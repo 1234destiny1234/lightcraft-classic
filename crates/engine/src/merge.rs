@@ -427,18 +427,33 @@ impl Session {
     /// apply Auto Settings / the auto crop. Returns `{id, path, …info}`.
     pub fn finish_merge(&mut self, job: &MergeJob, out: MergeOutput) -> Result<Value> {
         let first = &job.sources.first().ok_or_else(|| EngineError::Other("nothing merged".into()))?.1;
-        // a new file under a free name (never replacing one), complete and synced before it appears
-        let path = lightcraft_catalog::safe_file::write_new_unique(&mut output_names(first, job.kind.suffix()), &out.dng)
-            .map_err(|e| EngineError::Other(format!("could not write the merged DNG next to {first}: {e}")))?
-            .to_string_lossy()
-            .to_string();
-        let report = crate::import::import(self, std::slice::from_ref(&path), crate::import::ImportMode::Add)?;
-        let id = report
-            .imported
-            .first()
-            .copied()
-            .map(PhotoId)
-            .ok_or_else(|| EngineError::Other(format!("the merged file {path} could not be imported: {:?}", report.failed)))?;
+        let output_hash = lightcraft_preview::hash_bytes(&out.dng).to_string();
+        // Import deduplicates by content. Reuse an existing merge before publishing another
+        // uniquely named file, so a repeated deterministic merge cannot leave an orphan DNG.
+        let (id, path) = match self.catalog.photos().find_map(|p| {
+            if p.deleted || p.content_hash.as_deref() != Some(output_hash.as_str()) {
+                return None;
+            }
+            let Source::File { path } = &p.source else { return None };
+            Some((p.id, path.clone()))
+        }) {
+            Some(existing) => existing,
+            None => {
+                // A new file under a free name (never replacing one), complete and synced before it appears.
+                let path = lightcraft_catalog::safe_file::write_new_unique(&mut output_names(first, job.kind.suffix()), &out.dng)
+                    .map_err(|e| EngineError::Other(format!("could not write the merged DNG next to {first}: {e}")))?
+                    .to_string_lossy()
+                    .to_string();
+                let report = crate::import::import(self, std::slice::from_ref(&path), crate::import::ImportMode::Add)?;
+                let id = report
+                    .imported
+                    .first()
+                    .copied()
+                    .map(PhotoId)
+                    .ok_or_else(|| EngineError::Other(format!("the merged file {path} could not be imported: {:?}", report.failed)))?;
+                (id, path)
+            }
+        };
         if job.finish.stack {
             let sources: Vec<PhotoId> = job.sources.iter().map(|(p, _)| *p).collect();
             if let Some(op) = self.catalog.stack_with_ops(id, &sources) {

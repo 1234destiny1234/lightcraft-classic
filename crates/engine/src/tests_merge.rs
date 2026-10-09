@@ -55,15 +55,19 @@ fn hdr_merge_command_creates_and_imports_a_dng() {
     assert_eq!(st.photos[1..].iter().map(|p| p.0).collect::<Vec<_>>(), ids);
     assert!(st.collapsed);
     assert_eq!(s.visible_cloned(), vec![id]);
-    // the second merge doesn't overwrite the first
+    // A repeated deterministic merge reuses the existing content instead of publishing an
+    // unimported uniquely named orphan.
+    let undo_before = s.undo.len();
     let r2 = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": false})).unwrap();
-    assert!(r2["path"].as_str().unwrap().ends_with("IMG_0-HDR-2.dng"));
-    let id2 = lightcraft_catalog::PhotoId(r2["id"].as_u64().unwrap());
-    assert!(s.catalog.stack_of(id2).is_none(), "no stack without the option");
+    assert_eq!(r2["id"].as_u64(), Some(id.0));
+    assert_eq!(r2["path"].as_str(), Some(path));
+    assert!(!dir.join("IMG_0-HDR-2.dng").exists(), "duplicate merge left an orphan");
+    assert_eq!(s.catalog.photos().count(), 4);
+    assert_eq!(s.undo.len(), undo_before, "reusing merge content added an undo step");
     // the type filter finds merge results (and only them)
     s.execute("library.filter", &json!({"merged": "hdr"})).unwrap();
     let found: std::collections::HashSet<_> = s.catalog.query(&s.filter, &Default::default()).into_iter().collect();
-    assert_eq!(found, [id, id2].into_iter().collect());
+    assert_eq!(found, [id].into_iter().collect());
     let _ = std::fs::remove_dir_all(&dir);
 }
 
