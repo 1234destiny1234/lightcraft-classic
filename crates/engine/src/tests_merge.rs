@@ -57,13 +57,16 @@ fn hdr_merge_command_creates_and_imports_a_dng() {
     assert_eq!(s.visible_cloned(), vec![id]);
     // A repeated deterministic merge reuses the existing content instead of publishing an
     // unimported uniquely named orphan.
+    s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.73})).unwrap();
+    let edited = s.develop_of(id).unwrap().as_ref().clone();
     let undo_before = s.undo.len();
-    let r2 = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": false})).unwrap();
+    let r2 = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": true, "stack": true})).unwrap();
     assert_eq!(r2["id"].as_u64(), Some(id.0));
     assert_eq!(r2["path"].as_str(), Some(path));
     assert!(!dir.join("IMG_0-HDR-2.dng").exists(), "duplicate merge left an orphan");
     assert_eq!(s.catalog.photos().count(), 4);
     assert_eq!(s.undo.len(), undo_before, "reusing merge content added an undo step");
+    assert_eq!(s.develop_of(id).unwrap().as_ref(), &edited, "reusing merge content changed edits");
     // the type filter finds merge results (and only them)
     s.execute("library.filter", &json!({"merged": "hdr"})).unwrap();
     let found: std::collections::HashSet<_> = s.catalog.query(&s.filter, &Default::default()).into_iter().collect();
@@ -144,6 +147,44 @@ fn a_merge_of_raws_without_colour_matrices_keeps_their_colour() {
     assert!(lightcraft_raw::color::has_matrix(&merged.color), "{:?}", merged.color);
     let got = merged.color.as_shot_neutral.expect("the sources' white balance");
     assert!(got.iter().zip(neutral).all(|(a, b)| (a - b).abs() < 1e-3), "{got:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn hdr_merge_repairs_stale_result_or_cleans_failed_import() {
+    let dir = temp_dir("hdr-stale");
+    let mut paths = Vec::new();
+    for (i, b) in lightcraft_merge::synth::bracket_dngs(240, 160, &[-2.0, 0.0, 2.0]).unwrap().into_iter().enumerate() {
+        let p = dir.join(format!("IMG_{i}.dng"));
+        std::fs::write(&p, b).unwrap();
+        paths.push(p.to_string_lossy().to_string());
+    }
+    let mut s = Session::new().with_fs();
+    let ids = import(&mut s, paths.clone());
+    let first = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": false})).unwrap();
+    let id = lightcraft_catalog::PhotoId(first["id"].as_u64().unwrap());
+    let path = first["path"].as_str().unwrap().to_string();
+    s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.73})).unwrap();
+    let edited = s.develop_of(id).unwrap().as_ref().clone();
+
+    std::fs::remove_file(&path).unwrap();
+    let repaired = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": true})).unwrap();
+    assert_eq!(repaired["id"].as_u64(), Some(id.0));
+    assert_eq!(repaired["path"].as_str(), Some(path.as_str()));
+    assert!(std::path::Path::new(&path).exists());
+    assert_eq!(s.develop_of(id).unwrap().as_ref(), &edited, "repair changed edits");
+
+    std::fs::write(&path, std::fs::read(&paths[0]).unwrap()).unwrap();
+    let changed = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": true})).unwrap();
+    assert_eq!(changed["id"].as_u64(), Some(id.0));
+    assert!(changed["path"].as_str().unwrap().ends_with("IMG_0-HDR-2.dng"));
+    assert_eq!(s.develop_of(id).unwrap().as_ref(), &edited, "changed-source repair changed edits");
+    assert_eq!(s.catalog.photos().count(), 4);
+
+    s.execute("photo.delete", &json!({"ids": [id.0]})).unwrap();
+    let failed = s.execute("merge.hdr", &json!({"ids": ids, "autoSettings": false}));
+    assert!(failed.is_err(), "a deleted duplicate must not be silently reused");
+    assert!(!dir.join("IMG_0-HDR-3.dng").exists(), "failed import left an orphan");
     let _ = std::fs::remove_dir_all(&dir);
 }
 
