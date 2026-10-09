@@ -8,10 +8,9 @@
 //! the auto-crop rectangle when asked. A *preview* run works on ≤ 1024 px frames and returns a
 //! rendered image (with the deghost overlay when asked) instead of a file.
 
-use std::path::Path;
 use std::sync::Arc;
 
-use lightcraft_catalog::{Op, PhotoId, Source};
+use lightcraft_catalog::{PhotoId, Source};
 use lightcraft_develop::DevelopSettings;
 use lightcraft_merge::pano::MAX_MEGAPIXELS;
 use lightcraft_merge::{Deghost, Frame, HdrOptions, PanoOptions, Projection};
@@ -429,22 +428,25 @@ impl Session {
     pub fn finish_merge(&mut self, job: &MergeJob, out: MergeOutput) -> Result<Value> {
         let first = &job.sources.first().ok_or_else(|| EngineError::Other("nothing merged".into()))?.1;
         let output_hash = lightcraft_preview::hash_bytes(&out.dng).to_string();
-        // Import deduplicates by content. Reuse an existing merge only while its file still has
-        // matching bytes; a stale catalog row is repaired onto a newly written output below.
-        let candidates: Vec<(PhotoId, String)> = self
+        // Import deduplicates by content. Reuse an existing merge only while its live source has
+        // matching bytes; stale, missing or deleted rows fail before another file is published.
+        let candidates: Vec<(PhotoId, String, bool)> = self
             .catalog
             .photos()
             .filter_map(|p| {
-                if p.deleted || p.content_hash.as_deref() != Some(output_hash.as_str()) {
+                if p.content_hash.as_deref() != Some(output_hash.as_str()) {
                     return None;
                 }
                 let Source::File { path } = &p.source else { return None };
-                Some((p.id, path.clone()))
+                Some((p.id, path.clone(), p.deleted))
             })
             .collect();
         let valid_existing = candidates
             .iter()
-            .find(|(_, path)| {
+            .find(|(_, path, deleted)| {
+                if *deleted {
+                    return false;
+                }
                 let bytes = match &self.media.file_bytes {
                     Some(read) => read(path).ok(),
                     None => std::fs::read(path).ok(),
@@ -452,11 +454,13 @@ impl Session {
                 bytes.is_some_and(|bytes| lightcraft_preview::hash_bytes(&bytes).to_string() == output_hash)
             })
             .cloned();
-        let existing_valid = valid_existing.is_some();
-        let existing = valid_existing.or_else(|| candidates.into_iter().next());
-        let (id, path, reused) = if existing_valid {
-            let (id, path) = existing.as_ref().cloned().ok_or_else(|| EngineError::Other("merge reuse candidate disappeared".into()))?;
+        let (id, path, reused) = if let Some((id, path, _)) = valid_existing {
             (id, path, true)
+        } else if let Some((id, path, deleted)) = candidates.first() {
+            let state = if *deleted { "deleted" } else { "missing or changed" };
+            return Err(EngineError::Other(format!(
+                "existing merge result {id:?} has a {state} source at {path}; relink or remove it before repeating the merge"
+            )));
         } else {
             // A new file under a free name (never replacing one), complete and synced before it appears.
             let path = lightcraft_catalog::safe_file::write_new_unique(&mut output_names(first, job.kind.suffix()), &out.dng)
@@ -472,31 +476,14 @@ impl Session {
             };
             if let Some(id) = report.imported.first().copied().map(PhotoId) {
                 (id, path, false)
-            } else if let Some((stale_id, _)) =
-                existing.as_ref().filter(|(candidate, _)| report.duplicates.iter().any(|d| d.reason == "content" && d.existing == Some(candidate.0)))
-            {
-                let file_name = Path::new(&path).file_name().map(|name| name.to_string_lossy().to_string()).unwrap_or_else(|| path.clone());
-                let repair = self.commit(
-                    "Repair Merged Photo",
-                    Op::Relink { id: *stale_id, file_name, source: Source::File { path: path.clone() }, format: Some("DNG".into()) },
-                );
-                if let Err(e) = repair {
-                    let _ = std::fs::remove_file(&path);
-                    return Err(e);
-                }
-                (*stale_id, path, true)
             } else {
                 let _ = std::fs::remove_file(&path);
                 return Err(EngineError::Other(format!("the merged file {path} could not be imported: {:?}", report.failed)));
             }
         };
-        if job.finish.stack {
+        if !reused && job.finish.stack {
             let sources: Vec<PhotoId> = job.sources.iter().map(|(p, _)| *p).collect();
-            let already = self
-                .catalog
-                .stack_of(id)
-                .is_some_and(|stack| stack.collapsed && stack.top() == id && stack.photos.get(1..) == Some(sources.as_slice()));
-            if !already && let Some(op) = self.catalog.stack_with_ops(id, &sources) {
+            if let Some(op) = self.catalog.stack_with_ops(id, &sources) {
                 self.commit("Stack with Sources", op)?;
             }
         }
