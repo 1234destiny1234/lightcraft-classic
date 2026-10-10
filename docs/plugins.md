@@ -66,8 +66,18 @@ Imports (module `host`):
 
 ## Writing one in Rust
 
-The guest SDK is `sdk/plugin` (`dac-plugin-sdk`). An example that uses every hook is in
-`sdk/examples/catalog-tools`.
+The guest SDK is `sdk/plugin` (`dac-plugin-sdk`). Two examples:
+
+- `sdk/examples/catalog-tools` uses every hook: a menu command with a dialog, the plug-in's own
+  namespace, a metadata provider, an export hook and a publish service.
+- `sdk/examples/batch-metadata` is a small useful tool. It asks for `catalog` and `metadataWrite`.
+  *Title / Caption from Template…* fills the title or caption of the selected photos from a
+  template with tokens (`{name}`, `{file}`, `{date}`, `{year}`, `{camera}`, `{n}` with a start
+  number). *Add Keywords…* adds comma-separated keywords to the selection. Every write goes through
+  `metadata.setStandard`.
+
+Photo ids reach a plug-in as strings (`selection`). The host accepts them, or numbers, in `id` /
+`ids`, and refuses anything else, so a bad id is an error rather than "the current selection".
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -93,8 +103,8 @@ fn handle(req: &Request) -> Result<Value, String> {
 export_plugin!(MANIFEST, handle);
 ```
 
-`dac-plugins`' test suite (`crates/plugins/tests/example.rs`) builds the example to wasm32 and
-runs every hook of it. Without the wasm32 target installed, that test is skipped.
+`dac-plugins`' test suite (`crates/plugins/tests/example.rs`) builds both examples to wasm32 and
+runs every hook and command of them. Without the wasm32 target installed, those tests are skipped.
 
 ## Engine commands
 
