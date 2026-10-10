@@ -26,7 +26,7 @@ git config rerere.enabled true   # git records conflict resolutions and replays 
 
 Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) are listed in
 [`upstream-owned.txt`](../upstream-owned.txt), together with the regenerated files (`Cargo.lock`, the
-`docs/parity.md` summary, `*.md` rendered from `*.md.in`) and the paths exempt from the shared-code check.
+`docs/parity-checklist.md` summary, `*.md` rendered from `*.md.in`) and the paths exempt from the shared-code check.
 
 - **`cargo xtask upstream-merge [--ref upstream/main] [--no-ci]`** automates steps 1–3 below and checks step 4:
   refuses on a dirty tree, fetches, creates `merge/upstream-YYYYMMDD` from the current HEAD, runs

@@ -314,7 +314,7 @@ through the same entry point. An agent can cull a shoot, develop it, mask a sky 
 The app is young and moving fast. **Where we honestly stand** (details in the [roadmap](ROADMAP.md#where-we-stand)):
 
 - **By feature count we're at ~79%** of Lightroom (core features 98%), tracked row by row in
-  [docs/parity.md](docs/parity.md).
+  [docs/parity-checklist.md](docs/parity-checklist.md).
 - **As a day-to-day Lightroom replacement we're nearer 60–70%.** It's great for JPEG/DNG and most Nikon / Sony /
   older-Canon raws on one machine.
 - **The biggest gaps:**

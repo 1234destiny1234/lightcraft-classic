@@ -21,5 +21,5 @@ modules, and every action a command you can also run from the command line, a sc
 12. [Migrating from Lightroom Classic](migrating-from-lightroom.md).
 
 Reference: [control protocol](../control-protocol.md), [MCP](../mcp.md), [XMP interop](../xmp-interop.md),
-[process versions](../process-versions.md), [packaging](../packaging.md), and the [parity tracker](../parity.md)
+[process versions](../process-versions.md), [packaging](../packaging.md), and the [parity tracker](../parity-checklist.md)
 (what matches Lightroom, and what doesn't yet).

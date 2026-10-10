@@ -23,7 +23,7 @@ Lightroom `.xmp` presets); Import Keywords… reads keyword lists.
 
 Supported files: JPEG, PNG, TIFF, WebP, AVIF/HEIF, PSD, DNG and the common raw formats (Sony ARW, Nikon NEF, Canon
 CR2/CR3, Fujifilm RAF, Panasonic RW2, Olympus ORF, Pentax PEF, Samsung SRW and more). Per-model status is in the
-[parity tracker](../parity.md) (`LR-IMP-CAMERA-COVERAGE`).
+[parity tracker](../parity-checklist.md) (`LR-IMP-CAMERA-COVERAGE`).
 
 ## Export
 

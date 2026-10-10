@@ -151,7 +151,7 @@ upstream-owned.txt
 # `cargo` rewrites it after the merge
 Cargo.lock
 # summary table: `cargo xtask parity --write`
-docs/parity.md
+docs/parity-checklist.md
 # rendered from *.md.in by `cargo xtask docs` (list each rendered file here)
 packaging/web/HOSTING.md
 

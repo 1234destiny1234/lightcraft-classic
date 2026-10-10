@@ -7,7 +7,7 @@ projects (DrawCraft reached its first four milestones in ≈ 4½ h) and are revi
 ## Where we stand
 
 *Honest assessment, 2026-10-08. Agents: read this before picking work. The checklist in
-[`docs/parity.md`](docs/parity.md) counts features that **exist**; this section is about whether a photographer can
+[`docs/parity-checklist.md`](docs/parity-checklist.md) counts features that **exist**; this section is about whether a photographer can
 **switch** from Lightroom. Update it when a gap below closes.*
 
 **In one line:** the checklist says **79.7%** (P0 98.2%, P1 95.6%, P2 41.6%), but measured by whether a working
@@ -44,7 +44,7 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 
 ## Where we're going
 
-Priorities, in order. Each points at tracker rows in [`docs/parity.md`](docs/parity.md) → *Top gaps*.
+Priorities, in order. Each points at tracker rows in [`docs/parity-checklist.md`](docs/parity-checklist.md) → *Top gaps*.
 
 1. **Camera colour calibration of our own** (LR-PROF-CAMERACOLOR, P0): fit each camera to its own embedded JPEG, use
    matrices the files carry themselves, then chart shots. Sony ARW, Nikon NEF, Panasonic RW2, Fujifilm RAF, Canon CR3/CR2,
@@ -106,7 +106,7 @@ yet guarantee original-pixel detail; visible-region rendering remains a gap (LR-
 
 ## Parity estimate (feature count updated 2026-10-08; effort estimate from 2026-10-02)
 
-**By feature count** — from `docs/parity.md` (one row per Lightroom feature, menu item and shortcut; `cargo xtask
+**By feature count** — from `docs/parity-checklist.md` (one row per Lightroom feature, menu item and shortcut; `cargo xtask
 parity` prints this line on every run, so it stays current):
 
 | Scope | Weighted completion | Rows | 2026-10-02 |

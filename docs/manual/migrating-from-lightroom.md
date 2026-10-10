@@ -45,7 +45,7 @@ Photos you already edited in <app> keep their edits; `updateExisting=true` repla
 - **Rendering is approximate.** Basic tone, colour, curves, HSL, grading, detail, effects, crop and the supported
   mask types stay editable, but Adobe camera profiles, Adobe AI features (Denoise, Select Subject results),
   lens-profile corrections from Adobe's database and Lightroom's process-version algorithms are not reproduced.
-  Expect photos to look similar, not identical; [parity.md](../parity.md) (`LR-BEHAV-RENDER-FIDELITY`) tracks this.
+  Expect photos to look similar, not identical; [parity-checklist.md](../parity-checklist.md) (`LR-BEHAV-RENDER-FIDELITY`) tracks this.
 - Lightroom's `ProcessVersion` is not mapped: imported photos use <app>'s latest process
   ([process-versions.md](../process-versions.md)).
 - Custom white balance on non-DNG raws stays As Shot (the catalog has no as-shot white to convert from); see

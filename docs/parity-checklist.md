@@ -1,7 +1,15 @@
-# Lightroom parity tracker
+# Lightroom parity checklist
 
-A living checklist of every Lightroom feature the app aims to match, what we have, and what is missing. Agents and
-humans pick work from **[Top gaps](#top-gaps)**; whoever lands a feature updates its row in the same commit.
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** minor (renamed from `parity.md`; Top gaps moved to gaps.md, shortcut notes to ui-parity.md) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+
+The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
+have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
+enough to replace Lightroom is assessed in [target-app-parity.md](target-app-parity.md), and the work
+list is [gaps.md](gaps.md). Whoever lands a feature updates its row in the same commit.
+
+The rows are maintained by hand; the summary block is generated (`cargo xtask parity --write`), and
+`cargo xtask parity` (part of `cargo xtask ci`) checks that every command id, control id and path
+cited here still exists. Formerly docs/parity.md.
 
 - **Ids** are described in `plan/lightroom-classic/` (committed, our own words): `LR-…` = feature catalog,
   `MENU-…` = menu items, `KEY-…` / `KEYC-…` = keyboard shortcuts (desktop / Classic), `LRC-…` = Classic extras,
@@ -12,9 +20,6 @@ humans pick work from **[Top gaps](#top-gaps)**; whoever lands a feature updates
 - **Evidence**: `cmd:<id>` = command id (engine `command_specs()` or UI `UI_COMMANDS`), `ctl:<id>` = develop control
   id (`app-cli controls`), plus source files. A trailing `*` matches a prefix (`ctl:mixer.*`).
 - Feature names and notes are our own words. No Adobe text, screenshots or assets belong here.
-
-`cargo xtask parity` checks that every `cmd:`/`ctl:` id and file path below still exists (part of `cargo xtask ci`)
-and prints the summary; `cargo xtask parity --write` refreshes the summary table below.
 
 ## Summary
 
@@ -54,7 +59,12 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.9%** of 570 in-scope rows — P0 98.0% of 200 · P1 94.8% of 173 · P2 59.7% of 196.
 <!-- /parity:summary -->
 
-## Top gaps
+## Top gaps and shortcut notes
+
+Moved on 2026-10-10: the ranked gaps are in [gaps.md](gaps.md); shortcut conflicts, deliberate
+differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
+
+**The fork's own gaps** (Classic modules, Immich):
 
 Ordered by user impact, then tier, then effort. The checklist above counts features that *exist*; these are the gaps
 that decide whether a photographer can switch (see the honest assessment in [ROADMAP.md](../ROADMAP.md#where-we-stand)).
@@ -639,7 +649,7 @@ visible menu bar yet: the menu model is only exposed through the control channel
 ## Z. Keyboard shortcuts (desktop)
 
 From `06-shortcuts.md` part 1. Evidence is our binding; conflicts are explained in
-[Shortcuts: conflicts and missing bindings](#shortcuts-conflicts-and-missing-bindings).
+[UI parity → Shortcuts](ui-parity.md#shortcuts).
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
@@ -884,3 +894,10 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | IMM-PEOPLE | Import Immich people and face regions into People; push names back | P2 | ✅ | `cmd:immich.importPeople` `cmd:immich.confirmFaces` `cmd:immich.pushPeople`, `crates/immich/src/people.rs`: faces → face regions marked from Immich (`immich:<person>`), hidden people skipped, overlapping regions kept, confirmed ones survive re-import; names back as renames, shared names as merges (opt-in). Birth dates are reported, not stored | Phase 4 |
 | IMM-SEARCH | Immich smart (CLIP) and metadata search from the Library filter bar | P2 | ✅ | `cmd:immich.smartSearch` (`mode: smart\|ocr\|description\|place`, `show` → temporary collection via the filter's photo list, `saveAs` → album); filter bar "Immich smart search" box (`crates/ui-egui/src/panels/connections.rs` `smart_search_box`, runs on a worker) | Phase 4 |
 | IMM-MCP | Immich commands available via CLI, control channel and MCP | P2 | ✅ | every Immich action is an `immich.*` command (`cmd:immich.sync`, `cmd:immich.smartSearch`, …), dispatched alike by UI, CLI, control channel and MCP | Phase 4 |
+
+## Revision history
+
+| Date | Change | Summary |
+|---|---|---|
+| 2026-10-10 | minor | Renamed from `parity.md` (progress-docs standard); Top gaps moved to gaps.md (its duplicated items 1–2 from a bad merge resolved there), shortcut notes moved to ui-parity.md. Rows unchanged; a recount of the rows gives 81.1% of 517 in-scope rows (P0 98.0%, P1 95.1%, P2 46.9%), so the generated summary above is due a `cargo xtask parity --write` |
+| 2026-09-30 – 2026-10-10 | — | Rows added and updated with each feature (see `git log -- docs/parity.md docs/parity-checklist.md`) |

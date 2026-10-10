@@ -598,7 +598,7 @@ mod tests {
         assert!(m.is_owned("crates/ui-egui/src/panels/classic.rs"));
         assert!(m.is_shared("crates/ui-egui/src/app.rs"));
         assert!(!m.is_shared("crates/ui-egui/locales/en/main.ftl"));
-        assert!(!m.is_shared("docs/parity.md"));
+        assert!(!m.is_shared("docs/parity-checklist.md"));
     }
 
     #[test]
