@@ -1053,7 +1053,9 @@ fn right_column(app: &mut DacApp, ui: &mut egui::Ui) {
         });
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("Watermark"));
-            ch |= ui.text_edit_singleline(&mut o.watermark).changed();
+            let r = ui.text_edit_singleline(&mut o.watermark);
+            crate::access::label(&r, "Watermark");
+            ch |= r.changed();
         });
         let mut remove = None;
         for (k, t) in o.texts.iter_mut().enumerate() {
