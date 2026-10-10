@@ -22,7 +22,9 @@ fn main() {
     let time = |label: &str, s: &mut dac_engine::Session, win: PixelWindow| {
         let t = Instant::now();
         let job = s.region_job(id, w, h, win, true).expect("region job").with_stages(stages.clone());
-        let img = job.run().rendered.expect("render").image;
+        let r = job.run();
+        s.accept(&r); // as the app's render queue does: the decoded source is kept
+        let img = r.rendered.expect("render").image;
         println!("{label:<34} {:>8.1} ms  ({}×{})", t.elapsed().as_secs_f64() * 1e3, img.width, img.height);
     };
     let win = PixelWindow { x: w / 3, y: h / 3, w: edge, h: edge };

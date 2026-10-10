@@ -153,12 +153,11 @@ impl PreviewBuild {
 
 /// The jobs that build `id`'s previews: the largest grid thumbnail, then the view render at
 /// `edge` (`None` = 1:1, the photo's full size).
-fn jobs_for(s: &mut Session, id: dac_catalog::PhotoId, edge: Option<usize>) -> Vec<RenderJob> {
+pub(crate) fn jobs_for(s: &mut Session, id: dac_catalog::PhotoId, edge: Option<usize>) -> Vec<RenderJob> {
     let Some(p) = s.catalog.photo(id).cloned() else { return Vec::new() };
     let full = p.width.max(p.height) as usize;
     let e = edge.unwrap_or(full).min(full.max(1)).max(1);
     let mut v = Vec::new();
-    v.extend(s.thumb_job(id, THUMB_SIZES[THUMB_SIZES.len() - 1]));
     let mut view = s.loupe_job(id, e, e, true);
     // a 1:1 preview is kept under its own key, to be discarded on its own
     if edge.is_none()
@@ -168,6 +167,8 @@ fn jobs_for(s: &mut Session, id: dac_catalog::PhotoId, edge: Option<usize>) -> V
         *key = Session::full_view_key(&p);
     }
     v.extend(view);
+    // (after the view: it renders from the source the view loaded, see `run_photo`)
+    v.extend(s.thumb_job(id, THUMB_SIZES[THUMB_SIZES.len() - 1]));
     v
 }
 
@@ -183,17 +184,66 @@ fn task_for(s: &Session, state: &PreviewBuild) -> TaskGuard {
     task
 }
 
-fn run_all(jobs: Vec<Vec<RenderJob>>, state: &PreviewBuild, task: &TaskGuard) {
-    for photo_jobs in jobs {
-        if state.cancel.load(Ordering::Relaxed) {
-            break;
+/// Render one photo's jobs in order. The source the first job decodes serves the ones after it
+/// (the grid thumbnail is made from the view's source instead of decoding the file again).
+pub(crate) fn run_photo(jobs: Vec<RenderJob>) -> bool {
+    let mut decoded: Option<crate::media::DecodedSource> = None;
+    let mut ok = true;
+    for mut j in jobs {
+        if let Some(src) = &decoded
+            && !matches!(j.source, crate::media::SourceRef::Loaded(_))
+        {
+            j.source = crate::media::SourceRef::Loaded(Box::new(src.clone()));
         }
-        let ok = photo_jobs.into_iter().all(|j| j.run().rendered.is_ok());
-        if !ok {
-            state.failed.fetch_add(1, Ordering::Relaxed);
+        let r = j.run();
+        ok &= r.rendered.is_ok();
+        if decoded.is_none() {
+            decoded = r.loaded;
         }
-        let done = state.done.fetch_add(1, Ordering::Relaxed).saturating_add(1);
-        task.progress(done as u64, state.total as u64);
+    }
+    ok
+}
+
+/// How many photos render side by side: as many as an export batch for standard previews (each
+/// render spreads over the cores already; the others fill them while one decodes), two for 1:1
+/// previews (a full-size source each).
+fn lanes(n: usize, full: bool) -> usize {
+    let l = crate::export::export_parallelism(n);
+    if full { l.min(2) } else { l }
+}
+
+fn run_all(jobs: Vec<Vec<RenderJob>>, state: &PreviewBuild, task: &TaskGuard, lanes: usize) {
+    let total = jobs.len();
+    let queue = std::sync::Mutex::new(jobs.into_iter());
+    let work = || {
+        loop {
+            if state.cancel.load(Ordering::Relaxed) {
+                break;
+            }
+            let next = queue.lock().unwrap_or_else(std::sync::PoisonError::into_inner).next();
+            let Some(photo_jobs) = next else { break };
+            let ok = crate::guard::catch("building previews", || run_photo(photo_jobs)).unwrap_or(false);
+            if !ok {
+                state.failed.fetch_add(1, Ordering::Relaxed);
+            }
+            let done = state.done.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+            task.progress(done as u64, total as u64);
+        }
+    };
+    #[cfg(not(target_arch = "wasm32"))]
+    std::thread::scope(|sc| {
+        for k in 1..lanes.max(1) {
+            // a lane that can't start leaves its photos to the others (and to this thread)
+            if std::thread::Builder::new().name(format!("previews-{k}")).spawn_scoped(sc, work).is_err() {
+                break;
+            }
+        }
+        work();
+    });
+    #[cfg(target_arch = "wasm32")]
+    {
+        let _ = lanes;
+        work();
     }
     state.finished.store(true, Ordering::Relaxed);
 }
@@ -216,9 +266,10 @@ fn build(s: &mut Session, p: &Value) -> Result<Value> {
     let state = Arc::new(PreviewBuild { total: jobs.len(), ..Default::default() });
     s.preview_build = Some(state.clone());
     let task = task_for(s, &state);
+    let lanes = lanes(jobs.len(), edge.is_none());
     let wait = p.get("wait").and_then(Value::as_bool).unwrap_or(false) || cfg!(target_arch = "wasm32");
     if wait {
-        run_all(jobs, &state, &task);
+        run_all(jobs, &state, &task, lanes);
         return Ok(state.json());
     }
     #[cfg(not(target_arch = "wasm32"))]
@@ -227,7 +278,7 @@ fn build(s: &mut Session, p: &Value) -> Result<Value> {
         let st = state.clone();
         std::thread::Builder::new()
             .name("lc-build-previews".into())
-            .spawn(move || run_all(jobs, &st, &task))
+            .spawn(move || run_all(jobs, &st, &task, lanes))
             .map_err(|e| bad(C, format!("could not start: {e}")))?;
     }
     Ok(state.json())

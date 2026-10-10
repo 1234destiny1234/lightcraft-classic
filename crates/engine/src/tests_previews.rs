@@ -236,3 +236,30 @@ fn huge_export_size_is_an_error() {
     assert!(s.render_export(id, huge, huge, OutputSpace::Srgb, OutputDepth::U8).is_err());
     assert!(s.render_export(id, 70_000, 10, OutputSpace::Srgb, OutputDepth::U8).is_err());
 }
+
+// Given a photo's preview jobs, the grid thumbnail is made from the source the view decoded, not
+// by reading the file again (here: a thumbnail job pointing at a file that is not there)
+#[test]
+fn preview_build_makes_the_thumbnail_from_the_views_source() {
+    use crate::cmd::previews::{jobs_for, run_photo};
+    use crate::media::SourceRef;
+    let mut s = Session::with_demo();
+    let id = s.active().unwrap();
+    let mut jobs = jobs_for(&mut s, id, Some(512));
+    assert_eq!(jobs.len(), 2, "view and thumbnail");
+    assert!(jobs[0].view_cache.is_some(), "the view renders first");
+    jobs[1].source = SourceRef::File { path: "/nonexistent/photo.arw".into(), max_edge: 512, loader: None, fallback: None, denoise: None };
+    assert!(run_photo(jobs), "the thumbnail rendered from the view's decoded source");
+}
+
+// Given many photos, a standard preview build renders them side by side and counts every one
+#[test]
+fn preview_build_of_many_photos_counts_each_once() {
+    let mut s = Session::with_demo();
+    let ids: Vec<u64> = s.catalog.photos().map(|p| p.id.0).collect();
+    assert!(ids.len() > 4);
+    let r = s.execute("library.buildPreviews", &json!({"size": "standard", "edge": 512, "ids": ids, "wait": true})).unwrap();
+    assert_eq!(r["done"], json!(ids.len()), "{r}");
+    assert_eq!(r["total"], json!(ids.len()));
+    assert_eq!(r["failed"], json!(0));
+}
