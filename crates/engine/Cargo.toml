@@ -26,6 +26,7 @@ web-time = { workspace = true }
 dac-preview = { workspace = true }
 dac-codecs = { workspace = true }
 dac-raw = { workspace = true }
+dac-camdb = { workspace = true }
 dac-denoise-core = { workspace = true }
 dac-denoise = { workspace = true, optional = true }
 dac-meta = { workspace = true }

@@ -59,12 +59,14 @@ pub(crate) fn file_local_look(format: RawFormat) -> bool {
     )
 }
 
-/// The colour a raw starts from, first available first: the file's own colour matrices (DNG); a look fitted to the
-/// file's JPEG ([`fit_preview`]: with the camera profile for its model when there is one, else with colour fitted to
-/// this photo alone); the model's colour matrices from measured spectral sensitivities (`dac_raw::spectral`);
-/// the neutral fallback. The spectral matrices only stand in for the neutral fallback, so a photo whose JPEG fit is
-/// accepted renders as without them; when used they are written into `raw.color`. Returns the as-shot white, the
-/// camera transform at it and the fitted look.
+/// The colour a raw starts from, first available first: the file's own colour matrices (DNG); the model's measured
+/// matrices from the camera database (`dac_camdb`: camera-native DNG, chart or manufacturer data); a look fitted to
+/// the file's JPEG ([`fit_preview`]: with the camera profile for its model when there is one, else with colour fitted
+/// to this photo alone); the model's other database matrices (from measured spectral sensitivities,
+/// `dac_raw::spectral`); the neutral fallback. The spectral matrices only stand in for the neutral fallback, so a
+/// photo whose JPEG fit is accepted renders as without them. Database matrices, when used, are written into
+/// `raw.color`, where the DNG colour model interpolates them by the white's temperature; the database's black and
+/// white level overrides are applied first. Returns the as-shot white, the camera transform at it and the fitted look.
 pub(crate) fn starting_colour(raw: &mut RawImage, bytes: &[u8]) -> (Xy, CameraTransform, Option<CameraLook>) {
     starting_colour_with(raw, |raw, t| fit_preview(raw, bytes, t))
 }
@@ -74,10 +76,28 @@ fn starting_colour_with(
     raw: &mut RawImage,
     fit: impl FnOnce(&RawImage, &CameraTransform) -> Option<CameraLook>,
 ) -> (Xy, CameraTransform, Option<CameraLook>) {
+    let entry = raw.metadata.model.as_deref().and_then(|model| dac_camdb::find(raw.metadata.make.as_deref(), model));
+    starting_colour_from(raw, entry, fit)
+}
+
+/// [`starting_colour_with`] with the camera database entry passed in.
+fn starting_colour_from(
+    raw: &mut RawImage,
+    entry: Option<dac_camdb::Entry>,
+    fit: impl FnOnce(&RawImage, &CameraTransform) -> Option<CameraLook>,
+) -> (Xy, CameraTransform, Option<CameraLook>) {
     let start = |raw: &RawImage| {
         let xy = dac_raw::color::as_shot_white_xy(raw);
         (xy, dac_raw::color::camera_transform(raw, xy))
     };
+    let measured = entry.as_ref().is_some_and(|e| e.provenance.source.is_measured());
+    if let Some(e) = &entry {
+        // levels always; matrices now only when measured (the JPEG fit outranks spectral and estimated colour)
+        let applied = if measured { e.apply(raw) } else { dac_camdb::Entry { color_matrix: [None, None], ..e.clone() }.apply(raw) };
+        if dac_pipeline::profiling() && (applied.matrix || applied.levels) {
+            eprintln!("[profile] {:?} camera database {} {} ({:?}): {applied:?}", raw.format, e.make, e.model, e.provenance.source);
+        }
+    }
     let (xy, t) = start(raw);
     if !t.matrix_is_fallback {
         return (xy, t, None);
@@ -85,12 +105,14 @@ fn starting_colour_with(
     if let Some(look) = fit(raw, &t) {
         return (xy, t, Some(look));
     }
-    let Some(camera) = raw.metadata.model.as_deref().and_then(|model| dac_raw::spectral::find(raw.metadata.make.as_deref(), model)) else {
+    let Some(e) = entry.filter(|_| !measured) else {
         return (xy, t, None);
     };
-    camera.fill(&mut raw.color);
+    if !e.apply(raw).matrix {
+        return (xy, t, None);
+    }
     if dac_pipeline::profiling() {
-        eprintln!("[profile] {:?} camera colour from spectral sensitivities: {} {}", raw.format, camera.make, camera.model);
+        eprintln!("[profile] {:?} camera colour from the camera database: {} {} ({:?})", raw.format, e.make, e.model, e.provenance.source);
     }
     let (xy, t) = start(raw);
     (xy, t, None)
@@ -1517,6 +1539,32 @@ mod tests {
         // white-balanced white stays white
         let w = t.matrix.apply([1.0; 3]);
         assert!(w.iter().all(|v| (v - 1.0).abs() < 1e-4), "{w:?}");
+    }
+
+    /// A measured camera database entry (here: as if from a camera-native DNG) comes before the JPEG fit, its level
+    /// overrides apply, and the input transform interpolates its two matrices by the as-shot white's temperature.
+    #[test]
+    fn a_measured_database_entry_comes_before_the_jpeg_fit() {
+        let mut entry = dac_camdb::find(Some("Canon"), "Canon EOS 600D").unwrap();
+        entry.provenance.source = dac_camdb::Source::NativeDng;
+        entry.black = Some(2048.0);
+        let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 600D", Default::default());
+        let (xy, t, look) = starting_colour_from(&mut raw, Some(entry.clone()), |_, _| panic!("no JPEG fit for measured colour"));
+        assert!(look.is_none() && !t.matrix_is_fallback);
+        assert_eq!(raw.color.color_matrix, entry.color_matrix);
+        assert!(raw.black.values.iter().all(|&b| b == 2048.0));
+        assert_eq!(t.matrix, dac_raw::color::camera_transform_of(&entry.color_data(), xy).matrix);
+
+        // a spectral entry's levels apply at once, its matrices only after a failed fit
+        let mut spectral = entry.clone();
+        spectral.provenance.source = dac_camdb::Source::SpectralSensitivities;
+        let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 600D", Default::default());
+        let (_, t, _) = starting_colour_from(&mut raw, Some(spectral), |raw, _| {
+            assert!(!dac_raw::color::has_matrix(&raw.color));
+            assert!(raw.black.values.iter().all(|&b| b == 2048.0));
+            None
+        });
+        assert!(!t.matrix_is_fallback);
     }
 
     /// Step 5: a camera outside the table whose fit fails keeps the neutral fallback.
