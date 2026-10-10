@@ -16,11 +16,11 @@ Status: ✅ met · ❌ missed in owned code · ❌ᵘ missed in shared (upstream
 
 | Budget | Target | Measured (loaded machine) | Idle machine, 2026-10-11 (median of 3) | Status (idle) |
 |---|---|---|---|---|
-| Slider update, draft preview, 24 MP | ≤ 16 ms | GPU 4.7–8.7 ms (exposure, highlights, clarity); CPU 34–47 ms; NR drag GPU 27 ms / CPU 297 ms | GPU 1.8–1.9 ms (highlights, clarity); CPU 6.3–7.1 ms; NR drag GPU 9.2 ms / CPU 22.8 ms | ✅ GPU, ✅ CPU, ❌ᵘ CPU NR drag (U3) |
+| Slider update, draft preview, 24 MP | ≤ 16 ms | GPU 4.7–8.7 ms (exposure, highlights, clarity); CPU 34–47 ms; NR drag GPU 27 ms / CPU 297 ms | GPU 1.8–1.9 ms (highlights, clarity); CPU 6.3–7.1 ms; NR drag GPU 9.2 ms / CPU 22.8 ms | ✅ GPU, ✅ CPU, 🟡 CPU NR drag 15.7–16.0 ms after U3 fix (load ~25) |
 | Loupe update (1920×1280) | ≤ 60 ms | GPU 8.6 ms; CPU 72 ms | exposure drag GPU 2.5 ms / CPU 16.4 ms; NR drag GPU 28.5 / CPU 54.7 ms; cold GPU 35 / CPU 69 ms | ✅ |
-| 1:1 tile (1024², `Session::region_job`) | ≤ 100 ms | 530–1140 ms per window, every window | first 528 ms, same window 496 ms, pan 493 ms, after exposure 486 ms, after NR 497 ms | ❌ᵘ (U1) |
+| 1:1 tile (1024², `Session::region_job`) | ≤ 100 ms | 530–1140 ms per window, every window | first 528 ms, same window 496 ms, pan 493 ms, after exposure 486 ms, after NR 497 ms (probe artefact, see U1); with the source kept as the app keeps it: first 372–468 ms (decode), same window 1.7 / 5.0 ms, pan 5.9 / 15.1 ms, after exposure 1.3 / 6.0 ms, after NR 12.9 / 18.5 ms (GPU / CPU) | ✅ (first tile pays the decode) |
 | Export 24 MP JPEG | ≤ 1 s | GPU render 865 ms + encode 386 ms = 1.25 s; CPU 2.8 s + 0.4 s | GPU render 361 ms + encode 68 ms = **0.43 s**; CPU 477 + 68 ms = 0.55 s; whole `<cli> render` process (decode, GPU init, write) 846 ms | ✅ |
-| Import 1,000 raws + standard previews | < 2 min | import 16 s + previews 354 s = **370 s** | import ~4 s + previews 172 s = **176 s** | ❌ᵘ (U2) |
+| Import 1,000 raws + standard previews | < 2 min | import 16 s + previews 354 s = **370 s** | import ~4 s + previews 172 s = **176 s**; after U2 fix (load ~25, same session A/B): previews 239 s → **75 s**, import + previews **78.5 s** | ✅ after U2 fix |
 | Catalog at 1M photos | interactive | v3: open 20.7 s, filter ≤ 98 ms, 7.7 GB peak RSS; v4: open 13.2 s, filter ≤ 339 ms, 1.9 GB peak, first snapshot 44 s | v3: open 14.2 s, filter ≤ 75 ms, 7.7 GB peak; v4: open 1.4 s, filter ≤ 48 ms, 1.9 GB peak, first snapshot 10.3 s (9.8–19.5), snapshot after edits 338 ms | ✅ v4 (first full snapshot 10 s runs off the UI path); v3 open 14 s ❌ᵘ |
 | Map, 50k geotagged photos | frame ≤ 16 ms | frame 6–15 ms (noisy), cached pins 4.0 ms → **0.8 µs** (fixed); re-cluster on zoom step 6–49 ms | frame 3.3–5.9 ms, cached pins 0.7 µs, re-cluster on zoom step 4.4–11.0 ms; Library grid 0.97 ms | ✅ |
 | Print / Book page render (300 dpi, raws) | — | 1 photo 0.7–2.2 s, 4 photos 3.5 s → **0.6 s**, 20-photo contact sheet 8.1 s → **2.0–3.1 s** (fixed) | 1 photo 0.65 s (150 dpi 0.19 s), 4 photos 0.52 s, 20-photo contact sheet 1.81 s | — |
@@ -166,7 +166,11 @@ thread that dies is reported as that photo's failure, and cancel is checked befo
 
 ## Upstream-PR candidates (shared code, not changed here)
 
-**U1 — 1:1 tiles re-decode the whole raw (`crates/engine/src/media.rs`, `crates/pipeline`).** Every
+**U1 — 1:1 tiles re-decode the whole raw — not a product issue (2026-10-11, G6).** The probe
+(`examples/perf_tile.rs`) never handed its results to `Session::accept`, so each window decoded the raw again; the
+app's render queue accepts every result's source (`ui-egui` `render.rs`), so its tiles reuse the full-size source.
+With the probe fixed: same window 1.7 ms, pan 5.9 ms, after exposure 1.3 ms, after NR 12.9 ms (GPU; CPU 5–18.5 ms);
+only the first tile pays the ~0.4 s decode. Original analysis, kept for reference: (`crates/engine/src/media.rs`, `crates/pipeline`).** Every
 `Session::region_job` window, even the same window twice, loads and develops the full 6000×4000 source
 (`<PREFIX>_PROFILE`: develop 226–292 ms, highlights 50–57 ms, colour 138–161 ms, then the GPU window ~60 ms), so a
 1:1 tile costs 530–1140 ms against a 100 ms budget, with a `StageCache` attached as the loupe does. The GPU part alone
@@ -174,7 +178,13 @@ would fit. Proposal: keep the developed full-resolution source (per photo + deve
 the whole-frame loupe path keeps its preview-level source, so a pan or a slider change re-runs only the window.
 Expected: ~60–100 ms per tile.
 
-**U2 — `library.buildPreviews` builds one photo at a time (`crates/engine/src/cmd/previews.rs`, `run_all`).**
+**U2 — fixed in shared code (G6, branch `upstream/perf-previews`):** (a) photos render in `export_parallelism`
+lanes (2 for 1:1), (b) the thumbnail renders from the view's decoded source (one decode per photo instead of two),
+plus a cheaper hue/saturation table path in `dac-raw` (`HsvTable::apply`: no sRGB round trip for a unit value scale, no
+`fmodf`; 2048 px render 16.4 → 15.1 G instructions single-thread). 1,000 ARWs, same binaries A/B minutes apart, load
+average ~25: previews 239.3 s → **75.0 s** (CPU 34m06 → 26m59), whole `<cli> run --import … buildPreviews` 243.5 s →
+**78.5 s**; 100 ARWs 20.7 s → 8.4 s. (c) (embedded JPEG as the standard preview) not needed for the budget.
+Original analysis: **`library.buildPreviews` builds one photo at a time (`crates/engine/src/cmd/previews.rs`, `run_all`).**
 1,000 24 MP raws: 354 s of previews after a 16 s import (idle machine: 172 s after ~4 s, median of 3, still over) (budget: 2 min in total). A single 2048 px render takes ~320 ms
 (`load_bytes(2560)` alone is 93 ms wall / 1.9 s CPU, so it already uses many cores). Running the same work as N separate
 processes gave N=4: 202 s, N=8: 144 s — so concurrency helps but does not reach the budget on its own. Proposal:
@@ -182,7 +192,12 @@ processes gave N=4: 202 s, N=8: 144 s — so concurrency helps but does not reac
 preview instead of a second job per photo, (c) for an untouched raw, take the standard preview from the embedded
 camera JPEG (16.7 ms) and render the real one lazily. (b)+(c) should bring import + previews under 2 min.
 
-**U3 — CPU fallback misses the slider budget for NR.** Idle, draft-size highlights/clarity drags on the CPU take
+**U3 — improved in shared code (G6, branch `upstream/perf-nr-drag`):** a noise-reduction change no longer rebuilds
+the wide spatial planes (base, clarity, dehaze, chromaticity) in draft renders — the plan carries the linear key
+without NR, and drafts keep those planes, redoing only log luminance and the texture band; full-quality renders never
+take them (tested). Draft NR drag, CPU, A/B at load ~25: 18.5–20.2 → **15.7–16.0 ms** wall, 335 → 270 ms CPU; single
+thread `prepare` 18.7 → 7 ms. At the budget edge: the rest is NR itself (~30 ms single-thread) and the finish stage
+shared with every drag. Original analysis: **CPU fallback misses the slider budget for NR.** Idle, draft-size highlights/clarity drags on the CPU take
 6–7 ms (met; 34–47 ms under load), but an NR drag takes 22.8 ms (297 ms under load). Proposal: a smaller draft size during drags on the CPU path (e.g. 768 px), and skipping NR in
 draft renders while a slider moves.
 
