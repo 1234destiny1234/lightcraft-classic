@@ -1852,5 +1852,10 @@
   "Finding faces": "Recherche des visages",
   "Synchronizing folder": "Synchronisation du dossier",
   "Looking for changes": "Recherche des modifications",
-  "Content-Aware": "Contenu pris en compte"
+  "Content-Aware": "Contenu pris en compte",
+  "Other…": "Autre…",
+  "Intent:": "Mode de rendu :",
+  "Perceptual": "Perceptif",
+  "Relative": "Relatif",
+  "Simulate Paper & Ink": "Simuler le papier et l'encre"
 }

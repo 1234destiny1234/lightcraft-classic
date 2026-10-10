@@ -1854,5 +1854,10 @@
   "Finding faces": "顔を検索中",
   "Synchronizing folder": "フォルダを同期中",
   "Looking for changes": "変更を確認中",
-  "Content-Aware": "コンテンツに応じる"
+  "Content-Aware": "コンテンツに応じる",
+  "Other…": "その他…",
+  "Intent:": "マッチング方法：",
+  "Perceptual": "知覚的",
+  "Relative": "相対的",
+  "Simulate Paper & Ink": "紙とインキをシミュレート"
 }

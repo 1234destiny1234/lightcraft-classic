@@ -1852,5 +1852,10 @@
   "Finding faces": "正在查找人脸",
   "Synchronizing folder": "正在同步文件夹",
   "Looking for changes": "正在查找更改",
-  "Content-Aware": "内容识别"
+  "Content-Aware": "内容识别",
+  "Other…": "其他…",
+  "Intent:": "方法：",
+  "Perceptual": "可感知",
+  "Relative": "相对",
+  "Simulate Paper & Ink": "模拟纸张和油墨"
 }

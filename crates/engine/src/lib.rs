@@ -54,6 +54,7 @@ pub mod originals;
 pub mod preset_import;
 pub mod preset_luminar;
 pub mod presets;
+pub mod proof;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod remote;
 pub mod rename;

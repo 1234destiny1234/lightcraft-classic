@@ -1568,5 +1568,10 @@
   "Quit Anyway": "Всё равно выйти",
   "Synchronizing folder": "Синхронизация папки",
   "Looking for changes": "Поиск изменений",
-  "Content-Aware": "С учётом содержимого"
+  "Content-Aware": "С учётом содержимого",
+  "Other…": "Другой…",
+  "Intent:": "Метод:",
+  "Perceptual": "Перцепционный",
+  "Relative": "Относительный",
+  "Simulate Paper & Ink": "Имитировать бумагу и краску"
 }
