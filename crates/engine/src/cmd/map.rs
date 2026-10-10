@@ -485,6 +485,27 @@ mod tests {
 
     /// A photo inside a private saved location is exported without GPS or location fields; one
     /// outside keeps them.
+    /// End to end: the JPEG file a rendered export writes carries GPS and place names for a photo
+    /// outside every private location, and none for one inside a private location.
+    #[test]
+    fn private_location_photo_exports_a_file_without_location() {
+        use crate::export::{ExportOptions, export_photo};
+        let (mut s, ids) = session_with(2);
+        s.execute("map.geotag", &json!({"ids": [ids[0].0], "lat": 48.8566, "lon": 2.3522})).unwrap();
+        s.execute("map.geotag", &json!({"ids": [ids[1].0], "lat": 51.5, "lon": -0.12})).unwrap();
+        s.execute("map.saveLocation", &json!({"name": "Home", "lat": 48.8566, "lon": 2.3522, "radius": 500, "private": true})).unwrap();
+        let o = ExportOptions { resize: Some(crate::export::Resize::long_edge(256)), ..ExportOptions::default() };
+        let inside = export_photo(&mut s, ids[0], &o, 1).unwrap();
+        let outside = export_photo(&mut s, ids[1], &o, 2).unwrap();
+        assert!(dac_meta::extract(&outside.bytes).gps.is_some(), "a public photo keeps its GPS");
+        let m = dac_meta::extract(&inside.bytes);
+        assert!(m.gps.is_none(), "GPS stripped inside a private location");
+        assert!(!String::from_utf8_lossy(&inside.bytes).contains("48.85"), "no coordinates anywhere in the file");
+        // not private any more: the same photo exports with its location
+        s.execute("map.saveLocation", &json!({"name": "Home", "private": false})).unwrap();
+        assert!(dac_meta::extract(&export_photo(&mut s, ids[0], &o, 3).unwrap().bytes).gps.is_some());
+    }
+
     #[test]
     fn private_locations_strip_gps_on_export() {
         use crate::export::{ExportOptions, export_metadata};

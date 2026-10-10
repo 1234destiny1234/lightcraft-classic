@@ -34,3 +34,5 @@ cpal = { version = "0.15", optional = true } # Apache-2.0; links ALSA on Linux
 
 [dev-dependencies]
 dac-fuzzkit = { workspace = true }
+lopdf = { version = "0.45", default-features = false }
+hayro = { version = "0.8", default-features = false }
