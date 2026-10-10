@@ -50,6 +50,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("denoise", Class::Layer(1)),
     ("heif", Class::Layer(0)),
     ("raw", Class::Layer(1)),
+    ("camdb", Class::Layer(1)),
     ("codecs", Class::Layer(1)),
     ("meta", Class::Layer(1)),
     ("develop", Class::Layer(1)),
@@ -107,6 +108,8 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     &["meta", "develop"],
     &["develop", "scenes"],
     &["codecs", "raw"],
+    // camdb organises the colour data the raw decoder uses
+    &["raw", "camdb"],
     // the PDF writer embeds fonts laid out by the type engine
     &["text", "pdf"],
     // L3: the Immich client writes remote links into the catalog

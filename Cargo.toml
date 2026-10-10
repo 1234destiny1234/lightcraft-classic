@@ -21,6 +21,7 @@ dac-color = { path = "crates/color" }
 dac-raster = { path = "crates/raster" }
 dac-tiff = { path = "crates/tiff" }
 dac-raw = { path = "crates/raw" }
+dac-camdb = { path = "crates/camdb" }
 dac-codecs = { path = "crates/codecs" }
 dac-meta = { path = "crates/meta" }
 dac-develop = { path = "crates/develop" }
