@@ -119,7 +119,7 @@ fn book_pdf_is_structurally_valid_with_embedded_fonts_and_images() {
     let p = &rendered[0];
     let px = p.data_as_u8_slice();
     let (mut red, mut blue) = (0usize, 0usize);
-    for c in px.chunks_exact(4) {
+    for c in px.as_chunks::<4>().0 {
         if c[0] > 160 && c[2] < 80 {
             red += 1;
         } else if c[2] > 160 && c[0] < 80 {

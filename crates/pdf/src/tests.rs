@@ -60,7 +60,7 @@ fn text(o: &Object) -> String {
     match o {
         Object::String(s, _) => {
             if s.starts_with(&[0xFE, 0xFF]) {
-                let u: Vec<u16> = s[2..].chunks_exact(2).map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
+                let u: Vec<u16> = s[2..].as_chunks::<2>().0.iter().map(|c| u16::from_be_bytes([c[0], c[1]])).collect();
                 String::from_utf16_lossy(&u)
             } else {
                 String::from_utf8_lossy(s).into_owned()

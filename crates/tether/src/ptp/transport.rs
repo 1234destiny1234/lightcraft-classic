@@ -81,7 +81,7 @@ impl Container {
         Ok(Container { kind, code, tid, payload })
     }
     pub fn params(&self) -> Vec<u32> {
-        self.payload.chunks_exact(4).take(5).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
+        self.payload.as_chunks::<4>().0.iter().take(5).map(|c| u32::from_le_bytes([c[0], c[1], c[2], c[3]])).collect()
     }
 }
 

@@ -112,7 +112,7 @@ impl PtpIpTransport {
         let conn = r.u32()?;
         let rest = r.remaining();
         let name_units: Vec<u16> =
-            rest.get(16..).unwrap_or_default().chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
+            rest.get(16..).unwrap_or_default().as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
         let mut events = TcpStream::connect_timeout(&sa, TIMEOUT)?;
         events.set_read_timeout(Some(TIMEOUT))?;
         write_packet(&mut events, pk::INIT_EVENT_REQUEST, &conn.to_le_bytes())?;
