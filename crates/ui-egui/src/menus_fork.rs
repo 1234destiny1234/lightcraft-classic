@@ -110,7 +110,8 @@ pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value,
                     let next = match mode {
                         dac_develop::SpotMode::Remove => "heal",
                         dac_develop::SpotMode::Heal => "clone",
-                        dac_develop::SpotMode::Clone => "remove",
+                        dac_develop::SpotMode::Clone => "fill",
+                        dac_develop::SpotMode::Fill => "remove",
                     };
                     app.run("spot.update", json!({"index": i, "mode": next})).map(|_| json!({"mode": next}))
                 }

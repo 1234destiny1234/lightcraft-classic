@@ -320,7 +320,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-REM-CONTENTAWARE | Content-aware remove | P1 | 🟡 | `cmd:spot.add` (`mode: remove`), `crates/pipeline/src/spots.rs` | heal with automatic source; no patch synthesis (M8.4) |
+| LR-REM-CONTENTAWARE | Content-aware remove | P1 | 🟡 | `cmd:spot.add` (`mode: fill`), `crates/pipeline/src/spots.rs`, `crates/inpaint/src/patchmatch.rs` | Remove panel "Content-Aware" mode: the spot is rebuilt from patches of its surroundings (multi-scale PatchMatch completion, Barnes et al. 2009 / Wexler et al. 2007), deterministic, structure chosen at a scale set by the spot size so preview and export agree; `remove` stays heal with an automatic source. Missing: choosing where patches come from (source-area brush), generative fill |
 | LR-REM-HEAL | Heal | P0 | ✅ | `cmd:spot.add` (`mode: heal`) | |
 | LR-REM-CLONE | Clone | P0 | ✅ | `cmd:spot.add` (`mode: clone`) | |
 | LR-REM-GEN | Generative remove | OOS | 🚫 | | |
