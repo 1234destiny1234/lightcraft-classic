@@ -29,14 +29,19 @@ fn wasm32_installed() -> bool {
         .is_some_and(|o| Path::new(String::from_utf8_lossy(&o.stdout).trim()).exists())
 }
 
-/// Builds the example; `None` (test skipped) without the wasm32 target.
+/// Builds the catalog-tools example; `None` (test skipped) without the wasm32 target.
 fn build_example() -> Option<Vec<u8>> {
+    build_sdk_example("catalog-tools")
+}
+
+/// Builds `sdk/examples/<name>` to wasm32; `None` (test skipped) without the wasm32 target.
+fn build_sdk_example(name: &str) -> Option<Vec<u8>> {
     if !wasm32_installed() {
         eprintln!("skipped: the wasm32-unknown-unknown target is not installed (rustup target add wasm32-unknown-unknown)");
         return None;
     }
-    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sdk/examples/catalog-tools");
-    let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join("plugin-example");
+    let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sdk/examples").join(name);
+    let target = PathBuf::from(env!("CARGO_TARGET_TMPDIR")).join(format!("plugin-example-{name}"));
     let cargo = std::env::var("CARGO").unwrap_or_else(|_| "cargo".into());
     let status = Command::new(cargo)
         .current_dir(&root)
@@ -47,7 +52,7 @@ fn build_example() -> Option<Vec<u8>> {
         .status()
         .unwrap();
     assert!(status.success(), "building the example plug-in failed");
-    Some(std::fs::read(target.join("wasm32-unknown-unknown/release/catalog_tools.wasm")).unwrap())
+    Some(std::fs::read(target.join("wasm32-unknown-unknown/release").join(format!("{}.wasm", name.replace('-', "_")))).unwrap())
 }
 
 fn temp(name: &str) -> PathBuf {
@@ -112,5 +117,62 @@ fn example_plugin_end_to_end() {
     assert!(m.run_command(id, "mark", &json!({}), &[], &mut host).is_err());
     m.uninstall(id).unwrap();
     assert!(!dir.join(format!("{id}.wasm")).exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// A catalog of photos with numeric-string ids that records metadata writes.
+struct FakeLibrary {
+    writes: Vec<Value>,
+}
+
+impl HostApi for FakeLibrary {
+    fn catalog(&mut self, method: &str, p: &Value) -> Result<Value, String> {
+        match method {
+            "photo.inspect" => {
+                let id = p["id"].as_str().ok_or("id")?;
+                Ok(json!({"id": id, "file_name": format!("IMG_{id}.JPG"), "captured": "2026-09-20T05:40:00", "meta": {"camera": "X2"}}))
+            }
+            other => Err(format!("unexpected {other}")),
+        }
+    }
+    fn set_metadata(&mut self, p: &Value) -> Result<Value, String> {
+        self.writes.push(p.clone());
+        Ok(Value::Null)
+    }
+}
+
+#[test]
+fn batch_metadata_example_end_to_end() {
+    let Some(wasm) = build_sdk_example("batch-metadata") else { return };
+    let dir = temp("batch-metadata");
+    let mut m = Manager::open(&dir).unwrap();
+    let id = "org.example.batch-metadata";
+    // installed with read access only: the write is refused by the host
+    m.install_bytes(&wasm, Some(Permissions { catalog: true, ..Default::default() })).unwrap();
+    let mut host = FakeLibrary { writes: vec![] };
+    let sel: Vec<String> = vec!["7".into(), "8".into(), "9".into()];
+    let e = m.run_command(id, "template", &json!({}), &sel, &mut host).unwrap_err();
+    assert!(e.to_string().contains("metadataWrite"), "{e}");
+    assert!(host.writes.is_empty());
+    m.set_grant(id, Permissions { catalog: true, metadata_write: true, ..Default::default() }).unwrap();
+
+    // titles from the dialog's default template; captions from a numbered one
+    let r = m.run_command(id, "template", &json!({}), &sel, &mut host).unwrap();
+    assert_eq!(r["changed"], 3, "{r}");
+    assert_eq!(host.writes[0], json!({"ids": ["7"], "title": "IMG_7 · 2026-09-20"}));
+    host.writes.clear();
+    let r = m.run_command(id, "template", &json!({"field": "caption", "template": "{camera} #{n}", "start": 10}), &sel, &mut host).unwrap();
+    assert_eq!(r["changed"], 3);
+    let captions: Vec<&Value> = host.writes.iter().map(|w| &w["caption"]).collect();
+    assert_eq!(captions, [&json!("X2 #10"), &json!("X2 #11"), &json!("X2 #12")]);
+    // the host checks dialog values against the manifest before the plug-in sees them
+    assert!(m.run_command(id, "template", &json!({"field": "rating"}), &sel, &mut host).is_err());
+
+    // keywords: one write for the whole selection, trimmed and de-duplicated
+    host.writes.clear();
+    m.run_command(id, "keywords", &json!({"keywords": "beach, Sunset, beach"}), &sel, &mut host).unwrap();
+    assert_eq!(host.writes, vec![json!({"ids": ["7", "8", "9"], "addKeywords": ["beach", "Sunset"]})]);
+    assert!(m.run_command(id, "keywords", &json!({"keywords": " , "}), &sel, &mut host).is_err());
+    assert!(m.run_command(id, "keywords", &json!({"keywords": "x"}), &[], &mut host).is_err(), "nothing selected");
     let _ = std::fs::remove_dir_all(&dir);
 }

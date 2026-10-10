@@ -25,6 +25,7 @@ crates/credentials/
 crates/hash/
 crates/fuzzkit/
 apps/cli/tests/robust_catalog.rs
+apps/cli/tests/legacy_pickup.rs
 crates/immich/
 crates/text/
 crates/pdf/

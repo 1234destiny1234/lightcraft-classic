@@ -815,12 +815,12 @@ pub fn center(app: &mut DacApp, ui: &mut egui::Ui) {
         full_screen_show(app, &ctx);
     }
     let frame = egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(10, 8));
-    if crate::module::edge_visible(app, crate::module::Edge::Left) {
+    if crate::module::module_edge(app, crate::module::Edge::Left) {
         egui::Panel::left("slideshow-left").resizable(false).exact_size(220.0).frame(frame).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("slideshow-left-scroll").show(ui, |ui| left_column(app, ui));
         });
     }
-    if crate::module::edge_visible(app, crate::module::Edge::Right) {
+    if crate::module::module_edge(app, crate::module::Edge::Right) {
         egui::Panel::right("slideshow-right").resizable(false).exact_size(290.0).frame(frame).show(ui, |ui| {
             egui::ScrollArea::vertical().id_salt("slideshow-right-scroll").show(ui, |ui| right_column(app, ui));
         });
@@ -1251,6 +1251,11 @@ mod tests {
         assert!(has_widget(&h, "view:module:slideshow") && has_widget(&h, "view:slideshow:preview"));
         assert!(has_widget(&h, "button:slideshow.play"));
         assert!(!has_widget(&h, "panel:left_panel"), "the Library sources stay away");
+        // the module's own side panels follow the edge toggles (it declares no shell panels, so it
+        // asks module_edge): the Template Browser shows with the left edge
+        h.app.ui.left_panel = true;
+        h.settle(Duration::from_secs(10));
+        assert!(has_widget(&h, "slideshowTemplate:Default"), "the Template Browser is not on screen");
         // settings: a partial patch, clamped; bad values are errors
         let r = ok(&mut h, "slideshow.set", json!({"options": {"zoomToFill": true}, "playback": {"slideSecs": 9999}}));
         assert_eq!(r["settings"]["options"]["zoomToFill"], true);

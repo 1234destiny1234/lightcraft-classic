@@ -68,16 +68,37 @@ const STANDARD_FIELDS: &[&str] = &[
     "removeKeywords",
 ];
 
+/// One photo id from a plug-in: a number, or the decimal string the SDK hands out in `selection`.
+fn photo_id(v: &Value) -> std::result::Result<Value, String> {
+    v.as_u64().or_else(|| v.as_str().and_then(|s| s.trim().parse::<u64>().ok())).map(Value::from).ok_or_else(|| format!("{v} is not a photo id"))
+}
+
+/// `id` / `ids` as the engine reads them (numbers). Plug-ins get ids as strings, and an id the
+/// engine can't read must be an error: it would otherwise fall back to the app's current selection.
+fn engine_ids(params: &Value) -> std::result::Result<Value, String> {
+    let mut p = params.clone();
+    if let Some(id) = params.get("id") {
+        p["id"] = photo_id(id)?;
+    }
+    if let Some(ids) = params.get("ids") {
+        let a = ids.as_array().ok_or("`ids` must be a list")?;
+        p["ids"] = Value::Array(a.iter().map(photo_id).collect::<std::result::Result<_, _>>()?);
+    }
+    Ok(p)
+}
+
 impl HostApi for SessionHost<'_> {
     fn catalog(&mut self, method: &str, params: &Value) -> std::result::Result<Value, String> {
         // dac-plugins only forwards the read-only methods; check again: this is the boundary
         if !matches!(method, "catalog.query" | "photo.inspect" | "catalog.stats" | "keyword.list") {
             return Err(format!("{method} is not a catalog read"));
         }
-        self.0.execute(method, params).map_err(|e| e.to_string())
+        let params = if params.is_object() { engine_ids(params)? } else { params.clone() };
+        self.0.execute(method, &params).map_err(|e| e.to_string())
     }
 
     fn set_metadata(&mut self, params: &Value) -> std::result::Result<Value, String> {
+        let params = &engine_ids(params)?;
         let ids = params.get("ids").and_then(Value::as_array).filter(|a| !a.is_empty()).ok_or("metadata.setStandard needs `ids`")?;
         let mut p = serde_json::Map::new();
         p.insert("ids".into(), Value::Array(ids.clone()));
@@ -384,5 +405,23 @@ mod tests {
         assert!(h.catalog("photo.delete", &json!({})).is_err());
         assert!(h.set_metadata(&json!({"title": "x"})).is_err(), "ids required");
         assert!(h.set_metadata(&json!({"ids": [1], "rating": 5})).is_err(), "only standard fields");
+    }
+
+    #[test]
+    fn host_takes_the_string_ids_plugins_get() {
+        let mut s = Session::with_demo();
+        let ids: Vec<u64> = s.visible_cloned().iter().take(2).map(|p| p.0).collect();
+        // the app's selection is another photo: a string id must not fall back to it
+        s.execute("library.select", &json!({"ids": [ids[1]]})).unwrap();
+        let mut h = SessionHost(&mut s);
+        let v = h.catalog("photo.inspect", &json!({"id": ids[0].to_string()})).unwrap();
+        assert_eq!(v["id"], ids[0]);
+        h.set_metadata(&json!({"ids": [ids[0].to_string()], "title": "From a plug-in"})).unwrap();
+        assert!(h.catalog("photo.inspect", &json!({"id": "not-an-id"})).is_err());
+        assert!(h.set_metadata(&json!({"ids": ["x"], "title": "y"})).is_err());
+        let a = s.execute("photo.inspect", &json!({"id": ids[0]})).unwrap();
+        let b = s.execute("photo.inspect", &json!({"id": ids[1]})).unwrap();
+        assert_eq!(a["meta"]["title"], "From a plug-in");
+        assert_ne!(b["meta"]["title"], "From a plug-in");
     }
 }
