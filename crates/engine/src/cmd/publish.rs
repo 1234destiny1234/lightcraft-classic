@@ -219,7 +219,13 @@ fn create_collection(s: &mut Session, p: &Value) -> Result<Value> {
     if svc.collections.len() >= dac_publish::config::MAX_COLLECTIONS {
         return Err(bad(C, "too many collections in this service"));
     }
-    let parent = svc.set.filter(|a| s.catalog.album(*a).is_some_and(|al| al.folder));
+    let set = svc.set.filter(|a| s.catalog.album(*a).is_some_and(|al| al.folder));
+    // a collection set inside the service's set (Immich: its name prefixes the album name)
+    let parent = match p.get("parent").and_then(Value::as_u64).map(AlbumId) {
+        None => set,
+        Some(sub) if s.catalog.album(sub).is_some_and(|al| al.folder) && within(&s.catalog, sub, set) => Some(sub),
+        Some(_) => return Err(bad(C, "`parent` must be a collection set inside the service's set")),
+    };
     let album = s.catalog.alloc_album_id();
     let mut al = Album::new(album, name);
     al.parent = parent;
@@ -235,6 +241,20 @@ fn create_collection(s: &mut Session, p: &Value) -> Result<Value> {
     }
     save(&dir, &cfg, C)?;
     status_json(s, &cfg, album)
+}
+
+/// `id` is `set` or sits (at any depth) inside it.
+fn within(catalog: &dac_catalog::Catalog, id: AlbumId, set: Option<AlbumId>) -> bool {
+    let Some(set) = set else { return false };
+    let mut next = Some(id);
+    for _ in 0..32 {
+        match next {
+            Some(x) if x == set => return true,
+            Some(x) => next = catalog.album(x).and_then(|a| a.parent),
+            None => return false,
+        }
+    }
+    false
 }
 
 fn delete_collection(s: &mut Session, p: &Value) -> Result<Value> {
@@ -557,7 +577,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Create Published Collection…",
             [],
             None,
-            "{service: id | name, name, addSelected?: bool} — a published collection (an album in the service's set) → publish.status",
+            "{service: id | name, name, parent?: a collection set (folder album id) inside the service's set, addSelected?: bool} — a published collection (an album in the service's set) → publish.status",
             always,
             create_collection
         ),

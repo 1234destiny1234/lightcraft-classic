@@ -1,6 +1,9 @@
 # Local / CI Immich test server for `cargo xtask immich up|down|seed` (plan/immich.md).
 #
-# - Pinned to one Immich release. To move to a newer one, update all four images together from that release's
+# - `IMMICH_VERSION` picks the server and ML image tag (`cargo xtask immich up --version min|pinned|latest|vX.Y.Z`;
+#   the CI matrix runs the oldest supported v3.0.0 and the moving `release` tag), `IMMICH_PORT` the host port (a
+#   second server on another port is its own compose project). The database and redis images stay as below.
+# - Pinned to one Immich release by default. To move to a newer one, update all four images together from that release's
 #   own docker-compose.yml, re-run the integration tests, and update "Checked against" in plan/immich.md.
 # - Listens on 127.0.0.1:2284 (not Immich's default 2283), so it never collides with a real server on this machine.
 # - All data (uploads, database, model cache) lives in named docker volumes; `cargo xtask immich down --volumes`
@@ -21,14 +24,14 @@ x-env: &env
 
 services:
   immich-server:
-    image: ghcr.io/immich-app/immich-server:v3.3.1
+    image: ghcr.io/immich-app/immich-server:${IMMICH_VERSION:-v3.3.1}
     environment: *env
     volumes:
       - upload:/data
       # IMM-EXTLIB tests: a host folder Immich indexes as an external library (read-only, as recommended)
       - ${IMMICH_EXTLIB_DIR:-../../target/immich/extlib}:/mnt/extlib:ro
     ports:
-      - '127.0.0.1:2284:2283'
+      - '127.0.0.1:${IMMICH_PORT:-2284}:2283'
     depends_on:
       - redis
       - database
@@ -37,7 +40,7 @@ services:
       disable: false
 
   immich-machine-learning:
-    image: ghcr.io/immich-app/immich-machine-learning:v3.3.1
+    image: ghcr.io/immich-app/immich-machine-learning:${IMMICH_VERSION:-v3.3.1}
     environment: *env
     volumes:
       - model-cache:/cache

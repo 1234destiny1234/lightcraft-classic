@@ -144,6 +144,7 @@ xtask/src/brand.rs
 xtask/src/immich.rs
 xtask/src/upstream.rs
 xtask/immich/
+.github/workflows/immich.yml
 xtask/test-brand.toml
 upstream-owned.txt
 

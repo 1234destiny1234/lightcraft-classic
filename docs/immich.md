@@ -79,6 +79,10 @@ Immich* (`immich.scanLibraries`) starts a scan of the libraries covering mapped 
   generated photos (the compose file mounts `target/immich/extlib` at `/mnt/extlib`, override with
   `IMMICH_EXTLIB_DIR`), scanned, linked by path, then rating, description and a keyword written as XMP and read back
   from Immich.
+- Version matrix: `cargo xtask immich up --version min|pinned|latest|vX.Y.Z [--port N]` picks the server image
+  (`min` = v3.0.0, the oldest supported; `pinned` = v3.3.1, the default; `latest` = Immich's `release` tag); another
+  port runs a second server as its own compose project. `.github/workflows/immich.yml` (nightly, manual, and PRs
+  touching the Immich code; no secrets) runs the live tests against `min` and `latest`.
 
 ## Sync (IMM-SYNC)
 
@@ -109,6 +113,15 @@ upload is checked by SHA-1 first, so Immich never stores a duplicate; an origina
 (including external-library files) is never uploaded. `both` stacks the render on top of the original. Re-publishing
 uploads the new render, moves album membership and sends the old render to Immich's trash; removing a photo from the
 collection takes it out of the album (its render goes to the trash only with `deleteRemoved`).
+
+The album is remembered by id (`<library>/Immich/publish/<service>-<collection>.album`): renaming the collection, or
+moving it into another collection set, renames the same Immich album on the next publish run. Collection sets inside
+the service's set become name prefixes (`Trips / Paris`; Immich albums are flat); make one with `album.create
+{folder: true, parent: <service set>}` and pass it as `publish.createCollection {parent}` (or move the collection
+there). Failed uploads (offline, 5xx, dropped connection) are retried three times with backoff; each attempt asks the
+server by checksum first, so an upload whose answer was lost is never stored twice, and a run cut short resumes on
+the next run (photos already sent are found by checksum). In the app, Publish Services ▸ Set Up / Edit Settings…
+has the Immich form: account, what to send (rendered / original / both) and "trash removed renders".
 
 `immich.linkAlbum {album}` links a catalog album with an Immich album; `immich.syncAlbums` then keeps the same linked
 photos in both (added or removed on one side since the last sync: the same on the other).

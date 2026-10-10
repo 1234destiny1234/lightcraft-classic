@@ -497,6 +497,7 @@ impl Client {
 }
 
 /// What [`Client::upload`] sends.
+#[derive(Clone, Copy)]
 pub enum UploadData<'a> {
     Bytes(&'a [u8]),
     File(&'a Path),

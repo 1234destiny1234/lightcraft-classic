@@ -25,13 +25,63 @@ const ALBUM: &str = "xtask fixtures";
 const FIXTURES: usize = 8;
 const WAIT: Duration = Duration::from_secs(300);
 
-const USAGE: &str = "usage: cargo xtask immich up | down [--volumes] | seed";
+const USAGE: &str = "usage: cargo xtask immich up [--version min|pinned|latest|vX.Y.Z] [--port N] | down [--volumes] [--port N] | seed [--port N]";
+
+/// The version matrix: the oldest release the app supports (`dac_immich::types::MIN_VERSION`),
+/// the pinned one the recorded fixtures come from, and Immich's moving `release` tag.
+pub const MIN_SERVER: &str = "v3.0.0";
+pub const PINNED_SERVER: &str = "v3.3.1";
+pub const LATEST_SERVER: &str = "release";
+const DEFAULT_PORT: u16 = 2284;
+
+/// The image tag for `--version` (an alias or a `vX.Y.Z` tag).
+pub fn version_tag(v: &str) -> Result<String, String> {
+    let v = v.trim();
+    let tag = match v {
+        "" | "pinned" => PINNED_SERVER.to_string(),
+        "min" | "minimum" => MIN_SERVER.to_string(),
+        "latest" | "release" => LATEST_SERVER.to_string(),
+        v => {
+            let v = if v.starts_with('v') { v.to_string() } else { format!("v{v}") };
+            let ok = v[1..].split('.').count() == 3 && v[1..].split('.').all(|p| !p.is_empty() && p.chars().all(|c| c.is_ascii_digit()));
+            if !ok {
+                return Err(format!("--version {v}: expected min, pinned, latest or vX.Y.Z"));
+            }
+            v
+        }
+    };
+    Ok(tag)
+}
+
+/// The value after `flag` in `args`.
+fn flag<'a>(args: &[&'a str], flag: &str) -> Option<&'a str> {
+    args.iter().position(|a| *a == flag).and_then(|i| args.get(i + 1)).copied()
+}
+
+/// Server options from the command line: image tag and host port.
+struct Opts {
+    tag: String,
+    port: u16,
+}
+
+fn opts(args: &[&str]) -> Result<Opts, String> {
+    let tag = version_tag(flag(args, "--version").unwrap_or("pinned"))?;
+    let port = match flag(args, "--port") {
+        Some(p) => p.parse::<u16>().ok().filter(|p| *p > 0).ok_or_else(|| format!("--port {p}: not a port"))?,
+        None => DEFAULT_PORT,
+    };
+    Ok(Opts { tag, port })
+}
 
 pub fn run(root: &Path, args: &[&str]) -> Result<(), String> {
-    let url = base_url(std::env::var("IMMICH_URL").ok().as_deref());
+    let o = opts(args)?;
+    let url = match std::env::var("IMMICH_URL").ok().filter(|u| !u.trim().is_empty()) {
+        Some(u) => base_url(Some(&u)),
+        None => format!("http://127.0.0.1:{}", o.port),
+    };
     match args.first().copied() {
-        Some("up") => up(root, &url),
-        Some("down") => down(root, args.contains(&"--volumes")),
+        Some("up") => up(root, &url, &o),
+        Some("down") => down(root, args.contains(&"--volumes"), &o),
         Some("seed") => seed(root, &url),
         _ => Err(USAGE.into()),
     }
@@ -42,9 +92,16 @@ pub fn base_url(env: Option<&str>) -> String {
     env.map(str::trim).filter(|s| !s.is_empty()).unwrap_or(DEFAULT_URL).trim_end_matches('/').to_string()
 }
 
-fn compose(root: &Path) -> Command {
+/// The compose project: one per port, so a second server (another version) runs beside the
+/// default one without touching its volumes.
+pub fn project(port: u16) -> String {
+    if port == DEFAULT_PORT { "xtask-immich".into() } else { format!("xtask-immich-{port}") }
+}
+
+fn compose(root: &Path, o: &Opts) -> Command {
     let mut c = Command::new("docker");
-    c.current_dir(root).arg("compose").arg("-f").arg(root.join(COMPOSE));
+    c.current_dir(root).arg("compose").arg("-p").arg(project(o.port)).arg("-f").arg(root.join(COMPOSE));
+    c.env("IMMICH_VERSION", &o.tag).env("IMMICH_PORT", o.port.to_string());
     c
 }
 
@@ -53,13 +110,13 @@ fn status_ok(mut c: Command, what: &str) -> Result<(), String> {
     if s.success() { Ok(()) } else { Err(format!("{what} failed ({s})")) }
 }
 
-fn up(root: &Path, url: &str) -> Result<(), String> {
+fn up(root: &Path, url: &str, o: &Opts) -> Result<(), String> {
     // made here, by the user: docker would create the bind-mounted folder as root, and `seed`
     // could then not write the key or the fixtures next to it
     for d in host_dirs(root, std::env::var("IMMICH_EXTLIB_DIR").ok().as_deref()) {
         std::fs::create_dir_all(&d).map_err(|e| format!("create {}: {e}", d.display()))?;
     }
-    let mut c = compose(root);
+    let mut c = compose(root, o);
     c.args(["up", "-d"]);
     status_ok(c, "docker compose up")?;
     println!("waiting for {url}/api/server/ping (first start downloads the images and can take minutes)…");
@@ -91,8 +148,8 @@ pub fn host_dirs(root: &Path, extlib: Option<&str>) -> Vec<PathBuf> {
     vec![base.clone(), base.join("fixtures"), ext]
 }
 
-fn down(root: &Path, volumes: bool) -> Result<(), String> {
-    let mut c = compose(root);
+fn down(root: &Path, volumes: bool, o: &Opts) -> Result<(), String> {
+    let mut c = compose(root, o);
     c.arg("down");
     if volumes {
         c.arg("--volumes");
@@ -382,6 +439,20 @@ mod tests {
             assert!(all.iter().skip(i + 1).all(|b| b != a), "fixture {i} repeats");
         }
         assert!(png_rgb8(2, 2, &[0; 3]).is_err());
+    }
+
+    #[test]
+    fn versions_and_ports_parse() {
+        assert_eq!(version_tag("min").unwrap(), MIN_SERVER);
+        assert_eq!(version_tag("latest").unwrap(), "release");
+        assert_eq!(version_tag("pinned").unwrap(), PINNED_SERVER);
+        assert_eq!(version_tag("3.1.0").unwrap(), "v3.1.0");
+        assert!(version_tag("v3.x").is_err() && version_tag("v3").is_err() && version_tag("v").is_err());
+        let o = opts(&["up", "--version", "min", "--port", "2290"]).unwrap();
+        assert_eq!((o.tag.as_str(), o.port), (MIN_SERVER, 2290));
+        assert!(opts(&["up", "--port", "0"]).is_err());
+        assert_eq!(project(2284), "xtask-immich");
+        assert_eq!(project(2290), "xtask-immich-2290");
     }
 
     #[test]
