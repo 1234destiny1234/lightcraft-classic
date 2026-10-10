@@ -47,11 +47,11 @@ and prints the summary; `cargo xtask parity --write` refreshes the summary table
 | X. Cross-cutting behaviours (BEHAV) | 18 | 6 | 1 | 1 | 8/8 (100%) | 6/9 (67%) |
 | Y. Menus | 82 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 75 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
-| Lightroom Classic extras | 75 | 24 | 25 | 0 | — | 33/37 (89%) |
+| Lightroom Classic extras | 76 | 23 | 25 | 0 | — | 33/37 (89%) |
 | IMM. Immich integration | 9 | 1 | 0 | 0 | — | 5/6 (83%) |
-| **Total** | 448 | 60 | 62 | 27 | 192/200 (96%) | 158/173 (91%) |
+| **Total** | 449 | 59 | 62 | 27 | 192/200 (96%) | 158/173 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.9%** of 570 in-scope rows — P0 98.0% of 200 · P1 94.8% of 173 · P2 59.7% of 196.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.9%** of 570 in-scope rows — P0 98.0% of 200 · P1 94.8% of 173 · P2 59.9% of 196.
 <!-- /parity:summary -->
 
 ## Top gaps
@@ -766,7 +766,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-LIB-SLIDESHOW-IMPROMPTU | Impromptu slideshow | P2 | ✅ | `cmd:view.slideshow` | see LR-VIEW-SLIDESHOW |
 | LRC-DEV-SNAPSHOTS | Named snapshots | P1 | ✅ | `cmd:version.create`, `cmd:version.restore` | = versions |
 | LRC-DEV-HISTORY | Full history panel | P1 | ✅ | `cmd:history.list`, `cmd:history.restore`, `cmd:history.clear` | row menu: copy step to before, create version from step, clear history |
-| LRC-DEV-SOFTPROOF | Soft proofing | P2 | 🟡 | `cmd:view.softProof`, `crates/pipeline/src/output.rs` (`Proof`), `crates/ui-egui/src/panels/edit.rs` (`soft_proofing`) | S in the loupe (in grids S stays Expand/Collapse Stack): paper-white surround and "Proof Preview", proof profile (sRGB / Display P3 / Adobe RGB / ProPhoto / Rec. 2020), destination (red) and display (blue) gamut warnings (the display's gamut is the monitor profile's, `cmd:app.displayProfile`, else sRGB), Create Proof Copy (a named virtual copy). Missing: printer ICC profiles, rendering intent, Simulate Paper & Ink |
+| LRC-DEV-SOFTPROOF | Soft proofing | P2 | ✅ | `cmd:view.softProof`, `crates/pipeline/src/output.rs` (`Proof`), `crates/engine/src/proof.rs`, `crates/ui-egui/src/panels/edit.rs` (`soft_proofing`) | S in the loupe (in grids S stays Expand/Collapse Stack): paper-white surround and "Proof Preview", proof profile (sRGB / Display P3 / Adobe RGB / ProPhoto / Rec. 2020), destination (red) and display (blue) gamut warnings (the display's gamut is the monitor profile's, `cmd:app.displayProfile`, else sRGB), Create Proof Copy (a named virtual copy). Printer / paper ICC profiles (RGB or CMYK, matrix or LUT; Profile ▸ Other…, `view.softProof {profile}`) through the CMS as a 33³ proof table (`crates/codecs/src/proof.rs`, `ProofLut`), rendering intent Perceptual / Relative, Simulate Paper & Ink (the profile's media white and unscaled ink black), destination gamut warning from the profile's round trip. Missing: a list of installed printer profiles, black-point compensation choice, the GPU proof path (proof renders run on the CPU) |
 | LRC-DEV-AUTOSYNC | Sync / auto sync / paste previous | P1 | ✅ | `cmd:develop.sync`, `cmd:develop.autoSync`, `cmd:develop.pastePrevious` | Edit ▸ Sync Settings / Auto Sync (⌥⇧⌘A): only the changed settings carry over, one undo step, slider drags sync on release, spots / red eye stay per photo; Edit panel banner |
 | LRC-DEV-MATCHEXP | Match total exposures | P2 | ✅ | `cmd:develop.matchExposure` | Photo ▸ Match Total Exposures: the selected photos' Exposure set so shutter × ISO ÷ aperture² plus the slider matches the active photo's |
 | LRC-DEV-CALIB | Calibration panel | P1 | ✅ | `ctl:calibration.*` | |
