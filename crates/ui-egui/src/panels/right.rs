@@ -359,7 +359,7 @@ fn remove(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     header(ui, "Remove");
     padded(ui, |ui| {
         ui.horizontal_wrapped(|ui| {
-            for (label, tool) in [("Remove", "remove"), ("Heal", "heal"), ("Clone", "clone")] {
+            for (label, tool) in [("Remove", "remove"), ("Content-Aware", "fill"), ("Heal", "heal"), ("Clone", "clone")] {
                 if text_button(ui, &format!("removeMode-{tool}"), label, app.ui.tool == tool).clicked() {
                     app.ui.tool = tool.into();
                 }
@@ -399,6 +399,7 @@ fn remove(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
             dac_develop::SpotMode::Heal => "Heal",
             dac_develop::SpotMode::Clone => "Clone",
             dac_develop::SpotMode::Remove => "Remove",
+            dac_develop::SpotMode::Fill => "Content-Aware",
         };
         super::edit::sub_title(ui, &crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = mode));
     }

@@ -48,6 +48,7 @@ dac-webgallery = { path = "crates/webgallery" }
 dac-heif = { path = "crates/heif" }
 dac-segment = { path = "crates/segment" }
 dac-text = { path = "crates/text" }
+dac-inpaint = { path = "crates/inpaint" }
 dac-pdf = { path = "crates/pdf" }
 dac-print = { path = "crates/print" }
 dac-psd = { path = "crates/psd" }

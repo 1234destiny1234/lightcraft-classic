@@ -1953,6 +1953,13 @@ dependencies = [
 ]
 
 [[package]]
+name = "dac-inpaint"
+version = "0.5.0"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
 name = "dac-layout"
 version = "0.5.0"
 dependencies = [
@@ -2046,6 +2053,7 @@ dependencies = [
  "dac-color",
  "dac-develop",
  "dac-geom",
+ "dac-inpaint",
  "dac-raster",
  "dac-raw",
  "dac-scenes",

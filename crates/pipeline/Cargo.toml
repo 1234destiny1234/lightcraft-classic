@@ -15,6 +15,7 @@ dac-color = { workspace = true }
 dac-raster = { workspace = true }
 dac-develop = { workspace = true }
 dac-raw = { workspace = true }
+dac-inpaint = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 

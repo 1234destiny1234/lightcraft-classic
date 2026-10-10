@@ -1851,5 +1851,6 @@
   "Downloading model": "Descargando modelo",
   "Finding faces": "Buscando caras",
   "Synchronizing folder": "Sincronizando carpeta",
-  "Looking for changes": "Buscando cambios"
+  "Looking for changes": "Buscando cambios",
+  "Content-Aware": "Según el contenido"
 }
