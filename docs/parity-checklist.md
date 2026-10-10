@@ -52,11 +52,11 @@ cited here still exists. Formerly docs/parity.md.
 | X. Cross-cutting behaviours (BEHAV) | 18 | 6 | 1 | 1 | 8/8 (100%) | 6/9 (67%) |
 | Y. Menus | 82 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 75 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
-| Lightroom Classic extras | 88 | 26 | 10 | 0 | — | 33/37 (89%) |
+| Lightroom Classic extras | 89 | 25 | 10 | 0 | — | 33/37 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 462 | 61 | 47 | 27 | 192/200 (96%) | 159/173 (92%) |
+| **Total** | 463 | 60 | 47 | 27 | 192/200 (96%) | 159/173 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **86.4%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 66.8% of 196.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **86.5%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 67.1% of 196.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -330,7 +330,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-REM-CONTENTAWARE | Content-aware remove | P1 | 🟡 | `cmd:spot.add` (`mode: remove`), `crates/pipeline/src/spots.rs` | heal with automatic source; no patch synthesis (M8.4) |
+| LR-REM-CONTENTAWARE | Content-aware remove | P1 | 🟡 | `cmd:spot.add` (`mode: fill`), `crates/pipeline/src/spots.rs`, `crates/inpaint/src/patchmatch.rs` | Remove panel "Content-Aware" mode: the spot is rebuilt from patches of its surroundings (multi-scale PatchMatch completion, Barnes et al. 2009 / Wexler et al. 2007), deterministic, structure chosen at a scale set by the spot size so preview and export agree; `remove` stays heal with an automatic source. Missing: choosing where patches come from (source-area brush), generative fill |
 | LR-REM-HEAL | Heal | P0 | ✅ | `cmd:spot.add` (`mode: heal`) | |
 | LR-REM-CLONE | Clone | P0 | ✅ | `cmd:spot.add` (`mode: clone`) | |
 | LR-REM-GEN | Generative remove | OOS | 🚫 | | |
@@ -776,7 +776,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-LIB-SLIDESHOW-IMPROMPTU | Impromptu slideshow | P2 | ✅ | `cmd:view.slideshow` | see LR-VIEW-SLIDESHOW |
 | LRC-DEV-SNAPSHOTS | Named snapshots | P1 | ✅ | `cmd:version.create`, `cmd:version.restore` | = versions |
 | LRC-DEV-HISTORY | Full history panel | P1 | ✅ | `cmd:history.list`, `cmd:history.restore`, `cmd:history.clear` | row menu: copy step to before, create version from step, clear history |
-| LRC-DEV-SOFTPROOF | Soft proofing | P2 | 🟡 | `cmd:view.softProof`, `crates/pipeline/src/output.rs` (`Proof`), `crates/ui-egui/src/panels/edit.rs` (`soft_proofing`) | S in the loupe (in grids S stays Expand/Collapse Stack): paper-white surround and "Proof Preview", proof profile (sRGB / Display P3 / Adobe RGB / ProPhoto / Rec. 2020), destination (red) and display (blue) gamut warnings (the display's gamut is the monitor profile's, `cmd:app.displayProfile`, else sRGB), Create Proof Copy (a named virtual copy). Missing: printer ICC profiles, rendering intent, Simulate Paper & Ink |
+| LRC-DEV-SOFTPROOF | Soft proofing | P2 | ✅ | `cmd:view.softProof`, `crates/pipeline/src/output.rs` (`Proof`), `crates/engine/src/proof.rs`, `crates/ui-egui/src/panels/edit.rs` (`soft_proofing`) | S in the loupe (in grids S stays Expand/Collapse Stack): paper-white surround and "Proof Preview", proof profile (sRGB / Display P3 / Adobe RGB / ProPhoto / Rec. 2020), destination (red) and display (blue) gamut warnings (the display's gamut is the monitor profile's, `cmd:app.displayProfile`, else sRGB), Create Proof Copy (a named virtual copy). Printer / paper ICC profiles (RGB or CMYK, matrix or LUT; Profile ▸ Other…, `view.softProof {profile}`) through the CMS as a 33³ proof table (`crates/codecs/src/proof.rs`, `ProofLut`), rendering intent Perceptual / Relative, Simulate Paper & Ink (the profile's media white and unscaled ink black), destination gamut warning from the profile's round trip. Missing: a list of installed printer profiles, black-point compensation choice, the GPU proof path (proof renders run on the CPU) |
 | LRC-DEV-AUTOSYNC | Sync / auto sync / paste previous | P1 | ✅ | `cmd:develop.sync`, `cmd:develop.autoSync`, `cmd:develop.pastePrevious` | Edit ▸ Sync Settings / Auto Sync (⌥⇧⌘A): only the changed settings carry over, one undo step, slider drags sync on release, spots / red eye stay per photo; Edit panel banner |
 | LRC-DEV-MATCHEXP | Match total exposures | P2 | ✅ | `cmd:develop.matchExposure` | Photo ▸ Match Total Exposures: the selected photos' Exposure set so shutter × ISO ÷ aperture² plus the slider matches the active photo's |
 | LRC-DEV-CALIB | Calibration panel | P1 | ✅ | `ctl:calibration.*` | |

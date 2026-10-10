@@ -2029,5 +2029,11 @@
   "Downloading model": "Завантаження моделі",
   "Finding faces": "Пошук облич",
   "Synchronizing folder": "Синхронізація папки",
-  "Looking for changes": "Пошук змін"
+  "Looking for changes": "Пошук змін",
+  "Content-Aware": "З урахуванням вмісту",
+  "Other…": "Інший…",
+  "Intent:": "Метод:",
+  "Perceptual": "Перцепційний",
+  "Relative": "Відносний",
+  "Simulate Paper & Ink": "Імітувати папір і фарбу"
 }
