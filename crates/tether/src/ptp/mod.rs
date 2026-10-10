@@ -14,7 +14,7 @@ pub mod data;
 pub mod ptpip;
 pub mod sim;
 pub mod transport;
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows"))]
 pub mod usb;
 pub mod vendor;
 

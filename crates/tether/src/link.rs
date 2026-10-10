@@ -40,8 +40,9 @@ pub fn fallback_message(e: &PtpError) -> String {
 /// The cameras that can be connected: USB PTP cameras (and the simulated one when `simulated`).
 pub fn cameras(simulated: bool) -> Value {
     let mut out = Vec::new();
+    #[cfg_attr(not(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows")), allow(unused_mut))]
     let mut error: Option<String> = None;
-    #[cfg(not(target_arch = "wasm32"))]
+    #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows"))]
     match crate::ptp::usb::list() {
         Ok(list) => out.extend(list.into_iter().map(|c| json!({"id": c.id, "name": c.name, "vendor": c.vendor, "kind": "usb"}))),
         Err(e) => error = Some(e.to_string()),
@@ -64,13 +65,13 @@ pub fn connect(device: &str, delete_from_card: bool, make: Option<crate::ptp::si
         let t = crate::ptp::ptpip::PtpIpTransport::connect(host, *b"dac-tether-host!", "Photo library")?;
         (Camera::open(Box::new(t), None)?, None)
     } else if device == "usb" || device.starts_with("usb:") {
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows"))]
         {
             let (t, vid) = crate::ptp::usb::open(device)?;
             (Camera::open(t, Some(vid))?, None)
         }
-        #[cfg(target_arch = "wasm32")]
-        return Err(PtpError::Unsupported("USB cameras in the browser".into()));
+        #[cfg(not(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows")))]
+        return Err(PtpError::Unsupported("USB cameras on this platform (use PTP/IP over Wi-Fi or studio capture)".into()));
     } else {
         return Err(PtpError::Unsupported(format!("unknown device `{device}` (sim, usb, usb:<bus>:<addr>, ptpip:<host>)")));
     };

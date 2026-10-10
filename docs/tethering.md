@@ -64,6 +64,11 @@ camera's still-image interface to the WinUSB driver (for example with Zadig, cho
 switch it back (Device Manager ▸ Update driver ▸ the original MTP/WPD driver) to use Explorer or the maker's tools
 again. Wi-Fi (PTP/IP) needs no driver change. When in doubt, use studio capture.
 
+### FreeBSD and other BSDs
+
+The USB library (nusb) has no BSD backend, so USB tethering isn't available there: no USB cameras are listed and
+`usb` reports "unsupported". Wi-Fi (PTP/IP) and studio capture work.
+
 ### Wi-Fi (PTP/IP)
 
 Put the camera in its "connect to computer" / PC remote Wi-Fi mode on the same network and connect to

@@ -9,8 +9,8 @@ description = "Tethered capture (L3): studio capture (a watched folder imported 
 serde = { workspace = true }
 serde_json = { workspace = true }
 
-# PTP over USB (pure Rust, MIT/Apache-2.0); not on the web.
-[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+# PTP over USB (pure Rust, MIT/Apache-2.0): the platforms nusb supports (not the web, not the BSDs).
+[target.'cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows"))'.dependencies]
 nusb = "0.2"
 
 [lints]
