@@ -521,4 +521,25 @@ mod tests {
         let m = export_metadata(&p, &c, &ExportOptions::default()).unwrap();
         assert!(m.gps.is_some() && m.city.as_deref() == Some("Paris"));
     }
+
+    /// A private location also holds for Original (sidecar; an original embedding GPS is
+    /// refused) and DNG exports.
+    #[test]
+    fn private_locations_strip_gps_from_original_and_dng_exports() {
+        use crate::export::{ExportOptions, export_photo};
+        let dir = crate::tests_xmp::temp_dir("map-private-orig");
+        let raw = dir.join("Raw.dng");
+        std::fs::write(&raw, crate::tests_xmp::synthetic_dng_with(None, Default::default())).unwrap();
+        let mut s = Session::new().with_fs();
+        s.execute("library.import", &json!({"paths": [raw.to_string_lossy()]})).unwrap();
+        let id = s.catalog.photos().next().unwrap().id;
+        s.execute("photo.setMeta", &json!({"ids": [id.0], "gps": [48.851, 2.351]})).unwrap();
+        s.execute("map.saveLocation", &json!({"name": "Home", "lat": 48.85, "lon": 2.35, "radius": 500, "private": true})).unwrap();
+        let e = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": "original"})), 1).unwrap();
+        let side = dac_meta::parse_xmp(std::str::from_utf8(&e.sidecars[0].1).unwrap()).unwrap().metadata;
+        assert!(side.gps.is_none(), "{side:?}");
+        let e = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": "dng"})), 1).unwrap();
+        assert!(dac_meta::extract(&e.bytes).gps.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
 }

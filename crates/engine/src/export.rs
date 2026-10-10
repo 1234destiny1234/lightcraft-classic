@@ -1292,6 +1292,13 @@ pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) 
     r.map_err(|e| e.to_string())
 }
 
+/// Whether the export of `photo` under `o` leaves out its location (GPS and place names).
+/// (`photo` and `catalog` let library-level privacy rules add to the export option.)
+pub fn removes_location(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalog, o: &ExportOptions) -> bool {
+    // a photo inside a private saved location (Map module) is exported without its location
+    o.remove_location || photo.meta.gps.is_some_and(|g| catalog.is_private_location(g))
+}
+
 /// The metadata to embed for `photo` under `o.metadata` / `o.remove_location`. `None` = embed nothing.
 /// Keywords follow the catalog's keyword list (`Catalog::export_keywords`).
 pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalog, o: &ExportOptions) -> Option<Metadata> {
@@ -1316,8 +1323,7 @@ pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalo
     out.caption = text(&m.caption);
     out.alt_text = text(&m.alt_text);
     out.extended_description = text(&m.extended_description);
-    // a photo inside a private saved location (Map module) is exported without its location
-    let remove_location = o.remove_location || m.gps.is_some_and(|g| catalog.is_private_location(g));
+    let remove_location = removes_location(photo, catalog, o);
     if !remove_location {
         out.sublocation = text(&m.location);
         out.city = text(&m.city);
@@ -1402,6 +1408,8 @@ enum Work {
         read: Option<crate::merge::ByteReader>,
         packet: String,
         dng: Option<DngCompression>,
+        /// The original must not carry a location ([`removes_location`]).
+        remove_location: bool,
         label: String,
         size: (usize, usize),
     },
@@ -1456,8 +1464,9 @@ fn prepare_guarded(
         let work = Work::File {
             path: path.clone(),
             read: session.media.file_bytes.clone(),
-            packet: crate::sidecar::sidecar_packet(p, &session.catalog),
+            packet: crate::sidecar::sidecar_packet_with(p, &session.catalog, removes_location(p, &session.catalog, o)),
             dng,
+            remove_location: removes_location(p, &session.catalog, o),
             label: p.file_name.clone(),
             size: (p.width as usize, p.height as usize),
         };
@@ -1494,12 +1503,18 @@ impl PreparedExport {
                 };
                 Ok(Exported { file_name, bytes, width: r.image.width, height: r.image.height, sidecars: Vec::new() })
             }
-            Work::File { path, read, packet, dng, label, size } => {
+            Work::File { path, read, packet, dng, label, size, remove_location } => {
                 let bytes = match &read {
                     Some(r) => r(&path)?,
                     None => std::fs::read(&path).map_err(|e| format!("{path}: {e}"))?,
                 };
                 let Some(dng) = dng else {
+                    // the file is copied byte for byte: refuse rather than leak a location it embeds
+                    if remove_location && dac_meta::extract(&bytes).gps.is_some() {
+                        return Err(format!(
+                            "{label}: can't remove the location from an original file that embeds GPS; export as JPEG, TIFF or DNG instead"
+                        ));
+                    }
                     return Ok(Exported { file_name, bytes, width: size.0, height: size.1, sidecars: vec![("xmp", packet.into_bytes())] });
                 };
                 if dac_raw::probe(&bytes).is_none() {
