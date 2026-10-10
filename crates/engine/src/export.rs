@@ -1294,8 +1294,9 @@ pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) 
 
 /// Whether the export of `photo` under `o` leaves out its location (GPS and place names).
 /// (`photo` and `catalog` let library-level privacy rules add to the export option.)
-pub fn removes_location(_photo: &dac_catalog::Photo, _catalog: &dac_catalog::Catalog, o: &ExportOptions) -> bool {
-    o.remove_location
+pub fn removes_location(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalog, o: &ExportOptions) -> bool {
+    // a photo inside a private saved location (Map module) is exported without its location
+    o.remove_location || photo.meta.gps.is_some_and(|g| catalog.is_private_location(g))
 }
 
 /// The metadata to embed for `photo` under `o.metadata` / `o.remove_location`. `None` = embed nothing.
@@ -1322,8 +1323,7 @@ pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalo
     out.caption = text(&m.caption);
     out.alt_text = text(&m.alt_text);
     out.extended_description = text(&m.extended_description);
-    // a photo inside a private saved location (Map module) is exported without its location
-    let remove_location = o.remove_location || m.gps.is_some_and(|g| catalog.is_private_location(g));
+    let remove_location = removes_location(photo, catalog, o);
     if !remove_location {
         out.sublocation = text(&m.location);
         out.city = text(&m.city);
