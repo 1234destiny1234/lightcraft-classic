@@ -11,6 +11,7 @@
 
 [owned]
 # the fork's identity
+docs/images/classic/
 brand.toml
 crates/brand/
 brand/

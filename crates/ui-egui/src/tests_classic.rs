@@ -233,3 +233,14 @@ fn auto_hide_shows_a_side_on_a_click_at_the_edge() {
     let r = h.request("engine.execute", json!({"command": "panel.autoHide", "params": {"edge": "middle"}}), T);
     assert_eq!(r["ok"], false, "{r}");
 }
+
+/// The module picker: clicking a module's name switches to it (the bar's own context-menu area
+/// used to sit on top of the names and swallow the click).
+#[test]
+fn clicking_a_module_name_switches_module() {
+    let mut h = demo();
+    click(&mut h, "module:map");
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Map);
+    click(&mut h, "module:develop");
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+}

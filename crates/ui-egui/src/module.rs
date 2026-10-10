@@ -1231,6 +1231,10 @@ pub fn module_bar(app: &mut DacApp, ui: &mut egui::Ui) {
                 let g = ui.painter().layout(status, t.font(12.0), t.text_dim, w);
                 ui.painter().galley(pos2(plate.right() + 28.0, full.center().y - g.size().y / 2.0), g, t.text_dim);
             }
+            // the bar's own context menu; registered before the module names so they sit on top and get the clicks
+            let bg = ui.interact(full, egui::Id::new("module-bar-bg"), Sense::click());
+            crate::access::button(&bg, "Module Picker");
+            bg.context_menu(|ui| picker_menu(app, ui));
             // module picker, right-aligned
             let shown: Vec<ModuleId> = ModuleId::ALL.into_iter().filter(|m| !app.ui.hidden_modules.contains(m)).collect();
             let sizes: Vec<(ModuleId, f32)> = shown
@@ -1265,9 +1269,6 @@ pub fn module_bar(app: &mut DacApp, ui: &mut egui::Ui) {
                 resp.context_menu(|ui| picker_menu(app, ui));
                 x += w + sep;
             }
-            let bg = ui.interact(full, egui::Id::new("module-bar-bg"), Sense::click());
-            crate::access::button(&bg, "Module Picker");
-            bg.context_menu(|ui| picker_menu(app, ui));
             if let Some(m) = switch_to
                 && let Err(e) = app.run(m.command(), json!({}))
             {

@@ -45,6 +45,8 @@ fn import_from_immich_is_a_source_of_the_import_dialog() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = app(&dir);
+    // keys in memory, so the dialog doesn't ask for a passphrase on hosts without a system keychain (FreeBSD CI)
+    h.app.session.set_secret_store(std::sync::Arc::new(dac_engine::remote::MemorySecrets::default()));
     let r = h.request("engine.execute", json!({"command": "file.importImmich", "params": {}}), T);
     assert_eq!(r["result"]["source"], "immich", "{r}");
     h.step();

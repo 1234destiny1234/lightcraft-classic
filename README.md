@@ -37,6 +37,7 @@
 > `<PREFIX>` for `env_prefix`, from that file.
 
 <p align="center">
+  <a href="#seven-modules-one-catalog">Modules</a> ·
   <a href="#edit-like-you-mean-it">Editing</a> ·
   <a href="#color-grading-the-cinematic-way">Color grading</a> ·
   <a href="#before--after">Before &amp; after</a> ·
@@ -52,6 +53,31 @@
 </p>
 
 <br>
+
+## Seven modules, one catalog
+
+The app is laid out like a classic darkroom: one catalog and seven modules, picked from the top-right of the window
+(or `Window → Modules`, or ⌘⌥1–7). Library and Develop are where you spend your day; Map, Book, Slideshow, Print and Web
+turn the same photos into places, books, shows, prints and websites without leaving the app or exporting first.
+
+<p align="center">
+  <img src="docs/images/classic/library.jpg" alt="Library module: Grid view of the demo library, with Navigator, Catalog, Folders and Collections on the left and Quick Develop and Keywording on the right" width="100%">
+</p>
+
+<table>
+<tr>
+<td width="50%"><img src="docs/images/classic/develop.jpg" alt="Develop module: a lake photo in the loupe with the histogram and the Light panel's sliders on the right"><br><sub><b>Develop.</b> Non-destructive raw development, from white balance to masks.</sub></td>
+<td width="50%"><img src="docs/images/classic/map.jpg" alt="Map module: an OpenStreetMap world map with the location filter bar, Saved Locations and Tracklog panels"><br><sub><b>Map.</b> Geotag by drag and drop, saved locations, GPX tracklogs, reverse geocoding.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/classic/book.jpg" alt="Book module: a multi-page view of a 24-page landscape book laid out automatically, with Book Settings on the right"><br><sub><b>Book.</b> Auto layout, templates, text cells and cover; exports a print-ready PDF.</sub></td>
+<td width="50%"><img src="docs/images/classic/slideshow.jpg" alt="Slideshow module: the first slide framed in the stage, with Export PDF, Export JPEG, Preview and Play buttons"><br><sub><b>Slideshow.</b> Play full screen, or export the show as PDF or JPEGs.</sub></td>
+</tr>
+<tr>
+<td width="50%"><img src="docs/images/classic/print.jpg" alt="Print module: a US Letter page with rulers, one photo per page, and Layout Style, Image Settings, Layout and Margins panels"><br><sub><b>Print.</b> Single image, contact sheets and picture packages; print or save as PDF/JPEG.</sub></td>
+<td width="50%"><img src="docs/images/classic/web.jpg" alt="Web module: a grid gallery preview of the demo photos with Layout Style, Site Info, Color Palette and Appearance panels"><br><sub><b>Web.</b> Static HTML galleries, previewed live and uploaded over SFTP.</sub></td>
+</tr>
+</table>
 
 ## Edit like you mean it
 
