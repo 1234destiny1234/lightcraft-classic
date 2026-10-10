@@ -153,6 +153,7 @@ impl GradeLut {
             base: log_l,
             clarity_blur: None,
             texture_blur: None,
+            sharpen_blur: None,
             dark: None,
             chroma_blur: None,
             air: 1.0,
