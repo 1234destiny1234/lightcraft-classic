@@ -48,8 +48,41 @@ pub fn opener(s: &mut Session, svc: &ServiceConfig, coll: &CollectionConfig, pho
             PhotoInfo { created, favorite: p.flag == dac_catalog::Flag::Pick, original, original_name: p.file_name.clone(), linked, xmp: None },
         );
     }
-    let name = s.catalog.album(coll.album).map(|a| a.name.clone()).filter(|n| !n.trim().is_empty()).unwrap_or_else(|| coll.folder.clone());
-    Ok(Some(Box::new(move || Ok(Box::new(ImmichPublish::new(client, settings, &name, DEVICE, info)) as Box<dyn PublishService>))))
+    let name = album_name(&s.catalog, svc, coll);
+    let state = s.immich_dir().map(|d| d.join("publish").join(state_name(&svc.id, coll)));
+    Ok(Some(Box::new(move || {
+        let mut p = ImmichPublish::new(client, settings, &name, DEVICE, info);
+        if let Some(st) = state {
+            p = p.with_album_state(st);
+        }
+        Ok(Box::new(p) as Box<dyn PublishService>)
+    })))
+}
+
+/// The file that remembers a collection's Immich album id.
+fn state_name(service: &str, coll: &CollectionConfig) -> String {
+    let svc: String = service.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' { c } else { '_' }).take(64).collect();
+    format!("{svc}-{}.album", coll.album.0)
+}
+
+/// The Immich album name of a published collection: its current name, prefixed by the collection
+/// sets it sits in below the service's own set (`Set / Sub / Collection`; Immich albums are flat).
+pub fn album_name(catalog: &dac_catalog::Catalog, svc: &ServiceConfig, coll: &CollectionConfig) -> String {
+    let Some(al) = catalog.album(coll.album) else { return coll.folder.clone() };
+    let own = if al.name.trim().is_empty() { coll.folder.clone() } else { al.name.trim().to_string() };
+    let mut parts = vec![own];
+    let mut next = al.parent;
+    // bounded: a damaged catalog can't loop
+    for _ in 0..32 {
+        let Some(id) = next.filter(|id| Some(*id) != svc.set) else { break };
+        let Some(set) = catalog.album(id) else { break };
+        if !set.name.trim().is_empty() {
+            parts.push(set.name.trim().to_string());
+        }
+        next = set.parent;
+    }
+    parts.reverse();
+    parts.join(" / ")
 }
 
 /// Links each original a run uploaded (or found) to its catalog photo on the service's account, so

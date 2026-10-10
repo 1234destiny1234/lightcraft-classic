@@ -116,6 +116,33 @@ fn hard_drive_publish_cycle() {
     assert!(s2.catalog.album(dac_catalog::AlbumId(set)).is_none());
 }
 
+/// IMM-PUBLISH: collection sets inside the service's set prefix the Immich album name, which
+/// follows the collection's current name.
+#[test]
+fn immich_album_names_follow_renames_and_sets() {
+    let (mut s, root) = library("immich-sets");
+    let svc = s.execute("publish.createService", &json!({"kind": "immich", "name": "Immich", "settings": {"account": "x"}})).unwrap();
+    let set = svc["set"].as_u64().unwrap();
+    let trips = s.execute("album.create", &json!({"name": "Trips", "folder": true, "parent": set})).unwrap();
+    let trips = trips["id"].as_u64().unwrap();
+    let st = s.execute("publish.createCollection", &json!({"service": "Immich", "name": "Paris", "parent": trips})).unwrap();
+    let coll = st["collection"].as_u64().unwrap();
+    let name = |s: &Session| {
+        let cfg = dac_publish::PublishConfig::load(&root.join("lib")).unwrap();
+        let svc = cfg.services[0].clone();
+        crate::cmd::immich::publish::album_name(&s.catalog, &svc, svc.collection(dac_catalog::AlbumId(coll)).unwrap())
+    };
+    assert_eq!(name(&s), "Trips / Paris");
+    s.execute("album.rename", &json!({"id": coll, "name": "Paris 2026"})).unwrap();
+    assert_eq!(name(&s), "Trips / Paris 2026");
+    s.execute("album.move", &json!({"id": coll, "parent": set})).unwrap();
+    assert_eq!(name(&s), "Paris 2026");
+    // a parent outside the service's set is refused
+    let other = s.execute("album.create", &json!({"name": "Elsewhere", "folder": true})).unwrap();
+    let p = json!({"service": "Immich", "name": "X", "parent": other["id"]});
+    assert!(s.execute("publish.createCollection", &p).is_err());
+}
+
 #[test]
 fn bad_publish_params_are_errors() {
     let (mut s, root) = library("bad");

@@ -12,12 +12,22 @@
 //! to Immich's trash. Removing a photo from the collection takes it out of the album; deleting its
 //! asset is a separate option (`deleteRemoved`, off), and always goes to the trash.
 //!
+//! The album is remembered by id (a small state file per collection), so renaming the collection
+//! (or moving it into another collection set: sets become name prefixes, `Set / Collection`)
+//! renames the Immich album on the next run instead of creating a new one.
+//!
+//! Uploads are retried: a failed upload (server offline, 5xx, dropped connection) is tried again
+//! with backoff, and each attempt first asks the server by checksum whether the bytes already
+//! arrived, so a retry never stores a duplicate. A run cut short resumes where it stopped: photos
+//! already sent are published, and the rest are found by checksum on the next run.
+//!
 //! Remote ids: `r:<render id>` and/or `o:<original id>`, joined by `+`.
 //!
 //! Sources: own design; Immich's public API documentation (plan/immich.md → Publish).
 
 use std::collections::HashMap;
 use std::path::PathBuf;
+use std::time::Duration;
 
 use dac_catalog::PhotoId;
 use dac_publish::{Capabilities, PublishError, PublishService, Published, Upload};
@@ -72,7 +82,15 @@ pub struct ImmichPublish {
     album: Option<String>,
     photos: HashMap<PhotoId, PhotoInfo>,
     device_id: String,
+    /// Where the album's Immich id is remembered (rename instead of a new album).
+    album_state: Option<PathBuf>,
+    upload_retries: u32,
+    upload_backoff: Duration,
 }
+
+/// Upload attempts after the first, and the first wait (doubling).
+pub const UPLOAD_RETRIES: u32 = 3;
+pub const UPLOAD_BACKOFF: Duration = Duration::from_secs(2);
 
 fn err(e: ImmichError) -> PublishError {
     match e {
@@ -122,25 +140,70 @@ fn remote_id(render: Option<&str>, original: Option<&str>) -> String {
 impl ImmichPublish {
     /// `album_name`: the collection's name on the server; `device_id`: the app's id as a device.
     pub fn new(client: Client, settings: PublishSettings, album_name: &str, device_id: &str, photos: HashMap<PhotoId, PhotoInfo>) -> ImmichPublish {
-        ImmichPublish { client, settings, album_name: album_name.to_string(), album: None, photos, device_id: device_id.to_string() }
+        ImmichPublish {
+            client,
+            settings,
+            album_name: album_name.to_string(),
+            album: None,
+            photos,
+            device_id: device_id.to_string(),
+            album_state: None,
+            upload_retries: UPLOAD_RETRIES,
+            upload_backoff: UPLOAD_BACKOFF,
+        }
     }
 
+    /// Remember the album's id in `path` (one file per published collection).
+    pub fn with_album_state(mut self, path: PathBuf) -> ImmichPublish {
+        self.album_state = Some(path);
+        self
+    }
+
+    /// Upload retries and the first wait between them.
+    pub fn with_upload_retry(mut self, retries: u32, backoff: Duration) -> ImmichPublish {
+        self.upload_retries = retries.min(10);
+        self.upload_backoff = backoff;
+        self
+    }
+
+    fn remembered(&self) -> Option<String> {
+        let b = std::fs::read(self.album_state.as_ref()?).ok()?;
+        let id = String::from_utf8(b).ok()?.trim().to_string();
+        (!id.is_empty() && id.len() <= 64 && id.chars().all(|c| c.is_ascii_alphanumeric() || c == '-')).then_some(id)
+    }
+
+    fn remember(&self, id: &str) {
+        let Some(p) = &self.album_state else { return };
+        let r = p.parent().map(std::fs::create_dir_all).unwrap_or(Ok(())).and_then(|_| std::fs::write(p, id));
+        if let Err(e) = r {
+            // not fatal: the album is found by name next time
+            log::warn!("Immich publish: {}: {e}", p.display());
+        }
+    }
+
+    /// The collection's album: the remembered one (renamed when the collection's name changed),
+    /// else the album of that name, else a new one.
     fn album(&mut self) -> Result<String, PublishError> {
         if let Some(a) = &self.album {
             return Ok(a.clone());
         }
-        let id = match self.client.albums().map_err(err)?.into_iter().find(|a| a.album_name == self.album_name) {
-            Some(a) => a.id,
-            None => self.client.create_album(&self.album_name).map_err(err)?.id,
+        let albums = self.client.albums().map_err(err)?;
+        let known = self.remembered().and_then(|id| albums.iter().find(|a| a.id == id));
+        let id = match known {
+            Some(a) => {
+                if a.album_name != self.album_name {
+                    self.client.rename_album(&a.id, &self.album_name).map_err(err)?;
+                }
+                a.id.clone()
+            }
+            None => match albums.iter().find(|a| a.album_name == self.album_name) {
+                Some(a) => a.id.clone(),
+                None => self.client.create_album(&self.album_name).map_err(err)?.id,
+            },
         };
+        self.remember(&id);
         self.album = Some(id.clone());
         Ok(id)
-    }
-
-    /// The id of an asset with these bytes' SHA-1 already on the server.
-    fn existing(&self, sha1_b64: &str) -> Result<Option<String>, PublishError> {
-        let r = self.client.upload_check(&[UploadCheck { id: "x".into(), checksum: sha1_b64.into() }]).map_err(err)?;
-        Ok(r.into_iter().find(|x| x.action == "reject").and_then(|x| x.asset_id))
     }
 
     fn send(
@@ -152,7 +215,33 @@ impl ImmichPublish {
         info: &PhotoInfo,
         sidecar: Option<&[u8]>,
     ) -> Result<String, PublishError> {
-        if let Some(id) = self.existing(&sha1)? {
+        let mut attempt = 0;
+        loop {
+            match self.try_send(data, &sha1, name, device_asset_id, info, sidecar) {
+                Err(e) if e.retryable() && attempt < self.upload_retries => {
+                    let wait = self.upload_backoff.saturating_mul(1 << attempt.min(8));
+                    log::info!("Immich upload of {name}: {e}; retrying in {wait:?}");
+                    std::thread::sleep(wait);
+                    attempt += 1;
+                }
+                r => return r.map_err(err),
+            }
+        }
+    }
+
+    /// One attempt: the checksum check first, so an upload that reached the server before the
+    /// connection dropped is found instead of sent again.
+    fn try_send(
+        &self,
+        data: UploadData<'_>,
+        sha1: &str,
+        name: &str,
+        device_asset_id: &str,
+        info: &PhotoInfo,
+        sidecar: Option<&[u8]>,
+    ) -> Result<String, ImmichError> {
+        let r = self.client.upload_check(&[UploadCheck { id: "x".into(), checksum: sha1.into() }])?;
+        if let Some(id) = r.into_iter().find(|x| x.action == "reject").and_then(|x| x.asset_id) {
             return Ok(id);
         }
         let up = NewAsset {
@@ -165,7 +254,7 @@ impl ImmichPublish {
             favorite: info.favorite,
             sidecar,
         };
-        self.client.upload(&up).map(|(id, _)| id).map_err(err)
+        self.client.upload(&up).map(|(id, _)| id)
     }
 }
 

@@ -587,3 +587,104 @@ fn full_disk_connections_save_leaves_no_temp_file() {
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 1);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// ---- IMM-PUBLISH: album rename, upload retries
+
+fn publish_photos() -> std::collections::HashMap<PhotoId, crate::publish::PhotoInfo> {
+    let mut m = std::collections::HashMap::new();
+    m.insert(
+        PhotoId(1),
+        crate::publish::PhotoInfo { created: "2024-01-01T00:00:00.000Z".into(), original_name: "a.jpg".into(), ..Default::default() },
+    );
+    m
+}
+
+/// A server with one album `al-1` named "Old", counting uploads; the first `fail_uploads` uploads
+/// answer 503, and with `arrived` an upload that failed still reached the server (the checksum
+/// check finds it afterwards).
+fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<Req>>>) {
+    let uploads = Arc::new(AtomicUsize::new(0));
+    let name = Arc::new(Mutex::new("Old".to_string()));
+    serve(move |req| {
+        let path = req.target.split('?').next().unwrap_or_default();
+        match (req.method.as_str(), path) {
+            ("GET", "/api/albums") => {
+                let n = name.lock().unwrap().clone();
+                response("200 OK", format!(r#"[{{"id":"al-1","albumName":"{n}","assetCount":0}}]"#).as_bytes())
+            }
+            ("PATCH", "/api/albums/al-1") => {
+                let v: serde_json::Value = serde_json::from_slice(&req.body).unwrap();
+                *name.lock().unwrap() = v["albumName"].as_str().unwrap().to_string();
+                response("200 OK", br#"{"id":"al-1","albumName":"x","assetCount":0}"#)
+            }
+            ("POST", "/api/albums") => response("201 Created", br#"{"id":"al-new","albumName":"x","assetCount":0}"#),
+            ("POST", "/api/assets/bulk-upload-check") => {
+                if arrived && uploads.load(Ordering::SeqCst) > 0 {
+                    response("200 OK", br#"{"results":[{"id":"x","action":"reject","reason":"duplicate","assetId":"as-1"}]}"#)
+                } else {
+                    response("200 OK", br#"{"results":[{"id":"x","action":"accept"}]}"#)
+                }
+            }
+            ("POST", "/api/assets") => {
+                let n = uploads.fetch_add(1, Ordering::SeqCst);
+                if n < fail_uploads {
+                    response("503 Service Unavailable", br#"{"message":"busy"}"#)
+                } else {
+                    response("201 Created", br#"{"id":"as-1","status":"created"}"#)
+                }
+            }
+            ("PUT", "/api/albums/al-1/assets") | ("PUT", "/api/albums/al-new/assets") => response("200 OK", br#"[{"id":"as-1","success":true}]"#),
+            _ => response("404 Not Found", br#"{"message":"Not found"}"#),
+        }
+    })
+}
+
+fn publish_once(url: &str, name: &str, state: Option<std::path::PathBuf>) -> Result<String, dac_publish::PublishError> {
+    use dac_publish::{PublishService, Upload};
+    let mut svc = crate::publish::ImmichPublish::new(client(url, KEY), Default::default(), name, "dev", publish_photos())
+        .with_upload_retry(3, Duration::from_millis(5));
+    if let Some(p) = state {
+        svc = svc.with_album_state(p);
+    }
+    let up = Upload { photo: PhotoId(1), file_name: "a.jpg", bytes: b"\xff\xd8\xff\xd9", sidecars: &[], previous: None };
+    svc.publish(&up).map(|p| p.remote_id)
+}
+
+#[test]
+fn a_renamed_collection_renames_its_remembered_album() {
+    let dir = std::env::temp_dir().join(format!("dac-immich-pubalbum-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let state = dir.join("svc-1-5.album");
+    let (url, seen) = publish_server(0, false);
+    // first run: found by name, remembered
+    publish_once(&url, "Old", Some(state.clone())).unwrap();
+    assert_eq!(std::fs::read_to_string(&state).unwrap(), "al-1");
+    // renamed (and moved into a set): the same album is renamed, no new album
+    publish_once(&url, "Trips / New", Some(state.clone())).unwrap();
+    {
+        let seen = seen.lock().unwrap();
+        let patch = seen.iter().find(|r| r.method == "PATCH").expect("renamed");
+        assert!(String::from_utf8_lossy(&patch.body).contains("Trips / New"));
+        assert!(!seen.iter().any(|r| r.method == "POST" && r.target == "/api/albums"), "no new album");
+    }
+    // without the state file a new name means a new album
+    let (url, seen) = publish_server(0, false);
+    publish_once(&url, "Other", None).unwrap();
+    assert!(seen.lock().unwrap().iter().any(|r| r.method == "POST" && r.target == "/api/albums"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn failed_uploads_are_retried_without_duplicates() {
+    // two 503s, then it goes through
+    let (url, seen) = publish_server(2, false);
+    assert_eq!(publish_once(&url, "Old", None).unwrap(), "r:as-1");
+    assert_eq!(seen.lock().unwrap().iter().filter(|r| r.method == "POST" && r.target == "/api/assets").count(), 3);
+    // the upload arrived although the answer was lost: the retry finds it by checksum
+    let (url, seen) = publish_server(1, true);
+    assert_eq!(publish_once(&url, "Old", None).unwrap(), "r:as-1");
+    assert_eq!(seen.lock().unwrap().iter().filter(|r| r.method == "POST" && r.target == "/api/assets").count(), 1);
+    // gives up after the retries, with an error
+    let (url, _) = publish_server(100, false);
+    assert!(publish_once(&url, "Old", None).is_err());
+}

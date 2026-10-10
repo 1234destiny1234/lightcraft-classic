@@ -32,7 +32,16 @@ fn live_connect_list_and_download() {
     assert!(all.len() >= 8, "seeded fixtures: {}", all.len());
     assert!(c.albums().unwrap().iter().any(|a| a.album_name == "xtask fixtures"));
     let a = &all[0];
-    let thumb = c.thumbnail(&a.id, "thumbnail").unwrap();
+    // a freshly seeded server makes thumbnails in the background: wait for it (CI starts empty)
+    let mut thumb = c.thumbnail(&a.id, "thumbnail");
+    for _ in 0..60 {
+        if !matches!(thumb, Err(ImmichError::NotFound(_))) {
+            break;
+        }
+        std::thread::sleep(std::time::Duration::from_secs(1));
+        thumb = c.thumbnail(&a.id, "thumbnail");
+    }
+    let thumb = thumb.unwrap();
     assert!(!thumb.is_empty());
     let dir = std::env::temp_dir().join(format!("dac-immich-live-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
@@ -96,4 +105,34 @@ fn live_sync_publish_and_search_calls() {
     if two.len() == 2 {
         c.stack(&two).unwrap();
     }
+}
+
+/// IMM-PUBLISH end to end: a collection published, renamed into a collection set (the same album
+/// is renamed), and published again without a duplicate upload.
+#[test]
+#[ignore = "needs `cargo xtask immich up` and `seed` (nightly)"]
+fn live_publish_renames_its_album() {
+    use dac_publish::{PublishService, Upload};
+    let Some((url, key)) = server() else { panic!("no target/immich/api-key: run `cargo xtask immich seed`") };
+    let open = |name: &str, state: &std::path::Path| {
+        let c = Client::new(&url, Secret::new(key.expose()), &ServerOptions::standard()).unwrap();
+        dac_immich::publish::ImmichPublish::new(c, Default::default(), name, "live", Default::default()).with_album_state(state.to_path_buf())
+    };
+    let dir = std::env::temp_dir().join(format!("dac-immich-live-pub-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    let state = dir.join("svc-1-1.album");
+    let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
+    let (first, second) = (format!("live pub {stamp}"), format!("Trips / live pub {stamp}"));
+    // a seeded fixture: already on the server, so publishing finds it by checksum
+    let bytes = std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/immich/fixtures/fixture-00.png")).unwrap();
+    let up = Upload { photo: dac_catalog::PhotoId(1), file_name: "fixture-00.png", bytes: &bytes, sidecars: &[], previous: None };
+    let r1 = open(&first, &state).publish(&up).unwrap().remote_id;
+    let album = std::fs::read_to_string(&state).unwrap();
+    let r2 = open(&second, &state).publish(&up).unwrap().remote_id;
+    assert_eq!(r1, r2, "found by checksum, not uploaded again");
+    let c = Client::new(&url, key, &ServerOptions::standard()).unwrap();
+    let all = c.albums().unwrap();
+    assert!(all.iter().any(|a| a.id == album && a.album_name == second), "renamed in place");
+    assert!(!all.iter().any(|a| a.album_name == first));
+    let _ = std::fs::remove_dir_all(&dir);
 }
