@@ -1812,6 +1812,7 @@ dependencies = [
  "dac-heif",
  "dac-immich",
  "dac-layout",
+ "dac-lensdb",
  "dac-merge",
  "dac-meta",
  "dac-pipeline",

@@ -29,6 +29,7 @@ dac-raw = { workspace = true }
 dac-denoise-core = { workspace = true }
 dac-denoise = { workspace = true, optional = true }
 dac-meta = { workspace = true }
+dac-lensdb = { workspace = true }
 dac-faces = { workspace = true }
 miniz_oxide = { workspace = true }
 dac-merge = { workspace = true }
