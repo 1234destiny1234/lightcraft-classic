@@ -145,7 +145,7 @@ pub fn rasterize(layout: &TextLayout, transform: &Xform, antialias: AntiAlias) -
         let cov = cov.finish();
         let comps = [c.r, c.g, c.b];
         let a = c.alpha.clamp(0.0, 1.0);
-        for (px, &cv) in acc.chunks_exact_mut(4).zip(cov.iter()) {
+        for (px, &cv) in acc.as_chunks_mut::<4>().0.iter_mut().zip(cov.iter()) {
             let cv = if antialias == AntiAlias::None { if cv >= 0.5 { 1.0 } else { 0.0 } } else { cv };
             let s = cv * a;
             if s <= 0.0 {
@@ -161,7 +161,7 @@ pub fn rasterize(layout: &TextLayout, transform: &Xform, antialias: AntiAlias) -
         }
     }
     // Unpremultiply.
-    for px in acc.chunks_exact_mut(4) {
+    for px in acc.as_chunks_mut::<4>().0 {
         let a = px.get(3).copied().unwrap_or(0.0);
         if a > 0.0 {
             for v in px.iter_mut().take(3) {

@@ -52,9 +52,11 @@ jobs:
             rel="${t#packaging/}"; rel="${rel%.in}"; rel="${rel//\{app_id\}/$BRAND_APP_ID}"
             brand_render "$t" "$OUT/$rel"
           done
-          echo "OUT=$OUT" >>"$GITHUB_ENV"
-          echo "APP_ID=$BRAND_APP_ID" >>"$GITHUB_ENV"
-          echo "APP_BINARY=$BRAND_BINARY" >>"$GITHUB_ENV"
+          {
+            echo "OUT=$OUT"
+            echo "APP_ID=$BRAND_APP_ID"
+            echo "APP_BINARY=$BRAND_BINARY"
+          } >>"$GITHUB_ENV"
       - name: XML, desktop entry, AppStream, Flatpak manifest
         run: |
           xmllint --noout "$OUT"/windows/app.wxs "$OUT"/macos/*.plist "$OUT"/linux/*.xml packaging/macos/entitlements.plist

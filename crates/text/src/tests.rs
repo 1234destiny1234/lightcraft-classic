@@ -37,7 +37,7 @@ fn alpha_in(r: &Rendered, [x0, y0, x1, y1]: [i32; 4]) -> f64 {
 }
 
 fn alpha_sum(r: &Rendered) -> f64 {
-    r.rgba.chunks_exact(4).map(|p| f64::from(p[3])).sum()
+    r.rgba.as_chunks::<4>().0.iter().map(|p| f64::from(p[3])).sum()
 }
 
 fn rect(r: &Rendered) -> [i32; 4] {
@@ -91,7 +91,7 @@ fn multicolor_runs() {
     let t = TextLayer { text: "HH".into(), runs: vec![TextRun { len: 1, style: red }, TextRun { len: 1, style: blue }], ..Default::default() };
     let (l, r) = render(&mut e, &t, 0.0, 40.0);
     assert_eq!(l.glyphs.len(), 2);
-    let opaque: Vec<&[f32]> = r.rgba.chunks_exact(4).filter(|p| p[3] > 0.99).collect();
+    let opaque: Vec<&[f32; 4]> = r.rgba.as_chunks::<4>().0.iter().filter(|p| p[3] > 0.99).collect();
     assert!(opaque.iter().any(|p| p[0] > 0.99 && p[2] < 0.01));
     assert!(opaque.iter().any(|p| p[2] > 0.99 && p[0] < 0.01));
     assert_eq!(r.to_rgba8().len(), r.width * r.height * 4);

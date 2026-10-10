@@ -52,7 +52,7 @@ impl<'a> Reader<'a> {
     pub fn string(&mut self) -> Result<String, PtpError> {
         let n = usize::from(self.u8()?);
         let raw = self.take(n.saturating_mul(2))?;
-        let units: Vec<u16> = raw.chunks_exact(2).map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
+        let units: Vec<u16> = raw.as_chunks::<2>().0.iter().map(|c| u16::from_le_bytes([c[0], c[1]])).take_while(|u| *u != 0).collect();
         Ok(String::from_utf16_lossy(&units))
     }
     pub fn array_u16(&mut self) -> Result<Vec<u16>, PtpError> {

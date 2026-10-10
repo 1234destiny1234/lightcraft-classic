@@ -382,7 +382,7 @@ fn decode_tiff16(bytes: &[u8]) -> std::result::Result<Rendered16, String> {
     if v.len() < n.saturating_mul(spp) {
         return Err("render is short".into());
     }
-    let rgb = if spp == 3 { v } else { v.chunks_exact(4).flat_map(|p| p.iter().take(3).copied()).collect() };
+    let rgb = if spp == 3 { v } else { v.as_chunks::<4>().0.iter().flat_map(|p| p.iter().take(3).copied()).collect() };
     Ok(Rendered16 { width: w, height: h, rgb, icc })
 }
 
@@ -420,7 +420,7 @@ fn layered_psd(layers: &[(String, Rendered16)], depth: u8, icc: Option<Vec<u8>>,
         let (lw, lh) = (r.width as usize, r.height as usize);
         let (left, top) = ((w - r.width) / 2, (h - r.height) / 2);
         let mut px = Vec::with_capacity(lw.saturating_mul(lh).saturating_mul(4));
-        for (i, c) in r.rgb.chunks_exact(3).take(lw.saturating_mul(lh)).enumerate() {
+        for (i, c) in r.rgb.as_chunks::<3>().0.iter().take(lw.saturating_mul(lh)).enumerate() {
             px.extend_from_slice(c);
             px.push(u16::MAX);
             let (x, y) = (left as usize + i % lw.max(1), top as usize + i / lw.max(1));
