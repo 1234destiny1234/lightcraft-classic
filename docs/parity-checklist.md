@@ -52,11 +52,11 @@ cited here still exists. Formerly docs/parity.md.
 | X. Cross-cutting behaviours (BEHAV) | 18 | 6 | 1 | 1 | 8/8 (100%) | 6/9 (67%) |
 | Y. Menus | 82 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 75 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
-| Lightroom Classic extras | 75 | 24 | 25 | 0 | — | 33/37 (89%) |
+| Lightroom Classic extras | 88 | 26 | 10 | 0 | — | 33/37 (89%) |
 | IMM. Immich integration | 9 | 1 | 0 | 0 | — | 5/6 (83%) |
-| **Total** | 448 | 60 | 62 | 27 | 192/200 (96%) | 158/173 (91%) |
+| **Total** | 461 | 62 | 47 | 27 | 192/200 (96%) | 158/173 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **83.9%** of 570 in-scope rows — P0 98.0% of 200 · P1 94.8% of 173 · P2 59.7% of 196.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **86.3%** of 570 in-scope rows — P0 98.0% of 200 · P1 94.8% of 173 · P2 66.8% of 196.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -93,9 +93,9 @@ Take the first one nobody is working on.
 8. **Classic shell** (KEYC-MODULES, LRC-SHELL-*, LRC-CAT-*): module picker, panel system and Classic keymap (the catalog
    now scales to 500k–1M photos, LRC-CAT-SCALE). Then **Immich**: connect, link, import and external libraries exist (Phase 1, see
    [immich.md](immich.md)); two-way sync, people, smart search and publish now exist (Phase 4); keychains on macOS/Windows, sync at scale, album renames and the sync stream remain.
-9. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video), **Classic output modules** (Map view, Book, Slideshow module,
-   Print, Web, publish): large, well understood, lower priority than 1–6. Contact-sheet PDF export now covers a
-   basic Print workflow; custom picture packages, printer integration and print colour management remain open.
+9. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video). The **Classic output modules** (Map view, Book, Slideshow,
+   Print, Web, publish) exist in the fork (LRC-MAP-*, LRC-BOOK-*, LRC-SS-*, LRC-WEB-*, LRC-PRINT-*); what remains there:
+   slideshow sound output and video export, the slideshow backdrop image in playback, publish grid sections.
 
 Recognition runtime gap closed (LR-PREF-PEOPLE): the pinned SFace and AuraFace models now run on the shared pure-Rust
 CPU engine and agree with an independent reference runtime on public crops. Live-face threshold calibration, small-face
@@ -801,14 +801,14 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-BOOK-BG | Book backgrounds | P2 | ✅ | `cmd:book.background` | P3.5: colour, photo with opacity, our own graphics, global or per page |
 | LRC-BOOK-VIEWS | Book views | P2 | ✅ | `cmd:book.view` | P3.5: multi-page, spread, single, zoomed |
 | LRC-BOOK-EXPORT | Book export (PDF/JPEG) | P2 | ✅ | `cmd:book.export` | P3.5: one PDF (embedded subset fonts, sRGB ICC, trim/bleed boxes) or a JPEG per page |
-| LRC-SS-TEMPLATES | Slideshow templates | P2 | ⬜ | | |
-| LRC-SS-OPTIONS | Slideshow options | P2 | ⬜ | | |
-| LRC-SS-LAYOUT | Slideshow layout | P2 | ⬜ | | |
-| LRC-SS-OVERLAYS | Slideshow overlays | P2 | ⬜ | | |
-| LRC-SS-BACKDROP | Slideshow backdrop | P2 | ⬜ | | |
-| LRC-SS-TITLES | Slideshow titles | P2 | ⬜ | | |
-| LRC-SS-MUSIC | Slideshow music | P2 | ⬜ | | |
-| LRC-SS-PLAYBACK | Slideshow playback | P2 | ⬜ | | |
+| LRC-SS-TEMPLATES | Slideshow templates | P2 | ✅ | `cmd:slideshow.applyTemplate`, `cmd:slideshow.saveTemplate`, `cmd:slideshow.deleteTemplate`, `crates/slideshow/src/settings.rs` | Template Browser: 6 own built-in templates (Default, Caption and Rating, Crop to Fill, Exif Metadata, Simple, Widescreen) plus user templates (save, apply, delete); re-audited 2026-10-11 (G1), when the module side panels were fixed (they were never drawn) |
+| LRC-SS-OPTIONS | Slideshow options | P2 | ✅ | `cmd:slideshow.set`, `crates/ui-egui/src/slideshow_ui.rs` | zoom to fill frame, stroke border (width, colour), cast shadow (opacity, offset, radius, angle) |
+| LRC-SS-LAYOUT | Slideshow layout | P2 | ✅ | `cmd:slideshow.set`, `crates/slideshow/src/compose.rs` | show guides, margins linked or per side, aspect preview |
+| LRC-SS-OVERLAYS | Slideshow overlays | P2 | ✅ | `cmd:slideshow.set`, `crates/slideshow/src/tokens.rs` | identity plate, rating stars (colour, size, opacity), watermark, text overlays with tokens anchored on the photo or the slide, with shadow |
+| LRC-SS-BACKDROP | Slideshow backdrop | P2 | 🟡 | `cmd:slideshow.set`, `crates/ui-egui/src/slideshow_ui.rs` | background colour, colour wash (colour, opacity, angle), background image with opacity. Missing: the background image is drawn only in export, not in the preview or playback |
+| LRC-SS-TITLES | Slideshow titles | P2 | ✅ | `cmd:slideshow.set`, `crates/slideshow/src/timeline.rs` | intro and ending screens: colour, identity plate or text, text colour and size; included in playback and export |
+| LRC-SS-MUSIC | Slideshow music | P2 | 🟡 | `cmd:slideshow.addMusic`, `cmd:slideshow.clearMusic`, `crates/slideshow/src/music.rs` | WAV, FLAC and Ogg Vorbis tracks (pure-Rust decoders), fit slide timing to music, volume and balance. Missing: no build enables the `audio-out` feature (cpal), so shows play silently (`slideshow.get` reports `canPlayMusic: false`); MP3/AAC not decoded (the pure-Rust decoder is MPL-2.0) |
+| LRC-SS-PLAYBACK | Slideshow playback | P2 | ✅ | `cmd:slideshow.play`, `cmd:slideshow.preview`, `cmd:slideshow.pause`, `cmd:slideshow.next`, `cmd:slideshow.previous`, `cmd:slideshow.stop`, `crates/slideshow/src/timeline.rs` | full screen or preview in place, manual or timed slides, fade length, colour fade, random order, repeat, pan and zoom, draft quality; keys while playing |
 | LRC-SS-EXPORT | Slideshow export | P2 | 🟡 | `cmd:slideshow.exportJpeg`, `cmd:slideshow.exportPdf`, `crates/slideshow/src/export.rs` | P3.4/P3.8: JPEG sequence or one PDF (a page per slide, the slide at 96 ppi, through dac-pdf), intro/ending screens included, rendered on a worker thread (Activity). Missing: video (AV1) export, deferred until an encoder crate is shared with upstream |
 | LRC-PRINT-LAYOUTSTYLE | Print layout styles | P2 | 🟡 | `cmd:dialog.contactSheet`, `cmd:export.contactSheet`, `crates/engine/src/contact_sheet.rs` | paginated contact sheets; single-image/custom package layouts missing |
 | LRC-PRINT-IMAGESETTINGS | Print image settings | P2 | ⬜ | | |
@@ -818,12 +818,12 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-PRINT-PAGE | Print page options | P2 | 🟡 | `cmd:export.contactSheet`, `crates/engine/src/contact_sheet.rs` | optional filename captions; no page backgrounds/identity plates |
 | LRC-PRINT-JOB | Print job & colour management | P2 | 🟡 | `cmd:export.contactSheet`, `cmd:app.contactSheet`, `crates/ui-egui/src/export_task.rs` | PDF export at fixed 150 dpi in sRGB, current edits, background progress/cancel and original protection; no native printer integration, ICC soft proof/print profiles or selectable resolution |
 | LRC-PRINT-TEMPLATES | Print templates | P2 | ✅ | `crates/ui-egui/src/print_ui.rs` | P3.2/P3.8: built-in templates plus user templates (Template Browser +, right-click Delete; `printui.saveTemplate` / `printui.deleteTemplate`); user templates, the current settings, template and printer persist in `<settings_dir>/print.json` (a damaged file is ignored). No template folders |
-| LRC-WEB-LAYOUT | Web gallery layouts | P2 | ⬜ | | reopened 2026-10-10: the Web module is in scope (PLAN.md §2.11, Phase 3) |
-| LRC-WEB-SITEINFO | Web gallery site info | P2 | ⬜ | | reopened 2026-10-10: the Web module is in scope (PLAN.md §2.11, Phase 3) |
-| LRC-WEB-COLOR | Web gallery colours | P2 | ⬜ | | reopened 2026-10-10: the Web module is in scope (PLAN.md §2.11, Phase 3) |
-| LRC-WEB-APPEARANCE | Web gallery appearance | P2 | ⬜ | | reopened 2026-10-10: the Web module is in scope (PLAN.md §2.11, Phase 3) |
-| LRC-WEB-IMAGEINFO | Web gallery image info | P2 | ⬜ | | reopened 2026-10-10: the Web module is in scope (PLAN.md §2.11, Phase 3) |
-| LRC-WEB-OUTPUT | Web gallery output | P2 | ⬜ | | reopened 2026-10-10: the Web module is in scope (PLAN.md §2.11, Phase 3) |
+| LRC-WEB-LAYOUT | Web gallery layouts | P2 | ✅ | `cmd:web.preview`, `crates/webgallery/src/settings.rs`, `crates/ui-egui/src/web_module.rs` | own templates: Grid, Square grid, Track, Single image; live preview drawn in the module (the exported HTML is the reference, `web.preview` returns it); no in-app HTML browser |
+| LRC-WEB-SITEINFO | Web gallery site info | P2 | ✅ | `cmd:web.preview`, `crates/webgallery/src/site.rs` | site title, collection title, description, contact info, web or mail link |
+| LRC-WEB-COLOR | Web gallery colours | P2 | ✅ | `cmd:web.preview`, `crates/webgallery/src/settings.rs` | background, text, detail text, cells, rollover, grid lines, links |
+| LRC-WEB-APPEARANCE | Web gallery appearance | P2 | ✅ | `cmd:web.preview`, `crates/webgallery/src/settings.rs` | columns, thumbnail size, cell numbers, photo borders and width, image page size, captions under thumbnails |
+| LRC-WEB-IMAGEINFO | Web gallery image info | P2 | ✅ | `cmd:web.preview`, `crates/webgallery/src/tokens.rs` | title and caption from metadata tokens |
+| LRC-WEB-OUTPUT | Web gallery output | P2 | ✅ | `cmd:web.export`, `cmd:webui.export`, `crates/engine/src/cmd/web.rs` | large image size, JPEG quality, metadata (all / copyright only), watermark text, sharpen for screen; folder export on a worker thread (Activity) |
 | LRC-WEB-UPLOAD | Web gallery upload | P2 | 🟡 | `cmd:web.upload`, `cmd:web.saveServer`, `cmd:webui.upload`, `cmd:webui.export`, `crates/webgallery/src/sftp.rs` | P3.6/P3.8: SFTP upload with saved servers (secrets in the keychain, host key trusted on first use) and folder export, both rendered on a worker thread from the module. Missing: plain FTP (deliberately not offered) |
 | LRC-SHELL-MODULES | Module picker (Library, Develop, Map, Book, Slideshow, Print, Web), hide modules | P1 | ✅ | `cmd:module.switch`, `cmd:module.library`, `cmd:module.develop`, `cmd:module.previous`, `cmd:module.setVisible` | P1.2: `Module` trait (`crates/ui-egui/src/module.rs`); module bar with picker (right-click hides/shows modules); Library re-homes grid/loupe/compare/survey/people, Develop the loupe with editing panels and the reference view; Map is the Map module (P3.3); Book/Slideshow/Print/Web are placeholders until Phase 3. Switching keeps selection and filmstrip |
 | LRC-SHELL-PANELS | Panel system: four sides, auto hide/show, solo mode, toolbar toggle | P1 | ✅ | `cmd:panel.toggle`, `cmd:panel.sides`, `cmd:panel.all`, `cmd:panel.toolbar`, `cmd:panel.autoShow`, `cmd:panel.autoHide`, `cmd:panel.solo`, `cmd:panel.show`, `cmd:panel.order`, `crates/ui-egui/src/panels/classic.rs` | P1.2: top (module bar), left, right and bottom (filmstrip) edges plus toolbar, saved per module in `ui.json`; auto show at the window edge; right group order and hidden panels per module. P1.4: Library's left and right columns are Classic panel stacks (`crates/ui-egui/src/panels/classic.rs`): Navigator, Catalog, Folders, Collections | Quick Develop, Keywording, Keyword List, Metadata, each under a foldable header (`classicPanel:<id>`), Solo Mode keeps one open per side, the header's context menu shows/hides panels, toggles Solo Mode and expands/collapses all; order follows `panel.order`; dragging a header up or down its side moves the panel (insertion line, then `panel.order`). The same header menu sits on the Develop tool strip buttons, and offers the side's hiding mode: Manual, Auto Hide (`panel.autoHide`: a click at the window edge brings the hidden side back) or Auto Hide & Show (`panel.autoShow`: resting the pointer there), saved per module |
@@ -853,7 +853,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-PRINT-SAVED | Saved prints | P2 | ✅ | `cmd:printui.saveCreation`, `cmd:printui.openCreation`, `cmd:creation.open`, `crates/ui-egui/src/print_ui.rs` | P3.7: Print ▸ Saved Prints ▸ Create Saved Print: a collection holding the photos, the page layout and the print settings, listed in Collections with a printer icon; double-click (or the Saved Prints list) reopens it in Print with its photos and settings |
 | LRC-EXP-EMAIL | Email photos | P2 | ⬜ |  | low priority |
 | LRC-EXP-POSTPROCESS | Post-processing after export (open in app, export actions) | P2 | 🟡 |  | unverified |
-| LRC-AUTO-ACTIONS | Recordable actions / batch scripts | P2 | 🟡 | `cmd:actions.record`, `cmd:actions.stop`, `cmd:actions.play`, `cmd:actions.save`, `crates/engine/src/cmd/actions.rs` | record from the journal, parameters (`{{name}}`), per-photo replay on a selection, `app-cli run-action`, MCP via run_command; no Actions panel and stored shortcuts are not bound in the desktop app yet |
+| LRC-AUTO-ACTIONS | Recordable actions / batch scripts | P2 | ✅ | `cmd:actions.record`, `cmd:actions.stop`, `cmd:actions.play`, `cmd:actions.save`, `crates/engine/src/cmd/actions.rs` | record from the journal, parameters (`{{name}}`), per-photo replay on a selection, `app-cli run-action`, MCP via run_command; Window ▸ Actions panel (`cmd:panel.actions`, `crates/ui-egui/src/edit_in.rs`: record, stop, play, delete, set shortcut); saved shortcuts play their action in the desktop app |
 | LRC-VID-FRAME | Capture video frame as a still | P2 | ⬜ |  | see LRC-DEV-VIDEO and R. Video |
 | KEYC-PANELS | Classic panel keys (Tab, ⇧Tab, T, F5–F8, solo) | P2 | ✅ | `cmd:panel.sides`, `cmd:panel.all`, `cmd:panel.toolbar`, `cmd:panel.top`, `cmd:panel.bottom`, `cmd:panel.left`, `cmd:panel.right`, `cmd:panel.solo` | P1.3 Classic set: Tab sides, ⇧Tab all, T toolbar, F5 module bar, F6 filmstrip, F7 left, F8 right; Tab outside a text field no longer moves focus. Solo is a command/menu item (no Classic key) |
 | KEYC-MODULES | Classic module switching (⌘⌥1–7) | P1 | ✅ | `cmd:module.library`, `cmd:module.develop`, `cmd:module.previous` | P1.3: ⌘⌥1–7 (Ctrl+Alt elsewhere), ⌘⌥↑ previous module, D Develop |
@@ -865,7 +865,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | KEYC-COLLECTIONS | Classic collection keys (⌘N, B…) | P2 | ✅ | `cmd:dialog.newAlbum`, `cmd:album.toggleTarget` | ⌘N new album; P1.3: B adds to / removes from the target collection everywhere (brush is K) |
 | KEYC-METADATA | Classic keyword/metadata keys (⌘K, ⌘S, ⌘⌥⇧C/V…) | P2 | ✅ | `cmd:photo.saveMetadataToFile`, `cmd:photo.copyMetadata`, `cmd:photo.pasteMetadata`, `cmd:panel.keywords`, `cmd:keyword.toggleFromSet` | ⌘S saves metadata; P1.3: ⌘K keywords, ⌘⌥⇧C / ⌘⌥⇧V copy/paste metadata, ⌥1–9 keyword set (the plan's Ctrl+Alt+0–9 would collide with module switching; Classic uses ⌥) |
 | KEYC-DEVELOP | Classic develop keys (V, ⌘U, ⇧⌘U, R, Q, K, M, ⇧M, ⇧W, ⇧J, ⇧Q…) | P2 | 🟡 | `cmd:develop.treatment`, `cmd:develop.reset`, `cmd:crop.reset`, `cmd:panel.crop`, `cmd:panel.remove`, `cmd:tool.brush`, `cmd:tool.linear`, `cmd:tool.radial`, `cmd:panel.masking` | P1.3 Classic set: R crop, Q remove, K brush, M linear, ⇧M radial, ⇧W masking (Classic's key; the plan said ⇧T, which Classic uses for Guided Upright), ⇧T guided upright; V, ⇧⌘R, ⌥⌘R, W, J, Y, ⇧Y, \ match. Develop module keys: ⌘U Auto, ⇧⌘U Auto white balance, ⇧Q cycles the selected spot Remove → Heal → Clone (`cmd:spot.cycleMode`), Home / End; ⌘/ lists the current module's keys and filters the list to that module. Missing: ⇧J (its Classic meaning not yet verified by observation) |
-| KEYC-MODULE-OUTPUT | Book / slideshow / print / map / web keys | P2 | ⬜ | | modules not implemented |
+| KEYC-MODULE-OUTPUT | Book / slideshow / print / map / web keys | P2 | 🟡 | `cmd:book.addPage`, `cmd:slideshow.play`, `cmd:slideshow.preview`, `crates/ui-egui/src/module.rs` | per-module keymaps (shown by ⌘/): Book ⌘⇧B add page, ⌘Z / ⌘⇧Z layout undo/redo; Slideshow ↩ play, ⌥↩ preview; Print ←/→ page. Map and Web have no module keys yet (re-audited 2026-10-11, G1) |
 | KEYC-HELP | Classic help keys (⌘/, F1) | P2 | ✅ | `cmd:module.help`, `cmd:app.shortcuts`, `cmd:app.help`, `crates/ui-egui/src/help_overlay.rs` | F1 help; ⌘/ lays the Classic-style help sheet over the window for the current module (P6.3): the module's own keys (`Module::keymap`) and the global keys that work there, in every module (Library, Develop, Map, Book, Slideshow, Print, Web); any key or click closes it, "All Shortcuts…" opens the editable list (`app.shortcuts`, ⌘/ in the Alternative set), whose "Only <module> keys" filter now knows every module |
 
 ### Japanese text watermarks
