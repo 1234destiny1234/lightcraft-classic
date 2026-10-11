@@ -232,7 +232,7 @@ pub fn is_allowed(path: &str) -> bool {
 enum Match {
     /// Case-sensitive, not inside a longer word (`[A-Za-z0-9_]`).
     Word,
-    /// Case-sensitive, not preceded by a word character (`NONAMEYET_LOG` matches `NONAMEYET`).
+    /// Case-sensitive, not preceded by a word character (`LIGHTCRAFT_LOG` matches `LIGHTCRAFT`).
     Prefix,
     /// Case-insensitive substring.
     Anywhere,

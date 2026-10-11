@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build and package the app for Linux (<arch> is x86_64 or aarch64; <binary> and every other name
+# Build and package the app for Linux (<arch> is x86_64 or aarch64, or riscv64 when cross-compiling; <binary> and every other name
 # come from brand.toml):
 #
 #   $DIST/<binary>-<version>-linux-<arch>.AppImage  any distro with glibc >= the build host's
@@ -14,6 +14,8 @@
 # (downloaded into $CARGO_TARGET_DIR if missing). Build on an old distro (CI: Ubuntu 22.04,
 # glibc 2.35) so the binaries run on newer ones. Optional: desktop-file-validate, appstreamcli,
 # zsyncmake (the zsync package) for the AppImage's .zsync.
+# Cross-compiling (CI: riscv64, tar only): set CROSS_ARCH, CROSS_TARGET (the Rust target),
+# CROSS_COMPILE (binutils prefix, for strip) and optionally EMULATOR (runs the CLI smoke test).
 set -euo pipefail
 # shellcheck source=../env.sh
 . "$(dirname "${BASH_SOURCE[0]}")/../env.sh"
@@ -28,13 +30,14 @@ while [ $# -gt 0 ]; do
   case "$1" in
     --skip-build) SKIP_BUILD=1; shift ;;
     --formats) FORMATS="$2"; shift 2 ;;
-    -h | --help) sed -n '2,15p' "$0"; exit 0 ;;
+    -h | --help) sed -n '2,17p' "$0"; exit 0 ;;
     *) echo "unknown argument: $1" >&2; exit 2 ;;
   esac
 done
 
-ARCH="$(uname -m)"
+ARCH="${CROSS_ARCH:-$(uname -m)}"
 case "$ARCH" in
+  riscv64) DEB_ARCH=riscv64 ;;
   x86_64) DEB_ARCH=amd64 ;;
   aarch64 | arm64) ARCH=aarch64; DEB_ARCH=arm64 ;;
   *) echo "unsupported architecture $ARCH" >&2; exit 2 ;;
@@ -45,9 +48,10 @@ BASENAME="$APP-$VERSION-linux-$ARCH"
 echo "==> $BRAND_DISPLAY_NAME $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-  (cd "$ROOT" && cargo build --release --locked -p dac-app -p dac-cli --features dac-app/heif,dac-cli/heif)
+  (cd "$ROOT" && cargo build --release --locked -p dac-app -p dac-cli --features dac-app/heif,dac-cli/heif \
+    ${CROSS_TARGET:+--target "$CROSS_TARGET"})
 fi
-BIN="$CARGO_TARGET_DIR/release"
+BIN="$CARGO_TARGET_DIR/${CROSS_TARGET:+$CROSS_TARGET/}release"
 WORK="$CARGO_TARGET_DIR/linux-package"
 STAGE="$WORK/root"
 rm -rf "$WORK"
@@ -55,7 +59,7 @@ rm -rf "$WORK"
 # ---- stage an FHS tree (shared by every format) -------------------------------------------------
 # The cargo binaries have neutral names (app, app-cli); packages carry the brand's.
 stage_binaries "$BIN" "$STAGE/usr/bin"
-strip "$STAGE/usr/bin/$APP" "$STAGE/usr/bin/$CLI" 2>/dev/null || true
+"${CROSS_COMPILE:-}strip" "$STAGE/usr/bin/$APP" "$STAGE/usr/bin/$CLI" 2>/dev/null || true
 brand_render "$HERE/{app_id}.desktop.in" "$STAGE/usr/share/applications/$APP_ID.desktop"
 brand_render "$HERE/{app_id}.mime.xml.in" "$STAGE/usr/share/mime/packages/$APP_ID.xml"
 brand_render "$HERE/{app_id}.metainfo.xml.in" "$STAGE/usr/share/metainfo/$APP_ID.metainfo.xml"
@@ -142,6 +146,10 @@ if has appimage; then
   fi
 fi
 
-"$STAGE/usr/bin/$CLI" --version
+if [ -z "${CROSS_TARGET:-}" ]; then
+  "$STAGE/usr/bin/$CLI" --version
+elif [ -n "${EMULATOR:-}" ]; then
+  "$EMULATOR" "$STAGE/usr/bin/$CLI" --version
+fi
 echo "==> done"
 ls -lh "$DIST"

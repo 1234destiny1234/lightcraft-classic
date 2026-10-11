@@ -6,13 +6,23 @@
 //! face- or denoise-models folder until a host asks for one ([`Session::with_default_face_models`],
 //! [`Session::with_default_denoise_models`]), so tests stay hermetic.
 
+use std::ffi::OsString;
 use std::path::PathBuf;
 
 use crate::Session;
 
-/// The app's per-user config folder ([`dac_brand::settings_dir`]), if the platform tells us where.
+/// The app's settings folder ([`dac_brand::settings_dir`]). A nonempty `$<PREFIX>_CONFIG_DIR` overrides
+/// the platform default. The override is the complete directory; no application-name suffix is appended.
+/// An explicitly empty value disables the settings directory instead of falling back to a personal profile.
 pub fn config_dir() -> Option<PathBuf> {
-    dac_brand::settings_dir()
+    config_dir_with(dac_brand::env_os("CONFIG_DIR"), dac_brand::settings_dir)
+}
+
+fn config_dir_with(over: Option<OsString>, default: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
+    match over {
+        Some(dir) => (!dir.is_empty()).then(|| PathBuf::from(dir)),
+        None => default(),
+    }
 }
 
 /// Where face models are kept: `{ENV_PREFIX}_FACE_MODELS` if set, else `<config>/models`.
@@ -50,5 +60,35 @@ impl Session {
     /// Remote accounts are native only: nothing to set up in the browser.
     pub fn with_default_connections(self) -> Self {
         self
+    }
+}
+
+#[cfg(test)]
+mod config_tests {
+    use super::*;
+
+    #[test]
+    fn config_override_wins_without_reading_user_profile() {
+        let actual = config_dir_with(Some(OsString::from("isolated/settings")), || panic!("the default is not read"));
+        assert_eq!(actual, Some(PathBuf::from("isolated/settings")));
+    }
+
+    #[test]
+    fn config_empty_override_disables_profile_without_reading_defaults() {
+        assert_eq!(config_dir_with(Some(OsString::new()), || panic!("the default is not read")), None);
+    }
+
+    #[test]
+    fn config_unset_override_keeps_platform_defaults() {
+        assert_eq!(config_dir_with(None, || Some(PathBuf::from("/xdg/app"))), Some(PathBuf::from("/xdg/app")));
+        assert_eq!(config_dir_with(None, || None), None);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn config_override_preserves_non_unicode_paths() {
+        use std::os::unix::ffi::OsStringExt as _;
+        let value = OsString::from_vec(b"isolated/\xff".to_vec());
+        assert_eq!(config_dir_with(Some(value.clone()), || None), Some(PathBuf::from(value)));
     }
 }

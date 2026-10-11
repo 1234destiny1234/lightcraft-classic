@@ -24,19 +24,46 @@ pub(crate) fn edges(app: &mut DacApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
         if app.ui.module == module::ModuleId::Library && app.ui.right == state::RightPanel::None {
             panels::classic::right_column(app, ui);
         } else if app.ui.right != state::RightPanel::None {
-            panels::right::show(app, ui);
+            right(app, ui);
         }
         if app.ui.presets {
-            panels::presets::show(app, ui);
+            let t = crate::theme::Tokens::get(ui.ctx());
+            egui::Panel::right("presets_panel")
+                .exact_size(t.panel_w)
+                .resizable(false)
+                .frame(egui::Frame::NONE)
+                .show(ui, |ui| panels::presets::show(app, ui));
         }
     }
     if module::edge_visible(app, module::Edge::Left) && !m.own_sides() {
-        panels::left::show(app, ui);
+        left(app, ui);
     }
     if app.ui.toolbar && app.ui.screen_mode != module::ScreenMode::FullScreenHidePanels {
         m.toolbar(ui, app);
     }
     m
+}
+
+/// The shared panels draw only their contents (upstream's docking hosts them); the Classic edges give
+/// them their resizable sides.
+fn right(app: &mut DacApp, ui: &mut egui::Ui) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    // the presets column and the left sidebar are laid out after this panel: leave them their room
+    let reserve = if app.ui.presets { t.panel_w } else { 0.0 } + if app.ui.left_panel { state::LEFT_WIDTH.min } else { 0.0 };
+    let width = app.ui.right_width;
+    let resized =
+        panels::resizable_side(ui, false, "right_panel", egui::Frame::NONE, width, state::RIGHT_WIDTH, reserve, |ui| panels::right::show(app, ui));
+    if let Some(w) = resized {
+        app.ui.right_width = w;
+    }
+}
+
+fn left(app: &mut DacApp, ui: &mut egui::Ui) {
+    let width = app.ui.left_width;
+    let resized = panels::resizable_side(ui, true, "left_panel", egui::Frame::NONE, width, state::LEFT_WIDTH, 0.0, |ui| panels::left::show(app, ui));
+    if let Some(w) = resized {
+        app.ui.left_width = w;
+    }
 }
 
 /// Tab outside a text field toggles panels (Classic): keep it from moving egui's focus.

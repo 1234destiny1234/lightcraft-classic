@@ -2,6 +2,7 @@
 name = "dac-ui-egui"
 version.workspace = true
 edition.workspace = true
+rust-version = "1.95"
 license.workspace = true
 description = "Egui frontend (Lightroom-style UI); swappable — nothing below depends on it (L5)"
 
@@ -9,6 +10,7 @@ description = "Egui frontend (Lightroom-style UI); swappable — nothing below d
 workspace = true
 
 [dependencies]
+craft-ui = { workspace = true }
 dac-brand = { workspace = true }
 dac-geom = { workspace = true }
 dac-meta = { workspace = true }
@@ -43,6 +45,7 @@ resvg = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 image = { workspace = true }
+egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 dac-denoise = { workspace = true, features = ["runtime"] }
 dac-codecs = { workspace = true }
 dac-faces = { workspace = true }

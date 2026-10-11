@@ -18,6 +18,7 @@ pub mod control;
 pub mod creations_ui;
 pub mod credits;
 pub mod date_picker;
+pub mod docking;
 mod edit_in;
 pub mod export_task;
 pub mod headless;
@@ -483,6 +484,9 @@ impl DacApp {
             return r;
         }
         if let Some(r) = menus::run_ui_command(self, id, &params) {
+            if r.is_ok() {
+                docking::reveal_command(self, id)?;
+            }
             return r;
         }
         let r = self.session.execute(id, &params).map_err(|e| e.to_string());
@@ -1675,3 +1679,6 @@ mod cache_tests {
 
 #[cfg(test)]
 mod tests_model_setup;
+
+#[cfg(test)]
+mod tests_docking_acceptance;

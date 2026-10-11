@@ -355,6 +355,8 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 
 ## Quick start
 
+Workspace builds, including the desktop, web and CLI applications, require Rust 1.95 or newer.
+
 ```sh
 git clone https://example.invalid/repo && cd repo
 cargo xtask brand check                                 # the product name lives only in brand.toml
@@ -498,6 +500,8 @@ option to start it. For unattended installs: `msiexec /i <binary>-<ver>-windows-
 | Debian/Ubuntu | `<binary>-<ver>-linux-x86_64.deb` | `<binary>-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `<binary>-<ver>-linux-x86_64.rpm` | `<binary>-<ver>-linux-aarch64.rpm` | |
 | Tarball | `<binary>-<ver>-linux-x86_64.tar.gz` | `<binary>-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+
+RISC-V (riscv64): `<binary>-<ver>-linux-riscv64.tar.gz`, a tarball only (glibc 2.39 or newer, e.g. Ubuntu 24.04+).
 
 ### FreeBSD
 
