@@ -458,6 +458,9 @@ jobs:
   release:
     name: Draft GitHub Release
     needs: [version, macos, windows, linux, linux-riscv64, flatpak, freebsd, web]
+    # Draft whatever built: a platform that failed is named in the run summary and the draft's notes,
+    # so testers get the rest. Cancelling the run, or the version job failing, still stops it.
+    if: ${{ !cancelled() && needs.version.result == 'success' }}
     runs-on: ubuntu-latest
     environment: release
     permissions:
@@ -473,6 +476,15 @@ jobs:
           pattern: release-*
           path: artifacts
           merge-multiple: true
+      - name: Platforms that did not build
+        env:
+          RESULTS: ${{ toJSON(needs) }}
+        run: |
+          missing="$(jq -r 'to_entries[] | select(.key != "version" and .value.result != "success") | .key' <<<"$RESULTS" | paste -sd, - | sed 's/,/, /g')"
+          if [ -n "$missing" ]; then
+            echo "::warning::Drafting without: $missing"
+            echo "MISSING=$missing" >>"$GITHUB_ENV"
+          fi
       - name: Checksums
         working-directory: artifacts
         run: |
@@ -498,6 +510,12 @@ jobs:
           else
             echo "Creating draft $tag"
             gh release create "$tag" --draft --title "$title" --target "$GITHUB_SHA" --generate-notes "${pre[@]}" -- *
+          fi
+          if [ -n "${MISSING:-}" ]; then
+            notes="$(gh release view "$tag" --json body --jq .body)"
+            gh release edit "$tag" --notes "> **Not in this build:** $MISSING (the job failed; see the workflow run).
+
+          $notes"
           fi
           {
             echo "Draft release **$title** at \`${GITHUB_SHA::9}\`:"
