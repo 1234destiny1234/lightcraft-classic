@@ -298,96 +298,104 @@ fn settings_window(app: &mut DacApp, ctx: &egui::Context) {
     let Some(mut form) = ctx.data(|d| d.get_temp::<Form>(form_id())).filter(|f| f.open) else { return };
     let mut open = true;
     let mut start = false;
-    egui::Window::new(crate::i18n::tr("Tethered Capture Settings"))
-        .id(egui::Id::new("tether-settings"))
+    let window_id = egui::Id::new("tether-settings");
+    let shown = egui::Window::new(crate::i18n::tr("Tethered Capture Settings"))
+        .id(window_id)
         .open(&mut open)
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
-            egui::Grid::new("tether-grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
-                ui.label(crate::i18n::tr("Camera"));
-                let cams = app.session.execute("tether.cameras", &json!({"simulated": true})).unwrap_or(Value::Null);
-                let list: Vec<(String, String)> =
-                    cams["cameras"].as_array().into_iter().flatten().map(|c| (str_of(c, "id"), str_of(c, "name"))).collect();
-                let none = crate::i18n::tr("None (studio capture: watch a folder)").to_string();
-                let shown = list.iter().find(|(id, _)| *id == form.device).map(|(_, n)| n.clone()).unwrap_or_else(|| none.clone());
-                let r = egui::ComboBox::from_id_salt("tether-device").selected_text(shown).width(260.0).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut form.device, String::new(), none.clone());
-                    for (id, name) in &list {
-                        ui.selectable_value(&mut form.device, id.clone(), name);
-                    }
-                });
-                register(ui.ctx(), "tetherDevice", r.response.rect);
-                ui.end_row();
-                if !form.device.is_empty() {
-                    ui.label("");
-                    ui.checkbox(&mut form.delete_from_card, crate::i18n::tr("Delete from card after download"));
+            let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
+            layout.body(ui, |ui| {
+                egui::Grid::new("tether-grid").num_columns(2).spacing([10.0, 6.0]).show(ui, |ui| {
+                    ui.label(crate::i18n::tr("Camera"));
+                    let cams = app.session.execute("tether.cameras", &json!({"simulated": true})).unwrap_or(Value::Null);
+                    let list: Vec<(String, String)> =
+                        cams["cameras"].as_array().into_iter().flatten().map(|c| (str_of(c, "id"), str_of(c, "name"))).collect();
+                    let none = crate::i18n::tr("None (studio capture: watch a folder)").to_string();
+                    let shown = list.iter().find(|(id, _)| *id == form.device).map(|(_, n)| n.clone()).unwrap_or_else(|| none.clone());
+                    let r = egui::ComboBox::from_id_salt("tether-device").selected_text(shown).width(260.0).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut form.device, String::new(), none.clone());
+                        for (id, name) in &list {
+                            ui.selectable_value(&mut form.device, id.clone(), name);
+                        }
+                    });
+                    register(ui.ctx(), "tetherDevice", r.response.rect);
                     ui.end_row();
-                }
-                ui.label("");
-                ui.checkbox(&mut form.same_as_previous, crate::i18n::tr("Develop settings: same as previous"));
-                ui.end_row();
-                ui.label(crate::i18n::tr("Watched folder"));
-                let r =
-                    ui.add(egui::TextEdit::singleline(&mut form.folder).desired_width(260.0).hint_text(crate::i18n::tr(if form.device.is_empty() {
-                        "Where the camera software saves shots"
-                    } else {
-                        "Optional: where downloads go"
-                    })));
-                register(ui.ctx(), "tetherFolder", r.rect);
-                crate::access::label(&r, "Watched folder");
-                ui.end_row();
-                ui.label(crate::i18n::tr("Session name"));
-                let r = ui.add(egui::TextEdit::singleline(&mut form.session).desired_width(260.0));
-                crate::access::label(&r, "Session name");
-                register(ui.ctx(), "tetherSession", r.rect);
-                ui.end_row();
-                ui.label(crate::i18n::tr("Copy into library"));
-                ui.checkbox(&mut form.copy, crate::i18n::tr("Copy shots into Originals/<session>"));
-                ui.end_row();
-                ui.label(crate::i18n::tr("File naming"));
-                let r = ui.add_enabled(form.copy, egui::TextEdit::singleline(&mut form.naming).desired_width(260.0).hint_text("{session}-{seq:4}"));
-                crate::access::label(&r, "File naming");
-                ui.end_row();
-                ui.label(crate::i18n::tr("Collection"));
-                let r = ui.add(
-                    egui::TextEdit::singleline(&mut form.collection).desired_width(260.0).hint_text(crate::i18n::tr("Default: the session name")),
-                );
-                crate::access::label(&r, "Default: the session name");
-                ui.end_row();
-                ui.label(crate::i18n::tr("Keywords"));
-                let r = ui.add(egui::TextEdit::singleline(&mut form.keywords).desired_width(260.0).hint_text("studio, client"));
-                crate::access::label(&r, "Keywords");
-                ui.end_row();
-                ui.label(crate::i18n::tr("Develop preset"));
-                let presets: Vec<(String, String)> = app.session.presets.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
-                let shown =
-                    presets.iter().find(|(id, _)| *id == form.preset).map(|(_, n)| n.clone()).unwrap_or_else(|| crate::i18n::tr("None").to_string());
-                egui::ComboBox::from_id_salt("tether-preset").selected_text(shown).width(260.0).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut form.preset, String::new(), crate::i18n::tr("None"));
-                    for (id, name) in &presets {
-                        ui.selectable_value(&mut form.preset, id.clone(), name);
+                    if !form.device.is_empty() {
+                        ui.label("");
+                        ui.checkbox(&mut form.delete_from_card, crate::i18n::tr("Delete from card after download"));
+                        ui.end_row();
                     }
+                    ui.label("");
+                    ui.checkbox(&mut form.same_as_previous, crate::i18n::tr("Develop settings: same as previous"));
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Watched folder"));
+                    let r = ui.add(egui::TextEdit::singleline(&mut form.folder).desired_width(260.0).hint_text(crate::i18n::tr(
+                        if form.device.is_empty() { "Where the camera software saves shots" } else { "Optional: where downloads go" },
+                    )));
+                    register(ui.ctx(), "tetherFolder", r.rect);
+                    crate::access::label(&r, "Watched folder");
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Session name"));
+                    let r = ui.add(egui::TextEdit::singleline(&mut form.session).desired_width(260.0));
+                    crate::access::label(&r, "Session name");
+                    register(ui.ctx(), "tetherSession", r.rect);
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Copy into library"));
+                    ui.checkbox(&mut form.copy, crate::i18n::tr("Copy shots into Originals/<session>"));
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("File naming"));
+                    let r =
+                        ui.add_enabled(form.copy, egui::TextEdit::singleline(&mut form.naming).desired_width(260.0).hint_text("{session}-{seq:4}"));
+                    crate::access::label(&r, "File naming");
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Collection"));
+                    let r = ui.add(
+                        egui::TextEdit::singleline(&mut form.collection).desired_width(260.0).hint_text(crate::i18n::tr("Default: the session name")),
+                    );
+                    crate::access::label(&r, "Default: the session name");
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Keywords"));
+                    let r = ui.add(egui::TextEdit::singleline(&mut form.keywords).desired_width(260.0).hint_text("studio, client"));
+                    crate::access::label(&r, "Keywords");
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Develop preset"));
+                    let presets: Vec<(String, String)> = app.session.presets.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
+                    let shown = presets
+                        .iter()
+                        .find(|(id, _)| *id == form.preset)
+                        .map(|(_, n)| n.clone())
+                        .unwrap_or_else(|| crate::i18n::tr("None").to_string());
+                    egui::ComboBox::from_id_salt("tether-preset").selected_text(shown).width(260.0).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut form.preset, String::new(), crate::i18n::tr("None"));
+                        for (id, name) in &presets {
+                            ui.selectable_value(&mut form.preset, id.clone(), name);
+                        }
+                    });
+                    ui.end_row();
+                    ui.label(crate::i18n::tr("Metadata preset"));
+                    let metas: Vec<String> = app.session.metadata_presets.iter().map(|m| m.name.clone()).collect();
+                    let shown = if form.metadata_preset.is_empty() { crate::i18n::tr("None").to_string() } else { form.metadata_preset.clone() };
+                    egui::ComboBox::from_id_salt("tether-meta").selected_text(shown).width(260.0).show_ui(ui, |ui| {
+                        ui.selectable_value(&mut form.metadata_preset, String::new(), crate::i18n::tr("None"));
+                        for name in &metas {
+                            ui.selectable_value(&mut form.metadata_preset, name.clone(), name);
+                        }
+                    });
+                    ui.end_row();
                 });
-                ui.end_row();
-                ui.label(crate::i18n::tr("Metadata preset"));
-                let metas: Vec<String> = app.session.metadata_presets.iter().map(|m| m.name.clone()).collect();
-                let shown = if form.metadata_preset.is_empty() { crate::i18n::tr("None").to_string() } else { form.metadata_preset.clone() };
-                egui::ComboBox::from_id_salt("tether-meta").selected_text(shown).width(260.0).show_ui(ui, |ui| {
-                    ui.selectable_value(&mut form.metadata_preset, String::new(), crate::i18n::tr("None"));
-                    for name in &metas {
-                        ui.selectable_value(&mut form.metadata_preset, name.clone(), name);
-                    }
-                });
-                ui.end_row();
             });
-            ui.add_space(6.0);
-            ui.horizontal(|ui| {
-                let r = ui.button(crate::i18n::tr("Start"));
-                register(ui.ctx(), "tetherStart", r.rect);
-                start = r.clicked();
+            layout.footer(ui, |ui| {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    let r = ui.button(crate::i18n::tr("Start"));
+                    register(ui.ctx(), "tetherStart", r.rect);
+                    start = r.clicked();
+                });
             });
         });
+    crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
     if start {
         let opt = |s: &str| if s.trim().is_empty() { Value::Null } else { json!(s.trim()) };
         let p = json!({

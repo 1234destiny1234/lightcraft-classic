@@ -145,7 +145,15 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
         })
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
+            // fixed header (tabs) / scrolling body / fixed footer (buttons), capped to the screen;
+            // the import review sizes and scrolls itself (it can be resized)
+            let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
             match &mut dlg {
+                Dialog::Settings { tab } => crate::panels::settings::tabs(ui, tab),
+                Dialog::About => about_tabs(ui),
+                _ => {}
+            }
+            let mut body = |ui: &mut egui::Ui| match &mut dlg {
                 Dialog::AutoStack { gap } => {
                     ui.label(egui::RichText::new(crate::i18n::tr("Stack photos taken within this time of each other:")).color(t.text_label));
                     ui.add(
@@ -174,7 +182,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     ui.label(egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
                 }
                 Dialog::WhatsNew => {
-                    egui::ScrollArea::vertical().max_height(460.0).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.scope(|ui| {
                         for line in WHATS_NEW.lines() {
                             let l = line.trim_end();
                             if let Some(h) = l.strip_prefix("### ") {
@@ -234,7 +242,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     if !xmp.is_empty() {
                         groups.push(("XMP".into(), xmp));
                     }
-                    egui::ScrollArea::vertical().max_height(440.0).auto_shrink([false, true]).show(ui, |ui| {
+                    ui.scope(|ui| {
                         if groups.is_empty() {
                             ui.label(egui::RichText::new(crate::i18n::tr(rows["note"].as_str().unwrap_or("No metadata found"))).color(t.text_dim));
                         }
@@ -909,18 +917,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                 }
                 Dialog::About => {
                     ui.set_min_width(680.0);
-                    let tab_id = egui::Id::new("about_tab");
-                    let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
-                    ui.horizontal(|ui| {
-                        ui.spacing_mut().item_spacing.x = 4.0;
-                        for (i, (id, label)) in ABOUT_TABS.iter().enumerate() {
-                            if crate::widgets::text_button(ui, &format!("aboutTab-{id}"), label, usize::from(tab) == i).clicked() {
-                                tab = u8::try_from(i).unwrap_or(0);
-                            }
-                        }
-                    });
-                    ui.data_mut(|d| d.insert_temp(tab_id, tab));
-                    ui.separator();
+                    let tab = ui.data_mut(|d| d.get_temp::<u8>(egui::Id::new(ABOUT_TAB_ID))).unwrap_or(0);
                     match tab {
                         1 => crate::credits::contributors_ui(app, ui),
                         2 => crate::credits::models_ui(ui),
@@ -946,7 +943,13 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                 }
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),
                 Dialog::ViewOptions => crate::panels::cells::view_options(app, ui),
+            };
+            if import {
+                body(ui);
+            } else {
+                layout.body(ui, body);
             }
+            layout.footer(ui, |ui| {
             ui.add_space(4.0);
             ui.horizontal(|ui| {
                 // a model file the app cannot use has nothing to confirm
@@ -1021,10 +1024,14 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     }
                 }
             });
+            });
             if import {
                 crate::import::note_dialog_bottom(ui);
             }
         });
+    if !import {
+        crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
+    }
     if let Some(w) = shown {
         ctx.move_to_top(w.response.layer_id);
         crate::widgets::register(ctx, "dialog:window", w.response.rect);
@@ -1077,6 +1084,24 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
 
 /// Apply a dialog's action (also used by `ui.dialog.confirm`).
 /// `90` → `1 min 30 s`.
+/// The About dialog's tabs: the header above its scrolling body.
+const ABOUT_TAB_ID: &str = "about_tab";
+fn about_tabs(ui: &mut egui::Ui) {
+    ui.set_min_width(680.0);
+    let tab_id = egui::Id::new(ABOUT_TAB_ID);
+    let mut tab = ui.data_mut(|d| d.get_temp::<u8>(tab_id)).unwrap_or(0);
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = 4.0;
+        for (i, (id, label)) in ABOUT_TABS.iter().enumerate() {
+            if crate::widgets::text_button(ui, &format!("aboutTab-{id}"), label, usize::from(tab) == i).clicked() {
+                tab = u8::try_from(i).unwrap_or(0);
+            }
+        }
+    });
+    ui.data_mut(|d| d.insert_temp(tab_id, tab));
+    ui.separator();
+}
+
 pub fn fmt_gap(v: f64) -> String {
     let v = v.round() as u64;
     match v {
