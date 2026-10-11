@@ -200,6 +200,8 @@ pub fn format(m: Modifiers, k: Key) -> Option<String> {
 /// primary keymap assigns elsewhere, see docs/ui-parity.md → Shortcuts). Shown in Help → Keyboard Shortcuts.
 pub const ALIASES: &[(&str, &str, &str)] = &[
     ("Cmd+D", "library.selectNone", "{}"),
+    // F11: the Windows / Linux full-screen key (issue #2)
+    ("F11", "view.enterFullScreen", "{}"),
     ("Shift+E", "dialog.export", "{}"),
     ("Cmd+E", "app.exportPrevious", "{}"),
     ("Space", "view.zoomToggle", "{}"),

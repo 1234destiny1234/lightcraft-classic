@@ -364,6 +364,9 @@ pub struct DacApp {
     pub hover_preview: Option<HoverPreview>,
     /// The window is in full screen (as last reported by the host, or as last requested).
     pub window_is_fullscreen: bool,
+    /// Full Screen Preview (F) put the window into full screen itself: leaving the preview takes
+    /// the window back out (issue #2: the preview must cover the taskbar). `None` = no preview.
+    preview_window: Option<bool>,
     /// The GPU preference last applied (`app.gpu`), to apply Settings changes once.
     gpu_applied: Option<bool>,
     /// The memory budget setting last applied (MB, 0 = automatic).
@@ -454,6 +457,7 @@ impl DacApp {
             last_export_result: None,
             hover_preview: None,
             window_is_fullscreen: false,
+            preview_window: None,
             gpu_applied: None,
             memory_applied: None,
             display_applied: None,
@@ -1034,6 +1038,24 @@ impl DacApp {
         }
         if let Some(fs) = ctx.input(|i| i.viewport().fullscreen) {
             self.window_is_fullscreen = fs;
+        }
+        // Full Screen Preview covers the whole screen: the window goes full screen with it and
+        // comes back when it ends, unless it was already full screen (then it stays)
+        match (self.ui.fullscreen, self.preview_window) {
+            (true, None) => {
+                let took = !self.window_is_fullscreen;
+                self.preview_window = Some(took);
+                if took && self.ui.window_fullscreen.is_none() {
+                    self.ui.window_fullscreen = Some(true);
+                }
+            }
+            (false, Some(took)) => {
+                self.preview_window = None;
+                if took && self.ui.window_fullscreen.is_none() {
+                    self.ui.window_fullscreen = Some(false);
+                }
+            }
+            _ => {}
         }
         if let Some(on) = self.ui.window_fullscreen.take() {
             ctx.send_viewport_cmd(egui::ViewportCommand::Fullscreen(on));

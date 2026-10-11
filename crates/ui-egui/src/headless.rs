@@ -3196,6 +3196,35 @@ mod tests {
     /// F: full-screen preview (arrows step, I cycles the info overlay, Esc exits); ⌘I cycles the
     /// overlay in Detail; ⇧⌘F asks the host for window full screen.
     #[test]
+    fn full_screen_preview_covers_the_screen_and_f11_toggles_full_screen() {
+        // issue #2: F must take the window full screen (over the taskbar) and give it back after
+        let mut h = demo([1000.0, 700.0]);
+        let t = Duration::from_secs(10);
+        let vis: Vec<u64> = h.app.session.visible_cloned().iter().map(|p| p.0).collect();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [vis[0]]}}), t);
+        assert!(!h.app.window_is_fullscreen);
+        h.request("ui.key", json!({"key": "f"}), t);
+        h.settle(SETTLE);
+        assert!(h.app.ui.fullscreen);
+        assert!(h.app.window_is_fullscreen, "the preview takes the window full screen");
+        h.request("ui.key", json!({"key": "escape"}), t);
+        h.settle(SETTLE);
+        assert!(!h.app.ui.fullscreen);
+        assert!(!h.app.window_is_fullscreen, "leaving the preview gives the window back");
+        // already full screen: the preview leaves it full screen when it ends
+        h.request("ui.key", json!({"key": "F11"}), t);
+        h.settle(SETTLE);
+        assert!(h.app.window_is_fullscreen, "F11 enters full screen");
+        h.request("ui.key", json!({"key": "f"}), t);
+        h.request("ui.key", json!({"key": "f"}), t);
+        h.settle(SETTLE);
+        assert!(h.app.window_is_fullscreen);
+        h.request("ui.key", json!({"key": "F11"}), t);
+        h.settle(SETTLE);
+        assert!(!h.app.window_is_fullscreen, "F11 leaves full screen");
+    }
+
+    #[test]
     fn full_screen_preview_and_info_overlay_by_keyboard() {
         use crate::state::InfoOverlay;
         let mut h = demo([1000.0, 700.0]);
