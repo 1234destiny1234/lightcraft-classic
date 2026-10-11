@@ -1143,6 +1143,8 @@ impl DacApp {
         panels::plugins::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
         export_task::poll(self, &ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        panels::plugins::poll(self, &ctx);
         panels::activity::show(self, &ctx);
         pick::poll(self, &ctx);
         panels::grid::drag_feedback(self, &ctx);

@@ -144,11 +144,12 @@ pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
                     if cancelled {
                         m += " · cancelled";
                     }
+                    app.last_export_result = Some(json!({"files": files, "cancelled": cancelled}));
+                    // P4.3: plug-in export hooks, G19: destination; on a worker, reported when they finish
                     #[cfg(not(target_arch = "wasm32"))]
                     if sheet.is_none() {
-                        crate::panels::plugins::after_export(app, ctx, &files, destination.as_ref()); // P4.3: plug-in export hooks, G19: destination
+                        crate::panels::plugins::after_export(app, ctx, &files, destination.as_ref());
                     }
-                    app.last_export_result = Some(json!({"files": files, "cancelled": cancelled}));
                     m
                 }
                 Err(e) => e,

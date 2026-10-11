@@ -1107,5 +1107,7 @@
   "metadata suggestions": "元数据建议",
   "publish service": "发布服务",
   "export destination": "导出目标",
-  "metadata fields": "元数据字段"
+  "metadata fields": "元数据字段",
+  "Running plug-in export hooks": "正在运行插件导出挂钩",
+  "Plug-in export hooks are still running from the last export": "上次导出的插件导出挂钩仍在运行"
 }

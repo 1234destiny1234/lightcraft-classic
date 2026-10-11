@@ -967,5 +967,7 @@
   "metadata suggestions": "Metadatenvorschläge",
   "publish service": "Veröffentlichungsdienst",
   "export destination": "Exportziel",
-  "metadata fields": "Metadatenfelder"
+  "metadata fields": "Metadatenfelder",
+  "Running plug-in export hooks": "Plug-in-Export-Hooks laufen",
+  "Plug-in export hooks are still running from the last export": "Die Plug-in-Export-Hooks des letzten Exports laufen noch"
 }

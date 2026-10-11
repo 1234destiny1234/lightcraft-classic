@@ -1402,5 +1402,7 @@
   "metadata suggestions": "предложения метаданных",
   "publish service": "служба публикации",
   "export destination": "место экспорта",
-  "metadata fields": "поля метаданных"
+  "metadata fields": "поля метаданных",
+  "Running plug-in export hooks": "Выполняются обработчики экспорта плагинов",
+  "Plug-in export hooks are still running from the last export": "Обработчики экспорта плагинов от прошлого экспорта ещё работают"
 }

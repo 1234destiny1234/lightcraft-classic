@@ -5,11 +5,16 @@
 //!   granted; an update shows what it newly asks for.
 //! - Per plug-in: enable/disable, toggle (revoke) each requested permission, remove, read the log,
 //!   run its commands (with their declarative dialogs).
-//! - After an export, enabled export hooks run on the written files ([`after_export`]).
+//! - After an export, enabled export hooks and the chosen export destination run on the written
+//!   files, on a worker with an activity row ([`after_export`], [`poll`]).
 //!
 //! Every action is an engine `plugin.*` command. State lives in a static here (no field on the
 //! app), so the shell only needs the calls in `run`, `show`, `menu_items` and `after_export`.
 
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
+
+use dac_engine::activity::{Cancel, TaskGuard};
 use serde_json::{Value, json};
 
 use crate::DacApp;
@@ -132,9 +137,94 @@ pub fn menu_items(app: &DacApp) -> Vec<(String, Value, String)> {
 }
 
 /// After an export: runs the plug-ins' export hooks on the written files, then the plug-in
-/// export destination the export named (`pluginDestination`), and reports how they went.
+/// export destination the export named (`pluginDestination`), on a worker thread with a row in
+/// the activity stack, so a long upload doesn't freeze the window. [`poll`] answers the plug-ins'
+/// catalog requests on this thread and reports how they went (toast, `ui.inspect` → `export.last.plugins`).
 pub fn after_export(app: &mut DacApp, ctx: &egui::Context, files: &[Value], destination: Option<&Value>) {
-    let Some(results) = dac_engine::cmd::plugins::after_export(&mut app.session, files, destination) else { return };
+    let Some(hooks) = dac_engine::cmd::plugins::export_hooks(files, destination) else { return };
+    let mut task = task_lock();
+    if task.is_some() {
+        drop(task);
+        app.toast_error(ctx, tr("Plug-in export hooks are still running from the last export"));
+        return;
+    }
+    let total = hooks.len();
+    let cancel = Arc::new(AtomicBool::new(false));
+    let progress = Arc::new(Mutex::new((0usize, String::new())));
+    let (mut host, requests) = dac_engine::cmd::plugins::relay_host();
+    let (tx, results) = std::sync::mpsc::channel();
+    let (c, p) = (cancel.clone(), progress.clone());
+    let work = move || {
+        let r = hooks.run(&mut host, &|| c.load(Ordering::Relaxed), &mut |done, id| {
+            if let Ok(mut g) = p.lock() {
+                *g = (done, id.to_string());
+            }
+        });
+        let _ = tx.send(r);
+    };
+    if let Err(e) = std::thread::Builder::new().name("plugin-export".into()).spawn(work) {
+        drop(task);
+        app.toast_error(ctx, format!("{} {e}", tr("Plug-in export hook failed:")));
+        return;
+    }
+    // a running plug-in call can't be interrupted: ✕ stops before the next plug-in
+    let guard = app.session.activity.start("plugins", "Running plug-in export hooks", Cancel::Flag(cancel));
+    guard.progress(0, total as u64);
+    *task = Some(ExportHooksTask { total, progress, requests, results, guard });
+    ctx.request_repaint();
+}
+
+/// Export hooks running on their worker ([`after_export`]).
+struct ExportHooksTask {
+    total: usize,
+    /// Calls started so far and the plug-in in progress.
+    progress: Arc<Mutex<(usize, String)>>,
+    /// The plug-ins' catalog requests, answered here (the session lives on this thread).
+    requests: std::sync::mpsc::Receiver<dac_engine::cmd::plugins::HostRequest>,
+    results: std::sync::mpsc::Receiver<Vec<Value>>,
+    guard: TaskGuard,
+}
+
+static TASK: Mutex<Option<ExportHooksTask>> = Mutex::new(None);
+
+fn task_lock() -> std::sync::MutexGuard<'static, Option<ExportHooksTask>> {
+    TASK.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Whether export hooks are running (`ui.inspect`, tests).
+pub fn export_hooks_running() -> bool {
+    task_lock().is_some()
+}
+
+/// Per frame: answer the running export hooks' catalog requests, keep their activity row up to
+/// date and, when they finish, report how they went.
+pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
+    let mut g = task_lock();
+    let Some(task) = g.as_mut() else { return };
+    while let Ok(req) = task.requests.try_recv() {
+        req.answer(&mut app.session);
+    }
+    let results = match task.results.try_recv() {
+        Ok(r) => r,
+        Err(std::sync::mpsc::TryRecvError::Empty) => {
+            let (done, current) = task.progress.lock().map(|g| g.clone()).unwrap_or_default();
+            task.guard.progress(done as u64, task.total as u64);
+            task.guard.detail(&current);
+            // the worker may be waiting on an answer: look again soon
+            ctx.request_repaint_after(std::time::Duration::from_millis(50));
+            return;
+        }
+        Err(std::sync::mpsc::TryRecvError::Disconnected) => vec![json!({"plugin": "", "error": "the plug-in worker stopped unexpectedly"})],
+    };
+    *g = None;
+    drop(g);
+    report(app, ctx, &results);
+}
+
+fn report(app: &mut DacApp, ctx: &egui::Context, results: &[Value]) {
+    if let Some(last) = app.last_export_result.as_mut().filter(|l| l.is_object()) {
+        last["plugins"] = json!(results);
+    }
     let failed: Vec<String> = results
         .iter()
         .filter_map(|r| r.get("error").map(|e| format!("{}: {}", r["plugin"].as_str().unwrap_or(""), e.as_str().unwrap_or(""))))
@@ -664,5 +754,65 @@ mod tests {
         rows[3].set(&mut g, false);
         assert_eq!(g["fs"], json!([]));
         assert!(!rows[0].granted(&g));
+    }
+
+    /// An export-hook plug-in that spins for `spins` loop turns before answering `{seen: true}`
+    /// (a stand-in for a slow upload).
+    fn slow_hook(id: &str, spins: u32) -> Vec<u8> {
+        let manifest = format!(r#"{{"id":"{id}","name":"Slow","hooks":{{"export":true}}}}"#);
+        let reply = r#"{"ok":{"seen":true}}"#;
+        let esc = |s: &str| s.replace('"', "\\\"");
+        let src = format!(
+            r#"(module (memory (export "memory") 2)
+  (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
+  (func (export "dac_abi_version") (result i32) (i32.const 1))
+  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "dac_handle") (param i32 i32) (result i64) (local $n i32)
+    (local.set $n (i32.const {spins}))
+    (block (loop (br_if 1 (i32.eqz (local.get $n))) (local.set $n (i32.sub (local.get $n) (i32.const 1))) (br 0)))
+    (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+            m = esc(&manifest),
+            r = esc(reply),
+            ml = manifest.len(),
+            rl = reply.len()
+        );
+        wat::parse_str(&src).unwrap()
+    }
+
+    /// G19: a slow export hook runs on a worker: its row is in the activity stack, the window keeps
+    /// drawing frames while it runs, and its result reaches the export's result when it's done.
+    #[test]
+    fn export_hooks_run_off_the_ui_thread_with_an_activity_row() {
+        let dir = std::env::temp_dir().join(format!("plugin-worker-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wasm = dir.join("slow.wasm");
+        std::fs::write(&wasm, slow_hook("test.slowhook", 60_000_000)).unwrap();
+        let app = DacApp::new(dac_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+        let mut h = crate::headless::Headless::new(app, [1000.0, 700.0], 1.0);
+        h.app.session.execute("plugin.install", &json!({"path": wasm.display().to_string()})).unwrap();
+        let files = [json!({"path": dir.join("x.jpg").display().to_string()})];
+        h.app.last_export_result = Some(json!({"files": files, "cancelled": false}));
+        let ctx = h.view.ctx.clone();
+        let started = std::time::Instant::now();
+        after_export(&mut h.app, &ctx, &files, None);
+        assert!(started.elapsed() < std::time::Duration::from_millis(500), "returned at once: {:?}", started.elapsed());
+        assert!(export_hooks_running());
+        let row = h.app.session.activity.list().into_iter().find(|r| r.kind == "plugins").expect("an activity row");
+        assert_eq!(row.label, "Running plug-in export hooks");
+        assert!(row.cancellable);
+        let (frames, mut while_running) = (h.frames(), 0);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while export_hooks_running() && std::time::Instant::now() < deadline {
+            h.step();
+            while_running += 1;
+        }
+        assert!(!export_hooks_running(), "the hooks finished");
+        assert!(while_running >= 3 && h.frames() >= frames + 3, "frames went on while the hook ran: {while_running}");
+        assert!(h.app.session.activity.list().iter().all(|r| r.kind != "plugins"), "the row is gone");
+        let plugins = &h.app.last_export_result.as_ref().unwrap()["plugins"];
+        assert!(plugins.as_array().unwrap().iter().any(|v| v["plugin"] == "test.slowhook" && v["ok"]["seen"] == true), "{plugins}");
+        h.app.session.execute("plugin.uninstall", &json!({"id": "test.slowhook"})).unwrap();
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

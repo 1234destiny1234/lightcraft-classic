@@ -34,10 +34,10 @@ mod runtime;
 mod store;
 
 pub use context::{HostApi, NoHost};
-pub use manager::{Installed, Manager};
+pub use manager::{Installed, Manager, PendingCall};
 pub use manifest::{CommandDecl, DestinationDecl, Field, FieldKind, Hooks, Manifest, MetadataField, PublishDecl};
 pub use permissions::{FsRoot, Permissions};
-pub use runtime::{ABI_VERSION, Limits, Plugin};
+pub use runtime::{ABI_VERSION, Limits, Outcome, Plugin};
 pub use store::NamespaceStore;
 
 /// A plug-in error. Every way a module can misbehave ends here, never in a panic.
@@ -61,6 +61,8 @@ pub enum Error {
     NotFound(String),
     #[error("plug-in {0:?} is disabled")]
     Disabled(String),
+    #[error("plug-in {0:?} is busy (an export is still sending files to it)")]
+    Busy(String),
     #[error("{0}")]
     Io(String),
 }

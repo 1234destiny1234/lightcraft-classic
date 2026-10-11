@@ -50,6 +50,7 @@ dac-denoise = { workspace = true, features = ["runtime"] }
 dac-codecs = { workspace = true }
 dac-faces = { workspace = true }
 dac-merge = { workspace = true }
+wat = "1.228" # G19: a slow export-hook plug-in for the worker test
 
 [build-dependencies]
 dac-brand = { workspace = true }

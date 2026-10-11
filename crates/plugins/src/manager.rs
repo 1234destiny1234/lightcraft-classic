@@ -34,6 +34,8 @@ pub struct Installed {
     pub grant: Permissions,
     pub log: VecDeque<String>,
     store: Option<NamespaceStore>,
+    /// A call is running off the manager's lock ([`Manager::begin`] … [`Manager::end`]): its store is lent to it.
+    busy: bool,
 }
 
 impl Installed {
@@ -72,6 +74,30 @@ struct State {
 struct Entry {
     enabled: bool,
     grant: Permissions,
+}
+
+/// A plug-in call prepared by [`Manager::begin`]: it owns what the call needs, so it can run
+/// without the manager (on another thread), and goes back with [`Manager::end`].
+pub struct PendingCall {
+    id: String,
+    plugin: Arc<Plugin>,
+    perms: Permissions,
+    store: NamespaceStore,
+    request: Value,
+    lent: Vec<PathBuf>,
+}
+
+impl PendingCall {
+    /// The plug-in this call is for.
+    pub fn id(&self) -> &str {
+        &self.id
+    }
+
+    /// Runs the call (the plug-in's code: possibly long, e.g. an upload).
+    pub fn run(&mut self, host: &mut dyn HostApi) -> crate::Outcome {
+        let mut ctx = CallContext { perms: &self.perms, lent: &self.lent, host, store: &mut self.store };
+        self.plugin.invoke(&self.request, &mut ctx)
+    }
 }
 
 /// The set of installed plug-ins.
@@ -116,7 +142,7 @@ impl Manager {
                     let id = p.id().to_string();
                     // not in plugins.json (copied in by hand): disabled, nothing granted
                     let (enabled, grant) = state.plugins.get(&id).map_or((false, Permissions::default()), |e| (e.enabled, e.grant.clone()));
-                    m.plugins.insert(id, Installed { plugin: Arc::new(p), enabled, grant, log: VecDeque::new(), store: None });
+                    m.plugins.insert(id, Installed { plugin: Arc::new(p), enabled, grant, log: VecDeque::new(), store: None, busy: false });
                 }
                 Err(e) => m.failed.push((f.display().to_string(), e.to_string())),
             }
@@ -146,7 +172,7 @@ impl Manager {
             write_atomic(&dir.join(format!("{id}.wasm")), bytes)?;
         }
         let log = self.plugins.remove(&id).map(|i| i.log).unwrap_or_default();
-        self.plugins.insert(id.clone(), Installed { plugin: Arc::new(plugin), enabled: true, grant, log, store: None });
+        self.plugins.insert(id.clone(), Installed { plugin: Arc::new(plugin), enabled: true, grant, log, store: None, busy: false });
         self.save()?;
         self.plugins
             .get_mut(&id)
@@ -215,10 +241,22 @@ impl Manager {
     /// Sends `request` to plug-in `id` with its effective capabilities, `lent` files added for this
     /// call. Logs what it printed and how the call ended.
     pub fn invoke(&mut self, id: &str, request: &Value, host: &mut dyn HostApi, lent: &[PathBuf]) -> Result<Value> {
+        let mut call = self.begin(id, request.clone(), lent.to_vec())?;
+        let outcome = call.run(host);
+        self.end(call, Some(outcome))
+    }
+
+    /// Prepares a call of plug-in `id` that runs without this manager ([`PendingCall::run`], e.g. on a
+    /// worker thread while the manager's lock is free), then is handed back with [`Manager::end`]. The
+    /// plug-in's data is lent to the call: until then, other calls of the same plug-in are refused as busy.
+    pub fn begin(&mut self, id: &str, request: Value, lent: Vec<PathBuf>) -> Result<PendingCall> {
         let dir = self.dir.clone();
         let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
         if !p.enabled {
             return Err(Error::Disabled(id.into()));
+        }
+        if p.busy {
+            return Err(Error::Busy(id.into()));
         }
         if p.store.is_none() {
             p.store = Some(match &dir {
@@ -228,13 +266,27 @@ impl Manager {
         }
         let perms = p.effective();
         let plugin = p.plugin.clone();
-        let mut store = p.store.take().unwrap_or_default();
-        let outcome = {
-            let mut ctx = CallContext { perms: &perms, lent, host, store: &mut store };
-            plugin.invoke(request, &mut ctx)
-        };
+        let store = p.store.take().unwrap_or_default();
+        p.busy = true;
+        Ok(PendingCall { id: id.to_string(), plugin, perms, store, request, lent })
+    }
+
+    /// Hands a call from [`Manager::begin`] back with how it went (`None`: it never ran, e.g.
+    /// cancelled): its data is saved and returned to the plug-in, its log lines kept.
+    pub fn end(&mut self, call: PendingCall, outcome: Option<crate::Outcome>) -> Result<Value> {
+        let PendingCall { id, mut store, request, .. } = call;
         let saved = store.save();
+        // uninstalled meanwhile: nothing to hand back to
+        let Some(p) = self.plugins.get_mut(&id) else {
+            saved?;
+            return outcome.map_or_else(|| Err(Error::NotFound(id.clone())), |o| o.value);
+        };
         p.store = Some(store);
+        p.busy = false;
+        let Some(outcome) = outcome else {
+            saved?;
+            return Err(Error::Failed("cancelled".into()));
+        };
         let what = request.get("hook").and_then(Value::as_str).unwrap_or("call");
         for l in outcome.logs {
             p.push_log(l);
@@ -244,6 +296,41 @@ impl Manager {
         }
         saved?;
         outcome.value
+    }
+
+    /// The calls an export makes, in order: each enabled export hook (`hook: "export"`) on the
+    /// written files `[{path, photo?}]`, then the export destination `(plugin, destination, args)`
+    /// when one is named. Each is `(plugin id, destination id for the destination call, its
+    /// request and lent files or why it can't be made)`; nothing runs.
+    #[allow(clippy::type_complexity)]
+    pub fn export_calls(
+        &self,
+        files: &[Value],
+        destination: Option<(&str, &str, &Value)>,
+    ) -> Vec<(String, Option<String>, Result<(Value, Vec<PathBuf>)>)> {
+        let files: Vec<&Value> = files.iter().filter(|f| f.get("path").and_then(Value::as_str).is_some()).take(MAX_BATCH).collect();
+        let lent: Vec<PathBuf> = files.iter().filter_map(|f| f.get("path").and_then(Value::as_str)).map(PathBuf::from).collect();
+        let mut out: Vec<_> = self
+            .with_hook(|m| m.hooks.export)
+            .into_iter()
+            .map(|id| (id, None, Ok((json!({"hook": "export", "files": files}), lent.clone()))))
+            .collect();
+        if let Some((id, dest, args)) = destination {
+            let req = self.destination_request(id, dest, args, &files);
+            out.push((id.to_string(), Some(dest.to_string()), req.map(|r| (r, lent.clone()))));
+        }
+        out
+    }
+
+    fn destination_request(&self, id: &str, destination: &str, args: &Value, files: &[&Value]) -> Result<Value> {
+        let p = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?;
+        let decl = p
+            .plugin
+            .manifest()
+            .destination(destination)
+            .ok_or_else(|| Error::Params(format!("plug-in {id} has no export destination {destination:?}")))?;
+        let args = dialog_args(&decl.dialog, args)?;
+        Ok(json!({"hook": "export.destination", "destination": destination, "args": args, "files": files}))
     }
 
     /// Runs a plug-in's menu command: `args` are checked against its dialog, `selection` are the
@@ -287,16 +374,9 @@ impl Manager {
     /// Hands exported files `[{path, photo?}]` to a plug-in's export destination. `args` are
     /// checked against the destination's dialog; the files are lent to the call.
     pub fn export_to(&mut self, id: &str, destination: &str, args: &Value, files: &[Value], host: &mut dyn HostApi) -> Result<Value> {
-        let p = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?;
-        let decl = p
-            .plugin
-            .manifest()
-            .destination(destination)
-            .ok_or_else(|| Error::Params(format!("plug-in {id} has no export destination {destination:?}")))?;
-        let args = dialog_args(&decl.dialog, args)?;
         let files: Vec<&Value> = files.iter().filter(|f| f.get("path").and_then(Value::as_str).is_some()).take(MAX_BATCH).collect();
         let lent: Vec<PathBuf> = files.iter().filter_map(|f| f.get("path").and_then(Value::as_str)).map(PathBuf::from).collect();
-        let req = json!({"hook": "export.destination", "destination": destination, "args": args, "files": files});
+        let req = self.destination_request(id, destination, args, &files)?;
         self.invoke(id, &req, host, &lent)
     }
 

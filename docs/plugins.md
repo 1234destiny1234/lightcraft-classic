@@ -215,6 +215,16 @@ Preset / Previous, the CLI, the control channel and MCP) and, with
 `pluginDestination: {plugin, destination, args?}`, hands the written files to that destination;
 the results come back as `plugins: [{plugin, destination?, ok | error}]`.
 
+In the app, a background export (the Export dialog, Export with Preset / Previous) runs them on a
+worker thread once the files are written, with a row in the activity stack ("Running plug-in
+export hooks", kind `plugins`; detail: the plug-in in progress), so a long upload doesn't hold
+the window. ✕ stops before the next plug-in: a call that has started (a plug-in's code) runs to
+its end or its time limit. A plug-in's catalog reads and metadata writes are answered on the UI
+thread, with the same permission checks. The Plugin Manager stays usable meanwhile; a plug-in that
+is still busy with the export refuses other calls until it's done ("busy"). The results go to the
+toast and to `ui.inspect` → `export.last.plugins` when they finish. An export run synchronously
+(`app.export` without `background`, the CLI, MCP) runs them before it returns, as before.
+
 Plug-ins are installed per user in `<settings_dir>/plugins`, or in `<PREFIX>_PLUGINS` if that
 is set. That folder holds `<id>.wasm`, `plugins.json` (enabled state and grants) and
 `data/<id>.json` (the plug-in's namespace). A module copied into the folder by hand loads
@@ -222,8 +232,9 @@ disabled and with no permissions granted.
 
 ## Not done yet
 
-- Export hooks and destinations run on the UI thread after the export finished (a long upload
-  holds the window); they have no activity row of their own yet.
+- A plug-in call that has started can't be interrupted (✕ takes effect between plug-ins), and one
+  export's hooks run at a time: hooks for an export that ends while the previous ones still run
+  are skipped with a message.
 - Custom metadata fields show and edit the active photo only (not every selected photo), and are
   not searchable in the Library filter or written to XMP.
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any

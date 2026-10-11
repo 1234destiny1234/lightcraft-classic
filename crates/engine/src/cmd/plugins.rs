@@ -317,28 +317,122 @@ impl Drop for PluginService {
 /// After an export finished: runs the enabled export hooks on the written files (`[{path, …}]`),
 /// then, when the export named one (`pluginDestination: {plugin, destination, args?}`), hands
 /// the files to that plug-in export destination (its result is the last entry, with
-/// `destination` set). `None` when nothing ran.
+/// `destination` set). `None` when nothing ran. Runs here, on the caller's thread; the app runs
+/// the same calls on a worker ([`export_hooks`], [`ExportHooks::run`]).
 pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value>) -> Option<Vec<Value>> {
-    let any = manager().as_ref().is_some_and(|m| m.list().any(|p| p.enabled && p.plugin.manifest().hooks.export));
+    let hooks = export_hooks(files, destination)?;
+    Some(hooks.run(&mut SessionHost(s), &|| false, &mut |_, _| {}))
+}
+
+/// The plug-in calls an export makes ([`after_export`]), planned under the manager's lock and run
+/// without it, so a long upload neither blocks the manager nor (on a worker) the window.
+pub struct ExportHooks {
+    #[allow(clippy::type_complexity)]
+    calls: Vec<(String, Option<String>, std::result::Result<(Value, Vec<PathBuf>), dac_plugins::Error>)>,
+}
+
+/// The plug-in calls after an export of `files` to `destination` (see [`after_export`]); `None` when there are none.
+pub fn export_hooks(files: &[Value], destination: Option<&Value>) -> Option<ExportHooks> {
     let files: Vec<Value> = files.iter().filter(|f| f.get("path").and_then(Value::as_str).is_some()).cloned().collect();
     let destination = destination.filter(|d| d.is_object());
-    if (!any && destination.is_none()) || files.is_empty() {
+    if files.is_empty() {
         return None;
     }
-    let mut host = SessionHost(s);
-    with_manager(|m| {
-        let mut out = if any { m.post_export(&files, &mut host) } else { Vec::new() };
-        if let Some(d) = destination {
-            let (plugin, dest) = (d["plugin"].as_str().unwrap_or_default(), d["destination"].as_str().unwrap_or_default());
-            let r = m.export_to(plugin, dest, d.get("args").unwrap_or(&Value::Null), &files, &mut host);
-            out.push(match r {
-                Ok(v) => json!({"plugin": plugin, "destination": dest, "ok": v}),
-                Err(e) => json!({"plugin": plugin, "destination": dest, "error": e.to_string()}),
-            });
+    let dest = destination
+        .map(|d| (d["plugin"].as_str().unwrap_or_default(), d["destination"].as_str().unwrap_or_default(), d.get("args").unwrap_or(&Value::Null)));
+    let calls = manager().as_ref().map(|m| m.export_calls(&files, dest)).unwrap_or_default();
+    (!calls.is_empty()).then_some(ExportHooks { calls })
+}
+
+impl ExportHooks {
+    /// How many plug-in calls there are.
+    pub fn len(&self) -> usize {
+        self.calls.len()
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.calls.is_empty()
+    }
+
+    /// Runs the calls in order, the manager's lock held only to hand each one out and back.
+    /// `cancelled` is asked before each call (a running plug-in call can't be interrupted): the
+    /// rest are reported as cancelled. `progress(done, plug-in id)` before each. One result per
+    /// call: `{plugin, ok | error}`, the destination's with `destination` too.
+    pub fn run(self, host: &mut dyn HostApi, cancelled: &dyn Fn() -> bool, progress: &mut dyn FnMut(usize, &str)) -> Vec<Value> {
+        let mut out = Vec::with_capacity(self.calls.len());
+        for (k, (id, dest, call)) in self.calls.into_iter().enumerate() {
+            progress(k, &id);
+            let r = if cancelled() {
+                Err("cancelled".to_string())
+            } else {
+                call.map_err(|e| e.to_string()).and_then(|(req, lent)| {
+                    let mut pending = with_manager(|m| m.begin(&id, req, lent).map_err(|e| plugin_err("plugin", e))).map_err(|e| e.to_string())?;
+                    let outcome = pending.run(host);
+                    let mut g = manager();
+                    let m = g.get_or_insert_with(Manager::in_memory);
+                    m.end(pending, Some(outcome)).map_err(|e| e.to_string())
+                })
+            };
+            let mut v = match r {
+                Ok(v) => json!({"plugin": id, "ok": v}),
+                Err(e) => json!({"plugin": id, "error": e}),
+            };
+            if let Some(d) = dest {
+                v["destination"] = json!(d);
+            }
+            out.push(v);
         }
-        Ok(out)
-    })
-    .ok()
+        out
+    }
+}
+
+/// A catalog request a plug-in made from a worker thread ([`relay_host`]), answered on the thread that owns
+/// the session with [`HostRequest::answer`].
+pub struct HostRequest {
+    /// `None`: `metadata.setStandard`; else the catalog read.
+    method: Option<String>,
+    params: Value,
+    reply: std::sync::mpsc::Sender<std::result::Result<Value, String>>,
+}
+
+impl HostRequest {
+    /// Answers the request from `s`, with the same checks as a call on the session's thread.
+    pub fn answer(self, s: &mut Session) {
+        let mut host = SessionHost(s);
+        let r = match &self.method {
+            Some(m) => host.catalog(m, &self.params),
+            None => host.set_metadata(&self.params),
+        };
+        let _ = self.reply.send(r);
+    }
+}
+
+/// What plug-ins running on a worker see of the catalog: each request goes to the session's thread
+/// (see [`relay_host`]) and waits for its answer.
+pub struct RelayHost(std::sync::mpsc::Sender<HostRequest>);
+
+impl RelayHost {
+    fn ask(&self, method: Option<String>, params: &Value) -> std::result::Result<Value, String> {
+        let (reply, rx) = std::sync::mpsc::channel();
+        self.0.send(HostRequest { method, params: params.clone(), reply }).map_err(|_| "the catalog is closed".to_string())?;
+        rx.recv().map_err(|_| "the catalog is closed".to_string())?
+    }
+}
+
+impl HostApi for RelayHost {
+    fn catalog(&mut self, method: &str, params: &Value) -> std::result::Result<Value, String> {
+        self.ask(Some(method.to_string()), params)
+    }
+
+    fn set_metadata(&mut self, params: &Value) -> std::result::Result<Value, String> {
+        self.ask(None, params)
+    }
+}
+
+/// A host for plug-in calls on a worker, and where its requests arrive for the session's thread to answer.
+pub fn relay_host() -> (RelayHost, std::sync::mpsc::Receiver<HostRequest>) {
+    let (tx, rx) = std::sync::mpsc::channel();
+    (RelayHost(tx), rx)
 }
 
 fn destinations(_: &mut Session, _: &Value) -> Result<Value> {
@@ -474,6 +568,65 @@ mod tests {
         assert!(s.execute("plugin.setField", &json!({"plugin": "test.pub", "field": "job", "value": 5, "id": id})).is_err());
         assert!(s.execute("plugin.setField", &json!({"plugin": "test.pub", "field": "job", "value": "x", "id": "bogus"})).is_err());
         manager().get_or_insert_with(Manager::in_memory).uninstall("test.pub").unwrap();
+    }
+
+    /// An export hook plug-in `id` that answers `{seen: true}` (no catalog access).
+    fn hook_module(id: &str) -> Vec<u8> {
+        let manifest = format!(r#"{{"id":"{id}","name":"Hook","hooks":{{"export":true}},"exportDestinations":[{{"id":"d","name":"D"}}]}}"#);
+        let reply = r#"{"ok":{"seen":true}}"#;
+        let esc = |s: &str| s.replace('"', "\\\"");
+        let src = format!(
+            r#"(module (memory (export "memory") 2)
+  (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
+  (func (export "dac_abi_version") (result i32) (i32.const 1))
+  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+            m = esc(&manifest),
+            r = esc(reply),
+            ml = manifest.len(),
+            rl = reply.len()
+        );
+        wat::parse_str(&src).unwrap()
+    }
+
+    /// Export hooks planned on one thread run on another, the manager's lock free between the
+    /// calls; the catalog reaches them through the relay; cancelling skips the calls not yet made.
+    #[test]
+    fn export_hooks_run_on_a_worker_and_relay_catalog_requests() {
+        manager().get_or_insert_with(Manager::in_memory).install_bytes(&hook_module("test.relay"), None).unwrap();
+        let files = [json!({"path": "/tmp/x.jpg"})];
+        let d = json!({"plugin": "test.relay", "destination": "d"});
+        let hooks = export_hooks(&files, Some(&d)).unwrap();
+        let (mut host, requests) = relay_host();
+        let worker = std::thread::spawn(move || {
+            // a catalog read from the worker waits for the session's thread to answer it
+            let stats = host.catalog("catalog.stats", &json!({}));
+            let r = hooks.run(&mut host, &|| false, &mut |_, _| {});
+            (stats, r)
+        });
+        let mut s = Session::with_demo();
+        requests.recv_timeout(std::time::Duration::from_secs(20)).unwrap().answer(&mut s);
+        let (stats, r) = worker.join().unwrap();
+        assert!(stats.unwrap().is_object());
+        let mine: Vec<&Value> = r.iter().filter(|v| v["plugin"] == "test.relay").collect();
+        assert!(mine.iter().any(|v| v["ok"]["seen"] == true && v.get("destination").is_none()), "{r:?}");
+        assert_eq!(mine.last().unwrap()["destination"], "d", "{r:?}");
+        // the relay with nobody answering: an error, not a hang
+        let (mut host, requests) = relay_host();
+        drop(requests);
+        assert!(host.catalog("catalog.stats", &json!({})).is_err());
+        // cancelled before they start: no plug-in runs, none stays busy
+        let r = export_hooks(&files, None).unwrap().run(&mut dac_plugins::NoHost, &|| true, &mut |_, _| {});
+        assert!(r.iter().all(|v| v["error"] == "cancelled"), "{r:?}");
+        // a plug-in whose call is out (on a worker) is busy for others until it comes back
+        let call = with_manager(|m| m.begin("test.relay", json!({"hook": "export", "files": []}), vec![]).map_err(|e| plugin_err("t", e))).unwrap();
+        let busy = after_export(&mut s, &files, None).unwrap();
+        assert!(busy.iter().any(|v| v["plugin"] == "test.relay" && v["error"].as_str().is_some_and(|e| e.contains("busy"))), "{busy:?}");
+        assert!(with_manager(|m| m.end(call, None).map_err(|e| plugin_err("t", e))).is_err(), "never ran: reported as cancelled");
+        let again = after_export(&mut s, &files, None).unwrap();
+        assert!(again.iter().any(|v| v["plugin"] == "test.relay" && v["ok"]["seen"] == true), "{again:?}");
+        manager().get_or_insert_with(Manager::in_memory).uninstall("test.relay").unwrap();
     }
 
     #[test]
