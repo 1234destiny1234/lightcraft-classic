@@ -124,3 +124,100 @@ fn immich_commands_are_in_library_immich() {
         assert!(ids.contains(&id), "{id} in {ids:?}");
     }
 }
+
+/// A tiny Immich server: version, user, key permissions (`perms`); everything else is empty.
+fn mini_server(perms: Vec<&'static str>) -> String {
+    use std::io::{BufRead, BufReader, Read, Write};
+    let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    std::thread::spawn(move || {
+        for s in listener.incoming() {
+            let Ok(mut s) = s else { return };
+            let mut r = BufReader::new(&mut s);
+            let mut line = String::new();
+            if r.read_line(&mut line).is_err() {
+                continue;
+            }
+            let path = line.split_whitespace().nth(1).unwrap_or_default().split('?').next().unwrap_or_default().to_string();
+            let mut len = 0usize;
+            loop {
+                let mut l = String::new();
+                if r.read_line(&mut l).is_err() || l.trim_end().is_empty() {
+                    break;
+                }
+                if let Some((k, v)) = l.trim_end().split_once(':')
+                    && k.eq_ignore_ascii_case("content-length")
+                {
+                    len = v.trim().parse().unwrap_or(0);
+                }
+            }
+            let mut body = vec![0; len];
+            let _ = r.read_exact(&mut body);
+            let v = match path.as_str() {
+                "/api/server/version" => json!({"major": 3, "minor": 3, "patch": 1}),
+                "/api/users/me" => json!({"id": "user-1", "email": "me@example.invalid", "name": "Me"}),
+                "/api/api-keys/me" => json!({"id": "k", "name": "app", "permissions": perms}),
+                "/api/search/metadata" => json!({"assets": {"total": 0, "count": 0, "items": [], "nextPage": null}}),
+                _ => json!([]),
+            };
+            let b = v.to_string();
+            let _ = write!(s, "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nContent-Type: application/json\r\nConnection: close\r\n\r\n{b}", b.len());
+        }
+    });
+    format!("http://127.0.0.1:{port}")
+}
+
+fn rect(h: &Headless, id: &str) -> Option<egui::Rect> {
+    h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r)
+}
+
+// Feature: the server card stays short: only the permissions the key lacks (or one line saying
+// none), the full list behind "Show permissions"; one status line for the latest sync; the album
+// rule row in the sync rules.
+#[test]
+fn immich_card_is_compact() {
+    let dir = std::env::temp_dir().join(format!("dac-immich-ui-card-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut h = app(&dir);
+    h.app.session.set_secret_store(std::sync::Arc::new(dac_engine::remote::MemorySecrets::default()));
+    let mut perms: Vec<&'static str> = dac_immich::client::FEATURE_PERMISSIONS.iter().flat_map(|(_, p)| p.iter().copied()).collect();
+    perms.extend(["map.read", "memory.read", "sharedLink.create", "sharedLink.read", "session.read", "workflow.read", "systemConfig.read"]);
+    let url = mini_server(perms);
+    let r = h.app.session.execute("immich.connect", &json!({"url": url, "apiKey": "ui-test-key"})).unwrap();
+    assert_eq!(r["ok"], true, "{r}");
+    h.request("engine.execute", json!({"command": "app.settings", "params": {"tab": "connections"}}), T);
+    h.step();
+    h.step();
+    assert!(has(&h, "label:immichPermsOk-0"), "one line: nothing missing");
+    assert!(!has(&h, "label:immichPermsAll-0"), "the full list starts collapsed");
+    assert!(!has(&h, "label:immichMissing-0"));
+    click(&mut h, "button:immichPerms-0");
+    assert!(has(&h, "label:immichPermsAll-0"), "Show permissions opens the list");
+    click(&mut h, "button:immichPerms-0");
+    assert!(!has(&h, "label:immichPermsAll-0"));
+    click(&mut h, "button:immichSyncPanel-0");
+    assert!(has(&h, "label:immichSyncStatus-0"));
+    let text = h.painted_text().join("\n");
+    assert!(text.contains("Albums ↔ albums"), "the album rule row");
+    let card = rect(&h, "immichAccount:0").expect("the card");
+    // the old card was ~1000 pt tall with the sync rules open
+    assert!(card.height() < 470.0, "card height {}", card.height());
+    if let Some(p) = dac_brand::env_os("TEST_SHOTS") {
+        h.app.services.png = Some(Box::new(|img: &dac_raster::Rgba8| {
+            dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(img), &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+        }));
+        h.app.services.write = Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string())));
+        let r = h.request("ui.screenshot", json!({"path": std::path::Path::new(&p).join("immich-card.png").to_string_lossy(), "headless": true}), T);
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    // a key that lacks permissions lists only what is missing
+    let url = mini_server(vec!["asset.read", "asset.view", "asset.download"]);
+    h.app.session.execute("immich.disconnect", &json!({})).unwrap();
+    assert_eq!(h.app.session.execute("immich.connect", &json!({"url": url, "apiKey": "ui-test-key"})).unwrap()["ok"], true);
+    for _ in 0..3 {
+        h.step();
+    }
+    assert!(has(&h, "label:immichMissing-0") && !has(&h, "label:immichPermsOk-0"));
+    let _ = std::fs::remove_dir_all(&dir);
+}

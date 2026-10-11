@@ -587,6 +587,7 @@ pub const FEATURE_PERMISSIONS: &[(&str, &[&str])] = &[
     ("smartSearch", &["asset.read"]),
     ("stacks", &["stack.read", "stack.create", "stack.delete"]),
     ("editVersions", &["asset.upload", "stack.create", "album.read"]),
+    ("albumSync", &["album.read", "album.create", "album.update", "album.delete", "albumAsset.create", "albumAsset.delete"]),
 ];
 
 /// The features a key with `perms` can't use, with the permissions each lacks.

@@ -572,7 +572,7 @@ fn result_box(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, r: &Value) {
         );
         let l = ui.label(RichText::new(text).color(t.text));
         register(ui.ctx(), "label:immichResult", l.rect);
-        permissions(ui, t, r);
+        permissions(ui, t, usize::MAX, r);
         return;
     }
     let e = &r["error"];
@@ -602,57 +602,103 @@ fn result_box(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, r: &Value) {
     }
 }
 
-fn permissions(ui: &mut egui::Ui, t: &Tokens, a: &Value) {
-    match a["permissions"].as_array() {
-        Some(p) => {
-            let all: Vec<&str> = p.iter().filter_map(Value::as_str).collect();
-            ui.label(RichText::new(trf!("Key permissions: {}", all.join(", "))).size(11.0).color(t.text_dim));
-        }
-        None => {
-            ui.label(RichText::new(crate::i18n::tr("The key may not read its own permissions.")).size(11.0).color(t.text_dim));
-        }
-    }
+/// The key's permissions, short: only what the app needs and the key lacks (or one line saying
+/// nothing is missing); the full list sits behind a collapsed "Show permissions".
+fn permissions(ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
+    missing_permissions(ui, t, i, a);
+    ui.horizontal_wrapped(|ui| permissions_inline(ui, t, i, a));
+    all_permissions(ui, t, i, a);
+}
+
+/// What the key lacks, one caution line per feature.
+fn missing_permissions(ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
     for m in a["missingPermissions"].as_array().into_iter().flatten() {
         let perms: Vec<&str> = m["permissions"].as_array().into_iter().flatten().filter_map(Value::as_str).collect();
-        ui.label(
+        let l = ui.label(
             RichText::new(trf!("Not available with this key: {} (needs {})", m["feature"].as_str().unwrap_or_default(), perms.join(", ")))
                 .size(11.0)
                 .color(t.caution),
         );
+        register(ui.ctx(), format!("label:immichMissing-{i}"), l.rect);
+    }
+}
+
+fn perms_open_id(i: usize) -> egui::Id {
+    egui::Id::new(("immich-perms", i))
+}
+
+/// Inside a row: "Key has all needed permissions." and the Show / Hide permissions toggle.
+fn permissions_inline(ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
+    if a["permissions"].as_array().is_none() {
+        ui.label(RichText::new(crate::i18n::tr("The key may not read its own permissions.")).size(11.0).color(t.text_dim));
+        return;
+    }
+    if a["missingPermissions"].as_array().is_none_or(Vec::is_empty) {
+        let l = ui.label(RichText::new(crate::i18n::tr("Key has all needed permissions.")).size(11.0).color(t.text_dim));
+        register(ui.ctx(), format!("label:immichPermsOk-{i}"), l.rect);
+    }
+    let id = perms_open_id(i);
+    let open = ui.data(|d| d.get_temp::<bool>(id)).unwrap_or(false);
+    let label = if open { crate::i18n::tr("Hide permissions") } else { crate::i18n::tr("Show permissions") };
+    let r = ui.add(egui::Label::new(RichText::new(label).size(11.0).color(t.accent).underline()).sense(egui::Sense::click()));
+    register(ui.ctx(), format!("button:immichPerms-{i}"), r.rect);
+    if r.clicked() {
+        ui.data_mut(|d| d.insert_temp(id, !open));
+    }
+}
+
+/// The key's whole permission list, when opened.
+fn all_permissions(ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
+    let Some(all) = a["permissions"].as_array() else { return };
+    if ui.data(|d| d.get_temp::<bool>(perms_open_id(i))).unwrap_or(false) {
+        let all: Vec<&str> = all.iter().filter_map(Value::as_str).collect();
+        let l = ui.label(RichText::new(all.join(", ")).size(11.0).color(t.text_dim));
+        register(ui.ctx(), format!("label:immichPermsAll-{i}"), l.rect);
     }
 }
 
 fn account_card(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
     let id = a["id"].as_str().unwrap_or_default().to_string();
-    let r = egui::Frame::NONE.fill(t.inset).corner_radius(6.0).inner_margin(8).show(ui, |ui| {
+    let r = egui::Frame::NONE.fill(t.inset).corner_radius(6.0).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
-        ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.y = 3.0;
+        // url · version · user on one line
+        ui.horizontal_wrapped(|ui| {
             ui.label(RichText::new(a["url"].as_str().unwrap_or_default()).font(t.semibold(12.5)).color(t.text));
             ui.label(RichText::new(trf!("Immich {}", a["version"].as_str().unwrap_or("?"))).color(t.text_dim));
+            ui.label(
+                RichText::new(trf!("{} ({})", a["userName"].as_str().unwrap_or_default(), a["email"].as_str().unwrap_or_default()))
+                    .color(t.text_label),
+            );
         });
-        ui.label(
-            RichText::new(trf!("{} ({})", a["userName"].as_str().unwrap_or_default(), a["email"].as_str().unwrap_or_default())).color(t.text_label),
-        );
-        permissions(ui, t, a);
-        if a["checking"] == true {
-            ui.horizontal(|ui| {
-                ui.spinner();
-                ui.label(RichText::new(crate::i18n::tr("Checking the server…")).color(t.text_dim));
-            });
-        } else if a["server"]["ok"] == false {
-            let l = ui.label(RichText::new(a["server"]["error"]["message"].as_str().unwrap_or("failed")).color(t.caution));
-            register(ui.ctx(), format!("label:immichCheck-{i}"), l.rect);
-        } else if a["server"]["ok"] == true {
-            let l = ui.label(RichText::new(crate::i18n::tr("The server answers; the key works.")).color(t.text_label));
-            register(ui.ctx(), format!("label:immichCheck-{i}"), l.rect);
-        }
+        missing_permissions(ui, t, i, a);
+        // the server check, the link count and the key's permissions on one line
         let link = &a["link"];
         let status = if link["active"] == true {
             trf!("Linking… {} assets checked", link["seen"].as_u64().unwrap_or(0))
         } else {
             trf!("{} photos linked, {} probable", a["linked"].as_u64().unwrap_or(0), a["probable"].as_u64().unwrap_or(0))
         };
-        ui.label(RichText::new(status).color(t.text_label));
+        ui.horizontal_wrapped(|ui| {
+            let dot = |ui: &mut egui::Ui| ui.label(RichText::new("·").color(t.text_dim));
+            if a["checking"] == true {
+                ui.spinner();
+                ui.label(RichText::new(crate::i18n::tr("Checking the server…")).color(t.text_dim));
+                dot(ui);
+            } else if a["server"]["ok"] == false {
+                let l = ui.label(RichText::new(a["server"]["error"]["message"].as_str().unwrap_or("failed")).color(t.caution));
+                register(ui.ctx(), format!("label:immichCheck-{i}"), l.rect);
+                dot(ui);
+            } else if a["server"]["ok"] == true {
+                let l = ui.label(RichText::new(crate::i18n::tr("The server answers; the key works.")).color(t.text_label));
+                register(ui.ctx(), format!("label:immichCheck-{i}"), l.rect);
+                dot(ui);
+            }
+            ui.label(RichText::new(status).color(t.text_label));
+            dot(ui);
+            permissions_inline(ui, t, i, a);
+        });
+        all_permissions(ui, t, i, a);
         if let Some(e) = link["error"].as_str() {
             ui.label(RichText::new(e).color(t.caution));
         }
@@ -1235,6 +1281,29 @@ const SYNC_FIELDS: &[(&str, &str)] = &[
 const DIRECTIONS: &[(&str, &str)] = &[("twoWay", "Two-way"), ("toImmich", "To Immich"), ("fromImmich", "From Immich"), ("off", "Off")];
 const POLICIES: &[(&str, &str)] = &[("newest", "Newest wins"), ("catalog", "Catalog wins"), ("immich", "Immich wins"), ("ask", "Ask")];
 
+/// The last album run as one short line (and whether it failed); None before any run.
+fn album_summary(v: &Value) -> Option<(String, bool)> {
+    if v.is_null() {
+        return None;
+    }
+    if v["ok"] == false {
+        let msg = v["error"]["message"].as_str().or_else(|| v["errors"][0].as_str()).unwrap_or("failed");
+        return Some((trf!("Albums: {}", msg), true));
+    }
+    let n = |k: &str| v[k].as_u64().unwrap_or(0);
+    Some((
+        trf!(
+            "Albums: {} linked, {} created, {} renamed, {} changed, {} deleted",
+            n("albums"),
+            n("created"),
+            n("renamed"),
+            n("membership"),
+            n("deleted")
+        ),
+        false,
+    ))
+}
+
 fn label_of(list: &[(&str, &'static str)], v: &str) -> &'static str {
     list.iter().find(|(k, _)| *k == v).map(|(_, l)| *l).unwrap_or("?")
 }
@@ -1245,28 +1314,28 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
     let now = ui.input(|x| x.time);
     let stale = match app.immich.sync_view.get(id) {
         None => true,
-        Some((st, _, at)) => st["running"] == true && now - at > 0.5,
+        Some((st, _, at)) => (st["running"] == true || st["albumsRunning"] == true) && now - at > 0.5,
     };
     if stale {
-        let st = app.session.execute("immich.syncStatus", &json!({"account": id, "log": 5})).unwrap_or_default();
+        let st = app.session.execute("immich.syncStatus", &json!({"account": id, "log": 1})).unwrap_or_default();
         let cf = app.session.execute("immich.syncConflicts", &json!({"account": id})).unwrap_or_default();
         app.immich.sync_view.insert(id.to_string(), (st, cf, now));
     }
     let Some((st, cf, _)) = app.immich.sync_view.get(id).cloned() else { return };
-    if st["running"] == true {
+    let running = st["running"] == true || st["albumsRunning"] == true;
+    if running {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(300));
     }
     let mut changed = false;
     ui.separator();
-    ui.label(RichText::new(crate::i18n::tr("Metadata sync")).font(t.semibold(12.0)).color(t.text));
+    // heading and the one status line (the latest run only)
     let last = &st["last"];
-    let line = if st["running"] == true {
+    let latest = st["log"].as_array().and_then(|l| l.first()).cloned().unwrap_or(Value::Null);
+    let line = if running {
         crate::i18n::tr("Syncing…").to_string()
-    } else if last.is_null() {
-        crate::i18n::tr("Not synced in this session.").to_string()
     } else if last["ok"] == false {
         last["error"]["message"].as_str().unwrap_or("failed").to_string()
-    } else {
+    } else if !last.is_null() {
         trf!(
             "Last sync: {} checked, {} from Immich, {} to Immich, {} conflicts",
             last["checked"].as_u64().unwrap_or(0),
@@ -1274,9 +1343,27 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
             last["pushed"].as_u64().unwrap_or(0),
             last["conflicts"].as_u64().unwrap_or(0)
         )
+    } else if !latest.is_null() {
+        trf!(
+            "Last sync {}: {} from Immich, {} to Immich, {} conflicts",
+            latest["finished"].as_str().unwrap_or_default().chars().take(16).collect::<String>().replace('T', " "),
+            latest["pulled"].as_u64().unwrap_or(0),
+            latest["pushed"].as_u64().unwrap_or(0),
+            latest["conflicts"].as_u64().unwrap_or(0)
+        )
+    } else {
+        crate::i18n::tr("Not synced yet.").to_string()
     };
-    let l = ui.label(RichText::new(line).color(if last["ok"] == false { t.caution } else { t.text_label }));
-    register(ui.ctx(), format!("label:immichSyncStatus-{i}"), l.rect);
+    let albums_line = album_summary(&st["albumsLast"]);
+    ui.horizontal_wrapped(|ui| {
+        ui.label(RichText::new(crate::i18n::tr("Metadata sync")).font(t.semibold(12.0)).color(t.text));
+        let l = ui.label(RichText::new(line).size(11.5).color(if last["ok"] == false { t.caution } else { t.text_label }));
+        register(ui.ctx(), format!("label:immichSyncStatus-{i}"), l.rect);
+        if let Some((s, bad)) = albums_line {
+            let l = ui.label(RichText::new(s).size(11.5).color(if bad { t.caution } else { t.text_label }));
+            register(ui.ctx(), format!("label:immichAlbumStatus-{i}"), l.rect);
+        }
+    });
     ui.horizontal(|ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
         if text_button(ui, &format!("immichSyncDry-{i}"), crate::i18n::tr("Preview Changes"), false).clicked() {
@@ -1286,7 +1373,8 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
             changed = true;
         }
         if text_button(ui, &format!("immichSyncAlbums-{i}"), crate::i18n::tr("Sync Albums"), false).clicked() {
-            let _ = app.run("immich.syncAlbums", json!({"account": id}));
+            let _ = app.run("immich.syncAlbums", json!({"account": id, "background": true}));
+            changed = true;
         }
         if text_button(ui, &format!("immichPeople-{i}"), crate::i18n::tr("Import People"), false).clicked() {
             let _ = app.run("immich.importPeople", json!({"account": id}));
@@ -1298,6 +1386,7 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
     // rules
     let cfg = &st["config"];
     let mut patch = serde_json::Map::new();
+    let mut album_patch: Option<Value> = None;
     egui::Grid::new(("immich-sync-rules", i)).num_columns(3).spacing([8.0, 2.0]).show(ui, |ui| {
         for (row, rule) in st["rules"].as_array().into_iter().flatten().enumerate() {
             let field = rule["field"].as_str().unwrap_or_default();
@@ -1326,10 +1415,40 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
                 patch.insert(field.to_string(), json!({"direction": d2, "policy": p2}));
             }
         }
+        // collections ↔ albums: off = only albums linked by hand
+        let ar = &st["albumRule"];
+        let (dir, pol) = (ar["direction"].as_str().unwrap_or("off").to_string(), ar["policy"].as_str().unwrap_or("ask").to_string());
+        let (mut d2, mut p2) = (dir.clone(), pol.clone());
+        ui.label(RichText::new(crate::i18n::tr("Albums ↔ albums")).color(t.text_label)).on_hover_text(crate::i18n::tr(
+            "Catalog albums map to the Immich albums of the same name: creates, renames, photos added or removed, and album deletes. Deleting an album never deletes photos. Off: only albums linked by hand.",
+        ));
+        egui::ComboBox::from_id_salt(("immich-dir-albums", i)).width(110.0).selected_text(crate::i18n::tr(label_of(DIRECTIONS, &dir))).show_ui(
+            ui,
+            |ui| {
+                for (k, l) in DIRECTIONS {
+                    ui.selectable_value(&mut d2, k.to_string(), crate::i18n::tr(l));
+                }
+            },
+        );
+        egui::ComboBox::from_id_salt(("immich-pol-albums", i)).width(110.0).selected_text(crate::i18n::tr(label_of(POLICIES, &pol))).show_ui(
+            ui,
+            |ui| {
+                for (k, l) in POLICIES {
+                    ui.selectable_value(&mut p2, k.to_string(), crate::i18n::tr(l));
+                }
+            },
+        );
+        ui.end_row();
+        if d2 != dir || p2 != pol {
+            album_patch = Some(json!({"direction": d2, "policy": p2}));
+        }
     });
     let mut cfg_patch = serde_json::Map::new();
     if !patch.is_empty() {
         cfg_patch.insert("rules".into(), Value::Object(patch));
+    }
+    if let Some(a) = album_patch {
+        cfg_patch.insert("albums".into(), a);
     }
     ui.horizontal(|ui| {
         let mut fav = cfg["favorite"].as_str().unwrap_or("pick").to_string();
@@ -1407,22 +1526,30 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
             });
         }
     }
-    // activity
-    for l in st["log"].as_array().into_iter().flatten() {
-        let errs = l["errors"].as_array().map(Vec::len).unwrap_or(0);
-        ui.label(
-            RichText::new(trf!(
-                "{} {}: {} ↓ {} ↑ {} conflicts, {} errors",
-                l["finished"].as_str().unwrap_or_default().chars().take(16).collect::<String>(),
-                if l["dryRun"] == true { crate::i18n::tr("(preview)") } else { "" },
-                l["pulled"].as_u64().unwrap_or(0),
-                l["pushed"].as_u64().unwrap_or(0),
-                l["conflicts"].as_u64().unwrap_or(0),
-                errs
-            ))
-            .size(11.0)
-            .color(t.text_dim),
-        );
+    // albums deleted on one side, waiting for the user
+    let adels = st["albumDeletions"].as_array().cloned().unwrap_or_default();
+    if !adels.is_empty() {
+        ui.label(RichText::new(trf!("Albums deleted on one side ({})", adels.len())).font(t.semibold(12.0)).color(t.caution));
+        for (n, d) in adels.iter().enumerate() {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 4.0;
+                let in_catalog = d["deletedOn"] == "catalog";
+                let what = if in_catalog { crate::i18n::tr("deleted in the catalog") } else { crate::i18n::tr("deleted in Immich") };
+                ui.label(RichText::new(format!("{} — {what}", d["name"].as_str().unwrap_or_default())).color(t.text));
+                let apply = if in_catalog { "Delete in Immich Too" } else { "Delete Here Too" };
+                if text_button(ui, &format!("immichAlbumDeletion-{i}-{n}-apply"), crate::i18n::tr(apply), false)
+                    .on_hover_text(crate::i18n::tr("Deletes the album only; its photos stay."))
+                    .clicked()
+                {
+                    let _ = app.run("immich.resolveAlbumDeletion", json!({"account": id, "album": d["album"], "action": "apply"}));
+                    changed = true;
+                }
+                if text_button(ui, &format!("immichAlbumDeletion-{i}-{n}-keep"), crate::i18n::tr("Keep"), false).clicked() {
+                    let _ = app.run("immich.resolveAlbumDeletion", json!({"account": id, "album": d["album"], "action": "keep"}));
+                    changed = true;
+                }
+            });
+        }
     }
     if changed {
         app.immich.sync_view.remove(id);
