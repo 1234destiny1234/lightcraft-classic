@@ -414,19 +414,38 @@ fn trusted() -> std::sync::MutexGuard<'static, Vec<(String, String)>> {
 /// Trust the certificate with SHA-256 `fingerprint` (`AB:CD:…`, colons optional) for the printer
 /// at `uri` (or a bare `host:port`). Refused when the fingerprint is not 32 hex bytes.
 pub fn trust_certificate(uri: &str, fingerprint: &str) -> Result<()> {
-    let fp = dac_net::Fingerprint::parse(fingerprint.trim())
+    let fp = parse_fingerprint(fingerprint)
         .ok_or_else(|| PrintError::Invalid(format!("{fingerprint:?} is not a SHA-256 fingerprint (64 hex digits, colons optional)")))?;
     let key = if uri.contains("://") { IppUri::parse(uri)?.host_header() } else { uri.trim().to_string() };
     let mut t = trusted();
-    if !t.iter().any(|(k, f)| *k == key && *f == fp.to_string()) {
-        t.push((key, fp.to_string()));
+    if !t.iter().any(|(k, f)| *k == key && *f == fp) {
+        t.push((key, fp));
     }
     Ok(())
 }
 
 /// Whether `s` is a SHA-256 fingerprint (`AB:CD:…`, colons optional).
 pub fn is_fingerprint(s: &str) -> bool {
-    dac_net::Fingerprint::parse(s.trim()).is_some()
+    parse_fingerprint(s).is_some()
+}
+
+/// `s` normalised as an upper-case, colon-separated SHA-256 fingerprint, or `None`.
+#[cfg(not(target_arch = "wasm32"))]
+fn parse_fingerprint(s: &str) -> Option<String> {
+    dac_net::Fingerprint::parse(s.trim()).map(|f| f.to_string())
+}
+
+/// `s` normalised as an upper-case, colon-separated SHA-256 fingerprint, or `None` (wasm builds
+/// have no TLS client; the check matches the native one).
+#[cfg(target_arch = "wasm32")]
+fn parse_fingerprint(s: &str) -> Option<String> {
+    let hex: String = s.trim().chars().filter(|c| *c != ':').collect();
+    if hex.len() != 64 || !hex.chars().all(|c| c.is_ascii_hexdigit()) {
+        return None;
+    }
+    let up = hex.to_ascii_uppercase();
+    let pairs: Vec<&str> = (0..32).filter_map(|i| up.get(i * 2..i * 2 + 2)).collect();
+    Some(pairs.join(":"))
 }
 
 /// Forget every trusted printer certificate, then trust `list` (`host:port`, fingerprint): what the
