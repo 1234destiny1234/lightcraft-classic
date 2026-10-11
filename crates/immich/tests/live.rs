@@ -172,3 +172,30 @@ fn live_stacks_round_trip() {
     c.delete_stacks(&[mine[0].id.clone()]).unwrap();
     assert!(c.asset_stack(&ids[0]).unwrap().is_none());
 }
+
+/// IMM-SYNC album rule: the calls it makes on a real server (create, add, rename, remove, delete);
+/// deleting the album leaves its assets on the server.
+#[test]
+#[ignore = "needs `cargo xtask immich up` and `seed` (nightly)"]
+fn live_album_create_rename_delete_keeps_assets() {
+    let Some((url, key)) = server() else { panic!("no target/immich/api-key: run `cargo xtask immich seed`") };
+    let c = Client::new(&url, key, &ServerOptions::standard()).unwrap();
+    let mut some = Vec::new();
+    c.search_all(&MetadataSearch { size: Some(2), ..Default::default() }, 1, |p| {
+        some.extend(p.iter().map(|a| a.id.clone()));
+        false
+    })
+    .unwrap();
+    assert!(some.len() >= 2, "seeded fixtures");
+    let name = format!("album sync {}", std::process::id());
+    let a = c.create_album(&name).unwrap();
+    c.album_add(&a.id, &some).unwrap();
+    let renamed = format!("{name} renamed");
+    c.rename_album(&a.id, &renamed).unwrap();
+    assert!(c.albums().unwrap().iter().any(|x| x.id == a.id && x.album_name == renamed));
+    c.album_remove(&a.id, &some[..1]).unwrap();
+    assert_eq!(c.album_assets(&a.id).unwrap().len(), some.len() - 1);
+    c.delete_album(&a.id).unwrap();
+    assert!(!c.albums().unwrap().iter().any(|x| x.id == a.id));
+    assert!(c.asset(&some[0]).is_ok(), "the album's assets stay");
+}

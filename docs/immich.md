@@ -145,3 +145,19 @@ has the Immich form: account, what to send (rendered / original / both) and "tra
 
 `immich.linkAlbum {album}` links a catalog album with an Immich album; `immich.syncAlbums` then keeps the same linked
 photos in both (added or removed on one side since the last sync: the same on the other).
+
+**Album rule.** Settings → Connections → Sync… → *Albums ↔ albums* (`immich.setSync {config: {albums: {direction,
+policy}}}`) maps every plain catalog album to the Immich album of the same name:
+
+- *Off* (default): only albums linked by hand sync, as above.
+- *To Immich* / *From Immich*: one way; the other side's changes are not followed (an album deleted on the source-only
+  side is put back).
+- *Two-way*: creates, renames, photos added or removed, and album deletes travel both ways.
+
+Deleting an album never deletes photos, only the album on the other side, and only as the policy says: *Catalog wins*
+/ *Immich wins* decide, *Newest wins* deletes unless the other side changed the album since the last sync, *Ask* (the
+default) leaves it in the Sync… panel's *Albums deleted on one side* list (`immich.resolveAlbumDeletion {album,
+action: apply|keep}`). A name changed differently on both sides follows the policy, or is left alone. Published
+collections, smart albums, folders and the Quick Collection never map. Sync Now and the background schedule run the
+album rule too; runs show in the activity stack. The key needs `album.create`, `album.update`, `album.delete`,
+`albumAsset.create` and `albumAsset.delete` for this.

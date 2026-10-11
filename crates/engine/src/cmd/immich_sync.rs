@@ -46,6 +46,10 @@ pub(crate) struct AccountSync {
     last: Option<Value>,
     next_due: Option<Instant>,
     failures: u32,
+    /// An album run (`immich.syncAlbums`) is on a worker.
+    pub(crate) albums_running: bool,
+    /// The last album run's summary.
+    pub(crate) albums_last: Option<Value>,
 }
 
 /// One linked pair as the worker gets it.
@@ -185,14 +189,21 @@ fn start(s: &mut Session, account: &str, dry_run: bool, full: bool, background: 
     let entry = s.remote.sync.entry(account.to_string()).or_default();
     entry.running = true;
     let job = Job { account: account.to_string(), dry_run, since, cfg, pairs, kept, started: now, local_stacks, base_stacks };
+    let task =
+        s.activity.start("immich", if dry_run { "Previewing the Immich sync" } else { "Syncing metadata with Immich" }, crate::activity::Cancel::No);
+    let run = move || {
+        let d = work(&client, job);
+        drop(task);
+        d
+    };
     if background {
         let tx = s.remote.sender();
         std::thread::spawn(move || {
-            let _ = tx.send(Msg::Synced(Box::new(work(&client, job))));
+            let _ = tx.send(Msg::Synced(Box::new(run())));
         });
         return Ok(json!({"started": true}));
     }
-    let done = work(&client, job);
+    let done = run();
     Ok(finish(s, done))
 }
 
@@ -687,6 +698,11 @@ pub(crate) fn tick(s: &mut Session) {
                 if let Err(err) = start(s, &id, false, false, true) {
                     log::warn!("Immich background sync: {err}");
                 }
+                if config_of(s, &id).album_rule().direction != merge::Direction::Off
+                    && let Err(err) = super::publish::start_albums(s, &id, false, true)
+                {
+                    log::warn!("Immich background album sync: {err}");
+                }
                 // a start that could not reach the key / server waits a while
                 let e = s.remote.sync.entry(id).or_default();
                 if !e.running && e.next_due.is_none() {
@@ -703,7 +719,13 @@ pub(crate) fn tick(s: &mut Session) {
 fn sync_cmd(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "immich.sync";
     let id = account_param(s, p, C)?;
-    start(s, &id, bool_or(p, "dryRun", false), bool_or(p, "full", false), bool_or(p, "background", false))
+    let (dry, background) = (bool_or(p, "dryRun", false), bool_or(p, "background", false));
+    let mut v = start(s, &id, dry, bool_or(p, "full", false), background)?;
+    // the album rule rides along with every real run (Sync Now, the schedule)
+    if !dry && config_of(s, &id).album_rule().direction != merge::Direction::Off {
+        v["albums"] = super::publish::start_albums(s, &id, false, background)?;
+    }
+    Ok(v)
 }
 
 fn status(s: &mut Session, p: &Value) -> Result<Value> {
@@ -726,6 +748,10 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
         "log": st.log.iter().rev().take(n).collect::<Vec<_>>(),
         "config": cfg,
         "rules": Field::ALL.iter().map(|f| json!({"field": f.name(), "rule": cfg.rule(*f)})).collect::<Vec<_>>(),
+        "albumRule": cfg.album_rule(),
+        "albumsRunning": e.is_some_and(|e| e.albums_running),
+        "albumsLast": e.and_then(|e| e.albums_last.clone()),
+        "albumDeletions": super::publish::load_pending(s, &id),
     }))
 }
 
@@ -1039,7 +1065,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "immich.syncStatus", "Immich Sync Status", [], None, "{account?, log?: n} → {running, last, nextRunInSeconds, syncedUntil, items, conflicts, deletions, log (activity, newest first), config, rules}", always, status),
         cmd!(query "immich.syncConflicts", "Immich Sync Conflicts", [], None, "{account?} → {conflicts: [{photo, assetId, fileName, field, catalog, immich, detected, decided?}]}", always, conflicts),
         cmd!(query "immich.resolveConflict", "Resolve Immich Sync Conflict", [], None, "{account?, keep: catalog|immich, ids?: photos, assetId?, field?, sync?: bool, background?: bool} — decide conflicts (default: all); the next sync applies them (sync: run it now) → {decided, sync?}", always, resolve),
-        cmd!(query "immich.setSync", "Immich Sync Settings", [], None, "{account?, config: {rules?: {rating|favorite|archived|description|keywords|location|captured: {direction: twoWay|toImmich|fromImmich|off, policy: catalog|immich|newest|ask}}, favorite?: pick|fiveStars, description?: caption|title, intervalMinutes?, onPublish?, pushPeople?}} → {config}", always, set_config),
+        cmd!(query "immich.setSync", "Immich Sync Settings", [], None, "{account?, config: {rules?: {rating|favorite|archived|description|keywords|location|captured: {direction: twoWay|toImmich|fromImmich|off, policy: catalog|immich|newest|ask}}, favorite?: pick|fiveStars, description?: caption|title, intervalMinutes?, onPublish?, pushPeople?, albums?: {direction, policy} (collections ↔ albums, immich.syncAlbums; default off = only albums linked by hand, policy ask)}} → {config}", always, set_config),
         cmd!(query "immich.resolveDeletion", "Resolve Immich Deletion", [], None, "{account?, assets?: [asset ids] (default all queued), action: apply|keep} — apply: a photo whose asset is in Immich's trash goes to Recently Deleted, an asset whose photo was deleted goes to Immich's trash (never a hard delete); keep: dismiss → {resolved, failed}", always, resolve_deletion),
         cmd!(query "immich.importPeople", "Import People from Immich", ["Library", "Immich"], None, "{account?, ids?: photos (default all linked), includeHidden?: bool} — read Immich's faces and people into the photos' face regions, marked from Immich (unconfirmed ones are replaced on the next import; regions the photo had are kept) → {photos, added, removed, skipped, more, people: [{id, name, birthDate, hidden}]}", always, import_people),
         cmd!(

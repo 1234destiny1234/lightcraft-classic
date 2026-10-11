@@ -393,6 +393,11 @@ impl Client {
         Ok(link)
     }
 
+    /// `DELETE /albums/{id}` [album.delete]: the album only; its assets stay on the server.
+    pub fn delete_album(&self, id: &str) -> Result<(), ImmichError> {
+        self.send(Method::Delete, &format!("/albums/{}", path_id(id)?), None, true).map(|_| ())
+    }
+
     /// `PATCH /albums/{id}`: rename. Needs `album.update`.
     pub fn rename_album(&self, id: &str, name: &str) -> Result<(), ImmichError> {
         self.send(Method::Patch, &format!("/albums/{}", path_id(id)?), Some(&serde_json::json!({ "albumName": name })), true).map(|_| ())
@@ -582,6 +587,7 @@ pub const FEATURE_PERMISSIONS: &[(&str, &[&str])] = &[
     ("smartSearch", &["asset.read"]),
     ("stacks", &["stack.read", "stack.create", "stack.delete"]),
     ("editVersions", &["asset.upload", "stack.create", "album.read"]),
+    ("albumSync", &["album.read", "album.create", "album.update", "album.delete", "albumAsset.create", "albumAsset.delete"]),
 ];
 
 /// The features a key with `perms` can't use, with the permissions each lacks.
