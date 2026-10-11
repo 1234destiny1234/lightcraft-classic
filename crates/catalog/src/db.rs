@@ -36,7 +36,7 @@ use crate::settings_ref::{self, Resolver};
 use crate::{Album, AlbumId, Catalog, CatalogError, ColorLabel, Photo, PhotoId, Result, Stack, StackId};
 
 pub const DB_FILE: &str = "catalog.redb";
-const FORMAT: &str = "dac-catalog-db";
+pub(crate) const FORMAT: &str = crate::journal::V4_FORMAT;
 
 const META: TableDefinition<&str, &[u8]> = TableDefinition::new("meta");
 const PHOTOS: TableDefinition<u64, &[u8]> = TableDefinition::new("photos");
@@ -240,7 +240,7 @@ impl CatalogDb {
         let t = r.open_table(META).map_err(dberr)?;
         let format = t.get("format").map_err(dberr)?.map(|v| v.value().to_vec()).unwrap_or_default();
         if format != FORMAT.as_bytes() {
-            return Err(corrupt(format!("not a {} catalog", dac_brand::DISPLAY_NAME)));
+            return Err(CatalogError::Foreign(format!("{DB_FILE}: format {:?}", String::from_utf8_lossy(&format))));
         }
         let version: u32 =
             t.get("version").map_err(dberr)?.and_then(|v| std::str::from_utf8(v.value()).ok().and_then(|s| s.parse().ok())).unwrap_or(0);

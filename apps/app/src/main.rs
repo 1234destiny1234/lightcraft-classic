@@ -805,12 +805,30 @@ fn main() -> eframe::Result {
     if let Some(ui) = &prefs {
         dac_ui_egui::i18n::set_language(ui.language);
     }
-    // --library, else the library last opened from Settings, else the default location
-    let library_dir = library_dir.or_else(catalog_hooks::startup_catalog);
-    let library_dir = library_dir.or_else(|| {
-        prefs.as_ref().map(|u| u.settings.library_path.clone()).filter(|p| !p.is_empty() && !dac_brand::env_is_set("LIBRARY")).map(Into::into)
-    });
-    let library_dir = library_dir.or_else(dac_engine::library::default_dir);
+    // --library (or <PREFIX>_LIBRARY), else the startup catalog, else the library last opened from
+    // Settings, else the default location if a catalog of this app is there; otherwise (a first
+    // start) the welcome dialog asks. Another app's library (e.g. the upstream app's, named by
+    // settings copied from it) is never opened as this app's own.
+    let mut prefs = prefs;
+    let explicit = library_dir.or_else(|| dac_brand::env_os("LIBRARY").filter(|p| !p.is_empty()).map(Into::into));
+    let (library_dir, welcome) = if in_memory {
+        (explicit, None)
+    } else {
+        let from_prefs = prefs.as_ref().map(|u| u.settings.library_path.clone()).filter(|p| !p.is_empty() && !dac_brand::env_is_set("LIBRARY"));
+        let remembered = [catalog_hooks::startup_catalog(), from_prefs.map(Into::into)];
+        match catalog_hooks::decide(explicit, &remembered, dac_engine::library::default_dir()) {
+            catalog_hooks::Startup::Open(d) => (Some(d), None),
+            catalog_hooks::Startup::Welcome { foreign } => {
+                // another app's library is not remembered as this app's any more
+                if let Some(u) = prefs.as_mut()
+                    && catalog_hooks::is_foreign(std::path::Path::new(&u.settings.library_path))
+                {
+                    u.settings.library_path.clear();
+                }
+                (None, Some(foreign))
+            }
+        }
+    };
     // GPU compute: off if the preference says so, or if the last launch died creating the device
     // (issue #136) — before anything can create it
     let gpu_crash = gpu_crash_check(in_memory);
@@ -839,9 +857,10 @@ fn main() -> eframe::Result {
         Box::new(move |cc| {
             // an older catalog is upgraded on a worker thread once the window shows, with progress
             let upgrade = library_dir.clone().filter(|d| !in_memory && dac_engine::library::needs_migration(d));
-            let (mut session, problem) = match &upgrade {
-                Some(_) => (unopened_session(), None),
-                None => open_session(in_memory, library_dir, seed_demo && files.is_empty()),
+            let (mut session, problem) = if upgrade.is_some() || welcome.is_some() {
+                (unopened_session(), None)
+            } else {
+                open_session(in_memory, library_dir, seed_demo && files.is_empty())
             };
             // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or <PREFIX>_SAM3_DIR
             // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
@@ -875,7 +894,11 @@ fn main() -> eframe::Result {
                 let rx = control_server::start(port, cc.egui_ctx.clone());
                 app = app.with_control(rx);
             }
-            if let Some(dir) = upgrade {
+            if let Some(foreign) = welcome {
+                // a first start: create a catalog or open one (command-line files wait for it)
+                dac_ui_egui::catalog_ui::welcome(&mut app, foreign.iter().map(|p| p.display().to_string()).collect());
+                app.catalog_ui.pending_import = files;
+            } else if let Some(dir) = upgrade {
                 dac_ui_egui::panels::library_problem::start_upgrade(&mut app, dir, files);
             } else if let Some(mut p) = problem {
                 // imported once the user has chosen where (into the library, or the temporary session)

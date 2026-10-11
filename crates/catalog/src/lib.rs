@@ -75,6 +75,10 @@ pub enum CatalogError {
     /// version doesn't know). Nothing was read into the session and nothing was modified.
     #[error("this library was written by a newer version of the app ({0}); update the app to open it. The library was left unchanged.")]
     Newer(String),
+    /// The folder holds a catalog of another app (e.g. the upstream app this one was forked from):
+    /// a format this app doesn't read. Nothing was read and nothing was modified.
+    #[error("this catalog was made by another app ({0}); it can't be opened here. It was left unchanged.")]
+    Foreign(String),
 }
 
 pub type Result<T> = std::result::Result<T, CatalogError>;

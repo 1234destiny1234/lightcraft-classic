@@ -95,6 +95,15 @@ pub fn resolve(path: &Path) -> Result<PathBuf> {
 /// Create a new, empty catalog: the folder `parent/name` (must not exist or be empty) with its
 /// entry point and store. Returns the entry-point path.
 pub fn create(parent: &Path, name: &str) -> Result<PathBuf> {
+    let dir = create_folder(parent, name)?;
+    let (j, _, _) = Journal::open(Box::new(FsStore::open(&dir).map_err(ioe)?))?;
+    drop(j);
+    Ok(entry_path(&dir))
+}
+
+/// The folder of a new catalog, `parent/name` (must not exist or be empty), created empty: opening
+/// it as a library then creates the catalog (with the demo photos, when asked for). Returns it.
+pub fn create_folder(parent: &Path, name: &str) -> Result<PathBuf> {
     let name = name.trim();
     if name.is_empty() || name.contains(['/', '\\']) || name == "." || name == ".." {
         return Err(CatalogError::Invalid(format!("not a catalog name: {name:?}")));
@@ -104,9 +113,7 @@ pub fn create(parent: &Path, name: &str) -> Result<PathBuf> {
         return Err(CatalogError::Invalid(format!("{} exists and is not empty", dir.display())));
     }
     std::fs::create_dir_all(&dir).map_err(ioe)?;
-    let (j, _, _) = Journal::open(Box::new(FsStore::open(&dir).map_err(ioe)?))?;
-    drop(j);
-    Ok(entry_path(&dir))
+    Ok(dir)
 }
 
 /// Whether opening the library folder `dir` will first migrate it from v3 (the JSON snapshot and
@@ -121,9 +128,25 @@ pub fn needs_migration(dir: &Path) -> bool {
     let mut head = [0u8; 64];
     let snap = std::fs::File::open(dir.join(SNAPSHOT)).ok().and_then(|mut f| f.read(&mut head).ok()).map(|n| head.get(..n).unwrap_or(&[]).to_vec());
     match snap {
-        Some(start) => !start.starts_with(STUB.trim_end().as_bytes()),
+        // another app's catalog is never upgraded (in place) as if it were this app's
+        Some(start) => !start.starts_with(STUB.trim_end().as_bytes()) && foreign_format(dir).is_none(),
         None => std::fs::metadata(dir.join(LOG)).is_ok_and(|m| m.len() > 0),
     }
+}
+
+/// The catalog format named by the library folder `dir`, when it is not one this app reads:
+/// a catalog made by another app, e.g. the upstream app this one was forked from (`None` for
+/// this app's own catalogs, an empty or missing folder, or a snapshot without a readable header).
+/// Reads only the start of the snapshot; never modifies anything.
+pub fn foreign_format(dir: &Path) -> Option<String> {
+    use std::io::Read;
+    let mut head = vec![0u8; 512];
+    let n = std::fs::File::open(dir.join(SNAPSHOT)).ok()?.read(&mut head).ok()?;
+    let head = String::from_utf8_lossy(head.get(..n)?).into_owned();
+    // `{"format":"…"` starts every snapshot this app or its ancestors wrote
+    let rest = head.split_once("\"format\"")?.1.trim_start().strip_prefix(':')?.trim_start().strip_prefix('"')?;
+    let format = rest.split_once('"')?.0;
+    (format != crate::journal::FORMAT && format != crate::journal::V4_FORMAT).then(|| format.to_string())
 }
 
 /// Migrate the library folder `dir` from v3 to the v4 store if it needs it ([`needs_migration`]),
@@ -241,6 +264,10 @@ fn stamp(secs: i64) -> String {
 
 /// v3 → v4: back up, load the JSON library, write the store, put the stub in place.
 fn migrate_v3(store: Box<dyn Store>, dir: &Path) -> Result<(Box<dyn Store>, CatalogDb, u32)> {
+    // another app's catalog: refused before anything (the backup folder included) is written
+    if let Some(f) = foreign_format(dir) {
+        return Err(CatalogError::Foreign(format!("{SNAPSHOT}: format {f:?}")));
+    }
     let _running = crate::progress::Running::start(dir.display().to_string());
     let backup = dir.join(BACKUPS_DIR).join(format!("before-v4 {}", stamp(now_secs())));
     std::fs::create_dir_all(&backup).map_err(ioe)?;

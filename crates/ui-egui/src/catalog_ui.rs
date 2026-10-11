@@ -1,7 +1,8 @@
 //! Catalog-level UI (P1.5): File ▸ New / Open / Open Recent Catalog, the catalog chooser
 //! (at startup when asked for, or with Alt held while the window opens), Catalog Settings,
 //! Export as Catalog, Import from Another Catalog with its change preview, and the
-//! Read / Save Metadata conflict question.
+//! Read / Save Metadata conflict question, and the welcome dialog of a first start (no catalog
+//! yet: create one, or open one).
 //!
 //! The work is done by engine commands (`catalog.*`, `photo.xmpStatus`, `library.previewSettings`);
 //! this module only holds the dialogs and the UI commands that switch catalogs.
@@ -17,6 +18,15 @@ use crate::pick::Picked;
 /// The catalog dialogs (one at a time, in their own window).
 #[derive(Clone, Debug, PartialEq)]
 pub enum CatalogDialog {
+    /// First start, no catalog to open yet: create one (name, location, sample photos or not) or
+    /// open one. `foreign`: libraries of another app found where this app's would be (e.g. the
+    /// upstream app's), which can't be opened here; named so the user knows why they don't open.
+    Welcome {
+        parent: String,
+        name: String,
+        demo: bool,
+        foreign: Vec<String>,
+    },
     /// Pick a catalog: the recent ones, New…, Open….
     Chooser,
     NewCatalog {
@@ -57,6 +67,17 @@ pub struct CatalogUi {
     recent: Option<RecentCatalogs>,
     /// Frames since the window opened (Alt held during the first ones opens the chooser).
     frames: u32,
+    /// Files from the command line of a first start, imported once a catalog is open.
+    pub pending_import: Vec<String>,
+}
+
+/// The welcome dialog: a new catalog under the Pictures folder by default.
+pub fn welcome(app: &mut DacApp, foreign: Vec<String>) {
+    let parent = dac_engine::library::default_dir()
+        .and_then(|d| d.parent().map(Path::to_path_buf))
+        .map(|d| d.to_string_lossy().into_owned())
+        .unwrap_or_default();
+    app.catalog_ui.dialog = Some(CatalogDialog::Welcome { parent, name: dac_brand::LIBRARY_DEFAULT.to_string(), demo: false, foreign });
 }
 
 impl CatalogUi {
@@ -95,11 +116,11 @@ impl CatalogUi {
 /// isn't a catalog is an error rather than a new, empty library.
 fn open_catalog(app: &mut DacApp, path: &str) -> Result<Value, String> {
     let dir = dac_catalog::library::resolve(Path::new(path)).map_err(|e| e.to_string())?;
-    open_dir(app, &dir)
+    open_dir(app, &dir, false)
 }
 
-fn open_dir(app: &mut DacApp, dir: &Path) -> Result<Value, String> {
-    let r = crate::panels::settings::open_library(app, &json!({"path": dir.to_string_lossy()}))?;
+fn open_dir(app: &mut DacApp, dir: &Path, demo: bool) -> Result<Value, String> {
+    let r = crate::panels::settings::open_library(app, &json!({"path": dir.to_string_lossy(), "demo": demo}))?;
     app.catalog_ui.touch(dir);
     app.catalog_ui.dialog = None;
     Ok(r)
@@ -143,6 +164,10 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
             }
             None => Ok(json!({"recent": app.catalog_ui.recent().existing()})),
         },
+        "catalog.welcome" => {
+            welcome(app, Vec::new());
+            Ok(Value::Null)
+        }
         "catalog.chooser" => {
             app.catalog_ui.dialog = Some(CatalogDialog::Chooser);
             Ok(Value::Null)
@@ -202,10 +227,19 @@ fn xmp_conflict(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, S
 fn new_catalog(app: &mut DacApp, p: &Value) -> Result<Value, String> {
     match (str_of(p, "parent"), str_of(p, "name")) {
         (Some(parent), Some(name)) => {
-            let entry = dac_catalog::library::create(Path::new(parent), name).map_err(|e| e.to_string())?;
-            let dir = entry.parent().map(Path::to_path_buf).ok_or("catalog without a folder")?;
-            let mut r = open_dir(app, &dir)?;
-            r["entry"] = json!(entry);
+            let r = if p.get("demo").and_then(Value::as_bool).unwrap_or(false) {
+                // an empty folder, opened as a new library: it starts with the demo photos
+                let dir = dac_catalog::library::create_folder(Path::new(parent), name).map_err(|e| e.to_string())?;
+                let mut r = open_dir(app, &dir, true)?;
+                r["entry"] = json!(dac_catalog::library::find_entry(&dir));
+                r
+            } else {
+                let entry = dac_catalog::library::create(Path::new(parent), name).map_err(|e| e.to_string())?;
+                let dir = entry.parent().map(Path::to_path_buf).ok_or("catalog without a folder")?;
+                let mut r = open_dir(app, &dir, false)?;
+                r["entry"] = json!(entry);
+                r
+            };
             Ok(r)
         }
         _ => {
@@ -223,7 +257,7 @@ fn new_catalog(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
     let busy = crate::lightroom_import::is_running(app);
     Some(match id {
-        "catalog.new" | "catalog.open" | "catalog.chooser" | "catalog.openRecent" => !busy,
+        "catalog.new" | "catalog.open" | "catalog.chooser" | "catalog.openRecent" | "catalog.welcome" => !busy,
         "dialog.importCatalog" => !busy && app.services.pick_folder.is_some(),
         "dialog.catalogSettings" => app.session.catalog_dir().is_some(),
         "dialog.exportCatalog" => !app.session.catalog.is_empty(),
@@ -261,7 +295,13 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
         }
     }
     let Some(mut dlg) = app.catalog_ui.dialog.clone() else { return };
+    let welcoming = matches!(dlg, CatalogDialog::Welcome { .. });
+    if welcoming {
+        // nothing behind it can be used before a catalog is open
+        crate::panels::library_problem::dim(ctx);
+    }
     let title = match &dlg {
+        CatalogDialog::Welcome { .. } => "Welcome to {app}",
         CatalogDialog::Chooser => "Select a Catalog",
         CatalogDialog::NewCatalog { .. } => "New Catalog",
         CatalogDialog::Settings { .. } => "Catalog Settings",
@@ -276,6 +316,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
     egui::Window::new(crate::i18n::tr(title))
         .id(egui::Id::new("catalog-dialog"))
+        .order(if welcoming { egui::Order::Foreground } else { egui::Order::Middle })
         .collapsible(false)
         .resizable(false)
         .frame(frame)
@@ -285,6 +326,9 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
             ui.spacing_mut().item_spacing.y = 8.0;
             let dim = |s: &str| egui::RichText::new(crate::i18n::tr(s)).color(t.text_dim);
             match &mut dlg {
+                CatalogDialog::Welcome { parent, name, demo, foreign } => {
+                    welcome_ui(app, ui, &t, parent, name, demo, foreign, &mut action);
+                }
                 CatalogDialog::Chooser => chooser(app, ui, &mut action, &mut close),
                 CatalogDialog::NewCatalog { parent, name } => {
                     ui.label(dim("A catalog is a folder: its photos' records, settings and history. The photos themselves stay where they are."));
@@ -350,7 +394,8 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
     if app.catalog_ui.dialog.is_some() {
         app.catalog_ui.dialog = Some(dlg);
     }
-    if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
+    // the welcome dialog stays until a catalog is open (or the app quits)
+    if !welcoming && ctx.input(|i| i.key_pressed(egui::Key::Escape)) {
         close = true;
     }
     if close {
@@ -374,6 +419,93 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
             Err(e) => app.toast_error(ctx, e),
         }
     }
+    // a first start's command-line files, once a catalog is open
+    if !app.catalog_ui.pending_import.is_empty() && app.session.library.is_some() {
+        let files = std::mem::take(&mut app.catalog_ui.pending_import);
+        if let Err(e) = crate::import::start_paths(app, files) {
+            log::warn!("import: {e}");
+        }
+    }
+}
+
+/// The welcome dialog's body.
+#[allow(clippy::too_many_arguments)]
+fn welcome_ui(
+    app: &mut DacApp,
+    ui: &mut egui::Ui,
+    t: &crate::theme::Tokens,
+    parent: &mut String,
+    name: &mut String,
+    demo: &mut bool,
+    foreign: &[String],
+    action: &mut Option<(String, Value)>,
+) {
+    ui.set_width(460.0);
+    let dim = |s: &str| egui::RichText::new(crate::i18n::tr(s)).color(t.text_dim);
+    ui.label(dim(
+        "{app} keeps the records of your photos, their edits and history in a catalog. Create one to start, or open one you already have. Your photos stay where they are.",
+    ));
+    ui.add_space(4.0);
+    ui.label(egui::RichText::new(crate::i18n::tr("Create a new catalog")).strong());
+    ui.horizontal(|ui| {
+        ui.add_sized([80.0, 20.0], egui::Label::new(crate::i18n::tr("Name")));
+        crate::text_field::TextField::singleline("field:welcomeName", name).width(360.0).show(ui);
+    });
+    ui.horizontal(|ui| {
+        ui.add_sized([80.0, 20.0], egui::Label::new(crate::i18n::tr("Location")));
+        crate::text_field::TextField::singleline("field:welcomeParent", parent).width(280.0).show(ui);
+        let r = ui.add_enabled(app.services.pick_folder.is_some(), egui::Button::new(crate::i18n::tr("Choose…")));
+        crate::widgets::register(ui.ctx(), "button:welcomeParent", r.rect);
+        if r.clicked()
+            && let Some(d) = app.services.pick_folder.as_mut().and_then(|f| f())
+        {
+            *parent = d;
+        }
+    });
+    let r = ui.checkbox(demo, crate::i18n::tr("Add sample photos to try things out"));
+    crate::widgets::register(ui.ctx(), "check:welcomeDemo", r.rect);
+    let ready = !name.trim().is_empty() && !parent.trim().is_empty();
+    let r = ui.add_enabled(ready, egui::Button::new(egui::RichText::new(crate::i18n::tr("Create Catalog")).strong()).min_size(egui::vec2(0.0, 26.0)));
+    crate::widgets::register(ui.ctx(), "button:welcomeCreate", r.rect);
+    if r.clicked() {
+        *action = Some(("catalog.new".into(), json!({"parent": parent.trim(), "name": name.trim(), "demo": *demo})));
+    }
+    ui.separator();
+    ui.label(egui::RichText::new(crate::i18n::tr("Open an existing catalog")).strong());
+    // this app's catalogs only: another app's never open here
+    let recent: Vec<PathBuf> = app
+        .catalog_ui
+        .recent()
+        .existing()
+        .into_iter()
+        .filter(|p| dac_catalog::library::resolve(p).is_ok_and(|d| dac_catalog::library::foreign_format(&d).is_none()))
+        .collect();
+    for (i, p) in recent.iter().enumerate() {
+        let r = ui.selectable_label(false, display_name(p));
+        crate::widgets::register(ui.ctx(), format!("item:welcomeRecent{i}"), r.rect);
+        if r.clicked() {
+            *action = Some(("catalog.openRecent".into(), json!({"path": p})));
+        }
+    }
+    if !foreign.is_empty() {
+        ui.label(dim("A library of another app was found here. {app} can't open its catalog format, and leaves it untouched:"));
+        for f in foreign {
+            ui.label(egui::RichText::new(f.as_str()).color(t.text_label));
+        }
+    }
+    ui.add_space(2.0);
+    ui.horizontal(|ui| {
+        let r = ui.add_enabled(app.services.pick_folder.is_some(), egui::Button::new(crate::i18n::tr("Open Catalog…")));
+        crate::widgets::register(ui.ctx(), "button:welcomeOpen", r.rect);
+        if r.clicked() {
+            *action = Some(("catalog.open".into(), json!({})));
+        }
+        let r = ui.button(crate::i18n::tr("Quit"));
+        crate::widgets::register(ui.ctx(), "button:welcomeQuit", r.rect);
+        if r.clicked() {
+            app.ui.quit = true;
+        }
+    });
 }
 
 fn done_message(cmd: &str, v: &Value) -> Option<String> {

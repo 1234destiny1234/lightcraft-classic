@@ -649,3 +649,28 @@ fn export_and_import_catalogs() {
     both.apply(undo).unwrap();
     assert_eq!(both.photos().map(|p| p.as_ref().clone()).collect::<Vec<_>>(), c.photos().map(|p| p.as_ref().clone()).collect::<Vec<_>>());
 }
+
+/// First start after a rename (maintainer report): a library of the upstream app (its own v3
+/// snapshot format) was reported as "corrupt catalog data", and the upgrade attempt wrote a
+/// backups folder into it first. It is another app's catalog: refused as such, never touched.
+#[test]
+fn another_apps_catalog_is_foreign_and_left_untouched() {
+    let s = Scratch::new("foreign");
+    let snap = "{\"format\":\"upstream-catalog\",\"version\":6,\"seq\":0,\"catalog\":{}}\n";
+    std::fs::write(s.path().join(SNAPSHOT), snap).unwrap();
+    std::fs::write(s.path().join(LOG), "{\"op\":\"x\"}\n").unwrap();
+    assert_eq!(library::foreign_format(s.path()).as_deref(), Some("upstream-catalog"));
+    assert!(!library::needs_migration(s.path()));
+    let Err(e) = Journal::open(Box::new(FsStore::open(s.path()).unwrap())) else { panic!("another app's catalog opened") };
+    assert!(matches!(e, CatalogError::Foreign(_)), "{e}");
+    assert!(!e.to_string().contains("corrupt"), "{e}");
+    assert!(matches!(library::migrate(s.path()), Ok(false)));
+    let names: Vec<String> = std::fs::read_dir(s.path()).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().into_owned()).collect();
+    assert_eq!(names.len(), 2, "{names:?}");
+    assert_eq!(std::fs::read_to_string(s.path().join(SNAPSHOT)).unwrap(), snap);
+    // this app's own catalogs are not foreign
+    let own = Scratch::new("own");
+    drop(open(own.path()));
+    assert_eq!(library::foreign_format(own.path()), None);
+    assert_eq!(library::foreign_format(&s.path().join("nothing-here")), None);
+}
