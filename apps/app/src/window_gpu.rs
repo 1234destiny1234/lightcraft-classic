@@ -270,7 +270,10 @@ mod tests {
     /// wgpu's default panic. Needs an adapter; skipped where there is none (CI without a GPU).
     #[test]
     fn pipeline_errors_are_captured_not_panics() {
-        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor { backends: backend::window_backends(), ..wgpu::InstanceDescriptor::new_without_display_handle() });
+        let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
+            backends: backend::window_backends(),
+            ..wgpu::InstanceDescriptor::new_without_display_handle()
+        });
         let Ok(adapter) = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())) else {
             eprintln!("no GPU adapter: skipped");
             return;

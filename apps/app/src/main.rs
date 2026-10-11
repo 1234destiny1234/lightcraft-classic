@@ -862,83 +862,85 @@ fn main() -> eframe::Result {
     };
     // the app's copy: `log_file` is still named in the message of a start that fails
     let app_log_file = log_file.clone();
-    let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| eframe::run_native(
-        dac_brand::DISPLAY_NAME,
-        options,
-        Box::new(move |cc| {
-            // the window's renderer is up (eframe calls this after creating it)
-            win_files_app.started(window_renderer);
-            // an older catalog is upgraded on a worker thread once the window shows, with progress
-            let upgrade = library_dir.clone().filter(|d| !in_memory && dac_engine::library::needs_migration(d));
-            let (mut session, problem) = if upgrade.is_some() || welcome.is_some() {
-                (unopened_session(), None)
-            } else {
-                open_session(in_memory, library_dir, seed_demo && files.is_empty())
-            };
-            // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or <PREFIX>_SAM3_DIR
-            // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
-            session.segmenter.dir =
-                dac_brand::env_os("SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
-            // the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
-            session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
-            let mut app = DacApp::new(session, services(cc.egui_ctx.clone(), app_log_file.as_deref()));
-            if let Some(ui) = prefs {
-                app.ui = ui;
-            }
-            catalog_hooks::remember_recent(&mut app, in_memory);
-            dac_ui_egui::i18n::set_language(app.ui.language);
-            app.integrated_titlebar = cfg!(target_os = "macos");
-            app.notices.extend(prefs_warning);
-            app.notices.extend(launch_notices);
-            app.notices.extend(window_notice);
-            // what's on disk now: only changes are written
-            let writer = PrefsWriter {
-                path: if in_memory { None } else { prefs_path() },
-                written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
-                library: app.ui.settings.library_path.clone(),
-                keep_file: keep_prefs_file,
-                ..Default::default()
-            };
-            // after the snapshot above, so the writer saves the switched-off preference
-            if let Some(notice) = gpu_crash {
-                app.ui.settings.gpu = false;
-                app.notices.push(notice);
-            }
-            if let Some(port) = control_port {
-                let rx = control_server::start(port, cc.egui_ctx.clone());
-                app = app.with_control(rx);
-            }
-            if let Some(foreign) = welcome {
-                // a first start: create a catalog or open one (command-line files wait for it)
-                dac_ui_egui::catalog_ui::welcome(&mut app, foreign.iter().map(|p| p.display().to_string()).collect());
-                app.catalog_ui.pending_import = files;
-            } else if let Some(dir) = upgrade {
-                dac_ui_egui::panels::library_problem::start_upgrade(&mut app, dir, files);
-            } else if let Some(mut p) = problem {
-                // imported once the user has chosen where (into the library, or the temporary session)
-                p.pending_import = files;
-                app.library_problem = Some(p);
-            } else if !files.is_empty() {
-                // listed and read on the import worker once the window shows (issue #374: never
-                // here, before the first frame, where a large folder kept the window from
-                // appearing)
-                if let Err(e) = dac_ui_egui::import::start_paths(&mut app, files) {
-                    log::warn!("import at launch: {e}");
+    let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+        eframe::run_native(
+            dac_brand::DISPLAY_NAME,
+            options,
+            Box::new(move |cc| {
+                // the window's renderer is up (eframe calls this after creating it)
+                win_files_app.started(window_renderer);
+                // an older catalog is upgraded on a worker thread once the window shows, with progress
+                let upgrade = library_dir.clone().filter(|d| !in_memory && dac_engine::library::needs_migration(d));
+                let (mut session, problem) = if upgrade.is_some() || welcome.is_some() {
+                    (unopened_session(), None)
+                } else {
+                    open_session(in_memory, library_dir, seed_demo && files.is_empty())
+                };
+                // AI masks: the SAM 3 checkpoint (facebook/sam3) in <config>/models/sam3, or <PREFIX>_SAM3_DIR
+                // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
+                session.segmenter.dir =
+                    dac_brand::env_os("SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
+                // the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
+                session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+                let mut app = DacApp::new(session, services(cc.egui_ctx.clone(), app_log_file.as_deref()));
+                if let Some(ui) = prefs {
+                    app.ui = ui;
                 }
-                app.ui.view = dac_ui_egui::state::ViewMode::PhotoGrid;
-            }
-            // native menu bar generated from the command registry (macOS; elsewhere the menus are
-            // drawn in the window's top bar). <PREFIX>_NO_NATIVE_MENU=1 keeps the in-window menus.
-            #[cfg(target_os = "macos")]
-            let menu = (!dac_brand::env_is_set("NO_NATIVE_MENU")).then(|| native_menu::NativeMenu::install(&mut app, &cc.egui_ctx));
-            Ok(Box::new(App(
-                app,
-                writer,
+                catalog_hooks::remember_recent(&mut app, in_memory);
+                dac_ui_egui::i18n::set_language(app.ui.language);
+                app.integrated_titlebar = cfg!(target_os = "macos");
+                app.notices.extend(prefs_warning);
+                app.notices.extend(launch_notices);
+                app.notices.extend(window_notice);
+                // what's on disk now: only changes are written
+                let writer = PrefsWriter {
+                    path: if in_memory { None } else { prefs_path() },
+                    written: serde_json::to_vec_pretty(&app.ui).unwrap_or_default(),
+                    library: app.ui.settings.library_path.clone(),
+                    keep_file: keep_prefs_file,
+                    ..Default::default()
+                };
+                // after the snapshot above, so the writer saves the switched-off preference
+                if let Some(notice) = gpu_crash {
+                    app.ui.settings.gpu = false;
+                    app.notices.push(notice);
+                }
+                if let Some(port) = control_port {
+                    let rx = control_server::start(port, cc.egui_ctx.clone());
+                    app = app.with_control(rx);
+                }
+                if let Some(foreign) = welcome {
+                    // a first start: create a catalog or open one (command-line files wait for it)
+                    dac_ui_egui::catalog_ui::welcome(&mut app, foreign.iter().map(|p| p.display().to_string()).collect());
+                    app.catalog_ui.pending_import = files;
+                } else if let Some(dir) = upgrade {
+                    dac_ui_egui::panels::library_problem::start_upgrade(&mut app, dir, files);
+                } else if let Some(mut p) = problem {
+                    // imported once the user has chosen where (into the library, or the temporary session)
+                    p.pending_import = files;
+                    app.library_problem = Some(p);
+                } else if !files.is_empty() {
+                    // listed and read on the import worker once the window shows (issue #374: never
+                    // here, before the first frame, where a large folder kept the window from
+                    // appearing)
+                    if let Err(e) = dac_ui_egui::import::start_paths(&mut app, files) {
+                        log::warn!("import at launch: {e}");
+                    }
+                    app.ui.view = dac_ui_egui::state::ViewMode::PhotoGrid;
+                }
+                // native menu bar generated from the command registry (macOS; elsewhere the menus are
+                // drawn in the window's top bar). <PREFIX>_NO_NATIVE_MENU=1 keeps the in-window menus.
                 #[cfg(target_os = "macos")]
-                menu,
-            )))
-        }),
-    )));
+                let menu = (!dac_brand::env_is_set("NO_NATIVE_MENU")).then(|| native_menu::NativeMenu::install(&mut app, &cc.egui_ctx));
+                Ok(Box::new(App(
+                    app,
+                    writer,
+                    #[cfg(target_os = "macos")]
+                    menu,
+                )))
+            }),
+        )
+    }));
     // a panic that still escaped the renderer's start (the probe and error handler should
     // prevent it): an error like any other failed start
     let started = started.unwrap_or_else(|_| Err(eframe::Error::AppCreation("the window's renderer panicked while starting".into())));
