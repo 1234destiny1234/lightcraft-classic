@@ -183,6 +183,13 @@ both). Photos match by file path and virtual-copy name, so a photo whose origina
   (`catalog.promptAtStartup`). It shows at startup when asked for, or when Alt is held while the window opens. The
   last catalog is opened first and the chooser switches from it (pure Rust has no portable way to read the keyboard
   before the window exists).
+- **First start** (`catalog.welcome`): when there is no catalog of this app to open (no `--library` /
+  `<PREFIX>_LIBRARY`, nothing remembered, no catalog at the default location) the welcome dialog asks: create a
+  catalog (name, location — default `~/Pictures/<library_default>` — and sample photos only if ticked; `catalog.new
+  {parent, name, demo}`) or open one. Another app's library (e.g. the upstream app's, named by settings copied from a
+  previous name) is never opened as this app's own: its format is refused as `Foreign`, never upgraded in place, and
+  the dialog names it. The problem window words each failure by its cause (damaged only after a failed integrity
+  check; in use, newer, another app's, missing, permission).
 - **Backup**: engine commands `catalog.backup {dir?}`, `catalog.checkIntegrity`, `catalog.optimize` (File menu) and
   `catalog.backupIfDue`, which the desktop app runs on exit before the closing checkpoint.
 - **Catalog Settings…** (Edit menu, `dialog.catalogSettings` → `catalog.settings`): backup schedule, folder, integrity

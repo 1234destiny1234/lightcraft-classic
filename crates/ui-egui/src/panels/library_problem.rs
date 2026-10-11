@@ -29,9 +29,110 @@ pub struct LibraryProblem {
     pub upgrading: bool,
 }
 
+/// Why a library didn't open, from its error: each gets its own words and actions. Only a catalog
+/// that failed an integrity check is called damaged (a first start used to call another app's
+/// library "corrupt").
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ProblemKind {
+    /// No folder to try (e.g. no home folder).
+    NoLocation,
+    /// The catalog's data failed its integrity check.
+    Damaged,
+    /// Another program has it open.
+    InUse,
+    /// Written by a newer version of the app.
+    Newer,
+    /// Another app's catalog (e.g. the upstream app's).
+    Foreign,
+    /// The folder or a file of it isn't there.
+    Missing,
+    /// Not allowed to read or write it.
+    Permission,
+    Other,
+}
+
+impl ProblemKind {
+    pub fn of(path: &str, error: &str) -> ProblemKind {
+        let e = error.to_lowercase();
+        let has = |words: &[&str]| words.iter().any(|w| e.contains(w));
+        if path.is_empty() {
+            ProblemKind::NoLocation
+        } else if has(&["corrupt catalog data"]) {
+            ProblemKind::Damaged
+        } else if has(&["already open in"]) {
+            ProblemKind::InUse
+        } else if has(&["newer version of the app"]) {
+            ProblemKind::Newer
+        } else if has(&["made by another app"]) {
+            ProblemKind::Foreign
+        } else if has(&["permission denied", "access is denied", "os error 13", "read-only file system", "os error 30"]) {
+            ProblemKind::Permission
+        } else if has(&["no such file", "not found", "cannot find", "os error 2)", "os error 3)"]) || !std::path::Path::new(path).exists() {
+            ProblemKind::Missing
+        } else {
+            ProblemKind::Other
+        }
+    }
+
+    /// `ui.inspect` → `libraryProblem.kind`.
+    pub fn id(self) -> &'static str {
+        match self {
+            ProblemKind::NoLocation => "noLocation",
+            ProblemKind::Damaged => "damaged",
+            ProblemKind::InUse => "inUse",
+            ProblemKind::Newer => "newer",
+            ProblemKind::Foreign => "foreign",
+            ProblemKind::Missing => "missing",
+            ProblemKind::Permission => "permission",
+            ProblemKind::Other => "other",
+        }
+    }
+
+    /// The window's title (English source; translated when shown).
+    pub fn title(self) -> &'static str {
+        match self {
+            ProblemKind::Damaged => "Your catalog is damaged",
+            ProblemKind::InUse => "Your catalog is open in another program",
+            ProblemKind::Newer => "Your catalog needs a newer version",
+            ProblemKind::Foreign => "This catalog belongs to another app",
+            ProblemKind::Missing => "Your catalog can't be found",
+            ProblemKind::Permission => "Your catalog can't be accessed",
+            ProblemKind::NoLocation | ProblemKind::Other => "Your library couldn't be opened",
+        }
+    }
+
+    /// What it means and what to do (English source; translated when shown).
+    pub fn advice(self) -> &'static str {
+        match self {
+            ProblemKind::Damaged => {
+                "The catalog failed its integrity check. Restore it from a backup (the message above says where the newest one is), or open or create another catalog."
+            }
+            ProblemKind::InUse => "Close {app} or the other program that has it open, then try again.",
+            ProblemKind::Newer => "It was saved by a newer version of {app}. Update {app} to open it; it was left unchanged.",
+            ProblemKind::Foreign => {
+                "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one."
+            }
+            ProblemKind::Missing => "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.",
+            ProblemKind::Permission => "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.",
+            ProblemKind::NoLocation | ProblemKind::Other => {
+                "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved."
+            }
+        }
+    }
+
+    /// Try Again can help.
+    pub fn retryable(self) -> bool {
+        !matches!(self, ProblemKind::Foreign | ProblemKind::Newer | ProblemKind::NoLocation)
+    }
+}
+
 impl LibraryProblem {
     pub fn new(path: impl Into<String>, error: impl Into<String>) -> LibraryProblem {
         LibraryProblem { path: path.into(), error: error.into(), can_retry: true, ..Default::default() }
+    }
+
+    pub fn kind(&self) -> ProblemKind {
+        ProblemKind::of(&self.path, &self.error)
     }
 
     /// `ui.inspect` → `libraryProblem`.
@@ -42,6 +143,7 @@ impl LibraryProblem {
             "temporarySession": self.dismissed,
             "pendingImport": self.pending_import.len(),
             "upgrading": self.upgrading,
+            "kind": self.kind().id(),
             "upgrade": dac_engine::library::migration_progress(),
         })
     }
@@ -51,6 +153,7 @@ impl LibraryProblem {
 enum Choice {
     Retry,
     Choose,
+    New,
     Temporary,
     Quit,
 }
@@ -128,7 +231,7 @@ pub fn start_upgrade(app: &mut DacApp, dir: std::path::PathBuf, files: Vec<Strin
 }
 
 /// Dim everything behind a blocking window; clicks there go nowhere.
-fn dim(ctx: &egui::Context) {
+pub(crate) fn dim(ctx: &egui::Context) {
     let screen = ctx.content_rect();
     egui::Area::new(egui::Id::new("library-problem-dim")).order(egui::Order::Middle).fixed_pos(screen.min).interactable(true).show(ctx, |ui| {
         // swallows clicks: nothing behind the window can be used meanwhile
@@ -193,8 +296,9 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
     dim(ctx);
     let mut choice = None;
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
+    let kind = problem.kind();
     let window_id = egui::Id::new("library-problem");
-    let shown = egui::Window::new(crate::i18n::tr("Your library couldn't be opened"))
+    let shown = egui::Window::new(crate::i18n::tr(kind.title()))
         .id(window_id)
         .order(egui::Order::Foreground)
         .collapsible(false)
@@ -215,14 +319,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     ui.label(RichText::new(&problem.path).font(t.semibold(12.5)).color(t.text));
                 }
                 ui.add(egui::Label::new(RichText::new(&problem.error).color(t.caution)).wrap());
-                ui.label(
-                    RichText::new(
-                        "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open \
-                     or reconnecting its drive), open a different library or create a new one, or continue without a library — \
-                     then nothing you do is saved.",
-                    )
-                    .color(t.text_dim),
-                );
+                ui.label(RichText::new(crate::i18n::tr(kind.advice())).color(t.text_dim));
             });
             layout.footer(ui, |ui| {
                 ui.add_space(4.0);
@@ -234,8 +331,9 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                             choice = Some(c);
                         }
                     };
-                    button(ui, "libraryRetry", "Try Again", problem.can_retry && !problem.path.is_empty(), Choice::Retry);
+                    button(ui, "libraryRetry", "Try Again", problem.can_retry && kind.retryable(), Choice::Retry);
                     button(ui, "libraryChoose", "Choose Another Library…", app.services.pick_folder.is_some(), Choice::Choose);
+                    button(ui, "libraryNew", "New Catalog…", true, Choice::New);
                     button(ui, "libraryTemporary", "Continue Without Saving", true, Choice::Temporary);
                     button(ui, "libraryQuit", "Quit", true, Choice::Quit);
                 });
@@ -245,6 +343,13 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
     match choice {
         Some(Choice::Retry) => open(app, Some(problem.path)),
         Some(Choice::Choose) => open(app, None),
+        Some(Choice::New) => {
+            // the New Catalog dialog (it opens the catalog it creates, which ends the problem)
+            if let Some(p) = app.library_problem.as_mut() {
+                p.dismissed = true;
+            }
+            new_catalog_dialog(app);
+        }
         Some(Choice::Temporary) => {
             if let Some(p) = app.library_problem.as_mut() {
                 p.dismissed = true;
@@ -259,6 +364,15 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
         }
         Some(Choice::Quit) => app.ui.quit = true,
         None => {}
+    }
+}
+
+/// New Catalog… from the problem window: the catalog dialog, under the Pictures folder by default.
+fn new_catalog_dialog(app: &mut DacApp) {
+    let parent = dac_engine::library::default_dir().and_then(|d| d.parent().map(std::path::Path::to_path_buf));
+    let params = json!({"parent": parent.map(|d| d.to_string_lossy().into_owned())});
+    if let Err(e) = app.run("catalog.new", params) {
+        log::warn!("new catalog: {e}");
     }
 }
 

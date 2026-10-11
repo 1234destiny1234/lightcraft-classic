@@ -113,3 +113,53 @@ fn read_metadata_asks_before_overwriting_catalog_changes() {
     app.session.close_library().unwrap();
     let _ = std::fs::remove_dir_all(&root);
 }
+
+/// First start (maintainer report): the welcome dialog creates a catalog — with the sample photos
+/// only when asked for — and opens it.
+#[test]
+fn welcome_creates_a_catalog_with_or_without_samples() {
+    let root = temp("welcome");
+    let mut app = DacApp::new(dac_engine::Session::new().with_fs(), Services::default());
+    app.run("catalog.welcome", json!({})).unwrap();
+    assert!(matches!(&app.catalog_ui.dialog, Some(CatalogDialog::Welcome { demo: false, name, .. }) if name == dac_brand::LIBRARY_DEFAULT));
+    app.run("catalog.new", json!({"parent": root.to_string_lossy(), "name": "Plain", "demo": false})).unwrap();
+    assert!(app.session.catalog.is_empty());
+    assert!(app.catalog_ui.dialog.is_none());
+    app.run("catalog.new", json!({"parent": root.to_string_lossy(), "name": "Samples", "demo": true})).unwrap();
+    assert!(!app.session.catalog.is_empty(), "sample photos when asked for");
+    assert_eq!(app.session.catalog_dir(), Some(root.join("Samples").as_path()));
+    app.session.close_library().unwrap();
+    let _ = std::fs::remove_dir_all(&root);
+}
+
+/// The problem window says "damaged" only for a catalog that failed its integrity check; another
+/// app's catalog, a locked, newer, missing or forbidden one get their own words.
+#[test]
+fn library_problems_are_worded_by_their_cause() {
+    use crate::panels::library_problem::{LibraryProblem, ProblemKind};
+    let root = temp("problems");
+    let here = root.to_string_lossy().to_string();
+    // another app's catalog (e.g. the upstream app's): the report's case, opened for real
+    let foreign = root.join("Upstream Library");
+    std::fs::create_dir_all(&foreign).unwrap();
+    std::fs::write(foreign.join("catalog.snap"), "{\"format\":\"upstream-catalog\",\"version\":6,\"seq\":0,\"catalog\":{}}\n").unwrap();
+    let mut s = dac_engine::Session::new().with_fs();
+    let e = s.open_library(&foreign, false).unwrap_err().to_string();
+    let p = LibraryProblem::new(foreign.to_string_lossy(), e.clone());
+    assert_eq!(p.kind(), ProblemKind::Foreign, "{e}");
+    assert!(!e.to_lowercase().contains("corrupt"), "{e}");
+    for kind in [ProblemKind::Foreign, ProblemKind::InUse, ProblemKind::Newer, ProblemKind::Missing, ProblemKind::Permission, ProblemKind::Other] {
+        let words = format!("{} {}", kind.title(), kind.advice()).to_lowercase();
+        assert!(!words.contains("corrupt") && !words.contains("damaged"), "{kind:?}: {words}");
+    }
+    assert!(ProblemKind::Damaged.title().contains("damaged"));
+    assert_eq!(ProblemKind::of(&here, "corrupt catalog data: catalog.redb: DB corrupted"), ProblemKind::Damaged);
+    assert_eq!(ProblemKind::of(&here, "This library is already open in app (pid 7). Close it there first."), ProblemKind::InUse);
+    assert_eq!(ProblemKind::of(&here, "this library was written by a newer version of the app (v9)"), ProblemKind::Newer);
+    assert_eq!(ProblemKind::of(&here, "catalog storage: Permission denied (os error 13)"), ProblemKind::Permission);
+    assert_eq!(ProblemKind::of(&root.join("gone").to_string_lossy(), "catalog storage: something"), ProblemKind::Missing);
+    assert_eq!(ProblemKind::of(&here, "something else"), ProblemKind::Other);
+    assert_eq!(ProblemKind::of("", "no home"), ProblemKind::NoLocation);
+    assert!(!ProblemKind::Foreign.retryable() && ProblemKind::InUse.retryable());
+    let _ = std::fs::remove_dir_all(&root);
+}

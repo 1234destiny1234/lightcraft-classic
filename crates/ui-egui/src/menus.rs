@@ -209,6 +209,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("catalog.open", "Open Catalog…", None, "File"),
     ("catalog.openRecent", "Open Recent Catalog", None, ""),
     ("catalog.chooser", "Choose Catalog…", None, ""),
+    ("catalog.welcome", "Welcome…", None, ""),
     ("catalog.promptAtStartup", "Show the Catalog Chooser at Startup", None, ""),
     ("dialog.catalogSettings", "Catalog Settings…", None, "Edit"),
     ("dialog.exportCatalog", "Export as Catalog…", None, "File"),

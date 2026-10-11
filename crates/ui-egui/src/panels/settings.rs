@@ -678,7 +678,9 @@ pub fn open_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
         }
     };
     app.session.close_library().map_err(|e| e.to_string())?;
-    app.session.open_library(&path, false).map_err(|e| e.to_string())?;
+    // `demo`: a newly created library starts with the procedural demo photos (the welcome dialog's choice)
+    let demo = p.get("demo").and_then(Value::as_bool).unwrap_or(false);
+    app.session.open_library(&path, demo).map_err(|e| e.to_string())?;
     app.lightroom_last = None;
     app.renderer.forget_all();
     app.ui.compare = None;

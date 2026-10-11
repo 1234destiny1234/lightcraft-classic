@@ -71,7 +71,9 @@ use crate::{Catalog, CatalogError, Op, Result};
 
 pub const SNAPSHOT: &str = "catalog.snap";
 pub const LOG: &str = "catalog.log";
-const FORMAT: &str = "dac-catalog";
+pub(crate) const FORMAT: &str = "dac-catalog";
+/// The v4 store's format (`db`), also named by the stub snapshot of a v4 folder.
+pub(crate) const V4_FORMAT: &str = "dac-catalog-db";
 /// The catalog format this build writes (and the newest it reads). See the module docs →
 /// *Format versions*; bump it whenever an [`Op`] variant or a serialized field is added.
 pub const VERSION: u32 = 7;
@@ -353,8 +355,12 @@ impl Journal {
             Some(bytes) => {
                 // the header first: a newer snapshot may not parse as this version's catalog
                 let h: SnapHeader = serde_json::from_slice(&bytes).map_err(|e| CatalogError::Corrupt(format!("{SNAPSHOT}: {e}")))?;
+                if h.format == V4_FORMAT {
+                    // a v4 folder's stub without the v4 store reader (or the store lost)
+                    return Err(CatalogError::Corrupt(format!("{SNAPSHOT}: a v4 catalog's stub, read as a v3 snapshot")));
+                }
                 if h.format != FORMAT {
-                    return Err(CatalogError::Corrupt(format!("{SNAPSHOT}: not a {} catalog (format {:?})", dac_brand::DISPLAY_NAME, h.format)));
+                    return Err(CatalogError::Foreign(format!("{SNAPSHOT}: format {:?}", h.format)));
                 }
                 if h.version > VERSION {
                     return Err(newer(format!("{SNAPSHOT} is catalog format v{}", h.version)));
