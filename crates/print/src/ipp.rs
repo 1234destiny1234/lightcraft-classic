@@ -2,12 +2,19 @@
 //! print to CUPS on Linux and macOS: list the printers of a CUPS server, read a printer's media
 //! sizes and margins, and send a PDF or JPEG with Print-Job.
 //!
-//! Pure Rust over `std::net` (no libcups). `ipp://` and `http://` URIs only; `ipps://` (TLS) is
-//! reported as unsupported. Every length read from the network is bounded and checked.
+//! Pure Rust (no libcups): `ipp://` and `http://` over `std::net`; `ipps://` and `https://` over
+//! TLS through `dac-net` (rustls). A printer's certificate is trusted when it chains to the Mozilla
+//! roots or when its fingerprint was trusted earlier ([`trust_certificate`], or on first use when
+//! [`set_trust_on_first_use`] is on); otherwise the request fails with
+//! [`PrintError::UntrustedCertificate`], which names the fingerprint to check. The printer's own
+//! options (paper type, tray, quality, two-sided: [`DriverOptions`]) are read with its attributes
+//! and sent with the job. Every length read from the network is bounded and checked.
 //!
 //! Sources: RFC 8010 (IPP/1.1 encoding and transport), RFC 8011 (model and semantics), PWG
 //! 5100.13 (media-col, margins), PWG 5101.1 (self-describing media size names), CUPS
-//! "CUPS-Get-Printers" operation (CUPS IPP extensions documentation). Own design.
+//! "CUPS-Get-Printers" operation (CUPS IPP extensions documentation), RFC 7472 (IPP over HTTPS,
+//! the `ipps` scheme), PWG 5100.7 / 5100.13 (media-type, media-source, print-quality, sides).
+//! Own design.
 
 use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
@@ -346,21 +353,23 @@ impl Reader<'_> {
 /// Why a spooler printer name (`\\server\printer`, `HP OfficeJet`) is refused.
 pub const WINDOWS_SPOOLER_UNSUPPORTED: &str = "printing to a printer by its system name (the Windows print spooler) is not supported: it needs the native print API, which the app doesn't use. Enter the printer's ipp:// address (most network printers and Windows print servers with IPP printing on answer at ipp://<host>/ipp/print or ipp://<host>/printers/<name>), or print to a PDF file and print that";
 
-/// A parsed `ipp://host:port/path` URI.
+/// A parsed `ipp://host:port/path` (or `ipps://`) URI.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IppUri {
     pub host: String,
     pub port: u16,
     pub path: String,
+    /// `ipps://` / `https://`: IPP over TLS.
+    pub tls: bool,
 }
 
 impl IppUri {
     pub fn parse(uri: &str) -> Result<IppUri> {
         let uri = uri.trim();
-        let rest = if let Some(r) = uri.strip_prefix("ipp://").or_else(|| uri.strip_prefix("http://")) {
-            r
-        } else if uri.starts_with("ipps://") || uri.starts_with("https://") {
-            return Err(PrintError::Ipp("encrypted IPP (ipps://) is not supported yet; use ipp://".into()));
+        let (rest, tls) = if let Some(r) = uri.strip_prefix("ipp://").or_else(|| uri.strip_prefix("http://")) {
+            (r, false)
+        } else if let Some(r) = uri.strip_prefix("ipps://").or_else(|| uri.strip_prefix("https://")) {
+            (r, true)
         } else if uri.starts_with("\\\\") || !uri.contains("://") {
             return Err(PrintError::Ipp(format!("{uri:?}: {WINDOWS_SPOOLER_UNSUPPORTED}")));
         } else {
@@ -384,17 +393,113 @@ impl IppUri {
         if host.is_empty() || host.chars().any(|c| c.is_whitespace() || c.is_control()) || path.chars().any(|c| c.is_whitespace() || c.is_control()) {
             return Err(PrintError::Ipp(format!("bad printer URI: {uri}")));
         }
-        Ok(IppUri { host, port, path: path.to_string() })
+        Ok(IppUri { host, port, path: path.to_string(), tls })
     }
 
-    fn host_header(&self) -> String {
+    /// `host:port` (`[v6]:port`): what a trusted certificate is remembered under.
+    pub fn host_header(&self) -> String {
         if self.host.contains(':') { format!("[{}]:{}", self.host, self.port) } else { format!("{}:{}", self.host, self.port) }
     }
+}
+
+/// Printer certificates trusted by fingerprint: (`host:port`, `AB:CD:…`).
+static TRUSTED: std::sync::Mutex<Vec<(String, String)>> = std::sync::Mutex::new(Vec::new());
+/// Whether an `ipps://` printer's unknown certificate is trusted (and remembered) the first time.
+static TOFU: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+fn trusted() -> std::sync::MutexGuard<'static, Vec<(String, String)>> {
+    TRUSTED.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// Trust the certificate with SHA-256 `fingerprint` (`AB:CD:…`, colons optional) for the printer
+/// at `uri` (or a bare `host:port`). Refused when the fingerprint is not 32 hex bytes.
+pub fn trust_certificate(uri: &str, fingerprint: &str) -> Result<()> {
+    let fp = dac_net::Fingerprint::parse(fingerprint.trim())
+        .ok_or_else(|| PrintError::Invalid(format!("{fingerprint:?} is not a SHA-256 fingerprint (64 hex digits, colons optional)")))?;
+    let key = if uri.contains("://") { IppUri::parse(uri)?.host_header() } else { uri.trim().to_string() };
+    let mut t = trusted();
+    if !t.iter().any(|(k, f)| *k == key && *f == fp.to_string()) {
+        t.push((key, fp.to_string()));
+    }
+    Ok(())
+}
+
+/// Forget every trusted printer certificate, then trust `list` (`host:port`, fingerprint): what the
+/// app loads from its settings. Unusable entries are skipped.
+pub fn set_trusted_certificates(list: &[(String, String)]) {
+    trusted().clear();
+    for (k, f) in list {
+        let _ = trust_certificate(k, f);
+    }
+}
+
+/// The trusted printer certificates, including those trusted on first use (to save them).
+pub fn trusted_certificates() -> Vec<(String, String)> {
+    trusted().clone()
+}
+
+/// Trust an `ipps://` printer's certificate the first time it is seen (like an SSH host key),
+/// remembering its fingerprint; a different certificate later is still refused.
+pub fn set_trust_on_first_use(on: bool) {
+    TOFU.store(on, std::sync::atomic::Ordering::SeqCst);
+}
+
+/// IPP over TLS: one HTTPS POST through `dac-net`.
+#[cfg(not(target_arch = "wasm32"))]
+fn send_tls(u: &IppUri, msg: &Message, document: &[u8]) -> Result<Message> {
+    let key = u.host_header();
+    let mut trust = dac_net::Trust::new();
+    let pins: Vec<String> = trusted().iter().filter(|(k, _)| *k == key).map(|(_, f)| f.clone()).collect();
+    for f in &pins {
+        if let Some(fp) = dac_net::Fingerprint::parse(f) {
+            trust = trust.with_pinned(fp);
+        }
+    }
+    // first use: only for a printer with no trusted certificate yet (a changed one is refused)
+    if pins.is_empty() && TOFU.load(std::sync::atomic::Ordering::SeqCst) {
+        let k = key.clone();
+        trust = trust.with_tofu(std::sync::Arc::new(move |info: &dac_net::CertInfo| {
+            let mut t = trusted();
+            if !t.iter().any(|(h, _)| *h == k) {
+                t.push((k.clone(), info.fingerprint.to_string()));
+            }
+            true
+        }));
+    }
+    let config = dac_net::ClientConfig {
+        connect_timeout: TIMEOUT,
+        stall_timeout: TIMEOUT,
+        max_redirects: 0,
+        trust,
+        max_body: MAX_RESPONSE as u64,
+        ..dac_net::ClientConfig::default()
+    };
+    let client = dac_net::Client::new(config).map_err(|e| PrintError::Ipp(format!("{key}: {e}")))?;
+    let mut body = msg.encode();
+    body.extend_from_slice(document);
+    let url = format!("https://{key}{}", u.path);
+    let resp = client.post(&url).identity_encoding().body("application/ipp", body).send().map_err(|e| match e {
+        dac_net::NetError::UntrustedCertificate { fingerprint, .. } => PrintError::UntrustedCertificate { printer: key.clone(), fingerprint },
+        e => PrintError::Ipp(format!("{key}: {e}")),
+    })?;
+    if resp.status != 200 {
+        return Err(PrintError::Ipp(format!("printer answered HTTP {}", resp.status)));
+    }
+    let bytes = resp.bytes().map_err(|e| PrintError::Ipp(format!("{key}: {e}")))?;
+    Message::decode(&bytes)
+}
+
+#[cfg(target_arch = "wasm32")]
+fn send_tls(_: &IppUri, _: &Message, _: &[u8]) -> Result<Message> {
+    Err(PrintError::Ipp("printing to a printer is not available in the web app".into()))
 }
 
 /// Sends `msg` followed by `document` to `uri` and returns the parsed response.
 pub fn send(uri: &str, msg: &Message, document: &[u8]) -> Result<Message> {
     let u = IppUri::parse(uri)?;
+    if u.tls {
+        return send_tls(&u, msg, document);
+    }
     let addr = (u.host.as_str(), u.port)
         .to_socket_addrs()
         .map_err(|e| PrintError::Ipp(format!("{}: {e}", u.host)))?
@@ -519,6 +624,104 @@ pub struct PrinterInfo {
     pub formats: Vec<String>,
     pub media: Vec<Media>,
     pub media_default: Option<String>,
+    /// The printer's own options: what it offers and what it uses when the job doesn't say.
+    pub options: PrinterOptions,
+}
+
+/// The driver options a printer offers (keywords as the printer names them).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct PrinterOptions {
+    /// `media-type-supported`: paper types (`stationery`, `photographic-glossy`, …).
+    pub media_types: Vec<String>,
+    pub media_type_default: Option<String>,
+    /// `media-source-supported`: trays (`auto`, `main`, `manual`, `tray-2`, …).
+    pub media_sources: Vec<String>,
+    pub media_source_default: Option<String>,
+    /// `print-quality-supported`: 3 draft, 4 normal, 5 high.
+    pub qualities: Vec<i32>,
+    pub quality_default: Option<i32>,
+    /// `sides-supported`: `one-sided`, `two-sided-long-edge`, `two-sided-short-edge`.
+    pub sides: Vec<String>,
+    pub sides_default: Option<String>,
+}
+
+/// The printer options a job asks for; `None` leaves each to the printer's default.
+#[derive(Clone, Debug, Default, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct DriverOptions {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_type: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub media_source: Option<String>,
+    /// 3 draft, 4 normal, 5 high.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub print_quality: Option<i32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub sides: Option<String>,
+}
+
+impl DriverOptions {
+    pub fn is_empty(&self) -> bool {
+        *self == DriverOptions::default()
+    }
+
+    /// These options with those `printer` doesn't offer removed, and one warning for each.
+    /// A printer that lists nothing for an option is sent it anyway (it may still know it).
+    pub fn supported_by(&self, printer: &PrinterOptions) -> (DriverOptions, Vec<String>) {
+        let mut warnings = Vec::new();
+        let mut keep = |v: &Option<String>, list: &[String], what: &str| match v {
+            Some(k) if !list.is_empty() && !list.iter().any(|x| x == k) => {
+                warnings.push(format!("the printer offers no {what} {k:?}; its default is used"));
+                None
+            }
+            other => other.clone(),
+        };
+        let media_type = keep(&self.media_type, &printer.media_types, "paper type");
+        let media_source = keep(&self.media_source, &printer.media_sources, "paper tray");
+        let sides = keep(&self.sides, &printer.sides, "two-sided setting");
+        let print_quality = match self.print_quality {
+            Some(q) if !printer.qualities.is_empty() && !printer.qualities.contains(&q) => {
+                warnings.push(format!("the printer offers no print quality {q}; its default is used"));
+                None
+            }
+            q => q,
+        };
+        (DriverOptions { media_type, media_source, print_quality, sides }, warnings)
+    }
+
+    /// The job attributes for these options (PWG 5100.7: media-col, print-quality, sides).
+    /// Keywords with characters a keyword can't have are left out.
+    fn job_attributes(&self) -> Vec<Attribute> {
+        let ok = |k: &&String| !k.is_empty() && k.len() <= 255 && k.chars().all(|c| c.is_ascii_graphic());
+        let mut out = Vec::new();
+        let mut col = Vec::new();
+        if let Some(t) = self.media_type.as_ref().filter(ok) {
+            col.push(("media-type".to_string(), vec![Value::Text(t.clone())]));
+        }
+        if let Some(t) = self.media_source.as_ref().filter(ok) {
+            col.push(("media-source".to_string(), vec![Value::Text(t.clone())]));
+        }
+        if !col.is_empty() {
+            out.push(Attribute { tag: V_BEG_COLLECTION, name: "media-col".into(), values: vec![Value::Collection(col)] });
+        }
+        if let Some(q) = self.print_quality.filter(|q| (3..=5).contains(q)) {
+            out.push(Attribute { tag: V_ENUM, name: "print-quality".into(), values: vec![Value::Int(q)] });
+        }
+        if let Some(sd) = self.sides.as_ref().filter(ok) {
+            out.push(Attribute { tag: V_KEYWORD, name: "sides".into(), values: vec![Value::Text(sd.clone())] });
+        }
+        out
+    }
+}
+
+/// A print quality's name.
+pub fn quality_label(q: i32) -> &'static str {
+    match q {
+        3 => "Draft",
+        4 => "Normal",
+        5 => "High",
+        _ => "Unknown",
+    }
 }
 
 impl PrinterInfo {
@@ -550,6 +753,13 @@ pub fn printer_info(uri: &str) -> Result<PrinterInfo> {
         "media-left-margin-supported",
         "media-right-margin-supported",
         "media-top-margin-supported",
+        "media-type-supported",
+        "media-source-supported",
+        "media-col-default",
+        "print-quality-supported",
+        "print-quality-default",
+        "sides-supported",
+        "sides-default",
     ];
     let msg = Message::request(OP_GET_PRINTER_ATTRIBUTES, 1, uri).with(
         V_KEYWORD,
@@ -617,20 +827,58 @@ pub fn parse_printer_info(resp: &Message) -> PrinterInfo {
         formats: strs("document-format-supported"),
         media,
         media_default: strs("media-default").into_iter().next(),
+        options: parse_printer_options(resp),
+    }
+}
+
+/// [`PrinterOptions`] from a Get-Printer-Attributes response.
+pub fn parse_printer_options(resp: &Message) -> PrinterOptions {
+    let strs = |n: &str| -> Vec<String> {
+        resp.attr(TAG_PRINTER, n).map(|a| a.values.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default()
+    };
+    let ints = |n: &str| -> Vec<i32> { resp.attr(TAG_PRINTER, n).map(|a| a.values.iter().filter_map(Value::as_int).collect()).unwrap_or_default() };
+    let col_default = |member: &str| {
+        resp.attr(TAG_PRINTER, "media-col-default")
+            .and_then(|a| a.values.first())
+            .and_then(|c| c.member(member))
+            .and_then(Value::as_str)
+            .map(str::to_string)
+    };
+    let cap = |mut v: Vec<String>| {
+        v.truncate(256);
+        v
+    };
+    let mut qualities: Vec<i32> = ints("print-quality-supported").into_iter().filter(|q| (3..=5).contains(q)).collect();
+    qualities.dedup();
+    PrinterOptions {
+        media_types: cap(strs("media-type-supported")),
+        media_type_default: col_default("media-type"),
+        media_sources: cap(strs("media-source-supported")),
+        media_source_default: col_default("media-source"),
+        qualities,
+        quality_default: ints("print-quality-default").into_iter().next(),
+        sides: cap(strs("sides-supported")),
+        sides_default: strs("sides-default").into_iter().next(),
     }
 }
 
 /// Print-Job: sends `document` (`format` = `application/pdf` or `image/jpeg`); returns the job id.
 pub fn print_job(uri: &str, user: &str, job_name: &str, format: &str, copies: u32, document: &[u8]) -> Result<i32> {
+    print_job_with(uri, user, job_name, format, copies, &DriverOptions::default(), document)
+}
+
+/// [`print_job`] with the printer's own options (paper type, tray, quality, two-sided).
+pub fn print_job_with(uri: &str, user: &str, job_name: &str, format: &str, copies: u32, driver: &DriverOptions, document: &[u8]) -> Result<i32> {
     let mut msg = Message::request(OP_PRINT_JOB, 1, uri)
         .with(V_NAME_WO_LANG, "requesting-user-name", vec![Value::Text(user.into())])
         .with(V_NAME_WO_LANG, "job-name", vec![Value::Text(job_name.into())])
         .with(V_MIME, "document-format", vec![Value::Text(format.into())]);
+    let mut job = driver.job_attributes();
     if copies > 1 {
-        msg.groups.push(Group {
-            tag: TAG_JOB,
-            attrs: vec![Attribute { tag: V_INTEGER, name: "copies".into(), values: vec![Value::Int(copies.min(999) as i32)] }],
-        });
+        job.insert(0, Attribute { tag: V_INTEGER, name: "copies".into(), values: vec![Value::Int(copies.min(999) as i32)] });
+    }
+    if !job.is_empty() {
+        msg.groups.push(Group { tag: TAG_JOB, attrs: job });
     }
     let resp = send(uri, &msg, document)?;
     if !resp.is_success() {
@@ -790,10 +1038,12 @@ mod tests {
     fn uris() {
         assert_eq!(
             IppUri::parse("ipp://localhost/printers/PDF").unwrap(),
-            IppUri { host: "localhost".into(), port: 631, path: "/printers/PDF".into() }
+            IppUri { host: "localhost".into(), port: 631, path: "/printers/PDF".into(), tls: false }
         );
         assert_eq!(IppUri::parse("ipp://[::1]:8631/ipp/print").unwrap().port, 8631);
-        assert!(IppUri::parse("ipps://h/p").is_err());
+        let u = IppUri::parse("ipps://h/p").unwrap();
+        assert!(u.tls && u.port == 631);
+        assert!(!IppUri::parse("ipp://h/p").unwrap().tls);
         assert!(IppUri::parse("ipp://h:99999/p").is_err());
         assert!(IppUri::parse("ftp://h").is_err());
         assert!(IppUri::parse("ipp://h/a b").is_err());

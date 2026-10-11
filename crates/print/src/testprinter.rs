@@ -39,6 +39,12 @@ pub struct TestPrinterConfig {
     pub media: Vec<TestMedia>,
     /// The job state reported after a job arrives (9 = completed, 8 = aborted…).
     pub final_state: i32,
+    /// Paper types, trays, qualities and two-sided modes it offers (the first of each is its
+    /// default), like a photo inkjet.
+    pub media_types: Vec<String>,
+    pub media_sources: Vec<String>,
+    pub qualities: Vec<i32>,
+    pub sides: Vec<String>,
 }
 
 impl Default for TestPrinterConfig {
@@ -51,6 +57,10 @@ impl Default for TestPrinterConfig {
                 TestMedia { name: "iso_a4_210x297mm".into(), size: [21000, 29700], margins: [500, 300, 500, 300] },
             ],
             final_state: JobState::COMPLETED,
+            media_types: vec!["stationery".into(), "photographic-glossy".into(), "photographic-matte".into()],
+            media_sources: vec!["auto".into(), "main".into(), "photo".into(), "manual".into()],
+            qualities: vec![4, 3, 5],
+            sides: vec!["one-sided".into(), "two-sided-long-edge".into(), "two-sided-short-edge".into()],
         }
     }
 }
@@ -63,6 +73,11 @@ pub struct ReceivedJob {
     pub user: String,
     pub format: String,
     pub copies: i32,
+    /// The printer options the job asked for (`media-col` members, `print-quality`, `sides`).
+    pub media_type: Option<String>,
+    pub media_source: Option<String>,
+    pub print_quality: Option<i32>,
+    pub sides: Option<String>,
     pub document: Vec<u8>,
 }
 
@@ -225,6 +240,22 @@ fn answer(body: &[u8], config: &TestPrinterConfig, uri: &str, jobs: &Mutex<Vec<R
                     attr(V_KEYWORD, "media-supported", config.media.iter().map(|m| text(&m.name)).collect()),
                     attr(V_KEYWORD, "media-default", config.media.first().map(|m| vec![text(&m.name)]).unwrap_or_else(|| vec![text("none")])),
                     attr(V_BEG_COLLECTION, "media-col-database", cols),
+                    attr(V_KEYWORD, "media-type-supported", config.media_types.iter().map(|m| text(m)).collect()),
+                    attr(V_KEYWORD, "media-source-supported", config.media_sources.iter().map(|m| text(m)).collect()),
+                    attr(
+                        V_BEG_COLLECTION,
+                        "media-col-default",
+                        vec![Value::Collection(
+                            [("media-type", config.media_types.first()), ("media-source", config.media_sources.first())]
+                                .into_iter()
+                                .filter_map(|(k, v)| v.map(|v| (k.to_string(), vec![text(v)])))
+                                .collect(),
+                        )],
+                    ),
+                    attr(V_ENUM, "print-quality-supported", config.qualities.iter().map(|q| Value::Int(*q)).collect()),
+                    attr(V_ENUM, "print-quality-default", config.qualities.first().map(|q| vec![Value::Int(*q)]).unwrap_or_default()),
+                    attr(V_KEYWORD, "sides-supported", config.sides.iter().map(|m| text(m)).collect()),
+                    attr(V_KEYWORD, "sides-default", config.sides.first().map(|m| vec![text(m)]).unwrap_or_default()),
                 ],
             });
             m
@@ -239,6 +270,9 @@ fn answer(body: &[u8], config: &TestPrinterConfig, uri: &str, jobs: &Mutex<Vec<R
                 return response(0x0400, id);
             }
             let copies = req.attr(TAG_JOB, "copies").and_then(|a| a.values.first()).and_then(Value::as_int).unwrap_or(1);
+            let job_str = |n: &str| req.attr(TAG_JOB, n).and_then(|a| a.values.first()).and_then(Value::as_str).map(str::to_string);
+            let col = req.attr(TAG_JOB, "media-col").and_then(|a| a.values.first());
+            let col_str = |n: &str| col.and_then(|c| c.member(n)).and_then(Value::as_str).map(str::to_string);
             let mut list = jobs.lock().unwrap_or_else(PoisonError::into_inner);
             let job_id = i32::try_from(list.len()).unwrap_or(i32::MAX - 1).saturating_add(1);
             list.push(ReceivedJob {
@@ -247,6 +281,10 @@ fn answer(body: &[u8], config: &TestPrinterConfig, uri: &str, jobs: &Mutex<Vec<R
                 user: op_str("requesting-user-name").unwrap_or_default(),
                 format,
                 copies,
+                media_type: col_str("media-type"),
+                media_source: col_str("media-source"),
+                print_quality: req.attr(TAG_JOB, "print-quality").and_then(|a| a.values.first()).and_then(Value::as_int),
+                sides: job_str("sides"),
                 document,
             });
             let mut m = response(0, id);

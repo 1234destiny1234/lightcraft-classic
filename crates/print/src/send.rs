@@ -75,11 +75,20 @@ pub fn send_to_printer(
         let list = formats.map(|i| i.formats.join(", ")).unwrap_or_default();
         return Err(PrintError::Ipp(format!("the printer takes neither PDF nor JPEG (it takes: {list})")));
     };
+    // the printer's own options, less those it says it doesn't offer
+    let driver = match &formats {
+        Some(info) => {
+            let (d, w) = settings.job.driver.supported_by(&info.options);
+            warnings.extend(w);
+            d
+        }
+        None => settings.job.driver.clone(),
+    };
     let mut jobs = Vec::new();
     let n = files.len();
     for (i, bytes) in files.iter().enumerate() {
         let name = if n > 1 { format!("{} ({}/{n})", opt.title, i + 1) } else { opt.title.clone() };
-        jobs.push(ipp::print_job(uri, &opt.user, &name, format, copies, bytes)?);
+        jobs.push(ipp::print_job_with(uri, &opt.user, &name, format, copies, &driver, bytes)?);
     }
     let state = match jobs.last() {
         Some(&id) if id > 0 && !opt.wait.is_zero() => follow(uri, &opt.user, id, opt.wait, opt.poll),

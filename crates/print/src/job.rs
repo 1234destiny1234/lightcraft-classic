@@ -245,6 +245,9 @@ pub struct JobOptions {
     pub media: PrintMedia,
     /// Color Management and Print Adjustment.
     pub color: PrintColor,
+    /// The printer's own options (paper type, tray, quality, two-sided), sent with an IPP job.
+    #[serde(skip_serializing_if = "crate::ipp::DriverOptions::is_empty")]
+    pub driver: crate::ipp::DriverOptions,
 }
 
 impl Default for JobOptions {
@@ -257,6 +260,7 @@ impl Default for JobOptions {
             sharpening: PrintSharpening::Off,
             media: PrintMedia::Glossy,
             color: PrintColor::default(),
+            driver: crate::ipp::DriverOptions::default(),
         }
     }
 }

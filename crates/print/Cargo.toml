@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 dac-codecs = { workspace = true }
 dac-layout = { workspace = true }
+dac-net = { workspace = true }
 dac-pdf = { workspace = true }
 dac-raster = { workspace = true }
 dac-text = { workspace = true }
@@ -22,3 +23,5 @@ thiserror = { workspace = true }
 dac-fuzzkit = { workspace = true }
 lopdf = { version = "0.45", default-features = false }
 dac-brand = { workspace = true }
+rustls = { version = "0.23", default-features = false, features = ["std", "tls12"] }
+rustls-rustcrypto = "0.0.2-alpha"

@@ -9,7 +9,7 @@ use crate::output::{PdfOptions, to_jpeg, to_pdf};
 use crate::text::ShapedText;
 use crate::{LayoutStyle, PrintSettings};
 
-struct Gradient;
+pub(crate) struct Gradient;
 impl PhotoSource for Gradient {
     fn image(&self, photo: &str, long: usize) -> Result<Rgba8, String> {
         if photo == "missing" {
@@ -137,7 +137,7 @@ fn cups_test_printer_receives_a_job() {
     eprintln!("CUPS job {:?}: {:?}", sent.jobs, sent.state);
 }
 
-fn send_opts() -> crate::send::SendOptions {
+pub(crate) fn send_opts() -> crate::send::SendOptions {
     crate::send::SendOptions {
         user: "tester".into(),
         title: "Contact sheet".into(),
