@@ -12,6 +12,7 @@
 //! - [`people`]: Immich faces → face regions, names back to Immich people (IMM-PEOPLE).
 //! - [`extlib`]: path mapping between Immich's container paths and local folders.
 //! - [`share`]: IMM-SHARELINK, upload photos into a new album and create a shared link.
+//! - [`stacks`]: catalog stacks ⇄ Immich stacks, the three-way merge (RT.C3).
 //! - [`accounts`]: the connected accounts as kept in settings (never the API key).
 //!
 //! The client is native only; the pure modules build everywhere.
@@ -24,6 +25,7 @@ pub mod extlib;
 pub mod link;
 pub mod mapping;
 pub mod people;
+pub mod stacks;
 pub mod sync;
 pub mod types;
 

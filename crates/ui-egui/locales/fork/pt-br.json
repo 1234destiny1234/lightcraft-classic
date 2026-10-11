@@ -1025,5 +1025,14 @@
   "Title Slide": "Slide de título",
   "Two Up with Caption": "Duas lado a lado com legenda",
   "Edit Photo": "Editar foto",
-  "Edit Original opens the file itself; saving it updates this photo.": "Editar original abre o próprio arquivo; salvá-lo atualiza esta foto."
+  "Edit Original opens the file itself; saving it updates this photo.": "Editar original abre o próprio arquivo; salvá-lo atualiza esta foto.",
+  "Uploading the edited version to Immich…": "Enviando a versão editada para o Immich…",
+  "Immich: {}": "Immich: {}",
+  "The edited version replaced the previous one on Immich": "A versão editada substituiu a anterior no Immich",
+  "The edited version is on Immich, stacked on the original": "A versão editada está no Immich, empilhada sobre o original",
+  "Edited Version Saved Again": "Versão editada salva novamente",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "Esta versão já está no Immich. O Immich não consegue substituir um arquivo, então o novo salvamento é enviado como um novo recurso no topo da pilha.",
+  "Keep both": "Manter ambas",
+  "Replace (move the previous upload to Immich's trash)": "Substituir (mover o envio anterior para a lixeira do Immich)",
+  "Remember my choice": "Lembrar minha escolha"
 }

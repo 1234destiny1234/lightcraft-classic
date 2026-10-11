@@ -841,5 +841,14 @@
   "Title Slide": "Титульний слайд",
   "Two Up with Caption": "Дві поруч із підписом",
   "Edit Photo": "Редагувати фото",
-  "Edit Original opens the file itself; saving it updates this photo.": "«Редагувати оригінал» відкриває сам файл; після збереження це фото оновиться."
+  "Edit Original opens the file itself; saving it updates this photo.": "«Редагувати оригінал» відкриває сам файл; після збереження це фото оновиться.",
+  "Uploading the edited version to Immich…": "Завантаження відредагованої версії в Immich…",
+  "Immich: {}": "Immich: {}",
+  "The edited version replaced the previous one on Immich": "Відредагована версія замінила попередню в Immich",
+  "The edited version is on Immich, stacked on the original": "Відредагована версія в Immich, у стосі з оригіналом",
+  "Edited Version Saved Again": "Відредаговану версію збережено знову",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "Ця версія вже є в Immich. Immich не вміє замінювати файл, тож нове збереження завантажується як новий об’єкт нагору стосу.",
+  "Keep both": "Залишити обидві",
+  "Replace (move the previous upload to Immich's trash)": "Замінити (перемістити попереднє завантаження в кошик Immich)",
+  "Remember my choice": "Запам’ятати вибір"
 }

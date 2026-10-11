@@ -132,7 +132,7 @@ fn connect_reads_version_user_and_permissions() {
     assert!(st.user.is_admin);
     assert_eq!(st.permissions, Some(vec!["all".to_string()]));
     assert!(client::missing_permissions(&["all".into()]).is_empty());
-    assert_eq!(client::missing_permissions(&["asset.read".into()]).len(), 4, "import, external libraries, sync, people");
+    assert_eq!(client::missing_permissions(&["asset.read".into()]).len(), 6, "import, external libraries, sync, people, stacks, edit versions");
     // the key goes in its header, never in the URL
     let seen = seen.lock().unwrap();
     assert!(seen.iter().all(|r| !r.target.contains(KEY)));

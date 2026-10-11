@@ -37,6 +37,8 @@ crates/engine/examples/perf_tile.rs
 crates/engine/src/creations.rs
 # Immich engine wiring (IMM-SYNC / IMM-PEOPLE / IMM-SEARCH)
 crates/engine/src/cmd/immich_sync.rs
+crates/engine/src/cmd/immich_versions.rs
+crates/engine/src/tests_immich_versions.rs
 crates/engine/src/tests_immich_sync.rs
 crates/engine/src/cmd/immich_publish.rs
 crates/plugins/

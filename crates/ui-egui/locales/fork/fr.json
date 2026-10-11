@@ -1019,5 +1019,14 @@
   "Title Slide": "Diapositive de titre",
   "Two Up with Caption": "Deux côte à côte avec légende",
   "Edit Photo": "Modifier la photo",
-  "Edit Original opens the file itself; saving it updates this photo.": "Modifier l’original ouvre le fichier lui-même ; l’enregistrer met à jour cette photo."
+  "Edit Original opens the file itself; saving it updates this photo.": "Modifier l’original ouvre le fichier lui-même ; l’enregistrer met à jour cette photo.",
+  "Uploading the edited version to Immich…": "Envoi de la version modifiée vers Immich…",
+  "Immich: {}": "Immich : {}",
+  "The edited version replaced the previous one on Immich": "La version modifiée a remplacé la précédente dans Immich",
+  "The edited version is on Immich, stacked on the original": "La version modifiée est dans Immich, empilée sur l’original",
+  "Edited Version Saved Again": "Version modifiée enregistrée à nouveau",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "Cette version est déjà dans Immich. Immich ne peut pas remplacer un fichier : le nouvel enregistrement est envoyé comme nouvel élément en haut de la pile.",
+  "Keep both": "Garder les deux",
+  "Replace (move the previous upload to Immich's trash)": "Remplacer (mettre l’envoi précédent dans la corbeille d’Immich)",
+  "Remember my choice": "Mémoriser mon choix"
 }

@@ -136,3 +136,39 @@ fn live_publish_renames_its_album() {
     assert!(!all.iter().any(|a| a.album_name == first));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// RT.C1/C3 against the real server: stack the fixtures, read the stack back from both
+/// `GET /stacks` and the asset, re-stack with a new primary (merging), find albums by asset, and
+/// dissolve the stack.
+#[test]
+#[ignore = "needs `cargo xtask immich up` and `seed` (nightly)"]
+fn live_stacks_round_trip() {
+    let Some((url, key)) = server() else { panic!("no target/immich/api-key: run `cargo xtask immich seed`") };
+    let c = Client::new(&url, key, &ServerOptions::standard()).unwrap();
+    let mut all = Vec::new();
+    c.search_all(&MetadataSearch { size: Some(50), ..Default::default() }, 10, |p| {
+        all.extend_from_slice(p);
+        true
+    })
+    .unwrap();
+    let ids: Vec<String> = all.iter().filter(|a| !a.is_trashed).take(3).map(|a| a.id.clone()).collect();
+    assert_eq!(ids.len(), 3, "seeded fixtures");
+    // start clean
+    let old: Vec<String> = c.stacks().unwrap().into_iter().filter(|s| s.assets.iter().any(|a| ids.contains(&a.id))).map(|s| s.id).collect();
+    if !old.is_empty() {
+        c.delete_stacks(&old).unwrap();
+    }
+    c.stack(&ids[..2]).unwrap();
+    let st = c.asset_stack(&ids[1]).unwrap().expect("stacked");
+    assert_eq!(st.primary_asset_id, ids[0]);
+    // a new primary listed with the old primary: Immich merges the old stack in
+    c.stack(&[ids[2].clone(), ids[0].clone()]).unwrap();
+    let mine: Vec<_> = c.stacks().unwrap().into_iter().filter(|s| s.assets.iter().any(|a| ids.contains(&a.id))).collect();
+    assert_eq!(mine.len(), 1, "{mine:?}");
+    assert_eq!(mine[0].primary_asset_id, ids[2]);
+    assert_eq!(mine[0].assets.len(), 3);
+    let albums = c.albums_of(&ids[0]).unwrap();
+    assert!(albums.iter().any(|a| a.album_name == "xtask fixtures"), "{albums:?}");
+    c.delete_stacks(&[mine[0].id.clone()]).unwrap();
+    assert!(c.asset_stack(&ids[0]).unwrap().is_none());
+}

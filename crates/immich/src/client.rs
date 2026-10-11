@@ -433,6 +433,32 @@ impl Client {
         self.send(Method::Post, "/stacks", Some(&serde_json::json!({ "assetIds": ids })), true).map(|_| ())
     }
 
+    /// `GET /stacks`: every stack of the user, with its assets. Needs `stack.read`.
+    pub fn stacks(&self) -> Result<Vec<StackInfo>, ImmichError> {
+        self.get("/stacks", true)
+    }
+
+    /// The stack `asset` is in (`GET /assets/{id}` → `stack`). Needs `asset.read`.
+    pub fn asset_stack(&self, asset: &str) -> Result<Option<crate::types::AssetStack>, ImmichError> {
+        Ok(self.asset(asset)?.stack)
+    }
+
+    /// `DELETE /stacks`: dissolve stacks (their assets stay). Needs `stack.delete`.
+    pub fn delete_stacks(&self, ids: &[String]) -> Result<(), ImmichError> {
+        for chunk in ids.chunks(500) {
+            for id in chunk {
+                path_id(id)?;
+            }
+            self.send(Method::Delete, "/stacks", Some(&serde_json::json!({ "ids": chunk })), true)?;
+        }
+        Ok(())
+    }
+
+    /// `GET /albums?assetId=`: the albums holding `asset`. Needs `album.read`.
+    pub fn albums_of(&self, asset: &str) -> Result<Vec<Album>, ImmichError> {
+        self.get(&format!("/albums?assetId={}", path_id(asset)?), true)
+    }
+
     // ---- people (IMM-PEOPLE)
 
     /// Every person, hidden ones included (names, birth dates, hidden flag).
@@ -554,6 +580,8 @@ pub const FEATURE_PERMISSIONS: &[(&str, &[&str])] = &[
     ("sync", &["asset.read", "asset.update", "tag.read", "tag.create", "tag.asset"]),
     ("people", &["person.read", "face.read"]),
     ("smartSearch", &["asset.read"]),
+    ("stacks", &["stack.read", "stack.create", "stack.delete"]),
+    ("editVersions", &["asset.upload", "stack.create", "album.read"]),
 ];
 
 /// The features a key with `perms` can't use, with the permissions each lacks.
