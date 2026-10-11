@@ -216,6 +216,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.importCatalog", "Import from Another Catalog…", None, "File"),
     // Settings ▸ Display
     ("app.displayProfile", "Display Profile", None, ""),
+    ("app.lensDbFolder", "Choose Lens Database Folder…", None, ""),
     ("app.about", "About {app}", None, "Help"),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
@@ -512,16 +513,30 @@ pub fn run_ui_command(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(json!({"navigator": app.ui.navigator}))
         }
         "app.settings" => {
-            let tab = p.get("tab").and_then(Value::as_str).unwrap_or("general");
+            // a section opens its tab and is brought into view
+            let section = p.get("section").and_then(Value::as_str);
+            let section_tab = match section {
+                None => None,
+                Some(s) => match crate::panels::settings::SECTIONS.iter().find(|(id, _)| *id == s) {
+                    Some((_, tab)) => Some(*tab),
+                    None => {
+                        let all: Vec<&str> = crate::panels::settings::SECTIONS.iter().map(|(id, _)| *id).collect();
+                        return Some(Err(format!("unknown settings section `{s}` ({})", all.join("|"))));
+                    }
+                },
+            };
+            let tab = section_tab.or_else(|| p.get("tab").and_then(Value::as_str)).unwrap_or("general");
             if !crate::panels::settings::TABS.iter().any(|(id, _)| *id == tab) {
                 let tabs: Vec<&str> = crate::panels::settings::TABS.iter().map(|(id, _)| *id).collect();
                 return Some(Err(format!("unknown settings tab `{tab}` ({})", tabs.join("|"))));
             }
             app.ui.dialog = Some(Dialog::Settings { tab: tab.into() });
-            Ok(Value::Null)
+            app.ui.settings_section = section.map(str::to_string);
+            Ok(json!({"tab": tab, "section": section}))
         }
         "app.openLibrary" => crate::panels::settings::open_library(app, p),
         "app.displayProfile" => crate::panels::settings::display_profile(app, p),
+        "app.lensDbFolder" => crate::panels::settings::lens_db_folder(app, p),
         "file.backupLibrary" | "file.restoreLibrary" => {
             let action = if id == "file.backupLibrary" { app.services.backup_library.as_mut() } else { app.services.restore_library.as_mut() };
             match action {

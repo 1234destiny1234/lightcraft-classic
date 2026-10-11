@@ -601,6 +601,7 @@ fn services(ctx: egui::Context, log_file: Option<&std::path::Path>) -> Services 
 fn unopened_session() -> Session {
     let mut s = Session::new().with_fs().with_default_denoise_models().with_default_connections().with_system_clock();
     s.face_models_dir = dac_engine::config::default_face_models_dir();
+    s.lens_db = dac_engine::lens_download::LensSettings::load(dac_engine::config::config_dir());
     s
 }
 
@@ -608,6 +609,7 @@ fn unopened_session() -> Session {
 fn open_session(in_memory: bool, dir: Option<std::path::PathBuf>, seed_demo: bool) -> (Session, Option<LibraryProblem>) {
     let (mut s, problem) = open_library_session(in_memory, dir, seed_demo);
     s.face_models_dir = dac_engine::config::default_face_models_dir();
+    s.lens_db = dac_engine::lens_download::LensSettings::load(dac_engine::config::config_dir());
     (s, problem)
 }
 

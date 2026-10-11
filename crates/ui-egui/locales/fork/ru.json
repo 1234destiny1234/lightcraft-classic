@@ -1364,5 +1364,22 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "Он создан другим приложением, формат каталога которого {app} открыть не может. Каталог не изменён. Создайте новый каталог или откройте другой.",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "Если он находится на неподключённом диске, подключите диск и повторите попытку. В противном случае откройте или создайте другой каталог.",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "У {app} нет прав на чтение или запись его папки. Проверьте права доступа к папке и повторите попытку.",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваши фотографии и правки в ней не затронуты. Можно повторить попытку (например, закрыв другую программу, в которой она открыта, или снова подключив её диск), открыть другую библиотеку или создать новую либо продолжить без библиотеки — тогда ничего из сделанного не сохранится."
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваши фотографии и правки в ней не затронуты. Можно повторить попытку (например, закрыв другую программу, в которой она открыта, или снова подключив её диск), открыть другую библиотеку или создать новую либо продолжить без библиотеки — тогда ничего из сделанного не сохранится.",
+  "Lens profiles": "Профили объективов",
+  "Lens corrections use these profiles for raw photos whose files carry no correction of their own.": "Коррекция объектива использует эти профили для raw-фото, в файлах которых нет собственной коррекции.",
+  "Database": "База данных",
+  "no lens profiles found": "профили объективов не найдены",
+  "{lenses} lenses, {cameras} cameras": "Объективов: {lenses}, камер: {cameras}",
+  "updated {date}": "обновлено {date}",
+  "Set by {var}, which overrides the folder chosen here.": "Задано переменной {var}, она важнее выбранной здесь папки.",
+  "Downloading the lens database… {done} of {total} MB": "Загрузка базы объективов… {done} из {total} МБ",
+  "Downloading the lens database… {done} MB": "Загрузка базы объективов… {done} МБ",
+  "Download fetches the lensfun project's database (lensfun.github.io, CC-BY-SA 3.0) into the settings folder. It is not part of {app}.": "«Загрузить» скачивает базу данных проекта lensfun (lensfun.github.io, CC-BY-SA 3.0) в папку настроек. Она не входит в {app}.",
+  "Choose Lens Database Folder": "Выбрать папку базы объективов",
+  "Choose Lens Database Folder…": "Выбрать папку базы объективов…",
+  "Downloading lens database": "Загрузка базы объективов",
+  "No lens database — set one up or download it…": "Нет базы объективов — настройте или загрузите её…",
+  "Lens profiles apply to raw photos only.": "Профили объективов применяются только к raw-фото.",
+  "No lens named in this photo's metadata.": "В метаданных этого фото не указан объектив.",
+  "No profile for {lens} in the lens database.": "В базе объективов нет профиля для {lens}."
 }
