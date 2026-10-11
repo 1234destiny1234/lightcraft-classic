@@ -303,6 +303,11 @@ pub struct Photo {
     /// Catalog format 4.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xmp: Option<crate::xmp_state::XmpStamp>,
+    /// Plug-in custom metadata fields, `"<plug-in id>/<field key>"` → value: the catalog's copy of
+    /// what the plug-ins' own data holds for the photo, so rules can search them and sidecars carry
+    /// them. Kept by the engine (`Op::SetPluginFields`). Catalog format 8.
+    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    pub plugin_fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
 /// What assisted culling measured on a photo.
@@ -361,6 +366,7 @@ impl Photo {
             local_baseline: None,
             sha1: None,
             xmp: None,
+            plugin_fields: Default::default(),
         }
     }
     /// A raw file developed from its sensor data: not a rendered image, and not a raw shown from

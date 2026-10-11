@@ -17,7 +17,7 @@ pub enum RatingOp {
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Filter {
-    /// Free-text search: every token must match filename, title, caption, keywords, camera, lens,
+    /// Free-text search (plug-in metadata fields too; `key:value` for one): every token must match filename, title, caption, keywords, camera, lens,
     /// location or format. Tokens like `rating:3`, `flag:pick`, `iso:>800`, `camera:x2` are fielded.
     pub text: String,
     pub rating: u8,
@@ -485,11 +485,17 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             "date" => p.captured.as_deref().is_some_and(|c| c.starts_with(val)),
             "copy" | "virtual" => (val == "true" || val == "yes") == p.copy_of.is_some(),
             "name" | "file" => p.file_name.to_lowercase().contains(val),
-            _ => false,
+            // a plug-in metadata field by its key (`job:J-77`), whichever plug-in has it
+            key => p.plugin_fields.iter().any(|(k, v)| {
+                k.rsplit_once('/').is_some_and(|(_, f)| f.eq_ignore_ascii_case(key))
+                    && crate::rules::plugin_value_text(v).to_lowercase().contains(val)
+            }),
         };
     }
     let hay = [&p.file_name, &p.meta.title, &p.meta.caption, &p.meta.camera, &p.meta.lens, &p.meta.location, &p.format];
-    hay.iter().any(|h| h.to_lowercase().contains(&t)) || p.meta.keywords.iter().any(|k| k.to_lowercase().contains(&t))
+    hay.iter().any(|h| h.to_lowercase().contains(&t))
+        || p.meta.keywords.iter().any(|k| k.to_lowercase().contains(&t))
+        || p.plugin_fields.values().any(|v| crate::rules::plugin_value_text(v).to_lowercase().contains(&t))
 }
 
 /// Whether `p` has a named face region called `name` (case-insensitive).

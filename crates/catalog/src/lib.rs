@@ -195,6 +195,11 @@ pub enum Op {
         id: PhotoId,
         captured: Option<String>,
     },
+    /// Plug-in custom metadata fields of a photo (see [`Photo::plugin_fields`]).
+    SetPluginFields {
+        id: PhotoId,
+        fields: std::collections::BTreeMap<String, serde_json::Value>,
+    },
     /// Assisted culling scores.
     SetAnalysis {
         id: PhotoId,
@@ -785,6 +790,10 @@ impl Catalog {
                 let old = Op::SetStack { id, photos: std::mem::replace(&mut s.photos, photos), collapsed: s.collapsed };
                 s.collapsed = collapsed;
                 old
+            }
+            Op::SetPluginFields { id, fields } => {
+                let p = self.photo_mut(id)?;
+                Op::SetPluginFields { id, fields: std::mem::replace(&mut p.plugin_fields, fields) }
             }
             Op::SetAnalysis { id, analysis } => {
                 let p = self.photo_mut(id)?;

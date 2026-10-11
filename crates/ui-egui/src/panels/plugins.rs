@@ -291,10 +291,12 @@ pub fn export_destination_ui(ui: &mut egui::Ui) {
     *destination_lock() = chosen;
 }
 
-/// The Metadata panel's section for plug-in fields (`plugin.metadataFields`) of the active
-/// photo: each enabled plug-in that declares fields, with its fields edited in place
-/// (`plugin.setField`; text saves when the field loses focus). Nothing when no plug-in has fields.
-pub fn metadata_section(app: &mut DacApp, ui: &mut egui::Ui, photo: u64) {
+/// The Metadata panel's section for plug-in fields (`plugin.metadataFields`) of the photos shown
+/// (`photos`, `ids`; `photo` the active one): each enabled plug-in that declares fields, with its
+/// fields edited in place on every photo shown (`plugin.setField`; text saves when the field loses
+/// focus). A field whose value differs between the photos reads `< mixed >` (from the catalog's copy
+/// of the fields, so a big selection costs no plug-in reads). Nothing when no plug-in has fields.
+pub fn metadata_section(app: &mut DacApp, ui: &mut egui::Ui, photo: u64, photos: &[std::sync::Arc<dac_catalog::Photo>], ids: &[u64]) {
     let Ok(v) = app.session.execute("plugin.metadataFields", &json!({"id": photo})) else { return };
     let plugins = v["plugins"].as_array().cloned().unwrap_or_default();
     if plugins.is_empty() {
@@ -311,9 +313,17 @@ pub fn metadata_section(app: &mut DacApp, ui: &mut egui::Ui, photo: u64) {
             continue;
         }
         for f in p["fields"].as_array().into_iter().flatten() {
-            if let Some(new) = metadata_field_ui(ui, &plugin, photo, f) {
-                let key = f["key"].as_str().unwrap_or_default();
-                if let Err(e) = app.session.execute("plugin.setField", &json!({"plugin": plugin, "field": key, "value": new, "id": photo})) {
+            let key = f["key"].as_str().unwrap_or_default();
+            let copy = format!("{plugin}/{key}");
+            let first = photos.first().map(|q| q.plugin_fields.get(&copy));
+            let mixed = photos.iter().any(|q| Some(q.plugin_fields.get(&copy)) != first);
+            let mut f = f.clone();
+            if mixed {
+                f["value"] = Value::Null;
+            }
+            if let Some(new) = metadata_field_ui(ui, &plugin, photo, &f, mixed) {
+                let ids: Vec<u64> = if ids.is_empty() { vec![photo] } else { ids.to_vec() };
+                if let Err(e) = app.session.execute("plugin.setField", &json!({"plugin": plugin, "field": key, "value": new, "ids": ids})) {
                     app.toast_error(ui.ctx(), e.to_string());
                 }
             }
@@ -321,8 +331,9 @@ pub fn metadata_section(app: &mut DacApp, ui: &mut egui::Ui, photo: u64) {
     }
 }
 
-/// One plug-in metadata field; `Some(new value)` when the user changed it.
-fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> Option<Value> {
+/// One plug-in metadata field; `Some(new value)` when the user changed it. `mixed`: the photos shown
+/// differ (`< mixed >`; leaving a mixed text field empty changes nothing).
+fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value, mixed: bool) -> Option<Value> {
     let key = f["key"].as_str()?;
     let label = f["label"].as_str().unwrap_or(key);
     let value = &f["value"];
@@ -332,6 +343,7 @@ fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> 
         ui.label(label);
         if read_only {
             let text = match value {
+                _ if mixed => super::metadata::MIXED.to_string(),
                 Value::Null => "—".to_string(),
                 Value::Bool(b) => if *b { "✓" } else { "—" }.to_string(),
                 Value::String(s) => s.clone(),
@@ -344,6 +356,9 @@ fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> 
             Some("number") => {
                 let (min, max) = (f["min"].as_f64().unwrap_or(0.0), f["max"].as_f64().unwrap_or(1.0));
                 let mut x = value.as_f64().unwrap_or(min);
+                if mixed {
+                    ui.weak(super::metadata::MIXED);
+                }
                 let r = ui.add(egui::DragValue::new(&mut x).range(min..=max));
                 crate::access::label(&r, label);
                 if r.drag_stopped() || (r.changed() && !r.dragged()) {
@@ -352,7 +367,12 @@ fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> 
             }
             Some("bool") => {
                 let mut b = value.as_bool().unwrap_or(false);
-                let r = ui.checkbox(&mut b, "");
+                let r = if mixed {
+                    // indeterminate: a click sets every photo shown
+                    ui.add(egui::Checkbox::new(&mut b, "").indeterminate(true))
+                } else {
+                    ui.checkbox(&mut b, "")
+                };
                 crate::access::label(&r, label);
                 if r.changed() {
                     out = Some(json!(b));
@@ -360,19 +380,23 @@ fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> 
             }
             Some("choice") => {
                 let cur = value.as_str().unwrap_or("").to_string();
-                let r = egui::ComboBox::from_id_salt(("plugin-meta", plugin, key)).selected_text(if cur.is_empty() { "—" } else { &cur }).show_ui(
-                    ui,
-                    |ui| {
-                        if ui.selectable_label(cur.is_empty(), "—").clicked() && !cur.is_empty() {
-                            out = Some(Value::Null);
+                let shown = if mixed {
+                    super::metadata::MIXED
+                } else if cur.is_empty() {
+                    "—"
+                } else {
+                    &cur
+                };
+                let r = egui::ComboBox::from_id_salt(("plugin-meta", plugin, key)).selected_text(shown).show_ui(ui, |ui| {
+                    if ui.selectable_label(cur.is_empty() && !mixed, "—").clicked() && (mixed || !cur.is_empty()) {
+                        out = Some(Value::Null);
+                    }
+                    for o in f["options"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                        if ui.selectable_label(cur == o && !mixed, o).clicked() && (mixed || cur != o) {
+                            out = Some(json!(o));
                         }
-                        for o in f["options"].as_array().into_iter().flatten().filter_map(Value::as_str) {
-                            if ui.selectable_label(cur == o, o).clicked() && cur != o {
-                                out = Some(json!(o));
-                            }
-                        }
-                    },
-                );
+                    }
+                });
                 crate::access::label(&r.response, label);
             }
             _ => {
@@ -380,14 +404,16 @@ fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> 
                 let temp = egui::Id::new(("plugin-meta-text", plugin, key, photo));
                 let mut text: String = ui.data(|d| d.get_temp(temp)).unwrap_or_else(|| shown.clone());
                 let widget = format!("pluginField:{plugin}:{key}");
-                let r = crate::text_field::TextField::singleline(&widget, &mut text).width(ui.available_width()).show(ui);
+                let field = crate::text_field::TextField::singleline(&widget, &mut text);
+                let field = if mixed { field.hint(super::metadata::MIXED) } else { field };
+                let r = field.width(ui.available_width()).show(ui);
                 crate::access::label(&r.response, label);
                 if r.editing {
                     ui.data_mut(|d| d.insert_temp(temp, text.clone()));
                 } else {
                     ui.data_mut(|d| d.remove::<String>(temp));
                 }
-                if r.committed() && text != shown {
+                if r.committed() && text != shown && !(mixed && text.is_empty()) {
                     out = Some(if text.trim().is_empty() { Value::Null } else { json!(text) });
                 }
             }

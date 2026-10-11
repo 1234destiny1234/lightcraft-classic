@@ -1114,5 +1114,6 @@
   "export destination": "destino de exportación",
   "metadata fields": "campos de metadatos",
   "Running plug-in export hooks": "Ejecutando los ganchos de exportación de complementos",
-  "Plug-in export hooks are still running from the last export": "Los ganchos de exportación de complementos de la última exportación siguen en marcha"
+  "Plug-in export hooks are still running from the last export": "Los ganchos de exportación de complementos de la última exportación siguen en marcha",
+  "Plug-in Fields": "Campos de complementos"
 }

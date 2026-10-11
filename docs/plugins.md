@@ -13,7 +13,7 @@ plug-ins are not supported.
 | Metadata and keyword suggestions | `hooks.metadata: true` | `{"hook":"metadata","photos":[photo.inspect JSON]}` → `{"suggestions":[{photo, fields?, keywords?}]}` |
 | A publish service (kind `plugin:<id>` in `publish.addService`) | `publish: {id, name}` | `{"hook":"publish.upload","service","item":{path, photo, title, caption, keywords, remoteId?}}` → `{remoteId, url?}`; `{"hook":"publish.delete","service","remoteId"}` |
 | Export destinations ("Then send to" in the Export dialog) | `exportDestinations: [{id, name, dialog}]` | `{"hook":"export.destination","destination","args","files":[{path, photo}]}` after the files are written and the export hooks ran; the files are lent to the call; a `message` in the reply is shown |
-| Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel (`plugin.setField`), read-only ones only the plug-in sets |
+| Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel on every selected photo (`plugin.setField {ids}`; differing values read `< mixed >`), read-only ones only the plug-in sets. The catalog keeps a copy (`Photo.plugin_fields`, kept in step after every plug-in command and export hook): Library filter text search finds the values (`key:value` for one field), smart-album and filter rules test them as `plugin:<id>/<key>` (Rules ▸ Plug-in Fields; text operators), and XMP sidecars carry them as `lcpf:fields` (a bag of `{lcpf:plugin, lcpf:key, lcpf:value}`, namespace `https://ns.example.invalid/plugin-fields/1.0/`) when metadata is saved |
 
 Commands appear under File ▸ Plug-in Extras and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
 control channel and MCP all use this command. `plugin.commands` lists the commands so front
@@ -235,8 +235,7 @@ disabled and with no permissions granted.
 - A plug-in call that has started can't be interrupted (✕ takes effect between plug-ins), and one
   export's hooks run at a time: hooks for an export that ends while the previous ones still run
   are skipped with a message.
-- Custom metadata fields show and edit the active photo only (not every selected photo), and are
-  not searchable in the Library filter or written to XMP.
+- Plug-in fields in rules use text operators (a number compares as text); sidecars are written, not read back on import.
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
   server the user types" isn't possible; the author names the hosts.
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.

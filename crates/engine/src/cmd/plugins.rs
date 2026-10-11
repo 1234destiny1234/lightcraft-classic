@@ -136,11 +136,13 @@ fn list(_: &mut Session, _: &Value) -> Result<Value> {
     })
 }
 
-fn install(_: &mut Session, p: &Value) -> Result<Value> {
+fn install(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.install";
     let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path` (a .wasm file)"))?;
     let grant = grant_param(p, C)?;
-    with_manager(|m| m.install_file(std::path::Path::new(path), grant).map(|i| i.info()).map_err(|e| plugin_err(C, e)))
+    let r = with_manager(|m| m.install_file(std::path::Path::new(path), grant).map(|i| i.info()).map_err(|e| plugin_err(C, e)))?;
+    sync_fields(s);
+    Ok(r)
 }
 
 fn inspect_file(_: &mut Session, p: &Value) -> Result<Value> {
@@ -154,17 +156,21 @@ fn inspect_file(_: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"manifest": manifest, "installed": installed}))
 }
 
-fn uninstall(_: &mut Session, p: &Value) -> Result<Value> {
+fn uninstall(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.uninstall";
     let id = id_param(p, C)?;
-    with_manager(|m| m.uninstall(id).map(|_| Value::Null).map_err(|e| plugin_err(C, e)))
+    with_manager(|m| m.uninstall(id).map(|_| Value::Null).map_err(|e| plugin_err(C, e)))?;
+    sync_fields(s);
+    Ok(Value::Null)
 }
 
-fn enable(_: &mut Session, p: &Value) -> Result<Value> {
+fn enable(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.enable";
     let id = id_param(p, C)?;
     let on = bool_or(p, "enabled", true);
-    with_manager(|m| m.set_enabled(id, on).map(|_| json!({"id": id, "enabled": on})).map_err(|e| plugin_err(C, e)))
+    let r = with_manager(|m| m.set_enabled(id, on).map(|_| json!({"id": id, "enabled": on})).map_err(|e| plugin_err(C, e)))?;
+    sync_fields(s);
+    Ok(r)
 }
 
 fn set_grant(_: &mut Session, p: &Value) -> Result<Value> {
@@ -187,7 +193,10 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let args = p.get("args").cloned().unwrap_or(Value::Null);
     let selection: Vec<String> = s.targets(p).iter().map(|i| i.0.to_string()).collect();
     let mut host = SessionHost(s);
-    with_manager(|m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)))
+    let r = with_manager(|m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)));
+    // the command may have written the plug-in's own fields
+    sync_fields(s);
+    r
 }
 
 fn commands(_: &mut Session, _: &Value) -> Result<Value> {
@@ -225,7 +234,9 @@ fn post_export(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.postExport";
     let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
     let mut host = SessionHost(s);
-    with_manager(|m| Ok(Value::Array(m.post_export(files, &mut host))))
+    let r = with_manager(|m| Ok(Value::Array(m.post_export(files, &mut host))));
+    sync_fields(s);
+    r
 }
 
 fn services(_: &mut Session, _: &Value) -> Result<Value> {
@@ -321,7 +332,10 @@ impl Drop for PluginService {
 /// the same calls on a worker ([`export_hooks`], [`ExportHooks::run`]).
 pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value>) -> Option<Vec<Value>> {
     let hooks = export_hooks(files, destination)?;
-    Some(hooks.run(&mut SessionHost(s), &|| false, &mut |_, _| {}))
+    let r = hooks.run(&mut SessionHost(s), &|| false, &mut |_, _| {});
+    // hooks may have written their own fields (a "delivered" mark)
+    sync_fields(s);
+    Some(r)
 }
 
 /// The plug-in calls an export makes ([`after_export`]), planned under the manager's lock and run
@@ -455,7 +469,9 @@ fn export_to(s: &mut Session, p: &Value) -> Result<Value> {
     let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
     let mut host = SessionHost(s);
-    with_manager(|m| m.export_to(id, dest, &args, files, &mut host).map_err(|e| plugin_err(C, e)))
+    let r = with_manager(|m| m.export_to(id, dest, &args, files, &mut host).map_err(|e| plugin_err(C, e)));
+    sync_fields(s);
+    r
 }
 
 /// The photo a field command is about: `id`, else the active photo.
@@ -466,20 +482,106 @@ fn field_photo(s: &Session, p: &Value, cmd: &str) -> Result<String> {
     }
 }
 
+/// Most photos one field command reads or writes.
+const MAX_FIELD_PHOTOS: usize = 10_000;
+
+/// The photos a field command is about: `ids` (numbers or the decimal strings plug-ins get),
+/// else `id`, else the active photo.
+fn field_photos(s: &Session, p: &Value, cmd: &str) -> Result<Vec<String>> {
+    match p.get("ids").and_then(Value::as_array) {
+        Some(a) if !a.is_empty() => a.iter().take(MAX_FIELD_PHOTOS).map(|v| photo_id(v).map(|v| v.to_string()).map_err(|e| bad(cmd, e))).collect(),
+        _ => field_photo(s, p, cmd).map(|v| vec![v]),
+    }
+}
+
 fn metadata_fields(s: &mut Session, p: &Value) -> Result<Value> {
-    let photo = field_photo(s, p, "plugin.metadataFields")?;
-    with_manager(|m| Ok(json!({"photo": photo, "plugins": m.metadata_fields(&photo)})))
+    let photos = field_photos(s, p, "plugin.metadataFields")?;
+    with_manager(|m| {
+        let mut merged: Vec<Value> = Vec::new();
+        for (n, photo) in photos.iter().enumerate() {
+            for (k, plugin) in m.metadata_fields(photo).into_iter().enumerate() {
+                let Some(into) = merged.get_mut(k) else {
+                    merged.push(plugin);
+                    continue;
+                };
+                // a field whose value differs between the photos is mixed (no value)
+                let (Some(have), Some(new)) = (into.get_mut("fields").and_then(Value::as_array_mut), plugin["fields"].as_array()) else { continue };
+                for (f, g) in have.iter_mut().zip(new) {
+                    if n > 0 && f["value"] != g["value"] {
+                        f["value"] = Value::Null;
+                        f["mixed"] = json!(true);
+                    }
+                }
+            }
+        }
+        let shown = if photos.len() == 1 { json!(photos[0]) } else { json!(photos) };
+        Ok(json!({"photo": shown, "count": photos.len(), "plugins": merged}))
+    })
 }
 
 fn set_field(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.setField";
-    let photo = field_photo(s, p, C)?;
+    let photos = field_photos(s, p, C)?;
     let plugin = str_param(p, "plugin").ok_or_else(|| bad(C, "missing `plugin`"))?;
     let key = str_param(p, "field").ok_or_else(|| bad(C, "missing `field`"))?;
     let value = p.get("value").cloned().unwrap_or(Value::Null);
-    with_manager(|m| {
-        m.set_metadata_field(plugin, &photo, key, &value).map(|v| json!({"photo": photo, "field": key, "value": v})).map_err(|e| plugin_err(C, e))
-    })
+    let set = with_manager(|m| {
+        let mut v = Value::Null;
+        for photo in &photos {
+            v = m.set_metadata_field(plugin, photo, key, &value).map_err(|e| plugin_err(C, e))?;
+        }
+        Ok(v)
+    })?;
+    sync_fields(s);
+    let shown = if photos.len() == 1 { json!(photos[0]) } else { json!(photos) };
+    Ok(json!({"photo": shown, "count": photos.len(), "field": key, "value": set}))
+}
+
+/// The plug-in metadata fields rules can test: `(rule field id, "Plug-in ▸ Field")` of every enabled plug-in.
+pub fn rule_fields() -> Vec<(String, String)> {
+    let g = manager();
+    let Some(m) = g.as_ref() else { return Vec::new() };
+    m.list()
+        .filter(|p| p.enabled)
+        .flat_map(|p| {
+            let man = p.plugin.manifest();
+            man.metadata_fields
+                .iter()
+                .map(|f| (dac_catalog::rules::plugin_field_id(&man.id, &f.key), format!("{} ▸ {}", man.name, f.label)))
+                .collect::<Vec<_>>()
+        })
+        .collect()
+}
+
+/// Bring the catalog's copy of the plug-ins' metadata fields ([`dac_catalog::Photo::plugin_fields`],
+/// what rules search and sidecars carry) in line with the plug-ins' own data. Bookkeeping, not an
+/// undo step; a plug-in whose data can't be read now keeps its copy. Returns how many photos changed.
+pub fn sync_fields(s: &mut Session) -> usize {
+    let (values, skipped) = manager().as_mut().map(|m| m.field_values()).unwrap_or_default();
+    let kept = |k: &str| skipped.iter().any(|p| k.split_once('/').is_some_and(|(id, _)| id == p));
+    let mut ops = Vec::new();
+    for p in s.catalog.photos() {
+        let want_new = values.get(&p.id.0.to_string());
+        if p.plugin_fields.is_empty() && want_new.is_none() {
+            continue;
+        }
+        let mut want: std::collections::BTreeMap<String, Value> = want_new.cloned().unwrap_or_default();
+        for (k, v) in &p.plugin_fields {
+            if kept(k) {
+                want.insert(k.clone(), v.clone());
+            }
+        }
+        if want != p.plugin_fields {
+            ops.push(dac_catalog::Op::SetPluginFields { id: p.id, fields: want });
+        }
+    }
+    let n = ops.len();
+    for op in ops {
+        if let Err(e) = s.apply_system(op) {
+            log::warn!("plug-in fields: {e}");
+        }
+    }
+    n
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -497,8 +599,8 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "plugin.postExport", "Run Export Hooks", [], None, "{files: [{path, photo?}]} — runs plug-in export post-process hooks on exported files → [{plugin, ok|error}]", always, post_export),
         cmd!(query "plugin.exportDestinations", "Plug-in Export Destinations", [], None, "{} → [{plugin, pluginName, destination, name, dialog}] of enabled plug-ins; pass one as app.export {pluginDestination: {plugin, destination, args}}", always, destinations),
         cmd!(query "plugin.exportTo", "Send to Plug-in Destination", [], None, "{plugin, destination, files: [{path, photo?}], args?: dialog values} — hands exported files to a plug-in export destination → its result", always, export_to),
-        cmd!(query "plugin.metadataFields", "Plug-in Metadata Fields", [], None, "{id?: photo (default the active one)} → {photo, plugins: [{plugin, pluginName, fields: [{key, label, type, readOnly, value}]} | {plugin, error}]}", always, metadata_fields),
-        cmd!(query "plugin.setField", "Set Plug-in Metadata Field", [], None, "{plugin, field, value (null clears), id?: photo (default the active one)} — read-only fields and values the field doesn't take are refused → {photo, field, value}", always, set_field),
+        cmd!(query "plugin.metadataFields", "Plug-in Metadata Fields", [], None, "{ids?: photos | id?: photo (default the active one)} → {photo, count, plugins: [{plugin, pluginName, fields: [{key, label, type, readOnly, value, mixed?}]} | {plugin, error}]}; with several photos a field whose values differ is `mixed` (value null)", always, metadata_fields),
+        cmd!(query "plugin.setField", "Set Plug-in Metadata Field", [], None, "{plugin, field, value (null clears), ids?: photos | id?: photo (default the active one)} — read-only fields and values the field doesn't take are refused → {photo, count, field, value}; the catalog's copy (rules `plugin:<plugin>/<field>`, Any Searchable Text, XMP) follows", always, set_field),
         cmd!(query "plugin.publishServices", "Plug-in Publish Services", [], None, "{} → [{kind: plugin:<id> (a publish.addService kind), plugin, id, name}]", always, services),
     ]
 }
@@ -506,6 +608,14 @@ pub fn specs() -> Vec<CommandSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// The manager is process-wide: tests that install plug-ins take turns, so one test's export
+    /// hooks never hold another's plug-in busy.
+    static TURN: Mutex<()> = Mutex::new(());
+
+    fn turn() -> MutexGuard<'static, ()> {
+        TURN.lock().unwrap_or_else(PoisonError::into_inner)
+    }
 
     /// A plug-in publish service whose upload answers `{remoteId: "r1"}` and whose export hook
     /// answers `{seen: true}`.
@@ -530,6 +640,7 @@ mod tests {
 
     #[test]
     fn plugin_publish_service_and_export_hook() {
+        let _turn = turn();
         manager().get_or_insert_with(Manager::in_memory).install_bytes(&publisher_module(), None).unwrap();
         assert!(is_plugin_kind("plugin:test.pub"));
         assert!(!is_plugin_kind("plugin:nope") && !is_plugin_kind("hardDrive"));
@@ -594,6 +705,7 @@ mod tests {
     /// calls; the catalog reaches them through the relay; cancelling skips the calls not yet made.
     #[test]
     fn export_hooks_run_on_a_worker_and_relay_catalog_requests() {
+        let _turn = turn();
         manager().get_or_insert_with(Manager::in_memory).install_bytes(&hook_module("test.relay"), None).unwrap();
         let files = [json!({"path": "/tmp/x.jpg"})];
         let d = json!({"plugin": "test.relay", "destination": "d"});
@@ -627,6 +739,74 @@ mod tests {
         let again = after_export(&mut s, &files, None).unwrap();
         assert!(again.iter().any(|v| v["plugin"] == "test.relay" && v["ok"]["seen"] == true), "{again:?}");
         manager().get_or_insert_with(Manager::in_memory).uninstall("test.relay").unwrap();
+    }
+
+    /// A plug-in with custom metadata fields `job` (text) and `ok` (bool) and no code to speak of.
+    fn fields_module(id: &str) -> Vec<u8> {
+        let manifest = format!(
+            r#"{{"id":"{id}","name":"Jobs","metadataFields":[{{"key":"job","label":"Job","type":"text"}},{{"key":"ok","label":"OK","type":"bool"}}]}}"#
+        );
+        let reply = r#"{"ok":{}}"#;
+        let esc = |s: &str| s.replace('"', "\\\"");
+        let src = format!(
+            r#"(module (memory (export "memory") 2)
+  (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
+  (func (export "dac_abi_version") (result i32) (i32.const 1))
+  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+            m = esc(&manifest),
+            r = esc(reply),
+            ml = manifest.len(),
+            rl = reply.len()
+        );
+        wat::parse_str(&src).unwrap()
+    }
+
+    /// G19: a field is set on several photos at once, shows as mixed where they differ, and its
+    /// catalog copy is searchable by rules and goes into the photo's sidecar packet.
+    #[test]
+    fn plugin_fields_edit_the_selection_search_and_reach_xmp() {
+        let _turn = turn();
+        manager().get_or_insert_with(Manager::in_memory).install_bytes(&fields_module("test.jobs"), None).unwrap();
+        let mut s = Session::with_demo();
+        let ids: Vec<u64> = s.visible_cloned().iter().take(3).map(|p| p.0).collect();
+        let r = s.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "job", "value": "J-77", "ids": [ids[0], ids[1]]})).unwrap();
+        assert_eq!(r["count"], 2);
+        let field = |s: &mut Session, ids: Value| {
+            let f = s.execute("plugin.metadataFields", &json!({"ids": ids})).unwrap();
+            f["plugins"].as_array().unwrap().iter().find(|p| p["plugin"] == "test.jobs").cloned().unwrap()["fields"][0].clone()
+        };
+        let both = field(&mut s, json!([ids[0], ids[1]]));
+        assert_eq!((both["value"].clone(), both.get("mixed").cloned()), (json!("J-77"), None), "the same value: shown");
+        let mixed = field(&mut s, json!([ids[0], ids[2]]));
+        assert_eq!((mixed["value"].clone(), mixed["mixed"].clone()), (Value::Null, json!(true)), "{mixed}");
+        // the catalog's copy: rules and Any Searchable Text find it
+        let p0 = s.catalog.photo(dac_catalog::PhotoId(ids[0])).unwrap().clone();
+        assert_eq!(p0.plugin_fields.get("test.jobs/job"), Some(&json!("J-77")));
+        let rule: dac_catalog::rules::RuleSet =
+            serde_json::from_value(json!({"rules": [{"field": "plugin:test.jobs/job", "op": "contains", "value": "j-77"}]})).unwrap();
+        let mut found: Vec<u64> = s.catalog.photos().filter(|p| rule.matches(p, &s.catalog)).map(|p| p.id.0).collect();
+        found.sort_unstable();
+        let mut want = vec![ids[0], ids[1]];
+        want.sort_unstable();
+        assert_eq!(found, want);
+        // the sidecar packet carries it under the plug-in fields namespace
+        let packet = crate::sidecar::sidecar_packet(&p0, &s.catalog);
+        assert!(
+            packet.contains(dac_meta::PLUGIN_FIELDS_NS)
+                && packet.contains("<lcpf:plugin>test.jobs</lcpf:plugin>")
+                && packet.contains("<lcpf:value>J-77</lcpf:value>"),
+            "{packet}"
+        );
+        // clearing it clears the copy
+        s.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "job", "value": null, "ids": [ids[0], ids[1]]})).unwrap();
+        assert!(s.catalog.photo(dac_catalog::PhotoId(ids[0])).unwrap().plugin_fields.is_empty());
+        // removing the plug-in removes its fields from the catalog
+        s.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "ok", "value": true, "id": ids[2]})).unwrap();
+        assert!(!s.catalog.photo(dac_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
+        s.execute("plugin.uninstall", &json!({"id": "test.jobs"})).unwrap();
+        assert!(s.catalog.photo(dac_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
     }
 
     #[test]

@@ -577,7 +577,29 @@ pub fn ops_for(kind: Kind) -> &'static [(&'static str, &'static str)] {
 }
 
 pub fn field_kind(field: &str) -> Option<Kind> {
+    if plugin_field(field).is_some() {
+        return Some(Kind::Text);
+    }
     FIELDS.iter().find(|f| f.0 == field).map(|f| f.2)
+}
+
+/// The rule field id of plug-in metadata field `key` of plug-in `plugin` (see [`crate::Photo::plugin_fields`]).
+pub fn plugin_field_id(plugin: &str, key: &str) -> String {
+    format!("plugin:{plugin}/{key}")
+}
+
+/// `"plugin:<plug-in id>/<key>"` → the [`crate::Photo::plugin_fields`] key `"<plug-in id>/<key>"`.
+pub fn plugin_field(field: &str) -> Option<&str> {
+    field.strip_prefix("plugin:").filter(|k| k.split_once('/').is_some_and(|(p, f)| !p.is_empty() && !f.is_empty()))
+}
+
+/// A plug-in field's value as rules and searches see it: text, `true` / `false`, a number as written.
+pub fn plugin_value_text(v: &Value) -> String {
+    match v {
+        Value::Null => String::new(),
+        Value::String(s) => s.clone(),
+        other => other.to_string(),
+    }
 }
 
 thread_local! {
@@ -829,6 +851,7 @@ impl Rule {
                     &m.keywords.join(" "),
                     &p.people().join(" "),
                     p.copy_name.as_deref().unwrap_or(""),
+                    &p.plugin_fields.values().map(plugin_value_text).collect::<Vec<_>>().join(" "),
                 ]
                 .join(" ");
                 text(&all)
@@ -908,7 +931,11 @@ impl Rule {
                 // a smart album's photos are its matches; one being evaluated (a loop) holds none
                 id.is_some_and(|a| cat.album_contains(a, p)) == (op == "is")
             }
-            _ => false,
+            f => match plugin_field(f) {
+                // text rules over the field's value; an absent field is empty
+                Some(key) => text(&p.plugin_fields.get(key).map(plugin_value_text).unwrap_or_default()),
+                None => false,
+            },
         }
     }
 }
@@ -1152,6 +1179,31 @@ mod tests {
         // an empty rule list: all → everything, any → nothing
         yes(json!({"rules": []}));
         no(json!({"match": "any", "rules": []}));
+    }
+
+    /// G19: plug-in metadata fields are rule fields (`plugin:<id>/<key>`, text operators) and part of
+    /// Any Searchable Text; a photo without the field has it empty.
+    #[test]
+    fn plugin_fields_are_searchable() {
+        let cat = Catalog::new();
+        let mut p = photo(1);
+        p.plugin_fields.insert("com.ex.jobs/job".into(), json!("J-2026-17"));
+        p.plugin_fields.insert("com.ex.jobs/delivered".into(), json!(true));
+        let bare = photo(2);
+        let field = plugin_field_id("com.ex.jobs", "job");
+        assert_eq!(field, "plugin:com.ex.jobs/job");
+        let r = |op: &str, v: serde_json::Value| rs(json!({"rules": [{"field": field, "op": op, "value": v}]}));
+        assert!(r("contains", json!("j-2026")).matches(&p, &cat));
+        assert!(!r("contains", json!("j-2026")).matches(&bare, &cat));
+        assert!(r("isEmpty", json!(null)).matches(&bare, &cat));
+        assert!(rs(json!({"rules": [{"field": "plugin:com.ex.jobs/delivered", "op": "is", "value": "true"}]})).matches(&p, &cat));
+        assert!(rs(json!({"rules": [{"field": "text", "op": "contains", "value": "J-2026-17"}]})).matches(&p, &cat), "any searchable text");
+        assert!(r("contains", json!("x")).check(&cat).is_empty(), "a valid rule");
+        let f = crate::Filter { text: "j-2026".into(), ..Default::default() };
+        assert!(f.matches(&p, &cat) && !f.matches(&bare, &cat), "the filter bar's text search");
+        let f = crate::Filter { text: "job:2026-17".into(), ..Default::default() };
+        assert!(f.matches(&p, &cat) && !f.matches(&bare, &cat), "a field by its key");
+        assert!(plugin_field("plugin:/x").is_none() && plugin_field("plugin:a/").is_none() && plugin_field("rating").is_none());
     }
 
     #[test]

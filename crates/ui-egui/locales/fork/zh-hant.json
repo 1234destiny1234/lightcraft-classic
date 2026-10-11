@@ -1109,5 +1109,6 @@
   "export destination": "轉存目標",
   "metadata fields": "中繼資料欄位",
   "Running plug-in export hooks": "正在執行外掛程式匯出掛鉤",
-  "Plug-in export hooks are still running from the last export": "上次匯出的外掛程式匯出掛鉤仍在執行"
+  "Plug-in export hooks are still running from the last export": "上次匯出的外掛程式匯出掛鉤仍在執行",
+  "Plug-in Fields": "外掛程式欄位"
 }

@@ -233,8 +233,14 @@ fn value_editor(ui: &mut egui::Ui, field: &str, op: &str, v: &mut Value, salt: &
 /// The field menu of one rule: the top-level fields, then one submenu per field group. Picking a
 /// field keeps the operator when the new field has it, else takes the field's first operator.
 fn field_menu(ui: &mut egui::Ui, salt: &str, field: &mut String, op: &mut String, value: &mut Value) {
-    let label = field_label(field).unwrap_or(field.as_str()).to_string();
+    // G19: plug-in metadata fields (`plugin:<id>/<key>`), by their plug-in's and field's names
+    let plugin_fields = dac_engine::cmd::plugins::rule_fields();
+    let label = match plugin_fields.iter().find(|(id, _)| id == field) {
+        Some((_, name)) => name.clone(),
+        None => field_label(field).unwrap_or(field.as_str()).to_string(),
+    };
     let current = field.clone();
+    let mut plugin_pick: Option<String> = None;
     let r =
         egui::ComboBox::from_id_salt(format!("{salt}-field")).width(150.0).height(400.0).selected_text(crate::i18n::tr(&label)).show_ui(ui, |ui| {
             let mut pick = None;
@@ -265,9 +271,35 @@ fn field_menu(ui: &mut egui::Ui, salt: &str, field: &mut String, op: &mut String
                 });
                 register(ui.ctx(), format!("ruleFieldGroup:{group}:{salt}"), r.response.rect);
             }
+            if !plugin_fields.is_empty() {
+                let text = RichText::new(crate::i18n::tr("Plug-in Fields"));
+                let text = if dac_catalog::rules::plugin_field(&current).is_some() { text.strong() } else { text };
+                let r = ui.menu_button(text, |ui| {
+                    for (id, name) in &plugin_fields {
+                        let r = ui.selectable_label(current == *id, name);
+                        register(ui.ctx(), format!("ruleFieldItem:{id}:{salt}"), r.rect);
+                        if r.clicked() {
+                            plugin_pick = Some(id.clone());
+                            ui.close();
+                        }
+                    }
+                });
+                register(ui.ctx(), format!("ruleFieldGroup:Plug-in Fields:{salt}"), r.response.rect);
+            }
             pick
         });
     register(ui.ctx(), format!("ruleField:{salt}"), r.response.rect);
+    if let Some(id) = plugin_pick {
+        if *field != id {
+            *field = id;
+            let ops = ops_for(Kind::Text);
+            if !ops.iter().any(|o| o.0 == op.as_str()) {
+                *op = ops.first().map_or("is", |o| o.0).to_string();
+            }
+            *value = default_value(field, op);
+        }
+        return;
+    }
     let Some(Some(id)) = r.inner else { return };
     if field == id {
         return;

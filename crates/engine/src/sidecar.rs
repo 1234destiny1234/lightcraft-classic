@@ -291,7 +291,14 @@ pub fn sidecar_packet_with(p: &Photo, cat: &dac_catalog::Catalog, remove_locatio
     if !remove_location && !p.meta.location.trim().is_empty() {
         lc.push(("location", p.meta.location.as_str()));
     }
-    dac_meta::write_xmp_lc(&meta, &lc)
+    // plug-in custom metadata fields, under their own namespace
+    let fields: Vec<(String, String, String)> = p
+        .plugin_fields
+        .iter()
+        .filter_map(|(k, v)| k.split_once('/').map(|(plugin, key)| (plugin.to_string(), key.to_string(), dac_catalog::rules::plugin_value_text(v))))
+        .collect();
+    let fields: Vec<(&str, &str, &str)> = fields.iter().map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str())).collect();
+    dac_meta::write_xmp_ext(&meta, &lc, &fields)
 }
 
 /// The properties the app writes and owns in a sidecar: replaced on every save (removed when
@@ -411,7 +418,12 @@ pub fn read_packet(original: &str, kind: MediaKind, naming: SidecarNaming) -> Op
 /// Photo ids touched by an op (for auto-write).
 pub(crate) fn op_photos(op: &Op, out: &mut Vec<PhotoId>) {
     match op {
-        Op::SetRating { id, .. } | Op::SetFlag { id, .. } | Op::SetLabel { id, .. } | Op::SetDevelop { id, .. } | Op::SetMeta { id, .. } => {
+        Op::SetRating { id, .. }
+        | Op::SetFlag { id, .. }
+        | Op::SetLabel { id, .. }
+        | Op::SetDevelop { id, .. }
+        | Op::SetMeta { id, .. }
+        | Op::SetPluginFields { id, .. } => {
             if !out.contains(id) {
                 out.push(*id);
             }

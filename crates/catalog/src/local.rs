@@ -281,6 +281,7 @@ impl Op {
             | Op::PushHistory { id, .. }
             | Op::SetCaptured { id, .. }
             | Op::SetAnalysis { id, .. }
+            | Op::SetPluginFields { id, .. }
             | Op::SetFile { id, .. }
             | Op::Relink { id, .. }
             | Op::SetContent { id, .. }
