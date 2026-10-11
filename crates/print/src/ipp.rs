@@ -424,6 +424,11 @@ pub fn trust_certificate(uri: &str, fingerprint: &str) -> Result<()> {
     Ok(())
 }
 
+/// Whether `s` is a SHA-256 fingerprint (`AB:CD:…`, colons optional).
+pub fn is_fingerprint(s: &str) -> bool {
+    dac_net::Fingerprint::parse(s.trim()).is_some()
+}
+
 /// Forget every trusted printer certificate, then trust `list` (`host:port`, fingerprint): what the
 /// app loads from its settings. Unusable entries are skipped.
 pub fn set_trusted_certificates(list: &[(String, String)]) {

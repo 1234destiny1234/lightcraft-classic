@@ -13,7 +13,10 @@
 //! landscape}`, `printui.page {page | delta}`, `printui.guides {...}`, `printui.print {destination,
 //! path, printer}`, `printui.printOne`, `printui.printers {server}`, `printui.saveTemplate {name}`,
 //! `printui.state`, `printui.saveCreation {name}` (a Saved Print: a collection holding the photos,
-//! the page layout and these settings), `printui.openCreation {id}`.
+//! the page layout and these settings), `printui.openCreation {id}`, `printui.driver {mediaType,
+//! mediaSource, printQuality, sides}` (the printer's own options; `null` leaves one to the
+//! printer), `printui.trustCertificate {fingerprint?, uri?}` (an `ipps://` printer's certificate)
+//! and `printui.trustOnFirstUse {on}`.
 
 use dac_catalog::PhotoId;
 use dac_layout::tokens::{PhotoInfo, expand};
@@ -65,6 +68,14 @@ pub struct PrintUi {
     pub stored: Option<Value>,
     /// The printer profile's description (Color Management ▸ Profile).
     pub profile_name: Option<String>,
+    /// The options the chosen printer offers (paper type, tray, quality, two-sided).
+    pub options: dac_print::ipp::PrinterOptions,
+    /// An `ipps://` printer whose certificate was refused: (`host:port`, SHA-256 fingerprint).
+    pub untrusted: Option<(String, String)>,
+    /// Printer certificates trusted by fingerprint (`host:port`, fingerprint), saved in print.json.
+    pub trusted_certs: Vec<(String, String)>,
+    /// Trust an `ipps://` printer's certificate the first time it is seen.
+    pub trust_on_first_use: bool,
 }
 
 impl Default for PrintUi {
@@ -91,6 +102,10 @@ impl Default for PrintUi {
             media: Vec::new(),
             loaded: false,
             stored: None,
+            options: Default::default(),
+            untrusted: None,
+            trusted_certs: Vec::new(),
+            trust_on_first_use: false,
         }
     }
 }
@@ -112,7 +127,21 @@ pub const COMMANDS: &[crate::menus::UiCommand] = &[
     ("printui.state", "Print State", None, ""),
     ("printui.saveCreation", "Create Saved Print", None, ""),
     ("printui.openCreation", "Open Saved Print", None, ""),
+    ("printui.driver", "Printer Options", None, ""),
+    ("printui.trustCertificate", "Trust Printer Certificate", None, ""),
+    ("printui.trustOnFirstUse", "Trust Printer Certificates on First Use", None, ""),
 ];
+
+/// Push the trusted printer certificates and the first-use setting to the IPP client.
+fn apply_trust(pu: &PrintUi) {
+    dac_print::ipp::set_trusted_certificates(&pu.trusted_certs);
+    dac_print::ipp::set_trust_on_first_use(pu.trust_on_first_use);
+}
+
+/// Take in certificates the IPP client trusted on first use (so they are saved).
+fn sync_trust(pu: &mut PrintUi) {
+    pu.trusted_certs = dac_print::ipp::trusted_certificates();
+}
 
 /// The photos a print takes: the selection when it has more than one photo, else every photo in
 /// the filmstrip (Print One: the active photo).
@@ -207,6 +236,8 @@ fn stored_json(pu: &PrintUi) -> Value {
         "userTemplates": pu.user_templates.iter().map(|(n, s)| json!({"name": n, "settings": serde_json::to_value(s).unwrap_or(Value::Null)})).collect::<Vec<_>>(),
         "printerUri": pu.printer_uri,
         "cupsServer": pu.cups_server,
+        "trustedCertificates": pu.trusted_certs.iter().map(|(h, f)| json!({"printer": h, "fingerprint": f})).collect::<Vec<_>>(),
+        "trustOnFirstUse": pu.trust_on_first_use,
     })
 }
 
@@ -233,6 +264,17 @@ fn apply_stored(pu: &mut PrintUi, v: &Value) {
     if let Some(u) = v.get("cupsServer").and_then(Value::as_str).filter(|u| !u.trim().is_empty()) {
         pu.cups_server = u.to_string();
     }
+    if let Some(list) = v.get("trustedCertificates").and_then(Value::as_array) {
+        pu.trusted_certs = list
+            .iter()
+            .filter_map(|c| Some((c.get("printer")?.as_str()?.to_string(), c.get("fingerprint")?.as_str()?.to_string())))
+            .filter(|(_, f)| dac_print::ipp::is_fingerprint(f))
+            .take(500)
+            .collect();
+    }
+    if let Some(on) = v.get("trustOnFirstUse").and_then(Value::as_bool) {
+        pu.trust_on_first_use = on;
+    }
 }
 
 /// Read `print.json` once per session.
@@ -250,6 +292,7 @@ pub fn ensure_loaded(app: &mut DacApp) {
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {}
         Err(e) => log::warn!("{}: {e}", path.display()),
     }
+    apply_trust(&app.print);
     app.print.stored = Some(stored_json(&app.print));
 }
 
@@ -288,6 +331,16 @@ fn state_json(app: &mut DacApp) -> Value {
         "templates": builtin_templates().into_iter().map(|t| t.0).chain(pu.user_templates.iter().map(|t| t.0.clone())).collect::<Vec<_>>(),
         "userTemplates": pu.user_templates.iter().map(|t| t.0.clone()).collect::<Vec<_>>(),
         "media": pu.media.iter().map(|m| json!({"name": m.name, "w": m.size.w, "h": m.size.h, "margins": m.margins})).collect::<Vec<_>>(),
+        "printerOptions": {
+            "mediaTypes": pu.options.media_types, "mediaTypeDefault": pu.options.media_type_default,
+            "mediaSources": pu.options.media_sources, "mediaSourceDefault": pu.options.media_source_default,
+            "qualities": pu.options.qualities, "qualityDefault": pu.options.quality_default,
+            "sides": pu.options.sides, "sidesDefault": pu.options.sides_default,
+        },
+        "driver": serde_json::to_value(&pu.settings.job.driver).unwrap_or(Value::Null),
+        "untrustedCertificate": pu.untrusted.as_ref().map(|(h, f)| json!({"printer": h, "fingerprint": f})),
+        "trustedCertificates": pu.trusted_certs.iter().map(|(h, f)| json!({"printer": h, "fingerprint": f})).collect::<Vec<_>>(),
+        "trustOnFirstUse": pu.trust_on_first_use,
     })
 }
 
@@ -382,19 +435,88 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                     "Reading printer paper sizes",
                     None,
                     move || dac_print::ipp::printer_info(&uri),
-                    |app, ctx, r| match r {
-                        Ok(info) => {
-                            let n = info.media.len();
-                            app.print.media = info.media;
-                            app.toast(ctx, crate::i18n::tr_format!("{n} paper size(s) from the printer", n = n));
+                    |app, ctx, r| {
+                        sync_trust(&mut app.print);
+                        match r {
+                            Ok(info) => {
+                                let n = info.media.len();
+                                app.print.media = info.media;
+                                app.print.options = info.options;
+                                app.print.untrusted = None;
+                                app.toast(ctx, crate::i18n::tr_format!("{n} paper size(s) from the printer", n = n));
+                            }
+                            Err(dac_print::PrintError::UntrustedCertificate { printer, fingerprint }) => {
+                                let e = dac_print::PrintError::UntrustedCertificate { printer: printer.clone(), fingerprint: fingerprint.clone() };
+                                app.print.untrusted = Some((printer, fingerprint));
+                                app.toast_error(ctx, e.to_string());
+                            }
+                            Err(e) => app.toast_error(ctx, e.to_string()),
                         }
-                        Err(e) => app.toast_error(ctx, e.to_string()),
                     },
                 )?;
                 return Ok(json!({"background": true}));
             }
             #[cfg(target_arch = "wasm32")]
             return Err("printing is not available in the browser".into());
+        }
+        "printui.driver" => {
+            // each given key sets that option; null or "" leaves it to the printer
+            let mut d = app.print.settings.job.driver.clone();
+            let keyword = |k: &str| -> Result<Option<Option<String>>, String> {
+                match p.get(k) {
+                    None => Ok(None),
+                    Some(Value::Null) => Ok(Some(None)),
+                    Some(Value::String(v)) if v.trim().is_empty() => Ok(Some(None)),
+                    Some(Value::String(v)) if v.len() <= 255 && v.chars().all(|c| c.is_ascii_graphic()) => Ok(Some(Some(v.clone()))),
+                    Some(_) => Err(format!("{k} must be a printer keyword (no spaces) or null")),
+                }
+            };
+            if let Some(v) = keyword("mediaType")? {
+                d.media_type = v;
+            }
+            if let Some(v) = keyword("mediaSource")? {
+                d.media_source = v;
+            }
+            if let Some(v) = keyword("sides")? {
+                d.sides = v;
+            }
+            match p.get("printQuality") {
+                None => {}
+                Some(Value::Null) => d.print_quality = None,
+                Some(v) => {
+                    let q = v
+                        .as_i64()
+                        .or_else(|| match v.as_str() {
+                            Some("draft") => Some(3),
+                            Some("normal") => Some(4),
+                            Some("high") => Some(5),
+                            _ => None,
+                        })
+                        .filter(|q| (3..=5).contains(q))
+                        .ok_or("printQuality must be 3 (draft), 4 (normal), 5 (high), their names, or null")?;
+                    d.print_quality = Some(q as i32);
+                }
+            }
+            app.print.settings.job.driver = d;
+        }
+        "printui.trustCertificate" => {
+            let uri = p.get("uri").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| app.print.printer_uri.clone());
+            let fp = match p.get("fingerprint").and_then(Value::as_str) {
+                Some(f) => f.to_string(),
+                None => app.print.untrusted.as_ref().map(|u| u.1.clone()).ok_or("no refused printer certificate: give fingerprint")?,
+            };
+            if uri.trim().is_empty() {
+                return Err("no printer: give uri".into());
+            }
+            dac_print::ipp::trust_certificate(&uri, &fp).map_err(|e| e.to_string())?;
+            sync_trust(&mut app.print);
+            app.print.untrusted = None;
+            return Ok(json!({"trusted": app.print.trusted_certs.iter().map(|(h, f)| json!({"printer": h, "fingerprint": f})).collect::<Vec<_>>()}));
+        }
+        "printui.trustOnFirstUse" => {
+            let on = p.get("on").and_then(Value::as_bool).ok_or("on must be true or false")?;
+            app.print.trust_on_first_use = on;
+            apply_trust(&app.print);
         }
         "printui.profile" => {
             // {path: "…icc"} picks a printer profile, {path: null} = Managed by Printer, {} asks
@@ -641,6 +763,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     };
     crate::tasks::spawn(app, "Printing", Some("export"), work, |app, ctx, r: Result<Value, String>| {
         app.print.busy = false;
+        sync_trust(&mut app.print);
         match r {
             Ok(v) => {
                 let msg = if let Some(j) = v.get("job") {
@@ -1069,6 +1192,8 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
                     cmd(app, &ctx, "printui.media", json!({"uri": pr.uri}));
                 }
             }
+            printer_trust(ui, app, &ctx);
+            printer_options(ui, app, &ctx);
         }
         ui.add_space(10.0);
         ui.horizontal(|ui| {
@@ -1089,6 +1214,96 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
     // keep only valid edits (sliders can't produce invalid ones, but stay safe)
     if app.print.settings != before && app.print.settings.validate().is_err() {
         app.print.settings = before;
+    }
+}
+
+/// An `ipps://` printer whose certificate was refused: its fingerprint and Trust Certificate;
+/// and the first-use setting.
+fn printer_trust(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
+    let t = Tokens::get(ctx);
+    if let Some((printer, fp)) = app.print.untrusted.clone() {
+        ui.label(
+            egui::RichText::new(format!(
+                "{printer}: {}",
+                crate::i18n::tr("this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:")
+            ))
+            .color(t.text_dim)
+            .size(11.0),
+        );
+        ui.label(egui::RichText::new(&fp).monospace().size(10.0).color(t.text));
+        let r = ui.button(crate::i18n::tr("Trust Certificate"));
+        register(ctx, "print:trustCertificate", r.rect);
+        if r.clicked() {
+            cmd(app, ctx, "printui.trustCertificate", json!({}));
+            cmd(app, ctx, "printui.media", json!({}));
+        }
+    }
+    if app.print.printer_uri.trim_start().starts_with("ipps://") || app.print.trust_on_first_use {
+        let mut on = app.print.trust_on_first_use;
+        let r = ui.checkbox(&mut on, crate::i18n::tr("Trust a printer's certificate the first time"));
+        register(ctx, "print:trustOnFirstUse", r.rect);
+        if r.changed() {
+            cmd(app, ctx, "printui.trustOnFirstUse", json!({"on": on}));
+        }
+    }
+}
+
+/// The printer's own options (once its attributes are read): paper type, tray, quality, two-sided.
+fn printer_options(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
+    let o = app.print.options.clone();
+    let d = app.print.settings.job.driver.clone();
+    let pretty = |k: &str| -> String {
+        let s = k.replace(['-', '_'], " ");
+        let mut c = s.chars();
+        c.next().map(|f| f.to_uppercase().collect::<String>() + c.as_str()).unwrap_or_default()
+    };
+    let default_label = |def: Option<String>| match def {
+        Some(v) => format!("{} ({v})", crate::i18n::tr("Printer default")),
+        None => crate::i18n::tr("Printer default").to_string(),
+    };
+    let mut choose = |ui: &mut egui::Ui, key: &str, label: &str, list: &[String], def: Option<&String>, cur: Option<&String>| {
+        if list.is_empty() {
+            return;
+        }
+        ui.horizontal(|ui| {
+            ui.label(crate::i18n::tr(label));
+            let shown = cur.map(|c| pretty(c)).unwrap_or_else(|| default_label(def.map(|v| pretty(v))));
+            let r = egui::ComboBox::from_id_salt(("print-driver", key)).selected_text(shown).show_ui(ui, |ui| {
+                if ui.selectable_label(cur.is_none(), default_label(def.map(|v| pretty(v)))).clicked() {
+                    cmd(app, ctx, "printui.driver", json!({key: null}));
+                }
+                for v in list {
+                    if ui.selectable_label(cur == Some(v), pretty(v)).clicked() {
+                        cmd(app, ctx, "printui.driver", json!({key: v}));
+                    }
+                }
+            });
+            crate::access::label(&r.response, label);
+            register(ctx, format!("print:driver:{key}"), r.response.rect);
+        });
+    };
+    choose(ui, "mediaType", "Paper Type", &o.media_types, o.media_type_default.as_ref(), d.media_type.as_ref());
+    choose(ui, "mediaSource", "Paper Tray", &o.media_sources, o.media_source_default.as_ref(), d.media_source.as_ref());
+    choose(ui, "sides", "Two-Sided", &o.sides, o.sides_default.as_ref(), d.sides.as_ref());
+    if !o.qualities.is_empty() {
+        ui.horizontal(|ui| {
+            ui.label(crate::i18n::tr("Print Quality"));
+            let name = |q: i32| crate::i18n::tr(dac_print::ipp::quality_label(q)).to_string();
+            let def = default_label(o.quality_default.map(name));
+            let shown = d.print_quality.map(name).unwrap_or_else(|| def.clone());
+            let r = egui::ComboBox::from_id_salt(("print-driver", "printQuality")).selected_text(shown).show_ui(ui, |ui| {
+                if ui.selectable_label(d.print_quality.is_none(), def.clone()).clicked() {
+                    cmd(app, ctx, "printui.driver", json!({"printQuality": null}));
+                }
+                for q in &o.qualities {
+                    if ui.selectable_label(d.print_quality == Some(*q), name(*q)).clicked() {
+                        cmd(app, ctx, "printui.driver", json!({"printQuality": q}));
+                    }
+                }
+            });
+            crate::access::label(&r.response, "Print Quality");
+            register(ctx, "print:driver:printQuality", r.response.rect);
+        });
     }
 }
 
@@ -1627,5 +1842,53 @@ mod tests {
         assert_eq!(jobs.len(), 1);
         assert_eq!(jobs[0].copies, 2);
         assert!(jobs[0].document.starts_with(b"%PDF-"));
+    }
+
+    /// The printer's own options come with its paper sizes, show in the Print Job panel, and go
+    /// out with the job; a bad choice is refused.
+    #[test]
+    fn printer_options_are_offered_drawn_and_sent() {
+        use dac_print::testprinter::{TestPrinter, TestPrinterConfig};
+        let printer = TestPrinter::start(TestPrinterConfig::default()).unwrap();
+        let mut app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        app.run("module.print", json!({})).unwrap();
+        app.run("printui.template", json!({"name": "2×2 Cells"})).unwrap();
+        app.run("printui.set", json!({"settings": {"destination": "printer", "job": {"dpi": 72}}})).unwrap();
+        app.run("printui.media", json!({"uri": printer.uri()})).unwrap();
+        let mut h = crate::headless::Headless::new(app, [1400.0, 1000.0], 1.0);
+        let wait = |h: &mut crate::headless::Headless, done: &dyn Fn(&DacApp) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while !done(&h.app) && std::time::Instant::now() < deadline {
+                h.step();
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        wait(&mut h, &|a| !a.print.options.media_types.is_empty());
+        let st = h.app.run("printui.state", json!({})).unwrap();
+        assert_eq!(st["printerOptions"]["mediaTypeDefault"], "stationery", "{st}");
+        assert_eq!(st["printerOptions"]["qualities"], json!([4, 3, 5]));
+        h.step();
+        h.step();
+        for w in ["print:driver:mediaType", "print:driver:mediaSource", "print:driver:sides", "print:driver:printQuality"] {
+            assert!(h.app.widgets.iter().any(|(id, _)| id == w), "{w} is drawn");
+        }
+        assert!(h.app.run("printui.driver", json!({"sides": "two sided"})).is_err());
+        assert!(h.app.run("printui.driver", json!({"printQuality": 9})).is_err());
+        h.app
+            .run("printui.driver", json!({"mediaType": "photographic-matte", "mediaSource": "photo", "printQuality": "high", "sides": null}))
+            .unwrap();
+        assert_eq!(h.app.print.settings.job.driver.print_quality, Some(5));
+        h.app.run("printui.print", json!({"printer": printer.uri()})).unwrap();
+        wait(&mut h, &|a| !a.print.busy);
+        let j = &printer.jobs()[0];
+        assert_eq!(
+            (j.media_type.as_deref(), j.media_source.as_deref(), j.print_quality, j.sides.as_deref()),
+            (Some("photographic-matte"), Some("photo"), Some(5), None)
+        );
+        // trust settings: a bad fingerprint is refused, a good one is kept for saving
+        assert!(h.app.run("printui.trustCertificate", json!({"uri": "ipps://printer.local/ipp/print", "fingerprint": "zz"})).is_err());
+        h.app.run("printui.trustCertificate", json!({"uri": "ipps://printer.local/ipp/print", "fingerprint": "AB".repeat(32)})).unwrap();
+        assert!(stored_json(&h.app.print)["trustedCertificates"][0]["printer"] == "printer.local:631");
+        dac_print::ipp::set_trusted_certificates(&[]);
     }
 }
