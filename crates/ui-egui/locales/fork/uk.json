@@ -916,5 +916,14 @@
   "Clear Pair Kerning": "Скинути кернінг пар",
   "New Photos to Publish": "Нові фото для публікації",
   "Modified Photos to Re-Publish": "Змінені фото для повторної публікації",
-  "Published Photos": "Опубліковані фото"
+  "Published Photos": "Опубліковані фото",
+  "Then send to": "Потім надіслати до",
+  "Plug-in fields": "Поля плагінів",
+  "Adds:": "Додає:",
+  "menu commands": "команди меню",
+  "export hook": "обробка після експорту",
+  "metadata suggestions": "пропозиції метаданих",
+  "publish service": "служба публікації",
+  "export destination": "місце експорту",
+  "metadata fields": "поля метаданих"
 }

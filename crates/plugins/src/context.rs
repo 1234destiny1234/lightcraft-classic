@@ -8,6 +8,8 @@
 //! | `ns.get`, `ns.set`, `ns.photos` | always (own namespace) | [`NamespaceStore`]               |
 //! | `fs.readText`, `fs.list`, `fs.exists` | a readable root | std::fs                           |
 //! | `fs.writeText`        | a writable root (or a file lent for this call) | std::fs              |
+//! | `fs.readBytes`, `fs.writeBytes` | as the text calls; contents as base64 | std::fs              |
+//! | `fs.remove`           | a file below a writable root (never a lent file) | std::fs            |
 //! | `http.request`        | the URL's host in `network` | `dac-net` (native only)                 |
 
 use std::path::PathBuf;
@@ -92,6 +94,30 @@ impl CallContext<'_> {
                 }
                 std::fs::write(&path, text).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
             }
+            "fs.readBytes" => {
+                let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
+                let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
+                if meta.len() > MAX_IO_BYTES as u64 {
+                    return Err(format!("{}: larger than {MAX_IO_BYTES} bytes", path.display()));
+                }
+                std::fs::read(&path).map(|b| Value::from(crate::b64::encode(&b))).map_err(|e| format!("{}: {e}", path.display()))
+            }
+            "fs.writeBytes" => {
+                let path = self.perms.check_path(str_arg(p, "path")?, true, self.lent)?;
+                let text = str_arg(p, "base64")?;
+                if text.len() > MAX_IO_BYTES / 3 * 4 + 4 {
+                    return Err(format!("larger than {MAX_IO_BYTES} bytes"));
+                }
+                let bytes = crate::b64::decode(text)?;
+                std::fs::write(&path, bytes).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
+            }
+            "fs.remove" => {
+                let path = self.perms.check_path(str_arg(p, "path")?, true, &[])?;
+                if !std::fs::symlink_metadata(&path).is_ok_and(|m| m.is_file()) {
+                    return Err(format!("{}: not a file", path.display()));
+                }
+                std::fs::remove_file(&path).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
+            }
             "fs.exists" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
                 Ok(Value::from(path.exists()))
@@ -146,6 +172,12 @@ impl CallContext<'_> {
             }
             let ct = p.get("contentType").and_then(Value::as_str).unwrap_or("application/json");
             req = req.body(ct, body.as_bytes().to_vec());
+        } else if let Some(b64) = p.get("bodyBase64").and_then(Value::as_str) {
+            if b64.len() > MAX_IO_BYTES / 3 * 4 + 4 {
+                return Err(format!("request body larger than {MAX_IO_BYTES} bytes"));
+            }
+            let ct = p.get("contentType").and_then(Value::as_str).unwrap_or("application/octet-stream");
+            req = req.body(ct, crate::b64::decode(b64)?);
         }
         let resp = req.send().map_err(|e| e.to_string())?;
         let status = resp.status;

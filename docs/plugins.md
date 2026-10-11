@@ -12,6 +12,8 @@ plug-ins are not supported.
 | Export post-processing | `hooks.export: true` | `{"hook":"export","files":[{path, photo}]}`; the exported files are lent to the call for reading and writing |
 | Metadata and keyword suggestions | `hooks.metadata: true` | `{"hook":"metadata","photos":[photo.inspect JSON]}` → `{"suggestions":[{photo, fields?, keywords?}]}` |
 | A publish service (kind `plugin:<id>` in `publish.addService`) | `publish: {id, name}` | `{"hook":"publish.upload","service","item":{path, photo, title, caption, keywords, remoteId?}}` → `{remoteId, url?}`; `{"hook":"publish.delete","service","remoteId"}` |
+| Export destinations ("Then send to" in the Export dialog) | `exportDestinations: [{id, name, dialog}]` | `{"hook":"export.destination","destination","args","files":[{path, photo}]}` after the files are written and the export hooks ran; the files are lent to the call; a `message` in the reply is shown |
+| Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel (`plugin.setField`), read-only ones only the plug-in sets |
 
 Commands appear under File ▸ Plug-in Extras and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
 control channel and MCP all use this command. `plugin.commands` lists the commands so front
@@ -33,8 +35,8 @@ are the granted permissions intersected with the requested ones.
 |---|---|
 | `catalog: true` | `catalog.query`, `photo.inspect`, `catalog.stats`, `keyword.list` (read-only) |
 | `metadataWrite: true` | `metadata.setStandard {ids, title?, caption?, keywords?, addKeywords?, …}` |
-| `network: ["api.example.com", "*.example.org"]` | `http.request` to those hosts only. Redirects are not followed: the plug-in has to request the new URL itself, and that request is checked again. |
-| `fs: [{path: "/abs/dir", write?}]` | `fs.readText`, `fs.list`, `fs.exists` below each root, and `fs.writeText` below writable roots. `..` is rejected, and symbolic links are resolved so a link cannot lead out of a root. |
+| `network: ["api.example.com", "*.example.org"]` | `http.request` to those hosts only. Redirects are not followed: the plug-in has to request the new URL itself, and that request is checked again. A binary body goes as `bodyBase64` (with `contentType`) instead of `body`. |
+| `fs: [{path: "/abs/dir", write?}]` | `fs.readText`, `fs.readBytes`, `fs.list`, `fs.exists` below each root, and `fs.writeText`, `fs.writeBytes`, `fs.remove` (files only) below writable roots. Bytes travel as base64 (`{path}` → base64 text; `{path, base64}`). `..` is rejected, and symbolic links are resolved so a link cannot lead out of a root. Files lent to a call (an export hook's or destination's exported files, a publish upload's rendered file) can be read and rewritten without any root, never removed. |
 
 Every plug-in can always use its own **metadata namespace** (`ns.get {photo}`,
 `ns.set {photo, key, value}`, `ns.photos`). The namespace is stored next to the module, never in
@@ -66,18 +68,15 @@ Imports (module `host`):
 
 ## Writing one in Rust
 
-The guest SDK is `sdk/plugin` (`dac-plugin-sdk`). Two examples:
+The guest SDK is `sdk/plugin` (`dac-plugin-sdk`). Five examples, each a complete plug-in:
 
-- `sdk/examples/catalog-tools` uses every hook: a menu command with a dialog, the plug-in's own
-  namespace, a metadata provider, an export hook and a publish service.
-- `sdk/examples/batch-metadata` is a small useful tool. It asks for `catalog` and `metadataWrite`.
-  *Title / Caption from Template…* fills the title or caption of the selected photos from a
-  template with tokens (`{name}`, `{file}`, `{date}`, `{year}`, `{camera}`, `{n}` with a start
-  number). *Add Keywords…* adds comma-separated keywords to the selection. Every write goes through
-  `metadata.setStandard`.
-
-Photo ids reach a plug-in as strings (`selection`). The host accepts them, or numbers, in `id` /
-`ids`, and refuses anything else, so a bad id is an error rather than "the current selection".
+| Example | Shows |
+|---|---|
+| `sdk/examples/catalog-tools` | every hook in one place: a menu command with a dialog, the plug-in's own namespace, a metadata provider, an export hook and a publish service |
+| `sdk/examples/batch-metadata` | a small useful tool (`catalog` + `metadataWrite`): *Title / Caption from Template…* fills the title or caption of the selected photos from a template with tokens (`{name}`, `{file}`, `{date}`, `{year}`, `{camera}`, `{n}` with a start number); *Add Keywords…* adds comma-separated keywords. Every write goes through `metadata.setStandard` |
+| `sdk/examples/export-tools` | **export hooks**: a post-process hook that reads each exported file (binary, `host::read_bytes`) and records its CRC-32; an **export destination** "WebDAV Upload" that `PUT`s the files to a server (`host::http_bytes`, basic auth, a dry-run switch) |
+| `sdk/examples/publish-folder` | a **publish service** "Local Gallery": copies each rendered photo into a gallery folder (one writable `fs` root), keeps an `index.json`, replaces on re-publish and deletes on removal |
+| `sdk/examples/custom-fields` | **custom metadata fields** Client / Job / Usage (editable in the Metadata panel) and Delivered (read-only), a *Set Job Fields…* command for the selection, an export hook that marks exported photos delivered, and a metadata provider that suggests the client as a keyword |
 
 ```sh
 rustup target add wasm32-unknown-unknown
@@ -87,31 +86,134 @@ cargo build --release --target wasm32-unknown-unknown
 #   File ▸ Plug-in Manager…, or  <cli> commands plugin.install '{"path": "…"}'
 ```
 
+`dac-plugins`' test suite (`crates/plugins/tests/example.rs`) builds every example to wasm32 and
+runs each hook and command of them. Without the wasm32 target installed, those tests are skipped.
+
+## Guide for plug-in authors
+
+### 1. Start a crate
+
+A plug-in is a `cdylib` of its own (outside the app's workspace) that depends on the SDK:
+
+```toml
+[package]
+name = "hello"
+edition = "2024"
+
+[workspace]
+
+[lib]
+crate-type = ["cdylib", "rlib"]   # rlib: unit tests of your logic run natively
+
+[dependencies]
+dac-plugin-sdk = { path = "…/sdk/plugin" }   # or a git dependency on this repository
+
+[profile.release]
+opt-level = "s"
+panic = "abort"
+lto = true
+strip = true
+```
+
+### 2. Declare a manifest and handle requests
+
 ```rust
 use dac_plugin_sdk::{export_plugin, host, Request};
 use dac_plugin_sdk::serde_json::{json, Value};
 
-const MANIFEST: &str = r#"{"id": "org.example.hello", "name": "Hello",
+const MANIFEST: &str = r#"{"id": "org.example.hello", "name": "Hello", "version": "1.0.0",
   "permissions": {"catalog": true}, "commands": [{"id": "count", "label": "Count Photos"}]}"#;
 
 fn handle(req: &Request) -> Result<Value, String> {
     match req.hook() {
-        "command" => host::call("catalog.stats", json!({})),
+        "command" => {
+            let stats = host::call("catalog.stats", json!({}))?;
+            Ok(json!({"message": format!("{} photos", stats["photos"])}))
+        }
         other => Err(format!("unsupported hook {other}")),
     }
 }
 export_plugin!(MANIFEST, handle);
 ```
 
-`dac-plugins`' test suite (`crates/plugins/tests/example.rs`) builds both examples to wasm32 and
-runs every hook and command of them. Without the wasm32 target installed, those tests are skipped.
+`export_plugin!` exports the ABI; `handle` gets every request. Reply with `Ok(value)` or
+`Err(message)`: an error is shown to the user and written to the plug-in's log. A `message` in a
+command's or destination's reply is shown as a notice.
+
+The manifest fields:
+
+| Field | Meaning |
+|---|---|
+| `id` | stable, `[A-Za-z0-9._-]{1,64}`, reverse-DNS style; an install with the same id is an update |
+| `name`, `version`, `description`, `author` | shown in the Plug-in Manager |
+| `permissions` | what the plug-in asks for (see [Permissions](#permissions)); ask for as little as possible |
+| `commands` | `[{id, label, menu?, dialog?}]`, File ▸ Plug-in Extras ▸ `name` ▸ `menu` ▸ `label` |
+| `hooks` | `{export?: true, metadata?: true}` |
+| `publish` | `{id, name}`: one publish service |
+| `exportDestinations` | `[{id, name, dialog?}]`, at most 16 |
+| `metadataFields` | `[{key, label, type, …, readOnly?}]`, at most 32; `type` and its options as for dialog fields |
+
+### 3. Requests by hook
+
+| `req.hook()` | Fields (`req.get(…)`, helpers) | Reply |
+|---|---|---|
+| `command` | `req.command()`, `req.arg(key)`, `req.selection()` (photo ids as strings) | anything; `message` is shown |
+| `export` | `req.files()` → `(path, photo)` of the written files | anything |
+| `export.destination` | `req.destination()`, `req.arg(key)`, `req.files()` | anything; `message` is shown |
+| `metadata` | `photos`: `photo.inspect` JSON | `{suggestions: [{photo, fields?, keywords?}]}` |
+| `publish.upload` | `item: {path, photo, title, caption, keywords, remoteId?}` | `{remoteId, url?}`; the same `remoteId` comes back on a re-publish and on removal |
+| `publish.delete` | `remoteId` | anything |
+
+### 4. Call the host
+
+| SDK | Host method | Needs |
+|---|---|---|
+| `host::call(method, params)` | any of the below | |
+| `host::query(params)` | `catalog.query` (also `photo.inspect`, `catalog.stats`, `keyword.list` via `call`) | `catalog` |
+| `host::call("metadata.setStandard", {ids, title?, caption?, keywords?, addKeywords?, …})` | writes standard fields | `metadataWrite` |
+| `host::ns_get(photo)`, `host::ns_set(photo, key, value)` | `ns.get`, `ns.set`, `ns.photos` | nothing (own namespace; also holds `metadataFields` values) |
+| `host::read_text`, `host::write_text`, `host::read_bytes`, `host::write_bytes`, `host::remove`, `host::exists` | `fs.*` | an `fs` root (or a lent file) |
+| `host::http(method, url, headers, body)`, `host::http_bytes(…)` | `http.request` → `{status, contentType, location, body}` | the URL's host in `network` |
+| `host::log(line)` | `host.log` | nothing; Plug-in Manager ▸ Log |
+| `dac_plugin_sdk::base64::{encode, decode}` | | |
+
+### 5. Rules the host enforces
+
+- Every call runs in a **fresh instance**: keep state in the namespace, not in statics.
+- **Budgets per call**: instructions (fuel), wall-clock time (network time counts), 256 MiB of
+  memory, call depth, 16 MiB per message, 10 000 host calls, 8 MiB per file or HTTP body. Batch
+  work in chunks the user can re-run rather than one huge call.
+- Everything a plug-in returns is **checked**: dialog values are coerced to their fields before
+  the plug-in sees them, `metadataFields` values that no longer fit the field show as empty, and a
+  reply that is not JSON, too large or late is an error. Nothing a plug-in does can crash the app.
+- **Permissions are the user's**: each requested capability is a separate checkbox on install,
+  unticked; an update that asks for more gets nothing new until approved; the user can revoke any
+  permission later. Handle `permission … not granted` errors with a clear message.
+- Paths must be **absolute** without `..`; links can't lead out of a root.
+
+### 6. Test and ship
+
+- Unit-test your logic natively (`cargo test`; the host calls answer "no host" off wasm).
+- Build `--release --target wasm32-unknown-unknown`, then install from File ▸ Plug-in Manager…
+  (*Install…* shows every permission for approval) or `<cli> commands plugin.install`.
+- Drive it without the UI: `plugin.run`, `plugin.exportTo`, `plugin.setField`, `plugin.log` from
+  the CLI, the control channel or MCP.
+- Distribute the `.wasm` file. There is no store and no signing yet: tell users what each
+  permission is for.
 
 ## Engine commands
 
 `plugin.list`, `plugin.inspectFile {path}`, `plugin.install {path, grant?}`,
 `plugin.uninstall {id}`, `plugin.enable {id, enabled}`, `plugin.grant {id, grant}`,
 `plugin.log {id}`, `plugin.commands`, `plugin.run {plugin, command, args?, ids?}`,
-`plugin.suggestMetadata {ids?}`, `plugin.postExport {files}`, `plugin.publishServices`.
+`plugin.suggestMetadata {ids?}`, `plugin.postExport {files}`, `plugin.publishServices`,
+`plugin.exportDestinations`, `plugin.exportTo {plugin, destination, files, args?}`,
+`plugin.metadataFields {id?}`, `plugin.setField {plugin, field, value, id?}`.
+
+`app.export` runs the enabled export hooks after every export (the Export dialog, Export with
+Preset / Previous, the CLI, the control channel and MCP) and, with
+`pluginDestination: {plugin, destination, args?}`, hands the written files to that destination;
+the results come back as `plugins: [{plugin, destination?, ok | error}]`.
 
 Plug-ins are installed per user in `<settings_dir>/plugins`, or in `<PREFIX>_PLUGINS` if that
 is set. That folder holds `<id>.wasm`, `plugins.json` (enabled state and grants) and
@@ -120,6 +222,10 @@ disabled and with no permissions granted.
 
 ## Not done yet
 
-- Export hooks run after exports from the app's Export dialog (synchronously, on the UI thread);
-  the CLI's and MCP's exports don't call them yet (`plugin.postExport` does it by hand).
-- No binary file I/O for plug-ins yet (only text), and no WebDAV example plug-in.
+- Export hooks and destinations run on the UI thread after the export finished (a long upload
+  holds the window); they have no activity row of their own yet.
+- Custom metadata fields show and edit the active photo only (not every selected photo), and are
+  not searchable in the Library filter or written to XMP.
+- Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
+  server the user types" isn't possible; the author names the hosts.
+- No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.

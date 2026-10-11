@@ -13,6 +13,10 @@ pub const MAX_MANIFEST_BYTES: usize = 64 * 1024;
 pub const MAX_COMMANDS: usize = 64;
 /// Most fields one dialog may have.
 pub const MAX_FIELDS: usize = 32;
+/// Most export destinations one plug-in may declare.
+pub const MAX_DESTINATIONS: usize = 16;
+/// Most custom metadata fields one plug-in may declare.
+pub const MAX_METADATA_FIELDS: usize = 32;
 
 /// The manifest a plug-in returns from `dac_manifest`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -39,6 +43,47 @@ pub struct Manifest {
     /// A publish service this plug-in provides.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub publish: Option<PublishDecl>,
+    /// Export destinations: after the app writes the files, the plug-in delivers them
+    /// (`{"hook": "export.destination"}`).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub export_destinations: Vec<DestinationDecl>,
+    /// Custom metadata fields shown in the Metadata panel; their values live in the plug-in's
+    /// own namespace (the key is the field key).
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub metadata_fields: Vec<MetadataField>,
+}
+
+/// An export destination ("Upload to my server").
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct DestinationDecl {
+    /// `[A-Za-z0-9._-]{1,64}`, unique within the plug-in.
+    pub id: String,
+    /// Display name.
+    pub name: String,
+    /// Settings asked in the Export dialog; their values arrive as `args`.
+    #[serde(default)]
+    pub dialog: Vec<Field>,
+}
+
+/// A custom metadata field.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct MetadataField {
+    pub key: String,
+    pub label: String,
+    #[serde(flatten)]
+    pub kind: FieldKind,
+    /// Shown but not editable by the user (the plug-in fills it).
+    #[serde(default)]
+    pub read_only: bool,
+}
+
+impl MetadataField {
+    /// The field as a dialog field (same checks, same coercion).
+    pub fn as_field(&self) -> Field {
+        Field { key: self.key.clone(), label: self.label.clone(), kind: self.kind.clone() }
+    }
 }
 
 /// A menu command. It runs as the engine command `plugin.run {plugin, command, args}`.
@@ -159,11 +204,44 @@ impl Manifest {
         {
             return bad("publish service needs an id and a name".into());
         }
+        if self.export_destinations.len() > MAX_DESTINATIONS {
+            return bad(format!("at most {MAX_DESTINATIONS} export destinations"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for d in &self.export_destinations {
+            if !valid_id(&d.id) || !seen.insert(d.id.as_str()) || d.name.trim().is_empty() || d.name.len() > 128 {
+                return bad(format!("export destination {:?}: needs a unique id and a 1-128 byte name", d.id));
+            }
+            if d.dialog.len() > MAX_FIELDS {
+                return bad(format!("export destination {:?}: at most {MAX_FIELDS} dialog fields", d.id));
+            }
+            for f in &d.dialog {
+                f.validate().map_err(|e| Error::Manifest(format!("export destination {:?}: {e}", d.id)))?;
+            }
+        }
+        if self.metadata_fields.len() > MAX_METADATA_FIELDS {
+            return bad(format!("at most {MAX_METADATA_FIELDS} metadata fields"));
+        }
+        let mut seen = std::collections::BTreeSet::new();
+        for f in &self.metadata_fields {
+            if !seen.insert(f.key.as_str()) || f.label.trim().is_empty() {
+                return bad(format!("metadata field {:?}: needs a unique key and a label", f.key));
+            }
+            f.as_field().validate().map_err(|e| Error::Manifest(format!("metadata field: {e}")))?;
+        }
         Ok(())
     }
 
     pub fn command(&self, id: &str) -> Option<&CommandDecl> {
         self.commands.iter().find(|c| c.id == id)
+    }
+
+    pub fn destination(&self, id: &str) -> Option<&DestinationDecl> {
+        self.export_destinations.iter().find(|d| d.id == id)
+    }
+
+    pub fn metadata_field(&self, key: &str) -> Option<&MetadataField> {
+        self.metadata_fields.iter().find(|f| f.key == key)
     }
 }
 
@@ -275,5 +353,30 @@ mod tests {
             assert!(Manifest::parse(bad.to_string().as_bytes()).is_err(), "{bad}");
         }
         assert!(Manifest::parse(b"not json").is_err());
+    }
+
+    #[test]
+    fn destinations_and_metadata_fields() {
+        let m = Manifest::parse(
+            json!({"id": "a", "name": "A",
+                "exportDestinations": [{"id": "srv", "name": "My Server", "dialog": [{"key": "album", "label": "Album", "type": "text"}]}],
+                "metadataFields": [{"key": "job", "label": "Job", "type": "text"},
+                    {"key": "score", "label": "Score", "type": "number", "min": 0, "max": 10, "default": 0, "readOnly": true}]})
+            .to_string()
+            .as_bytes(),
+        )
+        .unwrap();
+        assert_eq!(m.destination("srv").unwrap().dialog.len(), 1);
+        assert!(m.metadata_field("score").unwrap().read_only);
+        assert_eq!(m.metadata_field("score").unwrap().as_field().coerce(&json!(99)).unwrap(), json!(10.0));
+        for bad in [
+            json!({"id": "a", "name": "A", "exportDestinations": [{"id": "x", "name": "X"}, {"id": "x", "name": "Y"}]}),
+            json!({"id": "a", "name": "A", "exportDestinations": [{"id": "bad id", "name": "X"}]}),
+            json!({"id": "a", "name": "A", "metadataFields": [{"key": "k", "label": "K", "type": "text"}, {"key": "k", "label": "L", "type": "text"}]}),
+            json!({"id": "a", "name": "A", "metadataFields": [{"key": "k k", "label": "K", "type": "text"}]}),
+            json!({"id": "a", "name": "A", "metadataFields": [{"key": "c", "label": "C", "type": "choice", "options": []}]}),
+        ] {
+            assert!(Manifest::parse(bad.to_string().as_bytes()).is_err(), "{bad}");
+        }
     }
 }

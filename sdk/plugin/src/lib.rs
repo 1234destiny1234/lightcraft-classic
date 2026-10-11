@@ -132,6 +132,69 @@ impl Request {
     pub fn get(&self, key: &str) -> &Value {
         self.0.get(key).unwrap_or(&Value::Null)
     }
+    /// The export destination id (`hook == "export.destination"`).
+    pub fn destination(&self) -> &str {
+        self.0.get("destination").and_then(Value::as_str).unwrap_or("")
+    }
+    /// Exported files `(path, photo id)` (`hook == "export"` or `"export.destination"`).
+    pub fn files(&self) -> Vec<(String, String)> {
+        self.0
+            .get("files")
+            .and_then(Value::as_array)
+            .map(|a| {
+                a.iter()
+                    .filter_map(|f| {
+                        let path = f.get("path")?.as_str()?.to_string();
+                        let photo = match f.get("photo") {
+                            Some(Value::String(s)) => s.clone(),
+                            Some(Value::Number(n)) => n.to_string(),
+                            _ => String::new(),
+                        };
+                        Some((path, photo))
+                    })
+                    .collect()
+            })
+            .unwrap_or_default()
+    }
+}
+
+/// Standard base64 (with padding), as `fs.readBytes` / `fs.writeBytes` / `bodyBase64` use.
+pub mod base64 {
+    const ALPHABET: &[u8; 64] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789+/";
+
+    pub fn encode(bytes: &[u8]) -> String {
+        let mut out = String::with_capacity(bytes.len().div_ceil(3) * 4);
+        for chunk in bytes.chunks(3) {
+            let b = [chunk[0], chunk.get(1).copied().unwrap_or(0), chunk.get(2).copied().unwrap_or(0)];
+            let n = (u32::from(b[0]) << 16) | (u32::from(b[1]) << 8) | u32::from(b[2]);
+            for i in 0..4 {
+                out.push(if i <= chunk.len() { char::from(ALPHABET[((n >> (18 - 6 * i)) & 63) as usize]) } else { '=' });
+            }
+        }
+        out
+    }
+
+    pub fn decode(text: &str) -> Result<Vec<u8>, String> {
+        let s = text.as_bytes();
+        if !s.len().is_multiple_of(4) {
+            return Err("base64 length must be a multiple of 4".into());
+        }
+        let mut out = Vec::with_capacity(s.len() / 4 * 3);
+        for (i, c) in s.chunks(4).enumerate() {
+            let pad = c.iter().rev().take_while(|&&b| b == b'=').count();
+            if pad > 2 || (pad > 0 && i + 1 != s.len() / 4) {
+                return Err("bad base64 padding".into());
+            }
+            let mut n = 0u32;
+            for &b in &c[..4 - pad] {
+                let v = ALPHABET.iter().position(|&a| a == b).ok_or("bad base64 character")? as u32;
+                n = (n << 6) | v;
+            }
+            n <<= 6 * pad as u32;
+            out.extend_from_slice(&[(n >> 16) as u8, (n >> 8) as u8, n as u8][..3 - pad]);
+        }
+        Ok(out)
+    }
 }
 
 /// Calls into the host.
@@ -182,6 +245,34 @@ pub mod host {
 
     pub fn write_text(path: &str, text: &str) -> Result<(), String> {
         call("fs.writeText", json!({"path": path, "text": text})).map(|_| ())
+    }
+
+    /// A binary file (needs a readable root, or a file lent to this call such as an exported file).
+    pub fn read_bytes(path: &str) -> Result<Vec<u8>, String> {
+        call("fs.readBytes", json!({"path": path})).and_then(|v| crate::base64::decode(v.as_str().unwrap_or_default()))
+    }
+
+    /// Writes a binary file (needs a writable root, or a file lent to this call).
+    pub fn write_bytes(path: &str, bytes: &[u8]) -> Result<(), String> {
+        call("fs.writeBytes", json!({"path": path, "base64": crate::base64::encode(bytes)})).map(|_| ())
+    }
+
+    /// Removes a file below a writable root.
+    pub fn remove(path: &str) -> Result<(), String> {
+        call("fs.remove", json!({"path": path})).map(|_| ())
+    }
+
+    /// Does `path` exist (needs a readable root)?
+    pub fn exists(path: &str) -> Result<bool, String> {
+        call("fs.exists", json!({"path": path})).map(|v| v.as_bool().unwrap_or(false))
+    }
+
+    /// An HTTP request with a binary body (e.g. a WebDAV `PUT` of an exported file).
+    pub fn http_bytes(method: &str, url: &str, headers: Value, content_type: &str, body: &[u8]) -> Result<Value, String> {
+        call(
+            "http.request",
+            json!({"method": method, "url": url, "headers": headers, "contentType": content_type, "bodyBase64": crate::base64::encode(body)}),
+        )
     }
 
     /// An HTTP request (needs the URL's host in the `network` permission) →

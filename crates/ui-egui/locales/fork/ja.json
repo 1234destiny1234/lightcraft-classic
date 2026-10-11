@@ -1099,5 +1099,14 @@
   "Clear Pair Kerning": "ペアカーニングを消去",
   "New Photos to Publish": "公開する新しい写真",
   "Modified Photos to Re-Publish": "再公開する変更された写真",
-  "Published Photos": "公開済みの写真"
+  "Published Photos": "公開済みの写真",
+  "Then send to": "書き出し後の送信先",
+  "Plug-in fields": "プラグインのフィールド",
+  "Adds:": "追加内容:",
+  "menu commands": "メニューコマンド",
+  "export hook": "書き出し後処理",
+  "metadata suggestions": "メタデータの提案",
+  "publish service": "公開サービス",
+  "export destination": "書き出し先",
+  "metadata fields": "メタデータフィールド"
 }

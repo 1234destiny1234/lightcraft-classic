@@ -1100,5 +1100,14 @@
   "Clear Pair Kerning": "Limpar kerning de pares",
   "New Photos to Publish": "Novas fotos a publicar",
   "Modified Photos to Re-Publish": "Fotos modificadas a republicar",
-  "Published Photos": "Fotos publicadas"
+  "Published Photos": "Fotos publicadas",
+  "Then send to": "Depois enviar para",
+  "Plug-in fields": "Campos de plug-ins",
+  "Adds:": "Adiciona:",
+  "menu commands": "comandos de menu",
+  "export hook": "pós-processamento de exportação",
+  "metadata suggestions": "sugestões de metadados",
+  "publish service": "serviço de publicação",
+  "export destination": "destino de exportação",
+  "metadata fields": "campos de metadados"
 }

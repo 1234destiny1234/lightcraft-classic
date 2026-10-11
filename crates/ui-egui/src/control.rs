@@ -478,10 +478,24 @@ pub fn export_active(app: &mut DacApp, p: &Value) -> Result<Value, String> {
     let background = p.get("background").and_then(Value::as_bool).unwrap_or(false) && app.services.write_shared.is_some();
     let out = if background {
         let items = dac_engine::export::prepare_batch(&mut app.session, &ids, &opts)?;
-        crate::export_task::start(app, items, opts, to)?
+        let r = crate::export_task::start(app, items, opts, to)?;
+        if let Some(t) = app.export.as_mut() {
+            t.plugin_destination = p.get("pluginDestination").filter(|d| d.is_object()).cloned();
+        }
+        r
     } else {
         let w = app.services.write.as_mut().ok_or("no writer")?;
-        json!({"files": export_batch(&mut app.session, &ids, &opts, &to, &mut |path, bytes| w(path, bytes), &|path| std::path::Path::new(path).exists())?})
+        let files = export_batch(&mut app.session, &ids, &opts, &to, &mut |path, bytes| w(path, bytes), &|path| std::path::Path::new(path).exists())?;
+        // plug-in export hooks and destination, as after a background export
+        #[cfg(not(target_arch = "wasm32"))]
+        let plugins = dac_engine::cmd::plugins::after_export(&mut app.session, &files, p.get("pluginDestination"));
+        #[cfg(target_arch = "wasm32")]
+        let plugins: Option<Vec<Value>> = None;
+        let mut out = json!({"files": files});
+        if let Some(r) = plugins {
+            out["plugins"] = json!(r);
+        }
+        out
     };
     // remember for Export with Previous (and to prefill the dialog)
     let mut last = p.clone();

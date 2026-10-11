@@ -958,5 +958,14 @@
   "Clear Pair Kerning": "Paarkerning entfernen",
   "New Photos to Publish": "Neue zu veröffentlichende Fotos",
   "Modified Photos to Re-Publish": "Geänderte erneut zu veröffentlichende Fotos",
-  "Published Photos": "Veröffentlichte Fotos"
+  "Published Photos": "Veröffentlichte Fotos",
+  "Then send to": "Danach senden an",
+  "Plug-in fields": "Plug-in-Felder",
+  "Adds:": "Fügt hinzu:",
+  "menu commands": "Menübefehle",
+  "export hook": "Export-Nachbearbeitung",
+  "metadata suggestions": "Metadatenvorschläge",
+  "publish service": "Veröffentlichungsdienst",
+  "export destination": "Exportziel",
+  "metadata fields": "Metadatenfelder"
 }

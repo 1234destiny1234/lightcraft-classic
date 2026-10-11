@@ -24,6 +24,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+mod b64;
 mod context;
 pub mod manager;
 pub mod manifest;
@@ -34,7 +35,7 @@ mod store;
 
 pub use context::{HostApi, NoHost};
 pub use manager::{Installed, Manager};
-pub use manifest::{CommandDecl, Field, FieldKind, Hooks, Manifest, PublishDecl};
+pub use manifest::{CommandDecl, DestinationDecl, Field, FieldKind, Hooks, Manifest, MetadataField, PublishDecl};
 pub use permissions::{FsRoot, Permissions};
 pub use runtime::{ABI_VERSION, Limits, Plugin};
 pub use store::NamespaceStore;

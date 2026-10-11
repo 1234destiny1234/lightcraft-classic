@@ -1094,5 +1094,14 @@
   "Clear Pair Kerning": "Effacer le crénage de paire",
   "New Photos to Publish": "Nouvelles photos à publier",
   "Modified Photos to Re-Publish": "Photos modifiées à republier",
-  "Published Photos": "Photos publiées"
+  "Published Photos": "Photos publiées",
+  "Then send to": "Puis envoyer vers",
+  "Plug-in fields": "Champs des modules externes",
+  "Adds:": "Ajoute :",
+  "menu commands": "commandes de menu",
+  "export hook": "post-traitement d’export",
+  "metadata suggestions": "suggestions de métadonnées",
+  "publish service": "service de publication",
+  "export destination": "destination d’export",
+  "metadata fields": "champs de métadonnées"
 }

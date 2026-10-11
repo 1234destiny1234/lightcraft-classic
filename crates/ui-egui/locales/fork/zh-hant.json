@@ -1098,5 +1098,14 @@
   "Clear Pair Kerning": "清除字偶間距",
   "New Photos to Publish": "要發佈的新相片",
   "Modified Photos to Re-Publish": "要重新發佈的已修改相片",
-  "Published Photos": "已發佈的相片"
+  "Published Photos": "已發佈的相片",
+  "Then send to": "然後傳送到",
+  "Plug-in fields": "外掛程式欄位",
+  "Adds:": "新增:",
+  "menu commands": "選單命令",
+  "export hook": "轉存後處理",
+  "metadata suggestions": "中繼資料建議",
+  "publish service": "發佈服務",
+  "export destination": "轉存目標",
+  "metadata fields": "中繼資料欄位"
 }

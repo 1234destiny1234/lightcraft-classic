@@ -1393,5 +1393,14 @@
   "Clear Pair Kerning": "Сбросить кернинг пар",
   "New Photos to Publish": "Новые фото для публикации",
   "Modified Photos to Re-Publish": "Изменённые фото для повторной публикации",
-  "Published Photos": "Опубликованные фото"
+  "Published Photos": "Опубликованные фото",
+  "Then send to": "Затем отправить в",
+  "Plug-in fields": "Поля плагинов",
+  "Adds:": "Добавляет:",
+  "menu commands": "команды меню",
+  "export hook": "обработка после экспорта",
+  "metadata suggestions": "предложения метаданных",
+  "publish service": "служба публикации",
+  "export destination": "место экспорта",
+  "metadata fields": "поля метаданных"
 }
