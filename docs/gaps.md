@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -35,7 +35,7 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 16 | **Classic output module finish**: Map, Book (incl. pair kerning, PDF text opacity), Slideshow, Web and publish services (with grid sections) exist; open: slideshow sound output (cpal needs C `libasound` on Linux: maintainer decision), backdrop image in preview / playback (upstream PR #808) and video export (upstream PR #929), a to-remove publish section, publish services beyond Hard Drive / SFTP / Immich (Flickr, SmugMug) | LRC-SS-BACKDROP / MUSIC / EXPORT, LRC-WEB-UPLOAD, LRC-LIB-PUBLISH 🟡 | Classic users; publish services matter for Flickr / SmugMug workflows | 15–35 | [target-app-parity](target-app-parity.md#features) |
 | 17 | **Tethered capture: verify native PTP on real bodies** (LRC-LIB-TETHER) | 🟡 | studio photographers | 5–15 + cameras | [hardware-parity](hardware-parity.md) |
 | 18 | **Video**: playback, trim, global edits, export | VID rows 0% | users who mix stills and clips | 25–45 | [target-app-parity](target-app-parity.md#features) |
-| 19 | **Plug-in ecosystem**: sandboxed wasm SDK with export hooks and destinations, publish services and custom metadata fields (G19, five SDK examples, author guide in [plugins](plugins.md)); left: fields edit the active photo only and are not searchable, no store/signing, no Lua plug-ins | 🟡 | pro workflows built on plug-ins (LR/Enfuse, Jeffrey's exporters, Negative Lab Pro) | 15–40 + owner decision | [target-app-parity](target-app-parity.md#by-dimension) |
+| 19 | **Plug-in ecosystem**: sandboxed wasm SDK with export hooks and destinations, publish services and custom metadata fields (G19, five SDK examples, author guide in [plugins](plugins.md)); left: fields not read back from XMP, no store/signing, no Lua plug-ins | 🟡 | pro workflows built on plug-ins (LR/Enfuse, Jeffrey's exporters, Negative Lab Pro) | 15–40 + owner decision | [target-app-parity](target-app-parity.md#by-dimension) |
 | 20 | **Long-tail raw formats**: compressed SRW, ARQ pixel shift, IIQ, Hasselblad compression, X3F, CRW, MRW, ERF, KDC, DCR, MEF, GPR, old FinePix | raw-parity.md | small user share each | 45–85 | [raw-parity](raw-parity.md) |
 | 21 | **Localization**: 9 of 15 shipped languages partial (74–99% of catalog messages), lower-layer errors English; Hindi, Arabic, Indonesian, Korean, Vietnamese absent; no RTL or complex shaping | measured from catalogs | non-English users see mixed English | 55–90 (shipped to full); 145–255 (five new) | [localization-parity](localization-parity.md) |
 | 22 | **Pen pressure**, OS monitor profiles, follow-window colour | hardware-parity.md | brush users with tablets; multi-monitor setups | 11–22 | [hardware-parity](hardware-parity.md) |
@@ -44,7 +44,7 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 25 | **File writes**: JXL encode, PSD export, lossy DNG, Render to DNG; AVIF import | file-format-parity.md | interchange edge cases | 25–45 | [file-format-parity](file-format-parity.md) |
 | 26 | **Performance at scale**: 85k-photo library opens in 1.7–4.7 s; 100k grid test pending; colour NR at half resolution | ROADMAP log, gpu-pipeline.md | large-catalog users | 15–30 | [target-app-parity](target-app-parity.md#by-dimension) |
 | 27 | **Windows / Linux runtime coverage**: Windows installer UI unverified on Windows (#79); GPU path proven on Apple only | ROADMAP, issues | non-Mac users find bugs first | 15–30 | [hardware-parity](hardware-parity.md) |
-| 28 | **Small Classic shortcuts and keys**: rating `[` `]`, \` flag toggle, `\` filter bar, F1 help, panel keys (Tab, ⇧Tab, F5–F8) and ⌘L Enable Filters are bound (G28); left: Develop ⇧J (meaning unverified), Web module keys | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
+| 28 | **Small Classic shortcuts and keys**: rating `[` `]`, \` flag toggle, `\` filter bar, F1 help, panel keys (Tab, ⇧Tab, F5–F8) and ⌘L Enable Filters are bound (G28); Web module ⌘R / ⌘⌥P bound too; left: Develop ⇧J (meaning unverified) | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
 
 Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform work they need around them,
 **~340–600 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).
@@ -78,6 +78,8 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Gap 28: Web module ⌘R reload preview and ⌘⌥P preview in browser are bound |
+| 2026-10-12 | minor | Gap 19: plug-in metadata fields edit the selection, are searchable and are written to XMP |
 | 2026-10-12 | minor | Gap 15: `ipps://` (TLS, certificates trusted by fingerprint or on first use) and printer driver options (paper type, tray, quality, two-sided) landed; 15–30 h → 10–22 h; Windows spooler and CMYK profiles remain |
 | 2026-10-12 | minor | Gap 19: plug-in export hooks and destinations run on a worker with an activity row |
 | 2026-10-12 | minor | Row 19 (plug-ins) to 🟡, 15–40 h left: export destinations, custom metadata fields, binary file I/O, hooks after CLI/MCP exports, three SDK examples and an author guide (G19) |

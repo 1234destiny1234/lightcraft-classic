@@ -257,9 +257,9 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
                 Row::Extras => extras(app, ui, &active),
             }
         }
-        // G19: custom fields of metadata-provider plug-ins (active photo)
+        // G19: custom fields of metadata-provider plug-ins, on every photo shown
         #[cfg(not(target_arch = "wasm32"))]
-        super::plugins::metadata_section(app, ui, active.id.0);
+        super::plugins::metadata_section(app, ui, active.id.0, &photos, &ids);
     });
 }
 

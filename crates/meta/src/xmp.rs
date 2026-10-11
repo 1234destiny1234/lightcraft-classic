@@ -570,8 +570,21 @@ pub fn write_xmp(meta: &Metadata, lc_settings: Option<&str>) -> String {
     write_xmp_lc(meta, &lc)
 }
 
+/// Namespace of plug-in custom metadata fields in sidecars (prefix `lcpf`): `lcpf:fields`, a bag of
+/// `{lcpf:plugin, lcpf:key, lcpf:value}`. Under the app's homepage (`dac_brand::HOMEPAGE`):
+/// `<homepage>/ns/plugin-fields/1.0/`.
+pub fn plugin_fields_ns() -> String {
+    format!("{}/ns/plugin-fields/1.0/", dac_brand::HOMEPAGE.trim_end_matches('/'))
+}
+
 /// Like [`write_xmp`], with any number of simple `lc:<name>` properties (e.g. `settings`, `flag`).
 pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
+    write_xmp_ext(meta, lc, &[])
+}
+
+/// [`write_xmp_lc`], plus plug-in custom metadata fields `(plug-in id, field key, value)` in
+/// [`plugin_fields_ns`].
+pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&str, &str, &str)]) -> String {
     let mut simple: Vec<(&str, String)> = Vec::new();
     let mut push = |k: &'static str, v: Option<String>| {
         if let Some(v) = v {
@@ -625,6 +638,9 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
     for (p, u) in NAMESPACES.iter().skip(2).filter(|(p, _)| *p != "crs") {
         x.push_str(&format!("\n    xmlns:{p}=\"{u}\""));
     }
+    if !plugin_fields.is_empty() {
+        x.push_str(&format!("\n    xmlns:lcpf=\"{}\"", plugin_fields_ns()));
+    }
     x.push_str(">\n");
     for (k, v) in &simple {
         x.push_str(&format!("   <{k}>{}</{k}>\n", escape(v.as_str())));
@@ -674,6 +690,18 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
             tf(r & 0x20 != 0),
             tf(r & 0x40 != 0)
         ));
+    }
+    if !plugin_fields.is_empty() {
+        x.push_str("   <lcpf:fields>\n    <rdf:Bag>\n");
+        for (plugin, key, value) in plugin_fields {
+            x.push_str(&format!(
+                "     <rdf:li rdf:parseType=\"Resource\">\n      <lcpf:plugin>{}</lcpf:plugin>\n      <lcpf:key>{}</lcpf:key>\n      <lcpf:value>{}</lcpf:value>\n     </rdf:li>\n",
+                escape(*plugin),
+                escape(*key),
+                escape(*value)
+            ));
+        }
+        x.push_str("    </rdf:Bag>\n   </lcpf:fields>\n");
     }
     x.push_str("  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>");
     x

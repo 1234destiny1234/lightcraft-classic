@@ -383,6 +383,10 @@ impl Manager {
     fn store_mut(&mut self, id: &str) -> Result<&mut Installed> {
         let dir = self.dir.clone();
         let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
+        // its data is lent to a call running elsewhere: opening it again would fork it
+        if p.busy {
+            return Err(Error::Busy(id.into()));
+        }
         if p.store.is_none() {
             p.store = Some(match &dir {
                 Some(d) => NamespaceStore::open(d.join("data").join(format!("{id}.json")))?,
@@ -417,6 +421,35 @@ impl Manager {
             out.push(r.unwrap_or_else(|e| json!({"plugin": id, "error": e.to_string()})));
         }
         out
+    }
+
+    /// Every enabled plug-in's custom metadata field values, by photo: `photo → {"<plug-in>/<key>": value}`
+    /// (values the field accepts; empty ones left out). A plug-in whose data can't be read (or that is
+    /// busy) is skipped and named in the second list.
+    pub fn field_values(&mut self) -> (BTreeMap<String, BTreeMap<String, Value>>, Vec<String>) {
+        let ids: Vec<String> = self.with_hook(|m| !m.metadata_fields.is_empty());
+        let mut out: BTreeMap<String, BTreeMap<String, Value>> = BTreeMap::new();
+        let mut skipped = Vec::new();
+        for id in ids {
+            let Ok(p) = self.store_mut(&id) else {
+                skipped.push(id);
+                continue;
+            };
+            let Some(store) = p.store.as_ref() else {
+                skipped.push(id);
+                continue;
+            };
+            let fields = &p.plugin.manifest().metadata_fields;
+            for photo in store.photos() {
+                let data = store.get(&photo);
+                for f in fields {
+                    if let Some(v) = data.get(&f.key).and_then(|x| f.as_field().coerce(x).ok()).filter(|v| !v.is_null()) {
+                        out.entry(photo.clone()).or_default().insert(format!("{id}/{}", f.key), v);
+                    }
+                }
+            }
+        }
+        (out, skipped)
     }
 
     /// Sets (or with `null`, clears) a custom metadata field the user edited. Read-only fields

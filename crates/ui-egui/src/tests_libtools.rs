@@ -195,3 +195,52 @@ fn cropped_ignores_an_uncropped_edit() {
     d.crop.geometry.angle = 2.0;
     assert!(crate::panels::cells::cropped(&d));
 }
+
+/// G19: a plug-in's custom metadata field edits every selected photo too: differing values read
+/// `< mixed >` and stay as they are unless typed into; typing sets them all (and the catalog's copy
+/// the Library filter searches).
+#[test]
+fn plugin_fields_edit_every_selected_photo() {
+    let manifest = r#"{"id":"test.uifields","name":"Jobs","metadataFields":[{"key":"job","label":"Job","type":"text"}]}"#;
+    let reply = r#"{"ok":{}}"#;
+    let esc = |s: &str| s.replace('"', "\\\"");
+    let src = format!(
+        r#"(module (memory (export "memory") 2)
+  (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
+  (func (export "dac_abi_version") (result i32) (i32.const 1))
+  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+        m = esc(manifest),
+        r = esc(reply),
+        ml = manifest.len(),
+        rl = reply.len()
+    );
+    let dir = std::env::temp_dir().join(format!("plugin-fields-ui-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let wasm = dir.join("fields.wasm");
+    std::fs::write(&wasm, wat::parse_str(&src).unwrap()).unwrap();
+    let mut h = app("detail");
+    exec(&mut h, "plugin.install", json!({"path": wasm.display().to_string()}));
+    let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
+    exec(&mut h, "plugin.setField", json!({"plugin": "test.uifields", "field": "job", "value": "A", "id": ids[0]}));
+    exec(&mut h, "plugin.setField", json!({"plugin": "test.uifields", "field": "job", "value": "B", "id": ids[1]}));
+    exec(&mut h, "library.select", json!({"ids": ids, "active": ids[0]}));
+    exec(&mut h, "panel.info", json!({}));
+    exec(&mut h, "metadata.panelPreset", json!({"preset": "minimal"}));
+    h.settle(SETTLE);
+    let job = |h: &Headless, i: u64| h.app.session.catalog.photo(PhotoId(i)).unwrap().plugin_fields.get("test.uifields/job").cloned();
+    let widget = "pluginField:test.uifields:job";
+    assert!(h.painted_text().iter().any(|t| t.contains(crate::panels::metadata::MIXED)), "the field reads mixed");
+    // focus and leave the mixed field without typing: nothing changes
+    assert_eq!(h.request("ui.clickWidget", json!({"id": widget}), T)["ok"], true);
+    h.request("ui.key", json!({"key": "enter"}), T);
+    assert_eq!((job(&h, ids[0]), job(&h, ids[1])), (Some(json!("A")), Some(json!("B"))));
+    // typing sets both
+    assert_eq!(h.request("ui.clickWidget", json!({"id": widget}), T)["ok"], true);
+    h.request("ui.text", json!({"text": "C"}), T);
+    h.request("ui.key", json!({"key": "enter"}), T);
+    assert_eq!((job(&h, ids[0]), job(&h, ids[1])), (Some(json!("C")), Some(json!("C"))));
+    exec(&mut h, "plugin.uninstall", json!({"id": "test.uifields"}));
+    let _ = std::fs::remove_dir_all(&dir);
+}

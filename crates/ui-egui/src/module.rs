@@ -778,6 +778,8 @@ pub const SHELL_COMMANDS: &[crate::menus::UiCommand] = &[
     ("webui.export", "Export Web Gallery…", None, ""),
     ("webui.upload", "Upload Web Gallery", None, ""),
     ("webui.shareImmich", "Share Web Gallery via Immich", None, ""),
+    ("webui.reload", "Reload Preview", None, "Web"),
+    ("webui.previewInBrowser", "Preview in Browser…", None, "Web"),
     // the Book module (crate::book)
     ("book.new", "New Book", None, ""),
     ("book.get", "Book Document", None, ""),

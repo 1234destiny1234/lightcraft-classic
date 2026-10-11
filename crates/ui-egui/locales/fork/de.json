@@ -969,5 +969,8 @@
   "export destination": "Exportziel",
   "metadata fields": "Metadatenfelder",
   "Running plug-in export hooks": "Plug-in-Export-Hooks laufen",
-  "Plug-in export hooks are still running from the last export": "Die Plug-in-Export-Hooks des letzten Exports laufen noch"
+  "Plug-in export hooks are still running from the last export": "Die Plug-in-Export-Hooks des letzten Exports laufen noch",
+  "Plug-in Fields": "Plug-in-Felder",
+  "Reload Preview": "Vorschau neu laden",
+  "Preview in Browser…": "Vorschau im Browser …"
 }
