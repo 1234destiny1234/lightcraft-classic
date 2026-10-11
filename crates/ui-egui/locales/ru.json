@@ -2147,5 +2147,8 @@
   "Canon EOS R5 Mark II C-RAW files that opened as \"preview only\" (more than half of them, depending on the": "Файлы C-RAW с Canon EOS R5 Mark II, которые открывались «только как превью» (больше половины, в зависимости от",
   "scene) now develop from their sensor data with every editing tool, like the camera's other raws. Photos": "сцены), теперь проявляются из данных сенсора со всеми инструментами, как другие raw этой камеры. Фото,",
   "imported earlier switch over with Photo ▸ Reload from Disk.": "импортированные раньше, переключаются через Фото → Перезагрузить с диска.",
-  "Files with the same content as another file in this import: only the first is imported.": "Файлы с тем же содержимым, что и другой файл этого импорта: импортируется только первый."
+  "Files with the same content as another file in this import: only the first is imported.": "Файлы с тем же содержимым, что и другой файл этого импорта: импортируется только первый.",
+  "Render to DNG": "Отрисовать в DNG",
+  "Rendering to DNG": "Отрисовка в DNG",
+  "Render to DNG stopped unexpectedly": "Отрисовка в DNG неожиданно остановлена"
 }

@@ -2110,5 +2110,8 @@
   "not added to Apple Photos (cancelled)": "nicht zu Apple Fotos hinzugefügt (abgebrochen)",
   "The first time, macOS asks whether {app} may control Photos.": "Beim ersten Mal fragt macOS, ob {app} Fotos steuern darf.",
   "Adding to Apple Photos": "Wird zu Apple Fotos hinzugefügt",
-  "Files with the same content as another file in this import: only the first is imported.": "Dateien mit demselben Inhalt wie eine andere Datei dieses Imports: Nur die erste wird importiert."
+  "Files with the same content as another file in this import: only the first is imported.": "Dateien mit demselben Inhalt wie eine andere Datei dieses Imports: Nur die erste wird importiert.",
+  "Render to DNG": "Als DNG rendern",
+  "Rendering to DNG": "Als DNG rendern",
+  "Render to DNG stopped unexpectedly": "Rendern als DNG unerwartet angehalten"
 }

@@ -358,64 +358,20 @@ fn duplicate(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"ids": made.iter().map(|i| i.0).collect::<Vec<_>>()}))
 }
 
-/// Most photos one Render to DNG takes (each becomes a full-size float DNG and a library photo).
-const MAX_RENDERED_DNGS: usize = 500;
-
-/// Render to DNG (Lightroom Classic 15.5): each photo rendered with its edits as a linear float DNG
-/// (`<name>-Rendered.dng`, never overwriting) next to its original, added to the library and stacked
-/// on top of it. More than one photo shows in the activity stack and can be cancelled between photos;
-/// the copies made until then stay.
+/// Render to DNG (Lightroom Classic 15.5): see [`crate::render_dng`]. Here all in one go; more
+/// than one photo shows in the activity stack and can be cancelled between photos (the copies made
+/// until then stay). The desktop app runs the renders on a worker instead.
 fn render_to_dng(s: &mut Session, p: &Value) -> Result<Value> {
-    const C: &str = "photo.renderToDng";
-    let mut ids = s.targets(p);
-    ids.dedup();
-    if ids.is_empty() {
-        return Err(bad(C, "no active photo"));
-    }
-    if ids.len() > MAX_RENDERED_DNGS {
-        return Err(bad(C, format!("{} photos selected: render at most {MAX_RENDERED_DNGS} at a time", ids.len())));
-    }
-    let space = match super::str_param(p, "colorSpace").unwrap_or("proPhoto") {
-        "srgb" => lcc_pipeline::OutputSpace::Srgb,
-        "displayP3" => lcc_pipeline::OutputSpace::DisplayP3,
-        "adobeRgb" => lcc_pipeline::OutputSpace::AdobeRgb,
-        "rec2020" => lcc_pipeline::OutputSpace::Rec2020,
-        "prophoto" | "proPhoto" => lcc_pipeline::OutputSpace::ProPhoto,
-        c => return Err(bad(C, format!("colorSpace {c:?}: use proPhoto, rec2020, adobeRgb, displayP3 or srgb"))),
-    };
-    let opts = crate::export::ExportOptions {
-        format: crate::export::ExportFormat::RenderedDng,
-        color_space: space,
-        naming: "{name}-Rendered".into(),
-        conflict: crate::export::Conflict::Unique,
-        ..Default::default()
-    };
-    let n = ids.len();
+    let job = crate::render_dng::prepare(s, p)?;
+    let n = job.len();
     let task = (n > 1).then(|| s.activity.start("renderDng", "Rendering to DNG", crate::activity::Cancel::Yes));
-    let mut copies = Vec::new();
-    let mut failed = Vec::new();
-    let mut cancelled = false;
-    for (i, id) in ids.into_iter().enumerate() {
-        if let Some(t) = &task {
-            if t.is_cancelled() {
-                cancelled = true;
-                break;
-            }
-            t.progress(i as u64, n as u64);
-        }
-        match edit_copy(s, p, id, &opts, C) {
-            Ok(c) => copies.push(c),
-            // a single photo reports its error; a batch carries on with the rest
-            Err(e) if n == 1 => return Err(e),
-            Err(e) => failed.push(json!({"id": id.0, "error": e.to_string()})),
-        }
-    }
+    let (done, cancelled) = job.run(&mut |path, bytes| crate::export::write_file_durable(path, bytes), &mut |i| {
+        let Some(t) = &task else { return true };
+        t.progress(i as u64, n as u64);
+        !t.is_cancelled()
+    });
     drop(task);
-    let new: Vec<lcc_catalog::PhotoId> = copies.iter().filter_map(|c| c["id"].as_u64()).map(lcc_catalog::PhotoId).collect();
-    if !new.is_empty() {
-        s.selection = crate::Selection { active: new.first().copied(), ids: new };
-    }
-    Ok(json!({"copies": copies, "failed": failed, "cancelled": cancelled}))
+    crate::render_dng::finish(s, done, cancelled)
 }
 
 pub fn edit_specs() -> Vec<CommandSpec> {

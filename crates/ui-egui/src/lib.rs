@@ -47,6 +47,7 @@ pub mod region;
 pub mod render;
 /// The module shell's frame steps (fork-owned).
 mod shell;
+pub mod render_dng_task;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod slideshow_ui;
@@ -421,6 +422,9 @@ pub struct LccApp {
     pub shown_library: Option<u64>,
     /// A background export in progress.
     pub export: Option<export_task::ExportTask>,
+    /// A background Photo ▸ Render to DNG in progress, and the last one's result.
+    pub render_dng: Option<render_dng_task::RenderDngTask>,
+    pub last_render_dng: Option<serde_json::Value>,
     /// Background file-system work of other commands (Find Missing Photos, auto import…).
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
@@ -526,6 +530,8 @@ impl LccApp {
             catalog_ui: Default::default(),
             shown_library: None,
             export: None,
+            render_dng: None,
+            last_render_dng: None,
             tasks: Default::default(),
             last_export_result: None,
             hover_preview: None,
@@ -1409,6 +1415,7 @@ impl LccApp {
         export_task::poll(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::poll(self, &ctx);
+        render_dng_task::poll(self, &ctx);
         panels::activity::show(self, &ctx);
         export_task::poll_photos(self, &ctx);
         pick::poll(self, &ctx);

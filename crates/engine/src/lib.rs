@@ -65,6 +65,7 @@ pub mod proof;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod remote;
 pub mod rename;
+pub mod render_dng;
 pub mod segment;
 pub mod sidecar;
 pub mod smart;

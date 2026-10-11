@@ -1849,6 +1849,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             return Some(r);
         }
         "app.export" => crate::control::export_active(app, p),
+        "photo.renderToDng" => return crate::render_dng_task::start(app, p),
         "app.showInFinder" => show_in_finder(app),
         "app.openLogFolder" => open_log_folder(app),
         "app.website" | "app.github" | "app.help" | "app.feedback" => {

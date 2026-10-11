@@ -1993,5 +1993,8 @@
   "Canon EOS R5 Mark II C-RAW files that opened as \"preview only\" (more than half of them, depending on the": "以前以“仅预览”打开的 Canon EOS R5 Mark II C-RAW 文件(视场景而定，超过一半)",
   "scene) now develop from their sensor data with every editing tool, like the camera's other raws. Photos": "现在与该相机的其他 RAW 一样，从传感器数据显影，可使用所有编辑工具。",
   "imported earlier switch over with Photo ▸ Reload from Disk.": "之前导入的照片可通过 照片 → 从磁盘重新载入 切换。",
-  "Files with the same content as another file in this import: only the first is imported.": "与本次导入中另一个文件内容相同的文件：只导入第一个。"
+  "Files with the same content as another file in this import: only the first is imported.": "与本次导入中另一个文件内容相同的文件：只导入第一个。",
+  "Render to DNG": "渲染为 DNG",
+  "Rendering to DNG": "正在渲染为 DNG",
+  "Render to DNG stopped unexpectedly": "渲染为 DNG 意外停止"
 }
