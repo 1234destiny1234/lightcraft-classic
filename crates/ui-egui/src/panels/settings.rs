@@ -51,12 +51,12 @@ pub fn tabs(ui: &mut egui::Ui, tab: &mut String) {
 }
 
 /// The selected tab's settings (the tabs themselves are [`tabs`]).
-pub fn body(app: &mut DacApp, ui: &mut egui::Ui, tab: &mut String) {
+pub fn body(app: &mut DacApp, ui: &mut egui::Ui, tab: &str) {
     let t = Tokens::get(ui.ctx());
     ui.set_min_width(560.0);
     ui.set_min_height(330.0);
     ui.add_space(2.0);
-    match tab.as_str() {
+    match tab {
         "import" => import_tab(app, ui, &t),
         "performance" => performance_tab(app, ui, &t),
         "display" => display_tab(app, ui, &t),
