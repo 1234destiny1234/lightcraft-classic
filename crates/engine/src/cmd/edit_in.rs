@@ -36,6 +36,10 @@ use serde_json::{Value, json};
 use super::{CommandSpec, always, bad, bool_or, cmd, has_active, has_selection, str_param};
 use crate::{Result, Session};
 
+pub mod editor;
+pub mod link;
+pub use link::stack_derived;
+
 /// Files an image editor opens as they are (Edit a Copy / Edit Original).
 const EDITABLE: &[&str] = &["jpg", "jpeg", "tif", "tiff", "png", "psd", "psb", "webp"];
 /// Most photos in one Open as Layers.
@@ -297,6 +301,35 @@ fn editable_path(s: &Session, id: PhotoId, cmd: &str) -> Result<String> {
     Ok(path.clone())
 }
 
+/// Stack the edited version `new` like Lightroom: directly above the photo it was made from,
+/// inside that photo's stack when it has one (a re-edit of a version joins the same stack), else
+/// a new `[new, on]` stack. An edit of an unstacked virtual copy also takes in its master (or joins
+/// the master's stack). Expanded so the versions show.
+pub(crate) fn stack_edit(s: &mut Session, new: PhotoId, on: PhotoId) -> Result<()> {
+    let master = s.catalog.photo(on).and_then(|p| p.copy_of).filter(|m| s.catalog.photo(*m).is_some());
+    let op = match (s.catalog.stack_of(on).is_some(), master) {
+        // an unstacked virtual copy: the edit and the copy go directly above the master, in the
+        // master's stack or a new one
+        (false, Some(m)) => match s.catalog.stack_of(m).cloned() {
+            Some(st) => {
+                let mut photos: Vec<PhotoId> = st.photos.iter().copied().filter(|p| *p != new && *p != on).collect();
+                let at = photos.iter().position(|p| *p == m).unwrap_or(0);
+                photos.splice(at..at, [new, on]);
+                let mut ops = s.catalog.remove_from_stacks_ops(&[new]);
+                ops.retain(|o| !matches!(o, dac_catalog::Op::SetStack { id, .. } | dac_catalog::Op::RemoveStack { id } if *id == st.id));
+                ops.push(dac_catalog::Op::SetStack { id: st.id, photos, collapsed: false });
+                Some(dac_catalog::Op::Batch { ops })
+            }
+            None => s.catalog.group_ops(new, &[on, m], false),
+        },
+        _ => s.catalog.insert_above_ops(new, on, false),
+    };
+    match op {
+        Some(op) => s.commit("Stack Edit", op),
+        None => Ok(()),
+    }
+}
+
 /// Add `path` to the library (stacked on `on` when asked) and select it. → the new photo
 fn add_and_stack(s: &mut Session, path: &Path, on: PhotoId, stack: bool, cmd: &str) -> Result<u64> {
     let r = s.execute("library.import", &json!({"paths": [path.to_string_lossy()]}))?;
@@ -314,8 +347,9 @@ fn add_and_stack(s: &mut Session, path: &Path, on: PhotoId, stack: bool, cmd: &s
         s.commit("Edit In", dac_catalog::Op::Batch { ops })?;
     }
     if stack {
-        // the edit on top of the original, expanded so both show
-        let _ = s.execute("stack.group", &json!({"ids": [new, on.0], "top": new, "collapsed": false}));
+        // import may already have stacked it from the file's DerivedFrom link: this places it
+        // directly above `on` either way
+        stack_edit(s, PhotoId(new), on)?;
     }
     s.selection = crate::Selection::single(PhotoId(new));
     Ok(new)
@@ -337,7 +371,7 @@ fn add_copy(s: &mut Session, ph: &dac_catalog::Photo, dest: &Path, stack: bool) 
     q.versions.clear();
     s.commit("Edit a Copy", dac_catalog::Op::AddPhoto { photo: Box::new(q) })?;
     if stack {
-        let _ = s.execute("stack.group", &json!({"ids": [new.0, ph.id.0], "top": new.0, "collapsed": false}));
+        stack_edit(s, new, ph.id)?;
     }
     s.selection = crate::Selection::single(new);
     Ok(new.0)
@@ -442,6 +476,44 @@ fn xmp_of(s: &Session, id: PhotoId) -> Option<String> {
     crate::export::export_metadata(ph, &s.catalog, &o).map(|m| dac_meta::write_xmp(&m, None))
 }
 
+/// The XMP packet of an edit made from `id`: its metadata plus a fresh document id and the
+/// `xmpMM:DerivedFrom` link to the source ([`link`]).
+fn linked_xmp(s: &Session, id: PhotoId, seed: &str) -> Option<String> {
+    let ph = s.catalog.photo(id)?;
+    let packet = xmp_of(s, id).unwrap_or_else(|| dac_meta::write_xmp(&dac_meta::Metadata::default(), None));
+    let from = link::source_document_id(ph);
+    Some(link::add_link(&packet, &link::new_document_id(seed), &from, &ph.file_name))
+}
+
+/// A TIFF of `id` rendered with its edits (8 or 16 bits in `space`), with the export metadata
+/// (EXIF) and the linked XMP packet.
+fn linked_tiff(s: &mut Session, id: PhotoId, space: dac_pipeline::OutputSpace, depth: u8, seed: &str, cmd: &str) -> Result<Vec<u8>> {
+    let r = render16(s, id, space, cmd)?;
+    let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad(cmd, "no photo"))?;
+    let meta = crate::export::export_metadata(&ph, &s.catalog, &crate::export::ExportOptions::default());
+    let exif = meta.as_ref().map(dac_meta::write_exif);
+    let xmp = linked_xmp(s, id, seed);
+    let profile = r.icc.clone().unwrap_or_else(|| dac_codecs::icc::write_named(crate::export::named_space(space)));
+    let em = dac_codecs::EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: None };
+    let eight: Vec<u8>;
+    let img = if depth == 8 {
+        eight = r.rgb.iter().map(|x| ((u32::from(*x) * 255 + 32_767) / 65_535) as u8).collect();
+        dac_codecs::EncodeImage::new(r.width, r.height, 3, dac_codecs::Samples::U8(&eight))
+    } else {
+        dac_codecs::EncodeImage::new(r.width, r.height, 3, dac_codecs::Samples::U16(&r.rgb))
+    };
+    dac_codecs::encode_tiff(&img, dac_codecs::TiffCompression::Deflate, &em).map_err(|e| bad(cmd, e.to_string()))
+}
+
+/// The mode Lightroom suggests for a photo: Edit Original for a PSD or TIFF (most likely an
+/// earlier edit coming back), a rendered copy otherwise.
+pub fn suggested_mode(file_name: &str) -> Mode {
+    match Path::new(file_name).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref() {
+        Some("psd" | "psb" | "tif" | "tiff") => Mode::Original,
+        _ => Mode::CopyWithAdjustments,
+    }
+}
+
 fn write_durable(path: &Path, bytes: &[u8], cmd: &str) -> Result<()> {
     crate::export::write_file_durable(&path.to_string_lossy(), bytes).map_err(|e| bad(cmd, e))
 }
@@ -472,22 +544,17 @@ fn edit_in(s: &mut Session, p: &Value) -> Result<Value> {
             let dir = out_dir(&ph.source, p, C)?;
             let dest = match pr.format {
                 Format::Tiff => {
-                    let opts = crate::export::ExportOptions {
-                        format: crate::export::ExportFormat::Tiff,
-                        bit_depth: Some(pr.bit_depth),
-                        color_space: space,
-                        ..Default::default()
-                    };
-                    let e = crate::export::export_photo(s, id, &opts, 1).map_err(|e| bad(C, e))?;
                     let dest = unique_path(&dir, &stem, "tif")?;
-                    write_durable(&dest, &e.bytes, C)?;
+                    let bytes = linked_tiff(s, id, space, pr.bit_depth, &dest.to_string_lossy(), C)?;
+                    write_durable(&dest, &bytes, C)?;
                     dest
                 }
                 Format::Psd => {
                     let r = render16(s, id, space, C)?;
                     let icc = r.icc.clone();
-                    let bytes = layered_psd(&[(stem_of(&ph.file_name), r)], pr.bit_depth, icc, xmp_of(s, id)).map_err(|e| bad(C, e))?;
                     let dest = unique_path(&dir, &stem, "psd")?;
+                    let xmp = linked_xmp(s, id, &dest.to_string_lossy());
+                    let bytes = layered_psd(&[(stem_of(&ph.file_name), r)], pr.bit_depth, icc, xmp).map_err(|e| bad(C, e))?;
                     write_durable(&dest, &bytes, C)?;
                     dest
                 }
@@ -496,14 +563,14 @@ fn edit_in(s: &mut Session, p: &Value) -> Result<Value> {
             (dest, Some(n))
         }
     };
-    let opened = hand_over(&pr, &path, p, C)?;
     let edited = new.unwrap_or(id.0);
+    let opened = hand_over(s, &pr, &path, edited, p, C)?;
     Ok(json!({
         "path": path.to_string_lossy(),
         "id": edited,
         "original": id.0,
         "mode": pr.mode,
-        "openWith": {"path": path.to_string_lossy(), "app": pr.app, "args": pr.args, "reload": [edited]},
+        "openWith": {"path": path.to_string_lossy(), "app": pr.app, "args": pr.args, "reload": [edited], "preset": pr.name, "control": pr.control},
         "opened": opened,
     }))
 }
@@ -550,28 +617,31 @@ fn open_as_layers(s: &mut Session, p: &Value) -> Result<Value> {
         icc = icc.or_else(|| r.icc.clone());
         layers.push((name, r));
     }
-    let bytes = layered_psd(&layers, depth, icc, xmp_of(s, on)).map_err(|e| bad(C, e))?;
-    drop(layers);
     let stem = str_param(p, "name").map(str::to_string).unwrap_or_else(|| format!("{}-Layers", stem_of(&ph.file_name)));
     if stem.contains(['/', '\\']) || stem.trim().is_empty() {
         return Err(bad(C, "`name` must be a plain file name"));
     }
     let dest = unique_path(&dir, &stem, "psd")?;
+    let xmp = linked_xmp(s, on, &dest.to_string_lossy());
+    let bytes = layered_psd(&layers, depth, icc, xmp).map_err(|e| bad(C, e))?;
+    drop(layers);
     write_durable(&dest, &bytes, C)?;
     let new = add_and_stack(s, &dest, on, bool_or(p, "stack", true), C)?;
-    let opened = hand_over(&pr, &dest, p, C)?;
+    let opened = hand_over(s, &pr, &dest, new, p, C)?;
     Ok(json!({
         "path": dest.to_string_lossy(),
         "id": new,
         "layers": ids.len(),
-        "openWith": {"path": dest.to_string_lossy(), "app": pr.app, "args": pr.args, "reload": [new]},
+        "openWith": {"path": dest.to_string_lossy(), "app": pr.app, "args": pr.args, "reload": [new], "preset": pr.name, "control": pr.control},
         "opened": opened,
     }))
 }
 
 /// Open the file in the editor when asked (`launch: true`): over PhotoCraft's control channel when
-/// the preset has one, else by starting the application. → how it was opened (`null` = not)
-fn hand_over(pr: &EditorPreset, path: &Path, p: &Value, cmd: &str) -> Result<Value> {
+/// the preset has one, else by starting the application. With `wait: true` the application is
+/// started with `--wait` and the command returns when it exits, after reloading photo `edited`
+/// (the activity stack shows the edit meanwhile). → how it was opened (`null` = not)
+fn hand_over(s: &mut Session, pr: &EditorPreset, path: &Path, edited: u64, p: &Value, cmd: &str) -> Result<Value> {
     if !bool_or(p, "launch", false) {
         return Ok(Value::Null);
     }
@@ -579,6 +649,17 @@ fn hand_over(pr: &EditorPreset, path: &Path, p: &Value, cmd: &str) -> Result<Val
         return control_open(c, path)
             .map(|r| json!({"control": c.port, "result": r}))
             .map_err(|e| bad(cmd, format!("PhotoCraft's control channel: {e}")));
+    }
+    if bool_or(p, "wait", false) {
+        let caps = editor::capabilities(&pr.app, &pr.args);
+        let line = editor::wait_command_line(&pr.app, &pr.args, path, caps);
+        let who = if pr.name.is_empty() { pr.app.clone() } else { pr.name.clone() };
+        let task = s.activity.start("editIn", &format!("Editing in {who}…"), crate::activity::Cancel::No);
+        let saved = editor::run_and_wait(&line).map_err(|e| bad(cmd, format!("couldn't start the editor: {e}")));
+        drop(task);
+        let saved = saved?;
+        let r = s.execute("photo.reload", &json!({"ids": [edited]}))?;
+        return Ok(json!({"waited": true, "saved": saved, "reloaded": r["reloaded"]}));
     }
     launch(&pr.app, &pr.args, path).map(|_| json!("launched")).map_err(|e| bad(cmd, format!("couldn't start the editor: {e}")))
 }
@@ -688,7 +769,7 @@ pub(super) fn specs() -> Vec<CommandSpec> {
                 "Edit In…",
                 ["Photo", "Edit In"],
                 None,
-                "{id?, preset?: name (default \"External Editor\"), mode?, format?, colorSpace?, bitDepth?, app?, args?, naming?, stack?, dir?, launch?: false} — Edit In with Lightroom's options: copyWithAdjustments renders the photo with its edits (TIFF, or a layered PSD), copy copies the original file, original edits the file itself (copy/original: JPEG, TIFF, PNG, PSD, WebP only). A new file is added to the library, stacked on the original and selected; launch opens it in the preset's application (or over PhotoCraft's control channel) → {path, id, original, mode, openWith: {path, app, args, reload}, opened}",
+                "{id?, preset?: name (default \"External Editor\"), mode?, format?, colorSpace?, bitDepth?, app?, args?, naming?, stack?, dir?, launch?: false, wait?: false} — Edit In with Lightroom's options: copyWithAdjustments renders the photo with its edits (TIFF, or a layered PSD), copy copies the original file, original edits the file itself (copy/original: JPEG, TIFF, PNG, PSD, WebP only). A new file is added to the library, stacked directly above the photo it was made from (inside that photo's stack when it has one) and selected; TIFF and PSD copies carry an xmpMM:DerivedFrom link to it, so a re-import stacks them again. launch opens it in the preset's application (or over PhotoCraft's control channel); wait (with launch) starts the application with --wait, returns when it exits and reloads the photo → {path, id, original, mode, openWith: {path, app, args, reload, preset, control}, opened}",
                 has_active,
                 edit_in
             )

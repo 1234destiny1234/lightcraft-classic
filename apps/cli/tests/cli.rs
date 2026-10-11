@@ -622,3 +622,52 @@ fn snapshot_leaves_desktop_gpu_preferences_untouched() {
         assert!(image.exists());
     }
 }
+
+/// RT.B5: Edit In end to end with a stand-in editor (a script that takes `--wait`, overwrites the
+/// file it was given and exits 0): `photo.editIn {launch, wait}` returns once the editor exits and
+/// the photo is read back with the editor's pixels.
+#[cfg(unix)]
+#[test]
+fn edit_in_waits_for_a_fake_editor_and_reloads() {
+    use std::os::unix::fs::PermissionsExt;
+    let dir = tmp("edit-in-wait");
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let input = dir.join("photo.png");
+    gradient_png(&input);
+    let replacement = dir.join("saved-by-editor.bin");
+    let img = dac_raster::Rgba8::from_fn(64, 48, |x, _| [x as u8 * 3, 10, 200, 255]);
+    std::fs::write(&replacement, dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap()).unwrap();
+    let script = dir.join("fake-editor.sh");
+    let log = dir.join("editor-args.txt");
+    std::fs::write(
+        &script,
+        format!("#!/bin/sh\necho \"$@\" > '{}'\nfor f; do :; done\ncp '{}' \"$f\"\nexit 0\n", log.display(), replacement.display()),
+    )
+    .unwrap();
+    std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
+    let (ok, lines, err) = run_cli(
+        &[
+            "--import",
+            input.to_str().unwrap(),
+            "photo.editIn",
+            "mode=copy",
+            &format!("app={}", script.display()),
+            r#"args=["--wait"]"#,
+            "launch=true",
+            "wait=true",
+        ],
+        None,
+    );
+    assert!(ok, "{err}: {lines:?}");
+    let r = &lines[0]["result"];
+    assert_eq!(r["opened"]["waited"], true, "{r}");
+    assert_eq!(r["opened"]["saved"], true, "{r}");
+    assert_eq!(r["opened"]["reloaded"], json!([r["id"]]), "{r}");
+    let copy = r["path"].as_str().unwrap();
+    assert!(copy.ends_with("photo-Edit.png"), "{copy}");
+    let args = std::fs::read_to_string(&log).unwrap();
+    assert!(args.starts_with("--wait ") && args.trim_end().ends_with("photo-Edit.png"), "{args}");
+    assert_eq!(std::fs::read(copy).unwrap(), std::fs::read(&replacement).unwrap());
+    let _ = std::fs::remove_dir_all(&dir);
+}
