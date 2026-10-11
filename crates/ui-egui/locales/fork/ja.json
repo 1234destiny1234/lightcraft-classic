@@ -1070,5 +1070,22 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "別のアプリで作成されたもので、{app}はそのカタログ形式を開けません。変更はされていません。新しいカタログを作成するか、別のカタログを開いてください。",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "接続されていないドライブにある場合は、接続してからもう一度お試しください。それ以外の場合は、別のカタログを開くか作成してください。",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app}にはそのフォルダーの読み書きが許可されていません。フォルダーのアクセス権を確認してから、もう一度お試しください。",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "中の写真と編集内容は変更されていません。もう一度試す(ライブラリを開いている別のプログラムを閉じたり、ドライブを接続し直した後など)、別のライブラリを開くか新しく作成する、またはライブラリなしで続行することができます。その場合、操作は何も保存されません。"
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "中の写真と編集内容は変更されていません。もう一度試す(ライブラリを開いている別のプログラムを閉じたり、ドライブを接続し直した後など)、別のライブラリを開くか新しく作成する、またはライブラリなしで続行することができます。その場合、操作は何も保存されません。",
+  "Lens profiles": "レンズプロファイル",
+  "Lens corrections use these profiles for raw photos whose files carry no correction of their own.": "レンズ補正は、ファイル自体に補正情報がない RAW 写真にこれらのプロファイルを使います。",
+  "Database": "データベース",
+  "no lens profiles found": "レンズプロファイルが見つかりません",
+  "{lenses} lenses, {cameras} cameras": "レンズ {lenses} 本、カメラ {cameras} 台",
+  "updated {date}": "{date} 更新",
+  "Set by {var}, which overrides the folder chosen here.": "{var} で設定されています（ここで選んだフォルダーより優先されます）。",
+  "Downloading the lens database… {done} of {total} MB": "レンズデータベースをダウンロード中… {done} / {total} MB",
+  "Downloading the lens database… {done} MB": "レンズデータベースをダウンロード中… {done} MB",
+  "Download fetches the lensfun project's database (lensfun.github.io, CC-BY-SA 3.0) into the settings folder. It is not part of {app}.": "「ダウンロード」は lensfun プロジェクトのデータベース（lensfun.github.io、CC-BY-SA 3.0）を設定フォルダーに取得します。{app} には含まれていません。",
+  "Choose Lens Database Folder": "レンズデータベースのフォルダーを選択",
+  "Choose Lens Database Folder…": "レンズデータベースのフォルダーを選択…",
+  "Downloading lens database": "レンズデータベースをダウンロード中",
+  "No lens database — set one up or download it…": "レンズデータベースがありません — 設定またはダウンロード…",
+  "Lens profiles apply to raw photos only.": "レンズプロファイルは RAW 写真にのみ適用されます。",
+  "No lens named in this photo's metadata.": "この写真のメタデータにはレンズ名がありません。",
+  "No profile for {lens} in the lens database.": "レンズデータベースに {lens} のプロファイルがありません。"
 }

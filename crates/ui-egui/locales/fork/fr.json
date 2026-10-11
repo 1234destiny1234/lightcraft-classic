@@ -1065,5 +1065,22 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "Il a été créé par une autre application, dont {app} ne peut pas ouvrir le format de catalogue. Il n’a pas été modifié. Créez un nouveau catalogue ou ouvrez-en un autre.",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "S’il se trouve sur un disque non connecté, connectez-le et réessayez. Sinon, ouvrez ou créez un autre catalogue.",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app} n’a pas le droit de lire ou d’écrire son dossier. Vérifiez les autorisations du dossier, puis réessayez.",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Vos photos et retouches qu’elle contient sont intactes. Vous pouvez réessayer (par ex. après avoir fermé un autre programme qui l’a ouverte ou reconnecté son disque), ouvrir une autre bibliothèque ou en créer une, ou continuer sans bibliothèque — rien de ce que vous faites ne sera alors enregistré."
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Vos photos et retouches qu’elle contient sont intactes. Vous pouvez réessayer (par ex. après avoir fermé un autre programme qui l’a ouverte ou reconnecté son disque), ouvrir une autre bibliothèque ou en créer une, ou continuer sans bibliothèque — rien de ce que vous faites ne sera alors enregistré.",
+  "Lens profiles": "Profils d'objectif",
+  "Lens corrections use these profiles for raw photos whose files carry no correction of their own.": "Les corrections d'objectif utilisent ces profils pour les photos raw dont le fichier n'apporte pas sa propre correction.",
+  "Database": "Base de données",
+  "no lens profiles found": "aucun profil d'objectif trouvé",
+  "{lenses} lenses, {cameras} cameras": "{lenses} objectifs, {cameras} appareils",
+  "updated {date}": "mise à jour le {date}",
+  "Set by {var}, which overrides the folder chosen here.": "Définie par {var}, qui l'emporte sur le dossier choisi ici.",
+  "Downloading the lens database… {done} of {total} MB": "Téléchargement de la base d'objectifs… {done} sur {total} Mo",
+  "Downloading the lens database… {done} MB": "Téléchargement de la base d'objectifs… {done} Mo",
+  "Download fetches the lensfun project's database (lensfun.github.io, CC-BY-SA 3.0) into the settings folder. It is not part of {app}.": "Télécharger récupère la base de données du projet lensfun (lensfun.github.io, CC-BY-SA 3.0) dans le dossier des réglages. Elle ne fait pas partie de {app}.",
+  "Choose Lens Database Folder": "Choisir le dossier de la base d'objectifs",
+  "Choose Lens Database Folder…": "Choisir le dossier de la base d'objectifs…",
+  "Downloading lens database": "Téléchargement de la base d'objectifs",
+  "No lens database — set one up or download it…": "Aucune base d'objectifs — en configurer ou en télécharger une…",
+  "Lens profiles apply to raw photos only.": "Les profils d'objectif ne s'appliquent qu'aux photos raw.",
+  "No lens named in this photo's metadata.": "Les métadonnées de cette photo ne nomment aucun objectif.",
+  "No profile for {lens} in the lens database.": "Aucun profil pour {lens} dans la base d'objectifs."
 }

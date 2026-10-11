@@ -30,6 +30,7 @@ pub mod folders;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod immich;
 pub mod keywords;
+mod lens_db;
 pub mod library;
 pub mod lut_profiles;
 pub mod manage;
@@ -158,6 +159,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(map::specs());
         v.extend(previews::specs());
         v.extend(lut_profiles::specs());
+        v.extend(lens_db::specs());
         v.extend(cull::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
