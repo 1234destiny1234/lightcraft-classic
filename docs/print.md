@@ -33,6 +33,39 @@ them to `dac_print::send::send_to_printer`, which:
   `printui.state` → `last.state` holds the final state (`completed`, or `pending` / `processing` when
   the printer is still busy).
 
+## Printer options (paper type, tray, quality, two-sided)
+
+When a printer is chosen, its attributes are read together with its paper sizes:
+`media-type-supported`, `media-source-supported` and `media-col-default` (paper types and trays,
+with its defaults), `print-quality-supported` / `-default` (3 Draft, 4 Normal, 5 High) and
+`sides-supported` / `-default`. The Print Job panel shows a Paper Type, Paper Tray, Two-Sided and
+Print Quality menu for each one the printer offers. Each menu starts at *Printer default*.
+`printui.driver {mediaType, mediaSource, printQuality, sides}` sets them; `null` gives one back to
+the printer. They are saved with the print settings (`settings.job.driver`).
+
+They go out with the job as `media-col {media-type, media-source}`, `print-quality` and `sides`
+(PWG 5100.7). An option the printer says it doesn't offer is left out, with a warning in
+`last.warnings`. Keywords with spaces or control characters are never sent.
+
+## Encrypted printing (`ipps://`)
+
+An `ipps://` (or `https://`) printer address prints over TLS (RFC 7472). It uses `dac-net`, the
+same pure-Rust rustls client as the other network features. A certificate is trusted when:
+
+- it chains to the Mozilla roots;
+- its SHA-256 fingerprint was trusted for that printer (`host:port`) earlier;
+- or *Trust a printer's certificate the first time* is on (`printui.trustOnFirstUse {on: true}`)
+  and nothing is trusted for that printer yet. This works like an SSH host key: a changed
+  certificate later is still refused.
+
+Printers usually make their own certificates, so the usual first result is a refusal:
+`PrintError::UntrustedCertificate`. Its message gives the fingerprint and what to do, and the
+Print Job panel shows the fingerprint with a **Trust Certificate** button. Compare it with the
+fingerprint on the printer's status or web page, then trust it (`printui.trustCertificate
+{fingerprint?, uri?}`; with no fingerprint, the one just refused is used). Trusted fingerprints and
+the first-use setting are saved in `print.json` (`trustedCertificates`, `trustOnFirstUse`).
+Verification is never turned off: the handshake is always checked against the trusted certificate.
+
 Choosing one of a printer's own paper sizes in Page Setup (`printui.pageSetup {media}`) also widens
 the page margins to at least the unprintable margins the printer reports for that paper.
 
@@ -70,7 +103,12 @@ Attributes with a `media-col-database`, Print-Job, Get-Job-Attributes) that keep
 The `virtual_*` tests in `crates/print/src/tests.rs` and
 `print_ui::tests::prints_to_a_virtual_ipp_printer_with_its_paper_margins_and_copies` print through it
 in `cargo xtask ci`: paper sizes and margins, copies, PDF, the JPEG fallback, an aborting printer, and
-malformed requests.
+malformed requests. The virtual printer also offers paper types, trays, qualities and two-sided
+modes and records what each job asked for: `tests_ipps.rs` and
+`print_ui::tests::printer_options_are_offered_drawn_and_sent` check that they are read, drawn
+and sent. In `tests_ipps.rs`, a TLS front (rustls, a test-only certificate) relays to the virtual
+printer. That tests `ipps://` refused with the fingerprint, trusted by fingerprint, trusted on
+first use, and a changed certificate refused again.
 
 ## CUPS test printer
 
