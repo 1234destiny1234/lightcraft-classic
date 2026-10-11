@@ -166,6 +166,8 @@ pub struct Session {
     pub catalog: Catalog,
     pub source: LibrarySource,
     pub filter: Filter,
+    /// The filter Library ▸ Enable Filters (`filter.toggleEnabled`) switched off, kept to restore.
+    pub filter_suspended: Option<Filter>,
     pub sort: Sort,
     pub selection: Selection,
     /// The grid order for the current source/filter/sort (cached by catalog revision).
@@ -321,6 +323,7 @@ impl Session {
             catalog: Catalog::new(),
             source: LibrarySource::All,
             filter: Filter::default(),
+            filter_suspended: None,
             sort: Sort::default(),
             selection: Selection::default(),
             visible: Vec::new().into(),

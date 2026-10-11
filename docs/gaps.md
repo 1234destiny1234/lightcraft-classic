@@ -1,6 +1,6 @@
 # Gaps: where the app falls short of Lightroom
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (G14: HLG AVIF export, HDR display decision; row 14 narrowed; row 13: smart collections and stacks import; row 17 narrowed: native PTP tethering exists, verification on real cameras remains; fork re-review at 0.6.1: rows 8, 12, 16, 17, 19 rewritten for what the fork has; row 8: lensfun database usable from Settings; row 15 narrowed to Print colour management after G2); previously major (created; absorbs the checklist's Top gaps and the ROADMAP's honest assessment, re-ranked after a full re-measure) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (row 28 narrowed after G28; earlier: row 15 narrowed to Print colour management after G2; G14: HLG AVIF export, HDR display decision; row 14 narrowed; row 13: smart collections and stacks import; row 17 narrowed: native PTP tethering exists, verification on real cameras remains; fork re-review at 0.6.1: rows 8, 12, 16, 17, 19 rewritten for what the fork has; row 8: lensfun database usable from Settings; row 15 narrowed to Print colour management after G2); previously major (created; absorbs the checklist's Top gaps and the ROADMAP's honest assessment, re-ranked after a full re-measure) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -42,7 +42,7 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 25 | **File writes**: JXL encode, PSD export, lossy DNG, Render to DNG; AVIF import | file-format-parity.md | interchange edge cases | 25–45 | [file-format-parity](file-format-parity.md) |
 | 26 | **Performance at scale**: 85k-photo library opens in 1.7–4.7 s; 100k grid test pending; colour NR at half resolution | ROADMAP log, gpu-pipeline.md | large-catalog users | 15–30 | [target-app-parity](target-app-parity.md#by-dimension) |
 | 27 | **Windows / Linux runtime coverage**: Windows installer UI unverified on Windows (#79); GPU path proven on Apple only | ROADMAP, issues | non-Mac users find bugs first | 15–30 | [hardware-parity](hardware-parity.md) |
-| 28 | **Small Classic shortcuts and keys**: rating `[` `]`, flag cycling, filter-bar keys, F1 help, panel keys (Tab, F5–F8) | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
+| 28 | **Small Classic shortcuts and keys**: rating `[` `]`, \` flag toggle, `\` filter bar, F1 help, panel keys (Tab, ⇧Tab, F5–F8) and ⌘L Enable Filters are bound (G28); left: Develop ⇧J (meaning unverified), Web module keys | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
 
 Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform work they need around them,
 **~340–600 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).

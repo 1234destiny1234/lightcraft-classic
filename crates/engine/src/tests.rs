@@ -624,6 +624,21 @@ fn filter_presets_save_and_apply() {
 }
 
 #[test]
+fn enable_filters_toggles_and_keeps_the_filter() {
+    let mut s = demo();
+    let all = s.visible_cloned().len();
+    s.execute("filter.toggleEnabled", &json!({})).unwrap();
+    assert_eq!(s.visible_cloned().len(), all, "no filter: nothing to switch");
+    s.execute("library.filter", &json!({"rating": 4})).unwrap();
+    let four = s.visible_cloned().len();
+    assert!(four < all);
+    let r = s.execute("filter.toggleEnabled", &json!({})).unwrap();
+    assert_eq!((r["enabled"].as_bool(), r["photos"].as_u64()), (Some(false), Some(all as u64)));
+    let r = s.execute("filter.toggleEnabled", &json!({})).unwrap();
+    assert_eq!((r["enabled"].as_bool(), r["photos"].as_u64()), (Some(true), Some(four as u64)));
+}
+
+#[test]
 fn auto_bw_mix_separates_colours() {
     let mut s = demo();
     s.execute("develop.autoBwMix", &json!({})).unwrap();

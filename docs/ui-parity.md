@@ -65,7 +65,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | Create Version | ⌘⇧S (+ ⇧M) | ⇧M (Windows: Ctrl+⇧S) | — |
 | Select None | ⌘⇧A (+ ⌘D) | ⌘D | — |
 
-**Library culling (KEYC-RATING):** `0–5`, `6–9` and `P/X/U` reach egui on macOS even when displayed in the native menu (adapted from PR #261; issue #283). `Shift+0–9` applies and advances once; `Shift+P` picks and advances in Photo Grid / Square Grid and retains Presets elsewhere. See [library shortcuts](library-shortcuts.md) for the verified Classic mapping and regression coverage. Remaining Classic gaps: rating `[` / `]`, flag cycling and filter-bar keys.
+**Library culling (KEYC-RATING):** `0–5`, `6–9` and `P/X/U` reach egui on macOS even when displayed in the native menu (adapted from PR #261; issue #283). `Shift+0–9` applies and advances once; `Shift+P` picks and advances in Photo Grid / Square Grid and retains Presets elsewhere. See [library shortcuts](library-shortcuts.md) for the verified Classic mapping and regression coverage. Rating `[` / `]` (grids), \` flag toggle, `\` filter bar and ⌘L Library ▸ Enable Filters (`filter.toggleEnabled`, keeps the filter while off) are bound too (G28).
 
 **Still missing / broken:**
 - No command yet: F1 help (verify the rest of the old list: full screen, settings, stacks,

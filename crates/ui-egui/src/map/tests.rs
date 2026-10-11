@@ -288,3 +288,16 @@ fn map_50k_pins_frame_time() {
     }
     println!("library 50k: frame {:.2} ms", t.elapsed().as_secs_f64() * 1e3 / 30.0);
 }
+
+#[test]
+fn map_keys_zoom_by_one_level() {
+    use crate::module::Module;
+    let keys = super::MAP.keymap();
+    assert!(keys.contains(&("=", "map.view", r#"{"zoomBy": 1}"#)) && keys.contains(&("-", "map.view", r#"{"zoomBy": -1}"#)));
+    let mut h = demo();
+    run(&mut h, "module.map", json!({}));
+    run(&mut h, "map.view", json!({"lat": 48.85, "lon": 2.35, "zoom": 12}));
+    assert_eq!(run(&mut h, "map.view", json!({"zoomBy": 1}))["zoom"].as_f64(), Some(13.0));
+    assert_eq!(run(&mut h, "map.view", json!({"zoomBy": -2}))["zoom"].as_f64(), Some(11.0));
+    assert_eq!(run(&mut h, "map.view", json!({"zoomBy": -100}))["zoom"].as_f64(), Some(1.0), "clamped");
+}

@@ -276,12 +276,15 @@ impl Module for MapModule {
         view::center(ui, app);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
-        &[crate::help_overlay::KEY]
+        MAP_KEYS
     }
     fn command_prefixes(&self) -> &'static [&'static str] {
         &["map."]
     }
 }
+
+/// Map: `=` / `-` zoom in / out one level (Classic's Map keys).
+const MAP_KEYS: &[ModuleKey] = &[("=", "map.view", r#"{"zoomBy": 1}"#), ("-", "map.view", r#"{"zoomBy": -1}"#), crate::help_overlay::KEY];
 
 // ---------- UI commands
 
@@ -340,7 +343,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             if !LatLon::new(lat, lon).is_valid() {
                 return Err(format!("{lat}, {lon} is not a position"));
             }
-            let zoom = f(p, "zoom").unwrap_or(app.map.prefs.zoom);
+            let zoom = f(p, "zoom").unwrap_or(app.map.prefs.zoom) + f(p, "zoomBy").filter(|d| d.is_finite()).unwrap_or(0.0);
             app.map.set_view(LatLon::new(lat, lon), zoom);
             if p.as_object().is_some_and(|o| !o.is_empty()) {
                 app.map.save();
