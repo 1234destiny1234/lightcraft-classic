@@ -10,13 +10,49 @@
 //! one in `<library>/Tethered/<session>`.
 
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
 
 use dac_catalog::PhotoId;
 use dac_tether::StudioSession;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
+use crate::activity::{Cancel, TaskGuard};
 use crate::{Result, Session, view::Selection};
+
+/// The connected camera's row in the activity stack: held for the whole connection, its ✕
+/// (`activity.cancel`) disconnects at the next scan.
+struct Connection {
+    guard: TaskGuard,
+    cancel: Arc<AtomicBool>,
+}
+
+static CONNECTION: Mutex<Option<Connection>> = Mutex::new(None);
+
+fn connection() -> std::sync::MutexGuard<'static, Option<Connection>> {
+    CONNECTION.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+/// Disconnect the camera and drop its activity row.
+fn hang_up() {
+    dac_tether::link::disconnect();
+    *connection() = None;
+}
+
+/// The row's detail: shots downloaded so far. A cancelled row disconnects (true).
+fn connection_tick() -> bool {
+    let cancelled = connection().as_ref().is_some_and(|c| c.cancel.load(Ordering::Relaxed));
+    if cancelled || !dac_tether::link::connected() {
+        hang_up();
+        return cancelled;
+    }
+    let n = dac_tether::link::status().get("downloaded").and_then(Value::as_u64).unwrap_or(0);
+    if let Some(c) = connection().as_ref() {
+        c.guard.detail(&format!("{n} downloaded"));
+    }
+    false
+}
 
 fn lib_dir(s: &Session, c: &str) -> Result<PathBuf> {
     s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone()).ok_or_else(|| bad(c, "studio capture needs a library on disk"))
@@ -134,6 +170,9 @@ fn scan(s: &mut Session, p: &Value) -> Result<Value> {
     let Some(mut ses) = ses.filter(|x| x.active) else { return Ok(json!({"active": false, "imported": []})) };
     // a connected camera: shots taken on its body download into the watched folder first
     let mut camera_error = None;
+    if connection_tick() {
+        camera_error = Some("camera: disconnected (cancelled)".to_string());
+    }
     if dac_tether::link::connected()
         && let Err(e) = dac_tether::link::poll(Path::new(&ses.folder))
     {
@@ -236,9 +275,13 @@ fn connect(s: &mut Session, p: &Value) -> Result<Value> {
     let cam =
         dac_tether::link::connect(device, bool_or(p, "deleteFromCard", false), make).map_err(|e| bad(C, dac_tether::link::fallback_message(&e)))?;
     if let Err(e) = capture_folder(s, p, C) {
-        dac_tether::link::disconnect();
+        hang_up();
         return Err(e);
     }
+    let name = cam.get("name").and_then(Value::as_str).unwrap_or("camera");
+    let cancel = Arc::new(AtomicBool::new(false));
+    let guard = s.activity.start("tether", &format!("Tethered: {name}"), Cancel::Flag(cancel.clone()));
+    *connection() = Some(Connection { guard, cancel });
     Ok(cam)
 }
 
@@ -249,6 +292,7 @@ fn capture(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let folder = capture_folder(s, p, C)?;
     let files = dac_tether::link::capture(&folder).map_err(|e| bad(C, e.to_string()))?;
+    connection_tick();
     // downloaded files are complete: two scans import them now
     s.execute("tether.scan", &json!({}))?;
     let r = s.execute("tether.scan", &json!({}))?;
@@ -327,7 +371,7 @@ pub fn specs() -> Vec<CommandSpec> {
             connect
         ),
         cmd!("tether.disconnect", "Disconnect Camera", ["File", "Tethered Capture"], None, "{} → null", always, |_s, _p| {
-            dac_tether::link::disconnect();
+            hang_up();
             Ok(Value::Null)
         }),
         cmd!(query "tether.cameras", "Tethered Cameras", [], None,

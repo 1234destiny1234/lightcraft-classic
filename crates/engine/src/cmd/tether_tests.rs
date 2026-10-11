@@ -25,6 +25,9 @@ fn simulated_camera_captures_downloads_and_imports() {
     assert_eq!(cam["name"], "Simulated PTP Camera");
     assert_eq!(cam["canCapture"], true);
     assert_eq!(cam["readouts"][0]["label"], "1/250");
+    // the connection holds a row in the activity stack
+    let rows = s.activity.list();
+    assert!(rows.iter().any(|t| t.kind == "tether" && t.label.contains("Simulated") && t.cancellable), "{rows:?}");
     let ses = s.execute("tether.status", &json!({})).unwrap();
     assert_eq!(ses["name"], "Shoot");
     assert!(ses["folder"].as_str().unwrap().contains("Tethered"));
@@ -65,5 +68,15 @@ fn simulated_camera_captures_downloads_and_imports() {
 
     s.execute("tether.disconnect", &json!({})).unwrap();
     assert!(s.execute("tether.camera", &json!({})).unwrap().is_null());
+    assert!(!s.activity.list().iter().any(|t| t.kind == "tether"));
+
+    // cancelling the row disconnects at the next scan
+    s.execute("tether.connect", &json!({"device": "sim"})).unwrap();
+    let id = s.activity.list().iter().find(|t| t.kind == "tether").unwrap().id;
+    s.activity.cancel(id).unwrap();
+    let r = s.execute("tether.scan", &json!({})).unwrap();
+    assert!(r["error"].as_str().unwrap_or("").contains("cancelled"), "{r}");
+    assert!(s.execute("tether.camera", &json!({})).unwrap().is_null());
+    assert!(!s.activity.list().iter().any(|t| t.kind == "tether"));
     let _ = std::fs::remove_dir_all(&root);
 }
