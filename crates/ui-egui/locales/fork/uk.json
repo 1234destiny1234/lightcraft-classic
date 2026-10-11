@@ -839,5 +839,7 @@
   "Full Bleed Spread": "Розворот під обріз",
   "Grid Gallery": "Галерея-сітка",
   "Title Slide": "Титульний слайд",
-  "Two Up with Caption": "Дві поруч із підписом"
+  "Two Up with Caption": "Дві поруч із підписом",
+  "Edit Photo": "Редагувати фото",
+  "Edit Original opens the file itself; saving it updates this photo.": "«Редагувати оригінал» відкриває сам файл; після збереження це фото оновиться."
 }

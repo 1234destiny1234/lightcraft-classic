@@ -1021,5 +1021,7 @@
   "Full Bleed Spread": "出血跨页",
   "Grid Gallery": "网格画廊",
   "Title Slide": "标题幻灯片",
-  "Two Up with Caption": "两张并排带题注"
+  "Two Up with Caption": "两张并排带题注",
+  "Edit Photo": "编辑照片",
+  "Edit Original opens the file itself; saving it updates this photo.": "“编辑原始文件”会直接打开该文件；保存后将更新此照片。"
 }

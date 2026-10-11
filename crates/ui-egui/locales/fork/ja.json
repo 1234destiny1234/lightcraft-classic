@@ -1022,5 +1022,7 @@
   "Full Bleed Spread": "裁ち落とし見開き",
   "Grid Gallery": "グリッドギャラリー",
   "Title Slide": "タイトルスライド",
-  "Two Up with Caption": "2 枚並べてキャプション"
+  "Two Up with Caption": "2 枚並べてキャプション",
+  "Edit Photo": "写真を編集",
+  "Edit Original opens the file itself; saving it updates this photo.": "オリジナルを編集はファイルそのものを開きます。保存するとこの写真が更新されます。"
 }

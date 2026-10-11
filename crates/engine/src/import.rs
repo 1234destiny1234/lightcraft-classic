@@ -1301,6 +1301,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     // (not browsed Local records: a stamp would count as a change the user made and keep them)
     let with_xmp: Vec<PhotoId> = report.imported.iter().map(|i| PhotoId(*i)).filter(|id| s.catalog.photo(*id).is_some_and(|p| !p.local)).collect();
     s.record_xmp_stamps(&with_xmp, true);
+    // Edit In versions (TIFF/PSD with an xmpMM:DerivedFrom link) stack on their source again
+    crate::cmd::edit_in::stack_derived(s, &with_xmp);
     Ok(report)
 }
 

@@ -1026,5 +1026,7 @@
   "Full Bleed Spread": "Doble página a sangre",
   "Grid Gallery": "Galería en cuadrícula",
   "Title Slide": "Diapositiva de título",
-  "Two Up with Caption": "Dos en paralelo con pie de foto"
+  "Two Up with Caption": "Dos en paralelo con pie de foto",
+  "Edit Photo": "Editar foto",
+  "Edit Original opens the file itself; saving it updates this photo.": "Editar original abre el propio archivo; al guardarlo se actualiza esta foto."
 }

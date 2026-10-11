@@ -881,5 +881,7 @@
   "Full Bleed Spread": "Randlose Doppelseite",
   "Grid Gallery": "Rastergalerie",
   "Title Slide": "Titelfolie",
-  "Two Up with Caption": "Zwei mit Bildunterschrift (nebeneinander)"
+  "Two Up with Caption": "Zwei mit Bildunterschrift (nebeneinander)",
+  "Edit Photo": "Foto bearbeiten",
+  "Edit Original opens the file itself; saving it updates this photo.": "„Original bearbeiten“ öffnet die Datei selbst; beim Speichern wird dieses Foto aktualisiert."
 }

@@ -1017,5 +1017,7 @@
   "Full Bleed Spread": "Double page à fond perdu",
   "Grid Gallery": "Galerie en grille",
   "Title Slide": "Diapositive de titre",
-  "Two Up with Caption": "Deux côte à côte avec légende"
+  "Two Up with Caption": "Deux côte à côte avec légende",
+  "Edit Photo": "Modifier la photo",
+  "Edit Original opens the file itself; saving it updates this photo.": "Modifier l’original ouvre le fichier lui-même ; l’enregistrer met à jour cette photo."
 }
