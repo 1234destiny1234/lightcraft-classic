@@ -26,7 +26,7 @@ cited here still exists. Formerly docs/parity.md.
 <!-- parity:summary -->
 | Section | ✅ | 🟡 | ⬜ | 🚫 | P0 done | P1 done |
 |---|---:|---:|---:|---:|---:|---:|
-| A. Import (IMP) | 11 | 3 | 1 | 1 | 3/5 (60%) | 5/5 (100%) |
+| A. Import (IMP) | 11 | 4 | 1 | 1 | 3/5 (60%) | 5/5 (100%) |
 | B. Library management (LIB) | 22 | 2 | 1 | 2 | 9/9 (100%) | 9/9 (100%) |
 | C. Views & navigation (VIEW) | 15 | 1 | 1 | 0 | 8/9 (89%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
@@ -42,7 +42,7 @@ cited here still exists. Formerly docs/parity.md.
 | N. Copy / paste / sync (SYNC) | 5 | 0 | 0 | 0 | 3/3 (100%) | 1/1 (100%) |
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
-| Q. HDR (HDR) | 2 | 3 | 0 | 0 | — | — |
+| Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
 | R. Video (VID) | 0 | 0 | 5 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 15 | 2 | 1 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
@@ -53,12 +53,10 @@ cited here still exists. Formerly docs/parity.md.
 | Y. Menus | 82 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 75 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 96 | 21 | 7 | 0 | — | 33/37 (89%) |
-| Lightroom Classic extras | 95 | 22 | 7 | 0 | — | 33/37 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
 | **Total** | 470 | 56 | 44 | 27 | 192/200 (96%) | 159/173 (92%) |
-| **Total** | 469 | 57 | 44 | 27 | 192/200 (96%) | 159/173 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.3%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 69.4% of 196.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.4%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 69.6% of 196.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
