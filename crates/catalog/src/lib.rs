@@ -235,6 +235,13 @@ pub enum Op {
         id: PhotoId,
         lens: Option<Box<dac_develop::EmbeddedLens>>,
     },
+    /// A raw's as-shot white balance (Kelvin, tint) as its file reads now: what a decode or Reload finds when the
+    /// camera's colour matrices give the file a Kelvin scale it was imported without (upstream issue #730).
+    /// Bookkeeping, not an edit: the look does not change, only the As Shot readout.
+    SetAsShotWb {
+        id: PhotoId,
+        wb: Option<(f64, f64)>,
+    },
     /// The name shown for a colour label (`None` = its colour's name).
     SetLabelName {
         label: ColorLabel,
@@ -826,6 +833,13 @@ impl Catalog {
             Op::SetEmbeddedLens { id, lens } => {
                 let p = self.photo_mut(id)?;
                 Op::SetEmbeddedLens { id, lens: std::mem::replace(&mut p.embedded_lens, lens) }
+            }
+            Op::SetAsShotWb { id, wb } => {
+                if wb.is_some_and(|(t, tint)| !(t.is_finite() && tint.is_finite())) {
+                    return Err(CatalogError::Invalid("as-shot white balance is not a number".into()));
+                }
+                let p = self.photo_mut(id)?;
+                Op::SetAsShotWb { id, wb: std::mem::replace(&mut p.as_shot_wb, wb) }
             }
             Op::SetFile { id, file_name, source } => {
                 if file_name.trim().is_empty() {

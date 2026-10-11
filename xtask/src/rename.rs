@@ -192,10 +192,8 @@ pub(crate) fn apply(root: &Path, files: &[String], f: impl Fn(&str) -> String) -
             continue;
         }
         let path = root.join(rel);
+        // binaries are skipped; valid UTF-8 is text even with NUL bytes (`\0` in Rust byte strings)
         let Ok(bytes) = std::fs::read(&path) else { continue };
-        if bytes.contains(&0) {
-            continue;
-        }
         let Ok(text) = String::from_utf8(bytes) else { continue };
         let new = f(&text);
         if new != text {

@@ -345,11 +345,9 @@ pub fn check(root: &Path) -> Result<(), String> {
         if is_allowed(&path) || is_rendered_doc(root, &path) {
             continue;
         }
-        // deleted-but-tracked files and binaries are skipped
+        // deleted-but-tracked files and binaries are skipped; a valid UTF-8 file is text even with NUL bytes
+        // in it (Rust sources with `\0` in byte-string literals, e.g. maker-note signatures)
         let Ok(bytes) = std::fs::read(root.join(&path)) else { continue };
-        if bytes.contains(&0) {
-            continue;
-        }
         let Ok(text) = String::from_utf8(bytes) else { continue };
         scanned += 1;
         // the file name counts as well (e.g. packaging/windows/lightcraft.wxs)

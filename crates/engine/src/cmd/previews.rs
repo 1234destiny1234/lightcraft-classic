@@ -151,14 +151,14 @@ impl PreviewBuild {
     }
 }
 
-/// The jobs that build `id`'s previews: the largest grid thumbnail, then the view render at
-/// `edge` (`None` = 1:1, the photo's full size).
+/// The jobs that build `id`'s previews: the largest grid thumbnail and the view render at `edge`
+/// (`None` = 1:1, the photo's full size), the larger first.
 pub(crate) fn jobs_for(s: &mut Session, id: dac_catalog::PhotoId, edge: Option<usize>) -> Vec<RenderJob> {
     let Some(p) = s.catalog.photo(id).cloned() else { return Vec::new() };
     let full = p.width.max(p.height) as usize;
     let e = edge.unwrap_or(full).min(full.max(1)).max(1);
-    let mut v = Vec::new();
-    let mut view = s.loupe_job(id, e, e, true);
+    let thumb = THUMB_SIZES[THUMB_SIZES.len() - 1];
+    let (mut view, grid) = (s.loupe_job(id, e, e, true), s.thumb_job(id, thumb));
     // a 1:1 preview is kept under its own key, to be discarded on its own
     if edge.is_none()
         && let Some(j) = view.as_mut()
@@ -166,10 +166,9 @@ pub(crate) fn jobs_for(s: &mut Session, id: dac_catalog::PhotoId, edge: Option<u
     {
         *key = Session::full_view_key(&p);
     }
-    v.extend(view);
-    // (after the view: it renders from the source the view loaded, see `run_photo`)
-    v.extend(s.thumb_job(id, THUMB_SIZES[THUMB_SIZES.len() - 1]));
-    v
+    // the larger render goes first: the one after it renders from the source it loaded (see
+    // `run_photo`), which must not be smaller than what it needs
+    if e >= thumb { view.into_iter().chain(grid).collect() } else { grid.into_iter().chain(view).collect() }
 }
 
 /// The build's row in the activity stack (`what` as in [`PreviewBuild::what`]).
@@ -380,7 +379,7 @@ pub fn build_after_import(s: &mut Session, ids: &[dac_catalog::PhotoId]) {
 
 /// One photo's smart preview to build or discard: (photo, its file in the smart previews folder,
 /// how to load the original at preview size, whether the photo takes the per-file camera look —
-/// `camera_preview::file_local_look`, [`dac_catalog::Photo::relative_wb`]: only those
+/// `camera_preview::file_local_look`, [`dac_catalog::Photo::fitted_look`]: only those
 /// proxies go stale when the fit changes).
 #[cfg(not(target_arch = "wasm32"))]
 type SmartJob = (dac_catalog::PhotoId, std::path::PathBuf, Option<crate::media::SourceRef>, bool);
@@ -446,6 +445,9 @@ fn smart_run(
             break;
         }
         let _one = SMART_WRITE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+        // Read either the new shard or a pre-upgrade flat file, without making new work
+        // depend on having the original online.
+        let path = crate::smart::existing_file_path(dir, path);
         if discard {
             if std::fs::remove_file(&path).is_ok() {
                 n.removed += 1;
@@ -469,7 +471,14 @@ fn smart_run(
                     .ok_or_else(|| "nothing to build from".to_string())
                     .and_then(|s| s.load_source())
                     .and_then(|src| crate::smart::encode(&src.image, src.info_or(Default::default()).camera_tone.as_ref()))
-                    .and_then(|b| dac_catalog::safe_file::write_atomic(&path, &b).map_err(|e| format!("{}: {e}", path.display())));
+                    .and_then(|b| {
+                        let parent = path.parent().ok_or_else(|| format!("{}: no parent folder", path.display()))?;
+                        // Only create the leaf shard: do not recreate a missing external drive.
+                        if !parent.is_dir() {
+                            std::fs::create_dir(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
+                        }
+                        dac_catalog::safe_file::write_atomic(&path, &b).map_err(|e| format!("{}: {e}", path.display()))
+                    });
                 match r {
                     Ok(()) => {
                         n.built += 1;
@@ -524,9 +533,9 @@ fn smart(s: &mut Session, p: &Value) -> Result<Value> {
         if !matches!(ph.source, dac_catalog::Source::File { .. }) {
             continue;
         }
-        let path = dir.join(crate::smart::file_name(&ph));
+        let path = crate::smart::sharded_file_path(&dir, &ph);
         let source = (!discard).then(|| s.media.source_ref(&ph, crate::media::SourceLevel::Preview));
-        jobs.push((id, path, source, ph.relative_wb()));
+        jobs.push((id, path, source, ph.fitted_look()));
     }
     let custom = s.smart_previews_dir.is_some();
     if background {
@@ -568,9 +577,9 @@ pub(crate) fn refresh_stale_smart_previews(s: &mut Session) -> Option<std::threa
         return None;
     }
     let max_edge = crate::media::SourceLevel::Preview.max_edge();
-    let photos: Vec<_> = s.catalog.photos().filter(|p| matches!(p.source, dac_catalog::Source::File { .. }) && p.relative_wb()).collect();
+    let photos: Vec<_> = s.catalog.photos().filter(|p| matches!(p.source, dac_catalog::Source::File { .. }) && p.fitted_look()).collect();
     let jobs: Vec<SmartJob> =
-        photos.iter().map(|p| (p.id, dir.join(crate::smart::file_name(p)), Some(s.media.origin_ref(&p.source, max_edge)), true)).collect();
+        photos.iter().map(|p| (p.id, crate::smart::sharded_file_path(&dir, p), Some(s.media.origin_ref(&p.source, max_edge)), true)).collect();
     std::thread::Builder::new()
         .name("lc-smart-look".into())
         .spawn(move || refresh_stale(&dir, jobs))
@@ -581,7 +590,11 @@ pub(crate) fn refresh_stale_smart_previews(s: &mut Session) -> Option<std::threa
 /// The body of [`refresh_stale_smart_previews`]: rebuild the stale proxies among `jobs`.
 #[cfg(not(target_arch = "wasm32"))]
 fn refresh_stale(dir: &std::path::Path, jobs: Vec<SmartJob>) {
-    let stale: Vec<SmartJob> = jobs.into_iter().filter(|(_, path, _, _)| crate::smart::is_stale(path)).collect();
+    let stale: Vec<SmartJob> = jobs
+        .into_iter()
+        .map(|(id, path, source, look)| (id, crate::smart::existing_file_path(dir, path), source, look))
+        .filter(|(_, path, _, _)| crate::smart::is_stale(path))
+        .collect();
     if !stale.is_empty() {
         // `custom`: the folder is there already, and must not be recreated if it went away since
         match smart_run(dir, true, false, stale, None) {
@@ -664,7 +677,7 @@ fn smart_location(s: &mut Session, p: &Value) -> Result<Value> {
 /// Whether photo `id` has a smart preview.
 pub fn has_smart_preview(s: &Session, id: dac_catalog::PhotoId) -> bool {
     match (&s.media.smart_dir, s.catalog.photo(id)) {
-        (Some(dir), Some(p)) => crate::smart::is_valid(&dir.join(crate::smart::file_name(p))),
+        (Some(dir), Some(p)) => crate::smart::is_valid(&crate::smart::file_path(dir, p)),
         _ => false,
     }
 }
@@ -736,4 +749,38 @@ pub fn specs() -> Vec<CommandSpec> {
             Ok(s.preview_build.as_ref().map_or(Value::Null, |b| b.json()))
         }),
     ]
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::{jobs_for, run_photo};
+    use crate::Session;
+    use crate::media::SourceRef;
+
+    // Given a photo's preview jobs, the grid thumbnail is made from the source the view decoded, not
+    // by reading the file again (here: a thumbnail job pointing at a file that is not there)
+    #[test]
+    fn preview_build_makes_the_thumbnail_from_the_views_source() {
+        let mut s = Session::with_demo();
+        let id = s.active().unwrap();
+        let mut jobs = jobs_for(&mut s, id, Some(512));
+        assert_eq!(jobs.len(), 2, "view and thumbnail");
+        assert!(jobs[0].view_cache.is_some(), "the view renders first");
+        jobs[1].source = SourceRef::File { path: "/nonexistent/photo.arw".into(), max_edge: 512, loader: None, fallback: None, denoise: None };
+        assert!(run_photo(jobs), "the thumbnail rendered from the view's decoded source");
+    }
+
+    // Given many photos, a standard preview build renders them side by side and counts every one
+    #[test]
+    fn preview_build_of_many_photos_counts_each_once() {
+        let mut s = Session::with_demo();
+        let ids: Vec<u64> = s.catalog.photos().map(|p| p.id.0).collect();
+        assert!(ids.len() > 4);
+        let r = s.execute("library.buildPreviews", &json!({"size": "standard", "edge": 512, "ids": ids, "wait": true})).unwrap();
+        assert_eq!(r["done"], json!(ids.len()), "{r}");
+        assert_eq!(r["total"], json!(ids.len()));
+        assert_eq!(r["failed"], json!(0));
+    }
 }

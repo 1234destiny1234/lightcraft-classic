@@ -104,6 +104,9 @@ pub struct SidecarData {
     /// `xmp:CreateDate` (first found). Used only when the file itself has no capture time.
     pub captured: Option<String>,
     pub develop: Option<DevelopPatch>,
+    /// Actionable diagnostics for foreign develop settings that were not fully carried over.
+    /// These are surfaced in the photo import report and never persisted in the catalog.
+    pub warnings: Vec<crate::import::ImportWarning>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -165,7 +168,65 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
     out.develop = match full {
         Some(s) => Some(DevelopPatch::Full(Box::new(s))),
         None if crate::crs::has_adjustments(&d.properties) => {
-            Some(DevelopPatch::Partial(crate::crs::to_partial_report(&d.properties, Some(&d.values), target, crate::crs_masks::DEFAULT_ASPECT).0))
+            let (partial, unmapped) = crate::crs::to_partial_report(&d.properties, Some(&d.values), target, crate::crs_masks::DEFAULT_ASPECT);
+            // Lightroom's default profiles are named by nearly every sidecar; our own starting look stands
+            // in for them, so only another profile is worth a warning
+            let profile = crate::crs::camera_profile_name(&d.properties)
+                .filter(|name| !matches!(name.trim(), "Adobe Standard" | "Adobe Color"))
+                .map(str::to_string);
+            if let Some(name) = profile {
+                out.warnings.push(crate::import::ImportWarning {
+                    path: String::new(),
+                    code: crate::import::ImportWarningCode::CameraProfile,
+                    profile: Some(name),
+                    mode: None,
+                    fields: Vec::new(),
+                });
+            }
+            let upright = crate::crs::has_saved_upright_transform(&d.properties);
+            if upright {
+                let mode = d
+                    .properties
+                    .get("crs:PerspectiveUpright")
+                    .and_then(|values| values.first())
+                    .map(String::as_str)
+                    .map(|mode| match mode {
+                        "0" => crate::import::ImportUprightMode::Off,
+                        "1" => crate::import::ImportUprightMode::Auto,
+                        "2" => crate::import::ImportUprightMode::Level,
+                        "3" => crate::import::ImportUprightMode::Vertical,
+                        "4" => crate::import::ImportUprightMode::Full,
+                        "5" => crate::import::ImportUprightMode::Guided,
+                        _ => crate::import::ImportUprightMode::Unknown,
+                    })
+                    .unwrap_or(crate::import::ImportUprightMode::Unknown);
+                out.warnings.push(crate::import::ImportWarning {
+                    path: String::new(),
+                    code: crate::import::ImportWarningCode::UprightGeometry,
+                    profile: None,
+                    mode: Some(mode),
+                    fields: Vec::new(),
+                });
+            }
+            let other: Vec<&str> = unmapped
+                .iter()
+                .map(String::as_str)
+                .filter(|name| {
+                    *name != "CameraProfile"
+                        && !name.starts_with("UprightTransform_")
+                        && !matches!(*name, "UprightTransformCount" | "UprightCenterNormX" | "UprightCenterNormY" | "UprightVersion")
+                })
+                .collect();
+            if !other.is_empty() {
+                out.warnings.push(crate::import::ImportWarning {
+                    path: String::new(),
+                    code: crate::import::ImportWarningCode::UnmappedXmp,
+                    profile: None,
+                    mode: None,
+                    fields: other.into_iter().map(str::to_string).collect(),
+                });
+            }
+            Some(DevelopPatch::Partial(partial))
         }
         None => None,
     };
@@ -482,30 +543,60 @@ impl Session {
     }
 
     /// Write the photo's XMP sidecar, merged into an existing one (see the module docs).
-    pub fn save_sidecar(&self, id: PhotoId) -> Result<SidecarSaved> {
+    pub fn save_sidecar(&mut self, id: PhotoId) -> Result<SidecarSaved> {
         self.save_sidecar_with(id, &StemOwners::of(&self.catalog))
     }
 
-    pub(crate) fn save_sidecar_with(&self, id: PhotoId, owners: &StemOwners) -> Result<SidecarSaved> {
+    pub(crate) fn save_sidecar_with(&mut self, id: PhotoId, owners: &StemOwners) -> Result<SidecarSaved> {
         let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
         if p.copy_of.is_some() {
             return Err(EngineError::Other(format!("{} is a virtual copy: its settings live only in the library", p.file_name)));
         }
         let orig = file_path(p).ok_or_else(|| EngineError::Other(format!("{} is not a file on disk", p.file_name)))?;
-        let path = sidecar_path(orig, owners.naming(p, self.xmp.naming));
+        let naming = owners.naming(p, self.xmp.naming);
+        let preferred = sidecar_path(orig, naming);
+        let other = if naming == SidecarNaming::Stem { SidecarNaming::Full } else { SidecarNaming::Stem };
+        let candidates: Vec<PathBuf> = [naming, other]
+            .into_iter()
+            .filter(|n| *n != SidecarNaming::Stem || owners.naming(p, SidecarNaming::Stem) == SidecarNaming::Stem)
+            .flat_map(|n| {
+                let path = sidecar_path(orig, n);
+                [path.clone(), path.with_extension("XMP")]
+            })
+            .collect();
+        // A separated packet is still the photo's metadata. Repair it before a fresh write
+        // occupies its destination; a failure preserves the queue and both existing packets.
+        self.repair_sidecars_for_paths(&candidates, &crate::rename::RealFs)
+            .map_err(|e| EngineError::Other(format!("{}: unfinished XMP repair: {e}", preferred.display())))?;
+        // Keep an existing packet's spelling/style so foreign properties survive this save and
+        // subsequent Undo/Redo writes. Shared stems owned by another photo were excluded above.
+        let path = candidates.into_iter().find(|path| path.is_file()).unwrap_or(preferred);
+        self.validate_sidecar_packets_for_paths(std::slice::from_ref(&path), &crate::rename::RealFs)?;
+        let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
         let err = |e: std::io::Error| EngineError::Other(format!("{}: {e}", path.display()));
         let (data, merged, backup) = sidecar_contents(&path, sidecar_packet(p, &self.catalog), &(self.clock)()).map_err(err)?;
         write_atomic(&path, data.as_bytes()).map_err(err)?;
+        self.note_sidecar_write(&path, data.as_bytes());
         Ok(SidecarSaved { path, merged, backup })
     }
 
     /// The op that applies a photo's sidecar (or embedded XMP) to the catalog, if there is one.
     pub fn read_sidecar_op(&self, id: PhotoId) -> Result<Option<(Op, PathBuf)>> {
+        self.read_sidecar_op_with_warnings(id).map(|result| result.map(|(op, from, _)| (op, from)))
+    }
+
+    /// Like [`Session::read_sidecar_op`], retaining transient diagnostics for the command report.
+    pub fn read_sidecar_op_with_warnings(&self, id: PhotoId) -> Result<Option<(Op, PathBuf, Vec<crate::import::ImportWarning>)>> {
         let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
         let Some(orig) = file_path(p) else { return Ok(None) };
         let Some((packet, from)) = read_packet(orig, p.kind, self.sidecar_naming(id)) else { return Ok(None) };
         let sc = parse_sidecar(&packet, crate::crs::Target::for_photo(p)).map_err(|e| EngineError::Other(format!("{}: {e}", from.display())))?;
-        Ok(Some((self.sidecar_op(id, sc)?, from)))
+        let mut warnings = sc.warnings.clone();
+        for warning in &mut warnings {
+            warning.path = orig.to_string();
+        }
+        let op = self.sidecar_op(id, sc)?;
+        Ok(Some((op, from, warnings)))
     }
 
     /// The op that applies what a sidecar says (already read and parsed, e.g. on a worker
@@ -574,6 +665,15 @@ impl Session {
     pub(crate) fn auto_write_sidecars(&mut self, ops: &[Op]) {
         let mut ids = Vec::new();
         ops.iter().for_each(|o| op_photos(o, &mut ids));
+        self.auto_write_sidecars_of(ids);
+    }
+
+    /// Gather changed IDs before the saves mutate retained physical repair queues.
+    pub(crate) fn auto_write_sidecars_since(&mut self, log_start: usize) {
+        let mut ids = Vec::new();
+        if let Some(ops) = self.pending_log.get(log_start..) {
+            ops.iter().for_each(|o| op_photos(o, &mut ids));
+        }
         self.auto_write_sidecars_of(ids);
     }
 
@@ -695,3 +795,15 @@ mod tests {
         assert_eq!(v, vec![PhotoId(1), PhotoId(3)]);
     }
 }
+
+#[cfg(test)]
+#[path = "sidecar/tests_repair_saves.rs"]
+mod tests_repair_saves;
+
+#[cfg(test)]
+#[path = "sidecar/tests_repair_companions.rs"]
+mod tests_repair_companions;
+
+#[cfg(test)]
+#[path = "sidecar/tests_repair_provenance.rs"]
+mod tests_repair_provenance;

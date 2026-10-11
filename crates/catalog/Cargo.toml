@@ -11,6 +11,7 @@ workspace = true
 [dependencies]
 dac-brand = { workspace = true }
 dac-develop = { workspace = true }
+dac-raw = { workspace = true }
 dac-meta = { workspace = true }
 dac-geo = { workspace = true }
 serde = { workspace = true }

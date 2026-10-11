@@ -671,3 +671,69 @@ fn edit_in_waits_for_a_fake_editor_and_reloads() {
     assert_eq!(std::fs::read(copy).unwrap(), std::fs::read(&replacement).unwrap());
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// `denoise-serve` serves the selected installed model; a client greets it and gets the CPU's answer for a tile
+/// (within half-float rounding on the wire), and a wrong token or a missing token variable is refused.
+#[cfg(feature = "denoise")]
+#[test]
+fn denoise_serve_runs_tiles_for_another_computer() {
+    use dac_denoise::manifest::{DenoiserManifest, Domain, Gain};
+    use dac_denoise::remote::Remote;
+    use dac_denoise::run::TileRunner;
+    let models = tmp("denoise-models");
+    let _ = std::fs::remove_dir_all(&models);
+    let dir = models.join("synthetic");
+    std::fs::create_dir_all(&dir).unwrap();
+    let manifest = DenoiserManifest {
+        id: "synthetic".into(),
+        name: "Synthetic".into(),
+        version: "1".into(),
+        licence: Default::default(),
+        source: None,
+        sha256: None,
+        size_bytes: None,
+        provenance: "made for a test".into(),
+        domain: Domain::BayerToRgb,
+        tile: 64,
+        overlap: 16,
+        gain: Gain::None,
+    };
+    let onnx = dir.join("model.onnx");
+    std::fs::write(&onnx, dac_denoise::synthetic::unet_onnx(64, 8, 2, 7)).unwrap();
+    std::fs::write(dir.join("denoise-model.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
+    std::fs::write(models.join("settings.json"), r#"{"model": "synthetic"}"#).unwrap();
+    let sha = dac_denoise::hash::sha256_file(&onnx).unwrap();
+
+    // without its token the server doesn't start
+    let o = Command::new(BIN).args(["denoise-serve", "--models", models.to_str().unwrap(), "--token-env", "LC_TEST_NO_SUCH_VAR"]).output().unwrap();
+    assert!(!o.status.success() && String::from_utf8_lossy(&o.stderr).contains("LC_TEST_NO_SUCH_VAR"));
+
+    let port = std::net::TcpListener::bind("127.0.0.1:0").unwrap().local_addr().unwrap().port();
+    let addr = format!("127.0.0.1:{port}");
+    let token = "cli-test-token-0123456789";
+    let mut child = Command::new(BIN)
+        .args(["denoise-serve", "--models", models.to_str().unwrap(), "--listen", &addr, "--run-on", "cpu"])
+        .env(dac_brand::env_var("DENOISE_TOKEN"), token)
+        .stderr(Stdio::piped())
+        .spawn()
+        .unwrap();
+    // wait for the banner
+    let mut err = BufReader::new(child.stderr.take().unwrap());
+    let mut banner = String::new();
+    err.read_line(&mut banner).unwrap();
+    assert!(banner.contains("synthetic 1") && banner.contains(&addr), "{banner}");
+
+    let remote = Remote::new(&addr, token, &sha, 64);
+    let info = remote.hello().unwrap();
+    assert!(info.device.starts_with("CPU"), "{info:?}");
+    let (input, _) = dac_denoise::runtime::test_tile(64);
+    let got = remote.try_run(&input).unwrap().unwrap();
+    let want = dac_denoise::runtime::CpuRunner::load(&onnx, &manifest).unwrap().run(&input).unwrap();
+    let scale = want.iter().fold(1e-9f32, |m, v| m.max(v.abs()));
+    let worst = want.iter().zip(&got).fold(0f32, |m, (a, b)| m.max((a - b).abs())) / scale;
+    assert!(worst < 5e-3, "remote vs local: {worst}");
+    assert!(Remote::new(&addr, "a-wrong-token-000000", &sha, 64).hello().is_err());
+    let _ = child.kill();
+    let _ = child.wait();
+    let _ = std::fs::remove_dir_all(&models);
+}

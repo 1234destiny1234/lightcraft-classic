@@ -34,6 +34,7 @@ dac-lensdb = { workspace = true }
 dac-faces = { workspace = true }
 miniz_oxide = { workspace = true }
 dac-merge = { workspace = true }
+dac-geocode = { workspace = true }
 dac-psd = { workspace = true }
 dac-actions = { workspace = true }
 tiff = { workspace = true }
@@ -69,6 +70,8 @@ denoise = ["dep:dac-denoise", "dac-denoise/runtime", "dac-gpu/denoise"]
 rawnind-model = ["denoise", "dac-denoise/rawnind-model", "dac-denoise-core/rawnind-model"]
 
 [dev-dependencies]
+# HDR JPEG XL tests read the file's colour encoding
+jxl-oxide = { workspace = true }
 # Lossless synthetic HEIC files (the import test; decoded when the codecs' `heif` feature is on).
 dac-heif = { workspace = true, features = ["testdata"] }
 libc = { workspace = true }

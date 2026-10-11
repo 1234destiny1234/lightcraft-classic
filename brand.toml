@@ -43,3 +43,7 @@ app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic"]
 name       = "LightCraft"
 repository = "https://github.com/storytold/lightcraft"
 slug       = "storytold/lightcraft"
+
+# Ids of other applications the app looks for (not ours; never renamed with the brand).
+[third_party]
+photocraft_app_id = "ai.storyteller.photocraft"   # PhotoCraft's Flatpak / desktop-entry id (Photo > Edit In)

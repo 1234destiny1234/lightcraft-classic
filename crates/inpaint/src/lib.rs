@@ -8,6 +8,10 @@
 //! Everything is deterministic (fixed-seed RNG, results independent of the thread count) and never
 //! panics on mismatched sizes: such calls return `None` or the input unchanged.
 //!
+//! Sources: C. Barnes, E. Shechtman, A. Finkelstein, D. B. Goldman, *PatchMatch: A Randomized
+//! Correspondence Algorithm for Structural Image Editing*, SIGGRAPH 2009; Y. Wexler, E. Shechtman,
+//! M. Irani, *Space-Time Completion of Video*, PAMI 2007.
+//!
 //! Ported from PhotoCraft (`crates/algo/src/inpaint.rs`, `poisson.rs`, MIT OR Apache-2.0, same
 //! organisation; see `NOTICE`).
 

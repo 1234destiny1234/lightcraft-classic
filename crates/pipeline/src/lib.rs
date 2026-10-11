@@ -24,6 +24,7 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod auto;
+pub mod blemish;
 pub mod colorops;
 pub mod cull;
 pub mod dust;
@@ -78,6 +79,10 @@ pub struct SourceInfo {
     pub as_shot_tint: f64,
     /// No measured camera illuminant: WB adjustments are relative to the camera's rendered look.
     pub relative_wb: bool,
+    /// The Kelvin scale comes from matrices measured for the camera model, not from the file: before those were
+    /// used for white balance, this source was edited on the relative scale (6500 K / 0 = as shot), so settings
+    /// without a [`dac_develop::WbScale`] are read that way ([`local::legacy_to_kelvin`]).
+    pub legacy_relative_wb: bool,
     /// The camera's colour model (raw files with a colour matrix); `None`: white balance adapts
     /// the developed pixels (Bradford, linear Rec.2020).
     pub camera_color: Option<Arc<CameraColor>>,
@@ -97,6 +102,7 @@ impl Default for SourceInfo {
             as_shot_tint: 0.0,
             lens: None,
             relative_wb: false,
+            legacy_relative_wb: false,
             camera_color: None,
             camera_tone: None,
             mattes: None,
@@ -477,6 +483,37 @@ pub fn settings_for<'a>(s: &'a DevelopSettings, req: &RenderRequest) -> std::bor
     if req.depth == OutputDepth::F32Hdr { std::borrow::Cow::Borrowed(s) } else { s.sdr_rendition() }
 }
 
+/// Long edge (pixels) of the small HDR render [`hdr_histogram`] measures.
+pub const HDR_HISTOGRAM_EDGE: usize = 384;
+
+/// The histogram of an HDR edit's HDR rendition for a preview request `req`: a small float HDR
+/// render of the same framing ([`HDR_HISTOGRAM_EDGE`]), binned with SDR on the left half and the
+/// whole HDR range ([`Hdr::MAX_EV_LIMIT`](dac_develop::Hdr::MAX_EV_LIMIT) stops above SDR
+/// white, whatever the headroom limit, so the scale stays put) on the right ([`Histogram::of_hdr`]). A preview of
+/// an HDR edit shows its SDR rendition; this says how far its highlights go. `None` for SDR edits,
+/// high-bit-depth, windowed and proofed requests (their histogram stays the image's).
+pub fn hdr_histogram(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> Option<Histogram> {
+    // a drag's drafts keep their own histogram: a second render per tick would slow them down
+    if !s.hdr.enabled || req.depth != OutputDepth::U8 || req.window.is_some() || req.proof.is_some() || req.quality == Quality::Draft {
+        return None;
+    }
+    let k = (HDR_HISTOGRAM_EDGE as f64 / req.max_w.max(req.max_h).max(1) as f64).min(1.0);
+    let size = |v: usize| ((v as f64 * k).round() as usize).max(1);
+    let hreq = RenderRequest {
+        max_w: size(req.max_w),
+        max_h: size(req.max_h),
+        depth: OutputDepth::F32Hdr,
+        overlay: Overlay::None,
+        proof: None,
+        window: None,
+        display: None,
+        ..*req
+    };
+    let deep = render(src, info, s, &hreq).deep?;
+    let DeepSamples::F32(v) = &deep.samples else { return None };
+    Some(Histogram::of_hdr(v.as_chunks::<3>().0, dac_develop::Hdr::MAX_EV_LIMIT as f32))
+}
+
 /// Render `src` with settings `s`.
 pub fn render(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) -> Rendered {
     render_impl(Src::Borrowed(src), info, s, req, None)
@@ -667,5 +704,7 @@ mod tests_geometry;
 mod tests_hdr;
 #[cfg(test)]
 mod tests_local;
+#[cfg(test)]
+mod tests_tone;
 #[cfg(test)]
 mod tests_window;

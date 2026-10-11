@@ -14,7 +14,7 @@ files were last updated) and offers:
   <https://github.com/lensfun/lensfun> or the copy a Linux distribution installs under `/usr/share/lensfun/version_1/`.
 - **Download** (**Update** once downloaded): fetches lensfun's database, only when you ask, from the project's source
   archive (`https://github.com/lensfun/lensfun/archive/master.tar.gz`, about 3 MB). Only its `data/db/*.xml` files are
-  kept, in `<settings_dir>/lensfun/db`; the archive is size-capped, file names are checked so nothing is written
+  kept, in `lensfun/db` in the settings folder; the archive is size-capped, file names are checked so nothing is written
   outside that folder, and the old database stays until the new one has been read and holds lenses. The download
   shows in the activity stack and can be cancelled there; a failure (no network, a 404, a damaged archive) is shown
   in the section. The section names lensfun and its licence (CC-BY-SA 3.0).

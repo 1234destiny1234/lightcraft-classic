@@ -139,6 +139,8 @@ pub fn base_options() -> WgpuConfiguration {
     if let WgpuSetup::CreateNew(n) = &mut c.wgpu_setup {
         n.instance_descriptor.backends = backend::window_backends();
         n.instance_descriptor.backend_options = backend::backend_options();
+        // no indirect-call validation pipeline: Intel Metal fails to compile it and the window never opens (#250)
+        n.instance_descriptor.flags = backend::instance_flags_from_env(n.instance_descriptor.flags);
     }
     c
 }
@@ -167,7 +169,7 @@ fn pick_probed(order: &[WindowRenderer], problems: &mut Vec<String>) -> Option<(
 fn probe(backends: Backends) -> Result<WgpuSetupExisting, String> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor {
         backends,
-        flags: wgpu::InstanceFlags::from_build_config().with_env(),
+        flags: backend::instance_flags_from_env(wgpu::InstanceFlags::from_build_config().with_env()),
         backend_options: backend::backend_options(),
         memory_budget_thresholds: wgpu::MemoryBudgetThresholds::default(),
         display: None,

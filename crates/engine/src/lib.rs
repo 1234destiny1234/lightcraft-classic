@@ -15,6 +15,8 @@
 extern crate dac_denoise_core as dac_denoise;
 
 pub mod activity;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod apple_photos;
 pub mod availability;
 pub(crate) mod camera_preview;
 pub mod camera_profiles;
@@ -45,6 +47,7 @@ pub mod lens_profiles;
 pub mod library;
 mod lightroom_archive;
 pub mod lightroom_catalog;
+pub mod lightroom_folder;
 pub mod lightroom_job;
 mod lightroom_smart;
 mod lightroom_sqlite;
@@ -96,6 +99,11 @@ pub enum EngineError {
     /// Another process (the app, the CLI, another computer) has the library open.
     #[error("{0}")]
     LibraryInUse(String),
+    /// The folder (or file) asked for is a Lightroom Classic catalog or part of one, not a
+    /// library of the app (issue #891): nothing was created or opened. `catalog`: the `.lrcat`
+    /// to import with `library.importLightroom`, when one was found.
+    #[error("{} is a Lightroom Classic catalog, not a library of the app; import it into a library with File ▸ Import Lightroom Catalog…{}", path.display(), catalog.as_ref().map_or(String::new(), |c| format!(" ({})", c.display())))]
+    LightroomCatalog { path: std::path::PathBuf, catalog: Option<std::path::PathBuf> },
     #[error("{0}")]
     Other(String),
 }
@@ -108,8 +116,13 @@ pub struct UndoEntry {
     pub label: String,
     pub op: Op,
     /// A folder to rename on disk (`from` → `to`) before `op` is applied: Rename / Move Folder
-    /// (whose `op` relinks the photos inside). Never overwrites; refused when `to` exists.
+    /// (whose `op` relinks the photos inside). Never overwrites; refused when `to` exists. An
+    /// empty `to` removes the (empty) folder `from`, an empty `from` creates `to` (Create Folder).
     pub folder: Option<FolderMove>,
+    /// Inverses of logged path corrections from a partially failed history step.
+    pub(crate) retry_inverse: Vec<Op>,
+    /// Sidecars still separated from their photo after a failed move or rollback.
+    pub(crate) retry_sidecars: Vec<rename::SidecarMove>,
 }
 
 /// The one photo an undo step changes, when it changes exactly one through its edit, rating, flag,
@@ -184,6 +197,8 @@ pub struct Session {
     /// its length can't tell how many steps a command just made; see [`Session::commits`]).
     commits: u64,
     pub redo: Vec<UndoEntry>,
+    /// Exact filesystem repairs from discarded history; catalog inverses stay discarded.
+    pub(crate) pending_sidecar_repairs: Vec<rename::SidecarMove>,
     pub interaction: Option<Interaction>,
     /// Set by a command whose change must not rewrite the photo's XMP sidecar even with auto-write on
     /// (a catalog-only edit of data the sidecar writer does not emit); consumed when the command ends.
@@ -198,6 +213,8 @@ pub struct Session {
     pub lens_db: lens_download::LensSettings,
     /// The lens database generation ([`lens_profiles::generation`]) each photo's lens data was last looked up with.
     pub(crate) lens_seen: std::collections::HashMap<PhotoId, u64>,
+    /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
+    pub place_names: cmd::geocode::PlaceNames,
     /// The user's own list of models to download (`catalog.json` in the models folder), as last read.
     pub(crate) face_catalog: dac_faces::catalog::Catalog,
     /// The loaded recognition model and the face embeddings made with it.
@@ -303,6 +320,20 @@ pub struct Session {
     pub forget_local_days: u32,
     /// The preview store settings (persisted in prefs.json).
     pub preview_prefs: cmd::previews::PreviewPrefs,
+    /// Adds exported files to Apple Photos ([`apple_photos`]): `/usr/bin/osascript`, installed by
+    /// [`Session::with_fs`] on macOS; `None` elsewhere and in sessions without a file system. Tests
+    /// put a fake here.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub apple_photos: Option<apple_photos::Runner>,
+    /// This session's Apple Photos imports, running or finished (`export.photosImports`).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub apple_photos_imports: apple_photos::Imports,
+    /// Apple Photos imports run on a worker by default (`export.addToPhotos` without `wait`,
+    /// `app.export` without `background`): set by the desktop app, which answers control requests
+    /// on its UI thread. Off (the default), they wait for Photos, so a one-shot process
+    /// (dac-cli, a script) never ends in the middle of one.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub apple_photos_background: bool,
 }
 
 impl Default for Session {
@@ -333,6 +364,7 @@ impl Session {
             undo: Vec::new(),
             commits: 0,
             redo: Vec::new(),
+            pending_sidecar_repairs: Vec::new(),
             interaction: None,
             skip_auto_write: false,
             denoise: Default::default(),
@@ -340,6 +372,7 @@ impl Session {
             face_downloads: Default::default(),
             lens_db: Default::default(),
             lens_seen: Default::default(),
+            place_names: Default::default(),
             face_catalog: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             faces: Default::default(),
@@ -391,6 +424,12 @@ impl Session {
             smart_previews_dir: None,
             forget_local_days: dac_catalog::DEFAULT_FORGET_DAYS,
             preview_prefs: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            apple_photos: None,
+            #[cfg(not(target_arch = "wasm32"))]
+            apple_photos_imports: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            apple_photos_background: false,
         }
     }
 
@@ -445,8 +484,7 @@ impl Session {
         if self.depth == 0 {
             let skip = std::mem::take(&mut self.skip_auto_write);
             if r.is_ok() && !skip && self.xmp.auto_write && self.interaction.is_none() && self.pending_log.len() > log_start {
-                let ops = self.pending_log.get(log_start..).map(<[Op]>::to_vec).unwrap_or_default();
-                self.auto_write_sidecars(&ops);
+                self.auto_write_sidecars_since(log_start);
             }
         }
         if self.depth == 0 && self.library.is_some() {
@@ -475,15 +513,32 @@ impl Session {
     /// Apply an op as one undoable step.
     pub fn commit(&mut self, label: &str, op: Op) -> Result<()> {
         let fwd = op.clone();
-        let inv = self.catalog.apply(op)?;
+        let inv = self.apply_catalog(op)?;
         self.pending_log.push(fwd);
-        self.undo.push(UndoEntry { label: label.to_string(), op: inv, folder: None });
+        self.undo.push(UndoEntry { label: label.to_string(), op: inv, folder: None, retry_inverse: Vec::new(), retry_sidecars: Vec::new() });
         self.commits = self.commits.wrapping_add(1);
         if self.undo.len() > 1000 {
-            self.undo.remove(0);
+            let mut dropped = self.undo.remove(0);
+            self.pending_sidecar_repairs.append(&mut dropped.retry_sidecars);
         }
-        self.redo.clear();
+        for mut dropped in self.redo.drain(..) {
+            self.pending_sidecar_repairs.append(&mut dropped.retry_sidecars);
+        }
         Ok(())
+    }
+
+    fn apply_catalog(&mut self, op: Op) -> Result<Op> {
+        let inv = self.catalog.apply(op.clone())?;
+        let mut pending = vec![&op];
+        while let Some(op) = pending.pop() {
+            match op {
+                Op::SetFile { id, .. } | Op::Relink { id, .. } | Op::SetContent { id, .. } | Op::RemovePhoto { id } => self.media.forget(*id),
+                Op::AddPhoto { photo } => self.media.forget(photo.id),
+                Op::Batch { ops } => pending.extend(ops),
+                _ => {}
+            }
+        }
+        Ok(inv)
     }
 
     /// [`Session::commit`] for an op that goes with a folder already renamed on disk; the undo
@@ -508,8 +563,8 @@ impl Session {
     }
 
     /// Apply an op that is the app's own bookkeeping rather than something the user did (faces found by the background
-    /// scan): journaled like any op, but not an undo step, and it leaves the redo stack alone.
-    #[cfg(not(target_arch = "wasm32"))]
+    /// scan, a raw's as-shot white read by a decode): journaled like any op, but not an undo step, and it leaves the
+    /// redo stack alone.
     pub(crate) fn apply_system(&mut self, op: Op) -> Result<()> {
         let fwd = op.clone();
         self.catalog.apply(op)?;
@@ -553,13 +608,20 @@ impl Session {
         if n < 2 || n > self.undo.len() {
             return;
         }
-        // a step that moves a folder on disk stays on its own
-        if self.undo[self.undo.len() - n..].iter().any(|e| e.folder.is_some()) {
+        let Some(entries) = self.undo.get(self.undo.len() - n..) else { return };
+        // Folder moves and partially applied file steps stay on their own.
+        if entries.iter().any(|e| e.folder.is_some() || !e.retry_inverse.is_empty() || !e.retry_sidecars.is_empty()) {
             return;
         }
         let tail = self.undo.split_off(self.undo.len() - n);
         let ops = tail.into_iter().rev().map(|e| e.op).collect();
-        self.undo.push(UndoEntry { label: label.to_string(), op: Op::Batch { ops }, folder: None });
+        self.undo.push(UndoEntry {
+            label: label.to_string(),
+            op: Op::Batch { ops },
+            folder: None,
+            retry_inverse: Vec::new(),
+            retry_sidecars: Vec::new(),
+        });
     }
 
     /// Apply and journal (so it is saved) without an undo step: a change the app made by itself, not the user.
@@ -577,8 +639,12 @@ impl Session {
     }
 
     pub fn undo_step(&mut self) -> Result<String> {
-        let e = self.undo.pop().ok_or_else(|| EngineError::Other("nothing to undo".into()))?;
-        let redo = match self.apply_with_files(&e.op, e.folder.as_ref()) {
+        self.undo_step_with(&rename::RealFs)
+    }
+
+    pub(crate) fn undo_step_with(&mut self, fs: &dyn rename::MoveFs) -> Result<String> {
+        let mut e = self.undo.pop().ok_or_else(|| EngineError::Other("nothing to undo".into()))?;
+        let redo = match self.apply_with_files(&mut e, fs) {
             Ok(r) => r,
             Err(err) => {
                 self.undo.push(e);
@@ -587,13 +653,23 @@ impl Session {
         };
         self.show_undone(&e.op);
         self.pending_log.push(e.op);
-        self.redo.push(UndoEntry { label: e.label.clone(), op: redo, folder: e.folder.as_ref().map(FolderMove::reversed) });
+        self.redo.push(UndoEntry {
+            label: e.label.clone(),
+            op: redo,
+            folder: e.folder.as_ref().map(FolderMove::reversed),
+            retry_inverse: Vec::new(),
+            retry_sidecars: Vec::new(),
+        });
         Ok(e.label)
     }
 
     pub fn redo_step(&mut self) -> Result<String> {
-        let e = self.redo.pop().ok_or_else(|| EngineError::Other("nothing to redo".into()))?;
-        let undo = match self.apply_with_files(&e.op, e.folder.as_ref()) {
+        self.redo_step_with(&rename::RealFs)
+    }
+
+    pub(crate) fn redo_step_with(&mut self, fs: &dyn rename::MoveFs) -> Result<String> {
+        let mut e = self.redo.pop().ok_or_else(|| EngineError::Other("nothing to redo".into()))?;
+        let undo = match self.apply_with_files(&mut e, fs) {
             Ok(r) => r,
             Err(err) => {
                 self.redo.push(e);
@@ -602,7 +678,13 @@ impl Session {
         };
         self.show_undone(&e.op);
         self.pending_log.push(e.op);
-        self.undo.push(UndoEntry { label: e.label.clone(), op: undo, folder: e.folder.as_ref().map(FolderMove::reversed) });
+        self.undo.push(UndoEntry {
+            label: e.label.clone(),
+            op: undo,
+            folder: e.folder.as_ref().map(FolderMove::reversed),
+            retry_inverse: Vec::new(),
+            retry_sidecars: Vec::new(),
+        });
         Ok(e.label)
     }
 
@@ -628,8 +710,18 @@ impl Session {
     /// imply (all or nothing). Files that can't be moved back after a failure are reported and the
     /// library follows them (a logged change outside the undo history), so none goes missing; the
     /// folder is only moved back when no file was left behind at its new path.
-    fn apply_with_files(&mut self, op: &Op, folder: Option<&FolderMove>) -> Result<Op> {
-        let fs = rename::RealFs;
+    fn apply_with_files(&mut self, entry: &mut UndoEntry, fs: &dyn rename::MoveFs) -> Result<Op> {
+        // The entry is detached from self.undo/self.redo: include it before any global
+        // repair can retire, then retry revalidates it before moving its own packets.
+        rename::validate_sidecars(fs, &entry.retry_sidecars).map_err(|e| EngineError::Other(format!("can't move the files back: {e}")))?;
+        // Repair discarded file steps before another path change can stale their exact paths.
+        // Unrelated metadata history must remain usable while a sidecar is still unwritable.
+        if entry.folder.is_some() || !entry.retry_sidecars.is_empty() || !self.file_moves(&entry.op).is_empty() {
+            self.repair_sidecars_with(fs).map_err(|e| EngineError::Other(format!("can't move the files back: {e}")))?;
+        }
+        rename::retry_sidecars(fs, &mut entry.retry_sidecars).map_err(|e| EngineError::Other(format!("can't move the files back: {e}")))?;
+        let op = &entry.op;
+        let folder = entry.folder.as_ref();
         if let Some(f) = folder {
             cmd::folders::folder_on_disk(&f.from, &f.to).map_err(|e| EngineError::Other(format!("can't move the folder back: {e}")))?;
         }
@@ -639,26 +731,42 @@ impl Session {
             }
         };
         let moves = self.file_moves(op);
-        if let Err(e) = rename::move_all(&fs, &moves) {
+        if let Err(mut e) = rename::move_all(fs, &moves) {
+            entry.retry_sidecars.append(&mut e.pending_sidecars);
             if e.stuck.is_empty() {
                 undo_folder();
             }
-            return Err(EngineError::Other(format!("can't move the files back: {}", self.follow_stuck(op, e, false))));
+            let (message, mut inverses) = self.follow_stuck(op, e, false);
+            // A later successful retry observes the corrected paths. Retain their old paths
+            // now, so the opposite history direction still restores the entire original step.
+            inverses.append(&mut entry.retry_inverse);
+            entry.retry_inverse = inverses;
+            return Err(EngineError::Other(format!("can't move the files back: {message}")));
         }
-        match self.catalog.apply(op.clone()) {
+        match self.apply_catalog(op.clone()) {
             Ok(inv) => {
                 if let Some(f) = folder.filter(|f| !f.from.is_empty() && !f.to.is_empty()) {
                     cmd::browse::follow_folder(self, &f.from, &f.to);
                 }
-                Ok(inv)
+                if entry.retry_inverse.is_empty() {
+                    Ok(inv)
+                } else {
+                    let mut ops = match inv {
+                        Op::Batch { ops } => ops,
+                        op => vec![op],
+                    };
+                    ops.append(&mut entry.retry_inverse);
+                    Ok(Op::Batch { ops })
+                }
             }
             Err(e) => {
                 let back: Vec<(String, String)> = moves.iter().rev().map(|(a, b)| (b.clone(), a.clone())).collect();
-                if let Err(be) = rename::move_all(&fs, &back) {
+                if let Err(mut be) = rename::move_all(fs, &back) {
+                    entry.retry_sidecars.append(&mut be.pending_sidecars);
                     return Err(EngineError::Other(format!("{e}; the files could not all be moved back: {}", be.message)));
                 }
                 undo_folder();
-                Err(e.into())
+                Err(e)
             }
         }
     }
@@ -954,11 +1062,15 @@ mod tests;
 #[cfg(test)]
 mod tests_album_order;
 #[cfg(test)]
+mod tests_albums_local;
+#[cfg(test)]
 mod tests_catalog_cmds;
 #[cfg(test)]
 mod tests_classic;
 #[cfg(test)]
 mod tests_color;
+#[cfg(test)]
+mod tests_crop_angle;
 #[cfg(test)]
 mod tests_denoise;
 #[cfg(test)]
@@ -972,6 +1084,8 @@ mod tests_face_models;
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_face_recognize;
+#[cfg(test)]
+mod tests_filesystem_history;
 #[cfg(test)]
 mod tests_folders;
 #[cfg(test)]
@@ -990,6 +1104,8 @@ mod tests_lens_db;
 mod tests_libops;
 #[cfg(test)]
 mod tests_library;
+#[cfg(test)]
+mod tests_lightroom_folder;
 #[cfg(test)]
 mod tests_merge;
 #[cfg(test)]

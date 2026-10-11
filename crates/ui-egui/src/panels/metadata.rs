@@ -494,6 +494,13 @@ fn gps(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64]) 
                 }
             }
         });
+        if text_button(ui, "fillLocation", crate::i18n::tr("Fill Location"), false)
+            .on_hover_text(crate::i18n::tr("Fill empty City, State and Country from GPS (offline GeoNames place names)"))
+            .clicked()
+            && let Err(e) = app.run("metadata.reverseGeocode", json!({}))
+        {
+            app.toast_error(ui.ctx(), e);
+        }
     }
     ui.add_space(6.0);
 }
@@ -581,12 +588,11 @@ fn extras(app: &mut DacApp, ui: &mut egui::Ui, p: &Photo) {
     if let dac_catalog::Source::File { path } = &p.source {
         let avail = &app.session.media.availability;
         let online = !avail.is_offline(path);
-        let smart = app
-            .session
-            .media
-            .smart_dir
-            .as_ref()
-            .is_some_and(|d| avail.exists(&d.join(dac_engine::smart::file_name(p)).to_string_lossy()) == Some(true));
+        let smart = app.session.media.smart_dir.as_ref().is_some_and(|d| {
+            let shard = dac_engine::smart::sharded_file_path(d, p);
+            let legacy = d.join(dac_engine::smart::file_name(p));
+            avail.exists(&shard.to_string_lossy()) == Some(true) || avail.exists(&legacy.to_string_lossy()) == Some(true)
+        });
         if !online || smart {
             let text = match (online, smart) {
                 (false, true) => "Original offline · editing the smart preview",

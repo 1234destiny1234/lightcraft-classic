@@ -228,9 +228,9 @@ impl NativeMenu {
 
         // the application menu
         let app_menu = Submenu::new(dac_brand::SHORT_NAME, true);
-        let about = MenuItem::with_id("app.about", dac_brand::fill(&dac_ui_egui::i18n::tr("About {app}")), true, None);
+        let about = MenuItem::with_id("app.about", dac_brand::fill(dac_ui_egui::i18n::tr("About {app}")), true, None);
         let settings = MenuItem::with_id(SETTINGS, dac_ui_egui::i18n::tr("Settings…"), true, accelerator(SETTINGS_KEY));
-        let quit = MenuItem::with_id(QUIT, dac_brand::fill(&dac_ui_egui::i18n::tr("Quit {app}")), true, accelerator("Cmd+Q"));
+        let quit = MenuItem::with_id(QUIT, dac_brand::fill(dac_ui_egui::i18n::tr("Quit {app}")), true, accelerator("Cmd+Q"));
         let _ = app_menu.append_items(&[
             &about,
             &PredefinedMenuItem::separator(),
@@ -238,7 +238,7 @@ impl NativeMenu {
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(Some(dac_ui_egui::i18n::tr("Services"))),
             &PredefinedMenuItem::separator(),
-            &PredefinedMenuItem::hide(Some(dac_brand::fill(&dac_ui_egui::i18n::tr("Hide {app}")).as_str())),
+            &PredefinedMenuItem::hide(Some(dac_brand::fill(dac_ui_egui::i18n::tr("Hide {app}")).as_str())),
             &PredefinedMenuItem::hide_others(Some(dac_ui_egui::i18n::tr("Hide Others"))),
             &PredefinedMenuItem::show_all(Some(dac_ui_egui::i18n::tr("Show All"))),
             &PredefinedMenuItem::separator(),

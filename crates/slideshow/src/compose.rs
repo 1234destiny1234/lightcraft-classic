@@ -226,12 +226,14 @@ pub fn text_in(img: &mut Rgba8, area: Rect, text: &str, anchor: Anchor, size: f3
     let (w, h) = (x1 - x0, y1 - y0);
     let mut sub = img.crop(x0, y0, w, h);
     let sub_short = w.min(h) as f32;
+    let inset = (0.02 * short / sub_short).clamp(0.0, 0.5);
     let wm = Watermark {
         text: text.to_string(),
         size: (size * short / sub_short).clamp(0.001, 1.0),
         opacity: opacity.clamp(0.0, 1.0),
         anchor,
-        inset: (0.02 * short / sub_short).clamp(0.0, 0.5),
+        inset_x: inset,
+        inset_y: inset,
         color,
         shadow,
         ..Default::default()

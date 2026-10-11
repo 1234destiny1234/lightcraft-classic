@@ -148,35 +148,96 @@ pub fn backend_options() -> wgpu::BackendOptions {
     o
 }
 
+/// wgpu's instance flags for every instance the app creates, from `flags` (wgpu's defaults with its
+/// environment variables applied) without `VALIDATION_INDIRECT_CALL`, unless
+/// `WGPU_VALIDATION_INDIRECT_CALL` asks for it (any value but `0`). That validation builds an internal
+/// compute pipeline when each device is created; Intel Macs' Metal compiler fails on it ("Compiler
+/// encountered an internal error"), the device is lost and the window never opens (#250). It only
+/// guards indirect draws and dispatches, which neither the app nor egui issue.
+pub fn instance_flags(flags: wgpu::InstanceFlags, env: Option<&str>) -> wgpu::InstanceFlags {
+    if env.is_some_and(|v| v != "0") {
+        flags | wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL
+    } else {
+        flags - wgpu::InstanceFlags::VALIDATION_INDIRECT_CALL
+    }
+}
+
+/// [`instance_flags`] with `WGPU_VALIDATION_INDIRECT_CALL` read from the environment.
+pub fn instance_flags_from_env(flags: wgpu::InstanceFlags) -> wgpu::InstanceFlags {
+    instance_flags(flags, std::env::var("WGPU_VALIDATION_INDIRECT_CALL").ok().as_deref())
+}
+
 /// `{ENV_PREFIX}_GPU_BACKEND=off`.
 pub(crate) fn env_off() -> bool {
     env_choice() == BackendChoice::Off
 }
 
 static MARKER: Mutex<Option<PathBuf>> = Mutex::new(None);
+/// Scopes of driver work (device creation, shader and pipeline compilation) running now, so
+/// that overlapping ones (the window-side warm-up and a first denoise) share one marker file.
+static ACTIVE: Mutex<u32> = Mutex::new(0);
 
-/// Write this file before the compute device is created and remove it once creation returned
-/// (successfully or not). A file still there at the next launch means the process died inside
-/// the driver: see [`take_init_marker`]. `None` (the default) writes nothing.
+/// Write this file before the compute device is created or any shader / pipeline is compiled
+/// (the kernels, the denoise network's), and remove it once that returned (successfully or not).
+/// A file still there at the next launch means the process died inside the driver — e.g. Apple's
+/// Metal compiler (`MTLCompilerService`) aborting on a kernel, issue #250: see
+/// [`take_init_marker`]. `None` (the default) writes nothing.
 pub fn set_init_marker(path: Option<PathBuf>) {
     *MARKER.lock().unwrap_or_else(|e| e.into_inner()) = path;
 }
 
-/// Run device creation `f` between writing and removing the init marker (if one is set).
-pub(crate) fn with_init_marker<T>(backends: Backends, f: impl FnOnce() -> T) -> T {
-    let marker = MARKER.lock().unwrap_or_else(|e| e.into_inner()).clone();
-    if let Some(m) = &marker {
-        if let Some(d) = m.parent() {
+/// The marker's text: what started, and when.
+fn marker_text(what: &str, secs: u64) -> String {
+    format!("GPU {what} started (unix time {secs})\n")
+}
+
+/// Enter a driver-work scope on `marker`: the first one writes the file.
+fn arm(marker: &std::path::Path, active: &Mutex<u32>, what: &str) {
+    let mut n = active.lock().unwrap_or_else(|e| e.into_inner());
+    if *n == 0 {
+        if let Some(d) = marker.parent() {
             let _ = std::fs::create_dir_all(d);
         }
         let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
-        let _ = std::fs::write(m, format!("GPU device creation started (backends {backends:?}, unix time {secs})\n"));
+        let _ = std::fs::write(marker, marker_text(what, secs));
     }
-    let r = f();
+    *n += 1;
+}
+
+/// Leave a scope: the last one removes the file.
+fn disarm(marker: &std::path::Path, active: &Mutex<u32>) {
+    let mut n = active.lock().unwrap_or_else(|e| e.into_inner());
+    *n = n.saturating_sub(1);
+    if *n == 0 {
+        let _ = std::fs::remove_file(marker);
+    }
+}
+
+/// Removes the marker on the way out, a panic included (the process survived).
+struct Armed(Option<PathBuf>);
+
+impl Drop for Armed {
+    fn drop(&mut self) {
+        if let Some(m) = &self.0 {
+            disarm(m, &ACTIVE);
+        }
+    }
+}
+
+/// Run driver work `f` (`what`: "device creation", "kernel compilation"…) between writing and
+/// removing the init marker (if one is set).
+pub(crate) fn with_marker<T>(what: &str, f: impl FnOnce() -> T) -> T {
+    let marker = MARKER.lock().unwrap_or_else(|e| e.into_inner()).clone();
     if let Some(m) = &marker {
-        let _ = std::fs::remove_file(m);
+        arm(m, &ACTIVE, what);
     }
-    r
+    let _armed = Armed(marker);
+    f()
+}
+
+/// Run device creation (and the kernel build that follows it) `f` under the init marker.
+pub(crate) fn with_init_marker<T>(backends: Backends, f: impl FnOnce() -> T) -> T {
+    with_marker(&format!("device and kernel creation (backends {backends:?})"), f)
 }
 
 /// If the init marker `path` is present — the last process died while creating the GPU device —
@@ -279,7 +340,21 @@ pub fn window_renderer_order(
 #[cfg(test)]
 #[allow(clippy::unwrap_used)]
 mod tests {
+
+    /// #250: the indirect-call validation pipeline is off unless asked for; other flags are kept.
+    #[test]
+    fn indirect_call_validation_is_off_unless_asked_for() {
+        use wgpu::InstanceFlags as F;
+        let base = F::VALIDATION_INDIRECT_CALL | F::DEBUG;
+        assert_eq!(instance_flags(base, None), F::DEBUG);
+        assert_eq!(instance_flags(base, Some("0")), F::DEBUG);
+        assert_eq!(instance_flags(F::empty(), Some("1")), F::VALIDATION_INDIRECT_CALL);
+        assert_eq!(instance_flags(F::empty(), None), F::empty());
+    }
     use super::*;
+
+    /// The tests that set the process-wide marker take turns.
+    static GLOBAL: Mutex<()> = Mutex::new(());
 
     #[test]
     fn parses_backend_names() {
@@ -347,6 +422,7 @@ mod tests {
 
     #[test]
     fn init_marker_is_written_during_creation_and_removed_after() {
+        let _turn = GLOBAL.lock().unwrap_or_else(|e| e.into_inner());
         let dir = std::env::temp_dir().join(format!("lc-gpu-marker-{}", std::process::id()));
         let m = dir.join("gpu-init.marker");
         let _ = std::fs::remove_dir_all(&dir);
@@ -356,7 +432,7 @@ mod tests {
         assert!(seen, "the marker exists while the device is created");
         assert!(!m.exists(), "and is removed afterwards");
         // a marker left behind by a crashed process is reported once; reading it leaves it in place
-        std::fs::write(&m, "GPU device creation started (backends DX12)").unwrap();
+        std::fs::write(&m, "GPU device and kernel creation started (backends DX12)").unwrap();
         assert!(read_init_marker(&m).unwrap().contains("DX12"));
         assert!(m.exists(), "read_init_marker leaves the marker for the next launch");
         assert!(take_init_marker(&m).unwrap().contains("DX12"));
@@ -403,5 +479,42 @@ mod tests {
         assert_eq!(forced_window_renderer(None, None), None);
         // `glow` only concerns the window: compute keeps its default, without a warning
         assert_eq!(parse_backends("glow"), Some(BackendChoice::Auto));
+    }
+
+    #[test]
+    fn overlapping_scopes_share_one_marker_until_the_last_ends() {
+        let dir = std::env::temp_dir().join(format!("lc-gpu-scopes-{}", std::process::id()));
+        let m = dir.join("gpu-init.marker");
+        let _ = std::fs::remove_dir_all(&dir);
+        let active = Mutex::new(0);
+        arm(&m, &active, "device creation");
+        assert!(read_init_marker(&m).unwrap().contains("device creation"));
+        // a second scope (a denoise network's kernels) keeps the first's text and the file
+        arm(&m, &active, "denoise kernel compilation");
+        assert!(read_init_marker(&m).unwrap().contains("device creation"));
+        disarm(&m, &active);
+        assert!(m.exists(), "the first scope is still running");
+        disarm(&m, &active);
+        assert!(!m.exists(), "the last scope removes it");
+        // a stray extra disarm does not underflow or break the next scope
+        disarm(&m, &active);
+        arm(&m, &active, "kernel compilation");
+        assert!(m.exists());
+        disarm(&m, &active);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_panic_inside_the_scope_still_removes_the_marker() {
+        let _turn = GLOBAL.lock().unwrap_or_else(|e| e.into_inner());
+        let dir = std::env::temp_dir().join(format!("lc-gpu-panic-{}", std::process::id()));
+        let m = dir.join("gpu-init.marker");
+        let _ = std::fs::remove_dir_all(&dir);
+        set_init_marker(Some(m.clone()));
+        let r = std::panic::catch_unwind(|| with_marker("kernel compilation", || panic!("compile")));
+        set_init_marker(None);
+        assert!(r.is_err());
+        assert!(!m.exists(), "the process survived, so nothing is left to report");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

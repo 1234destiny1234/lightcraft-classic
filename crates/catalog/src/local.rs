@@ -288,7 +288,8 @@ impl Op {
             | Op::SetKind { id, .. }
             | Op::SetXmpStamp { id, .. }
             | Op::SetPreview { id, .. }
-            | Op::SetEmbeddedLens { id, .. } => out(*id),
+            | Op::SetEmbeddedLens { id, .. }
+            | Op::SetAsShotWb { id, .. } => out(*id),
             Op::SetRemote { photo, .. } => out(*photo),
             Op::AddAlbum { album } => {
                 album.photos.iter().for_each(|p| out(*p));

@@ -73,6 +73,30 @@ pub fn swap(app: &mut DacApp) -> Result<Value, String> {
     Ok(Value::Null)
 }
 
+/// Show photo `id` on one side of the pair: `side` "select" or "candidate", else the side that is
+/// active (the one the Edit panel and the rating keys act on). A photo already on the other side
+/// swaps the two. The photo becomes the active one, so what is edited is always on screen.
+pub fn set_photo(app: &mut DacApp, id: PhotoId, side: Option<&str>) -> Result<Value, String> {
+    if app.session.catalog.photo(id).is_none_or(|p| p.deleted) {
+        return Err(format!("no photo {}", id.0));
+    }
+    let (sel, cand) = compare_pair(app).ok_or("nothing to compare")?;
+    let to_select = match side {
+        Some("select") => true,
+        Some("candidate") => false,
+        Some(other) => return Err(format!("unknown side `{other}` (select or candidate)")),
+        None => app.session.active() == Some(sel),
+    };
+    let (a, b) = match (to_select, id == sel, id == cand) {
+        (true, _, true) | (false, true, _) => (cand, sel),
+        (_, true, _) | (_, _, true) => (sel, cand),
+        (true, false, false) => (id, cand),
+        (false, false, false) => (sel, id),
+    };
+    select_pair(app, a, b, id);
+    Ok(json!({"select": a.0, "candidate": b.0}))
+}
+
 /// The candidate becomes the select; the next photo becomes the candidate.
 pub fn make_select(app: &mut DacApp) -> Result<Value, String> {
     let (_, b) = compare_pair(app).ok_or("nothing to compare")?;
@@ -250,6 +274,13 @@ fn slot_index(s: Slot) -> u8 {
         Slot::Compare(i) => i,
         _ => 255,
     }
+}
+
+/// Per frame, before the central view is shown: Compare and Reference keep two photos' originals
+/// decoded (their tiles are cut from both); other views keep one.
+pub fn prepare(app: &mut DacApp) {
+    let n = if matches!(app.ui.view, ViewMode::Compare | ViewMode::Reference) { 2 } else { 1 };
+    app.session.media.set_full_capacity(n);
 }
 
 pub fn show_compare(app: &mut DacApp, ui: &mut egui::Ui) {

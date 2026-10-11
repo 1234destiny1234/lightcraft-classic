@@ -199,7 +199,7 @@ The milestone estimates in the table above were made before work started and are
 Sony ILCE-7M4 downsized lossless ARW (subsampled YCbCr 4:2:0 / 4:2:2 tiles) now decodes to linear RGB;
 private 3:2 & 4:3 examples verified through native rendering & full-resolution 16-bit export.
 
-CR3 lossless Bayer and version 0x100/0x200 C-RAW sensor decoding is verified pixel-exactly on Canon M50, R100 and R8; any other CR3, or one that fails to decode, opens from its embedded JPEG as before. See [`docs/cr3.md`](docs/cr3.md) for coding limits, reference provenance and colour limitations.
+CR3 lossless Bayer and version 0x100/0x200 C-RAW sensor decoding is verified pixel-exactly on Canon M50, R100 and R8, and EOS R5 Mark II C-RAW decodes from sensor data (four CC0 files pinned); any other CR3, or one that fails to decode, opens from its embedded JPEG as before. See [`docs/cr3.md`](docs/cr3.md) for coding limits, reference provenance and colour limitations.
 
 Decoded (CC0 corpus from raw.pixls.us, `cargo xtask corpus --download`, `crates/raw/tests/corpus.rs`): DNG (uncompressed,
 LJ92, lossy JPEG / Smart Previews, Deflate, float, linear, DNG 1.7 JPEG XL tiles: lossless ones bit-exact on synthetic files,
@@ -247,6 +247,7 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 - 2026-10-09: Sony ILCE-7CR camera colour: bundled profile from 125 photos. On 26 withheld photos mean ΔE vs the camera JPEG 4.07 → 3.29; all 131 photos accepted, where 8 fell back to the neutral matrix without it. Measured calibration remains open.
 - 2026-10-10: 0.6.0: content-aware Remove (PatchMatch), soft proofing against printer profiles, plug-in SDK examples, golden PDF tests, Immich publish and version matrix, Linux riscv64 builds.
 - 2026-10-11: 0.6.1 (draft; macOS build pending): Print via IPP / CUPS with copies, margins, job state and print sharpening; Immich album sync rule; Windows renderer fallback; screen-fitting dialogs; first-start welcome dialog.
+- 2026-10-11 (upstream): Canon EOS R5 Mark II C-RAW decodes from sensor data (CRX QP map first-symbol literal and limited-length escape; four CC0 files pinned, docs/cr3.md); CR3 on four verified bodies.
 - 2026-10-12: roadmap refreshed for the fork at 0.6.1: 87.3% of 570 rows, Classic modules ~30% → ~65%, Classic power user ~45% → ~60%, Classic completion and platform CI added to the priorities.
 
 ## Chinese and Japanese interfaces, and text watermarks
