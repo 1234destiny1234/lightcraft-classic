@@ -8,9 +8,10 @@
 //! poll of the files it handed over ([`Watched`]).
 //!
 //! - **Capabilities** ([`capabilities`]): a preset whose arguments already hold `--wait` waits; a
-//!   PhotoCraft binary is asked once (`--help`, 5 s at most, cached) whether it takes `--wait` and
-//!   `--single-instance`. Other applications are never probed (starting an unknown GUI program
-//!   with `--help` could open a window).
+//!   PhotoCraft binary is asked once (`--version --json`, 5 s at most, cached) whether it takes
+//!   `--wait` and `--single-instance` (`features`: `wait`, `singleInstance`). Builds without it
+//!   stop at `--version` and print a plain line, so the probe never opens a window; that answer
+//!   means neither. Other applications are never probed (an unknown GUI program might open one).
 //! - **Events** ([`subscribe`]): one JSON-lines connection, `auth`, then `events.subscribe`; each
 //!   pushed line `{"event": "document.saved"|"document.closed", "params": {path, format, docId}}`
 //!   is handed to the caller. A channel without the method answers with an error: the caller
@@ -55,16 +56,21 @@ pub fn capabilities(app: &str, args: &[String]) -> Caps {
     Caps { wait: given.wait || probed.wait, single_instance: given.single_instance || probed.single_instance }
 }
 
-/// Parse an editor's `--help` text.
-pub fn caps_from_help(help: &str) -> Caps {
-    Caps { wait: help.contains("--wait"), single_instance: help.contains("--single-instance") }
+/// Parse PhotoCraft's `--version --json` answer (`app.capabilities`); anything else supports
+/// neither.
+pub fn caps_from_version(text: &str) -> Caps {
+    let Ok(v) = serde_json::from_str::<Value>(text.trim()) else {
+        return Caps::default();
+    };
+    let has = |f: &str| v.get("features").and_then(Value::as_array).is_some_and(|a| a.iter().any(|x| x.as_str() == Some(f)));
+    Caps { wait: has("wait"), single_instance: has("singleInstance") }
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 fn probe(app: &str) -> Caps {
     use std::io::Read;
     let Ok(mut child) = std::process::Command::new(app)
-        .arg("--help")
+        .args(["--version", "--json"])
         .stdin(std::process::Stdio::null())
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
@@ -88,10 +94,7 @@ fn probe(app: &str) -> Caps {
     if let Some(o) = child.stdout.as_mut() {
         let _ = o.take(1 << 20).read_to_string(&mut text);
     }
-    if let Some(e) = child.stderr.as_mut() {
-        let _ = e.take(1 << 20).read_to_string(&mut text);
-    }
-    caps_from_help(&text)
+    caps_from_version(&text)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -312,10 +315,13 @@ mod tests {
     use crate::cmd::edit_in::Control;
 
     #[test]
-    fn help_text_and_wait_line() {
-        let c = caps_from_help("Usage: photocraft [--wait] [--single-instance|--new-instance] FILES");
+    fn version_probe_and_wait_line() {
+        let c = caps_from_version(r#"{"app":"photocraft","features":["saveInPlace","events","wait","singleInstance"],"protocol":1}"#);
         assert_eq!(c, Caps { wait: true, single_instance: true });
-        assert_eq!(caps_from_help("Usage: x FILES"), Caps::default());
+        // a release without `--version --json` prints its plain version line
+        assert_eq!(caps_from_version("photocraft 0.7.0 (abc123 2026-10-01)"), Caps::default());
+        assert_eq!(caps_from_version(r#"{"features":"wait"}"#), Caps::default());
+        assert_eq!(caps_from_version(r#"{"features":["wait"]}"#), Caps { wait: true, single_instance: false });
         let l = wait_command_line("/opt/photocraft", &[], Path::new("/a/b.psd"), c);
         if !cfg!(target_os = "macos") {
             assert_eq!(l, vec!["/opt/photocraft", "--wait", "--single-instance", "/a/b.psd"]);
