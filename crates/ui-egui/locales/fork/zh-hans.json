@@ -1072,5 +1072,8 @@
   "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "其中的照片和编辑未受影响。你可以重试（例如关闭打开它的其他程序或重新连接其驱动器后），打开其他图库或新建一个，或在没有图库的情况下继续——此时所做的一切都不会保存。",
   "Pair Kerning": "字偶间距",
   "Place the text cursor between two characters to kern them.": "将文本光标放在两个字符之间以调整字偶间距。",
-  "Clear Pair Kerning": "清除字偶间距"
+  "Clear Pair Kerning": "清除字偶间距",
+  "New Photos to Publish": "要发布的新照片",
+  "Modified Photos to Re-Publish": "要重新发布的已修改照片",
+  "Published Photos": "已发布的照片"
 }

@@ -814,6 +814,13 @@ impl Session {
             if self.source != LibrarySource::RecentlyDeleted {
                 visible = self.catalog.arrange_stacks(&visible);
             }
+            if let LibrarySource::Album(a) = self.source
+                && let Some(sections) = cmd::publish::sections(self, a)
+            {
+                // a published collection: new, then modified, then published photos (stable,
+                // so each section keeps the sort); the grid shows each under a header
+                visible.sort_by_key(|id| sections.get(id).copied().unwrap_or(u8::MAX));
+            }
             self.visible = visible.into();
             self.visible_gen = VISIBLE_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
             self.visible_key = Some(key);

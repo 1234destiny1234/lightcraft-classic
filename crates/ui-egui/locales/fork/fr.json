@@ -1068,5 +1068,8 @@
   "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Vos photos et retouches qu’elle contient sont intactes. Vous pouvez réessayer (par ex. après avoir fermé un autre programme qui l’a ouverte ou reconnecté son disque), ouvrir une autre bibliothèque ou en créer une, ou continuer sans bibliothèque — rien de ce que vous faites ne sera alors enregistré.",
   "Pair Kerning": "Crénage de paire",
   "Place the text cursor between two characters to kern them.": "Placez le curseur de texte entre deux caractères pour les créner.",
-  "Clear Pair Kerning": "Effacer le crénage de paire"
+  "Clear Pair Kerning": "Effacer le crénage de paire",
+  "New Photos to Publish": "Nouvelles photos à publier",
+  "Modified Photos to Re-Publish": "Photos modifiées à republier",
+  "Published Photos": "Photos publiées"
 }

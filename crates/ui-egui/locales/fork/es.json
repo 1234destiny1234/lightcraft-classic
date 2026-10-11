@@ -1077,5 +1077,8 @@
   "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Tus fotos y ediciones en ella no se han tocado. Puedes volver a intentarlo (p. ej., tras cerrar otro programa que la tenga abierta o volver a conectar su unidad), abrir otra biblioteca o crear una nueva, o continuar sin biblioteca; entonces no se guardará nada de lo que hagas.",
   "Pair Kerning": "Kerning de pares",
   "Place the text cursor between two characters to kern them.": "Coloque el cursor de texto entre dos caracteres para ajustar su espaciado.",
-  "Clear Pair Kerning": "Borrar kerning de pares"
+  "Clear Pair Kerning": "Borrar kerning de pares",
+  "New Photos to Publish": "Fotos nuevas para publicar",
+  "Modified Photos to Re-Publish": "Fotos modificadas para volver a publicar",
+  "Published Photos": "Fotos publicadas"
 }

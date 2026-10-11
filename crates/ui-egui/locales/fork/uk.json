@@ -890,5 +890,8 @@
   "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваші фото й зміни в ній не зачеплено. Можна спробувати ще раз (наприклад, закривши іншу програму, у якій її відкрито, або знову підключивши її диск), відкрити іншу бібліотеку чи створити нову або продовжити без бібліотеки — тоді нічого зробленого не буде збережено.",
   "Pair Kerning": "Кернінг пари",
   "Place the text cursor between two characters to kern them.": "Поставте текстовий курсор між двома символами, щоб налаштувати кернінг.",
-  "Clear Pair Kerning": "Скинути кернінг пар"
+  "Clear Pair Kerning": "Скинути кернінг пар",
+  "New Photos to Publish": "Нові фото для публікації",
+  "Modified Photos to Re-Publish": "Змінені фото для повторної публікації",
+  "Published Photos": "Опубліковані фото"
 }

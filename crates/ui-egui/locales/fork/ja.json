@@ -1073,5 +1073,8 @@
   "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "中の写真と編集内容は変更されていません。もう一度試す(ライブラリを開いている別のプログラムを閉じたり、ドライブを接続し直した後など)、別のライブラリを開くか新しく作成する、またはライブラリなしで続行することができます。その場合、操作は何も保存されません。",
   "Pair Kerning": "ペアカーニング",
   "Place the text cursor between two characters to kern them.": "カーニングするには、2 つの文字の間にテキストカーソルを置きます。",
-  "Clear Pair Kerning": "ペアカーニングを消去"
+  "Clear Pair Kerning": "ペアカーニングを消去",
+  "New Photos to Publish": "公開する新しい写真",
+  "Modified Photos to Re-Publish": "再公開する変更された写真",
+  "Published Photos": "公開済みの写真"
 }

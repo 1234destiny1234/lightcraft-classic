@@ -272,6 +272,21 @@ fn delete_collection(s: &mut Session, p: &Value) -> Result<Value> {
     services(s)
 }
 
+/// A published collection's photos by section, for the grid (LRC-LIB-PUBLISH: New Photos to
+/// Publish, Modified Photos to Re-Publish, Published Photos): the section of each photo (0, 1, 2),
+/// or `None` when `album` isn't a published collection (or the library isn't on disk).
+pub fn sections(s: &Session, album: AlbumId) -> Option<std::collections::HashMap<PhotoId, u8>> {
+    let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone())?;
+    let cfg = PublishConfig::load(&dir).ok()?;
+    let svc = cfg.service_of(album)?;
+    let st = dac_publish::status(&s.catalog, &svc.id, album);
+    let mut m = std::collections::HashMap::new();
+    for (rank, list) in [(0u8, &st.new), (1, &st.modified), (2, &st.published)] {
+        m.extend(list.iter().map(|id| (*id, rank)));
+    }
+    Some(m)
+}
+
 fn status_json(s: &Session, cfg: &PublishConfig, album: AlbumId) -> Result<Value> {
     let svc = cfg.service_of(album).ok_or_else(|| bad("publish.status", "not a published collection"))?;
     let st = dac_publish::status(&s.catalog, &svc.id, album);
