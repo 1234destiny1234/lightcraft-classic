@@ -38,7 +38,7 @@ correctness is proven on Apple GPUs; other vendors rely on user reports.
 | OS monitor profile, follow window across displays | 5–10 | multi-monitor setup |
 | Pen pressure for brush masks (winit tablet events or a pure-Rust tablet layer) | 6–12 | a tablet |
 | Remaining stages on GPU (defringe, spot removal, masks) | 10–20 | |
-| Tethered capture (PTP over USB in pure Rust, Canon / Nikon / Sony first) | 25–45 | cameras (human) |
+| Tethered capture: native PTP exists (pure Rust, USB via nusb, PTP/IP, simulated camera); verify on Canon / Nikon / Sony bodies | 5–15 | cameras (human) |
 | Printing with colour management | 15–25 | printers (human) |
 | Neural-engine / DirectML inference for AI features | 10–20 | depends on the AI model decision |
 | **Total** | **80–150 h** (the core set for beta, HDR display + monitor profile + pen pressure: 20–40 h) | |
