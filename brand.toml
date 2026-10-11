@@ -37,3 +37,9 @@ env_prefixes  = ["NONAMEYET", "LIGHTCRAFT"]
 preset_exts   = ["nnypreset", "lcpreset"]
 catalog_exts  = ["nnycat"]
 app_ids       = ["org.example.NoNameYet"]
+
+# The project this one is forked from, for docs that compare the two ({{upstream_name}}, … in `*.md.in`).
+[upstream]
+name       = "LightCraft"
+repository = "https://github.com/storytold/lightcraft"
+slug       = "storytold/lightcraft"

@@ -11,6 +11,7 @@
 
 [owned]
 # the fork's identity
+README.md.in
 docs/images/classic/
 brand.toml
 crates/brand/
@@ -158,6 +159,7 @@ Cargo.lock
 docs/parity-checklist.md
 # rendered from *.md.in by `cargo xtask docs` (list each rendered file here)
 packaging/web/HOSTING.md
+README.md
 
 [exempt]
 **/locales/

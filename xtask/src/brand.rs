@@ -138,8 +138,15 @@ impl Brand {
     pub fn vars(&self) -> BTreeMap<String, String> {
         let mut vars = BTreeMap::new();
         for ((section, key), value) in &self.entries {
-            if let ("product" | "identity" | "stable", Value::Str(v)) = (section.as_str(), value) {
-                vars.insert(key.clone(), v.clone());
+            match (section.as_str(), value) {
+                ("product" | "identity" | "stable", Value::Str(v)) => {
+                    vars.insert(key.clone(), v.clone());
+                }
+                // `{{upstream_name}}`, `{{upstream_repository}}`, … for docs that compare with upstream
+                ("upstream", Value::Str(v)) => {
+                    vars.insert(format!("upstream_{key}"), v.clone());
+                }
+                _ => {}
             }
         }
         if let Some(name) = self.get("display_name") {
@@ -222,6 +229,12 @@ fn allowed_by(pat: &str, path: &str) -> bool {
     }
     let name = path.rsplit('/').next().unwrap_or(path);
     crate::assets::glob(pat, name)
+}
+
+/// A `.md` rendered from a `.md.in` template by `cargo xtask docs`: the template is scanned instead (it names the
+/// product only through `{{…}}` placeholders), and `cargo xtask docs --check` keeps the two in step.
+fn is_rendered_doc(root: &Path, path: &str) -> bool {
+    path.ends_with(".md") && root.join(format!("{path}.in")).is_file()
 }
 
 pub fn is_allowed(path: &str) -> bool {
@@ -329,7 +342,7 @@ pub fn check(root: &Path) -> Result<(), String> {
     let mut problems = Vec::new();
     let mut scanned = 0usize;
     for path in source_files(root)? {
-        if is_allowed(&path) {
+        if is_allowed(&path) || is_rendered_doc(root, &path) {
             continue;
         }
         // deleted-but-tracked files and binaries are skipped

@@ -2,11 +2,13 @@
   <img alt="" src="brand/logo.svg" width="120">
 </p>
 
-<h1 align="center">Your photos. Your pixels. Your machine.</h1>
+<h1 align="center">LightCraft Classic</h1>
+
+<h3 align="center">Your photos. Your pixels. Your machine.</h3>
 
 <p align="center">
-  <b>Photo library and raw development; an open-source, clean-room reimplementation of Adobe Lightroom, rebuilt in pure Rust.</b><br>
-  Native on macOS, Windows and Linux. In the browser via WebAssembly. Drivable end to end by AI agents over MCP.
+  <b>A Lightroom Classic-style photo library and raw developer in pure Rust: one catalog, seven modules, Immich built in.</b><br>
+  A fork of <a href="https://github.com/storytold/lightcraft">LightCraft</a>. Native on macOS, Windows and Linux. In the browser via WebAssembly. Drivable end to end by AI agents over MCP.
 </p>
 
 > [!NOTE]
@@ -32,11 +34,12 @@
 
 > [!NOTE]
 > The product name, binary names, settings folder and environment-variable prefix are set in one place,
-> [`brand.toml`](brand.toml). This README calls the product "the app"; `<app>`, `<binary>`, `<cli>`, `<mcp_server>`
+> [`brand.toml`](brand.toml); this README is rendered from `README.md.in` by `cargo xtask docs`. It calls the product "the app"; `<app>`, `<binary>`, `<cli>`, `<mcp_server>`
 > and `<settings_dir>` stand for `display_name`, `binary`, `cli_binary`, `mcp_server` and `settings_dir`, and
 > `<PREFIX>` for `env_prefix`, from that file.
 
 <p align="center">
+  <a href="#two-apps-one-engine">Fork vs upstream</a> ·
   <a href="#seven-modules-one-catalog">Modules</a> ·
   <a href="#edit-like-you-mean-it">Editing</a> ·
   <a href="#color-grading-the-cinematic-way">Color grading</a> ·
@@ -54,6 +57,42 @@
 
 <br>
 
+## Two apps, one engine
+
+**LightCraft** ([storytold/lightcraft](https://github.com/storytold/lightcraft)) is the upstream project: an open-source,
+clean-room reimplementation of Adobe Lightroom in pure Rust, with its own raw decoders, a scene-referred GPU/CPU
+develop pipeline, a command registry that the UI, CLI, control channel and MCP server all share, and a web build. Its
+interface follows the modern, cloud-era Lightroom: a single window with All Photos, albums nested in folders, Photo
+Grid and Square Grid, a detail view and an Edit panel with a presets column. Its library is a folder holding a JSON
+snapshot plus an append-only log of operations.
+
+**LightCraft Classic** is this fork. It keeps upstream's engine (raw decoding, develop pipeline, masking, export, MCP) and
+reshapes the app around the Lightroom Classic workflow: one catalog shared by seven modules (Library, Develop, Map,
+Book, Slideshow, Print, Web) with the Classic panels (Navigator, Catalog, Folders, Collections, Quick Develop,
+Keywording, Metadata), filmstrip and keyboard map. On top it adds what a Classic user expects and upstream does not
+have: a redb-backed catalog for large libraries with backups and integrity checks, two-way Immich sync, tethered
+capture, publish services, WebAssembly plug-ins, Edit In and Actions. Shared crates track upstream and fixes go
+back to it as pull requests first.
+
+| | LightCraft (upstream) | LightCraft Classic (this fork) |
+|---|---|---|
+| **UI shell** | Single-window layout modelled on the cloud-era Lightroom: grid, detail and edit views, side panels, presets column | Lightroom Classic layout: module picker (top right, `Window → Modules`), Navigator / Catalog / Folders / Collections on the left, Quick Develop / Keywording / Metadata on the right, filmstrip, identity plate, secondary window |
+| **Modules** | Library and editing only | Library, Develop, Map, Book, Slideshow, Print, Web, sharing one catalog |
+| **Map** | No map view | Map module: OpenStreetMap tiles, drag-and-drop geotagging, saved locations, tracklogs, reverse geocoding |
+| **Book / Slideshow / Web** | Not available | Book (auto layout, templates, text cells, cover; PDF export), Slideshow (play, PDF / JPEG export), Web (static HTML galleries, live preview, SFTP upload) |
+| **Print** | Contact-sheet PDF (A4/Letter, rows/columns, captions) and soft proofing | Print module: single image / contact sheet, picture and custom packages, rulers, print to IPP/CUPS printers or save PDF/JPEG |
+| **Catalog format** | Library folder: JSON snapshot + append-only op log, kept in RAM (format v3) | Catalog v4: redb store + op log, several catalogs (New / Open Catalog), scheduled backups, integrity test, optimize; opens and migrates v3 libraries |
+| **Immich** | None | Connect one or more Immich (v3+) servers (API key in the system keychain); link existing photos, import from Immich, two-way metadata and album sync, People and smart search, Immich as a publish service, Edit In versions stacked on the original ([docs/immich.md](docs/immich.md)) |
+| **Tethering** | None | Studio capture (watched folder) and native PTP tethering over USB or Wi-Fi (PTP/IP) |
+| **Plug-ins** | None | WebAssembly plug-ins in a `wasmi` sandbox: menu commands, export post-processing, metadata suggestions, publish services (Lightroom Lua plug-ins do not run) |
+| **Export & output extras** | Export presets, watermarks, HDR export, contact sheets | Everything upstream has, plus publish services (Hard Drive, Immich, plug-ins), Edit In (copy with adjustments, TIFF / layered PSD) and saved Actions |
+| **Lightroom migration** | Reads a Lightroom Classic `.lrcat` | The same importer, landing in a Classic catalog with its collections |
+| **Keyboard map** | Its own shortcuts (the commands' declared keys) | Classic keymap by default (E loupe, D Develop, C Compare, N Survey, R crop, Shift+W masking, Tab panels, ⌘⌥1–7 modules); upstream's set is kept as the *Alternative* keymap |
+| **Licence** | MIT OR Apache-2.0 (`crates/segment`, `crates/fetch`: Apache-2.0) | MIT (`crates/segment`, `crates/fetch`: Apache-2.0); upstream's copyright notices kept in `LICENSE` and `NOTICE` |
+| **Name and identity** | Upstream's own name, icon and app id | Everything from [`brand.toml`](brand.toml): name, binaries, app id, settings folder, env-var prefix, file extensions; reads upstream's settings, env vars and presets on first start |
+| **Release channel** | Upstream's GitHub Releases | This repository's own `release` workflow: signed installers and archives for Windows, macOS, Linux, FreeBSD and the web, created as draft GitHub Releases of this fork and published after review ([docs/releasing.md](docs/releasing.md)) |
+| **Relationship** | The source | Forked at the `fork-base` tag; upstream is merged in regularly with `cargo xtask upstream-merge`; fork-only paths are listed in `upstream-owned.txt`; changes to shared crates go upstream as pull requests first ([docs/upstream-merge.md](docs/upstream-merge.md)) |
+
 ## Seven modules, one catalog
 
 The app is laid out like a classic darkroom: one catalog and seven modules, picked from the top-right of the window
@@ -61,20 +100,20 @@ The app is laid out like a classic darkroom: one catalog and seven modules, pick
 turn the same photos into places, books, shows, prints and websites without leaving the app or exporting first.
 
 <p align="center">
-  <img src="docs/images/classic/library.jpg" alt="Library module: Grid view of the demo library, with Navigator, Catalog, Folders and Collections on the left and Quick Develop and Keywording on the right" width="100%">
+  <img src="docs/images/classic/library.jpg" alt="Library module: Grid view of the 24-photo demo library, with Navigator, Catalog, Folders and Collections on the left and the histogram and Edit panel on the right" width="100%">
 </p>
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/classic/develop.jpg" alt="Develop module: a lake photo in the loupe with the histogram and the Light panel's sliders on the right"><br><sub><b>Develop.</b> Non-destructive raw development, from white balance to masks.</sub></td>
-<td width="50%"><img src="docs/images/classic/map.jpg" alt="Map module: an OpenStreetMap world map with the location filter bar, Saved Locations and Tracklog panels"><br><sub><b>Map.</b> Geotag by drag and drop, saved locations, GPX tracklogs, reverse geocoding.</sub></td>
+<td width="50%"><img src="docs/images/classic/develop.jpg" alt="Develop module: a lake photo in the loupe with Highlights -55 and Shadows +35 in the Light panel, and the filmstrip below"><br><sub><b>Develop.</b> Non-destructive raw development, from white balance to masks.</sub></td>
+<td width="50%"><img src="docs/images/classic/map.jpg" alt="Map module: an OpenStreetMap world map with the location filter bar and Map Style, Saved Locations and Tracklog panels"><br><sub><b>Map.</b> Geotag by drag and drop, saved locations, GPX tracklogs, reverse geocoding.</sub></td>
 </tr>
 <tr>
 <td width="50%"><img src="docs/images/classic/book.jpg" alt="Book module: a multi-page view of a 24-page landscape book laid out automatically, with Book Settings on the right"><br><sub><b>Book.</b> Auto layout, templates, text cells and cover; exports a print-ready PDF.</sub></td>
-<td width="50%"><img src="docs/images/classic/slideshow.jpg" alt="Slideshow module: the first slide framed in the stage, with Export PDF, Export JPEG, Preview and Play buttons"><br><sub><b>Slideshow.</b> Play full screen, or export the show as PDF or JPEGs.</sub></td>
+<td width="50%"><img src="docs/images/classic/slideshow.jpg" alt="Slideshow module: a sunset slide framed in the stage with Options, Layout, Overlays and Backdrop panels, and Export PDF, Export JPEG, Preview and Play buttons"><br><sub><b>Slideshow.</b> Play full screen, or export the show as PDF or JPEGs.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/images/classic/print.jpg" alt="Print module: a US Letter page with rulers, one photo per page, and Layout Style, Image Settings, Layout and Margins panels"><br><sub><b>Print.</b> Single image, contact sheets and picture packages; print or save as PDF/JPEG.</sub></td>
+<td width="50%"><img src="docs/images/classic/print.jpg" alt="Print module: a US Letter contact sheet of four photos with rulers, and Layout Style, Image Settings, Layout and Margins panels"><br><sub><b>Print.</b> Single image, contact sheets and picture packages; print or save as PDF/JPEG.</sub></td>
 <td width="50%"><img src="docs/images/classic/web.jpg" alt="Web module: a grid gallery preview of the demo photos with Layout Style, Site Info, Color Palette and Appearance panels"><br><sub><b>Web.</b> Static HTML galleries, previewed live and uploaded over SFTP.</sub></td>
 </tr>
 </table>
@@ -115,43 +154,18 @@ construction, so you never get an accidental tone inversion.
 </tr>
 </table>
 
-<p align="center">
-  <img src="docs/images/curve-tetons.jpg" alt="The Tone Curve open under the Light panel, with a gentle S-curve on the RGB point curve applied to The Tetons and the Snake River" width="100%">
-  <br>
-  <sub>A gentle S on the RGB point curve, right under the Light sliders. <i>Ansel Adams, 1942 (public domain).</i></sub>
-</p>
-
-<br>
-
 ## Color grading, the cinematic way
 
 Split-tone shadows, midtones and highlights independently with drag-anywhere colour wheels. Below, Dorothea Lange's
 *Migrant Mother* gets a warm, print-like tone (highlights at 42°, shadows at 28°) in two drags.
-
-<p align="center">
-  <img src="docs/images/grading-migrant-mother.jpg" alt="Color Grading wheels for midtones, shadows and highlights next to Dorothea Lange's Migrant Mother, toned warm like a print" width="100%">
-  <br>
-  <sub>Shadows, midtones and highlights wheels in the Color panel. <i>Dorothea Lange, "Migrant Mother" (1936). Public domain, Library of Congress.</i></sub>
-</p>
 
 <br>
 
 ## Before & after
 
 Hold <kbd>\\</kbd> to peek at the original, press <kbd>Y</kbd> for side by side, or <kbd>Shift</kbd>+<kbd>Y</kbd> for a
-split view. Every image below is a real screenshot of the app, captured automatically by an agent through the
-[control channel](#built-for-agents).
-
-<table>
-<tr>
-<td width="50%"><img src="docs/images/ba-tetons.jpg" alt="Side-by-side before and after of The Tetons and the Snake River: the after has deeper clouds and more open shadows along the river"><br><sub><b>The Tetons and the Snake River.</b> Highlights −45, Shadows +38, Clarity +28, Dehaze +18. <i>Ansel Adams, 1942 (public domain).</i></sub></td>
-<td width="50%"><img src="docs/images/ba-migrant-mother.jpg" alt="Side-by-side before and after of Migrant Mother: the after is warmer, with lifted shadows"><br><sub><b>Migrant Mother.</b> Shadows +42, Texture +18, split-toned grade, vignette. <i>Dorothea Lange, 1936 (public domain).</i></sub></td>
-</tr>
-<tr>
-<td width="50%"><img src="docs/images/ba-earthrise.jpg" alt="Side-by-side before and after of Earthrise: the Earth over the lunar horizon, the after slightly warmer and richer"><br><sub><b>Earthrise.</b> Dehaze +22, Highlights −30, warmer white balance, Vibrance +22. <i>NASA / Bill Anders, Apollo 8, 1968 (public domain).</i></sub></td>
-<td width="50%"><img src="docs/images/ba-blue-marble.jpg" alt="Side-by-side before and after of The Blue Marble: the after has deeper blacks and firmer cloud detail"><br><sub><b>The Blue Marble.</b> Highlights −38, Blacks −20, Dehaze +15, Vibrance +30. <i>NASA, Apollo 17, 1972 (public domain).</i></sub></td>
-</tr>
-</table>
+split view. Every screenshot in this README is the real app, rendered headless from the procedural demo library by
+[`docs/showcase/classic.jsonl`](docs/showcase/classic.jsonl) through the [control channel](#built-for-agents).
 
 <br>
 
@@ -164,7 +178,7 @@ Exposure, Contrast, Highlights, Shadows, Whites, Blacks, Texture, Clarity, Dehaz
 plus an overall Amount.
 
 <p align="center">
-  <img src="docs/images/masking.jpg" alt="Masking panel with a linear Sky mask and a radial Sun glow mask; the radial gradient is drawn as a red overlay around the sun on a lake scene" width="100%">
+  <img src="docs/images/classic/masking.jpg" alt="Develop module with the Masking panel: a linear Sky mask and a selected radial Sun glow mask, its ellipse and pins drawn over the sun on a lake scene" width="100%">
   <br>
   <sub>A radial "Sun glow" mask (Temp +40, Exposure +0.50) layered over a linear "Sky" mask. <i>Photo from the app's procedurally generated demo library.</i></sub>
 </p>
@@ -176,12 +190,6 @@ plus an overall Amount.
 Eighteen hand-built presets ship in the box (*Golden Hour, Teal & Orange, Faded Matte, Selenium Tone, Crisp
 Landscape* and more), each with an **Amount** slider from 0 to 200 %. Save your own from any group of settings, mark
 favourites, and copy, paste or sync edits across a whole selection with exactly the groups you choose.
-
-<p align="center">
-  <img src="docs/images/presets-mixer.jpg" alt="Presets column grouped into B&amp;W, Color, Film, Landscape, Portrait and Style, beside the Color panel with the 8-band Color Mixer open on purple" width="100%">
-  <br>
-  <sub>The Presets column next to the 8-band Color Mixer. <i>Photo from the demo library.</i></sub>
-</p>
 
 <table>
 <tr>
@@ -201,10 +209,6 @@ Then tone it with Color Grading for selenium, sepia or split-tone prints.
 
 </td>
 </tr>
-<tr>
-<td width="50%"><img src="docs/images/crop-tetons.jpg" alt="Crop tool on The Tetons and the Snake River: a 16 by 9 crop rotated slightly, with a rule-of-thirds overlay and the Geometry sliders on the right"><br><sub>A 16:9 crop straightened +2.5° with the thirds overlay. <i>Ansel Adams, 1942 (public domain).</i></sub></td>
-<td width="50%"><img src="docs/images/bw-split.jpg" alt="Split before and after view of sand dunes: color on the left, black and white with grain and vignette on the right"><br><sub>Split view: colour original on the left, B&W with Clarity, Vignette and Grain on the right. <i>Demo library.</i></sub></td>
-</tr>
 </table>
 
 <br>
@@ -220,11 +224,8 @@ so they stay smooth whether you have forty photos or forty thousand.
 
 <table>
 <tr>
-<td width="50%"><img src="docs/images/grid-demo.jpg" alt="Justified Photo Grid of 24 demo photos with ratings and flags, and a sidebar of nested albums under a Travel 2026 folder"><br><sub>Photo Grid with albums nested in a folder, ratings and flags. <i>Demo library.</i></sub></td>
-<td width="50%"><img src="docs/images/grid-pd.jpg" alt="Square Grid showing the four public-domain showcase photos with star ratings and pick flags"><br><sub>Square Grid of the four public-domain showcase photos.</sub></td>
-</tr>
-<tr>
-<td colspan="2"><img src="docs/images/info-earthrise.jpg" alt="Info panel for Earthrise showing file name, 2400 by 2400 JPEG dimensions, rating, title field and camera metadata"><br><sub>The Info panel: file, dimensions, rating, title, caption, copyright and camera metadata. <i>NASA / Bill Anders, "Earthrise", Apollo 8, 1968 (public domain).</i></sub></td>
+<td width="50%"><img src="docs/images/classic/survey.jpg" alt="Library module in Survey view: four demo photos side by side with their ratings, Quick Develop and Keywording on the right"><br><sub><b>Survey</b> (<kbd>N</kbd>): narrow a selection down side by side. <i>Demo library.</i></sub></td>
+<td width="50%"><img src="docs/images/classic/compare.jpg" alt="Library module in Compare view: a Select photo of dunes beside a Candidate sunset photo"><br><sub><b>Compare</b> (<kbd>C</kbd>): Select against Candidate, with synced zoom. <i>Demo library.</i></sub></td>
 </tr>
 </table>
 
@@ -321,7 +322,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
   - **camera colour calibration:** Sony, Nikon, Panasonic, Fujifilm and Canon CR3 raws have guarded estimates from their camera JPEGs, with built-in ILCE-7CR, ILCE-7M4, X-H2S and X-T4 profiles; measured calibration is missing, and other raws or rejected fits retain a neutral matrix;
   - **compressed Olympus raws and unsupported CR3 variants:** these use embedded JPEG previews when present. Fujifilm lossless/lossy compressed RAF now decodes sensor data; [verification and existing-library reload instructions](docs/raf-compression.md);
   - **AI masks and denoise:** subject and sky selection are classical heuristics;
-  - **on-screen HDR display, video and the Classic Print / Book / Map modules.**
+  - **on-screen HDR display and video.**
 - **What's next:** see [where we're going](ROADMAP.md#where-were-going).
 
 | Area | Status |
@@ -437,9 +438,10 @@ environment.systemPackages = [ pkgs.<binary> ];           # home-manager: home.p
 `nix build` installs the same desktop file, hicolor icons and AppStream metadata as the .deb/.rpm, and runs
 `cargo test --workspace` as its check phase (skip it with `pkgs.<binary>.overrideAttrs { doCheck = false; }`).
 
-**Keyboard:** <kbd>G</kbd> grid · <kbd>D</kbd> detail · <kbd>E</kbd> edit · <kbd>C</kbd> crop · <kbd>M</kbd> masking ·
-<kbd>Shift</kbd>+<kbd>P</kbd> presets · <kbd>\\</kbd> original · <kbd>Y</kbd> before/after · <kbd>Z</kbd> zoom ·
-<kbd>J</kbd> clipping · <kbd>⌘Z</kbd> undo · <kbd>⌘/</kbd> all shortcuts.
+**Keyboard** (Classic keymap): <kbd>G</kbd> grid · <kbd>E</kbd> loupe · <kbd>D</kbd> Develop · <kbd>C</kbd> compare ·
+<kbd>N</kbd> survey · <kbd>R</kbd> crop · <kbd>Shift</kbd>+<kbd>W</kbd> masking · <kbd>\\</kbd> original ·
+<kbd>Y</kbd> before/after · <kbd>Tab</kbd> side panels · <kbd>L</kbd> lights out · <kbd>⌘⌥1</kbd>–<kbd>7</kbd> modules ·
+<kbd>⌘Z</kbd> undo · <kbd>⌘/</kbd> all shortcuts. Settings → Shortcuts → Keymap switches to the *Alternative* (upstream) set.
 
 ## How it's built
 
@@ -526,9 +528,7 @@ third-party notices are in [LICENSE](LICENSE) and [NOTICE](NOTICE).
 Bundled fonts, icons, images and other assets keep their own open licenses; each one is listed
 with its author, source and license in [assets/ATTRIBUTION.md](assets/ATTRIBUTION.md).
 
-Showcase photographs are public-domain works, used via Wikimedia Commons: Ansel Adams, *The Tetons and the Snake River*
-(1942, U.S. National Archives); Dorothea Lange, *Migrant Mother* (1936, Library of Congress); Bill Anders / NASA,
-*Earthrise* (1968); NASA, *The Blue Marble* (1972). The demo library is procedurally generated by the app. UI font:
+The screenshots show the demo library, which the app generates procedurally. UI font:
 Inter (SIL OFL 1.1). Builds made with [craft-fonts](https://github.com/storytold/craft-fonts) (all official releases)
 also embed its Chinese and Japanese fonts (Noto Sans CJK SC, BIZ UDPGothic, BIZ UDMincho, Shippori Mincho; SIL OFL 1.1), listed in its
 [ATTRIBUTION.md](https://github.com/storytold/craft-fonts/blob/main/ATTRIBUTION.md). All icons are original.

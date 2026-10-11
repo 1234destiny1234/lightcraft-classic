@@ -20,7 +20,6 @@ This product bundles third-party material under its own licenses, listed below. 
 list (author, source, license) is in assets/ATTRIBUTION.md.
 
 Inter (assets/fonts/Inter-*.ttf) — SIL Open Font License 1.1. See assets/fonts/OFL-Inter.txt.
-Showcase photographs by Ansel Adams, Dorothea Lange and NASA (docs/images/) — public domain. See assets/ATTRIBUTION.md.
 
 crates/raw/src/spectral_table.rs (lightcraft-raw) holds camera colour matrices derived from the
 camera spectral sensitivities, training reflectances and model alias list of rawtoaces-data
