@@ -11,26 +11,8 @@
   A fork of <a href="{{upstream_repository}}">{{upstream_name}}</a>. Native on macOS, Windows and Linux. In the browser via WebAssembly. Drivable end to end by AI agents over MCP.
 </p>
 
-> [!NOTE]
-> **Open for contributions** (since 2026-10-11). Phases 0, 1, U, 3, 4 and 6 are done; pull requests and bug reports
-> are welcome. Changes to crates shared with the upstream project go upstream as PRs first (see
-> [`docs/upstream-merge.md`](docs/upstream-merge.md) and `upstream-owned.txt`). Especially wanted: native-speaker review
-> of the translations, tethering tests on real Canon, Nikon and Sony bodies, and printing to real CUPS printers.
->
-> Timeline (clock-hours assume continuous agent-driven development):
->
-> | Phase | Agent-hours<br>estimate | Clock-hours<br>estimate | Status | Clock-hours<br>actual |
-> |---|---:|---:|---|---|
-> | 0 Fork, brand config and foundations | 12–22 | 2 | Done | 1.5 |
-> | 1 Classic shell, catalog, Immich link | 50–85 | 8 | Done | ~9 |
-> | U Upstream tracking | 8–14 | 1 | Done (follow-ups ongoing) | ~2 |
-> | 3 Output modules | 72–124 | 12 | Done (slideshow video export after release) | ~4 (with 4) |
-> | 4 Workflow power features, Immich two-way | 60–105 | 10 | Done (People, .lrcat v2 after release; real-camera checks pending) | ~4 (with 3) |
-> | 6 Hardening (public-release gate) | 30–50 | 5 | Done; post-release gap closing: CI on Linux/macOS/Windows, import 3× faster, NR drag within budget | ~3 |
-> | **Public: open for pull requests and bug reports (reached 2026-10-11).** From here on, every change to a crate shared with upstream goes upstream as a PR. | | | | |
-> | 2 Quality and camera coverage | 110–180 | 18 | In progress: camera database, lens profiles (lensfun format), content-aware Remove, ICC soft proofing; upstream PRs prepared | |
-> | 5 AI, HDR, video | 100–200 | 20 | | |
-> | **Total** | **≈ 442–780** | **78** | | |
+Pull requests and bug reports are welcome; changes to crates shared with upstream go upstream first (see
+[`docs/upstream-merge.md`](docs/upstream-merge.md)).
 
 > [!NOTE]
 > The product name, binary names, settings folder and environment-variable prefix are set in one place,
@@ -71,7 +53,7 @@ reshapes the app around the Lightroom Classic workflow: one catalog shared by se
 Book, Slideshow, Print, Web) with the Classic panels (Navigator, Catalog, Folders, Collections, Quick Develop,
 Keywording, Metadata), filmstrip and keyboard map. On top it adds what a Classic user expects and upstream does not
 have: a redb-backed catalog for large libraries with backups and integrity checks, two-way Immich sync, tethered
-capture, publish services, WebAssembly plug-ins, Edit In and Actions. Shared crates track upstream and fixes go
+capture, publish services, colour-managed printing, WebAssembly plug-ins, Edit In and Actions. Shared crates track upstream and fixes go
 back to it as pull requests first.
 
 | | {{upstream_name}} (upstream) | {{app}} (this fork) |
@@ -79,15 +61,15 @@ back to it as pull requests first.
 | **UI shell** | Single-window layout modelled on the cloud-era Lightroom: grid, detail and edit views, side panels, presets column | Lightroom Classic layout: module picker (top right, `Window → Modules`), Navigator / Catalog / Folders / Collections on the left, Quick Develop / Keywording / Metadata on the right, filmstrip, identity plate, secondary window |
 | **Modules** | Library and editing only | Library, Develop, Map, Book, Slideshow, Print, Web, sharing one catalog |
 | **Map** | No map view | Map module: OpenStreetMap tiles, drag-and-drop geotagging, saved locations, tracklogs, reverse geocoding |
-| **Book / Slideshow / Web** | Not available | Book (auto layout, templates, text cells, cover; PDF export), Slideshow (play, PDF / JPEG export), Web (static HTML galleries, live preview, SFTP upload) |
-| **Print** | Contact-sheet PDF (A4/Letter, rows/columns, captions) and soft proofing | Print module: single image / contact sheet, picture and custom packages, rulers, print to IPP/CUPS printers or save PDF/JPEG |
+| **Book / Slideshow / Web** | Not available | Book (auto layout, templates, text cells with pair kerning and opacity, cover; PDF export), Slideshow (play, PDF / JPEG export; music tracks are attached but not played yet), Web (static HTML galleries, live preview, SFTP upload) |
+| **Print** | Contact-sheet PDF (A4/Letter, rows/columns, captions) and soft proofing | Print module: single image / contact sheet, picture and custom packages, rulers, printer ICC profile with rendering intent and black point compensation, Print Adjustment, 16-bit output; print to IPP/CUPS printers (`ipps://` with certificate trust; paper type, tray, quality and two-sided from the driver) or save PDF/JPEG |
 | **Catalog format** | Library folder: JSON snapshot + append-only op log, kept in RAM (format v3) | Catalog v4: redb store + op log, several catalogs (New / Open Catalog), scheduled backups, integrity test, optimize; opens and migrates v3 libraries |
 | **Immich** | None | Connect one or more Immich (v3+) servers (API key in the system keychain); link existing photos, import from Immich, two-way metadata and album sync, People and smart search, Immich as a publish service, Edit In versions stacked on the original ([docs/immich.md](docs/immich.md)) |
 | **Tethering** | None | Studio capture (watched folder) and native PTP tethering over USB or Wi-Fi (PTP/IP) |
-| **Plug-ins** | None | WebAssembly plug-ins in a `wasmi` sandbox: menu commands, export post-processing, metadata suggestions, publish services (Lightroom Lua plug-ins do not run) |
+| **Plug-ins** | None | WebAssembly plug-ins in a `wasmi` sandbox: menu commands, export post-processing and export destinations, custom metadata fields (edited across the selection, searchable, written to XMP), metadata suggestions, publish services; hooks run off the UI thread (Lightroom Lua plug-ins do not run) |
 | **Export & output extras** | Export presets, watermarks, HDR export, contact sheets | Everything upstream has, plus publish services (Hard Drive, Immich, plug-ins), Edit In (copy with adjustments, TIFF / layered PSD) and saved Actions |
-| **Lightroom migration** | Reads a Lightroom Classic `.lrcat` | The same importer, landing in a Classic catalog with its collections |
-| **Keyboard map** | Its own shortcuts (the commands' declared keys) | Classic keymap by default (E loupe, D Develop, C Compare, N Survey, R crop, Shift+W masking, Tab panels, ⌘⌥1–7 modules); upstream's set is kept as the *Alternative* keymap |
+| **Lightroom migration** | Reads a Lightroom Classic `.lrcat` | The same importer, landing in a Classic catalog: collections become albums, smart collections smart albums, folder stacks stacks |
+| **Keyboard map** | Its own shortcuts (the commands' declared keys) | Classic keymap by default (E loupe, D Develop, C Compare, N Survey, R crop, Shift+W masking, Tab panels, ⌘⌥1–7 modules, ⌘L Enable Filters, F full-screen preview, F11 full screen); upstream's set is kept as the *Alternative* keymap |
 | **Licence** | MIT OR Apache-2.0 (`crates/segment`, `crates/fetch`: Apache-2.0) | MIT (`crates/segment`, `crates/fetch`: Apache-2.0); upstream's copyright notices kept in `LICENSE` and `NOTICE` |
 | **Name and identity** | Upstream's own name, icon and app id | Everything from [`brand.toml`](brand.toml): name, binaries, app id, settings folder, env-var prefix, file extensions; reads upstream's settings, env vars and presets on first start |
 | **Release channel** | Upstream's GitHub Releases | This repository's own `release` workflow: signed installers and archives for Windows, macOS, Linux, FreeBSD and the web, created as draft GitHub Releases of this fork and published after review ([docs/releasing.md](docs/releasing.md)) |
@@ -110,10 +92,10 @@ turn the same photos into places, books, shows, prints and websites without leav
 </tr>
 <tr>
 <td width="50%"><img src="docs/images/classic/book.jpg" alt="Book module: a multi-page view of a 24-page landscape book laid out automatically, with Book Settings on the right"><br><sub><b>Book.</b> Auto layout, templates, text cells and cover; exports a print-ready PDF.</sub></td>
-<td width="50%"><img src="docs/images/classic/slideshow.jpg" alt="Slideshow module: a sunset slide framed in the stage with Options, Layout, Overlays and Backdrop panels, and Export PDF, Export JPEG, Preview and Play buttons"><br><sub><b>Slideshow.</b> Play full screen, or export the show as PDF or JPEGs.</sub></td>
+<td width="50%"><img src="docs/images/classic/slideshow.jpg" alt="Slideshow module: a sunset slide framed in the stage with Options, Layout, Overlays and Backdrop panels, and Export PDF, Export JPEG, Preview and Play buttons"><br><sub><b>Slideshow.</b> Play full screen (silently for now), or export the show as PDF or JPEGs.</sub></td>
 </tr>
 <tr>
-<td width="50%"><img src="docs/images/classic/print.jpg" alt="Print module: a US Letter contact sheet of four photos with rulers, and Layout Style, Image Settings, Layout and Margins panels"><br><sub><b>Print.</b> Single image, contact sheets and picture packages; print or save as PDF/JPEG.</sub></td>
+<td width="50%"><img src="docs/images/classic/print.jpg" alt="Print module: a US Letter contact sheet of four photos with rulers, and Layout Style, Image Settings, Layout and Margins panels"><br><sub><b>Print.</b> Single image, contact sheets and picture packages; colour-managed with printer profiles; print or save as PDF/JPEG.</sub></td>
 <td width="50%"><img src="docs/images/classic/web.jpg" alt="Web module: a grid gallery preview of the demo photos with Layout Style, Site Info, Color Palette and Appearance panels"><br><sub><b>Web.</b> Static HTML galleries, previewed live and uploaded over SFTP.</sub></td>
 </tr>
 </table>
@@ -276,8 +258,7 @@ through the same entry point. An agent can cull a shoot, develop it, mask a sky 
   `export.contactSheet` also accepts explicit `ids`, `landscape=true`, and `paper=letter`. It replaces an existing
   output only after the entire PDF succeeds. Limits: 1,000 photos, 100 pages, 256 MiB; captions are rasterized
   with the same font coverage as watermarks (CJK requires craft-fonts), with long names shortened in the middle.
-  This is a contact-sheet workflow,
-  not a printer-driver or custom picture-package layout editor.
+  For printer profiles, driver options and picture packages, use the Print module.
 - **Every widget is addressable** (`ui.widgets`) and clickable by name, so agents operate the real UI, not a
   side door.
 - The screenshots in this README were produced end to end by the [`docs/showcase/`](docs/showcase/) scripts.
@@ -314,7 +295,7 @@ through the same entry point. An agent can cull a shoot, develop it, mask a sky 
 
 The app is young and moving fast. **Where we honestly stand** (details in the [roadmap](ROADMAP.md#where-we-stand)):
 
-- **By feature count we're at ~79%** of Lightroom (core features 98%), tracked row by row in
+- **By feature count we're at ~88%** of Lightroom (core features 98%), tracked row by row in
   [docs/parity-checklist.md](docs/parity-checklist.md).
 - **As a day-to-day Lightroom replacement we're nearer 60–70%.** It's great for JPEG/DNG and most Nikon / Sony /
   older-Canon raws on one machine.
@@ -338,14 +319,15 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Native macOS menu bar (generated from the command registry), control channel + every widget addressable, headless UI snapshots | ✅ |
 | RAW: DNG, CR2, CR3 (lossless CRX Bayer and version 0x100/0x200 C-RAW), ARW, NEF (uncompressed + lossless/lossy compressed), Fujifilm RAF (uncompressed + lossless/lossy compressed, Bayer + X-Trans), Panasonic RW2 / Leica RWL / Panasonic RAW (every raw format, DMC-LX1 to DC-S1RM2), Pentax PEF, Olympus ORF (uncompressed), Samsung SRW (uncompressed); embedded previews for every format incl. CR3 | 🟡 · CR3, compressed ORF and compressed SRW decode ⬜ |
 | Detail: sharpening, luminance + colour noise reduction | ✅ · AI Denoise, Super Resolution ⬜ |
-| Remove / Heal / Clone spots (auto source), Visualize Spots, Red Eye and Pet Eye (auto pupil detection, catchlight) | ✅ · content-aware fill, spot pin editing 🚧 |
+| Remove (content-aware fill) / Heal / Clone spots (auto source), Visualize Spots, Red Eye and Pet Eye (auto pupil detection, catchlight) | ✅ · spot pin editing 🚧 |
 | Export: JPEG / PNG / TIFF / WebP / AVIF / DNG / original, sizing, file-size limit, output sharpening, naming templates, batch, metadata policy, text or image watermark | ✅ |
-| HDR: HDR editing with a headroom limit, SDR rendition, Visualize HDR; export as ISO 21496-1 gain map JPEG, PQ AVIF or 32-bit float TIFF | ✅ · HDR display ⬜ |
+| HDR: HDR editing with a headroom limit, SDR rendition, Visualize HDR; export as ISO 21496-1 gain map JPEG, PQ or HLG AVIF, or 32-bit float TIFF | ✅ · HDR display ⬜ |
 | Library persistence (crash-safe op log + snapshots, background compaction, failed saves reported), disk thumbnail cache | ✅ |
 | Import: Add in place / Copy / Move, rename and folder templates, devices, duplicate detection, watched folders; Local folder browsing | ✅ |
+| Output: Print (printer ICC, intent, BPC, Print Adjustment, 16-bit, `ipps://`, driver options), Book (PDF, pair kerning), Slideshow (PDF/JPEG; no sound output yet), Web (HTML galleries, SFTP), publish services with grid sections | ✅ · slideshow sound and video export ⬜ |
 | MCP server (headless or live app, persistent libraries), CLI, control channel | ✅ |
 | XMP sidecars (read/write, auto-write), reading `crs:` develop settings, preset files (`.lcpreset`, XMP presets) | ✅ |
-| Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · camera lens profiles (our own) ⬜ |
+| Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · lensfun-format lens database set up or downloaded from Settings ▸ Lens profiles 🟡 · lens profiles of our own ⬜ |
 | Photo Merge: HDR (auto-align, deghost), Panorama (spherical/cylindrical/perspective, boundary warp, auto crop), HDR Panorama → DNG | ✅ |
 | GPU pipeline (wgpu compute, CPU-exact within 1/255), CPU fallback on device limits / errors | ✅ · WebGPU in the browser 🚧 |
 | AI: segmentation masks, AI denoise, super resolution, faces; video | ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
@@ -441,7 +423,7 @@ environment.systemPackages = [ pkgs.<binary> ];           # home-manager: home.p
 
 **Keyboard** (Classic keymap): <kbd>G</kbd> grid · <kbd>E</kbd> loupe · <kbd>D</kbd> Develop · <kbd>C</kbd> compare ·
 <kbd>N</kbd> survey · <kbd>R</kbd> crop · <kbd>Shift</kbd>+<kbd>W</kbd> masking · <kbd>\\</kbd> original ·
-<kbd>Y</kbd> before/after · <kbd>Tab</kbd> side panels · <kbd>L</kbd> lights out · <kbd>⌘⌥1</kbd>–<kbd>7</kbd> modules ·
+<kbd>Y</kbd> before/after · <kbd>Tab</kbd> side panels · <kbd>L</kbd> lights out · <kbd>F</kbd> full-screen preview · <kbd>F11</kbd> full screen · <kbd>⌘L</kbd> enable filters · <kbd>⌘⌥1</kbd>–<kbd>7</kbd> modules ·
 <kbd>⌘Z</kbd> undo · <kbd>⌘/</kbd> all shortcuts. Settings → Shortcuts → Keymap switches to the *Alternative* (upstream) set.
 
 ## How it's built
