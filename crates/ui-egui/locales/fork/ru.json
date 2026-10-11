@@ -1381,5 +1381,11 @@
   "No lens database — set one up or download it…": "Нет базы объективов — настройте или загрузите её…",
   "Lens profiles apply to raw photos only.": "Профили объективов применяются только к raw-фото.",
   "No lens named in this photo's metadata.": "В метаданных этого фото не указан объектив.",
-  "No profile for {lens} in the lens database.": "В базе объективов нет профиля для {lens}."
+  "No profile for {lens} in the lens database.": "В базе объективов нет профиля для {lens}.",
+  "Color Management": "Управление цветом",
+  "Managed by Printer": "Управляется принтером",
+  "Black Point Compensation": "Компенсация точки чёрного",
+  "Print Adjustment": "Коррекция печати",
+  "Brightness": "Яркость",
+  "16 Bit Output": "16-битный вывод"
 }

@@ -904,5 +904,11 @@
   "No lens database — set one up or download it…": "Немає бази об'єктивів — налаштуйте або завантажте її…",
   "Lens profiles apply to raw photos only.": "Профілі об'єктивів застосовуються лише до raw-фото.",
   "No lens named in this photo's metadata.": "У метаданих цього фото не вказано об'єктив.",
-  "No profile for {lens} in the lens database.": "У базі об'єктивів немає профілю для {lens}."
+  "No profile for {lens} in the lens database.": "У базі об'єктивів немає профілю для {lens}.",
+  "Color Management": "Керування кольором",
+  "Managed by Printer": "Керується принтером",
+  "Black Point Compensation": "Компенсація точки чорного",
+  "Print Adjustment": "Коригування друку",
+  "Brightness": "Яскравість",
+  "16 Bit Output": "16-бітний вивід"
 }

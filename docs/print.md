@@ -36,6 +36,33 @@ them to `dac_print::send::send_to_printer`, which:
 Choosing one of a printer's own paper sizes in Page Setup (`printui.pageSetup {media}`) also widens
 the page margins to at least the unprintable margins the printer reports for that paper.
 
+## Colour management, Print Adjustment and 16-bit output
+
+Print Job ▸ Color Management (`settings.job.color`, `dac_print::color`):
+
+- **Profile**: *Managed by Printer* (the default) sends sRGB and leaves colour to the driver. A
+  printer/paper ICC profile (`printui.profile {path}`; `{path: null}` goes back to Managed by
+  Printer; `{}` opens a file dialog; the panel also offers the profile chosen for soft proofing)
+  converts the photos into the printer's device RGB before they are placed. The PDF then tags the
+  photos with that profile (ICCBased) and carries it as the document's OutputIntent; JPEG pages
+  embed it. Only RGB (and grey) profiles can be printed with; a CMYK profile is refused with an
+  error that says so (it can still be soft-proofed). The conversion is a 33³ table built through
+  moxcms (`dac_codecs::printer`), the same CMS the soft proof uses.
+- **Intent**: Perceptual or Relative (colorimetric). With Relative, **Black Point Compensation**
+  (on by default) scales the photo's blacks onto the printer's darkest black so shadows compress
+  instead of clipping.
+- **Print Adjustment**: Brightness and Contrast (−100–100) change the print only, not the photo's
+  develop settings or exports: a power curve for brightness and a blend towards an S-curve for
+  contrast, both keeping black and white fixed. Applied after print sharpening and before the
+  profile.
+- **16 Bit Output**: photos are rendered at 16 bits per channel and embedded as 16-bit (Flate)
+  images in PDF output and in printer jobs sent as PDF. JPEG holds 8 bits: a 16-bit job to JPEG files
+  or a JPEG-only printer prints 8-bit pages and says so in the warnings.
+
+Windows: the app prints over IPP only. A printer named the Windows way (`\\server\printer`, or a
+plain printer name) is refused with an error that explains this and asks for the printer's `ipp://`
+address, because the Windows print spooler can only be reached through the native print API.
+
 ## Virtual IPP printer (every CI run)
 
 `dac_print::testprinter::TestPrinter` is an IPP Everywhere-style printer on `127.0.0.1` (Get-Printer-

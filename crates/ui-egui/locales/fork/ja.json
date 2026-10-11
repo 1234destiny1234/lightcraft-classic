@@ -1087,5 +1087,11 @@
   "No lens database — set one up or download it…": "レンズデータベースがありません — 設定またはダウンロード…",
   "Lens profiles apply to raw photos only.": "レンズプロファイルは RAW 写真にのみ適用されます。",
   "No lens named in this photo's metadata.": "この写真のメタデータにはレンズ名がありません。",
-  "No profile for {lens} in the lens database.": "レンズデータベースに {lens} のプロファイルがありません。"
+  "No profile for {lens} in the lens database.": "レンズデータベースに {lens} のプロファイルがありません。",
+  "Color Management": "カラーマネジメント",
+  "Managed by Printer": "プリンターによる管理",
+  "Black Point Compensation": "黒点の補正",
+  "Print Adjustment": "プリント調整",
+  "Brightness": "明るさ",
+  "16 Bit Output": "16 bit 出力"
 }

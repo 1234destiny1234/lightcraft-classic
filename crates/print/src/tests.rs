@@ -212,3 +212,92 @@ fn virtual_printer_survives_garbage_and_copies_are_checked() {
     s.job.copies = 0;
     assert!(s.validate().is_err());
 }
+
+struct Deep;
+impl PhotoSource for Deep {
+    fn image(&self, photo: &str, long: usize) -> Result<Rgba8, String> {
+        Gradient.image(photo, long)
+    }
+    fn image16(&self, _photo: &str) -> Option<dac_layout::render::Rgb16> {
+        Some(dac_layout::render::Rgb16 { width: 6, height: 4, data: (0..72).map(|i| i * 900).collect() })
+    }
+}
+
+fn image_streams(pdf: &lopdf::Document) -> Vec<lopdf::Dictionary> {
+    pdf.objects
+        .values()
+        .filter_map(|o| o.as_stream().ok())
+        .filter(|s| s.dict.get(b"Subtype").is_ok_and(|v| v.as_name().is_ok_and(|n| n == b"Image")))
+        .map(|s| s.dict.clone())
+        .collect()
+}
+
+#[test]
+fn sixteen_bit_output_embeds_16_bit_photos_tagged_with_the_printer_profile() {
+    let mut s = template("2×2 Cells");
+    s.job.color.bit16 = true;
+    let doc = s.build(&ids(1)).unwrap();
+    let profile = std::sync::Arc::new(dac_codecs::icc::write_named(dac_codecs::space::NamedSpace::AdobeRgb));
+    let opt = PdfOptions { photo_profile: Some(profile), ..PdfOptions::default() };
+    let out = to_pdf(&doc, &s, &Deep, &ShapedText::new(), &opt, &mut |_, _| true).unwrap();
+    let pdf = lopdf::Document::load_mem(&out.files[0]).unwrap();
+    let images = image_streams(&pdf);
+    assert_eq!(images.len(), 1);
+    assert_eq!(images[0].get(b"BitsPerComponent").unwrap().as_i64().unwrap(), 16);
+    let cs = match images[0].get(b"ColorSpace").unwrap() {
+        lopdf::Object::Reference(r) => pdf.get_object(*r).unwrap().clone(),
+        o => o.clone(),
+    };
+    assert_eq!(cs.as_array().unwrap()[0].as_name().unwrap(), b"ICCBased");
+    // without 16-bit output the same source gives an 8-bit JPEG
+    s.job.color.bit16 = false;
+    let out = to_pdf(&doc, &s, &Deep, &ShapedText::new(), &PdfOptions::default(), &mut |_, _| true).unwrap();
+    let pdf = lopdf::Document::load_mem(&out.files[0]).unwrap();
+    assert_eq!(image_streams(&pdf)[0].get(b"BitsPerComponent").unwrap().as_i64().unwrap(), 8);
+    // JPEG pages are 8-bit and say so
+    s.job.color.bit16 = true;
+    let out = to_jpeg(&doc, &s, &Deep, &ShapedText::new(), &mut |_, _| true).unwrap();
+    assert!(out.warnings.iter().any(|w| w.contains("16-bit")), "{:?}", out.warnings);
+}
+
+#[test]
+fn rgb16_rotation_matches_rgba8() {
+    let d = dac_layout::render::Rgb16 { width: 3, height: 2, data: (0..18).collect() };
+    let img = Rgba8::from_fn(3, 2, |x, y| {
+        let v = ((y * 3 + x) * 3) as u8;
+        [v, v + 1, v + 2, 255]
+    });
+    for (turns, r) in [(1u8, img.rotate_cw()), (2, img.rotate_180()), (3, img.rotate_180().rotate_cw())] {
+        let o = d.rotated(turns);
+        assert_eq!((o.width, o.height), (r.width, r.height));
+        let flat: Vec<u16> = r.data.iter().flat_map(|p| [u16::from(p[0]), u16::from(p[1]), u16::from(p[2])]).collect();
+        assert_eq!(o.data, flat, "turns {turns}");
+    }
+    let bad = dac_layout::render::Rgb16 { width: 3, height: 2, data: vec![1] };
+    assert_eq!(bad.rotated(1), bad);
+}
+
+#[test]
+fn print_color_settings_round_trip_and_validate() {
+    let mut s = PrintSettings::default();
+    s.job.color.profile = Some("/x/printer.icc".into());
+    s.job.color.intent = crate::PrintIntent::Relative;
+    s.job.color.adjust = true;
+    s.job.color.brightness = 20.0;
+    let back = PrintSettings::from_json(&s.to_json().unwrap()).unwrap();
+    assert_eq!(back, s);
+    // older settings without the section still load
+    assert!(PrintSettings::from_json(r#"{"job": {"dpi": 300}}"#).unwrap().job.color.black_point_compensation);
+    s.job.color.contrast = 500.0;
+    assert!(s.validate().is_err());
+    s.job.color.contrast = f32::NAN;
+    assert!(s.validate().is_err());
+}
+
+#[test]
+fn spooler_printer_names_get_a_clear_unsupported_error() {
+    for name in [r"\\server\Photo Printer", "HP OfficeJet"] {
+        let e = crate::ipp::IppUri::parse(name).unwrap_err().to_string();
+        assert!(e.contains("spooler") && e.contains("ipp://"), "{e}");
+    }
+}

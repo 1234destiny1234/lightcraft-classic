@@ -946,5 +946,11 @@
   "No lens database — set one up or download it…": "Keine Objektivdatenbank – eine einrichten oder laden …",
   "Lens profiles apply to raw photos only.": "Objektivprofile gelten nur für Raw-Fotos.",
   "No lens named in this photo's metadata.": "Die Metadaten dieses Fotos nennen kein Objektiv.",
-  "No profile for {lens} in the lens database.": "Kein Profil für {lens} in der Objektivdatenbank."
+  "No profile for {lens} in the lens database.": "Kein Profil für {lens} in der Objektivdatenbank.",
+  "Color Management": "Farbmanagement",
+  "Managed by Printer": "Vom Drucker verwaltet",
+  "Black Point Compensation": "Tiefenkompensierung",
+  "Print Adjustment": "Druckanpassung",
+  "Brightness": "Helligkeit",
+  "16 Bit Output": "16-Bit-Ausgabe"
 }

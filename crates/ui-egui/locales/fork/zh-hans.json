@@ -1086,5 +1086,11 @@
   "No lens database — set one up or download it…": "没有镜头数据库 — 设置或下载一个…",
   "Lens profiles apply to raw photos only.": "镜头配置文件仅适用于 RAW 照片。",
   "No lens named in this photo's metadata.": "此照片的元数据中没有镜头名称。",
-  "No profile for {lens} in the lens database.": "镜头数据库中没有 {lens} 的配置文件。"
+  "No profile for {lens} in the lens database.": "镜头数据库中没有 {lens} 的配置文件。",
+  "Color Management": "色彩管理",
+  "Managed by Printer": "由打印机管理",
+  "Black Point Compensation": "黑场补偿",
+  "Print Adjustment": "打印调整",
+  "Brightness": "亮度",
+  "16 Bit Output": "16 位输出"
 }

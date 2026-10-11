@@ -63,6 +63,8 @@ pub struct PrintUi {
     pub loaded: bool,
     /// What was last written to (or read from) `print.json`, to save only on change.
     pub stored: Option<Value>,
+    /// The printer profile's description (Color Management ▸ Profile).
+    pub profile_name: Option<String>,
 }
 
 impl Default for PrintUi {
@@ -82,6 +84,7 @@ impl Default for PrintUi {
             cups_server: "localhost:631".into(),
             printers: Vec::new(),
             output_path: String::new(),
+            profile_name: None,
             busy: false,
             last: None,
             creation: None,
@@ -102,6 +105,7 @@ pub const COMMANDS: &[crate::menus::UiCommand] = &[
     ("printui.print", "Print", None, ""),
     ("printui.printOne", "Print One", None, ""),
     ("printui.printers", "Find Printers", None, ""),
+    ("printui.profile", "Printer Color Profile", None, ""),
     ("printui.saveTemplate", "New Print Template", None, ""),
     ("printui.deleteTemplate", "Delete Print Template", None, ""),
     ("printui.media", "Printer Paper Sizes", None, ""),
@@ -276,6 +280,7 @@ fn state_json(app: &mut DacApp) -> Value {
         "error": err,
         "guides": {"rulers": pu.rulers, "margins": pu.margins, "cells": pu.cells, "bleed": pu.bleed, "dimensions": pu.dimensions},
         "printer": pu.printer_uri,
+        "profileName": pu.profile_name,
         "printers": pu.printers.iter().map(|p| json!({"name": p.name, "uri": p.uri, "info": p.info})).collect::<Vec<_>>(),
         "busy": pu.busy,
         "creation": pu.creation,
@@ -390,6 +395,27 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             }
             #[cfg(target_arch = "wasm32")]
             return Err("printing is not available in the browser".into());
+        }
+        "printui.profile" => {
+            // {path: "…icc"} picks a printer profile, {path: null} = Managed by Printer, {} asks
+            let path = match p.get("path") {
+                Some(Value::Null) => None,
+                Some(Value::String(s)) if !s.trim().is_empty() => Some(s.clone()),
+                Some(_) => return Err("path must be an ICC profile file or null".into()),
+                None => {
+                    let req = crate::pick::PickRequest::file("Choose Printer Profile", "ICC profile", &["icc", "icm"]);
+                    match crate::pick::ask(app, id, p, "path", req, |_| None) {
+                        crate::pick::Picked::Now(paths) => Some(paths.into_iter().next().ok_or("cancelled")?),
+                        crate::pick::Picked::Later => return Ok(json!({"pending": "path"})),
+                        crate::pick::Picked::Unavailable => return Err("no file dialog on this platform; supply path".into()),
+                    }
+                }
+            };
+            let mut color = app.print.settings.job.color.clone();
+            color.profile = path;
+            let job = dac_print::color::ColorJob::load(&color).map_err(|e| e.to_string())?;
+            app.print.settings.job.color = color;
+            app.print.profile_name = job.profile_name;
         }
         "printui.printers" => {
             let server = p.get("server").and_then(Value::as_str).unwrap_or(&app.print.cups_server).to_string();
@@ -523,7 +549,14 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     let doc = settings.build(&ids_text(&ids)).map_err(|e| e.to_string())?;
     // draft mode prints from preview-sized renders
     let dpi = if settings.job.draft { settings.job.dpi.min(150.0) } else { settings.job.dpi };
-    let (jobs, infos) = dac_engine::creations::prepare_jobs(&mut app.session, &doc, dpi)?;
+    // Color Management: read the printer profile now so a bad one is refused before rendering
+    let color = dac_print::color::ColorJob::load(&settings.job.color).map_err(|e| e.to_string())?;
+    let depth = if settings.job.color.bit16 && settings.destination != Destination::Jpeg {
+        dac_pipeline::OutputDepth::U16
+    } else {
+        dac_pipeline::OutputDepth::U8
+    };
+    let (jobs, infos) = dac_engine::creations::prepare_jobs_depth(&mut app.session, &doc, dpi, depth)?;
     let pages = doc.pages.len();
     let title = app.print.template.clone().unwrap_or_else(|| "Print".into());
     let write = app.services.write_shared.clone();
@@ -532,6 +565,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     let work = move || -> Result<Value, String> {
         let mut src = dac_engine::creations::run_jobs(jobs, infos)?;
         src.sharpen_for_print(settings.job.sharpening, settings.job.media);
+        src.apply_print_color(&color);
         let text = dac_print::text::ShapedText::with_system_fonts();
         let progress = &mut |_: usize, _: usize| true;
         let write_file = |path: &str, bytes: &[u8]| -> Result<(), String> {
@@ -548,7 +582,14 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                         creator: Some(dac_brand::DISPLAY_NAME.to_string()),
                         ..Default::default()
                     },
-                    output_intent: None,
+                    output_intent: color.profile.clone().map(|profile| dac_pdf::OutputIntent {
+                        subtype: "GTS_PDFX".into(),
+                        identifier: color.profile_name.clone().unwrap_or_else(|| "Printer profile".into()),
+                        info: color.profile_name.clone(),
+                        profile,
+                        components: 3,
+                    }),
+                    photo_profile: color.profile.clone(),
                 };
                 if dest == Destination::Printer {
                     let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into());
@@ -580,7 +621,8 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                 }
             }
             Destination::Jpeg => {
-                let out = dac_print::output::to_jpeg(&doc, &settings, &src, &text, progress).map_err(|e| e.to_string())?;
+                let out = dac_print::output::to_jpeg_icc(&doc, &settings, &src, &text, color.profile.as_deref().map(Vec::as_slice), progress)
+                    .map_err(|e| e.to_string())?;
                 let n = out.files.len();
                 let mut paths = Vec::new();
                 for (i, bytes) in out.files.iter().enumerate() {
@@ -1002,6 +1044,8 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
                 }
             });
         }
+        color_management(ui, app, &ctx);
+        let s = &mut app.print.settings;
         if s.destination == Destination::Jpeg {
             ui.add(egui::Slider::new(&mut s.job.jpeg_quality, 10..=100).text(crate::i18n::tr("JPEG Quality")));
         }
@@ -1049,6 +1093,80 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
 }
 
 /// Page Setup sits above the page: paper and orientation.
+/// Print Job ▸ 16 Bit Output, Color Management (profile, intent, black point compensation) and
+/// Print Adjustment.
+fn color_management(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
+    use dac_print::PrintIntent;
+    if app.print.settings.destination != Destination::Jpeg {
+        let r = ui.checkbox(&mut app.print.settings.job.color.bit16, crate::i18n::tr("16 Bit Output"));
+        register(ctx, "print:bit16", r.rect);
+    }
+    ui.label(egui::RichText::new(crate::i18n::tr("Color Management")).strong());
+    let managed = app.print.settings.job.color.profile.is_none();
+    let current = if managed {
+        crate::i18n::tr("Managed by Printer").to_string()
+    } else {
+        app.print
+            .profile_name
+            .clone()
+            .or_else(|| {
+                app.print
+                    .settings
+                    .job
+                    .color
+                    .profile
+                    .as_deref()
+                    .and_then(|p| std::path::Path::new(p).file_name())
+                    .map(|n| n.to_string_lossy().into_owned())
+            })
+            .unwrap_or_default()
+    };
+    let mut choose: Option<Value> = None;
+    ui.horizontal(|ui| {
+        ui.label(crate::i18n::tr("Profile:"));
+        let r = egui::ComboBox::from_id_salt("print-profile").selected_text(current).show_ui(ui, |ui| {
+            if ui.selectable_label(managed, crate::i18n::tr("Managed by Printer")).clicked() {
+                choose = Some(json!({"path": null}));
+            }
+            if let Some((path, name)) = app.ui.proof_profile.clone()
+                && ui.selectable_label(app.print.settings.job.color.profile.as_deref() == Some(path.as_str()), name).clicked()
+            {
+                choose = Some(json!({"path": path}));
+            }
+            if ui.selectable_label(false, crate::i18n::tr("Other…")).clicked() {
+                choose = Some(json!({}));
+            }
+        });
+        register(ctx, "print:profile", r.response.rect);
+    });
+    if let Some(p) = choose {
+        cmd(app, ctx, "printui.profile", p);
+    }
+    let c = &mut app.print.settings.job.color;
+    if c.profile.is_some() {
+        ui.horizontal(|ui| {
+            ui.label(crate::i18n::tr("Intent:"));
+            for (v, label) in [(PrintIntent::Perceptual, "Perceptual"), (PrintIntent::Relative, "Relative")] {
+                let r = ui.selectable_label(c.intent == v, crate::i18n::tr(label));
+                register(ctx, format!("print:intent:{label}"), r.rect);
+                if r.clicked() {
+                    c.intent = v;
+                }
+            }
+        });
+        if c.intent == PrintIntent::Relative {
+            let r = ui.checkbox(&mut c.black_point_compensation, crate::i18n::tr("Black Point Compensation"));
+            register(ctx, "print:bpc", r.rect);
+        }
+    }
+    let r = ui.checkbox(&mut c.adjust, crate::i18n::tr("Print Adjustment"));
+    register(ctx, "print:adjust", r.rect);
+    if c.adjust {
+        ui.add(egui::Slider::new(&mut c.brightness, -100.0..=100.0).step_by(1.0).text(crate::i18n::tr("Brightness")));
+        ui.add(egui::Slider::new(&mut c.contrast, -100.0..=100.0).step_by(1.0).text(crate::i18n::tr("Contrast")));
+    }
+}
+
 fn page_setup_bar(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
     let ctx = ui.ctx().clone();
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
@@ -1429,6 +1547,50 @@ mod tests {
         assert!(bytes.lock().unwrap().starts_with(b"%PDF-"));
         // printer destination without a printer is refused up front
         assert!(h.app.run("printui.print", json!({"destination": "printer"})).is_err());
+    }
+
+    #[test]
+    fn printer_profile_is_checked_and_a_colour_managed_16_bit_pdf_prints() {
+        use std::sync::{Arc, Mutex};
+        let bytes = Arc::new(Mutex::new(Vec::new()));
+        let written = bytes.clone();
+        let services = crate::Services {
+            write_shared: Some(Arc::new(move |_: &str, data: &[u8]| {
+                *written.lock().unwrap() = data.to_vec();
+                Ok(())
+            })),
+            ..Default::default()
+        };
+        let mut app = DacApp::new(dac_engine::Session::with_demo(), services);
+        app.run("module.print", json!({})).unwrap();
+        assert!(app.run("printui.profile", json!({"path": "/nonexistent/printer.icc"})).is_err());
+        assert!(app.print.settings.job.color.profile.is_none());
+        let dir = std::env::temp_dir().join(format!("print-profile-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let icc = dir.join("printer.icc");
+        std::fs::write(&icc, dac_codecs::icc::write_named(dac_codecs::space::NamedSpace::AdobeRgb)).unwrap();
+        app.run("printui.profile", json!({"path": icc.to_string_lossy()})).unwrap();
+        assert!(app.print.settings.job.color.profile.is_some());
+        app.run(
+            "printui.set",
+            json!({"settings": {"job": {"dpi": 72, "color": {"intent": "relative", "adjust": true, "brightness": 20, "bit16": true}}}}),
+        )
+        .unwrap();
+        app.run("printui.print", json!({"path": "Print.pdf"})).unwrap();
+        let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        while h.app.print.busy && std::time::Instant::now() < deadline {
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let last = h.app.print.last.clone().unwrap();
+        assert!(last.get("error").is_none(), "{last}");
+        let pdf = bytes.lock().unwrap().clone();
+        let has = |needle: &[u8]| pdf.windows(needle.len()).any(|w| w == needle);
+        assert!(has(b"/ICCBased") && has(b"/OutputIntents") && has(b"/BitsPerComponent 16"));
+        h.app.run("printui.profile", json!({"path": null})).unwrap();
+        assert!(h.app.print.settings.job.color.profile.is_none());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

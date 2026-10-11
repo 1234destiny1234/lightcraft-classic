@@ -9,7 +9,7 @@ use dac_layout::Document;
 use dac_layout::render::PhotoSource;
 
 use crate::ipp::{self, JobState};
-use crate::output::{PdfOptions, to_jpeg, to_pdf};
+use crate::output::{PdfOptions, to_jpeg_icc, to_pdf};
 use crate::text::ShapedText;
 use crate::{PrintError, PrintSettings, Result};
 
@@ -68,7 +68,7 @@ pub fn send_to_printer(
         warnings.extend(out.warnings);
         ("application/pdf", out.files, out.pages)
     } else if jpeg_ok {
-        let out = to_jpeg(doc, settings, photos, text, progress)?;
+        let out = to_jpeg_icc(doc, settings, photos, text, opt.pdf.photo_profile.as_deref().map(Vec::as_slice), progress)?;
         warnings.extend(out.warnings);
         ("image/jpeg", out.files, out.pages)
     } else {

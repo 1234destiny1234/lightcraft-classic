@@ -28,6 +28,9 @@ pub struct PdfOptions {
     pub metadata: dac_pdf::Metadata,
     /// The printer/paper profile written as the document's OutputIntent.
     pub output_intent: Option<dac_pdf::OutputIntent>,
+    /// The ICC profile the photos are encoded in (the printer profile after
+    /// [`crate::color::ColorJob`]); `None` = sRGB (untagged DeviceRGB).
+    pub photo_profile: Option<Arc<Vec<u8>>>,
 }
 
 /// Called before each page (0-based) with the page count; return `false` to cancel.
@@ -64,13 +67,18 @@ fn rgb_over_white(img: &Rgba8) -> Vec<u8> {
 
 /// JPEG bytes of `img` (alpha composited over white).
 pub fn jpeg(img: &Rgba8, quality: u8, ppi: Option<u16>) -> Result<Vec<u8>> {
+    jpeg_icc(img, quality, ppi, None)
+}
+
+/// [`jpeg`] with an embedded ICC profile.
+pub fn jpeg_icc(img: &Rgba8, quality: u8, ppi: Option<u16>, icc: Option<&[u8]>) -> Result<Vec<u8>> {
     let rgb = rgb_over_white(img);
     let (w, h) = (u32::try_from(img.width).unwrap_or(u32::MAX), u32::try_from(img.height).unwrap_or(u32::MAX));
     encode_jpeg(
         &EncodeImage::new(w, h, 3, Samples::U8(&rgb)),
         quality.clamp(1, 100),
         ChromaSubsampling::S444,
-        &EncodeMeta { ppi, ..Default::default() },
+        &EncodeMeta { ppi, icc, ..Default::default() },
     )
     .map_err(|e| PrintError::Output(e.to_string()))
 }
@@ -117,6 +125,8 @@ pub fn to_pdf(
     pdf.output_intent = opt.output_intent.clone();
     let mut warnings = Vec::new();
     let mut images: HashMap<(String, usize, u8), (dac_pdf::ImageId, usize, usize)> = HashMap::new();
+    // photos already converted into the printer profile are tagged with it
+    let cs = opt.photo_profile.clone().map_or(ColorSpace::Rgb, |profile| ColorSpace::Icc { profile, components: 3 });
     let n = doc.pages.len();
     for (pi, layout) in doc.pages.iter().enumerate() {
         if !progress(pi, n) {
@@ -147,27 +157,13 @@ pub fn to_pdf(
                     let key = (id.to_string(), long, turns);
                     let found = match images.get(&key) {
                         Some(v) => Some(*v),
-                        None => match photos.image(id, long) {
-                            Ok(img) if img.width > 0 && img.height > 0 && img.data.len() == img.width.saturating_mul(img.height) => {
-                                let img = match turns {
-                                    1 => img.rotate_cw(),
-                                    2 => img.rotate_180(),
-                                    3 => img.rotate_180().rotate_cw(),
-                                    _ => img,
-                                };
-                                let bytes = jpeg(&img, settings.job.jpeg_quality.max(80), None)?;
-                                let iid =
-                                    pdf.add_image(Image::jpeg(Arc::new(bytes), ColorSpace::Rgb)).map_err(|e| PrintError::Output(e.to_string()))?;
-                                let v = (iid, img.width, img.height);
+                        None => match add_photo(&mut pdf, photos, id, long, turns, settings, &cs)? {
+                            Ok(v) => {
                                 images.insert(key, v);
                                 Some(v)
                             }
-                            Ok(_) => {
-                                warnings.push(format!("photo {id}: empty image"));
-                                None
-                            }
-                            Err(e) => {
-                                warnings.push(format!("photo {id}: {e}"));
+                            Err(w) => {
+                                warnings.push(format!("photo {id}: {w}"));
                                 None
                             }
                         },
@@ -183,19 +179,9 @@ pub fn to_pdf(
                         let k2 = (id.to_string(), long, turns);
                         if let Some(v) = images.get(&k2) {
                             (iid, iw, ih) = *v;
-                        } else if let Ok(img) = photos.image(id, long) {
-                            let img = match turns {
-                                1 => img.rotate_cw(),
-                                2 => img.rotate_180(),
-                                3 => img.rotate_180().rotate_cw(),
-                                _ => img,
-                            };
-                            if img.width > 0 && img.height > 0 && img.data.len() == img.width.saturating_mul(img.height) {
-                                let bytes = jpeg(&img, settings.job.jpeg_quality.max(80), None)?;
-                                iid = pdf.add_image(Image::jpeg(Arc::new(bytes), ColorSpace::Rgb)).map_err(|e| PrintError::Output(e.to_string()))?;
-                                (iw, ih) = (img.width, img.height);
-                                images.insert(k2, (iid, iw, ih));
-                            }
+                        } else if let Ok(v) = add_photo(&mut pdf, photos, id, long, turns, settings, &cs)? {
+                            (iid, iw, ih) = v;
+                            images.insert(k2, v);
                         }
                     }
                     let cell_pt = dac_layout::Rect::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32);
@@ -254,11 +240,62 @@ pub fn to_pdf(
     Ok(Output { files: vec![bytes], pages: n, warnings })
 }
 
+/// A photo turned `turns` quarter turns, added to `pdf`: 16-bit samples when the job asks for them
+/// and `photos` has them, else JPEG. The inner error is a warning (the photo is drawn as a slot).
+fn add_photo(
+    pdf: &mut dac_pdf::Document,
+    photos: &dyn PhotoSource,
+    id: &str,
+    long: usize,
+    turns: u8,
+    settings: &PrintSettings,
+    cs: &ColorSpace,
+) -> Result<std::result::Result<(dac_pdf::ImageId, usize, usize), String>> {
+    if settings.job.color.bit16
+        && let Some(deep) = photos.image16(id).filter(dac_layout::render::Rgb16::is_valid)
+    {
+        let d = deep.rotated(turns);
+        let (w, h) = (u32::try_from(d.width).unwrap_or(u32::MAX), u32::try_from(d.height).unwrap_or(u32::MAX));
+        let iid = pdf.add_image(Image::samples16(w, h, cs.clone(), &d.data)).map_err(|e| PrintError::Output(e.to_string()))?;
+        return Ok(Ok((iid, d.width, d.height)));
+    }
+    let img = match photos.image(id, long) {
+        Ok(img) if img.width > 0 && img.height > 0 && img.data.len() == img.width.saturating_mul(img.height) => img,
+        Ok(_) => return Ok(Err("empty image".into())),
+        Err(e) => return Ok(Err(e)),
+    };
+    let img = match turns % 4 {
+        1 => img.rotate_cw(),
+        2 => img.rotate_180(),
+        3 => img.rotate_180().rotate_cw(),
+        _ => img,
+    };
+    let bytes = jpeg(&img, settings.job.jpeg_quality.max(80), None)?;
+    let iid = pdf.add_image(Image::jpeg(Arc::new(bytes), cs.clone())).map_err(|e| PrintError::Output(e.to_string()))?;
+    Ok(Ok((iid, img.width, img.height)))
+}
+
 /// Renders every page of `doc` to a JPEG at `settings.job.dpi`.
 pub fn to_jpeg(doc: &Document, settings: &PrintSettings, photos: &dyn PhotoSource, text: &ShapedText, progress: Progress) -> Result<Output> {
+    to_jpeg_icc(doc, settings, photos, text, None, progress)
+}
+
+/// [`to_jpeg`] with `icc` (the profile the photos were converted into) embedded in every page.
+/// JPEG holds 8 bits: a 16-bit job prints 8-bit pages and says so.
+pub fn to_jpeg_icc(
+    doc: &Document,
+    settings: &PrintSettings,
+    photos: &dyn PhotoSource,
+    text: &ShapedText,
+    icc: Option<&[u8]>,
+    progress: Progress,
+) -> Result<Output> {
     doc.validate()?;
     let n = doc.pages.len();
     let mut out = Output { pages: n, ..Output::default() };
+    if settings.job.color.bit16 {
+        out.warnings.push("JPEG output is 8-bit; 16-bit output needs PDF".into());
+    }
     let ppi = settings.job.dpi.round().clamp(1.0, 65_535.0) as u16;
     for (i, p) in doc.pages.iter().enumerate() {
         if !progress(i, n) {
@@ -267,7 +304,7 @@ pub fn to_jpeg(doc: &Document, settings: &PrintSettings, photos: &dyn PhotoSourc
         let opt = RenderOptions { dpi: settings.job.dpi, include_bleed: false, show_guides: false, page: i + 1, pages: n };
         let r = render_page(&doc.page, p, photos, text, &opt)?;
         out.warnings.extend(r.warnings.into_iter().map(|w| format!("page {}: {w}", i + 1)));
-        out.files.push(jpeg(&r.image, settings.job.jpeg_quality, Some(ppi))?);
+        out.files.push(jpeg_icc(&r.image, settings.job.jpeg_quality, Some(ppi), icc)?);
     }
     Ok(out)
 }

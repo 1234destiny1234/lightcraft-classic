@@ -1086,5 +1086,11 @@
   "No lens database — set one up or download it…": "沒有鏡頭資料庫 — 設定或下載一個…",
   "Lens profiles apply to raw photos only.": "鏡頭描述檔僅適用於 RAW 照片。",
   "No lens named in this photo's metadata.": "此照片的中繼資料中沒有鏡頭名稱。",
-  "No profile for {lens} in the lens database.": "鏡頭資料庫中沒有 {lens} 的描述檔。"
+  "No profile for {lens} in the lens database.": "鏡頭資料庫中沒有 {lens} 的描述檔。",
+  "Color Management": "色彩管理",
+  "Managed by Printer": "由印表機管理",
+  "Black Point Compensation": "黑點補償",
+  "Print Adjustment": "列印調整",
+  "Brightness": "亮度",
+  "16 Bit Output": "16 位元輸出"
 }

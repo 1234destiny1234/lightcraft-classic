@@ -185,8 +185,51 @@ pub enum PrintMedia {
     Matte,
 }
 
+/// Rendering intent of the conversion into the printer profile.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum PrintIntent {
+    #[default]
+    Perceptual,
+    Relative,
+}
+
+/// Print Job ▸ Color Management (printer profile, intent, black point compensation), Print
+/// Adjustment (brightness and contrast of the print only) and 16-bit output.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct PrintColor {
+    /// Path of the printer/paper ICC profile; `None` = Managed by Printer (sRGB is sent).
+    pub profile: Option<String>,
+    pub intent: PrintIntent,
+    /// Black point compensation (relative colorimetric only).
+    pub black_point_compensation: bool,
+    /// Print Adjustment on.
+    pub adjust: bool,
+    /// −100..100.
+    pub brightness: f32,
+    /// −100..100.
+    pub contrast: f32,
+    /// 16 bits per channel photos in PDF output (and printer jobs sent as PDF).
+    pub bit16: bool,
+}
+
+impl Default for PrintColor {
+    fn default() -> Self {
+        PrintColor {
+            profile: None,
+            intent: PrintIntent::Perceptual,
+            black_point_compensation: true,
+            adjust: false,
+            brightness: 0.0,
+            contrast: 0.0,
+            bit16: false,
+        }
+    }
+}
+
 /// The print job.
-#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct JobOptions {
     /// Pixels per inch of photos (PDF) and pages (JPEG).
@@ -200,11 +243,21 @@ pub struct JobOptions {
     /// Output sharpening of the photos at their printed size.
     pub sharpening: PrintSharpening,
     pub media: PrintMedia,
+    /// Color Management and Print Adjustment.
+    pub color: PrintColor,
 }
 
 impl Default for JobOptions {
     fn default() -> Self {
-        JobOptions { dpi: 240.0, draft: false, jpeg_quality: 92, copies: 1, sharpening: PrintSharpening::Off, media: PrintMedia::Glossy }
+        JobOptions {
+            dpi: 240.0,
+            draft: false,
+            jpeg_quality: 92,
+            copies: 1,
+            sharpening: PrintSharpening::Off,
+            media: PrintMedia::Glossy,
+            color: PrintColor::default(),
+        }
     }
 }
 
@@ -252,6 +305,11 @@ impl PrintSettings {
         }
         if !(1..=999).contains(&j.copies) {
             return Err(PrintError::Invalid("copies must be 1–999".into()));
+        }
+        let c = &j.color;
+        if !(c.brightness.is_finite() && c.contrast.is_finite() && (-100.0..=100.0).contains(&c.brightness) && (-100.0..=100.0).contains(&c.contrast))
+        {
+            return Err(PrintError::Invalid("print adjustment brightness and contrast must be −100–100".into()));
         }
         let fs = self.options.font_size;
         if !(fs.is_finite() && (2.0..=72.0).contains(&fs)) {
