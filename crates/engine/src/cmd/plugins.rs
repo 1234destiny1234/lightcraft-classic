@@ -553,13 +553,20 @@ pub fn rule_fields() -> Vec<(String, String)> {
         .collect()
 }
 
-/// Bring the catalog's copy of the plug-ins' metadata fields ([`dac_catalog::Photo::plugin_fields`],
-/// what rules search and sidecars carry) in line with the plug-ins' own data. Bookkeeping, not an
-/// undo step; a plug-in whose data can't be read now keeps its copy. Returns how many photos changed.
+/// Bring the catalog's in-memory index of the plug-ins' metadata fields ([`dac_catalog::Photo::plugin_fields`],
+/// what rules search and sidecars carry) in line with the plug-ins' own data, the source. Nothing is
+/// saved with the catalog; with XMP auto-write on, the changed photos' sidecars are written. A plug-in
+/// whose data can't be read now keeps its entries. Returns how many photos changed.
 pub fn sync_fields(s: &mut Session) -> usize {
+    sync_fields_with(s, true)
+}
+
+/// [`sync_fields`]; `write_sidecars: false` only builds the index (a library just opened: its
+/// sidecars already have what the plug-ins hold).
+pub(crate) fn sync_fields_with(s: &mut Session, write_sidecars: bool) -> usize {
     let (values, skipped) = manager().as_mut().map(|m| m.field_values()).unwrap_or_default();
     let kept = |k: &str| skipped.iter().any(|p| k.split_once('/').is_some_and(|(id, _)| id == p));
-    let mut ops = Vec::new();
+    let mut changes = Vec::new();
     for p in s.catalog.photos() {
         let want_new = values.get(&p.id.0.to_string());
         if p.plugin_fields.is_empty() && want_new.is_none() {
@@ -572,14 +579,18 @@ pub fn sync_fields(s: &mut Session) -> usize {
             }
         }
         if want != p.plugin_fields {
-            ops.push(dac_catalog::Op::SetPluginFields { id: p.id, fields: want });
+            changes.push((p.id, want));
         }
     }
-    let n = ops.len();
-    for op in ops {
-        if let Err(e) = s.apply_system(op) {
+    let ids: Vec<dac_catalog::PhotoId> = changes.iter().map(|(id, _)| *id).collect();
+    for (id, fields) in changes {
+        if let Err(e) = s.catalog.set_plugin_fields(id, fields) {
             log::warn!("plug-in fields: {e}");
         }
+    }
+    let n = ids.len();
+    if write_sidecars && s.xmp.auto_write && s.interaction.is_none() {
+        s.auto_write_sidecars_of(ids);
     }
     n
 }
@@ -794,11 +805,27 @@ mod tests {
         // the sidecar packet carries it under the plug-in fields namespace
         let packet = crate::sidecar::sidecar_packet(&p0, &s.catalog);
         assert!(
-            packet.contains(dac_meta::PLUGIN_FIELDS_NS)
+            packet.contains(&dac_meta::plugin_fields_ns())
                 && packet.contains("<lcpf:plugin>test.jobs</lcpf:plugin>")
                 && packet.contains("<lcpf:value>J-77</lcpf:value>"),
             "{packet}"
         );
+        // an index in memory only: the catalog's saved form (format 7) doesn't carry it
+        assert_eq!(dac_catalog::journal::VERSION, 7);
+        assert!(!s.catalog.to_snapshot().contains("J-77"), "not saved with the catalog");
+        // a library opened again rebuilds it from the plug-in's data
+        let dir = std::env::temp_dir().join(format!("plugin-fields-lib-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        let mut lib = Session::new();
+        lib.open_library(&dir, true).unwrap();
+        let first = lib.visible_cloned()[0].0;
+        lib.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "job", "value": "K-1", "id": first})).unwrap();
+        drop(lib);
+        let mut again = Session::new();
+        again.open_library(&dir, false).unwrap();
+        assert_eq!(again.catalog.photo(dac_catalog::PhotoId(first)).unwrap().plugin_fields.get("test.jobs/job"), Some(&json!("K-1")));
+        drop(again);
+        let _ = std::fs::remove_dir_all(&dir);
         // clearing it clears the copy
         s.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "job", "value": null, "ids": [ids[0], ids[1]]})).unwrap();
         assert!(s.catalog.photo(dac_catalog::PhotoId(ids[0])).unwrap().plugin_fields.is_empty());

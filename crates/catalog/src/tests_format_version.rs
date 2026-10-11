@@ -241,9 +241,8 @@ fn op_variants_are_versioned() {
             Op::SetEmbeddedLens { .. } | Op::SetKeyword { .. } | Op::SetFolderRecord { .. } => 5,
             Op::SetSavedLocation { .. } => 6,
             Op::SetAlbumCreation { .. } => 7,
-            Op::SetPluginFields { .. } => 8,
         }
     }
-    let newest = since(&Op::SetPluginFields { id: PhotoId(1), fields: Default::default() });
+    let newest = since(&Op::SetAlbumCreation { id: AlbumId(1), creation: None });
     assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
 }

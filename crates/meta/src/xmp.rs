@@ -571,8 +571,11 @@ pub fn write_xmp(meta: &Metadata, lc_settings: Option<&str>) -> String {
 }
 
 /// Namespace of plug-in custom metadata fields in sidecars (prefix `lcpf`): `lcpf:fields`, a bag of
-/// `{lcpf:plugin, lcpf:key, lcpf:value}`. Neutral (never derived from the product name).
-pub const PLUGIN_FIELDS_NS: &str = "https://ns.example.invalid/plugin-fields/1.0/";
+/// `{lcpf:plugin, lcpf:key, lcpf:value}`. Under the app's homepage (`dac_brand::HOMEPAGE`):
+/// `<homepage>/ns/plugin-fields/1.0/`.
+pub fn plugin_fields_ns() -> String {
+    format!("{}/ns/plugin-fields/1.0/", dac_brand::HOMEPAGE.trim_end_matches('/'))
+}
 
 /// Like [`write_xmp`], with any number of simple `lc:<name>` properties (e.g. `settings`, `flag`).
 pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
@@ -580,7 +583,7 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
 }
 
 /// [`write_xmp_lc`], plus plug-in custom metadata fields `(plug-in id, field key, value)` in
-/// [`PLUGIN_FIELDS_NS`].
+/// [`plugin_fields_ns`].
 pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&str, &str, &str)]) -> String {
     let mut simple: Vec<(&str, String)> = Vec::new();
     let mut push = |k: &'static str, v: Option<String>| {
@@ -636,7 +639,7 @@ pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&st
         x.push_str(&format!("\n    xmlns:{p}=\"{u}\""));
     }
     if !plugin_fields.is_empty() {
-        x.push_str(&format!("\n    xmlns:lcpf=\"{PLUGIN_FIELDS_NS}\""));
+        x.push_str(&format!("\n    xmlns:lcpf=\"{}\"", plugin_fields_ns()));
     }
     x.push_str(">\n");
     for (k, v) in &simple {

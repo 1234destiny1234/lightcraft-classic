@@ -418,12 +418,7 @@ pub fn read_packet(original: &str, kind: MediaKind, naming: SidecarNaming) -> Op
 /// Photo ids touched by an op (for auto-write).
 pub(crate) fn op_photos(op: &Op, out: &mut Vec<PhotoId>) {
     match op {
-        Op::SetRating { id, .. }
-        | Op::SetFlag { id, .. }
-        | Op::SetLabel { id, .. }
-        | Op::SetDevelop { id, .. }
-        | Op::SetMeta { id, .. }
-        | Op::SetPluginFields { id, .. } => {
+        Op::SetRating { id, .. } | Op::SetFlag { id, .. } | Op::SetLabel { id, .. } | Op::SetDevelop { id, .. } | Op::SetMeta { id, .. } => {
             if !out.contains(id) {
                 out.push(*id);
             }
@@ -579,6 +574,11 @@ impl Session {
     pub(crate) fn auto_write_sidecars(&mut self, ops: &[Op]) {
         let mut ids = Vec::new();
         ops.iter().for_each(|o| op_photos(o, &mut ids));
+        self.auto_write_sidecars_of(ids);
+    }
+
+    /// [`Session::auto_write_sidecars`] for photos changed outside ops (plug-in fields).
+    pub(crate) fn auto_write_sidecars_of(&mut self, ids: Vec<PhotoId>) {
         if ids.is_empty() {
             return;
         }

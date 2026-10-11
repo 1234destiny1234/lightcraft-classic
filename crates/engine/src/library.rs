@@ -365,6 +365,9 @@ impl Session {
             crate::demo::load(self);
             journal.snapshot(&self.catalog)?;
         }
+        // G19: the plug-in metadata field index (in memory only) from the plug-ins' own data
+        #[cfg(not(target_arch = "wasm32"))]
+        crate::cmd::plugins::sync_fields_with(self, false);
         let mut settings = SettingsLoad::default();
         // preferences
         let prefs = settings.read::<PrefsFile>(files.as_mut(), "prefs.json").unwrap_or_default();

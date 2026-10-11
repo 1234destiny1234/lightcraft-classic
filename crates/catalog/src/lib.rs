@@ -195,11 +195,6 @@ pub enum Op {
         id: PhotoId,
         captured: Option<String>,
     },
-    /// Plug-in custom metadata fields of a photo (see [`Photo::plugin_fields`]).
-    SetPluginFields {
-        id: PhotoId,
-        fields: std::collections::BTreeMap<String, serde_json::Value>,
-    },
     /// Assisted culling scores.
     SetAnalysis {
         id: PhotoId,
@@ -578,6 +573,13 @@ impl Catalog {
     fn photo_mut(&mut self, id: PhotoId) -> Result<&mut Photo> {
         self.photos.get_mut(&id).map(Arc::make_mut).ok_or(CatalogError::NoPhoto(id))
     }
+    /// Replace photo `id`'s in-memory plug-in field index ([`Photo::plugin_fields`]): not an op, not
+    /// journaled or undoable (the plug-ins' data is the source); smart albums and filters see it at once.
+    pub fn set_plugin_fields(&mut self, id: PhotoId, fields: std::collections::BTreeMap<String, serde_json::Value>) -> Result<()> {
+        self.photo_mut(id)?.plugin_fields = fields;
+        self.revision += 1;
+        Ok(())
+    }
     fn album_mut(&mut self, id: AlbumId) -> Result<&mut Album> {
         self.albums.get_mut(&id).ok_or(CatalogError::NoAlbum(id))
     }
@@ -790,10 +792,6 @@ impl Catalog {
                 let old = Op::SetStack { id, photos: std::mem::replace(&mut s.photos, photos), collapsed: s.collapsed };
                 s.collapsed = collapsed;
                 old
-            }
-            Op::SetPluginFields { id, fields } => {
-                let p = self.photo_mut(id)?;
-                Op::SetPluginFields { id, fields: std::mem::replace(&mut p.plugin_fields, fields) }
             }
             Op::SetAnalysis { id, analysis } => {
                 let p = self.photo_mut(id)?;

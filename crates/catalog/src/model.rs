@@ -303,10 +303,11 @@ pub struct Photo {
     /// Catalog format 4.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub xmp: Option<crate::xmp_state::XmpStamp>,
-    /// Plug-in custom metadata fields, `"<plug-in id>/<field key>"` → value: the catalog's copy of
-    /// what the plug-ins' own data holds for the photo, so rules can search them and sidecars carry
-    /// them. Kept by the engine (`Op::SetPluginFields`). Catalog format 8.
-    #[serde(default, skip_serializing_if = "std::collections::BTreeMap::is_empty")]
+    /// Plug-in custom metadata fields, `"<plug-in id>/<field key>"` → value: an in-memory index of
+    /// what the plug-ins' own data (the source) holds for the photo, so rules can search them and
+    /// sidecars carry them. Never saved with the catalog (the format doesn't change); the engine
+    /// rebuilds it when a library opens and after plug-in calls ([`crate::Catalog::set_plugin_fields`]).
+    #[serde(skip)]
     pub plugin_fields: std::collections::BTreeMap<String, serde_json::Value>,
 }
 
