@@ -29,6 +29,7 @@ mod dialog_filter;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+mod window_gpu;
 
 use dac_engine::Session;
 use dac_ui_egui::panels::library_problem::LibraryProblem;
@@ -72,7 +73,7 @@ impl eframe::App for App {
     fn ui(&mut self, ui: &mut egui::Ui, _frame: &mut eframe::Frame) {
         self.0.ui(ui);
     }
-    fn on_exit(&mut self) {
+    fn on_exit(&mut self, _gl: Option<&eframe::glow::Context>) {
         if let Err(e) = self.1.save(&self.0) {
             log::error!("{e}");
         }
@@ -95,13 +96,16 @@ const EXIT_WAIT: std::time::Duration = std::time::Duration::from_secs(2);
 /// alone on Windows unless `<PREFIX>_GPU_BACKEND` / `WGPU_BACKEND` say otherwise (issue #136:
 /// with Vulkan in the set, wgpu loads the Vulkan driver even when it then picks DX12) — and DX12
 /// shaders compiled with FXC, never a stray `dxcompiler.dll` (issue #471).
+/// The fallback chain on top of it (DX12 → Vulkan → GL → glow) is in `window_gpu`.
+#[cfg(test)]
 fn window_wgpu_options() -> eframe::egui_wgpu::WgpuConfiguration {
-    let mut c = eframe::egui_wgpu::WgpuConfiguration::default();
-    if let eframe::egui_wgpu::WgpuSetup::CreateNew(n) = &mut c.wgpu_setup {
-        n.instance_descriptor.backends = dac_engine::gpu::backend::window_backends();
-        n.instance_descriptor.backend_options = dac_engine::gpu::backend::backend_options();
-    }
-    c
+    window_gpu::base_options()
+}
+
+/// Where the window's renderer files live (`window_gpu::Files`): nothing for `--memory` sessions
+/// and `<PREFIX>_NO_PREFS`.
+fn window_files(in_memory: bool) -> window_gpu::Files {
+    window_gpu::Files::new(config_dir().filter(|_| !in_memory && !dac_brand::env_is_set("NO_PREFS")))
 }
 
 /// Written while the GPU compute device is created, removed once that returned
@@ -816,7 +820,14 @@ fn main() -> eframe::Result {
     let gpu_crash = gpu_crash_check(in_memory);
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     dac_engine::gpu::set_enabled(gpu_on);
+    // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
+    // build egui's pipeline never kills the start-up
+    let win_files = std::sync::Arc::new(window_files(in_memory));
+    let window_gpu::Chosen { renderer, wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
+    win_files.arm(window_renderer);
+    let win_files_app = win_files.clone();
     let options = eframe::NativeOptions {
+        renderer,
         viewport: egui::ViewportBuilder::default()
             .with_title(dac_brand::DISPLAY_NAME)
             .with_inner_size([1600.0, 1000.0])
@@ -828,15 +839,17 @@ fn main() -> eframe::Result {
             .with_icon(app_icon())
             // Wayland matches the window to the packaged `<APP_ID>.desktop` file by this id
             .with_app_id(APP_ID),
-        wgpu_options: window_wgpu_options(),
+        wgpu_options,
         ..Default::default()
     };
     // the app's copy: `log_file` is still named in the message of a start that fails
     let app_log_file = log_file.clone();
-    let started = eframe::run_native(
+    let started = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| eframe::run_native(
         dac_brand::DISPLAY_NAME,
         options,
         Box::new(move |cc| {
+            // the window's renderer is up (eframe calls this after creating it)
+            win_files_app.started(window_renderer);
             // an older catalog is upgraded on a worker thread once the window shows, with progress
             let upgrade = library_dir.clone().filter(|d| !in_memory && dac_engine::library::needs_migration(d));
             let (mut session, problem) = match &upgrade {
@@ -858,6 +871,7 @@ fn main() -> eframe::Result {
             app.integrated_titlebar = cfg!(target_os = "macos");
             app.notices.extend(prefs_warning);
             app.notices.extend(launch_notices);
+            app.notices.extend(window_notice);
             // what's on disk now: only changes are written
             let writer = PrefsWriter {
                 path: if in_memory { None } else { prefs_path() },
@@ -901,8 +915,16 @@ fn main() -> eframe::Result {
                 menu,
             )))
         }),
-    );
+    )));
+    // a panic that still escaped the renderer's start (the probe and error handler should
+    // prevent it): an error like any other failed start
+    let started = started.unwrap_or_else(|_| Err(eframe::Error::AppCreation("the window's renderer panicked while starting".into())));
     if let Err(e) = &started {
+        // the renderer never came up: start again, which tries the next one in the chain
+        if window_gpu::relaunch_after_failure(&win_files) {
+            log::error!("{} could not open its window with {}: {e}; trying the next renderer", dac_brand::DISPLAY_NAME, window_renderer.name());
+            return Ok(());
+        }
         startup_failed(&e.to_string(), log_file.as_deref());
     }
     started
