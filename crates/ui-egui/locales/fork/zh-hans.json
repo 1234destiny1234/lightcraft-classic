@@ -1069,5 +1069,8 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "它由另一个应用创建，{app} 无法打开其目录格式。它未被更改。请新建目录或打开另一个目录。",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "如果它位于未连接的驱动器上，请连接后重试。否则请打开或新建另一个目录。",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app} 无权读写其文件夹。请检查文件夹权限，然后重试。",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "其中的照片和编辑未受影响。你可以重试（例如关闭打开它的其他程序或重新连接其驱动器后），打开其他图库或新建一个，或在没有图库的情况下继续——此时所做的一切都不会保存。"
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "其中的照片和编辑未受影响。你可以重试（例如关闭打开它的其他程序或重新连接其驱动器后），打开其他图库或新建一个，或在没有图库的情况下继续——此时所做的一切都不会保存。",
+  "Pair Kerning": "字偶间距",
+  "Place the text cursor between two characters to kern them.": "将文本光标放在两个字符之间以调整字偶间距。",
+  "Clear Pair Kerning": "清除字偶间距"
 }

@@ -797,7 +797,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-BOOK-GUIDES | Book guides | P2 | ✅ | `cmd:book.guides` | P3.5: bleed, text safe area, photo cells, filler text |
 | LRC-BOOK-CELL | Book cell padding | P2 | ✅ | `cmd:book.cell`, `cmd:book.swap` | P3.5: padding linked/per side, zoom, pan (Alt-drag), fill/fit, drag to swap, drag from filmstrip |
 | LRC-BOOK-TEXT | Book photo/page text | P2 | ✅ | `cmd:book.photoText`, `cmd:book.pageText`, `cmd:book.text` | P3.5: tokens or custom text, above/below/over with offset; page text top/bottom |
-| LRC-BOOK-TYPE | Book typography | P2 | 🟡 | `cmd:book.type`, `cmd:book.textPreset` | P3.5: font, style, size, opacity, colour, tracking, baseline, leading, kerning mode, columns, gutter, alignment, presets via dac-text; no per-pair manual kerning; PDF text ignores opacity |
+| LRC-BOOK-TYPE | Book typography | P2 | ✅ | `cmd:book.type`, `cmd:book.textPreset` | P3.5: font, style, size, opacity, colour, tracking, baseline, leading, kerning mode, columns, gutter, alignment, presets via dac-text; per-pair manual kerning (Pair Kerning slider at the text cursor, `book.type {kern: {at, amount}}`, kept through tokens and presets); PDF text keeps its opacity (ExtGState) |
 | LRC-BOOK-BG | Book backgrounds | P2 | ✅ | `cmd:book.background` | P3.5: colour, photo with opacity, our own graphics, global or per page |
 | LRC-BOOK-VIEWS | Book views | P2 | ✅ | `cmd:book.view` | P3.5: multi-page, spread, single, zoomed |
 | LRC-BOOK-EXPORT | Book export (PDF/JPEG) | P2 | ✅ | `cmd:book.export` | P3.5: one PDF (embedded subset fonts, sRGB ICC, trim/bleed boxes) or a JPEG per page |

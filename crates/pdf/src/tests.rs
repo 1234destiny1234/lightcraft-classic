@@ -494,3 +494,37 @@ fn faces_that_cannot_be_embedded_are_drawn_as_outlines() {
     let res = dict(&doc, doc.get_dictionary(page).unwrap().get(b"Resources").unwrap());
     assert!(res.get(b"Font").map(|f| dict(&doc, f).is_empty()).unwrap_or(true));
 }
+
+#[test]
+fn text_opacity_is_written_as_ext_g_state() {
+    let mut e = dac_text::TextEngine::new();
+    let mut l = laid_out(&mut e, "Half", 30.0);
+    for s in &mut l.styles {
+        s.color.alpha = 0.5;
+    }
+    let mut d = Document::new();
+    let img = d.add_image(Image::samples8(1, 1, ColorSpace::Rgb, vec![0, 0, 0])).unwrap();
+    let mut p = Page::new(200.0, 100.0);
+    p.text(&l, "Half", (10.0, 50.0), 1.0);
+    p.image(img, Rect::new(0.0, 0.0, 10.0, 10.0));
+    d.push_page(p).unwrap();
+    let doc = parse(&d.to_bytes().unwrap());
+    let page = *doc.get_pages().get(&1).unwrap();
+    let c = content(&doc, page);
+    let (half, opaque) = (c.find("/GA128 gs").unwrap(), c.find("/GA255 gs").unwrap());
+    assert!(half < opaque, "{c}");
+    let res = dict(&doc, doc.get_dictionary(page).unwrap().get(b"Resources").unwrap());
+    let gs = dict(&doc, res.get(b"ExtGState").unwrap());
+    let g = dict(&doc, gs.get(b"GA128").unwrap());
+    assert!((g.get(b"ca").unwrap().as_float().unwrap() - 128.0 / 255.0).abs() < 1e-3);
+
+    // Opaque text adds no graphics states.
+    let l = laid_out(&mut e, "Full", 30.0);
+    let mut d = Document::new();
+    let mut p = Page::new(200.0, 100.0);
+    p.text(&l, "Full", (10.0, 50.0), 1.0);
+    d.push_page(p).unwrap();
+    let doc = parse(&d.to_bytes().unwrap());
+    let page = *doc.get_pages().get(&1).unwrap();
+    assert!(!content(&doc, page).contains(" gs"));
+}

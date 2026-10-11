@@ -6,12 +6,12 @@
 //! export show the same page.
 
 use dac_layout::render::{PhotoSource, RenderOptions};
-use dac_layout::tokens::{PhotoInfo, expand};
+use dac_layout::tokens::PhotoInfo;
 use dac_layout::{Cell, Fit, Page, PageLayout, PhotoCell, Rect};
 use dac_raster::Rgba8;
 use dac_text::TextEngine;
 
-use crate::text::{Placed, layout_box};
+use crate::text::{Placed, expand_kerned, layout_box_kerned};
 use crate::{Book, BookError, BookPage, CellContent, Graphic, NumberPos, PageRef, PageTextPos, PhotoTextPos, Result, TEXT_SAFE, TypeStyle, VAlign};
 
 /// Largest rendered page, pixels.
@@ -46,6 +46,8 @@ pub struct TextItem {
     pub rect: Rect,
     pub text: String,
     pub style: TypeStyle,
+    /// Manual kerning: byte offsets into `text` (see [`crate::text::expand_kerned`]).
+    pub kerns: crate::text::Kerns,
     /// Editor filler (not exported).
     pub filler: bool,
 }
@@ -82,17 +84,18 @@ pub fn text_items(book: &Book, r: PageRef, photos: &dyn PhotoSource, editor: boo
         let rect = c.rect.to_points(trim).inset(&c.padding.insets());
         match &c.content {
             CellContent::Text { text, style } => {
-                let t = expand(text, &info(photos, first_photo, num, pages));
+                let (t, kerns) = expand_kerned(text, &info(photos, first_photo, num, pages), &style.kerns);
                 if t.trim().is_empty() {
                     if editor && book.guides.show && book.guides.filler_text {
-                        out.push(TextItem { rect, text: FILLER.into(), style: TypeStyle { color: [150, 150, 150], ..style.clone() }, filler: true });
+                        let style = TypeStyle { color: [150, 150, 150], kerns: Vec::new(), ..style.clone() };
+                        out.push(TextItem { rect, text: FILLER.into(), style, kerns: Vec::new(), filler: true });
                     }
                 } else {
-                    out.push(TextItem { rect, text: t, style: style.clone(), filler: false });
+                    out.push(TextItem { rect, text: t, style: style.clone(), kerns, filler: false });
                 }
             }
             CellContent::Photo { photo, text: Some(pt), .. } => {
-                let t = expand(&pt.text, &info(photos, photo.as_deref(), num, pages));
+                let (t, kerns) = expand_kerned(&pt.text, &info(photos, photo.as_deref(), num, pages), &pt.style.kerns);
                 if t.trim().is_empty() {
                     continue;
                 }
@@ -104,13 +107,13 @@ pub fn text_items(book: &Book, r: PageRef, photos: &dyn PhotoSource, editor: boo
                 };
                 let style =
                     if pt.position == PhotoTextPos::Above { TypeStyle { valign: VAlign::Bottom, ..pt.style.clone() } } else { pt.style.clone() };
-                out.push(TextItem { rect: tr, text: t, style, filler: false });
+                out.push(TextItem { rect: tr, text: t, style, kerns, filler: false });
             }
             CellContent::Photo { .. } => {}
         }
     }
     if let Some(pt) = &page.text {
-        let t = expand(&pt.text, &info(photos, first_photo, num, pages));
+        let (t, kerns) = expand_kerned(&pt.text, &info(photos, first_photo, num, pages), &pt.style.kerns);
         if !t.trim().is_empty() {
             let h = pt.style.leading.unwrap_or(pt.style.size * 1.2) * 3.0;
             let y = match pt.position {
@@ -121,6 +124,7 @@ pub fn text_items(book: &Book, r: PageRef, photos: &dyn PhotoSource, editor: boo
                 rect: Rect::new(TEXT_SAFE, y, (trim.w - 2.0 * TEXT_SAFE).max(1.0), h),
                 text: t,
                 style: pt.style.clone(),
+                kerns,
                 filler: false,
             });
         }
@@ -142,14 +146,20 @@ pub fn text_items(book: &Book, r: PageRef, photos: &dyn PhotoSource, editor: boo
                 (if right { trim.w - o - w } else { o }, (trim.h - h) / 2.0, if right { crate::HAlign::Right } else { crate::HAlign::Left })
             }
         };
-        out.push(TextItem { rect: Rect::new(x, y, w, h), text: n.to_string(), style: TypeStyle { align, ..s.style.clone() }, filler: false });
+        out.push(TextItem {
+            rect: Rect::new(x, y, w, h),
+            text: n.to_string(),
+            style: TypeStyle { align, ..s.style.clone() },
+            kerns: Vec::new(),
+            filler: false,
+        });
     }
     out
 }
 
 /// Lays a text item out at `dpi`.
 pub fn layout_item(engine: &mut TextEngine, item: &TextItem, dpi: f32) -> Vec<Placed> {
-    layout_box(engine, &item.text, &item.style, item.rect.w, item.rect.h, dpi)
+    layout_box_kerned(engine, &item.text, &item.style, &item.kerns, item.rect.w, item.rect.h, dpi)
 }
 
 fn rgba(c: [u8; 3]) -> [u8; 4] {
