@@ -114,26 +114,7 @@ fn folder_param(p: &Value, c: &str) -> Result<String> {
     Ok(path.to_string())
 }
 
-fn create(s: &mut Session, p: &Value) -> Result<Value> {
-    let c = "folder.create";
-    let parent = str_param(p, "parent").filter(|x| !x.is_empty()).ok_or_else(|| bad(c, "missing parent"))?;
-    let name = str_param(p, "name")
-        .map(str::trim)
-        .filter(|n| !n.is_empty() && !n.contains(['/', '\\']) && *n != "." && *n != "..")
-        .ok_or_else(|| bad(c, "give a folder name (no slashes)"))?;
-    if !Path::new(parent).is_dir() {
-        return Err(bad(c, format!("{parent} is not a folder")));
-    }
-    let path = Path::new(parent).join(name).to_string_lossy().to_string();
-    folder_on_disk("", &path).map_err(|e| bad(c, e))?;
-    // undo removes it again (only while it is empty)
-    let undo = crate::FolderMove { from: path.clone(), to: String::new() };
-    if let Err(e) = s.commit_with_folder(&format!("Create Folder “{name}”"), Op::Batch { ops: vec![] }, undo) {
-        let _ = remove_empty(&path);
-        return Err(e);
-    }
-    Ok(json!({"path": path}))
-}
+// `folder.create` lives in `cmd/browse.rs` (the fork's version, which refuses a taken name).
 
 fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     let c = "folder.delete";
@@ -279,15 +260,6 @@ fn volumes(s: &mut Session, _p: &Value) -> Result<Value> {
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
-        cmd!(
-            "folder.create",
-            "Create Folder",
-            [],
-            None,
-            "{parent, name} — create a folder on disk; one undo step (undo removes it again while it is empty) → {path}",
-            always,
-            create
-        ),
         cmd!(
             "folder.delete",
             "Delete Empty Folder",
