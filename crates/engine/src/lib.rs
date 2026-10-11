@@ -45,6 +45,7 @@ pub mod library;
 mod lightroom_archive;
 pub mod lightroom_catalog;
 pub mod lightroom_job;
+mod lightroom_smart;
 mod lightroom_sqlite;
 pub mod logging;
 pub mod media;

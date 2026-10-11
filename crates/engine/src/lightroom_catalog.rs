@@ -154,6 +154,9 @@ pub struct CatalogImport {
     pub collections: Vec<Row>,
     pub members: Vec<Row>,
     pub collection_content: Vec<Row>,
+    /// `AgLibraryFolderStackImage` rows (`stack`, `image`, `position`, `collapsed`).
+    #[serde(default)]
+    pub stacks: Vec<Row>,
     pub warnings: Vec<String>,
 }
 
@@ -345,8 +348,8 @@ pub fn read(path: &Path) -> Result<CatalogImport, String> {
 }
 
 pub fn read_with_progress(path: &Path, cancel: &AtomicBool, total: &AtomicUsize, done: &AtomicUsize) -> Result<CatalogImport, String> {
-    // 13 catalog tables plus one validation stage; ImportJob adds one unit per original path.
-    total.store(14, Ordering::Relaxed);
+    // 14 catalog tables plus one validation stage; ImportJob adds one unit per original path.
+    total.store(15, Ordering::Relaxed);
     done.store(0, Ordering::Relaxed);
     ensure_read_active(cancel)?;
     let before = std::fs::metadata(path).map_err(|e| e.to_string())?;
@@ -436,6 +439,7 @@ pub fn read_with_progress(path: &Path, cancel: &AtomicBool, total: &AtomicUsize,
         collections: optional_table("AgLibraryCollection", &mut warnings)?,
         members: optional_table("AgLibraryCollectionImage", &mut warnings)?,
         collection_content: optional_table("AgLibraryCollectionContent", &mut warnings)?,
+        stacks: optional_table("AgLibraryFolderStackImage", &mut warnings)?,
         warnings,
     };
     for image in table("Adobe_images", true)? {
@@ -808,6 +812,13 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
     for members in grouped_members.values_mut() {
         members.sort_by(|a, b| text(a, "positionInCollection").cmp(text(b, "positionInCollection")));
     }
+    let smart_content: HashMap<i64, &str> = data
+        .collection_content
+        .iter()
+        .filter(|r| text(r, "owningModule") == "ag.library.smart_collection")
+        .map(|r| (number(r, "collection"), text(r, "content")))
+        .collect();
+    let (mut smart_albums, mut static_smart) = (0usize, 0usize);
     let mut ordered: Vec<_> = data.collections.iter().collect();
     ordered.sort_by_key(|r| {
         let mut depth = 0;
@@ -823,10 +834,25 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         let mut album = Album::new(id, text(collection, "name"));
         album.parent = albums.get(&number(collection, "parent")).copied();
         album.folder = text(collection, "creationId").contains("group");
+        let mut smart_ok = false;
         if text(collection, "creationId").contains("smart") {
-            warnings.push(format!("{}: smart rules preserved in archive; imported current membership", album.name));
+            match smart_content.get(&number(collection, "id_local")).map(|c| crate::lightroom_smart::smart_rules(c)) {
+                Some(Ok(rules)) => {
+                    album.smart = Some(Box::new(dac_catalog::Filter { rule_set: Some(rules), ..Default::default() }));
+                    smart_ok = true;
+                    smart_albums += 1;
+                }
+                Some(Err(why)) => {
+                    warnings.push(format!("{}: {why}; imported current membership (rules kept in archive)", album.name));
+                    static_smart += 1;
+                }
+                None => {
+                    warnings.push(format!("{}: smart rules missing; imported current membership", album.name));
+                    static_smart += 1;
+                }
+            }
         }
-        if !album.folder {
+        if !album.folder && !smart_ok {
             album.photos = grouped_members
                 .get(&number(collection, "id_local"))
                 .into_iter()
@@ -836,7 +862,9 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         }
         if s.catalog.album(id).is_some() {
             // Reimport preserves the user's album name/hierarchy, merges only new membership.
-            if let Some(old) = s.catalog.album(id).filter(|a| !a.folder && !a.is_smart()) {
+            if smart_ok {
+                // A reimported smart album keeps whatever rules the user has now.
+            } else if let Some(old) = s.catalog.album(id).filter(|a| !a.folder && !a.is_smart()) {
                 let mut photos = old.photos.clone();
                 let mut seen: HashSet<_> = photos.iter().copied().collect();
                 for photo in album.photos {
@@ -850,14 +878,45 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
             ops.push(Op::AddAlbum { album });
         }
     }
+    let stacks = stack_ops(s, &data, &ids, &mut ops, &mut warnings);
     if !ops.is_empty() {
         s.commit("Import Lightroom Catalog", Op::Batch { ops })?;
     }
     s.merge_undo(s.undo.len().saturating_sub(undo0), "Import Lightroom Catalog");
     Ok(AppliedImport {
-        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
+        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"stacks":stacks,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
         index: index.clone(),
     })
+}
+
+/// Lightroom folder stacks → stacks, top (position 1) first. Photos already stacked in the library
+/// keep their stack; a stack that would have fewer than two photos is skipped.
+fn stack_ops(s: &mut crate::Session, data: &CatalogImport, ids: &HashMap<i64, PhotoId>, ops: &mut Vec<Op>, warnings: &mut Vec<String>) -> usize {
+    let mut groups: BTreeMap<i64, Vec<(f64, PhotoId, bool)>> = BTreeMap::new();
+    for r in &data.stacks {
+        let Some(photo) = ids.get(&number(r, "image")).copied() else { continue };
+        let position = r.get("position").and_then(Value::as_f64).filter(|p| p.is_finite()).unwrap_or(f64::MAX);
+        groups.entry(number(r, "stack")).or_default().push((position, photo, number(r, "collapsed") != 0));
+    }
+    let mut taken: HashSet<PhotoId> = HashSet::new();
+    let mut made = 0;
+    for (stack, mut members) in groups {
+        members.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let collapsed = members.iter().any(|m| m.2);
+        let stacked = members.iter().any(|m| s.catalog.stack_of(m.1).is_some());
+        let photos: Vec<PhotoId> = members.into_iter().map(|m| m.1).filter(|p| s.catalog.stack_of(*p).is_none() && taken.insert(*p)).collect();
+        if stacked && photos.len() < 2 {
+            continue; // already stacked by an earlier import
+        }
+        if photos.len() < 2 {
+            warnings.push(format!("stack {stack}: fewer than two photos left to stack; skipped"));
+            continue;
+        }
+        let id = s.catalog.alloc_stack_id();
+        ops.push(Op::AddStack { stack: dac_catalog::Stack { id, photos, collapsed } });
+        made += 1;
+    }
+    made
 }
 
 #[cfg(test)]
@@ -897,6 +956,7 @@ mod tests {
                 row(json!({"collection":10,"image":1,"positionInCollection":"b"})),
             ],
             collection_content: Vec::new(),
+            stacks: Vec::new(),
             warnings: Vec::new(),
         }
     }
@@ -926,6 +986,39 @@ mod tests {
         assert!(s.catalog.is_empty());
         assert!(s.catalog.albums().next().is_none());
         assert!(data.photos[1].settings.contains("CameraProfile")); // unmapped source stays intact
+    }
+    #[test]
+    fn smart_collections_become_smart_albums_and_stacks_are_kept() {
+        let mut s = crate::Session::new();
+        let mut data = sample();
+        data.collections.push(row(json!({"id_local":11,"name":"Best","creationId":"com.adobe.ag.library.smart_collection"})));
+        data.collections.push(row(json!({"id_local":12,"name":"Odd","creationId":"com.adobe.ag.library.smart_collection"})));
+        data.members.push(row(json!({"collection":12,"image":1})));
+        data.collection_content = vec![
+            row(json!({"collection":11,"owningModule":"ag.library.smart_collection",
+                "content":"s = { { criteria = \"rating\", operation = \">=\", value = 4 }, combine = \"intersect\" }"})),
+            row(json!({"collection":12,"owningModule":"ag.library.smart_collection",
+                "content":"s = { { criteria = \"collection\", operation = \"all\", value = \"x\" } }"})),
+        ];
+        data.stacks =
+            vec![row(json!({"stack":5,"image":1,"position":2.0,"collapsed":1})), row(json!({"stack":5,"image":2,"position":1.0,"collapsed":1}))];
+        let r = apply(&mut s, data.clone(), false).unwrap();
+        assert_eq!(r["smartAlbums"], 1);
+        assert_eq!(r["smartAsStatic"], 1);
+        assert_eq!(r["stacks"], 1);
+        let best = s.catalog.albums().find(|a| a.name == "Best").unwrap();
+        assert!(best.is_smart());
+        let odd = s.catalog.albums().find(|a| a.name == "Odd").unwrap();
+        assert!(!odd.is_smart() && odd.photos.len() == 1);
+        let copy = s.catalog.photos().find(|p| p.copy_of.is_some()).unwrap().id;
+        let stack = s.catalog.stacks().next().unwrap();
+        assert_eq!(stack.photos.first(), Some(&copy));
+        assert!(stack.collapsed);
+        // Reimport neither duplicates the stack nor warns about it.
+        let r = apply(&mut s, data, false).unwrap();
+        assert_eq!(r["stacks"], 0);
+        assert_eq!(s.catalog.stacks().count(), 1);
+        assert!(!r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|w| w.starts_with("stack"))), "{}", r["warnings"]);
     }
     #[test]
     fn preserves_existing_edits_and_rejects_invalid_structure_before_mutation() {
