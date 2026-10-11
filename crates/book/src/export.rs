@@ -3,8 +3,8 @@
 //!
 //! PDF pages carry the bleed in the media box and the trim in the trim box. Each page's photos,
 //! backgrounds and graphics are one sRGB JPEG with the ICC profile attached; its text is vector
-//! text with the fonts embedded as subsets (searchable, sharp at any size). Text opacity is
-//! kept in rasters only for now: the PDF writer paints text opaque.
+//! text with the fonts embedded as subsets (searchable, sharp at any size), at the style's
+//! opacity, with manual kerning applied.
 
 use dac_layout::render::PhotoSource;
 use dac_raster::Rgba8;

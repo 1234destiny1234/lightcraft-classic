@@ -1092,5 +1092,11 @@
   "Black Point Compensation": "黑點補償",
   "Print Adjustment": "列印調整",
   "Brightness": "亮度",
-  "16 Bit Output": "16 位元輸出"
+  "16 Bit Output": "16 位元輸出",
+  "Pair Kerning": "字偶間距",
+  "Place the text cursor between two characters to kern them.": "將文字游標放在兩個字元之間以調整字偶間距。",
+  "Clear Pair Kerning": "清除字偶間距",
+  "New Photos to Publish": "要發佈的新相片",
+  "Modified Photos to Re-Publish": "要重新發佈的已修改相片",
+  "Published Photos": "已發佈的相片"
 }

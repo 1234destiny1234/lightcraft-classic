@@ -231,6 +231,8 @@ struct GlyphOp {
     /// Glyph space (outline coordinates at `size`, y up) -> PDF user space (y up).
     m: [f64; 6],
     paint: Paint,
+    /// Fill and stroke opacity, 0 (clear) to 255 (opaque).
+    alpha: u8,
     /// Faux bold: stroke width in points.
     bold: Option<f64>,
     coords: Vec<i16>,
@@ -239,7 +241,7 @@ struct GlyphOp {
 #[derive(Clone, Debug)]
 enum Op {
     Image { id: ImageId, rect: Rect },
-    Fill { path: Path, paint: Paint, even_odd: bool },
+    Fill { path: Path, paint: Paint, even_odd: bool, alpha: u8 },
     Stroke { path: Path, stroke: Stroke },
     Glyph(Box<GlyphOp>),
     Save,
@@ -277,11 +279,16 @@ impl Page {
     }
 
     pub fn fill(&mut self, path: Path, paint: Paint) {
-        self.ops.push(Op::Fill { path, paint, even_odd: false });
+        self.ops.push(Op::Fill { path, paint, even_odd: false, alpha: 255 });
     }
 
     pub fn fill_even_odd(&mut self, path: Path, paint: Paint) {
-        self.ops.push(Op::Fill { path, paint, even_odd: true });
+        self.ops.push(Op::Fill { path, paint, even_odd: true, alpha: 255 });
+    }
+
+    /// Fills `path` at `opacity` (0 clear to 1 opaque; NaN counts as opaque).
+    pub fn fill_alpha(&mut self, path: Path, paint: Paint, opacity: f32) {
+        self.ops.push(Op::Fill { path, paint, even_odd: false, alpha: alpha_u8(opacity) });
     }
 
     pub fn stroke(&mut self, path: Path, stroke: Stroke) {
@@ -326,8 +333,7 @@ impl Page {
 
     /// Draws a text layout: text space (pixels of `layout`) is mapped to the page by
     /// `pt_per_px` (72 / the layout's dpi) with the text origin at `origin` (points). `text` is
-    /// the laid-out string (for searchable text). Colours come from the styles (RGB; alpha is
-    /// ignored).
+    /// the laid-out string (for searchable text). Colours and opacity come from the styles.
     pub fn text(&mut self, layout: &dac_text::TextLayout, text: &str, origin: (f64, f64), pt_per_px: f64) {
         if !(origin.0.is_finite() && origin.1.is_finite() && pt_per_px.is_finite() && pt_per_px > 0.0) {
             return;
@@ -354,6 +360,7 @@ impl Page {
                 size: face.size_px,
                 m,
                 paint: Paint::Rgb(c.r, c.g, c.b),
+                alpha: alpha_u8(c.alpha),
                 bold,
                 coords: face.coords.clone(),
             })));
@@ -363,7 +370,7 @@ impl Page {
             let pts = [(d.x0, d.y0), (d.x1, d.y0), (d.x1, d.y1), (d.x0, d.y1)].map(|(x, y)| place.apply(f64::from(x), f64::from(y)));
             let path =
                 Path::new().move_to(pts[0].0, pts[0].1).line_to(pts[1].0, pts[1].1).line_to(pts[2].0, pts[2].1).line_to(pts[3].0, pts[3].1).close();
-            self.fill(path, Paint::Rgb(st.color.r, st.color.g, st.color.b));
+            self.fill_alpha(path, Paint::Rgb(st.color.r, st.color.g, st.color.b), st.color.alpha);
         }
         for f in layout.faces.iter().map(|f| FaceKey { blob: f.font.data.id(), index: f.font.index }) {
             if !self.chars.iter().any(|c| c.0 == f) {
@@ -373,6 +380,32 @@ impl Page {
             }
         }
     }
+}
+
+/// An opacity as a byte (NaN and infinities count as opaque).
+fn alpha_u8(opacity: f32) -> u8 {
+    if opacity.is_finite() { (opacity.clamp(0.0, 1.0) * 255.0).round() as u8 } else { 255 }
+}
+
+/// The opacities (below opaque) a page's fills and glyphs use, for its `/ExtGState` resources.
+fn page_alphas(p: &Page) -> Vec<u8> {
+    let mut v: Vec<u8> = p
+        .ops
+        .iter()
+        .filter_map(|op| match op {
+            Op::Fill { alpha, .. } => Some(*alpha),
+            Op::Glyph(g) => Some(g.alpha),
+            _ => None,
+        })
+        .filter(|&a| a < 255)
+        .collect();
+    if !v.is_empty() {
+        // Images and strokes go back to opaque.
+        v.push(255);
+    }
+    v.sort_unstable();
+    v.dedup();
+    v
 }
 
 /// Document information (Info dictionary and XMP).
@@ -612,6 +645,17 @@ impl Writer {
                         seen.push(id.0);
                         xo.pair(Name(format!("Im{}", id.0).as_bytes()), *r);
                     }
+                }
+            }
+            let alphas = page_alphas(p);
+            if !alphas.is_empty() {
+                let mut gs = res.ext_g_states();
+                for a in alphas {
+                    let v = f32::from(a) / 255.0;
+                    gs.insert(Name(format!("GA{a}").as_bytes()))
+                        .start::<pdf_writer::writers::ExtGraphicsState>()
+                        .non_stroking_alpha(v)
+                        .stroking_alpha(v);
                 }
             }
             res.finish();
@@ -898,15 +942,26 @@ fn page_content(p: &Page, fonts: &HashMap<FaceKey, (Ref, font::Embedded)>, uses:
         [a, -b, cc, -d, e, h - f]
     };
     let mut depth = 0usize;
+    // Current opacity, and the opacity at each open save (restore brings it back).
+    let mut alpha = 255u8;
+    let mut saved: Vec<u8> = Vec::new();
+    let set_alpha = |c: &mut Content, alpha: &mut u8, a: u8| {
+        if *alpha != a {
+            *alpha = a;
+            c.set_parameters(Name(format!("GA{a}").as_bytes()));
+        }
+    };
     for op in &p.ops {
         match op {
             Op::Save => {
                 depth += 1;
+                saved.push(alpha);
                 c.save_state();
             }
             Op::Restore => {
                 if depth > 0 {
                     depth -= 1;
+                    alpha = saved.pop().unwrap_or(255);
                     c.restore_state();
                 }
             }
@@ -919,12 +974,14 @@ fn page_content(p: &Page, fonts: &HashMap<FaceKey, (Ref, font::Embedded)>, uses:
                 if images.get(id.0).is_none() {
                     continue;
                 }
+                set_alpha(&mut c, &mut alpha, 255);
                 c.save_state();
                 c.transform([finite(rect.w), 0.0, 0.0, finite(rect.h), finite(rect.x), finite(h - rect.y - rect.h)]);
                 c.x_object(Name(format!("Im{}", id.0).as_bytes()));
                 c.restore_state();
             }
-            Op::Fill { path, paint, even_odd } => {
+            Op::Fill { path, paint, even_odd, alpha: a } => {
+                set_alpha(&mut c, &mut alpha, *a);
                 paint.set_fill(&mut c);
                 emit_path(&mut c, path, h);
                 if *even_odd {
@@ -934,6 +991,7 @@ fn page_content(p: &Page, fonts: &HashMap<FaceKey, (Ref, font::Embedded)>, uses:
                 }
             }
             Op::Stroke { path, stroke } => {
+                set_alpha(&mut c, &mut alpha, 255);
                 stroke.paint.set_stroke(&mut c);
                 c.set_line_width(finite(stroke.width.max(0.0)));
                 if let Some((dash, phase)) = &stroke.dash {
@@ -949,6 +1007,7 @@ fn page_content(p: &Page, fonts: &HashMap<FaceKey, (Ref, font::Embedded)>, uses:
                 if !m.iter().all(|v| v.is_finite()) {
                     continue;
                 }
+                set_alpha(&mut c, &mut alpha, g.alpha);
                 g.paint.set_fill(&mut c);
                 let font = fonts.get(&g.face).and_then(|(_, e)| Some((e.remap.get(&g.gid)?, p.faces.iter().position(|f| f.0 == g.face)?)));
                 match font {

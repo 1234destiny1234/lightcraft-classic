@@ -77,6 +77,35 @@ pub struct GridCache {
     local: Option<(u64, usize)>,
     /// Collections (plain albums) holding each photo, by generation (the collection badge).
     albums: Option<(u64, Arc<HashMap<PhotoId, usize>>)>,
+    /// A published collection's sections (new / modified / published), by generation.
+    publish: Option<(u64, Option<Arc<Vec<DateRun>>>)>,
+}
+
+/// Header keys of a published collection's sections, in the order the engine sorts them.
+const PUBLISH_SECTIONS: [&str; 3] = ["publish:new", "publish:modified", "publish:published"];
+
+/// The header of a published collection's section, as Lightroom Classic names them.
+fn publish_section_label(key: &str) -> Option<&'static str> {
+    Some(match key {
+        "publish:new" => "New Photos to Publish",
+        "publish:modified" => "Modified Photos to Re-Publish",
+        "publish:published" => "Published Photos",
+        _ => return None,
+    })
+}
+
+/// A published collection's photos as runs of one section each (`ids` in the engine's order:
+/// new, modified, published); photos in no section are left out.
+pub fn publish_runs(sections: &HashMap<PhotoId, u8>, ids: &[PhotoId]) -> Vec<DateRun> {
+    let mut runs: Vec<DateRun> = Vec::new();
+    for (i, id) in ids.iter().enumerate() {
+        let Some(key) = sections.get(id).and_then(|r| PUBLISH_SECTIONS.get(usize::from(*r))) else { continue };
+        match runs.last_mut() {
+            Some(last) if last.key == *key && last.start + last.count == i => last.count += 1,
+            _ => runs.push(DateRun { key: (*key).to_string(), label: String::new(), start: i, count: 1 }),
+        }
+    }
+    runs
 }
 
 impl GridCache {
@@ -87,6 +116,20 @@ impl GridCache {
                 stats.view_builds += 1;
                 let r = Arc::new(key.1.map(|sort| cat.date_runs(ids, sort, key.2)).unwrap_or_default());
                 self.runs = Some((key, r.clone()));
+                r
+            }
+        }
+    }
+
+    fn publish(&mut self, session: &dac_engine::Session, ids: &[PhotoId], generation: u64) -> Option<Arc<Vec<DateRun>>> {
+        match &self.publish {
+            Some((g, r)) if *g == generation => r.clone(),
+            _ => {
+                let r = match session.source {
+                    dac_engine::LibrarySource::Album(a) => dac_engine::cmd::publish::sections(session, a).map(|m| Arc::new(publish_runs(&m, ids))),
+                    _ => None,
+                };
+                self.publish = Some((generation, r.clone()));
                 r
             }
         }
@@ -230,7 +273,10 @@ fn show_inner(app: &mut DacApp, ui: &mut egui::Ui) {
     };
     let runs_key = (generation, group_key, by);
     let stats = &mut app.caches.grid_stats;
-    let runs = app.caches.grid.runs(stats, &app.session.catalog, &ids, runs_key);
+    let runs = match app.caches.grid.publish(&app.session, &ids, generation) {
+        Some(r) => r,
+        None => app.caches.grid.runs(stats, &app.session.catalog, &ids, runs_key),
+    };
     // the layout only changes with the photos (and their shapes), the grouping, the width and
     // the thumbnail size
     let lay_key = (runs_key, avail_w.to_bits(), target.to_bits(), square);
@@ -448,7 +494,11 @@ fn group_header(app: &mut DacApp, ui: &mut egui::Ui, run: &DateRun, ids: &[Photo
         p.rect_filled(r, 0.0, t.canvas);
         p.hline(r.x_range(), r.bottom(), Stroke::new(1.0, t.divider));
     }
-    let g = p.layout_no_wrap(crate::i18n::date_group_label(&run.key, false), t.semibold(15.0), if resp.hovered() { t.text } else { t.text_label });
+    let label = match publish_section_label(&run.key) {
+        Some(l) => crate::i18n::tr(l).to_string(),
+        None => crate::i18n::date_group_label(&run.key, false),
+    };
+    let g = p.layout_no_wrap(label, t.semibold(15.0), if resp.hovered() { t.text } else { t.text_label });
     let x = r.left() + 8.0;
     let gw = g.size().x;
     p.galley(pos2(x, r.center().y - g.size().y / 2.0), g, t.text);

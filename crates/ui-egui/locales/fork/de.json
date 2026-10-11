@@ -952,5 +952,11 @@
   "Black Point Compensation": "Tiefenkompensierung",
   "Print Adjustment": "Druckanpassung",
   "Brightness": "Helligkeit",
-  "16 Bit Output": "16-Bit-Ausgabe"
+  "16 Bit Output": "16-Bit-Ausgabe",
+  "Pair Kerning": "Paarkerning",
+  "Place the text cursor between two characters to kern them.": "Setzen Sie den Textcursor zwischen zwei Zeichen, um sie zu unterschneiden.",
+  "Clear Pair Kerning": "Paarkerning entfernen",
+  "New Photos to Publish": "Neue zu veröffentlichende Fotos",
+  "Modified Photos to Re-Publish": "Geänderte erneut zu veröffentlichende Fotos",
+  "Published Photos": "Veröffentlichte Fotos"
 }

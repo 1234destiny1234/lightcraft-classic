@@ -1097,5 +1097,11 @@
   "Black Point Compensation": "Compensación de punto negro",
   "Print Adjustment": "Ajuste de impresión",
   "Brightness": "Brillo",
-  "16 Bit Output": "Salida de 16 bits"
+  "16 Bit Output": "Salida de 16 bits",
+  "Pair Kerning": "Kerning de pares",
+  "Place the text cursor between two characters to kern them.": "Coloque el cursor de texto entre dos caracteres para ajustar su espaciado.",
+  "Clear Pair Kerning": "Borrar kerning de pares",
+  "New Photos to Publish": "Fotos nuevas para publicar",
+  "Modified Photos to Re-Publish": "Fotos modificadas para volver a publicar",
+  "Published Photos": "Fotos publicadas"
 }

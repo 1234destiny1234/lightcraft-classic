@@ -46,7 +46,7 @@ pub const OPS: &[(&str, &str, &str)] = &[
     (
         "book.type",
         "Type",
-        "{page, cell?, target: cell|photoText|pageText|numbers, preset?: name, style?: {font, style, size, opacity, color, tracking, baseline, leading, kerning, columns, gutter, align, valign}}",
+        "{page, cell?, target: cell|photoText|pageText|numbers, preset?: name, style?: {font, style, size, opacity, color, tracking, baseline, leading, kerning, columns, gutter, align, valign, kerns: [{at, amount}]}, kern?: {at: character index, amount: 1/1000 em (0 removes)}, clearKerns?: bool}",
     ),
     ("book.textPreset", "Text Style Preset", "{name, style?: {…} (save), delete?: bool}"),
     (
@@ -388,11 +388,20 @@ fn run(book: &mut Book, id: &str, p: &Value) -> Result<Value> {
                 },
                 t => return Err(bad(format!("unknown target: {t}"))),
             };
+            // a preset sets the look; the text's manual kerning stays
             if let Some(b) = base {
-                *style = b;
+                *style = TypeStyle { kerns: std::mem::take(&mut style.kerns), ..b };
             }
             if let Some(s) = p.get("style") {
                 *style = merge(style, s)?;
+            }
+            if let Some(k) = p.get("kern") {
+                let at = k.get("at").and_then(Value::as_u64).and_then(|v| u32::try_from(v).ok()).ok_or_else(|| bad("kern.at must be a character index"))?;
+                let amount = k.get("amount").and_then(Value::as_f64).ok_or_else(|| bad("kern.amount must be a number (1/1000 em)"))?;
+                style.set_kern(at, amount as f32)?;
+            }
+            if bool_of(p, "clearKerns") == Some(true) {
+                style.kerns.clear();
             }
             style.validate()?;
             serde_json::to_value(&*style).map_err(|e| BookError::Json(e.to_string()))
@@ -404,7 +413,7 @@ fn run(book: &mut Book, id: &str, p: &Value) -> Result<Value> {
                 return Ok(json!({"deleted": name}));
             }
             let style: TypeStyle = match p.get("style") {
-                Some(s) => merge(&TypeStyle::default(), s)?,
+                Some(s) => TypeStyle { kerns: Vec::new(), ..merge(&TypeStyle::default(), s)? },
                 None => return Err(bad("missing style")),
             };
             style.validate()?;
@@ -575,6 +584,21 @@ mod tests {
     }
 
     #[test]
+    fn manual_kerning_by_command_survives_presets() {
+        let mut book = b();
+        let r = apply(&mut book, "book.type", &json!({"target": "pageText", "page": 1, "kern": {"at": 2, "amount": -40}})).unwrap();
+        assert_eq!(r["kerns"], json!([{"at": 2, "amount": -40.0}]));
+        apply(&mut book, "book.type", &json!({"target": "pageText", "page": 1, "preset": "Title"})).unwrap();
+        let style = &book.pages[0].text.as_ref().unwrap().style;
+        assert_eq!((style.size, style.kern_at(2)), (30.0, -40.0));
+        // a preset saved from a kerned style doesn't carry the kerning
+        apply(&mut book, "book.textPreset", &json!({"name": "K", "style": {"kerns": [{"at": 1, "amount": 5}]}})).unwrap();
+        assert!(crate::text::find_preset(&book, "K").unwrap().kerns.is_empty());
+        let r = apply(&mut book, "book.type", &json!({"target": "pageText", "page": 1, "clearKerns": true})).unwrap();
+        assert!(r.get("kerns").is_none());
+    }
+
+    #[test]
     fn bad_input_is_an_error_and_changes_nothing() {
         let mut book = b();
         let snapshot = book.clone();
@@ -604,6 +628,9 @@ mod tests {
             ("book.textPreset", json!({"name": " "})),
             ("book.favorite", json!({"template": "nope"})),
             ("book.pageNumbers", json!({"position": "middle"})),
+            ("book.type", json!({"target": "numbers", "kern": {"at": 0, "amount": 1e9}})),
+            ("book.type", json!({"target": "numbers", "kern": {"at": -1, "amount": 10}})),
+            ("book.type", json!({"target": "numbers", "style": {"kerns": [{"at": 0, "amount": "x"}]}})),
         ] {
             assert!(apply(&mut book, id, &p).is_err(), "{id} {p}");
             assert_eq!(book, snapshot, "{id} changed the book");

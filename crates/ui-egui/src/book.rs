@@ -111,6 +111,10 @@ pub struct BookUi {
     pub save_name: String,
     /// The saved creation (catalog collection) this book was saved to or opened from.
     pub creation: Option<u64>,
+    /// The text cursor in the last focused text box (which text, character index), for the
+    /// Type panel's pair kerning.
+    #[serde(skip)]
+    pub kern_caret: Option<(TypeTarget, u32)>,
     /// Book edits to undo and redo (this session only).
     #[serde(skip)]
     pub undo: Vec<Book>,
@@ -133,6 +137,7 @@ impl Default for BookUi {
             type_target: TypeTarget::Cell,
             save_name: String::new(),
             creation: None,
+            kern_caret: None,
             undo: Vec::new(),
             redo: Vec::new(),
         }
@@ -1462,7 +1467,9 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     match selected_cell(app).map(|c| c.content) {
         Some(CellContent::Text { mut text, .. }) => {
             ui.label(crate::i18n::tr("Cell Text (tokens like {Title} work)"));
-            let r = ui.add(egui::TextEdit::multiline(&mut text).desired_rows(4).desired_width(f32::INFINITY));
+            let out = egui::TextEdit::multiline(&mut text).desired_rows(4).desired_width(f32::INFINITY).show(ui);
+            remember_caret(app, TypeTarget::Cell, &out);
+            let r = out.response.response;
             crate::access::label(&r, "Cell Text");
             if r.changed() {
                 op(app, &ctx, "book.text", json!({"text": text}));
@@ -1476,7 +1483,9 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
             }
             if let Some(pt) = pt {
                 let mut text = pt.text.clone();
-                let r = ui.add(egui::TextEdit::singleline(&mut text).hint_text("{Title}"));
+                let out = egui::TextEdit::singleline(&mut text).hint_text("{Title}").show(ui);
+                remember_caret(app, TypeTarget::PhotoText, &out);
+                let r = out.response.response;
                 crate::access::label(&r, "Photo Text");
                 if r.changed() {
                     op(app, &ctx, "book.photoText", json!({"text": text}));
@@ -1515,7 +1524,9 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
     if let Some(pt) = pt {
         let mut text = pt.text.clone();
-        let r = ui.add(egui::TextEdit::multiline(&mut text).desired_rows(2).desired_width(f32::INFINITY));
+        let out = egui::TextEdit::multiline(&mut text).desired_rows(2).desired_width(f32::INFINITY).show(ui);
+        remember_caret(app, TypeTarget::PageText, &out);
+        let r = out.response.response;
         crate::access::label(&r, "Page Text");
         if r.changed() {
             op(app, &ctx, "book.pageText", json!({"text": text}));
@@ -1529,6 +1540,16 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         if ui.add(egui::Slider::new(&mut off, 0.0..=288.0).suffix(" pt").text(crate::i18n::tr("Offset"))).changed() {
             op(app, &ctx, "book.pageText", json!({"offset": off}));
         }
+    }
+}
+
+/// Keeps the text cursor of a focused text box for the Type panel's pair kerning.
+fn remember_caret(app: &mut DacApp, target: TypeTarget, out: &egui::text_edit::TextEditOutput) {
+    if out.response.response.has_focus()
+        && let Some(c) = out.cursor_range
+        && let Ok(i) = u32::try_from(c.primary.index.0)
+    {
+        app.ui.book.kern_caret = Some((target, i));
     }
 }
 
@@ -1634,6 +1655,24 @@ fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         })
     {
         set(app, json!({"kerning": enum_key(kk)}));
+    }
+    // pair kerning: between the two characters around the text cursor
+    match app.ui.book.kern_caret {
+        Some((t, caret)) if t == app.ui.book.type_target && caret > 0 => {
+            let at = caret - 1;
+            let mut k = s.kern_at(at);
+            let r = ui.add(egui::Slider::new(&mut k, -500.0..=500.0).text(crate::i18n::tr("Pair Kerning")));
+            crate::access::label(&r, "Pair Kerning");
+            if r.changed() {
+                op(app, &ctx, "book.type", json!({"target": target, "kern": {"at": at, "amount": k.round()}}));
+            }
+        }
+        _ => {
+            ui.label(egui::RichText::new(crate::i18n::tr("Place the text cursor between two characters to kern them.")).weak());
+        }
+    }
+    if !s.kerns.is_empty() && ui.small_button(crate::i18n::tr("Clear Pair Kerning")).clicked() {
+        op(app, &ctx, "book.type", json!({"target": target, "clearKerns": true}));
     }
     let mut cols = s.columns;
     if ui.add(egui::Slider::new(&mut cols, 1..=6).text(crate::i18n::tr("Columns"))).changed() {

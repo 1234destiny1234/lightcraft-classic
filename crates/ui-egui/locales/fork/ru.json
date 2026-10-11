@@ -1387,5 +1387,11 @@
   "Black Point Compensation": "Компенсация точки чёрного",
   "Print Adjustment": "Коррекция печати",
   "Brightness": "Яркость",
-  "16 Bit Output": "16-битный вывод"
+  "16 Bit Output": "16-битный вывод",
+  "Pair Kerning": "Кернинг пары",
+  "Place the text cursor between two characters to kern them.": "Поставьте текстовый курсор между двумя символами, чтобы настроить кернинг.",
+  "Clear Pair Kerning": "Сбросить кернинг пар",
+  "New Photos to Publish": "Новые фото для публикации",
+  "Modified Photos to Re-Publish": "Изменённые фото для повторной публикации",
+  "Published Photos": "Опубликованные фото"
 }

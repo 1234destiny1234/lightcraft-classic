@@ -221,3 +221,31 @@ fn studio_capture_imports_new_shots() {
     s.execute("tether.stop", &json!({"end": true})).unwrap();
     assert_eq!(s.execute("tether.status", &json!({})).unwrap(), Value::Null);
 }
+
+#[test]
+fn a_published_collection_lists_new_then_modified_then_published() {
+    let (mut s, root) = library("sections");
+    let ids = import(&mut s, &root, 4);
+    let out = root.join("published");
+    s.execute("publish.createService", &json!({"name": "Disk", "dir": out.to_string_lossy(), "export": {"format": "jpeg", "longEdge": 20}})).unwrap();
+    s.execute("library.select", &json!({"ids": [ids[0], ids[1], ids[2]]})).unwrap();
+    let coll = s.execute("publish.createCollection", &json!({"service": "Disk", "name": "Web", "addSelected": true})).unwrap()["collection"]
+        .as_u64()
+        .unwrap();
+    s.execute("publish.run", &json!({"collection": coll})).unwrap();
+    // ids[1] modified, ids[3] new; ids[0] and ids[2] stay published
+    s.execute("photo.rate", &json!({"ids": [ids[1]], "rating": 3})).unwrap();
+    s.execute("album.addPhotos", &json!({"id": coll, "ids": [ids[3]]})).unwrap();
+    s.execute("library.source", &json!({"kind": "album", "id": coll})).unwrap();
+    let shown: Vec<u64> = s.visible_cloned().iter().map(|p| p.0).collect();
+    assert_eq!(shown[..2], [ids[3], ids[1]], "{shown:?}");
+    let mut rest = shown[2..].to_vec();
+    rest.sort();
+    assert_eq!(rest, vec![ids[0], ids[2]]);
+    let sections = crate::cmd::publish::sections(&s, dac_catalog::AlbumId(coll)).unwrap();
+    assert_eq!(sections.get(&dac_catalog::PhotoId(ids[3])), Some(&0));
+    // a plain album isn't sectioned
+    let plain = s.execute("album.create", &json!({"name": "Plain"})).unwrap();
+    let plain = plain["id"].as_u64().or_else(|| plain.as_u64()).unwrap();
+    assert!(crate::cmd::publish::sections(&s, dac_catalog::AlbumId(plain)).is_none());
+}

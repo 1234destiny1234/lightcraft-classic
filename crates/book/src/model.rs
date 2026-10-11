@@ -256,6 +256,21 @@ pub enum Kerning {
     Off,
 }
 
+/// Manual kerning between one character and the next (the Type panel's per-pair kerning).
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct KernPair {
+    /// Index (in characters) of the left character of the pair, in the text as typed. On a
+    /// token such as `{Title}` the closing `}` kerns after the token's last character; the
+    /// token's other characters don't kern.
+    pub at: u32,
+    /// Extra space after that character, 1/1000 em (−1000 … 1000; negative tightens).
+    pub amount: f32,
+}
+
+/// At most this many manual kerning pairs per text.
+pub const MAX_KERN_PAIRS: usize = 4096;
+
 /// The Type panel.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -276,6 +291,9 @@ pub struct TypeStyle {
     /// Line spacing, points (`None` = auto, 1.2 × size).
     pub leading: Option<f32>,
     pub kerning: Kerning,
+    /// Manual kerning of single pairs, on top of `kerning` (not part of text presets).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
+    pub kerns: Vec<KernPair>,
     /// Text columns (1–6) and the gap between them (points).
     pub columns: u8,
     pub gutter: f32,
@@ -295,6 +313,7 @@ impl Default for TypeStyle {
             baseline: 0.0,
             leading: None,
             kerning: Kerning::Metrics,
+            kerns: Vec::new(),
             columns: 1,
             gutter: 12.0,
             align: HAlign::Left,
@@ -307,6 +326,27 @@ impl TypeStyle {
     pub fn sized(size: f32) -> TypeStyle {
         TypeStyle { size, ..TypeStyle::default() }
     }
+    /// The manual kerning of the pair starting at character `at` (0 when there is none).
+    pub fn kern_at(&self, at: u32) -> f32 {
+        self.kerns.iter().find(|k| k.at == at).map_or(0.0, |k| k.amount)
+    }
+
+    /// Sets (or with 0, removes) the manual kerning of the pair starting at character `at`.
+    pub fn set_kern(&mut self, at: u32, amount: f32) -> Result<()> {
+        if !(amount.is_finite() && (-1000.0..=1000.0).contains(&amount)) {
+            return Err(BookError::Invalid("kerning out of range (−1000 … 1000)".into()));
+        }
+        self.kerns.retain(|k| k.at != at);
+        if amount != 0.0 {
+            if self.kerns.len() >= MAX_KERN_PAIRS {
+                return Err(BookError::Invalid("too many kerning pairs".into()));
+            }
+            self.kerns.push(KernPair { at, amount });
+            self.kerns.sort_by_key(|k| k.at);
+        }
+        Ok(())
+    }
+
     pub fn validate(&self) -> Result<()> {
         let fin = |v: f32| v.is_finite();
         let ok = fin(self.size)
@@ -321,7 +361,9 @@ impl TypeStyle {
             && (1..=6).contains(&self.columns)
             && fin(self.gutter)
             && (0.0..=200.0).contains(&self.gutter)
-            && self.font.len() <= 256;
+            && self.font.len() <= 256
+            && self.kerns.len() <= MAX_KERN_PAIRS
+            && self.kerns.iter().all(|k| fin(k.amount) && (-1000.0..=1000.0).contains(&k.amount));
         if ok { Ok(()) } else { Err(BookError::Invalid("type style out of range".into())) }
     }
 }
