@@ -234,7 +234,10 @@ fn value_editor(ui: &mut egui::Ui, field: &str, op: &str, v: &mut Value, salt: &
 /// field keeps the operator when the new field has it, else takes the field's first operator.
 fn field_menu(ui: &mut egui::Ui, salt: &str, field: &mut String, op: &mut String, value: &mut Value) {
     // G19: plug-in metadata fields (`plugin:<id>/<key>`), by their plug-in's and field's names
+    #[cfg(not(target_arch = "wasm32"))]
     let plugin_fields = dac_engine::cmd::plugins::rule_fields();
+    #[cfg(target_arch = "wasm32")]
+    let plugin_fields: Vec<(String, String)> = Vec::new();
     let label = match plugin_fields.iter().find(|(id, _)| id == field) {
         Some((_, name)) => name.clone(),
         None => field_label(field).unwrap_or(field.as_str()).to_string(),
