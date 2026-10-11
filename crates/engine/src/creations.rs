@@ -72,6 +72,26 @@ pub struct PreparedPhotos {
     infos: HashMap<String, PhotoInfo>,
 }
 
+impl PreparedPhotos {
+    /// Print sharpening: an output unsharp mask on every photo, rendered at its printed size.
+    pub fn sharpen_for_print(&mut self, level: dac_print::PrintSharpening, media: dac_print::PrintMedia) {
+        use crate::export::{SharpenAmount, SharpenFor};
+        let amount = match level {
+            dac_print::PrintSharpening::Off => return,
+            dac_print::PrintSharpening::Low => SharpenAmount::Low,
+            dac_print::PrintSharpening::Standard => SharpenAmount::Standard,
+            dac_print::PrintSharpening::High => SharpenAmount::High,
+        };
+        let target = match media {
+            dac_print::PrintMedia::Glossy => SharpenFor::Glossy,
+            dac_print::PrintMedia::Matte => SharpenFor::Matte,
+        };
+        for img in self.images.values_mut() {
+            crate::export::output_sharpen(img, target, amount);
+        }
+    }
+}
+
 impl PhotoSource for PreparedPhotos {
     fn image(&self, photo: &str, _long_side: usize) -> std::result::Result<Rgba8, String> {
         self.images.get(photo).cloned().ok_or_else(|| format!("photo {photo} was not prepared"))
@@ -476,6 +496,19 @@ mod tests {
         assert_eq!(parse_shutter("2\""), Some(2.0));
         assert_eq!(parse_shutter("1/0"), None);
         assert_eq!(parse_shutter("fast"), None);
+    }
+
+    #[test]
+    fn print_sharpening_raises_edge_contrast_and_off_leaves_photos_alone() {
+        let edge = Rgba8::from_fn(32, 32, |x, _| if x < 16 { [80, 80, 80, 255] } else { [170, 170, 170, 255] });
+        let make = || PreparedPhotos { images: HashMap::from([("1".to_string(), edge.clone())]), infos: HashMap::new() };
+        let mut off = make();
+        off.sharpen_for_print(dac_print::PrintSharpening::Off, dac_print::PrintMedia::Matte);
+        assert_eq!(off.images["1"], edge);
+        let mut high = make();
+        high.sharpen_for_print(dac_print::PrintSharpening::High, dac_print::PrintMedia::Matte);
+        let (dark, light) = (high.images["1"].get(15, 16)[0], high.images["1"].get(16, 16)[0]);
+        assert!(dark < 80 && light > 170, "unsharp mask overshoots at the edge: {dark} {light}");
     }
 
     #[test]

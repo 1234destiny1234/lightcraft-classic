@@ -165,6 +165,26 @@ pub enum Destination {
     Printer,
 }
 
+/// Print sharpening strength (Print Job ▸ Print Sharpening).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrintSharpening {
+    #[default]
+    Off,
+    Low,
+    Standard,
+    High,
+}
+
+/// The paper surface print sharpening is tuned for.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum PrintMedia {
+    #[default]
+    Glossy,
+    Matte,
+}
+
 /// The print job.
 #[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
@@ -177,11 +197,14 @@ pub struct JobOptions {
     pub jpeg_quality: u8,
     /// Copies the printer makes of each page (1–999).
     pub copies: u32,
+    /// Output sharpening of the photos at their printed size.
+    pub sharpening: PrintSharpening,
+    pub media: PrintMedia,
 }
 
 impl Default for JobOptions {
     fn default() -> Self {
-        JobOptions { dpi: 240.0, draft: false, jpeg_quality: 92, copies: 1 }
+        JobOptions { dpi: 240.0, draft: false, jpeg_quality: 92, copies: 1, sharpening: PrintSharpening::Off, media: PrintMedia::Glossy }
     }
 }
 

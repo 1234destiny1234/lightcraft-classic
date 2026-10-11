@@ -530,7 +530,8 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     app.print.busy = true;
     let dest = settings.destination.clone();
     let work = move || -> Result<Value, String> {
-        let src = dac_engine::creations::run_jobs(jobs, infos)?;
+        let mut src = dac_engine::creations::run_jobs(jobs, infos)?;
+        src.sharpen_for_print(settings.job.sharpening, settings.job.media);
         let text = dac_print::text::ShapedText::with_system_fonts();
         let progress = &mut |_: usize, _: usize| true;
         let write_file = |path: &str, bytes: &[u8]| -> Result<(), String> {
@@ -971,6 +972,36 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
         });
         ui.checkbox(&mut s.job.draft, crate::i18n::tr("Draft Mode Printing"));
         ui.add(egui::Slider::new(&mut s.job.dpi, 72.0..=720.0).step_by(1.0).text(crate::i18n::tr("Print Resolution (ppi)")));
+        ui.horizontal(|ui| {
+            use dac_print::PrintSharpening;
+            let mut on = s.job.sharpening != PrintSharpening::Off;
+            let r = ui.checkbox(&mut on, crate::i18n::tr("Print Sharpening"));
+            register(&ctx, "print:sharpening", r.rect);
+            if r.changed() {
+                s.job.sharpening = if on { PrintSharpening::Standard } else { PrintSharpening::Off };
+            }
+            if on {
+                let levels = [(PrintSharpening::Low, "Low"), (PrintSharpening::Standard, "Standard"), (PrintSharpening::High, "High")];
+                let cur = levels.iter().find(|l| l.0 == s.job.sharpening).map_or("Standard", |l| l.1);
+                egui::ComboBox::from_id_salt("print-sharpen-amount").selected_text(crate::i18n::tr(cur)).show_ui(ui, |ui| {
+                    for (v, label) in levels {
+                        ui.selectable_value(&mut s.job.sharpening, v, crate::i18n::tr(label));
+                    }
+                });
+            }
+        });
+        if s.job.sharpening != dac_print::PrintSharpening::Off {
+            ui.horizontal(|ui| {
+                use dac_print::PrintMedia;
+                ui.label(crate::i18n::tr("Media Type"));
+                for (v, label) in [(PrintMedia::Glossy, "Glossy"), (PrintMedia::Matte, "Matte")] {
+                    let r = ui.selectable_label(s.job.media == v, crate::i18n::tr(label));
+                    if r.clicked() {
+                        s.job.media = v;
+                    }
+                }
+            });
+        }
         if s.destination == Destination::Jpeg {
             ui.add(egui::Slider::new(&mut s.job.jpeg_quality, 10..=100).text(crate::i18n::tr("JPEG Quality")));
         }
