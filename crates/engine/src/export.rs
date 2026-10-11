@@ -560,6 +560,32 @@ pub enum MetadataPolicy {
     None,
 }
 
+/// Transfer curve of an HDR AVIF export (`hdrTransfer`): PQ (absolute, SDR white at 203 cd/m²) or
+/// HLG (relative to the display; BT.2100 with SDR white at signal 0.75).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum HdrCurve {
+    #[default]
+    Pq,
+    Hlg,
+}
+
+impl HdrCurve {
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.to_ascii_lowercase().as_str() {
+            "pq" => Some(Self::Pq),
+            "hlg" => Some(Self::Hlg),
+            _ => None,
+        }
+    }
+    fn codec(self) -> dac_codecs::HdrTransfer {
+        match self {
+            Self::Pq => dac_codecs::HdrTransfer::Pq,
+            Self::Hlg => dac_codecs::HdrTransfer::Hlg,
+        }
+    }
+}
+
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct ExportOptions {
@@ -605,6 +631,8 @@ pub struct ExportOptions {
     /// not applied), AVIF as 10-bit Rec. 2020 PQ, 32-bit float TIFF with the highlights above SDR
     /// white kept. Other formats, and photos without an HDR edit, are SDR.
     pub hdr: bool,
+    /// The curve of an HDR AVIF: PQ (default) or HLG.
+    pub hdr_transfer: HdrCurve,
 }
 
 impl Default for ExportOptions {
@@ -629,6 +657,7 @@ impl Default for ExportOptions {
             color_space: OutputSpace::Srgb,
             bit_depth: None,
             hdr: false,
+            hdr_transfer: HdrCurve::Pq,
         }
     }
 }
@@ -665,6 +694,7 @@ pub const OPTION_PARAMS: &[&str] = &[
     "colorSpace",
     "bitDepth",
     "hdr",
+    "hdrTransfer",
 ];
 
 /// The keys of a `watermark` object ([`Watermark`], camelCase).
@@ -804,6 +834,7 @@ impl ExportOptions {
                 }
                 "sharpen" => one_of(k, v, &["none", "screen", "matte", "glossy"])?,
                 "sharpenAmount" => one_of(k, v, &["low", "standard", "high"])?,
+                "hdrTransfer" => one_of(k, v, &["pq", "hlg"])?,
                 "conflict" => one_of(k, v, &["unique", "overwrite", "skip"])?,
                 "tiffCompression" => one_of(k, v, &["none", "lzw", "zip", "deflate"])?,
                 "dngCompression" => {
@@ -930,6 +961,7 @@ impl ExportOptions {
             color_space: s("colorSpace").and_then(OutputSpace::parse).unwrap_or(d.color_space),
             bit_depth: u("bitDepth").filter(|b| matches!(b, 8 | 10 | 16 | 32)).map(|b| b as u8),
             hdr: p.get("hdr").and_then(Value::as_bool).unwrap_or(d.hdr),
+            hdr_transfer: s("hdrTransfer").and_then(HdrCurve::parse).unwrap_or(d.hdr_transfer),
         }
     }
 
@@ -1285,7 +1317,9 @@ pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) 
     let r = match (o.format, &img.samples) {
         (ExportFormat::Png, _) => encode::encode_png(&e, &meta),
         (ExportFormat::Tiff, _) => encode::encode_tiff(&e, o.tiff_compression, &meta),
-        (ExportFormat::Avif, DeepSamples::F32(v)) if img.space == OutputSpace::Rec2020 => dac_codecs::encode_avif_pq(w, h, v, o.quality, 8, &meta),
+        (ExportFormat::Avif, DeepSamples::F32(v)) if img.space == OutputSpace::Rec2020 => {
+            dac_codecs::encode_avif_hdr(w, h, v, o.quality, 8, &meta, o.hdr_transfer.codec())
+        }
         (ExportFormat::Avif, _) => encode::encode_avif(&e, o.quality, 8, &meta),
         (f, _) => return Err(format!("{f:?} export is 8-bit only")),
     };

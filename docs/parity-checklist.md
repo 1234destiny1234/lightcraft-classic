@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (G13: Lightroom import maps smart collections and stacks; LR-EDIT-OPTICS-PROFILE: lensfun-format database set up or downloaded from Settings, Optics explains a missing correction); previously minor (G2: Print rows re-audited; IPP copies, printer margins, job state, print sharpening, virtual IPP printer and CUPS CI; Immich album sync rule; compact Immich server card) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (G14: HLG AVIF export; LR-VIEW-HDR-DISPLAY decision logic; G13: Lightroom import maps smart collections and stacks; LR-EDIT-OPTICS-PROFILE: lensfun-format database set up or downloaded from Settings, Optics explains a missing correction); previously minor (G2: Print rows re-audited; IPP copies, printer margins, job state, print sharpening, virtual IPP printer and CUPS CI; Immich album sync rule; compact Immich server card) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -140,6 +140,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
+| LR-HDR-EDIT | HDR editing | P2 | 🟡 | `cmd:develop.hdr`, `crates/pipeline/src/tone.rs` (`ToneMap::hdr`), `crates/pipeline/src/tests_hdr.rs` | HDR tone map (SDR curve through the midtones, highlights up to the headroom limit) and float HDR render, CPU only; no on-screen HDR display yet (LR-VIEW-HDR-DISPLAY); HDR settings not yet read from crs XMP (upstream PR #663 reads `crs:HDREditMode`) |
 | LR-IMP-ADD-DIALOG | Add photos/folders | P0 | ✅ | `cmd:file.addPhotos`, `cmd:library.importPreview`, `cmd:library.import` (`mode`, `album`, `albumName`, `preset`, `keywords`), `crates/ui-egui/src/import.rs` | review dialog (Import Photos): the scanned source (a scanned folder is not added to Local), candidate grid with thumbnails and checkboxes (duplicates by path/content marked and unchecked; with several file types, a toggle per type checks or unchecks all of its files, e.g. the raws without the JPEGs beside them, issue #344) filling a resizable window (issue #337), transfer mode (add in place / copy / move, each explained), album (existing/new), preset, keywords; the folder scan runs on a background thread with a progress window and Cancel (a NAS folder no longer freezes the window); the import itself (probing, sidecars, copying / moving files) runs on a worker thread and its batches join the library between frames, with a progress window and Cancel; one undo step. Drag-and-drop goes through the same background import. File dialogs list the importable extensions (`dac_engine::import::EXTENSIONS`) in any letter case on Linux, where GTK and the desktop portal match globs case-sensitively (`apps/app/src/dialog_filter.rs`, issue #342) |
 | LR-IMP-DRAGDROP | Drop files/folders to import | P0 | ✅ | `crates/ui-egui/src/lib.rs` (dropped files → `cmd:library.import`) | dropping onto a specific album not supported |
 | LR-IMP-DUPES | Skip duplicates by content | P1 | ✅ | `crates/engine/src/import.rs`, `crates/engine/src/tests_import.rs` | |
@@ -209,6 +210,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VIEW-SECONDWINDOW | Second display window [Classic] | P2 | ✅ | `cmd:view.secondWindow`, `crates/ui-egui/src/panels/second.rs` | Window ▸ Second Window (⌘F11): the active photo fitted in its own native window with its own render (a floating panel where there are no native windows); loupe view only (no grid / compare / survey there) |
 | LR-VIEW-CLIPPING | Clipping indicators | P0 | ✅ | `cmd:view.clipping` | |
 | LR-VIEW-HISTOGRAM | Histogram | P0 | ✅ | `cmd:view.histogram`, `crates/ui-egui/src/panels/edit.rs` | no drag-to-adjust on the histogram |
+| LR-VIEW-HDR-DISPLAY | HDR display output | P2 | ⬜ | `apps/app/src/hdr_display.rs` (`choose`, `preferred_hdr_format`) | SDR/HDR decision (platform, surface format, OS headroom, `<PREFIX>_HDR_DISPLAY=0`) is unit-tested and logged at start; always SDR today because eframe 0.36 configures an 8-bit surface; no OS headroom query yet |
 | LR-VIEW-HDR-DISPLAY | HDR display output | P2 | ⬜ | | |
 
 ## D. Search & filter (FILT)
@@ -435,6 +437,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-HDR-SDRPREVIEW | SDR preview of HDR | P2 | 🟡 | `ctl:hdr.sdr*` | SDR rendition sliders (brightness, contrast, highlights, shadows, whites, clarity) used by every SDR view and export; no separate SDR-preview toggle until HDR display lands |
 | LR-HDR-VISUALIZE | Visualize HDR range | P2 | ✅ | `cmd:view.visualizeHdr`, `crates/pipeline/src/visualize.rs` (`hdr_range`) | grey below SDR white, four colour bands by stops above it |
 | LR-HDR-LIMIT | HDR headroom limit | P2 | ✅ | `ctl:hdr.maxEv`, `cmd:develop.hdr` | 0 to 5 stops |
+| LR-HDR-EXPORT | HDR export | P2 | 🟡 | `cmd:app.export`, `crates/codecs/src/gainmap.rs`, `crates/engine/src/export.rs` (`encode_gain_map_jpeg`) | `hdr` export option: ISO 21496-1 gain map JPEG (plus Adobe hdrgm and Apple XMP), 10-bit Rec. 2020 AVIF with PQ or HLG (`hdrTransfer`, BT.2100 / BT.2408, SDR white at signal 0.75), 32-bit float TIFF; no HEIC (no permissive HEVC encoder) |
 | LR-HDR-EXPORT | HDR export | P2 | 🟡 | `cmd:app.export`, `crates/codecs/src/gainmap.rs`, `crates/engine/src/export.rs` (`encode_gain_map_jpeg`) | `hdr` export option: ISO 21496-1 gain map JPEG (plus Adobe hdrgm and Apple XMP), 10-bit Rec. 2020 PQ AVIF, 32-bit float TIFF; no HLG yet; no HEIC (no permissive HEVC encoder) |
 
 ## R. Video (VID)
@@ -459,6 +462,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EXP-BITDEPTH | Bit depth | P1 | ✅ | `cmd:app.export` (`bitDepth`), `crates/pipeline/src/output.rs` (`OutputDepth`), `crates/engine/src/export.rs` | 16-bit PNG/TIFF rendered at 16 bits (TIFF defaults to 16), 32-bit float linear TIFF with a linear profile, 10-bit AVIF; high-bit-depth renders run on the CPU |
 | LR-EXP-COMPRESSION | TIFF compression | P1 | ✅ | `cmd:app.export` (`tiffCompression`: none / lzw / zip) | |
 | LR-EXP-COLORSPACE | Output colour space | P0 | ✅ | `cmd:app.export` (`colorSpace`), `crates/pipeline/src/output.rs`, `crates/engine/src/export.rs` | sRGB, Display P3, Adobe RGB (1998) compatible, ProPhoto RGB, Rec. 2020: rendered from the working space with gamut mapping into the target gamut (CPU + GPU), own ICC profile embedded; AVIF stays sRGB (muxer has no ICC) |
+| LR-EXP-HDR | HDR output | P2 | 🟡 | `cmd:app.export`, `crates/ui-egui/src/panels/dialogs.rs` | HDR output checkbox in the export dialog: gain map JPEG, PQ or HLG AVIF, float TIFF; no HDR presets yet |
 | LR-EXP-HDR | HDR output | P2 | 🟡 | `cmd:app.export`, `crates/ui-egui/src/panels/dialogs.rs` | HDR output checkbox in the export dialog: gain map JPEG, PQ AVIF, float TIFF; no HDR presets yet |
 | LR-EXP-SHARPEN | Output sharpening | P1 | ✅ | `cmd:app.export` (`sharpen`, `sharpenAmount`) | |
 | LR-EXP-METADATA | Metadata policy | P1 | ✅ | `cmd:app.export` (`metadata`, `removeLocation`) | |

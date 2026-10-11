@@ -577,10 +577,15 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         if opts.hdr && !opts.hdr_output() {
                             ui.label(egui::RichText::new("HDR TIFF needs 32-bit float.").color(t.text_dim));
                         }
+                        if opts.hdr && opts.format == F::Avif {
+                            use dac_engine::export::HdrCurve as H;
+                            choices(ui, "HDR curve", "exportHdrCurve", &[(H::Pq, "PQ"), (H::Hlg, "HLG")], &mut opts.hdr_transfer);
+                        }
                     }
                     if !rendered {
                     } else if opts.format == F::Avif && opts.hdr {
-                        ui.label(egui::RichText::new("Color space: Rec. 2020 PQ (HDR AVIF)").color(t.text_dim));
+                        let curve = if opts.hdr_transfer == dac_engine::export::HdrCurve::Hlg { "HLG" } else { "PQ" };
+                        ui.label(egui::RichText::new(format!("Color space: Rec. 2020 {curve} (HDR AVIF)")).color(t.text_dim));
                     } else if opts.format == F::Avif {
                         ui.label(egui::RichText::new(crate::i18n::tr("Color space: sRGB (AVIF)")).color(t.text_dim));
                     } else {
