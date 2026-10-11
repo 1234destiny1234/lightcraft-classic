@@ -97,11 +97,15 @@ fn host_calls_follow_the_grant() {
 
 #[test]
 fn unrequested_capabilities_are_refused() {
+    // absolute on this platform, so they are refused for being outside every granted folder
+    let (secret, scratch) = if cfg!(windows) { (r"C:\Windows\win.ini", r"C:\Windows\Temp\x") } else { ("/etc/passwd", "/tmp/x") };
+    let read = serde_json::json!({"method": "fs.readText", "params": {"path": secret}}).to_string();
+    let write = serde_json::json!({"method": "fs.writeText", "params": {"path": scratch, "text": "y"}}).to_string();
     for (req, needle) in [
         (r#"{"method":"metadata.setStandard","params":{}}"#, "metadataWrite"),
         (r#"{"method":"http.request","params":{"url":"https://example.com/"}}"#, "network"),
-        (r#"{"method":"fs.readText","params":{"path":"/etc/passwd"}}"#, "not inside a folder"),
-        (r#"{"method":"fs.writeText","params":{"path":"/tmp/x","text":"y"}}"#, "not inside a folder"),
+        (read.as_str(), "not inside a folder"),
+        (write.as_str(), "not inside a folder"),
         (r#"{"method":"no.such","params":{}}"#, "unknown host method"),
         ("not json", "not JSON"),
     ] {
