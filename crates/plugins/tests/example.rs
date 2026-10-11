@@ -176,3 +176,106 @@ fn batch_metadata_example_end_to_end() {
     assert!(m.run_command(id, "keywords", &json!({"keywords": "x"}), &[], &mut host).is_err(), "nothing selected");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn export_tools_example_hook_and_destination() {
+    let Some(wasm) = build_sdk_example("export-tools") else { return };
+    let dir = temp("export-tools");
+    let mut m = Manager::open(&dir).unwrap();
+    let id = "org.example.export-tools";
+    m.install_bytes(&wasm, None).unwrap();
+    let file = dir.join("out.jpg");
+    std::fs::write(&file, b"123456789").unwrap();
+    let files = [json!({"path": file.display().to_string(), "photo": "5"})];
+    let mut host = dac_plugins::NoHost;
+
+    // post-process hook: reads the lent (binary) file, records its checksum
+    let r = m.post_export(&files, &mut host);
+    assert_eq!(r[0]["ok"]["checksums"][0]["crc32"], "cbf43926", "{r:?}");
+    let r = m.export_to(id, "webdav", &json!({"dryRun": true}), &[], &mut host).unwrap();
+    assert_eq!(r["uploaded"], json!([]), "no files, nothing sent");
+
+    // the destination: dry run lists the uploads; dialog values are checked first
+    assert_eq!(m.export_destinations().len(), 1);
+    let r = m.export_to(id, "webdav", &json!({"url": "https://dav.example.com/p/", "dryRun": true}), &files, &mut host).unwrap();
+    assert_eq!(r["uploaded"][0]["url"], "https://dav.example.com/p/out.jpg", "{r}");
+    assert!(m.export_to(id, "webdav", &json!({"dryRun": "yes"}), &files, &mut host).is_err());
+    assert!(m.export_to(id, "nope", &json!({}), &files, &mut host).is_err());
+    assert!(m.export_to(id, "webdav", &json!({"url": "ftp://x"}), &files, &mut host).is_err());
+    // without the network grant, a real upload is refused by the host
+    let e = m.export_to(id, "webdav", &json!({"url": "https://dav.example.com/p"}), &files, &mut host).unwrap_err();
+    assert!(e.to_string().contains("network"), "{e}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[cfg(unix)]
+#[test]
+fn publish_folder_example_publishes_and_removes() {
+    let Some(wasm) = build_sdk_example("publish-folder") else { return };
+    let dir = temp("publish-folder");
+    let root = Path::new("/tmp/dac-gallery");
+    let mut m = Manager::open(&dir).unwrap();
+    let id = "org.example.publish-folder";
+    let grant = Permissions { fs: vec![dac_plugins::FsRoot { path: root.display().to_string(), write: true }], ..Default::default() };
+    m.install_bytes(&wasm, Some(grant)).unwrap();
+    std::fs::create_dir_all(root).unwrap();
+    let src = dir.join("render.jpg");
+    std::fs::write(&src, [0u8, 1, 2, 255]).unwrap();
+    let mut host = dac_plugins::NoHost;
+    let mut p = PluginPublisher::new(&mut m, id).unwrap();
+    assert_eq!(p.label(), "Local Gallery");
+    let item = PublishItem { path: src.display().to_string(), photo: format!("g{}", std::process::id()), title: "T".into(), ..Default::default() };
+    let r = p.upload(&mut host, &item).unwrap();
+    let published = root.join(&r.remote_id);
+    assert_eq!(std::fs::read(&published).unwrap(), [0u8, 1, 2, 255], "binary copy");
+    let index: Value = serde_json::from_str(&std::fs::read_to_string(root.join("index.json")).unwrap()).unwrap();
+    assert_eq!(index[&r.remote_id]["title"], "T");
+    p.delete(&mut host, &r.remote_id).unwrap();
+    assert!(!published.exists());
+    // a hostile remote id can't reach outside the folder
+    assert!(p.delete(&mut host, "..").is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn custom_fields_example_shows_and_edits_fields() {
+    let Some(wasm) = build_sdk_example("custom-fields") else { return };
+    let dir = temp("custom-fields");
+    let mut m = Manager::open(&dir).unwrap();
+    let id = "org.example.custom-fields";
+    m.install_bytes(&wasm, None).unwrap();
+    let mut host = dac_plugins::NoHost;
+    let f = m.metadata_fields("3");
+    assert_eq!(f[0]["fields"].as_array().map(Vec::len), Some(4), "{f:?}");
+    assert!(f[0]["fields"].as_array().unwrap().iter().all(|x| x["value"].is_null()));
+
+    m.run_command(id, "set", &json!({"client": "ACME", "job": "J-1", "usage": "Commercial"}), &["3".into()], &mut host).unwrap();
+    let value = |f: &[Value], k: &str| f[0]["fields"].as_array().unwrap().iter().find(|x| x["key"] == k).unwrap()["value"].clone();
+    let f = m.metadata_fields("3");
+    assert_eq!(value(&f, "client"), "ACME");
+    assert_eq!(value(&f, "usage"), "Commercial");
+
+    // the user edits a field; read-only and invalid values are refused
+    m.set_metadata_field(id, "3", "job", &json!("J-2")).unwrap();
+    assert!(m.set_metadata_field(id, "3", "delivered", &json!(true)).is_err());
+    assert!(m.set_metadata_field(id, "3", "usage", &json!("Stolen")).is_err());
+    assert!(m.set_metadata_field(id, "3", "nope", &json!("x")).is_err());
+    assert_eq!(value(&m.metadata_fields("3"), "job"), "J-2");
+
+    // the export hook fills the read-only field; the provider suggests the client keyword
+    m.post_export(&[json!({"path": dir.join("a.jpg").display().to_string(), "photo": "3"})], &mut host);
+    assert_eq!(value(&m.metadata_fields("3"), "delivered"), true);
+    let s = m.suggest_metadata(&[json!({"id": "3"})], &mut host);
+    assert_eq!(s[0]["ok"]["suggestions"][0]["keywords"], json!(["ACME"]), "{s:?}");
+    m.set_metadata_field(id, "3", "client", &Value::Null).unwrap();
+    assert!(value(&m.metadata_fields("3"), "client").is_null());
+
+    // survives a restart; disabled plug-ins show no fields
+    drop(m);
+    let mut m = Manager::open(&dir).unwrap();
+    assert_eq!(value(&m.metadata_fields("3"), "job"), "J-2");
+    m.set_enabled(id, false).unwrap();
+    assert!(m.metadata_fields("3").is_empty());
+    assert!(m.set_metadata_field(id, "3", "job", &json!("x")).is_err());
+    let _ = std::fs::remove_dir_all(&dir);
+}

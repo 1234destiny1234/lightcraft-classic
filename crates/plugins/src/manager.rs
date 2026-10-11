@@ -57,6 +57,7 @@ impl Installed {
             "enabled": self.enabled, "size": self.plugin.size(),
             "requested": m.permissions, "granted": self.effective(),
             "commands": m.commands, "hooks": m.hooks, "publish": m.publish,
+            "exportDestinations": m.export_destinations, "metadataFields": m.metadata_fields,
         })
     }
 }
@@ -272,6 +273,89 @@ impl Manager {
         let ids = self.with_hook(|m| m.hooks.metadata);
         let req = json!({"hook": "metadata", "photos": photos.iter().take(MAX_BATCH).collect::<Vec<_>>()});
         ids.into_iter().map(|id| outcome(&id, self.invoke(&id, &req, host, &[]))).collect()
+    }
+
+    /// Enabled plug-ins' export destinations: `(plugin id, destination)`.
+    pub fn export_destinations(&self) -> Vec<(String, crate::DestinationDecl)> {
+        self.plugins
+            .values()
+            .filter(|p| p.enabled)
+            .flat_map(|p| p.plugin.manifest().export_destinations.iter().map(|d| (p.plugin.id().to_string(), d.clone())))
+            .collect()
+    }
+
+    /// Hands exported files `[{path, photo?}]` to a plug-in's export destination. `args` are
+    /// checked against the destination's dialog; the files are lent to the call.
+    pub fn export_to(&mut self, id: &str, destination: &str, args: &Value, files: &[Value], host: &mut dyn HostApi) -> Result<Value> {
+        let p = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?;
+        let decl = p
+            .plugin
+            .manifest()
+            .destination(destination)
+            .ok_or_else(|| Error::Params(format!("plug-in {id} has no export destination {destination:?}")))?;
+        let args = dialog_args(&decl.dialog, args)?;
+        let files: Vec<&Value> = files.iter().filter(|f| f.get("path").and_then(Value::as_str).is_some()).take(MAX_BATCH).collect();
+        let lent: Vec<PathBuf> = files.iter().filter_map(|f| f.get("path").and_then(Value::as_str)).map(PathBuf::from).collect();
+        let req = json!({"hook": "export.destination", "destination": destination, "args": args, "files": files});
+        self.invoke(id, &req, host, &lent)
+    }
+
+    fn store_mut(&mut self, id: &str) -> Result<&mut Installed> {
+        let dir = self.dir.clone();
+        let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
+        if p.store.is_none() {
+            p.store = Some(match &dir {
+                Some(d) => NamespaceStore::open(d.join("data").join(format!("{id}.json")))?,
+                None => NamespaceStore::in_memory(),
+            });
+        }
+        Ok(p)
+    }
+
+    /// The custom metadata fields of every enabled plug-in, with their values for `photo`
+    /// (from each plug-in's namespace; no plug-in code runs). A plug-in whose data can't be read
+    /// is listed with an `error`.
+    pub fn metadata_fields(&mut self, photo: &str) -> Vec<Value> {
+        let ids: Vec<String> = self.with_hook(|m| !m.metadata_fields.is_empty());
+        let mut out = Vec::new();
+        for id in ids {
+            let r = self.store_mut(&id).map(|p| {
+                let data = p.store.as_ref().map(|s| s.get(photo)).unwrap_or(Value::Null);
+                let m = p.plugin.manifest();
+                let fields: Vec<Value> = m
+                    .metadata_fields
+                    .iter()
+                    .map(|f| {
+                        let mut v = serde_json::to_value(f).unwrap_or(Value::Null);
+                        // a stored value the field no longer accepts shows as empty
+                        v["value"] = data.get(&f.key).and_then(|x| f.as_field().coerce(x).ok()).unwrap_or(Value::Null);
+                        v
+                    })
+                    .collect();
+                json!({"plugin": m.id, "pluginName": m.name, "fields": fields})
+            });
+            out.push(r.unwrap_or_else(|e| json!({"plugin": id, "error": e.to_string()})));
+        }
+        out
+    }
+
+    /// Sets (or with `null`, clears) a custom metadata field the user edited. Read-only fields
+    /// and values the field doesn't accept are refused.
+    pub fn set_metadata_field(&mut self, id: &str, photo: &str, key: &str, value: &Value) -> Result<Value> {
+        let p = self.plugins.get(id).ok_or_else(|| Error::NotFound(id.into()))?;
+        if !p.enabled {
+            return Err(Error::Disabled(id.into()));
+        }
+        let f = p.plugin.manifest().metadata_field(key).ok_or_else(|| Error::Params(format!("plug-in {id} has no metadata field {key:?}")))?;
+        if f.read_only {
+            return Err(Error::Params(format!("metadata field {key:?} is read-only")));
+        }
+        let v = if value.is_null() { Value::Null } else { f.as_field().coerce(value).map_err(Error::Params)? };
+        let p = self.store_mut(id)?;
+        let store = p.store.get_or_insert_with(NamespaceStore::in_memory);
+        store.set(photo, key, v.clone()).map_err(Error::Params)?;
+        store.save()?;
+        Ok(v)
     }
 
     fn with_hook(&self, f: impl Fn(&crate::Manifest) -> bool) -> Vec<String> {
