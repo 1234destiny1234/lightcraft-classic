@@ -1086,6 +1086,12 @@ pub fn run_ui_command(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "photo.editInExternal" => {
             // render an edit copy (stacked on the original), then open it in the editor
+            // a PSD or TIFF: ask Edit Original / a Copy / a Copy with Adjustments first, as Lightroom does
+            if p.as_object().is_none_or(|o| o.is_empty())
+                && let Some(r) = crate::edit_in::ask_mode(app, &json!({}))
+            {
+                return Some(r);
+            }
             let mut params = p.clone();
             if !params.is_object() {
                 params = json!({});
@@ -1096,7 +1102,7 @@ pub fn run_ui_command(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Va
             };
             let path = r["path"].as_str().unwrap_or_default().to_string();
             if let Some(id) = r["id"].as_u64() {
-                app.ui.external_edits.push(id);
+                crate::edit_in::watch(app, std::path::Path::new(&path), &[id]);
             }
             let editor = p.get("app").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| app.ui.settings.external_editor.clone());
             if let Some(f) = app.services.open_with.as_mut()
