@@ -7,6 +7,7 @@
 //!   also used for vector PDF text.
 //! * [`output`]: PDF (photos, shaped text with embedded subset fonts, graphics, crop marks, an
 //!   optional ICC OutputIntent) and JPEG output.
+//! * [`color`]: Print Adjustment and the conversion into the printer profile (8 and 16 bit).
 //! * [`ipp`]: IPP/1.1 printing to CUPS (and any IPP Everywhere printer) in pure Rust.
 //! * [`send`]: render, submit (PDF, else JPEG pages) with copies, and follow the job state.
 //! * [`testprinter`]: a virtual IPP printer on localhost for tests and CI.
@@ -20,6 +21,7 @@
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
+pub mod color;
 pub mod ipp;
 pub mod job;
 pub mod output;
@@ -27,7 +29,9 @@ pub mod send;
 pub mod testprinter;
 pub mod text;
 
-pub use job::{Destination, ImageSettings, LayoutStyle, PackageSpec, PageOptions, PrintMedia, PrintSettings, PrintSharpening};
+pub use job::{
+    Destination, ImageSettings, LayoutStyle, PackageSpec, PageOptions, PrintColor, PrintIntent, PrintMedia, PrintSettings, PrintSharpening,
+};
 
 /// Errors from building, rendering or sending a print.
 #[derive(Debug, thiserror::Error, PartialEq)]

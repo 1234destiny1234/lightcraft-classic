@@ -1069,5 +1069,11 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "它由另一個應用程式建立，{app} 無法開啟其目錄格式。它未被變更。請建立新目錄或開啟另一個目錄。",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "如果它位於未連接的磁碟機上，請連接後再試一次。否則請開啟或建立另一個目錄。",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app} 無權讀寫其資料夾。請檢查資料夾權限，然後再試一次。",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "其中的相片和編輯未受影響。你可以再試一次（例如關閉開啟它的其他程式或重新連接其磁碟機後），開啟其他圖庫或建立新的，或在沒有圖庫的情況下繼續——此時所做的一切都不會儲存。"
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "其中的相片和編輯未受影響。你可以再試一次（例如關閉開啟它的其他程式或重新連接其磁碟機後），開啟其他圖庫或建立新的，或在沒有圖庫的情況下繼續——此時所做的一切都不會儲存。",
+  "Color Management": "色彩管理",
+  "Managed by Printer": "由印表機管理",
+  "Black Point Compensation": "黑點補償",
+  "Print Adjustment": "列印調整",
+  "Brightness": "亮度",
+  "16 Bit Output": "16 位元輸出"
 }

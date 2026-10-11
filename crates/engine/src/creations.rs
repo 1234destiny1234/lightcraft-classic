@@ -70,6 +70,8 @@ pub fn parse_shutter(s: &str) -> Option<f64> {
 pub struct PreparedPhotos {
     images: HashMap<String, Rgba8>,
     infos: HashMap<String, PhotoInfo>,
+    /// 16-bit renders (16-bit print output).
+    deep: HashMap<String, dac_layout::render::Rgb16>,
 }
 
 impl PreparedPhotos {
@@ -89,6 +91,28 @@ impl PreparedPhotos {
         for img in self.images.values_mut() {
             crate::export::output_sharpen(img, target, amount);
         }
+        for d in self.deep.values_mut() {
+            let mut img = dac_pipeline::DeepImage {
+                width: d.width,
+                height: d.height,
+                space: OutputSpace::Srgb,
+                samples: dac_pipeline::DeepSamples::U16(std::mem::take(&mut d.data)),
+            };
+            crate::export::output_sharpen_deep(&mut img, target, amount);
+            if let dac_pipeline::DeepSamples::U16(v) = img.samples {
+                d.data = v;
+            }
+        }
+    }
+
+    /// Print Adjustment and the printer profile (Print Job ▸ Color Management) on every photo.
+    pub fn apply_print_color(&mut self, job: &dac_print::color::ColorJob) {
+        for img in self.images.values_mut() {
+            job.apply8(img);
+        }
+        for d in self.deep.values_mut() {
+            job.apply16(d);
+        }
     }
 }
 
@@ -99,6 +123,9 @@ impl PhotoSource for PreparedPhotos {
     fn info(&self, photo: &str) -> PhotoInfo {
         self.infos.get(photo).cloned().unwrap_or_default()
     }
+    fn image16(&self, photo: &str) -> Option<dac_layout::render::Rgb16> {
+        self.deep.get(photo).cloned()
+    }
 }
 
 /// Render jobs for every photo `doc` places, each at the largest size a cell needs at `dpi`.
@@ -106,6 +133,16 @@ pub fn prepare_jobs(
     s: &mut Session,
     doc: &Document,
     dpi: f32,
+) -> std::result::Result<(Vec<(String, RenderJob)>, HashMap<String, PhotoInfo>), String> {
+    prepare_jobs_depth(s, doc, dpi, OutputDepth::U8)
+}
+
+/// [`prepare_jobs`] at `depth` ([`OutputDepth::U16`] keeps a 16-bit render of each photo too).
+pub fn prepare_jobs_depth(
+    s: &mut Session,
+    doc: &Document,
+    dpi: f32,
+    depth: OutputDepth,
 ) -> std::result::Result<(Vec<(String, RenderJob)>, HashMap<String, PhotoInfo>), String> {
     let k = dpi / dac_layout::PT_PER_INCH;
     let mut sizes: HashMap<String, usize> = HashMap::new();
@@ -130,7 +167,7 @@ pub fn prepare_jobs(
         let id = PhotoId(key.parse::<u64>().map_err(|_| format!("{key:?} is not a photo id"))?);
         let photo = s.catalog.photo(id).ok_or_else(|| format!("no photo {key}"))?;
         infos.insert(key.clone(), photo_info(photo));
-        jobs.push((key, s.export_job(id, side, side, OutputSpace::Srgb, OutputDepth::U8)?));
+        jobs.push((key, s.export_job(id, side, side, OutputSpace::Srgb, depth)?));
     }
     Ok((jobs, infos))
 }
@@ -143,22 +180,34 @@ pub fn run_jobs(jobs: Vec<(String, RenderJob)>, infos: HashMap<String, PhotoInfo
     #[cfg(target_arch = "wasm32")]
     let width = 1;
     let mut images = HashMap::with_capacity(jobs.len());
+    let mut deep = HashMap::new();
     let mut jobs = jobs.into_iter().peekable();
+    type Done = std::result::Result<(Rgba8, Option<dac_pipeline::DeepImage>), String>;
+    let run = |j: RenderJob| -> Done { j.run().rendered.map(|r| (r.image, r.deep)) };
     while jobs.peek().is_some() {
         let batch: Vec<(String, RenderJob)> = jobs.by_ref().take(width).collect();
-        let done: Vec<(String, std::result::Result<Rgba8, String>)> = if batch.len() <= 1 || cfg!(target_arch = "wasm32") {
-            batch.into_iter().map(|(k, j)| (k, j.run().rendered.map(|r| r.image))).collect()
+        let done: Vec<(String, Done)> = if batch.len() <= 1 || cfg!(target_arch = "wasm32") {
+            batch.into_iter().map(|(k, j)| (k, run(j))).collect()
         } else {
             std::thread::scope(|scope| {
-                let handles: Vec<_> = batch.into_iter().map(|(k, j)| (k, scope.spawn(move || j.run().rendered.map(|r| r.image)))).collect();
+                let handles: Vec<_> = batch.into_iter().map(|(k, j)| (k, scope.spawn(move || run(j)))).collect();
                 handles.into_iter().map(|(k, h)| (k, h.join().unwrap_or_else(|_| Err("the render stopped unexpectedly".to_string())))).collect()
             })
         };
         for (key, image) in done {
-            images.insert(key, image?);
+            let (image, d) = image?;
+            if let Some(d) = d
+                && let dac_pipeline::DeepSamples::U16(data) = d.samples
+            {
+                let rgb = dac_layout::render::Rgb16 { width: d.width, height: d.height, data };
+                if rgb.is_valid() {
+                    deep.insert(key.clone(), rgb);
+                }
+            }
+            images.insert(key, image);
         }
     }
-    Ok(PreparedPhotos { images, infos })
+    Ok(PreparedPhotos { images, infos, deep })
 }
 
 /// Renders every page of `doc` with catalog photos.
@@ -501,7 +550,7 @@ mod tests {
     #[test]
     fn print_sharpening_raises_edge_contrast_and_off_leaves_photos_alone() {
         let edge = Rgba8::from_fn(32, 32, |x, _| if x < 16 { [80, 80, 80, 255] } else { [170, 170, 170, 255] });
-        let make = || PreparedPhotos { images: HashMap::from([("1".to_string(), edge.clone())]), infos: HashMap::new() };
+        let make = || PreparedPhotos { images: HashMap::from([("1".to_string(), edge.clone())]), infos: HashMap::new(), deep: HashMap::new() };
         let mut off = make();
         off.sharpen_for_print(dac_print::PrintSharpening::Off, dac_print::PrintMedia::Matte);
         assert_eq!(off.images["1"], edge);

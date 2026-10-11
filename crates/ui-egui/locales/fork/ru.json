@@ -1364,5 +1364,11 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "Он создан другим приложением, формат каталога которого {app} открыть не может. Каталог не изменён. Создайте новый каталог или откройте другой.",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "Если он находится на неподключённом диске, подключите диск и повторите попытку. В противном случае откройте или создайте другой каталог.",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "У {app} нет прав на чтение или запись его папки. Проверьте права доступа к папке и повторите попытку.",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваши фотографии и правки в ней не затронуты. Можно повторить попытку (например, закрыв другую программу, в которой она открыта, или снова подключив её диск), открыть другую библиотеку или создать новую либо продолжить без библиотеки — тогда ничего из сделанного не сохранится."
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваши фотографии и правки в ней не затронуты. Можно повторить попытку (например, закрыв другую программу, в которой она открыта, или снова подключив её диск), открыть другую библиотеку или создать новую либо продолжить без библиотеки — тогда ничего из сделанного не сохранится.",
+  "Color Management": "Управление цветом",
+  "Managed by Printer": "Управляется принтером",
+  "Black Point Compensation": "Компенсация точки чёрного",
+  "Print Adjustment": "Коррекция печати",
+  "Brightness": "Яркость",
+  "16 Bit Output": "16-битный вывод"
 }

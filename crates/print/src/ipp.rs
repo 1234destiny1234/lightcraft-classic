@@ -343,6 +343,9 @@ impl Reader<'_> {
     }
 }
 
+/// Why a spooler printer name (`\\server\printer`, `HP OfficeJet`) is refused.
+pub const WINDOWS_SPOOLER_UNSUPPORTED: &str = "printing to a printer by its system name (the Windows print spooler) is not supported: it needs the native print API, which the app doesn't use. Enter the printer's ipp:// address (most network printers and Windows print servers with IPP printing on answer at ipp://<host>/ipp/print or ipp://<host>/printers/<name>), or print to a PDF file and print that";
+
 /// A parsed `ipp://host:port/path` URI.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct IppUri {
@@ -358,6 +361,8 @@ impl IppUri {
             r
         } else if uri.starts_with("ipps://") || uri.starts_with("https://") {
             return Err(PrintError::Ipp("encrypted IPP (ipps://) is not supported yet; use ipp://".into()));
+        } else if uri.starts_with("\\\\") || !uri.contains("://") {
+            return Err(PrintError::Ipp(format!("{uri:?}: {WINDOWS_SPOOLER_UNSUPPORTED}")));
         } else {
             return Err(PrintError::Ipp(format!("not an ipp:// URI: {uri}")));
         };

@@ -25,6 +25,50 @@ pub trait PhotoSource {
     fn info(&self, _photo: &str) -> PhotoInfo {
         PhotoInfo::default()
     }
+    /// The same photo at 16 bits per channel when the source has it (16-bit print output).
+    fn image16(&self, _photo: &str) -> Option<Rgb16> {
+        None
+    }
+}
+
+/// A 16-bit RGB image (interleaved, row-major, same colour encoding as [`PhotoSource::image`]).
+#[derive(Clone, Debug, PartialEq)]
+pub struct Rgb16 {
+    pub width: usize,
+    pub height: usize,
+    pub data: Vec<u16>,
+}
+
+impl Rgb16 {
+    /// `true` when `data` holds `width × height × 3` samples.
+    pub fn is_valid(&self) -> bool {
+        self.width > 0 && self.height > 0 && self.width.checked_mul(self.height).and_then(|n| n.checked_mul(3)) == Some(self.data.len())
+    }
+
+    /// Turned `turns` quarter turns clockwise (an invalid image comes back unchanged).
+    pub fn rotated(&self, turns: u8) -> Rgb16 {
+        let turns = turns % 4;
+        if turns == 0 || !self.is_valid() {
+            return self.clone();
+        }
+        let (w, h) = (self.width, self.height);
+        let (ow, oh) = if turns == 2 { (w, h) } else { (h, w) };
+        let mut data = vec![0u16; self.data.len()];
+        for y in 0..h {
+            for x in 0..w {
+                let (ox, oy) = match turns {
+                    1 => (h - 1 - y, x),
+                    2 => (w - 1 - x, h - 1 - y),
+                    _ => (y, w - 1 - x),
+                };
+                let (s, d) = ((y * w + x) * 3, (oy * ow + ox) * 3);
+                if let (Some(src), Some(dst)) = (self.data.get(s..s + 3), data.get_mut(d..d + 3)) {
+                    dst.copy_from_slice(src);
+                }
+            }
+        }
+        Rgb16 { width: ow, height: oh, data }
+    }
 }
 
 /// Draws a text cell's (already expanded) text.
