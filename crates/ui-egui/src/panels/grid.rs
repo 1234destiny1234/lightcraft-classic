@@ -790,14 +790,17 @@ pub fn custom_order_album(app: &DacApp) -> Option<dac_catalog::AlbumId> {
 /// Photos dragged over a thumbnail of a regular album: a line on the side they would land
 /// (before this photo, or after it), and on release they move there in Custom Order (switching the
 /// sort to it, as Lightroom Classic does).
-fn reorder_drop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, dragged: &[u64]) {
+pub(crate) fn reorder_drop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, dragged: &[u64]) {
     let Some(album) = custom_order_album(app).filter(|_| !dragged.contains(&id.0)) else { return };
     let (pos, released) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.any_released()));
     let Some(pos) = pos.filter(|p| r.contains(*p) && ui.clip_rect().contains(*p)) else { return };
     let t = Tokens::get(ui.ctx());
     let left = pos.x < r.center().x;
-    let x = if left { r.left() - 2.0 } else { r.right() + 2.0 };
-    ui.painter().line_segment([egui::pos2(x, r.top()), egui::pos2(x, r.bottom())], Stroke::new(3.0, t.accent));
+    // inside the cell: the strip's cells touch
+    let x = if left { r.left() + 1.5 } else { r.right() - 1.5 };
+    // above the thumbnails (the filmstrip paints a cell after deciding its drop)
+    let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("reorder-drop"))).with_clip_rect(ui.clip_rect());
+    painter.line_segment([egui::pos2(x, r.top()), egui::pos2(x, r.bottom())], Stroke::new(3.0, t.accent));
     if !released {
         return;
     }

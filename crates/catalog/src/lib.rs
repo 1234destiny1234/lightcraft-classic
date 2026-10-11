@@ -165,7 +165,7 @@ pub enum Op {
         photos: Vec<PhotoId>,
     },
     /// The album's Custom Order ([`Album::photo_order`]; empty clears it). Ids that aren't members
-    /// and repeats are dropped. Format version 8.
+    /// and repeats are dropped. Format version 9.
     SetAlbumPhotoOrder {
         id: AlbumId,
         order: Vec<PhotoId>,

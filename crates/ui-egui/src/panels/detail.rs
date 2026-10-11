@@ -2271,12 +2271,16 @@ pub(crate) fn filmstrip(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
             }
             // in the Map module photos are dragged from the strip onto the map to geotag them
             let map = app.ui.module == crate::module::ModuleId::Map;
-            let resp = ui.interact(cr, egui::Id::new(("film", id.0)), if map { Sense::click_and_drag() } else { Sense::click() });
-            if map && resp.drag_started() {
+            // in a regular album they are dragged along the strip to put them in Custom Order
+            let reorder = !map && super::grid::custom_order_album(app).is_some();
+            let resp = ui.interact(cr, egui::Id::new(("film", id.0)), if map || reorder { Sense::click_and_drag() } else { Sense::click() });
+            if (map || reorder) && resp.drag_started() {
                 if !app.session.selection.contains(*id) {
                     let _ = app.run("library.select", json!({"ids": [id.0]}));
                 }
                 app.ui.dragging_photos = Some(app.session.selection.ids.iter().map(|p| p.0).collect());
+            } else if reorder && let Some(dragged) = app.ui.dragging_photos.clone() {
+                super::grid::reorder_drop(app, ui, *id, cr, &dragged);
             }
             register(ui.ctx(), format!("film:{}", id.0), cr);
             let state = app.session.selection.state_of(*id);

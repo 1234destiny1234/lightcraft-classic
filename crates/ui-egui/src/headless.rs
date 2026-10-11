@@ -2159,6 +2159,43 @@ mod tests {
         assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
     }
 
+    /// Custom Order in the filmstrip: dragging a photo along the strip of a regular album shown
+    /// in Loupe moves it in Custom Order.
+    #[test]
+    fn drag_photos_along_the_filmstrip_to_reorder() {
+        let mut h = demo([1300.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(4).map(|p| p.0).collect();
+        let r = h.request("engine.execute", json!({"command": "album.create", "params": {"name": "Strip"}}), t);
+        let album = r["result"]["id"].as_u64().unwrap_or_else(|| panic!("{r}"));
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [ids[0]]}}), t);
+        h.request("engine.execute", json!({"command": "album.addPhotos", "params": {"id": album, "ids": ids}}), t);
+        h.request("engine.execute", json!({"command": "library.source", "params": {"kind": "album", "id": album}}), t);
+        h.request("engine.execute", json!({"command": "library.sort", "params": {"key": "custom"}}), t);
+        let shown: Vec<u64> = h.app.session.visible_cloned().iter().map(|p| p.0).collect();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [shown[0]]}}), t);
+        h.request("engine.execute", json!({"command": "view.detail"}), t);
+        h.settle(SETTLE);
+        let rect = |h: &mut Headless, id: &str| {
+            let w = h.request("ui.widgets", json!({"filter": id}), t);
+            let r = w["result"]
+                .as_array()
+                .and_then(|a| a.iter().find(|x| x["id"] == id))
+                .map(|x| x["rect"].clone())
+                .unwrap_or_else(|| panic!("{id}: {w}"));
+            let f = |i: usize| r[i].as_f64().unwrap();
+            (f(0), f(1), f(2), f(3))
+        };
+        let (x, y, w, hh) = rect(&mut h, &format!("film:{}", shown[3]));
+        let (tx, ty, _, th) = rect(&mut h, &format!("film:{}", shown[1]));
+        let r = h.request("ui.drag", json!({"x": x + w / 2.0, "y": y + hh / 2.0, "toX": tx + 6.0, "toY": ty + th / 2.0, "steps": 12}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        let now: Vec<u64> = h.app.session.visible_cloned().iter().map(|p| p.0).collect();
+        assert_eq!(now, vec![shown[0], shown[3], shown[1], shown[2]]);
+        assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
+    }
+
     /// Custom Order: dragging a thumbnail onto the left half of another one in a regular album
     /// moves it there, and the sort becomes Custom Order (Lightroom Classic's drag to reorder).
     #[test]

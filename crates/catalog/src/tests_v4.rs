@@ -544,8 +544,16 @@ fn large_sorts_match_the_plain_sort() {
         c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     }
     let all: Vec<&Photo> = c.photos().map(|p| p.as_ref()).collect();
-    for key in [SortKey::CaptureDate, SortKey::ImportDate, SortKey::EditDate, SortKey::FileName, SortKey::Rating, SortKey::FileSize, SortKey::Random, SortKey::Custom]
-    {
+    for key in [
+        SortKey::CaptureDate,
+        SortKey::ImportDate,
+        SortKey::EditDate,
+        SortKey::FileName,
+        SortKey::Rating,
+        SortKey::FileSize,
+        SortKey::Random,
+        SortKey::Custom,
+    ] {
         for ascending in [true, false] {
             let sort = Sort { key, ascending, seed: 7, ..Default::default() };
             let mut want = all.clone();

@@ -51,7 +51,7 @@
 //! | 6 | the Map module | `Op::SetSavedLocation`, `Catalog.saved_locations` |
 //! | 7 | saved creations (Print / Book / Slideshow / Web) | `Op::SetAlbumCreation`, `Album.creation` |
 //! | 8 | upstream merge: Kelvin white balance for raws whose camera has matrices (upstream's 7, #730) | `Op::SetAsShotWb`, `WhiteBalance.scale` |
-//! | 9 | custom photo order (upstream PR #UPSTREAM_PR) | `Op::SetAlbumPhotoOrder`, `Album.photo_order` |
+//! | 9 | custom photo order (upstream PR #1155) | `Op::SetAlbumPhotoOrder`, `Album.photo_order` |
 //!
 //! Rules:
 //! - **Bump [`VERSION`]** (and add a row above) in the change that adds an [`Op`] variant or a
