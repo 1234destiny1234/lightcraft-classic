@@ -1,18 +1,23 @@
 # Roadmap
 
-Milestones toward full Adobe Lightroom parity (cloud Lightroom first, then every Lightroom Classic module), with wall-clock
-estimates for continuous (24/7) agent-driven development with 4–6 parallel agents. Estimates are calibrated on the sibling
-projects (DrawCraft reached its first four milestones in ≈ 4½ h) and are revised as milestones land.
+*Last updated 2026-10-12 (version 0.6.1). Revision history: [Log](#log).*
+
+Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
+Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
+continuous agent-driven development with 4–6 parallel agents and are revised as milestones land.
 
 ## Where we stand
 
-*Honest assessment, 2026-10-08. Agents: read this before picking work. The checklist in
+*Honest assessment, 2026-10-12, at 0.6.1. Agents: read this before picking work. The checklist in
 [`docs/parity-checklist.md`](docs/parity-checklist.md) counts features that **exist**; this section is about whether a photographer can
-**switch** from Lightroom. Update it when a gap below closes.*
+**switch** from Lightroom. Update it when a gap below closes. The full measured assessment is
+[`docs/target-app-parity.md`](docs/target-app-parity.md); the ranked work list is [`docs/gaps.md`](docs/gaps.md).*
 
-**In one line:** the checklist says **79.7%** (P0 98.2%, P1 95.6%, P2 41.6%), but measured by whether a working
-photographer could replace Lightroom without noticing, we are at roughly **60–70%**. The remaining gap is mostly
-**quality of results and camera coverage**, not missing buttons.
+**In one line:** the checklist says **87.3%** of 570 rows (P0 98.0%, P1 95.1%, P2 69.4%; Classic extras 89% of P1,
+Immich 10/10), but measured by whether a working photographer could replace Lightroom without noticing, we are at
+roughly **60–65%** and at **alpha**. Every Classic module now exists; the remaining gap is mostly **quality of
+results and camera coverage** (colour calibration, CR3 variants, render fidelity, lens profiles, AI masks), not
+missing buttons.
 
 Caveat on the checklist: ✅ is set by whoever lands a feature, and nobody has systematically checked rows against
 Lightroom's behaviour or output. Bugs keep turning up in ✅ areas (CR2 colour-filter phase on some Canon models #85,
@@ -22,14 +27,14 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 
 | Dimension | Estimate | What's true today | Biggest gaps |
 |---|---:|---|---|
-| **Feature checklist** | 79.7% | P0 core and P1 nearly complete: import (Add / Copy / Move, templates, devices), library, grid/loupe/compare/survey, every Edit slider, curves, colour grading, masking tools, crop/Upright, heal/clone, presets/profiles, versions/history, sync, export, menus, shortcuts | P0: full-resolution zoom detail; P1: lens-profile database, content-aware fill (patch synthesis), video playback/trim |
+| **Feature checklist** | 87.3% | P0 core and P1 nearly complete: import (Add / Copy / Move, templates, devices), library, grid/loupe/compare/survey, every Edit slider, curves, colour grading, masking tools, crop/Upright, heal/clone, content-aware Remove (PatchMatch Fill spots), presets/profiles, versions/history, sync, export, Edit In round trips, plug-in host with SDK examples, menus, shortcuts | P0: full-resolution zoom detail; P1: lens-profile database (import / lensfun download in review), catalog settings, `.lrcat` import depth; video playback/trim |
 | **RAW coverage** (formats people shoot) | ~55% | DNG (all kinds), CR2, CR3 lossless Bayer and version 0x100/0x200 C-RAW (M50/R100/R8 pixel-exact corpus), ARW, NEF (uncompressed + Huffman lossless/lossy), RAF (uncompressed, lossless/lossy compressed Bayer and X-Trans), uncompressed ORF, uncompressed Samsung SRW (NX5 to NX1100, EX1, WB2000), RW2 / RWL / Panasonic RAW (every raw format, checked on 178 files from 118 Panasonic and Leica bodies), PEF; every container's embedded preview (incl. CR3) | **CR3** (every Canon since ~2018), compressed ORF, compressed Samsung SRW (NX1, NX30, NX300, NX500, NX2000, NX3000, NX3300, NX mini), Nikon lossy-after-split, Canon sRAW, HEIC/AVIF. NEFs labelled compressed but stored uncompressed (Z 6 packed 14-bit, D850 12-bit uncompressed). Nikon High Efficiency NEF (HE / HE★: Z 8, Z 9, Z 6III, Z f; JPEG XS-based, preview only, #193). Per-model verification is thin (~55 corpus files vs >1,000 models) |
 | **Colour & image quality** | ~55–65% | Pipeline is complete and fast; GPU path CPU-exact within 1/255 | **No measured camera calibration database**: ARW, NEF, RW2, RAF, CR3, CR2 and PEF have guarded camera-JPEG colour estimates, with bundled ILCE-7CR, ILCE-7M4, X-H2S and X-T4 profiles (docs/camera-preview-colour.md); 52 models whose JPEG fit is rejected start from matrices fitted to measured spectral sensitivities; other non-DNG raws and rejected estimates use a neutral matrix. Colour fidelity remains incomplete. No lens-profile database. No measured fidelity against Lightroom (tone, highlights, texture/clarity, NR, sharpening are tuned by eye) |
 | **AI & computational** | ~15–20% | Assisted culling (focus, bursts), auto tone, HDR/panorama merge; subject/sky/background masks as classical heuristics, or the photo's own segmentation mattes when it ships them (DNG semantic masks, e.g. iPhone ProRAW's sky matte); non-destructive Bayer RAW denoise with opt-in weights on pure-Rust CPU/GPU; **faces (MVP, [docs/faces.md](docs/faces.md))**: a pure-Rust detector (a 232 KB opt-in download), opt-in recognition models (one-click download or add a file; they run on the shared pure-Rust CPU interpreter; pinned SFace/AuraFace embeddings agree with an independent reference runtime on 40 public crops; one-thread medians 34–36 / 233–252 ms (AuraFace remains expensive)), a background scan that finds and embeds faces, name suggestions, a person's page with look-alike faces to confirm, an Unnamed faces section (look-alikes together, select a group and name it at once) | Real segmentation masks (subject, sky, people, objects, landscape, depth), denoise model policy / linear RGB / quality verification, super resolution, lens blur, generative remove, natural-language search; for faces: clusters with separators between groups, small faces in large photos (the detector looks at 640 px), thresholds calibrated on live faces, writing face regions back to XMP. **Blocked on a model strategy** (licensable weights or our own training; pure-Rust inference is feasible) |
-| **Workflow & library** | ~85% (single machine) | Robust catalog (journal + redb store with incremental background checkpoints, crash-tested), 500k-photo libraries open in under a second and filter in under 25 ms, 1M photos under 2 GB (docs/catalog.md), several catalogs with backups and export / import as catalog, Local browsing with automatic cleanup, XMP interop, keywords, smart albums, Move import | photo records all stay in memory (fine to 1M photos); no cloud sync (out of scope), no tablet companion (#74, roadmap), shared albums, publish services, tethering |
-| **Classic modules** | ~30% | Geotagging from GPX track logs, soft proofing (partial), slideshow (basic), paginated contact-sheet PDF export (A4/Letter, layout/captions, current edits, 150 dpi sRGB) | **Map view, Book, full Print module, Slideshow module, Web, publish services**: contact sheets work, custom print packages and printer colour management remain missing |
+| **Workflow & library** | ~85% (single machine) | Robust catalog (journal + redb store with incremental background checkpoints, crash-tested), 500k-photo libraries open in under a second and filter in under 25 ms, 1M photos under 2 GB (docs/catalog.md), several catalogs with backups and export / import as catalog, first-start welcome dialog (another app's library is never opened or written), Local browsing with automatic cleanup, XMP interop, keywords, smart albums, Move import; **Immich** (docs/immich.md): connect, link, import, external libraries, two-way sync, people, smart search, publish, album sync rule | photo records all stay in memory (fine to 1M photos); Classic catalog settings and catalog sets; no tablet companion (#74); tethering; Immich keychains on macOS/Windows and sync at scale |
+| **Classic modules** | ~65% | Classic shell (module picker, panels, keymap); **Map** (geotagging, GPX, private saved locations honoured on export), **Book** and **Slideshow** (templates, layout, overlays, titles, playback, PDF output), **Web** (layout, site info, colours, output), **Print** (layouts, packages, IPP printing with copies, printer margins and job state, CUPS, print sharpening), soft proofing against printer ICC profiles; golden PDF tests | Print colour management (printer ICC / intent / Print Adjustment, 16-bit, Windows spooler); slideshow music, backdrop and video export; publish grid sections; tethering; people view |
 | **HDR & video** | ~25% | HDR editing (headroom limit, SDR rendition, Visualize HDR); gain map JPEG, PQ AVIF and float TIFF export | On-screen HDR display, HLG, HDR settings from crs XMP; video play/trim/edit/export |
-| **Platform & robustness** | ~70% | macOS native; Windows/Linux builds; web via WASM; no-panic lints workspace-wide, `unsafe` confined to `crates/sysmem`; failed saves are reported; GPU errors fall back to CPU | Windows installer UI unverified on Windows (PR #79); GPU path proven only on Apple + user reports; English, Simplified/Traditional Chinese, Japanese, Brazilian Portuguese, Spanish, German, Russian and Ukrainian UI (see docs/localization.md); remaining technical errors; Traditional Chinese uses the Simplified Chinese font until craft-fonts has a TC face; accessibility partial; headless UI tests time out under machine load |
+| **Platform & robustness** | ~70% | macOS native; release builds for Windows x64/x86/arm64, Linux x86_64/aarch64/riscv64, Flatpak, FreeBSD and web; no-panic lints workspace-wide, `unsafe` confined to `crates/sysmem`; failed saves are reported; GPU errors fall back to CPU; the window renderer falls back DX12 → Vulkan → GL → glow and remembers what works; dialogs fit the screen | macOS CI and the 0.6.1 macOS build blocked on GitHub billing; tests run in CI only on FreeBSD (gap 9); start-up crash on OCLP Macs under investigation; GPU path proven only on Apple + user reports; English, Simplified/Traditional Chinese, Japanese, Brazilian Portuguese, Spanish, German, Russian and Ukrainian UI (see docs/localization.md); remaining technical errors; Traditional Chinese uses the Simplified Chinese font until craft-fonts has a TC face; accessibility partial; headless UI tests time out under machine load |
 
 ### By kind of user
 
@@ -39,7 +44,8 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | Nikon / Sony / Panasonic / older-Canon raw shooter | ~65% | Camera colour fidelity and coverage (ARW, NEF and RW2 preview estimates are only a starting point); embedded distortion is supported for Panasonic / Leica RW2 and the Sony ILCE-7RM4A (Bayer ARW, 24–105 / 200–600 tested); other lens metadata needs coverage and validation |
 | Fujifilm raw shooter | ~65% | Uncompressed and lossless/lossy compressed RAF decoded; camera colour calibration remains missing. Verified on 13 bodies, including 14/16-bit GFX; see `docs/raf-compression.md` |
 | Canon CR3 / Olympus compressed-raw shooter | ~45% | CR3 lossless Bayer and version 0x100/0x200 C-RAW develop from sensor data (M50, R100, R8 verified pixel for pixel); other CRX variants and compressed ORF open as embedded JPEG previews. Camera colour and broader model verification remain |
-| Lightroom Classic power user | ~45% | Print, Book, Map, publish, tethering |
+| Lightroom Classic power user | ~60% | Every module exists; print colour management, catalog settings, `.lrcat` import depth, tethering, lens profiles |
+| Immich user | ~80% | Keychains on macOS/Windows, sync at scale |
 | Relies on AI (masks, denoise) | ~25% | Object / Describe masks via optional SAM 3 (download not yet hosted); Bayer AI denoise needs separately installed weights; X-Trans/linear RGB, model policy and quality parity remain open |
 
 ## Where we're going
@@ -64,12 +70,23 @@ Priorities, in order. Each points at tracker rows in [`docs/parity-checklist.md`
    segmentation masks and denoise. Bayer denoise inference is implemented in pure Rust with an opt-in GPL model; release policy and independently licensed weights remain open. Unblocks M12 and Enhance. Face detection and recognition run on our own checked Rust engine. Object / Describe masks now
    run Meta's SAM 3 in pure Rust (optional, user-consented download under the non-OSI SAM License; CDN mirrors still
    to be set up, docs/ai-masks.md); Subject / Sky / People, Raw Details and Super Resolution are still open.
-7. **Then:** HDR (Q), the Classic output modules (expand contact-sheet PDF export into full Print, then Map view, Book, Slideshow), video (R), localisation
-   and accessibility.
+7. **Classic completion** (fork): print colour management (LRC-PRINT-JOB / PAGESETUP), catalog settings
+   (LRC-CAT-SETTINGS), catalog sets (LRC-LIB-CATALOG-PANEL), `.lrcat` import depth (LRC-LIB-CATALOG-IMPORT), people
+   view, slideshow music / backdrop / export, tethering; the open Classic rows in `docs/parity-checklist.md`, P1 first.
+8. **Platforms:** test CI on macOS / Windows / Linux x64 (gap 9; macOS waits on GitHub billing), the OCLP Mac start-up
+   crash.
+9. **Then:** HDR display (Q), video (R), localisation and accessibility.
 
 Already closed in the week of 2026-10-03: compressed NEF (#10), Move import (#29), per-library smart-preview folder,
 Local roots / cleanup, grid and catalog performance at 85k photos (#35, #37), failed-save reporting, GPU export
 hardening (#78), copyright metadata (#51), GPX geotagging (#60), import tag help and folder templates (#31, #32).
+
+Closed 2026-10-09 – 10-11 (0.6.0 and 0.6.1): content-aware Remove (PatchMatch inpaint crate, Fill spots), the Classic
+output modules (Map, Book, Slideshow, Web, Print with IPP / CUPS printing and print sharpening), soft proofing against
+printer profiles, plug-in host with two SDK example plug-ins, Edit In version stacks, Immich publish / album sync,
+golden PDF tests, renderer fallback on Windows, screen-fitting dialogs, first-start welcome dialog. In review on
+branches: Color Range Pick in Masking (#957), lens profile import / lensfun download (#930), camdb refusing
+third-party-converted DNGs (#924).
 
 Library folders now have records of their own in the catalog (`Catalog.folder_records`, keyed by folder path; colour
 labels first). Photos still store full paths, so moving a whole disk or folder relinks each photo. If that becomes a
@@ -94,27 +111,30 @@ yet guarantee original-pixel detail; visible-region rendering remains a gap (LR-
 | M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | 🚧 (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget ✅; colour NR at half resolution, GPU histogram ⬜) |
 | M6 | Masking | brush, linear/radial gradients, colour/luminance/depth range, add/subtract/intersect/invert, all local adjustments, masks panel | 8–12 | 🚧 (brush/linear/radial/colour/luminance range, add/subtract/intersect, masks panel ✅; depth range, AI masks ⬜) |
 | M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution ⬜) |
-| M8 | Heal / Remove | content-aware remove (PatchMatch), heal, clone, brush spots, visualize spots, red/pet eye | 6–10 | 🚧 (heal, clone, auto source, visualize spots, red/pet eye ✅; PatchMatch remove ⬜) |
+| M8 | Heal / Remove | content-aware remove (PatchMatch), heal, clone, brush spots, visualize spots, red/pet eye | 6–10 | 🚧 (heal, clone, auto source, visualize spots, red/pet eye, PatchMatch content-aware remove ✅; generative remove ⬜) |
 | M9 | Presets, profiles, versions, sync | preset browser + amount, create/import presets, profile browser, versions, history, copy/paste/sync settings | 5–8 | ✅ |
 | M10 | Export & share | export dialog (JPEG/PNG/TIFF/DNG/AVIF/JXL/original), sizing, sharpening, metadata, watermark, naming, batch jobs, XMP sidecars, HDR export | 6–10 | 🚧 (all formats incl. DNG/original, sizing, presets, background jobs, HDR gain map JPEG / PQ AVIF ✅; JXL encode ⬜) |
 | M11 | RAW II | CR3, RAF (X-Trans), ORF, RW2, PEF, SRW, 3FR, IIQ + long tail; camera calibration DB; HEIC/AVIF/JXL import | 20–35 | 🚧 (CR3 lossless CRX and C-RAW, RAF uncompressed and lossless/lossy compressed, RW2 (every raw format), PEF, ORF uncompressed ✅; **camera colour calibration** 🚧 (guarded ARW, NEF, RW2 and RAF preview fitting; measured database still missing), CR3, compressed ORF ⬜) |
 | M12 | AI & smart features | subject/sky/background/people/object masks, semantic search, faces/People (permissively licensed models, pure-Rust inference) | 20–40 | ⬜ |
 | M13 | Merge | HDR merge (deghost), panorama (projections, boundary warp, fill edges), HDR panorama | 10–15 | ✅ |
 | M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 6–10 | ⬜ |
-| M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey ✅; Map/Book/Slideshow/Print/Web ⬜) |
+| M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey, Classic shell, Map, Book, Slideshow, Web, Print, publish ✅; print colour management, slideshow music/export, tethering, catalog settings 🟡/⬜) |
 | M16 | 1.0 polish | preferences, shortcut editor, accessibility, localization, packaging (dmg/msi/AppImage/web), hardening | 10–20 | 🚧 (settings, keyboard shortcuts sheet, packaging basics ✅; English/Chinese (Simplified, Traditional)/Japanese/Brazilian Portuguese/Spanish/German/Russian/Ukrainian localisation 🟡; accessibility and further locales ⬜) |
 
-## Parity estimate (feature count updated 2026-10-08; effort estimate from 2026-10-02)
+## Parity estimate (feature count updated 2026-10-12; effort estimate from 2026-10-02, superseded by [`docs/target-app-parity.md`](docs/target-app-parity.md): ~340–600 h to beta, ~1,000–1,800 h to full parity)
 
 **By feature count** — from `docs/parity-checklist.md` (one row per Lightroom feature, menu item and shortcut; `cargo xtask
 parity` prints this line on every run, so it stays current):
 
-| Scope | Weighted completion | Rows | 2026-10-02 |
-|---|---:|---:|---:|
-| P0 (core) | **98.2%** | 200 | 98.7% |
-| P1 (important parity) | **95.6%** | 149 | 94.4% |
-| P2 (later / AI / niche, incl. Classic modules) | **41.6%** | 160 | 29.4% |
-| **All in-scope rows** | **79.7%** | 509 | 75.6% |
+| Scope | Weighted completion | Rows | 2026-10-08 | 2026-10-02 |
+|---|---:|---:|---:|---:|
+| P0 (core) | **98.0%** | 200 | 98.2% | 98.7% |
+| P1 (important parity) | **95.1%** | 173 | 95.6% | 94.4% |
+| P2 (later / AI / niche, incl. Classic modules) | **69.4%** | 196 | 41.6% | 29.4% |
+| **All in-scope rows** | **87.3%** | 570 | 79.7% | 75.6% |
+
+Rows grew from 509 to 570 with the Lightroom Classic extras and Immich sections; P1 dipped slightly because new
+Classic rows entered 🟡.
 
 The 2026-10-05 count includes three new 🟡 rows that make quality gaps visible (camera colour calibration, verified
 camera coverage, render fidelity), which is why P0 dipped slightly.
@@ -225,6 +245,9 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
   bodies; RW2 gets the file-local camera look (accepted on 140 of 174 files with a preview).
 - 2026-10-08: independent Rust CR3 lossless and version 0x100/0x200 C-RAW decoding, six exact full-sensor regressions on M50/R100/R8; any CR3 decode error falls back to the embedded JPEG; guarded CR3 camera-JPEG colour fitting with independent framing validation (`docs/cr3.md`). Unverified CRX variants and broader model verification remain.
 - 2026-10-09: Sony ILCE-7CR camera colour: bundled profile from 125 photos. On 26 withheld photos mean ΔE vs the camera JPEG 4.07 → 3.29; all 131 photos accepted, where 8 fell back to the neutral matrix without it. Measured calibration remains open.
+- 2026-10-10: 0.6.0: content-aware Remove (PatchMatch), soft proofing against printer profiles, plug-in SDK examples, golden PDF tests, Immich publish and version matrix, Linux riscv64 builds.
+- 2026-10-11: 0.6.1 (draft; macOS build pending): Print via IPP / CUPS with copies, margins, job state and print sharpening; Immich album sync rule; Windows renderer fallback; screen-fitting dialogs; first-start welcome dialog.
+- 2026-10-12: roadmap refreshed for the fork at 0.6.1: 87.3% of 570 rows, Classic modules ~30% → ~65%, Classic power user ~45% → ~60%, Classic completion and platform CI added to the priorities.
 
 ## Chinese and Japanese interfaces, and text watermarks
 

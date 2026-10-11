@@ -4,9 +4,9 @@ display_name   = "LightCraft Classic"            # window title, menus, About, d
 short_name     = "LightCraft Classic"            # macOS menu bar, taskbar, notifications
 tagline        = "Photo library and raw development"
 vendor         = "LightCraft Classic contributors"
-homepage       = "https://example.invalid"
-repository     = "https://example.invalid/repo"
-developer_id   = "org.example"                  # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
+homepage       = "https://github.com/emmertex/lightcraft-classic"
+repository     = "https://github.com/emmertex/lightcraft-classic"
+developer_id   = "com.emmertex.lightcraftclassic" # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
 binary         = "lightcraft-classic"            # desktop executable name in packages
 cli_binary     = "lightcraft-classic-cli"
 env_prefix     = "LIGHTCRAFT_CLASSIC"            # <PREFIX>_LOG, <PREFIX>_GPU, …
@@ -17,7 +17,7 @@ logo_svg       = "brand/logo.svg"       # identity plate default, About box
 # Identifiers stored in users' files and OS registrations. Changing these is allowed, but the old
 # values MUST be appended to [legacy] in the same commit, so existing installs keep working.
 [identity]
-app_id          = "org.example.LightCraftClassic"   # reverse-DNS: bundle id, Flatpak id, MIME/desktop ids
+app_id          = "com.emmertex.LightCraftClassic"   # reverse-DNS: bundle id, Flatpak id, MIME/desktop ids
 settings_dir    = "LightCraft Classic"               # ~/.config/<x>, ~/Library/Application Support/<x>, %APPDATA%\<x>
 library_default = "LightCraft Classic Library"       # default catalog folder name under Pictures
 catalog_ext     = "lccat"
@@ -36,7 +36,7 @@ settings_dirs = ["NoNameYet", "LightCraft"]
 env_prefixes  = ["NONAMEYET", "LIGHTCRAFT"]
 preset_exts   = ["nnypreset", "lcpreset"]
 catalog_exts  = ["nnycat"]
-app_ids       = ["org.example.NoNameYet"]
+app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic"]
 
 # The project this one is forked from, for docs that compare the two ({{upstream_name}}, … in `*.md.in`).
 [upstream]
