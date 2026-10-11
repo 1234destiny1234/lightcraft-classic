@@ -21,12 +21,37 @@ Choosing a printer in the Print Job panel (or `printui.media {uri}`) asks it for
 appear under "Printer paper" in the Page Setup menu; `printui.pageSetup {media}` takes one by name,
 or any PWG self-describing name (`iso_a5_148x210mm`).
 
+## Sending to a printer
+
+`printui.print {destination: "printer"}` (Print Job ▸ Print to: Printer) renders the pages and hands
+them to `dac_print::send::send_to_printer`, which:
+
+- asks the printer which formats it takes (Get-Printer-Attributes) and sends one PDF, or one JPEG job
+  per page when the printer takes JPEG but not PDF; a printer that takes neither is an error;
+- asks for `copies` (Print Job ▸ Copies, `settings.job.copies`, 1–999) on the job;
+- follows the job with Get-Job-Attributes for up to 20 s: an aborted or canceled job is an error,
+  `printui.state` → `last.state` holds the final state (`completed`, or `pending` / `processing` when
+  the printer is still busy).
+
+Choosing one of a printer's own paper sizes in Page Setup (`printui.pageSetup {media}`) also widens
+the page margins to at least the unprintable margins the printer reports for that paper.
+
+## Virtual IPP printer (every CI run)
+
+`dac_print::testprinter::TestPrinter` is an IPP Everywhere-style printer on `127.0.0.1` (Get-Printer-
+Attributes with a `media-col-database`, Print-Job, Get-Job-Attributes) that keeps what it receives.
+The `virtual_*` tests in `crates/print/src/tests.rs` and
+`print_ui::tests::prints_to_a_virtual_ipp_printer_with_its_paper_margins_and_copies` print through it
+in `cargo xtask ci`: paper sizes and margins, copies, PDF, the JPEG fallback, an aborting printer, and
+malformed requests.
+
 ## CUPS test printer
 
-A real print queue is tested only on request: `crates/print/src/tests.rs`
-(`cups_test_printer_receives_a_job`) reads the printer's paper sizes and prints a contact sheet PDF
-to the IPP URI in `<PREFIX>_CUPS_TEST_PRINTER`. Without the variable the test passes without doing
-anything.
+A real CUPS queue is tested by `.github/workflows/print.yml` (on changes to the print code, weekly,
+and on demand): it installs CUPS with the cups-pdf backend, runs
+`cups_test_printer_receives_a_job` (paper sizes from the queue, a 2×2 contact sheet PDF, the job
+followed until CUPS finishes it) and checks that a PDF came out of cups-pdf. The test reads the
+printer URI from `<PREFIX>_CUPS_TEST_PRINTER`; without it, it passes without doing anything.
 
 Locally (Debian / Ubuntu):
 
@@ -34,23 +59,7 @@ Locally (Debian / Ubuntu):
 sudo apt-get install cups printer-driver-cups-pdf
 sudo lpadmin -p PDF -E -v cups-pdf:/ -m lsb/usr/cups-pdf/CUPS-PDF_opt.ppd
 <PREFIX>_CUPS_TEST_PRINTER=ipp://localhost:631/printers/PDF cargo test -p dac-print cups_test_printer
-ls ~/PDF/   # the printed job
-```
-
-Opt-in CI job (not part of `cargo xtask ci`; add it to a workflow that runs on `ubuntu-latest` when
-printing changes, e.g. `paths: [crates/print/**, crates/ui-egui/src/print_ui.rs]`):
-
-```yaml
-cups:
-  runs-on: ubuntu-latest
-  steps:
-    - uses: actions/checkout@v4
-    - run: sudo apt-get update && sudo apt-get install -y cups printer-driver-cups-pdf
-    - run: sudo systemctl start cups && sudo lpadmin -p PDF -E -v cups-pdf:/ -m lsb/usr/cups-pdf/CUPS-PDF_opt.ppd
-    - run: cargo test -p dac-print cups_test_printer -- --nocapture
-      env:
-        <PREFIX>_CUPS_TEST_PRINTER: ipp://localhost:631/printers/PDF
-    - run: test -n "$(ls ~/PDF/ /var/spool/cups-pdf/*/ 2>/dev/null)"
+ls ~/PDF/ /var/spool/cups-pdf/*/   # the printed job
 ```
 
 (Replace `<PREFIX>` with `env_prefix` from `brand.toml`.)
