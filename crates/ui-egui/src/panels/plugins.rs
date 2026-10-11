@@ -587,7 +587,7 @@ fn contributions(p: &Value) -> Vec<String> {
     let mut v = Vec::new();
     let n = |k: &str| p[k].as_array().map_or(0, Vec::len);
     if n("commands") > 0 {
-        v.push(format!("{} {}", n("commands"), tr("menu commands")));
+        v.push(format!("{} ({})", tr("menu commands"), n("commands")));
     }
     if p["hooks"]["export"].as_bool() == Some(true) {
         v.push(tr("export hook").to_string());
@@ -602,7 +602,7 @@ fn contributions(p: &Value) -> Vec<String> {
         v.push(format!("{} “{}”", tr("export destination"), d["name"].as_str().unwrap_or("")));
     }
     if n("metadataFields") > 0 {
-        v.push(format!("{} {}", n("metadataFields"), tr("metadata fields")));
+        v.push(format!("{} ({})", tr("metadata fields"), n("metadataFields")));
     }
     v
 }
