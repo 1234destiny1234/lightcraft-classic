@@ -2,7 +2,10 @@
 
 File → Import Lightroom Catalog… opens `.lrcat` directly. Lightroom, Python, DNG conversion
 and a C SQLite runtime are not required. The source database is read-only, including committed
-`-wal` pages; a catalog that changes during the read is rejected. LightCraft owns subsequent edits.
+`-wal` pages; a catalog that changes during the read is rejected when the change is
+observable. Close Lightroom and every other catalog writer before inspection or import:
+the metadata, header and companion checks are best-effort change detection, not a
+transactional SQLite snapshot. LightCraft owns subsequent edits.
 
 Equivalent commands:
 
@@ -28,9 +31,16 @@ retained. Oldest managed archives are retired; legacy `.json` archives remain un
 `Interop/lightroom-index.json` records imported identities. Source catalogs and originals are
 never overwritten.
 
-Native import is bounded to a 1 GiB database/WAL, 16 MiB XMP packets and one million rows per
-table. The in-tree, read-only Rust SQLite B-tree reader follows SQLite’s public file-format
-specification; it introduces no dependency or C runtime. Table payloads are capped at 256 MiB.
+Native import reads MAIN database pages on demand (no 1 GiB file-size cutoff) and streams WAL
+validation into a compact committed-page index (WAL capped at 1 GiB and 4,000,000 frames).
+MAIN is still structurally bounded to 16,777,216 pages (up to 1 TiB logical size with 64 KiB
+pages); each table B-tree walk is bounded to 4,000,000 visited pages and 1,000,000 rows. A record
+is capped at 64 MiB and aggregate table payload at 256 MiB; XMP packets are capped at 16 MiB.
+These limits bound work and decoded data, so a catalog can be below the file-size ceiling and still
+exceed a structural or per-table limit. The in-tree, read-only Rust SQLite B-tree reader follows
+SQLite’s public file-format specification; it introduces no dependency or C runtime. Close every
+catalog writer first: the metadata/header/companion checks are best-effort change detection, not a
+transactional snapshot.
 Optional history, keyword and collection tables that exceed limits are skipped with warnings;
 required photo tables still report errors. Unrelated unsupported schemas are ignored. A needed
 WITHOUT ROWID or virtual table produces an explicit error, handled as a warning when optional.
