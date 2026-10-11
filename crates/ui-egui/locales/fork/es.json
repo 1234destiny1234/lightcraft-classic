@@ -1117,5 +1117,10 @@
   "Plug-in export hooks are still running from the last export": "Los ganchos de exportación de complementos de la última exportación siguen en marcha",
   "Plug-in Fields": "Campos de complementos",
   "Reload Preview": "Recargar vista previa",
-  "Preview in Browser…": "Previsualizar en el navegador…"
+  "Preview in Browser…": "Previsualizar en el navegador…",
+  "Print Quality": "Calidad de impresión",
+  "Printer default": "Predeterminado de la impresora",
+  "Trust Certificate": "Confiar en el certificado",
+  "Trust a printer's certificate the first time": "Confiar en el certificado de una impresora la primera vez",
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "el certificado de esta impresora no es de confianza. Compare su huella con la página de estado de la impresora:"
 }

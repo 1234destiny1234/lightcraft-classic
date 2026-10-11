@@ -972,5 +972,10 @@
   "Plug-in export hooks are still running from the last export": "Die Plug-in-Export-Hooks des letzten Exports laufen noch",
   "Plug-in Fields": "Plug-in-Felder",
   "Reload Preview": "Vorschau neu laden",
-  "Preview in Browser…": "Vorschau im Browser …"
+  "Preview in Browser…": "Vorschau im Browser …",
+  "Print Quality": "Druckqualität",
+  "Printer default": "Druckerstandard",
+  "Trust Certificate": "Zertifikat vertrauen",
+  "Trust a printer's certificate the first time": "Dem Zertifikat eines Druckers beim ersten Mal vertrauen",
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "Dem Zertifikat dieses Druckers wird nicht vertraut. Vergleichen Sie den Fingerabdruck mit der Statusseite des Druckers:"
 }

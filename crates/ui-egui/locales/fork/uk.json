@@ -930,5 +930,10 @@
   "Plug-in export hooks are still running from the last export": "Обробники експорту плагінів від минулого експорту ще працюють",
   "Plug-in Fields": "Поля плагінів",
   "Reload Preview": "Оновити попередній перегляд",
-  "Preview in Browser…": "Переглянути в браузері…"
+  "Preview in Browser…": "Переглянути в браузері…",
+  "Print Quality": "Якість друку",
+  "Printer default": "Типово для принтера",
+  "Trust Certificate": "Довіряти сертифікату",
+  "Trust a printer's certificate the first time": "Довіряти сертифікату принтера під час першого підключення",
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертифікат цього принтера не є довіреним. Порівняйте його відбиток зі сторінкою стану принтера:"
 }

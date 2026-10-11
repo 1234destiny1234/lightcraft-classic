@@ -1112,5 +1112,10 @@
   "Plug-in export hooks are still running from the last export": "上次匯出的外掛程式匯出掛鉤仍在執行",
   "Plug-in Fields": "外掛程式欄位",
   "Reload Preview": "重新載入預覽",
-  "Preview in Browser…": "在瀏覽器中預覽…"
+  "Preview in Browser…": "在瀏覽器中預覽…",
+  "Print Quality": "列印品質",
+  "Printer default": "印表機預設值",
+  "Trust Certificate": "信任憑證",
+  "Trust a printer's certificate the first time": "首次連線時信任印表機的憑證",
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "此印表機的憑證不受信任。請將其指紋與印表機狀態頁上的指紋進行比對:"
 }

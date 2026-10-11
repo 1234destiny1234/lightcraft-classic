@@ -1108,5 +1108,10 @@
   "Plug-in export hooks are still running from the last export": "Les crochets d'exportation des modules de la dernière exportation sont encore en cours",
   "Plug-in Fields": "Champs des modules",
   "Reload Preview": "Recharger l'aperçu",
-  "Preview in Browser…": "Aperçu dans le navigateur…"
+  "Preview in Browser…": "Aperçu dans le navigateur…",
+  "Print Quality": "Qualité d'impression",
+  "Printer default": "Valeur par défaut de l'imprimante",
+  "Trust Certificate": "Faire confiance au certificat",
+  "Trust a printer's certificate the first time": "Faire confiance au certificat d'une imprimante la première fois",
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "le certificat de cette imprimante n'est pas approuvé. Comparez son empreinte avec la page d'état de l'imprimante :"
 }
