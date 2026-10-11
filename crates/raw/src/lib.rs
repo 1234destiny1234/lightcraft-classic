@@ -48,7 +48,7 @@ mod unpack;
 mod vendor;
 
 pub use demosaic::{Method, demosaic};
-pub use dngwrite::{DngCompression, DngWriteOptions, write_dng};
+pub use dngwrite::{DngCompression, DngWriteOptions, write_dng, write_rendered_dng};
 pub use lcc_color::Mat3;
 pub use lcc_geom::Orientation;
 pub use lcc_meta::Metadata;
