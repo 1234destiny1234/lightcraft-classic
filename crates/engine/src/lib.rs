@@ -833,6 +833,7 @@ impl Session {
             if self.source != LibrarySource::RecentlyDeleted {
                 visible = self.catalog.arrange_stacks(&visible);
             }
+            #[cfg(not(target_arch = "wasm32"))]
             if let LibrarySource::Album(a) = self.source
                 && let Some(sections) = cmd::publish::sections(self, a)
             {

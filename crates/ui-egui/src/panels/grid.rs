@@ -126,6 +126,7 @@ impl GridCache {
             Some((g, r)) if *g == generation => r.clone(),
             _ => {
                 let r = match session.source {
+                    #[cfg(not(target_arch = "wasm32"))]
                     dac_engine::LibrarySource::Album(a) => dac_engine::cmd::publish::sections(session, a).map(|m| Arc::new(publish_runs(&m, ids))),
                     _ => None,
                 };
