@@ -53,12 +53,10 @@ cited here still exists. Formerly docs/parity.md.
 | Y. Menus | 82 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 75 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 98 | 19 | 7 | 0 | — | 33/37 (89%) |
-| Lightroom Classic extras | 97 | 20 | 7 | 0 | — | 33/37 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
 | **Total** | 472 | 54 | 44 | 27 | 192/200 (96%) | 159/173 (92%) |
-| **Total** | 471 | 55 | 44 | 27 | 192/200 (96%) | 159/173 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.5%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 69.9% of 196.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.5%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 70.2% of 196.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
