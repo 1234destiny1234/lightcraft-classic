@@ -45,7 +45,7 @@ jobs:
           sudo lpadmin -p PDF -E -v cups-pdf:/ -m lsb/usr/cups-pdf/CUPS-PDF_opt.ppd
           lpstat -p PDF
       - name: virtual IPP printer tests
-        run: cargo test -p dac-print --lib -- virtual_ ipp::
+        run: "cargo test -p dac-print --lib -- virtual_ ipp::"
       - name: CUPS test printer
         run: |
           prefix=$(sed -n 's/^env_prefix *= *"\([A-Z0-9_]*\)".*/\1/p' brand.toml)
