@@ -115,8 +115,13 @@ fn handle(state: &Shared, down: &AtomicBool, m: &str, t: &str, key: Option<&str>
             let rest = p.trim_start_matches("/api/albums/");
             let (id, tail) = rest.split_once('/').unwrap_or((rest, ""));
             let ids: Vec<String> = b["ids"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+            if (m, tail) == ("DELETE", "") {
+                st.albums.retain(|a| a.0 != id);
+                return json(json!({}));
+            }
             let Some(al) = st.albums.iter_mut().find(|a| a.0 == id) else { return not_found() };
             match (m, tail) {
+                ("PATCH", "") => al.1 = b["albumName"].as_str().unwrap_or_default().to_string(),
                 ("PUT", "assets") => ids.into_iter().for_each(|i| {
                     if !al.2.contains(&i) {
                         al.2.push(i)
@@ -570,6 +575,80 @@ fn albums_sync_both_ways() {
     state.lock().unwrap().albums[0].2.retain(|x| x != "aaaa-1");
     s.execute("immich.syncAlbums", &json!({})).unwrap();
     assert_eq!(s.catalog.album(dac_catalog::AlbumId(a)).unwrap().photos, vec![two]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// The album rule: every plain album maps by name (creates both ways), renames travel, an album
+/// deleted on one side waits (ask) or follows the policy, photos are never deleted; a background
+/// run holds an activity row.
+#[test]
+fn album_rule_creates_renames_and_deletes_albums() {
+    let Setup { mut s, state, one, two, dir, .. } = setup("albumrule");
+    let album_named = |s: &Session, n: &str| s.catalog.albums().find(|a| a.name == n).map(|a| a.id);
+    let holiday = s.execute("album.create", &json!({"name": "Holiday"})).unwrap()["id"].as_u64().unwrap();
+    s.execute("album.addPhotos", &json!({"id": holiday, "ids": [one.0]})).unwrap();
+    state.lock().unwrap().albums.push(("album-x".into(), "Trip".into(), vec!["bbbb-2".into()]));
+    // off (the default): nothing happens to unlinked albums
+    let r = s.execute("immich.syncAlbums", &json!({})).unwrap();
+    assert_eq!(r["albums"], 0, "{r}");
+    assert!(album_named(&s, "Trip").is_none());
+
+    s.execute("immich.setSync", &json!({"config": {"albums": {"direction": "twoWay", "policy": "ask"}}})).unwrap();
+    assert_eq!(s.execute("immich.syncStatus", &json!({})).unwrap()["albumRule"]["direction"], "twoWay");
+    // a background run, with the server held: the activity stack shows it
+    let guard = state.lock().unwrap();
+    assert_eq!(s.execute("immich.syncAlbums", &json!({"background": true})).unwrap()["started"], true);
+    assert!(s.activity.list().iter().any(|t| t.kind == "immich" && t.label == "Syncing albums with Immich"));
+    drop(guard);
+    pump_until(&mut s, |s, _| !s.remote.sync.values().any(|e| e.albums_running));
+    assert!(!s.activity.list().iter().any(|t| t.label == "Syncing albums with Immich"));
+    let last = s.execute("immich.syncStatus", &json!({})).unwrap()["albumsLast"].clone();
+    assert_eq!(last["ok"], true, "{last}");
+    assert_eq!(last["created"], 2, "{last}");
+    let trip = album_named(&s, "Trip").expect("Trip created in the catalog");
+    assert_eq!(s.catalog.album(trip).unwrap().photos, vec![two]);
+    {
+        let st = state.lock().unwrap();
+        let h = st.albums.iter().find(|a| a.1 == "Holiday").expect("Holiday created in Immich");
+        assert_eq!(h.2, vec!["aaaa-1".to_string()]);
+    }
+    // renamed in the catalog → renamed in Immich
+    s.execute("album.rename", &json!({"id": holiday, "name": "Summer"})).unwrap();
+    let r = s.execute("immich.syncAlbums", &json!({})).unwrap();
+    assert_eq!(r["renamed"], 1, "{r}");
+    assert!(state.lock().unwrap().albums.iter().any(|a| a.1 == "Summer"));
+    // deleted in Immich, policy ask: waits; nothing deleted yet
+    state.lock().unwrap().albums.retain(|a| a.0 != "album-x");
+    let r = s.execute("immich.syncAlbums", &json!({})).unwrap();
+    assert_eq!(r["pending"][0]["deletedOn"], "immich", "{r}");
+    assert!(s.catalog.album(trip).is_some());
+    let st = s.execute("immich.syncStatus", &json!({})).unwrap();
+    assert_eq!(st["albumDeletions"].as_array().unwrap().len(), 1);
+    // the user applies it: the catalog album goes, its photo stays
+    s.execute("immich.resolveAlbumDeletion", &json!({"album": trip.0, "action": "apply"})).unwrap();
+    assert!(s.catalog.album(trip).is_none());
+    assert!(s.catalog.photo(two).is_some_and(|p| !p.deleted));
+    assert!(s.execute("immich.syncStatus", &json!({})).unwrap()["albumDeletions"].as_array().unwrap().is_empty());
+    // policy catalog: a catalog delete removes the Immich album (never its assets)
+    s.execute("immich.setSync", &json!({"config": {"albums": {"direction": "twoWay", "policy": "catalog"}}})).unwrap();
+    s.execute("album.delete", &json!({"id": holiday})).unwrap();
+    let r = s.execute("immich.syncAlbums", &json!({})).unwrap();
+    assert_eq!(r["deleted"], 1, "{r}");
+    assert!(!state.lock().unwrap().albums.iter().any(|a| a.1 == "Summer"));
+    assert_eq!(remote(&state, "aaaa-1")["isTrashed"], Value::Null);
+    // one-way to Immich: an Immich-only album is not pulled in
+    s.execute("immich.setSync", &json!({"config": {"albums": {"direction": "toImmich"}}})).unwrap();
+    state.lock().unwrap().albums.push(("album-y".into(), "Theirs".into(), vec![]));
+    s.execute("immich.syncAlbums", &json!({})).unwrap();
+    assert!(album_named(&s, "Theirs").is_none());
+    // Sync Now runs the album rule too, and a background metadata run holds its own row
+    let guard = state.lock().unwrap();
+    let r = s.execute("immich.sync", &json!({"background": true})).unwrap();
+    assert_eq!(r["albums"]["started"], true, "{r}");
+    let rows: Vec<String> = s.activity.list().into_iter().map(|t| t.label).collect();
+    assert!(rows.iter().any(|l| l == "Syncing metadata with Immich") && rows.iter().any(|l| l == "Syncing albums with Immich"), "{rows:?}");
+    drop(guard);
+    pump_until(&mut s, |s, _| !s.remote.sync.values().any(|e| e.albums_running || e.running));
     let _ = std::fs::remove_dir_all(&dir);
 }
 

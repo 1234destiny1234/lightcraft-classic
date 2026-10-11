@@ -47,6 +47,8 @@ pub(crate) enum Msg {
     Version(Box<crate::cmd::immich::versions::VersionDone>),
     /// `immich.sync {background}`: a sync run finished.
     Synced(Box<crate::cmd::immich::sync::SyncDone>),
+    /// `immich.syncAlbums {background}`: an album run finished.
+    AlbumsSynced(Box<crate::cmd::immich::publish::AlbumsDone>),
     /// `credentials.unlock {background}`: the encrypted file opened (or not).
     FileUnlocked(Result<dac_credentials::FileStore, CredError>),
     /// `credentials.unlockSystem`: the keychain's own unlock prompt was answered.

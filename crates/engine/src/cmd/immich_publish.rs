@@ -7,13 +7,13 @@
 //! - `immich.linkAlbum` / `immich.syncAlbums`: a catalog album linked to an Immich album keeps the
 //!   same linked photos on both sides (a set three-way merge against the last sync, like keywords).
 
-use std::collections::{BTreeMap, BTreeSet, HashMap};
+use std::collections::{BTreeSet, HashMap};
 
 use dac_catalog::{AlbumId, PhotoId, Source};
 use dac_immich::link::SERVICE;
 use dac_immich::publish::{ImmichPublish, PhotoInfo, PublishSettings, SendMode};
 use dac_publish::{CollectionConfig, PublishError, PublishService, ServiceConfig};
-use serde::{Deserialize, Serialize};
+use serde::Serialize;
 use serde_json::{Value, json};
 
 use super::{account_param, failure};
@@ -125,34 +125,43 @@ pub fn check_settings(settings: &Value) -> std::result::Result<(), String> {
 
 // ---- collections ↔ albums
 
-/// A catalog album linked to an Immich album.
-#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
-#[serde(default, rename_all = "camelCase")]
-pub struct AlbumLink {
-    pub immich: String,
-    /// Asset ids both sides had after the last sync.
-    pub base: Option<BTreeSet<String>>,
-}
+pub use dac_immich::albums::{AlbumLink, AlbumLinks};
+use dac_immich::albums::{self as plan_albums, LocalAlbum, LocalOp, PendingDelete, RemoteAlbum, RemoteOp};
+use dac_immich::sync::{Direction, FieldRule};
 
-type AlbumLinks = BTreeMap<u64, AlbumLink>;
-
-fn links_path(s: &Session, account: &str) -> Option<std::path::PathBuf> {
+fn sync_file(s: &Session, account: &str, ext: &str) -> Option<std::path::PathBuf> {
     let name: String = account.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' }).take(150).collect();
-    s.immich_dir().map(|d| d.join("sync").join(format!("{name}.albums.json")))
+    s.immich_dir().map(|d| d.join("sync").join(format!("{name}.{ext}")))
 }
 
-fn load_links(s: &Session, account: &str) -> AlbumLinks {
-    links_path(s, account).and_then(|p| std::fs::read(p).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
+fn load_json<T: serde::de::DeserializeOwned + Default>(path: Option<std::path::PathBuf>) -> T {
+    path.and_then(|p| std::fs::read(p).ok()).and_then(|b| serde_json::from_slice(&b).ok()).unwrap_or_default()
 }
 
-fn save_links(s: &Session, account: &str, l: &AlbumLinks) -> std::result::Result<(), String> {
-    let Some(p) = links_path(s, account) else { return Ok(()) };
+fn save_json<T: Serialize + ?Sized>(path: Option<std::path::PathBuf>, v: &T) -> std::result::Result<(), String> {
+    let Some(p) = path else { return Ok(()) };
     if let Some(d) = p.parent() {
         std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
     }
     // temp file + rename; a failed write (full disk) removes the temp file
-    let body = serde_json::to_vec(l).map_err(|e| e.to_string())?;
+    let body = serde_json::to_vec(v).map_err(|e| e.to_string())?;
     dac_catalog::safe_file::write_atomic(&p, &body).map_err(|e| format!("{}: {e}", p.display()))
+}
+
+fn load_links(s: &Session, account: &str) -> AlbumLinks {
+    load_json(sync_file(s, account, "albums.json"))
+}
+
+fn save_links(s: &Session, account: &str, l: &AlbumLinks) -> std::result::Result<(), String> {
+    save_json(sync_file(s, account, "albums.json"), l)
+}
+
+pub(crate) fn load_pending(s: &Session, account: &str) -> Vec<PendingDelete> {
+    load_json(sync_file(s, account, "album-deletes.json"))
+}
+
+fn save_pending(s: &Session, account: &str, p: &[PendingDelete]) -> std::result::Result<(), String> {
+    save_json(sync_file(s, account, "album-deletes.json"), p)
 }
 
 /// The set three-way merge: kept when both have it, or one side added it since `base`.
@@ -198,70 +207,313 @@ fn link_album(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     };
-    links.insert(album, AlbumLink { immich: target.clone(), base: None });
+    links.insert(album, AlbumLink { immich: target.clone(), base: None, name: None });
     save_links(s, &id, &links).map_err(|e| bad(C, e))?;
     Ok(json!({"ok": true, "album": album, "immichAlbum": target}))
+}
+
+/// Catalog albums that never map to Immich albums: folders, smart albums, the Quick Collection,
+/// and published collections (and everything below a publish service's set: publish owns those).
+fn unsyncable(s: &Session) -> BTreeSet<u64> {
+    let mut roots = BTreeSet::new();
+    if let Some(dir) = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone())
+        && let Ok(cfg) = dac_publish::PublishConfig::load(&dir)
+    {
+        for svc in &cfg.services {
+            roots.extend(svc.set.map(|x| x.0));
+            roots.extend(svc.collections.iter().map(|c| c.album.0));
+        }
+    }
+    let mut out = BTreeSet::new();
+    for al in s.catalog.albums() {
+        let mut skip = al.folder || al.smart.is_some() || al.quick || roots.contains(&al.id.0);
+        let mut next = al.parent;
+        // bounded: a damaged catalog can't loop
+        for _ in 0..32 {
+            let Some(p) = next.filter(|_| !skip) else { break };
+            skip = roots.contains(&p.0);
+            next = s.catalog.album(p).and_then(|a| a.parent);
+        }
+        if skip {
+            out.insert(al.id.0);
+        }
+    }
+    out
+}
+
+/// What an album sync worker gets.
+struct AlbumJob {
+    account: String,
+    dry_run: bool,
+    rule: FieldRule,
+    local: Vec<LocalAlbum>,
+    links: AlbumLinks,
+    pending: Vec<PendingDelete>,
+    /// The account's linked assets (only these count as album members).
+    linked: BTreeSet<String>,
+}
+
+/// What it brings back.
+pub(crate) struct AlbumsDone {
+    account: String,
+    dry_run: bool,
+    old: AlbumLinks,
+    plan: plan_albums::Plan,
+    /// Immich albums the run created: catalog album → new Immich album id.
+    created: Vec<(u64, String)>,
+    errors: Vec<String>,
+    fatal: Option<dac_immich::ImmichError>,
+}
+
+/// Start an album run: the catalog side here, the server on a worker (`background`) or inline.
+pub(crate) fn start_albums(s: &mut Session, account: &str, dry_run: bool, background: bool) -> Result<Value> {
+    if s.remote.sync.get(account).is_some_and(|a| a.albums_running) {
+        return Ok(json!({"started": false, "reason": "an album sync of this account is already running"}));
+    }
+    let rule = s.immich_accounts().ok().and_then(|a| a.get(account).map(|x| x.sync.album_rule())).unwrap_or_default();
+    let links = load_links(s, account);
+    if rule.direction == Direction::Off && links.is_empty() {
+        return Ok(json!({"ok": true, "albums": 0, "changes": {"toImmich": [], "toCatalog": []}}));
+    }
+    let (_, client) = match s.immich_client(account) {
+        Ok(x) => x,
+        Err(e) => return Ok(failure(&e)),
+    };
+    let by_photo: HashMap<PhotoId, String> = s
+        .catalog
+        .remote_links()
+        .iter()
+        .filter(|r| r.service == SERVICE && r.account_id == account && r.sync_state != dac_catalog::SyncState::Probable)
+        .map(|r| (r.photo_id, r.remote_id.clone()))
+        .collect();
+    let skip = unsyncable(s);
+    let local: Vec<LocalAlbum> = s
+        .catalog
+        .albums()
+        .filter(|a| !skip.contains(&a.id.0))
+        .filter(|a| rule.direction != Direction::Off || links.contains_key(&a.id.0))
+        .map(|a| LocalAlbum { id: a.id.0, name: a.name.clone(), assets: a.photos.iter().filter_map(|p| by_photo.get(p).cloned()).collect() })
+        .collect();
+    let job = AlbumJob {
+        account: account.to_string(),
+        dry_run,
+        rule,
+        local,
+        links,
+        pending: load_pending(s, account),
+        linked: by_photo.into_values().collect(),
+    };
+    s.remote.sync.entry(account.to_string()).or_default().albums_running = true;
+    let task = s.activity.start("immich", "Syncing albums with Immich", crate::activity::Cancel::No);
+    let run = move || {
+        let d = album_work(&client, job);
+        drop(task);
+        d
+    };
+    if background {
+        let tx = s.remote.sender();
+        std::thread::spawn(move || {
+            let _ = tx.send(crate::remote::Msg::AlbumsSynced(Box::new(run())));
+        });
+        return Ok(json!({"started": true}));
+    }
+    let done = run();
+    Ok(finish_albums(s, done))
+}
+
+/// The server side of an album run.
+fn album_work(c: &dac_immich::Client, job: AlbumJob) -> AlbumsDone {
+    let AlbumJob { account, dry_run, rule, local, links, pending, linked } = job;
+    let mut done = AlbumsDone { account, dry_run, old: links.clone(), plan: Default::default(), created: Vec::new(), errors: Vec::new(), fatal: None };
+    let list = match c.albums() {
+        Ok(v) => v,
+        Err(e) => {
+            done.fatal = Some(e);
+            return done;
+        }
+    };
+    let wanted: BTreeSet<&str> = links.values().map(|l| l.immich.as_str()).collect();
+    let mut remote = Vec::new();
+    for a in list {
+        if rule.direction == Direction::Off && !wanted.contains(a.id.as_str()) {
+            continue;
+        }
+        match c.album_assets(&a.id) {
+            Ok(v) => remote.push(RemoteAlbum { assets: v.into_iter().filter(|x| linked.contains(x)).collect(), id: a.id, name: a.album_name }),
+            Err(e) => {
+                done.fatal = Some(e);
+                return done;
+            }
+        }
+    }
+    let mut plan = plan_albums::plan(rule, &local, &remote, &links, &pending);
+    if !dry_run {
+        let mut failed: BTreeSet<String> = BTreeSet::new();
+        for op in &plan.remote {
+            let r = match op {
+                RemoteOp::Create { local, name, assets } => c.create_album(name).and_then(|a| {
+                    done.created.push((*local, a.id.clone()));
+                    let ids: Vec<String> = assets.iter().cloned().collect();
+                    c.album_add(&a.id, &ids)
+                }),
+                RemoteOp::Rename { id, name } => c.rename_album(id, name),
+                RemoteOp::Add { id, assets } => c.album_add(id, assets),
+                RemoteOp::Remove { id, assets } => c.album_remove(id, assets),
+                RemoteOp::Delete { id } => c.delete_album(id),
+            };
+            if let Err(e) = r {
+                done.errors.push(format!("Immich album: {e}"));
+                if let RemoteOp::Rename { id, .. } | RemoteOp::Add { id, .. } | RemoteOp::Remove { id, .. } | RemoteOp::Delete { id } = op {
+                    failed.insert(id.clone());
+                }
+            }
+        }
+        // a failed change keeps the old link, so the next run tries again
+        for (k, old) in &links {
+            if failed.contains(&old.immich) {
+                plan.links.insert(*k, old.clone());
+            }
+        }
+    }
+    done.plan = plan;
+    done
+}
+
+/// Take an album run in: catalog changes, the links, the summary.
+pub(crate) fn finish_albums(s: &mut Session, d: AlbumsDone) -> Value {
+    let AlbumsDone { account, dry_run, old, mut plan, created, mut errors, fatal } = d;
+    let v = if let Some(e) = fatal {
+        let mut v = failure(&e);
+        v["albums"] = json!(0);
+        v
+    } else {
+        let by_asset: HashMap<String, PhotoId> = s
+            .catalog
+            .remote_links()
+            .iter()
+            .filter(|r| r.service == SERVICE && r.account_id == account && r.sync_state != dac_catalog::SyncState::Probable)
+            .map(|r| (r.remote_id.clone(), r.photo_id))
+            .collect();
+        let photos = |a: &[String]| -> Vec<u64> { a.iter().filter_map(|x| by_asset.get(x)).map(|p| p.0).collect() };
+        let changes = json!({"toImmich": plan.remote, "toCatalog": plan.local});
+        if !dry_run {
+            for (local, immich) in &created {
+                let (name, assets) = plan
+                    .remote
+                    .iter()
+                    .find_map(|o| match o {
+                        RemoteOp::Create { local: l, name, assets } if l == local => Some((name.clone(), assets.clone())),
+                        _ => None,
+                    })
+                    .unwrap_or_default();
+                plan.links.insert(*local, AlbumLink { immich: immich.clone(), base: Some(assets), name: Some(name) });
+            }
+            for op in plan.local.clone() {
+                let r = match &op {
+                    LocalOp::Create { immich, name, assets } => {
+                        let ids: Vec<String> = assets.iter().cloned().collect();
+                        let ph = photos(&ids);
+                        s.execute("album.create", &json!({"name": name})).and_then(|a| {
+                            let id = a["id"].as_u64().unwrap_or_default();
+                            if !ph.is_empty() {
+                                s.execute("album.addPhotos", &json!({"id": id, "ids": ph}))?;
+                            }
+                            plan.links.insert(id, AlbumLink { immich: immich.clone(), base: Some(assets.clone()), name: Some(name.clone()) });
+                            Ok(Value::Null)
+                        })
+                    }
+                    LocalOp::Rename { id, name } => s.execute("album.rename", &json!({"id": id, "name": name})),
+                    LocalOp::Add { id, assets } => s.execute("album.addPhotos", &json!({"id": id, "ids": photos(assets)})),
+                    LocalOp::Remove { id, assets } => s.execute("album.removePhotos", &json!({"id": id, "ids": photos(assets)})),
+                    LocalOp::Delete { id } => s.execute("album.delete", &json!({"id": id})),
+                };
+                if let Err(e) = r {
+                    errors.push(format!("catalog album: {e}"));
+                    let id = match &op {
+                        LocalOp::Rename { id, .. } | LocalOp::Add { id, .. } | LocalOp::Remove { id, .. } | LocalOp::Delete { id } => Some(*id),
+                        LocalOp::Create { .. } => None,
+                    };
+                    if let Some(id) = id
+                        && let Some(o) = old.get(&id)
+                    {
+                        plan.links.insert(id, o.clone());
+                    }
+                }
+            }
+            if let Err(e) = save_links(s, &account, &plan.links).and_then(|_| save_pending(s, &account, &plan.pending)) {
+                errors.push(e);
+            }
+        }
+        let empty = Vec::new();
+        let (to_i, to_c) = (changes["toImmich"].as_array().unwrap_or(&empty), changes["toCatalog"].as_array().unwrap_or(&empty));
+        let count = |k: &str| to_i.iter().chain(to_c).filter(|o| o["op"] == k).count();
+        json!({
+            "ok": errors.is_empty(),
+            "dryRun": dry_run,
+            "created": count("create"),
+            "renamed": count("rename"),
+            "membership": count("add") + count("remove"),
+            "deleted": count("delete"),
+            "pending": plan.pending,
+            "conflicts": plan.conflicts,
+            "errors": errors,
+            "changes": changes,
+            "albums": plan.links.len(),
+        })
+    };
+    let e = s.remote.sync.entry(account).or_default();
+    e.albums_running = false;
+    e.albums_last = Some(v.clone());
+    v
 }
 
 fn sync_albums(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "immich.syncAlbums";
     let id = account_param(s, p, C)?;
-    let dry = bool_or(p, "dryRun", false);
-    let mut links = load_links(s, &id);
-    if links.is_empty() {
-        return Ok(json!({"ok": true, "albums": []}));
-    }
-    let (_, client) = match s.immich_client(&id) {
-        Ok(x) => x,
-        Err(e) => return Ok(failure(&e)),
+    start_albums(s, &id, bool_or(p, "dryRun", false), bool_or(p, "background", false))
+}
+
+/// An album deletion waiting for the user: `apply` deletes the surviving album too (never its
+/// photos); `keep` keeps it, unlinked, so the next run puts it back where it was deleted.
+fn resolve_album_deletion(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "immich.resolveAlbumDeletion";
+    let id = account_param(s, p, C)?;
+    let album = p.get("album").and_then(Value::as_u64).ok_or_else(|| bad(C, "missing `album` (catalog album id)"))?;
+    let apply = match str_param(p, "action") {
+        Some("apply") => true,
+        Some("keep") => false,
+        _ => return Err(bad(C, "`action` must be apply or keep")),
     };
-    // asset id ↔ photo for this account's confirmed links
-    let by_asset: HashMap<String, PhotoId> = s
-        .catalog
-        .remote_links()
-        .iter()
-        .filter(|r| r.service == SERVICE && r.account_id == id && r.sync_state != dac_catalog::SyncState::Probable)
-        .map(|r| (r.remote_id.clone(), r.photo_id))
-        .collect();
-    let by_photo: HashMap<PhotoId, String> = by_asset.iter().map(|(a, p)| (*p, a.clone())).collect();
-    let mut out = Vec::new();
-    for (album, link) in links.iter_mut() {
-        let Some(al) = s.catalog.album(AlbumId(*album)) else { continue };
-        let local: BTreeSet<String> = al.photos.iter().filter_map(|p| by_photo.get(p).cloned()).collect();
-        let remote: BTreeSet<String> = match client.album_assets(&link.immich) {
-            Ok(v) => v.into_iter().filter(|a| by_asset.contains_key(a)).collect(),
-            Err(e) => return Ok(failure(&e)),
-        };
-        let set = merge_sets(link.base.as_ref(), &local, &remote);
-        let to_add_remote: Vec<String> = set.difference(&remote).cloned().collect();
-        let to_remove_remote: Vec<String> = remote.difference(&set).cloned().collect();
-        let to_add_local: Vec<u64> = set.difference(&local).filter_map(|a| by_asset.get(a)).map(|p| p.0).collect();
-        let to_remove_local: Vec<u64> = local.difference(&set).filter_map(|a| by_asset.get(a)).map(|p| p.0).collect();
-        out.push(json!({"album": album, "immichAlbum": link.immich, "addToImmich": to_add_remote.len(), "removeFromImmich": to_remove_remote.len(), "addToCatalog": to_add_local, "removeFromCatalog": to_remove_local}));
-        if dry {
-            continue;
+    let mut pending = load_pending(s, &id);
+    let Some(pos) = pending.iter().position(|d| d.album == album) else { return Err(bad(C, "no deletion waiting for that album")) };
+    let d = pending.remove(pos);
+    if apply {
+        match d.deleted_on {
+            plan_albums::DeletedOn::Catalog => {
+                let (_, client) = match s.immich_client(&id) {
+                    Ok(x) => x,
+                    Err(e) => return Ok(failure(&e)),
+                };
+                if let Err(e) = client.delete_album(&d.immich) {
+                    return Ok(failure(&e));
+                }
+            }
+            plan_albums::DeletedOn::Immich => {
+                s.execute("album.delete", &json!({"id": album}))?;
+            }
         }
-        let r = client.album_add(&link.immich, &to_add_remote).and_then(|_| client.album_remove(&link.immich, &to_remove_remote));
-        if let Err(e) = r {
-            return Ok(failure(&e));
-        }
-        if !to_add_local.is_empty() {
-            s.execute("album.addPhotos", &json!({"id": album, "ids": to_add_local}))?;
-        }
-        if !to_remove_local.is_empty() {
-            s.execute("album.removePhotos", &json!({"id": album, "ids": to_remove_local}))?;
-        }
-        link.base = Some(set);
     }
-    if !dry {
-        save_links(s, &id, &links).map_err(|e| bad(C, e))?;
-    }
-    Ok(json!({"ok": true, "albums": out}))
+    let mut links = load_links(s, &id);
+    links.remove(&album);
+    save_links(s, &id, &links).map_err(|e| bad(C, e))?;
+    save_pending(s, &id, &pending).map_err(|e| bad(C, e))?;
+    Ok(json!({"ok": true, "album": album, "applied": apply}))
 }
 
 pub fn specs() -> Vec<CommandSpec> {
     vec![
         cmd!(query "immich.linkAlbum", "Link Album with Immich", [], None, "{account?, album: catalog album id, immichAlbum?: id (default: the Immich album of the same name, created if missing), unlink?: bool} — the album's linked photos sync both ways with the Immich album (immich.syncAlbums) → {ok, album, immichAlbum}", always, link_album),
-        cmd!(query "immich.syncAlbums", "Sync Albums with Immich", ["Library", "Immich"], None, "{account?, dryRun?: bool} — linked albums keep the same linked photos on both sides (added on one side since the last sync: added on the other; removed: removed) → {ok, albums: [{album, immichAlbum, addToImmich, removeFromImmich, addToCatalog, removeFromCatalog}]}", always, sync_albums),
+        cmd!(query "immich.syncAlbums", "Sync Albums with Immich", ["Library", "Immich"], None, "{account?, dryRun?: bool, background?: bool} — collections ↔ albums by the account's album rule (immich.setSync config.albums: direction off = only albums linked by hand, membership both ways; toImmich|fromImmich|twoWay = every plain album maps to the Immich album of the same name, with creates, renames, membership and album deletes, never photo deletes; the policy decides deletes and names changed on both sides, ask leaves deletes in `pending`) → {ok, dryRun, created, renamed, membership, deleted, pending, conflicts, errors, changes: {toImmich, toCatalog}, albums} or {started}", always, sync_albums),
+        cmd!(query "immich.resolveAlbumDeletion", "Resolve Immich Album Deletion", [], None, "{account?, album: catalog album id, action: apply|keep} — an album deleted on one side and waiting (immich.syncAlbums → pending): apply deletes the other side's album too (photos stay), keep unlinks it so it is created again where it was deleted → {ok, album, applied}", always, resolve_album_deletion),
     ]
 }
