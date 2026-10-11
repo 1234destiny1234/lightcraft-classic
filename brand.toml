@@ -6,6 +6,7 @@ tagline        = "Photo library and raw development"
 vendor         = "LightCraft Classic contributors"
 homepage       = "https://example.invalid"
 repository     = "https://example.invalid/repo"
+developer_id   = "org.example"                  # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
 binary         = "lightcraft-classic"            # desktop executable name in packages
 cli_binary     = "lightcraft-classic-cli"
 env_prefix     = "LIGHTCRAFT_CLASSIC"            # <PREFIX>_LOG, <PREFIX>_GPU, …

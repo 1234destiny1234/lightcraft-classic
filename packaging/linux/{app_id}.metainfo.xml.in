@@ -7,7 +7,7 @@
   <project_license>MIT AND Apache-2.0</project_license>
   <name>{{display_name}}</name>
   <summary>{{tagline}}</summary>
-  <developer id="{{app_id}}">
+  <developer id="{{developer_id}}">
     <name>{{vendor}}</name>
   </developer>
   <description>
