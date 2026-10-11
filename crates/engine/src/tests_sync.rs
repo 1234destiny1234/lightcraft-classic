@@ -32,7 +32,8 @@ impl Scratch {
         Scratch(dir)
     }
     fn path(&self, rel: &str) -> String {
-        self.0.join(rel).to_string_lossy().to_string()
+        // one component at a time, so Windows paths use `\\` throughout like the ones the app builds
+        rel.split('/').fold(self.0.clone(), |p, c| p.join(c)).to_string_lossy().to_string()
     }
 }
 

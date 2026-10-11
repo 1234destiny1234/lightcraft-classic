@@ -325,9 +325,12 @@ jobs:
             # craft-fonts was checked out next to the sources and synced into the VM with them.
             export CRAFT_FONTS_DIR="$PWD/craft-fonts" CRAFT_FONTS_REQUIRED=1
             bash packaging/freebsd/package.sh
+            # env.sh is bash (BASH_SOURCE); the VM's run shell is sh
+            bash -e <<'CHECK'
             . packaging/env.sh
             tar -tzf "dist/release/$BRAND_BINARY-"*-freebsd-x86_64.tar.gz \
               | grep -E "/bin/$BRAND_BINARY\$|/bin/$BRAND_CLI_BINARY\$|/share/applications/$BRAND_APP_ID\.desktop\$|/share/doc/$BRAND_BINARY/LICENSE\$"
+            CHECK
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-freebsd-x86_64

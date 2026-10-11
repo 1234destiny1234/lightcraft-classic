@@ -106,7 +106,7 @@ echo "==> assembling $APP"
 mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 # Executable and icon carry the display name (CFBundleExecutable / CFBundleIconFile).
 cp "$WORK/bin/$BRAND_BINARY" "$APP/Contents/MacOS/$NAME"
-ICNS="$(ls "$ROOT"/assets/app-icon/*.icns | head -n 1)"
+ICNS="$(find "$ROOT/assets/app-icon" -maxdepth 1 -name '*.icns' | sort | head -n 1)"
 cp "$ICNS" "$APP/Contents/Resources/$NAME.icns"
 brand_render "$HERE/Info.plist.in" "$APP/Contents/Info.plist"
 plutil -lint "$APP/Contents/Info.plist"

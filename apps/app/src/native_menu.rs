@@ -238,7 +238,7 @@ impl NativeMenu {
             &PredefinedMenuItem::separator(),
             &PredefinedMenuItem::services(Some(dac_ui_egui::i18n::tr("Services"))),
             &PredefinedMenuItem::separator(),
-            &PredefinedMenuItem::hide(Some(dac_brand::fill(&dac_ui_egui::i18n::tr("Hide {app}")))),
+            &PredefinedMenuItem::hide(Some(dac_brand::fill(&dac_ui_egui::i18n::tr("Hide {app}")).as_str())),
             &PredefinedMenuItem::hide_others(Some(dac_ui_egui::i18n::tr("Hide Others"))),
             &PredefinedMenuItem::show_all(Some(dac_ui_egui::i18n::tr("Show All"))),
             &PredefinedMenuItem::separator(),

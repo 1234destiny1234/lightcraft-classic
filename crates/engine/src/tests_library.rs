@@ -68,7 +68,8 @@ fn threshold_compaction_runs_in_the_background() {
         if s.execute("library.info", &json!({})).unwrap()["persistence"]["snapshotRunning"].as_bool().unwrap() {
             background += 1;
         }
-        if k == 30 {
+        // Windows locks the open store's byte ranges, so a running library can't be copied there
+        if k == 30 && cfg!(not(windows)) {
             // a crash while a compaction may be in flight
             let expect = s.catalog.to_snapshot();
             let copy = temp_dir("bg-compact-crash");

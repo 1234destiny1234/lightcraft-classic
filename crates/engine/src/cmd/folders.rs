@@ -233,6 +233,10 @@ fn sync(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Free and total bytes of the file system holding `path` (Unix, Windows; `None` elsewhere).
 pub fn disk_space(path: &str) -> Option<(u64, u64)> {
+    // an unplugged disk has no space to report (Windows would answer for the drive the path names)
+    if !std::path::Path::new(path).exists() {
+        return None;
+    }
     #[cfg(all(unix, not(target_arch = "wasm32")))]
     {
         let st = rustix::fs::statvfs(path).ok()?;
