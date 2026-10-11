@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-11 · **Change:** minor (G2: Print rows re-audited; IPP copies, printer margins, job state, print sharpening, virtual IPP printer and CUPS CI; Immich album sync rule; compact Immich server card) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (G14: HLG AVIF export; LR-VIEW-HDR-DISPLAY decision logic); previously minor (G2: Print rows re-audited; IPP copies, printer margins, job state, print sharpening, virtual IPP printer and CUPS CI; Immich album sync rule; compact Immich server card) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -209,7 +209,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VIEW-SECONDWINDOW | Second display window [Classic] | P2 | ✅ | `cmd:view.secondWindow`, `crates/ui-egui/src/panels/second.rs` | Window ▸ Second Window (⌘F11): the active photo fitted in its own native window with its own render (a floating panel where there are no native windows); loupe view only (no grid / compare / survey there) |
 | LR-VIEW-CLIPPING | Clipping indicators | P0 | ✅ | `cmd:view.clipping` | |
 | LR-VIEW-HISTOGRAM | Histogram | P0 | ✅ | `cmd:view.histogram`, `crates/ui-egui/src/panels/edit.rs` | no drag-to-adjust on the histogram |
-| LR-VIEW-HDR-DISPLAY | HDR display output | P2 | ⬜ | | |
+| LR-VIEW-HDR-DISPLAY | HDR display output | P2 | ⬜ | `apps/app/src/hdr_display.rs` (`choose`, `preferred_hdr_format`) | SDR/HDR decision (platform, surface format, OS headroom, `<PREFIX>_HDR_DISPLAY=0`) is unit-tested and logged at start; always SDR today because eframe 0.36 configures an 8-bit surface; no OS headroom query yet |
 
 ## D. Search & filter (FILT)
 
@@ -431,11 +431,11 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-HDR-EDIT | HDR editing | P2 | 🟡 | `cmd:develop.hdr`, `crates/pipeline/src/tone.rs` (`ToneMap::hdr`), `crates/pipeline/src/tests_hdr.rs` | HDR tone map (SDR curve through the midtones, highlights up to the headroom limit) and float HDR render, CPU only; no on-screen HDR display yet (LR-VIEW-HDR-DISPLAY); HDR settings not yet read from crs XMP |
+| LR-HDR-EDIT | HDR editing | P2 | 🟡 | `cmd:develop.hdr`, `crates/pipeline/src/tone.rs` (`ToneMap::hdr`), `crates/pipeline/src/tests_hdr.rs` | HDR tone map (SDR curve through the midtones, highlights up to the headroom limit) and float HDR render, CPU only; no on-screen HDR display yet (LR-VIEW-HDR-DISPLAY); HDR settings not yet read from crs XMP (upstream PR #663 reads `crs:HDREditMode`) |
 | LR-HDR-SDRPREVIEW | SDR preview of HDR | P2 | 🟡 | `ctl:hdr.sdr*` | SDR rendition sliders (brightness, contrast, highlights, shadows, whites, clarity) used by every SDR view and export; no separate SDR-preview toggle until HDR display lands |
 | LR-HDR-VISUALIZE | Visualize HDR range | P2 | ✅ | `cmd:view.visualizeHdr`, `crates/pipeline/src/visualize.rs` (`hdr_range`) | grey below SDR white, four colour bands by stops above it |
 | LR-HDR-LIMIT | HDR headroom limit | P2 | ✅ | `ctl:hdr.maxEv`, `cmd:develop.hdr` | 0 to 5 stops |
-| LR-HDR-EXPORT | HDR export | P2 | 🟡 | `cmd:app.export`, `crates/codecs/src/gainmap.rs`, `crates/engine/src/export.rs` (`encode_gain_map_jpeg`) | `hdr` export option: ISO 21496-1 gain map JPEG (plus Adobe hdrgm and Apple XMP), 10-bit Rec. 2020 PQ AVIF, 32-bit float TIFF; no HLG yet; no HEIC (no permissive HEVC encoder) |
+| LR-HDR-EXPORT | HDR export | P2 | 🟡 | `cmd:app.export`, `crates/codecs/src/gainmap.rs`, `crates/engine/src/export.rs` (`encode_gain_map_jpeg`) | `hdr` export option: ISO 21496-1 gain map JPEG (plus Adobe hdrgm and Apple XMP), 10-bit Rec. 2020 AVIF with PQ or HLG (`hdrTransfer`, BT.2100 / BT.2408, SDR white at signal 0.75), 32-bit float TIFF; no HEIC (no permissive HEVC encoder) |
 
 ## R. Video (VID)
 
@@ -459,7 +459,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EXP-BITDEPTH | Bit depth | P1 | ✅ | `cmd:app.export` (`bitDepth`), `crates/pipeline/src/output.rs` (`OutputDepth`), `crates/engine/src/export.rs` | 16-bit PNG/TIFF rendered at 16 bits (TIFF defaults to 16), 32-bit float linear TIFF with a linear profile, 10-bit AVIF; high-bit-depth renders run on the CPU |
 | LR-EXP-COMPRESSION | TIFF compression | P1 | ✅ | `cmd:app.export` (`tiffCompression`: none / lzw / zip) | |
 | LR-EXP-COLORSPACE | Output colour space | P0 | ✅ | `cmd:app.export` (`colorSpace`), `crates/pipeline/src/output.rs`, `crates/engine/src/export.rs` | sRGB, Display P3, Adobe RGB (1998) compatible, ProPhoto RGB, Rec. 2020: rendered from the working space with gamut mapping into the target gamut (CPU + GPU), own ICC profile embedded; AVIF stays sRGB (muxer has no ICC) |
-| LR-EXP-HDR | HDR output | P2 | 🟡 | `cmd:app.export`, `crates/ui-egui/src/panels/dialogs.rs` | HDR output checkbox in the export dialog: gain map JPEG, PQ AVIF, float TIFF; no HDR presets yet |
+| LR-EXP-HDR | HDR output | P2 | 🟡 | `cmd:app.export`, `crates/ui-egui/src/panels/dialogs.rs` | HDR output checkbox in the export dialog: gain map JPEG, PQ or HLG AVIF, float TIFF; no HDR presets yet |
 | LR-EXP-SHARPEN | Output sharpening | P1 | ✅ | `cmd:app.export` (`sharpen`, `sharpenAmount`) | |
 | LR-EXP-METADATA | Metadata policy | P1 | ✅ | `cmd:app.export` (`metadata`, `removeLocation`) | |
 | LR-EXP-WATERMARK | Watermark | P1 | ✅ | `cmd:app.export` (`watermark`: text, or `{text, vertical, size, opacity, anchor, inset, color, shadow, image, imageWidth}`), `crates/engine/src/export.rs` (`Watermark`, `WATERMARK_PARAMS`) | text (`size` = height as a fraction of the short edge, 0.005..0.5, default 0.035; `color` sRGB `[r,g,b]`; `shadow`; Japanese vertical glyph forms and origins, tested by `biz_ud_vertical_watermarks_place_punctuation_at_the_top_right`; extended grapheme cells keep decomposed dakuten/handakuten and Latin accents together, tested by `vertical_watermarks_keep_combining_marks_in_one_cell` and `upright_watermark_cell_retains_multiple_glyphs` (see `docs/vertical-watermarks.md`)) or a graphic with transparency (`image` path, `imageWidth` = fraction of the photo's width, 0.01..1, converted to the output colour space); `anchor`, `inset` (fraction of the short edge, 0..0.4), `opacity` 0..1. Unknown keys and out-of-range values are errors (issue #183) |

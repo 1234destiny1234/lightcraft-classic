@@ -26,6 +26,7 @@ mod alloc_release;
 mod catalog_hooks;
 mod control_server;
 mod dialog_filter;
+mod hdr_display;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
@@ -882,6 +883,8 @@ fn main() -> eframe::Result {
                     dac_brand::env_os("SAM3_DIR").map(std::path::PathBuf::from).or_else(|| config_dir().map(|d| d.join("models").join("sam3")));
                 // the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
                 session.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+                // HDR display: SDR unless the surface, platform and display all allow HDR
+                hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
                 let mut app = DacApp::new(session, services(cc.egui_ctx.clone(), app_log_file.as_deref()));
                 if let Some(ui) = prefs {
                     app.ui = ui;
