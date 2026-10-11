@@ -242,8 +242,9 @@ fn op_variants_are_versioned() {
             Op::SetSavedLocation { .. } => 6,
             Op::SetAlbumCreation { .. } => 7,
             Op::SetAsShotWb { .. } => 8,
+            Op::SetAlbumPhotoOrder { .. } => 9,
         }
     }
-    let newest = since(&Op::SetAsShotWb { id: PhotoId(1), wb: None });
+    let newest = since(&Op::SetAlbumPhotoOrder { id: AlbumId(1), order: vec![] });
     assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
 }

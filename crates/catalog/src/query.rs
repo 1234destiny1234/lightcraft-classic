@@ -82,6 +82,9 @@ pub enum SortKey {
     /// A shuffle fixed by [`Sort::seed`]: the same seed always gives the same order, and photos
     /// added or edited later never reshuffle the others. Pick a new seed to reshuffle.
     Random,
+    /// Custom Order: the order set by hand in a regular album ([`Catalog::album_photo_order`]).
+    /// Anywhere else (no album, a smart album) it sorts by capture date.
+    Custom,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -320,7 +323,7 @@ fn sort_photos<'a>(v: Vec<&'a Photo>, sort: &Sort) -> Vec<PhotoId> {
     let asc = sort.ascending;
     let seed = sort.seed;
     let (s1, s2, num): (Get, Get, fn(&Photo, u64) -> u64) = match sort.key {
-        SortKey::CaptureDate => (|p| p.captured.as_deref(), |p| Some(p.imported.as_str()), |_, _| 0),
+        SortKey::CaptureDate | SortKey::Custom => (|p| p.captured.as_deref(), |p| Some(p.imported.as_str()), |_, _| 0),
         SortKey::ImportDate => (|p| Some(p.imported.as_str()), none, |_, _| 0),
         SortKey::EditDate => (|p| p.edited.as_deref(), none, |_, _| 0),
         SortKey::Rating => (none, none, |p, _| u64::from(p.rating)),
@@ -721,6 +724,21 @@ impl Catalog {
     pub(crate) fn query_with(&self, filter: &Filter, sort: &Sort, cached: bool) -> Vec<PhotoId> {
         let root = filter.library_root();
         let keep = |p: &&Photo| filter.matches_in(p, self, root.as_deref());
+        if sort.key == SortKey::Custom {
+            if let Some(a) = filter.album.filter(|a| self.has_custom_order(*a)) {
+                let rank: std::collections::HashMap<PhotoId, usize> =
+                    self.album_photo_order(a).into_iter().enumerate().map(|(i, p)| (p, i)).collect();
+                let mut v: Vec<(usize, PhotoId)> =
+                    self.photos().map(|p| p.as_ref()).filter(keep).map(|p| (rank.get(&p.id).copied().unwrap_or(usize::MAX), p.id)).collect();
+                v.sort_unstable();
+                if !sort.ascending {
+                    v.reverse();
+                }
+                return v.into_iter().map(|(_, id)| id).collect();
+            }
+            // no regular album: by capture date
+            return self.query_with(filter, &Sort { key: SortKey::CaptureDate, ..*sort }, cached);
+        }
         let all: Vec<&Photo> = self.photos().map(|p| p.as_ref()).collect();
         if cached && let Some(sorted) = self.sort_cache.sorted(sort, &all) {
             // the whole catalog's order is known: mark the matches by rank, read them off in order
@@ -748,6 +766,22 @@ impl Catalog {
         let v: Vec<&Photo> =
             if all.len() >= PARALLEL_FROM && !filter.depends_on_now() { par_filter(&all, &keep) } else { all.into_iter().filter(keep).collect() };
         sort_photos(v, sort)
+    }
+
+    /// Whether the album can have a Custom Order (a regular album, not a smart album or folder).
+    pub fn has_custom_order(&self, id: AlbumId) -> bool {
+        self.album(id).is_some_and(|a| !a.folder && a.smart.is_none())
+    }
+
+    /// The album's photos in Custom Order: [`crate::Album::photo_order`] (members only), then the
+    /// photos it doesn't list in the order they were added. Empty for smart albums and folders.
+    pub fn album_photo_order(&self, id: AlbumId) -> Vec<PhotoId> {
+        let Some(a) = self.album(id).filter(|_| self.has_custom_order(id)) else { return Vec::new() };
+        let members: std::collections::HashSet<PhotoId> = a.photos.iter().copied().collect();
+        let mut seen = std::collections::HashSet::new();
+        let mut out: Vec<PhotoId> = a.photo_order.iter().copied().filter(|p| members.contains(p) && seen.insert(*p)).collect();
+        out.extend(a.photos.iter().copied().filter(|p| seen.insert(*p)));
+        out
     }
 
     /// Year → month → day counts for the "By Date" section (newest first).

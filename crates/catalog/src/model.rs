@@ -516,6 +516,11 @@ pub struct Album {
     /// and this its layout document. Format version 7.
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub creation: Option<Creation>,
+    /// Custom Order: the photos in the order the user set by hand ([`crate::SortKey::Custom`],
+    /// format version 9). Only members; photos added later (not listed) follow in the order they
+    /// were added. Empty: no custom order yet.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub photo_order: Vec<PhotoId>,
 }
 
 /// The layout attached to a saved-creation album.
@@ -546,6 +551,7 @@ impl Album {
             quick: false,
             order: None,
             creation: None,
+            photo_order: Vec::new(),
         }
     }
     pub fn is_creation(&self) -> bool {

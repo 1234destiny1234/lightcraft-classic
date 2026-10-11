@@ -544,14 +544,15 @@ fn large_sorts_match_the_plain_sort() {
         c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     }
     let all: Vec<&Photo> = c.photos().map(|p| p.as_ref()).collect();
-    for key in [SortKey::CaptureDate, SortKey::ImportDate, SortKey::EditDate, SortKey::FileName, SortKey::Rating, SortKey::FileSize, SortKey::Random]
+    for key in [SortKey::CaptureDate, SortKey::ImportDate, SortKey::EditDate, SortKey::FileName, SortKey::Rating, SortKey::FileSize, SortKey::Random, SortKey::Custom]
     {
         for ascending in [true, false] {
             let sort = Sort { key, ascending, seed: 7, ..Default::default() };
             let mut want = all.clone();
             want.sort_by(|a, b| {
                 let o = match key {
-                    SortKey::CaptureDate => a.captured.cmp(&b.captured).then_with(|| a.imported.cmp(&b.imported)),
+                    // Custom Order outside a regular album: by capture date
+                    SortKey::CaptureDate | SortKey::Custom => a.captured.cmp(&b.captured).then_with(|| a.imported.cmp(&b.imported)),
                     SortKey::ImportDate => a.imported.cmp(&b.imported),
                     SortKey::EditDate => a.edited.cmp(&b.edited),
                     SortKey::FileName => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),

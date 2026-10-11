@@ -69,6 +69,7 @@ fn albums_and_folders() {
             quick: false,
             order: None,
             creation: None,
+            photo_order: Vec::new(),
         },
     })
     .unwrap();
@@ -85,6 +86,7 @@ fn albums_and_folders() {
             quick: false,
             order: None,
             creation: None,
+            photo_order: Vec::new(),
         },
     })
     .unwrap();

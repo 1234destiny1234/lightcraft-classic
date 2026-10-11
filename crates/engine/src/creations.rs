@@ -366,7 +366,8 @@ fn get(s: &mut Session, p: &Value) -> Result<Value> {
     let a = s.catalog.album(id).ok_or_else(|| bad(c, "no such collection"))?;
     let cr = a.creation.as_ref().ok_or_else(|| bad(c, "not a saved creation"))?;
     let doc: Value = serde_json::from_str(&cr.document).map_err(|e| bad(c, format!("the stored layout is damaged: {e}")))?;
-    let photos: Vec<u64> = a.photos.iter().map(|p| p.0).collect();
+    // in the collection's Custom Order (the order photos were added until one is set)
+    let photos: Vec<u64> = s.catalog.album_photo_order(id).iter().map(|p| p.0).collect();
     Ok(json!({"id": id.0, "name": a.name, "kind": cr.kind, "document": doc, "photos": photos}))
 }
 
@@ -454,7 +455,7 @@ pub fn creations_of(s: &Session, kind: Option<CreationKind>) -> Vec<SavedCreatio
                 return None;
             }
             let settings = serde_json::from_str::<Value>(&cr.document).ok().and_then(|d| d.get("settings").cloned()).unwrap_or(Value::Null);
-            Some(SavedCreation { id: a.id, name: a.name.clone(), kind: k, settings, photos: a.photos.clone() })
+            Some(SavedCreation { id: a.id, name: a.name.clone(), kind: k, settings, photos: s.catalog.album_photo_order(a.id) })
         })
         .collect()
 }
