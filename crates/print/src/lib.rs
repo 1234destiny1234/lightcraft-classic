@@ -8,6 +8,8 @@
 //! * [`output`]: PDF (photos, shaped text with embedded subset fonts, graphics, crop marks, an
 //!   optional ICC OutputIntent) and JPEG output.
 //! * [`ipp`]: IPP/1.1 printing to CUPS (and any IPP Everywhere printer) in pure Rust.
+//! * [`send`]: render, submit (PDF, else JPEG pages) with copies, and follow the job state.
+//! * [`testprinter`]: a virtual IPP printer on localhost for tests and CI.
 //!
 //! Photos come in through `dac_layout::render::PhotoSource`, which the engine implements with
 //! its export renderer, so prints match exports. Print sharpening, 16-bit output and soft-proof
@@ -21,6 +23,8 @@
 pub mod ipp;
 pub mod job;
 pub mod output;
+pub mod send;
+pub mod testprinter;
 pub mod text;
 
 pub use job::{Destination, ImageSettings, LayoutStyle, PackageSpec, PageOptions, PrintSettings};

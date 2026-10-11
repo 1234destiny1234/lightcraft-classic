@@ -19,31 +19,32 @@ use crate::{PrintError, Result};
 
 /// IPP operation ids.
 pub const OP_PRINT_JOB: u16 = 0x0002;
+pub const OP_GET_JOB_ATTRIBUTES: u16 = 0x0009;
 pub const OP_GET_PRINTER_ATTRIBUTES: u16 = 0x000B;
 pub const OP_CUPS_GET_PRINTERS: u16 = 0x4002;
 
 /// Delimiter tags.
-const TAG_OPERATION: u8 = 0x01;
-const TAG_JOB: u8 = 0x02;
-const TAG_END: u8 = 0x03;
-const TAG_PRINTER: u8 = 0x04;
-const TAG_UNSUPPORTED: u8 = 0x05;
+pub(crate) const TAG_OPERATION: u8 = 0x01;
+pub(crate) const TAG_JOB: u8 = 0x02;
+pub(crate) const TAG_END: u8 = 0x03;
+pub(crate) const TAG_PRINTER: u8 = 0x04;
+pub(crate) const TAG_UNSUPPORTED: u8 = 0x05;
 
 /// Value tags.
-const V_INTEGER: u8 = 0x21;
-const V_BOOLEAN: u8 = 0x22;
-const V_ENUM: u8 = 0x23;
-const V_RESOLUTION: u8 = 0x32;
-const V_RANGE: u8 = 0x33;
-const V_BEG_COLLECTION: u8 = 0x34;
-const V_END_COLLECTION: u8 = 0x37;
-const V_NAME_WO_LANG: u8 = 0x42;
-const V_KEYWORD: u8 = 0x44;
-const V_URI: u8 = 0x45;
-const V_CHARSET: u8 = 0x47;
-const V_LANGUAGE: u8 = 0x48;
-const V_MIME: u8 = 0x49;
-const V_MEMBER_NAME: u8 = 0x4A;
+pub(crate) const V_INTEGER: u8 = 0x21;
+pub(crate) const V_BOOLEAN: u8 = 0x22;
+pub(crate) const V_ENUM: u8 = 0x23;
+pub(crate) const V_RESOLUTION: u8 = 0x32;
+pub(crate) const V_RANGE: u8 = 0x33;
+pub(crate) const V_BEG_COLLECTION: u8 = 0x34;
+pub(crate) const V_END_COLLECTION: u8 = 0x37;
+pub(crate) const V_NAME_WO_LANG: u8 = 0x42;
+pub(crate) const V_KEYWORD: u8 = 0x44;
+pub(crate) const V_URI: u8 = 0x45;
+pub(crate) const V_CHARSET: u8 = 0x47;
+pub(crate) const V_LANGUAGE: u8 = 0x48;
+pub(crate) const V_MIME: u8 = 0x49;
+pub(crate) const V_MEMBER_NAME: u8 = 0x4A;
 
 /// Largest IPP response accepted (attributes only; printers answer in kilobytes).
 const MAX_RESPONSE: usize = 16 * 1024 * 1024;
@@ -168,6 +169,11 @@ impl Message {
 
     /// Parses a message; trailing document data is ignored.
     pub fn decode(b: &[u8]) -> Result<Message> {
+        Message::decode_prefix(b).map(|(m, _)| m)
+    }
+
+    /// Parses a message and returns where the document data after it starts.
+    pub fn decode_prefix(b: &[u8]) -> Result<(Message, usize)> {
         let mut r = Reader { b, at: 0 };
         let version = (r.u8()?, r.u8()?);
         let code = r.u16()?;
@@ -194,7 +200,7 @@ impl Message {
                 g.attrs.push(Attribute { tag, name, values: vec![value] });
             }
         }
-        Ok(Message { version, code, request_id, groups })
+        Ok((Message { version, code, request_id, groups }, r.at))
     }
 }
 
@@ -627,6 +633,70 @@ pub fn print_job(uri: &str, user: &str, job_name: &str, format: &str, copies: u3
         return Err(PrintError::Ipp(format!("Print-Job failed: status 0x{:04x} {why}", resp.code)));
     }
     Ok(resp.attr(TAG_JOB, "job-id").and_then(|a| a.values.first()).and_then(Value::as_int).unwrap_or(0))
+}
+
+/// What a printer says about a job (Get-Job-Attributes).
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct JobState {
+    /// RFC 8011 job-state: 3 pending, 4 held, 5 processing, 6 stopped, 7 canceled, 8 aborted, 9 completed.
+    pub state: i32,
+    pub reasons: Vec<String>,
+    pub message: String,
+}
+
+impl JobState {
+    pub const PENDING: i32 = 3;
+    pub const CANCELED: i32 = 7;
+    pub const ABORTED: i32 = 8;
+    pub const COMPLETED: i32 = 9;
+
+    /// Canceled, aborted or completed: the job will not change any more.
+    pub fn is_final(&self) -> bool {
+        self.state >= JobState::CANCELED
+    }
+
+    /// A short word for the state.
+    pub fn label(&self) -> &'static str {
+        match self.state {
+            3 => "pending",
+            4 => "held",
+            5 => "processing",
+            6 => "stopped",
+            7 => "canceled",
+            8 => "aborted",
+            9 => "completed",
+            _ => "unknown",
+        }
+    }
+}
+
+/// Get-Job-Attributes: the state of job `job_id` on the printer at `uri`.
+pub fn job_state(uri: &str, user: &str, job_id: i32) -> Result<JobState> {
+    let msg = Message::request(OP_GET_JOB_ATTRIBUTES, 1, uri)
+        .with(V_INTEGER, "job-id", vec![Value::Int(job_id)])
+        .with(V_NAME_WO_LANG, "requesting-user-name", vec![Value::Text(user.into())])
+        .with(
+            V_KEYWORD,
+            "requested-attributes",
+            vec![Value::Text("job-state".into()), Value::Text("job-state-reasons".into()), Value::Text("job-state-message".into())],
+        );
+    let resp = send(uri, &msg, &[])?;
+    if !resp.is_success() {
+        return Err(PrintError::Ipp(format!("Get-Job-Attributes failed: status 0x{:04x}", resp.code)));
+    }
+    Ok(parse_job_state(&resp))
+}
+
+/// [`JobState`] from a Get-Job-Attributes response.
+pub fn parse_job_state(resp: &Message) -> JobState {
+    let strs = |n: &str| -> Vec<String> {
+        resp.attr(TAG_JOB, n).map(|a| a.values.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default()
+    };
+    JobState {
+        state: resp.attr(TAG_JOB, "job-state").and_then(|a| a.values.first()).and_then(Value::as_int).unwrap_or(0),
+        reasons: strs("job-state-reasons"),
+        message: strs("job-state-message").into_iter().next().unwrap_or_default(),
+    }
 }
 
 /// The group tag constant of unsupported attributes (for callers inspecting responses).

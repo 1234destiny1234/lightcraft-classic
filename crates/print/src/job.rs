@@ -175,11 +175,13 @@ pub struct JobOptions {
     pub draft: bool,
     /// JPEG quality 1–100.
     pub jpeg_quality: u8,
+    /// Copies the printer makes of each page (1–999).
+    pub copies: u32,
 }
 
 impl Default for JobOptions {
     fn default() -> Self {
-        JobOptions { dpi: 240.0, draft: false, jpeg_quality: 92 }
+        JobOptions { dpi: 240.0, draft: false, jpeg_quality: 92, copies: 1 }
     }
 }
 
@@ -225,6 +227,9 @@ impl PrintSettings {
         if !(j.dpi.is_finite() && (36.0..=1200.0).contains(&j.dpi)) {
             return Err(PrintError::Invalid("print resolution must be 36–1200 ppi".into()));
         }
+        if !(1..=999).contains(&j.copies) {
+            return Err(PrintError::Invalid("copies must be 1–999".into()));
+        }
         let fs = self.options.font_size;
         if !(fs.is_finite() && (2.0..=72.0).contains(&fs)) {
             return Err(PrintError::Invalid("font size must be 2–72 pt".into()));
@@ -241,6 +246,20 @@ impl PrintSettings {
     pub fn set_paper(&mut self, paper: Size, landscape: bool) {
         let (a, b) = (paper.w.min(paper.h), paper.w.max(paper.h));
         self.page.size = if landscape { Size::new(b, a) } else { Size::new(a, b) };
+    }
+
+    /// Keeps the page margins clear of what the printer can't print: each margin becomes at
+    /// least the printer's (`[top, right, bottom, left]` in points, for the paper fed portrait;
+    /// a landscape page turns them a quarter turn).
+    pub fn fit_printer_margins(&mut self, printer: [f32; 4]) {
+        let ok = |v: f32| if v.is_finite() && v > 0.0 { v.min(self.page.size.w.min(self.page.size.h) / 4.0) } else { 0.0 };
+        let [t, r, b, l] = printer.map(ok);
+        let (t, r, b, l) = if self.page.size.w > self.page.size.h { (r, b, l, t) } else { (t, r, b, l) };
+        let m = &mut self.page.margins;
+        m.top = m.top.max(t);
+        m.right = m.right.max(r);
+        m.bottom = m.bottom.max(b);
+        m.left = m.left.max(l);
     }
 
     /// The one-line summary used by Page Info.
