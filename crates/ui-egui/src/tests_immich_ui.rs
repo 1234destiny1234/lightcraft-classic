@@ -126,6 +126,7 @@ fn immich_commands_are_in_library_immich() {
 }
 
 /// A tiny Immich server: version, user, key permissions (`perms`); everything else is empty.
+#[allow(clippy::unwrap_used)]
 fn mini_server(perms: Vec<&'static str>) -> String {
     use std::io::{BufRead, BufReader, Read, Write};
     let listener = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

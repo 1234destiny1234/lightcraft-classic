@@ -189,7 +189,8 @@ fn start(s: &mut Session, account: &str, dry_run: bool, full: bool, background: 
     let entry = s.remote.sync.entry(account.to_string()).or_default();
     entry.running = true;
     let job = Job { account: account.to_string(), dry_run, since, cfg, pairs, kept, started: now, local_stacks, base_stacks };
-    let task = s.activity.start("immich", if dry_run { "Previewing the Immich sync" } else { "Syncing metadata with Immich" }, crate::activity::Cancel::No);
+    let task =
+        s.activity.start("immich", if dry_run { "Previewing the Immich sync" } else { "Syncing metadata with Immich" }, crate::activity::Cancel::No);
     let run = move || {
         let d = work(&client, job);
         drop(task);

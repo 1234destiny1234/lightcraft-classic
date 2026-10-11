@@ -74,24 +74,54 @@ pub struct PendingDelete {
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum RemoteOp {
     /// Create an Immich album for catalog album `local`, holding `assets`.
-    Create { local: u64, name: String, assets: BTreeSet<String> },
-    Rename { id: String, name: String },
-    Add { id: String, assets: Vec<String> },
-    Remove { id: String, assets: Vec<String> },
+    Create {
+        local: u64,
+        name: String,
+        assets: BTreeSet<String>,
+    },
+    Rename {
+        id: String,
+        name: String,
+    },
+    Add {
+        id: String,
+        assets: Vec<String>,
+    },
+    Remove {
+        id: String,
+        assets: Vec<String>,
+    },
     /// Delete the album (never its assets).
-    Delete { id: String },
+    Delete {
+        id: String,
+    },
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 #[serde(tag = "op", rename_all = "camelCase")]
 pub enum LocalOp {
     /// Create a catalog album for Immich album `immich`, holding the photos of `assets`.
-    Create { immich: String, name: String, assets: BTreeSet<String> },
-    Rename { id: u64, name: String },
-    Add { id: u64, assets: Vec<String> },
-    Remove { id: u64, assets: Vec<String> },
+    Create {
+        immich: String,
+        name: String,
+        assets: BTreeSet<String>,
+    },
+    Rename {
+        id: u64,
+        name: String,
+    },
+    Add {
+        id: u64,
+        assets: Vec<String>,
+    },
+    Remove {
+        id: u64,
+        assets: Vec<String>,
+    },
     /// Delete the album (never its photos).
-    Delete { id: u64 },
+    Delete {
+        id: u64,
+    },
 }
 
 /// One run's plan.
@@ -337,12 +367,19 @@ mod tests {
 
     #[test]
     fn one_way_never_writes_the_source_side() {
-        let p = plan(rule(Direction::ToImmich, Policy::Newest), &[la(1, "New", &["a"])], &[ra("r1", "Old", &["b"]), ra("r2", "X", &[])], &linked(&["b"], "Old"), &[]);
+        let p = plan(
+            rule(Direction::ToImmich, Policy::Newest),
+            &[la(1, "New", &["a"])],
+            &[ra("r1", "Old", &["b"]), ra("r2", "X", &[])],
+            &linked(&["b"], "Old"),
+            &[],
+        );
         assert!(p.local.is_empty(), "{:?}", p.local);
         assert!(p.remote.contains(&RemoteOp::Rename { id: "r1".into(), name: "New".into() }));
         assert!(p.remote.contains(&RemoteOp::Add { id: "r1".into(), assets: vec!["a".into()] }));
         assert!(p.remote.contains(&RemoteOp::Remove { id: "r1".into(), assets: vec!["b".into()] }));
-        let p = plan(rule(Direction::FromImmich, Policy::Newest), &[la(1, "New", &["a"])], &[ra("r1", "Old", &["b", "c"])], &linked(&["b"], "Old"), &[]);
+        let p =
+            plan(rule(Direction::FromImmich, Policy::Newest), &[la(1, "New", &["a"])], &[ra("r1", "Old", &["b", "c"])], &linked(&["b"], "Old"), &[]);
         assert!(p.remote.is_empty(), "{:?}", p.remote);
         assert_eq!(p.local, vec![LocalOp::Add { id: 1, assets: vec!["c".into()] }]);
     }

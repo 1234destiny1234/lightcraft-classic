@@ -125,8 +125,8 @@ pub fn check_settings(settings: &Value) -> std::result::Result<(), String> {
 
 // ---- collections ↔ albums
 
-pub use dac_immich::albums::{AlbumLink, AlbumLinks};
 use dac_immich::albums::{self as plan_albums, LocalAlbum, LocalOp, PendingDelete, RemoteAlbum, RemoteOp};
+pub use dac_immich::albums::{AlbumLink, AlbumLinks};
 use dac_immich::sync::{Direction, FieldRule};
 
 fn sync_file(s: &Session, account: &str, ext: &str) -> Option<std::path::PathBuf> {
@@ -324,7 +324,8 @@ pub(crate) fn start_albums(s: &mut Session, account: &str, dry_run: bool, backgr
 /// The server side of an album run.
 fn album_work(c: &dac_immich::Client, job: AlbumJob) -> AlbumsDone {
     let AlbumJob { account, dry_run, rule, local, links, pending, linked } = job;
-    let mut done = AlbumsDone { account, dry_run, old: links.clone(), plan: Default::default(), created: Vec::new(), errors: Vec::new(), fatal: None };
+    let mut done =
+        AlbumsDone { account, dry_run, old: links.clone(), plan: Default::default(), created: Vec::new(), errors: Vec::new(), fatal: None };
     let list = match c.albums() {
         Ok(v) => v,
         Err(e) => {
