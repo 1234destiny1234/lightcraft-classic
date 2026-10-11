@@ -1110,5 +1110,7 @@
   "metadata fields": "元数据字段",
   "Running plug-in export hooks": "正在运行插件导出挂钩",
   "Plug-in export hooks are still running from the last export": "上次导出的插件导出挂钩仍在运行",
-  "Plug-in Fields": "插件字段"
+  "Plug-in Fields": "插件字段",
+  "Reload Preview": "重新载入预览",
+  "Preview in Browser…": "在浏览器中预览…"
 }

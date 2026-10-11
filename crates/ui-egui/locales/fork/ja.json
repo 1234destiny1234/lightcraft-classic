@@ -1111,5 +1111,7 @@
   "metadata fields": "メタデータフィールド",
   "Running plug-in export hooks": "プラグインの書き出しフックを実行中",
   "Plug-in export hooks are still running from the last export": "前回の書き出しのプラグイン書き出しフックがまだ実行中です",
-  "Plug-in Fields": "プラグインのフィールド"
+  "Plug-in Fields": "プラグインのフィールド",
+  "Reload Preview": "プレビューを再読み込み",
+  "Preview in Browser…": "ブラウザーでプレビュー…"
 }

@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (G19: plug-in fields edit the selection, are searchable and go to XMP); previously minor (G19: plug-in export hooks run on a worker with an activity row); previously minor (G19: LRC-SHELL-PLUGINS gains export destinations, custom metadata fields, binary I/O, hooks after every export, three SDK examples and an author guide; G16: LRC-BOOK-TYPE ✅ with pair kerning and PDF text opacity; publish grid sections; G15: print colour management, Print Adjustment, 16-bit output; LRC-PRINT-JOB ✅; G14: HLG AVIF export; LR-VIEW-HDR-DISPLAY decision logic; G28: ⌘L Enable Filters, Map =/− keys; G17: native PTP tethering; G13: Lightroom import maps smart collections and stacks; LR-EDIT-OPTICS-PROFILE: lensfun-format database set up or downloaded from Settings, Optics explains a missing correction); previously minor (G2: Print rows re-audited; IPP copies, printer margins, job state, print sharpening, virtual IPP printer and CUPS CI; Immich album sync rule; compact Immich server card) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser); previously minor (G19: plug-in fields edit the selection, are searchable and go to XMP); previously minor (G19: plug-in export hooks run on a worker with an activity row); previously minor (G19: LRC-SHELL-PLUGINS gains export destinations, custom metadata fields, binary I/O, hooks after every export, three SDK examples and an author guide; G16: LRC-BOOK-TYPE ✅ with pair kerning and PDF text opacity; publish grid sections; G15: print colour management, Print Adjustment, 16-bit output; LRC-PRINT-JOB ✅; G14: HLG AVIF export; LR-VIEW-HDR-DISPLAY decision logic; G28: ⌘L Enable Filters, Map =/− keys; G17: native PTP tethering; G13: Lightroom import maps smart collections and stacks; LR-EDIT-OPTICS-PROFILE: lensfun-format database set up or downloaded from Settings, Optics explains a missing correction); previously minor (G2: Print rows re-audited; IPP copies, printer margins, job state, print sharpening, virtual IPP printer and CUPS CI; Immich album sync rule; compact Immich server card) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -52,11 +52,11 @@ cited here still exists. Formerly docs/parity.md.
 | X. Cross-cutting behaviours (BEHAV) | 18 | 6 | 1 | 1 | 8/8 (100%) | 6/9 (67%) |
 | Y. Menus | 82 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 75 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
-| Lightroom Classic extras | 97 | 20 | 7 | 0 | — | 33/37 (89%) |
+| Lightroom Classic extras | 98 | 19 | 7 | 0 | — | 33/37 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 471 | 55 | 44 | 27 | 192/200 (96%) | 159/173 (92%) |
+| **Total** | 472 | 54 | 44 | 27 | 192/200 (96%) | 159/173 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.5%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 69.9% of 196.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.5%** of 570 in-scope rows — P0 98.0% of 200 · P1 95.1% of 173 · P2 70.2% of 196.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -865,7 +865,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | KEYC-COLLECTIONS | Classic collection keys (⌘N, B…) | P2 | ✅ | `cmd:dialog.newAlbum`, `cmd:album.toggleTarget` | ⌘N new album; P1.3: B adds to / removes from the target collection everywhere (brush is K) |
 | KEYC-METADATA | Classic keyword/metadata keys (⌘K, ⌘S, ⌘⌥⇧C/V…) | P2 | ✅ | `cmd:photo.saveMetadataToFile`, `cmd:photo.copyMetadata`, `cmd:photo.pasteMetadata`, `cmd:panel.keywords`, `cmd:keyword.toggleFromSet` | ⌘S saves metadata; P1.3: ⌘K keywords, ⌘⌥⇧C / ⌘⌥⇧V copy/paste metadata, ⌥1–9 keyword set (the plan's Ctrl+Alt+0–9 would collide with module switching; Classic uses ⌥) |
 | KEYC-DEVELOP | Classic develop keys (V, ⌘U, ⇧⌘U, R, Q, K, M, ⇧M, ⇧W, ⇧J, ⇧Q…) | P2 | 🟡 | `cmd:develop.treatment`, `cmd:develop.reset`, `cmd:crop.reset`, `cmd:panel.crop`, `cmd:panel.remove`, `cmd:tool.brush`, `cmd:tool.linear`, `cmd:tool.radial`, `cmd:panel.masking` | P1.3 Classic set: R crop, Q remove, K brush, M linear, ⇧M radial, ⇧W masking (Classic's key; the plan said ⇧T, which Classic uses for Guided Upright), ⇧T guided upright; V, ⇧⌘R, ⌥⌘R, W, J, Y, ⇧Y, \ match. Develop module keys: ⌘U Auto, ⇧⌘U Auto white balance, ⇧Q cycles the selected spot Remove → Heal → Clone (`cmd:spot.cycleMode`), Home / End; ⌘/ lists the current module's keys and filters the list to that module. Missing: ⇧J (its Classic meaning not yet verified by observation) |
-| KEYC-MODULE-OUTPUT | Book / slideshow / print / map / web keys | P2 | 🟡 | `cmd:book.addPage`, `cmd:slideshow.play`, `cmd:slideshow.preview`, `crates/ui-egui/src/module.rs` | per-module keymaps (shown by ⌘/): Book ⌘⇧B add page, ⌘Z / ⌘⇧Z layout undo/redo; Slideshow ↩ play, ⌥↩ preview; Print ←/→ page; Map = / − zoom one level (`map.view` `zoomBy`, G28). Web has no module keys yet |
+| KEYC-MODULE-OUTPUT | Book / slideshow / print / map / web keys | P2 | ✅ | `cmd:book.addPage`, `cmd:slideshow.play`, `cmd:slideshow.preview`, `cmd:webui.reload`, `cmd:webui.previewInBrowser`, `crates/ui-egui/src/module.rs`, `crates/ui-egui/src/web_module.rs` | per-module keymaps (shown by ⌘/): Book ⌘⇧B add page, ⌘Z / ⌘⇧Z layout undo/redo; Slideshow ↩ play, ⌥↩ preview; Print ←/→ page; Map = / − zoom one level (`map.view` `zoomBy`, G28). Web ⌘R reload preview (`webui.reload`, over the global ⌘R Show in Finder while Web is shown), ⌘⌥P preview in browser (`webui.previewInBrowser`: the gallery shown exported to a temporary folder in the background, then its index opened) (G28) |
 | KEYC-HELP | Classic help keys (⌘/, F1) | P2 | ✅ | `cmd:module.help`, `cmd:app.shortcuts`, `cmd:app.help`, `crates/ui-egui/src/help_overlay.rs` | F1 help; ⌘/ lays the Classic-style help sheet over the window for the current module (P6.3): the module's own keys (`Module::keymap`) and the global keys that work there, in every module (Library, Develop, Map, Book, Slideshow, Print, Web); any key or click closes it, "All Shortcuts…" opens the editable list (`app.shortcuts`, ⌘/ in the Alternative set), whose "Only <module> keys" filter now knows every module |
 
 ### Japanese text watermarks
@@ -899,6 +899,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | KEYC-MODULE-OUTPUT (G28) 🟡 → ✅: Web module ⌘R reload preview and ⌘⌥P preview in browser |
 | 2026-10-12 | minor | LRC-SHELL-PLUGINS (G19): plug-in metadata fields edit the selection, are searchable in the filter and rules, and are written to XMP |
 | 2026-10-12 | minor | LRC-SHELL-PLUGINS (G19): export hooks and destinations run on a worker with an activity row instead of the UI thread |
 | 2026-10-12 | minor | LRC-SHELL-PLUGINS (G19): plug-in export destinations, custom metadata fields in the Metadata panel, binary file I/O, export hooks after CLI/MCP/control exports, manager lists each plug-in's contributions, export-tools / publish-folder / custom-fields SDK examples, author guide |

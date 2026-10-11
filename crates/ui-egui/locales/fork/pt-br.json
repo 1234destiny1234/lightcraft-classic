@@ -1112,5 +1112,7 @@
   "metadata fields": "campos de metadados",
   "Running plug-in export hooks": "Executando os ganchos de exportação dos plug-ins",
   "Plug-in export hooks are still running from the last export": "Os ganchos de exportação dos plug-ins da última exportação ainda estão em execução",
-  "Plug-in Fields": "Campos de plug-ins"
+  "Plug-in Fields": "Campos de plug-ins",
+  "Reload Preview": "Recarregar visualização",
+  "Preview in Browser…": "Visualizar no navegador…"
 }

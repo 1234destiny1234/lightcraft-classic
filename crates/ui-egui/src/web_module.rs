@@ -48,6 +48,10 @@ fn state_id() -> egui::Id {
 thread_local! {
     /// A saved gallery (collection id) to load into the module on its next frame (`creation.open`).
     static PENDING: std::cell::Cell<Option<u64>> = const { std::cell::Cell::new(None) };
+    /// `webui.reload`: re-read the saved galleries and servers and redraw the preview on the next frame.
+    static RELOAD: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    /// The settings the module shows (for `webui.previewInBrowser` from a command).
+    static SHOWN: std::cell::RefCell<Option<GallerySettings>> = const { std::cell::RefCell::new(None) };
 }
 
 /// Opens a saved web gallery (a saved creation of kind `web`): its settings load into the module
@@ -110,6 +114,12 @@ impl Module for WebModule {
         register(ui.ctx(), "view:module:web", area);
         let mut st = state(ui.ctx());
         take_pending(app, &mut st);
+        if RELOAD.with(std::cell::Cell::take) {
+            st.loaded = false;
+            // thumbnails are drawn from the cache: ask for them again
+            ui.ctx().forget_all_images();
+        }
+        SHOWN.with(|s| *s.borrow_mut() = Some(st.settings.clone()));
         if !st.loaded {
             refresh_lists(app, &mut st);
             st.loaded = true;
@@ -128,12 +138,16 @@ impl Module for WebModule {
         store(ui.ctx(), st);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
-        &[crate::help_overlay::KEY]
+        WEB_KEYS
     }
     fn command_prefixes(&self) -> &'static [&'static str] {
-        &["web."]
+        &["web.", "webui."]
     }
 }
+
+/// Lightroom Classic's Web module keys: ⌘R reloads the preview, ⌘⌥P previews the gallery in the
+/// browser (over the global ⌘R Show in Finder while the Web module is shown).
+const WEB_KEYS: &[ModuleKey] = &[("Cmd+R", "webui.reload", "{}"), ("Cmd+Alt+P", "webui.previewInBrowser", "{}"), crate::help_overlay::KEY];
 
 fn c32(hex: &str) -> Color32 {
     let [r, g, b] = dac_webgallery::settings::color_rgb(hex);
@@ -425,6 +439,14 @@ fn settings_column(ui: &mut egui::Ui, app: &mut DacApp, st: &mut WebUi) {
 /// when `webui.export` has no `dir`), set the job up on the UI thread and render, write, upload or
 /// share on a worker thread (Activity "export"). The result lands in the module's status line.
 pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+    match id {
+        "webui.reload" => {
+            RELOAD.with(|r| r.set(true));
+            return Some(Ok(json!({"reload": true})));
+        }
+        "webui.previewInBrowser" => return Some(preview_in_browser(app, p)),
+        _ => {}
+    }
     let engine_id = match id {
         "webui.export" => "web.export",
         "webui.upload" => "web.upload",
@@ -432,6 +454,26 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
         _ => return None,
     };
     Some(start(app, id, engine_id, p))
+}
+
+/// `webui.previewInBrowser`: the gallery as shown (or `settings`) exported to a temporary folder in
+/// the background, then opened in the system browser.
+fn preview_in_browser(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+    let dir = std::env::temp_dir().join(format!("{}-web-preview-{}", dac_brand::BINARY, std::process::id()));
+    // a previous preview's files go first, so the browser shows only this one
+    let _ = std::fs::remove_dir_all(&dir);
+    let mut q = p.clone();
+    if !q.is_object() {
+        q = json!({});
+    }
+    if q.get("settings").is_none()
+        && let Some(s) = SHOWN.with(|s| s.borrow().clone())
+    {
+        q["settings"] = json!(s);
+    }
+    q["dir"] = json!(dir.display().to_string());
+    q["openInBrowser"] = json!(true);
+    start(app, "webui.export", "web.export", &q)
 }
 
 #[cfg(target_arch = "wasm32")]
@@ -453,6 +495,9 @@ fn start(app: &mut DacApp, id: &str, engine_id: &'static str, p: &Value) -> Resu
         };
     }
     let job = dac_engine::cmd::web::prepare(&mut app.session, engine_id, p).map_err(|e| e.to_string())?;
+    let open_index = (p.get("openInBrowser").and_then(Value::as_bool) == Some(true))
+        .then(|| p.get("dir").and_then(Value::as_str).map(|d| std::path::Path::new(d).join("index.html")))
+        .flatten();
     let steps = job.steps();
     let label = match engine_id {
         "web.upload" => "Uploading web gallery",
@@ -473,9 +518,18 @@ fn start(app: &mut DacApp, id: &str, engine_id: &'static str, p: &Value) -> Resu
                 st.share_url = url.to_string();
             }
             st.status = result_text(r.clone());
+            let ok = r.is_ok();
             match r {
                 Ok(_) => app.toast(ctx, st.status.clone()),
                 Err(e) => app.toast_error(ctx, e),
+            }
+            // Preview in Browser: show the exported index page
+            if let Some(index) = open_index.as_ref().filter(|_| ok) {
+                let path = index.display().to_string().replace('\\', "/");
+                let url = if path.starts_with('/') { format!("file://{path}") } else { format!("file:///{path}") };
+                if let Some(Err(e)) = app.services.open_url.as_mut().map(|open| open(&url)) {
+                    app.toast_error(ctx, e);
+                }
             }
             st.loaded = false; // a first upload may have remembered a host key
             store(ctx, st);
@@ -587,6 +641,26 @@ mod tests {
         assert!(h.app.tasks.is_empty(), "export did not finish");
         assert!(dir.join("index.html").is_file());
         assert!(super::state(&h.view.ctx).status.contains("1 photos"), "{}", super::state(&h.view.ctx).status);
+        // G28: Preview in Browser exports the gallery shown to a temporary folder and opens its index
+        let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let o = opened.clone();
+        h.app.services.open_url = Some(Box::new(move |u: &str| {
+            o.lock().unwrap().push(u.to_string());
+            Ok(())
+        }));
+        let r = h.app.run("webui.previewInBrowser", json!({"ids": [id]})).unwrap();
+        assert_eq!(r["background"], true);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        while !h.app.tasks.is_empty() && std::time::Instant::now() < deadline {
+            h.step();
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        let urls = opened.lock().unwrap().clone();
+        assert_eq!(urls.len(), 1, "{urls:?}");
+        assert!(urls[0].starts_with("file://") && urls[0].ends_with("index.html"));
+        assert!(std::path::Path::new(urls[0].trim_start_matches("file://")).is_file());
+        let _ = std::fs::remove_dir_all(std::path::Path::new(urls[0].trim_start_matches("file://")).parent().unwrap());
+        assert_eq!(h.app.run("webui.reload", json!({})).unwrap()["reload"], true);
         // set-up errors come back at once
         assert!(h.app.run("webui.shareImmich", json!({"ids": [id]})).is_err(), "no Immich account");
         let _ = std::fs::remove_dir_all(dir);

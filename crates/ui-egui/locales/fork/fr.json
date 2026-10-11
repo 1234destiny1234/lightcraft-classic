@@ -1106,5 +1106,7 @@
   "metadata fields": "champs de métadonnées",
   "Running plug-in export hooks": "Exécution des crochets d'exportation des modules",
   "Plug-in export hooks are still running from the last export": "Les crochets d'exportation des modules de la dernière exportation sont encore en cours",
-  "Plug-in Fields": "Champs des modules"
+  "Plug-in Fields": "Champs des modules",
+  "Reload Preview": "Recharger l'aperçu",
+  "Preview in Browser…": "Aperçu dans le navigateur…"
 }

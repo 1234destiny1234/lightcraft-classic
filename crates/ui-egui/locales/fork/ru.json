@@ -1405,5 +1405,7 @@
   "metadata fields": "поля метаданных",
   "Running plug-in export hooks": "Выполняются обработчики экспорта плагинов",
   "Plug-in export hooks are still running from the last export": "Обработчики экспорта плагинов от прошлого экспорта ещё работают",
-  "Plug-in Fields": "Поля плагинов"
+  "Plug-in Fields": "Поля плагинов",
+  "Reload Preview": "Обновить предпросмотр",
+  "Preview in Browser…": "Просмотр в браузере…"
 }
