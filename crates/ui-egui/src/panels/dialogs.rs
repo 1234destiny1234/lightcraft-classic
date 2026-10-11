@@ -749,6 +749,9 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         &[(K::Unique, "Add number"), (K::Overwrite, "Overwrite"), (K::Skip, "Skip")],
                         &mut opts.conflict,
                     );
+                    // G19: a plug-in export destination the written files are handed to
+                    #[cfg(not(target_arch = "wasm32"))]
+                    crate::panels::plugins::export_destination_ui(ui);
                     ui.add_space(4.0);
                     field(ui, "Save preset", |ui| {
                         trailing_button_row(ui, |ui| {
@@ -1395,6 +1398,10 @@ pub fn confirm_dialog(app: &mut DacApp, dlg: &Dialog) -> Result<serde_json::Valu
             let mut p = export_dialog_params(opts, *full_size, resize, *limit_kb);
             p["dir"] = json!(dir);
             p["background"] = json!(true);
+            #[cfg(not(target_arch = "wasm32"))]
+            if let Some(d) = crate::panels::plugins::chosen_destination() {
+                p["pluginDestination"] = d;
+            }
             app.run("app.export", p)
         }
         Dialog::Merge { opts } => crate::merge::start_final(app, opts),

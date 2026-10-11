@@ -635,7 +635,7 @@ impl Default for ExportOptions {
 
 /// The `app.export` params that are not export options: which photos, where to, a preset to start
 /// from, and the desktop app's background flag.
-pub const TARGET_PARAMS: &[&str] = &["id", "ids", "path", "dir", "preset", "background"];
+pub const TARGET_PARAMS: &[&str] = &["id", "ids", "path", "dir", "preset", "background", "pluginDestination"];
 
 /// The export option params [`ExportOptions::from_json`] reads (and [`ExportOptions::to_json`] writes).
 pub const OPTION_PARAMS: &[&str] = &[
@@ -817,6 +817,15 @@ impl ExportOptions {
                     }
                 }
                 "watermark" => Self::validate_watermark(cmd, v)?,
+                "pluginDestination" => {
+                    // {plugin, destination, args?}: a plug-in export destination run after the files are written
+                    let ok = v.get("plugin").is_some_and(Value::is_string)
+                        && v.get("destination").is_some_and(Value::is_string)
+                        && v.get("args").is_none_or(|a| a.is_object() || a.is_null());
+                    if !ok {
+                        return Err(bad(format!("`{k}` must be {{plugin, destination, args?: object}}")));
+                    }
+                }
                 "id" => {
                     int(k, v, 0, i64::MAX)?;
                 }

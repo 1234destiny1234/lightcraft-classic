@@ -131,16 +131,179 @@ pub fn menu_items(app: &DacApp) -> Vec<(String, Value, String)> {
     v
 }
 
-/// After an export: runs the plug-ins' export hooks on the written files, and reports failures.
-pub fn after_export(app: &mut DacApp, ctx: &egui::Context, files: &[Value]) {
-    let Some(results) = dac_engine::cmd::plugins::after_export(&mut app.session, files) else { return };
+/// After an export: runs the plug-ins' export hooks on the written files, then the plug-in
+/// export destination the export named (`pluginDestination`), and reports how they went.
+pub fn after_export(app: &mut DacApp, ctx: &egui::Context, files: &[Value], destination: Option<&Value>) {
+    let Some(results) = dac_engine::cmd::plugins::after_export(&mut app.session, files, destination) else { return };
     let failed: Vec<String> = results
         .iter()
         .filter_map(|r| r.get("error").map(|e| format!("{}: {}", r["plugin"].as_str().unwrap_or(""), e.as_str().unwrap_or(""))))
         .collect();
     if let Some(first) = failed.first() {
         app.toast_error(ctx, format!("{} {first}", tr("Plug-in export hook failed:")));
+    } else if let Some(m) = results.iter().filter(|r| r.get("destination").is_some()).find_map(|r| r["ok"]["message"].as_str()) {
+        app.toast(ctx, m.to_string());
     }
+}
+
+/// The plug-in export destination chosen in the Export dialog: (plugin, destination, values).
+static DESTINATION: std::sync::Mutex<Option<(String, String, Value)>> = std::sync::Mutex::new(None);
+
+fn destination_lock() -> std::sync::MutexGuard<'static, Option<(String, String, Value)>> {
+    DESTINATION.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
+/// What to pass as `app.export {pluginDestination}`: the destination chosen in the Export
+/// dialog, if any (and if its plug-in still offers it).
+pub fn chosen_destination() -> Option<Value> {
+    let chosen = destination_lock().clone()?;
+    let offered =
+        dac_engine::cmd::plugins::manager().as_ref().is_some_and(|m| m.export_destinations().iter().any(|(p, d)| *p == chosen.0 && d.id == chosen.1));
+    offered.then(|| json!({"plugin": chosen.0, "destination": chosen.1, "args": chosen.2}))
+}
+
+/// Export dialog row "Then send to": None or one of the enabled plug-ins' export destinations,
+/// with the destination's settings below it. Shows nothing when no plug-in offers one.
+pub fn export_destination_ui(ui: &mut egui::Ui) {
+    let offered: Vec<(String, _)> = dac_engine::cmd::plugins::manager().as_ref().map(|m| m.export_destinations()).unwrap_or_default();
+    if offered.is_empty() {
+        return;
+    }
+    let mut chosen = destination_lock().clone();
+    let current = chosen.as_ref().and_then(|(p, d, _)| offered.iter().find(|(op, od)| op == p && od.id == *d));
+    let text = current.map_or_else(|| tr("None").to_string(), |(_, d)| d.name.clone());
+    ui.horizontal(|ui| {
+        ui.label(tr("Then send to"));
+        let r = egui::ComboBox::from_id_salt("export-plugin-destination").selected_text(text).show_ui(ui, |ui| {
+            if ui.selectable_label(current.is_none(), tr("None")).clicked() {
+                chosen = None;
+            }
+            for (plugin, d) in &offered {
+                let on = current.is_some_and(|(p, cd)| p == plugin && cd.id == d.id);
+                if ui.selectable_label(on, &d.name).clicked() && !on {
+                    let values: serde_json::Map<String, Value> = d.dialog.iter().map(|f| (f.key.clone(), f.default_value())).collect();
+                    chosen = Some((plugin.clone(), d.id.clone(), Value::Object(values)));
+                }
+            }
+        });
+        crate::widgets::register(ui.ctx(), "export:pluginDestination", r.response.rect);
+        crate::access::label(&r.response, "Then send to");
+    });
+    if let Some((plugin, dest, values)) = chosen.as_mut()
+        && let Some((_, d)) = offered.iter().find(|(p, d)| p == plugin && d.id == *dest)
+    {
+        for f in &d.dialog {
+            if let Ok(f) = serde_json::to_value(f) {
+                field_ui(ui, &f, values);
+            }
+        }
+    }
+    *destination_lock() = chosen;
+}
+
+/// The Metadata panel's section for plug-in fields (`plugin.metadataFields`) of the active
+/// photo: each enabled plug-in that declares fields, with its fields edited in place
+/// (`plugin.setField`; text saves when the field loses focus). Nothing when no plug-in has fields.
+pub fn metadata_section(app: &mut DacApp, ui: &mut egui::Ui, photo: u64) {
+    let Ok(v) = app.session.execute("plugin.metadataFields", &json!({"id": photo})) else { return };
+    let plugins = v["plugins"].as_array().cloned().unwrap_or_default();
+    if plugins.is_empty() {
+        return;
+    }
+    ui.add_space(6.0);
+    ui.strong(tr("Plug-in fields"));
+    for p in &plugins {
+        let plugin = p["plugin"].as_str().unwrap_or_default().to_string();
+        ui.add_space(2.0);
+        ui.weak(p["pluginName"].as_str().unwrap_or(&plugin));
+        if let Some(e) = p["error"].as_str() {
+            ui.colored_label(ui.visuals().error_fg_color, e);
+            continue;
+        }
+        for f in p["fields"].as_array().into_iter().flatten() {
+            if let Some(new) = metadata_field_ui(ui, &plugin, photo, f) {
+                let key = f["key"].as_str().unwrap_or_default();
+                if let Err(e) = app.session.execute("plugin.setField", &json!({"plugin": plugin, "field": key, "value": new, "id": photo})) {
+                    app.toast_error(ui.ctx(), e.to_string());
+                }
+            }
+        }
+    }
+}
+
+/// One plug-in metadata field; `Some(new value)` when the user changed it.
+fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value) -> Option<Value> {
+    let key = f["key"].as_str()?;
+    let label = f["label"].as_str().unwrap_or(key);
+    let value = &f["value"];
+    let read_only = f["readOnly"].as_bool() == Some(true);
+    let mut out = None;
+    ui.horizontal(|ui| {
+        ui.label(label);
+        if read_only {
+            let text = match value {
+                Value::Null => "—".to_string(),
+                Value::Bool(b) => if *b { "✓" } else { "—" }.to_string(),
+                Value::String(s) => s.clone(),
+                other => other.to_string(),
+            };
+            ui.label(text);
+            return;
+        }
+        match f["type"].as_str() {
+            Some("number") => {
+                let (min, max) = (f["min"].as_f64().unwrap_or(0.0), f["max"].as_f64().unwrap_or(1.0));
+                let mut x = value.as_f64().unwrap_or(min);
+                let r = ui.add(egui::DragValue::new(&mut x).range(min..=max));
+                crate::access::label(&r, label);
+                if r.drag_stopped() || (r.changed() && !r.dragged()) {
+                    out = Some(json!(x));
+                }
+            }
+            Some("bool") => {
+                let mut b = value.as_bool().unwrap_or(false);
+                let r = ui.checkbox(&mut b, "");
+                crate::access::label(&r, label);
+                if r.changed() {
+                    out = Some(json!(b));
+                }
+            }
+            Some("choice") => {
+                let cur = value.as_str().unwrap_or("").to_string();
+                let r = egui::ComboBox::from_id_salt(("plugin-meta", plugin, key)).selected_text(if cur.is_empty() { "—" } else { &cur }).show_ui(
+                    ui,
+                    |ui| {
+                        if ui.selectable_label(cur.is_empty(), "—").clicked() && !cur.is_empty() {
+                            out = Some(Value::Null);
+                        }
+                        for o in f["options"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                            if ui.selectable_label(cur == o, o).clicked() && cur != o {
+                                out = Some(json!(o));
+                            }
+                        }
+                    },
+                );
+                crate::access::label(&r.response, label);
+            }
+            _ => {
+                let shown = value.as_str().unwrap_or("").to_string();
+                let temp = egui::Id::new(("plugin-meta-text", plugin, key, photo));
+                let mut text: String = ui.data(|d| d.get_temp(temp)).unwrap_or_else(|| shown.clone());
+                let widget = format!("pluginField:{plugin}:{key}");
+                let r = crate::text_field::TextField::singleline(&widget, &mut text).width(ui.available_width()).show(ui);
+                crate::access::label(&r.response, label);
+                if r.editing {
+                    ui.data_mut(|d| d.insert_temp(temp, text.clone()));
+                } else {
+                    ui.data_mut(|d| d.remove::<String>(temp));
+                }
+                if r.committed() && text != shown {
+                    out = Some(if text.trim().is_empty() { Value::Null } else { json!(text) });
+                }
+            }
+        }
+    });
+    out
 }
 
 fn exec(app: &mut DacApp, id: &str, p: Value, msg: &mut String) -> Option<Value> {
@@ -371,7 +534,12 @@ fn plugin_ui(ui: &mut egui::Ui, p: &Value, actions: &mut Vec<(&'static str, Valu
         if let Some(d) = p["description"].as_str().filter(|d| !d.is_empty()) {
             ui.label(d);
         }
-        ui.weak(format!("{id} · {} bytes", p["size"]));
+        let author = p["author"].as_str().filter(|a| !a.is_empty()).map(|a| format!(" · {a}")).unwrap_or_default();
+        ui.weak(format!("{id}{author} · {} KB", p["size"].as_u64().unwrap_or(0).div_ceil(1024)));
+        let adds = contributions(p);
+        if !adds.is_empty() {
+            ui.label(format!("{} {}", tr("Adds:"), adds.join(" · ")));
+        }
         ui.horizontal(|ui| {
             let mut on = p["enabled"].as_bool().unwrap_or(false);
             if ui.checkbox(&mut on, tr("Enabled")).changed() {
@@ -412,6 +580,31 @@ fn plugin_ui(ui: &mut egui::Ui, p: &Value, actions: &mut Vec<(&'static str, Valu
             }
         });
     });
+}
+
+/// What a plug-in adds to the app (from `plugin.list`), for its row in the manager.
+fn contributions(p: &Value) -> Vec<String> {
+    let mut v = Vec::new();
+    let n = |k: &str| p[k].as_array().map_or(0, Vec::len);
+    if n("commands") > 0 {
+        v.push(format!("{} {}", n("commands"), tr("menu commands")));
+    }
+    if p["hooks"]["export"].as_bool() == Some(true) {
+        v.push(tr("export hook").to_string());
+    }
+    if p["hooks"]["metadata"].as_bool() == Some(true) {
+        v.push(tr("metadata suggestions").to_string());
+    }
+    if let Some(name) = p["publish"]["name"].as_str() {
+        v.push(format!("{} “{name}”", tr("publish service")));
+    }
+    for d in p["exportDestinations"].as_array().into_iter().flatten() {
+        v.push(format!("{} “{}”", tr("export destination"), d["name"].as_str().unwrap_or("")));
+    }
+    if n("metadataFields") > 0 {
+        v.push(format!("{} {}", n("metadataFields"), tr("metadata fields")));
+    }
+    v
 }
 
 fn field_ui(ui: &mut egui::Ui, f: &Value, values: &mut Value) {

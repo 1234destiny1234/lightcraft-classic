@@ -109,6 +109,10 @@ impl Headless {
         }
         // Single-photo exports also report path/width/height at the top level (back-compat).
         let mut out = files.first().cloned().unwrap_or_else(|| json!({}));
+        // plug-in export hooks, then the plug-in destination the export named (if any)
+        if let Some(r) = dac_engine::cmd::plugins::after_export(&mut self.session, &files, p.get("pluginDestination")) {
+            out["plugins"] = json!(r);
+        }
         out["files"] = json!(files);
         Ok(out)
     }

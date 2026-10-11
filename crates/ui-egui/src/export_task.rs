@@ -25,6 +25,8 @@ pub struct ExportTask {
     rx: Receiver<Result<Vec<Value>, String>>,
     /// The export's row in the activity stack (`activity.cancel` sets `cancel`).
     guard: TaskGuard,
+    /// `app.export {pluginDestination}`: the plug-in export destination the files go to when done.
+    pub plugin_destination: Option<Value>,
 }
 
 impl ExportTask {
@@ -62,7 +64,7 @@ pub fn start(app: &mut DacApp, items: Vec<PreparedExport>, opts: ExportOptions, 
     work();
     let guard = app.session.activity.start("export", "Exporting", Cancel::Flag(cancel.clone()));
     guard.progress(0, total as u64);
-    app.export = Some(ExportTask { total, progress, cancel, rx, guard });
+    app.export = Some(ExportTask { total, progress, cancel, rx, guard, plugin_destination: None });
     Ok(json!({"background": true, "total": total}))
 }
 
@@ -108,7 +110,7 @@ pub fn start_contact_sheet(app: &mut DacApp, params: &Value) -> Result<Value, St
     work();
     let row = app.session.activity.start("export", "Exporting contact sheet", Cancel::Flag(cancel.clone()));
     row.progress(0, total as u64);
-    app.export = Some(ExportTask { total, progress, cancel, rx, guard: row });
+    app.export = Some(ExportTask { total, progress, cancel, rx, guard: row, plugin_destination: None });
     Ok(json!({"background": true, "total": total}))
 }
 
@@ -119,6 +121,8 @@ pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
         Ok(r) => {
             let cancelled = task.cancel.load(Ordering::Relaxed);
             let total = task.total;
+            #[cfg(not(target_arch = "wasm32"))]
+            let destination = task.plugin_destination.clone();
             app.export = None;
             let msg = match r {
                 Ok(files) => {
@@ -142,7 +146,7 @@ pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
                     }
                     #[cfg(not(target_arch = "wasm32"))]
                     if sheet.is_none() {
-                        crate::panels::plugins::after_export(app, ctx, &files); // P4.3: plug-in export hooks
+                        crate::panels::plugins::after_export(app, ctx, &files, destination.as_ref()); // P4.3: plug-in export hooks, G19: destination
                     }
                     app.last_export_result = Some(json!({"files": files, "cancelled": cancelled}));
                     m

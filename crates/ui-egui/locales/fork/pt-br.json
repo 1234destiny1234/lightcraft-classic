@@ -1071,5 +1071,14 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "Ele foi criado por outro aplicativo, cujo formato de catálogo o {app} não consegue abrir. Ele não foi alterado. Crie um novo catálogo ou abra outro.",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "Se ele estiver em uma unidade desconectada, conecte-a e tente novamente. Caso contrário, abra ou crie outro catálogo.",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "O {app} não tem permissão para ler ou gravar a pasta dele. Verifique as permissões da pasta e tente novamente.",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Suas fotos e edições nela estão intactas. Você pode tentar novamente (por exemplo, depois de fechar outro programa que a esteja usando ou reconectar a unidade), abrir outra biblioteca ou criar uma nova, ou continuar sem biblioteca — nesse caso, nada do que você fizer será salvo."
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Suas fotos e edições nela estão intactas. Você pode tentar novamente (por exemplo, depois de fechar outro programa que a esteja usando ou reconectar a unidade), abrir outra biblioteca ou criar uma nova, ou continuar sem biblioteca — nesse caso, nada do que você fizer será salvo.",
+  "Then send to": "Depois enviar para",
+  "Plug-in fields": "Campos de plug-ins",
+  "Adds:": "Adiciona:",
+  "menu commands": "comandos de menu",
+  "export hook": "pós-processamento de exportação",
+  "metadata suggestions": "sugestões de metadados",
+  "publish service": "serviço de publicação",
+  "export destination": "destino de exportação",
+  "metadata fields": "campos de metadados"
 }

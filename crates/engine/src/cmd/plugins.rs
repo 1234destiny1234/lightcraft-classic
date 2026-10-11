@@ -314,16 +314,78 @@ impl Drop for PluginService {
     }
 }
 
-/// After an export finished: runs the enabled export hooks on the written files (`[{path, …}]`).
-/// `None` when no plug-in has an export hook (nothing ran).
-pub fn after_export(s: &mut Session, files: &[Value]) -> Option<Vec<Value>> {
+/// After an export finished: runs the enabled export hooks on the written files (`[{path, …}]`),
+/// then, when the export named one (`pluginDestination: {plugin, destination, args?}`), hands
+/// the files to that plug-in export destination (its result is the last entry, with
+/// `destination` set). `None` when nothing ran.
+pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value>) -> Option<Vec<Value>> {
     let any = manager().as_ref().is_some_and(|m| m.list().any(|p| p.enabled && p.plugin.manifest().hooks.export));
     let files: Vec<Value> = files.iter().filter(|f| f.get("path").and_then(Value::as_str).is_some()).cloned().collect();
-    if !any || files.is_empty() {
+    let destination = destination.filter(|d| d.is_object());
+    if (!any && destination.is_none()) || files.is_empty() {
         return None;
     }
     let mut host = SessionHost(s);
-    with_manager(|m| Ok(m.post_export(&files, &mut host))).ok()
+    with_manager(|m| {
+        let mut out = if any { m.post_export(&files, &mut host) } else { Vec::new() };
+        if let Some(d) = destination {
+            let (plugin, dest) = (d["plugin"].as_str().unwrap_or_default(), d["destination"].as_str().unwrap_or_default());
+            let r = m.export_to(plugin, dest, d.get("args").unwrap_or(&Value::Null), &files, &mut host);
+            out.push(match r {
+                Ok(v) => json!({"plugin": plugin, "destination": dest, "ok": v}),
+                Err(e) => json!({"plugin": plugin, "destination": dest, "error": e.to_string()}),
+            });
+        }
+        Ok(out)
+    })
+    .ok()
+}
+
+fn destinations(_: &mut Session, _: &Value) -> Result<Value> {
+    with_manager(|m| {
+        let names: std::collections::BTreeMap<String, String> =
+            m.list().map(|p| (p.plugin.id().to_string(), p.plugin.manifest().name.clone())).collect();
+        Ok(Value::Array(
+            m.export_destinations()
+                .into_iter()
+                .map(|(plugin, d)| json!({"plugin": plugin, "pluginName": names.get(&plugin), "destination": d.id, "name": d.name, "dialog": d.dialog}))
+                .collect(),
+        ))
+    })
+}
+
+fn export_to(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "plugin.exportTo";
+    let id = id_param(p, C)?;
+    let dest = str_param(p, "destination").ok_or_else(|| bad(C, "missing `destination`"))?;
+    let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
+    let args = p.get("args").cloned().unwrap_or(Value::Null);
+    let mut host = SessionHost(s);
+    with_manager(|m| m.export_to(id, dest, &args, files, &mut host).map_err(|e| plugin_err(C, e)))
+}
+
+/// The photo a field command is about: `id`, else the active photo.
+fn field_photo(s: &Session, p: &Value, cmd: &str) -> Result<String> {
+    match p.get("id").or_else(|| p.get("photo")) {
+        Some(v) => photo_id(v).map(|v| v.to_string()).map_err(|e| bad(cmd, e)),
+        None => s.active().map(|i| i.0.to_string()).ok_or_else(|| bad(cmd, "no photo (pass `id`)")),
+    }
+}
+
+fn metadata_fields(s: &mut Session, p: &Value) -> Result<Value> {
+    let photo = field_photo(s, p, "plugin.metadataFields")?;
+    with_manager(|m| Ok(json!({"photo": photo, "plugins": m.metadata_fields(&photo)})))
+}
+
+fn set_field(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "plugin.setField";
+    let photo = field_photo(s, p, C)?;
+    let plugin = str_param(p, "plugin").ok_or_else(|| bad(C, "missing `plugin`"))?;
+    let key = str_param(p, "field").ok_or_else(|| bad(C, "missing `field`"))?;
+    let value = p.get("value").cloned().unwrap_or(Value::Null);
+    with_manager(|m| {
+        m.set_metadata_field(plugin, &photo, key, &value).map(|v| json!({"photo": photo, "field": key, "value": v})).map_err(|e| plugin_err(C, e))
+    })
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -339,6 +401,10 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "plugin.run", "Run Plug-in Command", [], None, "{plugin, command, args?: dialog values, ids?} — runs a plug-in menu command on ids / the selection → its result", always, run),
         cmd!(query "plugin.suggestMetadata", "Suggest Metadata (Plug-ins)", [], None, "{ids?} — asks metadata providers about the photos → [{plugin, ok: {suggestions}} | {plugin, error}]; writes nothing", always, suggest),
         cmd!(query "plugin.postExport", "Run Export Hooks", [], None, "{files: [{path, photo?}]} — runs plug-in export post-process hooks on exported files → [{plugin, ok|error}]", always, post_export),
+        cmd!(query "plugin.exportDestinations", "Plug-in Export Destinations", [], None, "{} → [{plugin, pluginName, destination, name, dialog}] of enabled plug-ins; pass one as app.export {pluginDestination: {plugin, destination, args}}", always, destinations),
+        cmd!(query "plugin.exportTo", "Send to Plug-in Destination", [], None, "{plugin, destination, files: [{path, photo?}], args?: dialog values} — hands exported files to a plug-in export destination → its result", always, export_to),
+        cmd!(query "plugin.metadataFields", "Plug-in Metadata Fields", [], None, "{id?: photo (default the active one)} → {photo, plugins: [{plugin, pluginName, fields: [{key, label, type, readOnly, value}]} | {plugin, error}]}", always, metadata_fields),
+        cmd!(query "plugin.setField", "Set Plug-in Metadata Field", [], None, "{plugin, field, value (null clears), id?: photo (default the active one)} — read-only fields and values the field doesn't take are refused → {photo, field, value}", always, set_field),
         cmd!(query "plugin.publishServices", "Plug-in Publish Services", [], None, "{} → [{kind: plugin:<id> (a publish.addService kind), plugin, id, name}]", always, services),
     ]
 }
@@ -350,7 +416,7 @@ mod tests {
     /// A plug-in publish service whose upload answers `{remoteId: "r1"}` and whose export hook
     /// answers `{seen: true}`.
     fn publisher_module() -> Vec<u8> {
-        let manifest = r#"{"id":"test.pub","name":"Pub","hooks":{"export":true},"publish":{"id":"p","name":"P"}}"#;
+        let manifest = r#"{"id":"test.pub","name":"Pub","hooks":{"export":true},"publish":{"id":"p","name":"P"},"exportDestinations":[{"id":"d","name":"D"}],"metadataFields":[{"key":"job","label":"Job","type":"text"},{"key":"ro","label":"RO","type":"bool","readOnly":true}]}"#;
         let reply = r#"{"ok":{"remoteId":"r1","seen":true}}"#;
         let esc = |s: &str| s.replace('"', "\\\"");
         let src = format!(
@@ -379,9 +445,34 @@ mod tests {
         assert_eq!(service.publish(&up).unwrap().remote_id, "r1");
         service.remove("r1").unwrap();
         let mut s = Session::with_demo();
-        let r = after_export(&mut s, &[json!({"path": "/tmp/x.jpg"})]).unwrap();
+        let r = after_export(&mut s, &[json!({"path": "/tmp/x.jpg"})], None).unwrap();
         assert!(r.iter().any(|v| v["plugin"] == "test.pub" && v["ok"]["seen"] == true), "{r:?}");
-        assert!(after_export(&mut s, &[json!({"error": "failed"})]).is_none(), "no written files, no hooks");
+        assert!(after_export(&mut s, &[json!({"error": "failed"})], None).is_none(), "no written files, no hooks");
+        // an export destination named by the export runs after the hooks
+        let d = json!({"plugin": "test.pub", "destination": "d"});
+        let r = after_export(&mut s, &[json!({"path": "/tmp/x.jpg"})], Some(&d)).unwrap();
+        assert_eq!(r.last().unwrap()["destination"], "d", "{r:?}");
+        let bad = json!({"plugin": "test.pub", "destination": "nope"});
+        assert!(after_export(&mut s, &[json!({"path": "/tmp/x.jpg"})], Some(&bad)).unwrap().last().unwrap()["error"].is_string());
+        let l = s.execute("plugin.exportDestinations", &json!({})).unwrap();
+        assert!(l.as_array().unwrap().iter().any(|x| x["plugin"] == "test.pub" && x["destination"] == "d" && x["pluginName"] == "Pub"), "{l}");
+        assert!(s.execute("plugin.exportTo", &json!({"plugin": "test.pub", "destination": "d"})).is_err(), "files required");
+        // export validation accepts a well-formed destination only
+        assert!(crate::export::ExportOptions::validate("app.export", &json!({"pluginDestination": d})).is_ok());
+        assert!(crate::export::ExportOptions::validate("app.export", &json!({"pluginDestination": "d"})).is_err());
+
+        // custom metadata fields: listed for a photo, edited, read-only refused
+        let id = s.visible_cloned()[0].0;
+        let field = |s: &mut Session, id: Value| {
+            let f = s.execute("plugin.metadataFields", &json!({"id": id})).unwrap();
+            f["plugins"].as_array().unwrap().iter().find(|p| p["plugin"] == "test.pub").cloned().unwrap()["fields"][0].clone()
+        };
+        assert_eq!(field(&mut s, json!(id))["key"], "job");
+        s.execute("plugin.setField", &json!({"plugin": "test.pub", "field": "job", "value": "J-9", "id": id})).unwrap();
+        assert_eq!(field(&mut s, json!(id.to_string()))["value"], "J-9");
+        assert!(s.execute("plugin.setField", &json!({"plugin": "test.pub", "field": "ro", "value": true, "id": id})).is_err());
+        assert!(s.execute("plugin.setField", &json!({"plugin": "test.pub", "field": "job", "value": 5, "id": id})).is_err());
+        assert!(s.execute("plugin.setField", &json!({"plugin": "test.pub", "field": "job", "value": "x", "id": "bogus"})).is_err());
         manager().get_or_insert_with(Manager::in_memory).uninstall("test.pub").unwrap();
     }
 

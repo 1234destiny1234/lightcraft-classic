@@ -929,5 +929,14 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "Er wurde von einer anderen App erstellt, deren Katalogformat {app} nicht öffnen kann. Er wurde nicht verändert. Erstellen Sie einen neuen Katalog oder öffnen Sie einen anderen.",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "Liegt er auf einem nicht angeschlossenen Laufwerk, schließen Sie es an und versuchen Sie es erneut. Andernfalls öffnen oder erstellen Sie einen anderen Katalog.",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app} darf seinen Ordner nicht lesen oder beschreiben. Prüfen Sie die Berechtigungen des Ordners und versuchen Sie es erneut.",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ihre Fotos und Bearbeitungen darin sind unverändert. Sie können es erneut versuchen (z. B. nachdem Sie ein anderes Programm geschlossen haben, das sie geöffnet hat, oder ihr Laufwerk wieder angeschlossen haben), eine andere Bibliothek öffnen oder eine neue erstellen, oder ohne Bibliothek fortfahren – dann wird nichts gespeichert."
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ihre Fotos und Bearbeitungen darin sind unverändert. Sie können es erneut versuchen (z. B. nachdem Sie ein anderes Programm geschlossen haben, das sie geöffnet hat, oder ihr Laufwerk wieder angeschlossen haben), eine andere Bibliothek öffnen oder eine neue erstellen, oder ohne Bibliothek fortfahren – dann wird nichts gespeichert.",
+  "Then send to": "Danach senden an",
+  "Plug-in fields": "Plug-in-Felder",
+  "Adds:": "Fügt hinzu:",
+  "menu commands": "Menübefehle",
+  "export hook": "Export-Nachbearbeitung",
+  "metadata suggestions": "Metadatenvorschläge",
+  "publish service": "Veröffentlichungsdienst",
+  "export destination": "Exportziel",
+  "metadata fields": "Metadatenfelder"
 }

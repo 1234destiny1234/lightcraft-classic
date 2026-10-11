@@ -1070,5 +1070,14 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "別のアプリで作成されたもので、{app}はそのカタログ形式を開けません。変更はされていません。新しいカタログを作成するか、別のカタログを開いてください。",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "接続されていないドライブにある場合は、接続してからもう一度お試しください。それ以外の場合は、別のカタログを開くか作成してください。",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app}にはそのフォルダーの読み書きが許可されていません。フォルダーのアクセス権を確認してから、もう一度お試しください。",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "中の写真と編集内容は変更されていません。もう一度試す(ライブラリを開いている別のプログラムを閉じたり、ドライブを接続し直した後など)、別のライブラリを開くか新しく作成する、またはライブラリなしで続行することができます。その場合、操作は何も保存されません。"
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "中の写真と編集内容は変更されていません。もう一度試す(ライブラリを開いている別のプログラムを閉じたり、ドライブを接続し直した後など)、別のライブラリを開くか新しく作成する、またはライブラリなしで続行することができます。その場合、操作は何も保存されません。",
+  "Then send to": "書き出し後の送信先",
+  "Plug-in fields": "プラグインのフィールド",
+  "Adds:": "追加内容:",
+  "menu commands": "メニューコマンド",
+  "export hook": "書き出し後処理",
+  "metadata suggestions": "メタデータの提案",
+  "publish service": "公開サービス",
+  "export destination": "書き出し先",
+  "metadata fields": "メタデータフィールド"
 }

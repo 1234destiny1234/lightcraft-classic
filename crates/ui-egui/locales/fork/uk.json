@@ -887,5 +887,14 @@
   "It was made by another app, whose catalog format {app} can't open. It was left unchanged. Create a new catalog, or open another one.": "Його створено іншим застосунком, формат каталогу якого {app} не може відкрити. Каталог не змінено. Створіть новий каталог або відкрийте інший.",
   "If it is on a drive that isn't connected, connect it and try again. Otherwise open or create another catalog.": "Якщо він на непідключеному диску, підключіть диск і спробуйте ще раз. Інакше відкрийте або створіть інший каталог.",
   "{app} isn't allowed to read or write its folder. Check the folder's permissions, then try again.": "{app} не має дозволу читати або записувати його теку. Перевірте дозволи теки й спробуйте ще раз.",
-  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваші фото й зміни в ній не зачеплено. Можна спробувати ще раз (наприклад, закривши іншу програму, у якій її відкрито, або знову підключивши її диск), відкрити іншу бібліотеку чи створити нову або продовжити без бібліотеки — тоді нічого зробленого не буде збережено."
+  "Your photos and edits in it are untouched. You can try again (e.g. after closing another program that has it open or reconnecting its drive), open a different library or create a new one, or continue without a library — then nothing you do is saved.": "Ваші фото й зміни в ній не зачеплено. Можна спробувати ще раз (наприклад, закривши іншу програму, у якій її відкрито, або знову підключивши її диск), відкрити іншу бібліотеку чи створити нову або продовжити без бібліотеки — тоді нічого зробленого не буде збережено.",
+  "Then send to": "Потім надіслати до",
+  "Plug-in fields": "Поля плагінів",
+  "Adds:": "Додає:",
+  "menu commands": "команди меню",
+  "export hook": "обробка після експорту",
+  "metadata suggestions": "пропозиції метаданих",
+  "publish service": "служба публікації",
+  "export destination": "місце експорту",
+  "metadata fields": "поля метаданих"
 }
