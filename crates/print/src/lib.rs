@@ -8,10 +8,12 @@
 //! * [`output`]: PDF (photos, shaped text with embedded subset fonts, graphics, crop marks, an
 //!   optional ICC OutputIntent) and JPEG output.
 //! * [`ipp`]: IPP/1.1 printing to CUPS (and any IPP Everywhere printer) in pure Rust.
+//! * [`send`]: render, submit (PDF, else JPEG pages) with copies, and follow the job state.
+//! * [`testprinter`]: a virtual IPP printer on localhost for tests and CI.
 //!
 //! Photos come in through `dac_layout::render::PhotoSource`, which the engine implements with
-//! its export renderer, so prints match exports. Print sharpening, 16-bit output and soft-proof
-//! colour management are applied by that renderer (shared pipeline), not here.
+//! its export renderer, so prints match exports. Print sharpening ([`job::PrintSharpening`]) is
+//! applied by the engine to the rendered photos at their printed size, not here.
 //!
 //! Sources: own design; IPP after RFC 8010/8011 (see [`ipp`]).
 
@@ -21,9 +23,11 @@
 pub mod ipp;
 pub mod job;
 pub mod output;
+pub mod send;
+pub mod testprinter;
 pub mod text;
 
-pub use job::{Destination, ImageSettings, LayoutStyle, PackageSpec, PageOptions, PrintSettings};
+pub use job::{Destination, ImageSettings, LayoutStyle, PackageSpec, PageOptions, PrintMedia, PrintSettings, PrintSharpening};
 
 /// Errors from building, rendering or sending a print.
 #[derive(Debug, thiserror::Error, PartialEq)]

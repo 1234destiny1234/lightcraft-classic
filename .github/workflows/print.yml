@@ -1,0 +1,68 @@
+# Printing (LRC-PRINT-*): the pure-Rust IPP client against a real CUPS queue. The virtual IPP printer
+# (`dac_print::testprinter`) already runs in every `cargo xtask ci`; this job adds CUPS itself with the
+# cups-pdf backend: `cups_test_printer_receives_a_job` reads the queue's paper sizes, prints a 2×2 contact sheet
+# PDF, follows the job to "completed", and the PDF must land in the cups-pdf output. See docs/print.md.
+name: Print
+
+on:
+  schedule:
+    - cron: '41 3 * * 1'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - 'crates/print/**'
+      - 'crates/layout/**'
+      - 'crates/pdf/**'
+      - 'crates/ui-egui/src/print_ui.rs'
+      - '.github/workflows/print.yml'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: print-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  CARGO_TERM_COLOR: always
+  CARGO_INCREMENTAL: 0
+
+jobs:
+  cups:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: Swatinem/rust-cache@v2
+        with:
+          key: print-cups
+      - name: install CUPS and cups-pdf
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cups printer-driver-cups-pdf
+          sudo systemctl start cups
+          sudo lpadmin -p PDF -E -v cups-pdf:/ -m lsb/usr/cups-pdf/CUPS-PDF_opt.ppd
+          lpstat -p PDF
+      - name: virtual IPP printer tests
+        run: cargo test -p dac-print --lib -- virtual_ ipp::
+      - name: CUPS test printer
+        run: |
+          prefix=$(sed -n 's/^env_prefix *= *"\([A-Z0-9_]*\)".*/\1/p' brand.toml)
+          test -n "$prefix"
+          env "${prefix}_CUPS_TEST_PRINTER=ipp://localhost:631/printers/PDF" \
+            cargo test -p dac-print --lib cups_test_printer -- --nocapture
+      - name: the job reached cups-pdf
+        run: |
+          for _ in $(seq 1 30); do
+            found=$(sudo find /var/spool/cups-pdf "$HOME/PDF" -name '*.pdf' 2>/dev/null | head -n 1)
+            if [ -n "$found" ]; then
+              echo "printed: $found"
+              sudo head -c 8 "$found" | grep -q '%PDF-'
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "no PDF from cups-pdf"
+          sudo tail -n 100 /var/log/cups/error_log || true
+          exit 1
