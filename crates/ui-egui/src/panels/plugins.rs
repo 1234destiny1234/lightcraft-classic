@@ -235,39 +235,46 @@ fn approval_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static s
     let installed = pending.info["installed"].clone();
     let had = if installed.is_object() { installed["granted"].clone() } else { Value::Null };
     let mut keep = true;
-    egui::Window::new(tr("Install Plug-in")).id(key().with("approve")).collapsible(false).resizable(false).show(ctx, |ui| {
-        ui.strong(format!("{} {}", m["name"].as_str().unwrap_or(""), m["version"].as_str().unwrap_or("")));
-        ui.weak(format!("{} · {}", m["id"].as_str().unwrap_or(""), m["author"].as_str().unwrap_or("")));
-        if installed.is_object() {
-            ui.label(format!("{} {}", tr("Updates the installed version"), installed["version"].as_str().unwrap_or("")));
-        }
-        ui.separator();
-        let req = &m["permissions"];
-        let rows = permission_rows(req);
-        if rows.is_empty() {
-            ui.label(tr("It asks for no permissions: it can only keep its own data."));
-        } else {
-            ui.label(tr("It asks for these permissions. Tick the ones you allow:"));
-        }
-        for row in rows {
-            let mut on = row.granted(&pending.grant);
-            let new = !row.granted(&had);
-            let text = if new && installed.is_object() { format!("{}  ({})", row.label(), tr("new")) } else { row.label() };
-            if ui.checkbox(&mut on, text).changed() {
-                row.set(&mut pending.grant, on);
+    let window_id = key().with("approve");
+    let shown = egui::Window::new(tr("Install Plug-in")).id(window_id).collapsible(false).resizable(false).show(ctx, |ui| {
+        let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
+        layout.body(ui, |ui| {
+            ui.strong(format!("{} {}", m["name"].as_str().unwrap_or(""), m["version"].as_str().unwrap_or("")));
+            ui.weak(format!("{} · {}", m["id"].as_str().unwrap_or(""), m["author"].as_str().unwrap_or("")));
+            if installed.is_object() {
+                ui.label(format!("{} {}", tr("Updates the installed version"), installed["version"].as_str().unwrap_or("")));
             }
-        }
-        ui.separator();
-        ui.horizontal(|ui| {
-            if ui.button(tr("Install")).clicked() {
-                actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant})));
-                keep = false;
+            ui.separator();
+            let req = &m["permissions"];
+            let rows = permission_rows(req);
+            if rows.is_empty() {
+                ui.label(tr("It asks for no permissions: it can only keep its own data."));
+            } else {
+                ui.label(tr("It asks for these permissions. Tick the ones you allow:"));
             }
-            if ui.button(tr("Cancel")).clicked() {
-                keep = false;
+            for row in rows {
+                let mut on = row.granted(&pending.grant);
+                let new = !row.granted(&had);
+                let text = if new && installed.is_object() { format!("{}  ({})", row.label(), tr("new")) } else { row.label() };
+                if ui.checkbox(&mut on, text).changed() {
+                    row.set(&mut pending.grant, on);
+                }
             }
         });
+        layout.footer(ui, |ui| {
+            ui.separator();
+            ui.horizontal(|ui| {
+                if ui.button(tr("Install")).clicked() {
+                    actions.push(("plugin.install", json!({"path": pending.path, "grant": pending.grant})));
+                    keep = false;
+                }
+                if ui.button(tr("Cancel")).clicked() {
+                    keep = false;
+                }
+            });
+        });
     });
+    crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
     if keep {
         s.pending = Some(pending);
     }

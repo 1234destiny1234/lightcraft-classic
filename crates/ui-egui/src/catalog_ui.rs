@@ -274,8 +274,9 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
     let mut action: Option<(String, Value)> = None;
     let t = crate::theme::Tokens::get(ctx);
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
-    egui::Window::new(crate::i18n::tr(title))
-        .id(egui::Id::new("catalog-dialog"))
+    let window_id = egui::Id::new("catalog-dialog");
+    let shown = egui::Window::new(crate::i18n::tr(title))
+        .id(window_id)
         .collapsible(false)
         .resizable(false)
         .frame(frame)
@@ -284,7 +285,10 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
             let dim = |s: &str| egui::RichText::new(crate::i18n::tr(s)).color(t.text_dim);
-            match &mut dlg {
+            // capped to the screen; the buttons are part of each variant's content, so they scroll
+            // with it in a window too short for the whole dialog
+            let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
+            layout.body(ui, |ui| match &mut dlg {
                 CatalogDialog::Chooser => chooser(app, ui, &mut action, &mut close),
                 CatalogDialog::NewCatalog { parent, name } => {
                     ui.label(dim("A catalog is a folder: its photos' records, settings and history. The photos themselves stay where they are."));
@@ -345,8 +349,10 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         action = Some((command.clone(), json!({"ids": ids, "confirmed": true})));
                     }
                 }
-            }
+            });
+            layout.footer(ui, |_| {});
         });
+    crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
     if app.catalog_ui.dialog.is_some() {
         app.catalog_ui.dialog = Some(dlg);
     }

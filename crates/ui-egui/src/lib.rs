@@ -18,6 +18,7 @@ pub mod control;
 pub mod creations_ui;
 pub mod credits;
 pub mod date_picker;
+pub mod dialog_frame;
 pub mod docking;
 mod edit_in;
 pub mod export_task;
@@ -73,6 +74,8 @@ mod tests_crop_rotate;
 mod tests_curve;
 #[cfg(test)]
 mod tests_date_picker;
+#[cfg(test)]
+mod tests_dialog_frame;
 #[cfg(test)]
 mod tests_filmstrip;
 #[cfg(test)]
