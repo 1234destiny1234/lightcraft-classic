@@ -53,8 +53,11 @@ flag, color label, has-adjustments, ISO, focal length and aperture comparisons; 
 keywords, filename, camera, lens, title, caption, creator, copyright, location fields and file
 format (contains all / any / none, begins/ends with, is, empty); and nested match-all / any /
 none groups. Any other rule (collection, dates, metadata status, …) keeps the collection as a
-regular album with its current membership, and the report names the rule. The report counts
-`smartAlbums`, `smartAsStatic` and `stacks`. Folder stacks become stacks in Lightroom's order
+regular album with its current membership, and the report names the rule. On reimport an album keeps
+its kind: an existing smart album keeps its current (possibly edited) rules, and a regular album
+made by an earlier import stays regular and gains new members, with a warning (delete it and
+reimport to get a smart album). The report counts albums by their resulting kind:
+`smartAlbums`, `smartAsStatic`, `smartKept` (existing smart albums left as they were) and `stacks`. Folder stacks become stacks in Lightroom's order
 and collapsed state; photos already in a stack keep it, so reimport doesn't duplicate them. Archived history and snapshots are source data, not native history yet.
 A Custom white balance on a raw the app develops relative to its as-shot look (ARW, NEF, RW2,
 RAF, CR3, CR2, PEF, SRW; Lightroom names them all `RAW`) can't be taken as Kelvin: the catalog keeps no

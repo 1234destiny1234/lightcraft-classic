@@ -856,7 +856,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         .filter(|r| text(r, "owningModule") == "ag.library.smart_collection")
         .map(|r| (number(r, "collection"), text(r, "content")))
         .collect();
-    let (mut smart_albums, mut static_smart) = (0usize, 0usize);
+    let (mut smart_albums, mut static_smart, mut smart_kept) = (0usize, 0usize, 0usize);
     let mut ordered: Vec<_> = data.collections.iter().collect();
     ordered.sort_by_key(|r| {
         let mut depth = 0;
@@ -872,48 +872,69 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         let mut album = Album::new(id, text(collection, "name"));
         album.parent = albums.get(&number(collection, "parent")).copied();
         album.folder = text(collection, "creationId").contains("group");
-        let mut smart_ok = false;
-        if text(collection, "creationId").contains("smart") {
-            match smart_content.get(&number(collection, "id_local")).map(|c| crate::lightroom_smart::smart_rules(c)) {
-                Some(Ok(rules)) => {
-                    album.smart = Some(Box::new(dac_catalog::Filter { rule_set: Some(rules), ..Default::default() }));
-                    smart_ok = true;
+        let is_smart = text(collection, "creationId").contains("smart");
+        let rules = if is_smart {
+            Some(match smart_content.get(&number(collection, "id_local")) {
+                Some(c) => crate::lightroom_smart::smart_rules(c),
+                None => Err("smart rules missing".into()),
+            })
+        } else {
+            None
+        };
+        let members: Vec<PhotoId> = grouped_members
+            .get(&number(collection, "id_local"))
+            .into_iter()
+            .flatten()
+            .filter_map(|r| ids.get(&number(r, "image")).copied())
+            .collect();
+        // Reimport branches on the existing album's kind: its name/hierarchy and (for a smart album)
+        // its possibly user-edited rules are kept; a regular album only gains new members.
+        let existing = s.catalog.album(id).map(|a| (a.folder, a.is_smart(), a.photos.clone()));
+        match existing {
+            Some((true, _, _)) => {}
+            Some((false, true, _)) => {
+                if is_smart {
                     smart_albums += 1;
-                }
-                Some(Err(why)) => {
-                    warnings.push(format!("{}: {why}; imported current membership (rules kept in archive)", album.name));
-                    static_smart += 1;
-                }
-                None => {
-                    warnings.push(format!("{}: smart rules missing; imported current membership", album.name));
-                    static_smart += 1;
+                    smart_kept += 1;
                 }
             }
-        }
-        if !album.folder && !smart_ok {
-            album.photos = grouped_members
-                .get(&number(collection, "id_local"))
-                .into_iter()
-                .flatten()
-                .filter_map(|r| ids.get(&number(r, "image")).copied())
-                .collect();
-        }
-        if s.catalog.album(id).is_some() {
-            // Reimport preserves the user's album name/hierarchy, merges only new membership.
-            if smart_ok {
-                // A reimported smart album keeps whatever rules the user has now.
-            } else if let Some(old) = s.catalog.album(id).filter(|a| !a.folder && !a.is_smart()) {
-                let mut photos = old.photos.clone();
+            Some((false, false, old)) => {
+                if let Some(rules) = &rules {
+                    static_smart += 1;
+                    match rules {
+                        Ok(_) => warnings.push(format!(
+                            "{}: an earlier import created a static album; it stays static (delete it and reimport to get a smart album)",
+                            album.name
+                        )),
+                        Err(why) => warnings.push(format!("{}: {why}; imported current membership (rules kept in archive)", album.name)),
+                    }
+                }
+                let mut photos = old;
                 let mut seen: HashSet<_> = photos.iter().copied().collect();
-                for photo in album.photos {
+                for photo in members {
                     if seen.insert(photo) {
                         photos.push(photo);
                     }
                 }
                 ops.push(Op::SetAlbumPhotos { id, photos });
             }
-        } else {
-            ops.push(Op::AddAlbum { album });
+            None => {
+                match rules {
+                    Some(Ok(rules)) => {
+                        album.smart = Some(Box::new(dac_catalog::Filter { rule_set: Some(rules), ..Default::default() }));
+                        smart_albums += 1;
+                    }
+                    Some(Err(why)) => {
+                        warnings.push(format!("{}: {why}; imported current membership (rules kept in archive)", album.name));
+                        static_smart += 1;
+                    }
+                    None => {}
+                }
+                if !album.folder && !album.is_smart() {
+                    album.photos = members;
+                }
+                ops.push(Op::AddAlbum { album });
+            }
         }
     }
     let stacks = stack_ops(s, &data, &ids, &mut ops, &mut warnings);
@@ -922,7 +943,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
     }
     s.merge_undo(s.undo.len().saturating_sub(undo0), "Import Lightroom Catalog");
     Ok(AppliedImport {
-        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"stacks":stacks,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
+        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"smartKept":smart_kept,"stacks":stacks,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
         index: index.clone(),
     })
 }
@@ -1320,6 +1341,61 @@ mod tests {
         }
     }
 
+    fn smart_sample(content: &str) -> CatalogImport {
+        let mut data = sample();
+        data.collections.push(row(json!({"id_local":11,"name":"Best","creationId":"com.adobe.ag.library.smart_collection"})));
+        data.members.push(row(json!({"collection":11,"image":1})));
+        data.collection_content = vec![row(json!({"collection":11,"owningModule":"ag.library.smart_collection","content":content}))];
+        data
+    }
+    const SUPPORTED: &str = "s = { { criteria = \"rating\", operation = \">=\", value = 4 }, combine = \"intersect\" }";
+    const UNSUPPORTED: &str = "s = { { criteria = \"collection\", operation = \"all\", value = \"x\" } }";
+    #[test]
+    fn reimport_keeps_an_earlier_static_album_static_and_merges_its_membership() {
+        let dir = std::env::temp_dir().join(format!("app-lrcat-reimport_keeps_an_earlie-{}", std::process::id()));
+        let mut s = crate::Session::new();
+        s.open_library(&dir, false).unwrap();
+        let r = apply(&mut s, smart_sample(UNSUPPORTED), false).unwrap();
+        assert_eq!((r["smartAlbums"].as_u64(), r["smartAsStatic"].as_u64()), (Some(0), Some(1)));
+        let albums = s.catalog.albums().count();
+        let mut data = smart_sample(SUPPORTED);
+        data.members.push(row(json!({"collection":11,"image":2})));
+        let r = apply(&mut s, data.clone(), false).unwrap();
+        assert_eq!((r["smartAlbums"].as_u64(), r["smartAsStatic"].as_u64(), r["smartKept"].as_u64()), (Some(0), Some(1), Some(0)));
+        assert!(
+            r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().is_some_and(|w| w.starts_with("Best:") && w.contains("stays static"))),
+            "{}",
+            r["warnings"]
+        );
+        let best = s.catalog.albums().find(|a| a.name == "Best").unwrap();
+        assert!(!best.is_smart());
+        assert_eq!(best.photos.len(), 2, "new membership merged");
+        // Repeating the import creates no duplicates.
+        apply(&mut s, data, false).unwrap();
+        assert_eq!(s.catalog.albums().count(), albums);
+        assert_eq!(s.catalog.albums().find(|a| a.name == "Best").unwrap().photos.len(), 2);
+        s.close_library().unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn reimport_preserves_user_edited_smart_rules() {
+        let dir = std::env::temp_dir().join(format!("app-lrcat-reimport_preserves_user_-{}", std::process::id()));
+        let mut s = crate::Session::new();
+        s.open_library(&dir, false).unwrap();
+        let r = apply(&mut s, smart_sample(SUPPORTED), false).unwrap();
+        assert_eq!(r["smartAlbums"], 1);
+        let albums = s.catalog.albums().count();
+        let id = s.catalog.albums().find(|a| a.name == "Best").unwrap().id;
+        let edited = dac_catalog::Filter { rating: 2, ..Default::default() };
+        s.commit("Edit rules", Op::SetAlbumRules { id, rules: Box::new(edited.clone()) }).unwrap();
+        let r = apply(&mut s, smart_sample(SUPPORTED), false).unwrap();
+        assert_eq!((r["smartAlbums"].as_u64(), r["smartAsStatic"].as_u64(), r["smartKept"].as_u64()), (Some(1), Some(0), Some(1)));
+        let best = s.catalog.album(id).unwrap();
+        assert_eq!(best.smart.as_deref().map(|f| f.rating), Some(2));
+        assert_eq!(s.catalog.albums().count(), albums);
+        s.close_library().unwrap();
+        std::fs::remove_dir_all(dir).unwrap();
+    }
     #[test]
     fn persistent_reimport_keeps_copy_and_collection_ids_and_capture_time() {
         let dir = std::env::temp_dir().join(format!("app-lrcat-reimport-{}", std::process::id()));
