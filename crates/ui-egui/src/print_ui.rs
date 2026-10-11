@@ -306,20 +306,20 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
         "printui.pageSetup" => {
             let cur = app.print.settings.page.size;
             let landscape = p.get("landscape").and_then(Value::as_bool).unwrap_or(cur.w > cur.h);
-            let size = match (p.get("paper").and_then(Value::as_str), p.get("media").and_then(Value::as_str)) {
-                (Some(k), _) => dac_print::job::paper(k).ok_or_else(|| format!("unknown paper {k}"))?.size,
-                (None, Some(m)) => app
-                    .print
-                    .media
-                    .iter()
-                    .find(|x| x.name == m)
-                    .map(|x| x.size)
-                    .or_else(|| dac_print::ipp::pwg_media_size(m))
-                    .ok_or_else(|| format!("unknown printer paper {m}"))?,
-                (None, None) => cur,
+            let (size, margins) = match (p.get("paper").and_then(Value::as_str), p.get("media").and_then(Value::as_str)) {
+                (Some(k), _) => (dac_print::job::paper(k).ok_or_else(|| format!("unknown paper {k}"))?.size, None),
+                (None, Some(m)) => match app.print.media.iter().find(|x| x.name == m) {
+                    Some(x) => (x.size, Some(x.margins)),
+                    None => (dac_print::ipp::pwg_media_size(m).ok_or_else(|| format!("unknown printer paper {m}"))?, None),
+                },
+                (None, None) => (cur, None),
             };
             let s = &mut app.print.settings;
             s.set_paper(size, landscape);
+            // the printer's own paper: keep the layout inside what it can print
+            if let Some(m) = margins {
+                s.fit_printer_margins(m);
+            }
             // grids and packages adapt; custom cells keep their places
             s.validate().map_err(|e| e.to_string())?;
         }
@@ -549,13 +549,31 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                     },
                     output_intent: None,
                 };
-                let out = dac_print::output::to_pdf(&doc, &settings, &src, &text, &opt, progress).map_err(|e| e.to_string())?;
-                let bytes = out.files.into_iter().next().unwrap_or_default();
                 if dest == Destination::Printer {
                     let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into());
-                    let job = dac_print::ipp::print_job(&printer, &user, &title, "application/pdf", 1, &bytes).map_err(|e| e.to_string())?;
-                    Ok(json!({"printer": printer, "job": job, "pages": out.pages, "warnings": out.warnings}))
-                } else {
+                    let send = dac_print::send::SendOptions {
+                        user,
+                        title: title.clone(),
+                        pdf: opt,
+                        wait: std::time::Duration::from_secs(20),
+                        poll: std::time::Duration::from_millis(500),
+                    };
+                    let sent =
+                        dac_print::send::send_to_printer(&printer, &doc, &settings, &src, &text, &send, progress).map_err(|e| e.to_string())?;
+                    return Ok(json!({
+                        "printer": printer,
+                        "job": sent.jobs.last().copied().unwrap_or(0),
+                        "jobs": sent.jobs,
+                        "format": sent.format,
+                        "copies": sent.copies,
+                        "state": sent.state.as_ref().map(|s| s.label()),
+                        "pages": sent.pages,
+                        "warnings": sent.warnings,
+                    }));
+                }
+                let out = dac_print::output::to_pdf(&doc, &settings, &src, &text, &opt, progress).map_err(|e| e.to_string())?;
+                let bytes = out.files.into_iter().next().unwrap_or_default();
+                {
                     write_file(&path, &bytes)?;
                     Ok(json!({"path": path, "pages": out.pages, "bytes": bytes.len(), "warnings": out.warnings}))
                 }
@@ -957,6 +975,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
             ui.add(egui::Slider::new(&mut s.job.jpeg_quality, 10..=100).text(crate::i18n::tr("JPEG Quality")));
         }
         if s.destination == Destination::Printer {
+            ui.add(egui::Slider::new(&mut s.job.copies, 1..=99).text(crate::i18n::tr("Copies")));
             ui.horizontal(|ui| {
                 let r = ui.add(egui::TextEdit::singleline(&mut app.print.printer_uri).hint_text("ipp://host/printers/name").desired_width(190.0));
                 crate::access::label(&r, "Printer address");
@@ -1379,5 +1398,41 @@ mod tests {
         assert!(bytes.lock().unwrap().starts_with(b"%PDF-"));
         // printer destination without a printer is refused up front
         assert!(h.app.run("printui.print", json!({"destination": "printer"})).is_err());
+    }
+
+    #[test]
+    fn prints_to_a_virtual_ipp_printer_with_its_paper_margins_and_copies() {
+        use dac_print::testprinter::{TestPrinter, TestPrinterConfig};
+        let printer = TestPrinter::start(TestPrinterConfig::default()).unwrap();
+        let mut app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        app.run("module.print", json!({})).unwrap();
+        app.run("printui.template", json!({"name": "2×2 Cells"})).unwrap();
+        app.run(
+            "printui.set",
+            json!({"settings": {"page": {"margins": {"top": 0, "right": 0, "bottom": 0, "left": 0}}, "job": {"dpi": 72, "copies": 2}}}),
+        )
+        .unwrap();
+        app.run("printui.media", json!({"uri": printer.uri()})).unwrap();
+        let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
+        let wait = |h: &mut crate::headless::Headless, done: &dyn Fn(&DacApp) -> bool| {
+            let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+            while !done(&h.app) && std::time::Instant::now() < deadline {
+                h.step();
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+        };
+        wait(&mut h, &|a| !a.print.media.is_empty());
+        h.app.run("printui.pageSetup", json!({"media": "iso_a4_210x297mm", "landscape": false})).unwrap();
+        let m = h.app.print.settings.page.margins;
+        assert!((m.top - 14.17).abs() < 0.1 && (m.left - 8.5).abs() < 0.1, "{m:?}");
+        h.app.run("printui.print", json!({"destination": "printer", "printer": printer.uri()})).unwrap();
+        wait(&mut h, &|a| !a.print.busy);
+        let last = h.app.print.last.clone().unwrap();
+        assert_eq!(last["state"], "completed", "{last}");
+        assert_eq!(last["copies"], 2);
+        let jobs = printer.jobs();
+        assert_eq!(jobs.len(), 1);
+        assert_eq!(jobs[0].copies, 2);
+        assert!(jobs[0].document.starts_with(b"%PDF-"));
     }
 }
