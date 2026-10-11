@@ -30,6 +30,8 @@ const PAGE_SIZE: u32 = 1000;
 pub mod publish;
 #[path = "immich_sync.rs"]
 pub(crate) mod sync;
+#[path = "immich_versions.rs"]
+pub(crate) mod versions;
 /// Most assets one import takes.
 const MAX_IMPORT: usize = 5000;
 
@@ -649,6 +651,9 @@ pub fn pump(s: &mut Session, p: &Value) -> Result<Value> {
             Msg::Synced(d) => {
                 sync::finish(s, *d);
             }
+            Msg::Version(d) => {
+                versions::finish(s, *d);
+            }
             Msg::Original { photo, account, result } => {
                 s.remote.fetching.remove(&photo);
                 match result {
@@ -934,6 +939,7 @@ fn scan_libraries(s: &mut Session, p: &Value) -> Result<Value> {
 pub fn specs() -> Vec<CommandSpec> {
     let mut v = sync::specs();
     v.extend(publish::specs());
+    v.extend(versions::specs());
     v.extend(base_specs());
     v
 }

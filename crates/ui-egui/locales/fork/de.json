@@ -883,5 +883,14 @@
   "Title Slide": "Titelfolie",
   "Two Up with Caption": "Zwei mit Bildunterschrift (nebeneinander)",
   "Edit Photo": "Foto bearbeiten",
-  "Edit Original opens the file itself; saving it updates this photo.": "„Original bearbeiten“ öffnet die Datei selbst; beim Speichern wird dieses Foto aktualisiert."
+  "Edit Original opens the file itself; saving it updates this photo.": "„Original bearbeiten“ öffnet die Datei selbst; beim Speichern wird dieses Foto aktualisiert.",
+  "Uploading the edited version to Immich…": "Bearbeitete Version wird zu Immich hochgeladen…",
+  "Immich: {}": "Immich: {}",
+  "The edited version replaced the previous one on Immich": "Die bearbeitete Version hat die vorherige in Immich ersetzt",
+  "The edited version is on Immich, stacked on the original": "Die bearbeitete Version ist in Immich, gestapelt auf dem Original",
+  "Edited Version Saved Again": "Bearbeitete Version erneut gespeichert",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "Diese Version ist bereits in Immich. Immich kann keine Datei ersetzen, daher wird die neue Speicherung als neues Asset oben im Stapel hochgeladen.",
+  "Keep both": "Beide behalten",
+  "Replace (move the previous upload to Immich's trash)": "Ersetzen (vorherigen Upload in den Immich-Papierkorb)",
+  "Remember my choice": "Meine Wahl merken"
 }

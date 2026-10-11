@@ -317,7 +317,12 @@ fn reload(app: &mut DacApp, ctx: &egui::Context, ids: Vec<u64>) {
         return;
     }
     match app.session.execute("photo.reload", &json!({"ids": ids})) {
-        Ok(r) if r["reloaded"].as_array().is_some_and(|a| !a.is_empty()) => app.toast(ctx, tr("Updated the edits saved in the external editor")),
+        Ok(r) if r["reloaded"].as_array().is_some_and(|a| !a.is_empty()) => {
+            app.toast(ctx, tr("Updated the edits saved in the external editor"));
+            // fork: Edit In versions of Immich-linked photos go to Immich (RT.C1)
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::panels::connections::after_edit_saved(app, ctx, &ids);
+        }
         Ok(_) => {}
         Err(e) => app.ui.status = e.to_string(),
     }

@@ -1024,5 +1024,14 @@
   "Title Slide": "タイトルスライド",
   "Two Up with Caption": "2 枚並べてキャプション",
   "Edit Photo": "写真を編集",
-  "Edit Original opens the file itself; saving it updates this photo.": "オリジナルを編集はファイルそのものを開きます。保存するとこの写真が更新されます。"
+  "Edit Original opens the file itself; saving it updates this photo.": "オリジナルを編集はファイルそのものを開きます。保存するとこの写真が更新されます。",
+  "Uploading the edited version to Immich…": "編集したバージョンを Immich にアップロード中…",
+  "Immich: {}": "Immich: {}",
+  "The edited version replaced the previous one on Immich": "編集したバージョンが Immich の以前のものを置き換えました",
+  "The edited version is on Immich, stacked on the original": "編集したバージョンは Immich でオリジナルにスタックされました",
+  "Edited Version Saved Again": "編集したバージョンを再保存しました",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "このバージョンはすでに Immich にあります。Immich はファイルを置き換えられないため、新しい保存はスタックの一番上に新しいアセットとしてアップロードされます。",
+  "Keep both": "両方を保持",
+  "Replace (move the previous upload to Immich's trash)": "置き換える（以前のアップロードを Immich のゴミ箱へ）",
+  "Remember my choice": "選択を記憶"
 }

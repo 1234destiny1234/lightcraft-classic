@@ -1023,5 +1023,14 @@
   "Title Slide": "標題投影片",
   "Two Up with Caption": "兩張並排含說明文字",
   "Edit Photo": "編輯相片",
-  "Edit Original opens the file itself; saving it updates this photo.": "「編輯原始檔案」會直接開啟該檔案；儲存後將更新此相片。"
+  "Edit Original opens the file itself; saving it updates this photo.": "「編輯原始檔案」會直接開啟該檔案；儲存後將更新此相片。",
+  "Uploading the edited version to Immich…": "正在將編輯版本上傳到 Immich…",
+  "Immich: {}": "Immich：{}",
+  "The edited version replaced the previous one on Immich": "編輯版本已取代 Immich 上的舊版本",
+  "The edited version is on Immich, stacked on the original": "編輯版本已在 Immich 上，堆疊在原始相片之上",
+  "Edited Version Saved Again": "編輯版本已再次儲存",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "此版本已在 Immich 上。Immich 無法取代檔案，因此新的儲存會作為新資產上傳到堆疊頂端。",
+  "Keep both": "保留兩者",
+  "Replace (move the previous upload to Immich's trash)": "取代（將先前的上傳移到 Immich 垃圾桶）",
+  "Remember my choice": "記住我的選擇"
 }

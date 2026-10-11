@@ -684,6 +684,8 @@ pub struct SyncState {
     /// Assets whose deletion the user chose to keep (not asked again).
     pub kept: BTreeSet<String>,
     pub log: Vec<RunLog>,
+    /// The stacks both sides held after the last sync (RT.C3, [`crate::stacks`]).
+    pub stacks: Vec<crate::stacks::Group>,
 }
 
 /// Most activity-log entries kept.

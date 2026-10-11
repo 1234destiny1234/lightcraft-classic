@@ -82,6 +82,14 @@ pub(crate) struct SyncDone {
     checked: u64,
     errors: Vec<String>,
     fatal: Option<ImmichError>,
+    /// RT.C3: the stack merge (None: skipped, e.g. the key lacks stack permissions).
+    stacks: Option<StackSync>,
+}
+
+/// The stack part of a run.
+pub(crate) struct StackSync {
+    plan: dac_immich::stacks::Plan,
+    base: Vec<dac_immich::stacks::Group>,
 }
 
 fn excluded(c: &Catalog) -> impl Fn(&str) -> bool + '_ {
@@ -170,9 +178,13 @@ fn start(s: &mut Session, account: &str, dry_run: bool, full: bool, background: 
     }
     let since = if full { None } else { st.synced_until.clone() };
     let kept = st.kept.clone();
+    let base_stacks = st.stacks.clone();
+    let asset_of: HashMap<PhotoId, String> = links.iter().map(|(p, a)| (*p, a.clone())).collect();
+    let catalog_stacks: Vec<Vec<PhotoId>> = s.catalog.stacks().map(|st| st.photos.clone()).collect();
+    let local_stacks = dac_immich::stacks::local_groups(&catalog_stacks, |p| asset_of.get(&p).cloned());
     let entry = s.remote.sync.entry(account.to_string()).or_default();
     entry.running = true;
-    let job = Job { account: account.to_string(), dry_run, since, cfg, pairs, kept, started: now };
+    let job = Job { account: account.to_string(), dry_run, since, cfg, pairs, kept, started: now, local_stacks, base_stacks };
     if background {
         let tx = s.remote.sender();
         std::thread::spawn(move || {
@@ -192,11 +204,15 @@ struct Job {
     pairs: Vec<Pair>,
     kept: BTreeSet<String>,
     started: String,
+    /// The catalog's stacks over this account's linked assets, and the last sync's.
+    local_stacks: Vec<dac_immich::stacks::Group>,
+    base_stacks: Vec<dac_immich::stacks::Group>,
 }
 
 /// The server side of a run (a worker thread, or inline).
 fn work(c: &dac_immich::Client, job: Job) -> SyncDone {
-    let Job { account, dry_run, since, cfg, pairs, kept, started } = job;
+    let Job { account, dry_run, since, cfg, pairs, kept, started, local_stacks, base_stacks } = job;
+    let linked_assets: BTreeSet<String> = pairs.iter().map(|p| p.asset.clone()).collect();
     let mut done = SyncDone {
         account,
         dry_run,
@@ -208,6 +224,7 @@ fn work(c: &dac_immich::Client, job: Job) -> SyncDone {
         checked: 0,
         errors: Vec::new(),
         fatal: None,
+        stacks: None,
     };
     // 1. what changed on the server since the last complete run
     let wanted: BTreeSet<&str> = pairs.iter().map(|p| p.asset.as_str()).collect();
@@ -308,7 +325,83 @@ fn work(c: &dac_immich::Client, job: Job) -> SyncDone {
         push(c, &cfg, &mut results, &mut done);
     }
     done.pairs = results.into_iter().map(|(p, _)| p).collect();
+    // 5. stacks
+    done.stacks = sync_stacks(c, &local_stacks, &base_stacks, &linked_assets, dry_run, &mut done.errors);
     done
+}
+
+/// RT.C3: mirror stacks of linked assets (three-way, `dac_immich::stacks`); the Immich side is
+/// written here, the catalog side in [`finish`]. A key without stack permissions skips this
+/// part with a clear message; the metadata sync still counts.
+fn sync_stacks(
+    c: &dac_immich::Client,
+    local: &[dac_immich::stacks::Group],
+    base: &[dac_immich::stacks::Group],
+    linked: &BTreeSet<String>,
+    dry_run: bool,
+    errors: &mut Vec<String>,
+) -> Option<StackSync> {
+    use dac_immich::stacks;
+    const PERMS: &str =
+        "stack sync skipped: the API key lacks the stack permissions (stack.read, stack.create, stack.delete); add them to the key in Immich";
+    let remote_all = match c.stacks() {
+        Ok(v) => v,
+        Err(ImmichError::Forbidden(_)) => {
+            errors.push(PERMS.into());
+            return None;
+        }
+        Err(e) => {
+            errors.push(format!("stacks: {e}"));
+            return None;
+        }
+    };
+    let remote = stacks::remote_groups(&remote_all, linked);
+    let plan = stacks::reconcile(local, &remote, base);
+    let base = stacks::next_base(local, &remote, &plan);
+    if dry_run || plan.to_remote.is_empty() && plan.remove_remote.is_empty() {
+        return Some(StackSync { plan, base });
+    }
+    let index = stacks::stack_index(&remote_all);
+    let stack_of = |a: &str| index.get(a).cloned();
+    let mut gone: BTreeSet<String> = BTreeSet::new();
+    let mut delete: Vec<String> = Vec::new();
+    for g in &plan.remove_remote {
+        if let Some(id) = stack_of(&g.primary)
+            && gone.insert(id.clone())
+        {
+            delete.push(id);
+        }
+    }
+    // a new group replaces every remote stack it overlaps
+    for g in &plan.to_remote {
+        for m in &g.members {
+            if let Some(id) = stack_of(m)
+                && gone.insert(id.clone())
+            {
+                delete.push(id);
+            }
+        }
+    }
+    let mut ok = true;
+    if !delete.is_empty()
+        && let Err(e) = c.delete_stacks(&delete)
+    {
+        ok = false;
+        errors.push(if matches!(e, ImmichError::Forbidden(_)) { PERMS.to_string() } else { format!("stacks: {e}") });
+    }
+    for g in &plan.to_remote {
+        if !ok {
+            break;
+        }
+        let mut ids = vec![g.primary.clone()];
+        ids.extend(g.members.iter().filter(|m| **m != g.primary).cloned());
+        if let Err(e) = c.stack(&ids) {
+            ok = false;
+            errors.push(if matches!(e, ImmichError::Forbidden(_)) { PERMS.to_string() } else { format!("stack: {e}") });
+        }
+    }
+    // a failed write: keep the old base, so the next run tries again
+    ok.then_some(StackSync { plan, base })
 }
 
 /// Write the outcomes' Immich side: asset updates, then tags (created once, assigned in bulk).
@@ -461,8 +554,42 @@ pub(crate) fn finish(s: &mut Session, d: SyncDone) -> Value {
             }
         }
     }
+    let mut stacks_changed = 0u64;
+    if !d.dry_run
+        && let Some(ss) = &d.stacks
+    {
+        let photo_of = |s: &Session, a: &str| s.catalog.photo_of_remote(SERVICE, &account, a);
+        let mut sops: Vec<Op> = Vec::new();
+        for g in &ss.plan.remove_local {
+            let photos: Vec<PhotoId> = g.members.iter().filter_map(|a| photo_of(s, a)).collect();
+            sops.extend(s.catalog.remove_from_stacks_ops(&photos));
+        }
+        if !sops.is_empty() {
+            stacks_changed += ss.plan.remove_local.len() as u64;
+            if let Err(e) = s.apply_system(Op::Batch { ops: std::mem::take(&mut sops) }) {
+                errors.push(format!("catalog stacks: {e}"));
+            }
+        }
+        for g in &ss.plan.to_local {
+            let Some(top) = photo_of(s, &g.primary) else { continue };
+            let photos: Vec<PhotoId> = g.members.iter().filter_map(|a| photo_of(s, a)).collect();
+            let same = s.catalog.stack_of(top).is_some_and(|st| photos.iter().all(|p| st.photos.contains(p)));
+            let op = if same { s.catalog.set_top_ops(top) } else { s.catalog.group_ops(top, &photos, false) };
+            if let Some(op) = op {
+                stacks_changed += 1;
+                if let Err(e) = s.apply_system(op) {
+                    errors.push(format!("catalog stacks: {e}"));
+                }
+            }
+        }
+    }
     let fatal = d.fatal.as_ref().map(failure);
     let st = state_of(s, &account);
+    if !d.dry_run
+        && let Some(ss) = &d.stacks
+    {
+        st.stacks = ss.base.clone();
+    }
     if !d.dry_run {
         for (k, v) in new_items {
             st.items.insert(k, v);
@@ -511,6 +638,12 @@ pub(crate) fn finish(s: &mut Session, d: SyncDone) -> Value {
         "deletionsQueued": queued,
         "missing": d.missing,
         "errors": errors,
+        "stacks": d.stacks.as_ref().map(|ss| json!({
+            "toCatalog": ss.plan.to_local.len() + ss.plan.remove_local.len(),
+            "toImmich": ss.plan.to_remote.len() + ss.plan.remove_remote.len(),
+            "conflicts": ss.plan.conflicts.len(),
+            "applied": stacks_changed,
+        })),
     });
     if d.dry_run {
         v["changes"] = json!(changes);

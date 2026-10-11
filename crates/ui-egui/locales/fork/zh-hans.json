@@ -1023,5 +1023,14 @@
   "Title Slide": "标题幻灯片",
   "Two Up with Caption": "两张并排带题注",
   "Edit Photo": "编辑照片",
-  "Edit Original opens the file itself; saving it updates this photo.": "“编辑原始文件”会直接打开该文件；保存后将更新此照片。"
+  "Edit Original opens the file itself; saving it updates this photo.": "“编辑原始文件”会直接打开该文件；保存后将更新此照片。",
+  "Uploading the edited version to Immich…": "正在将编辑版本上传到 Immich…",
+  "Immich: {}": "Immich：{}",
+  "The edited version replaced the previous one on Immich": "编辑版本已替换 Immich 上的旧版本",
+  "The edited version is on Immich, stacked on the original": "编辑版本已在 Immich 上，堆叠在原始照片之上",
+  "Edited Version Saved Again": "编辑版本已再次保存",
+  "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.": "此版本已在 Immich 上。Immich 无法替换文件，因此新的保存将作为新资源上传到堆叠顶部。",
+  "Keep both": "保留两者",
+  "Replace (move the previous upload to Immich's trash)": "替换（将之前的上传移到 Immich 回收站）",
+  "Remember my choice": "记住我的选择"
 }

@@ -105,6 +105,26 @@ names); `immich.confirmFaces` confirms them, `immich.pushPeople {merge?}` sends 
 `immich.smartSearch {query, mode: smart|ocr|description|place, show?, saveAs?}` maps the server's results to linked
 photos; `show` makes them a temporary collection, `saveAs` an album.
 
+## Edit In versions and stacks (RT.C)
+
+- **Edit versions** (`immich.uploadVersion`): when the external editor saves an Edit In version
+  whose catalog stack holds an Immich-linked photo, the app uploads the version, links it, and
+  stacks it on Immich with the version as the primary (`POST /stacks` with the source's stack
+  primary, which Immich v3.3.1 merges in). Runs on a worker with an activity row; errors are toasts.
+- **Saving again**: Immich v3.3.1 has no endpoint that replaces an asset's file
+  (`PUT /assets/{id}/original` is gone), so each save is a new asset on top of the stack. The app
+  asks **Keep both** (default) or **Replace** (the previous upload's albums are copied to the new
+  asset, then it goes to Immich's trash), with "remember my choice"
+  (`immich.versionSettings {resave: ask|keepBoth|replace}`, kept in `<library>/Immich/versions.json`).
+- **Stack sync** (part of `immich.sync`): catalog stacks of linked photos ⇄ Immich stacks,
+  three-way against the last sync (`dac_immich::stacks`). The top photo is the primary, and the order
+  below it stays local. Unlinked photos keep their place in the catalog stack. When both sides
+  changed the same stack, the catalog's version wins. Needs `stack.read`, `stack.create` and
+  `stack.delete`; a key without them skips the stack part and says so in the sync's errors.
+  `PUT /stacks/{id}` (deprecated in v3) is not used.
+- Tests: `edit_versions_upload_and_stack_on_immich` and `stacks_mirror_both_ways` (in-process
+  server), `live_stacks_round_trip` (real server, `--ignored`).
+
 ## Publish (IMM-PUBLISH) and albums
 
 An Immich publish service (`publish.createService {kind: "immich", settings: {account, send: rendered|original|both,

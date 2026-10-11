@@ -43,6 +43,8 @@ pub(crate) enum Msg {
         account: String,
         result: Result<dac_immich::ServerStatus, ImmichError>,
     },
+    /// `immich.uploadVersion`: an Edit In version upload finished.
+    Version(Box<crate::cmd::immich::versions::VersionDone>),
     /// `immich.sync {background}`: a sync run finished.
     Synced(Box<crate::cmd::immich::sync::SyncDone>),
     /// `credentials.unlock {background}`: the encrypted file opened (or not).
@@ -136,6 +138,8 @@ pub struct State {
     pub(crate) checks: HashMap<String, serde_json::Value>,
     /// IMM-SYNC per account: state between runs, the running flag, the schedule.
     pub(crate) sync: HashMap<String, crate::cmd::immich::sync::AccountSync>,
+    /// Finished Edit In version uploads not yet shown (`immich.versionResults`).
+    pub(crate) versions: Vec<serde_json::Value>,
 }
 
 impl Default for State {
@@ -167,6 +171,7 @@ impl Default for State {
             checking: HashSet::new(),
             checks: HashMap::new(),
             sync: HashMap::new(),
+            versions: Vec::new(),
         }
     }
 }

@@ -94,6 +94,32 @@ pub struct PersonRef {
     pub name: String,
 }
 
+/// `StackResponseDto` (`GET /stacks`, `POST /stacks`): only the ids mirroring needs.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct StackInfo {
+    pub id: String,
+    pub primary_asset_id: String,
+    #[serde(default)]
+    pub assets: Vec<StackAsset>,
+}
+
+/// An asset of a stack (its id).
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct StackAsset {
+    pub id: String,
+}
+
+/// `AssetStackResponseDto`: the stack an asset is in.
+#[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AssetStack {
+    pub id: String,
+    pub primary_asset_id: String,
+    #[serde(default)]
+    pub asset_count: u64,
+}
+
 /// `AssetResponseDto` (the fields the app uses).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -132,6 +158,9 @@ pub struct Asset {
     pub tags: Vec<Tag>,
     #[serde(default)]
     pub people: Vec<PersonRef>,
+    /// The stack it is in (v3: `stack`, null when unstacked).
+    #[serde(default)]
+    pub stack: Option<AssetStack>,
 }
 
 impl Asset {

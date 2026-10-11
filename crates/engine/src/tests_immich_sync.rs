@@ -103,7 +103,8 @@ fn handle(state: &Shared, down: &AtomicBool, m: &str, t: &str, key: Option<&str>
             json(json!({"results": results}))
         }
         ("GET", "/api/albums") => {
-            json(json!(st.albums.iter().map(|(i, n, a)| json!({"id": i, "albumName": n, "assetCount": a.len()})).collect::<Vec<_>>()))
+            let with = query.strip_prefix("assetId=");
+            json(json!(st.albums.iter().filter(|(_, _, a)| with.is_none_or(|w| a.iter().any(|x| x == w))).map(|(i, n, a)| json!({"id": i, "albumName": n, "assetCount": a.len()})).collect::<Vec<_>>()))
         }
         ("POST", "/api/albums") => {
             let id = format!("album-{}", st.albums.len() + 1);
@@ -127,9 +128,39 @@ fn handle(state: &Shared, down: &AtomicBool, m: &str, t: &str, key: Option<&str>
             json(json!({"id": al.0, "albumName": al.1, "assets": al.2.iter().map(|i| json!({"id": i})).collect::<Vec<_>>()}))
         }
         ("POST", "/api/stacks") => {
-            let ids = b["assetIds"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
-            st.stacks.push(ids);
-            json(json!({"id": "stack"}))
+            // v3.3.1: the first is the primary; stacks whose primary is listed are merged in
+            let mut ids: Vec<String> = b["assetIds"].as_array().into_iter().flatten().filter_map(Value::as_str).map(str::to_string).collect();
+            for s in st.stacks.iter_mut() {
+                if s.first().is_some_and(|p| ids.contains(p)) {
+                    for m in s.drain(..) {
+                        if !ids.contains(&m) {
+                            ids.push(m);
+                        }
+                    }
+                } else {
+                    s.retain(|m| !ids.contains(m));
+                    if s.len() < 2 {
+                        s.clear();
+                    }
+                }
+            }
+            st.stacks.push(ids.clone());
+            json(json!({"id": format!("stack-{}", st.stacks.len() - 1), "primaryAssetId": ids[0], "assets": ids.iter().map(|i| json!({"id": i})).collect::<Vec<_>>()}))
+        }
+        ("GET", "/api/stacks") => json(json!(st
+            .stacks
+            .iter()
+            .enumerate()
+            .filter(|(_, s)| s.len() >= 2)
+            .map(|(i, s)| json!({"id": format!("stack-{i}"), "primaryAssetId": s[0], "assets": s.iter().map(|a| json!({"id": a})).collect::<Vec<_>>()}))
+            .collect::<Vec<_>>())),
+        ("DELETE", "/api/stacks") => {
+            for id in b["ids"].as_array().into_iter().flatten().filter_map(Value::as_str) {
+                if let Some(s) = id.strip_prefix("stack-").and_then(|i| i.parse::<usize>().ok()).and_then(|i| st.stacks.get_mut(i)) {
+                    s.clear();
+                }
+            }
+            resp("204 No Content", "application/json", b"")
         }
         ("PUT", "/api/tags") => {
             let mut out = Vec::new();
@@ -182,7 +213,9 @@ fn handle(state: &Shared, down: &AtomicBool, m: &str, t: &str, key: Option<&str>
         (_, p) if p.starts_with("/api/assets/") => {
             let id = p.trim_start_matches("/api/assets/").to_string();
             let now = st.tick();
+            let stack = st.stacks.iter().enumerate().find(|(_, s)| s.len() >= 2 && s.contains(&id)).map(|(i, s)| json!({"id": format!("stack-{i}"), "primaryAssetId": s[0], "assetCount": s.len()}));
             let Some(a) = st.asset_mut(&id) else { return not_found() };
+            a["stack"] = stack.unwrap_or(Value::Null);
             if m == "PUT" {
                 if let Some(r) = b.get("rating") {
                     a["exifInfo"]["rating"] = r.clone();
@@ -538,4 +571,72 @@ fn albums_sync_both_ways() {
     s.execute("immich.syncAlbums", &json!({})).unwrap();
     assert_eq!(s.catalog.album(dac_catalog::AlbumId(a)).unwrap().photos, vec![two]);
     let _ = std::fs::remove_dir_all(&dir);
+}
+
+/// RT.C1/C2: an Edit In version of a linked photo goes to Immich stacked on the original as the
+/// primary; saving it again asks (or follows the remembered choice): Keep both adds the new upload
+/// on top, Replace also trashes the previous upload after copying its albums.
+#[test]
+fn edit_versions_upload_and_stack_on_immich() {
+    let Setup { mut s, state, one, dir, .. } = setup("versions");
+    let r = s.execute("photo.editIn", &json!({"id": one.0})).unwrap();
+    let ed = PhotoId(r["id"].as_u64().unwrap());
+    let r = s.execute("immich.uploadVersion", &json!({"id": ed.0, "background": false})).unwrap();
+    assert_eq!(r["stacked"], true, "{r}");
+    let first = r["asset"].as_str().unwrap().to_string();
+    assert_eq!(state.lock().unwrap().stacks.iter().find(|x| x.len() >= 2).unwrap(), &vec![first.clone(), "aaaa-1".to_string()]);
+    assert_eq!(s.catalog.remote_of(ed).next().unwrap().remote_id, first, "the version is linked to its upload");
+    // saved again: the setting is `ask`
+    let r = s.execute("immich.uploadVersion", &json!({"id": ed.0, "background": false})).unwrap();
+    assert_eq!(r["ask"], true, "{r}");
+    let r = s.execute("immich.uploadVersion", &json!({"id": ed.0, "resave": "keepBoth", "background": false})).unwrap();
+    let second = r["asset"].as_str().unwrap().to_string();
+    {
+        let st = state.lock().unwrap();
+        let stack = st.stacks.iter().find(|x| x.len() >= 2).unwrap();
+        assert_eq!(stack[0], second, "the new save is the primary");
+        assert!(stack.contains(&first) && stack.contains(&"aaaa-1".to_string()), "{stack:?}");
+    }
+    // remembered Replace: the previous upload's album carries over, then it goes to the trash
+    s.execute("immich.versionSettings", &json!({"resave": "replace"})).unwrap();
+    state.lock().unwrap().albums.push(("album-x".into(), "Trip".into(), vec![second.clone()]));
+    let r = s.execute("immich.uploadVersion", &json!({"id": ed.0, "background": false})).unwrap();
+    let third = r["asset"].as_str().unwrap().to_string();
+    assert_eq!(r["trashed"], json!(second), "{r}");
+    assert_eq!(remote(&state, &second)["isTrashed"], true);
+    assert!(state.lock().unwrap().albums[0].2.contains(&third), "album membership carried over");
+    assert_eq!(s.execute("immich.versionSettings", &json!({})).unwrap()["resave"], "replace");
+    // a photo with nothing on Immich is skipped
+    std::fs::write(dir.join("loose.png"), png(77)).unwrap();
+    let r = s.execute("library.import", &json!({"paths": [dir.join("loose.png").to_string_lossy()]})).unwrap();
+    let loose = r["imported"][0].as_u64().unwrap();
+    assert!(s.execute("immich.uploadVersion", &json!({"id": loose})).unwrap()["skipped"].is_string());
+}
+
+/// RT.C3: catalog stacks of linked photos mirror to Immich (top = primary) and back.
+#[test]
+fn stacks_mirror_both_ways() {
+    let Setup { mut s, state, one, two, .. } = setup("stacks");
+    s.execute("stack.group", &json!({"ids": [two.0, one.0], "top": two.0})).unwrap();
+    let r = s.execute("immich.sync", &json!({})).unwrap();
+    assert_eq!(r["stacks"]["toImmich"], 1, "{r}");
+    assert_eq!(state.lock().unwrap().stacks.iter().find(|x| x.len() >= 2).unwrap(), &vec!["bbbb-2".to_string(), "aaaa-1".to_string()]);
+    // nothing changed: nothing to do
+    let r = s.execute("immich.sync", &json!({})).unwrap();
+    assert_eq!((r["stacks"]["toImmich"].as_u64(), r["stacks"]["toCatalog"].as_u64()), (Some(0), Some(0)), "{r}");
+    // Immich makes the other asset primary: the catalog follows
+    {
+        let mut st = state.lock().unwrap();
+        for x in st.stacks.iter_mut() {
+            x.clear();
+        }
+        st.stacks.push(vec!["aaaa-1".into(), "bbbb-2".into()]);
+    }
+    let r = s.execute("immich.sync", &json!({})).unwrap();
+    assert_eq!(r["stacks"]["toCatalog"].as_u64(), Some(2), "{r}");
+    assert_eq!(s.catalog.stack_of(one).unwrap().top(), one);
+    // the catalog dissolves it: Immich follows
+    s.execute("stack.ungroup", &json!({"ids": [one.0]})).unwrap();
+    s.execute("immich.sync", &json!({})).unwrap();
+    assert!(state.lock().unwrap().stacks.iter().all(|x| x.len() < 2));
 }

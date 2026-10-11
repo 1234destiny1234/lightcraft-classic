@@ -113,7 +113,88 @@ impl ImmichUi {
 
 /// Every frame (cheaply): take in finished background work, keep the window repainting while
 /// something runs, and start downloading the original of a link-only photo opened in Develop.
+/// RT.C1/C2: the Edit In version waiting for the re-save question (photo id, "replace" picked,
+/// "remember my choice" ticked).
+#[derive(Clone, Debug, Default)]
+struct ResaveAsk {
+    photo: u64,
+    replace: bool,
+    remember: bool,
+}
+
+thread_local! {
+    static RESAVE: std::cell::RefCell<Vec<ResaveAsk>> = const { std::cell::RefCell::new(Vec::new()) };
+}
+
+/// After the external editor saved Edit In versions (`ids` reloaded): versions of Immich-linked
+/// photos go to Immich (`immich.uploadVersion`); a version already there asks Keep both / Replace
+/// unless the user chose to be remembered.
+pub(crate) fn after_edit_saved(app: &mut DacApp, ctx: &egui::Context, ids: &[u64]) {
+    for id in ids {
+        match app.session.execute("immich.uploadVersion", &json!({"id": id})) {
+            Ok(r) if r["ask"] == true => RESAVE.with_borrow_mut(|q| {
+                if !q.iter().any(|a| a.photo == *id) {
+                    q.push(ResaveAsk { photo: *id, ..Default::default() });
+                }
+            }),
+            Ok(r) if r["started"] == true => app.toast(ctx, crate::i18n::tr("Uploading the edited version to Immich…")),
+            Ok(_) => {}
+            Err(e) => app.toast(ctx, e.to_string()),
+        }
+    }
+}
+
+/// The re-save question and the finished uploads' toasts (every frame).
+fn versions_ui(app: &mut DacApp, ctx: &egui::Context) {
+    if let Ok(v) = app.session.execute("immich.versionResults", &json!({})) {
+        for r in v["results"].as_array().into_iter().flatten() {
+            let text = match r["error"].as_str() {
+                Some(e) => trf!("Immich: {}", e),
+                None if r["trashed"].is_string() => crate::i18n::tr("The edited version replaced the previous one on Immich").to_string(),
+                None => crate::i18n::tr("The edited version is on Immich, stacked on the original").to_string(),
+            };
+            app.toast(ctx, text);
+        }
+    }
+    let Some(mut ask) = RESAVE.with_borrow(|q| q.first().cloned()) else { return };
+    let (mut go, mut open) = (false, true);
+    egui::Window::new(crate::i18n::tr("Edited Version Saved Again"))
+        .id(egui::Id::new("immich-resave"))
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .show(ctx, |ui| {
+            ui.label(crate::i18n::tr(
+                "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.",
+            ));
+            ui.radio_value(&mut ask.replace, false, crate::i18n::tr("Keep both"));
+            ui.radio_value(&mut ask.replace, true, crate::i18n::tr("Replace (move the previous upload to Immich's trash)"));
+            ui.checkbox(&mut ask.remember, crate::i18n::tr("Remember my choice"));
+            go = ui.button(crate::i18n::tr("Upload")).clicked();
+        });
+    let choice = if ask.replace { "replace" } else { "keepBoth" };
+    if go {
+        if ask.remember
+            && let Err(e) = app.session.execute("immich.versionSettings", &json!({"resave": choice}))
+        {
+            app.toast(ctx, e.to_string());
+        }
+        match app.session.execute("immich.uploadVersion", &json!({"id": ask.photo, "resave": choice})) {
+            Ok(_) => app.toast(ctx, crate::i18n::tr("Uploading the edited version to Immich…")),
+            Err(e) => app.toast(ctx, e.to_string()),
+        }
+    }
+    RESAVE.with_borrow_mut(|q| {
+        if go || !open {
+            q.retain(|a| a.photo != ask.photo);
+        } else if let Some(first) = q.first_mut() {
+            *first = ask;
+        }
+    });
+}
+
 pub fn pump(app: &mut DacApp, ctx: &egui::Context) {
+    versions_ui(app, ctx);
     let now = ctx.input(|i| i.time);
     if now - app.immich.last_pump < 0.2 {
         return;
