@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-PLAY: MP3 and PCM clip audio; LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-EXPORT 🟡 → ✅: pipelined export with GPU grade, audio codecs; LR-VID-PLAY: MP3 and PCM clip audio; LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -43,7 +43,7 @@ cited here still exists. Formerly docs/parity.md.
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
-| R. Video (VID) | 3 | 2 | 0 | 1 | — | 2/2 (100%) |
+| R. Video (VID) | 4 | 1 | 0 | 1 | — | 2/2 (100%) |
 | S. Export (EXP) | 15 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 2 | 0 | 0 | — | 0/1 (0%) |
@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 101 | 19 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 488 | 57 | 36 | 27 | 193/201 (96%) | 163/175 (93%) |
+| **Total** | 489 | 56 | 36 | 27 | 193/201 (96%) | 163/175 (93%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.9%** of 581 in-scope rows — P0 98.0% of 201 · P1 96.3% of 175 · P2 73.5% of 204.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.0%** of 581 in-scope rows — P0 98.0% of 201 · P1 96.3% of 175 · P2 73.8% of 204.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -447,7 +447,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VID-TRIM | Trim | P1 | ✅ | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim`, `cmd:video.setTrim`, `cmd:video.resetTrim` | catalog format 10 stores the trim (undoable, sidecar `lcvid:trimIn/trimOut`); loupe trim handles drag a preview and commit one undo step; playback and export honour it; CLI `render --trim` |
 | LR-VID-EDIT | Edits on video | P2 | 🟡 | `crates/engine/src/video/playback.rs`, `crates/ui-egui/src/video_ui.rs` | global controls only (WB, tone, curve, HSL/mixer, colour grading, presets touching them), LUT-graded while playing, full quality paused and on export; masks, spots, lens, denoise, crop/transform are disabled for a clip ("Not available for video", also per clip in `ids`); presets/paste/sync keep only the video controls; Info panel shows duration, frame rate, codec, resolution, audio, trim. Missing: local adjustments, lens corrections, crop on video |
 | LR-VID-COVER | Cover frame | P2 | ✅ | `Op::SetVideoPoster`, `cmd:video.setPoster`, `crates/engine/src/media.rs` (`SourceRef::Video`, `video_poster`) | poster time stored (default 10 % in; sidecar `lcvid:posterTime`), Set Poster Frame button in the player and Photo ▸ Video menu; grid and loupe show the graded poster, undecodable clips get a film placeholder |
-| LR-VID-EXPORT | Video export | P2 | 🟡 | `crates/engine/src/export_video.rs`, `crates/video-export/src/native.rs` | a clip in an `app.export` batch (dialog Video section, CLI `render … -o x.mp4 [--trim IN,OUT]`, MCP `export`; tests `apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`) exports with its trim and video grade at full quality: H.264+AAC MP4 or ProRes 422 MOV (PCM), audio from any decodable source codec; activity row, cancellable. Limits: CPU grading ~0.7 s per 1080p frame (slow), no HEVC/AV1 output, no web |
+| LR-VID-EXPORT | Video export | P2 | ✅ | `crates/engine/src/export_video.rs`, `crates/video-export/src/native.rs` | a clip in an `app.export` batch (dialog Video section, CLI `render … -o x.mp4 [--trim IN,OUT]`, MCP `export`; tests `apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`) exports with its trim and video grade at full quality: H.264+AAC MP4 or ProRes 422 MOV (PCM), audio from AAC, Opus, AC-3, PCM or MP3 sources; pipelined decode / grade / encode, GPU grade for H.264 (10 s 1080p: H.264 243 s → 45–52 s, ProRes 343 s → 55 s; [video.md](video.md) Speed); activity row, cancellable. Limits: no HEVC/AV1 output, FLAC/ALAC audio dropped, no web |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)
@@ -911,6 +911,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | LR-VID-PLAY: MP3 and PCM (MOV FourCCs, Matroska, Blu-ray/DVD LPCM, MXF) clip audio decode; status unchanged (🟡) |
+| 2026-10-12 | minor | LR-VID-EXPORT 🟡 → ✅: pipelined export, GPU grade for H.264 (243 s → 45–52 s for 10 s 1080p), audio from AAC/Opus/AC-3/PCM/MP3 |
 | 2026-10-12 | minor | R. Video after the M14 merge: LR-VID-PLAY, LR-VID-TRIM, LR-VID-COVER, LRC-DEV-VIDEO, LRC-VID-FRAME 🟡 → ✅; LR-VID-EDIT ⬜ → 🟡; LR-VID-EXPORT stays 🟡 (slow CPU grading) |
 | 2026-10-12 | minor | LR-VID-EXPORT: CLI `render --trim`, CLI/MCP end-to-end video tests; LR-VID-EDIT: photo-only commands refused per clip in `ids`; status unchanged |
 | 2026-10-12 | minor | LR-VID-EDIT: photo-only tools and commands disabled for clips, presets/paste/sync keep video controls, Info panel video fields; status unchanged (⬜) |

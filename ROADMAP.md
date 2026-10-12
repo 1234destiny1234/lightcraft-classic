@@ -117,7 +117,7 @@ yet guarantee original-pixel detail; visible-region rendering remains a gap (LR-
 | M11 | RAW II | CR3, RAF (X-Trans), ORF, RW2, PEF, SRW, 3FR, IIQ + long tail; camera calibration DB; HEIC/AVIF/JXL import | 20–35 | 🚧 (CR3 lossless CRX and C-RAW, RAF uncompressed and lossless/lossy compressed, RW2 (every raw format), PEF, ORF uncompressed ✅; **camera colour calibration** 🚧 (guarded ARW, NEF, RW2 and RAF preview fitting; measured database still missing), CR3, compressed ORF ⬜) |
 | M12 | AI & smart features | subject/sky/background/people/object masks, semantic search, faces/People (permissively licensed models, pure-Rust inference) | 20–40 | ⬜ |
 | M13 | Merge | HDR merge (deghost), panorama (projections, boundary warp, fill edges), HDR panorama | 10–15 | ✅ |
-| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 15–25 left | 🟡 landed: decode (8 codecs, 6 containers), loupe playback, trim, poster, Capture Frame, global grading, H.264/ProRes export, CLI/MCP; left: sound output decision, interlaced H.264, AV1 speed, faster export grading |
+| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 12–20 left | 🟡 landed: decode (8 codecs, 6 containers), loupe playback, trim, poster, Capture Frame, global grading, H.264/ProRes export (pipelined, GPU grade for H.264; audio from AAC/Opus/AC-3/PCM/MP3), CLI/MCP; left: sound output decision, interlaced H.264, AV1 speed |
 | M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey, Classic shell, Map, Book, Slideshow, Web, Print, publish ✅; print colour management, slideshow music/export, tethering, catalog settings 🟡/⬜) |
 | M16 | 1.0 polish | preferences, shortcut editor, accessibility, localization, packaging (dmg/msi/AppImage/web), hardening | 10–20 | 🚧 (settings, keyboard shortcuts sheet, packaging basics ✅; English/Chinese (Simplified, Traditional)/Japanese/Brazilian Portuguese/Spanish/German/Russian/Ukrainian localisation 🟡; accessibility and further locales ⬜) |
 
@@ -230,6 +230,7 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-12: video export pipelined with GPU grade for H.264 (10 s 1080p: H.264 243 s → 45–52 s, ProRes 343 s → 55 s), audio from AAC/Opus/AC-3/PCM/MP3; LR-VID-EXPORT ✅; M14 12–20 h left.
 - 2026-10-12: M14 video stack merged (decode via FilmCraft crates, loupe playback with LUT grading, trim, poster, Capture Frame, global grading, H.264/ProRes export with audio, CLI `--trim`, MCP); R. Video rows updated; HDR & video ~25% → ~50%; 15–25 h left.
 - 2026-09-30: roadmap created; M0 in progress; research docs (Lightroom reference, Rust imaging ecosystem) complete.
 - 2026-09-30 (later): app running with the full Lightroom-style UI; pipeline v0; DNG/CR2/ARW; README showcase. ≈ 8 h elapsed.

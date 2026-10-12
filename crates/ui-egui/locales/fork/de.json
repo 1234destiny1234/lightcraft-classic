@@ -1008,5 +1008,7 @@
   "video clips export as movies, trimmed, with their video edits": "Videoclips werden als Filme exportiert, gekürzt und mit ihren Videobearbeitungen",
   "Video format": "Videoformat",
   "Video quality": "Videoqualität",
-  "Video long edge (px, 0 = full)": "Lange Videokante (px, 0 = voll)"
+  "Video long edge (px, 0 = full)": "Lange Videokante (px, 0 = voll)",
+  "H.264 (MP4)": "H.264 (MP4)",
+  "ProRes (MOV)": "ProRes (MOV)"
 }

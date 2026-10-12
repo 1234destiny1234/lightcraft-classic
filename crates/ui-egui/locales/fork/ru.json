@@ -1443,5 +1443,7 @@
   "video clips export as movies, trimmed, with their video edits": "видеоклипы экспортируются как фильмы, обрезанными и с их видеоправками",
   "Video format": "Формат видео",
   "Video quality": "Качество видео",
-  "Video long edge (px, 0 = full)": "Длинная сторона видео (пикс., 0 = полный размер)"
+  "Video long edge (px, 0 = full)": "Длинная сторона видео (пикс., 0 = полный размер)",
+  "H.264 (MP4)": "H.264 (MP4)",
+  "ProRes (MOV)": "ProRes (MOV)"
 }

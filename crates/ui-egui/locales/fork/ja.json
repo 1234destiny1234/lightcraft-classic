@@ -1149,5 +1149,7 @@
   "video clips export as movies, trimmed, with their video edits": "ビデオクリップはトリミングとビデオ編集を反映したムービーとして書き出されます",
   "Video format": "ビデオ形式",
   "Video quality": "ビデオ画質",
-  "Video long edge (px, 0 = full)": "ビデオの長辺（px、0 = フルサイズ）"
+  "Video long edge (px, 0 = full)": "ビデオの長辺（px、0 = フルサイズ）",
+  "H.264 (MP4)": "H.264 (MP4)",
+  "ProRes (MOV)": "ProRes (MOV)"
 }

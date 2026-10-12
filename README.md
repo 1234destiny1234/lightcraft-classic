@@ -219,7 +219,7 @@ Clips live in the same library as your photos. MP4, MOV, MKV, WebM, MPEG-TS and 
 ProRes, DNxHR, APV or MPEG-2 decode in pure Rust. Play a clip in the loupe (<kbd>Space</kbd>, <kbd>←</kbd> /
 <kbd>→</kbd> for single frames), drag the trim handles, pick the poster frame the grid shows, and capture any frame as
 a photo. The Light and Color controls (and presets that use only them) grade every frame. Export writes H.264 MP4 or
-ProRes MOV with the trim, the grade and the sound; `<cli> render clip.mov -o out.mp4 --trim 2,8` does the same from
+ProRes MOV with the trim, the grade and the sound (graded on the GPU for H.264); `<cli> render clip.mov -o out.mp4 --trim 2,8` does the same from
 the command line. Playback is silent for now, and masks, spot removal, lens corrections and crop don't apply to video.
 See [docs/video.md](docs/video.md).
 
@@ -316,7 +316,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
   - **compressed Olympus raws and unsupported CR3 variants:** these use embedded JPEG previews when present. Fujifilm lossless/lossy compressed RAF now decodes sensor data; [verification and existing-library reload instructions](docs/raf-compression.md);
   - **AI masks and denoise:** subject and sky selection are classical heuristics;
   - **network libraries:** a preview reads the raw's header and its embedded JPEG only (56.5 MB → 5.9 MB, 10 s → 1 s on the test share), but the *developed* picture still needs the sensor data over the wire; see [docs/raw-preview-reads.md](docs/raw-preview-reads.md);
-  - **on-screen HDR display; video is new** (silent playback, global edits only, slow export).
+  - **on-screen HDR display; video is new** (silent playback, global edits only).
 - **What's next:** see [where we're going](ROADMAP.md#where-were-going).
 
 | Area | Status |

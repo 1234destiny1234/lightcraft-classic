@@ -1148,5 +1148,7 @@
   "video clips export as movies, trimmed, with their video edits": "视频剪辑将导出为影片，包含修剪和视频编辑",
   "Video format": "视频格式",
   "Video quality": "视频质量",
-  "Video long edge (px, 0 = full)": "视频长边（像素，0 = 原尺寸）"
+  "Video long edge (px, 0 = full)": "视频长边（像素，0 = 原尺寸）",
+  "H.264 (MP4)": "H.264 (MP4)",
+  "ProRes (MOV)": "ProRes (MOV)"
 }
