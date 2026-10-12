@@ -80,8 +80,8 @@ pub(crate) fn decode_v0(bytes: &[u8], strip: usize, table: usize, width: usize, 
     let mut d = vec![0u16; w * h];
     for row in 0..h {
         let off = table
-            .checked_add(row * 4)
-            .and_then(|o| bytes.get(o..o + 4))
+            .checked_add(row.saturating_mul(4))
+            .and_then(|o| bytes.get(o..o.checked_add(4)?))
             .and_then(|b| b.try_into().ok())
             .map(u32::from_le_bytes)
             .ok_or_else(|| RawError::Corrupt("SRW row table truncated".into()))?;
