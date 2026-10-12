@@ -68,6 +68,11 @@ pub trait VideoBackend: Send + Sync {
     fn probe(&self, path: &Path) -> Result<VideoInfo, String>;
     /// The frame shown at `t` seconds, scaled so its longer side is at most `max_side` (None = full size).
     fn frame_at(&self, path: &Path, t: f64, max_side: Option<u32>) -> Result<FrameImage, String>;
+    /// Whether this build can play the clip's sound: built with `audio-out` and the clip has a
+    /// decodable audio track. Default: false (muted).
+    fn can_play_audio(&self, _path: &Path) -> bool {
+        false
+    }
 }
 
 /// Seconds on a monotonic clock (injectable for tests).
@@ -85,6 +90,23 @@ pub struct VideoState {
 impl Default for VideoState {
     fn default() -> Self {
         Self { backend: default_backend(), player: Player::default(), clock: default_clock() }
+    }
+}
+
+impl VideoState {
+    /// Drive playback from an audio device clock (`audio-out` builds playing a clip's sound), so
+    /// frames follow the sound. Continues from the current time: the position doesn't jump.
+    pub fn follow_audio_clock(&mut self, audio: dac_audio_out::AudioClock) {
+        let offset = (self.clock)() - audio.seconds();
+        self.clock = Box::new(move || offset + audio.seconds());
+    }
+
+    /// Back to the monotonic system clock (sound stopped), continuing from the current time.
+    pub fn follow_system_clock(&mut self) {
+        let offset = (self.clock)();
+        let system = default_clock();
+        let start = system();
+        self.clock = Box::new(move || offset + system() - start);
     }
 }
 

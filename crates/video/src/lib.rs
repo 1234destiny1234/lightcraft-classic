@@ -4,6 +4,7 @@
 //! - [`FrameReader`]: decodes the frame shown at a time, optionally decimated to a maximum side
 //!   (draft decode for playback and thumbnails), as linear Rec.709 RGB ([`dac_raster::Rgb32f`],
 //!   the type the pipeline takes for JPEG/TIFF input).
+//! - [`AudioReader`]: the first audio track as interleaved f32 PCM (AAC, Opus, AC-3); [`resample`].
 //! - [`poster`]: one frame for grid thumbnails (default 10 % into the clip).
 //!
 //! Containers and codecs come from FilmCraft (pure Rust, clean-room): the MP4/MOV, Matroska/WebM,
@@ -33,6 +34,11 @@ use std::path::Path;
 
 use dac_raster::Rgb32f;
 
+pub use audio::{AudioBlock, AudioInfo, AudioReader, MAX_CHANNELS, MAX_RANGE_SECONDS, resample};
+
+mod audio;
+#[cfg(not(target_arch = "wasm32"))]
+mod audio_native;
 #[cfg(not(target_arch = "wasm32"))]
 mod colour;
 #[cfg(not(target_arch = "wasm32"))]

@@ -18,6 +18,7 @@ dac-denoise = { path = "crates/denoise", default-features = false }
 dac-geom = { path = "crates/geom" }
 dac-faces = { path = "crates/faces" }
 dac-sysmem = { path = "crates/sysmem" }
+dac-audio-out = { path = "crates/audio-out" }
 dac-color = { path = "crates/color" }
 dac-raster = { path = "crates/raster" }
 dac-video = { path = "crates/video" }
