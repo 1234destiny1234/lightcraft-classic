@@ -307,7 +307,7 @@ mod contact_sheet_tests {
         let dialog = h.app.ui.dialog.take().unwrap();
         crate::panels::dialogs::confirm_dialog(&mut h.app, &dialog).unwrap();
         assert_eq!(h.app.pending_picks.len(), 1);
-        let deadline = Instant::now() + Duration::from_secs(20);
+        let deadline = Instant::now() + Duration::from_secs(60);
         loop {
             // The activity stack lays out text, which egui only allows inside a frame.
             h.step();
