@@ -135,7 +135,7 @@ Canon	EOS 6D	CR2	2012	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAM
 Canon	EOS 6D Mark II	CR2	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 7D	CR2	2008	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 7D Mark II	CR2	2013	unverified	CR2 lossless JPEG decoder
-Canon	EOS 10D	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	EOS 10D	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	EOS 20D	CR2	2003	unverified	CR2 lossless JPEG decoder
 Canon	EOS 20Da	CR2	2005	unverified	CR2 lossless JPEG decoder
 Canon	EOS 30D	CR2	2005	unverified	CR2 lossless JPEG decoder
@@ -149,9 +149,9 @@ Canon	EOS 80D	CR2	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SA
 Canon	EOS 90D	CR3	2018	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS 200D (EOS Kiss X9, EOS Rebel SL2)	CR2	2015	unverified	CR2 lossless JPEG decoder
 Canon	EOS 250D (EOS Rebel SL3, EOS 200D II, EOS Kiss X10)	CR3	2018	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
-Canon	EOS D30	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	EOS D60	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	EOS 300D (EOS Digital Rebel, EOS Kiss Digital)	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	EOS D30	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	EOS D60	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	EOS 300D (EOS Digital Rebel, EOS Kiss Digital)	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	EOS 100D (EOS Digital Rebel SL1, EOS Kiss X7)	CR2	2012	unverified	CR2 lossless JPEG decoder
 Canon	EOS 500D (EOS Digital Rebel T1i, EOS Kiss X3 Digital)	CR2	2008	unverified	CR2 lossless JPEG decoder
 Canon	EOS 550D (EOS Digital Rebel T2i, EOS Kiss X4 Digital)	CR2	2010	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
@@ -202,20 +202,20 @@ Canon	EOS R8	CR3	2022	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sen
 Canon	EOS R50	CR3	2022	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS R50 V	CR3	2024	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
 Canon	EOS R100	CR3	2022	verified	corpus: crates/raw/tests/cr3_corpus.rs (exact sensor hashes, docs/cr3.md)
-Canon	PowerShot 600	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot A5	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot A50	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot G1	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	PowerShot 600	CRW	2003	preview	CMYG CRW is opened from its embedded JPEG only
+Canon	PowerShot A5	CRW	2003	preview	CMYG CRW is opened from its embedded JPEG only
+Canon	PowerShot A50	CRW	2003	preview	CMYG CRW is opened from its embedded JPEG only
+Canon	PowerShot G1	CRW	2003	preview	CMYG CRW is opened from its embedded JPEG only
 Canon	PowerShot G1 X	CR2	2012	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G1 X Mark II	CR2	2013	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G1 X Mark III	CR2	2017	unverified	CR2 lossless JPEG decoder
-Canon	PowerShot G2	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot G3	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	PowerShot G2	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	PowerShot G3	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	PowerShot G3 X	CR2	2015	unverified	CR2 lossless JPEG decoder
-Canon	PowerShot G5	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	PowerShot G5	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	PowerShot G5 X	CR2	2015	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G5 X Mark II	CR3	2018	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
-Canon	PowerShot G6	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	PowerShot G6	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	PowerShot G7 X	CR2	2013	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G7 X Mark II	CR2	2015	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G7 X Mark III	CR3	2018	unverified	CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview
@@ -227,17 +227,17 @@ Canon	PowerShot G11	CR2	2008	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G12	CR2	2010	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G15	CR2	2012	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot G16	CR2	2013	unverified	CR2 lossless JPEG decoder
-Canon	PowerShot Pro 1	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot Pro70	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot Pro90 IS	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot S30	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot S40	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot S45	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot S50	CRW	2003	preview	CRW is opened from its embedded JPEG only
-Canon	PowerShot S60	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	PowerShot Pro 1	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	PowerShot Pro70	CRW	2003	preview	CMYG CRW is opened from its embedded JPEG only
+Canon	PowerShot Pro90 IS	CRW	2003	preview	CMYG CRW is opened from its embedded JPEG only
+Canon	PowerShot S30	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	PowerShot S40	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	PowerShot S45	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	PowerShot S50	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
+Canon	PowerShot S60	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	PowerShot S90	CR2	2008	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot S95	CR2	2010	unverified	CR2 lossless JPEG decoder
-Canon	PowerShot S70	CRW	2003	preview	CRW is opened from its embedded JPEG only
+Canon	PowerShot S70	CRW	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_canon_crw (xtask RAW_SAMPLES)
 Canon	PowerShot S100	CR2	2010	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot S100V	CR2	2010	unverified	CR2 lossless JPEG decoder
 Canon	PowerShot S110	CR2	2012	unverified	CR2 lossless JPEG decoder
@@ -296,9 +296,9 @@ DJI	DJI Mavic 4 Pro (DJI FC9284)	DNG	2025	unverified	DNG decoder (uncompressed, 
 DJI	DJI Mavic 4 Pro (DJI FC9287)	DNG	2025	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 DJI	DJI Mavic 4 Pro (Hasselblad L3D-100c)	DNG	2025	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 DxO	DxO ONE	DNG	2015	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
-Epson	R-D1	ERF	2003	preview	ERF is opened from its embedded JPEG only
-Epson	R-D1s	ERF	2005	preview	ERF is opened from its embedded JPEG only
-Epson	R-D1x	ERF	2008	preview	ERF is opened from its embedded JPEG only
+Epson	R-D1	ERF	2003	verified	corpus: crates/raw/tests/corpus.rs corpus_epson_erf (xtask RAW_SAMPLES)
+Epson	R-D1s	ERF	2005	verified	corpus: crates/raw/tests/corpus.rs corpus_epson_erf (xtask RAW_SAMPLES)
+Epson	R-D1x	ERF	2008	verified	corpus: crates/raw/tests/corpus.rs corpus_epson_erf (xtask RAW_SAMPLES)
 Fujifilm	GFX 50R	RAF	2017	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	GFX 50S	RAF	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	GFX 50S II	RAF	2020	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
@@ -673,7 +673,7 @@ Mamiya	Mamiya M18	TIF	2008	unsupported	TIF is not imported
 Mamiya	Mamiya M22	TIF	2008	unsupported	TIF is not imported
 Mamiya	Mamiya M31	TIF	2008	unsupported	TIF is not imported
 Mamiya	Mamiya DM40	MOS	2010	preview	MOS is opened from its embedded JPEG only
-Mamiya	ZD	MEF	2005	unsupported	MEF is not imported
+Mamiya	ZD	MEF	2005	verified	corpus: crates/raw/tests/corpus.rs corpus_mamiya_mef (xtask RAW_SAMPLES)
 Motorola	Moto G Power (2021) Front Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Motorola	Moto G Power (2021) Rear Macro Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Motorola	Moto G Power (2021) Rear Wide Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)

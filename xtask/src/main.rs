@@ -752,6 +752,88 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "https://raw.pixls.us/getfile.php/1198/nice/Pentax%20-%20K-5%20II%20s%20-%2014bit%20%283:2%29.PEF",
         "e579e7360c35e512f9c3a5c0eb9519575b87b489c6f86be82590f7706a7ed17b",
     ),
+    // Canon CRW (CIFF): 10-bit (G2, S30, S40) and 12-bit with low bits (EOS D30 / D60 / 10D / 300D, later
+    // PowerShots), all three Huffman table sets; the CMYG G1 is refused.
+    (
+        "crw-canon-300d.crw",
+        "https://raw.pixls.us/data/Canon/EOS%20300D/CRW_8395.CRW",
+        "9e7f62239fe728046af28d0d4a8a722d35d40146a79794a5bda1775306af4383",
+    ),
+    (
+        "crw-canon-10d.crw",
+        "https://raw.pixls.us/data/Canon/EOS%2010D/CRW_7673.CRW",
+        "b0730eb3a67cc2281a32e0b2ee104199246928d954a68b7e5b72366514c73d02",
+    ),
+    (
+        "crw-canon-d30.crw",
+        "https://raw.pixls.us/data/Canon/EOS%20D30/CRW_2444.CRW",
+        "4ee482f2b6f9f1a8d370703ea04e9f2abaa49356973a7f56b229af93a78e8a2e",
+    ),
+    (
+        "crw-canon-d60.crw",
+        "https://raw.pixls.us/data/Canon/EOS%20D60/CRW_0099.CRW",
+        "2b98659ecff170af1dfe44f89b493139e75e995b2979686f6ff0847cfb56b97f",
+    ),
+    (
+        "crw-canon-g1.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20G1/crw_1693.crw",
+        "f39be5acf14057ce04527fd8d0574e57ec8ed5fed082d7bfaff763075a44ee8a",
+    ),
+    (
+        "crw-canon-g2.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20G2/RAW_CANON_G2.CRW",
+        "05bdd52c725dcd1aedb0f642731c7397711bdb91ed596f0bc12e1642b5ece98a",
+    ),
+    (
+        "crw-canon-g3.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20G3/RAW_CANON_G3.CRW",
+        "2c6a006cb7948877e9b2ebb85428a6246c7c2755709af61ae5fd7cc8f4d30eb7",
+    ),
+    (
+        "crw-canon-g5.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20G5/105_0506.CRW",
+        "bb084223d714871b99de4f549eaf00513e30a7080feeead700252c2008060196",
+    ),
+    (
+        "crw-canon-g6.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20G6/CRW_2097.CRW",
+        "244378e1f5660b6cc6cefc93a75ed4928d0b28aa6304ff327b61c748538f4fef",
+    ),
+    (
+        "crw-canon-pro1.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20Pro1/RAW_CANON_PRO1_ARGB.CRW",
+        "d4a11e5b861f93f10c40d16d3faf5a87682b0cd1793290df8cf188d656b71030",
+    ),
+    (
+        "crw-canon-s30.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20S30/RAW_CANON_S30.CRW",
+        "585e9317b0804743371b53e6d6a785c68310d29a66aa331016d4a946376347d0",
+    ),
+    (
+        "crw-canon-s40.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20S40/RAW_CANON_S40.CRW",
+        "9922aa8a49ef29617f42a2b4fb95df3c3b55b48e6f5c2177e7bf2c715b38670c",
+    ),
+    (
+        "crw-canon-s45.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20S45/RAW_CANON_S45.CRW",
+        "6e7395e3adb1a3348efb987ad54ea933bae702f42829ebf9b4a3d24739f4d471",
+    ),
+    (
+        "crw-canon-s50.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20S50/RAW_CANON_S50.CRW",
+        "db4d0e077f88949adb3435a4edb14cdd30f7a70ee6729035e83cc6bac363a090",
+    ),
+    (
+        "crw-canon-s60.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20S60/RAW_CANON_S60_SRGB.CRW",
+        "f168bb5642e67d09866a87396725adbdc3f4aa549c626404ec4b596425d22c5c",
+    ),
+    (
+        "crw-canon-s70.crw",
+        "https://raw.pixls.us/data/Canon/PowerShot%20S70/RAW_CANON_S70_SRGB.CRW",
+        "8015f91a4f6d549fc882fe026a831bbf45f033b2b44ba11cb88e8cbf761f4f0e",
+    ),
     // Minolta MRW: 16-bit words (DiMAGE 7, 7Hi), 12-bit packing (A1, A2, A200 with GBRG, Dynax / Maxxum 7D).
     (
         "mrw-minolta-7.mrw",
@@ -1279,6 +1361,14 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "raf-fujifilm-xt30ii.raf",
         "https://raw.pixls.us/data/Fujifilm/X-T30%20II/compressed_X-T30II.RAF",
         "5e2678038377cc7f146ceb7693c08535fa1af162cec705d06b0446c3d3017d47",
+    ),
+    ("erf-epson-rd1.erf", "https://raw.pixls.us/data/Epson/R-D1/_EPS0672.ERF", "09d8e533d93116294a9f3e161ed868e929454c7b946e083b644bd6bb75bcb5e4"),
+    ("erf-epson-rd1s.erf", "https://raw.pixls.us/data/Epson/R-D1s/EPSN3575.ERF", "45bb0081baf1c813c7cd9e05b3e6ae734b90aba408dd1195118dc94dc6abbbb9"),
+    ("erf-epson-rd1x.erf", "https://raw.pixls.us/data/Epson/R-D1x/_EPS1919.ERF", "fa1bff3e0b9b9a14f83b8db9fae022c2aca8d455896bf4f25f2c1a0034e295e6"),
+    (
+        "mef-mamiya-zd.mef",
+        "https://raw.pixls.us/data/Mamiya/ZD/RAW_MAMIYA_ZD.MEF",
+        "bcd63507c3c4cc3ea1bad2945e3f88cb4677a1a3c762e1acc38df4445714eb7c",
     ),
 ];
 
