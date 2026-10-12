@@ -632,13 +632,18 @@ fn jpeg_cells(jpeg: &[u8], gw: usize, gh: usize) -> Vec<[f64; 3]> {
     let mut d = zune_jpeg::JpegDecoder::new_with_options(ZCursor::new(jpeg), opts);
     let px = d.decode().unwrap();
     let info = d.info().unwrap();
-    let (w, h) = (info.width as usize, info.height as usize);
+    let (w, full_h) = (info.width as usize, info.height as usize);
+    // letterboxed previews (a 3:2 frame inside 4:3, Minolta Dynax 7D): drop the black bars above and below
+    let dark = |y: usize| px[y * w * 3..(y + 1) * w * 3].iter().all(|&v| v < 24);
+    let top = (0..full_h / 4).take_while(|&y| dark(y)).count();
+    let bottom = (0..full_h / 4).take_while(|&y| dark(full_h - 1 - y)).count();
+    let h = full_h - top - bottom;
     let (mut sum, mut n) = (vec![[0f64; 3]; gw * gh], vec![0f64; gw * gh]);
     for y in 0..h {
         for x in 0..w {
             let i = (y * gh / h) * gw + x * gw / w;
             for c in 0..3 {
-                let v = px[(y * w + x) * 3 + c] as f64 / 255.0;
+                let v = px[((y + top) * w + x) * 3 + c] as f64 / 255.0;
                 sum[i][c] += if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) };
             }
             n[i] += 1.0;
@@ -862,6 +867,61 @@ fn corpus_samsung_srw() {
         seen += 1;
     }
     eprintln!("Samsung SRW checked on {seen} files");
+}
+
+/// Minolta MRW (`crates/raw/src/vendor/mrw.rs`): 16-bit words (DiMAGE 7Hi) and the 12-bit packing (DiMAGE A2,
+/// Dynax 7D) decode to the image of the camera's own JPEG, with the layout, framing, levels and white balance the
+/// file's blocks state.
+#[test]
+fn corpus_minolta_mrw() {
+    let dir = corpus_root().join("raw");
+    // (file, sensor width x height, image width x height, CFA layout)
+    let cases = [
+        ("mrw-minolta-7hi.mrw", (2568, 1928), (2560, 1920), "RGGB"),
+        ("mrw-minolta-a2.mrw", (3272, 2456), (3264, 2448), "RGGB"),
+        ("mrw-minolta-dynax7d.mrw", (3016, 2008), (3008, 2000), "RGGB"),
+        ("mrw-minolta-maxxum7d.mrw", (3016, 2008), (3008, 2000), "RGGB"),
+        ("mrw-minolta-7.mrw", (2568, 1928), (2560, 1920), "RGGB"),
+        ("mrw-minolta-a1.mrw", (2568, 1928), (2560, 1920), "RGGB"),
+        ("mrw-minolta-a200.mrw", (3280, 2454), (3264, 2448), "GBRG"),
+    ];
+    let mut seen = 0;
+    for (name, sensor, image, cfa) in cases {
+        let Ok(bytes) = std::fs::read(dir.join(name)) else {
+            eprintln!("skip: {name} absent");
+            continue;
+        };
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(img.format, RawFormat::Mrw, "{name}");
+        assert_eq!(probe_info(&bytes).unwrap(), img.info(), "{name}: header and full decode agree");
+        assert_eq!((img.width, img.height), sensor, "{name}: sensor");
+        assert_eq!((img.active_area.width, img.active_area.height), image, "{name}: image");
+        assert_eq!(img.cfa.as_ref().map(|c| c.name()).as_deref(), Some(cfa), "{name}: CFA layout");
+        let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no as-shot white balance"));
+        assert!(wb[0] > 1.0 && wb[1] == 1.0 && wb[2] > 1.0, "{name}: white balance {wb:?}");
+        // 12-bit samples without a pedestal: the darkest of the image sit near 0
+        let lcc_raw::RawData::U16(d) = &img.data else { panic!("float data") };
+        let a = img.active_area;
+        let mut sorted: Vec<u16> = (0..a.height).flat_map(|y| d[y * img.width..y * img.width + a.width].iter().copied()).collect();
+        sorted.sort_unstable();
+        assert!(sorted[sorted.len() / 1_000_000] < 64 && sorted[sorted.len() - 1] <= 4095, "{name}: levels");
+        let jpeg = embedded_preview(&bytes).unwrap_or_else(|| panic!("{name}: no embedded preview"));
+        let (gw, gh) = (24, 18);
+        let (sites, jpeg) = (raw_sites(&img, gw, gh), jpeg_cells(&jpeg, gw, gh));
+        let layout = img.cfa.clone().unwrap_or_else(|| panic!("{name}: no CFA"));
+        let green: Vec<f64> = sites.iter().map(|s| (0..4).filter(|&i| layout.pattern[i] == 1).map(|i| s[i]).sum::<f64>()).collect();
+        let rho = correlation(&ranks(&green), &ranks(&jpeg.iter().map(|j| j[1]).collect::<Vec<_>>()));
+        let agree = |l: &str| chroma_agreement(&sites, &jpeg, &lcc_raw::Cfa::bayer(l).unwrap().pattern);
+        let best_other = ["RGGB", "GRBG", "GBRG", "BGGR"].into_iter().filter(|l| *l != cfa).map(agree).fold(f64::MIN, f64::max);
+        let own = agree(cfa);
+        eprintln!("{name}: green rank correlation {rho:.3}, colour agreement {own:.3} (others <= {best_other:.3})");
+        // the A200 frame is a saturated red tank whose JPEG green is near 0 over most cells, so its ranks tie more
+        let min_rho = if name.contains("a200") { 0.8 } else { 0.9 };
+        assert!(rho > min_rho, "{name}: rank correlation with the camera JPEG {rho}");
+        assert!(own > 0.5 && own > best_other, "{name}: colours follow the JPEG better with another layout ({own} vs {best_other})");
+        seen += 1;
+    }
+    eprintln!("Minolta MRW checked on {seen} files");
 }
 
 /// Reference sensor sums and position-weighted sums from black-box decoding, independent
