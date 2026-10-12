@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (gap 23: arrow keys move the crop and Remove spots; gap 18: video crop in loupe, Capture Frame and export; gap 18: export speed and audio codecs, 12–20 h left; gap 18: M14 video stack landed, 15–25 h left; gap 18: video sequential decode, pixel aspect, deinterlace; gap 18: video engine commands; gap 18: video plan, 55–80 h, `lcc-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (gap 6 closed: compressed ORF decodes; gap 23: arrow keys move the crop and Remove spots; gap 18: video crop in loupe, Capture Frame and export; gap 18: export speed and audio codecs, 12–20 h left; gap 18: M14 video stack landed, 15–25 h left; gap 18: video sequential decode, pixel aspect, deinterlace; gap 18: video engine commands; gap 18: video plan, 55–80 h, `lcc-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -22,11 +22,11 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 3 B | **Render fidelity unmeasured** (LR-BEHAV-RENDER-FIDELITY): tone, highlights, texture / clarity / dehaze, NR and sharpening are tuned by eye | no side-by-side suite; a retune needs a new process version (only V1 exists) | edits imported from Lightroom look different; the look "isn't Lightroom's" | 30–60 | [raw-parity](raw-parity.md), [process-versions](process-versions.md) |
 | 4 B | **Original-pixel detail at 100%** (LR-VIEW-ZOOM, P0): Detail, Before/After, Compare and Reference are sharp at 1:1–8:1 (zoom windows, #323). Mask overlays and soft proofing still render the whole frame at the drawn size instead of a window: sharp up to the GPU texture side, but a full-size render per edit at 1:1 | checklist row 🟡 | editing with a mask overlay or soft proof on at 1:1 is slow on large files, and blurry past the texture side | 4–8 | [ui-parity](ui-parity.md) |
 | 5 B | **AI masks: Subject, Sky, People, Background, Landscape** are heuristics; Object / Describe run SAM 3 but its download has no mirror configured | `crates/segment`; ai-masks.md; MASK rows 67% | masking is how most Lightroom users edit today | 40–70 + model decision | [target-app-parity](target-app-parity.md#ai) |
-| 6 B | **Compressed ORF** (every Olympus / OM body since ~2008) | measured: 66 of 78 Olympus / OM models preview-only; `orf.rs` refuses; OM bucket 3% of photographers, 3% of them fully work | +2.6 points; best gain per hour of any raw gap (~0.2) | 8–15 | [raw-parity](raw-parity.md#compressed-orf-a-clean-room-starting-point) (the two Olympus patents that describe the method) |
+| 6 | ~~**Compressed ORF**~~ closed 2026-10-13: `decode_compressed` in `orf.rs` decodes every Olympus / OM body since ~2008 that writes it | measured: E-M1 and E-M10 Mark III corpus files decode and render correctly; 73 of 78 Olympus / OM models now unverified rather than preview-only; OM bucket 3% → 80% fully working | +2.6 points (use-weighted 85% → 87%) | 0 (left: verify OM-1 / OM-5 / E-M1 II–III files) | [raw-parity](raw-parity.md#compressed-orf-a-clean-room-starting-point) |
 | 7 | **Nikon High Efficiency NEF** (HE / HE★ on Z 8, Z 9, Z 6III, Z f, Z50II, Z5II when set to HE) | named and preview only (#193); needs a pure-Rust JPEG XS decoder | +1.1 points (only shots taken in HE; lossless works on the same bodies); low gain per hour (~0.04), so not a beta blocker | 20–40 | [raw-parity](raw-parity.md) |
 | 8 B | **No lens profile database of our own** (LR-EDIT-OPTICS-PROFILE): DNG opcodes, RW2 in-file distortion and Sony ILCE-7RM4A distortion, plus a lensfun-format database the user sets up or downloads from Settings ▸ Lens profiles (CC-BY-SA, never bundled; profiles unverified against Lightroom) | Adobe ships 3,635 lens profiles; we never use them | distortion / vignetting correction is a default step for many | 40–80 + calibration shots | [raw-parity](raw-parity.md#lens-profiles) |
 | 9 B | **Tests don't run in CI on macOS, Windows or Linux x64**: only FreeBSD runs `cargo test`; the others build packages | `.github/workflows/` (freebsd, packaging-lint, release, windows-arm64); the linux-riscv64 release job added in 0.6.0 (#844) runs only `<cli> --version` under QEMU | regressions reach users on the main platforms; `cargo xtask ci` runs only locally | 6–12 | [target-app-parity](target-app-parity.md#by-dimension) |
-| 10 B | **Per-model verification thin, plus cheap per-body decode fixes**: 235 of 1,446 Adobe models verified (16%), ~42% of photographers on a verified body; Nikon 5 bodies verified, Canon 12. Cheap fixes: Z 6II packed 14-bit NEF (#769, PR #671), Sony A100 / F828 regression (#702), DSLR-A200…A390 / A850 12-bit ARW (#535) | measured: [raw/coverage.tsv](raw/coverage.tsv) | per-body bugs (levels, crops, WB) surface only from users | 25–45 | [raw-parity](raw-parity.md#by-maker-measured) |
+| 10 B | **Per-model verification thin, plus cheap per-body decode fixes**: 237 of 1,446 Adobe models verified (16%), ~42% of photographers on a verified body; Nikon 5 bodies verified, Canon 12. Cheap fixes: Z 6II packed 14-bit NEF (#769, PR #671), Sony A100 / F828 regression (#702), DSLR-A200…A390 / A850 12-bit ARW (#535) | measured: [raw/coverage.tsv](raw/coverage.tsv) | per-body bugs (levels, crops, WB) surface only from users | 25–45 | [raw-parity](raw-parity.md#by-maker-measured) |
 | 11 | **Enhance: Raw Details, Super Resolution; AI denoise without shippable weights or X-Trans** | ENH rows 0%; denoise Bayer only, RawNIND weights GPL and opt-in | Fujifilm users get no AI denoise; nobody gets it out of the box | 30–60 + model decision | [raw-parity](raw-parity.md#demosaic-levels-crops-and-lens-metadata) |
 | 12 | **Generative remove, detect distractions, reflections removal** (content-aware Remove exists: PatchMatch Fill spots, LR-REM-CONTENTAWARE 🟡) | REM rows 75%; no generative model | cleanup work goes back to Photoshop | 25–45 (+ generative model) | [target-app-parity](target-app-parity.md#ai) |
 | 13 | **Lightroom catalog migration is one-way and approximate**: unsupported Adobe profiles / AI settings archived, history kept as data; smart collections with unmappable rules (collection, date, metadata-status criteria) stay static (smart rules and stacks now import, G13) | lightroom-catalog-import.md | switching users lose some looks | 8–12 | [file-format-parity](file-format-parity.md) |
@@ -46,14 +46,14 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 27 | **Windows / Linux runtime coverage**: Windows installer UI unverified on Windows (#79); GPU path proven on Apple only; the Linux riscv64 tarball (new in 0.6.0, #844) is cross-compiled and never run beyond a QEMU smoke test | ROADMAP, issues, `release.yml` | non-Mac users find bugs first | 15–30 | [hardware-parity](hardware-parity.md) |
 | 28 | **Small Classic shortcuts and keys**: rating `[` `]`, \` flag toggle, `\` filter bar, F1 help, panel keys (Tab, ⇧Tab, F5–F8) and ⌘L Enable Filters are bound (G28); Web module ⌘R / ⌘⌥P bound too; left: Develop ⇧J (meaning unverified) | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
 
-Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform work they need around them,
-**~340–600 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).
+Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform work they need around them,
+**~330–585 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).
 
 ## Gaps by kind
 
 - **Feature:** 5, 8, 11, 12, 13, 15, 16, 18, 19
 - **UI / UX:** 4, 23, 24, 28
-- **File format:** 2, 6, 7, 10, 13, 20, 25 (raw ones in [raw-parity.md](raw-parity.md))
+- **File format:** 2, 7, 10, 13, 20, 25 (raw ones in [raw-parity.md](raw-parity.md))
 - **Hardware:** 14, 17, 22, 27
 - **Localization:** 21
 - **Quality / fidelity:** 1, 3
@@ -61,6 +61,7 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 
 ## Closed recently (kept for calibration)
 
+- 2026-10-13: Compressed Olympus / OM ORF (gap 6): E-M1 and E-M10 Mark III verified.
 - 2026-10-11: 0.6.1: Print via IPP / CUPS (copies, printer margins, job state), print sharpening, Immich album
   sync rule, Windows renderer fallback, screen-fitting dialogs.
 - 2026-10-10: 0.6.0 (fork): content-aware Remove (PatchMatch), soft proofing against printer profiles, Map / Book /
@@ -92,6 +93,7 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 | 2026-10-12 | minor | Gap 18: video frame grading (CPU/GPU) and 33³ LUT playback path, timings in video.md |
 | 2026-10-12 | minor | Gap 18: video UI pieces (control bar, trim handles, poster marker, grid badge, controls greyed for video) |
 | 2026-10-12 | minor | Gap 28: Web module ⌘R reload preview and ⌘⌥P preview in browser are bound |
+| 2026-10-13 | minor | Gap 6 closed: compressed ORF decodes (E-M1, E-M10 III verified); B total ~220–415 h, beta ~330–585 h |
 | 2026-10-12 | minor | Gap 19: plug-in metadata fields edit the selection, are searchable and are written to XMP |
 | 2026-10-12 | minor | Gap 15: `ipps://` (TLS, certificates trusted by fingerprint or on first use) and printer driver options (paper type, tray, quality, two-sided) landed; 15–30 h → 10–22 h; Windows spooler and CMYK profiles remain |
 | 2026-10-12 | minor | Gap 19: plug-in export hooks and destinations run on a worker with an activity row |

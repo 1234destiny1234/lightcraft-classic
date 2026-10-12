@@ -248,3 +248,5 @@ Sony	RX1R II (DSC-RX1RM2)	verified	issue #535: raw.pixls.us bulk check of all 10
 Sony	ZV-1 (DCZV1/B)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	ZV-E1	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	ZV-E10	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
+Olympus	OM-D E-M1	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES), compressed ORF
+Olympus	OM-D E-M10 Mark III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES), compressed ORF
