@@ -43,7 +43,9 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
                     }
                     let Some((id, icon, panel, tip, needs_photo)) = entry(*p) else { continue };
                     let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
-                    let resp = icon_button(ui, id, icon, sz, on, has_photo || !needs_photo, tip);
+                    let video = crate::video_ui::blocked(app, &format!("panel.{id}"));
+                    let tip = if video { crate::video_ui::NOT_FOR_VIDEO } else { tip };
+                    let resp = icon_button(ui, id, icon, sz, on, (has_photo || !needs_photo) && !video, tip);
                     if resp.clicked() {
                         let _ = app.run(&format!("panel.{id}"), json!({}));
                     }

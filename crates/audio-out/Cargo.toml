@@ -1,0 +1,20 @@
+[package]
+name = "dac-audio-out"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Audio output (L0): the one sound-card path (slideshow music, video playback) and its device clock; silent unless built with `audio-out`"
+
+[lints]
+workspace = true
+
+[features]
+default = []
+# Play through the sound card with cpal. On Linux cpal links the system ALSA library (alsa-sys,
+# libasound found with pkg-config), a C library, so the feature is off by default: without it
+# `Output::start` returns an error and callers stay silent.
+audio-out = ["dep:cpal"]
+
+[dependencies]
+log = { workspace = true }
+cpal = { version = "0.15", optional = true } # Apache-2.0; links ALSA on Linux

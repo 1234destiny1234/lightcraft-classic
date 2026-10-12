@@ -9,6 +9,8 @@ use super::{FrameImage, FrameIter, VideoBackend, VideoInfo};
 #[derive(Default)]
 pub struct DacVideo {
     reader: Mutex<Option<(PathBuf, dac_video::FrameReader)>>,
+    /// The last clip asked about by `can_play_audio` and the answer (opening its audio costs a demux).
+    audio: Mutex<Option<(PathBuf, bool)>>,
 }
 
 impl VideoBackend for DacVideo {
@@ -26,6 +28,21 @@ impl VideoBackend for DacVideo {
             codec: i.codec,
             has_audio: i.has_audio,
         })
+    }
+
+    fn can_play_audio(&self, path: &Path) -> bool {
+        if !dac_audio_out::CAN_PLAY {
+            return false;
+        }
+        let mut slot = self.audio.lock().unwrap_or_else(PoisonError::into_inner);
+        if let Some((p, ok)) = slot.as_ref()
+            && p == path
+        {
+            return *ok;
+        }
+        let ok = dac_video::AudioReader::open(path).is_ok();
+        *slot = Some((path.to_path_buf(), ok));
+        ok
     }
 
     fn frame_at(&self, path: &Path, t: f64, max_side: Option<u32>) -> Result<FrameImage, String> {

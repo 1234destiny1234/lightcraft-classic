@@ -457,7 +457,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
         canvas.max.y = bar.top();
         video_state = crate::video_ui::show_bar(app, ui, bar, vid).map(|s| (vid, s));
     } else {
-        app.video_view.stop();
+        crate::video_view::stop(app);
     }
     app.canvas_rect = Some(canvas);
     if show_film {

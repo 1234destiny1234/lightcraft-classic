@@ -1142,5 +1142,11 @@
   "Capture Frame": "Capturar fotograma",
   "Capturing a video frame": "Capturando un fotograma de vídeo",
   "video playback isn't available in this build": "la reproducción de vídeo no está disponible en esta compilación",
-  "the active photo isn't a video": "la foto activa no es un vídeo"
+  "the active photo isn't a video": "la foto activa no es un vídeo",
+  "Duration": "Duración",
+  "Frame Rate": "Velocidad de fotogramas",
+  "Codec": "Códec",
+  "Resolution": "Resolución",
+  "Audio": "Audio",
+  "Trim": "Recorte"
 }

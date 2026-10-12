@@ -63,8 +63,8 @@ fn state(s: &mut Session, x: &Ctx) -> Value {
         "height": m.height,
         "codec": m.codec,
         "hasAudio": m.has_audio,
-        // playback is muted in this version (the `audio-out` feature is pending)
-        "canPlayAudio": false,
+        // true only in `audio-out` builds for clips with decodable sound (else playback is muted)
+        "canPlayAudio": m.has_audio && can_play_audio(s, x.id),
         "current": current,
         "frame": if x.fps > 0.0 { (current * x.fps + 1e-6).floor() } else { 0.0 },
         "playing": p.playing,
@@ -75,6 +75,14 @@ fn state(s: &mut Session, x: &Ctx) -> Value {
         "poster": poster_of(m),
         "posterSet": m.poster_time.is_some(),
     })
+}
+
+/// Whether the clip's sound can play: `audio-out` builds with a decodable audio track.
+fn can_play_audio(s: &Session, id: PhotoId) -> bool {
+    match (adapter::backend(s), adapter::clip_path(s, id)) {
+        (Ok(be), Ok(path)) => be.can_play_audio(&path),
+        _ => false,
+    }
 }
 
 /// A finite time parameter within `[0, duration]`.

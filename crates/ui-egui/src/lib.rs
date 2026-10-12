@@ -556,6 +556,9 @@ impl DacApp {
         if let Some(r) = edit_in::intercept(self, id, &params) {
             return r;
         }
+        if video_ui::blocked(self, id) {
+            return Err(i18n::tr(video_ui::NOT_FOR_VIDEO).to_string());
+        }
         if let Some(r) = menus::run_ui_command(self, id, &params) {
             if r.is_ok() {
                 docking::reveal_command(self, id)?;

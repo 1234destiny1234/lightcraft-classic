@@ -10,7 +10,7 @@
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use dac_catalog::PhotoId;
-use dac_engine::video::playback::{Playback, ShownFrame, spawn_still};
+use dac_engine::video::playback::{AudioPlayback, Playback, ShownFrame, spawn_still};
 use serde_json::json;
 
 use crate::DacApp;
@@ -24,6 +24,8 @@ const RESYNC_SECS: f64 = 0.5;
 #[derive(Default)]
 pub struct VideoView {
     playback: Option<(PhotoId, Playback)>,
+    /// The clip's sound while playing (`audio-out` builds); the player clock follows it.
+    audio: Option<AudioPlayback>,
     /// What is on screen: the clip, the frame's time, its look key, full quality?, the texture.
     shown: Option<Shown>,
     /// A still being rendered and the key it is for.
@@ -67,10 +69,14 @@ impl VideoView {
     pub fn texture_id(&self, id: PhotoId) -> Option<egui::TextureId> {
         self.shown.as_ref().filter(|s| s.photo == id).map(|s| s.tex.id())
     }
-    /// Stop the worker (another photo, another view).
-    pub fn stop(&mut self) {
-        self.playback = None;
-        self.still = None;
+}
+
+/// Stop the worker and the sound (another photo, another view); the clock goes back to the system's.
+pub fn stop(app: &mut DacApp) {
+    app.video_view.playback = None;
+    app.video_view.still = None;
+    if app.video_view.audio.take().is_some() {
+        app.session.video.follow_system_clock();
     }
 }
 
@@ -86,7 +92,7 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
     let backend = app.session.video.backend.clone();
     let path = dac_engine::video::adapter::clip_path(&app.session, id).ok();
     let (Some(backend), Some(path)) = (backend, path) else {
-        app.video_view.stop();
+        stop(app);
         return None;
     };
     let fps = if state.fps > 0.0 { state.fps } else { 30.0 };
@@ -105,6 +111,19 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
         let same = app.video_view.playback.as_ref().is_some_and(|(p, pb)| *p == id && pb.path == path);
         if !same || drifted {
             app.video_view.playback = None;
+            // the sound restarts with the picture; the player clock follows it
+            if app.video_view.audio.take().is_some() {
+                app.session.video.follow_system_clock();
+            }
+            if backend.can_play_audio(&path) {
+                match AudioPlayback::start(path.clone(), state.current) {
+                    Ok((a, clock)) => {
+                        app.session.video.follow_audio_clock(clock);
+                        app.video_view.audio = Some(a);
+                    }
+                    Err(e) => log::warn!("video sound: {e}"),
+                }
+            }
             match Playback::start(backend, path, state.current, side.min(dac_engine::video::playback::PLAY_MAX_SIDE), &develop) {
                 Ok(p) => app.video_view.playback = Some((id, p)),
                 Err(e) => return fail(app, ctx, e),
@@ -125,6 +144,9 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
         ctx.request_repaint();
     } else {
         app.video_view.playback = None;
+        if app.video_view.audio.take().is_some() {
+            app.session.video.follow_system_clock();
+        }
         let snapped = dac_engine::video::player::snap(state.current, fps);
         let key = StillKey { photo: id, t_us: (snapped * 1e6).round() as i64, look, side: side.clamp(64, 3840) };
         let have = app.video_view.shown.as_ref().is_some_and(|s| s.key == Some(key));
@@ -157,6 +179,9 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
 fn fail(app: &mut DacApp, ctx: &egui::Context, e: String) -> Option<(egui::TextureId, [usize; 2])> {
     log::warn!("video playback: {e}");
     app.video_view.playback = None;
+    if app.video_view.audio.take().is_some() {
+        app.session.video.follow_system_clock();
+    }
     let _ = app.session.execute("video.pause", &json!({}));
     app.toast(ctx, format!("{}: {e}", crate::i18n::tr("Playback stopped")));
     app.video_view.shown.as_ref().map(|s| (s.tex.id(), s.tex.size()))

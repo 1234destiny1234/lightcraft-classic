@@ -1138,5 +1138,11 @@
   "Capture Frame": "フレームをキャプチャ",
   "Capturing a video frame": "ビデオフレームをキャプチャ中",
   "video playback isn't available in this build": "このビルドではビデオ再生を利用できません",
-  "the active photo isn't a video": "アクティブな写真はビデオではありません"
+  "the active photo isn't a video": "アクティブな写真はビデオではありません",
+  "Duration": "再生時間",
+  "Frame Rate": "フレームレート",
+  "Codec": "コーデック",
+  "Resolution": "解像度",
+  "Audio": "オーディオ",
+  "Trim": "トリミング"
 }

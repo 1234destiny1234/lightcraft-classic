@@ -14,7 +14,7 @@ const MAX_PENDING: usize = 32;
 const MAX_OVERRUN: usize = 64;
 
 /// Run a FilmCraft call; a panic inside it becomes [`VideoError::Internal`].
-fn guarded<T>(what: &str, f: impl FnOnce() -> Result<T, VideoError>) -> Result<T, VideoError> {
+pub(crate) fn guarded<T>(what: &str, f: impl FnOnce() -> Result<T, VideoError>) -> Result<T, VideoError> {
     match catch_unwind(AssertUnwindSafe(f)) {
         Ok(r) => r,
         Err(p) => {

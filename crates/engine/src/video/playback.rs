@@ -235,3 +235,82 @@ pub fn spawn_still(
     }
     rx
 }
+
+/// Most seconds of sound decoded ahead of the sound card.
+const AUDIO_AHEAD_SECS: usize = 1;
+
+/// A playing clip's sound (only with the `audio-out` feature; see
+/// [`VideoBackend::can_play_audio`]): a feeder thread decodes from `t` with
+/// `dac_video::AudioReader`, resamples to the device rate, downmixes to stereo, and the
+/// `dac-audio-out` stream drains it. Follow its [`dac_audio_out::AudioClock`] with
+/// `VideoState::follow_audio_clock` so the picture keeps to the sound. Dropping it stops both.
+pub struct AudioPlayback {
+    _out: dac_audio_out::Output,
+    stop: Arc<AtomicBool>,
+}
+
+impl std::fmt::Debug for AudioPlayback {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("AudioPlayback")
+    }
+}
+
+impl Drop for AudioPlayback {
+    fn drop(&mut self) {
+        self.stop.store(true, Ordering::Relaxed);
+    }
+}
+
+impl AudioPlayback {
+    /// Start the clip's sound at `t` seconds. Returns the playback and its clock.
+    pub fn start(path: PathBuf, t: f64) -> Result<(AudioPlayback, dac_audio_out::AudioClock), String> {
+        let rate = dac_audio_out::default_rate().ok_or("no audio output device")?;
+        let mut reader = dac_video::AudioReader::open(&path).map_err(|e| e.to_string())?;
+        let info = reader.info().clone();
+        let channels = info.channels.max(1);
+        let queue: Arc<Mutex<std::collections::VecDeque<f32>>> = Arc::default();
+        let stop = Arc::new(AtomicBool::new(false));
+        let cap = (rate as usize).saturating_mul(2).saturating_mul(AUDIO_AHEAD_SECS);
+        let (q, st) = (queue.clone(), stop.clone());
+        reader.seek(t);
+        std::thread::Builder::new()
+            .name("video-audio".into())
+            .spawn(move || {
+                while !st.load(Ordering::Relaxed) {
+                    if q.lock().unwrap_or_else(PoisonError::into_inner).len() > cap {
+                        std::thread::sleep(std::time::Duration::from_millis(10));
+                        continue;
+                    }
+                    let block = match reader.next_block() {
+                        Ok(Some(b)) => b,
+                        Ok(None) => return,
+                        Err(e) => {
+                            log::warn!("video sound of {}: {e}", path.display());
+                            return;
+                        }
+                    };
+                    // the first block may start before `t`: drop the part before it
+                    let skip = if block.time < t { (((t - block.time) * f64::from(info.sample_rate)) as usize).saturating_mul(channels) } else { 0 };
+                    let src = block.samples.get(skip.min(block.samples.len())..).unwrap_or(&[]);
+                    let pcm = dac_video::resample(src, channels, info.sample_rate, rate);
+                    let mut g = q.lock().unwrap_or_else(PoisonError::into_inner);
+                    for f in pcm.chunks(channels) {
+                        let l = f.first().copied().unwrap_or(0.0);
+                        let r = f.get(1).copied().unwrap_or(l);
+                        g.push_back(l);
+                        g.push_back(r);
+                    }
+                }
+            })
+            .map_err(|e| format!("can't start the clip's sound: {e}"))?;
+        let fill: dac_audio_out::Fill = Box::new(move |out: &mut [f32]| {
+            let mut g = queue.lock().unwrap_or_else(PoisonError::into_inner);
+            for s in out.iter_mut() {
+                *s = g.pop_front().unwrap_or(0.0);
+            }
+        });
+        let out = dac_audio_out::Output::start(rate, 2, fill)?;
+        let clock = out.clock();
+        Ok((AudioPlayback { _out: out, stop }, clock))
+    }
+}

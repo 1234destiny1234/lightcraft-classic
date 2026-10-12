@@ -1137,5 +1137,11 @@
   "Capture Frame": "捕获帧",
   "Capturing a video frame": "正在捕获视频帧",
   "video playback isn't available in this build": "此版本不支持视频播放",
-  "the active photo isn't a video": "当前照片不是视频"
+  "the active photo isn't a video": "当前照片不是视频",
+  "Duration": "时长",
+  "Frame Rate": "帧速率",
+  "Codec": "编解码器",
+  "Resolution": "分辨率",
+  "Audio": "音频",
+  "Trim": "修剪"
 }

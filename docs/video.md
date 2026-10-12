@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-12 · **Change:** minor (clip audio decode `AudioReader`, `dac-audio-out` with `AudioClock`, `canPlayAudio`)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
 > **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
@@ -76,7 +77,9 @@ available in this build". Commands act on the active photo and are enabled only 
 | `video.captureFrame` | `{time?}` (default: current position) | JPEG next to the clip (`<name>-<m>m<ss>s<mmm>.jpg`, never overwriting), imported and stacked under the clip, one undo step, an activity row while it runs → `{id, path, time, clip}` |
 
 The position follows `session.video.clock` (monotonic seconds, injectable in tests): it advances while playing, stops
-at the trim end, or wraps to the trim start with `loop`. Playback is muted (`canPlayAudio` false). Every command
+at the trim end, or wraps to the trim start with `loop`. `session.video.follow_audio_clock(AudioClock)` makes the
+position follow an audio device instead (no jump), `follow_system_clock()` goes back. Playback is muted unless built
+with `audio-out` (`canPlayAudio`: true only then, and only for clips with decodable sound; see Audio below). Every command
 answers the `video.get` state, so UI, CLI and MCP see the same thing. Captured frames are not graded yet (M14.7).
 ## Loupe playback (M14.4)
 
@@ -89,7 +92,7 @@ full-quality frame (`grade_frame`) on its own thread. The UI (`crates/ui-egui/sr
 playing, it shows the worker's frames by `video.get.current` (restarting the worker after a seek or loop), requests
 repaints, and on a decode error pauses (`video.pause`) with one toast (and a log line); paused, it shows the still for
 (time, look, size), so develop edits re-render it. Trim handles drag a preview and send one `video.setTrim` on release.
-`ui.inspect` → `loupe.source` reads `video` / `video-still`. Neither is an activity row (interactive, long-lived).
+`ui.inspect` → `loupe.source` reads `video` / `video-still`. With `audio-out` and `canPlayAudio`, playing also starts `playback::AudioPlayback` (an `AudioReader` feeder thread, resampled to `default_rate()`, stereo, ~1 s ahead) and the player follows its `AudioClock` (`follow_audio_clock`); pausing, seeking or leaving the clip drops it and returns to the system clock. Default builds stay on the system clock, muted. Neither is an activity row (interactive, long-lived).
 
 ## Supported formats
 Probe works for every container below; frames decode when the codec cell says so. "Unsupported" streams probe with
@@ -114,7 +117,7 @@ Probe works for every container below; frames decode when the codec cell says so
 else the bitstream (H.264 / HEVC VUI SAR, MPEG-2 sequence header); frames come out at display aspect by stretching the
 wider axis (HDV / DNxHD 1440×1080 at 4:3 → 1920×1080; DV NTSC 720×480 at 10:11 → 720×528), bilinear after the box
 decimation. Only the first video track
-is read; audio is detected (`has_audio`) but not decoded (playback is muted in v1).
+is read; the first decodable audio track is decoded by `AudioReader` (see Audio below).
 ## Export through the engine (M14.8)
 `dac_engine::export` is the one export path for app, CLI and MCP (`crates/engine/src/export_video.rs`). A clip
 (`Photo.video` set) in a batch exported to a rendered format becomes a movie; `Original` copies its file. It keeps
@@ -132,6 +135,46 @@ headless MCP export show it as the row's detail (`clip.mp4 42%`). The Export dia
 quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`).
 Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; frames are graded one at a
 time on the CPU (~0.7 s per 1080p frame, see Grading performance); no "export current frame as JPEG" command yet.
+
+## Audio (decode always; sound only with `audio-out`)
+
+**Decode** (`dac-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
+returns interleaved f32 PCM at the source rate: `info()` → `AudioInfo {codec, sample_rate, channels}`; `seek(t)` +
+`next_block()` → `AudioBlock {time, samples}`; `samples_from(t)` iterates blocks; `read_range(start, end)` returns a
+trimmed range (capped at `MAX_RANGE_SECONDS`); `resample(samples, channels, from, to)` converts rates (linear, own
+code). Times count from the clip's first shown frame, like `FrameReader`'s (MP4 edit lists, Matroska `CodecDelay`
+and encoder priming are honoured; Matroska timestamps are whole milliseconds, so it is within 1 ms there).
+
+| Container | AAC-LC | Opus | AC-3 / E-AC-3 |
+|---|---|---|---|
+| MP4 / MOV | ✅ | ✅ (`dOps`) | ✅ |
+| Matroska / WebM | ✅ | ✅ | AC-3 |
+| MPEG-TS / PS | ✅ (ADTS; not LATM) | — | ✅ |
+
+HE-AAC plays as its AAC-LC core (FilmCraft doesn't rebuild the SBR band); MP3, FLAC, PCM, ALAC and MXF audio are not
+read yet (`AudioReader::open` → `Unsupported`). Decoders: `filmcraft-aac`, `filmcraft-opus`, `filmcraft-ac3` (std-only,
+MIT OR Apache-2.0); never `filmcraft-codecs` (symphonia). A bad packet is skipped; 32 bad in a row is an error.
+Tests: `crates/video/tests/audio.rs` (a synthetic AAC tone in MP4, Matroska and TS, phase-checked; resampling;
+damaged copies; the corpus clip `h264-aac-720p-nps-elk.mp4` when present).
+
+**Output** (`crates/audio-out` = `dac-audio-out`, L0): the one sound-card path, shared with slideshow music.
+`Output::start(rate, channels, fill)` plays what `fill` writes; `output.clock()` is an `AudioClock` (frames the device
+pulled, as seconds) that the engine player can follow. `CAN_PLAY` says whether the build has sound.
+
+**Turning sound on (user decision pending).** Sound needs the cargo feature `audio-out`
+(`cargo build -p dac-app --features audio-out`; it forwards `dac-engine/audio-out` → `dac-audio-out/audio-out`, and
+`dac-slideshow/audio-out` is the same switch). It brings in `cpal` (Apache-2.0), which on Linux links the system C
+library **libasound** (ALSA, through `alsa-sys` and pkg-config): a C dependency at build and run time, which the
+pure-Rust rule forbids by default. macOS (CoreAudio) and Windows (WASAPI) need no extra library. The choice for the
+maintainer: accept libasound on Linux (distro packages have it), or keep Linux silent and enable the feature only on
+macOS/Windows release builds. Until then no build enables it: `video.get` reports `canPlayAudio: false`, playback
+follows the system clock, slideshows play silently. Still to do once it is on: the playback worker starts an
+`Output` fed from `AudioReader` (resampled to `dac_audio_out::default_rate()`) and calls
+`session.video.follow_audio_clock(output.clock())`.
+
+Checked 2026-10-12: with default features no package (`dac-app`, `dac-cli`, `dac-web`, `dac-engine`, `dac-slideshow`)
+has `cpal` in its tree (`cargo tree -p <pkg> -i cpal` finds none); `cargo deny check licenses` passes with default
+features and with `--features dac-app/audio-out`.
 
 ## Licences: why not `filmcraft-codecs`
 
@@ -179,6 +222,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 ## Revision history
 
 - 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
+- 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost.
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).

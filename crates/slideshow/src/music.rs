@@ -1,6 +1,6 @@
 //! Slideshow music: decode WAV (hound), FLAC (claxon) and Ogg Vorbis (lewton), all pure Rust and
 //! permissive, to interleaved stereo `f32`; measure track lengths (for "fit to music"); apply volume
-//! and balance; and, with the `audio-out` feature, play through the sound card with cpal.
+//! and balance; and, with the `audio-out` feature, play through the sound card (`dac-audio-out`).
 //!
 //! MP3 and AAC are not decoded yet: the pure-Rust decoder that covers them (symphonia) is MPL-2.0,
 //! which the licence policy rejects.
@@ -181,49 +181,31 @@ pub fn mix(samples: &mut [f32], volume: f32, balance: f32) {
     }
 }
 
-/// Whether this build can play sound.
-pub const CAN_PLAY: bool = cfg!(feature = "audio-out");
+/// Whether this build can play sound (`dac-audio-out` built with its `audio-out` feature).
+pub const CAN_PLAY: bool = dac_audio_out::CAN_PLAY;
 
 /// Music playing on the default output device; dropping it stops the sound.
 pub struct Player {
-    #[cfg(feature = "audio-out")]
-    _stream: cpal::Stream,
+    _out: dac_audio_out::Output,
 }
 
 impl Player {
-    /// Start playing `audio` (already mixed), looping when `repeat`.
-    #[cfg(feature = "audio-out")]
+    /// Start playing `audio` (already mixed), looping when `repeat`. Without the `audio-out`
+    /// feature: an error (the show plays silently).
     pub fn play(audio: Audio, repeat: bool) -> Result<Player, String> {
-        use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
-        let host = cpal::default_host();
-        let device = host.default_output_device().ok_or("no audio output device")?;
-        let config = cpal::StreamConfig { channels: 2, sample_rate: cpal::SampleRate(audio.rate), buffer_size: cpal::BufferSize::Default };
         let mut pos = 0usize;
         let data = audio.samples;
-        let stream = device
-            .build_output_stream(
-                &config,
-                move |out: &mut [f32], _| {
-                    for s in out.iter_mut() {
-                        if pos >= data.len() && repeat {
-                            pos = 0;
-                        }
-                        *s = data.get(pos).copied().unwrap_or(0.0);
-                        pos = pos.saturating_add(1);
-                    }
-                },
-                |e| log::warn!("slideshow audio: {e}"),
-                None,
-            )
-            .map_err(|e| format!("audio output: {e}"))?;
-        stream.play().map_err(|e| format!("audio output: {e}"))?;
-        Ok(Player { _stream: stream })
-    }
-
-    /// Without the `audio-out` feature: an "unsupported" error (the show plays silently).
-    #[cfg(not(feature = "audio-out"))]
-    pub fn play(_audio: Audio, _repeat: bool) -> Result<Player, String> {
-        Err("this build plays slideshows without sound (built without the audio-out feature)".into())
+        let fill = move |out: &mut [f32]| {
+            for s in out.iter_mut() {
+                if pos >= data.len() && repeat {
+                    pos = 0;
+                }
+                *s = data.get(pos).copied().unwrap_or(0.0);
+                pos = pos.saturating_add(1);
+            }
+        };
+        let out = dac_audio_out::Output::start(audio.rate, 2, Box::new(fill)).map_err(|e| format!("slideshow music: {e}"))?;
+        Ok(Player { _out: out })
     }
 }
 

@@ -75,6 +75,11 @@ pub trait VideoBackend: Send + Sync {
         let _ = (path, t, max_side);
         Err("sequential decoding isn't available in this build".into())
     }
+    /// Whether this build can play the clip's sound: built with `audio-out` and the clip has a
+    /// decodable audio track. Default: false (muted).
+    fn can_play_audio(&self, _path: &Path) -> bool {
+        false
+    }
 }
 
 /// What [`VideoBackend::frames_from`] returns.
@@ -95,6 +100,23 @@ pub struct VideoState {
 impl Default for VideoState {
     fn default() -> Self {
         Self { backend: default_backend(), player: Player::default(), clock: default_clock() }
+    }
+}
+
+impl VideoState {
+    /// Drive playback from an audio device clock (`audio-out` builds playing a clip's sound), so
+    /// frames follow the sound. Continues from the current time: the position doesn't jump.
+    pub fn follow_audio_clock(&mut self, audio: dac_audio_out::AudioClock) {
+        let offset = (self.clock)() - audio.seconds();
+        self.clock = Box::new(move || offset + audio.seconds());
+    }
+
+    /// Back to the monotonic system clock (sound stopped), continuing from the current time.
+    pub fn follow_system_clock(&mut self) {
+        let offset = (self.clock)();
+        let system = default_clock();
+        let start = system();
+        self.clock = Box::new(move || offset + system() - start);
     }
 }
 
