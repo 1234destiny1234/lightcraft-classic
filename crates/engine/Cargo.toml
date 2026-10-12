@@ -50,6 +50,7 @@ unicode-segmentation = "1.13"
 dac-segment = { workspace = true, optional = true }
 # video clips: probe and poster frames (every call is `Unsupported` on wasm32)
 dac-video = { workspace = true }
+dac-audio-out = { workspace = true }
 
 # model downloads run natively only (the web build fetches no models)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -68,6 +69,9 @@ dac-video-export = { workspace = true }
 rustix = { workspace = true }
 
 [features]
+# Clip sound and slideshow music through the sound card (dac-audio-out with cpal, which links the C
+# library libasound on Linux: off by default, see docs/video.md). Without it playback is muted.
+audio-out = ["dac-audio-out/audio-out"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:dac-segment"]
 denoise = ["dep:dac-denoise", "dac-denoise/runtime", "dac-gpu/denoise"]

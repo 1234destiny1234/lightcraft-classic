@@ -20,6 +20,8 @@ rawnind-model = ["denoise", "dac-engine/rawnind-model"]
 # Open HEIC/HEIF photos (the optional dac-heif crate). Not default so distributors choose
 # it (HEVC patents); build with `--features heif` to include it.
 heif = ["dac-codecs/heif"]
+# Sound for video playback and slideshow music (cpal; links libasound on Linux). See docs/video.md.
+audio-out = ["dac-engine/audio-out"]
 
 [dependencies]
 dac-brand = { workspace = true }

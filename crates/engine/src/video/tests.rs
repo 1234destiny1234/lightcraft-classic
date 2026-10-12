@@ -22,7 +22,18 @@ impl VideoBackend for Mock {
         if path.to_string_lossy().contains("broken") {
             return Err("not an MP4".into());
         }
-        Ok(VideoInfo { duration: 10.0, fps_num: 25, fps_den: 1, width: 8, height: 6, codec: "h264".into(), has_audio: false })
+        Ok(VideoInfo {
+            duration: 10.0,
+            fps_num: 25,
+            fps_den: 1,
+            width: 8,
+            height: 6,
+            codec: "h264".into(),
+            has_audio: path.to_string_lossy().contains("sound"),
+        })
+    }
+    fn can_play_audio(&self, path: &Path) -> bool {
+        path.to_string_lossy().contains("sound")
     }
     fn frame_at(&self, _: &Path, t: f64, _: Option<u32>) -> Result<FrameImage, String> {
         self.frames.lock().unwrap().push(t);
@@ -119,6 +130,32 @@ fn play_pause_follow_the_clock_and_stop_at_the_end() {
     run(&mut s, "video.play", json!({}));
     ms.store(61_000, Ordering::SeqCst);
     assert!(approx(&run(&mut s, "video.get", json!({}))["current"], 1.0));
+}
+
+#[test]
+fn can_play_audio_needs_the_backend_and_a_sound_track() {
+    let (mut s, _) = session(&tmp("mute"));
+    assert_eq!(run(&mut s, "video.get", json!({}))["canPlayAudio"], false);
+    let (mut s, _) = session(&tmp("sound"));
+    let g = run(&mut s, "video.get", json!({}));
+    assert_eq!((g["hasAudio"].clone(), g["canPlayAudio"].clone()), (json!(true), json!(true)));
+}
+
+#[test]
+fn playback_can_follow_an_audio_device_clock() {
+    let (mut s, ms) = session(&tmp("audioclock"));
+    ms.store(3000, Ordering::SeqCst);
+    run(&mut s, "video.play", json!({}));
+    let audio = dac_audio_out::AudioClock::new(48_000);
+    s.video.follow_audio_clock(audio.clone());
+    // the system clock no longer drives the position; the device's frames do, without a jump
+    ms.store(9000, Ordering::SeqCst);
+    assert!(approx(&run(&mut s, "video.get", json!({}))["current"], 0.0));
+    audio.advance(72_000);
+    assert!(approx(&run(&mut s, "video.get", json!({}))["current"], 1.5));
+    s.video.follow_system_clock();
+    let c = run(&mut s, "video.get", json!({}))["current"].as_f64().unwrap();
+    assert!((c - 1.5).abs() < 0.05, "{c}");
 }
 
 #[test]
