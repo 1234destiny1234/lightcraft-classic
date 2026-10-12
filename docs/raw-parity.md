@@ -98,7 +98,7 @@ committed table is stale.
 | Leica | 1% | 95% | 5% | |
 | DJI | 1% | 95% | 0% | |
 | Medium format and others | 0.5% | 31% | 6% | IIQ, 3FR, X3F; MRW, ERF, MEF decode |
-| **Weighted** | 100% | **87%** | **42%** | |
+| **Weighted** | 100% | **88%** | **42%** | |
 
 About 5 in 6 raw photographers' cameras decode, but only about 2 in 5 use a body we have actually
 checked, and Canon, the largest bucket, is the weakest of the big four.
@@ -118,7 +118,7 @@ checked, and Canon, the largest bucket, is the weakest of the big four.
 | CR3 | sRAW / mRAW | ⬜ | 4-plane Bayer only |
 | CR3 | HEIF / HDR PQ | ⬜ | HEVC tracks recognised, not decoded |
 | CR3 | dual-pixel raw | ⬜ | never substituted |
-| CRW | all | ⬜ | preview |
+| CRW | CIFF, Huffman blocks, 10-bit and 12-bit with low bits | ✅ | `vendor/crw.rs`; EOS D30, D60, 10D, 300D, PowerShot G2, G3, G5, G6, Pro1, S30, S40, S45, S50, S60, S70 match the camera JPEG (colour agreement 0.77–0.99); as-shot WB from `0x10a9` / `0x102c` / `0x0032` or measured from the JPEG; CMYG bodies (G1, Pro90 IS, Pro70, 600, A5, A50) refused, preview |
 | NEF | uncompressed, lossless, lossy type 1 / 2, lossy after split | ✅ | D5100, D7000, D7500, Z f corpus; ~60 NEFs by hand; #633 |
 | NEF | packed 12 / 14-bit stored under a compressed tag without a linearization table (Z 6II "Packed 14 bits") | ✅ | #769; `nef.rs` `packed_lsb` (rows tight or padded to 16 bytes, the layouts of upstream PR #671); Z 6II CC0 file in the corpus |
 | NEF | High Efficiency / HE★ (JPEG XS) | ⬜ | named, preview (#193); needs a JPEG XS decoder |

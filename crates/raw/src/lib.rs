@@ -139,6 +139,7 @@ impl RawFormat {
                 | RawFormat::Mrw
                 | RawFormat::Erf
                 | RawFormat::Mef
+                | RawFormat::Crw
         )
     }
 }
@@ -387,6 +388,7 @@ fn decode_with(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         RawFormat::Mrw => vendor::mrw::decode(bytes, mode),
         RawFormat::Erf => vendor::erf::decode(bytes, mode),
         RawFormat::Mef => vendor::mef::decode(bytes, mode),
+        RawFormat::Crw => vendor::crw::decode(bytes, mode),
         RawFormat::OtherTiff => Err(RawError::Unsupported(other_tiff_reason(bytes))),
         other => Err(RawError::Unsupported(format!("{other:?} files are not decoded yet"))),
     }
@@ -1019,9 +1021,8 @@ mod tests {
         assert_eq!(probe(b"II\x1a\0\0\0HEAPCCDR\0\0"), Some(RawFormat::Crw));
         assert_eq!(probe(b"\0MRM\0\x01\0\0"), Some(RawFormat::Mrw));
         assert_eq!(probe(b"FOVb\x02\0\x02\0"), Some(RawFormat::X3f));
-        for f in [RawFormat::Crw, RawFormat::X3f] {
-            assert!(!f.is_supported());
-        }
+        assert!(!RawFormat::X3f.is_supported());
+        assert!(RawFormat::Crw.is_supported());
         assert!(RawFormat::Mrw.is_supported());
         assert!(matches!(decode(b"\0MRM\0\x01\0\0"), Err(RawError::Corrupt(_))));
         // too short for the CIFF signature

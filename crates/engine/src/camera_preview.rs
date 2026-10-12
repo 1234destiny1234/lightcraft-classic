@@ -59,6 +59,7 @@ pub(crate) fn file_local_look(format: RawFormat) -> bool {
             | RawFormat::Srw
             | RawFormat::Orf
             | RawFormat::Erf
+            | RawFormat::Crw
     )
 }
 
@@ -1932,6 +1933,7 @@ mod tests {
             RawFormat::Srw,
             RawFormat::Orf,
             RawFormat::Erf,
+            RawFormat::Crw,
         ];
         assert!(local.into_iter().all(file_local_look));
         // DNG carries its own colour model

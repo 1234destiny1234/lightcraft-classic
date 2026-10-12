@@ -9,6 +9,7 @@ pub(crate) mod arw6_testenc;
 mod arw_lens;
 pub mod cr2;
 pub mod cr3;
+pub mod crw;
 pub mod crx;
 pub(crate) mod crx_wavelet;
 pub mod erf;

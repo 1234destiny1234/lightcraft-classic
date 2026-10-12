@@ -18,6 +18,7 @@ const KNOWN_UNSUPPORTED: &[&str] = &[
     "cr3-",            // Unverified CRX coding variants; exact supported cases live in cr3_corpus.rs.
     "-he.nef",         // Nikon High Efficiency (HE / HE★) NEF, issue #193
     "sraw",            // Canon sRAW / mRAW
+    "crw-canon-g1",    // CMYG colour filter
     "finepix-s200exr", // SuperCCD EXR stored upright without a raw IFD: no Bayer phase matches the camera JPEG
 ];
 
@@ -1394,4 +1395,75 @@ fn corpus_mamiya_mef() {
     let lcc_raw::RawData::U16(d) = &img.data else { panic!("float data") };
     let step: f64 = d.chunks(4016).take(400).flat_map(|r| r.windows(3).map(|w| f64::from(w[0].abs_diff(w[2])))).sum::<f64>() / (400.0 * 4014.0);
     assert!(step < 40.0, "rough {step}");
+}
+
+/// Canon CRW (`crates/raw/src/vendor/crw.rs`): the Huffman-coded mosaic of 10-bit bodies and the 12-bit ones that
+/// store low bits decode to the image of the camera's own JPEG, framed by `SensorInfo`, RGGB, with black from the
+/// masked columns and an as-shot white balance. The CMYG G1 is refused with a reason.
+#[test]
+fn corpus_canon_crw() {
+    let dir = corpus_root().join("raw");
+    let g2 = ((2376, 1728), (2272, 1704));
+    let g5 = ((2672, 1968), (2592, 1944));
+    let g6 = ((3160, 2344), (3072, 2304));
+    let eos = ((3152, 2068), (3072, 2048));
+    // (file, (sensor, picture) width x height, bits)
+    let cases = [
+        ("crw-canon-300d.crw", eos, 12),
+        ("crw-canon-10d.crw", eos, 12),
+        ("crw-canon-d60.crw", eos, 12),
+        ("crw-canon-d30.crw", ((2224, 1456), (2160, 1440)), 12),
+        ("crw-canon-g2.crw", g2, 10),
+        ("crw-canon-s40.crw", g2, 10),
+        ("crw-canon-g3.crw", g2, 12),
+        ("crw-canon-s45.crw", g2, 12),
+        ("crw-canon-g5.crw", g5, 12),
+        ("crw-canon-s50.crw", g5, 12),
+        ("crw-canon-s60.crw", g5, 12),
+        ("crw-canon-g6.crw", g6, 12),
+        ("crw-canon-s70.crw", g6, 12),
+        ("crw-canon-pro1.crw", ((3344, 2484), (3264, 2448)), 12),
+        ("crw-canon-s30.crw", ((2144, 1560), (2048, 1536)), 10),
+    ];
+    let mut seen = 0;
+    for (name, (sensor, image), bits) in cases {
+        let Ok(bytes) = std::fs::read(dir.join(name)) else {
+            eprintln!("skip: {name} absent");
+            continue;
+        };
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!(img.format, RawFormat::Crw, "{name}");
+        assert_eq!(probe_info(&bytes).unwrap(), img.info(), "{name}: header and full decode agree");
+        assert_eq!((img.width, img.height), sensor, "{name}: sensor");
+        assert_eq!((img.active_area.width, img.active_area.height), image, "{name}: picture");
+        assert_eq!(img.bits, bits, "{name}: bits");
+        assert_eq!(img.metadata.make.as_deref(), Some("Canon"), "{name}");
+        assert!(img.metadata.model.as_deref().is_some_and(|m| m.starts_with("Canon ")), "{name}");
+        assert!(img.metadata.capture_time.is_some() && img.metadata.iso.is_some(), "{name}: capture time and ISO");
+        // a 128 pedestal at 12 bits, 32 at 10
+        let black = img.black.mean();
+        let pedestal = if bits == 12 { 128.0 } else { 32.0 };
+        assert!((black - pedestal).abs() < pedestal * 0.05, "{name}: black {black}");
+        let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no as-shot white balance"));
+        assert!(wb[0] > 1.0 && wb[0] < 3.0 && wb[1] == 1.0 && wb[2] > 1.0 && wb[2] < 2.5, "{name}: white balance {wb:?}");
+        let jpeg = embedded_preview(&bytes).unwrap_or_else(|| panic!("{name}: no embedded preview"));
+        let (gw, gh) = (24, 16);
+        let (sites, jpeg) = (raw_sites(&img, gw, gh), jpeg_cells(&jpeg, gw, gh));
+        let green: Vec<f64> = sites.iter().map(|s| s[1] + s[2]).collect();
+        let rho = correlation(&ranks(&green), &ranks(&jpeg.iter().map(|j| j[1]).collect::<Vec<_>>()));
+        let agree = |l: &str| chroma_agreement(&sites, &jpeg, &lcc_raw::Cfa::bayer(l).unwrap().pattern);
+        let best_other = ["GRBG", "GBRG", "BGGR"].into_iter().map(agree).fold(f64::MIN, f64::max);
+        let own = agree("RGGB");
+        eprintln!("{name}: green rank correlation {rho:.3}, colour agreement {own:.3} (others <= {best_other:.3}), wb {wb:?}");
+        assert!(rho > 0.95, "{name}: rank correlation with the camera JPEG {rho}");
+        assert!(own > 0.7 && own > best_other, "{name}: colours follow the JPEG better with another layout ({own} vs {best_other})");
+        seen += 1;
+    }
+    for (name, why) in [("crw-canon-g1.crw", "CMYG")] {
+        let Ok(bytes) = std::fs::read(dir.join(name)) else { continue };
+        assert_eq!(probe(&bytes), Some(RawFormat::Crw), "{name}");
+        assert!(matches!(decode(&bytes), Err(RawError::Unsupported(w)) if w.contains(why)), "{name}");
+        assert!(embedded_preview(&bytes).is_some(), "{name}: the preview stays available");
+    }
+    eprintln!("Canon CRW checked on {seen} files");
 }
