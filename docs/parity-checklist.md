@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-PLAY: `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -116,6 +116,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Action | Ours | Lightroom desktop | Why |
 |---|---|---|---|
+| 2026-10-12 | minor | LR-VID-PLAY: new `dac-video` crate (probe, frame reader, poster frames on FilmCraft's MP4 demuxer and H.264/HEVC decoders); status unchanged (⬜) |
 | Pick flag | P | Z | Z = toggle zoom (Classic convention); P is the Classic pick key |
 | Photos panel (left) | ⌘⇧L | P | P = pick |
 | Expand/collapse edit sections | ⌘⌥1–5 | ⌘1–6 | ⌘0 = Zoom to Fit, ⌘1 = Zoom 100 %; Geometry lives in the Crop panel |
@@ -443,7 +444,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs` | videos can be catalogued (kind, duration); no player |
+| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs` | videos can be catalogued (kind, duration); `dac-video` probes MP4/MOV and decodes H.264/HEVC frames and posters (M14.1, [video.md](video.md)); no player |
 | LR-VID-TRIM | Trim | P1 | ⬜ | | |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | | |
