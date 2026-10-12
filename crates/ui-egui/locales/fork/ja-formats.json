@@ -18,6 +18,7 @@
   "Only {} keys": "{} のキーのみ",
   "{} keys": "{} のキー",
   "PDF in {dir}": "{dir} に PDF",
+  "Video in {dir}": "{dir} にビデオ",
   "{n} JPEGs in {dir}": "{dir} に JPEG {n} 枚",
   "Slideshow {n}": "スライドショー {n}",
   "{n} photos shared: {u}": "{n} 枚の写真を共有しました: {u}",
@@ -61,5 +62,6 @@
   "Last checked {when}": "最後の確認: {when}",
   "{done} of {total} ({percent} %)": "{done} / {total}（{percent} %）",
   "{done} downloaded": "{done} ダウンロード済み",
-  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} をダウンロードして検証しました。インストールすると更新されます（アプリは再起動します）。"
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} をダウンロードして検証しました。インストールすると更新されます（アプリは再起動します）。",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "カラースペース：Rec. 2020 {curve}（HDR AVIF）"
 }

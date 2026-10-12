@@ -100,10 +100,10 @@ fn example_plugin_end_to_end() {
     let r = publisher.upload(&mut host, &item).unwrap();
     assert_eq!(r.remote_id, "p1");
 
-    // namespace data persisted; grants and enabled state survive a restart
+    // namespace data persisted (per library; none open here: the unnamed one); grants and enabled state survive a restart
     let data: Value = serde_json::from_slice(&std::fs::read(dir.join("data").join(format!("{id}.json"))).unwrap()).unwrap();
-    assert_eq!(data["p1"]["marked"], true);
-    assert_eq!(data["p1"]["lastExport"], dir.join("out.jpg").display().to_string());
+    assert_eq!(data["libraries"][""]["p1"]["marked"], true);
+    assert_eq!(data["libraries"][""]["p1"]["lastExport"], dir.join("out.jpg").display().to_string());
 
     // revoking the catalog permission takes effect on the next call
     m.set_grant(id, Permissions::default()).unwrap();
@@ -269,6 +269,14 @@ fn custom_fields_example_shows_and_edits_fields() {
     assert_eq!(s[0]["ok"]["suggestions"][0]["keywords"], json!(["ACME"]), "{s:?}");
     m.set_metadata_field(id, "3", "client", &Value::Null).unwrap();
     assert!(value(&m.metadata_fields("3"), "client").is_null());
+
+    // photo 3 of another library has none of these values (data is kept per library)
+    m.set_library("other-library");
+    assert!(value(&m.metadata_fields("3"), "job").is_null());
+    m.run_command(id, "set", &json!({"client": "B", "job": "B-1", "usage": "Commercial"}), &["3".into()], &mut host).unwrap();
+    assert_eq!(value(&m.metadata_fields("3"), "job"), "B-1");
+    m.set_library("");
+    assert_eq!(value(&m.metadata_fields("3"), "job"), "J-2");
 
     // survives a restart; disabled plug-ins show no fields
     drop(m);

@@ -18,6 +18,7 @@
   "Only {} keys": "Nur Tasten für {}",
   "{} keys": "Tasten für {}",
   "PDF in {dir}": "PDF in {dir}",
+  "Video in {dir}": "Video in {dir}",
   "{n} JPEGs in {dir}": "{n} JPEGs in {dir}",
   "Slideshow {n}": "Diashow {n}",
   "{n} photos shared: {u}": "{n} Fotos geteilt: {u}",
@@ -61,5 +62,6 @@
   "Last checked {when}": "Zuletzt geprüft: {when}",
   "{done} of {total} ({percent} %)": "{done} von {total} ({percent} %)",
   "{done} downloaded": "{done} heruntergeladen",
-  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} ist heruntergeladen und geprüft; installieren Sie es, um zu aktualisieren (die App startet neu)."
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} ist heruntergeladen und geprüft; installieren Sie es, um zu aktualisieren (die App startet neu).",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Farbraum: Rec. 2020 {curve} (HDR-AVIF)"
 }

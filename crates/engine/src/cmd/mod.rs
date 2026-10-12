@@ -43,6 +43,13 @@ pub mod missing;
 mod organize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod plugins;
+/// The web build has no plug-ins: plug-in fields read from XMP have nowhere to go.
+#[cfg(target_arch = "wasm32")]
+pub mod plugins {
+    pub fn restore_fields(_s: &mut crate::Session, _items: &[(lcc_catalog::PhotoId, Vec<(String, String, String)>)]) -> usize {
+        0
+    }
+}
 mod prefs;
 mod preset_files;
 pub mod previews;

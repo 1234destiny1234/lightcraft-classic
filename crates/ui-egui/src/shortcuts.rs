@@ -423,7 +423,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
         {
             let now = ctx.input(|i| i.time);
             app.ui.slideshow = Some((interval, now + interval, !paused));
-            app.toast(ctx, if paused { "Slideshow resumed" } else { "Slideshow paused" });
+            app.toast(ctx, crate::i18n::tr(if paused { "Slideshow resumed" } else { "Slideshow paused" }));
             continue;
         }
         // flag/rate aliases (Shift+X…) go through the culling path: active photo in Compare/Survey,
@@ -558,6 +558,10 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
             }
             // Up / Down in the grids go to the cell above / below (the filmstrip steps one photo)
             if matches!(f.as_str(), "library.up" | "library.down") {
+                // over a slider (or with one focused) the arrows nudge it instead (`widgets::slider`)
+                if crate::widgets::arrows_go_to_a_slider(ctx, &app.widgets) {
+                    continue;
+                }
                 match crate::panels::grid::row_distance(app, f == "library.down") {
                     Some(0) => {}
                     Some(rows) => {

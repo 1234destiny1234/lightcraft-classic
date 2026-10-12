@@ -188,8 +188,9 @@ impl State {
 }
 
 /// The photos whose SHA-1 is still unknown: library photos from files (virtual copies share
-/// their master's file and are skipped), minus those that failed this session.
-pub(crate) fn sha1_pending(s: &crate::Session) -> Vec<(PhotoId, String)> {
+/// their master's file and are skipped), minus those that failed this session; at most `limit`
+/// (one batch: a large library is not copied path by path for every batch).
+pub(crate) fn sha1_pending(s: &crate::Session, limit: usize) -> Vec<(PhotoId, String)> {
     s.catalog
         .photos()
         .filter(|p| p.sha1.is_none() && p.copy_of.is_none() && !p.local && !s.remote.sha1_failed.contains(&p.id))
@@ -198,6 +199,7 @@ pub(crate) fn sha1_pending(s: &crate::Session) -> Vec<(PhotoId, String)> {
             Source::File { path } => Some((p.id, path.clone())),
             Source::Demo { .. } => None,
         })
+        .take(limit)
         .collect()
 }
 
@@ -348,5 +350,27 @@ impl crate::Session {
             Some(l) if l.on_disk => Some(l.dir.join("Immich")),
             _ => self.remote.cache_dir.clone(),
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
+
+    /// Gap 26: each SHA-1 batch takes only a batch of paths, not a copy of every unhashed path in
+    /// the library (which made each pump of a 100k-photo library copy 100k strings).
+    #[test]
+    fn sha1_pending_stops_at_the_batch() {
+        let mut s = crate::Session::new();
+        for i in 0..100u64 {
+            let p = Photo::new(PhotoId(i + 1), Source::File { path: format!("/x/{i}.jpg") }, "a.jpg", "JPEG", 10, 10, "2026-01-01T00:00:00");
+            s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        }
+        let first = super::sha1_pending(&s, super::SHA1_BATCH);
+        assert_eq!(first.len(), super::SHA1_BATCH);
+        s.remote.sha1_failed.extend(first.iter().map(|(id, _)| *id));
+        let next = super::sha1_pending(&s, super::SHA1_BATCH);
+        assert!(next.iter().all(|(id, _)| !s.remote.sha1_failed.contains(id)));
+        assert_eq!(super::sha1_pending(&s, 1000).len(), 100 - super::SHA1_BATCH);
     }
 }

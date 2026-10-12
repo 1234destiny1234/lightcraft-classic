@@ -12,6 +12,9 @@ impl MoveFs for Faults {
     fn is_file(&self, p: &Path) -> bool {
         RealFs.is_file(p)
     }
+    fn listed(&self, p: &Path) -> bool {
+        RealFs.listed(p)
+    }
     fn same_file(&self, a: &Path, b: &Path) -> bool {
         RealFs.same_file(a, b)
     }
@@ -68,6 +71,7 @@ fn assert_fresh(path: &Path) {
 
 #[test]
 fn partial_move_companions_allow_save_and_autowrite_without_weakening_collisions() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     for upper_stem in [false, true] {
         for upper_full in [false, true] {
             for naming in [SidecarNaming::Stem, SidecarNaming::Full] {
@@ -153,6 +157,7 @@ fn partial_move_companions_allow_save_and_autowrite_without_weakening_collisions
 
 #[test]
 fn rollback_repair_and_shared_copy_keep_known_companions() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     for rollback in [false, true] {
         for naming in [SidecarNaming::Stem, SidecarNaming::Full] {
             let dir = crate::tests_xmp::temp_dir(&format!("r3-companion-rollback-{rollback}-{naming:?}"));

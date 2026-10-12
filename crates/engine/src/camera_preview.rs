@@ -58,6 +58,9 @@ pub(crate) fn file_local_look(format: RawFormat) -> bool {
             | RawFormat::Pef
             | RawFormat::Srw
             | RawFormat::Orf
+            | RawFormat::Erf
+            | RawFormat::Crw
+            | RawFormat::Mrw
     )
 }
 
@@ -1930,10 +1933,15 @@ mod tests {
             RawFormat::Pef,
             RawFormat::Srw,
             RawFormat::Orf,
+            RawFormat::Erf,
+            RawFormat::Crw,
+            RawFormat::Mrw,
         ];
         assert!(local.into_iter().all(file_local_look));
         // DNG carries its own colour model
         assert!(!file_local_look(RawFormat::Dng));
+        // Mamiya MEF has no camera JPEG to measure a look from (its previews are uncompressed RGB)
+        assert!(!file_local_look(RawFormat::Mef));
     }
 
     #[test]

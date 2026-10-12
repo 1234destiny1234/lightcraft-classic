@@ -259,6 +259,18 @@ compilation: ~0.4 s once per process — the desktop app starts it on a backgrou
 (`lcc_gpu::warm_up`), so the first loupe render doesn't wait for it; other processes create
 the device on their first GPU render. `lcc_gpu::ready()` asks without blocking.
 
+**Colour NR on the CPU (gap 26, 2026-10-13).** From a blur radius of `HALF_RES_NR_SIGMA` (4 px)
+on, a CPU *draft* render (slider drag) blurs the chromaticity at half resolution (2×2 box down, half the radius, bilinear back)
+instead of at full resolution; the luminance and the per-pixel mix stay at full resolution, and
+smaller radii and every full-quality render keep the full-resolution blur, so final renders match the GPU
+and the look existing edits always had (half-res on final renders broke that; fixed 2026-10-13). A test bounds the difference (mean < 0.002, worst
+< 0.02 linear). Measured by `colour_nr_timing` (`cargo test --release -p lcc-pipeline
+colour_nr_timing -- --ignored --nocapture`), both paths interleaved in one run on a machine at load
+average ≈ 105 on 32 threads, so compare the ratio, not the absolute numbers: 1936×1290 140 → 78 ms,
+6000×4000 670 → 336 ms (σ 6.8, best of 5). Full-resolution colour NR on the CPU is still over the
+16 ms slider budget at loupe size; the GPU path (unchanged, full-resolution blur, 10–18 ms for the
+whole NR drag) is the one that meets it.
+
 ## Opening a photo (M5.4)
 - The loupe shows a stand-in at once (`media::QuickJob`): the photo's cached view render for its
   current settings, else (raws with their import look) the embedded camera JPEG, else a

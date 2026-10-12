@@ -18,6 +18,7 @@
   "Only {} keys": "Лише клавіші {}",
   "{} keys": "Клавіші {}",
   "PDF in {dir}": "PDF у {dir}",
+  "Video in {dir}": "Відео у {dir}",
   "{n} JPEGs in {dir}": "{n} JPEG у {dir}",
   "Slideshow {n}": "Слайд-шоу {n}",
   "{n} photos shared: {u}": "Поширено фото: {n}: {u}",
@@ -51,5 +52,6 @@
   "Last checked {when}": "Остання перевірка: {when}",
   "{done} of {total} ({percent} %)": "{done} з {total} ({percent} %)",
   "{done} downloaded": "Завантажено: {done}",
-  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} завантажено й перевірено; встановіть його, щоб оновитися (застосунок перезапуститься)."
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} завантажено й перевірено; встановіть його, щоб оновитися (застосунок перезапуститься).",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Колірний простір: Rec. 2020 {curve} (HDR AVIF)"
 }

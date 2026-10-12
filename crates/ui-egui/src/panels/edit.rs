@@ -193,7 +193,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 app.ui.toggle_flyout("sdrRendition");
             }
             if open {
-                for c in ["hdr.sdrBrightness", "hdr.sdrContrast", "hdr.sdrHighlights", "hdr.sdrShadows", "hdr.sdrWhites", "hdr.sdrClarity"] {
+                for c in
+                    ["hdr.sdrBrightness", "hdr.sdrContrast", "hdr.sdrHighlights", "hdr.sdrShadows", "hdr.sdrWhites", "hdr.sdrClarity", "hdr.sdrBlend"]
+                {
                     control(app, ui, d, c, true);
                 }
                 ui.add_space(6.0);

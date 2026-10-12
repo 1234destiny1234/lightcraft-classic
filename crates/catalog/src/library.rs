@@ -413,6 +413,10 @@ pub struct CatalogSettings {
     /// the engine (`library.previewSettings`); kept opaque here so the catalog needn't know them.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub previews: Option<serde_json::Value>,
+    /// A stable id of this library, made when first needed: what keeps data held outside it, by
+    /// photo id (plug-in data), apart from other libraries' (photo ids are only unique within one).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub library_id: Option<String>,
 }
 
 impl CatalogSettings {

@@ -20,6 +20,8 @@ pub struct SequenceWriter {
     mux: Option<Mp4Writer<BufWriter<File>>>,
     video: VideoOut,
     track: usize,
+    /// The audio track and its packets, written when the movie is finished.
+    audio: Option<(usize, crate::EncodedAudioTrack)>,
     partial: PathBuf,
     out: PathBuf,
     frames: i64,
@@ -33,6 +35,22 @@ impl SequenceWriter {
     /// A writer for `width × height` frames (even, 16..=[`MAX_SIDE`]) at `fps_num / fps_den`
     /// frames per second (0.1..=240). `quality` 1–100 as in [`crate::ClipExportOptions`].
     pub fn create(out: &Path, format: ClipFormat, quality: u8, width: u32, height: u32, fps_num: u32, fps_den: u32) -> Result<Self> {
+        Self::create_with_audio(out, format, quality, width, height, fps_num, fps_den, None)
+    }
+
+    /// [`Self::create`] with an encoded audio track (from [`crate::encode_pcm_track`] for the same
+    /// `format`), muxed beside the frames.
+    #[allow(clippy::too_many_arguments)]
+    pub fn create_with_audio(
+        out: &Path,
+        format: ClipFormat,
+        quality: u8,
+        width: u32,
+        height: u32,
+        fps_num: u32,
+        fps_den: u32,
+        audio: Option<crate::EncodedAudioTrack>,
+    ) -> Result<Self> {
         let bad = |m: String| Err(ExportClipError::BadOptions(m));
         if !(16..=MAX_SIDE).contains(&width) || !(16..=MAX_SIDE).contains(&height) || !width.is_multiple_of(2) || !height.is_multiple_of(2) {
             return bad(format!("frame size {width}×{height} must be even and 16–{MAX_SIDE}"));
@@ -50,16 +68,20 @@ impl SequenceWriter {
         let made = (|| {
             let mut mux = Mp4Writer::new(BufWriter::new(file), WriterOptions::new(brand)).map_err(enc)?;
             let track = mux.add_track(video.track_config()).map_err(enc)?;
-            Ok::<_, ExportClipError>((mux, track))
+            let audio = match audio {
+                Some(a) => Some((mux.add_track(a.track_config()).map_err(enc)?, a)),
+                None => None,
+            };
+            Ok::<_, ExportClipError>((mux, track, audio))
         })();
-        let (mux, track) = match made {
+        let (mux, track, audio) = match made {
             Ok(v) => v,
             Err(e) => {
                 let _ = std::fs::remove_file(&partial);
                 return Err(e);
             }
         };
-        Ok(Self { mux: Some(mux), video, track, partial, out: out.to_path_buf(), frames: 0, width, height, fps_num, fps_den })
+        Ok(Self { mux: Some(mux), video, track, audio, partial, out: out.to_path_buf(), frames: 0, width, height, fps_num, fps_den })
     }
 
     /// Frames written so far.
@@ -104,6 +126,12 @@ impl SequenceWriter {
             mux.write_sample(self.track, WriteSample { data: &p.data, duration: self.fps_den, composition_offset: p.cto, is_sync: p.key })
                 .map_err(enc)?;
         }
+        let has_audio = self.audio.is_some();
+        if let Some((tr, a)) = self.audio.take() {
+            for p in &a.packets {
+                mux.write_sample(tr, WriteSample { data: &p.data, duration: p.duration, composition_offset: 0, is_sync: true }).map_err(enc)?;
+            }
+        }
         let mut out = mux.finish().map_err(enc)?;
         out.flush().map_err(io)?;
         let file = out.into_inner().map_err(|e| io(e.error()))?;
@@ -117,7 +145,7 @@ impl SequenceWriter {
             path: self.out.clone(),
             width: self.width,
             height: self.height,
-            has_audio: false,
+            has_audio,
         })
     }
 }
@@ -158,6 +186,27 @@ mod tests {
         w.push_encoded(&Rgb32f::from_fn(32, 16, |_, _| [0.5; 3])).unwrap();
         drop(w);
         assert!(!out2.exists() && !dir.join("u.mov.partial").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn muxes_an_audio_track() {
+        let dir = std::env::temp_dir().join(format!("lcc-seq-audio-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let no = std::sync::atomic::AtomicBool::new(false);
+        let pcm: Vec<f32> = (0..48_000 * 2).map(|i| ((i / 2) as f32 * 0.05).sin() * 0.4).collect();
+        for (name, format) in [("a.mp4", ClipFormat::H264Mp4), ("a.mov", ClipFormat::ProResMov)] {
+            let out = dir.join(name);
+            let track = crate::encode_pcm_track(&pcm, 2, 48_000, format, &no).unwrap();
+            let mut w = SequenceWriter::create_with_audio(&out, format, 60, 32, 16, 10, 1, Some(track)).unwrap();
+            for _ in 0..10 {
+                w.push_encoded(&Rgb32f::from_fn(32, 16, |_, _| [0.3; 3])).unwrap();
+            }
+            let r = w.finish().unwrap();
+            assert!(r.has_audio, "{name}");
+            let a = lcc_video::AudioReader::open(&out).unwrap();
+            assert_eq!(a.info().channels, 2, "{name}");
+        }
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

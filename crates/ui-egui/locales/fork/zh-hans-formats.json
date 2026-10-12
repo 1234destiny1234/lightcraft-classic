@@ -18,6 +18,7 @@
   "Only {} keys": "仅显示 {} 的按键",
   "{} keys": "{} 按键",
   "PDF in {dir}": "PDF 位于 {dir}",
+  "Video in {dir}": "视频位于 {dir}",
   "{n} JPEGs in {dir}": "{dir} 中的 {n} 个 JPEG",
   "Slideshow {n}": "幻灯片 {n}",
   "{n} photos shared: {u}": "已共享 {n} 张照片：{u}",
@@ -61,5 +62,6 @@
   "Last checked {when}": "上次检查：{when}",
   "{done} of {total} ({percent} %)": "{done} / {total}（{percent} %）",
   "{done} downloaded": "已下载 {done}",
-  "{file} is downloaded and checked; install it to update (the app restarts).": "已下载并校验 {file}；安装即可更新（应用将重启）。"
+  "{file} is downloaded and checked; install it to update (the app restarts).": "已下载并校验 {file}；安装即可更新（应用将重启）。",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "色彩空间：Rec. 2020 {curve}（HDR AVIF）"
 }

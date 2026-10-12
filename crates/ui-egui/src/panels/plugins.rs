@@ -141,7 +141,7 @@ pub fn menu_items(app: &LccApp) -> Vec<(String, Value, String)> {
 /// the activity stack, so a long upload doesn't freeze the window. [`poll`] answers the plug-ins'
 /// catalog requests on this thread and reports how they went (toast, `ui.inspect` → `export.last.plugins`).
 pub fn after_export(app: &mut LccApp, ctx: &egui::Context, files: &[Value], destination: Option<&Value>) {
-    let Some(hooks) = lcc_engine::cmd::plugins::export_hooks(files, destination) else { return };
+    let Some(hooks) = lcc_engine::cmd::plugins::export_hooks(app.session.plugin_library(), files, destination) else { return };
     let mut task = task_lock();
     if task.is_some() {
         drop(task);

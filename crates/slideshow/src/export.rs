@@ -4,7 +4,12 @@
 //! at 96 px per inch). Rendering goes through the engine's export renderer, encoding through
 //! `lcc_engine::export` (the one encoder of the app).
 //!
-//! Video export (AV1) is deferred: it needs an encoder crate shared with upstream (PLAN phase 3.4).
+//! Or as a movie, `<name>.mp4` (H.264 + AAC) or `<name>.mov` (ProRes 422 + PCM): one pass of the
+//! show at the chosen frame rate, with the timing, transitions, pan and zoom of playback and the
+//! music (mixed with its volume and balance) as the sound track, encoded by `lcc-video-export`
+//! (the encoder of clip and timelapse export; native builds only).
+//!
+//! Sources: own design (frames sampled from [`Plan::frame_at`], the playback timeline).
 
 use std::path::{Path, PathBuf};
 
@@ -64,6 +69,48 @@ pub struct Prepared {
     background: Option<Rgba8>,
     /// One PDF instead of a JPEG sequence.
     pdf: bool,
+    /// A movie instead of a JPEG sequence.
+    video: Option<VideoSpec>,
+    /// Seconds each segment holds and fades (movies).
+    timing: (f64, f64),
+}
+
+/// Movie container and codecs.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum VideoFormat {
+    /// H.264 + AAC in MP4.
+    H264,
+    /// ProRes 422 + 16-bit PCM in MOV.
+    ProRes,
+}
+
+impl VideoFormat {
+    pub fn parse(s: &str) -> Result<Self, String> {
+        match s.to_ascii_lowercase().as_str() {
+            "h264" | "mp4" => Ok(Self::H264),
+            "prores" | "mov" => Ok(Self::ProRes),
+            other => Err(format!("unknown video format “{other}” (h264 or prores)")),
+        }
+    }
+
+    pub fn extension(self) -> &'static str {
+        match self {
+            Self::H264 => "mp4",
+            Self::ProRes => "mov",
+        }
+    }
+}
+
+/// A movie export's settings.
+#[derive(Clone, Debug)]
+#[cfg_attr(target_arch = "wasm32", allow(dead_code))]
+struct VideoSpec {
+    format: VideoFormat,
+    fps: u32,
+    /// The mixed music (interleaved stereo), when the show has music.
+    music: Option<crate::music::Audio>,
+    /// Why the music was left out, if it was.
+    warning: Option<String>,
 }
 
 fn safe_name(name: &str) -> String {
@@ -119,6 +166,80 @@ pub fn prepare(
         items,
         background,
         pdf: false,
+        video: None,
+        timing: (plan.hold, plan.fade),
+    })
+}
+
+/// Most seconds a slideshow movie runs.
+pub const MAX_VIDEO_SECONDS: f64 = 3.0 * 60.0 * 60.0;
+
+/// Decode and join the show's music tracks (all at the first one's rate), mixed with volume and
+/// balance. `Err` names why there is no music track.
+pub fn mixed_music(s: &Settings) -> Result<Option<crate::music::Audio>, String> {
+    let m = &s.music;
+    if !m.enabled || m.tracks.is_empty() {
+        return Ok(None);
+    }
+    let mut all = crate::music::Audio::default();
+    for t in &m.tracks {
+        let a = crate::music::decode(Path::new(t))?;
+        if all.rate != 0 && a.rate != all.rate {
+            return Err(format!("{t}: a different sample rate than the first track"));
+        }
+        all.rate = a.rate;
+        all.samples.extend(a.samples);
+    }
+    crate::music::mix(&mut all.samples, m.volume, m.balance);
+    Ok(Some(all))
+}
+
+/// [`prepare`] for a movie, `<dir>/<name>.mp4|.mov`, of one pass of the show at `fps` (the size
+/// is rounded down to even). The music is decoded here; music that can't be read leaves the movie
+/// silent, and [`Prepared::warning`] says why.
+#[allow(clippy::too_many_arguments)]
+pub fn prepare_video(
+    session: &mut Session,
+    ids: &[PhotoId],
+    settings: &Settings,
+    width: usize,
+    height: usize,
+    quality: u8,
+    fps: u32,
+    format: VideoFormat,
+    dir: &Path,
+    name: &str,
+    plate: &str,
+) -> Result<Prepared, String> {
+    if !(1..=60).contains(&fps) {
+        return Err("frame rate must be 1…60".into());
+    }
+    let (width, height) = (width & !1, height & !1);
+    let mut p = prepare(session, ids, settings, width, height, quality, dir, name, plate)?;
+    let (music, warning) = match mixed_music(&p.settings) {
+        Ok(m) => (m, None),
+        Err(e) => (None, Some(e)),
+    };
+    // one pass, timed like playback (fit to music included)
+    let mut once = p.settings.clone();
+    once.playback.repeat = false;
+    let secs = music.as_ref().map(crate::music::Audio::seconds);
+    let plan = Plan::new(ids.len(), &once, 0x5eed, secs);
+    if plan.duration() > MAX_VIDEO_SECONDS {
+        return Err(format!("a slideshow movie runs at most {} hours", MAX_VIDEO_SECONDS / 3600.0));
+    }
+    p.segments = plan.segments;
+    p.timing = (plan.hold, plan.fade);
+    p.video = Some(VideoSpec { format, fps, music, warning });
+    Ok(p)
+}
+
+/// A composed slide as encoded R'G'B' 0..=1 (the movie writer's input).
+#[cfg(not(target_arch = "wasm32"))]
+fn to_rgb32f(img: &Rgba8) -> lcc_raster::Rgb32f {
+    lcc_raster::Rgb32f::from_fn(img.width, img.height, |x, y| {
+        let p = img.data.get(y * img.width + x).copied().unwrap_or([0; 4]);
+        [f32::from(p[0]) / 255.0, f32::from(p[1]) / 255.0, f32::from(p[2]) / 255.0]
     })
 }
 
@@ -153,9 +274,127 @@ impl Prepared {
         self.segments.is_empty()
     }
 
+    /// Why a movie has no sound although the show has music.
+    pub fn warning(&self) -> Option<&str> {
+        self.video.as_ref().and_then(|v| v.warning.as_deref())
+    }
+
+    /// The movie's timeline: one pass, not repeating.
+    fn plan(&self) -> Plan {
+        Plan { segments: self.segments.clone(), hold: self.timing.0, fade: self.timing.1, repeat: false }
+    }
+
+    /// Frames a movie export writes (0 for stills).
+    pub fn video_frames(&self) -> u64 {
+        self.video.as_ref().map_or(0, |v| (self.plan().duration() * f64::from(v.fps)).ceil().max(1.0) as u64)
+    }
+
+    /// Write the movie: every frame sampled from the show's timeline, the music muxed in.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn run_video(mut self, spec: VideoSpec, progress: &mut dyn FnMut(usize, &str) -> bool) -> Result<Vec<String>, String> {
+        use lcc_video_export::{ClipFormat, SequenceWriter, encode_pcm_track};
+        std::fs::create_dir_all(&self.dir).map_err(|e| format!("{}: {e}", self.dir.display()))?;
+        let format = match spec.format {
+            VideoFormat::H264 => ClipFormat::H264Mp4,
+            VideoFormat::ProRes => ClipFormat::ProResMov,
+        };
+        let plan = self.plan();
+        let total = (plan.duration() * f64::from(spec.fps)).ceil().max(1.0) as u64;
+        let secs = total as f64 / f64::from(spec.fps);
+        let never = std::sync::atomic::AtomicBool::new(false);
+        let audio = match &spec.music {
+            Some(m) if m.rate > 0 && !m.samples.is_empty() => {
+                // the music, cut or padded with silence to the movie's length
+                let n = ((secs * f64::from(m.rate)).round() as usize).saturating_mul(2);
+                let mut pcm = m.samples.clone();
+                pcm.resize(n, 0.0);
+                Some(encode_pcm_track(&pcm, 2, m.rate, format, &never).map_err(|e| e.to_string())?)
+            }
+            _ => None,
+        };
+        let out = self.dir.join(format!("{}.{}", self.name, spec.format.extension()));
+        let mut writer = SequenceWriter::create_with_audio(&out, format, self.quality, self.width as u32, self.height as u32, spec.fps, 1, audio)
+            .map_err(|e| e.to_string())?;
+        let items = std::mem::take(&mut self.items);
+        let infos: Vec<SlideInfo> = items.iter().map(|x| x.info.clone()).collect();
+        let mut jobs: Vec<Option<RenderJob>> = items.into_iter().map(|x| Some(x.job)).collect();
+        // rendered photos of the segments on screen, and composed stills while nothing moves
+        let mut rendered: Vec<(usize, Rgba8)> = Vec::new();
+        let mut still: Vec<(usize, Rgba8)> = Vec::new();
+        let moving = self.settings.playback.pan_zoom;
+        let mut last_seg = usize::MAX;
+        for f in 0..total {
+            let Some(fr) = plan.frame_at(f as f64 / f64::from(spec.fps)) else { break };
+            if fr.index != last_seg {
+                last_seg = fr.index;
+                let label = match fr.current {
+                    Segment::Intro => "Intro".to_string(),
+                    Segment::Ending => "Ending".to_string(),
+                    Segment::Slide(i) => infos.get(i).map(|x| x.filename.clone()).unwrap_or_default(),
+                };
+                if !progress(fr.index, &label) {
+                    return Err("Slideshow export cancelled".into());
+                }
+                let keep: Vec<usize> = [fr.index, fr.index + 1]
+                    .into_iter()
+                    .filter_map(|k| match self.segments.get(k) {
+                        Some(Segment::Slide(i)) => Some(*i),
+                        _ => None,
+                    })
+                    .collect();
+                rendered.retain(|(i, _)| keep.contains(i));
+                still.retain(|(k, _)| *k >= fr.index);
+            }
+            let mut frame_of = |k: usize, at: f32| -> Result<Rgba8, String> {
+                if !moving && let Some((_, img)) = still.iter().find(|(j, _)| *j == k) {
+                    return Ok(img.clone());
+                }
+                let img = match self.segments.get(k).copied().ok_or("segment out of range")? {
+                    Segment::Intro => compose_title(self.width, self.height, &self.settings.titles.intro, &self.plate)?,
+                    Segment::Ending => compose_title(self.width, self.height, &self.settings.titles.ending, &self.plate)?,
+                    Segment::Slide(i) => {
+                        if !rendered.iter().any(|(j, _)| *j == i) {
+                            let job = jobs.get_mut(i).and_then(Option::take).ok_or("slide out of range")?;
+                            rendered.push((i, job.run().rendered?.image));
+                        }
+                        let photo = rendered.iter().find(|(j, _)| *j == i).map(|(_, p)| p);
+                        let info = infos.get(i).cloned().unwrap_or_default();
+                        let s = &self.settings;
+                        let view = if s.playback.pan_zoom { crate::timeline::pan_zoom(k, at, s.playback.pan_zoom_amount) } else { (1.0, 0.5, 0.5) };
+                        compose_slide(self.width, self.height, photo, &info, s, view, self.background.as_ref(), &self.plate)?
+                    }
+                };
+                if !moving {
+                    still.push((k, img.clone()));
+                }
+                Ok(img)
+            };
+            let a = frame_of(fr.index, fr.progress)?;
+            let img = match fr.next {
+                Some((_, mix)) if fr.index + 1 < self.segments.len() => {
+                    let b = frame_of(fr.index + 1, 0.0)?;
+                    crate::compose::transition(&a, &b, mix, &self.settings)
+                }
+                _ => a,
+            };
+            writer.push_encoded(&to_rgb32f(&img)).map_err(|e| e.to_string())?;
+        }
+        let rep = writer.finish().map_err(|e| e.to_string())?;
+        progress(self.segments.len(), "");
+        Ok(vec![rep.path.display().to_string()])
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn run_video(self, _spec: VideoSpec, _progress: &mut dyn FnMut(usize, &str) -> bool) -> Result<Vec<String>, String> {
+        Err("slideshow video export is not available in the web build".into())
+    }
+
     /// Render, compose and write every frame; `progress(done, label)` returning false cancels
     /// (frames already written stay). Returns the written paths.
-    pub fn run(self, progress: &mut dyn FnMut(usize, &str) -> bool) -> Result<Vec<String>, String> {
+    pub fn run(mut self, progress: &mut dyn FnMut(usize, &str) -> bool) -> Result<Vec<String>, String> {
+        if let Some(spec) = self.video.take() {
+            return self.run_video(spec, progress);
+        }
         std::fs::create_dir_all(&self.dir).map_err(|e| format!("{}: {e}", self.dir.display()))?;
         let o = ExportOptions { format: ExportFormat::Jpeg, quality: self.quality, ..Default::default() };
         let mut items: Vec<Option<Item>> = self.items.into_iter().map(Some).collect();
@@ -272,6 +511,51 @@ mod tests {
         let text = String::from_utf8_lossy(&b);
         assert!(text.contains("/Count 3"), "three pages");
         assert!(text.contains("/MediaBox [0 0 240 135]"), "320×180 px at 96 ppi");
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn exports_a_movie_with_transitions_and_music() {
+        let mut session = Session::with_demo();
+        let ids: Vec<PhotoId> = session.catalog.photos().take(2).map(|p| p.id).collect();
+        let dir = std::env::temp_dir().join(format!("lcc-slideshow-video-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let wav = dir.join("m.wav");
+        let spec = hound::WavSpec { channels: 2, sample_rate: 44_100, bits_per_sample: 16, sample_format: hound::SampleFormat::Int };
+        let mut w = hound::WavWriter::create(&wav, spec).unwrap();
+        for i in 0..44_100 * 2 {
+            w.write_sample(((i as f32 * 0.03).sin() * 8000.0) as i16).unwrap();
+        }
+        w.finalize().unwrap();
+        let mut s = Settings::default();
+        s.playback.slide_secs = 1.0;
+        s.playback.fade_secs = 0.5;
+        s.playback.pan_zoom = true;
+        s.playback.repeat = true; // a movie is still one pass
+        s.music.enabled = true;
+        s.music.tracks = vec![wav.display().to_string()];
+        for (format, ext, music) in [(VideoFormat::H264, "mp4", true), (VideoFormat::ProRes, "mov", false)] {
+            let mut s = s.clone();
+            s.music.enabled = music;
+            // odd sizes round down to even
+            let p = prepare_video(&mut session, &ids, &s, 161, 91, 70, 10, format, &dir, "Show", "Plate").unwrap();
+            assert!(p.warning().is_none());
+            // 2 × 1 s + one 0.5 s fade = 2.5 s at 10 fps
+            assert_eq!(p.video_frames(), 25);
+            let files = std::thread::spawn(move || p.run(&mut |_, _| true)).join().unwrap().unwrap();
+            assert!(files[0].ends_with(&format!("Show.{ext}")), "{files:?}");
+            let r = lcc_video::FrameReader::open(std::path::Path::new(&files[0])).unwrap();
+            assert_eq!(r.frame_times().len(), 25);
+            assert_eq!(lcc_video::AudioReader::open(std::path::Path::new(&files[0])).is_ok(), music, "{ext}");
+        }
+        // unreadable music: a silent movie and a warning
+        let mut bad = s.clone();
+        bad.music.tracks = vec![dir.join("missing.flac").display().to_string()];
+        let p = prepare_video(&mut session, &ids, &bad, 160, 90, 70, 10, VideoFormat::H264, &dir, "Silent", "").unwrap();
+        assert!(p.warning().is_some());
+        assert!(prepare_video(&mut session, &ids, &s, 160, 90, 70, 0, VideoFormat::H264, &dir, "x", "").is_err());
+        assert!(VideoFormat::parse("avi").is_err());
+        assert_eq!(VideoFormat::parse("ProRes").unwrap(), VideoFormat::ProRes);
         let _ = std::fs::remove_dir_all(dir);
     }
 

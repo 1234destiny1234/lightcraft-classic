@@ -1012,6 +1012,7 @@
   "Expiry (days, 0 = never)": "Срок действия (дней, 0 = бессрочно)",
   "Export JPEG…": "Экспорт в JPEG…",
   "Export PDF…": "Экспорт в PDF…",
+  "Export Video…": "Экспорт видео…",
   "Export Slideshow": "Экспорт слайд-шоу",
   "Export Web Gallery": "Экспорт веб-галереи",
   "Exporting…": "Экспорт…",
@@ -1193,7 +1194,7 @@
   "deleted in the catalog": "удалено в каталоге",
   "e.g. Lustre, 148 gsm": "напр. Lustre, 148 г/м²",
   "in Immich's trash": "в корзине Immich",
-  "path (export)": "путь (экспорт)",
+  "image file path": "путь к файлу изображения",
   "shots": "снимков",
   "Dimensions": "Размеры",
   "ISO Speed Rating": "Светочувствительность ISO",
@@ -1482,5 +1483,7 @@
   "Skip This Version": "Пропустить эту версию",
   "Check for updates when the app starts": "Проверять обновления при запуске",
   "Include prereleases (release candidates)": "Включать предварительные версии (RC)",
-  "These settings are saved in the app's settings folder.": "Эти настройки сохраняются в папке настроек приложения."
+  "These settings are saved in the app's settings folder.": "Эти настройки сохраняются в папке настроек приложения.",
+  "File date": "Дата файла",
+  "HDR curve": "Кривая HDR"
 }

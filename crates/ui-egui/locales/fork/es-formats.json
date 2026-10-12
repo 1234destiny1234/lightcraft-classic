@@ -18,6 +18,7 @@
   "Only {} keys": "Solo teclas de {}",
   "{} keys": "Teclas de {}",
   "PDF in {dir}": "PDF en {dir}",
+  "Video in {dir}": "Vídeo en {dir}",
   "{n} JPEGs in {dir}": "{n} JPEG en {dir}",
   "Slideshow {n}": "Presentación {n}",
   "{n} photos shared: {u}": "{n} fotos compartidas: {u}",
@@ -61,5 +62,6 @@
   "Last checked {when}": "Última comprobación: {when}",
   "{done} of {total} ({percent} %)": "{done} de {total} ({percent} %)",
   "{done} downloaded": "{done} descargados",
-  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} se ha descargado y comprobado; instálalo para actualizar (la aplicación se reinicia)."
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} se ha descargado y comprobado; instálalo para actualizar (la aplicación se reinicia).",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Espacio de color: Rec. 2020 {curve} (AVIF HDR)"
 }

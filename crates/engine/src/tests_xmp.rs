@@ -15,6 +15,32 @@ pub(crate) fn temp_dir(tag: &str) -> PathBuf {
     d
 }
 
+/// The temp volume ignores letter case (Windows, default macOS): `a.xmp` and `a.XMP` are one file
+/// there. Fixtures that need both spellings as separate files skip; `rename::tests::FakeFs` models
+/// such volumes instead.
+pub(crate) fn case_insensitive_volume() -> bool {
+    // probed once: parallel tests must not share (and delete) one probe folder
+    static PROBE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PROBE.get_or_init(|| {
+        let d = temp_dir("case-probe");
+        std::fs::write(d.join("Probe.xmp"), b"").unwrap();
+        let insensitive = d.join("probe.XMP").exists();
+        let _ = std::fs::remove_dir_all(&d);
+        insensitive
+    })
+}
+
+/// Skip a real-disk fixture that writes case-variant sidecars as distinct files.
+macro_rules! skip_on_case_insensitive_volume {
+    () => {
+        if crate::tests_xmp::case_insensitive_volume() {
+            eprintln!("skipped: the temp volume ignores letter case (FakeFs models it)");
+            return;
+        }
+    };
+}
+pub(crate) use skip_on_case_insensitive_volume;
+
 pub(crate) fn write_png(path: &Path, seed: u8) {
     let (w, h) = (40usize, 24usize);
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 6) as u8, (i / w * 9) as u8, seed, 255]).collect();

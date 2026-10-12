@@ -150,6 +150,35 @@ pub fn encode_audio_range(
     Ok(Some(track))
 }
 
+/// Encode interleaved PCM the caller already holds (`channels` 1 or 2, −1..1, e.g. slideshow
+/// music) for `format`: AAC for MP4 (resampled to 48 kHz when `rate` is not an AAC rate), 16-bit
+/// PCM for MOV.
+pub fn encode_pcm_track(
+    pcm: &[f32],
+    channels: usize,
+    rate: u32,
+    format: ClipFormat,
+    cancel: &AtomicBool,
+) -> Result<EncodedAudioTrack, ExportClipError> {
+    if !(1..=2).contains(&channels) || !(8_000..=192_000).contains(&rate) {
+        return Err(ExportClipError::BadOptions(format!("audio {channels} channels at {rate} Hz is not supported")));
+    }
+    let frames = pcm.len() / channels;
+    if frames as f64 > MAX_RANGE_SECONDS * f64::from(rate) {
+        return Err(ExportClipError::BadOptions("the audio is too long".into()));
+    }
+    let clean: Vec<f32> =
+        pcm.get(..frames * channels).unwrap_or_default().iter().map(|v| if v.is_finite() { v.clamp(-1.0, 1.0) } else { 0.0 }).collect();
+    match format {
+        ClipFormat::H264Mp4 => {
+            let out = if filmcraft_aac::sample_rate_index(rate).is_none() { FALLBACK_RATE } else { rate };
+            let pcm = if out == rate { clean } else { lcc_video::resample(&clean, channels, rate, out) };
+            encode_aac(&pcm, channels, out, cancel)
+        }
+        ClipFormat::ProResMov => Ok(encode_pcm(&clean, channels, rate)),
+    }
+}
+
 /// Append one frame folded to `out_ch` channels (WAV order assumed beyond stereo: L R C LFE Ls Rs …).
 fn fold(f: &[f32], out_ch: usize, out: &mut Vec<f32>) {
     let g = |i: usize| f.get(i).copied().filter(|v| v.is_finite()).unwrap_or(0.0);
@@ -226,6 +255,19 @@ mod tests {
         assert_eq!(&o[..4], &[0.5, -0.5, 0.25, 0.25]);
         assert_eq!(o[4], 0.0);
         assert!(o[5] > 0.5 && o[5] <= 1.0);
+    }
+
+    #[test]
+    fn caller_pcm_encodes_and_bad_shapes_are_errors() {
+        let no = AtomicBool::new(false);
+        let pcm: Vec<f32> = (0..48_000 * 2).map(|i| (i as f32 * 0.01).sin() * 0.3).collect();
+        let t = encode_pcm_track(&pcm, 2, 44_100, ClipFormat::H264Mp4, &no).unwrap();
+        assert_eq!(t.codec, AudioCodecOut::Aac);
+        assert!(!t.packets.is_empty());
+        let t = encode_pcm_track(&[f32::NAN, 2.0], 2, 22_050, ClipFormat::ProResMov, &no).unwrap();
+        assert_eq!(t.packets[0].data, vec![0, 0, 0xff, 0x7f]);
+        assert!(encode_pcm_track(&pcm, 3, 48_000, ClipFormat::H264Mp4, &no).is_err());
+        assert!(encode_pcm_track(&pcm, 2, 0, ClipFormat::H264Mp4, &no).is_err());
     }
 
     #[test]

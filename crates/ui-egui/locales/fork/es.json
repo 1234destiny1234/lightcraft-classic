@@ -722,6 +722,7 @@
   "Expiry (days, 0 = never)": "Caducidad (días, 0 = nunca)",
   "Export JPEG…": "Exportar JPEG…",
   "Export PDF…": "Exportar PDF…",
+  "Export Video…": "Exportar vídeo…",
   "Export Slideshow": "Exportar presentación",
   "Export Web Gallery": "Exportar galería web",
   "Exporting…": "Exportando…",
@@ -903,7 +904,7 @@
   "deleted in the catalog": "eliminada en el catálogo",
   "e.g. Lustre, 148 gsm": "p. ej. Lustre, 148 g/m²",
   "in Immich's trash": "en la papelera de Immich",
-  "path (export)": "ruta (exportación)",
+  "image file path": "ruta del archivo de imagen",
   "shots": "tomas",
   "Dimensions": "Dimensiones",
   "ISO Speed Rating": "Valor ISO",
@@ -1277,5 +1278,7 @@
   "Skip This Version": "Omitir esta versión",
   "Check for updates when the app starts": "Buscar actualizaciones al iniciar la aplicación",
   "Include prereleases (release candidates)": "Incluir versiones preliminares (candidatas)",
-  "These settings are saved in the app's settings folder.": "Estos ajustes se guardan en la carpeta de ajustes de la aplicación."
+  "These settings are saved in the app's settings folder.": "Estos ajustes se guardan en la carpeta de ajustes de la aplicación.",
+  "File date": "Fecha del archivo",
+  "HDR curve": "Curva HDR"
 }

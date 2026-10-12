@@ -797,6 +797,20 @@ pub(crate) fn elide_head(text: &str, max: f32, width: impl Fn(&str) -> f32) -> S
 #[path = "widgets/tests_numeric_entry.rs"]
 mod numeric_entry_tests;
 
+/// Whether Up / Down go to a slider this frame (the pointer over a slider's row, or a slider holding
+/// the keyboard focus), as [`slider`] reads them: the photo-stepping shortcuts then leave them alone.
+pub fn arrows_go_to_a_slider(ctx: &egui::Context, widgets: &[(String, egui::Rect)]) -> bool {
+    let pointer = ctx.input(|i| i.pointer.hover_pos());
+    // the registered rect is the track; its row reaches up over the label and out to the paddings
+    let over = pointer.is_some_and(|p| {
+        widgets.iter().any(|(id, r)| {
+            id.starts_with("slider:") && Rect::from_min_max(pos2(r.left() - 24.0, r.top() - 22.0), pos2(r.right() + 22.0, r.bottom())).contains(p)
+        })
+    });
+    let focused = ctx.data(|d| d.get_temp::<egui::Id>(focused_slider_key())).is_some_and(|id| ctx.memory(|m| m.has_focus(id)));
+    over || focused
+}
+
 fn focused_slider_key() -> egui::Id {
     egui::Id::new("app-focused-slider")
 }

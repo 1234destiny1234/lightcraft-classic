@@ -18,6 +18,7 @@
   "Only {} keys": "Только клавиши модуля {}",
   "{} keys": "Клавиши модуля {}",
   "PDF in {dir}": "PDF в {dir}",
+  "Video in {dir}": "Видео в {dir}",
   "{n} JPEGs in {dir}": "{n} JPEG в {dir}",
   "Slideshow {n}": "Слайд-шоу {n}",
   "{n} photos shared: {u}": "Опубликовано фото: {n}: {u}",
@@ -65,5 +66,6 @@
   "Last checked {when}": "Последняя проверка: {when}",
   "{done} of {total} ({percent} %)": "{done} из {total} ({percent} %)",
   "{done} downloaded": "Загружено: {done}",
-  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} загружен и проверен; установите его, чтобы обновиться (приложение перезапустится)."
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} загружен и проверен; установите его, чтобы обновиться (приложение перезапустится).",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Цветовое пространство: Rec. 2020 {curve} (HDR AVIF)"
 }

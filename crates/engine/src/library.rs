@@ -189,6 +189,35 @@ impl Library {
     }
 }
 
+/// The library in `dir`'s stable id (its catalog settings' `libraryId`), made and saved the first
+/// time. When it can't be saved, an id derived from the folder stands in (stable while that lasts).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn library_id(dir: &Path) -> String {
+    use std::hash::{Hash, Hasher};
+    let mut cs = lcc_catalog::library::CatalogSettings::load(dir);
+    if let Some(id) = cs.library_id.as_ref().filter(|s| !s.is_empty()) {
+        return id.clone();
+    }
+    let hash = |fresh: bool| {
+        let mut h = std::collections::hash_map::DefaultHasher::new();
+        dir.hash(&mut h);
+        if fresh {
+            std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_nanos()).unwrap_or_default().hash(&mut h);
+            std::process::id().hash(&mut h);
+        }
+        format!("{:016x}", h.finish())
+    };
+    let id = hash(true);
+    cs.library_id = Some(id.clone());
+    match cs.save(dir) {
+        Ok(()) => id,
+        Err(e) => {
+            log::warn!("library id: {e}");
+            format!("path-{}", hash(false))
+        }
+    }
+}
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct PrefsFile {
@@ -429,9 +458,14 @@ impl Session {
             crate::demo::load(self);
             journal.snapshot(&self.catalog)?;
         }
-        // G19: the plug-in metadata field index (in memory only) from the plug-ins' own data
+        // G19: the plug-in metadata field index (in memory only) from the plug-ins' own data, this
+        // library's (plug-in data is kept per library: photo ids are per library)
         #[cfg(not(target_arch = "wasm32"))]
-        crate::cmd::plugins::sync_fields_with(self, false);
+        {
+            let id = if on_disk { library_id(&dir) } else { String::new() };
+            self.plugin_library = id;
+            crate::cmd::plugins::sync_fields_with(self, false);
+        }
         let mut settings = SettingsLoad::default();
         // preferences
         let prefs = settings.read::<PrefsFile>(files.as_mut(), "prefs.json").unwrap_or_default();

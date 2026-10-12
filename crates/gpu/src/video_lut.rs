@@ -274,13 +274,18 @@ mod tests {
     fn device() -> Option<(wgpu::Device, wgpu::Queue)> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()?;
+        // the sRGB view of the frame needs view formats, which downlevel (GL) adapters lack;
+        // the app grades on the CPU there
+        if !adapter.get_downlevel_capabilities().flags.contains(wgpu::DownlevelFlags::VIEW_FORMATS) {
+            return None;
+        }
         pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()
     }
 
     #[test]
     fn gpu_lut_matches_cpu_lut() {
         let Some((device, queue)) = device() else {
-            eprintln!("no GPU adapter: skipped");
+            eprintln!("no GPU adapter with view formats: skipped");
             return;
         };
         let mut s = lcc_develop::DevelopSettings::default();

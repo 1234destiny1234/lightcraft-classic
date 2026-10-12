@@ -582,8 +582,8 @@ pub fn ops_for(kind: Kind) -> &'static [(&'static str, &'static str)] {
 }
 
 pub fn field_kind(field: &str) -> Option<Kind> {
-    if plugin_field(field).is_some() {
-        return Some(Kind::Text);
+    if let Some(key) = plugin_field(field) {
+        return Some(if is_numeric_plugin_field(key) { Kind::Number } else { Kind::Text });
     }
     FIELDS.iter().find(|f| f.0 == field).map(|f| f.2)
 }
@@ -596,6 +596,24 @@ pub fn plugin_field_id(plugin: &str, key: &str) -> String {
 /// `"plugin:<plug-in id>/<key>"` → the [`crate::Photo::plugin_fields`] key `"<plug-in id>/<key>"`.
 pub fn plugin_field(field: &str) -> Option<&str> {
     field.strip_prefix("plugin:").filter(|k| k.split_once('/').is_some_and(|(p, f)| !p.is_empty() && !f.is_empty()))
+}
+
+/// The plug-in metadata fields that hold numbers (`"<plug-in id>/<key>"`): rules compare them as
+/// numbers (is ≥, is between, …). The catalog doesn't know plug-ins: the engine says which, from
+/// the installed plug-ins' manifests ([`set_numeric_plugin_fields`]); others are text.
+static NUMERIC_PLUGIN_FIELDS: std::sync::RwLock<std::collections::BTreeSet<String>> = std::sync::RwLock::new(std::collections::BTreeSet::new());
+
+/// Which plug-in metadata fields hold numbers (`"<plug-in id>/<key>"`, as in [`crate::Photo::plugin_fields`]).
+pub fn set_numeric_plugin_fields(keys: impl IntoIterator<Item = String>) {
+    let keys: std::collections::BTreeSet<String> = keys.into_iter().collect();
+    let mut g = NUMERIC_PLUGIN_FIELDS.write().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if *g != keys {
+        *g = keys;
+    }
+}
+
+fn is_numeric_plugin_field(key: &str) -> bool {
+    NUMERIC_PLUGIN_FIELDS.read().unwrap_or_else(std::sync::PoisonError::into_inner).contains(key)
 }
 
 /// A plug-in field's value as rules and searches see it: text, `true` / `false`, a number as written.
@@ -963,6 +981,11 @@ impl Rule {
                 id.is_some_and(|a| cat.album_contains(a, p)) == (op == "is")
             }
             f => match plugin_field(f) {
+                // a number field compares as a number (a rule saved with a text operator still
+                // tests the text); an absent field has no value
+                Some(key) if is_numeric_plugin_field(key) && ops_for(Kind::Number).iter().any(|o| o.0 == op) => {
+                    num_op(op, p.plugin_fields.get(key).and_then(number).filter(|n| n.is_finite()), value)
+                }
                 // text rules over the field's value; an absent field is empty
                 Some(key) => text(&p.plugin_fields.get(key).map(plugin_value_text).unwrap_or_default()),
                 None => false,
@@ -1254,6 +1277,33 @@ mod tests {
         let f = crate::Filter { text: "job:2026-17".into(), ..Default::default() };
         assert!(f.matches(&p, &cat) && !f.matches(&bare, &cat), "a field by its key");
         assert!(plugin_field("plugin:/x").is_none() && plugin_field("plugin:a/").is_none() && plugin_field("rating").is_none());
+    }
+
+    /// G19: a plug-in number field compares as a number (`10` > `9`, which as text it isn't), its
+    /// rules check as numbers, and an absent value matches no comparison.
+    #[test]
+    fn numeric_plugin_fields_compare_as_numbers() {
+        set_numeric_plugin_fields(["com.ex.num/rank".to_string()]);
+        let cat = Catalog::new();
+        let mut ten = photo(1);
+        ten.plugin_fields.insert("com.ex.num/rank".into(), json!(10));
+        let mut nine = photo(2);
+        nine.plugin_fields.insert("com.ex.num/rank".into(), json!(9.5));
+        let bare = photo(3);
+        let field = plugin_field_id("com.ex.num", "rank");
+        assert_eq!(field_kind(&field), Some(Kind::Number));
+        let r = |op: &str, v: serde_json::Value| rs(json!({"rules": [{"field": field, "op": op, "value": v}]}));
+        assert!(r("gt", json!(9.75)).matches(&ten, &cat) && !r("gt", json!(9.75)).matches(&nine, &cat));
+        assert!(r("gte", json!("10")).matches(&ten, &cat), "a number written as text");
+        assert!(r("between", json!([9, 9.6])).matches(&nine, &cat) && !r("between", json!([9, 9.6])).matches(&ten, &cat));
+        assert!(r("is", json!(10)).matches(&ten, &cat) && r("isNot", json!(10)).matches(&nine, &cat));
+        assert!(!r("lt", json!(100)).matches(&bare, &cat) && r("isNot", json!(1)).matches(&bare, &cat));
+        assert!(r("lt", json!(5)).check(&cat).is_empty());
+        assert!(!r("lt", json!("many")).check(&cat).is_empty(), "needs a number");
+        // a rule saved with a text operator before still matches the text
+        assert!(r("contains", json!("10")).matches(&ten, &cat));
+        // other plug-in fields stay text
+        assert_eq!(field_kind("plugin:com.ex.num/name"), Some(Kind::Text));
     }
 
     #[test]

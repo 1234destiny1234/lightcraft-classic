@@ -15,6 +15,9 @@ impl MoveFs for PartialRename {
     fn is_file(&self, path: &Path) -> bool {
         RealFs.is_file(path)
     }
+    fn listed(&self, path: &Path) -> bool {
+        RealFs.listed(path)
+    }
     fn same_file(&self, a: &Path, b: &Path) -> bool {
         RealFs.same_file(a, b)
     }
@@ -53,6 +56,7 @@ fn queued(s: &Session) -> Vec<crate::rename::SidecarMove> {
 
 #[test]
 fn autowrite_repairs_partial_rename_before_merging_foreign_xmp_across_library_switch() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     for naming in [SidecarNaming::Stem, SidecarNaming::Full] {
         for save_naming in [SidecarNaming::Stem, SidecarNaming::Full] {
             for upper in [false, true] {
