@@ -273,15 +273,15 @@ fn delete_collection(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// A published collection's photos by section, for the grid (LRC-LIB-PUBLISH: New Photos to
-/// Publish, Modified Photos to Re-Publish, Published Photos): the section of each photo (0, 1, 2),
-/// or `None` when `album` isn't a published collection (or the library isn't on disk).
+/// Publish, Modified Photos to Re-Publish, Published Photos, Deleted Photos to Remove): the section
+/// of each photo (0, 1, 2, 3), or `None` when `album` isn't a published collection (or the library isn't on disk).
 pub fn sections(s: &Session, album: AlbumId) -> Option<std::collections::HashMap<PhotoId, u8>> {
     let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone())?;
     let cfg = PublishConfig::load(&dir).ok()?;
     let svc = cfg.service_of(album)?;
     let st = lcc_publish::status(&s.catalog, &svc.id, album);
     let mut m = std::collections::HashMap::new();
-    for (rank, list) in [(0u8, &st.new), (1, &st.modified), (2, &st.published)] {
+    for (rank, list) in [(0u8, &st.new), (1, &st.modified), (2, &st.published), (3, &st.to_remove)] {
         m.extend(list.iter().map(|id| (*id, rank)));
     }
     Some(m)

@@ -963,6 +963,16 @@ impl Session {
                 // a published collection: new, then modified, then published photos (stable,
                 // so each section keeps the sort); the grid shows each under a header
                 visible.sort_by_key(|id| sections.get(id).copied().unwrap_or(u8::MAX));
+                // photos removed from the collection (or deleted) since they were published are
+                // no longer members; they're listed last, under Deleted Photos to Remove
+                let shown: std::collections::HashSet<PhotoId> = visible.iter().copied().collect();
+                let mut gone: Vec<PhotoId> = sections
+                    .iter()
+                    .filter(|(id, r)| **r == 3 && !shown.contains(id) && self.catalog.photo(**id).is_some())
+                    .map(|(id, _)| *id)
+                    .collect();
+                gone.sort();
+                visible.extend(gone);
             }
             self.visible = visible.into();
             self.visible_gen = VISIBLE_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed);

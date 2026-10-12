@@ -244,6 +244,13 @@ fn a_published_collection_lists_new_then_modified_then_published() {
     assert_eq!(rest, vec![ids[0], ids[2]]);
     let sections = crate::cmd::publish::sections(&s, lcc_catalog::AlbumId(coll)).unwrap();
     assert_eq!(sections.get(&lcc_catalog::PhotoId(ids[3])), Some(&0));
+    // a published photo taken out of the collection is listed last, to remove
+    s.execute("album.removePhotos", &json!({"id": coll, "ids": [ids[0]]})).unwrap();
+    s.execute("library.source", &json!({"kind": "album", "id": coll})).unwrap();
+    let shown: Vec<u64> = s.visible_cloned().iter().map(|p| p.0).collect();
+    assert_eq!(shown.last(), Some(&ids[0]), "{shown:?}");
+    let sections = crate::cmd::publish::sections(&s, lcc_catalog::AlbumId(coll)).unwrap();
+    assert_eq!(sections.get(&lcc_catalog::PhotoId(ids[0])), Some(&3));
     // a plain album isn't sectioned
     let plain = s.execute("album.create", &json!({"name": "Plain"})).unwrap();
     let plain = plain["id"].as_u64().or_else(|| plain.as_u64()).unwrap();
