@@ -40,3 +40,8 @@ dhat-heap = ["dep:dhat"]
 # Open HEIC/HEIF photos (the optional dac-heif crate). Not default so distributors choose
 # it (HEVC patents); build with `--features heif` to include it.
 heif = ["dac-codecs/heif"]
+
+# M14: end-to-end video tests encode a synthetic clip in-test and re-decode the export
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.dac-video]
+workspace = true
+features = ["test-util"]

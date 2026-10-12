@@ -323,3 +323,70 @@ fn export_without_token_finishes_after_eof() {
     assert_eq!(std::fs::read_dir(&dir).unwrap().count(), 2);
     std::fs::remove_dir_all(dir).unwrap();
 }
+
+/// M14: a synthetic clip through the headless MCP server: import, video state, trim, seek,
+/// capture a frame, export as a movie, undo, and photo-only tools refused for the clip.
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn video_clip_over_mcp() {
+    let dir = std::env::temp_dir().join(format!("dac-mcp-e2e-video-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let clip = dir.join("clip.mp4");
+    dac_video::test_util::write_clip(&clip, 64, 48, 60, |k| if k < 30 { 40 } else { 200 }, &[]);
+    let out = dir.join("out.mp4");
+    let mut server = Server::new(Box::new(Headless::default()));
+    let replies = session(
+        &mut server,
+        &[
+            call(1, "import", json!({"paths": [clip.to_string_lossy()]})),
+            call(2, "cmd_video_get", json!({})),
+            call(3, "cmd_video_setTrim", json!({"in": 1, "out": 1.5})),
+            call(4, "cmd_video_seek", json!({"time": 1.2})),
+            call(5, "cmd_video_captureFrame", json!({})),
+        ],
+    );
+    for r in &replies {
+        assert!(r["result"]["isError"] == false, "{r}");
+    }
+    let clip_id = replies[0]["result"]["structuredContent"]["imported"][0].as_u64().unwrap();
+    let g = &replies[1]["result"]["structuredContent"];
+    assert!((g["duration"].as_f64().unwrap() - 2.0).abs() < 0.05, "{g}");
+    assert!((replies[3]["result"]["structuredContent"]["current"].as_f64().unwrap() - 1.2).abs() < 0.05);
+    let cap = &replies[4]["result"]["structuredContent"];
+    assert_eq!(cap["clip"], clip_id);
+    let still = std::path::PathBuf::from(cap["path"].as_str().unwrap());
+    assert!(still.exists(), "{cap}");
+
+    let replies = session(
+        &mut server,
+        &[
+            call(10, "cmd_library_select", json!({"ids": [clip_id], "active": clip_id})),
+            call(11, "set_develop", json!({"values": {"light.exposure": 1}})),
+            call(12, "export", json!({"path": out.to_string_lossy(), "videoFormat": "h264"})),
+            // photo-only tools refused while the clip is active, and by ids
+            call(13, "cmd_crop_set", json!({})),
+            call(14, "cmd_denoise_queue", json!({"ids": [clip_id]})),
+            // undo: exposure, the captured frame, then the trim
+            call(15, "cmd_edit_undo", json!({})),
+            call(16, "cmd_edit_undo", json!({})),
+            call(17, "cmd_edit_undo", json!({})),
+            call(18, "cmd_library_select", json!({"ids": [clip_id], "active": clip_id})),
+            call(19, "cmd_video_get", json!({})),
+        ],
+    );
+    for (k, r) in replies.iter().enumerate() {
+        let err = r["result"]["isError"] == true;
+        assert_eq!(err, k == 3 || k == 4, "{r}");
+        if err {
+            assert!(r.to_string().contains("Not available for video"), "{r}");
+        }
+    }
+    let info = dac_video::probe(&out).unwrap();
+    assert!((info.duration - 0.5).abs() < 0.1, "trimmed export: {info:?}");
+    let frame = dac_video::FrameReader::open(&out).unwrap().frame_at(0.1, None).unwrap();
+    assert!(dac_video::test_util::mean(&frame.image) > 0.5, "graded bright half");
+    let g = &replies[9]["result"]["structuredContent"];
+    assert!(g["trimIn"].as_f64().unwrap_or(-1.0).abs() < 1e-9, "trim undone: {g}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

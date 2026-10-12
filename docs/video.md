@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
 > **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
@@ -116,7 +117,7 @@ moved into place in batch order (`Exported::video_file`, `Exported::save`); a sk
 leaves nothing behind. `set_video_hooks(items, &VideoHooks { cancel, progress })` gives clips the batch's
 activity-row flag (checked once per frame) and a per-clip progress callback: the desktop background export and the
 headless MCP export show it as the row's detail (`clip.mp4 42%`). The Export dialog shows a Video section (format,
-quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`).
+quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`), `--trim IN,OUT` (seconds; OUT empty = to the end) exports a range.
 Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; frames are graded one at a
 time on the CPU (~0.7 s per 1080p frame, see Grading performance); no "export current frame as JPEG" command yet.
 
@@ -165,6 +166,9 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 ## Revision history
 
+- 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
+  active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`
+  `video_clip_over_mcp`) on clips from `dac_video::test_util::write_clip` (feature `test-util`, dev-only).
 - 2026-10-12: sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost.
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).

@@ -43,6 +43,8 @@ mod demux;
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 mod source;
+#[cfg(all(feature = "test-util", not(target_arch = "wasm32")))]
+pub mod test_util;
 
 /// What went wrong reading a video.
 #[derive(Debug, thiserror::Error)]

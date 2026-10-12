@@ -128,6 +128,20 @@ pub fn video_gate(s: &Session, id: &str) -> std::result::Result<(), String> {
     if photo_only(id) && s.active().is_some_and(|a| crate::video::adapter::is_video(s, a)) { Err(NOT_FOR_VIDEO.into()) } else { Ok(()) }
 }
 
+/// [`video_gate`] for one call: a [`photo_only`] command that names photos through `ids` is also
+/// refused when any of them is a video clip, whatever the active photo is.
+pub fn video_gate_call(s: &Session, id: &str, params: &serde_json::Value) -> std::result::Result<(), String> {
+    video_gate(s, id)?;
+    if !photo_only(id) {
+        return Ok(());
+    }
+    let ids = params.get("ids").and_then(serde_json::Value::as_array).into_iter().flatten().filter_map(serde_json::Value::as_u64);
+    match ids.map(crate::catalog::PhotoId).find(|p| crate::video::adapter::is_video(s, *p)) {
+        Some(p) => Err(format!("{NOT_FOR_VIDEO} (photo {} is a video clip)", p.0)),
+        None => Ok(()),
+    }
+}
+
 pub fn always(_: &Session) -> std::result::Result<(), String> {
     Ok(())
 }
