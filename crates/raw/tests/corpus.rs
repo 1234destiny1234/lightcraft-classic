@@ -640,6 +640,26 @@ fn corpus_arw1_and_packed_nef() {
     }
 }
 
+/// Nikon Z 8 and Z 9 14-bit lossless NEFs (raw.pixls.us, CC0): full sensor, black 1008, as-shot WB.
+#[test]
+fn corpus_nikon_z8_z9_lossless() {
+    let cases: &[(&str, (usize, usize, u32), f32)] =
+        &[("nef-nikon-z8-lossless14.nef", (8280, 5520, 14), 1008.0), ("nef-nikon-z9-lossless14.nef", (8280, 5520, 14), 1008.0)];
+    for &(name, dims, black) in cases {
+        let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
+            eprintln!("skip: {name} absent");
+            continue;
+        };
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!((img.width, img.height, img.bits), dims, "{name}");
+        assert_eq!(img.black.values.first().copied(), Some(black), "{name}");
+        let r = same_colour_roughness(&img);
+        assert!(r < 0.3, "{name}: same-colour roughness {r:.3}");
+        let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no as-shot WB"));
+        assert!(wb[0] > 1.0 && wb[2] > 1.0, "{name}: WB {wb:?}");
+    }
+}
+
 /// Issue #535: pre-2017 Sony bodies without crop tags shot in the camera's 16:9 mode. The ILCE-7SM2 records the
 /// 16:9 size in `FullImageSize`, the DSLR-A580 only in the Exif image size; both crops are centred vertically (each
 /// camera JPEG registered on its raw) and drop the right-edge padding, so the image matches its JPEG's aspect ratio

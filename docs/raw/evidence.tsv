@@ -281,3 +281,5 @@ Pentax	K-1 II (* see note)	verified	corpus: crates/raw/tests/corpus.rs (xtask RA
 Pentax	K-3 Mark III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K-70	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	KF	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z 8	verified	corpus: crates/raw/tests/corpus.rs corpus_nikon_z8_z9_lossless (14-bit lossless)
+Nikon	Z 9 (*See note)	verified	corpus: crates/raw/tests/corpus.rs corpus_nikon_z8_z9_lossless (14-bit lossless)

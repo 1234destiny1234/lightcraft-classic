@@ -771,8 +771,8 @@ Nikon	Z 6 II	NEF	2020	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_an
 Nikon	Z 6 III	NEF	2023	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nikon	Z 7	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nikon	Z 7 II	NEF	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Nikon	Z 8	NEF	2022	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
-Nikon	Z 9 (*See note)	NEF	2021	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 8	NEF	2022	verified	corpus: crates/raw/tests/corpus.rs corpus_nikon_z8_z9_lossless (14-bit lossless)
+Nikon	Z 9 (*See note)	NEF	2021	verified	corpus: crates/raw/tests/corpus.rs corpus_nikon_z8_z9_lossless (14-bit lossless)
 Nikon	Z fc	NEF	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Nikon	Z f	NEF	2022	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Nikon	ZR	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only

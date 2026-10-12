@@ -1123,6 +1123,16 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "4c75e683bd4e751615c93842f519579cde8e0e7fbee3cc58ba7f6a1a23f060dc",
     ),
     (
+        "nef-nikon-z8-lossless14.nef",
+        "https://raw.pixls.us/data/Nikon/Z%208/Nikon_Z8_raw_14_bit_lossless_compression.NEF",
+        "c13a8675294456b9c979e6c1e556951654f35377b2870af2874bfb556f21ce40",
+    ),
+    (
+        "nef-nikon-z9-lossless14.nef",
+        "https://raw.pixls.us/data/Nikon/Z%209/Nikon_-_NIKON_Z_9_-_14bit_compressed_(Lossless).NEF",
+        "99d0fe24a38f0f7623aeab21440d266a5ac09f9665cf5283f590337e84323c38",
+    ),
+    (
         "nef-nikon-z7ii.nef",
         "https://raw.pixls.us/data/Nikon/Z%207_2/Z72_0027.NEF",
         "dc83d3e49db54ca9c3a1e41dc847afd213c822d482c40158e42d01ee8968f33b",
