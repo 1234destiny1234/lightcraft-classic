@@ -1963,24 +1963,24 @@ mod tests {
         }
     }
 
-    /// Recognised raw containers we don't decode (Minolta MRW here: the preview's first byte is
-    /// overwritten in the file) import as preview only with the JPEG's size, instead of failing.
+    /// Recognised raw containers we don't decode (Sigma X3F here; the preview's first byte is
+    /// overwritten in the file, as Minolta and Epson files do) import as preview only with the JPEG's size, instead of failing.
     #[test]
     fn undecodable_container_with_a_preview_imports_as_preview_only() {
         let px: Vec<u8> = (0..40 * 30).flat_map(|i| [(i % 251) as u8, 128, 200]).collect();
         let mut jpeg = encode_jpeg(&EncodeImage::new(40, 30, 3, Samples::U8(&px)), 90, ChromaSubsampling::S444, &EncodeMeta::default()).unwrap();
         jpeg[0] = 0x02;
-        let mut f = b"\0MRM\0\x01\0\0".to_vec();
+        let mut f = b"FOVb\x02\0\x02\0".to_vec();
         f.extend(std::iter::repeat_n(0x11u8, 300));
         f.extend_from_slice(&jpeg);
         f.extend(std::iter::repeat_n(0x22u8, 300));
-        let p = probe_bytes("A.MRW", &f).unwrap();
-        assert_eq!((p.kind, p.format.as_str(), p.width, p.height), (MediaKind::Raw, "MRW", 40, 30));
-        assert!(p.preview_only.is_some_and(|w| w.contains("Mrw")));
+        let p = probe_bytes("A.X3F", &f).unwrap();
+        assert_eq!((p.kind, p.format.as_str(), p.width, p.height), (MediaKind::Raw, "X3F", 40, 30));
+        assert!(p.preview_only.is_some_and(|w| w.contains("X3f")));
         let (img, src) = load_bytes(&f, 20).unwrap();
         assert_eq!((img.width, img.height, src.raw), (20, 15, false));
         // without a JPEG: a clear error
-        let e = probe_bytes("A.MRW", b"\0MRM\0\x01\0\0 nothing here").unwrap_err();
+        let e = probe_bytes("A.X3F", b"FOVb\x02\0\x02\0 nothing here").unwrap_err();
         assert!(e.contains("without an embedded preview"), "{e}");
     }
 

@@ -752,6 +752,42 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "https://raw.pixls.us/getfile.php/1198/nice/Pentax%20-%20K-5%20II%20s%20-%2014bit%20%283:2%29.PEF",
         "e579e7360c35e512f9c3a5c0eb9519575b87b489c6f86be82590f7706a7ed17b",
     ),
+    // Minolta MRW: 16-bit words (DiMAGE 7, 7Hi), 12-bit packing (A1, A2, A200 with GBRG, Dynax / Maxxum 7D).
+    (
+        "mrw-minolta-7.mrw",
+        "https://raw.pixls.us/data/Minolta/DiMAGE%207/RAW_MINOLTA_DIMAGE7.MRW",
+        "4c5d4274bebb548f5f7b3001770903bc4023e7bfe4aeeebbd9d6fc08e81b03bb",
+    ),
+    (
+        "mrw-minolta-7hi.mrw",
+        "https://raw.pixls.us/data/Minolta/DiMAGE%207Hi/RAW_MINOLTA_DIMAGE_7HI.MRW",
+        "2919a05757197a5424e02970c016893bca5aa29363a67b62b1a4b36326a10f6a",
+    ),
+    (
+        "mrw-minolta-a1.mrw",
+        "https://raw.pixls.us/data/Minolta/DiMAGE%20A1/RAW_MINOLTA_A1.MRW",
+        "bde1e2cd788e49c9bef20dfdd41be948fb02c2ee198c6b0959a67a3f79fd41c9",
+    ),
+    (
+        "mrw-minolta-a2.mrw",
+        "https://raw.pixls.us/data/Minolta/DiMAGE%20A2/PICT0881.MRW",
+        "8655e3428461377dd7c6b28ae98a0b23d659314997ed16333985278f99c9a4b4",
+    ),
+    (
+        "mrw-minolta-a200.mrw",
+        "https://raw.pixls.us/data/Minolta/DiMAGE%20A200/RAW_MINOLTA_DIMAGE_A200.MRW",
+        "2a95f6af2168e536dfb6d02b47e3b6119b35b497eebf179d7c20a6e496c26641",
+    ),
+    (
+        "mrw-minolta-dynax7d.mrw",
+        "https://raw.pixls.us/data/Minolta/Dynax%207D/PICT3410.MRW",
+        "713819e33e5302ec864d576d57223cfc8dcf46e8d45e0ae744d1fec40290a89f",
+    ),
+    (
+        "mrw-minolta-maxxum7d.mrw",
+        "https://raw.pixls.us/data/Minolta/Maxxum%207D/PICT0041.MRW",
+        "ff57d7c632507e908e2f556fb1632d10c008f9d237d4001e583a2aedbacb585f",
+    ),
     // Samsung SRW, one file per packing: 12-bit MSB-first (NX10), 12-bit LSB-first (NX20), 16-bit words (EX1).
     (
         "srw-samsung-nx10.srw",

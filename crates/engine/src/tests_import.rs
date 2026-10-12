@@ -1209,7 +1209,7 @@ fn folder_import_picks_up_undecodable_raw_containers_as_preview_only() {
     let src = temp_dir("preview-only-exts");
     let px: Vec<u8> = (0..40 * 30).flat_map(|i| [(i % 251) as u8, 128, 200]).collect();
     let jpeg = encode_jpeg(&EncodeImage::new(40, 30, 3, Samples::U8(&px)), 90, ChromaSubsampling::S444, &EncodeMeta::default()).unwrap();
-    // CRW / MRW / X3F: their magic, then the JPEG. IIQ / KDC / MOS / ERF: a TIFF whose IFD0 only points at the JPEG.
+    // CRW / X3F: their magic, then the JPEG. IIQ / KDC / MOS / ERF: a TIFF whose IFD0 only points at the JPEG.
     let tiff = {
         let off = 8 + 2 + 24 + 4;
         let mut f = b"II*\0\x08\0\0\0\x02\0".to_vec();
@@ -1223,9 +1223,8 @@ fn folder_import_picks_up_undecodable_raw_containers_as_preview_only() {
         f
     };
     let with_magic = |magic: &[u8]| [magic, &[0x11u8; 64][..], &jpeg].concat();
-    let files: [(&str, Vec<u8>); 7] = [
+    let files: [(&str, Vec<u8>); 6] = [
         ("a.CRW", with_magic(b"II\x1a\0\0\0HEAPCCDR")),
-        ("b.mrw", with_magic(b"\0MRM\0\x01\0\0")),
         ("c.x3f", with_magic(b"FOVb\x02\0\x02\0")),
         ("d.iiq", [&tiff[..], b"d"].concat()),
         ("e.kdc", [&tiff[..], b"e"].concat()),
@@ -1237,8 +1236,8 @@ fn folder_import_picks_up_undecodable_raw_containers_as_preview_only() {
     }
     let mut s = Session::new().with_fs();
     let r = s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
-    assert_eq!(r["scanned"], 7, "{r}");
-    assert_eq!(ids(&r, "imported"), 7, "{r}");
+    assert_eq!(r["scanned"], 6, "{r}");
+    assert_eq!(ids(&r, "imported"), 6, "{r}");
     assert_eq!(ids(&r, "failed"), 0, "{r}");
     assert!(s.catalog.photos().all(|p| p.preview_only.is_some() && p.kind == lcc_catalog::MediaKind::Raw && (p.width, p.height) == (40, 30)));
     let _ = std::fs::remove_dir_all(&src);

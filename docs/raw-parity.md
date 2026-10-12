@@ -1,6 +1,6 @@
 # RAW parity: cameras, formats, demosaic, colour and lens profiles
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
 
 Raw processing is the deepest single dimension of Lightroom parity: a photographer whose camera
 does not decode, or decodes with the wrong colour, cannot switch. This document measures it model by
@@ -14,9 +14,9 @@ ranked in [gaps.md](gaps.md). Details per format: [cr3.md](cr3.md),
 | Measure | Value | Kind |
 |---|---:|---|
 | Adobe-listed camera models | **1,446** | measured: [raw/adobe-cameras.tsv](raw/adobe-cameras.tsv) |
-| Decoded from sensor data and **verified** on a real file | **241** (17%) | measured: [raw/evidence.tsv](raw/evidence.tsv) |
-| Decoder path should handle it, **unverified** | **1,011** (70%) | measured from the format rules (632 of them DNG, mostly phones) |
-| **Preview-only** (embedded JPEG) | **158** (11%) | measured |
+| Decoded from sensor data and **verified** on a real file | **247** (17%) | measured: [raw/evidence.tsv](raw/evidence.tsv) |
+| Decoder path should handle it, **unverified** | **1,016** (70%) | measured from the format rules (632 of them DNG, mostly phones) |
+| **Preview-only** (embedded JPEG) | **147** (10%) | measured |
 | **Unsupported** (not imported, refused or decodes wrongly) | **36** (2%) | measured |
 | Models added since 2017 (Camera Raw 10+): verified / unverified / preview / unsupported | 83 / 656 / 7 / 8 of 754 | measured |
 | **Share of photographers whose camera fully works** (decodes from sensor data), use-weighted | **~87%** | estimated: measured classes × written usage weights × per-format confidence |
@@ -80,8 +80,8 @@ committed table is stale.
 | Casio | 26 | 0 | 26 | 0 | 0 | — (DNG) |
 | DJI | 21 | 0 | 21 | 0 | 0 | — (DNG) |
 | OM Digital Solutions | 7 | 0 | 7 | 0 | 0 | — (compressed ORF, unverified) |
-| Kodak, Konica Minolta, Epson, Sigma, GoPro, Contax, others | 56 | 0 | 14 | 27 | 15 | DCR, GPR not imported; KDC, MRW, ERF, X3F preview |
-| **All** | **1,446** | **241 (17%)** | **1,011 (70%)** | **158 (11%)** | **36 (2%)** | |
+| Kodak, Konica Minolta, Epson, Sigma, GoPro, Contax, others | 56 | 6 | 19 | 16 | 15 | DCR, GPR not imported; KDC, ERF, X3F preview (MRW decodes since 2026-10-13: DiMAGE 7, 7Hi, A1, A2, A200, Dynax 7D verified) |
+| **All** | **1,446** | **247 (17%)** | **1,016 (70%)** | **147 (10%)** | **36 (2%)** | |
 
 ## By use (estimated)
 
@@ -97,8 +97,8 @@ committed table is stale.
 | Pentax / Ricoh | 1.5% | 94% | 14% | |
 | Leica | 1% | 95% | 5% | |
 | DJI | 1% | 95% | 0% | |
-| Medium format and others | 0.5% | 23% | 0% | IIQ, 3FR, X3F |
-| **Weighted** | 100% | **85%** | **42%** | |
+| Medium format and others | 0.5% | 29% | 3% | IIQ, 3FR, X3F; MRW decodes |
+| **Weighted** | 100% | **87%** | **42%** | |
 
 About 5 in 6 raw photographers' cameras decode, but only about 2 in 5 use a body we have actually
 checked, and Canon, the largest bucket, is the weakest of the big four.
@@ -145,7 +145,8 @@ checked, and Canon, the largest bucket, is the weakest of the big four.
 | DNG | GoPro GPR (VC-5) | ⬜ | refused |
 | 3FR / FFF | DNG-like layouts | 🟡 | decoded when uncompressed or LJ92 |
 | 3FR / FFF | Hasselblad compression | ⬜ | preview |
-| IIQ, MOS, MRW, ERF, KDC, X3F | all | ⬜ | preview |
+| MRW | 16-bit words, 12-bit packing | ✅ | `vendor/mrw.rs`; DiMAGE 7, 7Hi, A1, A2, A200 (GBRG), Dynax / Maxxum 7D match the camera JPEG (colour agreement 0.73–0.99); as-shot WB from `\0WBG` |
+| IIQ, MOS, ERF, KDC, X3F | all | ⬜ | preview |
 | DCR, MEF, MFW, DXO, GPR, TIFF raws | all | ⬜ | not imported |
 
 ### Compressed ORF: a clean-room starting point
@@ -254,7 +255,7 @@ works, from [raw/usage-weights.tsv](raw/usage-weights.tsv).
 | 6 | Sony A100 and DSC-F828 regression (#702) | +0.1 | 1–2 | ~0.07 | samples on raw.pixls.us |
 | 7 | Canon CRW (2000–2004 bodies) | +1.2 by the uniform tail weight, far less by real use | 6–12 | ≤ 0.1 | samples |
 | 8 | Nikon HE / HE★ NEF (Z 8, Z 9, Z 6III, Z f, Z50II, Z5II set to HE) | +1.1 | 20–40 | ~0.04 | a pure-Rust JPEG XS decoder |
-| 9 | ~~Compressed SRW~~ (done 2026-10-13), Hasselblad 3FR, IIQ, X3F, MRW, KDC, ERF, DCR, MEF, GPR | +0.6 together | 45–85 | ~0.01 | samples; low use |
+| 9 | ~~Compressed SRW~~, ~~MRW~~ (done 2026-10-13), Hasselblad 3FR, IIQ, X3F, KDC, ERF, DCR, MEF, GPR | +0.6 together | 45–85 | ~0.01 | samples; low use |
 
 Beyond decoding:
 
@@ -269,6 +270,7 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Minolta MRW decoded (`vendor/mrw.rs`: 16-bit words and 12-bit packing, WBG white balance in layout order): 7 CC0 files from 6 bodies pinned and checked against the camera JPEG; re-measured: 247 verified, 1,016 unverified, 147 preview; use-weighted unchanged at 87% |
 | 2026-10-10 | minor | Compressed ORF: pointer to the two Olympus patents that describe the method, as a clean-room starting point |
 | 2026-10-13 | minor | Compressed Samsung SRW (32770 row blocks, 32772 Huffman, 32773 blocks) decoded: 7 CC0 files from 7 bodies pinned and checked against the camera JPEG; re-measured: 241 verified, 1,011 unverified, 158 preview; use-weighted unchanged at 87% (Samsung carries no weight bucket) |
 | 2026-10-13 | minor | Compressed ORF decoded (`decode_compressed`); E-M1 and E-M10 Mark III verified on the corpus; re-measured with `coverage.py`: 237 verified, 1,006 unverified, 167 preview; OM / Olympus bucket 3% → 80% fully working; use-weighted 87%; decoding 78%, RAW readiness ~57% |
