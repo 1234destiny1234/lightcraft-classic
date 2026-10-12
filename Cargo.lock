@@ -1656,6 +1656,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "dac-audio-out"
+version = "0.6.4"
+dependencies = [
+ "cpal",
+ "log",
+]
+
+[[package]]
 name = "dac-book"
 version = "0.6.4"
 dependencies = [
@@ -1837,6 +1845,7 @@ version = "0.6.4"
 dependencies = [
  "ab_glyph",
  "dac-actions",
+ "dac-audio-out",
  "dac-brand",
  "dac-camdb",
  "dac-catalog",
@@ -2268,7 +2277,7 @@ name = "dac-slideshow"
 version = "0.6.4"
 dependencies = [
  "claxon",
- "cpal",
+ "dac-audio-out",
  "dac-brand",
  "dac-catalog",
  "dac-codecs",
@@ -2280,7 +2289,6 @@ dependencies = [
  "hayro",
  "hound",
  "lewton",
- "log",
  "lopdf",
  "serde",
  "serde_json",
@@ -2370,6 +2378,8 @@ name = "dac-video"
 version = "0.6.4"
 dependencies = [
  "dac-raster",
+ "filmcraft-aac",
+ "filmcraft-ac3",
  "filmcraft-apv",
  "filmcraft-av1",
  "filmcraft-bitstream",
@@ -2384,6 +2394,7 @@ dependencies = [
  "filmcraft-mpeg2v",
  "filmcraft-mpegts",
  "filmcraft-mxf",
+ "filmcraft-opus",
  "filmcraft-prores",
  "filmcraft-time",
  "filmcraft-vp9",
@@ -2401,6 +2412,7 @@ dependencies = [
  "filmcraft-color",
  "filmcraft-h264enc",
  "filmcraft-isobmff",
+ "filmcraft-matroska",
  "filmcraft-prores",
  "thiserror 2.0.21",
 ]
@@ -3243,6 +3255,14 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-ac3"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "filmcraft-apv"
 version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
@@ -3359,6 +3379,11 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-mxf"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+
+[[package]]
+name = "filmcraft-opus"
 version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
 

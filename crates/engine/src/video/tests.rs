@@ -22,7 +22,18 @@ impl VideoBackend for Mock {
         if path.to_string_lossy().contains("broken") {
             return Err("not an MP4".into());
         }
-        Ok(VideoInfo { duration: 10.0, fps_num: 25, fps_den: 1, width: 8, height: 6, codec: "h264".into(), has_audio: false })
+        Ok(VideoInfo {
+            duration: 10.0,
+            fps_num: 25,
+            fps_den: 1,
+            width: 8,
+            height: 6,
+            codec: "h264".into(),
+            has_audio: path.to_string_lossy().contains("sound"),
+        })
+    }
+    fn can_play_audio(&self, path: &Path) -> bool {
+        path.to_string_lossy().contains("sound")
     }
     fn frame_at(&self, _: &Path, t: f64, _: Option<u32>) -> Result<FrameImage, String> {
         self.frames.lock().unwrap().push(t);
@@ -119,6 +130,32 @@ fn play_pause_follow_the_clock_and_stop_at_the_end() {
     run(&mut s, "video.play", json!({}));
     ms.store(61_000, Ordering::SeqCst);
     assert!(approx(&run(&mut s, "video.get", json!({}))["current"], 1.0));
+}
+
+#[test]
+fn can_play_audio_needs_the_backend_and_a_sound_track() {
+    let (mut s, _) = session(&tmp("mute"));
+    assert_eq!(run(&mut s, "video.get", json!({}))["canPlayAudio"], false);
+    let (mut s, _) = session(&tmp("sound"));
+    let g = run(&mut s, "video.get", json!({}));
+    assert_eq!((g["hasAudio"].clone(), g["canPlayAudio"].clone()), (json!(true), json!(true)));
+}
+
+#[test]
+fn playback_can_follow_an_audio_device_clock() {
+    let (mut s, ms) = session(&tmp("audioclock"));
+    ms.store(3000, Ordering::SeqCst);
+    run(&mut s, "video.play", json!({}));
+    let audio = dac_audio_out::AudioClock::new(48_000);
+    s.video.follow_audio_clock(audio.clone());
+    // the system clock no longer drives the position; the device's frames do, without a jump
+    ms.store(9000, Ordering::SeqCst);
+    assert!(approx(&run(&mut s, "video.get", json!({}))["current"], 0.0));
+    audio.advance(72_000);
+    assert!(approx(&run(&mut s, "video.get", json!({}))["current"], 1.5));
+    s.video.follow_system_clock();
+    let c = run(&mut s, "video.get", json!({}))["current"].as_f64().unwrap();
+    assert!((c - 1.5).abs() < 0.05, "{c}");
 }
 
 #[test]
@@ -307,4 +344,47 @@ fn the_native_backend_reports_a_garbage_clip_as_an_error() {
     let e = s.execute("video.get", &json!({})).unwrap_err().to_string();
     assert!(e.contains("can't read the video"), "{e}");
     let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
+fn photo_only_tools_are_disabled_for_a_clip() {
+    let dir = tmp("gating");
+    let (mut s, _) = session(&dir);
+    for id in ["crop.set", "mask.add", "spot.add", "redeye.add", "denoise.queue"] {
+        let info = crate::cmd::find_command(id).unwrap().info(&s);
+        assert!(!info.enabled && info.disabled_reason.as_deref() == Some(crate::cmd::NOT_FOR_VIDEO), "{id}: {info:?}");
+        let e = s.execute(id, &json!({})).unwrap_err().to_string();
+        assert!(e.contains(crate::cmd::NOT_FOR_VIDEO), "{id}: {e}");
+    }
+    assert!(crate::cmd::find_command("develop.set").unwrap().info(&s).enabled);
+    select(&mut s, 901);
+    assert!(crate::cmd::find_command("crop.set").unwrap().info(&s).disabled_reason.is_none_or(|r| r != crate::cmd::NOT_FOR_VIDEO));
+}
+
+#[test]
+fn presets_paste_and_sync_keep_only_video_controls() {
+    let dir = tmp("gating-preset");
+    let (mut s, _) = session(&dir);
+    let clip = PhotoId(900);
+    let mut d = dac_develop::DevelopSettings::default();
+    d.light.exposure = 1.0;
+    d.effects.clarity = 40.0;
+    d.detail.sharpen_amount = 80.0;
+    s.presets.push(dac_develop::Preset::from_settings("user.t", "T", "User", &d, &dac_develop::SettingsGroup::default_copy()));
+    s.execute("preset.apply", &json!({"id": "user.t"})).unwrap();
+    let got = s.develop_of(clip).unwrap();
+    assert_eq!(got.light.exposure, 1.0);
+    assert_eq!(got.effects.clarity, 0.0);
+    // paste from a still and sync from it drop the photo-only controls the same way
+    select(&mut s, 901);
+    s.execute("develop.merge", &json!({"settings": {"light": {"contrast": 30.0}, "effects": {"clarity": 25.0}}})).unwrap();
+    s.execute("develop.copy", &json!({})).unwrap();
+    select(&mut s, 900);
+    s.execute("develop.paste", &json!({})).unwrap();
+    let got = s.develop_of(clip).unwrap();
+    assert_eq!((got.light.contrast, got.effects.clarity), (30.0, 0.0));
+    s.execute("library.select", &json!({"ids": [901, 900], "active": 901})).unwrap();
+    s.execute("develop.sync", &json!({})).unwrap();
+    assert_eq!(s.develop_of(clip).unwrap().effects.clarity, 0.0);
+    assert_eq!(s.develop_of(PhotoId(901)).unwrap().effects.clarity, 25.0);
 }

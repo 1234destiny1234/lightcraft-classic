@@ -179,7 +179,44 @@ pub fn value(p: &Photo, key: &str) -> String {
         "lens" => m.lens.clone(),
         "format" => p.format.to_uppercase(),
         "fileSize" => human_size(p.file_size),
+        "videoDuration" | "frameRate" | "codec" | "resolution" | "audio" | "trim" => video_value(p, key),
         "keywords" => m.keywords.iter().map(|k| k.rsplit('|').next().unwrap_or(k)).collect::<Vec<_>>().join(", "),
+        _ => String::new(),
+    }
+}
+
+/// The rows of a clip's Video section (shown under any preset when the active photo is a video).
+pub const VIDEO_ROWS: [(&str, &str); 6] = [
+    ("videoDuration", "Duration"),
+    ("frameRate", "Frame Rate"),
+    ("codec", "Codec"),
+    ("resolution", "Resolution"),
+    ("audio", "Audio"),
+    ("trim", "Trim"),
+];
+
+/// A clip's video field; empty for a still, and for a clip not yet probed (no `VideoMeta`) beyond
+/// what the catalog row knows (duration, size).
+fn video_value(p: &Photo, key: &str) -> String {
+    if !crate::video_ui::is_video(p) {
+        return String::new();
+    }
+    let v = p.video.as_ref();
+    match key {
+        "videoDuration" => v.map(|v| v.duration).or(p.duration).map(crate::video_ui::format_time).unwrap_or_default(),
+        "frameRate" => v
+            .filter(|v| v.fps_den > 0 && v.fps_num > 0)
+            .map(|v| format!("{} fps", ((v.fps_num as f64 / v.fps_den as f64) * 100.0).round() / 100.0))
+            .unwrap_or_default(),
+        "codec" => v.map(|v| v.codec.to_uppercase()).unwrap_or_default(),
+        "resolution" => {
+            v.map(|v| (v.width, v.height)).filter(|d| d.0 > 0).or(Some((p.width, p.height))).map(|(w, h)| format!("{w} × {h}")).unwrap_or_default()
+        }
+        "audio" => v.map(|v| crate::i18n::tr(if v.has_audio { "Yes" } else { "No" }).to_string()).unwrap_or_default(),
+        "trim" => v
+            .filter(|v| v.trim_in > 0.0 || v.trim_out.is_some())
+            .map(|v| format!("{} – {}", crate::video_ui::format_time(v.trim_in), crate::video_ui::format_time(v.trim_out.unwrap_or(v.duration))))
+            .unwrap_or_else(|| if v.is_some() { crate::i18n::tr("None").to_string() } else { String::new() }),
         _ => String::new(),
     }
 }
@@ -255,6 +292,14 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
                 Row::Rating => rating(app, ui, &photos),
                 Row::Label => label(app, ui, &photos),
                 Row::Extras => extras(app, ui, &active),
+            }
+        }
+        if crate::video_ui::is_video(&active) {
+            ui.add_space(6.0);
+            ui.label(egui::RichText::new(crate::i18n::tr("Video")).font(t.semibold(12.5)).color(t.text));
+            ui.add_space(4.0);
+            for (key, label) in VIDEO_ROWS {
+                info_row(ui, label, common(&photos, key).as_deref());
             }
         }
         // G19: custom fields of metadata-provider plug-ins, on every photo shown

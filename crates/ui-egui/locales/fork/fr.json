@@ -1133,5 +1133,11 @@
   "Capture Frame": "Capturer l’image",
   "Capturing a video frame": "Capture d’une image vidéo",
   "video playback isn't available in this build": "la lecture vidéo n’est pas disponible dans cette version",
-  "the active photo isn't a video": "la photo active n’est pas une vidéo"
+  "the active photo isn't a video": "la photo active n’est pas une vidéo",
+  "Duration": "Durée",
+  "Frame Rate": "Fréquence d’images",
+  "Codec": "Codec",
+  "Resolution": "Résolution",
+  "Audio": "Audio",
+  "Trim": "Découpe"
 }

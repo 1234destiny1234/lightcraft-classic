@@ -328,6 +328,20 @@ pub fn control_allowed(id: &str) -> bool {
     matches!(section, "light" | "wb" | "color" | "curve" | "mixer" | "hsl" | "grading" | "profile")
 }
 
+/// UI and engine commands that a clip can't take: the Crop, Remove, Masking and Red Eye panels,
+/// the local-adjustment and Upright tools, and the engine's photo-only commands.
+pub fn photo_only(id: &str) -> bool {
+    matches!(
+        id,
+        "panel.crop" | "panel.remove" | "panel.masking" | "panel.redeye" | "tool.brush" | "tool.linear" | "tool.radial" | "tool.guidedUpright"
+    ) || dac_engine::cmd::photo_only(id)
+}
+
+/// `id` is [`photo_only`] and the active photo is a clip.
+pub fn blocked(app: &DacApp, id: &str) -> bool {
+    photo_only(id) && app.session.active().is_some_and(|a| photo_is_video(app, a))
+}
+
 /// Draw `add` greyed out and inert when `blocked`, with the "Not available for video" tooltip.
 pub fn video_gate<R>(ui: &mut Ui, blocked: bool, add: impl FnOnce(&mut Ui) -> R) -> R {
     if !blocked {

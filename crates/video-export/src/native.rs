@@ -9,16 +9,12 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use dac_raster::Rgb32f;
 use dac_video::FrameReader;
 use filmcraft_color::{Matrix, from_linear, rgb_to_ycbcr};
-use filmcraft_isobmff::{AvcConfig, Brand, CodecConfig, FourCc, Mp4File, Mp4Writer, SampleEntry, TrackConfig, TrackKind, WriteSample, WriterOptions};
+use filmcraft_isobmff::{AvcConfig, Brand, FourCc, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
 
 /// Largest output side (H.264 level 6.2 tops out at 8192×4320).
 pub const MAX_SIDE: u32 = 8192;
 /// Most frames one export writes (24 h at 60 fps): guards against a hostile duration.
 pub const MAX_FRAMES: i64 = 24 * 3600 * 60;
-/// Most audio channels written (more are dropped: stereo delivery).
-const MAX_AUDIO_CHANNELS: usize = 2;
-/// AAC bitrate per channel.
-const AAC_BPS_PER_CHANNEL: u32 = 96_000;
 
 /// The frame type the grade callback receives: [`dac_raster::Rgb32f`] as `dac_video` decodes it,
 /// **linear light, Rec.709 primaries, D65, display-referred** (1.0 = the source's SDR peak white).
@@ -33,7 +29,7 @@ pub enum ClipFormat {
     /// MPEG-4: H.264 High 8-bit 4:2:0 + AAC-LC.
     #[default]
     H264Mp4,
-    /// QuickTime: ProRes 422 (HQ at quality ≥ 80, Standard ≥ 50, else LT) 10-bit + AAC-LC.
+    /// QuickTime: ProRes 422 (HQ at quality ≥ 80, Standard ≥ 50, else LT) 10-bit + 16-bit PCM.
     ProResMov,
 }
 
@@ -219,7 +215,7 @@ fn run(
     let mut video = VideoOut::new(opts.format, quality, w, h, fnum, fden)?;
     let vtrack = mux.add_track(video.track_config()).map_err(enc)?;
     let end = t0 + total as f64 * f64::from(fden) / f64::from(fnum);
-    let mut audio = AudioOut::open(src, t0, end)?;
+    let audio = crate::audio::encode_audio_range(src, t0, end, opts.format, cancel)?;
     let atrack = match &audio {
         Some(a) => Some(mux.add_track(a.track_config()).map_err(enc)?),
         None => None,
@@ -300,12 +296,6 @@ fn run(
                 for p in video.encode(&frame, i as i64)? {
                     mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key }).map_err(enc)?;
                 }
-                if let (Some(a), Some(tr)) = (audio.as_mut(), atrack) {
-                    let until = t0 + (i as f64 + 1.0) * f64::from(fden) / f64::from(fnum);
-                    for au in a.encode_until(until)? {
-                        mux.write_sample(tr, WriteSample { data: &au, duration: 1024, composition_offset: 0, is_sync: true }).map_err(enc)?;
-                    }
-                }
                 i += 1;
                 progress(i as f64 / total as f64);
             }
@@ -329,9 +319,9 @@ fn run(
     for p in video.flush() {
         mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key }).map_err(enc)?;
     }
-    if let (Some(a), Some(tr)) = (audio.as_mut(), atrack) {
-        for au in a.finish()? {
-            mux.write_sample(tr, WriteSample { data: &au, duration: 1024, composition_offset: 0, is_sync: true }).map_err(enc)?;
+    if let (Some(a), Some(tr)) = (&audio, atrack) {
+        for p in &a.packets {
+            mux.write_sample(tr, WriteSample { data: &p.data, duration: p.duration, composition_offset: 0, is_sync: true }).map_err(enc)?;
         }
     }
     let mut out = mux.finish().map_err(enc)?;
@@ -512,139 +502,6 @@ impl VideoOut {
 
 fn h264_packets(ps: Vec<filmcraft_h264enc::Packet>) -> Vec<Packet> {
     ps.into_iter().map(|p| Packet { data: p.data, key: p.keyframe, cto: i32::try_from(p.pts.saturating_sub(p.dts)).unwrap_or(0) }).collect()
-}
-
-/// The primary AAC audio track of the source for `[start, end)` seconds, re-encoded to AAC-LC as
-/// the video frames go by. Other audio codecs are not exported yet (the movie is written without
-/// audio).
-struct AudioOut {
-    file: Mp4File,
-    src: File,
-    track: usize,
-    timescale: i64,
-    edit: i64,
-    dec: filmcraft_aac::Decoder,
-    enc: filmcraft_aac::Encoder,
-    sr: u32,
-    channels: usize,
-    /// Next source sample to decode.
-    next: usize,
-    /// Output position (samples at `sr`, presentation time) of the next sample to emit.
-    cursor: i64,
-    /// Absolute end (samples at `sr`).
-    end: i64,
-    /// Decoded samples from `cursor` on, per channel.
-    buf: Vec<Vec<f32>>,
-}
-
-/// Packets decoded before the first needed one (AAC's overlapped MDCT needs one).
-const AAC_PREROLL: usize = 2;
-
-impl AudioOut {
-    fn open(path: &Path, start: f64, end: f64) -> Result<Option<Self>> {
-        let src = File::open(path).map_err(io)?;
-        let Ok(file) = filmcraft_isobmff::open(&src) else { return Ok(None) };
-        let Some(track) = file.track_of_kind(TrackKind::Audio) else { return Ok(None) };
-        let Some(t) = file.tracks.get(track) else { return Ok(None) };
-        let Some(CodecConfig::Aac(cfg)) = t.codec() else { return Ok(None) };
-        let Ok(dec) = filmcraft_aac::Decoder::new(&cfg.asc) else { return Ok(None) };
-        let (sr, channels) = (dec.sample_rate(), dec.channels().clamp(1, MAX_AUDIO_CHANNELS));
-        if !(8_000..=96_000).contains(&sr) || t.timescale == 0 || t.samples.is_empty() {
-            return Ok(None);
-        }
-        let timescale = i64::from(t.timescale);
-        let edit = t.edit_offset;
-        let at = |s: f64| (s.max(0.0) * f64::from(sr)).round().min(i64::MAX as f64 / 4.0) as i64;
-        let (cursor, end) = (at(start), at(end));
-        // first packet whose presentation end lies after `cursor`, minus the pre-roll
-        let to_sr =
-            |ts: i64| -> i64 { (i128::from(ts) * i128::from(sr) / i128::from(timescale)).clamp(i64::MIN as i128 / 4, i64::MAX as i128 / 4) as i64 };
-        let first = t
-            .samples
-            .iter()
-            .position(|s| to_sr(s.pts.saturating_add(edit).saturating_add(i64::from(s.duration))) > cursor)
-            .unwrap_or(t.samples.len());
-        let bps = AAC_BPS_PER_CHANNEL * channels as u32;
-        let enc = filmcraft_aac::Encoder::new(filmcraft_aac::EncoderConfig::cbr(sr, channels, bps)).map_err(enc)?;
-        Ok(Some(Self {
-            file,
-            src,
-            track,
-            timescale,
-            edit,
-            dec,
-            enc,
-            sr,
-            channels,
-            next: first.saturating_sub(AAC_PREROLL),
-            cursor,
-            end,
-            buf: vec![Vec::new(); channels],
-        }))
-    }
-
-    fn track_config(&self) -> TrackConfig {
-        let entry = SampleEntry::aac(self.enc.audio_specific_config(), self.channels as u32, self.sr);
-        let mut t = TrackConfig::new(entry, self.sr);
-        t.media_start = Some(i64::from(self.enc.priming_samples()));
-        t
-    }
-
-    /// Decode source packets until `buf` holds `n` samples (or the stream ends).
-    fn fill(&mut self, n: usize) -> Result<()> {
-        let count = self.file.tracks.get(self.track).map_or(0, |t| t.samples.len());
-        while self.buf.first().map_or(0, Vec::len) < n && self.next < count {
-            let i = self.next;
-            self.next += 1;
-            let Some(s) = self.file.tracks.get(self.track).and_then(|t| t.samples.get(i)).copied() else { break };
-            let data = self.file.read_sample(&self.src, self.track, i).map_err(|e| ExportClipError::Decode(format!("audio: {e}")))?;
-            // a damaged packet becomes silence rather than failing the export
-            let pcm = self.dec.decode(&data).unwrap_or_default();
-            let frames = pcm.first().map_or(0, Vec::len);
-            if frames == 0 {
-                continue;
-            }
-            let pos = (i128::from(s.pts.saturating_add(self.edit)) * i128::from(self.sr) / i128::from(self.timescale)) as i64;
-            let have = self.cursor.saturating_add(self.buf.first().map_or(0, Vec::len) as i64);
-            // skip what lies before what we already hold; pad a gap with silence
-            let skip = usize::try_from(have.saturating_sub(pos)).unwrap_or(0);
-            let gap = usize::try_from(pos.saturating_sub(have)).unwrap_or(0).min(self.sr as usize * 10);
-            for (c, out) in self.buf.iter_mut().enumerate() {
-                let ch = pcm.get(c).or(pcm.first());
-                out.extend(std::iter::repeat_n(0.0, gap));
-                if let Some(ch) = ch {
-                    out.extend(ch.iter().skip(skip));
-                }
-            }
-        }
-        Ok(())
-    }
-
-    /// Encode audio up to `until` seconds (clamped to the export end).
-    fn encode_until(&mut self, until: f64) -> Result<Vec<Vec<u8>>> {
-        let target = ((until.max(0.0) * f64::from(self.sr)).round() as i64).min(self.end);
-        let n = usize::try_from(target.saturating_sub(self.cursor)).unwrap_or(0);
-        if n == 0 {
-            return Ok(Vec::new());
-        }
-        self.fill(n)?;
-        let mut planar: Vec<Vec<f32>> = Vec::with_capacity(self.channels);
-        for ch in &mut self.buf {
-            let mut part: Vec<f32> = ch.drain(..n.min(ch.len())).collect();
-            part.resize(n, 0.0);
-            planar.push(part);
-        }
-        self.cursor = target;
-        let refs: Vec<&[f32]> = planar.iter().map(Vec::as_slice).collect();
-        Ok(self.enc.encode(&refs))
-    }
-
-    fn finish(&mut self) -> Result<Vec<Vec<u8>>> {
-        let end = self.end as f64 / f64::from(self.sr);
-        let mut out = self.encode_until(end)?;
-        out.extend(self.enc.flush());
-        Ok(out)
-    }
 }
 
 #[cfg(test)]

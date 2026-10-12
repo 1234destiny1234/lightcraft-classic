@@ -244,3 +244,82 @@ fn edit_panel_greys_out_for_video_only() {
         assert_eq!(disabled, kind == MediaKind::Video, "{kind:?}");
     }
 }
+
+/// A clip (no `VideoMeta`, missing file) and a still, the clip active in Develop.
+fn develop_clip() -> crate::headless::Headless {
+    let mut s = dac_engine::Session::new();
+    // an undecodable file: the loupe shows the placeholder poster
+    let dir = std::env::temp_dir().join(format!("dac-video-ui-gating-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("CLIP.mp4");
+    std::fs::write(&path, b"not an mp4").unwrap();
+    let mut clip = video(1);
+    clip.source = Source::File { path: path.to_string_lossy().into_owned() };
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(clip) }).unwrap();
+    let still = Photo::new(PhotoId(2), Source::Demo { scene: 0 }, "still.jpg", "JPEG", 64, 48, "");
+    s.catalog.apply(Op::AddPhoto { photo: Box::new(still) }).unwrap();
+    s.execute("library.select", &json!({"ids": [1], "active": 1})).unwrap();
+    let app = crate::DacApp::new(s, crate::Services { png: None, ..Default::default() });
+    let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
+    h.app.ui.view = crate::state::ViewMode::Detail;
+    h.app.ui.right = crate::state::RightPanel::Edit;
+    h
+}
+
+#[test]
+fn photo_only_panels_and_tools_are_blocked_for_a_clip() {
+    let mut h = develop_clip();
+    h.settle(std::time::Duration::from_secs(30));
+    for id in ["panel.crop", "panel.remove", "panel.masking", "panel.redeye", "tool.brush", "crop.set", "mask.add"] {
+        assert!(!crate::menus::ui_enabled(&h.app, id), "{id}");
+        let e = h.app.run(id, json!({})).unwrap_err();
+        assert!(e.contains("video"), "{id}: {e}");
+    }
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit, "no photo-only panel opened");
+    assert!(crate::menus::ui_enabled(&h.app, "panel.edit"));
+    // a still takes them again
+    h.app.run("library.select", json!({"ids": [2], "active": 2})).unwrap();
+    assert!(crate::menus::ui_enabled(&h.app, "panel.crop"));
+    h.app.run("panel.crop", json!({})).unwrap();
+}
+
+#[test]
+fn develop_on_a_clip_without_video_meta_draws_the_histogram_and_metadata() {
+    let mut h = develop_clip();
+    h.settle(std::time::Duration::from_secs(30));
+    assert!(h.app.widgets.iter().any(|(w, _)| w == "histogram"), "histogram drawn");
+    let main = h.app.renderer.textures.get(&crate::render::Slot::Main).expect("the poster rendered");
+    assert!(main.photo == PhotoId(1) && main.histogram.is_some(), "histogram of the poster frame");
+    h.app.ui.right = crate::state::RightPanel::Info;
+    h.settle(std::time::Duration::from_secs(5));
+}
+
+#[test]
+fn metadata_shows_video_fields() {
+    use crate::panels::metadata::value;
+    let mut p = video(3);
+    assert_eq!(value(&p, "videoDuration"), "1:05");
+    assert_eq!(value(&p, "resolution"), "1920 × 1080");
+    assert_eq!(value(&p, "codec"), "", "not probed yet");
+    p.video = Some(dac_catalog::VideoMeta {
+        duration: 65.0,
+        fps_num: 30000,
+        fps_den: 1001,
+        width: 1280,
+        height: 720,
+        codec: "h264".into(),
+        has_audio: true,
+        trim_in: 2.0,
+        trim_out: Some(30.0),
+        poster_time: None,
+    });
+    assert_eq!(value(&p, "frameRate"), "29.97 fps");
+    assert_eq!(value(&p, "codec"), "H264");
+    assert_eq!(value(&p, "resolution"), "1280 × 720");
+    assert_eq!(value(&p, "audio"), "Yes");
+    assert_eq!(value(&p, "trim"), "0:02 – 0:30");
+    p.video.as_mut().unwrap().fps_den = 0;
+    assert_eq!(value(&p, "frameRate"), "", "a zero denominator is no frame rate, not a panic");
+    p.kind = MediaKind::Image;
+    assert_eq!(value(&p, "codec"), "");
+}

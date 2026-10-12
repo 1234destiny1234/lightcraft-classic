@@ -955,5 +955,11 @@
   "Capture Frame": "Захопити кадр",
   "Capturing a video frame": "Захоплення кадру відео",
   "video playback isn't available in this build": "відтворення відео недоступне в цій збірці",
-  "the active photo isn't a video": "активне фото не є відео"
+  "the active photo isn't a video": "активне фото не є відео",
+  "Duration": "Тривалість",
+  "Frame Rate": "Частота кадрів",
+  "Codec": "Кодек",
+  "Resolution": "Роздільність",
+  "Audio": "Звук",
+  "Trim": "Обрізка"
 }

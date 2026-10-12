@@ -99,7 +99,7 @@ pub struct CommandInfo {
 
 impl CommandSpec {
     pub fn info(&self, s: &Session) -> CommandInfo {
-        let e = (self.enabled)(s);
+        let e = video_gate(s, self.id).and_then(|()| (self.enabled)(s));
         CommandInfo {
             id: self.id,
             label: self.label,
@@ -113,6 +113,20 @@ impl CommandSpec {
 }
 
 // ---------- enablement predicates
+
+/// Why a photo-only tool is disabled while a video clip is the active photo.
+pub const NOT_FOR_VIDEO: &str = "Not available for video";
+
+/// Commands that edit what a video can't take (plan §7: global grading only): crop and
+/// geometry, masks, Remove / Heal spots, Red Eye and AI Denoise.
+pub fn photo_only(id: &str) -> bool {
+    ["crop.", "mask.", "spot.", "redeye."].iter().any(|p| id.starts_with(p)) || matches!(id, "denoise.queue" | "denoise.toggle")
+}
+
+/// [`NOT_FOR_VIDEO`] for a [`photo_only`] command while the active photo is a video clip.
+pub fn video_gate(s: &Session, id: &str) -> std::result::Result<(), String> {
+    if photo_only(id) && s.active().is_some_and(|a| crate::video::adapter::is_video(s, a)) { Err(NOT_FOR_VIDEO.into()) } else { Ok(()) }
+}
 
 pub fn always(_: &Session) -> std::result::Result<(), String> {
     Ok(())

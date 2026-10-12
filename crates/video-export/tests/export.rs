@@ -102,13 +102,25 @@ fn prores_mean_rgb(path: &Path) -> [f32; 3] {
     filmcraft_color::ycbcr_to_rgb(y, cb, cr, filmcraft_color::Matrix::Bt709).map(filmcraft_color::srgb_to_linear)
 }
 
-/// Peak of the first `secs` of the file's AAC track.
+/// Peak of the first `secs` of the file's AAC track (of the whole track for PCM).
 fn audio_peak(path: &Path, secs: f64) -> f32 {
     let src = File::open(path).unwrap();
     let file = filmcraft_isobmff::open(&src).unwrap();
     let ti = file.track_of_kind(filmcraft_isobmff::TrackKind::Audio).unwrap();
     let t = &file.tracks[ti];
-    let Some(filmcraft_isobmff::CodecConfig::Aac(c)) = t.codec() else { panic!("not AAC") };
+    let c = match t.codec() {
+        Some(filmcraft_isobmff::CodecConfig::Aac(c)) => c,
+        Some(filmcraft_isobmff::CodecConfig::Pcm(_)) => {
+            let mut peak = 0f32;
+            for i in 0..t.samples.len() {
+                for b in file.read_sample(&src, ti, i).unwrap().as_chunks::<2>().0 {
+                    peak = peak.max((f32::from(i16::from_le_bytes([b[0], b[1]])) / 32768.0).abs());
+                }
+            }
+            return peak;
+        }
+        _ => panic!("not AAC or PCM"),
+    };
     let mut dec = filmcraft_aac::Decoder::new(&c.asc).unwrap();
     let mut peak = 0f32;
     for i in 0..t.samples.len() {
