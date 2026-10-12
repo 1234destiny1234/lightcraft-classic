@@ -233,6 +233,25 @@ mod tests {
     }
 
     #[test]
+    fn sdr_blend_compresses_or_clips_the_sdr_rendition_and_round_trips() {
+        let mut s = DevelopSettings::default();
+        s.hdr.enabled = true;
+        s.hdr.sdr_blend = 50.0;
+        let r = s.sdr_rendition().into_owned();
+        assert!(r.light.highlights < 0.0 && r.light.whites < 0.0, "positive blend fits more highlights in");
+        assert_eq!(DevelopSettings::from_json(&s.to_json()).unwrap(), s, "lc:settings round trip");
+        s.hdr.max_ev = 5.0;
+        assert!(s.sdr_rendition().light.highlights < r.light.highlights, "more headroom, stronger compression");
+        s.hdr.sdr_blend = -50.0;
+        assert!(s.sdr_rendition().light.highlights > 0.0);
+        s.hdr.sdr_blend = f64::NAN;
+        assert_eq!(s.sdr_rendition().light.highlights, 0.0, "damaged blend is ignored");
+        s.hdr.enabled = false;
+        s.hdr.sdr_blend = 80.0;
+        assert_eq!(s.sdr_rendition().light.highlights, 0.0, "HDR off: no SDR rendition");
+    }
+
+    #[test]
     fn missing_fields_take_defaults_and_unknown_ignored() {
         let s = DevelopSettings::from_json(&json!({"light": {"exposure": 0.5}, "futureThing": 3})).unwrap();
         assert_eq!(s.light.exposure, 0.5);

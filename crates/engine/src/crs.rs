@@ -187,6 +187,9 @@ fn curve(props: &Props, k: &str) -> Option<Value> {
 /// Map the `crs:` fields of an XMP packet to a partial develop-settings JSON object.
 ///
 /// `target` decides how the white balance is read (see [`Target`]).
+/// `crs:HDRMaxValue` above this is read as a linear peak ratio rather than stops.
+const HDR_MAX_STOPS_READ: f64 = 6.0;
+
 pub fn to_partial(props: &Props, target: Target) -> Value {
     let mut out = Value::Object(Map::new());
     let o = &mut out;
@@ -214,8 +217,15 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
         ("SDRShadows", "hdr.sdr_shadows"),
         ("SDRWhites", "hdr.sdr_whites"),
         ("SDRClarity", "hdr.sdr_clarity"),
+        ("SDRBlend", "hdr.sdr_blend"),
     ] {
         n(o, crs, path);
+    }
+    // the headroom limit. Adobe doesn't document its scale: small values are read as stops above SDR
+    // white (the Lightroom readout), larger ones as a linear peak ratio (assumption, see `Hdr`)
+    if let Some(v) = num(props, "crs:HDRMaxValue").filter(|v| v.is_finite() && *v >= 0.0) {
+        let stops = if v > HDR_MAX_STOPS_READ { v.log2() } else { v };
+        put(o, "hdr.max_ev", json!(stops.clamp(0.0, lcc_develop::Hdr::MAX_EV_LIMIT)));
     }
     // older process versions (most `.lrtemplate` presets): approximate the 2012 sliders from the
     // earlier ones, relative to their defaults (contrast 25, blacks 5, brightness 50)
@@ -641,6 +651,23 @@ mod tests {
             xmlns:c="http://ns.adobe.com/camera-raw-settings/1.0/" c:Vibrance="+30" c:GrainAmount="10"/></rdf:RDF>"#;
         let partial = to_partial(&props(x), Target::Any);
         assert_eq!(partial, json!({"color": {"vibrance": 30.0}, "grain": {"amount": 10.0}}));
+    }
+
+    #[test]
+    fn hdr_headroom_and_sdr_blend_are_read() {
+        let x = |a: &str| {
+            format!(
+                r#"<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description
+                xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/" crs:HDREditMode="1" {a}/></rdf:RDF>"#
+            )
+        };
+        let got = |a: &str| apply_partial(&DevelopSettings::default(), &to_partial(&props(&x(a)), Target::RawAbsolute), 1.0).hdr;
+        let h = got(r#"crs:HDRMaxValue="+2.5" crs:SDRBlend="-40""#);
+        assert_eq!((h.max_ev, h.sdr_blend), (2.5, -40.0));
+        assert_eq!(got(r#"crs:HDRMaxValue="16""#).max_ev, 4.0, "a linear ratio becomes stops");
+        assert_eq!(got(r#"crs:HDRMaxValue="1e9""#).max_ev, lcc_develop::Hdr::MAX_EV_LIMIT);
+        assert_eq!(got(r#"crs:HDRMaxValue="-3""#).max_ev, lcc_develop::Hdr::DEFAULT_MAX_EV, "negative ignored");
+        assert_eq!(got(r#"crs:HDRMaxValue="NaN""#).max_ev, lcc_develop::Hdr::DEFAULT_MAX_EV);
     }
 
     #[test]
