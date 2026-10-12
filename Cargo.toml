@@ -41,6 +41,7 @@ lcc-ui-egui = { path = "crates/ui-egui" }
 lcc-mcp = { path = "crates/mcp" }
 lcc-fetch = { path = "crates/fetch" }
 lcc-net = { path = "crates/net" }
+lcc-updater = { path = "crates/updater" }
 lcc-credentials = { path = "crates/credentials" }
 lcc-hash = { path = "crates/hash" }
 lcc-fuzzkit = { path = "crates/fuzzkit" }

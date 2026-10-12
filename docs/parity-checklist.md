@@ -44,19 +44,19 @@ cited here still exists. Formerly docs/parity.md.
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
 | R. Video (VID) | 0 | 4 | 2 | 1 | — | 0/2 (0%) |
-| S. Export (EXP) | 15 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
+| S. Export (EXP) | 16 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 2 | 0 | 0 | — | 0/1 (0%) |
 | V. Preferences (PREF) | 6 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
-| Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
+| Y. Menus | 85 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 101 | 19 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 486 | 58 | 38 | 27 | 194/201 (97%) | 161/175 (92%) |
+| **Total** | 488 | 58 | 38 | 27 | 194/201 (97%) | 161/175 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.5%** of 582 in-scope rows — P0 98.3% of 201 · P1 95.7% of 175 · P2 72.8% of 204.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.5%** of 584 in-scope rows — P0 98.3% of 201 · P1 95.7% of 175 · P2 73.1% of 206.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -644,6 +644,7 @@ visible menu bar yet: the menu model is only exposed through the control channel
 | MENU-HELP-HELP | Help | P2 | ✅ | `cmd:app.help` | opens the documentation |
 | MENU-HELP-TUTORIALS | Tutorials | OOS | 🚫 | | |
 | MENU-HELP-WHATSNEW | What's new | P2 | ✅ | `cmd:app.whatsNew` | |
+| MENU-HELP-UPDATES | Check for updates | P2 | ✅ | `cmd:app.checkForUpdates`, `cmd:update.status`, `cmd:update.check`, `cmd:update.download`, `cmd:update.install`, `cmd:update.prefs`, `crates/updater`, `crates/engine/src/update.rs`, `crates/ui-egui/src/panels/update.rs` | an extra (the reference app updates through its own service): Help ▸ Check for Updates… reads the release feed (the `latest.json` the release publishes, else GitHub's Releases API, else `{env}_UPDATE_URL`), compares versions, shows the notes and what installing will do, downloads the asset for the platform (resumable, size- and SHA-256-checked, in the activity stack) and installs it — the Windows MSI runs, the macOS disk image is mounted and its app copied over this one, an AppImage replaces itself; a tarball or zip is laid out for a manual install. One check runs a few seconds after start-up unless turned off; a release already skipped is not offered again |
 | MENU-HELP-SHORTCUTS | Keyboard shortcuts | P1 | ✅ | `cmd:app.shortcuts` | |
 | MENU-HELP-FEEDBACK | Send feedback | P2 | ✅ | `cmd:app.feedback` | opens a new issue on the project's GitHub |
 | MENU-HELP-LOGFOLDER | Open log folder | P2 | ✅ | `cmd:app.openLogFolder` | an extra (the reference app has no such item): Help ▸ Open Log Folder reveals the app log in `logs/` in the system file manager (Finder, Explorer, or the folder on Linux); off on the web and in `--memory` sessions, which keep no log (issue #260) |

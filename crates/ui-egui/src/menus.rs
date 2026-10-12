@@ -233,6 +233,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.displayProfile", "Display Profile", None, ""),
     ("app.lensDbFolder", "Choose Lens Database Folder…", None, ""),
     ("app.about", "About {app}", None, "Help"),
+    ("app.checkForUpdates", "Check for Updates…", None, "Help"),
+    ("app.installUpdate", "Install Update and Relaunch", None, "Help"),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
     ("app.whatsNew", "What's New", None, "Help"),
@@ -1276,6 +1278,42 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             app.ui.dialog = Some(Dialog::About);
             Ok(Value::Null)
         }
+        // the updater is native only (the web build updates by reloading the page)
+        #[cfg(target_arch = "wasm32")]
+        "app.checkForUpdates" => Err("the web build updates by reloading the page".into()),
+        #[cfg(not(target_arch = "wasm32"))]
+        "app.checkForUpdates" => {
+            // open the dialog and ask the feed: the check runs on a worker thread, so the window
+            // appears at once and says "Checking…" while it waits
+            app.ui.dialog = Some(Dialog::Update);
+            match app.session.execute("update.check", &json!({})) {
+                Ok(_) => Ok(app.session.updater.status()),
+                // a check that cannot even be started shows why in the dialog
+                Err(e) => Err(e.to_string()),
+            }
+        }
+        #[cfg(target_arch = "wasm32")]
+        "app.installUpdate" => Err("the web build updates by reloading the page".into()),
+        #[cfg(not(target_arch = "wasm32"))]
+        "app.installUpdate" => {
+            // the same install the dialog's button runs, without the plan in front of it
+            match app.session.execute("update.install", &json!({"confirm": true})) {
+                Ok(v) => {
+                    if let Some(message) = v["message"].as_str() {
+                        app.toast(&ctx, message);
+                    }
+                    if v["exit"].as_bool().unwrap_or(false) {
+                        ctx.send_viewport_cmd(egui::ViewportCommand::Close);
+                    }
+                    Ok(v)
+                }
+                // nothing downloaded yet: open the dialog, which explains what to do
+                Err(e) => {
+                    app.ui.dialog = Some(Dialog::Update);
+                    Err(e.to_string())
+                }
+            }
+        }
         "photo.editInPhotoCraft" => edit_in(app, &ctx, p, true),
         "photo.editInExternal" => {
             // a PSD or TIFF: ask Edit Original / a Copy / a Copy with Adjustments first, as Lightroom does
@@ -1879,6 +1917,11 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
             app.session.active().is_some()
         }
         "photo.tagFromTracklog" => app.session.active().is_some() && app.services.pick_tracklog.is_some(),
+        // nothing downloaded, nothing to install (the dialog's own button says the same)
+        #[cfg(target_arch = "wasm32")]
+        "app.installUpdate" => false,
+        #[cfg(not(target_arch = "wasm32"))]
+        "app.installUpdate" => app.session.updater.staged().is_some(),
         "photo.editInPhotoCraft" | "photo.editInExternal" => app.session.active().is_some() && app.services.open_with.is_some(),
         "app.exportPrevious" => app.session.active().is_some() && app.session.last_export.is_some(),
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),

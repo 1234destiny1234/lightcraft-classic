@@ -522,3 +522,54 @@ jobs:
             echo
             sed 's/^/    /' SHA256SUMS.txt
           } >>"$GITHUB_STEP_SUMMARY"
+      - name: Update manifest (latest.json)
+        working-directory: artifacts
+        # What Help ▸ Check for Updates… reads (the in-app updater, crates/updater): the version, the
+        # release notes and, per platform, the file to download and its SHA-256. Published on every
+        # release — prereleases included, marked as such; the app only offers one to someone who
+        # ticked "Include prereleases" — it is a plain file on the release, so the check keeps
+        # working when GitHub's API is rate-limited. It is built after the release exists so the
+        # notes are the published ones ("What's New" in the dialog).
+        env:
+          DISPLAY_NAME: ${{ needs.version.outputs.display_name }}
+          REPO: ${{ github.repository }}
+        run: |
+          tag="v$VERSION"
+          # a manifest left over from a previous run of this draft must not describe this one
+          rm -f latest.json latest.json.new
+          notes="$(gh release view "$tag" --json body --jq .body)"
+          # the asset names are the artifacts' file names (what the app matches against)
+          jq -n --arg version "$VERSION" --arg name "$DISPLAY_NAME v$VERSION" \
+                --arg date "$(date -u +%Y-%m-%dT%H:%M:%SZ)" \
+                --arg tag "$tag" --arg repo "$REPO" --arg notes "$notes" \
+                --argjson pre "$PRERELEASE" '{
+            version: $version,
+            name: $name,
+            pub_date: $date,
+            notes: $notes,
+            releases: [{
+              tag: $tag,
+              name: $name,
+              notes: $notes,
+              date: $date,
+              prerelease: $pre,
+              assets: []
+            }]
+          }' > latest.json
+          # every artifact but the checksum list becomes an asset, with its size and SHA-256
+          for f in *; do
+            case "$f" in SHA256SUMS.txt|latest.json) continue ;; esac
+            [ -f "$f" ] || continue
+            sha="$(awk -v name="$f" '$2 == name || $2 == "*" name { print $1; exit }' SHA256SUMS.txt)"
+            [ -n "$sha" ] || { echo "::error::no checksum for $f"; exit 1; }
+            size="$(stat -c %s "$f")"
+            jq --arg name "$f" --arg url "https://github.com/$REPO/releases/download/$tag/$f" \
+               --arg sha "$sha" --argjson size "$size" \
+               '.releases[0].assets += [{name: $name, url: $url, size: $size, sha256: $sha}]' \
+               latest.json > latest.json.new
+            mv latest.json.new latest.json
+          done
+          jq -e '.version != "" and (.releases[0].assets | length) > 0' latest.json >/dev/null
+          rm -f latest.json.new
+          gh release upload "$tag" --clobber latest.json
+          jq -r '.releases[0].assets[] | "\(.name) \(.size) \(.sha256)"' latest.json
