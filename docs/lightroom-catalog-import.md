@@ -54,14 +54,26 @@ the app's latest rendering process, and photos already in the library keep their
 and original smart-collection rules. Smart collections become smart albums when every rule has an exact equivalent: rating, pick
 flag, color label, has-adjustments, ISO, focal length and aperture comparisons; text rules on
 keywords, filename, camera, lens, title, caption, creator, copyright, location fields and file
-format (contains all / any / none, begins/ends with, is, empty); and nested match-all / any /
-none groups. Any other rule (collection, dates, metadata status, …) keeps the collection as a
+format (contains all / any / none, begins/ends with, is, empty); capture date and edit date
+(`captureTime` / `touchTime`: is, after, before, in range, in / not in the last N hours, days,
+weeks, months or years); collection-name rules (contains all / any, begins/ends with, is), which
+become "in album" rules for the collections imported with it whose names match (resolved at import:
+a collection made later isn't picked up by name); and nested match-all / any /
+none groups. Any other rule (metadata status, relative dates such as "today", …) keeps the collection as a
 regular album with its current membership, and the report names the rule. On reimport an album keeps
 its kind: an existing smart album keeps its current (possibly edited) rules, and a regular album
 made by an earlier import stays regular and gains new members, with a warning (delete it and
 reimport to get a smart album). The report counts albums by their resulting kind:
 `smartAlbums`, `smartAsStatic`, `smartKept` (existing smart albums left as they were) and `stacks`. Folder stacks become stacks in Lightroom's order
-and collapsed state; photos already in a stack keep it, so reimport doesn't duplicate them. Archived history and snapshots are source data, not native history yet.
+and collapsed state; photos already in a stack keep it, so reimport doesn't duplicate them.
+
+Lightroom's develop history (`Adobe_libraryImageDevelopHistoryStep`) becomes the photo's History,
+oldest first, each step named as in Lightroom and mapped like the current settings (so a step shows
+what the app can reproduce of it). When the newest step differs from the photo's settings, a final
+"Lightroom catalog" entry holds them, so History ends where the photo is. Steps that can't be read
+are skipped with a warning; at most the newest 200 are kept. The report counts them as
+`historySteps`. A photo whose edits are preserved (reimport without `updateExisting`) keeps its
+History. Snapshots stay archived source data, not versions yet.
 A Custom white balance on a raw the app develops relative to its as-shot look (ARW, NEF, RW2,
 RAF, CR3, CR2, PEF, SRW; Lightroom names them all `RAW`) can't be taken as Kelvin: the catalog keeps no
 as-shot white for Custom photos, so the photo stays As Shot and `Temperature, Tint` are reported

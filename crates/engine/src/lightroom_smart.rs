@@ -10,7 +10,7 @@
 //! Sources: own design, from the structure of the Lua literal as described in public prose
 //! write-ups of the catalog format; no Adobe code or data.
 
-use lcc_catalog::{Match, Rule, RuleSet};
+use lcc_catalog::{AlbumId, Match, Rule, RuleSet};
 use serde_json::{Value, json};
 
 use crate::preset_import::{Lua, parse_lua};
@@ -18,12 +18,14 @@ use crate::preset_import::{Lua, parse_lua};
 const MAX_DEPTH: usize = 16;
 
 /// The rule set a smart collection's `content` describes, or why it can't be expressed.
-pub(crate) fn smart_rules(content: &str) -> Result<RuleSet, String> {
+/// `collections` are the imported (non-folder) collections, name and album, which a `collection`
+/// rule (a text match on the names of the collections a photo is in) resolves against.
+pub(crate) fn smart_rules(content: &str, collections: &[(&str, AlbumId)]) -> Result<RuleSet, String> {
     let root = parse_lua(content)?;
-    group(&root, 0)
+    group(&root, 0, collections)
 }
 
-fn group(t: &Lua, depth: usize) -> Result<RuleSet, String> {
+fn group(t: &Lua, depth: usize, collections: &[(&str, AlbumId)]) -> Result<RuleSet, String> {
     if depth > MAX_DEPTH {
         return Err("smart rules nest too deeply".into());
     }
@@ -37,9 +39,9 @@ fn group(t: &Lua, depth: usize) -> Result<RuleSet, String> {
     let mut rules = Vec::new();
     for item in items {
         if item.get("criteria").is_some() {
-            rules.push(criterion(item)?);
+            rules.push(criterion(item, collections)?);
         } else {
-            rules.push(Rule::Group { group: group(item, depth + 1)? });
+            rules.push(Rule::Group { group: group(item, depth + 1, collections)? });
         }
     }
     if rules.is_empty() {
@@ -72,12 +74,75 @@ fn number_op(op: &str) -> Option<&'static str> {
     })
 }
 
-fn criterion(c: &Lua) -> Result<Rule, String> {
+/// A Lightroom date value (`2024-05-01`, optionally with a time) as a rule date, or `None`.
+fn date(v: Option<&Lua>) -> Option<String> {
+    let s = v.and_then(Lua::str)?.trim();
+    let day = s.get(..10).unwrap_or(s);
+    let ok = day.len() == 10 && day.char_indices().all(|(i, c)| if i == 4 || i == 7 { c == '-' } else { c.is_ascii_digit() });
+    ok.then(|| day.to_string())
+}
+
+/// Whether a collection name matches Lightroom's text operation on collection names.
+fn name_matches(name: &str, op: &str, value: &str) -> Option<bool> {
+    let name = name.to_lowercase();
+    let value = value.to_lowercase();
+    let mut words = value.split_whitespace();
+    Some(match op {
+        "all" | "words" => words.all(|w| name.contains(w)),
+        "any" => words.any(|w| name.contains(w)),
+        "beginsWith" => name.starts_with(value.trim()),
+        "endsWith" => name.ends_with(value.trim()),
+        "==" => name == value.trim(),
+        _ => return None,
+    })
+}
+
+fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
     let name = c.get("criteria").and_then(Lua::str).unwrap_or_default();
     let op = c.get("operation").and_then(Lua::str).unwrap_or_default();
     let value = c.get("value");
     let unsupported = || format!("rule `{name} {op}` has no equivalent");
     match name {
+        "collection" => {
+            // Resolved now against the collections imported with it: a collection made later
+            // isn't matched by name (the archive keeps the original rule).
+            let text = value.and_then(Lua::str).unwrap_or_default();
+            if text.trim().is_empty() {
+                return Err(unsupported());
+            }
+            let mut rules = Vec::new();
+            for (n, id) in collections {
+                if name_matches(n, op, text).ok_or_else(unsupported)? {
+                    rules.push(field("album", "is", json!(id)));
+                }
+            }
+            match rules.len() {
+                0 => Err(format!("rule `{name} {op}` matches no imported collection")),
+                1 => Ok(rules.remove(0)),
+                _ => Ok(Rule::Group { group: RuleSet { mode: Match::Any, rules } }),
+            }
+        }
+        "captureTime" | "touchTime" => {
+            let target = if name == "captureTime" { "captureDate" } else { "editDate" };
+            match op {
+                "==" => Ok(field(target, "is", json!(date(value).ok_or_else(unsupported)?))),
+                ">" => Ok(field(target, "after", json!(date(value).ok_or_else(unsupported)?))),
+                "<" => Ok(field(target, "before", json!(date(value).ok_or_else(unsupported)?))),
+                "in" => {
+                    let (a, b) = (date(value).ok_or_else(unsupported)?, date(c.get("value2")).ok_or_else(unsupported)?);
+                    Ok(field(target, "between", json!([a, b])))
+                }
+                "inLast" | "notInLast" => {
+                    let n = num(value).filter(|n| *n > 0.0).ok_or_else(unsupported)?;
+                    let unit = match c.get("value_units").and_then(Lua::str).unwrap_or("days") {
+                        u @ ("hours" | "days" | "weeks" | "months" | "years") => u.trim_end_matches('s').to_string(),
+                        _ => return Err(unsupported()),
+                    };
+                    Ok(field(target, op, json!({"n": n, "unit": unit})))
+                }
+                _ => Err(unsupported()),
+            }
+        }
         "rating" | "isoSpeedRating" | "focalLength" | "aperture" => {
             let target = match name {
                 "rating" => "rating",
@@ -181,6 +246,34 @@ mod tests {
     use super::*;
 
     #[test]
+    fn maps_collection_and_date_rules() {
+        let cols = [("Italy 2024", AlbumId(1)), ("France 2024", AlbumId(2)), ("Family", AlbumId(3))];
+        let set = smart_rules(
+            r#"s = { { criteria = "collection", operation = "all", value = "2024" },
+                     { criteria = "collection", operation = "beginsWith", value = "fam" },
+                     { criteria = "captureTime", operation = "in", value = "2024-01-01", value2 = "2024-12-31" },
+                     { criteria = "touchTime", operation = "inLast", value = 3, value_units = "weeks" },
+                     { criteria = "captureTime", operation = ">", value = "2023-06-01T10:00:00" },
+                     combine = "intersect" }"#,
+            &cols,
+        )
+        .unwrap();
+        let Rule::Group { group } = &set.rules[0] else { panic!() };
+        assert_eq!(group.rules, vec![field("album", "is", json!(AlbumId(1))), field("album", "is", json!(AlbumId(2)))]);
+        assert_eq!(set.rules[1], field("album", "is", json!(AlbumId(3))));
+        assert_eq!(set.rules[2], field("captureDate", "between", json!(["2024-01-01", "2024-12-31"])));
+        assert_eq!(set.rules[3], field("editDate", "inLast", json!({"n": 3.0, "unit": "week"})));
+        assert_eq!(set.rules[4], field("captureDate", "after", json!("2023-06-01")));
+        for bad in [
+            r#"s = { { criteria = "collection", operation = "all", value = "spain" } }"#,
+            r#"s = { { criteria = "captureTime", operation = "==", value = "last tuesday" } }"#,
+            r#"s = { { criteria = "touchTime", operation = "inLast", value = 2, value_units = "fortnights" } }"#,
+        ] {
+            assert!(smart_rules(bad, &cols).is_err(), "{bad}");
+        }
+    }
+
+    #[test]
     fn maps_common_rules_and_groups() {
         let set = smart_rules(
             r#"s = { { criteria = "rating", operation = ">=", value = 3, value2 = 0 },
@@ -190,6 +283,7 @@ mod tests {
                        { criteria = "isoSpeedRating", operation = "in", value = 100, value2 = 800 },
                        combine = "union" },
                      combine = "intersect" }"#,
+            &[],
         )
         .unwrap();
         assert_eq!(set.mode, Match::All);
@@ -211,13 +305,13 @@ mod tests {
     #[test]
     fn unexpressible_rules_are_reported_not_guessed() {
         for bad in [
-            r#"s = { { criteria = "collection", operation = "all", value = "x" }, combine = "intersect" }"#,
+            r#"s = { { criteria = "metadataStatus", operation = "==", value = "x" }, combine = "intersect" }"#,
             r#"s = { { criteria = "rating", operation = "~", value = 3 } }"#,
             r#"s = { combine = "intersect" }"#,
             r#"s = { { criteria = "rating", operation = ">=", value = "abc" } }"#,
             "not lua at all {",
         ] {
-            assert!(smart_rules(bad).is_err(), "{bad}");
+            assert!(smart_rules(bad, &[]).is_err(), "{bad}");
         }
     }
 
@@ -227,6 +321,6 @@ mod tests {
         for _ in 0..40 {
             s = format!("{{ {s} }}");
         }
-        assert!(smart_rules(&s).is_err());
+        assert!(smart_rules(&s, &[]).is_err());
     }
 }

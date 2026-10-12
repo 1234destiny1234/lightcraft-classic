@@ -531,6 +531,44 @@ fn ensure_read_active(cancel: &AtomicBool) -> Result<(), String> {
     if cancel.load(Ordering::Relaxed) { Err("Lightroom import cancelled".into()) } else { Ok(()) }
 }
 
+/// Lightroom's history steps (each a full settings table) → History entries, oldest first, each
+/// mapped onto `base` like the photo's current settings. A step that can't be read is skipped and
+/// counted. When the newest step doesn't match `current` (Lightroom records the state after the
+/// last step separately), a final "Lightroom catalog" entry holds it, so History ends where the
+/// photo is.
+fn history_steps(
+    rows: &[Row],
+    base: &Arc<lcc_develop::DevelopSettings>,
+    current: &Arc<lcc_develop::DevelopSettings>,
+    map: impl Fn(&str) -> Result<(Value, Vec<String>), String>,
+) -> (Vec<lcc_catalog::HistoryStep>, usize) {
+    let mut ordered: Vec<&Row> = rows.iter().filter(|r| !text(r, "text").is_empty()).collect();
+    let skipped_empty = rows.len() - ordered.len();
+    let when = |r: &Row| r.get("dateCreated").and_then(Value::as_f64).filter(|n| n.is_finite()).unwrap_or(0.0);
+    ordered.sort_by(|a, b| when(a).total_cmp(&when(b)).then(number(a, "id_local").cmp(&number(b, "id_local"))));
+    let mut skipped = skipped_empty;
+    let mut steps: Vec<lcc_catalog::HistoryStep> = Vec::new();
+    for row in ordered {
+        let Ok((partial, _)) = map(text(row, "text")) else {
+            skipped += 1;
+            continue;
+        };
+        let label = match text(row, "name").trim() {
+            "" => "Lightroom step".to_string(),
+            n => n.chars().take(120).collect(),
+        };
+        steps.push(lcc_catalog::HistoryStep { label, settings: Arc::new(lcc_develop::apply_partial(base, &partial, 1.0)) });
+    }
+    if !steps.is_empty() && steps.last().is_some_and(|l| l.settings != *current) {
+        steps.push(lcc_catalog::HistoryStep { label: "Lightroom catalog".into(), settings: current.clone() });
+    }
+    if steps.len() > lcc_catalog::HISTORY_LIMIT {
+        let n = steps.len() - lcc_catalog::HISTORY_LIMIT;
+        steps.drain(..n);
+    }
+    (steps, skipped)
+}
+
 fn mapped_settings(
     text: &str,
     target: crate::crs::Target,
@@ -715,6 +753,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
     let mut missing = Vec::new();
     let mut unmapped = BTreeMap::new();
     let mut preserved = 0;
+    let mut history_imported = 0usize;
     // Masters precede their virtual copies.
     let mut photos: Vec<_> = data.photos.iter().collect();
     photos.sort_by_key(|p| number(&p.image, "masterImage") != 0);
@@ -802,21 +841,26 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         if !src.settings.is_empty() && !keep_develop {
             let orientation = lightroom_orientation(text(&src.image, "orientation")).unwrap_or_default();
             let stored_aspect = number(&src.image, "fileWidth") as f64 / number(&src.image, "fileHeight") as f64;
-            match mapped_settings(
-                &src.settings,
-                crate::crs::Target::for_photo(&p),
-                p.width.max(1) as f64 / p.height.max(1) as f64,
-                orientation,
-                stored_aspect,
-            ) {
+            let target = crate::crs::Target::for_photo(&p);
+            let aspect = p.width.max(1) as f64 / p.height.max(1) as f64;
+            let base = p.develop.clone();
+            match mapped_settings(&src.settings, target, aspect, orientation, stored_aspect) {
                 Ok((partial, unknown)) => {
-                    p.develop = Arc::new(lcc_develop::apply_partial(&p.develop, &partial, 1.0));
+                    p.develop = Arc::new(lcc_develop::apply_partial(&base, &partial, 1.0));
                     p.edited = Some(now.clone());
                     if !unknown.is_empty() {
                         unmapped.insert(src.source_id, unknown);
                     }
                 }
                 Err(e) => warnings.push(format!("image {} settings: {e}", src.source_id)),
+            }
+            let (steps, skipped) = history_steps(&src.history, &base, &p.develop, |t| mapped_settings(t, target, aspect, orientation, stored_aspect));
+            if skipped > 0 {
+                warnings.push(format!("image {}: {skipped} Lightroom history step(s) could not be read; kept in the archive", src.source_id));
+            }
+            if !steps.is_empty() {
+                history_imported += steps.len();
+                p.history = steps;
             }
         }
         if keep_develop {
@@ -831,6 +875,9 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
                 Op::SetCaptured { id: p.id, captured: p.captured.clone() },
             ]);
             ops.push(Op::SetDevelop { id: p.id, settings: p.develop.clone(), label: "Lightroom catalog".into(), edited: p.edited.clone() });
+            if !keep_develop && !src.history.is_empty() {
+                ops.push(Op::SetHistory { id: p.id, history: p.history.clone() });
+            }
         } else {
             ops.push(Op::AddPhoto { photo: Box::new(p.clone()) });
         }
@@ -867,6 +914,12 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         .filter(|r| text(r, "owningModule") == "ag.library.smart_collection")
         .map(|r| (number(r, "collection"), text(r, "content")))
         .collect();
+    let named_collections: Vec<(&str, lcc_catalog::AlbumId)> = data
+        .collections
+        .iter()
+        .filter(|r| !text(r, "creationId").contains("group"))
+        .filter_map(|r| Some((text(r, "name"), albums.get(&number(r, "id_local")).copied()?)))
+        .collect();
     let (mut smart_albums, mut static_smart, mut smart_kept) = (0usize, 0usize, 0usize);
     let mut ordered: Vec<_> = data.collections.iter().collect();
     ordered.sort_by_key(|r| {
@@ -886,7 +939,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         let is_smart = text(collection, "creationId").contains("smart");
         let rules = if is_smart {
             Some(match smart_content.get(&number(collection, "id_local")) {
-                Some(c) => crate::lightroom_smart::smart_rules(c),
+                Some(c) => crate::lightroom_smart::smart_rules(c, &named_collections),
                 None => Err("smart rules missing".into()),
             })
         } else {
@@ -954,7 +1007,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
     }
     s.merge_undo(s.undo.len().saturating_sub(undo0), "Import Lightroom Catalog");
     Ok(AppliedImport {
-        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"smartKept":smart_kept,"stacks":stacks,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
+        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"smartKept":smart_kept,"stacks":stacks,"historySteps":history_imported,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
         index: index.clone(),
     })
 }
@@ -1031,6 +1084,27 @@ mod tests {
         }
     }
     #[test]
+    fn lightroom_history_steps_become_history_in_order() {
+        let mut s = crate::Session::new();
+        let mut data = sample();
+        data.photos[1].history = vec![
+            row(json!({"id_local":3,"name":"Contrast","dateCreated":20.0,"text":"s = { Exposure2012 = 1.25, Contrast2012 = 17 }"})),
+            row(json!({"id_local":2,"name":"Exposure","dateCreated":10.0,"text":"s = { Exposure2012 = 1.25 }"})),
+            row(json!({"id_local":4,"name":"Broken","dateCreated":15.0,"text":"not lua {"})),
+        ];
+        let r = apply(&mut s, data, false).unwrap();
+        let master = s.catalog.photo(PhotoId(r["mapping"]["1"].as_u64().unwrap())).unwrap();
+        let labels: Vec<_> = master.history.iter().map(|h| h.label.as_str()).collect();
+        // the newest step lacks the camera profile field, which maps to nothing: same settings, no extra entry
+        assert_eq!(labels, ["Exposure", "Contrast"]);
+        assert_eq!(master.history[0].settings.light.exposure, 1.25);
+        assert_eq!(master.history[0].settings.light.contrast, 0.0);
+        assert_eq!(*master.history[1].settings, *master.develop);
+        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("1 Lightroom history step")));
+        assert_eq!(r["historySteps"], 4, "2 master steps + the copy's 1 step and its final state");
+    }
+
+    #[test]
     fn imports_copies_collections_ratings_and_mapped_edits_in_one_undo_step() {
         let mut s = crate::Session::new();
         let data = sample();
@@ -1068,7 +1142,7 @@ mod tests {
             row(json!({"collection":11,"owningModule":"ag.library.smart_collection",
                 "content":"s = { { criteria = \"rating\", operation = \">=\", value = 4 }, combine = \"intersect\" }"})),
             row(json!({"collection":12,"owningModule":"ag.library.smart_collection",
-                "content":"s = { { criteria = \"collection\", operation = \"all\", value = \"x\" } }"})),
+                "content":"s = { { criteria = \"metadataStatus\", operation = \"==\", value = \"x\" } }"})),
         ];
         data.stacks =
             vec![row(json!({"stack":5,"image":1,"position":2.0,"collapsed":1})), row(json!({"stack":5,"image":2,"position":1.0,"collapsed":1}))];
@@ -1360,7 +1434,7 @@ mod tests {
         data
     }
     const SUPPORTED: &str = "s = { { criteria = \"rating\", operation = \">=\", value = 4 }, combine = \"intersect\" }";
-    const UNSUPPORTED: &str = "s = { { criteria = \"collection\", operation = \"all\", value = \"x\" } }";
+    const UNSUPPORTED: &str = "s = { { criteria = \"metadataStatus\", operation = \"==\", value = \"x\" } }";
     #[test]
     fn reimport_keeps_an_earlier_static_album_static_and_merges_its_membership() {
         let dir = std::env::temp_dir().join(format!("app-lrcat-reimport_keeps_an_earlie-{}", std::process::id()));
