@@ -348,6 +348,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
     }
     // a video in the loupe: Space plays / pauses, ←/→ step frames while paused
     crate::video_ui::handle_keys(app, ctx);
+    canvas_nudge(app, ctx);
     let mut fire: Vec<String> = Vec::new();
     // shortcuts the native menu bar handles (it consumes those key presses itself)
     let native = |sc: &str| app.native_shortcuts.contains(sc);
@@ -569,6 +570,54 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 "edit.redo" => app.toast(ctx, crate::i18n::tr("Redo")),
                 _ => {}
             }
+        }
+    }
+}
+
+/// Arrow keys reach the canvas tools from the keyboard (accessibility; the tools are otherwise
+/// pointer-only): while cropping they move the crop frame and with ⌥ move its right / bottom edge;
+/// in Remove they move the selected spot. 1 % of the image per press, ⇧ ×10; one undo step each.
+/// Outside these tools ← / → keep stepping through photos.
+fn canvas_nudge(app: &mut LccApp, ctx: &egui::Context) {
+    use crate::state::RightPanel as R;
+    if app.ui.view != crate::state::ViewMode::Detail {
+        return;
+    }
+    let crop = app.ui.right == R::Crop;
+    let spot = app.ui.right == R::Remove && app.session.active_spot.is_some();
+    if !crop && !spot {
+        return;
+    }
+    let arrows = [(Key::ArrowLeft, -1.0, 0.0), (Key::ArrowRight, 1.0, 0.0), (Key::ArrowUp, 0.0, -1.0), (Key::ArrowDown, 0.0, 1.0)];
+    let mut moves: Vec<(f64, f64, bool)> = Vec::new();
+    ctx.input_mut(|i| {
+        for (key, dx, dy) in arrows {
+            for (m, step, edge) in [
+                // most specific first: egui's matching ignores a Shift the pattern leaves out
+                (Modifiers::ALT | Modifiers::SHIFT, 0.1, true),
+                (Modifiers::ALT, 0.01, true),
+                (Modifiers::SHIFT, 0.1, false),
+                (Modifiers::NONE, 0.01, false),
+            ] {
+                if (crop || !edge) && i.consume_key(m, key) {
+                    moves.push((dx * step, dy * step, edge));
+                }
+            }
+        }
+    });
+    for (dx, dy, edge) in moves {
+        let r = if crop {
+            let handle = match (edge, dx != 0.0) {
+                (false, _) => "move",
+                (true, true) => "right",
+                (true, false) => "bottom",
+            };
+            app.run("crop.drag", json!({"handle": handle, "from": [0.5, 0.5], "to": [0.5 + dx, 0.5 + dy]}))
+        } else {
+            app.run("spot.update", json!({"move": [dx, dy]}))
+        };
+        if let Err(e) = r {
+            app.toast(ctx, e);
         }
     }
 }

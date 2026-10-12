@@ -20,6 +20,10 @@ no screen-reader bridge).
   colour fields), the Metadata panel (fields, rating stars, colour labels) and the Navigator.
 - Keyboard focus moves through each module's side panels with Tab / Shift+Tab in layout order
   (egui's focus order is the order widgets are drawn: top to bottom, left to right).
+- The canvas tools answer the arrow keys (`shortcuts.rs`, `canvas_nudge`): while cropping they
+  move the crop frame and ⌥ arrows move its right / bottom edge; in Remove they move the selected
+  spot. Each press is 1 % of the image (⇧ ×10) and one undo step. Mask pins and brush strokes are
+  still pointer-only.
 
 ## The test
 
