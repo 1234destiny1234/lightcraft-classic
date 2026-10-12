@@ -77,7 +77,49 @@ a calm sea under a sunset sky (0.43–0.64), aurora rays (0.50–0.55, textured 
 same blue as the sky (0.60–0.67). Real photos need a CC0 set with hand-made reference masks in
 `corpus/`, which doesn't exist yet.
 
-### Model options (decision for the maintainer)
+## Subject and Background with BiRefNet
+
+**Maintainer decision 2026-10-13: BiRefNet adopted** for Subject (and Background, its inverse);
+the plug-in store, signing and Lua plug-ins (gap 19) are on hold.
+
+`crates/segment/src/birefnet.rs` runs **BiRefNet_lite** (Swin-T backbone, MIT code and weights,
+`ZhengPeng7/BiRefNet_lite`) in pure Rust on candle. Like SAM 3 it is optional and downloaded only
+on request: `segment.subject.download {"acknowledged": true}` fetches `model.safetensors`
+(177,634,392 bytes, SHA-256 `4417d897…0815`, from the author's Hugging Face repository at a pinned
+revision; `<PREFIX>_BIREFNET_MIRRORS` adds mirrors) into `<settings_dir>/models/birefnet`
+(`<PREFIX>_BIREFNET_DIR` overrides it); `segment.subject.status` reports it and puts a finished
+download to use. The weights are never committed or shipped.
+
+Once installed, the engine registers it as the pipeline's subject model
+(`lcc_pipeline::auto_mask::set_subject_model`). Subject and Background masks then use its matte:
+it sees the uncropped, oriented photo at 1024 px (exposure-normalized, sRGB), stretched to the
+1024² input, and its 1024² matte is sampled over the frame like the analysis grid and snapped to
+the photo's edges. A run is cached per photo (white balance left out, so a WB drag doesn't re-run
+it) and holds an activity-stack row ("Finding the subject", kind `segment`). If the model can't
+load or run, the photo analysis is used. Without the model nothing changes. The CLI and web builds
+don't enable the `sam` feature, so they always use the analysis.
+
+**Port check.** `tools/birefnet_reference.py` runs the MIT reference implementation (the
+checkpoint's own `birefnet.py`, fp32 CPU) and `crates/segment/tests/birefnet_reference.rs`
+compares: backbone stages within 2.5·10⁻⁴ relative, logits within 2·10⁻⁵ relative, no pixel
+on the other side of 0.5. Shape and plumbing tests use tiny synthetic weights
+(`birefnet::tiny_checkpoint`). Sources: the BiRefNet paper (Zheng et al., arXiv 2401.03407) and the
+MIT reference implementation (github.com/ZhengPeng7/BiRefNet); Swin Transformer (Liu et al.,
+ICCV 2021); DCNv2 (Zhu et al., CVPR 2019).
+
+**Measured (2026-10-13, Linux, 32 cores shared with other jobs, load average 10–20):** about
+5.5–5.8 s per photo on the CPU (backbone at 1024 and 512 px ≈ 2.6 s, decoder ≈ 2.8 s). On the
+three labelled demo macro scenes its soft IoU is **0.44** (0.55 / 0.28 / 0.49), against 0.88 for
+the analysis: the procedural bokeh discs are drawn sharp, so the model reads them as foreground
+objects along with the flower (`cargo test --release -p lcc-engine --features sam --test
+subject_eval`, `MASK_EVAL_DUMP` writes the mattes). The flower itself, stem included, is cut out
+cleanly. The synthetic scenes favour the hand-tuned analysis; a real-photo reference set is still
+needed to compare them fairly. Not measured yet: Metal on macOS.
+
+Left: real-photo evaluation, GPU (Metal) timing, the full BiRefNet (Swin-L) as an option, a
+smaller input for drafts, and an in-app offer of the download (today a command).
+
+### Model options
 
 Weight licences were checked as published by their authors. Verify them again before shipping
 anything:
@@ -96,8 +138,8 @@ anything:
 - **Rejected:** SegFormer (NVIDIA licence, non-commercial), and anything trained only on
   non-commercial data or released under GPL / CC-BY-NC.
 
-Which model to adopt, and who hosts its weights, is the maintainer's decision. Until then the
-analysis above runs.
+BiRefNet was adopted for Subject and Background (above). For Sky, People and Landscape the choice is
+still open, and the analysis above runs.
 
 ### SAM 3 mirror
 
@@ -255,6 +297,9 @@ Therefore:
 | `segment.model.status` | `{}` | `{available, installed, remote, dir, loaded, busy, analyzing, sizeBytes, license, licenseUrl, mirrors, download}` |
 | `segment.model.download` | `{acknowledged: true}` | start the download in the background → `{started}` |
 | `segment.model.cancel` | `{}` | stop it (it resumes next time) → `{cancelled}` |
+| `segment.subject.status` | `{}` | the Subject / Background model (BiRefNet_lite): installed, in use, download progress → `{available, installed, active, dir, sizeBytes, license, licenseUrl, download}` |
+| `segment.subject.download` | `{acknowledged: true}` | download it (178 MB, MIT) in the background → `{started, installed, downloading}` |
+| `segment.subject.cancel` | `{}` | stop that download → `{cancelled}` |
 
 `remote` reports the configured endpoint, not its health. `installed` describes local weights only.
 
