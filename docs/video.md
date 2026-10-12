@@ -2,6 +2,7 @@
 
 > **Last updated:** 2026-10-12 · **Change:** minor (clip audio: PCM in MP4/MOV/MKV/TS/MXF, MP3; FLAC/ALAC skipped)
 > **Last updated:** 2026-10-12 · **Change:** minor (faster clip export: pipelined decode/grade/encode, GPU grade for H.264)
+> **Last updated:** 2026-10-12 · **Change:** minor ("Using video" section for users)
 > **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
@@ -12,6 +13,23 @@
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
 used as git dependencies pinned to one full revision. The app writes no codecs or containers of its own.
+
+## Using video
+
+- **Import** clips like photos (MP4, MOV, MKV, WebM, MPEG-TS, MXF). The grid shows a poster frame; the Info panel
+  shows duration, frame rate, codec, resolution, audio and trim. `video:yes` in the search bar finds clips.
+- **Play** in the loupe: <kbd>Space</kbd> plays and pauses, <kbd>←</kbd> / <kbd>→</kbd> step one frame, drag the
+  playhead to scrub. Playback is silent in default builds (see [Audio](#audio-decode-always-sound-only-with-audio-out)).
+- **Trim**: drag the start and end handles on the bar; the drag is one undo step. Photo ▸ Video ▸ Reset Trim plays
+  the whole clip again.
+- **Poster frame**: Set Poster Frame (bar button or Photo ▸ Video) uses the current frame for the grid.
+- **Capture Frame** (Photo ▸ Video) saves the current frame, graded, as a JPEG next to the clip and stacks it with it.
+- **Edit** with the Light and Color controls, tone curve, Color Mixer and Color Grading; presets apply only those.
+  Masks, spot removal, red eye, lens corrections, denoise and crop are greyed out ("Not available for video").
+- **Export**: put clips in an export batch; the dialog's Video section picks H.264 (MP4) or ProRes (MOV), quality and
+  long edge. The movie keeps the trim, the grade and the sound.
+- **CLI**: `<cli> render clip.mov -o out.mp4 --trim 2,8` (seconds; `--trim 2,` = to the end). MCP agents use the
+  `video.*` commands and `export`.
 
 ## `crates/video` (`dac-video`, L3, native only)
 
@@ -259,6 +277,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 ## Revision history
 
+- 2026-10-12: "Using video" section (M14.9).
 - 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
 - 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still

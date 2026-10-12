@@ -1144,5 +1144,10 @@
   "Codec": "コーデック",
   "Resolution": "解像度",
   "Audio": "オーディオ",
-  "Trim": "トリミング"
+  "Trim": "トリミング",
+  "Playback stopped": "再生を停止しました",
+  "video clips export as movies, trimmed, with their video edits": "ビデオクリップはトリミングとビデオ編集を反映したムービーとして書き出されます",
+  "Video format": "ビデオ形式",
+  "Video quality": "ビデオ画質",
+  "Video long edge (px, 0 = full)": "ビデオの長辺（px、0 = フルサイズ）"
 }

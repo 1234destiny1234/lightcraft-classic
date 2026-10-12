@@ -961,5 +961,10 @@
   "Codec": "Кодек",
   "Resolution": "Роздільність",
   "Audio": "Звук",
-  "Trim": "Обрізка"
+  "Trim": "Обрізка",
+  "Playback stopped": "Відтворення зупинено",
+  "video clips export as movies, trimmed, with their video edits": "відеокліпи експортуються як фільми, обрізаними та з їхніми відеоправками",
+  "Video format": "Формат відео",
+  "Video quality": "Якість відео",
+  "Video long edge (px, 0 = full)": "Довга сторона відео (пікс., 0 = повний розмір)"
 }
