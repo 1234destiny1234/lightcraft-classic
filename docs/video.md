@@ -3,6 +3,9 @@
 > **Last updated:** 2026-10-12 · **Change:** minor (one revision history; export speed and audio codecs in the tracker docs)
 
 > **Last updated:** 2026-10-12 · **Change:** minor (timelapse video from photos, upstream #497)
+> **Last updated:** 2026-10-12 · **Change:** minor (GPU playback LUT: frames graded on the window GPU)
+> **Last updated:** 2026-10-12 · **Change:** minor (clip audio: PCM in MP4/MOV/MKV/TS/MXF, MP3; FLAC/ALAC skipped)
+> **Last updated:** 2026-10-12 · **Change:** minor (faster clip export: pipelined decode/grade/encode, GPU grade for H.264)
 > **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
@@ -117,6 +120,33 @@ playing, it shows the worker's frames by `video.get.current` (restarting the wor
 repaints, and on a decode error pauses (`video.pause`) with one toast (and a log line); paused, it shows the still for
 (time, look, size), so develop edits re-render it. Trim handles drag a preview and send one `video.setTrim` on release.
 `ui.inspect` → `loupe.source` reads `video` / `video-still`. With `audio-out` and `canPlayAudio`, playing also starts `playback::AudioPlayback` (an `AudioReader` feeder thread, resampled to `default_rate()`, stereo, ~1 s ahead) and the player follows its `AudioClock` (`follow_audio_clock`); pausing, seeking or leaving the clip drops it and returns to the system clock. Default builds stay on the system clock, muted. Neither is an activity row (interactive, long-lived).
+
+**GPU playback grade.** When the window renders with wgpu (`Services::video_gpu`, desktop
+`apps/app/src/video_gpu.rs`) and Settings ▸ GPU is on, the loupe starts the worker with `Playback::start_linear`: it
+decodes and bakes the LUT as before but skips the CPU grade, handing `FramePixels::Linear { image, lut, key }`. The
+UI thread uploads the linear `f32` frame as-is and `dac_gpu::video_lut::VideoLut::grade` runs one compute shader
+(`wgsl/video_lut.wgsl`, the tetrahedral twin of `GradeLut::lookup`, LUT re-uploaded only when its key changes) into
+an `Rgba8Unorm` texture registered with egui-wgpu through an `Rgba8UnormSrgb` view, so there is no CPU grade,
+RGBA conversion or egui texture copy. Any GPU error falls back to the CPU LUT for the rest of the session (logged
+once). Paused stills keep the full CPU pipeline (`spawn_still`). Equivalence: GPU vs CPU LUT ≤ 2 codes
+(`dac-gpu` `video_lut::tests::gpu_lut_matches_cpu_lut`, includes NaN / out-of-range / lattice edges).
+
+Per playing frame (`cargo test -p dac-engine --release --lib video::bench_playback -- --ignored --nocapture`,
+2026-10-12, Radeon / Vulkan, **load average ≈ 150–170 from other jobs**, so upper bounds; 47 frames each):
+
+| Clip (decoded at ≤ 960 px) | decode | CPU LUT | RGBA conv. | GPU LUT (upload + shader, waited) |
+|---|---|---|---|---|
+| H.264 1080p BBB → 960×540 | 41.6 ms | 24.9 ms | 0.19 ms | 3.5 ms |
+| HEVC 1080p → 960×540 | 47.2 ms | 29.9 ms | 0.26 ms | 3.9 ms |
+| VP9 1080p → 960×540 | 79.2 ms | 23.9 ms | 0.26 ms | 4.1 ms |
+| AV1 1080p → 960×540 | 130.9 ms | 24.0 ms | 0.21 ms | 3.6 ms |
+| H.264 720p NPS → 640×360 | 25.4 ms | 20.6 ms | 0.28 ms | 2.8 ms |
+| synthetic H.264 2160p → 960×540 | 82.0 ms | 23.1 ms | 0.22 ms | 3.2 ms |
+
+The GPU path removes ~85 % of the per-frame grade cost from the CPU (and the shader time itself is a fraction of the
+3–4 ms, which is mostly the 6 MB upload and the wait the benchmark adds). Decode now dominates: under this load no
+codec reaches 30 fps; on an idle machine sequential decode is 5.7–25 ms (see Cost). 4K and high-frame-rate clips
+are bounded by the decoder, not the grade; the CPU LUT has a fixed ~20 ms per frame even at 640×360, worth a look.
 
 ## Supported formats
 Probe works for every container below; frames decode when the codec cell says so. "Unsupported" streams probe with
@@ -307,6 +337,8 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 ## Revision history
 
 - 2026-10-12: `export.timelapse` + File ▸ Export ▸ Timelapse Video… (upstream #497), `dac_video_export::SequenceWriter`.
+- 2026-10-12: GPU playback LUT (`dac_gpu::video_lut`, `Playback::start_linear`, `Services::video_gpu`), per-frame cost measured.
+- 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
 - 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
   active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`

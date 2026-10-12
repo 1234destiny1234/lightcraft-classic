@@ -30,6 +30,9 @@ dac-sysmem = { workspace = true }
 dac-ui-egui = { workspace = true }
 dac-codecs = { workspace = true }
 dac-raster = { workspace = true }
+# M14.4: the playing video frame graded on the window GPU (video_gpu)
+dac-gpu = { workspace = true }
+dac-pipeline = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "glow", "accesskit", "wayland", "x11"] }
 # probing the window's renderer before it opens (`window_gpu`)
 pollster = { workspace = true }

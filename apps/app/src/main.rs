@@ -34,6 +34,7 @@ mod logging;
 mod native_menu;
 #[cfg(target_os = "macos")]
 mod screen_profile;
+mod video_gpu;
 mod window_gpu;
 
 use dac_engine::Session;
@@ -603,6 +604,8 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         backup_library: None,
         restore_library: None,
         system_theme: appearance::service(),
+        // playing video frames graded on the window GPU (wgpu renderer only)
+        video_gpu: cc.wgpu_render_state.as_ref().map(|s| Box::new(video_gpu::WindowVideoGpu::new(s)) as Box<dyn dac_ui_egui::VideoGpu>),
     }
 }
 

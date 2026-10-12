@@ -138,3 +138,56 @@ fn loupe_plays_pauses_trims_seeks_and_stops_at_the_trim_end() {
     assert!(h.step_until(T, |h| h.app.video_view.info(id).is_some_and(|i| i.full && !i.playing)));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Stands in for the window GPU: answers a fixed texture id, or fails when told to.
+struct FakeGpu {
+    calls: Arc<Mutex<usize>>,
+    fail: Arc<Mutex<bool>>,
+}
+
+impl crate::VideoGpu for FakeGpu {
+    fn grade(&mut self, img: &dac_raster::Rgb32f, _: u64, _: &dac_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String> {
+        *self.calls.lock().unwrap() += 1;
+        if *self.fail.lock().unwrap() {
+            return Err("device lost".into());
+        }
+        Ok((egui::TextureId::User(77), [img.width, img.height]))
+    }
+}
+
+#[test]
+fn playing_frames_go_to_the_gpu_grade_and_fall_back_to_the_cpu() {
+    let dir = std::env::temp_dir().join(format!("dac-video-gpu-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let clip = dir.join("clip.mp4");
+    write_clip(&clip, 128, 72, 60);
+    let clock = Arc::new(Mutex::new(0.0f64));
+    let mut session = dac_engine::Session::new().with_fs();
+    let c = clock.clone();
+    session.video.clock = Box::new(move || *c.lock().unwrap());
+    let (calls, fail) = (Arc::new(Mutex::new(0)), Arc::new(Mutex::new(false)));
+    let gpu = FakeGpu { calls: calls.clone(), fail: fail.clone() };
+    let app = DacApp::new(session, Services { png: None, video_gpu: Some(Box::new(gpu)), ..Default::default() });
+    let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+    h.app.ui.settings.gpu = true;
+    let r = exec(&mut h, "library.import", json!({"paths": [clip.to_string_lossy()]}));
+    let id = dac_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+    exec(&mut h, "library.select", json!({"ids": [id.0], "active": id.0}));
+    h.app.ui.view = ViewMode::Detail;
+    assert!(h.step_until(T, |h| h.app.video_view.info(id).is_some_and(|i| i.full)), "a still at the start");
+    assert_eq!(*calls.lock().unwrap(), 0, "paused stills stay on the CPU pipeline");
+    exec(&mut h, "video.play", json!({}));
+    *clock.lock().unwrap() = 0.3;
+    assert!(h.step_until(T, |h| h.app.video_view.info(id).is_some_and(|i| !i.full && i.gpu)), "{:?}", h.app.video_view.info(id));
+    assert_eq!(h.app.video_view.texture_id(id), Some(egui::TextureId::User(77)));
+    // the GPU fails: that frame and the rest are graded on the CPU, and playing goes on
+    *fail.lock().unwrap() = true;
+    *clock.lock().unwrap() = 0.8;
+    assert!(h.step_until(T, |h| h.app.video_view.info(id).is_some_and(|i| !i.full && !i.gpu && i.time > 0.6)), "{:?}", h.app.video_view.info(id));
+    let n = *calls.lock().unwrap();
+    *clock.lock().unwrap() = 1.4;
+    assert!(h.step_until(T, |h| h.app.video_view.info(id).is_some_and(|i| !i.gpu && i.time > 1.2)));
+    assert_eq!(*calls.lock().unwrap(), n, "not tried again after a failure");
+    let _ = std::fs::remove_dir_all(&dir);
+}

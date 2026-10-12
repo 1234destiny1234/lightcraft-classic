@@ -10,7 +10,7 @@
 use std::sync::mpsc::{Receiver, TryRecvError};
 
 use dac_catalog::PhotoId;
-use dac_engine::video::playback::{AudioPlayback, Playback, ShownFrame, spawn_still};
+use dac_engine::video::playback::{AudioPlayback, FramePixels, Playback, ShownFrame, spawn_still};
 use serde_json::json;
 
 use crate::DacApp;
@@ -32,6 +32,29 @@ pub struct VideoView {
     still: Option<(StillKey, Receiver<Result<ShownFrame, String>>)>,
     /// The last still key whose render failed (not retried until it changes).
     failed: Option<StillKey>,
+    /// The GPU grade failed once: playing frames are graded on the CPU from then on.
+    gpu_failed: bool,
+}
+
+/// A frame's texture: egui's own (CPU-graded) or the window GPU's (graded there).
+enum Tex {
+    Egui(egui::TextureHandle),
+    Gpu(egui::TextureId, [usize; 2]),
+}
+
+impl Tex {
+    fn id(&self) -> egui::TextureId {
+        match self {
+            Tex::Egui(t) => t.id(),
+            Tex::Gpu(id, _) => *id,
+        }
+    }
+    fn size(&self) -> [usize; 2] {
+        match self {
+            Tex::Egui(t) => t.size(),
+            Tex::Gpu(_, s) => *s,
+        }
+    }
 }
 
 struct Shown {
@@ -39,7 +62,7 @@ struct Shown {
     time: f64,
     full: bool,
     key: Option<StillKey>,
-    tex: egui::TextureHandle,
+    tex: Tex,
 }
 
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -57,13 +80,20 @@ pub struct VideoFrameInfo {
     pub time: f64,
     pub full: bool,
     pub playing: bool,
+    /// Graded on the GPU.
+    pub gpu: bool,
 }
 
 impl VideoView {
     /// The frame on screen for `id`, if any.
     pub fn info(&self, id: PhotoId) -> Option<VideoFrameInfo> {
         let s = self.shown.as_ref().filter(|s| s.photo == id)?;
-        Some(VideoFrameInfo { time: s.time, full: s.full, playing: self.playback.as_ref().is_some_and(|(p, _)| *p == id) })
+        Some(VideoFrameInfo {
+            time: s.time,
+            full: s.full,
+            playing: self.playback.as_ref().is_some_and(|(p, _)| *p == id),
+            gpu: matches!(s.tex, Tex::Gpu(..)),
+        })
     }
     /// The texture on screen for `id` (a new one per frame shown).
     pub fn texture_id(&self, id: PhotoId) -> Option<egui::TextureId> {
@@ -80,8 +110,26 @@ pub fn stop(app: &mut DacApp) {
     }
 }
 
-fn upload(ctx: &egui::Context, f: &ShownFrame) -> egui::TextureHandle {
-    ctx.load_texture("video-frame", crate::render::color_image(&f.image), egui::TextureOptions::LINEAR)
+fn upload(ctx: &egui::Context, f: &ShownFrame) -> Tex {
+    Tex::Egui(ctx.load_texture("video-frame", crate::render::color_image(&f.pixels.graded()), egui::TextureOptions::LINEAR))
+}
+
+/// A playing frame's texture: graded on the window's GPU when it came ungraded and the GPU
+/// grade works, else on the CPU (and the GPU isn't tried again).
+fn show(app: &mut DacApp, ctx: &egui::Context, f: &ShownFrame) -> Tex {
+    if let FramePixels::Linear { image, lut, key } = &f.pixels
+        && let Some(g) = app.services.video_gpu.as_mut()
+        && !app.video_view.gpu_failed
+    {
+        match g.grade(image, *key, lut) {
+            Ok((id, size)) => return Tex::Gpu(id, size),
+            Err(e) => {
+                log::warn!("video playback: GPU grade failed, grading on the CPU: {e}");
+                app.video_view.gpu_failed = true;
+            }
+        }
+    }
+    upload(ctx, f)
 }
 
 /// Bring the loupe's video frame up to date for clip `id` with control-bar state `state`;
@@ -102,13 +150,17 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
         // a seek (or a wrap when looping) while playing: restart the worker at the playhead
         let shown_t = app.video_view.shown.as_ref().filter(|s| s.photo == id && !s.full).map(|s| s.time);
         let next_t = app.video_view.playback.as_ref().and_then(|(_, p)| p.next_time());
+        let started = app.video_view.playback.as_ref().filter(|(p, _)| *p == id).map(|(_, p)| p.start);
         let off = |t: f64| state.current < t - RESYNC_SECS || state.current > t + RESYNC_SECS;
         let drifted = match (next_t, shown_t) {
             (Some(n), _) => state.current < n - RESYNC_SECS - 1.0 / fps || state.current > n + RESYNC_SECS,
-            (None, Some(s)) => off(s),
+            // nothing queued yet: a worker just restarted near the playhead is waited for (it
+            // was restarted every frame until its first frame arrived after a long jump)
+            (None, Some(s)) => off(s) && started.is_none_or(off),
             (None, None) => false,
         };
-        let same = app.video_view.playback.as_ref().is_some_and(|(p, pb)| *p == id && pb.path == path);
+        let gpu = app.services.video_gpu.is_some() && app.ui.settings.gpu && !app.video_view.gpu_failed;
+        let same = app.video_view.playback.as_ref().is_some_and(|(p, pb)| *p == id && pb.path == path && pb.linear == gpu);
         if !same || drifted {
             app.video_view.playback = None;
             // the sound restarts with the picture; the player clock follows it
@@ -124,7 +176,13 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
                     Err(e) => log::warn!("video sound: {e}"),
                 }
             }
-            match Playback::start(backend, path, state.current, side.min(dac_engine::video::playback::PLAY_MAX_SIDE), &develop) {
+            let max = side.min(dac_engine::video::playback::PLAY_MAX_SIDE);
+            let started = if gpu {
+                Playback::start_linear(backend, path, state.current, max, &develop)
+            } else {
+                Playback::start(backend, path, state.current, max, &develop)
+            };
+            match started {
                 Ok(p) => app.video_view.playback = Some((id, p)),
                 Err(e) => return fail(app, ctx, e),
             }
@@ -137,7 +195,7 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
             return fail(app, ctx, e);
         }
         if let Some(f) = polled.frame {
-            let tex = upload(ctx, &f);
+            let tex = show(app, ctx, &f);
             app.video_view.shown = Some(Shown { photo: id, time: f.time, full: false, key: None, tex });
         }
         // the engine clock decides the end (stop at the trim end, or loop); keep frames coming

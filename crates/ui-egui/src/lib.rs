@@ -206,6 +206,14 @@ pub type HostAction = Box<dyn FnMut(&mut Session) -> Result<Value, String>>;
 /// last heard and wakes the UI itself when that changes; it is never polled for changes.
 pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
 
+/// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through
+/// `dac_gpu::video_lut`), producing the texture to draw without a CPU grade or upload.
+pub trait VideoGpu {
+    /// Grade linear frame `img` with `lut` (identified by `key`) into a texture to draw (valid
+    /// until the next call). An error makes the loupe fall back to the CPU LUT.
+    fn grade(&mut self, img: &dac_raster::Rgb32f, key: u64, lut: &dac_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String>;
+}
+
 /// Platform services injected by the host app (desktop or web).
 #[derive(Default)]
 pub struct Services {
@@ -271,6 +279,8 @@ pub struct Services {
     pub restore_library: Option<HostAction>,
     /// The system appearance for Appearance Mode ▸ Auto, ahead of egui's own report.
     pub system_theme: Option<SystemThemeFn>,
+    /// The GPU grade of playing video frames (none: graded on the CPU).
+    pub video_gpu: Option<Box<dyn VideoGpu>>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]

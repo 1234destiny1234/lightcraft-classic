@@ -145,6 +145,13 @@ impl GradeLut {
         Ok(GradeLut { data, shaper })
     }
 
+    /// The lattice: display-encoded sRGB output (0..1) per point, red fastest, then green, then
+    /// blue ([`LUT_SIZE`]³ entries). For a GPU twin of [`GradeLut::lookup`], whose input
+    /// coordinate is the sRGB curve of the clamped linear input times `LUT_SIZE - 1`.
+    pub fn table(&self) -> &[[f32; 3]] {
+        &self.data
+    }
+
     /// Look up one linear working-space colour: display-encoded sRGB, 0..1.
     pub fn lookup(&self, c: [f32; 3]) -> [f32; 3] {
         let n = LUT_SIZE;
