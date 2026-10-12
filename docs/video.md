@@ -85,6 +85,19 @@ at the trim end, or wraps to the trim start with `loop`. `session.video.follow_a
 position follow an audio device instead (no jump), `follow_system_clock()` goes back. Playback is muted unless built
 with `audio-out` (`canPlayAudio`: true only then, and only for clips with decodable sound; see Audio below). Every command
 answers the `video.get` state, so UI, CLI and MCP see the same thing. Captured frames are not graded yet (M14.7).
+## Loupe playback (M14.4)
+
+`dac_engine::video::playback`: `Playback::start(backend, path, t, max_side, &develop)` runs a worker that decodes
+sequentially (`VideoBackend::frames_from`, native: `FrameReader::seek` + `next_frame`) at ≤ 960 px, grades each frame
+with a `GradeLut` baked from `video_settings(develop)` (rebaked only when that changes: `set_settings`), and sends
+it over an 8-frame bounded queue; frames more than a frame behind `set_target(t)` are skipped before grading.
+`poll(now, slack)` returns the newest due frame (earlier ones are dropped as late). `spawn_still` renders one
+full-quality frame (`grade_frame`) on its own thread. The UI (`crates/ui-egui/src/video_view.rs`) polls once per frame:
+playing, it shows the worker's frames by `video.get.current` (restarting the worker after a seek or loop), requests
+repaints, and on a decode error pauses (`video.pause`) with one toast (and a log line); paused, it shows the still for
+(time, look, size), so develop edits re-render it. Trim handles drag a preview and send one `video.setTrim` on release.
+`ui.inspect` → `loupe.source` reads `video` / `video-still`. With `audio-out` and `canPlayAudio`, playing also starts `playback::AudioPlayback` (an `AudioReader` feeder thread, resampled to `default_rate()`, stereo, ~1 s ahead) and the player follows its `AudioClock` (`follow_audio_clock`); pausing, seeking or leaving the clip drops it and returns to the system clock. Default builds stay on the system clock, muted. Neither is an activity row (interactive, long-lived).
+
 ## Supported formats
 Probe works for every container below; frames decode when the codec cell says so. "Unsupported" streams probe with
 `decodable: false`, and `FrameReader::open` returns `VideoError::Unsupported(reason)`.
@@ -212,6 +225,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 ## Revision history
 
+- 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
 - 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
   active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`

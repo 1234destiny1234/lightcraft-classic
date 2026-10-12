@@ -451,14 +451,18 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
     let film_h = if show_film { t.film_h } else { 0.0 };
     let mut canvas = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - film_h));
     // a video: its control bar along the bottom of the canvas (photos keep the whole canvas)
+    let mut video_state = None;
     if let Some(vid) = app.session.active().filter(|id| crate::video_ui::photo_is_video(app, *id)) {
         let bar = Rect::from_min_max(pos2(canvas.left(), canvas.bottom() - crate::video_ui::BAR_H), canvas.max);
         canvas.max.y = bar.top();
-        crate::video_ui::show_bar(app, ui, bar, vid);
+        video_state = crate::video_ui::show_bar(app, ui, bar, vid).map(|s| (vid, s));
+    } else {
+        crate::video_view::stop(app);
     }
     app.canvas_rect = Some(canvas);
     if show_film {
-        filmstrip(app, ui, Rect::from_min_max(pos2(full.left(), canvas.bottom()), full.max));
+        // under the canvas and the video bar (the bar doesn't take the filmstrip's room)
+        filmstrip(app, ui, Rect::from_min_max(pos2(full.left(), full.bottom() - film_h), full.max));
     }
     let Some(id) = app.session.active() else {
         super::empty_message(ui, canvas, "No photo selected", "Choose a photo in the grid or filmstrip");
@@ -683,6 +687,11 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
             app.renderer.release(Slot::Window(pane));
         }
     }
+    // a clip: the frame to show at the playhead (playing or paused)
+    let video_tex = video_state.as_ref().filter(|(v, _)| *v == id).and_then(|(vid, vs)| {
+        let side = (target_rect.width().max(target_rect.height()) * ppp) as u32;
+        crate::video_view::update(app, ui.ctx(), *vid, vs, side).map(|(t, s)| (t, s, vs.playing))
+    });
     let p = ui.painter_at(canvas);
     // what a view slot shows: its own render of this photo, else the stand-ins (no blank frame
     // between photos, and the full render replaces them in place)
@@ -731,6 +740,11 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
         p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
         p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
         shown = "hover";
+    } else if let Some((tex, size, playing)) = video_tex {
+        // a clip: its current frame (playing or paused) over the poster render
+        let _ = draw(Slot::Main, img_rect, canvas);
+        p.image(tex, fit_texture_rect(img_rect, size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        shown = if playing { "video" } else { "video-still" };
     } else {
         shown = draw(Slot::Main, img_rect, canvas);
         if shown == "none" {
