@@ -1138,6 +1138,10 @@ pub struct Hdr {
     pub sdr_shadows: f64,
     pub sdr_whites: f64,
     pub sdr_clarity: f64,
+    /// SDR blend (−100..100, own design; see [`DevelopSettings::sdr_rendition`]): positive values fit more
+    /// of the HDR highlight range into the SDR rendition (highlights and whites pulled down in proportion to
+    /// the headroom limit), negative ones clip it harder (highlights and whites pushed up).
+    pub sdr_blend: f64,
 }
 
 impl Default for Hdr {
@@ -1151,6 +1155,7 @@ impl Default for Hdr {
             sdr_shadows: 0.0,
             sdr_whites: 0.0,
             sdr_clarity: 0.0,
+            sdr_blend: 0.0,
         }
     }
 }
@@ -1192,6 +1197,13 @@ impl DevelopSettings {
         s.light.shadows = add(s.light.shadows, h.sdr_shadows);
         s.light.whites = add(s.light.whites, h.sdr_whites);
         s.effects.clarity = add(s.effects.clarity, h.sdr_clarity);
+        // SDR blend: scaled by the headroom (stops, relative to the default limit) so a larger HDR range
+        // takes a stronger compression; damaged values contribute nothing
+        let blend = if h.sdr_blend.is_finite() { h.sdr_blend.clamp(-100.0, 100.0) } else { 0.0 };
+        let ev = if h.max_ev.is_finite() { h.max_ev.clamp(0.0, Hdr::MAX_EV_LIMIT) } else { Hdr::DEFAULT_MAX_EV };
+        let k = blend * (ev / Hdr::DEFAULT_MAX_EV).min(1.5);
+        s.light.highlights = add(s.light.highlights, -0.6 * k);
+        s.light.whites = add(s.light.whites, -0.3 * k);
         std::borrow::Cow::Owned(s)
     }
 }

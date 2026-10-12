@@ -147,6 +147,7 @@ controls! {
     "hdr.sdrShadows" => hdr.sdr_shadows, "SDR Shadows", Light, -100, 100, 0, 1, 0, Centered;
     "hdr.sdrWhites" => hdr.sdr_whites, "SDR Whites", Light, -100, 100, 0, 1, 0, Centered;
     "hdr.sdrClarity" => hdr.sdr_clarity, "SDR Clarity", Light, -100, 100, 0, 1, 0, Centered;
+    "hdr.sdrBlend" => hdr.sdr_blend, "SDR Blend", Light, -100, 100, 0, 1, 0, Centered;
     "curve.highlights" => curve.highlights, "Highlights", Curve, -100, 100, 0, 1, 0, Centered;
     "curve.lights" => curve.lights, "Lights", Curve, -100, 100, 0, 1, 0, Centered;
     "curve.darks" => curve.darks, "Darks", Curve, -100, 100, 0, 1, 0, Centered;

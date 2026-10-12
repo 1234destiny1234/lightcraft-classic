@@ -1263,18 +1263,8 @@ mod tests {
         eprintln!("crs coverage: {mapped} of {} public fields map; dropped: {dropped:?}", PUBLIC_CRS_FIELDS.len());
         // No equivalent in the app: Lightroom's algorithm / tool bookkeeping (auto white version,
         // lens profile setup, Upright's preview, centre mode and focal length: ours computes its
-        // own), the pre-2012 single Defringe switch, and HDR headroom / SDR blend, whose scales
-        // differ from ours. Reported as unmapped and kept in the archive.
-        let expected = [
-            "AutoWhiteVersion",
-            "Defringe",
-            "HDRMaxValue",
-            "LensProfileSetup",
-            "SDRBlend",
-            "UprightCenterMode",
-            "UprightFocalLength35mm",
-            "UprightPreview",
-        ];
+        // own) and the pre-2012 single Defringe switch. Reported as unmapped and kept in the archive.
+        let expected = ["AutoWhiteVersion", "Defringe", "LensProfileSetup", "UprightCenterMode", "UprightFocalLength35mm", "UprightPreview"];
         assert_eq!(dropped, expected, "{mapped} mapped");
     }
 
