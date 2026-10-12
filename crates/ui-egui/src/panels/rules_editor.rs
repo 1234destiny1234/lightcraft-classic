@@ -2,7 +2,7 @@
 //! value), with nested groups. Field and operator lists come from `lcc_catalog::rules`.
 
 use egui::RichText;
-use lcc_catalog::rules::{FIELD_GROUPS, Kind, Problem, TOP_LEVEL_FIELDS, bool_value, field_kind, field_label, ops_for};
+use lcc_catalog::rules::{FIELD_GROUPS, Kind, Problem, TOP_LEVEL_FIELDS, bool_value, field_kind, field_label, ops_for, takes_value};
 use lcc_catalog::{Match, Rule, RuleSet};
 use serde_json::{Value, json};
 
@@ -14,7 +14,7 @@ use crate::widgets::register;
 /// A sensible starting value for `field` / `op`.
 pub fn default_value(field: &str, op: &str) -> Value {
     match (field_kind(field), op) {
-        (_, "isEmpty" | "isNotEmpty") => Value::Null,
+        (_, op) if !takes_value(op) => Value::Null,
         (Some(Kind::Date), "inLast" | "notInLast") => json!({"n": 30, "unit": "days"}),
         // this year (the catalog's clock): a date that means something, not an empty one that
         // matches nothing ("is") or every date ("between")
@@ -131,7 +131,7 @@ fn album_value(ui: &mut egui::Ui, v: &mut Value, salt: &str, env: &Env) {
 /// The value editor for one rule.
 fn value_editor(ui: &mut egui::Ui, field: &str, op: &str, v: &mut Value, salt: &str, env: &Env) {
     match (field_kind(field), op) {
-        (_, "isEmpty" | "isNotEmpty") => {}
+        (_, op) if !takes_value(op) => {}
         (Some(Kind::Album), _) => album_value(ui, v, salt, env),
         (Some(Kind::Date), "inLast" | "notInLast") => {
             // shown as stored ({n, unit}, or a plain number of days) and only written when changed:
@@ -359,9 +359,9 @@ pub fn edit(ui: &mut egui::Ui, rs: &mut RuleSet, salt: &str, depth: usize, path:
                     egui::ComboBox::from_id_salt(format!("{rsalt}-op")).width(110.0).selected_text(crate::i18n::tr(&op_label)).show_ui(ui, |ui| {
                         for (id, l) in ops_for(kind) {
                             if ui.selectable_label(op == id, crate::i18n::tr(l)).clicked() && op != id {
-                                let was_special = matches!(op.as_str(), "between" | "inLast" | "notInLast" | "isEmpty" | "isNotEmpty");
+                                let was_special = matches!(op.as_str(), "between" | "inLast" | "notInLast") || !takes_value(op);
                                 *op = id.to_string();
-                                if was_special || matches!(*id, "between" | "inLast" | "notInLast" | "isEmpty" | "isNotEmpty") {
+                                if was_special || matches!(*id, "between" | "inLast" | "notInLast") || !takes_value(id) {
                                     *value = default_value(field, op);
                                 }
                             }
@@ -432,7 +432,7 @@ mod tests {
                 // input; every other default is a rule that means something
                 let problems = rs.check(&cat);
                 let waits = matches!(kind, Kind::Text | Kind::Keywords) || *field == "album";
-                assert!(problems.is_empty() || waits && !matches!(*op, "isEmpty" | "isNotEmpty"), "{field} {op}: {problems:?}");
+                assert!(problems.is_empty() || waits && takes_value(op), "{field} {op}: {problems:?}");
                 let _ = rs.matches(&p, &cat);
                 let v = default_value(field, op);
                 let one = |v: &Value| match kind {
@@ -444,7 +444,7 @@ mod tests {
                     Kind::Text | Kind::Keywords | Kind::Date => v.is_string(),
                 };
                 match *op {
-                    "isEmpty" | "isNotEmpty" => assert!(v.is_null(), "{field} {op}: {v}"),
+                    op if !takes_value(op) => assert!(v.is_null(), "{field} {op}: {v}"),
                     "between" => assert!(v.as_array().is_some_and(|a| a.len() == 2 && a.iter().all(one)), "{field} {op}: {v}"),
                     "inLast" | "notInLast" => assert!(v["n"].is_number(), "{field} {op}: {v}"),
                     _ => assert!(one(&v), "{field} {op}: {v}"),

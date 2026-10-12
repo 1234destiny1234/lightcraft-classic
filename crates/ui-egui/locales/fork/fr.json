@@ -1159,5 +1159,10 @@
   "Each photo with its own edits, in the order shown. No audio.": "Chaque photo avec ses propres réglages, dans l’ordre affiché. Sans son.",
   "Duplicate Album": "Dupliquer l’album",
   "Another album with the same photos, to arrange in its own order": "Un autre album avec les mêmes photos, à organiser dans son propre ordre",
-  "Switch Brush A / B": "Basculer pinceau A / B"
+  "Switch Brush A / B": "Basculer pinceau A / B",
+  "is today": "est aujourd'hui",
+  "is yesterday": "est hier",
+  "is in this week": "est dans cette semaine",
+  "is in this month": "est dans ce mois",
+  "is in this year": "est dans cette année"
 }

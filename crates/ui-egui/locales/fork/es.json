@@ -1253,5 +1253,10 @@
   "starts using it for AI Denoise": "empieza a usarlo para reducir ruido con IA",
   "terms unclear": "condiciones poco claras",
   "the graphics card": "la tarjeta gráfica",
-  "the graphics card is not used": "no se usa la tarjeta gráfica"
+  "the graphics card is not used": "no se usa la tarjeta gráfica",
+  "is today": "es hoy",
+  "is yesterday": "es ayer",
+  "is in this week": "está en esta semana",
+  "is in this month": "está en este mes",
+  "is in this year": "está en este año"
 }

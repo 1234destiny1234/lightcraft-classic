@@ -569,6 +569,39 @@ fn history_steps(
     (steps, skipped)
 }
 
+/// Lightroom's snapshots (named full settings tables) → Versions, in Lightroom's order (by
+/// `id_local`), each mapped onto `base` like the photo's current settings. A snapshot that can't
+/// be read is skipped and counted; an unnamed one is called "Lightroom snapshot".
+fn snapshot_versions(
+    rows: &[Row],
+    base: &Arc<lcc_develop::DevelopSettings>,
+    now: &str,
+    map: impl Fn(&str) -> Result<(Value, Vec<String>), String>,
+) -> (Vec<lcc_catalog::Version>, usize) {
+    let mut ordered: Vec<&Row> = rows.iter().collect();
+    ordered.sort_by_key(|r| number(r, "id_local"));
+    let mut skipped = 0;
+    let mut versions = Vec::new();
+    for row in ordered {
+        let settings = text(row, "text");
+        let Some(Ok((partial, _))) = (!settings.is_empty()).then(|| map(settings)) else {
+            skipped += 1;
+            continue;
+        };
+        let name = match text(row, "name").trim() {
+            "" => "Lightroom snapshot".to_string(),
+            n => n.chars().take(120).collect(),
+        };
+        versions.push(lcc_catalog::Version {
+            name,
+            created: now.to_string(),
+            settings: Arc::new(lcc_develop::apply_partial(base, &partial, 1.0)),
+            auto: false,
+        });
+    }
+    (versions, skipped)
+}
+
 fn mapped_settings(
     text: &str,
     target: crate::crs::Target,
@@ -754,6 +787,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
     let mut unmapped = BTreeMap::new();
     let mut preserved = 0;
     let mut history_imported = 0usize;
+    let mut snapshots_imported = 0usize;
     // Masters precede their virtual copies.
     let mut photos: Vec<_> = data.photos.iter().collect();
     photos.sort_by_key(|p| number(&p.image, "masterImage") != 0);
@@ -862,6 +896,15 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
                 history_imported += steps.len();
                 p.history = steps;
             }
+            let (versions, skipped) =
+                snapshot_versions(&src.snapshots, &base, &now, |t| mapped_settings(t, target, aspect, orientation, stored_aspect));
+            if skipped > 0 {
+                warnings.push(format!("image {}: {skipped} Lightroom snapshot(s) could not be read; kept in the archive", src.source_id));
+            }
+            if !versions.is_empty() {
+                snapshots_imported += versions.len();
+                p.versions = versions;
+            }
         }
         if keep_develop {
             (p.develop, p.edited) = previous_develop;
@@ -877,6 +920,9 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
             ops.push(Op::SetDevelop { id: p.id, settings: p.develop.clone(), label: "Lightroom catalog".into(), edited: p.edited.clone() });
             if !keep_develop && !src.history.is_empty() {
                 ops.push(Op::SetHistory { id: p.id, history: p.history.clone() });
+            }
+            if !keep_develop && !src.snapshots.is_empty() {
+                ops.push(Op::SetVersions { id: p.id, versions: p.versions.clone() });
             }
         } else {
             ops.push(Op::AddPhoto { photo: Box::new(p.clone()) });
@@ -1007,7 +1053,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
     }
     s.merge_undo(s.undo.len().saturating_sub(undo0), "Import Lightroom Catalog");
     Ok(AppliedImport {
-        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"smartKept":smart_kept,"stacks":stacks,"historySteps":history_imported,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
+        report: json!({"source":data.source,"photos":ids.len(),"imported":files.imported.len(),"collections":albums.len(),"smartAlbums":smart_albums,"smartAsStatic":static_smart,"smartKept":smart_kept,"stacks":stacks,"historySteps":history_imported,"snapshots":snapshots_imported,"preservedExistingEdits":preserved,"missing":missing,"failed":files.failed,"warnings":warnings,"unmapped":unmapped,"archive":archive_path,"mapping":ids}),
         index: index.clone(),
     })
 }
@@ -1083,6 +1129,175 @@ mod tests {
             warnings: Vec::new(),
         }
     }
+    /// Every flat `crs:` develop field named in Adobe's public Camera Raw XMP documentation (no
+    /// structured fields: masks, spots, curves and looks have their own tests). Coverage report:
+    /// the ones a catalog import maps, and the ones it drops because the app has no equivalent.
+    const PUBLIC_CRS_FIELDS: &[&str] = &[
+        "Exposure2012",
+        "Contrast2012",
+        "Highlights2012",
+        "Shadows2012",
+        "Whites2012",
+        "Blacks2012",
+        "Texture",
+        "Clarity2012",
+        "Dehaze",
+        "Vibrance",
+        "Saturation",
+        "WhiteBalance",
+        "Temperature",
+        "Tint",
+        "IncrementalTemperature",
+        "IncrementalTint",
+        "ConvertToGrayscale",
+        "HDREditMode",
+        "SDRBrightness",
+        "SDRContrast",
+        "SDRHighlights",
+        "SDRShadows",
+        "SDRWhites",
+        "SDRClarity",
+        "SDRBlend",
+        "HDRMaxValue",
+        "ParametricShadows",
+        "ParametricDarks",
+        "ParametricLights",
+        "ParametricHighlights",
+        "ParametricShadowSplit",
+        "ParametricMidtoneSplit",
+        "ParametricHighlightSplit",
+        "CurveRefineSaturation",
+        "HueAdjustmentRed",
+        "SaturationAdjustmentOrange",
+        "LuminanceAdjustmentBlue",
+        "GrayMixerMagenta",
+        "SplitToningShadowHue",
+        "SplitToningShadowSaturation",
+        "SplitToningHighlightHue",
+        "SplitToningHighlightSaturation",
+        "SplitToningBalance",
+        "ColorGradeShadowLum",
+        "ColorGradeHighlightLum",
+        "ColorGradeMidtoneHue",
+        "ColorGradeMidtoneSat",
+        "ColorGradeMidtoneLum",
+        "ColorGradeGlobalHue",
+        "ColorGradeGlobalSat",
+        "ColorGradeGlobalLum",
+        "ColorGradeBlending",
+        "Sharpness",
+        "SharpenRadius",
+        "SharpenDetail",
+        "SharpenEdgeMasking",
+        "LuminanceSmoothing",
+        "LuminanceNoiseReductionDetail",
+        "LuminanceNoiseReductionContrast",
+        "ColorNoiseReduction",
+        "ColorNoiseReductionDetail",
+        "ColorNoiseReductionSmoothness",
+        "PostCropVignetteAmount",
+        "PostCropVignetteMidpoint",
+        "PostCropVignetteRoundness",
+        "PostCropVignetteFeather",
+        "PostCropVignetteHighlightContrast",
+        "PostCropVignetteStyle",
+        "GrainAmount",
+        "GrainSize",
+        "GrainFrequency",
+        "GrainSeed",
+        "LensProfileEnable",
+        "LensProfileDistortionScale",
+        "LensProfileVignettingScale",
+        "AutoLateralCA",
+        "ChromaticAberrationR",
+        "ChromaticAberrationB",
+        "LensManualDistortionAmount",
+        "VignetteAmount",
+        "VignetteMidpoint",
+        "DefringePurpleAmount",
+        "DefringePurpleHueLo",
+        "DefringePurpleHueHi",
+        "DefringeGreenAmount",
+        "DefringeGreenHueLo",
+        "DefringeGreenHueHi",
+        "Defringe",
+        "ShadowTint",
+        "RedHue",
+        "RedSaturation",
+        "GreenHue",
+        "GreenSaturation",
+        "BlueHue",
+        "BlueSaturation",
+        "PerspectiveVertical",
+        "PerspectiveHorizontal",
+        "PerspectiveRotate",
+        "PerspectiveScale",
+        "PerspectiveAspect",
+        "PerspectiveX",
+        "PerspectiveY",
+        "PerspectiveUpright",
+        "UprightFocalLength35mm",
+        "UprightCenterMode",
+        "UprightPreview",
+        "CropLeft",
+        "CropTop",
+        "CropRight",
+        "CropBottom",
+        "CropAngle",
+        "AutoWhiteVersion",
+        "LensProfileSetup",
+    ];
+
+    #[test]
+    fn develop_field_coverage_over_public_crs_fields() {
+        let value = |k: &str| match k {
+            "CropLeft" | "CropTop" => "0.1",
+            "CropRight" | "CropBottom" => "0.9",
+            _ => "10",
+        };
+        let body: Vec<String> = PUBLIC_CRS_FIELDS.iter().map(|k| format!("{k} = {}", value(k))).collect();
+        let settings = format!("s = {{ {} }}", body.join(", "));
+        let (_, mut dropped) = mapped_settings(&settings, crate::crs::Target::RawAbsolute, 1.5, Orientation::Normal, 1.5).unwrap();
+        dropped.sort();
+        let mapped = PUBLIC_CRS_FIELDS.len() - dropped.len();
+        eprintln!("crs coverage: {mapped} of {} public fields map; dropped: {dropped:?}", PUBLIC_CRS_FIELDS.len());
+        // No equivalent in the app: Lightroom's algorithm / tool bookkeeping (auto white version,
+        // lens profile setup, Upright's preview, centre mode and focal length: ours computes its
+        // own), the pre-2012 single Defringe switch, and HDR headroom / SDR blend, whose scales
+        // differ from ours. Reported as unmapped and kept in the archive.
+        let expected = [
+            "AutoWhiteVersion",
+            "Defringe",
+            "HDRMaxValue",
+            "LensProfileSetup",
+            "SDRBlend",
+            "UprightCenterMode",
+            "UprightFocalLength35mm",
+            "UprightPreview",
+        ];
+        assert_eq!(dropped, expected, "{mapped} mapped");
+    }
+
+    #[test]
+    fn lightroom_snapshots_become_versions() {
+        let mut s = crate::Session::new();
+        let mut data = sample();
+        data.photos[1].snapshots = vec![
+            row(json!({"id_local":8,"name":"Bright","text":"s = { Exposure2012 = 2 }"})),
+            row(json!({"id_local":5,"name":"","text":"s = { Contrast2012 = 30 }"})),
+            row(json!({"id_local":9,"name":"Bad","text":"nope {"})),
+            row(json!({"id_local":10,"name":"Empty"})),
+        ];
+        let r = apply(&mut s, data, false).unwrap();
+        let master = s.catalog.photo(PhotoId(r["mapping"]["1"].as_u64().unwrap())).unwrap();
+        let names: Vec<_> = master.versions.iter().map(|v| v.name.as_str()).collect();
+        assert_eq!(names, ["Lightroom snapshot", "Bright"]);
+        assert_eq!(master.versions[0].settings.light.contrast, 30.0);
+        assert_eq!(master.versions[1].settings.light.exposure, 2.0);
+        assert!(r["warnings"].as_array().unwrap().iter().any(|w| w.as_str().unwrap().contains("2 Lightroom snapshot")));
+        assert_eq!(r["snapshots"], 2);
+    }
+
     #[test]
     fn lightroom_history_steps_become_history_in_order() {
         let mut s = crate::Session::new();

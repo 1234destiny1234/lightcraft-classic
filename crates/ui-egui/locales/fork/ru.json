@@ -1459,5 +1459,10 @@
   "Duplicate Album": "Дублировать альбом",
   "Another album with the same photos, to arrange in its own order": "Ещё один альбом с теми же фото, чтобы упорядочить их по-своему",
   "Switch Brush A / B": "Переключить кисть A / B",
-  "OK": "ОК"
+  "OK": "ОК",
+  "is today": "сегодня",
+  "is yesterday": "вчера",
+  "is in this week": "на этой неделе",
+  "is in this month": "в этом месяце",
+  "is in this year": "в этом году"
 }
