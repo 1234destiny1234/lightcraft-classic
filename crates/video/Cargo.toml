@@ -1,0 +1,30 @@
+[package]
+name = "dac-video"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+description = "Video clips (L3): probe, frame reader and poster frames on FilmCraft's pure-Rust demuxer and decoders (native only)"
+
+[lints]
+workspace = true
+
+[dependencies]
+dac-raster = { workspace = true }
+thiserror = { workspace = true }
+
+# Native only (plan/video-filmcraft.md §3): the web build shows videos as poster-less tiles.
+# Not `filmcraft-codecs`: it pulls symphonia (MPL-2.0), which deny.toml rejects; the MP4/MOV demuxer
+# and the H.264 / HEVC decoders are used directly instead.
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+filmcraft-color = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-frame = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-time = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-h264 = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-hevc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+
+[dev-dependencies]
+image = { workspace = true }
