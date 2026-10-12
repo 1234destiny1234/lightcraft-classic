@@ -2,6 +2,7 @@
 
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.4 / M14.6 engine: `video.*` commands)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
+> **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
@@ -96,6 +97,23 @@ Probe works for every container below; frames decode when the codec cell says so
 | VP8, MJPEG, others | – | probed, unsupported |
 Pixel aspect ratio is not applied yet (anamorphic HDV / DV / DNxHD 1440 show unstretched). Only the first video track
 is read; audio is detected (`has_audio`) but not decoded (playback is muted in v1).
+## Export through the engine (M14.8)
+`dac_engine::export` is the one export path for app, CLI and MCP (`crates/engine/src/export_video.rs`). A clip
+(`Photo.video` set) in a batch exported to a rendered format becomes a movie; `Original` copies its file. It keeps
+the clip's trim (`trim_in`/`trim_out`) and its develop settings reduced by `video_settings`, graded on every frame at
+full quality by `dac_pipeline::grade::grade_frame_linear` (float, linear Rec.709 in and out, so the export crate's
+clamp + sRGB encode after the grade is the only encode; an 8-bit round trip would band ProRes). A default grade is the
+identity and skips the pipeline. Options (`ExportOptions`, validated like every export key): `videoFormat`
+(`h264` default = H.264 + AAC MP4, `prores` = ProRes 422 + AAC MOV), `videoQuality` 1–100 (default 80), `videoMaxSide`
+16–8192 (0 = the clip's size). The file name keeps the naming template with `.mp4` / `.mov`.
+The movie is written to a temporary file on the worker (`PreparedExport::run`, beside the batch's other items) and
+moved into place in batch order (`Exported::video_file`, `Exported::save`); a skipped, failed or cancelled clip
+leaves nothing behind. `set_video_hooks(items, &VideoHooks { cancel, progress })` gives clips the batch's
+activity-row flag (checked once per frame) and a per-clip progress callback: the desktop background export and the
+headless MCP export show it as the row's detail (`clip.mp4 42%`). The Export dialog shows a Video section (format,
+quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`).
+Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; frames are graded one at a
+time on the CPU (~0.7 s per 1080p frame, see Grading performance); no "export current frame as JPEG" command yet.
 
 ## Licences: why not `filmcraft-codecs`
 
@@ -136,6 +154,7 @@ cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [ma
 
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
+- 2026-10-12: M14.8 export through the engine (options, dialog, CLI, MCP, activity row).
 
 ## Next
 

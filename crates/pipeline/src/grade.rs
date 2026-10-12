@@ -64,6 +64,20 @@ pub fn grade_frame(img: &Rgb32f, settings: &DevelopSettings, quality: Quality) -
     crate::render(img, &video_source_info(), &s, &grade_request(img.width, img.height, quality)).image
 }
 
+/// [`grade_frame`] keeping float precision: the graded frame as *linear* Rec.709 / sRGB-primaries
+/// RGB (0..1, [`crate::OutputDepth::F32Linear`]), the same type and convention as the input. For
+/// export, where an 8-bit round trip would band 10-bit ProRes. `None` when the render produced no
+/// float samples of the frame's size (never expected).
+pub fn grade_frame_linear(img: &Rgb32f, settings: &DevelopSettings, quality: Quality) -> Option<Rgb32f> {
+    let s = video_settings(settings);
+    let req =
+        RenderRequest { depth: crate::OutputDepth::F32Linear, space: crate::OutputSpace::Srgb, ..grade_request(img.width, img.height, quality) };
+    let deep = crate::render(img, &video_source_info(), &s, &req).deep?;
+    let crate::DeepSamples::F32(v) = deep.samples else { return None };
+    let (chunks, _) = v.as_chunks::<3>();
+    (chunks.len() == deep.width.checked_mul(deep.height)?).then(|| Rgb32f { width: deep.width, height: deep.height, data: chunks.to_vec() })
+}
+
 /// Lattice points per axis of a baked grade ([`GradeLut`]).
 pub const LUT_SIZE: usize = 33;
 

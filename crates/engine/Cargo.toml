@@ -59,6 +59,8 @@ dac-tether = { workspace = true }
 dac-credentials = { workspace = true }
 dac-webgallery = { workspace = true, features = ["sftp"] }
 dac-plugins = { workspace = true }
+# M14.8: video clips in an export batch
+dac-video-export = { workspace = true }
 
 # free disk space of a volume (Folders panel)
 [target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
@@ -78,6 +80,12 @@ dac-heif = { workspace = true, features = ["testdata"] }
 libc = { workspace = true }
 dac-tiff = { workspace = true }
 wat = "1.228" # P4.3: plug-in test modules
+
+# M14.8: synthetic clips generated in-test (no media committed) and re-decoded
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+dac-video = { workspace = true }
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 
 [target.'cfg(windows)'.dependencies]
 # free space on Windows (the Folders panel); its own unsafe FFI stays inside the crate

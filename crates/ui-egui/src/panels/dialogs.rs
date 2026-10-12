@@ -774,6 +774,24 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                             *limit_kb = k as u32;
                         }
                     }
+                    // M14.8: clips in the selection export as movies (their trim and video grade)
+                    let videos = app.session.selection.ids.iter().filter(|id| app.session.catalog.photo(**id).is_some_and(|p| p.video.is_some())).count();
+                    if rendered && videos > 0 {
+                        use dac_engine::export_video::VideoFormat as V;
+                        ui.add_space(4.0);
+                        ui.label(egui::RichText::new(crate::i18n::tr("Video")).strong());
+                        let note = format!("{videos} · {}", crate::i18n::tr("video clips export as movies, trimmed, with their video edits"));
+                        ui.label(egui::RichText::new(note).color(t.text_dim));
+                        choices(ui, "Video format", "exportVideoFormat", &[(V::H264, "H.264 (MP4)"), (V::ProRes, "ProRes (MOV)")], &mut opts.video_format);
+                        let mut q = opts.video_quality as f64;
+                        if num(ui, &VIDEO_QUALITY, &mut q) {
+                            opts.video_quality = q.clamp(1.0, 100.0) as u8;
+                        }
+                        let mut side = opts.video_max_side.map_or(0.0, f64::from);
+                        if num(ui, &VIDEO_MAX_SIDE, &mut side) {
+                            opts.video_max_side = (side >= 16.0).then_some(side as u32);
+                        }
+                    }
                     if rendered {
                         export_size(ui, full_size, resize, &mut opts.ppi);
                     }
@@ -1727,6 +1745,8 @@ const fn spec(id: &'static str, label: &'static str, min: f64, max: f64, default
     ControlSpec { id, label, section: Section::Light, min, max, default, step, decimals: 0, track: Track::Plain }
 }
 const QUALITY: ControlSpec = spec("export.quality", "Quality", 1.0, 100.0, 90.0, 1.0);
+const VIDEO_QUALITY: ControlSpec = spec("export.videoQuality", "Video quality", 1.0, 100.0, 80.0, 1.0);
+const VIDEO_MAX_SIDE: ControlSpec = spec("export.videoMaxSide", "Video long edge (px, 0 = full)", 0.0, 8192.0, 0.0, 16.0);
 const LIMIT_KB: ControlSpec = spec("export.limitKb", "Limit file size (KB, 0 = off)", 0.0, 20_000.0, 0.0, 10.0);
 const SIZE_PX: ControlSpec = spec("export.sizePx", "Pixels", 16.0, 20_000.0, 2048.0, 16.0);
 const SIZE_W: ControlSpec = spec("export.sizeW", "Width (px)", 16.0, 20_000.0, 2048.0, 16.0);
