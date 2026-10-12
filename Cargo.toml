@@ -21,6 +21,7 @@ dac-sysmem = { path = "crates/sysmem" }
 dac-color = { path = "crates/color" }
 dac-raster = { path = "crates/raster" }
 dac-video = { path = "crates/video" }
+dac-video-export = { path = "crates/video-export" }
 dac-tiff = { path = "crates/tiff" }
 dac-raw = { path = "crates/raw" }
 dac-camdb = { path = "crates/camdb" }

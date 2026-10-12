@@ -709,6 +709,12 @@ pub struct ExportOptions {
     pub add_to_photos: bool,
     /// The Photos album they go into, made when missing (empty = none).
     pub photos_album: String,
+    /// Video clips in the batch (rendered formats only): the movie format.
+    pub video_format: crate::export_video::VideoFormat,
+    /// Video quality 1–100 (H.264 CRF 40…14, or the ProRes flavour).
+    pub video_quality: u8,
+    /// Video: longest output side in pixels (`None` = the clip's size; never upscales).
+    pub video_max_side: Option<u32>,
 }
 
 impl Default for ExportOptions {
@@ -739,6 +745,9 @@ impl Default for ExportOptions {
             jxl_progressive: false,
             add_to_photos: false,
             photos_album: String::new(),
+            video_format: crate::export_video::VideoFormat::H264,
+            video_quality: 80,
+            video_max_side: None,
         }
     }
 }
@@ -781,6 +790,9 @@ pub const OPTION_PARAMS: &[&str] = &[
     "jxlProgressive",
     "addToPhotos",
     "photosAlbum",
+    "videoFormat",
+    "videoQuality",
+    "videoMaxSide",
 ];
 
 /// Why an export can't add its files to Apple Photos on this platform (`None`: it can, when the
@@ -906,8 +918,15 @@ impl ExportOptions {
                         return Err(bad(format!("`{k}` must be one of jpeg|png|tiff|webp|avif|jxl|dng|original")));
                     }
                 }
-                "quality" => {
+                "quality" | "videoQuality" => {
                     int(k, v, 1, 100)?;
+                }
+                "videoFormat" => one_of(k, v, crate::export_video::VideoFormat::NAMES)?,
+                "videoMaxSide" => {
+                    let (lo, hi) = crate::export_video::VIDEO_MAX_SIDE_RANGE;
+                    if !whole(v).is_some_and(|i| i == 0 || (i64::from(lo)..=i64::from(hi)).contains(&i)) {
+                        return Err(bad(format!("`{k}` must be 0 (the clip's size) or an integer {lo}..{hi}")));
+                    }
                 }
                 "ppi" => {
                     int(k, v, 1, u16::MAX as i64)?;
@@ -1102,6 +1121,11 @@ impl ExportOptions {
             jxl_progressive: p.get("jxlProgressive").and_then(Value::as_bool).unwrap_or(d.jxl_progressive),
             add_to_photos: p.get("addToPhotos").and_then(Value::as_bool).unwrap_or(d.add_to_photos),
             photos_album: s("photosAlbum").map_or(d.photos_album, |a| a.trim().to_string()),
+            video_format: s("videoFormat").and_then(crate::export_video::VideoFormat::parse).unwrap_or(d.video_format),
+            video_quality: u("videoQuality").map_or(d.video_quality, |q| q.clamp(1, 100) as u8),
+            video_max_side: u("videoMaxSide").filter(|v| *v > 0).map(|v| {
+                v.clamp(u64::from(crate::export_video::VIDEO_MAX_SIDE_RANGE.0), u64::from(crate::export_video::VIDEO_MAX_SIDE_RANGE.1)) as u32
+            }),
         }
     }
 
@@ -1572,6 +1596,28 @@ pub struct Exported {
     /// Set when the render was tried on the GPU and fell back to the CPU: why (see
     /// `docs/gpu-pipeline.md`). The file holds the CPU render either way.
     pub gpu_fallback: Option<String>,
+    /// A video clip's movie, in a temporary file (`bytes` is then empty): moved into place instead
+    /// of written ([`Exported::save`]).
+    pub video_file: Option<crate::export_video::TempFile>,
+}
+
+impl Exported {
+    /// Write the export to `path` (the movie moved there, else the bytes; sidecars not included).
+    pub fn save(&self, path: &str) -> Result<(), String> {
+        match &self.video_file {
+            Some(f) => f.move_to(path),
+            None => write_file(path, &self.bytes),
+        }
+    }
+
+    /// The exported file's size in bytes.
+    pub fn len(&self) -> u64 {
+        self.video_file.as_ref().map_or(self.bytes.len() as u64, |f| f.len())
+    }
+
+    pub fn is_empty(&self) -> bool {
+        self.len() == 0
+    }
 }
 
 /// Output size of photo `p` under `o` (its cropped full size when `o.resize` is `None`).
@@ -1613,6 +1659,8 @@ struct RenderWork {
 
 enum Work {
     Render(Box<RenderWork>),
+    /// A video clip exported as a movie ([`crate::export_video`]).
+    Video(Box<crate::export_video::VideoWork>),
     /// [`ExportFormat::Original`] (the file's bytes + an XMP sidecar) or [`ExportFormat::Dng`] (the
     /// raw data re-encoded as a lossless DNG with the edits in its XMP).
     File {
@@ -1648,7 +1696,28 @@ fn prepare_guarded(
     guard: std::sync::Arc<crate::originals::OriginalGuard>,
 ) -> Result<PreparedExport, String> {
     let p = session.catalog.photo(id).ok_or("no such photo")?;
-    let file_name = o.file_name_for(p, seq);
+    let mut file_name = o.file_name_for(p, seq);
+    if let Some(v) = p.video.as_ref().filter(|_| o.format.is_rendered()) {
+        let dac_catalog::Source::File { path } = &p.source else {
+            return Err(format!("{}: a video clip without a file", p.file_name));
+        };
+        let stem = file_name.strip_suffix(o.format.extension()).unwrap_or(&file_name).trim_end_matches('.');
+        file_name = format!("{stem}.{}", o.video_format.extension());
+        let px = (v.width as usize).saturating_mul(v.height as usize);
+        let work = crate::export_video::VideoWork {
+            src: std::path::PathBuf::from(path),
+            trim: (v.trim_in, v.trim_out),
+            settings: (*p.develop).clone(),
+            format: o.video_format,
+            quality: o.video_quality,
+            max_side: o.video_max_side,
+            file_name: file_name.clone(),
+            hooks: Default::default(),
+        };
+        // a decoded frame, its graded copy and the pipeline's planes, plus the encoder's frames
+        let weight = px.saturating_mul(96);
+        return Ok(PreparedExport { photo: id, file_name, work: Work::Video(Box::new(work)), guard, weight });
+    }
     // HDR output only for photos edited in HDR; the rest of the batch exports as usual
     let sdr_opts;
     let o = if o.hdr && !p.develop.hdr.enabled {
@@ -1698,10 +1767,36 @@ fn render_weight(full_px: usize, long: usize, level: crate::media::SourceLevel, 
     src_px.saturating_mul(12).saturating_add(out_px.saturating_mul(36))
 }
 
+/// Give the clips among `items` the batch's cancel flag and progress callback.
+pub fn set_video_hooks(items: &mut [PreparedExport], hooks: &crate::export_video::VideoHooks) {
+    for i in items {
+        if let Work::Video(w) = &mut i.work {
+            w.hooks = hooks.clone();
+        }
+    }
+}
+
 impl PreparedExport {
+    /// Whether this item is a video clip exported as a movie.
+    pub fn is_video(&self) -> bool {
+        matches!(self.work, Work::Video(_))
+    }
+
     pub fn run(self) -> Result<Exported, String> {
         let file_name = self.file_name;
         match self.work {
+            Work::Video(w) => {
+                let out = crate::export_video::run(*w)?;
+                Ok(Exported {
+                    file_name,
+                    bytes: Vec::new(),
+                    width: out.width,
+                    height: out.height,
+                    sidecars: Vec::new(),
+                    gpu_fallback: None,
+                    video_file: Some(out.file),
+                })
+            }
             Work::Render(w) => {
                 let RenderWork { job, hdr_job, meta, opts } = *w;
                 let result = job.run();
@@ -1715,7 +1810,7 @@ impl PreparedExport {
                     }
                     None => encode_rendered(&r, &opts, meta.as_ref())?,
                 };
-                Ok(Exported { file_name, bytes, width: r.image.width, height: r.image.height, sidecars: Vec::new(), gpu_fallback })
+                Ok(Exported { file_name, bytes, width: r.image.width, height: r.image.height, sidecars: Vec::new(), gpu_fallback, video_file: None })
             }
             Work::File { path, read, packet, dng, label, size, remove_location } => {
                 let bytes = match &read {
@@ -1736,6 +1831,7 @@ impl PreparedExport {
                         height: size.1,
                         sidecars: vec![("xmp", packet.into_bytes())],
                         gpu_fallback: None,
+                        video_file: None,
                     });
                 };
                 if dac_raw::probe(&bytes).is_none() {
@@ -1750,7 +1846,15 @@ impl PreparedExport {
                 };
                 let dng = dac_raw::write_dng(&raw, &dac_raw::DngWriteOptions { xmp: Some(packet), compression, ..Default::default() })
                     .map_err(|e| e.to_string())?;
-                Ok(Exported { file_name, bytes: dng, width: raw.width, height: raw.height, sidecars: Vec::new(), gpu_fallback: None })
+                Ok(Exported {
+                    file_name,
+                    bytes: dng,
+                    width: raw.width,
+                    height: raw.height,
+                    sidecars: Vec::new(),
+                    gpu_fallback: None,
+                    video_file: None,
+                })
             }
         }
     }
@@ -2186,7 +2290,10 @@ impl<'a> Placer<'a> {
             for f in &files {
                 guard.check(std::path::Path::new(f))?;
             }
-            write(&path, &e.bytes)?;
+            match &e.video_file {
+                Some(f) => f.move_to(&path)?,
+                None => write(&path, &e.bytes)?,
+            }
             let mut sidecars = Vec::new();
             for ((_, bytes), sc) in e.sidecars.iter().zip(files.iter().skip(1)) {
                 write(sc, bytes)?;
@@ -2197,7 +2304,10 @@ impl<'a> Placer<'a> {
         match written {
             Ok((path, files, sidecars)) => {
                 self.taken.extend(files);
-                let mut entry = json!({"path": path, "width": e.width, "height": e.height, "bytes": e.bytes.len(), "sidecars": sidecars});
+                let mut entry = json!({"path": path, "width": e.width, "height": e.height, "bytes": e.len(), "sidecars": sidecars});
+                if e.video_file.is_some() {
+                    entry["video"] = json!(true);
+                }
                 if let Some(why) = &e.gpu_fallback {
                     entry["gpuFallback"] = json!(why);
                 }

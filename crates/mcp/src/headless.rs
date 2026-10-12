@@ -93,6 +93,10 @@ impl Headless {
         if let (Some(path), None) = (exact, p.get("format")) {
             let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
             opts.format = ExportFormat::parse(&ext).unwrap_or(ExportFormat::Png);
+            // a movie path: the clip's movie format (the format stays a rendered one)
+            if let (None, Some(v)) = (p.get("videoFormat"), dac_engine::export_video::VideoFormat::parse(&ext)) {
+                opts.video_format = v;
+            }
         }
         let ids: Vec<_> = match p.get("ids").and_then(Value::as_array) {
             Some(a) => a.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect(),
@@ -107,8 +111,18 @@ impl Headless {
         let write = &mut dac_engine::export::write_file;
         // Add to Apple Photos: refused before anything is written when it can't be done
         let after = self.session.after_export(&opts)?;
-        let items = prepare_batch(&mut self.session, &ids, &opts)?;
+        let mut items = prepare_batch(&mut self.session, &ids, &opts)?;
         let total = items.len();
+        // video clips: a row in the activity stack whose cancel stops the movie within a frame
+        let _video_row = items.iter().any(|i| i.is_video()).then(|| {
+            let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+            let row = self.session.activity.start("export", "Exporting video", dac_engine::activity::Cancel::Flag(cancel.clone()));
+            let h = row.handle();
+            let progress: dac_engine::export_video::VideoProgress =
+                std::sync::Arc::new(move |name: &str, x: f64| h.detail(&format!("{name} {:.0}%", x.clamp(0.0, 1.0) * 100.0)));
+            dac_engine::export::set_video_hooks(&mut items, &dac_engine::export_video::VideoHooks { cancel, progress: Some(progress) });
+            row
+        });
         let mut hook = self.progress.take();
         let mut cancelled = false;
         let files = run_batch(
@@ -163,7 +177,7 @@ impl Backend for Headless {
             "engine.commands" => {
                 let mut v: Vec<Value> = self.session.commands().into_iter().map(|c| serde_json::to_value(c).unwrap_or_default()).collect();
                 v.push(json!({"id": "app.export", "label": "Export Now", "menu": [], "shortcut": null,
-                    "params": "{path?: output file (.jpg/.png/.tif/.webp/.avif/.jxl/.psd/.dng) | dir?, ids?, preset?, format?: jpeg|png|tiff|webp|avif|jxl|psd|dng|original, longEdge?|shortEdge?|width?|height?|megapixels?|percent? (default longEdge 3000; longEdge 0 = full size), dontEnlarge?, ppi?, quality?: 1..100, jxlLossless?, jxlEffort?: fast|normal, jxlProgressive?, limitKb?, colorSpace?: srgb|displayP3|adobeRgb|proPhoto|rec2020, bitDepth?: 8|10|16|32, hdr? (HDR output for HDR edits: gain map JPEG, PQ AVIF / PNG / JPEG XL, float TIFF), sharpen?: none|screen|matte|glossy, sharpenAmount?: low|standard|high, metadata?: all|allExceptCamera|copyright|none, removeLocation?, naming?, startNumber?, subfolder?, conflict?: unique|overwrite|skip, tiffCompression?: none|lzw|zip, dngCompression?: lossless|deflate|uncompressed, addToPhotos?: bool (macOS: then add the files written to Apple Photos; outcome in `applePhotos`), photosAlbum?: top-level album name (made when missing), watermark?: text | {text?, vertical? (upright columns, right to left), size? (text height, 0.005..0.5 of the short edge; default 0.035), opacity? (0..1; 0.7), anchor?: topLeft|top|topRight|left|center|right|bottomLeft|bottom|bottomRight, insetX? (margin from the left/right edge, 0..0.4 of the short edge; 0.025), insetY? (from the top/bottom edge; 0.025), inset? (sets both), rotation?: 0|90|180|270 (degrees clockwise; 0), color? [r,g,b] sRGB, shadow?, image? (graphic drawn instead of the text), imageWidth? (0.01..1 of the photo's width; 0.2)}} — an unknown parameter, an out-of-range watermark size or a value of the wrong kind is an error, not a default",
+                    "params": "{path?: output file (.jpg/.png/.tif/.webp/.avif/.jxl/.psd/.dng) | dir?, ids?, preset?, format?: jpeg|png|tiff|webp|avif|jxl|psd|dng|original, longEdge?|shortEdge?|width?|height?|megapixels?|percent? (default longEdge 3000; longEdge 0 = full size), dontEnlarge?, ppi?, quality?: 1..100, jxlLossless?, jxlEffort?: fast|normal, jxlProgressive?, videoFormat?: h264|prores (video clips export as movies: trim + video edits), videoQuality?: 1..100, videoMaxSide?: px (0 = clip size), limitKb?, colorSpace?: srgb|displayP3|adobeRgb|proPhoto|rec2020, bitDepth?: 8|10|16|32, hdr? (HDR output for HDR edits: gain map JPEG, PQ AVIF / PNG / JPEG XL, float TIFF), sharpen?: none|screen|matte|glossy, sharpenAmount?: low|standard|high, metadata?: all|allExceptCamera|copyright|none, removeLocation?, naming?, startNumber?, subfolder?, conflict?: unique|overwrite|skip, tiffCompression?: none|lzw|zip, dngCompression?: lossless|deflate|uncompressed, addToPhotos?: bool (macOS: then add the files written to Apple Photos; outcome in `applePhotos`), photosAlbum?: top-level album name (made when missing), watermark?: text | {text?, vertical? (upright columns, right to left), size? (text height, 0.005..0.5 of the short edge; default 0.035), opacity? (0..1; 0.7), anchor?: topLeft|top|topRight|left|center|right|bottomLeft|bottom|bottomRight, insetX? (margin from the left/right edge, 0..0.4 of the short edge; 0.025), insetY? (from the top/bottom edge; 0.025), inset? (sets both), rotation?: 0|90|180|270 (degrees clockwise; 0), color? [r,g,b] sRGB, shadow?, image? (graphic drawn instead of the text), imageWidth? (0.01..1 of the photo's width; 0.2)}} — an unknown parameter, an out-of-range watermark size or a value of the wrong kind is an error, not a default",
                     "enabled": self.session.active().is_some()}));
                 Ok(Value::Array(v))
             }

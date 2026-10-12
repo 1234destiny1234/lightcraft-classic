@@ -31,6 +31,7 @@ pub mod denoise;
 pub mod devices;
 pub mod display;
 pub mod export;
+pub mod export_video;
 pub mod face_download;
 #[cfg(not(target_arch = "wasm32"))]
 mod faces_index;
@@ -1082,6 +1083,8 @@ mod tests_edit_in;
 mod tests_edit_roundtrip;
 #[cfg(test)]
 mod tests_export;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_export_video;
 #[cfg(test)]
 mod tests_face_models;
 #[cfg(test)]

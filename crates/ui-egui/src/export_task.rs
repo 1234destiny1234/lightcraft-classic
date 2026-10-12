@@ -12,7 +12,7 @@ use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 
 use dac_engine::activity::{Cancel, TaskGuard};
-use dac_engine::export::{AfterExport, Destination, ExportOptions, PreparedExport, run_batch};
+use dac_engine::export::{AfterExport, Destination, ExportOptions, PreparedExport, run_batch, set_video_hooks};
 use serde_json::{Value, json};
 
 use crate::DacApp;
@@ -41,7 +41,7 @@ impl ExportTask {
 
 /// Start exporting `items` in the background, then do `after` with the files written (Add to Apple
 /// Photos). Errors per photo are collected, not fatal.
-pub fn start(app: &mut DacApp, items: Vec<PreparedExport>, opts: ExportOptions, to: Destination, after: AfterExport) -> Result<Value, String> {
+pub fn start(app: &mut DacApp, mut items: Vec<PreparedExport>, opts: ExportOptions, to: Destination, after: AfterExport) -> Result<Value, String> {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
@@ -54,6 +54,13 @@ pub fn start(app: &mut DacApp, items: Vec<PreparedExport>, opts: ExportOptions, 
     let guard = app.session.activity.start("export", "Exporting", Cancel::Flag(cancel.clone()));
     guard.progress(0, total as u64);
     let row = guard.handle();
+    // video clips stop within a frame on ✕ and show how far the movie is
+    if items.iter().any(PreparedExport::is_video) {
+        let r = row.clone();
+        let progress: dac_engine::export_video::VideoProgress =
+            Arc::new(move |name: &str, x: f64| r.detail(&format!("{name} {:.0}%", x.clamp(0.0, 1.0) * 100.0)));
+        set_video_hooks(&mut items, &dac_engine::export_video::VideoHooks { cancel: cancel.clone(), progress: Some(progress) });
+    }
     // translated here: the language is the UI thread's, and the worker would show English
     let adding = crate::i18n::tr("Adding to Apple Photos…").to_string();
     let work = move || {

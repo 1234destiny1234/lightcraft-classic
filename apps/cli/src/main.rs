@@ -768,8 +768,13 @@ fn render(args: &[String]) -> Result<(), String> {
     let mut o = ExportOptions::from_params(&p).map_err(|e| e.to_string())?;
     if p.get("format").is_none() {
         let ext = Path::new(&output).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-        o.format = ExportFormat::parse(&ext)
-            .ok_or_else(|| format!("{output}: unknown extension (use .jpg .png .tif .webp .avif .dng or --opt format=…)"))?;
+        match (ExportFormat::parse(&ext), dac_engine::export_video::VideoFormat::parse(&ext)) {
+            (Some(f), _) => o.format = f,
+            // a movie (.mp4 / .mov): a video clip exports as one; the format stays a rendered one
+            (None, Some(v)) if p.get("videoFormat").is_none() => o.video_format = v,
+            (None, Some(_)) => {}
+            (None, None) => return Err(format!("{output}: unknown extension (use .jpg .png .tif .webp .avif .dng .mp4 .mov or --opt format=…)")),
+        }
     }
     // Add to Apple Photos: refused before anything is written when it can't be done
     let after = s.after_export(&o)?;
@@ -781,7 +786,7 @@ fn render(args: &[String]) -> Result<(), String> {
     for p in std::iter::once(&output).chain(sidecars.iter().map(|(p, _)| p)) {
         guard.check(Path::new(p)).map_err(|err| format!("render: {err}"))?;
     }
-    dac_engine::export::write_file(&output, &e.bytes)?;
+    e.save(&output)?;
     for (sc, bytes) in &sidecars {
         dac_engine::export::write_file(sc, bytes)?;
         eprintln!("{CLI}: wrote {sc}");

@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-EXPORT: video export through the engine, M14.8; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -448,7 +448,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VID-TRIM | Trim | P1 | ⬜ | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim` | catalog format 10 stores and validates the trim (undoable, in sidecars as `lcvid:trimIn/trimOut`); no UI or commands yet |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster` | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); no poster rendering yet |
-| LR-VID-EXPORT | Video export | P2 | ⬜ | `crates/video-export/src/native.rs` | core loop only (M14.8): trimmed decode, per-frame grade, H.264+AAC MP4 / ProRes MOV; not yet wired to engine, UI, CLI or MCP |
+| LR-VID-EXPORT | Video export | P2 | 🟡 | `crates/engine/src/export_video.rs`, `crates/video-export/src/native.rs` | M14.8: a clip in an `app.export` batch (app dialog Video section, CLI `render … -o x.mp4`, MCP `export`) exports as a movie with its trim and video-only develop settings graded at full quality in float (H.264+AAC MP4 or ProRes 422 MOV; `videoFormat`/`videoQuality`/`videoMaxSide`); photos in the batch export as before; activity row cancels within a frame. Limits: needs `Photo.video` from the import probe (lands with M14.2/engine wiring), frames graded one at a time on the CPU (~0.7 s per 1080p frame), AAC is the only audio kept, no web |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)
