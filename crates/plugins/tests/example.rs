@@ -100,10 +100,10 @@ fn example_plugin_end_to_end() {
     let r = publisher.upload(&mut host, &item).unwrap();
     assert_eq!(r.remote_id, "p1");
 
-    // namespace data persisted; grants and enabled state survive a restart
+    // namespace data persisted (per library; none open here: the unnamed one); grants and enabled state survive a restart
     let data: Value = serde_json::from_slice(&std::fs::read(dir.join("data").join(format!("{id}.json"))).unwrap()).unwrap();
-    assert_eq!(data["p1"]["marked"], true);
-    assert_eq!(data["p1"]["lastExport"], dir.join("out.jpg").display().to_string());
+    assert_eq!(data["libraries"][""]["p1"]["marked"], true);
+    assert_eq!(data["libraries"][""]["p1"]["lastExport"], dir.join("out.jpg").display().to_string());
 
     // revoking the catalog permission takes effect on the next call
     m.set_grant(id, Permissions::default()).unwrap();
