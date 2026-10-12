@@ -156,12 +156,6 @@ fn sh_quote(text: &str) -> String {
     format!("'{}'", text.replace('\'', "'\\''"))
 }
 
-/// Windows' `"…"`: quotes doubled for `cmd`/`msiexec`.
-#[cfg(windows)]
-fn win_quote(text: &str) -> String {
-    format!("\"{}\"", text.replace('"', "\"\""))
-}
-
 // ---------- Windows
 
 #[cfg(windows)]
@@ -169,10 +163,11 @@ fn install_msi(msi: &Path) -> Result<Outcome, UpdateError> {
     // `/passive` shows the installer's progress bar without asking questions, `/norestart` keeps
     // the machine up. The installer needs this process gone to replace the exe, so it is started
     // and the caller exits; when it needs elevation Windows asks through `msiexec` itself.
-    // The path is quoted because msiexec parses its own command line.
+    // `Command` quotes the path itself when it holds spaces; quoting it again here would hand
+    // msiexec literal `\"` characters.
     let child = Command::new("msiexec")
         .arg("/i")
-        .arg(win_quote(&msi.to_string_lossy()))
+        .arg(msi)
         .arg("/passive")
         .arg("/norestart")
         .spawn()
@@ -246,10 +241,19 @@ fn install_dmg(dmg: &Path) -> Result<Outcome, UpdateError> {
 fn install_appimage(new: &Path) -> Result<Outcome, UpdateError> {
     use std::os::unix::fs::PermissionsExt;
 
-    let running = current_exe().ok_or_else(|| UpdateError::Install("could not tell which file this program is".into()))?;
     if !new.is_file() {
         return Err(UpdateError::Install(format!("{} is not there", new.display())));
     }
+    // Inside an AppImage `current_exe` is the binary in the read-only squashfs mount; the file
+    // to replace is the one the runtime names in `$APPIMAGE`. Without it this copy was installed
+    // another way (a package, a tarball, `cargo install`) and must not be overwritten by an
+    // AppImage.
+    let running = appimage_path(std::env::var_os("APPIMAGE")).ok_or_else(|| {
+        UpdateError::Install(format!(
+            "this copy of the app is not running from an AppImage; the update was downloaded to {}, install it the way this copy was installed",
+            new.display()
+        ))
+    })?;
     // the new file goes beside the old one first, so replacing it is a rename on the same file
     // system (atomic, and it cannot fail half way across devices)
     let staged = running.with_file_name(format!("{}.new-{}", file_name(&running), std::process::id()));
@@ -295,17 +299,19 @@ fn install_appimage(new: &Path) -> Result<Outcome, UpdateError> {
     })
 }
 
-#[cfg(all(unix, not(target_os = "macos")))]
-fn set_executable(path: &Path) -> Result<(), UpdateError> {
-    use std::os::unix::fs::PermissionsExt;
-    let mut perms = std::fs::metadata(path).map_err(|e| UpdateError::Install(format!("{}: {e}", path.display())))?.permissions();
-    perms.set_mode(perms.mode() | 0o700);
-    std::fs::set_permissions(path, perms).map_err(|e| UpdateError::Install(format!("{}: {e}", path.display())))
-}
-
 #[cfg(not(all(unix, not(target_os = "macos"))))]
 fn install_appimage(new: &Path) -> Result<Outcome, UpdateError> {
     Err(UpdateError::Install(format!("{} is an AppImage; this system installs it another way", new.display())))
+}
+
+/// The AppImage file to replace, from the runtime's `$APPIMAGE` (an existing file, canonical).
+#[cfg(all(unix, not(target_os = "macos")))]
+fn appimage_path(var: Option<std::ffi::OsString>) -> Option<PathBuf> {
+    let path = PathBuf::from(var?);
+    if !path.is_file() {
+        return None;
+    }
+    Some(std::fs::canonicalize(&path).unwrap_or(path))
 }
 
 #[cfg(all(unix, not(target_os = "macos")))]
@@ -352,8 +358,6 @@ mod tests {
             assert_eq!(sh_quote("/tmp/a b"), "'/tmp/a b'");
             assert_eq!(sh_quote("/tmp/it's"), "'/tmp/it'\\''s'");
         }
-        #[cfg(windows)]
-        assert_eq!(win_quote(r"C:\a b.msi"), r#""C:\a b.msi""#);
     }
 
     #[test]
@@ -397,6 +401,15 @@ mod tests {
             let err = install(Kind::AppImage, &downloaded("nowhere.AppImage"), "1.2.3").expect_err("refused");
             assert!(err.to_string().contains("not there"), "{err}");
         }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    #[test]
+    fn only_a_real_appimage_file_is_replaced() {
+        assert_eq!(appimage_path(None), None, "not started from an AppImage");
+        assert_eq!(appimage_path(Some("/nowhere/app.AppImage".into())), None);
+        let exe = current_exe().expect("test exe");
+        assert!(appimage_path(Some(exe.clone().into_os_string())).is_some());
     }
 
     #[test]
