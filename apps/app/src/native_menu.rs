@@ -131,6 +131,11 @@ fn accelerator(sc: &str) -> Option<Accelerator> {
         "Delete" => Code::Backspace,
         // with modifiers only: a bare Enter belongs to text fields and tools
         "Enter" if !mods.is_empty() => Code::Enter,
+        // arrows likewise: bare arrows move the selection or nudge sliders in egui
+        "Up" if !mods.is_empty() => Code::ArrowUp,
+        "Down" if !mods.is_empty() => Code::ArrowDown,
+        "Left" if !mods.is_empty() => Code::ArrowLeft,
+        "Right" if !mods.is_empty() => Code::ArrowRight,
         "F1" => Code::F1,
         "F2" => Code::F2,
         "F3" => Code::F3,
@@ -468,6 +473,8 @@ mod tests {
         assert_eq!(accelerator("G"), Some(Accelerator::new(Modifiers::empty(), Code::KeyG)));
         assert_eq!(accelerator("Cmd+'"), Some(Accelerator::new(Modifiers::META, Code::Quote)));
         assert_eq!(accelerator("Escape"), None);
+        assert_eq!(accelerator("Cmd+Alt+Up"), Some(Accelerator::new(Modifiers::META | Modifiers::ALT, Code::ArrowUp)));
+        assert_eq!(accelerator("Up"), None);
         assert!(yields_to_text("G") && yields_to_text("Delete") && yields_to_text("Cmd+V"));
         assert!(!yields_to_text("Cmd+Shift+E"));
         // every registry shortcut that a menu shows maps (or is deliberately left to egui)
