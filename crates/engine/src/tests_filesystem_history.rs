@@ -292,7 +292,7 @@ fn history_retries_both_sidecar_styles_after_following_a_photo_with_failed_rollb
             file_history_step(&mut s, &fs, redo).unwrap();
             let mut after = before
                 .iter()
-                .map(|(path, bytes)| (path.replace(from.trim_end_matches(".jpg"), to.trim_end_matches(".jpg")), bytes.clone()))
+                .map(|(path, bytes)| (path.replace(slashed(&from).trim_end_matches(".jpg"), slashed(&to).trim_end_matches(".jpg")), bytes.clone()))
                 .collect::<Vec<_>>();
             after.sort();
             assert_eq!(fs.listing(), after);

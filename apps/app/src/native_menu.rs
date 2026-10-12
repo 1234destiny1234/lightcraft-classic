@@ -129,6 +129,8 @@ fn accelerator(sc: &str) -> Option<Accelerator> {
         "`" => Code::Backquote,
         "," => Code::Comma,
         "Delete" => Code::Backspace,
+        // a bare Tab (hide the side panels) never reaches the menu bar; text fields keep it
+        "Tab" => Code::Tab,
         // with modifiers only: a bare Enter belongs to text fields and tools
         "Enter" if !mods.is_empty() => Code::Enter,
         // arrows likewise: bare arrows move the selection or nudge sliders in egui

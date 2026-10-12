@@ -1186,7 +1186,11 @@ pub(crate) mod tests {
         }
         fn idx(&self, p: &Path) -> Option<usize> {
             let p = Self::norm(p);
-            self.files.borrow().iter().position(|(f, _)| if self.ci { folded_path(f) == folded_path(&p) } else { *f == p })
+            self.files.borrow().iter().position(|(f, _)| {
+                // tests may push host-joined paths straight into `files`
+                let f = f.replace('\\', "/");
+                if self.ci { folded_path(&f) == folded_path(&p) } else { f == p }
+            })
         }
         /// The listing: (exact path, contents), sorted.
         pub fn listing(&self) -> Vec<(String, String)> {
@@ -1240,7 +1244,7 @@ pub(crate) mod tests {
         }
         fn listed(&self, p: &Path) -> bool {
             let p = Self::norm(p);
-            self.files.borrow().iter().any(|(f, _)| *f == p)
+            self.files.borrow().iter().any(|(f, _)| f.replace('\\', "/") == p)
         }
         fn stem_sibling(&self, sidecar: &Path) -> Option<String> {
             let stem = Self::norm(&sidecar.with_extension(""));
