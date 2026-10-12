@@ -612,7 +612,10 @@ fn swap(app: &mut LccApp, to: ModuleId, full: bool) {
     app.ui.module = to;
     if let Some(l) = app.ui.layouts.get(&to).cloned() {
         apply(app, &l, full);
-    } else if full && to == ModuleId::Library && app.ui.right.is_edit_tool() {
+    }
+    // Library never keeps an editing panel: its right column is the Classic panels (also when
+    // the view, not a module switch, brought it back, e.g. an import showing its photos)
+    if to == ModuleId::Library && app.ui.right.is_edit_tool() {
         app.ui.right = RightPanel::None;
     }
 }

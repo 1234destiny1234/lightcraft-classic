@@ -69,6 +69,31 @@ fn switching_modules_keeps_selection_and_filmstrip() {
     assert_eq!(r["ok"], false, "{r}");
 }
 
+// Regression: returning to a grid from Develop by a view change (an import showing its photos,
+// a grid key) entered Library with the Develop panel still on the right, instead of Library's
+// Classic panels, until Develop and back.
+#[test]
+fn a_grid_view_from_develop_shows_library_panels() {
+    let mut h = demo();
+    run(&mut h, "module.develop", json!({}));
+    run(&mut h, "module.library", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.right, RightPanel::Edit);
+    run(&mut h, "view.photoGrid", json!({}));
+    assert_eq!(h.app.ui.module, ModuleId::Library);
+    assert!(!h.app.ui.right.is_edit_tool(), "{:?}", h.app.ui.right);
+    // and the first time too, before Library has a saved layout
+    let mut h = demo();
+    h.app.ui.layouts.clear();
+    h.app.ui.module = ModuleId::Develop;
+    h.app.ui.view = ViewMode::Detail;
+    h.app.ui.right = RightPanel::Edit;
+    h.step();
+    run(&mut h, "view.photoGrid", json!({}));
+    assert_eq!(h.app.ui.module, ModuleId::Library);
+    assert!(!h.app.ui.right.is_edit_tool(), "{:?}", h.app.ui.right);
+}
+
 #[test]
 fn panel_state_is_per_module_and_persists() {
     let mut h = demo();
