@@ -847,6 +847,13 @@ fn brush_settings(app: &mut LccApp, ui: &mut egui::Ui) {
             if text_button(ui, "brushErase", crate::i18n::tr("Erase"), app.ui.brush_erase).clicked() {
                 app.ui.brush_erase = true;
             }
+            ui.add_space(8.0);
+            // Lightroom's brush A / B: two presets, each with its own size, feather, flow, density
+            for (slot, id, label) in [(0u8, "brushA", "A"), (1, "brushB", "B")] {
+                if text_button(ui, id, label, app.ui.brush_slot == slot).clicked() && app.ui.brush_slot != slot {
+                    let _ = app.run("brush.preset", json!({"slot": label.to_ascii_lowercase()}));
+                }
+            }
         });
         let mut auto = app.ui.brush_auto_mask;
         if ui
@@ -861,6 +868,7 @@ fn brush_settings(app: &mut LccApp, ui: &mut egui::Ui) {
         ("ui.brushSize", "Size", 1.0, 100.0, (app.ui.brush_size * 400.0) as f64),
         ("ui.brushFeather", "Feather", 0.0, 100.0, app.ui.brush_feather as f64),
         ("ui.brushFlow", "Flow", 1.0, 100.0, app.ui.brush_flow as f64),
+        ("ui.brushDensity", "Density", 0.0, 100.0, app.ui.brush_density as f64),
     ] {
         let s = ControlSpec { id, label, section: Section::Light, min, max, default: min, step: 1.0, decimals: 0, track: Track::Plain };
         let out = slider(ui, &s, get, true, None);
@@ -868,6 +876,7 @@ fn brush_settings(app: &mut LccApp, ui: &mut egui::Ui) {
             match id {
                 "ui.brushSize" => app.ui.brush_size = (v / 400.0) as f32,
                 "ui.brushFeather" => app.ui.brush_feather = v as f32,
+                "ui.brushDensity" => app.ui.brush_density = v as f32,
                 _ => app.ui.brush_flow = v as f32,
             }
         }

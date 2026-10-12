@@ -141,6 +141,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("brush.larger", "Increase Brush Size", Some("]"), "Window>Tools"),
     ("brush.featherLess", "Decrease Brush Feather", Some("Shift+["), "Window>Tools"),
     ("brush.featherMore", "Increase Brush Feather", Some("Shift+]"), "Window>Tools"),
+    // the Masking brush's A / B presets (each keeps its own size, feather, flow and density)
+    ("brush.preset", "Switch Brush A / B", None, "Window>Tools"),
     ("dialog.newAlbum", "New Album…", Some("Cmd+N"), "Library"),
     ("dialog.newFolder", "New Folder…", Some("Cmd+Shift+N"), "Library"),
     ("dialog.smartAlbum", "New Smart Album…", None, "Library"),
@@ -272,6 +274,20 @@ fn panel(app: &mut LccApp, ctx: &egui::Context, p: RightPanel, name: &str) {
         app.ui.tool.clear();
     }
     let _ = app.session.end_interaction();
+}
+
+/// Use brush preset `slot` (0 = A, 1 = B): the settings in use are kept in the current slot first.
+pub(crate) fn switch_brush_preset(app: &mut LccApp, slot: u8) -> Value {
+    let u = &mut app.ui;
+    let cur = usize::from(u.brush_slot.min(1));
+    if let Some(p) = u.brush_presets.get_mut(cur) {
+        *p = crate::state::BrushPreset { size: u.brush_size, feather: u.brush_feather, flow: u.brush_flow, density: u.brush_density };
+    }
+    u.brush_slot = slot.min(1);
+    if let Some(p) = u.brush_presets.get(usize::from(u.brush_slot)).copied() {
+        (u.brush_size, u.brush_feather, u.brush_flow, u.brush_density) = (p.size, p.feather, p.flow, p.density);
+    }
+    json!({"slot": if u.brush_slot == 0 { "a" } else { "b" }, "size": u.brush_size, "feather": u.brush_feather, "flow": u.brush_flow, "density": u.brush_density})
 }
 
 /// `[` / `]` (size ×`k`) and ⇧`[` / ⇧`]` (feather +`df`) for the brush in use: the Remove tool's
@@ -890,6 +906,15 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             let [r, g, b] = app.ui.mask_overlay_color;
             Ok(json!({"color": format!("#{r:02x}{g:02x}{b:02x}"), "opacity": app.ui.mask_overlay_opacity}))
+        }
+        "brush.preset" => {
+            let want = match p.get("slot").and_then(Value::as_str) {
+                None => 1 - app.ui.brush_slot.min(1),
+                Some(s) if s.eq_ignore_ascii_case("a") => 0,
+                Some(s) if s.eq_ignore_ascii_case("b") => 1,
+                Some(other) => return Some(Err(format!("brush.preset: `slot` is \"a\" or \"b\", not {other:?}"))),
+            };
+            Ok(switch_brush_preset(app, want))
         }
         "brush.smaller" | "brush.larger" | "brush.featherLess" | "brush.featherMore" => {
             let (k, df) = match id {

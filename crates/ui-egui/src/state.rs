@@ -489,6 +489,37 @@ pub enum KeywordingView {
     WillExport,
 }
 
+/// One of the Masking brush's A / B presets: each remembers its own size (fraction of the long
+/// edge), feather, flow and density (0..100), like Lightroom's brush A and B.
+#[derive(Clone, Copy, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct BrushPreset {
+    pub size: f32,
+    pub feather: f32,
+    pub flow: f32,
+    pub density: f32,
+}
+
+impl Default for BrushPreset {
+    fn default() -> Self {
+        Self { size: 0.04, feather: 50.0, flow: 60.0, density: 100.0 }
+    }
+}
+
+impl BrushPreset {
+    /// Clamp values restored from disk (NaN falls back to the default).
+    pub fn sanitized(self) -> Self {
+        let d = Self::default();
+        let fix = |v: f32, lo: f32, hi: f32, def: f32| if v.is_finite() { v.clamp(lo, hi) } else { def };
+        Self {
+            size: fix(self.size, 0.002, 0.5, d.size),
+            feather: fix(self.feather, 0.0, 100.0, d.feather),
+            flow: fix(self.flow, 1.0, 100.0, d.flow),
+            density: fix(self.density, 0.0, 100.0, d.density),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct UiState {
@@ -666,6 +697,13 @@ pub struct UiState {
     pub brush_size: f32,
     pub brush_feather: f32,
     pub brush_flow: f32,
+    /// Brush Density (0..100): the most a stroke's paint can reach.
+    pub brush_density: f32,
+    /// Which of Lightroom's two brush presets is in use: 0 = A, 1 = B.
+    pub brush_slot: u8,
+    /// The A and B brush presets; the slot in use is mirrored by the `brush_*` fields above and
+    /// saved back when switching (`brush.preset`).
+    pub brush_presets: [BrushPreset; 2],
     pub brush_erase: bool,
     /// Brush Auto Mask: dabs stick to areas like the one under the brush centre.
     pub brush_auto_mask: bool,
@@ -1161,6 +1199,9 @@ impl Default for UiState {
             brush_size: 0.04,
             brush_feather: 50.0,
             brush_flow: 60.0,
+            brush_density: 100.0,
+            brush_slot: 0,
+            brush_presets: [BrushPreset::default(), BrushPreset { size: 0.012, feather: 20.0, flow: 100.0, density: 100.0 }],
             brush_erase: false,
             brush_auto_mask: false,
             remove_size: 0.02,
@@ -1287,6 +1328,10 @@ impl UiState {
         self.left_width = LEFT_WIDTH.clamp(self.left_width);
         self.right_width = RIGHT_WIDTH.clamp(self.right_width);
         self.brush_size = self.brush_size.clamp(0.002, 0.5);
+        self.brush_slot = self.brush_slot.min(1);
+        self.brush_presets = self.brush_presets.map(BrushPreset::sanitized);
+        let cur = BrushPreset { size: self.brush_size, feather: self.brush_feather, flow: self.brush_flow, density: self.brush_density }.sanitized();
+        (self.brush_size, self.brush_feather, self.brush_flow, self.brush_density) = (cur.size, cur.feather, cur.flow, cur.density);
         self.sidebar.adopt_collapsed(&self.collapsed_sidebar);
         self.collapsed_sidebar.retain(|id| id.starts_with("panel:"));
         self.dialog = None;
