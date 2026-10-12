@@ -150,6 +150,13 @@ pub fn evaluate_one(m: &Mask, frame: &Frame, w: usize, h: usize, img: &Rgb32f, l
             *a += (r - *a) * k.sqrt();
         }
     }
+    if m.feather > 0.0 {
+        // Feather: soften the combined mask's edges; sigma up to 2 % of the long edge (relative,
+        // so a preview and a full-size export match)
+        let k = (m.feather / 100.0).clamp(0.0, 1.0) as f32;
+        let sigma = 0.02 * frame.output_long(w, h) as f32 * k;
+        alpha = lcc_raster::blur::gaussian(&alpha, sigma);
+    }
     if m.invert {
         alpha.data.iter_mut().for_each(|v| *v = 1.0 - *v);
     }
@@ -917,6 +924,33 @@ mod tests {
         };
         let (plain, sharp) = (step(&soft), step(&refined));
         assert!(sharp > plain * 1.5 && sharp > 0.1, "the edge in the mask follows the photo's: {plain} → {sharp}");
+    }
+
+    /// Feather: a hard mask edge softens, by the same relative width at any resolution.
+    #[test]
+    fn feather_softens_edges_resolution_independently() {
+        let alpha_at = |w: usize, h: usize, feather: f64, fx: f64| {
+            let img = Rgb32f::from_fn(w, h, |_, _| [0.2; 3]);
+            let log_l = img.map(crate::local::log_lum);
+            let f = Frame::new(w, h, &Default::default(), true);
+            let m = Mask {
+                components: vec![MaskComponent {
+                    name: None,
+                    op: MaskOp::Add,
+                    invert: false,
+                    shape: MaskShape::Linear { start: Point::new(0.501, 0.5), end: Point::new(0.499, 0.5) },
+                }],
+                feather,
+                ..Default::default()
+            };
+            let a = evaluate_one(&m, &f, w, h, &img, &log_l, 0.0, None);
+            a.get((fx * w as f64) as usize, h / 2)
+        };
+        // hard: just inside the edge is fully selected; feathered it is partly
+        let (hard, soft) = (alpha_at(200, 100, 0.0, 0.52), alpha_at(200, 100, 100.0, 0.52));
+        assert!(hard > 0.99 && soft < 0.95 && soft > 0.5, "hard {hard}, feathered {soft}");
+        let big = alpha_at(400, 200, 100.0, 0.52);
+        assert!((big - soft).abs() < 0.05, "same falloff at twice the size: {soft} vs {big}");
     }
 
     /// Issue #157: a colour-range sample of one flat patch must not select a clearly different

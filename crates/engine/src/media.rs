@@ -1007,16 +1007,19 @@ fn develop_image(
     gpu: bool,
 ) -> (Rendered, Option<String>) {
     // LUT profiles have no GPU stage: they render on the CPU
-    let fallback =
-        if gpu && !lcc_pipeline::lut::is_lut_profile(&s.profile.id) && !s.masks.iter().any(|m| m.visible && m.refine > 0.0) && req.proof.is_none() {
-            match lcc_gpu::try_render(src, info, s, req, stages) {
-                Ok(r) => return (r, None),
-                Err(lcc_gpu::Fallback::Failed(why)) => Some(why),
-                Err(lcc_gpu::Fallback::NotTried) => None,
-            }
-        } else {
-            None
-        };
+    let fallback = if gpu
+        && !lcc_pipeline::lut::is_lut_profile(&s.profile.id)
+        && !s.masks.iter().any(|m| m.visible && (m.refine > 0.0 || m.feather > 0.0))
+        && req.proof.is_none()
+    {
+        match lcc_gpu::try_render(src, info, s, req, stages) {
+            Ok(r) => return (r, None),
+            Err(lcc_gpu::Fallback::Failed(why)) => Some(why),
+            Err(lcc_gpu::Fallback::NotTried) => None,
+        }
+    } else {
+        None
+    };
     let rendered = match stages {
         Some(st) => lcc_pipeline::render_cached(src, info, s, req, st),
         None => lcc_pipeline::render(src, info, s, req),

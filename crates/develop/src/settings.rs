@@ -1010,6 +1010,10 @@ pub struct Mask {
     /// Refine Edges 0..100: the mask's edges snap to the photo's (guided filter).
     #[serde(skip_serializing_if = "is_zero")]
     pub refine: f64,
+    /// Feather 0..100: the whole mask's edges soften (a Gaussian blur of up to 2 % of the long edge,
+    /// so previews and exports match).
+    #[serde(default, skip_serializing_if = "is_zero")]
+    pub feather: f64,
 }
 
 fn is_zero(v: &f64) -> bool {
@@ -1018,7 +1022,16 @@ fn is_zero(v: &f64) -> bool {
 
 impl Default for Mask {
     fn default() -> Self {
-        Self { id: 0, name: "Mask 1".into(), visible: true, invert: false, components: Vec::new(), adjust: LocalAdjustments::default(), refine: 0.0 }
+        Self {
+            id: 0,
+            name: "Mask 1".into(),
+            visible: true,
+            invert: false,
+            components: Vec::new(),
+            adjust: LocalAdjustments::default(),
+            refine: 0.0,
+            feather: 0.0,
+        }
     }
 }
 
