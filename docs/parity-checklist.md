@@ -448,7 +448,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VID-TRIM | Trim | P1 | ⬜ | | |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | | |
-| LR-VID-EXPORT | Video export | P2 | ⬜ | | |
+| LR-VID-EXPORT | Video export | P2 | ⬜ | `crates/video-export/src/native.rs` | core loop only (M14.8): trimmed decode, per-frame grade, H.264+AAC MP4 / ProRes MOV; not yet wired to engine, UI, CLI or MCP |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)

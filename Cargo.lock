@@ -2378,6 +2378,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "dac-video-export"
+version = "0.6.4"
+dependencies = [
+ "dac-raster",
+ "dac-video",
+ "filmcraft-aac",
+ "filmcraft-color",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
+ "filmcraft-prores",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "dac-web"
 version = "0.6.4"
 dependencies = [
@@ -3206,6 +3220,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
+name = "filmcraft-aac"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "filmcraft-bitstream"
 version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
@@ -3265,6 +3288,16 @@ version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
 dependencies = [
  "filmcraft-bitstream",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-prores"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
  "thiserror 2.0.21",
 ]
 

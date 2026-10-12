@@ -1,6 +1,6 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** new (M14.1: `dac-video` crate)
+> **Last updated:** 2026-10-12 · **Change:** M14.8 core: `dac-video-export` crate (S3: option A)
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
@@ -31,6 +31,22 @@ truncations, random byte corruption and garbage files.
 
 **Web build.** On wasm32 the API exists and returns `Unsupported`; the FilmCraft crates aren't linked.
 
+## `crates/video-export` (`dac-video-export`, L3, native only)
+
+`export_clip(src, (trim_in, trim_out), grade, &ClipExportOptions { format, quality, max_side, out }, cancel, progress)
+-> Result<ClipReport, ExportClipError>`: decodes the trimmed range with `dac_video::FrameReader` (first frame = the one
+displayed at the in point, decoded from the previous sync sample), runs `grade(&mut dac_raster::Rgb32f)` on every
+frame (linear Rec.709, display-referred), converts to BT.709 limited-range Y'CbCr and encodes H.264 High 4:2:0
+(`filmcraft-h264enc`, CRF from quality) into MP4 or ProRes 422 10-bit (`filmcraft-prores`, HQ/Standard/LT) into MOV.
+A source AAC track is decoded (with pre-roll, honouring its edit list) and re-encoded as AAC-LC for the same range,
+the encoder delay hidden by an edit list. Output goes to `<out>.partial` and is renamed on success; errors, panics and
+cancel remove it. Other source audio codecs export without audio for now.
+
+**Spike S3 (export option A vs B):** option A. `filmcraft-export`'s `FrameRenderer` hook is a global registry of
+plain `fn()` factories rendering a `filmcraft-project` sequence, so a per-export grade closure cannot be passed
+without global state, and the crate pulls `project`/`render`/`text`/`audio-dsp` plus `filmcraft-media`/`-codecs`
+(symphonia, MPL-2.0: rejected by `cargo deny`). Option A is ~600 lines over isobmff, h264enc, prores and aac.
+
 ## Licences: why not `filmcraft-codecs`
 
 The plan named `filmcraft-codecs` (the container/codec hub with GOP caching). At rev 156086dc it depends
@@ -52,6 +68,10 @@ the tests generate their clips in-test, so no media is committed.
 ```sh
 cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [max_side]
 ```
+
+## Revision history
+
+- 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
 
 ## Next
 

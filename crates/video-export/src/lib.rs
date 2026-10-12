@@ -1,0 +1,30 @@
+//! Video clip export (M14.8): decode the trimmed range of a clip, grade every frame, encode, mux.
+//!
+//! Plan option A (`plan/video-filmcraft.md` §6): a small loop over FilmCraft's media, codec and
+//! container crates, with no NLE project model. The pieces:
+//!
+//! 1. **Demux + decode** through `dac-video` (FilmCraft's MP4/MOV demuxer and H.264/HEVC decoders):
+//!    `FrameReader::frame_at` decodes from the previous sync sample, so the first exported frame is
+//!    exactly the frame displayed at `trim_in`, even mid-GOP. Not `filmcraft-codecs`: it pulls
+//!    symphonia (MPL-2.0), which the licence policy rejects.
+//! 2. **Grade**: the caller's closure runs once per frame on a [`GradeFrame`]
+//!    (`dac_raster::Rgb32f`, linear light; see its docs for the exact convention).
+//! 3. **Encode**: RGB → Y'CbCr (BT.709 coefficients from `filmcraft-color`, limited range) as
+//!    8-bit 4:2:0 for H.264 (`filmcraft-h264enc`) or 10-bit 4:2:2 for ProRes 422
+//!    (`filmcraft-prores`).
+//! 4. **Audio**: the primary AAC track of the trimmed range, decoded and re-encoded as AAC-LC
+//!    (`filmcraft-aac`, pre-roll decoded before the in point, the source edit list honoured); the
+//!    encoder delay is hidden with an edit list (`media_start` = priming samples).
+//! 5. **Mux**: `filmcraft-isobmff`'s `Mp4Writer` (MP4 brand for H.264, QuickTime for ProRes).
+//!
+//! The file is written to `<out>.partial` and renamed on success; an error or a cancel removes
+//! it, so a failed export never leaves a truncated movie behind.
+//!
+//! Sources: plan/video-filmcraft.md §6 option A (own design over FilmCraft's public crate APIs).
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
+#![forbid(unsafe_code)]
+
+#[cfg(not(target_arch = "wasm32"))]
+mod native;
+#[cfg(not(target_arch = "wasm32"))]
+pub use native::*;
