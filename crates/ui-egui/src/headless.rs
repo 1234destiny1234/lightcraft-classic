@@ -758,6 +758,63 @@ mod tests {
         assert!(egui::Popup::is_any_open(&h.view.ctx), "its context menu");
     }
 
+    /// #1239: deleting asks first by default, and the context menu's Delete Photo asks too.
+    #[test]
+    fn context_menu_delete_asks_first() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        assert!(h.app.ui.settings.confirm_delete, "on by default");
+        h.request("ui.set", json!({"view": "detail"}), t);
+        h.settle(SETTLE);
+        let id = h.app.session.selection.active.expect("an active photo");
+        let cell = format!("film:{}", id.0);
+        h.request("ui.clickWidget", json!({"id": cell, "button": "right"}), t);
+        h.settle(SETTLE);
+        let r = h.request("ui.clickWidget", json!({"id": "button:photoMenu-delete"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::ConfirmDelete { count: 1 }));
+        assert!(!h.app.session.catalog.photo(id).unwrap().deleted, "not deleted before the answer");
+        h.request("ui.dialog.confirm", json!({}), t);
+        h.settle(SETTLE);
+        assert!(h.app.session.catalog.photo(id).unwrap().deleted, "deleted after OK");
+    }
+
+    /// #1171: Up / Down in the grid go to the cell above / below; in the filmstrip, one photo.
+    #[test]
+    fn up_and_down_move_through_the_grid_rows() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "grid"}), t);
+        h.settle(SETTLE);
+        let first = h.app.session.visible_cloned()[0];
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [first.0]}}), t);
+        h.settle(SETTLE);
+        let rect = |h: &Headless| {
+            let a = h.app.session.selection.active.unwrap();
+            h.app.widgets.iter().find(|(w, _)| *w == format!("thumb:{}", a.0)).map(|(_, r)| *r).expect("grid cell")
+        };
+        let top = rect(&h);
+        h.request("ui.key", json!({"key": "down"}), t);
+        h.settle(SETTLE);
+        let below = rect(&h);
+        let pos = h.app.session.visible_position(h.app.session.selection.active.unwrap()).unwrap();
+        assert!(below.top() > top.bottom(), "the next row, at {pos}: {top:?} -> {below:?}");
+        assert!(below.left() < top.right() && below.right() > top.left(), "overlapping horizontally");
+        h.request("ui.key", json!({"key": "up"}), t);
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.selection.active, Some(first), "back up");
+        h.request("ui.key", json!({"key": "up"}), t);
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.selection.active, Some(first), "the top row stays put");
+        // the filmstrip (one row): Down is the next photo
+        h.request("ui.set", json!({"view": "detail"}), t);
+        h.settle(SETTLE);
+        h.request("ui.key", json!({"key": "down"}), t);
+        h.settle(SETTLE);
+        assert_eq!(h.app.session.visible_position(h.app.session.selection.active.unwrap()), Some(1));
+    }
+
     /// The search field is a shared text field: right-click ▸ Paste puts the clipboard's text in
     /// and filters by it.
     #[test]
@@ -3760,6 +3817,8 @@ mod tests {
             assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { tab: tab.into() }));
         }
         // General: confirm before delete, startup view
+        h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
+        assert!(!h.app.ui.settings.confirm_delete, "on by default; the click turns it off");
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(h.app.ui.settings.confirm_delete);
         h.request("ui.clickWidget", json!({"id": "button:settingsStartup-2"}), t);
