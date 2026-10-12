@@ -1954,5 +1954,6 @@
   "Adding to Apple Photos": "Añadiendo a Fotos de Apple",
   "Canon EOS R5 Mark II C-RAW files that opened as \"preview only\" (more than half of them, depending on the": "Los archivos C-RAW de la Canon EOS R5 Mark II que se abrían como «solo vista previa» (más de la mitad, según la",
   "scene) now develop from their sensor data with every editing tool, like the camera's other raws. Photos": "escena) ahora se revelan desde los datos del sensor con todas las herramientas, como los demás raws de la cámara. Las fotos",
-  "imported earlier switch over with Photo ▸ Reload from Disk.": "importadas antes cambian con Foto → Volver a cargar desde el disco."
+  "imported earlier switch over with Photo ▸ Reload from Disk.": "importadas antes cambian con Foto → Volver a cargar desde el disco.",
+  "Files with the same content as another file in this import: only the first is imported.": "Archivos con el mismo contenido que otro archivo de esta importación: solo se importa el primero."
 }

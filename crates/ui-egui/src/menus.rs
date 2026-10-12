@@ -420,6 +420,10 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             };
             app.ui.grid_info = next;
             app.ui.show_filenames = true;
+            // the caption is drawn on Square Grid cells only: from Photo Grid, show it there
+            if app.ui.view == ViewMode::PhotoGrid {
+                app.ui.view = ViewMode::SquareGrid;
+            }
             Ok(json!({"info": app.ui.grid_info}))
         }
         "view.secondWindow" => {
