@@ -28,7 +28,7 @@ fn primaries_from_code(c: u16) -> Option<Primaries> {
     }
 }
 
-fn apply(color: &mut ColorInfo, c: Codes) {
+pub fn apply(color: &mut ColorInfo, c: Codes) {
     let small = |v: u16| u8::try_from(v).ok();
     if let Some(p) = primaries_from_code(c.primaries) {
         color.primaries = p;

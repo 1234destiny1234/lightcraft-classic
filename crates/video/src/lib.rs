@@ -6,18 +6,23 @@
 //!   the type the pipeline takes for JPEG/TIFF input).
 //! - [`poster`]: one frame for grid thumbnails (default 10 % into the clip).
 //!
-//! Containers and codecs come from FilmCraft (pure Rust, clean-room): the MP4/MOV demuxer
-//! (`filmcraft-isobmff`), the H.264 and HEVC decoders, and its colour maths (`filmcraft-color`,
-//! `filmcraft-frame`). Y'CbCr is converted honouring the stream's colour description (the `colr`
-//! box first, then the bitstream's VUI, then size-based defaults); HLG and PQ are tone-mapped to
-//! SDR (BT.2390 EETF) and wide-gamut primaries are converted to Rec.709 for v1.
+//! Containers and codecs come from FilmCraft (pure Rust, clean-room): the MP4/MOV, Matroska/WebM,
+//! MPEG-TS/PS and MXF demuxers; the H.264, HEVC, VP9, AV1, ProRes, DNxHD/DNxHR, APV and MPEG-1/2
+//! decoders; and its colour maths (`filmcraft-color`, `filmcraft-frame`). Each container becomes
+//! one sample table and each codec one decoder (`demux`, `decode`), so seeking is shared. Y'CbCr
+//! is converted honouring the stream's colour description (the container first, then the
+//! bitstream, then size-based defaults); HLG and PQ are tone-mapped to SDR (BT.2390 EETF) and
+//! wide-gamut primaries are converted to Rec.709 for v1. Interlaced H.264 is reported as
+//! [`VideoError::Unsupported`] rather than decoded wrongly.
 //!
 //! Never-crash: every input-derived number is checked, and every call into FilmCraft runs under
 //! `catch_unwind`, so a malformed file is a [`VideoError`], never a panic.
 //!
 //! Native only: on wasm32 the API exists but every call returns [`VideoError::Unsupported`].
 //!
-//! Sources: ISO/IEC 14496-12 (MP4) and ITU-T H.273 colour code points as implemented by FilmCraft;
+//! Sources: ISO/IEC 14496-12 (MP4), Matroska (RFC 9559), ISO/IEC 13818-1 (TS), SMPTE ST 377-1 (MXF)
+//! and ITU-T H.273 colour code points as implemented by FilmCraft; the per-codec frame mapping follows
+//! `filmcraft-codecs` (MIT OR Apache-2.0);
 //! ITU-R BT.2100 (HLG OOTF, PQ) and BT.2390 (tone mapping) through `filmcraft-color`; ISO 6709
 //! location strings; frame selection and seeking are own design.
 
@@ -30,6 +35,10 @@ use dac_raster::Rgb32f;
 
 #[cfg(not(target_arch = "wasm32"))]
 mod colour;
+#[cfg(not(target_arch = "wasm32"))]
+mod decode;
+#[cfg(not(target_arch = "wasm32"))]
+mod demux;
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
@@ -64,7 +73,8 @@ pub struct VideoInfo {
     /// Display size (after the container's rotation).
     pub width: u32,
     pub height: u32,
-    /// `h264`, `hevc`, or the sample entry's fourcc for codecs we don't decode.
+    /// `h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`; for codecs we don't decode,
+    /// the container's name for them (MP4 fourcc, Matroska / TS codec name).
     pub codec: String,
     pub has_audio: bool,
     /// Creation date as written in the file (QuickTime `creationdate` / `©day`), RFC 3339 when it is.

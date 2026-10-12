@@ -2366,13 +2366,23 @@ name = "dac-video"
 version = "0.6.4"
 dependencies = [
  "dac-raster",
+ "filmcraft-apv",
+ "filmcraft-av1",
+ "filmcraft-bitstream",
  "filmcraft-color",
+ "filmcraft-dnx",
  "filmcraft-frame",
  "filmcraft-h264",
  "filmcraft-h264enc",
  "filmcraft-hevc",
  "filmcraft-isobmff",
+ "filmcraft-matroska",
+ "filmcraft-mpeg2v",
+ "filmcraft-mpegts",
+ "filmcraft-mxf",
+ "filmcraft-prores",
  "filmcraft-time",
+ "filmcraft-vp9",
  "image",
  "thiserror 2.0.21",
 ]
@@ -3206,6 +3216,26 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
+name = "filmcraft-apv"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-av1"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "filmcraft-bitstream"
 version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
@@ -3216,6 +3246,16 @@ version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "filmcraft-dnx"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]
@@ -3269,11 +3309,58 @@ dependencies = [
 ]
 
 [[package]]
+name = "filmcraft-matroska"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+
+[[package]]
+name = "filmcraft-mpeg2v"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-mpegts"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "filmcraft-mxf"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+
+[[package]]
+name = "filmcraft-prores"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
+]
+
+[[package]]
 name = "filmcraft-time"
 version = "0.6.0"
 source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
 dependencies = [
  "serde",
+]
+
+[[package]]
+name = "filmcraft-vp9"
+version = "0.6.0"
+source = "git+https://github.com/storytold/filmcraft?rev=156086dc87282026aeec33f8a220e4629bccbe31#156086dc87282026aeec33f8a220e4629bccbe31"
+dependencies = [
+ "filmcraft-bitstream",
+ "rayon",
+ "thiserror 2.0.21",
 ]
 
 [[package]]

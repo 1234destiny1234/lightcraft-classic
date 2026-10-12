@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-PLAY: `dac-video` containers MKV/WebM, TS, MXF and codecs VP9, AV1, ProRes, DNxHR, APV, MPEG-2; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -116,7 +116,6 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Action | Ours | Lightroom desktop | Why |
 |---|---|---|---|
-| 2026-10-12 | minor | LR-VID-PLAY: new `dac-video` crate (probe, frame reader, poster frames on FilmCraft's MP4 demuxer and H.264/HEVC decoders); status unchanged (⬜) |
 | Pick flag | P | Z | Z = toggle zoom (Classic convention); P is the Classic pick key |
 | Photos panel (left) | ⌘⇧L | P | P = pick |
 | Expand/collapse edit sections | ⌘⌥1–5 | ⌘1–6 | ⌘0 = Zoom to Fit, ⌘1 = Zoom 100 %; Geometry lives in the Crop panel |
@@ -444,7 +443,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs` | videos can be catalogued (kind, duration); `dac-video` probes MP4/MOV and decodes H.264/HEVC frames and posters (M14.1, [video.md](video.md)); no player |
+| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs` | videos can be catalogued (kind, duration); `dac-video` probes and decodes frames and posters for MP4/MOV, Matroska/WebM, MPEG-TS/M2TS/MTS (+ program and MPEG video elementary streams) and MXF, codecs H.264, HEVC, VP9, AV1, ProRes, DNxHD/DNxHR, APV, MPEG-1/2 (M14.1, [video.md](video.md#supported-formats)); interlaced H.264 (AVCHD 1080i), 4:2:2/10-bit H.264, VP8 and MJPEG are probed but reported unsupported; no player |
 | LR-VID-TRIM | Trim | P1 | ⬜ | | Planned (M14.6): `video.setTrim` / `video.resetTrim` with handles on the scrub bar, stored in the catalog (format 10), honoured by playback and export |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | | Planned (M14.3/M14.6): poster thumbnails in the grid (default 10 % in), `video.setPoster`, `video.captureFrame` |
@@ -911,6 +910,8 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | LR-VID-PLAY: `dac-video` reads Matroska/WebM, MPEG-TS and MXF, decodes VP9, AV1, ProRes, DNxHR, APV and MPEG-2 too; interlaced H.264 reported unsupported; status unchanged (⬜) |
+| 2026-10-12 | minor | LR-VID-PLAY: new `dac-video` crate (probe, frame reader, poster frames on FilmCraft's MP4 demuxer and H.264/HEVC decoders); status unchanged (⬜) |
 | 2026-10-12 | minor | R. Video (LR-VID-PLAY/TRIM/EDIT/COVER/EXPORT): notes give the M14 plan via FilmCraft crates; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
