@@ -811,7 +811,7 @@ mod tests {
             "{packet}"
         );
         // an index in memory only: the catalog's saved form (format 7) doesn't carry it
-        assert_eq!(dac_catalog::journal::VERSION, 9);
+        assert_eq!(dac_catalog::journal::VERSION, 10);
         assert!(!s.catalog.to_snapshot().contains("J-77"), "not saved with the catalog");
         // a library opened again rebuilds it from the plug-in's data
         let dir = std::env::temp_dir().join(format!("plugin-fields-lib-{}", std::process::id()));

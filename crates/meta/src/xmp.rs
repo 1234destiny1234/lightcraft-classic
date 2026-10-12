@@ -165,6 +165,7 @@ fn canonical(qname: &str, scopes: &[Vec<(String, String)>]) -> String {
     match uri {
         Some(u) => match NAMESPACES.iter().find(|(_, nu)| *nu == u) {
             Some((p, _)) => format!("{p}:{local}"),
+            None if u == video_ns() => format!("{VIDEO_PREFIX}:{local}"),
             None if prefix.is_empty() => local.to_string(),
             None => qname.to_string(),
         },
@@ -577,6 +578,15 @@ pub fn plugin_fields_ns() -> String {
     format!("{}/ns/plugin-fields/1.0/", dac_brand::HOMEPAGE.trim_end_matches('/'))
 }
 
+/// Prefix of the video clip namespace ([`video_ns`]) as [`parse_xmp`] reports it, whatever prefix a packet uses.
+pub const VIDEO_PREFIX: &str = "lcvid";
+
+/// Namespace of video clip settings in sidecars (prefix [`VIDEO_PREFIX`]): `lcvid:trimIn`, `lcvid:trimOut`,
+/// `lcvid:posterTime` (seconds). Under the app's homepage (`dac_brand::HOMEPAGE`): `<homepage>/ns/video/1.0/`.
+pub fn video_ns() -> String {
+    format!("{}/ns/video/1.0/", dac_brand::HOMEPAGE.trim_end_matches('/'))
+}
+
 /// Like [`write_xmp`], with any number of simple `lc:<name>` properties (e.g. `settings`, `flag`).
 pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
     write_xmp_ext(meta, lc, &[])
@@ -585,6 +595,11 @@ pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
 /// [`write_xmp_lc`], plus plug-in custom metadata fields `(plug-in id, field key, value)` in
 /// [`plugin_fields_ns`].
 pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&str, &str, &str)]) -> String {
+    write_xmp_video(meta, lc, plugin_fields, &[])
+}
+
+/// [`write_xmp_ext`], plus simple video clip properties `(name, value)` in [`video_ns`] (`lcvid:<name>`).
+pub fn write_xmp_video(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&str, &str, &str)], video: &[(&str, &str)]) -> String {
     let mut simple: Vec<(&str, String)> = Vec::new();
     let mut push = |k: &'static str, v: Option<String>| {
         if let Some(v) = v {
@@ -641,6 +656,9 @@ pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&st
     if !plugin_fields.is_empty() {
         x.push_str(&format!("\n    xmlns:lcpf=\"{}\"", plugin_fields_ns()));
     }
+    if !video.is_empty() {
+        x.push_str(&format!("\n    xmlns:{VIDEO_PREFIX}=\"{}\"", video_ns()));
+    }
     x.push_str(">\n");
     for (k, v) in &simple {
         x.push_str(&format!("   <{k}>{}</{k}>\n", escape(v.as_str())));
@@ -649,6 +667,11 @@ pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&st
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             // element content: quotes needn't be escaped, which keeps the JSON readable
             x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(*v)));
+        }
+    }
+    for (k, v) in video {
+        if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric()) {
+            x.push_str(&format!("   <{VIDEO_PREFIX}:{k}>{}</{VIDEO_PREFIX}:{k}>\n", escape(*v)));
         }
     }
     let array = |x: &mut String, k: &str, kind: &str, items: &[String], lang: bool| {

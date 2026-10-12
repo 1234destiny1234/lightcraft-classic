@@ -243,8 +243,9 @@ fn op_variants_are_versioned() {
             Op::SetAlbumCreation { .. } => 7,
             Op::SetAsShotWb { .. } => 8,
             Op::SetAlbumPhotoOrder { .. } => 9,
+            Op::SetVideoMeta { .. } | Op::SetVideoTrim { .. } | Op::SetVideoPoster { .. } => 10,
         }
     }
-    let newest = since(&Op::SetAlbumPhotoOrder { id: AlbumId(1), order: vec![] });
+    let newest = since(&Op::SetVideoPoster { id: crate::PhotoId(1), time: None });
     assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
 }
