@@ -53,6 +53,8 @@ mod quick;
 mod sync;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tether;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod update;
 pub mod video;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod web;
@@ -237,6 +239,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(edit_in::specs());
         #[cfg(not(target_arch = "wasm32"))]
         v.extend(plugins::specs());
+        #[cfg(not(target_arch = "wasm32"))]
+        v.extend(update::specs());
         v.extend(activity::specs());
         v.extend(video::specs());
         v

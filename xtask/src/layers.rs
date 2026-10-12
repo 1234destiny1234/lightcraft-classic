@@ -42,6 +42,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("audio-out", Class::Layer(0)),
     ("fetch", Class::Layer(0)),
     ("net", Class::Layer(0)),
+    ("updater", Class::Layer(0)),
     ("credentials", Class::Layer(0)),
     ("hash", Class::Layer(0)),
     ("psd", Class::Standalone),
@@ -105,6 +106,8 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     &["brand", "sysmem"],
     &["brand", "fetch"],
     &["brand", "net"],
+    // the updater reads the release feed over the network crate
+    &["net", "updater"],
     &["brand", "credentials"],
     &["brand", "heif"],
     &["geom", "color", "raster"],

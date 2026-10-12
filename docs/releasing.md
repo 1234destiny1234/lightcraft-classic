@@ -23,6 +23,24 @@ still apply.
 The workflow replaces assets when it updates an existing draft. It stops rather than overwriting a
 release that has already been published, so bump the version before producing another release.
 
+## The update feed
+
+Each release carries a `latest.json` beside its artifacts. It is what Help ▸ Check for Updates… reads
+(the in-app updater, [`crates/updater`](../crates/updater)): the version, the date, and one entry per
+artifact with its file name, download URL, size and SHA-256. The app reads
+`https://github.com/<owner>/<repo>/releases/latest/download/latest.json` first and falls back to GitHub's
+Releases API, so the check keeps working when the API is rate-limited; `<PREFIX>_UPDATE_URL` points a
+build at another feed (a mirror, a fork, a local file server).
+
+The `release` job builds the manifest from the downloaded artifacts and the checksums it just computed, so
+only what is actually attached to the release is offered. It is uploaded with the rest of the assets and
+replaced on every run of the draft. Nothing else has to be maintained by hand: a new platform is offered as
+soon as its artifact name carries the OS and architecture slugs the pipeline already uses
+(`<binary>-<version>-<os>-<arch>…`).
+
+Prerelease tags get a manifest too (with `prerelease: true`): the app only offers one when
+"Include prereleases" is ticked, so a release candidate never reaches someone on a stable build.
+
 ## Builds and artifacts
 
 Release jobs build macOS universal, Windows x86/x64/ARM64, Linux x86_64/aarch64/riscv64, FreeBSD x86_64,

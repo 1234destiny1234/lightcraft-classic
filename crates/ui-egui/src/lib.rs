@@ -158,6 +158,8 @@ mod tests_sync;
 mod tests_titlebar;
 #[cfg(test)]
 mod tests_unsaved;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_update;
 #[cfg(test)]
 mod tests_wb_selector;
 #[cfg(test)]
@@ -463,6 +465,9 @@ pub struct LccApp {
     pub map: map::MapUi,
     /// The Classic module help sheet (⌘/, P6.3).
     pub help: help_overlay::HelpOverlay,
+    /// A dialog panel asked to be closed (it cannot do it itself: the dialog frame writes the state
+    /// back after the body has drawn). Taken by the dialog frame each frame.
+    pub close_dialog: bool,
 }
 
 impl LccApp {
@@ -476,6 +481,7 @@ impl LccApp {
             print: Default::default(),
             map: Default::default(),
             help: Default::default(),
+            close_dialog: false,
             ui: UiState::default(),
             services,
             renderer: render::Renderer::default(),
@@ -1092,6 +1098,8 @@ impl LccApp {
         import::tick(self, ctx);
         lightroom_import::tick(self, ctx);
         tasks::poll(self, ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        panels::update::poll(self, ctx);
         self.preview_build_status(ctx);
         self.save_status(ctx);
         self.slideshow_tick(ctx);

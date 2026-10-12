@@ -258,6 +258,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::SamModel { .. } if sam_by_hand(&app.session.segmenter) => "Install the SAM 3 Model",
         Dialog::SamModel { .. } => "Download the SAM 3 Model?",
         Dialog::About => "About {app}",
+        Dialog::Update => "Check for Updates",
         Dialog::Shortcuts => "Keyboard Shortcuts",
         Dialog::ViewOptions => "Library View Options",
     }
@@ -279,6 +280,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
             Dialog::SmartRules { .. } => 680.0,
             Dialog::AllMetadata { .. } => 620.0,
+            Dialog::Update => 500.0,
             Dialog::FaceModel { .. } => 460.0,
             Dialog::LightroomCatalog { .. } => 440.0,
             _ => 380.0,
@@ -1218,6 +1220,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),
                 Dialog::ViewOptions => crate::panels::cells::view_options(app, ui),
+                #[cfg(not(target_arch = "wasm32"))]
+                Dialog::Update => crate::panels::update::body(app, ui),
             };
             if import {
                 body(ui);
@@ -1240,6 +1244,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             | Dialog::SystemInfo { .. }
                             | Dialog::AllMetadata { .. }
                             | Dialog::WhatsNew
+                            // the updater has its own buttons in the body; the footer only closes
+                            | Dialog::Update
                     );
                 let sam = &app.session.segmenter;
                 let (sam_installed, sam_running, sam_failed) = (sam.installed(), sam.download_status().running, sam.download_status().error.is_some());
@@ -1288,6 +1294,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::SamModel { .. } if sam_installed || sam_running || sam_nowhere => "",
                     Dialog::SamModel { error, .. } if error.is_some() || sam_failed => "Try Again",
                     Dialog::SamModel { .. } => "Download",
+                    // the updater's own buttons are in its body; the footer only closes
+                    Dialog::Update => "",
                     _ if informational => "Close",
                     _ => "OK",
                 };
@@ -1373,6 +1381,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     // a dialog opened from inside this one (a button in Settings that shows a licence) takes its place
     if app.ui.dialog.as_ref().is_some_and(|now| *now != at_start) {
         return;
+    }
+    // a panel inside the dialog asked to close it (its own Close or Skip button)
+    if std::mem::take(&mut app.close_dialog) {
+        close = true;
     }
     app.ui.dialog = if close { None } else { Some(dlg) };
 }
@@ -1724,7 +1736,7 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         }
         Dialog::RemoveFolder { path, disk, .. } => app.run("library.removeFolder", json!({"path": path, "disk": disk})),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::confirm(app, d),
-        Dialog::About | Dialog::Shortcuts | Dialog::ViewOptions | Dialog::Settings { .. } => Ok(serde_json::Value::Null),
+        Dialog::About | Dialog::Shortcuts | Dialog::ViewOptions | Dialog::Settings { .. } | Dialog::Update => Ok(serde_json::Value::Null),
     }
 }
 
