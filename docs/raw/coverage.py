@@ -32,8 +32,10 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 ORF_DECODED = re.compile(r"^(E-1|E-10|E-20|EVOLT E-300|EVOLT E-330|EVOLT E-400|EVOLT E-500|E-300|E-330|E-500|Camedia C-\S+.*|Stylus XZ-2 iHS)$")
 # Samsung SRW bodies with compressed raw data (32770 / 32772 / 32773, decoded by crates/raw/src/vendor/srwc.rs).
 SRW_COMPRESSED = re.compile(r"(^|\W)(NX1|NX30|NX300|NX300M|NX500|NX2000|NX3000|NX3300|NX mini|EK-GN\d+|EK-KN\d+)(\W|$)")
-# Fujifilm bodies before the X series whose RAF has no raw IFD (crates/raw/src/vendor/raf.rs).
-RAF_OLD = re.compile(r"^(FinePix (E|F|S\d|S\d{3,4}|IS)|IS Pro|S5Pro|S3Pro|S2Pro)", re.I)
+# Fujifilm SuperCCD EXR bodies whose RAF stores an upright EXR array without a raw IFD (refused by
+# crates/raw/src/vendor/raf_superccd.rs). The other pre-X bodies decode: SuperCCD lattices in raf_superccd.rs,
+# the rest through the raw IFD in raf.rs.
+RAF_OLD = re.compile(r"^FinePix S20[05] EXR", re.I)
 
 # Probability that an unverified body of a format decodes correctly, used for the use-weighted share only.
 CONFIDENCE = {"DNG": 0.95, "CR2": 0.95, "CR3": 0.6, "NEF": 0.9, "NRW": 0.9, "ARW": 0.9, "SR2": 0.8, "RAF": 0.95,
@@ -69,7 +71,7 @@ def classify(maker, camera, ext_field):
             return "unverified", "SR2", "SR2 decoder"
         if e == "RAF":
             if RAF_OLD.search(camera):
-                return "preview", "RAF", "pre-X FinePix RAF without a raw IFD"
+                return "preview", "RAF", "SuperCCD EXR RAF stored upright without a raw IFD"
             return "unverified", "RAF", "RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)"
         if e in ("RW2", "RWL") or (e == "RAW" and maker in ("Panasonic", "Leica")):
             return "unverified", e, "Panasonic decoder, every raw format"

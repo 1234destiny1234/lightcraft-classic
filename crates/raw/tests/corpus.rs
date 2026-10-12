@@ -15,9 +15,10 @@ fn corpus_root() -> PathBuf {
 
 /// Variants known not to decode yet (see the crate docs): matched against the lower-case file name.
 const KNOWN_UNSUPPORTED: &[&str] = &[
-    "cr3-",    // Unverified CRX coding variants; exact supported cases live in cr3_corpus.rs.
-    "-he.nef", // Nikon High Efficiency (HE / HE★) NEF, issue #193
-    "sraw",    // Canon sRAW / mRAW
+    "cr3-",            // Unverified CRX coding variants; exact supported cases live in cr3_corpus.rs.
+    "-he.nef",         // Nikon High Efficiency (HE / HE★) NEF, issue #193
+    "sraw",            // Canon sRAW / mRAW
+    "finepix-s200exr", // SuperCCD EXR stored upright without a raw IFD: no Bayer phase matches the camera JPEG
 ];
 
 #[test]
@@ -1268,4 +1269,72 @@ fn fuji_embedded_lens_tables_follow_the_validated_models() {
         checked += 1;
     }
     eprintln!("Fuji lens tables: {checked} RAFs, {warped} warps, {vignetted} vignette gains");
+}
+
+/// Gap 10: pre-X FinePix SuperCCD RAF (`vendor/raf_superccd.rs`): the 45° lattice is demosaiced and turned upright
+/// to the measured size, and its colours follow the camera JPEG (log r/g and b/g per cell, after the orientation).
+/// The F700 (SuperCCD SR, S and R photosites in alternate rows) decodes its S photosites as an upright image.
+#[test]
+fn corpus_fujifilm_superccd() {
+    let cases: &[(&str, (usize, usize))] = &[
+        ("raf-fuji-finepix-e550.raf", (2896, 2177)),
+        ("raf-fuji-finepix-e900.raf", (3461, 2607)),
+        ("raf-fuji-finepix-f700.raf", (1440, 1084)),
+        ("raf-fuji-finepix-s2pro.raf", (2036, 3030)),
+        ("raf-fuji-finepix-s3pro.raf", (3032, 2035)),
+        ("raf-fuji-finepix-s5000.raf", (2013, 1521)),
+        ("raf-fuji-finepix-s5200.raf", (2607, 1962)),
+        ("raf-fuji-finepix-s5600.raf", (2607, 1962)),
+        ("raf-fuji-finepix-s5pro.raf", (3032, 2035)),
+        ("raf-fuji-finepix-s6000fd.raf", (2896, 2182)),
+        ("raf-fuji-finepix-s6500fd.raf", (2896, 2182)),
+        ("raf-fuji-finepix-s7000.raf", (2896, 2177)),
+        ("raf-fuji-finepix-s9500.raf", (3461, 2607)),
+        ("raf-fuji-finepix-s9600.raf", (3461, 2607)),
+        ("raf-fuji-finepix-s100fs.raf", (3869, 2911)),
+    ];
+    const G: usize = 24;
+    let mut seen = 0;
+    for &(name, dims) in cases {
+        let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
+            eprintln!("skip: {name} absent");
+            continue;
+        };
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        let lcc_raw::RawData::U16(d) = &img.data else { panic!("{name}: float data") };
+        assert_eq!((img.cpp, img.cfa.is_none()), (3, true), "{name}");
+        let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no as-shot WB"));
+        // camera-RGB cells in display orientation (the S2Pro is turned a quarter clockwise)
+        let a = img.active_area;
+        let turned = img.orientation == lcc_geom::Orientation::Rotate90;
+        let (mut sum, mut n) = (vec![[0f64; 3]; G * G], vec![0f64; G * G]);
+        for y in 0..a.height {
+            for x in 0..a.width {
+                let (cx, cy) = (x * G / a.width, y * G / a.height);
+                let i = if turned { cx * G + (G - 1 - cy) } else { cy * G + cx };
+                for c in 0..3 {
+                    sum[i][c] += f64::from(d[((a.y + y) * img.width + a.x + x) * 3 + c]);
+                }
+                n[i] += 1.0;
+            }
+        }
+        let cells: Vec<[f64; 3]> = sum.iter().zip(&n).map(|(s, n)| s.map(|v| v / n)).collect();
+        let jpeg = jpeg_cells(&embedded_preview(&bytes).unwrap_or_else(|| panic!("{name}: no preview")), G, G);
+        let (mut x, mut y) = ([vec![], vec![]], [vec![], vec![]]);
+        for (s, j) in cells.iter().zip(&jpeg) {
+            if s.iter().all(|v| *v > 64.0) && j.iter().all(|v| (0.002..0.9).contains(v)) {
+                for (k, c) in [0, 2].into_iter().enumerate() {
+                    x[k].push((s[c] / s[1]).ln());
+                    y[k].push((j[c] / j[1]).ln());
+                }
+            }
+        }
+        let (cr, cb) = (correlation(&x[0], &y[0]), correlation(&x[1], &y[1]));
+        eprintln!("{name}: {}x{} {:?} wb {wb:?} chroma r {cr:.3} b {cb:.3}", img.width, img.height, img.orientation);
+        assert_eq!((img.width, img.height), dims, "{name}");
+        // the F700 sample's embedded JPEG is another frame (different framing), so its colours can't be compared
+        assert!(name.contains("f700") || (cr > 0.5 && cb > 0.5), "{name}: chroma vs camera JPEG r {cr:.3} b {cb:.3}");
+        seen += 1;
+    }
+    eprintln!("SuperCCD RAFs checked: {seen}");
 }
