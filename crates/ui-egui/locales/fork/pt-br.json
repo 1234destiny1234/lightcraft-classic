@@ -1139,5 +1139,11 @@
   "Capture Frame": "Capturar quadro",
   "Capturing a video frame": "Capturando um quadro do vídeo",
   "video playback isn't available in this build": "a reprodução de vídeo não está disponível nesta compilação",
-  "the active photo isn't a video": "a foto ativa não é um vídeo"
+  "the active photo isn't a video": "a foto ativa não é um vídeo",
+  "Duration": "Duração",
+  "Frame Rate": "Taxa de quadros",
+  "Codec": "Codec",
+  "Resolution": "Resolução",
+  "Audio": "Áudio",
+  "Trim": "Corte"
 }

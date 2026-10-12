@@ -997,5 +997,11 @@
   "Capture Frame": "Einzelbild erfassen",
   "Capturing a video frame": "Videobild wird erfasst",
   "video playback isn't available in this build": "Videowiedergabe ist in diesem Build nicht verfügbar",
-  "the active photo isn't a video": "das aktive Foto ist kein Video"
+  "the active photo isn't a video": "das aktive Foto ist kein Video",
+  "Duration": "Dauer",
+  "Frame Rate": "Bildrate",
+  "Codec": "Codec",
+  "Resolution": "Auflösung",
+  "Audio": "Audio",
+  "Trim": "Zuschnitt"
 }

@@ -1836,6 +1836,9 @@ pub fn run_ui_command(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Va
 }
 
 pub fn ui_enabled(app: &DacApp, id: &str) -> bool {
+    if crate::video_ui::blocked(app, id) {
+        return false;
+    }
     if let Some(e) = fork::enabled(app, id) {
         return e;
     }
