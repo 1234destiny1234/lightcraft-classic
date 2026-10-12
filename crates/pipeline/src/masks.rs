@@ -953,6 +953,36 @@ mod tests {
         assert!((big - soft).abs() < 0.05, "same falloff at twice the size: {soft} vs {big}");
     }
 
+    /// Feather softens a radial mask's edge but keeps its shape: the half-selected contour of an
+    /// ellipse stays where it was (no rounding), along both axes.
+    #[test]
+    fn feather_keeps_a_radial_masks_shape() {
+        let (w, h) = (400, 200);
+        let img = Rgb32f::from_fn(w, h, |_, _| [0.2; 3]);
+        let log_l = img.map(crate::local::log_lum);
+        let f = Frame::new(w, h, &Default::default(), true);
+        let extents = |feather: f64| {
+            let m = Mask {
+                components: vec![MaskComponent {
+                    name: None,
+                    op: MaskOp::Add,
+                    invert: false,
+                    shape: MaskShape::Radial { center: Point::new(0.5, 0.5), rx: 0.3, ry: 0.1, angle: 0.0, feather: 50.0, invert: false },
+                }],
+                feather,
+                ..Default::default()
+            };
+            let a = evaluate_one(&m, &f, w, h, &img, &log_l, 0.0, None);
+            let ex = (w / 2..w).take_while(|&x| a.get(x, h / 2) >= 0.5).count() as f64;
+            let ey = (h / 2..h).take_while(|&y| a.get(w / 2, y) >= 0.5).count() as f64;
+            eprintln!("feather {feather}: ex {ex} ey {ey} centre {}", a.get(w / 2, h / 2));
+            (ex, ey)
+        };
+        let (x0, y0) = extents(0.0);
+        let (x1, y1) = extents(100.0);
+        assert!((x1 - x0).abs() <= 3.0 && (y1 - y0).abs() <= 3.0, "contour moved: {x0}x{y0} -> {x1}x{y1}");
+    }
+
     /// Issue #157: a colour-range sample of one flat patch must not select a clearly different
     /// patch. The two patches are the ones from the report (sRGB 120,150,155 and 200,198,195),
     /// sampled the way `mask.sampleColor` does (3×3 mean of the selection-space OkLab).
