@@ -66,7 +66,7 @@ fn entry(p: crate::module::PanelId) -> Option<(&'static str, Icon, RightPanel, &
         P::Crop => ("crop", Icon::Crop, RightPanel::Crop, "Crop & Rotate", true),
         P::Remove => ("remove", Icon::Eraser, RightPanel::Remove, "Remove", true),
         P::Masking => ("masking", Icon::Mask, RightPanel::Masking, "Masking", true),
-        P::RedEye => ("redeye", Icon::Eye, RightPanel::RedEye, "Red Eye", true),
+        P::RedEye => ("redeye", Icon::RedEye, RightPanel::RedEye, "Red Eye", true),
         P::Versions => ("versions", Icon::Versions, RightPanel::Versions, "Versions", true),
         P::Activity => ("activity", Icon::Activity, RightPanel::Activity, "History & Activity", false),
         P::Keywords => ("keywords", Icon::Tag, RightPanel::Keywords, "Keywords", true),

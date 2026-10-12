@@ -77,7 +77,7 @@ pub fn extras(app: &mut DacApp, ui: &egui::Ui, id: PhotoId, r: Rect, square: boo
         badges.push(("cropped", Icon::Crop, crate::i18n::tr("Cropped").to_string(), Color32::WHITE));
     }
     if p.develop.orientation != dac_geom::Orientation::Normal {
-        badges.push(("rotated", Icon::Rotate, crate::i18n::tr("Rotated or flipped").to_string(), Color32::WHITE));
+        badges.push(("rotated", Icon::RotateDrag, crate::i18n::tr("Rotated or flipped").to_string(), Color32::WHITE));
     }
     if !p.meta.keywords.is_empty() {
         let names: Vec<&str> = p.meta.keywords.iter().map(|k| k.rsplit('|').next().unwrap_or(k)).collect();
