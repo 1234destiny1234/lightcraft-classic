@@ -987,5 +987,15 @@
   "Trim Start": "Trimmanfang",
   "Trim End": "Trimmende",
   "Drag to trim the start": "Ziehen, um den Anfang zu kürzen",
-  "Drag to trim the end": "Ziehen, um das Ende zu kürzen"
+  "Drag to trim the end": "Ziehen, um das Ende zu kürzen",
+  "Play / Pause": "Wiedergabe / Pause",
+  "Video State": "Videostatus",
+  "Go to Time": "Gehe zu Zeit",
+  "Step Frame": "Einzelbild weiter",
+  "Trim Video": "Video zuschneiden",
+  "Reset Trim": "Zuschnitt zurücksetzen",
+  "Capture Frame": "Einzelbild erfassen",
+  "Capturing a video frame": "Videobild wird erfasst",
+  "video playback isn't available in this build": "Videowiedergabe ist in diesem Build nicht verfügbar",
+  "the active photo isn't a video": "das aktive Foto ist kein Video"
 }

@@ -945,5 +945,15 @@
   "Trim Start": "Початок обрізання",
   "Trim End": "Кінець обрізання",
   "Drag to trim the start": "Перетягніть, щоб обрізати початок",
-  "Drag to trim the end": "Перетягніть, щоб обрізати кінець"
+  "Drag to trim the end": "Перетягніть, щоб обрізати кінець",
+  "Play / Pause": "Відтворення / пауза",
+  "Video State": "Стан відео",
+  "Go to Time": "Перейти до часу",
+  "Step Frame": "Покроковий кадр",
+  "Trim Video": "Обрізати відео",
+  "Reset Trim": "Скинути обрізку",
+  "Capture Frame": "Захопити кадр",
+  "Capturing a video frame": "Захоплення кадру відео",
+  "video playback isn't available in this build": "відтворення відео недоступне в цій збірці",
+  "the active photo isn't a video": "активне фото не є відео"
 }

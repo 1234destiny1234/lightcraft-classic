@@ -1127,5 +1127,15 @@
   "Trim Start": "剪辑起点",
   "Trim End": "剪辑终点",
   "Drag to trim the start": "拖动以剪掉开头",
-  "Drag to trim the end": "拖动以剪掉结尾"
+  "Drag to trim the end": "拖动以剪掉结尾",
+  "Play / Pause": "播放 / 暂停",
+  "Video State": "视频状态",
+  "Go to Time": "转到时间",
+  "Step Frame": "逐帧",
+  "Trim Video": "修剪视频",
+  "Reset Trim": "重置修剪",
+  "Capture Frame": "捕获帧",
+  "Capturing a video frame": "正在捕获视频帧",
+  "video playback isn't available in this build": "此版本不支持视频播放",
+  "the active photo isn't a video": "当前照片不是视频"
 }

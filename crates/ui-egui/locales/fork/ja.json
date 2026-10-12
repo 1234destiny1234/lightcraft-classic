@@ -1128,5 +1128,15 @@
   "Trim Start": "トリム開始",
   "Trim End": "トリム終了",
   "Drag to trim the start": "ドラッグして先頭をトリミング",
-  "Drag to trim the end": "ドラッグして末尾をトリミング"
+  "Drag to trim the end": "ドラッグして末尾をトリミング",
+  "Play / Pause": "再生 / 一時停止",
+  "Video State": "ビデオの状態",
+  "Go to Time": "時間へ移動",
+  "Step Frame": "コマ送り",
+  "Trim Video": "ビデオをトリミング",
+  "Reset Trim": "トリミングをリセット",
+  "Capture Frame": "フレームをキャプチャ",
+  "Capturing a video frame": "ビデオフレームをキャプチャ中",
+  "video playback isn't available in this build": "このビルドではビデオ再生を利用できません",
+  "the active photo isn't a video": "アクティブな写真はビデオではありません"
 }

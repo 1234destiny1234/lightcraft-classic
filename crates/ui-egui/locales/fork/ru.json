@@ -1422,5 +1422,15 @@
   "Trim Start": "Начало обрезки",
   "Trim End": "Конец обрезки",
   "Drag to trim the start": "Перетащите, чтобы обрезать начало",
-  "Drag to trim the end": "Перетащите, чтобы обрезать конец"
+  "Drag to trim the end": "Перетащите, чтобы обрезать конец",
+  "Play / Pause": "Воспроизведение / пауза",
+  "Video State": "Состояние видео",
+  "Go to Time": "Перейти ко времени",
+  "Step Frame": "Покадровый шаг",
+  "Trim Video": "Обрезать видео",
+  "Reset Trim": "Сбросить обрезку",
+  "Capture Frame": "Захватить кадр",
+  "Capturing a video frame": "Захват кадра видео",
+  "video playback isn't available in this build": "воспроизведение видео недоступно в этой сборке",
+  "the active photo isn't a video": "активное фото не является видео"
 }

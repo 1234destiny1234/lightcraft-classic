@@ -256,6 +256,28 @@ fn capture_frame_writes_a_jpeg_imports_and_stacks_it() {
 }
 
 #[test]
+fn capture_frame_bakes_the_clip_grade() {
+    let mean = |path: &str| {
+        let img = dac_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap().to_srgb8();
+        img.data.iter().map(|p| p[..3].iter().map(|&c| c as f64).sum::<f64>()).sum::<f64>() / img.data.len() as f64
+    };
+    let d = tmp("capture-grade");
+    let (mut s, _) = session(&d);
+    let plain = run(&mut s, "video.captureFrame", json!({"time": 2.0}));
+    let plain_mean = mean(plain["path"].as_str().unwrap());
+    let mut dev = (*s.catalog.photo(PhotoId(900)).unwrap().develop).clone();
+    dev.light.exposure = 1.0;
+    s.catalog.apply(Op::SetDevelop { id: PhotoId(900), settings: std::sync::Arc::new(dev), label: "Exposure".into(), edited: None }).unwrap();
+    select(&mut s, 900);
+    let graded = run(&mut s, "video.captureFrame", json!({"time": 2.0}));
+    let graded_mean = mean(graded["path"].as_str().unwrap());
+    assert!(graded_mean > plain_mean + 10.0, "{graded_mean} vs {plain_mean}");
+    let new = s.catalog.photo(PhotoId(graded["id"].as_u64().unwrap())).unwrap();
+    assert!(!new.is_edited(), "the grade is baked, the still starts at defaults");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
+#[test]
 fn commands_are_listed_with_docs() {
     for id in [
         "video.get",

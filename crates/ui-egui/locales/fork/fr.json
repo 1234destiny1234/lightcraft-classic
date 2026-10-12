@@ -1123,5 +1123,15 @@
   "Trim Start": "Début du découpage",
   "Trim End": "Fin du découpage",
   "Drag to trim the start": "Faites glisser pour couper le début",
-  "Drag to trim the end": "Faites glisser pour couper la fin"
+  "Drag to trim the end": "Faites glisser pour couper la fin",
+  "Play / Pause": "Lecture / Pause",
+  "Video State": "État de la vidéo",
+  "Go to Time": "Aller à l’instant",
+  "Step Frame": "Image par image",
+  "Trim Video": "Raccourcir la vidéo",
+  "Reset Trim": "Réinitialiser le raccourci",
+  "Capture Frame": "Capturer l’image",
+  "Capturing a video frame": "Capture d’une image vidéo",
+  "video playback isn't available in this build": "la lecture vidéo n’est pas disponible dans cette version",
+  "the active photo isn't a video": "la photo active n’est pas une vidéo"
 }
