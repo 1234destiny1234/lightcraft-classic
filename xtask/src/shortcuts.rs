@@ -1,5 +1,5 @@
 //! `cargo xtask shortcuts`: regenerates `docs/manual/keyboard-shortcuts.md` from the running
-//! command registry. It builds `dac-cli`, runs `app-cli snapshot --demo` with one `ui.menu.list`
+//! command registry. It builds `lcc-cli`, runs `app-cli snapshot --demo` with one `ui.menu.list`
 //! request (every menu command with the shortcut the default Classic keymap gives it) and writes a
 //! Markdown table per top-level menu. Labels that carry the product name (`{app}`) become `<app>`,
 //! so the generated file passes `cargo xtask brand check`.
@@ -73,8 +73,8 @@ pub fn render(entries: &[Entry]) -> String {
 
 pub fn run(root: &Path) -> Result<(), String> {
     let mut c = crate::cargo();
-    c.args(["build", "-p", "dac-cli"]);
-    crate::run(c, "cargo build -p dac-cli")?;
+    c.args(["build", "-p", "lcc-cli"]);
+    crate::run(c, "cargo build -p lcc-cli")?;
     let dir = target_dir(root);
     let cli = dir.join(format!("debug/app-cli{}", std::env::consts::EXE_SUFFIX));
     let work = dir.join("xtask-shortcuts");

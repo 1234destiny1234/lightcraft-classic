@@ -1,4 +1,4 @@
-//! A book as a shared `dac-layout` document and back, so books are saved creations (catalog
+//! A book as a shared `lcc-layout` document and back, so books are saved creations (catalog
 //! collections holding a layout) and the engine's photo preparation and rendering apply.
 //!
 //! The layout document carries the page size, every page (covers included) with its photo and
@@ -7,7 +7,7 @@
 //! numbers, guides, presets) travel in the book JSON; [`from_layout`] rebuilds what the layout
 //! holds.
 
-use dac_layout::{Align, Cell, CellKind, CreationKind, Document, Fit, Page, PageLayout, PhotoCell, Rect, TextCell, TextStyle};
+use lcc_layout::{Align, Cell, CellKind, CreationKind, Document, Fit, Page, PageLayout, PhotoCell, Rect, TextCell, TextStyle};
 
 use crate::{Book, BookCell, BookPage, BookSize, CellContent, CoverType, HAlign, NRect, Padding, PageRef, TypeStyle};
 

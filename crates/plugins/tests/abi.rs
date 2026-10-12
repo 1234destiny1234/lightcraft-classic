@@ -4,10 +4,10 @@
 
 use std::time::{Duration, Instant};
 
-use dac_plugins::{Error, Limits, Manager, NoHost, Permissions, Plugin};
+use lcc_plugins::{Error, Limits, Manager, NoHost, Permissions, Plugin};
 use serde_json::{Value, json};
 
-/// A module implementing the ABI. `handle` is the body of `dac_handle(ptr, len) -> i64`;
+/// A module implementing the ABI. `handle` is the body of `lcc_handle(ptr, len) -> i64`;
 /// `request` (a host request, JSON) is placed at offset 8192 for it to send.
 fn module(manifest: &str, version: i32, handle: &str, extra: &str, request: &str) -> Vec<u8> {
     let esc = |s: &str| s.replace('\\', "\\\\").replace('"', "\\\"");
@@ -20,14 +20,14 @@ fn module(manifest: &str, version: i32, handle: &str, extra: &str, request: &str
   (memory (export "memory") 2)
   (data (i32.const 16) "{m}")
   (data (i32.const 8192) "{r}")
-  (func (export "dac_abi_version") (result i32) (i32.const {version}))
-  (func (export "dac_manifest") (result i64)
+  (func (export "lcc_abi_version") (result i32) (i32.const {version}))
+  (func (export "lcc_manifest") (result i64)
     (i64.or (i64.shl (i64.const {mlen}) (i64.const 32)) (i64.const 16)))
-  (func (export "dac_alloc") (param $n i32) (result i32) (local $old i32)
+  (func (export "lcc_alloc") (param $n i32) (result i32) (local $old i32)
     (local.set $old (memory.grow (i32.shr_u (i32.add (local.get $n) (i32.const 65535)) (i32.const 16))))
     (if (result i32) (i32.eq (local.get $old) (i32.const -1))
       (then (i32.const 0)) (else (i32.mul (local.get $old) (i32.const 65536)))))
-  (func (export "dac_handle") (param $ptr i32) (param $len i32) (result i64) (local $n i32)
+  (func (export "lcc_handle") (param $ptr i32) (param $len i32) (result i64) (local $n i32)
     {handle})
 )"#,
         m = esc(manifest),
@@ -55,7 +55,7 @@ fn reply(json: &str) -> Vec<u8> {
     module(MANIFEST, 1, &format!("(i64.or (i64.shl (i64.const {}) (i64.const 32)) (i64.const 8192))", json.len()), "", json)
 }
 
-fn run(bytes: &[u8], limits: Limits) -> (dac_plugins::Result<Value>, Duration) {
+fn run(bytes: &[u8], limits: Limits) -> (lcc_plugins::Result<Value>, Duration) {
     let t = Instant::now();
     let mut m = Manager::in_memory();
     m.set_limits(limits.clone());
@@ -77,7 +77,7 @@ fn a_plain_reply_round_trips() {
 #[test]
 fn host_calls_follow_the_grant() {
     struct Cat;
-    impl dac_plugins::HostApi for Cat {
+    impl lcc_plugins::HostApi for Cat {
         fn catalog(&mut self, _: &str, _: &Value) -> Result<Value, String> {
             Ok(json!({"photos": 3}))
         }

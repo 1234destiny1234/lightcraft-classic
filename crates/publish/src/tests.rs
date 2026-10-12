@@ -1,4 +1,4 @@
-use dac_catalog::{Album, AlbumId, Catalog, Op, Photo, PhotoId, RemoteIdentity, Source, SyncState};
+use lcc_catalog::{Album, AlbumId, Catalog, Op, Photo, PhotoId, RemoteIdentity, Source, SyncState};
 use serde_json::json;
 
 use crate::hard_drive::{HardDrive, safe_name};
@@ -7,7 +7,7 @@ use crate::*;
 fn tmp(tag: &str) -> std::path::PathBuf {
     static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let d = std::env::temp_dir().join(format!("dac-publish-{tag}-{}-{n}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-publish-{tag}-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d

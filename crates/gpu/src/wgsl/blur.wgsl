@@ -1,5 +1,5 @@
 // Box passes (clamped edges) over an image of NC interleaved channels; three of each approximate a
-// Gaussian (`dac_raster::blur::gaussian`). Each thread slides a running sum over CH pixels.
+// Gaussian (`lcc_raster::blur::gaussian`). Each thread slides a running sum over CH pixels.
 // P: w, h, nc, r, ch. Bindings: src, dst.
 
 // Pixel `i` (all nc ≤ 3 channels at once: one contiguous read per pixel).
@@ -79,7 +79,7 @@ fn box_v(@builtin(global_invocation_id) g: vec3<u32>) {
     }
 }
 
-// Separable median of a single-channel plane (`dac_pipeline::local::median_hv`): 2r+1
+// Separable median of a single-channel plane (`lcc_pipeline::local::median_hv`): 2r+1
 // taps (r ≤ 24, clamped edges) along a row (median_h) or a column (median_v), one thread per
 // pixel. The median is a selection, so the result matches the CPU's bit for bit.
 // P: w, h, nc (unused), r.

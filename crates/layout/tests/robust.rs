@@ -2,10 +2,10 @@
 //! slideshows, user templates) and from agents; a damaged or hostile one is an error or a
 //! clamped render, never a panic, an unbounded allocation or a hang.
 
-use dac_layout::render::{PhotoSource, PlaceholderText, RenderOptions, render_document};
-use dac_layout::tokens::{PhotoInfo, expand};
-use dac_layout::{Document, Template, builtin_templates};
-use dac_raster::Rgba8;
+use lcc_layout::render::{PhotoSource, PlaceholderText, RenderOptions, render_document};
+use lcc_layout::tokens::{PhotoInfo, expand};
+use lcc_layout::{Document, Template, builtin_templates};
+use lcc_raster::Rgba8;
 
 struct Tiny;
 
@@ -37,7 +37,7 @@ fn documents_never_panic() {
     let docs: Vec<String> = builtin_templates().iter().filter_map(|t| t.instantiate(&photos, false).ok()).filter_map(|d| d.to_json().ok()).collect();
     assert!(!docs.is_empty());
     let seeds: Vec<&str> = docs.iter().map(String::as_str).collect();
-    dac_fuzzkit::run_json("layout.document", &seeds, 1500, |s| {
+    lcc_fuzzkit::run_json("layout.document", &seeds, 1500, |s| {
         let _ = Document::from_json(s);
         // render without validation too: documents edited in memory (by the UI or an agent) reach
         // the renderer without a round trip through `from_json`
@@ -52,7 +52,7 @@ fn templates_never_panic() {
     let json: Vec<String> = builtin_templates().iter().filter_map(|t| t.to_json().ok()).collect();
     let seeds: Vec<&str> = json.iter().map(String::as_str).collect();
     let photos: Vec<String> = (0..4).map(|i| format!("p{i}")).collect();
-    dac_fuzzkit::run_json("layout.template", &seeds, 1500, |s| {
+    lcc_fuzzkit::run_json("layout.template", &seeds, 1500, |s| {
         let parsed = Template::from_json(s).ok().or_else(|| serde_json::from_str::<Template>(s).ok());
         if let Some(t) = parsed {
             for repeat in [false, true] {
@@ -69,7 +69,7 @@ fn templates_never_panic() {
 fn caption_tokens_never_panic() {
     let info =
         PhotoInfo { filename: "IMG_0001.JPG".into(), title: "Tïtle".into(), shutter: Some(0.004), aperture: Some(8.0), ..PhotoInfo::default() };
-    dac_fuzzkit::run_str("layout.tokens", &["{Filename} — {Title} {Shutter} f/{Aperture} {Date} {Page}/{Pages} {{}}"], 3000, |s| {
+    lcc_fuzzkit::run_str("layout.tokens", &["{Filename} — {Title} {Shutter} f/{Aperture} {Date} {Page}/{Pages} {{}}"], 3000, |s| {
         let _ = expand(s, &info);
         let _ = expand(s, &PhotoInfo::default());
     });

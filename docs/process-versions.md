@@ -27,7 +27,7 @@ stronger Light sliders, issue #196) without changing a single photo someone has 
 1. Add a variant to `Process` (`V2`), append it to `Process::ALL` (oldest first), give it its number in
    `Process::version` and make it `Process::LATEST`.
 2. The compiler then points at every `match` on `Process`. The base tone map is chosen in one place,
-   `dac_pipeline::finish::base_tone` (both the CPU and the GPU renderer take it from there): give
+   `lcc_pipeline::finish::base_tone` (both the CPU and the GPU renderer take it from there): give
    V2 its own arm and leave V1's alone. A process that changes another stage branches there the same
    way, on `s.process.process()`; if that stage is cached (`Plan::lin_key`, the planes in `local.rs`),
    add the process to its key.

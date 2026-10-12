@@ -16,13 +16,13 @@ use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use dac_engine::catalog::PhotoId;
-use dac_engine::media::{RenderJob, RenderResult, SourceLevel};
-use dac_engine::pipeline::Rendered;
-use dac_preview::{Hash128, PreviewCache};
-use dac_raster::{Histogram, Rgba8};
-use dac_ui_egui::render::{RenderOffload, Slot};
 use js_sys::{Array, Object, Reflect, Uint8Array, Uint32Array};
+use lcc_engine::catalog::PhotoId;
+use lcc_engine::media::{RenderJob, RenderResult, SourceLevel};
+use lcc_engine::pipeline::Rendered;
+use lcc_preview::{Hash128, PreviewCache};
+use lcc_raster::{Histogram, Rgba8};
+use lcc_ui_egui::render::{RenderOffload, Slot};
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
 
@@ -94,7 +94,7 @@ async fn handle(scope: &web_sys::DedicatedWorkerGlobalScope, backend: Option<Bac
         if job.thumb_cached
             && let (Some(b), Some(key)) = (&backend, job.thumb_key())
         {
-            match b.read(&key).await.ok().flatten().and_then(|bytes| dac_preview::decode_jpeg(&bytes)) {
+            match b.read(&key).await.ok().flatten().and_then(|bytes| lcc_preview::decode_jpeg(&bytes)) {
                 Some(image) => {
                     let histogram = Histogram::of_srgb8(&image);
                     return Ok((Rendered { image, histogram, deep: None }, 0));
@@ -113,7 +113,7 @@ async fn handle(scope: &web_sys::DedicatedWorkerGlobalScope, backend: Option<Bac
         let rendered = CORE.with(|c| c.borrow_mut().render(&job, original.as_deref()))?;
         let mut stored = 0;
         if let (Some(b), Some(key)) = (&backend, job.thumb_key())
-            && let Some(jpeg) = dac_preview::encode_jpeg(&rendered.image)
+            && let Some(jpeg) = lcc_preview::encode_jpeg(&rendered.image)
         {
             match b.write(&key, &jpeg).await {
                 Ok(()) => stored = jpeg.len() as u32,
@@ -247,7 +247,7 @@ impl Workers {
             let i = slots.peek();
             let opts = web_sys::WorkerOptions::new();
             opts.set_type(web_sys::WorkerType::Module);
-            opts.set_name(&format!("{}-render-{attempt}", dac_brand::BINARY));
+            opts.set_name(&format!("{}-render-{attempt}", lcc_brand::BINARY));
             let worker = match web_sys::Worker::new_with_options("./worker.js", &opts) {
                 Ok(x) => x,
                 Err(e) => {

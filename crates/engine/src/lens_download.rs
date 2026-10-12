@@ -222,7 +222,7 @@ impl LensSettings {
         json!({
             "dir": source.as_ref().map(|(d, _)| d.display().to_string()),
             "origin": source.as_ref().map(|(_, o)| *o),
-            "env": dac_brand::env_var(crate::lens_profiles::ENV),
+            "env": lcc_brand::env_var(crate::lens_profiles::ENV),
             "configured": crate::lens_profiles::configured_dir().map(|d| d.display().to_string()),
             "downloaded": downloaded,
             "lenses": db.as_ref().map_or(0, |d| d.lenses.len()),
@@ -279,12 +279,12 @@ fn install(url: &str, settings: &Path, cancel: &AtomicBool, progress: &mut dyn F
     // always a fresh copy: an Update must not "resume" an older archive
     let _ = std::fs::remove_file(staging.join(NAME));
     let _ = std::fs::remove_file(staging.join(format!("{NAME}.part")));
-    let file = dac_fetch::FileSpec { name: NAME, size: None, sha256: None, max: MAX_ARCHIVE };
-    let fetched = dac_fetch::download_url(&file, url, &staging, &dac_fetch::Options::default(), cancel, &mut |p| progress(p.done, p.total));
+    let file = lcc_fetch::FileSpec { name: NAME, size: None, sha256: None, max: MAX_ARCHIVE };
+    let fetched = lcc_fetch::download_url(&file, url, &staging, &lcc_fetch::Options::default(), cancel, &mut |p| progress(p.done, p.total));
     if let Err(e) = fetched {
         let _ = std::fs::remove_dir_all(&staging);
         return Err(match e {
-            dac_fetch::DownloadError::AllMirrorsFailed { errors, .. } => {
+            lcc_fetch::DownloadError::AllMirrorsFailed { errors, .. } => {
                 let detail: String = errors.join("; ").chars().take(300).collect();
                 format!(
                     "could not download the lens database ({detail}): check the internet connection and try again, or choose a folder holding lensfun's data/db files"

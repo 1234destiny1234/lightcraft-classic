@@ -1,6 +1,6 @@
 //! The interface every publish service implements (the built-in ones, Immich and plugin services).
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde::Serialize;
 
 use crate::ServiceConfig;

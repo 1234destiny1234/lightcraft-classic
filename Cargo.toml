@@ -12,55 +12,55 @@ repository = "https://example.invalid/repo"
 [workspace.dependencies]
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb3de70e735c8ce87a59a7dedd47675", features = ["serde"] }
 # internal
-dac-brand = { path = "crates/brand" }
-dac-denoise-core = { path = "crates/denoise-core" }
-dac-denoise = { path = "crates/denoise", default-features = false }
-dac-geom = { path = "crates/geom" }
-dac-faces = { path = "crates/faces" }
-dac-sysmem = { path = "crates/sysmem" }
-dac-audio-out = { path = "crates/audio-out" }
-dac-color = { path = "crates/color" }
-dac-raster = { path = "crates/raster" }
-dac-video = { path = "crates/video" }
-dac-video-export = { path = "crates/video-export" }
-dac-tiff = { path = "crates/tiff" }
-dac-raw = { path = "crates/raw" }
-dac-camdb = { path = "crates/camdb" }
-dac-codecs = { path = "crates/codecs" }
-dac-meta = { path = "crates/meta" }
-dac-develop = { path = "crates/develop" }
-dac-lensdb = { path = "crates/lensdb" }
-dac-scenes = { path = "crates/scenes" }
-dac-pipeline = { path = "crates/pipeline" }
-dac-gpu = { path = "crates/gpu" }
-dac-catalog = { path = "crates/catalog" }
-dac-preview = { path = "crates/preview" }
-dac-merge = { path = "crates/merge" }
-dac-engine = { path = "crates/engine" }
-dac-ui-egui = { path = "crates/ui-egui" }
-dac-mcp = { path = "crates/mcp" }
-dac-fetch = { path = "crates/fetch" }
-dac-net = { path = "crates/net" }
-dac-credentials = { path = "crates/credentials" }
-dac-hash = { path = "crates/hash" }
-dac-fuzzkit = { path = "crates/fuzzkit" }
-dac-layout = { path = "crates/layout" }
-dac-immich = { path = "crates/immich" }
-dac-geo = { path = "crates/geo" }
-dac-plugins = { path = "crates/plugins" }
-dac-publish = { path = "crates/publish" }
-dac-tether = { path = "crates/tether" }
-dac-webgallery = { path = "crates/webgallery" }
-dac-heif = { path = "crates/heif" }
-dac-segment = { path = "crates/segment" }
-dac-text = { path = "crates/text" }
-dac-inpaint = { path = "crates/inpaint" }
-dac-pdf = { path = "crates/pdf" }
-dac-print = { path = "crates/print" }
-dac-psd = { path = "crates/psd" }
-dac-actions = { path = "crates/actions" }
-dac-book = { path = "crates/book" }
-dac-geocode = { path = "crates/geocode" }
+lcc-brand = { path = "crates/brand" }
+lcc-denoise-core = { path = "crates/denoise-core" }
+lcc-denoise = { path = "crates/denoise", default-features = false }
+lcc-geom = { path = "crates/geom" }
+lcc-faces = { path = "crates/faces" }
+lcc-sysmem = { path = "crates/sysmem" }
+lcc-audio-out = { path = "crates/audio-out" }
+lcc-color = { path = "crates/color" }
+lcc-raster = { path = "crates/raster" }
+lcc-video = { path = "crates/video" }
+lcc-video-export = { path = "crates/video-export" }
+lcc-tiff = { path = "crates/tiff" }
+lcc-raw = { path = "crates/raw" }
+lcc-camdb = { path = "crates/camdb" }
+lcc-codecs = { path = "crates/codecs" }
+lcc-meta = { path = "crates/meta" }
+lcc-develop = { path = "crates/develop" }
+lcc-lensdb = { path = "crates/lensdb" }
+lcc-scenes = { path = "crates/scenes" }
+lcc-pipeline = { path = "crates/pipeline" }
+lcc-gpu = { path = "crates/gpu" }
+lcc-catalog = { path = "crates/catalog" }
+lcc-preview = { path = "crates/preview" }
+lcc-merge = { path = "crates/merge" }
+lcc-engine = { path = "crates/engine" }
+lcc-ui-egui = { path = "crates/ui-egui" }
+lcc-mcp = { path = "crates/mcp" }
+lcc-fetch = { path = "crates/fetch" }
+lcc-net = { path = "crates/net" }
+lcc-credentials = { path = "crates/credentials" }
+lcc-hash = { path = "crates/hash" }
+lcc-fuzzkit = { path = "crates/fuzzkit" }
+lcc-layout = { path = "crates/layout" }
+lcc-immich = { path = "crates/immich" }
+lcc-geo = { path = "crates/geo" }
+lcc-plugins = { path = "crates/plugins" }
+lcc-publish = { path = "crates/publish" }
+lcc-tether = { path = "crates/tether" }
+lcc-webgallery = { path = "crates/webgallery" }
+lcc-heif = { path = "crates/heif" }
+lcc-segment = { path = "crates/segment" }
+lcc-text = { path = "crates/text" }
+lcc-inpaint = { path = "crates/inpaint" }
+lcc-pdf = { path = "crates/pdf" }
+lcc-print = { path = "crates/print" }
+lcc-psd = { path = "crates/psd" }
+lcc-actions = { path = "crates/actions" }
+lcc-book = { path = "crates/book" }
+lcc-geocode = { path = "crates/geocode" }
 
 # foundation
 thiserror = "2"
@@ -75,7 +75,7 @@ crc32fast = "1"
 siphasher = "1"
 redb = "4.3" # catalog storage v4 (crates/catalog/src/db.rs): pure Rust, MIT OR Apache-2.0
 libc = "0.2" # dev-only: process CPU time in benches
-dhat = "0.3" # opt-in heap profiling (dac-cli --features dhat-heap); never in default builds
+dhat = "0.3" # opt-in heap profiling (lcc-cli --features dhat-heap); never in default builds
 
 # formats
 quick-xml = "0.38"
@@ -102,7 +102,7 @@ rav1e = { version = "0.8.1", default-features = false, features = ["threading"] 
 avif-serialize = "0.8.6"
 
 # gpu (crates/gpu; native backends only, no GL: everything stays pure Rust)
-# SAM 3 inference (dac-segment). 0.9.2: later releases pull `tokenizers` with the
+# SAM 3 inference (lcc-segment). 0.9.2: later releases pull `tokenizers` with the
 # Oniguruma C library into candle-core, and the product is pure Rust.
 candle-core = { version = "=0.9.2", default-features = false }
 candle-nn = { version = "=0.9.2", default-features = false }
@@ -171,15 +171,15 @@ panic = "abort"
 opt-level = "s"
 
 [profile.web.package]
-dac-pipeline = { opt-level = 3 }
-dac-raster = { opt-level = 3 }
-dac-color = { opt-level = 3 }
-dac-develop = { opt-level = 3 }
-dac-geom = { opt-level = 3 }
-dac-raw = { opt-level = 3 }
-dac-codecs = { opt-level = 3 }
-dac-scenes = { opt-level = 3 }
-dac-preview = { opt-level = 3 }
+lcc-pipeline = { opt-level = 3 }
+lcc-raster = { opt-level = 3 }
+lcc-color = { opt-level = 3 }
+lcc-develop = { opt-level = 3 }
+lcc-geom = { opt-level = 3 }
+lcc-raw = { opt-level = 3 }
+lcc-codecs = { opt-level = 3 }
+lcc-scenes = { opt-level = 3 }
+lcc-preview = { opt-level = 3 }
 zune-jpeg = { opt-level = 3 }
 zune-core = { opt-level = 3 }
 jpeg-decoder = { opt-level = 3 }

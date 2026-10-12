@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use dac_raster::Rgba8;
+use lcc_raster::Rgba8;
 
 use super::*;
 

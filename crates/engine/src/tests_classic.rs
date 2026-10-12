@@ -23,21 +23,21 @@ fn quick_set_applies_to_every_selected_photo_in_one_step() {
     assert_eq!(s.undo.len(), undo + 1, "one undo step");
     assert_eq!(s.selection.active, active, "the selection is put back");
     for id in &ids {
-        assert_eq!(s.develop_of(dac_catalog::PhotoId(*id)).unwrap().treatment, dac_develop::Treatment::Bw);
+        assert_eq!(s.develop_of(lcc_catalog::PhotoId(*id)).unwrap().treatment, lcc_develop::Treatment::Bw);
     }
     s.undo_step().unwrap();
     for id in &ids {
-        assert_eq!(s.develop_of(dac_catalog::PhotoId(*id)).unwrap().treatment, dac_develop::Treatment::Color);
+        assert_eq!(s.develop_of(lcc_catalog::PhotoId(*id)).unwrap().treatment, lcc_develop::Treatment::Color);
     }
     // crop ratio and white balance
     s.execute("develop.quickSet", &json!({"aspect": "1x1"})).unwrap();
     for id in &ids {
-        let (w, h) = s.develop_of(dac_catalog::PhotoId(*id)).unwrap().crop.aspect.unwrap();
+        let (w, h) = s.develop_of(lcc_catalog::PhotoId(*id)).unwrap().crop.aspect.unwrap();
         assert_eq!(w, h);
     }
     s.execute("develop.quickSet", &json!({"wb": "tungsten"})).unwrap();
     for id in &ids {
-        assert_eq!(s.develop_of(dac_catalog::PhotoId(*id)).unwrap().wb.mode, dac_develop::WbMode::Tungsten);
+        assert_eq!(s.develop_of(lcc_catalog::PhotoId(*id)).unwrap().wb.mode, lcc_develop::WbMode::Tungsten);
     }
     // bad input is an error, not a panic
     assert!(s.execute("develop.quickSet", &json!({"treatment": "sepia"})).is_err());
@@ -71,16 +71,16 @@ impl Drop for Scratch {
 fn write_png(path: &str, seed: u8) {
     let (w, h) = (48usize, 32usize);
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 5) as u8, (i / w * 7) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 
-fn add_file_photo(s: &mut Session, path: &str) -> dac_catalog::PhotoId {
+fn add_file_photo(s: &mut Session, path: &str) -> lcc_catalog::PhotoId {
     let id = s.catalog.alloc_photo_id();
     let name = std::path::Path::new(path).file_name().unwrap().to_string_lossy().to_string();
-    let p = dac_catalog::Photo::new(id, dac_catalog::Source::File { path: path.into() }, &name, "JPEG", 60, 40, "2026-01-01T10:00:00");
-    s.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    let p = lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: path.into() }, &name, "JPEG", 60, 40, "2026-01-01T10:00:00");
+    s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     id
 }
 
@@ -141,12 +141,12 @@ fn a_folder_synchronises_and_relocates() {
     let r = s.execute("folder.relocate", &json!({"path": d.path("shoot"), "to": d.path("moved")})).unwrap();
     assert!(r["relinked"].as_u64().unwrap() >= 1, "{r}");
     let now = match &s.catalog.photo(a).unwrap().source {
-        dac_catalog::Source::File { path } => path.clone(),
+        lcc_catalog::Source::File { path } => path.clone(),
         _ => String::new(),
     };
     assert_eq!(now, d.path("moved/a.png"));
     s.undo_step().unwrap();
-    assert!(matches!(&s.catalog.photo(a).unwrap().source, dac_catalog::Source::File { path } if *path == d.path("shoot/a.png")));
+    assert!(matches!(&s.catalog.photo(a).unwrap().source, lcc_catalog::Source::File { path } if *path == d.path("shoot/a.png")));
     assert!(s.execute("folder.relocate", &json!({"path": d.path("nothing-here"), "to": d.path("moved")})).is_err());
 }
 
@@ -231,7 +231,7 @@ fn builtin_keyword_sets_and_the_keyword_shortcut() {
     // the shortcut
     assert!(s.execute("keyword.toggleShortcut", &json!({})).is_err(), "none set yet");
     s.execute("keyword.setShortcut", &json!({"keyword": " Travel|Rome "})).unwrap();
-    let has = |s: &Session, k: &str| ids.iter().all(|i| s.catalog.photo(dac_catalog::PhotoId(*i)).unwrap().meta.keywords.iter().any(|x| x == k));
+    let has = |s: &Session, k: &str| ids.iter().all(|i| s.catalog.photo(lcc_catalog::PhotoId(*i)).unwrap().meta.keywords.iter().any(|x| x == k));
     s.execute("keyword.toggleShortcut", &json!({})).unwrap();
     assert!(has(&s, "Travel|Rome"));
     s.execute("keyword.toggleShortcut", &json!({})).unwrap();

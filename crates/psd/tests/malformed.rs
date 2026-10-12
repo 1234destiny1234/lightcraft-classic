@@ -1,7 +1,7 @@
 //! Malformed input handling: every error path must return `Err`, never panic.
 
-use dac_psd::testgen;
-use dac_psd::*;
+use lcc_psd::testgen;
+use lcc_psd::*;
 use proptest::prelude::*;
 
 fn truncation_sweep(bytes: &[u8], name: &str) {

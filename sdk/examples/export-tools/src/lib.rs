@@ -9,8 +9,8 @@
 //!   The manifest asks for the network hosts it may reach (`*.example.com` here: change it to
 //!   your server before building). `dryRun` lists the uploads without sending anything.
 
-use dac_plugin_sdk::serde_json::{Value, json};
-use dac_plugin_sdk::{Request, base64, export_plugin, host};
+use lcc_plugin_sdk::serde_json::{Value, json};
+use lcc_plugin_sdk::{Request, base64, export_plugin, host};
 
 const MANIFEST: &str = r#"{
   "id": "org.example.export-tools",

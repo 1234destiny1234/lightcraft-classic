@@ -95,7 +95,7 @@ fn format_nine_upgrades_and_video_persists() {
     let mut base = Catalog::default();
     let id = clip(&mut base);
     let m = MemStore::default();
-    m.set(SNAPSHOT, format!("{{\"format\":\"dac-catalog\",\"version\":9,\"seq\":1,\"catalog\":{}}}\n", base.to_snapshot()).into_bytes());
+    m.set(SNAPSHOT, format!("{{\"format\":\"lcc-catalog\",\"version\":9,\"seq\":1,\"catalog\":{}}}\n", base.to_snapshot()).into_bytes());
     let (mut j, mut c, r) = Journal::open(Box::new(m.clone())).unwrap();
     assert_eq!(r.upgraded_from, Some(9));
     assert!(c.photo(id).unwrap().video.is_none());

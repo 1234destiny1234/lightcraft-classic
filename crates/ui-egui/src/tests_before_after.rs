@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::{BeforeAfter, ViewMode, Zoom};
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
@@ -24,7 +24,7 @@ fn click_at(h: &mut Headless, pos: egui::Pos2) {
 /// view used to be mapped through the After view's rectangle, so they sampled the photo's edge.
 #[test]
 fn wb_selector_picks_the_same_point_in_the_before_view() {
-    let app = DacApp::new(dac_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     let id = h.app.session.visible_cloned()[2];
     h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0], "active": id.0}}), T);

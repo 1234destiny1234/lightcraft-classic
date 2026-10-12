@@ -10,7 +10,7 @@
 //! | `fs.writeText`        | a writable root (or a file lent for this call) | std::fs              |
 //! | `fs.readBytes`, `fs.writeBytes` | as the text calls; contents as base64 | std::fs              |
 //! | `fs.remove`           | a file below a writable root (never a lent file) | std::fs            |
-//! | `http.request`        | the URL's host in `network` | `dac-net` (native only)                 |
+//! | `http.request`        | the URL's host in `network` | `lcc-net` (native only)                 |
 
 use std::path::PathBuf;
 
@@ -140,7 +140,7 @@ impl CallContext<'_> {
 
     #[cfg(not(target_arch = "wasm32"))]
     fn http(&mut self, p: &Value) -> Result<Value, String> {
-        use dac_net::{Client, ClientConfig, Method, Url};
+        use lcc_net::{Client, ClientConfig, Method, Url};
         let url = str_arg(p, "url")?;
         let parsed = Url::parse(url).map_err(|e| e.to_string())?;
         if !self.perms.allows_host(&parsed.host) {

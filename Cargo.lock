@@ -1629,845 +1629,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "dac-actions"
-version = "0.6.4"
-dependencies = [
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-app"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-codecs",
- "dac-engine",
- "dac-gpu",
- "dac-pipeline",
- "dac-raster",
- "dac-sysmem",
- "dac-ui-egui",
- "eframe",
- "egui",
- "log",
- "muda",
- "objc2 0.6.4",
- "objc2-app-kit 0.3.2",
- "objc2-foundation 0.3.2",
- "pollster 1.0.1",
- "rfd",
- "serde_json",
- "winit",
- "winresource",
- "zbus",
-]
-
-[[package]]
-name = "dac-audio-out"
-version = "0.6.4"
-dependencies = [
- "cpal",
- "log",
-]
-
-[[package]]
-name = "dac-book"
-version = "0.6.4"
-dependencies = [
- "dac-codecs",
- "dac-fuzzkit",
- "dac-layout",
- "dac-pdf",
- "dac-raster",
- "dac-text",
- "hayro",
- "lopdf",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-brand"
-version = "0.6.4"
-
-[[package]]
-name = "dac-camdb"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-color",
- "dac-raw",
- "serde",
- "toml",
-]
-
-[[package]]
-name = "dac-catalog"
-version = "0.6.4"
-dependencies = [
- "crc32fast",
- "dac-brand",
- "dac-develop",
- "dac-fuzzkit",
- "dac-geo",
- "dac-geom",
- "dac-meta",
- "dac-raw",
- "log",
- "proptest",
- "redb",
- "serde",
- "serde_json",
- "siphasher",
- "thiserror 2.0.21",
- "web-time",
-]
-
-[[package]]
-name = "dac-cli"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-camdb",
- "dac-codecs",
- "dac-denoise",
- "dac-engine",
- "dac-mcp",
- "dac-merge",
- "dac-raster",
- "dac-sysmem",
- "dac-ui-egui",
- "dac-video",
- "dhat",
- "log",
- "serde_json",
-]
-
-[[package]]
-name = "dac-codecs"
-version = "0.6.4"
-dependencies = [
- "avif-serialize",
- "bytemuck",
- "dac-brand",
- "dac-color",
- "dac-geom",
- "dac-heif",
- "dac-raster",
- "image",
- "image-webp",
- "jixel",
- "jpeg-decoder",
- "jpeg-encoder",
- "jxl-oxide",
- "moxcms 0.9.1",
- "png 0.18.1",
- "proptest",
- "rav1e",
- "ravif",
- "rayon",
- "serde",
- "thiserror 2.0.21",
- "tiff",
- "zune-core",
- "zune-jpeg",
-]
-
-[[package]]
-name = "dac-color"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-geom",
- "proptest",
- "serde",
-]
-
-[[package]]
-name = "dac-credentials"
-version = "0.6.4"
-dependencies = [
- "argon2 0.5.3",
- "chacha20poly1305",
- "dac-brand",
- "dac-fuzzkit",
- "getrandom 0.3.4",
- "log",
- "serde",
- "serde_json",
- "zbus",
- "zeroize",
-]
-
-[[package]]
-name = "dac-denoise"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-denoise-core",
- "dac-raster",
- "faer-core",
- "miniz_oxide 0.8.9",
- "proptest",
- "rayon",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "web-time",
-]
-
-[[package]]
-name = "dac-denoise-core"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-raster",
- "miniz_oxide 0.8.9",
- "proptest",
- "rayon",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "web-time",
-]
-
-[[package]]
-name = "dac-develop"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-color",
- "dac-geom",
- "miniz_oxide 0.8.9",
- "proptest",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-engine"
-version = "0.6.4"
-dependencies = [
- "ab_glyph",
- "dac-actions",
- "dac-audio-out",
- "dac-brand",
- "dac-camdb",
- "dac-catalog",
- "dac-codecs",
- "dac-color",
- "dac-credentials",
- "dac-denoise",
- "dac-denoise-core",
- "dac-develop",
- "dac-faces",
- "dac-fetch",
- "dac-geo",
- "dac-geocode",
- "dac-geom",
- "dac-gpu",
- "dac-hash",
- "dac-heif",
- "dac-immich",
- "dac-layout",
- "dac-lensdb",
- "dac-merge",
- "dac-meta",
- "dac-pipeline",
- "dac-plugins",
- "dac-preview",
- "dac-print",
- "dac-psd",
- "dac-publish",
- "dac-raster",
- "dac-raw",
- "dac-scenes",
- "dac-segment",
- "dac-tether",
- "dac-tiff",
- "dac-video",
- "dac-video-export",
- "dac-webgallery",
- "filmcraft-h264enc",
- "filmcraft-isobmff",
- "fs4",
- "harfrust",
- "jxl-oxide",
- "libc",
- "log",
- "miniz_oxide 0.8.9",
- "pollster 1.0.1",
- "rayon",
- "rustix 1.1.5",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "tiff",
- "unicode-segmentation",
- "wat",
- "web-time",
- "wgpu",
-]
-
-[[package]]
-name = "dac-faces"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "matrixmultiply",
- "ndarray",
- "proptest",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "web-time",
-]
-
-[[package]]
-name = "dac-fetch"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "log",
- "rustls",
- "rustls-rustcrypto",
- "sha2 0.10.9",
- "webpki-roots",
-]
-
-[[package]]
-name = "dac-fuzzkit"
-version = "0.6.4"
-dependencies = [
- "serde_json",
-]
-
-[[package]]
-name = "dac-geo"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "dac-meta",
- "dac-net",
- "flate2",
- "image",
- "log",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-geocode"
-version = "0.6.4"
-dependencies = [
- "miniz_oxide 0.8.9",
- "serde",
-]
-
-[[package]]
-name = "dac-geom"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "proptest",
- "serde",
-]
-
-[[package]]
-name = "dac-gpu"
-version = "0.6.4"
-dependencies = [
- "bytemuck",
- "dac-brand",
- "dac-color",
- "dac-denoise",
- "dac-develop",
- "dac-geom",
- "dac-pipeline",
- "dac-raster",
- "dac-raw",
- "dac-scenes",
- "log",
- "pollster 1.0.1",
- "wgpu",
-]
-
-[[package]]
-name = "dac-hash"
-version = "0.6.4"
-dependencies = [
- "sha1 0.10.7",
-]
-
-[[package]]
-name = "dac-heif"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "heic-rs",
- "rayon",
-]
-
-[[package]]
-name = "dac-immich"
-version = "0.6.4"
-dependencies = [
- "dac-catalog",
- "dac-credentials",
- "dac-fuzzkit",
- "dac-geom",
- "dac-hash",
- "dac-meta",
- "dac-net",
- "dac-publish",
- "log",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-inpaint"
-version = "0.6.4"
-dependencies = [
- "rayon",
-]
-
-[[package]]
-name = "dac-layout"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "dac-raster",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-lensdb"
-version = "0.6.4"
-dependencies = [
- "dac-develop",
- "dac-geom",
- "quick-xml 0.38.4",
-]
-
-[[package]]
-name = "dac-mcp"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-codecs",
- "dac-engine",
- "dac-hash",
- "dac-raster",
- "dac-video",
- "log",
- "russh",
- "russh-sftp",
- "serde_json",
- "tokio",
-]
-
-[[package]]
-name = "dac-merge"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-codecs",
- "dac-color",
- "dac-geom",
- "dac-meta",
- "dac-raster",
- "dac-raw",
- "dac-scenes",
- "rayon",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-meta"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-geom",
- "dac-tiff",
- "proptest",
- "quick-xml 0.38.4",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-net"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-fuzzkit",
- "flate2",
- "log",
- "rustls",
- "rustls-rustcrypto",
- "serde",
- "serde_json",
- "sha2 0.10.9",
- "webpki-roots",
-]
-
-[[package]]
-name = "dac-pdf"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "dac-text",
- "hayro",
- "lopdf",
- "miniz_oxide 0.8.9",
- "pdf-writer",
- "skrifa 0.44.0",
- "subsetter",
-]
-
-[[package]]
-name = "dac-pipeline"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-color",
- "dac-develop",
- "dac-geom",
- "dac-inpaint",
- "dac-raster",
- "dac-raw",
- "dac-scenes",
- "image",
- "proptest",
- "rayon",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-plugins"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "dac-net",
- "log",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
- "wasmi",
- "wat",
-]
-
-[[package]]
-name = "dac-preview"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-raster",
- "jpeg-encoder",
- "log",
- "siphasher",
- "zune-core",
- "zune-jpeg",
-]
-
-[[package]]
-name = "dac-print"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-codecs",
- "dac-fuzzkit",
- "dac-layout",
- "dac-net",
- "dac-pdf",
- "dac-raster",
- "dac-text",
- "lopdf",
- "rustls",
- "rustls-rustcrypto",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-psd"
-version = "0.6.4"
-dependencies = [
- "dac-psd",
- "flate2",
- "proptest",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-publish"
-version = "0.6.4"
-dependencies = [
- "dac-catalog",
- "dac-fuzzkit",
- "dac-hash",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-raster"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-color",
- "dac-geom",
- "libc",
- "proptest",
- "rayon",
- "serde",
-]
-
-[[package]]
-name = "dac-raw"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-color",
- "dac-geom",
- "dac-meta",
- "dac-raster",
- "dac-tiff",
- "jpeg-encoder",
- "jxl-oxide",
- "miniz_oxide 0.8.9",
- "proptest",
- "rayon",
- "serde",
- "sha2 0.10.9",
- "thiserror 2.0.21",
- "zune-core",
- "zune-jpeg",
- "zune-jpegxl",
-]
-
-[[package]]
-name = "dac-scenes"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-color",
- "dac-raster",
- "image",
- "rayon",
- "serde",
-]
-
-[[package]]
-name = "dac-segment"
-version = "0.6.4"
-dependencies = [
- "candle-core",
- "candle-nn",
- "dac-brand",
- "dac-fetch",
- "log",
- "serde",
- "serde_json",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-slideshow"
-version = "0.6.4"
-dependencies = [
- "claxon",
- "dac-audio-out",
- "dac-brand",
- "dac-catalog",
- "dac-codecs",
- "dac-engine",
- "dac-fuzzkit",
- "dac-pdf",
- "dac-pipeline",
- "dac-raster",
- "hayro",
- "hound",
- "lewton",
- "lopdf",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-sysmem"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
-]
-
-[[package]]
-name = "dac-tether"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "nusb",
- "serde",
- "serde_json",
-]
-
-[[package]]
-name = "dac-text"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "parley",
- "serde",
- "serde_json",
- "skrifa 0.44.0",
-]
-
-[[package]]
-name = "dac-tiff"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "proptest",
- "serde",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-ui-egui"
-version = "0.6.4"
-dependencies = [
- "craft-ui",
- "dac-book",
- "dac-brand",
- "dac-catalog",
- "dac-codecs",
- "dac-color",
- "dac-denoise",
- "dac-develop",
- "dac-engine",
- "dac-faces",
- "dac-geo",
- "dac-geom",
- "dac-immich",
- "dac-layout",
- "dac-merge",
- "dac-meta",
- "dac-pdf",
- "dac-pipeline",
- "dac-preview",
- "dac-print",
- "dac-publish",
- "dac-raster",
- "dac-slideshow",
- "dac-text",
- "dac-webgallery",
- "egui",
- "egui_kittest",
- "filmcraft-h264enc",
- "filmcraft-isobmff",
- "image",
- "log",
- "resvg",
- "serde",
- "serde_json",
- "toml",
- "wat",
- "web-time",
-]
-
-[[package]]
-name = "dac-video"
-version = "0.6.4"
-dependencies = [
- "dac-raster",
- "filmcraft-aac",
- "filmcraft-ac3",
- "filmcraft-apv",
- "filmcraft-av1",
- "filmcraft-bitstream",
- "filmcraft-color",
- "filmcraft-dnx",
- "filmcraft-frame",
- "filmcraft-h264",
- "filmcraft-h264enc",
- "filmcraft-hevc",
- "filmcraft-isobmff",
- "filmcraft-matroska",
- "filmcraft-mpeg2v",
- "filmcraft-mpegts",
- "filmcraft-mxf",
- "filmcraft-opus",
- "filmcraft-prores",
- "filmcraft-time",
- "filmcraft-vp9",
- "image",
- "puremp3",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-video-export"
-version = "0.6.4"
-dependencies = [
- "dac-brand",
- "dac-raster",
- "dac-video",
- "filmcraft-aac",
- "filmcraft-color",
- "filmcraft-h264enc",
- "filmcraft-isobmff",
- "filmcraft-matroska",
- "filmcraft-prores",
- "thiserror 2.0.21",
-]
-
-[[package]]
-name = "dac-web"
-version = "0.6.4"
-dependencies = [
- "crc32fast",
- "dac-brand",
- "dac-codecs",
- "dac-engine",
- "dac-preview",
- "dac-raster",
- "dac-ui-egui",
- "eframe",
- "egui",
- "js-sys",
- "log",
- "serde",
- "serde_json",
- "wasm-bindgen",
- "wasm-bindgen-futures",
- "web-sys",
-]
-
-[[package]]
-name = "dac-webgallery"
-version = "0.6.4"
-dependencies = [
- "dac-fuzzkit",
- "russh",
- "russh-sftp",
- "serde",
- "serde_json",
- "tokio",
-]
-
-[[package]]
 name = "dashmap"
 version = "6.2.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -5214,6 +4375,845 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "20870f649af7073d53e38067b2a84312175d56ea15217e1b15bc83506ec50afb"
 dependencies = [
  "spin",
+]
+
+[[package]]
+name = "lcc-actions"
+version = "0.6.4"
+dependencies = [
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-app"
+version = "0.6.4"
+dependencies = [
+ "eframe",
+ "egui",
+ "lcc-brand",
+ "lcc-codecs",
+ "lcc-engine",
+ "lcc-gpu",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lcc-sysmem",
+ "lcc-ui-egui",
+ "log",
+ "muda",
+ "objc2 0.6.4",
+ "objc2-app-kit 0.3.2",
+ "objc2-foundation 0.3.2",
+ "pollster 1.0.1",
+ "rfd",
+ "serde_json",
+ "winit",
+ "winresource",
+ "zbus",
+]
+
+[[package]]
+name = "lcc-audio-out"
+version = "0.6.4"
+dependencies = [
+ "cpal",
+ "log",
+]
+
+[[package]]
+name = "lcc-book"
+version = "0.6.4"
+dependencies = [
+ "hayro",
+ "lcc-codecs",
+ "lcc-fuzzkit",
+ "lcc-layout",
+ "lcc-pdf",
+ "lcc-raster",
+ "lcc-text",
+ "lopdf",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-brand"
+version = "0.6.4"
+
+[[package]]
+name = "lcc-camdb"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-color",
+ "lcc-raw",
+ "serde",
+ "toml",
+]
+
+[[package]]
+name = "lcc-catalog"
+version = "0.6.4"
+dependencies = [
+ "crc32fast",
+ "lcc-brand",
+ "lcc-develop",
+ "lcc-fuzzkit",
+ "lcc-geo",
+ "lcc-geom",
+ "lcc-meta",
+ "lcc-raw",
+ "log",
+ "proptest",
+ "redb",
+ "serde",
+ "serde_json",
+ "siphasher",
+ "thiserror 2.0.21",
+ "web-time",
+]
+
+[[package]]
+name = "lcc-cli"
+version = "0.6.4"
+dependencies = [
+ "dhat",
+ "lcc-brand",
+ "lcc-camdb",
+ "lcc-codecs",
+ "lcc-denoise",
+ "lcc-engine",
+ "lcc-mcp",
+ "lcc-merge",
+ "lcc-raster",
+ "lcc-sysmem",
+ "lcc-ui-egui",
+ "lcc-video",
+ "log",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-codecs"
+version = "0.6.4"
+dependencies = [
+ "avif-serialize",
+ "bytemuck",
+ "image",
+ "image-webp",
+ "jixel",
+ "jpeg-decoder",
+ "jpeg-encoder",
+ "jxl-oxide",
+ "lcc-brand",
+ "lcc-color",
+ "lcc-geom",
+ "lcc-heif",
+ "lcc-raster",
+ "moxcms 0.9.1",
+ "png 0.18.1",
+ "proptest",
+ "rav1e",
+ "ravif",
+ "rayon",
+ "serde",
+ "thiserror 2.0.21",
+ "tiff",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "lcc-color"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-geom",
+ "proptest",
+ "serde",
+]
+
+[[package]]
+name = "lcc-credentials"
+version = "0.6.4"
+dependencies = [
+ "argon2 0.5.3",
+ "chacha20poly1305",
+ "getrandom 0.3.4",
+ "lcc-brand",
+ "lcc-fuzzkit",
+ "log",
+ "serde",
+ "serde_json",
+ "zbus",
+ "zeroize",
+]
+
+[[package]]
+name = "lcc-denoise"
+version = "0.6.4"
+dependencies = [
+ "faer-core",
+ "lcc-brand",
+ "lcc-denoise-core",
+ "lcc-raster",
+ "miniz_oxide 0.8.9",
+ "proptest",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "web-time",
+]
+
+[[package]]
+name = "lcc-denoise-core"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-raster",
+ "miniz_oxide 0.8.9",
+ "proptest",
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "web-time",
+]
+
+[[package]]
+name = "lcc-develop"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-color",
+ "lcc-geom",
+ "miniz_oxide 0.8.9",
+ "proptest",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-engine"
+version = "0.6.4"
+dependencies = [
+ "ab_glyph",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
+ "fs4",
+ "harfrust",
+ "jxl-oxide",
+ "lcc-actions",
+ "lcc-audio-out",
+ "lcc-brand",
+ "lcc-camdb",
+ "lcc-catalog",
+ "lcc-codecs",
+ "lcc-color",
+ "lcc-credentials",
+ "lcc-denoise",
+ "lcc-denoise-core",
+ "lcc-develop",
+ "lcc-faces",
+ "lcc-fetch",
+ "lcc-geo",
+ "lcc-geocode",
+ "lcc-geom",
+ "lcc-gpu",
+ "lcc-hash",
+ "lcc-heif",
+ "lcc-immich",
+ "lcc-layout",
+ "lcc-lensdb",
+ "lcc-merge",
+ "lcc-meta",
+ "lcc-pipeline",
+ "lcc-plugins",
+ "lcc-preview",
+ "lcc-print",
+ "lcc-psd",
+ "lcc-publish",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "lcc-segment",
+ "lcc-tether",
+ "lcc-tiff",
+ "lcc-video",
+ "lcc-video-export",
+ "lcc-webgallery",
+ "libc",
+ "log",
+ "miniz_oxide 0.8.9",
+ "pollster 1.0.1",
+ "rayon",
+ "rustix 1.1.5",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "tiff",
+ "unicode-segmentation",
+ "wat",
+ "web-time",
+ "wgpu",
+]
+
+[[package]]
+name = "lcc-faces"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "matrixmultiply",
+ "ndarray",
+ "proptest",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "web-time",
+]
+
+[[package]]
+name = "lcc-fetch"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "log",
+ "rustls",
+ "rustls-rustcrypto",
+ "sha2 0.10.9",
+ "webpki-roots",
+]
+
+[[package]]
+name = "lcc-fuzzkit"
+version = "0.6.4"
+dependencies = [
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-geo"
+version = "0.6.4"
+dependencies = [
+ "flate2",
+ "image",
+ "lcc-fuzzkit",
+ "lcc-meta",
+ "lcc-net",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-geocode"
+version = "0.6.4"
+dependencies = [
+ "miniz_oxide 0.8.9",
+ "serde",
+]
+
+[[package]]
+name = "lcc-geom"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "proptest",
+ "serde",
+]
+
+[[package]]
+name = "lcc-gpu"
+version = "0.6.4"
+dependencies = [
+ "bytemuck",
+ "lcc-brand",
+ "lcc-color",
+ "lcc-denoise",
+ "lcc-develop",
+ "lcc-geom",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "log",
+ "pollster 1.0.1",
+ "wgpu",
+]
+
+[[package]]
+name = "lcc-hash"
+version = "0.6.4"
+dependencies = [
+ "sha1 0.10.7",
+]
+
+[[package]]
+name = "lcc-heif"
+version = "0.6.4"
+dependencies = [
+ "heic-rs",
+ "lcc-brand",
+ "rayon",
+]
+
+[[package]]
+name = "lcc-immich"
+version = "0.6.4"
+dependencies = [
+ "lcc-catalog",
+ "lcc-credentials",
+ "lcc-fuzzkit",
+ "lcc-geom",
+ "lcc-hash",
+ "lcc-meta",
+ "lcc-net",
+ "lcc-publish",
+ "log",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-inpaint"
+version = "0.6.4"
+dependencies = [
+ "rayon",
+]
+
+[[package]]
+name = "lcc-layout"
+version = "0.6.4"
+dependencies = [
+ "lcc-fuzzkit",
+ "lcc-raster",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-lensdb"
+version = "0.6.4"
+dependencies = [
+ "lcc-develop",
+ "lcc-geom",
+ "quick-xml 0.38.4",
+]
+
+[[package]]
+name = "lcc-mcp"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-codecs",
+ "lcc-engine",
+ "lcc-hash",
+ "lcc-raster",
+ "lcc-video",
+ "log",
+ "russh",
+ "russh-sftp",
+ "serde_json",
+ "tokio",
+]
+
+[[package]]
+name = "lcc-merge"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-codecs",
+ "lcc-color",
+ "lcc-geom",
+ "lcc-meta",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "rayon",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-meta"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-geom",
+ "lcc-tiff",
+ "proptest",
+ "quick-xml 0.38.4",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-net"
+version = "0.6.4"
+dependencies = [
+ "flate2",
+ "lcc-brand",
+ "lcc-fuzzkit",
+ "log",
+ "rustls",
+ "rustls-rustcrypto",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "webpki-roots",
+]
+
+[[package]]
+name = "lcc-pdf"
+version = "0.6.4"
+dependencies = [
+ "hayro",
+ "lcc-fuzzkit",
+ "lcc-text",
+ "lopdf",
+ "miniz_oxide 0.8.9",
+ "pdf-writer",
+ "skrifa 0.44.0",
+ "subsetter",
+]
+
+[[package]]
+name = "lcc-pipeline"
+version = "0.6.4"
+dependencies = [
+ "image",
+ "lcc-brand",
+ "lcc-color",
+ "lcc-develop",
+ "lcc-geom",
+ "lcc-inpaint",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "proptest",
+ "rayon",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-plugins"
+version = "0.6.4"
+dependencies = [
+ "lcc-fuzzkit",
+ "lcc-net",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+ "wasmi",
+ "wat",
+]
+
+[[package]]
+name = "lcc-preview"
+version = "0.6.4"
+dependencies = [
+ "jpeg-encoder",
+ "lcc-brand",
+ "lcc-raster",
+ "log",
+ "siphasher",
+ "zune-core",
+ "zune-jpeg",
+]
+
+[[package]]
+name = "lcc-print"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-codecs",
+ "lcc-fuzzkit",
+ "lcc-layout",
+ "lcc-net",
+ "lcc-pdf",
+ "lcc-raster",
+ "lcc-text",
+ "lopdf",
+ "rustls",
+ "rustls-rustcrypto",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-psd"
+version = "0.6.4"
+dependencies = [
+ "flate2",
+ "lcc-psd",
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-publish"
+version = "0.6.4"
+dependencies = [
+ "lcc-catalog",
+ "lcc-fuzzkit",
+ "lcc-hash",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-raster"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "lcc-color",
+ "lcc-geom",
+ "libc",
+ "proptest",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "lcc-raw"
+version = "0.6.4"
+dependencies = [
+ "jpeg-encoder",
+ "jxl-oxide",
+ "lcc-brand",
+ "lcc-color",
+ "lcc-geom",
+ "lcc-meta",
+ "lcc-raster",
+ "lcc-tiff",
+ "miniz_oxide 0.8.9",
+ "proptest",
+ "rayon",
+ "serde",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "zune-core",
+ "zune-jpeg",
+ "zune-jpegxl",
+]
+
+[[package]]
+name = "lcc-scenes"
+version = "0.6.4"
+dependencies = [
+ "image",
+ "lcc-brand",
+ "lcc-color",
+ "lcc-raster",
+ "rayon",
+ "serde",
+]
+
+[[package]]
+name = "lcc-segment"
+version = "0.6.4"
+dependencies = [
+ "candle-core",
+ "candle-nn",
+ "lcc-brand",
+ "lcc-fetch",
+ "log",
+ "serde",
+ "serde_json",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-slideshow"
+version = "0.6.4"
+dependencies = [
+ "claxon",
+ "hayro",
+ "hound",
+ "lcc-audio-out",
+ "lcc-brand",
+ "lcc-catalog",
+ "lcc-codecs",
+ "lcc-engine",
+ "lcc-fuzzkit",
+ "lcc-pdf",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lewton",
+ "lopdf",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-sysmem"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+]
+
+[[package]]
+name = "lcc-tether"
+version = "0.6.4"
+dependencies = [
+ "lcc-fuzzkit",
+ "nusb",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
+name = "lcc-text"
+version = "0.6.4"
+dependencies = [
+ "lcc-fuzzkit",
+ "parley",
+ "serde",
+ "serde_json",
+ "skrifa 0.44.0",
+]
+
+[[package]]
+name = "lcc-tiff"
+version = "0.6.4"
+dependencies = [
+ "lcc-brand",
+ "proptest",
+ "serde",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-ui-egui"
+version = "0.6.4"
+dependencies = [
+ "craft-ui",
+ "egui",
+ "egui_kittest",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
+ "image",
+ "lcc-book",
+ "lcc-brand",
+ "lcc-catalog",
+ "lcc-codecs",
+ "lcc-color",
+ "lcc-denoise",
+ "lcc-develop",
+ "lcc-engine",
+ "lcc-faces",
+ "lcc-geo",
+ "lcc-geom",
+ "lcc-immich",
+ "lcc-layout",
+ "lcc-merge",
+ "lcc-meta",
+ "lcc-pdf",
+ "lcc-pipeline",
+ "lcc-preview",
+ "lcc-print",
+ "lcc-publish",
+ "lcc-raster",
+ "lcc-slideshow",
+ "lcc-text",
+ "lcc-webgallery",
+ "log",
+ "resvg",
+ "serde",
+ "serde_json",
+ "toml",
+ "wat",
+ "web-time",
+]
+
+[[package]]
+name = "lcc-video"
+version = "0.6.4"
+dependencies = [
+ "filmcraft-aac",
+ "filmcraft-ac3",
+ "filmcraft-apv",
+ "filmcraft-av1",
+ "filmcraft-bitstream",
+ "filmcraft-color",
+ "filmcraft-dnx",
+ "filmcraft-frame",
+ "filmcraft-h264",
+ "filmcraft-h264enc",
+ "filmcraft-hevc",
+ "filmcraft-isobmff",
+ "filmcraft-matroska",
+ "filmcraft-mpeg2v",
+ "filmcraft-mpegts",
+ "filmcraft-mxf",
+ "filmcraft-opus",
+ "filmcraft-prores",
+ "filmcraft-time",
+ "filmcraft-vp9",
+ "image",
+ "lcc-raster",
+ "puremp3",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-video-export"
+version = "0.6.4"
+dependencies = [
+ "filmcraft-aac",
+ "filmcraft-color",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
+ "filmcraft-matroska",
+ "filmcraft-prores",
+ "lcc-brand",
+ "lcc-raster",
+ "lcc-video",
+ "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-web"
+version = "0.6.4"
+dependencies = [
+ "crc32fast",
+ "eframe",
+ "egui",
+ "js-sys",
+ "lcc-brand",
+ "lcc-codecs",
+ "lcc-engine",
+ "lcc-preview",
+ "lcc-raster",
+ "lcc-ui-egui",
+ "log",
+ "serde",
+ "serde_json",
+ "wasm-bindgen",
+ "wasm-bindgen-futures",
+ "web-sys",
+]
+
+[[package]]
+name = "lcc-webgallery"
+version = "0.6.4"
+dependencies = [
+ "lcc-fuzzkit",
+ "russh",
+ "russh-sftp",
+ "serde",
+ "serde_json",
+ "tokio",
 ]
 
 [[package]]

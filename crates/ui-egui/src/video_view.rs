@@ -1,7 +1,7 @@
 //! The moving picture in the loupe (M14.4): while a clip plays, frames from the engine's
-//! decode-ahead worker ([`dac_engine::video::playback::Playback`]) shown by the player clock;
+//! decode-ahead worker ([`lcc_engine::video::playback::Playback`]) shown by the player clock;
 //! paused or scrubbed, a full-quality graded frame at the playhead
-//! ([`dac_engine::video::playback::spawn_still`]). The texture is drawn over the loupe's poster
+//! ([`lcc_engine::video::playback::spawn_still`]). The texture is drawn over the loupe's poster
 //! render; until the first frame arrives the poster shows.
 //!
 //! Nothing here waits: the worker and still renders run on their own threads and are polled once
@@ -9,11 +9,11 @@
 
 use std::sync::mpsc::{Receiver, TryRecvError};
 
-use dac_catalog::PhotoId;
-use dac_engine::video::playback::{AudioPlayback, FramePixels, Playback, ShownFrame, spawn_still};
+use lcc_catalog::PhotoId;
+use lcc_engine::video::playback::{AudioPlayback, FramePixels, Playback, ShownFrame, spawn_still};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::video_ui::VideoUiState;
 
 /// How far the shown frame may drift from the clock before the worker restarts there (a seek or
@@ -102,7 +102,7 @@ impl VideoView {
 }
 
 /// Stop the worker and the sound (another photo, another view); the clock goes back to the system's.
-pub fn stop(app: &mut DacApp) {
+pub fn stop(app: &mut LccApp) {
     app.video_view.playback = None;
     app.video_view.still = None;
     if app.video_view.audio.take().is_some() {
@@ -116,7 +116,7 @@ fn upload(ctx: &egui::Context, f: &ShownFrame) -> Tex {
 
 /// A playing frame's texture: graded on the window's GPU when it came ungraded and the GPU
 /// grade works, else on the CPU (and the GPU isn't tried again).
-fn show(app: &mut DacApp, ctx: &egui::Context, f: &ShownFrame) -> Tex {
+fn show(app: &mut LccApp, ctx: &egui::Context, f: &ShownFrame) -> Tex {
     if let FramePixels::Linear { image, lut, key } = &f.pixels
         && let Some(g) = app.services.video_gpu.as_mut()
         && !app.video_view.gpu_failed
@@ -134,11 +134,11 @@ fn show(app: &mut DacApp, ctx: &egui::Context, f: &ShownFrame) -> Tex {
 
 /// Bring the loupe's video frame up to date for clip `id` with control-bar state `state`;
 /// `side` is the drawn long edge in pixels. Returns the texture to draw, if one is ready.
-pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoUiState, side: u32) -> Option<(egui::TextureId, [usize; 2])> {
+pub fn update(app: &mut LccApp, ctx: &egui::Context, id: PhotoId, state: &VideoUiState, side: u32) -> Option<(egui::TextureId, [usize; 2])> {
     let develop = app.session.catalog.photo(id).map(|p| (*p.develop).clone()).unwrap_or_default();
-    let look = dac_pipeline::grade::video_settings(&develop).hash64();
+    let look = lcc_pipeline::grade::video_settings(&develop).hash64();
     let backend = app.session.video.backend.clone();
-    let path = dac_engine::video::adapter::clip_path(&app.session, id).ok();
+    let path = lcc_engine::video::adapter::clip_path(&app.session, id).ok();
     let (Some(backend), Some(path)) = (backend, path) else {
         stop(app);
         return None;
@@ -176,7 +176,7 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
                     Err(e) => log::warn!("video sound: {e}"),
                 }
             }
-            let max = side.min(dac_engine::video::playback::PLAY_MAX_SIDE);
+            let max = side.min(lcc_engine::video::playback::PLAY_MAX_SIDE);
             let started = if gpu {
                 Playback::start_linear(backend, path, state.current, max, &develop)
             } else {
@@ -205,7 +205,7 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
         if app.video_view.audio.take().is_some() {
             app.session.video.follow_system_clock();
         }
-        let snapped = dac_engine::video::player::snap(state.current, fps);
+        let snapped = lcc_engine::video::player::snap(state.current, fps);
         let key = StillKey { photo: id, t_us: (snapped * 1e6).round() as i64, look, side: side.clamp(64, 3840) };
         let have = app.video_view.shown.as_ref().is_some_and(|s| s.key == Some(key));
         let pending = app.video_view.still.as_ref().is_some_and(|(k, _)| *k == key);
@@ -234,7 +234,7 @@ pub fn update(app: &mut DacApp, ctx: &egui::Context, id: PhotoId, state: &VideoU
     app.video_view.shown.as_ref().filter(|s| s.photo == id).map(|s| (s.tex.id(), s.tex.size()))
 }
 
-fn fail(app: &mut DacApp, ctx: &egui::Context, e: String) -> Option<(egui::TextureId, [usize; 2])> {
+fn fail(app: &mut LccApp, ctx: &egui::Context, e: String) -> Option<(egui::TextureId, [usize; 2])> {
     log::warn!("video playback: {e}");
     app.video_view.playback = None;
     if app.video_view.audio.take().is_some() {

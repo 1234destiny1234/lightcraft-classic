@@ -6,7 +6,7 @@
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use dac_raster::Rgb32f;
+use lcc_raster::Rgb32f;
 use rayon::prelude::*;
 
 use crate::bayer::{Layout, pack_tile};
@@ -201,7 +201,7 @@ pub fn denoise_bayer(
             }
         }
     });
-    if dac_brand::env_is_set("PROFILE") {
+    if lcc_brand::env_is_set("PROFILE") {
         eprintln!(
             "[denoise] {total} tiles, {} at once: tiles {:.0} ms (blending, {:.0} ms of it, overlaps the model), normalise {:.0} ms",
             group,

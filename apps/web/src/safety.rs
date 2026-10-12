@@ -81,11 +81,11 @@ pub fn install_panic_hook() {
             _ => "unknown error".into(),
         };
         let at = info.location().map(|l| format!(" at {}:{}", l.file(), l.line())).unwrap_or_default();
-        log::error!("{} panicked{at}: {msg}", dac_brand::DISPLAY_NAME);
+        log::error!("{} panicked{at}: {msg}", lcc_brand::DISPLAY_NAME);
         show_blocking(&format!(
             "{app} stopped after an internal error:\n{msg}\n\nThe library saved in this browser is kept. Reload the page to continue.\n\
              If it happens again right away, a photo may be the cause: reload with ?workers=0 or report the error.",
-            app = dac_brand::DISPLAY_NAME
+            app = lcc_brand::DISPLAY_NAME
         ));
     }));
 }
@@ -164,7 +164,7 @@ pub async fn backup(files: Files, backend: Backend, names: HashMap<String, Strin
         bytes += (header.len() + data.len()) as f64;
         Ok(())
     };
-    add(&mut zip, "README.txt", dac_brand::fill(README).as_bytes())?;
+    add(&mut zip, "README.txt", lcc_brand::fill(README).as_bytes())?;
     for name in LIBRARY_FILES {
         if let Some(d) = files.get(name) {
             add(&mut zip, &format!("library/{name}"), &d)?;
@@ -191,7 +191,7 @@ pub async fn backup(files: Files, backend: Backend, names: HashMap<String, Strin
     opts.set_type("application/zip");
     let blob = web_sys::Blob::new_with_u8_array_sequence_and_options(&parts, &opts).map_err(|e| format!("{e:?}"))?;
     let day: String = String::from(js_sys::Date::new_0().to_iso_string()).chars().take(10).collect();
-    download_blob(&format!("{}-library-backup-{day}.zip", dac_brand::BINARY), &blob)?;
+    download_blob(&format!("{}-library-backup-{day}.zip", lcc_brand::BINARY), &blob)?;
     Ok((originals, bytes + tail.len() as f64))
 }
 
@@ -211,7 +211,7 @@ pub async fn restore(file: web_sys::File, backend: Backend) -> Result<String, St
     let cd = read_range(&file, cd_offset, cd_offset + cd_size).await?;
     let entries = parse_central(&cd)?;
     if !entries.iter().any(|e| e.name == "library/catalog.snap" || e.name == "library/catalog.log") {
-        return Err(format!("this isn't a {} library backup (no library/catalog files)", dac_brand::DISPLAY_NAME));
+        return Err(format!("this isn't a {} library backup (no library/catalog files)", lcc_brand::DISPLAY_NAME));
     }
     let dir = restored_dir_name(js_sys::Date::now());
     let mut written = 0usize;
@@ -238,7 +238,7 @@ pub async fn restore(file: web_sys::File, backend: Backend) -> Result<String, St
 
 /// File ▸ Restore Library from Backup…: confirm, pick the zip, restore, reload.
 pub fn pick_and_restore(backend: Backend, before_reload: impl FnOnce() + 'static) {
-    let ok = confirm(&dac_brand::fill(
+    let ok = confirm(&lcc_brand::fill(
         "Restore a {app} library backup?\n\nThe backup becomes the library in this browser and the page reloads. \
          The current library is not deleted: it stays in browser storage.",
     ));

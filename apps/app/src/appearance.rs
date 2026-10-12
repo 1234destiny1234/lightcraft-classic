@@ -88,7 +88,7 @@ fn publish(value: &std::sync::atomic::AtomicU8, wake: &std::sync::OnceLock<egui:
 }
 
 /// The host's system-appearance service (Linux), or `None` where egui's report is enough.
-pub fn service() -> Option<dac_ui_egui::SystemThemeFn> {
+pub fn service() -> Option<lcc_ui_egui::SystemThemeFn> {
     #[cfg(target_os = "linux")]
     {
         use std::sync::{

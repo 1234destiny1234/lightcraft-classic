@@ -3,7 +3,7 @@
 
 use std::sync::Arc;
 
-use dac_develop::DevelopSettings;
+use lcc_develop::DevelopSettings;
 
 use crate::*;
 

@@ -13,14 +13,14 @@
 //! Also here: automatic lateral chromatic aberration estimation ([`estimate_lateral_ca`]) and [`defringe`].
 //! Profile corrections use lens data embedded in the files (DNG `WarpRectilinear` / `WarpRectilinear2` /
 //! `FixVignetteRadial`, and the raw readers' equivalent of a camera's own correction, e.g. Panasonic / Leica RW2
-//! distortion), or a lens database profile in the same form (`dac_lensdb`).
+//! distortion), or a lens database profile in the same form (`lcc_lensdb`).
 
 use std::sync::Mutex;
 
-use dac_color::perceptual::{oklab_from_2020, oklab_to_2020};
-use dac_develop::{DevelopSettings, EmbeddedLens, EmbeddedVignette, EmbeddedWarp, EmbeddedWarpStage};
-use dac_geom::{Affine, Homography, Interval, Orientation, Point, Real};
-use dac_raster::{Plane, Rgb32f};
+use lcc_color::perceptual::{oklab_from_2020, oklab_to_2020};
+use lcc_develop::{DevelopSettings, EmbeddedLens, EmbeddedVignette, EmbeddedWarp, EmbeddedWarpStage};
+use lcc_geom::{Affine, Homography, Interval, Orientation, Point, Real};
+use lcc_raster::{Plane, Rgb32f};
 
 use crate::for_rows;
 
@@ -729,7 +729,7 @@ mod tests {
         let mut r = Rng(42);
         for _ in 0..2000 {
             let wp = random_warp(&mut r);
-            let a = dac_geom::Affine([
+            let a = lcc_geom::Affine([
                 r.range(-2.0, 2.0),
                 r.range(-2.0, 2.0),
                 r.range(-2.0, 2.0),
@@ -770,7 +770,7 @@ mod tests {
         let (mut decided, mut total) = (0, 0);
         for _ in 0..500 {
             let wp = random_warp(&mut r);
-            let a = dac_geom::Affine([
+            let a = lcc_geom::Affine([
                 r.range(0.5, 2.0),
                 r.range(-0.2, 0.2),
                 r.range(-0.2, 0.2),
@@ -1033,7 +1033,7 @@ mod tests {
                 stages.push(st);
             }
             let wp = chain(&stages);
-            let a = dac_geom::Affine([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
+            let a = lcc_geom::Affine([1.0, 0.0, 0.0, 1.0, 0.0, 0.0]);
             for _ in 0..20 {
                 let (x0, y0) = (r.range(0.0, 1.0) * wp.w, r.range(0.0, 1.0) * wp.h);
                 let (bw, bh) = (r.range(0.0, 20.0), r.range(0.0, 20.0));

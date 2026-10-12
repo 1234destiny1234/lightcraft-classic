@@ -48,8 +48,8 @@ impl Drop for Scratch {
 fn write_png(path: &str, seed: u8) {
     let (w, h) = (24usize, 16usize);
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 9) as u8, (i / w * 13) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::create_dir_all(Path::new(path).parent().unwrap()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
@@ -354,8 +354,8 @@ fn a_whole_disk_or_a_folder_holding_disks_is_synchronized_only_on_request() {
     let mut s = library(&dir);
     // a library photo on another disk makes the scratch folder's root look like it holds disks
     let id = s.catalog.alloc_photo_id();
-    let p = dac_catalog::Photo::new(id, dac_catalog::Source::File { path: "/Volumes/nas/x.jpg".into() }, "x.jpg", "JPEG", 6, 4, "2026-01-01");
-    s.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    let p = lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: "/Volumes/nas/x.jpg".into() }, "x.jpg", "JPEG", 6, 4, "2026-01-01");
+    s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     if std::path::Path::new("/Volumes").is_dir() {
         let e = s.execute("folder.scanChanges", &json!({"path": "/Volumes"})).unwrap_err().to_string();
         assert!(e.contains("disk: true"), "{e}");
@@ -394,9 +394,9 @@ fn a_file_renamed_or_moved_inside_the_folder_is_relinked_not_lost() {
     assert_eq!((r["relinked"].as_u64(), r["removed"].as_u64(), r["imported"].as_u64()), (Some(1), Some(0), Some(0)), "{r}");
     let p = s.catalog.photo(a).unwrap();
     assert!(p.in_library() && p.rating == 4, "the same photo, edits and all");
-    assert_eq!(p.source, dac_catalog::Source::File { path: dir.path("trip/day1/a-renamed.png") });
+    assert_eq!(p.source, lcc_catalog::Source::File { path: dir.path("trip/day1/a-renamed.png") });
     s.execute("edit.undo", &json!({})).unwrap();
-    assert_eq!(s.catalog.photo(a).unwrap().source, dac_catalog::Source::File { path: dir.path("trip/a.png") });
+    assert_eq!(s.catalog.photo(a).unwrap().source, lcc_catalog::Source::File { path: dir.path("trip/a.png") });
 }
 
 #[test]
@@ -484,8 +484,8 @@ fn a_renamed_photo_with_no_content_hash_is_relinked_when_its_file_is_unmistakabl
     let a = s.catalog.photos().find(|p| p.file_name == "a.png").unwrap().id;
     let mut p = (**s.catalog.photo(a).unwrap()).clone();
     p.content_hash = None;
-    s.catalog.apply(dac_catalog::Op::RemovePhoto { id: a }).unwrap();
-    s.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    s.catalog.apply(lcc_catalog::Op::RemovePhoto { id: a }).unwrap();
+    s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     std::fs::rename(dir.path("trip/a.png"), dir.path("trip/a-renamed.png")).unwrap();
     let r = scan(&mut s, &dir.path("trip"));
     assert_eq!(r["moved"][0]["to"], dir.path("trip/a-renamed.png"), "{r}");
@@ -517,8 +517,8 @@ fn face_regions_found_meanwhile_leave_the_scan_current() {
     // background face search adds a region to a photo of the folder
     let a = s.catalog.photos().find(|p| p.file_name == "a.png").unwrap().id;
     let mut meta = s.catalog.photo(a).unwrap().meta.clone();
-    meta.regions.push(dac_meta::Region { rect: Default::default(), kind: dac_meta::RegionKind::Face, name: None, description: None });
-    s.catalog.apply(dac_catalog::Op::SetMeta { id: a, meta: Box::new(meta) }).unwrap();
+    meta.regions.push(lcc_meta::Region { rect: Default::default(), kind: lcc_meta::RegionKind::Face, name: None, description: None });
+    s.catalog.apply(lcc_catalog::Op::SetMeta { id: a, meta: Box::new(meta) }).unwrap();
     let r = s.execute("folder.synchronize", &json!({"path": dir.path("trip"), "scanned": true})).unwrap();
     assert_eq!(r["imported"], 1, "{r}");
 }
@@ -661,10 +661,10 @@ fn sidecar_namings_for_many_photos_agree_with_one_at_a_time() {
     // a raw beside its JPEG: the raw owns IMG_1.xmp, the JPEG's is IMG_1.JPG.xmp
     for name in ["IMG_1.CR3", "IMG_1.JPG", "IMG_2.JPG"] {
         let id = s.catalog.alloc_photo_id();
-        let p = dac_catalog::Photo::new(id, dac_catalog::Source::File { path: dir.path(&format!("trip/{name}")) }, name, "X", 6, 4, "2026-01-01");
-        s.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        let p = lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: dir.path(&format!("trip/{name}")) }, name, "X", 6, 4, "2026-01-01");
+        s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     }
-    let ids: Vec<dac_catalog::PhotoId> = s.catalog.photos().map(|p| p.id).collect();
+    let ids: Vec<lcc_catalog::PhotoId> = s.catalog.photos().map(|p| p.id).collect();
     let one_by_one: Vec<_> = ids.iter().map(|id| s.sidecar_naming(*id)).collect();
     assert_eq!(s.sidecar_namings(&ids), one_by_one);
     assert!(one_by_one.contains(&crate::sidecar::SidecarNaming::Full), "the case that matters is there");

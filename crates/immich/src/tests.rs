@@ -8,8 +8,8 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dac_catalog::{Catalog, Op, Photo, PhotoId, Source, SyncState};
-use dac_credentials::Secret;
+use lcc_catalog::{Catalog, Op, Photo, PhotoId, Source, SyncState};
+use lcc_credentials::Secret;
 
 use crate::client::{self, Client, ServerOptions};
 use crate::extlib::{self, PathMap};
@@ -205,7 +205,7 @@ fn tls_to_a_plain_server_fails_cleanly() {
     let e = client(&url.replace("http://", "https://"), KEY).version().unwrap_err();
     assert!(matches!(e, ImmichError::Tls(_) | ImmichError::Offline(_) | ImmichError::Protocol(_)), "{e:?}");
     // a certificate nobody vouches for carries its fingerprint to the confirmation dialog
-    let e = ImmichError::from(dac_net::NetError::UntrustedCertificate { host: "nas.local".into(), fingerprint: "AB:CD".into() });
+    let e = ImmichError::from(lcc_net::NetError::UntrustedCertificate { host: "nas.local".into(), fingerprint: "AB:CD".into() });
     assert_eq!(e.kind(), "untrustedCertificate");
     assert!(e.to_string().contains("AB:CD"));
     // a pin that is not a fingerprint is refused before connecting
@@ -288,11 +288,11 @@ fn assets_link_by_checksum_else_probably_by_name_time_and_size() {
     assert_eq!(link::link_state(&cat, other), "none");
     assert_eq!(cat.photo_of_remote(link::SERVICE, account, &assets[0].id), Some(by_sum));
     // the filter and the smart-collection rule see the states
-    let f = dac_catalog::Filter { immich: Some("notLinked".into()), ..Default::default() };
-    let mut ids = cat.query(&f, &dac_catalog::Sort::default());
+    let f = lcc_catalog::Filter { immich: Some("notLinked".into()), ..Default::default() };
+    let mut ids = cat.query(&f, &lcc_catalog::Sort::default());
     ids.sort();
     assert_eq!(ids, vec![probable, other]);
-    let rule: dac_catalog::Rule = serde_json::from_value(serde_json::json!({"field": "immich", "op": "is", "value": "probable"})).unwrap();
+    let rule: lcc_catalog::Rule = serde_json::from_value(serde_json::json!({"field": "immich", "op": "is", "value": "probable"})).unwrap();
     assert!(rule.matches(cat.photo(probable).unwrap(), &cat));
     assert!(!rule.matches(cat.photo(by_sum).unwrap(), &cat));
     // a second pass over the same listing changes nothing
@@ -337,7 +337,7 @@ fn metadata_maps_one_way_on_import() {
     let mut p = Photo::new(PhotoId(1), Source::File { path: "/x.jpg".into() }, "x.jpg", "JPEG", 1, 1, "now");
     mapping::apply(&a, &mut p);
     assert_eq!(p.rating, 4);
-    assert_eq!(p.flag, dac_catalog::Flag::Pick);
+    assert_eq!(p.flag, lcc_catalog::Flag::Pick);
     assert_eq!(p.meta.caption, "Sunset");
     assert_eq!(p.meta.keywords, vec!["travel|swiss".to_string()]);
     assert_eq!(p.meta.gps, Some((47.5, 8.25)));
@@ -350,7 +350,7 @@ fn metadata_maps_one_way_on_import() {
     let mut q = Photo::new(PhotoId(2), Source::File { path: "/y.jpg".into() }, "y.jpg", "JPEG", 1, 1, "now");
     q.rating = 3;
     mapping::apply(&r, &mut q);
-    assert_eq!((q.rating, q.flag), (0, dac_catalog::Flag::Reject));
+    assert_eq!((q.rating, q.flag), (0, lcc_catalog::Flag::Reject));
     assert_eq!(q.meta.gps, None, "out-of-range coordinates are dropped");
 }
 
@@ -375,7 +375,7 @@ fn external_library_paths_map_both_ways() {
 
 #[test]
 fn accounts_file_round_trips_without_secrets() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-accounts-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-accounts-{}", std::process::id()));
     let path = dir.join("connections.json");
     let mut a = crate::Accounts::default();
     a.upsert(crate::Account { id: "http://nas#u".into(), url: "http://nas".into(), user_id: "u".into(), ..Default::default() });
@@ -497,7 +497,7 @@ fn use_assets(assets: &[Asset]) {
 #[test]
 fn hostile_server_json_never_panics() {
     let seeds = [VERSION, ME, KEY_ME, PAGE1, PAGE2, ALBUMS, LIBRARIES];
-    dac_fuzzkit::run_json("immich.json", &seeds, 1500, |s| {
+    lcc_fuzzkit::run_json("immich.json", &seeds, 1500, |s| {
         let _ = serde_json::from_str::<ServerVersion>(s);
         let _ = serde_json::from_str::<User>(s);
         let _ = serde_json::from_str::<ApiKeyInfo>(s);
@@ -525,8 +525,8 @@ fn hostile_server_answers_through_the_client_never_panic() {
     let (url, _) = serve(move |_| response("200 OK", &b2.lock().unwrap()));
     let c = client(&url, KEY);
     let seeds = [VERSION, ME, PAGE1, ALBUMS, LIBRARIES];
-    // each iteration is a few loopback requests: a short loop (DAC_FUZZ_ITERS raises it)
-    dac_fuzzkit::run_json("immich.client", &seeds, 60, |s| {
+    // each iteration is a few loopback requests: a short loop (LCC_FUZZ_ITERS raises it)
+    lcc_fuzzkit::run_json("immich.client", &seeds, 60, |s| {
         *body.lock().unwrap() = s.as_bytes().to_vec();
         let _ = c.status();
         let _ = c.albums();
@@ -540,7 +540,7 @@ fn hostile_server_answers_through_the_client_never_panic() {
 
 #[test]
 fn damaged_connections_file_never_panics() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-robust-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-robust-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("connections.json");
     let mut a = crate::Accounts::default();
@@ -559,7 +559,7 @@ fn damaged_connections_file_never_panics() {
     });
     a.save(&path).unwrap();
     let seed = std::fs::read_to_string(&path).unwrap();
-    dac_fuzzkit::run_json("immich.connections", &[&seed], 800, |s| {
+    lcc_fuzzkit::run_json("immich.connections", &[&seed], 800, |s| {
         std::fs::write(&path, s).unwrap();
         if let Ok(acc) = crate::Accounts::load(&path) {
             for a in &acc.immich {
@@ -575,7 +575,7 @@ fn damaged_connections_file_never_panics() {
 /// no partial temp file behind.
 #[test]
 fn full_disk_connections_save_leaves_no_temp_file() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-full-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-full-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("connections.json");
@@ -584,7 +584,7 @@ fn full_disk_connections_save_leaves_no_temp_file() {
     let mut a = crate::Accounts::default();
     a.upsert(crate::Account { id: "x".into(), url: "https://h".into(), user_name: "a long enough name to overflow".into(), ..Default::default() });
     {
-        let _full = dac_catalog::safe_file::fail_writes_after(8);
+        let _full = lcc_catalog::safe_file::fail_writes_after(8);
         assert!(a.save(&path).is_err());
     }
     assert_eq!(std::fs::read(&path).unwrap(), before);
@@ -643,8 +643,8 @@ fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<
     })
 }
 
-fn publish_once(url: &str, name: &str, state: Option<std::path::PathBuf>) -> Result<String, dac_publish::PublishError> {
-    use dac_publish::{PublishService, Upload};
+fn publish_once(url: &str, name: &str, state: Option<std::path::PathBuf>) -> Result<String, lcc_publish::PublishError> {
+    use lcc_publish::{PublishService, Upload};
     let mut svc = crate::publish::ImmichPublish::new(client(url, KEY), Default::default(), name, "dev", publish_photos())
         .with_upload_retry(3, Duration::from_millis(5));
     if let Some(p) = state {
@@ -656,7 +656,7 @@ fn publish_once(url: &str, name: &str, state: Option<std::path::PathBuf>) -> Res
 
 #[test]
 fn a_renamed_collection_renames_its_remembered_album() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-pubalbum-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-pubalbum-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let state = dir.join("svc-1-5.album");
     let (url, seen) = publish_server(0, false);

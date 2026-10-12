@@ -1,6 +1,6 @@
 //! Library view state: what the grid shows and what is selected.
 
-use dac_catalog::{AlbumId, Catalog, Filter, PhotoId};
+use lcc_catalog::{AlbumId, Catalog, Filter, PhotoId};
 use serde::{Deserialize, Serialize};
 
 /// The "My Photos" source in the left panel.
@@ -49,8 +49,8 @@ impl LibrarySource {
             // everything imported in the 30 days up to the latest import (by import, newest first)
             LibrarySource::RecentlyAdded => {
                 let latest = cat.photos().filter(|p| p.in_library()).map(|p| p.imported.clone()).max().unwrap_or_default();
-                let from = dac_catalog::stacks::iso_seconds(&latest)
-                    .map(|s| dac_catalog::dates::civil(s - RECENT_DAYS * 86_400))
+                let from = lcc_catalog::stacks::iso_seconds(&latest)
+                    .map(|s| lcc_catalog::dates::civil(s - RECENT_DAYS * 86_400))
                     .unwrap_or_else(|| latest.get(..10).unwrap_or("").to_string());
                 f.imported_from = Some(from);
             }
@@ -62,7 +62,7 @@ impl LibrarySource {
             // no Quick Collection yet: an album id no album has, so nothing shows
             LibrarySource::QuickCollection => f.album = Some(cat.quick_collection().unwrap_or(AlbumId(u64::MAX))),
             LibrarySource::RecentlyDeleted => f.deleted = true,
-            LibrarySource::Picks => f.flag = Some(dac_catalog::Flag::Pick),
+            LibrarySource::Picks => f.flag = Some(lcc_catalog::Flag::Pick),
             // the folder itself is filled in by the session (it holds the path)
             LibrarySource::Folder | LibrarySource::Missing | LibrarySource::LibraryFolder | LibrarySource::PreviousExport => {}
         }
@@ -158,7 +158,7 @@ pub struct FilterChip {
 
 /// The chips for every constraint in the filter bar / search / sidebar (not the source itself).
 pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
-    use dac_catalog::{MediaKind, RatingOp};
+    use lcc_catalog::{MediaKind, RatingOp};
     use serde_json::{Value::Null, json};
     let mut v = Vec::new();
     let mut add = |label: String, clear: serde_json::Value| v.push(FilterChip { label, clear });
@@ -214,7 +214,7 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
     }
     if let Some(d) = f.library_folder.as_deref().filter(|d| !d.trim().is_empty()) {
         // the last two names, so two folders called "Pictures" are told apart
-        let name = dac_catalog::folders::folder_label(d);
+        let name = lcc_catalog::folders::folder_label(d);
         add(format!("Folder: {name}"), json!({"libraryFolder": Null}));
     }
     if let Some(d) = &f.imported {
@@ -251,7 +251,7 @@ fn date_label(d: &str) -> String {
 #[cfg(test)]
 mod selection_state_tests {
     use super::*;
-    use dac_catalog::PhotoId;
+    use lcc_catalog::PhotoId;
 
     #[test]
     fn select_all_marks_the_others_selected_and_one_active() {

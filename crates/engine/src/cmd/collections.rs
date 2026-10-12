@@ -2,7 +2,7 @@
 //! inside it) written as a small JSON definition, and read back into this or another library.
 //! Photos are matched by file path, else by file name and capture time.
 
-use dac_catalog::{Album, AlbumId, Filter, Op, PhotoId, Source};
+use lcc_catalog::{Album, AlbumId, Filter, Op, PhotoId, Source};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -113,7 +113,7 @@ impl Importer<'_> {
             return Some(p.id);
         }
         // by name and capture time (the same file elsewhere), name alone only when it's unique
-        let named: Vec<&std::sync::Arc<dac_catalog::Photo>> = photos().filter(|p| p.file_name.eq_ignore_ascii_case(&r.file_name)).take(64).collect();
+        let named: Vec<&std::sync::Arc<lcc_catalog::Photo>> = photos().filter(|p| p.file_name.eq_ignore_ascii_case(&r.file_name)).take(64).collect();
         if let Some(cap) = &r.captured
             && let Some(p) = named.iter().find(|p| p.captured.as_deref() == Some(cap.as_str()))
         {

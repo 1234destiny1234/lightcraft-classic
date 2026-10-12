@@ -25,7 +25,7 @@
 use std::collections::{HashMap, HashSet};
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{Op, Photo, PhotoId, Source};
+use lcc_catalog::{Op, Photo, PhotoId, Source};
 use serde::Serialize;
 
 use crate::sidecar::SidecarNaming;
@@ -324,7 +324,7 @@ pub(crate) trait MoveFs {
     fn packet_version(&self, path: &Path) -> std::io::Result<PacketVersion> {
         use std::io::Read;
         let mut file = std::fs::File::open(path)?;
-        let mut hash = dac_preview::Hasher128::new();
+        let mut hash = lcc_preview::Hasher128::new();
         let mut len = 0u64;
         let mut buffer = [0u8; 16 * 1024];
         loop {
@@ -508,12 +508,12 @@ pub(crate) struct SidecarMove {
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub(crate) struct PacketVersion {
     len: u64,
-    hash: dac_preview::Hash128,
+    hash: lcc_preview::Hash128,
 }
 
 impl PacketVersion {
     fn of(bytes: &[u8]) -> Self {
-        Self { len: bytes.len() as u64, hash: dac_preview::hash_bytes(bytes) }
+        Self { len: bytes.len() as u64, hash: lcc_preview::hash_bytes(bytes) }
     }
 }
 
@@ -832,7 +832,7 @@ fn set_file_ops_to(op: &Op, to: &HashSet<&str>, out: &mut Vec<Op>) {
 
 /// The photos among `ids` a rename handles, in order: photos sharing one file (virtual copies)
 /// rename once. No file-system calls.
-pub fn rename_photos(cat: &dac_catalog::Catalog, ids: &[PhotoId]) -> Vec<std::sync::Arc<Photo>> {
+pub fn rename_photos(cat: &lcc_catalog::Catalog, ids: &[PhotoId]) -> Vec<std::sync::Arc<Photo>> {
     let mut seen_paths: HashSet<String> = HashSet::new();
     ids.iter()
         .filter_map(|id| cat.photo(*id))

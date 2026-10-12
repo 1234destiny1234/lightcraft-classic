@@ -1,19 +1,19 @@
 //! Timelapse video from stills (upstream issue #497): the selected photos, in the shown order
 //! (the current sort, Custom Order in an album), each rendered with its own develop settings,
 //! fitted (letterboxed) or cropped to fill one frame size, held for `hold` frames, optionally
-//! cross-faded over `crossfade` extra frames, and encoded by `dac-video-export` as H.264 MP4 or
+//! cross-faded over `crossfade` extra frames, and encoded by `lcc-video-export` as H.264 MP4 or
 //! ProRes MOV without audio. The movie is written to `<path>.partial` and renamed when done; a
 //! cancel or an error leaves no file.
 //!
 //! Frames: `photos × hold + (photos − 1) × crossfade`.
 //!
-//! Sources: own design (reuses the export render jobs and `dac_video_export::SequenceWriter`).
+//! Sources: own design (reuses the export render jobs and `lcc_video_export::SequenceWriter`).
 
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use dac_catalog::{MediaKind, PhotoId};
-use dac_pipeline::{OutputDepth, OutputSpace};
-use dac_raster::{Rgb32f, Rgba8};
+use lcc_catalog::{MediaKind, PhotoId};
+use lcc_pipeline::{OutputDepth, OutputSpace};
+use lcc_raster::{Rgb32f, Rgba8};
 use serde_json::{Value, json};
 
 use crate::Session;
@@ -282,7 +282,7 @@ impl Prepared {
     /// setting `cancel` stops within a frame and removes the partial movie.
     #[cfg(not(target_arch = "wasm32"))]
     pub fn run(self, cancel: &AtomicBool, progress: &mut dyn FnMut(usize, &str)) -> Result<Report, String> {
-        use dac_video_export::{ClipFormat, SequenceWriter};
+        use lcc_video_export::{ClipFormat, SequenceWriter};
         let o = &self.options;
         let format = match o.format {
             VideoFormat::H264 => ClipFormat::H264Mp4,

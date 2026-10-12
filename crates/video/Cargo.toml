@@ -1,5 +1,5 @@
 [package]
-name = "dac-video"
+name = "lcc-video"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ description = "Video clips (L3): probe, frame reader and poster frames on FilmCr
 workspace = true
 
 [dependencies]
-dac-raster = { workspace = true }
+lcc-raster = { workspace = true }
 thiserror = { workspace = true }
 
 # Native only (plan/video-filmcraft.md §3): the web build shows videos as poster-less tiles.

@@ -5,7 +5,7 @@
 //! * **pages** with media, bleed, trim, crop and art boxes ([`Page`]);
 //! * **images**: JPEG passthrough (DCTDecode) and 8/16-bit samples with Flate, in Gray, RGB,
 //!   CMYK or an ICC-based colour space, with an optional alpha soft mask ([`Image`]);
-//! * **text** laid out by `dac-text` ([`Page::text`]): every face is subset to the glyphs used
+//! * **text** laid out by `lcc-text` ([`Page::text`]): every face is subset to the glyphs used
 //!   and embedded (TrueType and CFF outlines, CJK and vertical type included), with a ToUnicode
 //!   map; faces that cannot be embedded are drawn as outlines;
 //! * **vector paths** for guides, borders, crop and registration marks ([`Path`], [`Page::fill`],
@@ -261,7 +261,7 @@ pub struct Page {
     pub crop: Option<Rect>,
     pub art: Option<Rect>,
     ops: Vec<Op>,
-    faces: Vec<(FaceKey, dac_text::FontData, bool)>,
+    faces: Vec<(FaceKey, lcc_text::FontData, bool)>,
     chars: Vec<(FaceKey, String)>,
 }
 
@@ -334,12 +334,12 @@ impl Page {
     /// Draws a text layout: text space (pixels of `layout`) is mapped to the page by
     /// `pt_per_px` (72 / the layout's dpi) with the text origin at `origin` (points). `text` is
     /// the laid-out string (for searchable text). Colours and opacity come from the styles.
-    pub fn text(&mut self, layout: &dac_text::TextLayout, text: &str, origin: (f64, f64), pt_per_px: f64) {
+    pub fn text(&mut self, layout: &lcc_text::TextLayout, text: &str, origin: (f64, f64), pt_per_px: f64) {
         if !(origin.0.is_finite() && origin.1.is_finite() && pt_per_px.is_finite() && pt_per_px > 0.0) {
             return;
         }
         // Text space (y down) -> page user space with y down; flipped when written.
-        let place = dac_text::Xform([pt_per_px, 0.0, 0.0, pt_per_px, origin.0, origin.1]);
+        let place = lcc_text::Xform([pt_per_px, 0.0, 0.0, pt_per_px, origin.0, origin.1]);
         for g in &layout.glyphs {
             let (Some(face), Some(st)) = (layout.faces.get(g.face as usize), layout.styles.get(g.style as usize)) else { continue };
             let Ok(gid) = u16::try_from(g.id) else { continue };
@@ -350,9 +350,9 @@ impl Page {
             } else if variable && let Some(f) = self.faces.iter_mut().find(|f| f.0 == key) {
                 f.2 = true;
             }
-            let gx = dac_text::render::glyph_xform(layout, g, face.skew_deg);
+            let gx = lcc_text::render::glyph_xform(layout, g, face.skew_deg);
             let m = place.mul(&gx).0;
-            let bold = (st.faux_bold || face.embolden).then(|| f64::from(face.size_px * dac_text::render::FAUX_BOLD_RADIUS) * 2.0 * pt_per_px);
+            let bold = (st.faux_bold || face.embolden).then(|| f64::from(face.size_px * lcc_text::render::FAUX_BOLD_RADIUS) * 2.0 * pt_per_px);
             let c = st.color;
             self.ops.push(Op::Glyph(Box::new(GlyphOp {
                 face: key,

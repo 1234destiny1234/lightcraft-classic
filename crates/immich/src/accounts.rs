@@ -46,8 +46,8 @@ impl Account {
 
 /// The key an account's API key is stored under.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn secret_key(account_id: &str) -> dac_credentials::Key {
-    dac_credentials::Key::new(crate::link::SERVICE, account_id)
+pub fn secret_key(account_id: &str) -> lcc_credentials::Key {
+    lcc_credentials::Key::new(crate::link::SERVICE, account_id)
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -102,6 +102,6 @@ impl Accounts {
             std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
         }
         // temp file + sync + rename; a failed write (full disk) removes the temp file
-        dac_catalog::safe_file::write_atomic(path, &json).map_err(|e| format!("{}: {e}", path.display()))
+        lcc_catalog::safe_file::write_atomic(path, &json).map_err(|e| format!("{}: {e}", path.display()))
     }
 }

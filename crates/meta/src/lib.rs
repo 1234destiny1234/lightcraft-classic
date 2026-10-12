@@ -23,11 +23,11 @@ mod xmp;
 mod xmp_merge;
 
 pub use container::{Embedded, embedded, jpeg_segments, png_chunks, webp_chunks};
-pub use dac_geom::{Orientation, Rect};
 pub use datetime::DateTime;
 pub use exif::{from_tiff, read_exif, strip_exif_header, try_read_exif, write_exif};
 pub use gpx::{GpxError, Match, TrackPoint, Tracklog, parse_gpx};
 pub use iptc::parse_iptc;
+pub use lcc_geom::{Orientation, Rect};
 pub use tags::{TagRow, file_tag_rows, tag_rows};
 pub use xmp::{
     CRS_NS, LC_NS, VIDEO_PREFIX, XmpData, XmpError, XmpValue, parse_xmp, plugin_fields_ns, video_ns, write_xmp, write_xmp_ext, write_xmp_lc,

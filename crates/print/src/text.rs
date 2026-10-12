@@ -1,13 +1,13 @@
-//! Shaped text for layout cells: a [`TextRenderer`] over `dac-text` (HarfRust shaping, bidi,
+//! Shaped text for layout cells: a [`TextRenderer`] over `lcc-text` (HarfRust shaping, bidi,
 //! line breaking, CJK fallbacks), and the same layout for vector PDF text, so a print preview
 //! and its PDF wrap lines identically.
 
 use std::sync::{Mutex, PoisonError};
 
-use dac_layout::render::TextRenderer;
-use dac_layout::{Align, TextStyle};
-use dac_raster::Rgba8;
-use dac_text::{CharStyle, Color, ParagraphRun, ParagraphStyle, TextAlign, TextBlock, TextEngine, TextLayout, TextRun, TextShape, Xform};
+use lcc_layout::render::TextRenderer;
+use lcc_layout::{Align, TextStyle};
+use lcc_raster::Rgba8;
+use lcc_text::{CharStyle, Color, ParagraphRun, ParagraphStyle, TextAlign, TextBlock, TextEngine, TextLayout, TextRun, TextShape, Xform};
 
 /// The text block for `text` in `style`, wrapped in a `w`×`h` box of text-space pixels.
 pub fn block(text: &str, style: &TextStyle, w: f32, h: f32) -> TextBlock {
@@ -77,7 +77,7 @@ impl TextRenderer for ShapedText {
         if !(px_per_pt.is_finite() && px_per_pt > 0.0) {
             return Err("invalid text scale".into());
         }
-        if w == 0 || h == 0 || w.saturating_mul(h) > dac_layout::render::MAX_PIXELS {
+        if w == 0 || h == 0 || w.saturating_mul(h) > lcc_layout::render::MAX_PIXELS {
             return Err("invalid text box".into());
         }
         let dpi = px_per_pt * 72.0;

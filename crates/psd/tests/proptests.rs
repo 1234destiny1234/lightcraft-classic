@@ -1,8 +1,8 @@
 //! Property-based round-trip tests.
 
-use dac_psd::compression::{PlaneLayout, decode_planes, encode_planes, packbits};
-use dac_psd::testgen;
-use dac_psd::*;
+use lcc_psd::compression::{PlaneLayout, decode_planes, encode_planes, packbits};
+use lcc_psd::testgen;
+use lcc_psd::*;
 use proptest::prelude::*;
 
 fn version() -> impl Strategy<Value = Version> {

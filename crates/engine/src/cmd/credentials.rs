@@ -7,7 +7,7 @@
 
 use std::sync::Arc;
 
-use dac_credentials::{CredError, FileStore, Secret, SecretStore};
+use lcc_credentials::{CredError, FileStore, Secret, SecretStore};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -21,7 +21,7 @@ fn cred_error(e: &CredError) -> Value {
 /// The system keychain's state, probed once per session (or on `refresh`).
 fn system_state(s: &mut Session, refresh: bool) -> Value {
     if refresh || s.remote.system_error.is_none() {
-        s.remote.system_error = Some(dac_credentials::os_store().err());
+        s.remote.system_error = Some(lcc_credentials::os_store().err());
     }
     match s.remote.system_error.clone().flatten() {
         None => json!({"state": "ok"}),
@@ -43,13 +43,13 @@ impl SecretStore for Named {
     fn name(&self) -> &'static str {
         FILE_STORE_NAME
     }
-    fn get(&self, key: &dac_credentials::Key) -> std::result::Result<Option<Secret>, CredError> {
+    fn get(&self, key: &lcc_credentials::Key) -> std::result::Result<Option<Secret>, CredError> {
         self.0.get(key)
     }
-    fn set(&self, key: &dac_credentials::Key, secret: &Secret) -> std::result::Result<(), CredError> {
+    fn set(&self, key: &lcc_credentials::Key, secret: &Secret) -> std::result::Result<(), CredError> {
         self.0.set(key, secret)
     }
-    fn delete(&self, key: &dac_credentials::Key) -> std::result::Result<bool, CredError> {
+    fn delete(&self, key: &lcc_credentials::Key) -> std::result::Result<bool, CredError> {
         self.0.delete(key)
     }
 }
@@ -140,7 +140,7 @@ fn unlock_system(s: &mut Session, _: &Value) -> Result<Value> {
     if s.remote.unlocking {
         return Ok(json!({"started": false, "reason": "an unlock is already running"}));
     }
-    let store = match dac_credentials::os_store() {
+    let store = match lcc_credentials::os_store() {
         Ok(x) => x,
         Err(e) => return Ok(json!({"ok": false, "error": cred_error(&e)})),
     };

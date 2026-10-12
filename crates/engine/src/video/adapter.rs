@@ -3,7 +3,7 @@
 
 use std::path::PathBuf;
 
-use dac_catalog::{MediaKind, Op, PhotoId, Source};
+use lcc_catalog::{MediaKind, Op, PhotoId, Source};
 
 use super::VideoMeta;
 use super::{UNAVAILABLE, VideoBackend};

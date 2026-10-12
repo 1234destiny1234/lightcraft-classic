@@ -1,10 +1,10 @@
-//! Lens profile corrections from a lens database the user supplies ([`dac_lensdb`]).
+//! Lens profile corrections from a lens database the user supplies ([`lcc_lensdb`]).
 //!
 //! When a raw carries no lens correction of its own (DNG opcodes, or a camera correction a raw reader converts,
 //! [`crate::files::embedded_lens`]), the lens named in its EXIF is looked up in a lensfun-format database (e.g.
 //! lensfun's `data/db`, CC-BY-SA 3.0, which is never bundled with the app). Where it comes from, first match wins:
 //! the directory in `{ENV_PREFIX}_LENSFUN_DIR`, else the folder chosen in Settings ▸ Lens profiles (or downloaded
-//! there on request, [`crate::lens_download`]). The profile is converted to the same [`dac_develop::EmbeddedLens`]
+//! there on request, [`crate::lens_download`]). The profile is converted to the same [`lcc_develop::EmbeddedLens`]
 //! form, so "Enable Profile Corrections", its amount sliders, the GPU path and DNG export treat both alike.
 //!
 //! The loaded database is cached process-wide and swapped when the folder changes ([`set_dir`], [`reload`]): each
@@ -12,8 +12,8 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use dac_develop::EmbeddedLens;
-use dac_lensdb::{LensDb, Shot};
+use lcc_develop::EmbeddedLens;
+use lcc_lensdb::{LensDb, Shot};
 
 /// The environment variable (after the app prefix) naming the lens database directory. It overrides the folder
 /// chosen in Settings.
@@ -46,7 +46,7 @@ fn cache() -> std::sync::MutexGuard<'static, Cache> {
 
 /// The environment override, when set and nonempty.
 fn env_dir() -> Option<PathBuf> {
-    dac_brand::env_os(ENV).filter(|v| !v.is_empty()).map(PathBuf::from)
+    lcc_brand::env_os(ENV).filter(|v| !v.is_empty()).map(PathBuf::from)
 }
 
 /// The database folder in use and where it comes from (the environment wins over Settings).
@@ -177,13 +177,13 @@ pub enum Applied {
     Found(String),
 }
 
-fn profile_name(p: &dac_lensdb::Profile, fallback: &str) -> String {
+fn profile_name(p: &lcc_lensdb::Profile, fallback: &str) -> String {
     p.models.first().cloned().unwrap_or_else(|| fallback.trim().to_string())
 }
 
 /// The profile for a given lens: one whose name (and maker, when given) equals it, ignoring case and outer spaces,
 /// else the best match by name ([`LensDb::find_lens`]).
-pub fn find_given<'a>(db: &'a LensDb, given: &GivenLens) -> Option<&'a dac_lensdb::Profile> {
+pub fn find_given<'a>(db: &'a LensDb, given: &GivenLens) -> Option<&'a lcc_lensdb::Profile> {
     let model = given.model.trim();
     if model.is_empty() || given.validate().is_err() {
         return None;
@@ -225,7 +225,7 @@ pub(crate) static TEST_LOCK: Mutex<()> = Mutex::new(());
 
 /// The database profile for a photo with metadata `m`, for its `w × h` (unoriented, default-cropped) image,
 /// re-expressed after `orientation`. `None` without a database, lens name, focal length or matching profile.
-pub fn lookup(db: &LensDb, m: &dac_meta::Metadata, w: f64, h: f64, orientation: dac_geom::Orientation) -> Option<EmbeddedLens> {
+pub fn lookup(db: &LensDb, m: &lcc_meta::Metadata, w: f64, h: f64, orientation: lcc_geom::Orientation) -> Option<EmbeddedLens> {
     lookup_with(db, m, None, w, h, orientation).map(|(l, _)| l)
 }
 
@@ -234,11 +234,11 @@ pub fn lookup(db: &LensDb, m: &dac_meta::Metadata, w: f64, h: f64, orientation: 
 /// database lacks, or one without a focal length, gives no correction (it never falls back to the name match).
 pub fn lookup_with(
     db: &LensDb,
-    m: &dac_meta::Metadata,
+    m: &lcc_meta::Metadata,
     given: Option<&GivenLens>,
     w: f64,
     h: f64,
-    orientation: dac_geom::Orientation,
+    orientation: lcc_geom::Orientation,
 ) -> Option<(EmbeddedLens, Applied)> {
     let valid = |f: f64| f.is_finite() && f > 0.0;
     let camera = db.find_camera(m.make.as_deref().unwrap_or_default(), m.model.as_deref().unwrap_or_default());
@@ -261,17 +261,17 @@ pub fn lookup_with(
         camera.map(|c| c.crop_factor).or_else(|| m.focal_length_35mm.map(|f35| f35 / focal).filter(|c| c.is_finite() && (0.1..=20.0).contains(c)));
     let shot = Shot { focal, aperture, distance: None, crop_factor: crop, width: w, height: h };
     let corr = lens.correction(&shot)?;
-    Some((dac_pipeline::optics::reorient_lens(&corr, orientation, w, h), applied))
+    Some((lcc_pipeline::optics::reorient_lens(&corr, orientation, w, h), applied))
 }
 
 /// [`crate::files::embedded_lens`], else the database profile ([`lookup`]) for a raw with metadata `meta`.
-pub fn for_raw(raw: &dac_raw::RawInfo, meta: impl FnOnce() -> dac_meta::Metadata) -> Option<EmbeddedLens> {
+pub fn for_raw(raw: &lcc_raw::RawInfo, meta: impl FnOnce() -> lcc_meta::Metadata) -> Option<EmbeddedLens> {
     resolve_raw(raw, meta, None).map(|(l, _)| l)
 }
 
 /// The lens correction for a raw and where it comes from, first that applies: the file's embedded correction,
 /// the lens `given` by the caller ([`GivenLens`]), the automatic match by the metadata's lens name; else `None`.
-pub fn resolve_raw(raw: &dac_raw::RawInfo, meta: impl FnOnce() -> dac_meta::Metadata, given: Option<&GivenLens>) -> Option<(EmbeddedLens, Applied)> {
+pub fn resolve_raw(raw: &lcc_raw::RawInfo, meta: impl FnOnce() -> lcc_meta::Metadata, given: Option<&GivenLens>) -> Option<(EmbeddedLens, Applied)> {
     resolve(crate::files::embedded_lens(raw), || {
         let db = database()?;
         let c = raw.crop.clipped(raw.active_area.width, raw.active_area.height);
@@ -325,7 +325,7 @@ pub fn list(db: &LensDb, filter: &ListFilter, offset: usize, limit: usize) -> (u
     let words: Vec<String> = filter.query.as_deref().unwrap_or_default().split_whitespace().take(16).map(str::to_lowercase).collect();
     let mount = filter.mount.as_deref().map(str::trim).filter(|m| !m.is_empty());
     let crop = filter.crop.filter(|c| c.is_finite() && *c > 0.0);
-    let mut hits: Vec<&dac_lensdb::Profile> = db
+    let mut hits: Vec<&lcc_lensdb::Profile> = db
         .lenses
         .iter()
         .filter(|l| mount.is_none_or(|m| l.mounts.is_empty() || l.mounts.iter().any(|x| x.trim().eq_ignore_ascii_case(m))))
@@ -336,7 +336,7 @@ pub fn list(db: &LensDb, filter: &ListFilter, offset: usize, limit: usize) -> (u
         })
         .collect();
     hits.sort_by(|a, b| {
-        let key = |l: &dac_lensdb::Profile| (l.maker.to_lowercase(), l.models.first().map(|m| m.to_lowercase()).unwrap_or_default());
+        let key = |l: &lcc_lensdb::Profile| (l.maker.to_lowercase(), l.models.first().map(|m| m.to_lowercase()).unwrap_or_default());
         key(a).cmp(&key(b))
     });
     let total = hits.len();
@@ -366,7 +366,7 @@ pub fn list(db: &LensDb, filter: &ListFilter, offset: usize, limit: usize) -> (u
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_geom::Orientation;
+    use lcc_geom::Orientation;
 
     const DB: &str = r#"<lensdatabase>
       <camera><maker>Testcam</maker><model>TC-1</model><mount>T</mount><cropfactor>1.5</cropfactor></camera>
@@ -377,8 +377,8 @@ mod tests {
         </calibration>
       </lens></lensdatabase>"#;
 
-    fn meta() -> dac_meta::Metadata {
-        dac_meta::Metadata {
+    fn meta() -> lcc_meta::Metadata {
+        lcc_meta::Metadata {
             make: Some("Testcam".into()),
             model: Some("TC-1".into()),
             lens_model: Some("18-55mm F3.5-5.6".into()),
@@ -432,11 +432,11 @@ mod tests {
         let lens = lookup(&db, &meta(), 6000.0, 4000.0, Orientation::Normal).unwrap();
         assert!(lens.warp.is_some() && lens.vignette.is_some());
         let rotated = lookup(&db, &meta(), 6000.0, 4000.0, Orientation::Rotate90).unwrap();
-        assert_eq!(rotated.warp.unwrap().center, dac_geom::Point::new(0.5, 0.5));
+        assert_eq!(rotated.warp.unwrap().center, lcc_geom::Point::new(0.5, 0.5));
         // no lens name, no focal length, an unknown lens: nothing
-        assert!(lookup(&db, &dac_meta::Metadata { lens_model: None, ..meta() }, 6000.0, 4000.0, Orientation::Normal).is_none());
-        assert!(lookup(&db, &dac_meta::Metadata { focal_length: None, ..meta() }, 6000.0, 4000.0, Orientation::Normal).is_none());
-        let other = dac_meta::Metadata { lens_model: Some("70-200mm F4".into()), ..meta() };
+        assert!(lookup(&db, &lcc_meta::Metadata { lens_model: None, ..meta() }, 6000.0, 4000.0, Orientation::Normal).is_none());
+        assert!(lookup(&db, &lcc_meta::Metadata { focal_length: None, ..meta() }, 6000.0, 4000.0, Orientation::Normal).is_none());
+        let other = lcc_meta::Metadata { lens_model: Some("70-200mm F4".into()), ..meta() };
         assert!(lookup(&db, &other, 6000.0, 4000.0, Orientation::Normal).is_none());
     }
 
@@ -460,7 +460,7 @@ mod tests {
     #[test]
     fn corrections_apply_in_order() {
         let db = LensDb::parse(DB3).unwrap();
-        let m = dac_meta::Metadata { lens_model: Some("18-55mm F3.5-5.6".into()), ..meta() };
+        let m = lcc_meta::Metadata { lens_model: Some("18-55mm F3.5-5.6".into()), ..meta() };
         let o = Orientation::Normal;
         let (_, a) = lookup_with(&db, &m, None, 600.0, 400.0, o).unwrap();
         assert_eq!(a, Applied::Found("Testcam 18-55mm f/3.5-5.6".into()));
@@ -471,7 +471,7 @@ mod tests {
         assert!(lookup_with(&db, &m, Some(&given("Nonesuch 1000mm", Some(50.0))), 600.0, 400.0, o).is_none());
         // a chosen lens takes the file's focal length when it gives none, and needs one from somewhere
         assert!(lookup_with(&db, &m, Some(&given("Oldglass 50mm f/1.8", None)), 600.0, 400.0, o).is_some());
-        let no_focal = dac_meta::Metadata { focal_length: None, lens_model: None, ..meta() };
+        let no_focal = lcc_meta::Metadata { focal_length: None, lens_model: None, ..meta() };
         assert!(lookup_with(&db, &no_focal, Some(&given("Oldglass 50mm f/1.8", None)), 600.0, 400.0, o).is_none());
         assert!(lookup_with(&db, &no_focal, Some(&chosen), 600.0, 400.0, o).is_some(), "a file naming no lens, focal given");
         // the file's own correction comes first, whatever was chosen
@@ -548,12 +548,12 @@ mod tests {
         };
         // horizontal scene lines every 50 px (2 px wide, dark on light)
         let line = |v: f64| if v.rem_euclid(50.0) < 2.0 { 0.02f32 } else { 0.8 };
-        let src = dac_raster::Rgb32f::from_fn(w, h, |x, y| {
+        let src = lcc_raster::Rgb32f::from_fn(w, h, |x, y| {
             let (_, sy) = undistort(x as f64 + 0.5, y as f64 + 0.5);
             [line(sy); 3]
         });
         // the dark row nearest y = 51 in each column, sub-pixel (centroid of darkness), as rendered
-        let line_rows = |img: &dac_raster::Rgba8| -> Vec<f64> {
+        let line_rows = |img: &lcc_raster::Rgba8| -> Vec<f64> {
             (20..w - 20)
                 .step_by(10)
                 .map(|x| {
@@ -570,12 +570,12 @@ mod tests {
                 .collect()
         };
         let spread = |rows: &[f64]| rows.iter().cloned().fold(f64::MIN, f64::max) - rows.iter().cloned().fold(f64::MAX, f64::min);
-        let req = dac_pipeline::RenderRequest::fit(w, h);
-        let mut s = dac_develop::DevelopSettings::default();
-        let info = dac_pipeline::SourceInfo { lens: Some(lens), ..Default::default() };
-        let before = spread(&line_rows(&dac_pipeline::render(&src, &info, &s, &req).image));
+        let req = lcc_pipeline::RenderRequest::fit(w, h);
+        let mut s = lcc_develop::DevelopSettings::default();
+        let info = lcc_pipeline::SourceInfo { lens: Some(lens), ..Default::default() };
+        let before = spread(&line_rows(&lcc_pipeline::render(&src, &info, &s, &req).image));
         s.optics.lens_profile = true;
-        let after = spread(&line_rows(&dac_pipeline::render(&src, &info, &s, &req).image));
+        let after = spread(&line_rows(&lcc_pipeline::render(&src, &info, &s, &req).image));
         assert!(before > 2.0, "the recorded line is curved: {before} px");
         // 8-bit output and a 2 px line: the centroid measurement itself is good to about a pixel
         assert!(after < 1.0 && after < before / 8.0, "corrected line bent by {after} px (uncorrected {before})");

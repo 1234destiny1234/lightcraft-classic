@@ -3,7 +3,7 @@
 use serde::{Deserialize, Serialize};
 
 use crate::{BookError, MAX_CELLS, MAX_PAGES, Result};
-use dac_layout::{PT_PER_INCH, PT_PER_MM, Size};
+use lcc_layout::{PT_PER_INCH, PT_PER_MM, Size};
 
 /// The current book format.
 pub const BOOK_VERSION: u32 = 1;
@@ -165,8 +165,8 @@ impl NRect {
         NRect { x, y, w, h }
     }
     /// In points on a `size` page.
-    pub fn to_points(self, size: Size) -> dac_layout::Rect {
-        dac_layout::Rect::new(self.x * size.w, self.y * size.h, self.w * size.w, self.h * size.h)
+    pub fn to_points(self, size: Size) -> lcc_layout::Rect {
+        lcc_layout::Rect::new(self.x * size.w, self.y * size.h, self.w * size.w, self.h * size.h)
     }
     fn is_valid(&self) -> bool {
         [self.x, self.y, self.w, self.h].iter().all(|v| v.is_finite() && (-0.5..=1.5).contains(v)) && self.w > 0.0 && self.h > 0.0
@@ -188,8 +188,8 @@ impl Padding {
     pub fn all(v: f32) -> Padding {
         Padding { linked: true, top: v, right: v, bottom: v, left: v }
     }
-    pub fn insets(&self) -> dac_layout::Insets {
-        dac_layout::Insets { top: self.top, right: self.right, bottom: self.bottom, left: self.left }
+    pub fn insets(&self) -> lcc_layout::Insets {
+        lcc_layout::Insets { top: self.top, right: self.right, bottom: self.bottom, left: self.left }
     }
     fn is_valid(&self) -> bool {
         [self.top, self.right, self.bottom, self.left].iter().all(|v| v.is_finite() && (0.0..=720.0).contains(v))

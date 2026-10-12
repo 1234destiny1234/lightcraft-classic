@@ -97,9 +97,9 @@ impl Backend for Remote {
                     self.conn = None;
                     format!(
                         "{} at {} is not reachable: {e} (start it with `{} --control PORT`)",
-                        dac_brand::DISPLAY_NAME,
+                        lcc_brand::DISPLAY_NAME,
                         self.addr,
-                        dac_brand::BINARY
+                        lcc_brand::BINARY
                     )
                 })?
             }

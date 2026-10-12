@@ -10,8 +10,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::path::{Path, PathBuf};
 
-use dac_raster::Rgb32f;
 use filmcraft_isobmff::{Brand, Mp4Writer, WriteSample, WriterOptions};
+use lcc_raster::Rgb32f;
 
 use crate::native::{ClipFormat, ClipReport, ExportClipError, MAX_FRAMES, MAX_SIDE, Result, VideoOut, enc, io, partial_path, ycbcr_with};
 
@@ -137,7 +137,7 @@ mod tests {
 
     #[test]
     fn writes_frames_and_rejects_bad_options() {
-        let dir = std::env::temp_dir().join(format!("dac-seq-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-seq-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.mp4");
         assert!(SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 15, 16, 24, 1).is_err());
@@ -150,7 +150,7 @@ mod tests {
         }
         let r = w.finish().unwrap();
         assert_eq!(r.frames, 5);
-        assert_eq!(dac_video::FrameReader::open(&out).unwrap().frame_times().len(), 5);
+        assert_eq!(lcc_video::FrameReader::open(&out).unwrap().frame_times().len(), 5);
         assert!(!dir.join("t.mp4.partial").exists());
         // dropped unfinished: nothing left
         let out2 = dir.join("u.mov");

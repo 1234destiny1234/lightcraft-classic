@@ -1,5 +1,5 @@
 [package]
-name = "dac-book"
+name = "lcc-book"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,16 +9,16 @@ description = "Photo books (L3): book settings, page templates, auto layout, cel
 workspace = true
 
 [dependencies]
-dac-layout = { workspace = true }
-dac-raster = { workspace = true }
-dac-text = { workspace = true }
-dac-pdf = { workspace = true }
-dac-codecs = { workspace = true }
+lcc-layout = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-text = { workspace = true }
+lcc-pdf = { workspace = true }
+lcc-codecs = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
-dac-fuzzkit = { workspace = true }
+lcc-fuzzkit = { workspace = true }
 lopdf = { version = "0.45", default-features = false }
 hayro = { version = "0.8", default-features = false }

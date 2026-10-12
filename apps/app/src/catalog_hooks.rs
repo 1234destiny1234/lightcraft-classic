@@ -1,7 +1,7 @@
 //! The catalog's steps of the desktop app's start and exit (fork-owned; `main.rs` calls each once).
 
-use dac_engine::Session;
-use dac_ui_egui::DacApp;
+use lcc_engine::Session;
+use lcc_ui_egui::LccApp;
 
 /// The catalog's backup schedule (Catalog Settings): checked on exit, like Lightroom.
 pub fn backup_if_due(session: &mut Session) {
@@ -14,16 +14,16 @@ pub fn backup_if_due(session: &mut Session) {
 
 /// The catalog chosen to open at startup (the chooser's default), if it still exists.
 pub fn startup_catalog() -> Option<std::path::PathBuf> {
-    let file = dac_engine::catalog::library::RecentCatalogs::default_file()
-        .filter(|_| !dac_brand::env_is_set("NO_PREFS") && !dac_brand::env_is_set("LIBRARY"))?;
-    let d = dac_engine::catalog::library::RecentCatalogs::load(&file).default?;
-    dac_engine::catalog::library::resolve(&d).ok()
+    let file = lcc_engine::catalog::library::RecentCatalogs::default_file()
+        .filter(|_| !lcc_brand::env_is_set("NO_PREFS") && !lcc_brand::env_is_set("LIBRARY"))?;
+    let d = lcc_engine::catalog::library::RecentCatalogs::load(&file).default?;
+    lcc_engine::catalog::library::resolve(&d).ok()
 }
 
 /// File ▸ Open Recent Catalog and the startup chooser (not for throwaway sessions).
-pub fn remember_recent(app: &mut DacApp, in_memory: bool) {
-    if !in_memory && !dac_brand::env_is_set("NO_PREFS") {
-        app.catalog_ui.recent_file = dac_engine::catalog::library::RecentCatalogs::default_file();
+pub fn remember_recent(app: &mut LccApp, in_memory: bool) {
+    if !in_memory && !lcc_brand::env_is_set("NO_PREFS") {
+        app.catalog_ui.recent_file = lcc_engine::catalog::library::RecentCatalogs::default_file();
         if let Some(dir) = app.session.catalog_dir().map(std::path::Path::to_path_buf) {
             app.catalog_ui.touch(&dir);
         }
@@ -44,7 +44,7 @@ pub enum Startup {
 /// A library folder holding another app's catalog (e.g. the upstream app's): never opened at
 /// startup as this app's own.
 pub fn is_foreign(dir: &std::path::Path) -> bool {
-    dac_engine::catalog::library::resolve(dir).is_ok_and(|d| dac_engine::catalog::library::foreign_format(&d).is_some())
+    lcc_engine::catalog::library::resolve(dir).is_ok_and(|d| lcc_engine::catalog::library::foreign_format(&d).is_some())
 }
 
 /// Decide what to open at startup. `explicit`: `--library` or `<PREFIX>_LIBRARY` (always opened,
@@ -69,7 +69,7 @@ pub fn decide(explicit: Option<std::path::PathBuf>, remembered: &[Option<std::pa
             if !foreign.contains(&d) {
                 foreign.push(d);
             }
-        } else if d.is_dir() && dac_engine::catalog::library::resolve(&d).is_ok() {
+        } else if d.is_dir() && lcc_engine::catalog::library::resolve(&d).is_ok() {
             return Startup::Open(d);
         }
     }
@@ -83,7 +83,7 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     fn scratch(tag: &str) -> PathBuf {
-        let d = std::env::temp_dir().join(format!("dac-firstrun-{tag}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("lcc-firstrun-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -116,7 +116,7 @@ mod tests {
     #[test]
     fn later_starts_open_the_catalog() {
         let d = scratch("later");
-        let entry = dac_engine::catalog::library::create(&d, "Default").unwrap();
+        let entry = lcc_engine::catalog::library::create(&d, "Default").unwrap();
         let default = entry.parent().unwrap().to_path_buf();
         assert_eq!(decide(None, &[None, None], Some(default.clone())), Startup::Open(default.clone()));
         let other = d.join("Other");
@@ -141,7 +141,7 @@ mod tests {
         let ui = serde_json::json!({"settings": {"library_path": upstream_lib}});
         std::fs::write(legacy.join("ui.json"), ui.to_string()).unwrap();
         let current = d.join("config").join("current");
-        assert_eq!(dac_brand::migrate_settings_from(&current, std::slice::from_ref(&legacy)).unwrap(), Some(legacy));
+        assert_eq!(lcc_brand::migrate_settings_from(&current, std::slice::from_ref(&legacy)).unwrap(), Some(legacy));
         let copied: serde_json::Value = serde_json::from_slice(&std::fs::read(current.join("ui.json")).unwrap()).unwrap();
         let remembered = copied["settings"]["library_path"].as_str().map(PathBuf::from);
         assert_eq!(remembered.as_deref(), Some(upstream_lib.as_path()));

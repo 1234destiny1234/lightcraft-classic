@@ -65,7 +65,7 @@ impl Multipart {
         h.update(format!("{:?}{}{:?}", std::time::SystemTime::now(), std::process::id(), std::thread::current().id()));
         h.update(COUNTER.fetch_add(1, Ordering::Relaxed).to_le_bytes());
         let hex: String = h.finalize().iter().take(16).map(|b| format!("{b:02x}")).collect();
-        Multipart { boundary: format!("----dac-{hex}"), parts: Vec::new() }
+        Multipart { boundary: format!("----lcc-{hex}"), parts: Vec::new() }
     }
 
     fn push(&mut self, name: &str, file: Option<(&str, &str)>, data: Data) {

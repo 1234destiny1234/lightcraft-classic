@@ -8,14 +8,14 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::{Dialog, ViewMode};
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn demo() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail"}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -220,7 +220,7 @@ fn classic_keys_switch_modules_views_and_panels() {
     key(&mut h, "[", false);
     assert_eq!(h.app.session.catalog.photo(id).unwrap().rating, 1);
     key(&mut h, "`", false);
-    assert_eq!(h.app.session.catalog.photo(id).unwrap().flag, dac_catalog::Flag::Pick);
+    assert_eq!(h.app.session.catalog.photo(id).unwrap().flag, lcc_catalog::Flag::Pick);
     key(&mut h, "C", false);
     assert_eq!(h.app.ui.view, ViewMode::Compare);
     // ⇧E: the secondary window's loupe (not Export)
@@ -302,7 +302,7 @@ fn module_keys_are_scoped_by_module_and_view() {
     let undo = h.app.session.undo.len();
     press(&mut h, "U", true, true);
     let id = h.app.session.active().unwrap();
-    assert_eq!(h.app.session.develop_of(id).unwrap().wb.mode, dac_develop::WbMode::Auto);
+    assert_eq!(h.app.session.develop_of(id).unwrap().wb.mode, lcc_develop::WbMode::Auto);
     press(&mut h, "U", true, false);
     assert!(h.app.session.undo.len() >= undo + 2, "both keys made an edit");
     // ⇧Q without a spot is a no-op, not a crash

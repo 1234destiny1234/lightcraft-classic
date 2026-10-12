@@ -13,7 +13,7 @@ use serde_json::{Value, json};
 
 use crate::headless::Headless;
 use crate::state::ViewMode;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(30);
 
@@ -53,19 +53,19 @@ fn exec(h: &mut Headless, cmd: &str, params: Value) -> Value {
 
 #[test]
 fn loupe_plays_pauses_trims_seeks_and_stops_at_the_trim_end() {
-    let dir = std::env::temp_dir().join(format!("dac-video-view-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-video-view-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let clip = dir.join("clip.mp4");
     write_clip(&clip, 128, 72, 60);
     let clock = Arc::new(Mutex::new(0.0f64));
-    let mut session = dac_engine::Session::new().with_fs();
+    let mut session = lcc_engine::Session::new().with_fs();
     let c = clock.clone();
     session.video.clock = Box::new(move || *c.lock().unwrap());
-    let app = DacApp::new(session, Services { png: None, ..Default::default() });
+    let app = LccApp::new(session, Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
     let r = exec(&mut h, "library.import", json!({"paths": [clip.to_string_lossy()]}));
-    let id = dac_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+    let id = lcc_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
     exec(&mut h, "library.select", json!({"ids": [id.0], "active": id.0}));
     h.app.ui.view = ViewMode::Detail;
     // paused at the start: a full-quality frame
@@ -146,7 +146,7 @@ struct FakeGpu {
 }
 
 impl crate::VideoGpu for FakeGpu {
-    fn grade(&mut self, img: &dac_raster::Rgb32f, _: u64, _: &dac_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String> {
+    fn grade(&mut self, img: &lcc_raster::Rgb32f, _: u64, _: &lcc_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String> {
         *self.calls.lock().unwrap() += 1;
         if *self.fail.lock().unwrap() {
             return Err("device lost".into());
@@ -157,22 +157,22 @@ impl crate::VideoGpu for FakeGpu {
 
 #[test]
 fn playing_frames_go_to_the_gpu_grade_and_fall_back_to_the_cpu() {
-    let dir = std::env::temp_dir().join(format!("dac-video-gpu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-video-gpu-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let clip = dir.join("clip.mp4");
     write_clip(&clip, 128, 72, 60);
     let clock = Arc::new(Mutex::new(0.0f64));
-    let mut session = dac_engine::Session::new().with_fs();
+    let mut session = lcc_engine::Session::new().with_fs();
     let c = clock.clone();
     session.video.clock = Box::new(move || *c.lock().unwrap());
     let (calls, fail) = (Arc::new(Mutex::new(0)), Arc::new(Mutex::new(false)));
     let gpu = FakeGpu { calls: calls.clone(), fail: fail.clone() };
-    let app = DacApp::new(session, Services { png: None, video_gpu: Some(Box::new(gpu)), ..Default::default() });
+    let app = LccApp::new(session, Services { png: None, video_gpu: Some(Box::new(gpu)), ..Default::default() });
     let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
     h.app.ui.settings.gpu = true;
     let r = exec(&mut h, "library.import", json!({"paths": [clip.to_string_lossy()]}));
-    let id = dac_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+    let id = lcc_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
     exec(&mut h, "library.select", json!({"ids": [id.0], "active": id.0}));
     h.app.ui.view = ViewMode::Detail;
     assert!(h.step_until(T, |h| h.app.video_view.info(id).is_some_and(|i| i.full)), "a still at the start");

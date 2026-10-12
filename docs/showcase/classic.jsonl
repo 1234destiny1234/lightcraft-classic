@@ -1,5 +1,5 @@
 # Classic screenshots for the README, from the procedural demo library. Run from the repository root:
-#   cargo run --release -p dac-cli -- snapshot --demo --script docs/showcase/classic.jsonl --size 1600x1000
+#   cargo run --release -p lcc-cli -- snapshot --demo --script docs/showcase/classic.jsonl --size 1600x1000
 # then convert the PNGs in docs/images/classic/ to JPEG (see docs/showcase/README.md).
 {"method":"engine.execute","params":{"command":"module.library"}}
 {"method":"engine.execute","params":{"command":"view.squareGrid"}}

@@ -2,8 +2,8 @@
 //!
 //! A clip in a batch exported to a rendered format (JPEG, PNG…) is exported as a movie instead:
 //! its trim (`Photo.video.trim_in` / `trim_out`), its develop settings reduced to the video
-//! controls ([`dac_pipeline::grade::video_settings`]), graded at full quality on every frame by
-//! the photo pipeline, and encoded by `dac-video-export` as H.264 MP4 or ProRes MOV
+//! controls ([`lcc_pipeline::grade::video_settings`]), graded at full quality on every frame by
+//! the photo pipeline, and encoded by `lcc-video-export` as H.264 MP4 or ProRes MOV
 //! ([`VideoFormat`]). Photos in the same batch export as before. Exporting a clip as
 //! [`crate::export::ExportFormat::Original`] copies its file.
 //!
@@ -11,7 +11,7 @@
 //! run beside the batch's other items) and moved to its place in batch order; it never sits in
 //! memory. Cancel and per-frame progress come from [`VideoHooks`].
 //!
-//! Sources: own design (reuses `dac-video-export` and the pipeline's video grade).
+//! Sources: own design (reuses `lcc-video-export` and the pipeline's video grade).
 
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
@@ -75,7 +75,7 @@ impl Default for VideoHooks {
 pub(crate) struct VideoWork {
     pub src: PathBuf,
     pub trim: (f64, Option<f64>),
-    pub settings: dac_develop::DevelopSettings,
+    pub settings: lcc_develop::DevelopSettings,
     pub format: VideoFormat,
     pub quality: u8,
     pub max_side: Option<u32>,
@@ -140,8 +140,8 @@ fn temp_path(ext: &str) -> PathBuf {
 
 /// Grade one linear frame in place with the clip's (video-reduced) settings at full quality.
 /// The frame stays linear Rec.709 (the export crate clamps and sRGB-encodes it afterwards).
-pub fn grade_linear(frame: &mut dac_raster::Rgb32f, settings: &dac_develop::DevelopSettings) -> Result<(), String> {
-    let out = dac_pipeline::grade::grade_frame_linear(frame, settings, dac_pipeline::Quality::Full).ok_or("the grade produced no float frame")?;
+pub fn grade_linear(frame: &mut lcc_raster::Rgb32f, settings: &lcc_develop::DevelopSettings) -> Result<(), String> {
+    let out = lcc_pipeline::grade::grade_frame_linear(frame, settings, lcc_pipeline::Quality::Full).ok_or("the grade produced no float frame")?;
     if (out.width, out.height) != (frame.width, frame.height) {
         return Err(format!("the grade changed the frame size ({}×{} → {}×{})", frame.width, frame.height, out.width, out.height));
     }
@@ -153,11 +153,11 @@ pub fn grade_linear(frame: &mut dac_raster::Rgb32f, settings: &dac_develop::Deve
 /// GPU did not render it (unavailable, switched off or failed): grade on the CPU then. Used for
 /// 8-bit H.264 only, where the encoder quantises to 8 bits anyway (within one code value of the
 /// CPU float grade); 10-bit ProRes always takes the float CPU path.
-pub fn grade_gpu(frame: &mut dac_raster::Rgb32f, video_settings: &dac_develop::DevelopSettings) -> Option<()> {
-    use dac_pipeline::grade;
-    let req = grade::grade_request(frame.width, frame.height, dac_pipeline::Quality::Full);
-    let src = Arc::new(std::mem::replace(frame, dac_raster::Rgb32f::new(0, 0)));
-    let r = dac_gpu::try_render(&src, &grade::video_source_info(), video_settings, &req, None);
+pub fn grade_gpu(frame: &mut lcc_raster::Rgb32f, video_settings: &lcc_develop::DevelopSettings) -> Option<()> {
+    use lcc_pipeline::grade;
+    let req = grade::grade_request(frame.width, frame.height, lcc_pipeline::Quality::Full);
+    let src = Arc::new(std::mem::replace(frame, lcc_raster::Rgb32f::new(0, 0)));
+    let r = lcc_gpu::try_render(&src, &grade::video_source_info(), video_settings, &req, None);
     *frame = Arc::try_unwrap(src).unwrap_or_else(|a| (*a).clone());
     let img = r.ok()?.image;
     if (img.width, img.height) != (frame.width, frame.height) || img.data.len() != frame.data.len() {
@@ -172,12 +172,12 @@ pub fn grade_gpu(frame: &mut dac_raster::Rgb32f, video_settings: &dac_develop::D
 
 fn srgb8_lut() -> &'static [f32; 256] {
     static LUT: std::sync::OnceLock<[f32; 256]> = std::sync::OnceLock::new();
-    LUT.get_or_init(|| std::array::from_fn(|i| dac_color::transfer::srgb_to_linear(i as f32 / 255.0)))
+    LUT.get_or_init(|| std::array::from_fn(|i| lcc_color::transfer::srgb_to_linear(i as f32 / 255.0)))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
-    use dac_video_export::{ClipExportOptions, ClipFormat, export_clip};
+    use lcc_video_export::{ClipExportOptions, ClipFormat, export_clip};
     let format = match w.format {
         VideoFormat::H264 => ClipFormat::H264Mp4,
         VideoFormat::ProRes => ClipFormat::ProResMov,
@@ -186,11 +186,11 @@ pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
     let opts = ClipExportOptions { format, quality: w.quality, max_side: w.max_side, out: tmp.clone() };
     // a default grade is the identity: skip the pipeline
     // the clip's settings are reduced once, not per frame
-    let video_settings = dac_pipeline::grade::video_settings(&w.settings);
-    let neutral = video_settings == dac_pipeline::grade::video_settings(&dac_develop::DevelopSettings::default());
-    let gpu = w.format == VideoFormat::H264 && dac_gpu::enabled() && dac_gpu::available();
+    let video_settings = lcc_pipeline::grade::video_settings(&w.settings);
+    let neutral = video_settings == lcc_pipeline::grade::video_settings(&lcc_develop::DevelopSettings::default());
+    let gpu = w.format == VideoFormat::H264 && lcc_gpu::enabled() && lcc_gpu::available();
     let failed: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
-    let grade = |f: &mut dac_raster::Rgb32f| {
+    let grade = |f: &mut lcc_raster::Rgb32f| {
         if neutral {
             return;
         }

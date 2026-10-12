@@ -3,26 +3,26 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{MediaKind, Op};
+use lcc_catalog::{MediaKind, Op};
 use serde_json::json;
 
 use crate::Session;
 
 fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-video-posters-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-video-posters-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
 }
 
-use dac_video::test_util::write_clip;
+use lcc_video::test_util::write_clip;
 
-fn mean(img: &dac_raster::Rgba8) -> f64 {
+fn mean(img: &lcc_raster::Rgba8) -> f64 {
     let n = img.data.len().max(1) as f64;
     img.data.iter().map(|p| f64::from(p[0]) + f64::from(p[1]) + f64::from(p[2])).sum::<f64>() / (3.0 * n)
 }
 
-fn import_one(s: &mut Session, path: &Path) -> dac_catalog::PhotoId {
+fn import_one(s: &mut Session, path: &Path) -> lcc_catalog::PhotoId {
     let r = s.execute("library.import", &json!({"paths": [path.to_string_lossy()]})).unwrap();
     assert_eq!(r["imported"].as_array().map(Vec::len), Some(1), "{r}");
     s.catalog.photos().next().unwrap().id
@@ -48,8 +48,8 @@ fn import_fills_video_meta_dims_date_and_gps_in_one_undo_step() {
     assert!((la - 48.8584).abs() < 1e-3 && (lo - 2.2945).abs() < 1e-3);
     // the whole-file hash, streamed: same as hashing the bytes at once (duplicates and Copy verification)
     let bytes = std::fs::read(&clip).unwrap();
-    assert_eq!(p.content_hash.as_deref(), Some(dac_preview::hash_bytes(&bytes).to_string().as_str()));
-    assert_eq!(p.sha1.as_deref(), Some(dac_hash::sha1_bytes(&bytes).to_hex().as_str()));
+    assert_eq!(p.content_hash.as_deref(), Some(lcc_preview::hash_bytes(&bytes).to_string().as_str()));
+    assert_eq!(p.sha1.as_deref(), Some(lcc_hash::sha1_bytes(&bytes).to_hex().as_str()));
     // a byte-identical copy is a duplicate by content
     std::fs::copy(&clip, dir.join("copy.mp4")).unwrap();
     let r = s.execute("library.import", &json!({"paths": [dir.join("copy.mp4").to_string_lossy()]})).unwrap();

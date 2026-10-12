@@ -3,7 +3,7 @@
 
 use serde_json::Value;
 
-use crate::DacApp;
+use crate::LccApp;
 
 #[derive(Clone, Debug, PartialEq)]
 pub enum CatalogDialog {}
@@ -14,16 +14,16 @@ pub struct CatalogUi {
     pub recent_file: Option<std::path::PathBuf>,
 }
 
-pub fn run(_: &mut DacApp, _: &str, _: &Value) -> Option<Result<Value, String>> {
+pub fn run(_: &mut LccApp, _: &str, _: &Value) -> Option<Result<Value, String>> {
     None
 }
 
-pub fn enabled(_: &DacApp, id: &str) -> Option<bool> {
+pub fn enabled(_: &LccApp, id: &str) -> Option<bool> {
     (id.starts_with("catalog.") || matches!(id, "dialog.catalogSettings" | "dialog.exportCatalog" | "dialog.importCatalog")).then_some(false)
 }
 
-pub fn recent_items(_: &DacApp) -> Vec<(String, Value)> {
+pub fn recent_items(_: &LccApp) -> Vec<(String, Value)> {
     Vec::new()
 }
 
-pub fn show(_: &mut DacApp, _: &egui::Context) {}
+pub fn show(_: &mut LccApp, _: &egui::Context) {}

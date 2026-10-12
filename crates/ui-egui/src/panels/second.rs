@@ -5,12 +5,12 @@
 //! switcher (top), filter bar (`second.filter`, Grid) and filmstrip (`second.filmstrip`), the
 //! same in a native window and in the floating window egui uses where there are none.
 
-use dac_catalog::{Flag, PhotoId};
 use egui::{Color32, Rect, Sense, pos2, vec2};
+use lcc_catalog::{Flag, PhotoId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::SecondMode;
 use crate::render::Slot;
 use crate::widgets::register;
@@ -40,7 +40,7 @@ impl SecondFilter {
 }
 
 /// `second.filter {text?, rating?: 0..5, picks?: bool, clear?: bool}`.
-pub fn set_filter(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn set_filter(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let f = &mut app.ui.second_filter;
     if p.get("clear").and_then(Value::as_bool).unwrap_or(false) {
         *f = SecondFilter::default();
@@ -59,7 +59,7 @@ pub fn set_filter(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 /// The library's visible photos that pass the secondary filter (at most `max`).
-pub fn filtered(app: &mut DacApp, max: usize) -> Vec<PhotoId> {
+pub fn filtered(app: &mut LccApp, max: usize) -> Vec<PhotoId> {
     let f = &app.ui.second_filter;
     let all = app.session.visible_cloned();
     if f.is_empty() {
@@ -76,12 +76,12 @@ pub fn filtered(app: &mut DacApp, max: usize) -> Vec<PhotoId> {
         .collect()
 }
 
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if !app.ui.second_window {
         return;
     }
     let vid = egui::ViewportId::from_hash_of("app-second-window");
-    let builder = egui::ViewportBuilder::default().with_title(format!("{} — Second Window", dac_brand::DISPLAY_NAME)).with_inner_size([960.0, 640.0]);
+    let builder = egui::ViewportBuilder::default().with_title(format!("{} — Second Window", lcc_brand::DISPLAY_NAME)).with_inner_size([960.0, 640.0]);
     ctx.show_viewport_immediate(vid, builder, |ctx, class| {
         // (without native windows — web, headless — egui wraps this in a floating window)
         egui::CentralPanel::default().frame(egui::Frame::NONE.fill(Color32::BLACK)).show(ctx, |ui| body(app, ui));
@@ -102,7 +102,7 @@ const MODES: &[(&str, &str, SecondMode)] = &[
     ("second.slideshow", "Slideshow", SecondMode::Slideshow),
 ];
 
-fn body(app: &mut DacApp, ui: &mut egui::Ui) {
+fn body(app: &mut LccApp, ui: &mut egui::Ui) {
     let full = ui.available_rect_before_wrap();
     ui.allocate_rect(full, Sense::hover());
     let mut area = full;
@@ -127,7 +127,7 @@ fn body(app: &mut DacApp, ui: &mut egui::Ui) {
     view(app, ui, area);
 }
 
-fn mode_bar(app: &mut DacApp, ui: &mut egui::Ui, bar: Rect) {
+fn mode_bar(app: &mut LccApp, ui: &mut egui::Ui, bar: Rect) {
     ui.painter().rect_filled(bar, 0.0, Color32::from_gray(24));
     let mut x = bar.left() + 8.0;
     for (cmd, label, mode) in MODES {
@@ -156,7 +156,7 @@ fn mode_bar(app: &mut DacApp, ui: &mut egui::Ui, bar: Rect) {
     }
 }
 
-fn filter_bar(app: &mut DacApp, ui: &mut egui::Ui, fb: Rect) {
+fn filter_bar(app: &mut LccApp, ui: &mut egui::Ui, fb: Rect) {
     ui.painter().rect_filled(fb, 0.0, Color32::from_gray(32));
     let mut f = app.ui.second_filter.clone();
     let mut x = fb.left() + 8.0;
@@ -182,7 +182,7 @@ fn filter_bar(app: &mut DacApp, ui: &mut egui::Ui, fb: Rect) {
     }
 }
 
-fn filmstrip(app: &mut DacApp, ui: &mut egui::Ui, film: Rect) {
+fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, film: Rect) {
     ui.painter().rect_filled(film, 0.0, Color32::from_gray(20));
     let photos = filtered(app, MAX_FILM);
     let side = film.height() - 12.0;
@@ -211,7 +211,7 @@ fn filmstrip(app: &mut DacApp, ui: &mut egui::Ui, film: Rect) {
     }
 }
 
-fn view(app: &mut DacApp, ui: &mut egui::Ui, area: Rect) {
+fn view(app: &mut LccApp, ui: &mut egui::Ui, area: Rect) {
     let active = app.session.active();
     let photos: Vec<PhotoId> = match app.ui.second_mode {
         SecondMode::Loupe => active.into_iter().collect(),
@@ -270,7 +270,7 @@ fn view(app: &mut DacApp, ui: &mut egui::Ui, area: Rect) {
 }
 
 /// One photo, rendered for this window.
-fn loupe(app: &mut DacApp, ui: &mut egui::Ui, area: Rect, id: PhotoId) {
+fn loupe(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, id: PhotoId) {
     let ppp = ui.ctx().pixels_per_point();
     let side = super::detail::texture_side(ui.ctx()).clamp(64, 4096);
     let (w, h) = (((area.width() * ppp) as usize).clamp(64, side), ((area.height() * ppp) as usize).clamp(64, side));

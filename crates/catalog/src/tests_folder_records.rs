@@ -217,7 +217,7 @@ fn folder_labels_and_the_keyword_list_go_across_catalogs() {
     assert_eq!(sub.folder_record("/pics/home"), None, "a folder none of the exported photos is in stays behind");
     assert_eq!(sub.keyword_info("Places|beach"), Some(&info));
     // the exported catalog keeps them on disk
-    let dir = std::env::temp_dir().join(format!("dac-xfer-records-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-xfer-records-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let ids: Vec<PhotoId> = sub.photos().map(|p| p.id).collect();

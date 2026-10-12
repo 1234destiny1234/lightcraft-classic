@@ -37,7 +37,7 @@
     <StandardDirectory Id="ProgramFiles6432Folder">
       <Directory Id="INSTALLFOLDER" Name="{{display_name}}" />
     </StandardDirectory>
-    <!-- The folder of the installed version (written by DacApp), so an upgrade installs where the
+    <!-- The folder of the installed version (written by LccApp), so an upgrade installs where the
          user chose instead of moving back to Program Files. Searched into its own property:
          AppSearch would otherwise overwrite INSTALLFOLDER=... given to msiexec. -->
     <Property Id="PREVIOUSINSTALLFOLDER">
@@ -183,7 +183,7 @@
 
   <Fragment>
     <ComponentGroup Id="AppFiles" Directory="INSTALLFOLDER">
-      <Component Id="DacApp" Guid="8A1D3A39-F7C1-47B1-97AE-40C80BF82F4A">
+      <Component Id="LccApp" Guid="8A1D3A39-F7C1-47B1-97AE-40C80BF82F4A">
         <File Id="AppExe" Source="$(var.BinDir)\{{binary}}.exe" KeyPath="yes">
           <Shortcut Id="StartMenuShortcut" Directory="ProgramMenuFolder" Name="{{display_name}}"
               Description="{{display_name}}: {{tagline}}" WorkingDirectory="INSTALLFOLDER" Advertise="yes"

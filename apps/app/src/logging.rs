@@ -12,8 +12,8 @@
 //! and naga are chatty). `<PREFIX>_LOG` keeps the meaning it had with the old logger: `info` or
 //! `debug` lowers the app's own crates to that level, any other value means warnings and errors
 //! only. Without it, `RUST_LOG` replaces the default with env_logger-style directives: `debug`,
-//! `warn,dac_pipeline=trace`, `wgpu_core=info`. A directive ending in `*` matches every
-//! target that starts with it (`dac*=debug`).
+//! `warn,lcc_pipeline=trace`, `wgpu_core=info`. A directive ending in `*` matches every
+//! target that starts with it (`lcc*=debug`).
 //!
 //! Records logged before the settings folder is known are kept (up to [`MAX_PENDING`]) and
 //! written once the file is attached. Writing never panics: a file that can't be created or
@@ -32,7 +32,7 @@ use log::LevelFilter;
 
 /// The current log file's name inside the log folder.
 pub fn log_file() -> String {
-    format!("{}.log", dac_brand::BINARY)
+    format!("{}.log", lcc_brand::BINARY)
 }
 /// How many previous logs are kept (`<binary>.1.log` … `<binary>.<KEEP>.log`).
 pub const KEEP: usize = 2;
@@ -41,7 +41,7 @@ pub const MAX_FILE_BYTES: u64 = 16 * 1024 * 1024;
 /// Records kept in memory until the log file is attached.
 pub const MAX_PENDING: usize = 512;
 /// The built-in filter when neither `<PREFIX>_LOG` nor `RUST_LOG` says otherwise.
-pub const DEFAULT_FILTER: &str = "warn,dac*=info,app=info";
+pub const DEFAULT_FILTER: &str = "warn,lcc*=info,app=info";
 
 /// The filter directives for this run from `<PREFIX>_LOG` and `RUST_LOG` (blank = unset).
 ///
@@ -52,8 +52,8 @@ pub fn filter_spec(app_log: Option<&str>, rust_log: Option<&str>) -> String {
     let set = |v: Option<&str>| v.map(str::trim).filter(|v| !v.is_empty()).map(str::to_owned);
     if let Some(level) = set(app_log) {
         return match level.as_str() {
-            "debug" => "warn,dac*=debug,app=debug".to_owned(),
-            "info" => "warn,dac*=info,app=info".to_owned(),
+            "debug" => "warn,lcc*=debug,app=debug".to_owned(),
+            "info" => "warn,lcc*=info,app=info".to_owned(),
             _ => "warn".to_owned(),
         };
     }
@@ -140,7 +140,7 @@ fn civil_from_days(days: u64) -> (u64, u64, u64) {
 }
 
 fn numbered_name(n: usize) -> String {
-    format!("{}.{n}.log", dac_brand::BINARY)
+    format!("{}.{n}.log", lcc_brand::BINARY)
 }
 
 fn numbered(dir: &Path, n: usize) -> PathBuf {
@@ -318,7 +318,7 @@ impl log::Log for AppLogger {
 /// first. Call [`AppLogger::attach_dir`] (or [`AppLogger::no_file`]) once the arguments are parsed.
 pub fn install() -> Option<&'static AppLogger> {
     static LOGGER: OnceLock<AppLogger> = OnceLock::new();
-    let filter = Filter::parse(&filter_spec(dac_brand::env("LOG").as_deref(), std::env::var("RUST_LOG").ok().as_deref()));
+    let filter = Filter::parse(&filter_spec(lcc_brand::env("LOG").as_deref(), std::env::var("RUST_LOG").ok().as_deref()));
     let max = filter.max();
     let logger = LOGGER.get_or_init(|| AppLogger::new(filter, true));
     log::set_logger(logger).ok()?;
@@ -334,7 +334,7 @@ pub fn record_panics(logger: &'static AppLogger) {
         previous(info);
         let thread = std::thread::current();
         let at = info.location().map(|l| format!(" at {}:{}", l.file(), l.line())).unwrap_or_default();
-        let report = format!("panic{at}: {}", dac_engine::guard::panic_message(info.payload()));
+        let report = format!("panic{at}: {}", lcc_engine::guard::panic_message(info.payload()));
         logger.record_panic(thread.name().unwrap_or("?"), &report);
     }));
 }
@@ -369,7 +369,7 @@ mod tests {
             "info" => LevelFilter::Info,
             _ => LevelFilter::Warn,
         };
-        level <= max && (level <= log::Level::Warn || (target.starts_with("dac") || target == "app" || target.starts_with("app::")))
+        level <= max && (level <= log::Level::Warn || (target.starts_with("lcc") || target == "app" || target.starts_with("app::")))
     }
 
     #[test]
@@ -377,8 +377,8 @@ mod tests {
         let f = Filter::parse(DEFAULT_FILTER);
         assert_eq!(f.level_for("app"), LevelFilter::Info);
         assert_eq!(f.level_for("app::control_server"), LevelFilter::Info);
-        assert_eq!(f.level_for("dac_engine::guard"), LevelFilter::Info);
-        assert_eq!(f.level_for("dac_ui_egui::render"), LevelFilter::Info);
+        assert_eq!(f.level_for("lcc_engine::guard"), LevelFilter::Info);
+        assert_eq!(f.level_for("lcc_ui_egui::render"), LevelFilter::Info);
         assert_eq!(f.level_for("wgpu_core::device"), LevelFilter::Warn);
         assert_eq!(f.level_for("naga"), LevelFilter::Warn);
         assert_eq!(f.max(), LevelFilter::Info);
@@ -390,7 +390,7 @@ mod tests {
     /// `<PREFIX>_LOG` keeps working exactly as it did with the old stderr-only logger.
     #[test]
     fn app_log_keeps_its_meaning() {
-        let targets = ["dac-app", "app::control_server", "dac_engine::segment", "dac_gpu", "wgpu_core::device", "naga", "eframe"];
+        let targets = ["lcc-app", "app::control_server", "lcc_engine::segment", "lcc_gpu", "wgpu_core::device", "naga", "eframe"];
         let levels = [log::Level::Error, log::Level::Warn, log::Level::Info, log::Level::Debug, log::Level::Trace];
         for value in ["info", "debug", "warn", "error", "verbose", "INFO"] {
             let f = Filter::parse(&filter_spec(Some(value), None));
@@ -412,22 +412,22 @@ mod tests {
         // The app's own variable is the more specific choice.
         let f = Filter::parse(&filter_spec(Some("info"), Some("trace")));
         assert_eq!(f.level_for("eframe"), LevelFilter::Warn);
-        assert_eq!(f.level_for("dac_engine"), LevelFilter::Info);
+        assert_eq!(f.level_for("lcc_engine"), LevelFilter::Info);
     }
 
     #[test]
     fn directives_follow_env_logger_and_the_most_specific_one_wins() {
-        let f = Filter::parse("info,wgpu_core=error,dac_pipeline=trace,dac_pipeline::tiles=off");
+        let f = Filter::parse("info,wgpu_core=error,lcc_pipeline=trace,lcc_pipeline::tiles=off");
         assert_eq!(f.level_for("eframe"), LevelFilter::Info);
         assert_eq!(f.level_for("wgpu_core::instance"), LevelFilter::Error);
-        assert_eq!(f.level_for("dac_pipeline::stage"), LevelFilter::Trace);
-        assert_eq!(f.level_for("dac_pipeline::tiles"), LevelFilter::Off);
+        assert_eq!(f.level_for("lcc_pipeline::stage"), LevelFilter::Trace);
+        assert_eq!(f.level_for("lcc_pipeline::tiles"), LevelFilter::Off);
         assert_eq!(f.max(), LevelFilter::Trace);
         // A module name is matched at `::` boundaries, not as a bare prefix.
         assert_eq!(f.level_for("wgpu_core_extra"), LevelFilter::Info);
         // A trailing `*` is a prefix.
-        assert_eq!(Filter::parse("dac*=debug").level_for("dac_raw::cr2"), LevelFilter::Debug);
-        assert_eq!(Filter::parse("dac*=debug").level_for("eframe"), LevelFilter::Error);
+        assert_eq!(Filter::parse("lcc*=debug").level_for("lcc_raw::cr2"), LevelFilter::Debug);
+        assert_eq!(Filter::parse("lcc*=debug").level_for("eframe"), LevelFilter::Error);
         // A bare target name sets that target to the most verbose level, as env_logger does.
         assert_eq!(Filter::parse("naga").level_for("naga::front"), LevelFilter::Trace);
         assert_eq!(Filter::parse("naga").level_for("eframe"), LevelFilter::Error);
@@ -602,15 +602,15 @@ mod tests {
         let path = logger.attach_dir(&dir).expect("attach");
         assert_eq!(path, dir.join(log_file()));
         record(&logger, log::Level::Warn, "wgpu_hal::vulkan", "a real warning");
-        record(&logger, log::Level::Error, "dac_engine::guard", "`develop.reset` failed unexpectedly: boom");
+        record(&logger, log::Level::Error, "lcc_engine::guard", "`develop.reset` failed unexpectedly: boom");
         record(&logger, log::Level::Debug, "app", "below info");
         let text = read(&path);
         let lines: Vec<&str> = text.lines().collect();
         assert_eq!(lines.len(), 3, "{text}");
         assert!(lines[0].contains(" INFO  [") && lines[0].ends_with("app: before the settings directory"), "{text}");
         assert!(lines[1].ends_with("wgpu_hal::vulkan: a real warning"), "{text}");
-        assert!(lines[2].contains(" ERROR [") && lines[2].ends_with("dac_engine::guard: `develop.reset` failed unexpectedly: boom"), "{text}");
-        assert!(logger.enabled(&log::Metadata::builder().level(log::Level::Info).target("dac_ui_egui").build()));
+        assert!(lines[2].contains(" ERROR [") && lines[2].ends_with("lcc_engine::guard: `develop.reset` failed unexpectedly: boom"), "{text}");
+        assert!(logger.enabled(&log::Metadata::builder().level(log::Level::Info).target("lcc_ui_egui").build()));
         assert!(!logger.enabled(&log::Metadata::builder().level(log::Level::Info).target("naga").build()));
         // Attaching again rotates: the first log becomes `.1`.
         logger.attach_dir(&dir).expect("attach again");

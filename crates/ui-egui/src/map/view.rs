@@ -4,11 +4,11 @@
 use egui::{Align2, Color32, CornerRadius, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::json;
 
-use dac_geo::LatLon;
-use dac_geo::mercator::{TILE, project, unproject, visible_tiles, world_px};
+use lcc_geo::LatLon;
+use lcc_geo::mercator::{TILE, project, unproject, visible_tiles, world_px};
 
 use super::MapUi;
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::{Edge, edge_visible};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -35,7 +35,7 @@ pub fn screen_to_geo(m: &MapUi, r: Rect, s: Pos2) -> LatLon {
 }
 
 /// The Map module's centre: filter bar, map canvas, side panel; the filmstrip below.
-pub fn center(ui: &mut egui::Ui, app: &mut DacApp) {
+pub fn center(ui: &mut egui::Ui, app: &mut LccApp) {
     app.map.start(app.headless_host);
     let t = Tokens::get(ui.ctx());
     let mut area = ui.available_rect_before_wrap();
@@ -57,7 +57,7 @@ pub fn center(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn canvas(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
+fn canvas(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     app.map.canvas = Some(r);
@@ -149,7 +149,7 @@ fn canvas(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
     }
 
     // ---- saved locations
-    let mpp = dac_geo::mercator::metres_per_px(app.map.prefs.lat, zf);
+    let mpp = lcc_geo::mercator::metres_per_px(app.map.prefs.lat, zf);
     for l in app.session.catalog.saved_locations() {
         let c = geo_to_screen(&app.map, r, l.centre());
         let rad = (l.radius / mpp.max(1e-9)).clamp(3.0, 20_000.0) as f32;
@@ -314,7 +314,7 @@ fn canvas(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
     painter.text(pos2(r.left() + 12.0, y - 3.0), Align2::LEFT_BOTTOM, label, t.font(10.0), Color32::from_gray(40));
 }
 
-fn zoom_at(app: &mut DacApp, r: Rect, at: Pos2, dz: f64) {
+fn zoom_at(app: &mut LccApp, r: Rect, at: Pos2, dz: f64) {
     let before = screen_to_geo(&app.map, r, at);
     let c = app.map.centre();
     let z = app.map.prefs.zoom + dz;
@@ -328,9 +328,9 @@ fn zoom_at(app: &mut DacApp, r: Rect, at: Pos2, dz: f64) {
     app.map.set_view(unproject(cx + (bx - ax), cy + (by - ay)), zz);
 }
 
-fn hover_preview(app: &mut DacApp, ui: &mut egui::Ui, r: Rect, at: Pos2, ids: &[u64]) {
+fn hover_preview(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, at: Pos2, ids: &[u64]) {
     let t = Tokens::get(ui.ctx());
-    let Some(first) = ids.first().map(|i| dac_catalog::PhotoId(*i)) else { return };
+    let Some(first) = ids.first().map(|i| lcc_catalog::PhotoId(*i)) else { return };
     crate::panels::grid::request_thumb(app, first, 256, 4);
     let size = vec2(150.0, 120.0);
     let mut pos = at + vec2(14.0, -size.y - 10.0);

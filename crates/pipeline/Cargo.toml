@@ -1,5 +1,5 @@
 [package]
-name = "dac-pipeline"
+name = "lcc-pipeline"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,18 +9,18 @@ description = "Develop pipeline: scene-referred, float, resolution independent (
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-geom = { workspace = true }
-dac-color = { workspace = true }
-dac-raster = { workspace = true }
-dac-develop = { workspace = true }
-dac-raw = { workspace = true }
-dac-inpaint = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-geom = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-develop = { workspace = true }
+lcc-raw = { workspace = true }
+lcc-inpaint = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
-dac-scenes = { workspace = true }
+lcc-scenes = { workspace = true }
 proptest = { workspace = true }
 image = { workspace = true }
 serde_json = { workspace = true }

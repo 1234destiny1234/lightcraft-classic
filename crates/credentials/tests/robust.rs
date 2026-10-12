@@ -1,11 +1,11 @@
 //! Never-crash (P6.2): a damaged or doctored encrypted credentials file is an error, never a panic
 //! or an unbounded key derivation.
 
-use dac_credentials::{FileStore, Key, Secret, SecretStore};
+use lcc_credentials::{FileStore, Key, Secret, SecretStore};
 
 #[test]
 fn damaged_credentials_file_never_panics() {
-    let dir = std::env::temp_dir().join(format!("dac-cred-robust-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-cred-robust-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("credentials.json");
@@ -16,7 +16,7 @@ fn damaged_credentials_file_never_panics() {
     let probe = dir.join("probe.json");
     // Each open runs Argon2: keep the loop short and skip mutants that ask for more work than the
     // default parameters (the cap itself is covered below).
-    dac_fuzzkit::run("credentials.file", &[&seed], 120, |b| {
+    lcc_fuzzkit::run("credentials.file", &[&seed], 120, |b| {
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(b) {
             let cost = |k: &str| v.get(k).and_then(serde_json::Value::as_u64).unwrap_or(0);
             if cost("m_kib") > 19 * 1024 || cost("t") > 2 || cost("p") > 1 {

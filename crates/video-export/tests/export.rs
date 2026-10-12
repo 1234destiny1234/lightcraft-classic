@@ -5,9 +5,9 @@ use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use dac_raster::Rgb32f as RgbFrame;
-use dac_video_export::{ClipExportOptions, ClipFormat, ExportClipError, export_clip};
 use filmcraft_isobmff::{AvcConfig, Brand, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_raster::Rgb32f as RgbFrame;
+use lcc_video_export::{ClipExportOptions, ClipFormat, ExportClipError, export_clip};
 
 const W: u32 = 64;
 const H: u32 = 48;
@@ -16,7 +16,7 @@ const FRAMES: u32 = 50;
 const SR: u32 = 48_000;
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-video-export-{}-{name}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-video-export-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
     d
 }
@@ -80,7 +80,7 @@ fn make_clip_with(path: &Path, audio: bool, luma: impl Fn(u32) -> u8) {
 
 /// Mean linear RGB of the decoded frame at `t`.
 fn mean_rgb(path: &Path, t: f64) -> [f32; 3] {
-    let f = dac_video::FrameReader::open(path).unwrap().frame_at(t, None).unwrap();
+    let f = lcc_video::FrameReader::open(path).unwrap().frame_at(t, None).unwrap();
     let n = f.image.data.len() as f32;
     let mut m = [0f32; 3];
     for p in &f.image.data {
@@ -91,7 +91,7 @@ fn mean_rgb(path: &Path, t: f64) -> [f32; 3] {
     m
 }
 
-/// Mean linear RGB of the first ProRes frame (`dac-video` does not decode ProRes).
+/// Mean linear RGB of the first ProRes frame (`lcc-video` does not decode ProRes).
 fn prores_mean_rgb(path: &Path) -> [f32; 3] {
     let src = File::open(path).unwrap();
     let file = filmcraft_isobmff::open(&src).unwrap();
@@ -160,7 +160,7 @@ fn check_export(format: ClipFormat, audio: bool) {
     assert!((*last.lock().unwrap() - 1.0f64).abs() < 1e-9);
     assert!(!dir.join(format!("out.{}.partial", format.extension())).exists());
 
-    let info = dac_video::probe(&out).unwrap();
+    let info = lcc_video::probe(&out).unwrap();
     assert!((info.duration - 1.0).abs() <= 1.0 / f64::from(FPS) + 1e-6, "duration {}", info.duration);
     assert_eq!(info.has_audio, audio);
     if audio {
@@ -198,7 +198,7 @@ fn max_side_downscales() {
     o.max_side = Some(32);
     let rep = export_clip(&src, (0.0, None), &|_: &mut RgbFrame| {}, &o, &AtomicBool::new(false), &|_| {}).unwrap();
     assert_eq!((rep.width, rep.height, rep.frames), (32, 24, 50));
-    let v = dac_video::probe(&dir.join("out.mp4")).unwrap();
+    let v = lcc_video::probe(&dir.join("out.mp4")).unwrap();
     assert_eq!((v.width, v.height), (32, 24));
     std::fs::remove_dir_all(&dir).ok();
 }
@@ -294,11 +294,11 @@ fn parallel_grading_keeps_frame_order() {
         std::thread::sleep(std::time::Duration::from_millis(((v * 9973.0) as u64) % 7));
     };
     export_clip(&src, (0.0, None), &grade, &opts(out.clone(), ClipFormat::H264Mp4), &none, &|_| {}).unwrap();
-    let mut a = dac_video::FrameReader::open(&src).unwrap();
-    let mut b = dac_video::FrameReader::open(&out).unwrap();
+    let mut a = lcc_video::FrameReader::open(&src).unwrap();
+    let mut b = lcc_video::FrameReader::open(&out).unwrap();
     let times = b.frame_times();
     assert_eq!(times.len(), FRAMES as usize);
-    let mean = |f: dac_video::Frame| f.image.data.iter().map(|p| p[1]).sum::<f32>() / f.image.data.len() as f32;
+    let mean = |f: lcc_video::Frame| f.image.data.iter().map(|p| p[1]).sum::<f32>() / f.image.data.len() as f32;
     for t in times {
         let (x, y) = (mean(a.frame_at(t, None).unwrap()), mean(b.frame_at(t, None).unwrap()));
         assert!((x - y).abs() < 0.01 + 0.05 * x, "frame at {t}: {x} vs {y}");

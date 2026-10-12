@@ -9,8 +9,8 @@ use std::sync::{
 };
 
 use crate::lightroom_sqlite::{Database, LiveTable, Value as SqlValue};
-use dac_catalog::{Album, Flag, Op, Photo, PhotoId, Source};
-use dac_geom::{Affine, Orientation, Point, Rect};
+use lcc_catalog::{Album, Flag, Op, Photo, PhotoId, Source};
+use lcc_geom::{Affine, Orientation, Point, Rect};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -675,7 +675,7 @@ fn apply(s: &mut crate::Session, data: CatalogImport, update_existing: bool) -> 
     if let Some(path) = index_path {
         s.persist()?;
         let bytes = serde_json::to_vec(&applied.index).map_err(|e| error(e.to_string()))?;
-        dac_catalog::safe_file::write_atomic(&path, &bytes).map_err(|e| error(e.to_string()))?;
+        lcc_catalog::safe_file::write_atomic(&path, &bytes).map_err(|e| error(e.to_string()))?;
     }
     Ok(applied.report)
 }
@@ -753,7 +753,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
                 &now,
             );
             if ["RAW", "DNG", "ARW", "CR2", "CR3", "NEF", "NRW", "RAF", "ORF", "RW2", "PEF"].contains(&p.format.to_uppercase().as_str()) {
-                p.kind = dac_catalog::MediaKind::Raw;
+                p.kind = lcc_catalog::MediaKind::Raw;
             }
             p
         };
@@ -799,7 +799,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
                 stored_aspect,
             ) {
                 Ok((partial, unknown)) => {
-                    p.develop = Arc::new(dac_develop::apply_partial(&p.develop, &partial, 1.0));
+                    p.develop = Arc::new(lcc_develop::apply_partial(&p.develop, &partial, 1.0));
                     p.edited = Some(now.clone());
                     if !unknown.is_empty() {
                         unmapped.insert(src.source_id, unknown);
@@ -836,7 +836,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
             .collections
             .get(&collection_key)
             .copied()
-            .map(dac_catalog::AlbumId)
+            .map(lcc_catalog::AlbumId)
             .filter(|id| s.catalog.album(*id).is_some())
             .unwrap_or_else(|| s.catalog.alloc_album_id());
         index.collections.insert(collection_key, id.0);
@@ -921,7 +921,7 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
             None => {
                 match rules {
                     Some(Ok(rules)) => {
-                        album.smart = Some(Box::new(dac_catalog::Filter { rule_set: Some(rules), ..Default::default() }));
+                        album.smart = Some(Box::new(lcc_catalog::Filter { rule_set: Some(rules), ..Default::default() }));
                         smart_albums += 1;
                     }
                     Some(Err(why)) => {
@@ -972,7 +972,7 @@ fn stack_ops(s: &mut crate::Session, data: &CatalogImport, ids: &HashMap<i64, Ph
             continue;
         }
         let id = s.catalog.alloc_stack_id();
-        ops.push(Op::AddStack { stack: dac_catalog::Stack { id, photos, collapsed } });
+        ops.push(Op::AddStack { stack: lcc_catalog::Stack { id, photos, collapsed } });
         made += 1;
     }
     made
@@ -981,7 +981,7 @@ fn stack_ops(s: &mut crate::Session, data: &CatalogImport, ids: &HashMap<i64, Ph
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_geom::CropGeometry;
+    use lcc_geom::CropGeometry;
     fn row(v: Value) -> Row {
         serde_json::from_value(v).unwrap()
     }
@@ -1085,7 +1085,7 @@ mod tests {
         let data = sample();
         apply(&mut s, data.clone(), false).unwrap();
         let id = s.catalog.photos().find(|p| p.copy_of.is_none()).unwrap().id;
-        s.set_develop(id, dac_develop::DevelopSettings::default(), "Personal edit").unwrap();
+        s.set_develop(id, lcc_develop::DevelopSettings::default(), "Personal edit").unwrap();
         let r = apply(&mut s, data.clone(), false).unwrap();
         assert!(r["preservedExistingEdits"].as_u64().unwrap() > 0);
         assert_eq!(s.catalog.photo(id).unwrap().develop.light.exposure, 0.0);
@@ -1386,7 +1386,7 @@ mod tests {
         assert_eq!(r["smartAlbums"], 1);
         let albums = s.catalog.albums().count();
         let id = s.catalog.albums().find(|a| a.name == "Best").unwrap().id;
-        let edited = dac_catalog::Filter { rating: 2, ..Default::default() };
+        let edited = lcc_catalog::Filter { rating: 2, ..Default::default() };
         s.commit("Edit rules", Op::SetAlbumRules { id, rules: Box::new(edited.clone()) }).unwrap();
         let r = apply(&mut s, smart_sample(SUPPORTED), false).unwrap();
         assert_eq!((r["smartAlbums"].as_u64(), r["smartAsStatic"].as_u64(), r["smartKept"].as_u64()), (Some(1), Some(0), Some(1)));

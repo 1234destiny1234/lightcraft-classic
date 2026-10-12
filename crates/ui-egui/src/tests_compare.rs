@@ -6,13 +6,13 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::Zoom;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn demo() -> Headless {
-    let app = DacApp::new(dac_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     Headless::new(app, [1400.0, 900.0], 1.0)
 }
 
@@ -22,7 +22,7 @@ fn demo() -> Headless {
 fn filmstrip_click_in_compare_keeps_the_active_photo_on_screen() {
     let mut h = demo();
     let vis: Vec<u64> = h.app.session.visible_cloned().iter().map(|p| p.0).collect();
-    let rating = |h: &Headless, id: u64| h.app.session.catalog.photo(dac_catalog::PhotoId(id)).map(|p| p.rating);
+    let rating = |h: &Headless, id: u64| h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).map(|p| p.rating);
     for zoom in [Zoom::Fit, Zoom::Percent(100.0)] {
         h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [vis[0], vis[1]], "active": vis[0]}}), T);
         let r = h.request("engine.execute", json!({"command": "view.compare"}), T);

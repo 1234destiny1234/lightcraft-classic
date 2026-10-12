@@ -11,11 +11,11 @@
 use std::collections::BTreeSet;
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{Op, PhotoId, Source};
-use dac_credentials::Secret;
-use dac_immich::link::{self, Index, SERVICE};
-use dac_immich::types::MetadataSearch;
-use dac_immich::{Account, ImmichError, extlib, mapping};
+use lcc_catalog::{Op, PhotoId, Source};
+use lcc_credentials::Secret;
+use lcc_immich::link::{self, Index, SERVICE};
+use lcc_immich::types::MetadataSearch;
+use lcc_immich::{Account, ImmichError, extlib, mapping};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -50,13 +50,13 @@ fn account_json(s: &Session, a: &Account) -> Value {
     let links = s.catalog.remote_links().iter().filter(|r| r.service == SERVICE && r.account_id == a.id);
     let (mut linked, mut probable) = (0u64, 0u64);
     for r in links {
-        if r.sync_state == dac_catalog::SyncState::Probable {
+        if r.sync_state == lcc_catalog::SyncState::Probable {
             probable += 1;
         } else {
             linked += 1;
         }
     }
-    let missing = a.permissions.as_deref().map(dac_immich::client::missing_permissions).unwrap_or_default();
+    let missing = a.permissions.as_deref().map(lcc_immich::client::missing_permissions).unwrap_or_default();
     json!({
         "id": a.id,
         "url": a.url,
@@ -72,7 +72,7 @@ fn account_json(s: &Session, a: &Account) -> Value {
         "probable": probable,
         "linkedUntil": a.linked_until,
         "link": s.remote.links.get(&a.id),
-        "apiKeyPage": dac_immich::client::api_key_page(&a.url),
+        "apiKeyPage": lcc_immich::client::api_key_page(&a.url),
     })
 }
 
@@ -89,22 +89,22 @@ fn account_param(s: &mut Session, p: &Value, c: &str) -> Result<String> {
 }
 
 /// Contact the server: version, user, permissions.
-fn probe(p: &Value, c: &str) -> Result<std::result::Result<(String, dac_immich::ServerStatus, Option<String>), ImmichError>> {
+fn probe(p: &Value, c: &str) -> Result<std::result::Result<(String, lcc_immich::ServerStatus, Option<String>), ImmichError>> {
     let url = str_param(p, "url").ok_or_else(|| bad(c, "missing `url`"))?;
     let key = str_param(p, "apiKey").map(str::trim).filter(|k| !k.is_empty()).ok_or_else(|| bad(c, "missing `apiKey`"))?;
     let pinned = str_param(p, "pinned").map(str::to_string).filter(|f| !f.is_empty());
-    let opts = dac_immich::ServerOptions { pinned: pinned.clone(), ..dac_immich::ServerOptions::default() };
-    Ok(dac_immich::Client::new(url, Secret::new(key), &opts).and_then(|cl| cl.status().map(|st| (cl.base().to_string(), st, pinned))))
+    let opts = lcc_immich::ServerOptions { pinned: pinned.clone(), ..lcc_immich::ServerOptions::default() };
+    Ok(lcc_immich::Client::new(url, Secret::new(key), &opts).and_then(|cl| cl.status().map(|st| (cl.base().to_string(), st, pinned))))
 }
 
-fn status_json(base: &str, st: &dac_immich::ServerStatus) -> Value {
+fn status_json(base: &str, st: &lcc_immich::ServerStatus) -> Value {
     json!({
         "ok": true,
         "url": base,
         "version": st.version.to_string(),
         "user": {"id": st.user.id, "name": st.user.name, "email": st.user.email, "isAdmin": st.user.is_admin},
         "permissions": st.permissions,
-        "missingPermissions": st.permissions.as_deref().map(dac_immich::client::missing_permissions).unwrap_or_default()
+        "missingPermissions": st.permissions.as_deref().map(lcc_immich::client::missing_permissions).unwrap_or_default()
             .iter().map(|(f, p)| json!({"feature": f, "permissions": p})).collect::<Vec<_>>(),
     })
 }
@@ -132,9 +132,9 @@ fn connect(s: &mut Session, p: &Value) -> Result<Value> {
         s.remote.connected = None;
         let tx = s.remote.sender();
         std::thread::spawn(move || {
-            let opts = dac_immich::ServerOptions { pinned: pinned.clone(), ..dac_immich::ServerOptions::default() };
+            let opts = lcc_immich::ServerOptions { pinned: pinned.clone(), ..lcc_immich::ServerOptions::default() };
             let key = Secret::new(key);
-            let r = dac_immich::Client::new(&url, key.clone(), &opts)
+            let r = lcc_immich::Client::new(&url, key.clone(), &opts)
                 .and_then(|cl| cl.status().map(|st| remote::Probed { base: cl.base().to_string(), status: st, pinned, key }));
             let _ = tx.send(Msg::Connected(Box::new(r)));
         });
@@ -153,7 +153,7 @@ fn adopt(s: &mut Session, pr: remote::Probed) -> std::result::Result<Value, Stri
     let remote::Probed { base, status: st, pinned, key } = pr;
     let id = Account::make_id(&base, &st.user.id);
     let store = s.secret_store().map_err(|e| format!("can't store the API key: {e}"))?;
-    store.set(&dac_immich::accounts::secret_key(&id), &key).map_err(|e| format!("can't store the API key: {e}"))?;
+    store.set(&lcc_immich::accounts::secret_key(&id), &key).map_err(|e| format!("can't store the API key: {e}"))?;
     let acc = Account {
         id: id.clone(),
         url: base.clone(),
@@ -176,7 +176,7 @@ fn disconnect(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "immich.disconnect";
     let id = account_param(s, p, C)?;
     if let Ok(store) = s.secret_store()
-        && let Err(e) = store.delete(&dac_immich::accounts::secret_key(&id))
+        && let Err(e) = store.delete(&lcc_immich::accounts::secret_key(&id))
     {
         log::warn!("could not delete the stored Immich key: {e}");
     }
@@ -327,8 +327,8 @@ fn links_of(s: &mut Session, p: &Value) -> Result<Value> {
             json!({
                 "account": r.account_id,
                 "assetId": r.remote_id,
-                "state": if r.sync_state == dac_catalog::SyncState::Probable { "probable" } else { "linked" },
-                "url": dac_immich::client::asset_web_url(&base, &r.remote_id),
+                "state": if r.sync_state == lcc_catalog::SyncState::Probable { "probable" } else { "linked" },
+                "url": lcc_immich::client::asset_web_url(&base, &r.remote_id),
             })
         })
         .collect();
@@ -337,7 +337,7 @@ fn links_of(s: &mut Session, p: &Value) -> Result<Value> {
     )
 }
 
-fn asset_json(s: &Session, index: &Index, account: &str, a: &dac_immich::Asset) -> Value {
+fn asset_json(s: &Session, index: &Index, account: &str, a: &lcc_immich::Asset) -> Value {
     let in_catalog = s.catalog.photo_of_remote(SERVICE, account, &a.id).or_else(|| index.has_sha1(&a.checksum));
     json!({
         "id": a.id,
@@ -481,7 +481,7 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
             let asset = match client.asset(&aid) {
                 Ok(a) => a,
                 Err(e) => {
-                    items.push((dac_immich::Asset { id: aid, ..Default::default() }, Err(e)));
+                    items.push((lcc_immich::Asset { id: aid, ..Default::default() }, Err(e)));
                     continue;
                 }
             };
@@ -699,7 +699,7 @@ pub fn pump(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn finish_import(s: &mut Session, d: Downloaded, now: &str) {
-    let mut ok: Vec<(dac_immich::Asset, PathBuf)> = Vec::new();
+    let mut ok: Vec<(lcc_immich::Asset, PathBuf)> = Vec::new();
     let mut failed = Vec::new();
     for (a, r) in d.items {
         match r {
@@ -735,7 +735,7 @@ fn finish_import(s: &mut Session, d: Downloaded, now: &str) {
                             preview_only: Some(LINK_ONLY.into()),
                         });
                     }
-                    ops.push(dac_catalog::Catalog::link_remote_op(dac_catalog::RemoteIdentity {
+                    ops.push(lcc_catalog::Catalog::link_remote_op(lcc_catalog::RemoteIdentity {
                         photo_id: id,
                         service: SERVICE.into(),
                         account_id: d.account.clone(),
@@ -743,7 +743,7 @@ fn finish_import(s: &mut Session, d: Downloaded, now: &str) {
                         remote_checksum: (!a.checksum.is_empty()).then(|| a.checksum.clone()),
                         remote_updated_at: a.updated_at.clone(),
                         last_synced_at: Some(now.to_string()),
-                        sync_state: dac_catalog::SyncState::Synced,
+                        sync_state: lcc_catalog::SyncState::Synced,
                     }));
                     imported += 1;
                 }

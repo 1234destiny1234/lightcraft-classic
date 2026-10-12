@@ -5,7 +5,7 @@
 //!
 //! Everything goes through the engine's `immich.*` commands except the slow listing and thumbnail
 //! calls of the Immich import source, which run on worker threads with a client from
-//! [`dac_engine::Session::immich_client`]. The API key typed into the form lives in memory until
+//! [`lcc_engine::Session::immich_client`]. The API key typed into the form lives in memory until
 //! Connect hands it to the secret store; it is never shown again, logged or saved in settings.
 
 use std::collections::{BTreeSet, HashMap, HashSet};
@@ -14,7 +14,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use egui::{Color32, Rect, RichText, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::theme::Tokens;
 use crate::widgets::{register, text_button};
 
@@ -129,7 +129,7 @@ thread_local! {
 /// After the external editor saved Edit In versions (`ids` reloaded): versions of Immich-linked
 /// photos go to Immich (`immich.uploadVersion`); a version already there asks Keep both / Replace
 /// unless the user chose to be remembered.
-pub(crate) fn after_edit_saved(app: &mut DacApp, ctx: &egui::Context, ids: &[u64]) {
+pub(crate) fn after_edit_saved(app: &mut LccApp, ctx: &egui::Context, ids: &[u64]) {
     for id in ids {
         match app.session.execute("immich.uploadVersion", &json!({"id": id})) {
             Ok(r) if r["ask"] == true => RESAVE.with_borrow_mut(|q| {
@@ -145,7 +145,7 @@ pub(crate) fn after_edit_saved(app: &mut DacApp, ctx: &egui::Context, ids: &[u64
 }
 
 /// The re-save question and the finished uploads' toasts (every frame).
-fn versions_ui(app: &mut DacApp, ctx: &egui::Context) {
+fn versions_ui(app: &mut LccApp, ctx: &egui::Context) {
     if let Ok(v) = app.session.execute("immich.versionResults", &json!({})) {
         for r in v["results"].as_array().into_iter().flatten() {
             let text = match r["error"].as_str() {
@@ -193,7 +193,7 @@ fn versions_ui(app: &mut DacApp, ctx: &egui::Context) {
     });
 }
 
-pub fn pump(app: &mut DacApp, ctx: &egui::Context) {
+pub fn pump(app: &mut LccApp, ctx: &egui::Context) {
     versions_ui(app, ctx);
     let now = ctx.input(|i| i.time);
     if now - app.immich.last_pump < 0.2 {
@@ -223,7 +223,7 @@ pub fn pump(app: &mut DacApp, ctx: &egui::Context) {
     let developing = app.ui.view == crate::state::ViewMode::Detail && app.ui.right.is_edit_tool();
     if developing
         && let Some(id) = app.session.active()
-        && app.session.catalog.photo(id).is_some_and(|p| p.preview_only.as_deref() == Some(dac_engine::remote::LINK_ONLY))
+        && app.session.catalog.photo(id).is_some_and(|p| p.preview_only.as_deref() == Some(lcc_engine::remote::LINK_ONLY))
         && app.immich.fetch_tried.insert(id.0)
     {
         match app.session.execute("immich.fetchOriginal", &json!({"id": id.0})) {
@@ -239,8 +239,8 @@ pub fn pump(app: &mut DacApp, ctx: &egui::Context) {
 
 /// A small "Immich" pill at the top left of a grid cell for photos linked to Immich (dashed
 /// outline when the link is only probable).
-pub fn grid_badge(app: &DacApp, ui: &egui::Ui, id: dac_catalog::PhotoId, img: Rect) {
-    let state = app.session.catalog.remote_links().link_state(id, dac_immich::link::SERVICE);
+pub fn grid_badge(app: &LccApp, ui: &egui::Ui, id: lcc_catalog::PhotoId, img: Rect) {
+    let state = app.session.catalog.remote_links().link_state(id, lcc_immich::link::SERVICE);
     if state == "none" {
         return;
     }
@@ -261,8 +261,8 @@ pub fn grid_badge(app: &DacApp, ui: &egui::Ui, id: dac_catalog::PhotoId, img: Re
 
 /// "Immich" rows in Info: the link state and an Open in Immich link per account; Confirm for a
 /// probable link.
-pub fn metadata_rows(app: &mut DacApp, ui: &mut egui::Ui, id: dac_catalog::PhotoId) {
-    if app.session.catalog.remote_links().link_state(id, dac_immich::link::SERVICE) == "none" {
+pub fn metadata_rows(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
+    if app.session.catalog.remote_links().link_state(id, lcc_immich::link::SERVICE) == "none" {
         return;
     }
     let Ok(v) = app.session.execute("immich.links", &json!({"id": id.0})) else { return };
@@ -290,7 +290,7 @@ pub fn metadata_rows(app: &mut DacApp, ui: &mut egui::Ui, id: dac_catalog::Photo
     }
 }
 
-fn open_url(app: &mut DacApp, url: &str) {
+fn open_url(app: &mut LccApp, url: &str) {
     if let Some(f) = app.services.open_url.as_mut()
         && let Err(e) = f(url)
     {
@@ -314,7 +314,7 @@ fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui
 /// Test the form's server on a worker thread (`immich.test` in a session of its own), or connect
 /// in the background (`immich.connect {background}`: the probe runs on a worker, `remote.pump`
 /// stores the key; the result shows up in `immich.status`).
-fn start_test(app: &mut DacApp, connect: bool) {
+fn start_test(app: &mut LccApp, connect: bool) {
     if connect {
         let params = json!({"url": app.immich.url, "apiKey": app.immich.key, "pinned": app.immich.pinned, "background": true});
         app.immich.result = None;
@@ -331,13 +331,13 @@ fn start_test(app: &mut DacApp, connect: bool) {
     app.immich.pending = Some((connect, slot));
     app.immich.result = None;
     std::thread::spawn(move || {
-        let mut s = dac_engine::Session::new();
+        let mut s = lcc_engine::Session::new();
         let v = s.execute("immich.test", &params).unwrap_or_else(|e| json!({"ok": false, "error": {"kind": "badParams", "message": e.to_string()}}));
         *out.lock().unwrap_or_else(PoisonError::into_inner) = Some(v);
     });
 }
 
-pub fn settings_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     // a finished test
     if let Some((_, slot)) = &app.immich.pending
         && let Some(v) = take(slot)
@@ -388,14 +388,14 @@ pub fn settings_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
     });
     ui.horizontal(|ui| {
         ui.add_space(124.0);
-        let base = dac_immich::client::normalize_url(&app.immich.url).ok();
+        let base = lcc_immich::client::normalize_url(&app.immich.url).ok();
         if ui
             .add_enabled_ui(base.is_some(), |ui| text_button(ui, "immichKeyPage", crate::i18n::tr("Create an API key on the server…"), false))
             .inner
             .clicked()
             && let Some(b) = base
         {
-            open_url(app, &dac_immich::client::api_key_page(&b));
+            open_url(app, &lcc_immich::client::api_key_page(&b));
         }
     });
     super::settings::hint(
@@ -425,7 +425,7 @@ pub fn settings_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 }
 
 /// `credentials.status`, refreshed at most twice a second.
-fn cred_status(app: &mut DacApp, ctx: &egui::Context) -> Value {
+fn cred_status(app: &mut LccApp, ctx: &egui::Context) -> Value {
     let now = ctx.input(|i| i.time);
     if app.immich.cred.is_null() || now - app.immich.cred_at > 0.5 || app.immich.cred["unlocking"] == true {
         app.immich.cred = app.session.execute("credentials.status", &json!({})).unwrap_or_default();
@@ -436,7 +436,7 @@ fn cred_status(app: &mut DacApp, ctx: &egui::Context) -> Value {
 
 /// Settings → Connections → Key storage: where API keys are kept (the system keychain or an
 /// encrypted file), and the passphrase prompt that unlocks the file once per session.
-fn key_storage(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn key_storage(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     super::settings::heading(ui, t, "Key storage");
     let st = cred_status(app, ui.ctx());
     let system_ok = st["system"]["state"] == "ok";
@@ -496,7 +496,7 @@ fn key_storage(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 }
 
 /// The passphrase prompt of the encrypted key file (create it when there is none yet).
-pub(crate) fn unlock_box(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, st: &Value) {
+pub(crate) fn unlock_box(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, st: &Value) {
     let exists = st["file"]["exists"] == true;
     let frame = egui::Frame::NONE.stroke(egui::Stroke::new(1.0, t.caution.gamma_multiply(0.5))).corner_radius(6.0).inner_margin(8);
     let r = frame.show(ui, |ui| {
@@ -560,7 +560,7 @@ pub(crate) fn unlock_box(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, st: &V
     register(ui.ctx(), "credUnlockBox", r.response.rect);
 }
 
-fn result_box(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, r: &Value) {
+fn result_box(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, r: &Value) {
     ui.add_space(4.0);
     if r["ok"] == true {
         let user = &r["user"];
@@ -657,7 +657,7 @@ fn all_permissions(ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
     }
 }
 
-fn account_card(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
+fn account_card(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value) {
     let id = a["id"].as_str().unwrap_or_default().to_string();
     let r = egui::Frame::NONE.fill(t.inset).corner_radius(6.0).inner_margin(egui::Margin::symmetric(8, 6)).show(ui, |ui| {
         ui.set_width(ui.available_width());
@@ -759,7 +759,7 @@ fn account_card(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &V
 
 /// The external-library helper: libraries, the path mapping table, which catalog folders are
 /// covered, and Write XMP.
-fn extlib(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, id: &str) {
+fn extlib(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, id: &str) {
     let Some(v) = app.immich.libraries.get(id).cloned() else { return };
     ui.separator();
     ui.label(RichText::new(crate::i18n::tr("External libraries")).font(t.semibold(12.0)).color(t.text));
@@ -859,7 +859,7 @@ fn extlib(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, id: &str) {
 // ---------------------------------------------------------------------- Import from Immich
 
 /// UI commands: `file.importImmich` opens the Import dialog on its Immich source.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     match id {
         "immich.connections" => Some(app.run("app.settings", json!({"tab": "connections"}))),
         "file.importImmich" => {
@@ -871,14 +871,14 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 }
 
 /// Open the Import dialog with Immich as its source.
-fn open_import(app: &mut DacApp, account: Option<String>) {
+fn open_import(app: &mut LccApp, account: Option<String>) {
     let opts = crate::import::ImportDialog { immich: true, ..Default::default() };
     app.ui.dialog = Some(crate::state::Dialog::Import { opts: Box::new(opts) });
     open_source(app, account);
 }
 
 /// Switch the Import dialog's Immich source to `account` (else the first one) and list its timeline.
-pub fn open_source(app: &mut DacApp, account: Option<String>) {
+pub fn open_source(app: &mut LccApp, account: Option<String>) {
     let accounts: Vec<String> = app.session.immich_accounts().map(|a| a.immich.iter().map(|x| x.id.clone()).collect()).unwrap_or_default();
     let ui = &mut app.immich;
     ui.account = account
@@ -898,11 +898,11 @@ pub fn open_source(app: &mut DacApp, account: Option<String>) {
 }
 
 /// How many Immich assets are selected (the dialog's Import button counts them).
-pub fn selected_count(app: &DacApp) -> usize {
+pub fn selected_count(app: &LccApp) -> usize {
     app.immich.selected.len()
 }
 
-fn set_source(app: &mut DacApp, source: &str, target: Option<(String, String)>) {
+fn set_source(app: &mut LccApp, source: &str, target: Option<(String, String)>) {
     let ui = &mut app.immich;
     ui.source = source.to_string();
     ui.target = target;
@@ -916,7 +916,7 @@ fn set_source(app: &mut DacApp, source: &str, target: Option<(String, String)>) 
 }
 
 /// List the current source's next page on a worker thread.
-fn list(app: &mut DacApp) {
+fn list(app: &mut LccApp) {
     let Some(account) = app.immich.account.clone() else { return };
     let (src, id) = match (&app.immich.target, app.immich.source.as_str()) {
         (Some((kind, id)), _) => (kind.clone(), Some(id.clone())),
@@ -940,9 +940,9 @@ fn list(app: &mut DacApp) {
 }
 
 /// The worker half of `immich.browse` (the engine command needs the session).
-fn browse(c: &dac_immich::Client, p: &Value, sums: &HashSet<String>, linked: &HashSet<String>) -> Value {
-    use dac_immich::types::MetadataSearch;
-    let fail = |e: dac_immich::ImmichError| json!({"ok": false, "error": {"message": e.to_string(), "retryable": e.retryable()}});
+fn browse(c: &lcc_immich::Client, p: &Value, sums: &HashSet<String>, linked: &HashSet<String>) -> Value {
+    use lcc_immich::types::MetadataSearch;
+    let fail = |e: lcc_immich::ImmichError| json!({"ok": false, "error": {"message": e.to_string(), "retryable": e.retryable()}});
     match p["source"].as_str().unwrap_or("timeline") {
         "albums" => match c.albums() {
             Ok(a) => {
@@ -989,7 +989,7 @@ fn browse(c: &dac_immich::Client, p: &Value, sums: &HashSet<String>, linked: &Ha
 }
 
 /// Load thumbnails for `ids` on one worker thread (decoded to small images there).
-fn load_thumbs(app: &mut DacApp, ids: Vec<String>) {
+fn load_thumbs(app: &mut LccApp, ids: Vec<String>) {
     let Some(account) = app.immich.account.clone() else { return };
     let Ok((_, client)) = app.session.immich_client(&account) else { return };
     let out = app.immich.thumb_rx.get_or_insert_with(Default::default).clone();
@@ -999,7 +999,7 @@ fn load_thumbs(app: &mut DacApp, ids: Vec<String>) {
     std::thread::spawn(move || {
         for id in ids {
             let img = client.thumbnail(&id, "thumbnail").ok().and_then(|b| {
-                let d = dac_codecs::decode(&b, dac_codecs::DecodeOptions { max_size: Some((256, 256)), ..Default::default() }).ok()?;
+                let d = lcc_codecs::decode(&b, lcc_codecs::DecodeOptions { max_size: Some((256, 256)), ..Default::default() }).ok()?;
                 let rgba = d.image.to_srgb8();
                 Some(egui::ColorImage::from_rgba_unmultiplied([rgba.width, rgba.height], &rgba.as_bytes()))
             });
@@ -1009,7 +1009,7 @@ fn load_thumbs(app: &mut DacApp, ids: Vec<String>) {
 }
 
 /// Take in finished listings and decoded thumbnails.
-fn poll(app: &mut DacApp, ctx: &egui::Context) {
+fn poll(app: &mut LccApp, ctx: &egui::Context) {
     if let Some(slot) = app.immich.listing.clone()
         && let Some(v) = take(&slot)
     {
@@ -1043,7 +1043,7 @@ fn poll(app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// Start importing the selected assets (the Import dialog's Import button).
-pub fn start_import(app: &mut DacApp) -> Result<Value, String> {
+pub fn start_import(app: &mut LccApp) -> Result<Value, String> {
     if app.immich.selected.is_empty() {
         return Err(crate::i18n::tr("Select photos to import").to_string());
     }
@@ -1070,7 +1070,7 @@ pub fn start_import(app: &mut DacApp) -> Result<Value, String> {
 
 /// The Import dialog's Immich source: accounts, timeline / favourites / albums / people as
 /// thumbnails loaded from the server, Copy or Link only.
-pub fn import_source(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn import_source(app: &mut LccApp, ui: &mut egui::Ui) {
     poll(app, ui.ctx());
     let t = Tokens::get(ui.ctx());
     let st = cred_status(app, ui.ctx());
@@ -1228,7 +1228,7 @@ pub fn import_source(app: &mut DacApp, ui: &mut egui::Ui) {
     });
 }
 
-fn asset_cell(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value, size: f32) {
+fn asset_cell(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &Value, size: f32) {
     let id = a["id"].as_str().unwrap_or_default().to_string();
     let (r, resp) = ui.allocate_exact_size(vec2(size - 4.0, size - 4.0), Sense::click());
     register(ui.ctx(), format!("immichAsset:{i}"), r);
@@ -1310,7 +1310,7 @@ fn label_of(list: &[(&str, &'static str)], v: &str) -> &'static str {
 
 /// Settings → Connections → an account → Sync…: status and activity, per-field rules, the
 /// schedule, Sync Conflicts (both values, keep one) and the deletion queue.
-fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &str) {
+fn sync_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &str) {
     let now = ui.input(|x| x.time);
     let stale = match app.immich.sync_view.get(id) {
         None => true,
@@ -1559,7 +1559,7 @@ fn sync_section(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, i: usize, id: &
 /// The filter bar's "Immich smart search" box (IMM-SEARCH): a natural-language query sent to the
 /// connected server on a worker; the linked photos it finds become the grid's temporary collection
 /// (`filter.only`, cleared with the filter bar's other filters). Shown only with one account.
-pub fn smart_search_box(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn smart_search_box(app: &mut LccApp, ui: &mut egui::Ui) {
     let account = match app.session.immich_accounts().map(|a| a.immich.iter().map(|x| x.id.clone()).collect::<Vec<_>>()) {
         Ok(v) if v.len() == 1 => v.into_iter().next().unwrap_or_default(),
         _ => return,
@@ -1571,16 +1571,16 @@ pub fn smart_search_box(app: &mut DacApp, ui: &mut egui::Ui) {
         app.immich.smart_pending = None;
         match r {
             Ok(ids) => {
-                let mut photos: Vec<dac_catalog::PhotoId> = Vec::new();
+                let mut photos: Vec<lcc_catalog::PhotoId> = Vec::new();
                 for a in &ids {
-                    if let Some(p) = app.session.catalog.photo_of_remote(dac_immich::link::SERVICE, &acc, a)
+                    if let Some(p) = app.session.catalog.photo_of_remote(lcc_immich::link::SERVICE, &acc, a)
                         && !photos.contains(&p)
                     {
                         photos.push(p);
                     }
                 }
                 app.immich.smart_note = Some(trf!("{} photos", photos.len()));
-                app.session.filter.only = if photos.is_empty() { vec![dac_catalog::PhotoId(u64::MAX)] } else { photos };
+                app.session.filter.only = if photos.is_empty() { vec![lcc_catalog::PhotoId(u64::MAX)] } else { photos };
             }
             Err(e) => app.immich.smart_note = Some(e),
         }
@@ -1613,7 +1613,7 @@ pub fn smart_search_box(app: &mut DacApp, ui: &mut egui::Ui) {
         let slot: Slot<Result<Vec<String>, String>> = Arc::new(Mutex::new(None));
         let out = slot.clone();
         std::thread::spawn(move || {
-            let q = dac_immich::types::SmartSearch { query: q, size: Some(250), kind: Some("IMAGE".into()), ..Default::default() };
+            let q = lcc_immich::types::SmartSearch { query: q, size: Some(250), kind: Some("IMAGE".into()), ..Default::default() };
             let r = client.smart_search(&q).map(|p| p.items.into_iter().map(|a| a.id).collect()).map_err(|e| e.to_string());
             *out.lock().unwrap_or_else(PoisonError::into_inner) = Some(r);
         });

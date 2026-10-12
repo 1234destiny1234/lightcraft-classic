@@ -4,8 +4,8 @@
 
 use std::sync::Arc;
 
-use dac_pdf::{ColorSpace, Document, Image, Page, Paint, Path, Rect, jpeg_info};
-use dac_text::{TextBlock, TextEngine};
+use lcc_pdf::{ColorSpace, Document, Image, Page, Paint, Path, Rect, jpeg_info};
+use lcc_text::{TextBlock, TextEngine};
 
 const INTER: &[u8] = include_bytes!("../../../assets/fonts/Inter-Regular.ttf");
 
@@ -43,7 +43,7 @@ fn write_with_image(img: Image) {
 fn hostile_jpegs_never_panic() {
     let seeds = [jpeg(64, 48, 3), jpeg(1, 1, 1), jpeg(9, 9, 4)];
     let refs: Vec<&[u8]> = seeds.iter().map(Vec::as_slice).collect();
-    dac_fuzzkit::run("pdf.jpeg", &refs, 4000, |b| {
+    lcc_fuzzkit::run("pdf.jpeg", &refs, 4000, |b| {
         let info = jpeg_info(b);
         let components = info.as_ref().map_or(3, |i| i.components as u8);
         for color in [ColorSpace::Rgb, ColorSpace::Gray, ColorSpace::Cmyk, ColorSpace::Icc { profile: Arc::new(b.to_vec()), components }] {
@@ -54,7 +54,7 @@ fn hostile_jpegs_never_panic() {
 
 #[test]
 fn mismatched_samples_and_alpha_never_panic() {
-    let mut rng = dac_fuzzkit::Rng::new(11);
+    let mut rng = lcc_fuzzkit::Rng::new(11);
     for _ in 0..2000 {
         let (w, h) = (rng.below(5) as u32 * [1, 1000, 1 << 20][rng.below(3)], rng.below(5) as u32);
         let len = rng.below(64);
@@ -77,7 +77,7 @@ fn mismatched_samples_and_alpha_never_panic() {
 fn hostile_fonts_never_panic() {
     // a damaged font file in the user's fonts: registered (or refused), laid out, embedded
     let text = "Hamburgefonstiv ÄÖÜ ﬁ → 123 漢字";
-    dac_fuzzkit::run("pdf.font", &[INTER], 120, |b| {
+    lcc_fuzzkit::run("pdf.font", &[INTER], 120, |b| {
         let mut e = TextEngine::new();
         let names = e.fonts.register_font_data(b.to_vec());
         let family = names.first().cloned().unwrap_or_else(|| "Inter".into());

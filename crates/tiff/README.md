@@ -1,6 +1,6 @@
-# dac-tiff (L0)
+# lcc-tiff (L0)
 
-TIFF / IFD reader and writer. Used by `dac-raw` (DNG, CR2, NEF, ARW…), `dac-meta` (Exif) and
+TIFF / IFD reader and writer. Used by `lcc-raw` (DNG, CR2, NEF, ARW…), `lcc-meta` (Exif) and
 later the TIFF/DNG exporters.
 
 ## Features

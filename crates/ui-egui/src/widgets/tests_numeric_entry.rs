@@ -1,8 +1,8 @@
 //! Real egui pointer and keyboard frames on the production slider readout.
 use super::{SliderOut, slider, take_registry};
 use crate::headless::HeadlessView;
-use dac_develop::{ControlSpec, controls};
 use egui::{Event, Key, Modifiers, PointerButton, Rect, vec2};
+use lcc_develop::{ControlSpec, controls};
 
 struct Harness {
     view: HeadlessView,

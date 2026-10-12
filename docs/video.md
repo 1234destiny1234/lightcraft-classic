@@ -10,7 +10,7 @@
 > **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
-> **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
+> **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `lcc_engine::export`
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.2 import side, M14.3 posters)
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
@@ -34,13 +34,13 @@ used as git dependencies pinned to one full revision. The app writes no codecs o
 - **CLI**: `<cli> render clip.mov -o out.mp4 --trim 2,8` (seconds; `--trim 2,` = to the end). MCP agents use the
   `video.*` commands and `export`.
 
-## `crates/video` (`dac-video`, L3, native only)
+## `crates/video` (`lcc-video`, L3, native only)
 
 | API | What it does |
 |---|---|
 | `probe(path) -> Result<VideoInfo, VideoError>` | Container and stream headers, no decoding: `duration` (s), `fps_num`/`fps_den`, display `width`/`height` (after rotation), `codec` (`h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`, or the container's name for codecs we don't decode), `has_audio`, `created` (QuickTime `creationdate`/`©day` as written; Matroska `DateUTC` as RFC 3339), `gps` (ISO 6709), `rotation`, `hdr`, `decodable`, `coded_width`/`coded_height`, `par_num`/`par_den` (pixel aspect), `interlaced` (MPEG-2). `width`/`height` are the display size after the pixel aspect. |
 | `FrameReader::open(path)` | Opens a clip with a decodable video track ([supported formats](#supported-formats)); a recognised but undecodable stream is `Unsupported` with the reason. |
-| `FrameReader::frame_at(t, max_side) -> Result<Frame, VideoError>` | The frame displayed at `t` seconds (clamped to the clip; NaN = 0), box-decimated so the longer side is at most `max_side`. `Frame { image: dac_raster::Rgb32f, time }`: linear Rec.709 RGB, the pipeline's JPEG/TIFF input type; `time` is the frame's presentation time. |
+| `FrameReader::frame_at(t, max_side) -> Result<Frame, VideoError>` | The frame displayed at `t` seconds (clamped to the clip; NaN = 0), box-decimated so the longer side is at most `max_side`. `Frame { image: lcc_raster::Rgb32f, time }`: linear Rec.709 RGB, the pipeline's JPEG/TIFF input type; `time` is the frame's presentation time. |
 | `FrameReader::seek(t)` / `next_frame(max_side) -> Result<Option<Frame>>` / `frames_from(t, max_side)` | Sequential playback for a decode-ahead worker: frames in presentation order from the cursor (`seek`, or just after the last `frame_at`/`next_frame`), decoding forward across GOPs without re-seeking; `None` at the end. `frames_from` is `seek` + an iterator that stops after the first error. |
 | `FrameReader::frame_times()` | Every frame's presentation time, sorted (frame stepping). |
 | `poster(path, t, max_side)` | One frame for thumbnails; `t = None` means `default_poster_time(duration)` = 10 % in. |
@@ -64,11 +64,11 @@ truncations, random byte corruption and garbage files.
 
 **Web build.** On wasm32 the API exists and returns `Unsupported`; the FilmCraft crates aren't linked.
 
-## `crates/video-export` (`dac-video-export`, L3, native only)
+## `crates/video-export` (`lcc-video-export`, L3, native only)
 
 `export_clip(src, (trim_in, trim_out), grade, &ClipExportOptions { format, quality, max_side, out }, cancel, progress)
--> Result<ClipReport, ExportClipError>`: decodes the trimmed range with `dac_video::FrameReader` (first frame = the one
-displayed at the in point, decoded from the previous sync sample), runs `grade(&mut dac_raster::Rgb32f)` on every
+-> Result<ClipReport, ExportClipError>`: decodes the trimmed range with `lcc_video::FrameReader` (first frame = the one
+displayed at the in point, decoded from the previous sync sample), runs `grade(&mut lcc_raster::Rgb32f)` on every
 frame (linear Rec.709, display-referred), converts to BT.709 limited-range Y'CbCr and encodes H.264 High 4:2:0
 (`filmcraft-h264enc`, CRF from quality) into MP4 or ProRes 422 10-bit (`filmcraft-prores`, HQ/Standard/LT) into MOV.
 Audio (`encode_audio_range(src, start, end, format, cancel) -> Result<Option<EncodedAudioTrack>>`, called once per
@@ -86,8 +86,8 @@ without global state, and the crate pulls `project`/`render`/`text`/`audio-dsp` 
 ## Engine: playback, trim, poster, Capture Frame (M14.4 / M14.6)
 
 `crates/engine/src/video/` holds the state, `crates/engine/src/cmd/video.rs` the commands. The engine decodes through
-a `VideoBackend` (`probe`, `frame_at`) in `session.video.backend`: native builds install `video::native::DacVideo`
-(`dac-video`); the web build has none, and every `video.*` command is then disabled with "video playback isn't
+a `VideoBackend` (`probe`, `frame_at`) in `session.video.backend`: native builds install `video::native::LccVideo`
+(`lcc-video`); the web build has none, and every `video.*` command is then disabled with "video playback isn't
 available in this build". Commands act on the active photo and are enabled only when it is a video; a clip without
 `Photo::video` is probed on first use (`Op::SetVideoMeta`, not an undo step).
 
@@ -110,7 +110,7 @@ with `audio-out` (`canPlayAudio`: true only then, and only for clips with decoda
 answers the `video.get` state, so UI, CLI and MCP see the same thing. Captured frames are not graded yet (M14.7).
 ## Loupe playback (M14.4)
 
-`dac_engine::video::playback`: `Playback::start(backend, path, t, max_side, &develop)` runs a worker that decodes
+`lcc_engine::video::playback`: `Playback::start(backend, path, t, max_side, &develop)` runs a worker that decodes
 sequentially (`VideoBackend::frames_from`, native: `FrameReader::seek` + `next_frame`) at ≤ 960 px, grades each frame
 with a `GradeLut` baked from `video_settings(develop)` (rebaked only when that changes: `set_settings`), and sends
 it over an 8-frame bounded queue; frames more than a frame behind `set_target(t)` are skipped before grading.
@@ -124,14 +124,14 @@ repaints, and on a decode error pauses (`video.pause`) with one toast (and a log
 **GPU playback grade.** When the window renders with wgpu (`Services::video_gpu`, desktop
 `apps/app/src/video_gpu.rs`) and Settings ▸ GPU is on, the loupe starts the worker with `Playback::start_linear`: it
 decodes and bakes the LUT as before but skips the CPU grade, handing `FramePixels::Linear { image, lut, key }`. The
-UI thread uploads the linear `f32` frame as-is and `dac_gpu::video_lut::VideoLut::grade` runs one compute shader
+UI thread uploads the linear `f32` frame as-is and `lcc_gpu::video_lut::VideoLut::grade` runs one compute shader
 (`wgsl/video_lut.wgsl`, the tetrahedral twin of `GradeLut::lookup`, LUT re-uploaded only when its key changes) into
 an `Rgba8Unorm` texture registered with egui-wgpu through an `Rgba8UnormSrgb` view, so there is no CPU grade,
 RGBA conversion or egui texture copy. Any GPU error falls back to the CPU LUT for the rest of the session (logged
 once). Paused stills keep the full CPU pipeline (`spawn_still`). Equivalence: GPU vs CPU LUT ≤ 2 codes
-(`dac-gpu` `video_lut::tests::gpu_lut_matches_cpu_lut`, includes NaN / out-of-range / lattice edges).
+(`lcc-gpu` `video_lut::tests::gpu_lut_matches_cpu_lut`, includes NaN / out-of-range / lattice edges).
 
-Per playing frame (`cargo test -p dac-engine --release --lib video::bench_playback -- --ignored --nocapture`,
+Per playing frame (`cargo test -p lcc-engine --release --lib video::bench_playback -- --ignored --nocapture`,
 2026-10-12, Radeon / Vulkan, **load average ≈ 150–170 from other jobs**, so upper bounds; 47 frames each):
 
 | Clip (decoded at ≤ 960 px) | decode | CPU LUT | RGBA conv. | GPU LUT (upload + shader, waited) |
@@ -173,10 +173,10 @@ wider axis (HDV / DNxHD 1440×1080 at 4:3 → 1920×1080; DV NTSC 720×480 at 10
 decimation. Only the first video track
 is read; the first decodable audio track is decoded by `AudioReader` (see Audio below).
 ## Export through the engine (M14.8)
-`dac_engine::export` is the one export path for app, CLI and MCP (`crates/engine/src/export_video.rs`). A clip
+`lcc_engine::export` is the one export path for app, CLI and MCP (`crates/engine/src/export_video.rs`). A clip
 (`Photo.video` set) in a batch exported to a rendered format becomes a movie; `Original` copies its file. It keeps
 the clip's trim (`trim_in`/`trim_out`) and its develop settings reduced by `video_settings`, graded on every frame at
-full quality by `dac_pipeline::grade::grade_frame_linear` (float, linear Rec.709 in and out, so the export crate's
+full quality by `lcc_pipeline::grade::grade_frame_linear` (float, linear Rec.709 in and out, so the export crate's
 clamp + sRGB encode after the grade is the only encode; an 8-bit round trip would band ProRes). A default grade is the
 identity and skips the pipeline. Options (`ExportOptions`, validated like every export key): `videoFormat`
 (`h264` default = H.264 + AAC MP4, `prores` = ProRes 422 + AAC MOV), `videoQuality` 1–100 (default 80), `videoMaxSide`
@@ -194,7 +194,7 @@ on cancel or error the stages are halted and drained, the partial file removed. 
 one is available (`export_video::grade_gpu`: the 8-bit sRGB GPU render decoded back to linear; within a few 8-bit
 codes of the CPU float grade, test `gpu_grade_matches_cpu_grade`; CPU fallback per frame); ProRes keeps the float
 CPU grade (10-bit). The settings are reduced to `video_settings` once per clip; a default grade skips the pipeline.
-Bench (`VIDEO_BENCH_CLIP=corpus/video/h264-1080p-bbb.mp4 cargo test --release -p dac-engine --lib export_speed_1080p
+Bench (`VIDEO_BENCH_CLIP=corpus/video/h264-1080p-bbb.mp4 cargo test --release -p lcc-engine --lib export_speed_1080p
 -- --ignored --nocapture`; 10 s 1080p24 = 240 frames, exposure/contrast/vibrance grade, 32-core Linux shared with
 other builds, load 30–110, so numbers are noisy):
 
@@ -236,14 +236,14 @@ placed in one `size` frame (`"WxH"` or `[w, h]`, 16–8192, rounded down to even
 black, `fill` crops the centre. Each photo is held `hold` frames (1–1000, default 1) and `crossfade` extra frames
 (0–1000) blend it into the next, so a movie has `photos × hold + (photos − 1) × crossfade` frames at `fps` (1–120,
 default 24). `format` `h264` (MP4) or `prores` (MOV; the default follows the extension), `quality` 1–100 (80). The
-frames go to `dac_video_export::SequenceWriter` (same encoders and muxer as clip export; `push_encoded` takes the
+frames go to `lcc_video_export::SequenceWriter` (same encoders and muxer as clip export; `push_encoded` takes the
 sRGB render values as BT.709 video), written to `<path>.partial` and renamed when done; an error or a cancel (activity
 row ✕, checked once per frame) leaves no file. The desktop app runs it on a worker; CLI/MCP run it in the call with its
 own activity row. Limits: no audio/music, no deflicker or pan/zoom, integer frame rates only, native only.
 
 ## Audio (decode always; sound only with `audio-out`)
 
-**Decode** (`dac-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
+**Decode** (`lcc-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
 returns interleaved f32 PCM at the source rate: `info()` → `AudioInfo {codec, sample_rate, channels}`; `seek(t)` +
 `next_block()` → `AudioBlock {time, samples}`; `samples_from(t)` iterates blocks; `read_range(start, end)` returns a
 trimmed range (capped at `MAX_RANGE_SECONDS`); `resample(samples, channels, from, to)` converts rates (linear, own
@@ -272,30 +272,30 @@ damaged copies; the corpus clip `h264-aac-720p-nps-elk.mp4` when present) and `c
 (sample-exact PCM tones in MP4/MOV under each FourCC, Matroska and OP1a MXF; synthetic silent MP3 frames in
 Matroska; damaged copies).
 
-**Output** (`crates/audio-out` = `dac-audio-out`, L0): the one sound-card path, shared with slideshow music.
+**Output** (`crates/audio-out` = `lcc-audio-out`, L0): the one sound-card path, shared with slideshow music.
 `Output::start(rate, channels, fill)` plays what `fill` writes; `output.clock()` is an `AudioClock` (frames the device
 pulled, as seconds) that the engine player can follow. `CAN_PLAY` says whether the build has sound.
 
 **Turning sound on (user decision pending).** Sound needs the cargo feature `audio-out`
-(`cargo build -p dac-app --features audio-out`; it forwards `dac-engine/audio-out` → `dac-audio-out/audio-out`, and
-`dac-slideshow/audio-out` is the same switch). It brings in `cpal` (Apache-2.0), which on Linux links the system C
+(`cargo build -p lcc-app --features audio-out`; it forwards `lcc-engine/audio-out` → `lcc-audio-out/audio-out`, and
+`lcc-slideshow/audio-out` is the same switch). It brings in `cpal` (Apache-2.0), which on Linux links the system C
 library **libasound** (ALSA, through `alsa-sys` and pkg-config): a C dependency at build and run time, which the
 pure-Rust rule forbids by default. macOS (CoreAudio) and Windows (WASAPI) need no extra library. The choice for the
 maintainer: accept libasound on Linux (distro packages have it), or keep Linux silent and enable the feature only on
 macOS/Windows release builds. Until then no build enables it: `video.get` reports `canPlayAudio: false`, playback
 follows the system clock, slideshows play silently. Still to do once it is on: the playback worker starts an
-`Output` fed from `AudioReader` (resampled to `dac_audio_out::default_rate()`) and calls
+`Output` fed from `AudioReader` (resampled to `lcc_audio_out::default_rate()`) and calls
 `session.video.follow_audio_clock(output.clock())`.
 
-Checked 2026-10-12: with default features no package (`dac-app`, `dac-cli`, `dac-web`, `dac-engine`, `dac-slideshow`)
+Checked 2026-10-12: with default features no package (`lcc-app`, `lcc-cli`, `lcc-web`, `lcc-engine`, `lcc-slideshow`)
 has `cpal` in its tree (`cargo tree -p <pkg> -i cpal` finds none); `cargo deny check licenses` passes with default
-features and with `--features dac-app/audio-out`.
+features and with `--features lcc-app/audio-out`.
 
 ## Licences: why not `filmcraft-codecs`
 
 The plan named `filmcraft-codecs` (the container/codec hub with GOP caching). At rev 156086dc it depends
 unconditionally on `symphonia` (MPL-2.0, audio decoding), which `deny.toml` rejects (`cargo deny check licenses`
-fails). `dac-video` therefore uses the crates below it directly: the demuxers `filmcraft-isobmff`, `-matroska`,
+fails). `lcc-video` therefore uses the crates below it directly: the demuxers `filmcraft-isobmff`, `-matroska`,
 `-mpegts`, `-mxf`; the decoders `filmcraft-h264`, `-hevc`, `-vp9`, `-av1`, `-prores`, `-dnx`, `-apv`, `-mpeg2v`;
 and `filmcraft-bitstream`, `-frame`, `-color`, `-time`. Each is std-only (plus `thiserror` and `rayon`), `MIT OR
 Apache-2.0`, with no `unsafe` and no C; `cargo deny check licenses` passes. The per-codec frame conversions follow
@@ -304,7 +304,7 @@ the tests generate their clips in-test, so no media is committed.
 
 ## Cost (2026-10-12, 32-core Linux)
 
-- Cold release build of `dac-video` and its FilmCraft dependencies: ~8 s wall with MP4 + H.264/HEVC only (spike S1
+- Cold release build of `lcc-video` and its FilmCraft dependencies: ~8 s wall with MP4 + H.264/HEVC only (spike S1
   measured ~20 s with the example), ~15 s with every container and codec above.
 - A stripped binary using the API (the `clips` test binary): 2.6 MB → 5.2 MB with every container and codec.
 - Decoding vs the `ffmpeg` oracle (dev only, not in CI), frame at 4 s, PSNR in sRGB: Big Buck Bunny 1080p excerpts
@@ -330,34 +330,34 @@ MPEG-2, VP9 or AV1 clip (FilmCraft has no encoder for them); VP9 and AV1 are cov
 only by FilmCraft's own tests.
 
 ```sh
-cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [max_side]
-cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_side]
+cargo run --release -p lcc-video --example frame_png -- clip.mp4 1.5 out.png [max_side]
+cargo run --release -p lcc-video --example seq_bench -- clip.mp4 [frames] [max_side]
 ```
 
 ## Revision history
 
-- 2026-10-12: `export.timelapse` + File ▸ Export ▸ Timelapse Video… (upstream #497), `dac_video_export::SequenceWriter`.
-- 2026-10-12: GPU playback LUT (`dac_gpu::video_lut`, `Playback::start_linear`, `Services::video_gpu`), per-frame cost measured.
+- 2026-10-12: `export.timelapse` + File ▸ Export ▸ Timelapse Video… (upstream #497), `lcc_video_export::SequenceWriter`.
+- 2026-10-12: GPU playback LUT (`lcc_gpu::video_lut`, `Playback::start_linear`, `Services::video_gpu`), per-frame cost measured.
 - 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
-- 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
+- 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `lcc-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
   active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`
-  `video_clip_over_mcp`) on clips from `dac_video::test_util::write_clip` (feature `test-util`, dev-only).
+  `video_clip_over_mcp`) on clips from `lcc_video::test_util::write_clip` (feature `test-util`, dev-only).
 - 2026-10-12: sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost.
-- 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
-- 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
+- 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `lcc-video` backend.
+- 2026-10-12: M14.8 core, `lcc-video-export` (S3: option A).
 - 2026-10-12: M14.8 export through the engine (options, dialog, CLI, MCP, activity row).
 ## Import and posters (M14.2 import side, M14.3)
-- **Import** (`dac_engine::files::probe_video_file`, used by the native file probe for video extensions): the clip is
+- **Import** (`lcc_engine::files::probe_video_file`, used by the native file probe for video extensions): the clip is
   hashed in 1 MiB chunks (content hash + SHA-1 of the whole file, equal to hashing its bytes at once, so duplicate
   detection and Import → Copy verification work as for photos; never the whole clip in memory), then
-  `dac_video::probe` fills `Photo.video` (`VideoMeta`), the display width/height, `Photo.duration`, the capture date
+  `lcc_video::probe` fills `Photo.video` (`VideoMeta`), the display width/height, `Photo.duration`, the capture date
   (QuickTime `creationdate` / `©day`, normalised to the Exif-date form `YYYY-MM-DDThh:mm:ss[±hh:mm]`) and GPS
   (ISO 6709). All of it lands in the photo record, so it is one undo step with the import. A clip whose container
   can't be read still imports (`video: None`, 1×1).
 - **Posters** (`SourceRef::Video`, `media::video_poster`): a video's thumbnail, loupe and preview renders start from
-  its poster frame (`dac_video::poster` at `VideoMeta::poster_time`, default 10 % in) at the level's size, graded
-  with `dac_pipeline::grade::video_settings` of its develop settings on the display-referred path (exactly what
+  its poster frame (`lcc_video::poster` at `VideoMeta::poster_time`, default 10 % in) at the level's size, graded
+  with `lcc_pipeline::grade::video_settings` of its develop settings on the display-referred path (exactly what
   `grade_frame` does, but through the ordinary render jobs, so thumbnails use the preview cache, its workers and
   the activity rows of preview builds). The render cache keys (`media::pixels_key`) include the poster time, and
   `Op::SetVideoPoster` / `Op::SetVideoMeta` drop the clip's decoded sources: a new poster renders afresh.
@@ -371,15 +371,15 @@ Catalog format 10 + import (M14.2), grid posters (M14.3), player (M14.4), trim/p
 (M14.7), export (M14.8). See `plan/video-filmcraft.md` §9.
 ## Grading performance
 A clip has one `DevelopSettings`, applied to every frame through the display-referred (JPEG/TIFF) input path of the
-photo pipeline: `dac_pipeline::grade::grade_frame(&Rgb32f, &DevelopSettings, Quality) -> Rgba8` (CPU) and
-`dac_gpu::grade_frame(&Arc<Rgb32f>, &DevelopSettings, Quality) -> (Rgba8, bool)` (GPU when available, CPU fallback;
+photo pipeline: `lcc_pipeline::grade::grade_frame(&Rgb32f, &DevelopSettings, Quality) -> Rgba8` (CPU) and
+`lcc_gpu::grade_frame(&Arc<Rgb32f>, &DevelopSettings, Quality) -> (Rgba8, bool)` (GPU when available, CPU fallback;
 the bool says whether the GPU rendered it). `Quality::Draft` fits 960 px wide, `Quality::Full` keeps the frame size.
 `video_settings` keeps only the video controls: white balance (relative), Light, tone curve, colour (vibrance,
 saturation, HSL), mixer / B&W mix, colour grading, profile and treatment. Everything else (texture, clarity, dehaze,
 vignette, grain, detail, optics, geometry, crop, masks, spots, red eye, lens blur, enhance, point colour, calibration,
 HDR) is dropped.
 Measured 2026-10-12 on a 32-thread Linux box **under heavy load from other jobs (load average ≈ 90)**, so treat
-these as upper bounds; synthetic `dac-scenes` frames, exposure / contrast / highlights / shadows / vibrance / WB set.
+these as upper bounds; synthetic `lcc-scenes` frames, exposure / contrast / highlights / shadows / vibrance / WB set.
 Draft rows take the full-size frame and resample it; playback should decode at display size instead.
 | Frame | Quality | CPU pipeline | GPU pipeline | CPU 3D LUT |
 |---|---|---|---|---|
@@ -391,26 +391,26 @@ Draft rows take the full-size frame and resample it; playback should decode at d
 `<PREFIX>_PROFILE=1` on the 1080p CPU draft: sample 60–110 ms, white balance 15–25 ms, log luminance 12–40 ms,
 the edge-aware Highlights/Shadows base 175–275 ms, finish 46–60 ms. The CPU pipeline is far from 30 fps, so playback
 uses a baked LUT:
-**3D LUT playback path** (`dac_pipeline::grade::GradeLut`): `GradeLut::bake(&settings)` evaluates the video
+**3D LUT playback path** (`lcc_pipeline::grade::GradeLut`): `GradeLut::bake(&settings)` evaluates the video
 controls on a 33³ lattice (sRGB-curve spacing of the linear input, ~30 ms) and `apply(&frame, quality)` /
 `lookup(rgb)` interpolate it tetrahedrally (one thread: ~107 ns/px, 55 ms per 960×540 frame; parallel as above).
 Highlights/Shadows enter it point-wise (their base taken as the pixel's own luminance); texture, clarity and dehaze
 never do (stripped for video anyway). Accuracy vs the real grade on a 480×270 frame (CIE76 ΔE, tested): point-wise
 controls mean 0.34 / p99 1.26; with Highlights/Shadows mean 0.61 / p99 2.24. Use the LUT while playing and the real
 pipeline (`grade_frame`) on pause and export.
-Reproduce: `cargo test --release -p dac-gpu --test grade -- --ignored --nocapture` and
-`cargo test --release -p dac-pipeline grade::tests::lut_timings -- --ignored --nocapture`.
+Reproduce: `cargo test --release -p lcc-gpu --test grade -- --ignored --nocapture` and
+`cargo test --release -p lcc-pipeline grade::tests::lut_timings -- --ignored --nocapture`.
 ## Revision history
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | Collapsed the two revision histories and the stacked Last updated lines into one |
 | 2026-10-12 | minor | "Using video" section (M14.9). |
 | 2026-10-12 | minor | M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag. |
-| 2026-10-12 | minor | clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`. |
-| 2026-10-12 | minor | CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs` `video_clip_over_mcp`) on clips from `dac_video::test_util::write_clip` (feature `test-util`, dev-only). |
+| 2026-10-12 | minor | clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `lcc-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`. |
+| 2026-10-12 | minor | CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs` `video_clip_over_mcp`) on clips from `lcc_video::test_util::write_clip` (feature `test-util`, dev-only). |
 | 2026-10-12 | minor | sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost. |
-| 2026-10-12 | minor | M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend. |
-| 2026-10-12 | minor | M14.8 core, `dac-video-export` (S3: option A). |
+| 2026-10-12 | minor | M14.4 / M14.6 engine: `video.*` commands, player state machine, `lcc-video` backend. |
+| 2026-10-12 | minor | M14.8 core, `lcc-video-export` (S3: option A). |
 | 2026-10-12 | minor | M14.8 export through the engine (options, dialog, CLI, MCP, activity row). |
 | 2026-10-12 | minor | faster clip export (pipelined stages, parallel grading, GPU grade for H.264). |
 | 2026-10-12 | minor | Import fills `VideoMeta`, size, duration, date, GPS (streamed hash); graded poster thumbnails and loupe, placeholder tile (M14.2/M14.3) |

@@ -6,9 +6,9 @@
 //! text with the fonts embedded as subsets (searchable, sharp at any size), at the style's
 //! opacity, with manual kerning applied.
 
-use dac_layout::render::PhotoSource;
-use dac_raster::Rgba8;
-use dac_text::TextEngine;
+use lcc_layout::render::PhotoSource;
+use lcc_raster::Rgba8;
+use lcc_text::TextEngine;
 
 use crate::render::{Options, layout_item, render_page, text_items};
 use crate::{Book, BookError, PageRef, Result, Sharpening};
@@ -65,13 +65,13 @@ pub fn sharpen(img: &mut Rgba8, level: Sharpening, ppi: u32) {
 
 fn jpeg(img: &Rgba8, quality: u8, ppi: u32, icc: &[u8]) -> Result<Vec<u8>> {
     let rgb: Vec<u8> = img.data.iter().flat_map(|p| [p[0], p[1], p[2]]).collect();
-    let e = dac_codecs::EncodeImage::new(img.width as u32, img.height as u32, 3, dac_codecs::Samples::U8(&rgb));
-    let meta = dac_codecs::EncodeMeta { icc: Some(icc), ppi: u16::try_from(ppi).ok(), ..Default::default() };
-    dac_codecs::encode_jpeg(&e, quality.clamp(1, 100), dac_codecs::ChromaSubsampling::S444, &meta).map_err(|e| BookError::Export(e.to_string()))
+    let e = lcc_codecs::EncodeImage::new(img.width as u32, img.height as u32, 3, lcc_codecs::Samples::U8(&rgb));
+    let meta = lcc_codecs::EncodeMeta { icc: Some(icc), ppi: u16::try_from(ppi).ok(), ..Default::default() };
+    lcc_codecs::encode_jpeg(&e, quality.clamp(1, 100), lcc_codecs::ChromaSubsampling::S444, &meta).map_err(|e| BookError::Export(e.to_string()))
 }
 
 fn srgb_icc() -> Vec<u8> {
-    dac_codecs::icc::write_named(dac_codecs::NamedSpace::Srgb)
+    lcc_codecs::icc::write_named(lcc_codecs::NamedSpace::Srgb)
 }
 
 /// The file name suffix of a page (`cover`, `001`, …, `back`).
@@ -117,12 +117,12 @@ pub fn export_pdf(book: &Book, photos: &dyn PhotoSource, engine: &mut TextEngine
     let trim = book.trim();
     let bleed = f64::from(s.bleed);
     let (pw, ph) = (f64::from(trim.w) + 2.0 * bleed, f64::from(trim.h) + 2.0 * bleed);
-    let mut doc = dac_pdf::Document::new();
+    let mut doc = lcc_pdf::Document::new();
     doc.metadata.title = Some(book.name.clone()).filter(|n| !n.is_empty());
     if !s.paper.is_empty() {
         doc.metadata.subject = Some(format!("Paper: {}", s.paper));
     }
-    let perr = |e: dac_pdf::PdfError| BookError::Export(e.to_string());
+    let perr = |e: lcc_pdf::PdfError| BookError::Export(e.to_string());
     for (i, r) in pages.iter().enumerate() {
         if !progress(i, pages.len()) {
             return Err(BookError::Export("cancelled".into()));
@@ -131,17 +131,17 @@ pub fn export_pdf(book: &Book, photos: &dyn PhotoSource, engine: &mut TextEngine
             render_page(book, *r, photos, engine, &Options { dpi: s.resolution as f32, bleed: true, text: false, ..Options::default() })?.image;
         sharpen(&mut img, s.sharpening, s.resolution);
         let bytes = jpeg(&img, s.jpeg_quality, s.resolution, &[])?;
-        let id = doc.add_image(dac_pdf::Image::jpeg(bytes, dac_pdf::ColorSpace::Icc { profile: icc.clone(), components: 3 })).map_err(perr)?;
-        let mut page = dac_pdf::Page::new(pw, ph);
-        page.image(id, dac_pdf::Rect::new(0.0, 0.0, pw, ph));
+        let id = doc.add_image(lcc_pdf::Image::jpeg(bytes, lcc_pdf::ColorSpace::Icc { profile: icc.clone(), components: 3 })).map_err(perr)?;
+        let mut page = lcc_pdf::Page::new(pw, ph);
+        page.image(id, lcc_pdf::Rect::new(0.0, 0.0, pw, ph));
         if bleed > 0.0 {
-            page.bleed = Some(dac_pdf::Rect::new(0.0, 0.0, pw, ph));
-            page.trim = Some(dac_pdf::Rect::new(bleed, bleed, f64::from(trim.w), f64::from(trim.h)));
+            page.bleed = Some(lcc_pdf::Rect::new(0.0, 0.0, pw, ph));
+            page.trim = Some(lcc_pdf::Rect::new(bleed, bleed, f64::from(trim.w), f64::from(trim.h)));
         }
         for item in text_items(book, *r, photos, false) {
             let placed = layout_item(engine, &item, 72.0);
             let rect =
-                dac_pdf::Rect::new(f64::from(item.rect.x) + bleed, f64::from(item.rect.y) + bleed, f64::from(item.rect.w), f64::from(item.rect.h));
+                lcc_pdf::Rect::new(f64::from(item.rect.x) + bleed, f64::from(item.rect.y) + bleed, f64::from(item.rect.w), f64::from(item.rect.h));
             crate::text::draw_pdf(&mut page, &placed, rect);
         }
         doc.push_page(page).map_err(perr)?;

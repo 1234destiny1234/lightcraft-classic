@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use dac_develop::DevelopSettings;
+use lcc_develop::DevelopSettings;
 use proptest::prelude::*;
 
 use crate::journal::{LOG, SNAPSHOT, decode_record, encode_record};
@@ -302,7 +302,7 @@ fn streamed_snapshot_keeps_the_on_disk_format() {
     assert_eq!(c.to_snapshot(), full.to_snapshot());
     j.snapshot(&c).unwrap();
     let legacy =
-        format!("{{\"format\":\"dac-catalog\",\"version\":{},\"seq\":{},\"catalog\":{}}}\n", crate::journal::VERSION, j.seq(), c.to_snapshot());
+        format!("{{\"format\":\"lcc-catalog\",\"version\":{},\"seq\":{},\"catalog\":{}}}\n", crate::journal::VERSION, j.seq(), c.to_snapshot());
     assert_eq!(String::from_utf8(m.get(SNAPSHOT).unwrap()).unwrap(), legacy);
     assert_eq!(j.stats().last_snapshot.bytes, legacy.len() as u64);
 
@@ -343,20 +343,20 @@ fn failed_streamed_write_keeps_the_old_file() {
 /// else: the photo and its edits load (`docs/process-versions.md`).
 #[test]
 fn a_damaged_process_value_loads_as_v1_with_the_edits() {
-    use dac_develop::ProcessVersion;
+    use lcc_develop::ProcessVersion;
     let mut c = Catalog::new();
     let id = c.alloc_photo_id();
     let mut p = Photo::new(id, Source::Demo { scene: 1 }, "a.jpg", "JPEG", 10, 10, "2026-10-09T00:00:00");
     p.develop = Arc::new(DevelopSettings {
         process: ProcessVersion(7),
-        light: dac_develop::Light { exposure: 0.5, ..Default::default() },
+        light: lcc_develop::Light { exposure: 0.5, ..Default::default() },
         ..Default::default()
     });
     c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     let snapshot = c.to_snapshot();
     assert!(snapshot.contains(r#""process":7"#));
     let snapshot = format!(
-        "{{\"format\":\"dac-catalog\",\"version\":{},\"seq\":0,\"catalog\":{}}}\n",
+        "{{\"format\":\"lcc-catalog\",\"version\":{},\"seq\":0,\"catalog\":{}}}\n",
         crate::journal::VERSION,
         snapshot.replace(r#""process":7"#, r#""process":-1"#)
     );
@@ -367,7 +367,7 @@ fn a_damaged_process_value_loads_as_v1_with_the_edits() {
     assert_eq!((d.process, d.light.exposure), (ProcessVersion::V1, 0.5));
     // and in a (CRC-valid) log record
     let edit =
-        DevelopSettings { process: ProcessVersion(7), light: dac_develop::Light { exposure: 0.8, ..Default::default() }, ..Default::default() };
+        DevelopSettings { process: ProcessVersion(7), light: lcc_develop::Light { exposure: 0.8, ..Default::default() }, ..Default::default() };
     let op = Op::SetDevelop { id, settings: Arc::new(edit), label: "Edit".into(), edited: None };
     let body = serde_json::to_string(&op).unwrap().replace(r#""process":7"#, r#""process":"seven""#);
     assert!(body.contains("seven"));

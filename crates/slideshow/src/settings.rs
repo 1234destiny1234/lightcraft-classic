@@ -5,7 +5,7 @@
 
 use serde::{Deserialize, Serialize};
 
-pub use dac_engine::export::Anchor;
+pub use lcc_engine::export::Anchor;
 
 /// The whole look and playback of a slideshow (a template is one of these with a name).
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]

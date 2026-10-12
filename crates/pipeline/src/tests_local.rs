@@ -1,8 +1,8 @@
 //! Pixel tests of the local (mask) Noise, Moiré and Defringe sliders.
 
-use dac_develop::{DevelopSettings, LocalAdjustments, Mask, MaskComponent, MaskOp, MaskShape};
-use dac_geom::Point;
-use dac_raster::{Rgb32f, Rgba8};
+use lcc_develop::{DevelopSettings, LocalAdjustments, Mask, MaskComponent, MaskOp, MaskShape};
+use lcc_geom::Point;
+use lcc_raster::{Rgb32f, Rgba8};
 
 use crate::{RenderRequest, SourceInfo, render};
 

@@ -1,7 +1,7 @@
 //! Real Session/serializer regressions for saves that overlap retained physical repairs.
 use super::*;
 use crate::rename::{MoveFs, RealFs};
-use dac_catalog::{Op, Photo, Source};
+use lcc_catalog::{Op, Photo, Source};
 use serde_json::json;
 
 struct PartialRename {
@@ -43,8 +43,8 @@ impl MoveFs for PartialRename {
 const FOREIGN: &[u8] = br#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmlns:fixture="urn:example:repair-test" xmp:Rating="2" fixture:Marker="keep-me"/></rdf:RDF></x:xmpmeta>"#;
 
 fn png(path: &Path) {
-    let image = dac_raster::Rgba8::from_fn(4, 3, |_, _| [40, 80, 120, 255]);
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&image), &Default::default()).unwrap();
+    let image = lcc_raster::Rgba8::from_fn(4, 3, |_, _| [40, 80, 120, 255]);
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&image), &Default::default()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 fn queued(s: &Session) -> Vec<crate::rename::SidecarMove> {

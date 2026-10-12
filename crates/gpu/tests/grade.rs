@@ -3,8 +3,8 @@
 use std::sync::Arc;
 use std::time::Instant;
 
-use dac_develop::DevelopSettings;
-use dac_pipeline::{Quality, grade};
+use lcc_develop::DevelopSettings;
+use lcc_pipeline::{Quality, grade};
 
 fn settings() -> DevelopSettings {
     let mut s = DevelopSettings::default();
@@ -19,9 +19,9 @@ fn settings() -> DevelopSettings {
 
 #[test]
 fn gpu_grade_matches_cpu() {
-    let img = Arc::new(dac_scenes::demo_library()[0].render(480, 270));
+    let img = Arc::new(lcc_scenes::demo_library()[0].render(480, 270));
     let s = settings();
-    let (gpu, on_gpu) = dac_gpu::grade_frame(&img, &s, Quality::Full);
+    let (gpu, on_gpu) = lcc_gpu::grade_frame(&img, &s, Quality::Full);
     let cpu = grade::grade_frame(&img, &s, Quality::Full);
     assert_eq!((gpu.width, gpu.height), (cpu.width, cpu.height));
     if !on_gpu {
@@ -38,14 +38,14 @@ fn gpu_grade_matches_cpu() {
     assert!(mean < 1.5, "mean abs diff {mean}");
 }
 
-/// Prints CPU/GPU grade times for 1080p and 4K, draft and full: `cargo test -p dac-gpu --release
+/// Prints CPU/GPU grade times for 1080p and 4K, draft and full: `cargo test -p lcc-gpu --release
 /// --test grade -- --ignored --nocapture`.
 #[test]
 #[ignore]
 fn grade_timings() {
     let s = settings();
     for (w, h) in [(1920, 1080), (3840, 2160)] {
-        let img = Arc::new(dac_scenes::demo_library()[0].render(w, h));
+        let img = Arc::new(lcc_scenes::demo_library()[0].render(w, h));
         for q in [Quality::Draft, Quality::Full] {
             let time = |f: &dyn Fn()| {
                 f();
@@ -59,9 +59,9 @@ fn grade_timings() {
             let cpu = time(&|| {
                 grade::grade_frame(&img, &s, q);
             });
-            let on = dac_gpu::grade_frame(&img, &s, q).1;
+            let on = lcc_gpu::grade_frame(&img, &s, q).1;
             let gpu = time(&|| {
-                dac_gpu::grade_frame(&img, &s, q);
+                lcc_gpu::grade_frame(&img, &s, q);
             });
             println!("{w}x{h} {q:?}: cpu {cpu:.1} ms ({:.0} fps), gpu {gpu:.1} ms ({:.0} fps, on_gpu={})", 1e3 / cpu, 1e3 / gpu, on);
         }

@@ -1,6 +1,6 @@
 //! Standard image codecs (layer L1).
 //!
-//! - [`sniff`] detects the container format (and flags camera raws for `dac-raw`).
+//! - [`sniff`] detects the container format (and flags camera raws for `lcc-raw`).
 //! - [`decode`] decodes JPEG, PNG, TIFF, WebP, GIF, BMP, PSD (merged composite) and JPEG XL into
 //!   **linear-light** [`Rgb32f`] in the source's own primaries, described by [`SourceSpace`]; ICC
 //!   profiles (matrix/TRC exactly, LUT/CMYK via the `moxcms` CMS), 16-bit and float precision are
@@ -47,7 +47,7 @@ pub use jxl_encode::{JxlColour, JxlEffort, JxlOptions, encode_jxl};
 pub use sniff::{Format, sniff};
 pub use space::{NamedSpace, SourceSpace, SpaceOrigin, Trc};
 
-use dac_raster::{Plane, Rgb32f, Rgba8};
+use lcc_raster::{Plane, Rgb32f, Rgba8};
 use serde::{Deserialize, Serialize};
 
 /// Codec errors.
@@ -130,13 +130,13 @@ impl Decoded {
 
     /// Display-encoded 8-bit sRGB (gamut clipped), with alpha.
     pub fn to_srgb8(&self) -> Rgba8 {
-        let m = self.space.to_space(&dac_color::SRGB);
-        let ident = m == dac_color::Mat3::IDENTITY;
+        let m = self.space.to_space(&lcc_color::SRGB);
+        let ident = m == lcc_color::Mat3::IDENTITY;
         let m = m.to_f32();
-        let enc = dac_color::transfer::encode_srgb8;
+        let enc = lcc_color::transfer::encode_srgb8;
         let mut out = Rgba8::new(self.image.width, self.image.height);
         let alpha = self.alpha.as_ref();
-        dac_raster::par_rows(&mut out.data, self.image.width, |y, row| {
+        lcc_raster::par_rows(&mut out.data, self.image.width, |y, row| {
             let src = self.image.row(y);
             let a = alpha.map(|a| a.row(y));
             for (x, (o, p)) in row.iter_mut().zip(src).enumerate() {

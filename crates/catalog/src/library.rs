@@ -34,7 +34,7 @@ fn ioe(e: std::io::Error) -> CatalogError {
 /// The entry-point file's content.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub struct EntryFile {
-    /// [`dac_brand::CATALOG_MAGIC`]: stable across product renames.
+    /// [`lcc_brand::CATALOG_MAGIC`]: stable across product renames.
     pub magic: String,
     pub version: u32,
     /// The store file, relative to the folder.
@@ -43,14 +43,14 @@ pub struct EntryFile {
 
 impl Default for EntryFile {
     fn default() -> Self {
-        EntryFile { magic: dac_brand::CATALOG_MAGIC.to_string(), version: VERSION, store: DB_FILE.to_string() }
+        EntryFile { magic: lcc_brand::CATALOG_MAGIC.to_string(), version: VERSION, store: DB_FILE.to_string() }
     }
 }
 
 /// The entry-point file of the catalog in `dir`: `<dir name>.<catalog_ext>`.
 pub fn entry_path(dir: &Path) -> PathBuf {
     let name = dir.file_name().map(|n| n.to_string_lossy().into_owned()).filter(|n| !n.is_empty()).unwrap_or_else(|| "catalog".into());
-    dir.join(format!("{name}.{}", dac_brand::CATALOG_EXT))
+    dir.join(format!("{name}.{}", lcc_brand::CATALOG_EXT))
 }
 
 /// An entry-point file in `dir` (any name with a current or legacy catalog extension).
@@ -61,20 +61,20 @@ pub fn find_entry(dir: &Path) -> Option<PathBuf> {
     }
     let rd = std::fs::read_dir(dir).ok()?;
     rd.filter_map(|e| e.ok().map(|e| e.path()))
-        .find(|p| p.is_file() && p.extension().and_then(|x| x.to_str()).is_some_and(|x| dac_brand::catalog_exts().any(|c| c.eq_ignore_ascii_case(x))))
+        .find(|p| p.is_file() && p.extension().and_then(|x| x.to_str()).is_some_and(|x| lcc_brand::catalog_exts().any(|c| c.eq_ignore_ascii_case(x))))
 }
 
 /// The catalog folder for a path the user picked: the entry-point file or the folder itself.
 /// A folder must hold an entry point or catalog files.
 pub fn resolve(path: &Path) -> Result<PathBuf> {
     if path.is_file() {
-        let ext_ok = path.extension().and_then(|x| x.to_str()).is_some_and(|x| dac_brand::catalog_exts().any(|c| c.eq_ignore_ascii_case(x)));
+        let ext_ok = path.extension().and_then(|x| x.to_str()).is_some_and(|x| lcc_brand::catalog_exts().any(|c| c.eq_ignore_ascii_case(x)));
         if !ext_ok {
-            return Err(CatalogError::Invalid(format!("{} is not a catalog (expected a .{} file)", path.display(), dac_brand::CATALOG_EXT)));
+            return Err(CatalogError::Invalid(format!("{} is not a catalog (expected a .{} file)", path.display(), lcc_brand::CATALOG_EXT)));
         }
         let bytes = std::fs::read(path).map_err(ioe)?;
         let e: EntryFile = serde_json::from_slice(&bytes).map_err(|e| CatalogError::Corrupt(format!("{}: {e}", path.display())))?;
-        if e.magic != dac_brand::CATALOG_MAGIC {
+        if e.magic != lcc_brand::CATALOG_MAGIC {
             return Err(CatalogError::Corrupt(format!("{}: not a catalog entry file", path.display())));
         }
         if e.version > VERSION {
@@ -179,7 +179,7 @@ fn write_entry_if_missing(dir: &Path) {
 
 /// The stub `catalog.snap` of a v4 folder: builds before v4 read its header, see a format they
 /// don't know and refuse the folder without touching it.
-const STUB: &str = "{\"format\":\"dac-catalog-db\",\"version\":4,\"store\":\"catalog.redb\"}\n";
+const STUB: &str = "{\"format\":\"lcc-catalog-db\",\"version\":4,\"store\":\"catalog.redb\"}\n";
 
 impl Journal {
     /// Open the library in `dir` with the v4 store, creating it, or migrating a v3 library
@@ -333,7 +333,7 @@ pub const RECENT_MAX: usize = 10;
 impl RecentCatalogs {
     /// `recent-catalogs.json` in the app's settings folder.
     pub fn default_file() -> Option<PathBuf> {
-        dac_brand::settings_dir().map(|d| d.join("recent-catalogs.json"))
+        lcc_brand::settings_dir().map(|d| d.join("recent-catalogs.json"))
     }
     /// The list in `file` (empty if missing or unreadable: never an error).
     pub fn load(file: &Path) -> RecentCatalogs {

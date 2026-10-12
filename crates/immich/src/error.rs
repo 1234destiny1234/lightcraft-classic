@@ -1,7 +1,7 @@
 //! Why a call to an Immich server failed, in words a user can act on. Messages never contain the
 //! API key, request bodies or query strings.
 
-use dac_net::NetError;
+use lcc_net::NetError;
 
 use crate::types::{MIN_VERSION, ServerVersion};
 

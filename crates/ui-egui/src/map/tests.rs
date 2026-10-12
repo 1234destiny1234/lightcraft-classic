@@ -10,7 +10,7 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::headless::Headless;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
@@ -45,7 +45,7 @@ fn fake_tiles() -> u16 {
 
 fn demo() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     h.settle(SETTLE);
     h
@@ -117,24 +117,24 @@ fn tiles_draw_with_attribution_and_pins_cluster() {
 fn dragging_from_the_filmstrip_and_moving_pins_geotags() {
     let mut h = map_on_fake_tiles();
     let id = h.app.session.visible_cloned()[0].0;
-    assert!(h.app.session.catalog.photo(dac_catalog::PhotoId(id)).unwrap().meta.gps.is_none());
+    assert!(h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.gps.is_none());
     let canvas = widget(&h, "map:canvas").unwrap();
     assert!(widget(&h, &format!("film:{id}")).is_some(), "the filmstrip shows the photo");
     let to = canvas.center();
     let r = h.request("ui.dragWidget", json!({"id": format!("film:{id}"), "toX": to.x, "toY": to.y, "steps": 12}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    let gps = h.app.session.catalog.photo(dac_catalog::PhotoId(id)).unwrap().meta.gps.expect("dropped on the map: geotagged");
+    let gps = h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.gps.expect("dropped on the map: geotagged");
     assert!((gps.0 - 48.85).abs() < 0.01 && (gps.1 - 2.35).abs() < 0.01, "{gps:?}");
     // drag its pin 100 px east: the photo moves with it
     let r = h.request("ui.dragWidget", json!({"id": format!("map:pin:{id}"), "dx": 100.0, "dy": 0.0, "steps": 12}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    let moved = h.app.session.catalog.photo(dac_catalog::PhotoId(id)).unwrap().meta.gps.unwrap();
+    let moved = h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.gps.unwrap();
     assert!(moved.1 > gps.1 + 0.005 && (moved.0 - gps.0).abs() < 0.005, "{gps:?} → {moved:?}");
     // undo puts it back
     run(&mut h, "edit.undo", json!({}));
-    assert_eq!(h.app.session.catalog.photo(dac_catalog::PhotoId(id)).unwrap().meta.gps, Some(gps));
+    assert_eq!(h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.gps, Some(gps));
     // geotagAt (control channel) at a screen point
     run(&mut h, "map.geotagAt", json!({"ids": [id], "x": to.x, "y": to.y}));
 }
@@ -163,7 +163,7 @@ fn saved_locations_filter_and_tracks() {
     let r = h.request("engine.execute", json!({"command": "map.search", "params": {"query": "Paris"}}), T);
     assert_eq!(r["ok"], false, "{r}");
     // a GPX track loads, frames the view and draws
-    let dir = std::env::temp_dir().join(format!("dac-map-ui-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-map-ui-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let gpx = dir.join("walk.gpx");
     std::fs::write(
@@ -221,8 +221,8 @@ fn hostile_map_json_is_sanitized() {
                     let mut m = MapUi { prefs, ..MapUi::default() };
                     m.sanitize();
                     let p = &m.prefs;
-                    let max = f64::from(dac_geo::mercator::MAX_ZOOM);
-                    assert!(dac_geo::LatLon::new(p.lat, p.lon).is_valid() && (1.0..=max).contains(&p.zoom), "{text}");
+                    let max = f64::from(lcc_geo::mercator::MAX_ZOOM);
+                    assert!(lcc_geo::LatLon::new(p.lat, p.lon).is_valid() && (1.0..=max).contains(&p.zoom), "{text}");
                     assert!(m.servers().iter().any(|s| s.id == p.style), "{text}");
                     assert!(p.servers.iter().all(|s| s.validate().is_ok()));
                     let _ = serde_json::to_string(p);
@@ -233,13 +233,13 @@ fn hostile_map_json_is_sanitized() {
     assert!(n > 50, "only {n} variants parsed");
 }
 
-/// P6.1 budget probe (`cargo test --release -p dac-ui-egui map_50k -- --ignored --nocapture`):
+/// P6.1 budget probe (`cargo test --release -p lcc-ui-egui map_50k -- --ignored --nocapture`):
 /// 50,000 geotagged photos spread over Europe; prints the clustering time per zoom step and the
 /// steady-state frame time of the Map view (pins cached) at a few zooms. Numbers go in docs/perf.md.
 #[test]
 #[ignore = "perf probe"]
 fn map_50k_pins_frame_time() {
-    use dac_catalog::{Op, Photo, Source};
+    use lcc_catalog::{Op, Photo, Source};
     use std::time::Instant;
     let port = fake_tiles();
     let mut h = demo();

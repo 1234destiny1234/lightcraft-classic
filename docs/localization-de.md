@@ -30,7 +30,7 @@ wo sie nicht passen, mit `{:.0}` ausgeblendet; mengenabhängige Meldungen verwen
 Formulierungen. Das Datum erscheint beispielsweise als `Sonntag, 20.09.2026`.
 
 ```sh
-cargo test -p dac-ui-egui i18n::tests
+cargo test -p lcc-ui-egui i18n::tests
 <PREFIX>_LANGUAGE=de <cli> snapshot --demo -o deutsch.png --size 1600x1000
 ```
 

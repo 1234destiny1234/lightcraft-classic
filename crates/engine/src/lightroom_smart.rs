@@ -10,7 +10,7 @@
 //! Sources: own design, from the structure of the Lua literal as described in public prose
 //! write-ups of the catalog format; no Adobe code or data.
 
-use dac_catalog::{Match, Rule, RuleSet};
+use lcc_catalog::{Match, Rule, RuleSet};
 use serde_json::{Value, json};
 
 use crate::preset_import::{Lua, parse_lua};
@@ -200,11 +200,11 @@ mod tests {
         assert_eq!(group.mode, Match::Any);
         let Rule::Group { group } = &set.rules[3] else { panic!() };
         assert_eq!(group.rules[1], field("iso", "between", json!([100.0, 800.0])));
-        let cat = dac_catalog::Catalog::default();
+        let cat = lcc_catalog::Catalog::default();
         let mut tmp = cat;
         let id = tmp.alloc_album_id();
-        let mut album = dac_catalog::Album::new(id, "s");
-        album.smart = Some(Box::new(dac_catalog::Filter { rule_set: Some(set), ..Default::default() }));
+        let mut album = lcc_catalog::Album::new(id, "s");
+        album.smart = Some(Box::new(lcc_catalog::Filter { rule_set: Some(set), ..Default::default() }));
         assert!(tmp.album_filter_problem(album.smart.as_deref().unwrap(), None).is_none());
     }
 

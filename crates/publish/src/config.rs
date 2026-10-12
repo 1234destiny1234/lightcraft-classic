@@ -2,7 +2,7 @@
 
 use std::path::Path;
 
-use dac_catalog::AlbumId;
+use lcc_catalog::AlbumId;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -81,7 +81,7 @@ impl PublishConfig {
     pub fn save(&self, dir: &Path) -> Result<(), PublishError> {
         let body = serde_json::to_vec_pretty(self).map_err(|e| PublishError::Config(e.to_string()))?;
         let path = dir.join(crate::FILE);
-        dac_catalog::safe_file::write_atomic(&path, &body).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))
+        lcc_catalog::safe_file::write_atomic(&path, &body).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))
     }
 
     /// A new service id.

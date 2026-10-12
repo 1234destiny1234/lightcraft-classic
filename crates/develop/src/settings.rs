@@ -3,7 +3,7 @@
 //! exception is `process`: missing (or unreadable), it is V1, the rendering those older files were
 //! made with.
 
-use dac_geom::{CropGeometry, Homography, Orientation, Point};
+use lcc_geom::{CropGeometry, Homography, Orientation, Point};
 use serde::{Deserialize, Serialize};
 
 pub const SCHEMA_VERSION: u32 = 1;
@@ -271,7 +271,7 @@ impl WbMode {
 /// Raws whose camera has colour matrices (in the file, or measured for the model) edit white balance in Kelvin;
 /// before that, raws without matrices in the file were all edited relative to their as-shot look, where 6500 K / 0
 /// means *as shot*. Settings written then carry no scale and keep that meaning (`Legacy`): the pipeline turns them
-/// into the same colour change on the Kelvin scale (`dac_pipeline::local::legacy_to_kelvin`), so no photo's
+/// into the same colour change on the Kelvin scale (`lcc_pipeline::local::legacy_to_kelvin`), so no photo's
 /// look changes. Settings written on the Kelvin scale say so (`Kelvin`). The scale is irrelevant on files the
 /// Kelvin scale does not reach (rendered photos, raws without matrices): their values keep the relative meaning.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -311,7 +311,7 @@ pub struct WhiteBalance {
 impl Default for WhiteBalance {
     fn default() -> Self {
         // (`Legacy`, like an absent field: a default photo's settings JSON stays what it was; the engine marks the
-        // scale when white balance is written on a raw that has one, `dac_pipeline::local::normalize_wb`)
+        // scale when white balance is written on a raw that has one, `lcc_pipeline::local::normalize_wb`)
         Self { mode: WbMode::AsShot, temp: 6500.0, tint: 0.0, scale: WbScale::Legacy }
     }
 }
@@ -690,7 +690,7 @@ impl Default for Optics {
 
 /// Lens corrections embedded in the file, converted to the oriented, default-cropped image: a DNG's `OpcodeList3`
 /// (`WarpRectilinear`, `FixVignetteRadial`), or a raw reader's equivalent of the camera's own correction (Panasonic /
-/// Leica RW2 distortion, `dac_raw`'s `vendor/rw2.rs`). This is camera/file data (stored on the photo record, not in the develop
+/// Leica RW2 distortion, `lcc_raw`'s `vendor/rw2.rs`). This is camera/file data (stored on the photo record, not in the develop
 /// settings); "Enable Profile Corrections" applies it, scaled by the profile distortion/vignetting amounts.
 /// The app never uses Adobe LCP lens profiles.
 #[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]

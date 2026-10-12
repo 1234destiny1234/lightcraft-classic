@@ -8,7 +8,7 @@ use std::path::PathBuf;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
-use dac_catalog::{Op, Photo, PhotoId, Source};
+use lcc_catalog::{Op, Photo, PhotoId, Source};
 use serde_json::{Value, json};
 
 use crate::Session;
@@ -17,7 +17,7 @@ use crate::remote::{LINK_ONLY, MemorySecrets};
 const KEY: &str = "engine-test-key-42";
 
 fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-immich-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-immich-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -26,12 +26,12 @@ fn temp_dir(tag: &str) -> PathBuf {
 fn png(seed: u8) -> Vec<u8> {
     let (w, h) = (40usize, 30usize);
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 5) as u8, (i / w * 7) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap()
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap()
 }
 
 fn b64(bytes: &[u8]) -> String {
-    dac_hash::sha1_bytes(bytes).to_base64()
+    lcc_hash::sha1_bytes(bytes).to_base64()
 }
 
 struct Fake {
@@ -162,7 +162,7 @@ fn import_records_sha1_and_the_backfill_fills_old_photos() {
     let mut s = session();
     s.execute("library.import", &json!({"paths": [a.to_string_lossy()]})).unwrap();
     let p = s.catalog.photos().next().unwrap();
-    assert_eq!(p.sha1.as_deref(), Some(dac_hash::sha1_bytes(&png(1)).to_hex().as_str()));
+    assert_eq!(p.sha1.as_deref(), Some(lcc_hash::sha1_bytes(&png(1)).to_hex().as_str()));
 
     // an older catalog: photos without SHA-1 get it in the background
     let b = dir.join("b.png");
@@ -174,7 +174,7 @@ fn import_records_sha1_and_the_backfill_fills_old_photos() {
     let ph = Photo::new(gone, Source::File { path: dir.join("missing.png").to_string_lossy().into() }, "missing.png", "PNG", 1, 1, "now");
     s.catalog.apply(Op::AddPhoto { photo: Box::new(ph) }).unwrap();
     let v = pump_until(&mut s, |s, v| s.catalog.photo(id).unwrap().sha1.is_some() && v["sha1"]["active"] == false);
-    assert_eq!(s.catalog.photo(id).unwrap().sha1.as_deref(), Some(dac_hash::sha1_bytes(&png(2)).to_hex().as_str()));
+    assert_eq!(s.catalog.photo(id).unwrap().sha1.as_deref(), Some(lcc_hash::sha1_bytes(&png(2)).to_hex().as_str()));
     assert_eq!(v["sha1"]["failed"], 1, "the missing file is not retried: {v}");
     assert!(s.catalog.photo(gone).unwrap().sha1.is_none());
     let _ = std::fs::remove_dir_all(&dir);
@@ -221,17 +221,17 @@ fn connect_link_and_open_in_immich() {
 
     s.execute("immich.link", &json!({})).unwrap();
     pump_until(&mut s, |_, v| v["links"][&account]["active"] == false);
-    assert_eq!(dac_immich::link::link_state(&s.catalog, id_one), "linked");
-    assert_eq!(dac_immich::link::link_state(&s.catalog, id_two), "probable");
+    assert_eq!(lcc_immich::link::link_state(&s.catalog, id_one), "linked");
+    assert_eq!(lcc_immich::link::link_state(&s.catalog, id_two), "probable");
     let l = s.execute("immich.links", &json!({"id": id_one.0})).unwrap();
     assert_eq!(l["links"][0]["url"], format!("{url}/photos/aaaa-1"));
     // the Library filter
     let probable_ids: Vec<PhotoId> =
-        s.catalog.photos().filter(|p| dac_catalog::query::immich_state_is(&s.catalog, p.id, "probable")).map(|p| p.id).collect();
+        s.catalog.photos().filter(|p| lcc_catalog::query::immich_state_is(&s.catalog, p.id, "probable")).map(|p| p.id).collect();
     assert_eq!(probable_ids, vec![id_two]);
     // confirm the probable one
     assert_eq!(s.execute("immich.confirmLink", &json!({"ids": [id_two.0]})).unwrap()["confirmed"], 1);
-    assert_eq!(dac_immich::link::link_state(&s.catalog, id_two), "linked");
+    assert_eq!(lcc_immich::link::link_state(&s.catalog, id_two), "linked");
     // the linked filter also works through the session's filter
     s.filter.immich = Some("linked".into());
     assert_eq!(s.visible().len(), 2);
@@ -281,10 +281,10 @@ fn import_copies_maps_metadata_and_skips_duplicates() {
     assert_eq!(v["import"]["skipped"], 1, "{v}");
     let beach = s.catalog.photos().find(|p| p.remote_of_test(&s.catalog) == Some("a-1".into())).unwrap();
     assert_eq!(beach.rating, 4);
-    assert_eq!(beach.flag, dac_catalog::Flag::Pick);
+    assert_eq!(beach.flag, lcc_catalog::Flag::Pick);
     assert_eq!(beach.meta.caption, "Beach");
     assert_eq!(beach.meta.keywords, vec!["trips|sea".to_string()]);
-    assert_eq!(beach.sha1.as_deref(), Some(dac_hash::sha1_bytes(&a).to_hex().as_str()));
+    assert_eq!(beach.sha1.as_deref(), Some(lcc_hash::sha1_bytes(&a).to_hex().as_str()));
     // two assets with the same name land side by side in the dated folder
     let names: Vec<String> = s.catalog.photos().map(|p| p.file_name.clone()).collect();
     assert!(names.contains(&"beach.png".to_string()) && names.contains(&"beach-1.png".to_string()), "{names:?}");
@@ -307,14 +307,14 @@ fn link_only_downloads_the_original_on_demand() {
     assert!(p.sha1.is_none());
     assert_eq!(s.execute("immich.links", &json!({"id": p.id.0})).unwrap()["linkOnly"], true);
     // as if the preview were a JPEG standing in for a raw: the original's kind and format win
-    s.catalog.apply(Op::SetKind { id: p.id, kind: dac_catalog::MediaKind::Raw, format: "JPEG".into() }).unwrap();
+    s.catalog.apply(Op::SetKind { id: p.id, kind: lcc_catalog::MediaKind::Raw, format: "JPEG".into() }).unwrap();
     assert_eq!(s.execute("immich.fetchOriginal", &json!({"id": p.id.0})).unwrap()["started"], true);
     pump_until(&mut s, |s, _| s.remote.fetching.is_empty());
     let q = s.catalog.photo(p.id).unwrap();
     assert!(q.preview_only.is_none(), "{:?}", s.remote.fetch_errors);
     assert_eq!(q.file_name, "far.png");
-    assert_eq!((q.kind, q.format.as_str()), (dac_catalog::MediaKind::Image, "PNG"), "kind and format follow the original");
-    assert_eq!(q.sha1.as_deref(), Some(dac_hash::sha1_bytes(&a).to_hex().as_str()));
+    assert_eq!((q.kind, q.format.as_str()), (lcc_catalog::MediaKind::Image, "PNG"), "kind and format follow the original");
+    assert_eq!(q.sha1.as_deref(), Some(lcc_hash::sha1_bytes(&a).to_hex().as_str()));
     let _ = std::fs::remove_dir_all(&dir);
 }
 
@@ -355,11 +355,11 @@ fn sidecars_are_written_for_mapped_folders_only() {
 }
 
 trait RemoteOf {
-    fn remote_of_test(&self, cat: &dac_catalog::Catalog) -> Option<String>;
+    fn remote_of_test(&self, cat: &lcc_catalog::Catalog) -> Option<String>;
 }
 
 impl RemoteOf for Photo {
-    fn remote_of_test(&self, cat: &dac_catalog::Catalog) -> Option<String> {
+    fn remote_of_test(&self, cat: &lcc_catalog::Catalog) -> Option<String> {
         cat.remote_of(self.id).next().map(|r| r.remote_id.clone())
     }
 }
@@ -474,8 +474,8 @@ fn live_external_library_links_by_path_and_reads_sidecars() {
     for i in 0..3u8 {
         let (w, h) = (48usize, 32usize);
         let data: Vec<[u8; 4]> = (0..w * h).map(|p| [(p % w * 5) as u8 ^ (stamp >> (i * 8)) as u8, (p / w * 7) as u8, i * 80, 255]).collect();
-        let img = dac_raster::Rgba8 { width: w, height: h, data };
-        let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+        let img = lcc_raster::Rgba8 { width: w, height: h, data };
+        let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
         let f = dir.join(format!("shared-{i}.png"));
         std::fs::write(&f, bytes).unwrap();
         files.push(f.to_string_lossy().to_string());
@@ -486,10 +486,10 @@ fn live_external_library_links_by_path_and_reads_sidecars() {
     let r = s.execute("immich.connect", &json!({"url": url, "apiKey": key})).unwrap();
     assert_eq!(r["ok"], true, "{r}");
 
-    let c = dac_immich::Client::new(&url, dac_credentials::Secret::new(&key), &dac_immich::ServerOptions::standard()).unwrap();
+    let c = lcc_immich::Client::new(&url, lcc_credentials::Secret::new(&key), &lcc_immich::ServerOptions::standard()).unwrap();
     let me = c.me().unwrap();
     let lib = c.create_library(&me.id, &format!("live {run}"), &[format!("/mnt/extlib/{run}")]).unwrap();
-    let cleanup = |c: &dac_immich::Client| {
+    let cleanup = |c: &lcc_immich::Client| {
         let _ = c.delete_library(&lib.id);
         let _ = std::fs::remove_dir_all(&dir);
     };
@@ -506,7 +506,7 @@ fn live_external_library_links_by_path_and_reads_sidecars() {
     wait_for(180, "the scan finds the files and the link pass matches them", || {
         s.execute("immich.link", &json!({"full": true})).unwrap();
         pump_until(&mut s, |_, v| v["links"].as_object().is_some_and(|m| m.values().all(|l| l["active"] == false)));
-        ids.iter().all(|id| dac_immich::link::link_state(&s.catalog, *id) == "linked").then_some(())
+        ids.iter().all(|id| lcc_immich::link::link_state(&s.catalog, *id) == "linked").then_some(())
     });
     for id in &ids {
         let r = s.catalog.remote_of(*id).next().unwrap();

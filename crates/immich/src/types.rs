@@ -176,7 +176,7 @@ impl Asset {
     }
     /// The SHA-1 as lower-case hex, when the checksum is one.
     pub fn sha1_hex(&self) -> Option<String> {
-        dac_hash::Sha1Digest::parse(&self.checksum).map(|d| d.to_hex())
+        lcc_hash::Sha1Digest::parse(&self.checksum).map(|d| d.to_hex())
     }
 }
 

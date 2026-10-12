@@ -1,5 +1,5 @@
 [package]
-name = "dac-tiff"
+name = "lcc-tiff"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,7 +9,7 @@ description = "TIFF/IFD reader and writer (L0)"
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
+lcc-brand = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 

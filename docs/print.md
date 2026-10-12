@@ -24,7 +24,7 @@ or any PWG self-describing name (`iso_a5_148x210mm`).
 ## Sending to a printer
 
 `printui.print {destination: "printer"}` (Print Job ▸ Print to: Printer) renders the pages and hands
-them to `dac_print::send::send_to_printer`, which:
+them to `lcc_print::send::send_to_printer`, which:
 
 - asks the printer which formats it takes (Get-Printer-Attributes) and sends one PDF, or one JPEG job
   per page when the printer takes JPEG but not PDF; a printer that takes neither is an error;
@@ -49,7 +49,7 @@ They go out with the job as `media-col {media-type, media-source}`, `print-quali
 
 ## Encrypted printing (`ipps://`)
 
-An `ipps://` (or `https://`) printer address prints over TLS (RFC 7472). It uses `dac-net`, the
+An `ipps://` (or `https://`) printer address prints over TLS (RFC 7472). It uses `lcc-net`, the
 same pure-Rust rustls client as the other network features. A certificate is trusted when:
 
 - it chains to the Mozilla roots;
@@ -71,7 +71,7 @@ the page margins to at least the unprintable margins the printer reports for tha
 
 ## Colour management, Print Adjustment and 16-bit output
 
-Print Job ▸ Color Management (`settings.job.color`, `dac_print::color`):
+Print Job ▸ Color Management (`settings.job.color`, `lcc_print::color`):
 
 - **Profile**: *Managed by Printer* (the default) sends sRGB and leaves colour to the driver. A
   printer/paper ICC profile (`printui.profile {path}`; `{path: null}` goes back to Managed by
@@ -80,7 +80,7 @@ Print Job ▸ Color Management (`settings.job.color`, `dac_print::color`):
   photos with that profile (ICCBased) and carries it as the document's OutputIntent; JPEG pages
   embed it. Only RGB (and grey) profiles can be printed with; a CMYK profile is refused with an
   error that says so (it can still be soft-proofed). The conversion is a 33³ table built through
-  moxcms (`dac_codecs::printer`), the same CMS the soft proof uses.
+  moxcms (`lcc_codecs::printer`), the same CMS the soft proof uses.
 - **Intent**: Perceptual or Relative (colorimetric). With Relative, **Black Point Compensation**
   (on by default) scales the photo's blacks onto the printer's darkest black so shadows compress
   instead of clipping.
@@ -98,7 +98,7 @@ address, because the Windows print spooler can only be reached through the nativ
 
 ## Virtual IPP printer (every CI run)
 
-`dac_print::testprinter::TestPrinter` is an IPP Everywhere-style printer on `127.0.0.1` (Get-Printer-
+`lcc_print::testprinter::TestPrinter` is an IPP Everywhere-style printer on `127.0.0.1` (Get-Printer-
 Attributes with a `media-col-database`, Print-Job, Get-Job-Attributes) that keeps what it receives.
 The `virtual_*` tests in `crates/print/src/tests.rs` and
 `print_ui::tests::prints_to_a_virtual_ipp_printer_with_its_paper_margins_and_copies` print through it
@@ -123,7 +123,7 @@ Locally (Debian / Ubuntu):
 ```sh
 sudo apt-get install cups printer-driver-cups-pdf
 sudo lpadmin -p PDF -E -v cups-pdf:/ -m lsb/usr/cups-pdf/CUPS-PDF_opt.ppd
-<PREFIX>_CUPS_TEST_PRINTER=ipp://localhost:631/printers/PDF cargo test -p dac-print cups_test_printer
+<PREFIX>_CUPS_TEST_PRINTER=ipp://localhost:631/printers/PDF cargo test -p lcc-print cups_test_printer
 ls ~/PDF/ /var/spool/cups-pdf/*/   # the printed job
 ```
 

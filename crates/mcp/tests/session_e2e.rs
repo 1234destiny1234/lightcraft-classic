@@ -29,14 +29,14 @@ use serde_json::{Value, json};
 // The CLI binary
 
 /// `app-cli` in this test's target folder. It lives in another package, so cargo neither hands us
-/// its path nor rebuilds it for `cargo test -p dac-mcp`: build it here (a no-op when it is up to
+/// its path nor rebuilds it for `cargo test -p lcc-mcp`: build it here (a no-op when it is up to
 /// date), so the session never drives a stale binary.
 fn app_cli() -> PathBuf {
     let exe = std::env::current_exe().unwrap();
     let dir = exe.parent().and_then(Path::parent).unwrap().to_path_buf(); // target/<profile>
     let bin = dir.join(format!("app-cli{}", std::env::consts::EXE_SUFFIX));
     let mut cmd = Command::new(option_env!("CARGO").unwrap_or("cargo"));
-    cmd.args(["build", "--quiet", "-p", "dac-cli", "--bin", "app-cli"]);
+    cmd.args(["build", "--quiet", "-p", "lcc-cli", "--bin", "app-cli"]);
     if dir.file_name().is_some_and(|n| n == "release") {
         cmd.arg("--release");
     }
@@ -73,7 +73,7 @@ impl Mcp {
         let mut m = Mcp { child, stdin, stdout, next: 1 };
         let r =
             m.rpc("initialize", json!({"protocolVersion": "2025-06-18", "capabilities": {}, "clientInfo": {"name": "session-e2e", "version": "0"}}));
-        assert_eq!(r["result"]["serverInfo"]["name"], dac_brand::MCP_SERVER);
+        assert_eq!(r["result"]["serverInfo"]["name"], lcc_brand::MCP_SERVER);
         writeln!(m.stdin, "{}", json!({"jsonrpc": "2.0", "method": "notifications/initialized"})).unwrap();
         m
     }
@@ -263,7 +263,7 @@ fn immich_handle(state: &Mutex<Immich>, req: &Request) -> Vec<u8> {
         }
         ("POST", "/api/assets") => {
             let Some((name, data)) = multipart_part(req, "assetData") else { return response("400 Bad Request", b"{}") };
-            let checksum = dac_hash::sha1_bytes(&data).to_base64();
+            let checksum = lcc_hash::sha1_bytes(&data).to_base64();
             if let Some(a) = st.assets.iter().find(|a| a["checksum"] == checksum.as_str()) {
                 return json(json!({"id": a["id"], "status": "duplicate"}));
             }
@@ -585,7 +585,7 @@ fn serve_sftp(fs: SharedFs) -> u16 {
 // The session
 
 fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-session-e2e-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-session-e2e-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d

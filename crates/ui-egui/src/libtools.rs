@@ -9,11 +9,11 @@
 
 use std::collections::HashSet;
 
-use dac_catalog::{ColorLabel, Flag, Photo, PhotoId};
+use lcc_catalog::{ColorLabel, Flag, Photo, PhotoId};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 
 /// What the painter sprays.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
@@ -203,7 +203,7 @@ pub struct LibTools {
     pub stroke: Option<(bool, HashSet<PhotoId>)>,
     /// Sidecar stats for the metadata-conflict badge: (egui time read, stat).
     #[serde(skip)]
-    pub sidecar_stats: std::collections::HashMap<PhotoId, (f64, Option<dac_catalog::SidecarStat>)>,
+    pub sidecar_stats: std::collections::HashMap<PhotoId, (f64, Option<lcc_catalog::SidecarStat>)>,
 }
 
 impl Default for LibTools {
@@ -222,7 +222,7 @@ impl Default for LibTools {
 }
 
 /// UI commands of this module; `None`: not one of them.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     Some(match id {
         "tool.painter" => painter_command(app, p),
         "tool.keywordPainter" => {
@@ -265,7 +265,7 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 
 /// `tool.painter {kind?, value?, stop?}`: start (or retarget) the painter; `{}` toggles it with the
 /// last kind and value; `stop: true` stops.
-fn painter_command(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+fn painter_command(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let stop = p.get("stop").and_then(Value::as_bool).unwrap_or(false);
     let kind = p.get("kind").and_then(Value::as_str);
     if stop || (kind.is_none() && app.ui.lib.painter.is_some()) {
@@ -302,7 +302,7 @@ fn painter_command(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 /// Is the photo in the target collection (the Quick Collection unless one is set)?
-pub fn in_target(app: &DacApp, id: PhotoId) -> bool {
+pub fn in_target(app: &LccApp, id: PhotoId) -> bool {
     let cat = &app.session.catalog;
     let target = app.session.target_album.filter(|a| cat.album(*a).is_some_and(|al| !al.is_smart() && !al.folder)).or_else(|| cat.quick_collection());
     target.and_then(|a| cat.album(a)).is_some_and(|al| al.photos.contains(&id))
@@ -310,7 +310,7 @@ pub fn in_target(app: &DacApp, id: PhotoId) -> bool {
 
 /// Once per grid frame: a finished stroke ends (kept on the release frame so the click that ends
 /// it doesn't paint twice).
-pub fn end_stroke(app: &mut DacApp, ui: &egui::Ui) {
+pub fn end_stroke(app: &mut LccApp, ui: &egui::Ui) {
     if !ui.input(|i| i.pointer.primary_down() || i.pointer.primary_released()) {
         app.ui.lib.stroke = None;
     }
@@ -319,7 +319,7 @@ pub fn end_stroke(app: &mut DacApp, ui: &egui::Ui) {
 /// While the painter runs, a grid cell paints instead of selecting: pressing on a photo starts a
 /// stroke (erasing when the photo already has the value, or with Alt), dragging over more photos
 /// sprays them. Returns `true` when the painter handled the cell.
-pub fn paint_cell(app: &mut DacApp, ui: &egui::Ui, resp: &egui::Response, id: PhotoId) -> bool {
+pub fn paint_cell(app: &mut LccApp, ui: &egui::Ui, resp: &egui::Response, id: PhotoId) -> bool {
     let Some(painter) = app.ui.lib.painter.clone() else { return false };
     if resp.contains_pointer() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
@@ -350,7 +350,7 @@ pub fn paint_cell(app: &mut DacApp, ui: &egui::Ui, resp: &egui::Response, id: Ph
 }
 
 /// The painter bar over the grid while painting: what to spray, its value, Done.
-pub fn painter_bar(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn painter_bar(app: &mut LccApp, ui: &mut egui::Ui) {
     let Some(painter) = app.ui.lib.painter.clone() else { return };
     let t = crate::theme::Tokens::get(ui.ctx());
     let frame = egui::Frame::NONE.fill(t.chrome).inner_margin(egui::Margin::symmetric(16, 6));
@@ -397,7 +397,7 @@ pub fn painter_bar(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// The value control for the painter's kind; a change goes to `next`.
-fn value_editor(app: &mut DacApp, ui: &mut egui::Ui, painter: &Painter, next: &mut Option<(PaintKind, String)>) {
+fn value_editor(app: &mut LccApp, ui: &mut egui::Ui, painter: &Painter, next: &mut Option<(PaintKind, String)>) {
     let kind = painter.kind;
     let mut choose = |ui: &mut egui::Ui, items: Vec<(String, String)>| {
         let current = items.iter().find(|(v, _)| *v == painter.value).map(|(_, l)| l.clone()).unwrap_or_else(|| painter.value.clone());
@@ -477,7 +477,7 @@ fn value_editor(app: &mut DacApp, ui: &mut egui::Ui, painter: &Painter, next: &m
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_catalog::Source;
+    use lcc_catalog::Source;
 
     fn photo() -> Photo {
         Photo::new(PhotoId(7), Source::Demo { scene: 0 }, "a.jpg", "JPEG", 10, 10, "2026-01-01T00:00:00")

@@ -8,8 +8,8 @@ use std::f32::consts::TAU;
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use dac_video::AudioReader;
 use filmcraft_isobmff::{AvcConfig, Brand, CodecConfig, FourCc, Mp4Writer, PcmConfig, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_video::AudioReader;
 
 const W: u32 = 64;
 const H: u32 = 48;
@@ -20,7 +20,7 @@ const HZ: f32 = 440.0;
 const N: usize = (SR * FRAMES / FPS) as usize;
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-video-pcm-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-video-pcm-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
     d.join(name)
 }

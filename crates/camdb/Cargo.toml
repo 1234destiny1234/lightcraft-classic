@@ -1,5 +1,5 @@
 [package]
-name = "dac-camdb"
+name = "lcc-camdb"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,8 +9,8 @@ description = "Per-model camera data with provenance: dual-illuminant colour mat
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-color = { workspace = true }
-dac-raw = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raw = { workspace = true }
 serde = { workspace = true }
 toml = "1"

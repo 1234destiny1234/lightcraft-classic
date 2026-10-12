@@ -10,8 +10,8 @@
 //! `<config>/camera-profiles`; a local profile replaces the one built in ([`BUNDLED`], from
 //! `assets/camera-profiles/`). They are read once per process; a damaged or hostile file is
 //! ignored with a warning. They hold aggregate colour statistics only, never image content.
-use dac_color::Mat3;
-use dac_raw::profile::HsvTable;
+use lcc_color::Mat3;
+use lcc_raw::profile::HsvTable;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
@@ -71,7 +71,7 @@ pub use crate::config::config_dir;
 
 /// Where camera profiles are read from and written to.
 pub fn dir() -> Option<PathBuf> {
-    dac_brand::env_os("CAMERA_PROFILES").map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("camera-profiles")))
+    lcc_brand::env_os("CAMERA_PROFILES").map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("camera-profiles")))
 }
 
 /// File name of `model`'s profile: letters, digits, `-` and `_` kept, anything else `_`.
@@ -102,7 +102,7 @@ fn parse(json: &[u8], origin: &str) -> Result<CameraProfile, String> {
 /// The built-in profile for `model`, if any.
 fn bundled(model: &str) -> Option<CameraProfile> {
     let (_, json) = BUNDLED.iter().find(|(m, _)| *m == model)?;
-    parse(json.as_bytes(), &format!("built-in profile {model}")).inspect_err(|e| eprintln!("{}: ignoring camera profile {e}", dac_brand::BINARY)).ok()
+    parse(json.as_bytes(), &format!("built-in profile {model}")).inspect_err(|e| eprintln!("{}: ignoring camera profile {e}", lcc_brand::BINARY)).ok()
 }
 
 /// Write `profile` to `dir` (created if needed) as `<model>.json`; returns the path.
@@ -136,11 +136,11 @@ pub fn get(model: &str) -> Option<Arc<CameraProfile>> {
         Some(path) if path.is_file() => match load(&path) {
             Ok(p) if p.model.trim() == model => Some(Arc::new(p)),
             Ok(p) => {
-                eprintln!("{}: ignoring camera profile {}: it is for {:?}, not {model:?}", dac_brand::BINARY, path.display(), p.model);
+                eprintln!("{}: ignoring camera profile {}: it is for {:?}, not {model:?}", lcc_brand::BINARY, path.display(), p.model);
                 None
             }
             Err(e) => {
-                eprintln!("{}: ignoring camera profile {e}", dac_brand::BINARY);
+                eprintln!("{}: ignoring camera profile {e}", lcc_brand::BINARY);
                 None
             }
         },
@@ -169,7 +169,7 @@ pub fn cache_key() -> u64 {
             })
             .collect();
         files.sort();
-        let mut h = dac_preview::Hasher128::new();
+        let mut h = lcc_preview::Hasher128::new();
         for (name, len, modified) in &files {
             h.str(name).u64(*len).u64(*modified);
         }
@@ -193,7 +193,7 @@ impl Pool {
     /// Add one raw file's colour pairs. `Ok(None)` when the file can't contribute (not an ARW,
     /// NEF or RAF without colour matrices, no usable camera JPEG, too little colour).
     pub fn add(&mut self, bytes: &[u8]) -> Result<Option<String>, String> {
-        let mut raw = dac_raw::decode(bytes).map_err(|e| e.to_string())?;
+        let mut raw = lcc_raw::decode(bytes).map_err(|e| e.to_string())?;
         // colour only: geometric lens corrections would stop the sensor proxy from binning
         raw.opcodes.list3.retain(|op| !op.is_lens_correction());
         let Some(model) = raw.metadata.model.as_deref().map(str::trim).filter(|m| !m.is_empty()) else { return Ok(None) };

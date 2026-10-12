@@ -1,7 +1,7 @@
 //! Native files and genuine Session entry points: packet ownership survives partial renames.
 use super::*;
 use crate::rename::{MoveFs, RealFs};
-use dac_catalog::{Op, Photo, Source};
+use lcc_catalog::{Op, Photo, Source};
 use serde_json::json;
 
 struct Faults(Vec<PathBuf>);
@@ -271,7 +271,7 @@ fn own_atomic_shared_packet_writes_advance_retained_versions_and_failures_do_not
     std::fs::rename(&f.source, &held).unwrap();
     let before = queued(&f.s);
     {
-        let _fault = dac_catalog::safe_file::fail_writes_after(0);
+        let _fault = lcc_catalog::safe_file::fail_writes_after(0);
         assert!(f.s.save_sidecar(PhotoId(2)).is_err());
     }
     assert_eq!(queued(&f.s), before, "failed atomic writes must not advance provenance");
@@ -357,8 +357,8 @@ fn detached_history_entry_is_checked_before_unrelated_global_retirement() {
         target: PathBuf,
     }
     let root = crate::tests_xmp::temp_dir("detached-history-preflight-contract");
-    let image = dac_raster::Rgba8::from_fn(4, 3, |_, _| [40, 80, 120, 255]);
-    let png = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&image), &Default::default()).unwrap();
+    let image = lcc_raster::Rgba8::from_fn(4, 3, |_, _| [40, 80, 120, 255]);
+    let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&image), &Default::default()).unwrap();
     let mut s = Session::new();
     s.xmp.naming = SidecarNaming::Stem;
     let mut native = Vec::new();
@@ -393,7 +393,7 @@ fn detached_history_entry_is_checked_before_unrelated_global_retirement() {
         assert_eq!(s.undo.len(), i + 1);
         assert_eq!(queued(&s).len(), i + 1);
         assert_eq!(s.catalog.photo(id).unwrap().source, Source::File { path: moved.to_string_lossy().into_owned() });
-        let decoded = dac_codecs::decode(&std::fs::read(&moved).unwrap(), Default::default()).unwrap();
+        let decoded = lcc_codecs::decode(&std::fs::read(&moved).unwrap(), Default::default()).unwrap();
         assert_eq!((decoded.width, decoded.height), (4, 3));
         native.push(NativePartial {
             id,

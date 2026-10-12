@@ -1,13 +1,13 @@
 //! Real app command dispatch using egui input, without rendering an image or linking a facade.
-use dac_catalog::{Flag, Op, Photo, PhotoId, Source};
 use egui::{Key, Modifiers};
+use lcc_catalog::{Flag, Op, Photo, PhotoId, Source};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::state::{Dialog, RightPanel, ViewMode};
 
-fn app() -> dac_engine::Result<DacApp> {
-    let mut s = dac_engine::Session::new();
+fn app() -> lcc_engine::Result<LccApp> {
+    let mut s = lcc_engine::Session::new();
     for (id, rating) in [(1, 0), (2, 2), (3, 5)] {
         let mut photo = Photo::new(
             PhotoId(id),
@@ -23,16 +23,16 @@ fn app() -> dac_engine::Result<DacApp> {
     }
     s.execute("library.sort", &json!({"key": "fileName", "ascending": true}))?;
     s.execute("library.select", &json!({"ids": [1, 2, 3], "active": 2}))?;
-    Ok(DacApp::new(s, crate::Services { png: None, ..Default::default() }))
+    Ok(LccApp::new(s, crate::Services { png: None, ..Default::default() }))
 }
 
-fn ratings(app: &DacApp) -> dac_engine::Result<Vec<u8>> {
+fn ratings(app: &LccApp) -> lcc_engine::Result<Vec<u8>> {
     (1..=3)
-        .map(|id| app.session.catalog.photo(PhotoId(id)).map(|p| p.rating).ok_or_else(|| dac_catalog::CatalogError::NoPhoto(PhotoId(id)).into()))
+        .map(|id| app.session.catalog.photo(PhotoId(id)).map(|p| p.rating).ok_or_else(|| lcc_catalog::CatalogError::NoPhoto(PhotoId(id)).into()))
         .collect()
 }
 
-fn frame(app: &mut DacApp, ctx: &egui::Context, key: Option<Key>, text: Option<&mut String>) {
+fn frame(app: &mut LccApp, ctx: &egui::Context, key: Option<Key>, text: Option<&mut String>) {
     let events = key
         .map(|key| egui::Event::Key { key, physical_key: Some(key), pressed: true, repeat: false, modifiers: Modifiers::NONE })
         .into_iter()

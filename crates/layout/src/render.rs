@@ -8,7 +8,7 @@
 //! Resolution independence: everything is placed in points and scaled by `dpi / 72`, so a preview
 //! at 50 dpi and a print at 300 dpi show the same layout.
 
-use dac_raster::Rgba8;
+use lcc_raster::Rgba8;
 
 use crate::tokens::{PhotoInfo, expand};
 use crate::{Align, Cell, CellKind, Color, Fit, GraphicCell, LayoutError, Page, PageLayout, PhotoCell, Rect, Result, Shape, Stroke, TextStyle};

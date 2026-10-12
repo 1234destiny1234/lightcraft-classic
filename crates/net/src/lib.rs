@@ -41,7 +41,7 @@ pub use url::Url;
 
 /// `User-Agent`: the brand's binary name and the version.
 pub fn user_agent() -> String {
-    format!("{}/{}", dac_brand::BINARY, env!("CARGO_PKG_VERSION"))
+    format!("{}/{}", lcc_brand::BINARY, env!("CARGO_PKG_VERSION"))
 }
 
 #[cfg(test)]

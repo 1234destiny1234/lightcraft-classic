@@ -1,5 +1,5 @@
 //! AI masks: Object (clicks) and Describe (text) selections computed with SAM 3
-//! (`dac-segment`, cargo feature `sam`; the desktop app enables it).
+//! (`lcc-segment`, cargo feature `sam`; the desktop app enables it).
 //!
 //! **Nothing requires the model.** It is not part of the app (SAM License); the user
 //! downloads it when they first use an AI mask and agree to (`segment.model.download`), or
@@ -22,9 +22,9 @@ mod worker;
 
 use std::path::PathBuf;
 
-use dac_catalog::PhotoId;
-use dac_develop::{MaskShape, SegMask};
-use dac_geom::Point;
+use lcc_catalog::PhotoId;
+use lcc_develop::{MaskShape, SegMask};
+use lcc_geom::Point;
 
 use crate::Session;
 
@@ -159,7 +159,7 @@ impl Segmenter {
 
     pub fn remote_endpoint(&self) -> Option<String> {
         #[cfg(feature = "sam")]
-        return dac_segment::remote::configured();
+        return lcc_segment::remote::configured();
         #[cfg(not(feature = "sam"))]
         None
     }
@@ -168,7 +168,7 @@ impl Segmenter {
     pub fn installed(&self) -> bool {
         #[cfg(feature = "sam")]
         if let Some(dir) = &self.dir {
-            return dac_segment::is_model_dir(dir);
+            return lcc_segment::is_model_dir(dir);
         }
         false
     }
@@ -225,8 +225,8 @@ impl Segmenter {
     pub fn mirrors(&self) -> Vec<String> {
         #[cfg(feature = "sam")]
         {
-            let env = dac_brand::env(dac_segment::fetch::MIRRORS_ENV);
-            dac_segment::fetch::mirrors(env.as_deref(), self.mirrors_file.as_deref())
+            let env = lcc_brand::env(lcc_segment::fetch::MIRRORS_ENV);
+            lcc_segment::fetch::mirrors(env.as_deref(), self.mirrors_file.as_deref())
         }
         #[cfg(not(feature = "sam"))]
         Vec::new()
@@ -238,7 +238,7 @@ impl Segmenter {
             return Err("AI masks are not available in this build".into());
         }
         #[cfg(feature = "sam")]
-        if dac_segment::remote::configured().is_some() {
+        if lcc_segment::remote::configured().is_some() {
             return Ok(PathBuf::new());
         }
         let dir = self.dir.clone().ok_or("no folder is set for the SAM 3 model")?;
@@ -271,9 +271,9 @@ impl Segmenter {
         {
             let mirrors = self.mirrors();
             if mirrors.is_empty() {
-                return Err(dac_segment::fetch::no_mirrors_message());
+                return Err(lcc_segment::fetch::no_mirrors_message());
             }
-            self.download.start(dac_segment::fetch::SAM3_FILES, mirrors, dir, dac_segment::fetch::options(), activity, "SAM 3")
+            self.download.start(lcc_segment::fetch::SAM3_FILES, mirrors, dir, lcc_segment::fetch::options(), activity, "SAM 3")
         }
         #[cfg(not(feature = "sam"))]
         {
@@ -358,7 +358,7 @@ fn clicks_of(include: &[Point], exclude: &[Point]) -> Vec<Click> {
 impl Session {
     /// The key and settings of photo `id` as the model sees it: its look without masks, uncropped.
     #[cfg_attr(not(feature = "sam"), allow(dead_code))]
-    fn segment_key(&self, id: PhotoId) -> Option<(u64, dac_develop::DevelopSettings)> {
+    fn segment_key(&self, id: PhotoId) -> Option<(u64, lcc_develop::DevelopSettings)> {
         let p = self.catalog.photo(id)?;
         let mut d = (*p.develop).clone();
         d.masks.clear();
@@ -373,8 +373,8 @@ impl Session {
 
     /// Clicks (in normalized photo coordinates) for the model.
     #[cfg(feature = "sam")]
-    fn model_clicks(clicks: &[Click]) -> Vec<dac_segment::Click> {
-        clicks.iter().map(|c| dac_segment::Click { x: c.at.x as f32, y: c.at.y as f32, positive: c.include }).collect()
+    fn model_clicks(clicks: &[Click]) -> Vec<lcc_segment::Click> {
+        clicks.iter().map(|c| lcc_segment::Click { x: c.at.x as f32, y: c.at.y as f32, positive: c.include }).collect()
     }
 
     /// A worker request about photo `id` (the render job for its model input goes along; the
@@ -393,13 +393,13 @@ impl Session {
         let (key, mut d) = self.segment_key(id).ok_or("no such photo")?;
         let p = self.catalog.photo(id).ok_or("no such photo")?.clone();
         let missing = match &p.source {
-            dac_catalog::Source::File { path } if !std::path::Path::new(path).exists() => Some(path.clone()),
+            lcc_catalog::Source::File { path } if !std::path::Path::new(path).exists() => Some(path.clone()),
             _ => None,
         };
         let render = match region {
             None => self.preview_job(id, INPUT_EDGE, INPUT_EDGE, false, &d).ok_or("no such photo")?,
             Some(region) => {
-                d.crop.geometry = dac_geom::CropGeometry { rect: dac_geom::Rect::new(region[0], region[1], region[2], region[3]), angle: 0.0 };
+                d.crop.geometry = lcc_geom::CropGeometry { rect: lcc_geom::Rect::new(region[0], region[1], region[2], region[3]), angle: 0.0 };
                 d.crop.flip_h = false;
                 d.crop.flip_v = false;
                 d.geometry.constrain_crop = false;

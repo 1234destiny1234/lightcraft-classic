@@ -101,8 +101,8 @@ fn fake_icc(tag: &[u8; 4]) -> Arc<Vec<u8>> {
     Arc::new(v)
 }
 
-fn laid_out(e: &mut dac_text::TextEngine, s: &str, size: f32) -> dac_text::TextLayout {
-    e.layout(&dac_text::TextBlock::plain(s, "Inter", size), 72.0)
+fn laid_out(e: &mut lcc_text::TextEngine, s: &str, size: f32) -> lcc_text::TextLayout {
+    e.layout(&lcc_text::TextBlock::plain(s, "Inter", size), 72.0)
 }
 
 fn content(doc: &lopdf::Document, page: lopdf::ObjectId) -> String {
@@ -118,7 +118,7 @@ fn multi_page_document_round_trips() {
         subject: Some("Test".into()),
         keywords: vec!["one".into(), "two & three".into()],
         creator: Some("the app".into()),
-        producer: Some("dac-pdf".into()),
+        producer: Some("lcc-pdf".into()),
         created: Some(DateTime { year: 2026, month: 10, day: 10, hour: 9, minute: 30, second: 0 }),
         modified: None,
     };
@@ -137,7 +137,7 @@ fn multi_page_document_round_trips() {
     let flate8 = d.add_image(rgba).unwrap();
     let flate16 = d.add_image(Image::samples16(3, 1, ColorSpace::Gray, &[0, 0x8000, 0xFFFF])).unwrap();
 
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     for i in 0..3 {
         let mut p = Page::new(612.0, 792.0);
         p.bleed = Some(Rect::new(9.0, 9.0, 594.0, 774.0));
@@ -233,7 +233,7 @@ fn multi_page_document_round_trips() {
     assert_eq!(name(desc.get(b"Subtype").unwrap()), b"CIDFontType2");
     let fd = dict(&doc, desc.get(b"FontDescriptor").unwrap());
     let file = stream(&doc, fd.get(b"FontFile2").unwrap()).decompressed_content().unwrap();
-    assert!(file.len() < dac_text::fonts::INTER_REGULAR.len() / 4, "subset: {} bytes", file.len());
+    assert!(file.len() < lcc_text::fonts::INTER_REGULAR.len() / 4, "subset: {} bytes", file.len());
 
     // Output intent and metadata.
     let cat = doc.catalog().unwrap();
@@ -250,10 +250,10 @@ fn multi_page_document_round_trips() {
     assert!(xmp.contains("Contact sheet — été") && xmp.contains("two &amp; three") && xmp.contains("2026-10-10T09:30:00Z"), "{xmp}");
     let info = dict(&doc, doc.trailer.get(b"Info").unwrap());
     assert_eq!(text(info.get(b"Title").unwrap()), "Contact sheet — été");
-    assert_eq!(text(info.get(b"Producer").unwrap()), "dac-pdf");
+    assert_eq!(text(info.get(b"Producer").unwrap()), "lcc-pdf");
     assert!(text(info.get(b"CreationDate").unwrap()).starts_with("D:20261010093000"));
 
-    if let Some(dir) = std::env::var_os("DAC_PDF_DUMP") {
+    if let Some(dir) = std::env::var_os("LCC_PDF_DUMP") {
         std::fs::write(std::path::Path::new(&dir).join("pages.pdf"), &bytes).unwrap();
     }
     // Deterministic output.
@@ -264,7 +264,7 @@ fn multi_page_document_round_trips() {
 /// the source glyph, and ToUnicode maps them back to the text.
 #[test]
 fn font_subsetting_round_trip() {
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     let s = "Subset fidelity: ÀÉÎõü 0123 ffi";
     let l = laid_out(&mut e, s, 30.0);
     let mut d = Document::new();
@@ -282,7 +282,7 @@ fn font_subsetting_round_trip() {
     let fd = dict(&doc, desc.get(b"FontDescriptor").unwrap());
     let program = stream(&doc, fd.get(b"FontFile2").unwrap()).decompressed_content().unwrap();
     let sub = skrifa::FontRef::new(&program).unwrap();
-    let orig = skrifa::FontRef::new(dac_text::fonts::INTER_REGULAR).unwrap();
+    let orig = skrifa::FontRef::new(lcc_text::fonts::INTER_REGULAR).unwrap();
     let used: std::collections::BTreeSet<u32> = l.glyphs.iter().map(|g| g.id).collect();
     // The glyphs drawn, .notdef, and the components of composite (accented) glyphs.
     let n = sub.maxp().map(|m| u32::from(m.num_glyphs())).unwrap();
@@ -361,12 +361,12 @@ impl Bounds {
 /// text, horizontal and vertical, Japanese (TrueType) and Chinese (CFF) faces.
 #[test]
 fn cjk_multi_page_document_with_craft_fonts() {
-    if dac_text::craft_fonts::install_from_env() == 0 {
+    if lcc_text::craft_fonts::install_from_env() == 0 {
         eprintln!("skipping: CRAFT_FONTS_DIR is not set to a craft-fonts checkout");
         return;
     }
-    let installed = dac_text::craft_fonts::installed();
-    let mut e = dac_text::TextEngine::new();
+    let installed = lcc_text::craft_fonts::installed();
+    let mut e = lcc_text::TextEngine::new();
     let mut d = Document::new();
     let img = d.add_image(Image::samples8(4, 4, ColorSpace::Rgb, vec![200; 48])).unwrap();
     let mut families = Vec::new();
@@ -381,11 +381,11 @@ fn cjk_multi_page_document_with_craft_fonts() {
         families.push(*fam);
         let mut p = Page::new(420.0, 595.0);
         p.image(img, Rect::new(20.0, 20.0, 100.0, 100.0));
-        let mut b = dac_text::TextBlock::plain(*sample, *fam, 18.0);
+        let mut b = lcc_text::TextBlock::plain(*sample, *fam, 18.0);
         let l = e.layout(&b, 72.0);
         assert!(l.glyphs.iter().all(|g| g.id != 0), "{fam}: no .notdef");
         p.text(&l, sample, (20.0, 200.0), 1.0);
-        b.orientation = dac_text::Orientation::Vertical;
+        b.orientation = lcc_text::Orientation::Vertical;
         let v = e.layout(&b, 72.0);
         p.text(&v, sample, (380.0, 40.0), 1.0);
         d.push_page(p).unwrap();
@@ -422,7 +422,7 @@ fn cjk_multi_page_document_with_craft_fonts() {
     }
     // Whole document stays small (multi-megabyte CJK fonts subset to a few glyphs).
     assert!(bytes.len() < 1_000_000, "{} bytes", bytes.len());
-    if let Some(dir) = std::env::var_os("DAC_PDF_DUMP") {
+    if let Some(dir) = std::env::var_os("LCC_PDF_DUMP") {
         std::fs::write(std::path::Path::new(&dir).join("cjk.pdf"), &bytes).unwrap();
     }
 }
@@ -448,7 +448,7 @@ fn hostile_input_is_an_error_not_a_panic() {
     p.stroke(Path::line((0.0, 0.0), (1e300, 5.0)), Stroke { paint: Paint::BLACK, width: f64::NAN, dash: Some((vec![f64::NAN], f64::INFINITY)) });
     p.restore();
     p.restore();
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     let l = laid_out(&mut e, "x", 12.0);
     p.text(&l, "x", (f64::NAN, 0.0), 1.0);
     p.text(&l, "x", (0.0, 0.0), -1.0);
@@ -478,7 +478,7 @@ fn icc_with_bad_component_count_is_an_error() {
 #[test]
 fn faces_that_cannot_be_embedded_are_drawn_as_outlines() {
     // A variable instance (non-default coordinates) is drawn as paths, no font resource.
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     let mut l = laid_out(&mut e, "Ab", 20.0);
     for f in &mut l.faces {
         f.coords = vec![1];
@@ -497,7 +497,7 @@ fn faces_that_cannot_be_embedded_are_drawn_as_outlines() {
 
 #[test]
 fn text_opacity_is_written_as_ext_g_state() {
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     let mut l = laid_out(&mut e, "Half", 30.0);
     for s in &mut l.styles {
         s.color.alpha = 0.5;

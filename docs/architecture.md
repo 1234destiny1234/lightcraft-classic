@@ -19,7 +19,7 @@ L5 depends on egui, eframe, winit or rfd, and that each crate only uses lower la
 | L3 | `catalog` (11.0k), `gpu` (5.1k), `preview` (1.3k), `merge` (3.8k), `segment` (2.3k) | Library model and persistence; wgpu compute twin of the pipeline; thumbnail/preview cache and job pool; HDR and panorama merge; SAM 3 segmentation |
 | L4 | `engine` (53.2k) | Session, command registry (everything is a command), history, render and export jobs, import, Lightroom catalog and preset import, faces index, view-models |
 | L5 | `ui-egui` (46.9k), `mcp` (2.3k) | The Lightroom-style egui interface (swappable); the MCP server |
-| L6 | `apps/dac-app` (2.8k), `apps/dac-cli` (1.5k), `apps/dac-web` (3.4k), `xtask` (2.7k) | Desktop app (eframe + wgpu, native menus, control server), CLI (render, commands, calibrate, snapshot, MCP), WASM build, tooling |
+| L6 | `apps/lcc-app` (2.8k), `apps/lcc-cli` (1.5k), `apps/lcc-web` (3.4k), `xtask` (2.7k) | Desktop app (eframe + wgpu, native menus, control server), CLI (render, commands, calibrate, snapshot, MCP), WASM build, tooling |
 
 ## Data model
 
@@ -48,7 +48,7 @@ L5 depends on egui, eframe, winit or rfd, and that each crate only uses lower la
 3. **GPU** (`gpu`): the same stages in WGSL on Metal / DX12 / Vulkan, checked against the CPU path
    (within 1/255); GPU errors fall back to the CPU (`docs/gpu-pipeline.md`).
 4. **Display and export**: display-profile conversion (`docs/display-profiles.md`); export through
-   one encoder for app, CLI, MCP and web (`dac_engine::export`).
+   one encoder for app, CLI, MCP and web (`lcc_engine::export`).
 
 ## Agent control
 

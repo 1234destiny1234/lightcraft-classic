@@ -203,7 +203,7 @@ mod online {
     use std::sync::Mutex;
     use std::time::{Duration, Instant};
 
-    use dac_net::{Client, ClientConfig};
+    use lcc_net::{Client, ClientConfig};
 
     use super::*;
 
@@ -377,7 +377,7 @@ mod tests {
         assert_eq!(n.reverse(Consent::Denied, LatLon::new(1.0, 1.0)), Err(GeoError::NoConsent));
         assert_eq!(n.search(Consent::Denied, "Paris"), Err(GeoError::NoConsent));
         assert!(Nominatim::new("ftp://x").is_err());
-        let dir = std::env::temp_dir().join(format!("dac-geo-geonames-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-geo-geonames-{}", std::process::id()));
         assert_eq!(download_geonames(Consent::Denied, "http://127.0.0.1:1/", &dir), Err(GeoError::NoConsent));
 
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();

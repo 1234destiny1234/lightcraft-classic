@@ -18,7 +18,7 @@ use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::state::{RightPanel, ViewMode};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -391,8 +391,8 @@ pub trait Module: Sync {
     fn id(&self) -> ModuleId;
     fn left_panels(&self) -> &'static [PanelId];
     fn right_panels(&self) -> &'static [PanelId];
-    fn toolbar(&self, ui: &mut egui::Ui, app: &mut DacApp);
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp);
+    fn toolbar(&self, ui: &mut egui::Ui, app: &mut LccApp);
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp);
     /// Module-local keys, layered over the global keymap (Classic set only).
     fn keymap(&self) -> &'static [ModuleKey];
     /// The module draws its own side columns in [`Module::center`] (the window's Library / Develop
@@ -459,10 +459,10 @@ impl Module for Library {
     fn right_panels(&self) -> &'static [PanelId] {
         LIBRARY_RIGHT
     }
-    fn toolbar(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         crate::panels::bottombar::show(app, ui);
     }
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         views(ui, app);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
@@ -480,10 +480,10 @@ impl Module for Develop {
     fn right_panels(&self) -> &'static [PanelId] {
         DEVELOP_RIGHT
     }
-    fn toolbar(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         crate::panels::bottombar::show(app, ui);
     }
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         views(ui, app);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
@@ -511,10 +511,10 @@ impl Module for SlideshowModule {
     fn right_panels(&self) -> &'static [PanelId] {
         &[]
     }
-    fn toolbar(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         crate::slideshow_ui::toolbar(app, ui);
     }
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         crate::slideshow_ui::center(app, ui);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
@@ -543,7 +543,7 @@ pub fn get(id: ModuleId) -> &'static dyn Module {
 }
 
 /// The Library / Develop centre: the view the user is in.
-fn views(ui: &mut egui::Ui, app: &mut DacApp) {
+fn views(ui: &mut egui::Ui, app: &mut LccApp) {
     use crate::panels;
     match app.ui.view {
         ViewMode::PhotoGrid | ViewMode::SquareGrid => panels::grid::show(app, ui),
@@ -561,7 +561,7 @@ fn implied(view: ViewMode, right: RightPanel) -> ModuleId {
 }
 
 /// The live panel state as a layout.
-fn capture(app: &DacApp) -> ModuleLayout {
+fn capture(app: &LccApp) -> ModuleLayout {
     let u = &app.ui;
     let right = match u.module {
         ModuleId::Library if u.right.is_edit_tool() => RightPanel::None,
@@ -581,7 +581,7 @@ fn capture(app: &DacApp) -> ModuleLayout {
 }
 
 /// Put `l`'s edges (and with `full`, its right panel) on screen.
-fn apply(app: &mut DacApp, l: &ModuleLayout, full: bool) {
+fn apply(app: &mut LccApp, l: &ModuleLayout, full: bool) {
     let u = &mut app.ui;
     u.module_bar = l.shown.top;
     u.filmstrip = l.shown.bottom;
@@ -601,7 +601,7 @@ fn apply(app: &mut DacApp, l: &ModuleLayout, full: bool) {
 
 /// Leave the current module for `to`, saving its panels and restoring `to`'s (`full`: its right
 /// panel too). A module seen for the first time keeps the edges as they are.
-fn swap(app: &mut DacApp, to: ModuleId, full: bool) {
+fn swap(app: &mut LccApp, to: ModuleId, full: bool) {
     let from = app.ui.module;
     if from == to {
         return;
@@ -619,7 +619,7 @@ fn swap(app: &mut DacApp, to: ModuleId, full: bool) {
 
 /// Follow the view: opening an editing panel from Library enters Develop, returning to a grid
 /// enters Library. Placeholder modules stay until a view or panel changes under them.
-pub fn sync(app: &mut DacApp) {
+pub fn sync(app: &mut LccApp) {
     let now = (app.ui.view, app.ui.right);
     if app.ui.module.is_placeholder() {
         match app.ui.placeholder_from {
@@ -639,7 +639,7 @@ pub fn sync(app: &mut DacApp) {
 }
 
 /// `module.switch {module}`.
-pub fn switch(app: &mut DacApp, to: ModuleId) -> Result<Value, String> {
+pub fn switch(app: &mut LccApp, to: ModuleId) -> Result<Value, String> {
     if app.ui.module == to {
         return Ok(json!({"module": to}));
     }
@@ -682,7 +682,7 @@ fn bool_param(p: &Value, key: &str) -> Option<bool> {
     p.get(key).and_then(Value::as_bool)
 }
 
-fn edge_shown(app: &DacApp, e: Edge) -> bool {
+fn edge_shown(app: &LccApp, e: Edge) -> bool {
     match e {
         Edge::Top => app.ui.module_bar,
         Edge::Bottom => app.ui.filmstrip,
@@ -691,7 +691,7 @@ fn edge_shown(app: &DacApp, e: Edge) -> bool {
     }
 }
 
-fn set_edge(app: &mut DacApp, e: Edge, on: bool) {
+fn set_edge(app: &mut LccApp, e: Edge, on: bool) {
     match e {
         Edge::Top => app.ui.module_bar = on,
         Edge::Bottom => app.ui.filmstrip = on,
@@ -701,7 +701,7 @@ fn set_edge(app: &mut DacApp, e: Edge, on: bool) {
     app.ui.peek.set(e, false);
 }
 
-fn edges_json(app: &DacApp) -> Value {
+fn edges_json(app: &LccApp) -> Value {
     json!({
         "module": app.ui.module,
         "top": app.ui.module_bar, "bottom": app.ui.filmstrip, "left": app.ui.left_panel, "right": app.ui.right_edge,
@@ -818,7 +818,7 @@ pub const SHELL_COMMANDS: &[crate::menus::UiCommand] = &[
 ];
 
 /// Is `id` a shell command, and is it enabled?
-pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
+pub fn enabled(app: &LccApp, id: &str) -> Option<bool> {
     if let Some(e) = crate::print_ui::enabled(app, id).or_else(|| crate::creations_ui::enabled(app, id)) {
         return Some(e);
     }
@@ -835,7 +835,7 @@ pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
 }
 
 /// Run a shell command; `None`: not one.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if let Some(r) = crate::print_ui::run(app, id, p).or_else(|| crate::creations_ui::run(app, id, p)) {
         return Some(r);
     }
@@ -851,7 +851,7 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
     Some(run_inner(app, id, p))
 }
 
-fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     if let Some(r) = crate::slideshow_ui::run(app, id, p) {
         return r;
     }
@@ -1063,14 +1063,14 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
         }
         "photo.flagToggle" => {
             let active = app.session.active().ok_or("no photo selected")?;
-            let picked = app.session.catalog.photo(active).is_some_and(|ph| ph.flag == dac_catalog::Flag::Pick);
+            let picked = app.session.catalog.photo(active).is_some_and(|ph| ph.flag == lcc_catalog::Flag::Pick);
             app.run(if picked { "photo.unflag" } else { "photo.pick" }, json!({}))
         }
         _ => Err(format!("unknown shell command: {id}")),
     }
 }
 
-fn set_screen_mode(app: &mut DacApp, mode: ScreenMode) -> Value {
+fn set_screen_mode(app: &mut LccApp, mode: ScreenMode) -> Value {
     let was = app.ui.screen_mode;
     app.ui.screen_mode = mode;
     if was.window_fullscreen() != mode.window_fullscreen() {
@@ -1079,7 +1079,7 @@ fn set_screen_mode(app: &mut DacApp, mode: ScreenMode) -> Value {
     json!({"screenMode": mode})
 }
 
-fn second(app: &mut DacApp, mode: SecondMode) -> Result<Value, String> {
+fn second(app: &mut LccApp, mode: SecondMode) -> Result<Value, String> {
     app.ui.second_mode = mode;
     app.ui.second_window = true;
     if mode == SecondMode::Locked {
@@ -1089,7 +1089,7 @@ fn second(app: &mut DacApp, mode: SecondMode) -> Result<Value, String> {
 }
 
 /// The right group's panels for the module on screen, in the user's order, without hidden ones.
-pub fn right_group(app: &DacApp) -> Vec<PanelId> {
+pub fn right_group(app: &LccApp) -> Vec<PanelId> {
     let declared = get(app.ui.module).right_panels();
     let mut out: Vec<PanelId> = app.ui.panel_order.iter().copied().filter(|p| declared.contains(p)).collect();
     for p in declared {
@@ -1103,7 +1103,7 @@ pub fn right_group(app: &DacApp) -> Vec<PanelId> {
 
 /// Whether an edge is drawn this frame (shown, or peeking while auto-shown), given the module and
 /// the screen mode.
-pub fn edge_visible(app: &DacApp, e: Edge) -> bool {
+pub fn edge_visible(app: &LccApp, e: Edge) -> bool {
     if app.ui.screen_mode == ScreenMode::FullScreenHidePanels {
         return app.ui.peek.get(e);
     }
@@ -1118,7 +1118,7 @@ pub fn edge_visible(app: &DacApp, e: Edge) -> bool {
 
 /// Whether a module that draws its own side columns (Print) shows the column at edge `e`: the
 /// edge is shown or peeking, as [`edge_visible`] decides for modules with declared panels.
-pub fn module_edge(app: &DacApp, e: Edge) -> bool {
+pub fn module_edge(app: &LccApp, e: Edge) -> bool {
     if app.ui.screen_mode == ScreenMode::FullScreenHidePanels {
         return app.ui.peek.get(e);
     }
@@ -1127,7 +1127,7 @@ pub fn module_edge(app: &DacApp, e: Edge) -> bool {
 
 /// Auto show: a hidden edge marked auto-show appears while the pointer is at the window's edge and
 /// hides again once it leaves the panel.
-pub fn auto_show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn auto_show(app: &mut LccApp, ctx: &egui::Context) {
     let Some(pos) = ctx.input(|i| i.pointer.hover_pos()) else { return };
     let clicked = ctx.input(|i| i.pointer.primary_pressed());
     let r = ctx.content_rect();
@@ -1160,7 +1160,7 @@ pub fn auto_show(app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// The identity plate's context menu: a graphic from a file, back to text, the brand mark, bold.
-fn plate_menu(app: &mut DacApp, ui: &mut egui::Ui, plate: Rect) {
+fn plate_menu(app: &mut LccApp, ui: &mut egui::Ui, plate: Rect) {
     let resp = ui.interact(plate, egui::Id::new("identity-plate"), Sense::click());
     crate::access::button(&resp, "Identity Plate");
     resp.context_menu(|ui| {
@@ -1184,7 +1184,7 @@ fn plate_menu(app: &mut DacApp, ui: &mut egui::Ui, plate: Rect) {
 }
 
 /// The module bar (top edge): identity plate, activity, module picker.
-pub fn module_bar(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn module_bar(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::top("module_bar")
         .exact_size(44.0)
@@ -1215,7 +1215,7 @@ pub fn module_bar(app: &mut DacApp, ui: &mut egui::Ui) {
                     paint_mark(ui.painter(), r);
                     x += 32.0;
                 }
-                let text = if ip.text.trim().is_empty() { dac_brand::DISPLAY_NAME.to_string() } else { ip.text.clone() };
+                let text = if ip.text.trim().is_empty() { lcc_brand::DISPLAY_NAME.to_string() } else { ip.text.clone() };
                 let color = ip.color.map_or(t.text, |[r, g, b]| egui::Color32::from_rgb(r, g, b));
                 let size = if ip.size.is_finite() { ip.size.clamp(9.0, 32.0) } else { 17.0 };
                 let font = if ip.bold { t.semibold(size) } else { t.font(size) };
@@ -1280,7 +1280,7 @@ pub fn module_bar(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// The picker's context menu: tick a module to show it in the picker.
-fn picker_menu(app: &mut DacApp, ui: &mut egui::Ui) {
+fn picker_menu(app: &mut LccApp, ui: &mut egui::Ui) {
     for m in ModuleId::ALL {
         let mut on = !app.ui.hidden_modules.contains(&m);
         if ui.add_enabled(m != app.ui.module, egui::Checkbox::new(&mut on, crate::i18n::tr(m.label()))).changed() {
@@ -1316,7 +1316,7 @@ fn paint_mark(p: &egui::Painter, r: Rect) {
 }
 
 /// Lights out: veil everything but the photo.
-pub fn lights_out(app: &DacApp, ctx: &egui::Context) {
+pub fn lights_out(app: &LccApp, ctx: &egui::Context) {
     let a = app.ui.lights_out.alpha();
     if a <= 0.0 {
         return;

@@ -6,7 +6,7 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd};
@@ -231,7 +231,7 @@ fn capture(s: &mut Session, p: &Value) -> Result<Value> {
     // Bake the clip's grade into the still (like Lightroom's Capture Frame): the JPEG looks like
     // the graded clip and the new photo starts with default settings, so it isn't graded twice.
     let develop = s.catalog.photo(x.id).map(|ph| ph.develop.clone()).unwrap_or_default();
-    let graded = dac_pipeline::grade::grade_frame(&frame, &develop, dac_pipeline::Quality::Full);
+    let graded = lcc_pipeline::grade::grade_frame(&frame, &develop, lcc_pipeline::Quality::Full);
     let opts = crate::export::ExportOptions::default();
     let bytes = crate::export::encode_image(&graded, &opts).map_err(|e| EngineError::Other(format!("can't encode the frame: {e}")))?;
     let out = frame_path(&clip, t)?;

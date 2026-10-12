@@ -3,7 +3,7 @@
 //! sizes and margins, and send a PDF or JPEG with Print-Job.
 //!
 //! Pure Rust (no libcups): `ipp://` and `http://` over `std::net`; `ipps://` and `https://` over
-//! TLS through `dac-net` (rustls). A printer's certificate is trusted when it chains to the Mozilla
+//! TLS through `lcc-net` (rustls). A printer's certificate is trusted when it chains to the Mozilla
 //! roots or when its fingerprint was trusted earlier ([`trust_certificate`], or on first use when
 //! [`set_trust_on_first_use`] is on); otherwise the request fails with
 //! [`PrintError::UntrustedCertificate`], which names the fingerprint to check. The printer's own
@@ -20,7 +20,7 @@ use std::io::{Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use dac_layout::Size;
+use lcc_layout::Size;
 
 use crate::{PrintError, Result};
 
@@ -432,7 +432,7 @@ pub fn is_fingerprint(s: &str) -> bool {
 /// `s` normalised as an upper-case, colon-separated SHA-256 fingerprint, or `None`.
 #[cfg(not(target_arch = "wasm32"))]
 fn parse_fingerprint(s: &str) -> Option<String> {
-    dac_net::Fingerprint::parse(s.trim()).map(|f| f.to_string())
+    lcc_net::Fingerprint::parse(s.trim()).map(|f| f.to_string())
 }
 
 /// `s` normalised as an upper-case, colon-separated SHA-256 fingerprint, or `None` (wasm builds
@@ -468,21 +468,21 @@ pub fn set_trust_on_first_use(on: bool) {
     TOFU.store(on, std::sync::atomic::Ordering::SeqCst);
 }
 
-/// IPP over TLS: one HTTPS POST through `dac-net`.
+/// IPP over TLS: one HTTPS POST through `lcc-net`.
 #[cfg(not(target_arch = "wasm32"))]
 fn send_tls(u: &IppUri, msg: &Message, document: &[u8]) -> Result<Message> {
     let key = u.host_header();
-    let mut trust = dac_net::Trust::new();
+    let mut trust = lcc_net::Trust::new();
     let pins: Vec<String> = trusted().iter().filter(|(k, _)| *k == key).map(|(_, f)| f.clone()).collect();
     for f in &pins {
-        if let Some(fp) = dac_net::Fingerprint::parse(f) {
+        if let Some(fp) = lcc_net::Fingerprint::parse(f) {
             trust = trust.with_pinned(fp);
         }
     }
     // first use: only for a printer with no trusted certificate yet (a changed one is refused)
     if pins.is_empty() && TOFU.load(std::sync::atomic::Ordering::SeqCst) {
         let k = key.clone();
-        trust = trust.with_tofu(std::sync::Arc::new(move |info: &dac_net::CertInfo| {
+        trust = trust.with_tofu(std::sync::Arc::new(move |info: &lcc_net::CertInfo| {
             let mut t = trusted();
             if !t.iter().any(|(h, _)| *h == k) {
                 t.push((k.clone(), info.fingerprint.to_string()));
@@ -490,20 +490,20 @@ fn send_tls(u: &IppUri, msg: &Message, document: &[u8]) -> Result<Message> {
             true
         }));
     }
-    let config = dac_net::ClientConfig {
+    let config = lcc_net::ClientConfig {
         connect_timeout: TIMEOUT,
         stall_timeout: TIMEOUT,
         max_redirects: 0,
         trust,
         max_body: MAX_RESPONSE as u64,
-        ..dac_net::ClientConfig::default()
+        ..lcc_net::ClientConfig::default()
     };
-    let client = dac_net::Client::new(config).map_err(|e| PrintError::Ipp(format!("{key}: {e}")))?;
+    let client = lcc_net::Client::new(config).map_err(|e| PrintError::Ipp(format!("{key}: {e}")))?;
     let mut body = msg.encode();
     body.extend_from_slice(document);
     let url = format!("https://{key}{}", u.path);
     let resp = client.post(&url).identity_encoding().body("application/ipp", body).send().map_err(|e| match e {
-        dac_net::NetError::UntrustedCertificate { fingerprint, .. } => PrintError::UntrustedCertificate { printer: key.clone(), fingerprint },
+        lcc_net::NetError::UntrustedCertificate { fingerprint, .. } => PrintError::UntrustedCertificate { printer: key.clone(), fingerprint },
         e => PrintError::Ipp(format!("{key}: {e}")),
     })?;
     if resp.status != 200 {

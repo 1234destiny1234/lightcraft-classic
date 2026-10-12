@@ -2,7 +2,7 @@
 //!
 //! Other raw developers store their edits as `crs:` properties in XMP sidecars, in DNG-embedded
 //! XMP and in XMP preset files. This module maps the commonly used, documented-by-observation
-//! fields to a *partial* [`DevelopSettings`](dac_develop::DevelopSettings) JSON object
+//! fields to a *partial* [`DevelopSettings`](lcc_develop::DevelopSettings) JSON object
 //! (only the fields present in the packet), which is then merged like a preset. Our pipeline is
 //! not theirs, so the result is a best-effort approximation of the look, not a pixel match.
 //! The full table is in `docs/xmp-interop.md`.
@@ -12,16 +12,16 @@
 
 use std::collections::BTreeMap;
 
-use dac_develop::{MIXER_BANDS, Preset};
+use lcc_develop::{MIXER_BANDS, Preset};
 use serde_json::{Map, Value, json};
 
-/// Properties keyed `prefix:name` (as produced by [`dac_meta::parse_xmp`]).
+/// Properties keyed `prefix:name` (as produced by [`lcc_meta::parse_xmp`]).
 pub type Props = BTreeMap<String, Vec<String>>;
 
 /// What the mapped settings will develop. It decides how a `crs:` white balance is read: a raw
 /// with a Kelvin scale (colour matrices in the file, or measured for its camera) takes `Temperature`
 /// as Kelvin; everything developed relative to its as-shot look (rendered files, and raws without
-/// matrices anywhere, [`dac_catalog::relative_wb_camera`]) needs a shift from the other app's
+/// matrices anywhere, [`lcc_catalog::relative_wb_camera`]) needs a shift from the other app's
 /// as-shot white instead, because on that scale 6500 K / 0 means *as shot* (issue #510).
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Target {
@@ -33,7 +33,7 @@ pub enum Target {
     /// A raw developed with an absolute white balance (DNG and other files with matrices, and raws
     /// whose camera has measured matrices): Kelvin as written.
     RawAbsolute,
-    /// A raw developed relative to its as-shot look ([`dac_catalog::Photo::relative_wb`]).
+    /// A raw developed relative to its as-shot look ([`lcc_catalog::Photo::relative_wb`]).
     RawRelative,
 }
 
@@ -41,17 +41,17 @@ impl Target {
     /// The target for a file of this media kind and format (its extension or Lightroom's
     /// `fileFormat` name) shot on `camera` (Exif make and model as the catalog keeps them, or
     /// empty when unknown); `preview_only` for a raw that can't be decoded yet.
-    pub fn for_file(kind: dac_catalog::MediaKind, format: &str, preview_only: bool, camera: &str) -> Target {
-        if kind != dac_catalog::MediaKind::Raw || preview_only {
+    pub fn for_file(kind: lcc_catalog::MediaKind, format: &str, preview_only: bool, camera: &str) -> Target {
+        if kind != lcc_catalog::MediaKind::Raw || preview_only {
             Target::Rendered
-        } else if dac_catalog::relative_wb_camera(format, camera) {
+        } else if lcc_catalog::relative_wb_camera(format, camera) {
             Target::RawRelative
         } else {
             Target::RawAbsolute
         }
     }
     /// The target for a photo in the catalog.
-    pub fn for_photo(p: &dac_catalog::Photo) -> Target {
+    pub fn for_photo(p: &lcc_catalog::Photo) -> Target {
         Target::for_file(p.kind, &p.format, p.preview_only.is_some(), &p.meta.camera)
     }
 }
@@ -524,7 +524,7 @@ pub fn has_saved_upright_transform(props: &Props) -> bool {
 /// Read an XMP preset (`crs:` fields + `crs:Name` / `crs:Group`) into one of our presets.
 /// Returns `None` when the packet has no adjustments we understand.
 pub fn preset_from_xmp(xmp: &str, fallback_name: &str) -> Option<Preset> {
-    let d = dac_meta::parse_xmp(xmp).ok()?;
+    let d = lcc_meta::parse_xmp(xmp).ok()?;
     let props = &d.properties;
     let settings = to_partial(props, Target::Any);
     if settings.as_object().is_none_or(Map::is_empty) {
@@ -540,7 +540,7 @@ pub fn preset_from_xmp(xmp: &str, fallback_name: &str) -> Option<Preset> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_develop::{DevelopSettings, Upright, VignetteStyle, WbMode, apply_partial};
+    use lcc_develop::{DevelopSettings, Upright, VignetteStyle, WbMode, apply_partial};
 
     /// A hand-written sidecar in attribute form (as many tools write it).
     const SIDECAR: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/">
@@ -572,7 +572,7 @@ mod tests {
 </x:xmpmeta>"#;
 
     fn props(x: &str) -> Props {
-        dac_meta::parse_xmp(x).unwrap().properties
+        lcc_meta::parse_xmp(x).unwrap().properties
     }
 
     #[test]
@@ -607,7 +607,7 @@ mod tests {
         assert_eq!(s.geometry.upright, Upright::Level);
         assert_eq!(s.geometry.vertical, -10.0);
         assert!(s.optics.remove_ca);
-        assert_eq!(s.treatment, dac_develop::Treatment::Color);
+        assert_eq!(s.treatment, lcc_develop::Treatment::Color);
         let cal = s.calibration;
         assert_eq!(
             (cal.shadows_tint, cal.red_hue, cal.red_sat, cal.green_hue, cal.green_sat, cal.blue_hue, cal.blue_sat),
@@ -636,7 +636,7 @@ mod tests {
         let on = apply_partial(&DevelopSettings::default(), &to_partial(&props(&x("1")), Target::RawAbsolute), 1.0);
         assert!(on.hdr.enabled);
         assert_eq!(on.light.exposure, 1.5);
-        assert_eq!(on.hdr.max_ev, dac_develop::Hdr::DEFAULT_MAX_EV, "the rest of the HDR settings keep their defaults");
+        assert_eq!(on.hdr.max_ev, lcc_develop::Hdr::DEFAULT_MAX_EV, "the rest of the HDR settings keep their defaults");
         let true_form = apply_partial(&DevelopSettings::default(), &to_partial(&props(&x("True")), Target::RawAbsolute), 1.0);
         assert!(true_form.hdr.enabled);
         let mut hdr = DevelopSettings::default();
@@ -660,7 +660,7 @@ mod tests {
           </rdf:Description></rdf:RDF></x:xmpmeta>"#;
         let p = props(x);
         let rendered = apply_partial(&DevelopSettings::default(), &to_partial(&p, Target::Rendered), 1.0);
-        assert_eq!(rendered.treatment, dac_develop::Treatment::Bw);
+        assert_eq!(rendered.treatment, lcc_develop::Treatment::Bw);
         assert_eq!(rendered.bw_mix.blue, -35.0);
         assert!((rendered.wb.temp - rel_to_kelvin(25.0)).abs() < 1e-6 && rendered.wb.temp > 6500.0);
         assert_eq!(rendered.wb.tint, -6.0);
@@ -732,7 +732,7 @@ mod tests {
 
     #[test]
     fn target_follows_the_file() {
-        use dac_catalog::MediaKind;
+        use lcc_catalog::MediaKind;
         assert_eq!(Target::for_file(MediaKind::Raw, "ARW", false, ""), Target::RawRelative);
         assert_eq!(Target::for_file(MediaKind::Raw, "nef", false, "NIKON CORPORATION NIKON D7500"), Target::RawRelative);
         // Lightroom's `fileFormat` name for proprietary raws
@@ -746,7 +746,7 @@ mod tests {
         assert_eq!(Target::for_file(MediaKind::Raw, "RAW", false, "ILCE-7M3"), Target::RawAbsolute);
         assert_eq!(Target::for_file(MediaKind::Raw, "NEF", false, "NIKON CORPORATION NIKON D850"), Target::RawAbsolute);
         assert_eq!(Target::for_file(MediaKind::Raw, "CR2", false, "Canon Canon EOS 5D Mark III"), Target::RawAbsolute);
-        let mut p = dac_catalog::Photo::new(dac_catalog::PhotoId(1), dac_catalog::Source::Demo { scene: 0 }, "a.arw", "ARW", 1, 1, "");
+        let mut p = lcc_catalog::Photo::new(lcc_catalog::PhotoId(1), lcc_catalog::Source::Demo { scene: 0 }, "a.arw", "ARW", 1, 1, "");
         p.kind = MediaKind::Raw;
         assert_eq!(Target::for_photo(&p), Target::RawRelative);
         p.meta.camera = "SONY ILCE-7M3".into();
@@ -758,7 +758,7 @@ mod tests {
     /// a raw without matrices still takes the #510 shift.
     #[test]
     fn kelvin_is_direct_on_raws_whose_camera_has_matrices() {
-        use dac_catalog::MediaKind;
+        use lcc_catalog::MediaKind;
         let x = r#"<rdf:Description xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
              crs:WhiteBalance="Custom" crs:Temperature="4650" crs:Tint="+3" crs:AsShotTemperature="5400" crs:AsShotTint="-1"/>"#;
         let p = props(x);

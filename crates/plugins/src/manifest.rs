@@ -1,4 +1,4 @@
-//! The plug-in manifest (`dac_manifest`, UTF-8 JSON): identity, requested capabilities and what
+//! The plug-in manifest (`lcc_manifest`, UTF-8 JSON): identity, requested capabilities and what
 //! the plug-in contributes (commands with declarative dialogs, hooks, a publish service).
 
 use serde::{Deserialize, Serialize};
@@ -18,7 +18,7 @@ pub const MAX_DESTINATIONS: usize = 16;
 /// Most custom metadata fields one plug-in may declare.
 pub const MAX_METADATA_FIELDS: usize = 32;
 
-/// The manifest a plug-in returns from `dac_manifest`.
+/// The manifest a plug-in returns from `lcc_manifest`.
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct Manifest {

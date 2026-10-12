@@ -10,7 +10,7 @@
 
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
@@ -56,7 +56,7 @@ fn str_of(v: &Value, k: &str) -> String {
 }
 
 /// UI side of the `tether.*` commands: `tether.start` without a folder opens the settings window.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if id != "tether.start" || p.get("folder").and_then(Value::as_str).is_some_and(|f| !f.trim().is_empty()) {
         return None;
     }
@@ -83,7 +83,7 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 
 /// Every frame: the settings window when open, and the capture bar plus scans while a session is
 /// active.
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     settings_window(app, ctx);
     let now = ctx.input(|i| i.time);
     let (at, status) = ctx.data(|d| d.get_temp::<(f64, Value)>(status_id())).unwrap_or((-1.0, Value::Null));
@@ -117,7 +117,7 @@ fn refresh(ctx: &egui::Context) {
 }
 
 /// The connected camera's part of the bar: name, readouts, capture, live view, disconnect.
-fn camera_controls(app: &mut DacApp, ui: &mut egui::Ui, cam: &Value, st: &Value) {
+fn camera_controls(app: &mut LccApp, ui: &mut egui::Ui, cam: &Value, st: &Value) {
     let t = Tokens::get(ui.ctx());
     ui.separator();
     ui.label(egui::RichText::new(str_of(cam, "name")).strong().size(12.0));
@@ -188,7 +188,7 @@ fn camera_controls(app: &mut DacApp, ui: &mut egui::Ui, cam: &Value, st: &Value)
 
 /// The live view window: a frame every `LIVE_EVERY` seconds while it is on.
 #[cfg(not(target_arch = "wasm32"))]
-fn live_view(app: &mut DacApp, ctx: &egui::Context, cam: &Value) {
+fn live_view(app: &mut LccApp, ctx: &egui::Context, cam: &Value) {
     let on = ctx.data(|d| d.get_temp::<bool>(live_id())).unwrap_or(false);
     if !on || cam.is_null() {
         return;
@@ -199,7 +199,7 @@ fn live_view(app: &mut DacApp, ctx: &egui::Context, cam: &Value) {
     let tex = match last {
         Some((at, tex)) if now - at < LIVE_EVERY => tex,
         _ => {
-            let tex = match dac_engine::cmd::tether::live_view_rgba(1024) {
+            let tex = match lcc_engine::cmd::tether::live_view_rgba(1024) {
                 Ok(img) => {
                     let flat: Vec<u8> = img.data.iter().flatten().copied().collect();
                     let color = egui::ColorImage::from_rgba_unmultiplied([img.width, img.height], &flat);
@@ -231,9 +231,9 @@ fn live_view(app: &mut DacApp, ctx: &egui::Context, cam: &Value) {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn live_view(_app: &mut DacApp, _ctx: &egui::Context, _cam: &Value) {}
+fn live_view(_app: &mut LccApp, _ctx: &egui::Context, _cam: &Value) {}
 
-fn scan(app: &mut DacApp, ctx: &egui::Context) {
+fn scan(app: &mut LccApp, ctx: &egui::Context) {
     let r = match app.session.execute("tether.scan", &json!({})) {
         Ok(r) => r,
         Err(e) => return log::warn!("studio capture: {e}"),
@@ -250,7 +250,7 @@ fn scan(app: &mut DacApp, ctx: &egui::Context) {
     }
 }
 
-fn bar(app: &mut DacApp, ctx: &egui::Context, st: &Value, cam: &Value) {
+fn bar(app: &mut LccApp, ctx: &egui::Context, st: &Value, cam: &Value) {
     let t = Tokens::get(ctx);
     let top = t.top_bar_h + 6.0;
     egui::Area::new(egui::Id::new("tether-bar")).anchor(egui::Align2::CENTER_TOP, egui::vec2(0.0, top)).order(egui::Order::Foreground).show(
@@ -294,7 +294,7 @@ fn bar(app: &mut DacApp, ctx: &egui::Context, st: &Value, cam: &Value) {
     );
 }
 
-fn settings_window(app: &mut DacApp, ctx: &egui::Context) {
+fn settings_window(app: &mut LccApp, ctx: &egui::Context) {
     let Some(mut form) = ctx.data(|d| d.get_temp::<Form>(form_id())).filter(|f| f.open) else { return };
     let mut open = true;
     let mut start = false;

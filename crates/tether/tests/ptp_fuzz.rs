@@ -5,10 +5,10 @@
 use std::sync::{Arc, Mutex};
 use std::time::Duration;
 
-use dac_fuzzkit::Rng;
-use dac_tether::ptp::sim::SimCamera;
-use dac_tether::ptp::transport::Response;
-use dac_tether::ptp::{Camera, Container, DeviceInfo, Event, ObjectInfo, PropDesc, Transport, op, prop, ptpip, vendor};
+use lcc_fuzzkit::Rng;
+use lcc_tether::ptp::sim::SimCamera;
+use lcc_tether::ptp::transport::Response;
+use lcc_tether::ptp::{Camera, Container, DeviceInfo, Event, ObjectInfo, PropDesc, Transport, op, prop, ptpip, vendor};
 
 fn cam() -> SimCamera {
     SimCamera::new(Some(Box::new(|n| vec![n as u8; 2000])), true)
@@ -31,13 +31,13 @@ fn mutated_datasets_never_panic() {
     let seeds = datasets(&cam());
     assert!(DeviceInfo::parse(&seeds[0]).is_ok() && ObjectInfo::parse(&seeds[1]).is_ok());
     let refs: Vec<&[u8]> = seeds.iter().map(Vec::as_slice).collect();
-    dac_fuzzkit::run("ptp.dataset", &refs, 5000, |b| {
+    lcc_fuzzkit::run("ptp.dataset", &refs, 5000, |b| {
         if let Ok(d) = DeviceInfo::parse(b) {
             let _ = vendor::Vendor::detect(d.vendor_extension_id, &d.manufacturer, Some(0x04a9));
         }
         let _ = ObjectInfo::parse(b);
         if let Ok(p) = PropDesc::parse(b) {
-            let _ = dac_tether::ptp::camera::format_value(p.code, &p.current);
+            let _ = lcc_tether::ptp::camera::format_value(p.code, &p.current);
         }
         let _ = vendor::jpeg_in(b);
     });
@@ -48,7 +48,7 @@ fn mutated_containers_and_ptpip_packets_never_panic() {
     let c = Container::with_params(2, op::GET_OBJECT, 7, &[1, 2, 3]).encode();
     let mut pkt = Vec::new();
     ptpip::write_packet(&mut pkt, 7, &[1, 0, 0, 0, 9, 9]).unwrap();
-    dac_fuzzkit::run("ptp.container", &[&c, &pkt], 5000, |b| {
+    lcc_fuzzkit::run("ptp.container", &[&c, &pkt], 5000, |b| {
         let _ = Container::header(b);
         if let Ok(c) = Container::decode(b) {
             let _ = c.params();
@@ -64,10 +64,10 @@ struct Liar {
 }
 
 impl Transport for Liar {
-    fn transact(&mut self, code: u16, tid: u32, params: &[u32], data_out: Option<&[u8]>) -> Result<(Response, Vec<u8>), dac_tether::ptp::PtpError> {
+    fn transact(&mut self, code: u16, tid: u32, params: &[u32], data_out: Option<&[u8]>) -> Result<(Response, Vec<u8>), lcc_tether::ptp::PtpError> {
         let (mut r, data) = self.inner.transact(code, tid, params, data_out)?;
         let mut rng = self.rng.lock().unwrap();
-        let data = if rng.chance(2) { dac_fuzzkit::mutate(&mut rng, &data, 4) } else { data };
+        let data = if rng.chance(2) { lcc_fuzzkit::mutate(&mut rng, &data, 4) } else { data };
         if rng.chance(6) {
             r.params = (0..rng.below(8)).map(|_| rng.next_u64() as u32).collect();
         }
@@ -76,7 +76,7 @@ impl Transport for Liar {
         }
         Ok((r, data))
     }
-    fn poll_event(&mut self, timeout: Duration) -> Result<Option<Event>, dac_tether::ptp::PtpError> {
+    fn poll_event(&mut self, timeout: Duration) -> Result<Option<Event>, lcc_tether::ptp::PtpError> {
         let e = self.inner.poll_event(timeout)?;
         let mut rng = self.rng.lock().unwrap();
         Ok(if rng.chance(3) {
@@ -93,7 +93,7 @@ impl Transport for Liar {
 #[test]
 fn a_lying_camera_never_panics() {
     let rng = Arc::new(Mutex::new(Rng::new(77)));
-    for _ in 0..dac_fuzzkit::iterations(150) {
+    for _ in 0..lcc_fuzzkit::iterations(150) {
         let sim = cam();
         let inner = if rng.lock().unwrap().chance(2) { sim.transport() } else { sim.usb() };
         let Ok(mut c) = Camera::open(Box::new(Liar { inner, rng: rng.clone() }), Some(0x04b0)) else { continue };

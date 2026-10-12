@@ -1,8 +1,8 @@
 //! Stream colour description and Y'CbCr → linear Rec.709 RGB (HDR tone-mapped to SDR).
 
-use dac_raster::Rgb32f;
 use filmcraft_color::{ColorInfo, Gamut, Matrix, Primaries, REFERENCE_WHITE_NITS, Range, ToneMap, Transfer};
 use filmcraft_frame::VideoFrame;
+use lcc_raster::Rgb32f;
 
 /// Nominal peak of HLG displays / PQ masters without metadata, cd/m².
 const HDR_PEAK_NITS: f64 = 1000.0;

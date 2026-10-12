@@ -1,13 +1,13 @@
 //! Scene-linear preparation: white balance + exposure, and the spatial planes the per-pixel stage
 //! needs (edge-aware base layer for highlights/shadows, clarity/texture bands, dehaze veil).
 
-use dac_color::cct::{temp_tint_to_xy, wb_matrix, xy_to_temp_tint};
-use dac_color::{REC2020, luminance_2020};
-use dac_develop::{DevelopSettings, Process};
-use dac_raster::blur::gaussian;
+use lcc_color::cct::{temp_tint_to_xy, wb_matrix, xy_to_temp_tint};
+use lcc_color::{REC2020, luminance_2020};
+use lcc_develop::{DevelopSettings, Process};
+use lcc_raster::blur::gaussian;
 use std::sync::Arc;
 
-use dac_raster::{Plane, Rgb32f, par_join};
+use lcc_raster::{Plane, Rgb32f, par_join};
 
 use crate::geometry::Frame;
 use crate::{Prepared, Quality, SourceInfo, for_rows, masks, timed};
@@ -33,17 +33,17 @@ pub fn wb_matrix_for(info: &SourceInfo, s: &DevelopSettings) -> Option<[[f32; 3]
         return None;
     }
     if let Some(cc) = info.camera_color.as_deref().filter(|_| info.raw && !info.relative_wb)
-        && let Some(m) = dac_raw::color::rebalance(&cc.tags, cc.developed_for, temp_tint_to_xy(t, tint))
+        && let Some(m) = lcc_raw::color::rebalance(&cc.tags, cc.developed_for, temp_tint_to_xy(t, tint))
     {
         return Some(m.to_f32());
     }
     let set = wb_matrix(&REC2020, effective_white(info, s));
     let shot = wb_matrix(&REC2020, temp_tint_to_xy(info.as_shot_temp, info.as_shot_tint));
-    let m = set.mul(&shot.inverse().unwrap_or(dac_color::Mat3::IDENTITY));
+    let m = set.mul(&shot.inverse().unwrap_or(lcc_color::Mat3::IDENTITY));
     // Normalize so neutral luminance is preserved (WB shouldn't change exposure).
     let g = m.apply([1.0, 1.0, 1.0]);
     let y = g[0] * 0.2627 + g[1] * 0.6780 + g[2] * 0.0593;
-    Some(m.mul(&dac_color::Mat3::diag(1.0 / y, 1.0 / y, 1.0 / y)).to_f32())
+    Some(m.mul(&lcc_color::Mat3::diag(1.0 / y, 1.0 / y, 1.0 / y)).to_f32())
 }
 
 fn wb_gain(img: &mut Rgb32f, info: &SourceInfo, s: &DevelopSettings, gain: f32) {
@@ -68,7 +68,7 @@ fn wb_gain(img: &mut Rgb32f, info: &SourceInfo, s: &DevelopSettings, gain: f32) 
 /// the relative scale before a raw's camera matrices reached its white balance give the same colour change on the
 /// Kelvin scale, see [`legacy_to_kelvin`]).
 pub fn effective_wb(info: &SourceInfo, s: &DevelopSettings) -> (f64, f64) {
-    use dac_develop::WbMode;
+    use lcc_develop::WbMode;
     match s.wb.mode {
         WbMode::AsShot => (info.as_shot_temp, info.as_shot_tint),
         _ if legacy_wb(info, s) => legacy_to_kelvin(s.wb.temp, s.wb.tint, (info.as_shot_temp, info.as_shot_tint)),
@@ -80,9 +80,9 @@ pub fn effective_wb(info: &SourceInfo, s: &DevelopSettings) -> (f64, f64) {
 /// The source white the render adapts from the as-shot white to: [`effective_wb`] as a chromaticity, except that a
 /// white balance still on the relative scale is composed exactly ([`legacy_white`]) rather than read back through
 /// its rounded Kelvin / tint.
-fn effective_white(info: &SourceInfo, s: &DevelopSettings) -> dac_color::Xy {
+fn effective_white(info: &SourceInfo, s: &DevelopSettings) -> lcc_color::Xy {
     if legacy_wb(info, s)
-        && s.wb.mode != dac_develop::WbMode::AsShot
+        && s.wb.mode != lcc_develop::WbMode::AsShot
         && let Some(xy) = legacy_white(s.wb.temp, s.wb.tint, (info.as_shot_temp, info.as_shot_tint))
     {
         return xy;
@@ -93,7 +93,7 @@ fn effective_white(info: &SourceInfo, s: &DevelopSettings) -> dac_color::Xy {
 
 /// Whether `s` holds a white balance written on the relative scale for a source that is edited in Kelvin today.
 fn legacy_wb(info: &SourceInfo, s: &DevelopSettings) -> bool {
-    info.raw && !info.relative_wb && info.legacy_relative_wb && s.wb.scale == dac_develop::WbScale::Legacy
+    info.raw && !info.relative_wb && info.legacy_relative_wb && s.wb.scale == lcc_develop::WbScale::Legacy
 }
 
 /// The white that renders exactly as `(temp, tint)` did on the relative scale, where 6500 K / 0 meant *as shot* and
@@ -105,8 +105,8 @@ fn legacy_wb(info: &SourceInfo, s: &DevelopSettings) -> bool {
 /// over the old reference's, and the two renders give the same matrix (up to the scale the luminance
 /// normalisation removes). `None` when the arithmetic has nowhere to go (a non-finite input, a white outside the
 /// chromaticity plane).
-pub fn legacy_white(temp: f64, tint: f64, as_shot: (f64, f64)) -> Option<dac_color::Xy> {
-    use dac_color::{BRADFORD, Xy};
+pub fn legacy_white(temp: f64, tint: f64, as_shot: (f64, f64)) -> Option<lcc_color::Xy> {
+    use lcc_color::{BRADFORD, Xy};
     if !(temp.is_finite() && tint.is_finite() && as_shot.0.is_finite() && as_shot.1.is_finite()) {
         return None;
     }
@@ -146,7 +146,7 @@ pub fn legacy_to_kelvin(temp: f64, tint: f64, as_shot: (f64, f64)) -> (f64, f64)
 /// value, since the preset's Kelvin value would be a different look). Elsewhere the scale is cleared, so values
 /// edited on a rendered photo or a raw without matrices never pass for Kelvin when pasted onto one that has them.
 pub fn normalize_wb(d: &mut DevelopSettings, info: &SourceInfo) {
-    use dac_develop::{WbMode, WbScale};
+    use lcc_develop::{WbMode, WbScale};
     if !(info.raw && !info.relative_wb) {
         d.wb.scale = WbScale::Legacy;
         return;
@@ -194,7 +194,7 @@ fn guided_apply(p: &Plane, a: &Plane, b: &Plane) -> Plane {
 /// bilinearly upsampled; the output keeps full-resolution edges. Equivalent to [`guided`] for
 /// large windows at a fraction of the cost.
 pub fn guided_fast(p: &Plane, sigma: f32, eps: f32) -> Plane {
-    use dac_raster::resample::{Filter, resize};
+    use lcc_raster::resample::{Filter, resize};
     let s = guided_fast_step(sigma);
     if s <= 1 {
         return guided(p, sigma, eps);
@@ -454,7 +454,7 @@ pub struct PlaneSigmas {
 
 pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, q: Quality) -> PlaneSigmas {
     let ppl = px_per_long as f32;
-    let local_any = |f: fn(&dac_develop::LocalAdjustments) -> f64| s.masks.iter().any(|m| f(&m.adjust) != 0.0);
+    let local_any = |f: fn(&lcc_develop::LocalAdjustments) -> f64| s.masks.iter().any(|m| f(&m.adjust) != 0.0);
     let tone_active =
         s.light.highlights != 0.0 || s.light.shadows != 0.0 || s.masks.iter().any(|m| m.adjust.highlights != 0.0 || m.adjust.shadows != 0.0);
     // Edge-aware base at ~1.5% of the long edge (EV² epsilon: edges of > ~0.6 EV are preserved)
@@ -590,7 +590,7 @@ mod tests {
         scene_linear_pre(&mut img, &info, &s);
         assert!((img.get(0, 0)[0] - 0.3).abs() < 1e-6);
         let mut warm = s.clone();
-        warm.wb.mode = dac_develop::WbMode::Custom;
+        warm.wb.mode = lcc_develop::WbMode::Custom;
         warm.wb.temp = 9000.0;
         let mut img2 = Rgb32f::filled(4, 4, [0.3, 0.3, 0.3]);
         scene_linear_pre(&mut img2, &info, &warm);

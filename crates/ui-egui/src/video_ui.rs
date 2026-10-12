@@ -4,14 +4,14 @@
 //!
 //! The bar is drawn from a plain [`VideoUiState`] and only *asks* for changes: it returns command
 //! requests by id (`video.togglePlay`, `video.seek`, `video.setTrim`, `video.stepFrame`,
-//! `video.setPoster`), which [`show_bar`] sends through [`DacApp::run`] like every other control.
+//! `video.setPoster`), which [`show_bar`] sends through [`LccApp::run`] like every other control.
 //! Photos never reach any of this: everything is gated on the catalog kind being video.
 
-use dac_catalog::{MediaKind, Photo, PhotoId};
 use egui::{Color32, Rect, Sense, Stroke, Ui, pos2, vec2};
+use lcc_catalog::{MediaKind, Photo, PhotoId};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::theme::Tokens;
 use crate::widgets::{command_tooltip, icon_button_named, register};
@@ -91,7 +91,7 @@ pub fn is_video(p: &Photo) -> bool {
 }
 
 /// Whether the photo with this id is a video.
-pub fn photo_is_video(app: &DacApp, id: PhotoId) -> bool {
+pub fn photo_is_video(app: &LccApp, id: PhotoId) -> bool {
     app.session.catalog.photo(id).is_some_and(|p| is_video(p))
 }
 
@@ -103,7 +103,7 @@ pub fn format_time(t: f64) -> String {
 }
 
 /// The bar's state for a video: `video.get` when the engine has it, else the catalog record.
-pub fn state_of(app: &mut DacApp, id: PhotoId) -> Option<VideoUiState> {
+pub fn state_of(app: &mut LccApp, id: PhotoId) -> Option<VideoUiState> {
     let photo = app.session.catalog.photo(id).filter(|p| is_video(p))?;
     let fallback = VideoUiState { duration: photo.duration.unwrap_or(0.0), ..Default::default() };
     if !has_command("video.get") {
@@ -116,12 +116,12 @@ pub fn state_of(app: &mut DacApp, id: PhotoId) -> Option<VideoUiState> {
 }
 
 fn has_command(id: &str) -> bool {
-    dac_engine::command_specs().iter().any(|c| c.id == id)
+    lcc_engine::command_specs().iter().any(|c| c.id == id)
 }
 
 /// Draw the control bar in `rect` and send what it asks for through the command dispatch.
 /// Returns the state after the requests ran (what the loupe shows).
-pub fn show_bar(app: &mut DacApp, ui: &mut Ui, rect: Rect, id: PhotoId) -> Option<VideoUiState> {
+pub fn show_bar(app: &mut LccApp, ui: &mut Ui, rect: Rect, id: PhotoId) -> Option<VideoUiState> {
     let state = state_of(app, id)?;
     let out = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| control_bar(ui, &state)).inner;
     for (cmd, params) in out.requests {
@@ -265,7 +265,7 @@ pub fn control_bar(ui: &mut Ui, s: &VideoUiState) -> BarOutput {
 
 /// Space plays / pauses the active video and ←/→ step a frame while it's paused, in the loupe only.
 /// Consumes the keys it uses, so they don't also reach their usual commands. Photos are untouched.
-pub fn handle_keys(app: &mut DacApp, ctx: &egui::Context) {
+pub fn handle_keys(app: &mut LccApp, ctx: &egui::Context) {
     if app.ui.view != crate::state::ViewMode::Detail {
         return;
     }
@@ -346,11 +346,11 @@ pub fn photo_only(id: &str) -> bool {
     matches!(
         id,
         "panel.crop" | "panel.remove" | "panel.masking" | "panel.redeye" | "tool.brush" | "tool.linear" | "tool.radial" | "tool.guidedUpright"
-    ) || dac_engine::cmd::photo_only(id)
+    ) || lcc_engine::cmd::photo_only(id)
 }
 
 /// `id` is [`photo_only`] and the active photo is a clip.
-pub fn blocked(app: &DacApp, id: &str) -> bool {
+pub fn blocked(app: &LccApp, id: &str) -> bool {
     photo_only(id) && app.session.active().is_some_and(|a| photo_is_video(app, a))
 }
 

@@ -5,7 +5,7 @@
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::state::{ViewMode, ZOOM_LEVELS, Zoom};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -37,7 +37,7 @@ fn current(zoom: Zoom) -> Option<&'static str> {
 
 /// Click on the Navigator at normalized `(u, v)`: centre the loupe there (opening it from a
 /// grid at the custom or 1:1 level).
-pub(crate) fn pan_to(app: &mut DacApp, u: f32, v: f32) {
+pub(crate) fn pan_to(app: &mut LccApp, u: f32, v: f32) {
     let (u, v) = (if u.is_finite() { u.clamp(0.0, 1.0) } else { 0.5 }, if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.5 });
     if app.ui.view != ViewMode::Detail {
         let _ = app.run("view.loupe", json!({}));
@@ -58,7 +58,7 @@ fn triangle(p: &egui::Painter, c: egui::Pos2, open: bool, col: Color32) {
     p.add(egui::Shape::convex_polygon(pts, col, Stroke::NONE));
 }
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     // header: title and the four presets at the right

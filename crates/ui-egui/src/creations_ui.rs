@@ -1,15 +1,15 @@
 //! Saved creations in the Collections panel (P3.7): Saved Prints, Books, Slideshows and Web
-//! Galleries are collections carrying a layout or module settings (`dac_engine::creations`).
+//! Galleries are collections carrying a layout or module settings (`lcc_engine::creations`).
 //! The panel marks each kind with its own icon; a double-click (or `creation.open {id}`) shows
 //! the collection and opens the creation in its module.
 //!
 //! Sources: own design.
 
-use dac_catalog::{Album, AlbumId};
-use dac_layout::CreationKind;
+use lcc_catalog::{Album, AlbumId};
+use lcc_layout::CreationKind;
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::Icon;
 
 /// UI commands: (id, label, shortcut, menu).
@@ -20,7 +20,7 @@ pub const COMMANDS: &[crate::menus::UiCommand] = &[
 
 /// The kind of saved creation `a` is, if it is one.
 pub fn kind(a: &Album) -> Option<CreationKind> {
-    a.creation.as_ref().and_then(|c| dac_engine::creations::kind_of(&c.kind))
+    a.creation.as_ref().and_then(|c| lcc_engine::creations::kind_of(&c.kind))
 }
 
 /// The Collections panel icon of a saved creation.
@@ -44,18 +44,18 @@ fn module_of(k: CreationKind) -> &'static str {
 }
 
 /// Is `id` one of ours, and is it enabled?
-pub fn enabled(_app: &DacApp, id: &str) -> Option<bool> {
+pub fn enabled(_app: &LccApp, id: &str) -> Option<bool> {
     COMMANDS.iter().any(|c| c.0 == id).then_some(true)
 }
 
 /// Run one of our commands; `None`: not one.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     (id == "creation.open").then(|| open(app, p))
 }
 
 /// `creation.open {id}`: shows the creation's collection (its photos fill the filmstrip) and
 /// opens it in its module.
-fn open(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+fn open(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let id = p.get("id").and_then(Value::as_u64).ok_or("missing id")?;
     let k = app.session.catalog.album(AlbumId(id)).and_then(kind).ok_or("not a saved creation")?;
     app.run("library.source", json!({"kind": "album", "id": id}))?;
@@ -67,11 +67,11 @@ fn open(app: &mut DacApp, p: &Value) -> Result<Value, String> {
         CreationKind::Slideshow => app.run("slideshow.openSaved", json!({"id": id}))?,
         CreationKind::Web => crate::web_module::open_creation(app, id)?,
     };
-    Ok(json!({"id": id, "kind": dac_engine::creations::kind_name(k), "module": module, "result": r}))
+    Ok(json!({"id": id, "kind": lcc_engine::creations::kind_name(k), "module": module, "result": r}))
 }
 
 /// A double-click on a creation's row in the Collections panel.
-pub fn double_clicked(app: &mut DacApp, ctx: &egui::Context, a: &Album) {
+pub fn double_clicked(app: &mut LccApp, ctx: &egui::Context, a: &Album) {
     if kind(a).is_some()
         && let Err(e) = app.run("creation.open", json!({"id": a.id.0}))
     {
@@ -86,13 +86,13 @@ mod tests {
     use serde_json::{Value, json};
 
     use crate::headless::Headless;
-    use crate::{DacApp, Services};
+    use crate::{LccApp, Services};
 
     const T: Duration = Duration::from_secs(60);
 
     pub(crate) fn demo() -> Headless {
         let services = Services { png: None, ..Default::default() };
-        let app = DacApp::new(dac_engine::Session::with_demo(), services);
+        let app = LccApp::new(lcc_engine::Session::with_demo(), services);
         let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
         h.settle(Duration::from_secs(120));
         h
@@ -120,7 +120,7 @@ mod tests {
             assert_eq!(r["module"], module, "{r}");
             h.settle(T);
             assert_eq!(serde_json::to_value(h.app.ui.module).unwrap(), json!(module));
-            assert_eq!(h.app.session.source, dac_engine::LibrarySource::Album(dac_catalog::AlbumId(id.as_u64().unwrap())));
+            assert_eq!(h.app.session.source, lcc_engine::LibrarySource::Album(lcc_catalog::AlbumId(id.as_u64().unwrap())));
         }
         assert_eq!(h.app.session.visible_cloned().len(), 1, "the web gallery's photos");
         assert_eq!(crate::web_module::state(&h.view.ctx).gallery_name, "Site");
@@ -129,16 +129,16 @@ mod tests {
         assert_eq!(h.app.ui.slides.open_id, slides.as_u64());
         // a Saved Print made in the module keeps its settings
         ok(&mut h, "creation.open", json!({"id": print}));
-        ok(&mut h, "printui.template", json!({"name": dac_print::job::builtin_templates()[1].0}));
+        ok(&mut h, "printui.template", json!({"name": lcc_print::job::builtin_templates()[1].0}));
         let want = serde_json::to_value(&h.app.print.settings).unwrap();
         let mine = ok(&mut h, "printui.saveCreation", json!({"name": "Mine"}))["creation"].clone();
-        ok(&mut h, "printui.template", json!({"name": dac_print::job::builtin_templates()[0].0}));
+        ok(&mut h, "printui.template", json!({"name": lcc_print::job::builtin_templates()[0].0}));
         ok(&mut h, "creation.open", json!({"id": mine}));
         assert_eq!(serde_json::to_value(&h.app.print.settings).unwrap(), want);
         let r = h.request("engine.execute", json!({"command": "creation.open", "params": {"id": 999_999}}), T);
         assert_eq!(r["ok"], false);
         // the panel marks creations with their own icons
-        let a = h.app.session.catalog.album(dac_catalog::AlbumId(print.as_u64().unwrap())).unwrap().clone();
+        let a = h.app.session.catalog.album(lcc_catalog::AlbumId(print.as_u64().unwrap())).unwrap().clone();
         assert_eq!(super::icon(&a), Some(crate::icons::Icon::Printer));
     }
 

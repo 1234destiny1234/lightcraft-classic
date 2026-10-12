@@ -32,13 +32,13 @@ coordinates 0..1 with the origin at the top-left. Every action is a command: com
 docs; command_run {id, params} runs any of them; command_batch runs steps in order. Inspect with doc_inspect. Edits are undoable (undo / redo).";
 
 /// Resource URIs.
-pub const DOCUMENT_URI: &str = "dac://document";
-pub const COMMANDS_URI: &str = "dac://commands";
-pub const LIBRARY_URI: &str = "dac://library";
-pub const PHOTOS_URI: &str = "dac://photos";
-pub const PHOTO_URI: &str = "dac://photo/active";
-pub const DEVELOP_URI: &str = "dac://develop/active";
-pub const CONTROLS_URI: &str = "dac://controls";
+pub const DOCUMENT_URI: &str = "lcc://document";
+pub const COMMANDS_URI: &str = "lcc://commands";
+pub const LIBRARY_URI: &str = "lcc://library";
+pub const PHOTOS_URI: &str = "lcc://photos";
+pub const PHOTO_URI: &str = "lcc://photo/active";
+pub const DEVELOP_URI: &str = "lcc://develop/active";
+pub const CONTROLS_URI: &str = "lcc://controls";
 
 /// An MCP server bound to one backend.
 pub struct Server {
@@ -166,8 +166,8 @@ impl Server {
                 Ok(json!({
                     "protocolVersion": version,
                     "capabilities": {"tools": {"listChanged": false}, "resources": {"subscribe": false, "listChanged": false}},
-                    "serverInfo": {"name": dac_brand::MCP_SERVER, "title": dac_brand::DISPLAY_NAME, "version": env!("CARGO_PKG_VERSION")},
-                    "instructions": format!("{} {INSTRUCTIONS} Backend: {}.", dac_brand::DISPLAY_NAME, self.backend.describe()),
+                    "serverInfo": {"name": lcc_brand::MCP_SERVER, "title": lcc_brand::DISPLAY_NAME, "version": env!("CARGO_PKG_VERSION")},
+                    "instructions": format!("{} {INSTRUCTIONS} Backend: {}.", lcc_brand::DISPLAY_NAME, self.backend.describe()),
                 }))
             }
             "ping" => Ok(json!({})),

@@ -2,8 +2,8 @@
 //! proptests): every parsed file is then walked like a reader would (layers, tree, channel and
 //! merged-image decoding, re-encoding); nothing panics or allocates without bound.
 
-use dac_psd::testgen;
-use dac_psd::*;
+use lcc_psd::testgen;
+use lcc_psd::*;
 
 fn walk(f: &PsdFile) {
     let h = &f.header;
@@ -59,8 +59,8 @@ fn mutated_descriptors_never_panic() {
 }
 
 /// A tiny seeded mutator (this crate is standalone: no workspace dev-dependencies, so not
-/// `dac-fuzzkit`). Bit flips, byte writes, truncation, deletion, duplication and inserted
-/// tokens; `DAC_FUZZ_ITERS` raises the count.
+/// `lcc-fuzzkit`). Bit flips, byte writes, truncation, deletion, duplication and inserted
+/// tokens; `LCC_FUZZ_ITERS` raises the count.
 fn fuzz(name: &str, seeds: &[&[u8]], default: usize, mut check: impl FnMut(&[u8])) {
     let mut x = name.bytes().fold(0x9E37_79B9_7F4A_7C15u64, |h, b| (h ^ u64::from(b)).wrapping_mul(0x100_0000_01b3)) | 1;
     let mut next = move |n: usize| {
@@ -70,7 +70,7 @@ fn fuzz(name: &str, seeds: &[&[u8]], default: usize, mut check: impl FnMut(&[u8]
         if n == 0 { 0 } else { (x % n as u64) as usize }
     };
     const TOKENS: &[&[u8]] = &[b"\0", b"\xff\xff\xff\xff", b"-1", b"1e309", b"null", b"[]", b"{}", b"\"\"", b"[[[[", b"99999999999999999999"];
-    let iters = std::env::var("DAC_FUZZ_ITERS").ok().and_then(|s| s.parse().ok()).unwrap_or(default);
+    let iters = std::env::var("LCC_FUZZ_ITERS").ok().and_then(|s| s.parse().ok()).unwrap_or(default);
     for s in seeds {
         check(s);
     }

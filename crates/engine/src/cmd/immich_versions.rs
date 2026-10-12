@@ -22,8 +22,8 @@
 
 use std::path::PathBuf;
 
-use dac_catalog::{PhotoId, RemoteIdentity, Source, SyncState as LinkState};
-use dac_immich::link::SERVICE;
+use lcc_catalog::{PhotoId, RemoteIdentity, Source, SyncState as LinkState};
+use lcc_immich::link::SERVICE;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -81,7 +81,7 @@ fn version_settings(s: &mut Session, p: &Value) -> Result<Value> {
             std::fs::create_dir_all(d).map_err(|e| bad(C, format!("{}: {e}", d.display())))?;
         }
         let bytes = serde_json::to_vec_pretty(&st).map_err(|e| bad(C, e.to_string()))?;
-        dac_catalog::safe_file::write_atomic(&path, &bytes).map_err(|e| bad(C, format!("{}: {e}", path.display())))?;
+        lcc_catalog::safe_file::write_atomic(&path, &bytes).map_err(|e| bad(C, format!("{}: {e}", path.display())))?;
     }
     serde_json::to_value(st).map_err(|e| bad(C, e.to_string()))
 }
@@ -176,7 +176,7 @@ fn upload_version(s: &mut Session, p: &Value) -> Result<Value> {
         path: PathBuf::from(path),
         file_name: ph.file_name.clone(),
         created,
-        favorite: ph.flag == dac_catalog::Flag::Pick,
+        favorite: ph.flag == lcc_catalog::Flag::Pick,
         anchor,
         replace,
     };
@@ -198,11 +198,11 @@ fn upload_version(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(finish(s, done))
 }
 
-fn work(c: &dac_immich::Client, job: &Job) -> std::result::Result<Uploaded, String> {
+fn work(c: &lcc_immich::Client, job: &Job) -> std::result::Result<Uploaded, String> {
     let device_asset_id =
         format!("{}-{}", job.photo.0, std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0));
-    let up = dac_immich::client::NewAsset {
-        data: dac_immich::client::UploadData::File(&job.path),
+    let up = lcc_immich::client::NewAsset {
+        data: lcc_immich::client::UploadData::File(&job.path),
         file_name: &job.file_name,
         mime: mime_of(&job.file_name),
         device_asset_id: &device_asset_id,
@@ -259,14 +259,14 @@ fn work(c: &dac_immich::Client, job: &Job) -> std::result::Result<Uploaded, Stri
 pub(crate) fn finish(s: &mut Session, d: VersionDone) -> Value {
     match d.result {
         Ok(u) => {
-            let op = dac_catalog::Catalog::link_remote_op(RemoteIdentity {
+            let op = lcc_catalog::Catalog::link_remote_op(RemoteIdentity {
                 photo_id: d.photo,
                 service: SERVICE.to_string(),
                 account_id: d.account.clone(),
                 remote_id: u.asset.clone(),
                 remote_checksum: None,
                 remote_updated_at: None,
-                last_synced_at: Some(dac_catalog::rules::now()),
+                last_synced_at: Some(lcc_catalog::rules::now()),
                 sync_state: LinkState::Synced,
             });
             let mut warnings = u.warnings;

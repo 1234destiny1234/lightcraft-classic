@@ -62,8 +62,8 @@ fn original_export_copies_the_file_and_writes_its_edits_beside_it() {
     let e = export_photo(&mut s, id, &o, 1).unwrap();
     assert_eq!(e.file_name, "Shot.dng");
     assert!(e.sidecars.is_empty());
-    let back = dac_raw::decode(&e.bytes).expect("our DNG decodes");
-    let orig = dac_raw::decode(&dng).unwrap();
+    let back = lcc_raw::decode(&e.bytes).expect("our DNG decodes");
+    let orig = lcc_raw::decode(&dng).unwrap();
     assert_eq!((back.width, back.height), (orig.width, orig.height));
     assert_eq!(back.data, orig.data, "lossless");
     let out = dir.join("out.dng");
@@ -88,7 +88,7 @@ fn original_and_dng_need_a_file() {
 fn dng_export_rejects_non_raw_photos() {
     let dir = temp_dir("export-dng-jpeg");
     let src = dir.join("a.png");
-    let img = dac_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 8) as u8, (y * 10) as u8, 90, 255]);
+    let img = lcc_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 8) as u8, (y * 10) as u8, 90, 255]);
     std::fs::write(&src, crate::export::encode_image(&img, &ExportOptions { format: ExportFormat::Png, ..Default::default() }).unwrap()).unwrap();
     let mut s = Session::new().with_fs();
     s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
@@ -181,7 +181,7 @@ fn prepared_exports_run_on_another_thread() {
 ///
 /// Issue #675: this test runs beside every other engine test, many of them rendering on the GPU.
 /// It asks only about its own export (`Exported::gpu_fallback`), never the process-wide
-/// `dac_gpu::last_fallback` another thread's render overwrites, and the simulated failure
+/// `lcc_gpu::last_fallback` another thread's render overwrites, and the simulated failure
 /// switches the GPU off for this thread alone, so neither the fault nor `reset_failures` reaches
 /// the other tests.
 #[test]
@@ -192,30 +192,30 @@ fn export_falls_back_to_the_cpu_when_gpu_work_is_lost() {
     s.execute("develop.set", &json!({"control": "effects.clarity", "value": 20})).unwrap();
     let o = ExportOptions::from_json(&json!({"format": "png"}));
     let mean = |b: &[u8]| {
-        let d = dac_codecs::decode(b, Default::default()).unwrap().image;
+        let d = lcc_codecs::decode(b, Default::default()).unwrap().image;
         d.data.iter().map(|p| (p[0] + p[1] + p[2]) as f64).sum::<f64>() / (3 * d.data.len()) as f64
     };
-    let gpu = dac_gpu::available();
+    let gpu = lcc_gpu::available();
     let healthy = mean(&export_photo(&mut s, id, &o, 1).unwrap().bytes);
-    dac_gpu::inject_fault(dac_gpu::Fault::DropWork);
+    lcc_gpu::inject_fault(lcc_gpu::Fault::DropWork);
     let faulted = export_photo(&mut s, id, &o, 1).unwrap();
     if gpu {
         let why = faulted.gpu_fallback.clone().unwrap_or_default();
         assert!(why.contains("incomplete"), "{why}");
         // the GPU is off for this thread now: the next export is not even tried on it
-        assert!(!dac_gpu::available());
-        assert!(dac_gpu::unavailable_reason().unwrap_or_default().contains("incomplete"), "{:?}", dac_gpu::unavailable_reason());
+        assert!(!lcc_gpu::available());
+        assert!(lcc_gpu::unavailable_reason().unwrap_or_default().contains("incomplete"), "{:?}", lcc_gpu::unavailable_reason());
         // the thread's own `inject_fault` stopped only its own GPU use: the others still have it
-        let elsewhere = std::thread::spawn(|| (dac_gpu::available(), dac_gpu::unavailable_reason())).join().unwrap();
+        let elsewhere = std::thread::spawn(|| (lcc_gpu::available(), lcc_gpu::unavailable_reason())).join().unwrap();
         assert_eq!(elsewhere, (true, None), "a simulated failure must not switch the GPU off for the other threads");
     } else {
         assert_eq!(faulted.gpu_fallback, None);
     }
     let cpu = export_photo(&mut s, id, &o, 1).unwrap();
     assert_eq!(cpu.gpu_fallback, None, "not tried on the GPU: no fallback to report");
-    dac_gpu::reset_failures();
-    assert_eq!(dac_gpu::available(), gpu, "reset_failures gives this thread the GPU back");
-    let px = |b: &[u8]| dac_codecs::decode(b, Default::default()).unwrap().image.data;
+    lcc_gpu::reset_failures();
+    assert_eq!(lcc_gpu::available(), gpu, "reset_failures gives this thread the GPU back");
+    let px = |b: &[u8]| lcc_codecs::decode(b, Default::default()).unwrap().image.data;
     assert!(px(&faulted.bytes) == px(&cpu.bytes), "the fallback is the CPU render");
     let m = mean(&faulted.bytes);
     assert!(m > 0.02, "not black: mean {m}");
@@ -223,10 +223,10 @@ fn export_falls_back_to_the_cpu_when_gpu_work_is_lost() {
 }
 
 /// A JPEG original `dir/IMG_1.jpg` imported into a library on disk.
-fn library_with_jpeg(tag: &str) -> (Session, dac_catalog::PhotoId, std::path::PathBuf, std::path::PathBuf, Vec<u8>) {
+fn library_with_jpeg(tag: &str) -> (Session, lcc_catalog::PhotoId, std::path::PathBuf, std::path::PathBuf, Vec<u8>) {
     let dir = temp_dir(tag);
     let src = dir.join("IMG_1.jpg");
-    let img = dac_raster::Rgba8::from_fn(48, 32, |x, y| [(x * 5) as u8, (y * 7) as u8, 120, 255]);
+    let img = lcc_raster::Rgba8::from_fn(48, 32, |x, y| [(x * 5) as u8, (y * 7) as u8, 120, 255]);
     let bytes = crate::export::encode_image(&img, &ExportOptions::default()).unwrap();
     std::fs::write(&src, &bytes).unwrap();
     let mut s = Session::new().with_fs();
@@ -238,7 +238,7 @@ fn library_with_jpeg(tag: &str) -> (Session, dac_catalog::PhotoId, std::path::Pa
 
 fn disk_batch(
     s: &mut Session,
-    id: dac_catalog::PhotoId,
+    id: lcc_catalog::PhotoId,
     o: &ExportOptions,
     to: &crate::export::Destination,
 ) -> Result<Vec<serde_json::Value>, String> {
@@ -327,7 +327,7 @@ fn a_failed_export_write_keeps_the_previous_file() {
     let to = Destination { dir: out.to_string_lossy().to_string(), exact: None };
     let o = ExportOptions { conflict: Conflict::Overwrite, ..Default::default() };
     {
-        let _fault = dac_catalog::safe_file::fail_writes_after(100);
+        let _fault = lcc_catalog::safe_file::fail_writes_after(100);
         let err = disk_batch(&mut s, id, &o, &to).unwrap_err();
         assert!(err.contains("injected"), "{err}");
     }
@@ -369,7 +369,7 @@ fn export_protects_the_target_of_an_imported_symlink() {
 #[test]
 fn exports_are_atomic_without_a_sync() {
     use crate::export::{Conflict, Destination};
-    use dac_catalog::safe_file::syncs_on_this_thread;
+    use lcc_catalog::safe_file::syncs_on_this_thread;
     let (mut s, id, dir, _src, _) = library_with_jpeg("export-nosync");
     let out = dir.join("out");
     let to = Destination { dir: out.to_string_lossy().to_string(), exact: None };
@@ -386,7 +386,7 @@ fn exports_are_atomic_without_a_sync() {
 }
 
 /// The demo library's ocean sunset (a sun far above SDR white), selected and active.
-fn sunset(s: &mut Session) -> dac_catalog::PhotoId {
+fn sunset(s: &mut Session) -> lcc_catalog::PhotoId {
     let id = s.catalog.photos().find(|p| p.meta.title == "Golden horizon").map(|p| p.id).unwrap();
     s.execute("library.select", &json!({"ids": [id.0]})).unwrap();
     id
@@ -394,7 +394,7 @@ fn sunset(s: &mut Session) -> dac_catalog::PhotoId {
 
 #[test]
 fn hdr_jpeg_export_writes_a_gain_map_and_sdr_edits_stay_plain() {
-    use dac_codecs::gainmap;
+    use lcc_codecs::gainmap;
     let mut s = Session::with_demo();
     let id = sunset(&mut s);
     let o = ExportOptions::from_json(&json!({"longEdge": 320, "hdr": true}));
@@ -410,8 +410,8 @@ fn hdr_jpeg_export_writes_a_gain_map_and_sdr_edits_stay_plain() {
     let gm = gainmap::read_jpeg(&e.bytes).unwrap();
     assert!(gm.meta.alternate_headroom > 0.5 && gm.meta.alternate_headroom <= 3.05, "headroom {}", gm.meta.alternate_headroom);
     // the base is the SDR rendition: the same pixels as the SDR export (the decoders agree)
-    let a = dac_codecs::decode(&e.bytes, Default::default()).unwrap();
-    let b = dac_codecs::decode(&plain.bytes, Default::default()).unwrap();
+    let a = lcc_codecs::decode(&e.bytes, Default::default()).unwrap();
+    let b = lcc_codecs::decode(&plain.bytes, Default::default()).unwrap();
     assert_eq!((a.width, a.height), (b.width, b.height));
     let diff = a.image.data.iter().zip(&b.image.data).map(|(p, q)| (p[1] - q[1]).abs()).fold(0.0f32, f32::max);
     assert!(diff < 0.02, "base differs from the SDR export by {diff}");
@@ -428,7 +428,7 @@ fn hdr_float_tiff_keeps_highlights_above_white() {
     let max_of = |s: &mut Session, hdr: bool| {
         let o = ExportOptions::from_json(&json!({"longEdge": 240, "format": "tiff", "bitDepth": 32, "hdr": hdr}));
         let e = export_photo(s, id, &o, 1).unwrap();
-        let d = dac_codecs::decode(&e.bytes, Default::default()).unwrap();
+        let d = lcc_codecs::decode(&e.bytes, Default::default()).unwrap();
         d.image.data.iter().flat_map(|p| p.iter().copied()).fold(0.0f32, f32::max)
     };
     let hdr = max_of(&mut s, true);
@@ -475,16 +475,16 @@ fn hdr_avif_export_hlg() {
 #[test]
 fn remove_location_holds_for_original_and_dng_exports() {
     let dir = temp_dir("export-noloc");
-    let gps = dac_meta::Metadata { gps: Some(dac_meta::Gps { latitude: 48.85, longitude: 2.35, altitude: None }), ..Default::default() };
+    let gps = lcc_meta::Metadata { gps: Some(lcc_meta::Gps { latitude: 48.85, longitude: 2.35, altitude: None }), ..Default::default() };
     // a raw with no embedded GPS, located in the catalog
     let raw = dir.join("Raw.dng");
     std::fs::write(&raw, synthetic_dng_with(None, Default::default())).unwrap();
     // a JPEG with GPS in its EXIF
     let jpg = dir.join("Geo.jpg");
-    let img = dac_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 8) as u8, (y * 10) as u8, 90, 255]);
-    let exif = dac_meta::write_exif(&gps);
-    let meta = dac_codecs::EncodeMeta { exif: Some(&exif), ..Default::default() };
-    std::fs::write(&jpg, dac_codecs::encode_jpeg(&dac_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &meta).unwrap()).unwrap();
+    let img = lcc_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 8) as u8, (y * 10) as u8, 90, 255]);
+    let exif = lcc_meta::write_exif(&gps);
+    let meta = lcc_codecs::EncodeMeta { exif: Some(&exif), ..Default::default() };
+    std::fs::write(&jpg, lcc_codecs::encode_jpeg(&lcc_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &meta).unwrap()).unwrap();
     let mut s = Session::new().with_fs();
     s.execute("library.import", &json!({"paths": [raw.to_string_lossy(), jpg.to_string_lossy()]})).unwrap();
     let id = |s: &Session, n: &str| s.catalog.photos().find(|p| p.file_name == n).unwrap().id;
@@ -493,7 +493,7 @@ fn remove_location_holds_for_original_and_dng_exports() {
     let opts = |f: &str, remove: bool| ExportOptions::from_json(&json!({"format": f, "removeLocation": remove}));
 
     // original raw: the sidecar keeps the location unless it is removed
-    let side = |e: &crate::export::Exported| dac_meta::parse_xmp(std::str::from_utf8(&e.sidecars[0].1).unwrap()).unwrap().metadata;
+    let side = |e: &crate::export::Exported| lcc_meta::parse_xmp(std::str::from_utf8(&e.sidecars[0].1).unwrap()).unwrap().metadata;
     let kept = side(&export_photo(&mut s, rid, &opts("original", false), 1).unwrap());
     assert!(kept.gps.is_some() && kept.city.is_some());
     let gone = side(&export_photo(&mut s, rid, &opts("original", true), 1).unwrap());
@@ -501,14 +501,14 @@ fn remove_location_holds_for_original_and_dng_exports() {
 
     // dng: the embedded packet
     let e = export_photo(&mut s, rid, &opts("dng", false), 1).unwrap();
-    assert!(dac_meta::extract(&e.bytes).gps.is_some());
+    assert!(lcc_meta::extract(&e.bytes).gps.is_some());
     let e = export_photo(&mut s, rid, &opts("dng", true), 1).unwrap();
-    let m = dac_meta::extract(&e.bytes);
+    let m = lcc_meta::extract(&e.bytes);
     assert!(m.gps.is_none() && m.city.is_none(), "{m:?}");
 
     // original JPEG embedding GPS: copied as is normally, refused when the location must go
     let e = export_photo(&mut s, jid, &opts("original", false), 1).unwrap();
-    assert!(dac_meta::extract(&e.bytes).gps.is_some());
+    assert!(lcc_meta::extract(&e.bytes).gps.is_some());
     let err = export_photo(&mut s, jid, &opts("original", true), 1).err().unwrap();
     assert!(err.contains("can't remove the location") && err.contains("export as JPEG"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -518,10 +518,10 @@ fn remove_location_holds_for_original_and_dng_exports() {
 #[test]
 fn remove_location_refuses_a_raw_that_embeds_gps() {
     let dir = temp_dir("export-noloc-raw");
-    let gps = dac_meta::Metadata { gps: Some(dac_meta::Gps { latitude: 10.0, longitude: 20.0, altitude: None }), ..Default::default() };
+    let gps = lcc_meta::Metadata { gps: Some(lcc_meta::Gps { latitude: 10.0, longitude: 20.0, altitude: None }), ..Default::default() };
     let raw = dir.join("Geo.dng");
-    let bytes = synthetic_dng_with(Some(&dac_meta::write_xmp(&gps, None)), Default::default());
-    assert!(dac_meta::extract(&bytes).gps.is_some(), "fixture embeds GPS");
+    let bytes = synthetic_dng_with(Some(&lcc_meta::write_xmp(&gps, None)), Default::default());
+    assert!(lcc_meta::extract(&bytes).gps.is_some(), "fixture embeds GPS");
     std::fs::write(&raw, bytes).unwrap();
     let mut s = Session::new().with_fs();
     s.execute("library.import", &json!({"paths": [raw.to_string_lossy()]})).unwrap();
@@ -537,7 +537,7 @@ fn hdr_png_export_is_16_bit_pq_rec2020() {
     let id = sunset(&mut s);
     let o = ExportOptions::from_json(&json!({"longEdge": 160, "format": "png", "hdr": true}));
     assert!(o.hdr_output());
-    assert_eq!(o.effective_space(), dac_pipeline::OutputSpace::Rec2020);
+    assert_eq!(o.effective_space(), lcc_pipeline::OutputSpace::Rec2020);
     // a photo without an HDR edit exports as an ordinary (sRGB, 8-bit) PNG
     let sdr = export_photo(&mut s, id, &o, 1).unwrap();
     assert!(!sdr.bytes.windows(4).any(|w| w == b"cICP"));
@@ -584,7 +584,7 @@ fn jxl_export_writes_metadata() {
     let id = sunset(&mut s);
     let o = ExportOptions::from_json(&json!({"longEdge": 120, "format": "jxl", "quality": 80}));
     let e = export_photo(&mut s, id, &o, 1).unwrap();
-    let d = dac_codecs::decode(&e.bytes, Default::default()).unwrap();
+    let d = lcc_codecs::decode(&e.bytes, Default::default()).unwrap();
     assert_eq!(d.width.max(d.height), 120);
     assert!(d.xmp.as_deref().is_some_and(|x| x.contains("Golden horizon")), "title in the XMP box");
     assert!(d.exif.is_some(), "EXIF box");
@@ -863,7 +863,7 @@ mod apple_photos {
         assert_eq!(s.execute("export.addToPhotos", &json!({"paths": paths})).unwrap()["imported"], 2);
     }
 
-    /// The desktop app, dac-cli and the MCP server get the real runner from `with_fs`, on
+    /// The desktop app, lcc-cli and the MCP server get the real runner from `with_fs`, on
     /// macOS only. (Installed, never run here.)
     #[test]
     fn with_fs_installs_the_runner_on_macos_only() {

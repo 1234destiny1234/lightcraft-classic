@@ -8,7 +8,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
 use super::{Bindable, Keymap, assign, bindable, binding, matches, parse};
-use crate::DacApp;
+use crate::LccApp;
 
 impl Bindable {
     /// The shortcut in the active keymap set: Classic's where [`CLASSIC`] names the command,
@@ -116,7 +116,7 @@ pub const CLASSIC: &[(&str, Option<&str>)] = &[
 const MAX_KEYMAP_FILE: u64 = 1 << 20;
 
 /// `app.keymapSet {set: classic|alternative}` (no set: report the active one).
-pub fn choose_set(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn choose_set(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     if let Some(name) = p.get("set").and_then(Value::as_str) {
         let set = KeymapSet::parse(name).ok_or_else(|| format!("unknown keymap set: {name} (classic|alternative)"))?;
         app.ui.settings.keymap_set = set;
@@ -126,12 +126,12 @@ pub fn choose_set(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 /// The keymap file: the set and the user's changes over it.
-pub fn keymap_file(app: &DacApp) -> Value {
+pub fn keymap_file(app: &LccApp) -> Value {
     json!({"format": "keymap", "version": 1, "set": app.ui.settings.keymap_set, "keymap": app.ui.settings.keymap})
 }
 
 /// `app.keymapExport {path}`.
-pub fn export_file(app: &mut DacApp, path: &str) -> Result<Value, String> {
+pub fn export_file(app: &mut LccApp, path: &str) -> Result<Value, String> {
     let bytes = serde_json::to_vec_pretty(&keymap_file(app)).map_err(|e| e.to_string())?;
     std::fs::write(path, bytes).map_err(|e| format!("can't write {path}: {e}"))?;
     Ok(json!({"path": path, "count": app.ui.settings.keymap.len()}))
@@ -139,7 +139,7 @@ pub fn export_file(app: &mut DacApp, path: &str) -> Result<Value, String> {
 
 /// Apply a keymap file's contents: the set, then each entry through [`assign`] (so conflicts
 /// move keys as in the editor). Bad entries are reported, the rest applied.
-pub fn import_value(app: &mut DacApp, v: &Value) -> Result<Value, String> {
+pub fn import_value(app: &mut LccApp, v: &Value) -> Result<Value, String> {
     let o = v.as_object().ok_or("a keymap file is a JSON object")?;
     if let Some(name) = o.get("set").and_then(Value::as_str) {
         let set = KeymapSet::parse(name).ok_or_else(|| format!("unknown keymap set: {name}"))?;
@@ -165,7 +165,7 @@ pub fn import_value(app: &mut DacApp, v: &Value) -> Result<Value, String> {
 }
 
 /// `app.keymapImport {path}`.
-pub fn import_file(app: &mut DacApp, path: &str) -> Result<Value, String> {
+pub fn import_file(app: &mut LccApp, path: &str) -> Result<Value, String> {
     let len = std::fs::metadata(path).map_err(|e| format!("can't read {path}: {e}"))?.len();
     if len > MAX_KEYMAP_FILE {
         return Err(format!("{path} is too large for a keymap ({len} bytes)"));

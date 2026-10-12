@@ -1,10 +1,10 @@
 //! Headless tests of the video UI: the control bar's requests on click and drag (from a fake
 //! state), the grid badge for a video record, and develop controls greyed out for video only.
 
-use dac_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use egui::{Event, PointerButton, Pos2, Rect, pos2, vec2};
 use egui_kittest::Harness;
 use egui_kittest::kittest::Queryable;
+use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use serde_json::json;
 
 use super::*;
@@ -168,9 +168,9 @@ fn grid_badge_only_for_video() {
 
 #[test]
 fn grid_cell_shows_the_badge() {
-    let mut s = dac_engine::Session::new();
+    let mut s = lcc_engine::Session::new();
     s.catalog.apply(Op::AddPhoto { photo: Box::new(video(1)) }).unwrap();
-    let app = crate::DacApp::new(s, crate::Services { png: None, ..Default::default() });
+    let app = crate::LccApp::new(s, crate::Services { png: None, ..Default::default() });
     let mut h = crate::headless::Headless::new(app, [1000.0, 700.0], 1.0);
     h.app.ui.view = crate::state::ViewMode::PhotoGrid;
     h.settle(std::time::Duration::from_secs(30));
@@ -217,16 +217,16 @@ fn gate_disables_only_when_blocked() {
 #[test]
 fn edit_panel_greys_out_for_video_only() {
     for kind in [MediaKind::Image, MediaKind::Video] {
-        let mut s = dac_engine::Session::new();
+        let mut s = lcc_engine::Session::new();
         let mut p = video(1);
         p.kind = kind;
         s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
         s.execute("library.select", &json!({"ids": [1]})).unwrap();
-        let mut app = crate::DacApp::new(s, crate::Services { png: None, ..Default::default() });
+        let mut app = crate::LccApp::new(s, crate::Services { png: None, ..Default::default() });
         app.ui.toggle_section("detail");
         let mut ready = false;
         let mut h = Harness::builder().with_size(vec2(360.0, 3000.0)).build_ui_state(
-            move |ui, app: &mut crate::DacApp| {
+            move |ui, app: &mut crate::LccApp| {
                 if !ready {
                     crate::theme::install_fonts(ui.ctx());
                     crate::theme::apply(ui.ctx());
@@ -247,9 +247,9 @@ fn edit_panel_greys_out_for_video_only() {
 
 /// A clip (no `VideoMeta`, missing file) and a still, the clip active in Develop.
 fn develop_clip() -> crate::headless::Headless {
-    let mut s = dac_engine::Session::new();
+    let mut s = lcc_engine::Session::new();
     // an undecodable file: the loupe shows the placeholder poster
-    let dir = std::env::temp_dir().join(format!("dac-video-ui-gating-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-video-ui-gating-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("CLIP.mp4");
     std::fs::write(&path, b"not an mp4").unwrap();
@@ -259,7 +259,7 @@ fn develop_clip() -> crate::headless::Headless {
     let still = Photo::new(PhotoId(2), Source::Demo { scene: 0 }, "still.jpg", "JPEG", 64, 48, "");
     s.catalog.apply(Op::AddPhoto { photo: Box::new(still) }).unwrap();
     s.execute("library.select", &json!({"ids": [1], "active": 1})).unwrap();
-    let app = crate::DacApp::new(s, crate::Services { png: None, ..Default::default() });
+    let app = crate::LccApp::new(s, crate::Services { png: None, ..Default::default() });
     let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
     h.app.ui.view = crate::state::ViewMode::Detail;
     h.app.ui.right = crate::state::RightPanel::Edit;
@@ -301,7 +301,7 @@ fn metadata_shows_video_fields() {
     assert_eq!(value(&p, "videoDuration"), "1:05");
     assert_eq!(value(&p, "resolution"), "1920 × 1080");
     assert_eq!(value(&p, "codec"), "", "not probed yet");
-    p.video = Some(dac_catalog::VideoMeta {
+    p.video = Some(lcc_catalog::VideoMeta {
         duration: 65.0,
         fps_num: 30000,
         fps_den: 1001,

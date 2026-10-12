@@ -54,8 +54,8 @@ fn tmp(name: &str) -> std::path::PathBuf {
 }
 
 fn gradient_png(path: &std::path::Path) {
-    let img = dac_raster::Rgba8::from_fn(120, 80, |x, y| [(x * 2) as u8, (y * 3) as u8, 100, 255]);
-    let png = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap();
+    let img = lcc_raster::Rgba8::from_fn(120, 80, |x, y| [(x * 2) as u8, (y * 3) as u8, 100, 255]);
+    let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap();
     std::fs::write(path, png).unwrap();
 }
 
@@ -89,7 +89,7 @@ fn camdb_shows_entries_and_refuses_converted_dngs() {
 }
 
 fn mean(path: &std::path::Path) -> f64 {
-    let d = dac_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap();
+    let d = lcc_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap();
     let img = d.to_srgb8();
     img.data.iter().map(|p| (p[0] as u32 + p[1] as u32 + p[2] as u32) as f64).sum::<f64>() / (3 * img.data.len()) as f64
 }
@@ -144,9 +144,9 @@ fn render_subcommand() {
         .status()
         .unwrap();
     assert!(st.success());
-    let d = dac_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
+    let d = lcc_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
     assert_eq!((d.width, d.height), (60, 40));
-    let d = dac_codecs::decode(&std::fs::read(&plain).unwrap(), Default::default()).unwrap();
+    let d = lcc_codecs::decode(&std::fs::read(&plain).unwrap(), Default::default()).unwrap();
     assert_eq!((d.width, d.height), (120, 80));
     assert!(mean(&out) > mean(&plain) + 10.0);
     // Bad control id fails cleanly.
@@ -184,9 +184,9 @@ fn render_export_options() {
         .status()
         .unwrap();
     assert!(st.success());
-    let d = dac_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
+    let d = lcc_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
     assert_eq!((d.width, d.height), (60, 40));
-    assert_eq!(d.space.named, Some(dac_codecs::NamedSpace::DisplayP3));
+    assert_eq!(d.space.named, Some(lcc_codecs::NamedSpace::DisplayP3));
     // original + sidecar named after the output
     let out = tmp("o-copy.png");
     let st = Command::new(BIN)
@@ -244,7 +244,7 @@ fn snapshot_subcommand_renders_the_ui_headlessly() {
     assert_eq!(replies.len(), 6);
     assert!(replies.iter().all(|r| r["ok"] == true), "{replies:?}");
     for (p, dimmed) in [(&a, false), (&b, true)] {
-        let d = dac_codecs::decode(&std::fs::read(p).unwrap(), Default::default()).unwrap();
+        let d = lcc_codecs::decode(&std::fs::read(p).unwrap(), Default::default()).unwrap();
         assert_eq!((d.width, d.height), (640, 400));
         // the export dialog dims everything around it
         assert_eq!(mean(p) < mean(&a) - 2.0, dimmed, "{}", p.display());
@@ -252,7 +252,7 @@ fn snapshot_subcommand_renders_the_ui_headlessly() {
     // no script: one settled screenshot, at 2× scale
     let o = Command::new(BIN).args(["snapshot", "-o", a.to_str().unwrap(), "--size", "320x240", "--scale", "2"]).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
-    let d = dac_codecs::decode(&std::fs::read(&a).unwrap(), Default::default()).unwrap();
+    let d = lcc_codecs::decode(&std::fs::read(&a).unwrap(), Default::default()).unwrap();
     assert_eq!((d.width, d.height), (640, 480));
 }
 
@@ -285,7 +285,7 @@ fn snapshot_script_failure_exits_non_zero() {
     assert!(replies[0]["error"].as_str().unwrap_or("").contains("grid"), "{replies:?}");
     assert_eq!(replies[1]["ok"], true, "{replies:?}");
     // continue-and-report: the final screenshot is still written
-    let d = dac_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
+    let d = lcc_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
     assert_eq!((d.width, d.height), (320, 200));
 }
 
@@ -304,7 +304,7 @@ fn snapshot_ui_zoom_keeps_requested_pixel_dimensions() {
         let replies: Vec<Value> = String::from_utf8_lossy(&o.stdout).lines().map(|line| serde_json::from_str(line).unwrap()).collect();
         assert!(replies.iter().all(|reply| reply["ok"] == true), "{replies:?}");
         assert!(replies[1]["result"]["pixelsPerPoint"].as_f64().unwrap() > scale.parse::<f64>().unwrap());
-        let decoded = dac_codecs::decode(&std::fs::read(out).unwrap(), Default::default()).unwrap();
+        let decoded = lcc_codecs::decode(&std::fs::read(out).unwrap(), Default::default()).unwrap();
         assert_eq!((decoded.width, decoded.height), expected);
     }
 }
@@ -320,8 +320,8 @@ fn snapshot_defaults_to_cpu_without_gpu_environment_overrides() {
     .unwrap();
     let image = tmp("default-cpu.png");
     let output = Command::new(BIN)
-        .env_remove(dac_brand::env_var("GPU"))
-        .env_remove(dac_brand::env_var("GPU_BACKEND"))
+        .env_remove(lcc_brand::env_var("GPU"))
+        .env_remove(lcc_brand::env_var("GPU_BACKEND"))
         .env_remove("WGPU_BACKEND")
         .args(["snapshot", "--demo", "--script", script.to_str().unwrap(), "-o", image.to_str().unwrap(), "--size", "480x320"])
         .output()
@@ -334,7 +334,7 @@ fn snapshot_defaults_to_cpu_without_gpu_environment_overrides() {
     assert_eq!(gpu["available"], false, "{gpu}");
     assert_eq!(gpu["adapter"], Value::Null, "no device is created: {gpu}");
     assert!(gpu["reason"].as_str().is_some_and(|reason| reason.contains("preference")), "{gpu}");
-    let decoded = dac_codecs::decode(&std::fs::read(image).unwrap(), Default::default()).unwrap();
+    let decoded = lcc_codecs::decode(&std::fs::read(image).unwrap(), Default::default()).unwrap();
     assert_eq!((decoded.width, decoded.height), (480, 320));
 }
 
@@ -353,12 +353,12 @@ fn snapshot_starts_without_a_gpu() {
         ),
     )
     .unwrap();
-    for (var, value) in [(dac_brand::env_var("GPU"), "0"), (dac_brand::env_var("GPU_BACKEND"), "off")] {
+    for (var, value) in [(lcc_brand::env_var("GPU"), "0"), (lcc_brand::env_var("GPU_BACKEND"), "off")] {
         let reason = format!("{var}={value}");
         let out = tmp(&format!("nogpu-{var}.png"));
         let o = Command::new(BIN)
-            .env_remove(dac_brand::env_var("GPU"))
-            .env_remove(dac_brand::env_var("GPU_BACKEND"))
+            .env_remove(lcc_brand::env_var("GPU"))
+            .env_remove(lcc_brand::env_var("GPU_BACKEND"))
             .env(&var, value)
             .args(["snapshot", "--demo", "--script", script.to_str().unwrap(), "-o", out.to_str().unwrap(), "--size", "480x320"])
             .output()
@@ -370,7 +370,7 @@ fn snapshot_starts_without_a_gpu() {
         assert_eq!(gpu["available"], false, "{var}: {gpu}");
         assert_eq!(gpu["adapter"], Value::Null, "{var}: no device was created: {gpu}");
         assert!(gpu["reason"].as_str().is_some_and(|r| r.contains(&reason)), "{var}: {gpu}");
-        let d = dac_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
+        let d = lcc_codecs::decode(&std::fs::read(&out).unwrap(), Default::default()).unwrap();
         assert_eq!((d.width, d.height), (480, 320));
     }
 }
@@ -441,7 +441,7 @@ fn devices_are_listed_and_imported_from() {
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("CARD/DCIM/100TEST")).unwrap();
     gradient_png(&base.join("CARD/DCIM/100TEST/IMG_0001.png"));
-    let o = Command::new(BIN).env(dac_brand::env_var("DEVICE_ROOTS"), &base).args(["run", "--demo", "library.devices"]).output().unwrap();
+    let o = Command::new(BIN).env(lcc_brand::env_var("DEVICE_ROOTS"), &base).args(["run", "--demo", "library.devices"]).output().unwrap();
     assert!(o.status.success(), "{}", String::from_utf8_lossy(&o.stderr));
     let line: Value = serde_json::from_slice(o.stdout.split(|b| *b == b'\n').next().unwrap()).unwrap();
     let dev = &line["result"][0];
@@ -463,7 +463,7 @@ fn an_old_library_is_upgraded_with_progress() {
     let _ = std::fs::remove_dir_all(&lib);
     std::fs::create_dir_all(&lib).unwrap();
     let catalog = json!({"photos": {}, "albums": {}, "next_photo": 1, "next_album": 1});
-    std::fs::write(lib.join("catalog.snap"), json!({"format": "dac-catalog", "version": 3, "seq": 0, "catalog": catalog}).to_string()).unwrap();
+    std::fs::write(lib.join("catalog.snap"), json!({"format": "lcc-catalog", "version": 3, "seq": 0, "catalog": catalog}).to_string()).unwrap();
     let lib_s = lib.to_str().unwrap();
     let (ok, lines, stderr) = run_cli(&["--library", lib_s, "library.info"], None);
     assert!(ok, "{stderr}");
@@ -524,10 +524,10 @@ fn warnings_are_logged_on_stderr() {
     let run = |level: &str| {
         let o = Command::new(BIN)
             .args(["render", input.to_str().unwrap(), "-o", out.to_str().unwrap()])
-            .env(dac_brand::env_var("GPU_BACKEND"), "bogus")
+            .env(lcc_brand::env_var("GPU_BACKEND"), "bogus")
             .env("RUST_LOG", level)
-            .env_remove(dac_brand::env_var("LOG"))
-            .env_remove(dac_brand::env_var("GPU"))
+            .env_remove(lcc_brand::env_var("LOG"))
+            .env_remove(lcc_brand::env_var("GPU"))
             .output()
             .unwrap();
         let stderr = String::from_utf8_lossy(&o.stderr).into_owned();
@@ -535,7 +535,7 @@ fn warnings_are_logged_on_stderr() {
         stderr
     };
     let warn = run("warn");
-    assert!(warn.contains(&format!("{}=bogus names no known backend", dac_brand::env_var("GPU_BACKEND"))), "{warn}");
+    assert!(warn.contains(&format!("{}=bogus names no known backend", lcc_brand::env_var("GPU_BACKEND"))), "{warn}");
     let off = run("off");
     assert!(!off.contains("names no known backend"), "{off}");
 }
@@ -557,13 +557,13 @@ fn snapshot_rejects_invalid_dimensions_before_creating_an_image() {
 fn snapshot_preserves_fractional_scale_rounding() {
     let image = tmp("fractional-scale-rounding.png");
     let output = Command::new(BIN)
-        .env(dac_brand::env_var("GPU"), "0")
+        .env(lcc_brand::env_var("GPU"), "0")
         .args(["snapshot", "--size", "345x200", "--scale", "0.9", "-o"])
         .arg(&image)
         .output()
         .unwrap();
     assert!(output.status.success(), "{}", String::from_utf8_lossy(&output.stderr));
-    let decoded = dac_codecs::decode(&std::fs::read(image).unwrap(), Default::default()).unwrap();
+    let decoded = lcc_codecs::decode(&std::fs::read(image).unwrap(), Default::default()).unwrap();
     assert_eq!((decoded.width, decoded.height), (311, 180));
 }
 
@@ -573,14 +573,14 @@ fn snapshot_preserves_fractional_scale_rounding() {
 fn snapshot_leaves_desktop_gpu_preferences_untouched() {
     let dir = tmp("snapshot-desktop-preferences");
     let library = dir.join("library");
-    let mut session = dac_engine::Session::new().with_fs();
+    let mut session = lcc_engine::Session::new().with_fs();
     session.open_library(&library, true).unwrap();
     drop(session);
     let config = dir.join("config");
-    let app_config = config.join(dac_brand::settings_dir_name(dac_brand::SETTINGS_DIR));
+    let app_config = config.join(lcc_brand::settings_dir_name(lcc_brand::SETTINGS_DIR));
     std::fs::create_dir_all(&app_config).unwrap();
     let ui_path = app_config.join("ui.json");
-    let mut ui = dac_ui_egui::UiState::default();
+    let mut ui = lcc_ui_egui::UiState::default();
     ui.settings.gpu = true;
     let saved = serde_json::to_vec_pretty(&ui).unwrap();
     std::fs::write(&ui_path, &saved).unwrap();
@@ -594,11 +594,11 @@ fn snapshot_leaves_desktop_gpu_preferences_untouched() {
         let image = dir.join(format!("{}.png", gpu_environment.unwrap_or("default")));
         let mut cmd = Command::new(BIN);
         cmd.env("XDG_CONFIG_HOME", &config)
-            .env_remove(dac_brand::env_var("GPU"))
-            .env_remove(dac_brand::env_var("GPU_BACKEND"))
+            .env_remove(lcc_brand::env_var("GPU"))
+            .env_remove(lcc_brand::env_var("GPU_BACKEND"))
             .env_remove("WGPU_BACKEND");
         if let Some(value) = gpu_environment {
-            cmd.env(dac_brand::env_var("GPU"), value);
+            cmd.env(lcc_brand::env_var("GPU"), value);
         }
         let output = cmd
             .args(["snapshot", "--library"])
@@ -636,8 +636,8 @@ fn edit_in_waits_for_a_fake_editor_and_reloads() {
     let input = dir.join("photo.png");
     gradient_png(&input);
     let replacement = dir.join("saved-by-editor.bin");
-    let img = dac_raster::Rgba8::from_fn(64, 48, |x, _| [x as u8 * 3, 10, 200, 255]);
-    std::fs::write(&replacement, dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap()).unwrap();
+    let img = lcc_raster::Rgba8::from_fn(64, 48, |x, _| [x as u8 * 3, 10, 200, 255]);
+    std::fs::write(&replacement, lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap()).unwrap();
     let script = dir.join("fake-editor.sh");
     let log = dir.join("editor-args.txt");
     std::fs::write(
@@ -677,9 +677,9 @@ fn edit_in_waits_for_a_fake_editor_and_reloads() {
 #[cfg(feature = "denoise")]
 #[test]
 fn denoise_serve_runs_tiles_for_another_computer() {
-    use dac_denoise::manifest::{DenoiserManifest, Domain, Gain};
-    use dac_denoise::remote::Remote;
-    use dac_denoise::run::TileRunner;
+    use lcc_denoise::manifest::{DenoiserManifest, Domain, Gain};
+    use lcc_denoise::remote::Remote;
+    use lcc_denoise::run::TileRunner;
     let models = tmp("denoise-models");
     let _ = std::fs::remove_dir_all(&models);
     let dir = models.join("synthetic");
@@ -699,10 +699,10 @@ fn denoise_serve_runs_tiles_for_another_computer() {
         gain: Gain::None,
     };
     let onnx = dir.join("model.onnx");
-    std::fs::write(&onnx, dac_denoise::synthetic::unet_onnx(64, 8, 2, 7)).unwrap();
+    std::fs::write(&onnx, lcc_denoise::synthetic::unet_onnx(64, 8, 2, 7)).unwrap();
     std::fs::write(dir.join("denoise-model.json"), serde_json::to_vec(&manifest).unwrap()).unwrap();
     std::fs::write(models.join("settings.json"), r#"{"model": "synthetic"}"#).unwrap();
-    let sha = dac_denoise::hash::sha256_file(&onnx).unwrap();
+    let sha = lcc_denoise::hash::sha256_file(&onnx).unwrap();
 
     // without its token the server doesn't start
     let o = Command::new(BIN).args(["denoise-serve", "--models", models.to_str().unwrap(), "--token-env", "LC_TEST_NO_SUCH_VAR"]).output().unwrap();
@@ -713,7 +713,7 @@ fn denoise_serve_runs_tiles_for_another_computer() {
     let token = "cli-test-token-0123456789";
     let mut child = Command::new(BIN)
         .args(["denoise-serve", "--models", models.to_str().unwrap(), "--listen", &addr, "--run-on", "cpu"])
-        .env(dac_brand::env_var("DENOISE_TOKEN"), token)
+        .env(lcc_brand::env_var("DENOISE_TOKEN"), token)
         .stderr(Stdio::piped())
         .spawn()
         .unwrap();
@@ -726,9 +726,9 @@ fn denoise_serve_runs_tiles_for_another_computer() {
     let remote = Remote::new(&addr, token, &sha, 64);
     let info = remote.hello().unwrap();
     assert!(info.device.starts_with("CPU"), "{info:?}");
-    let (input, _) = dac_denoise::runtime::test_tile(64);
+    let (input, _) = lcc_denoise::runtime::test_tile(64);
     let got = remote.try_run(&input).unwrap().unwrap();
-    let want = dac_denoise::runtime::CpuRunner::load(&onnx, &manifest).unwrap().run(&input).unwrap();
+    let want = lcc_denoise::runtime::CpuRunner::load(&onnx, &manifest).unwrap().run(&input).unwrap();
     let scale = want.iter().fold(1e-9f32, |m, v| m.max(v.abs()));
     let worst = want.iter().zip(&got).fold(0f32, |m, (a, b)| m.max((a - b).abs())) / scale;
     assert!(worst < 5e-3, "remote vs local: {worst}");

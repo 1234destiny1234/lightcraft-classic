@@ -1,8 +1,8 @@
 //! End to end: settings → pages → PDF / JPEG.
 
-use dac_layout::render::PhotoSource;
-use dac_layout::tokens::PhotoInfo;
-use dac_raster::Rgba8;
+use lcc_layout::render::PhotoSource;
+use lcc_layout::tokens::PhotoInfo;
+use lcc_raster::Rgba8;
 
 use crate::job::builtin_templates;
 use crate::output::{PdfOptions, to_jpeg, to_pdf};
@@ -99,13 +99,13 @@ fn jpeg_pages_at_print_resolution() {
     let doc = s.build(&ids(21)).unwrap();
     let out = to_jpeg(&doc, &s, &Gradient, &ShapedText::new(), &mut |_, _| true).unwrap();
     assert_eq!(out.files.len(), 2);
-    let info = dac_pdf::jpeg_info(&out.files[0]).unwrap();
+    let info = lcc_pdf::jpeg_info(&out.files[0]).unwrap();
     assert_eq!((info.width, info.height), (425, 550)); // 8.5×11 in at 50 ppi
 }
 
 #[test]
 fn single_image_grid_style_survives_round_trip() {
-    let s = PrintSettings { layout: LayoutStyle::SingleImage { grid: dac_layout::grid::Grid::new(3, 2) }, ..PrintSettings::default() };
+    let s = PrintSettings { layout: LayoutStyle::SingleImage { grid: lcc_layout::grid::Grid::new(3, 2) }, ..PrintSettings::default() };
     let back = PrintSettings::from_json(&s.to_json().unwrap()).unwrap();
     assert_eq!(back.build(&ids(7)).unwrap().pages.len(), 2);
 }
@@ -116,8 +116,8 @@ fn single_image_grid_style_survives_round_trip() {
 #[cfg(not(target_arch = "wasm32"))]
 #[test]
 fn cups_test_printer_receives_a_job() {
-    let Some(uri) = dac_brand::env("CUPS_TEST_PRINTER").filter(|u| !u.trim().is_empty()) else {
-        eprintln!("skipped: set {} to an IPP printer URI to run", dac_brand::env_var("CUPS_TEST_PRINTER"));
+    let Some(uri) = lcc_brand::env("CUPS_TEST_PRINTER").filter(|u| !u.trim().is_empty()) else {
+        eprintln!("skipped: set {} to an IPP printer URI to run", lcc_brand::env_var("CUPS_TEST_PRINTER"));
         return;
     };
     let info = crate::ipp::printer_info(&uri).unwrap();
@@ -158,7 +158,7 @@ fn virtual_ipp_printer_receives_a_contact_sheet() {
     assert!((a4.margins[1] - 8.5).abs() < 0.1, "{:?}", a4.margins);
     let mut s = template("2×2 Cells");
     s.set_paper(a4.size, false);
-    s.page.margins = dac_layout::Insets::all(0.0);
+    s.page.margins = lcc_layout::Insets::all(0.0);
     s.fit_printer_margins(a4.margins);
     assert!((s.page.margins.top - 14.17).abs() < 0.1);
     s.job.copies = 3;
@@ -218,8 +218,8 @@ impl PhotoSource for Deep {
     fn image(&self, photo: &str, long: usize) -> Result<Rgba8, String> {
         Gradient.image(photo, long)
     }
-    fn image16(&self, _photo: &str) -> Option<dac_layout::render::Rgb16> {
-        Some(dac_layout::render::Rgb16 { width: 6, height: 4, data: (0..72).map(|i| i * 900).collect() })
+    fn image16(&self, _photo: &str) -> Option<lcc_layout::render::Rgb16> {
+        Some(lcc_layout::render::Rgb16 { width: 6, height: 4, data: (0..72).map(|i| i * 900).collect() })
     }
 }
 
@@ -237,7 +237,7 @@ fn sixteen_bit_output_embeds_16_bit_photos_tagged_with_the_printer_profile() {
     let mut s = template("2×2 Cells");
     s.job.color.bit16 = true;
     let doc = s.build(&ids(1)).unwrap();
-    let profile = std::sync::Arc::new(dac_codecs::icc::write_named(dac_codecs::space::NamedSpace::AdobeRgb));
+    let profile = std::sync::Arc::new(lcc_codecs::icc::write_named(lcc_codecs::space::NamedSpace::AdobeRgb));
     let opt = PdfOptions { photo_profile: Some(profile), ..PdfOptions::default() };
     let out = to_pdf(&doc, &s, &Deep, &ShapedText::new(), &opt, &mut |_, _| true).unwrap();
     let pdf = lopdf::Document::load_mem(&out.files[0]).unwrap();
@@ -262,7 +262,7 @@ fn sixteen_bit_output_embeds_16_bit_photos_tagged_with_the_printer_profile() {
 
 #[test]
 fn rgb16_rotation_matches_rgba8() {
-    let d = dac_layout::render::Rgb16 { width: 3, height: 2, data: (0..18).collect() };
+    let d = lcc_layout::render::Rgb16 { width: 3, height: 2, data: (0..18).collect() };
     let img = Rgba8::from_fn(3, 2, |x, y| {
         let v = ((y * 3 + x) * 3) as u8;
         [v, v + 1, v + 2, 255]
@@ -273,7 +273,7 @@ fn rgb16_rotation_matches_rgba8() {
         let flat: Vec<u16> = r.data.iter().flat_map(|p| [u16::from(p[0]), u16::from(p[1]), u16::from(p[2])]).collect();
         assert_eq!(o.data, flat, "turns {turns}");
     }
-    let bad = dac_layout::render::Rgb16 { width: 3, height: 2, data: vec![1] };
+    let bad = lcc_layout::render::Rgb16 { width: 3, height: 2, data: vec![1] };
     assert_eq!(bad.rotated(1), bad);
 }
 

@@ -39,11 +39,11 @@ pub mod xmp_state;
 use std::collections::BTreeMap;
 use std::sync::Arc;
 
-use dac_develop::DevelopSettings;
 pub use dates::{DateRun, GroupBy};
 pub use folders::{FolderNode, FolderRecord};
 pub use journal::{Journal, LoadReport, PersistStats, SnapshotPolicy, SnapshotTiming};
 pub use keywords::KeywordNode;
+use lcc_develop::DevelopSettings;
 pub use local::{DEFAULT_FORGET_DAYS, ForgetPlan, folder_of};
 pub use lock::{LibraryLock, LockError, LockOwner};
 pub use model::*;
@@ -239,7 +239,7 @@ pub enum Op {
     /// The lens data a photo's file carries (what Reload finds when it was read after import).
     SetEmbeddedLens {
         id: PhotoId,
-        lens: Option<Box<dac_develop::EmbeddedLens>>,
+        lens: Option<Box<lcc_develop::EmbeddedLens>>,
     },
     /// A raw's as-shot white balance (Kelvin, tint) as its file reads now: what a decode or Reload finds when the
     /// camera's colour matrices give the file a Kelvin scale it was imported without (upstream issue #730).
@@ -321,7 +321,7 @@ pub enum Op {
     /// Format version 6.
     SetSavedLocation {
         name: String,
-        location: Option<dac_geo::SavedLocation>,
+        location: Option<lcc_geo::SavedLocation>,
     },
     /// Several ops as one step (undo applies the inverses in reverse).
     Batch {
@@ -359,7 +359,7 @@ pub struct Catalog {
     folder_records: BTreeMap<String, FolderRecord>,
     /// The Map module's saved locations, by lower-case name (format version 6).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    saved_locations: BTreeMap<String, dac_geo::SavedLocation>,
+    saved_locations: BTreeMap<String, lcc_geo::SavedLocation>,
     /// Increments on every applied op.
     #[serde(skip)]
     pub revision: u64,
@@ -370,17 +370,17 @@ pub struct Catalog {
 
 impl Catalog {
     /// The Map module's saved locations, by name.
-    pub fn saved_locations(&self) -> impl Iterator<Item = &dac_geo::SavedLocation> {
+    pub fn saved_locations(&self) -> impl Iterator<Item = &lcc_geo::SavedLocation> {
         self.saved_locations.values()
     }
 
-    pub fn saved_location(&self, name: &str) -> Option<&dac_geo::SavedLocation> {
+    pub fn saved_location(&self, name: &str) -> Option<&lcc_geo::SavedLocation> {
         self.saved_locations.get(&name.trim().to_lowercase())
     }
 
     /// Is a photo position inside a private saved location (its location is left out on export)?
     pub fn is_private_location(&self, gps: (f64, f64)) -> bool {
-        self.saved_locations.values().any(|l| l.private && l.contains(dac_geo::LatLon::new(gps.0, gps.1)))
+        self.saved_locations.values().any(|l| l.private && l.contains(lcc_geo::LatLon::new(gps.0, gps.1)))
     }
 
     pub fn new() -> Catalog {
@@ -1007,7 +1007,7 @@ impl Catalog {
                 }
                 let old = match location {
                     Some(l) => {
-                        let l = dac_geo::SavedLocation::new(&l.name, l.lat, l.lon, l.radius, l.private)
+                        let l = lcc_geo::SavedLocation::new(&l.name, l.lat, l.lon, l.radius, l.private)
                             .map_err(|e| CatalogError::Invalid(e.to_string()))?;
                         self.saved_locations.insert(key, l)
                     }

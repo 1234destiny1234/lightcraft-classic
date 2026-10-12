@@ -3,13 +3,13 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde_json::json;
 
 use crate::Session;
 
 fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-editrt-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-editrt-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -17,8 +17,8 @@ fn temp_dir(tag: &str) -> PathBuf {
 
 fn write_png(path: &Path, seed: u8, w: usize, h: usize) {
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 6) as u8, (i / w * 9) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 
@@ -89,7 +89,7 @@ fn virtual_copy_edits_stack_with_the_master() {
     assert_eq!(st.top(), e);
     assert!(st.photos.contains(&vc) && st.photos.contains(&master), "{:?}", st.photos);
     let (m, v) = (s.render_now(master, 8, 8).unwrap(), s.render_now(e, 8, 8).unwrap());
-    let sum = |r: &dac_pipeline::Rendered| r.image.data.iter().map(|p| p[1] as u32).sum::<u32>();
+    let sum = |r: &lcc_pipeline::Rendered| r.image.data.iter().map(|p| p[1] as u32).sum::<u32>();
     assert!(sum(&v) > sum(&m), "the copy's +2 EV is in the edit");
     let _ = std::fs::remove_dir_all(&dir);
 }

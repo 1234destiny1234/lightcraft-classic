@@ -21,7 +21,7 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dac_catalog::{Flag, Op, Photo};
+use lcc_catalog::{Flag, Op, Photo};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

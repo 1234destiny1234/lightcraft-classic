@@ -7,17 +7,17 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::time::Instant;
 
-use dac_raster::Rgb32f;
-use dac_video::FrameReader;
 use filmcraft_color::{Matrix, from_linear, rgb_to_ycbcr};
 use filmcraft_isobmff::{AvcConfig, Brand, FourCc, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_raster::Rgb32f;
+use lcc_video::FrameReader;
 
 /// Largest output side (H.264 level 6.2 tops out at 8192×4320).
 pub const MAX_SIDE: u32 = 8192;
 /// Most frames one export writes (24 h at 60 fps): guards against a hostile duration.
 pub const MAX_FRAMES: i64 = 24 * 3600 * 60;
 
-/// The frame type the grade callback receives: [`dac_raster::Rgb32f`] as `dac_video` decodes it,
+/// The frame type the grade callback receives: [`lcc_raster::Rgb32f`] as `lcc_video` decodes it,
 /// **linear light, Rec.709 primaries, D65, display-referred** (1.0 = the source's SDR peak white).
 /// The grade may write any value; afterwards values are clamped to 0..=1 and re-encoded with the
 /// sRGB curve (the inverse of the decode), so an identity grade round-trips. The grade must not
@@ -174,10 +174,10 @@ fn output_size(w: u32, h: u32, max_side: Option<u32>) -> Result<(u32, u32)> {
     Ok((even(w), even(h)))
 }
 
-fn video_err(e: dac_video::VideoError) -> ExportClipError {
+fn video_err(e: lcc_video::VideoError) -> ExportClipError {
     match e {
-        dac_video::VideoError::Io(m) => ExportClipError::Io(m),
-        dac_video::VideoError::Decode(m) => ExportClipError::Decode(m),
+        lcc_video::VideoError::Io(m) => ExportClipError::Io(m),
+        lcc_video::VideoError::Decode(m) => ExportClipError::Decode(m),
         other => ExportClipError::Open(other.to_string()),
     }
 }
@@ -374,7 +374,7 @@ impl Stages {
         slot.fetch_add(u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX), Ordering::Relaxed);
     }
     fn report(&self, frames: usize, wall: f64, workers: usize) {
-        if !dac_brand::env_is_set("PROFILE") {
+        if !lcc_brand::env_is_set("PROFILE") {
             return;
         }
         let ms = |a: &AtomicU64| a.load(Ordering::Relaxed) as f64 / 1e6 / frames.max(1) as f64;

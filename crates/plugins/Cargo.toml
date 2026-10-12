@@ -1,5 +1,5 @@
 [package]
-name = "dac-plugins"
+name = "lcc-plugins"
 description = "Sandboxed WebAssembly plug-ins: a resource-limited wasmi host with a capability-gated host API"
 version.workspace = true
 edition.workspace = true
@@ -15,9 +15,9 @@ log = { workspace = true }
 wasmi = { version = "2.0.0", default-features = false, features = ["std", "validate", "stable", "portable-dispatch"] }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dac-net = { workspace = true }
+lcc-net = { workspace = true }
 
 [dev-dependencies]
 # WebAssembly text -> binary for the hostile-module fixtures (Apache-2.0 WITH LLVM-exception).
 wat = "1.228"
-dac-fuzzkit = { workspace = true }
+lcc-fuzzkit = { workspace = true }

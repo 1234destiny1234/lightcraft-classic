@@ -28,7 +28,7 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 use std::path::{Path, PathBuf};
 use std::sync::{Arc, RwLock};
 
-use dac_develop::DevelopSettings;
+use lcc_develop::DevelopSettings;
 use redb::{Database, MultimapTableDefinition, ReadableDatabase, ReadableTable, ReadableTableMetadata, TableDefinition};
 
 use crate::remote::{PreviewEntry, RemoteIdentity, RemoteTable};
@@ -85,7 +85,7 @@ struct Head {
     folder_records: BTreeMap<String, crate::FolderRecord>,
     /// The Map module's saved locations (format version 6).
     #[serde(default, skip_serializing_if = "BTreeMap::is_empty")]
-    saved_locations: BTreeMap<String, dac_geo::SavedLocation>,
+    saved_locations: BTreeMap<String, lcc_geo::SavedLocation>,
 }
 
 impl Head {

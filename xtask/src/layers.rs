@@ -30,7 +30,7 @@ impl Class {
     }
 }
 
-/// The layering table. Names are package names without the `dac-`
+/// The layering table. Names are package names without the `lcc-`
 /// prefix.
 pub const TABLE: &[(&str, Class)] = &[
     ("brand", Class::Layer(0)),
@@ -150,7 +150,7 @@ pub const UI_CRATES: &[&str] = &["craft-ui", "egui", "eframe", "winit", "egui_ki
 pub const UI_MIN_LAYER: u8 = 5;
 
 pub fn short_name(pkg: &str) -> &str {
-    pkg.strip_prefix("dac-").unwrap_or(pkg)
+    pkg.strip_prefix("lcc-").unwrap_or(pkg)
 }
 
 pub fn classify(pkg: &str) -> Option<Class> {
@@ -208,7 +208,7 @@ impl std::fmt::Display for Violation {
                 write!(f, "{krate}: standalone crate must not depend on workspace crate {dep}")
             }
             Violation::TestkitAsNormalDep { krate } => {
-                write!(f, "{krate}: dac-testkit may only be a dev-dependency")
+                write!(f, "{krate}: lcc-testkit may only be a dev-dependency")
             }
             Violation::UiBelowL5 { krate, dep, layer } => {
                 write!(f, "{krate} (L{layer}) depends on UI crate `{dep}`; UI toolkits are only allowed in L5+")
@@ -316,54 +316,54 @@ mod tests {
     #[test]
     fn clean_downward_graph_passes() {
         let g = [
-            c("dac-geom", &[("serde", Normal, false)]),
-            c("dac-develop", &[("dac-geom", Normal, true)]),
-            c("dac-engine", &[("dac-develop", Normal, true), ("dac-testkit", Dev, true)]),
-            c("dac-ui-egui", &[("dac-engine", Normal, true), ("egui", Normal, false)]),
-            c("dac-cli", &[("dac-ui-egui", Normal, true)]),
+            c("lcc-geom", &[("serde", Normal, false)]),
+            c("lcc-develop", &[("lcc-geom", Normal, true)]),
+            c("lcc-engine", &[("lcc-develop", Normal, true), ("lcc-testkit", Dev, true)]),
+            c("lcc-ui-egui", &[("lcc-engine", Normal, true), ("egui", Normal, false)]),
+            c("lcc-cli", &[("lcc-ui-egui", Normal, true)]),
         ];
         assert!(check(&g).is_empty(), "{:?}", check(&g));
     }
 
     #[test]
     fn upward_dependency_flagged() {
-        let v = check(&[c("dac-develop", &[("dac-engine", Normal, true)])]);
+        let v = check(&[c("lcc-develop", &[("lcc-engine", Normal, true)])]);
         assert!(matches!(v[..], [Violation::Upward { from: 1, to: 4, .. }]));
     }
 
     #[test]
     fn sideways_dependency_flagged() {
-        let v = check(&[c("dac-catalog", &[("dac-preview", Normal, true)])]);
+        let v = check(&[c("lcc-catalog", &[("lcc-preview", Normal, true)])]);
         assert!(matches!(v[..], [Violation::Upward { from: 3, to: 3, .. }]));
     }
 
     #[test]
     fn l0_chain_allowed_one_way() {
-        assert!(check(&[c("dac-raster", &[("dac-color", Normal, true)])]).is_empty());
-        assert!(!check(&[c("dac-color", &[("dac-raster", Normal, true)])]).is_empty());
+        assert!(check(&[c("lcc-raster", &[("lcc-color", Normal, true)])]).is_empty());
+        assert!(!check(&[c("lcc-color", &[("lcc-raster", Normal, true)])]).is_empty());
     }
 
     #[test]
     fn ui_crates_forbidden_below_l5() {
         for dep in ["craft-ui", "egui", "eframe", "winit", "rfd"] {
-            let v = check(&[c("dac-engine", &[(dep, Normal, false)])]);
+            let v = check(&[c("lcc-engine", &[(dep, Normal, false)])]);
             assert!(matches!(v[..], [Violation::UiBelowL5 { .. }]), "{dep}");
         }
-        assert!(check(&[c("dac-mcp", &[("winit", Normal, false)])]).is_empty());
+        assert!(check(&[c("lcc-mcp", &[("winit", Normal, false)])]).is_empty());
     }
 
     #[test]
     fn unregistered_and_testkit_rules() {
-        let v = check(&[c("dac-mystery", &[])]);
-        assert!(matches!(&v[..], [Violation::Unregistered { krate }] if krate == "dac-mystery"));
-        assert!(!check(&[c("dac-pipeline", &[("dac-testkit", Normal, true)])]).is_empty());
-        assert!(check(&[c("dac-pipeline", &[("dac-testkit", Dev, true)])]).is_empty());
+        let v = check(&[c("lcc-mystery", &[])]);
+        assert!(matches!(&v[..], [Violation::Unregistered { krate }] if krate == "lcc-mystery"));
+        assert!(!check(&[c("lcc-pipeline", &[("lcc-testkit", Normal, true)])]).is_empty());
+        assert!(check(&[c("lcc-pipeline", &[("lcc-testkit", Dev, true)])]).is_empty());
     }
 
     #[test]
     fn apps_exempt() {
-        for app in ["dac-app", "dac-cli", "dac-web", "xtask"] {
-            assert!(check(&[c(app, &[("egui", Normal, false), ("dac-ui-egui", Normal, true)])]).is_empty());
+        for app in ["lcc-app", "lcc-cli", "lcc-web", "xtask"] {
+            assert!(check(&[c(app, &[("egui", Normal, false), ("lcc-ui-egui", Normal, true)])]).is_empty());
         }
     }
 }

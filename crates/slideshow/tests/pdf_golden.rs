@@ -6,10 +6,10 @@
 
 use std::sync::Arc;
 
-use dac_catalog::PhotoId;
-use dac_engine::Session;
-use dac_slideshow::export::prepare_pdf;
-use dac_slideshow::settings::Settings;
+use lcc_catalog::PhotoId;
+use lcc_engine::Session;
+use lcc_slideshow::export::prepare_pdf;
+use lcc_slideshow::settings::Settings;
 use lopdf::Object;
 
 #[test]
@@ -19,7 +19,7 @@ fn slideshow_pdf_pages_match_their_frames() {
     let mut s = Settings::default();
     s.titles.intro.enabled = true;
     s.titles.intro.text = "Golden".into();
-    let dir = std::env::temp_dir().join(format!("dac-slideshow-golden-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-slideshow-golden-{}", std::process::id()));
     let p = prepare_pdf(&mut session, &ids, &s, 320, 180, 90, &dir, "Golden", "").unwrap();
     let files = std::thread::spawn(move || p.run(&mut |_, _| true)).join().unwrap().unwrap();
     let bytes = std::fs::read(&files[0]).unwrap();
@@ -54,7 +54,7 @@ fn slideshow_pdf_pages_match_their_frames() {
         assert_eq!(im.dict.get(b"Width").unwrap().as_i64().unwrap(), 320, "frame embedded at full resolution");
         assert_eq!(im.dict.get(b"Height").unwrap().as_i64().unwrap(), 180);
         assert_eq!(im.dict.get(b"Filter").unwrap().as_name().unwrap(), b"DCTDecode");
-        frames.push(dac_codecs::decode_thumbnail(&im.content, 4096).unwrap().image);
+        frames.push(lcc_codecs::decode_thumbnail(&im.content, 4096).unwrap().image);
     }
 
     // Rasterise at 4/3 px per pt = the frame's own pixel grid, compare with the decoded frame.

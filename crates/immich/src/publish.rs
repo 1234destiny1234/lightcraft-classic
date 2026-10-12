@@ -29,8 +29,8 @@ use std::collections::HashMap;
 use std::path::PathBuf;
 use std::time::Duration;
 
-use dac_catalog::PhotoId;
-use dac_publish::{Capabilities, PublishError, PublishService, Published, Upload};
+use lcc_catalog::PhotoId;
+use lcc_publish::{Capabilities, PublishError, PublishService, Published, Upload};
 use serde::{Deserialize, Serialize};
 
 use crate::ImmichError;
@@ -273,7 +273,7 @@ impl PublishService for ImmichPublish {
         let album = self.album()?;
         let mode = self.settings.send;
         let render = if mode != SendMode::Original {
-            let sha = dac_hash::sha1_bytes(up.bytes).to_base64();
+            let sha = lcc_hash::sha1_bytes(up.bytes).to_base64();
             Some(self.send(UploadData::Bytes(up.bytes), sha, up.file_name, &format!("{}-render", up.photo.0), &info, None)?)
         } else {
             None
@@ -282,7 +282,7 @@ impl PublishService for ImmichPublish {
             match (&info.linked, &info.original) {
                 (Some(id), _) => Some(id.clone()),
                 (None, Some(path)) => {
-                    let sha = dac_hash::sha1_file(path).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))?.to_base64();
+                    let sha = lcc_hash::sha1_file(path).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))?.to_base64();
                     let name = if info.original_name.is_empty() { up.file_name.to_string() } else { info.original_name.clone() };
                     Some(self.send(UploadData::File(path), sha, &name, &format!("{}-original", up.photo.0), &info, info.xmp.as_deref())?)
                 }

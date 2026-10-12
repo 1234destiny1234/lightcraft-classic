@@ -4,10 +4,10 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-/// The name the UI asks for when it means PhotoCraft (`dac_ui_egui::state::PHOTOCRAFT`).
-const PHOTOCRAFT: &str = dac_ui_egui::state::PHOTOCRAFT;
+/// The name the UI asks for when it means PhotoCraft (`lcc_ui_egui::state::PHOTOCRAFT`).
+const PHOTOCRAFT: &str = lcc_ui_egui::state::PHOTOCRAFT;
 /// PhotoCraft's application id (Flatpak, desktop entry), from `[third_party]` in `brand.toml`.
-const PHOTOCRAFT_ID: &str = dac_brand::THIRD_PARTY_PHOTOCRAFT_APP_ID;
+const PHOTOCRAFT_ID: &str = lcc_brand::THIRD_PARTY_PHOTOCRAFT_APP_ID;
 
 /// How an editor is started.
 #[derive(Debug, PartialEq)]

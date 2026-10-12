@@ -4,7 +4,7 @@ use std::path::Path;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::{Arc, Mutex};
 
-use dac_catalog::{MediaKind, Op, Photo, PhotoId, Source};
+use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use serde_json::{Value, json};
 
 use super::{FrameImage, VideoBackend, VideoInfo};
@@ -68,7 +68,7 @@ fn select(s: &mut Session, id: u64) {
 }
 
 fn tmp(name: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-video-{name}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-video-{name}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -146,7 +146,7 @@ fn playback_can_follow_an_audio_device_clock() {
     let (mut s, ms) = session(&tmp("audioclock"));
     ms.store(3000, Ordering::SeqCst);
     run(&mut s, "video.play", json!({}));
-    let audio = dac_audio_out::AudioClock::new(48_000);
+    let audio = lcc_audio_out::AudioClock::new(48_000);
     s.video.follow_audio_clock(audio.clone());
     // the system clock no longer drives the position; the device's frames do, without a jump
     ms.store(9000, Ordering::SeqCst);
@@ -295,7 +295,7 @@ fn capture_frame_writes_a_jpeg_imports_and_stacks_it() {
 #[test]
 fn capture_frame_bakes_the_clip_grade() {
     let mean = |path: &str| {
-        let img = dac_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap().to_srgb8();
+        let img = lcc_codecs::decode(&std::fs::read(path).unwrap(), Default::default()).unwrap().to_srgb8();
         img.data.iter().map(|p| p[..3].iter().map(|&c| c as f64).sum::<f64>()).sum::<f64>() / img.data.len() as f64
     };
     let d = tmp("capture-grade");
@@ -340,7 +340,7 @@ fn the_native_backend_reports_a_garbage_clip_as_an_error() {
     let (mut s, _) = session(&d);
     std::fs::write(d.join("clip.mp4"), b"not really a movie").unwrap();
     s.video = super::VideoState::default();
-    assert!(s.video.backend.is_some(), "native builds decode with dac-video");
+    assert!(s.video.backend.is_some(), "native builds decode with lcc-video");
     let e = s.execute("video.get", &json!({})).unwrap_err().to_string();
     assert!(e.contains("can't read the video"), "{e}");
     let _ = std::fs::remove_dir_all(&d);
@@ -379,11 +379,11 @@ fn presets_paste_and_sync_keep_only_video_controls() {
     let dir = tmp("gating-preset");
     let (mut s, _) = session(&dir);
     let clip = PhotoId(900);
-    let mut d = dac_develop::DevelopSettings::default();
+    let mut d = lcc_develop::DevelopSettings::default();
     d.light.exposure = 1.0;
     d.effects.clarity = 40.0;
     d.detail.sharpen_amount = 80.0;
-    s.presets.push(dac_develop::Preset::from_settings("user.t", "T", "User", &d, &dac_develop::SettingsGroup::default_copy()));
+    s.presets.push(lcc_develop::Preset::from_settings("user.t", "T", "User", &d, &lcc_develop::SettingsGroup::default_copy()));
     s.execute("preset.apply", &json!({"id": "user.t"})).unwrap();
     let got = s.develop_of(clip).unwrap();
     assert_eq!(got.light.exposure, 1.0);

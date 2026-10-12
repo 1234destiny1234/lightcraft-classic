@@ -3,8 +3,8 @@
 
 use std::sync::Arc;
 
-use dac_develop::{DevelopSettings, Process, ProcessVersion, controls};
-use dac_raster::{Plane, Rgb32f, Rgba8};
+use lcc_develop::{DevelopSettings, Process, ProcessVersion, controls};
+use lcc_raster::{Plane, Rgb32f, Rgba8};
 
 use crate::{Quality, RenderRequest, SourceInfo, StageCache, local, render, render_cached};
 

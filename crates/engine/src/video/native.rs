@@ -1,4 +1,4 @@
-//! The `dac-video` backend (pure-Rust FilmCraft decoders). Keeps the last clip's reader open so
+//! The `lcc-video` backend (pure-Rust FilmCraft decoders). Keeps the last clip's reader open so
 //! scrubbing and frame steps don't re-open the file.
 
 use std::path::{Path, PathBuf};
@@ -7,15 +7,15 @@ use std::sync::{Mutex, PoisonError};
 use super::{FrameImage, FrameIter, VideoBackend, VideoInfo};
 
 #[derive(Default)]
-pub struct DacVideo {
-    reader: Mutex<Option<(PathBuf, dac_video::FrameReader)>>,
+pub struct LccVideo {
+    reader: Mutex<Option<(PathBuf, lcc_video::FrameReader)>>,
     /// The last clip asked about by `can_play_audio` and the answer (opening its audio costs a demux).
     audio: Mutex<Option<(PathBuf, bool)>>,
 }
 
-impl VideoBackend for DacVideo {
+impl VideoBackend for LccVideo {
     fn probe(&self, path: &Path) -> Result<VideoInfo, String> {
-        let i = dac_video::probe(path).map_err(|e| e.to_string())?;
+        let i = lcc_video::probe(path).map_err(|e| e.to_string())?;
         if !i.decodable {
             return Err(format!("unsupported video: {} can't be decoded", i.codec));
         }
@@ -31,7 +31,7 @@ impl VideoBackend for DacVideo {
     }
 
     fn can_play_audio(&self, path: &Path) -> bool {
-        if !dac_audio_out::CAN_PLAY {
+        if !lcc_audio_out::CAN_PLAY {
             return false;
         }
         let mut slot = self.audio.lock().unwrap_or_else(PoisonError::into_inner);
@@ -40,7 +40,7 @@ impl VideoBackend for DacVideo {
         {
             return *ok;
         }
-        let ok = dac_video::AudioReader::open(path).is_ok();
+        let ok = lcc_video::AudioReader::open(path).is_ok();
         *slot = Some((path.to_path_buf(), ok));
         ok
     }
@@ -49,7 +49,7 @@ impl VideoBackend for DacVideo {
         let mut slot = self.reader.lock().unwrap_or_else(PoisonError::into_inner);
         if slot.as_ref().is_none_or(|(p, _)| p != path) {
             *slot = None;
-            let r = dac_video::FrameReader::open(path).map_err(|e| e.to_string())?;
+            let r = lcc_video::FrameReader::open(path).map_err(|e| e.to_string())?;
             *slot = Some((path.to_path_buf(), r));
         }
         let Some((_, reader)) = slot.as_mut() else { return Err("the video reader isn't open".into()) };
@@ -64,7 +64,7 @@ impl VideoBackend for DacVideo {
     }
 
     fn frames_from(&self, path: &Path, t: f64, max_side: Option<u32>) -> Result<FrameIter, String> {
-        let mut r = dac_video::FrameReader::open(path).map_err(|e| e.to_string())?;
+        let mut r = lcc_video::FrameReader::open(path).map_err(|e| e.to_string())?;
         r.seek(t);
         let mut failed = false;
         Ok(Box::new(std::iter::from_fn(move || {

@@ -1,6 +1,6 @@
 //! Print colour: Print Adjustment (brightness and contrast that change the print only, to make up
 //! for prints that come out darker or flatter than the screen) and the conversion of the photos
-//! into the printer profile ([`dac_codecs::printer`]), at 8 or 16 bits per channel.
+//! into the printer profile ([`lcc_codecs::printer`]), at 8 or 16 bits per channel.
 //!
 //! Order: Print Adjustment on the display-encoded sRGB photo, then the printer profile. Both run
 //! on the photos the engine rendered for the print, after print sharpening.
@@ -14,14 +14,14 @@
 
 use std::sync::Arc;
 
-use dac_codecs::printer::PrinterTransform;
-use dac_layout::render::Rgb16;
-use dac_raster::Rgba8;
+use lcc_codecs::printer::PrinterTransform;
+use lcc_layout::render::Rgb16;
+use lcc_raster::Rgba8;
 
 use crate::{PrintColor, PrintError, PrintIntent, Result};
 
 /// Largest printer profile read (bytes).
-pub const MAX_PROFILE_BYTES: u64 = dac_codecs::display::MAX_PROFILE_BYTES as u64;
+pub const MAX_PROFILE_BYTES: u64 = lcc_codecs::display::MAX_PROFILE_BYTES as u64;
 
 /// The Print Adjustment curve value of display-encoded `v` (0..1).
 pub fn adjust_value(v: f32, brightness: f32, contrast: f32) -> f32 {
@@ -62,8 +62,8 @@ impl ColorJob {
         let (transform, profile) = match profile {
             Some(bytes) => {
                 let intent = match color.intent {
-                    PrintIntent::Perceptual => dac_codecs::printer::PrintIntent::Perceptual,
-                    PrintIntent::Relative => dac_codecs::printer::PrintIntent::Relative,
+                    PrintIntent::Perceptual => lcc_codecs::printer::PrintIntent::Perceptual,
+                    PrintIntent::Relative => lcc_codecs::printer::PrintIntent::Relative,
                 };
                 let t = PrinterTransform::new(&bytes, intent, color.black_point_compensation)
                     .map_err(|e| PrintError::Invalid(format!("printer profile: {e}")))?;
@@ -184,7 +184,7 @@ mod tests {
 
     #[test]
     fn printer_profile_converts_and_bad_profiles_are_errors() {
-        let p = dac_codecs::icc::write_named(dac_codecs::space::NamedSpace::AdobeRgb);
+        let p = lcc_codecs::icc::write_named(lcc_codecs::space::NamedSpace::AdobeRgb);
         let job = ColorJob::new(&PrintColor::default(), Some(p)).unwrap();
         assert!(job.profile.is_some());
         let mut a = Rgba8::new(1, 1);

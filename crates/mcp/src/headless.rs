@@ -3,9 +3,9 @@
 
 use std::path::Path;
 
-use dac_engine::Session;
-use dac_engine::catalog::PhotoId;
-use dac_raster::Rgba8;
+use lcc_engine::Session;
+use lcc_engine::catalog::PhotoId;
+use lcc_raster::Rgba8;
 use serde_json::{Value, json};
 
 use crate::backend::{Backend, ProgressHook};
@@ -80,10 +80,10 @@ impl Headless {
     }
 
     /// The UI command `app.export`, emulated with the same parameters as the desktop app
-    /// (see `dac_engine::export::ExportOptions::from_json`, plus `ids`, `dir`, `path`).
+    /// (see `lcc_engine::export::ExportOptions::from_json`, plus `ids`, `dir`, `path`).
     /// With `path` and no `format`, the format follows the path's extension.
     fn export(&mut self, p: &Value) -> Result<Value, String> {
-        use dac_engine::export::{Destination, ExportFormat, ExportOptions, Resize, prepare_batch, run_batch};
+        use lcc_engine::export::{Destination, ExportFormat, ExportOptions, Resize, prepare_batch, run_batch};
         let p = &self.session.export_params(p)?;
         let mut opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
         if !ExportOptions::has_size_param(p) {
@@ -94,7 +94,7 @@ impl Headless {
             let ext = Path::new(path).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
             opts.format = ExportFormat::parse(&ext).unwrap_or(ExportFormat::Png);
             // a movie path: the clip's movie format (the format stays a rendered one)
-            if let (None, Some(v)) = (p.get("videoFormat"), dac_engine::export_video::VideoFormat::parse(&ext)) {
+            if let (None, Some(v)) = (p.get("videoFormat"), lcc_engine::export_video::VideoFormat::parse(&ext)) {
                 opts.video_format = v;
             }
         }
@@ -108,7 +108,7 @@ impl Headless {
             None => vec![self.photo_or_active(p)?],
         };
         let dir = p.get("dir").and_then(Value::as_str).unwrap_or("");
-        let write = &mut dac_engine::export::write_file;
+        let write = &mut lcc_engine::export::write_file;
         // Add to Apple Photos: refused before anything is written when it can't be done
         let after = self.session.after_export(&opts)?;
         let mut items = prepare_batch(&mut self.session, &ids, &opts)?;
@@ -116,11 +116,11 @@ impl Headless {
         // video clips: a row in the activity stack whose cancel stops the movie within a frame
         let _video_row = items.iter().any(|i| i.is_video()).then(|| {
             let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-            let row = self.session.activity.start("export", "Exporting video", dac_engine::activity::Cancel::Flag(cancel.clone()));
+            let row = self.session.activity.start("export", "Exporting video", lcc_engine::activity::Cancel::Flag(cancel.clone()));
             let h = row.handle();
-            let progress: dac_engine::export_video::VideoProgress =
+            let progress: lcc_engine::export_video::VideoProgress =
                 std::sync::Arc::new(move |name: &str, x: f64| h.detail(&format!("{name} {:.0}%", x.clamp(0.0, 1.0) * 100.0)));
-            dac_engine::export::set_video_hooks(&mut items, &dac_engine::export_video::VideoHooks { cancel, progress: Some(progress) });
+            lcc_engine::export::set_video_hooks(&mut items, &lcc_engine::export_video::VideoHooks { cancel, progress: Some(progress) });
             row
         });
         let mut hook = self.progress.take();
@@ -150,7 +150,7 @@ impl Headless {
         }
         // plug-in export hooks, then the plug-in destination the export named (if any)
         #[cfg(not(target_arch = "wasm32"))]
-        if let Some(r) = dac_engine::cmd::plugins::after_export(&mut self.session, &files, p.get("pluginDestination")) {
+        if let Some(r) = lcc_engine::cmd::plugins::after_export(&mut self.session, &files, p.get("pluginDestination")) {
             out["plugins"] = json!(r);
         }
         out["files"] = json!(files);
@@ -194,7 +194,7 @@ impl Backend for Headless {
             }
             "app.export" => self.export(&p),
             m if m.starts_with("ui.") || m == "app.quit" => {
-                Err(format!("`{m}` needs the desktop app: start `{} --control 7980` and run the MCP server with `--connect`", dac_brand::BINARY))
+                Err(format!("`{m}` needs the desktop app: start `{} --control 7980` and run the MCP server with `--connect`", lcc_brand::BINARY))
             }
             other => Err(format!("unknown method `{other}`")),
         }
@@ -209,7 +209,7 @@ impl Backend for Headless {
     }
 }
 
-/// Expand folders (recursively, sorted; bounded, see `dac_engine::walk`) into photo files
+/// Expand folders (recursively, sorted; bounded, see `lcc_engine::walk`) into photo files
 /// and make paths absolute.
 pub fn expand_paths(paths: &[String]) -> Vec<String> {
     let absolute = |p: &Path| std::path::absolute(p).unwrap_or_else(|_| p.to_path_buf()).to_string_lossy().to_string();
@@ -218,7 +218,7 @@ pub fn expand_paths(paths: &[String]) -> Vec<String> {
     for p in paths {
         let path = Path::new(p);
         if path.is_dir() {
-            let w = dac_engine::walk::files_in(path, None, dac_engine::walk::Limits::default(), photo);
+            let w = lcc_engine::walk::files_in(path, None, lcc_engine::walk::Limits::default(), photo);
             out.extend(w.files.iter().map(|f| absolute(f)));
         } else {
             // Explicit files are kept even with unknown extensions (the probe decides).
@@ -231,16 +231,16 @@ pub fn expand_paths(paths: &[String]) -> Vec<String> {
 /// Encode by extension: `.png` (default), `.jpg`/`.jpeg` (quality), `.tif`/`.tiff`, `.webp` (lossless),
 /// `.avif`, `.jxl` — via the shared export encoder (embeds an sRGB profile).
 pub fn encode_image(ext: &str, img: &Rgba8, quality: u8) -> Result<Vec<u8>, String> {
-    use dac_engine::export::{ExportFormat, ExportOptions};
+    use lcc_engine::export::{ExportFormat, ExportOptions};
     let format = ExportFormat::parse(ext).unwrap_or(ExportFormat::Png);
-    dac_engine::export::encode_image(img, &ExportOptions { format, quality: quality.clamp(1, 100), ..Default::default() })
+    lcc_engine::export::encode_image(img, &ExportOptions { format, quality: quality.clamp(1, 100), ..Default::default() })
 }
 
 /// Encode by the path's extension and write the file.
 pub fn write_image(path: &Path, img: &Rgba8, quality: u8) -> Result<(), String> {
     let ext = path.extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
     let bytes = encode_image(&ext, img, quality)?;
-    dac_engine::export::write_file(&path.to_string_lossy(), &bytes)
+    lcc_engine::export::write_file(&path.to_string_lossy(), &bytes)
 }
 
 #[cfg(test)]
@@ -250,7 +250,7 @@ mod tests {
     /// Headless sessions look for the SAM 3 model where the desktop app does, and `segment.model.status` reports it (issue #619).
     #[test]
     fn headless_sessions_get_the_sam3_model_folder() {
-        let dir = dac_engine::config::default_sam3_dir();
+        let dir = lcc_engine::config::default_sam3_dir();
         assert_eq!(Headless::default().session.segmenter.dir, dir);
         assert_eq!(Headless::demo().session.segmenter.dir, dir);
         let dir = std::env::temp_dir().join("lc-mcp-sam3-dir");

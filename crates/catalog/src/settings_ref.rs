@@ -13,7 +13,7 @@ use std::collections::HashMap;
 use std::hash::Hasher;
 use std::sync::Arc;
 
-use dac_develop::DevelopSettings;
+use lcc_develop::DevelopSettings;
 use serde::de::{self, Deserializer, MapAccess, Visitor};
 use serde::{Deserialize, Serialize, Serializer};
 

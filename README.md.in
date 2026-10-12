@@ -250,7 +250,7 @@ through the same entry point. An agent can cull a shoot, develop it, mask a sky 
   to the running app with screenshots, clicks and gestures. See [docs/mcp.md](docs/mcp.md).
 
   ```sh
-  cargo build --release -p dac-cli
+  cargo build --release -p lcc-cli
   claude mcp add <mcp_server> -- "$PWD/target/release/app-cli" mcp ~/Pictures/shoot          # headless
   claude mcp add <mcp_server>-app -- "$PWD/target/release/app-cli" mcp --connect 127.0.0.1:7980  # live app
   ```
@@ -362,14 +362,14 @@ cargo xtask run -- ~/Pictures/trip                      # import your photos (fo
 cargo xtask run -- --memory                             # a throwaway in-memory demo session (writes nothing)
 cargo xtask run -- --control 7980                       # with the automation channel
 cargo xtask web --serve                                 # the same app in the browser: http://127.0.0.1:8080/
-cargo run --release -p dac-cli -- render photo.jpg -o out.jpg --set light.exposure=0.5
+cargo run --release -p lcc-cli -- render photo.jpg -o out.jpg --set light.exposure=0.5
 cargo xtask package                                     # installers and archives under the brand binary names
 cargo xtask install                                     # install the app and CLI for the current user
 cargo xtask ci                                          # fmt, clippy, tests, layering, wasm checks
 ```
 
 Inside `target/` the binaries are always called `app` and `app-cli`; `cargo xtask run`, `package` and `install`
-give them the brand names from `brand.toml`. `cargo run -p dac-app` / `-p dac-cli` also work for development.
+give them the brand names from `brand.toml`. `cargo run -p lcc-app` / `-p lcc-cli` also work for development.
 
 CI defaults to line-table debug information and one build job per 1.5 GB of RAM
 available when it starts (at most one per CPU; 4 if memory can't be read), so an
@@ -383,7 +383,7 @@ override these defaults. Ordinary development commands keep their own settings.
 
 ```sh
 git clone https://github.com/storytold/craft-fonts ../craft-fonts
-CRAFT_FONTS_DIR=../craft-fonts cargo run --release -p dac-app
+CRAFT_FONTS_DIR=../craft-fonts cargo run --release -p lcc-app
 ```
 
 Without it the app builds and runs the same, but Chinese and Japanese text have no glyphs. Fonts are never committed to this
@@ -402,8 +402,8 @@ next start; the file stops growing at 16 MiB, `--version` and `--help` write non
 `<PREFIX>_NO_PREFS` log to standard error only. By default the app's own crates log at `info` and everything else
 at `warn`. `<PREFIX>_LOG=info` or `debug` works as before (that level for the app's own crates, warnings and
 errors from the rest; any other value: warnings and errors only) and wins over `RUST_LOG`, which otherwise replaces
-the default with env_logger-style directives such as `RUST_LOG=debug` or `RUST_LOG=warn,dac_pipeline=trace` (a
-directive ending in `*` covers every target starting with it, as in `dac*=debug`). Panics are recorded there
+the default with env_logger-style directives such as `RUST_LOG=debug` or `RUST_LOG=warn,lcc_pipeline=trace` (a
+directive ending in `*` covers every target starting with it, as in `lcc*=debug`). Panics are recorded there
 too, and still in `<binary>-panics.log` in the temp folder. The logger is `apps/app/src/logging.rs`.
 
 The web build needs the `wasm32-unknown-unknown` target and the matching `wasm-bindgen` CLI

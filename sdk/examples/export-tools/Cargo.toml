@@ -12,7 +12,7 @@ publish = false
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dac-plugin-sdk = { path = "../../plugin" }
+lcc-plugin-sdk = { path = "../../plugin" }
 
 [profile.release]
 opt-level = "s"

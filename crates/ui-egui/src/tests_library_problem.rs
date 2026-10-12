@@ -8,7 +8,7 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::panels::library_problem::LibraryProblem;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 
@@ -22,19 +22,19 @@ fn unopenable_library_asks_instead_of_running_a_demo() {
     let _ = std::fs::remove_dir_all(&dir);
     let lib = dir.join("lib");
     std::fs::create_dir_all(&lib).unwrap();
-    let img = dac_raster::Rgba8 { width: 8, height: 8, data: vec![[90, 3, 9, 255]; 64] };
-    let png = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: 8, height: 8, data: vec![[90, 3, 9, 255]; 64] };
+    let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     let photo = dir.join("a.png");
     std::fs::write(&photo, png).unwrap();
 
     // another program has the library open: the launch fails like the desktop host's would
-    let held = dac_catalog::LibraryLock::acquire(&lib, "another program").unwrap();
-    let mut session = dac_engine::Session::new().with_fs();
+    let held = lcc_catalog::LibraryLock::acquire(&lib, "another program").unwrap();
+    let mut session = lcc_engine::Session::new().with_fs();
     let err = session.open_library(&lib, true).unwrap_err().to_string();
-    let png = |img: &dac_raster::Rgba8| {
-        dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(img), &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+    let png = |img: &lcc_raster::Rgba8| {
+        lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
     };
-    let mut app = DacApp::new(
+    let mut app = LccApp::new(
         session,
         Services {
             png: Some(Box::new(png)),
@@ -51,7 +51,7 @@ fn unopenable_library_asks_instead_of_running_a_demo() {
     for b in ["button:libraryRetry", "button:libraryChoose", "button:libraryTemporary", "button:libraryQuit"] {
         assert!(has(&h, b), "{b}");
     }
-    if let Some(p) = dac_brand::env_os("TEST_SHOTS") {
+    if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
         let r = h.request("ui.screenshot", json!({"path": std::path::Path::new(&p).join("dialog.png").to_string_lossy(), "headless": true}), T);
         assert_eq!(r["ok"], true, "{r}");
     }
@@ -78,7 +78,7 @@ fn unopenable_library_asks_instead_of_running_a_demo() {
     // imported on the import worker (issue #374: never synchronously on the UI thread)
     h.step_until(T, |h| h.app.import.is_none() && h.app.session.catalog.len() == 1);
     assert_eq!(h.app.session.catalog.len(), 1, "the command-line photo is imported into the temporary session");
-    if let Some(p) = dac_brand::env_os("TEST_SHOTS") {
+    if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
         let r = h.request("ui.screenshot", json!({"path": std::path::Path::new(&p).join("banner.png").to_string_lossy(), "headless": true}), T);
         assert_eq!(r["ok"], true, "{r}");
     }
@@ -110,25 +110,25 @@ fn old_catalog_is_upgraded_with_progress_then_opened() {
     let _ = std::fs::remove_dir_all(&dir);
     let lib = dir.join("lib");
     std::fs::create_dir_all(&lib).unwrap();
-    let mut c = dac_catalog::Catalog::new();
+    let mut c = lcc_catalog::Catalog::new();
     for i in 0..3 {
         let id = c.alloc_photo_id();
-        let p = dac_catalog::Photo::new(
+        let p = lcc_catalog::Photo::new(
             id,
-            dac_catalog::Source::File { path: format!("/nowhere/{i}.jpg") },
+            lcc_catalog::Source::File { path: format!("/nowhere/{i}.jpg") },
             &format!("{i}.jpg"),
             "JPEG",
             8,
             8,
             "2026-01-01T00:00:00",
         );
-        c.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        c.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     }
-    let snap = format!("{{\"format\":\"dac-catalog\",\"version\":3,\"seq\":3,\"catalog\":{}}}\n", c.to_snapshot());
+    let snap = format!("{{\"format\":\"lcc-catalog\",\"version\":3,\"seq\":3,\"catalog\":{}}}\n", c.to_snapshot());
     std::fs::write(lib.join("catalog.snap"), snap).unwrap();
-    assert!(dac_engine::library::needs_migration(&lib));
+    assert!(lcc_engine::library::needs_migration(&lib));
 
-    let mut app = DacApp::new(dac_engine::Session::new().with_fs(), Services::default());
+    let mut app = LccApp::new(lcc_engine::Session::new().with_fs(), Services::default());
     crate::panels::library_problem::start_upgrade(&mut app, lib.clone(), Vec::new());
     assert!(app.library_problem.as_ref().is_some_and(|p| p.upgrading));
     let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
@@ -141,7 +141,7 @@ fn old_catalog_is_upgraded_with_progress_then_opened() {
     h.step();
     assert!(h.app.library_problem.is_none(), "{:?}", h.app.library_problem);
     assert_eq!(h.app.session.catalog.len(), 3);
-    assert!(!dac_engine::library::needs_migration(&lib));
+    assert!(!lcc_engine::library::needs_migration(&lib));
     drop(h);
     let _ = std::fs::remove_dir_all(&dir);
 }

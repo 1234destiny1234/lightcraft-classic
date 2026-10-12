@@ -1,14 +1,14 @@
-//! The SFTP publish service (kind [`dac_publish::KIND_SFTP`]): each published collection is a
+//! The SFTP publish service (kind [`lcc_publish::KIND_SFTP`]): each published collection is a
 //! folder on an SFTP server, each photo a file in it. The server is one of the web module's
 //! saved upload servers (`web.saveServer`, its password or key passphrase in the keychain) or an
 //! inline `{host, port?, user, path, keyFile?, knownFingerprint?}` without a password (key
-//! files only). Upload and delete reuse `dac_webgallery::sftp`.
+//! files only). Upload and delete reuse `lcc_webgallery::sftp`.
 //!
 //! Settings: `{server: saved server name | {host, …}}`. The remote id is the file's path
 //! relative to the server's folder (`<collection folder>/<file name>`).
 
-use dac_publish::{CollectionConfig, PublishError, PublishService, Published, ServiceConfig, Upload};
-use dac_webgallery::sftp::{self, Auth, Server};
+use lcc_publish::{CollectionConfig, PublishError, PublishService, Published, ServiceConfig, Upload};
+use lcc_webgallery::sftp::{self, Auth, Server};
 use serde_json::Value;
 
 use crate::Session;
@@ -31,7 +31,7 @@ pub fn check_settings(settings: &Value) -> std::result::Result<(), String> {
 
 /// Opens the service for a run: the server and its login are resolved now (they need the session).
 pub fn opener(s: &mut Session, svc: &ServiceConfig, coll: &CollectionConfig) -> std::result::Result<Option<Opener>, String> {
-    if svc.kind != dac_publish::KIND_SFTP {
+    if svc.kind != lcc_publish::KIND_SFTP {
         return Ok(None);
     }
     const C: &str = "publish.run";
@@ -59,14 +59,14 @@ impl SftpPublish {
 
 impl PublishService for SftpPublish {
     fn kind(&self) -> &'static str {
-        dac_publish::KIND_SFTP
+        lcc_publish::KIND_SFTP
     }
 
     fn publish(&mut self, up: &Upload<'_>) -> Result<Published, PublishError> {
         let rel = self.rel(up.file_name);
         let mut files = vec![(rel.clone(), up.bytes.to_vec())];
         for (ext, bytes) in up.sidecars {
-            files.push((dac_publish::hard_drive::with_ext(&rel, ext), bytes.clone()));
+            files.push((lcc_publish::hard_drive::with_ext(&rel, ext), bytes.clone()));
         }
         let done = sftp::upload(&self.server, self.auth.clone(), &files, &mut |_, _| true).map_err(PublishError::Io)?;
         // trust on first use: later uploads (and runs) refuse a different host key
@@ -83,7 +83,7 @@ impl PublishService for SftpPublish {
     fn remove(&mut self, remote_id: &str) -> Result<(), PublishError> {
         // and its XMP sidecar, if one was written
         let mut rels = vec![remote_id.to_string()];
-        let xmp = dac_publish::hard_drive::with_ext(remote_id, "xmp");
+        let xmp = lcc_publish::hard_drive::with_ext(remote_id, "xmp");
         if xmp != remote_id {
             rels.push(xmp);
         }

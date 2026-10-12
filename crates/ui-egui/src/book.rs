@@ -1,13 +1,13 @@
 //! The Book module: a photo book laid out from the filmstrip, edited on a page canvas and
-//! exported as a PDF or one JPEG per page. The document and every edit live in `dac-book`
-//! ([`dac_book::ops`]); this file draws it and routes the `book.*` commands.
+//! exported as a PDF or one JPEG per page. The document and every edit live in `lcc-book`
+//! ([`lcc_book::ops`]); this file draws it and routes the `book.*` commands.
 //!
 //! Screen: a template browser and saved books on the left, the pages in the middle (multi-page,
 //! spread, single page or zoomed page; toolbar below), the panels on the right (Book Settings,
 //! Auto Layout, Page, Guides, Cell, Text, Type, Background, Export) and a filmstrip at the bottom
 //! whose photos drag onto cells. Dragging a photo cell onto another swaps their photos.
 //!
-//! The canvas draws photos from the grid's thumbnail textures and text through `dac-text`
+//! The canvas draws photos from the grid's thumbnail textures and text through `lcc-text`
 //! (shaped exactly as exported), so it matches the export at screen resolution.
 //!
 //! Saved books are JSON files in the settings folder (`books/`) until saved creations (catalog
@@ -17,13 +17,13 @@ use std::cell::RefCell;
 use std::collections::HashMap;
 use std::sync::Mutex;
 
-use dac_book::{Book, CellContent, PageRef};
-use dac_catalog::PhotoId;
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, UiBuilder, pos2, vec2};
+use lcc_book::{Book, CellContent, PageRef};
+use lcc_catalog::PhotoId;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::{Edge, Module, ModuleId, ModuleKey, PanelId};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -161,8 +161,8 @@ impl Module for BookModule {
     fn right_panels(&self) -> &'static [PanelId] {
         &[]
     }
-    fn toolbar(&self, _ui: &mut egui::Ui, _app: &mut DacApp) {}
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, _ui: &mut egui::Ui, _app: &mut LccApp) {}
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         center(ui, app);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
@@ -181,7 +181,7 @@ pub const BOOK_KEYS: &[ModuleKey] =
 // ------------------------------------------------------------------ commands
 
 /// The `book.*` UI commands (listed in the module shell's table): the document operations of
-/// [`dac_book::ops::OPS`] plus the views, navigation, export and saved books.
+/// [`lcc_book::ops::OPS`] plus the views, navigation, export and saved books.
 pub fn is_book_command(id: &str) -> bool {
     id.starts_with("book.")
 }
@@ -219,7 +219,7 @@ fn page_json(r: PageRef) -> Value {
 }
 
 /// Runs a `book.*` command.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     let st = &mut app.ui.book;
     match id {
         "book.view" => {
@@ -301,13 +301,13 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     }
 }
 
-fn run_op(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
-    if !dac_book::ops::OPS.iter().any(|o| o.0 == id) {
+fn run_op(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
+    if !lcc_book::ops::OPS.iter().any(|o| o.0 == id) {
         return Err(format!("unknown command: {id}"));
     }
     let st = &mut app.ui.book;
     let before = st.book.clone();
-    let r = dac_book::ops::apply(&mut st.book, id, p).map_err(|e| e.to_string())?;
+    let r = lcc_book::ops::apply(&mut st.book, id, p).map_err(|e| e.to_string())?;
     if st.book != before {
         st.undo.push(before);
         if st.undo.len() > UNDO_LIMIT {
@@ -340,7 +340,7 @@ fn run_op(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
 fn books_dir() -> Option<std::path::PathBuf> {
     #[cfg(not(target_arch = "wasm32"))]
     {
-        dac_engine::config::config_dir().map(|d| d.join("books"))
+        lcc_engine::config::config_dir().map(|d| d.join("books"))
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -366,7 +366,7 @@ pub fn saved_books() -> Vec<String> {
     v
 }
 
-fn saved(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn saved(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     let dir = books_dir().ok_or("saved books need a settings folder")?;
     let name = || -> Result<String, String> {
         let n = p.get("name").and_then(Value::as_str).map(str::to_string).unwrap_or_else(|| app.ui.book.book.name.clone());
@@ -377,13 +377,13 @@ fn saved(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
         "book.save" => {
             let n = name()?;
             // the collection (saved creation) in the catalog
-            let doc = dac_book::layoutdoc::to_layout(&app.ui.book.book);
+            let doc = lcc_book::layoutdoc::to_layout(&app.ui.book.book);
             let document = serde_json::to_value(&doc).map_err(|e| e.to_string())?;
             let existing = app
                 .ui
                 .book
                 .creation
-                .filter(|c| app.session.catalog.album(dac_catalog::AlbumId(*c)).is_some_and(|a| a.creation.is_some() && a.name == n));
+                .filter(|c| app.session.catalog.album(lcc_catalog::AlbumId(*c)).is_some_and(|a| a.creation.is_some() && a.name == n));
             let creation = match existing {
                 Some(c) => app.run("creation.update", json!({"id": c, "document": document})).map(|_| c)?,
                 None => app
@@ -417,8 +417,8 @@ fn saved(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                 Some(b) => b,
                 None => {
                     let doc =
-                        dac_layout::Document::from_json(&r.get("document").map(Value::to_string).unwrap_or_default()).map_err(|e| e.to_string())?;
-                    dac_book::layoutdoc::from_layout(&doc, &n).map_err(|e| e.to_string())?
+                        lcc_layout::Document::from_json(&r.get("document").map(Value::to_string).unwrap_or_default()).map_err(|e| e.to_string())?;
+                    lcc_book::layoutdoc::from_layout(&doc, &n).map_err(|e| e.to_string())?
                 }
             };
             let st = &mut app.ui.book;
@@ -452,11 +452,11 @@ fn saved(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
 // ------------------------------------------------------------------ export
 
 /// Token values for a catalog photo.
-pub fn photo_info(app: &DacApp, id: &str) -> dac_layout::tokens::PhotoInfo {
-    id.parse::<u64>().ok().and_then(|n| app.session.catalog.photo(PhotoId(n))).map(|p| dac_engine::creations::photo_info(p)).unwrap_or_default()
+pub fn photo_info(app: &LccApp, id: &str) -> lcc_layout::tokens::PhotoInfo {
+    id.parse::<u64>().ok().and_then(|n| app.session.catalog.photo(PhotoId(n))).map(|p| lcc_engine::creations::photo_info(p)).unwrap_or_default()
 }
 
-fn export(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn export(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     if with_status(|s| s.running) {
         return Err("a book export is already running".into());
     }
@@ -466,8 +466,8 @@ fn export(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
         return Err("the book has no pages: use Auto Layout or Add Page first".into());
     }
     let kind = match p.get("kind").and_then(Value::as_str) {
-        Some(k) if k.eq_ignore_ascii_case("jpeg") || k.eq_ignore_ascii_case("jpg") => dac_book::BookKind::Jpeg,
-        Some(k) if k.eq_ignore_ascii_case("pdf") => dac_book::BookKind::Pdf,
+        Some(k) if k.eq_ignore_ascii_case("jpeg") || k.eq_ignore_ascii_case("jpg") => lcc_book::BookKind::Jpeg,
+        Some(k) if k.eq_ignore_ascii_case("pdf") => lcc_book::BookKind::Pdf,
         Some(k) => return Err(format!("unknown kind: {k} (pdf|jpeg)")),
         None => book.settings.kind,
     };
@@ -476,8 +476,8 @@ fn export(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
         None => {
             let base = safe_name(&book.name).unwrap_or_else(|| "Book".into());
             let req = match kind {
-                dac_book::BookKind::Pdf => crate::pick::PickRequest::save("Export Book", "PDF", &["pdf"], format!("{base}.pdf")),
-                dac_book::BookKind::Jpeg => crate::pick::PickRequest::folder("Export Book Pages to Folder"),
+                lcc_book::BookKind::Pdf => crate::pick::PickRequest::save("Export Book", "PDF", &["pdf"], format!("{base}.pdf")),
+                lcc_book::BookKind::Jpeg => crate::pick::PickRequest::folder("Export Book Pages to Folder"),
             };
             match crate::pick::ask(app, id, p, "path", req, |_| None) {
                 crate::pick::Picked::Now(paths) => paths.into_iter().next().ok_or("cancelled")?,
@@ -493,13 +493,13 @@ fn export(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        let layout = dac_book::layoutdoc::to_layout(&book);
-        let (jobs, infos) = dac_engine::creations::prepare_jobs(&mut app.session, &layout, book.settings.resolution as f32)?;
+        let layout = lcc_book::layoutdoc::to_layout(&book);
+        let (jobs, infos) = lcc_engine::creations::prepare_jobs(&mut app.session, &layout, book.settings.resolution as f32)?;
         let total = book.all_pages().len();
         with_status(|s| *s = ExportStatus { running: true, done: 0, total, result: None });
         let work = move || -> Result<Vec<String>, String> {
-            let src = dac_engine::creations::run_jobs(jobs, infos)?;
-            let mut engine = dac_text::TextEngine::with_system_fonts();
+            let src = lcc_engine::creations::run_jobs(jobs, infos)?;
+            let mut engine = lcc_text::TextEngine::with_system_fonts();
             let mut progress = |done: usize, total: usize| {
                 with_status(|s| {
                     s.done = done;
@@ -535,30 +535,30 @@ fn export(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn write_export(
     book: &Book,
-    kind: dac_book::BookKind,
+    kind: lcc_book::BookKind,
     path: &str,
-    src: &dyn dac_layout::render::PhotoSource,
-    engine: &mut dac_text::TextEngine,
-    progress: dac_book::export::Progress,
+    src: &dyn lcc_layout::render::PhotoSource,
+    engine: &mut lcc_text::TextEngine,
+    progress: lcc_book::export::Progress,
 ) -> Result<Vec<String>, String> {
     let write = |p: &std::path::Path, bytes: &[u8]| -> Result<(), String> {
         let tmp = p.with_extension("part");
         std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, p)).map_err(|e| format!("{}: {e}", p.display()))
     };
     match kind {
-        dac_book::BookKind::Pdf => {
+        lcc_book::BookKind::Pdf => {
             let mut p = std::path::PathBuf::from(path);
             if p.extension().is_none_or(|e| !e.eq_ignore_ascii_case("pdf")) {
                 p.set_extension("pdf");
             }
-            let bytes = dac_book::export::export_pdf(book, src, engine, progress).map_err(|e| e.to_string())?;
+            let bytes = lcc_book::export::export_pdf(book, src, engine, progress).map_err(|e| e.to_string())?;
             if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
                 std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
             }
             write(&p, &bytes)?;
             Ok(vec![p.to_string_lossy().into_owned()])
         }
-        dac_book::BookKind::Jpeg => {
+        lcc_book::BookKind::Jpeg => {
             let p = std::path::PathBuf::from(path);
             let (dir, stem) = if p.is_dir() || path.ends_with(['/', '\\']) {
                 (p.clone(), safe_name(&book.name).unwrap_or_else(|| "Book".into()))
@@ -569,7 +569,7 @@ fn write_export(
                 )
             };
             std::fs::create_dir_all(&dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-            let pages = dac_book::export::export_jpegs(book, src, engine, progress).map_err(|e| e.to_string())?;
+            let pages = lcc_book::export::export_jpegs(book, src, engine, progress).map_err(|e| e.to_string())?;
             let mut out = Vec::with_capacity(pages.len());
             for (suffix, bytes) in pages {
                 let f = dir.join(format!("{stem}-{suffix}.jpg"));
@@ -584,7 +584,7 @@ fn write_export(
 // ------------------------------------------------------------------ text textures
 
 struct TextCache {
-    engine: dac_text::TextEngine,
+    engine: lcc_text::TextEngine,
     tex: HashMap<u64, egui::TextureHandle>,
     families: Vec<String>,
 }
@@ -598,9 +598,9 @@ fn with_text<T>(f: impl FnOnce(&mut TextCache) -> T) -> T {
         let mut c = c.borrow_mut();
         let cache = c.get_or_insert_with(|| {
             #[cfg(not(target_arch = "wasm32"))]
-            let mut engine = dac_text::TextEngine::with_system_fonts();
+            let mut engine = lcc_text::TextEngine::with_system_fonts();
             #[cfg(target_arch = "wasm32")]
-            let mut engine = dac_text::TextEngine::new();
+            let mut engine = lcc_text::TextEngine::new();
             let families = engine.fonts.families();
             TextCache { engine, tex: HashMap::new(), families }
         });
@@ -613,7 +613,7 @@ fn font_families() -> Vec<String> {
 }
 
 /// A text item as a texture at `scale` screen pixels per point.
-fn text_texture(ctx: &egui::Context, item: &dac_book::render::TextItem, scale: f32) -> Option<egui::TextureHandle> {
+fn text_texture(ctx: &egui::Context, item: &lcc_book::render::TextItem, scale: f32) -> Option<egui::TextureHandle> {
     use std::hash::{Hash, Hasher};
     let (w, h) = ((item.rect.w * scale).round() as usize, (item.rect.h * scale).round() as usize);
     if w == 0 || h == 0 || w > 8000 || h > 8000 {
@@ -631,9 +631,9 @@ fn text_texture(ctx: &egui::Context, item: &dac_book::render::TextItem, scale: f
         if c.tex.len() > 600 {
             c.tex.clear();
         }
-        let placed = dac_book::render::layout_item(&mut c.engine, item, 72.0 * scale);
-        let mut img = dac_raster::Rgba8::new(w, h);
-        dac_book::text::draw(&mut img, &placed, 0.0, 0.0, w as f32, h as f32);
+        let placed = lcc_book::render::layout_item(&mut c.engine, item, 72.0 * scale);
+        let mut img = lcc_raster::Rgba8::new(w, h);
+        lcc_book::text::draw(&mut img, &placed, 0.0, 0.0, w as f32, h as f32);
         let bytes: Vec<u8> = img.data.iter().flatten().copied().collect();
         let ci = egui::ColorImage::from_rgba_premultiplied([w, h], &bytes);
         let t = ctx.load_texture(format!("book-text-{key}"), ci, egui::TextureOptions::LINEAR);
@@ -643,13 +643,13 @@ fn text_texture(ctx: &egui::Context, item: &dac_book::render::TextItem, scale: f
 }
 
 /// Token values from the catalog, for the canvas.
-struct CatalogInfo<'a>(&'a DacApp);
+struct CatalogInfo<'a>(&'a LccApp);
 
-impl dac_layout::render::PhotoSource for CatalogInfo<'_> {
-    fn image(&self, _: &str, _: usize) -> Result<dac_raster::Rgba8, String> {
+impl lcc_layout::render::PhotoSource for CatalogInfo<'_> {
+    fn image(&self, _: &str, _: usize) -> Result<lcc_raster::Rgba8, String> {
         Err("not used on screen".into())
     }
-    fn info(&self, photo: &str) -> dac_layout::tokens::PhotoInfo {
+    fn info(&self, photo: &str) -> lcc_layout::tokens::PhotoInfo {
         photo_info(self.0, photo)
     }
 }
@@ -660,7 +660,7 @@ fn c32(c: [u8; 3]) -> Color32 {
     Color32::from_rgb(c[0], c[1], c[2])
 }
 
-fn photo_tex(app: &mut DacApp, id: &str) -> Option<(egui::TextureId, [usize; 2])> {
+fn photo_tex(app: &mut LccApp, id: &str) -> Option<(egui::TextureId, [usize; 2])> {
     let pid = PhotoId(id.parse().ok()?);
     app.session.catalog.photo(pid)?;
     crate::panels::grid::request_thumb(app, pid, 512, 6);
@@ -669,10 +669,10 @@ fn photo_tex(app: &mut DacApp, id: &str) -> Option<(egui::TextureId, [usize; 2])
 
 /// Paints a photo filling/fitting `cell` like the export does.
 fn paint_photo(p: &egui::Painter, tex: egui::TextureId, size: [usize; 2], cell: Rect, fill: bool, zoom: f32, pan: [f32; 2], tint: Color32) {
-    let lr = dac_layout::Rect::new(cell.left(), cell.top(), cell.width(), cell.height());
-    let pc = dac_layout::PhotoCell { fit: if fill { dac_layout::Fit::Fill } else { dac_layout::Fit::Fit }, zoom, pan, ..Default::default() };
+    let lr = lcc_layout::Rect::new(cell.left(), cell.top(), cell.width(), cell.height());
+    let pc = lcc_layout::PhotoCell { fit: if fill { lcc_layout::Fit::Fill } else { lcc_layout::Fit::Fit }, zoom, pan, ..Default::default() };
     let (iw, ih) = (size[0].max(1) as f32, size[1].max(1) as f32);
-    let (s, ox, oy) = dac_layout::render::photo_placement(lr, iw, ih, &pc);
+    let (s, ox, oy) = lcc_layout::render::photo_placement(lr, iw, ih, &pc);
     if !(s.is_finite() && s > 0.0) {
         return;
     }
@@ -696,13 +696,13 @@ struct PhotoDrag(u64);
 struct CellDrag(PageRef, usize);
 
 /// Draws one page at `rect` (the trim box on screen). Returns whether it was clicked.
-fn draw_page(ui: &mut egui::Ui, app: &mut DacApp, r: PageRef, rect: Rect, interactive: bool) -> bool {
+fn draw_page(ui: &mut egui::Ui, app: &mut LccApp, r: PageRef, rect: Rect, interactive: bool) -> bool {
     let t = Tokens::get(ui.ctx());
     let Some(page) = app.ui.book.book.page(r).cloned() else { return false };
     let book = app.ui.book.book.clone();
     let trim = book.trim();
     let k = rect.width() / trim.w.max(1.0);
-    let to_screen = |lr: dac_layout::Rect| Rect::from_min_size(rect.min + vec2(lr.x * k, lr.y * k), vec2(lr.w * k, lr.h * k));
+    let to_screen = |lr: lcc_layout::Rect| Rect::from_min_size(rect.min + vec2(lr.x * k, lr.y * k), vec2(lr.w * k, lr.h * k));
     let painter = ui.painter_at(rect.expand(2.0));
     let bg = book.background_of(r).clone();
     painter.rect_filled(rect, 0.0, c32(bg.color));
@@ -713,7 +713,7 @@ fn draw_page(ui: &mut egui::Ui, app: &mut DacApp, r: PageRef, rect: Rect, intera
         paint_photo(&painter, tex, size, rect, true, 1.0, [0.0, 0.0], Color32::from_white_alpha(a));
     }
     let ga = (bg.graphic_opacity.clamp(0.0, 1.0) * 255.0) as u8;
-    for g in dac_book::render::graphic_rects(bg.graphic, trim.w, trim.h) {
+    for g in lcc_book::render::graphic_rects(bg.graphic, trim.w, trim.h) {
         let gc = c32(bg.graphic_color);
         painter.rect_filled(to_screen(g), 0.0, Color32::from_rgba_unmultiplied(gc.r(), gc.g(), gc.b(), ga));
     }
@@ -781,7 +781,7 @@ fn draw_page(ui: &mut egui::Ui, app: &mut DacApp, r: PageRef, rect: Rect, intera
     // text
     let editor = interactive || rect.width() > 200.0;
     let src = CatalogInfo(app);
-    let items = dac_book::render::text_items(&book, r, &src, editor && book.guides.show);
+    let items = lcc_book::render::text_items(&book, r, &src, editor && book.guides.show);
     let ppp = ui.ctx().pixels_per_point();
     for item in items {
         let tr = to_screen(item.rect);
@@ -793,7 +793,7 @@ fn draw_page(ui: &mut egui::Ui, app: &mut DacApp, r: PageRef, rect: Rect, intera
     let g = book.guides;
     if g.show && editor {
         if g.text_safe {
-            let s = dac_book::TEXT_SAFE * k;
+            let s = lcc_book::TEXT_SAFE * k;
             painter.rect_stroke(rect.shrink(s), 0.0, Stroke::new(1.0, Color32::from_rgba_unmultiplied(40, 140, 230, 150)), StrokeKind::Inside);
         }
         if g.bleed && book.settings.bleed > 0.0 {
@@ -866,7 +866,7 @@ fn spreads(book: &Book) -> Vec<[Option<PageRef>; 2]> {
     v
 }
 
-fn draw_spread(ui: &mut egui::Ui, app: &mut DacApp, s: [Option<PageRef>; 2], origin: egui::Pos2, pw: f32, ph: f32, labels: bool) {
+fn draw_spread(ui: &mut egui::Ui, app: &mut LccApp, s: [Option<PageRef>; 2], origin: egui::Pos2, pw: f32, ph: f32, labels: bool) {
     let t = Tokens::get(ui.ctx());
     for (side, r) in s.iter().enumerate() {
         let rect = Rect::from_min_size(origin + vec2(side as f32 * pw, 0.0), vec2(pw, ph));
@@ -881,7 +881,7 @@ fn draw_spread(ui: &mut egui::Ui, app: &mut DacApp, s: [Option<PageRef>; 2], ori
     }
 }
 
-fn canvas(ui: &mut egui::Ui, app: &mut DacApp, area: Rect) {
+fn canvas(ui: &mut egui::Ui, app: &mut LccApp, area: Rect) {
     let book = app.ui.book.book.clone();
     let trim = book.trim();
     let aspect = trim.h / trim.w.max(1.0);
@@ -951,7 +951,7 @@ fn canvas(ui: &mut egui::Ui, app: &mut DacApp, area: Rect) {
     }
 }
 
-fn toolbar(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
+fn toolbar(ui: &mut egui::Ui, app: &mut LccApp, r: Rect) {
     let t = Tokens::get(ui.ctx());
     ui.painter().rect_filled(r, 0.0, t.chrome);
     ui.scope_builder(UiBuilder::new().max_rect(r.shrink2(vec2(10.0, 5.0))), |ui| {
@@ -987,8 +987,8 @@ fn toolbar(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 let label = match app.ui.book.book.settings.kind {
-                    dac_book::BookKind::Pdf => "Export Book to PDF…",
-                    dac_book::BookKind::Jpeg => "Export Book to JPEG…",
+                    lcc_book::BookKind::Pdf => "Export Book to PDF…",
+                    lcc_book::BookKind::Jpeg => "Export Book to JPEG…",
                 };
                 let resp = ui.button(crate::i18n::tr(label));
                 register(ui.ctx(), "book:export", resp.rect);
@@ -1013,7 +1013,7 @@ fn toolbar(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
 }
 
 /// A filmstrip of the photos shown in Library; each one drags onto a photo cell.
-fn filmstrip(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
+fn filmstrip(ui: &mut egui::Ui, app: &mut LccApp, r: Rect) {
     let t = Tokens::get(ui.ctx());
     ui.painter().rect_filled(r, 0.0, t.chrome);
     register(ui.ctx(), "book:filmstrip", r);
@@ -1056,13 +1056,13 @@ fn filmstrip(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
 }
 
 /// Runs a book command from a panel, toasting errors.
-fn op(app: &mut DacApp, ctx: &egui::Context, id: &str, p: Value) {
+fn op(app: &mut LccApp, ctx: &egui::Context, id: &str, p: Value) {
     if let Err(e) = run(app, id, &p) {
         app.toast_error(ctx, e);
     }
 }
 
-fn center(ui: &mut egui::Ui, app: &mut DacApp) {
+fn center(ui: &mut egui::Ui, app: &mut LccApp) {
     let t = Tokens::get(ui.ctx());
     let mut area = ui.available_rect_before_wrap();
     app.canvas_rect = Some(area);
@@ -1110,22 +1110,22 @@ fn section(ui: &mut egui::Ui, title: &str, open: bool, add: impl FnOnce(&mut egu
     register(ui.ctx(), format!("book:panel:{title}"), resp.header_response.rect);
 }
 
-fn left_panels(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
+fn left_panels(ui: &mut egui::Ui, app: &mut LccApp, r: Rect) {
     side_frame(ui, r, "book-left", |ui| {
         section(ui, "Page Templates", true, |ui| templates_panel(ui, app));
         section(ui, "Saved Books", true, |ui| saved_panel(ui, app));
     });
 }
 
-fn templates_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn templates_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     ui.label(egui::RichText::new(crate::i18n::tr("Click to apply to the current page; ★ marks favourites.")).small());
-    let all = dac_book::templates::builtin();
+    let all = lcc_book::templates::builtin();
     let favs = app.ui.book.book.favorites.clone();
-    let mut groups: Vec<(String, Vec<&dac_book::templates::Template>)> = Vec::new();
+    let mut groups: Vec<(String, Vec<&lcc_book::templates::Template>)> = Vec::new();
     if !favs.is_empty() {
         groups.push(("Favorites".into(), all.iter().filter(|t| favs.iter().any(|f| f == t.id)).collect()));
     }
-    for g in dac_book::templates::Group::ALL {
+    for g in lcc_book::templates::Group::ALL {
         groups.push((g.label().into(), all.iter().filter(|t| t.group == g).collect()));
     }
     let cur_tpl = app.ui.book.book.page(app.ui.book.current).map(|p| p.template.clone()).unwrap_or_default();
@@ -1184,7 +1184,7 @@ fn templates_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn saved_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn saved_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     ui.horizontal(|ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut app.ui.book.save_name).hint_text(app.ui.book.book.name.clone()).desired_width(110.0));
         crate::access::label(&r, "Book name");
@@ -1205,7 +1205,7 @@ fn saved_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn right_panels(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
+fn right_panels(ui: &mut egui::Ui, app: &mut LccApp, r: Rect) {
     side_frame(ui, r, "book-right", |ui| {
         section(ui, "Book Settings", true, |ui| settings_panel(ui, app));
         section(ui, "Auto Layout", true, |ui| auto_panel(ui, app));
@@ -1239,7 +1239,7 @@ fn enum_key<T: Serialize>(v: T) -> Value {
     serde_json::to_value(v).unwrap_or(Value::Null)
 }
 
-fn settings_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn settings_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let s = app.ui.book.book.settings.clone();
     let mut name = app.ui.book.book.name.clone();
@@ -1249,27 +1249,27 @@ fn settings_panel(ui: &mut egui::Ui, app: &mut DacApp) {
             op(app, &ctx, "book.settings", json!({"name": name}));
         }
     });
-    if let Some(k) = combo(ui, "book-kind", "Book", s.kind, &[dac_book::BookKind::Pdf, dac_book::BookKind::Jpeg], |k| match k {
-        dac_book::BookKind::Pdf => "PDF".into(),
-        dac_book::BookKind::Jpeg => "JPEG".into(),
+    if let Some(k) = combo(ui, "book-kind", "Book", s.kind, &[lcc_book::BookKind::Pdf, lcc_book::BookKind::Jpeg], |k| match k {
+        lcc_book::BookKind::Pdf => "PDF".into(),
+        lcc_book::BookKind::Jpeg => "JPEG".into(),
     }) {
         op(app, &ctx, "book.settings", json!({"kind": enum_key(k)}));
     }
-    let mut sizes: Vec<dac_book::BookSize> = dac_book::BookSize::PRESETS.to_vec();
+    let mut sizes: Vec<lcc_book::BookSize> = lcc_book::BookSize::PRESETS.to_vec();
     let custom = match s.size {
-        dac_book::BookSize::Custom { .. } => s.size,
-        _ => dac_book::BookSize::Custom { w: 9.0, h: 9.0 },
+        lcc_book::BookSize::Custom { .. } => s.size,
+        _ => lcc_book::BookSize::Custom { w: 9.0, h: 9.0 },
     };
     sizes.push(custom);
     if let Some(sz) = combo(ui, "book-size", "Size", s.size, &sizes, |b| b.label()) {
         let mut p = json!({"size": sz.key()});
-        if let dac_book::BookSize::Custom { w, h } = sz {
+        if let lcc_book::BookSize::Custom { w, h } = sz {
             p["width"] = json!(w);
             p["height"] = json!(h);
         }
         op(app, &ctx, "book.settings", p);
     }
-    if let dac_book::BookSize::Custom { mut w, mut h } = s.size {
+    if let lcc_book::BookSize::Custom { mut w, mut h } = s.size {
         ui.horizontal(|ui| {
             let a = ui.add(egui::DragValue::new(&mut w).range(2.0..=40.0).speed(0.05).suffix(" in"));
             ui.label("×");
@@ -1280,11 +1280,11 @@ fn settings_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         });
     }
     if let Some(c) =
-        combo(ui, "book-cover", "Cover", s.cover, &[dac_book::CoverType::Hardcover, dac_book::CoverType::Softcover, dac_book::CoverType::None], |c| {
+        combo(ui, "book-cover", "Cover", s.cover, &[lcc_book::CoverType::Hardcover, lcc_book::CoverType::Softcover, lcc_book::CoverType::None], |c| {
             match c {
-                dac_book::CoverType::Hardcover => "Hardcover",
-                dac_book::CoverType::Softcover => "Softcover",
-                dac_book::CoverType::None => "No Cover",
+                lcc_book::CoverType::Hardcover => "Hardcover",
+                lcc_book::CoverType::Softcover => "Softcover",
+                lcc_book::CoverType::None => "No Cover",
             }
             .into()
         })
@@ -1313,7 +1313,7 @@ fn settings_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         "book-sharp",
         "Sharpening",
         s.sharpening,
-        &[dac_book::Sharpening::Off, dac_book::Sharpening::Low, dac_book::Sharpening::Standard, dac_book::Sharpening::High],
+        &[lcc_book::Sharpening::Off, lcc_book::Sharpening::Low, lcc_book::Sharpening::Standard, lcc_book::Sharpening::High],
         |v| format!("{v:?}"),
     ) {
         op(app, &ctx, "book.settings", json!({"sharpening": enum_key(sh)}));
@@ -1328,9 +1328,9 @@ fn settings_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn auto_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn auto_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
-    let names: Vec<String> = dac_book::auto::builtin_presets().into_iter().map(|p| p.name).collect();
+    let names: Vec<String> = lcc_book::auto::builtin_presets().into_iter().map(|p| p.name).collect();
     ui.horizontal(|ui| {
         ui.label(crate::i18n::tr("Preset"));
         egui::ComboBox::from_id_salt("book-preset").selected_text(crate::i18n::tr(&app.ui.book.preset).to_string()).width(170.0).show_ui(ui, |ui| {
@@ -1356,7 +1356,7 @@ fn auto_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     ui.label(egui::RichText::new(crate::i18n::tr("Lays out the selected photos, or every photo in the filmstrip.")).small().weak());
 }
 
-fn page_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn page_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let cur = app.ui.book.current;
     ui.label(egui::RichText::new(page_label(&app.ui.book.book, cur)).strong());
@@ -1377,7 +1377,7 @@ fn page_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         if ui.checkbox(&mut show, crate::i18n::tr("Page Numbers")).changed() {
             op(app, &ctx, "book.pageNumbers", json!({"show": show}));
         }
-        if let Some(p) = combo(ui, "book-numpos", "", n.position, &dac_book::NumberPos::ALL, |p| p.label().into()) {
+        if let Some(p) = combo(ui, "book-numpos", "", n.position, &lcc_book::NumberPos::ALL, |p| p.label().into()) {
             op(app, &ctx, "book.pageNumbers", json!({"position": enum_key(p)}));
         }
     });
@@ -1394,7 +1394,7 @@ fn page_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn guides_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn guides_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let g = app.ui.book.book.guides;
     for (key, label, v) in [
@@ -1411,11 +1411,11 @@ fn guides_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn selected_cell(app: &DacApp) -> Option<dac_book::BookCell> {
+fn selected_cell(app: &LccApp) -> Option<lcc_book::BookCell> {
     app.ui.book.cell.and_then(|i| app.ui.book.book.page(app.ui.book.current).and_then(|p| p.cells.get(i).cloned()))
 }
 
-fn cell_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn cell_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let Some(c) = selected_cell(app) else {
         ui.label(egui::RichText::new(crate::i18n::tr("Click a cell on a page to edit it.")).weak());
@@ -1462,7 +1462,7 @@ fn cell_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
 }
 
-fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn text_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     match selected_cell(app).map(|c| c.content) {
         Some(CellContent::Text { mut text, .. }) => {
@@ -1502,7 +1502,7 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
                     "book-ptpos",
                     "Align",
                     pt.position,
-                    &[dac_book::PhotoTextPos::Above, dac_book::PhotoTextPos::Below, dac_book::PhotoTextPos::Over],
+                    &[lcc_book::PhotoTextPos::Above, lcc_book::PhotoTextPos::Below, lcc_book::PhotoTextPos::Over],
                     |p| format!("{p:?}"),
                 ) {
                     op(app, &ctx, "book.photoText", json!({"position": enum_key(pos)}));
@@ -1532,7 +1532,7 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
             op(app, &ctx, "book.pageText", json!({"text": text}));
         }
         if let Some(pos) =
-            combo(ui, "book-pgpos", "Align", pt.position, &[dac_book::PageTextPos::Top, dac_book::PageTextPos::Bottom], |p| format!("{p:?}"))
+            combo(ui, "book-pgpos", "Align", pt.position, &[lcc_book::PageTextPos::Top, lcc_book::PageTextPos::Bottom], |p| format!("{p:?}"))
         {
             op(app, &ctx, "book.pageText", json!({"position": enum_key(pos)}));
         }
@@ -1544,7 +1544,7 @@ fn text_panel(ui: &mut egui::Ui, app: &mut DacApp) {
 }
 
 /// Keeps the text cursor of a focused text box for the Type panel's pair kerning.
-fn remember_caret(app: &mut DacApp, target: TypeTarget, out: &egui::text_edit::TextEditOutput) {
+fn remember_caret(app: &mut LccApp, target: TypeTarget, out: &egui::text_edit::TextEditOutput) {
     if out.response.response.has_focus()
         && let Some(c) = out.cursor_range
         && let Ok(i) = u32::try_from(c.primary.index.0)
@@ -1554,7 +1554,7 @@ fn remember_caret(app: &mut DacApp, target: TypeTarget, out: &egui::text_edit::T
 }
 
 /// The style the Type panel shows.
-fn type_style(app: &DacApp) -> Option<dac_book::TypeStyle> {
+fn type_style(app: &LccApp) -> Option<lcc_book::TypeStyle> {
     let st = &app.ui.book;
     match st.type_target {
         TypeTarget::Numbers => Some(st.book.numbers.style.clone()),
@@ -1566,7 +1566,7 @@ fn type_style(app: &DacApp) -> Option<dac_book::TypeStyle> {
     }
 }
 
-fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn type_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let targets = [TypeTarget::Cell, TypeTarget::PhotoText, TypeTarget::PageText, TypeTarget::Numbers];
     if let Some(t) = combo(ui, "book-typetarget", "Edit", app.ui.book.type_target, &targets, |t| t.label().into()) {
@@ -1577,9 +1577,9 @@ fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         ui.label(egui::RichText::new(crate::i18n::tr("Select a text cell, or turn on photo or page text.")).weak());
         return;
     };
-    let set = |app: &mut DacApp, patch: Value| op(app, &ctx, "book.type", json!({"target": target, "style": patch}));
+    let set = |app: &mut LccApp, patch: Value| op(app, &ctx, "book.type", json!({"target": target, "style": patch}));
     // presets
-    let mut presets: Vec<String> = dac_book::text::builtin_presets().into_iter().map(|p| p.name).collect();
+    let mut presets: Vec<String> = lcc_book::text::builtin_presets().into_iter().map(|p| p.name).collect();
     presets.extend(app.ui.book.book.text_presets.iter().map(|p| p.name.clone()));
     ui.horizontal(|ui| {
         ui.label(crate::i18n::tr("Text Style Preset"));
@@ -1611,7 +1611,7 @@ fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
             }
         });
     });
-    if let Some(fs) = combo(ui, "book-fstyle", "Style", s.style, &dac_book::FontStyle::ALL, |f| f.label().into()) {
+    if let Some(fs) = combo(ui, "book-fstyle", "Style", s.style, &lcc_book::FontStyle::ALL, |f| f.label().into()) {
         set(app, json!({"style": enum_key(fs)}));
     }
     let mut v = s.size;
@@ -1650,7 +1650,7 @@ fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
         set(app, json!({"leading": lead}));
     }
     if let Some(kk) =
-        combo(ui, "book-kern", "Kerning", s.kerning, &[dac_book::Kerning::Metrics, dac_book::Kerning::Optical, dac_book::Kerning::Off], |k| {
+        combo(ui, "book-kern", "Kerning", s.kerning, &[lcc_book::Kerning::Metrics, lcc_book::Kerning::Optical, lcc_book::Kerning::Off], |k| {
             format!("{k:?}")
         })
     {
@@ -1684,14 +1684,14 @@ fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
     ui.horizontal(|ui| {
         for (a, l) in
-            [(dac_book::HAlign::Left, "⇤"), (dac_book::HAlign::Center, "↔"), (dac_book::HAlign::Right, "⇥"), (dac_book::HAlign::Justify, "☰")]
+            [(lcc_book::HAlign::Left, "⇤"), (lcc_book::HAlign::Center, "↔"), (lcc_book::HAlign::Right, "⇥"), (lcc_book::HAlign::Justify, "☰")]
         {
             if ui.selectable_label(s.align == a, l).on_hover_text(crate::i18n::tr(&format!("{a:?}")).to_string()).clicked() {
                 set(app, json!({"align": enum_key(a)}));
             }
         }
         ui.separator();
-        for (a, l) in [(dac_book::VAlign::Top, "⤒"), (dac_book::VAlign::Middle, "↕"), (dac_book::VAlign::Bottom, "⤓")] {
+        for (a, l) in [(lcc_book::VAlign::Top, "⤒"), (lcc_book::VAlign::Middle, "↕"), (lcc_book::VAlign::Bottom, "⤓")] {
             if ui.selectable_label(s.valign == a, l).on_hover_text(crate::i18n::tr(&format!("{a:?}")).to_string()).clicked() {
                 set(app, json!({"valign": enum_key(a)}));
             }
@@ -1699,7 +1699,7 @@ fn type_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     });
 }
 
-fn background_panel(ui: &mut egui::Ui, app: &mut DacApp) {
+fn background_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let cur = app.ui.book.current;
     let own = app.ui.book.book.page(cur).is_some_and(|p| p.background.is_some());
@@ -1713,7 +1713,7 @@ fn background_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     }
     let bg = app.ui.book.book.background_of(cur).clone();
     let target = if own { json!({"page": page_json(cur)}) } else { json!({}) };
-    let set = |app: &mut DacApp, patch: Value| {
+    let set = |app: &mut LccApp, patch: Value| {
         let mut p = target.clone();
         if let (Some(o), Some(x)) = (p.as_object_mut(), patch.as_object()) {
             o.extend(x.clone());
@@ -1751,7 +1751,7 @@ fn background_panel(ui: &mut egui::Ui, app: &mut DacApp) {
     if ui.add(egui::Slider::new(&mut po, 0.0..=100.0).suffix(" %").text(crate::i18n::tr("Photo Opacity"))).changed() {
         set(app, json!({"photoOpacity": po / 100.0}));
     }
-    if let Some(g) = combo(ui, "book-graphic", "Graphic", bg.graphic, &dac_book::Graphic::ALL, |g| g.label().into()) {
+    if let Some(g) = combo(ui, "book-graphic", "Graphic", bg.graphic, &lcc_book::Graphic::ALL, |g| g.label().into()) {
         set(app, json!({"graphic": enum_key(g)}));
     }
     let mut gc = bg.graphic_color;
@@ -1778,7 +1778,7 @@ mod tests {
     const T: Duration = Duration::from_secs(30);
 
     fn demo() -> Headless {
-        let app = DacApp::new(dac_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+        let app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
         let mut h = Headless::new(app, [1500.0, 950.0], 1.0);
         h.settle(Duration::from_secs(120));
         h
@@ -1813,7 +1813,7 @@ mod tests {
         assert!(!h.app.ui.book.book.numbers.show);
         run(&mut h, "book.redo", json!({}));
         assert!(h.app.ui.book.book.numbers.show);
-        let doc = dac_book::layoutdoc::to_layout(&h.app.ui.book.book);
+        let doc = lcc_book::layoutdoc::to_layout(&h.app.ui.book.book);
         let saved = run(&mut h, "creation.save", json!({"kind": "book", "name": "Test Book", "document": serde_json::to_value(&doc).unwrap()}));
         let cid = saved["id"].as_u64().unwrap();
         let pages = h.app.ui.book.book.pages.len();

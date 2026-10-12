@@ -503,7 +503,7 @@ mod tests {
 
     #[test]
     fn file_round_trip_and_hostile_files() {
-        let dir = std::env::temp_dir().join(format!("dac-actions-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-actions-{}", std::process::id()));
         let f = dir.join("actions.json");
         let mut st = State::with_file(Some(f.clone()));
         let mut a = Action::new("One");

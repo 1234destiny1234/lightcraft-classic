@@ -52,7 +52,7 @@ pub fn parse_backends(s: &str) -> Option<BackendChoice> {
 /// The choice from `{ENV_PREFIX}_GPU_BACKEND` (`app`) or else `WGPU_BACKEND` (`wgpu`): the
 /// first one that parses wins; an unknown value is skipped (with a warning).
 pub fn choose(app: Option<&str>, wgpu: Option<&str>) -> BackendChoice {
-    let app_name = dac_brand::env_var("GPU_BACKEND");
+    let app_name = lcc_brand::env_var("GPU_BACKEND");
     for (name, v) in [(app_name.as_str(), app), ("WGPU_BACKEND", wgpu)] {
         let Some(v) = v else { continue };
         match parse_backends(v) {
@@ -102,7 +102,7 @@ pub fn resolve(choice: BackendChoice, default: Backends, compiled: Backends) -> 
 fn env_choice() -> BackendChoice {
     static C: std::sync::OnceLock<BackendChoice> = std::sync::OnceLock::new();
     *C.get_or_init(|| {
-        let lc = dac_brand::env("GPU_BACKEND");
+        let lc = lcc_brand::env("GPU_BACKEND");
         let wg = std::env::var("WGPU_BACKEND").ok();
         choose(lc.as_deref(), wg.as_deref())
     })

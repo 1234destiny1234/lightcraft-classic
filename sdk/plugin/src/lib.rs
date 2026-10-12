@@ -3,7 +3,7 @@
 //! A plug-in is a `cdylib` built for `wasm32-unknown-unknown`:
 //!
 //! ```ignore
-//! use dac_plugin_sdk::{export_plugin, host, Request};
+//! use lcc_plugin_sdk::{export_plugin, host, Request};
 //! use serde_json::{json, Value};
 //!
 //! const MANIFEST: &str = r#"{"id": "org.example.hello", "name": "Hello",
@@ -54,7 +54,7 @@ fn host_response(_: i32) {}
 fn host_log(_: i32, _: i32) {}
 
 thread_local! {
-    /// Buffers handed to the host by `dac_alloc`, by address.
+    /// Buffers handed to the host by `lcc_alloc`, by address.
     static BUFFERS: RefCell<BTreeMap<usize, Vec<u8>>> = const { RefCell::new(BTreeMap::new()) };
     /// The last reply, kept alive until the next call.
     static REPLY: RefCell<Vec<u8>> = const { RefCell::new(Vec::new()) };
@@ -288,19 +288,19 @@ pub mod host {
 macro_rules! export_plugin {
     ($manifest:expr, $handler:path) => {
         #[unsafe(no_mangle)]
-        pub extern "C" fn dac_abi_version() -> i32 {
+        pub extern "C" fn lcc_abi_version() -> i32 {
             $crate::ABI_VERSION
         }
         #[unsafe(no_mangle)]
-        pub extern "C" fn dac_manifest() -> i64 {
+        pub extern "C" fn lcc_manifest() -> i64 {
             $crate::__manifest($manifest)
         }
         #[unsafe(no_mangle)]
-        pub extern "C" fn dac_alloc(len: i32) -> i32 {
+        pub extern "C" fn lcc_alloc(len: i32) -> i32 {
             $crate::__alloc(len)
         }
         #[unsafe(no_mangle)]
-        pub extern "C" fn dac_handle(ptr: i32, len: i32) -> i64 {
+        pub extern "C" fn lcc_handle(ptr: i32, len: i32) -> i64 {
             $crate::__handle(ptr, len, $handler)
         }
     };

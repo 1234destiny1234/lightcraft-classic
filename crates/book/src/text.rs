@@ -1,9 +1,9 @@
-//! Book text: the Type panel's style turned into `dac-text` blocks, laid out in boxes with
+//! Book text: the Type panel's style turned into `lcc-text` blocks, laid out in boxes with
 //! columns and vertical alignment, and drawn into rasters (preview, JPEG) or PDF pages (vector,
 //! embedded fonts). Also the built-in text style presets.
 
-use dac_raster::Rgba8;
-use dac_text::{CharStyle, ParagraphRun, ParagraphStyle, TextAlign, TextBlock, TextEngine, TextLayout, TextRun, TextShape, Xform};
+use lcc_raster::Rgba8;
+use lcc_text::{CharStyle, ParagraphRun, ParagraphStyle, TextAlign, TextBlock, TextEngine, TextLayout, TextRun, TextShape, Xform};
 
 use crate::{FontStyle, HAlign, KernPair, Kerning, TextPreset, TypeStyle, VAlign};
 
@@ -28,11 +28,11 @@ pub fn find_preset(book: &crate::Book, name: &str) -> Option<TypeStyle> {
 /// Manual kerning in laid-out text: (byte offset of the left character, 1/1000 em), sorted.
 pub type Kerns = Vec<(usize, f32)>;
 
-/// Expands the tokens of `template` like [`dac_layout::tokens::expand`] and maps manual kerning
+/// Expands the tokens of `template` like [`lcc_layout::tokens::expand`] and maps manual kerning
 /// pairs (character indices in `template`) to byte offsets in the expanded text.
-pub fn expand_kerned(template: &str, info: &dac_layout::tokens::PhotoInfo, pairs: &[KernPair]) -> (String, Kerns) {
+pub fn expand_kerned(template: &str, info: &lcc_layout::tokens::PhotoInfo, pairs: &[KernPair]) -> (String, Kerns) {
     if pairs.is_empty() {
-        return (dac_layout::tokens::expand(template, info), Vec::new());
+        return (lcc_layout::tokens::expand(template, info), Vec::new());
     }
     let kern = |i: usize| u32::try_from(i).ok().and_then(|i| pairs.iter().find(|k| k.at == i)).map(|k| k.amount);
     let chars: Vec<(usize, char)> = template.char_indices().collect();
@@ -58,7 +58,7 @@ pub fn expand_kerned(template: &str, info: &dac_layout::tokens::PhotoInfo, pairs
         if span == 1 {
             out.push(c);
         } else {
-            out.push_str(&dac_layout::tokens::expand(piece, info));
+            out.push_str(&lcc_layout::tokens::expand(piece, info));
         }
         let amount = if span == 2 && piece.len() == 2 && piece != "{}" { kern(i).or_else(|| kern(i + 1)) } else { kern(i + span - 1) };
         if let Some(a) = amount
@@ -74,7 +74,7 @@ pub fn expand_kerned(template: &str, info: &dac_layout::tokens::PhotoInfo, pairs
 
 fn block(text: &str, s: &TypeStyle, kerns: &[(usize, f32)], width_px: f32, height_px: f32) -> TextBlock {
     let color =
-        dac_text::Color { r: f32::from(s.color[0]) / 255.0, g: f32::from(s.color[1]) / 255.0, b: f32::from(s.color[2]) / 255.0, alpha: s.opacity };
+        lcc_text::Color { r: f32::from(s.color[0]) / 255.0, g: f32::from(s.color[1]) / 255.0, b: f32::from(s.color[2]) / 255.0, alpha: s.opacity };
     let style = CharStyle {
         font_family: s.font.clone(),
         weight: if s.style.bold() { 700 } else { 400 },
@@ -85,9 +85,9 @@ fn block(text: &str, s: &TypeStyle, kerns: &[(usize, f32)], width_px: f32, heigh
         leading_pt: s.leading,
         baseline_shift_pt: s.baseline,
         kerning: match s.kerning {
-            Kerning::Metrics => dac_text::Kerning::Metrics,
-            Kerning::Optical => dac_text::Kerning::Optical,
-            Kerning::Off => dac_text::Kerning::Off,
+            Kerning::Metrics => lcc_text::Kerning::Metrics,
+            Kerning::Optical => lcc_text::Kerning::Optical,
+            Kerning::Off => lcc_text::Kerning::Off,
         },
         ..CharStyle::default()
     };
@@ -197,7 +197,7 @@ pub fn layout_box_kerned(engine: &mut TextEngine, text: &str, style: &TypeStyle,
 pub fn draw(img: &mut Rgba8, placed: &[Placed], bx: f32, by: f32, bw: f32, bh: f32) {
     for p in placed {
         let xf = Xform([1.0, 0.0, 0.0, 1.0, f64::from(bx + p.origin.0), f64::from(by + p.origin.1)]);
-        let r = dac_text::render::rasterize(&p.layout, &xf, dac_text::AntiAlias::Smooth);
+        let r = lcc_text::render::rasterize(&p.layout, &xf, lcc_text::AntiAlias::Smooth);
         let (cx0, cy0, cx1, cy1) = (bx.floor() as i64, by.floor() as i64, (bx + bw).ceil() as i64, (by + bh).ceil() as i64);
         for row in 0..r.height {
             let y = i64::from(r.y0) + row as i64;
@@ -227,9 +227,9 @@ pub fn draw(img: &mut Rgba8, placed: &[Placed], bx: f32, by: f32, bw: f32, bh: f
 }
 
 /// Draws laid-out text (laid out at 72 dpi) on a PDF page, its box at `rect` (points), clipped.
-pub fn draw_pdf(page: &mut dac_pdf::Page, placed: &[Placed], rect: dac_pdf::Rect) {
+pub fn draw_pdf(page: &mut lcc_pdf::Page, placed: &[Placed], rect: lcc_pdf::Rect) {
     page.save();
-    page.clip(dac_pdf::Path::rect(rect));
+    page.clip(lcc_pdf::Path::rect(rect));
     for p in placed {
         page.text(&p.layout, &p.text, (rect.x + f64::from(p.origin.0), rect.y + f64::from(p.origin.1)), 1.0);
     }
@@ -266,7 +266,7 @@ mod tests {
 
     #[test]
     fn manual_kerning_maps_through_tokens_and_moves_glyphs() {
-        let info = dac_layout::tokens::PhotoInfo { title: "Été".into(), ..Default::default() };
+        let info = lcc_layout::tokens::PhotoInfo { title: "Été".into(), ..Default::default() };
         let k = |at, amount| KernPair { at, amount };
         // "A{Title}B": 0 'A', 1..=7 the token, 8 'B'; kerns after A, after the token, inside it (ignored)
         let (t, kerns) = expand_kerned("A{Title}B", &info, &[k(0, 50.0), k(7, -20.0), k(3, 99.0)]);
@@ -275,7 +275,7 @@ mod tests {
         // escapes, a trailing pair, an index past the end and hostile templates
         assert_eq!(expand_kerned("{{x}}", &info, &[k(1, 10.0), k(4, 5.0), k(99, 1.0)]), ("{x}".into(), vec![(0, 10.0), (2, 5.0)]));
         assert_eq!(expand_kerned("{", &info, &[k(0, 1.0)]).0, "{");
-        assert_eq!(expand_kerned("a{b{c}", &info, &[k(1, 1.0)]).0, dac_layout::tokens::expand("a{b{c}", &info));
+        assert_eq!(expand_kerned("a{b{c}", &info, &[k(1, 1.0)]).0, lcc_layout::tokens::expand("a{b{c}", &info));
 
         let mut e = TextEngine::new();
         let style = TypeStyle { size: 100.0, ..TypeStyle::default() };

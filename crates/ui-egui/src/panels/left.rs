@@ -1,11 +1,11 @@
 //! The left "My Photos" panel: library sources, albums tree, and date groups.
 
-use dac_catalog::{Album, AlbumId, FolderNode, KeywordNode};
-use dac_engine::LibrarySource;
 use egui::{Align2, Rect, Sense, pos2, vec2};
+use lcc_catalog::{Album, AlbumId, FolderNode, KeywordNode};
+use lcc_engine::LibrarySource;
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::sidebar::SidebarSection;
 use crate::theme::Tokens;
@@ -33,13 +33,13 @@ fn note_width(ui: &egui::Ui, w: f32) {
     });
 }
 
-fn row(app: &mut DacApp, ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, count: Option<usize>, selected: bool, indent: f32) -> egui::Response {
+fn row(app: &mut LccApp, ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, count: Option<usize>, selected: bool, indent: f32) -> egui::Response {
     row_named(app, ui, id, icon, label, None, count, selected, indent)
 }
 
 /// [`row`] whose spoken name is `spoken` when the painted `label` is a shortened form of it.
 fn row_named(
-    app: &mut DacApp,
+    app: &mut LccApp,
     ui: &mut egui::Ui,
     id: &str,
     icon: Icon,
@@ -56,7 +56,7 @@ fn row_named(
 /// label's dot (`mark`) before the count.
 #[allow(clippy::too_many_arguments)]
 fn row_sensed(
-    app: &mut DacApp,
+    app: &mut LccApp,
     ui: &mut egui::Ui,
     id: &str,
     icon: Icon,
@@ -191,11 +191,11 @@ const SECTION_HEADER: f32 = 34.0;
 /// draws. Every section goes through here, so they all fold, space and announce themselves alike.
 /// `rows`: how many rows the section lists at its top level (a folded header says so).
 fn section(
-    app: &mut DacApp,
+    app: &mut LccApp,
     ui: &mut egui::Ui,
     section: SidebarSection,
     rows: usize,
-    body: impl FnOnce(&mut DacApp, &mut egui::Ui),
+    body: impl FnOnce(&mut LccApp, &mut egui::Ui),
 ) -> PlacedSection {
     ui.add_space(SECTION_GAP);
     let (header, _) = ui.allocate_exact_size(vec2(ui.available_width(), SECTION_HEADER), Sense::hover());
@@ -238,7 +238,7 @@ fn visible_right(ui: &egui::Ui) -> f32 {
 /// the sidebar (widget `sidebarSectionPinned:<id>`), so it is always clear which section the rows
 /// belong to, and the section can be folded, moved or hidden from anywhere in a long list. The
 /// next section's header pushes it out as it arrives. `view_top`: where the visible part starts.
-fn pinned_header(app: &mut DacApp, ui: &mut egui::Ui, placed: &[PlacedSection], view_top: f32) {
+fn pinned_header(app: &mut LccApp, ui: &mut egui::Ui, placed: &[PlacedSection], view_top: f32) {
     let pinned = placed.iter().find(|p| p.open && p.top < view_top && p.bottom > view_top);
     let rect = pinned.map(|p| {
         let top = view_top.min(p.bottom - SECTION_HEADER);
@@ -300,7 +300,7 @@ pub(crate) fn section_drop_before(placed: &[PlacedSection], y: f32) -> Option<Si
 
 /// While a section is dragged by its header: a line shows where it would go, releasing over the
 /// sidebar moves it there (`view.sidebarMoveSection`), releasing elsewhere or Esc leaves it.
-fn section_drag(app: &mut DacApp, ui: &mut egui::Ui, placed: &[PlacedSection]) {
+fn section_drag(app: &mut LccApp, ui: &mut egui::Ui, placed: &[PlacedSection]) {
     let Some(dragged) = app.ui.dragging_section else { return };
     let (released, pos, esc) = ui.input(|i| (i.pointer.primary_released(), i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape)));
     if esc {
@@ -340,7 +340,7 @@ fn section_drag(app: &mut DacApp, ui: &mut egui::Ui, placed: &[PlacedSection]) {
 
 /// The dragged section's name follows the pointer; a drag that ended anywhere (also outside the
 /// sidebar, or with the sidebar closed) is over.
-pub fn section_drag_feedback(app: &mut DacApp, ctx: &egui::Context) {
+pub fn section_drag_feedback(app: &mut LccApp, ctx: &egui::Context) {
     let Some(section) = app.ui.dragging_section else { return };
     let (down, pos) = ctx.input(|i| (i.pointer.primary_down(), i.pointer.latest_pos()));
     if !down || !app.ui.left_panel {
@@ -365,7 +365,7 @@ pub fn section_drag_feedback(app: &mut DacApp, ctx: &egui::Context) {
 /// it survives restarts), and what the section adds to its header (its button, see `header_button`) sits at
 /// the visible edge. A folded section says how many rows it holds (`rows`, with View ▸ Show Photo
 /// Counts). `pinned`: this is the copy kept at the top of the sidebar (see `pinned_header`).
-fn section_header(app: &mut DacApp, ui: &mut egui::Ui, section: SidebarSection, r: Rect, rows: usize, pinned: bool) -> HeaderOutcome {
+fn section_header(app: &mut LccApp, ui: &mut egui::Ui, section: SidebarSection, r: Rect, rows: usize, pinned: bool) -> HeaderOutcome {
     let t = Tokens::get(ui.ctx());
     let id = section.id();
     let title = crate::i18n::tr(section.title());
@@ -433,9 +433,9 @@ struct HeaderButton {
 /// What a header's button does when clicked.
 enum HeaderAction {
     /// Does it at once (usually: opens a dialog).
-    Run(fn(&mut DacApp, &egui::Context)),
+    Run(fn(&mut LccApp, &egui::Context)),
     /// Opens a menu with these items.
-    Menu(fn(&mut DacApp, &mut egui::Ui)),
+    Menu(fn(&mut LccApp, &mut egui::Ui)),
 }
 
 /// The button a section has at the end of its header, if it has one. This is the one place that
@@ -461,7 +461,7 @@ fn header_button_rect(ui: &egui::Ui, header: Rect) -> Rect {
 }
 
 /// Draw `button` at the end of `header` and act on it.
-fn show_header_button(app: &mut DacApp, ui: &mut egui::Ui, header: Rect, button: &HeaderButton) {
+fn show_header_button(app: &mut LccApp, ui: &mut egui::Ui, header: Rect, button: &HeaderButton) {
     let mut hdr =
         ui.new_child(egui::UiBuilder::new().max_rect(header_button_rect(ui, header)).layout(egui::Layout::right_to_left(egui::Align::Center)));
     let resp = icon_button(&mut hdr, button.id, button.icon, vec2(HEADER_BUTTON, HEADER_BUTTON), false, true, button.tooltip);
@@ -480,7 +480,7 @@ fn show_header_button(app: &mut DacApp, ui: &mut egui::Ui, header: Rect, button:
 /// Keywords' +: Create Keyword Tag, for a keyword at the usual place for new ones (not inside
 /// whatever is picked in the Keyword List, which may not even be on screen).
 /// Made from here, the keyword is shown here: Keywords opens down to it (`reveal_keyword`).
-fn new_keyword(app: &mut DacApp, _ctx: &egui::Context) {
+fn new_keyword(app: &mut LccApp, _ctx: &egui::Context) {
     let mut dialog = crate::panels::keyword_list::create_dialog_inside(app, None);
     if let crate::state::Dialog::KeywordTag { reveal, .. } = &mut dialog {
         *reveal = true;
@@ -491,7 +491,7 @@ fn new_keyword(app: &mut DacApp, _ctx: &egui::Context) {
 /// The menu of a section's header (`on`) and of the My Photos title (`None`): hide this section,
 /// show or hide any section, and go back to the usual arrangement. Its items are widgets
 /// `sidebarMenu:hide`, `sidebarMenu:section:<id>` and `sidebarMenu:reset`.
-fn sections_menu(app: &mut DacApp, ui: &mut egui::Ui, on: Option<SidebarSection>) {
+fn sections_menu(app: &mut LccApp, ui: &mut egui::Ui, on: Option<SidebarSection>) {
     let mut run = None;
     if let Some(section) = on {
         let hide = ui.button(crate::i18n::tr("Hide This Section"));
@@ -530,7 +530,7 @@ fn sections_menu(app: &mut DacApp, ui: &mut egui::Ui, on: Option<SidebarSection>
 }
 
 /// The menu of Albums' +: Create Album, Smart Album, Folder…
-fn new_album_menu(app: &mut DacApp, ui: &mut egui::Ui) {
+fn new_album_menu(app: &mut LccApp, ui: &mut egui::Ui) {
     if ui.button(crate::i18n::tr("Create Album…")).clicked() {
         app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: false, parent: None });
     }
@@ -538,7 +538,7 @@ fn new_album_menu(app: &mut DacApp, ui: &mut egui::Ui) {
         app.ui.dialog = Some(crate::state::Dialog::SmartRules {
             id: None,
             name: String::new(),
-            rules: dac_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
+            rules: lcc_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
             parent: None,
         });
     }
@@ -558,7 +558,7 @@ fn new_album_menu(app: &mut DacApp, ui: &mut egui::Ui) {
     }
 }
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider));
     frame.show(ui, |ui| {
@@ -672,7 +672,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
 
 /// Albums: the tree of albums and the folders they are sorted into. `reveal`: an album just made,
 /// whose folders open down to it.
-fn albums_rows(app: &mut DacApp, ui: &mut egui::Ui, reveal: Option<u64>) {
+fn albums_rows(app: &mut LccApp, ui: &mut egui::Ui, reveal: Option<u64>) {
     let kids: AlbumKids = app.session.catalog.album_children_by_parent().into_iter().map(|(k, v)| (k, v.into_iter().cloned().collect())).collect();
     let cat = &app.session.catalog;
     let mut open_to = Vec::new();
@@ -685,7 +685,7 @@ fn albums_rows(app: &mut DacApp, ui: &mut egui::Ui, reveal: Option<u64>) {
 }
 
 /// By Date: year → month → day; a click filters by that prefix, the triangle opens a level.
-fn date_rows(app: &mut DacApp, ui: &mut egui::Ui) {
+fn date_rows(app: &mut LccApp, ui: &mut egui::Ui) {
     let groups = app.caches.date_groups(&app.session.catalog);
     for g in groups.iter() {
         if date_row(app, ui, &g.year, &crate::i18n::date_group_label(&g.year, true), g.count, 0.0) {
@@ -706,7 +706,7 @@ fn date_rows(app: &mut DacApp, ui: &mut egui::Ui) {
 /// `cmd::missing::checked_path`). Checking stats every file, which on a network share takes
 /// seconds, so it runs on a worker thread: the count shown is the last finished one, refreshed
 /// at most every 5 s, and at once (after the running check) when the catalog changed.
-fn missing_count(app: &mut DacApp, ui: &mut egui::Ui) -> usize {
+fn missing_count(app: &mut LccApp, ui: &mut egui::Ui) -> usize {
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering::Relaxed};
     #[derive(Clone, Default)]
     struct Job {
@@ -722,7 +722,7 @@ fn missing_count(app: &mut DacApp, ui: &mut egui::Ui) -> usize {
     let fresh = now - job.at < 5.0 && job.rev == rev;
     if !fresh && !job.running.load(Relaxed) {
         // the same scope as the Missing Photos view: library photos only, never Local browse records
-        let paths = dac_engine::cmd::missing::candidates(&app.session.catalog);
+        let paths = lcc_engine::cmd::missing::candidates(&app.session.catalog);
         job.running.store(true, Relaxed);
         job.at = now;
         job.rev = rev;
@@ -752,7 +752,7 @@ struct LocalNow {
 /// Downloads, the home folder, the folder being browsed, and the folders kept with Browse
 /// Folder…. Worked out every frame the sidebar shows, drawn or not: the row listed for this
 /// session only (`local_browse_root`) follows the browsing. `None` where there is no Local (web).
-fn local_now(app: &mut DacApp, ui: &egui::Ui) -> Option<LocalNow> {
+fn local_now(app: &mut LccApp, ui: &egui::Ui) -> Option<LocalNow> {
     if !SidebarSection::Local.available() {
         return None;
     }
@@ -778,7 +778,7 @@ fn local_now(app: &mut DacApp, ui: &egui::Ui) -> Option<LocalNow> {
 }
 
 /// Local's rows: each place as a folder tree, Browse Folder…, and the way back for hidden places.
-fn local_rows(app: &mut DacApp, ui: &mut egui::Ui, now: &LocalNow) {
+fn local_rows(app: &mut LccApp, ui: &mut egui::Ui, now: &LocalNow) {
     let (local, current) = (&now.places, now.current.as_deref());
     for (i, (name, path)) in local.places.iter().enumerate() {
         let transient = local.browse_root.as_deref() == Some(path.as_str());
@@ -812,9 +812,9 @@ fn local_rows(app: &mut DacApp, ui: &mut egui::Ui, now: &LocalNow) {
 }
 
 /// Whether two paths name the same folder, however they are spelled (separators, trailing
-/// slash, `.`/`..`, drive-letter case; see `dac_catalog::query::folder_key`).
+/// slash, `.`/`..`, drive-letter case; see `lcc_catalog::query::folder_key`).
 pub(crate) fn same_folder(a: &str, b: &str) -> bool {
-    a == b || dac_catalog::query::folder_key(a) == dac_catalog::query::folder_key(b)
+    a == b || lcc_catalog::query::folder_key(a) == lcc_catalog::query::folder_key(b)
 }
 
 /// Local's top-level folders and how the folder being browsed sits among them.
@@ -848,7 +848,7 @@ pub(crate) fn local_places(
     browse_root: Option<&str>,
     hidden: &[String],
 ) -> LocalPlaces {
-    use dac_catalog::query::{folder_key, folder_within};
+    use lcc_catalog::query::{folder_key, folder_within};
     let is_hidden = |p: &str| hidden.iter().any(|h| same_folder(h, p));
     let mut places = builtin;
     for path in saved {
@@ -976,10 +976,10 @@ pub(crate) fn fs_cached<T: Clone + Send + 'static>(ui: &egui::Ui, kind: &'static
 /// way down to it open whenever the browsed folder changes, so it shows highlighted in place.
 /// `transient`: a top-level row listed for this session only (it offers Keep in Local).
 #[allow(clippy::too_many_arguments)]
-fn folder_tree(app: &mut DacApp, ui: &mut egui::Ui, name: &str, path: &str, indent: f32, current: Option<&str>, reveal: bool, transient: bool) {
+fn folder_tree(app: &mut LccApp, ui: &mut egui::Ui, name: &str, path: &str, indent: f32, current: Option<&str>, reveal: bool, transient: bool) {
     let open_id = egui::Id::new(("folder-open", path.to_string()));
     let sel = current.is_some_and(|c| same_folder(c, path));
-    let on_the_way = !sel && current.is_some_and(|c| dac_catalog::query::folder_within(c, path));
+    let on_the_way = !sel && current.is_some_and(|c| lcc_catalog::query::folder_within(c, path));
     let mut open = tree_open(ui, open_id, false);
     if reveal && on_the_way {
         // opened once per browsed folder: collapsing it again afterwards sticks
@@ -1052,7 +1052,7 @@ fn folder_tree(app: &mut DacApp, ui: &mut egui::Ui, name: &str, path: &str, inde
 }
 
 /// One By Date row (`key`: `YYYY`, `YYYY-MM` or `YYYY-MM-DD`); returns whether it is open.
-fn date_row(app: &mut DacApp, ui: &mut egui::Ui, key: &str, label: &str, count: usize, indent: f32) -> bool {
+fn date_row(app: &mut LccApp, ui: &mut egui::Ui, key: &str, label: &str, count: usize, indent: f32) -> bool {
     let open_id = egui::Id::new(("date-open", key.to_string()));
     let mut open = tree_open(ui, open_id, false);
     let sel = app.session.filter.date.as_deref() == Some(key);
@@ -1071,7 +1071,7 @@ fn date_row(app: &mut DacApp, ui: &mut egui::Ui, key: &str, label: &str, count: 
 /// By Date and Keywords count every photo in the library, so choosing a row shows those photos
 /// from All Photos, not from whatever album or folder happened to be open, where they could be
 /// missing (issue #341). Only when choosing (`on`), not when clearing the row again.
-pub(crate) fn browse_all_photos(app: &mut DacApp, on: bool) {
+pub(crate) fn browse_all_photos(app: &mut LccApp, on: bool) {
     if on && app.session.source != LibrarySource::All {
         let _ = app.run("library.source", json!({"kind": "all"}));
     }
@@ -1081,7 +1081,7 @@ pub(crate) fn browse_all_photos(app: &mut DacApp, on: bool) {
 type AlbumKids = std::collections::HashMap<Option<AlbumId>, Vec<Album>>;
 
 /// `open_to`: folders forced open this frame (the way down to an album that was just made).
-fn albums_tree(app: &mut DacApp, ui: &mut egui::Ui, all: &AlbumKids, parent: Option<AlbumId>, indent: f32, open_to: &[AlbumId]) {
+fn albums_tree(app: &mut LccApp, ui: &mut egui::Ui, all: &AlbumKids, parent: Option<AlbumId>, indent: f32, open_to: &[AlbumId]) {
     let Some(kids) = all.get(&parent) else { return };
     for a in kids {
         if a.folder {
@@ -1204,7 +1204,7 @@ pub fn auto_scroll_speed(y: f32, top: f32, bottom: f32) -> f32 {
 /// While an album, or photos from the grid, are dragged over the sidebar: scrolls it when the
 /// pointer is near its top or bottom edge, so rows beyond the visible part can be reached. Call
 /// inside the scroll area.
-fn drag_auto_scroll(app: &DacApp, ui: &egui::Ui) {
+fn drag_auto_scroll(app: &LccApp, ui: &egui::Ui) {
     if app.ui.dragging_album.is_none() && app.ui.dragging_photos.is_none() && app.ui.dragging_section.is_none() {
         return;
     }
@@ -1235,7 +1235,7 @@ const HOVER_OPEN_SECS: f64 = 0.6;
 
 /// Whether the album `dragged` may be dropped into the folder `target` (`None`: the top level):
 /// a folder other than where it already is, and not itself or something inside it.
-fn can_drop_album(app: &DacApp, dragged: AlbumId, target: Option<AlbumId>) -> bool {
+fn can_drop_album(app: &LccApp, dragged: AlbumId, target: Option<AlbumId>) -> bool {
     let Some(d) = app.session.catalog.album(dragged) else { return false };
     match target {
         None => d.parent.is_some(),
@@ -1244,7 +1244,7 @@ fn can_drop_album(app: &DacApp, dragged: AlbumId, target: Option<AlbumId>) -> bo
 }
 
 /// Ends a drag that ran `result`: the folders down to the album open so it shows in its new place.
-fn finish_drop(app: &mut DacApp, ui: &egui::Ui, dragged: AlbumId, result: Result<serde_json::Value, String>) {
+fn finish_drop(app: &mut LccApp, ui: &egui::Ui, dragged: AlbumId, result: Result<serde_json::Value, String>) {
     forget_hover(app, ui.ctx());
     match result {
         Ok(_) => {
@@ -1257,7 +1257,7 @@ fn finish_drop(app: &mut DacApp, ui: &egui::Ui, dragged: AlbumId, result: Result
 }
 
 /// Forgets how long the pointer rested on each folder (a new drag starts counting again).
-fn forget_hover(app: &DacApp, ctx: &egui::Context) {
+fn forget_hover(app: &LccApp, ctx: &egui::Context) {
     let ids: Vec<u64> = app.session.catalog.albums().filter(|a| a.folder).map(|a| a.id.0).collect();
     ctx.data_mut(|d| {
         for id in ids {
@@ -1267,14 +1267,14 @@ fn forget_hover(app: &DacApp, ctx: &egui::Context) {
 }
 
 /// Moves the dragged album into a folder (`album.move`, one undo step; `None`: the top level).
-fn drop_album(app: &mut DacApp, ui: &egui::Ui, dragged: AlbumId, target: Option<AlbumId>) {
+fn drop_album(app: &mut LccApp, ui: &egui::Ui, dragged: AlbumId, target: Option<AlbumId>) {
     let r = app.run("album.move", json!({"id": dragged.0, "parent": target.map(|t| t.0)}));
     finish_drop(app, ui, dragged, r);
 }
 
 /// Places the dragged album in `parent` before the sibling `before` (`None`: last of its kind), by
 /// hand (`album.reorder`, one undo step).
-fn place_album(app: &mut DacApp, ui: &egui::Ui, dragged: AlbumId, parent: Option<AlbumId>, before: Option<AlbumId>) {
+fn place_album(app: &mut LccApp, ui: &egui::Ui, dragged: AlbumId, parent: Option<AlbumId>, before: Option<AlbumId>) {
     let r = app.run("album.reorder", json!({"id": dragged.0, "parent": parent.map(|p| p.0), "before": before.map(|b| b.0)}));
     finish_drop(app, ui, dragged, r);
 }
@@ -1294,7 +1294,7 @@ enum AlbumDrop {
 /// middle and beside it by its edges; an album over an album goes before it by its top half and
 /// after it by its bottom half; a folder over an album does nothing. Placing where it already
 /// is, or inside itself, is nothing too. `expanded`: `target` is a folder shown open.
-fn album_drop_at(app: &DacApp, dragged: AlbumId, target: &Album, frac: f32, expanded: bool) -> Option<AlbumDrop> {
+fn album_drop_at(app: &LccApp, dragged: AlbumId, target: &Album, frac: f32, expanded: bool) -> Option<AlbumDrop> {
     let cat = &app.session.catalog;
     let d = cat.album(dragged)?;
     let into = || can_drop_album(app, dragged, Some(target.id)).then_some(AlbumDrop::Into(target.id));
@@ -1328,7 +1328,7 @@ fn album_drop_at(app: &DacApp, dragged: AlbumId, target: &Album, frac: f32, expa
 /// inside it, a line above or below the row when it would go beside it, and the move or placement
 /// done on release. A closed folder with something inside (`open`) opens once the pointer rests on
 /// it; returns whether it did.
-fn album_drag_over(app: &mut DacApp, ui: &mut egui::Ui, resp: &egui::Response, row: &Album, open: Option<&mut bool>, indent: f32) -> bool {
+fn album_drag_over(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, row: &Album, open: Option<&mut bool>, indent: f32) -> bool {
     let hover_id = egui::Id::new(("album-hover", row.id.0));
     let Some(dragged) = app.ui.dragging_album.map(AlbumId) else { return false };
     let pos = ui.input(|i| i.pointer.latest_pos()).filter(|_| pointer_over_row(ui, resp.rect));
@@ -1386,7 +1386,7 @@ fn album_drag_over(app: &mut DacApp, ui: &mut egui::Ui, resp: &egui::Response, r
 /// While an album that sits in a folder is dragged: the "Albums" header takes it back to the top
 /// level (outlined, with a hint). The header stays in view however long the tree is, and nothing
 /// moves when it appears.
-fn top_level_drop_target(app: &mut DacApp, ui: &mut egui::Ui, header: Rect) {
+fn top_level_drop_target(app: &mut LccApp, ui: &mut egui::Ui, header: Rect) {
     let Some(dragged) = app.ui.dragging_album.map(AlbumId) else { return };
     if !can_drop_album(app, dragged, None) {
         return;
@@ -1406,7 +1406,7 @@ fn top_level_drop_target(app: &mut DacApp, ui: &mut egui::Ui, header: Rect) {
 
 /// While an album is dragged in the sidebar: its name at the pointer; the drag ends when the
 /// button is up (the drop targets act on the release frame, before this runs).
-pub fn album_drag_feedback(app: &mut DacApp, ctx: &egui::Context) {
+pub fn album_drag_feedback(app: &mut LccApp, ctx: &egui::Context) {
     let Some(id) = app.ui.dragging_album else { return };
     let (released, down, pos, esc) =
         ctx.input(|i| (i.pointer.primary_released(), i.pointer.primary_down(), i.pointer.latest_pos(), i.key_pressed(egui::Key::Escape)));
@@ -1427,7 +1427,7 @@ pub fn album_drag_feedback(app: &mut DacApp, ctx: &egui::Context) {
 
 /// An album row while photos are dragged from the grid: highlighted under the pointer; a
 /// release there adds them.
-fn drop_target(app: &mut DacApp, ui: &mut egui::Ui, resp: &egui::Response, a: &Album) {
+fn drop_target(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, a: &Album) {
     let Some(ids) = app.ui.dragging_photos.clone() else { return };
     // only where the row can be seen: not scrolled out of the sidebar or beneath the pinned header
     let over = pointer_over_row(ui, resp.rect);
@@ -1437,7 +1437,7 @@ fn drop_target(app: &mut DacApp, ui: &mut egui::Ui, resp: &egui::Response, a: &A
     let released = ui.input(|i| i.pointer.any_released());
     // albums hold library photos (issue #684): Local ones can't be dropped in; the row doesn't
     // light up, and a release says why
-    let photos: Vec<dac_catalog::PhotoId> = ids.iter().map(|id| dac_catalog::PhotoId(*id)).collect();
+    let photos: Vec<lcc_catalog::PhotoId> = ids.iter().map(|id| lcc_catalog::PhotoId(*id)).collect();
     if super::grid::local_only(app, &photos) {
         ui.ctx().set_cursor_icon(egui::CursorIcon::NotAllowed);
         if released {
@@ -1470,7 +1470,7 @@ fn drop_target(app: &mut DacApp, ui: &mut egui::Ui, resp: &egui::Response, a: &A
     }
 }
 
-fn folder_menu(app: &mut DacApp, resp: &egui::Response, a: &Album) {
+fn folder_menu(app: &mut LccApp, resp: &egui::Response, a: &Album) {
     resp.context_menu(|ui| {
         if a.folder {
             // the same commands as File ▸ New…, aimed at this folder
@@ -1532,7 +1532,7 @@ fn folder_menu(app: &mut DacApp, resp: &egui::Response, a: &Album) {
         }
         if !a.folder {
             // export: show the album, select its photos, then the dialog / a preset
-            let show_all = |app: &mut DacApp| {
+            let show_all = |app: &mut LccApp| {
                 let _ = app.run("library.source", json!({"kind": "album", "id": a.id.0}));
                 let _ = app.run("library.selectAll", json!({}));
             };
@@ -1590,7 +1590,7 @@ fn folder_menu(app: &mut DacApp, resp: &egui::Response, a: &Album) {
 }
 
 /// Whether `id` is `ancestor` or lies inside it.
-fn is_within(app: &DacApp, id: dac_catalog::AlbumId, ancestor: dac_catalog::AlbumId) -> bool {
+fn is_within(app: &LccApp, id: lcc_catalog::AlbumId, ancestor: lcc_catalog::AlbumId) -> bool {
     let mut cur = Some(id);
     let mut guard = 0;
     while let Some(c) = cur {
@@ -1607,13 +1607,13 @@ fn is_within(app: &DacApp, id: dac_catalog::AlbumId, ancestor: dac_catalog::Albu
 }
 
 // "Folders" (drawn in `show`): where on disk the library's photos were imported from, with photo counts (see
-// `dac_catalog::folders`). A click makes that folder the source, like an album or a Local
+// `lcc_catalog::folders`). A click makes that folder the source, like an album or a Local
 // folder: its photos and those of the folders inside it fill the grid. The triangle opens a
 // level. Only folders holding imported photos are listed; every folder on disk is under Local.
 
 /// A plain collapsible section header (Classic's panels): the title and its disclosure triangle;
 /// a click folds it. Returns the header's rect and whether the section is open.
-fn sidebar_section_header(app: &mut DacApp, ui: &mut egui::Ui, id: &str, title: &str) -> (Rect, bool) {
+fn sidebar_section_header(app: &mut LccApp, ui: &mut egui::Ui, id: &str, title: &str) -> (Rect, bool) {
     let t = Tokens::get(ui.ctx());
     let title = crate::i18n::tr(title);
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::click());
@@ -1639,7 +1639,7 @@ fn sidebar_section_header(app: &mut DacApp, ui: &mut egui::Ui, id: &str, title: 
 }
 
 /// Local under a plain header (Classic's Folders panel).
-fn local_section(app: &mut DacApp, ui: &mut egui::Ui) {
+fn local_section(app: &mut LccApp, ui: &mut egui::Ui) {
     let Some(now) = local_now(app, ui) else { return };
     if sidebar_section_header(app, ui, "local", "Local").1 {
         local_rows(app, ui, &now);
@@ -1649,11 +1649,11 @@ fn local_section(app: &mut DacApp, ui: &mut egui::Ui) {
 
 /// Whenever the shown folder changes (a click, an agent, a rename or its undo), open the rows
 /// above it so it is on screen; folding one by hand afterwards sticks until the choice changes.
-fn reveal_chosen(app: &DacApp, ui: &egui::Ui, tree: &[FolderNode]) {
+fn reveal_chosen(app: &LccApp, ui: &egui::Ui, tree: &[FolderNode]) {
     let shown = app.session.library_folder.clone().filter(|_| app.session.source == LibrarySource::LibraryFolder);
-    let chosen = shown.filter(|c| !dac_catalog::query::folder_key(c).is_empty());
+    let chosen = shown.filter(|c| !lcc_catalog::query::folder_key(c).is_empty());
     let seen = egui::Id::new("libfolder-revealed");
-    let now = chosen.as_deref().map(dac_catalog::query::folder_key);
+    let now = chosen.as_deref().map(lcc_catalog::query::folder_key);
     if ui.data(|d| d.get_temp::<Option<String>>(seen)) == Some(now.clone()) {
         return;
     }
@@ -1661,8 +1661,8 @@ fn reveal_chosen(app: &DacApp, ui: &egui::Ui, tree: &[FolderNode]) {
     let Some(chosen) = chosen else { return };
     fn open_above(ui: &egui::Ui, nodes: &[FolderNode], chosen: &str) {
         for n in nodes {
-            if dac_catalog::query::folder_within(chosen, &n.path) && !same_folder(chosen, &n.path) {
-                let key = dac_catalog::query::folder_key(&n.path);
+            if lcc_catalog::query::folder_within(chosen, &n.path) && !same_folder(chosen, &n.path) {
+                let key = lcc_catalog::query::folder_key(&n.path);
                 ui.data_mut(|d| d.insert_temp(egui::Id::new(("libfolder-open", key)), true));
                 open_above(ui, &n.children, chosen);
             }
@@ -1671,9 +1671,9 @@ fn reveal_chosen(app: &DacApp, ui: &egui::Ui, tree: &[FolderNode]) {
     open_above(ui, tree, &chosen);
 }
 
-fn folder_rows(app: &mut DacApp, ui: &mut egui::Ui, nodes: &[FolderNode], indent: f32) {
+fn folder_rows(app: &mut LccApp, ui: &mut egui::Ui, nodes: &[FolderNode], indent: f32) {
     for n in nodes {
-        let key = dac_catalog::query::folder_key(&n.path);
+        let key = lcc_catalog::query::folder_key(&n.path);
         let open_id = egui::Id::new(("libfolder-open", key.clone()));
         // a disk starts open, and so does a folder that holds nothing itself and leads to one
         // folder (`Users` → `me`): the first row where the library branches is what you look for
@@ -1720,7 +1720,7 @@ fn folder_rows(app: &mut DacApp, ui: &mut egui::Ui, nodes: &[FolderNode], indent
 
 /// The context menu of a Folders row: a folder's own, a disk's (remove it), none for the
 /// startup disk.
-fn row_menu(app: &mut DacApp, resp: &egui::Response, n: &FolderNode) {
+fn row_menu(app: &mut LccApp, resp: &egui::Response, n: &FolderNode) {
     if !n.volume {
         folder_menu_for_library(app, resp, n);
     } else if n.path != "/" {
@@ -1742,7 +1742,7 @@ fn row_menu(app: &mut DacApp, resp: &egui::Response, n: &FolderNode) {
 
 /// Synchronize Folder… of a Folders row (widget `folderSynchronize`): opens its dialog, which
 /// scans the folder in the background.
-fn synchronize_item(app: &mut DacApp, ui: &mut egui::Ui, n: &FolderNode, name: &str) {
+fn synchronize_item(app: &mut LccApp, ui: &mut egui::Ui, n: &FolderNode, name: &str) {
     let r = ui
         .button(crate::i18n::tr("Synchronize Folder…"))
         .on_hover_text(crate::i18n::tr("Find photos added to or missing from this folder on disk, and XMP sidecars changed by other apps"));
@@ -1758,7 +1758,7 @@ fn synchronize_item(app: &mut DacApp, ui: &mut egui::Ui, n: &FolderNode, name: &
 
 /// Set Color Label ▸ of a Folders row (`folder.label`; the submenu is widget `folderLabelMenu`,
 /// its colours `folderLabel:<colour>`).
-fn folder_label_menu(app: &mut DacApp, ui: &mut egui::Ui, n: &FolderNode) {
+fn folder_label_menu(app: &mut LccApp, ui: &mut egui::Ui, n: &FolderNode) {
     let menu = ui.menu_button(crate::i18n::tr("Set Color Label"), |ui| {
         if let Some(l) = crate::panels::grid::label_items(app, ui, n.label, "folderLabel") {
             if let Err(e) = app.run("folder.label", json!({"path": n.path, "label": crate::panels::grid::label_param(l)})) {
@@ -1772,11 +1772,11 @@ fn folder_label_menu(app: &mut DacApp, ui: &mut egui::Ui, n: &FolderNode) {
 
 /// The context menu of a folder row: the folder's disk actions (the same as Local's, photos
 /// follow) and taking its photos out of the library.
-fn folder_menu_for_library(app: &mut DacApp, resp: &egui::Response, n: &FolderNode) {
+fn folder_menu_for_library(app: &mut LccApp, resp: &egui::Response, n: &FolderNode) {
     let path = n.path.as_str();
     let name = std::path::Path::new(path).file_name().map(|f| f.to_string_lossy().to_string()).unwrap_or_else(|| path.to_string());
     // what dialogs call it: the last two names, so same-named folders are told apart
-    let label = dac_catalog::folders::folder_label(path);
+    let label = lcc_catalog::folders::folder_label(path);
     resp.context_menu(|ui| {
         if ui.button(crate::i18n::tr("Rename Folder…")).clicked() {
             app.ui.dialog = Some(crate::state::Dialog::TextPrompt {
@@ -1849,7 +1849,7 @@ fn folder_menu_for_library(app: &mut DacApp, resp: &egui::Response, n: &FolderNo
 /// "Keywords": the library's keyword tree with photo counts (`a|b|c` keywords nest). A click
 /// filters the grid by the keyword (children included), the triangle opens a level, and the
 /// context menu renames, merges or deletes the keyword across the library.
-fn keyword_rows(app: &mut DacApp, ui: &mut egui::Ui, nodes: &[KeywordNode], indent: f32) {
+fn keyword_rows(app: &mut LccApp, ui: &mut egui::Ui, nodes: &[KeywordNode], indent: f32) {
     for n in nodes {
         let open_id = egui::Id::new(("kw-open", n.path.to_lowercase()));
         let mut open = tree_open(ui, open_id, false);

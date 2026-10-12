@@ -2,7 +2,7 @@
 //! format version, v1 → current upgrade paths), the log (ops that pass their CRC but carry hostile
 //! values), the v4 store (truncated / garbled `catalog.redb`, with the backup named in the error),
 //! catalogs opened for import (`transfer::load_readonly`), keyword lists and the small settings
-//! files, plus full-disk saves. Seeded mutation loops from `dac-fuzzkit`: plain `cargo test`.
+//! files, plus full-disk saves. Seeded mutation loops from `lcc-fuzzkit`: plain `cargo test`.
 
 use std::path::Path;
 
@@ -33,7 +33,7 @@ fn sample() -> (Catalog, Vec<Op>) {
 }
 
 fn snap_file(version: u32, seq: u64, c: &Catalog) -> String {
-    format!("{{\"format\":\"dac-catalog\",\"version\":{version},\"seq\":{seq},\"catalog\":{}}}\n", c.to_snapshot())
+    format!("{{\"format\":\"lcc-catalog\",\"version\":{version},\"seq\":{seq},\"catalog\":{}}}\n", c.to_snapshot())
 }
 
 /// Open from these bytes; when it opens, use it (append, snapshot, reopen) like a session would.
@@ -63,7 +63,7 @@ fn snapshots_of_every_format_never_panic() {
     let (c, _) = sample();
     let seeds: Vec<String> = (1..=VERSION).map(|v| snap_file(v, 3, &c)).collect();
     let seed_refs: Vec<&str> = seeds.iter().map(String::as_str).collect();
-    dac_fuzzkit::run_json("catalog.snapshot", &seed_refs, 400, |s| open_and_use(Some(s.as_bytes()), None));
+    lcc_fuzzkit::run_json("catalog.snapshot", &seed_refs, 400, |s| open_and_use(Some(s.as_bytes()), None));
 }
 
 #[test]
@@ -74,7 +74,7 @@ fn log_records_with_valid_crcs_never_panic() {
     let (base, _) = sample();
     // mutate the op, then sign it: the CRC only proves the line is what was written, not that
     // the op makes sense (a newer build, a hand edit, a bug elsewhere)
-    dac_fuzzkit::run_json("catalog.log", &seeds, 1500, |body| {
+    lcc_fuzzkit::run_json("catalog.log", &seeds, 1500, |body| {
         let crc = crc32fast::hash(body.as_bytes());
         let line = format!("{{\"seq\":9,\"crc\":{crc},\"op\":{body}}}");
         if let Some((_, op)) = decode_record(&line) {
@@ -94,7 +94,7 @@ fn damaged_logs_never_panic() {
     let (c, ops) = sample();
     let log: String = ops.iter().enumerate().map(|(i, op)| encode_record(i as u64 + 1, op) + "\n").collect();
     let snap = snap_file(VERSION, 2, &c);
-    dac_fuzzkit::run("catalog.logfile", &[log.as_bytes()], 300, |l| {
+    lcc_fuzzkit::run("catalog.logfile", &[log.as_bytes()], 300, |l| {
         open_and_use(None, Some(l));
         open_and_use(Some(snap.as_bytes()), Some(l));
     });
@@ -120,9 +120,9 @@ fn garbled_store_and_log_never_panic() {
     let good = std::fs::read(&db).unwrap();
     let log = s.path().join(LOG);
     let good_log = std::fs::read(&log).unwrap_or_default();
-    // each open is a real redb open: a bounded number of mutants (raise with DAC_FUZZ_ITERS)
-    let mut rng = dac_fuzzkit::Rng::new(0x5eed);
-    for _ in 0..dac_fuzzkit::iterations(60) {
+    // each open is a real redb open: a bounded number of mutants (raise with LCC_FUZZ_ITERS)
+    let mut rng = lcc_fuzzkit::Rng::new(0x5eed);
+    for _ in 0..lcc_fuzzkit::iterations(60) {
         let mut b = good.clone();
         match rng.below(3) {
             0 => b.truncate(rng.below(b.len() + 1)),
@@ -141,7 +141,7 @@ fn garbled_store_and_log_never_panic() {
             }
         }
         std::fs::write(&db, &b).unwrap();
-        std::fs::write(&log, dac_fuzzkit::mutate(&mut rng, &good_log, 4)).unwrap();
+        std::fs::write(&log, lcc_fuzzkit::mutate(&mut rng, &good_log, 4)).unwrap();
         if let Ok((mut j, c, _)) = open_dir(s.path()) {
             let _ = j.check_integrity(&c);
         }
@@ -182,7 +182,7 @@ fn catalogs_opened_for_import_never_panic() {
     let snap = snap_file(VERSION, 2, &c);
     let log: String = ops.iter().enumerate().map(|(i, op)| encode_record(i as u64 + 1, op) + "\n").collect();
     let s = Scratch::new("robust-import");
-    dac_fuzzkit::run_json("catalog.import", &[&snap], 150, |t| {
+    lcc_fuzzkit::run_json("catalog.import", &[&snap], 150, |t| {
         std::fs::write(s.path().join(SNAPSHOT), t).unwrap();
         std::fs::write(s.path().join(LOG), &log).unwrap();
         if let Ok(other) = transfer::load_readonly(s.path()) {
@@ -200,7 +200,7 @@ fn catalogs_opened_for_import_never_panic() {
 fn settings_files_and_keyword_lists_never_panic() {
     let s = Scratch::new("robust-settings");
     let settings = serde_json::to_string(&CatalogSettings { keep_backups: 5, ..CatalogSettings::default() }).unwrap();
-    dac_fuzzkit::run_json("catalog.settings", &[&settings], 500, |t| {
+    lcc_fuzzkit::run_json("catalog.settings", &[&settings], 500, |t| {
         std::fs::write(s.path().join(library::SETTINGS_FILE), t).unwrap();
         let cs = CatalogSettings::load(s.path());
         let _ = cs.backup_due(i64::MAX);
@@ -209,12 +209,12 @@ fn settings_files_and_keyword_lists_never_panic() {
     });
     let recent = r#"{"paths":["/a/b","/c"],"default":"/a/b","promptAtStartup":true}"#;
     let file = s.path().join("recent.json");
-    dac_fuzzkit::run_json("catalog.recent", &[recent], 500, |t| {
+    lcc_fuzzkit::run_json("catalog.recent", &[recent], 500, |t| {
         std::fs::write(&file, t).unwrap();
         let _ = RecentCatalogs::load(&file);
     });
     let kw = "People\n\tAnna\n\t\t{Annie}\n[Places]\n\tParis\n~Hidden\n";
-    dac_fuzzkit::run_str("catalog.keywords", &[kw], 3000, |t| {
+    lcc_fuzzkit::run_str("catalog.keywords", &[kw], 3000, |t| {
         if let Ok(list) = keywords::parse_keyword_list(t) {
             let mut c = Catalog::new();
             for (path, info) in list {

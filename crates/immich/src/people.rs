@@ -10,9 +10,9 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dac_catalog::Photo;
-use dac_geom::Rect;
-use dac_meta::{Region, RegionKind};
+use lcc_catalog::Photo;
+use lcc_geom::Rect;
+use lcc_meta::{Region, RegionKind};
 
 use crate::types::{Face, Person};
 

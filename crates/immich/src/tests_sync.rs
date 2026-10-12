@@ -3,8 +3,8 @@
 
 use std::collections::{BTreeMap, BTreeSet};
 
-use dac_catalog::Flag;
-use dac_meta::{Region, RegionKind};
+use lcc_catalog::Flag;
+use lcc_meta::{Region, RegionKind};
 
 use super::*;
 use crate::people;
@@ -251,7 +251,7 @@ fn faces_become_regions_marked_from_immich() {
     let mut p = photo_with(0, Flag::None, "", &[]);
     // a region of the photo's own XMP over the first face
     p.meta.regions.push(Region {
-        rect: dac_geom::Rect { x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.5 },
+        rect: lcc_geom::Rect { x0: 0.1, y0: 0.1, x1: 0.3, y1: 0.5 },
         kind: RegionKind::Face,
         name: Some("Me".into()),
         description: None,
@@ -285,7 +285,7 @@ fn faces_become_regions_marked_from_immich() {
 fn names_given_in_the_app_go_back_as_renames_and_merges() {
     let mut a = photo_with(0, Flag::None, "", &[]);
     let r = |pid: &str, name: &str| Region {
-        rect: dac_geom::Rect::UNIT,
+        rect: lcc_geom::Rect::UNIT,
         kind: RegionKind::Face,
         name: Some(name.into()),
         description: Some(format!("immich:{pid}")),

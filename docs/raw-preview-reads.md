@@ -19,8 +19,8 @@ libraries. Measured on one real file (`DSCF9492.RAF`, 56.5 MB) over a GVFS/SMB s
 1. `read_prefix` reads the first `PREVIEW_PREFIX` (4 KiB); every format whose preview is locatable
    from the header keeps its pointer well inside that.
 2. For Fuji RAF the header's two big-endian `u32`s at **84** (offset) and **88** (length) are the
-   same fields `dac_raw`'s RAF reader uses. When they declare more than the prefix holds, the
-   prefix is re-read once at exactly that extent: `dac_raw::bounded_preview` reports the range
+   same fields `lcc_raw`'s RAF reader uses. When they declare more than the prefix holds, the
+   prefix is re-read once at exactly that extent: `lcc_raw::bounded_preview` reports the range
    its buffer covers (`slice` clamps to `b.len()`), so a short prefix yields a *plausible but
    truncated* range — a real 4 KiB prefix reports 3 948 bytes where the file holds 5.6 MB.
 3. `embedded_preview_from_range` checks the window really starts with a JPEG SOI and trims it at the
@@ -72,7 +72,7 @@ render queue stayed empty.
 
   ```sh
   LC_PREVIEW_RAW="/mnt/nas/…/DSCF0001.RAF" \
-    cargo test --release -p dac-engine --test preview_read -- --ignored --nocapture
+    cargo test --release -p lcc-engine --test preview_read -- --ignored --nocapture
   ```
 
   No raw fixture is committed (media never is, see `AGENTS.md`).

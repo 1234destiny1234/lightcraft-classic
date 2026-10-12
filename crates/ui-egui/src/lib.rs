@@ -1,6 +1,6 @@
-//! The app's egui frontend: a Lightroom-style UI over `dac-engine`.
+//! The app's egui frontend: a Lightroom-style UI over `lcc-engine`.
 //!
-//! The UI is thin: every action goes through [`DacApp::run`], which handles UI commands
+//! The UI is thin: every action goes through [`LccApp::run`], which handles UI commands
 //! (views, panels, zoom — see [`menus::ui_commands`]) and forwards everything else to the engine.
 //! The same entry point serves menus, shortcuts, buttons and the control channel ([`control`]).
 #![forbid(unsafe_code)]
@@ -166,7 +166,7 @@ mod tests_zoom_keys;
 
 use std::sync::mpsc::{Receiver, Sender};
 
-use dac_engine::Session;
+use lcc_engine::Session;
 use serde_json::Value;
 
 pub use control::{ControlRequest, ControlResponse};
@@ -182,7 +182,7 @@ pub type SaveFile = Box<dyn FnMut(&str) -> Option<String>>;
 pub type WriteFn = Box<dyn FnMut(&str, &[u8]) -> Result<(), String>>;
 /// A writer other threads can use (background export).
 pub type SharedWrite = std::sync::Arc<dyn Fn(&str, &[u8]) -> Result<(), String> + Send + Sync>;
-pub type PngEncode = Box<dyn Fn(&dac_raster::Rgba8) -> Vec<u8>>;
+pub type PngEncode = Box<dyn Fn(&lcc_raster::Rgba8) -> Vec<u8>>;
 /// A folder chooser (`None` = cancelled).
 pub type PickFolder = Box<dyn FnMut() -> Option<String>>;
 /// Reveal a file in the system file manager (Finder / Explorer / the folder on Linux).
@@ -207,11 +207,11 @@ pub type HostAction = Box<dyn FnMut(&mut Session) -> Result<Value, String>>;
 pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
 
 /// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through
-/// `dac_gpu::video_lut`), producing the texture to draw without a CPU grade or upload.
+/// `lcc_gpu::video_lut`), producing the texture to draw without a CPU grade or upload.
 pub trait VideoGpu {
     /// Grade linear frame `img` with `lut` (identified by `key`) into a texture to draw (valid
     /// until the next call). An error makes the loupe fall back to the CPU LUT.
-    fn grade(&mut self, img: &dac_raster::Rgb32f, key: u64, lut: &dac_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String>;
+    fn grade(&mut self, img: &lcc_raster::Rgb32f, key: u64, lut: &lcc_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String>;
 }
 
 /// Platform services injected by the host app (desktop or web).
@@ -285,9 +285,9 @@ pub struct Services {
 
 #[derive(Clone, Copy, Debug, Default)]
 pub struct Perf {
-    /// Layout of the last frame ([`DacApp::ui`], including commands run from widgets).
+    /// Layout of the last frame ([`LccApp::ui`], including commands run from widgets).
     pub frame_ms: f64,
-    /// Per-frame logic before layout ([`DacApp::logic`]: control channel, shortcuts,
+    /// Per-frame logic before layout ([`LccApp::logic`]: control channel, shortcuts,
     /// render polling, pending catalog persistence).
     pub logic_ms: f64,
     /// The whole update of the last frame: logic + layout.
@@ -315,7 +315,7 @@ impl QuitPrompt {
     }
 }
 
-pub struct DacApp {
+pub struct LccApp {
     pub(crate) model_setup: model_setup::Pending,
     /// Per-catalog-revision caches of library-wide results the panels show every frame
     /// (expensive on big libraries).
@@ -385,7 +385,7 @@ pub struct DacApp {
     pub brush_live: Option<brush_live::LiveStroke>,
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
     /// "thumb", "none").
-    pub loupe_shown: Option<(dac_catalog::PhotoId, &'static str)>,
+    pub loupe_shown: Option<(lcc_catalog::PhotoId, &'static str)>,
     /// The loupe's video frames (playback worker, paused still).
     pub video_view: video_view::VideoView,
     /// The zoomed view the loupe asked tiles for last (see [`region`]): the frame, the part its
@@ -396,9 +396,9 @@ pub struct DacApp {
     /// The loupe's render sizes while a pinch or two-finger scroll runs.
     pub(crate) size_hold: region::SizeHold,
     /// (photo, look, window frame size) a window was refused for: it reads more than one render holds.
-    pub(crate) window_refused: Option<(dac_catalog::PhotoId, u64, usize)>,
+    pub(crate) window_refused: Option<(lcc_catalog::PhotoId, u64, usize)>,
     /// (photo, look) whose 1:1 preview was last asked to be read from disk (see `detail`).
-    pub(crate) full_preview_loaded: Option<(dac_catalog::PhotoId, u64)>,
+    pub(crate) full_preview_loaded: Option<(lcc_catalog::PhotoId, u64)>,
     /// Photo Merge dialog previews and background merges.
     pub merge: merge::MergeState,
     /// An import in progress (the import review dialog's batches).
@@ -461,7 +461,7 @@ pub struct DacApp {
     pub help: help_overlay::HelpOverlay,
 }
 
-impl DacApp {
+impl LccApp {
     pub fn new(mut session: Session, services: Services) -> Self {
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
@@ -579,7 +579,7 @@ impl DacApp {
         let params = if id == "crop.aspect"
             && params.get("aspect").and_then(Value::as_str) == Some("toggle")
             && self.crop_tool_aspect().is_some()
-            && self.session.active().and_then(|id| self.session.develop_of(id)).is_some_and(|d| d.crop == dac_develop::Crop::default())
+            && self.session.active().and_then(|id| self.session.develop_of(id)).is_some_and(|d| d.crop == lcc_develop::Crop::default())
         {
             serde_json::json!({"aspect": "free"})
         } else {
@@ -620,7 +620,7 @@ impl DacApp {
             }
         }
         if r.is_ok() && id == "photo.label" {
-            let label = params.get("label").and_then(Value::as_str).and_then(dac_catalog::ColorLabel::parse);
+            let label = params.get("label").and_then(Value::as_str).and_then(lcc_catalog::ColorLabel::parse);
             let text = match label {
                 Some(label) => {
                     let name =
@@ -652,7 +652,7 @@ impl DacApp {
     pub(crate) fn crop_tool_aspect(&self) -> Option<(u32, u32)> {
         let photo = self.session.active()?;
         let d = self.session.develop_of(photo)?;
-        if d.crop != dac_develop::Crop::default() {
+        if d.crop != lcc_develop::Crop::default() {
             return d.crop.aspect;
         }
         match self.ui.crop_default_aspect.as_ref()? {
@@ -675,7 +675,7 @@ impl DacApp {
     /// Called only after a crop gesture begins, inside its undo transaction.
     pub(crate) fn begin_crop(&mut self) -> Result<(), String> {
         if self.session.interaction.is_some()
-            && self.session.active().and_then(|id| self.session.develop_of(id)).is_some_and(|d| d.crop == dac_develop::Crop::default())
+            && self.session.active().and_then(|id| self.session.develop_of(id)).is_some_and(|d| d.crop == lcc_develop::Crop::default())
             && let Some(aspect) = self.ui.crop_default_aspect.clone()
             && aspect != serde_json::json!("free")
             && let Err(e) = self.session.execute("crop.aspect", &serde_json::json!({"aspect": aspect}))
@@ -781,7 +781,7 @@ impl DacApp {
 
     /// Reverse geocoding: say how a place-names download ended (a failure stays readable, with what to do).
     fn place_names_outcome(&mut self, ctx: &egui::Context) {
-        use dac_engine::cmd::geocode::DownloadOutcome;
+        use lcc_engine::cmd::geocode::DownloadOutcome;
         match self.session.place_names.take_outcome() {
             Some(DownloadOutcome::Done(_)) => self.toast(ctx, crate::i18n::tr("Place names downloaded")),
             Some(DownloadOutcome::Cancelled) => self.toast(ctx, crate::i18n::tr("Place names download cancelled")),
@@ -849,7 +849,7 @@ impl DacApp {
     /// (`then`: the AI mask to start afterwards); otherwise a toast.
     pub fn ai_error(&mut self, ctx: &egui::Context, e: impl Into<String>, then: Option<(&str, &str)>) {
         let e = e.into();
-        if dac_engine::segment::Segmenter::AVAILABLE && e.starts_with(dac_engine::segment::NOT_INSTALLED) {
+        if lcc_engine::segment::Segmenter::AVAILABLE && e.starts_with(lcc_engine::segment::NOT_INSTALLED) {
             self.offer_sam_download(then);
         } else {
             self.toast_error(ctx, e);
@@ -1021,13 +1021,13 @@ impl DacApp {
     /// on other threads (export, denoise, the device warm-up). `false`: the deadline passed first
     /// (the host exits anyway). The app renders nothing afterwards.
     pub fn shutdown(&mut self, timeout: std::time::Duration) -> bool {
-        dac_engine::gpu::begin_shutdown();
+        lcc_engine::gpu::begin_shutdown();
         #[cfg(not(target_arch = "wasm32"))]
         let t0 = std::time::Instant::now();
         let stopped = self.renderer.shutdown(timeout);
         #[cfg(not(target_arch = "wasm32"))]
         let timeout = timeout.saturating_sub(t0.elapsed());
-        let idle = dac_engine::gpu::wait_idle(timeout);
+        let idle = lcc_engine::gpu::wait_idle(timeout);
         stopped && idle
     }
 
@@ -1046,7 +1046,7 @@ impl DacApp {
             theme::apply(ctx);
             // File → Add from Device lists cards scanned in the background: show hot-plugs
             let repaint = ctx.clone();
-            dac_engine::devices::on_change(move || repaint.request_repaint());
+            lcc_engine::devices::on_change(move || repaint.request_repaint());
             // "is the original there?" (grid, Info panel, Missing Photos) answers from a cache a
             // worker fills: a sleeping NAS or a dropped share never stalls a frame
             let repaint = ctx.clone();
@@ -1116,8 +1116,8 @@ impl DacApp {
                 && !self.tasks.is_running(LABEL)
             {
                 self.ui.auto_import_at = now;
-                let work = move || dac_engine::cmd::library::list_auto_import_folder(&folder);
-                let done = |app: &mut DacApp, _ctx: &egui::Context, listing: Result<Vec<(String, u64)>, String>| {
+                let work = move || lcc_engine::cmd::library::list_auto_import_folder(&folder);
+                let done = |app: &mut LccApp, _ctx: &egui::Context, listing: Result<Vec<(String, u64)>, String>| {
                     let listing = match listing {
                         Ok(l) => l,
                         Err(e) => return log::debug!("auto import: {e}"),
@@ -1187,20 +1187,20 @@ impl DacApp {
             // GPU device + kernels off the UI thread, once the window is up and only when GPU
             // rendering is on: a broken driver must not keep the window from appearing (issue #136)
             if self.ui.settings.gpu {
-                dac_engine::gpu::warm_up();
+                lcc_engine::gpu::warm_up();
             }
         }
         let mb = self.ui.settings.memory_mb;
         // automatic at startup: leave the engine's default alone
         if self.memory_applied != Some(mb) && (mb > 0 || self.memory_applied.is_some()) {
-            let mb = if mb == 0 { (dac_engine::memory::default_budget() >> 20) as u32 } else { mb };
+            let mb = if mb == 0 { (lcc_engine::memory::default_budget() >> 20) as u32 } else { mb };
             let _ = self.session.execute("app.memoryBudget", &serde_json::json!({"mb": mb}));
         }
         self.memory_applied = Some(mb);
         // the monitor profile (Settings ▸ Display): previews follow it from the next frame
         if self.display_applied.as_ref() != Some(&self.ui.settings.display_profile) {
             let path = self.ui.settings.display_profile.clone();
-            match dac_engine::display::Display::load_opt(&path) {
+            match lcc_engine::display::Display::load_opt(&path) {
                 Ok(d) => {
                     self.renderer.set_display(d);
                     self.display_error = None;
@@ -1267,7 +1267,7 @@ impl DacApp {
         if icc == self.screen_profile {
             return;
         }
-        let display = icc.as_deref().and_then(|bytes| match dac_engine::display::Display::from_bytes(SCREEN_PROFILE, bytes) {
+        let display = icc.as_deref().and_then(|bytes| match lcc_engine::display::Display::from_bytes(SCREEN_PROFILE, bytes) {
             Ok(d) => Some(std::sync::Arc::new(d)),
             Err(msg) => {
                 // a profile we can't use: previews stay sRGB, as before #787
@@ -1349,8 +1349,8 @@ impl DacApp {
     /// "<app> — <library name>" (just "<app>" for a library that isn't saved).
     pub fn window_title(&self) -> String {
         match panels::settings::open_library_name(self) {
-            Some(name) => format!("{} — {name}", dac_brand::DISPLAY_NAME),
-            None => dac_brand::DISPLAY_NAME.to_string(),
+            Some(name) => format!("{} — {name}", lcc_brand::DISPLAY_NAME),
+            None => lcc_brand::DISPLAY_NAME.to_string(),
         }
     }
 
@@ -1454,11 +1454,11 @@ pub struct HoverPreview {
     /// What is previewed (e.g. "Preset: Warm Glow").
     pub label: String,
     /// The photo's settings with the look applied.
-    pub settings: dac_develop::DevelopSettings,
+    pub settings: lcc_develop::DevelopSettings,
 }
 
-pub fn is_bw(d: &dac_develop::DevelopSettings) -> bool {
-    d.treatment == dac_develop::Treatment::Bw || d.profile.id == "lc.mono" || d.profile.id.starts_with("lc.bw.")
+pub fn is_bw(d: &lcc_develop::DevelopSettings) -> bool {
+    d.treatment == lcc_develop::Treatment::Bw || d.profile.id == "lc.mono" || d.profile.id.starts_with("lc.bw.")
 }
 
 /// "Found 3 faces in 2 photos" for a `faces.detect` result.
@@ -1555,7 +1555,7 @@ mod drop_tests {
 /// Results recomputed only when the catalog (or their inputs) change.
 #[derive(Default)]
 pub struct Caches {
-    keyword_tree: Option<(u64, std::sync::Arc<Vec<dac_catalog::KeywordNode>>)>,
+    keyword_tree: Option<(u64, std::sync::Arc<Vec<lcc_catalog::KeywordNode>>)>,
     /// The Keywording box's read-only names (with containing keywords, or Will Export), by library
     /// revision, selection and view.
     keyword_names: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Chip>>)>,
@@ -1563,20 +1563,20 @@ pub struct Caches {
     keyword_chips: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Chip>>)>,
     /// The Keyword List's tick boxes, by library revision and selection.
     keyword_ticks: Option<(u64, u64, std::sync::Arc<panels::keyword_list::Ticks>)>,
-    folder_tree: Option<(u64, std::sync::Arc<Vec<dac_catalog::FolderNode>>)>,
-    people: Option<(u64, dac_catalog::Filter, std::sync::Arc<Vec<dac_catalog::Person>>)>,
+    folder_tree: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
+    people: Option<(u64, lcc_catalog::Filter, std::sync::Arc<Vec<lcc_catalog::Person>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
     counts: Option<(u64, LibraryCounts)>,
-    date_groups: Option<(u64, std::sync::Arc<Vec<dac_catalog::DateGroup>>)>,
+    date_groups: Option<(u64, std::sync::Arc<Vec<lcc_catalog::DateGroup>>)>,
     filter_values: Option<(u64, std::sync::Arc<FilterValues>)>,
-    album_counts: Option<(u64, std::sync::Arc<std::collections::HashMap<dac_catalog::AlbumId, usize>>)>,
+    album_counts: Option<(u64, std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, usize>>)>,
     /// How often the album counts were recomputed (tests check that unchanged frames don't).
     pub album_count_scans: usize,
     /// What the open smart-album rule dialog shows besides the rules ([`Caches::rules_view`]).
     rules_view: Option<(u64, std::sync::Arc<RulesView>)>,
     pub rules_view_scans: usize,
     /// The problems of every saved smart album that has some ([`Caches::smart_album_problems`]).
-    smart_problems: Option<(u64, std::sync::Arc<std::collections::HashMap<dac_catalog::AlbumId, Vec<dac_catalog::rules::Problem>>>)>,
+    smart_problems: Option<(u64, std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, Vec<lcc_catalog::rules::Problem>>>)>,
     pub smart_problem_scans: usize,
     /// AI denoise: what the pump last saw, the model list and the downloads being watched.
     pub denoise: panels::denoise::Ui,
@@ -1630,7 +1630,7 @@ pub struct FilterValues {
 /// What the smart-album rule dialog shows besides the rules themselves: their problems (each row
 /// marks its own), how many photos they match and the albums an Album rule picks from.
 pub struct RulesView {
-    pub problems: Vec<dac_catalog::rules::Problem>,
+    pub problems: Vec<lcc_catalog::rules::Problem>,
     pub count: usize,
     pub albums: Vec<album_picker::AlbumEntry>,
 }
@@ -1642,7 +1642,7 @@ pub(crate) fn key_of(parts: impl std::hash::Hash) -> u64 {
 
 impl Caches {
     /// The folders the library's photos were imported from.
-    pub fn folder_tree(&mut self, cat: &dac_catalog::Catalog) -> std::sync::Arc<Vec<dac_catalog::FolderNode>> {
+    pub fn folder_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::FolderNode>> {
         match &self.folder_tree {
             Some((r, t)) if *r == cat.revision => t.clone(),
             _ => {
@@ -1653,7 +1653,7 @@ impl Caches {
         }
     }
     /// The library's keyword tree.
-    pub fn keyword_tree(&mut self, cat: &dac_catalog::Catalog) -> std::sync::Arc<Vec<dac_catalog::KeywordNode>> {
+    pub fn keyword_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::KeywordNode>> {
         match &self.keyword_tree {
             Some((r, t)) if *r == cat.revision => t.clone(),
             _ => {
@@ -1667,8 +1667,8 @@ impl Caches {
     /// (`export`), or the keywords with those containing them.
     pub(crate) fn keyword_names(
         &mut self,
-        cat: &dac_catalog::Catalog,
-        selection: &[dac_catalog::PhotoId],
+        cat: &lcc_catalog::Catalog,
+        selection: &[lcc_catalog::PhotoId],
         export: bool,
     ) -> std::sync::Arc<Vec<panels::keywording::Chip>> {
         let key = key_of((selection, export));
@@ -1688,8 +1688,8 @@ impl Caches {
     /// The selection's keywords (the Keywording box's chips).
     pub(crate) fn keyword_chips(
         &mut self,
-        cat: &dac_catalog::Catalog,
-        selection: &[dac_catalog::PhotoId],
+        cat: &lcc_catalog::Catalog,
+        selection: &[lcc_catalog::PhotoId],
     ) -> std::sync::Arc<Vec<panels::keywording::Chip>> {
         let key = key_of(selection);
         match &self.keyword_chips {
@@ -1704,8 +1704,8 @@ impl Caches {
     /// How many selected photos have each keyword (the Keyword List's tick boxes).
     pub(crate) fn keyword_ticks(
         &mut self,
-        cat: &dac_catalog::Catalog,
-        selection: &[dac_catalog::PhotoId],
+        cat: &lcc_catalog::Catalog,
+        selection: &[lcc_catalog::PhotoId],
     ) -> std::sync::Arc<panels::keyword_list::Ticks> {
         let key = key_of(selection);
         match &self.keyword_ticks {
@@ -1719,8 +1719,8 @@ impl Caches {
     }
     /// The people named on faces among the photos the filter lets through (its own `person` aside),
     /// with photo counts.
-    pub fn people(&mut self, cat: &dac_catalog::Catalog, filter: &dac_catalog::Filter) -> std::sync::Arc<Vec<dac_catalog::Person>> {
-        let key = dac_catalog::Filter { person: None, ..filter.clone() };
+    pub fn people(&mut self, cat: &lcc_catalog::Catalog, filter: &lcc_catalog::Filter) -> std::sync::Arc<Vec<lcc_catalog::Person>> {
+        let key = lcc_catalog::Filter { person: None, ..filter.clone() };
         match &self.people {
             Some((r, f, t)) if *r == cat.revision && *f == key => t.clone(),
             _ => {
@@ -1731,7 +1731,7 @@ impl Caches {
         }
     }
     /// All Photos / Picks / Recently Deleted counts.
-    pub fn counts(&mut self, cat: &dac_catalog::Catalog) -> LibraryCounts {
+    pub fn counts(&mut self, cat: &lcc_catalog::Catalog) -> LibraryCounts {
         if let Some((r, c)) = self.counts
             && r == cat.revision
         {
@@ -1741,7 +1741,7 @@ impl Caches {
         for p in cat.photos() {
             if p.in_library() {
                 c.total += 1;
-                if p.flag == dac_catalog::Flag::Pick {
+                if p.flag == lcc_catalog::Flag::Pick {
                     c.picks += 1;
                 }
             } else if p.deleted && !p.local {
@@ -1752,7 +1752,7 @@ impl Caches {
         c
     }
     /// Everyone named on a face in the library (for completing a name as it is typed).
-    pub fn person_names(&mut self, cat: &dac_catalog::Catalog) -> std::sync::Arc<Vec<String>> {
+    pub fn person_names(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<String>> {
         match &self.person_names {
             Some((r, v)) if *r == cat.revision => v.clone(),
             _ => {
@@ -1763,7 +1763,7 @@ impl Caches {
         }
     }
     /// The By Date tree.
-    pub fn date_groups(&mut self, cat: &dac_catalog::Catalog) -> std::sync::Arc<Vec<dac_catalog::DateGroup>> {
+    pub fn date_groups(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::DateGroup>> {
         match &self.date_groups {
             Some((r, g)) if *r == cat.revision => g.clone(),
             _ => {
@@ -1774,7 +1774,7 @@ impl Caches {
         }
     }
     /// Cameras, lenses and keywords in the library (filter bar pickers).
-    pub fn filter_values(&mut self, cat: &dac_catalog::Catalog) -> std::sync::Arc<FilterValues> {
+    pub fn filter_values(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<FilterValues> {
         match &self.filter_values {
             Some((r, v)) if *r == cat.revision => v.clone(),
             _ => {
@@ -1796,7 +1796,7 @@ impl Caches {
         }
     }
     /// Keyword suggestions for a photo with `current` keywords and the typed `prefix`.
-    pub fn suggestions(&mut self, cat: &dac_catalog::Catalog, current: &[String], prefix: &str, n: usize) -> std::sync::Arc<Vec<String>> {
+    pub fn suggestions(&mut self, cat: &lcc_catalog::Catalog, current: &[String], prefix: &str, n: usize) -> std::sync::Arc<Vec<String>> {
         let k = key_of((cat.revision, current, prefix, n));
         match &self.suggestions {
             Some((h, v)) if *h == k => v.clone(),
@@ -1817,8 +1817,8 @@ impl Caches {
     /// rules, the language or (for "in the last…" rules) the minute changes, not every frame.
     pub fn rules_view(
         &mut self,
-        cat: &dac_catalog::Catalog,
-        rules: &dac_catalog::RuleSet,
+        cat: &lcc_catalog::Catalog,
+        rules: &lcc_catalog::RuleSet,
         editing: Option<u64>,
         folder: Option<String>,
         now: &str,
@@ -1832,10 +1832,10 @@ impl Caches {
             return v.clone();
         }
         if relative {
-            dac_catalog::rules::set_now(Some(now.to_string()));
+            lcc_catalog::rules::set_now(Some(now.to_string()));
         }
-        let problems = rules.check_for(cat, editing.map(dac_catalog::AlbumId));
-        let filter = dac_catalog::Filter { rule_set: Some(rules.clone()), library_folder: folder, ..Default::default() };
+        let problems = rules.check_for(cat, editing.map(lcc_catalog::AlbumId));
+        let filter = lcc_catalog::Filter { rule_set: Some(rules.clone()), library_folder: folder, ..Default::default() };
         let count = if problems.is_empty() { cat.query(&filter, &Default::default()).len() } else { 0 };
         let v = std::sync::Arc::new(RulesView { problems, count, albums: panels::dialogs::album_entries(cat, editing) });
         self.rules_view_scans += 1;
@@ -1847,8 +1847,8 @@ impl Caches {
     /// for the sidebar's ⚠ marks: worked out again only when the catalog changes.
     pub fn smart_album_problems(
         &mut self,
-        cat: &dac_catalog::Catalog,
-    ) -> std::sync::Arc<std::collections::HashMap<dac_catalog::AlbumId, Vec<dac_catalog::rules::Problem>>> {
+        cat: &lcc_catalog::Catalog,
+    ) -> std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, Vec<lcc_catalog::rules::Problem>>> {
         if let Some((rev, v)) = &self.smart_problems
             && *rev == cat.revision
         {
@@ -1862,7 +1862,7 @@ impl Caches {
         v
     }
 
-    pub fn album_counts(&mut self, cat: &dac_catalog::Catalog, now: &str) -> std::sync::Arc<std::collections::HashMap<dac_catalog::AlbumId, usize>> {
+    pub fn album_counts(&mut self, cat: &lcc_catalog::Catalog, now: &str) -> std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, usize>> {
         let relative = cat.albums().any(|a| a.smart.as_ref().is_some_and(|f| f.depends_on_now()));
         let minute = if relative { now.get(..16).unwrap_or(now) } else { "" };
         let k = key_of((cat.revision, minute));
@@ -1871,7 +1871,7 @@ impl Caches {
             _ => {
                 if relative {
                     // "in the last N days" counts back from the session clock, as in the grid
-                    dac_catalog::rules::set_now(Some(now.to_string()));
+                    lcc_catalog::rules::set_now(Some(now.to_string()));
                 }
                 let v: std::sync::Arc<std::collections::HashMap<_, _>> =
                     std::sync::Arc::new(cat.albums().map(|a| (a.id, cat.album_count(a.id))).collect());
@@ -1885,7 +1885,7 @@ impl Caches {
 
 #[cfg(test)]
 mod cache_tests {
-    use dac_catalog::{Album, AlbumId, Catalog, Filter, Op, Photo, PhotoId, RuleSet, Source};
+    use lcc_catalog::{Album, AlbumId, Catalog, Filter, Op, Photo, PhotoId, RuleSet, Source};
 
     fn photo(id: u64, captured: &str, rating: u8) -> Op {
         let mut p = Photo::new(PhotoId(id), Source::Demo { scene: 0 }, &format!("p{id}.jpg"), "JPEG", 60, 40, "2026-01-01T00:00:00");
@@ -1930,7 +1930,7 @@ mod cache_tests {
         // an hour later the 11:59:30 photo has left "in the last hour", with no catalog change
         assert_eq!(c.album_counts(&cat, "2026-09-30T13:00:10")[&AlbumId(11)], 0);
         assert_eq!(c.album_count_scans, 4);
-        dac_catalog::rules::set_now(None);
+        lcc_catalog::rules::set_now(None);
     }
 
     /// The rule dialog's problems, live count and album list are worked out once per change to the
@@ -1957,7 +1957,7 @@ mod cache_tests {
         assert_eq!(c.rules_view(&cat, &rules(3), None, None, now).count, 2, "a catalog change");
         assert_eq!(c.rules_view_scans, 4);
         // the sidebar's problems
-        cat.apply(Op::AddAlbum { album: dac_catalog::Album::new(AlbumId(20), "Trip") }).unwrap();
+        cat.apply(Op::AddAlbum { album: lcc_catalog::Album::new(AlbumId(20), "Trip") }).unwrap();
         cat.apply(smart(21, serde_json::json!({"rules": [{"field": "album", "op": "is", "value": 20}]}))).unwrap();
         assert!(c.smart_album_problems(&cat).get(&AlbumId(21)).is_none_or(Vec::is_empty));
         for _ in 0..10 {

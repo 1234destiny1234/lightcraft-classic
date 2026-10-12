@@ -7,7 +7,7 @@ use crate::Session;
 
 #[test]
 fn simulated_camera_captures_downloads_and_imports() {
-    let root = std::env::temp_dir().join(format!("dac-tether-native-{}", std::process::id()));
+    let root = std::env::temp_dir().join(format!("lcc-tether-native-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&root);
     std::fs::create_dir_all(&root).unwrap();
     let mut s = Session::new().with_fs();
@@ -40,7 +40,7 @@ fn simulated_camera_captures_downloads_and_imports() {
     // capture from the app: downloaded, imported, selected
     let r = s.execute("tether.capture", &json!({})).unwrap();
     assert_eq!(r["files"].as_array().unwrap().len(), 1, "{r}");
-    let first = dac_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+    let first = lcc_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
     assert_eq!(s.selection.active, Some(first));
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.5})).unwrap();
 
@@ -52,7 +52,7 @@ fn simulated_camera_captures_downloads_and_imports() {
         imported.extend(r["imported"].as_array().unwrap().iter().filter_map(|v| v.as_u64()));
     }
     assert_eq!(imported.len(), 1);
-    let second = dac_catalog::PhotoId(imported[0]);
+    let second = lcc_catalog::PhotoId(imported[0]);
     assert!((s.develop_of(second).unwrap().light.exposure - 0.5).abs() < 1e-6);
 
     // delete from card

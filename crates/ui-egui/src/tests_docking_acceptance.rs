@@ -1,10 +1,10 @@
 //! Dock changes exercise the same real catalog and command handlers as the application.
-use crate::{DacApp, Services, docking::Panel, headless::Headless, state::RightPanel};
+use crate::{LccApp, Services, docking::Panel, headless::Headless, state::RightPanel};
 use egui::{Event, Modifiers, PointerButton};
 use serde_json::json;
 
 fn app() -> Headless {
-    let mut app = DacApp::new(dac_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     app.ui.left_panel = true;
     let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
     for _ in 0..5 {
@@ -99,14 +99,14 @@ fn floating_panel_blocks_photo_album_drop_then_uncovered_target_adds_exact_selec
     let undo = h.app.session.undo.len();
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
-    assert!(h.app.session.catalog.album(dac_catalog::AlbumId(album)).unwrap().photos.is_empty());
+    assert!(h.app.session.catalog.album(lcc_catalog::AlbumId(album)).unwrap().photos.is_empty());
     assert_eq!(h.app.session.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
     assert_eq!(
-        h.app.session.catalog.album(dac_catalog::AlbumId(album)).unwrap().photos,
-        ids.into_iter().map(dac_catalog::PhotoId).collect::<Vec<_>>()
+        h.app.session.catalog.album(lcc_catalog::AlbumId(album)).unwrap().photos,
+        ids.into_iter().map(lcc_catalog::PhotoId).collect::<Vec<_>>()
     );
     assert_eq!(h.app.session.undo.len(), undo + 1);
 }
@@ -189,11 +189,11 @@ fn floating_presets_block_keyword_photo_drop_then_uncovered_target_changes_exact
     let ids: Vec<_> = h.app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
     dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
     let undo = h.app.session.undo.len();
-    let before: Vec<_> = ids.iter().map(|id| h.app.session.catalog.photo(dac_catalog::PhotoId(*id)).unwrap().meta.keywords.clone()).collect();
+    let before: Vec<_> = ids.iter().map(|id| h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords.clone()).collect();
     h.app.ui.dragging_photos = Some(ids.clone());
     release(&mut h, row.center());
     for (id, expected) in ids.iter().zip(&before) {
-        assert_eq!(&h.app.session.catalog.photo(dac_catalog::PhotoId(*id)).unwrap().meta.keywords, expected);
+        assert_eq!(&h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords, expected);
     }
     assert_eq!(h.app.session.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
@@ -201,7 +201,7 @@ fn floating_presets_block_keyword_photo_drop_then_uncovered_target_changes_exact
     release(&mut h, row.center());
     for (id, mut expected) in ids.iter().zip(before) {
         expected.push("A Dock Keyword".into());
-        let mut actual = h.app.session.catalog.photo(dac_catalog::PhotoId(*id)).unwrap().meta.keywords.clone();
+        let mut actual = h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords.clone();
         expected.sort();
         actual.sort();
         assert_eq!(actual, expected);
@@ -222,12 +222,12 @@ fn covered_folder_rejects_album_move_and_uncovered_folder_nests_exact_album() {
     let undo = h.app.session.undo.len();
     h.app.ui.dragging_album = Some(child);
     release(&mut h, row.center());
-    assert_eq!(h.app.session.catalog.album(dac_catalog::AlbumId(child)).unwrap().parent, None);
+    assert_eq!(h.app.session.catalog.album(lcc_catalog::AlbumId(child)).unwrap().parent, None);
     assert_eq!(h.app.session.undo.len(), undo);
     dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
     h.app.ui.dragging_album = Some(child);
     release(&mut h, row.center());
-    assert_eq!(h.app.session.catalog.album(dac_catalog::AlbumId(child)).unwrap().parent, Some(dac_catalog::AlbumId(folder)));
+    assert_eq!(h.app.session.catalog.album(lcc_catalog::AlbumId(child)).unwrap().parent, Some(lcc_catalog::AlbumId(folder)));
     assert_eq!(h.app.session.undo.len(), undo + 1);
 }
 

@@ -1,12 +1,12 @@
-//! The module shell's steps of [`DacApp::ui`] and [`DacApp::raw_input_hook`], kept out of the
+//! The module shell's steps of [`LccApp::ui`] and [`LccApp::raw_input_hook`], kept out of the
 //! shared `lib.rs` (U.5): the window's edges (top bar, module bar, strip and right column, left
 //! panel, toolbar) as the module asks for them, and Tab held back from focus navigation.
 
-use crate::{DacApp, module, panels, state};
+use crate::{LccApp, module, panels, state};
 
 /// The edges, in order (earlier panels take the full edge); returns the module, which draws the
 /// centre.
-pub(crate) fn edges(app: &mut DacApp, ui: &mut egui::Ui, ctx: &egui::Context) -> &'static dyn module::Module {
+pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) -> &'static dyn module::Module {
     module::sync(app);
     module::auto_show(app, ctx);
     let m = module::get(app.ui.module);
@@ -46,7 +46,7 @@ pub(crate) fn edges(app: &mut DacApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
 
 /// The shared panels draw only their contents (upstream's docking hosts them); the Classic edges give
 /// them their resizable sides.
-fn right(app: &mut DacApp, ui: &mut egui::Ui) {
+fn right(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = crate::theme::Tokens::get(ui.ctx());
     // the presets column and the left sidebar are laid out after this panel: leave them their room
     let reserve = if app.ui.presets { t.panel_w } else { 0.0 } + if app.ui.left_panel { state::LEFT_WIDTH.min } else { 0.0 };
@@ -58,7 +58,7 @@ fn right(app: &mut DacApp, ui: &mut egui::Ui) {
     }
 }
 
-fn left(app: &mut DacApp, ui: &mut egui::Ui) {
+fn left(app: &mut LccApp, ui: &mut egui::Ui) {
     let width = app.ui.left_width;
     let resized = panels::resizable_side(ui, true, "left_panel", egui::Frame::NONE, width, state::LEFT_WIDTH, 0.0, |ui| panels::left::show(app, ui));
     if let Some(w) = resized {
@@ -67,7 +67,7 @@ fn left(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// Tab outside a text field toggles panels (Classic): keep it from moving egui's focus.
-pub(crate) fn defer_tabs(app: &mut DacApp, raw: &mut egui::RawInput) {
+pub(crate) fn defer_tabs(app: &mut LccApp, raw: &mut egui::RawInput) {
     if app.text_focus || app.recording_shortcut.is_some() {
         return;
     }

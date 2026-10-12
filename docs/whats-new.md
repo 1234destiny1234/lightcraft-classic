@@ -25,7 +25,7 @@
 - Choosing a Lightroom Classic catalog folder in File → Open Library… (or one of its `Previews.lrdata` /
   `.lrcat-data` folders, or the `.lrcat`) no longer makes an empty library of the app inside it (issue #891). The
   library open now stays, and the app says "This is a Lightroom catalog, not a <app> library" and offers
-  **Import Lightroom Catalog…** with that catalog, or Cancel. `dac-cli --library` refuses those folders too.
+  **Import Lightroom Catalog…** with that catalog, or Cancel. `lcc-cli --library` refuses those folders too.
 
 ### Canon EOS R5 Mark II
 - Canon EOS R5 Mark II C-RAW files that opened as "preview only" (more than half of them, depending on the
@@ -37,7 +37,7 @@
 - File ▸ Open Recent Library lists the last 8 libraries; ones that are gone (moved, drive disconnected) are greyed
   out. Clear Recent Libraries empties the list.
 - The open library's name shows under My Photos at the top of the left panel and in the window title.
-- `dac-cli --library` given a library's own file (`catalog.snap`) opens its folder instead of failing with
+- `lcc-cli --library` given a library's own file (`catalog.snap`) opens its folder instead of failing with
   "File exists".
 - Agents use `app.newLibrary {path, name}`, `app.recentLibraries` and `app.clearRecentLibraries`.
 
@@ -325,7 +325,7 @@
   (issue #735).
 
 ### Formats
-- HEIC / HEIF photos (iPhone and Mac) open now: the optional `dac-heif` crate (heic-rs, pure Rust) behind
+- HEIC / HEIF photos (iPhone and Mac) open now: the optional `lcc-heif` crate (heic-rs, pure Rust) behind
   codecs' `heif` feature — 8- and 10-bit, alpha, grid tiles, the container's rotation/mirror/crop, ICC, EXIF and XMP.
   Off by default (HEVC patents are the distributor's call, same as PhotoCraft); official builds pass `--features heif`.
 - HEIC colours now match libheif to within one code value (they were up to ~10 off): the HEVC stream's own

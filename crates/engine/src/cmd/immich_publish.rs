@@ -1,4 +1,4 @@
-//! IMM-PUBLISH wiring (the service itself is `dac_immich::publish`) and the collections ↔ albums
+//! IMM-PUBLISH wiring (the service itself is `lcc_immich::publish`) and the collections ↔ albums
 //! part of IMM-SYNC.
 //!
 //! - [`opener`]: for a publish run of an Immich service, reads the account's key and what the
@@ -9,10 +9,10 @@
 
 use std::collections::{BTreeSet, HashMap};
 
-use dac_catalog::{AlbumId, PhotoId, Source};
-use dac_immich::link::SERVICE;
-use dac_immich::publish::{ImmichPublish, PhotoInfo, PublishSettings, SendMode};
-use dac_publish::{CollectionConfig, PublishError, PublishService, ServiceConfig};
+use lcc_catalog::{AlbumId, PhotoId, Source};
+use lcc_immich::link::SERVICE;
+use lcc_immich::publish::{ImmichPublish, PhotoInfo, PublishSettings, SendMode};
+use lcc_publish::{CollectionConfig, PublishError, PublishService, ServiceConfig};
 use serde::Serialize;
 use serde_json::{Value, json};
 
@@ -28,7 +28,7 @@ const DEVICE: &str = "desktop-publish";
 
 /// `Some` for an Immich service: its opener, with what it needs per photo of `photos`.
 pub fn opener(s: &mut Session, svc: &ServiceConfig, coll: &CollectionConfig, photos: &[PhotoId]) -> std::result::Result<Option<Opener>, String> {
-    if svc.kind != dac_immich::publish::KIND {
+    if svc.kind != lcc_immich::publish::KIND {
         return Ok(None);
     }
     let settings: PublishSettings = serde_json::from_value(svc.settings.clone()).map_err(|e| format!("Immich service settings: {e}"))?;
@@ -45,7 +45,7 @@ pub fn opener(s: &mut Session, svc: &ServiceConfig, coll: &CollectionConfig, pho
         };
         info.insert(
             *id,
-            PhotoInfo { created, favorite: p.flag == dac_catalog::Flag::Pick, original, original_name: p.file_name.clone(), linked, xmp: None },
+            PhotoInfo { created, favorite: p.flag == lcc_catalog::Flag::Pick, original, original_name: p.file_name.clone(), linked, xmp: None },
         );
     }
     let name = album_name(&s.catalog, svc, coll);
@@ -67,7 +67,7 @@ fn state_name(service: &str, coll: &CollectionConfig) -> String {
 
 /// The Immich album name of a published collection: its current name, prefixed by the collection
 /// sets it sits in below the service's own set (`Set / Sub / Collection`; Immich albums are flat).
-pub fn album_name(catalog: &dac_catalog::Catalog, svc: &ServiceConfig, coll: &CollectionConfig) -> String {
+pub fn album_name(catalog: &lcc_catalog::Catalog, svc: &ServiceConfig, coll: &CollectionConfig) -> String {
     let Some(al) = catalog.album(coll.album) else { return coll.folder.clone() };
     let own = if al.name.trim().is_empty() { coll.folder.clone() } else { al.name.trim().to_string() };
     let mut parts = vec![own];
@@ -88,19 +88,19 @@ pub fn album_name(catalog: &dac_catalog::Catalog, svc: &ServiceConfig, coll: &Co
 /// Links each original a run uploaded (or found) to its catalog photo on the service's account, so
 /// sync works without a separate `immich.link`. Photos already linked on that account are left
 /// alone. `published`: (photo, remote id `r:<render>+o:<original>`).
-pub fn original_link_ops(s: &Session, svc: &ServiceConfig, published: &[(PhotoId, String)]) -> Vec<dac_catalog::Op> {
-    if svc.kind != dac_immich::publish::KIND {
+pub fn original_link_ops(s: &Session, svc: &ServiceConfig, published: &[(PhotoId, String)]) -> Vec<lcc_catalog::Op> {
+    if svc.kind != lcc_immich::publish::KIND {
         return Vec::new();
     }
     let Ok(settings) = serde_json::from_value::<PublishSettings>(svc.settings.clone()) else { return Vec::new() };
-    let now = dac_catalog::rules::now();
+    let now = lcc_catalog::rules::now();
     let mut ops = Vec::new();
     for (photo, remote) in published {
-        let Some(original) = dac_immich::publish::parse_remote(remote).1 else { continue };
+        let Some(original) = lcc_immich::publish::parse_remote(remote).1 else { continue };
         if s.catalog.photo(*photo).is_none() || s.catalog.remote_of(*photo).any(|r| r.service == SERVICE && r.account_id == settings.account) {
             continue;
         }
-        ops.push(dac_catalog::Catalog::link_remote_op(dac_catalog::RemoteIdentity {
+        ops.push(lcc_catalog::Catalog::link_remote_op(lcc_catalog::RemoteIdentity {
             photo_id: *photo,
             service: SERVICE.to_string(),
             account_id: settings.account.clone(),
@@ -108,7 +108,7 @@ pub fn original_link_ops(s: &Session, svc: &ServiceConfig, published: &[(PhotoId
             remote_checksum: None,
             remote_updated_at: None,
             last_synced_at: Some(now.clone()),
-            sync_state: dac_catalog::SyncState::Synced,
+            sync_state: lcc_catalog::SyncState::Synced,
         }));
     }
     ops
@@ -125,9 +125,9 @@ pub fn check_settings(settings: &Value) -> std::result::Result<(), String> {
 
 // ---- collections ↔ albums
 
-use dac_immich::albums::{self as plan_albums, LocalAlbum, LocalOp, PendingDelete, RemoteAlbum, RemoteOp};
-pub use dac_immich::albums::{AlbumLink, AlbumLinks};
-use dac_immich::sync::{Direction, FieldRule};
+use lcc_immich::albums::{self as plan_albums, LocalAlbum, LocalOp, PendingDelete, RemoteAlbum, RemoteOp};
+pub use lcc_immich::albums::{AlbumLink, AlbumLinks};
+use lcc_immich::sync::{Direction, FieldRule};
 
 fn sync_file(s: &Session, account: &str, ext: &str) -> Option<std::path::PathBuf> {
     let name: String = account.chars().map(|c| if c.is_ascii_alphanumeric() || c == '-' || c == '.' { c } else { '_' }).take(150).collect();
@@ -145,7 +145,7 @@ fn save_json<T: Serialize + ?Sized>(path: Option<std::path::PathBuf>, v: &T) -> 
     }
     // temp file + rename; a failed write (full disk) removes the temp file
     let body = serde_json::to_vec(v).map_err(|e| e.to_string())?;
-    dac_catalog::safe_file::write_atomic(&p, &body).map_err(|e| format!("{}: {e}", p.display()))
+    lcc_catalog::safe_file::write_atomic(&p, &body).map_err(|e| format!("{}: {e}", p.display()))
 }
 
 fn load_links(s: &Session, account: &str) -> AlbumLinks {
@@ -217,7 +217,7 @@ fn link_album(s: &mut Session, p: &Value) -> Result<Value> {
 fn unsyncable(s: &Session) -> BTreeSet<u64> {
     let mut roots = BTreeSet::new();
     if let Some(dir) = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone())
-        && let Ok(cfg) = dac_publish::PublishConfig::load(&dir)
+        && let Ok(cfg) = lcc_publish::PublishConfig::load(&dir)
     {
         for svc in &cfg.services {
             roots.extend(svc.set.map(|x| x.0));
@@ -262,7 +262,7 @@ pub(crate) struct AlbumsDone {
     /// Immich albums the run created: catalog album → new Immich album id.
     created: Vec<(u64, String)>,
     errors: Vec<String>,
-    fatal: Option<dac_immich::ImmichError>,
+    fatal: Option<lcc_immich::ImmichError>,
 }
 
 /// Start an album run: the catalog side here, the server on a worker (`background`) or inline.
@@ -283,7 +283,7 @@ pub(crate) fn start_albums(s: &mut Session, account: &str, dry_run: bool, backgr
         .catalog
         .remote_links()
         .iter()
-        .filter(|r| r.service == SERVICE && r.account_id == account && r.sync_state != dac_catalog::SyncState::Probable)
+        .filter(|r| r.service == SERVICE && r.account_id == account && r.sync_state != lcc_catalog::SyncState::Probable)
         .map(|r| (r.photo_id, r.remote_id.clone()))
         .collect();
     let skip = unsyncable(s);
@@ -322,7 +322,7 @@ pub(crate) fn start_albums(s: &mut Session, account: &str, dry_run: bool, backgr
 }
 
 /// The server side of an album run.
-fn album_work(c: &dac_immich::Client, job: AlbumJob) -> AlbumsDone {
+fn album_work(c: &lcc_immich::Client, job: AlbumJob) -> AlbumsDone {
     let AlbumJob { account, dry_run, rule, local, links, pending, linked } = job;
     let mut done =
         AlbumsDone { account, dry_run, old: links.clone(), plan: Default::default(), created: Vec::new(), errors: Vec::new(), fatal: None };
@@ -392,7 +392,7 @@ pub(crate) fn finish_albums(s: &mut Session, d: AlbumsDone) -> Value {
             .catalog
             .remote_links()
             .iter()
-            .filter(|r| r.service == SERVICE && r.account_id == account && r.sync_state != dac_catalog::SyncState::Probable)
+            .filter(|r| r.service == SERVICE && r.account_id == account && r.sync_state != lcc_catalog::SyncState::Probable)
             .map(|r| (r.remote_id.clone(), r.photo_id))
             .collect();
         let photos = |a: &[String]| -> Vec<u64> { a.iter().filter_map(|x| by_asset.get(x)).map(|p| p.0).collect() };

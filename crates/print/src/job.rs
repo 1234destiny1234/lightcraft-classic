@@ -11,8 +11,8 @@
 //! Page options (photo info, page numbers, page info, identity plate) become text cells on each
 //! page, so the preview, JPEG and PDF all draw them through the same path.
 
-use dac_layout::grid::Grid;
-use dac_layout::{Align, Cell, CellKind, Color, CreationKind, Document, Fit, Insets, Page, PageLayout, Rect, Size, Stroke, TextCell, TextStyle};
+use lcc_layout::grid::Grid;
+use lcc_layout::{Align, Cell, CellKind, Color, CreationKind, Document, Fit, Insets, Page, PageLayout, Rect, Size, Stroke, TextCell, TextStyle};
 use serde::{Deserialize, Serialize};
 
 use crate::{PrintError, Result};
@@ -144,7 +144,7 @@ pub struct PageOptions {
 impl Default for PageOptions {
     fn default() -> Self {
         PageOptions {
-            background: dac_layout::WHITE,
+            background: lcc_layout::WHITE,
             identity_plate: None,
             page_numbers: false,
             page_info: false,
@@ -377,7 +377,7 @@ impl PrintSettings {
                 pages = fill(&[base], photos, self.image.repeat_one);
             }
             LayoutStyle::PicturePackage(spec) => {
-                let package = dac_layout::package::package_pages(&self.page, &spec.cells, spec.gap)?;
+                let package = lcc_layout::package::package_pages(&self.page, &spec.cells, spec.gap)?;
                 if photos.is_empty() {
                     pages = package;
                 } else {
@@ -386,7 +386,7 @@ impl PrintSettings {
                             let mut p = p.clone();
                             p.cells.iter_mut().filter_map(Cell::as_photo_mut).for_each(|c| c.photo = Some(photo.clone()));
                             pages.push(p);
-                            if pages.len() > dac_layout::MAX_PAGES {
+                            if pages.len() > lcc_layout::MAX_PAGES {
                                 return Err(PrintError::Invalid("too many pages".into()));
                             }
                         }
@@ -400,7 +400,7 @@ impl PrintSettings {
                 pages = fill(custom, photos, self.image.repeat_one);
             }
         }
-        if pages.len() > dac_layout::MAX_PAGES {
+        if pages.len() > lcc_layout::MAX_PAGES {
             return Err(PrintError::Invalid("too many pages".into()));
         }
         for p in &mut pages {
@@ -493,7 +493,7 @@ fn fill(templates: &[PageLayout], photos: &[String], repeat_one: bool) -> Vec<Pa
     }
     let mut next = photos.iter();
     let mut left = photos.len();
-    while left > 0 && out.len() <= dac_layout::MAX_PAGES {
+    while left > 0 && out.len() <= lcc_layout::MAX_PAGES {
         for t in templates {
             if left == 0 {
                 break;
@@ -522,7 +522,7 @@ pub fn builtin_templates() -> Vec<(String, PrintSettings)> {
     let grid = |rows, cols, gutter| LayoutStyle::SingleImage { grid: Grid::new(rows, cols).with_gutter(gutter) };
     vec![
         with("1 Large with Stroke", &|s| {
-            s.image.stroke = Some(Stroke { width: 1.0, color: dac_layout::BLACK });
+            s.image.stroke = Some(Stroke { width: 1.0, color: lcc_layout::BLACK });
         }),
         with("Fine Art Mat", &|s| {
             s.page.margins = Insets { top: 90.0, right: 90.0, bottom: 150.0, left: 90.0 };

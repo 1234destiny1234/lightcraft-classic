@@ -269,7 +269,7 @@ pub fn with_summary(md: &str, table: &str) -> Option<String> {
 }
 
 fn registry(what: &str) -> Result<BTreeSet<String>, String> {
-    let out = crate::cargo().args(["run", "-q", "-p", "dac-cli", "--", what, "--json"]).output().map_err(|e| format!("app-cli {what}: {e}"))?;
+    let out = crate::cargo().args(["run", "-q", "-p", "lcc-cli", "--", what, "--json"]).output().map_err(|e| format!("app-cli {what}: {e}"))?;
     if !out.status.success() {
         return Err(format!("app-cli {what} --json failed:\n{}", String::from_utf8_lossy(&out.stderr)));
     }

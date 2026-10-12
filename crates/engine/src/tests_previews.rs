@@ -1,7 +1,7 @@
 //! True 1:1 (P1.6): a window of the loupe at 1:1 has the pixels of the full-size export, and the
 //! preview store's 1:1 previews, settings and discards.
 
-use dac_pipeline::{OutputDepth, OutputSpace, PixelWindow};
+use lcc_pipeline::{OutputDepth, OutputSpace, PixelWindow};
 use serde_json::json;
 
 use crate::Session;
@@ -9,7 +9,7 @@ use crate::cmd::previews::{DiscardAfter, discard_full};
 
 /// The largest per-channel difference between the `visible` pixels of `part` (a render of
 /// window `win`) and the same pixels of `full`.
-fn max_diff(full: &dac_raster::Rgba8, part: &dac_raster::Rgba8, win: PixelWindow, visible: PixelWindow) -> u8 {
+fn max_diff(full: &lcc_raster::Rgba8, part: &lcc_raster::Rgba8, win: PixelWindow, visible: PixelWindow) -> u8 {
     let mut worst = 0u8;
     for y in visible.y..visible.y + visible.h {
         for x in visible.x..visible.x + visible.w {
@@ -24,7 +24,7 @@ fn max_diff(full: &dac_raster::Rgba8, part: &dac_raster::Rgba8, win: PixelWindow
 }
 
 /// Render photo `id` at full size for export and windows of its 1:1 view, and compare them.
-fn check_one_to_one(s: &mut Session, id: dac_catalog::PhotoId) {
+fn check_one_to_one(s: &mut Session, id: lcc_catalog::PhotoId) {
     let p = s.catalog.photo(id).unwrap().clone();
     let export = s.render_export(id, p.width as usize, p.height as usize, OutputSpace::Srgb, OutputDepth::U8).unwrap().image;
     let (w, h) = (export.width, export.height);
@@ -78,15 +78,15 @@ fn one_to_one_pixels_equal_full_resolution_export_pixels() {
 // cleanly without them
 #[test]
 fn one_to_one_pixels_equal_export_pixels_on_corpus_raws() {
-    let dir = std::env::var_os("DAC_CORPUS_RAW")
+    let dir = std::env::var_os("LCC_CORPUS_RAW")
         .map(std::path::PathBuf::from)
         .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/raw"));
     let Ok(rd) = std::fs::read_dir(&dir) else {
         eprintln!("skipped: no raw corpus at {}", dir.display());
         return;
     };
-    // (DAC_CORPUS_RAW_COUNT files, sorted by name; default 3: each is a full-size render)
-    let count = std::env::var("DAC_CORPUS_RAW_COUNT").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
+    // (LCC_CORPUS_RAW_COUNT files, sorted by name; default 3: each is a full-size render)
+    let count = std::env::var("LCC_CORPUS_RAW_COUNT").ok().and_then(|n| n.parse().ok()).unwrap_or(3);
     let mut files: Vec<_> = rd.flatten().map(|e| e.path()).filter(|p| p.is_file()).collect();
     files.sort();
     let step = (files.len() / count.max(1)).max(1);
@@ -149,17 +149,17 @@ fn preview_settings_are_validated_and_applied() {
 /// the tiles it moves onto ready. Every frame the loupe draws the tiles it has (textures moved by
 /// the GPU); this measures the tile renders a pan needs, CPU and GPU, and the pan speed (in frames
 /// per second at 40 px a frame) one render worker keeps sharp. Opt in (release build recommended):
-/// `cargo test --release -p dac-engine --lib pan_at_one_to_one -- --ignored --nocapture`
+/// `cargo test --release -p lcc-engine --lib pan_at_one_to_one -- --ignored --nocapture`
 #[test]
 #[ignore]
 fn pan_at_one_to_one_on_45_megapixels() {
     use std::collections::HashSet;
     use std::sync::Arc;
-    let scene = dac_scenes::demo_library().into_iter().next().unwrap();
+    let scene = lcc_scenes::demo_library().into_iter().next().unwrap();
     let (fw, fh) = (8256usize, 5504usize);
     let src = Arc::new(scene.render(fw, fh));
-    let info = dac_pipeline::SourceInfo::default();
-    let mut d = dac_develop::DevelopSettings::default();
+    let info = lcc_pipeline::SourceInfo::default();
+    let mut d = lcc_develop::DevelopSettings::default();
     d.light.exposure = 0.3;
     d.effects.clarity = 20.0;
     let (cw, ch) = (2560usize, 1440usize);
@@ -179,14 +179,14 @@ fn pan_at_one_to_one_on_45_megapixels() {
         PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 }
     };
     for gpu in [false, true] {
-        if gpu && !dac_gpu::available() {
+        if gpu && !lcc_gpu::available() {
             eprintln!("gpu: not available, skipped");
             continue;
         }
         let mut held: HashSet<(usize, usize)> = HashSet::new();
         let render = |c: usize, r: usize| {
             let want = render_window(c, r);
-            let req = dac_pipeline::RenderRequest { window: Some(want), ..dac_pipeline::RenderRequest::fit(fw, fh) };
+            let req = lcc_pipeline::RenderRequest { window: Some(want), ..lcc_pipeline::RenderRequest::fit(fw, fh) };
             let t = std::time::Instant::now();
             let out = crate::media::develop(&src, &info, &d, &req, None, gpu);
             assert_eq!((out.image.width, out.image.height), (want.w, want.h));

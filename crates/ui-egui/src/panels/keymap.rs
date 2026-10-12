@@ -7,7 +7,7 @@
 
 use egui::RichText;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::shortcuts::{self, Bindable};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -16,7 +16,7 @@ const SEARCH: &str = "shortcuts-search";
 const SHOW_ALL: &str = "shortcuts-show-all";
 const MODULE_ONLY: &str = "shortcuts-module-only";
 
-pub fn body(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+pub fn body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
     capture(app, ui.ctx());
     ui.set_min_width(560.0);
@@ -171,7 +171,7 @@ pub(crate) fn in_module(module: crate::module::ModuleId, id: &str) -> bool {
 }
 
 /// The current module's own keys (Classic set), above the editable list.
-fn module_keys(app: &DacApp, ui: &mut egui::Ui, t: &Tokens, mac: bool, needle: &str) {
+fn module_keys(app: &LccApp, ui: &mut egui::Ui, t: &Tokens, mac: bool, needle: &str) {
     if shortcuts::active_set() != shortcuts::KeymapSet::Classic {
         return;
     }
@@ -210,7 +210,7 @@ fn menu_text(sc: &str, mac: bool) -> String {
     crate::menubar::shortcut_text(sc, mac)
 }
 
-fn row(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, b: &Bindable, sc: Option<&str>, mac: bool) {
+fn row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, b: &Bindable, sc: Option<&str>, mac: bool) {
     let changed = app.ui.settings.keymap.contains_key(b.id);
     let mut name = RichText::new(crate::i18n::tr(b.label)).color(t.text);
     if changed {
@@ -259,7 +259,7 @@ fn row(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens, b: &Bindable, sc: Option
 
 /// Keys that aren't a command's own shortcut (ratings, labels, secondary keys): listed, not editable.
 /// One the user gave to a command shows struck through.
-fn fixed_keys(app: &DacApp, ui: &mut egui::Ui, t: &Tokens, mac: bool, needle: &str) {
+fn fixed_keys(app: &LccApp, ui: &mut egui::Ui, t: &Tokens, mac: bool, needle: &str) {
     let mut fixed: Vec<(String, &str)> = Vec::new();
     for (sc, id, _) in shortcuts::ALIASES {
         let label = shortcuts::find_bindable(id).map_or(*id, |b| b.label);
@@ -308,7 +308,7 @@ fn fixed_keys(app: &DacApp, ui: &mut egui::Ui, t: &Tokens, mac: bool, needle: &s
 }
 
 /// Run `app.setShortcut` and say what changed (a key taken from another command, or why not).
-fn apply(app: &mut DacApp, ctx: &egui::Context, params: serde_json::Value) {
+fn apply(app: &mut LccApp, ctx: &egui::Context, params: serde_json::Value) {
     match app.run("app.setShortcut", params) {
         Ok(r) => {
             let lost: Vec<String> = r["removedFrom"]
@@ -327,7 +327,7 @@ fn apply(app: &mut DacApp, ctx: &egui::Context, params: serde_json::Value) {
 }
 
 /// While a row is recording: the first key press becomes its shortcut, Esc cancels.
-fn capture(app: &mut DacApp, ctx: &egui::Context) {
+fn capture(app: &mut LccApp, ctx: &egui::Context) {
     let Some(id) = app.recording_shortcut.clone() else { return };
     let pressed = ctx.input(|i| {
         i.events.iter().find_map(|e| match e {

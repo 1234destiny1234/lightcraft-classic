@@ -4,7 +4,7 @@ use serde_json::json;
 
 use crate::Session;
 
-fn spots(s: &Session) -> Vec<dac_develop::Spot> {
+fn spots(s: &Session) -> Vec<lcc_develop::Spot> {
     s.develop_of(s.active().unwrap()).unwrap().spots.clone()
 }
 
@@ -46,7 +46,7 @@ fn spots_select_move_edit_refresh_and_delete() {
     // delete the selected spot: the selection clears; deleting before a selected one shifts it
     s.execute("spot.delete", &json!({})).unwrap();
     assert_eq!((spots(&s).len(), s.active_spot), (1, None));
-    assert_eq!(spots(&s)[0].mode, dac_develop::SpotMode::Clone);
+    assert_eq!(spots(&s)[0].mode, lcc_develop::SpotMode::Clone);
     assert!(s.execute("spot.delete", &json!({})).is_err(), "nothing selected");
     s.execute("spot.add", &json!({"points": [[0.2, 0.2]], "source": [0.05, 0.0]})).unwrap();
     s.execute("spot.delete", &json!({"index": 0})).unwrap();
@@ -61,7 +61,7 @@ fn a_content_aware_spot_has_no_source() {
     let mut s = Session::with_demo();
     s.execute("spot.add", &json!({"mode": "fill", "points": [[0.4, 0.5]], "size": 0.03})).unwrap();
     let sp = &spots(&s)[0];
-    assert_eq!((sp.mode, sp.source_offset), (dac_develop::SpotMode::Fill, None));
+    assert_eq!((sp.mode, sp.source_offset), (lcc_develop::SpotMode::Fill, None));
     assert_eq!(serde_json::to_value(sp).unwrap()["mode"], "fill");
     assert!(s.execute("spot.update", &json!({"mode": "nonsense"})).is_err());
 }

@@ -4,7 +4,7 @@
 use serde_json::json;
 
 use crate::catalog_ui::CatalogDialog;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 fn temp(tag: &str) -> std::path::PathBuf {
     let d = std::env::temp_dir().join(format!("lc-ui-catalog-{tag}-{}", std::process::id()));
@@ -13,10 +13,10 @@ fn temp(tag: &str) -> std::path::PathBuf {
     d
 }
 
-fn app_in(dir: &std::path::Path) -> DacApp {
-    let mut s = dac_engine::Session::new().with_fs();
+fn app_in(dir: &std::path::Path) -> LccApp {
+    let mut s = lcc_engine::Session::new().with_fs();
     s.open_library(dir, true).unwrap();
-    DacApp::new(s, Services::default())
+    LccApp::new(s, Services::default())
 }
 
 #[test]
@@ -32,7 +32,7 @@ fn new_open_and_open_recent_switch_catalogs_and_keep_the_list() {
     app.run("catalog.new", json!({})).unwrap();
     assert!(matches!(app.catalog_ui.dialog, Some(CatalogDialog::NewCatalog { .. })));
     let r = app.run("catalog.new", json!({"parent": root.to_string_lossy(), "name": "Second"})).unwrap();
-    assert!(r["entry"].as_str().unwrap().ends_with(&format!("Second.{}", dac_brand::CATALOG_EXT)), "{r}");
+    assert!(r["entry"].as_str().unwrap().ends_with(&format!("Second.{}", lcc_brand::CATALOG_EXT)), "{r}");
     assert!(app.session.catalog.is_empty());
     assert!(app.catalog_ui.dialog.is_none());
     assert_eq!(app.session.catalog_dir(), Some(root.join("Second").as_path()));
@@ -42,7 +42,7 @@ fn new_open_and_open_recent_switch_catalogs_and_keep_the_list() {
     assert_eq!(items.len(), 1, "{items:?}");
     app.run("catalog.openRecent", items[0].1.clone()).unwrap();
     assert_eq!(app.session.catalog.len(), photos);
-    let saved = dac_catalog::library::RecentCatalogs::load(&root.join("recent.json"));
+    let saved = lcc_catalog::library::RecentCatalogs::load(&root.join("recent.json"));
     assert_eq!(saved.paths.len(), 2);
     assert!(saved.paths[0].starts_with(root.join("First")));
 
@@ -57,7 +57,7 @@ fn new_open_and_open_recent_switch_catalogs_and_keep_the_list() {
 
     // the startup preference
     app.run("catalog.promptAtStartup", json!({"on": true})).unwrap();
-    assert!(dac_catalog::library::RecentCatalogs::load(&root.join("recent.json")).prompt_at_startup);
+    assert!(lcc_catalog::library::RecentCatalogs::load(&root.join("recent.json")).prompt_at_startup);
     app.session.close_library().unwrap();
     let _ = std::fs::remove_dir_all(&root);
 }
@@ -91,12 +91,12 @@ fn read_metadata_asks_before_overwriting_catalog_changes() {
     let root = temp("xmp");
     let src = root.join("src");
     std::fs::create_dir_all(&src).unwrap();
-    let img = dac_raster::Rgba8 { width: 8, height: 8, data: vec![[90, 120, 150, 255]; 64] };
-    let png = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: 8, height: 8, data: vec![[90, 120, 150, 255]; 64] };
+    let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::write(src.join("a.png"), png).unwrap();
-    let mut s = dac_engine::Session::new().with_fs();
+    let mut s = lcc_engine::Session::new().with_fs();
     s.open_library(root.join("Lib"), false).unwrap();
-    let mut app = DacApp::new(s, Services::default());
+    let mut app = LccApp::new(s, Services::default());
     app.run("library.import", json!({"paths": [src.join("a.png").to_string_lossy()]})).unwrap();
     let id = app.session.catalog.photos().next().unwrap().id.0;
     app.run("photo.saveMetadataToFile", json!({"ids": [id]})).unwrap();
@@ -119,9 +119,9 @@ fn read_metadata_asks_before_overwriting_catalog_changes() {
 #[test]
 fn welcome_creates_a_catalog_with_or_without_samples() {
     let root = temp("welcome");
-    let mut app = DacApp::new(dac_engine::Session::new().with_fs(), Services::default());
+    let mut app = LccApp::new(lcc_engine::Session::new().with_fs(), Services::default());
     app.run("catalog.welcome", json!({})).unwrap();
-    assert!(matches!(&app.catalog_ui.dialog, Some(CatalogDialog::Welcome { demo: false, name, .. }) if name == dac_brand::LIBRARY_DEFAULT));
+    assert!(matches!(&app.catalog_ui.dialog, Some(CatalogDialog::Welcome { demo: false, name, .. }) if name == lcc_brand::LIBRARY_DEFAULT));
     app.run("catalog.new", json!({"parent": root.to_string_lossy(), "name": "Plain", "demo": false})).unwrap();
     assert!(app.session.catalog.is_empty());
     assert!(app.catalog_ui.dialog.is_none());
@@ -143,7 +143,7 @@ fn library_problems_are_worded_by_their_cause() {
     let foreign = root.join("Upstream Library");
     std::fs::create_dir_all(&foreign).unwrap();
     std::fs::write(foreign.join("catalog.snap"), "{\"format\":\"upstream-catalog\",\"version\":6,\"seq\":0,\"catalog\":{}}\n").unwrap();
-    let mut s = dac_engine::Session::new().with_fs();
+    let mut s = lcc_engine::Session::new().with_fs();
     let e = s.open_library(&foreign, false).unwrap_err().to_string();
     let p = LibraryProblem::new(foreign.to_string_lossy(), e.clone());
     assert_eq!(p.kind(), ProblemKind::Foreign, "{e}");

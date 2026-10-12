@@ -3,18 +3,18 @@
 //! [`show`], and the sidebar layout calls [`catalog_section`]. A child module of `left`, so it
 //! uses that file's private helpers without widening them.
 
-use dac_catalog::AlbumId;
-use dac_engine::LibrarySource;
 use egui::{Rect, pos2, vec2};
+use lcc_catalog::AlbumId;
+use lcc_engine::LibrarySource;
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::Icon;
 use crate::module::PanelId;
 use crate::widgets::icon_button;
 
 /// Library's left column: the panels in a scroll area as wide as its widest row.
-pub(super) fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let counts = app.caches.counts(&app.session.catalog);
     let (total, picks, deleted) = (counts.total, counts.picks, counts.deleted);
     egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
@@ -40,7 +40,7 @@ pub(super) fn show(app: &mut DacApp, ui: &mut egui::Ui) {
 
 /// Library's Classic left column: Navigator, Catalog, Folders, Collections, each under a
 /// collapsible header (see [`super::classic`]), in the user's order.
-fn columns(app: &mut DacApp, ui: &mut egui::Ui, viewport: Rect, total: usize, picks: usize, deleted: usize) {
+fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, total: usize, picks: usize, deleted: usize) {
     let side = crate::module::LIBRARY_LEFT;
     for p in crate::panels::classic::ordered(app, side) {
         match p {
@@ -86,7 +86,7 @@ fn columns(app: &mut DacApp, ui: &mut egui::Ui, viewport: Rect, total: usize, pi
 
 /// All Photos, Quick Collection, Previous Import, Recently Added, Picks, Missing (and, in the
 /// Classic Catalog panel, Recently Deleted).
-pub(super) fn catalog_section(app: &mut DacApp, ui: &mut egui::Ui, total: usize, picks: usize, deleted: usize, with_deleted: bool) {
+pub(super) fn catalog_section(app: &mut LccApp, ui: &mut egui::Ui, total: usize, picks: usize, deleted: usize, with_deleted: bool) {
     let src = app.session.source;
     let quick = app.session.catalog.quick_collection().map(|q| app.session.catalog.album_count(q)).unwrap_or(0);
     for (id, icon, label, count, s) in [
@@ -118,7 +118,7 @@ pub(super) fn catalog_section(app: &mut DacApp, ui: &mut egui::Ui, total: usize,
     }
 }
 
-fn recently_deleted_row(app: &mut DacApp, ui: &mut egui::Ui, deleted: usize) {
+fn recently_deleted_row(app: &mut LccApp, ui: &mut egui::Ui, deleted: usize) {
     let src = app.session.source;
     if super::row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0).clicked() {
         let _ = app.run("library.source", json!({"kind": "recentlyDeleted"}));
@@ -126,7 +126,7 @@ fn recently_deleted_row(app: &mut DacApp, ui: &mut egui::Ui, deleted: usize) {
 }
 
 /// By Date: year → month → day rows.
-fn dates_section(app: &mut DacApp, ui: &mut egui::Ui) {
+fn dates_section(app: &mut LccApp, ui: &mut egui::Ui) {
     // By date
     let (_, dates_open) = super::sidebar_section_header(app, ui, "byDate", "By Date");
     let groups = if dates_open { app.caches.date_groups(&app.session.catalog) } else { Default::default() };
@@ -147,7 +147,7 @@ fn dates_section(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// The + menu at the right end of an albums / collections header.
-fn collections_plus(app: &mut DacApp, ui: &mut egui::Ui, ar: Rect, viewport: Rect) {
+fn collections_plus(app: &mut LccApp, ui: &mut egui::Ui, ar: Rect, viewport: Rect) {
     // the + stays at the visible edge when the sidebar is scrolled sideways
     let plus_right = (ar.left() + viewport.max.x).min(ar.right());
     let mut hdr = ui.new_child(
@@ -164,7 +164,7 @@ fn collections_plus(app: &mut DacApp, ui: &mut egui::Ui, ar: Rect, viewport: Rec
             app.ui.dialog = Some(crate::state::Dialog::SmartRules {
                 id: None,
                 name: String::new(),
-                rules: dac_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
+                rules: lcc_catalog::RuleSet { rules: vec![crate::panels::rules_editor::new_rule()], ..Default::default() },
                 parent: None,
             });
         }
@@ -186,7 +186,7 @@ fn collections_plus(app: &mut DacApp, ui: &mut egui::Ui, ar: Rect, viewport: Rec
 }
 
 /// The album tree (opening the folders down to an album just made).
-fn albums_body(app: &mut DacApp, ui: &mut egui::Ui) {
+fn albums_body(app: &mut LccApp, ui: &mut egui::Ui) {
     // the album just made: the folders down to it open, once (also when the section is shut)
     let reveal = app.ui.reveal_album.take();
     {
@@ -204,7 +204,7 @@ fn albums_body(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// The Classic Folders panel's tree (no section header of its own).
-fn folders_body(app: &mut DacApp, ui: &mut egui::Ui) {
+fn folders_body(app: &mut LccApp, ui: &mut egui::Ui) {
     let tree = app.caches.folder_tree(&app.session.catalog);
     super::reveal_chosen(app, ui, &tree);
     super::folder_rows(app, ui, &tree, 0.0);
@@ -214,7 +214,7 @@ fn folders_body(app: &mut DacApp, ui: &mut egui::Ui) {
 /// New Folder…) under each folder that holds photos, as Classic's Folders panel lists them. Only
 /// below folders with photos of their own (a parent like `Users` would list half the disk), a few
 /// levels down, and capped, so a huge tree can't stall a frame.
-pub fn with_disk_folders(mut tree: Vec<dac_catalog::FolderNode>) -> Vec<dac_catalog::FolderNode> {
+pub fn with_disk_folders(mut tree: Vec<lcc_catalog::FolderNode>) -> Vec<lcc_catalog::FolderNode> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut budget = MAX_DISK_FOLDERS;
@@ -230,7 +230,7 @@ pub fn with_disk_folders(mut tree: Vec<dac_catalog::FolderNode>) -> Vec<dac_cata
 const MAX_DISK_FOLDERS: usize = 2_000;
 
 #[cfg(not(target_arch = "wasm32"))]
-fn add_disk_folders(n: &mut dac_catalog::FolderNode, empty_depth: usize, budget: &mut usize) {
+fn add_disk_folders(n: &mut lcc_catalog::FolderNode, empty_depth: usize, budget: &mut usize) {
     for c in &mut n.children {
         add_disk_folders(c, 0, budget);
     }
@@ -259,7 +259,7 @@ fn add_disk_folders(n: &mut dac_catalog::FolderNode, empty_depth: usize, budget:
             continue;
         }
         *budget -= 1;
-        let mut child = dac_catalog::FolderNode { name, path, count: 0, own: 0, volume: false, selectable: true, label: None, children: Vec::new() };
+        let mut child = lcc_catalog::FolderNode { name, path, count: 0, own: 0, volume: false, selectable: true, label: None, children: Vec::new() };
         add_disk_folders(&mut child, empty_depth + 1, budget);
         added.push(child);
     }
@@ -280,7 +280,7 @@ mod tests {
         std::fs::create_dir_all(d.join(".hidden")).unwrap();
         std::fs::create_dir_all(d.join("shoot")).unwrap();
         let p = d.to_string_lossy().replace('\\', "/");
-        let node = |name: &str, path: String, own: usize, children| dac_catalog::FolderNode {
+        let node = |name: &str, path: String, own: usize, children| lcc_catalog::FolderNode {
             name: name.into(),
             path,
             count: own,

@@ -1,5 +1,5 @@
 //! IMM-SYNC (two-way metadata sync), IMM-PEOPLE (faces and names) and IMM-SEARCH (smart search)
-//! commands. The merge itself is pure and lives in `dac_immich::sync`; this module gathers the
+//! commands. The merge itself is pure and lives in `lcc_immich::sync`; this module gathers the
 //! catalog side, runs the server side on a worker, and takes the result in (`remote.pump`).
 //!
 //! A sync run, per account:
@@ -19,11 +19,11 @@ use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::path::PathBuf;
 use std::time::{Duration, Instant};
 
-use dac_catalog::{Catalog, Op, PhotoId, SyncState as LinkState};
-use dac_immich::link::SERVICE;
-use dac_immich::sync::{self as merge, Deletion, Field, ItemState, Outcome, RunLog, Side, Sides, Snapshot, SyncConfig, SyncState};
-use dac_immich::types::{MetadataSearch, SmartSearch};
-use dac_immich::{Asset, ImmichError, people};
+use lcc_catalog::{Catalog, Op, PhotoId, SyncState as LinkState};
+use lcc_immich::link::SERVICE;
+use lcc_immich::sync::{self as merge, Deletion, Field, ItemState, Outcome, RunLog, Side, Sides, Snapshot, SyncConfig, SyncState};
+use lcc_immich::types::{MetadataSearch, SmartSearch};
+use lcc_immich::{Asset, ImmichError, people};
 use serde_json::{Value, json};
 
 use super::{account_param, failure};
@@ -92,8 +92,8 @@ pub(crate) struct SyncDone {
 
 /// The stack part of a run.
 pub(crate) struct StackSync {
-    plan: dac_immich::stacks::Plan,
-    base: Vec<dac_immich::stacks::Group>,
+    plan: lcc_immich::stacks::Plan,
+    base: Vec<lcc_immich::stacks::Group>,
 }
 
 fn excluded(c: &Catalog) -> impl Fn(&str) -> bool + '_ {
@@ -127,7 +127,7 @@ fn save_state(s: &mut Session, account: &str) -> std::result::Result<(), String>
         std::fs::create_dir_all(d).map_err(|e| format!("{}: {e}", d.display()))?;
     }
     // temp file + rename; a failed write (full disk) removes the temp file
-    dac_catalog::safe_file::write_atomic(&path, &json).map_err(|e| format!("{}: {e}", path.display()))
+    lcc_catalog::safe_file::write_atomic(&path, &json).map_err(|e| format!("{}: {e}", path.display()))
 }
 
 fn config_of(s: &mut Session, account: &str) -> SyncConfig {
@@ -185,7 +185,7 @@ fn start(s: &mut Session, account: &str, dry_run: bool, full: bool, background: 
     let base_stacks = st.stacks.clone();
     let asset_of: HashMap<PhotoId, String> = links.iter().map(|(p, a)| (*p, a.clone())).collect();
     let catalog_stacks: Vec<Vec<PhotoId>> = s.catalog.stacks().map(|st| st.photos.clone()).collect();
-    let local_stacks = dac_immich::stacks::local_groups(&catalog_stacks, |p| asset_of.get(&p).cloned());
+    let local_stacks = lcc_immich::stacks::local_groups(&catalog_stacks, |p| asset_of.get(&p).cloned());
     let entry = s.remote.sync.entry(account.to_string()).or_default();
     entry.running = true;
     let job = Job { account: account.to_string(), dry_run, since, cfg, pairs, kept, started: now, local_stacks, base_stacks };
@@ -216,12 +216,12 @@ struct Job {
     kept: BTreeSet<String>,
     started: String,
     /// The catalog's stacks over this account's linked assets, and the last sync's.
-    local_stacks: Vec<dac_immich::stacks::Group>,
-    base_stacks: Vec<dac_immich::stacks::Group>,
+    local_stacks: Vec<lcc_immich::stacks::Group>,
+    base_stacks: Vec<lcc_immich::stacks::Group>,
 }
 
 /// The server side of a run (a worker thread, or inline).
-fn work(c: &dac_immich::Client, job: Job) -> SyncDone {
+fn work(c: &lcc_immich::Client, job: Job) -> SyncDone {
     let Job { account, dry_run, since, cfg, pairs, kept, started, local_stacks, base_stacks } = job;
     let linked_assets: BTreeSet<String> = pairs.iter().map(|p| p.asset.clone()).collect();
     let mut done = SyncDone {
@@ -341,18 +341,18 @@ fn work(c: &dac_immich::Client, job: Job) -> SyncDone {
     done
 }
 
-/// RT.C3: mirror stacks of linked assets (three-way, `dac_immich::stacks`); the Immich side is
+/// RT.C3: mirror stacks of linked assets (three-way, `lcc_immich::stacks`); the Immich side is
 /// written here, the catalog side in [`finish`]. A key without stack permissions skips this
 /// part with a clear message; the metadata sync still counts.
 fn sync_stacks(
-    c: &dac_immich::Client,
-    local: &[dac_immich::stacks::Group],
-    base: &[dac_immich::stacks::Group],
+    c: &lcc_immich::Client,
+    local: &[lcc_immich::stacks::Group],
+    base: &[lcc_immich::stacks::Group],
     linked: &BTreeSet<String>,
     dry_run: bool,
     errors: &mut Vec<String>,
 ) -> Option<StackSync> {
-    use dac_immich::stacks;
+    use lcc_immich::stacks;
     const PERMS: &str =
         "stack sync skipped: the API key lacks the stack permissions (stack.read, stack.create, stack.delete); add them to the key in Immich";
     let remote_all = match c.stacks() {
@@ -416,7 +416,7 @@ fn sync_stacks(
 }
 
 /// Write the outcomes' Immich side: asset updates, then tags (created once, assigned in bulk).
-fn push(c: &dac_immich::Client, cfg: &SyncConfig, results: &mut [(PairDone, Asset)], done: &mut SyncDone) {
+fn push(c: &lcc_immich::Client, cfg: &SyncConfig, results: &mut [(PairDone, Asset)], done: &mut SyncDone) {
     for (p, a) in results.iter_mut() {
         if p.outcome.to_remote.is_empty() {
             continue;
@@ -459,7 +459,7 @@ fn push(c: &dac_immich::Client, cfg: &SyncConfig, results: &mut [(PairDone, Asse
             }
         }
         for k in &p.outcome.remove_tags {
-            if let Some(t) = a.tags.iter().find(|t| dac_immich::mapping::tag_to_keyword(&t.value) == *k) {
+            if let Some(t) = a.tags.iter().find(|t| lcc_immich::mapping::tag_to_keyword(&t.value) == *k) {
                 remove.entry(t.id.clone()).or_default().push(i);
             }
         }
@@ -817,7 +817,7 @@ fn set_config(s: &mut Session, p: &Value) -> Result<Value> {
     let cur = config_of(s, &id);
     let mut v = serde_json::to_value(&cur).map_err(|e| bad(C, e.to_string()))?;
     if let Some(patch) = p.get("config") {
-        dac_develop::presets::deep_merge(&mut v, patch);
+        lcc_develop::presets::deep_merge(&mut v, patch);
     }
     let cfg: SyncConfig = serde_json::from_value(v).map_err(|e| bad(C, format!("`config`: {e}")))?;
     let accs = s.immich_accounts().map_err(|e| bad(C, e))?;

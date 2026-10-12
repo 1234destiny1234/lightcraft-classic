@@ -3,7 +3,7 @@
 //! common enumerations are spelled out, everything else is shown as stored. Maker notes and
 //! binary blobs are summarised by size.
 
-use dac_tiff::{Ifd, Tiff, Value};
+use lcc_tiff::{Ifd, Tiff, Value};
 
 /// One metadata row.
 #[derive(Clone, Debug, PartialEq)]
@@ -305,7 +305,7 @@ fn nikon_nef_compression(tiff: &Tiff, bytes: &[u8]) -> Option<&'static str> {
         return None;
     }
     let e = ifd0.exif.as_ref()?.get(0x927c)?;
-    let mn = dac_tiff::makernote::parse_makernote(bytes, e.offset, e.count() as u64, tiff.order, &make)?;
+    let mn = lcc_tiff::makernote::parse_makernote(bytes, e.offset, e.count() as u64, tiff.order, &make)?;
     nef_compression(mn.ifd.u32(0x0093)?)
 }
 

@@ -3,7 +3,7 @@
 //! One [`Entry`] per camera model (Exif make and model, plus aliases) carries:
 //! - colour matrices for two calibration illuminants (DNG `ColorMatrix1/2`, XYZ → camera, and optionally
 //!   `ForwardMatrix1/2`), interpolated by the white balance's correlated colour temperature through the DNG colour
-//!   model in [`dac_raw::color`] (inverse-CCT weighting, DNG Specification 1.7 chapter 6);
+//!   model in [`lcc_raw::color`] (inverse-CCT weighting, DNG Specification 1.7 chapter 6);
 //! - white-balance presets (camera RGB multipliers, green = 1);
 //! - black and white level overrides, for models whose files carry wrong or no levels;
 //! - a [`Provenance`]: where the numbers came from and who contributed them.
@@ -11,7 +11,7 @@
 //! Two sources feed the database:
 //! - human-editable TOML in `data/cameras/<maker>.toml`, embedded at build time (format below; `<cli> camdb extract`
 //!   writes entries from camera-native DNGs);
-//! - the matrices fitted to measured spectral sensitivities that [`dac_raw::spectral`] already carries (rawtoaces-data,
+//! - the matrices fitted to measured spectral sensitivities that [`lcc_raw::spectral`] already carries (rawtoaces-data,
 //!   Apache-2.0), exposed here with [`Source::SpectralSensitivities`] provenance rather than copied.
 //!
 //! [`find`] returns the best entry for a camera: TOML entries ranked by [`Source::rank`], then the spectral table.
@@ -39,8 +39,8 @@
 
 pub mod extract;
 
-use dac_color::{Mat3, Xy};
-use dac_raw::{ColorData, RawImage};
+use lcc_color::{Mat3, Xy};
+use lcc_raw::{ColorData, RawImage};
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
 
@@ -211,21 +211,21 @@ impl Entry {
 
     /// XYZ → camera for a white of `temp_k` kelvin (no tint), interpolated between the two matrices by inverse CCT.
     pub fn xyz_to_camera_at(&self, temp_k: f64) -> Option<Mat3> {
-        if !dac_raw::color::has_matrix(&self.color_data()) || !temp_k.is_finite() || temp_k <= 0.0 {
+        if !lcc_raw::color::has_matrix(&self.color_data()) || !temp_k.is_finite() || temp_k <= 0.0 {
             return None;
         }
-        Some(dac_raw::color::xyz_to_camera(&self.color_data(), dac_color::cct::temp_tint_to_xy(temp_k, 0.0)))
+        Some(lcc_raw::color::xyz_to_camera(&self.color_data(), lcc_color::cct::temp_tint_to_xy(temp_k, 0.0)))
     }
 
     /// Camera transform (camera → XYZ D50) for white `xy`, as the raw input transform computes it.
     pub fn camera_to_xyz_d50(&self, white: Xy) -> Mat3 {
-        dac_raw::color::camera_to_xyz_d50(&self.color_data(), white)
+        lcc_raw::color::camera_to_xyz_d50(&self.color_data(), white)
     }
 
     /// Give `raw` this entry's data: the matrices when the file has none of its own, and the level overrides.
     pub fn apply(&self, raw: &mut RawImage) -> Applied {
         let mut applied = Applied::default();
-        if !dac_raw::color::has_matrix(&raw.color) && dac_raw::color::has_matrix(&self.color_data()) {
+        if !lcc_raw::color::has_matrix(&raw.color) && lcc_raw::color::has_matrix(&self.color_data()) {
             raw.color.illuminant = self.illuminants;
             raw.color.color_matrix = self.color_matrix;
             raw.color.forward_matrix = self.forward_matrix;
@@ -233,7 +233,7 @@ impl Entry {
         }
         let cpp = raw.cpp.max(1);
         if let Some(b) = self.black {
-            raw.black = dac_raw::BlackLevel { values: vec![b; cpp], ..dac_raw::BlackLevel::uniform(b) };
+            raw.black = lcc_raw::BlackLevel { values: vec![b; cpp], ..lcc_raw::BlackLevel::uniform(b) };
             applied.levels = true;
         }
         if let Some(w) = self.white {
@@ -253,7 +253,7 @@ impl Entry {
             return Err(Error(format!("{name}: no colour matrix")));
         }
         for (i, m) in self.color_matrix.iter().enumerate() {
-            if m.is_some() && dac_raw::color::illuminant_temperature(self.illuminants[i]).is_none() {
+            if m.is_some() && lcc_raw::color::illuminant_temperature(self.illuminants[i]).is_none() {
                 return Err(Error(format!("{name}: unknown calibration illuminant {}", self.illuminants[i])));
             }
         }
@@ -319,7 +319,7 @@ pub fn embedded() -> &'static [Entry] {
     DB.get_or_init(|| FILES.iter().filter_map(|(_, text)| parse_toml(text).ok()).flatten().collect())
 }
 
-fn spectral_entry(c: &dac_raw::spectral::Camera) -> Entry {
+fn spectral_entry(c: &lcc_raw::spectral::Camera) -> Entry {
     Entry {
         make: c.make.into(),
         model: c.model.into(),
@@ -342,12 +342,12 @@ fn spectral_entry(c: &dac_raw::spectral::Camera) -> Entry {
 /// sensitivity table (its aliases included).
 pub fn find(make: Option<&str>, model: &str) -> Option<Entry> {
     let own = embedded().iter().filter(|e| e.matches(make, model)).min_by_key(|e| e.provenance.source.rank());
-    own.cloned().or_else(|| dac_raw::spectral::find(make, model).map(spectral_entry))
+    own.cloned().or_else(|| lcc_raw::spectral::find(make, model).map(spectral_entry))
 }
 
 /// Every entry: the embedded files, then the spectral table.
 pub fn entries() -> Vec<Entry> {
-    embedded().iter().cloned().chain(dac_raw::spectral::cameras().iter().map(spectral_entry)).collect()
+    embedded().iter().cloned().chain(lcc_raw::spectral::cameras().iter().map(spectral_entry)).collect()
 }
 
 /// First word of a make, upper case ("NIKON CORPORATION" → "NIKON").
@@ -384,23 +384,23 @@ provenance = { source = "native-dng", detail = "Software: X1 1.0" }
 
     fn raw_image() -> RawImage {
         RawImage {
-            format: dac_raw::RawFormat::Nef,
+            format: lcc_raw::RawFormat::Nef,
             width: 2,
             height: 2,
             cpp: 1,
-            data: dac_raw::RawData::U16(vec![600; 4]),
-            cfa: dac_raw::Cfa::bayer("RGGB"),
+            data: lcc_raw::RawData::U16(vec![600; 4]),
+            cfa: lcc_raw::Cfa::bayer("RGGB"),
             bits: 14,
-            black: dac_raw::BlackLevel::uniform(0.0),
+            black: lcc_raw::BlackLevel::uniform(0.0),
             white: vec![16383.0],
-            active_area: dac_raw::Rect::new(0, 0, 2, 2),
-            crop: dac_raw::Rect::new(0, 0, 2, 2),
-            orientation: dac_raw::Orientation::Normal,
+            active_area: lcc_raw::Rect::new(0, 0, 2, 2),
+            crop: lcc_raw::Rect::new(0, 0, 2, 2),
+            orientation: lcc_raw::Orientation::Normal,
             color: ColorData::default(),
             wb_multipliers: None,
             linearized: false,
-            opcodes: dac_raw::OpcodeLists::default(),
-            metadata: dac_raw::Metadata::default(),
+            opcodes: lcc_raw::OpcodeLists::default(),
+            metadata: lcc_raw::Metadata::default(),
         }
     }
 
@@ -455,8 +455,8 @@ provenance = { source = "native-dng", detail = "Software: X1 1.0" }
         assert!(close(e.xyz_to_camera_at(10000.0).unwrap(), d65));
         // between them: weighted by inverse temperature (DNG spec chapter 6)
         let t = 4000.0;
-        let xy = dac_color::cct::temp_tint_to_xy(t, 0.0);
-        let t_eff = dac_color::cct::xy_to_temp_tint(xy).0;
+        let xy = lcc_color::cct::temp_tint_to_xy(t, 0.0);
+        let t_eff = lcc_color::cct::xy_to_temp_tint(xy).0;
         let g = (1.0 / t_eff - 1.0 / 6504.0) / (1.0 / 2856.0 - 1.0 / 6504.0);
         let m = e.xyz_to_camera_at(t).unwrap();
         for i in 0..3 {
@@ -480,8 +480,8 @@ provenance = { source = "native-dng", detail = "Software: X1 1.0" }
         assert_eq!(raw.black.values, vec![512.0]);
         assert_eq!(raw.white, vec![16000.0]);
         // the white the raw input transform starts from now goes through the entry's interpolated matrices
-        let wb = dac_color::cct::temp_tint_to_xy(4000.0, 0.0);
-        let t = dac_raw::color::camera_transform(&raw, wb);
+        let wb = lcc_color::cct::temp_tint_to_xy(4000.0, 0.0);
+        let t = lcc_raw::color::camera_transform(&raw, wb);
         assert!(!t.matrix_is_fallback);
 
         let own = Mat3([[0.5, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 0.7]]);
@@ -504,7 +504,7 @@ provenance = { source = "native-dng", detail = "Software: X1 1.0" }
         assert_eq!(s.provenance.source, Source::SpectralSensitivities);
         assert!(s.validate().is_ok());
         assert_eq!(find(Some("Nobody"), "Nothing"), None);
-        assert!(entries().len() >= dac_raw::spectral::cameras().len());
+        assert!(entries().len() >= lcc_raw::spectral::cameras().len());
         for e in entries() {
             assert!(e.validate().is_ok(), "{} {}", e.make, e.model);
         }

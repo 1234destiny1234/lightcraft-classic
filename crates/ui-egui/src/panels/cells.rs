@@ -5,11 +5,11 @@
 
 use std::collections::HashMap;
 
-use dac_catalog::{Photo, PhotoId, SidecarStat, XmpStatus};
 use egui::{Align2, Color32, Rect, Sense, pos2, vec2};
+use lcc_catalog::{Photo, PhotoId, SidecarStat, XmpStatus};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::libtools::CellStyle;
 use crate::theme::Tokens;
@@ -19,7 +19,7 @@ use crate::widgets::register;
 const EXPANDED_HEADER: f32 = 40.0;
 
 /// The image area of a Square Grid cell.
-pub fn image_rect(app: &DacApp, r: Rect) -> Rect {
+pub fn image_rect(app: &LccApp, r: Rect) -> Rect {
     let top = if app.ui.lib.cell_style == CellStyle::Expanded { EXPANDED_HEADER } else { 24.0 };
     let min = r.min + vec2(10.0, top);
     let max = r.max - vec2(10.0, 10.0);
@@ -28,7 +28,7 @@ pub fn image_rect(app: &DacApp, r: Rect) -> Rect {
 }
 
 /// Expanded header: index · file name · format, then dimensions and exposure.
-pub fn expanded_header(app: &DacApp, ui: &egui::Ui, p: &Photo, r: Rect, index: usize) {
+pub fn expanded_header(app: &LccApp, ui: &egui::Ui, p: &Photo, r: Rect, index: usize) {
     let t = Tokens::get(ui.ctx());
     let painter = ui.painter().with_clip_rect(r);
     let mut x = r.left() + 8.0;
@@ -55,7 +55,7 @@ pub fn expanded_header(app: &DacApp, ui: &egui::Ui, p: &Photo, r: Rect, index: u
 }
 
 /// Index number (compact cells: large and faint in the corner) and the thumbnail badges.
-pub fn extras(app: &mut DacApp, ui: &egui::Ui, id: PhotoId, r: Rect, square: bool, index: usize, albums: Option<&HashMap<PhotoId, usize>>) {
+pub fn extras(app: &mut LccApp, ui: &egui::Ui, id: PhotoId, r: Rect, square: bool, index: usize, albums: Option<&HashMap<PhotoId, usize>>) {
     let t = Tokens::get(ui.ctx());
     let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     let expanded = square && app.ui.lib.cell_style == CellStyle::Expanded;
@@ -76,7 +76,7 @@ pub fn extras(app: &mut DacApp, ui: &egui::Ui, id: PhotoId, r: Rect, square: boo
     if cropped(&p.develop) {
         badges.push(("cropped", Icon::Crop, crate::i18n::tr("Cropped").to_string(), Color32::WHITE));
     }
-    if p.develop.orientation != dac_geom::Orientation::Normal {
+    if p.develop.orientation != lcc_geom::Orientation::Normal {
         badges.push(("rotated", Icon::RotateRight, crate::i18n::tr("Rotated or flipped").to_string(), Color32::WHITE));
     }
     if !p.meta.keywords.is_empty() {
@@ -131,7 +131,7 @@ pub fn extras(app: &mut DacApp, ui: &egui::Ui, id: PhotoId, r: Rect, square: boo
 }
 
 /// Whether the edit crops or straightens the photo.
-pub fn cropped(d: &dac_develop::DevelopSettings) -> bool {
+pub fn cropped(d: &lcc_develop::DevelopSettings) -> bool {
     let g = &d.crop.geometry;
     let r = &g.rect;
     let off = |a: f64, b: f64| (a - b).abs() > 1e-6;
@@ -156,7 +156,7 @@ fn shown_size(p: &Photo) -> [usize; 2] {
 
 /// Library ▸ View Options (⌘J): the grid cell style, index numbers and badges, the same settings
 /// as `view.gridCellStyle` and the View ▸ Grid View Style menu.
-pub fn view_options(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn view_options(app: &mut LccApp, ui: &mut egui::Ui) {
     ui.set_min_width(320.0);
     let lib = &app.ui.lib;
     let (mut expanded, mut index, mut badges) = (lib.cell_style == CellStyle::Expanded, lib.cell_index, lib.cell_badges);
@@ -194,16 +194,16 @@ const STAT_TTL: f64 = 5.0;
 /// The metadata-vs-XMP badge text, if the photo is out of step with its sidecar. Only photos that
 /// were read from / written to a sidecar have a stamp; the sidecar is stat'ed at most every
 /// [`STAT_TTL`] seconds per photo.
-fn xmp_badge(app: &mut DacApp, ui: &egui::Ui, p: &Photo) -> Option<&'static str> {
+fn xmp_badge(app: &mut LccApp, ui: &egui::Ui, p: &Photo) -> Option<&'static str> {
     p.xmp?;
-    let dac_catalog::Source::File { path } = &p.source else { return None };
+    let lcc_catalog::Source::File { path } = &p.source else { return None };
     let now = ui.input(|i| i.time);
     let stats = &mut app.ui.lib.sidecar_stats;
     let stat = match stats.get(&p.id) {
         Some((at, s)) if now - at < STAT_TTL => *s,
         _ => {
             let naming = app.session.sidecar_naming(p.id);
-            let s = dac_engine::sidecar::find_sidecar(path, naming)
+            let s = lcc_engine::sidecar::find_sidecar(path, naming)
                 .and_then(|f| std::fs::metadata(f).ok())
                 .map(|m| SidecarStat { mtime: mtime(&m), size: m.len() });
             if stats.len() > 4096 {

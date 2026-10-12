@@ -375,7 +375,7 @@ pub fn check(root: &Path) -> Result<(), String> {
         *per_file.entry(file).or_default() += 1;
     }
     Err(format!(
-        "brand check: {} product name(s) in {} file(s). Use the `dac_brand` constants (code), `{{{{app}}}}` templates \
+        "brand check: {} product name(s) in {} file(s). Use the `lcc_brand` constants (code), `{{{{app}}}}` templates \
          (docs, packaging) or neutral wording; legacy handling goes in LEGACY_FILES in xtask/src/brand.rs",
         problems.len(),
         per_file.len()
@@ -384,15 +384,15 @@ pub fn check(root: &Path) -> Result<(), String> {
 
 // ---- brand test ---------------------------------------------------------------------------------
 
-/// Builds `dac-cli` with `xtask/test-brand.toml` into `target/brand-test` and checks the brand reaches its help,
+/// Builds `lcc-cli` with `xtask/test-brand.toml` into `target/brand-test` and checks the brand reaches its help,
 /// UI snapshot, MCP `serverInfo` and config/log folders, with no other product name anywhere.
 pub fn test(root: &Path) -> Result<(), String> {
     let test_brand = Brand::load(&root.join(TEST_BRAND))?;
     let real = Brand::load(&root.join("brand.toml"))?;
     let target = root.join("target/brand-test");
     let mut c = crate::cargo();
-    c.env("BRAND_FILE", TEST_BRAND).env("CARGO_TARGET_DIR", &target).args(["build", "-p", "dac-cli"]);
-    crate::run(c, &format!("BRAND_FILE={TEST_BRAND} CARGO_TARGET_DIR=target/brand-test cargo build -p dac-cli"))?;
+    c.env("BRAND_FILE", TEST_BRAND).env("CARGO_TARGET_DIR", &target).args(["build", "-p", "lcc-cli"]);
+    crate::run(c, &format!("BRAND_FILE={TEST_BRAND} CARGO_TARGET_DIR=target/brand-test cargo build -p lcc-cli"))?;
     let cli = target.join("debug").join(format!("app-cli{}", std::env::consts::EXE_SUFFIX));
 
     let display = test_brand.req("display_name")?;

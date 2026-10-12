@@ -3,7 +3,7 @@
 //!
 //! Sources: the freedesktop.org Secret Service API specification (0.2). Own implementation.
 //!
-//! Items carry the attributes `application` (the app id from `dac_brand`), `service` and
+//! Items carry the attributes `application` (the app id from `lcc_brand`), `service` and
 //! `account`; lookups match all three. The session uses the `plain` algorithm: the secret travels
 //! over the local session bus to the keyring daemon, as with most clients. A locked collection
 //! that needs an unlock prompt is reported as [`CredError::Locked`]; [`SecretStore::unlock`] shows the
@@ -77,7 +77,7 @@ impl SecretService {
 
     fn attributes(key: &Key) -> HashMap<String, String> {
         HashMap::from([
-            ("application".to_string(), dac_brand::APP_ID.to_string()),
+            ("application".to_string(), lcc_brand::APP_ID.to_string()),
             ("service".to_string(), key.service.clone()),
             ("account".to_string(), key.account.clone()),
         ])
@@ -119,7 +119,7 @@ impl SecretStore for SecretService {
             return Err(CredError::Unavailable("the keyring has no default collection".into()));
         }
         let session = self.session()?;
-        let label = format!("{} – {} ({})", dac_brand::DISPLAY_NAME, key.service, key.account);
+        let label = format!("{} – {} ({})", lcc_brand::DISPLAY_NAME, key.service, key.account);
         let mut props: HashMap<&str, Value<'_>> = HashMap::new();
         props.insert("org.freedesktop.Secret.Item.Label", Value::from(label));
         props.insert("org.freedesktop.Secret.Item.Attributes", Value::from(Self::attributes(key)));

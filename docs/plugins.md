@@ -1,7 +1,7 @@
 # Plug-ins (SDK, ABI v1)
 
 The app runs plug-ins as WebAssembly modules in a sandbox: `wasmi`, a pure-Rust interpreter (crate
-`crates/plugins`, `dac-plugins`). A plug-in can only do what the user grants it. Lightroom Lua
+`crates/plugins`, `lcc-plugins`). A plug-in can only do what the user grants it. Lightroom Lua
 plug-ins are not supported.
 
 ## What a plug-in can add
@@ -55,8 +55,8 @@ other than the three below (no WASI).
 All messages are UTF-8 JSON. An `i64` result packs `len << 32 | ptr`, pointing into the module's
 memory.
 
-Exports: `memory`, `dac_abi_version() -> i32` (returns 1), `dac_manifest() -> i64`,
-`dac_alloc(len: i32) -> i32`, `dac_handle(ptr: i32, len: i32) -> i64`. `dac_handle` replies
+Exports: `memory`, `lcc_abi_version() -> i32` (returns 1), `lcc_manifest() -> i64`,
+`lcc_alloc(len: i32) -> i32`, `lcc_handle(ptr: i32, len: i32) -> i64`. `lcc_handle` replies
 `{"ok": value}` or `{"error": "message"}`.
 
 Imports (module `host`):
@@ -68,7 +68,7 @@ Imports (module `host`):
 
 ## Writing one in Rust
 
-The guest SDK is `sdk/plugin` (`dac-plugin-sdk`). Five examples, each a complete plug-in:
+The guest SDK is `sdk/plugin` (`lcc-plugin-sdk`). Five examples, each a complete plug-in:
 
 | Example | Shows |
 |---|---|
@@ -86,7 +86,7 @@ cargo build --release --target wasm32-unknown-unknown
 #   File ▸ Plug-in Manager…, or  <cli> commands plugin.install '{"path": "…"}'
 ```
 
-`dac-plugins`' test suite (`crates/plugins/tests/example.rs`) builds every example to wasm32 and
+`lcc-plugins`' test suite (`crates/plugins/tests/example.rs`) builds every example to wasm32 and
 runs each hook and command of them. Without the wasm32 target installed, those tests are skipped.
 
 ## Guide for plug-in authors
@@ -106,7 +106,7 @@ edition = "2024"
 crate-type = ["cdylib", "rlib"]   # rlib: unit tests of your logic run natively
 
 [dependencies]
-dac-plugin-sdk = { path = "…/sdk/plugin" }   # or a git dependency on this repository
+lcc-plugin-sdk = { path = "…/sdk/plugin" }   # or a git dependency on this repository
 
 [profile.release]
 opt-level = "s"
@@ -118,8 +118,8 @@ strip = true
 ### 2. Declare a manifest and handle requests
 
 ```rust
-use dac_plugin_sdk::{export_plugin, host, Request};
-use dac_plugin_sdk::serde_json::{json, Value};
+use lcc_plugin_sdk::{export_plugin, host, Request};
+use lcc_plugin_sdk::serde_json::{json, Value};
 
 const MANIFEST: &str = r#"{"id": "org.example.hello", "name": "Hello", "version": "1.0.0",
   "permissions": {"catalog": true}, "commands": [{"id": "count", "label": "Count Photos"}]}"#;
@@ -175,7 +175,7 @@ The manifest fields:
 | `host::read_text`, `host::write_text`, `host::read_bytes`, `host::write_bytes`, `host::remove`, `host::exists` | `fs.*` | an `fs` root (or a lent file) |
 | `host::http(method, url, headers, body)`, `host::http_bytes(…)` | `http.request` → `{status, contentType, location, body}` | the URL's host in `network` |
 | `host::log(line)` | `host.log` | nothing; Plug-in Manager ▸ Log |
-| `dac_plugin_sdk::base64::{encode, decode}` | | |
+| `lcc_plugin_sdk::base64::{encode, decode}` | | |
 
 ### 5. Rules the host enforces
 

@@ -1,7 +1,7 @@
 //! Masking and Remove (spot) commands on the active photo.
 
-use dac_develop::{BrushStroke, LocalAdjustments, Mask, MaskComponent, MaskOp, MaskShape, RedEye, Spot, SpotMode};
-use dac_geom::Point;
+use lcc_develop::{BrushStroke, LocalAdjustments, Mask, MaskComponent, MaskOp, MaskShape, RedEye, Spot, SpotMode};
+use lcc_geom::Point;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, bool_or, cmd, f64_or, has_active, ok, point, str_param};
@@ -61,7 +61,7 @@ fn points(p: &Value, key: &str) -> Vec<Point> {
 }
 
 /// A segmentation passed in (`seg`: a stored or replayed AI mask; the model isn't needed).
-fn seg_param(p: &Value) -> Option<dac_develop::SegMask> {
+fn seg_param(p: &Value) -> Option<lcc_develop::SegMask> {
     p.get("seg").and_then(|v| serde_json::from_value(v.clone()).ok())
 }
 
@@ -298,8 +298,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 let src = s.source_now(id, crate::media::SourceLevel::Thumb).map_err(|e| bad(c, e))?;
                 let info = s.source_info(id);
                 let d = s.develop_of(id).unwrap_or_default();
-                let req = dac_pipeline::RenderRequest::fit(384, 384);
-                let lab = dac_pipeline::color_range_sample(&src, &info, &d, &req, dac_geom::Point::new(x, y))
+                let req = lcc_pipeline::RenderRequest::fit(384, 384);
+                let lab = lcc_pipeline::color_range_sample(&src, &info, &d, &req, lcc_geom::Point::new(x, y))
                     .ok_or_else(|| bad(c, "the point is outside the photo"))?;
                 let mid = mask_id(p, s.active_mask, c)?;
                 let comp = p.get("component").and_then(Value::as_u64).map(|v| v as usize);
@@ -507,7 +507,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 masks_edit(s, "mask.adjust", "Mask Adjustment", |masks, _| {
                     let i = find(masks, mid, "mask.adjust")?;
                     let mut v = serde_json::to_value(masks[i].adjust).unwrap_or_default();
-                    dac_develop::presets::deep_merge(&mut v, &vals);
+                    lcc_develop::presets::deep_merge(&mut v, &vals);
                     let a: LocalAdjustments = serde_json::from_value(v).map_err(|e| bad("mask.adjust", e.to_string()))?;
                     masks[i].adjust = clamp_local(a);
                     Ok(())
@@ -667,7 +667,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 // the uncropped photo, so positions are the spots' own coordinates
                 let job = s.render_job(id, 1600, 1600, false, false).ok_or_else(|| bad(c, "no photo"))?;
                 let img = job.run().rendered.map_err(|e| bad(c, e))?.image;
-                let found = dac_pipeline::dust::detect(&img, f64_or(p, "sensitivity", 50.0) as f32);
+                let found = lcc_pipeline::dust::detect(&img, f64_or(p, "sensitivity", 50.0) as f32);
                 let out: Vec<Value> = found.iter().map(|d| json!({"x": d.x, "y": d.y, "size": d.radius})).collect();
                 if !p.get("add").and_then(Value::as_bool).unwrap_or(true) || found.is_empty() {
                     return Ok(json!({"spots": out, "added": 0}));
@@ -705,10 +705,10 @@ pub fn specs() -> Vec<CommandSpec> {
                 let job = s.render_job(id, 1600, 1600, false, false).ok_or_else(|| bad(c, "no photo"))?;
                 let img = job.run().rendered.map_err(|e| bad(c, e))?.image;
                 let rgb: Vec<u8> = img.data.iter().flat_map(|px| [px[0], px[1], px[2]]).collect();
-                let faces = detector.detect(&rgb, img.width, img.height, &dac_faces::yunet::Options::default()).map_err(|e| bad(c, e.to_string()))?;
-                let boxes: Vec<dac_pipeline::blemish::FaceBox> = faces
+                let faces = detector.detect(&rgb, img.width, img.height, &lcc_faces::yunet::Options::default()).map_err(|e| bad(c, e.to_string()))?;
+                let boxes: Vec<lcc_pipeline::blemish::FaceBox> = faces
                     .iter()
-                    .map(|f| dac_pipeline::blemish::FaceBox {
+                    .map(|f| lcc_pipeline::blemish::FaceBox {
                         x0: f64::from(f.x0),
                         y0: f64::from(f.y0),
                         x1: f64::from(f.x1),
@@ -717,7 +717,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     })
                     .collect();
                 let max_per_face = (f64_or(p, "maxPerFace", 6.0) as usize).clamp(1, 20);
-                let mut found = dac_pipeline::blemish::detect(&img, &boxes, f64_or(p, "sensitivity", 50.0) as f32);
+                let mut found = lcc_pipeline::blemish::detect(&img, &boxes, f64_or(p, "sensitivity", 50.0) as f32);
                 let mut per_face = std::collections::BTreeMap::new();
                 found.retain(|b| {
                     let n = per_face.entry(b.face).or_insert(0usize);
@@ -964,10 +964,10 @@ fn spots_edit(s: &mut Session, c: &str, label: &str, f: impl FnOnce(&mut Vec<Spo
 }
 
 /// An automatic source for `spot` on photo `id` (a small proxy of the photo, framed by `d`).
-fn pick_source(s: &mut Session, id: crate::PhotoId, d: &dac_develop::DevelopSettings, spot: &Spot, avoid: Option<Point>) -> Option<Point> {
+fn pick_source(s: &mut Session, id: crate::PhotoId, d: &lcc_develop::DevelopSettings, spot: &Spot, avoid: Option<Point>) -> Option<Point> {
     let src = s.source_now(id, crate::media::SourceLevel::Thumb).ok()?;
     let info = s.source_info(id);
-    dac_pipeline::spots::pick_source(&src, &info, d, spot, avoid)
+    lcc_pipeline::spots::pick_source(&src, &info, d, spot, avoid)
 }
 
 fn clamp_local(mut a: LocalAdjustments) -> LocalAdjustments {

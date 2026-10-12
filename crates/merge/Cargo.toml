@@ -1,5 +1,5 @@
 [package]
-name = "dac-merge"
+name = "lcc-merge"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,14 +9,14 @@ description = "Photo Merge: HDR merge (align, deghost) and panorama stitching (L
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-geom = { workspace = true }
-dac-color = { workspace = true }
-dac-raster = { workspace = true }
-dac-raw = { workspace = true }
-dac-codecs = { workspace = true }
-dac-meta = { workspace = true }
-dac-scenes = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-geom = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-raw = { workspace = true }
+lcc-codecs = { workspace = true }
+lcc-meta = { workspace = true }
+lcc-scenes = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 rayon = { workspace = true }

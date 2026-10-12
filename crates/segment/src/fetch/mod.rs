@@ -1,11 +1,11 @@
 //! Downloading the SAM 3 model, only when the user asked for it. The downloader itself (mirrors,
-//! resuming, checks, the pure-Rust HTTPS client) is the `dac-fetch` crate; this module
+//! resuming, checks, the pure-Rust HTTPS client) is the `lcc-fetch` crate; this module
 //! says what SAM 3 needs and where it may come from.
 //!
 //! The weights are never part of the app (SAM License, see docs/ai-masks.md); where they are
 //! downloaded from is configured by [`DEFAULT_MIRRORS`] and the user's own list.
 
-pub use dac_fetch::*;
+pub use lcc_fetch::*;
 
 use std::path::Path;
 
@@ -41,14 +41,14 @@ pub const SAM3_WEIGHTS_SIZE: u64 = 3_439_938_512;
 // "https://<cdn-host>/models/sam3/<revision>" — the files there must match `SAM3_FILES`.
 pub const DEFAULT_MIRRORS: &[&str] = &[];
 
-/// Environment variable (name after the app prefix, read with `dac_brand::env`) with extra mirrors (base URLs separated by commas, spaces or newlines),
+/// Environment variable (name after the app prefix, read with `lcc_brand::env`) with extra mirrors (base URLs separated by commas, spaces or newlines),
 /// tried before the defaults.
 pub const MIRRORS_ENV: &str = "SAM3_MIRRORS";
 
 /// The mirrors to try for SAM 3, in order: the environment variable's, then the mirrors file's
 /// (one base URL per line, `#` comments), then [`DEFAULT_MIRRORS`].
 pub fn mirrors(env: Option<&str>, file: Option<&Path>) -> Vec<String> {
-    dac_fetch::mirrors(env, file, DEFAULT_MIRRORS)
+    lcc_fetch::mirrors(env, file, DEFAULT_MIRRORS)
 }
 
 /// Download settings for SAM 3: the defaults, plus [`TOKEN_ENV`] for a gated mirror.
@@ -56,14 +56,14 @@ pub fn options() -> Options {
     Options { token_env: Some(TOKEN_ENV), ..Options::default() }
 }
 
-/// Environment variable (name after the app prefix, read with `dac_brand::env`) with a bearer token for the SAM 3 mirror's own host (a gated Hugging Face repository).
+/// Environment variable (name after the app prefix, read with `lcc_brand::env`) with a bearer token for the SAM 3 mirror's own host (a gated Hugging Face repository).
 pub const TOKEN_ENV: &str = "SAM3_TOKEN";
 
 /// What to tell the user when there is no mirror for the SAM 3 model.
 pub fn no_mirrors_message() -> String {
     format!(
         "no download location is configured for the SAM 3 model in this build (set {}, or put the files in the model folder yourself; see docs/ai-masks.md)",
-        dac_brand::env_var(MIRRORS_ENV)
+        lcc_brand::env_var(MIRRORS_ENV)
     )
 }
 

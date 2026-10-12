@@ -1,5 +1,5 @@
 [package]
-name = "dac-scenes"
+name = "lcc-scenes"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,9 +9,9 @@ description = "Procedurally generated photographic demo scenes (HDR, linear Rec.
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-color = { workspace = true }
-dac-raster = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raster = { workspace = true }
 serde = { workspace = true }
 rayon = { workspace = true }
 

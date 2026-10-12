@@ -12,7 +12,7 @@
 
 // Model/cache types remain available without linking the optional inference crate.
 #[cfg(not(feature = "denoise"))]
-extern crate dac_denoise_core as dac_denoise;
+extern crate lcc_denoise_core as lcc_denoise;
 
 pub mod activity;
 #[cfg(not(target_arch = "wasm32"))]
@@ -77,13 +77,13 @@ pub mod walk;
 use std::sync::Arc;
 
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
-use dac_catalog::{Catalog, Filter, Op, PhotoId, Sort};
-use dac_develop::DevelopSettings;
 pub use fonts::{CRAFT_FONTS, CraftFont};
+use lcc_catalog::{Catalog, Filter, Op, PhotoId, Sort};
+use lcc_develop::DevelopSettings;
 pub use media::{RenderJob, SourceLevel};
 use serde_json::Value;
 pub use view::{Browse, FilterChip, LibrarySource, Selection, SelectionState, filter_chips};
-pub use {dac_catalog as catalog, dac_develop as develop, dac_gpu as gpu, dac_pipeline as pipeline};
+pub use {lcc_catalog as catalog, lcc_develop as develop, lcc_gpu as gpu, lcc_pipeline as pipeline};
 
 #[derive(Debug, thiserror::Error)]
 pub enum EngineError {
@@ -94,7 +94,7 @@ pub enum EngineError {
     #[error("invalid parameters for `{cmd}`: {msg}")]
     BadParams { cmd: String, msg: String },
     #[error("{0}")]
-    Catalog(#[from] dac_catalog::CatalogError),
+    Catalog(#[from] lcc_catalog::CatalogError),
     /// The command's change is applied (in memory, undoable) but its journal records could not
     /// be written. They stay queued and are written by the next successful save.
     #[error("saved in memory but not written to disk: {0}; the app will retry")]
@@ -221,7 +221,7 @@ pub struct Session {
     /// Reverse geocoding: the parsed place names and their download (`metadata.*PlaceNames`).
     pub place_names: cmd::geocode::PlaceNames,
     /// The user's own list of models to download (`catalog.json` in the models folder), as last read.
-    pub(crate) face_catalog: dac_faces::catalog::Catalog,
+    pub(crate) face_catalog: lcc_faces::catalog::Catalog,
     /// The loaded recognition model and the face embeddings made with it.
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) faces: faces_index::FacesState,
@@ -240,8 +240,8 @@ pub struct Session {
     /// The photo that was active before the current one (Paste Settings from Previous).
     pub previous_active: Option<PhotoId>,
     /// Groups last used for Copy (Lightroom remembers them).
-    pub copy_groups: Vec<dac_develop::SettingsGroup>,
-    pub presets: Vec<dac_develop::Preset>,
+    pub copy_groups: Vec<lcc_develop::SettingsGroup>,
+    pub presets: Vec<lcc_develop::Preset>,
     /// Favourite profile ids (persisted with the library, like preset favourites).
     pub profile_favorites: Vec<String>,
     /// Recently applied profile ids, newest first (at most [`presets::RECENT_PROFILES`]).
@@ -288,7 +288,7 @@ pub struct Session {
     /// Imported `.cube` LUT profiles.
     pub lut_profiles: Vec<cmd::lut_profiles::LutProfile>,
     /// The target album B adds to (`None` = the Quick Collection).
-    pub target_album: Option<dac_catalog::AlbumId>,
+    pub target_album: Option<lcc_catalog::AlbumId>,
     /// Auto import: files seen in the watched folder and their size then (a file is imported once
     /// its size held between two scans).
     pub auto_import_seen: std::collections::HashMap<String, u64>,
@@ -338,7 +338,7 @@ pub struct Session {
     /// Apple Photos imports run on a worker by default (`export.addToPhotos` without `wait`,
     /// `app.export` without `background`): set by the desktop app, which answers control requests
     /// on its UI thread. Off (the default), they wait for Photos, so a one-shot process
-    /// (dac-cli, a script) never ends in the middle of one.
+    /// (lcc-cli, a script) never ends in the middle of one.
     #[cfg(not(target_arch = "wasm32"))]
     pub apple_photos_background: bool,
 }
@@ -391,7 +391,7 @@ impl Session {
             browse: None,
             library_folder: None,
             previous_active: None,
-            copy_groups: dac_develop::SettingsGroup::default_copy(),
+            copy_groups: lcc_develop::SettingsGroup::default_copy(),
             presets: presets::builtin(),
             profile_favorites: Vec::new(),
             profile_recent: Vec::new(),
@@ -431,7 +431,7 @@ impl Session {
             import_defaults: import::ImportDefaults::default(),
             cache_mb: 0,
             smart_previews_dir: None,
-            forget_local_days: dac_catalog::DEFAULT_FORGET_DAYS,
+            forget_local_days: lcc_catalog::DEFAULT_FORGET_DAYS,
             preview_prefs: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             apple_photos: None,
@@ -565,7 +565,7 @@ impl Session {
 
     /// The box to cut a face's picture from: the detector's, when the scan has looked at the face (every face is then shown
     /// equally close, however loosely or tightly its own region was drawn), else the region's own box.
-    pub fn face_view(&self, id: PhotoId, rect: dac_geom::Rect) -> dac_geom::Rect {
+    pub fn face_view(&self, id: PhotoId, rect: lcc_geom::Rect) -> lcc_geom::Rect {
         #[cfg(not(target_arch = "wasm32"))]
         if let Some(v) = self.faces.index.view(id.0, &rect) {
             return v;
@@ -594,8 +594,8 @@ impl Session {
         }
         let mut versions = p.versions.clone();
         let created = (self.clock)();
-        let name = dac_catalog::dates::display_time(&created);
-        versions.push(dac_catalog::Version { name, created, settings: p.develop.clone(), auto: true });
+        let name = lcc_catalog::dates::display_time(&created);
+        versions.push(lcc_catalog::Version { name, created, settings: p.develop.clone(), auto: true });
         let autos = versions.iter().filter(|v| v.auto).count();
         if autos > AUTO_VERSIONS
             && let Some(i) = versions.iter().position(|v| v.auto)
@@ -809,7 +809,7 @@ impl Session {
         {
             return self.apply_silent(Op::SetDevelop { id, settings, label: label.into(), edited: Some(now) });
         }
-        let mut ops = vec![self.develop_op(id, (*settings).clone(), label).ok_or(dac_catalog::CatalogError::NoPhoto(id))?];
+        let mut ops = vec![self.develop_op(id, (*settings).clone(), label).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?];
         ops.extend(self.auto_sync_ops(id, &settings, label));
         let op = if ops.len() == 1 { ops.remove(0) } else { Op::Batch { ops } };
         self.commit(label, op)
@@ -844,7 +844,7 @@ impl Session {
             .filter(|x| **x != id)
             .filter_map(|x| self.develop_of(*x).map(|d| (*x, d)))
             .filter_map(|(x, d)| {
-                let synced = dac_develop::apply_partial(&d, &delta, 1.0);
+                let synced = lcc_develop::apply_partial(&d, &delta, 1.0);
                 (synced != *d).then(|| self.develop_op(x, synced, label)).flatten()
             })
             .collect()
@@ -854,8 +854,8 @@ impl Session {
     pub fn develop_op(&self, id: PhotoId, settings: DevelopSettings, label: &str) -> Option<Op> {
         let p = self.catalog.photo(id)?;
         // a clip takes only the global grading controls: presets, paste and sync drop the rest
-        let settings = Arc::new(if p.kind == dac_catalog::MediaKind::Video { dac_pipeline::grade::video_settings(&settings) } else { settings });
-        let step = dac_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
+        let settings = Arc::new(if p.kind == lcc_catalog::MediaKind::Video { lcc_pipeline::grade::video_settings(&settings) } else { settings });
+        let step = lcc_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
         Some(Op::Batch {
             ops: vec![Op::SetDevelop { id, settings, label: label.into(), edited: Some((self.clock)()) }, Op::PushHistory { id, step }],
         })
@@ -902,7 +902,7 @@ impl Session {
         }
         if self.visible_key.as_ref() != Some(&key) {
             // "in the last N days" rules count back from the session's clock
-            dac_catalog::rules::set_now(Some((self.clock)()));
+            lcc_catalog::rules::set_now(Some((self.clock)()));
             let mut f = self.source.to_filter(&self.filter, &self.catalog);
             if self.source == LibrarySource::Folder {
                 // no folder chosen: nothing (an empty path matches nothing)
@@ -926,7 +926,7 @@ impl Session {
                 return self.visible();
             }
             if matches!(self.source, LibrarySource::Album(_))
-                && self.sort.key == dac_catalog::SortKey::CaptureDate
+                && self.sort.key == lcc_catalog::SortKey::CaptureDate
                 && let LibrarySource::Album(a) = self.source
                 && let Some(al) = self.catalog.album(a)
                 && !al.is_smart()

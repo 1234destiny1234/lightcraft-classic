@@ -1,5 +1,5 @@
 //! Spike S1: decode the frame at a time and write it as PNG.
-//! `cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [max_side]`
+//! `cargo run --release -p lcc-video --example frame_png -- clip.mp4 1.5 out.png [max_side]`
 
 #![cfg_attr(target_arch = "wasm32", allow(unused))]
 
@@ -9,9 +9,9 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
         return Err("usage: frame_png <clip> <seconds> <out.png> [max_side]".into());
     };
     let max_side = a.get(4).map(|s| s.parse()).transpose()?;
-    let info = dac_video::probe(input.as_ref())?;
+    let info = lcc_video::probe(input.as_ref())?;
     eprintln!("{info:?}");
-    let mut r = dac_video::FrameReader::open(input.as_ref())?;
+    let mut r = lcc_video::FrameReader::open(input.as_ref())?;
     let start = std::time::Instant::now();
     let f = r.frame_at(t.parse()?, max_side)?;
     eprintln!("frame at {:.3}s, {}x{}, {:?}", f.time, f.image.width, f.image.height, start.elapsed());

@@ -1,15 +1,15 @@
 //! A book page as pixels: background colour, background photo (with opacity), graphic, photo
-//! cells (through the shared `dac-layout` renderer, so fit/fill, zoom and pan match Print), then
+//! cells (through the shared `lcc-layout` renderer, so fit/fill, zoom and pan match Print), then
 //! text (photo text, text cells, page text, page number) and, in the editor, guides.
 //!
 //! Everything is placed in points and scaled by `dpi / 72`, so the editor preview and a 300 ppi
 //! export show the same page.
 
-use dac_layout::render::{PhotoSource, RenderOptions};
-use dac_layout::tokens::PhotoInfo;
-use dac_layout::{Cell, Fit, Page, PageLayout, PhotoCell, Rect};
-use dac_raster::Rgba8;
-use dac_text::TextEngine;
+use lcc_layout::render::{PhotoSource, RenderOptions};
+use lcc_layout::tokens::PhotoInfo;
+use lcc_layout::{Cell, Fit, Page, PageLayout, PhotoCell, Rect};
+use lcc_raster::Rgba8;
+use lcc_text::TextEngine;
 
 use crate::text::{Placed, expand_kerned, layout_box_kerned};
 use crate::{Book, BookError, BookPage, CellContent, Graphic, NumberPos, PageRef, PageTextPos, PhotoTextPos, Result, TEXT_SAFE, TypeStyle, VAlign};
@@ -246,7 +246,7 @@ fn photo_layer(page: &Page, cells: Vec<Cell>, photos: &dyn PhotoSource, ro: &Ren
         return Ok(None);
     }
     let layer = Page { background: [0, 0, 0, 0], ..page.clone() };
-    let r = dac_layout::render::render_page(&layer, &PageLayout { cells, guides: Vec::new() }, photos, &dac_layout::render::PlaceholderText, ro)?;
+    let r = lcc_layout::render::render_page(&layer, &PageLayout { cells, guides: Vec::new() }, photos, &lcc_layout::render::PlaceholderText, ro)?;
     warnings.extend(r.warnings);
     Ok(Some(r.image))
 }
@@ -298,7 +298,7 @@ pub fn render_page(book: &Book, r: PageRef, photos: &dyn PhotoSource, engine: &m
         .filter_map(|c| match &c.content {
             CellContent::Photo { photo, fill, zoom, pan, .. } if photo.is_some() || opt.editor => Some(Cell {
                 rect: c.rect.to_points(trim).inset(&c.padding.insets()),
-                kind: dac_layout::CellKind::Photo(PhotoCell {
+                kind: lcc_layout::CellKind::Photo(PhotoCell {
                     photo: photo.clone(),
                     fit: if *fill { Fit::Fill } else { Fit::Fit },
                     zoom: *zoom,

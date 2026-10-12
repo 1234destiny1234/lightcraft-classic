@@ -9,7 +9,7 @@
 use egui::{Align2, Sense, pos2, vec2};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::PanelId;
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -56,7 +56,7 @@ fn form_id() -> egui::Id {
 }
 
 /// `publish.services`, asked again when the catalog changed or every two seconds.
-fn services(app: &mut DacApp, ui: &egui::Ui) -> Value {
+fn services(app: &mut LccApp, ui: &egui::Ui) -> Value {
     let id = egui::Id::new("publish-services-cache");
     let now = ui.ctx().input(|i| i.time);
     let rev = app.session.catalog.revision;
@@ -76,7 +76,7 @@ fn refresh(ui: &egui::Ui) {
 }
 
 /// The panel: header plus, when open, the services.
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui, side: &[PanelId]) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
     let (r, open) = super::classic::header(app, ui, PanelId::Publish, side);
     let _ = r;
     if !open {
@@ -88,7 +88,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, side: &[PanelId]) {
     });
 }
 
-fn body(app: &mut DacApp, ui: &mut egui::Ui) {
+fn body(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let v = services(app, ui);
     let mut form: Form = ui.data(|d| d.get_temp(form_id())).unwrap_or_default();
@@ -101,7 +101,7 @@ fn body(app: &mut DacApp, ui: &mut egui::Ui) {
         ui.label(egui::RichText::new(crate::i18n::tr("Publish collections to a folder kept in sync.")).color(t.text_dim).size(11.5));
     }
     let shown = match app.session.source {
-        dac_engine::LibrarySource::Album(a) => Some(a.0),
+        lcc_engine::LibrarySource::Album(a) => Some(a.0),
         _ => None,
     };
     for svc in &list {
@@ -212,7 +212,7 @@ fn body(app: &mut DacApp, ui: &mut egui::Ui) {
     ui.data_mut(|d| d.insert_temp(form_id(), form));
 }
 
-fn status_line(app: &mut DacApp, ui: &mut egui::Ui, album: u64) {
+fn status_line(app: &mut LccApp, ui: &mut egui::Ui, album: u64) {
     let t = Tokens::get(ui.ctx());
     let Ok(st) = app.session.execute("publish.status", &json!({"collection": album})) else { return };
     let n = |k: &str| st[k].as_array().map(Vec::len).unwrap_or(0);
@@ -250,9 +250,9 @@ fn status_line(app: &mut DacApp, ui: &mut egui::Ui, album: u64) {
 /// A service kind as people call it.
 fn kind_label(kind: &str, plugins: &[(String, String)]) -> String {
     match kind {
-        dac_publish::KIND_HARD_DRIVE => crate::i18n::tr("Hard Drive").to_string(),
-        dac_publish::KIND_SFTP => crate::i18n::tr("SFTP Server").to_string(),
-        dac_publish::KIND_IMMICH => "Immich".to_string(),
+        lcc_publish::KIND_HARD_DRIVE => crate::i18n::tr("Hard Drive").to_string(),
+        lcc_publish::KIND_SFTP => crate::i18n::tr("SFTP Server").to_string(),
+        lcc_publish::KIND_IMMICH => "Immich".to_string(),
         k if k.starts_with("plugin:") => {
             plugins.iter().find(|(pk, _)| pk == k).map(|(_, n)| n.clone()).unwrap_or_else(|| crate::i18n::tr("Plug-in").to_string())
         }
@@ -262,7 +262,7 @@ fn kind_label(kind: &str, plugins: &[(String, String)]) -> String {
 
 impl Form {
     /// Show the form for a new service (`svc` None) or to edit `svc`, reading the choices.
-    fn open(&mut self, app: &mut DacApp, svc: Option<&Value>) {
+    fn open(&mut self, app: &mut LccApp, svc: Option<&Value>) {
         let (coll_for, coll_name) = (self.coll_for.take(), std::mem::take(&mut self.coll_name));
         *self = Form { coll_for, coll_name, setup: true, ..Form::default() };
         let servers = app.session.execute("web.servers", &json!({})).unwrap_or(Value::Null);
@@ -291,7 +291,7 @@ impl Form {
         self.plugin_settings = "{}".into();
         match svc {
             None => {
-                self.kind = dac_publish::KIND_HARD_DRIVE.into();
+                self.kind = lcc_publish::KIND_HARD_DRIVE.into();
                 self.name = crate::i18n::tr("Hard Drive").to_string();
             }
             Some(svc) => {
@@ -332,9 +332,9 @@ impl Form {
     /// The kind's settings from the fields.
     fn settings(&self) -> Result<Value, String> {
         Ok(match self.kind.as_str() {
-            dac_publish::KIND_HARD_DRIVE => json!({"dir": self.dir.trim()}),
-            dac_publish::KIND_SFTP if !self.sftp_saved.is_empty() => json!({"server": self.sftp_saved}),
-            dac_publish::KIND_SFTP => {
+            lcc_publish::KIND_HARD_DRIVE => json!({"dir": self.dir.trim()}),
+            lcc_publish::KIND_SFTP if !self.sftp_saved.is_empty() => json!({"server": self.sftp_saved}),
+            lcc_publish::KIND_SFTP => {
                 let port: u16 = self.sftp_port.trim().parse().map_err(|_| crate::i18n::tr("The port must be a number (1–65535)").to_string())?;
                 let mut server = json!({"host": self.sftp_host.trim(), "port": port, "user": self.sftp_user.trim(), "path": self.sftp_path.trim()});
                 if !self.sftp_key.trim().is_empty() {
@@ -342,7 +342,7 @@ impl Form {
                 }
                 json!({"server": server})
             }
-            dac_publish::KIND_IMMICH => json!({"account": self.immich_account, "send": self.immich_send, "deleteRemoved": self.delete_removed}),
+            lcc_publish::KIND_IMMICH => json!({"account": self.immich_account, "send": self.immich_send, "deleteRemoved": self.delete_removed}),
             _ => {
                 let v: Value =
                     serde_json::from_str(&self.plugin_settings).map_err(|e| format!("{}: {e}", crate::i18n::tr("Settings are not valid JSON")))?;
@@ -355,12 +355,12 @@ impl Form {
     }
 }
 
-fn setup_form(app: &mut DacApp, ui: &mut egui::Ui, form: &mut Form) {
+fn setup_form(app: &mut LccApp, ui: &mut egui::Ui, form: &mut Form) {
     let title = if form.editing.is_some() { "Edit Publish Service" } else { "New Publish Service" };
     ui.label(egui::RichText::new(crate::i18n::tr(title)).strong().size(12.0));
     // the kind: fixed once the service exists
     let mut kinds: Vec<String> =
-        [dac_publish::KIND_HARD_DRIVE, dac_publish::KIND_SFTP, dac_publish::KIND_IMMICH].iter().map(|k| k.to_string()).collect();
+        [lcc_publish::KIND_HARD_DRIVE, lcc_publish::KIND_SFTP, lcc_publish::KIND_IMMICH].iter().map(|k| k.to_string()).collect();
     kinds.extend(form.plugins.iter().map(|(k, _)| k.clone()));
     let before = form.kind.clone();
     ui.add_enabled_ui(form.editing.is_none(), |ui| {
@@ -379,12 +379,12 @@ fn setup_form(app: &mut DacApp, ui: &mut egui::Ui, form: &mut Form) {
     crate::access::label(&r, "Name");
     register(ui.ctx(), "publishSetUpName", r.rect);
     match form.kind.as_str() {
-        dac_publish::KIND_HARD_DRIVE => {
+        lcc_publish::KIND_HARD_DRIVE => {
             let r = ui.add(egui::TextEdit::singleline(&mut form.dir).hint_text(crate::i18n::tr("Folder (absolute path)")));
             crate::access::label(&r, "Folder (absolute path)");
             register(ui.ctx(), "publishSetUpDir", r.rect);
         }
-        dac_publish::KIND_SFTP => {
+        lcc_publish::KIND_SFTP => {
             let other = crate::i18n::tr("Other server…").to_string();
             let shown = if form.sftp_saved.is_empty() { other.clone() } else { form.sftp_saved.clone() };
             let r = egui::ComboBox::from_id_salt("publishSetUpServer").selected_text(shown).show_ui(ui, |ui| {
@@ -420,7 +420,7 @@ fn setup_form(app: &mut DacApp, ui: &mut egui::Ui, form: &mut Form) {
                 );
             }
         }
-        dac_publish::KIND_IMMICH => {
+        lcc_publish::KIND_IMMICH => {
             if form.accounts.is_empty() {
                 let t = Tokens::get(ui.ctx());
                 ui.label(
@@ -478,12 +478,12 @@ fn setup_form(app: &mut DacApp, ui: &mut egui::Ui, form: &mut Form) {
 }
 
 /// Publish one collection: set up here, rendered and sent on a worker thread, recorded when done.
-pub fn publish(app: &mut DacApp, ctx: &egui::Context, album: u64) {
+pub fn publish(app: &mut LccApp, ctx: &egui::Context, album: u64) {
     if app.tasks.is_running(TASK) {
         app.toast(ctx, crate::i18n::tr("A publish is already running"));
         return;
     }
-    let plan = match dac_engine::cmd::publish::plan(&mut app.session, dac_catalog::AlbumId(album)) {
+    let plan = match lcc_engine::cmd::publish::plan(&mut app.session, lcc_catalog::AlbumId(album)) {
         Ok(p) => p,
         Err(e) => return app.toast_error(ctx, e.to_string()),
     };
@@ -491,7 +491,7 @@ pub fn publish(app: &mut DacApp, ctx: &egui::Context, album: u64) {
         return app.toast(ctx, crate::i18n::tr("Nothing to publish"));
     }
     let work = move || plan.execute(&mut |_, _| true);
-    let done = |app: &mut DacApp, ctx: &egui::Context, out: dac_engine::cmd::publish::Outcome| match dac_engine::cmd::publish::apply(
+    let done = |app: &mut LccApp, ctx: &egui::Context, out: lcc_engine::cmd::publish::Outcome| match lcc_engine::cmd::publish::apply(
         &mut app.session,
         out,
     ) {

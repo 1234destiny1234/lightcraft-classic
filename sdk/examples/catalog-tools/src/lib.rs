@@ -7,8 +7,8 @@
 //! - **Export hook**: remembers where each photo was last exported (own namespace).
 //! - **Publish service** "Example Folder": pretends to upload, returning the file as the remote.
 
-use dac_plugin_sdk::serde_json::{Value, json};
-use dac_plugin_sdk::{Request, export_plugin, host};
+use lcc_plugin_sdk::serde_json::{Value, json};
+use lcc_plugin_sdk::{Request, export_plugin, host};
 
 const MANIFEST: &str = r#"{
   "id": "org.example.catalog-tools",

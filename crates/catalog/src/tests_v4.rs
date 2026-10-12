@@ -3,7 +3,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use dac_develop::DevelopSettings;
+use lcc_develop::DevelopSettings;
 
 use crate::db::{DB_FILE, Index};
 use crate::journal::{LOG, SNAPSHOT, encode_record};
@@ -17,7 +17,7 @@ impl Scratch {
     pub(crate) fn new(tag: &str) -> Scratch {
         static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
         let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-        let d = std::env::temp_dir().join(format!("dac-v4-{tag}-{}-{n}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("lcc-v4-{tag}-{}-{n}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         Scratch(d)
@@ -85,7 +85,7 @@ pub(crate) fn fill(j: &mut Journal, c: &mut Catalog, n: u64) {
     ops.push(Op::SetKeyword { path: "People|Anna".into(), info: Some(keywords::KeywordInfo { person: true, ..Default::default() }) });
     ops.push(c.folder_label_op("/pics/2020", Some(ColorLabel::Green)));
     // format version 6 (the Map module's saved locations): also in the head record
-    ops.push(Op::SetSavedLocation { name: "Home".into(), location: Some(dac_geo::SavedLocation::new("Home", 48.85, 2.35, 300.0, true).unwrap()) });
+    ops.push(Op::SetSavedLocation { name: "Home".into(), location: Some(lcc_geo::SavedLocation::new("Home", 48.85, 2.35, 300.0, true).unwrap()) });
     for op in &ops {
         c.apply(op.clone()).unwrap();
     }
@@ -247,7 +247,7 @@ fn sha1_is_validated_and_found() {
 /// before v4 refuse the folder.
 #[test]
 fn v3_library_is_migrated_with_a_backup() {
-    let n: u64 = std::env::var("DAC_MIGRATE_PHOTOS").ok().and_then(|v| v.parse().ok()).unwrap_or(3000);
+    let n: u64 = std::env::var("LCC_MIGRATE_PHOTOS").ok().and_then(|v| v.parse().ok()).unwrap_or(3000);
     let s = Scratch::new("mig");
     let mut c = Catalog::new();
     for i in 0..n {
@@ -255,7 +255,7 @@ fn v3_library_is_migrated_with_a_backup() {
         c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     }
     let ids: Vec<PhotoId> = c.photos().map(|p| p.id).collect();
-    let snap = format!("{{\"format\":\"dac-catalog\",\"version\":3,\"seq\":{n},\"catalog\":{}}}\n", c.to_snapshot());
+    let snap = format!("{{\"format\":\"lcc-catalog\",\"version\":3,\"seq\":{n},\"catalog\":{}}}\n", c.to_snapshot());
     let mut log = String::new();
     for (k, id) in ids.iter().take(5).enumerate() {
         let op = Op::SetRating { id: *id, rating: 5 };
@@ -323,7 +323,7 @@ fn interrupted_migration_is_redone() {
         let p = photo(&mut c, i);
         c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
     }
-    std::fs::write(s.path().join(SNAPSHOT), format!("{{\"format\":\"dac-catalog\",\"version\":3,\"seq\":10,\"catalog\":{}}}\n", c.to_snapshot()))
+    std::fs::write(s.path().join(SNAPSHOT), format!("{{\"format\":\"lcc-catalog\",\"version\":3,\"seq\":10,\"catalog\":{}}}\n", c.to_snapshot()))
         .unwrap();
     std::fs::write(s.path().join(format!("{DB_FILE}.migrating")), b"partial").unwrap();
     let (_, got, r) = open(s.path());
@@ -418,7 +418,7 @@ fn a_newer_store_is_refused_untouched() {
 fn catalog_folder_new_open_recent() {
     let s = Scratch::new("lib");
     let entry = library::create(s.path(), "Family Photos").unwrap();
-    assert_eq!(entry.extension().unwrap(), dac_brand::CATALOG_EXT);
+    assert_eq!(entry.extension().unwrap(), lcc_brand::CATALOG_EXT);
     assert_eq!(entry.parent().unwrap(), s.path().join("Family Photos"));
     assert!(library::create(s.path(), "Family Photos").is_err(), "not over an existing catalog");
     assert!(library::create(s.path(), "../x").is_err() && library::create(s.path(), " ").is_err());
@@ -431,7 +431,7 @@ fn catalog_folder_new_open_recent() {
     // not catalogs
     std::fs::write(s.path().join("x.txt"), b"{}").unwrap();
     assert!(library::open(&s.path().join("x.txt")).is_err());
-    let fake = s.path().join(format!("fake.{}", dac_brand::CATALOG_EXT));
+    let fake = s.path().join(format!("fake.{}", lcc_brand::CATALOG_EXT));
     std::fs::write(&fake, b"\xff\xfe garbage").unwrap();
     assert!(library::open(&fake).is_err());
     assert!(library::open(&s.path().join("missing")).is_err());

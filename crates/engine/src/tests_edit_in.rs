@@ -2,14 +2,14 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde_json::json;
 
 use crate::Session;
 use crate::cmd::edit_in::{Control, control_open};
 
 fn temp_dir(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-editin-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-editin-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -17,8 +17,8 @@ fn temp_dir(tag: &str) -> PathBuf {
 
 fn write_png(path: &Path, seed: u8, w: usize, h: usize) {
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 6) as u8, (i / w * 9) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 
@@ -49,7 +49,7 @@ fn edit_in_photocraft_writes_a_stacked_layered_psd() {
     assert!(path.ends_with("beach-Edit.psd"), "{r}");
     assert_eq!(r["openWith"]["app"], "photocraft");
     assert_eq!(r["opened"], serde_json::Value::Null, "not launched unless asked");
-    let f = dac_psd::PsdFile::from_bytes(&std::fs::read(path).unwrap()).unwrap();
+    let f = lcc_psd::PsdFile::from_bytes(&std::fs::read(path).unwrap()).unwrap();
     assert_eq!((f.header.width, f.header.height, f.header.depth), (40, 24, 16));
     assert_eq!(f.layer(0).unwrap().name(), "beach");
     let new = PhotoId(r["id"].as_u64().unwrap());
@@ -62,7 +62,7 @@ fn edit_in_photocraft_writes_a_stacked_layered_psd() {
     // brighter than the unedited original: the edits are in the pixels
     let a = s.render_now(orig, 8, 8).unwrap();
     let b = s.render_now(new, 8, 8).unwrap();
-    let mean = |r: &dac_pipeline::Rendered| r.image.data.iter().map(|p| p[0] as u32 + p[1] as u32 + p[2] as u32).sum::<u32>();
+    let mean = |r: &lcc_pipeline::Rendered| r.image.data.iter().map(|p| p[0] as u32 + p[1] as u32 + p[2] as u32).sum::<u32>();
     assert!(mean(&b) + 50 >= mean(&a), "the PSD holds the edited render");
     let _ = std::fs::remove_dir_all(&dir);
 }
@@ -119,12 +119,12 @@ fn open_as_layers_builds_one_psd_from_the_selection() {
     assert!(s.execute("photo.openAsLayers", &json!({"ids": [ia.0]})).is_err(), "needs two");
     let r = s.execute("photo.openAsLayers", &json!({"ids": [ia.0, ib.0]})).unwrap();
     assert_eq!(r["layers"], 2);
-    let f = dac_psd::PsdFile::from_bytes(&std::fs::read(r["path"].as_str().unwrap()).unwrap()).unwrap();
+    let f = lcc_psd::PsdFile::from_bytes(&std::fs::read(r["path"].as_str().unwrap()).unwrap()).unwrap();
     assert_eq!((f.header.width, f.header.height), (30, 30));
     assert_eq!(f.layer(1).unwrap().name(), "a", "first selected on top");
     assert_eq!(f.layer(0).unwrap().name(), "b");
     let r8 = s.execute("photo.openAsLayers", &json!({"ids": [ia.0, ib.0], "bitDepth": 8})).unwrap();
-    let f8 = dac_psd::PsdFile::from_bytes(&std::fs::read(r8["path"].as_str().unwrap()).unwrap()).unwrap();
+    let f8 = lcc_psd::PsdFile::from_bytes(&std::fs::read(r8["path"].as_str().unwrap()).unwrap()).unwrap();
     assert_eq!(f8.header.depth, 8, "an 8-bit preset writes 8-bit layers");
     let new = PhotoId(r["id"].as_u64().unwrap());
     assert!(s.catalog.stack_of(new).is_some());

@@ -7,12 +7,12 @@ use crate::tests_classic::{T, click, demo, has, run};
 
 /// A raw photo (rendered from a demo scene) whose metadata names `lens`, made active in Develop with Enable Lens
 /// Corrections on and the Optics section open.
-fn raw_in_develop(h: &mut crate::headless::Headless, lens: &str) -> dac_catalog::PhotoId {
+fn raw_in_develop(h: &mut crate::headless::Headless, lens: &str) -> lcc_catalog::PhotoId {
     let id = h.app.session.catalog.alloc_photo_id();
-    let mut p = dac_catalog::Photo::new(id, dac_catalog::Source::Demo { scene: 0 }, "LENS0001.NEF", "NEF", 300, 200, "2026-01-01T10:00:00");
-    p.kind = dac_catalog::MediaKind::Raw;
+    let mut p = lcc_catalog::Photo::new(id, lcc_catalog::Source::Demo { scene: 0 }, "LENS0001.NEF", "NEF", 300, 200, "2026-01-01T10:00:00");
+    p.kind = lcc_catalog::MediaKind::Raw;
     p.meta.lens = lens.into();
-    h.app.session.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    h.app.session.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     run(h, "library.select", json!({"ids": [id.0]}));
     run(h, "module.develop", json!({}));
     run(h, "develop.merge", json!({"settings": {"optics": {"lens_profile": true}}, "label": "Lens Corrections"}));
@@ -27,11 +27,11 @@ fn raw_in_develop(h: &mut crate::headless::Headless, lens: &str) -> dac_catalog:
 
 #[test]
 fn optics_link_opens_settings_at_lens_profiles() {
-    if dac_brand::env_os(dac_engine::lens_profiles::ENV).is_some_and(|v| !v.is_empty()) {
+    if lcc_brand::env_os(lcc_engine::lens_profiles::ENV).is_some_and(|v| !v.is_empty()) {
         return;
     }
-    let before = dac_engine::lens_profiles::configured_dir();
-    dac_engine::lens_profiles::set_dir(None);
+    let before = lcc_engine::lens_profiles::configured_dir();
+    lcc_engine::lens_profiles::set_dir(None);
     let mut h = demo();
     raw_in_develop(&mut h, "70-200mm F4");
     assert!(has(&h, "link:lensDbSetup"), "no database: the Optics note is a link");
@@ -45,16 +45,16 @@ fn optics_link_opens_settings_at_lens_profiles() {
     // an unknown section is an error that lists the known ones
     let r = h.request("engine.execute", json!({"command": "app.settings", "params": {"section": "nope"}}), T);
     assert!(r["error"].as_str().is_some_and(|e| e.contains("lensProfiles")), "{r}");
-    dac_engine::lens_profiles::set_dir(before);
+    lcc_engine::lens_profiles::set_dir(before);
     // (one test: the lens database is process-wide)
     optics_names_the_lens_the_database_lacks();
 }
 
 fn optics_names_the_lens_the_database_lacks() {
-    if dac_brand::env_os(dac_engine::lens_profiles::ENV).is_some_and(|v| !v.is_empty()) {
+    if lcc_brand::env_os(lcc_engine::lens_profiles::ENV).is_some_and(|v| !v.is_empty()) {
         return;
     }
-    let before = dac_engine::lens_profiles::configured_dir();
+    let before = lcc_engine::lens_profiles::configured_dir();
     let dir = std::env::temp_dir().join(format!("lens-ui-db-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
@@ -71,6 +71,6 @@ fn optics_names_the_lens_the_database_lacks() {
     assert!(has(&h, "label:lensNote"));
     let st = h.app.session.execute("lens.db.photo", &json!({"ids": [id.0]})).unwrap();
     assert_eq!(st, json!({"state": "notFound", "lens": "70-200mm F4"}));
-    dac_engine::lens_profiles::set_dir(before);
+    lcc_engine::lens_profiles::set_dir(before);
     let _ = std::fs::remove_dir_all(&dir);
 }

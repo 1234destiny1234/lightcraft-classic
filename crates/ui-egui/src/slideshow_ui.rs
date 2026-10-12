@@ -1,7 +1,7 @@
 //! The Classic Slideshow module: the Template Browser and saved slideshows on the left, the slide
 //! preview in the centre, Options / Layout / Overlays / Backdrop / Titles / Playback / Music on the
 //! right, and the play / preview / export buttons in the toolbar. The look, timing and export come
-//! from `dac-slideshow`; the preview and the show are painted with egui using the same geometry, the
+//! from `lcc-slideshow`; the preview and the show are painted with egui using the same geometry, the
 //! JPEG-sequence export composes on the CPU.
 //!
 //! Every action is a `slideshow.*` command (listed in `module::SHELL_COMMANDS`). View ▸ Slideshow
@@ -9,17 +9,17 @@
 
 use std::cell::RefCell;
 
-use dac_catalog::{Flag, PhotoId};
-use dac_slideshow::compose::{Geometry, geometry};
-use dac_slideshow::settings::{Anchor, Aspect, TextOverlay, TitleScreen};
-use dac_slideshow::timeline::{Plan, Segment, pan_zoom};
-use dac_slideshow::tokens::{SlideInfo, TOKENS, expand};
-use dac_slideshow::{SavedSlideshow, Settings, Template, builtin_templates};
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, pos2, vec2};
+use lcc_catalog::{Flag, PhotoId};
+use lcc_slideshow::compose::{Geometry, geometry};
+use lcc_slideshow::settings::{Anchor, Aspect, TextOverlay, TitleScreen};
+use lcc_slideshow::timeline::{Plan, Segment, pan_zoom};
+use lcc_slideshow::tokens::{SlideInfo, TOKENS, expand};
+use lcc_slideshow::{SavedSlideshow, Settings, Template, builtin_templates};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
@@ -51,7 +51,7 @@ pub struct Playing {
 #[serde(default, rename_all = "camelCase")]
 pub struct SlideshowState {
     pub settings: Settings,
-    /// The user's templates (the built-in ones come from `dac-slideshow`).
+    /// The user's templates (the built-in ones come from `lcc-slideshow`).
     pub templates: Vec<Template>,
     /// Saved slideshows as older builds kept them here; they move into the catalog as saved
     /// creations (collections of kind `slideshow`) the first time a slideshow command runs.
@@ -79,7 +79,7 @@ pub struct SlideshowState {
 
 thread_local! {
     /// The music player of the running show (UI thread only; dropping it stops the sound).
-    static PLAYER: RefCell<Option<dac_slideshow::music::Player>> = const { RefCell::new(None) };
+    static PLAYER: RefCell<Option<lcc_slideshow::music::Player>> = const { RefCell::new(None) };
 }
 
 /// The commands of the module (`module::SHELL_COMMANDS` lists them for menus and parity).
@@ -88,9 +88,9 @@ pub fn is_command(id: &str) -> bool {
 }
 
 /// The photos the show uses.
-pub fn photos(app: &mut DacApp) -> Vec<PhotoId> {
+pub fn photos(app: &mut LccApp) -> Vec<PhotoId> {
     if let Some(id) = app.ui.slides.open_id
-        && let Some(a) = app.session.catalog.album(dac_catalog::AlbumId(id)).filter(|a| a.creation.is_some())
+        && let Some(a) = app.session.catalog.album(lcc_catalog::AlbumId(id)).filter(|a| a.creation.is_some())
     {
         let ids: Vec<PhotoId> = a.photos.iter().copied().filter(|i| app.session.catalog.photo(*i).is_some()).collect();
         return ids;
@@ -107,12 +107,12 @@ pub fn photos(app: &mut DacApp) -> Vec<PhotoId> {
     }
 }
 
-fn plate_text(app: &DacApp) -> String {
+fn plate_text(app: &LccApp) -> String {
     let t = app.ui.identity_plate.text.trim();
-    if t.is_empty() { dac_brand::DISPLAY_NAME.to_string() } else { t.to_string() }
+    if t.is_empty() { lcc_brand::DISPLAY_NAME.to_string() } else { t.to_string() }
 }
 
-fn all_templates(app: &DacApp) -> Vec<Template> {
+fn all_templates(app: &LccApp) -> Vec<Template> {
     let mut v = builtin_templates();
     v.extend(app.ui.slides.templates.iter().cloned());
     v
@@ -124,17 +124,17 @@ fn name_param(p: &Value) -> Result<String, String> {
 }
 
 /// The saved slideshows: saved creations of kind `slideshow` in the catalog.
-fn saved_list(app: &DacApp) -> Vec<dac_engine::creations::SavedCreation> {
-    dac_engine::creations::creations_of(&app.session, Some(dac_layout::CreationKind::Slideshow))
+fn saved_list(app: &LccApp) -> Vec<lcc_engine::creations::SavedCreation> {
+    lcc_engine::creations::creations_of(&app.session, Some(lcc_layout::CreationKind::Slideshow))
 }
 
 /// Moves saved slideshows an older build kept in `ui.json` into the catalog (once).
-fn migrate_saved(app: &mut DacApp) {
+fn migrate_saved(app: &mut LccApp) {
     if app.ui.slides.saved.is_empty() {
         return;
     }
     for old in std::mem::take(&mut app.ui.slides.saved) {
-        let exists = dac_engine::creations::find_creation(&app.session, dac_layout::CreationKind::Slideshow, &old.name).is_some();
+        let exists = lcc_engine::creations::find_creation(&app.session, lcc_layout::CreationKind::Slideshow, &old.name).is_some();
         if exists || old.name.trim().is_empty() {
             continue;
         }
@@ -147,7 +147,7 @@ fn migrate_saved(app: &mut DacApp) {
 
 /// Opens a saved slideshow (`id`: its collection; else by `name`): its settings, and its photos
 /// are the show.
-fn open_saved(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+fn open_saved(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let list = saved_list(app);
     let found = match p.get("id").and_then(Value::as_u64) {
         Some(id) => list.into_iter().find(|c| c.id.0 == id),
@@ -164,7 +164,7 @@ fn open_saved(app: &mut DacApp, p: &Value) -> Result<Value, String> {
     Ok(state_json(app))
 }
 
-fn state_json(app: &mut DacApp) -> Value {
+fn state_json(app: &mut LccApp) -> Value {
     let photos = photos(app).len();
     let s = &app.ui.slides;
     json!({
@@ -177,30 +177,30 @@ fn state_json(app: &mut DacApp) -> Value {
         "usePhotos": s.use_photos,
         "photos": photos,
         "playing": s.playing.as_ref().map(|p| json!({"full": p.full, "paused": p.paused_at.is_some(), "slides": p.plan.segments.len()})),
-        "canPlayMusic": dac_slideshow::music::CAN_PLAY,
+        "canPlayMusic": lcc_slideshow::music::CAN_PLAY,
     })
 }
 
-fn now(app: &DacApp) -> f64 {
+fn now(app: &LccApp) -> f64 {
     app.tasks.repaint.as_ref().map_or(0.0, |c| c.input(|i| i.time))
 }
 
-fn stop(app: &mut DacApp) {
+fn stop(app: &mut LccApp) {
     app.ui.slides.playing = None;
     PLAYER.with(|p| p.borrow_mut().take());
 }
 
-fn start_music(app: &mut DacApp, repeat: bool) -> Option<String> {
+fn start_music(app: &mut LccApp, repeat: bool) -> Option<String> {
     let m = app.ui.slides.settings.music.clone();
     if !m.enabled || m.tracks.is_empty() {
         return None;
     }
-    if !dac_slideshow::music::CAN_PLAY {
+    if !lcc_slideshow::music::CAN_PLAY {
         return Some("this build plays slideshows without sound".into());
     }
-    let mut all = dac_slideshow::music::Audio::default();
+    let mut all = lcc_slideshow::music::Audio::default();
     for t in &m.tracks {
-        match dac_slideshow::music::decode(std::path::Path::new(t)) {
+        match lcc_slideshow::music::decode(std::path::Path::new(t)) {
             Ok(a) if all.rate == 0 || a.rate == all.rate => {
                 all.rate = a.rate;
                 all.samples.extend(a.samples);
@@ -209,8 +209,8 @@ fn start_music(app: &mut DacApp, repeat: bool) -> Option<String> {
             Err(e) => return Some(e),
         }
     }
-    dac_slideshow::music::mix(&mut all.samples, m.volume, m.balance);
-    match dac_slideshow::music::Player::play(all, repeat) {
+    lcc_slideshow::music::mix(&mut all.samples, m.volume, m.balance);
+    match lcc_slideshow::music::Player::play(all, repeat) {
         Ok(p) => {
             PLAYER.with(|slot| *slot.borrow_mut() = Some(p));
             None
@@ -219,13 +219,13 @@ fn start_music(app: &mut DacApp, repeat: bool) -> Option<String> {
     }
 }
 
-fn play(app: &mut DacApp, full: bool) -> Result<Value, String> {
+fn play(app: &mut LccApp, full: bool) -> Result<Value, String> {
     let ids = photos(app);
     if ids.is_empty() {
         return Err("no photos to show".into());
     }
     let s = app.ui.slides.settings.clone();
-    let music = if s.music.enabled && s.music.fit_to_music { Some(dac_slideshow::music::total_duration(&s.music.tracks).0) } else { None };
+    let music = if s.music.enabled && s.music.fit_to_music { Some(lcc_slideshow::music::total_duration(&s.music.tracks).0) } else { None };
     let seed = (now(app) * 1000.0) as u64 ^ ids.len() as u64;
     let plan = Plan::new(ids.len(), &s, seed, music);
     stop(app);
@@ -236,7 +236,7 @@ fn play(app: &mut DacApp, full: bool) -> Result<Value, String> {
 }
 
 /// Move the show by `delta` segments (manual playback, arrow keys).
-fn step(app: &mut DacApp, delta: i64) -> Result<Value, String> {
+fn step(app: &mut LccApp, delta: i64) -> Result<Value, String> {
     let t = now(app);
     let p = app.ui.slides.playing.as_mut().ok_or("no slideshow is playing")?;
     let at = p.paused_at.unwrap_or(t) - p.start;
@@ -249,14 +249,14 @@ fn step(app: &mut DacApp, delta: i64) -> Result<Value, String> {
 }
 
 /// Run a `slideshow.*` command; `None`: not one.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if !is_command(id) {
         return None;
     }
     Some(run_inner(app, id, p))
 }
 
-fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     migrate_saved(app);
     match id {
         "slideshow.get" => Ok(state_json(app)),
@@ -316,7 +316,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             }
             // a saved creation in the catalog: replaces the one of the same name
             let settings = serde_json::to_value(&app.ui.slides.settings).map_err(|e| e.to_string())?;
-            let existing = dac_engine::creations::find_creation(&app.session, dac_layout::CreationKind::Slideshow, &name);
+            let existing = lcc_engine::creations::find_creation(&app.session, lcc_layout::CreationKind::Slideshow, &name);
             let cid = match existing {
                 Some(c) => {
                     app.run("creation.update", json!({"id": c.id.0, "settings": settings, "ids": ids}))?;
@@ -373,7 +373,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
         "slideshow.previous" => step(app, -1),
         "slideshow.addMusic" => {
             let path = p.get("path").and_then(Value::as_str).ok_or("missing path")?;
-            let d = dac_slideshow::music::duration(std::path::Path::new(path))?;
+            let d = lcc_slideshow::music::duration(std::path::Path::new(path))?;
             let m = &mut app.ui.slides.settings.music;
             if m.tracks.len() >= 64 {
                 return Err("a slideshow takes at most 64 tracks".into());
@@ -396,7 +396,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
 /// `slideshow.exportPdf {…}`: one PDF, a page per slide. The slides are set up here and rendered,
 /// composed and written on a worker thread (Activity "export"); the result lands in
 /// `export_status` / `export_last`. Returns `{background: true, frames}`.
-fn export(app: &mut DacApp, p: &Value, pdf: bool) -> Result<Value, String> {
+fn export(app: &mut LccApp, p: &Value, pdf: bool) -> Result<Value, String> {
     let id = if pdf { "slideshow.exportPdf" } else { "slideshow.exportJpeg" };
     let Some(dir) = p.get("dir").and_then(Value::as_str).filter(|d| !d.trim().is_empty()) else {
         let req = crate::pick::PickRequest::folder(crate::i18n::tr("Export Slideshow"));
@@ -419,7 +419,7 @@ fn export(app: &mut DacApp, p: &Value, pdf: bool) -> Result<Value, String> {
     let ids = photos(app);
     let settings = app.ui.slides.settings.clone();
     let plate = plate_text(app);
-    let prep = if pdf { dac_slideshow::export::prepare_pdf } else { dac_slideshow::export::prepare };
+    let prep = if pdf { lcc_slideshow::export::prepare_pdf } else { lcc_slideshow::export::prepare };
     let job = prep(&mut app.session, &ids, &settings, w, h, quality, std::path::Path::new(dir), &name, &plate)?;
     let frames = job.len();
     let dir = dir.to_string();
@@ -464,7 +464,7 @@ fn c32(c: [u8; 3], a: f32) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (a.clamp(0.0, 1.0) * 255.0) as u8)
 }
 
-fn to_rect(r: dac_slideshow::compose::Rect, at: Pos2) -> Rect {
+fn to_rect(r: lcc_slideshow::compose::Rect, at: Pos2) -> Rect {
     Rect::from_min_max(pos2(at.x + r.x0, at.y + r.y0), pos2(at.x + r.x1, at.y + r.y1))
 }
 
@@ -522,7 +522,7 @@ fn star_shape(c: Pos2, r: f32, col: Color32) -> Vec<egui::Shape> {
 }
 
 /// Paint one slide (or title) into `frame` at opacity `alpha`.
-fn paint_segment(app: &mut DacApp, ui: &egui::Ui, frame: Rect, seg: Segment, photos: &[PhotoId], progress: f32, alpha: f32, guides: bool) {
+fn paint_segment(app: &mut LccApp, ui: &egui::Ui, frame: Rect, seg: Segment, photos: &[PhotoId], progress: f32, alpha: f32, guides: bool) {
     let s = app.ui.slides.settings.clone();
     let p = ui.painter().with_clip_rect(frame);
     let short = frame.width().min(frame.height()).max(1.0);
@@ -657,7 +657,7 @@ fn paint_segment(app: &mut DacApp, ui: &egui::Ui, frame: Rect, seg: Segment, pho
 }
 
 /// Paint the show at its current time into `frame`; returns false when it is over.
-fn paint_show(app: &mut DacApp, ui: &egui::Ui, frame: Rect) -> bool {
+fn paint_show(app: &mut LccApp, ui: &egui::Ui, frame: Rect) -> bool {
     let t = ui.ctx().input(|i| i.time);
     let Some(pl) = app.ui.slides.playing.clone() else { return false };
     let at = pl.paused_at.unwrap_or(t) - pl.start;
@@ -696,7 +696,7 @@ fn paint_show(app: &mut DacApp, ui: &egui::Ui, frame: Rect) -> bool {
 }
 
 /// Keys while a show plays: Esc ends, Space pauses, ← / → step.
-fn play_keys(app: &mut DacApp, ctx: &egui::Context) {
+fn play_keys(app: &mut LccApp, ctx: &egui::Context) {
     let (esc, space, left, right) = ctx.input_mut(|i| {
         (
             i.consume_key(egui::Modifiers::NONE, egui::Key::Escape),
@@ -717,7 +717,7 @@ fn play_keys(app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// The full-screen show over everything (when playing full screen).
-fn full_screen_show(app: &mut DacApp, ctx: &egui::Context) {
+fn full_screen_show(app: &mut LccApp, ctx: &egui::Context) {
     let screen = ctx.content_rect();
     egui::Area::new(egui::Id::new("slideshow-full")).order(egui::Order::Foreground).fixed_pos(screen.min).show(ctx, |ui| {
         let (r, resp) = ui.allocate_exact_size(screen.size(), Sense::click());
@@ -732,7 +732,7 @@ fn full_screen_show(app: &mut DacApp, ctx: &egui::Context) {
 // ---------------------------------------------------------------- the module
 
 /// The module's toolbar: photo use, play and preview, export.
-pub fn toolbar(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn toolbar(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("slideshow-toolbar")
         .exact_size(t.bottom_bar_h)
@@ -793,7 +793,7 @@ pub fn toolbar(app: &mut DacApp, ui: &mut egui::Ui) {
         });
 }
 
-fn run_reporting(app: &mut DacApp, ctx: &egui::Context, id: &str) {
+fn run_reporting(app: &mut LccApp, ctx: &egui::Context, id: &str) {
     match app.run(id, json!({})) {
         Ok(v) => {
             if let Some(w) = v.get("music").and_then(Value::as_str) {
@@ -805,7 +805,7 @@ fn run_reporting(app: &mut DacApp, ctx: &egui::Context, id: &str) {
 }
 
 /// The centre: the side columns (when their edges are shown) and the slide preview.
-pub fn center(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn center(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     if app.ui.slides.playing.is_some() {
@@ -878,7 +878,7 @@ fn heading(ui: &mut egui::Ui, text: &str) -> bool {
     r.fully_open() || r.openness > 0.0
 }
 
-fn left_column(app: &mut DacApp, ui: &mut egui::Ui) {
+fn left_column(app: &mut LccApp, ui: &mut egui::Ui) {
     ui.label(egui::RichText::new(crate::i18n::tr("Template Browser")).strong());
     let current = app.ui.slides.template.clone();
     let builtin: Vec<String> = builtin_templates().into_iter().map(|t| t.name).collect();
@@ -984,7 +984,7 @@ fn anchor_combo(ui: &mut egui::Ui, id: impl std::hash::Hash + std::fmt::Debug, a
 
 /// Options, Layout, Overlays, Backdrop, Titles, Playback, Music — edited on a copy, applied with
 /// `slideshow.set` when anything changed (so the control channel sees the same path).
-fn right_column(app: &mut DacApp, ui: &mut egui::Ui) {
+fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
     let before = app.ui.slides.settings.clone();
     let mut s = before.clone();
     let mut ch = false;
@@ -1155,7 +1155,7 @@ fn right_column(app: &mut DacApp, ui: &mut egui::Ui) {
     if heading(ui, "Music") {
         let m = &mut s.music;
         ch |= ui.checkbox(&mut m.enabled, crate::i18n::tr("Soundtrack")).changed();
-        if !dac_slideshow::music::CAN_PLAY {
+        if !lcc_slideshow::music::CAN_PLAY {
             ui.label(egui::RichText::new(crate::i18n::tr("This build plays without sound")).small());
         }
         for tr in &m.tracks {
@@ -1207,13 +1207,13 @@ mod tests {
 
     use super::*;
     use crate::headless::Headless;
-    use crate::{DacApp, Services};
+    use crate::{LccApp, Services};
 
     const T: Duration = Duration::from_secs(20);
 
     fn demo() -> Headless {
         let services = Services { png: None, ..Default::default() };
-        let app = DacApp::new(dac_engine::Session::with_demo(), services);
+        let app = LccApp::new(lcc_engine::Session::with_demo(), services);
         let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
         h.settle(Duration::from_secs(120));
         h
@@ -1303,7 +1303,7 @@ mod tests {
         assert_eq!(exec(&mut h, "slideshow.addMusic", json!({"path": "/no/such/song.mp3"}))["ok"], false);
         assert!(h.app.ui.slides.settings.music.tracks.is_empty());
         // JPEG sequence
-        let dir = std::env::temp_dir().join(format!("dac-slideshow-ui-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-slideshow-ui-{}", std::process::id()));
         ok(&mut h, "slideshow.closeSaved", json!({}));
         ok(&mut h, "slideshow.set", json!({"usePhotos": "selected"}));
         let first = h.app.session.visible_cloned()[0].0;

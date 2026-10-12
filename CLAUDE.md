@@ -4,15 +4,15 @@ The app is a clean-room, open-source, pure-Rust photo library + non-destructive 
 
 ## The name lives in `brand.toml` only
 - The product name, binary names, app id, settings folder, env-var prefix, MCP server id, URL scheme and file
-  extensions are defined once, in [`brand.toml`](brand.toml), and reach code through the `dac-brand` crate. Never write
+  extensions are defined once, in [`brand.toml`](brand.toml), and reach code through the `lcc-brand` crate. Never write
   the product name (or a legacy upstream name) in code, UI strings, docs or tests: say "the app" in prose, use `{app}`
-  (display name), `{cli}` and `{env}` in i18n catalogs, and `dac_brand::…` constants in code.
+  (display name), `{cli}` and `{env}` in i18n catalogs, and `lcc_brand::…` constants in code.
 - `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else. Allowed exceptions:
   `brand.toml`, `[legacy]` handling, `NOTICE`, `LICENSE`, `assets/ATTRIBUTION.md`, `docs/upstream-merge.md`.
 - Docs that genuinely need the name are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
   `{{env_prefix}}`, `{{app_id}}`, `{{settings_dir}}`, rendered by `cargo xtask docs`; otherwise docs write `<app>`,
   `<binary>`, `<cli>`, `<PREFIX>`, `<settings_dir>` for the `brand.toml` values.
-- Crates are `dac-*`; the packages with binaries are `dac-app` (desktop), `dac-cli` and `dac-web`. Inside `target/` the
+- Crates are `lcc-*`; the packages with binaries are `lcc-app` (desktop), `lcc-cli` and `lcc-web`. Inside `target/` the
   binaries are always `app` and `app-cli`; `cargo xtask run`, `cargo xtask package` and `cargo xtask install` give them
   the brand names.
 - Environment variables are `<PREFIX>_X`, where `PREFIX` is `env_prefix` from `brand.toml` (e.g. `<PREFIX>_LOG`,
@@ -114,7 +114,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   font files here (Inter, already in `assets/fonts/`, is the one exception); add new fonts to craft-fonts. The app
   uses it as the optional build input `CRAFT_FONTS_DIR`: `git clone https://github.com/storytold/craft-fonts ../craft-fonts`
   then `CRAFT_FONTS_DIR=../craft-fonts cargo xtask run` (or any cargo/xtask command). `crates/engine/build.rs`
-  embeds the manifest's fonts as `dac_engine::CRAFT_FONTS` (wasm32: BIZ UDPGothic Regular only); `cargo xtask web`
+  embeds the manifest's fonts as `lcc_engine::CRAFT_FONTS` (wasm32: BIZ UDPGothic Regular only); `cargo xtask web`
   ships Noto Sans CJK SC Regular as a separate asset loaded by the UI before startup. The UI
   (`theme::font_definitions`) and the export watermark renderer use CJK faces (picked by script) as fallbacks after Inter; the UI also falls back on the faces of other scripts (Thai, Arabic, …). Unset,
   `CRAFT_FONTS` is empty: everything builds, tests and runs, but Chinese and Japanese text lack glyphs. Releases always build
@@ -122,7 +122,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   without it; the FreeBSD CI job runs them with it. Rules: craftrules
   [`standards/fonts.md`](https://github.com/storytold/craftrules/blob/main/standards/fonts.md).
 - Icons drawn in code (e.g. `crates/ui-egui/src/icons.rs`) are original work and are recorded in `assets/ATTRIBUTION.md` as such; do not trace them from Adobe icons.
-- Demo/test images: generated procedurally by `dac-scenes`, or CC0 downloads kept in the gitignored `corpus/` with their source recorded. Screenshots of Adobe apps live only in the gitignored `plan/` and are never committed or published.
+- Demo/test images: generated procedurally by `lcc-scenes`, or CC0 downloads kept in the gitignored `corpus/` with their source recorded. Screenshots of Adobe apps live only in the gitignored `plan/` and are never committed or published.
 - **Enforced:** `cargo xtask assets` (in `ci`) fails when an image/icon/font/sound/video/raw/ICC/XMP file is not matched
   by a path pattern in the first column of `assets/ATTRIBUTION.md`, when a referenced licence file is missing, when a
   file name suggests Adobe material, or when an Adobe profile/template format (`.dcp`, `.lcp`, `.lrtemplate`, …) appears.
@@ -130,18 +130,18 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - When in doubt about an asset's licence: don't use it.
 
 ## Running and looking at the app
-- `cargo xtask run -- --control 7980` (or `cargo run --release -p dac-app -- --control 7980`) opens the desktop app with the JSON-lines control server (see `docs/control-protocol.md`).
+- `cargo xtask run -- --control 7980` (or `cargo run --release -p lcc-app -- --control 7980`) opens the desktop app with the JSON-lines control server (see `docs/control-protocol.md`).
 - **Never send OS-level synthetic input** (osascript/System Events keystrokes or clicks, `cliclick`, accessibility
   automation): it goes to whatever window is frontmost — the user's terminal or other apps. Drive the app only
   through its control channel (`ui.key`, `ui.pointer`, `ui.clickWidget`, `ui.menu.invoke`) or headless snapshots.
 - For UI work, **look at the result**: drive via the control channel and take `ui.screenshot`, compare with `plan/lightroom/screenshots/`.
 - **Unattended (display asleep/locked, CI, nightly runs): prefer headless snapshots** — no window needed:
-  `cargo run --release -p dac-cli -- snapshot --demo --script tour.jsonl -o out.png --size 1600x1000` (control-protocol requests,
+  `cargo run --release -p lcc-cli -- snapshot --demo --script tour.jsonl -o out.png --size 1600x1000` (control-protocol requests,
   one per line; see `docs/control-protocol.md` → Headless rendering). In a running app use
   `ui.screenshot {"path": …, "headless": true}`; windowed screenshots fall back to headless after 2 s.
-- MCP: `cargo run -p dac-cli -- mcp` (headless, `--demo` for the procedural library) or `… mcp --connect` (drives
-  the running app). See `docs/mcp.md`. Quick non-UI checks: `cargo run -p dac-cli -- render in.jpg -o out.jpg --set light.exposure=1`.
-- Export goes through `dac_engine::export` (one encoder for app, CLI, MCP and web); UI-only commands live in
+- MCP: `cargo run -p lcc-cli -- mcp` (headless, `--demo` for the procedural library) or `… mcp --connect` (drives
+  the running app). See `docs/mcp.md`. Quick non-UI checks: `cargo run -p lcc-cli -- render in.jpg -o out.jpg --set light.exposure=1`.
+- Export goes through `lcc_engine::export` (one encoder for app, CLI, MCP and web); UI-only commands live in
   `crates/ui-egui/src/menus.rs`.
 - Text boxes use `crates/ui-egui/src/text_field.rs` (`TextField`), not `egui::TextEdit`: it gives every field the
   Cut / Copy / Paste / Select All menu, Esc restoring the text, and reports how an edit ended. Give each a widget id
@@ -161,11 +161,11 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Measure, don't guess**: `<PREFIX>_PROFILE=1` (`PREFIX` = `env_prefix` from `brand.toml`) prints per-stage pipeline timings to stderr; time CLI renders
   with `/usr/bin/time`. Record numbers in `plan/STATUS.md` → Metrics. Budgets: slider update ≤ 16 ms (draft) / loupe
   ≤ 60 ms on ~2.5 MP; export ≤ 1 s per 24 MP JPEG.
-- Never commit media: test images are procedural (`dac-scenes`) or CC0 downloads in the gitignored `corpus/`.
+- Never commit media: test images are procedural (`lcc-scenes`) or CC0 downloads in the gitignored `corpus/`.
 
 ## Map of the code
 `geom`, `color`, `raster`, `tiff` (L0) → `raw`, `codecs`, `meta`, `develop` (L1) → `pipeline` → `catalog` → `engine`
-→ `ui-egui`, `mcp` (L5) → apps `dac-app` (desktop, binary `app`), `dac-cli` (render/commands/MCP, binary `app-cli`), `dac-web`; `brand` (`dac-brand`) carries `brand.toml` into code. `scenes` generates demo
+→ `ui-egui`, `mcp` (L5) → apps `lcc-app` (desktop, binary `app`), `lcc-cli` (render/commands/MCP, binary `app-cli`), `lcc-web`; `brand` (`lcc-brand`) carries `brand.toml` into code. `scenes` generates demo
 photos. `xtask` = tooling (`ci`, `layers`, `assets`, `parity`, `wasm`, `corpus`, `stats`, `brand check`, `docs`, `run`, `package`, `install`). `flake.nix` +
 `nix/package.nix` = the Nix package (`nix build` builds both binaries with the craft-fonts input, installs the
 desktop file/icons/AppStream metadata and runs `cargo test --workspace`; `nix develop` = dev shell). Community-maintained and not

@@ -5,7 +5,7 @@
 pub fn migrate_with_progress(dir: &str) -> Result<(), String> {
     use std::sync::atomic::{AtomicBool, Ordering};
     let path = std::path::Path::new(dir);
-    if !dac_engine::library::needs_migration(path) {
+    if !lcc_engine::library::needs_migration(path) {
         return Ok(());
     }
     eprintln!("{}: upgrading the catalog of {dir} to the current format (once; the old files are kept under backups/)", super::CLI);
@@ -15,7 +15,7 @@ pub fn migrate_with_progress(dir: &str) -> Result<(), String> {
         std::thread::spawn(move || {
             let mut last = String::new();
             while !done.load(Ordering::Relaxed) {
-                if let Some(p) = dac_engine::library::migration_progress() {
+                if let Some(p) = lcc_engine::library::migration_progress() {
                     let line = p.describe();
                     if line != last {
                         eprintln!("  {line}");
@@ -27,7 +27,7 @@ pub fn migrate_with_progress(dir: &str) -> Result<(), String> {
         })
     };
     let t = std::time::Instant::now();
-    let r = dac_engine::library::migrate_library(path);
+    let r = lcc_engine::library::migrate_library(path);
     done.store(true, Ordering::Relaxed);
     let _ = printer.join();
     r.map_err(|e| super::library_error(dir, e))?;

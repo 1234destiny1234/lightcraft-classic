@@ -4,12 +4,12 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use dac_codecs::encode::{ChromaSubsampling, EncodeImage, EncodeMeta, Samples, encode_jpeg};
-use dac_layout::render::{PhotoSource, RenderOptions, photo_placement, render_page};
-use dac_layout::tokens::{PhotoInfo, expand};
-use dac_layout::{CellKind, Color, Document, Shape};
-use dac_pdf::{ColorSpace, Image, Paint, Path, Rect as PRect, Stroke as PStroke};
-use dac_raster::Rgba8;
+use lcc_codecs::encode::{ChromaSubsampling, EncodeImage, EncodeMeta, Samples, encode_jpeg};
+use lcc_layout::render::{PhotoSource, RenderOptions, photo_placement, render_page};
+use lcc_layout::tokens::{PhotoInfo, expand};
+use lcc_layout::{CellKind, Color, Document, Shape};
+use lcc_pdf::{ColorSpace, Image, Paint, Path, Rect as PRect, Stroke as PStroke};
+use lcc_raster::Rgba8;
 
 use crate::text::ShapedText;
 use crate::{PrintError, PrintSettings, Result};
@@ -25,9 +25,9 @@ pub const MAX_PHOTO_PX: usize = 16_384;
 /// Extra PDF options.
 #[derive(Clone, Debug, Default)]
 pub struct PdfOptions {
-    pub metadata: dac_pdf::Metadata,
+    pub metadata: lcc_pdf::Metadata,
     /// The printer/paper profile written as the document's OutputIntent.
-    pub output_intent: Option<dac_pdf::OutputIntent>,
+    pub output_intent: Option<lcc_pdf::OutputIntent>,
     /// The ICC profile the photos are encoded in (the printer profile after
     /// [`crate::color::ColorJob`]); `None` = sRGB (untagged DeviceRGB).
     pub photo_profile: Option<Arc<Vec<u8>>>,
@@ -49,7 +49,7 @@ fn paint(c: Color) -> Paint {
     Paint::Rgb(f32::from(c[0]) / 255.0, f32::from(c[1]) / 255.0, f32::from(c[2]) / 255.0)
 }
 
-fn prect(r: &dac_layout::Rect, dx: f64, dy: f64) -> PRect {
+fn prect(r: &lcc_layout::Rect, dx: f64, dy: f64) -> PRect {
     PRect::new(f64::from(r.x) + dx, f64::from(r.y) + dy, f64::from(r.w), f64::from(r.h))
 }
 
@@ -83,7 +83,7 @@ pub fn jpeg_icc(img: &Rgba8, quality: u8, ppi: Option<u16>, icc: Option<&[u8]>) 
     .map_err(|e| PrintError::Output(e.to_string()))
 }
 
-fn page_infos(layout: &dac_layout::PageLayout, photos: &dyn PhotoSource, page: usize, pages: usize) -> Vec<Option<PhotoInfo>> {
+fn page_infos(layout: &lcc_layout::PageLayout, photos: &dyn PhotoSource, page: usize, pages: usize) -> Vec<Option<PhotoInfo>> {
     layout
         .cells
         .iter()
@@ -98,7 +98,7 @@ fn page_infos(layout: &dac_layout::PageLayout, photos: &dyn PhotoSource, page: u
         .collect()
 }
 
-fn text_of(t: &dac_layout::TextCell, infos: &[Option<PhotoInfo>], page: usize, pages: usize) -> String {
+fn text_of(t: &lcc_layout::TextCell, infos: &[Option<PhotoInfo>], page: usize, pages: usize) -> String {
     let src = t.source.and_then(|s| infos.get(s).cloned().flatten()).or_else(|| infos.iter().flatten().next().cloned());
     let info = src.unwrap_or(PhotoInfo { page, pages, ..PhotoInfo::default() });
     expand(&t.text, &info)
@@ -120,11 +120,11 @@ pub fn to_pdf(
     let bleed = f64::from(page.bleed.max(0.0));
     let margin = pad.max(bleed);
     let (pw, ph) = (f64::from(page.size.w) + 2.0 * margin, f64::from(page.size.h) + 2.0 * margin);
-    let mut pdf = dac_pdf::Document::new();
+    let mut pdf = lcc_pdf::Document::new();
     pdf.metadata = opt.metadata.clone();
     pdf.output_intent = opt.output_intent.clone();
     let mut warnings = Vec::new();
-    let mut images: HashMap<(String, usize, u8), (dac_pdf::ImageId, usize, usize)> = HashMap::new();
+    let mut images: HashMap<(String, usize, u8), (lcc_pdf::ImageId, usize, usize)> = HashMap::new();
     // photos already converted into the printer profile are tagged with it
     let cs = opt.photo_profile.clone().map_or(ColorSpace::Rgb, |profile| ColorSpace::Icc { profile, components: 3 });
     let n = doc.pages.len();
@@ -132,14 +132,14 @@ pub fn to_pdf(
         if !progress(pi, n) {
             return Err(PrintError::Cancelled);
         }
-        let mut out = dac_pdf::Page::new(pw, ph);
+        let mut out = lcc_pdf::Page::new(pw, ph);
         let trim = PRect::new(margin, margin, f64::from(page.size.w), f64::from(page.size.h));
         out.trim = Some(trim);
         if bleed > 0.0 {
             out.bleed = Some(trim.inset(-bleed));
         }
         let bg = if bleed > 0.0 { trim.inset(-bleed) } else { trim };
-        if page.background != dac_layout::WHITE {
+        if page.background != lcc_layout::WHITE {
             out.fill(Path::rect(bg), paint(page.background));
         }
         let infos = page_infos(layout, photos, pi + 1, n);
@@ -184,7 +184,7 @@ pub fn to_pdf(
                             images.insert(k2, v);
                         }
                     }
-                    let cell_pt = dac_layout::Rect::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32);
+                    let cell_pt = lcc_layout::Rect::new(r.x as f32, r.y as f32, r.w as f32, r.h as f32);
                     let (s, ox, oy) = photo_placement(cell_pt, iw as f32, ih as f32, p);
                     if !(s.is_finite() && s > 0.0) {
                         continue;
@@ -243,16 +243,16 @@ pub fn to_pdf(
 /// A photo turned `turns` quarter turns, added to `pdf`: 16-bit samples when the job asks for them
 /// and `photos` has them, else JPEG. The inner error is a warning (the photo is drawn as a slot).
 fn add_photo(
-    pdf: &mut dac_pdf::Document,
+    pdf: &mut lcc_pdf::Document,
     photos: &dyn PhotoSource,
     id: &str,
     long: usize,
     turns: u8,
     settings: &PrintSettings,
     cs: &ColorSpace,
-) -> Result<std::result::Result<(dac_pdf::ImageId, usize, usize), String>> {
+) -> Result<std::result::Result<(lcc_pdf::ImageId, usize, usize), String>> {
     if settings.job.color.bit16
-        && let Some(deep) = photos.image16(id).filter(dac_layout::render::Rgb16::is_valid)
+        && let Some(deep) = photos.image16(id).filter(lcc_layout::render::Rgb16::is_valid)
     {
         let d = deep.rotated(turns);
         let (w, h) = (u32::try_from(d.width).unwrap_or(u32::MAX), u32::try_from(d.height).unwrap_or(u32::MAX));

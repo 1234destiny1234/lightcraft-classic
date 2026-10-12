@@ -1,10 +1,10 @@
 //! The bottom bar: view modes, sort, rating/flags pill, copy/paste settings, zoom and view toggles.
 
-use dac_catalog::Flag;
 use egui::{Align2, Rect, Sense, pos2, vec2};
+use lcc_catalog::Flag;
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::state::{BeforeAfter, ViewMode, Zoom};
 use crate::theme::Tokens;
@@ -19,7 +19,7 @@ const VIEW_MODES: &[(&str, Icon, ViewMode, &str)] = &[
     ("people", Icon::People, ViewMode::People, "People"),
 ];
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::bottom("bottom_bar")
         .exact_size(t.bottom_bar_h)
@@ -82,7 +82,7 @@ const PILL_W: f32 = 208.0;
 
 /// The rating/flag pill and copy/paste settings, between `from` and `to` (the side groups): the
 /// copy buttons go first when there is no room (they are in the Edit menu too), then the pill.
-fn centre(app: &mut DacApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
+fn centre(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
     let t = Tokens::get(ui.ctx());
     let has_clip = app.session.clipboard.is_some();
     let label = crate::i18n::tr(if has_clip { "Paste Edit Settings" } else { "Copy Edit Settings" });
@@ -153,7 +153,7 @@ fn centre(app: &mut DacApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
 }
 
 /// The right-hand group (zoom, view toggles or thumbnail size); returns its left edge.
-fn right_side(app: &mut DacApp, ui: &mut egui::Ui, full: Rect, compact_zoom: bool) -> f32 {
+fn right_side(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, compact_zoom: bool) -> f32 {
     let t = Tokens::get(ui.ctx());
     let mut child = ui.new_child(
         egui::UiBuilder::new()
@@ -251,7 +251,7 @@ fn right_side(app: &mut DacApp, ui: &mut egui::Ui, full: Rect, compact_zoom: boo
     if child.min_rect().width() > 0.0 { child.min_rect().left() } else { full.right() }
 }
 
-fn click_zoom_menu(app: &mut DacApp, ui: &mut egui::Ui) {
+fn click_zoom_menu(app: &mut LccApp, ui: &mut egui::Ui) {
     for pct in crate::state::CLICK_ZOOMS {
         if ui.selectable_label(app.ui.click_zoom == pct, format!("{}:1", pct / 100)).clicked() {
             let _ = app.run("view.clickZoom", json!({"ratio": pct / 100}));
@@ -259,9 +259,9 @@ fn click_zoom_menu(app: &mut DacApp, ui: &mut egui::Ui) {
     }
 }
 
-fn sort_menu(app: &mut DacApp, ui: &mut egui::Ui) {
-    use dac_catalog::GroupBy;
-    use dac_catalog::SortKey::*;
+fn sort_menu(app: &mut LccApp, ui: &mut egui::Ui) {
+    use lcc_catalog::GroupBy;
+    use lcc_catalog::SortKey::*;
     let cur = app.session.sort;
     ui.label(egui::RichText::new(crate::i18n::tr("Sort by")).weak());
     for (label, key, k) in [
@@ -337,12 +337,12 @@ mod visual_regressions {
                 ViewMode::People,
             ] {
                 for scale in [1.0, 1.5, 2.0] {
-                    let mut app = DacApp::new(dac_engine::Session::new(), Default::default());
+                    let mut app = LccApp::new(lcc_engine::Session::new(), Default::default());
                     app.ui.view = view;
                     let mut ready = false;
                     let mut harness =
                         egui_kittest::Harness::builder().with_size(vec2(width, 100.0)).with_pixels_per_point(scale).wgpu().build_ui_state(
-                            move |ui, app: &mut DacApp| {
+                            move |ui, app: &mut LccApp| {
                                 if !ready {
                                     crate::theme::install_fonts(ui.ctx());
                                     crate::theme::apply(ui.ctx());
@@ -394,7 +394,7 @@ mod visual_regressions {
                     let ctx = egui::Context::default();
                     crate::theme::install_fonts(&ctx);
                     crate::theme::apply(&ctx);
-                    let mut app = DacApp::new(dac_engine::Session::new(), Default::default());
+                    let mut app = LccApp::new(lcc_engine::Session::new(), Default::default());
                     app.ui.view = view;
                     let mut output = ctx.run_ui(scaled_input(vec2(width, 100.0), scale), |ui| show(&mut app, ui));
                     output.textures_delta.clear();
@@ -417,10 +417,10 @@ mod visual_regressions {
         use egui_kittest::kittest::Queryable;
 
         for scale in [1.0, 1.5, 2.0] {
-            let app = DacApp::new(dac_engine::Session::new(), Default::default());
+            let app = LccApp::new(lcc_engine::Session::new(), Default::default());
             let mut ready = false;
             let mut harness = egui_kittest::Harness::builder().with_size(vec2(280.0, 640.0)).with_pixels_per_point(scale).build_ui_state(
-                move |ui, app: &mut DacApp| {
+                move |ui, app: &mut LccApp| {
                     if !ready {
                         crate::theme::install_fonts(ui.ctx());
                         crate::theme::apply(ui.ctx());
@@ -475,7 +475,7 @@ mod tests {
     fn rating_and_flag_buttons_keep_padding_inside_the_pill() {
         for scale in [1.0, 2.0] {
             for room in [240.0, 500.0] {
-                let mut app = DacApp::new(dac_engine::Session::new(), Services::default());
+                let mut app = LccApp::new(lcc_engine::Session::new(), Services::default());
                 let mut view = HeadlessView::new();
                 for frame in 0..3 {
                     let raw = HeadlessView::raw_input(vec2(700.0, 40.0), scale, frame as f64 / 60.0, vec![]);

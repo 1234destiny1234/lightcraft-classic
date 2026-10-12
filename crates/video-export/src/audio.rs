@@ -1,5 +1,5 @@
 //! Clip audio for export: decode the trimmed range of the source's first audio track with
-//! `dac_video::AudioReader` (AAC, Opus, AC-3 / E-AC-3 in MP4/MOV, Matroska or MPEG-TS), fold it to
+//! `lcc_video::AudioReader` (AAC, Opus, AC-3 / E-AC-3 in MP4/MOV, Matroska or MPEG-TS), fold it to
 //! mono or stereo, and encode it once per clip for the muxer: AAC-LC for MP4 (resampled to 48 kHz
 //! when the source rate is not an AAC rate), 16-bit little-endian PCM (`sowt`) for ProRes MOV.
 //!
@@ -14,8 +14,8 @@
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use dac_video::{AudioReader, MAX_RANGE_SECONDS};
 use filmcraft_isobmff::{PcmConfig, SampleEntry, TrackConfig};
+use lcc_video::{AudioReader, MAX_RANGE_SECONDS};
 
 use crate::native::{ClipFormat, ExportClipError};
 
@@ -141,7 +141,7 @@ pub fn encode_audio_range(
         _ => sr,
     };
     if rate != sr {
-        pcm = dac_video::resample(&pcm, out_ch, sr, rate);
+        pcm = lcc_video::resample(&pcm, out_ch, sr, rate);
     }
     let track = match codec {
         AudioCodecOut::Aac => encode_aac(&pcm, out_ch, rate, cancel)?,

@@ -8,14 +8,14 @@ use serde_json::json;
 use crate::headless::Headless;
 use crate::module::PanelId;
 use crate::panels::classic;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 pub(crate) const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 pub(crate) fn demo() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
     let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
     h.settle(SETTLE);
     run(&mut h, "module.library", json!({}));
@@ -52,7 +52,7 @@ fn quick_develop_steps_every_selected_photo() {
     let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
     run(&mut h, "library.select", json!({"ids": ids}));
     assert!(has(&h, "button:qd-light.exposure-3"), "the exposure row is on screen");
-    let exposure = |h: &Headless, id: u64| h.app.session.develop_of(dac_catalog::PhotoId(id)).unwrap().light.exposure;
+    let exposure = |h: &Headless, id: u64| h.app.session.develop_of(lcc_catalog::PhotoId(id)).unwrap().light.exposure;
     let before: Vec<f64> = ids.iter().map(|i| exposure(&h, *i)).collect();
     let undo = h.app.session.undo.len();
     click(&mut h, "button:qd-light.exposure-3");
@@ -62,7 +62,7 @@ fn quick_develop_steps_every_selected_photo() {
     assert_eq!(h.app.session.undo.len(), undo + 1, "one undo step");
     run(&mut h, "develop.quickSet", json!({"treatment": "bw"}));
     for id in &ids {
-        assert_eq!(h.app.session.develop_of(dac_catalog::PhotoId(*id)).unwrap().treatment, dac_develop::Treatment::Bw);
+        assert_eq!(h.app.session.develop_of(lcc_catalog::PhotoId(*id)).unwrap().treatment, lcc_develop::Treatment::Bw);
     }
     assert!(has(&h, "button:qd-crop") && has(&h, "button:qd-wb") && has(&h, "button:qd-autoTone"));
 }
@@ -76,8 +76,8 @@ fn folders_panel_lists_volumes_with_free_space() {
     std::fs::create_dir_all(&dir).unwrap();
     let path = dir.join("a.jpg").to_string_lossy().to_string();
     let id = h.app.session.catalog.alloc_photo_id();
-    let p = dac_catalog::Photo::new(id, dac_catalog::Source::File { path }, "a.jpg", "JPEG", 60, 40, "2026-01-01T10:00:00");
-    h.app.session.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    let p = lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path }, "a.jpg", "JPEG", 60, 40, "2026-01-01T10:00:00");
+    h.app.session.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     // the space is read off the UI thread: wait for it
     h.step_until(SETTLE, |h| h.app.widgets.iter().any(|(w, _)| w.starts_with("volume:")));
     assert!(h.app.widgets.iter().any(|(w, _)| w.starts_with("volume:")), "a volume row");
@@ -117,7 +117,7 @@ fn keywording_panel_adds_suggestions_to_the_selection() {
     click(&mut h, &format!("kwSuggest:{k}"));
     for id in &ids {
         assert!(
-            h.app.session.catalog.photo(dac_catalog::PhotoId(*id)).unwrap().meta.keywords.iter().any(|x| x.eq_ignore_ascii_case(&k)),
+            h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords.iter().any(|x| x.eq_ignore_ascii_case(&k)),
             "{k} on {id}"
         );
     }
@@ -134,7 +134,7 @@ fn keyword_list_marks_filters_and_lists_created_keywords() {
     run(&mut h, "library.select", json!({"ids": [id]}));
     assert!(has(&h, "keywordRow:Anna"), "a created keyword is listed");
     click(&mut h, "keywordCheck:Anna");
-    let has_kw = |h: &Headless| h.app.session.catalog.photo(dac_catalog::PhotoId(id)).unwrap().meta.keywords.iter().any(|k| k == "Anna");
+    let has_kw = |h: &Headless| h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.keywords.iter().any(|k| k == "Anna");
     assert!(has_kw(&h), "the tick adds it");
     click(&mut h, "keywordCheck:Anna");
     assert!(!has_kw(&h), "and takes it away");

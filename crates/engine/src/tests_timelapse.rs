@@ -1,15 +1,15 @@
-//! Upstream #497: `export.timelapse` from synthetic photos, re-decoded with `dac-video`.
+//! Upstream #497: `export.timelapse` from synthetic photos, re-decoded with `lcc-video`.
 
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 
-use dac_catalog::{Op, Photo, PhotoId, Source};
+use lcc_catalog::{Op, Photo, PhotoId, Source};
 use serde_json::json;
 
 use crate::{Selection, Session};
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-engine-timelapse-{}-{name}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-engine-timelapse-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -17,8 +17,8 @@ fn scratch(name: &str) -> PathBuf {
 
 /// A flat grey PNG photo (`w × h`, sRGB code value `v`) in the catalog.
 fn add_photo(s: &mut Session, dir: &Path, name: &str, w: u32, h: u32, v: u8) -> PhotoId {
-    let img = dac_raster::Rgba8::filled(w as usize, h as usize, [v, v, v, 255]);
-    let bytes = dac_codecs::encode::encode_png(&dac_codecs::encode::EncodeImage::rgba8(&img), &Default::default()).unwrap();
+    let img = lcc_raster::Rgba8::filled(w as usize, h as usize, [v, v, v, 255]);
+    let bytes = lcc_codecs::encode::encode_png(&lcc_codecs::encode::EncodeImage::rgba8(&img), &Default::default()).unwrap();
     let path = dir.join(name);
     std::fs::write(&path, bytes).unwrap();
     let id = s.catalog.alloc_photo_id();
@@ -44,7 +44,7 @@ fn six(s: &mut Session, dir: &Path) -> Vec<PhotoId> {
         .collect()
 }
 
-fn luma(r: &mut dac_video::FrameReader, t: f64) -> f32 {
+fn luma(r: &mut lcc_video::FrameReader, t: f64) -> f32 {
     let f = r.frame_at(t, None).unwrap();
     f.image.data.iter().map(|p| (p[0] + p[1] + p[2]) / 3.0).sum::<f32>() / f.image.data.len() as f32
 }
@@ -68,7 +68,7 @@ fn frames_hold_crossfade_and_brightness_follow_each_photo() {
     assert_eq!(r["frames"], 6 * 3 + 5 * 2, "{r}");
     assert_eq!((r["width"].as_u64(), r["height"].as_u64(), r["photos"].as_u64()), (Some(64), Some(48), Some(6)));
     assert!(!dir.join("tl.mp4.partial").exists());
-    let mut rd = dac_video::FrameReader::open(&out).unwrap();
+    let mut rd = lcc_video::FrameReader::open(&out).unwrap();
     assert_eq!(rd.frame_times().len(), 28);
     // photo i's held frames start at frame i × (hold + crossfade); sample the middle one
     let ys: Vec<f32> = (0..6).map(|i| luma(&mut rd, f64::from(i * 5 + 1) / 25.0)).collect();
@@ -98,7 +98,7 @@ fn order_follows_custom_order_and_prores() {
     let r = s.execute("export.timelapse", &json!({"path": out, "size": [32, 24], "fps": 24})).unwrap();
     assert_eq!(r["frames"], 6);
     assert_eq!(&std::fs::read(&out).unwrap()[8..12], b"qt  ", "a .mov is ProRes in QuickTime");
-    let mut rd = dac_video::FrameReader::open(&out).unwrap();
+    let mut rd = lcc_video::FrameReader::open(&out).unwrap();
     let ys: Vec<f32> = (0..6).map(|i| luma(&mut rd, f64::from(i) / 24.0)).collect();
     assert!(ys.windows(2).all(|w| w[1] < w[0]), "darker each frame (reversed order): {ys:?}");
     let _ = std::fs::remove_dir_all(&dir);
@@ -112,7 +112,7 @@ fn fit_letterboxes_and_fill_crops() {
     for (fit, black) in [("fit", true), ("fill", false)] {
         let out = dir.join(format!("{fit}.mp4"));
         s.execute("export.timelapse", &json!({"path": out, "ids": [wide.0], "size": "32x32", "fit": fit, "quality": 95})).unwrap();
-        let f = dac_video::FrameReader::open(&out).unwrap().frame_at(0.0, None).unwrap().image;
+        let f = lcc_video::FrameReader::open(&out).unwrap().frame_at(0.0, None).unwrap().image;
         assert_eq!((f.width, f.height), (32, 32));
         let top = f.data[2 * 32 + 16][1];
         let centre = f.data[16 * 32 + 16][1];

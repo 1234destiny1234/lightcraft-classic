@@ -1,18 +1,18 @@
 //! Export a slideshow as a JPEG sequence: one composed slide per photo (plus the intro and ending
 //! screens when they are on), named `<name>-001.jpg` … in show order; or as one PDF, `<name>.pdf`,
-//! with a page per slide (the same JPEG frames embedded through `dac-pdf`, page size = the slide
+//! with a page per slide (the same JPEG frames embedded through `lcc-pdf`, page size = the slide
 //! at 96 px per inch). Rendering goes through the engine's export renderer, encoding through
-//! `dac_engine::export` (the one encoder of the app).
+//! `lcc_engine::export` (the one encoder of the app).
 //!
 //! Video export (AV1) is deferred: it needs an encoder crate shared with upstream (PLAN phase 3.4).
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::PhotoId;
-use dac_engine::export::{ExportFormat, ExportOptions, encode_image, write_file};
-use dac_engine::{RenderJob, Session};
-use dac_pipeline::{OutputDepth, OutputSpace};
-use dac_raster::Rgba8;
+use lcc_catalog::PhotoId;
+use lcc_engine::export::{ExportFormat, ExportOptions, encode_image, write_file};
+use lcc_engine::{RenderJob, Session};
+use lcc_pipeline::{OutputDepth, OutputSpace};
+use lcc_raster::Rgba8;
 
 use crate::compose::{MAX_EDGE, compose_slide, compose_title, geometry};
 use crate::settings::Settings;
@@ -32,7 +32,7 @@ pub fn load_background(path: &str) -> Result<Rgba8, String> {
         return Err(format!("{path}: larger than 256 MiB"));
     }
     let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-    dac_codecs::decode_thumbnail(&bytes, 4096).map(|t| t.image).map_err(|e| format!("{path}: not a usable image: {e}"))
+    lcc_codecs::decode_thumbnail(&bytes, 4096).map(|t| t.image).map_err(|e| format!("{path}: not a usable image: {e}"))
 }
 
 /// The render size a photo needs in a `w × h` slide: its drawn rectangle (larger when filling).
@@ -161,14 +161,14 @@ impl Prepared {
         let mut items: Vec<Option<Item>> = self.items.into_iter().map(Some).collect();
         let mut written = Vec::with_capacity(self.segments.len());
         let mut doc = self.pdf.then(|| {
-            let mut d = dac_pdf::Document::new();
+            let mut d = lcc_pdf::Document::new();
             d.metadata.title = Some(self.name.clone());
-            d.metadata.creator = Some(dac_brand::DISPLAY_NAME.to_string());
+            d.metadata.creator = Some(lcc_brand::DISPLAY_NAME.to_string());
             d
         });
         let page_size = (
-            (self.width as f64 * PT_PER_PX).clamp(dac_pdf::MIN_SIDE, dac_pdf::MAX_SIDE),
-            (self.height as f64 * PT_PER_PX).clamp(dac_pdf::MIN_SIDE, dac_pdf::MAX_SIDE),
+            (self.width as f64 * PT_PER_PX).clamp(lcc_pdf::MIN_SIDE, lcc_pdf::MAX_SIDE),
+            (self.height as f64 * PT_PER_PX).clamp(lcc_pdf::MIN_SIDE, lcc_pdf::MAX_SIDE),
         );
         for (k, seg) in self.segments.iter().enumerate() {
             let label = match seg {
@@ -199,9 +199,9 @@ impl Prepared {
             };
             let bytes = encode_image(&img, &o)?;
             if let Some(d) = doc.as_mut() {
-                let image = d.add_image(dac_pdf::Image::jpeg(bytes, dac_pdf::ColorSpace::Rgb)).map_err(|e| format!("PDF: {e}"))?;
-                let mut page = dac_pdf::Page::new(page_size.0, page_size.1);
-                page.image(image, dac_pdf::Rect::new(0.0, 0.0, page_size.0, page_size.1));
+                let image = d.add_image(lcc_pdf::Image::jpeg(bytes, lcc_pdf::ColorSpace::Rgb)).map_err(|e| format!("PDF: {e}"))?;
+                let mut page = lcc_pdf::Page::new(page_size.0, page_size.1);
+                page.image(image, lcc_pdf::Rect::new(0.0, 0.0, page_size.0, page_size.1));
                 d.push_page(page).map_err(|e| format!("PDF: {e}"))?;
                 continue;
             }
@@ -241,7 +241,7 @@ mod tests {
         s.titles.intro.enabled = true;
         s.titles.intro.text = "Hello".into();
         s.overlays.rating = true;
-        let dir = std::env::temp_dir().join(format!("dac-slideshow-export-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-slideshow-export-{}", std::process::id()));
         let p = prepare(&mut session, &ids, &s, 320, 180, 85, &dir, "Show", "Plate").unwrap();
         assert_eq!(p.len(), 3);
         let files = p.run(&mut |_, _| true).unwrap();
@@ -261,7 +261,7 @@ mod tests {
         let mut s = Settings::default();
         s.titles.ending.enabled = true;
         s.titles.ending.text = "The end".into();
-        let dir = std::env::temp_dir().join(format!("dac-slideshow-pdf-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-slideshow-pdf-{}", std::process::id()));
         let p = prepare_pdf(&mut session, &ids, &s, 320, 180, 85, &dir, "Show", "Plate").unwrap();
         assert_eq!(p.len(), 3);
         let files = std::thread::spawn(move || p.run(&mut |_, _| true)).join().unwrap().unwrap();

@@ -9,8 +9,8 @@
 //! - **Export hook**: marks every exported photo Delivered.
 //! - **Metadata provider**: suggests the client as a keyword.
 
-use dac_plugin_sdk::serde_json::{Value, json};
-use dac_plugin_sdk::{Request, export_plugin, host};
+use lcc_plugin_sdk::serde_json::{Value, json};
+use lcc_plugin_sdk::{Request, export_plugin, host};
 
 const MANIFEST: &str = r#"{
   "id": "org.example.custom-fields",
@@ -89,7 +89,7 @@ mod tests {
 
     #[test]
     fn manifest_is_json() {
-        let m: Value = dac_plugin_sdk::serde_json::from_str(MANIFEST).unwrap();
+        let m: Value = lcc_plugin_sdk::serde_json::from_str(MANIFEST).unwrap();
         assert_eq!(m["metadataFields"].as_array().map(Vec::len), Some(4));
     }
 }

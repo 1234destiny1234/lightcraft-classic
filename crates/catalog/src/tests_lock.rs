@@ -15,17 +15,17 @@ fn temp_dir(tag: &str) -> PathBuf {
 #[test]
 fn second_opener_is_refused_until_the_first_lets_go() {
     let dir = temp_dir("twice");
-    let first = LibraryLock::acquire(&dir, dac_brand::DISPLAY_NAME).unwrap();
+    let first = LibraryLock::acquire(&dir, lcc_brand::DISPLAY_NAME).unwrap();
     assert!(first.held());
     let owner: LockOwner = serde_json::from_slice(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
-    assert_eq!((owner.pid, owner.program.as_str()), (std::process::id(), dac_brand::DISPLAY_NAME));
+    assert_eq!((owner.pid, owner.program.as_str()), (std::process::id(), lcc_brand::DISPLAY_NAME));
 
-    let e = LibraryLock::acquire(&dir, "dac-cli").unwrap_err();
+    let e = LibraryLock::acquire(&dir, "lcc-cli").unwrap_err();
     let LockError::InUse(Some(who)) = &e else { panic!("{e:?}") };
     assert_eq!(who.pid, std::process::id());
     let msg = e.to_string();
     assert!(
-        msg.contains(&format!("already open in {}", dac_brand::DISPLAY_NAME)) && msg.contains(&format!("process {}", std::process::id())),
+        msg.contains(&format!("already open in {}", lcc_brand::DISPLAY_NAME)) && msg.contains(&format!("process {}", std::process::id())),
         "{msg}"
     );
 
@@ -36,7 +36,7 @@ fn second_opener_is_refused_until_the_first_lets_go() {
     // and exec), so the release may take a moment to be seen
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(2);
     let again = loop {
-        match LibraryLock::acquire(&dir, "dac-cli") {
+        match LibraryLock::acquire(&dir, "lcc-cli") {
             Ok(l) => break l,
             Err(_) if std::time::Instant::now() < deadline => std::thread::sleep(std::time::Duration::from_millis(10)),
             Err(e) => panic!("{e:?}"),
@@ -53,7 +53,7 @@ fn leftover_lock_files_are_not_a_lock() {
     let dir = temp_dir("stale");
     std::fs::write(dir.join(LOCK), b"").unwrap();
     std::fs::write(dir.join(OWNER), br#"{"pid":999999,"host":"elsewhere","program":"Other","version":"0.2.0","since":1}"#).unwrap();
-    let l = LibraryLock::acquire(&dir, dac_brand::DISPLAY_NAME).unwrap();
+    let l = LibraryLock::acquire(&dir, lcc_brand::DISPLAY_NAME).unwrap();
     assert!(l.held());
     let owner: LockOwner = serde_json::from_slice(&std::fs::read(dir.join(OWNER)).unwrap()).unwrap();
     assert_eq!(owner.pid, std::process::id(), "the note now names this process");
@@ -79,7 +79,7 @@ fn lock_held_by_another_process_is_released_when_it_dies() {
         assert!(std::time::Instant::now() < deadline, "child never locked");
         std::thread::sleep(std::time::Duration::from_millis(20));
     }
-    let e = LibraryLock::acquire(&dir, dac_brand::DISPLAY_NAME).unwrap_err();
+    let e = LibraryLock::acquire(&dir, lcc_brand::DISPLAY_NAME).unwrap_err();
     let LockError::InUse(Some(who)) = &e else { panic!("{e:?}") };
     assert_eq!(who.pid, child.id());
     assert!(e.to_string().contains("on this computer") || who.host.is_empty(), "{e}");
@@ -87,7 +87,7 @@ fn lock_held_by_another_process_is_released_when_it_dies() {
     child.kill().unwrap(); // SIGKILL: no clean-up runs, like a crash
     child.wait().unwrap();
     assert!(dir.join(OWNER).exists(), "the crashed holder's note is left behind");
-    let l = LibraryLock::acquire(&dir, dac_brand::DISPLAY_NAME).expect("the OS released the dead process's lock");
+    let l = LibraryLock::acquire(&dir, lcc_brand::DISPLAY_NAME).expect("the OS released the dead process's lock");
     assert!(l.held());
     drop(l);
     let _ = std::fs::remove_dir_all(&dir);
@@ -99,7 +99,7 @@ fn lock_held_by_another_process_is_released_when_it_dies() {
 #[ignore = "helper process for lock_held_by_another_process_is_released_when_it_dies"]
 fn lock_holder_child() {
     let Some(dir) = std::env::var_os("LC_LOCK_CHILD_DIR") else { return };
-    let _l = LibraryLock::acquire(std::path::Path::new(&dir), "dac-cli").unwrap();
+    let _l = LibraryLock::acquire(std::path::Path::new(&dir), "lcc-cli").unwrap();
     std::fs::write(std::path::Path::new(&dir).join("child-locked"), b"").unwrap();
     std::thread::sleep(std::time::Duration::from_secs(120));
 }

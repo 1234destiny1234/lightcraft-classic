@@ -1,5 +1,5 @@
 [package]
-name = "dac-app"
+name = "lcc-app"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -15,24 +15,24 @@ workspace = true
 
 [features]
 default = ["denoise"]
-denoise = ["dac-engine/denoise"]
-rawnind-model = ["denoise", "dac-engine/rawnind-model"]
-# Open HEIC/HEIF photos (the optional dac-heif crate). Not default so distributors choose
+denoise = ["lcc-engine/denoise"]
+rawnind-model = ["denoise", "lcc-engine/rawnind-model"]
+# Open HEIC/HEIF photos (the optional lcc-heif crate). Not default so distributors choose
 # it (HEVC patents); build with `--features heif` to include it.
-heif = ["dac-codecs/heif"]
+heif = ["lcc-codecs/heif"]
 # Sound for video playback and slideshow music (cpal; links libasound on Linux). See docs/video.md.
-audio-out = ["dac-engine/audio-out"]
+audio-out = ["lcc-engine/audio-out"]
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-engine = { workspace = true, features = ["sam"] }
-dac-sysmem = { workspace = true }
-dac-ui-egui = { workspace = true }
-dac-codecs = { workspace = true }
-dac-raster = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-engine = { workspace = true, features = ["sam"] }
+lcc-sysmem = { workspace = true }
+lcc-ui-egui = { workspace = true }
+lcc-codecs = { workspace = true }
+lcc-raster = { workspace = true }
 # M14.4: the playing video frame graded on the window GPU (video_gpu)
-dac-gpu = { workspace = true }
-dac-pipeline = { workspace = true }
+lcc-gpu = { workspace = true }
+lcc-pipeline = { workspace = true }
 eframe = { workspace = true, features = ["default_fonts", "wgpu", "glow", "accesskit", "wayland", "x11"] }
 # probing the window's renderer before it opens (`window_gpu`)
 pollster = { workspace = true }
@@ -42,7 +42,7 @@ log = { workspace = true }
 
 [build-dependencies]
 # Icon + VERSIONINFO for the desktop executable; build.rs only uses it when targeting Windows.
-dac-brand = { workspace = true }
+lcc-brand = { workspace = true }
 winresource = "0.1"
 
 [target.'cfg(all(unix, not(target_os = "macos")))'.dependencies]

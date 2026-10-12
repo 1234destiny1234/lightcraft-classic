@@ -2,11 +2,11 @@
 //! with `cargo xtask corpus --download`). Each test skips cleanly when its directory is absent.
 //! `{ENV_PREFIX}_CORPUS` overrides the corpus root.
 
-use dac_codecs::*;
+use lcc_codecs::*;
 use std::path::{Path, PathBuf};
 
 fn corpus_root() -> PathBuf {
-    dac_brand::env_os("CORPUS").map(PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
+    lcc_brand::env_os("CORPUS").map(PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
 }
 
 fn files(dir: &Path) -> Vec<PathBuf> {
@@ -100,7 +100,7 @@ fn corpus_raw_is_routed() {
 /// Parse the OS-provided ICC profiles when present (macOS ColorSync; read-only, nothing copied).
 #[test]
 fn system_icc_profiles() {
-    use dac_codecs::icc::{IccColorModel, IccKind, parse};
+    use lcc_codecs::icc::{IccColorModel, IccKind, parse};
     let dir = Path::new("/System/Library/ColorSync/Profiles");
     if !dir.is_dir() {
         eprintln!("skip: no system ICC profiles");

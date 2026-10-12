@@ -1,6 +1,6 @@
 //! File ▸ Export ▸ Timelapse Video… (upstream #497): the dialog's commands and the background
 //! export. The dialog is `Dialog::Timelapse` (drawn in `panels::dialogs`); confirming it asks for
-//! a file and runs `dac_engine::timelapse` on a worker with an activity row whose ✕ stops it.
+//! a file and runs `lcc_engine::timelapse` on a worker with an activity row whose ✕ stops it.
 //!
 //! Sources: own design.
 
@@ -10,7 +10,7 @@ use std::sync::{Arc, Mutex};
 
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::pick::{PickRequest, Picked};
 use crate::state::Dialog;
 
@@ -38,11 +38,11 @@ pub fn new_dialog() -> Dialog {
     Dialog::Timelapse { fps: 24, size: "1920x1080".into(), fill: false, hold: 1, crossfade: 0, prores: false, quality: 80 }
 }
 
-pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
+pub fn enabled(app: &LccApp, id: &str) -> Option<bool> {
     COMMANDS.iter().any(|c| c.0 == id).then(|| app.session.active().is_some() && app.export.is_none())
 }
 
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     Some(match id {
         "dialog.timelapse" if COMMANDS.iter().any(|c| c.0 == id) => {
             app.ui.dialog = Some(new_dialog());
@@ -82,11 +82,11 @@ pub fn dialog_params(d: &Dialog) -> Option<Value> {
 }
 
 /// Render and encode on a worker; the export's row in the activity stack shows the photo count.
-pub fn start(app: &mut DacApp, params: &Value) -> Result<Value, String> {
+pub fn start(app: &mut LccApp, params: &Value) -> Result<Value, String> {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
-    let prepared = dac_engine::timelapse::prepare(&mut app.session, params)?;
+    let prepared = lcc_engine::timelapse::prepare(&mut app.session, params)?;
     let total = prepared.len();
     let progress = Arc::new(Mutex::new((0, String::new())));
     let cancel = Arc::new(AtomicBool::new(false));
@@ -104,7 +104,7 @@ pub fn start(app: &mut DacApp, params: &Value) -> Result<Value, String> {
     std::thread::Builder::new().name("timelapse".into()).spawn(work).map_err(|e| e.to_string())?;
     #[cfg(target_arch = "wasm32")]
     work();
-    let row = app.session.activity.start("export", "Exporting timelapse", dac_engine::activity::Cancel::Flag(cancel.clone()));
+    let row = app.session.activity.start("export", "Exporting timelapse", lcc_engine::activity::Cancel::Flag(cancel.clone()));
     row.progress(0, total as u64);
     app.export = Some(crate::export_task::ExportTask::new(total, progress, cancel, rx, row));
     Ok(json!({"background": true, "total": total}))
@@ -117,11 +117,11 @@ mod tests {
 
     #[test]
     fn menu_dialog_and_background_timelapse() {
-        let dir = std::env::temp_dir().join(format!("dac-ui-timelapse-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-ui-timelapse-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.mp4");
-        let mut app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services::default());
         assert!(crate::menus::menu_entries(&app).iter().any(|e| e.id == "dialog.timelapse" && e.menu == ["File", "Export"]));
         let ids: Vec<u64> = app.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
         app.run("dialog.timelapse", json!({})).unwrap();

@@ -13,7 +13,7 @@ use crate::testprinter::{TestPrinter, TestPrinterConfig};
 use crate::text::ShapedText;
 
 /// A test CA's `localhost` / 127.0.0.1 leaf and its key (P-256, valid until 2126), generated
-/// with openssl for tests only (the same pair `dac-net`'s TLS tests use).
+/// with openssl for tests only (the same pair `lcc-net`'s TLS tests use).
 const LEAF_B64: &str = "MIIBqTCCAU6gAwIBAgIUHPx6OQjNVD01xDDk464Uj1xwmzcwCgYIKoZIzj0EAwIwEjEQMA4GA1UEAwwHVGVzdCBDQTAgFw0yNjEwMTAwMDA1NDlaGA8yMTI2MDkxNjAwMDU0OVowFDESMBAGA1UEAwwJbG9jYWxob3N0MFkwEwYHKoZIzj0CAQYIKoZIzj0DAQcDQgAEFPSyEHSnzWNFWHjo6Fsccp8IUISLOIv2JcW4dwim6VlrvmcgH4fSRtMLq9JDbrs7eGp5J/7qj5VL3iqt4kGTI6N+MHwwGgYDVR0RBBMwEYIJbG9jYWxob3N0hwR/AAABMAkGA1UdEwQCMAAwEwYDVR0lBAwwCgYIKwYBBQUHAwEwHQYDVR0OBBYEFIkl10ciEZxIBMwplQXH2M/FHL6EMB8GA1UdIwQYMBaAFKqM68Y6JJb+RsT9hW35DdCWbtsTMAoGCCqGSM49BAMCA0kAMEYCIQCGcYFLw3UXrn8ea/Hfn4plLzgTQLoQzYhaA86WzbiexQIhAM/ozbpH7BFWxXjrbJfUwlFZ5A6k670RBOEwjjudfnO4";
 const KEY_B64: &str = "MIGHAgEAMBMGByqGSM49AgEGCCqGSM49AwEHBG0wawIBAQQgP7on22FsY1CzXydImw0X41brmtJ52CZx4n9+5T6HDV+hRANCAAQU9LIQdKfNY0VYeOjoWxxynwhQhIs4i/Ylxbh3CKbpWWu+ZyAfh9JG0wur0kNuuzt4ankn/uqPlUveKq3iQZMj";
 
@@ -33,9 +33,9 @@ fn b64(s: &str) -> Vec<u8> {
     out
 }
 
-/// The leaf certificate's fingerprint as `dac-net` writes it.
+/// The leaf certificate's fingerprint as `lcc-net` writes it.
 fn leaf_fingerprint() -> String {
-    dac_net::Fingerprint::of(&b64(LEAF_B64)).to_string()
+    lcc_net::Fingerprint::of(&b64(LEAF_B64)).to_string()
 }
 
 /// A TLS front for `n` connections that relays each request to `plain` (the virtual printer's

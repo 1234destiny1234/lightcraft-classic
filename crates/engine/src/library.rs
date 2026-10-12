@@ -3,7 +3,7 @@
 //!
 //! ```text
 //! <Name> Library/
-//!   catalog.snap   catalog.log      (dac-catalog journal)
+//!   catalog.snap   catalog.log      (lcc-catalog journal)
 //!   presets.json   view.json        (user presets + favourites; last source/sort/selection)
 //!   prefs.json     (library preferences: XMP sidecars, import defaults, cache size, last export)
 //!   thumbs/        (rendered thumbnail cache, safe to delete)
@@ -18,28 +18,28 @@
 //! [`EngineError::NotSaved`]: its change stays applied in memory and queued, and every later save
 //! retries the queue ([`Session::unsaved`] reports it meanwhile), so nothing is lost once the
 //! disk is writable again. The log is compacted into a snapshot when it
-//! grows (see [`dac_catalog::SnapshotPolicy`]; written by a worker thread on native, see
-//! [`dac_catalog::journal`]) and on [`Session::close_library`].
+//! grows (see [`lcc_catalog::SnapshotPolicy`]; written by a worker thread on native, see
+//! [`lcc_catalog::journal`]) and on [`Session::close_library`].
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{FsStore, Journal, LibraryLock, LoadReport, Store};
-use dac_develop::Preset;
+use lcc_catalog::{FsStore, Journal, LibraryLock, LoadReport, Store};
+use lcc_develop::Preset;
 use serde::{Deserialize, Serialize};
 
 use crate::{EngineError, LibrarySource, Result, Selection, Session};
 
 /// The catalog migration (v3 → v4) running in this process, if any: what frontends show while
 /// [`migrate_library`] runs on a worker thread.
-pub fn migration_progress() -> Option<dac_catalog::progress::MigrationProgress> {
-    dac_catalog::progress::migration()
+pub fn migration_progress() -> Option<lcc_catalog::progress::MigrationProgress> {
+    lcc_catalog::progress::migration()
 }
 
 /// Whether opening the library in `dir` first upgrades its catalog (a one-time step that takes
 /// tens of seconds for a library of hundreds of thousands of photos).
 #[cfg(not(target_arch = "wasm32"))]
 pub fn needs_migration(dir: &Path) -> bool {
-    dac_catalog::library::needs_migration(dir)
+    lcc_catalog::library::needs_migration(dir)
 }
 
 /// Upgrade the catalog of the library in `dir` without opening it in a session, so a frontend
@@ -49,7 +49,7 @@ pub fn needs_migration(dir: &Path) -> bool {
 #[cfg(not(target_arch = "wasm32"))]
 pub fn migrate_library(dir: &Path) -> Result<bool> {
     let _lock = LibraryLock::acquire(dir, &program_name()).map_err(|e| EngineError::LibraryInUse(e.to_string()))?;
-    Ok(dac_catalog::library::migrate(dir)?)
+    Ok(lcc_catalog::library::migrate(dir)?)
 }
 
 /// The library folder `path` names. A library is a folder; naming one of its own files
@@ -63,7 +63,7 @@ pub fn resolve_dir(path: &Path) -> Result<PathBuf> {
     let own = path
         .file_name()
         .and_then(|n| n.to_str())
-        .is_some_and(|n| [dac_catalog::journal::SNAPSHOT, dac_catalog::journal::LOG, dac_catalog::lock::LOCK].contains(&n));
+        .is_some_and(|n| [lcc_catalog::journal::SNAPSHOT, lcc_catalog::journal::LOG, lcc_catalog::lock::LOCK].contains(&n));
     if !own {
         return Err(EngineError::Other(format!("{} is a file; a library is a folder", path.display())));
     }
@@ -75,18 +75,18 @@ pub fn resolve_dir(path: &Path) -> Result<PathBuf> {
 
 /// Whether `dir` already holds a library (its catalog files).
 pub fn is_library(dir: &Path) -> bool {
-    dir.join(dac_catalog::journal::SNAPSHOT).is_file() || dir.join(dac_catalog::journal::LOG).is_file()
+    dir.join(lcc_catalog::journal::SNAPSHOT).is_file() || dir.join(lcc_catalog::journal::LOG).is_file()
 }
 
 /// Library directory name inside the user's Pictures folder.
-pub const DEFAULT_NAME: &str = dac_brand::LIBRARY_DEFAULT;
+pub const DEFAULT_NAME: &str = lcc_brand::LIBRARY_DEFAULT;
 
 /// The default library location: `{ENV_PREFIX}_LIBRARY` if set, else `~/Pictures/<`[`DEFAULT_NAME`]`>`
 /// (`%USERPROFILE%\Pictures\…` on Windows). When that folder doesn't exist but a library under a
-/// previous default name does ([`dac_brand::library_default_names`]), that one is used, so an
+/// previous default name does ([`lcc_brand::library_default_names`]), that one is used, so an
 /// existing library keeps opening after a rename.
 pub fn default_dir() -> Option<PathBuf> {
-    if let Some(p) = dac_brand::env_os("LIBRARY").filter(|p| !p.is_empty()) {
+    if let Some(p) = lcc_brand::env_os("LIBRARY").filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(p));
     }
     let home = if cfg!(windows) { std::env::var_os("USERPROFILE") } else { std::env::var_os("HOME") }?;
@@ -99,7 +99,7 @@ pub fn default_in(pictures: &Path) -> PathBuf {
     if current.exists() {
         return current;
     }
-    dac_brand::library_default_names().into_iter().skip(1).map(|n| pictures.join(n)).find(|p| p.is_dir()).unwrap_or(current)
+    lcc_brand::library_default_names().into_iter().skip(1).map(|n| pictures.join(n)).find(|p| p.is_dir()).unwrap_or(current)
 }
 
 pub struct Library {
@@ -121,7 +121,7 @@ pub struct Library {
     /// When the frame loop may retry a failed append ([`Session::persist_if_dirty`] backs off).
     retry_at: Option<web_time::Instant>,
     /// What forgetting untouched Local records did when the library opened.
-    pub forgot_local: Option<dac_catalog::ForgetPlan>,
+    pub forgot_local: Option<lcc_catalog::ForgetPlan>,
     presets_written: String,
     view_written: Vec<u8>,
     /// Settings files that were unreadable or damaged when the library opened (`library.info` →
@@ -166,11 +166,11 @@ struct ViewFile {
     library_folder: Option<String>,
     // No filter: a library opens unfiltered. A date, keyword or person left over from the last session
     // would silently hide photos, with only a small badge to say so.
-    sort: dac_catalog::Sort,
+    sort: lcc_catalog::Sort,
     selection: Selection,
     /// The photos of the last export (the Previous Export source).
     #[serde(skip_serializing_if = "Vec::is_empty")]
-    previous_export: Vec<dac_catalog::PhotoId>,
+    previous_export: Vec<lcc_catalog::PhotoId>,
 }
 
 impl Library {
@@ -261,8 +261,8 @@ fn same_dir(a: &Path, b: &Path) -> bool {
 fn program_name() -> String {
     let exe = std::env::current_exe().ok().and_then(|p| p.file_stem().map(|s| s.to_string_lossy().to_string()));
     match exe.as_deref() {
-        None => dac_brand::DISPLAY_NAME.into(),
-        Some(n) if n == dac_brand::BINARY || n == crate::legacy::BINARY => dac_brand::DISPLAY_NAME.into(),
+        None => lcc_brand::DISPLAY_NAME.into(),
+        Some(n) if n == lcc_brand::BINARY || n == crate::legacy::BINARY => lcc_brand::DISPLAY_NAME.into(),
         Some(other) => other.to_string(),
     }
 }
@@ -342,7 +342,7 @@ impl Session {
     /// Open (or create) the library at `dir` into this session, replacing its catalog. With
     /// `seed_demo`, a newly created library starts with the procedural demo photos.
     ///
-    /// The library is locked for this session ([`dac_catalog::lock`]): if another process
+    /// The library is locked for this session ([`lcc_catalog::lock`]): if another process
     /// has it open, this fails with [`EngineError::LibraryInUse`] and nothing is read or changed.
     /// Reopening the library this session already has open keeps its lock.
     ///
@@ -455,12 +455,12 @@ impl Session {
         if on_disk {
             // the catalog's own settings hold them (catalog-settings.json); prefs.json only for
             // libraries written before they moved, migrated on the next save
-            let cs = dac_catalog::library::CatalogSettings::load(&dir);
+            let cs = lcc_catalog::library::CatalogSettings::load(&dir);
             if let Some(v) = cs.previews.and_then(|v| serde_json::from_value(v).ok()) {
                 self.preview_prefs = v;
             }
         }
-        self.forget_local_days = prefs.forget_local_days.unwrap_or(dac_catalog::DEFAULT_FORGET_DAYS);
+        self.forget_local_days = prefs.forget_local_days.unwrap_or(lcc_catalog::DEFAULT_FORGET_DAYS);
         self.smart_previews_dir = prefs.smart_previews_dir.filter(|_| on_disk).map(PathBuf::from);
         if let Some(d) = &self.smart_previews_dir {
             self.media.smart_dir = Some(d.clone());
@@ -486,8 +486,8 @@ impl Session {
             self.library_folder = v.library_folder.filter(|f| !f.trim().is_empty());
             if self.source == LibrarySource::LibraryFolder {
                 // a folder that is gone (or none): everything, not an empty grid
-                let f = dac_catalog::Filter { library_folder: self.library_folder.clone(), ..Default::default() };
-                let any = self.library_folder.is_some() && !self.catalog.query(&f, &dac_catalog::Sort::default()).is_empty();
+                let f = lcc_catalog::Filter { library_folder: self.library_folder.clone(), ..Default::default() };
+                let any = self.library_folder.is_some() && !self.catalog.query(&f, &lcc_catalog::Sort::default()).is_empty();
                 if !any {
                     self.source = LibrarySource::All;
                     self.library_folder = None;
@@ -706,7 +706,7 @@ impl Session {
         let Some(lib) = self.library.as_mut() else { return Ok(()) };
         #[cfg(not(target_arch = "wasm32"))]
         if lib.on_disk {
-            let mut cs = dac_catalog::library::CatalogSettings::load(&lib.dir);
+            let mut cs = lcc_catalog::library::CatalogSettings::load(&lib.dir);
             let v = serde_json::to_value(self.preview_prefs).ok();
             if cs.previews != v {
                 cs.previews = v;
@@ -789,7 +789,7 @@ impl Session {
 
     /// Run `f` on the open catalog's journal and catalog, after the queued ops are written (so a
     /// checkpoint holds them).
-    fn with_catalog_journal<T>(&mut self, f: impl FnOnce(&mut Journal, &dac_catalog::Catalog) -> dac_catalog::Result<T>) -> Result<T> {
+    fn with_catalog_journal<T>(&mut self, f: impl FnOnce(&mut Journal, &lcc_catalog::Catalog) -> lcc_catalog::Result<T>) -> Result<T> {
         if self.interaction.is_some() {
             return Err(EngineError::Other("finish the edit in progress first".into()));
         }
@@ -800,12 +800,12 @@ impl Session {
     }
 
     /// The open catalog's settings (`catalog-settings.json`); the defaults when none is on disk.
-    pub fn catalog_settings(&self) -> dac_catalog::library::CatalogSettings {
-        self.catalog_dir().map(dac_catalog::library::CatalogSettings::load).unwrap_or_default()
+    pub fn catalog_settings(&self) -> lcc_catalog::library::CatalogSettings {
+        self.catalog_dir().map(lcc_catalog::library::CatalogSettings::load).unwrap_or_default()
     }
 
     /// Save the open catalog's settings.
-    pub fn set_catalog_settings(&mut self, settings: &dac_catalog::library::CatalogSettings) -> Result<()> {
+    pub fn set_catalog_settings(&mut self, settings: &lcc_catalog::library::CatalogSettings) -> Result<()> {
         let dir = self.catalog_dir().ok_or_else(|| EngineError::Other("no catalog on disk is open".into()))?.to_path_buf();
         settings.save(&dir)?;
         Ok(())
@@ -821,19 +821,19 @@ impl Session {
     }
 
     /// Test the catalog's integrity (a checkpoint first).
-    pub fn check_catalog_integrity(&mut self) -> Result<dac_catalog::library::IntegrityReport> {
+    pub fn check_catalog_integrity(&mut self) -> Result<lcc_catalog::library::IntegrityReport> {
         self.with_catalog_journal(|j, c| j.check_integrity(c))
     }
 
     /// Optimise the catalog: its store rewritten, indexes rebuilt, compacted.
-    pub fn optimize_catalog(&mut self) -> Result<dac_catalog::library::OptimizeReport> {
+    pub fn optimize_catalog(&mut self) -> Result<lcc_catalog::library::OptimizeReport> {
         self.with_catalog_journal(|j, c| j.optimize(c))
     }
 
     /// The exit-time backup: when the catalog's schedule says one is due (with the integrity
     /// test and optimise when set). `Ok(None)`: not due, or no catalog on disk.
     pub fn backup_catalog_if_due(&mut self) -> Result<Option<PathBuf>> {
-        if self.catalog_dir().is_none() || !self.catalog_settings().backup_due(dac_catalog::library::now_secs()) {
+        if self.catalog_dir().is_none() || !self.catalog_settings().backup_due(lcc_catalog::library::now_secs()) {
             return Ok(None);
         }
         let _ = self.end_interaction();
@@ -869,7 +869,7 @@ mod resolve_tests {
         s.close_library().unwrap();
         drop(s);
         assert!(is_library(&dir));
-        let snap = dir.join(dac_catalog::journal::SNAPSHOT);
+        let snap = dir.join(lcc_catalog::journal::SNAPSHOT);
         assert_eq!(resolve_dir(&snap).unwrap(), dir);
         let mut s = Session::new().with_fs();
         s.open_library(&snap, false).unwrap();

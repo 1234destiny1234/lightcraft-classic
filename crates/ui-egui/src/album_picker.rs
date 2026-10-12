@@ -33,16 +33,16 @@ pub struct AlbumEntry {
 /// Every album, smart album and folder of `cat` in the sidebar's order (folders first, the user's
 /// order, else by name), each folder followed by what it holds. `blocked` says why an album can't
 /// be picked, if so.
-pub fn entries_from(cat: &dac_catalog::Catalog, blocked: impl Fn(&dac_catalog::Album) -> Option<String>) -> Vec<AlbumEntry> {
+pub fn entries_from(cat: &lcc_catalog::Catalog, blocked: impl Fn(&lcc_catalog::Album) -> Option<String>) -> Vec<AlbumEntry> {
     let kids = cat.album_children_by_parent();
     let mut out = Vec::new();
     // depth-first, guarded against a parent loop in a damaged catalog
     let mut seen = std::collections::HashSet::new();
     fn walk(
-        parent: Option<dac_catalog::AlbumId>,
-        kids: &std::collections::HashMap<Option<dac_catalog::AlbumId>, Vec<&dac_catalog::Album>>,
-        blocked: &dyn Fn(&dac_catalog::Album) -> Option<String>,
-        seen: &mut std::collections::HashSet<dac_catalog::AlbumId>,
+        parent: Option<lcc_catalog::AlbumId>,
+        kids: &std::collections::HashMap<Option<lcc_catalog::AlbumId>, Vec<&lcc_catalog::Album>>,
+        blocked: &dyn Fn(&lcc_catalog::Album) -> Option<String>,
+        seen: &mut std::collections::HashSet<lcc_catalog::AlbumId>,
         out: &mut Vec<AlbumEntry>,
         depth: usize,
     ) {
@@ -411,7 +411,7 @@ mod tests {
         assert_eq!(search(&v, "folder 7 wedding").len(), want);
         // wall time depends on the machine's load: enforced only with <PREFIX>_PERF_ASSERT set
         let took = start.elapsed();
-        if dac_brand::env_is_set("PERF_ASSERT") {
+        if lcc_brand::env_is_set("PERF_ASSERT") {
             assert!(took < std::time::Duration::from_secs(1), "took {took:?}");
         } else if took >= std::time::Duration::from_secs(1) {
             eprintln!("note: the album search took {took:?} (over 1 s)");

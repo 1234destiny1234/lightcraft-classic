@@ -11,7 +11,7 @@ use crate::{Result, Session};
 /// Run `command` with `params` on each of `ids` as the active photo, then fold the undo steps
 /// into one labelled `label`. The selection is put back afterwards; a photo the command refuses
 /// is skipped and reported.
-fn for_each(s: &mut Session, ids: &[dac_catalog::PhotoId], command: &str, params: &Value, label: &str) -> Result<Value> {
+fn for_each(s: &mut Session, ids: &[lcc_catalog::PhotoId], command: &str, params: &Value, label: &str) -> Result<Value> {
     let saved = s.selection.clone();
     let before = s.undo.len();
     let mut changed = 0usize;

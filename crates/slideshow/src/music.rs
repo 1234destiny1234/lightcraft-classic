@@ -1,6 +1,6 @@
 //! Slideshow music: decode WAV (hound), FLAC (claxon) and Ogg Vorbis (lewton), all pure Rust and
 //! permissive, to interleaved stereo `f32`; measure track lengths (for "fit to music"); apply volume
-//! and balance; and, with the `audio-out` feature, play through the sound card (`dac-audio-out`).
+//! and balance; and, with the `audio-out` feature, play through the sound card (`lcc-audio-out`).
 //!
 //! MP3 and AAC are not decoded yet: the pure-Rust decoder that covers them (symphonia) is MPL-2.0,
 //! which the licence policy rejects.
@@ -181,12 +181,12 @@ pub fn mix(samples: &mut [f32], volume: f32, balance: f32) {
     }
 }
 
-/// Whether this build can play sound (`dac-audio-out` built with its `audio-out` feature).
-pub const CAN_PLAY: bool = dac_audio_out::CAN_PLAY;
+/// Whether this build can play sound (`lcc-audio-out` built with its `audio-out` feature).
+pub const CAN_PLAY: bool = lcc_audio_out::CAN_PLAY;
 
 /// Music playing on the default output device; dropping it stops the sound.
 pub struct Player {
-    _out: dac_audio_out::Output,
+    _out: lcc_audio_out::Output,
 }
 
 impl Player {
@@ -204,7 +204,7 @@ impl Player {
                 pos = pos.saturating_add(1);
             }
         };
-        let out = dac_audio_out::Output::start(audio.rate, 2, Box::new(fill)).map_err(|e| format!("slideshow music: {e}"))?;
+        let out = lcc_audio_out::Output::start(audio.rate, 2, Box::new(fill)).map_err(|e| format!("slideshow music: {e}"))?;
         Ok(Player { _out: out })
     }
 }
@@ -223,7 +223,7 @@ mod tests {
     }
 
     fn tmp(name: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("dac-slideshow-{}-{name}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("lcc-slideshow-{}-{name}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
         d
     }

@@ -1,17 +1,17 @@
 //! Playback cost per frame (M14.4 perf): decode at playback size, CPU LUT grade, and the RGBA
 //! conversion the loupe does before a texture upload. `#[ignore]`d: run with
-//! `cargo test -p dac-engine --release video::bench_playback -- --ignored --nocapture`.
+//! `cargo test -p lcc-engine --release video::bench_playback -- --ignored --nocapture`.
 //! Corpus clips (`corpus/video`, `cargo xtask corpus --download`) are measured when present; a
 //! synthetic 4K H.264 clip is made in-test.
 
 use std::path::{Path, PathBuf};
 use std::time::Instant;
 
-use dac_pipeline::Quality;
-use dac_pipeline::grade::GradeLut;
+use lcc_pipeline::Quality;
+use lcc_pipeline::grade::GradeLut;
 
 use super::VideoBackend;
-use super::native::DacVideo;
+use super::native::LccVideo;
 use super::playback::PLAY_MAX_SIDE;
 
 const FRAMES: usize = 48;
@@ -23,23 +23,23 @@ fn ms(d: std::time::Duration) -> f64 {
 struct Gpu {
     device: wgpu::Device,
     queue: wgpu::Queue,
-    lut: dac_gpu::video_lut::VideoLut,
-    target: Option<dac_gpu::video_lut::LutTarget>,
+    lut: lcc_gpu::video_lut::VideoLut,
+    target: Option<lcc_gpu::video_lut::LutTarget>,
 }
 
 fn gpu() -> Option<Gpu> {
     let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
     let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions::default())).ok()?;
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default())).ok()?;
-    let lut = dac_gpu::video_lut::VideoLut::new(&device).ok()?;
+    let lut = lcc_gpu::video_lut::VideoLut::new(&device).ok()?;
     Some(Gpu { device, queue, lut, target: None })
 }
 
 /// Upload + LUT shader, waited for (the display path doesn't wait; this bounds its cost).
-fn gpu_grade(g: &mut Gpu, img: &dac_raster::Rgb32f, lut: &GradeLut) -> f64 {
+fn gpu_grade(g: &mut Gpu, img: &lcc_raster::Rgb32f, lut: &GradeLut) -> f64 {
     let t = Instant::now();
     if g.target.as_ref().is_none_or(|t| t.size() != [img.width, img.height]) {
-        g.target = dac_gpu::video_lut::LutTarget::new(&g.device, img.width, img.height).ok();
+        g.target = lcc_gpu::video_lut::LutTarget::new(&g.device, img.width, img.height).ok();
     }
     let Some(target) = g.target.as_ref() else { return f64::NAN };
     if g.lut.grade(&g.device, &g.queue, img, 1, lut, target).is_err() {
@@ -50,7 +50,7 @@ fn gpu_grade(g: &mut Gpu, img: &dac_raster::Rgb32f, lut: &GradeLut) -> f64 {
 }
 
 fn measure(path: &Path, lut: &GradeLut, mut gpu: Option<&mut Gpu>) {
-    let b = DacVideo::default();
+    let b = LccVideo::default();
     let Ok(mut it) = b.frames_from(path, 0.0, Some(PLAY_MAX_SIDE)) else {
         println!("{}: can't open", path.display());
         return;
@@ -94,7 +94,7 @@ fn measure(path: &Path, lut: &GradeLut, mut gpu: Option<&mut Gpu>) {
 #[test]
 #[ignore = "benchmark"]
 fn playback_cost_per_frame() {
-    let mut s = dac_develop::DevelopSettings::default();
+    let mut s = lcc_develop::DevelopSettings::default();
     s.light.exposure = 0.3;
     s.light.contrast = 20.0;
     s.color.vibrance = 15.0;
@@ -102,10 +102,10 @@ fn playback_cost_per_frame() {
     let root = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/video");
     let mut clips: Vec<PathBuf> = std::fs::read_dir(&root).map(|d| d.flatten().map(|e| e.path()).collect()).unwrap_or_default();
     clips.sort();
-    let dir = std::env::temp_dir().join(format!("dac-bench-playback-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-bench-playback-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let uhd = dir.join("synthetic-h264-2160p.mp4");
-    dac_video::test_util::write_clip(&uhd, 3840, 2160, FRAMES + 1, |k| (16 + 3 * k).min(235) as u8, &[]);
+    lcc_video::test_util::write_clip(&uhd, 3840, 2160, FRAMES + 1, |k| (16 + 3 * k).min(235) as u8, &[]);
     clips.push(uhd);
     let mut g = gpu();
     for c in &clips {
@@ -118,13 +118,13 @@ fn playback_cost_per_frame() {
 #[test]
 fn linear_playback_frames_carry_the_lut() {
     use super::playback::{FramePixels, Playback};
-    let dir = std::env::temp_dir().join(format!("dac-linear-playback-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-linear-playback-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let clip = dir.join("c.mp4");
-    dac_video::test_util::write_clip(&clip, 64, 48, 4, |k| (40 + 20 * k) as u8, &[]);
-    let mut s = dac_develop::DevelopSettings::default();
+    lcc_video::test_util::write_clip(&clip, 64, 48, 4, |k| (40 + 20 * k) as u8, &[]);
+    let mut s = lcc_develop::DevelopSettings::default();
     s.light.exposure = 0.5;
-    let b: std::sync::Arc<dyn VideoBackend> = std::sync::Arc::new(DacVideo::default());
+    let b: std::sync::Arc<dyn VideoBackend> = std::sync::Arc::new(LccVideo::default());
     let first = |mut p: Playback| {
         let t = Instant::now();
         loop {

@@ -1,13 +1,13 @@
 //! The typed client: one method per endpoint the app calls (plan/immich.md → Endpoints we need).
-//! Blocking, like `dac-net`: run it on a worker thread.
+//! Blocking, like `lcc-net`: run it on a worker thread.
 
 use std::path::Path;
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
 use std::time::Duration;
 
-use dac_credentials::Secret;
-use dac_net::{ClientConfig, DownloadOptions, Fingerprint, Method, Trust};
+use lcc_credentials::Secret;
+use lcc_net::{ClientConfig, DownloadOptions, Fingerprint, Method, Trust};
 use serde::Serialize;
 use serde::de::DeserializeOwned;
 
@@ -52,14 +52,14 @@ pub fn normalize_url(input: &str) -> Result<String, ImmichError> {
     if let Some(stripped) = s.strip_suffix("/api") {
         s = stripped.to_string();
     }
-    dac_net::Url::parse(&s).map_err(ImmichError::from)?;
+    lcc_net::Url::parse(&s).map_err(ImmichError::from)?;
     Ok(s)
 }
 
 /// A connection to one server with one API key.
 #[derive(Clone)]
 pub struct Client {
-    http: dac_net::Client,
+    http: lcc_net::Client,
     base: String,
     key: Secret,
     retries: u32,
@@ -87,7 +87,7 @@ impl Client {
         if let Some(t) = opts.stall_timeout {
             cfg.stall_timeout = t;
         }
-        let http = dac_net::Client::new(cfg)?;
+        let http = lcc_net::Client::new(cfg)?;
         Ok(Client { http, base, key, retries: opts.retries, backoff: opts.backoff })
     }
 
@@ -105,7 +105,7 @@ impl Client {
         format!("{}/api{path}", self.base)
     }
 
-    fn send(&self, method: Method, path: &str, body: Option<&serde_json::Value>, auth: bool) -> Result<dac_net::Response, ImmichError> {
+    fn send(&self, method: Method, path: &str, body: Option<&serde_json::Value>, auth: bool) -> Result<lcc_net::Response, ImmichError> {
         let mut attempt = 0;
         loop {
             let mut req = self.http.request(method, &self.url(path)).header("accept", "application/json");
@@ -226,7 +226,7 @@ impl Client {
         let url = self.url(&format!("/assets/{}/original", path_id(id)?));
         let opts = DownloadOptions { headers: vec![("x-api-key".into(), self.key.expose().to_string(), true)], cancel, ..DownloadOptions::default() };
         let d = self.http.download(&url, dest, opts).map_err(|e| match e {
-            dac_net::NetError::Status { code, .. } => status(code, "original"),
+            lcc_net::NetError::Status { code, .. } => status(code, "original"),
             e => ImmichError::from(e),
         })?;
         Ok(d.bytes)
@@ -343,7 +343,7 @@ impl Client {
     /// the app's stable id for it. Needs `asset.upload`. Not retried (not idempotent by itself;
     /// callers check checksums first).
     pub fn upload(&self, up: &NewAsset<'_>) -> Result<(String, bool), ImmichError> {
-        let mut form = dac_net::Multipart::new()
+        let mut form = lcc_net::Multipart::new()
             .text("deviceAssetId", up.device_asset_id)
             .text("deviceId", up.device_id)
             .text("fileCreatedAt", up.created)

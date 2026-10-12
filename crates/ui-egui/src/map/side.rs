@@ -4,11 +4,11 @@
 use egui::{Rect, RichText};
 use serde_json::{Value, json};
 
-use dac_engine::cmd::map::LocationFilter;
-use dac_geo::LatLon;
+use lcc_engine::cmd::map::LocationFilter;
+use lcc_geo::LatLon;
 
 use super::Job;
-use crate::DacApp;
+use crate::LccApp;
 use crate::i18n::tr;
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -22,7 +22,7 @@ fn parse_coords(q: &str) -> Option<LatLon> {
 }
 
 /// `map.search`: coordinates, then a saved location, then (with consent) the online geocoder.
-pub fn search(app: &mut DacApp, q: &str) -> Result<Value, String> {
+pub fn search(app: &mut LccApp, q: &str) -> Result<Value, String> {
     let q = q.trim();
     if q.is_empty() {
         app.map.results.clear();
@@ -51,8 +51,8 @@ pub fn search(app: &mut DacApp, q: &str) -> Result<Value, String> {
         let query = q.to_string();
         let (tx, rx) = std::sync::mpsc::channel();
         let spawned = std::thread::Builder::new().name("map-search".into()).spawn(move || {
-            let r = dac_geo::geocode::Nominatim::new(&endpoint)
-                .and_then(|n| n.search(dac_geo::geocode::Consent::Granted, &query))
+            let r = lcc_geo::geocode::Nominatim::new(&endpoint)
+                .and_then(|n| n.search(lcc_geo::geocode::Consent::Granted, &query))
                 .map_err(|e| e.to_string());
             let _ = tx.send(r);
         });
@@ -66,7 +66,7 @@ pub fn search(app: &mut DacApp, q: &str) -> Result<Value, String> {
 
 /// `map.lookup {ids?}`: reverse-geocode the selected photos with the chosen provider (online in the
 /// background, then applied as one undo step).
-pub fn lookup(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn lookup(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let mut params = json!({"provider": app.map.prefs.geocoder, "overwrite": p.get("overwrite").and_then(Value::as_bool).unwrap_or(false)});
     if let (Some(o), Some(ids)) = (params.as_object_mut(), p.get("ids")) {
         o.insert("ids".into(), ids.clone());
@@ -79,7 +79,7 @@ pub fn lookup(app: &mut DacApp, p: &Value) -> Result<Value, String> {
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let ids: Vec<dac_catalog::PhotoId> = app.session.targets(&params);
+                let ids: Vec<lcc_catalog::PhotoId> = app.session.targets(&params);
                 let todo: Vec<(u64, LatLon)> =
                     ids.iter().filter_map(|id| app.session.catalog.photo(*id)?.meta.gps.map(|(a, b)| (id.0, LatLon::new(a, b)))).take(500).collect();
                 if todo.is_empty() {
@@ -89,14 +89,14 @@ pub fn lookup(app: &mut DacApp, p: &Value) -> Result<Value, String> {
                 let (tx, rx) = std::sync::mpsc::channel();
                 let spawned = std::thread::Builder::new().name("map-geocode".into()).spawn(move || {
                     let r = (|| -> Result<Value, String> {
-                        let n = dac_geo::geocode::Nominatim::new(&endpoint).map_err(|e| e.to_string())?;
+                        let n = lcc_geo::geocode::Nominatim::new(&endpoint).map_err(|e| e.to_string())?;
                         let mut places = Vec::new();
-                        let mut seen: Vec<(LatLon, Option<dac_geo::geocode::Place>)> = Vec::new();
+                        let mut seen: Vec<(LatLon, Option<lcc_geo::geocode::Place>)> = Vec::new();
                         for (id, at) in todo {
-                            let pl = match seen.iter().find(|(q, _)| dac_geo::distance_m(*q, at) < 50.0) {
+                            let pl = match seen.iter().find(|(q, _)| lcc_geo::distance_m(*q, at) < 50.0) {
                                 Some((_, pl)) => pl.clone(),
                                 None => {
-                                    let pl = n.reverse(dac_geo::geocode::Consent::Granted, at).map_err(|e| e.to_string())?;
+                                    let pl = n.reverse(lcc_geo::geocode::Consent::Granted, at).map_err(|e| e.to_string())?;
                                     seen.push((at, pl.clone()));
                                     pl
                                 }
@@ -123,14 +123,14 @@ pub fn lookup(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn start_download(app: &mut DacApp) {
-    let dir = dac_engine::config::config_dir().map(|d| d.join("geonames"));
+fn start_download(app: &mut LccApp) {
+    let dir = lcc_engine::config::config_dir().map(|d| d.join("geonames"));
     let Some(dir) = dir else { return };
     let (tx, rx) = std::sync::mpsc::channel();
     let ok = std::thread::Builder::new()
         .name("geonames".into())
         .spawn(move || {
-            let r = dac_geo::geocode::download_geonames(dac_geo::geocode::Consent::Granted, dac_geo::geocode::GEONAMES_BASE, &dir);
+            let r = lcc_geo::geocode::download_geonames(lcc_geo::geocode::Consent::Granted, lcc_geo::geocode::GEONAMES_BASE, &dir);
             let _ = tx.send(r.map_err(|e| e.to_string()));
         })
         .is_ok();
@@ -140,7 +140,7 @@ fn start_download(app: &mut DacApp) {
 }
 
 /// Finish background jobs.
-pub fn poll_jobs(app: &mut DacApp, ctx: &egui::Context) {
+pub fn poll_jobs(app: &mut LccApp, ctx: &egui::Context) {
     use std::sync::mpsc::TryRecvError;
     let mut keep = Vec::new();
     for job in std::mem::take(&mut app.map.jobs) {
@@ -184,7 +184,7 @@ pub fn poll_jobs(app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// The bar above the map: location filter and search.
-pub fn bar(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
+pub fn bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     let t = Tokens::get(ui.ctx());
     ui.painter().rect_filled(r, 0.0, t.chrome);
     ui.painter().line_segment([r.left_bottom(), r.right_bottom()], egui::Stroke::new(1.0, t.divider));
@@ -217,7 +217,7 @@ pub fn bar(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
         }
     });
     let counts = {
-        let all = dac_engine::cmd::map::filtered(&mut app.session, &LocationFilter::All);
+        let all = lcc_engine::cmd::map::filtered(&mut app.session, &LocationFilter::All);
         let tagged = all.iter().filter(|(_, g)| g.is_some()).count();
         (tagged, all.len() - tagged)
     };
@@ -244,7 +244,7 @@ fn section(ui: &mut egui::Ui, title: &str, open: bool, body: impl FnOnce(&mut eg
 }
 
 /// The side panel.
-pub fn panel(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
+pub fn panel(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     let t = Tokens::get(ui.ctx());
     ui.painter().rect_filled(r, 0.0, t.chrome);
     ui.painter().line_segment([r.left_top(), r.left_bottom()], egui::Stroke::new(1.0, t.divider));
@@ -270,7 +270,7 @@ pub fn panel(app: &mut DacApp, ui: &mut egui::Ui, r: Rect) {
     });
 }
 
-fn style_section(app: &mut DacApp, ui: &mut egui::Ui) {
+fn style_section(app: &mut LccApp, ui: &mut egui::Ui) {
     section(ui, "Map Style", true, |ui| {
         let servers = app.map.servers();
         let cur = app.map.server();
@@ -310,7 +310,7 @@ fn style_section(app: &mut DacApp, ui: &mut egui::Ui) {
     });
 }
 
-fn locations_section(app: &mut DacApp, ui: &mut egui::Ui) {
+fn locations_section(app: &mut LccApp, ui: &mut egui::Ui) {
     section(ui, "Saved Locations", true, |ui| {
         let list = app.run("map.locations", json!({})).ok().and_then(|v| v["locations"].as_array().cloned()).unwrap_or_default();
         for l in &list {
@@ -358,7 +358,7 @@ fn locations_section(app: &mut DacApp, ui: &mut egui::Ui) {
     });
 }
 
-fn track_section(app: &mut DacApp, ui: &mut egui::Ui) {
+fn track_section(app: &mut LccApp, ui: &mut egui::Ui) {
     section(ui, "Tracklog", true, |ui| {
         if ui.button(tr("Load Tracklog…")).clicked()
             && let Err(e) = app.run("map.loadTrack", json!({}))
@@ -423,7 +423,7 @@ fn track_section(app: &mut DacApp, ui: &mut egui::Ui) {
     });
 }
 
-fn geocode_section(app: &mut DacApp, ui: &mut egui::Ui) {
+fn geocode_section(app: &mut LccApp, ui: &mut egui::Ui) {
     section(ui, "Reverse Geocoding", false, |ui| {
         ui.label(RichText::new(tr("Fills Sublocation, City, State and Country from GPS. Off until you choose a provider.")).weak().size(11.0));
         let cur = app.map.prefs.geocoder.clone();
@@ -438,7 +438,7 @@ fn geocode_section(app: &mut DacApp, ui: &mut egui::Ui) {
                 {
                     let st = app.run("map.geocodeStatus", json!({})).unwrap_or_default();
                     let have = st["offline"]["downloaded"].as_bool().unwrap_or(false);
-                    ui.label(RichText::new(dac_geo::geocode::GEONAMES_ATTRIBUTION).weak().size(11.0));
+                    ui.label(RichText::new(lcc_geo::geocode::GEONAMES_ATTRIBUTION).weak().size(11.0));
                     let busy = app.map.jobs.iter().any(|j| matches!(j, Job::Download(_)));
                     let label =
                         if have { tr("Update Place Names (from geonames.org)") } else { tr("Download Place Names (from geonames.org, ~3 MB)") };
@@ -461,7 +461,7 @@ fn geocode_section(app: &mut DacApp, ui: &mut egui::Ui) {
                     let _ = app.run("map.geocoder", json!({"consent": consent}));
                 }
                 ui.label(
-                    RichText::new(format!("{} {}", tr("At most one request per second."), dac_geo::geocode::NOMINATIM_ATTRIBUTION)).weak().size(11.0),
+                    RichText::new(format!("{} {}", tr("At most one request per second."), lcc_geo::geocode::NOMINATIM_ATTRIBUTION)).weak().size(11.0),
                 );
             }
             _ => {}

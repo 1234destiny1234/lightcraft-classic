@@ -8,7 +8,7 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::Dialog;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 
@@ -26,7 +26,7 @@ fn names(dir: &std::path::Path) -> Vec<std::ffi::OsString> {
 fn open_library_on_a_lightroom_catalog_offers_its_import() {
     let dir = std::env::temp_dir().join(format!("lc-ui-openlrcat-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
-    let lib = dir.join(dac_brand::LIBRARY_DEFAULT);
+    let lib = dir.join(lcc_brand::LIBRARY_DEFAULT);
     let lr = dir.join("Lightroom");
     std::fs::create_dir_all(lr.join("Lightroom Catalog Previews.lrdata")).unwrap();
     std::fs::create_dir_all(lr.join("Lightroom Catalog.lrcat-data")).unwrap();
@@ -35,13 +35,13 @@ fn open_library_on_a_lightroom_catalog_offers_its_import() {
     std::fs::write(&lrcat, b"not really SQLite").unwrap();
     let before = names(&lr);
 
-    let mut session = dac_engine::Session::new().with_fs();
+    let mut session = lcc_engine::Session::new().with_fs();
     session.open_library(&lib, true).unwrap();
     let photos = session.catalog.len();
     assert!(photos > 0);
     let picked = lr.to_string_lossy().to_string();
-    let png = |img: &dac_raster::Rgba8| {
-        dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(img), &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+    let png = |img: &lcc_raster::Rgba8| {
+        lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
     };
     let services = Services {
         pick_folder: Some(Box::new(move || Some(picked.clone()))),
@@ -49,7 +49,7 @@ fn open_library_on_a_lightroom_catalog_offers_its_import() {
         write: Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string()))),
         ..Default::default()
     };
-    let mut h = Headless::new(DacApp::new(session, services), [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(LccApp::new(session, services), [1200.0, 800.0], 1.0);
     h.step();
 
     // File ▸ Open Library…, the Lightroom folder chosen in the folder dialog
@@ -68,7 +68,7 @@ fn open_library_on_a_lightroom_catalog_offers_its_import() {
     assert_eq!(h.app.session.library.as_ref().map(|l| l.dir.clone()), Some(lib.clone()));
     assert_eq!(h.app.session.catalog.len(), photos);
     assert_eq!(names(&lr), before);
-    if let Some(p) = dac_brand::env_os("TEST_SHOTS") {
+    if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
         let r = h.request("ui.screenshot", json!({"path": std::path::Path::new(&p).join("prompt-891.png").to_string_lossy(), "headless": true}), T);
         assert_eq!(r["ok"], true, "{r}");
     }

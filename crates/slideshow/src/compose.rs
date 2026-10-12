@@ -5,8 +5,8 @@
 //! Sources: own design (straight alpha blending of 8-bit sRGB values, bilinear sampling, a soft
 //! shadow from the distance to a rectangle).
 
-use dac_engine::export::{Anchor, Watermark, draw_watermark};
-use dac_raster::Rgba8;
+use lcc_engine::export::{Anchor, Watermark, draw_watermark};
+use lcc_raster::Rgba8;
 
 use crate::settings::{Settings, TitleScreen};
 use crate::tokens::{SlideInfo, expand};

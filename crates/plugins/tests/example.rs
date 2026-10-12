@@ -4,8 +4,8 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dac_plugins::publish::{PluginPublisher, PublishItem, PublishProvider};
-use dac_plugins::{HostApi, Manager, Permissions};
+use lcc_plugins::publish::{PluginPublisher, PublishItem, PublishProvider};
+use lcc_plugins::{HostApi, Manager, Permissions};
 use serde_json::{Value, json};
 
 struct FakeCatalog {
@@ -187,7 +187,7 @@ fn export_tools_example_hook_and_destination() {
     let file = dir.join("out.jpg");
     std::fs::write(&file, b"123456789").unwrap();
     let files = [json!({"path": file.display().to_string(), "photo": "5"})];
-    let mut host = dac_plugins::NoHost;
+    let mut host = lcc_plugins::NoHost;
 
     // post-process hook: reads the lent (binary) file, records its checksum
     let r = m.post_export(&files, &mut host);
@@ -213,15 +213,15 @@ fn export_tools_example_hook_and_destination() {
 fn publish_folder_example_publishes_and_removes() {
     let Some(wasm) = build_sdk_example("publish-folder") else { return };
     let dir = temp("publish-folder");
-    let root = Path::new("/tmp/dac-gallery");
+    let root = Path::new("/tmp/lcc-gallery");
     let mut m = Manager::open(&dir).unwrap();
     let id = "org.example.publish-folder";
-    let grant = Permissions { fs: vec![dac_plugins::FsRoot { path: root.display().to_string(), write: true }], ..Default::default() };
+    let grant = Permissions { fs: vec![lcc_plugins::FsRoot { path: root.display().to_string(), write: true }], ..Default::default() };
     m.install_bytes(&wasm, Some(grant)).unwrap();
     std::fs::create_dir_all(root).unwrap();
     let src = dir.join("render.jpg");
     std::fs::write(&src, [0u8, 1, 2, 255]).unwrap();
-    let mut host = dac_plugins::NoHost;
+    let mut host = lcc_plugins::NoHost;
     let mut p = PluginPublisher::new(&mut m, id).unwrap();
     assert_eq!(p.label(), "Local Gallery");
     let item = PublishItem { path: src.display().to_string(), photo: format!("g{}", std::process::id()), title: "T".into(), ..Default::default() };
@@ -244,7 +244,7 @@ fn custom_fields_example_shows_and_edits_fields() {
     let mut m = Manager::open(&dir).unwrap();
     let id = "org.example.custom-fields";
     m.install_bytes(&wasm, None).unwrap();
-    let mut host = dac_plugins::NoHost;
+    let mut host = lcc_plugins::NoHost;
     let f = m.metadata_fields("3");
     assert_eq!(f[0]["fields"].as_array().map(Vec::len), Some(4), "{f:?}");
     assert!(f[0]["fields"].as_array().unwrap().iter().all(|x| x["value"].is_null()));

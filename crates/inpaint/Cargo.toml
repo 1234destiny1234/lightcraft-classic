@@ -1,5 +1,5 @@
 [package]
-name = "dac-inpaint"
+name = "lcc-inpaint"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

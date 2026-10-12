@@ -1,4 +1,4 @@
-//! Tracks to draw on the map: GPX (parsed by `dac_meta::parse_gpx`, which also drives
+//! Tracks to draw on the map: GPX (parsed by `lcc_meta::parse_gpx`, which also drives
 //! Auto-Tag), KML (`<coordinates>` and `<gx:coord>`) and GeoJSON (LineString, MultiLineString,
 //! Point, in Features and FeatureCollections).
 
@@ -52,7 +52,7 @@ pub fn parse(name: &str, text: &str) -> Result<Track, GeoError> {
 }
 
 fn parse_gpx(text: &str) -> Result<Track, GeoError> {
-    let log = dac_meta::parse_gpx(text).map_err(|e| GeoError::Invalid(e.to_string()))?;
+    let log = lcc_meta::parse_gpx(text).map_err(|e| GeoError::Invalid(e.to_string()))?;
     let mut segments: Vec<Vec<LatLon>> = Vec::new();
     let mut last = None;
     for p in &log.points {

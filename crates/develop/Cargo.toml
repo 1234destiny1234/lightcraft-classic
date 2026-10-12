@@ -1,5 +1,5 @@
 [package]
-name = "dac-develop"
+name = "lcc-develop"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,9 +9,9 @@ description = "Develop settings: the non-destructive edit model, control specs, 
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-geom = { workspace = true }
-dac-color = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-geom = { workspace = true }
+lcc-color = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 miniz_oxide = { workspace = true }

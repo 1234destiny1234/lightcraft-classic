@@ -4,16 +4,16 @@
 
 use std::path::Path;
 
-use dac_slideshow::compose::geometry;
-use dac_slideshow::music;
-use dac_slideshow::settings::{SavedSlideshow, Settings, Template, builtin_templates};
-use dac_slideshow::timeline::{Plan, pan_zoom};
+use lcc_slideshow::compose::geometry;
+use lcc_slideshow::music;
+use lcc_slideshow::settings::{SavedSlideshow, Settings, Template, builtin_templates};
+use lcc_slideshow::timeline::{Plan, pan_zoom};
 
 #[test]
 fn hostile_settings_never_panic() {
     let seeds: Vec<String> = builtin_templates().iter().map(|t| serde_json::to_string(t).unwrap()).collect();
     let refs: Vec<&str> = seeds.iter().map(String::as_str).collect();
-    dac_fuzzkit::run_json("slideshow.settings", &refs, 1500, |s| {
+    lcc_fuzzkit::run_json("slideshow.settings", &refs, 1500, |s| {
         let Ok(v) = serde_json::from_str::<serde_json::Value>(s) else { return };
         let _ = serde_json::from_value::<SavedSlideshow>(v.clone());
         let t: Template = serde_json::from_value(v.clone()).unwrap_or_default();
@@ -95,7 +95,7 @@ fn ogg_crc(data: &[u8]) -> u32 {
 
 #[test]
 fn damaged_music_files_never_panic() {
-    let dir = std::env::temp_dir().join(format!("dac-slideshow-robust-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-slideshow-robust-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let cases: [(&str, Vec<u8>); 4] = [("a.wav", wav(2, 16, 800)), ("b.wav", wav(1, 24, 300)), ("c.flac", flac()), ("d.ogg", ogg())];
@@ -104,7 +104,7 @@ fn damaged_music_files_never_panic() {
         // every seed is at least a valid header for its decoder
         std::fs::write(&p, seed).unwrap();
         let _ = music::decode(&p);
-        dac_fuzzkit::run(&format!("slideshow.{name}"), &[seed], 600, |b| {
+        lcc_fuzzkit::run(&format!("slideshow.{name}"), &[seed], 600, |b| {
             std::fs::write(&p, b).unwrap();
             check(&p);
         });

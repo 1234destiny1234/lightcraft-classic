@@ -3,14 +3,14 @@
 //!
 //! The service "Local Gallery" appears in the Publish Services panel (kind
 //! `plugin:org.example.publish-folder`). Publishing copies each rendered photo into the gallery
-//! folder `/tmp/dac-gallery` (the one filesystem root the manifest asks for; change it before
+//! folder `/tmp/lcc-gallery` (the one filesystem root the manifest asks for; change it before
 //! building) and keeps an `index.json` of what is there. Re-publishing replaces the file;
 //! removing a photo from the collection deletes it.
 
-use dac_plugin_sdk::serde_json::{Map, Value, json};
-use dac_plugin_sdk::{Request, export_plugin, host};
+use lcc_plugin_sdk::serde_json::{Map, Value, json};
+use lcc_plugin_sdk::{Request, export_plugin, host};
 
-const ROOT: &str = "/tmp/dac-gallery";
+const ROOT: &str = "/tmp/lcc-gallery";
 
 const MANIFEST: &str = r#"{
   "id": "org.example.publish-folder",
@@ -18,7 +18,7 @@ const MANIFEST: &str = r#"{
   "version": "0.1.0",
   "description": "Publishes photos into a gallery folder with an index",
   "author": "the app's authors",
-  "permissions": {"fs": [{"path": "/tmp/dac-gallery", "write": true}]},
+  "permissions": {"fs": [{"path": "/tmp/lcc-gallery", "write": true}]},
   "publish": {"id": "gallery", "name": "Local Gallery"}
 }"#;
 
@@ -63,13 +63,13 @@ fn handle(req: &Request) -> Result<Value, String> {
 fn read_index() -> Map<String, Value> {
     host::read_text(&format!("{ROOT}/index.json"))
         .ok()
-        .and_then(|t| dac_plugin_sdk::serde_json::from_str::<Value>(&t).ok())
+        .and_then(|t| lcc_plugin_sdk::serde_json::from_str::<Value>(&t).ok())
         .and_then(|v| v.as_object().cloned())
         .unwrap_or_default()
 }
 
 fn write_index(index: &Map<String, Value>) -> Result<(), String> {
-    let text = dac_plugin_sdk::serde_json::to_string_pretty(index).map_err(|e| e.to_string())?;
+    let text = lcc_plugin_sdk::serde_json::to_string_pretty(index).map_err(|e| e.to_string())?;
     host::write_text(&format!("{ROOT}/index.json"), &text)
 }
 

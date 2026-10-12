@@ -5,14 +5,14 @@
 use egui::{Align2, Rect, Sense, pos2, vec2};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::widgets::{icon_button, register};
 
 /// The + menu at the right end of the Folders header: Add Folder… (its photos join the library
 /// where they are), Create Folder….
-pub fn header_buttons(app: &mut DacApp, ui: &mut egui::Ui, header: Rect, viewport: Rect) {
+pub fn header_buttons(app: &mut LccApp, ui: &mut egui::Ui, header: Rect, viewport: Rect) {
     if app.services.pick_folder.is_none() {
         return;
     }
@@ -45,9 +45,9 @@ pub fn header_buttons(app: &mut DacApp, ui: &mut egui::Ui, header: Rect, viewpor
     });
 }
 
-fn create_prompt(app: &mut DacApp, parent: &str) {
+fn create_prompt(app: &mut LccApp, parent: &str) {
     app.ui.dialog = Some(crate::state::Dialog::TextPrompt {
-        title: crate::i18n::tr_format!("Create Folder in “{name}”", name = dac_catalog::folders::folder_label(parent)),
+        title: crate::i18n::tr_format!("Create Folder in “{name}”", name = lcc_catalog::folders::folder_label(parent)),
         hint: "Folder name (created on disk)".into(),
         value: String::new(),
         command: "folder.create".into(),
@@ -58,7 +58,7 @@ fn create_prompt(app: &mut DacApp, parent: &str) {
 
 /// Synchronise `path` (new files join the library, sidecars changed elsewhere are read) and say
 /// what happened.
-fn sync_and_report(app: &mut DacApp, ctx: &egui::Context, path: &str) {
+fn sync_and_report(app: &mut LccApp, ctx: &egui::Context, path: &str) {
     match app.run("folder.sync", json!({"path": path, "readMetadata": true})) {
         Ok(r) => {
             let added = r["imported"].as_u64().unwrap_or(0);
@@ -79,7 +79,7 @@ fn sync_and_report(app: &mut DacApp, ctx: &egui::Context, path: &str) {
 }
 
 /// A folder row's disk actions, added to its context menu.
-pub fn row_menu_items(app: &mut DacApp, ui: &mut egui::Ui, path: &str) {
+pub fn row_menu_items(app: &mut LccApp, ui: &mut egui::Ui, path: &str) {
     if ui.button(crate::i18n::tr("Create Folder Inside…")).clicked() {
         create_prompt(app, path);
         ui.close();
@@ -130,12 +130,12 @@ fn human_bytes(b: u64) -> String {
 /// One row per disk the library's photos are on: a status light (green: online with room,
 /// yellow: under 10 % free, red: under 2 % free, grey: offline) and its free / total space.
 /// Widget ids `volume:<path>`.
-pub fn volumes(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn volumes(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let tree = app.caches.folder_tree(&app.session.catalog);
     let vols: Vec<(String, String, usize)> = tree.iter().filter(|n| n.volume).take(64).map(|n| (n.path.clone(), n.name.clone(), n.count)).collect();
     for (path, name, count) in vols {
-        let space = super::left::fs_cached(ui, "disk-space", &path, 30.0, dac_engine::cmd::folders::disk_space).flatten();
+        let space = super::left::fs_cached(ui, "disk-space", &path, 30.0, lcc_engine::cmd::folders::disk_space).flatten();
         let online = super::left::fs_cached(ui, "is-dir", &path, 5.0, |p| std::path::Path::new(p).is_dir()) == Some(true);
         let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
         register(ui.ctx(), format!("volume:{path}"), r);

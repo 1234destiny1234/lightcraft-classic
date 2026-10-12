@@ -9,7 +9,7 @@ use crate::Session;
 fn temp_dir(tag: &str) -> PathBuf {
     static N: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
     let n = N.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-    let d = std::env::temp_dir().join(format!("dac-pub-{tag}-{}-{n}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-pub-{tag}-{}-{n}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -18,8 +18,8 @@ fn temp_dir(tag: &str) -> PathBuf {
 fn png(path: &Path, seed: u8) {
     let (w, h) = (40usize, 30usize);
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 5) as u8, (i / w * 7) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 
@@ -69,7 +69,7 @@ fn hard_drive_publish_cycle() {
     let coll = st["collection"].as_u64().unwrap();
     assert_eq!(st["new"].as_array().unwrap().len(), 2);
     // the collection is an album inside the service's set
-    assert_eq!(s.catalog.album(dac_catalog::AlbumId(coll)).unwrap().parent, Some(dac_catalog::AlbumId(set)));
+    assert_eq!(s.catalog.album(lcc_catalog::AlbumId(coll)).unwrap().parent, Some(lcc_catalog::AlbumId(set)));
 
     let r = s.execute("publish.run", &json!({"collection": coll})).unwrap();
     assert_eq!(r["runs"][0]["published"].as_array().unwrap().len(), 2, "{r}");
@@ -96,7 +96,7 @@ fn hard_drive_publish_cycle() {
     assert_eq!(files(&out.join("Web")), vec!["p0.jpg", "p2.jpg"]);
     assert_eq!(s.execute("publish.status", &json!({"collection": coll})).unwrap()["pending"], 0);
     // remote ids are in the catalog's remote links
-    assert_eq!(s.catalog.remote_links().iter().filter(|r| r.service == dac_publish::SERVICE).count(), 2);
+    assert_eq!(s.catalog.remote_links().iter().filter(|r| r.service == lcc_publish::SERVICE).count(), 2);
 
     // the configuration is in the library folder and survives a reopen
     let list = s.execute("publish.services", &json!({})).unwrap();
@@ -109,11 +109,11 @@ fn hard_drive_publish_cycle() {
 
     // deleting the collection forgets the links, keeps the files
     s2.execute("publish.deleteCollection", &json!({"collection": coll})).unwrap();
-    assert_eq!(s2.catalog.remote_links().iter().filter(|r| r.service == dac_publish::SERVICE).count(), 0);
-    assert!(s2.catalog.album(dac_catalog::AlbumId(coll)).is_none());
+    assert_eq!(s2.catalog.remote_links().iter().filter(|r| r.service == lcc_publish::SERVICE).count(), 0);
+    assert!(s2.catalog.album(lcc_catalog::AlbumId(coll)).is_none());
     assert_eq!(files(&out.join("Web")).len(), 2);
     s2.execute("publish.deleteService", &json!({"service": sid})).unwrap();
-    assert!(s2.catalog.album(dac_catalog::AlbumId(set)).is_none());
+    assert!(s2.catalog.album(lcc_catalog::AlbumId(set)).is_none());
 }
 
 /// IMM-PUBLISH: collection sets inside the service's set prefix the Immich album name, which
@@ -128,9 +128,9 @@ fn immich_album_names_follow_renames_and_sets() {
     let st = s.execute("publish.createCollection", &json!({"service": "Immich", "name": "Paris", "parent": trips})).unwrap();
     let coll = st["collection"].as_u64().unwrap();
     let name = |s: &Session| {
-        let cfg = dac_publish::PublishConfig::load(&root.join("lib")).unwrap();
+        let cfg = lcc_publish::PublishConfig::load(&root.join("lib")).unwrap();
         let svc = cfg.services[0].clone();
-        crate::cmd::immich::publish::album_name(&s.catalog, &svc, svc.collection(dac_catalog::AlbumId(coll)).unwrap())
+        crate::cmd::immich::publish::album_name(&s.catalog, &svc, svc.collection(lcc_catalog::AlbumId(coll)).unwrap())
     };
     assert_eq!(name(&s), "Trips / Paris");
     s.execute("album.rename", &json!({"id": coll, "name": "Paris 2026"})).unwrap();
@@ -158,7 +158,7 @@ fn bad_publish_params_are_errors() {
     assert!(s.execute("publish.run", &json!({"collection": 12345})).is_err());
     assert!(s.execute("publish.run", &json!({})).is_err());
     // a damaged publish.json is reported, not replaced
-    std::fs::write(root.join("lib").join(dac_publish::FILE), b"{").unwrap();
+    std::fs::write(root.join("lib").join(lcc_publish::FILE), b"{").unwrap();
     let e = s.execute("publish.services", &json!({})).unwrap_err().to_string();
     assert!(e.contains("damaged"), "{e}");
     // an in-memory library has no publish services
@@ -186,7 +186,7 @@ fn studio_capture_imports_new_shots() {
     let r = s.execute("tether.scan", &json!({})).unwrap();
     let ids = r["imported"].as_array().unwrap().clone();
     assert_eq!(ids.len(), 1, "{r}");
-    let id = dac_catalog::PhotoId(ids[0].as_u64().unwrap());
+    let id = lcc_catalog::PhotoId(ids[0].as_u64().unwrap());
     // the file that was there before the session is not imported
     assert_eq!(s.catalog.len(), 1);
     // newest shot selected, renamed, copied into Originals/<session>, keyworded, in the collection
@@ -194,7 +194,7 @@ fn studio_capture_imports_new_shots() {
     let p = s.catalog.photo(id).unwrap();
     assert_eq!(p.file_name, "Shoot-001.png");
     match &p.source {
-        dac_catalog::Source::File { path } => assert!(path.contains("Originals") && path.contains("Shoot"), "{path}"),
+        lcc_catalog::Source::File { path } => assert!(path.contains("Originals") && path.contains("Shoot"), "{path}"),
         other => panic!("{other:?}"),
     }
     assert!(p.meta.keywords.iter().any(|k| k == "studio"));
@@ -203,7 +203,7 @@ fn studio_capture_imports_new_shots() {
     png(&watch.join("IMG_2.png"), 3);
     s.execute("tether.scan", &json!({})).unwrap();
     let r = s.execute("tether.scan", &json!({})).unwrap();
-    let id2 = dac_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+    let id2 = lcc_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
     assert_eq!(s.catalog.photo(id2).unwrap().file_name, "Shoot-002.png");
     assert_eq!(s.execute("tether.status", &json!({})).unwrap()["shots"], 2);
     // stop: scans do nothing
@@ -242,10 +242,10 @@ fn a_published_collection_lists_new_then_modified_then_published() {
     let mut rest = shown[2..].to_vec();
     rest.sort();
     assert_eq!(rest, vec![ids[0], ids[2]]);
-    let sections = crate::cmd::publish::sections(&s, dac_catalog::AlbumId(coll)).unwrap();
-    assert_eq!(sections.get(&dac_catalog::PhotoId(ids[3])), Some(&0));
+    let sections = crate::cmd::publish::sections(&s, lcc_catalog::AlbumId(coll)).unwrap();
+    assert_eq!(sections.get(&lcc_catalog::PhotoId(ids[3])), Some(&0));
     // a plain album isn't sectioned
     let plain = s.execute("album.create", &json!({"name": "Plain"})).unwrap();
     let plain = plain["id"].as_u64().or_else(|| plain.as_u64()).unwrap();
-    assert!(crate::cmd::publish::sections(&s, dac_catalog::AlbumId(plain)).is_none());
+    assert!(crate::cmd::publish::sections(&s, lcc_catalog::AlbumId(plain)).is_none());
 }

@@ -14,10 +14,10 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use dac_engine::activity::{Cancel, TaskGuard};
+use lcc_engine::activity::{Cancel, TaskGuard};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::i18n::tr;
 
 /// An install waiting for the user's approval: the file, its inspection and the ticked grant.
@@ -55,14 +55,14 @@ fn set_state(ctx: &egui::Context, s: State) {
     *STATE.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(s);
 }
 
-fn app_ctx(app: &DacApp) -> egui::Context {
+fn app_ctx(app: &LccApp) -> egui::Context {
     app.tasks.repaint.clone().unwrap_or_default()
 }
 
 /// UI commands: `plugins.manager {open?}` opens / closes the window; `plugins.install {path}`
 /// inspects a module and opens the approval dialog; `plugins.runItem {plugin, command}` runs a
 /// plug-in command from the menu (asking its dialog first, if it has one).
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     let ctx = app_ctx(app);
     let mut s = state(&ctx);
     let r = match id {
@@ -93,7 +93,7 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 
 /// Inspects `path` and opens the approval dialog with everything unticked but what an installed
 /// version already holds.
-fn begin_install(app: &mut DacApp, s: &mut State, path: &str) -> Result<(), String> {
+fn begin_install(app: &mut LccApp, s: &mut State, path: &str) -> Result<(), String> {
     if path.is_empty() {
         return Err(tr("Choose a plug-in module (.wasm) first").to_string());
     }
@@ -106,7 +106,7 @@ fn begin_install(app: &mut DacApp, s: &mut State, path: &str) -> Result<(), Stri
 }
 
 /// Runs a command right away, or opens its dialog. `Value::Null` when the dialog opened.
-fn start_command(app: &mut DacApp, s: &mut State, plugin: &str, command: &str) -> Result<Value, String> {
+fn start_command(app: &mut LccApp, s: &mut State, plugin: &str, command: &str) -> Result<Value, String> {
     let list = app.session.execute("plugin.commands", &json!({})).map_err(|e| e.to_string())?;
     let decl = list.as_array().into_iter().flatten().find(|c| c["plugin"] == plugin && c["command"] == command).cloned();
     let decl = decl.ok_or_else(|| format!("{plugin}: {command}: {}", tr("no such plug-in command (is the plug-in enabled?)")))?;
@@ -120,10 +120,10 @@ fn start_command(app: &mut DacApp, s: &mut State, plugin: &str, command: &str) -
 }
 
 /// File ▸ Plug-in Extras: the commands of enabled plug-ins, then the manager.
-pub fn menu_items(app: &DacApp) -> Vec<(String, Value, String)> {
+pub fn menu_items(app: &LccApp) -> Vec<(String, Value, String)> {
     let mut v = Vec::new();
     // read without the session's &mut: the commands come straight from the manager
-    let g = dac_engine::cmd::plugins::manager();
+    let g = lcc_engine::cmd::plugins::manager();
     for p in g.as_ref().into_iter().flat_map(|m| m.list()).filter(|p| p.enabled) {
         let m = p.plugin.manifest();
         for c in &m.commands {
@@ -140,8 +140,8 @@ pub fn menu_items(app: &DacApp) -> Vec<(String, Value, String)> {
 /// export destination the export named (`pluginDestination`), on a worker thread with a row in
 /// the activity stack, so a long upload doesn't freeze the window. [`poll`] answers the plug-ins'
 /// catalog requests on this thread and reports how they went (toast, `ui.inspect` → `export.last.plugins`).
-pub fn after_export(app: &mut DacApp, ctx: &egui::Context, files: &[Value], destination: Option<&Value>) {
-    let Some(hooks) = dac_engine::cmd::plugins::export_hooks(files, destination) else { return };
+pub fn after_export(app: &mut LccApp, ctx: &egui::Context, files: &[Value], destination: Option<&Value>) {
+    let Some(hooks) = lcc_engine::cmd::plugins::export_hooks(files, destination) else { return };
     let mut task = task_lock();
     if task.is_some() {
         drop(task);
@@ -151,7 +151,7 @@ pub fn after_export(app: &mut DacApp, ctx: &egui::Context, files: &[Value], dest
     let total = hooks.len();
     let cancel = Arc::new(AtomicBool::new(false));
     let progress = Arc::new(Mutex::new((0usize, String::new())));
-    let (mut host, requests) = dac_engine::cmd::plugins::relay_host();
+    let (mut host, requests) = lcc_engine::cmd::plugins::relay_host();
     let (tx, results) = std::sync::mpsc::channel();
     let (c, p) = (cancel.clone(), progress.clone());
     let work = move || {
@@ -180,7 +180,7 @@ struct ExportHooksTask {
     /// Calls started so far and the plug-in in progress.
     progress: Arc<Mutex<(usize, String)>>,
     /// The plug-ins' catalog requests, answered here (the session lives on this thread).
-    requests: std::sync::mpsc::Receiver<dac_engine::cmd::plugins::HostRequest>,
+    requests: std::sync::mpsc::Receiver<lcc_engine::cmd::plugins::HostRequest>,
     results: std::sync::mpsc::Receiver<Vec<Value>>,
     guard: TaskGuard,
 }
@@ -198,7 +198,7 @@ pub fn export_hooks_running() -> bool {
 
 /// Per frame: answer the running export hooks' catalog requests, keep their activity row up to
 /// date and, when they finish, report how they went.
-pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
+pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     let mut g = task_lock();
     let Some(task) = g.as_mut() else { return };
     while let Ok(req) = task.requests.try_recv() {
@@ -221,7 +221,7 @@ pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
     report(app, ctx, &results);
 }
 
-fn report(app: &mut DacApp, ctx: &egui::Context, results: &[Value]) {
+fn report(app: &mut LccApp, ctx: &egui::Context, results: &[Value]) {
     if let Some(last) = app.last_export_result.as_mut().filter(|l| l.is_object()) {
         last["plugins"] = json!(results);
     }
@@ -248,14 +248,14 @@ fn destination_lock() -> std::sync::MutexGuard<'static, Option<(String, String, 
 pub fn chosen_destination() -> Option<Value> {
     let chosen = destination_lock().clone()?;
     let offered =
-        dac_engine::cmd::plugins::manager().as_ref().is_some_and(|m| m.export_destinations().iter().any(|(p, d)| *p == chosen.0 && d.id == chosen.1));
+        lcc_engine::cmd::plugins::manager().as_ref().is_some_and(|m| m.export_destinations().iter().any(|(p, d)| *p == chosen.0 && d.id == chosen.1));
     offered.then(|| json!({"plugin": chosen.0, "destination": chosen.1, "args": chosen.2}))
 }
 
 /// Export dialog row "Then send to": None or one of the enabled plug-ins' export destinations,
 /// with the destination's settings below it. Shows nothing when no plug-in offers one.
 pub fn export_destination_ui(ui: &mut egui::Ui) {
-    let offered: Vec<(String, _)> = dac_engine::cmd::plugins::manager().as_ref().map(|m| m.export_destinations()).unwrap_or_default();
+    let offered: Vec<(String, _)> = lcc_engine::cmd::plugins::manager().as_ref().map(|m| m.export_destinations()).unwrap_or_default();
     if offered.is_empty() {
         return;
     }
@@ -296,7 +296,7 @@ pub fn export_destination_ui(ui: &mut egui::Ui) {
 /// fields edited in place on every photo shown (`plugin.setField`; text saves when the field loses
 /// focus). A field whose value differs between the photos reads `< mixed >` (from the catalog's copy
 /// of the fields, so a big selection costs no plug-in reads). Nothing when no plug-in has fields.
-pub fn metadata_section(app: &mut DacApp, ui: &mut egui::Ui, photo: u64, photos: &[std::sync::Arc<dac_catalog::Photo>], ids: &[u64]) {
+pub fn metadata_section(app: &mut LccApp, ui: &mut egui::Ui, photo: u64, photos: &[std::sync::Arc<lcc_catalog::Photo>], ids: &[u64]) {
     let Ok(v) = app.session.execute("plugin.metadataFields", &json!({"id": photo})) else { return };
     let plugins = v["plugins"].as_array().cloned().unwrap_or_default();
     if plugins.is_empty() {
@@ -422,7 +422,7 @@ fn metadata_field_ui(ui: &mut egui::Ui, plugin: &str, photo: u64, f: &Value, mix
     out
 }
 
-fn exec(app: &mut DacApp, id: &str, p: Value, msg: &mut String) -> Option<Value> {
+fn exec(app: &mut LccApp, id: &str, p: Value, msg: &mut String) -> Option<Value> {
     match app.session.execute(id, &p) {
         Ok(v) => Some(v),
         Err(e) => {
@@ -432,7 +432,7 @@ fn exec(app: &mut DacApp, id: &str, p: Value, msg: &mut String) -> Option<Value>
     }
 }
 
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let mut s = state(ctx);
     if !s.open && s.dialog.is_none() {
         return;
@@ -502,7 +502,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
     set_state(ctx, s);
 }
 
-fn toast_result(app: &mut DacApp, ctx: &egui::Context, s: &mut State, v: &Value) {
+fn toast_result(app: &mut LccApp, ctx: &egui::Context, s: &mut State, v: &Value) {
     s.message = v.get("message").and_then(Value::as_str).map_or_else(|| v.to_string(), str::to_string);
     app.toast(ctx, s.message.clone());
 }
@@ -617,7 +617,7 @@ impl Row {
 fn dialog_ui(ctx: &egui::Context, s: &mut State, actions: &mut Vec<(&'static str, Value)>) {
     let Some((plugin, command, mut values)) = s.dialog.take() else { return };
     let decl = {
-        let g = dac_engine::cmd::plugins::manager();
+        let g = lcc_engine::cmd::plugins::manager();
         g.as_ref().and_then(|m| m.get(&plugin)).and_then(|p| p.plugin.manifest().command(&command).cloned())
     };
     let Some(decl) = decl else { return };
@@ -690,7 +690,7 @@ fn plugin_ui(ui: &mut egui::Ui, p: &Value, actions: &mut Vec<(&'static str, Valu
             }
         }
         egui::CollapsingHeader::new(tr("Log")).id_salt(("plugin-log", &id)).show(ui, |ui| {
-            let g = dac_engine::cmd::plugins::manager();
+            let g = lcc_engine::cmd::plugins::manager();
             for l in g.as_ref().and_then(|m| m.get(&id)).into_iter().flat_map(|i| i.log.iter()) {
                 ui.monospace(l);
             }

@@ -29,7 +29,7 @@ pub const MAX_AGE: Duration = Duration::from_secs(2);
 /// Folders whose children are mounted volumes on this platform. `{ENV_PREFIX}_DEVICE_ROOTS`
 /// (paths joined like `PATH`) replaces them (tests, unusual mounts).
 fn mount_parents() -> Vec<std::path::PathBuf> {
-    if let Some(v) = dac_brand::env_os("DEVICE_ROOTS") {
+    if let Some(v) = lcc_brand::env_os("DEVICE_ROOTS") {
         return std::env::split_paths(&v).collect();
     }
     let mut out = Vec::new();
@@ -160,7 +160,7 @@ pub fn on_change(f: impl Fn() + Send + Sync + 'static) {
 
 fn scan() -> Vec<Device> {
     let mut extra = Vec::new();
-    if cfg!(windows) && dac_brand::env_os("DEVICE_ROOTS").is_none() {
+    if cfg!(windows) && lcc_brand::env_os("DEVICE_ROOTS").is_none() {
         extra.extend((b'D'..=b'Z').map(|c| std::path::PathBuf::from(format!("{}:\\", c as char))));
     }
     devices_in(&mount_parents(), extra)

@@ -153,7 +153,7 @@ thread_local! {
 
 /// The UI language from the environment (`<ENV_PREFIX>_LANGUAGE=zh-hans`), for headless runs.
 pub fn default_language() -> Locale {
-    dac_brand::env("LANGUAGE").and_then(|value| Locale::parse_tag(&value)).unwrap_or(Locale::En)
+    lcc_brand::env("LANGUAGE").and_then(|value| Locale::parse_tag(&value)).unwrap_or(Locale::En)
 }
 
 pub fn set_language(language: Locale) {
@@ -196,12 +196,12 @@ fn tr_in(language: Locale, source: &str) -> &str {
 }
 
 /// Fills the brand placeholders of catalog and source text: `{app}` (the display name, via
-/// [`dac_brand::fill`]), `{cli}` (the command-line binary) and `{env}` (the environment variable prefix).
+/// [`lcc_brand::fill`]), `{cli}` (the command-line binary) and `{env}` (the environment variable prefix).
 pub fn brand_fill(text: &str) -> String {
     if !text.contains('{') {
         return text.to_string();
     }
-    dac_brand::fill(text).replace("{cli}", dac_brand::CLI_BINARY).replace("{env}", dac_brand::ENV_PREFIX)
+    lcc_brand::fill(text).replace("{cli}", lcc_brand::CLI_BINARY).replace("{env}", lcc_brand::ENV_PREFIX)
 }
 
 /// Source text with its brand placeholders filled in. Text without a placeholder is returned as is;
@@ -245,12 +245,12 @@ pub fn builtin_label(source: &str, builtin: bool) -> &str {
 /// A profile's name for display: a built-in profile's is translated, an imported LUT's is shown as
 /// its file named it (it may happen to match a message, like "Vivid").
 pub fn profile_label<'a>(id: &str, name: &'a str) -> &'a str {
-    builtin_label(name, dac_engine::presets::profile(id).is_some())
+    builtin_label(name, lcc_engine::presets::profile(id).is_some())
 }
 
 /// An Activity (history) step for display. The step's stored label stays English; generated steps
 /// are translated around the names they carry, and a user preset's name is kept verbatim.
-pub fn history_label(source: &str, presets: &[dac_develop::Preset]) -> String {
+pub fn history_label(source: &str, presets: &[lcc_develop::Preset]) -> String {
     if let Some(name) = source.strip_prefix("Preset: ") {
         // A user preset may share a stock preset's name: then the step could be either, so it
         // keeps the name as written.
@@ -268,16 +268,16 @@ pub fn history_label(source: &str, presets: &[dac_develop::Preset]) -> String {
 
 /// A library source's heading (All Photos, Recently Deleted…) in the UI language; an album's
 /// name is the user's and stays verbatim.
-pub fn source_label(source: dac_engine::LibrarySource, catalog: &dac_catalog::Catalog) -> String {
+pub fn source_label(source: lcc_engine::LibrarySource, catalog: &lcc_catalog::Catalog) -> String {
     let label = source.label(catalog);
-    if matches!(source, dac_engine::LibrarySource::Album(id) if catalog.album(id).is_some()) { label } else { tr(&label).to_string() }
+    if matches!(source, lcc_engine::LibrarySource::Album(id) if catalog.album(id).is_some()) { label } else { tr(&label).to_string() }
 }
 
 /// What the grid is titled for the session's source: [`source_label`], or a library folder's last
 /// two names (`photos/travel`; the folder's name is the user's and stays verbatim).
-pub fn source_title(session: &dac_engine::Session) -> String {
+pub fn source_title(session: &lcc_engine::Session) -> String {
     match (session.source, session.library_folder.as_deref()) {
-        (dac_engine::LibrarySource::LibraryFolder, Some(path)) => dac_catalog::folders::folder_label(path),
+        (lcc_engine::LibrarySource::LibraryFolder, Some(path)) => lcc_catalog::folders::folder_label(path),
         (source, _) => source_label(source, &session.catalog),
     }
 }
@@ -287,7 +287,7 @@ pub fn source_title(session: &dac_engine::Session) -> String {
 /// catalog's own wording; every other language formats it with its `*-formats.json` date
 /// patterns and weekday names. The grouping keys themselves never change.
 pub fn date_group_label(key: &str, short: bool) -> String {
-    let label = dac_catalog::dates::group_label(key);
+    let label = lcc_catalog::dates::group_label(key);
     if language() == Locale::En {
         return if short {
             match key.len() {
@@ -312,7 +312,7 @@ pub fn date_group_label(key: &str, short: bool) -> String {
         return if short { tr_format!("{month}", month = month) } else { tr_format!("{month} {year}", month = month, year = year) };
     }
     if key.len() == 10
-        && let Some(weekday) = dac_catalog::dates::weekday(key)
+        && let Some(weekday) = lcc_catalog::dates::weekday(key)
         && let Some(day) = key.get(8..10).and_then(|d| d.parse::<u32>().ok())
     {
         let weekday = tr(weekday);
@@ -328,8 +328,8 @@ pub fn date_group_label(key: &str, short: bool) -> String {
 /// A capture time for display in the UI language (English: "March 30, 2022 at 10:11:11 PM");
 /// the metadata itself is never rewritten, and a value that doesn't parse is shown as it is.
 pub fn display_time(iso: &str) -> String {
-    if language() == Locale::En || dac_catalog::dates::normalize_iso(iso).is_none() {
-        return dac_catalog::dates::display_time(iso);
+    if language() == Locale::En || lcc_catalog::dates::normalize_iso(iso).is_none() {
+        return lcc_catalog::dates::display_time(iso);
     }
     let date = date_group_label(iso.get(..10).unwrap_or(iso), false);
     match iso.get(11..).filter(|time| !time.is_empty()) {
@@ -339,16 +339,16 @@ pub fn display_time(iso: &str) -> String {
 }
 
 /// Built-in colour names are translated; custom label names are user data.
-pub fn color_label(catalog: &dac_catalog::Catalog, label: dac_catalog::ColorLabel) -> String {
+pub fn color_label(catalog: &lcc_catalog::Catalog, label: lcc_catalog::ColorLabel) -> String {
     catalog.custom_label_name(label).map_or_else(|| tr(&catalog.label_name(label)).to_string(), str::to_string)
 }
 
 /// A legacy smart-album filter summary, using the same display labels as filter chips.
-pub fn filter_label(filter: &dac_catalog::Filter, catalog: &dac_catalog::Catalog) -> String {
+pub fn filter_label(filter: &lcc_catalog::Filter, catalog: &lcc_catalog::Catalog) -> String {
     if language() == Locale::En {
         filter.describe_with(catalog)
     } else {
-        dac_engine::filter_chips(filter, catalog)
+        lcc_engine::filter_chips(filter, catalog)
             .iter()
             .map(|chip| crate::panels::chips::display_label(chip, filter, catalog))
             .collect::<Vec<_>>()
@@ -358,27 +358,27 @@ pub fn filter_label(filter: &dac_catalog::Filter, catalog: &dac_catalog::Catalog
 
 /// What people read for a smart-album rule's problem, under its row: the field's name and the
 /// issue, in the current language ("Title: needs something to look for").
-pub fn problem_text(problem: &dac_catalog::rules::Problem) -> String {
+pub fn problem_text(problem: &lcc_catalog::rules::Problem) -> String {
     problem_text_in(language(), problem)
 }
 
 /// [`problem_text`] with the rule's position first ("#2.1 Rating: …"), for lists away from the
 /// editor (the sidebar's tooltip).
-pub fn problem_line(problem: &dac_catalog::rules::Problem) -> String {
+pub fn problem_line(problem: &lcc_catalog::rules::Problem) -> String {
     problem_line_in(language(), problem)
 }
 
-fn problem_text_in(language: Locale, problem: &dac_catalog::rules::Problem) -> String {
+fn problem_text_in(language: Locale, problem: &lcc_catalog::rules::Problem) -> String {
     let issue = tr_in(language, problem.issue.text());
     // Japanese and Chinese catalogs join a label and its text with a full-width colon
     let colon = if matches!(language.script(), "Jpan" | "Hans" | "Hant") { "：" } else { ": " };
     match problem.field.as_deref() {
-        Some(field) => format!("{}{colon}{issue}", tr_in(language, dac_catalog::rules::field_label(field).unwrap_or(field))),
+        Some(field) => format!("{}{colon}{issue}", tr_in(language, lcc_catalog::rules::field_label(field).unwrap_or(field))),
         None => issue.to_string(),
     }
 }
 
-fn problem_line_in(language: Locale, problem: &dac_catalog::rules::Problem) -> String {
+fn problem_line_in(language: Locale, problem: &lcc_catalog::rules::Problem) -> String {
     let at: Vec<String> = problem.path.iter().map(|i| i.saturating_add(1).to_string()).collect();
     // a problem with the album filter around the rules has no rule to point at
     if at.is_empty() {
@@ -394,7 +394,7 @@ pub fn choice_text<'a>(field: &str, id: &'a str) -> &'a str {
 }
 
 fn choice_text_in<'a>(language: Locale, field: &str, id: &'a str) -> &'a str {
-    dac_catalog::rules::choice_label(field, id).map_or(id, |label| tr_in(language, label))
+    lcc_catalog::rules::choice_label(field, id).map_or(id, |label| tr_in(language, label))
 }
 
 /// What people read for a smart-album yes/no value ("Ja" / "Nein" in German).
@@ -406,13 +406,13 @@ pub fn bool_text(b: bool) -> &'static str {
 const BOOL_CONTEXT: &str = "smart album value";
 
 fn bool_text_in(language: Locale, b: bool) -> &'static str {
-    tr_ctx_in(language, BOOL_CONTEXT, dac_catalog::rules::bool_label(b))
+    tr_ctx_in(language, BOOL_CONTEXT, lcc_catalog::rules::bool_label(b))
 }
 
 /// A rule summary for display, keeping free-text rule values verbatim.
-pub fn rules_label(rules: &dac_catalog::RuleSet, catalog: &dac_catalog::Catalog) -> String {
-    fn describe(rules: &dac_catalog::RuleSet, catalog: &dac_catalog::Catalog, depth: usize) -> String {
-        use dac_catalog::{
+pub fn rules_label(rules: &lcc_catalog::RuleSet, catalog: &lcc_catalog::Catalog) -> String {
+    fn describe(rules: &lcc_catalog::RuleSet, catalog: &lcc_catalog::Catalog, depth: usize) -> String {
+        use lcc_catalog::{
             Match, Rule,
             rules::{FIELDS, Kind, ops_for},
         };
@@ -429,9 +429,9 @@ pub fn rules_label(rules: &dac_catalog::RuleSet, catalog: &dac_catalog::Catalog)
                     let operator = ops_for(*kind).iter().find(|entry| entry.0 == op).map_or(op.as_str(), |entry| entry.1);
                     let text = match kind {
                         // the album's name, as people know it (a user's name is never translated)
-                        Kind::Album => dac_catalog::rules::album_name(value, Some(catalog)),
+                        Kind::Album => lcc_catalog::rules::album_name(value, Some(catalog)),
                         Kind::Choice(_) => value.as_str().map_or_else(|| value.to_string(), |id| choice_text(field, id).to_string()),
-                        Kind::Bool => dac_catalog::rules::bool_value(value).map_or_else(|| value.to_string(), |b| bool_text(b).to_string()),
+                        Kind::Bool => lcc_catalog::rules::bool_value(value).map_or_else(|| value.to_string(), |b| bool_text(b).to_string()),
                         _ if matches!(op.as_str(), "inLast" | "notInLast") => format!(
                             "{} {}",
                             value.get("n").unwrap_or(&serde_json::Value::Null),
@@ -515,9 +515,9 @@ mod tests {
     /// file, in the UI language.
     #[test]
     fn startup_failure_message_names_the_error_and_the_log() {
-        let log = format!("/home/a/.config/app/logs/{}.log", dac_brand::BINARY);
+        let log = format!("/home/a/.config/app/logs/{}.log", lcc_brand::BINARY);
         let (title, text) = startup_failed_message("no adapter", Some(&log));
-        assert_eq!(title, format!("{} could not start", dac_brand::DISPLAY_NAME));
+        assert_eq!(title, format!("{} could not start", lcc_brand::DISPLAY_NAME));
         assert!(text.contains("no adapter") && text.ends_with(&log), "{text}");
         assert!(!startup_failed_message("no adapter", None).1.contains("log file"));
     }
@@ -614,7 +614,7 @@ mod tests {
     #[test]
     fn catalog_characters_are_paintable() {
         let ctx = egui::Context::default();
-        ctx.set_fonts(crate::theme::font_definitions(dac_engine::CRAFT_FONTS));
+        ctx.set_fonts(crate::theme::font_definitions(lcc_engine::CRAFT_FONTS));
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
         out.textures_delta.clear();
         for language in Locale::ALL {
@@ -624,7 +624,7 @@ mod tests {
             }
             // The faces this language's script needs; a language the craft-fonts input does not
             // cover (a translation added ahead of its font) is reported, not failed.
-            let mut faces: Vec<&str> = dac_engine::CRAFT_FONTS.iter().filter(|font| font.serves(language.script())).map(|font| font.family).collect();
+            let mut faces: Vec<&str> = lcc_engine::CRAFT_FONTS.iter().filter(|font| font.serves(language.script())).map(|font| font.family).collect();
             faces.dedup();
             if faces.is_empty() {
                 eprintln!("skipped {}: built without a craft-fonts face for {}", language.code(), language.script());
@@ -656,7 +656,7 @@ mod tests {
     #[test]
     fn interface_symbols_are_paintable() {
         let ctx = egui::Context::default();
-        ctx.set_fonts(crate::theme::font_definitions(dac_engine::CRAFT_FONTS));
+        ctx.set_fonts(crate::theme::font_definitions(lcc_engine::CRAFT_FONTS));
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
         out.textures_delta.clear();
         // ⌥ and ⌫ come from egui's bundled fonts; ▸ and ▾ are in neither (measured 2026-10-07).
@@ -737,7 +737,7 @@ mod tests {
     /// in the middle of a translated rule.
     #[test]
     fn choice_values_read_as_words_in_every_language() {
-        use dac_catalog::rules::{FIELDS, Kind};
+        use lcc_catalog::rules::{FIELDS, Kind};
         assert_eq!(choice_text_in(Locale::En, "copyrightStatus", "publicDomain"), "Public Domain");
         assert_eq!(choice_text_in(Locale::De, "copyrightStatus", "publicDomain"), "Gemeinfrei");
         assert_eq!(choice_text_in(Locale::De, "copyrightStatus", "someday"), "someday");
@@ -762,7 +762,7 @@ mod tests {
             assert!(!ja.contains("あり") && !ja.contains("なし"), "{field}: {ja}");
         }
         // a contextual entry names a real value (a typo would silently fall back to はい / いいえ)
-        let values = [dac_catalog::rules::bool_label(true), dac_catalog::rules::bool_label(false)];
+        let values = [lcc_catalog::rules::bool_label(true), lcc_catalog::rules::bool_label(false)];
         for language in Locale::ALL {
             for key in language.catalog().keys() {
                 if let Some(value) = key.strip_prefix(BOOL_CONTEXT).and_then(|k| k.strip_prefix('|')) {
@@ -771,7 +771,7 @@ mod tests {
             }
         }
         for language in Locale::ALL.iter().filter(|language| **language != Locale::En) {
-            for label in [dac_catalog::rules::bool_label(true), dac_catalog::rules::bool_label(false)] {
+            for label in [lcc_catalog::rules::bool_label(true), lcc_catalog::rules::bool_label(false)] {
                 assert!(language.catalog().contains_key(label), "{} lacks {label:?}", language.code());
             }
         }
@@ -794,10 +794,10 @@ mod tests {
     /// is translated in every language: an English one would stand out in a translated editor.
     #[test]
     fn problems_read_in_every_language() {
-        use dac_catalog::rules::Issue;
-        let cat = dac_catalog::Catalog::new();
+        use lcc_catalog::rules::Issue;
+        let cat = lcc_catalog::Catalog::new();
         let problems =
-            |rules: serde_json::Value| serde_json::from_value::<dac_catalog::RuleSet>(serde_json::json!({"rules": rules})).unwrap().check(&cat);
+            |rules: serde_json::Value| serde_json::from_value::<lcc_catalog::RuleSet>(serde_json::json!({"rules": rules})).unwrap().check(&cat);
         let p = problems(serde_json::json!([{"field": "rating", "op": "gte", "value": 3}, {"field": "title", "op": "contains", "value": ""}]));
         assert_eq!(problem_text_in(Locale::En, &p[0]), "Title: needs something to look for (or use “is empty”)");
         assert_eq!(problem_text_in(Locale::De, &p[0]), "Titel: braucht einen Suchbegriff (oder „ist leer“)");
@@ -806,14 +806,14 @@ mod tests {
         assert_eq!(problem_text_in(Locale::Ja, &p[0]), "タイトル：検索する語句が必要です（または「が空」を使用）");
         // a problem with the album filter itself has no rule position to show
         let filter_loop =
-            dac_catalog::rules::Problem { path: Vec::new(), field: Some("album".into()), issue: Issue::AlbumLoop, message: String::new() };
+            lcc_catalog::rules::Problem { path: Vec::new(), field: Some("album".into()), issue: Issue::AlbumLoop, message: String::new() };
         assert!(problem_line_in(Locale::En, &filter_loop).starts_with("Album: "), "{}", problem_line_in(Locale::En, &filter_loop));
         let g = problems(serde_json::json!([{"group": {"rules": []}}]));
         assert_eq!(problem_text_in(Locale::En, &g[0]), "This group is empty: add a rule or remove it.");
         // the issues, the operators their hints name and the album picker's words, in every language
         for language in Locale::ALL.iter().filter(|l| **l != Locale::En) {
             // the field menu: every field and every group, so it never mixes languages
-            for label in dac_catalog::rules::FIELDS.iter().map(|f| f.1).chain(dac_catalog::rules::FIELD_GROUPS.iter().map(|g| g.0)) {
+            for label in lcc_catalog::rules::FIELDS.iter().map(|f| f.1).chain(lcc_catalog::rules::FIELD_GROUPS.iter().map(|g| g.0)) {
                 assert!(language.catalog().contains_key(label), "{} lacks the rule label {label:?}", language.code());
             }
             for word in [
@@ -830,8 +830,8 @@ mod tests {
             for issue in Issue::ALL {
                 assert!(language.catalog().contains_key(issue.text()), "{} lacks {:?}", language.code(), issue.text());
             }
-            for (_, _, kind) in dac_catalog::rules::FIELDS {
-                for (_, op) in dac_catalog::rules::ops_for(*kind) {
+            for (_, _, kind) in lcc_catalog::rules::FIELDS {
+                for (_, op) in lcc_catalog::rules::ops_for(*kind) {
                     assert!(language.catalog().contains_key(*op), "{} lacks the operator {op:?}", language.code());
                 }
             }
@@ -860,16 +860,16 @@ mod tests {
         if !lacking.is_empty() {
             eprintln!("uk lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
         }
-        let mut labels: Vec<&str> = dac_engine::command_specs().iter().map(|spec| spec.label).collect();
+        let mut labels: Vec<&str> = lcc_engine::command_specs().iter().map(|spec| spec.label).collect();
         labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
-        labels.extend(dac_develop::CONTROLS.iter().map(|control| control.label));
+        labels.extend(lcc_develop::CONTROLS.iter().map(|control| control.label));
         labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
-        for (_, label, kind) in dac_catalog::rules::FIELDS {
+        for (_, label, kind) in lcc_catalog::rules::FIELDS {
             labels.push(label);
-            labels.extend(dac_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
+            labels.extend(lcc_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
         }
-        labels.extend(dac_engine::rename::TOKENS.iter().map(|token| token.meaning));
-        labels.extend(dac_engine::rename::TEMPLATE_NOTES);
+        labels.extend(lcc_engine::rename::TOKENS.iter().map(|token| token.meaning));
+        labels.extend(lcc_engine::rename::TEMPLATE_NOTES);
         let missing: Vec<_> = labels.into_iter().filter(|label| !catalog.contains_key(*label)).collect();
         if !missing.is_empty() {
             eprintln!("uk lacks {} display label(s) (shown in English): {missing:?}", missing.len());
@@ -879,7 +879,7 @@ mod tests {
     #[test]
     fn ukrainian_switches_persists_formats_dates_and_preserves_values() {
         use crate::control::{ControlRequest, Outcome};
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.run("app.language.ukrainian", serde_json::json!({})).unwrap();
         assert_eq!(app.ui.language, Locale::Uk);
         assert_eq!(crate::menubar::checked(&app, "app.language.ukrainian"), Some(true));
@@ -925,7 +925,7 @@ mod tests {
     #[test]
     fn ukrainian_panels_dialogs_and_letters_paint_with_bundled_fonts() {
         let ctx = fonts_ctx(&[]);
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
         let text = painted_text(&ctx, &mut app, Locale::Uk);
         assert!(text.contains("Мої фото") && text.contains("Усі фото"), "{text}");
@@ -956,16 +956,16 @@ mod tests {
     /// language, and the translations catch up at their own pace.
     #[test]
     fn display_label_gaps_are_reported() {
-        let mut labels: Vec<&str> = dac_engine::command_specs().iter().map(|spec| spec.label).collect();
+        let mut labels: Vec<&str> = lcc_engine::command_specs().iter().map(|spec| spec.label).collect();
         labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
-        labels.extend(dac_develop::CONTROLS.iter().map(|control| control.label));
-        for (_, label, kind) in dac_catalog::rules::FIELDS {
+        labels.extend(lcc_develop::CONTROLS.iter().map(|control| control.label));
+        for (_, label, kind) in lcc_catalog::rules::FIELDS {
             labels.push(label);
-            labels.extend(dac_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
+            labels.extend(lcc_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
         }
-        labels.extend(dac_catalog::rules::FIELD_GROUPS.iter().map(|group| group.0));
-        labels.extend(dac_engine::rename::TOKENS.iter().map(|token| token.meaning));
-        labels.extend(dac_engine::rename::TEMPLATE_NOTES);
+        labels.extend(lcc_catalog::rules::FIELD_GROUPS.iter().map(|group| group.0));
+        labels.extend(lcc_engine::rename::TOKENS.iter().map(|token| token.meaning));
+        labels.extend(lcc_engine::rename::TEMPLATE_NOTES);
         let ui_labels = labels.len();
         for line in crate::panels::dialogs::WHATS_NEW.lines().map(str::trim) {
             if line.is_empty() || line.starts_with("# ") {
@@ -998,7 +998,7 @@ mod tests {
     #[test]
     fn german_switches_via_menu_and_control_persists_and_formats_dates() {
         use crate::control::{ControlRequest, Outcome};
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.run("app.language.german", serde_json::json!({})).unwrap();
         assert_eq!(app.ui.language, Locale::De);
         assert_eq!(tr("File"), "Datei");
@@ -1023,31 +1023,31 @@ mod tests {
         assert_eq!(builtin_label("Warm Glow", false), "Warm Glow");
         assert_eq!(builtin_label("Warm Glow", true), "Warmer Glanz");
         assert_eq!(tr("my-photo.jpg"), "my-photo.jpg");
-        let rules = dac_catalog::RuleSet {
-            mode: dac_catalog::Match::All,
-            rules: vec![dac_catalog::Rule::Field { field: "keywords".into(), op: "contains".into(), value: serde_json::json!("Color") }],
+        let rules = lcc_catalog::RuleSet {
+            mode: lcc_catalog::Match::All,
+            rules: vec![lcc_catalog::Rule::Field { field: "keywords".into(), op: "contains".into(), value: serde_json::json!("Color") }],
         };
-        let mut catalog = dac_catalog::Catalog::new();
-        catalog.apply(dac_catalog::Op::AddAlbum { album: dac_catalog::Album::new(dac_catalog::AlbumId(4), "Ausgeschlossen") }).unwrap();
+        let mut catalog = lcc_catalog::Catalog::new();
+        catalog.apply(lcc_catalog::Op::AddAlbum { album: lcc_catalog::Album::new(lcc_catalog::AlbumId(4), "Ausgeschlossen") }).unwrap();
         assert_eq!(rules_label(&rules, &catalog), "Stichwörter enthält Color");
-        let album = dac_catalog::RuleSet {
-            mode: dac_catalog::Match::All,
-            rules: vec![dac_catalog::Rule::Field { field: "album".into(), op: "isNot".into(), value: serde_json::json!(4) }],
+        let album = lcc_catalog::RuleSet {
+            mode: lcc_catalog::Match::All,
+            rules: vec![lcc_catalog::Rule::Field { field: "album".into(), op: "isNot".into(), value: serde_json::json!(4) }],
         };
         assert!(rules_label(&album, &catalog).ends_with(" “Ausgeschlossen”"), "{}", rules_label(&album, &catalog));
-        let rules = dac_catalog::RuleSet {
-            mode: dac_catalog::Match::All,
-            rules: vec![dac_catalog::Rule::Field { field: "copyrightStatus".into(), op: "is".into(), value: serde_json::json!("publicDomain") }],
+        let rules = lcc_catalog::RuleSet {
+            mode: lcc_catalog::Match::All,
+            rules: vec![lcc_catalog::Rule::Field { field: "copyrightStatus".into(), op: "is".into(), value: serde_json::json!("publicDomain") }],
         };
         assert!(rules_label(&rules, &catalog).ends_with(" Gemeinfrei"), "{}", rules_label(&rules, &catalog));
         for value in [serde_json::json!(false), serde_json::json!("false")] {
-            let rules = dac_catalog::RuleSet {
-                mode: dac_catalog::Match::All,
-                rules: vec![dac_catalog::Rule::Field { field: "edited".into(), op: "is".into(), value }],
+            let rules = lcc_catalog::RuleSet {
+                mode: lcc_catalog::Match::All,
+                rules: vec![lcc_catalog::Rule::Field { field: "edited".into(), op: "is".into(), value }],
             };
             assert!(rules_label(&rules, &catalog).ends_with(" Nein"), "{}", rules_label(&rules, &catalog));
         }
-        let filter = dac_catalog::Filter { labels: vec![dac_catalog::ColorLabel::Red, dac_catalog::ColorLabel::Blue], ..Default::default() };
+        let filter = lcc_catalog::Filter { labels: vec![lcc_catalog::ColorLabel::Red, lcc_catalog::ColorLabel::Blue], ..Default::default() };
         assert_eq!(filter_label(&filter, &app.session.catalog), "Farbmarkierung: Rot oder Blau");
         app.run("label.setNames", serde_json::json!({"names": {"red": "Color"}})).unwrap();
         assert_eq!(filter_label(&filter, &app.session.catalog), "Farbmarkierung: Color oder Blau");
@@ -1057,14 +1057,14 @@ mod tests {
     #[test]
     fn german_panels_dialogs_and_glyphs_are_painted_without_extra_fonts() {
         let ctx = fonts_ctx(&[]);
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
         let text = painted_text(&ctx, &mut app, Locale::De);
         assert!(text.contains("Meine Fotos") && text.contains("Alle Fotos"), "{text}");
         app.ui.view = crate::state::ViewMode::People;
         let text = painted_text(&ctx, &mut app, Locale::De);
         assert!(text.contains("Benannte Personen"), "{text}");
-        let about = format!("Über {}", dac_brand::DISPLAY_NAME);
+        let about = format!("Über {}", lcc_brand::DISPLAY_NAME);
         for (command, title) in [("app.about", about.as_str()), ("app.shortcuts", "Tastenkürzel"), ("app.settings", "Einstellungen")] {
             app.ui.dialog = None;
             app.run(command, serde_json::json!({})).unwrap();
@@ -1096,7 +1096,7 @@ mod tests {
         for language in [Locale::De, Locale::Uk] {
             let ctx = fonts_ctx(&[]);
             let services = crate::Services { pick_folder: Some(Box::new(|| None)), ..Default::default() };
-            let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), services);
+            let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), services);
             app.ui.language = language;
             let mut bounds = Vec::new();
             for export in [false, true] {
@@ -1149,7 +1149,7 @@ mod tests {
     }
 
     /// The text the whole window paints over a few frames in `language`.
-    fn painted_text(ctx: &egui::Context, app: &mut crate::DacApp, language: Locale) -> String {
+    fn painted_text(ctx: &egui::Context, app: &mut crate::LccApp, language: Locale) -> String {
         fn collect(shape: &egui::epaint::Shape, text: &mut String) {
             match shape {
                 egui::epaint::Shape::Text(shape) => {
@@ -1184,9 +1184,9 @@ mod tests {
     fn every_language_is_painted_and_menu_ids_stay_the_same() {
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
-        let ids = |app: &crate::DacApp| crate::menus::menu_entries(app).into_iter().map(|entry| entry.id).collect::<Vec<_>>();
+        let ids = |app: &crate::LccApp| crate::menus::menu_entries(app).into_iter().map(|entry| entry.id).collect::<Vec<_>>();
         let english_ids = ids(&app);
         for language in Locale::ALL {
             let text = painted_text(&ctx, &mut app, *language);
@@ -1206,7 +1206,7 @@ mod tests {
     }
 
     /// The UI families, after one frame so the font definitions are loaded.
-    fn fonts_ctx(craft: &'static [dac_engine::CraftFont]) -> egui::Context {
+    fn fonts_ctx(craft: &'static [lcc_engine::CraftFont]) -> egui::Context {
         let ctx = egui::Context::default();
         ctx.set_fonts(crate::theme::font_definitions(craft));
         let mut out = ctx.run_ui(egui::RawInput::default(), |_| {});
@@ -1220,12 +1220,12 @@ mod tests {
     fn craft_fonts_render_cjk_in_the_ui() {
         let samples = [(Locale::Ja, "日本語の文字"), (Locale::ZhHans, "简体中文字"), (Locale::ZhHant, "繁體中文字")];
         for (language, sample) in samples {
-            if !dac_engine::CRAFT_FONTS.iter().any(|font| font.serves(language.script())) {
+            if !lcc_engine::CRAFT_FONTS.iter().any(|font| font.serves(language.script())) {
                 eprintln!("skipped {}: built without a craft-fonts face for {}", language.code(), language.script());
                 continue;
             }
             set_language(language);
-            let ctx = fonts_ctx(dac_engine::CRAFT_FONTS);
+            let ctx = fonts_ctx(lcc_engine::CRAFT_FONTS);
             ctx.fonts_mut(|fonts| {
                 for family in
                     [egui::FontFamily::Proportional, egui::FontFamily::Name(crate::theme::FONT_SEMIBOLD.into()), egui::FontFamily::Monospace]
@@ -1253,10 +1253,10 @@ mod tests {
             // replacement-glyph face, which there is Hack, the face that draws Latin.)
             for family in [egui::FontFamily::Proportional, egui::FontFamily::Name(crate::theme::FONT_SEMIBOLD.into())] {
                 let font = egui::FontId::new(13.0, family);
-                assert!(dac_brand::DISPLAY_NAME.chars().all(|ch| fonts.has_glyph(&font, ch)), "{font:?}");
+                assert!(lcc_brand::DISPLAY_NAME.chars().all(|ch| fonts.has_glyph(&font, ch)), "{font:?}");
             }
         });
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         for language in Locale::ALL {
             app.ui.language = *language;
             for frame in 0..3 {
@@ -1276,12 +1276,12 @@ mod tests {
     #[test]
     fn traditional_chinese_switches_through_menu_and_control_and_persists() {
         use crate::control::{ControlRequest, Outcome};
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.run("app.language.traditionalChinese", serde_json::json!({})).unwrap();
         assert_eq!(app.ui.language, Locale::ZhHant);
         // Applied at once, not on the next frame.
         assert_eq!(tr("File"), "檔案");
-        assert_eq!(source_label(dac_engine::LibrarySource::All, &app.session.catalog), "所有照片");
+        assert_eq!(source_label(lcc_engine::LibrarySource::All, &app.session.catalog), "所有照片");
         assert_eq!(date_group_label("2026-09-20", false), "2026年9月20日 星期日");
         assert_eq!(date_group_label("2026-09-20", true), "20日 星期日");
         assert_eq!(date_group_label("2026-09", false), "2026年9月");
@@ -1315,7 +1315,7 @@ mod tests {
         let Outcome::Done(reply) = crate::control::handle(&mut app, &ctx, &req) else { panic!("expected a reply") };
         assert_eq!(reply["ok"], false);
         assert_eq!(app.ui.language, Locale::ZhHant);
-        let ids = |app: &crate::DacApp| crate::menus::menu_entries(app).into_iter().map(|entry| entry.id).collect::<Vec<_>>();
+        let ids = |app: &crate::LccApp| crate::menus::menu_entries(app).into_iter().map(|entry| entry.id).collect::<Vec<_>>();
         let chinese_ids = ids(&app);
         app.run("app.language.english", serde_json::json!({})).unwrap();
         assert_eq!(tr("File"), "File");
@@ -1329,7 +1329,7 @@ mod tests {
         assert_eq!(date_group_label("2026-09-20", false), "Sunday, 20 September 2026");
         assert_eq!(date_group_label("2026-09-20", true), "Sunday, 20");
         assert_eq!(date_group_label("2026-09", true), "September");
-        assert_eq!(display_time("2026-09-20T16:04:05"), dac_catalog::dates::display_time("2026-09-20T16:04:05"));
+        assert_eq!(display_time("2026-09-20T16:04:05"), lcc_catalog::dates::display_time("2026-09-20T16:04:05"));
         set_language(Locale::Ja);
         assert_eq!(date_group_label("2026-09-20", false), "2026年9月20日（日曜日）");
         assert_eq!(date_group_label("2026-09", true), "9月");
@@ -1352,10 +1352,10 @@ mod tests {
     fn traditional_chinese_presets_and_panel_headers_are_painted() {
         let ctx = egui::Context::default();
         crate::theme::install_fonts(&ctx);
-        let mut app = crate::DacApp::new(dac_engine::Session::with_demo(), Default::default());
+        let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.presets = true;
         let builtin = app.session.presets.iter().find(|p| p.name == "Warm Glow").unwrap().clone();
-        app.session.presets.push(dac_develop::Preset { id: "user.test".into(), builtin: false, ..builtin });
+        app.session.presets.push(lcc_develop::Preset { id: "user.test".into(), builtin: false, ..builtin });
         for (panel, title) in [(crate::state::RightPanel::Activity, "歷史紀錄"), (crate::state::RightPanel::Versions, "版本")] {
             app.ui.right = panel;
             let text = painted_text(&ctx, &mut app, Locale::ZhHant);

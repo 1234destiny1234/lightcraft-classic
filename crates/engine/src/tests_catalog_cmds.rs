@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{PhotoId, XmpStatus};
+use lcc_catalog::{PhotoId, XmpStatus};
 use serde_json::json;
 
 use crate::{LibrarySource, Session};
@@ -19,8 +19,8 @@ fn temp_dir(tag: &str) -> PathBuf {
 fn write_png(path: &Path, seed: u8) {
     let (w, h) = (16usize, 12usize);
     let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 9) as u8, (i / w * 13) as u8, seed, 255]).collect();
-    let img = dac_raster::Rgba8 { width: w, height: h, data };
-    let bytes = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).unwrap();
+    let img = lcc_raster::Rgba8 { width: w, height: h, data };
+    let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
     std::fs::write(path, bytes).unwrap();
 }
 
@@ -85,7 +85,7 @@ fn an_in_memory_session_has_no_catalog_to_back_up() {
 fn preview_settings_live_in_the_catalog_settings() {
     let (mut s, lib, _) = library("previews", 0);
     s.execute("library.previewSettings", &json!({"standardEdge": 1024, "discardFull": "week"})).unwrap();
-    let cs = dac_catalog::library::CatalogSettings::load(&lib);
+    let cs = lcc_catalog::library::CatalogSettings::load(&lib);
     assert_eq!(cs.previews.as_ref().and_then(|v| v["standardEdge"].as_u64()), Some(1024), "{cs:?}");
     let prefs = std::fs::read_to_string(lib.join("prefs.json")).unwrap();
     assert!(!prefs.contains("1024"), "no longer in prefs.json: {prefs}");
@@ -108,12 +108,12 @@ fn preview_settings_in_an_old_prefs_file_are_migrated() {
         s.close_library().unwrap();
     }
     std::fs::write(lib.join("prefs.json"), br#"{"previews": {"standardEdge": 3000}}"#).unwrap();
-    let _ = std::fs::remove_file(lib.join(dac_catalog::library::SETTINGS_FILE));
+    let _ = std::fs::remove_file(lib.join(lcc_catalog::library::SETTINGS_FILE));
     let mut s = Session::new().with_fs();
     s.open_library(&lib, false).unwrap();
     assert_eq!(s.preview_prefs.standard_edge(), 3000);
     s.save_prefs().unwrap();
-    let cs = dac_catalog::library::CatalogSettings::load(&lib);
+    let cs = lcc_catalog::library::CatalogSettings::load(&lib);
     assert_eq!(cs.previews.as_ref().and_then(|v| v["standardEdge"].as_u64()), Some(3000));
 }
 

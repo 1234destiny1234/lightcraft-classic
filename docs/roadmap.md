@@ -12,7 +12,7 @@ The app has no `cargo xtask scorecard`; the measured checklist is
 Toward **beta** (~340–600 Opus 5.5 agent hours; ranked, each a gap in [gaps.md](gaps.md)):
 
 1. **Camera colour of our own** (gap 1, 50–90 h): chart-based calibration for the most-used models,
-   building on the per-file JPEG fits and pooled profiles (`dac-cli calibrate`); never Adobe
+   building on the per-file JPEG fits and pooled profiles (`lcc-cli calibrate`); never Adobe
    data.
 2. **CR3 for every Canon body** (gap 2, 25–45 h): the remaining CRX variants, sRAW / mRAW, HEIF CR3;
    clean-room from prose descriptions (decided 2026-10-05; compressed NEF is the template).

@@ -11,10 +11,10 @@
 use super::{nefc, white_from_data};
 use crate::tiffraw::{Packing, check_image, read_image};
 use crate::{BlackLevel, Cfa, ColorData, Mode, OpcodeLists, RawData, RawError, RawFormat, RawImage, Rect, Result};
-use dac_geom::Orientation;
-use dac_tiff::image::ImageInfo;
-use dac_tiff::tags::{self as t, photometric};
-use dac_tiff::{ByteOrder, Ifd, Tiff, makernote};
+use lcc_geom::Orientation;
+use lcc_tiff::image::ImageInfo;
+use lcc_tiff::tags::{self as t, photometric};
+use lcc_tiff::{ByteOrder, Ifd, Tiff, makernote};
 
 const WB_RB_LEVELS: u16 = 0x000c;
 const BLACK_LEVEL: u16 = 0x003d;
@@ -173,7 +173,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         Some(&MeasuredBody { crop: (x, y, cw, ch), .. }) if x + cw <= active_w && y + ch <= h => Rect::new(x, y, cw, ch),
         _ => default_crop(mn.as_ref(), active_w, h),
     };
-    let mut metadata = dac_meta::from_tiff(&tiff);
+    let mut metadata = lcc_meta::from_tiff(&tiff);
     metadata.width = Some(crop.width as u32);
     metadata.height = Some(crop.height as u32);
     let img = RawImage {
@@ -261,7 +261,7 @@ fn compressed(bytes: &[u8], info: &ImageInfo, mn: Option<&makernote::MakerNote>,
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_tiff::{ByteOrder, IfdBuilder, ImageData, TiffWriter, Value};
+    use lcc_tiff::{ByteOrder, IfdBuilder, ImageData, TiffWriter, Value};
 
     fn nef(compression: u16, bits: u16, strips: Vec<Vec<u8>>, w: u32, h: u32, rps: u32) -> Vec<u8> {
         nef_with_note(compression, bits, strips, w, h, rps, None)

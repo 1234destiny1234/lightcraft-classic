@@ -1,4 +1,4 @@
-# dac-psd
+# lcc-psd
 
 A standalone reader and writer for Adobe Photoshop **PSD** (version 1) and **PSB** (version 2, "large document format") files. It keeps everything it reads, so an unmodified file writes back byte for byte. It depends on no other crate of the workspace. Ported (copied and renamed) from the `psd` crate of the sibling project PhotoCraft (storytold/photocraft, MIT OR Apache-2.0, used here under MIT); send fixes back there too.
 
@@ -126,7 +126,7 @@ padding-specific size limit.
 
 ## Testing
 
-`cargo test -p dac-psd --all-features` runs the unit tests, integration tests and proptests:
+`cargo test -p lcc-psd --all-features` runs the unit tests, integration tests and proptests:
 
 * Byte stability and model round-trips for every generated case: all depths, color modes and compressions, PSD and PSB.
 * PackBits edge cases.

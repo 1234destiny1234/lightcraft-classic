@@ -1,10 +1,10 @@
 //! Encode → decode round trips on generated fixtures.
 
-use dac_codecs::exif::minimal_exif;
-use dac_codecs::icc::{self, write_named};
-use dac_codecs::*;
-use dac_color::{DISPLAY_P3, REC2020, transfer::srgb_to_linear};
-use dac_raster::Rgba8;
+use lcc_codecs::exif::minimal_exif;
+use lcc_codecs::icc::{self, write_named};
+use lcc_codecs::*;
+use lcc_color::{DISPLAY_P3, REC2020, transfer::srgb_to_linear};
+use lcc_raster::Rgba8;
 
 fn gradient(w: usize, h: usize) -> Rgba8 {
     Rgba8::from_fn(w, h, |x, y| [(x * 255 / w.max(2).saturating_sub(1).max(1)) as u8, (y * 255 / h.max(2)) as u8, ((x + y) % 256) as u8, 255])
@@ -165,12 +165,12 @@ fn p3_icc_to_working() {
 #[test]
 fn custom_matrix_icc_is_exact() {
     // A non-standard space: goes through the generic matrix/TRC path, not the named one.
-    let space = dac_color::RgbSpace {
+    let space = lcc_color::RgbSpace {
         name: "Custom",
-        r: dac_color::Xy::new(0.66, 0.32),
-        g: dac_color::Xy::new(0.25, 0.65),
-        b: dac_color::Xy::new(0.14, 0.07),
-        white: dac_color::D65,
+        r: lcc_color::Xy::new(0.66, 0.32),
+        g: lcc_color::Xy::new(0.25, 0.65),
+        b: lcc_color::Xy::new(0.14, 0.07),
+        white: lcc_color::D65,
     };
     let icc = icc::write_matrix_trc(&space, &Trc::Gamma(2.0));
     let data = [255u8, 0, 0];
@@ -683,7 +683,7 @@ fn pq_png_rejects_short_buffers_and_survives_hostile_samples() {
 }
 
 /// Largest per-channel difference between two linear images.
-fn max_diff(a: &dac_raster::Rgb32f, b: &dac_raster::Rgb32f) -> f32 {
+fn max_diff(a: &lcc_raster::Rgb32f, b: &lcc_raster::Rgb32f) -> f32 {
     a.data.iter().zip(&b.data).flat_map(|(p, q)| (0..3).map(move |c| (p[c] - q[c]).abs())).fold(0.0, f32::max)
 }
 
@@ -794,7 +794,7 @@ fn jxl_hdr_pq() {
         let fb = r.image_all_channels();
         let at = |x: usize| fb.buf()[((h / 2) * w + x) * fb.channels() + 1];
         for (x, nits) in [(w / 4, HDR_REFERENCE_WHITE_NITS), (w * 3 / 4, 4.0 * HDR_REFERENCE_WHITE_NITS)] {
-            let (got, want) = (at(x), dac_codecs::encode::pq_encode(nits));
+            let (got, want) = (at(x), lcc_codecs::encode::pq_encode(nits));
             assert!((got - want).abs() < 0.005, "lossless={lossless}: {nits} cd/m² written as {got}, want {want}");
         }
     }

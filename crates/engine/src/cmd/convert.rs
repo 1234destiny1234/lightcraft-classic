@@ -4,7 +4,7 @@
 
 use std::path::Path;
 
-use dac_catalog::{MediaKind, Op, Source};
+use lcc_catalog::{MediaKind, Op, Source};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, bad, cmd, has_active, has_selection};
@@ -35,21 +35,21 @@ pub(crate) fn write_dng_with(file_bytes: Option<&crate::merge::ByteReader>, path
         Some(r) => r(path)?,
         None => std::fs::read(path).map_err(|e| format!("{path}: {e}"))?,
     };
-    let raw = dac_raw::decode(&bytes).map_err(|e| format!("{path}: {e}"))?;
+    let raw = lcc_raw::decode(&bytes).map_err(|e| format!("{path}: {e}"))?;
     drop(bytes);
-    let dng = dac_raw::write_dng(&raw, &dac_raw::DngWriteOptions { xmp: (!packet.is_empty()).then_some(packet), ..Default::default() })
+    let dng = lcc_raw::write_dng(&raw, &lcc_raw::DngWriteOptions { xmp: (!packet.is_empty()).then_some(packet), ..Default::default() })
         .map_err(|e| e.to_string())?;
-    let back = dac_raw::decode(&dng).map_err(|e| format!("{path}: the DNG written for it doesn't decode ({e}); the raw is kept"))?;
+    let back = lcc_raw::decode(&dng).map_err(|e| format!("{path}: the DNG written for it doesn't decode ({e}); the raw is kept"))?;
     let same = match (&back.data, &raw.data) {
-        (dac_raw::RawData::U16(a), dac_raw::RawData::U16(b)) => a == b,
-        (dac_raw::RawData::F32(a), dac_raw::RawData::F32(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits()),
+        (lcc_raw::RawData::U16(a), lcc_raw::RawData::U16(b)) => a == b,
+        (lcc_raw::RawData::F32(a), lcc_raw::RawData::F32(b)) => a.len() == b.len() && a.iter().zip(b).all(|(x, y)| x.to_bits() == y.to_bits()),
         _ => false,
     };
     if (back.width, back.height, back.cpp) != (raw.width, raw.height, raw.cpp) || !same {
         return Err(format!("{path}: the DNG written for it doesn't hold the same raw data; the raw is kept"));
     }
     drop((raw, back));
-    let out = dac_catalog::safe_file::write_new_unique(&mut dng_names(path), &dng)
+    let out = lcc_catalog::safe_file::write_new_unique(&mut dng_names(path), &dng)
         .map_err(|e| format!("{path}: could not write its DNG ({e}); the raw is kept"))?;
     Ok(out.to_string_lossy().to_string())
 }
@@ -131,10 +131,10 @@ fn edit_external(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, format!("{} photos selected: edit at most {MAX_EDIT_COPIES} at a time", ids.len())));
     }
     let space = match super::str_param(p, "colorSpace").unwrap_or("adobeRgb") {
-        "srgb" => dac_pipeline::OutputSpace::Srgb,
-        "displayP3" => dac_pipeline::OutputSpace::DisplayP3,
-        "prophoto" | "proPhoto" => dac_pipeline::OutputSpace::ProPhoto,
-        _ => dac_pipeline::OutputSpace::AdobeRgb,
+        "srgb" => lcc_pipeline::OutputSpace::Srgb,
+        "displayP3" => lcc_pipeline::OutputSpace::DisplayP3,
+        "prophoto" | "proPhoto" => lcc_pipeline::OutputSpace::ProPhoto,
+        _ => lcc_pipeline::OutputSpace::AdobeRgb,
     };
     let format = match super::str_param(p, "format").unwrap_or("tiff") {
         "tiff" | "tif" => crate::export::ExportFormat::Tiff,
@@ -158,7 +158,7 @@ fn edit_external(s: &mut Session, p: &Value) -> Result<Value> {
     for id in ids {
         copies.push(edit_copy(s, p, id, &opts)?);
     }
-    let new: Vec<dac_catalog::PhotoId> = copies.iter().filter_map(|c| c["id"].as_u64()).map(dac_catalog::PhotoId).collect();
+    let new: Vec<lcc_catalog::PhotoId> = copies.iter().filter_map(|c| c["id"].as_u64()).map(lcc_catalog::PhotoId).collect();
     s.selection = crate::Selection { active: new.first().copied(), ids: new };
     let first = copies.first().cloned().unwrap_or(Value::Null);
     Ok(json!({"path": first["path"], "id": first["id"], "original": first["original"], "copies": copies}))
@@ -169,7 +169,7 @@ const MAX_EDIT_COPIES: usize = 50;
 
 /// One photo's edit copy for [`edit_external`]: rendered with `opts` next to its original (a demo
 /// photo into `dir`), added to the library and stacked on top of the original, expanded.
-fn edit_copy(s: &mut Session, p: &Value, id: dac_catalog::PhotoId, opts: &crate::export::ExportOptions) -> Result<Value> {
+fn edit_copy(s: &mut Session, p: &Value, id: lcc_catalog::PhotoId, opts: &crate::export::ExportOptions) -> Result<Value> {
     const C: &str = "photo.editExternal";
     let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad(C, format!("no photo {}", id.0)))?;
     let dir = match &ph.source {
@@ -199,8 +199,8 @@ fn edit_copy(s: &mut Session, p: &Value, id: dac_catalog::PhotoId, opts: &crate:
 
 /// The op that brings a photo up to date with what its file is now (`info`, a fresh probe), or
 /// `None` when nothing changed. Covers a raw that became decodable (or stopped being: a different
-/// file relinked), i.e. a change of [`dac_catalog::Photo::preview_only`].
-pub(crate) fn content_op(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info: crate::media::ProbeInfo) -> Option<Op> {
+/// file relinked), i.e. a change of [`lcc_catalog::Photo::preview_only`].
+pub(crate) fn content_op(id: lcc_catalog::PhotoId, ph: &lcc_catalog::Photo, info: crate::media::ProbeInfo) -> Option<Op> {
     let same = info.content_hash == ph.content_hash
         && info.file_size == ph.file_size
         && (info.width, info.height) == (ph.width, ph.height)
@@ -216,7 +216,7 @@ pub(crate) fn content_op(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info
 }
 
 /// Ops that fill a photo's empty camera fields (camera, lens, exposure, GPS, capture time) from a fresh probe.
-fn fill_missing_meta(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
+fn fill_missing_meta(id: lcc_catalog::PhotoId, ph: &lcc_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
     let (mut m, src) = (ph.meta.clone(), &info.meta);
     let before = m.clone();
     if m.camera.is_empty() {
@@ -247,7 +247,7 @@ fn fill_missing_meta(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info: &c
 /// photo's correction stayed off. When the photo gains lens data and its develop settings are still
 /// what import gave it, the lens correction is turned on as import would; an edited photo keeps
 /// its settings.
-pub(crate) fn lens_ops(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
+pub(crate) fn lens_ops(id: lcc_catalog::PhotoId, ph: &lcc_catalog::Photo, info: &crate::media::ProbeInfo) -> Vec<Op> {
     if info.embedded_lens == ph.embedded_lens.as_deref().copied() {
         return Vec::new();
     }
@@ -264,7 +264,7 @@ pub(crate) fn lens_ops(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info: 
 /// The op that gives a raw the as-shot white balance its file reads now (`info`, a fresh probe), or none when the
 /// catalog already has it or the photo is not a raw edited in Kelvin. A raw imported before its camera's matrices
 /// gave it a Kelvin scale keeps the relative scale's 6500 / 0 until a decode or Reload reads the file (issue #730).
-pub(crate) fn as_shot_wb_op(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, info: &crate::media::ProbeInfo) -> Option<Op> {
+pub(crate) fn as_shot_wb_op(id: lcc_catalog::PhotoId, ph: &lcc_catalog::Photo, info: &crate::media::ProbeInfo) -> Option<Op> {
     let read = info.as_shot_wb.filter(|(t, tint)| t.is_finite() && tint.is_finite())?;
     (ph.develops_raw() && !ph.relative_wb() && ph.as_shot_wb != Some(read)).then_some(Op::SetAsShotWb { id, wb: Some(read) })
 }
@@ -273,7 +273,7 @@ pub(crate) fn as_shot_wb_op(id: dac_catalog::PhotoId, ph: &dac_catalog::Photo, i
 /// dimensions and content hash, cached sources dropped. → {reloaded: [ids]}
 fn reload(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = s.targets(p);
-    let paths: Vec<(dac_catalog::PhotoId, String)> = ids
+    let paths: Vec<(lcc_catalog::PhotoId, String)> = ids
         .iter()
         .filter_map(|id| match s.catalog.photo(*id).map(|ph| ph.source.clone()) {
             Some(Source::File { path }) => Some((*id, path)),
@@ -394,7 +394,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_catalog::{Photo, PhotoId, Source};
+    use lcc_catalog::{Photo, PhotoId, Source};
 
     /// Reload fills camera fields a photo lacks (a CR3 imported before CR3 metadata was read) and keeps
     /// everything already set.
@@ -419,16 +419,16 @@ mod tests {
         assert!(fill_missing_meta(PhotoId(1), &ph, &info).is_empty());
     }
 
-    fn lens() -> dac_develop::EmbeddedLens {
-        dac_develop::EmbeddedLens {
-            warp: Some(dac_develop::EmbeddedWarp { planes: [[1.0, -0.1, 0.03, 0.0, 0.0, 0.0]; 3], ..Default::default() }),
+    fn lens() -> lcc_develop::EmbeddedLens {
+        lcc_develop::EmbeddedLens {
+            warp: Some(lcc_develop::EmbeddedWarp { planes: [[1.0, -0.1, 0.03, 0.0, 0.0, 0.0]; 3], ..Default::default() }),
             vignette: None,
             stages: Default::default(),
         }
     }
-    fn old_rw2() -> dac_catalog::Photo {
+    fn old_rw2() -> lcc_catalog::Photo {
         // as an older build catalogued it: no lens data, correction off
-        dac_catalog::Photo::new(dac_catalog::PhotoId(1), Source::File { path: "/x.rw2".into() }, "x.rw2", "RW2", 4592, 3448, "2026-10-06T00:00:00")
+        lcc_catalog::Photo::new(lcc_catalog::PhotoId(1), Source::File { path: "/x.rw2".into() }, "x.rw2", "RW2", 4592, 3448, "2026-10-06T00:00:00")
     }
 
     #[test]
@@ -440,12 +440,12 @@ mod tests {
         let Some(Op::SetDevelop { settings, .. }) = ops.get(1) else { panic!("{ops:?}") };
         assert!(settings.optics.lens_profile);
         // once applied, the photo is still "unedited" and has what import would have given it
-        let mut c = dac_catalog::Catalog::default();
+        let mut c = lcc_catalog::Catalog::default();
         c.apply(Op::AddPhoto { photo: Box::new(ph) }).unwrap();
         for op in ops {
             c.apply(op).unwrap();
         }
-        let after = c.photo(dac_catalog::PhotoId(1)).unwrap();
+        let after = c.photo(lcc_catalog::PhotoId(1)).unwrap();
         assert_eq!(after.embedded_lens.as_deref().copied(), Some(lens()));
         assert!(!after.is_edited());
         assert_eq!(*after.develop, after.camera_defaults());
@@ -480,7 +480,7 @@ mod tests {
     #[test]
     fn corpus_reload_corrects_an_rw2_catalogued_without_lens_data() {
         let root =
-            dac_brand::env_os("CORPUS").map(std::path::PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
+            lcc_brand::env_os("CORPUS").map(std::path::PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
         let f = root.join("raw/rw2-panasonic-gx80.rw2");
         if !f.exists() {
             eprintln!("skip: {} absent", f.display());

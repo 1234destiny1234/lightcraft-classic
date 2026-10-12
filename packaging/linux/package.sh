@@ -48,7 +48,7 @@ BASENAME="$APP-$VERSION-linux-$ARCH"
 echo "==> $BRAND_DISPLAY_NAME $VERSION for Linux $ARCH ($FORMATS)"
 
 if [ "$SKIP_BUILD" = 0 ]; then
-  (cd "$ROOT" && cargo build --release --locked -p dac-app -p dac-cli --features dac-app/heif,dac-cli/heif \
+  (cd "$ROOT" && cargo build --release --locked -p lcc-app -p lcc-cli --features lcc-app/heif,lcc-cli/heif \
     ${CROSS_TARGET:+--target "$CROSS_TARGET"})
 fi
 BIN="$CARGO_TARGET_DIR/${CROSS_TARGET:+$CROSS_TARGET/}release"

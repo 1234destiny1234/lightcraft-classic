@@ -96,7 +96,7 @@ fn get_json_gzip_and_user_agent() {
     h.join().unwrap();
     let req = seen.lock().unwrap()[0].clone();
     assert_eq!(req.header("user-agent"), Some(user_agent().as_str()));
-    assert!(user_agent().starts_with(dac_brand::BINARY));
+    assert!(user_agent().starts_with(lcc_brand::BINARY));
     assert_eq!(req.header("accept-encoding"), Some("gzip"));
 }
 
@@ -256,7 +256,7 @@ fn body_cap() {
 }
 
 fn tempdir(tag: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-net-test-{tag}-{}-{:?}", std::process::id(), std::thread::current().id()));
+    let d = std::env::temp_dir().join(format!("lcc-net-test-{tag}-{}-{:?}", std::process::id(), std::thread::current().id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d

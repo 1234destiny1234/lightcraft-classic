@@ -1,5 +1,5 @@
 [package]
-name = "dac-ui-egui"
+name = "lcc-ui-egui"
 version.workspace = true
 edition.workspace = true
 rust-version = "1.95"
@@ -11,50 +11,50 @@ workspace = true
 
 [dependencies]
 craft-ui = { workspace = true }
-dac-brand = { workspace = true }
-dac-geom = { workspace = true }
-dac-meta = { workspace = true }
-dac-color = { workspace = true }
-dac-raster = { workspace = true }
-dac-develop = { workspace = true }
-dac-pipeline = { workspace = true }
-dac-catalog = { workspace = true }
-dac-geo = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-geom = { workspace = true }
+lcc-meta = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-develop = { workspace = true }
+lcc-pipeline = { workspace = true }
+lcc-catalog = { workspace = true }
+lcc-geo = { workspace = true }
 web-time = { workspace = true }
-dac-engine = { workspace = true }
-dac-layout = { workspace = true }
-dac-pdf = { workspace = true }
-dac-print = { workspace = true }
-dac-preview = { workspace = true }
-dac-slideshow = { path = "../slideshow" }
+lcc-engine = { workspace = true }
+lcc-layout = { workspace = true }
+lcc-pdf = { workspace = true }
+lcc-print = { workspace = true }
+lcc-preview = { workspace = true }
+lcc-slideshow = { path = "../slideshow" }
 # the Book module (owned, Phase 3)
-dac-book = { workspace = true }
-dac-text = { workspace = true }
-dac-webgallery = { workspace = true }
+lcc-book = { workspace = true }
+lcc-text = { workspace = true }
+lcc-webgallery = { workspace = true }
 egui = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dac-immich = { workspace = true }
-dac-publish = { workspace = true }
-dac-codecs = { workspace = true }
+lcc-immich = { workspace = true }
+lcc-publish = { workspace = true }
+lcc-codecs = { workspace = true }
 # identity plate graphic from an SVG (MIT/Apache-2.0, pure Rust); no text or system fonts
 resvg = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 image = { workspace = true }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
-dac-denoise = { workspace = true, features = ["runtime"] }
-dac-codecs = { workspace = true }
-dac-faces = { workspace = true }
-dac-merge = { workspace = true }
+lcc-denoise = { workspace = true, features = ["runtime"] }
+lcc-codecs = { workspace = true }
+lcc-faces = { workspace = true }
+lcc-merge = { workspace = true }
 filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 wat = "1.228" # G19: a slow export-hook plug-in for the worker test
 
 [build-dependencies]
-dac-brand = { workspace = true }
+lcc-brand = { workspace = true }
 serde_json = { workspace = true }
 toml = "1"

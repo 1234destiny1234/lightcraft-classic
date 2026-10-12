@@ -4,10 +4,10 @@
 //! - [`tiles`]: tile servers (OpenStreetMap by default, terrain, satellite, user-added XYZ), their
 //!   URLs and attribution.
 //! - [`cache`]: the on-disk tile cache with a size limit and an expiry.
-//! - [`fetch`] (native): tile downloads through `dac-net`, cache first, polite to the servers
+//! - [`fetch`] (native): tile downloads through `lcc-net`, cache first, polite to the servers
 //!   (the brand's User-Agent, no bulk prefetch).
 //! - [`cluster`]: grid clustering of photo pins, zoom dependent.
-//! - [`tracks`]: track display from GPX (parsed by `dac-meta`), KML and GeoJSON.
+//! - [`tracks`]: track display from GPX (parsed by `lcc-meta`), KML and GeoJSON.
 //! - [`places`]: saved locations (centre, radius, private flag).
 //! - [`geocode`]: opt-in reverse geocoding, offline (a GeoNames cities file) or online (a
 //!   Nominatim-compatible endpoint, rate-limited); nothing is sent without consent.

@@ -1,5 +1,5 @@
 [package]
-name = "dac-web"
+name = "lcc-web"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -13,12 +13,12 @@ workspace = true
 crate-type = ["cdylib", "rlib"]
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-engine = { workspace = true }
-dac-ui-egui = { workspace = true }
-dac-codecs = { workspace = true }
-dac-raster = { workspace = true }
-dac-preview = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-engine = { workspace = true }
+lcc-ui-egui = { workspace = true }
+lcc-codecs = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-preview = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
@@ -74,7 +74,7 @@ web-sys = { workspace = true, features = [
 ] }
 
 [features]
-# Open HEIC/HEIF photos (the optional dac-heif crate). Not default so distributors choose
+# Open HEIC/HEIF photos (the optional lcc-heif crate). Not default so distributors choose
 # it (HEVC patents); build with `--features heif` to include it. On wasm32 panics abort, so
 # heic-rs's `catch_unwind` guard does not apply there.
-heif = ["dac-codecs/heif"]
+heif = ["lcc-codecs/heif"]

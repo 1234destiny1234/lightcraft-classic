@@ -12,8 +12,8 @@
 //! Every write goes through `metadata.setStandard`, so the host checks the permission and the
 //! field names, and the edit is one undoable catalog change like any other.
 
-use dac_plugin_sdk::serde_json::{Value, json};
-use dac_plugin_sdk::{Request, export_plugin, host};
+use lcc_plugin_sdk::serde_json::{Value, json};
+use lcc_plugin_sdk::{Request, export_plugin, host};
 
 const MANIFEST: &str = r#"{
   "id": "org.example.batch-metadata",

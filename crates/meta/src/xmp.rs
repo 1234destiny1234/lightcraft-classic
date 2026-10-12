@@ -9,7 +9,7 @@
 //! The app's full develop settings as an opaque JSON string in `lc:settings`.
 
 use crate::{DateTime, Flash, Gps, Metadata, Orientation, Region, RegionKind, parse_number};
-use dac_geom::{Point, Rect};
+use lcc_geom::{Point, Rect};
 use quick_xml::escape::{escape, partial_escape};
 use quick_xml::events::Event;
 use std::collections::BTreeMap;
@@ -555,12 +555,12 @@ fn frac(v: f64) -> String {
             return format!("1/{}", inv.round() as u64);
         }
     }
-    let (n, d) = dac_tiff::writer::rational(v);
+    let (n, d) = lcc_tiff::writer::rational(v);
     format!("{n}/{d}")
 }
 
 fn sfrac(v: f64) -> String {
-    let (n, d) = dac_tiff::writer::srational(v);
+    let (n, d) = lcc_tiff::writer::srational(v);
     format!("{n}/{d}")
 }
 
@@ -572,19 +572,19 @@ pub fn write_xmp(meta: &Metadata, lc_settings: Option<&str>) -> String {
 }
 
 /// Namespace of plug-in custom metadata fields in sidecars (prefix `lcpf`): `lcpf:fields`, a bag of
-/// `{lcpf:plugin, lcpf:key, lcpf:value}`. Under the app's homepage (`dac_brand::HOMEPAGE`):
+/// `{lcpf:plugin, lcpf:key, lcpf:value}`. Under the app's homepage (`lcc_brand::HOMEPAGE`):
 /// `<homepage>/ns/plugin-fields/1.0/`.
 pub fn plugin_fields_ns() -> String {
-    format!("{}/ns/plugin-fields/1.0/", dac_brand::HOMEPAGE.trim_end_matches('/'))
+    format!("{}/ns/plugin-fields/1.0/", lcc_brand::HOMEPAGE.trim_end_matches('/'))
 }
 
 /// Prefix of the video clip namespace ([`video_ns`]) as [`parse_xmp`] reports it, whatever prefix a packet uses.
 pub const VIDEO_PREFIX: &str = "lcvid";
 
 /// Namespace of video clip settings in sidecars (prefix [`VIDEO_PREFIX`]): `lcvid:trimIn`, `lcvid:trimOut`,
-/// `lcvid:posterTime` (seconds). Under the app's homepage (`dac_brand::HOMEPAGE`): `<homepage>/ns/video/1.0/`.
+/// `lcvid:posterTime` (seconds). Under the app's homepage (`lcc_brand::HOMEPAGE`): `<homepage>/ns/video/1.0/`.
 pub fn video_ns() -> String {
-    format!("{}/ns/video/1.0/", dac_brand::HOMEPAGE.trim_end_matches('/'))
+    format!("{}/ns/video/1.0/", lcc_brand::HOMEPAGE.trim_end_matches('/'))
 }
 
 /// Like [`write_xmp`], with any number of simple `lc:<name>` properties (e.g. `settings`, `flag`).
@@ -646,7 +646,7 @@ pub fn write_xmp_video(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&
     let mut x = String::new();
     x.push_str("<?xpacket begin=\"\u{feff}\" id=\"W5M0MpCehiHzreSzNTczkc9d\"?>\n");
     x.push_str("<x:xmpmeta xmlns:x=\"adobe:ns:meta/\" x:xmptk=\"");
-    x.push_str(dac_brand::DISPLAY_NAME);
+    x.push_str(lcc_brand::DISPLAY_NAME);
     x.push_str("\">\n");
     x.push_str(" <rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\">\n");
     x.push_str("  <rdf:Description rdf:about=\"\"");
@@ -742,7 +742,7 @@ mod tests {
             make: Some("Maker & Sons".into()),
             model: Some("X <1>".into()),
             serial_number: Some("SN1".into()),
-            software: Some(dac_brand::DISPLAY_NAME.into()),
+            software: Some(lcc_brand::DISPLAY_NAME.into()),
             lens_make: Some("L".into()),
             lens_model: Some("24-70mm".into()),
             lens_serial_number: Some("LS".into()),

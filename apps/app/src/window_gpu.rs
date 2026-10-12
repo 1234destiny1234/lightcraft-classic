@@ -12,9 +12,9 @@
 //! - The renderer that worked is remembered (`<config>/window-renderer`, Windows only) and tried
 //!   first next time. `<PREFIX>_GPU_BACKEND=dx12|vulkan|gl|glow` (or `WGPU_BACKEND`) forces one.
 
-use dac_engine::gpu::backend::{self, Backends, WindowRenderer};
 use eframe::egui_wgpu::{WgpuConfiguration, WgpuSetup, WgpuSetupExisting};
 use eframe::wgpu;
+use lcc_engine::gpu::backend::{self, Backends, WindowRenderer};
 use std::path::PathBuf;
 
 /// Environment variable counting automatic relaunches after a failed start (bounds the chain).
@@ -86,7 +86,7 @@ impl Files {
 
 /// The renderer for this start: see the module docs.
 pub fn choose(files: &Files) -> Chosen {
-    let forced = backend::forced_window_renderer(dac_brand::env("GPU_BACKEND").as_deref(), std::env::var("WGPU_BACKEND").ok().as_deref());
+    let forced = backend::forced_window_renderer(lcc_brand::env("GPU_BACKEND").as_deref(), std::env::var("WGPU_BACKEND").ok().as_deref());
     let failed = files.take_failed();
     let remembered = if cfg!(windows) { Files::read(files.remembered()) } else { None };
     let compiled = wgpu::Instance::enabled_backend_features();
@@ -111,8 +111,8 @@ pub fn choose(files: &Files) -> Chosen {
             "{n} {app} now draws its window with {}. To choose another, start {app} with {var}=dx12, vulkan, gl or glow \
              (see docs/gpu-pipeline.md → Troubleshooting).",
             which.name(),
-            app = dac_brand::DISPLAY_NAME,
-            var = dac_brand::env_var("GPU_BACKEND"),
+            app = lcc_brand::DISPLAY_NAME,
+            var = lcc_brand::env_var("GPU_BACKEND"),
         )
     });
     log::info!("window: renderer {} (order {:?})", which.name(), order.iter().map(|r| r.name()).collect::<Vec<_>>());
@@ -220,7 +220,7 @@ pub fn relaunch_after_failure(files: &Files) -> bool {
     if !files.armed() {
         return false;
     }
-    let tries = dac_brand::env(RETRY_VAR).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
+    let tries = lcc_brand::env(RETRY_VAR).and_then(|v| v.parse::<u32>().ok()).unwrap_or(0);
     if tries >= MAX_RETRIES {
         return false;
     }
@@ -228,7 +228,7 @@ pub fn relaunch_after_failure(files: &Files) -> bool {
     log::warn!("window: the renderer failed to start; starting again with the next one");
     std::process::Command::new(exe)
         .args(std::env::args_os().skip(1))
-        .env(dac_brand::env_var(RETRY_VAR), (tries + 1).to_string())
+        .env(lcc_brand::env_var(RETRY_VAR), (tries + 1).to_string())
         .spawn()
         .map_err(|e| log::error!("window: could not start again: {e}"))
         .is_ok()

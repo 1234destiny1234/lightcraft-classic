@@ -12,7 +12,7 @@
 use std::io::{Read, Write};
 use std::path::Path;
 
-use dac_raster::Rgb32f;
+use lcc_raster::Rgb32f;
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 

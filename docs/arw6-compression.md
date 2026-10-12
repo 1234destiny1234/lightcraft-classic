@@ -129,7 +129,7 @@ LibRaw assumes the full-frame grid (s = 0) for every tile. On the APS-C crop tha
 
 These 12 files are CC0 1.0. RawDB's record of the set, <https://rawdb.dnglab.org/api/sets/Sony/ILCE-7RM6> (the data behind <https://rawdb.dnglab.org/sets/Sony/ILCE-7RM6>, accessed 2026-10-10), says `"license":"CC0 1.0"` for the set (uploaded by abbradar, 2026-08-29) and again for each of the 12 files, next to the SHA-256 values in the table.
 
-They live in the gitignored corpus. `cargo xtask corpus --download` fetches two of them, one per geometry and compression mode (full frame Compressed, APS-C HQ), and checks each against its SHA-256, pinned in `RAW_SAMPLES` (`xtask/src/main.rs`). Fetch the other ten by hand: the server answers 303 to a signed object URL, so `curl -L -o corpus/raw/<file> https://rawdb.dnglab.org/api/download/Sony/ILCE-7RM6/<source path>`, then compare with the SHA-256 above. `cargo test -p dac-raw corpus_sony -- --nocapture` checks the decoder's sensor sum and position-weighted sum of the two pinned files and skips absent files. The sums are regression values from the app's decoder with the derived curve; the 12-bit codes behind them were verified against the oracle in Phase 0.
+They live in the gitignored corpus. `cargo xtask corpus --download` fetches two of them, one per geometry and compression mode (full frame Compressed, APS-C HQ), and checks each against its SHA-256, pinned in `RAW_SAMPLES` (`xtask/src/main.rs`). Fetch the other ten by hand: the server answers 303 to a signed object URL, so `curl -L -o corpus/raw/<file> https://rawdb.dnglab.org/api/download/Sony/ILCE-7RM6/<source path>`, then compare with the SHA-256 above. `cargo test -p lcc-raw corpus_sony -- --nocapture` checks the decoder's sensor sum and position-weighted sum of the two pinned files and skips absent files. The sums are regression values from the app's decoder with the derived curve; the 12-bit codes behind them were verified against the oracle in Phase 0.
 
 Nine further full-frame HQ photos from the maintainer's A7R VI were compared with the oracle locally; they are private and never committed or published. On all 9 (ISO 100-12800, incl. two near-black night shots) the 12-bit codes matched the oracle over the full frame (0 mismatching pixels of 66.8 MP each).
 
@@ -162,7 +162,7 @@ Unconditional synthetic tests (encode -> decode round trips for both geometries,
 
 ## Timings
 
-Raw decode only, 4 CPUs, release build, best of 3 wall-clock (2026-10-10). Method: a small throwaway Rust program linking `dac-raw` reads the file into memory, then times `dac_raw::decode` alone with `std::time::Instant` (no render, no JPEG encode), three decodes in one process; the best is reported. Files were already in the page cache.
+Raw decode only, 4 CPUs, release build, best of 3 wall-clock (2026-10-10). Method: a small throwaway Rust program linking `lcc-raw` reads the file into memory, then times `lcc_raw::decode` alone with `std::time::Instant` (no render, no JPEG encode), three decodes in one process; the best is reported. Files were already in the page cache.
 
 | File | Size | Sensor | Decode |
 |---|---|---|---|

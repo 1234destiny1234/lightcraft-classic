@@ -7,8 +7,8 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use dac_catalog::safe_file::same_file;
-use dac_catalog::{Catalog, Source};
+use lcc_catalog::safe_file::same_file;
+use lcc_catalog::{Catalog, Source};
 
 /// The library's originals and their sidecars, looked up by file name.
 #[derive(Debug, Default)]
@@ -98,7 +98,7 @@ impl crate::Session {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_catalog::{Op, Photo, PhotoId};
+    use lcc_catalog::{Op, Photo, PhotoId};
 
     #[test]
     fn originals_and_their_sidecars_are_protected_by_identity() {

@@ -6,7 +6,7 @@
 //! grid and carry a margin, so panning by a few pixels re-uses the render and the spatial stages
 //! (clarity, dehaze…) have the context they read around the visible edge.
 
-use dac_engine::pipeline::PixelWindow;
+use lcc_engine::pipeline::PixelWindow;
 
 /// Windows start and end on multiples of this many pixels of the zoomed frame.
 pub const SNAP: usize = 256;
@@ -19,7 +19,7 @@ pub const MAX_SPAN: usize = if cfg!(target_arch = "wasm32") { 3072 } else { 6144
 /// the part of it the on-screen tiles cover, and the look they are rendered with.
 #[derive(Clone, Copy, Debug, PartialEq)]
 pub struct RegionView {
-    pub photo: dac_catalog::PhotoId,
+    pub photo: lcc_catalog::PhotoId,
     /// The Before side of a Before/After view (the photo without its edits).
     pub before: bool,
     pub key: u64,
@@ -37,7 +37,7 @@ impl RegionView {
     ///
     /// While a slider is dragged (`drafting`) a window made for an earlier value of it still
     /// belongs: drafts follow the drag, and waiting for an exact match would show none.
-    pub fn is_current(&self, photo: dac_catalog::PhotoId, full: (usize, usize), settings: u64, drafting: bool) -> bool {
+    pub fn is_current(&self, photo: lcc_catalog::PhotoId, full: (usize, usize), settings: u64, drafting: bool) -> bool {
         self.photo == photo && self.full == full && (drafting || self.settings == settings)
     }
 }
@@ -108,7 +108,7 @@ pub fn plan(settings: &crate::state::AppSettings, v: ViewSizes) -> LoupePlan {
     }
     // a user who chose a size above the preview source level (3840, 5120) means it; otherwise the
     // original is not decoded for the whole-frame render
-    let source_cap = if settings.preview_limit == 0 { dac_engine::SourceLevel::Preview.max_edge() } else { settings.preview_limit as usize };
+    let source_cap = if settings.preview_limit == 0 { lcc_engine::SourceLevel::Preview.max_edge() } else { settings.preview_limit as usize };
     let edge_at = |scale: f32| settings.loupe_edge(drawn_long.min(canvas_long) * scale, v.native_long, v.texture_side).min(source_cap);
     let main_edge = edge_at(scale);
     let frame_edge = settings.window_frame_edge(drawn_long, v.native_long);
@@ -128,7 +128,7 @@ pub const HOLD_SECS: f64 = 0.25;
 /// gesture has been quiet for [`HOLD_SECS`].
 #[derive(Clone, Debug, Default)]
 pub struct SizeHold {
-    photo: Option<dac_catalog::PhotoId>,
+    photo: Option<lcc_catalog::PhotoId>,
     plan: Option<LoupePlan>,
     until: f64,
 }
@@ -136,7 +136,7 @@ pub struct SizeHold {
 impl SizeHold {
     /// The plan to render this frame: `fresh` normally; the plan from before the gesture while
     /// one is running (`gesturing`) and for [`HOLD_SECS`] after. `now` is in seconds.
-    pub fn apply(&mut self, photo: dac_catalog::PhotoId, now: f64, gesturing: bool, fresh: LoupePlan) -> LoupePlan {
+    pub fn apply(&mut self, photo: lcc_catalog::PhotoId, now: f64, gesturing: bool, fresh: LoupePlan) -> LoupePlan {
         if self.photo != Some(photo) {
             *self = SizeHold { photo: Some(photo), plan: Some(fresh), until: f64::NEG_INFINITY };
             return fresh;
@@ -324,7 +324,7 @@ pub fn tiles_for(full: (usize, usize), side: usize, visible: (f32, f32, f32, f32
 /// it, and the look (develop settings, overlay, proof and quality, hashed).
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Hash)]
 pub struct TileKey {
-    pub photo: dac_catalog::PhotoId,
+    pub photo: lcc_catalog::PhotoId,
     pub pane: u8,
     pub full: (usize, usize),
     pub tile: TileId,
@@ -466,7 +466,7 @@ impl<T> TileCache<T> {
 
 /// The part `tile` of `img`, a render of `window` (both in frame pixels): `None` when the tile
 /// is not inside the render.
-pub fn crop_tile(img: &dac_raster::Rgba8, window: PixelWindow, tile: PixelWindow) -> Option<dac_raster::Rgba8> {
+pub fn crop_tile(img: &lcc_raster::Rgba8, window: PixelWindow, tile: PixelWindow) -> Option<lcc_raster::Rgba8> {
     let ox = tile.x.checked_sub(window.x)?;
     let oy = tile.y.checked_sub(window.y)?;
     if ox.checked_add(tile.w)? > img.width || oy.checked_add(tile.h)? > img.height || tile.w == 0 || tile.h == 0 {
@@ -477,7 +477,7 @@ pub fn crop_tile(img: &dac_raster::Rgba8, window: PixelWindow, tile: PixelWindow
         let start = y.checked_mul(img.width)?.checked_add(ox)?;
         data.extend_from_slice(img.data.get(start..start.checked_add(tile.w)?)?);
     }
-    Some(dac_raster::Rgba8 { width: tile.w, height: tile.h, data })
+    Some(lcc_raster::Rgba8 { width: tile.w, height: tile.h, data })
 }
 
 #[cfg(test)]
@@ -640,7 +640,7 @@ mod tests {
     // Given a pinch from fit to 400 %, the sizes of the first frame hold until the gesture is quiet
     #[test]
     fn a_pinch_holds_the_render_sizes() {
-        use dac_catalog::PhotoId;
+        use lcc_catalog::PhotoId;
         let (fit, zoomed) = (plan(&auto(), sizes(1400.0, 1400.0, 6000)), plan(&auto(), sizes(24000.0, 1400.0, 6000)));
         assert_ne!(fit, zoomed);
         let mut hold = SizeHold::default();
@@ -662,7 +662,7 @@ mod tests {
     // Given another photo, the held sizes are forgotten
     #[test]
     fn another_photo_is_planned_afresh() {
-        use dac_catalog::PhotoId;
+        use lcc_catalog::PhotoId;
         let (fit, zoomed) = (plan(&auto(), sizes(1400.0, 1400.0, 6000)), plan(&auto(), sizes(24000.0, 1400.0, 6000)));
         let mut hold = SizeHold::default();
         hold.apply(PhotoId(1), 0.0, false, fit);
@@ -758,7 +758,7 @@ mod tests {
     // Given a tile rendered for other settings, another photo or another zoom, it is not drawn
     #[test]
     fn a_tile_is_drawn_only_while_it_shows_what_the_loupe_shows() {
-        use dac_catalog::PhotoId;
+        use lcc_catalog::PhotoId;
         let v = RegionView {
             photo: PhotoId(1),
             before: false,
@@ -832,7 +832,7 @@ mod tests {
     }
 
     fn key(col: u16, look: u64) -> TileKey {
-        TileKey { photo: dac_catalog::PhotoId(1), pane: 0, full: (8256, 5504), tile: TileId { col, row: 0 }, look }
+        TileKey { photo: lcc_catalog::PhotoId(1), pane: 0, full: (8256, 5504), tile: TileId { col, row: 0 }, look }
     }
 
     // Given a 45 MP frame, the tiles cover it exactly: none overlap, none spill past the edge
@@ -869,7 +869,7 @@ mod tests {
         let win = tile_render_window(full, tile);
         let m = margin_for(8256);
         assert_eq!(win, PixelWindow { x: 0, y: 1024 - m, w: 1024 + m, h: 1024 + 2 * m });
-        let img = dac_raster::Rgba8::from_fn(win.w, win.h, |x, y| [(x % 251) as u8, (y % 251) as u8, 0, 255]);
+        let img = lcc_raster::Rgba8::from_fn(win.w, win.h, |x, y| [(x % 251) as u8, (y % 251) as u8, 0, 255]);
         let part = crop_tile(&img, win, tile).unwrap();
         assert_eq!((part.width, part.height), (1024, 1024));
         assert_eq!(part.data[0], [0, (m % 251) as u8, 0, 255], "the tile's first pixel");

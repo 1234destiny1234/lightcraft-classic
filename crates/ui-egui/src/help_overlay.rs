@@ -11,7 +11,7 @@
 use egui::{Align2, Color32, RichText, Sense, vec2};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::i18n::tr;
 use crate::module::{ModuleId, ModuleKey};
 use crate::theme::Tokens;
@@ -34,7 +34,7 @@ pub struct HelpOverlay {
 pub type Row = (String, String);
 
 /// The module's own keys (without the help key itself), then the global shortcuts in effect there.
-pub fn rows(app: &DacApp, module: ModuleId, mac: bool) -> (Vec<Row>, Vec<Row>) {
+pub fn rows(app: &LccApp, module: ModuleId, mac: bool) -> (Vec<Row>, Vec<Row>) {
     let label = |id: &str| -> String {
         let source = match id {
             "develop.wb" => "Auto White Balance",
@@ -66,7 +66,7 @@ pub fn rows(app: &DacApp, module: ModuleId, mac: bool) -> (Vec<Row>, Vec<Row>) {
 }
 
 /// `module.help`.
-pub fn run(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn run(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let show = p.get("show").and_then(Value::as_bool).unwrap_or(!app.help.open);
     app.help.open = show;
     app.help.fresh = show;
@@ -75,7 +75,7 @@ pub fn run(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 /// Draw the sheet when it is up; a click or key press (after the frame that opened it) closes it.
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if !app.help.open {
         return;
     }

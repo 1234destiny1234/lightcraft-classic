@@ -1,4 +1,4 @@
-use dac_meta::{MergeRules, Metadata, extract, merge_xmp, parse_iptc, parse_xmp, read_exif, write_xmp};
+use lcc_meta::{MergeRules, Metadata, extract, merge_xmp, parse_iptc, parse_xmp, read_exif, write_xmp};
 use proptest::prelude::*;
 
 proptest! {

@@ -1,4 +1,4 @@
-//! Publish services (LRC-LIB-PUBLISH; model in `dac-publish`). A service (Hard Drive now) holds
+//! Publish services (LRC-LIB-PUBLISH; model in `lcc-publish`). A service (Hard Drive now) holds
 //! published collections, each a regular album inside a collection set named after the service;
 //! `publish.run` renders the collection's new and modified photos with the service's export
 //! settings, sends them, and takes removed photos off the service. What was published where is a
@@ -10,8 +10,8 @@
 
 use std::path::PathBuf;
 
-use dac_catalog::{Album, AlbumId, Catalog, Op, PhotoId, RemoteIdentity, SyncState};
-use dac_publish::{CollectionConfig, PublishConfig, ServiceConfig, Upload};
+use lcc_catalog::{Album, AlbumId, Catalog, Op, PhotoId, RemoteIdentity, SyncState};
+use lcc_publish::{CollectionConfig, PublishConfig, ServiceConfig, Upload};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, cmd, str_param};
@@ -56,7 +56,7 @@ fn service_json(cat: &Catalog, svc: &ServiceConfig) -> Value {
         .collections
         .iter()
         .map(|c| {
-            let st = dac_publish::status(cat, &svc.id, c.album);
+            let st = lcc_publish::status(cat, &svc.id, c.album);
             json!({
                 "album": c.album.0,
                 "name": cat.album(c.album).map(|a| a.name.clone()).unwrap_or_else(|| c.folder.clone()),
@@ -69,9 +69,9 @@ fn service_json(cat: &Catalog, svc: &ServiceConfig) -> Value {
         })
         .collect();
     let caps = match svc.kind.as_str() {
-        dac_publish::KIND_HARD_DRIVE => json!({"comments": false, "likes": false}),
-        dac_publish::KIND_IMMICH => json!({"comments": false, "likes": true}),
-        dac_publish::KIND_SFTP => json!({"comments": false, "likes": false}),
+        lcc_publish::KIND_HARD_DRIVE => json!({"comments": false, "likes": false}),
+        lcc_publish::KIND_IMMICH => json!({"comments": false, "likes": true}),
+        lcc_publish::KIND_SFTP => json!({"comments": false, "likes": false}),
         _ => json!(null),
     };
     json!({
@@ -82,25 +82,25 @@ fn service_json(cat: &Catalog, svc: &ServiceConfig) -> Value {
 
 fn services(s: &Session) -> Result<Value> {
     let (_, cfg) = load(s, "publish.services")?;
-    Ok(json!({"services": cfg.services.iter().map(|x| service_json(&s.catalog, x)).collect::<Vec<_>>(), "kinds": dac_publish::KINDS}))
+    Ok(json!({"services": cfg.services.iter().map(|x| service_json(&s.catalog, x)).collect::<Vec<_>>(), "kinds": lcc_publish::KINDS}))
 }
 
 /// Check a service's settings and export params.
 fn check(kind: &str, settings: &Value, export: &Value, c: &str) -> Result<()> {
-    if !dac_publish::KINDS.contains(&kind) && !plugin_kind(kind) {
-        return Err(bad(c, format!("unknown kind `{kind}` (known: {})", dac_publish::KINDS.join(", "))));
+    if !lcc_publish::KINDS.contains(&kind) && !plugin_kind(kind) {
+        return Err(bad(c, format!("unknown kind `{kind}` (known: {})", lcc_publish::KINDS.join(", "))));
     }
-    if kind == dac_publish::KIND_HARD_DRIVE {
+    if kind == lcc_publish::KIND_HARD_DRIVE {
         let dir = settings.get("dir").and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty());
         let dir = dir.ok_or_else(|| bad(c, "a Hard Drive service needs `dir` (the folder it publishes to)"))?;
         if !std::path::Path::new(dir).is_absolute() {
             return Err(bad(c, format!("`{dir}` is not an absolute folder path")));
         }
     }
-    if kind == dac_publish::KIND_IMMICH {
+    if kind == lcc_publish::KIND_IMMICH {
         super::immich::publish::check_settings(settings).map_err(|e| bad(c, e))?;
     }
-    if kind == dac_publish::KIND_SFTP {
+    if kind == lcc_publish::KIND_SFTP {
         sftp::check_settings(settings).map_err(|e| bad(c, e))?;
     }
     if !export.is_object() {
@@ -119,12 +119,12 @@ fn export_param(p: &Value) -> Value {
 fn create_service(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "publish.createService";
     let (dir, mut cfg) = load(s, C)?;
-    let kind = str_param(p, "kind").unwrap_or(dac_publish::KIND_HARD_DRIVE).to_string();
+    let kind = str_param(p, "kind").unwrap_or(lcc_publish::KIND_HARD_DRIVE).to_string();
     let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).unwrap_or("Hard Drive").to_string();
     if cfg.services.iter().any(|x| x.name.eq_ignore_ascii_case(&name)) {
         return Err(bad(C, format!("a publish service is already called `{name}`")));
     }
-    if cfg.services.len() >= dac_publish::config::MAX_SERVICES {
+    if cfg.services.len() >= lcc_publish::config::MAX_SERVICES {
         return Err(bad(C, "too many publish services"));
     }
     let settings = match str_param(p, "dir") {
@@ -197,7 +197,7 @@ fn delete_service(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn unlink_collection(s: &mut Session, service: &str, album: AlbumId) -> Result<()> {
-    let ops: Vec<Op> = dac_publish::state::links(&s.catalog, service, album)
+    let ops: Vec<Op> = lcc_publish::state::links(&s.catalog, service, album)
         .map(|r| Op::SetRemote { photo: r.photo_id, service: r.service.clone(), account_id: r.account_id.clone(), record: None })
         .collect();
     if !ops.is_empty() {
@@ -211,12 +211,12 @@ fn create_collection(s: &mut Session, p: &Value) -> Result<Value> {
     let (dir, mut cfg) = load(s, C)?;
     let id = service_id(&cfg, p, C)?;
     let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(C, "missing `name`"))?.to_string();
-    let folder = dac_publish::hard_drive::safe_name(&name).ok_or_else(|| bad(C, format!("`{name}` can't be a collection name")))?;
+    let folder = lcc_publish::hard_drive::safe_name(&name).ok_or_else(|| bad(C, format!("`{name}` can't be a collection name")))?;
     let Some(svc) = cfg.service(&id) else { return Err(bad(C, "no such service")) };
     if svc.collections.iter().any(|c| c.folder.eq_ignore_ascii_case(&folder)) {
         return Err(bad(C, format!("`{}` already has a collection `{name}`", svc.name)));
     }
-    if svc.collections.len() >= dac_publish::config::MAX_COLLECTIONS {
+    if svc.collections.len() >= lcc_publish::config::MAX_COLLECTIONS {
         return Err(bad(C, "too many collections in this service"));
     }
     let set = svc.set.filter(|a| s.catalog.album(*a).is_some_and(|al| al.folder));
@@ -244,7 +244,7 @@ fn create_collection(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 /// `id` is `set` or sits (at any depth) inside it.
-fn within(catalog: &dac_catalog::Catalog, id: AlbumId, set: Option<AlbumId>) -> bool {
+fn within(catalog: &lcc_catalog::Catalog, id: AlbumId, set: Option<AlbumId>) -> bool {
     let Some(set) = set else { return false };
     let mut next = Some(id);
     for _ in 0..32 {
@@ -279,7 +279,7 @@ pub fn sections(s: &Session, album: AlbumId) -> Option<std::collections::HashMap
     let dir = s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone())?;
     let cfg = PublishConfig::load(&dir).ok()?;
     let svc = cfg.service_of(album)?;
-    let st = dac_publish::status(&s.catalog, &svc.id, album);
+    let st = lcc_publish::status(&s.catalog, &svc.id, album);
     let mut m = std::collections::HashMap::new();
     for (rank, list) in [(0u8, &st.new), (1, &st.modified), (2, &st.published)] {
         m.extend(list.iter().map(|id| (*id, rank)));
@@ -289,7 +289,7 @@ pub fn sections(s: &Session, album: AlbumId) -> Option<std::collections::HashMap
 
 fn status_json(s: &Session, cfg: &PublishConfig, album: AlbumId) -> Result<Value> {
     let svc = cfg.service_of(album).ok_or_else(|| bad("publish.status", "not a published collection"))?;
-    let st = dac_publish::status(&s.catalog, &svc.id, album);
+    let st = lcc_publish::status(&s.catalog, &svc.id, album);
     let ids = |v: &[PhotoId]| v.iter().map(|i| i.0).collect::<Vec<_>>();
     Ok(json!({
         "service": svc.id, "collection": album.0,
@@ -303,17 +303,17 @@ fn mark_up_to_date(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "publish.markUpToDate";
     let (_, cfg) = load(s, C)?;
     let (svc, coll) = collection(&cfg, p, C)?;
-    let st = dac_publish::status(&s.catalog, &svc.id, coll.album);
+    let st = lcc_publish::status(&s.catalog, &svc.id, coll.album);
     let want: Option<Vec<PhotoId>> = p.get("ids").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_u64).map(PhotoId).collect());
-    let acct = dac_publish::account_id(&svc.id, coll.album);
+    let acct = lcc_publish::account_id(&svc.id, coll.album);
     let mut ops = Vec::new();
     for id in st.modified.iter().filter(|i| want.as_ref().is_none_or(|w| w.contains(i))) {
-        let (Some(photo), Some(link)) = (s.catalog.photo(*id), s.catalog.remote_links().get(&(*id, dac_publish::SERVICE.to_string(), acct.clone())))
+        let (Some(photo), Some(link)) = (s.catalog.photo(*id), s.catalog.remote_links().get(&(*id, lcc_publish::SERVICE.to_string(), acct.clone())))
         else {
             continue;
         };
         let mut r = link.clone();
-        r.remote_checksum = Some(dac_publish::fingerprint(photo));
+        r.remote_checksum = Some(lcc_publish::fingerprint(photo));
         ops.push(Catalog::link_remote_op(r));
     }
     let n = ops.len();
@@ -363,13 +363,13 @@ pub fn plan(s: &mut Session, album: AlbumId) -> Result<Plan> {
     let (_, cfg) = load(s, C)?;
     let (svc, coll) = collection(&cfg, &json!({"collection": album.0}), C)?;
     let opts = ExportOptions::from_params(&svc.export)?;
-    let st = dac_publish::status(&s.catalog, &svc.id, album);
-    let acct = dac_publish::account_id(&svc.id, album);
-    let link = |cat: &Catalog, id: PhotoId| cat.remote_links().get(&(id, dac_publish::SERVICE.to_string(), acct.clone())).cloned();
+    let st = lcc_publish::status(&s.catalog, &svc.id, album);
+    let acct = lcc_publish::account_id(&svc.id, album);
+    let link = |cat: &Catalog, id: PhotoId| cat.remote_links().get(&(id, lcc_publish::SERVICE.to_string(), acct.clone())).cloned();
     let mut jobs = Vec::new();
     let mut failed = Vec::new();
     for (i, id) in st.new.iter().chain(&st.modified).enumerate() {
-        let Some(fp) = s.catalog.photo(*id).map(|p| dac_publish::fingerprint(p)) else { continue };
+        let Some(fp) = s.catalog.photo(*id).map(|p| lcc_publish::fingerprint(p)) else { continue };
         let previous = link(&s.catalog, *id).map(|l| l.remote_id);
         match crate::export::prepare_export(s, *id, &opts, i + 1) {
             Ok(prepared) => jobs.push(Job { photo: *id, prepared, previous, fingerprint: fp }),
@@ -480,8 +480,8 @@ fn render_batch(batch: Vec<crate::export::PreparedExport>) -> Vec<std::result::R
 
 /// Record a run's links (app bookkeeping, not an undo step).
 pub fn apply(s: &mut Session, out: Outcome) -> Result<Value> {
-    let acct = dac_publish::account_id(&out.service, out.album);
-    let now = dac_catalog::rules::now();
+    let acct = lcc_publish::account_id(&out.service, out.album);
+    let now = lcc_catalog::rules::now();
     let mut ops = Vec::new();
     for (photo, remote_id, fp) in &out.published {
         if s.catalog.photo(*photo).is_none() {
@@ -489,7 +489,7 @@ pub fn apply(s: &mut Session, out: Outcome) -> Result<Value> {
         }
         ops.push(Catalog::link_remote_op(RemoteIdentity {
             photo_id: *photo,
-            service: dac_publish::SERVICE.into(),
+            service: lcc_publish::SERVICE.into(),
             account_id: acct.clone(),
             remote_id: remote_id.clone(),
             remote_checksum: Some(fp.clone()),
@@ -506,7 +506,7 @@ pub fn apply(s: &mut Session, out: Outcome) -> Result<Value> {
         ops.extend(super::immich::publish::original_link_ops(s, svc, &sent));
     }
     for photo in &out.removed {
-        ops.push(Op::SetRemote { photo: *photo, service: dac_publish::SERVICE.into(), account_id: acct.clone(), record: None });
+        ops.push(Op::SetRemote { photo: *photo, service: lcc_publish::SERVICE.into(), account_id: acct.clone(), record: None });
     }
     if !ops.is_empty() {
         s.apply_system(Op::Batch { ops })?;
@@ -545,8 +545,8 @@ fn comments(s: &mut Session, p: &Value) -> Result<Value> {
     let (_, cfg) = load(s, C)?;
     let (svc, coll) = collection(&cfg, p, C)?;
     let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad(C, "missing `id`"))?;
-    let acct = dac_publish::account_id(&svc.id, coll.album);
-    let Some(link) = s.catalog.remote_links().get(&(id, dac_publish::SERVICE.to_string(), acct)).cloned() else {
+    let acct = lcc_publish::account_id(&svc.id, coll.album);
+    let Some(link) = s.catalog.remote_links().get(&(id, lcc_publish::SERVICE.to_string(), acct)).cloned() else {
         return Ok(json!({"comments": [], "supported": true, "published": false}));
     };
     let mut service = open_any(&svc, &coll).map_err(|e| bad(C, e.to_string()))?;
@@ -646,14 +646,14 @@ fn plugin_kind(_: &str) -> bool {
     false
 }
 fn open_any(
-    svc: &dac_publish::ServiceConfig,
-    coll: &dac_publish::CollectionConfig,
-) -> std::result::Result<Box<dyn dac_publish::PublishService>, dac_publish::PublishError> {
+    svc: &lcc_publish::ServiceConfig,
+    coll: &lcc_publish::CollectionConfig,
+) -> std::result::Result<Box<dyn lcc_publish::PublishService>, lcc_publish::PublishError> {
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(r) = super::plugins::open_plugin_service(svc) {
         return r;
     }
-    dac_publish::open_service(svc, coll)
+    lcc_publish::open_service(svc, coll)
 }
 
 #[path = "publish_sftp.rs"]

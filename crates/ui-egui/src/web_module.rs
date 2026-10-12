@@ -8,12 +8,12 @@
 //!
 //! Export, upload and Share via Immich run on a worker thread ([`run`]: `webui.*`).
 
-use dac_webgallery::Server;
-use dac_webgallery::{GallerySettings, MetadataMode, Template};
 use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
+use lcc_webgallery::Server;
+use lcc_webgallery::{GallerySettings, MetadataMode, Template};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::{Edge, Module, ModuleId, ModuleKey, PanelId};
 use crate::text_field::TextField;
 use crate::theme::Tokens;
@@ -42,7 +42,7 @@ pub struct WebUi {
 }
 
 fn state_id() -> egui::Id {
-    egui::Id::new("dac-web-module")
+    egui::Id::new("lcc-web-module")
 }
 
 thread_local! {
@@ -56,8 +56,8 @@ thread_local! {
 
 /// Opens a saved web gallery (a saved creation of kind `web`): its settings load into the module
 /// on the next frame; its photos are the collection's (the caller shows that collection).
-pub fn open_creation(app: &mut DacApp, id: u64) -> Result<Value, String> {
-    let c = dac_engine::creations::creations_of(&app.session, Some(dac_layout::CreationKind::Web))
+pub fn open_creation(app: &mut LccApp, id: u64) -> Result<Value, String> {
+    let c = lcc_engine::creations::creations_of(&app.session, Some(lcc_layout::CreationKind::Web))
         .into_iter()
         .find(|c| c.id.0 == id)
         .ok_or("not a saved web gallery")?;
@@ -66,9 +66,9 @@ pub fn open_creation(app: &mut DacApp, id: u64) -> Result<Value, String> {
 }
 
 /// Loads a pending saved gallery into `st`.
-fn take_pending(app: &mut DacApp, st: &mut WebUi) {
+fn take_pending(app: &mut LccApp, st: &mut WebUi) {
     let Some(id) = PENDING.with(std::cell::Cell::take) else { return };
-    if let Some(c) = dac_engine::creations::creations_of(&app.session, Some(dac_layout::CreationKind::Web)).into_iter().find(|c| c.id.0 == id) {
+    if let Some(c) = lcc_engine::creations::creations_of(&app.session, Some(lcc_layout::CreationKind::Web)).into_iter().find(|c| c.id.0 == id) {
         st.settings = GallerySettings::default().merged(&c.settings).unwrap_or_default();
         st.gallery_name = c.name;
         st.loaded = false;
@@ -101,8 +101,8 @@ impl Module for WebModule {
     fn right_panels(&self) -> &'static [PanelId] {
         &[]
     }
-    fn toolbar(&self, _ui: &mut egui::Ui, _app: &mut DacApp) {}
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, _ui: &mut egui::Ui, _app: &mut LccApp) {}
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         let t = Tokens::get(ui.ctx());
         let mut area = ui.available_rect_before_wrap();
         if crate::module::edge_visible(app, Edge::Bottom) {
@@ -150,7 +150,7 @@ impl Module for WebModule {
 const WEB_KEYS: &[ModuleKey] = &[("Cmd+R", "webui.reload", "{}"), ("Cmd+Alt+P", "webui.previewInBrowser", "{}"), crate::help_overlay::KEY];
 
 fn c32(hex: &str) -> Color32 {
-    let [r, g, b] = dac_webgallery::settings::color_rgb(hex);
+    let [r, g, b] = lcc_webgallery::settings::color_rgb(hex);
     Color32::from_rgb(r, g, b)
 }
 
@@ -159,7 +159,7 @@ fn to_hex(c: [u8; 3]) -> String {
 }
 
 /// The gallery as it will look: palette, header, cells with thumbnails.
-fn preview(ui: &mut egui::Ui, app: &mut DacApp, s: &GallerySettings, rect: Rect) {
+fn preview(ui: &mut egui::Ui, app: &mut LccApp, s: &GallerySettings, rect: Rect) {
     let s = s.sanitized();
     let t = Tokens::get(ui.ctx());
     register(ui.ctx(), "view:web:preview", rect);
@@ -185,7 +185,7 @@ fn preview(ui: &mut egui::Ui, app: &mut DacApp, s: &GallerySettings, rect: Rect)
         y += g.size().y + 6.0;
     }
     y += 12.0;
-    let ids: Vec<dac_catalog::PhotoId> = {
+    let ids: Vec<lcc_catalog::PhotoId> = {
         let sel = app.session.selection.ids.clone();
         if sel.len() > 1 { sel } else { app.session.visible().to_vec() }
     };
@@ -253,7 +253,7 @@ fn preview(ui: &mut egui::Ui, app: &mut DacApp, s: &GallerySettings, rect: Rect)
 }
 
 /// The photo's thumbnail fitted into `r` (a placeholder until it is rendered).
-fn draw_photo(p: &egui::Painter, app: &DacApp, id: dac_catalog::PhotoId, r: Rect, border: f32, border_c: Color32) {
+fn draw_photo(p: &egui::Painter, app: &LccApp, id: lcc_catalog::PhotoId, r: Rect, border: f32, border_c: Color32) {
     let Some(tex) = app.renderer.thumb(id) else {
         p.rect_filled(r, 0.0, Color32::from_gray(60));
         return;
@@ -268,7 +268,7 @@ fn draw_photo(p: &egui::Painter, app: &DacApp, id: dac_catalog::PhotoId, r: Rect
     }
 }
 
-fn refresh_lists(app: &mut DacApp, st: &mut WebUi) {
+fn refresh_lists(app: &mut LccApp, st: &mut WebUi) {
     if let Ok(Value::Array(g)) = app.session.execute("web.galleries", &json!({})) {
         st.galleries = g.iter().filter_map(|x| x["name"].as_str().map(str::to_string)).collect();
     }
@@ -292,7 +292,7 @@ fn field(ui: &mut egui::Ui, id: &str, label: &str, text: &mut String) {
 
 fn color_row(ui: &mut egui::Ui, label: &str, hex: &mut String) {
     ui.horizontal(|ui| {
-        let mut c = dac_webgallery::settings::color_rgb(hex);
+        let mut c = lcc_webgallery::settings::color_rgb(hex);
         let r = ui.color_edit_button_srgb(&mut c);
         crate::access::label(&r, label);
         if r.changed() {
@@ -302,7 +302,7 @@ fn color_row(ui: &mut egui::Ui, label: &str, hex: &mut String) {
     });
 }
 
-fn settings_column(ui: &mut egui::Ui, app: &mut DacApp, st: &mut WebUi) {
+fn settings_column(ui: &mut egui::Ui, app: &mut LccApp, st: &mut WebUi) {
     let s = &mut st.settings;
     heading(ui, "Layout Style");
     ui.horizontal_wrapped(|ui| {
@@ -341,7 +341,7 @@ fn settings_column(ui: &mut egui::Ui, app: &mut DacApp, st: &mut WebUi) {
     heading(ui, "Image Info");
     field(ui, "imageTitle", "Title", &mut s.image_info.title);
     field(ui, "imageCaption", "Caption", &mut s.image_info.caption);
-    ui.label(egui::RichText::new(dac_webgallery::tokens::KNOWN.iter().map(|k| format!("{{{k}}}")).collect::<Vec<_>>().join(" ")).small().weak());
+    ui.label(egui::RichText::new(lcc_webgallery::tokens::KNOWN.iter().map(|k| format!("{{{k}}}")).collect::<Vec<_>>().join(" ")).small().weak());
 
     heading(ui, "Output Settings");
     ui.add(egui::Slider::new(&mut s.output.large_size, 300..=4096).text(crate::i18n::tr("Large image size")));
@@ -438,7 +438,7 @@ fn settings_column(ui: &mut egui::Ui, app: &mut DacApp, st: &mut WebUi) {
 /// take the params of `web.export` / `web.upload` / `web.shareImmich` (the folder dialog opens
 /// when `webui.export` has no `dir`), set the job up on the UI thread and render, write, upload or
 /// share on a worker thread (Activity "export"). The result lands in the module's status line.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     match id {
         "webui.reload" => {
             RELOAD.with(|r| r.set(true));
@@ -458,8 +458,8 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 
 /// `webui.previewInBrowser`: the gallery as shown (or `settings`) exported to a temporary folder in
 /// the background, then opened in the system browser.
-fn preview_in_browser(app: &mut DacApp, p: &Value) -> Result<Value, String> {
-    let dir = std::env::temp_dir().join(format!("{}-web-preview-{}", dac_brand::BINARY, std::process::id()));
+fn preview_in_browser(app: &mut LccApp, p: &Value) -> Result<Value, String> {
+    let dir = std::env::temp_dir().join(format!("{}-web-preview-{}", lcc_brand::BINARY, std::process::id()));
     // a previous preview's files go first, so the browser shows only this one
     let _ = std::fs::remove_dir_all(&dir);
     let mut q = p.clone();
@@ -477,12 +477,12 @@ fn preview_in_browser(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 #[cfg(target_arch = "wasm32")]
-fn start(_app: &mut DacApp, _id: &str, engine_id: &str, _p: &Value) -> Result<Value, String> {
+fn start(_app: &mut LccApp, _id: &str, engine_id: &str, _p: &Value) -> Result<Value, String> {
     Err(format!("{engine_id}: not available in the browser"))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn start(app: &mut DacApp, id: &str, engine_id: &'static str, p: &Value) -> Result<Value, String> {
+fn start(app: &mut LccApp, id: &str, engine_id: &'static str, p: &Value) -> Result<Value, String> {
     if id == "webui.export" && p.get("dir").and_then(Value::as_str).is_none_or(|d| d.trim().is_empty()) {
         let req = crate::pick::PickRequest::folder(crate::i18n::tr("Export Web Gallery"));
         return match crate::pick::ask(app, id, p, "dir", req, |s| s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x])) {
@@ -494,7 +494,7 @@ fn start(app: &mut DacApp, id: &str, engine_id: &'static str, p: &Value) -> Resu
             crate::pick::Picked::Unavailable => Err(crate::i18n::tr("No folder dialog here: use web.export {dir}").to_string()),
         };
     }
-    let job = dac_engine::cmd::web::prepare(&mut app.session, engine_id, p).map_err(|e| e.to_string())?;
+    let job = lcc_engine::cmd::web::prepare(&mut app.session, engine_id, p).map_err(|e| e.to_string())?;
     let open_index = (p.get("openInBrowser").and_then(Value::as_bool) == Some(true))
         .then(|| p.get("dir").and_then(Value::as_str).map(|d| std::path::Path::new(d).join("index.html")))
         .flatten();
@@ -538,11 +538,11 @@ fn start(app: &mut DacApp, id: &str, engine_id: &'static str, p: &Value) -> Resu
     Ok(json!({"background": true, "steps": steps}))
 }
 
-fn export(app: &mut DacApp, st: &mut WebUi) {
+fn export(app: &mut LccApp, st: &mut WebUi) {
     st.status = background_text(app.run("webui.export", json!({"settings": st.settings})));
 }
 
-fn upload(app: &mut DacApp, st: &mut WebUi) {
+fn upload(app: &mut LccApp, st: &mut WebUi) {
     let mut p = json!({"server": st.server, "settings": st.settings});
     if !st.server.name.is_empty() && st.servers.iter().any(|x| x.name == st.server.name) && st.password.is_empty() {
         p["server"] = json!(st.server.name);
@@ -553,7 +553,7 @@ fn upload(app: &mut DacApp, st: &mut WebUi) {
     st.status = background_text(app.run("webui.upload", p));
 }
 
-fn share(app: &mut DacApp, st: &mut WebUi) {
+fn share(app: &mut LccApp, st: &mut WebUi) {
     let mut p = json!({"settings": st.settings, "allowDownload": !st.share_no_download, "showMetadata": !st.share_hide_metadata});
     for (k, v) in [("account", &st.share_account), ("album", &st.share_album), ("password", &st.share_password)] {
         if !v.trim().is_empty() {
@@ -587,7 +587,7 @@ fn result_text(r: Result<Value, String>) -> String {
 }
 
 /// "Share via Immich" (IMM-SHARELINK): album, expiry, password, download and metadata switches.
-fn share_section(ui: &mut egui::Ui, app: &mut DacApp, st: &mut WebUi) {
+fn share_section(ui: &mut egui::Ui, app: &mut LccApp, st: &mut WebUi) {
     heading(ui, "Share via Immich");
     field(ui, "shareAccount", "Account (blank: the connected one)", &mut st.share_account);
     field(ui, "shareAlbum", "Album name (blank: the collection title)", &mut st.share_album);
@@ -621,14 +621,14 @@ fn share_section(ui: &mut egui::Ui, app: &mut DacApp, st: &mut WebUi) {
 mod tests {
     use serde_json::json;
 
-    use crate::DacApp;
+    use crate::LccApp;
     use crate::headless::Headless;
 
     #[test]
     fn web_export_runs_in_the_background() {
-        let dir = std::env::temp_dir().join(format!("dac-webui-export-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-webui-export-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        let app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services::default());
         let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
         let id = h.app.session.visible_cloned()[0].0;
         let r = h.app.run("webui.export", json!({"dir": dir.display().to_string(), "ids": [id]})).unwrap();

@@ -1,13 +1,13 @@
 //! Integration tests against a real server: `cargo xtask immich up && cargo xtask immich seed`,
-//! then `cargo test -p dac-immich --test live -- --ignored` (the nightly job). The server address
+//! then `cargo test -p lcc-immich --test live -- --ignored` (the nightly job). The server address
 //! is `IMMICH_URL` (default `http://127.0.0.1:2284`), the key is read from `target/immich/api-key`.
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::path::PathBuf;
 
-use dac_credentials::Secret;
-use dac_immich::types::MetadataSearch;
-use dac_immich::{Client, ImmichError, ServerOptions};
+use lcc_credentials::Secret;
+use lcc_immich::types::MetadataSearch;
+use lcc_immich::{Client, ImmichError, ServerOptions};
 
 fn server() -> Option<(String, Secret)> {
     let url = std::env::var("IMMICH_URL").unwrap_or_else(|_| "http://127.0.0.1:2284".into());
@@ -22,7 +22,7 @@ fn live_connect_list_and_download() {
     let Some((url, key)) = server() else { panic!("no target/immich/api-key: run `cargo xtask immich seed`") };
     let c = Client::new(&url, key, &ServerOptions::standard()).unwrap();
     let st = c.status().unwrap();
-    assert!(st.version >= dac_immich::MIN_VERSION);
+    assert!(st.version >= lcc_immich::MIN_VERSION);
     let mut all = Vec::new();
     c.search_all(&MetadataSearch { size: Some(3), with_exif: Some(true), ..Default::default() }, 100, |p| {
         all.extend_from_slice(p);
@@ -43,11 +43,11 @@ fn live_connect_list_and_download() {
     }
     let thumb = thumb.unwrap();
     assert!(!thumb.is_empty());
-    let dir = std::env::temp_dir().join(format!("dac-immich-live-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-live-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let dest = dir.join(&a.original_file_name);
     c.download_original(&a.id, &dest, None).unwrap();
-    let sha = dac_hash::sha1_file(&dest).unwrap();
+    let sha = lcc_hash::sha1_file(&dest).unwrap();
     assert_eq!(sha.to_base64(), a.checksum, "the original's SHA-1 is Immich's checksum");
     let _ = std::fs::remove_dir_all(&dir);
     // a bad key is refused with BadKey
@@ -60,13 +60,13 @@ fn live_connect_list_and_download() {
 #[test]
 #[ignore = "needs `cargo xtask immich up` and `seed` (nightly)"]
 fn live_sync_publish_and_search_calls() {
-    use dac_immich::client::{NewAsset, UploadData};
-    use dac_immich::types::{AssetUpdate, SmartSearch, UploadCheck};
+    use lcc_immich::client::{NewAsset, UploadData};
+    use lcc_immich::types::{AssetUpdate, SmartSearch, UploadCheck};
     let Some((url, key)) = server() else { panic!("no target/immich/api-key: run `cargo xtask immich seed`") };
     let c = Client::new(&url, key, &ServerOptions::standard()).unwrap();
     let fixture = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/immich/fixtures/fixture-00.png");
     let bytes = std::fs::read(&fixture).unwrap();
-    let sha = dac_hash::sha1_bytes(&bytes).to_base64();
+    let sha = lcc_hash::sha1_bytes(&bytes).to_base64();
     let check = c.upload_check(&[UploadCheck { id: "x".into(), checksum: sha }]).unwrap();
     assert_eq!(check[0].action, "reject", "the seeded fixture is a duplicate: {check:?}");
     let existing = check[0].asset_id.clone().unwrap();
@@ -112,20 +112,20 @@ fn live_sync_publish_and_search_calls() {
 #[test]
 #[ignore = "needs `cargo xtask immich up` and `seed` (nightly)"]
 fn live_publish_renames_its_album() {
-    use dac_publish::{PublishService, Upload};
+    use lcc_publish::{PublishService, Upload};
     let Some((url, key)) = server() else { panic!("no target/immich/api-key: run `cargo xtask immich seed`") };
     let open = |name: &str, state: &std::path::Path| {
         let c = Client::new(&url, Secret::new(key.expose()), &ServerOptions::standard()).unwrap();
-        dac_immich::publish::ImmichPublish::new(c, Default::default(), name, "live", Default::default()).with_album_state(state.to_path_buf())
+        lcc_immich::publish::ImmichPublish::new(c, Default::default(), name, "live", Default::default()).with_album_state(state.to_path_buf())
     };
-    let dir = std::env::temp_dir().join(format!("dac-immich-live-pub-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-live-pub-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     let state = dir.join("svc-1-1.album");
     let stamp = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_nanos();
     let (first, second) = (format!("live pub {stamp}"), format!("Trips / live pub {stamp}"));
     // a seeded fixture: already on the server, so publishing finds it by checksum
     let bytes = std::fs::read(PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../target/immich/fixtures/fixture-00.png")).unwrap();
-    let up = Upload { photo: dac_catalog::PhotoId(1), file_name: "fixture-00.png", bytes: &bytes, sidecars: &[], previous: None };
+    let up = Upload { photo: lcc_catalog::PhotoId(1), file_name: "fixture-00.png", bytes: &bytes, sidecars: &[], previous: None };
     let r1 = open(&first, &state).publish(&up).unwrap().remote_id;
     let album = std::fs::read_to_string(&state).unwrap();
     let r2 = open(&second, &state).publish(&up).unwrap().remote_id;

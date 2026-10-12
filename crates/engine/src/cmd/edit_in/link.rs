@@ -15,7 +15,7 @@ use std::collections::HashMap;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use dac_catalog::{PhotoId, Source};
+use lcc_catalog::{PhotoId, Source};
 
 use crate::Session;
 
@@ -54,7 +54,7 @@ pub fn new_document_id(seed: &str) -> String {
 
 /// The document id of a catalog photo without reading its file: from its SHA-1 or content hash
 /// (what the link of an edit made from a raw or a JPEG names).
-pub fn hash_document_id(ph: &dac_catalog::Photo) -> Option<String> {
+pub fn hash_document_id(ph: &lcc_catalog::Photo) -> Option<String> {
     let h = ph.sha1.as_deref().or(ph.content_hash.as_deref())?;
     let clean: String = h.chars().filter(char::is_ascii_alphanumeric).take(64).collect();
     (!clean.is_empty()).then(|| format!("xmp.did:{clean}"))
@@ -62,7 +62,7 @@ pub fn hash_document_id(ph: &dac_catalog::Photo) -> Option<String> {
 
 /// The document id an edit of `ph` names as its source: the id in the file's own XMP when it has
 /// one (an edit of an edit), else [`hash_document_id`], else one made from its path.
-pub fn source_document_id(ph: &dac_catalog::Photo) -> String {
+pub fn source_document_id(ph: &lcc_catalog::Photo) -> String {
     if let Source::File { path } = &ph.source
         && let Some(id) = file_xmp(Path::new(path)).and_then(|x| read_link(&x).document_id)
     {
@@ -324,7 +324,7 @@ mod tests {
         assert_eq!(l.derived_document.as_deref(), Some("xmp.did:src&1"));
         assert_eq!(l.derived_path.as_deref(), Some("IMG_1.CR3"));
         assert!(x.contains("<xmp:Rating>3</xmp:Rating>"));
-        assert!(dac_meta::parse_xmp(&x).is_ok(), "still a valid packet: {x}");
+        assert!(lcc_meta::parse_xmp(&x).is_ok(), "still a valid packet: {x}");
         // a second link replaces the first
         let y = add_link(&x, "xmp.did:bb", "xmp.did:aa", "IMG_1-Edit.psd");
         assert_eq!(y.matches("<xmpMM:DerivedFrom").count(), 1, "{y}");

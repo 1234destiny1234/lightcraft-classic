@@ -1,5 +1,5 @@
 [package]
-name = "dac-fuzzkit"
+name = "lcc-fuzzkit"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

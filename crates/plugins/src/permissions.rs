@@ -183,7 +183,7 @@ mod tests {
 
     #[test]
     fn paths_stay_inside_roots() {
-        let dir = std::env::temp_dir().join(format!("dac-plugins-perm-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-plugins-perm-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("in")).unwrap();
         let root = dir.join("in");
         let p = Permissions { fs: vec![FsRoot { path: root.display().to_string(), write: false }], ..Default::default() };

@@ -46,7 +46,7 @@ pub fn rasterise_svg(bytes: &[u8]) -> Result<egui::ColorImage, String> {
 #[cfg(not(target_arch = "wasm32"))]
 fn decode_raster(bytes: &[u8]) -> Result<egui::ColorImage, String> {
     // fitted into a box twice the plate's height wide-ish: a logo is short and wide
-    let t = dac_codecs::decode_thumbnail(bytes, MAX_WIDTH).map_err(|e| format!("not a usable image: {e}"))?;
+    let t = lcc_codecs::decode_thumbnail(bytes, MAX_WIDTH).map_err(|e| format!("not a usable image: {e}"))?;
     let img = t.image;
     if img.width == 0 || img.height == 0 || img.data.len() != img.width.saturating_mul(img.height) {
         return Err("the image is empty".into());

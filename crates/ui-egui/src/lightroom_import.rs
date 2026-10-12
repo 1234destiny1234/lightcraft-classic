@@ -8,10 +8,10 @@ use std::path::PathBuf;
 use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::{Arc, mpsc};
 
-use dac_engine::activity::{Cancel, TaskGuard};
+use lcc_engine::activity::{Cancel, TaskGuard};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 
 #[derive(Clone, Copy)]
 enum Kind {
@@ -21,7 +21,7 @@ enum Kind {
 
 enum Message {
     Inspected(Result<Value, String>),
-    Prepared(Result<Box<dac_engine::lightroom_job::PreparedLightroom>, String>),
+    Prepared(Result<Box<lcc_engine::lightroom_job::PreparedLightroom>, String>),
     Finalized(Result<(), String>),
 }
 
@@ -48,7 +48,7 @@ pub struct LightroomTask {
 impl LightroomTask {
     #[cfg(not(target_arch = "wasm32"))]
     fn new(
-        s: &dac_engine::Session,
+        s: &lcc_engine::Session,
         kind: Kind,
         path: PathBuf,
         cancel: Arc<AtomicBool>,
@@ -129,12 +129,12 @@ fn unsupported_wasm() -> Result<Value, String> {
 }
 
 /// Whether a Lightroom task currently owns the catalog transition.
-pub fn is_running(app: &DacApp) -> bool {
+pub fn is_running(app: &LccApp) -> bool {
     app.lightroom.is_some()
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn busy(app: &DacApp) -> Result<(), String> {
+fn busy(app: &LccApp) -> Result<(), String> {
     if app.lightroom.is_some() {
         return Err("a Lightroom catalog task is already running".into());
     }
@@ -157,7 +157,7 @@ fn spawn_inspect(
         .name("lc-lightroom-inspect".into())
         .spawn(move || {
             let result =
-                dac_engine::guard::catch("Lightroom inspect", || dac_engine::lightroom_catalog::read_with_progress(&path, &cancel, &total, &done))
+                lcc_engine::guard::catch("Lightroom inspect", || lcc_engine::lightroom_catalog::read_with_progress(&path, &cancel, &total, &done))
                     .and_then(|r| r.map(inspect_report));
             let _ = tx.send(Message::Inspected(result));
             ctx.request_repaint();
@@ -168,7 +168,7 @@ fn spawn_inspect(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_prepare(
-    mut job: dac_engine::lightroom_job::LightroomJob,
+    mut job: lcc_engine::lightroom_job::LightroomJob,
     cancel: Arc<AtomicBool>,
     tx: mpsc::Sender<Message>,
     ctx: egui::Context,
@@ -177,7 +177,7 @@ fn spawn_prepare(
         .name("lc-lightroom-import".into())
         .spawn(move || {
             let result =
-                dac_engine::guard::catch("Lightroom import", || job.prepare(&cancel)).and_then(|r| r.map(Box::new).map_err(|e| e.to_string()));
+                lcc_engine::guard::catch("Lightroom import", || job.prepare(&cancel)).and_then(|r| r.map(Box::new).map_err(|e| e.to_string()));
             if let Err(mpsc::SendError(Message::Prepared(Ok(prepared)))) = tx.send(Message::Prepared(result)) {
                 // The owner dropped the task (for example while closing): staged copies/moves
                 // must be put back even though no UI receiver remains to accept the result.
@@ -191,7 +191,7 @@ fn spawn_prepare(
 
 #[cfg(not(target_arch = "wasm32"))]
 fn spawn_finalize(
-    finalization: dac_engine::lightroom_job::LightroomArchiveFinalization,
+    finalization: lcc_engine::lightroom_job::LightroomArchiveFinalization,
     tx: mpsc::Sender<Message>,
     ctx: egui::Context,
 ) -> Result<(), String> {
@@ -199,7 +199,7 @@ fn spawn_finalize(
         .name("lc-lightroom-finalize".into())
         .spawn(move || {
             let result =
-                dac_engine::guard::catch("Lightroom archive finalization", || finalization.finish()).and_then(|r| r.map_err(|e| e.to_string()));
+                lcc_engine::guard::catch("Lightroom archive finalization", || finalization.finish()).and_then(|r| r.map_err(|e| e.to_string()));
             let _ = tx.send(Message::Finalized(result));
             ctx.request_repaint();
         })
@@ -209,7 +209,7 @@ fn spawn_finalize(
 
 #[cfg(target_arch = "wasm32")]
 fn spawn_finalize(
-    _finalization: dac_engine::lightroom_job::LightroomArchiveFinalization,
+    _finalization: lcc_engine::lightroom_job::LightroomArchiveFinalization,
     _tx: mpsc::Sender<Message>,
     _ctx: egui::Context,
 ) -> Result<(), String> {
@@ -217,7 +217,7 @@ fn spawn_finalize(
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn inspect_report(data: dac_engine::lightroom_catalog::CatalogImport) -> Value {
+fn inspect_report(data: lcc_engine::lightroom_catalog::CatalogImport) -> Value {
     json!({
         "photos": data.photos.len(),
         "collections": data.collections.iter().filter(|r| r.get("systemOnly").and_then(Value::as_f64).unwrap_or(0.0) == 0.0).count(),
@@ -227,7 +227,7 @@ fn inspect_report(data: dac_engine::lightroom_catalog::CatalogImport) -> Value {
 }
 
 /// The task is over: keep its result (with the catalog's `path`) for `status` and say how it went.
-fn terminal(app: &mut DacApp, ctx: &egui::Context, task: &LightroomTask, mut value: Value) {
+fn terminal(app: &mut LccApp, ctx: &egui::Context, task: &LightroomTask, mut value: Value) {
     let kind = task.kind;
     if let Some(o) = value.as_object_mut() {
         o.entry("path").or_insert_with(|| json!(task.path));
@@ -274,7 +274,7 @@ fn terminal(app: &mut DacApp, ctx: &egui::Context, task: &LightroomTask, mut val
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn start_inspect(app: &mut DacApp, path: PathBuf, ctx: &egui::Context) -> Result<Value, String> {
+fn start_inspect(app: &mut LccApp, path: PathBuf, ctx: &egui::Context) -> Result<Value, String> {
     busy(app)?;
     let cancel = Arc::new(AtomicBool::new(false));
     let total = Arc::new(AtomicUsize::new(0));
@@ -287,9 +287,9 @@ fn start_inspect(app: &mut DacApp, path: PathBuf, ctx: &egui::Context) -> Result
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn start_import(app: &mut DacApp, path: PathBuf, update_existing: bool, ctx: &egui::Context) -> Result<Value, String> {
+fn start_import(app: &mut LccApp, path: PathBuf, update_existing: bool, ctx: &egui::Context) -> Result<Value, String> {
     busy(app)?;
-    let job = dac_engine::lightroom_job::LightroomJob::new(&mut app.session, path.clone(), update_existing).map_err(|e| e.to_string())?;
+    let job = lcc_engine::lightroom_job::LightroomJob::new(&mut app.session, path.clone(), update_existing).map_err(|e| e.to_string())?;
     let cancel = Arc::new(AtomicBool::new(false));
     let total = job.total_atomic();
     let done = job.done_atomic();
@@ -301,7 +301,7 @@ fn start_import(app: &mut DacApp, path: PathBuf, update_existing: bool, ctx: &eg
 }
 
 /// Run Lightroom UI commands before the generic engine dispatcher.
-pub fn command(app: &mut DacApp, id: &str, p: &Value, ctx: &egui::Context) -> Result<Value, String> {
+pub fn command(app: &mut LccApp, id: &str, p: &Value, ctx: &egui::Context) -> Result<Value, String> {
     #[cfg(target_arch = "wasm32")]
     {
         let _ = (app, id, p, ctx);
@@ -337,7 +337,7 @@ pub fn command(app: &mut DacApp, id: &str, p: &Value, ctx: &egui::Context) -> Re
 }
 
 /// Poll owner-thread work, commit a prepared import, and finish its archive index.
-pub fn tick(app: &mut DacApp, ctx: &egui::Context) {
+pub fn tick(app: &mut LccApp, ctx: &egui::Context) {
     let Some(mut task) = app.lightroom.take() else { return };
     let message = match task.rx.try_recv() {
         Ok(m) => m,
@@ -388,7 +388,7 @@ pub fn tick(app: &mut DacApp, ctx: &egui::Context) {
             let mut finalization = None;
             let mut report = None;
             let committed = app.session.execute_fn("library.importLightroom", |s| {
-                let completion = dac_engine::lightroom_job::commit_prepared(s, *prepared)?;
+                let completion = lcc_engine::lightroom_job::commit_prepared(s, *prepared)?;
                 report = Some(completion.report.clone());
                 finalization = Some(completion.finalization);
                 Ok(completion.report)
@@ -439,7 +439,7 @@ pub fn tick(app: &mut DacApp, ctx: &egui::Context) {
 
 /// Wait for a task in control/headless mode while still applying owner-thread completion.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn wait_for(app: &mut DacApp, ctx: &egui::Context, timeout: std::time::Duration) -> Result<Value, String> {
+pub fn wait_for(app: &mut LccApp, ctx: &egui::Context, timeout: std::time::Duration) -> Result<Value, String> {
     let start = std::time::Instant::now();
     while app.lightroom.is_some() {
         tick(app, ctx);
@@ -452,14 +452,14 @@ pub fn wait_for(app: &mut DacApp, ctx: &egui::Context, timeout: std::time::Durat
 }
 
 #[cfg(target_arch = "wasm32")]
-pub fn wait_for(_app: &mut DacApp, _ctx: &egui::Context, _timeout: std::time::Duration) -> Result<Value, String> {
+pub fn wait_for(_app: &mut LccApp, _ctx: &egui::Context, _timeout: std::time::Duration) -> Result<Value, String> {
     unsupported_wasm()
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_engine::lightroom_catalog::CatalogImport;
+    use lcc_engine::lightroom_catalog::CatalogImport;
 
     /// A task as `start_import` makes it, fed by a channel the test holds instead of a worker.
     fn fake_import(h: &crate::headless::Headless) -> (LightroomTask, mpsc::Sender<Message>, Arc<AtomicBool>, Arc<AtomicUsize>, Arc<AtomicUsize>) {
@@ -470,7 +470,7 @@ mod tests {
     }
 
     fn demo() -> crate::headless::Headless {
-        let app = crate::DacApp::new(dac_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+        let app = crate::LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
         let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
         // no render left running at exit (see tests_activity::demo)
         h.settle(std::time::Duration::from_secs(20));

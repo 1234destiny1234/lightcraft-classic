@@ -1,5 +1,5 @@
 //! Reverse geocoding (issue #582): fill City / State / Country from a photo's GPS position, offline, with the
-//! GeoNames place names ([`dac_geocode`]). The place names (CC-BY 4.0) are not shipped with the app: the user
+//! GeoNames place names ([`lcc_geocode`]). The place names (CC-BY 4.0) are not shipped with the app: the user
 //! downloads them once (`metadata.downloadPlaceNames`, ~3 MB from download.geonames.org) into the settings folder;
 //! after that every lookup is local and no position ever leaves the machine.
 //!
@@ -11,8 +11,8 @@ use std::time::SystemTime;
 
 use serde_json::{Value, json};
 
-use dac_catalog::{Op, PhotoId};
-use dac_geocode::{GEONAMES_ATTRIBUTION, GEONAMES_FILES, GeoNames, LatLon};
+use lcc_catalog::{Op, PhotoId};
+use lcc_geocode::{GEONAMES_ATTRIBUTION, GEONAMES_FILES, GeoNames, LatLon};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, has_selection, str_param};
 use crate::activity::Cancel;
@@ -64,7 +64,7 @@ impl PlaceNames {
     }
 
     /// The gazetteer in `dir`, parsed once and re-read only when the cities file's size or time changes.
-    fn load(&mut self, dir: &Path) -> std::result::Result<Arc<GeoNames>, dac_geocode::GeocodeError> {
+    fn load(&mut self, dir: &Path) -> std::result::Result<Arc<GeoNames>, lcc_geocode::GeocodeError> {
         let file = dir.join(GEONAMES_FILES[0]);
         let meta = std::fs::metadata(&file).ok();
         let (len, mtime) = (meta.as_ref().map_or(0, |m| m.len()), meta.as_ref().and_then(|m| m.modified().ok()));
@@ -94,12 +94,12 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
     };
     Ok(json!({
         "downloaded": size.is_some(), "bytes": size, "path": dir, "downloading": sh.running, "lastDownload": last, "lastError": error,
-        "attribution": GEONAMES_ATTRIBUTION, "source": dac_geocode::GEONAMES_BASE,
+        "attribution": GEONAMES_ATTRIBUTION, "source": lcc_geocode::GEONAMES_BASE,
     }))
 }
 
 /// Which place fields to write: a field is filled when it is empty, or always with `overwrite`.
-fn fill(meta: &mut dac_catalog::Meta, place: &dac_geocode::Place, overwrite: bool) {
+fn fill(meta: &mut lcc_catalog::Meta, place: &lcc_geocode::Place, overwrite: bool) {
     for (field, value) in [
         (&mut meta.location, &place.sublocation),
         (&mut meta.city, &place.city),
@@ -163,7 +163,7 @@ mod download {
     use std::sync::Arc;
     use std::sync::atomic::AtomicBool;
 
-    use dac_geocode::{GEONAMES_BASE, GEONAMES_ZIP};
+    use lcc_geocode::{GEONAMES_BASE, GEONAMES_ZIP};
 
     use super::*;
     use crate::activity::Unit;
@@ -173,8 +173,8 @@ mod download {
 
     fn get(name: &str, base: &str, dir: &Path, cancel: &AtomicBool, task: &crate::activity::TaskHandle) -> std::result::Result<(), String> {
         let _ = std::fs::remove_file(dir.join(name));
-        let file = dac_fetch::FileSpec { name, size: None, sha256: None, max: MAX_ZIP };
-        dac_fetch::download_url(&file, &format!("{base}{name}"), dir, &dac_fetch::Options::default(), cancel, &mut |pr| {
+        let file = lcc_fetch::FileSpec { name, size: None, sha256: None, max: MAX_ZIP };
+        lcc_fetch::download_url(&file, &format!("{base}{name}"), dir, &lcc_fetch::Options::default(), cancel, &mut |pr| {
             task.progress(pr.done, pr.total.max(pr.done))
         })
         .map_err(|e| e.to_string())
@@ -186,7 +186,7 @@ mod download {
         std::fs::create_dir_all(&staging).map_err(|e| format!("could not create {}: {e}", staging.display()))?;
         get(GEONAMES_ZIP, base, &staging, cancel, task)?;
         let zip = std::fs::read(staging.join(GEONAMES_ZIP)).map_err(|e| e.to_string())?;
-        let cities = dac_geocode::unzip::extract(&zip, GEONAMES_FILES[0], MAX_TEXT).map_err(|e| e.to_string())?;
+        let cities = lcc_geocode::unzip::extract(&zip, GEONAMES_FILES[0], MAX_TEXT).map_err(|e| e.to_string())?;
         let places = GeoNames::parse(&String::from_utf8_lossy(&cities), None, None).len();
         if places == 0 {
             return Err("the downloaded place list is empty".into());
@@ -381,7 +381,7 @@ mod tests {
         use std::io::{BufRead, BufReader, Write};
         let l = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
         let port = l.local_addr().unwrap().port();
-        let zip = dac_geocode::unzip::make(GEONAMES_FILES[0], CITIES.as_bytes());
+        let zip = lcc_geocode::unzip::make(GEONAMES_FILES[0], CITIES.as_bytes());
         std::thread::spawn(move || {
             for conn in l.incoming() {
                 let Ok(mut c) = conn else { continue };

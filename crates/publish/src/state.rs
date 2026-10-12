@@ -2,7 +2,7 @@
 
 use std::collections::BTreeSet;
 
-use dac_catalog::{AlbumId, Catalog, Photo, PhotoId, RemoteIdentity};
+use lcc_catalog::{AlbumId, Catalog, Photo, PhotoId, RemoteIdentity};
 use serde::Serialize;
 
 /// A photo's publish state in one collection.
@@ -64,7 +64,7 @@ pub fn fingerprint(p: &Photo) -> String {
         "file": p.file_name,
     });
     let bytes = serde_json::to_vec(&v).unwrap_or_default();
-    dac_hash::sha1_bytes(&bytes).to_hex()
+    lcc_hash::sha1_bytes(&bytes).to_hex()
 }
 
 /// The links of one collection.

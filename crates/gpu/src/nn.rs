@@ -8,7 +8,7 @@
 //!
 //! Every failure is an `Err` (never a panic), and a device that errs or is lost stops being used: callers then run the
 //! CPU runner. The kernels (`wgsl/nn_conv.wgsl`, `wgsl/nn_pool.wgsl`) are tested against the plain-loop reference
-//! interpreter in `dac_denoise::reference` and, with the real model, against the pure-Rust CPU runner.
+//! interpreter in `lcc_denoise::reference` and, with the real model, against the pure-Rust CPU runner.
 
 use std::collections::HashMap;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -16,8 +16,8 @@ use std::sync::{Condvar, Mutex, OnceLock};
 use std::time::Duration;
 
 use bytemuck::{Pod, Zeroable};
-use dac_denoise::net::{Net, Op};
-use dac_denoise::run::{Error, TileRunner};
+use lcc_denoise::net::{Net, Op};
+use lcc_denoise::run::{Error, TileRunner};
 use wgpu::util::DeviceExt;
 
 /// Longest wait for one tile's GPU work before the device is given up on.
@@ -75,7 +75,7 @@ fn dev() -> Result<&'static Dev, String> {
 const CLOSING: &str = "the app is closing";
 
 fn create_device() -> Result<Dev, String> {
-    let Some(backends) = crate::backend::compute_backends() else { return Err(format!("disabled by {}=off", dac_brand::env_var("GPU_BACKEND"))) };
+    let Some(backends) = crate::backend::compute_backends() else { return Err(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND"))) };
     crate::backend::with_init_marker(backends, || {
         std::panic::catch_unwind(|| make_device(backends)).unwrap_or_else(|_| Err("device creation panicked".into()))
     })
@@ -89,7 +89,7 @@ fn make_device(backends: wgpu::Backends) -> Result<Dev, String> {
     // no indirect-call validation pipeline: Intel Metal fails to compile it (#250)
     desc.flags = crate::backend::instance_flags_from_env(desc.flags);
     let instance = wgpu::Instance::new(desc);
-    let wanted = dac_brand::env("GPU_ADAPTER").map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
+    let wanted = lcc_brand::env("GPU_ADAPTER").map(|s| s.trim().to_lowercase()).filter(|s| !s.is_empty());
     let adapter = match &wanted {
         Some(w) => {
             let all = pollster::block_on(instance.enumerate_adapters(backends));
@@ -121,7 +121,7 @@ fn make_device(backends: wgpu::Backends) -> Result<Dev, String> {
         return Err(format!("{} has too little workgroup memory for the denoise kernels", info.name));
     }
     let (device, queue) = pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor {
-        label: Some("dac-denoise"),
+        label: Some("lcc-denoise"),
         required_limits: limits.clone(),
         ..Default::default()
     }))
@@ -880,7 +880,7 @@ impl TileRunner for NetRunner {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_denoise::{onnx, reference, synthetic};
+    use lcc_denoise::{onnx, reference, synthetic};
 
     fn net(tile: u64, ch: u64, depth: usize, seed: u64) -> Net {
         let path = std::env::temp_dir().join(format!("lc-nn-{}-{tile}-{ch}-{depth}-{seed}.onnx", std::process::id()));
@@ -931,7 +931,7 @@ mod tests {
             let x = picture(4 * (tile * tile) as usize, seed);
             let want = reference::run(&n, tile as usize, &x).unwrap();
             let got = g.run(&x).unwrap();
-            let cpu = dac_denoise::cpu::NetRunner::new(&n, tile as usize).unwrap().run(&x).unwrap();
+            let cpu = lcc_denoise::cpu::NetRunner::new(&n, tile as usize).unwrap().run(&x).unwrap();
             assert!(worst(&got, &cpu) < 1e-3, "GPU and pure-Rust CPU differ");
             let e = worst(&got, &want);
             eprintln!("{}: tile {tile}, {ch} channels, depth {depth}: off by {e:e} of the output's size", g.adapter());
@@ -974,12 +974,12 @@ mod tests {
     }
 
     /// The real model on the GPU against the pure-Rust CPU runner, with timings (the numbers in docs/denoise.md come from here):
-    /// `LC_DENOISE_MODEL=<model_bayer.onnx> cargo test --release -p dac-gpu --lib real_model -- --ignored --nocapture`
+    /// `LC_DENOISE_MODEL=<model_bayer.onnx> cargo test --release -p lcc-gpu --lib real_model -- --ignored --nocapture`
     #[test]
     #[ignore = "needs the real model: see the doc comment"]
     fn real_model_on_the_gpu_matches_cpu() {
-        use dac_denoise::manifest::{DenoiserManifest, Domain, Gain};
-        use dac_denoise::runtime::CpuRunner;
+        use lcc_denoise::manifest::{DenoiserManifest, Domain, Gain};
+        use lcc_denoise::runtime::CpuRunner;
         use std::time::Instant;
         let Some(model) = std::env::var_os("LC_DENOISE_MODEL") else { return };
         let net = onnx::read(std::path::Path::new(&model)).unwrap();

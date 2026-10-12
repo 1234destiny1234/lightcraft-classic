@@ -12,9 +12,9 @@ use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use dac_catalog::{PhotoId, Source};
-use dac_credentials::{CredError, SecretStore};
-use dac_immich::{Account, Accounts, Asset, ImmichError};
+use lcc_catalog::{PhotoId, Source};
+use lcc_credentials::{CredError, SecretStore};
+use lcc_immich::{Account, Accounts, Asset, ImmichError};
 
 /// Files hashed per back-fill batch (one worker thread).
 pub(crate) const SHA1_BATCH: usize = 32;
@@ -41,7 +41,7 @@ pub(crate) enum Msg {
     /// `immich.status {check, background}`: one account's server status.
     Checked {
         account: String,
-        result: Result<dac_immich::ServerStatus, ImmichError>,
+        result: Result<lcc_immich::ServerStatus, ImmichError>,
     },
     /// `immich.uploadVersion`: an Edit In version upload finished.
     Version(Box<crate::cmd::immich::versions::VersionDone>),
@@ -50,7 +50,7 @@ pub(crate) enum Msg {
     /// `immich.syncAlbums {background}`: an album run finished.
     AlbumsSynced(Box<crate::cmd::immich::publish::AlbumsDone>),
     /// `credentials.unlock {background}`: the encrypted file opened (or not).
-    FileUnlocked(Result<dac_credentials::FileStore, CredError>),
+    FileUnlocked(Result<lcc_credentials::FileStore, CredError>),
     /// `credentials.unlockSystem`: the keychain's own unlock prompt was answered.
     SystemUnlocked(Result<(), CredError>),
 }
@@ -58,9 +58,9 @@ pub(crate) enum Msg {
 /// A server that answered `immich.connect`'s probe, with the key that opened it.
 pub(crate) struct Probed {
     pub base: String,
-    pub status: dac_immich::ServerStatus,
+    pub status: lcc_immich::ServerStatus,
     pub pinned: Option<String>,
-    pub key: dac_credentials::Secret,
+    pub key: lcc_credentials::Secret,
 }
 
 /// What an import download job brings back.
@@ -120,7 +120,7 @@ pub struct State {
     pub(crate) import: ImportProgress,
     pub(crate) fetching: HashSet<PhotoId>,
     pub(crate) fetch_errors: HashMap<PhotoId, String>,
-    /// The encrypted key file ([`dac_credentials::FileStore`]), used where the system keychain is
+    /// The encrypted key file ([`lcc_credentials::FileStore`]), used where the system keychain is
     /// missing or locked, or when the user prefers it (`None`: no settings folder, as in tests).
     pub secrets_file: Option<PathBuf>,
     /// Where the store preference (`credentials.json`) lives.
@@ -207,7 +207,7 @@ pub(crate) fn spawn_sha1(tx: Sender<Msg>, batch: Vec<(PhotoId, String)>) {
         let out = batch
             .into_iter()
             .map(|(id, path)| {
-                let h = dac_hash::sha1_file(Path::new(&path)).map(|d| d.to_hex()).ok();
+                let h = lcc_hash::sha1_file(Path::new(&path)).map(|d| d.to_hex()).ok();
                 (id, path, h)
             })
             .collect();
@@ -215,7 +215,7 @@ pub(crate) fn spawn_sha1(tx: Sender<Msg>, batch: Vec<(PhotoId, String)>) {
     });
 }
 
-/// Why a link-only photo shows a preview ([`dac_catalog::Photo::preview_only`]): the original stays
+/// Why a link-only photo shows a preview ([`lcc_catalog::Photo::preview_only`]): the original stays
 /// on the server until the photo is opened in Develop.
 pub const LINK_ONLY: &str = "Immich link only: the original is downloaded when the photo is opened in Develop";
 
@@ -224,20 +224,20 @@ pub const NEEDS_PASSPHRASE: &str = "unlock the encrypted key file with its passp
 
 /// A secret store kept in memory (tests, and hosts that must not touch the keychain).
 #[derive(Default)]
-pub struct MemorySecrets(std::sync::Mutex<HashMap<dac_credentials::Key, dac_credentials::Secret>>);
+pub struct MemorySecrets(std::sync::Mutex<HashMap<lcc_credentials::Key, lcc_credentials::Secret>>);
 
 impl SecretStore for MemorySecrets {
     fn name(&self) -> &'static str {
         "memory"
     }
-    fn get(&self, key: &dac_credentials::Key) -> Result<Option<dac_credentials::Secret>, dac_credentials::CredError> {
+    fn get(&self, key: &lcc_credentials::Key) -> Result<Option<lcc_credentials::Secret>, lcc_credentials::CredError> {
         Ok(self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).get(key).cloned())
     }
-    fn set(&self, key: &dac_credentials::Key, secret: &dac_credentials::Secret) -> Result<(), dac_credentials::CredError> {
+    fn set(&self, key: &lcc_credentials::Key, secret: &lcc_credentials::Secret) -> Result<(), lcc_credentials::CredError> {
         self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(key.clone(), secret.clone());
         Ok(())
     }
-    fn delete(&self, key: &dac_credentials::Key) -> Result<bool, dac_credentials::CredError> {
+    fn delete(&self, key: &lcc_credentials::Key) -> Result<bool, lcc_credentials::CredError> {
         Ok(self.0.lock().unwrap_or_else(std::sync::PoisonError::into_inner).remove(key).is_some())
     }
 }
@@ -284,7 +284,7 @@ impl crate::Session {
         if self.store_pref() == "file" {
             return Err(NEEDS_PASSPHRASE.into());
         }
-        match dac_credentials::os_store() {
+        match lcc_credentials::os_store() {
             Ok(s) => {
                 let s: Arc<dyn SecretStore> = Arc::from(s);
                 self.remote.system_error = Some(None);
@@ -328,7 +328,7 @@ impl crate::Session {
     }
 
     /// A client for a connected account, with its stored key.
-    pub fn immich_client(&mut self, account: &str) -> Result<(Account, dac_immich::Client), ImmichError> {
+    pub fn immich_client(&mut self, account: &str) -> Result<(Account, lcc_immich::Client), ImmichError> {
         let acc = self
             .immich_accounts()
             .map_err(ImmichError::Io)?
@@ -336,9 +336,9 @@ impl crate::Session {
             .cloned()
             .ok_or_else(|| ImmichError::NotFound(format!("account {account}")))?;
         let store = self.secret_store().map_err(ImmichError::Io)?;
-        let key = store.get(&dac_immich::accounts::secret_key(&acc.id)).map_err(|e| ImmichError::Io(e.to_string()))?.ok_or(ImmichError::NoKey)?;
-        let opts = dac_immich::ServerOptions { pinned: acc.pinned.clone(), ..dac_immich::ServerOptions::standard() };
-        let c = dac_immich::Client::new(&acc.url, key, &opts)?;
+        let key = store.get(&lcc_immich::accounts::secret_key(&acc.id)).map_err(|e| ImmichError::Io(e.to_string()))?.ok_or(ImmichError::NoKey)?;
+        let opts = lcc_immich::ServerOptions { pinned: acc.pinned.clone(), ..lcc_immich::ServerOptions::standard() };
+        let c = lcc_immich::Client::new(&acc.url, key, &opts)?;
         Ok((acc, c))
     }
 

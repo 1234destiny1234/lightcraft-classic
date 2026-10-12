@@ -3,7 +3,7 @@
 > Names in angle brackets (`<app>`, `<binary>`, `<cli>`, `<PREFIX>`, `<settings_dir>`, …) are the values set in
 > [`brand.toml`](../brand.toml); see the README.
 
-The CPU pipeline (`crates/pipeline`) is the reference ("oracle"). `dac-gpu` (`crates/gpu`, L3)
+The CPU pipeline (`crates/pipeline`) is the reference ("oracle"). `lcc-gpu` (`crates/gpu`, L3)
 evaluates the same stages with wgpu compute shaders (WGSL) on Metal / Vulkan / DX12. Everything is
 pure Rust (wgpu, naga); the drivers are the system's. No GL backend is compiled in.
 
@@ -13,7 +13,7 @@ rounding otherwise can turn a blank edge pixel into a photo pixel. The mask
 uses one bit per output pixel (rows padded to 32 bits). Sampling and color
 corrections remain on the GPU, and existing geometry stage caching reuses the
 result. The mask is built per 32 × 16 block (`Warp::block_coverage`): the warp
-formulas are written once, generic over `dac_geom::Real`, and evaluated
+formulas are written once, generic over `lcc_geom::Real`, and evaluated
 with outward-rounded `Interval`s over the block. Those bounds enclose the f64
 result of every pixel in the block, so a block whose bounds lie inside the
 image edges (the same f64 comparisons, no margin), or beyond one of them, is
@@ -29,7 +29,7 @@ wgpu loads the driver of **every** backend in an instance's set while it enumera
 when it then picks another one. A Vulkan driver that crashes there (issue #136: an access violation
 in Intel's `igvk64.dll` on a UHD 630 under Windows 11) takes the process down before any window
 appears, and a native crash cannot be caught. So the app only lets wgpu touch the backends it
-means to use (`dac_gpu::backend`), for its compute device *and* for the desktop window
+means to use (`lcc_gpu::backend`), for its compute device *and* for the desktop window
 (eframe/egui-wgpu, `window_wgpu_options` in `apps/app/src/main.rs`):
 
 | platform | default (window and compute) |
@@ -48,7 +48,7 @@ Overrides (read once at launch):
 - `<PREFIX>_GPU=0`: GPU rendering off for the process (the window is unaffected).
 
 **DX12 shader compiler (issue #471).** Every instance (window and compute) compiles DX12 shaders with
-FXC (`d3dcompiler_47.dll`, part of Windows; `dac_gpu::backend::backend_options`). wgpu's
+FXC (`d3dcompiler_47.dll`, part of Windows; `lcc_gpu::backend::backend_options`). wgpu's
 default, `Auto`, loads whichever `dxcompiler.dll` the DLL search path finds first. The app ships
 none, so that copy belongs to another program (a Windows SDK, a folder on `PATH`). An older copy without
 `dxil.dll` beside it (e.g. DXC 1.7) warns that the DXIL is unsigned, wgpu treats the warning as a
@@ -66,7 +66,7 @@ Settings ▸ Performance ▸ *Use the GPU for rendering* unchecked (applied befo
 **Quitting.** The devices are never dropped, and renders run on worker threads: a render still inside
 the driver while the process exits crashes there (a SIGSEGV in the NVIDIA Vulkan driver on Linux,
 issue #620), which no panic hook catches. So every entry into a device counts as work in flight
-(`crates/gpu/src/exit.rs`), and the desktop app ends with `DacApp::shutdown` (from `on_exit`,
+(`crates/gpu/src/exit.rs`), and the desktop app ends with `LccApp::shutdown` (from `on_exit`,
 after settings and library are saved): `gpu::begin_shutdown()` — from then on `gpu::render` returns
 `None`, no device is created, denoise tiles fail over and a render job gives up instead of rendering
 on the CPU — then the render pool stops (queued jobs dropped, running ones waited for) and
@@ -119,7 +119,7 @@ same way (PhotoCraft does). It is a driver issue: nothing in the app itself
 walks the drive.
 
 ## Where it is used
-- `dac_engine::media::develop` (called by every `RenderJob`): loupe / before / compare views,
+- `lcc_engine::media::develop` (called by every `RenderJob`): loupe / before / compare views,
   `render_now` (CLI, MCP, control channel renders) and exports render on the GPU when one is
   available; grid/filmstrip thumbnails (many small jobs in parallel) stay on the CPU.
 - Anything the GPU path cannot do returns `None` and the CPU renders instead: no adapter (CI
@@ -208,13 +208,13 @@ redone on the CPU and why, e.g. `"6000×4000: the GPU returned an incomplete ima
 `lastFallback`), Help ▸ System Info and Settings ▸ Performance. `<PREFIX>_PROFILE=1` prints the
 fallback with the stage timings; `RUST_LOG=warn` logs it.
 `perf.gpuFallback` is one value for the whole process, overwritten by the latest render on any
-thread. A render's *own* reason comes from `dac_gpu::try_render` (`Err(Fallback::Failed(why))`;
-`Fallback::NotTried` when the GPU was not used at all), which `dac_engine::media::develop_reporting`
+thread. A render's *own* reason comes from `lcc_gpu::try_render` (`Err(Fallback::Failed(why))`;
+`Fallback::NotTried` when the GPU was not used at all), which `lcc_engine::media::develop_reporting`
 passes on as `RenderResult::gpu_fallback`; an export carries it as `Exported::gpu_fallback`, and
 each file of an `app.export` batch result has `gpuFallback` when its render fell back (issue #675).
 **Reproducing a smaller GPU:** `<PREFIX>_GPU_LIMITS=webgpu` (or `downlevel`) creates the device
 with 128 MiB storage bindings / 256 MiB buffers, `<PREFIX>_GPU_LIMITS=<n>` with n MiB / 2n MiB.
-Tests inject failures with `dac_gpu::inject_fault` (`crates/gpu/tests/fallback.rs`,
+Tests inject failures with `lcc_gpu::inject_fault` (`crates/gpu/tests/fallback.rs`,
 `export_falls_back_to_the_cpu_when_gpu_work_is_lost`). The fault is thread-local, and so are its
 consequences: a simulated fatal failure stops GPU use on the injecting thread only (`available()`
 false, `unavailable_reason()` set there), until `reset_failures()`, which undoes nothing else — a
@@ -256,8 +256,8 @@ so CPU numbers are pessimistic; the GPU numbers are less affected):
 
 GPU timings include the readback of the 8-bit result and the histogram. Device creation + kernel
 compilation: ~0.4 s once per process — the desktop app starts it on a background thread at launch
-(`dac_gpu::warm_up`), so the first loupe render doesn't wait for it; other processes create
-the device on their first GPU render. `dac_gpu::ready()` asks without blocking.
+(`lcc_gpu::warm_up`), so the first loupe render doesn't wait for it; other processes create
+the device on their first GPU render. `lcc_gpu::ready()` asks without blocking.
 
 ## Opening a photo (M5.4)
 - The loupe shows a stand-in at once (`media::QuickJob`): the photo's cached view render for its
@@ -282,7 +282,7 @@ A view's stages keep an uploaded source only up to 96 MB (a Preview-level source
   `/usr/bin/time -l <cli> snapshot <files> --script steps.jsonl -o out.png` → "maximum
   resident set size" and "peak memory footprint". Run it several times: the high-water mark is
   noisy (allocator caching, scheduling). On Apple silicon GPU buffers count in the footprint.
-- Imports read raw headers only (`dac_raw::probe_info`): no pixel data is decompressed,
+- Imports read raw headers only (`lcc_raw::probe_info`): no pixel data is decompressed,
   except the first rows a few vendor formats need for facts their headers lack (Nikon NEF: the
   first 128 rows for the masked trailing columns, issue #708).
 - One budget (`memory::budget`, default min(25 % of RAM, 1.5 GiB); `<PREFIX>_MEMORY_MB` or

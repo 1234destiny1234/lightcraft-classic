@@ -24,7 +24,7 @@ pub(crate) struct FaceKey {
 
 /// A face used in the document and the glyphs drawn with it.
 pub(crate) struct FaceUse {
-    pub font: dac_text::FontData,
+    pub font: lcc_text::FontData,
     pub glyphs: BTreeSet<u16>,
     /// Characters drawn with this face (for ToUnicode).
     pub chars: BTreeSet<char>,

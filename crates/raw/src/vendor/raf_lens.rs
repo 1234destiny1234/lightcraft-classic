@@ -17,7 +17,7 @@
 //! - vignetting: relative illumination in percent at the source radius; the correction is the gain `100 / V`.
 
 use crate::{Opcode, Rect};
-use dac_tiff::Ifd;
+use lcc_tiff::Ifd;
 
 const DISTORTION: u16 = 0xf00b;
 const VIGNETTING: u16 = 0xf010;
@@ -311,7 +311,7 @@ pub(super) fn corrections(model: &str, raw: &Ifd, active: Rect) -> Vec<Opcode> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_tiff::{Entry, Value};
+    use lcc_tiff::{Entry, Value};
 
     pub(crate) const KNOTS9: [f64; 9] = [0.3535211268, 0.5, 0.6126760563, 0.7070422535, 0.7908450704, 0.8661971831, 0.9352112676, 1.0, 1.06056338];
     /// X-T4 with the XF16-55 at 16 mm (3913): the tables as ExifTool prints them.

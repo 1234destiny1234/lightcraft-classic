@@ -2,11 +2,11 @@
 //! and the UI send are untrusted; a damaged document or a hostile parameter is an error or a
 //! clamped render, never a panic or an unbounded allocation.
 
-use dac_book::render::{Options, render_page};
-use dac_book::{Book, ops};
-use dac_layout::render::PhotoSource;
-use dac_raster::Rgba8;
-use dac_text::TextEngine;
+use lcc_book::render::{Options, render_page};
+use lcc_book::{Book, ops};
+use lcc_layout::render::PhotoSource;
+use lcc_raster::Rgba8;
+use lcc_text::TextEngine;
 use serde_json::{Value, json};
 
 struct Tiny;
@@ -67,7 +67,7 @@ fn damaged_book_documents_never_panic() {
     let seed = sample().to_json().unwrap();
     assert!(Book::from_json(&seed).is_ok());
     let mut e = TextEngine::new();
-    dac_fuzzkit::run_json("book.document", &[&seed], 400, |s| {
+    lcc_fuzzkit::run_json("book.document", &[&seed], 400, |s| {
         let _ = Book::from_json(s);
         // unvalidated too: a book edited in memory reaches the renderer without `from_json`
         if let Ok(b) = serde_json::from_str::<Book>(s) {
@@ -83,10 +83,10 @@ fn hostile_op_parameters_never_panic() {
     let params: Vec<String> = calls.iter().map(|(_, p)| p.to_string()).collect();
     let seeds: Vec<&str> = params.iter().map(String::as_str).collect();
     let ids: Vec<&str> = calls.iter().map(|(id, _)| *id).chain(["book.get", "book.nope", "book.clearLayout"]).collect();
-    let mut rng = dac_fuzzkit::Rng::new(5);
+    let mut rng = lcc_fuzzkit::Rng::new(5);
     let mut e = TextEngine::new();
     let mut n = 0usize;
-    dac_fuzzkit::run_json("book.ops", &seeds, 3000, |s| {
+    lcc_fuzzkit::run_json("book.ops", &seeds, 3000, |s| {
         let Ok(p) = serde_json::from_str::<Value>(s) else { return };
         let mut b = base.clone();
         for _ in 0..3 {

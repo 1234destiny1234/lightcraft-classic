@@ -114,7 +114,7 @@ fn generate() -> Result<String, Box<dyn std::error::Error>> {
 /// `format!` arguments. The name is escaped for `format!` (`{` → `{{`).
 fn brand_fill(text: &str) -> String {
     let esc = |s: &str| s.replace('{', "{{").replace('}', "}}");
-    text.replace("{app}", &esc(dac_brand::DISPLAY_NAME)).replace("{cli}", &esc(dac_brand::CLI_BINARY)).replace("{env}", &esc(dac_brand::ENV_PREFIX))
+    text.replace("{app}", &esc(lcc_brand::DISPLAY_NAME)).replace("{cli}", &esc(lcc_brand::CLI_BINARY)).replace("{env}", &esc(lcc_brand::ENV_PREFIX))
 }
 
 /// The About window's credits tables.

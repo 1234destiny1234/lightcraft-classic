@@ -1,11 +1,11 @@
-//! Tile downloads (native): the cache first, then the server through `dac-net` (which sends the
+//! Tile downloads (native): the cache first, then the server through `lcc-net` (which sends the
 //! brand's User-Agent). Only tiles on screen are ever requested — no bulk prefetch, as the
 //! OpenStreetMap tile usage policy asks. A stale cached tile is returned when the server can't be
 //! reached, so the map keeps working offline.
 
 use std::time::Duration;
 
-use dac_net::{Client, ClientConfig};
+use lcc_net::{Client, ClientConfig};
 
 use crate::GeoError;
 use crate::cache::{MAX_TILE_BYTES, TileCache};
@@ -127,7 +127,7 @@ mod tests {
 
     #[test]
     fn fetches_through_cache_and_survives_outages() {
-        let dir = std::env::temp_dir().join(format!("dac-geo-fetch-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-geo-fetch-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let (port, seen, h) = fake_server(1, false);
         let server =

@@ -3,7 +3,7 @@
 //! `[in, out]`; playing to `out` stops there (or wraps to `in` when looping). Seeks snap to frame
 //! starts; frame steps move whole frames.
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde::Serialize;
 
 use super::VideoMeta;

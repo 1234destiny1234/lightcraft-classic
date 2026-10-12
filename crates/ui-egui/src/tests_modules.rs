@@ -9,14 +9,14 @@ use serde_json::json;
 use crate::headless::Headless;
 use crate::module::{Edge, LightsOut, ModuleId, ScreenMode};
 use crate::state::{RightPanel, ViewMode};
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn demo() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     h.settle(SETTLE);
     run(&mut h, "module.library", json!({}));
@@ -186,9 +186,9 @@ fn rating_steps_and_flag_toggle() {
     }
     assert_eq!(h.app.session.catalog.photo(id).unwrap().rating, 0);
     run(&mut h, "photo.flagToggle", json!({}));
-    assert_eq!(h.app.session.catalog.photo(id).unwrap().flag, dac_catalog::Flag::Pick);
+    assert_eq!(h.app.session.catalog.photo(id).unwrap().flag, lcc_catalog::Flag::Pick);
     run(&mut h, "photo.flagToggle", json!({}));
-    assert_eq!(h.app.session.catalog.photo(id).unwrap().flag, dac_catalog::Flag::None);
+    assert_eq!(h.app.session.catalog.photo(id).unwrap().flag, lcc_catalog::Flag::None);
 }
 
 #[test]

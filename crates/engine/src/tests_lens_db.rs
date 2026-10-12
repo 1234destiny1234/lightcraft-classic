@@ -58,7 +58,7 @@ fn a_lens_look_up_is_not_an_undo_step() {
     let before = crate::lens_profiles::configured_dir();
     crate::lens_profiles::set_dir(None);
     let dir = scratch("undo");
-    let m = dac_meta::Metadata {
+    let m = lcc_meta::Metadata {
         make: Some("Testcam".into()),
         model: Some("TC-1".into()),
         lens_model: Some("18-55mm F3.5-5.6".into()),
@@ -86,7 +86,7 @@ fn a_lens_look_up_is_not_an_undo_step() {
 }
 
 fn skip_for_env() -> bool {
-    dac_brand::env_os(crate::lens_profiles::ENV).is_some_and(|v| !v.is_empty())
+    lcc_brand::env_os(crate::lens_profiles::ENV).is_some_and(|v| !v.is_empty())
 }
 
 #[test]
@@ -200,14 +200,14 @@ fn optics_is_told_why_there_is_no_correction() {
     crate::lens_profiles::set_dir(None);
     let mut s = Session::new();
     let raw = |lens: &str| {
-        let mut p = dac_catalog::Photo::new(dac_catalog::PhotoId(1), dac_catalog::Source::Demo { scene: 0 }, "a.nef", "NEF", 10, 10, "now");
-        p.kind = dac_catalog::MediaKind::Raw;
+        let mut p = lcc_catalog::Photo::new(lcc_catalog::PhotoId(1), lcc_catalog::Source::Demo { scene: 0 }, "a.nef", "NEF", 10, 10, "now");
+        p.kind = lcc_catalog::MediaKind::Raw;
         p.meta.lens = lens.into();
         p
     };
     assert_eq!(s.lens_match(&raw("18-55mm F3.5-5.6")), Some(Match::NoDatabase));
     let mut jpeg = raw("x");
-    jpeg.kind = dac_catalog::MediaKind::Image;
+    jpeg.kind = lcc_catalog::MediaKind::Image;
     let db = scratch("optics");
     std::fs::write(db.join("lenses.xml"), DB).unwrap();
     s.lens_db.set_dir(Some(db)).unwrap();
@@ -222,7 +222,7 @@ fn optics_is_told_why_there_is_no_correction() {
     let id = s.catalog.alloc_photo_id();
     let mut p = raw("70-200mm F4");
     p.id = id;
-    s.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
     let v: Value = s.execute("lens.db.photo", &json!({"ids": [id.0]})).unwrap();
     assert_eq!(v, json!({"state": "notFound", "lens": "70-200mm F4"}));
     // a change makes every photo's lens data stale until it is looked up again
@@ -252,14 +252,14 @@ fn a_chosen_lens_and_the_lens_list() {
     s.lens_db.set_dir(Some(db)).unwrap();
     let add = |s: &mut Session, lens: &str, own: bool| {
         let id = s.catalog.alloc_photo_id();
-        let mut p = dac_catalog::Photo::new(id, dac_catalog::Source::Demo { scene: 0 }, "a.nef", "NEF", 10, 10, "now");
-        p.kind = dac_catalog::MediaKind::Raw;
+        let mut p = lcc_catalog::Photo::new(id, lcc_catalog::Source::Demo { scene: 0 }, "a.nef", "NEF", 10, 10, "now");
+        p.kind = lcc_catalog::MediaKind::Raw;
         p.meta.lens = lens.into();
         if own {
             p.embedded_lens = Some(Default::default());
             s.lens_from_file.insert(id, true);
         }
-        s.catalog.apply(dac_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
         id.0
     };
     let nameless = add(&mut s, "", false);

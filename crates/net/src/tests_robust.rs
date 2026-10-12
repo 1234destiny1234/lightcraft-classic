@@ -10,7 +10,7 @@ use super::*;
 #[test]
 fn hostile_urls_never_panic() {
     let seeds = ["https://photos.example:2283/api/x?y=1#f", "http://[::1]:80/", "http://user:pw@h/", "https://ü.example/ä"];
-    dac_fuzzkit::run_str("net.url", &seeds, 5000, |s| {
+    lcc_fuzzkit::run_str("net.url", &seeds, 5000, |s| {
         if let Ok(u) = Url::parse(s) {
             let _ = (u.host_header(), u.origin());
             for loc in ["/a", "//other/b", "../c", s, "https://x/y", "?q", ""] {
@@ -24,7 +24,7 @@ fn hostile_urls_never_panic() {
 #[test]
 fn hostile_response_heads_never_panic() {
     let head = "HTTP/1.1 200 OK\r\nContent-Length: 12\r\nTransfer-Encoding: chunked\r\nLocation: /x\r\nContent-Encoding: gzip\r\n\r\n";
-    dac_fuzzkit::run_str("net.head", &[head, "HTTP/1.0 301 Moved\r\n\r\n"], 5000, |s| {
+    lcc_fuzzkit::run_str("net.head", &[head, "HTTP/1.0 301 Moved\r\n\r\n"], 5000, |s| {
         if let Ok(h) = http::read_head(&mut s.as_bytes()) {
             let _ = h.header("content-length");
         }
@@ -69,8 +69,8 @@ fn hostile_responses_through_the_client_never_panic() {
     });
     let c = Client::new(ClientConfig { stall_timeout: Duration::from_millis(500), ..ClientConfig::default() }).unwrap();
     let url = format!("http://127.0.0.1:{port}/x");
-    // a loopback round trip per iteration: keep it short (DAC_FUZZ_ITERS raises it)
-    dac_fuzzkit::run("net.response", &seeds, 150, |b| {
+    // a loopback round trip per iteration: keep it short (LCC_FUZZ_ITERS raises it)
+    lcc_fuzzkit::run("net.response", &seeds, 150, |b| {
         *answer.lock().unwrap() = b.to_vec();
         if let Ok(r) = c.get(&url).send() {
             let _ = r.bytes();

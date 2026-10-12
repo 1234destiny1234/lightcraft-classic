@@ -1,5 +1,5 @@
 // Playback grade of a video frame (M14.4): linear RGB in, the clip's baked 33^3 grade LUT
-// (dac_pipeline::grade::GradeLut) looked up with tetrahedral interpolation, display-encoded
+// (lcc_pipeline::grade::GradeLut) looked up with tetrahedral interpolation, display-encoded
 // sRGB 8-bit out. The GPU twin of GradeLut::lookup. Sources: own design; tetrahedral
 // interpolation after Kasson, Nin, Plouffe & Hafner (J. Electronic Imaging, 1995).
 

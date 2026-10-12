@@ -5,13 +5,13 @@
 use egui::{Align2, Sense, pos2, vec2};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
 /// Below the collection tree: which collection B adds to (`collectionsTarget`); a click on × goes
 /// back to the Quick Collection.
-pub fn footer(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn footer(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let target = app.session.target_album.and_then(|a| app.session.catalog.album(a)).map(|a| a.name.clone());
     let name = target.clone().unwrap_or_else(|| crate::i18n::tr("Quick Collection").to_string());
@@ -39,7 +39,7 @@ pub fn footer(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// The + menu's import entry.
-pub fn import_item(app: &mut DacApp, ui: &mut egui::Ui, parent: Option<u64>) {
+pub fn import_item(app: &mut LccApp, ui: &mut egui::Ui, parent: Option<u64>) {
     if app.services.pick_list_file.is_some() && ui.button(crate::i18n::tr("Import Collection Definition…")).clicked() {
         let picked = app.services.pick_list_file.as_mut().map(|f| f()).unwrap_or_default();
         if let Some(path) = picked.first() {
@@ -56,7 +56,7 @@ pub fn import_item(app: &mut DacApp, ui: &mut egui::Ui, parent: Option<u64>) {
 }
 
 /// A collection row's export entry.
-pub fn export_item(app: &mut DacApp, ui: &mut egui::Ui, id: u64, name: &str) {
+pub fn export_item(app: &mut LccApp, ui: &mut egui::Ui, id: u64, name: &str) {
     if app.services.save_list_file.is_some() && ui.button(crate::i18n::tr("Export Collection Definition…")).clicked() {
         let suggested = format!("{}.json", name.replace(['/', '\\', ':'], "-"));
         let path = app.services.save_list_file.as_mut().and_then(|f| f(&suggested));

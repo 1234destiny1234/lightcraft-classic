@@ -5,10 +5,10 @@
 
 use std::sync::Arc;
 
-use dac_book::{Book, BookSize, CellContent, CoverType};
-use dac_layout::render::PhotoSource;
-use dac_raster::Rgba8;
-use dac_text::TextEngine;
+use lcc_book::{Book, BookSize, CellContent, CoverType};
+use lcc_layout::render::PhotoSource;
+use lcc_raster::Rgba8;
+use lcc_text::TextEngine;
 use lopdf::{Dictionary, Object};
 
 /// Every photo: left half red, right half blue.
@@ -46,7 +46,7 @@ fn book() -> Book {
     b.settings.resolution = 72;
     b.settings.size = BookSize::SmallSquare;
     b.settings.cover = CoverType::Hardcover;
-    dac_book::auto::auto_layout(&mut b, &["a".into(), "b".into(), "c".into()], &dac_book::auto::builtin_presets()[2]).unwrap();
+    lcc_book::auto::auto_layout(&mut b, &["a".into(), "b".into(), "c".into()], &lcc_book::auto::builtin_presets()[2]).unwrap();
     if let CellContent::Text { text, .. } = &mut b.front.cells[1].content {
         *text = "Summer Höhe".into();
     }
@@ -57,7 +57,7 @@ fn book() -> Book {
 fn book_pdf_is_structurally_valid_with_embedded_fonts_and_images() {
     let b = book();
     let mut e = TextEngine::new();
-    let bytes = dac_book::export::export_pdf(&b, &Halves, &mut e, &mut |_, _| true).unwrap();
+    let bytes = lcc_book::export::export_pdf(&b, &Halves, &mut e, &mut |_, _| true).unwrap();
     let doc = lopdf::Document::load_mem(&bytes).expect("valid xref and trailer");
     // xref: every in-use object listed resolves, and /Size covers the highest id.
     let size = doc.trailer.get(b"Size").unwrap().as_i64().unwrap() as u32;

@@ -24,10 +24,10 @@
 use std::cell::RefCell;
 use std::path::{Path, PathBuf};
 
-use dac_engine::cmd::edit_in::editor::{self, EditorEvent, Watched};
+use lcc_engine::cmd::edit_in::editor::{self, EditorEvent, Watched};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::i18n::tr;
 
 /// The ids [`intercept`] handles.
@@ -133,7 +133,7 @@ fn update(f: impl FnOnce(&mut WorkflowUi)) {
 }
 
 /// Open the windows by command id (menu items, control channel). `None` = not ours.
-pub(crate) fn intercept(_app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub(crate) fn intercept(_app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     let show = p.get("show").and_then(Value::as_bool);
     match id {
         PRESETS_DIALOG => {
@@ -151,7 +151,7 @@ pub(crate) fn intercept(_app: &mut DacApp, id: &str, p: &Value) -> Option<Result
 
 /// Edit In from a menu or shortcut (no `mode`, nothing scripted) on a PSD or TIFF: ask first, as
 /// Lightroom does (Edit Original preselected). `None` = run the command as it is.
-pub(crate) fn ask_mode(app: &DacApp, p: &Value) -> Option<Result<Value, String>> {
+pub(crate) fn ask_mode(app: &LccApp, p: &Value) -> Option<Result<Value, String>> {
     let plain = match p {
         Value::Null => true,
         Value::Object(o) => o.keys().all(|k| matches!(k.as_str(), "id" | "preset")),
@@ -160,9 +160,9 @@ pub(crate) fn ask_mode(app: &DacApp, p: &Value) -> Option<Result<Value, String>>
     if !plain || p.get("mode").is_some() {
         return None;
     }
-    let id = p.get("id").and_then(Value::as_u64).map(dac_catalog::PhotoId).or_else(|| app.session.active())?;
+    let id = p.get("id").and_then(Value::as_u64).map(lcc_catalog::PhotoId).or_else(|| app.session.active())?;
     let ph = app.session.catalog.photo(id)?;
-    if dac_engine::cmd::edit_in::suggested_mode(&ph.file_name) != dac_engine::cmd::edit_in::Mode::Original {
+    if lcc_engine::cmd::edit_in::suggested_mode(&ph.file_name) != lcc_engine::cmd::edit_in::Mode::Original {
         return None;
     }
     let mut params = if p.is_object() { p.clone() } else { json!({}) };
@@ -174,7 +174,7 @@ pub(crate) fn ask_mode(app: &DacApp, p: &Value) -> Option<Result<Value, String>>
 }
 
 /// Called with every engine command's successful result.
-pub(crate) fn after_command(app: &mut DacApp, id: &str, r: &Value) {
+pub(crate) fn after_command(app: &mut LccApp, id: &str, r: &Value) {
     if !matches!(id, "photo.editIn" | "photo.openAsLayers") || !r["opened"].is_null() {
         return;
     }
@@ -187,7 +187,7 @@ pub(crate) fn after_command(app: &mut DacApp, id: &str, r: &Value) {
     let label = w["preset"].as_str().filter(|n| !n.is_empty()).unwrap_or(tool.as_str()).to_string();
     #[cfg(not(target_arch = "wasm32"))]
     {
-        if let Ok(Some(c)) = serde_json::from_value::<Option<dac_engine::cmd::edit_in::Control>>(w["control"].clone()) {
+        if let Ok(Some(c)) = serde_json::from_value::<Option<lcc_engine::cmd::edit_in::Control>>(w["control"].clone()) {
             start_control(c, PathBuf::from(path));
             return;
         }
@@ -239,7 +239,7 @@ thread_local! {
 }
 
 /// Track `path` (out for editing) for the photos `ids`: they reload when it changes.
-pub(crate) fn watch(app: &mut DacApp, path: &Path, ids: &[u64]) {
+pub(crate) fn watch(app: &mut LccApp, path: &Path, ids: &[u64]) {
     for id in ids {
         if !app.ui.external_edits.contains(id) {
             app.ui.external_edits.push(*id);
@@ -257,10 +257,10 @@ fn watched_files() -> usize {
 /// Open `path` in PhotoCraft over its control channel and follow its events (one subscription per
 /// port), on a worker thread.
 #[cfg(not(target_arch = "wasm32"))]
-fn start_control(c: dac_engine::cmd::edit_in::Control, path: PathBuf) {
+fn start_control(c: lcc_engine::cmd::edit_in::Control, path: PathBuf) {
     let (tx, subscribe) = ROUND_TRIP.with_borrow_mut(|rt| (rt.tx.clone(), rt.subscribed.insert(c.port)));
     let spawned = std::thread::Builder::new().name("edit-in-control".into()).spawn(move || {
-        if let Err(e) = dac_engine::cmd::edit_in::control_open(&c, &path) {
+        if let Err(e) = lcc_engine::cmd::edit_in::control_open(&c, &path) {
             let _ = tx.send(Msg::Error(format!("PhotoCraft: {e}")));
         }
         if !subscribe {
@@ -279,13 +279,13 @@ fn start_control(c: dac_engine::cmd::edit_in::Control, path: PathBuf) {
 /// Start the editor on a worker thread: with `--wait` when it takes it (the activity stack shows
 /// the edit until it exits, then the photo reloads), else just started.
 #[cfg(not(target_arch = "wasm32"))]
-fn start_editor(app: &mut DacApp, tool: String, args: Vec<String>, label: String, path: PathBuf) {
+fn start_editor(app: &mut LccApp, tool: String, args: Vec<String>, label: String, path: PathBuf) {
     let tx = ROUND_TRIP.with_borrow(|rt| rt.tx.clone());
     let activity = app.session.activity.clone();
     let spawned = std::thread::Builder::new().name("edit-in-editor".into()).spawn(move || {
         let caps = editor::capabilities(&tool, &args);
         if !caps.wait {
-            let line = dac_engine::cmd::edit_in::command_line(&tool, &args, &path);
+            let line = lcc_engine::cmd::edit_in::command_line(&tool, &args, &path);
             if let Some((prog, rest)) = line.split_first()
                 && let Err(e) = std::process::Command::new(prog).args(rest).spawn()
             {
@@ -295,7 +295,7 @@ fn start_editor(app: &mut DacApp, tool: String, args: Vec<String>, label: String
         }
         let line = editor::wait_command_line(&tool, &args, &path, caps);
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
-        let task = activity.start("editIn", &format!("Editing {name} in {label}…"), dac_engine::activity::Cancel::No);
+        let task = activity.start("editIn", &format!("Editing {name} in {label}…"), lcc_engine::activity::Cancel::No);
         let r = editor::run_and_wait(&line);
         drop(task);
         match r {
@@ -312,7 +312,7 @@ fn start_editor(app: &mut DacApp, tool: String, args: Vec<String>, label: String
     }
 }
 
-fn reload(app: &mut DacApp, ctx: &egui::Context, ids: Vec<u64>) {
+fn reload(app: &mut LccApp, ctx: &egui::Context, ids: Vec<u64>) {
     if ids.is_empty() {
         return;
     }
@@ -330,7 +330,7 @@ fn reload(app: &mut DacApp, ctx: &egui::Context, ids: Vec<u64>) {
 
 /// Every frame: the editor threads' news, and once a second the modification times of the files
 /// out for editing.
-pub(crate) fn pump(app: &mut DacApp, ctx: &egui::Context) {
+pub(crate) fn pump(app: &mut LccApp, ctx: &egui::Context) {
     let now = ctx.input(|i| i.time);
     let (msgs, changed, busy) = ROUND_TRIP.with_borrow_mut(|rt| {
         let msgs: Vec<Msg> = rt.rx.try_iter().take(256).collect();
@@ -367,7 +367,7 @@ pub(crate) fn pump(app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// Every frame: the windows that are open, and the saved action shortcuts.
-pub(crate) fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) {
     play_shortcuts(app, ctx);
     pump(app, ctx);
     let mut st = STATE.with_borrow_mut(std::mem::take);
@@ -407,7 +407,7 @@ fn combo(ui: &mut egui::Ui, id: &str, label: &str, value: &mut String, choices: 
     ui.end_row();
 }
 
-fn presets_window(app: &mut DacApp, ctx: &egui::Context, st: &mut WorkflowUi) {
+fn presets_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let list = app.session.execute("editIn.presets", &json!({})).ok();
     let mut open = true;
     egui::Window::new(tr("Edit In Presets")).id(egui::Id::new("edit-in-presets")).open(&mut open).default_width(420.0).collapsible(false).show(
@@ -502,7 +502,7 @@ fn presets_window(app: &mut DacApp, ctx: &egui::Context, st: &mut WorkflowUi) {
 }
 
 /// Lightroom's "Edit Photo" question for a PSD or TIFF.
-fn ask_window(app: &mut DacApp, ctx: &egui::Context, st: &mut WorkflowUi) {
+fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let Some((params, mut mode)) = st.ask.take() else { return };
     let mut open = true;
     let mut go = false;
@@ -531,7 +531,7 @@ fn ask_window(app: &mut DacApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     }
 }
 
-fn actions_window(app: &mut DacApp, ctx: &egui::Context, st: &mut WorkflowUi) {
+fn actions_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let list = app.session.execute("actions.list", &json!({})).map_err(|e| e.to_string());
     let mut open = true;
     egui::Window::new(tr("Actions")).id(egui::Id::new("actions-panel")).open(&mut open).default_width(360.0).show(ctx, |ui| {
@@ -619,7 +619,7 @@ fn actions_window(app: &mut DacApp, ctx: &egui::Context, st: &mut WorkflowUi) {
 }
 
 /// The actions whose saved shortcut was pressed this frame (`(shortcut, action)` pairs).
-fn play_shortcuts(app: &mut DacApp, ctx: &egui::Context) {
+fn play_shortcuts(app: &mut LccApp, ctx: &egui::Context) {
     if ctx.egui_wants_keyboard_input() {
         return;
     }
@@ -653,7 +653,7 @@ mod tests {
 
     #[test]
     fn commands_open_the_windows_and_save_a_preset() {
-        let app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        let app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services::default());
         let mut h = crate::headless::Headless::new(app, [1000.0, 700.0], 1.0);
         let r = h.request("engine.execute", json!({"command": PRESETS_DIALOG, "params": {}}), std::time::Duration::from_secs(20));
         assert_eq!(r["ok"], true, "{r}");
@@ -663,7 +663,7 @@ mod tests {
         let s = state();
         assert!(s.presets_open && s.actions_open);
         // an action with a shortcut plays from the keyboard
-        h.app.session.workflow = dac_engine::cmd::actions::Workflow::in_dir(None);
+        h.app.session.workflow = lcc_engine::cmd::actions::Workflow::in_dir(None);
         h.app
             .session
             .execute(
@@ -680,8 +680,8 @@ mod tests {
 
     fn png(path: &std::path::Path, w: usize, h: usize, seed: u8) {
         let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 6) as u8, seed, 90, 255]).collect();
-        let img = dac_raster::Rgba8 { width: w, height: h, data };
-        std::fs::write(path, dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap()).unwrap();
+        let img = lcc_raster::Rgba8 { width: w, height: h, data };
+        std::fs::write(path, lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap()).unwrap();
     }
 
     fn temp(tag: &str) -> std::path::PathBuf {
@@ -692,9 +692,9 @@ mod tests {
     }
 
     fn headless(dir: &std::path::Path) -> crate::headless::Headless {
-        let mut s = dac_engine::Session::new().with_fs();
-        s.workflow = dac_engine::cmd::actions::Workflow::in_dir(Some(dir.join("settings")));
-        crate::headless::Headless::new(DacApp::new(s, crate::Services::default()), [900.0, 600.0], 1.0)
+        let mut s = lcc_engine::Session::new().with_fs();
+        s.workflow = lcc_engine::cmd::actions::Workflow::in_dir(Some(dir.join("settings")));
+        crate::headless::Headless::new(LccApp::new(s, crate::Services::default()), [900.0, 600.0], 1.0)
     }
 
     /// RT.B1: Edit In on a PSD from the menu asks first (Edit Original preselected); the choice runs
@@ -708,7 +708,7 @@ mod tests {
         h.app.session.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
         let r = h.app.run("photo.editIn", json!({"preset": "PhotoCraft"})).unwrap();
         assert!(r["path"].as_str().unwrap().ends_with("a-Edit.psd"), "a PNG doesn't ask: {r}");
-        let psd = dac_catalog::PhotoId(r["id"].as_u64().unwrap());
+        let psd = lcc_catalog::PhotoId(r["id"].as_u64().unwrap());
         assert_eq!(watched_files(), 1, "the PSD is out for editing");
         let n = h.app.session.catalog.photos().count();
         let r = h.app.run("photo.editIn", json!({})).unwrap();

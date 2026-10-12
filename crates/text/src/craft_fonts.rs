@@ -235,7 +235,7 @@ mod tests {
 
     #[test]
     fn load_dir_reads_a_manifest_and_rejects_bad_ones() {
-        let dir = std::env::temp_dir().join(format!("dac-text-craft-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-text-craft-{}", std::process::id()));
         std::fs::create_dir_all(dir.join("fonts/x")).unwrap();
         std::fs::write(dir.join("fonts/x/A.ttf"), crate::fonts::INTER_REGULAR).unwrap();
         std::fs::write(dir.join("fonts/manifest.txt"), "# c\n\nFake Mincho | Regular | fonts/x/A.ttf | Jpan,Latn | OFL-1.1 | x | y | z\n").unwrap();

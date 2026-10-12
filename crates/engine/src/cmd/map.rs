@@ -1,11 +1,11 @@
 //! `map.*`: the Map module's library commands — pins and clusters, geotagging, saved locations
 //! (with the private flag export honours), track logs, and opt-in reverse geocoding. The map view
-//! itself (tiles, panning) lives in the UI; tile servers and geocoders in `dac-geo`.
+//! itself (tiles, panning) lives in the UI; tile servers and geocoders in `lcc-geo`.
 
 use serde_json::{Value, json};
 
-use dac_catalog::{Op, PhotoId};
-use dac_geo::{LatLon, SavedLocation};
+use lcc_catalog::{Op, PhotoId};
+use lcc_geo::{LatLon, SavedLocation};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, has_selection, str_param};
 use crate::Result;
@@ -158,18 +158,18 @@ fn pins(s: &mut crate::Session, p: &Value) -> Result<Value> {
     let photos = filtered(s, &filter);
     let untagged = photos.iter().filter(|(_, g)| g.is_none()).count();
     let pts: Vec<(PhotoId, LatLon)> = photos.iter().filter_map(|(id, g)| g.map(|g| (*id, g))).collect();
-    let clusters: Vec<Value> = dac_geo::cluster(&pts, zoom, cell)
+    let clusters: Vec<Value> = lcc_geo::cluster(&pts, zoom, cell)
         .into_iter()
         .map(|c| json!({"lat": c.centre.lat, "lon": c.centre.lon, "count": c.items.len(), "ids": c.items.iter().take(100).map(|i| i.0).collect::<Vec<_>>()}))
         .collect();
-    let bounds = dac_geo::mercator::fit(&pts.iter().map(|p| p.1).collect::<Vec<_>>(), 1000.0, 700.0);
+    let bounds = lcc_geo::mercator::fit(&pts.iter().map(|p| p.1).collect::<Vec<_>>(), 1000.0, 700.0);
     Ok(json!({
         "filter": filter.key(), "tagged": pts.len(), "untagged": untagged, "clusters": clusters,
         "fit": bounds.map(|(c, z)| json!({"lat": c.lat, "lon": c.lon, "zoom": z})),
     }))
 }
 
-fn read_track(p: &Value, c: &str) -> Result<dac_geo::tracks::Track> {
+fn read_track(p: &Value, c: &str) -> Result<lcc_geo::tracks::Track> {
     let (name, text) = match (str_param(p, "text"), str_param(p, "path")) {
         (Some(t), _) => ("track".to_string(), t.to_string()),
         (None, Some(path)) => {
@@ -183,14 +183,14 @@ fn read_track(p: &Value, c: &str) -> Result<dac_geo::tracks::Track> {
         }
         (None, None) => return Err(bad(c, "missing `path` (a .gpx, .kml or .geojson file) or `text`")),
     };
-    dac_geo::tracks::parse(&name, &text).map_err(|e| bad(c, e.to_string()))
+    lcc_geo::tracks::parse(&name, &text).map_err(|e| bad(c, e.to_string()))
 }
 
 fn track_info(_s: &mut crate::Session, p: &Value) -> Result<Value> {
     let t = read_track(p, "map.track")?;
     let pts: Vec<LatLon> = t.all_points().collect();
-    let fit = dac_geo::mercator::fit(&pts, 1000.0, 700.0);
-    let iso = |x: f64| format!("{}Z", dac_catalog::dates::civil(x.floor() as i64));
+    let fit = lcc_geo::mercator::fit(&pts, 1000.0, 700.0);
+    let iso = |x: f64| format!("{}Z", lcc_catalog::dates::civil(x.floor() as i64));
     Ok(json!({
         "name": t.name, "points": t.points(), "segments": t.segments.len(), "timed": t.timed,
         "start": t.span.map(|s| iso(s.0)), "end": t.span.map(|s| iso(s.1)),
@@ -207,7 +207,7 @@ fn track_offset(s: &mut crate::Session, p: &Value) -> Result<Value> {
         (None, Some(path)) => std::fs::read_to_string(path).map_err(|e| bad(C, format!("can't read {path}: {e}")))?,
         (None, None) => return Err(bad(C, "missing `path` (a .gpx file) or `gpx`")),
     };
-    let log = dac_meta::parse_gpx(&text).map_err(|e| bad(C, e.to_string()))?;
+    let log = lcc_meta::parse_gpx(&text).map_err(|e| bad(C, e.to_string()))?;
     let id = p
         .get("id")
         .and_then(Value::as_u64)
@@ -219,13 +219,13 @@ fn track_offset(s: &mut crate::Session, p: &Value) -> Result<Value> {
         (Some(a), Some(b)) => LatLon::new(a, b),
         _ => ph.meta.gps.map(|(a, b)| LatLon::new(a, b)).ok_or_else(|| bad(C, "give `lat` and `lon` (or geotag the photo first)"))?,
     };
-    let dt = ph.captured.as_deref().and_then(dac_meta::DateTime::parse_iso).ok_or_else(|| bad(C, "the photo has no capture time"))?;
+    let dt = ph.captured.as_deref().and_then(lcc_meta::DateTime::parse_iso).ok_or_else(|| bad(C, "the photo has no capture time"))?;
     let nearest = log
         .points
         .iter()
         .min_by(|a, b| {
-            let da = dac_geo::distance_m(at, LatLon::new(a.latitude, a.longitude));
-            let db = dac_geo::distance_m(at, LatLon::new(b.latitude, b.longitude));
+            let da = lcc_geo::distance_m(at, LatLon::new(a.latitude, a.longitude));
+            let db = lcc_geo::distance_m(at, LatLon::new(b.latitude, b.longitude));
             da.total_cmp(&db)
         })
         .ok_or_else(|| bad(C, "the track log has no timed points"))?;
@@ -237,13 +237,13 @@ fn track_offset(s: &mut crate::Session, p: &Value) -> Result<Value> {
     }
     let sign = if minutes < 0 { '-' } else { '+' };
     let offset = format!("{sign}{:02}:{:02}", minutes.abs() / 60, minutes.abs() % 60);
-    Ok(json!({"offset": offset, "minutes": minutes, "distance": dac_geo::distance_m(at, LatLon::new(nearest.latitude, nearest.longitude))}))
+    Ok(json!({"offset": offset, "minutes": minutes, "distance": lcc_geo::distance_m(at, LatLon::new(nearest.latitude, nearest.longitude))}))
 }
 
 #[cfg(not(target_arch = "wasm32"))]
 mod geocoding {
     use super::*;
-    use dac_geo::geocode::{Consent, GEONAMES_ATTRIBUTION, GeoNames, NOMINATIM_ATTRIBUTION, NOMINATIM_DEFAULT, Nominatim, Place};
+    use lcc_geo::geocode::{Consent, GEONAMES_ATTRIBUTION, GeoNames, NOMINATIM_ATTRIBUTION, NOMINATIM_DEFAULT, Nominatim, Place};
 
     pub fn geonames_dir(p: &Value) -> Option<std::path::PathBuf> {
         str_param(p, "dataset").map(std::path::PathBuf::from).or_else(|| crate::config::config_dir().map(|d| d.join("geonames")))
@@ -251,10 +251,10 @@ mod geocoding {
 
     pub fn status(_s: &mut crate::Session, p: &Value) -> Result<Value> {
         let dir = geonames_dir(p);
-        let file = dir.as_ref().map(|d| d.join(dac_geo::geocode::GEONAMES_FILES[0]));
+        let file = dir.as_ref().map(|d| d.join(lcc_geo::geocode::GEONAMES_FILES[0]));
         let size = file.as_ref().and_then(|f| std::fs::metadata(f).ok()).map(|m| m.len());
         Ok(json!({
-            "offline": {"downloaded": size.is_some(), "bytes": size, "path": dir, "attribution": GEONAMES_ATTRIBUTION, "source": dac_geo::geocode::GEONAMES_BASE},
+            "offline": {"downloaded": size.is_some(), "bytes": size, "path": dir, "attribution": GEONAMES_ATTRIBUTION, "source": lcc_geo::geocode::GEONAMES_BASE},
             "online": {"endpoint": NOMINATIM_DEFAULT, "attribution": NOMINATIM_ATTRIBUTION, "rateLimit": "1 request per second"},
         }))
     }
@@ -263,8 +263,8 @@ mod geocoding {
         const C: &str = "map.geonamesDownload";
         let consent = if bool_or(p, "consent", false) { Consent::Granted } else { Consent::Denied };
         let dir = geonames_dir(p).ok_or_else(|| bad(C, "no settings folder: give `dataset`"))?;
-        let base = str_param(p, "base").unwrap_or(dac_geo::geocode::GEONAMES_BASE);
-        let n = dac_geo::geocode::download_geonames(consent, base, &dir).map_err(|e| bad(C, e.to_string()))?;
+        let base = str_param(p, "base").unwrap_or(lcc_geo::geocode::GEONAMES_BASE);
+        let n = lcc_geo::geocode::download_geonames(consent, base, &dir).map_err(|e| bad(C, e.to_string()))?;
         Ok(json!({"places": n, "path": dir, "attribution": GEONAMES_ATTRIBUTION}))
     }
 
@@ -309,7 +309,7 @@ mod geocoding {
         let mut cache: Vec<(LatLon, Option<Place>)> = Vec::new();
         for (id, at) in todo.iter().copied() {
             // photos a few metres apart share one lookup
-            let place = match cache.iter().find(|(q, _)| dac_geo::distance_m(*q, at) < 50.0) {
+            let place = match cache.iter().find(|(q, _)| lcc_geo::distance_m(*q, at) < 50.0) {
                 Some((_, pl)) => pl.clone(),
                 None => {
                     let pl = lookup(at)?;
@@ -466,7 +466,7 @@ mod tests {
     fn reverse_geocode_offline_and_consent() {
         let (mut s, ids) = session_with(2);
         s.execute("map.geotag", &json!({"ids": [ids[0].0], "lat": 48.86, "lon": 2.34})).unwrap();
-        let dir = std::env::temp_dir().join(format!("dac-engine-geonames-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-engine-geonames-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         std::fs::write(dir.join("cities15000.txt"), "1\tParis\tParis\t\t48.85341\t2.3488\tP\tPPLC\tFR\t\t11\n").unwrap();
         std::fs::write(dir.join("countryInfo.txt"), "FR\tFRA\t250\tFR\tFrance\n").unwrap();
@@ -497,19 +497,19 @@ mod tests {
         let o = ExportOptions { resize: Some(crate::export::Resize::long_edge(256)), ..ExportOptions::default() };
         let inside = export_photo(&mut s, ids[0], &o, 1).unwrap();
         let outside = export_photo(&mut s, ids[1], &o, 2).unwrap();
-        assert!(dac_meta::extract(&outside.bytes).gps.is_some(), "a public photo keeps its GPS");
-        let m = dac_meta::extract(&inside.bytes);
+        assert!(lcc_meta::extract(&outside.bytes).gps.is_some(), "a public photo keeps its GPS");
+        let m = lcc_meta::extract(&inside.bytes);
         assert!(m.gps.is_none(), "GPS stripped inside a private location");
         assert!(!String::from_utf8_lossy(&inside.bytes).contains("48.85"), "no coordinates anywhere in the file");
         // not private any more: the same photo exports with its location
         s.execute("map.saveLocation", &json!({"name": "Home", "private": false})).unwrap();
-        assert!(dac_meta::extract(&export_photo(&mut s, ids[0], &o, 3).unwrap().bytes).gps.is_some());
+        assert!(lcc_meta::extract(&export_photo(&mut s, ids[0], &o, 3).unwrap().bytes).gps.is_some());
     }
 
     #[test]
     fn private_locations_strip_gps_on_export() {
         use crate::export::{ExportOptions, export_metadata};
-        use dac_catalog::{Catalog, Photo, Source};
+        use lcc_catalog::{Catalog, Photo, Source};
         let mut c = Catalog::new();
         c.apply(Op::SetSavedLocation { name: "Home".into(), location: Some(SavedLocation::new("Home", 48.85, 2.35, 500.0, true).unwrap()) }).unwrap();
         let mut p = Photo::new(PhotoId(1), Source::Demo { scene: 0 }, "a.jpg", "jpeg", 10, 10, "2026-09-30T00:00:00");
@@ -536,10 +536,10 @@ mod tests {
         s.execute("photo.setMeta", &json!({"ids": [id.0], "gps": [48.851, 2.351]})).unwrap();
         s.execute("map.saveLocation", &json!({"name": "Home", "lat": 48.85, "lon": 2.35, "radius": 500, "private": true})).unwrap();
         let e = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": "original"})), 1).unwrap();
-        let side = dac_meta::parse_xmp(std::str::from_utf8(&e.sidecars[0].1).unwrap()).unwrap().metadata;
+        let side = lcc_meta::parse_xmp(std::str::from_utf8(&e.sidecars[0].1).unwrap()).unwrap().metadata;
         assert!(side.gps.is_none(), "{side:?}");
         let e = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"format": "dng"})), 1).unwrap();
-        assert!(dac_meta::extract(&e.bytes).gps.is_none());
+        assert!(lcc_meta::extract(&e.bytes).gps.is_none());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

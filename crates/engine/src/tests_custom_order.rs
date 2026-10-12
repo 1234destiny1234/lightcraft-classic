@@ -1,7 +1,7 @@
 //! Custom Order: `album.orderPhotos`, `album.setPhotoOrder` and `library.sort {key: custom}` —
 //! one undo step each, kept across reopening the library, and followed by Rename `{seq}`.
 
-use dac_catalog::{AlbumId, PhotoId, SortKey};
+use lcc_catalog::{AlbumId, PhotoId, SortKey};
 use serde_json::{Value, json};
 
 use crate::{Selection, Session};

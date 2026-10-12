@@ -9,10 +9,10 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::library::RecentCatalogs;
+use lcc_catalog::library::RecentCatalogs;
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::pick::Picked;
 
 /// The catalog dialogs (one at a time, in their own window).
@@ -57,7 +57,7 @@ pub enum CatalogDialog {
     },
 }
 
-/// Catalog UI state on [`DacApp`].
+/// Catalog UI state on [`LccApp`].
 #[derive(Default)]
 pub struct CatalogUi {
     pub dialog: Option<CatalogDialog>,
@@ -72,12 +72,12 @@ pub struct CatalogUi {
 }
 
 /// The welcome dialog: a new catalog under the Pictures folder by default.
-pub fn welcome(app: &mut DacApp, foreign: Vec<String>) {
-    let parent = dac_engine::library::default_dir()
+pub fn welcome(app: &mut LccApp, foreign: Vec<String>) {
+    let parent = lcc_engine::library::default_dir()
         .and_then(|d| d.parent().map(Path::to_path_buf))
         .map(|d| d.to_string_lossy().into_owned())
         .unwrap_or_default();
-    app.catalog_ui.dialog = Some(CatalogDialog::Welcome { parent, name: dac_brand::LIBRARY_DEFAULT.to_string(), demo: false, foreign });
+    app.catalog_ui.dialog = Some(CatalogDialog::Welcome { parent, name: lcc_brand::LIBRARY_DEFAULT.to_string(), demo: false, foreign });
 }
 
 impl CatalogUi {
@@ -86,7 +86,7 @@ impl CatalogUi {
         self.recent.get_or_insert_with(|| file.map(|f| RecentCatalogs::load(&f)).unwrap_or_default())
     }
 
-    /// The list without loading it into the cache (menus are built from `&DacApp`).
+    /// The list without loading it into the cache (menus are built from `&LccApp`).
     pub fn recent_view(&self) -> RecentCatalogs {
         match (&self.recent, &self.recent_file) {
             (Some(r), _) => r.clone(),
@@ -106,7 +106,7 @@ impl CatalogUi {
 
     /// Put the catalog in `dir` at the top of Open Recent.
     pub fn touch(&mut self, dir: &Path) {
-        let entry = dac_catalog::library::find_entry(dir).unwrap_or_else(|| dir.to_path_buf());
+        let entry = lcc_catalog::library::find_entry(dir).unwrap_or_else(|| dir.to_path_buf());
         self.recent().touch(&entry);
         self.save_recent();
     }
@@ -114,12 +114,12 @@ impl CatalogUi {
 
 /// Open a catalog chosen by the user (entry point or folder): validated first, so a folder that
 /// isn't a catalog is an error rather than a new, empty library.
-fn open_catalog(app: &mut DacApp, path: &str) -> Result<Value, String> {
-    let dir = dac_catalog::library::resolve(Path::new(path)).map_err(|e| e.to_string())?;
+fn open_catalog(app: &mut LccApp, path: &str) -> Result<Value, String> {
+    let dir = lcc_catalog::library::resolve(Path::new(path)).map_err(|e| e.to_string())?;
     open_dir(app, &dir, false)
 }
 
-fn open_dir(app: &mut DacApp, dir: &Path, demo: bool) -> Result<Value, String> {
+fn open_dir(app: &mut LccApp, dir: &Path, demo: bool) -> Result<Value, String> {
     let r = crate::panels::settings::open_library(app, &json!({"path": dir.to_string_lossy(), "demo": demo}))?;
     app.catalog_ui.touch(dir);
     app.catalog_ui.dialog = None;
@@ -131,7 +131,7 @@ fn str_of<'a>(p: &'a Value, key: &str) -> Option<&'a str> {
 }
 
 /// Ask for a folder for `command` (answer under `key`).
-fn pick_folder(app: &mut DacApp, command: &str, p: &Value, key: &'static str, title: &str) -> Result<Option<String>, String> {
+fn pick_folder(app: &mut LccApp, command: &str, p: &Value, key: &'static str, title: &str) -> Result<Option<String>, String> {
     let req = crate::pick::PickRequest::folder(crate::i18n::tr(title));
     match crate::pick::ask(app, command, p, key, req, |s| s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x])) {
         Picked::Now(v) => Ok(v.into_iter().next()),
@@ -141,7 +141,7 @@ fn pick_folder(app: &mut DacApp, command: &str, p: &Value, key: &'static str, ti
 }
 
 /// The UI commands of this module; `None` for other ids.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     Some(match id {
         "catalog.new" => new_catalog(app, p),
         "catalog.open" => match str_of(p, "path") {
@@ -211,7 +211,7 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 
 /// Read / Save Metadata: ask first when it would overwrite newer changes on the other side
 /// (Read: changes made in the catalog; Save: changes another app made to the file).
-fn xmp_conflict(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+fn xmp_conflict(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     let st = app.session.execute("photo.xmpStatus", p).ok()?;
     let lost = if id == "photo.readMetadataFromFile" { ["changedInCatalog", "conflict"] } else { ["changedOnDisk", "conflict"] };
     let photos = st["photos"].as_array()?;
@@ -224,17 +224,17 @@ fn xmp_conflict(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, S
     Some(Ok(json!({"confirm": "dialog", "affected": affected})))
 }
 
-fn new_catalog(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+fn new_catalog(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     match (str_of(p, "parent"), str_of(p, "name")) {
         (Some(parent), Some(name)) => {
             let r = if p.get("demo").and_then(Value::as_bool).unwrap_or(false) {
                 // an empty folder, opened as a new library: it starts with the demo photos
-                let dir = dac_catalog::library::create_folder(Path::new(parent), name).map_err(|e| e.to_string())?;
+                let dir = lcc_catalog::library::create_folder(Path::new(parent), name).map_err(|e| e.to_string())?;
                 let mut r = open_dir(app, &dir, true)?;
-                r["entry"] = json!(dac_catalog::library::find_entry(&dir));
+                r["entry"] = json!(lcc_catalog::library::find_entry(&dir));
                 r
             } else {
-                let entry = dac_catalog::library::create(Path::new(parent), name).map_err(|e| e.to_string())?;
+                let entry = lcc_catalog::library::create(Path::new(parent), name).map_err(|e| e.to_string())?;
                 let dir = entry.parent().map(Path::to_path_buf).ok_or("catalog without a folder")?;
                 let mut r = open_dir(app, &dir, false)?;
                 r["entry"] = json!(entry);
@@ -254,7 +254,7 @@ fn new_catalog(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 }
 
 /// Whether a UI command of this module is available.
-pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
+pub fn enabled(app: &LccApp, id: &str) -> Option<bool> {
     let busy = crate::lightroom_import::is_running(app);
     Some(match id {
         "catalog.new" | "catalog.open" | "catalog.chooser" | "catalog.openRecent" | "catalog.welcome" => !busy,
@@ -266,13 +266,13 @@ pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
 }
 
 /// File ▸ Open Recent Catalog entries: (label, params).
-pub fn recent_items(app: &DacApp) -> Vec<(String, Value)> {
+pub fn recent_items(app: &LccApp) -> Vec<(String, Value)> {
     let current = app.session.catalog_dir().map(Path::to_path_buf);
     app.catalog_ui
         .recent_view()
         .existing()
         .into_iter()
-        .filter(|p| current.as_deref().is_none_or(|c| dac_catalog::library::resolve(p).ok().as_deref() != Some(c)))
+        .filter(|p| current.as_deref().is_none_or(|c| lcc_catalog::library::resolve(p).ok().as_deref() != Some(c)))
         .map(|p| (display_name(&p), json!({"path": p})))
         .collect()
 }
@@ -284,7 +284,7 @@ fn display_name(p: &Path) -> String {
 }
 
 /// Each frame: Alt held while the window opens shows the chooser; then the dialog, if any.
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if app.catalog_ui.frames < 30 {
         app.catalog_ui.frames += 1;
         let alt = ctx.input(|i| i.modifiers.alt);
@@ -437,7 +437,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
 /// The welcome dialog's body.
 #[allow(clippy::too_many_arguments)]
 fn welcome_ui(
-    app: &mut DacApp,
+    app: &mut LccApp,
     ui: &mut egui::Ui,
     t: &crate::theme::Tokens,
     parent: &mut String,
@@ -484,7 +484,7 @@ fn welcome_ui(
         .recent()
         .existing()
         .into_iter()
-        .filter(|p| dac_catalog::library::resolve(p).is_ok_and(|d| dac_catalog::library::foreign_format(&d).is_none()))
+        .filter(|p| lcc_catalog::library::resolve(p).is_ok_and(|d| lcc_catalog::library::foreign_format(&d).is_none()))
         .collect();
     for (i, p) in recent.iter().enumerate() {
         let r = ui.selectable_label(false, display_name(p));
@@ -536,7 +536,7 @@ fn text_row(ui: &mut egui::Ui, label: &str, value: &mut String, widget: &str) {
 }
 
 /// A folder field with Choose… (the host's folder dialog, when it has one).
-fn folder_row(app: &mut DacApp, ui: &mut egui::Ui, label: &str, value: &mut String, widget: &str, button: &str) {
+fn folder_row(app: &mut LccApp, ui: &mut egui::Ui, label: &str, value: &mut String, widget: &str, button: &str) {
     ui.horizontal(|ui| {
         ui.add_sized([80.0, 20.0], egui::Label::new(crate::i18n::tr(label)));
         let r = ui.add(egui::TextEdit::singleline(value).desired_width(230.0));
@@ -568,14 +568,14 @@ fn buttons(ui: &mut egui::Ui, ok: &str, widget: &str, close: &mut bool) -> bool 
     clicked
 }
 
-fn chooser(app: &mut DacApp, ui: &mut egui::Ui, action: &mut Option<(String, Value)>, close: &mut bool) {
+fn chooser(app: &mut LccApp, ui: &mut egui::Ui, action: &mut Option<(String, Value)>, close: &mut bool) {
     let current = app.session.catalog_dir().map(Path::to_path_buf);
     let recent = app.catalog_ui.recent().existing();
     if recent.is_empty() {
         ui.label(crate::i18n::tr("No recent catalogs."));
     }
     for (i, p) in recent.iter().enumerate() {
-        let open_now = current.as_deref().is_some_and(|c| dac_catalog::library::resolve(p).ok().as_deref() == Some(c));
+        let open_now = current.as_deref().is_some_and(|c| lcc_catalog::library::resolve(p).ok().as_deref() == Some(c));
         let label = if open_now { format!("{} ({})", display_name(p), crate::i18n::tr("open")) } else { display_name(p) };
         let r = ui.selectable_label(false, label);
         crate::widgets::register(ui.ctx(), format!("item:recentCatalog{i}"), r.rect);
@@ -641,7 +641,7 @@ fn combo(ui: &mut egui::Ui, id: &str, label: &str, value: &mut Value, options: &
     });
 }
 
-fn settings_ui(app: &mut DacApp, ui: &mut egui::Ui, s: &mut Value, action: &mut Option<(String, Value)>, close: &mut bool) {
+fn settings_ui(app: &mut LccApp, ui: &mut egui::Ui, s: &mut Value, action: &mut Option<(String, Value)>, close: &mut bool) {
     ui.label(egui::RichText::new(crate::i18n::tr("Backup")).strong());
     combo(ui, "catalogBackup", "Back up catalog", &mut s["backup"], SCHEDULES);
     let mut dir = s["backupDir"].as_str().unwrap_or("").to_string();
@@ -657,7 +657,7 @@ fn settings_ui(app: &mut DacApp, ui: &mut egui::Ui, s: &mut Value, action: &mut 
         s[key] = json!(b);
     }
     if let Some(last) = s["lastBackup"].as_i64() {
-        let when = dac_catalog::dates::civil(last);
+        let when = lcc_catalog::dates::civil(last);
         ui.label(egui::RichText::new(format!("{} {}", crate::i18n::tr("Last backup:"), when.replace('T', " "))).weak());
     }
     ui.horizontal(|ui| {

@@ -1,16 +1,16 @@
-//! Plug-in commands (P4.3): the Plugin Manager ([`dac_plugins::Manager`]) behind engine commands,
+//! Plug-in commands (P4.3): the Plugin Manager ([`lcc_plugins::Manager`]) behind engine commands,
 //! so the UI, CLI, control channel and MCP drive plug-ins the same way. See docs/plugins.md.
 //!
 //! The manager is process-wide (plug-ins are installed per user, not per catalog) and lives in
 //! `<PREFIX>_PLUGINS` or `<settings>/plugins`; unit tests keep it in memory.
 //!
 //! A plug-in reaches the catalog only through [`SessionHost`]: read-only queries, and
-//! `photo.setMeta` for standard fields, each behind its permission (checked by `dac-plugins`).
+//! `photo.setMeta` for standard fields, each behind its permission (checked by `lcc-plugins`).
 
 use std::path::PathBuf;
 use std::sync::{Mutex, MutexGuard, PoisonError};
 
-use dac_plugins::{HostApi, Manager, Permissions};
+use lcc_plugins::{HostApi, Manager, Permissions};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -20,7 +20,7 @@ static MANAGER: Mutex<Option<Manager>> = Mutex::new(None);
 
 /// Where plug-ins are installed: `<PREFIX>_PLUGINS`, else `<settings>/plugins`.
 pub fn plugins_dir() -> Option<PathBuf> {
-    dac_brand::env_os("PLUGINS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| crate::config::config_dir().map(|d| d.join("plugins")))
+    lcc_brand::env_os("PLUGINS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| crate::config::config_dir().map(|d| d.join("plugins")))
 }
 
 /// The process-wide manager, opened on first use. A folder that can't be opened leaves an
@@ -89,7 +89,7 @@ fn engine_ids(params: &Value) -> std::result::Result<Value, String> {
 
 impl HostApi for SessionHost<'_> {
     fn catalog(&mut self, method: &str, params: &Value) -> std::result::Result<Value, String> {
-        // dac-plugins only forwards the read-only methods; check again: this is the boundary
+        // lcc-plugins only forwards the read-only methods; check again: this is the boundary
         if !matches!(method, "catalog.query" | "photo.inspect" | "catalog.stats" | "keyword.list") {
             return Err(format!("{method} is not a catalog read"));
         }
@@ -113,7 +113,7 @@ impl HostApi for SessionHost<'_> {
     }
 }
 
-fn plugin_err(cmd: &str, e: dac_plugins::Error) -> crate::EngineError {
+fn plugin_err(cmd: &str, e: lcc_plugins::Error) -> crate::EngineError {
     bad(cmd, e.to_string())
 }
 
@@ -149,7 +149,7 @@ fn inspect_file(_: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.inspectFile";
     let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
     let bytes = std::fs::read(path).map_err(|e| bad(C, format!("{path}: {e}")))?;
-    let plugin = dac_plugins::Plugin::load(&bytes, dac_plugins::Limits::default()).map_err(|e| plugin_err(C, e))?;
+    let plugin = lcc_plugins::Plugin::load(&bytes, lcc_plugins::Limits::default()).map_err(|e| plugin_err(C, e))?;
     let manifest = serde_json::to_value(plugin.manifest()).map_err(|e| bad(C, e.to_string()))?;
     // an update: what is granted now, so the dialog can show what the new version adds
     let installed = with_manager(|m| Ok(m.get(plugin.id()).map(|i| json!({"version": i.plugin.manifest().version, "granted": i.effective()}))))?;
@@ -260,36 +260,36 @@ pub fn is_plugin_kind(kind: &str) -> bool {
 
 /// Opens a `plugin:<id>` service; `None` for other kinds (the built-in ones).
 pub fn open_plugin_service(
-    svc: &dac_publish::ServiceConfig,
-) -> Option<std::result::Result<Box<dyn dac_publish::PublishService>, dac_publish::PublishError>> {
+    svc: &lcc_publish::ServiceConfig,
+) -> Option<std::result::Result<Box<dyn lcc_publish::PublishService>, lcc_publish::PublishError>> {
     let id = svc.kind.strip_prefix(KIND_PREFIX)?;
     if !is_plugin_kind(&svc.kind) {
-        return Some(Err(dac_publish::PublishError::Config(format!("plug-in {id} is not installed, enabled, or a publish service"))));
+        return Some(Err(lcc_publish::PublishError::Config(format!("plug-in {id} is not installed, enabled, or a publish service"))));
     }
     let dir =
         std::env::temp_dir().join(format!("plugin-publish-{}-{}", std::process::id(), svc.id.replace(|c: char| !c.is_ascii_alphanumeric(), "_")));
     Some(Ok(Box::new(PluginService { plugin: id.to_string(), dir })))
 }
 
-/// A plug-in's publish service as a [`dac_publish::PublishService`]: each rendered photo is
+/// A plug-in's publish service as a [`lcc_publish::PublishService`]: each rendered photo is
 /// written to a private temporary file, lent to the plug-in's `publish.upload` call, then deleted.
 pub struct PluginService {
     plugin: String,
     dir: PathBuf,
 }
 
-fn pub_err(e: dac_plugins::Error) -> dac_publish::PublishError {
-    dac_publish::PublishError::Service(e.to_string())
+fn pub_err(e: lcc_plugins::Error) -> lcc_publish::PublishError {
+    lcc_publish::PublishError::Service(e.to_string())
 }
 
-impl dac_publish::PublishService for PluginService {
+impl lcc_publish::PublishService for PluginService {
     fn kind(&self) -> &'static str {
         "plugin"
     }
 
-    fn publish(&mut self, up: &dac_publish::Upload<'_>) -> std::result::Result<dac_publish::Published, dac_publish::PublishError> {
-        use dac_plugins::publish::{PluginPublisher, PublishItem, PublishProvider};
-        let io = |e: std::io::Error| dac_publish::PublishError::Io(e.to_string());
+    fn publish(&mut self, up: &lcc_publish::Upload<'_>) -> std::result::Result<lcc_publish::Published, lcc_publish::PublishError> {
+        use lcc_plugins::publish::{PluginPublisher, PublishItem, PublishProvider};
+        let io = |e: std::io::Error| lcc_publish::PublishError::Io(e.to_string());
         std::fs::create_dir_all(&self.dir).map_err(io)?;
         // only the file name, never a path the export settings could smuggle in
         let name: String = up.file_name.rsplit(['/', '\\']).next().unwrap_or("photo").chars().filter(|c| !c.is_control()).take(200).collect();
@@ -305,17 +305,17 @@ impl dac_publish::PublishService for PluginService {
         let r = {
             let mut g = manager();
             let m = g.get_or_insert_with(Manager::in_memory);
-            PluginPublisher::new(m, &self.plugin).and_then(|mut p| p.upload(&mut dac_plugins::NoHost, &item))
+            PluginPublisher::new(m, &self.plugin).and_then(|mut p| p.upload(&mut lcc_plugins::NoHost, &item))
         };
         let _ = std::fs::remove_file(&path);
-        r.map(|r| dac_publish::Published { remote_id: r.remote_id }).map_err(pub_err)
+        r.map(|r| lcc_publish::Published { remote_id: r.remote_id }).map_err(pub_err)
     }
 
-    fn remove(&mut self, remote_id: &str) -> std::result::Result<(), dac_publish::PublishError> {
-        use dac_plugins::publish::{PluginPublisher, PublishProvider};
+    fn remove(&mut self, remote_id: &str) -> std::result::Result<(), lcc_publish::PublishError> {
+        use lcc_plugins::publish::{PluginPublisher, PublishProvider};
         let mut g = manager();
         let m = g.get_or_insert_with(Manager::in_memory);
-        PluginPublisher::new(m, &self.plugin).and_then(|mut p| p.delete(&mut dac_plugins::NoHost, remote_id)).map_err(pub_err)
+        PluginPublisher::new(m, &self.plugin).and_then(|mut p| p.delete(&mut lcc_plugins::NoHost, remote_id)).map_err(pub_err)
     }
 }
 
@@ -342,7 +342,7 @@ pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value
 /// without it, so a long upload neither blocks the manager nor (on a worker) the window.
 pub struct ExportHooks {
     #[allow(clippy::type_complexity)]
-    calls: Vec<(String, Option<String>, std::result::Result<(Value, Vec<PathBuf>), dac_plugins::Error>)>,
+    calls: Vec<(String, Option<String>, std::result::Result<(Value, Vec<PathBuf>), lcc_plugins::Error>)>,
 }
 
 /// The plug-in calls after an export of `files` to `destination` (see [`after_export`]); `None` when there are none.
@@ -547,13 +547,13 @@ pub fn rule_fields() -> Vec<(String, String)> {
             let man = p.plugin.manifest();
             man.metadata_fields
                 .iter()
-                .map(|f| (dac_catalog::rules::plugin_field_id(&man.id, &f.key), format!("{} ▸ {}", man.name, f.label)))
+                .map(|f| (lcc_catalog::rules::plugin_field_id(&man.id, &f.key), format!("{} ▸ {}", man.name, f.label)))
                 .collect::<Vec<_>>()
         })
         .collect()
 }
 
-/// Bring the catalog's in-memory index of the plug-ins' metadata fields ([`dac_catalog::Photo::plugin_fields`],
+/// Bring the catalog's in-memory index of the plug-ins' metadata fields ([`lcc_catalog::Photo::plugin_fields`],
 /// what rules search and sidecars carry) in line with the plug-ins' own data, the source. Nothing is
 /// saved with the catalog; with XMP auto-write on, the changed photos' sidecars are written. A plug-in
 /// whose data can't be read now keeps its entries. Returns how many photos changed.
@@ -582,7 +582,7 @@ pub(crate) fn sync_fields_with(s: &mut Session, write_sidecars: bool) -> usize {
             changes.push((p.id, want));
         }
     }
-    let ids: Vec<dac_catalog::PhotoId> = changes.iter().map(|(id, _)| *id).collect();
+    let ids: Vec<lcc_catalog::PhotoId> = changes.iter().map(|(id, _)| *id).collect();
     for (id, fields) in changes {
         if let Err(e) = s.catalog.set_plugin_fields(id, fields) {
             log::warn!("plug-in fields: {e}");
@@ -637,10 +637,10 @@ mod tests {
         let src = format!(
             r#"(module (memory (export "memory") 2)
   (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
-  (func (export "dac_abi_version") (result i32) (i32.const 1))
-  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
-  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
-  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+  (func (export "lcc_abi_version") (result i32) (i32.const 1))
+  (func (export "lcc_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "lcc_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "lcc_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
             m = esc(manifest),
             r = esc(reply),
             ml = manifest.len(),
@@ -655,9 +655,9 @@ mod tests {
         manager().get_or_insert_with(Manager::in_memory).install_bytes(&publisher_module(), None).unwrap();
         assert!(is_plugin_kind("plugin:test.pub"));
         assert!(!is_plugin_kind("plugin:nope") && !is_plugin_kind("hardDrive"));
-        let svc: dac_publish::ServiceConfig = serde_json::from_value(json!({"id": "svc-9", "kind": "plugin:test.pub", "name": "P"})).unwrap();
+        let svc: lcc_publish::ServiceConfig = serde_json::from_value(json!({"id": "svc-9", "kind": "plugin:test.pub", "name": "P"})).unwrap();
         let mut service = open_plugin_service(&svc).unwrap().unwrap();
-        let up = dac_publish::Upload { photo: dac_catalog::PhotoId(7), file_name: "../evil/a.jpg", bytes: b"jpeg", sidecars: &[], previous: None };
+        let up = lcc_publish::Upload { photo: lcc_catalog::PhotoId(7), file_name: "../evil/a.jpg", bytes: b"jpeg", sidecars: &[], previous: None };
         assert_eq!(service.publish(&up).unwrap().remote_id, "r1");
         service.remove("r1").unwrap();
         let mut s = Session::with_demo();
@@ -700,10 +700,10 @@ mod tests {
         let src = format!(
             r#"(module (memory (export "memory") 2)
   (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
-  (func (export "dac_abi_version") (result i32) (i32.const 1))
-  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
-  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
-  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+  (func (export "lcc_abi_version") (result i32) (i32.const 1))
+  (func (export "lcc_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "lcc_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "lcc_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
             m = esc(&manifest),
             r = esc(reply),
             ml = manifest.len(),
@@ -740,7 +740,7 @@ mod tests {
         drop(requests);
         assert!(host.catalog("catalog.stats", &json!({})).is_err());
         // cancelled before they start: no plug-in runs, none stays busy
-        let r = export_hooks(&files, None).unwrap().run(&mut dac_plugins::NoHost, &|| true, &mut |_, _| {});
+        let r = export_hooks(&files, None).unwrap().run(&mut lcc_plugins::NoHost, &|| true, &mut |_, _| {});
         assert!(r.iter().all(|v| v["error"] == "cancelled"), "{r:?}");
         // a plug-in whose call is out (on a worker) is busy for others until it comes back
         let call = with_manager(|m| m.begin("test.relay", json!({"hook": "export", "files": []}), vec![]).map_err(|e| plugin_err("t", e))).unwrap();
@@ -762,10 +762,10 @@ mod tests {
         let src = format!(
             r#"(module (memory (export "memory") 2)
   (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
-  (func (export "dac_abi_version") (result i32) (i32.const 1))
-  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
-  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
-  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+  (func (export "lcc_abi_version") (result i32) (i32.const 1))
+  (func (export "lcc_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "lcc_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "lcc_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
             m = esc(&manifest),
             r = esc(reply),
             ml = manifest.len(),
@@ -793,9 +793,9 @@ mod tests {
         let mixed = field(&mut s, json!([ids[0], ids[2]]));
         assert_eq!((mixed["value"].clone(), mixed["mixed"].clone()), (Value::Null, json!(true)), "{mixed}");
         // the catalog's copy: rules and Any Searchable Text find it
-        let p0 = s.catalog.photo(dac_catalog::PhotoId(ids[0])).unwrap().clone();
+        let p0 = s.catalog.photo(lcc_catalog::PhotoId(ids[0])).unwrap().clone();
         assert_eq!(p0.plugin_fields.get("test.jobs/job"), Some(&json!("J-77")));
-        let rule: dac_catalog::rules::RuleSet =
+        let rule: lcc_catalog::rules::RuleSet =
             serde_json::from_value(json!({"rules": [{"field": "plugin:test.jobs/job", "op": "contains", "value": "j-77"}]})).unwrap();
         let mut found: Vec<u64> = s.catalog.photos().filter(|p| rule.matches(p, &s.catalog)).map(|p| p.id.0).collect();
         found.sort_unstable();
@@ -805,13 +805,13 @@ mod tests {
         // the sidecar packet carries it under the plug-in fields namespace
         let packet = crate::sidecar::sidecar_packet(&p0, &s.catalog);
         assert!(
-            packet.contains(&dac_meta::plugin_fields_ns())
+            packet.contains(&lcc_meta::plugin_fields_ns())
                 && packet.contains("<lcpf:plugin>test.jobs</lcpf:plugin>")
                 && packet.contains("<lcpf:value>J-77</lcpf:value>"),
             "{packet}"
         );
         // an index in memory only: the catalog's saved form (format 7) doesn't carry it
-        assert_eq!(dac_catalog::journal::VERSION, 10);
+        assert_eq!(lcc_catalog::journal::VERSION, 10);
         assert!(!s.catalog.to_snapshot().contains("J-77"), "not saved with the catalog");
         // a library opened again rebuilds it from the plug-in's data
         let dir = std::env::temp_dir().join(format!("plugin-fields-lib-{}", std::process::id()));
@@ -823,17 +823,17 @@ mod tests {
         drop(lib);
         let mut again = Session::new();
         again.open_library(&dir, false).unwrap();
-        assert_eq!(again.catalog.photo(dac_catalog::PhotoId(first)).unwrap().plugin_fields.get("test.jobs/job"), Some(&json!("K-1")));
+        assert_eq!(again.catalog.photo(lcc_catalog::PhotoId(first)).unwrap().plugin_fields.get("test.jobs/job"), Some(&json!("K-1")));
         drop(again);
         let _ = std::fs::remove_dir_all(&dir);
         // clearing it clears the copy
         s.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "job", "value": null, "ids": [ids[0], ids[1]]})).unwrap();
-        assert!(s.catalog.photo(dac_catalog::PhotoId(ids[0])).unwrap().plugin_fields.is_empty());
+        assert!(s.catalog.photo(lcc_catalog::PhotoId(ids[0])).unwrap().plugin_fields.is_empty());
         // removing the plug-in removes its fields from the catalog
         s.execute("plugin.setField", &json!({"plugin": "test.jobs", "field": "ok", "value": true, "id": ids[2]})).unwrap();
-        assert!(!s.catalog.photo(dac_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
+        assert!(!s.catalog.photo(lcc_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
         s.execute("plugin.uninstall", &json!({"id": "test.jobs"})).unwrap();
-        assert!(s.catalog.photo(dac_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
+        assert!(s.catalog.photo(lcc_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
     }
 
     #[test]

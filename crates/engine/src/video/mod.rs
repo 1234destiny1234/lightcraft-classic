@@ -2,14 +2,14 @@
 //! (`plan/video-filmcraft.md` §7).
 //!
 //! The engine never decodes video itself: a host that can installs a [`VideoBackend`] in
-//! [`VideoState::backend`] (the desktop app and CLI wrap `dac-video`). Without one every `video.*`
+//! [`VideoState::backend`] (the desktop app and CLI wrap `lcc-video`). Without one every `video.*`
 //! command fails with [`UNAVAILABLE`], so the web build and tests without a decoder stay clean.
 //!
 //! - [`player`]: the playback state machine (play/pause, clock-driven position, frame steps,
 //!   trim bounds).
 //! - [`adapter`]: the few functions that read and change a clip's [`VideoMeta`]; the only code
 //!   that knows where it is stored.
-//! - [`native`]: the `dac-video` backend, installed by default on native builds.
+//! - [`native`]: the `lcc-video` backend, installed by default on native builds.
 //!
 //! Sources: own design.
 
@@ -26,14 +26,14 @@ mod tests;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use dac_catalog::VideoMeta;
+pub use lcc_catalog::VideoMeta;
 pub use player::Player;
 
 /// What every video command answers when no decoder backend is installed.
 pub const UNAVAILABLE: &str = "video playback isn't available in this build";
 
 /// A decoded frame: linear-light sRGB-primaries RGB (what the pipeline takes from a JPEG/TIFF).
-pub type FrameImage = dac_raster::Rgb32f;
+pub type FrameImage = lcc_raster::Rgb32f;
 
 /// What a backend's probe reports about a clip.
 #[derive(Clone, Debug, Default, PartialEq)]
@@ -65,7 +65,7 @@ impl VideoInfo {
     }
 }
 
-/// A video decoder the host provides (`dac-video` on native). Errors are user-facing messages.
+/// A video decoder the host provides (`lcc-video` on native). Errors are user-facing messages.
 pub trait VideoBackend: Send + Sync {
     /// Duration, frame rate, size and codec of the clip at `path`.
     fn probe(&self, path: &Path) -> Result<VideoInfo, String>;
@@ -92,7 +92,7 @@ pub type Clock = Box<dyn Fn() -> f64 + Send>;
 
 /// The session's video state.
 pub struct VideoState {
-    /// The decoder (`dac-video` on native by default); `None` = video isn't available in this build.
+    /// The decoder (`lcc-video` on native by default); `None` = video isn't available in this build.
     pub backend: Option<Arc<dyn VideoBackend>>,
     pub player: Player,
     /// Monotonic time source driving playback.
@@ -108,7 +108,7 @@ impl Default for VideoState {
 impl VideoState {
     /// Drive playback from an audio device clock (`audio-out` builds playing a clip's sound), so
     /// frames follow the sound. Continues from the current time: the position doesn't jump.
-    pub fn follow_audio_clock(&mut self, audio: dac_audio_out::AudioClock) {
+    pub fn follow_audio_clock(&mut self, audio: lcc_audio_out::AudioClock) {
         let offset = (self.clock)() - audio.seconds();
         self.clock = Box::new(move || offset + audio.seconds());
     }
@@ -130,7 +130,7 @@ impl std::fmt::Debug for VideoState {
 
 #[cfg(not(target_arch = "wasm32"))]
 fn default_backend() -> Option<Arc<dyn VideoBackend>> {
-    Some(Arc::new(native::DacVideo::default()))
+    Some(Arc::new(native::LccVideo::default()))
 }
 
 #[cfg(target_arch = "wasm32")]

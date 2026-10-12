@@ -23,6 +23,6 @@
 компилятором Rust при сборке. Английские окончания множественного числа скрываются через `{:.0}`.
 
 ```sh
-cargo test -p dac-ui-egui i18n::tests -- --nocapture
+cargo test -p lcc-ui-egui i18n::tests -- --nocapture
 <PREFIX>_LANGUAGE=ru <cli> snapshot --demo -o russian.png --size 1600x1000
 ```

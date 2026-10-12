@@ -12,7 +12,7 @@ divergence), shared paths only:
 | | before U.5 | after U.5 |
 |---|---|---|
 | `git diff --numstat upstream/main HEAD` (raw, renames detected) | 28 259 (code 22 516, locales 4 411, md 1 332) | 18 351 (code 16 697, locales 322, md 1 332), before merging integ/batch4 |
-| same, upstream normalised for the crate rename (upstream crate prefix → `dac_*`, its app struct → `DacApp`, app dirs) and re-`rustfmt`ed | **21 310** (code 15 426, locales 4 411, md 1 473) | **11 127** (code 9 332, locales 322, md 1 473) |
+| same, upstream normalised for the crate rename (upstream crate prefix → `lcc_*`, its app struct → `LccApp`, app dirs) and re-`rustfmt`ed | **21 310** (code 15 426, locales 4 411, md 1 473) | **11 127** (code 9 332, locales 322, md 1 473) |
 
 The normalised number is the one that predicts merge work: rename-only lines are rewritten by
 `cargo xtask rename-crates --upstream`. What was done:
@@ -36,10 +36,10 @@ The normalised number is the one that predicts merge work: rename-only lines are
 
 - **Brand** (product name, env prefix, binary names, icon paths) across apps and docs: required, rewritten per merge.
 - **`panels/right.rs`**: upstream's Info panel removed (replaced by owned `panels/metadata.rs`); kept as a deletion.
-- **`UiState` / `DacApp` fields of the shell, Immich, Print, Map** (`state.rs`, `lib.rs`): next step would be one
+- **`UiState` / `LccApp` fields of the shell, Immich, Print, Map** (`state.rs`, `lib.rs`): next step would be one
   `#[serde(flatten)]` owned sub-struct, but that renames every access in owned UI files (deferred while P6.3 edits them).
 - **`with_default_connections()`** at ~10 session builders in apps/MCP: one call each; could fold into a single
-  app-level init hook in `dac-engine` (needs an engine change; small).
+  app-level init hook in `lcc-engine` (needs an engine change; small).
 - **Engine split** (`engine-export`, `engine-library`, `engine-develop`, `engine-core`): see `plan/upstream.md`.
 
 ## UPSTREAM-PR candidates

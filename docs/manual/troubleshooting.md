@@ -12,7 +12,7 @@
 | Catalog backups | `backups/` in the library, or the folder set in Edit → Catalog Settings… |
 
 Attach the log to a bug report. Set `<PREFIX>_LOG=debug` for more detail, or `RUST_LOG` for per-module levels
-(`warn,dac_pipeline=trace`).
+(`warn,lcc_pipeline=trace`).
 
 ## The app shows an error instead of doing something
 

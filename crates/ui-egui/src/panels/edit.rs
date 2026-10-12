@@ -1,21 +1,21 @@
 //! The Edit panel: histogram, Auto/B&W, profile, and the Light / Color / Effects / Detail / Optics
 //! sections, built from the engine's control specs.
 
-use dac_catalog::PhotoId;
-use dac_develop::{ControlSpec, DevelopSettings, Section, Track, WbMode, controls};
-use dac_geom::Point;
 use egui::epaint::{Mesh, Vertex};
 use egui::{Align2, Color32, Pos2, Rect, RichText, Sense, Stroke, pos2, vec2};
+use lcc_catalog::PhotoId;
+use lcc_develop::{ControlSpec, DevelopSettings, Section, Track, WbMode, controls};
+use lcc_geom::Point;
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::render::Slot;
 use crate::theme::Tokens;
 use crate::widgets::{BAND_COLORS, SliderOut, divider, flyout_row, hex, register, section_header, slider, text_button};
 
 /// Commit a slider interaction: begin → live updates → end, so a drag is one undo step.
-pub fn apply_slider_out(app: &mut DacApp, spec: &ControlSpec, out: SliderOut, mut set: impl FnMut(&mut DacApp, f64) -> Result<Value, String>) {
+pub fn apply_slider_out(app: &mut LccApp, spec: &ControlSpec, out: SliderOut, mut set: impl FnMut(&mut LccApp, f64) -> Result<Value, String>) {
     if out.drag_started && !out.reset {
         let _ = app.run("develop.beginInteraction", json!({"label": spec.label}));
         app.ui.dragging_control = Some(spec.id.to_string());
@@ -29,7 +29,7 @@ pub fn apply_slider_out(app: &mut DacApp, spec: &ControlSpec, out: SliderOut, mu
     }
 }
 
-pub(crate) fn control(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings, id: &str, enabled: bool) {
+pub(crate) fn control(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, id: &str, enabled: bool) {
     let Some(spec) = controls::find(id) else { return };
     let v = controls::get(d, id).unwrap_or(spec.default);
     // greyed out inside a disabled scope (a control video can't take)
@@ -68,7 +68,7 @@ fn rel_to_k(r: f64) -> f64 {
     1e6 / (1e6 / 6500.0 - r * 0.8)
 }
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let d = app.session.develop_of(id).unwrap_or_default();
     // a raw shown from its embedded JPEG (preview only) gets the rendered-file white balance scale
@@ -83,7 +83,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         // numbers can predate a decoder update, or the camera's matrices giving the file its Kelvin scale), a
         // preset its Kelvin value, and a value written on the old relative scale the Kelvin it renders as
         let info = app.session.source_info(id);
-        let (temp, tint) = dac_engine::pipeline::local::effective_wb(&info, &d);
+        let (temp, tint) = lcc_engine::pipeline::local::effective_wb(&info, &d);
         let wb = &mut std::sync::Arc::make_mut(&mut d).wb;
         wb.temp = temp;
         wb.tint = tint;
@@ -283,7 +283,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         sub_title(ui, crate::i18n::tr("Vignette"));
         {
-            use dac_develop::VignetteStyle as V;
+            use lcc_develop::VignetteStyle as V;
             let styles = [
                 (V::HighlightPriority, "Highlight", "highlightPriority"),
                 (V::ColorPriority, "Color", "colorPriority"),
@@ -319,7 +319,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         // AI Denoise is its own tool, apart from the manual noise reduction sliders below it
         sub_title(ui, crate::i18n::tr("AI Denoise"));
         // AI Denoise: how much of the photo's cleaned picture to mix in (raw files only), and what that picture is doing
-        let applicable = !matches!(app.session.denoise_photo_state(id), dac_engine::denoise::PhotoState::NotApplicable);
+        let applicable = !matches!(app.session.denoise_photo_state(id), lcc_engine::denoise::PhotoState::NotApplicable);
         let on = d.enhance.denoise_enabled();
         super::denoise::detail_toggle(app, ui, id, on, applicable);
         control(app, ui, d, "enhance.denoise", applicable && on);
@@ -400,8 +400,8 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
 
 /// The profile dropdown: Favorites, Recent, one submenu per group, then favourite toggle and
 /// Browse….
-fn profile_menu(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
-    use dac_engine::presets::{PROFILES, profile_groups};
+fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+    use lcc_engine::presets::{PROFILES, profile_groups};
     let t = Tokens::get(ui.ctx());
     ui.set_min_width(200.0);
     let cur = d.profile.id.as_str();
@@ -496,12 +496,12 @@ pub fn sub_title(ui: &mut egui::Ui, title: &str) {
 }
 
 fn section(
-    app: &mut DacApp,
+    app: &mut LccApp,
     ui: &mut egui::Ui,
     d: &DevelopSettings,
     id: &str,
     title: &str,
-    body: impl FnOnce(&mut DacApp, &mut egui::Ui, &DevelopSettings),
+    body: impl FnOnce(&mut LccApp, &mut egui::Ui, &DevelopSettings),
 ) {
     let open = app.ui.section_open(id);
     let (resp, toggled) = section_header(ui, id, title, open, Some(d.section_enabled(id)));
@@ -521,7 +521,7 @@ fn section(
 
 // ------------------------------------------------------------------------------ histogram
 
-fn histogram(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     // the loupe render of this photo, else its thumbnail (grid view before the loupe has rendered it)
@@ -549,7 +549,7 @@ fn histogram(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         let white = Color32::from_rgb(228, 228, 230);
         bar(plot.left(), x0 - 1.0, white);
         let stops = b.stops.round().max(1.0) as usize;
-        let bands = dac_pipeline::visualize::HDR_BANDS;
+        let bands = lcc_pipeline::visualize::HDR_BANDS;
         let colours = app.ui.hdr_visualize;
         for k in 0..stops {
             let c = if colours { bands.get(k).or(bands.last()).copied().unwrap_or([255, 255, 255]) } else { [228, 228, 230] };
@@ -658,8 +658,8 @@ fn histogram(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
 // ------------------------------------------------------------------------------ soft proofing
 
 /// The Soft Proofing strip under the histogram: proof profile, gamut warnings, Create Proof Copy.
-fn soft_proofing(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
-    use dac_engine::pipeline::OutputSpace;
+fn soft_proofing(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    use lcc_engine::pipeline::OutputSpace;
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 6 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -709,7 +709,7 @@ fn soft_proofing(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         if app.ui.proof_profile.is_some() {
             ui.horizontal(|ui| {
                 ui.label(RichText::new(crate::i18n::tr("Intent:")).color(t.text_label));
-                use dac_engine::proof::ProofIntent;
+                use lcc_engine::proof::ProofIntent;
                 for (i, label) in [(ProofIntent::Perceptual, "Perceptual"), (ProofIntent::Relative, "Relative")] {
                     let r = ui.selectable_label(app.ui.proof_intent == i, crate::i18n::tr(label));
                     register(ui.ctx(), format!("button:proofIntent-{}", i.name()), r.rect);
@@ -740,7 +740,7 @@ fn soft_proofing(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
 
 // ------------------------------------------------------------------------------ tone curve
 
-fn curve_editor(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSettings) {
+fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSettings) {
     let t = Tokens::get(ui.ctx());
     // channel selector
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 4 }).show(ui, |ui| {
@@ -849,7 +849,7 @@ fn curve_editor(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
         if v.is_empty() { vec![Point::new(0.0, 0.0), Point::new(1.0, 1.0)] } else { v.clone() }
     };
     let pts = pts_of(d);
-    let curve = dac_color::spline::MonotoneCurve::new(&pts.iter().map(|q| (q.x, q.y)).collect::<Vec<_>>());
+    let curve = lcc_color::spline::MonotoneCurve::new(&pts.iter().map(|q| (q.x, q.y)).collect::<Vec<_>>());
     let color = match ch.as_str() {
         "red" => hex("#dd3333"),
         "green" => hex("#33bb55"),
@@ -959,8 +959,8 @@ fn curve_editor(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
 }
 
 /// The row under the curve graph: point-curve presets and reset every curve.
-fn curve_footer(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
-    use dac_engine::cmd::curves::{all_presets, matching_preset};
+fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+    use lcc_engine::cmd::curves::{all_presets, matching_preset};
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 4 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -1027,7 +1027,7 @@ fn curve_footer(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 }
 
 /// Right-click menu of the curve graph.
-fn curve_reset_menu(app: &mut DacApp, ui: &mut egui::Ui, ch: &str) {
+fn curve_reset_menu(app: &mut LccApp, ui: &mut egui::Ui, ch: &str) {
     let label =
         if ch == "parametric" { "Reset Parametric Curve".to_string() } else { crate::i18n::tr_format!("Reset {} Channel", channel_label(ch)) };
     let r = ui.button(label);
@@ -1054,7 +1054,7 @@ fn channel_label(ch: &str) -> &'static str {
 }
 
 /// Toggle for a targeted-adjustment tool (`tool` = `tat:<target>`).
-fn tat_button(app: &mut DacApp, ui: &mut egui::Ui, tool: &str, tip: &str) {
+fn tat_button(app: &mut LccApp, ui: &mut egui::Ui, tool: &str, tip: &str) {
     let active = app.ui.tool == tool;
     let id = tool.replace(':', "-");
     if crate::widgets::icon_button(ui, &id, Icon::Target, vec2(26.0, 26.0), active, true, tip).clicked() {
@@ -1064,9 +1064,9 @@ fn tat_button(app: &mut DacApp, ui: &mut egui::Ui, tool: &str, tip: &str) {
 
 // ------------------------------------------------------------------------------ colour mixer
 
-fn mixer(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+fn mixer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     let t = Tokens::get(ui.ctx());
-    let bands = dac_develop::MIXER_BANDS;
+    let bands = lcc_develop::MIXER_BANDS;
     let sel = bands.iter().position(|b| *b == app.ui.mixer_mode).unwrap_or(0);
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 4 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -1128,16 +1128,16 @@ fn mixer(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 
 /// Display colour of an OkLCh sample (lightness, chroma, hue in degrees).
 fn oklch_color(l: f64, c: f64, h_deg: f64) -> Color32 {
-    use dac_color::perceptual::{lch_to_lab, oklab_to_2020};
+    use lcc_color::perceptual::{lch_to_lab, oklab_to_2020};
     let lin = oklab_to_2020(lch_to_lab([l as f32, c as f32, (h_deg as f32).to_radians()]));
-    let s = dac_color::REC2020.to_space(&dac_color::SRGB).apply_f32(lin);
-    let e = s.map(|v| (dac_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * 255.0).round() as u8);
+    let s = lcc_color::REC2020.to_space(&lcc_color::SRGB).apply_f32(lin);
+    let e = s.map(|v| (lcc_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * 255.0).round() as u8);
     Color32::from_rgb(e[0], e[1], e[2])
 }
 
 /// Point Color: swatches of the samples (+ the eyedropper), the selected sample's shifts and range,
 /// and "Visualize range".
-fn point_color(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+fn point_color(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     let t = Tokens::get(ui.ctx());
     let n = d.point_colors.len();
     if app.ui.point_color >= n && n > 0 {
@@ -1148,7 +1148,7 @@ fn point_color(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 5.0;
             let active = app.ui.tool == "pointColor";
-            let full = n >= dac_develop::MAX_POINT_COLORS;
+            let full = n >= lcc_develop::MAX_POINT_COLORS;
             if crate::widgets::icon_button(ui, "pointColorPicker", Icon::Picker, vec2(26.0, 26.0), active, !full, "Sample a colour on the photo")
                 .clicked()
             {
@@ -1200,7 +1200,7 @@ fn point_color(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 /// The Light panel's HDR row: the HDR switch and Visualize HDR, then (HDR on) the headroom limit.
 /// The Light panel's HDR settings while HDR editing is on (the switch itself is the HDR button
 /// next to B&W): Visualize HDR range and the headroom limit.
-fn hdr_row(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings) {
+fn hdr_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     if !d.hdr.enabled {
         return;
     }
@@ -1228,7 +1228,7 @@ const GRADING_TABS: [(&str, &str, Icon); 4] = [
 /// The wheels, in the order of `UiState::grading_hidden`.
 const GRADING_WHEELS: [(&str, &str); 3] = [("shadows", "Shadows"), ("midtones", "Midtones"), ("highlights", "Highlights")];
 
-fn grading(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: PhotoId) {
+fn grading(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: PhotoId) {
     let mode = GRADING_TABS.iter().find(|(k, ..)| *k == app.ui.grading_mode).map_or("3way", |(k, ..)| *k);
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 2 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -1275,7 +1275,7 @@ fn grading(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: Phot
 /// on the photo for viewing. `readout`: show hue and saturation centred above the wheel while
 /// hovered (3-Way); otherwise the wheel is the large one and gets saturation guide rings.
 #[allow(clippy::too_many_arguments)]
-fn grading_wheel(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: PhotoId, i: usize, c: Pos2, rad: f32, readout: bool) {
+fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: PhotoId, i: usize, c: Pos2, rad: f32, readout: bool) {
     let t = Tokens::get(ui.ctx());
     let Some(&(key, label)) = GRADING_WHEELS.get(i) else { return };
     let wh = match key {
@@ -1389,7 +1389,7 @@ fn paint_wheel(p: &egui::Painter, c: Pos2, rad: f32) {
     mesh.vertices.push(Vertex { pos: c, uv: Pos2::ZERO, color: Color32::from_gray(128) });
     for i in 0..=n {
         let a = i as f32 / n as f32 * std::f32::consts::TAU;
-        let rgb = dac_color::perceptual::hsv_to_rgb(a.to_degrees(), 0.75, 0.8);
+        let rgb = lcc_color::perceptual::hsv_to_rgb(a.to_degrees(), 0.75, 0.8);
         let col = Color32::from_rgb((rgb[0] * 255.0) as u8, (rgb[1] * 255.0) as u8, (rgb[2] * 255.0) as u8);
         mesh.vertices.push(Vertex { pos: c + vec2(a.cos(), -a.sin()) * rad, uv: Pos2::ZERO, color: col });
         if i > 0 {
@@ -1402,7 +1402,7 @@ fn paint_wheel(p: &egui::Painter, c: Pos2, rad: f32) {
 
 /// Quick Develop (grid with several photos selected): relative steps applied to every selected
 /// photo from its own value.
-fn quick_develop(app: &mut DacApp, ui: &mut egui::Ui, n: usize) {
+fn quick_develop(app: &mut LccApp, ui: &mut egui::Ui, n: usize) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 10 }).show(ui, |ui| {
         ui.label(egui::RichText::new(crate::i18n::tr_format!("Quick Develop · {n} photos", n = n)).color(t.text_label).size(12.5));
@@ -1439,9 +1439,9 @@ fn quick_develop(app: &mut DacApp, ui: &mut egui::Ui, n: usize) {
 /// Why Enable Lens Corrections has nothing to apply to photo `id` (its file carries no correction): no lens database
 /// (a link that opens Settings ▸ Lens profiles), no lens named in its metadata, or none of the database's profiles
 /// fits its lens.
-fn lens_note(app: &mut DacApp, ui: &mut egui::Ui, id: dac_catalog::PhotoId) {
+fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
     use crate::i18n::tr;
-    use dac_engine::lens_profiles::Match;
+    use lcc_engine::lens_profiles::Match;
     let t = Tokens::get(ui.ctx());
     let Some(state) = app.session.catalog.photo(id).and_then(|p| app.session.lens_match(p)) else { return };
     let text = match state {

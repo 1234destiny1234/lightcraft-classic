@@ -28,11 +28,11 @@ fn target_dir(root: &Path) -> PathBuf {
 
 fn build(release: bool) -> Result<(), String> {
     let mut c = crate::cargo();
-    c.args(["build", "-p", "dac-app", "-p", "dac-cli"]);
+    c.args(["build", "-p", "lcc-app", "-p", "lcc-cli"]);
     if release {
         c.arg("--release");
     }
-    crate::run(c, if release { "cargo build --release -p dac-app -p dac-cli" } else { "cargo build -p dac-app -p dac-cli" })
+    crate::run(c, if release { "cargo build --release -p lcc-app -p lcc-cli" } else { "cargo build -p lcc-app -p lcc-cli" })
 }
 
 fn copy(from: &Path, to: &Path) -> Result<(), String> {

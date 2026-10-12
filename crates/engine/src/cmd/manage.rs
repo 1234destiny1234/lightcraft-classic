@@ -2,12 +2,12 @@
 
 use serde_json::{Value, json};
 
-use dac_catalog::{ColorLabel, Op};
+use lcc_catalog::{ColorLabel, Op};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, f64_or, has_selection, str_param};
 use crate::Result;
 
-fn rename_args(s: &mut crate::Session, p: &Value, c: &str) -> Result<(Vec<dac_catalog::PhotoId>, String, usize)> {
+fn rename_args(s: &mut crate::Session, p: &Value, c: &str) -> Result<(Vec<lcc_catalog::PhotoId>, String, usize)> {
     let template = str_param(p, "template").ok_or_else(|| bad(c, "missing `template`"))?.to_string();
     let start = p.get("start").and_then(Value::as_u64).unwrap_or(1) as usize;
     let mut ids = s.targets(p);
@@ -69,7 +69,7 @@ fn set_names_ops(s: &crate::Session, names: &[String; 5]) -> Vec<Op> {
 /// Auto-Tag Photos). GPX times are UTC; capture times are the camera's local clock, so a photo's
 /// recorded zone (Exif `OffsetTimeOriginal`) or the `offset` parameter converts them.
 fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
-    use dac_meta::{DateTime, Match, parse_gpx};
+    use lcc_meta::{DateTime, Match, parse_gpx};
     const C: &str = "photo.autoTagTracklog";
     let text = match (str_param(p, "gpx"), str_param(p, "path")) {
         (Some(t), _) => t.to_string(),
@@ -142,7 +142,7 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
     if !bool_or(p, "dryRun", false) && !ops.is_empty() {
         s.commit("Auto-Tag from Tracklog", Op::Batch { ops })?;
     }
-    let iso = |t: f64| format!("{}Z", dac_catalog::dates::civil(t.floor() as i64));
+    let iso = |t: f64| format!("{}Z", lcc_catalog::dates::civil(t.floor() as i64));
     Ok(json!({
         "tagged": tagged,
         "interpolated": interpolated,
@@ -157,11 +157,11 @@ fn auto_tag_tracklog(s: &mut crate::Session, p: &Value) -> Result<Value> {
 }
 
 /// The original file's modification time as an ISO time (UTC), if it has a readable file.
-fn file_time(p: &dac_catalog::Photo) -> Option<String> {
-    let dac_catalog::Source::File { path } = &p.source else { return None };
+fn file_time(p: &lcc_catalog::Photo) -> Option<String> {
+    let lcc_catalog::Source::File { path } = &p.source else { return None };
     let t = std::fs::metadata(path).and_then(|m| m.modified()).ok()?;
     let secs = i64::try_from(t.duration_since(std::time::UNIX_EPOCH).ok()?.as_secs()).ok()?;
-    Some(dac_catalog::dates::civil(secs))
+    Some(lcc_catalog::dates::civil(secs))
 }
 
 pub fn specs() -> Vec<CommandSpec> {
@@ -195,7 +195,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "{ids?, time?: `2026-09-30T14:05:00` (the active photo gets it, the others shift by the same amount), each?: bool (every photo gets `time`), fromFile?: bool (each photo gets its original file's modification time, UTC), shift?: seconds, hours?: time-zone shift in hours} → {changed, captured: [..], noFile}",
             has_selection,
             |s, p| {
-                use dac_catalog::dates::{iso_seconds, normalize_iso, shift_iso};
+                use lcc_catalog::dates::{iso_seconds, normalize_iso, shift_iso};
                 let c = "photo.setCaptureTime";
                 let targets: Vec<_> = s.targets(p).into_iter().filter(|id| s.catalog.photo(*id).is_some()).collect();
                 if targets.is_empty() {

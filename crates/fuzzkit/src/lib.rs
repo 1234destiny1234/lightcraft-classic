@@ -3,9 +3,9 @@
 //! No cargo-fuzz, no nightly, no C: a seeded xorshift generator mutates valid seed inputs
 //! (bit flips, byte overwrites, truncation, deletion, duplication, interesting tokens, extreme
 //! numbers, splicing) so every harness runs in an ordinary `cargo test`, reproducibly, in bounded
-//! time. A failing case prints the harness name, iteration and input on stderr; `DAC_FUZZ_ITERS`
+//! time. A failing case prints the harness name, iteration and input on stderr; `LCC_FUZZ_ITERS`
 //! raises the iteration count for longer local runs
-//! (e.g. `DAC_FUZZ_ITERS=200000 cargo test -p dac-geo --test robust`).
+//! (e.g. `LCC_FUZZ_ITERS=200000 cargo test -p lcc-geo --test robust`).
 //!
 //! Used from dev-dependencies only. Pure computation; builds everywhere.
 
@@ -162,9 +162,9 @@ pub fn mutate(rng: &mut Rng, seed: &[u8], max: usize) -> Vec<u8> {
     v
 }
 
-/// Iterations per harness: `DAC_FUZZ_ITERS` or `default`.
+/// Iterations per harness: `LCC_FUZZ_ITERS` or `default`.
 pub fn iterations(default: usize) -> usize {
-    std::env::var("DAC_FUZZ_ITERS").ok().and_then(|s| s.parse().ok()).unwrap_or(default)
+    std::env::var("LCC_FUZZ_ITERS").ok().and_then(|s| s.parse().ok()).unwrap_or(default)
 }
 
 /// Runs `check` on every seed, every prefix of the shortest seed, and `iterations(default)`

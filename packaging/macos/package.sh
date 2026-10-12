@@ -60,7 +60,7 @@ echo "==> $NAME $VERSION for macOS ($ARCH), identity: $IDENTITY, notarize: $NOTA
 if [ "$SKIP_BUILD" = 0 ]; then
   args=()
   for t in "${TARGETS[@]}"; do args+=(--target "$t"); done
-  (cd "$ROOT" && cargo build --release --locked -p dac-app -p dac-cli --features dac-app/heif,dac-cli/heif "${args[@]}")
+  (cd "$ROOT" && cargo build --release --locked -p lcc-app -p lcc-cli --features lcc-app/heif,lcc-cli/heif "${args[@]}")
 fi
 
 rm -rf "$WORK"

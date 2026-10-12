@@ -185,11 +185,11 @@ impl<T: Copy + Default> Image<T> {
     }
     /// Apply an EXIF orientation (stored → displayed).
     /// [`Self::oriented`] without a copy when `o` is the identity.
-    pub fn into_oriented(self, o: dac_geom::Orientation) -> Self {
-        if o == dac_geom::Orientation::Normal { self } else { self.oriented(o) }
+    pub fn into_oriented(self, o: lcc_geom::Orientation) -> Self {
+        if o == lcc_geom::Orientation::Normal { self } else { self.oriented(o) }
     }
 
-    pub fn oriented(&self, o: dac_geom::Orientation) -> Self {
+    pub fn oriented(&self, o: lcc_geom::Orientation) -> Self {
         let (flip, turns) = o.to_parts();
         let mut img = if flip { self.flip_h() } else { self.clone() };
         match turns {
@@ -225,12 +225,12 @@ impl Rgb32f {
     }
 
     pub fn luminance(&self) -> Plane {
-        self.map(dac_color::luminance_2020)
+        self.map(lcc_color::luminance_2020)
     }
 
     /// Encode to 8-bit sRGB from linear sRGB values (no gamut conversion).
     pub fn to_srgb8(&self) -> Rgba8 {
-        use dac_color::transfer::encode_srgb8;
+        use lcc_color::transfer::encode_srgb8;
         self.map(|p| [encode_srgb8(p[0]), encode_srgb8(p[1]), encode_srgb8(p[2]), 255])
     }
 }
@@ -248,7 +248,7 @@ impl Rgba8 {
     }
     /// Linear Rec.709/sRGB primaries float image from 8-bit sRGB.
     pub fn to_linear(&self) -> Rgb32f {
-        use dac_color::transfer::decode_srgb8;
+        use lcc_color::transfer::decode_srgb8;
         self.map(|p| [decode_srgb8(p[0]), decode_srgb8(p[1]), decode_srgb8(p[2])])
     }
 }
@@ -256,7 +256,7 @@ impl Rgba8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_geom::Orientation;
+    use lcc_geom::Orientation;
 
     #[test]
     fn crop_and_rotate() {

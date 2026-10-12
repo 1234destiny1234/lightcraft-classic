@@ -1,11 +1,11 @@
-//! Tethered capture, first stage: studio capture (LRC-LIB-TETHER; model in `dac-tether`). A
+//! Tethered capture, first stage: studio capture (LRC-LIB-TETHER; model in `lcc-tether`). A
 //! watched folder written by the camera's app or a vendor tool; every new shot is imported with
 //! the session's develop preset, metadata preset, keywords, naming and collection, and becomes the
 //! selection so the loupe shows it. The app calls `tether.scan` every couple of seconds while a
 //! session is active.
 //!
 //! Native tethering (`tether.connect`, `tether.capture`, `tether.camera*`, `tether.liveView`): a
-//! PTP camera over USB or PTP/IP (`dac_tether::link`). Its shots download into the session's
+//! PTP camera over USB or PTP/IP (`lcc_tether::link`). Its shots download into the session's
 //! watched folder, so the scan imports them like any other; connecting without a session starts
 //! one in `<library>/Tethered/<session>`.
 
@@ -13,8 +13,8 @@ use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, PoisonError};
 
-use dac_catalog::PhotoId;
-use dac_tether::StudioSession;
+use lcc_catalog::PhotoId;
+use lcc_tether::StudioSession;
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -36,18 +36,18 @@ fn connection() -> std::sync::MutexGuard<'static, Option<Connection>> {
 
 /// Disconnect the camera and drop its activity row.
 fn hang_up() {
-    dac_tether::link::disconnect();
+    lcc_tether::link::disconnect();
     *connection() = None;
 }
 
 /// The row's detail: shots downloaded so far. A cancelled row disconnects (true).
 fn connection_tick() -> bool {
     let cancelled = connection().as_ref().is_some_and(|c| c.cancel.load(Ordering::Relaxed));
-    if cancelled || !dac_tether::link::connected() {
+    if cancelled || !lcc_tether::link::connected() {
         hang_up();
         return cancelled;
     }
-    let n = dac_tether::link::status().get("downloaded").and_then(Value::as_u64).unwrap_or(0);
+    let n = lcc_tether::link::status().get("downloaded").and_then(Value::as_u64).unwrap_or(0);
     if let Some(c) = connection().as_ref() {
         c.guard.detail(&format!("{n} downloaded"));
     }
@@ -72,7 +72,7 @@ fn opt_str(p: &Value, key: &str) -> Option<Option<String>> {
 /// Apply the settings in `p` to a session, checking presets exist.
 fn configure(s: &Session, ses: &mut StudioSession, p: &Value, c: &str) -> Result<()> {
     if let Some(n) = str_param(p, "session").map(str::trim).filter(|n| !n.is_empty()) {
-        ses.name = dac_tether::safe_session_name(n);
+        ses.name = lcc_tether::safe_session_name(n);
     }
     if let Some(c2) = p.get("copy").and_then(Value::as_bool) {
         ses.copy = c2;
@@ -122,7 +122,7 @@ fn start(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, format!("`{folder}` is not a folder")));
     }
     // a new session unless this continues the stopped one (same folder, no new name)
-    let named = str_param(p, "session").map(dac_tether::safe_session_name);
+    let named = str_param(p, "session").map(lcc_tether::safe_session_name);
     let resume = old.as_ref().is_some_and(|o| o.folder == folder && named.as_ref().is_none_or(|n| *n == o.name));
     let mut ses = match old {
         Some(o) if resume => o,
@@ -135,7 +135,7 @@ fn start(s: &mut Session, p: &Value) -> Result<Value> {
     configure(s, &mut ses, p, C)?;
     ses.active = true;
     if !resume && bool_or(p, "skipExisting", true) {
-        let listing = dac_tether::list_folder(Path::new(&folder)).map_err(|e| bad(C, e))?;
+        let listing = lcc_tether::list_folder(Path::new(&folder)).map_err(|e| bad(C, e))?;
         ses.skip_existing(&listing);
     }
     StudioSession::save(Some(&ses), &dir).map_err(|e| bad(C, e))?;
@@ -173,14 +173,14 @@ fn scan(s: &mut Session, p: &Value) -> Result<Value> {
     if connection_tick() {
         camera_error = Some("camera: disconnected (cancelled)".to_string());
     }
-    if dac_tether::link::connected()
-        && let Err(e) = dac_tether::link::poll(Path::new(&ses.folder))
+    if lcc_tether::link::connected()
+        && let Err(e) = lcc_tether::link::poll(Path::new(&ses.folder))
     {
         camera_error = Some(format!("camera: {e}"));
     }
     let listing = match p.get("listing").and_then(Value::as_array) {
         Some(l) => l.iter().filter_map(|e| Some((e.get(0)?.as_str()?.to_string(), e.get(1)?.as_u64()?))).collect(),
-        None => match dac_tether::list_folder(Path::new(&ses.folder)) {
+        None => match lcc_tether::list_folder(Path::new(&ses.folder)) {
             Ok(l) => l,
             // the card or share went away: say so, keep the session
             Err(e) => return Ok(json!({"active": true, "imported": [], "error": e})),
@@ -221,16 +221,16 @@ fn scan(s: &mut Session, p: &Value) -> Result<Value> {
 /// Give the new shots `ids` the develop settings (the copy groups) of shot `prev`.
 fn same_as_previous(s: &mut Session, prev: PhotoId, ids: &[u64]) {
     let Some(from) = s.develop_of(prev).filter(|_| s.catalog.photo(prev).is_some_and(|p| !p.deleted)) else { return };
-    let partial = dac_develop::extract_groups(&from, &s.copy_groups);
+    let partial = lcc_develop::extract_groups(&from, &s.copy_groups);
     let ops: Vec<_> = ids
         .iter()
         .map(|i| PhotoId(*i))
         .filter(|id| *id != prev)
         .filter_map(|id| s.develop_of(id).map(|d| (id, d)))
-        .filter_map(|(id, d)| s.develop_op(id, dac_develop::apply_partial(&d, &partial, 1.0), "Same as Previous"))
+        .filter_map(|(id, d)| s.develop_op(id, lcc_develop::apply_partial(&d, &partial, 1.0), "Same as Previous"))
         .collect();
     if !ops.is_empty()
-        && let Err(e) = s.commit("Same as Previous", dac_catalog::Op::Batch { ops })
+        && let Err(e) = s.commit("Same as Previous", lcc_catalog::Op::Batch { ops })
     {
         log::warn!("same as previous: {e}");
     }
@@ -245,7 +245,7 @@ fn capture_folder(s: &mut Session, p: &Value, c: &str) -> Result<PathBuf> {
         return Ok(PathBuf::from(ses.folder));
     }
     let dir = lib_dir(s, c)?;
-    let name = dac_tether::safe_session_name(str_param(p, "session").unwrap_or("Tethered Session"));
+    let name = lcc_tether::safe_session_name(str_param(p, "session").unwrap_or("Tethered Session"));
     let folder = dir.join("Tethered").join(&name);
     std::fs::create_dir_all(&folder).map_err(|e| bad(c, format!("{}: {e}", folder.display())))?;
     let mut sp = json!({"folder": folder.to_string_lossy(), "session": name});
@@ -262,8 +262,8 @@ fn capture_folder(s: &mut Session, p: &Value, c: &str) -> Result<PathBuf> {
 fn sim_shot(n: u32) -> Vec<u8> {
     let (w, h) = (96usize, 64usize);
     let px: Vec<u8> = (0..w * h).flat_map(|i| [(i % w * 2) as u8, (i / w * 3) as u8, (n.wrapping_mul(40) % 256) as u8]).collect();
-    let img = dac_codecs::EncodeImage::new(w as u32, h as u32, 3, dac_codecs::Samples::U8(&px));
-    dac_codecs::encode_jpeg(&img, 85, dac_codecs::ChromaSubsampling::S420, &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+    let img = lcc_codecs::EncodeImage::new(w as u32, h as u32, 3, lcc_codecs::Samples::U8(&px));
+    lcc_codecs::encode_jpeg(&img, 85, lcc_codecs::ChromaSubsampling::S420, &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
 }
 
 fn connect(s: &mut Session, p: &Value) -> Result<Value> {
@@ -271,9 +271,9 @@ fn connect(s: &mut Session, p: &Value) -> Result<Value> {
     let device = str_param(p, "device").map(str::trim).filter(|d| !d.is_empty()).unwrap_or("usb");
     // a library on disk first: shots need somewhere to land
     lib_dir(s, C)?;
-    let make: Option<dac_tether::ptp::sim::ShotMaker> = Some(Box::new(sim_shot));
+    let make: Option<lcc_tether::ptp::sim::ShotMaker> = Some(Box::new(sim_shot));
     let cam =
-        dac_tether::link::connect(device, bool_or(p, "deleteFromCard", false), make).map_err(|e| bad(C, dac_tether::link::fallback_message(&e)))?;
+        lcc_tether::link::connect(device, bool_or(p, "deleteFromCard", false), make).map_err(|e| bad(C, lcc_tether::link::fallback_message(&e)))?;
     if let Err(e) = capture_folder(s, p, C) {
         hang_up();
         return Err(e);
@@ -287,11 +287,11 @@ fn connect(s: &mut Session, p: &Value) -> Result<Value> {
 
 fn capture(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "tether.capture";
-    if !dac_tether::link::connected() {
+    if !lcc_tether::link::connected() {
         return Err(bad(C, "no camera connected (tether.connect); with studio capture, fire the camera from its own app"));
     }
     let folder = capture_folder(s, p, C)?;
-    let files = dac_tether::link::capture(&folder).map_err(|e| bad(C, e.to_string()))?;
+    let files = lcc_tether::link::capture(&folder).map_err(|e| bad(C, e.to_string()))?;
     connection_tick();
     // downloaded files are complete: two scans import them now
     s.execute("tether.scan", &json!({}))?;
@@ -302,27 +302,27 @@ fn capture(s: &mut Session, p: &Value) -> Result<Value> {
 fn set_camera(_s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "tether.camera.set";
     if let Some(b) = p.get("deleteFromCard").and_then(Value::as_bool) {
-        dac_tether::link::set_delete_from_card(b);
+        lcc_tether::link::set_delete_from_card(b);
     }
-    let Some(name) = str_param(p, "setting") else { return Ok(dac_tether::link::status()) };
+    let Some(name) = str_param(p, "setting") else { return Ok(lcc_tether::link::status()) };
     let value = match p.get("value") {
         Some(Value::String(v)) => v.clone(),
         Some(Value::Number(n)) => n.to_string(),
         _ => return Err(bad(C, "missing `value`")),
     };
-    dac_tether::link::set(name, &value).map_err(|e| bad(C, e.to_string()))
+    lcc_tether::link::set(name, &value).map_err(|e| bad(C, e.to_string()))
 }
 
 /// One live view frame, decoded (RGBA, fitted within `max_edge`).
-pub fn live_view_rgba(max_edge: u32) -> std::result::Result<dac_raster::Rgba8, String> {
-    let jpeg = dac_tether::link::live_view_frame().map_err(|e| e.to_string())?;
-    dac_codecs::decode_thumbnail(&jpeg, max_edge).map(|t| t.image).map_err(|e| e.to_string())
+pub fn live_view_rgba(max_edge: u32) -> std::result::Result<lcc_raster::Rgba8, String> {
+    let jpeg = lcc_tether::link::live_view_frame().map_err(|e| e.to_string())?;
+    lcc_codecs::decode_thumbnail(&jpeg, max_edge).map(|t| t.image).map_err(|e| e.to_string())
 }
 
 fn live_view(_s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "tether.liveView";
     if bool_or(p, "stop", false) {
-        dac_tether::link::stop_live_view();
+        lcc_tether::link::stop_live_view();
         return Ok(json!({"live": false}));
     }
     let img = live_view_rgba(1024).map_err(|e| bad(C, e))?;
@@ -376,10 +376,10 @@ pub fn specs() -> Vec<CommandSpec> {
         }),
         cmd!(query "tether.cameras", "Tethered Cameras", [], None,
             "{simulated?: bool} → {cameras: [{id, name, vendor, kind}], error?}",
-            always, |_s, p| Ok(dac_tether::link::cameras(bool_or(p, "simulated", false)))),
+            always, |_s, p| Ok(lcc_tether::link::cameras(bool_or(p, "simulated", false)))),
         cmd!(query "tether.camera", "Tethered Camera Status", [], None,
             "{} → the connected camera {id, name, vendor, link, canCapture, liveView, deleteFromCard, downloaded, readouts: [{name: shutter|aperture|iso|wb|ev|battery, value, label, writable, choices}], note} or null",
-            always, |_s, _p| Ok(dac_tether::link::status())),
+            always, |_s, _p| Ok(lcc_tether::link::status())),
         cmd!(
             "tether.camera.set",
             "Set Camera Setting",
@@ -414,7 +414,7 @@ pub fn specs() -> Vec<CommandSpec> {
             None,
             "{} — the simulated camera (device \"sim\") takes a shot on its own, as if its shutter button was pressed → {handle} or null",
             always,
-            |_s, _p| Ok(dac_tether::link::sim_shoot().map(|h| json!({"handle": h})).unwrap_or(Value::Null))
+            |_s, _p| Ok(lcc_tether::link::sim_shoot().map(|h| json!({"handle": h})).unwrap_or(Value::Null))
         ),
         cmd!(
             "tether.scan",

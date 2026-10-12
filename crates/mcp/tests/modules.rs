@@ -1,9 +1,9 @@
 //! P3.7 audit: every module is scriptable over MCP. Headless (no window), each module's engine
 //! commands are listed as `cmd_*` tools and one harmless command per module runs through
 //! `tools/call`. (The UI-only commands of each module, reachable when MCP drives the running app,
-//! are audited in `dac_ui_egui::creations_ui`'s tests.)
+//! are audited in `lcc_ui_egui::creations_ui`'s tests.)
 
-use dac_mcp::{Headless, Server, command_tool_name};
+use lcc_mcp::{Headless, Server, command_tool_name};
 use serde_json::{Value, json};
 
 fn rpc(s: &mut Server, id: u64, method: &str, params: Value) -> Value {

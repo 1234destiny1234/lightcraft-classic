@@ -1,5 +1,5 @@
 [package]
-name = "dac-raw"
+name = "lcc-raw"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,12 +9,12 @@ description = "RAW decoding, demosaicing and DNG colour model (L1)"
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-tiff = { workspace = true }
-dac-meta = { workspace = true }
-dac-raster = { workspace = true }
-dac-color = { workspace = true }
-dac-geom = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-tiff = { workspace = true }
+lcc-meta = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-color = { workspace = true }
+lcc-geom = { workspace = true }
 serde = { workspace = true }
 thiserror = { workspace = true }
 rayon = { workspace = true }

@@ -6,9 +6,9 @@
 use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::sync::{Arc, Mutex};
 
-use dac_catalog::{Photo, PhotoId, Source};
-use dac_credentials::Secret;
-use dac_publish::{PublishService, Upload};
+use lcc_catalog::{Photo, PhotoId, Source};
+use lcc_credentials::Secret;
+use lcc_publish::{PublishService, Upload};
 
 use crate::client::{Client, ServerOptions};
 use crate::people;
@@ -56,9 +56,9 @@ fn merge_all(a: &Asset, base: Option<&Snapshot>, cfg: &SyncConfig) {
 #[test]
 fn hostile_assets_through_the_merge_never_panic() {
     let cfg_seed = serde_json::to_string(&SyncConfig::default()).unwrap();
-    let mut rng = dac_fuzzkit::Rng::new(3);
+    let mut rng = lcc_fuzzkit::Rng::new(3);
     let base = sync::remote(&serde_json::from_str::<Asset>(ASSET).unwrap());
-    dac_fuzzkit::run_json("immich.sync.asset", &[ASSET, &cfg_seed], 2000, |s| {
+    lcc_fuzzkit::run_json("immich.sync.asset", &[ASSET, &cfg_seed], 2000, |s| {
         let cfg: SyncConfig = serde_json::from_str(s).unwrap_or_default();
         if let Ok(a) = serde_json::from_str::<Asset>(s) {
             merge_all(&a, if rng.chance(2) { Some(&base) } else { None }, &cfg);
@@ -66,7 +66,7 @@ fn hostile_assets_through_the_merge_never_panic() {
         let a: Asset = serde_json::from_str(ASSET).unwrap_or_default();
         merge_all(&a, Some(&base), &cfg);
     });
-    dac_fuzzkit::run_str("immich.sync.time", &["2024-01-08T12:00:00.123+02:00", "2024-01-08T12:00:00Z", "2024-01-08"], 5000, |s| {
+    lcc_fuzzkit::run_str("immich.sync.time", &["2024-01-08T12:00:00.123+02:00", "2024-01-08T12:00:00Z", "2024-01-08"], 5000, |s| {
         let _ = (sync::instant(s), sync::zone_of(s), sync::keyword_to_tag(s), Field::parse(s), sync::Side::parse(s));
     });
 }
@@ -81,7 +81,7 @@ fn damaged_sync_state_never_panics() {
     st.kept.insert("k".into());
     let seed = serde_json::to_string(&st).unwrap();
     let a: Asset = serde_json::from_str(ASSET).unwrap();
-    dac_fuzzkit::run_json("immich.sync.state", &[&seed], 2000, |s| {
+    lcc_fuzzkit::run_json("immich.sync.state", &[&seed], 2000, |s| {
         let Ok(mut st) = serde_json::from_str::<SyncState>(s) else { return };
         let _ = st.conflict_count();
         for item in st.items.values() {
@@ -100,7 +100,7 @@ fn hostile_faces_people_and_search_never_panic() {
     let people =
         r#"{"people":[{"id":"p1","name":"Alice","isHidden":false,"birthDate":"1990-01-01"},{"id":"p2","name":"","isHidden":true}],"total":2}"#;
     let search = serde_json::to_string(&SmartSearch::default()).unwrap_or_default();
-    dac_fuzzkit::run_json("immich.people", &[faces, people, &search], 2000, |s| {
+    lcc_fuzzkit::run_json("immich.people", &[faces, people, &search], 2000, |s| {
         let _ = serde_json::from_str::<SmartSearch>(s);
         let ppl: Vec<Person> = serde_json::from_str::<People>(s).map(|p| p.people).unwrap_or_default();
         let Ok(fs) = serde_json::from_str::<Vec<Face>>(s) else { return };
@@ -121,11 +121,11 @@ fn hostile_faces_people_and_search_never_panic() {
 
 #[test]
 fn publish_ids_and_settings_never_panic() {
-    dac_fuzzkit::run_str("immich.publish.id", &["r:abc+o:def", "o:x", "+++", "r:"], 5000, |s| {
+    lcc_fuzzkit::run_str("immich.publish.id", &["r:abc+o:def", "o:x", "+++", "r:"], 5000, |s| {
         let _ = parse_remote(s);
     });
     let seed = serde_json::to_string(&PublishSettings { account: "https://h#u1".into(), ..Default::default() }).unwrap();
-    dac_fuzzkit::run_json("immich.publish.settings", &[&seed], 1000, |s| {
+    lcc_fuzzkit::run_json("immich.publish.settings", &[&seed], 1000, |s| {
         let _ = serde_json::from_str::<PublishSettings>(s);
     });
 }
@@ -173,7 +173,7 @@ fn publishing_to_a_hostile_server_never_panics() {
         PhotoId(1),
         PhotoInfo { created: "2024-01-01T00:00:00Z".into(), favorite: true, original_name: "a.jpg".into(), ..Default::default() },
     );
-    dac_fuzzkit::run_json("immich.publish", &seeds, 80, |s| {
+    lcc_fuzzkit::run_json("immich.publish", &seeds, 80, |s| {
         *body.lock().unwrap() = s.as_bytes().to_vec();
         let Ok(c) = Client::new(&format!("http://127.0.0.1:{port}"), Secret::new("k"), &opts) else { return };
         let mut svc = ImmichPublish::new(c, PublishSettings::default(), "Shoot", "dev", photos.clone());

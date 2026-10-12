@@ -1,10 +1,10 @@
 //! Every way of setting the crop angle keeps the crop inside the photo (issue #742): the generic
-//! control path (`develop.set` on `crop.angle`, as MCP, the control channel and `dac-cli
+//! control path (`develop.set` on `crop.angle`, as MCP, the control channel and `lcc-cli
 //! render --set` use it, plus `develop.adjust`, `develop.quickAdjust`, `develop.resetControl`) gives
 //! the same crop as `crop.straighten` (the rotate handle, the Straighten slider, the Angle field)
 //! and `crop.set {angle}`.
 
-use dac_geom::{CropGeometry, Rect};
+use lcc_geom::{CropGeometry, Rect};
 use serde_json::{Value, json};
 
 use crate::Session;

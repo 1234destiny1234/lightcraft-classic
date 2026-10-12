@@ -1,4 +1,4 @@
-use dac_segment::remote::{Operation, Request, read_frame};
+use lcc_segment::remote::{Operation, Request, read_frame};
 use std::io::Cursor;
 
 #[test]

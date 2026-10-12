@@ -1,9 +1,9 @@
 //! Modal dialogs (new album, rename, create preset, choose settings to copy, export, about, shortcuts).
 
-use dac_develop::{ControlSpec, Section, SettingsGroup, Track};
+use lcc_develop::{ControlSpec, Section, SettingsGroup, Track};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::state::Dialog;
 use crate::theme::Tokens;
 
@@ -15,15 +15,15 @@ const RENAME_PREVIEW_ROWS: usize = 6;
 /// rows are planned on a worker thread, and only when the template, start number, photos or
 /// catalog change — never once per frame.
 pub(crate) fn rename_preview(
-    app: &mut DacApp,
+    app: &mut LccApp,
     ctx: &egui::Context,
     template: &str,
     start: usize,
-) -> (Option<Vec<dac_engine::rename::RenamePlan>>, usize) {
+) -> (Option<Vec<lcc_engine::rename::RenamePlan>>, usize) {
     use std::hash::{Hash, Hasher};
-    type Rows = std::sync::Arc<std::sync::Mutex<Option<Vec<dac_engine::rename::RenamePlan>>>>;
+    type Rows = std::sync::Arc<std::sync::Mutex<Option<Vec<lcc_engine::rename::RenamePlan>>>>;
     let ids = app.session.targets(&json!({}));
-    let photos = dac_engine::rename::rename_photos(&app.session.catalog, &ids);
+    let photos = lcc_engine::rename::rename_photos(&app.session.catalog, &ids);
     let total = photos.len();
     let mut h = std::collections::hash_map::DefaultHasher::new();
     (template, start, app.session.catalog.revision, &ids).hash(&mut h);
@@ -40,7 +40,7 @@ pub(crate) fn rename_preview(
     let (out, template, repaint) = (rows.clone(), template.to_string(), ctx.clone());
     let exists = app.session.media.availability.probe();
     let work = move || {
-        let plans = dac_engine::rename::plan_rename_photos(&first, &template, start, &|f| exists(f));
+        let plans = lcc_engine::rename::plan_rename_photos(&first, &template, start, &|f| exists(f));
         *out.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(plans);
         repaint.request_repaint();
     };
@@ -60,15 +60,15 @@ pub(crate) fn rename_preview(
 /// thumbnail comes first (at once, a little soft) and then a render at the preview's own pixel size
 /// replaces it. The watermark is redrawn on a copy only when it, the output size or the picture
 /// changes, which is quick at this size, so the preview follows the sliders.
-fn watermark_preview(app: &mut DacApp, ui: &mut egui::Ui, wm: &dac_engine::export::Watermark, resize: Option<dac_engine::export::Resize>) {
+fn watermark_preview(app: &mut LccApp, ui: &mut egui::Ui, wm: &lcc_engine::export::Watermark, resize: Option<lcc_engine::export::Resize>) {
     use std::hash::{Hash, Hasher};
     // (pictures received so far: 1 the thumbnail, 2 the sharp render; the latest, or why none came)
-    type Base = std::sync::Arc<std::sync::Mutex<(u8, Option<Result<dac_raster::Rgba8, String>>)>>;
-    type Shown = (u64, u8, dac_engine::export::Watermark, usize, egui::TextureHandle);
+    type Base = std::sync::Arc<std::sync::Mutex<(u8, Option<Result<lcc_raster::Rgba8, String>>)>>;
+    type Shown = (u64, u8, lcc_engine::export::Watermark, usize, egui::TextureHandle);
     let t = Tokens::get(ui.ctx());
     let Some(&id) = app.session.targets(&json!({})).first() else { return };
     let Some(photo) = app.session.catalog.photo(id).cloned() else { return };
-    let (out_w, out_h) = dac_engine::export::output_size(&photo, &dac_engine::export::ExportOptions { resize, ..Default::default() });
+    let (out_w, out_h) = lcc_engine::export::output_size(&photo, &lcc_engine::export::ExportOptions { resize, ..Default::default() });
     let export_short = out_w.min(out_h);
     // pixels across the dialog, in steps so a scroll bar or a point of layout doesn't re-render
     let step = 128.0;
@@ -135,7 +135,7 @@ fn watermark_preview(app: &mut DacApp, ui: &mut egui::Ui, wm: &dac_engine::expor
                     return;
                 }
             };
-            dac_engine::export::draw_watermark_preview(&mut img, wm, export_short);
+            lcc_engine::export::draw_watermark_preview(&mut img, wm, export_short);
             // shown through the monitor profile like every other preview
             if let Some(d) = app.renderer.display()
                 && let Err(e) = d.profile.from_srgb(&mut img)
@@ -178,7 +178,7 @@ fn window_id(dialog: &Dialog) -> egui::Id {
 
 /// Block the underlying panels from the first frame, before the window establishes its modal
 /// layer. Close background menus on entry; popups subsequently opened inside the dialog stay usable.
-pub(crate) fn prepare(app: &DacApp, ui: &mut egui::Ui) {
+pub(crate) fn prepare(app: &LccApp, ui: &mut egui::Ui) {
     let Some(dialog) = &app.ui.dialog else { return };
     ui.disable();
     let layer = egui::LayerId::new(egui::Order::Middle, window_id(dialog));
@@ -187,7 +187,7 @@ pub(crate) fn prepare(app: &DacApp, ui: &mut egui::Ui) {
     }
 }
 
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let Some(mut dlg) = app.ui.dialog.clone() else { return };
     let at_start = dlg.clone();
     // Esc with a popup open in the dialog (a dropdown, a date picker's calendar) closes the popup
@@ -404,7 +404,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     crate::widgets::register(ui.ctx(), "field:smartName", r.rect);
                     ui.add_space(6.0);
                     // the folder an album made from a folder view carries is not in the editor, but it counts
-                    let folder = id.and_then(|id| app.session.catalog.album(dac_catalog::AlbumId(id))).and_then(|a| a.smart.as_deref().and_then(|f| f.library_folder.clone()));
+                    let folder = id.and_then(|id| app.session.catalog.album(lcc_catalog::AlbumId(id))).and_then(|a| a.smart.as_deref().and_then(|f| f.library_folder.clone()));
                     // problems, count and albums: cached until the catalog or the rules change (not per frame)
                     let now = (app.session.clock)();
                     let view = app.caches.rules_view(&app.session.catalog, rules, *id, folder, &now);
@@ -477,13 +477,13 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     let active = app.session.active().and_then(|id| app.session.catalog.photo(id)).map(|p| (p.file_name.clone(), p.date().to_string()));
                     if let Some((name, cur)) = active {
                         let delta = match mode.as_str() {
-                            "set" => dac_catalog::dates::normalize_iso(time)
-                                .and_then(|t| Some(dac_catalog::dates::iso_seconds(&t)? - dac_catalog::dates::iso_seconds(&cur)?)),
+                            "set" => lcc_catalog::dates::normalize_iso(time)
+                                .and_then(|t| Some(lcc_catalog::dates::iso_seconds(&t)? - lcc_catalog::dates::iso_seconds(&cur)?)),
                             "shift" => params["shift"].as_i64(),
                             "file" => None,
                             _ => Some((*zone as f64 * 3600.0).round() as i64),
                         };
-                        let after = delta.and_then(|d| dac_catalog::dates::shift_iso(&cur, d));
+                        let after = delta.and_then(|d| lcc_catalog::dates::shift_iso(&cur, d));
                         ui.label(
                             egui::RichText::new(match after {
                                 Some(a) => format!("{name}: {} → {}", cur.replace('T', " "), a.replace('T', " ")),
@@ -500,7 +500,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                 Dialog::LabelNames { names, save_as } => {
                     names.resize(5, String::new());
                     // start from a set
-                    let sets = dac_engine::cmd::manage::label_sets_json(&app.session);
+                    let sets = lcc_engine::cmd::manage::label_sets_json(&app.session);
                     field(ui, "Set", |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         for set in sets["sets"].as_array().into_iter().flatten() {
@@ -510,7 +510,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                             }
                         }
                     });
-                    for (i, l) in dac_catalog::ColorLabel::ALL.iter().enumerate() {
+                    for (i, l) in lcc_catalog::ColorLabel::ALL.iter().enumerate() {
                         let colour = format!("{l:?}");
                         field(ui, &colour, |ui| {
                             let (r, _) = ui.allocate_exact_size(egui::vec2(14.0, 14.0), egui::Sense::hover());
@@ -580,7 +580,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     }
                 }
                 Dialog::RenameKeyword { from, to } => {
-                    let n = app.session.catalog.photos().filter(|p| p.meta.keywords.iter().any(|k| dac_catalog::keywords::is_under(k, from))).count();
+                    let n = app.session.catalog.photos().filter(|p| p.meta.keywords.iter().any(|k| lcc_catalog::keywords::is_under(k, from))).count();
                     if dialog_field(ui, "field:keywordName", to, "New name") {
                         confirm = true;
                     }
@@ -600,7 +600,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         .catalog
                         .keyword_suggestions(from, into, 12)
                         .into_iter()
-                        .filter(|k| !from.iter().any(|f| dac_catalog::keywords::is_under(k, f)))
+                        .filter(|k| !from.iter().any(|f| lcc_catalog::keywords::is_under(k, f)))
                         .collect();
                     ui.horizontal_wrapped(|ui| {
                         for k in options {
@@ -677,14 +677,14 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     });
                     choices(ui, "Frame", "timelapseFit", &[(false, "Fit (letterbox)"), (true, "Fill (crop)")], fill);
                     choices(ui, "Frame Rate", "timelapseFps", &[(24, "24"), (25, "25"), (30, "30"), (50, "50"), (60, "60")], fps);
-                    field(ui, "Frames per Photo", |ui| { ui.add(egui::DragValue::new(hold).range(1..=dac_engine::timelapse::MAX_HOLD)); });
-                    field(ui, "Cross-Fade Frames", |ui| { ui.add(egui::DragValue::new(crossfade).range(0..=dac_engine::timelapse::MAX_HOLD)); });
+                    field(ui, "Frames per Photo", |ui| { ui.add(egui::DragValue::new(hold).range(1..=lcc_engine::timelapse::MAX_HOLD)); });
+                    field(ui, "Cross-Fade Frames", |ui| { ui.add(egui::DragValue::new(crossfade).range(0..=lcc_engine::timelapse::MAX_HOLD)); });
                     choices(ui, "Format", "timelapseFormat", &[(false, "H.264 (MP4)"), (true, "ProRes 422 (MOV)")], prores);
                     field(ui, "Quality", |ui| { ui.add(egui::Slider::new(quality, 1..=100)); });
                     ui.label(egui::RichText::new(crate::i18n::tr("Each photo with its own edits, in the order shown. No audio.")).color(t.text_dim));
                 }
                 Dialog::Export { opts, full_size, resize, preset_name, limit_kb, dir } => {
-                    use dac_engine::export::{ExportFormat as F, MetadataPolicy as M, SharpenAmount as A, SharpenFor as S};
+                    use lcc_engine::export::{ExportFormat as F, MetadataPolicy as M, SharpenAmount as A, SharpenFor as S};
                     let n = app.session.selection.ids.len().max(1);
                     ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
                     // Preset: load a built-in or saved set of options into the dialog
@@ -706,7 +706,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         if let Some(name) = chosen
                             && let Ok(params) = app.session.export_params(&json!({"preset": name}))
                         {
-                            let o = dac_engine::export::ExportOptions::from_json(&params);
+                            let o = lcc_engine::export::ExportOptions::from_json(&params);
                             *full_size = o.resize.is_none();
                             *resize = o.resize.unwrap_or_default();
                             *limit_kb = o.limit_kb.unwrap_or(0);
@@ -735,7 +735,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         opts.bit_depth = None;
                     }
                     let rendered = opts.format.is_rendered();
-                    let depths = dac_engine::export::ExportOptions::bit_depths(opts.format);
+                    let depths = lcc_engine::export::ExportOptions::bit_depths(opts.format);
                     if rendered && depths.len() > 1 {
                         let mut bd = opts.bit_depth.filter(|b| depths.iter().any(|d| d.0 == *b)).unwrap_or(depths[0].0);
                         choices(ui, "Bit depth", "exportBitDepth", depths, &mut bd);
@@ -748,13 +748,13 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                             ui.label(egui::RichText::new("HDR TIFF needs 32-bit float.").color(t.text_dim));
                         }
                         if opts.hdr && opts.format == F::Avif {
-                            use dac_engine::export::HdrCurve as H;
+                            use lcc_engine::export::HdrCurve as H;
                             choices(ui, "HDR curve", "exportHdrCurve", &[(H::Pq, "PQ"), (H::Hlg, "HLG")], &mut opts.hdr_transfer);
                         }
                     }
                     if !rendered {
                     } else if opts.format == F::Avif && opts.hdr {
-                        let curve = if opts.hdr_transfer == dac_engine::export::HdrCurve::Hlg { "HLG" } else { "PQ" };
+                        let curve = if opts.hdr_transfer == lcc_engine::export::HdrCurve::Hlg { "HLG" } else { "PQ" };
                         ui.label(egui::RichText::new(format!("Color space: Rec. 2020 {curve} (HDR AVIF)")).color(t.text_dim));
                     } else if opts.format == F::Png && opts.hdr {
                         ui.label(egui::RichText::new("Color space: Rec. 2020 PQ, 16-bit (HDR PNG)").color(t.text_dim))
@@ -764,7 +764,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     } else if opts.format == F::Avif {
                         ui.label(egui::RichText::new(crate::i18n::tr("Color space: sRGB (AVIF)")).color(t.text_dim));
                     } else {
-                        use dac_engine::export::OutputSpace as C;
+                        use lcc_engine::export::OutputSpace as C;
                         choices(
                             ui,
                             "Color space",
@@ -794,7 +794,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         }
                     }
                     if opts.format == F::Jxl {
-                        use dac_engine::export::JxlEffort as E;
+                        use lcc_engine::export::JxlEffort as E;
                         choices(ui, "Effort", "exportJxlEffort", &[(E::Fast, "Fast"), (E::Normal, "Normal")], &mut opts.jxl_effort);
                         let tip = "Shows a coarse version first and refines it as the file loads";
                         ui.checkbox(&mut opts.jxl_progressive, crate::i18n::tr("Progressive")).on_hover_text(crate::i18n::tr(tip));
@@ -808,7 +808,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     // M14.8: clips in the selection export as movies (their trim and video grade)
                     let videos = app.session.selection.ids.iter().filter(|id| app.session.catalog.photo(**id).is_some_and(|p| p.video.is_some())).count();
                     if rendered && videos > 0 {
-                        use dac_engine::export_video::VideoFormat as V;
+                        use lcc_engine::export_video::VideoFormat as V;
                         ui.add_space(4.0);
                         ui.label(egui::RichText::new(crate::i18n::tr("Video")).strong());
                         let note = format!("{videos} · {}", crate::i18n::tr("video clips export as movies, trimmed, with their video edits"));
@@ -857,7 +857,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     }
                     let mut wm_on = opts.watermark.is_some();
                     if ui.checkbox(&mut wm_on, crate::i18n::tr("Watermark")).changed() {
-                        opts.watermark = wm_on.then(|| dac_engine::export::Watermark { text: "© ".into(), ..Default::default() });
+                        opts.watermark = wm_on.then(|| lcc_engine::export::Watermark { text: "© ".into(), ..Default::default() });
                     }
                     let wm_shown = opts.watermark.clone();
                     if let Some(wm) = &wm_shown {
@@ -914,7 +914,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         }
                         // like Lightroom Classic: a margin from the side edges and one from the top and bottom
                         // edges, each unused (greyed) when the position is centred along that axis
-                        use dac_engine::export::Anchor as P;
+                        use lcc_engine::export::Anchor as P;
                         let across = !matches!(wm.anchor, P::Top | P::Center | P::Bottom);
                         if let Some(v) = crate::widgets::slider(ui, &WM_INSET_X, wm.inset_x as f64 * 100.0, across, None).value {
                             wm.inset_x = (v / 100.0) as f32;
@@ -934,11 +934,11 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     }
                     ui.add_space(4.0);
                     if opts.format == F::Tiff {
-                        use dac_engine::export::TiffCompression as Z;
+                        use lcc_engine::export::TiffCompression as Z;
                         choices(ui, "Compression", "exportTiffCompression", &[(Z::None, "None"), (Z::Lzw, "LZW"), (Z::Deflate, "ZIP")], &mut opts.tiff_compression);
                     }
                     if opts.format == F::Dng {
-                        use dac_engine::export::DngCompression as Z;
+                        use lcc_engine::export::DngCompression as Z;
                         choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None")], &mut opts.dng_compression);
                     }
                     let naming_id = egui::Id::new("export-naming");
@@ -973,7 +973,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                     field(ui, "Subfolder", |ui| {
                         ui.add(egui::TextEdit::singleline(&mut opts.subfolder).hint_text(crate::i18n::tr("none")).desired_width(f32::INFINITY))
                     });
-                    use dac_engine::export::Conflict as K;
+                    use lcc_engine::export::Conflict as K;
                     choices(
                         ui,
                         "If file exists",
@@ -1189,7 +1189,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         1 => crate::credits::contributors_ui(app, ui),
                         2 => crate::credits::models_ui(ui),
                         _ => {
-                            ui.label(egui::RichText::new(dac_brand::DISPLAY_NAME).font(t.semibold(20.0)).color(t.text));
+                            ui.label(egui::RichText::new(lcc_brand::DISPLAY_NAME).font(t.semibold(20.0)).color(t.text));
                             ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
                             ui.label(crate::i18n::tr_format!(
                                 "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
@@ -1291,7 +1291,7 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
                         Dialog::DenoiseModel { accepted: false, .. } | Dialog::FaceModel { accepted: false, .. } | Dialog::SynchronizeFolder { counts: None, .. }
                     )
                         // smart-album rules that can't mean anything wait to be fixed
-                        && !matches!(&dlg, Dialog::SmartRules { id, rules, .. } if !rules.check_for(&app.session.catalog, id.map(dac_catalog::AlbumId)).is_empty());
+                        && !matches!(&dlg, Dialog::SmartRules { id, rules, .. } if !rules.check_for(&app.session.catalog, id.map(lcc_catalog::AlbumId)).is_empty());
                 let r = (!ok.is_empty()).then(|| ui.add_enabled(can_confirm, egui::Button::new(crate::i18n::tr(ok))));
                 if let Some(r) = &r {
                     crate::widgets::register(ui.ctx(), "button:dialogOk", r.rect);
@@ -1416,29 +1416,29 @@ pub fn fmt_gap(v: f64) -> String {
 
 /// Whether a dialog stays open after its action succeeded (the SAM 3 dialog while the model
 /// downloads).
-pub fn keeps_open(app: &DacApp, dlg: &Dialog) -> bool {
+pub fn keeps_open(app: &LccApp, dlg: &Dialog) -> bool {
     matches!(dlg, Dialog::SamModel { .. }) && !app.session.segmenter.installed()
 }
 
 /// No SAM 3 model, no download running and nowhere to download it from: installing it by hand is
 /// all the dialog can offer.
-fn sam_by_hand(sam: &dac_engine::segment::Segmenter) -> bool {
+fn sam_by_hand(sam: &lcc_engine::segment::Segmenter) -> bool {
     !sam.installed() && !sam.download_status().running && sam.mirrors().is_empty()
 }
 
 /// The model installation guide.
-const SAM_HELP: &str = dac_brand::REPOSITORY;
+const SAM_HELP: &str = lcc_brand::REPOSITORY;
 
 /// Show the SAM 3 model folder in the file manager (created first, so there is something to show).
-fn show_model_folder(app: &mut DacApp, dir: &std::path::Path) -> Result<(), String> {
+fn show_model_folder(app: &mut LccApp, dir: &std::path::Path) -> Result<(), String> {
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
     let reveal = app.services.reveal.as_mut().ok_or("not available here")?;
     reveal(&dir.to_string_lossy())
 }
 
 /// The SAM 3 dialog: what the model is, its size and licence, and the download's progress.
-fn sam_model_body(app: &mut DacApp, ui: &mut egui::Ui, error: Option<&str>) {
-    use dac_engine::segment::{LICENSE_NAME, LICENSE_URL, MODEL_BYTES};
+fn sam_model_body(app: &mut LccApp, ui: &mut egui::Ui, error: Option<&str>) {
+    use lcc_engine::segment::{LICENSE_NAME, LICENSE_URL, MODEL_BYTES};
     let t = Tokens::get(ui.ctx());
     let seg = &app.session.segmenter;
     let d = seg.download_status();
@@ -1515,7 +1515,7 @@ fn sam_model_body(app: &mut DacApp, ui: &mut egui::Ui, error: Option<&str>) {
 }
 
 /// Runs a command that creates an album and asks the Albums tree to open the folders down to it.
-fn created_in(app: &mut DacApp, command: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
+fn created_in(app: &mut LccApp, command: &str, params: serde_json::Value) -> Result<serde_json::Value, String> {
     let r = app.run(command, params)?;
     app.ui.reveal_album = r.get("id").and_then(serde_json::Value::as_u64);
     Ok(r)
@@ -1523,8 +1523,8 @@ fn created_in(app: &mut DacApp, command: &str, params: serde_json::Value) -> Res
 
 /// The albums an Album rule in smart album `editing` picks from, in the sidebar's order: the album
 /// itself and any smart album that tests it (testing it back would loop) are blocked, with why.
-pub(crate) fn album_entries(cat: &dac_catalog::Catalog, editing: Option<u64>) -> Vec<crate::album_picker::AlbumEntry> {
-    let editing = editing.map(dac_catalog::AlbumId);
+pub(crate) fn album_entries(cat: &lcc_catalog::Catalog, editing: Option<u64>) -> Vec<crate::album_picker::AlbumEntry> {
+    let editing = editing.map(lcc_catalog::AlbumId);
     crate::album_picker::entries_from(cat, |a| match editing {
         Some(e) if a.id == e => Some(crate::i18n::tr("This is the album you're editing").to_string()),
         Some(e) if cat.album_reaches(a.id, e) => Some(crate::i18n::tr("It tests this album, so testing it back would loop").to_string()),
@@ -1532,7 +1532,7 @@ pub(crate) fn album_entries(cat: &dac_catalog::Catalog, editing: Option<u64>) ->
     })
 }
 
-pub fn confirm_dialog(app: &mut DacApp, dlg: &Dialog) -> Result<serde_json::Value, String> {
+pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Value, String> {
     match dlg {
         Dialog::SamModel { then, .. } => {
             if app.session.segmenter.installed() {
@@ -1568,7 +1568,7 @@ pub fn confirm_dialog(app: &mut DacApp, dlg: &Dialog) -> Result<serde_json::Valu
         ),
         Dialog::LabelNames { names, save_as } => {
             let mut m = serde_json::Map::new();
-            for (l, n) in dac_catalog::ColorLabel::ALL.iter().zip(names) {
+            for (l, n) in lcc_catalog::ColorLabel::ALL.iter().zip(names) {
                 m.insert(format!("{l:?}").to_lowercase(), if n.trim().is_empty() { serde_json::Value::Null } else { json!(n.trim()) });
             }
             let r = app.run("label.setNames", json!({"names": m}));
@@ -1627,12 +1627,12 @@ pub fn confirm_dialog(app: &mut DacApp, dlg: &Dialog) -> Result<serde_json::Valu
         }
         Dialog::DeleteKeyword { keyword, .. } => app.run("keyword.delete", json!({"keyword": keyword})),
         Dialog::KeywordSet { replaces, name, slots, as_new } => {
-            use dac_catalog::keywords::same;
+            use lcc_catalog::keywords::same;
             let name = name.trim();
             if name.is_empty() {
                 return Err(crate::i18n::tr("A keyword set needs a name").to_string());
             }
-            if same(name, dac_engine::cmd::keywords::RECENT) {
+            if same(name, lcc_engine::cmd::keywords::RECENT) {
                 return Err(crate::i18n::tr("Recent Keywords is built in: choose another name").to_string());
             }
             // the set it renames: none when saving as new, or when it was deleted meanwhile (then it is
@@ -1672,7 +1672,7 @@ pub fn confirm_dialog(app: &mut DacApp, dlg: &Dialog) -> Result<serde_json::Valu
         }
         Dialog::SmartRules { id, name, rules, parent } => {
             // refused before anything changes (not even the name)
-            if let Some(problem) = rules.check_for(&app.session.catalog, id.map(dac_catalog::AlbumId)).first() {
+            if let Some(problem) = rules.check_for(&app.session.catalog, id.map(lcc_catalog::AlbumId)).first() {
                 return Err(problem.to_string());
             }
             let name = if name.trim().is_empty() { "Smart Album".to_string() } else { name.trim().to_string() };
@@ -1721,20 +1721,20 @@ pub fn confirm_dialog(app: &mut DacApp, dlg: &Dialog) -> Result<serde_json::Valu
 }
 
 /// Open a one-field dialog that runs `command` with `params` + `{key: typed value}`.
-pub fn prompt(app: &mut DacApp, title: &str, hint: &str, value: &str, command: &str, params: serde_json::Value, key: &str) {
+pub fn prompt(app: &mut LccApp, title: &str, hint: &str, value: &str, command: &str, params: serde_json::Value, key: &str) {
     app.ui.dialog =
         Some(Dialog::TextPrompt { title: title.into(), hint: hint.into(), value: value.into(), command: command.into(), params, key: key.into() });
 }
 
 /// The Export dialog's choices as `app.export` params (without the folder).
 fn export_dialog_params(
-    opts: &dac_engine::export::ExportOptions,
+    opts: &lcc_engine::export::ExportOptions,
     full_size: bool,
-    resize: &dac_engine::export::Resize,
+    resize: &lcc_engine::export::Resize,
     limit_kb: u32,
 ) -> serde_json::Value {
     let o =
-        dac_engine::export::ExportOptions { resize: (!full_size).then_some(*resize), limit_kb: (limit_kb > 0).then_some(limit_kb), ..opts.clone() };
+        lcc_engine::export::ExportOptions { resize: (!full_size).then_some(*resize), limit_kb: (limit_kb > 0).then_some(limit_kb), ..opts.clone() };
     o.to_json()
 }
 
@@ -1791,8 +1791,8 @@ const START_NUMBER: ControlSpec = spec("export.startNumber", "Start number", 1.0
 const PPI: ControlSpec = spec("export.ppi", "Resolution (ppi)", 1.0, 1200.0, 240.0, 1.0);
 
 /// Image Sizing: full size, or a resize mode and its value(s), don't enlarge, ppi.
-fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut dac_engine::export::Resize, ppi: &mut u16) {
-    use dac_engine::export::ResizeMode as R;
+fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::Resize, ppi: &mut u16) {
+    use lcc_engine::export::ResizeMode as R;
     const MODES: [(R, &str); 7] = [
         (R::LongEdge, "Long Edge"),
         (R::ShortEdge, "Short Edge"),
@@ -1853,8 +1853,8 @@ fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut dac_engine::export::R
 }
 /// All nine positions supported by both the text and graphic watermark renderer.
 /// Keep them in grid order so bottom-centre and edge-centre anchors are available in Export.
-const WM_POSITIONS: [(dac_engine::export::Anchor, &str); 9] = {
-    use dac_engine::export::Anchor::*;
+const WM_POSITIONS: [(lcc_engine::export::Anchor, &str); 9] = {
+    use lcc_engine::export::Anchor::*;
     [(TopLeft, "↖"), (Top, "↑"), (TopRight, "↗"), (Left, "←"), (Center, "•"), (Right, "→"), (BottomLeft, "↙"), (Bottom, "↓"), (BottomRight, "↘")]
 };
 
@@ -1941,7 +1941,7 @@ fn just_opened(ui: &egui::Ui, key: &str) -> bool {
 #[cfg(test)]
 mod watermark_position_tests {
     use super::WM_POSITIONS;
-    use dac_engine::export::Anchor;
+    use lcc_engine::export::Anchor;
 
     #[test]
     fn export_dialog_offers_every_rendered_anchor_exactly_once() {

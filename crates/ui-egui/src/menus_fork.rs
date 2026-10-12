@@ -5,7 +5,7 @@
 use serde_json::{Value, json};
 
 use super::UiCommand;
-use crate::DacApp;
+use crate::LccApp;
 use crate::pick::{PickRequest, Picked};
 use crate::state::{Dialog, ViewMode};
 
@@ -31,7 +31,7 @@ const PLUGIN_COMMANDS: &[UiCommand] = &[
 const PLUGIN_COMMANDS: &[UiCommand] = &[];
 
 /// The fork's modules' commands, then the fork's own UI command arms.
-pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if let Some(r) = crate::module::run(app, id, p) {
         return Some(r);
     }
@@ -112,10 +112,10 @@ pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value,
                 None => Err("select a spot first".to_string()),
                 Some((i, mode)) => {
                     let next = match mode {
-                        dac_develop::SpotMode::Remove => "heal",
-                        dac_develop::SpotMode::Heal => "clone",
-                        dac_develop::SpotMode::Clone => "fill",
-                        dac_develop::SpotMode::Fill => "remove",
+                        lcc_develop::SpotMode::Remove => "heal",
+                        lcc_develop::SpotMode::Heal => "clone",
+                        lcc_develop::SpotMode::Clone => "fill",
+                        lcc_develop::SpotMode::Fill => "remove",
                     };
                     app.run("spot.update", json!({"index": i, "mode": next})).map(|_| json!({"mode": next}))
                 }
@@ -126,7 +126,7 @@ pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value,
             let path = match p.get("path").and_then(Value::as_str) {
                 Some(x) => x.to_string(),
                 None => {
-                    let name = format!("{} Keymap.json", dac_brand::DISPLAY_NAME);
+                    let name = format!("{} Keymap.json", lcc_brand::DISPLAY_NAME);
                     let req = PickRequest::save(crate::i18n::tr("Export Keymap"), crate::i18n::tr("Keymap"), &["json"], name);
                     match crate::pick::ask(app, id, p, "path", req, |_| None) {
                         Picked::Now(v) => match v.into_iter().next() {
@@ -162,6 +162,6 @@ pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value,
 }
 
 /// Enabled state of the fork's modules' commands.
-pub(super) fn enabled(app: &DacApp, id: &str) -> Option<bool> {
+pub(super) fn enabled(app: &LccApp, id: &str) -> Option<bool> {
     crate::module::enabled(app, id).or_else(|| crate::catalog_ui::enabled(app, id)).or_else(|| crate::timelapse_ui::enabled(app, id))
 }

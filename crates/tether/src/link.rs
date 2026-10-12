@@ -62,7 +62,7 @@ pub fn connect(device: &str, delete_from_card: bool, make: Option<crate::ptp::si
         let s = SimCamera::new(make, device == "sim-nikon");
         (Camera::open(s.transport(), None)?, Some(s))
     } else if let Some(host) = device.strip_prefix("ptpip:") {
-        let t = crate::ptp::ptpip::PtpIpTransport::connect(host, *b"dac-tether-host!", "Photo library")?;
+        let t = crate::ptp::ptpip::PtpIpTransport::connect(host, *b"lcc-tether-host!", "Photo library")?;
         (Camera::open(Box::new(t), None)?, None)
     } else if device == "usb" || device.starts_with("usb:") {
         #[cfg(any(target_os = "linux", target_os = "android", target_os = "macos", target_os = "windows"))]

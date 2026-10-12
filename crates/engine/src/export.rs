@@ -4,11 +4,11 @@
 //! published primaries and curves, optional output sharpening and a JPEG file-size limit. Pure (bytes in, bytes out) so the desktop
 //! app, CLI, MCP and the web build share it; writing the file is the caller's job.
 
-use dac_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, JxlColour, JxlOptions, NamedSpace, Samples, encode, icc};
-pub use dac_codecs::{JxlEffort, TiffCompression};
-use dac_meta::{DateTime, Gps, Metadata};
-pub use dac_pipeline::{DeepImage, DeepSamples, OutputDepth, OutputSpace};
-use dac_raster::Rgba8;
+use lcc_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, JxlColour, JxlOptions, NamedSpace, Samples, encode, icc};
+pub use lcc_codecs::{JxlEffort, TiffCompression};
+use lcc_meta::{DateTime, Gps, Metadata};
+pub use lcc_pipeline::{DeepImage, DeepSamples, OutputDepth, OutputSpace};
+use lcc_raster::Rgba8;
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -550,7 +550,7 @@ fn watermark_logo(path: &str) -> Option<std::sync::Arc<Rgba8>> {
         return Some(img.clone());
     }
     let bytes = std::fs::read(path).ok()?;
-    let img = Arc::new(dac_codecs::decode(&bytes, Default::default()).ok()?.to_srgb8());
+    let img = Arc::new(lcc_codecs::decode(&bytes, Default::default()).ok()?.to_srgb8());
     map.insert(path.to_string(), (modified, img.clone()));
     Some(img)
 }
@@ -567,12 +567,12 @@ fn logo_coverage(width: usize, height: usize, wm: &Watermark, mut blend_px: impl
     }
     let lw = ((wm.image_width.clamp(0.01, 1.0) * width as f32).round() as usize).clamp(1, width);
     let lh = ((lw as f32 * logo.height as f32 / logo.width as f32).round() as usize).clamp(1, height);
-    let pre: dac_raster::Image<[f32; 4]> = dac_raster::Image::from_fn(logo.width, logo.height, |x, y| {
+    let pre: lcc_raster::Image<[f32; 4]> = lcc_raster::Image::from_fn(logo.width, logo.height, |x, y| {
         let p = logo.get(x, y);
         let a = p[3] as f32 / 255.0;
         [p[0] as f32 * a, p[1] as f32 * a, p[2] as f32 * a, a]
     });
-    let scaled = dac_raster::resample::resize(&pre, lw, lh, dac_raster::resample::Filter::Mitchell);
+    let scaled = lcc_raster::resample::resize(&pre, lw, lh, lcc_raster::resample::Filter::Mitchell);
     let short = width.min(height) as f32;
     let (ix, iy) = (wm.inset_x.clamp(0.0, 0.4) * short, wm.inset_y.clamp(0.0, 0.4) * short);
     let turns = wm.quarter_turns();
@@ -641,10 +641,10 @@ impl HdrCurve {
             _ => None,
         }
     }
-    fn codec(self) -> dac_codecs::HdrTransfer {
+    fn codec(self) -> lcc_codecs::HdrTransfer {
         match self {
-            Self::Pq => dac_codecs::HdrTransfer::Pq,
-            Self::Hlg => dac_codecs::HdrTransfer::Hlg,
+            Self::Pq => lcc_codecs::HdrTransfer::Pq,
+            Self::Hlg => lcc_codecs::HdrTransfer::Hlg,
         }
     }
 }
@@ -1259,7 +1259,7 @@ impl ExportOptions {
 
     /// Output file name for photo `p` at 1-based position `seq` in a batch (the original's
     /// extension is kept for [`ExportFormat::Original`]).
-    pub fn file_name_for(&self, p: &dac_catalog::Photo, seq: usize) -> String {
+    pub fn file_name_for(&self, p: &lcc_catalog::Photo, seq: usize) -> String {
         let base = if self.naming.trim().is_empty() { "{name}" } else { self.naming.as_str() };
         let n = seq + self.start_number.max(1) as usize - 1;
         let name = crate::rename::expand_tokens(base, p, n, 3);
@@ -1367,8 +1367,8 @@ pub fn encode_with_metadata(img: &Rgba8, o: &ExportOptions, meta: Option<&Metada
     let img = finish_8bit(img, o);
     let space = o.effective_space();
     let profile = icc::write_named(named_space(space));
-    let exif = meta.map(dac_meta::write_exif);
-    let xmp = meta.map(|m| dac_meta::write_xmp(m, None));
+    let exif = meta.map(lcc_meta::write_exif);
+    let xmp = meta.map(|m| lcc_meta::write_xmp(m, None));
     let meta = EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: Some(o.ppi) };
     let e = EncodeImage::rgba8(&img);
     let r = match o.format {
@@ -1404,7 +1404,7 @@ pub fn encode_with_metadata(img: &Rgba8, o: &ExportOptions, meta: Option<&Metada
         ExportFormat::Psd => encode::encode_psd(&e, &meta),
         ExportFormat::Webp => encode::encode_webp_lossless(&e, &meta),
         ExportFormat::Avif => encode::encode_avif(&e, o.quality, 8, &meta),
-        ExportFormat::Jxl => dac_codecs::encode_jxl(&e, &o.jxl(space, false), &meta),
+        ExportFormat::Jxl => lcc_codecs::encode_jxl(&e, &o.jxl(space, false), &meta),
         f @ (ExportFormat::Original | ExportFormat::Dng) => return Err(format!("{f:?} export does not encode pixels")),
     };
     r.map_err(|e| e.to_string())
@@ -1437,7 +1437,7 @@ fn finish_deep(img: &DeepImage, o: &ExportOptions) -> DeepImage {
 /// and the HDR rendition `hdr` (float linear, same space and size). The gain map is measured
 /// against the base as written, so its 8-bit rounding is handed back by the map.
 pub fn encode_gain_map_jpeg(sdr: &Rgba8, hdr: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
-    use dac_codecs::gainmap;
+    use lcc_codecs::gainmap;
     let base = finish_8bit(sdr, o);
     let hdr = finish_deep(hdr, o);
     let DeepSamples::F32(hv) = &hdr.samples else {
@@ -1453,8 +1453,8 @@ pub fn encode_gain_map_jpeg(sdr: &Rgba8, hdr: &DeepImage, o: &ExportOptions, met
     let hdr_lin: &[[f32; 3]] = hv.as_chunks::<3>().0;
     let (map, gm) = gainmap::compute(&sdr_lin, hdr_lin, w, h, space.luma(), &gainmap::GainMapOptions::default()).map_err(|e| e.to_string())?;
     let profile = icc::write_named(named_space(space));
-    let exif = meta.map(dac_meta::write_exif);
-    let xmp = meta.map(|m| dac_meta::write_xmp(m, None));
+    let exif = meta.map(lcc_meta::write_exif);
+    let xmp = meta.map(|m| lcc_meta::write_xmp(m, None));
     let em = EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: Some(o.ppi) };
     let sub = if o.limit_kb.is_some() { ChromaSubsampling::S420 } else { ChromaSubsampling::S444 };
     gainmap::encode_jpeg(&EncodeImage::rgba8(&base), &map, &gm, o.quality, sub, &em).map_err(|e| e.to_string())
@@ -1476,8 +1476,8 @@ pub fn srgb8_in(space: OutputSpace, c: [u8; 3]) -> [u8; 3] {
     if space == OutputSpace::Srgb {
         return c;
     }
-    let lin = c.map(dac_color::transfer::decode_srgb8);
-    let m = dac_color::SRGB.to_space(&space.rgb_space()).to_f32();
+    let lin = c.map(lcc_color::transfer::decode_srgb8);
+    let m = lcc_color::SRGB.to_space(&space.rgb_space()).to_f32();
     let t = space.trc();
     std::array::from_fn(|i| {
         let v = m[i][0] * lin[0] + m[i][1] * lin[1] + m[i][2] * lin[2];
@@ -1487,7 +1487,7 @@ pub fn srgb8_in(space: OutputSpace, c: [u8; 3]) -> [u8; 3] {
 
 /// Encode a render according to `o`: its high-bit-depth samples when it has them (16-bit PNG/TIFF,
 /// 10-bit AVIF, 32-bit float linear TIFF), else its 8-bit image.
-pub fn encode_rendered(r: &dac_pipeline::Rendered, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
+pub fn encode_rendered(r: &lcc_pipeline::Rendered, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
     match &r.deep {
         Some(d) if o.effective_depth() != OutputDepth::U8 => encode_deep(d, o, meta),
         _ => encode_with_metadata(&r.image, o, meta),
@@ -1498,11 +1498,11 @@ pub fn encode_rendered(r: &dac_pipeline::Rendered, o: &ExportOptions, meta: Opti
 pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) -> Result<Vec<u8>, String> {
     let img = finish_deep(img, o);
     let profile = match img.samples {
-        DeepSamples::F32(_) => icc::write_matrix_trc(&img.space.rgb_space(), &dac_codecs::Trc::Linear),
+        DeepSamples::F32(_) => icc::write_matrix_trc(&img.space.rgb_space(), &lcc_codecs::Trc::Linear),
         DeepSamples::U16(_) => icc::write_named(named_space(img.space)),
     };
-    let exif = meta.map(dac_meta::write_exif);
-    let xmp = meta.map(|m| dac_meta::write_xmp(m, None));
+    let exif = meta.map(lcc_meta::write_exif);
+    let xmp = meta.map(|m| lcc_meta::write_xmp(m, None));
     let meta = EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: Some(o.ppi) };
     let (w, h) = (img.width as u32, img.height as u32);
     let e = match &img.samples {
@@ -1510,16 +1510,16 @@ pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) 
         DeepSamples::F32(v) => EncodeImage::new(w, h, 3, Samples::F32(v)),
     };
     let r = match (o.format, &img.samples) {
-        (ExportFormat::Png, DeepSamples::F32(v)) if img.space == OutputSpace::Rec2020 => dac_codecs::encode_png_pq(w, h, v, &meta),
+        (ExportFormat::Png, DeepSamples::F32(v)) if img.space == OutputSpace::Rec2020 => lcc_codecs::encode_png_pq(w, h, v, &meta),
         (ExportFormat::Png, _) => encode::encode_png(&e, &meta),
         (ExportFormat::Tiff, _) => encode::encode_tiff(&e, o.tiff_compression, &meta),
         (ExportFormat::Psd, _) => encode::encode_psd(&e, &meta),
         (ExportFormat::Avif, DeepSamples::F32(v)) if img.space == OutputSpace::Rec2020 => {
-            dac_codecs::encode_avif_hdr(w, h, v, o.quality, 8, &meta, o.hdr_transfer.codec())
+            lcc_codecs::encode_avif_hdr(w, h, v, o.quality, 8, &meta, o.hdr_transfer.codec())
         }
         (ExportFormat::Avif, _) => encode::encode_avif(&e, o.quality, 8, &meta),
-        (ExportFormat::Jxl, DeepSamples::F32(_)) if img.space == OutputSpace::Rec2020 => dac_codecs::encode_jxl(&e, &o.jxl(img.space, true), &meta),
-        (ExportFormat::Jxl, DeepSamples::U16(_)) => dac_codecs::encode_jxl(&e, &o.jxl(img.space, false), &meta),
+        (ExportFormat::Jxl, DeepSamples::F32(_)) if img.space == OutputSpace::Rec2020 => lcc_codecs::encode_jxl(&e, &o.jxl(img.space, true), &meta),
+        (ExportFormat::Jxl, DeepSamples::U16(_)) => lcc_codecs::encode_jxl(&e, &o.jxl(img.space, false), &meta),
         (f, _) => return Err(format!("{f:?} export is 8-bit only")),
     };
     r.map_err(|e| e.to_string())
@@ -1527,14 +1527,14 @@ pub fn encode_deep(img: &DeepImage, o: &ExportOptions, meta: Option<&Metadata>) 
 
 /// Whether the export of `photo` under `o` leaves out its location (GPS and place names).
 /// (`photo` and `catalog` let library-level privacy rules add to the export option.)
-pub fn removes_location(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalog, o: &ExportOptions) -> bool {
+pub fn removes_location(photo: &lcc_catalog::Photo, catalog: &lcc_catalog::Catalog, o: &ExportOptions) -> bool {
     // a photo inside a private saved location (Map module) is exported without its location
     o.remove_location || photo.meta.gps.is_some_and(|g| catalog.is_private_location(g))
 }
 
 /// The metadata to embed for `photo` under `o.metadata` / `o.remove_location`. `None` = embed nothing.
 /// Keywords follow the catalog's keyword list (`Catalog::export_keywords`).
-pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalog, o: &ExportOptions) -> Option<Metadata> {
+pub fn export_metadata(photo: &lcc_catalog::Photo, catalog: &lcc_catalog::Catalog, o: &ExportOptions) -> Option<Metadata> {
     let m = &photo.meta;
     let text = |s: &str| (!s.trim().is_empty()).then(|| s.to_string());
     // copyright info (also under "copyright only"): notice, creator, status, usage terms, info URL
@@ -1544,7 +1544,7 @@ pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalo
         usage_terms: text(&m.usage_terms),
         copyright_url: text(&m.copyright_url),
         artist: text(&m.creator),
-        software: Some(dac_brand::DISPLAY_NAME.into()),
+        software: Some(lcc_brand::DISPLAY_NAME.into()),
         ..Default::default()
     };
     match o.metadata {
@@ -1569,7 +1569,7 @@ pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalo
     out.capture_time = photo.captured.as_deref().and_then(DateTime::parse_iso);
     out.rating = (photo.rating > 0).then_some(photo.rating as i8);
     // Pixels are exported upright: orientation is baked in.
-    out.orientation = Some(dac_meta::Orientation::Normal);
+    out.orientation = Some(lcc_meta::Orientation::Normal);
     if !remove_location {
         out.gps = m.gps.map(|(latitude, longitude)| Gps { latitude, longitude, altitude: None });
     }
@@ -1578,7 +1578,7 @@ pub fn export_metadata(photo: &dac_catalog::Photo, catalog: &dac_catalog::Catalo
         out.lens_model = text(&m.lens);
         out.focal_length = m.focal_mm.map(f64::from);
         out.f_number = m.aperture.map(f64::from);
-        out.exposure_time = dac_catalog::parse_shutter_seconds(&m.shutter);
+        out.exposure_time = lcc_catalog::parse_shutter_seconds(&m.shutter);
         out.iso = m.iso;
     }
     Some(out)
@@ -1621,8 +1621,8 @@ impl Exported {
 }
 
 /// Output size of photo `p` under `o` (its cropped full size when `o.resize` is `None`).
-pub fn output_size(p: &dac_catalog::Photo, o: &ExportOptions) -> (usize, usize) {
-    let (w, h) = dac_pipeline::native_output_size(p.width.max(1) as usize, p.height.max(1) as usize, &p.develop);
+pub fn output_size(p: &lcc_catalog::Photo, o: &ExportOptions) -> (usize, usize) {
+    let (w, h) = lcc_pipeline::native_output_size(p.width.max(1) as usize, p.height.max(1) as usize, &p.develop);
     match &o.resize {
         Some(r) => r.apply(w, h),
         None => ((w.round() as usize).max(1), (h.round() as usize).max(1)),
@@ -1631,7 +1631,7 @@ pub fn output_size(p: &dac_catalog::Photo, o: &ExportOptions) -> (usize, usize) 
 
 /// Render photo `id` at the requested size and encode it (or copy / convert its original for
 /// [`ExportFormat::Original`] / [`ExportFormat::Dng`]).
-pub fn export_photo(session: &mut crate::Session, id: dac_catalog::PhotoId, o: &ExportOptions, seq: usize) -> Result<Exported, String> {
+pub fn export_photo(session: &mut crate::Session, id: lcc_catalog::PhotoId, o: &ExportOptions, seq: usize) -> Result<Exported, String> {
     prepare_export(session, id, o, seq)?.run()
 }
 
@@ -1639,7 +1639,7 @@ pub fn export_photo(session: &mut crate::Session, id: dac_catalog::PhotoId, o: &
 /// the heavy part (read, decode, render, encode) without the session, so it can run on another
 /// thread.
 pub struct PreparedExport {
-    pub photo: dac_catalog::PhotoId,
+    pub photo: lcc_catalog::PhotoId,
     pub file_name: String,
     work: Work,
     /// The library's originals, which [`run_batch`] never writes over (shared by a batch).
@@ -1677,20 +1677,20 @@ enum Work {
 
 /// Set up the export of photo `id` at 1-based position `seq` of a batch. (For a whole batch use
 /// [`prepare_batch`]: it looks at the library's originals once.)
-pub fn prepare_export(session: &mut crate::Session, id: dac_catalog::PhotoId, o: &ExportOptions, seq: usize) -> Result<PreparedExport, String> {
+pub fn prepare_export(session: &mut crate::Session, id: lcc_catalog::PhotoId, o: &ExportOptions, seq: usize) -> Result<PreparedExport, String> {
     let guard = std::sync::Arc::new(session.original_guard());
     prepare_guarded(session, id, o, seq, guard)
 }
 
 /// [`prepare_export`] for each of `ids` in order (`{seq}` = position, from 1).
-pub fn prepare_batch(session: &mut crate::Session, ids: &[dac_catalog::PhotoId], o: &ExportOptions) -> Result<Vec<PreparedExport>, String> {
+pub fn prepare_batch(session: &mut crate::Session, ids: &[lcc_catalog::PhotoId], o: &ExportOptions) -> Result<Vec<PreparedExport>, String> {
     let guard = std::sync::Arc::new(session.original_guard());
     ids.iter().enumerate().map(|(i, id)| prepare_guarded(session, *id, o, i + 1, guard.clone())).collect()
 }
 
 fn prepare_guarded(
     session: &mut crate::Session,
-    id: dac_catalog::PhotoId,
+    id: lcc_catalog::PhotoId,
     o: &ExportOptions,
     seq: usize,
     guard: std::sync::Arc<crate::originals::OriginalGuard>,
@@ -1698,7 +1698,7 @@ fn prepare_guarded(
     let p = session.catalog.photo(id).ok_or("no such photo")?;
     let mut file_name = o.file_name_for(p, seq);
     if let Some(v) = p.video.as_ref().filter(|_| o.format.is_rendered()) {
-        let dac_catalog::Source::File { path } = &p.source else {
+        let lcc_catalog::Source::File { path } = &p.source else {
             return Err(format!("{}: a video clip without a file", p.file_name));
         };
         let stem = file_name.strip_suffix(o.format.extension()).unwrap_or(&file_name).trim_end_matches('.');
@@ -1736,7 +1736,7 @@ fn prepare_guarded(
         let hdr_job = if gain_map { Some(session.export_job(id, w, h, o.effective_space(), OutputDepth::F32Hdr)?) } else { None };
         (Work::Render(Box::new(RenderWork { job, hdr_job, meta, opts: o.clone() })), weight)
     } else {
-        let dac_catalog::Source::File { path } = &p.source else {
+        let lcc_catalog::Source::File { path } = &p.source else {
             return Err(format!("{} is a generated demo photo: it has no original file to export", p.file_name));
         };
         let dng = (o.format == ExportFormat::Dng).then_some(o.dng_compression);
@@ -1819,7 +1819,7 @@ impl PreparedExport {
                 };
                 let Some(dng) = dng else {
                     // the file is copied byte for byte: refuse rather than leak a location it embeds
-                    if remove_location && dac_meta::extract(&bytes).gps.is_some() {
+                    if remove_location && lcc_meta::extract(&bytes).gps.is_some() {
                         return Err(format!(
                             "{label}: can't remove the location from an original file that embeds GPS; export as JPEG, TIFF or DNG instead"
                         ));
@@ -1834,17 +1834,17 @@ impl PreparedExport {
                         video_file: None,
                     });
                 };
-                if dac_raw::probe(&bytes).is_none() {
+                if lcc_raw::probe(&bytes).is_none() {
                     return Err(format!("{label}: DNG export needs a raw photo"));
                 }
-                let raw = dac_raw::decode(&bytes).map_err(|e| format!("{label}: {e}"))?;
+                let raw = lcc_raw::decode(&bytes).map_err(|e| format!("{label}: {e}"))?;
                 drop(bytes);
                 let compression = match dng {
-                    DngCompression::Lossless => dac_raw::DngCompression::Lj92 { tile: 256 },
-                    DngCompression::Deflate => dac_raw::DngCompression::Deflate { tile: 256, half: false },
-                    DngCompression::Uncompressed => dac_raw::DngCompression::Uncompressed,
+                    DngCompression::Lossless => lcc_raw::DngCompression::Lj92 { tile: 256 },
+                    DngCompression::Deflate => lcc_raw::DngCompression::Deflate { tile: 256, half: false },
+                    DngCompression::Uncompressed => lcc_raw::DngCompression::Uncompressed,
                 };
-                let dng = dac_raw::write_dng(&raw, &dac_raw::DngWriteOptions { xmp: Some(packet), compression, ..Default::default() })
+                let dng = lcc_raw::write_dng(&raw, &lcc_raw::DngWriteOptions { xmp: Some(packet), compression, ..Default::default() })
                     .map_err(|e| e.to_string())?;
                 Ok(Exported {
                     file_name,
@@ -1918,7 +1918,7 @@ impl AfterExport {
 
     /// Do it now for an export's per-photo results ([`run_batch`]'s: only the files written
     /// count), waiting for Photos: for a worker thread (the app's background export) or a caller
-    /// without a window (MCP, dac-cli). `None` when there was nothing to do, else the
+    /// without a window (MCP, lcc-cli). `None` when there was nothing to do, else the
     /// outcome to report as the export's `applePhotos`: the finished job (`{job, running: false,
     /// requested, album}` with `{imported, ids, warning?}`, `{error}`, or `{skipped}` when the
     /// export was cancelled or wrote nothing). Never fails the export: its files are written
@@ -1983,7 +1983,7 @@ impl crate::Session {
 /// Export `ids` in order ([`prepare_batch`] + [`run_batch`]), stopping at the first error.
 pub fn export_batch(
     session: &mut crate::Session,
-    ids: &[dac_catalog::PhotoId],
+    ids: &[lcc_catalog::PhotoId],
     o: &ExportOptions,
     to: &Destination,
     write: &mut dyn FnMut(&str, &[u8]) -> Result<(), String>,
@@ -1994,7 +1994,7 @@ pub fn export_batch(
 }
 
 /// Write an exported or rendered file on disk: its folder is created if needed, and the file is
-/// replaced atomically ([`dac_catalog::safe_file::write_atomic_nosync`]: a temp file
+/// replaced atomically ([`lcc_catalog::safe_file::write_atomic_nosync`]: a temp file
 /// renamed into place), so a failure part-way leaves any previous file intact and no truncated
 /// one. Not synced to disk (issue #134): an export can always be made again from the original.
 /// The native writer behind exports, renders and screenshots (app, CLI, MCP).
@@ -2009,7 +2009,7 @@ pub fn write_file_durable(path: &str, bytes: &[u8]) -> Result<(), String> {
 }
 
 fn write_with(path: &str, bytes: &[u8], durable: bool) -> Result<(), String> {
-    use dac_catalog::safe_file::{write_atomic, write_atomic_nosync};
+    use lcc_catalog::safe_file::{write_atomic, write_atomic_nosync};
     let p = std::path::Path::new(path);
     if let Some(dir) = p.parent().filter(|d| !d.as_os_str().is_empty()) {
         std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
@@ -2241,7 +2241,7 @@ impl<'a> Placer<'a> {
     /// only when it failed and `stop_on_error` is set.
     fn place(
         &mut self,
-        photo: dac_catalog::PhotoId,
+        photo: lcc_catalog::PhotoId,
         name: String,
         guard: &crate::originals::OriginalGuard,
         e: Result<Exported, String>,
@@ -2370,7 +2370,7 @@ mod tests {
     /// a keyword left out of export. They used to carry the `a|b` paths in `dc:subject`.
     #[test]
     fn exported_keywords_follow_their_options() {
-        use dac_catalog::{Catalog, Op, Photo, PhotoId, Source, keywords::KeywordInfo};
+        use lcc_catalog::{Catalog, Op, Photo, PhotoId, Source, keywords::KeywordInfo};
         let mut c = Catalog::new();
         c.apply(Op::SetKeyword { path: "Places".into(), info: Some(KeywordInfo { include_on_export: false, ..KeywordInfo::default() }) }).unwrap();
         c.apply(Op::SetKeyword { path: "draft".into(), info: Some(KeywordInfo { include_on_export: false, ..KeywordInfo::default() }) }).unwrap();
@@ -2380,17 +2380,17 @@ mod tests {
         assert_eq!(m.keywords, ["Lisbon", "Italy", "travel"]);
         assert_eq!(m.hierarchical_keywords, ["Places|Lisbon", "travel|Italy"]);
         let jpg = encode_with_metadata(&test_image(), &ExportOptions::default(), Some(&m)).unwrap();
-        let back = dac_meta::extract(&jpg);
+        let back = lcc_meta::extract(&jpg);
         assert_eq!((back.keywords, back.hierarchical_keywords), (m.keywords.clone(), m.hierarchical_keywords.clone()));
     }
 
     #[test]
     fn metadata_policies() {
-        use dac_catalog::{Catalog, Photo, PhotoId, Source};
+        use lcc_catalog::{Catalog, Photo, PhotoId, Source};
         let mut p = Photo::new(PhotoId(1), Source::Demo { scene: 0 }, "a.jpg", "jpeg", 10, 10, "2026-09-30T00:00:00");
         p.meta.camera = "Synthetic X2".into();
         p.meta.copyright = "(c) Me".into();
-        p.meta.copyright_status = dac_catalog::CopyrightStatus::Copyrighted;
+        p.meta.copyright_status = lcc_catalog::CopyrightStatus::Copyrighted;
         p.meta.usage_terms = "Editorial use only".into();
         p.meta.copyright_url = "https://example.com/rights".into();
         p.meta.shutter = "1/250".into();
@@ -2412,7 +2412,7 @@ mod tests {
         assert!(export_metadata(&p, &Catalog::new(), &ExportOptions { metadata: MetadataPolicy::None, ..Default::default() }).is_none());
         // embedded and readable back from the JPEG
         let jpg = encode_with_metadata(&test_image(), &ExportOptions::default(), Some(&all)).unwrap();
-        let back = dac_meta::extract(&jpg);
+        let back = lcc_meta::extract(&jpg);
         assert_eq!(back.model.as_deref(), Some("Synthetic X2"));
         assert_eq!(back.copyright.as_deref(), Some("(c) Me"));
         assert_eq!((back.copyright_marked, back.usage_terms.as_deref()), (Some(true), Some("Editorial use only")));
@@ -2693,7 +2693,7 @@ mod tests {
         let logo_path = dir.join("logo.png");
         // 40×20: left half opaque red, right half fully transparent
         let logo = Rgba8::from_fn(40, 20, |x, _| if x < 20 { [255, 0, 0, 255] } else { [0, 255, 0, 0] });
-        let png = dac_codecs::encode_png(&EncodeImage::rgba8(&logo), &EncodeMeta::default()).unwrap();
+        let png = lcc_codecs::encode_png(&EncodeImage::rgba8(&logo), &EncodeMeta::default()).unwrap();
         std::fs::write(&logo_path, png).unwrap();
         let mut img = Rgba8::new(400, 300);
         img.data.iter_mut().for_each(|p| *p = [0, 0, 0, 255]);
@@ -2755,8 +2755,8 @@ mod tests {
         assert_eq!(ExportOptions { format: ExportFormat::Dng, ..Default::default() }.file_name_for(&named("a.cr2"), 1), "a.dng");
     }
 
-    fn named(file_name: &str) -> dac_catalog::Photo {
-        use dac_catalog::{Photo, PhotoId, Source};
+    fn named(file_name: &str) -> lcc_catalog::Photo {
+        use lcc_catalog::{Photo, PhotoId, Source};
         Photo::new(PhotoId(1), Source::Demo { scene: 0 }, file_name, "", 1, 1, "2026-01-01T00:00:00")
     }
 
@@ -2844,18 +2844,18 @@ mod tests {
 
     /// A flat field of a saturated green inside Display P3 but outside sRGB, rendered into `space`.
     fn p3_green(space: OutputSpace) -> Rgba8 {
-        use dac_color::{DISPLAY_P3, REC2020};
+        use lcc_color::{DISPLAY_P3, REC2020};
         let c = DISPLAY_P3.to_space(&REC2020).apply_f32([0.04, 0.45, 0.04]);
-        let src = dac_raster::Rgb32f::filled(16, 16, c);
-        let req = dac_pipeline::RenderRequest { space, ..dac_pipeline::RenderRequest::fit(16, 16) };
-        dac_pipeline::render(&src, &Default::default(), &Default::default(), &req).image
+        let src = lcc_raster::Rgb32f::filled(16, 16, c);
+        let req = lcc_pipeline::RenderRequest { space, ..lcc_pipeline::RenderRequest::fit(16, 16) };
+        lcc_pipeline::render(&src, &Default::default(), &Default::default(), &req).image
     }
 
     /// Decode `bytes` and return the centre pixel in linear sRGB primaries (unclamped), plus the
     /// recognised space of the embedded profile.
     fn decoded_in_srgb(bytes: &[u8]) -> ([f32; 3], Option<NamedSpace>) {
-        let d = dac_codecs::decode(bytes, Default::default()).expect("decodes");
-        let m = d.space.to_space(&dac_color::SRGB);
+        let d = lcc_codecs::decode(bytes, Default::default()).expect("decodes");
+        let m = d.space.to_space(&lcc_color::SRGB);
         (m.apply_f32(d.image.get(8, 8)), d.space.named)
     }
 
@@ -2875,9 +2875,9 @@ mod tests {
     #[test]
     fn every_space_embeds_its_own_profile_and_round_trips() {
         let grey = {
-            let src = dac_raster::Rgb32f::filled(16, 16, [0.18; 3]);
-            let base = dac_pipeline::RenderRequest::fit(16, 16);
-            move |space| dac_pipeline::render(&src, &Default::default(), &Default::default(), &dac_pipeline::RenderRequest { space, ..base }).image
+            let src = lcc_raster::Rgb32f::filled(16, 16, [0.18; 3]);
+            let base = lcc_pipeline::RenderRequest::fit(16, 16);
+            move |space| lcc_pipeline::render(&src, &Default::default(), &Default::default(), &lcc_pipeline::RenderRequest { space, ..base }).image
         };
         let reference =
             decoded_in_srgb(&encode_image(&grey(OutputSpace::Srgb), &ExportOptions { format: ExportFormat::Tiff, ..Default::default() }).unwrap()).0;
@@ -2916,14 +2916,14 @@ mod tests {
     }
 
     /// A shallow horizontal grey ramp (few 8-bit levels), rendered at `depth`.
-    fn ramp(depth: OutputDepth, space: OutputSpace) -> dac_pipeline::Rendered {
-        let src = dac_raster::Rgb32f::from_fn(1024, 4, |x, _| [0.10 + 0.03 * x as f32 / 1023.0; 3]);
-        let req = dac_pipeline::RenderRequest { depth, space, ..dac_pipeline::RenderRequest::fit(1024, 4) };
-        dac_pipeline::render(&src, &Default::default(), &Default::default(), &req)
+    fn ramp(depth: OutputDepth, space: OutputSpace) -> lcc_pipeline::Rendered {
+        let src = lcc_raster::Rgb32f::from_fn(1024, 4, |x, _| [0.10 + 0.03 * x as f32 / 1023.0; 3]);
+        let req = lcc_pipeline::RenderRequest { depth, space, ..lcc_pipeline::RenderRequest::fit(1024, 4) };
+        lcc_pipeline::render(&src, &Default::default(), &Default::default(), &req)
     }
 
-    fn distinct_levels(bytes: &[u8]) -> (usize, dac_codecs::Decoded) {
-        let d = dac_codecs::decode(bytes, Default::default()).expect("decodes");
+    fn distinct_levels(bytes: &[u8]) -> (usize, lcc_codecs::Decoded) {
+        let d = lcc_codecs::decode(bytes, Default::default()).expect("decodes");
         let mut v: Vec<u32> = (0..d.image.width).map(|x| d.image.get(x, 1)[1].to_bits()).collect();
         v.dedup();
         (v.len(), d)
@@ -3016,7 +3016,7 @@ mod tests {
             let png = ExportOptions { format: ExportFormat::Png, color_space: space, ..Default::default() };
             let img = p3_green(space);
             let bytes = encode_image(&img, &o).unwrap();
-            assert_eq!(dac_codecs::sniff(&bytes), Some(dac_codecs::Format::Jxl));
+            assert_eq!(lcc_codecs::sniff(&bytes), Some(lcc_codecs::Format::Jxl));
             let (got, _) = decoded_in_srgb(&bytes);
             let (want, _) = decoded_in_srgb(&encode_image(&img, &png).unwrap());
             for c in 0..3 {
@@ -3200,7 +3200,7 @@ mod tests {
     #[allow(clippy::type_complexity)]
     fn lanes_batch(
         s: &mut crate::Session,
-        ids: &[dac_catalog::PhotoId],
+        ids: &[lcc_catalog::PhotoId],
         o: &ExportOptions,
         lanes: usize,
         stop_on_error: bool,
@@ -3232,15 +3232,15 @@ mod tests {
     /// entry (`gpuFallback`, the render's own reason) and says nothing on the others.
     #[test]
     fn a_batch_reports_a_gpu_fallback_on_the_file_it_hit() {
-        if !dac_gpu::available() {
-            eprintln!("skipped: no GPU adapter ({:?})", dac_gpu::unavailable_reason());
+        if !lcc_gpu::available() {
+            eprintln!("skipped: no GPU adapter ({:?})", lcc_gpu::unavailable_reason());
             return;
         }
         let mut s = crate::Session::with_demo();
         let ids: Vec<_> = s.visible().iter().copied().take(2).collect();
         let o = ExportOptions::from_json(&json!({"format": "png", "width": 64}));
         // one lane: both photos render on this thread, and the fault hits the first render here
-        dac_gpu::inject_fault(dac_gpu::Fault::Limit(1 << 10));
+        lcc_gpu::inject_fault(lcc_gpu::Fault::Limit(1 << 10));
         let (files, _, _) = lanes_batch(&mut s, &ids, &o, 1, true, usize::MAX);
         let files = files.unwrap();
         assert_eq!(files.len(), 2, "{files:?}");
@@ -3248,7 +3248,7 @@ mod tests {
         assert_eq!(why.len(), 1, "exactly one file fell back: {files:?}");
         assert!(why[0].contains("limit"), "{files:?}");
         assert!(files[1].get("gpuFallback").is_none(), "the second render was fine: {files:?}");
-        assert!(dac_gpu::available(), "a limit is no device failure");
+        assert!(lcc_gpu::available(), "a limit is no device failure");
     }
 
     // Issue #496: photos rendered side by side give the same files, names, order and progress as
@@ -3280,7 +3280,7 @@ mod tests {
     // stop_on_error the batch ends there and nothing after it is written
     #[test]
     fn side_by_side_batches_report_failures_in_order() {
-        use dac_catalog::{Op, Photo, PhotoId, Source};
+        use lcc_catalog::{Op, Photo, PhotoId, Source};
         let mut s = crate::Session::with_demo();
         let mut ids: Vec<_> = s.visible().iter().copied().take(3).collect();
         let gone =

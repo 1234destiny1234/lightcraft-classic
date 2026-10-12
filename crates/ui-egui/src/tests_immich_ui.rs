@@ -6,7 +6,7 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::Dialog;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 
@@ -24,10 +24,10 @@ fn click(h: &mut Headless, id: &str) {
 }
 
 fn app(dir: &std::path::Path) -> Headless {
-    let mut s = dac_engine::Session::new();
+    let mut s = lcc_engine::Session::new();
     s.remote.secrets_file = Some(dir.join("credentials.enc"));
     s.remote.credentials_prefs = Some(dir.join("credentials.json"));
-    Headless::new(DacApp::new(s, Services { png: None, ..Default::default() }), [1200.0, 800.0], 1.0)
+    Headless::new(LccApp::new(s, Services { png: None, ..Default::default() }), [1200.0, 800.0], 1.0)
 }
 
 fn immich_source(h: &Headless) -> Option<bool> {
@@ -41,12 +41,12 @@ fn immich_source(h: &Headless) -> Option<bool> {
 // of its own); the dialog switches between Files and Immich.
 #[test]
 fn import_from_immich_is_a_source_of_the_import_dialog() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-ui-src-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-ui-src-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = app(&dir);
     // keys in memory, so the dialog doesn't ask for a passphrase on hosts without a system keychain (FreeBSD CI)
-    h.app.session.set_secret_store(std::sync::Arc::new(dac_engine::remote::MemorySecrets::default()));
+    h.app.session.set_secret_store(std::sync::Arc::new(lcc_engine::remote::MemorySecrets::default()));
     let r = h.request("engine.execute", json!({"command": "file.importImmich", "params": {}}), T);
     assert_eq!(r["result"]["source"], "immich", "{r}");
     h.step();
@@ -65,7 +65,7 @@ fn import_from_immich_is_a_source_of_the_import_dialog() {
 // Feature: keys kept in the encrypted file are unlocked with a passphrase prompt once per session.
 #[test]
 fn key_file_prompt_creates_and_unlocks_the_file() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-ui-key-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-ui-key-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = app(&dir);
@@ -94,7 +94,7 @@ fn key_file_prompt_creates_and_unlocks_the_file() {
 // Feature: the engine's Immich commands are in the menus (Library ▸ Immich).
 #[test]
 fn immich_commands_are_in_library_immich() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-ui-menu-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-ui-menu-{}", std::process::id()));
     let h = app(&dir);
     let bar = crate::menubar::menu_bar(&h.app);
     let (_, file) = bar.iter().find(|(t, _)| t == "Library").unwrap();
@@ -177,12 +177,12 @@ fn rect(h: &Headless, id: &str) -> Option<egui::Rect> {
 // rule row in the sync rules.
 #[test]
 fn immich_card_is_compact() {
-    let dir = std::env::temp_dir().join(format!("dac-immich-ui-card-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-immich-ui-card-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut h = app(&dir);
-    h.app.session.set_secret_store(std::sync::Arc::new(dac_engine::remote::MemorySecrets::default()));
-    let mut perms: Vec<&'static str> = dac_immich::client::FEATURE_PERMISSIONS.iter().flat_map(|(_, p)| p.iter().copied()).collect();
+    h.app.session.set_secret_store(std::sync::Arc::new(lcc_engine::remote::MemorySecrets::default()));
+    let mut perms: Vec<&'static str> = lcc_immich::client::FEATURE_PERMISSIONS.iter().flat_map(|(_, p)| p.iter().copied()).collect();
     perms.extend(["map.read", "memory.read", "sharedLink.create", "sharedLink.read", "session.read", "workflow.read", "systemConfig.read"]);
     let url = mini_server(perms);
     let r = h.app.session.execute("immich.connect", &json!({"url": url, "apiKey": "ui-test-key"})).unwrap();
@@ -204,9 +204,9 @@ fn immich_card_is_compact() {
     let card = rect(&h, "immichAccount:0").expect("the card");
     // the old card was ~1000 pt tall with the sync rules open
     assert!(card.height() < 470.0, "card height {}", card.height());
-    if let Some(p) = dac_brand::env_os("TEST_SHOTS") {
-        h.app.services.png = Some(Box::new(|img: &dac_raster::Rgba8| {
-            dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(img), &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+    if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
+        h.app.services.png = Some(Box::new(|img: &lcc_raster::Rgba8| {
+            lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
         }));
         h.app.services.write = Some(Box::new(|p: &str, b: &[u8]| std::fs::write(p, b).map_err(|e| e.to_string())));
         let r = h.request("ui.screenshot", json!({"path": std::path::Path::new(&p).join("immich-card.png").to_string_lossy(), "headless": true}), T);

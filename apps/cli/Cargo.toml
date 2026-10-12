@@ -1,5 +1,5 @@
 [package]
-name = "dac-cli"
+name = "lcc-cli"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -14,34 +14,34 @@ path = "src/main.rs"
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-engine = { workspace = true }
-dac-denoise = { workspace = true }
-dac-camdb = { workspace = true }
-dac-sysmem = { workspace = true }
-dac-mcp = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-engine = { workspace = true }
+lcc-denoise = { workspace = true }
+lcc-camdb = { workspace = true }
+lcc-sysmem = { workspace = true }
+lcc-mcp = { workspace = true }
 log = { workspace = true }
-dac-ui-egui = { workspace = true }
-dac-codecs = { workspace = true }
-dac-raster = { workspace = true }
-dac-merge = { workspace = true }
+lcc-ui-egui = { workspace = true }
+lcc-codecs = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-merge = { workspace = true }
 serde_json = { workspace = true }
 dhat = { workspace = true, optional = true }
 
 [features]
 default = ["denoise"]
-denoise = ["dac-engine/denoise"]
-rawnind-model = ["denoise", "dac-engine/rawnind-model"]
-# Heap profiling: `cargo run --release -p dac-cli --features dhat-heap -- snapshot …` counts
+denoise = ["lcc-engine/denoise"]
+rawnind-model = ["denoise", "lcc-engine/rawnind-model"]
+# Heap profiling: `cargo run --release -p lcc-cli --features dhat-heap -- snapshot …` counts
 # every allocation (live/peak bytes in `library.memory` / `ui.inspect`) and writes dhat-heap.json
 # (open it in DHAT's viewer: allocation sites by bytes at the peak). Slows allocation-heavy work.
 dhat-heap = ["dep:dhat"]
 
-# Open HEIC/HEIF photos (the optional dac-heif crate). Not default so distributors choose
+# Open HEIC/HEIF photos (the optional lcc-heif crate). Not default so distributors choose
 # it (HEVC patents); build with `--features heif` to include it.
-heif = ["dac-codecs/heif"]
+heif = ["lcc-codecs/heif"]
 
 # M14: end-to-end video tests encode a synthetic clip in-test and re-decode the export
-[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.dac-video]
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies.lcc-video]
 workspace = true
 features = ["test-util"]

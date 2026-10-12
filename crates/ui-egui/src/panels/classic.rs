@@ -7,7 +7,7 @@
 use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::PanelId;
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -17,12 +17,12 @@ fn state_key(p: PanelId) -> String {
 }
 
 /// Whether a Classic panel is unfolded.
-pub fn is_open(app: &DacApp, p: PanelId) -> bool {
+pub fn is_open(app: &LccApp, p: PanelId) -> bool {
     !app.ui.sidebar_section_collapsed(&state_key(p))
 }
 
 /// Fold or unfold a Classic panel; in Solo Mode, unfolding one folds the others on its side.
-pub fn set_open(app: &mut DacApp, p: PanelId, open: bool) {
+pub fn set_open(app: &mut LccApp, p: PanelId, open: bool) {
     if open == is_open(app, p) {
         return;
     }
@@ -38,13 +38,13 @@ pub fn set_open(app: &mut DacApp, p: PanelId, open: bool) {
     app.ui.toggle_sidebar_section(&state_key(p));
 }
 
-pub fn toggle(app: &mut DacApp, p: PanelId) {
+pub fn toggle(app: &mut LccApp, p: PanelId) {
     let open = is_open(app, p);
     set_open(app, p, !open);
 }
 
 /// The panels of one side, in the user's order, without hidden ones.
-pub fn ordered(app: &DacApp, declared: &[PanelId]) -> Vec<PanelId> {
+pub fn ordered(app: &LccApp, declared: &[PanelId]) -> Vec<PanelId> {
     let mut out: Vec<PanelId> = app.ui.panel_order.iter().copied().filter(|p| declared.contains(p)).collect();
     for p in declared {
         if !out.contains(p) {
@@ -84,7 +84,7 @@ pub fn title(p: PanelId) -> &'static str {
 /// A Classic panel header: a disclosure triangle and the title, the full width; a click folds the
 /// panel, the context menu lists the side's panels (show/hide) and Solo Mode. Returns the header
 /// rect and whether the panel is open. `widget id`: `classicPanel:<key>`.
-pub fn header(app: &mut DacApp, ui: &mut egui::Ui, p: PanelId, side: &[PanelId]) -> (Rect, bool) {
+pub fn header(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId, side: &[PanelId]) -> (Rect, bool) {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click_and_drag());
     register(ui.ctx(), format!("classicPanel:{}", p.key()), r);
@@ -113,7 +113,7 @@ fn rect_id(p: PanelId) -> egui::Id {
 
 /// Drag a header up or down its side to move the panel: an insertion line shows where it lands;
 /// on release the side's new order goes through `panel.order`.
-fn drag_to_reorder(app: &mut DacApp, ui: &egui::Ui, p: PanelId, side: &[PanelId], r: Rect, resp: &egui::Response) {
+fn drag_to_reorder(app: &mut LccApp, ui: &egui::Ui, p: PanelId, side: &[PanelId], r: Rect, resp: &egui::Response) {
     ui.data_mut(|d| d.insert_temp(rect_id(p), r));
     if !(resp.dragged() || resp.drag_stopped()) {
         return;
@@ -163,7 +163,7 @@ fn side_edge(side: &[PanelId]) -> crate::module::Edge {
 
 /// The header context menu: every panel of the side with a check (show/hide), Solo Mode, expand /
 /// collapse all, and the side's hiding mode (manual, auto hide, auto hide & show).
-pub fn side_menu(app: &mut DacApp, resp: &egui::Response, side: &[PanelId]) {
+pub fn side_menu(app: &mut LccApp, resp: &egui::Response, side: &[PanelId]) {
     resp.context_menu(|ui| {
         for q in side {
             let mut shown = !app.ui.hidden_panels.contains(q);
@@ -214,7 +214,7 @@ pub fn triangle(p: &egui::Painter, c: egui::Pos2, open: bool, col: Color32) {
 }
 
 /// Library's right column: the Classic panels stacked, each under its header.
-pub fn right_column(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider));
     let reserve = if app.ui.left_panel { crate::state::LEFT_WIDTH.min } else { 0.0 };
@@ -240,7 +240,7 @@ pub fn right_column(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// A right-column panel's contents.
-fn body(app: &mut DacApp, ui: &mut egui::Ui, p: PanelId) {
+fn body(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId) {
     match p {
         PanelId::QuickDevelop => super::quick_develop::show(app, ui),
         PanelId::Keywording => super::right::keywording(app, ui),

@@ -1,13 +1,13 @@
-//! Project links (Help menu, About dialog), from the brand (`dac_brand`).
+//! Project links (Help menu, About dialog), from the brand (`lcc_brand`).
 
 /// This app's web page.
-pub const APP_PAGE: &str = dac_brand::HOMEPAGE;
+pub const APP_PAGE: &str = lcc_brand::HOMEPAGE;
 /// This app's source repository.
-pub const GITHUB: &str = dac_brand::REPOSITORY;
+pub const GITHUB: &str = lcc_brand::REPOSITORY;
 /// The user documentation (docs/ in the repository).
-pub const HELP: &str = dac_brand::REPOSITORY;
+pub const HELP: &str = lcc_brand::REPOSITORY;
 /// Where feedback and bug reports go.
-pub const FEEDBACK: &str = dac_brand::REPOSITORY;
+pub const FEEDBACK: &str = lcc_brand::REPOSITORY;
 
 /// (UI command id, menu label, URL) for each link, in Help-menu order. Labels use the `{app}`
 /// placeholder; `crate::i18n::tr` fills it in.
@@ -23,7 +23,7 @@ pub fn url_of(cmd: &str) -> Option<&'static str> {
 }
 
 /// Open `url` in the user's browser (through the host's `open_url` service).
-pub fn open(app: &mut crate::DacApp, url: &str) -> Result<serde_json::Value, String> {
+pub fn open(app: &mut crate::LccApp, url: &str) -> Result<serde_json::Value, String> {
     let open = app.services.open_url.as_mut().ok_or("can't open links here")?;
     open(url)?;
     Ok(serde_json::json!({ "url": url }))
@@ -40,6 +40,6 @@ mod tests {
             assert!(!label.is_empty());
             assert_eq!(url_of(id), Some(*url));
         }
-        assert_eq!((APP_PAGE, GITHUB), (dac_brand::HOMEPAGE, dac_brand::REPOSITORY));
+        assert_eq!((APP_PAGE, GITHUB), (lcc_brand::HOMEPAGE, lcc_brand::REPOSITORY));
     }
 }

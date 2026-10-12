@@ -1,5 +1,5 @@
 # Printing (LRC-PRINT-*): the pure-Rust IPP client against a real CUPS queue. The virtual IPP printer
-# (`dac_print::testprinter`) already runs in every `cargo xtask ci`; this job adds CUPS itself with the
+# (`lcc_print::testprinter`) already runs in every `cargo xtask ci`; this job adds CUPS itself with the
 # cups-pdf backend: `cups_test_printer_receives_a_job` reads the queue's paper sizes, prints a 2×2 contact sheet
 # PDF, follows the job to "completed", and the PDF must land in the cups-pdf output. See docs/print.md.
 name: Print
@@ -45,13 +45,13 @@ jobs:
           sudo lpadmin -p PDF -E -v cups-pdf:/ -m lsb/usr/cups-pdf/CUPS-PDF_opt.ppd
           lpstat -p PDF
       - name: virtual IPP printer tests
-        run: "cargo test -p dac-print --lib -- virtual_ ipp::"
+        run: "cargo test -p lcc-print --lib -- virtual_ ipp::"
       - name: CUPS test printer
         run: |
           prefix=$(sed -n 's/^env_prefix *= *"\([A-Z0-9_]*\)".*/\1/p' brand.toml)
           test -n "$prefix"
           env "${prefix}_CUPS_TEST_PRINTER=ipp://localhost:631/printers/PDF" \
-            cargo test -p dac-print --lib cups_test_printer -- --nocapture
+            cargo test -p lcc-print --lib cups_test_printer -- --nocapture
       - name: the job reached cups-pdf
         run: |
           for _ in $(seq 1 30); do

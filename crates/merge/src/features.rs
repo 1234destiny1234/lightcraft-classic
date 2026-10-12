@@ -16,9 +16,9 @@
 //! - **Matching:** brute-force nearest neighbour in L2 with Lowe's ratio test, kept only when
 //!   mutually consistent.
 
-use dac_raster::Plane;
-use dac_raster::blur::gaussian;
-use dac_raster::resample::half;
+use lcc_raster::Plane;
+use lcc_raster::blur::gaussian;
+use lcc_raster::resample::half;
 use rayon::prelude::*;
 
 pub const DESC_LEN: usize = 64;

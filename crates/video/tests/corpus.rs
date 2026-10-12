@@ -7,8 +7,8 @@
 
 use std::path::PathBuf;
 
-use dac_raster::Rgb32f;
-use dac_video::{FrameReader, VideoError, poster, probe};
+use lcc_raster::Rgb32f;
+use lcc_video::{FrameReader, VideoError, poster, probe};
 
 fn clip(name: &str) -> Option<PathBuf> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/video").join(name);
@@ -135,7 +135,7 @@ fn avchd_interlaced_is_reported_unsupported() {
 /// Prefixes of every corpus clip: probe and decode return errors or frames, never panic.
 #[test]
 fn corpus_truncations_never_panic() {
-    let dir = std::env::temp_dir().join(format!("dac-video-corpus-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-video-corpus-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("scratch");
     for name in CLIPS.iter().map(|e| e.name).chain(["avchd-interlaced-1080i-jvc.mts"]) {
         let Some(path) = clip(name) else { continue };

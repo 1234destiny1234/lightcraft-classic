@@ -1,13 +1,13 @@
 [package]
-name = "dac-publish"
+name = "lcc-publish"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
 description = "Publish services (L3): published collections, per-photo publish state, remote ids, the service trait and the built-in Hard Drive service"
 
 [dependencies]
-dac-catalog = { workspace = true }
-dac-hash = { workspace = true }
+lcc-catalog = { workspace = true }
+lcc-hash = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 
@@ -15,4 +15,4 @@ serde_json = { workspace = true }
 workspace = true
 
 [dev-dependencies]
-dac-fuzzkit = { workspace = true }
+lcc-fuzzkit = { workspace = true }

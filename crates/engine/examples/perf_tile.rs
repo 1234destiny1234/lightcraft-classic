@@ -1,25 +1,25 @@
 //! P6.1 budget probe: a 1:1 loupe tile (`Session::region_job`), budget ≤ 100 ms.
-//! `cargo run --release -p dac-engine --example perf_tile -- corpus/raw/arw-sony-a7m3-compressed.arw`
+//! `cargo run --release -p lcc-engine --example perf_tile -- corpus/raw/arw-sony-a7m3-compressed.arw`
 //! Prints: the first window (decodes the original), the same window again, a pan to the next
 //! window, and an exposure change on the same window (the source is cached across all three).
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use std::time::Instant;
 
-use dac_pipeline::PixelWindow;
+use lcc_pipeline::PixelWindow;
 use serde_json::json;
 
 fn main() {
     let path = std::env::args().nth(1).expect("a raw file");
     let edge: usize = std::env::var("TILE").ok().and_then(|v| v.parse().ok()).unwrap_or(1024);
-    let mut s = dac_engine::Session::new().with_fs();
+    let mut s = lcc_engine::Session::new().with_fs();
     let r = s.execute("library.import", &json!({"paths": [path]})).expect("import");
-    let id = dac_catalog::PhotoId(r["imported"][0].as_u64().expect("imported"));
+    let id = lcc_catalog::PhotoId(r["imported"][0].as_u64().expect("imported"));
     let p = s.catalog.photo(id).expect("photo").clone();
     let (w, h) = (p.width as usize, p.height as usize);
     // as the loupe does: one stage cache per view slot, kept across its renders
-    let stages = std::sync::Arc::new(dac_pipeline::StageCache::default());
-    let time = |label: &str, s: &mut dac_engine::Session, win: PixelWindow| {
+    let stages = std::sync::Arc::new(lcc_pipeline::StageCache::default());
+    let time = |label: &str, s: &mut lcc_engine::Session, win: PixelWindow| {
         let t = Instant::now();
         let job = s.region_job(id, w, h, win, true).expect("region job").with_stages(stages.clone());
         let r = job.run();

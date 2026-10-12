@@ -1,5 +1,5 @@
 //! Interchange: local corrections (masks) stored as `crs:` structures in XMP sidecars, XMP
-//! presets and `.lrtemplate` files → our [`Mask`](dac_develop::Mask)s.
+//! presets and `.lrtemplate` files → our [`Mask`](lcc_develop::Mask)s.
 //!
 //! Four containers hold them: `MaskGroupBasedCorrections` (current: each correction has a list
 //! of mask components) and the older `GradientBasedCorrections`, `CircularGradientBasedCorrections`
@@ -13,7 +13,7 @@
 
 use std::collections::BTreeMap;
 
-use dac_meta::XmpValue;
+use lcc_meta::XmpValue;
 use serde_json::{Value, json};
 
 /// Top-level properties keyed `prefix:name`, with structure.
@@ -229,7 +229,7 @@ pub fn masks(values: &Values, aspect: f64) -> (Vec<Value>, Vec<String>) {
 /// beside `RetouchAreas` for older readers and read on its own when that is all there is).
 pub const SPOT_CONTAINERS: [&str; 2] = ["crs:RetouchAreas", "crs:RetouchInfo"];
 
-/// One `RetouchAreas` item → a [`Spot`](dac_develop::Spot) as JSON. `aspect` = width /
+/// One `RetouchAreas` item → a [`Spot`](lcc_develop::Spot) as JSON. `aspect` = width /
 /// height of the target: horizontal sizes are stored as fractions of the width, ours of the long
 /// edge. Returns the component kind it can't carry over.
 fn spot(item: &XmpValue, aspect: f64) -> Result<Value, String> {
@@ -377,7 +377,7 @@ pub fn refit_radials(partial: &mut Value, from: f64, to: f64) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_develop::{DevelopSettings, MaskOp, MaskShape};
+    use lcc_develop::{DevelopSettings, MaskOp, MaskShape};
 
     /// A packet in the shape local corrections take (values written for this test).
     const PACKET: &str = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
@@ -411,7 +411,7 @@ mod tests {
 </rdf:Description></rdf:RDF></x:xmpmeta>"#;
 
     fn settings() -> (DevelopSettings, Vec<String>) {
-        let d = dac_meta::parse_xmp(PACKET).unwrap();
+        let d = lcc_meta::parse_xmp(PACKET).unwrap();
         let (partial, unmapped) = crate::crs::to_partial_report(&d.properties, Some(&d.values), crate::crs::Target::Any, 1.5);
         (DevelopSettings::default().merged(&partial).expect("valid settings"), unmapped)
     }
@@ -447,8 +447,8 @@ mod tests {
     #[test]
     fn masks_render() {
         let (s, _) = settings();
-        let img = dac_scenes::demo_library()[0].render(96, 64);
-        let render = |d: &DevelopSettings| dac_pipeline::render(&img, &Default::default(), d, &dac_pipeline::RenderRequest::fit(96, 64)).image.data;
+        let img = lcc_scenes::demo_library()[0].render(96, 64);
+        let render = |d: &DevelopSettings| lcc_pipeline::render(&img, &Default::default(), d, &lcc_pipeline::RenderRequest::fit(96, 64)).image.data;
         assert_ne!(render(&DevelopSettings { light: s.light, ..Default::default() }), render(&s), "the masks change the picture");
     }
 
@@ -468,9 +468,9 @@ mod tests {
     fn presets_add_masks_once() {
         let (s, _) = settings();
         let partial = json!({"masks": serde_json::to_value(&s.masks).unwrap(), "light": {"exposure": 0.5}});
-        let p = dac_develop::Preset { id: "t".into(), name: "t".into(), group: "g".into(), settings: partial, favorite: false, builtin: false };
+        let p = lcc_develop::Preset { id: "t".into(), name: "t".into(), group: "g".into(), settings: partial, favorite: false, builtin: false };
         let mut mine = DevelopSettings::default();
-        mine.masks.push(dac_develop::Mask { id: 7, name: "Mine".into(), ..Default::default() });
+        mine.masks.push(lcc_develop::Mask { id: 7, name: "Mine".into(), ..Default::default() });
         let once = p.apply(&mine, 1.0);
         assert_eq!(once.masks.len(), 4, "added to the photo's own mask");
         assert_eq!(once.masks[1].id, 8, "fresh ids");
@@ -518,8 +518,8 @@ mod tests {
 
     #[test]
     fn retouch_areas_become_spots() {
-        use dac_develop::SpotMode;
-        let d = dac_meta::parse_xmp(SPOTS).unwrap();
+        use lcc_develop::SpotMode;
+        let d = lcc_meta::parse_xmp(SPOTS).unwrap();
         let (partial, unmapped) = crate::crs::to_partial_report(&d.properties, Some(&d.values), crate::crs::Target::Any, 1.5);
         let s = DevelopSettings::default().merged(&partial).expect("valid settings");
         assert_eq!(s.light.exposure, 0.1, "global settings still map");
@@ -543,7 +543,7 @@ mod tests {
 
     #[test]
     fn portrait_target_scales_spot_sizes() {
-        let d = dac_meta::parse_xmp(SPOTS).unwrap();
+        let d = lcc_meta::parse_xmp(SPOTS).unwrap();
         let (partial, _) = crate::crs::to_partial_report(&d.properties, Some(&d.values), crate::crs::Target::Any, 2.0 / 3.0);
         let s = DevelopSettings::default().merged(&partial).unwrap();
         assert!((s.spots[0].size - 0.01 * 2.0 / 3.0).abs() < 1e-9, "a width fraction on a portrait target: {}", s.spots[0].size);
@@ -552,11 +552,11 @@ mod tests {
     #[test]
     fn legacy_retouch_info_is_read_on_its_own() {
         let packet = SPOTS.replace("crs:RetouchAreas", "crs:Ignored");
-        let d = dac_meta::parse_xmp(&packet).unwrap();
+        let d = lcc_meta::parse_xmp(&packet).unwrap();
         let (partial, unmapped) = crate::crs::to_partial_report(&d.properties, Some(&d.values), crate::crs::Target::Any, 1.5);
         let s = DevelopSettings::default().merged(&partial).unwrap();
         assert_eq!(s.spots.len(), 1, "{:?}", s.spots);
-        assert_eq!(s.spots[0].mode, dac_develop::SpotMode::Heal);
+        assert_eq!(s.spots[0].mode, lcc_develop::SpotMode::Heal);
         assert!((s.spots[0].points[0].x - 0.4).abs() < 1e-9 && (s.spots[0].size - 0.01).abs() < 1e-9);
         assert!(s.spots[0].source_offset.is_some_and(|o| (o.x - 0.05).abs() < 1e-9));
         assert!(unmapped.iter().any(|u| u == "Ignored"), "{unmapped:?}");
@@ -565,11 +565,11 @@ mod tests {
 
     #[test]
     fn spots_render() {
-        let d = dac_meta::parse_xmp(SPOTS).unwrap();
+        let d = lcc_meta::parse_xmp(SPOTS).unwrap();
         let (partial, _) = crate::crs::to_partial_report(&d.properties, Some(&d.values), crate::crs::Target::Any, 1.5);
         let s = DevelopSettings::default().merged(&partial).unwrap();
-        let img = dac_scenes::demo_library()[0].render(96, 64);
-        let render = |d: &DevelopSettings| dac_pipeline::render(&img, &Default::default(), d, &dac_pipeline::RenderRequest::fit(96, 64)).image.data;
+        let img = lcc_scenes::demo_library()[0].render(96, 64);
+        let render = |d: &DevelopSettings| lcc_pipeline::render(&img, &Default::default(), d, &lcc_pipeline::RenderRequest::fit(96, 64)).image.data;
         assert_ne!(render(&DevelopSettings { light: s.light, ..Default::default() }), render(&s), "the spots change the picture");
     }
 }

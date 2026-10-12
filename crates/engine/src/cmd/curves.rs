@@ -2,8 +2,8 @@
 //! Medium / Strong Contrast plus the user's, saved with the library preferences, imported and
 //! exported as small JSON files).
 
-use dac_develop::ToneCurve;
-use dac_geom::Point;
+use lcc_develop::ToneCurve;
+use lcc_geom::Point;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 

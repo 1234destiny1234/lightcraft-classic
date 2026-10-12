@@ -1,5 +1,5 @@
 [package]
-name = "dac-plugin-sdk"
+name = "lcc-plugin-sdk"
 description = "Guest-side SDK for the app's WebAssembly plug-ins (ABI v1): exports, host calls, typed helpers"
 version = "0.1.0"
 edition = "2024"

@@ -12,7 +12,7 @@
 //! - [`ops`]: every edit as a JSON operation (`book.addPage`, `book.cell`, …) so the UI, the
 //!   control channel, MCP and the CLI share one implementation.
 //! - [`render`]: a page as pixels (preview, JPEG export) through a
-//!   [`dac_layout::render::PhotoSource`], text shaped with `dac-text`.
+//!   [`lcc_layout::render::PhotoSource`], text shaped with `lcc-text`.
 //! - [`export`]: a PDF (cover plus pages, spreads as single pages, photos as JPEG with an sRGB
 //!   ICC profile, text as embedded subset fonts) or one JPEG per page.
 //!
@@ -51,8 +51,8 @@ pub enum BookError {
 
 pub type Result<T> = std::result::Result<T, BookError>;
 
-impl From<dac_layout::LayoutError> for BookError {
-    fn from(e: dac_layout::LayoutError) -> Self {
+impl From<lcc_layout::LayoutError> for BookError {
+    fn from(e: lcc_layout::LayoutError) -> Self {
         BookError::Render(e.to_string())
     }
 }

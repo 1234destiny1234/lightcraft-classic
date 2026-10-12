@@ -39,7 +39,7 @@ commands:
                   catalog scale benchmark: import throughput, snapshot time, then (in a fresh process)
                   open time, peak RSS and filter latency (default 250000,1000000 photos, backend v4)
   deny            cargo deny check licenses (deny.toml), skipped with a message if cargo-deny is missing
-  shortcuts       regenerate docs/manual/keyboard-shortcuts.md from the command registry (builds dac-cli)
+  shortcuts       regenerate docs/manual/keyboard-shortcuts.md from the command registry (builds lcc-cli)
   docs [--check]  render README.md.in and docs/**/*.md.in ({{app}}, {{binary}}, … from brand.toml) into
                   the .md next to each; --check fails when one is out of date
   install [--prefix DIR] [--skip-build]
@@ -49,7 +49,7 @@ commands:
                   release build + rendered packaging/**/*.in templates, branded binaries, man page and
                   completions into target/package/ (installers: packaging/<os>/package.*)
   rename-crates <prefix> [--from OLD] | --upstream [--since REV]
-                  change the internal crate prefix (dac-*) everywhere; --upstream rewrites incoming
+                  change the internal crate prefix (lcc-*) everywhere; --upstream rewrites incoming
                   upstream crate paths (UPSTREAM_PREFIX-*) in files changed since REV (fork-base)
   run [--release] [ARGS…]
                   build and run the app under its brand.binary name (target/<profile>/branded/)
@@ -273,7 +273,7 @@ fn wasm_set() -> Result<Vec<String>, String> {
             _ => false,
         })
         .map(|c| c.name)
-        .chain(std::iter::once("dac-web".to_string()))
+        .chain(std::iter::once("lcc-web".to_string()))
         .collect())
 }
 
@@ -298,7 +298,7 @@ fn cmd_wasm() -> Result<(), String> {
 /// `bench-catalog`: the catalog crate's `bench_catalog` example, release build (see its docs).
 fn cmd_bench_catalog(rest: &[&str]) -> Result<(), String> {
     let mut c = cargo();
-    c.args(["run", "--release", "-q", "-p", "dac-catalog", "--example", "bench_catalog", "--"]);
+    c.args(["run", "--release", "-q", "-p", "lcc-catalog", "--example", "bench_catalog", "--"]);
     if !rest.contains(&"--dir") {
         c.args(["--dir", "target/bench-catalog"]);
     }
@@ -343,15 +343,15 @@ pub fn cmd_ci() -> Result<(), String> {
             Box::new(|| {
                 // the optional HEIC/HEIF decoder is off in the workspace build above
                 let mut c = cargo();
-                c.args(["clippy", "-p", "dac-codecs", "--features", "heif", "--all-targets", "--", "-D", "warnings"]);
-                run(c, "cargo clippy -p dac-codecs --features heif --all-targets -- -D warnings")?;
+                c.args(["clippy", "-p", "lcc-codecs", "--features", "heif", "--all-targets", "--", "-D", "warnings"]);
+                run(c, "cargo clippy -p lcc-codecs --features heif --all-targets -- -D warnings")?;
                 let mut c = cargo();
-                c.args(["test", "-p", "dac-codecs", "-p", "dac-heif", "--features", "dac-codecs/heif"]);
-                run(c, "cargo test -p dac-codecs -p dac-heif --features dac-codecs/heif")?;
+                c.args(["test", "-p", "lcc-codecs", "-p", "lcc-heif", "--features", "lcc-codecs/heif"]);
+                run(c, "cargo test -p lcc-codecs -p lcc-heif --features lcc-codecs/heif")?;
                 // the engine's HEIC import test, with the decoder (the workspace run checks the error)
                 let mut c = cargo();
-                c.args(["test", "-p", "dac-engine", "--lib", "--features", "dac-codecs/heif", "heic"]);
-                run(c, "cargo test -p dac-engine --lib --features dac-codecs/heif heic")
+                c.args(["test", "-p", "lcc-engine", "--lib", "--features", "lcc-codecs/heif", "heic"]);
+                run(c, "cargo test -p lcc-engine --lib --features lcc-codecs/heif heic")
             }),
         ),
         (
@@ -1017,7 +1017,7 @@ fn cmd_corpus(download: bool) -> Result<(), String> {
         "Test corpora live under {} (git-ignored, never committed).
 Tests that use a corpus skip cleanly when it is absent.
 
-  corpus/raw/        raw.pixls.us samples (CC0) — dac-raw decodes every file.
+  corpus/raw/        raw.pixls.us samples (CC0) — lcc-raw decodes every file.
   corpus/images/     CC0 / public-domain JPEG/PNG/TIFF/HEIC samples (optional)
   corpus/video/      public-domain / CC-BY test clips (see VIDEO_SAMPLES in xtask for provenance)
 ",

@@ -1,5 +1,5 @@
 [package]
-name = "dac-engine"
+name = "lcc-engine"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,34 +9,34 @@ description = "Engine: session, command registry, history, render jobs, view-mod
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-geom = { workspace = true }
-dac-color = { workspace = true }
-dac-raster = { workspace = true }
-dac-develop = { workspace = true }
-dac-scenes = { workspace = true }
-dac-pipeline = { workspace = true }
-dac-gpu = { workspace = true }
-dac-catalog = { workspace = true }
-dac-geo = { workspace = true }
-dac-hash = { workspace = true }
-dac-layout = { workspace = true }
-dac-print = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-geom = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-develop = { workspace = true }
+lcc-scenes = { workspace = true }
+lcc-pipeline = { workspace = true }
+lcc-gpu = { workspace = true }
+lcc-catalog = { workspace = true }
+lcc-geo = { workspace = true }
+lcc-hash = { workspace = true }
+lcc-layout = { workspace = true }
+lcc-print = { workspace = true }
 web-time = { workspace = true }
-dac-preview = { workspace = true }
-dac-codecs = { workspace = true }
-dac-raw = { workspace = true }
-dac-camdb = { workspace = true }
-dac-denoise-core = { workspace = true }
-dac-denoise = { workspace = true, optional = true }
-dac-meta = { workspace = true }
-dac-lensdb = { workspace = true }
-dac-faces = { workspace = true }
+lcc-preview = { workspace = true }
+lcc-codecs = { workspace = true }
+lcc-raw = { workspace = true }
+lcc-camdb = { workspace = true }
+lcc-denoise-core = { workspace = true }
+lcc-denoise = { workspace = true, optional = true }
+lcc-meta = { workspace = true }
+lcc-lensdb = { workspace = true }
+lcc-faces = { workspace = true }
 miniz_oxide = { workspace = true }
-dac-merge = { workspace = true }
-dac-geocode = { workspace = true }
-dac-psd = { workspace = true }
-dac-actions = { workspace = true }
+lcc-merge = { workspace = true }
+lcc-geocode = { workspace = true }
+lcc-psd = { workspace = true }
+lcc-actions = { workspace = true }
 tiff = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
@@ -47,48 +47,48 @@ ab_glyph = { workspace = true }
 # Apply the font’s vertical substitutions and origins to Japanese watermarks.
 harfrust = { version = "0.12", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
-dac-segment = { workspace = true, optional = true }
+lcc-segment = { workspace = true, optional = true }
 # video clips: probe and poster frames (every call is `Unsupported` on wasm32)
-dac-video = { workspace = true }
-dac-audio-out = { workspace = true }
+lcc-video = { workspace = true }
+lcc-audio-out = { workspace = true }
 
 # model downloads run natively only (the web build fetches no models)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
-dac-fetch = { workspace = true }
-dac-immich = { workspace = true }
-dac-publish = { workspace = true }
-dac-tether = { workspace = true }
-dac-credentials = { workspace = true }
-dac-webgallery = { workspace = true, features = ["sftp"] }
-dac-plugins = { workspace = true }
+lcc-fetch = { workspace = true }
+lcc-immich = { workspace = true }
+lcc-publish = { workspace = true }
+lcc-tether = { workspace = true }
+lcc-credentials = { workspace = true }
+lcc-webgallery = { workspace = true, features = ["sftp"] }
+lcc-plugins = { workspace = true }
 # M14.8: video clips in an export batch
-dac-video-export = { workspace = true }
+lcc-video-export = { workspace = true }
 
 # free disk space of a volume (Folders panel)
 [target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
 rustix = { workspace = true }
 
 [features]
-# Clip sound and slideshow music through the sound card (dac-audio-out with cpal, which links the C
+# Clip sound and slideshow music through the sound card (lcc-audio-out with cpal, which links the C
 # library libasound on Linux: off by default, see docs/video.md). Without it playback is muted.
-audio-out = ["dac-audio-out/audio-out"]
+audio-out = ["lcc-audio-out/audio-out"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
-sam = ["dep:dac-segment"]
-denoise = ["dep:dac-denoise", "dac-denoise/runtime", "dac-gpu/denoise"]
-rawnind-model = ["denoise", "dac-denoise/rawnind-model", "dac-denoise-core/rawnind-model"]
+sam = ["dep:lcc-segment"]
+denoise = ["dep:lcc-denoise", "lcc-denoise/runtime", "lcc-gpu/denoise"]
+rawnind-model = ["denoise", "lcc-denoise/rawnind-model", "lcc-denoise-core/rawnind-model"]
 
 [dev-dependencies]
 # HDR JPEG XL tests read the file's colour encoding
 jxl-oxide = { workspace = true }
 # Lossless synthetic HEIC files (the import test; decoded when the codecs' `heif` feature is on).
-dac-heif = { workspace = true, features = ["testdata"] }
+lcc-heif = { workspace = true, features = ["testdata"] }
 libc = { workspace = true }
-dac-tiff = { workspace = true }
+lcc-tiff = { workspace = true }
 wat = "1.228" # P4.3: plug-in test modules
 
 # M14.2/M14.3/M14.8: synthetic clips generated in-test (no media committed) and re-decoded
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
-dac-video = { workspace = true, features = ["test-util"] }
+lcc-video = { workspace = true, features = ["test-util"] }
 # M14.4: the GPU playback LUT benchmark (bench_playback)
 wgpu = { workspace = true }
 pollster = { workspace = true }

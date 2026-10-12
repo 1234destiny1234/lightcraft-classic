@@ -8,8 +8,8 @@
 //! Sources: own design (reuses [`crate::render`]).
 
 use crate::{Quality, RenderRequest, SourceInfo};
-use dac_develop::DevelopSettings;
-use dac_raster::{Rgb32f, Rgba8};
+use lcc_develop::DevelopSettings;
+use lcc_raster::{Rgb32f, Rgba8};
 
 /// The widest frame a draft (playback) grade renders.
 pub const DRAFT_MAX_WIDTH: usize = 960;
@@ -106,7 +106,7 @@ const SHAPER_SIZE: usize = 16384;
 impl GradeLut {
     /// Bake `settings` (reduced to [`video_settings`]).
     pub fn bake(settings: &DevelopSettings) -> Result<GradeLut, String> {
-        use dac_color::transfer::srgb_to_linear;
+        use lcc_color::transfer::srgb_to_linear;
         let n = LUT_SIZE;
         let v = video_settings(settings);
         let effective = v.effective();
@@ -141,7 +141,7 @@ impl GradeLut {
         }
         let data = out.data.iter().map(|p| [p[0] as f32 / 255.0, p[1] as f32 / 255.0, p[2] as f32 / 255.0]).collect();
         let scale = (n - 1) as f32;
-        let shaper = (0..SHAPER_SIZE).map(|i| dac_color::transfer::linear_to_srgb(i as f32 / (SHAPER_SIZE - 1) as f32) * scale).collect();
+        let shaper = (0..SHAPER_SIZE).map(|i| lcc_color::transfer::linear_to_srgb(i as f32 / (SHAPER_SIZE - 1) as f32) * scale).collect();
         Ok(GradeLut { data, shaper })
     }
 
@@ -216,10 +216,10 @@ impl GradeLut {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_develop::{Mask, Spot};
+    use lcc_develop::{Mask, Spot};
 
     fn frame() -> Rgb32f {
-        dac_scenes::demo_library()[0].render(320, 180)
+        lcc_scenes::demo_library()[0].render(320, 180)
     }
 
     fn allowed() -> DevelopSettings {
@@ -279,7 +279,7 @@ mod tests {
     /// CIE76 ΔE between two sRGB 8-bit colours (D65).
     fn delta_e(a: [u8; 4], b: [u8; 4]) -> f64 {
         let lab = |p: [u8; 4]| {
-            let l = |v: u8| dac_color::transfer::srgb_to_linear(v as f32 / 255.0) as f64;
+            let l = |v: u8| lcc_color::transfer::srgb_to_linear(v as f32 / 255.0) as f64;
             let (r, g, b) = (l(p[0]), l(p[1]), l(p[2]));
             let x = (0.4124 * r + 0.3576 * g + 0.1805 * b) / 0.95047;
             let y = 0.2126 * r + 0.7152 * g + 0.0722 * b;
@@ -294,7 +294,7 @@ mod tests {
 
     /// (mean, 99th percentile) ΔE of the LUT grade against the real one.
     fn lut_error(s: &DevelopSettings) -> (f64, f64) {
-        let img = dac_scenes::demo_library()[0].render(480, 270);
+        let img = lcc_scenes::demo_library()[0].render(480, 270);
         let lut = GradeLut::bake(s).unwrap();
         let a = lut.apply(&img, Quality::Full);
         let b = grade_frame(&img, s, Quality::Full);
@@ -335,7 +335,7 @@ mod tests {
         }
     }
 
-    /// `cargo test --release -p dac-pipeline grade::tests::lut_timings -- --ignored --nocapture`
+    /// `cargo test --release -p lcc-pipeline grade::tests::lut_timings -- --ignored --nocapture`
     #[test]
     #[ignore]
     fn lut_timings() {
@@ -343,7 +343,7 @@ mod tests {
         let t = std::time::Instant::now();
         let lut = GradeLut::bake(&s).unwrap();
         eprintln!("bake: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
-        let img = dac_scenes::demo_library()[0].render(960, 540);
+        let img = lcc_scenes::demo_library()[0].render(960, 540);
         let t = std::time::Instant::now();
         let mut acc = 0.0f32;
         for c in &img.data {
@@ -352,7 +352,7 @@ mod tests {
         let ns = t.elapsed().as_secs_f64() * 1e9 / img.data.len() as f64;
         eprintln!("lookup, one thread: {ns:.1} ns/px ({:.1} ms per 960x540 frame) [{acc}]", ns * 960.0 * 540.0 / 1e6);
         for (w, h) in [(960, 540), (1920, 1080), (3840, 2160)] {
-            let img = dac_scenes::demo_library()[0].render(w, h);
+            let img = lcc_scenes::demo_library()[0].render(w, h);
             for q in [Quality::Draft, Quality::Full] {
                 lut.apply(&img, q);
                 let t = std::time::Instant::now();

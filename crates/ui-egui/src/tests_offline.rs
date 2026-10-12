@@ -8,13 +8,13 @@ use std::sync::{Arc, Mutex};
 use std::thread::ThreadId;
 use std::time::{Duration, Instant};
 
-use dac_catalog::{Op, Photo, PhotoId, Source};
-use dac_engine::{LibrarySource, Session};
+use lcc_catalog::{Op, Photo, PhotoId, Source};
+use lcc_engine::{LibrarySource, Session};
 use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::{RightPanel, ViewMode};
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 /// What one file-system call takes on the "NAS".
 const SLOW: Duration = Duration::from_millis(400);
@@ -63,10 +63,10 @@ fn offline_library(calls: &Calls) -> Session {
 /// logged. What makes the tests deterministic is the probe's thread record: the slow call never
 /// runs on the UI thread, so no frame can wait for it.
 fn frame_budget(worst: Duration, what: &str) {
-    if dac_brand::env_is_set("PERF_ASSERT") {
+    if lcc_brand::env_is_set("PERF_ASSERT") {
         assert!(worst < FRAME_LIMIT, "{what} frame took {worst:?}");
     } else if worst >= FRAME_LIMIT {
-        eprintln!("note: {what} frame took {worst:?} (over {FRAME_LIMIT:?}; set {} to enforce)", dac_brand::env_var("PERF_ASSERT"));
+        eprintln!("note: {what} frame took {worst:?} (over {FRAME_LIMIT:?}; set {} to enforce)", lcc_brand::env_var("PERF_ASSERT"));
     }
 }
 
@@ -83,7 +83,7 @@ fn max_frame(h: &mut Headless, frames: usize) -> Duration {
 #[test]
 fn offline_originals_never_block_a_frame() {
     let calls = Calls::default();
-    let app = DacApp::new(offline_library(&calls), Services { png: None, ..Default::default() });
+    let app = LccApp::new(offline_library(&calls), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
     let ui_thread = std::thread::current().id();
     h.app.ui.view = ViewMode::PhotoGrid;
@@ -146,9 +146,9 @@ fn import_reads_files_off_the_ui_thread_and_can_be_cancelled() {
     s.media.file_probe = Some(Arc::new(move |p: &str| {
         c.record();
         std::thread::sleep(Duration::from_millis(150));
-        Ok(dac_engine::media::ProbeInfo { width: 60, height: 40, format: "JPEG".into(), content_hash: Some(p.to_string()), ..Default::default() })
+        Ok(lcc_engine::media::ProbeInfo { width: 60, height: 40, format: "JPEG".into(), content_hash: Some(p.to_string()), ..Default::default() })
     }));
-    let app = DacApp::new(s, Services { png: None, ..Default::default() });
+    let app = LccApp::new(s, Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
     let ui_thread = std::thread::current().id();
     h.step();

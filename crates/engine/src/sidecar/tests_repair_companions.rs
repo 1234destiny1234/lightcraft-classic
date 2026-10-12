@@ -1,7 +1,7 @@
 //! Real Session partial moves, sidecar serialization/merging, AutoWrite and history.
 use super::*;
 use crate::rename::{MoveFs, RealFs};
-use dac_catalog::{Op, Photo, Source};
+use lcc_catalog::{Op, Photo, Source};
 use serde_json::json;
 
 struct Faults(Vec<PathBuf>);

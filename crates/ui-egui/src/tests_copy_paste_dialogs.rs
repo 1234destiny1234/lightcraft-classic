@@ -2,10 +2,10 @@
 
 use std::time::Duration;
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::headless::Headless;
 use crate::state::Dialog;
 
@@ -15,7 +15,7 @@ const T: Duration = Duration::from_secs(10);
 /// The demo library with an edited first photo selected; returns the first two photos' ids.
 fn edited() -> (Headless, [u64; 2]) {
     let services = crate::Services { png: None, ..Default::default() };
-    let mut app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
     app.ui.view = crate::state::ViewMode::PhotoGrid;
     let mut h = Headless::new(app, [1200.0, 900.0], 1.0);
     let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();

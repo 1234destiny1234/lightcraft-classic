@@ -11,11 +11,11 @@ use std::path::PathBuf;
 
 use crate::Session;
 
-/// The app's settings folder ([`dac_brand::settings_dir`]). A nonempty `$<PREFIX>_CONFIG_DIR` overrides
+/// The app's settings folder ([`lcc_brand::settings_dir`]). A nonempty `$<PREFIX>_CONFIG_DIR` overrides
 /// the platform default. The override is the complete directory; no application-name suffix is appended.
 /// An explicitly empty value disables the settings directory instead of falling back to a personal profile.
 pub fn config_dir() -> Option<PathBuf> {
-    config_dir_with(dac_brand::env_os("CONFIG_DIR"), dac_brand::settings_dir)
+    config_dir_with(lcc_brand::env_os("CONFIG_DIR"), lcc_brand::settings_dir)
 }
 
 fn config_dir_with(over: Option<OsString>, default: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
@@ -27,17 +27,17 @@ fn config_dir_with(over: Option<OsString>, default: impl FnOnce() -> Option<Path
 
 /// Where face models are kept: `{ENV_PREFIX}_FACE_MODELS` if set, else `<config>/models`.
 pub fn default_face_models_dir() -> Option<PathBuf> {
-    dac_brand::env_os("FACE_MODELS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("models")))
+    lcc_brand::env_os("FACE_MODELS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("models")))
 }
 
 /// Where opt-in denoise models are kept: `{ENV_PREFIX}_DENOISE_MODELS` if set, else `<config>/denoise-models`.
 pub fn default_denoise_models_dir() -> Option<PathBuf> {
-    dac_brand::env_os("DENOISE_MODELS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("denoise-models")))
+    lcc_brand::env_os("DENOISE_MODELS").filter(|v| !v.is_empty()).map(PathBuf::from).or_else(|| config_dir().map(|d| d.join("denoise-models")))
 }
 
 /// Where the SAM 3 model is kept: `$<PREFIX>_SAM3_DIR` if set, else `<config>/models/sam3`.
 pub fn default_sam3_dir() -> Option<PathBuf> {
-    sam3_dir(dac_brand::env_os("SAM3_DIR"), config_dir())
+    sam3_dir(lcc_brand::env_os("SAM3_DIR"), config_dir())
 }
 
 /// [`default_sam3_dir`] for a given override and config folder: a non-empty override wins.
@@ -73,7 +73,7 @@ impl Session {
     }
 
     /// Whether photo `id`'s lens data predates the lens database in use (it changed since the photo was looked up).
-    pub fn lens_profiles_stale(&self, id: dac_catalog::PhotoId) -> bool {
+    pub fn lens_profiles_stale(&self, id: lcc_catalog::PhotoId) -> bool {
         let g = crate::lens_profiles::generation();
         g != 0 && self.lens_seen.get(&id) != Some(&g)
     }
@@ -81,15 +81,15 @@ impl Session {
     /// Look the lenses of raw photos `ids` up again in the lens database in use (after it changed), so their lens
     /// corrections and previews follow. → the photos whose lens data changed.
     #[cfg(not(target_arch = "wasm32"))]
-    pub fn refresh_lens_profiles(&mut self, ids: &[dac_catalog::PhotoId]) -> crate::Result<Vec<dac_catalog::PhotoId>> {
+    pub fn refresh_lens_profiles(&mut self, ids: &[lcc_catalog::PhotoId]) -> crate::Result<Vec<lcc_catalog::PhotoId>> {
         let g = crate::lens_profiles::generation();
-        let files: Vec<(dac_catalog::PhotoId, String)> = ids
+        let files: Vec<(lcc_catalog::PhotoId, String)> = ids
             .iter()
             .filter_map(|id| {
                 self.lens_seen.insert(*id, g);
                 let p = self.catalog.photo(*id)?;
                 match &p.source {
-                    dac_catalog::Source::File { path } if p.develops_raw() => Some((*id, path.clone())),
+                    lcc_catalog::Source::File { path } if p.develops_raw() => Some((*id, path.clone())),
                     _ => None,
                 }
             })
@@ -114,13 +114,13 @@ impl Session {
         }
         if !ops.is_empty() {
             // found by the app, not done by the user: saved, but no undo step
-            self.apply_unrecorded(dac_catalog::Op::Batch { ops })?;
+            self.apply_unrecorded(lcc_catalog::Op::Batch { ops })?;
         }
         Ok(changed)
     }
 
     #[cfg(target_arch = "wasm32")]
-    pub fn refresh_lens_profiles(&mut self, ids: &[dac_catalog::PhotoId]) -> crate::Result<Vec<dac_catalog::PhotoId>> {
+    pub fn refresh_lens_profiles(&mut self, ids: &[lcc_catalog::PhotoId]) -> crate::Result<Vec<lcc_catalog::PhotoId>> {
         let g = crate::lens_profiles::generation();
         for id in ids {
             self.lens_seen.insert(*id, g);
@@ -130,7 +130,7 @@ impl Session {
 
     /// What the lens database says about `p`'s lens, for Develop ▸ Optics; `None` when the photo carries a lens
     /// correction already (its own, or one found earlier).
-    pub fn lens_match(&self, p: &dac_catalog::Photo) -> Option<crate::lens_profiles::Match> {
+    pub fn lens_match(&self, p: &lcc_catalog::Photo) -> Option<crate::lens_profiles::Match> {
         self.lens_match_with(p, None)
     }
 
@@ -138,7 +138,7 @@ impl Session {
     /// metadata names, in the order corrections apply ([`crate::lens_profiles::resolve_raw`]): `None` when the
     /// file carries its own correction, else [`crate::lens_profiles::Match::Chosen`] (or `NotFound`) for the given
     /// lens, else the match by name. A correction found earlier by name gives way to a given lens.
-    pub fn lens_match_with(&self, p: &dac_catalog::Photo, given: Option<&crate::lens_profiles::GivenLens>) -> Option<crate::lens_profiles::Match> {
+    pub fn lens_match_with(&self, p: &lcc_catalog::Photo, given: Option<&crate::lens_profiles::GivenLens>) -> Option<crate::lens_profiles::Match> {
         use crate::lens_profiles::Match;
         if !p.develops_raw() {
             return if p.embedded_lens.is_some() { None } else { Some(Match::NotRaw) };

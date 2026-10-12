@@ -38,7 +38,7 @@ pub const FILE: &str = "publish.json";
 /// The built-in Hard Drive service's kind.
 pub const KIND_HARD_DRIVE: &str = "hardDrive";
 /// Service kinds this build can publish with.
-/// Immich (IMM-PUBLISH): opened by the engine, which holds the account's key (`dac_immich::publish`).
+/// Immich (IMM-PUBLISH): opened by the engine, which holds the account's key (`lcc_immich::publish`).
 pub const KIND_IMMICH: &str = "immich";
 /// SFTP: a folder on a server per collection; opened by the engine, which holds the login.
 pub const KIND_SFTP: &str = "sftp";

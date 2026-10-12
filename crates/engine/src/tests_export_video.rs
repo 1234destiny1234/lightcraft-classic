@@ -1,11 +1,11 @@
-//! M14.8: video clips through `dac_engine::export` (synthetic clips generated in-test).
+//! M14.8: video clips through `lcc_engine::export` (synthetic clips generated in-test).
 
 use std::fs::File;
 use std::io::BufWriter;
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{MediaKind, Op, Photo, PhotoId, Source, VideoMeta};
 use filmcraft_isobmff::{AvcConfig, Brand, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source, VideoMeta};
 use serde_json::json;
 
 use crate::Session;
@@ -21,7 +21,7 @@ const FRAMES: u32 = 50;
 const LUMA: u8 = 100;
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-engine-video-{}-{name}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-engine-video-{}-{name}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -82,7 +82,7 @@ fn add_clip(s: &mut Session, path: &Path, trim: (f64, Option<f64>)) -> PhotoId {
 }
 
 fn mean_luma(path: &Path, t: f64) -> f32 {
-    let f = dac_video::FrameReader::open(path).unwrap().frame_at(t, None).unwrap();
+    let f = lcc_video::FrameReader::open(path).unwrap().frame_at(t, None).unwrap();
     f.image.data.iter().map(|p| (p[0] + p[1] + p[2]) / 3.0).sum::<f32>() / f.image.data.len() as f32
 }
 
@@ -113,9 +113,9 @@ fn clip_exports_trimmed_and_graded() {
     let files = export(&mut s, &[id], &o, &out.join("bright"), &VideoHooks::default()).unwrap();
     let bright = PathBuf::from(files[0]["path"].as_str().unwrap());
 
-    let info = dac_video::probe(&bright).unwrap();
+    let info = lcc_video::probe(&bright).unwrap();
     assert!((info.duration - 1.0).abs() < 0.05, "trimmed to 1 s: {}", info.duration);
-    assert_eq!(dac_video::FrameReader::open(&bright).unwrap().frame_times().len(), 25);
+    assert_eq!(lcc_video::FrameReader::open(&bright).unwrap().frame_times().len(), 25);
     let (src_y, plain_y, bright_y) = (mean_luma(&src, 0.5), mean_luma(&plain, 0.5), mean_luma(&bright, 0.5));
     assert!((plain_y / src_y - 1.0).abs() < 0.05, "a default grade keeps the clip: {src_y} → {plain_y}");
     assert!((bright_y / plain_y - 2.0).abs() < 0.12, "+1 EV doubles linear light: {plain_y} → {bright_y}");
@@ -125,12 +125,12 @@ fn clip_exports_trimmed_and_graded() {
 /// The full-quality linear grade (no 8-bit step): +1 EV doubles a mid-tone exactly.
 #[test]
 fn linear_grade_doubles_on_plus_one_ev() {
-    let mut f = dac_raster::Rgb32f::from_fn(32, 24, |_, _| [0.12, 0.12, 0.12]);
+    let mut f = lcc_raster::Rgb32f::from_fn(32, 24, |_, _| [0.12, 0.12, 0.12]);
     // the default grade is the identity (export skips the pipeline for it)
     let mut same = f.clone();
-    crate::export_video::grade_linear(&mut same, &dac_develop::DevelopSettings::default()).unwrap();
+    crate::export_video::grade_linear(&mut same, &lcc_develop::DevelopSettings::default()).unwrap();
     assert!(same.data.iter().all(|p| (p[1] - 0.12).abs() < 0.004), "{:?}", same.data[0]);
-    let mut d = dac_develop::DevelopSettings::default();
+    let mut d = lcc_develop::DevelopSettings::default();
     d.light.exposure = 1.0;
     crate::export_video::grade_linear(&mut f, &d).unwrap();
     let m = f.data.iter().map(|p| p[1]).sum::<f32>() / f.data.len() as f32;
@@ -220,7 +220,7 @@ fn hostile_video_options() {
 }
 
 /// Timing of a graded 10 s 1080p export of the corpus clip (`cargo xtask corpus --download`):
-/// `VIDEO_BENCH_CLIP=<clip> cargo test --release -p dac-engine export_speed_1080p -- --ignored --nocapture`.
+/// `VIDEO_BENCH_CLIP=<clip> cargo test --release -p lcc-engine export_speed_1080p -- --ignored --nocapture`.
 #[test]
 #[ignore = "needs corpus/video/h264-1080p-bbb.mp4; a benchmark"]
 fn export_speed_1080p() {
@@ -230,7 +230,7 @@ fn export_speed_1080p() {
         eprintln!("skipped: {} missing", src.display());
         return;
     }
-    let mut settings = dac_develop::DevelopSettings::default();
+    let mut settings = lcc_develop::DevelopSettings::default();
     settings.light.exposure = 0.5;
     settings.light.contrast = 20.0;
     settings.color.vibrance = 15.0;
@@ -254,26 +254,26 @@ fn export_speed_1080p() {
 /// The GPU grade of an exported (H.264) frame matches the CPU float grade within 8-bit rounding.
 #[test]
 fn gpu_grade_matches_cpu_grade() {
-    if !dac_gpu::available() {
+    if !lcc_gpu::available() {
         eprintln!("skipped: no GPU");
         return;
     }
-    let frame = dac_raster::Rgb32f::from_fn(96, 64, |x, y| {
+    let frame = lcc_raster::Rgb32f::from_fn(96, 64, |x, y| {
         let (u, v) = (x as f32 / 95.0, y as f32 / 63.0);
         [u * u, v * 0.8, (1.0 - u) * 0.5 * v]
     });
-    let mut d = dac_develop::DevelopSettings::default();
+    let mut d = lcc_develop::DevelopSettings::default();
     d.light.exposure = 0.5;
     d.light.contrast = 20.0;
     d.color.vibrance = 15.0;
-    let vs = dac_pipeline::grade::video_settings(&d);
+    let vs = lcc_pipeline::grade::video_settings(&d);
     let (mut cpu, mut gpu) = (frame.clone(), frame);
     crate::export_video::grade_linear(&mut cpu, &vs).unwrap();
     if crate::export_video::grade_gpu(&mut gpu, &vs).is_none() {
         eprintln!("skipped: the GPU did not render");
         return;
     }
-    let enc = |v: f32| dac_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * 255.0;
+    let enc = |v: f32| lcc_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * 255.0;
     let mut worst = 0f32;
     for (a, b) in cpu.data.iter().zip(&gpu.data) {
         for k in 0..3 {

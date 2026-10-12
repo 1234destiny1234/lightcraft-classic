@@ -8,7 +8,7 @@
 //! - albums → the album names, for the caller to put the photo into.
 //! - GPS → `meta.gps` when both coordinates are finite and in range.
 
-use dac_catalog::{Flag, Photo};
+use lcc_catalog::{Flag, Photo};
 
 use crate::types::Asset;
 
@@ -57,8 +57,8 @@ pub fn apply(a: &Asset, p: &mut Photo) {
 }
 
 /// The ops that bring `p` (already in the catalog) to what [`apply`] makes of it.
-pub fn ops(a: &Asset, p: &Photo) -> Vec<dac_catalog::Op> {
-    use dac_catalog::Op;
+pub fn ops(a: &Asset, p: &Photo) -> Vec<lcc_catalog::Op> {
+    use lcc_catalog::Op;
     let mut q = p.clone();
     apply(a, &mut q);
     let mut out = Vec::new();

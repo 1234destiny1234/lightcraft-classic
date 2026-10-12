@@ -40,7 +40,7 @@ pub fn converter(software: &str) -> Option<String> {
              so use a DNG the camera wrote itself"
         ));
     }
-    let own = dac_brand::DISPLAY_NAME.to_lowercase();
+    let own = lcc_brand::DISPLAY_NAME.to_lowercase();
     if !own.is_empty() && lower.contains(&own) {
         return Some(format!("written by this app's DNG export (\"{software}\"); its matrices are not a measurement"));
     }
@@ -48,8 +48,8 @@ pub fn converter(software: &str) -> Option<String> {
 }
 
 /// The entry a camera-native DNG supports, from its decoded header.
-pub fn from_info(info: &dac_raw::RawInfo) -> Result<Entry, Error> {
-    if info.format != dac_raw::RawFormat::Dng {
+pub fn from_info(info: &lcc_raw::RawInfo) -> Result<Entry, Error> {
+    if info.format != lcc_raw::RawFormat::Dng {
         return Err(Error(format!("not a DNG ({:?})", info.format)));
     }
     let software = info.metadata.software.as_deref().map(str::trim).unwrap_or_default();
@@ -80,17 +80,17 @@ pub fn from_info(info: &dac_raw::RawInfo) -> Result<Entry, Error> {
 
 /// The entry a camera-native DNG file supports.
 pub fn from_dng(bytes: &[u8]) -> Result<Entry, Error> {
-    let info = dac_raw::probe_info(bytes).map_err(|e| Error(format!("can't read the DNG: {e}")))?;
+    let info = lcc_raw::probe_info(bytes).map_err(|e| Error(format!("can't read the DNG: {e}")))?;
     from_info(&info)
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_raw::Mat3;
+    use lcc_raw::Mat3;
 
-    fn info(software: Option<&str>) -> dac_raw::RawInfo {
-        let mut info = dac_raw::probe_info(&dng()).unwrap();
+    fn info(software: Option<&str>) -> lcc_raw::RawInfo {
+        let mut info = lcc_raw::probe_info(&dng()).unwrap();
         info.metadata.software = software.map(Into::into);
         info
     }
@@ -98,20 +98,20 @@ mod tests {
     /// A small DNG with dual-illuminant matrices, written by our own DNG writer.
     fn dng() -> Vec<u8> {
         let (w, h) = (8usize, 8usize);
-        let raw = dac_raw::RawImage {
-            format: dac_raw::RawFormat::Dng,
+        let raw = lcc_raw::RawImage {
+            format: lcc_raw::RawFormat::Dng,
             width: w,
             height: h,
             cpp: 1,
-            data: dac_raw::RawData::U16((0..w * h).map(|i| (200 + i * 13) as u16).collect()),
-            cfa: dac_raw::Cfa::bayer("RGGB"),
+            data: lcc_raw::RawData::U16((0..w * h).map(|i| (200 + i * 13) as u16).collect()),
+            cfa: lcc_raw::Cfa::bayer("RGGB"),
             bits: 12,
-            black: dac_raw::BlackLevel::uniform(64.0),
+            black: lcc_raw::BlackLevel::uniform(64.0),
             white: vec![4095.0],
-            active_area: dac_raw::Rect::new(0, 0, w, h),
-            crop: dac_raw::Rect::new(0, 0, w, h),
-            orientation: dac_raw::Orientation::Normal,
-            color: dac_raw::ColorData {
+            active_area: lcc_raw::Rect::new(0, 0, w, h),
+            crop: lcc_raw::Rect::new(0, 0, w, h),
+            orientation: lcc_raw::Orientation::Normal,
+            color: lcc_raw::ColorData {
                 illuminant: [17, 21],
                 color_matrix: [
                     Some(Mat3([[1.2, -0.3, -0.1], [-0.4, 1.3, 0.1], [-0.05, 0.2, 0.6]])),
@@ -121,10 +121,10 @@ mod tests {
             },
             wb_multipliers: None,
             linearized: false,
-            opcodes: dac_raw::OpcodeLists::default(),
-            metadata: dac_raw::Metadata { make: Some("Example".into()), model: Some("Example X1".into()), ..Default::default() },
+            opcodes: lcc_raw::OpcodeLists::default(),
+            metadata: lcc_raw::Metadata { make: Some("Example".into()), model: Some("Example X1".into()), ..Default::default() },
         };
-        dac_raw::write_dng(&raw, &dac_raw::DngWriteOptions::default()).unwrap()
+        lcc_raw::write_dng(&raw, &lcc_raw::DngWriteOptions::default()).unwrap()
     }
 
     #[test]
@@ -181,7 +181,7 @@ mod tests {
     #[test]
     fn non_dngs_and_garbage_are_errors() {
         let mut i = info(Some("Example X1"));
-        i.format = dac_raw::RawFormat::Nef;
+        i.format = lcc_raw::RawFormat::Nef;
         assert!(from_info(&i).is_err());
         let mut i = info(Some("Example X1"));
         i.color.color_matrix = [None, None];

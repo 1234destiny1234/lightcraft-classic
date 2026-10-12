@@ -90,7 +90,7 @@ if (-not $SkipBuild) {
   [Environment]::SetEnvironmentVariable($flagVar, '-C target-feature=+crt-static')
   # Fail the build (rather than warn) if the icon/VERSIONINFO can't be embedded.
   [Environment]::SetEnvironmentVariable("$($Brand.env_prefix)_REQUIRE_WINRES", '1')
-  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p dac-app -p dac-cli --features dac-app/heif,dac-cli/heif --target $Target }
+  Invoke-Native "cargo build ($Target)" { cargo build --release --locked -p lcc-app -p lcc-cli --features lcc-app/heif,lcc-cli/heif --target $Target }
 }
 
 $Bin = Join-Path $TargetDir "$Target\release"

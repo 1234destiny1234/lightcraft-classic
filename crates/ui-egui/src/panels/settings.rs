@@ -12,7 +12,7 @@
 use egui::RichText;
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::state::{GridBadges, PREVIEW_LIMITS, StartupView};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -53,7 +53,7 @@ pub fn tabs(ui: &mut egui::Ui, tab: &mut String) {
 }
 
 /// The selected tab's settings (the tabs themselves are [`tabs`]).
-pub fn body(app: &mut DacApp, ui: &mut egui::Ui, tab: &str) {
+pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &str) {
     let t = Tokens::get(ui.ctx());
     ui.set_width((ui.ctx().content_rect().width() - 64.0).clamp(240.0, 560.0));
     ui.set_min_height(330.0);
@@ -116,7 +116,7 @@ pub(super) fn choices<V: PartialEq + Copy>(ui: &mut egui::Ui, id: &str, options:
 
 /// The shortcut editor (the command registry, with conflict handling), the keymap set and
 /// keymap file import/export.
-fn shortcuts_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn shortcuts_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use crate::shortcuts::KeymapSet;
     let mut set = app.ui.settings.keymap_set;
     row(ui, t, "Keymap", |ui| {
@@ -138,7 +138,7 @@ fn shortcuts_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 
 // ------------------------------------------------------------------------------------- General
 
-fn general_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     row(ui, t, crate::i18n::tr("Language"), |ui| {
         let languages: Vec<_> = crate::i18n::Locale::ALL.iter().map(|language| (*language, language.name())).collect();
         choices(ui, "settingsLanguage", &languages, &mut app.ui.language);
@@ -226,7 +226,7 @@ fn edit_file_rows(ui: &mut egui::Ui, t: &Tokens, id: &str, file: &mut crate::sta
 // -------------------------------------------------------------------------------------- Import
 
 /// A preset picker: `None` = `none_label`. Returns the new choice when it changed.
-fn preset_combo(app: &DacApp, ui: &mut egui::Ui, id: &str, current: Option<&str>, none_label: &str) -> Option<Option<String>> {
+fn preset_combo(app: &LccApp, ui: &mut egui::Ui, id: &str, current: Option<&str>, none_label: &str) -> Option<Option<String>> {
     let name = |pid: &str| {
         app.session
             .presets
@@ -257,12 +257,12 @@ fn preset_combo(app: &DacApp, ui: &mut egui::Ui, id: &str, current: Option<&str>
 }
 
 /// Cameras of the raws in the library plus those with a stored default, sorted.
-fn cameras(app: &DacApp) -> Vec<String> {
+fn cameras(app: &LccApp) -> Vec<String> {
     let mut v: Vec<String> = app
         .session
         .catalog
         .photos()
-        .filter(|p| p.kind == dac_catalog::MediaKind::Raw && !p.meta.camera.is_empty())
+        .filter(|p| p.kind == lcc_catalog::MediaKind::Raw && !p.meta.camera.is_empty())
         .map(|p| p.meta.camera.clone())
         .chain(app.session.import_defaults.cameras.iter().map(|c| c.camera.clone()))
         .collect();
@@ -271,7 +271,7 @@ fn cameras(app: &DacApp) -> Vec<String> {
     v
 }
 
-fn import_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let d = app.session.import_defaults.clone();
     heading(ui, t, crate::i18n::tr("Raw defaults"));
     hint(ui, t, crate::i18n::tr("Settings new raw photos start from. Changing them doesn't touch photos already in the library."));
@@ -390,7 +390,7 @@ fn import_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
         let _ = app.run("library.xmpPreferences", json!({"autoWrite": xmp.auto_write}));
     }
     row(ui, t, crate::i18n::tr("Sidecar names"), |ui| {
-        use dac_engine::sidecar::SidecarNaming as N;
+        use lcc_engine::sidecar::SidecarNaming as N;
         let mut n = xmp.naming;
         if choices(ui, "settingsXmpNaming", &[(N::Stem, "IMG_1.xmp"), (N::Full, "IMG_1.CR3.xmp")], &mut n) {
             let naming = if n == N::Full { "full" } else { "stem" };
@@ -443,7 +443,7 @@ fn import_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 
 /// Settings ▸ Import ▸ Lens profiles: the lens database lens corrections fall back to (an app setting, not a
 /// library one), a folder chooser, and downloading lensfun's database on request (`lens.db.*`).
-fn lens_profiles(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn lens_profiles(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use crate::i18n::tr;
     let r = ui.scope(|ui| heading(ui, t, tr("Lens profiles"))).response;
     register(ui.ctx(), "section:lensProfiles", r.rect);
@@ -531,7 +531,7 @@ fn lens_profiles(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 }
 
 /// Choose the lens database folder (`{dir}`, else a folder dialog), then use it (`lens.db.setDir`).
-pub fn lens_db_folder(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn lens_db_folder(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let dir = match p.get("dir").and_then(Value::as_str).map(str::trim).filter(|d| !d.is_empty()) {
         Some(d) => d.to_string(),
         None => {
@@ -551,8 +551,8 @@ pub fn lens_db_folder(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 
 // --------------------------------------------------------------------------------- Performance
 
-fn performance_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
-    use dac_engine::gpu;
+fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
     let status = if !gpu::available() {
@@ -578,7 +578,7 @@ fn performance_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
         ),
     );
     row(ui, t, crate::i18n::tr("Memory for caches"), |ui| {
-        let auto = crate::i18n::tr_format!("Automatic ({} MB)", dac_engine::memory::default_budget() >> 20);
+        let auto = crate::i18n::tr_format!("Automatic ({} MB)", lcc_engine::memory::default_budget() >> 20);
         let opts = [(0u32, auto.as_str()), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (4096, "4 GB")];
         choices(ui, "settingsMemory", &opts, &mut app.ui.settings.memory_mb);
     });
@@ -622,7 +622,7 @@ fn performance_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 /// Where this library keeps its smart previews (the offline-editing proxies, which can be large):
 /// the effective folder, what is in it, and choosing another one.
 #[cfg(not(target_arch = "wasm32"))]
-fn smart_previews(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn smart_previews(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     // listing a big folder every frame would be slow: refresh every 2 s and after a change
     let cache = egui::Id::new("smart-location");
     let now = ui.input(|i| i.time);
@@ -718,7 +718,7 @@ fn smart_previews(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 
 /// The monitor profile (`app.displayProfile`): previews are shown through the display's ICC
 /// profile, so wide-gamut and calibrated displays show colours as they are.
-fn display_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn display_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     heading(ui, t, crate::i18n::tr("Monitor profile"));
     let current = app.renderer.display().cloned();
     let screen = current.as_ref().is_some_and(|d| d.path == crate::SCREEN_PROFILE);
@@ -764,8 +764,8 @@ fn display_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
         }
         row(ui, t, crate::i18n::tr("Type"), |ui| {
             let kind = match d.profile.kind {
-                dac_engine::display::DisplayKind::MatrixTrc => crate::i18n::tr("Matrix/TRC"),
-                dac_engine::display::DisplayKind::Lut => crate::i18n::tr("LUT-based"),
+                lcc_engine::display::DisplayKind::MatrixTrc => crate::i18n::tr("Matrix/TRC"),
+                lcc_engine::display::DisplayKind::Lut => crate::i18n::tr("LUT-based"),
             };
             ui.label(RichText::new(kind).color(t.text));
         });
@@ -787,7 +787,7 @@ fn display_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
     hint(ui, t, crate::i18n::tr("Profiles assigned in your desktop's colour settings are usually in ~/.local/share/icc."));
 }
 
-fn interface_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
+fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let system = app.system_theme(ui.ctx());
     appearance(ui, t, &mut app.ui.settings, system);
     heading(ui, t, crate::i18n::tr("Filmstrip"));
@@ -813,7 +813,7 @@ fn interface_tab(app: &mut DacApp, ui: &mut egui::Ui, t: &Tokens) {
 
 /// Appearance Mode (`button:settingsAppearance-{0,1,2}`: Auto, Dark, Light) above the light and
 /// dark theme cards (`radio:theme-{id}`), each with a preview of the chosen theme. The card in
-/// use is outlined. Applied on the next frame ([`DacApp::sync_theme`]).
+/// use is outlined. Applied on the next frame ([`LccApp::sync_theme`]).
 fn appearance(ui: &mut egui::Ui, t: &Tokens, s: &mut crate::state::AppSettings, system: Option<egui::Theme>) {
     use crate::state::{AppearanceMode as M, DarkTheme, LightTheme};
     heading(ui, t, crate::i18n::tr("Appearance"));
@@ -1040,10 +1040,10 @@ fn theme_preview(ui: &mut egui::Ui, kind: crate::theme::ThemeKind, width: f32) {
 /// or a folder chosen in a dialog. Remembered as the library to open at launch.
 ///
 /// A Lightroom Classic catalog (its folder, an `.lrdata` / `.lrcat-data` folder or the `.lrcat`
-/// itself, see [`dac_engine::lightroom_folder`]) is not opened: the current library stays
+/// itself, see [`lcc_engine::lightroom_folder`]) is not opened: the current library stays
 /// and a dialog offers Import Lightroom Catalog… instead; returns `{opened: false,
 /// lightroomCatalog: <.lrcat path or null>, path}`.
-pub fn open_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn open_library(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     if crate::lightroom_import::is_running(app) {
         return Err("wait for Lightroom catalog import to finish before switching libraries".into());
     }
@@ -1063,9 +1063,9 @@ pub fn open_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
     };
     // A Lightroom catalog folder (or part of one) is not a library: before closing the library
     // open now, offer to import it instead (issue #891). The engine refuses it too.
-    if let Some(place) = dac_engine::lightroom_folder::lightroom_catalog_at(std::path::Path::new(&path)) {
+    if let Some(place) = lcc_engine::lightroom_folder::lightroom_catalog_at(std::path::Path::new(&path)) {
         let catalog = place.catalog.map(|c| c.to_string_lossy().into_owned());
-        let err = dac_engine::EngineError::LightroomCatalog { path: path.clone().into(), catalog: catalog.clone().map(Into::into) };
+        let err = lcc_engine::EngineError::LightroomCatalog { path: path.clone().into(), catalog: catalog.clone().map(Into::into) };
         // the library problem window (no library could be opened) shows the error instead
         if app.library_problem.is_some() {
             return Err(err.to_string());
@@ -1088,7 +1088,7 @@ pub fn open_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 /// the target is checked before anything is closed, and if opening it still fails the previous
 /// library is opened again (both errors are reported if that fails too). `demo`: a new library
 /// starts with the procedural demo photos.
-fn switch_library(app: &mut DacApp, path: &str, demo: bool) -> Result<Value, String> {
+fn switch_library(app: &mut LccApp, path: &str, demo: bool) -> Result<Value, String> {
     let dir = app.session.check_library(std::path::Path::new(path)).map_err(|e| format!("{path}: {e}"))?;
     let path = dir.to_string_lossy().into_owned();
     // the library being left goes in the list too (also when it was opened at launch)
@@ -1127,7 +1127,7 @@ pub fn library_name(dir: &std::path::Path) -> String {
 }
 
 /// The open library's name (`None`: in memory, nothing is saved).
-pub fn open_library_name(app: &DacApp) -> Option<String> {
+pub fn open_library_name(app: &LccApp) -> Option<String> {
     app.session.library.as_ref().filter(|l| l.on_disk).map(|l| library_name(&l.dir))
 }
 
@@ -1135,7 +1135,7 @@ pub fn open_library_name(app: &DacApp) -> Option<String> {
 /// is the folder `name` inside `path` (or inside a location chosen in a dialog); without it,
 /// `path` itself, or a new folder named after the default library. The folder must not hold a
 /// library already, nor anything else.
-pub fn new_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn new_library(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     if crate::lightroom_import::is_running(app) {
         return Err("wait for Lightroom catalog import to finish before switching libraries".into());
     }
@@ -1146,7 +1146,7 @@ pub fn new_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
     };
     // from the menu: ask for the name first (default prefilled), then for the location
     if name.is_none() && p.get("path").is_none() && app.services.pick_folder.is_some() {
-        crate::panels::dialogs::prompt(app, "New Library", "Library name", dac_engine::library::DEFAULT_NAME, "app.newLibrary", json!({}), "name");
+        crate::panels::dialogs::prompt(app, "New Library", "Library name", lcc_engine::library::DEFAULT_NAME, "app.newLibrary", json!({}), "name");
         return Ok(Value::Null);
     }
     let (location, picked) = match p.get("path").and_then(Value::as_str) {
@@ -1166,10 +1166,10 @@ pub fn new_library(app: &mut DacApp, p: &Value) -> Result<Value, String> {
     let dir = match name {
         Some(n) => location.join(n),
         // a chosen location gets a new folder in it, named after the default library
-        None if picked => free_name(&location, dac_engine::library::DEFAULT_NAME),
+        None if picked => free_name(&location, lcc_engine::library::DEFAULT_NAME),
         None => location,
     };
-    if dac_engine::library::is_library(&dir) {
+    if lcc_engine::library::is_library(&dir) {
         return Err(format!("{}: there is a library here already; open it with File ▸ Open Library…", dir.display()));
     }
     if dir.is_file() {
@@ -1211,7 +1211,7 @@ fn free_name(location: &std::path::Path, base: &str) -> std::path::PathBuf {
 /// `app.recentLibraries {clear?: bool}`: the recently opened libraries, newest first, as
 /// `[{path, name, exists, open}]` (`exists: false`: moved or on a disconnected drive). `clear`
 /// forgets them all.
-pub fn recent_libraries(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn recent_libraries(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     if p.get("clear").and_then(Value::as_bool) == Some(true) {
         app.ui.settings.recent_libraries.clear();
     }
@@ -1237,7 +1237,7 @@ pub fn recent_libraries(app: &mut DacApp, p: &Value) -> Result<Value, String> {
 /// only. A file that can't be used is an error and changes nothing. Returns the profile in use:
 /// `{path, description, kind (matrix|lut), primaries {red, green, blue: [x, y]}}`, with
 /// `path: null, screen: true` for the screen's profile.
-pub fn display_profile(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn display_profile(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let path = match p.get("path") {
         None => None,
         Some(Value::Null) => Some(String::new()),
@@ -1245,7 +1245,7 @@ pub fn display_profile(app: &mut DacApp, p: &Value) -> Result<Value, String> {
         Some(_) => return Err("app.displayProfile: path must be a string or null".into()),
     };
     if let Some(path) = path {
-        let d = dac_engine::display::Display::load_opt(&path).map_err(|e| format!("app.displayProfile: {e}"))?;
+        let d = lcc_engine::display::Display::load_opt(&path).map_err(|e| format!("app.displayProfile: {e}"))?;
         app.renderer.set_display(d);
         app.ui.settings.display_profile = path.clone();
         app.display_applied = Some(path);

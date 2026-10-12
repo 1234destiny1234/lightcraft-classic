@@ -35,11 +35,11 @@ CPU slider path and export (both now met); the import miss and the 1:1 tile miss
 ```sh
 cargo xtask corpus --download                    # CC0 raws into corpus/
 cargo xtask bench                                # render: slider / loupe / export rows (CPU and GPU)
-<PREFIX>_PROFILE=1 cargo run --release -p dac-cli -- render corpus/raw/arw-sony-a7m3-compressed.arw -o /tmp/o.jpg --size 2048
-ONLY=source N=3 cargo run --release -p dac-engine --example render_bench -- corpus/raw/arw-sony-a7m3-compressed.arw
-cargo run --release -p dac-engine --example perf_tile -- $PWD/corpus/raw/arw-sony-a7m3-compressed.arw   # 1:1 tile
+<PREFIX>_PROFILE=1 cargo run --release -p lcc-cli -- render corpus/raw/arw-sony-a7m3-compressed.arw -o /tmp/o.jpg --size 2048
+ONLY=source N=3 cargo run --release -p lcc-engine --example render_bench -- corpus/raw/arw-sony-a7m3-compressed.arw
+cargo run --release -p lcc-engine --example perf_tile -- $PWD/corpus/raw/arw-sony-a7m3-compressed.arw   # 1:1 tile
 cargo xtask bench-catalog --photos 100000,1000000 [--backend v4]
-cargo test --release -p dac-ui-egui map_50k -- --ignored --nocapture                                   # Map, 50k pins
+cargo test --release -p lcc-ui-egui map_50k -- --ignored --nocapture                                   # Map, 50k pins
 ```
 
 Import / previews / publish / print: 1,000 unique raws are made as reflink copies of the 24 MP ARW with a few bytes
@@ -134,7 +134,7 @@ Idle, 2026-10-11 (median of 3): zoom 3 cluster 4.4 ms / frame 3.3 ms; zoom 5 4.8
 zoom 12 11.0 / 5.9 ms; cached pins 0.7 µs at every zoom; Library grid 0.97 ms per frame.
 
 (Frame ranges span runs under varying load; the Library grid with the same 50k photos ran at 1.2–3.2 ms per frame.)
-Follow-up (owned, `dac-geo`): clustering on a zoom step costs up to ~50 ms at 50k photos (a `BTreeMap` of cells); a
+Follow-up (owned, `lcc-geo`): clustering on a zoom step costs up to ~50 ms at 50k photos (a `BTreeMap` of cells); a
 hash map plus a final key sort, or clustering off the UI thread, would remove the hitch.
 
 ## Print / Book page render (raws, 300 dpi, built-in templates)
@@ -180,7 +180,7 @@ Expected: ~60–100 ms per tile.
 
 **U2 — fixed in shared code (G6, branch `upstream/perf-previews`):** (a) photos render in `export_parallelism`
 lanes (2 for 1:1), (b) the thumbnail renders from the view's decoded source (one decode per photo instead of two),
-plus a cheaper hue/saturation table path in `dac-raw` (`HsvTable::apply`: no sRGB round trip for a unit value scale, no
+plus a cheaper hue/saturation table path in `lcc-raw` (`HsvTable::apply`: no sRGB round trip for a unit value scale, no
 `fmodf`; 2048 px render 16.4 → 15.1 G instructions single-thread). 1,000 ARWs, same binaries A/B minutes apart, load
 average ~25: previews 239.3 s → **75.0 s** (CPU 34m06 → 26m59), whole `<cli> run --import … buildPreviews` 243.5 s →
 **78.5 s**; 100 ARWs 20.7 s → 8.4 s. (c) (embedded JPEG as the standard preview) not needed for the budget.

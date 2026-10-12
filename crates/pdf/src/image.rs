@@ -146,7 +146,7 @@ pub fn jpeg_info(b: &[u8]) -> Result<JpegInfo, PdfError> {
         if marker == 0xEE && seg.starts_with(b"Adobe") {
             adobe = true;
         }
-        // SOF0..SOF15 except DHT (C4), JPG (C8) and DAC (CC).
+        // SOF0..SOF15 except DHT (C4), JPG (C8) and LCC (CC).
         if (0xC0..=0xCF).contains(&marker) && marker != 0xC4 && marker != 0xC8 && marker != 0xCC {
             let (Some(&p), Some(h), Some(w), Some(&n)) = (seg.first(), seg.get(1..3), seg.get(3..5), seg.get(5)) else {
                 return Err(bad("short frame header"));

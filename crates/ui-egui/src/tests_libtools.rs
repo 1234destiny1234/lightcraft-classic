@@ -3,18 +3,18 @@
 
 use std::time::Duration;
 
-use dac_catalog::PhotoId;
+use lcc_catalog::PhotoId;
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn app(view: &str) -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
     let r = h.request("ui.set", json!({"view": view, "moduleBar": false}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -190,7 +190,7 @@ fn grid_badges_for_crop_and_rotation_sit_on_the_photo() {
 
 #[test]
 fn cropped_ignores_an_uncropped_edit() {
-    let mut d = dac_develop::DevelopSettings::default();
+    let mut d = lcc_develop::DevelopSettings::default();
     assert!(!crate::panels::cells::cropped(&d));
     d.crop.geometry.angle = 2.0;
     assert!(crate::panels::cells::cropped(&d));
@@ -207,10 +207,10 @@ fn plugin_fields_edit_every_selected_photo() {
     let src = format!(
         r#"(module (memory (export "memory") 2)
   (data (i32.const 16) "{m}") (data (i32.const 8192) "{r}")
-  (func (export "dac_abi_version") (result i32) (i32.const 1))
-  (func (export "dac_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
-  (func (export "dac_alloc") (param i32) (result i32) (i32.const 65536))
-  (func (export "dac_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
+  (func (export "lcc_abi_version") (result i32) (i32.const 1))
+  (func (export "lcc_manifest") (result i64) (i64.or (i64.shl (i64.const {ml}) (i64.const 32)) (i64.const 16)))
+  (func (export "lcc_alloc") (param i32) (result i32) (i32.const 65536))
+  (func (export "lcc_handle") (param i32 i32) (result i64) (i64.or (i64.shl (i64.const {rl}) (i64.const 32)) (i64.const 8192))))"#,
         m = esc(manifest),
         r = esc(reply),
         ml = manifest.len(),

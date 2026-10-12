@@ -1,4 +1,4 @@
-//! Map tiles as textures: fetched on worker threads through `dac_geo::fetch` (cache first), a few
+//! Map tiles as textures: fetched on worker threads through `lcc_geo::fetch` (cache first), a few
 //! at a time, only for tiles on screen; decoded off the UI thread; kept as a bounded set of
 //! textures (least recently drawn go first). A headless host fetches synchronously so a snapshot
 //! shows the finished map. Without a fetcher (the web build) nothing is fetched.
@@ -6,8 +6,8 @@
 use std::collections::HashMap;
 use std::sync::mpsc::{Receiver, Sender, channel};
 
-use dac_geo::TileKey;
-use dac_geo::tiles::TileServer;
+use lcc_geo::TileKey;
+use lcc_geo::tiles::TileServer;
 
 /// Concurrent downloads (OSM's policy asks for few connections).
 const MAX_INFLIGHT: usize = 4;
@@ -32,7 +32,7 @@ pub struct TileLoader {
     inflight: usize,
     frame: u64,
     #[cfg(not(target_arch = "wasm32"))]
-    fetcher: Option<std::sync::Arc<dac_geo::fetch::TileFetcher>>,
+    fetcher: Option<std::sync::Arc<lcc_geo::fetch::TileFetcher>>,
     /// The last fetch error (shown in the attribution line).
     pub last_error: Option<String>,
     /// Tiles fetched / failed since start (`map.view` reports them).
@@ -62,12 +62,12 @@ impl TileLoader {
     /// Set up the fetcher with a disk cache in `cache_dir` (none: memory only).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn start(&mut self, cache_dir: Option<std::path::PathBuf>) {
-        let cache = cache_dir.map(dac_geo::cache::TileCache::new);
+        let cache = cache_dir.map(lcc_geo::cache::TileCache::new);
         if let Some(c) = cache.clone() {
             // keep the cache under its limit, off the UI thread
             let _ = std::thread::Builder::new().name("tile-cache-prune".into()).spawn(move || c.prune());
         }
-        match dac_geo::fetch::TileFetcher::new(cache) {
+        match lcc_geo::fetch::TileFetcher::new(cache) {
             Ok(f) => self.fetcher = Some(std::sync::Arc::new(f)),
             Err(e) => self.last_error = Some(e.to_string()),
         }
@@ -203,7 +203,7 @@ impl TileLoader {
 }
 
 #[cfg(not(target_arch = "wasm32"))]
-fn fetch_decode(f: &dac_geo::fetch::TileFetcher, server: &TileServer, k: TileKey) -> Decoded {
+fn fetch_decode(f: &lcc_geo::fetch::TileFetcher, server: &TileServer, k: TileKey) -> Decoded {
     let (bytes, _) = f.fetch(server, k).map_err(|e| e.to_string())?;
-    dac_geo::tiles::decode_tile(&bytes).map_err(|e| e.to_string())
+    lcc_geo::tiles::decode_tile(&bytes).map_err(|e| e.to_string())
 }

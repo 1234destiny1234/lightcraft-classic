@@ -1,13 +1,13 @@
 //! Golden-image tests: every built-in template, filled with procedural photos, rendered at a
 //! preview resolution and reduced to a 16×16 grid of block means, compared with
 //! `tests/golden/<template>.txt` (±3 per channel). Text signatures, not images, so no media is
-//! committed. `UPDATE_GOLDEN=1 cargo test -p dac-layout --test golden` rewrites them; look at the
+//! committed. `UPDATE_GOLDEN=1 cargo test -p lcc-layout --test golden` rewrites them; look at the
 //! diff before committing.
 
-use dac_layout::render::{PhotoSource, PlaceholderText, RenderOptions, render_document};
-use dac_layout::tokens::PhotoInfo;
-use dac_layout::{builtin_templates, render::Rendered};
-use dac_raster::Rgba8;
+use lcc_layout::render::{PhotoSource, PlaceholderText, RenderOptions, render_document};
+use lcc_layout::tokens::PhotoInfo;
+use lcc_layout::{builtin_templates, render::Rendered};
+use lcc_raster::Rgba8;
 
 /// Photos: a hue from the id, a horizontal ramp, a dark diagonal band; 3:2 landscape, every
 /// third one portrait.

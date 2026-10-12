@@ -30,7 +30,7 @@ Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) 
 
 - **`cargo xtask upstream-merge [--ref upstream/main] [--no-ci]`** automates steps 1–3 below and checks step 4:
   refuses on a dirty tree, fetches, creates `merge/upstream-YYYYMMDD` from the current HEAD, runs
-  `git merge --no-ff --no-commit` (with `merge.conflictStyle=zdiff3`), settles the conflict hunks where one side equals the base once crate names are mapped (`lightcraft_x` → `dac_x`, `LightcraftApp` → `DacApp`, `lightcraft/heif` → `dac-app/heif`), then puts back our version of every owned path (conflicted ones too; files
+  `git merge --no-ff --no-commit` (with `merge.conflictStyle=zdiff3`), settles the conflict hunks where one side equals the base once crate names are mapped (`lightcraft_x` → `lcc_x`, `LightcraftApp` → `LccApp`, `lightcraft/heif` → `lcc-app/heif`), then puts back our version of every owned path (conflicted ones too; files
   upstream added under an owned path are dropped). Git's `merge=ours` attribute is not enough: it only applies when
   both sides changed a file. Upstream commits that touched owned paths go into `target/upstream/review-YYYYMMDD.md`
   (hash, subject, files with line counts): they were set aside, review them for anything worth porting by hand.
@@ -38,7 +38,7 @@ Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) 
   (exit non-zero), and otherwise leaves the merge staged but uncommitted and runs `cargo xtask ci`. Continue at
   step 4.
 - **`cargo xtask upstream-pr <branch> <commit>...`** creates `<branch>` off `upstream/main` and replays the commits
-  (`git am --3way`) with our crate names mapped back to upstream's (`dac-x` → upstream's prefix, `-p dac-app` →
+  (`git am --3way`) with our crate names mapped back to upstream's (`lcc-x` → upstream's prefix, `-p lcc-app` →
   upstream's app package), in the patches and the touched files. It never pushes: it prints the push/PR steps. Our
   copy of the commit then carries `UPSTREAM-PR: <link>` in its message.
 - **`cargo xtask shared-check [--strict]`** (a warning step in `cargo xtask ci`) lists commits since the last
@@ -61,21 +61,21 @@ Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) 
    `apps/app`, `apps/cli` and `apps/web`. Resolve content conflicts as usual, but **never by hand-editing names**
    (step 3 does that).
 3. **Map upstream crate names to ours.** Upstream calls its crates `lightcraft-*` (paths `lightcraft_*`); ours use
-   the internal prefix (`dac-*`). Rewrite every incoming reference in the files the merge touched:
+   the internal prefix (`lcc-*`). Rewrite every incoming reference in the files the merge touched:
    ```sh
    cargo xtask rename-crates --upstream            # files changed since fork-base, plus conflicted files
    cargo xtask rename-crates --upstream --since HEAD~1   # narrower: only what this merge brought
    ```
-   Only names of crates this workspace has are rewritten (`lightcraft-raw` → `dac-raw`, `lightcraft_engine::` →
-   `dac_engine::`, `-p lightcraft` → `-p dac-app`). A crate upstream **added** is not known yet: rename its package
-   to `dac-<name>` in its `Cargo.toml`, register it in `xtask/src/layers.rs`, and run the command again.
+   Only names of crates this workspace has are rewritten (`lightcraft-raw` → `lcc-raw`, `lightcraft_engine::` →
+   `lcc_engine::`, `-p lightcraft` → `-p lcc-app`). A crate upstream **added** is not known yet: rename its package
+   to `lcc-<name>` in its `Cargo.toml`, register it in `xtask/src/layers.rs`, and run the command again.
 4. **Remove upstream's product name** everywhere else. Upstream writes "LightCraft", `lightcraft`, `LIGHTCRAFT_*`
    and its app id into code, docs and packaging; here every name comes from `brand.toml`:
    ```sh
    cargo xtask brand check
    ```
-   lists each `file:line`. Fix them with the brand constants (`dac_brand::DISPLAY_NAME`, `dac_brand::env("LOG")`,
-   `dac_brand::fill("… {app} …")`), `{{app}}`/`{{binary}}` placeholders in `*.md.in` docs and `packaging/**/*.in`
+   lists each `file:line`. Fix them with the brand constants (`lcc_brand::DISPLAY_NAME`, `lcc_brand::env("LOG")`,
+   `lcc_brand::fill("… {app} …")`), `{{app}}`/`{{binary}}` placeholders in `*.md.in` docs and `packaging/**/*.in`
    templates, or neutral wording ("the app"). New legacy handling (code that must name an old identity to migrate
    from it) goes in `LEGACY_FILES` in `xtask/src/brand.rs`, and the old values in `[legacy]` of `brand.toml`.
 5. **Regenerate and verify.**

@@ -18,7 +18,7 @@
 //! scaling in XYZ mapping source black to destination black), applied here as a neutral scaling in
 //! linear RGB; the transforms are moxcms's. Own design otherwise.
 
-use dac_color::{REC2020, SRGB};
+use lcc_color::{REC2020, SRGB};
 use moxcms::{ColorProfile, DataColorSpace, Layout, RenderingIntent, TransformOptions};
 
 use crate::display::MAX_PROFILE_BYTES;
@@ -78,7 +78,7 @@ impl PrinterTransform {
         let n = PRINT_GRID;
         let grid: Vec<f32> = (0..n * n * n)
             .flat_map(|i| {
-                let s = [i / (n * n), (i / n) % n, i % n].map(|k| dac_color::transfer::srgb_to_linear(k as f32 / (n - 1) as f32));
+                let s = [i / (n * n), (i / n) % n, i % n].map(|k| lcc_color::transfer::srgb_to_linear(k as f32 / (n - 1) as f32));
                 let r: [f32; 3] = std::array::from_fn(|j| (0..3).map(|k| to2020[j][k] * s[k]).sum::<f32>().max(0.0));
                 r.map(|v| black_point + (1.0 - black_point) * v)
             })

@@ -1,4 +1,4 @@
-//! Golden raster tests (Phase 3 gate): documents written by `dac-pdf` are rasterised with
+//! Golden raster tests (Phase 3 gate): documents written by `lcc-pdf` are rasterised with
 //! `hayro` (pure Rust, MIT/Apache-2.0, dev-only) and compared with expectations kept in code —
 //! pixel colours at known spots and ink statistics, never committed image files. This proves a
 //! real PDF consumer can draw what we write: vector paint, Flate images (8/16-bit, soft mask) at
@@ -6,9 +6,9 @@
 
 use std::sync::Arc;
 
-use dac_pdf::{ColorSpace, Document, Image, Page, Paint, Path, Rect};
 use hayro::hayro_interpret::InterpreterSettings;
 use hayro::hayro_syntax::Pdf;
+use lcc_pdf::{ColorSpace, Document, Image, Page, Paint, Path, Rect};
 
 /// RGBA8 pixels of each page at `scale` px per pt.
 struct Raster {
@@ -68,9 +68,9 @@ fn vector_images_and_text_rasterise_as_laid_out() {
     ghost.alpha = Some(vec![0]);
     let ghost = d.add_image(ghost).unwrap();
 
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     let s = "Golden HIM";
-    let layout = e.layout(&dac_text::TextBlock::plain(s, "Inter", 40.0), 72.0);
+    let layout = e.layout(&lcc_text::TextBlock::plain(s, "Inter", 40.0), 72.0);
 
     let mut p = Page::new(300.0, 200.0);
     p.fill(Path::rect(Rect::new(10.0, 10.0, 60.0, 40.0)), Paint::Rgb(0.0, 0.0, 1.0));
@@ -119,13 +119,13 @@ fn vector_images_and_text_rasterise_as_laid_out() {
 
 #[test]
 fn cjk_text_rasterises_with_craft_fonts() {
-    if dac_text::craft_fonts::install_from_env() == 0 {
+    if lcc_text::craft_fonts::install_from_env() == 0 {
         eprintln!("CRAFT_FONTS_DIR unset: skipping CJK raster test");
         return;
     }
-    let mut e = dac_text::TextEngine::new();
+    let mut e = lcc_text::TextEngine::new();
     let s = "写真の本";
-    let layout = e.layout(&dac_text::TextBlock::plain(s, "Inter", 40.0), 72.0);
+    let layout = e.layout(&lcc_text::TextBlock::plain(s, "Inter", 40.0), 72.0);
     let mut d = Document::new();
     let mut p = Page::new(300.0, 100.0);
     p.text(&layout, s, (10.0, 20.0), 1.0);

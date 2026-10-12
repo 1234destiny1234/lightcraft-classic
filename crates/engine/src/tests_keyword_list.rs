@@ -28,7 +28,7 @@ fn temp_dir(tag: &str) -> std::path::PathBuf {
 }
 
 fn keywords_of(s: &Session, id: u64) -> Vec<String> {
-    s.catalog.photo(dac_catalog::PhotoId(id)).unwrap().meta.keywords.clone()
+    s.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.keywords.clone()
 }
 
 /// Create Keyword: a name inside a parent, with attributes, given to the selected photos at once,

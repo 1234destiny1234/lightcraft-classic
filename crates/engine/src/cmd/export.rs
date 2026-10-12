@@ -78,7 +78,7 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(list(s))
 }
 
-/// `export.addToPhotos`: there is a runner (the desktop app and dac-cli on macOS).
+/// `export.addToPhotos`: there is a runner (the desktop app and lcc-cli on macOS).
 #[cfg(not(target_arch = "wasm32"))]
 fn photos_enabled(s: &Session) -> std::result::Result<(), String> {
     match &s.apple_photos {
@@ -88,7 +88,7 @@ fn photos_enabled(s: &Session) -> std::result::Result<(), String> {
 }
 
 /// `export.addToPhotos {paths, album?, wait?}`: add files already on disk to Apple Photos, as a
-/// job: here (the default without a window: dac-cli, the MCP server, scripts), or on a
+/// job: here (the default without a window: lcc-cli, the MCP server, scripts), or on a
 /// worker thread (the default in the desktop app, which answers control requests on its UI
 /// thread and must not wait minutes for Photos; see [`Session::apple_photos_background`]).
 #[cfg(not(target_arch = "wasm32"))]
@@ -211,7 +211,7 @@ pub fn specs() -> Vec<CommandSpec> {
         "Add to Apple Photos",
         [],
         None,
-        "{paths: [absolute file paths], album?: name (an album at the top level of Photos, made when missing; default none), wait?} → once Photos is done, {job, running: false, requested, album, imported, ids: [Photos media item ids], warning?}; with wait: false, at once {job, running: true, requested, album} and the outcome later from export.photosImports {job}. wait defaults to true without a window (dac-cli, the MCP server) and to false in the desktop app, where wait: true is refused (its control requests are answered on the UI thread, which never waits for Photos). macOS: asks Photos to import the files (the first time, macOS asks the user to allow the app to control Photos). One import runs at a time, and an export adding to Photos reserves it before writing: another is refused until it ends. app.export does this for the files it writes with `addToPhotos: true`",
+        "{paths: [absolute file paths], album?: name (an album at the top level of Photos, made when missing; default none), wait?} → once Photos is done, {job, running: false, requested, album, imported, ids: [Photos media item ids], warning?}; with wait: false, at once {job, running: true, requested, album} and the outcome later from export.photosImports {job}. wait defaults to true without a window (lcc-cli, the MCP server) and to false in the desktop app, where wait: true is refused (its control requests are answered on the UI thread, which never waits for Photos). macOS: asks Photos to import the files (the first time, macOS asks the user to allow the app to control Photos). One import runs at a time, and an export adding to Photos reserves it before writing: another is refused until it ends. app.export does this for the files it writes with `addToPhotos: true`",
         photos_enabled,
         add_to_photos
     ));

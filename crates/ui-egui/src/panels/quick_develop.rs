@@ -4,7 +4,7 @@
 
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
@@ -46,7 +46,7 @@ pub(crate) const TONE_ROWS: &[(&str, &str, f64, f64)] = &[
 ];
 pub(crate) const PRESENCE_ROWS: &[(&str, &str, f64, f64)] = &[("Clarity", "effects.clarity", 5.0, 20.0), ("Vibrance", "color.vibrance", 5.0, 20.0)];
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let n = app.session.targets(&json!({})).len();
     if n == 0 {
@@ -127,7 +127,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
     }
 }
 
-fn quick_set(app: &mut DacApp, ui: &egui::Ui, p: serde_json::Value) {
+fn quick_set(app: &mut LccApp, ui: &egui::Ui, p: serde_json::Value) {
     match app.run("develop.quickSet", p) {
         Ok(r) => {
             if let Some(e) = r["errors"].as_array().and_then(|a| a.first()).and_then(|e| e.as_str()) {
@@ -171,7 +171,7 @@ fn choice_row(
 }
 
 /// Rows of ◀◀ ◀ ▶ ▶▶ step buttons (`button:qd-<control>-<i>`, i = 0..3 from the left).
-fn steps(app: &mut DacApp, ui: &mut egui::Ui, rows: &[(&str, &str, f64, f64)]) {
+fn steps(app: &mut LccApp, ui: &mut egui::Ui, rows: &[(&str, &str, f64, f64)]) {
     let t = Tokens::get(ui.ctx());
     for (label, ctl, small, big) in rows {
         ui.horizontal(|ui| {

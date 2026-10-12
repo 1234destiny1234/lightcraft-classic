@@ -212,7 +212,7 @@ both). Photos match by file path and virtual-copy name, so a photo whose origina
   visible photos; `catalog.query` without a filter pages the current view that way instead of copying the whole list.
   The grid reads the shared `Arc<[PhotoId]>` (`Session::visible_shared`) and draws only the rows on screen; a million
   ids are 8 MB.
-- **Migration progress**: `dac_catalog::progress::migration()` reports the running v3 → v4 migration (backup,
+- **Migration progress**: `lcc_catalog::progress::migration()` reports the running v3 → v4 migration (backup,
   reading, encoding, writing *n* of *total* photos, finishing; process-wide, so another thread can show it).
   `library::needs_migration(dir)` tells whether an open will migrate, `library::migrate(dir)` (the engine's
   `library::migrate_library`, under the library lock) migrates without loading. The desktop app migrates an older

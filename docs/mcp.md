@@ -6,7 +6,7 @@
 `<cli> mcp` exposes the app to AI agents through the
 [Model Context Protocol](https://modelcontextprotocol.io): newline-delimited JSON-RPC 2.0 over
 stdio (protocol revision `2025-06-18`; `2025-03-26` and `2024-11-05` clients are accepted). The
-server lives in `crates/mcp` (`dac-mcp`, layer L5) and is hand-written: no async runtime,
+server lives in `crates/mcp` (`lcc-mcp`, layer L5) and is hand-written: no async runtime,
 no C dependencies.
 
 It runs in one of two modes:
@@ -30,7 +30,7 @@ Logs go to stderr; stdout carries only protocol messages.
 
 ## Wiring it into a client
 
-Build once: `cargo build --release -p dac-cli` (binary: `target/release/<cli>`).
+Build once: `cargo build --release -p lcc-cli` (binary: `target/release/<cli>`).
 
 ### Claude Code
 
@@ -118,7 +118,7 @@ Every stdio MCP client takes the same shape: a `command` plus `args`. For exampl
 }
 ```
 
-During development you can also point the client at `cargo run --release -p dac-cli -- mcp`
+During development you can also point the client at `cargo run --release -p lcc-cli -- mcp`
 (with `"cwd"` set to the repository), at the cost of a slower start.
 
 ## Shared core tools

@@ -1,11 +1,11 @@
 //! M14 end to end: `render` a synthetic H.264 clip to a graded movie (.mp4 / .mov, trimmed) and
-//! re-decode the result with dac-video.
+//! re-decode the result with lcc-video.
 #![cfg(not(target_arch = "wasm32"))]
 
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use dac_video::test_util::{mean, write_clip};
+use lcc_video::test_util::{mean, write_clip};
 
 const BIN: &str = env!("CARGO_BIN_EXE_app-cli");
 
@@ -22,7 +22,7 @@ fn render(args: &[&str]) -> (bool, String) {
 }
 
 fn mean_at(path: &Path, t: f64) -> f64 {
-    mean(&dac_video::FrameReader::open(path).unwrap().frame_at(t, None).unwrap().image)
+    mean(&lcc_video::FrameReader::open(path).unwrap().frame_at(t, None).unwrap().image)
 }
 
 #[test]
@@ -35,10 +35,10 @@ fn render_a_clip_to_graded_mp4_and_mov() {
         let out = d.join(format!("out.{ext}"));
         let (ok, err) = render(&[clip.to_str().unwrap(), "-o", out.to_str().unwrap(), "--set", "light.exposure=1"]);
         assert!(ok, "{ext}: {err}");
-        let info = dac_video::probe(&out).unwrap();
+        let info = lcc_video::probe(&out).unwrap();
         assert!((info.duration - 1.0).abs() < 0.1, "{ext}: {info:?}");
         assert_eq!((info.width, info.height), (64, 48), "{ext}");
-        let n = dac_video::FrameReader::open(&out).unwrap().frame_times().len();
+        let n = lcc_video::FrameReader::open(&out).unwrap().frame_times().len();
         assert!((29..=31).contains(&n), "{ext}: {n} frames");
         let graded = mean_at(&out, 0.5);
         assert!(graded > base * 1.5, "{ext}: exposure +1 brightens {base} → {graded}");
@@ -55,14 +55,14 @@ fn render_trims_a_clip() {
     let out = d.join("trim.mp4");
     let (ok, err) = render(&[clip.to_str().unwrap(), "-o", out.to_str().unwrap(), "--trim", "1,1.5"]);
     assert!(ok, "{err}");
-    let info = dac_video::probe(&out).unwrap();
+    let info = lcc_video::probe(&out).unwrap();
     assert!((info.duration - 0.5).abs() < 0.1, "{info:?}");
     assert!(mean_at(&out, 0.0) > mean_at(&clip, 0.5) * 2.0, "the trimmed export starts in the bright second");
     // open-ended trim and a bad one
     let out2 = d.join("tail.mp4");
     let (ok, err) = render(&[clip.to_str().unwrap(), "-o", out2.to_str().unwrap(), "--trim", "1.5,"]);
     assert!(ok, "{err}");
-    assert!((dac_video::probe(&out2).unwrap().duration - 0.5).abs() < 0.1);
+    assert!((lcc_video::probe(&out2).unwrap().duration - 0.5).abs() < 0.1);
     let (ok, err) = render(&[clip.to_str().unwrap(), "-o", d.join("bad.mp4").to_str().unwrap(), "--trim", "soon,1"]);
     assert!(!ok && err.contains("--trim"), "{err}");
     let (ok, err) = render(&[clip.to_str().unwrap(), "-o", d.join("bad.mp4").to_str().unwrap(), "--trim", "1.5,1"]);

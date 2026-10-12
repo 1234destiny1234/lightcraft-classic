@@ -6,7 +6,7 @@
 //! settings (`lc:settings`, JSON), the pick/reject flag (`lc:flag`) and location (`lc:location`).
 //!
 //! An existing sidecar is never replaced wholesale (issue #92): The app's properties
-//! ([`OWNED`], [`OWNED_IF_STATED`]) are merged into it ([`dac_meta::merge_xmp`]) and
+//! ([`OWNED`], [`OWNED_IF_STATED`]) are merged into it ([`lcc_meta::merge_xmp`]) and
 //! everything else — another editor's `crs:` develop settings, `xmpMM` history, unknown
 //! namespaces — is kept byte for byte. A sidecar that can't be read as XMP is first copied to
 //! `<name>.xmp.bak-<time>` (never overwritten), then replaced. Writes are atomic (temp file,
@@ -27,8 +27,8 @@ use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
-use dac_catalog::{ColorLabel, Flag, MediaKind, Op, Photo, PhotoId, SidecarStat, Source, XmpStatus};
-use dac_develop::DevelopSettings;
+use lcc_catalog::{ColorLabel, Flag, MediaKind, Op, Photo, PhotoId, SidecarStat, Source, XmpStatus};
+use lcc_develop::DevelopSettings;
 use serde::{Deserialize, Serialize};
 use serde_json::Value;
 
@@ -99,7 +99,7 @@ pub struct SidecarData {
     pub alt_text: Option<String>,
     pub extended_description: Option<String>,
     pub keywords: Option<Vec<String>>,
-    pub regions: Option<Vec<dac_meta::Region>>,
+    pub regions: Option<Vec<lcc_meta::Region>>,
     /// Capture time (ISO 8601) from `exif:DateTimeOriginal`, `photoshop:DateCreated` or
     /// `xmp:CreateDate` (first found). Used only when the file itself has no capture time.
     pub captured: Option<String>,
@@ -125,7 +125,7 @@ pub enum DevelopPatch {
 /// ([`crate::crs::Target`]: absolute Kelvin for raws with a measured illuminant, a shift from the
 /// as-shot white for everything developed relative to it).
 pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Result<SidecarData, String> {
-    let d = dac_meta::parse_xmp(xmp).map_err(|e| e.to_string())?;
+    let d = lcc_meta::parse_xmp(xmp).map_err(|e| e.to_string())?;
     let m = &d.metadata;
     let lc = |k: &str| d.properties.get(&format!("lc:{k}")).and_then(|v| v.first()).cloned();
     let mut out = SidecarData {
@@ -143,7 +143,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
         alt_text: m.alt_text.clone(),
         extended_description: m.extended_description.clone(),
         keywords: (!m.keywords.is_empty() || !m.hierarchical_keywords.is_empty())
-            .then(|| dac_catalog::keywords::from_file(&m.keywords, &m.hierarchical_keywords)),
+            .then(|| lcc_catalog::keywords::from_file(&m.keywords, &m.hierarchical_keywords)),
         // A sidecar that has `mwg-rs:Regions` at all (even an empty list) was written by an app that
         // knows about regions, so it's authoritative: its list, empty or not, replaces the catalog's.
         // One without it (most writers, the app's own included, which keeps another app's
@@ -155,7 +155,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
     };
     let vid = |k: &str| {
         d.properties
-            .get(&format!("{}:{k}", dac_meta::VIDEO_PREFIX))
+            .get(&format!("{}:{k}", lcc_meta::VIDEO_PREFIX))
             .and_then(|v| v.first())
             .and_then(|t| t.trim().parse::<f64>().ok())
             .filter(|t| t.is_finite())
@@ -283,7 +283,7 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
         }
     }
     if let Some(marked) = sc.copyright_marked {
-        m.copyright_status = dac_catalog::CopyrightStatus::from_marked(Some(marked));
+        m.copyright_status = lcc_catalog::CopyrightStatus::from_marked(Some(marked));
     }
     if let Some(k) = &sc.keywords {
         m.keywords = k.clone();
@@ -294,12 +294,12 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
     // a clip's trim and poster, when the photo is a probed clip and the values fit it (bad ones are ignored)
     if let Some(v) = p.video.as_mut() {
         if let Some((t_in, t_out)) = sc.video_trim
-            && dac_catalog::validate_trim(v.duration, t_in, t_out).is_ok()
+            && lcc_catalog::validate_trim(v.duration, t_in, t_out).is_ok()
         {
             (v.trim_in, v.trim_out) = (t_in, t_out);
         }
         if let Some(t) = sc.video_poster
-            && dac_catalog::validate_poster(v.duration, Some(t)).is_ok()
+            && lcc_catalog::validate_poster(v.duration, Some(t)).is_ok()
         {
             v.poster_time = Some(t);
         }
@@ -311,7 +311,7 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
             if p.width > 0 && p.height > 0 {
                 crate::crs_masks::refit_radials(&mut v, crate::crs_masks::DEFAULT_ASPECT, p.width as f64 / p.height as f64);
             }
-            dac_develop::apply_partial(&p.develop, &v, 1.0)
+            lcc_develop::apply_partial(&p.develop, &v, 1.0)
         }
         None => return false,
     };
@@ -326,7 +326,7 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
 impl SidecarData {
     /// Read the label through the catalog's label names: other editors write the label's name
     /// (a custom set's "To Do" as well as "Red"); unknown names clear the label.
-    pub fn resolve_label(mut self, cat: &dac_catalog::Catalog) -> Self {
+    pub fn resolve_label(mut self, cat: &lcc_catalog::Catalog) -> Self {
         if let Some(t) = &self.label_text {
             self.label = Some(if t.is_empty() { None } else { cat.label_from_name(t) });
         }
@@ -336,16 +336,16 @@ impl SidecarData {
 
 /// The sidecar packet for a photo; the colour label is written by its name in `cat` (custom
 /// label names included, as other editors do).
-pub fn sidecar_packet(p: &Photo, cat: &dac_catalog::Catalog) -> String {
+pub fn sidecar_packet(p: &Photo, cat: &lcc_catalog::Catalog) -> String {
     sidecar_packet_with(p, cat, false)
 }
 
 /// [`sidecar_packet`], without any location (GPS, sublocation, city, state, country) when
 /// `remove_location` is set (an export with "Remove location info").
-pub fn sidecar_packet_with(p: &Photo, cat: &dac_catalog::Catalog, remove_location: bool) -> String {
+pub fn sidecar_packet_with(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool) -> String {
     let nz = |s: &str| (!s.trim().is_empty()).then(|| s.to_string());
-    let meta = dac_meta::Metadata {
-        software: Some(dac_brand::DISPLAY_NAME.into()),
+    let meta = lcc_meta::Metadata {
+        software: Some(lcc_brand::DISPLAY_NAME.into()),
         title: nz(&p.meta.title),
         caption: nz(&p.meta.caption),
         alt_text: nz(&p.meta.alt_text),
@@ -362,8 +362,8 @@ pub fn sidecar_packet_with(p: &Photo, cat: &dac_catalog::Catalog, remove_locatio
         keywords: p.meta.keywords.clone(),
         rating: Some(p.rating.min(5) as i8),
         label: p.label.map(|l| cat.label_name(l)),
-        capture_time: p.captured.as_deref().and_then(dac_meta::DateTime::parse_iso),
-        gps: p.meta.gps.map(|(latitude, longitude)| dac_meta::Gps { latitude, longitude, altitude: None }),
+        capture_time: p.captured.as_deref().and_then(lcc_meta::DateTime::parse_iso),
+        gps: p.meta.gps.map(|(latitude, longitude)| lcc_meta::Gps { latitude, longitude, altitude: None }),
         ..Default::default()
     };
     let mut meta = meta;
@@ -384,7 +384,7 @@ pub fn sidecar_packet_with(p: &Photo, cat: &dac_catalog::Catalog, remove_locatio
     let fields: Vec<(String, String, String)> = p
         .plugin_fields
         .iter()
-        .filter_map(|(k, v)| k.split_once('/').map(|(plugin, key)| (plugin.to_string(), key.to_string(), dac_catalog::rules::plugin_value_text(v))))
+        .filter_map(|(k, v)| k.split_once('/').map(|(plugin, key)| (plugin.to_string(), key.to_string(), lcc_catalog::rules::plugin_value_text(v))))
         .collect();
     let fields: Vec<(&str, &str, &str)> = fields.iter().map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str())).collect();
     // a video clip's trim and poster, in the fork's video namespace
@@ -399,7 +399,7 @@ pub fn sidecar_packet_with(p: &Photo, cat: &dac_catalog::Catalog, remove_locatio
         }
     }
     let video: Vec<(&str, &str)> = video.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    dac_meta::write_xmp_video(&meta, &lc, &fields, &video)
+    lcc_meta::write_xmp_video(&meta, &lc, &fields, &video)
 }
 
 /// The properties the app writes and owns in a sidecar: replaced on every save (removed when
@@ -433,7 +433,7 @@ pub const OWNED_IF_STATED: &[&str] = &["exif:DateTimeOriginal", "photoshop:DateC
 
 /// Write `data` to `path` atomically: a temp file next to it, synced, then renamed over it.
 fn write_atomic(path: &Path, data: &[u8]) -> std::io::Result<()> {
-    dac_catalog::safe_file::write_atomic(path, data)
+    lcc_catalog::safe_file::write_atomic(path, data)
 }
 
 /// Copy `path` to a new `<name>.bak-<stamp>` (`-1`, `-2`… if taken; never overwriting).
@@ -479,8 +479,8 @@ fn sidecar_contents(path: &Path, fresh: String, stamp: &str) -> std::io::Result<
     if bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok((fresh, false, None));
     }
-    let rules = dac_meta::MergeRules { owned: OWNED, owned_if_present: OWNED_IF_STATED };
-    match std::str::from_utf8(&bytes).map_err(|e| e.to_string()).and_then(|old| dac_meta::merge_xmp(old, &fresh, rules).map_err(|e| e.to_string())) {
+    let rules = lcc_meta::MergeRules { owned: OWNED, owned_if_present: OWNED_IF_STATED };
+    match std::str::from_utf8(&bytes).map_err(|e| e.to_string()).and_then(|old| lcc_meta::merge_xmp(old, &fresh, rules).map_err(|e| e.to_string())) {
         Ok(merged) => Ok((merged, true, None)),
         Err(why) => {
             let b = backup(path, stamp)?;
@@ -511,7 +511,7 @@ pub fn read_packet(original: &str, kind: MediaKind, naming: SidecarNaming) -> Op
     }
     if kind == MediaKind::Raw {
         let bytes = std::fs::read(original).ok()?;
-        let x = dac_meta::embedded(&bytes).xmp?;
+        let x = lcc_meta::embedded(&bytes).xmp?;
         return Some((x, PathBuf::from(original)));
     }
     None
@@ -535,7 +535,7 @@ pub(crate) fn op_photos(op: &Op, out: &mut Vec<PhotoId>) {
 pub(crate) struct StemOwners(HashMap<String, PhotoId>);
 
 impl StemOwners {
-    pub(crate) fn of(cat: &dac_catalog::Catalog) -> StemOwners {
+    pub(crate) fn of(cat: &lcc_catalog::Catalog) -> StemOwners {
         // per stem: (raw first, then file name, then id) of the best candidate; and how many
         let mut best: HashMap<String, ((bool, String, u64), PhotoId, usize)> = HashMap::new();
         for p in cat.photos().filter(|p| p.copy_of.is_none()) {
@@ -589,7 +589,7 @@ impl Session {
     }
 
     pub(crate) fn save_sidecar_with(&mut self, id: PhotoId, owners: &StemOwners) -> Result<SidecarSaved> {
-        let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
+        let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         if p.copy_of.is_some() {
             return Err(EngineError::Other(format!("{} is a virtual copy: its settings live only in the library", p.file_name)));
         }
@@ -613,7 +613,7 @@ impl Session {
         // subsequent Undo/Redo writes. Shared stems owned by another photo were excluded above.
         let path = candidates.into_iter().find(|path| path.is_file()).unwrap_or(preferred);
         self.validate_sidecar_packets_for_paths(std::slice::from_ref(&path), &crate::rename::RealFs)?;
-        let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
+        let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         let err = |e: std::io::Error| EngineError::Other(format!("{}: {e}", path.display()));
         let (data, merged, backup) = sidecar_contents(&path, sidecar_packet(p, &self.catalog), &(self.clock)()).map_err(err)?;
         write_atomic(&path, data.as_bytes()).map_err(err)?;
@@ -628,7 +628,7 @@ impl Session {
 
     /// Like [`Session::read_sidecar_op`], retaining transient diagnostics for the command report.
     pub fn read_sidecar_op_with_warnings(&self, id: PhotoId) -> Result<Option<(Op, PathBuf, Vec<crate::import::ImportWarning>)>> {
-        let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
+        let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         let Some(orig) = file_path(p) else { return Ok(None) };
         let Some((packet, from)) = read_packet(orig, p.kind, self.sidecar_naming(id)) else { return Ok(None) };
         let sc = parse_sidecar(&packet, crate::crs::Target::for_photo(p)).map_err(|e| EngineError::Other(format!("{}: {e}", from.display())))?;
@@ -643,7 +643,7 @@ impl Session {
     /// The op that applies what a sidecar says (already read and parsed, e.g. on a worker
     /// thread) to photo `id`: the sidecar wins. No file is read.
     pub fn sidecar_op(&self, id: PhotoId, sc: SidecarData) -> Result<Op> {
-        let p = self.catalog.photo(id).ok_or(dac_catalog::CatalogError::NoPhoto(id))?;
+        let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         let sc = sc.resolve_label(&self.catalog);
         let mut q = (**p).clone();
         let develop_changed = merge_into(&mut q, &sc, &(self.clock)());
@@ -673,7 +673,7 @@ impl Session {
         Some(SidecarStat { mtime, size: m.len() })
     }
 
-    /// The metadata-vs-XMP state of photo `id` (see [`dac_catalog::xmp_state`]).
+    /// The metadata-vs-XMP state of photo `id` (see [`lcc_catalog::xmp_state`]).
     pub fn xmp_status(&self, id: PhotoId) -> XmpStatus {
         match self.catalog.photo(id) {
             Some(p) => p.xmp_status(self.sidecar_stat(id)),
@@ -743,17 +743,17 @@ mod tests {
     /// gives the photo its keywords as paths.
     #[test]
     fn sidecar_keywords_keep_their_hierarchy() {
-        let m = dac_meta::Metadata {
+        let m = lcc_meta::Metadata {
             keywords: vec!["Lisbon".into(), "Places".into()],
             hierarchical_keywords: vec!["Places|Lisbon".into()],
             ..Default::default()
         };
-        let sc = super::parse_sidecar(&dac_meta::write_xmp(&m, None), crate::crs::Target::Rendered).unwrap();
+        let sc = super::parse_sidecar(&lcc_meta::write_xmp(&m, None), crate::crs::Target::Rendered).unwrap();
         assert_eq!(sc.keywords, Some(vec!["Places|Lisbon".to_string()]));
     }
 
     use super::*;
-    use dac_catalog::Meta;
+    use lcc_catalog::Meta;
 
     fn photo() -> Photo {
         let mut p = Photo::new(PhotoId(7), Source::File { path: "/x/IMG_1.jpg".into() }, "IMG_1.jpg", "JPEG", 40, 30, "2026-01-01T00:00:00");
@@ -775,7 +775,7 @@ mod tests {
         d.light.exposure = 0.75;
         d.effects.clarity = 22.0;
         d.crop.geometry.angle = 2.5;
-        d.masks.push(dac_develop::Mask { id: 1, ..Default::default() });
+        d.masks.push(lcc_develop::Mask { id: 1, ..Default::default() });
         p.develop = Arc::new(d);
         p
     }
@@ -785,8 +785,8 @@ mod tests {
     #[test]
     fn video_trim_and_poster_roundtrip() {
         let mut p = Photo::new(PhotoId(3), Source::File { path: "/v/c.mp4".into() }, "c.mp4", "MP4", 1, 1, "2026-01-01T00:00:00");
-        p.kind = dac_catalog::MediaKind::Video;
-        let v = dac_catalog::VideoMeta {
+        p.kind = lcc_catalog::MediaKind::Video;
+        let v = lcc_catalog::VideoMeta {
             duration: 12.0,
             fps_num: 25,
             fps_den: 1,
@@ -799,12 +799,12 @@ mod tests {
             poster_time: Some(3.0),
         };
         p.video = Some(v.clone());
-        let x = sidecar_packet(&p, &dac_catalog::Catalog::new());
-        assert!(x.contains(&dac_meta::video_ns()) && x.contains("<lcvid:trimIn>1.25</lcvid:trimIn>"), "{x}");
+        let x = sidecar_packet(&p, &lcc_catalog::Catalog::new());
+        assert!(x.contains(&lcc_meta::video_ns()) && x.contains("<lcvid:trimIn>1.25</lcvid:trimIn>"), "{x}");
         let sc = parse_sidecar(&x, crate::crs::Target::Rendered).unwrap();
         assert_eq!((sc.video_trim, sc.video_poster), (Some((1.25, Some(9.5))), Some(3.0)));
         let mut q = p.clone();
-        q.video = Some(dac_catalog::VideoMeta { trim_in: 0.0, trim_out: None, poster_time: None, ..v.clone() });
+        q.video = Some(lcc_catalog::VideoMeta { trim_in: 0.0, trim_out: None, poster_time: None, ..v.clone() });
         merge_into(&mut q, &sc, "now");
         assert_eq!(q.video, Some(v.clone()));
         // a sidecar written for a longer clip: out of range, ignored
@@ -813,7 +813,7 @@ mod tests {
         merge_into(&mut r, &parse_sidecar(&other, crate::crs::Target::Rendered).unwrap(), "now");
         assert_eq!(r.video, Some(v));
         // a still photo has no video properties
-        assert!(!sidecar_packet(&photo(), &dac_catalog::Catalog::new()).contains("lcvid"));
+        assert!(!sidecar_packet(&photo(), &lcc_catalog::Catalog::new()).contains("lcvid"));
     }
 
     #[test]
@@ -825,7 +825,7 @@ mod tests {
     #[test]
     fn packet_roundtrip_restores_everything() {
         let p = photo();
-        let x = sidecar_packet(&p, &dac_catalog::Catalog::new());
+        let x = sidecar_packet(&p, &lcc_catalog::Catalog::new());
         let sc = parse_sidecar(&x, crate::crs::Target::Rendered).unwrap();
         assert_eq!(sc.rating, Some(4));
         assert_eq!(sc.flag, Some(Flag::Pick));

@@ -1,8 +1,8 @@
 //! P6.2 never-crash harnesses: print settings and templates (files, agents) and what a printer
 //! answers over IPP (decode, HTTP framing, printer attributes) are untrusted.
 
-use dac_layout::render::PhotoSource;
-use dac_raster::Rgba8;
+use lcc_layout::render::PhotoSource;
+use lcc_raster::Rgba8;
 
 use crate::PrintSettings;
 use crate::ipp::*;
@@ -25,7 +25,7 @@ fn hostile_print_settings_never_panic() {
     let photos: Vec<String> = (0..5).map(|i| i.to_string()).collect();
     let text = ShapedText::new();
     let mut n = 0usize;
-    dac_fuzzkit::run_json("print.settings", &refs, 1500, |s| {
+    lcc_fuzzkit::run_json("print.settings", &refs, 1500, |s| {
         let parsed = PrintSettings::from_json(s).ok().or_else(|| serde_json::from_str::<PrintSettings>(s).ok());
         let Some(mut st) = parsed else { return };
         let _ = st.validate();
@@ -85,7 +85,7 @@ fn hostile_ipp_answers_never_panic() {
     let chunked =
         [b"HTTP/1.1 200 OK\r\nTransfer-Encoding: chunked\r\n\r\n".as_slice(), format!("{:x}\r\n", body.len()).as_bytes(), &body, b"\r\n0\r\n\r\n"]
             .concat();
-    dac_fuzzkit::run("print.ipp", &[&body, &http, &chunked], 5000, |b| {
+    lcc_fuzzkit::run("print.ipp", &[&body, &http, &chunked], 5000, |b| {
         for m in [Message::decode(b), http_body(b).and_then(|x| Message::decode(&x))].into_iter().flatten() {
             let info = parse_printer_info(&m);
             let _ = info.accepts("application/pdf");
@@ -99,7 +99,7 @@ fn hostile_ipp_answers_never_panic() {
 
 #[test]
 fn hostile_printer_uris_and_media_names_never_panic() {
-    dac_fuzzkit::run_str(
+    lcc_fuzzkit::run_str(
         "print.uri",
         &["ipp://printer.local:631/printers/PDF", "ipps://[::1]/ipp/print", "na_letter_8.5x11in", "custom_min_1x1mm"],
         5000,

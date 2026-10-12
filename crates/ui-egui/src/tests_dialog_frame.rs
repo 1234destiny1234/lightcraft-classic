@@ -7,7 +7,7 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::Dialog;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 
@@ -22,7 +22,7 @@ fn settle(h: &mut Headless) {
 }
 
 fn open(size: [f32; 2], dlg: Dialog) -> Headless {
-    let app = DacApp::new(dac_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, size, 1.0);
     h.app.ui.dialog = Some(dlg);
     // (the first request switches the widget list on; the layout settles on measured heights)

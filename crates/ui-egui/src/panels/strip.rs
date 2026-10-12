@@ -3,13 +3,13 @@
 use egui::vec2;
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::Icon;
 use crate::state::RightPanel;
 use crate::theme::Tokens;
 use crate::widgets::icon_button;
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::right("tool_strip")
         .exact_size(t.strip_w)

@@ -1,5 +1,5 @@
 //! The playback grade of a video frame on the GPU (M14.4): the twin of
-//! [`GradeLut::apply`](dac_pipeline::grade::GradeLut::apply). A decoded linear frame is uploaded
+//! [`GradeLut::apply`](lcc_pipeline::grade::GradeLut::apply). A decoded linear frame is uploaded
 //! as-is (`f32` RGB, no CPU conversion), looked up in the clip's baked [`LUT_SIZE`]³ grade with
 //! tetrahedral interpolation by one small compute shader, and written straight into an RGBA8
 //! texture the window can draw ([`LutTarget::view`], an `Rgba8UnormSrgb` view, the format
@@ -11,8 +11,8 @@
 //! Hafner, "Performing color space conversions with three-dimensional linear interpolation"
 //! (J. Electronic Imaging, 1995).
 
-use dac_pipeline::grade::{GradeLut, LUT_SIZE};
-use dac_raster::{Rgb32f, Rgba8};
+use lcc_pipeline::grade::{GradeLut, LUT_SIZE};
+use lcc_raster::{Rgb32f, Rgba8};
 
 const SHADER: &str = include_str!("wgsl/video_lut.wgsl");
 /// Largest frame side graded here (the window's texture limit is checked by wgpu as well).
@@ -269,7 +269,7 @@ impl Scopes {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_pipeline::Quality;
+    use lcc_pipeline::Quality;
 
     fn device() -> Option<(wgpu::Device, wgpu::Queue)> {
         let instance = wgpu::Instance::new(wgpu::InstanceDescriptor::new_without_display_handle());
@@ -283,7 +283,7 @@ mod tests {
             eprintln!("no GPU adapter: skipped");
             return;
         };
-        let mut s = dac_develop::DevelopSettings::default();
+        let mut s = lcc_develop::DevelopSettings::default();
         s.light.exposure = 0.4;
         s.light.contrast = 25.0;
         s.light.highlights = -30.0;
@@ -293,7 +293,7 @@ mod tests {
         s.grading.shadows.hue = 220.0;
         s.grading.shadows.sat = 30.0;
         let lut = GradeLut::bake(&s).unwrap();
-        let mut img = dac_scenes::demo_library()[0].render(333, 187);
+        let mut img = lcc_scenes::demo_library()[0].render(333, 187);
         // out-of-range, NaN and the lattice's edges too
         img.data[0] = [f32::NAN, 2.0, -1.0];
         img.data[1] = [1.0, 1.0, 1.0];
@@ -307,14 +307,14 @@ mod tests {
         let worst = cpu.data.iter().zip(&gpu.data).flat_map(|(a, b)| (0..4).map(move |k| a[k].abs_diff(b[k]))).max().unwrap();
         assert!(worst <= 2, "GPU LUT differs from the CPU LUT by {worst} codes");
         // a new key uploads the new table
-        let lut2 = GradeLut::bake(&dac_develop::DevelopSettings::default()).unwrap();
+        let lut2 = GradeLut::bake(&lcc_develop::DevelopSettings::default()).unwrap();
         g.grade(&device, &queue, &img, 2, &lut2, &target).unwrap();
         let gpu2 = target.read(&device, &queue).unwrap();
         let cpu2 = lut2.apply(&img, Quality::Full);
         let worst2 = cpu2.data.iter().zip(&gpu2.data).flat_map(|(a, b)| (0..4).map(move |k| a[k].abs_diff(b[k]))).max().unwrap();
         assert!(worst2 <= 2, "after a LUT change: {worst2} codes");
         // a frame of the wrong size is an error, not a panic
-        assert!(g.grade(&device, &queue, &dac_scenes::demo_library()[0].render(10, 10), 2, &lut2, &target).is_err());
+        assert!(g.grade(&device, &queue, &lcc_scenes::demo_library()[0].render(10, 10), 2, &lut2, &target).is_err());
         assert!(LutTarget::new(&device, 0, 10).is_err());
     }
 }

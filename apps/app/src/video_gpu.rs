@@ -1,11 +1,11 @@
-//! The window GPU's grade of playing video frames (M14.4): `dac_gpu::video_lut` on the
+//! The window GPU's grade of playing video frames (M14.4): `lcc_gpu::video_lut` on the
 //! egui-wgpu device, its output registered with the window's renderer as a native texture, so a
 //! frame goes from the decoder to the screen with no CPU grade, conversion or texture copy.
 //! Without a wgpu renderer (glow) the loupe keeps the CPU LUT.
 
-use dac_gpu::video_lut::{LutTarget, VideoLut};
 use eframe::egui_wgpu::RenderState;
 use eframe::wgpu;
+use lcc_gpu::video_lut::{LutTarget, VideoLut};
 
 pub struct WindowVideoGpu {
     state: RenderState,
@@ -20,8 +20,8 @@ impl WindowVideoGpu {
     }
 }
 
-impl dac_ui_egui::VideoGpu for WindowVideoGpu {
-    fn grade(&mut self, img: &dac_raster::Rgb32f, key: u64, lut: &dac_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String> {
+impl lcc_ui_egui::VideoGpu for WindowVideoGpu {
+    fn grade(&mut self, img: &lcc_raster::Rgb32f, key: u64, lut: &lcc_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String> {
         let (device, queue) = (&self.state.device, &self.state.queue);
         if self.lut.is_none() {
             self.lut = Some(VideoLut::new(device)?);

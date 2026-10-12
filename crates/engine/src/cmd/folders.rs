@@ -4,7 +4,7 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{Op, PhotoId, Source};
+use lcc_catalog::{Op, PhotoId, Source};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -89,7 +89,7 @@ fn scan(dir: &Path, subfolders: bool) -> Vec<PathBuf> {
 }
 
 /// The sidecar of `path` as it is now (either naming, `.xmp` or `.XMP`).
-fn sidecar_stat(path: &str) -> Option<dac_catalog::SidecarStat> {
+fn sidecar_stat(path: &str) -> Option<lcc_catalog::SidecarStat> {
     for naming in [crate::sidecar::SidecarNaming::Stem, crate::sidecar::SidecarNaming::Full] {
         let p = crate::sidecar::sidecar_path(path, naming);
         for q in [p.clone(), p.with_extension("XMP")] {
@@ -102,7 +102,7 @@ fn sidecar_stat(path: &str) -> Option<dac_catalog::SidecarStat> {
                     .and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok())
                     .map(|d| i64::try_from(d.as_secs()).unwrap_or(i64::MAX))
                     .unwrap_or(0);
-                return Some(dac_catalog::SidecarStat { mtime, size: m.len() });
+                return Some(lcc_catalog::SidecarStat { mtime, size: m.len() });
             }
         }
     }
@@ -189,7 +189,7 @@ fn sync(s: &mut Session, p: &Value) -> Result<Value> {
         .filter_map(|(id, p)| {
             let ph = s.catalog.photo(*id)?;
             let st = ph.xmp_status(sidecar_stat(&p.to_string_lossy()));
-            matches!(st, dac_catalog::XmpStatus::ChangedOnDisk | dac_catalog::XmpStatus::Conflict).then_some(id.0)
+            matches!(st, lcc_catalog::XmpStatus::ChangedOnDisk | lcc_catalog::XmpStatus::Conflict).then_some(id.0)
         })
         .collect();
     let _ = known_paths;

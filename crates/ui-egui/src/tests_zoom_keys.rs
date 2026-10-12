@@ -9,14 +9,14 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::Zoom;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn edit_view() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let mut app = DacApp::new(dac_engine::Session::with_demo(), services);
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
     app.ui.settings.gpu = false;
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail", "right": "edit"}), T);

@@ -1,6 +1,6 @@
 //! Background export: the Export dialog, File → Export with Preset and Export with Previous hand
 //! their batch to a worker thread so the window stays responsive. Photos are prepared on the UI
-//! thread ([`dac_engine::export::prepare_export`]: cheap, needs the session) and rendered,
+//! thread ([`lcc_engine::export::prepare_export`]: cheap, needs the session) and rendered,
 //! encoded and written on the worker (several side by side: [`run_batch`]); its row in the
 //! activity stack shows the count, the file in progress and ✕ (issue #345).
 //!
@@ -11,11 +11,11 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Receiver, channel};
 use std::sync::{Arc, Mutex};
 
-use dac_engine::activity::{Cancel, TaskGuard};
-use dac_engine::export::{AfterExport, Destination, ExportOptions, PreparedExport, run_batch, set_video_hooks};
+use lcc_engine::activity::{Cancel, TaskGuard};
+use lcc_engine::export::{AfterExport, Destination, ExportOptions, PreparedExport, run_batch, set_video_hooks};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 
 pub struct ExportTask {
     pub total: usize,
@@ -52,7 +52,7 @@ impl ExportTask {
 
 /// Start exporting `items` in the background, then do `after` with the files written (Add to Apple
 /// Photos). Errors per photo are collected, not fatal.
-pub fn start(app: &mut DacApp, mut items: Vec<PreparedExport>, opts: ExportOptions, to: Destination, after: AfterExport) -> Result<Value, String> {
+pub fn start(app: &mut LccApp, mut items: Vec<PreparedExport>, opts: ExportOptions, to: Destination, after: AfterExport) -> Result<Value, String> {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
@@ -68,9 +68,9 @@ pub fn start(app: &mut DacApp, mut items: Vec<PreparedExport>, opts: ExportOptio
     // video clips stop within a frame on ✕ and show how far the movie is
     if items.iter().any(PreparedExport::is_video) {
         let r = row.clone();
-        let progress: dac_engine::export_video::VideoProgress =
+        let progress: lcc_engine::export_video::VideoProgress =
             Arc::new(move |name: &str, x: f64| r.detail(&format!("{name} {:.0}%", x.clamp(0.0, 1.0) * 100.0)));
-        set_video_hooks(&mut items, &dac_engine::export_video::VideoHooks { cancel: cancel.clone(), progress: Some(progress) });
+        set_video_hooks(&mut items, &lcc_engine::export_video::VideoHooks { cancel: cancel.clone(), progress: Some(progress) });
     }
     // translated here: the language is the UI thread's, and the worker would show English
     let adding = crate::i18n::tr("Adding to Apple Photos…").to_string();
@@ -106,14 +106,14 @@ pub fn start(app: &mut DacApp, mut items: Vec<PreparedExport>, opts: ExportOptio
 }
 
 /// Export a single paginated PDF with the same activity row and cancellation as image exports.
-pub fn start_contact_sheet(app: &mut DacApp, params: &Value) -> Result<Value, String> {
+pub fn start_contact_sheet(app: &mut LccApp, params: &Value) -> Result<Value, String> {
     if app.export.is_some() {
         return Err("an export is already running".into());
     }
     let path = params.get("path").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).ok_or("missing path")?.to_string();
     app.session.check_write_target(&path)?;
     let guard = app.session.original_guard();
-    let prepared = dac_engine::contact_sheet::prepare(&mut app.session, params)?;
+    let prepared = lcc_engine::contact_sheet::prepare(&mut app.session, params)?;
     let total = prepared.len();
     let write = app.services.write_shared.clone();
     let progress = Arc::new(Mutex::new((0, String::new())));
@@ -135,7 +135,7 @@ pub fn start_contact_sheet(app: &mut DacApp, params: &Value) -> Result<Value, St
                 guard.check(std::path::Path::new(&path))?;
                 match write {
                     Some(write) => write(&path, &doc.bytes)?,
-                    None => dac_engine::export::write_file(&path, &doc.bytes)?,
+                    None => lcc_engine::export::write_file(&path, &doc.bytes)?,
                 }
                 Ok(vec![json!({"path": path, "pages": doc.pages, "photos": doc.photos, "bytes": doc.bytes.len(), "contactSheet": true})])
             });
@@ -177,7 +177,7 @@ pub fn apple_photos_note(outcome: &Value) -> String {
 /// Per frame: when an Apple Photos import that no export task reports finishes (`app.export`
 /// without `background`, `export.addToPhotos`), say how it went.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn poll_photos(app: &mut DacApp, ctx: &egui::Context) {
+pub fn poll_photos(app: &mut LccApp, ctx: &egui::Context) {
     let jobs = app.session.apple_photos_imports.all();
     if jobs.iter().any(|j| !j.finished()) {
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
@@ -197,10 +197,10 @@ pub fn poll_photos(app: &mut DacApp, ctx: &egui::Context) {
 
 /// No Apple Photos on the web.
 #[cfg(target_arch = "wasm32")]
-pub fn poll_photos(_: &mut DacApp, _: &egui::Context) {}
+pub fn poll_photos(_: &mut LccApp, _: &egui::Context) {}
 
 /// Per frame: keep the activity row up to date; when the batch finishes, report it.
-pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
+pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     let Some(task) = &app.export else { return };
     match task.rx.try_recv() {
         Ok(r) => {
@@ -298,7 +298,7 @@ mod contact_sheet_tests {
             })),
             ..Default::default()
         };
-        let mut app = DacApp::new(dac_engine::Session::with_demo(), services);
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
         app.run("dialog.contactSheet", json!({})).unwrap();
         let Some(Dialog::ContactSheet { options }) = app.ui.dialog.as_mut() else { panic!("no contact sheet settings") };
         options.paper = "letter".into();
@@ -330,7 +330,7 @@ mod contact_sheet_tests {
     #[test]
     fn contact_sheet_export_shows_a_row_and_its_cross_stops_it() {
         let mut app =
-            DacApp::new(dac_engine::Session::with_demo(), crate::Services { write_shared: Some(Arc::new(|_, _| Ok(()))), ..Default::default() });
+            LccApp::new(lcc_engine::Session::with_demo(), crate::Services { write_shared: Some(Arc::new(|_, _| Ok(()))), ..Default::default() });
         let ids: Vec<_> = app.session.catalog.photos().take(24).map(|p| p.id.0).collect();
         start_contact_sheet(&mut app, &json!({"path": "Sheet.pdf", "ids": ids})).unwrap();
         let rows = app.session.activity.list();
@@ -347,8 +347,8 @@ mod contact_sheet_tests {
 
     #[test]
     fn cancelled_contact_sheet_never_calls_writer() {
-        let mut app = DacApp::new(
-            dac_engine::Session::with_demo(),
+        let mut app = LccApp::new(
+            lcc_engine::Session::with_demo(),
             crate::Services { write_shared: Some(Arc::new(|_, _| panic!("cancelled export wrote a file"))), ..Default::default() },
         );
         let ids: Vec<_> = app.session.catalog.photos().take(24).map(|p| p.id.0).collect();

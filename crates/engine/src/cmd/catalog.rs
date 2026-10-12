@@ -3,8 +3,8 @@
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::library::{BackupSchedule, CatalogSettings};
-use dac_catalog::transfer::{self, ConflictRule, ExportOptions};
+use lcc_catalog::library::{BackupSchedule, CatalogSettings};
+use lcc_catalog::transfer::{self, ConflictRule, ExportOptions};
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -41,19 +41,19 @@ fn settings_json(s: &Session, c: &CatalogSettings) -> Value {
         "backup": schedule_name(c.backup),
         "backupDir": c.backup_root(&dir).display().to_string(),
         "customBackupDir": c.backup_dir.is_some(),
-        "defaultBackupDir": dir.join(dac_catalog::library::BACKUPS_DIR).display().to_string(),
+        "defaultBackupDir": dir.join(lcc_catalog::library::BACKUPS_DIR).display().to_string(),
         "keepBackups": c.keep_backups,
         "lastBackup": c.last_backup,
         "testIntegrity": c.test_integrity,
         "optimize": c.optimize,
         "previews": s.preview_prefs.json(),
-        "backupDue": c.backup_due(dac_catalog::library::now_secs()),
+        "backupDue": c.backup_due(lcc_catalog::library::now_secs()),
     })
 }
 
 fn info(s: &mut Session, _: &Value) -> Result<Value> {
     let dir = s.catalog_dir().map(Path::to_path_buf);
-    let entry = dir.as_deref().and_then(dac_catalog::library::find_entry);
+    let entry = dir.as_deref().and_then(lcc_catalog::library::find_entry);
     let c = s.catalog_settings();
     Ok(json!({
         "dir": dir.map(|d| d.display().to_string()),
@@ -150,7 +150,7 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     let path = str_param(p, "path").map(str::trim).filter(|d| !d.is_empty()).ok_or_else(|| bad(C, "missing `path` (the other catalog)"))?;
     let rule = rule_param(p)?;
     if let Some(dir) = s.catalog_dir()
-        && dac_catalog::library::resolve(Path::new(path)).is_ok_and(|o| same(&o, dir))
+        && lcc_catalog::library::resolve(Path::new(path)).is_ok_and(|o| same(&o, dir))
     {
         return Err(bad(C, "that is the catalog that is open"));
     }

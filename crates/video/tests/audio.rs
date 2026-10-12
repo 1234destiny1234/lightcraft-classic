@@ -8,8 +8,8 @@ use std::f32::consts::TAU;
 use std::io::{BufWriter, Cursor};
 use std::path::{Path, PathBuf};
 
-use dac_video::{AudioReader, VideoError, resample};
 use filmcraft_isobmff::{AvcConfig, Brand, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_video::{AudioReader, VideoError, resample};
 
 const W: u32 = 64;
 const H: u32 = 48;
@@ -19,7 +19,7 @@ const SR: u32 = 48_000;
 const HZ: f32 = 440.0;
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-video-audio-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-video-audio-{}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
     d.join(name)
 }

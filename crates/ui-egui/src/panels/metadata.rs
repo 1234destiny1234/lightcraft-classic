@@ -5,11 +5,11 @@
 
 use std::sync::Arc;
 
-use dac_catalog::{Photo, PhotoId};
 use egui::{Sense, vec2};
+use lcc_catalog::{Photo, PhotoId};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::Icon;
 use crate::theme::Tokens;
 use crate::widgets::{divider, register, text_button};
@@ -156,8 +156,8 @@ pub fn value(p: &Photo, key: &str) -> String {
         "gps" => m.gps.map(|(la, lo)| format!("{la:.6}, {lo:.6}")).unwrap_or_default(),
         "fileName" => p.file_name.clone(),
         "folder" => match &p.source {
-            dac_catalog::Source::File { path } => std::path::Path::new(path).parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
-            dac_catalog::Source::Demo { .. } => crate::i18n::tr("Generated demo photo").into(),
+            lcc_catalog::Source::File { path } => std::path::Path::new(path).parent().map(|d| d.to_string_lossy().into_owned()).unwrap_or_default(),
+            lcc_catalog::Source::Demo { .. } => crate::i18n::tr("Generated demo photo").into(),
         },
         "captured" => p.captured.clone().unwrap_or_default(),
         "rating" => p.rating.to_string(),
@@ -241,7 +241,7 @@ fn padded(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 /// The panel. `id` is the active photo; the fields show (and edit) every selected photo.
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let targets: Vec<PhotoId> = app.session.targets(&json!({}));
     let photos: Vec<Arc<Photo>> = {
@@ -309,7 +309,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
 }
 
 /// Panel preset · metadata preset · copy / paste.
-fn toolbar(app: &mut DacApp, ui: &mut egui::Ui, ids: &[u64]) {
+fn toolbar(app: &mut LccApp, ui: &mut egui::Ui, ids: &[u64]) {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("View")).size(11.5).color(t.text_dim));
@@ -397,7 +397,7 @@ fn info_row(ui: &mut egui::Ui, label: &str, v: Option<&str>) {
 /// A labelled text field: the typed text lives in egui memory while focused and is saved
 /// (photo.setMeta `key`, on every photo shown) when the field loses focus. A mixed field is empty
 /// with a `<mixed>` hint; leaving it empty changes nothing.
-fn text_field(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64], label: &str, key: &str, lines: usize) {
+fn text_field(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64], label: &str, key: &str, lines: usize) {
     small(ui, label);
     let shared = common(photos, key);
     let shown = shared.clone().unwrap_or_default();
@@ -426,13 +426,13 @@ fn text_field(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &
 }
 
 /// Copyright Status: Unknown / Copyrighted / Public Domain (`xmpRights:Marked`).
-fn copyright_status(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+fn copyright_status(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     small(ui, "Copyright Status");
     let current = photos.first().map(|p| p.meta.copyright_status).unwrap_or_default();
     let mixed = common(photos, "copyrightStatus").is_none();
     let text = if mixed { MIXED.to_string() } else { crate::i18n::tr(current.label()).to_string() };
     let r = egui::ComboBox::from_id_salt("info-copyright-status").selected_text(text).show_ui(ui, |ui| {
-        for st in dac_catalog::CopyrightStatus::ALL {
+        for st in lcc_catalog::CopyrightStatus::ALL {
             if ui.selectable_label(!mixed && st == current, crate::i18n::tr(st.label())).clicked() && (mixed || st != current) {
                 let _ = app.run("photo.setMeta", json!({"copyrightStatus": st.id()}));
             }
@@ -442,7 +442,7 @@ fn copyright_status(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) 
     ui.add_space(6.0);
 }
 
-fn file_name(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+fn file_name(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "File Name");
     let name = common(photos, "fileName").unwrap_or_else(|| MIXED.into());
@@ -462,7 +462,7 @@ fn file_name(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     ui.add_space(4.0);
 }
 
-fn folder(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+fn folder(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Folder");
     let path = common(photos, "folder").unwrap_or_else(|| MIXED.into());
@@ -480,7 +480,7 @@ fn folder(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     ui.add_space(4.0);
 }
 
-fn captured(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+fn captured(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Capture Time");
     let cap = match common(photos, "captured") {
@@ -500,7 +500,7 @@ fn captured(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
 }
 
 /// GPS: typed as "lat, lon" (or degrees / minutes / seconds); empty clears it.
-fn gps(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64]) {
+fn gps(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64]) {
     let t = Tokens::get(ui.ctx());
     let shared = common(photos, "gps");
     let gps = shared.clone().unwrap_or_default();
@@ -550,7 +550,7 @@ fn gps(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64]) 
     ui.add_space(6.0);
 }
 
-fn rating(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Rating");
     let shared = common(photos, "rating");
@@ -567,13 +567,13 @@ fn rating(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
 }
 
 /// Colour label: one swatch per label (hover shows its name); clicking the current one clears it.
-fn label(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Label");
     let shared = common(photos, "label");
-    let current = shared.as_deref().and_then(dac_catalog::ColorLabel::parse);
+    let current = shared.as_deref().and_then(lcc_catalog::ColorLabel::parse);
     ui.horizontal(|ui| {
-        for l in dac_catalog::ColorLabel::ALL {
+        for l in lcc_catalog::ColorLabel::ALL {
             let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
             let key = format!("{l:?}").to_lowercase();
             register(ui.ctx(), format!("label:{key}"), r);
@@ -603,7 +603,7 @@ fn label(app: &mut DacApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
 }
 
 /// The active photo's extras: virtual copy, analysis, offline original / smart preview, All Metadata….
-fn extras(app: &mut DacApp, ui: &mut egui::Ui, p: &Photo) {
+fn extras(app: &mut LccApp, ui: &mut egui::Ui, p: &Photo) {
     let t = Tokens::get(ui.ctx());
     if let Some(why) = &p.preview_only {
         crate::widgets::preview_only_notice(ui, "info", why);
@@ -630,12 +630,12 @@ fn extras(app: &mut DacApp, ui: &mut egui::Ui, p: &Photo) {
     }
     // offline originals / smart previews (cached answers, checked off the UI thread: unknown
     // counts as online / no smart preview)
-    if let dac_catalog::Source::File { path } = &p.source {
+    if let lcc_catalog::Source::File { path } = &p.source {
         let avail = &app.session.media.availability;
         let online = !avail.is_offline(path);
         let smart = app.session.media.smart_dir.as_ref().is_some_and(|d| {
-            let shard = dac_engine::smart::sharded_file_path(d, p);
-            let legacy = d.join(dac_engine::smart::file_name(p));
+            let shard = lcc_engine::smart::sharded_file_path(d, p);
+            let legacy = d.join(lcc_engine::smart::file_name(p));
             avail.exists(&shard.to_string_lossy()) == Some(true) || avail.exists(&legacy.to_string_lossy()) == Some(true)
         });
         if !online || smart {
@@ -662,7 +662,7 @@ fn extras(app: &mut DacApp, ui: &mut egui::Ui, p: &Photo) {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use dac_catalog::Source;
+    use lcc_catalog::Source;
 
     fn photo(id: u64) -> Arc<Photo> {
         let mut p = Photo::new(PhotoId(id), Source::Demo { scene: 0 }, "a.jpg", "JPEG", 300, 200, "2026-01-01T00:00:00");

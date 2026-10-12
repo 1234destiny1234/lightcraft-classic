@@ -118,7 +118,7 @@ pub fn choose(target: Option<TextureFormat>, platform: Platform, display_headroo
 
 /// The decision for this start, logged once (the window renderer's `target` format).
 pub fn report(target: Option<TextureFormat>) -> DisplayOutput {
-    let disabled = dac_brand::env("HDR_DISPLAY").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false" | "no"));
+    let disabled = lcc_brand::env("HDR_DISPLAY").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false" | "no"));
     // no OS headroom query is wired yet: unknown, so SDR unless everything else is HDR-ready
     let out = choose(target, Platform::current(), None, disabled);
     match out {

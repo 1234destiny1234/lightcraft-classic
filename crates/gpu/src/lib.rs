@@ -1,8 +1,8 @@
 //! The develop pipeline on the GPU (wgpu compute, WGSL kernels).
 //!
-//! The CPU pipeline (`dac-pipeline`) is the reference: every kernel here is a port of a CPU
-//! stage, both read the same resolved parameters ([`dac_pipeline::Plan`],
-//! [`dac_pipeline::finish::FinishParams`]), and the equivalence tests (`tests/`) render the
+//! The CPU pipeline (`lcc-pipeline`) is the reference: every kernel here is a port of a CPU
+//! stage, both read the same resolved parameters ([`lcc_pipeline::Plan`],
+//! [`lcc_pipeline::finish::FinishParams`]), and the equivalence tests (`tests/`) render the
 //! same settings on both and bound the difference in 8-bit sRGB. Stages without a kernel run on the
 //! CPU inside the same render (per-stage hybrid); see `docs/gpu-pipeline.md`.
 //!
@@ -25,9 +25,9 @@
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex};
 
-use dac_develop::DevelopSettings;
-use dac_pipeline::{RenderRequest, Rendered, SourceInfo, StageCache};
-use dac_raster::Rgb32f;
+use lcc_develop::DevelopSettings;
+use lcc_pipeline::{RenderRequest, Rendered, SourceInfo, StageCache};
+use lcc_raster::Rgb32f;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod backend;
@@ -78,9 +78,9 @@ pub fn unavailable_reason() -> Option<String> {
     if env_disabled() {
         #[cfg(not(target_arch = "wasm32"))]
         if backend::env_off() {
-            return Some(format!("disabled by {}=off", dac_brand::env_var("GPU_BACKEND")));
+            return Some(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND")));
         }
-        return Some(format!("disabled by {}=0", dac_brand::env_var("GPU")));
+        return Some(format!("disabled by {}=0", lcc_brand::env_var("GPU")));
     }
     if !ENABLED.load(Ordering::Relaxed) {
         return Some("disabled by the GPU rendering preference (app.gpu)".into());
@@ -247,9 +247,9 @@ pub fn wait_idle(timeout: std::time::Duration) -> bool {
 pub(crate) fn switched_off() -> Option<String> {
     if env_disabled() {
         return Some(if backend::env_off() {
-            format!("disabled by {}=off", dac_brand::env_var("GPU_BACKEND"))
+            format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND"))
         } else {
-            format!("disabled by {}=0", dac_brand::env_var("GPU"))
+            format!("disabled by {}=0", lcc_brand::env_var("GPU"))
         });
     }
     (!ENABLED.load(Ordering::Relaxed)).then(|| "disabled by the GPU rendering preference (app.gpu)".into())
@@ -259,7 +259,7 @@ pub(crate) fn switched_off() -> Option<String> {
 fn env_disabled() -> bool {
     static OFF: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
     *OFF.get_or_init(|| {
-        let off = dac_brand::env("GPU").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false" | "no"));
+        let off = lcc_brand::env("GPU").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false" | "no"));
         #[cfg(not(target_arch = "wasm32"))]
         let off = off || backend::env_off();
         off
@@ -281,7 +281,7 @@ pub(crate) fn device() -> Option<&'static ctx::Gpu> {
     // creating the device is a long call into the driver: not once the process is ending
     let _work = exit::enter()?;
     GPU.get_or_init(|| {
-        let Some(backends) = backend::compute_backends() else { return Err(format!("disabled by {}=off", dac_brand::env_var("GPU_BACKEND"))) };
+        let Some(backends) = backend::compute_backends() else { return Err(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND"))) };
         let r = backend::with_init_marker(backends, || {
             std::panic::catch_unwind(|| ctx::Gpu::new(backends)).unwrap_or_else(|_| Err("device creation panicked".into()))
         });
@@ -443,16 +443,16 @@ pub fn render(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &R
     try_render(src, info, s, req, stages).ok()
 }
 
-/// Grade one video frame ([`dac_pipeline::grade`]): on the GPU when it is available, else on the
+/// Grade one video frame ([`lcc_pipeline::grade`]): on the GPU when it is available, else on the
 /// CPU. Returns the sRGB 8-bit frame and whether the GPU rendered it.
-pub fn grade_frame(img: &Arc<Rgb32f>, settings: &DevelopSettings, quality: dac_pipeline::Quality) -> (dac_raster::Rgba8, bool) {
-    use dac_pipeline::grade;
+pub fn grade_frame(img: &Arc<Rgb32f>, settings: &DevelopSettings, quality: lcc_pipeline::Quality) -> (lcc_raster::Rgba8, bool) {
+    use lcc_pipeline::grade;
     let s = grade::video_settings(settings);
     let req = grade::grade_request(img.width, img.height, quality);
     let info = grade::video_source_info();
     match try_render(img, &info, &s, &req, None) {
         Ok(r) => (r.image, true),
-        Err(_) => (dac_pipeline::render(img, &info, &s, &req).image, false),
+        Err(_) => (lcc_pipeline::render(img, &info, &s, &req).image, false),
     }
 }
 
@@ -474,10 +474,10 @@ pub fn try_render(
         let s: &DevelopSettings = &effective;
         // the kernel writes 8-bit output: high-bit-depth exports (and soft proofs) render on the CPU
         // Visualize HDR needs the float HDR render: CPU too
-        if !enabled() || req.depth != dac_pipeline::OutputDepth::U8 || req.proof.is_some() || req.overlay == dac_pipeline::Overlay::HdrRange {
+        if !enabled() || req.depth != lcc_pipeline::OutputDepth::U8 || req.proof.is_some() || req.overlay == lcc_pipeline::Overlay::HdrRange {
             return Err(Fallback::NotTried);
         }
-        let s = &*dac_pipeline::settings_for(s, req);
+        let s = &*lcc_pipeline::settings_for(s, req);
         // in flight until this returns; not tried once the process is ending (issue #620)
         let _work = exit::enter().ok_or(Fallback::NotTried)?;
         let gpu = device().ok_or(Fallback::NotTried)?;

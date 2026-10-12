@@ -26,7 +26,7 @@
 use std::collections::HashMap;
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{MediaKind, Op, Photo, PhotoId, Source};
+use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source};
 use serde::{Deserialize, Serialize};
 
 use crate::Session;
@@ -100,7 +100,7 @@ pub struct ImportOptions {
     pub on_deleted: OnDeleted,
     pub mode: ImportMode,
     /// Applied to every imported photo (one History entry).
-    pub preset: Option<dac_develop::Preset>,
+    pub preset: Option<lcc_develop::Preset>,
     /// Added to every imported photo.
     pub keywords: Vec<String>,
     /// Browsing a folder: photos come in as `local` (not in the library), and a file with the
@@ -283,7 +283,7 @@ pub struct Kept {
 /// The develop settings a photo gets on import: raws start from their as-shot white balance with
 /// default sharpening / colour noise reduction, and file-embedded lens corrections on (as the
 /// camera intended); a user default preset ([`ImportDefaults`]) goes on top.
-pub fn import_defaults(p: &Photo) -> dac_develop::DevelopSettings {
+pub fn import_defaults(p: &Photo) -> lcc_develop::DevelopSettings {
     p.import_defaults()
 }
 
@@ -466,7 +466,7 @@ pub fn launch_path(arg: &str, cwd: Option<&Path>, home: Option<&Path>, dcim: imp
             None => LaunchPath::Refused { path: shown, why: "a whole drive".into() },
         });
     }
-    let key = dac_catalog::query::folder_key;
+    let key = lcc_catalog::query::folder_key;
     if home.is_some_and(|h| key(&h.to_string_lossy()) == key(&shown)) {
         return Some(LaunchPath::Refused { path: shown, why: "the whole home folder".into() });
     }
@@ -540,7 +540,7 @@ fn copy_into(dir: &Path, src: &str, name: Option<&str>, probe_hash: Option<&str>
     let name = name
         .map(str::to_string)
         .unwrap_or_else(|| Path::new(src).file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "photo".into()));
-    let expect = probe_hash.and_then(dac_preview::Hash128::parse);
+    let expect = probe_hash.and_then(lcc_preview::Hash128::parse);
     crate::import_move::copy_new(Path::new(src), dir, &name, expect).map(|p| p.to_string_lossy().to_string())
 }
 
@@ -1232,7 +1232,7 @@ fn run_transfer(t: Transfer, file_bytes: Option<&crate::merge::ByteReader>) -> P
 
 /// A trashed photo's file is not where the library had it (never on the web, where paths are
 /// storage keys, not files).
-fn trashed_file_is_gone(cat: &dac_catalog::Catalog, id: PhotoId) -> bool {
+fn trashed_file_is_gone(cat: &lcc_catalog::Catalog, id: PhotoId) -> bool {
     !cfg!(target_arch = "wasm32")
         && match cat.photo(id).map(|p| &p.source) {
             Some(Source::File { path }) => !Path::new(path).exists(),
@@ -1338,7 +1338,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     crate::cmd::metadata::apply_to(&mut p.meta, &mp.fields);
                 }
                 for k in &opts.keywords {
-                    let k = dac_catalog::keywords::clean(k);
+                    let k = lcc_catalog::keywords::clean(k);
                     if !k.is_empty() && !p.meta.keywords.iter().any(|x| x.eq_ignore_ascii_case(&k)) {
                         p.meta.keywords.push(k);
                     }
@@ -1348,7 +1348,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     let label = format!("Preset: {}", preset.name);
                     p.develop = d.clone();
                     p.edited = Some(now.clone());
-                    p.history.push(dac_catalog::HistoryStep { label, settings: d });
+                    p.history.push(lcc_catalog::HistoryStep { label, settings: d });
                 }
                 report.imported.push(id.0);
                 p.local = opts.local;
@@ -1437,7 +1437,7 @@ pub fn system_clock() -> String {
 
 /// Unix seconds → `YYYY-MM-DDTHH:MM:SS` (UTC), proleptic Gregorian.
 pub fn civil(secs: i64) -> String {
-    dac_catalog::dates::civil(secs)
+    lcc_catalog::dates::civil(secs)
 }
 
 impl Session {
@@ -1459,7 +1459,7 @@ impl Session {
         let edge = edge.clamp(64, crate::media::SourceLevel::Thumb.max_edge());
         let level = crate::media::SourceLevel::Thumb;
         let source = self.media.origin_ref(&p.source, level.max_edge());
-        let key = dac_preview::Hasher128::new().str(&c.path).u64(c.file_size).u64(edge as u64).finish().0 as u64;
+        let key = lcc_preview::Hasher128::new().str(&c.path).u64(c.file_size).u64(edge as u64).finish().0 as u64;
         let small = crate::media::RenderJob {
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
@@ -1470,7 +1470,7 @@ impl Session {
             origin: p.source.clone(),
             info: crate::media::source_info(&p),
             settings: p.develop.clone(),
-            request: dac_pipeline::RenderRequest::fit(edge, edge),
+            request: lcc_pipeline::RenderRequest::fit(edge, edge),
             key,
             cache: None,
             stages: None,

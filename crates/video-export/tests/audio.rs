@@ -1,5 +1,5 @@
 //! Audio export from a non-MP4 source: a 440 Hz stereo AAC tone in Matroska (FilmCraft has no
-//! Opus or AC-3 encoder, so those codecs are covered by `dac_video`'s decode tests; the export
+//! Opus or AC-3 encoder, so those codecs are covered by `lcc_video`'s decode tests; the export
 //! path after decode is codec-independent). Exports a trimmed range to MP4 (AAC-LC) and ProRes
 //! MOV (16-bit PCM) and checks the output's length, the tone's pitch and A/V sync.
 #![cfg(not(target_arch = "wasm32"))]
@@ -9,7 +9,7 @@ use std::io::Cursor;
 use std::path::{Path, PathBuf};
 use std::sync::atomic::AtomicBool;
 
-use dac_video_export::{ClipExportOptions, ClipFormat, export_clip};
+use lcc_video_export::{ClipExportOptions, ClipFormat, export_clip};
 
 const W: u32 = 64;
 const H: u32 = 48;
@@ -20,7 +20,7 @@ const HZ: f32 = 440.0;
 const TRIM: (f64, f64) = (0.4, 1.6);
 
 fn scratch(name: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-video-export-audio-{}-{name}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-video-export-audio-{}-{name}", std::process::id()));
     std::fs::create_dir_all(&d).unwrap();
     d
 }
@@ -119,7 +119,7 @@ fn matroska_audio_exports_to_mp4_as_aac_in_sync() {
     let src = dir.join("in.mkv");
     mkv_clip(&src);
     let out = export(&src, ClipFormat::H264Mp4, &dir);
-    let mut r = dac_video::AudioReader::open(&out).unwrap();
+    let mut r = lcc_video::AudioReader::open(&out).unwrap();
     assert_eq!(r.info().codec, "aac");
     assert_eq!(r.info().channels, 2);
     let pcm = r.read_range(0.0, None).unwrap();

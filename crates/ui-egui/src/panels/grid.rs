@@ -7,11 +7,11 @@ mod header_tests;
 use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
-use dac_catalog::{Catalog, ColorLabel, DateRun, Flag, GroupBy, PhotoId, SortKey, StackId};
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use lcc_catalog::{Catalog, ColorLabel, DateRun, Flag, GroupBy, PhotoId, SortKey, StackId};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::render::Slot;
 use crate::state::ViewMode;
@@ -48,7 +48,7 @@ pub struct GridStats {
     pub last_show: web_time::Duration,
 }
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t0 = web_time::Instant::now();
     show_inner(app, ui);
     app.caches.grid_stats.frames += 1;
@@ -63,7 +63,7 @@ type StackIndex = HashMap<PhotoId, (StackId, usize)>;
 type RunsKey = (u64, Option<SortKey>, GroupBy);
 
 /// What the grid derives from the visible photos, kept across frames. Everything is keyed by the
-/// session's visible-list generation ([`dac_engine::Session::visible_shared`]), which
+/// session's visible-list generation ([`lcc_engine::Session::visible_shared`]), which
 /// changes whenever the list is recomputed (any catalog change: crops, orientation, dates, stacks;
 /// or another source, filter or sort) — so an unchanged frame neither copies nor hashes the ids.
 #[derive(Default)]
@@ -121,13 +121,13 @@ impl GridCache {
         }
     }
 
-    fn publish(&mut self, session: &dac_engine::Session, ids: &[PhotoId], generation: u64) -> Option<Arc<Vec<DateRun>>> {
+    fn publish(&mut self, session: &lcc_engine::Session, ids: &[PhotoId], generation: u64) -> Option<Arc<Vec<DateRun>>> {
         match &self.publish {
             Some((g, r)) if *g == generation => r.clone(),
             _ => {
                 let r = match session.source {
                     #[cfg(not(target_arch = "wasm32"))]
-                    dac_engine::LibrarySource::Album(a) => dac_engine::cmd::publish::sections(session, a).map(|m| Arc::new(publish_runs(&m, ids))),
+                    lcc_engine::LibrarySource::Album(a) => lcc_engine::cmd::publish::sections(session, a).map(|m| Arc::new(publish_runs(&m, ids))),
                     _ => None,
                 };
                 self.publish = Some((generation, r.clone()));
@@ -184,7 +184,7 @@ fn aspects(cat: &Catalog, ids: &[PhotoId]) -> Vec<f32> {
             let p = cat.photo(*id);
             let (w, h) = p.map(|p| (p.width.max(1) as f32, p.height.max(1) as f32)).unwrap_or((3.0, 2.0));
             let swap = p.is_some_and(|p| p.develop.orientation.swaps_axes());
-            let crop = p.map(|p| p.develop.crop.geometry.rect).unwrap_or(dac_geom::Rect::UNIT);
+            let crop = p.map(|p| p.develop.crop.geometry.rect).unwrap_or(lcc_geom::Rect::UNIT);
             let (w, h) = if swap { (h, w) } else { (w, h) };
             (w * crop.width() as f32) / (h * crop.height() as f32).max(1e-3)
         })
@@ -200,16 +200,16 @@ pub fn rows_between(rows: &[GridRow], top: f32, bottom: f32) -> &[GridRow] {
     rest.get(..n).unwrap_or(&[])
 }
 
-fn show_inner(app: &mut DacApp, ui: &mut egui::Ui) {
+fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let (generation, ids) = app.session.visible_shared();
     // header: source title + count
     let sel_n = app.session.selection.ids.len();
-    let chips = dac_engine::filter_chips(&app.session.filter, &app.session.catalog);
+    let chips = lcc_engine::filter_chips(&app.session.filter, &app.session.catalog);
     let total = app.session.source_total();
     let counted = super::chips::count_text(ids.len(), total, !chips.is_empty());
     let cnt = if sel_n > 1 { crate::i18n::tr_format!("{sel_n} selected · {counted}", counted = counted, sel_n = sel_n) } else { counted };
-    match app.session.browse.clone().filter(|_| app.session.source == dac_engine::LibrarySource::Folder) {
+    match app.session.browse.clone().filter(|_| app.session.source == lcc_engine::LibrarySource::Folder) {
         Some(b) => {
             let local = app.caches.grid.local(&app.session.catalog, &ids, generation);
             folder_header(app, ui, &b, &ids, local, &cnt);
@@ -255,7 +255,7 @@ fn show_inner(app: &mut DacApp, ui: &mut egui::Ui) {
                 "No matching photos",
                 "A filter is hiding this view's photos: change it, or clear it (View → Clear Filters)",
             );
-        } else if app.session.source == dac_engine::LibrarySource::Folder {
+        } else if app.session.source == lcc_engine::LibrarySource::Folder {
             super::empty_message(ui, ui.max_rect(), "No photos in this folder", "Turn on Include subfolders, or pick another folder under Local");
         } else {
             super::empty_message(ui, ui.max_rect(), "No photos", "Import photos with File → Import Photos… (Cmd+Shift+I), or drop them here");
@@ -268,8 +268,8 @@ fn show_inner(app: &mut DacApp, ui: &mut egui::Ui) {
     let avail_w = ui.available_width() - 8.0;
     let by = resolve_group(app.session.sort.group, target);
     let group_key = match app.session.source {
-        dac_engine::LibrarySource::RecentlyDeleted => None,
-        dac_engine::LibrarySource::RecentlyAdded => Some(SortKey::ImportDate),
+        lcc_engine::LibrarySource::RecentlyDeleted => None,
+        lcc_engine::LibrarySource::RecentlyAdded => Some(SortKey::ImportDate),
         _ => Some(app.session.sort.key),
     };
     let runs_key = (generation, group_key, by);
@@ -484,7 +484,7 @@ pub fn layout(aspects: &[f32], groups: &[(usize, usize)], avail_w: f32, target: 
 
 /// A date header: "Wednesday, 30 September 2026 · 12 photos". Clicking it selects the group
 /// (Cmd/Shift: adds to the selection).
-fn group_header(app: &mut DacApp, ui: &mut egui::Ui, run: &DateRun, ids: &[PhotoId], r: Rect, pinned: bool) {
+fn group_header(app: &mut LccApp, ui: &mut egui::Ui, run: &DateRun, ids: &[PhotoId], r: Rect, pinned: bool) {
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(r, egui::Id::new(("group-header", run.start, pinned)), Sense::click());
     if !pinned {
@@ -522,10 +522,10 @@ fn group_header(app: &mut DacApp, ui: &mut egui::Ui, run: &DateRun, ids: &[Photo
 /// Request a grid/filmstrip thumbnail at `priority`. An unedited raw without a thumbnail texture
 /// gets its embedded camera preview, and the render of the raw behind it follows in the background
 /// — except where that render would only redraw what the embedded JPEG already shows (see
-/// [`dac_engine::media::Session::embedded_thumb_is_final`]), which for a folder of raws on a
+/// [`lcc_engine::media::Session::embedded_thumb_is_final`]), which for a folder of raws on a
 /// network share is the difference between reading every file whole and reading a preview each.
-pub fn request_thumb(app: &mut DacApp, id: PhotoId, size: usize, priority: u32) {
-    let bucket = dac_engine::media::thumb_bucket(size);
+pub fn request_thumb(app: &mut LccApp, id: PhotoId, size: usize, priority: u32) {
+    let bucket = lcc_engine::media::thumb_bucket(size);
     if let Some(photo) = app.session.catalog.photo(id)
         && app.renderer.thumb_current(photo, bucket, priority)
     {
@@ -569,7 +569,7 @@ pub fn request_thumb(app: &mut DacApp, id: PhotoId, size: usize, priority: u32) 
 
 /// Whether a photo's grid thumbnail is already the picture it should show, so the render of the raw
 /// behind it is skipped. `embedded_is_final` is the engine's answer
-/// ([`dac_engine::media::Session::embedded_thumb_is_final`]: the photo is an unedited raw
+/// ([`lcc_engine::media::Session::embedded_thumb_is_final`]: the photo is an unedited raw
 /// whose camera JPEG the viewer is showing) and `from_embedded` says the stand-in actually came from
 /// the embedded preview rather than a cached render of the file.
 ///
@@ -584,7 +584,7 @@ pub(crate) fn skips_the_real_render(embedded_is_final: bool, from_embedded: bool
 pub const BACKGROUND_THUMB_PRIORITY: u32 = 3;
 
 #[allow(clippy::too_many_arguments)]
-fn cell(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool, onscreen: bool, ppp: f32, index: usize) {
+fn cell(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool, onscreen: bool, ppp: f32, index: usize) {
     let t = Tokens::get(ui.ctx());
     let Some(photo) = app.session.catalog.photo(id).cloned() else { return };
     let resp = ui.interact(r, egui::Id::new(("cell", id.0)), Sense::click_and_drag());
@@ -594,23 +594,23 @@ fn cell(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
     }
     register(ui.ctx(), format!("thumb:{}", id.0), r);
     let state = app.session.selection.state_of(id);
-    let selected = state != dac_engine::SelectionState::NotSelected;
+    let selected = state != lcc_engine::SelectionState::NotSelected;
     // screen readers: the file, then rating / flag / label
     let mut spoken = photo.file_name.clone();
     if photo.rating > 0 {
         spoken.push_str(&crate::i18n::tr_format!(", {} star{}", photo.rating, if photo.rating == 1 { "" } else { "s" }));
     }
     match photo.flag {
-        dac_catalog::Flag::Pick => spoken.push_str(crate::i18n::tr(", picked")),
-        dac_catalog::Flag::Reject => spoken.push_str(crate::i18n::tr(", rejected")),
-        dac_catalog::Flag::None => {}
+        lcc_catalog::Flag::Pick => spoken.push_str(crate::i18n::tr(", picked")),
+        lcc_catalog::Flag::Reject => spoken.push_str(crate::i18n::tr(", rejected")),
+        lcc_catalog::Flag::None => {}
     }
     if let Some(l) = photo.label {
         spoken.push_str(&crate::i18n::tr_format!(", {} label", crate::i18n::color_label(&app.session.catalog, l)));
     }
     spoken.push_str(&crate::video_ui::spoken_suffix(&photo));
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, &spoken));
-    let active = state == dac_engine::SelectionState::Active;
+    let active = state == lcc_engine::SelectionState::Active;
     let p = ui.painter();
     let img_rect = if square {
         let base = if selected { t.cell_selected } else { t.cell };
@@ -782,9 +782,9 @@ fn cell(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
 }
 
 /// The regular album the library shows: the one whose photos can be put in Custom Order.
-pub fn custom_order_album(app: &DacApp) -> Option<dac_catalog::AlbumId> {
+pub fn custom_order_album(app: &LccApp) -> Option<lcc_catalog::AlbumId> {
     match app.session.source {
-        dac_engine::LibrarySource::Album(a) if app.session.catalog.has_custom_order(a) => Some(a),
+        lcc_engine::LibrarySource::Album(a) if app.session.catalog.has_custom_order(a) => Some(a),
         _ => None,
     }
 }
@@ -792,7 +792,7 @@ pub fn custom_order_album(app: &DacApp) -> Option<dac_catalog::AlbumId> {
 /// Photos dragged over a thumbnail of a regular album: a line on the side they would land
 /// (before this photo, or after it), and on release they move there in Custom Order (switching the
 /// sort to it, as Lightroom Classic does).
-pub(crate) fn reorder_drop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, dragged: &[u64]) {
+pub(crate) fn reorder_drop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, dragged: &[u64]) {
     let Some(album) = custom_order_album(app).filter(|_| !dragged.contains(&id.0)) else { return };
     let (pos, released) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.any_released()));
     let Some(pos) = pos.filter(|p| r.contains(*p) && ui.clip_rect().contains(*p)) else { return };
@@ -820,7 +820,7 @@ pub(crate) fn reorder_drop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: 
 
 /// The header of a Local folder view: the path as a breadcrumb (each part opens that folder),
 /// Include subfolders, Add to My Photos.
-fn folder_header(app: &mut DacApp, ui: &mut egui::Ui, b: &dac_engine::Browse, ids: &[PhotoId], local_n: usize, cnt: &str) -> Rect {
+fn folder_header(app: &mut LccApp, ui: &mut egui::Ui, b: &lcc_engine::Browse, ids: &[PhotoId], local_n: usize, cnt: &str) -> Rect {
     let t = Tokens::get(ui.ctx());
     // The path/count and actions need independent rows. The frame reserves the actual height,
     // including any wrapped actions, so the grid below never paints under the header.
@@ -890,7 +890,7 @@ pub(crate) fn crumbs(path: &str) -> Vec<(&str, String)> {
     out
 }
 
-fn folder_breadcrumbs(app: &mut DacApp, ui: &mut egui::Ui, path: &str) {
+fn folder_breadcrumbs(app: &mut LccApp, ui: &mut egui::Ui, path: &str) {
     let t = Tokens::get(ui.ctx());
     ui.spacing_mut().item_spacing.x = 4.0;
     let crumbs = crumbs(path);
@@ -928,7 +928,7 @@ fn folder_breadcrumbs(app: &mut DacApp, ui: &mut egui::Ui, path: &str) {
 
 /// While photos are dragged: a badge at the pointer; the drag ends when the button is up
 /// (drop targets act on the release frame, before this runs).
-pub fn drag_feedback(app: &mut DacApp, ctx: &egui::Context) {
+pub fn drag_feedback(app: &mut LccApp, ctx: &egui::Context) {
     let Some(ids) = &app.ui.dragging_photos else { return };
     let (released, down, pos) = ctx.input(|i| (i.pointer.any_released(), i.pointer.any_down(), i.pointer.latest_pos()));
     if released || !down {
@@ -954,7 +954,7 @@ pub use super::filterbar::label_color;
 
 /// Albums hold library photos (issue #684): true when `ids` are photos and all of them are
 /// browsed (Local) ones, which album views never show.
-pub fn local_only(app: &DacApp, ids: &[PhotoId]) -> bool {
+pub fn local_only(app: &LccApp, ids: &[PhotoId]) -> bool {
     !ids.is_empty() && ids.iter().all(|id| app.session.catalog.photo(*id).is_some_and(|p| p.local))
 }
 
@@ -965,7 +965,7 @@ pub fn albums_hint() -> String {
 
 /// Tell the user when an album command skipped Local photos of the selection (`skipped` in its
 /// result).
-pub fn toast_skipped(app: &mut DacApp, ctx: &egui::Context, r: &serde_json::Value) {
+pub fn toast_skipped(app: &mut LccApp, ctx: &egui::Context, r: &serde_json::Value) {
     if let Some(n) = r.get("skipped").and_then(serde_json::Value::as_u64).filter(|n| *n > 0) {
         app.toast(
             ctx,
@@ -979,7 +979,7 @@ pub fn toast_skipped(app: &mut DacApp, ctx: &egui::Context, r: &serde_json::Valu
 }
 
 /// "Set Color Label" items for the active photo, shared by context menus.
-pub fn label_menu(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn label_menu(app: &mut LccApp, ui: &mut egui::Ui) {
     let current = app.session.active().and_then(|id| app.session.catalog.photo(id)).and_then(|p| p.label);
     if let Some(l) = label_items(app, ui, current, "photoLabel") {
         let _ = app.run("photo.label", json!({"label": label_param(l)}));
@@ -990,7 +990,7 @@ pub fn label_menu(app: &mut DacApp, ui: &mut egui::Ui) {
 /// The colour label items of a menu (coloured dot + the label's name, then None and Edit Label
 /// Names…), `current` checked; each colour is widget `<widget>:<colour>` (`<widget>:none`) for
 /// the control channel. Returns the choice (`Some(None)`: None).
-pub fn label_items(app: &mut DacApp, ui: &mut egui::Ui, current: Option<ColorLabel>, widget: &str) -> Option<Option<ColorLabel>> {
+pub fn label_items(app: &mut LccApp, ui: &mut egui::Ui, current: Option<ColorLabel>, widget: &str) -> Option<Option<ColorLabel>> {
     let mut chosen = None;
     for l in ColorLabel::ALL {
         let name = crate::i18n::color_label(&app.session.catalog, l);
@@ -1023,7 +1023,7 @@ pub fn label_param(l: Option<ColorLabel>) -> String {
 
 /// Stack badge at the cell's top-left: the photo count on a collapsed stack's top, `i/n` on the
 /// members of an expanded stack. Clicking it expands/collapses the stack.
-pub fn stack_badge(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, sid: dac_catalog::StackId, pos: usize, r: Rect, square: bool) {
+pub fn stack_badge(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, sid: lcc_catalog::StackId, pos: usize, r: Rect, square: bool) {
     let t = Tokens::get(ui.ctx());
     let Some(st) = app.session.catalog.stack(sid) else { return };
     let n = st.photos.len();
@@ -1051,7 +1051,7 @@ pub fn stack_badge(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, sid: dac_ca
     }
 }
 
-pub fn context_menu(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if !app.session.selection.contains(id) {
         let _ = app.run("library.select", json!({"ids": [id.0]}));
     }
@@ -1134,7 +1134,7 @@ pub fn context_menu(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         register(ui.ctx(), "button:contextAddToAlbum", add.response.rect);
     }
     // in a (non-smart) album: take the selection out of it, or make this photo its cover
-    if let dac_engine::LibrarySource::Album(aid) = app.session.source
+    if let lcc_engine::LibrarySource::Album(aid) = app.session.source
         && app.session.catalog.album(aid).is_some_and(|a| !a.folder && !a.is_smart())
     {
         if ui.button(crate::i18n::tr("Remove from Album")).clicked() {
@@ -1225,7 +1225,7 @@ pub fn context_menu(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     ui.separator();
     // the original moved or its drive is gone: point the photo at the file again
     // (a cached answer, checked off the UI thread)
-    let missing = matches!(&app.session.catalog.photo(id).map(|p| p.source.clone()), Some(dac_catalog::Source::File { path }) if app.session.media.availability.is_offline(path));
+    let missing = matches!(&app.session.catalog.photo(id).map(|p| p.source.clone()), Some(lcc_catalog::Source::File { path }) if app.session.media.availability.is_offline(path));
     if missing && ui.button(crate::i18n::tr("Locate Missing File…")).clicked() {
         let _ = app.run("photo.locate", json!({}));
     }

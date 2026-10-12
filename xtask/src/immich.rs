@@ -27,7 +27,7 @@ const WAIT: Duration = Duration::from_secs(300);
 
 const USAGE: &str = "usage: cargo xtask immich up [--version min|pinned|latest|vX.Y.Z] [--port N] | down [--volumes] [--port N] | seed [--port N]";
 
-/// The version matrix: the oldest release the app supports (`dac_immich::types::MIN_VERSION`),
+/// The version matrix: the oldest release the app supports (`lcc_immich::types::MIN_VERSION`),
 /// the pinned one the recorded fixtures come from, and Immich's moving `release` tag.
 pub const MIN_SERVER: &str = "v3.0.0";
 pub const PINNED_SERVER: &str = "v3.3.1";

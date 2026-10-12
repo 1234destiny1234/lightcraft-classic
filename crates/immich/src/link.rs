@@ -12,7 +12,7 @@
 
 use std::collections::HashMap;
 
-use dac_catalog::{Catalog, Op, Photo, PhotoId, RemoteIdentity, SyncState};
+use lcc_catalog::{Catalog, Op, Photo, PhotoId, RemoteIdentity, SyncState};
 
 use crate::types::Asset;
 
@@ -70,7 +70,7 @@ impl Index {
                 }
             }
             if !maps.is_empty()
-                && let dac_catalog::Source::File { path } = &p.source
+                && let lcc_catalog::Source::File { path } = &p.source
             {
                 let e = by_path.entry(path_key(path)).or_insert(p.id);
                 if p.id < *e {
@@ -109,7 +109,7 @@ impl Index {
 
     /// Whether a photo with this SHA-1 (hex or base64) is in the catalog.
     pub fn has_sha1(&self, checksum: &str) -> Option<PhotoId> {
-        let h = dac_hash::Sha1Digest::parse(checksum)?.to_hex();
+        let h = lcc_hash::Sha1Digest::parse(checksum)?.to_hex();
         self.by_sha1.get(&h).copied()
     }
 }

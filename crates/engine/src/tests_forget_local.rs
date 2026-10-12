@@ -16,7 +16,7 @@ fn temp_dir(tag: &str) -> PathBuf {
 }
 
 fn png(p: &Path, seed: u8) {
-    let img = dac_raster::Rgba8::from_fn(16, 12, |x, y| [(x * 9) as u8, (y * 11) as u8, seed, 255]);
+    let img = lcc_raster::Rgba8::from_fn(16, 12, |x, y| [(x * 9) as u8, (y * 11) as u8, seed, 255]);
     let b =
         crate::export::encode_image(&img, &crate::export::ExportOptions { format: crate::export::ExportFormat::Png, ..Default::default() }).unwrap();
     std::fs::create_dir_all(p.parent().unwrap()).unwrap();
@@ -41,7 +41,7 @@ fn local_paths(s: &Session) -> Vec<String> {
         .photos()
         .filter(|p| p.local)
         .filter_map(|p| match &p.source {
-            dac_catalog::Source::File { path } => Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()),
+            lcc_catalog::Source::File { path } => Path::new(path).file_name().map(|n| n.to_string_lossy().to_string()),
             _ => None,
         })
         .collect();
@@ -154,9 +154,9 @@ fn sidecar_values_are_not_user_changes_and_sidecars_stay() {
     let (a, lib) = (root.join("a"), root.join("lib"));
     png(&a.join("x.png"), 1);
     let x = a.join("x.png").to_string_lossy().to_string();
-    let mut p = dac_catalog::Photo::new(
-        dac_catalog::PhotoId(1),
-        dac_catalog::Source::File { path: x.clone() },
+    let mut p = lcc_catalog::Photo::new(
+        lcc_catalog::PhotoId(1),
+        lcc_catalog::Source::File { path: x.clone() },
         "x.png",
         "PNG",
         16,
@@ -166,7 +166,7 @@ fn sidecar_values_are_not_user_changes_and_sidecars_stay() {
     p.rating = 4;
     p.meta.keywords = vec!["dunes".into()];
     let side = crate::sidecar::sidecar_path(&x, Default::default());
-    std::fs::write(&side, crate::sidecar::sidecar_packet(&p, &dac_catalog::Catalog::new())).unwrap();
+    std::fs::write(&side, crate::sidecar::sidecar_packet(&p, &lcc_catalog::Catalog::new())).unwrap();
     let packet = std::fs::read(&side).unwrap();
 
     let clock = Arc::new(Mutex::new("2026-08-01T10:00:00".to_string()));
@@ -200,9 +200,9 @@ fn upgraded_catalogs_forget_nothing_at_first() {
     drop(s);
     // strip the times and baselines, as an older version would have written the snapshot
     // (as a format-1 JSON library: the v4 store is migrated from it on the next open)
-    let cat = dac_catalog::transfer::load_readonly(&lib).unwrap();
+    let cat = lcc_catalog::transfer::load_readonly(&lib).unwrap();
     let mut v =
-        json!({"format": "dac-catalog", "version": 1, "seq": 0, "catalog": serde_json::from_str::<serde_json::Value>(&cat.to_snapshot()).unwrap()});
+        json!({"format": "lcc-catalog", "version": 1, "seq": 0, "catalog": serde_json::from_str::<serde_json::Value>(&cat.to_snapshot()).unwrap()});
     std::fs::remove_file(lib.join("catalog.redb")).unwrap();
     std::fs::write(lib.join("catalog.log"), b"").unwrap();
     v["catalog"].as_object_mut().unwrap().remove("browsed");

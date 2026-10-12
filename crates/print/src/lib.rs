@@ -2,19 +2,19 @@
 //!
 //! * [`job`]: print settings ([`PrintSettings`]: page setup, layout style, image settings, page
 //!   options, print job) and [`PrintSettings::build`], which turns them and a list of photos into
-//!   a `dac-layout` [`dac_layout::Document`]; built-in print templates ([`job::builtin_templates`]).
-//! * [`text`]: [`text::ShapedText`], the `dac-layout` text renderer over the `dac-text` shaper,
+//!   a `lcc-layout` [`lcc_layout::Document`]; built-in print templates ([`job::builtin_templates`]).
+//! * [`text`]: [`text::ShapedText`], the `lcc-layout` text renderer over the `lcc-text` shaper,
 //!   also used for vector PDF text.
 //! * [`output`]: PDF (photos, shaped text with embedded subset fonts, graphics, crop marks, an
 //!   optional ICC OutputIntent) and JPEG output.
 //! * [`color`]: Print Adjustment and the conversion into the printer profile (8 and 16 bit).
 //! * [`ipp`]: IPP/1.1 printing to CUPS (and any IPP Everywhere printer) in pure Rust, over
-//!   `ipp://` or `ipps://` (TLS through `dac-net`, with pinned or trust-on-first-use certificates),
+//!   `ipp://` or `ipps://` (TLS through `lcc-net`, with pinned or trust-on-first-use certificates),
 //!   with the printer's own options (paper type, tray, quality, two-sided).
 //! * [`send`]: render, submit (PDF, else JPEG pages) with copies, and follow the job state.
 //! * [`testprinter`]: a virtual IPP printer on localhost for tests and CI.
 //!
-//! Photos come in through `dac_layout::render::PhotoSource`, which the engine implements with
+//! Photos come in through `lcc_layout::render::PhotoSource`, which the engine implements with
 //! its export renderer, so prints match exports. Print sharpening ([`job::PrintSharpening`]) is
 //! applied by the engine to the rendered photos at their printed size, not here.
 //!
@@ -41,7 +41,7 @@ pub enum PrintError {
     #[error("print settings: {0}")]
     Invalid(String),
     #[error(transparent)]
-    Layout(#[from] dac_layout::LayoutError),
+    Layout(#[from] lcc_layout::LayoutError),
     #[error("print output: {0}")]
     Output(String),
     #[error("printer: {0}")]

@@ -1,5 +1,5 @@
 [package]
-name = "dac-audio-out"
+name = "lcc-audio-out"
 version.workspace = true
 edition.workspace = true
 license.workspace = true

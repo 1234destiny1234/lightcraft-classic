@@ -40,7 +40,7 @@ pub fn write_clip(path: &Path, w: u32, h: u32, frames: usize, luma: impl Fn(usiz
 }
 
 /// Mean of a frame's linear RGB.
-pub fn mean(img: &dac_raster::Rgb32f) -> f64 {
+pub fn mean(img: &lcc_raster::Rgb32f) -> f64 {
     let n = img.data.len().max(1) as f64;
     img.data.iter().map(|p| f64::from(p[0]) + f64::from(p[1]) + f64::from(p[2])).sum::<f64>() / (3.0 * n)
 }

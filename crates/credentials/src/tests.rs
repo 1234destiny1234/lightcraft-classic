@@ -5,7 +5,7 @@ use super::*;
 const SECRET: &str = "immich-api-key-7f3a9c";
 
 fn tempdir(tag: &str) -> std::path::PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-cred-test-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-cred-test-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d
@@ -123,7 +123,7 @@ fn secrets_never_reach_debug_output_or_logs() {
 /// Exercises the real keychain only when asked (it may prompt or touch the user's keyring).
 #[test]
 fn os_store_round_trip_when_enabled() {
-    if std::env::var_os("DAC_TEST_OS_KEYCHAIN").is_none() {
+    if std::env::var_os("LCC_TEST_OS_KEYCHAIN").is_none() {
         return;
     }
     let store = os_store().unwrap();

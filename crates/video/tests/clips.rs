@@ -5,9 +5,9 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use dac_video::{FrameReader, VideoError, poster, probe};
 use filmcraft_h264enc::{ColorConfig, Encoder, EncoderConfig, PacketFormat, RateControl, YuvFrame};
 use filmcraft_isobmff::{AvcConfig, Brand, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_video::{FrameReader, VideoError, poster, probe};
 
 struct Clip {
     w: u32,
@@ -28,7 +28,7 @@ impl Clip {
 }
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("dac-video-tests-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-video-tests-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("scratch dir");
     dir.join(name)
 }
@@ -89,7 +89,7 @@ fn srgb_to_linear(v: f32) -> f32 {
     if v <= 0.04045 { v / 12.92 } else { ((v + 0.055) / 1.055).powf(2.4) }
 }
 
-fn mean(img: &dac_raster::Rgb32f) -> [f32; 3] {
+fn mean(img: &lcc_raster::Rgb32f) -> [f32; 3] {
     let n = img.data.len().max(1) as f32;
     let s = img.data.iter().fold([0f32; 3], |a, p| [a[0] + p[0], a[1] + p[1], a[2] + p[2]]);
     s.map(|v| v / n)
@@ -164,7 +164,7 @@ fn gradient_is_monotonic_and_scaled_decode_bounds_the_side() {
 }
 
 /// Each frame k has luma 30 + 6k: the decoded mean identifies which frame came back.
-fn which(img: &dac_raster::Rgb32f) -> usize {
+fn which(img: &lcc_raster::Rgb32f) -> usize {
     let g = mean(img)[1];
     // invert the sRGB curve and the limited-range mapping
     let v = if g <= 0.0031308 { g * 12.92 } else { 1.055 * g.powf(1.0 / 2.4) - 0.055 };

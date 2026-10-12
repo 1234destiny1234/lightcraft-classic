@@ -5,13 +5,13 @@
 
 use std::time::Duration;
 
-use dac_catalog::{Op, Photo, PhotoId, Source, Stack, StackId};
-use dac_engine::Session;
+use lcc_catalog::{Op, Photo, PhotoId, Source, Stack, StackId};
+use lcc_engine::Session;
 use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::ViewMode;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(30);
 const SETTLE: Duration = Duration::from_secs(120);
@@ -38,7 +38,7 @@ fn library() -> Session {
 }
 
 fn grid(view: ViewMode) -> Headless {
-    let app = DacApp::new(library(), Services { png: None, ..Default::default() });
+    let app = LccApp::new(library(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
     h.app.ui.view = view;
     h.app.ui.thumb_size = 160.0;

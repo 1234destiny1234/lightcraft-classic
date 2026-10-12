@@ -1,5 +1,5 @@
 //! Relative ratings dispatch through the real engine, including history and AutoWrite.
-use dac_catalog::{Op, Photo, PhotoId, Source};
+use lcc_catalog::{Op, Photo, PhotoId, Source};
 use serde_json::json;
 
 use crate::{Result, Selection, Session};
@@ -25,7 +25,7 @@ fn session() -> Result<Session> {
 }
 
 fn ratings(s: &Session) -> Result<Vec<u8>> {
-    (1..=4).map(|id| s.catalog.photo(PhotoId(id)).map(|p| p.rating).ok_or_else(|| dac_catalog::CatalogError::NoPhoto(PhotoId(id)).into())).collect()
+    (1..=4).map(|id| s.catalog.photo(PhotoId(id)).map(|p| p.rating).ok_or_else(|| lcc_catalog::CatalogError::NoPhoto(PhotoId(id)).into())).collect()
 }
 
 #[test]

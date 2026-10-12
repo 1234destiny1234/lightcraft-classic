@@ -102,8 +102,8 @@ let
 
   # HEIC/HEIF decoding (opt-in upstream: HEVC patents are the distributor's call), as the release builds.
   buildFeatures = [
-    "dac-app/heif"
-    "dac-cli/heif"
+    "lcc-app/heif"
+    "lcc-cli/heif"
   ];
 in
 rustPlatform.buildRustPackage {
@@ -128,9 +128,9 @@ rustPlatform.buildRustPackage {
   cargoBuildFlags = [
     "--locked"
     "-p"
-    "dac-app"
+    "lcc-app"
     "-p"
-    "dac-cli"
+    "lcc-cli"
   ];
 
   # `cargo xtask ci` runs `cargo test --workspace`. Tests that need what the sandbox cannot have
@@ -138,7 +138,7 @@ rustPlatform.buildRustPackage {
   # equivalence tests (no adapter).
   cargoTestFlags = [ "--workspace" ];
 
-  # One test thread at a time (RUST_TEST_THREADS=1). `dac-catalog`'s `tests_lock` tests share
+  # One test thread at a time (RUST_TEST_THREADS=1). `lcc-catalog`'s `tests_lock` tests share
   # a process-global resource: `flock` is inherited across `fork`, so a child process that another
   # test forked keeps the parent's just-released library lock alive until its `execve` closes the
   # (CLOEXEC) fd — long enough that the sibling test sees a spurious `LockError::InUse`, on ~30 % of

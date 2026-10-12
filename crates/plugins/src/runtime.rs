@@ -1,7 +1,7 @@
 //! The wasmi host: loading, instantiating and calling a plug-in under resource limits.
 //!
-//! ABI v1 (see `docs/plugins.md`). The module exports `memory`, `dac_abi_version() -> i32`,
-//! `dac_manifest() -> i64`, `dac_alloc(len: i32) -> i32` and `dac_handle(ptr: i32, len: i32) -> i64`
+//! ABI v1 (see `docs/plugins.md`). The module exports `memory`, `lcc_abi_version() -> i32`,
+//! `lcc_manifest() -> i64`, `lcc_alloc(len: i32) -> i32` and `lcc_handle(ptr: i32, len: i32) -> i64`
 //! (`i64` results pack `len << 32 | ptr` of a UTF-8 JSON buffer in the module's memory). It may
 //! import only:
 //!
@@ -25,7 +25,7 @@ use crate::context::CallContext;
 use crate::manifest::{MAX_MANIFEST_BYTES, Manifest};
 use crate::{Error, Result};
 
-/// The plug-in ABI version this host implements (`dac_abi_version` must return it).
+/// The plug-in ABI version this host implements (`lcc_abi_version` must return it).
 pub const ABI_VERSION: i32 = 1;
 
 /// Fuel handed out per slice; between slices the host checks the deadline.
@@ -191,19 +191,19 @@ impl Plugin {
         let mut p = Plugin { manifest: placeholder_manifest(), engine, module, limits, size: bytes.len() };
         let deadline = Deadline::new(&p.limits);
         let mut live = p.instantiate()?;
-        let version: TypedFunc<(), i32> = live.func("dac_abi_version")?;
+        let version: TypedFunc<(), i32> = live.func("lcc_abi_version")?;
         let v = p.call(&mut live, &version, (), &deadline, None)?;
         if v != ABI_VERSION {
-            return Err(Error::Abi(format!("dac_abi_version returned {v}; this host implements version {ABI_VERSION}")));
+            return Err(Error::Abi(format!("lcc_abi_version returned {v}; this host implements version {ABI_VERSION}")));
         }
-        let manifest: TypedFunc<(), i64> = live.func("dac_manifest")?;
+        let manifest: TypedFunc<(), i64> = live.func("lcc_manifest")?;
         let (ptr, len) = unpack(p.call(&mut live, &manifest, (), &deadline, None)?);
         if len > MAX_MANIFEST_BYTES {
             return Err(Error::Manifest(format!("manifest is {len} bytes (limit {MAX_MANIFEST_BYTES})")));
         }
-        p.manifest = Manifest::parse(&live.read(ptr, len, "dac_manifest")?)?;
-        live.func::<i32, i32>("dac_alloc")?;
-        live.func::<(i32, i32), i64>("dac_handle")?;
+        p.manifest = Manifest::parse(&live.read(ptr, len, "lcc_manifest")?)?;
+        live.func::<i32, i32>("lcc_alloc")?;
+        live.func::<(i32, i32), i64>("lcc_handle")?;
         Ok(p)
     }
 
@@ -333,7 +333,7 @@ impl Plugin {
         }
     }
 
-    /// Sends `request` to `dac_handle` in a fresh instance; returns the reply and the log.
+    /// Sends `request` to `lcc_handle` in a fresh instance; returns the reply and the log.
     /// A reply `{"error": "…"}` is an [`Error::Failed`].
     pub(crate) fn invoke(&self, request: &Value, ctx: &mut CallContext<'_>) -> Outcome {
         let mut logs = Vec::new();
@@ -349,17 +349,17 @@ impl Plugin {
             return Err(Error::Limit("message size".into()));
         }
         let n = i32::try_from(bytes.len()).map_err(|_| Error::Limit("message size".into()))?;
-        let alloc: TypedFunc<i32, i32> = live.func("dac_alloc")?;
-        let handle: TypedFunc<(i32, i32), i64> = live.func("dac_handle")?;
+        let alloc: TypedFunc<i32, i32> = live.func("lcc_alloc")?;
+        let handle: TypedFunc<(i32, i32), i64> = live.func("lcc_handle")?;
         let ptr = self.call(&mut live, &alloc, n.max(1), &deadline, None)?;
         if ptr == 0 {
-            return Err(Error::Failed("dac_alloc returned 0 (out of memory)".into()));
+            return Err(Error::Failed("lcc_alloc returned 0 (out of memory)".into()));
         }
         let start = ptr as u32 as usize;
         live.memory
             .data_mut(&mut live.store)
             .get_mut(start..start.saturating_add(bytes.len()))
-            .ok_or_else(|| Error::Abi("dac_alloc returned a block outside memory".into()))?
+            .ok_or_else(|| Error::Abi("lcc_alloc returned a block outside memory".into()))?
             .copy_from_slice(&bytes);
         let result = self.call(&mut live, &handle, (ptr, n), &deadline, Some(ctx));
         *logs = std::mem::take(&mut live.store.data_mut().logs);
@@ -367,8 +367,8 @@ impl Plugin {
         if rlen > self.limits.max_message_bytes {
             return Err(Error::Limit("message size".into()));
         }
-        let reply = live.read(rptr, rlen, "dac_handle")?;
-        let value: Value = serde_json::from_slice(&reply).map_err(|e| Error::Abi(format!("dac_handle reply is not JSON: {e}")))?;
+        let reply = live.read(rptr, rlen, "lcc_handle")?;
+        let value: Value = serde_json::from_slice(&reply).map_err(|e| Error::Abi(format!("lcc_handle reply is not JSON: {e}")))?;
         if let Some(e) = value.get("error") {
             let msg = e.as_str().map_or_else(|| e.to_string(), str::to_string);
             return Err(Error::Failed(msg));

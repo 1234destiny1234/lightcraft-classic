@@ -1,4 +1,4 @@
-//! The command-line tool (`dac_brand::CLI_BINARY`): the app, headless.
+//! The command-line tool (`lcc_brand::CLI_BINARY`): the app, headless.
 //!
 //! ```text
 //! <cli> run [--demo | --library DIR | --connect [ADDR]] [--import PATH]… CMD [key=value…]…
@@ -25,8 +25,8 @@ use std::io::{BufReader, Write};
 use std::path::Path;
 use std::process::ExitCode;
 
-use dac_engine::Session;
-use dac_mcp::{Backend, DEFAULT_ADDR, Headless, Remote, Server, expand_paths};
+use lcc_engine::Session;
+use lcc_mcp::{Backend, DEFAULT_ADDR, Headless, Remote, Server, expand_paths};
 use serde_json::{Value, json};
 
 /// `--help` text; `{cli}`, `{bin}`, `{app}` and `{P}` are filled by [`usage`].
@@ -125,13 +125,13 @@ USAGE:
 ";
 
 fn usage() -> String {
-    USAGE.replace("{cli}", CLI).replace("{bin}", dac_brand::BINARY).replace("{P}", dac_brand::ENV_PREFIX).replace("{app}", APP)
+    USAGE.replace("{cli}", CLI).replace("{bin}", lcc_brand::BINARY).replace("{P}", lcc_brand::ENV_PREFIX).replace("{app}", APP)
 }
 
 /// The command name shown in messages and `--help`.
-const CLI: &str = dac_brand::CLI_BINARY;
-const APP: &str = dac_brand::DISPLAY_NAME;
-const BIN: &str = dac_brand::BINARY;
+const CLI: &str = lcc_brand::CLI_BINARY;
+const APP: &str = lcc_brand::DISPLAY_NAME;
+const BIN: &str = lcc_brand::BINARY;
 
 #[cfg(feature = "dhat-heap")]
 #[global_allocator]
@@ -147,12 +147,12 @@ fn library_warnings(session: &mut Session, who: &str) {
     }
 }
 
-fn library_error(dir: &str, e: dac_engine::EngineError) -> String {
+fn library_error(dir: &str, e: lcc_engine::EngineError) -> String {
     match e {
-        dac_engine::EngineError::LibraryInUse(why) => format!(
+        lcc_engine::EngineError::LibraryInUse(why) => format!(
             "{dir}: {why}\nTo work with the library while the app has it open, start the app with `--control PORT` and use `{CLI} mcp --connect 127.0.0.1:PORT`."
         ),
-        e @ dac_engine::EngineError::LightroomCatalog { .. } => format!(
+        e @ lcc_engine::EngineError::LightroomCatalog { .. } => format!(
             "{e}\nOpen a library with `--library DIR` (an empty folder makes a new one) and run `library.importLightroom` with the catalog's path."
         ),
         e => format!("{dir}: {e}"),
@@ -164,20 +164,20 @@ fn main() -> ExitCode {
     // (<PREFIX>_DHAT_FILE, default dhat-heap.json).
     #[cfg(feature = "dhat-heap")]
     let _heap = {
-        let file = dac_brand::env("DHAT_FILE").unwrap_or_else(|| "dhat-heap.json".into());
-        dac_engine::memory::set_heap_stats(|| {
+        let file = lcc_brand::env("DHAT_FILE").unwrap_or_else(|| "dhat-heap.json".into());
+        lcc_engine::memory::set_heap_stats(|| {
             let s = dhat::HeapStats::get();
-            dac_engine::memory::HeapUsage { current: s.curr_bytes as u64, peak: s.max_bytes as u64 }
+            lcc_engine::memory::HeapUsage { current: s.curr_bytes as u64, peak: s.max_bytes as u64 }
         });
         dhat::Profiler::builder().file_name(file).build()
     };
     alloc_release::install();
     // Warnings (a GPU render redone on the CPU, an unknown backend name) on stderr; <PREFIX>_LOG
     // or RUST_LOG picks another level (#168).
-    dac_engine::logging::install("dac-cli");
+    lcc_engine::logging::install("lcc-cli");
     // first start under this name: copy the settings folder of a previous name (never moved)
-    if !dac_brand::env_is_set("NO_PREFS") {
-        match dac_brand::migrate_legacy_settings() {
+    if !lcc_brand::env_is_set("NO_PREFS") {
+        match lcc_brand::migrate_legacy_settings() {
             Ok(Some(from)) => log::info!("settings copied from {}", from.display()),
             Ok(None) => {}
             Err(e) => log::warn!("could not copy the previous settings folder: {e}"),
@@ -260,19 +260,19 @@ fn camdb(args: &[String]) -> Result<(), String> {
             let mut entries = Vec::new();
             for f in &files {
                 let bytes = std::fs::read(f).map_err(|e| format!("{f}: {e}"))?;
-                let mut entry = dac_camdb::extract::from_dng(&bytes).map_err(|e| format!("{f}: {e}"))?;
+                let mut entry = lcc_camdb::extract::from_dng(&bytes).map_err(|e| format!("{f}: {e}"))?;
                 entry.provenance.contributor = contributor.clone();
                 entries.push(entry);
             }
-            print!("{}", dac_camdb::to_toml(&entries).map_err(|e| e.to_string())?);
+            print!("{}", lcc_camdb::to_toml(&entries).map_err(|e| e.to_string())?);
             Ok(())
         }
         Some("show") => {
             let (Some(make), Some(model)) = (args.get(1), args.get(2)) else {
                 return Err("camdb show needs MAKE and MODEL".into());
             };
-            let entry = dac_camdb::find(Some(make), model).ok_or_else(|| format!("no camera database entry for {make} {model}"))?;
-            print!("{}", dac_camdb::to_toml(&[entry]).map_err(|e| e.to_string())?);
+            let entry = lcc_camdb::find(Some(make), model).ok_or_else(|| format!("no camera database entry for {make} {model}"))?;
+            print!("{}", lcc_camdb::to_toml(&[entry]).map_err(|e| e.to_string())?);
             Ok(())
         }
         _ => Err("camdb needs `extract` or `show`".into()),
@@ -308,15 +308,15 @@ fn calibrate(args: &[String]) -> Result<(), String> {
         files = (0..max).filter_map(|k| files.get(k * found / max).cloned()).collect();
     }
     eprintln!("calibrate: {} of {found} raw files", files.len());
-    let dir = out.or_else(dac_engine::camera_profiles::dir).ok_or("no profiles folder: pass --out DIR")?;
+    let dir = out.or_else(lcc_engine::camera_profiles::dir).ok_or("no profiles folder: pass --out DIR")?;
     let workers = std::thread::available_parallelism().map_or(4, |n| n.get()).clamp(1, 6);
     let next = std::sync::atomic::AtomicUsize::new(0);
     let done = std::sync::atomic::AtomicUsize::new(0);
-    let pools: Vec<dac_engine::camera_profiles::Pool> = std::thread::scope(|scope| {
+    let pools: Vec<lcc_engine::camera_profiles::Pool> = std::thread::scope(|scope| {
         let handles: Vec<_> = (0..workers)
             .map(|_| {
                 scope.spawn(|| {
-                    let mut pool = dac_engine::camera_profiles::Pool::default();
+                    let mut pool = lcc_engine::camera_profiles::Pool::default();
                     while let Some(path) = files.get(next.fetch_add(1, std::sync::atomic::Ordering::Relaxed)) {
                         let result = std::fs::read(path).map_err(|e| e.to_string()).and_then(|bytes| pool.add(&bytes));
                         let n = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
@@ -332,7 +332,7 @@ fn calibrate(args: &[String]) -> Result<(), String> {
             .collect();
         handles.into_iter().filter_map(|h| h.join().ok()).collect()
     });
-    let mut pool = dac_engine::camera_profiles::Pool::default();
+    let mut pool = lcc_engine::camera_profiles::Pool::default();
     for p in pools {
         pool.merge(p);
     }
@@ -340,7 +340,7 @@ fn calibrate(args: &[String]) -> Result<(), String> {
     for result in pool.fit(5) {
         match result {
             Ok(profile) => {
-                let path = dac_engine::camera_profiles::save(&profile, &dir)?;
+                let path = lcc_engine::camera_profiles::save(&profile, &dir)?;
                 println!(
                     "{}: {} photos, {} colour pairs, hue/saturation table {} → {}",
                     profile.model,
@@ -491,8 +491,8 @@ fn merge(args: &[String]) -> Result<(), String> {
     ids.sort_by_key(|id| {
         paths.iter().position(|f| {
             s.catalog
-                .photo(dac_engine::catalog::PhotoId(*id))
-                .is_some_and(|ph| matches!(&ph.source, dac_engine::catalog::Source::File { path } if path == f))
+                .photo(lcc_engine::catalog::PhotoId(*id))
+                .is_some_and(|ph| matches!(&ph.source, lcc_engine::catalog::Source::File { path } if path == f))
         })
     });
     p.insert("ids".into(), json!(ids));
@@ -519,7 +519,7 @@ fn synth_merge(args: &[String]) -> Result<(), String> {
     let mut written = Vec::new();
     match kind {
         "hdr" => {
-            for (k, b) in dac_merge::synth::bracket_dngs(1800, 1200, &[-2.0, 0.0, 2.0]).map_err(|e| e.to_string())?.into_iter().enumerate() {
+            for (k, b) in lcc_merge::synth::bracket_dngs(1800, 1200, &[-2.0, 0.0, 2.0]).map_err(|e| e.to_string())?.into_iter().enumerate() {
                 let p = Path::new(&dir).join(format!("bracket-{k}.dng"));
                 std::fs::write(&p, b).map_err(|e| e.to_string())?;
                 written.push(p);
@@ -527,12 +527,12 @@ fn synth_merge(args: &[String]) -> Result<(), String> {
         }
         "panorama" | "pano" => {
             for (k, v) in
-                dac_merge::synth::pano_views(1200, 900, 1000.0, &[-50.0, -25.0, 0.0, 25.0, 50.0]).map_err(|e| e.to_string())?.into_iter().enumerate()
+                lcc_merge::synth::pano_views(1200, 900, 1000.0, &[-50.0, -25.0, 0.0, 25.0, 50.0]).map_err(|e| e.to_string())?.into_iter().enumerate()
             {
                 let p = Path::new(&dir).join(format!("view-{k}.png"));
                 let img = v.to_srgb8();
                 let png =
-                    dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&img), &dac_codecs::EncodeMeta::default()).map_err(|e| e.to_string())?;
+                    lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).map_err(|e| e.to_string())?;
                 std::fs::write(&p, png).map_err(|e| e.to_string())?;
                 written.push(p);
             }
@@ -653,7 +653,7 @@ fn run(args: &[String]) -> Result<(), String> {
                     let mut h = Headless::default();
                     catalog_migrate::migrate_with_progress(dir)?;
                     h.session.open_library(dir, demo).map_err(|e| library_error(dir, e))?;
-                    library_warnings(&mut h.session, "dac-cli");
+                    library_warnings(&mut h.session, "lcc-cli");
                     h
                 }
                 None if demo => Headless::demo(),
@@ -773,7 +773,7 @@ fn render(args: &[String]) -> Result<(), String> {
     if let Some(t) = trim {
         run(&mut s, "video.setTrim", t).map_err(|e| format!("--trim: {e}"))?;
     }
-    use dac_engine::export::{ExportFormat, ExportOptions, export_photo};
+    use lcc_engine::export::{ExportFormat, ExportOptions, export_photo};
     let mut p = json!({"quality": quality});
     if let Some(n) = size {
         p["longEdge"] = json!(n);
@@ -784,7 +784,7 @@ fn render(args: &[String]) -> Result<(), String> {
     let mut o = ExportOptions::from_params(&p).map_err(|e| e.to_string())?;
     if p.get("format").is_none() {
         let ext = Path::new(&output).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
-        match (ExportFormat::parse(&ext), dac_engine::export_video::VideoFormat::parse(&ext)) {
+        match (ExportFormat::parse(&ext), lcc_engine::export_video::VideoFormat::parse(&ext)) {
             (Some(f), _) => o.format = f,
             // a movie (.mp4 / .mov): a video clip exports as one; the format stays a rendered one
             (None, Some(v)) if p.get("videoFormat").is_none() => o.video_format = v,
@@ -794,7 +794,7 @@ fn render(args: &[String]) -> Result<(), String> {
     }
     // Add to Apple Photos: refused before anything is written when it can't be done
     let after = s.after_export(&o)?;
-    let e = export_photo(&mut s, dac_engine::catalog::PhotoId(id), &o, 1)?;
+    let e = export_photo(&mut s, lcc_engine::catalog::PhotoId(id), &o, 1)?;
     // never over the input (or its sidecar), however it is spelled: `render IMG.jpg -o IMG.jpg`
     let sidecars: Vec<(String, &Vec<u8>)> =
         e.sidecars.iter().map(|(ext, bytes)| (Path::new(&output).with_extension(ext).to_string_lossy().to_string(), bytes)).collect();
@@ -804,7 +804,7 @@ fn render(args: &[String]) -> Result<(), String> {
     }
     e.save(&output)?;
     for (sc, bytes) in &sidecars {
-        dac_engine::export::write_file(sc, bytes)?;
+        lcc_engine::export::write_file(sc, bytes)?;
         eprintln!("{CLI}: wrote {sc}");
     }
     eprintln!("{CLI}: wrote {output} ({}×{})", e.width, e.height);
@@ -818,7 +818,7 @@ fn render(args: &[String]) -> Result<(), String> {
 }
 
 fn snapshot(args: &[String]) -> Result<(), String> {
-    use dac_ui_egui::headless::Headless;
+    use lcc_ui_egui::headless::Headless;
     use std::time::{Duration, Instant};
     let mut library: Option<String> = None;
     let mut script: Option<String> = None;
@@ -847,7 +847,7 @@ fn snapshot(args: &[String]) -> Result<(), String> {
     if script.is_none() && output.is_none() {
         return Err("snapshot: give -o OUT.png and/or --script FILE".into());
     }
-    dac_ui_egui::headless::viewport_pixels(size, scale).map_err(|e| format!("snapshot: bad --size/--scale: {e}"))?;
+    lcc_ui_egui::headless::viewport_pixels(size, scale).map_err(|e| format!("snapshot: bad --size/--scale: {e}"))?;
     let t0 = Instant::now();
     let mut session = match &library {
         Some(dir) => {
@@ -885,15 +885,15 @@ fn snapshot(args: &[String]) -> Result<(), String> {
         let n = r["imported"].as_array().map_or(0, Vec::len);
         eprintln!("{CLI} snapshot: imported {n} files in {:.0} ms", ti.elapsed().as_secs_f64() * 1e3);
     }
-    let services = dac_ui_egui::Services {
-        write_shared: Some(std::sync::Arc::new(dac_engine::export::write_file)),
-        write: Some(Box::new(dac_engine::export::write_file)),
-        png: Some(Box::new(|img: &dac_raster::Rgba8| {
-            dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(img), &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+    let services = lcc_ui_egui::Services {
+        write_shared: Some(std::sync::Arc::new(lcc_engine::export::write_file)),
+        write: Some(Box::new(lcc_engine::export::write_file)),
+        png: Some(Box::new(|img: &lcc_raster::Rgba8| {
+            lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
         })),
         ..Default::default()
     };
-    let mut app = dac_ui_egui::DacApp::new(session, services);
+    let mut app = lcc_ui_egui::LccApp::new(session, services);
     // Snapshot sessions promise no GPU: disable photo compute as well as the compositor
     // before the first frame can start background adapter discovery.
     // This UI state is session-local: the CLI neither loads nor saves desktop ui.json.
@@ -1032,15 +1032,15 @@ fn controls(args: &[String]) -> Result<(), String> {
     Ok(())
 }
 
-/// `denoise-serve`: the remote half of AI Denoise (`dac_denoise::remote`).
+/// `denoise-serve`: the remote half of AI Denoise (`lcc_denoise::remote`).
 #[cfg(feature = "denoise")]
 fn denoise_serve(args: &[String]) -> Result<(), String> {
-    use dac_denoise::remote::{DEFAULT_PORT, ServerOptions, serve};
-    use dac_engine::denoise::RunOn;
+    use lcc_denoise::remote::{DEFAULT_PORT, ServerOptions, serve};
+    use lcc_engine::denoise::RunOn;
     let mut model: Option<String> = None;
     let mut dir: Option<String> = None;
     let mut listen = format!("127.0.0.1:{DEFAULT_PORT}");
-    let mut token_env = dac_brand::env_var("DENOISE_TOKEN");
+    let mut token_env = lcc_brand::env_var("DENOISE_TOKEN");
     let mut run_on = RunOn::Auto;
     let mut max_connections = 8usize;
     let mut i = 0;
@@ -1062,7 +1062,7 @@ fn denoise_serve(args: &[String]) -> Result<(), String> {
         i += 1;
     }
     let token = std::env::var(&token_env).map_err(|_| format!("denoise-serve: set the shared token in ${token_env}"))?;
-    let s = dac_engine::denoise::serving(dir.as_deref().map(Path::new), model.as_deref(), run_on)?;
+    let s = lcc_engine::denoise::serving(dir.as_deref().map(Path::new), model.as_deref(), run_on)?;
     let listener = std::net::TcpListener::bind(&listen).map_err(|e| format!("denoise-serve: {listen}: {e}"))?;
     eprintln!("{CLI} denoise-serve: {} {} ({}) on {listen} via {}", s.model.id, s.model.version, s.model.sha256, s.device);
     if listen.starts_with("0.0.0.0") || listen.starts_with("[::]") {

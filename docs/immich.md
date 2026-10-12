@@ -1,7 +1,7 @@
 # Immich
 
 The app links its library with one or more [Immich](https://immich.app) servers (v3.0 or later). Research notes,
-endpoints and the test server: the local research note `plan/immich.md` (not published). Code: `crates/immich` (`dac-immich`, the typed
+endpoints and the test server: the local research note `plan/immich.md` (not published). Code: `crates/immich` (`lcc-immich`, the typed
 client and the pure matching / mapping logic), `crates/engine/src/cmd/immich.rs` (commands),
 `crates/engine/src/remote.rs` (background work), `crates/ui-egui/src/panels/connections.rs` (UI).
 
@@ -11,7 +11,7 @@ Settings → Connections → *Add Immich server*: the server URL and an API key 
 page). **Test** shows the version, user and the key's permissions, and which features a key with fewer permissions
 can't use; **Connect** stores the key and starts a link pass. Several servers and accounts can be connected.
 
-- The key is kept in the system keychain (`dac-credentials`: Secret Service on Linux and the BSDs). It is never written
+- The key is kept in the system keychain (`lcc-credentials`: Secret Service on Linux and the BSDs). It is never written
   to the catalog, `connections.json`, logs, the command journal or command results. Where no keychain is reachable
   (macOS and Windows until a safe backend exists, or a Linux session without a Secret Service), connecting reports it;
   a passphrase-protected key file is not wired into the UI yet.
@@ -69,13 +69,13 @@ Immich* (`immich.scanLibraries`) starts a scan of the libraries covering mapped 
 
 ## Tests
 
-- `cargo test -p dac-immich`: the client against recorded v3.3.1 responses (`crates/immich/tests/fixtures`), and the
+- `cargo test -p lcc-immich`: the client against recorded v3.3.1 responses (`crates/immich/tests/fixtures`), and the
   error paths (offline, bad key, old server, 5xx with retries, TLS to a plain server, hostile ids).
-- `cargo test -p dac-engine tests_immich`: SHA-1 at import and its back-fill, connect / link / import / link-only /
+- `cargo test -p lcc-engine tests_immich`: SHA-1 at import and its back-fill, connect / link / import / link-only /
   sidecars through the commands, against an in-process server.
 - Nightly, with Docker: `cargo xtask immich up && cargo xtask immich seed`, then
-  `cargo test -p dac-immich --test live -- --ignored` (lists, downloads an original and checks its SHA-1 equals
-  Immich's checksum), and `cargo test -p dac-engine live_external -- --ignored`: an external library over a folder of
+  `cargo test -p lcc-immich --test live -- --ignored` (lists, downloads an original and checks its SHA-1 equals
+  Immich's checksum), and `cargo test -p lcc-engine live_external -- --ignored`: an external library over a folder of
   generated photos (the compose file mounts `target/immich/extlib` at `/mnt/extlib`, override with
   `IMMICH_EXTLIB_DIR`), scanned, linked by path, then rating, description and a keyword written as XMP and read back
   from Immich.
@@ -117,7 +117,7 @@ photos; `show` makes them a temporary collection, `saveAs` an album.
   asset, then it goes to Immich's trash), with "remember my choice"
   (`immich.versionSettings {resave: ask|keepBoth|replace}`, kept in `<library>/Immich/versions.json`).
 - **Stack sync** (part of `immich.sync`): catalog stacks of linked photos ⇄ Immich stacks,
-  three-way against the last sync (`dac_immich::stacks`). The top photo is the primary, and the order
+  three-way against the last sync (`lcc_immich::stacks`). The top photo is the primary, and the order
   below it stays local. Unlinked photos keep their place in the catalog stack. When both sides
   changed the same stack, the catalog's version wins. Needs `stack.read`, `stack.create` and
   `stack.delete`; a key without them skips the stack part and says so in the sync's errors.

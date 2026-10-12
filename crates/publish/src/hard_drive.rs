@@ -69,10 +69,10 @@ impl PublishService for HardDrive {
         let name = safe_name(up.file_name).ok_or_else(|| PublishError::Config(format!("`{}` can't be a file name", up.file_name)))?;
         std::fs::create_dir_all(&self.folder).map_err(|e| PublishError::Io(format!("{}: {e}", self.folder.display())))?;
         let path = self.folder.join(&name);
-        dac_catalog::safe_file::write_atomic(&path, up.bytes).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))?;
+        lcc_catalog::safe_file::write_atomic(&path, up.bytes).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))?;
         for (ext, bytes) in up.sidecars {
             let p = self.folder.join(with_ext(&name, ext));
-            dac_catalog::safe_file::write_atomic(&p, bytes).map_err(|e| PublishError::Io(format!("{}: {e}", p.display())))?;
+            lcc_catalog::safe_file::write_atomic(&p, bytes).map_err(|e| PublishError::Io(format!("{}: {e}", p.display())))?;
         }
         // a re-publish under another name (the naming template changed): the old file goes
         if let Some(prev) = up.previous.filter(|p| *p != name) {

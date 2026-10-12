@@ -284,7 +284,7 @@ fn setup(tag: &str) -> Setup {
     let two = s.catalog.photos().find(|p| p.file_name == "two.png").unwrap().id;
     assert_eq!(s.execute("immich.connect", &json!({"url": url, "apiKey": KEY})).unwrap()["ok"], true);
     s.execute("immich.link", &json!({})).unwrap();
-    pump_until(&mut s, |s, _| dac_immich::link::link_state(&s.catalog, one) == "linked" && dac_immich::link::link_state(&s.catalog, two) == "linked");
+    pump_until(&mut s, |s, _| lcc_immich::link::link_state(&s.catalog, one) == "linked" && lcc_immich::link::link_state(&s.catalog, two) == "linked");
     Setup { s, state, down, hits, one, two, dir }
 }
 
@@ -304,7 +304,7 @@ fn two_way_sync_dry_run_conflicts_and_deletions() {
     s.catalog
         .apply(Op::SetKeyword {
             path: "Private|Home".into(),
-            info: Some(dac_catalog::keywords::KeywordInfo { include_on_export: false, ..Default::default() }),
+            info: Some(lcc_catalog::keywords::KeywordInfo { include_on_export: false, ..Default::default() }),
         })
         .unwrap();
 
@@ -363,8 +363,8 @@ fn two_way_sync_dry_run_conflicts_and_deletions() {
     let c = s.execute("immich.syncConflicts", &json!({})).unwrap();
     assert_eq!(c["conflicts"][0]["field"], "rating");
     assert_eq!((c["conflicts"][0]["catalog"].as_u64(), c["conflicts"][0]["immich"].as_u64()), (Some(5), Some(1)));
-    assert_eq!(dac_immich::link::link_state(&s.catalog, one), "linked");
-    assert!(s.catalog.remote_of(one).any(|r| r.sync_state == dac_catalog::SyncState::Conflict));
+    assert_eq!(lcc_immich::link::link_state(&s.catalog, one), "linked");
+    assert!(s.catalog.remote_of(one).any(|r| r.sync_state == lcc_catalog::SyncState::Conflict));
     // still a conflict on the next run
     assert_eq!(s.execute("immich.sync", &json!({})).unwrap()["openConflicts"], 1);
     // the user keeps Immich's
@@ -487,7 +487,7 @@ fn smart_search_maps_results_to_photos_and_shows_or_saves_them() {
     assert_eq!(r["photos"], json!([two.0]));
     assert_eq!(r["unmatched"], 1);
     assert_eq!(s.visible(), vec![two], "the temporary collection");
-    let album = dac_catalog::AlbumId(r["album"].as_u64().unwrap());
+    let album = lcc_catalog::AlbumId(r["album"].as_u64().unwrap());
     assert_eq!(s.catalog.album(album).unwrap().photos, vec![two]);
     // nothing found: an empty grid, not everything
     s.execute("immich.smartSearch", &json!({"query": "zebra", "show": true})).unwrap();
@@ -567,14 +567,14 @@ fn albums_sync_both_ways() {
     state.lock().unwrap().albums[0].2.push("bbbb-2".into());
     let r = s.execute("immich.syncAlbums", &json!({})).unwrap();
     assert_eq!(r["ok"], true, "{r}");
-    let mut photos = s.catalog.album(dac_catalog::AlbumId(a)).unwrap().photos.clone();
+    let mut photos = s.catalog.album(lcc_catalog::AlbumId(a)).unwrap().photos.clone();
     photos.sort();
     assert_eq!(photos, vec![one, two]);
     assert!(state.lock().unwrap().albums[0].2.contains(&"aaaa-1".to_string()));
     // removed in Immich: removed in the catalog
     state.lock().unwrap().albums[0].2.retain(|x| x != "aaaa-1");
     s.execute("immich.syncAlbums", &json!({})).unwrap();
-    assert_eq!(s.catalog.album(dac_catalog::AlbumId(a)).unwrap().photos, vec![two]);
+    assert_eq!(s.catalog.album(lcc_catalog::AlbumId(a)).unwrap().photos, vec![two]);
     let _ = std::fs::remove_dir_all(&dir);
 }
 

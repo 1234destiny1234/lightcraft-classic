@@ -206,7 +206,7 @@ impl Reader {
         let mut image = colour::to_rgb(&f, n);
         if par.0 != par.1 {
             let (tw, th) = fit(dw, dh, max_side);
-            image = dac_raster::resample::resize(&image, tw as usize, th as usize, dac_raster::resample::Filter::Bilinear);
+            image = lcc_raster::resample::resize(&image, tw as usize, th as usize, lcc_raster::resample::Filter::Bilinear);
         }
         let time = self.clip.table.seconds(p.pts.saturating_sub(self.origin()));
         Ok(Frame { image, time: time.max(0.0) })

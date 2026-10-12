@@ -2,7 +2,7 @@
 
 use std::sync::Arc;
 
-use dac_develop::{DevelopSettings, WbMode};
+use lcc_develop::{DevelopSettings, WbMode};
 use serde::{Deserialize, Serialize};
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash, Serialize, Deserialize)]
@@ -89,7 +89,7 @@ impl ColorLabel {
 pub enum Source {
     /// A file on disk (native) or in the browser's storage (web).
     File { path: String },
-    /// A procedurally generated demo scene (by `dac-scenes` id).
+    /// A procedurally generated demo scene (by `lcc-scenes` id).
     Demo { scene: u32 },
 }
 
@@ -198,7 +198,7 @@ pub struct Meta {
     /// Removing or resizing one edits the catalog only; the app never writes regions to XMP.
     /// Left out of the catalog JSON when empty (most photos), so older catalogs read unchanged.
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub regions: Vec<dac_meta::Region>,
+    pub regions: Vec<lcc_meta::Region>,
 }
 
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
@@ -269,7 +269,7 @@ pub struct Photo {
     /// Lens corrections embedded in the file (DNG `WarpRectilinear` / `FixVignetteRadial`), applied when
     /// "Enable Profile Corrections" is on.
     #[serde(default, skip_serializing_if = "Option::is_none")]
-    pub embedded_lens: Option<Box<dac_develop::EmbeddedLens>>,
+    pub embedded_lens: Option<Box<lcc_develop::EmbeddedLens>>,
     /// A virtual copy: the photo it was copied from (it shares that photo's file but has its own
     /// settings, metadata and history).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -413,11 +413,11 @@ pub fn relative_wb_format(format: &str) -> bool {
 /// Whether a raw of `format` shot on `camera` (Exif make and model, as [`Meta::camera`] keeps them) is developed
 /// with a white balance relative to its as-shot look (6500 K / 0 means as shot, as for rendered photographs):
 /// a file without colour matrices ([`relative_wb_format`]) whose camera has none measured either. A camera
-/// with matrices in `dac_raw::spectral` edits in Kelvin: the matrices turn its as-shot multipliers into
+/// with matrices in `lcc_raw::spectral` edits in Kelvin: the matrices turn its as-shot multipliers into
 /// a temperature, and the slider back, while its colour look stays whatever the file's fit gives (upstream #730).
 /// The engine's render path (`files.rs`) decides the same way from the file; both must agree.
 pub fn relative_wb_camera(format: &str, camera: &str) -> bool {
-    relative_wb_format(format) && dac_raw::spectral::find_camera(camera).is_none()
+    relative_wb_format(format) && lcc_raw::spectral::find_camera(camera).is_none()
 }
 
 impl Photo {
@@ -487,7 +487,7 @@ impl Photo {
     }
     /// The built-in defaults for this photo, before any user default preset: raws start from
     /// their as-shot white balance; embedded lens corrections on when the file has them. They
-    /// carry the photo's own rendering process ([`dac_develop::ProcessVersion`]): which
+    /// carry the photo's own rendering process ([`lcc_develop::ProcessVersion`]): which
     /// process a photo renders with is not an edit, so comparisons with its defaults (edited?
     /// still as imported?) don't change when a newer process exists. A new photo has the latest.
     pub fn camera_defaults(&self) -> DevelopSettings {
@@ -498,7 +498,7 @@ impl Photo {
             None => DevelopSettings::default(),
         };
         if self.develops_raw() && !relative {
-            d.wb.scale = dac_develop::WbScale::Kelvin;
+            d.wb.scale = lcc_develop::WbScale::Kelvin;
         }
         if self.embedded_lens.is_some() {
             d.optics.lens_profile = true;
@@ -538,7 +538,7 @@ impl Photo {
     /// differ only in case are one person, as first seen). Pets and unnamed faces are not people.
     pub fn people(&self) -> Vec<&str> {
         let mut out: Vec<&str> = Vec::new();
-        for r in self.meta.regions.iter().filter(|r| r.kind == dac_meta::RegionKind::Face) {
+        for r in self.meta.regions.iter().filter(|r| r.kind == lcc_meta::RegionKind::Face) {
             let Some(name) = r.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else { continue };
             if !out.iter().any(|o| o.to_lowercase() == name.to_lowercase()) {
                 out.push(name);
@@ -643,7 +643,7 @@ impl Album {
 #[cfg(test)]
 mod edited_tests {
     use super::*;
-    use dac_develop::WbScale;
+    use lcc_develop::WbScale;
 
     #[test]
     fn raw_with_import_settings_is_not_edited() {
@@ -661,7 +661,7 @@ mod edited_tests {
 
     #[test]
     fn the_process_a_photo_renders_with_is_not_an_edit() {
-        use dac_develop::ProcessVersion;
+        use lcc_develop::ProcessVersion;
         // a photo on another process than the latest (a V1 photo once a later process is the
         // latest, or a photo saved by a newer version of the app)
         let other = ProcessVersion(ProcessVersion::LATEST.0 + 1);

@@ -1345,7 +1345,7 @@ mod tests {
         }
     }
 
-    /// `ICON_SHEET=out.png cargo test -p dac-ui-egui icon_contact_sheet -- --ignored` writes every icon, labelled,
+    /// `ICON_SHEET=out.png cargo test -p lcc-ui-egui icon_contact_sheet -- --ignored` writes every icon, labelled,
     /// at 16 pt and 1×/2× plus 48 pt, light on dark, for reviewing the set by eye.
     #[test]
     #[ignore]
@@ -1368,8 +1368,8 @@ mod tests {
             }
         });
         let img = view.paint(&Default::default());
-        let image = dac_raster::Rgba8 { width: img.size[0], height: img.size[1], data: img.pixels.iter().map(|c| c.to_array()).collect() };
-        let png = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&image), &dac_codecs::EncodeMeta::default()).unwrap();
+        let image = lcc_raster::Rgba8 { width: img.size[0], height: img.size[1], data: img.pixels.iter().map(|c| c.to_array()).collect() };
+        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&image), &lcc_codecs::EncodeMeta::default()).unwrap();
         std::fs::write(path, png).unwrap();
     }
 }

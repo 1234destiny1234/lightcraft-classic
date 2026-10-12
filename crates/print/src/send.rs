@@ -5,8 +5,8 @@
 
 use std::time::{Duration, Instant};
 
-use dac_layout::Document;
-use dac_layout::render::PhotoSource;
+use lcc_layout::Document;
+use lcc_layout::render::PhotoSource;
 
 use crate::ipp::{self, JobState};
 use crate::output::{PdfOptions, to_jpeg_icc, to_pdf};

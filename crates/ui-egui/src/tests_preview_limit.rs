@@ -42,7 +42,7 @@ fn render_sizes_move_in_steps() {
 // would evict the open photo's single full-resolution source (review of #323)
 #[test]
 fn prefetch_and_stand_ins_never_ask_for_the_full_source_level() {
-    use dac_engine::SourceLevel;
+    use lcc_engine::SourceLevel;
     let s = with_limit(0);
     for wanted in [1000.0, 2560.0, 3024.0, 6000.0, 48000.0] {
         assert!(s.prefetch_edge(wanted, 6000, BIG) <= SourceLevel::Preview.max_edge(), "{wanted}");
@@ -143,7 +143,7 @@ mod in_the_loupe {
 
     use crate::headless::Headless;
     use crate::render::Slot;
-    use crate::{DacApp, Services};
+    use crate::{LccApp, Services};
 
     const T: Duration = Duration::from_secs(20);
     /// Generous: these tests render 24 MP frames and tiles, which a loaded machine (a full
@@ -157,7 +157,7 @@ mod in_the_loupe {
 
     fn detail_in(size: [f32; 2]) -> (Headless, usize) {
         let services = Services { png: None, ..Default::default() };
-        let app = DacApp::new(dac_engine::Session::with_demo(), services);
+        let app = LccApp::new(lcc_engine::Session::with_demo(), services);
         let mut h = Headless::new(app, size, 1.0);
         let r = h.request("ui.set", json!({"view": "detail", "right": "none", "filmstrip": false}), T);
         assert_eq!(r["ok"], true, "{r}");
@@ -214,7 +214,7 @@ mod in_the_loupe {
         h.settle(SETTLE);
         let id = h.app.session.active().expect("a photo");
         let d = h.app.session.develop_of(id).expect("settings");
-        assert!(matches!(crate::panels::detail::view_overlay(&h.app, &d), dac_pipeline::Overlay::Mask { .. }), "the mask overlay is shown");
+        assert!(matches!(crate::panels::detail::view_overlay(&h.app, &d), lcc_pipeline::Overlay::Mask { .. }), "the mask overlay is shown");
         assert_eq!((h.app.ui.zoom, h.app.ui.pan), (zoom, pan), "showing the overlay keeps zoom and pan");
         let main = rendered_long_edge(&h);
         assert!(main <= 2560 && main < native, "native {native}: the whole-frame render is {main}");
@@ -381,10 +381,10 @@ mod in_the_loupe {
         let (mut h, _) = detail();
         let id = h.app.session.active().unwrap();
         let mut s = (*h.app.session.develop_of(id).unwrap()).clone();
-        s.spots.push(dac_develop::Spot {
-            points: vec![dac_geom::Point::new(0.5, 0.5)],
+        s.spots.push(lcc_develop::Spot {
+            points: vec![lcc_geom::Point::new(0.5, 0.5)],
             size: 0.01,
-            source_offset: Some(dac_geom::Point::new(0.05, 0.0)),
+            source_offset: Some(lcc_geom::Point::new(0.05, 0.0)),
             ..Default::default()
         });
         h.app.session.set_develop(id, s, "Spot").unwrap();
@@ -564,7 +564,7 @@ mod in_the_loupe {
         assert_eq!(region_tile(&h), None);
     }
 
-    /// `cargo test -p dac-ui-egui --release profile_slider_drag -- --ignored --nocapture`:
+    /// `cargo test -p lcc-ui-egui --release profile_slider_drag -- --ignored --nocapture`:
     /// milliseconds from a slider tick to the loupe showing it, at 100 % and 400 % of the demo
     /// library's 24 MP photos (what the maintainers asked for in the review of #351).
     #[test]
@@ -657,7 +657,7 @@ mod in_the_loupe {
             let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
             if view == "reference" {
                 h.app.ui.reference = Some(ids[0]);
-                h.app.session.selection.active = Some(dac_catalog::PhotoId(ids[1]));
+                h.app.session.selection.active = Some(lcc_catalog::PhotoId(ids[1]));
                 h.app.ui.view = crate::state::ViewMode::Reference;
             } else {
                 h.app.ui.compare = Some((ids[0], ids[1]));

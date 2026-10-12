@@ -1,7 +1,7 @@
 //! Crash-safe catalog persistence: an append-only op log plus periodic snapshots.
 //!
 //! Files (in a [`Store`]):
-//! - `catalog.snap` — `{"format":"dac-catalog","version":V,"seq":N,"catalog":{…}}`, the
+//! - `catalog.snap` — `{"format":"lcc-catalog","version":V,"seq":N,"catalog":{…}}`, the
 //!   state after op `N` in catalog format `V` ([`VERSION`]); replaced atomically (temp + fsync +
 //!   rename).
 //! - `catalog.log` — JSON lines, one per op applied after the snapshot:
@@ -74,9 +74,9 @@ use crate::{Catalog, CatalogError, Op, Result};
 
 pub const SNAPSHOT: &str = "catalog.snap";
 pub const LOG: &str = "catalog.log";
-pub(crate) const FORMAT: &str = "dac-catalog";
+pub(crate) const FORMAT: &str = "lcc-catalog";
 /// The v4 store's format (`db`), also named by the stub snapshot of a v4 folder.
-pub(crate) const V4_FORMAT: &str = "dac-catalog-db";
+pub(crate) const V4_FORMAT: &str = "lcc-catalog-db";
 /// The catalog format this build writes (and the newest it reads). See the module docs →
 /// *Format versions*; bump it whenever an [`Op`] variant or a serialized field is added.
 pub const VERSION: u32 = 10;
@@ -171,7 +171,7 @@ pub struct SnapshotTiming {
 /// `{ENV_PREFIX}_PROFILE` is set: print persistence timings to stderr.
 fn profiling() -> bool {
     static ON: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
-    *ON.get_or_init(|| dac_brand::env_is_set("PROFILE"))
+    *ON.get_or_init(|| lcc_brand::env_is_set("PROFILE"))
 }
 
 fn ms_since(t: web_time::Instant) -> f64 {
@@ -290,7 +290,7 @@ fn resync(line: &[u8], last: u64) -> Option<(usize, (u64, Op))> {
 
 /// Write `catalog.snap` for the state after op `seq`, streaming the JSON into the store (no
 /// whole-file string). The bytes are exactly
-/// `{"format":"dac-catalog","version":1,"seq":N,"catalog":<serde_json of the catalog>}\n`,
+/// `{"format":"lcc-catalog","version":1,"seq":N,"catalog":<serde_json of the catalog>}\n`,
 /// as before streaming. Fills in the serialise / write+sync times and the size.
 fn write_snapshot(store: &mut dyn Store, seq: u64, catalog: &Catalog) -> std::io::Result<SnapshotTiming> {
     let t0 = web_time::Instant::now();

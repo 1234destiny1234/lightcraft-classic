@@ -1,5 +1,5 @@
 [package]
-name = "dac-gpu"
+name = "lcc-gpu"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,13 +9,13 @@ description = "GPU develop pipeline: wgpu compute (WGSL) twin of the CPU pipelin
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
-dac-denoise = { workspace = true, optional = true }
-dac-geom = { workspace = true }
-dac-color = { workspace = true }
-dac-raster = { workspace = true }
-dac-develop = { workspace = true }
-dac-pipeline = { workspace = true }
+lcc-brand = { workspace = true }
+lcc-denoise = { workspace = true, optional = true }
+lcc-geom = { workspace = true }
+lcc-color = { workspace = true }
+lcc-raster = { workspace = true }
+lcc-develop = { workspace = true }
+lcc-pipeline = { workspace = true }
 log = { workspace = true }
 
 # Native only: Metal / Vulkan / DX12 through wgpu (pure Rust; the drivers are the system's).
@@ -27,8 +27,8 @@ bytemuck = { workspace = true }
 
 [features]
 default = []
-denoise = ["dep:dac-denoise", "dac-denoise/runtime"]
+denoise = ["dep:lcc-denoise", "lcc-denoise/runtime"]
 
 [dev-dependencies]
-dac-scenes = { workspace = true }
-dac-raw = { workspace = true }
+lcc-scenes = { workspace = true }
+lcc-raw = { workspace = true }

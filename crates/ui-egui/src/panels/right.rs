@@ -1,17 +1,17 @@
 //! The right-hand panel next to the tool strip: Edit, Crop, Remove, Masking, Red Eye, Info,
 //! Keywords, Versions, Activity.
 
-use dac_catalog::PhotoId;
 use egui::{Align2, Rect, Sense, pos2, vec2};
+use lcc_catalog::PhotoId;
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::state::RightPanel;
 use crate::theme::Tokens;
 use crate::widgets::{divider, register, slider, text_button};
 
-pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider));
     frame.show(ui, |ui| {
@@ -52,7 +52,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
 }
 
 /// The Classic Metadata panel (Library's right column).
-pub fn metadata_panel(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn metadata_panel(app: &mut LccApp, ui: &mut egui::Ui) {
     match app.session.active() {
         Some(id) => super::metadata::show(app, ui, id),
         None => {
@@ -117,7 +117,7 @@ fn aspect_label(aspect: Option<(u32, u32)>, original: Option<f64>) -> String {
 }
 
 /// "Custom" row of the aspect menu: two number fields and an Apply button (`crop.aspect` `[w, h]`).
-fn custom_aspect(app: &mut DacApp, ui: &mut egui::Ui) {
+fn custom_aspect(app: &mut LccApp, ui: &mut egui::Ui) {
     let key = egui::Id::new("crop-custom-aspect");
     let (mut w, mut h): (String, String) = ui.data_mut(|d| d.get_temp(key)).unwrap_or_else(|| ("3".into(), "2".into()));
     let mut apply = false;
@@ -135,7 +135,7 @@ fn custom_aspect(app: &mut DacApp, ui: &mut egui::Ui) {
         // Accept `3`, `2.5` and `3,5`; anything else (zero, negative, text, huge) is ignored.
         let num = |t: &str| t.trim().replace(',', ".").parse::<f64>().ok().filter(|v| v.is_finite() && *v > 0.0 && *v <= 1000.0);
         if let (Some(x), Some(y)) = (num(&w), num(&h))
-            && (1.0 / dac_geom::MAX_RATIO..=dac_geom::MAX_RATIO).contains(&(x / y))
+            && (1.0 / lcc_geom::MAX_RATIO..=lcc_geom::MAX_RATIO).contains(&(x / y))
         {
             let _ = app.run("crop.aspect", json!({"aspect": [x, y]}));
             ui.close();
@@ -144,7 +144,7 @@ fn custom_aspect(app: &mut DacApp, ui: &mut egui::Ui) {
     ui.data_mut(|d| d.insert_temp(key, (w, h)));
 }
 
-fn crop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Crop");
     padded(ui, |ui| {
@@ -193,7 +193,7 @@ fn crop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         });
     });
-    let ang = dac_develop::controls::find("crop.angle").copied();
+    let ang = lcc_develop::controls::find("crop.angle").copied();
     if let Some(spec) = ang {
         let out = slider(ui, &spec, d.crop.geometry.angle, true, Some("Straighten"));
         super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("crop.straighten", json!({"angle": v})));
@@ -287,7 +287,7 @@ fn crop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     padded(ui, |ui| {
         ui.label(crate::i18n::tr("Upright"));
         {
-            use dac_develop::Upright;
+            use lcc_develop::Upright;
             let modes = [
                 ("Off", Upright::Off, "off"),
                 ("Auto", Upright::Auto, "auto"),
@@ -304,10 +304,10 @@ fn crop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
                 app.ui.tool = if mode == Upright::Guided { "guidedUpright".into() } else { String::new() };
             }
         }
-        let guided = d.geometry.upright == dac_develop::Upright::Guided;
+        let guided = d.geometry.upright == lcc_develop::Upright::Guided;
         ui.horizontal_wrapped(|ui| {
             if !guided
-                && d.geometry.upright != dac_develop::Upright::Off
+                && d.geometry.upright != lcc_develop::Upright::Off
                 && text_button(ui, "uprightUpdate", crate::i18n::tr("Update"), false).clicked()
             {
                 let mode = serde_json::to_value(d.geometry.upright).unwrap_or_default();
@@ -339,14 +339,14 @@ fn crop(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
             let _ = app.run("develop.merge", json!({"settings": {"geometry": {"constrain_crop": c}}, "label": "Constrain Crop"}));
         }
     });
-    for spec in dac_develop::controls::in_section(dac_develop::Section::Geometry).filter(|c| c.id != "crop.angle") {
-        let v = dac_develop::controls::get(&d, spec.id).unwrap_or(spec.default);
+    for spec in lcc_develop::controls::in_section(lcc_develop::Section::Geometry).filter(|c| c.id != "crop.angle") {
+        let v = lcc_develop::controls::get(&d, spec.id).unwrap_or(spec.default);
         let out = slider(ui, spec, v, true, None);
         super::edit::apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": spec.id, "value": v})));
     }
 }
 
-fn remove(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Remove");
     padded(ui, |ui| {
@@ -388,23 +388,23 @@ fn remove(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
         (app.ui.remove_size, app.ui.remove_feather, app.ui.remove_opacity) = (sp.size as f32, sp.feather as f32, sp.opacity as f32);
         divider(ui);
         let mode = match sp.mode {
-            dac_develop::SpotMode::Heal => "Heal",
-            dac_develop::SpotMode::Clone => "Clone",
-            dac_develop::SpotMode::Remove => "Remove",
-            dac_develop::SpotMode::Fill => "Content-Aware",
+            lcc_develop::SpotMode::Heal => "Heal",
+            lcc_develop::SpotMode::Clone => "Clone",
+            lcc_develop::SpotMode::Remove => "Remove",
+            lcc_develop::SpotMode::Fill => "Content-Aware",
         };
         super::edit::sub_title(ui, &crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = mode));
     }
-    let plain = |id: &'static str, label: &'static str, min: f64, max: f64, default: f64| dac_develop::ControlSpec {
+    let plain = |id: &'static str, label: &'static str, min: f64, max: f64, default: f64| lcc_develop::ControlSpec {
         id,
         label,
-        section: dac_develop::Section::Detail,
+        section: lcc_develop::Section::Detail,
         min,
         max,
         default,
         step: 1.0,
         decimals: 0,
-        track: dac_develop::Track::Plain,
+        track: lcc_develop::Track::Plain,
     };
     let sliders = [
         (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", (app.ui.remove_size * 1000.0) as f64),
@@ -444,16 +444,16 @@ fn remove(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
             app.ui.visualize_spots = v;
         }
     });
-    let spec = dac_develop::ControlSpec {
+    let spec = lcc_develop::ControlSpec {
         id: "ui.spotsThreshold",
         label: "Threshold",
-        section: dac_develop::Section::Detail,
+        section: lcc_develop::Section::Detail,
         min: 0.0,
         max: 100.0,
         default: 50.0,
         step: 1.0,
         decimals: 0,
-        track: dac_develop::Track::Plain,
+        track: lcc_develop::Track::Plain,
     };
     let out = slider(ui, &spec, app.ui.spots_threshold as f64, app.ui.visualize_spots, None);
     if let Some(v) = out.value {
@@ -468,7 +468,7 @@ fn remove(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     });
 }
 
-fn red_eye(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn red_eye(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Red Eye");
     padded(ui, |ui| {
@@ -506,8 +506,8 @@ fn red_eye(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     );
     for k in ["pupilSize", "darken"] {
         let cid = format!("redEye.{i}.{k}");
-        let Some(spec) = dac_develop::controls::find(&cid) else { continue };
-        let v = dac_develop::controls::get(&d, &cid).unwrap_or(spec.default);
+        let Some(spec) = lcc_develop::controls::find(&cid) else { continue };
+        let v = lcc_develop::controls::get(&d, &cid).unwrap_or(spec.default);
         let out = slider(ui, spec, v, true, None);
         super::edit::apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": cid, "value": v})));
     }
@@ -532,7 +532,7 @@ fn red_eye(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     });
 }
 
-fn keywords(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn keywords(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // (the box is the selection's: the active photo only says that there is one)
     if app.session.catalog.photo(id).is_none() {
         return;
@@ -544,7 +544,7 @@ fn keywords(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
 
 /// The keyword entry, chips, keyword set, painter and suggestions for the selected photos (the
 /// Classic shell's Keywording panel; the Keywords panel adds the Keyword List below them).
-pub(crate) fn keywording(app: &mut DacApp, ui: &mut egui::Ui) {
+pub(crate) fn keywording(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     padded(ui, |ui| {
         let kid = egui::Id::new("kw-input");
@@ -627,21 +627,21 @@ pub(crate) fn keywording(app: &mut DacApp, ui: &mut egui::Ui) {
 
 /// The keyword set: pick a set, then nine buttons (⌥1–⌥9) that toggle its keywords on the
 /// selected photos; "Save as Set…" keeps the current nine under a name.
-fn keyword_set(app: &mut DacApp, ui: &mut egui::Ui) {
+fn keyword_set(app: &mut LccApp, ui: &mut egui::Ui) {
     // on: every selected photo has it (⌥1–⌥9 then take it off them); partly on: only some do
     let selection = app.session.targets(&serde_json::Value::Null);
     let chips = app.caches.keyword_chips(&app.session.catalog, &selection);
     let t = Tokens::get(ui.ctx());
-    let sets = dac_engine::cmd::keywords::keyword_sets_json(&app.session);
+    let sets = lcc_engine::cmd::keywords::keyword_sets_json(&app.session);
     let current = sets["current"].as_str().unwrap_or_default().to_string();
     ui.horizontal(|ui| {
         ui.label(egui::RichText::new(crate::i18n::tr("Keyword Set")).color(t.text_dim));
         let combo = egui::ComboBox::from_id_salt("kw-set")
-            .selected_text(crate::i18n::builtin_label(&current, current == dac_engine::cmd::keywords::RECENT))
+            .selected_text(crate::i18n::builtin_label(&current, current == lcc_engine::cmd::keywords::RECENT))
             .show_ui(ui, |ui| {
                 for set in sets["sets"].as_array().into_iter().flatten() {
                     let name = set["name"].as_str().unwrap_or_default();
-                    if ui.selectable_label(name == current, crate::i18n::builtin_label(name, name == dac_engine::cmd::keywords::RECENT)).clicked() {
+                    if ui.selectable_label(name == current, crate::i18n::builtin_label(name, name == lcc_engine::cmd::keywords::RECENT)).clicked() {
                         let _ = app.run("keyword.useSet", json!({"name": name}));
                     }
                 }
@@ -653,7 +653,7 @@ fn keyword_set(app: &mut DacApp, ui: &mut egui::Ui) {
                     let mut slots: Vec<String> =
                         sets["keywords"].as_array().into_iter().flatten().filter_map(|k| k.as_str().map(str::to_string)).collect();
                     slots.resize(9, String::new());
-                    let named = current != dac_engine::cmd::keywords::RECENT;
+                    let named = current != lcc_engine::cmd::keywords::RECENT;
                     app.ui.dialog = Some(crate::state::Dialog::KeywordSet {
                         replaces: named.then(|| current.clone()),
                         name: if named { current.clone() } else { String::new() },
@@ -671,7 +671,7 @@ fn keyword_set(app: &mut DacApp, ui: &mut egui::Ui) {
                         key: "name".into(),
                     });
                 }
-                if current != dac_engine::cmd::keywords::RECENT
+                if current != lcc_engine::cmd::keywords::RECENT
                     && ui.button(crate::i18n::tr_format!("Delete “{current}”", current = current)).clicked()
                 {
                     let _ = app.run("keyword.deleteSet", json!({"name": current}));
@@ -696,7 +696,7 @@ fn keyword_set(app: &mut DacApp, ui: &mut egui::Ui) {
                 }
                 continue;
             }
-            let chip = chips.iter().find(|c| dac_catalog::keywords::same(&c.path, &dac_catalog::keywords::clean(k)));
+            let chip = chips.iter().find(|c| lcc_catalog::keywords::same(&c.path, &lcc_catalog::keywords::clean(k)));
             let on = chip.is_some_and(|c| c.on_all());
             let some = chip.is_some() && !on;
             let short = format!("{}{}", k.rsplit('|').next().unwrap_or(k), if some { " *" } else { "" });
@@ -722,7 +722,7 @@ fn keyword_set(app: &mut DacApp, ui: &mut egui::Ui) {
     });
 }
 
-fn versions(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn versions(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     header(ui, "Versions");
     let t = Tokens::get(ui.ctx());
@@ -744,7 +744,7 @@ fn versions(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
             ui.data_mut(|d| d.insert_temp(tab_id, auto));
         }
         ui.add_space(6.0);
-        let shown: Vec<(usize, &dac_catalog::Version)> = p.versions.iter().enumerate().filter(|(_, v)| v.auto == auto).collect();
+        let shown: Vec<(usize, &lcc_catalog::Version)> = p.versions.iter().enumerate().filter(|(_, v)| v.auto == auto).collect();
         if shown.is_empty() {
             let msg = if auto { "No automatic versions." } else { "No versions yet. Create one to keep this look." };
             ui.label(egui::RichText::new(crate::i18n::tr(msg)).color(t.text_dim));
@@ -817,7 +817,7 @@ fn short_time(iso: &str) -> String {
     if crate::i18n::language() != crate::i18n::Locale::En {
         return crate::i18n::display_time(iso);
     }
-    let long = dac_catalog::dates::display_time(iso);
+    let long = lcc_catalog::dates::display_time(iso);
     // "September 30, 2026 at 12:00:00 PM" → month abbreviated, seconds dropped
     let (date, time) = long.split_once(" at ").map_or((long.as_str(), None), |(d, t)| (d, Some(t)));
     let date = match date.split_once(' ') {
@@ -830,7 +830,7 @@ fn short_time(iso: &str) -> String {
     }
 }
 
-fn activity(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
+fn activity(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     header(ui, "History");
     let t = Tokens::get(ui.ctx());
@@ -875,7 +875,7 @@ fn activity(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
 /// A panel icon button for `label` (translated: the accessible name), its hover text the label plus
 /// `command`'s current shortcut. Addressable as `button:{id}` (as the text button it replaced was)
 /// and `icon:{id}`.
-fn cmd_icon(app: &DacApp, ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, command: Option<&str>, active: bool) -> egui::Response {
+fn cmd_icon(app: &LccApp, ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, command: Option<&str>, active: bool) -> egui::Response {
     let sc = command.and_then(|c| crate::shortcuts::shortcut_of(&app.ui.settings.keymap, c));
     let tip = crate::widgets::command_tooltip(ui, label, sc);
     let r = crate::widgets::icon_button_named(ui, id, icon, vec2(28.0, 24.0), active, true, crate::i18n::tr(label), &tip);

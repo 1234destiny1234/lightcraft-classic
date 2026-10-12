@@ -8,7 +8,7 @@ use std::process::Command;
 const BIN: &str = env!("CARGO_BIN_EXE_app-cli");
 
 fn scratch(tag: &str) -> PathBuf {
-    let d = std::env::temp_dir().join(format!("dac-cli-robust-{tag}-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-cli-robust-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     d

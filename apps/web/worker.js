@@ -1,7 +1,7 @@
 // The render worker: a second instance of the app's wasm module that renders jobs posted
 // by the page (see apps/web/src/workers.rs). The first message carries the compiled
 // WebAssembly.Module and the storage backend kind; the module then takes over `onmessage`.
-import init, { worker_main } from "./dac_web.js";
+import init, { worker_main } from "./lcc_web.js";
 
 self.onmessage = async (e) => {
   self.onmessage = null;

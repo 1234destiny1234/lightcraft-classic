@@ -1,4 +1,4 @@
-//! Sequential decode cost: `cargo run --release -p dac-video --example seq_bench -- clip [frames] [max_side]`
+//! Sequential decode cost: `cargo run --release -p lcc-video --example seq_bench -- clip [frames] [max_side]`
 
 #![cfg_attr(target_arch = "wasm32", allow(unused))]
 
@@ -7,7 +7,7 @@ fn main() -> Result<(), Box<dyn std::error::Error>> {
     let input = a.get(1).ok_or("usage: seq_bench <clip> [frames] [max_side]")?;
     let n: usize = a.get(2).map(|s| s.parse()).transpose()?.unwrap_or(120);
     let max_side: Option<u32> = a.get(3).map(|s| s.parse()).transpose()?;
-    let mut r = dac_video::FrameReader::open(input.as_ref())?;
+    let mut r = lcc_video::FrameReader::open(input.as_ref())?;
     r.seek(0.0);
     let start = std::time::Instant::now();
     let mut got = 0;

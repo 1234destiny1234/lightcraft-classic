@@ -59,7 +59,7 @@ fn import_params_carry_the_session() {
 
 #[test]
 fn session_file_round_trips_and_damage_is_reported() {
-    let d = std::env::temp_dir().join(format!("dac-tether-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-tether-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     assert_eq!(StudioSession::load(&d).unwrap(), None);
@@ -82,7 +82,7 @@ fn session_file_round_trips_and_damage_is_reported() {
 /// partial temp file behind.
 #[test]
 fn full_disk_save_leaves_no_temp_file() {
-    let d = std::env::temp_dir().join(format!("dac-tether-full-{}", std::process::id()));
+    let d = std::env::temp_dir().join(format!("lcc-tether-full-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
     std::fs::create_dir_all(&d).unwrap();
     let s = StudioSession::new("A", "/w");

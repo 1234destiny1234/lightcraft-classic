@@ -7,7 +7,7 @@ use std::sync::OnceLock;
 use egui::{Key, Modifiers};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 
 /// The Classic keymap set and keymap files (fork-owned).
 #[path = "keymap_classic.rs"]
@@ -42,7 +42,7 @@ pub fn bindable() -> &'static [Bindable] {
             }
         }
         let ui_keys: Vec<(Modifiers, Key)> = v.iter().filter_map(|b| b.default.and_then(parse)).collect();
-        for c in dac_engine::command_specs() {
+        for c in lcc_engine::command_specs() {
             if v.iter().any(|b| b.id == c.id) {
                 continue;
             }
@@ -133,7 +133,7 @@ pub fn reset(keymap: &mut Keymap, id: &str) -> Result<Vec<&'static str>, String>
 }
 
 /// `app.setShortcut {id, shortcut?, reset?}`: `shortcut` null or `""` removes it.
-pub fn set_shortcut(app: &mut DacApp, p: &Value) -> Result<Value, String> {
+pub fn set_shortcut(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let id = p.get("id").and_then(Value::as_str).ok_or("missing id")?;
     let keymap = &mut app.ui.settings.keymap;
     let lost = if p.get("reset").and_then(Value::as_bool).unwrap_or(false) {
@@ -309,7 +309,7 @@ fn grid_bracket_command(keymap: &Keymap, grid: bool, id: &'static str, shortcut:
 
 /// Content widgets keep keyboard ownership, including text fields and arrow-driven sliders.
 /// Dock chrome owns activation, traversal, resizing and cancellation; its other keys reach commands.
-fn keyboard_owned(app: &DacApp, ctx: &egui::Context) -> bool {
+fn keyboard_owned(app: &LccApp, ctx: &egui::Context) -> bool {
     if !ctx.egui_wants_keyboard_input() {
         // Escape drops egui focus before shortcuts run; keep the numeric edit's whole input batch.
         return ctx.input(|input| input.key_pressed(Key::Escape))
@@ -334,7 +334,7 @@ fn keyboard_owned(app: &DacApp, ctx: &egui::Context) -> bool {
     })
 }
 
-pub fn handle(app: &mut DacApp, ctx: &egui::Context) {
+pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
     if !matches!(app.ui.dialog, Some(crate::state::Dialog::Shortcuts)) {
         app.recording_shortcut = None;
     }
@@ -408,7 +408,7 @@ pub fn handle(app: &mut DacApp, ctx: &egui::Context) {
     use crate::panels::compare;
     // rating/flag/label keys: in Compare/Survey they act on the active photo only; Shift+key or
     // Auto Advance then moves on (next candidate in Compare, next photo elsewhere)
-    let cull = |app: &mut DacApp, id: &str, mut params: serde_json::Value, advance: bool| {
+    let cull = |app: &mut LccApp, id: &str, mut params: serde_json::Value, advance: bool| {
         compare::target_active(app, &mut params);
         let ok = app.run(id, params).is_ok();
         if ok && (advance || app.ui.auto_advance) {
@@ -573,7 +573,7 @@ pub fn handle(app: &mut DacApp, ctx: &egui::Context) {
     }
 }
 
-pub(crate) fn library_grid(app: &DacApp) -> bool {
+pub(crate) fn library_grid(app: &LccApp) -> bool {
     matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid)
 }
 
@@ -581,8 +581,8 @@ pub(crate) fn library_grid(app: &DacApp) -> bool {
 mod tests {
 
     fn library() -> crate::headless::Headless {
-        use dac_catalog::{Op, Photo, PhotoId, Source};
-        let mut session = dac_engine::Session::new();
+        use lcc_catalog::{Op, Photo, PhotoId, Source};
+        let mut session = lcc_engine::Session::new();
         for id in 1..=4 {
             let photo = Photo::new(
                 PhotoId(id),
@@ -597,7 +597,7 @@ mod tests {
         }
         session.execute("library.sort", &json!({"key": "fileName", "ascending": true})).unwrap();
         session.execute("library.select", &json!({"ids": [1]})).unwrap();
-        let app = DacApp::new(session, crate::Services { png: None, ..Default::default() });
+        let app = LccApp::new(session, crate::Services { png: None, ..Default::default() });
         let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
         h.app.ui.view = crate::state::ViewMode::PhotoGrid;
         for _ in 0..3 {
@@ -613,7 +613,7 @@ mod tests {
 
     #[test]
     fn library_rating_labels_flags_and_undo() {
-        use dac_catalog::{ColorLabel, Flag, PhotoId};
+        use lcc_catalog::{ColorLabel, Flag, PhotoId};
         for view in [crate::state::ViewMode::PhotoGrid, crate::state::ViewMode::SquareGrid] {
             let mut h = library();
             h.app.ui.view = view;
@@ -645,7 +645,7 @@ mod tests {
 
     #[test]
     fn shift_culling_keys_advance_exactly_once() {
-        use dac_catalog::{ColorLabel, Flag, PhotoId};
+        use lcc_catalog::{ColorLabel, Flag, PhotoId};
         for auto in [false, true] {
             for (k, rating, label, flag) in [
                 ("0", 0, None, Flag::Pick),
@@ -681,18 +681,18 @@ mod tests {
         let mut h = library();
         h.app.ui.view = crate::state::ViewMode::SquareGrid;
         key(&mut h, "P", true);
-        assert_eq!(h.app.session.active(), Some(dac_catalog::PhotoId(2)));
+        assert_eq!(h.app.session.active(), Some(lcc_catalog::PhotoId(2)));
         assert!(!h.app.ui.presets, "grid Shift+P must not open Presets");
         assert_eq!(h.app.ui.view, crate::state::ViewMode::SquareGrid);
         h.app.ui.view = crate::state::ViewMode::Detail;
         key(&mut h, "P", true);
         assert!(h.app.ui.presets);
-        assert_eq!(h.app.session.active(), Some(dac_catalog::PhotoId(2)));
+        assert_eq!(h.app.session.active(), Some(lcc_catalog::PhotoId(2)));
     }
 
     #[test]
     fn shift_label_targets_only_candidate_in_compare() {
-        use dac_catalog::{ColorLabel, PhotoId};
+        use lcc_catalog::{ColorLabel, PhotoId};
         let mut h = library();
         h.app.session.execute("library.select", &json!({"ids": [1, 2], "active": 1})).unwrap();
         crate::panels::compare::enter_compare(&mut h.app).unwrap();
@@ -704,7 +704,7 @@ mod tests {
 
     #[test]
     fn plain_culling_keys_auto_advance_once() {
-        use dac_catalog::PhotoId;
+        use lcc_catalog::PhotoId;
         for k in ["0", "5", "6", "9", "P", "X", "U"] {
             let mut h = library();
             h.app.ui.auto_advance = true;
@@ -715,7 +715,7 @@ mod tests {
 
     #[test]
     fn color_label_actions_show_feedback_only_after_success() {
-        use dac_catalog::PhotoId;
+        use lcc_catalog::PhotoId;
         let mut h = library();
         for shift in [false, true] {
             for (k, name) in [("6", "Red"), ("7", "Yellow"), ("8", "Green"), ("9", "Blue")] {
@@ -748,7 +748,7 @@ mod tests {
 
     #[test]
     fn shifted_number_punctuation_rates_and_advances() {
-        use dac_catalog::PhotoId;
+        use lcc_catalog::PhotoId;
         let mut h = library();
         // A real winit event on a layout with Shift+1 = !, rather than ui.key's logical Num1.
         for pressed in [true, false] {
@@ -767,7 +767,7 @@ mod tests {
 
     #[test]
     fn library_keys_yield_to_search_and_crop_context() {
-        use dac_catalog::{Flag, PhotoId};
+        use lcc_catalog::{Flag, PhotoId};
         let mut h = library();
         let r = h.request("ui.clickWidget", json!({"id": "field:search"}), std::time::Duration::from_secs(20));
         assert_eq!(r["ok"], true, "{r}");
@@ -808,7 +808,7 @@ mod tests {
                 assert!(parse(sc).is_some(), "{id}: {sc}");
             }
         }
-        for c in dac_engine::command_specs() {
+        for c in lcc_engine::command_specs() {
             if let Some(sc) = c.shortcut {
                 assert!(parse(sc).is_some(), "{}: {sc}", c.id);
             }
@@ -820,7 +820,7 @@ mod tests {
         let ui: Vec<&str> = crate::menus::ui_commands().map(|c| c.0).collect();
         for (sc, id, params) in ALIASES {
             assert!(parse(sc).is_some(), "{id}: {sc}");
-            assert!(ui.contains(id) || dac_engine::find_command(id).is_some(), "alias {sc} → unknown command {id}");
+            assert!(ui.contains(id) || lcc_engine::find_command(id).is_some(), "alias {sc} → unknown command {id}");
             assert!(serde_json::from_str::<serde_json::Value>(params).is_ok(), "alias {sc}: bad params");
         }
     }
@@ -909,7 +909,7 @@ mod tests {
             ui.push((parse(sc).unwrap(), format!("alias {id}")));
         }
         let mut engine: Vec<((Modifiers, Key), &str)> = Vec::new();
-        for c in dac_engine::command_specs() {
+        for c in lcc_engine::command_specs() {
             if let Some(k) = c.shortcut.and_then(parse) {
                 engine.push((k, c.id));
             }

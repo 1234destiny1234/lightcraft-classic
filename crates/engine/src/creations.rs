@@ -1,4 +1,4 @@
-//! Print, Book, Slideshow and Web layouts on the engine: `dac_layout` documents filled with
+//! Print, Book, Slideshow and Web layouts on the engine: `lcc_layout` documents filled with
 //! catalog photos, rendered with the export pipeline (so a print matches an export), and saved
 //! creations (albums carrying a layout document, catalog format 7).
 //!
@@ -13,12 +13,12 @@
 
 use std::collections::HashMap;
 
-use dac_catalog::{Album, AlbumId, Creation, Op, Photo, PhotoId};
-use dac_layout::render::{PhotoSource, RenderOptions, Rendered, render_page};
-use dac_layout::tokens::PhotoInfo;
-use dac_layout::{CellKind, CreationKind, Document, Page, Size, Template, builtin_templates};
-use dac_pipeline::{OutputDepth, OutputSpace};
-use dac_raster::Rgba8;
+use lcc_catalog::{Album, AlbumId, Creation, Op, Photo, PhotoId};
+use lcc_layout::render::{PhotoSource, RenderOptions, Rendered, render_page};
+use lcc_layout::tokens::PhotoInfo;
+use lcc_layout::{CellKind, CreationKind, Document, Page, Size, Template, builtin_templates};
+use lcc_pipeline::{OutputDepth, OutputSpace};
+use lcc_raster::Rgba8;
 use serde_json::{Value, json};
 
 use crate::cmd::{CommandSpec, always, bad, cmd};
@@ -71,42 +71,42 @@ pub struct PreparedPhotos {
     images: HashMap<String, Rgba8>,
     infos: HashMap<String, PhotoInfo>,
     /// 16-bit renders (16-bit print output).
-    deep: HashMap<String, dac_layout::render::Rgb16>,
+    deep: HashMap<String, lcc_layout::render::Rgb16>,
 }
 
 impl PreparedPhotos {
     /// Print sharpening: an output unsharp mask on every photo, rendered at its printed size.
-    pub fn sharpen_for_print(&mut self, level: dac_print::PrintSharpening, media: dac_print::PrintMedia) {
+    pub fn sharpen_for_print(&mut self, level: lcc_print::PrintSharpening, media: lcc_print::PrintMedia) {
         use crate::export::{SharpenAmount, SharpenFor};
         let amount = match level {
-            dac_print::PrintSharpening::Off => return,
-            dac_print::PrintSharpening::Low => SharpenAmount::Low,
-            dac_print::PrintSharpening::Standard => SharpenAmount::Standard,
-            dac_print::PrintSharpening::High => SharpenAmount::High,
+            lcc_print::PrintSharpening::Off => return,
+            lcc_print::PrintSharpening::Low => SharpenAmount::Low,
+            lcc_print::PrintSharpening::Standard => SharpenAmount::Standard,
+            lcc_print::PrintSharpening::High => SharpenAmount::High,
         };
         let target = match media {
-            dac_print::PrintMedia::Glossy => SharpenFor::Glossy,
-            dac_print::PrintMedia::Matte => SharpenFor::Matte,
+            lcc_print::PrintMedia::Glossy => SharpenFor::Glossy,
+            lcc_print::PrintMedia::Matte => SharpenFor::Matte,
         };
         for img in self.images.values_mut() {
             crate::export::output_sharpen(img, target, amount);
         }
         for d in self.deep.values_mut() {
-            let mut img = dac_pipeline::DeepImage {
+            let mut img = lcc_pipeline::DeepImage {
                 width: d.width,
                 height: d.height,
                 space: OutputSpace::Srgb,
-                samples: dac_pipeline::DeepSamples::U16(std::mem::take(&mut d.data)),
+                samples: lcc_pipeline::DeepSamples::U16(std::mem::take(&mut d.data)),
             };
             crate::export::output_sharpen_deep(&mut img, target, amount);
-            if let dac_pipeline::DeepSamples::U16(v) = img.samples {
+            if let lcc_pipeline::DeepSamples::U16(v) = img.samples {
                 d.data = v;
             }
         }
     }
 
     /// Print Adjustment and the printer profile (Print Job ▸ Color Management) on every photo.
-    pub fn apply_print_color(&mut self, job: &dac_print::color::ColorJob) {
+    pub fn apply_print_color(&mut self, job: &lcc_print::color::ColorJob) {
         for img in self.images.values_mut() {
             job.apply8(img);
         }
@@ -123,7 +123,7 @@ impl PhotoSource for PreparedPhotos {
     fn info(&self, photo: &str) -> PhotoInfo {
         self.infos.get(photo).cloned().unwrap_or_default()
     }
-    fn image16(&self, photo: &str) -> Option<dac_layout::render::Rgb16> {
+    fn image16(&self, photo: &str) -> Option<lcc_layout::render::Rgb16> {
         self.deep.get(photo).cloned()
     }
 }
@@ -144,7 +144,7 @@ pub fn prepare_jobs_depth(
     dpi: f32,
     depth: OutputDepth,
 ) -> std::result::Result<(Vec<(String, RenderJob)>, HashMap<String, PhotoInfo>), String> {
-    let k = dpi / dac_layout::PT_PER_INCH;
+    let k = dpi / lcc_layout::PT_PER_INCH;
     let mut sizes: HashMap<String, usize> = HashMap::new();
     for page in &doc.pages {
         for c in &page.cells {
@@ -182,7 +182,7 @@ pub fn run_jobs(jobs: Vec<(String, RenderJob)>, infos: HashMap<String, PhotoInfo
     let mut images = HashMap::with_capacity(jobs.len());
     let mut deep = HashMap::new();
     let mut jobs = jobs.into_iter().peekable();
-    type Done = std::result::Result<(Rgba8, Option<dac_pipeline::DeepImage>), String>;
+    type Done = std::result::Result<(Rgba8, Option<lcc_pipeline::DeepImage>), String>;
     let run = |j: RenderJob| -> Done { j.run().rendered.map(|r| (r.image, r.deep)) };
     while jobs.peek().is_some() {
         let batch: Vec<(String, RenderJob)> = jobs.by_ref().take(width).collect();
@@ -197,9 +197,9 @@ pub fn run_jobs(jobs: Vec<(String, RenderJob)>, infos: HashMap<String, PhotoInfo
         for (key, image) in done {
             let (image, d) = image?;
             if let Some(d) = d
-                && let dac_pipeline::DeepSamples::U16(data) = d.samples
+                && let lcc_pipeline::DeepSamples::U16(data) = d.samples
             {
-                let rgb = dac_layout::render::Rgb16 { width: d.width, height: d.height, data };
+                let rgb = lcc_layout::render::Rgb16 { width: d.width, height: d.height, data };
                 if rgb.is_valid() {
                     deep.insert(key.clone(), rgb);
                 }
@@ -216,7 +216,7 @@ pub fn render_document(s: &mut Session, doc: &Document, opt: &RenderOptions) -> 
     let (jobs, infos) = prepare_jobs(s, doc, opt.dpi)?;
     let photos = run_jobs(jobs, infos)?;
     let n = doc.pages.len();
-    let text = dac_print::text::ShapedText::new();
+    let text = lcc_print::text::ShapedText::new();
     doc.pages
         .iter()
         .enumerate()
@@ -285,12 +285,12 @@ fn render_cmd(s: &mut Session, p: &Value, c: &str, kind: CreationKind) -> Result
     if path.to_ascii_lowercase().ends_with(".pdf") {
         // vector PDF: photos at `dpi`, shaped text with embedded fonts, optional crop marks
         s.check_write_target(path).map_err(|e| bad(c, e))?;
-        let mut settings = dac_print::PrintSettings::default();
+        let mut settings = lcc_print::PrintSettings::default();
         settings.job.dpi = dpi.clamp(36.0, 1200.0);
         settings.options.crop_marks = p.get("cropMarks").and_then(Value::as_bool).unwrap_or(false);
         let (jobs, infos) = prepare_jobs(s, &doc, settings.job.dpi).map_err(|e| bad(c, e))?;
         let photos = run_jobs(jobs, infos).map_err(|e| bad(c, e))?;
-        let out = dac_print::output::to_pdf(&doc, &settings, &photos, &dac_print::text::ShapedText::new(), &Default::default(), &mut |_, _| true)
+        let out = lcc_print::output::to_pdf(&doc, &settings, &photos, &lcc_print::text::ShapedText::new(), &Default::default(), &mut |_, _| true)
             .map_err(|e| bad(c, e.to_string()))?;
         let bytes = out.files.into_iter().next().unwrap_or_default();
         crate::export::write_file(path, &bytes).map_err(|e| bad(c, e))?;
@@ -553,10 +553,10 @@ mod tests {
         let edge = Rgba8::from_fn(32, 32, |x, _| if x < 16 { [80, 80, 80, 255] } else { [170, 170, 170, 255] });
         let make = || PreparedPhotos { images: HashMap::from([("1".to_string(), edge.clone())]), infos: HashMap::new(), deep: HashMap::new() };
         let mut off = make();
-        off.sharpen_for_print(dac_print::PrintSharpening::Off, dac_print::PrintMedia::Matte);
+        off.sharpen_for_print(lcc_print::PrintSharpening::Off, lcc_print::PrintMedia::Matte);
         assert_eq!(off.images["1"], edge);
         let mut high = make();
-        high.sharpen_for_print(dac_print::PrintSharpening::High, dac_print::PrintMedia::Matte);
+        high.sharpen_for_print(lcc_print::PrintSharpening::High, lcc_print::PrintMedia::Matte);
         let (dark, light) = (high.images["1"].get(15, 16)[0], high.images["1"].get(16, 16)[0]);
         assert!(dark < 80 && light > 170, "unsharp mask overshoots at the edge: {dark} {light}");
     }

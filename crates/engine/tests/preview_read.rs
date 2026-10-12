@@ -2,7 +2,7 @@
 //! network share, which is where reading only the header instead of the whole raw matters:
 //!
 //!   LC_PREVIEW_RAW="/run/user/1000/gvfs/smb-share:.../DSCF0001.RAF" \
-//!     cargo test --release -p dac-engine --test preview_read -- --ignored --nocapture
+//!     cargo test --release -p lcc-engine --test preview_read -- --ignored --nocapture
 //!
 //! It reports what the preview cost and fails when the read is not the small part of the file the
 //! header path promises. Skipped without `LC_PREVIEW_RAW` (there is no committed raw fixture: media
@@ -20,7 +20,7 @@ fn a_preview_reads_only_the_header_and_the_preview() {
     assert!(file_len > 0, "empty file");
 
     let started = Instant::now();
-    let window = dac_engine::files::preview_window(&path).expect("the file reads").expect("it carries an embedded preview the header can point at");
+    let window = lcc_engine::files::preview_window(&path).expect("the file reads").expect("it carries an embedded preview the header can point at");
     let elapsed = started.elapsed();
     let (_, preview, read) = window;
 

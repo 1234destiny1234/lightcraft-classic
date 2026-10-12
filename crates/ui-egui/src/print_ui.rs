@@ -1,8 +1,8 @@
 //! The Print module: template browser (left), page canvas with rulers and guides (centre),
 //! layout, image, page and print-job panels (right), filmstrip (bottom).
 //!
-//! The settings are a [`dac_print::PrintSettings`]; the pages come from
-//! [`dac_print::PrintSettings::build`] over the selected photos (all photos in the filmstrip when
+//! The settings are a [`lcc_print::PrintSettings`]; the pages come from
+//! [`lcc_print::PrintSettings::build`] over the selected photos (all photos in the filmstrip when
 //! one or none is selected… as Print One prints just the active photo). The canvas draws the same
 //! layout from thumbnails; Print renders every photo with the export pipeline at the print
 //! resolution on a worker thread and writes a PDF or JPEG files, or sends the PDF to an IPP/CUPS
@@ -18,26 +18,26 @@
 //! printer), `printui.trustCertificate {fingerprint?, uri?}` (an `ipps://` printer's certificate)
 //! and `printui.trustOnFirstUse {on}`.
 
-use dac_catalog::PhotoId;
-use dac_layout::tokens::{PhotoInfo, expand};
-use dac_layout::{Align, CellKind, Document, Fit};
-use dac_print::job::{PAPERS, builtin_templates};
-use dac_print::{Destination, LayoutStyle, PrintSettings};
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, StrokeKind, pos2, vec2};
+use lcc_catalog::PhotoId;
+use lcc_layout::tokens::{PhotoInfo, expand};
+use lcc_layout::{Align, CellKind, Document, Fit};
+use lcc_print::job::{PAPERS, builtin_templates};
+use lcc_print::{Destination, LayoutStyle, PrintSettings};
 use serde_json::{Value, json};
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::{Edge, Module, ModuleId, ModuleKey, PanelId};
 use crate::theme::Tokens;
 use crate::widgets::register;
 
 /// Most photos one print job takes from the filmstrip.
-const MAX_JOB_PHOTOS: usize = dac_print::job::MAX_PHOTOS;
+const MAX_JOB_PHOTOS: usize = lcc_print::job::MAX_PHOTOS;
 const LEFT_W: f32 = 220.0;
 const RIGHT_W: f32 = 320.0;
 const RULER: f32 = 18.0;
 
-/// The module's state (lives in [`DacApp::print`]).
+/// The module's state (lives in [`LccApp::print`]).
 #[derive(Clone, Debug)]
 pub struct PrintUi {
     pub settings: PrintSettings,
@@ -54,14 +54,14 @@ pub struct PrintUi {
     pub dimensions: bool,
     pub printer_uri: String,
     pub cups_server: String,
-    pub printers: Vec<dac_print::ipp::PrinterEntry>,
+    pub printers: Vec<lcc_print::ipp::PrinterEntry>,
     pub output_path: String,
     pub busy: bool,
     pub last: Option<Value>,
     /// The Saved Print (collection) last saved or opened.
     pub creation: Option<u64>,
     /// Paper sizes the chosen printer reports (IPP `media-col-database` / `media-supported`).
-    pub media: Vec<dac_print::ipp::Media>,
+    pub media: Vec<lcc_print::ipp::Media>,
     /// `<config>/print.json` has been read.
     pub loaded: bool,
     /// What was last written to (or read from) `print.json`, to save only on change.
@@ -69,7 +69,7 @@ pub struct PrintUi {
     /// The printer profile's description (Color Management ▸ Profile).
     pub profile_name: Option<String>,
     /// The options the chosen printer offers (paper type, tray, quality, two-sided).
-    pub options: dac_print::ipp::PrinterOptions,
+    pub options: lcc_print::ipp::PrinterOptions,
     /// An `ipps://` printer whose certificate was refused: (`host:port`, SHA-256 fingerprint).
     pub untrusted: Option<(String, String)>,
     /// Printer certificates trusted by fingerprint (`host:port`, fingerprint), saved in print.json.
@@ -134,18 +134,18 @@ pub const COMMANDS: &[crate::menus::UiCommand] = &[
 
 /// Push the trusted printer certificates and the first-use setting to the IPP client.
 fn apply_trust(pu: &PrintUi) {
-    dac_print::ipp::set_trusted_certificates(&pu.trusted_certs);
-    dac_print::ipp::set_trust_on_first_use(pu.trust_on_first_use);
+    lcc_print::ipp::set_trusted_certificates(&pu.trusted_certs);
+    lcc_print::ipp::set_trust_on_first_use(pu.trust_on_first_use);
 }
 
 /// Take in certificates the IPP client trusted on first use (so they are saved).
 fn sync_trust(pu: &mut PrintUi) {
-    pu.trusted_certs = dac_print::ipp::trusted_certificates();
+    pu.trusted_certs = lcc_print::ipp::trusted_certificates();
 }
 
 /// The photos a print takes: the selection when it has more than one photo, else every photo in
 /// the filmstrip (Print One: the active photo).
-pub fn job_photos(app: &mut DacApp, one: bool) -> Vec<PhotoId> {
+pub fn job_photos(app: &mut LccApp, one: bool) -> Vec<PhotoId> {
     if one {
         return app.session.active().into_iter().collect();
     }
@@ -161,12 +161,12 @@ fn ids_text(ids: &[PhotoId]) -> Vec<String> {
 }
 
 /// Token values of a catalog photo.
-fn info_of(app: &DacApp, id: &str) -> PhotoInfo {
-    id.parse::<u64>().ok().and_then(|n| app.session.catalog.photo(PhotoId(n))).map(|p| dac_engine::creations::photo_info(p)).unwrap_or_default()
+fn info_of(app: &LccApp, id: &str) -> PhotoInfo {
+    id.parse::<u64>().ok().and_then(|n| app.session.catalog.photo(PhotoId(n))).map(|p| lcc_engine::creations::photo_info(p)).unwrap_or_default()
 }
 
 /// The document for the current settings and photos.
-fn document(app: &mut DacApp) -> Result<(Document, Vec<PhotoId>), String> {
+fn document(app: &mut LccApp) -> Result<(Document, Vec<PhotoId>), String> {
     let ids = job_photos(app, false);
     let doc = app.print.settings.build(&ids_text(&ids)).map_err(|e| e.to_string())?;
     Ok((doc, ids))
@@ -190,7 +190,7 @@ fn merge(a: &mut Value, b: &Value) {
 }
 
 /// Is `id` one of ours, and is it enabled?
-pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
+pub fn enabled(app: &LccApp, id: &str) -> Option<bool> {
     if !COMMANDS.iter().any(|c| c.0 == id) {
         return None;
     }
@@ -201,7 +201,7 @@ pub fn enabled(app: &DacApp, id: &str) -> Option<bool> {
 }
 
 /// Run one of our commands; `None`: not one.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if !COMMANDS.iter().any(|c| c.0 == id) {
         return None;
     }
@@ -219,13 +219,13 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
 
 /// `<config>/print.json`: the user templates, the current settings and template, the printer.
 #[cfg(not(target_arch = "wasm32"))]
-fn store_path(app: &DacApp) -> Option<std::path::PathBuf> {
+fn store_path(app: &LccApp) -> Option<std::path::PathBuf> {
     app.session.remote.connections_path.as_ref().and_then(|p| p.parent()).map(|d| d.join("print.json"))
 }
 
 /// The web build keeps print settings for the session only.
 #[cfg(target_arch = "wasm32")]
-fn store_path(_app: &DacApp) -> Option<std::path::PathBuf> {
+fn store_path(_app: &LccApp) -> Option<std::path::PathBuf> {
     None
 }
 
@@ -268,7 +268,7 @@ fn apply_stored(pu: &mut PrintUi, v: &Value) {
         pu.trusted_certs = list
             .iter()
             .filter_map(|c| Some((c.get("printer")?.as_str()?.to_string(), c.get("fingerprint")?.as_str()?.to_string())))
-            .filter(|(_, f)| dac_print::ipp::is_fingerprint(f))
+            .filter(|(_, f)| lcc_print::ipp::is_fingerprint(f))
             .take(500)
             .collect();
     }
@@ -278,7 +278,7 @@ fn apply_stored(pu: &mut PrintUi, v: &Value) {
 }
 
 /// Read `print.json` once per session.
-pub fn ensure_loaded(app: &mut DacApp) {
+pub fn ensure_loaded(app: &mut LccApp) {
     if app.print.loaded {
         return;
     }
@@ -297,7 +297,7 @@ pub fn ensure_loaded(app: &mut DacApp) {
 }
 
 /// Write `print.json` when the settings, templates or printer changed since the last write.
-pub fn persist(app: &mut DacApp) -> Result<(), String> {
+pub fn persist(app: &mut LccApp) -> Result<(), String> {
     let now = stored_json(&app.print);
     if app.print.stored.as_ref() == Some(&now) {
         return Ok(());
@@ -305,10 +305,10 @@ pub fn persist(app: &mut DacApp) -> Result<(), String> {
     let Some(path) = store_path(app) else { return Ok(()) };
     let bytes = serde_json::to_vec_pretty(&now).map_err(|e| e.to_string())?;
     app.print.stored = Some(now);
-    dac_engine::export::write_file_durable(&path.to_string_lossy(), &bytes)
+    lcc_engine::export::write_file_durable(&path.to_string_lossy(), &bytes)
 }
 
-fn state_json(app: &mut DacApp) -> Value {
+fn state_json(app: &mut LccApp) -> Value {
     let (pages, photos, err) = match document(app) {
         Ok((d, ids)) => (d.pages.len(), ids.len(), None),
         Err(e) => (0, 0, Some(e)),
@@ -344,7 +344,7 @@ fn state_json(app: &mut DacApp) -> Value {
     })
 }
 
-fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     match id {
         "printui.template" => {
             let name = p.get("name").and_then(Value::as_str).ok_or("missing name")?;
@@ -365,10 +365,10 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             let cur = app.print.settings.page.size;
             let landscape = p.get("landscape").and_then(Value::as_bool).unwrap_or(cur.w > cur.h);
             let (size, margins) = match (p.get("paper").and_then(Value::as_str), p.get("media").and_then(Value::as_str)) {
-                (Some(k), _) => (dac_print::job::paper(k).ok_or_else(|| format!("unknown paper {k}"))?.size, None),
+                (Some(k), _) => (lcc_print::job::paper(k).ok_or_else(|| format!("unknown paper {k}"))?.size, None),
                 (None, Some(m)) => match app.print.media.iter().find(|x| x.name == m) {
                     Some(x) => (x.size, Some(x.margins)),
-                    None => (dac_print::ipp::pwg_media_size(m).ok_or_else(|| format!("unknown printer paper {m}"))?, None),
+                    None => (lcc_print::ipp::pwg_media_size(m).ok_or_else(|| format!("unknown printer paper {m}"))?, None),
                 },
                 (None, None) => (cur, None),
             };
@@ -434,7 +434,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                     app,
                     "Reading printer paper sizes",
                     None,
-                    move || dac_print::ipp::printer_info(&uri),
+                    move || lcc_print::ipp::printer_info(&uri),
                     |app, ctx, r| {
                         sync_trust(&mut app.print);
                         match r {
@@ -445,8 +445,8 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                                 app.print.untrusted = None;
                                 app.toast(ctx, crate::i18n::tr_format!("{n} paper size(s) from the printer", n = n));
                             }
-                            Err(dac_print::PrintError::UntrustedCertificate { printer, fingerprint }) => {
-                                let e = dac_print::PrintError::UntrustedCertificate { printer: printer.clone(), fingerprint: fingerprint.clone() };
+                            Err(lcc_print::PrintError::UntrustedCertificate { printer, fingerprint }) => {
+                                let e = lcc_print::PrintError::UntrustedCertificate { printer: printer.clone(), fingerprint: fingerprint.clone() };
                                 app.print.untrusted = Some((printer, fingerprint));
                                 app.toast_error(ctx, e.to_string());
                             }
@@ -508,7 +508,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             if uri.trim().is_empty() {
                 return Err("no printer: give uri".into());
             }
-            dac_print::ipp::trust_certificate(&uri, &fp).map_err(|e| e.to_string())?;
+            lcc_print::ipp::trust_certificate(&uri, &fp).map_err(|e| e.to_string())?;
             sync_trust(&mut app.print);
             app.print.untrusted = None;
             return Ok(json!({"trusted": app.print.trusted_certs.iter().map(|(h, f)| json!({"printer": h, "fingerprint": f})).collect::<Vec<_>>()}));
@@ -535,7 +535,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             };
             let mut color = app.print.settings.job.color.clone();
             color.profile = path;
-            let job = dac_print::color::ColorJob::load(&color).map_err(|e| e.to_string())?;
+            let job = lcc_print::color::ColorJob::load(&color).map_err(|e| e.to_string())?;
             app.print.settings.job.color = color;
             app.print.profile_name = job.profile_name;
         }
@@ -548,7 +548,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                     app,
                     "Finding printers",
                     None,
-                    move || dac_print::ipp::cups_printers(&server),
+                    move || lcc_print::ipp::cups_printers(&server),
                     |app, ctx, r| match r {
                         Ok(list) => {
                             if app.print.printer_uri.is_empty()
@@ -581,7 +581,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             let same = app.print.creation.filter(|c| {
                 app.session
                     .catalog
-                    .album(dac_catalog::AlbumId(*c))
+                    .album(lcc_catalog::AlbumId(*c))
                     .is_some_and(|a| a.name == name && a.creation.as_ref().is_some_and(|k| k.kind == "print"))
             });
             let cid = match same {
@@ -618,7 +618,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
 }
 
 /// Starts a print: renders photos on a worker thread, then writes the file(s) or sends the job.
-fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn start(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     if cfg!(target_arch = "wasm32") {
         return Err("printing is not available in the browser".into());
     }
@@ -640,7 +640,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             if printer.trim().is_empty() {
                 return Err("choose a printer (Find Printers, or enter an ipp:// URI)".into());
             }
-            dac_print::ipp::IppUri::parse(&printer).map_err(|e| e.to_string())?;
+            lcc_print::ipp::IppUri::parse(&printer).map_err(|e| e.to_string())?;
             String::new()
         }
         Destination::Pdf | Destination::Jpeg => {
@@ -672,39 +672,39 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
     // draft mode prints from preview-sized renders
     let dpi = if settings.job.draft { settings.job.dpi.min(150.0) } else { settings.job.dpi };
     // Color Management: read the printer profile now so a bad one is refused before rendering
-    let color = dac_print::color::ColorJob::load(&settings.job.color).map_err(|e| e.to_string())?;
+    let color = lcc_print::color::ColorJob::load(&settings.job.color).map_err(|e| e.to_string())?;
     let depth = if settings.job.color.bit16 && settings.destination != Destination::Jpeg {
-        dac_pipeline::OutputDepth::U16
+        lcc_pipeline::OutputDepth::U16
     } else {
-        dac_pipeline::OutputDepth::U8
+        lcc_pipeline::OutputDepth::U8
     };
-    let (jobs, infos) = dac_engine::creations::prepare_jobs_depth(&mut app.session, &doc, dpi, depth)?;
+    let (jobs, infos) = lcc_engine::creations::prepare_jobs_depth(&mut app.session, &doc, dpi, depth)?;
     let pages = doc.pages.len();
     let title = app.print.template.clone().unwrap_or_else(|| "Print".into());
     let write = app.services.write_shared.clone();
     app.print.busy = true;
     let dest = settings.destination.clone();
     let work = move || -> Result<Value, String> {
-        let mut src = dac_engine::creations::run_jobs(jobs, infos)?;
+        let mut src = lcc_engine::creations::run_jobs(jobs, infos)?;
         src.sharpen_for_print(settings.job.sharpening, settings.job.media);
         src.apply_print_color(&color);
-        let text = dac_print::text::ShapedText::with_system_fonts();
+        let text = lcc_print::text::ShapedText::with_system_fonts();
         let progress = &mut |_: usize, _: usize| true;
         let write_file = |path: &str, bytes: &[u8]| -> Result<(), String> {
             match &write {
                 Some(w) => w(path, bytes),
-                None => dac_engine::export::write_file(path, bytes),
+                None => lcc_engine::export::write_file(path, bytes),
             }
         };
         match dest {
             Destination::Pdf | Destination::Printer => {
-                let opt = dac_print::output::PdfOptions {
-                    metadata: dac_pdf::Metadata {
+                let opt = lcc_print::output::PdfOptions {
+                    metadata: lcc_pdf::Metadata {
                         title: Some(title.clone()),
-                        creator: Some(dac_brand::DISPLAY_NAME.to_string()),
+                        creator: Some(lcc_brand::DISPLAY_NAME.to_string()),
                         ..Default::default()
                     },
-                    output_intent: color.profile.clone().map(|profile| dac_pdf::OutputIntent {
+                    output_intent: color.profile.clone().map(|profile| lcc_pdf::OutputIntent {
                         subtype: "GTS_PDFX".into(),
                         identifier: color.profile_name.clone().unwrap_or_else(|| "Printer profile".into()),
                         info: color.profile_name.clone(),
@@ -715,7 +715,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                 };
                 if dest == Destination::Printer {
                     let user = std::env::var("USER").or_else(|_| std::env::var("USERNAME")).unwrap_or_else(|_| "user".into());
-                    let send = dac_print::send::SendOptions {
+                    let send = lcc_print::send::SendOptions {
                         user,
                         title: title.clone(),
                         pdf: opt,
@@ -723,7 +723,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                         poll: std::time::Duration::from_millis(500),
                     };
                     let sent =
-                        dac_print::send::send_to_printer(&printer, &doc, &settings, &src, &text, &send, progress).map_err(|e| e.to_string())?;
+                        lcc_print::send::send_to_printer(&printer, &doc, &settings, &src, &text, &send, progress).map_err(|e| e.to_string())?;
                     return Ok(json!({
                         "printer": printer,
                         "job": sent.jobs.last().copied().unwrap_or(0),
@@ -735,7 +735,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                         "warnings": sent.warnings,
                     }));
                 }
-                let out = dac_print::output::to_pdf(&doc, &settings, &src, &text, &opt, progress).map_err(|e| e.to_string())?;
+                let out = lcc_print::output::to_pdf(&doc, &settings, &src, &text, &opt, progress).map_err(|e| e.to_string())?;
                 let bytes = out.files.into_iter().next().unwrap_or_default();
                 {
                     write_file(&path, &bytes)?;
@@ -743,7 +743,7 @@ fn start(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
                 }
             }
             Destination::Jpeg => {
-                let out = dac_print::output::to_jpeg_icc(&doc, &settings, &src, &text, color.profile.as_deref().map(Vec::as_slice), progress)
+                let out = lcc_print::output::to_jpeg_icc(&doc, &settings, &src, &text, color.profile.as_deref().map(Vec::as_slice), progress)
                     .map_err(|e| e.to_string())?;
                 let n = out.files.len();
                 let mut paths = Vec::new();
@@ -802,10 +802,10 @@ impl Module for PrintModule {
     fn right_panels(&self) -> &'static [PanelId] {
         &[]
     }
-    fn toolbar(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         toolbar(ui, app);
     }
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         center(ui, app);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
@@ -816,13 +816,13 @@ impl Module for PrintModule {
     }
 }
 
-fn cmd(app: &mut DacApp, ctx: &egui::Context, id: &str, p: Value) {
+fn cmd(app: &mut LccApp, ctx: &egui::Context, id: &str, p: Value) {
     if let Err(e) = app.run(id, p) {
         app.toast_error(ctx, e);
     }
 }
 
-fn toolbar(ui: &mut egui::Ui, app: &mut DacApp) {
+fn toolbar(ui: &mut egui::Ui, app: &mut LccApp) {
     let t = Tokens::get(ui.ctx());
     let n = document(app).map(|d| d.0.pages.len()).unwrap_or(0);
     let photos = job_photos(app, false).len();
@@ -860,7 +860,7 @@ fn toolbar(ui: &mut egui::Ui, app: &mut DacApp) {
         });
 }
 
-fn center(ui: &mut egui::Ui, app: &mut DacApp) {
+fn center(ui: &mut egui::Ui, app: &mut LccApp) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     ensure_loaded(app);
@@ -905,7 +905,7 @@ fn heading(ui: &mut egui::Ui, title: &str) {
     ui.separator();
 }
 
-fn template_browser(ui: &mut egui::Ui, app: &mut DacApp) {
+fn template_browser(ui: &mut egui::Ui, app: &mut LccApp) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     egui::ScrollArea::vertical().id_salt("print-templates").show(ui, |ui| {
@@ -952,7 +952,7 @@ fn template_browser(ui: &mut egui::Ui, app: &mut DacApp) {
         });
         heading(ui, "Saved Prints");
         let open = app.print.creation;
-        for c in dac_engine::creations::creations_of(&app.session, Some(dac_layout::CreationKind::Print)) {
+        for c in lcc_engine::creations::creations_of(&app.session, Some(lcc_layout::CreationKind::Print)) {
             let r = ui.selectable_label(open == Some(c.id.0), format!("{} ({})", c.name, c.photos.len()));
             register(&ctx, format!("print:creation:{}", c.id.0), r.rect);
             if r.clicked() {
@@ -988,7 +988,7 @@ fn template_browser(ui: &mut egui::Ui, app: &mut DacApp) {
     });
 }
 
-fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
+fn settings_panels(ui: &mut egui::Ui, app: &mut LccApp) {
     let ctx = ui.ctx().clone();
     let before = app.print.settings.clone();
     egui::ScrollArea::vertical().id_salt("print-settings").show(ui, |ui| {
@@ -1004,13 +1004,13 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
             register(&ctx, format!("print:style:{i}"), r.rect);
             if r.clicked() && style != i {
                 s.layout = match i {
-                    0 => LayoutStyle::SingleImage { grid: dac_layout::grid::Grid::new(1, 1) },
-                    1 => LayoutStyle::PicturePackage(dac_print::PackageSpec { cells: vec![dac_layout::Size::inches(5.0, 7.0)], gap: 9.0 }),
+                    0 => LayoutStyle::SingleImage { grid: lcc_layout::grid::Grid::new(1, 1) },
+                    1 => LayoutStyle::PicturePackage(lcc_print::PackageSpec { cells: vec![lcc_layout::Size::inches(5.0, 7.0)], gap: 9.0 }),
                     _ => {
                         let c = s.page.content();
                         LayoutStyle::CustomPackage {
-                            pages: vec![dac_layout::PageLayout {
-                                cells: vec![dac_layout::Cell::photo(dac_layout::Rect::new(c.x, c.y, c.w / 2.0, c.h / 2.0))],
+                            pages: vec![lcc_layout::PageLayout {
+                                cells: vec![lcc_layout::Cell::photo(lcc_layout::Rect::new(c.x, c.y, c.w / 2.0, c.h / 2.0))],
                                 guides: Vec::new(),
                             }],
                         }
@@ -1025,7 +1025,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
         ui.checkbox(&mut im.repeat_one, crate::i18n::tr("Repeat One Photo per Page"));
         let mut stroke = im.stroke.is_some();
         if ui.checkbox(&mut stroke, crate::i18n::tr("Stroke Border")).changed() {
-            im.stroke = stroke.then_some(dac_layout::Stroke { width: 1.0, color: dac_layout::BLACK });
+            im.stroke = stroke.then_some(lcc_layout::Stroke { width: 1.0, color: lcc_layout::BLACK });
         }
         if let Some(st) = &mut im.stroke {
             ui.add(egui::Slider::new(&mut st.width, 0.25..=20.0).text(crate::i18n::tr("Width (pt)")));
@@ -1046,7 +1046,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
                         let r = ui.button(format!("{w}×{h}"));
                         register(&ctx, format!("print:addCell:{w}x{h}"), r.rect);
                         if r.clicked() && spec.cells.len() < 64 {
-                            spec.cells.push(dac_layout::Size::inches(w, h));
+                            spec.cells.push(lcc_layout::Size::inches(w, h));
                         }
                     }
                 });
@@ -1064,8 +1064,8 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
                             && let Some(pg) = pages.first_mut()
                         {
                             let c = s.page.content();
-                            let sz = dac_layout::Size::inches(w, h);
-                            pg.cells.push(dac_layout::Cell::photo(dac_layout::Rect::new(c.x, c.y, sz.w.min(c.w), sz.h.min(c.h))));
+                            let sz = lcc_layout::Size::inches(w, h);
+                            pg.cells.push(lcc_layout::Cell::photo(lcc_layout::Rect::new(c.x, c.y, sz.w.min(c.w), sz.h.min(c.h))));
                         }
                     }
                 });
@@ -1096,7 +1096,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
         let r = ui.checkbox(&mut plate, crate::i18n::tr("Identity Plate"));
         register(&ctx, "print:identityPlate", r.rect);
         if r.changed() {
-            o.identity_plate = plate.then(|| dac_print::job::IdentityPlate { text: dac_brand::DISPLAY_NAME.to_string(), ..Default::default() });
+            o.identity_plate = plate.then(|| lcc_print::job::IdentityPlate { text: lcc_brand::DISPLAY_NAME.to_string(), ..Default::default() });
         }
         if let Some(pl) = &mut o.identity_plate {
             let r = ui.text_edit_singleline(&mut pl.text);
@@ -1138,7 +1138,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
         ui.checkbox(&mut s.job.draft, crate::i18n::tr("Draft Mode Printing"));
         ui.add(egui::Slider::new(&mut s.job.dpi, 72.0..=720.0).step_by(1.0).text(crate::i18n::tr("Print Resolution (ppi)")));
         ui.horizontal(|ui| {
-            use dac_print::PrintSharpening;
+            use lcc_print::PrintSharpening;
             let mut on = s.job.sharpening != PrintSharpening::Off;
             let r = ui.checkbox(&mut on, crate::i18n::tr("Print Sharpening"));
             register(&ctx, "print:sharpening", r.rect);
@@ -1155,9 +1155,9 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
                 });
             }
         });
-        if s.job.sharpening != dac_print::PrintSharpening::Off {
+        if s.job.sharpening != lcc_print::PrintSharpening::Off {
             ui.horizontal(|ui| {
-                use dac_print::PrintMedia;
+                use lcc_print::PrintMedia;
                 ui.label(crate::i18n::tr("Media Type"));
                 for (v, label) in [(PrintMedia::Glossy, "Glossy"), (PrintMedia::Matte, "Matte")] {
                     let r = ui.selectable_label(s.job.media == v, crate::i18n::tr(label));
@@ -1219,7 +1219,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut DacApp) {
 
 /// An `ipps://` printer whose certificate was refused: its fingerprint and Trust Certificate;
 /// and the first-use setting.
-fn printer_trust(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
+fn printer_trust(ui: &mut egui::Ui, app: &mut LccApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     if let Some((printer, fp)) = app.print.untrusted.clone() {
         ui.label(
@@ -1249,7 +1249,7 @@ fn printer_trust(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// The printer's own options (once its attributes are read): paper type, tray, quality, two-sided.
-fn printer_options(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
+fn printer_options(ui: &mut egui::Ui, app: &mut LccApp, ctx: &egui::Context) {
     let o = app.print.options.clone();
     let d = app.print.settings.job.driver.clone();
     let pretty = |k: &str| -> String {
@@ -1288,7 +1288,7 @@ fn printer_options(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
     if !o.qualities.is_empty() {
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("Print Quality"));
-            let name = |q: i32| crate::i18n::tr(dac_print::ipp::quality_label(q)).to_string();
+            let name = |q: i32| crate::i18n::tr(lcc_print::ipp::quality_label(q)).to_string();
             let def = default_label(o.quality_default.map(name));
             let shown = d.print_quality.map(name).unwrap_or_else(|| def.clone());
             let r = egui::ComboBox::from_id_salt(("print-driver", "printQuality")).selected_text(shown).show_ui(ui, |ui| {
@@ -1310,8 +1310,8 @@ fn printer_options(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
 /// Page Setup sits above the page: paper and orientation.
 /// Print Job ▸ 16 Bit Output, Color Management (profile, intent, black point compensation) and
 /// Print Adjustment.
-fn color_management(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
-    use dac_print::PrintIntent;
+fn color_management(ui: &mut egui::Ui, app: &mut LccApp, ctx: &egui::Context) {
+    use lcc_print::PrintIntent;
     if app.print.settings.destination != Destination::Jpeg {
         let r = ui.checkbox(&mut app.print.settings.job.color.bit16, crate::i18n::tr("16 Bit Output"));
         register(ctx, "print:bit16", r.rect);
@@ -1382,7 +1382,7 @@ fn color_management(ui: &mut egui::Ui, app: &mut DacApp, ctx: &egui::Context) {
     }
 }
 
-fn page_setup_bar(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
+fn page_setup_bar(ui: &mut egui::Ui, app: &mut LccApp, r: Rect) {
     let ctx = ui.ctx().clone();
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
     let s = app.print.settings.page.size;
@@ -1420,7 +1420,7 @@ fn page_setup_bar(ui: &mut egui::Ui, app: &mut DacApp, r: Rect) {
     }
 }
 
-fn canvas(ui: &mut egui::Ui, app: &mut DacApp, area: Rect) {
+fn canvas(ui: &mut egui::Ui, app: &mut LccApp, area: Rect) {
     let t = Tokens::get(ui.ctx());
     let p = ui.painter_at(area);
     p.rect_filled(area, 0.0, t.canvas);
@@ -1448,7 +1448,7 @@ fn canvas(ui: &mut egui::Ui, app: &mut DacApp, area: Rect) {
     let k = (inner.width() / page.size.w).min(inner.height() / page.size.h);
     let sheet = Rect::from_center_size(inner.center(), vec2(page.size.w * k, page.size.h * k));
     let to = |x: f32, y: f32| pos2(sheet.left() + x * k, sheet.top() + y * k);
-    let rect = |r: &dac_layout::Rect| Rect::from_min_size(to(r.x, r.y), vec2(r.w * k, r.h * k));
+    let rect = |r: &lcc_layout::Rect| Rect::from_min_size(to(r.x, r.y), vec2(r.w * k, r.h * k));
     register(ui.ctx(), "print:page", sheet);
     // shadow + paper
     p.rect_filled(sheet.translate(vec2(3.0, 4.0)), 0.0, Color32::from_black_alpha(90));
@@ -1531,8 +1531,8 @@ fn canvas(ui: &mut egui::Ui, app: &mut DacApp, area: Rect) {
     }
     for g in &layout.guides {
         match *g {
-            dac_layout::Guide::Vertical(x) => p.line_segment([to(x, 0.0), to(x, page.size.h)], Stroke::new(1.0, Color32::from_rgb(255, 0, 170))),
-            dac_layout::Guide::Horizontal(y) => p.line_segment([to(0.0, y), to(page.size.w, y)], Stroke::new(1.0, Color32::from_rgb(255, 0, 170))),
+            lcc_layout::Guide::Vertical(x) => p.line_segment([to(x, 0.0), to(x, page.size.h)], Stroke::new(1.0, Color32::from_rgb(255, 0, 170))),
+            lcc_layout::Guide::Horizontal(y) => p.line_segment([to(0.0, y), to(page.size.w, y)], Stroke::new(1.0, Color32::from_rgb(255, 0, 170))),
         };
     }
     if rulers {
@@ -1552,7 +1552,7 @@ fn canvas(ui: &mut egui::Ui, app: &mut DacApp, area: Rect) {
 }
 
 /// The photo's thumbnail placed in its cell as the print will place it.
-fn draw_photo(p: &egui::Painter, app: &DacApp, id: PhotoId, r: Rect, ph: &dac_layout::PhotoCell) {
+fn draw_photo(p: &egui::Painter, app: &LccApp, id: PhotoId, r: Rect, ph: &lcc_layout::PhotoCell) {
     let Some(tex) = app.renderer.thumb(id) else {
         p.rect_filled(r, 0.0, Color32::from_gray(120));
         return;
@@ -1566,8 +1566,8 @@ fn draw_photo(p: &egui::Painter, app: &DacApp, id: PhotoId, r: Rect, ph: &dac_la
     if turns % 2 == 1 {
         std::mem::swap(&mut iw, &mut ih);
     }
-    let cell = dac_layout::Rect::new(r.left(), r.top(), r.width(), r.height());
-    let (s, ox, oy) = dac_layout::render::photo_placement(cell, iw, ih, ph);
+    let cell = lcc_layout::Rect::new(r.left(), r.top(), r.width(), r.height());
+    let (s, ox, oy) = lcc_layout::render::photo_placement(cell, iw, ih, ph);
     if !(s.is_finite() && s > 0.0) {
         return;
     }
@@ -1602,7 +1602,7 @@ fn draw_photo(p: &egui::Painter, app: &DacApp, id: PhotoId, r: Rect, ph: &dac_la
     let _ = Fit::Fit;
 }
 
-fn draw_rulers(p: &egui::Painter, t: &Tokens, sheet: Rect, k: f32, size: dac_layout::Size) {
+fn draw_rulers(p: &egui::Painter, t: &Tokens, sheet: Rect, k: f32, size: lcc_layout::Size) {
     let top = Rect::from_min_max(pos2(sheet.left(), sheet.top() - RULER - 6.0), pos2(sheet.right(), sheet.top() - 6.0));
     let left = Rect::from_min_max(pos2(sheet.left() - RULER - 6.0, sheet.top()), pos2(sheet.left() - 6.0, sheet.bottom()));
     for r in [top, left] {
@@ -1648,7 +1648,7 @@ fn draw_rulers(p: &egui::Painter, t: &Tokens, sheet: Rect, k: f32, size: dac_lay
 }
 
 /// Custom Package: drag a cell to move it (snapped to page, margins and other cells).
-fn custom_drag(ui: &mut egui::Ui, app: &mut DacApp, sheet: Rect, k: f32) {
+fn custom_drag(ui: &mut egui::Ui, app: &mut LccApp, sheet: Rect, k: f32) {
     let page = app.print.settings.page.clone();
     let LayoutStyle::CustomPackage { pages } = &mut app.print.settings.layout else { return };
     let Some(pg) = pages.first_mut() else { return };
@@ -1668,10 +1668,10 @@ fn custom_drag(ui: &mut egui::Ui, app: &mut DacApp, sheet: Rect, k: f32) {
             raw[0] += d.x;
             raw[1] += d.y;
             ui.data_mut(|m| m.insert_temp(raw_id, raw));
-            let targets = dac_layout::snap::SnapTargets::for_page(&page, pg, Some(i));
+            let targets = lcc_layout::snap::SnapTargets::for_page(&page, pg, Some(i));
             if let Some(c) = pg.cells.get_mut(i) {
-                let moved = dac_layout::Rect::new(raw[0], raw[1], c.rect.w, c.rect.h);
-                c.rect = dac_layout::snap::snap_move(moved, &targets, 6.0 / k.max(0.01)).0;
+                let moved = lcc_layout::Rect::new(raw[0], raw[1], c.rect.w, c.rect.h);
+                c.rect = lcc_layout::snap::snap_move(moved, &targets, 6.0 / k.max(0.01)).0;
             }
         }
         if resp.hovered() {
@@ -1693,13 +1693,13 @@ mod tests {
 
     #[test]
     fn user_templates_settings_and_printer_paper_persist() {
-        let dir = std::env::temp_dir().join(format!("dac-print-persist-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-print-persist-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(&dir).unwrap();
         let open = || {
-            let mut s = dac_engine::Session::with_demo();
+            let mut s = lcc_engine::Session::with_demo();
             s.remote.connections_path = Some(dir.join("connections.json"));
-            DacApp::new(s, crate::Services::default())
+            LccApp::new(s, crate::Services::default())
         };
         let mut app = open();
         app.run("printui.template", json!({"name": "2×2 Cells"})).unwrap();
@@ -1742,7 +1742,7 @@ mod tests {
             })),
             ..Default::default()
         };
-        let mut app = DacApp::new(dac_engine::Session::with_demo(), services);
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
         app.run("module.print", json!({})).unwrap();
         app.run("printui.template", json!({"name": "2×2 Cells"})).unwrap();
         let st = app.run("printui.set", json!({"settings": {"options": {"pageNumbers": true}, "job": {"dpi": 72}}})).unwrap();
@@ -1776,14 +1776,14 @@ mod tests {
             })),
             ..Default::default()
         };
-        let mut app = DacApp::new(dac_engine::Session::with_demo(), services);
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
         app.run("module.print", json!({})).unwrap();
         assert!(app.run("printui.profile", json!({"path": "/nonexistent/printer.icc"})).is_err());
         assert!(app.print.settings.job.color.profile.is_none());
         let dir = std::env::temp_dir().join(format!("print-profile-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let icc = dir.join("printer.icc");
-        std::fs::write(&icc, dac_codecs::icc::write_named(dac_codecs::space::NamedSpace::AdobeRgb)).unwrap();
+        std::fs::write(&icc, lcc_codecs::icc::write_named(lcc_codecs::space::NamedSpace::AdobeRgb)).unwrap();
         app.run("printui.profile", json!({"path": icc.to_string_lossy()})).unwrap();
         assert!(app.print.settings.job.color.profile.is_some());
         app.run(
@@ -1810,9 +1810,9 @@ mod tests {
 
     #[test]
     fn prints_to_a_virtual_ipp_printer_with_its_paper_margins_and_copies() {
-        use dac_print::testprinter::{TestPrinter, TestPrinterConfig};
+        use lcc_print::testprinter::{TestPrinter, TestPrinterConfig};
         let printer = TestPrinter::start(TestPrinterConfig::default()).unwrap();
-        let mut app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services::default());
         app.run("module.print", json!({})).unwrap();
         app.run("printui.template", json!({"name": "2×2 Cells"})).unwrap();
         app.run(
@@ -1822,7 +1822,7 @@ mod tests {
         .unwrap();
         app.run("printui.media", json!({"uri": printer.uri()})).unwrap();
         let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
-        let wait = |h: &mut crate::headless::Headless, done: &dyn Fn(&DacApp) -> bool| {
+        let wait = |h: &mut crate::headless::Headless, done: &dyn Fn(&LccApp) -> bool| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             while !done(&h.app) && std::time::Instant::now() < deadline {
                 h.step();
@@ -1848,15 +1848,15 @@ mod tests {
     /// out with the job; a bad choice is refused.
     #[test]
     fn printer_options_are_offered_drawn_and_sent() {
-        use dac_print::testprinter::{TestPrinter, TestPrinterConfig};
+        use lcc_print::testprinter::{TestPrinter, TestPrinterConfig};
         let printer = TestPrinter::start(TestPrinterConfig::default()).unwrap();
-        let mut app = DacApp::new(dac_engine::Session::with_demo(), crate::Services::default());
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services::default());
         app.run("module.print", json!({})).unwrap();
         app.run("printui.template", json!({"name": "2×2 Cells"})).unwrap();
         app.run("printui.set", json!({"settings": {"destination": "printer", "job": {"dpi": 72}}})).unwrap();
         app.run("printui.media", json!({"uri": printer.uri()})).unwrap();
         let mut h = crate::headless::Headless::new(app, [1400.0, 1000.0], 1.0);
-        let wait = |h: &mut crate::headless::Headless, done: &dyn Fn(&DacApp) -> bool| {
+        let wait = |h: &mut crate::headless::Headless, done: &dyn Fn(&LccApp) -> bool| {
             let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
             while !done(&h.app) && std::time::Instant::now() < deadline {
                 h.step();
@@ -1889,6 +1889,6 @@ mod tests {
         assert!(h.app.run("printui.trustCertificate", json!({"uri": "ipps://printer.local/ipp/print", "fingerprint": "zz"})).is_err());
         h.app.run("printui.trustCertificate", json!({"uri": "ipps://printer.local/ipp/print", "fingerprint": "AB".repeat(32)})).unwrap();
         assert!(stored_json(&h.app.print)["trustedCertificates"][0]["printer"] == "printer.local:631");
-        dac_print::ipp::set_trusted_certificates(&[]);
+        lcc_print::ipp::set_trusted_certificates(&[]);
     }
 }

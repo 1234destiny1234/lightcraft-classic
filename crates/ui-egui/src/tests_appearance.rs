@@ -7,16 +7,16 @@ use serde_json::json;
 use crate::headless::Headless;
 use crate::state::{AppSettings, AppearanceMode, DarkTheme, LightTheme, UiState};
 use crate::theme::ThemeKind;
-use crate::{DacApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 
-fn app() -> DacApp {
-    DacApp::new(dac_engine::Session::new(), Services { png: None, ..Default::default() })
+fn app() -> LccApp {
+    LccApp::new(lcc_engine::Session::new(), Services { png: None, ..Default::default() })
 }
 
 /// One frame of logic on `ctx`: where the theme is applied.
-fn frame(app: &mut DacApp, ctx: &egui::Context) {
+fn frame(app: &mut LccApp, ctx: &egui::Context) {
     let mut output = ctx.run_ui(egui::RawInput::default(), |ui| app.logic(ui.ctx()));
     output.textures_delta.clear();
 }
@@ -40,7 +40,7 @@ fn new_users_keep_the_dark_look_and_old_settings_load_unchanged() {
 fn choices_validate_and_survive_a_restart() {
     let mut a = app();
     let ctx = egui::Context::default();
-    let set = |a: &mut DacApp, p: serde_json::Value| {
+    let set = |a: &mut LccApp, p: serde_json::Value| {
         let (req, _) = crate::control::ControlRequest::new("ui.set", p);
         match crate::control::handle(a, &ctx, &req) {
             crate::control::Outcome::Done(reply) => reply,
@@ -217,8 +217,8 @@ fn favorites_validate_roundtrip_and_stars_toggle_without_selecting() {
             h.step();
         }
         let pixels = h.paint();
-        let image = dac_raster::Rgba8 { width: pixels.size[0], height: pixels.size[1], data: pixels.pixels.iter().map(|c| c.to_array()).collect() };
-        let png = dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(&image), &dac_codecs::EncodeMeta::default()).unwrap();
+        let image = lcc_raster::Rgba8 { width: pixels.size[0], height: pixels.size[1], data: pixels.pixels.iter().map(|c| c.to_array()).collect() };
+        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&image), &lcc_codecs::EncodeMeta::default()).unwrap();
         std::fs::create_dir_all(&path).unwrap();
         std::fs::write(std::path::Path::new(&path).join("app-favorites.png"), png).unwrap();
     }

@@ -1,10 +1,10 @@
 //! Actions (P4.5): record a sequence of commands, parameterise and save it, play it on the
-//! selection (`actions.*`). The model, file format and argument binding live in `dac-actions`;
+//! selection (`actions.*`). The model, file format and argument binding live in `lcc-actions`;
 //! this module keeps the list on the [`Session`] and plays steps through [`Session::execute`], so
 //! the desktop app, `app-cli`, the control channel and MCP all run the same thing.
 //!
 //! Recording copies the journal: `actions.record` remembers where the journal stood and
-//! `actions.stop` turns the entries since then into steps ([`dac_actions::steps_from_journal`]:
+//! `actions.stop` turns the entries since then into steps ([`lcc_actions::steps_from_journal`]:
 //! selection, view and filter commands are dropped, and so are the photos calls named, so a step
 //! applies to whatever is selected when the action plays). Playback stops at the first error and
 //! reports which step failed; the steps that ran stay (each is its own undo step).
@@ -13,7 +13,7 @@
 
 use std::path::PathBuf;
 
-use dac_actions::{Action, Param, Recording, Step};
+use lcc_actions::{Action, Param, Recording, Step};
 use serde_json::{Map, Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
@@ -21,7 +21,7 @@ use crate::{Result, Session};
 
 /// Session state for actions and Edit In presets (`Session::workflow`).
 pub struct Workflow {
-    pub actions: dac_actions::State,
+    pub actions: lcc_actions::State,
     /// Where Edit In presets are kept (`editors.json`; `None` = in memory only).
     pub editors_file: Option<PathBuf>,
     /// Edit In presets the user saved (read from `editors_file` on first use).
@@ -31,9 +31,9 @@ pub struct Workflow {
 impl Default for Workflow {
     /// Kept in the settings folder, except in unit tests and with `<PREFIX>_NO_PREFS`.
     fn default() -> Self {
-        let dir = if cfg!(test) || dac_brand::env_is_set("NO_PREFS") { None } else { crate::config::config_dir() };
+        let dir = if cfg!(test) || lcc_brand::env_is_set("NO_PREFS") { None } else { crate::config::config_dir() };
         Workflow {
-            actions: dac_actions::State::with_file(dir.as_ref().map(|d| d.join("actions.json"))),
+            actions: lcc_actions::State::with_file(dir.as_ref().map(|d| d.join("actions.json"))),
             editors_file: dir.map(|d| d.join("editors.json")),
             editors: None,
         }
@@ -44,7 +44,7 @@ impl Workflow {
     /// In memory only, or kept in `dir` (tests, a portable setup).
     pub fn in_dir(dir: Option<PathBuf>) -> Self {
         Workflow {
-            actions: dac_actions::State::with_file(dir.as_ref().map(|d| d.join("actions.json"))),
+            actions: lcc_actions::State::with_file(dir.as_ref().map(|d| d.join("actions.json"))),
             editors_file: dir.map(|d| d.join("editors.json")),
             editors: None,
         }
@@ -55,7 +55,7 @@ const C: &str = "actions";
 
 fn name_param<'a>(p: &'a Value, cmd: &str) -> Result<&'a str> {
     let n = str_param(p, "name").map(str::trim).unwrap_or("");
-    dac_actions::validate_name(n).map_err(|e| bad(cmd, e))?;
+    lcc_actions::validate_name(n).map_err(|e| bad(cmd, e))?;
     Ok(n)
 }
 
@@ -108,7 +108,7 @@ fn stop(s: &mut Session, _: &Value) -> Result<Value> {
     // (the journal drops its oldest entries past 10 000; a recording that long keeps what is left)
     let start = r.start.min(s.journal.len());
     let entries = s.journal.get(start..).unwrap_or_default();
-    let steps = dac_actions::steps_from_journal(entries, r.keep_targets, |id| super::find_command(id).is_some_and(|c| c.journal));
+    let steps = lcc_actions::steps_from_journal(entries, r.keep_targets, |id| super::find_command(id).is_some_and(|c| c.journal));
     if steps.is_empty() {
         return Err(bad(C, format!("nothing to save: `{}` recorded no edits", r.name)));
     }
@@ -187,7 +187,7 @@ fn play(s: &mut Session, p: &Value) -> Result<Value> {
         Some(Value::Object(m)) => m,
         Some(_) => return Err(bad(C, "`args` must be an object")),
     };
-    let steps = dac_actions::bind(&a, args).map_err(|e| bad(C, e))?;
+    let steps = lcc_actions::bind(&a, args).map_err(|e| bad(C, e))?;
     let targets = s.targets(p);
     let per_photo = p.get("perPhoto").and_then(Value::as_bool).unwrap_or(a.per_photo);
     if per_photo && targets.is_empty() {
@@ -212,8 +212,8 @@ fn play(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Run `steps` once, or once per photo of `photos` with that photo alone selected. Stops at the
 /// first error. → steps run
-fn run_steps(s: &mut Session, name: &str, steps: &[Step], photos: Vec<dac_catalog::PhotoId>) -> Result<usize> {
-    let rounds: Vec<Option<dac_catalog::PhotoId>> = if photos.is_empty() { vec![None] } else { photos.into_iter().map(Some).collect() };
+fn run_steps(s: &mut Session, name: &str, steps: &[Step], photos: Vec<lcc_catalog::PhotoId>) -> Result<usize> {
+    let rounds: Vec<Option<lcc_catalog::PhotoId>> = if photos.is_empty() { vec![None] } else { photos.into_iter().map(Some).collect() };
     let mut ran = 0usize;
     for photo in rounds {
         if let Some(id) = photo {
@@ -223,7 +223,7 @@ fn run_steps(s: &mut Session, name: &str, steps: &[Step], photos: Vec<dac_catalo
             s.selection = crate::Selection::single(id);
         }
         for (i, st) in steps.iter().enumerate() {
-            if dac_actions::is_navigation(&st.command) && photo.is_some() {
+            if lcc_actions::is_navigation(&st.command) && photo.is_some() {
                 continue;
             }
             s.execute(&st.command, &st.params).map_err(|e| {

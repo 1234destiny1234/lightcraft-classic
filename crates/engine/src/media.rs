@@ -6,7 +6,7 @@
 //! self-contained and `Send`: frontends run it on a worker thread; if the source wasn't cached yet
 //! the job loads it and hands it back in the [`RenderResult`] so the cache can keep it.
 //!
-//! Rendered thumbnails are cached too ([`dac_preview::PreviewCache`]: memory LRU, plus a
+//! Rendered thumbnails are cached too ([`lcc_preview::PreviewCache`]: memory LRU, plus a
 //! disk cache in the library's `thumbs/` folder), keyed by the photo's content hash, the develop
 //! settings hash, the size and [`RENDER_CACHE_VERSION`] — so reopening a library shows its grid
 //! without decoding a single original, and an edit simply produces a new key.
@@ -19,11 +19,11 @@
 use std::collections::{HashMap, VecDeque};
 use std::sync::{Arc, Weak};
 
-use dac_catalog::{MediaKind, Op, Photo, PhotoId, Source};
-use dac_develop::DevelopSettings;
-use dac_pipeline::{Quality, RenderRequest, Rendered, SourceInfo, StageCache};
-use dac_preview::{Hash128, Hasher128, Lru, PreviewCache};
-use dac_raster::{Histogram, Rgb32f, Rgba8};
+use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source};
+use lcc_develop::DevelopSettings;
+use lcc_pipeline::{Quality, RenderRequest, Rendered, SourceInfo, StageCache};
+use lcc_preview::{Hash128, Hasher128, Lru, PreviewCache};
+use lcc_raster::{Histogram, Rgb32f, Rgba8};
 use serde::{Deserialize, Serialize};
 
 const SETTINGS_HASH_ENTRIES: usize = 1024;
@@ -169,7 +169,7 @@ pub struct DecodedSource {
     pub info: Option<SourceInfo>,
     /// A smart preview's stored camera tone curve: the one decoder fact its pixels need that the
     /// catalog's header facts lack (used when `info` is `None`).
-    pub camera_tone: Option<dac_pipeline::tone::CameraTone>,
+    pub camera_tone: Option<lcc_pipeline::tone::CameraTone>,
     /// The same picture developed from the AI-denoised mosaic, when the photo has one cached.
     pub denoised: Option<Arc<Twin>>,
 }
@@ -198,7 +198,7 @@ impl DecodedSource {
             return img.clone();
         }
         let mut mixed = (*self.image).clone();
-        if !dac_denoise::product::blend(&mut mixed, &twin.image, thousandths as f32 / 1000.0) {
+        if !lcc_denoise::product::blend(&mut mixed, &twin.image, thousandths as f32 / 1000.0) {
             return self.image.clone();
         }
         let mixed = Arc::new(mixed);
@@ -224,7 +224,7 @@ impl DecodedSource {
 pub enum SourceRef {
     Loaded(Box<DecodedSource>),
     Demo {
-        scene: Box<dac_scenes::Scene>,
+        scene: Box<lcc_scenes::Scene>,
         max_edge: usize,
     },
     File {
@@ -241,7 +241,7 @@ pub enum SourceRef {
     Smart {
         path: std::path::PathBuf,
     },
-    /// A video clip: its poster frame at `time` (`None`: [`dac_video::default_poster_time`]),
+    /// A video clip: its poster frame at `time` (`None`: [`lcc_video::default_poster_time`]),
     /// at most `max_edge` long (M14.3). A clip that can't be decoded gives [`video_placeholder`].
     Video {
         path: String,
@@ -317,10 +317,10 @@ impl SourceRef {
 /// so a grid full of such clips shows film tiles rather than a stream of failures.
 pub fn video_poster(path: &str, time: Option<f64>, max_edge: usize) -> Result<Rgb32f, String> {
     let side = u32::try_from(max_edge.clamp(16, 16_384)).unwrap_or(16_384);
-    match dac_video::poster(std::path::Path::new(path), time, side) {
+    match lcc_video::poster(std::path::Path::new(path), time, side) {
         Ok(f) if f.image.width > 0 && f.image.height > 0 => Ok(f.image),
         Ok(_) => Ok(video_placeholder(side as usize)),
-        Err(dac_video::VideoError::Io(e)) => Err(format!("{path}: {e}")),
+        Err(lcc_video::VideoError::Io(e)) => Err(format!("{path}: {e}")),
         Err(e) => {
             log::debug!("{path}: video poster unavailable ({e}); showing a placeholder");
             Ok(video_placeholder(side as usize))
@@ -380,7 +380,7 @@ pub struct MediaCache {
     settings_hashes: SettingsHashes,
     /// Decoded thumbnail-level sources (LRU by bytes).
     thumbs: Lru<PhotoId, DecodedSource>,
-    /// Decoded preview-level sources with their last use ([`dac_preview::next_tick`]).
+    /// Decoded preview-level sources with their last use ([`lcc_preview::next_tick`]).
     previews: Vec<(PhotoId, DecodedSource, u64)>,
     /// The last full-resolution originals (exports, zoomed views; ~300 MB each at 24 MP), with
     /// their last use. Normally one; see [`Self::set_full_capacity`].
@@ -402,7 +402,7 @@ pub struct MediaCache {
     /// Whether originals (and smart previews) are on disk: cached and checked off the UI thread
     /// in the app (see [`crate::availability`]).
     pub availability: crate::availability::Availability,
-    scenes: Vec<dac_scenes::Scene>,
+    scenes: Vec<lcc_scenes::Scene>,
     /// Rendered thumbnails (memory, plus disk once a library is attached).
     pub rendered: Arc<PreviewCache>,
     /// Which photos have a cached denoised picture, and how to read it.
@@ -581,11 +581,11 @@ impl MediaCache {
         match level {
             SourceLevel::Thumb => self.thumbs.get(&id).cloned(),
             SourceLevel::Preview => self.previews.iter_mut().find(|e| e.0 == id).map(|e| {
-                e.2 = dac_preview::next_tick();
+                e.2 = lcc_preview::next_tick();
                 e.1.clone()
             }),
             SourceLevel::Full => self.full.iter_mut().find(|e| e.0 == id).map(|e| {
-                e.2 = dac_preview::next_tick();
+                e.2 = lcc_preview::next_tick();
                 e.1.clone()
             }),
         }
@@ -612,7 +612,7 @@ impl MediaCache {
     }
 
     fn insert_source(&mut self, id: PhotoId, level: SourceLevel, img: DecodedSource) {
-        let tick = dac_preview::next_tick();
+        let tick = lcc_preview::next_tick();
         match level {
             SourceLevel::Thumb => {
                 let cost = img.bytes();
@@ -737,7 +737,7 @@ impl MediaCache {
         match origin {
             Source::Demo { scene } => {
                 if self.scenes.is_empty() {
-                    self.scenes = dac_scenes::demo_library();
+                    self.scenes = lcc_scenes::demo_library();
                 }
                 match self.scenes.iter().find(|s| s.id == *scene) {
                     Some(s) => SourceRef::Demo { scene: Box::new(s.clone()), max_edge },
@@ -789,7 +789,7 @@ pub struct RenderResult {
     pub key: u64,
     pub rendered: Result<Rendered, String>,
     /// Set when this job's render was tried on the GPU and fell back to the CPU: why
-    /// ([`dac_gpu::Fallback::Failed`]). The result is the CPU render either way.
+    /// ([`lcc_gpu::Fallback::Failed`]). The result is the CPU render either way.
     pub gpu_fallback: Option<String>,
     /// A source that was loaded by this job (to be inserted into the cache).
     pub loaded: Option<DecodedSource>,
@@ -812,24 +812,24 @@ impl RenderJob {
 
     /// Draw a diagnostic overlay over the result (e.g. Point Color's visualized range). Gets its
     /// own result key.
-    pub fn with_overlay(mut self, overlay: dac_pipeline::Overlay) -> Self {
+    pub fn with_overlay(mut self, overlay: lcc_pipeline::Overlay) -> Self {
         if self.request.overlay != overlay {
             self.key ^= self.request.overlay.key().wrapping_mul(0x9e37_79b9_7f4a_7c15);
             self.request.overlay = overlay;
             self.key ^= overlay.key().wrapping_mul(0x9e37_79b9_7f4a_7c15);
         }
         // a diagnostic view (visualized range / spots) must never become the photo's cached preview
-        if overlay != dac_pipeline::Overlay::None {
+        if overlay != lcc_pipeline::Overlay::None {
             self.view_cache = None;
         }
         self
     }
 
-    /// Soft-proof the result (see [`dac_pipeline::Proof`]). Gets its own result key and is
+    /// Soft-proof the result (see [`lcc_pipeline::Proof`]). Gets its own result key and is
     /// never kept as the photo's cached preview.
-    pub fn with_proof(mut self, proof: Option<dac_pipeline::Proof>) -> Self {
+    pub fn with_proof(mut self, proof: Option<lcc_pipeline::Proof>) -> Self {
         if self.request.proof != proof {
-            let k = |p: Option<dac_pipeline::Proof>| p.map_or(0, |p| p.key()).wrapping_mul(0xc2b2_ae3d_27d4_eb4f);
+            let k = |p: Option<lcc_pipeline::Proof>| p.map_or(0, |p| p.key()).wrapping_mul(0xc2b2_ae3d_27d4_eb4f);
             self.key ^= k(self.request.proof) ^ k(proof);
             self.request.proof = proof;
         }
@@ -850,7 +850,7 @@ impl RenderJob {
         let g = &mut s.grading;
         for (off, wheel) in hidden.into_iter().zip([&mut g.shadows, &mut g.midtones, &mut g.highlights]) {
             if off {
-                *wheel = dac_develop::Wheel::default();
+                *wheel = lcc_develop::Wheel::default();
             }
         }
         let bits = hidden.iter().enumerate().fold(0u64, |b, (i, h)| b | ((*h as u64) << i));
@@ -872,7 +872,7 @@ impl RenderJob {
     /// Gets its own result key. Thumbnail jobs (rendered-thumbnail cache) are left as they are:
     /// [`crate::display::present`] converts their sRGB results.
     pub fn with_display(mut self, display: Option<Arc<crate::display::Display>>) -> Self {
-        if self.cache.is_some() || self.request.depth != dac_pipeline::OutputDepth::U8 {
+        if self.cache.is_some() || self.request.depth != lcc_pipeline::OutputDepth::U8 {
             return self;
         }
         let k = |d: &Option<Arc<crate::display::Display>>| d.as_ref().map_or(0, |d| d.id()).wrapping_mul(0xd6e8_feb8_6659_fd93);
@@ -904,7 +904,7 @@ impl RenderJob {
         let was_loaded = matches!(self.source, SourceRef::Loaded(_));
         // The app is closing (issue #620): nobody is left to show this, and quitting waits for the
         // jobs that are running. Without this, one that lost the GPU mid-way would render on the CPU.
-        let closing = || dac_gpu::shutting_down().then(|| "the app is closing".to_string());
+        let closing = || lcc_gpu::shutting_down().then(|| "the app is closing".to_string());
         let source = match closing() {
             Some(e) => Err(e),
             None => self.source.load_source().and_then(|s| closing().map_or(Ok(s), Err)),
@@ -972,16 +972,16 @@ impl RenderJob {
     }
 }
 
-/// Render `src`: on the GPU when `gpu` is set and a GPU is available (`dac_gpu`), else on
+/// Render `src`: on the GPU when `gpu` is set and a GPU is available (`lcc_gpu`), else on
 /// the CPU, reusing `stages` either way. Both produce the same image within 1–3 LSB (see
-/// `docs/gpu-pipeline.md`); `{ENV_PREFIX}_GPU=0` or [`dac_gpu::set_enabled`] forces the CPU.
+/// `docs/gpu-pipeline.md`); `{ENV_PREFIX}_GPU=0` or [`lcc_gpu::set_enabled`] forces the CPU.
 pub fn develop(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, stages: Option<&StageCache>, gpu: bool) -> Rendered {
     develop_reporting(src, info, s, req, stages, gpu).0
 }
 
 /// [`develop`], also saying why the render fell back from the GPU to the CPU when it did (`None`:
 /// it rendered on the GPU, or the GPU was not tried). The reason is this render's own, not the
-/// process-wide [`dac_gpu::last_fallback`].
+/// process-wide [`lcc_gpu::last_fallback`].
 pub fn develop_reporting(
     src: &Arc<Rgb32f>,
     info: &SourceInfo,
@@ -992,7 +992,7 @@ pub fn develop_reporting(
 ) -> (Rendered, Option<String>) {
     let (mut rendered, fallback) = develop_image(src, info, s, req, stages, gpu);
     // an HDR edit's preview is its SDR rendition: its histogram shows the HDR range instead
-    if let Some(h) = dac_pipeline::hdr_histogram(src, info, s, req) {
+    if let Some(h) = lcc_pipeline::hdr_histogram(src, info, s, req) {
         rendered.histogram = h;
     }
     (rendered, fallback)
@@ -1008,18 +1008,18 @@ fn develop_image(
 ) -> (Rendered, Option<String>) {
     // LUT profiles have no GPU stage: they render on the CPU
     let fallback =
-        if gpu && !dac_pipeline::lut::is_lut_profile(&s.profile.id) && !s.masks.iter().any(|m| m.visible && m.refine > 0.0) && req.proof.is_none() {
-            match dac_gpu::try_render(src, info, s, req, stages) {
+        if gpu && !lcc_pipeline::lut::is_lut_profile(&s.profile.id) && !s.masks.iter().any(|m| m.visible && m.refine > 0.0) && req.proof.is_none() {
+            match lcc_gpu::try_render(src, info, s, req, stages) {
                 Ok(r) => return (r, None),
-                Err(dac_gpu::Fallback::Failed(why)) => Some(why),
-                Err(dac_gpu::Fallback::NotTried) => None,
+                Err(lcc_gpu::Fallback::Failed(why)) => Some(why),
+                Err(lcc_gpu::Fallback::NotTried) => None,
             }
         } else {
             None
         };
     let rendered = match stages {
-        Some(st) => dac_pipeline::render_cached(src, info, s, req, st),
-        None => dac_pipeline::render(src, info, s, req),
+        Some(st) => lcc_pipeline::render_cached(src, info, s, req, st),
+        None => lcc_pipeline::render(src, info, s, req),
     };
     (rendered, fallback)
 }
@@ -1147,8 +1147,8 @@ impl crate::Session {
     ) -> Option<RenderJob> {
         let p = self.catalog.photo(id)?.clone();
         let settings = if before { Arc::new(self.before_settings(&p)) } else { p.develop.clone() };
-        // a clip's poster is graded like its frames: the global controls only (`dac_pipeline::grade`)
-        let settings = if p.kind == MediaKind::Video { Arc::new(dac_pipeline::grade::video_settings(&settings)) } else { settings };
+        // a clip's poster is graded like its frames: the global controls only (`lcc_pipeline::grade`)
+        let settings = if p.kind == MediaKind::Video { Arc::new(lcc_pipeline::grade::video_settings(&settings)) } else { settings };
         let level = SourceLevel::for_size(if thumb_bucket.is_some() {
             max_w.max(max_h) // (grid thumbnails of tight crops stay cheap)
         } else {
@@ -1256,7 +1256,7 @@ impl crate::Session {
     /// photo's own look with its crop replaced by a square around the face (room for hair and chin),
     /// `edge` pixels across (≤ 512). The source level is the smallest that keeps the face sharp, up
     /// to the preview. Cached like [`Self::variant_job`], and `key` likewise follows the content.
-    pub fn face_job(&mut self, id: PhotoId, face: dac_geom::Rect, edge: usize) -> Option<RenderJob> {
+    pub fn face_job(&mut self, id: PhotoId, face: lcc_geom::Rect, edge: usize) -> Option<RenderJob> {
         let p = self.catalog.photo(id)?.clone();
         // `face` is on the upright (EXIF-oriented) photo; the crop below is in the frame after the
         // user's Rotate Left/Right, so carry the box (and the photo's size) over to it.
@@ -1270,9 +1270,9 @@ impl crate::Session {
         let (cx, cy) = ((face.x0 + face.x1) / 2.0 * w, (face.y0 + face.y1) / 2.0 * h);
         let (cx, cy) = (if cx.is_finite() { cx } else { w / 2.0 }, if cy.is_finite() { cy } else { h / 2.0 });
         let (x0, y0) = (cx.clamp(side / 2.0, w - side / 2.0) - side / 2.0, cy.clamp(side / 2.0, h - side / 2.0) - side / 2.0);
-        let rect = dac_geom::Rect { x0: x0 / w, y0: y0 / h, x1: (x0 + side) / w, y1: (y0 + side) / h };
+        let rect = lcc_geom::Rect { x0: x0 / w, y0: y0 / h, x1: (x0 + side) / w, y1: (y0 + side) / h };
         let mut settings = (*p.develop).clone();
-        settings.crop = dac_develop::Crop { geometry: dac_geom::CropGeometry { rect, angle: 0.0 }, ..Default::default() };
+        settings.crop = lcc_develop::Crop { geometry: lcc_geom::CropGeometry { rect, angle: 0.0 }, ..Default::default() };
         let edge = edge.clamp(16, SourceLevel::Thumb.max_edge());
         // pixels along the long edge that leave `edge` across the crop
         let needed = (edge as f64 * w.max(h) / side).ceil().min(SourceLevel::Preview.max_edge() as f64);
@@ -1336,7 +1336,7 @@ impl crate::Session {
         id: PhotoId,
         full_w: usize,
         full_h: usize,
-        window: dac_pipeline::PixelWindow,
+        window: lcc_pipeline::PixelWindow,
         apply_crop: bool,
     ) -> Option<RenderJob> {
         self.region_job_of(id, full_w, full_h, window, apply_crop, false)
@@ -1348,7 +1348,7 @@ impl crate::Session {
         id: PhotoId,
         full_w: usize,
         full_h: usize,
-        window: dac_pipeline::PixelWindow,
+        window: lcc_pipeline::PixelWindow,
         apply_crop: bool,
     ) -> Option<RenderJob> {
         self.region_job_of(id, full_w, full_h, window, apply_crop, true)
@@ -1359,7 +1359,7 @@ impl crate::Session {
         id: PhotoId,
         full_w: usize,
         full_h: usize,
-        window: dac_pipeline::PixelWindow,
+        window: lcc_pipeline::PixelWindow,
         apply_crop: bool,
         before: bool,
     ) -> Option<RenderJob> {
@@ -1367,7 +1367,7 @@ impl crate::Session {
         // what the window's spots and Auto Mask strokes read must fit in one render: else the
         // caller keeps the whole-frame render (a window alone would come out wrong)
         let p = self.catalog.photo(id)?;
-        let frame = dac_pipeline::geometry::Frame::with_lens(
+        let frame = lcc_pipeline::geometry::Frame::with_lens(
             p.width.max(1) as usize,
             p.height.max(1) as usize,
             &job.settings,
@@ -1375,7 +1375,7 @@ impl crate::Session {
             p.embedded_lens.as_deref(),
         );
         let ppl = frame.px_per_long(full_w);
-        dac_pipeline::spots::window_for_reads_checked(&job.settings, &frame, full_w, full_h, ppl, window.clamped(full_w, full_h))?;
+        lcc_pipeline::spots::window_for_reads_checked(&job.settings, &frame, full_w, full_h, ppl, window.clamped(full_w, full_h))?;
         job.request.window = Some(window);
         job.key = Hasher128::new()
             .u64(job.key)
@@ -1428,7 +1428,7 @@ impl crate::Session {
     /// The photo's 1:1 preview (Library → Previews → Build 1:1 Previews) for its current look, if
     /// it is held in memory: what a zoomed loupe shows at once while its tiles render. With
     /// `load`, one held only on disk is read into memory on a background thread for next time.
-    pub fn full_preview_in_memory(&self, id: PhotoId, load: bool) -> Option<Arc<dac_raster::Rgba8>> {
+    pub fn full_preview_in_memory(&self, id: PhotoId, load: bool) -> Option<Arc<lcc_raster::Rgba8>> {
         let p = self.catalog.photo(id)?;
         let key = Self::full_view_key(p);
         if let Some(img) = self.media.rendered.get_in_memory(key) {
@@ -1528,8 +1528,8 @@ impl crate::Session {
         id: PhotoId,
         max_w: usize,
         max_h: usize,
-        space: dac_pipeline::OutputSpace,
-        depth: dac_pipeline::OutputDepth,
+        space: lcc_pipeline::OutputSpace,
+        depth: lcc_pipeline::OutputDepth,
     ) -> Result<Rendered, String> {
         let r = self.export_job(id, max_w, max_h, space, depth)?.run();
         self.accept(&r);
@@ -1542,10 +1542,10 @@ impl crate::Session {
         id: PhotoId,
         max_w: usize,
         max_h: usize,
-        space: dac_pipeline::OutputSpace,
-        depth: dac_pipeline::OutputDepth,
+        space: lcc_pipeline::OutputSpace,
+        depth: lcc_pipeline::OutputDepth,
     ) -> Result<RenderJob, String> {
-        dac_pipeline::check_output_size(max_w, max_h)?;
+        lcc_pipeline::check_output_size(max_w, max_h)?;
         let mut job = self.render_job(id, max_w, max_h, false, true).ok_or("no such photo")?;
         // An export is made from the denoised picture its Denoise amount asks for, made when the job runs if the
         // background queue has not got to it. (A source kept in memory may lack the picture, so the job reads the file.)
@@ -1581,7 +1581,7 @@ impl crate::Session {
     }
 }
 
-/// What an import learns from a file header (set by the app from `dac-codecs`/`-raw`).
+/// What an import learns from a file header (set by the app from `lcc-codecs`/`-raw`).
 #[derive(Clone, Debug, Default)]
 pub struct ProbeInfo {
     pub width: u32,
@@ -1590,27 +1590,27 @@ pub struct ProbeInfo {
     pub kind: MediaKind,
     pub file_size: u64,
     pub captured: Option<String>,
-    pub meta: dac_catalog::Meta,
+    pub meta: lcc_catalog::Meta,
     pub as_shot_wb: Option<(f64, f64)>,
     /// Hash of the file's bytes (hex), for duplicate detection. When it is a 32-digit
-    /// [`dac_preview::hash_bytes`] of the whole file (as the native probe computes it),
+    /// [`lcc_preview::hash_bytes`] of the whole file (as the native probe computes it),
     /// Import → Copy verifies each copy against it instead of reading the source again.
     pub content_hash: Option<String>,
     /// Lens corrections embedded in the file (DNG opcodes).
-    pub embedded_lens: Option<dac_develop::EmbeddedLens>,
+    pub embedded_lens: Option<lcc_develop::EmbeddedLens>,
     /// Whether `embedded_lens` is the file's own correction (not a lens database profile).
     pub lens_from_file: bool,
     /// The file's embedded XMP packet (raw/DNG files), for develop settings stored inside the file.
     pub xmp: Option<String>,
     /// A raw variant that can't be decoded yet: why. The file is described (and will be shown and
-    /// edited) from its embedded preview; see [`dac_catalog::Photo::preview_only`].
+    /// edited) from its embedded preview; see [`lcc_catalog::Photo::preview_only`].
     pub preview_only: Option<String>,
     /// SHA-1 of the file's bytes (lowercase hex), computed in the same read pass as
     /// `content_hash`: what Immich stores for its assets (IMM-LINK).
     pub sha1: Option<String>,
     /// A video clip's stream facts ([`crate::files::probe_video_file`]); `None` for photos and
     /// for clips whose container could not be read.
-    pub video: Option<dac_catalog::VideoMeta>,
+    pub video: Option<lcc_catalog::VideoMeta>,
     /// A video clip's duration in seconds.
     pub duration: Option<f64>,
 }
@@ -1748,7 +1748,7 @@ mod tests {
 
     #[test]
     fn decoder_info_survives_render_jobs_cache_and_eviction() {
-        let tone = dac_pipeline::tone::CameraTone::new(std::array::from_fn(|i| {
+        let tone = lcc_pipeline::tone::CameraTone::new(std::array::from_fn(|i| {
             let x = 0.01 * (i + 1) as f32;
             [x, (x * 2.0).min(0.9)]
         }))
@@ -1773,7 +1773,7 @@ mod tests {
         job.settings = Arc::new(DevelopSettings::default());
         let r = job.clone().run();
         assert_eq!(r.loaded.as_ref().unwrap().info.as_ref(), Some(&info));
-        let expected = dac_pipeline::render(&r.loaded.as_ref().unwrap().image, &info, &job.settings, &job.request);
+        let expected = lcc_pipeline::render(&r.loaded.as_ref().unwrap().image, &info, &job.settings, &job.request);
         assert_eq!(r.rendered.as_ref().unwrap().image.data, expected.image.data);
         s.accept(&r);
         job.source = s.media.source_ref(s.catalog.photo(id).unwrap(), job.level);
@@ -1790,14 +1790,14 @@ mod tests {
     /// and the panel then reads As Shot in Kelvin while the stored settings keep their look.
     #[test]
     fn old_relative_white_balance_on_a_kelvin_camera_keeps_its_look_and_learns_the_as_shot_white() {
-        use dac_develop::{WbMode, WbScale};
+        use lcc_develop::{WbMode, WbScale};
         let mut s = crate::Session::new();
         let id = s.catalog.alloc_photo_id();
         let mut p = Photo::new(id, Source::File { path: "/photos/DSC00001.ARW".into() }, "DSC00001.ARW", "ARW", 64, 64, "2026-01-01T00:00:00");
         p.kind = MediaKind::Raw;
         p.meta.camera = "SONY ILCE-7M3".into();
         p.as_shot_wb = Some((6500.0, 0.0));
-        let mut d = dac_develop::DevelopSettings::for_raw(6500.0, 0.0);
+        let mut d = lcc_develop::DevelopSettings::for_raw(6500.0, 0.0);
         (d.wb.mode, d.wb.temp, d.wb.tint) = (WbMode::Custom, 5800.0, 3.0);
         assert_eq!(d.wb.scale, WbScale::Legacy);
         p.develop = Arc::new(d.clone());
@@ -1830,9 +1830,9 @@ mod tests {
         let new = r.rendered.as_ref().unwrap().image.data.clone();
         // the old pipeline: the same settings against the relative-scale source facts of an older build
         let old_info = SourceInfo { raw: true, relative_wb: true, as_shot_temp: 6500.0, as_shot_tint: 0.0, ..Default::default() };
-        let old = dac_pipeline::render(&pixels, &old_info, &d, &request).image.data;
+        let old = lcc_pipeline::render(&pixels, &old_info, &d, &request).image.data;
         assert_eq!(new, old, "the look of an existing edit changed");
-        assert_ne!(new, dac_pipeline::render(&pixels, &decoded, &dac_develop::DevelopSettings::for_raw(4986.0, -2.0), &request).image.data);
+        assert_ne!(new, lcc_pipeline::render(&pixels, &decoded, &lcc_develop::DevelopSettings::for_raw(4986.0, -2.0), &request).image.data);
         // accepting the result records the as-shot white, journaled but not undoable, and the settings are untouched
         s.accept(&r);
         let p = s.catalog.photo(id).unwrap();
@@ -1844,15 +1844,15 @@ mod tests {
         // the panel reads the white balance in effect in Kelvin: the value the relative edit renders as
         let info = s.source_info(id);
         assert_eq!((info.as_shot_temp, info.as_shot_tint), (4986.0, -2.0));
-        let shown = dac_pipeline::local::effective_wb(&info, &d);
-        assert_eq!(shown, dac_pipeline::local::legacy_to_kelvin(5800.0, 3.0, (4986.0, -2.0)));
+        let shown = lcc_pipeline::local::effective_wb(&info, &d);
+        assert_eq!(shown, lcc_pipeline::local::legacy_to_kelvin(5800.0, 3.0, (4986.0, -2.0)));
         assert!(shown.0 < 4986.0 && shown.0 > 4000.0, "{shown:?}");
         // accepting again changes nothing more
         let log = s.pending_log.len();
         s.accept(&r);
         assert_eq!(s.pending_log.len(), log);
         // a catalog-only (proxy) render of the same settings before the decode gave the same pixels too
-        let proxy = dac_pipeline::render(&pixels, &header, &d, &request).image.data;
+        let proxy = lcc_pipeline::render(&pixels, &header, &d, &request).image.data;
         assert_eq!(proxy, old, "a smart preview of an existing edit changed");
     }
 
@@ -1871,7 +1871,7 @@ mod tests {
         assert!(m.get(PhotoId(1), SourceLevel::Preview).is_some() && m.get(PhotoId(3), SourceLevel::Preview).is_some());
         // a thumbnail source and a rendered preview compete in the same budget
         m.insert(PhotoId(4), SourceLevel::Thumb, img(500));
-        m.rendered.put(Hash128(7), Arc::new(dac_raster::Rgba8::new(1000, 1000)));
+        m.rendered.put(Hash128(7), Arc::new(lcc_raster::Rgba8::new(1000, 1000)));
         assert!(m.held() <= 30 * mb, "{}", m.held());
         // the newest preview (the one on screen) is never evicted, even alone over budget
         m.set_budget(mb);
@@ -1963,7 +1963,7 @@ mod tests {
     // from the original, with a key of its own
     #[test]
     fn region_jobs_render_a_window_of_the_zoomed_frame() {
-        use dac_pipeline::PixelWindow;
+        use lcc_pipeline::PixelWindow;
         let mut s = crate::Session::with_demo();
         let p = s.catalog.photos().next().unwrap().clone();
         let (w, h) = (p.width as usize, p.height as usize);
@@ -1996,7 +1996,7 @@ mod tests {
         // the uncropped photo at 1600 px: the preview is plenty
         assert_eq!(s.render_job(id, 1600, 1600, false, true).unwrap().level, SourceLevel::Preview);
         // a crop to 30 % of each side shown 1600 px long needs 1600 / 0.3 px of the source
-        d.crop.geometry.rect = dac_geom::Rect { x0: 0.2, y0: 0.2, x1: 0.5, y1: 0.5 };
+        d.crop.geometry.rect = lcc_geom::Rect { x0: 0.2, y0: 0.2, x1: 0.5, y1: 0.5 };
         s.set_develop(id, d, "Crop").unwrap();
         assert_eq!(s.render_job(id, 1600, 1600, false, true).unwrap().level, SourceLevel::Full);
         // …but with the crop tool open (the whole photo shown) it does not
@@ -2008,16 +2008,16 @@ mod tests {
     // a window whose spot reads from further away than a render can hold is refused
     #[test]
     fn a_region_job_is_refused_when_a_spot_reads_beyond_what_fits() {
-        use dac_pipeline::PixelWindow;
+        use lcc_pipeline::PixelWindow;
         let mut s = crate::Session::with_demo();
         let id = s.active().unwrap();
         let p = s.catalog.photo(id).unwrap().clone();
         let (w, h) = (p.width as usize * 8, p.height as usize * 8);
         let mut d = (*s.develop_of(id).unwrap()).clone();
-        d.spots.push(dac_develop::Spot {
-            points: vec![dac_geom::Point::new(0.2, 0.5)],
+        d.spots.push(lcc_develop::Spot {
+            points: vec![lcc_geom::Point::new(0.2, 0.5)],
             size: 0.01,
-            source_offset: Some(dac_geom::Point::new(0.6, 0.0)),
+            source_offset: Some(lcc_geom::Point::new(0.6, 0.0)),
             ..Default::default()
         });
         s.set_develop(id, d, "Spot").unwrap();
@@ -2031,7 +2031,7 @@ mod tests {
     // without its edits (the crop is kept), with a key of its own
     #[test]
     fn a_before_window_shows_the_unedited_look() {
-        use dac_pipeline::PixelWindow;
+        use lcc_pipeline::PixelWindow;
         let mut s = crate::Session::with_demo();
         let id = s.active().unwrap();
         let p = s.catalog.photo(id).unwrap().clone();

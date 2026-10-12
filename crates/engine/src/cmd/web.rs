@@ -1,4 +1,4 @@
-//! Web module commands (P3.6): generate a static web gallery ([`dac_webgallery`]) from photos,
+//! Web module commands (P3.6): generate a static web gallery ([`lcc_webgallery`]) from photos,
 //! write it to a folder or upload it over SFTP, and keep saved galleries and upload servers.
 //!
 //! - `web.preview {settings?, ids?}` → the generated pages without rendering any image.
@@ -20,10 +20,10 @@
 use std::collections::BTreeMap;
 use std::path::PathBuf;
 
-use dac_catalog::PhotoId;
-use dac_credentials::{Key, Secret};
-use dac_webgallery::sftp::{self, Auth, Server};
-use dac_webgallery::{GalleryPhoto, GallerySettings, MetadataMode, Site};
+use lcc_catalog::PhotoId;
+use lcc_credentials::{Key, Secret};
+use lcc_webgallery::sftp::{self, Auth, Server};
+use lcc_webgallery::{GalleryPhoto, GallerySettings, MetadataMode, Site};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -31,7 +31,7 @@ use super::{CommandSpec, always, bad, cmd, str_param};
 use crate::creations;
 use crate::export::{ExportFormat, ExportOptions, MetadataPolicy, Resize, ResizeMode, SharpenFor, Watermark};
 use crate::{Result, Session};
-use dac_layout::CreationKind;
+use lcc_layout::CreationKind;
 
 /// Keychain service for SFTP passwords / key passphrases (account = `user@host:port`).
 pub const SFTP_SERVICE: &str = "web-sftp";
@@ -153,12 +153,12 @@ fn photo_ids(s: &mut Session, p: &Value) -> Vec<PhotoId> {
             .photos
             .into_iter()
             .filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted))
-            .take(dac_webgallery::site::MAX_PHOTOS.saturating_add(1))
+            .take(lcc_webgallery::site::MAX_PHOTOS.saturating_add(1))
             .collect();
     }
     let t = s.targets(p);
     let t = if t.len() > 1 || super::names_photos(p) { t } else { s.visible().to_vec() };
-    t.into_iter().filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted)).take(dac_webgallery::site::MAX_PHOTOS.saturating_add(1)).collect()
+    t.into_iter().filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted)).take(lcc_webgallery::site::MAX_PHOTOS.saturating_add(1)).collect()
 }
 
 /// The token fields of one photo.
@@ -218,7 +218,7 @@ fn build(s: &mut Session, g: &GallerySettings, ids: &[PhotoId]) -> std::result::
             GalleryPhoto { fields: fields(s, *id), aspect }
         })
         .collect();
-    dac_webgallery::generate(g, &photos)
+    lcc_webgallery::generate(g, &photos)
 }
 
 fn secret_key(server: &Server) -> Key {
@@ -276,9 +276,9 @@ enum Target {
         store: Option<PathBuf>,
     },
     Immich {
-        client: Box<dac_immich::Client>,
+        client: Box<lcc_immich::Client>,
         album: String,
-        options: dac_immich::share::ShareOptions,
+        options: lcc_immich::share::ShareOptions,
     },
 }
 
@@ -335,7 +335,7 @@ fn expiry(p: &Value, c: &str) -> Result<Option<String>> {
         Some(v) => {
             let d = v.as_u64().filter(|d| (1..=3650).contains(d)).ok_or_else(|| bad(c, "`expiresDays` must be 1…3650"))?;
             let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|x| x.as_secs() as i64).unwrap_or(0);
-            Ok(Some(format!("{}.000Z", dac_catalog::dates::civil(now.saturating_add(d as i64 * 86_400)))))
+            Ok(Some(format!("{}.000Z", lcc_catalog::dates::civil(now.saturating_add(d as i64 * 86_400)))))
         }
     }
 }
@@ -365,7 +365,7 @@ pub fn prepare(s: &mut Session, c: &str, p: &Value) -> Result<WebJob> {
                 .map(str::to_string)
                 .or_else(|| [&g.site.collection_title, &g.site.title].into_iter().map(|t| t.trim()).find(|t| !t.is_empty()).map(str::to_string))
                 .unwrap_or_else(|| "Shared photos".into());
-            let options = dac_immich::share::ShareOptions {
+            let options = lcc_immich::share::ShareOptions {
                 expires_at: expiry(p, c)?,
                 password: str_param(p, "password").map(str::to_string).filter(|x| !x.is_empty()),
                 allow_download: flag(p, "allowDownload", true),
@@ -445,15 +445,15 @@ impl WebJob {
                     "photos": photos, "fingerprint": done.fingerprint})
             }
             Target::Immich { client, album, options } => {
-                let items: Vec<dac_immich::share::ShareItem> = rendered
+                let items: Vec<lcc_immich::share::ShareItem> = rendered
                     .into_iter()
                     .map(|(path, bytes, created)| {
                         let file_name = path.rsplit('/').next().unwrap_or("photo.jpg").to_string();
-                        dac_immich::share::ShareItem { file_name, bytes, created }
+                        lcc_immich::share::ShareItem { file_name, bytes, created }
                     })
                     .collect();
                 let r =
-                    dac_immich::share::share_photos(&client, &album, SHARE_DEVICE, &items, &options, &mut |_, _| true).map_err(|e| e.to_string())?;
+                    lcc_immich::share::share_photos(&client, &album, SHARE_DEVICE, &items, &options, &mut |_, _| true).map_err(|e| e.to_string())?;
                 json!({"album": album, "albumId": r.album_id, "linkId": r.link_id, "url": r.url, "uploaded": r.uploaded,
                     "duplicates": r.duplicates, "photos": photos, "expiresAt": options.expires_at, "password": options.password.is_some()})
             }
@@ -506,7 +506,7 @@ fn delete_gallery(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_param(p, "name").ok_or_else(|| bad(ID, "missing `name`"))?;
     migrate_galleries(s, ID)?;
     let g = creations::find_creation(s, CreationKind::Web, name).ok_or_else(|| bad(ID, format!("no saved web gallery `{name}`")))?;
-    s.commit("Delete Web Gallery", dac_catalog::Op::RemoveAlbum { id: g.id })?;
+    s.commit("Delete Web Gallery", lcc_catalog::Op::RemoveAlbum { id: g.id })?;
     Ok(galleries_json(s))
 }
 
@@ -587,7 +587,7 @@ mod tests {
     use crate::remote::MemorySecrets;
 
     fn temp_dir(tag: &str) -> std::path::PathBuf {
-        let d = std::env::temp_dir().join(format!("dac-web-{tag}-{}", std::process::id()));
+        let d = std::env::temp_dir().join(format!("lcc-web-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);
         std::fs::create_dir_all(&d).unwrap();
         d
@@ -702,7 +702,7 @@ mod tests {
         assert_eq!(g[0]["name"], "Old");
         assert_eq!(g[0]["ids"].as_array().unwrap().len(), 2);
         let id = g[0]["id"].as_u64().unwrap();
-        let a = s.catalog.album(dac_catalog::AlbumId(id)).unwrap();
+        let a = s.catalog.album(lcc_catalog::AlbumId(id)).unwrap();
         assert_eq!(a.creation.as_ref().unwrap().kind, "web");
         // moved: the file keeps the server only, a second call adds nothing
         let file = std::fs::read_to_string(dir.join("web.json")).unwrap();
@@ -713,6 +713,6 @@ mod tests {
         assert_eq!(v["photos"].as_array().map(Vec::len), Some(2));
         assert_eq!(v["settings"]["site"]["title"], "Old");
         s.execute("web.deleteGallery", &json!({"name": "old"})).unwrap();
-        assert!(s.catalog.album(dac_catalog::AlbumId(id)).is_none());
+        assert!(s.catalog.album(lcc_catalog::AlbumId(id)).is_none());
     }
 }

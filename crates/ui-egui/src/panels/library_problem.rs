@@ -6,7 +6,7 @@
 use egui::{Align2, RichText, vec2};
 use serde_json::json;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
@@ -144,7 +144,7 @@ impl LibraryProblem {
             "pendingImport": self.pending_import.len(),
             "upgrading": self.upgrading,
             "kind": self.kind().id(),
-            "upgrade": dac_engine::library::migration_progress(),
+            "upgrade": lcc_engine::library::migration_progress(),
         })
     }
 }
@@ -160,7 +160,7 @@ enum Choice {
 
 /// Open `path` (`None`: ask for a folder) through `app.openLibrary`; on success the problem is
 /// over (and command-line files are imported), else it shows the new error.
-fn open(app: &mut DacApp, path: Option<String>) {
+fn open(app: &mut LccApp, path: Option<String>) {
     let params = match &path {
         Some(p) => json!({"path": p}),
         None => json!({}),
@@ -189,25 +189,25 @@ fn open(app: &mut DacApp, path: Option<String>) {
 }
 
 /// Clear the problem once a library is open (e.g. through Settings → Open Library…).
-pub fn logic(app: &mut DacApp) {
+pub fn logic(app: &mut LccApp) {
     if app.library_problem.is_some() && app.session.library.is_some() {
         app.library_problem = None;
     }
 }
 
 /// Upgrade the catalog of the library in `dir` (an older format, see
-/// [`dac_engine::library::needs_migration`]) on a worker thread, then open it; the window shows
+/// [`lcc_engine::library::needs_migration`]) on a worker thread, then open it; the window shows
 /// the progress meanwhile (a library of hundreds of thousands of photos takes tens of seconds,
 /// once). `files` are imported once it is open. A failure shows the usual problem window.
 #[cfg(not(target_arch = "wasm32"))]
-pub fn start_upgrade(app: &mut DacApp, dir: std::path::PathBuf, files: Vec<String>) {
+pub fn start_upgrade(app: &mut LccApp, dir: std::path::PathBuf, files: Vec<String>) {
     let path = dir.to_string_lossy().to_string();
     app.library_problem = Some(LibraryProblem { upgrading: true, pending_import: files, ..LibraryProblem::new(path.clone(), "") });
     let started = crate::tasks::spawn(
         app,
         "Upgrade catalog",
         None,
-        move || dac_engine::library::migrate_library(&dir).map_err(|e| e.to_string()),
+        move || lcc_engine::library::migrate_library(&dir).map_err(|e| e.to_string()),
         move |app, _ctx, res: Result<bool, String>| {
             if let Some(p) = app.library_problem.as_mut() {
                 p.upgrading = false;
@@ -244,7 +244,7 @@ pub(crate) fn dim(ctx: &egui::Context) {
 fn upgrade_window(ctx: &egui::Context, path: &str) {
     let t = Tokens::get(ctx);
     dim(ctx);
-    let progress = dac_engine::library::migration_progress();
+    let progress = lcc_engine::library::migration_progress();
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
     egui::Window::new(crate::i18n::tr("Upgrading your library"))
         .id(egui::Id::new("library-upgrade"))
@@ -271,7 +271,7 @@ fn upgrade_window(ctx: &egui::Context, path: &str) {
                 None => (0.0, crate::i18n::tr("Starting…").to_string()),
             };
             let text = match &progress {
-                Some(p) if p.phase == dac_engine::catalog::progress::MigrationPhase::Writing => {
+                Some(p) if p.phase == lcc_engine::catalog::progress::MigrationPhase::Writing => {
                     format!("{text}… {} / {}", p.done, p.total)
                 }
                 _ => format!("{text}…"),
@@ -283,7 +283,7 @@ fn upgrade_window(ctx: &egui::Context, path: &str) {
 }
 
 /// The blocking window (until a choice is made).
-pub fn show(app: &mut DacApp, ctx: &egui::Context) {
+pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let Some(problem) = app.library_problem.clone() else { return };
     if problem.upgrading {
         upgrade_window(ctx, &problem.path);
@@ -368,8 +368,8 @@ pub fn show(app: &mut DacApp, ctx: &egui::Context) {
 }
 
 /// New Catalog… from the problem window: the catalog dialog, under the Pictures folder by default.
-fn new_catalog_dialog(app: &mut DacApp) {
-    let parent = dac_engine::library::default_dir().and_then(|d| d.parent().map(std::path::Path::to_path_buf));
+fn new_catalog_dialog(app: &mut LccApp) {
+    let parent = lcc_engine::library::default_dir().and_then(|d| d.parent().map(std::path::Path::to_path_buf));
     let params = json!({"parent": parent.map(|d| d.to_string_lossy().into_owned())});
     if let Err(e) = app.run("catalog.new", params) {
         log::warn!("new catalog: {e}");
@@ -377,7 +377,7 @@ fn new_catalog_dialog(app: &mut DacApp) {
 }
 
 /// The banner under the top bar while the session is temporary (Continue Without Saving).
-pub fn banner(app: &mut DacApp, ui: &mut egui::Ui) {
+pub fn banner(app: &mut LccApp, ui: &mut egui::Ui) {
     if !app.library_problem.as_ref().is_some_and(|p| p.dismissed) {
         return;
     }

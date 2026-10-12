@@ -1,5 +1,5 @@
 [package]
-name = "dac-raster"
+name = "lcc-raster"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -9,10 +9,10 @@ description = "Raster (L0)"
 workspace = true
 
 [dependencies]
-dac-brand = { workspace = true }
+lcc-brand = { workspace = true }
 serde = { workspace = true }
-dac-geom = { workspace = true }
-dac-color = { workspace = true }
+lcc-geom = { workspace = true }
+lcc-color = { workspace = true }
 rayon = { workspace = true, optional = true }
 
 [features]

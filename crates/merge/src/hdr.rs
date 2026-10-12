@@ -20,8 +20,8 @@
 //!    are dilated and feathered (Gaussian), upsampled, and remove the frame's weight. Their union
 //!    is the deghost overlay.
 
-use dac_raster::blur::gaussian;
-use dac_raster::{Plane, Rgb32f};
+use lcc_raster::blur::gaussian;
+use lcc_raster::{Plane, Rgb32f};
 use rayon::prelude::*;
 use serde::{Deserialize, Serialize};
 
@@ -80,8 +80,8 @@ pub struct HdrResult {
     pub alignments: Vec<Alignment>,
     pub color: FrameColor,
     pub raw: bool,
-    pub orientation: dac_geom::Orientation,
-    pub metadata: dac_meta::Metadata,
+    pub orientation: lcc_geom::Orientation,
+    pub metadata: lcc_meta::Metadata,
     pub baseline_exposure: f64,
 }
 

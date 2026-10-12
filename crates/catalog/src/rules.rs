@@ -828,7 +828,7 @@ impl Rule {
             }
             "cropped" => yes(p.is_cropped()),
             "treatment" => {
-                let t = if p.develop.treatment == dac_develop::Treatment::Bw { "monochrome" } else { "color" };
+                let t = if p.develop.treatment == lcc_develop::Treatment::Bw { "monochrome" } else { "color" };
                 (t == want) == (op == "is")
             }
             "keywords" => names_op(op, &m.keywords, &want),
@@ -1102,9 +1102,9 @@ mod tests {
         p.meta.city = "Rome".into();
         p.meta.country = "Italy".into();
         p.meta.shutter = "1/250".into();
-        p.meta.regions.push(dac_meta::Region {
-            rect: dac_meta::Rect { x0: 0.1, y0: 0.1, x1: 0.2, y1: 0.2 },
-            kind: dac_meta::RegionKind::Face,
+        p.meta.regions.push(lcc_meta::Region {
+            rect: lcc_meta::Rect { x0: 0.1, y0: 0.1, x1: 0.2, y1: 0.2 },
+            kind: lcc_meta::RegionKind::Face,
             name: Some("Anna Rossi".into()),
             description: None,
         });
@@ -1243,7 +1243,7 @@ mod tests {
     /// faces are not people; People Count counts each person once.
     #[test]
     fn people_rules() {
-        use dac_meta::{Rect, Region, RegionKind};
+        use lcc_meta::{Rect, Region, RegionKind};
         let cat = Catalog::new();
         let region = |name: Option<&str>, kind: RegionKind| Region {
             rect: Rect { x0: 0.4, y0: 0.4, x1: 0.6, y1: 0.6 },
@@ -1355,8 +1355,8 @@ mod tests {
         let mut d = photo(5);
         assert!(m(&d, "cropped", "is", json!(false)) && m(&d, "treatment", "is", json!("color")));
         let mut s = (*d.develop).clone();
-        s.crop.geometry.rect = dac_geom::Rect::new(0.1, 0.0, 0.9, 1.0);
-        s.treatment = dac_develop::Treatment::Bw;
+        s.crop.geometry.rect = lcc_geom::Rect::new(0.1, 0.0, 0.9, 1.0);
+        s.treatment = lcc_develop::Treatment::Bw;
         d.develop = std::sync::Arc::new(s);
         assert!(m(&d, "cropped", "is", json!(true)) && m(&d, "treatment", "is", json!("monochrome")));
         assert!(m(&d, "treatment", "isNot", json!("color")));
@@ -1379,11 +1379,11 @@ mod tests {
         assert!(m(&p, "aspect", "is", json!("landscape")) && m(&p, "longEdge", "is", json!(6000)) && m(&p, "shortEdge", "is", json!(4000)));
         assert!(m(&p, "megapixels", "is", json!(24)));
         let mut s = (*p.develop).clone();
-        s.orientation = dac_geom::Orientation::Rotate90;
+        s.orientation = lcc_geom::Orientation::Rotate90;
         p.develop = std::sync::Arc::new(s.clone());
         assert!(m(&p, "aspect", "is", json!("portrait")) && m(&p, "longEdge", "is", json!(6000)));
         // a square crop of the rotated frame: 4000 wide, 4000 of its 6000 tall
-        s.crop.geometry.rect = dac_geom::Rect::new(0.0, 1.0 / 6.0, 1.0, 5.0 / 6.0);
+        s.crop.geometry.rect = lcc_geom::Rect::new(0.0, 1.0 / 6.0, 1.0, 5.0 / 6.0);
         p.develop = std::sync::Arc::new(s);
         assert!(m(&p, "aspect", "is", json!("square")) && m(&p, "longEdge", "is", json!(4000)));
         assert!(m(&p, "megapixels", "is", json!(16)), "a 4000 × 4000 crop is 16 MP, not the sensor's 24");
@@ -1408,9 +1408,9 @@ mod tests {
         }
         p.meta.state = "Oregon".into();
         p.meta.alt_text = "A kite".into();
-        p.meta.regions = vec![dac_meta::Region {
-            rect: dac_meta::Rect { x0: 0.4, y0: 0.4, x1: 0.6, y1: 0.6 },
-            kind: dac_meta::RegionKind::Face,
+        p.meta.regions = vec![lcc_meta::Region {
+            rect: lcc_meta::Rect { x0: 0.4, y0: 0.4, x1: 0.6, y1: 0.6 },
+            kind: lcc_meta::RegionKind::Face,
             name: Some("Ana".into()),
             description: None,
         }];

@@ -22,14 +22,14 @@
 //!   PhotoCraft running with `--control` to open the file (`app.open`, relative to its automation
 //!   read root) instead of starting a new process.
 //!
-//! Layered PSDs are written with `dac-psd` (PhotoCraft's PSD writer, ported).
+//! Layered PSDs are written with `lcc-psd` (PhotoCraft's PSD writer, ported).
 //!
 //! Sources: own design; behaviour from Lightroom's documented Edit In options; PSD layout from
-//! Adobe's public file format specification (via dac-psd).
+//! Adobe's public file format specification (via lcc-psd).
 
 use std::path::{Path, PathBuf};
 
-use dac_catalog::{PhotoId, Source};
+use lcc_catalog::{PhotoId, Source};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -68,7 +68,7 @@ pub enum Mode {
 pub enum Format {
     #[default]
     Tiff,
-    /// Layered Photoshop document (dac-psd).
+    /// Layered Photoshop document (lcc-psd).
     Psd,
 }
 
@@ -125,7 +125,7 @@ impl Default for EditorPreset {
 
 impl EditorPreset {
     fn validate(&self) -> std::result::Result<(), String> {
-        dac_actions::validate_name(&self.name)?;
+        lcc_actions::validate_name(&self.name)?;
         space(&self.color_space)?;
         if !matches!(self.bit_depth, 8 | 16) {
             return Err(format!("bit depth {} (8 or 16)", self.bit_depth));
@@ -154,12 +154,12 @@ pub fn builtin_presets() -> Vec<EditorPreset> {
     ]
 }
 
-fn space(s: &str) -> std::result::Result<dac_pipeline::OutputSpace, String> {
+fn space(s: &str) -> std::result::Result<lcc_pipeline::OutputSpace, String> {
     Ok(match s {
-        "srgb" | "sRGB" => dac_pipeline::OutputSpace::Srgb,
-        "adobeRgb" => dac_pipeline::OutputSpace::AdobeRgb,
-        "displayP3" => dac_pipeline::OutputSpace::DisplayP3,
-        "proPhoto" | "prophoto" => dac_pipeline::OutputSpace::ProPhoto,
+        "srgb" | "sRGB" => lcc_pipeline::OutputSpace::Srgb,
+        "adobeRgb" => lcc_pipeline::OutputSpace::AdobeRgb,
+        "displayP3" => lcc_pipeline::OutputSpace::DisplayP3,
+        "proPhoto" | "prophoto" => lcc_pipeline::OutputSpace::ProPhoto,
         other => return Err(format!("unknown colour space `{other}` (srgb, adobeRgb, displayP3, proPhoto)")),
     })
 }
@@ -190,7 +190,7 @@ fn store_presets(s: &mut Session, cmd: &str, list: Vec<EditorPreset>) -> Result<
             std::fs::create_dir_all(d).map_err(|e| bad(cmd, format!("can't create {}: {e}", d.display())))?;
         }
         // temp file + rename; a failed write (full disk) removes the temp file
-        dac_catalog::safe_file::write_atomic(f, &bytes).map_err(|e| bad(cmd, format!("can't write {}: {e}", f.display())))?;
+        lcc_catalog::safe_file::write_atomic(f, &bytes).map_err(|e| bad(cmd, format!("can't write {}: {e}", f.display())))?;
     }
     s.workflow.editors = Some(list);
     Ok(())
@@ -316,9 +316,9 @@ pub(crate) fn stack_edit(s: &mut Session, new: PhotoId, on: PhotoId) -> Result<(
                 let at = photos.iter().position(|p| *p == m).unwrap_or(0);
                 photos.splice(at..at, [new, on]);
                 let mut ops = s.catalog.remove_from_stacks_ops(&[new]);
-                ops.retain(|o| !matches!(o, dac_catalog::Op::SetStack { id, .. } | dac_catalog::Op::RemoveStack { id } if *id == st.id));
-                ops.push(dac_catalog::Op::SetStack { id: st.id, photos, collapsed: false });
-                Some(dac_catalog::Op::Batch { ops })
+                ops.retain(|o| !matches!(o, lcc_catalog::Op::SetStack { id, .. } | lcc_catalog::Op::RemoveStack { id } if *id == st.id));
+                ops.push(lcc_catalog::Op::SetStack { id: st.id, photos, collapsed: false });
+                Some(lcc_catalog::Op::Batch { ops })
             }
             None => s.catalog.group_ops(new, &[on, m], false),
         },
@@ -340,11 +340,11 @@ fn add_and_stack(s: &mut Session, path: &Path, on: PhotoId, stack: bool, cmd: &s
     if let Some(from) = s.catalog.photo(on).cloned() {
         let nid = PhotoId(new);
         let ops = vec![
-            dac_catalog::Op::SetRating { id: nid, rating: from.rating },
-            dac_catalog::Op::SetLabel { id: nid, label: from.label },
-            dac_catalog::Op::SetMeta { id: nid, meta: Box::new(from.meta.clone()) },
+            lcc_catalog::Op::SetRating { id: nid, rating: from.rating },
+            lcc_catalog::Op::SetLabel { id: nid, label: from.label },
+            lcc_catalog::Op::SetMeta { id: nid, meta: Box::new(from.meta.clone()) },
         ];
-        s.commit("Edit In", dac_catalog::Op::Batch { ops })?;
+        s.commit("Edit In", lcc_catalog::Op::Batch { ops })?;
     }
     if stack {
         // import may already have stacked it from the file's DerivedFrom link: this places it
@@ -358,7 +358,7 @@ fn add_and_stack(s: &mut Session, path: &Path, on: PhotoId, stack: bool, cmd: &s
 /// Edit a Copy: the same bytes as the original, so import would call it a duplicate. Add it as
 /// its own photo instead (metadata kept, edits not: the editor gets the unedited file), stacked
 /// on the original and selected. → the new photo
-fn add_copy(s: &mut Session, ph: &dac_catalog::Photo, dest: &Path, stack: bool) -> Result<u64> {
+fn add_copy(s: &mut Session, ph: &lcc_catalog::Photo, dest: &Path, stack: bool) -> Result<u64> {
     let new = s.catalog.alloc_photo_id();
     let mut q = ph.clone();
     q.id = new;
@@ -369,7 +369,7 @@ fn add_copy(s: &mut Session, ph: &dac_catalog::Photo, dest: &Path, stack: bool) 
     (q.edited, q.copy_of, q.copy_name, q.sha1, q.xmp) = (None, None, None, None, None);
     q.history.clear();
     q.versions.clear();
-    s.commit("Edit a Copy", dac_catalog::Op::AddPhoto { photo: Box::new(q) })?;
+    s.commit("Edit a Copy", lcc_catalog::Op::AddPhoto { photo: Box::new(q) })?;
     if stack {
         stack_edit(s, new, ph.id)?;
     }
@@ -385,7 +385,7 @@ struct Rendered16 {
     icc: Option<Vec<u8>>,
 }
 
-fn render16(s: &mut Session, id: PhotoId, space: dac_pipeline::OutputSpace, cmd: &str) -> Result<Rendered16> {
+fn render16(s: &mut Session, id: PhotoId, space: lcc_pipeline::OutputSpace, cmd: &str) -> Result<Rendered16> {
     let opts = crate::export::ExportOptions {
         format: crate::export::ExportFormat::Tiff,
         bit_depth: Some(16),
@@ -435,20 +435,20 @@ fn layered_psd(layers: &[(String, Rendered16)], depth: u8, icc: Option<Vec<u8>>,
     let eight = depth == 8;
     let pixels = |v: Vec<u16>| {
         if eight {
-            dac_psd::PixelData::Rgba8(v.into_iter().map(|x| ((u32::from(x) * 255 + 32_767) / 65_535) as u8).collect())
+            lcc_psd::PixelData::Rgba8(v.into_iter().map(|x| ((u32::from(x) * 255 + 32_767) / 65_535) as u8).collect())
         } else {
-            dac_psd::PixelData::Rgba16(v)
+            lcc_psd::PixelData::Rgba16(v)
         }
     };
-    let mut b = dac_psd::PsdBuilder::new(w, h).depth(if eight { 8 } else { 16 });
+    let mut b = lcc_psd::PsdBuilder::new(w, h).depth(if eight { 8 } else { 16 });
     if w > PSD_MAX_SIDE || h > PSD_MAX_SIDE {
-        b = b.version(dac_psd::Version::Psb);
+        b = b.version(lcc_psd::Version::Psb);
     }
     if let Some(icc) = icc {
         b = b.icc_profile(icc);
     }
     if let Some(x) = xmp {
-        b = b.resource(dac_psd::ImageResource::new(dac_psd::resources::ids::XMP, x.into_bytes()));
+        b = b.resource(lcc_psd::ImageResource::new(lcc_psd::resources::ids::XMP, x.into_bytes()));
     }
     for (name, r) in layers {
         let (lw, lh) = (r.width as usize, r.height as usize);
@@ -464,7 +464,7 @@ fn layered_psd(layers: &[(String, Rendered16)], depth: u8, icc: Option<Vec<u8>>,
         }
         let left = i32::try_from(left).map_err(|_| "too large")?;
         let top = i32::try_from(top).map_err(|_| "too large")?;
-        b.push_layer(dac_psd::LayerSpec::new(name.clone(), left, top, r.width, r.height, pixels(px)));
+        b.push_layer(lcc_psd::LayerSpec::new(name.clone(), left, top, r.width, r.height, pixels(px)));
     }
     b.composite(pixels(comp));
     b.to_bytes().map_err(|e| e.to_string())
@@ -473,36 +473,36 @@ fn layered_psd(layers: &[(String, Rendered16)], depth: u8, icc: Option<Vec<u8>>,
 fn xmp_of(s: &Session, id: PhotoId) -> Option<String> {
     let ph = s.catalog.photo(id)?;
     let o = crate::export::ExportOptions::default();
-    crate::export::export_metadata(ph, &s.catalog, &o).map(|m| dac_meta::write_xmp(&m, None))
+    crate::export::export_metadata(ph, &s.catalog, &o).map(|m| lcc_meta::write_xmp(&m, None))
 }
 
 /// The XMP packet of an edit made from `id`: its metadata plus a fresh document id and the
 /// `xmpMM:DerivedFrom` link to the source ([`link`]).
 fn linked_xmp(s: &Session, id: PhotoId, seed: &str) -> Option<String> {
     let ph = s.catalog.photo(id)?;
-    let packet = xmp_of(s, id).unwrap_or_else(|| dac_meta::write_xmp(&dac_meta::Metadata::default(), None));
+    let packet = xmp_of(s, id).unwrap_or_else(|| lcc_meta::write_xmp(&lcc_meta::Metadata::default(), None));
     let from = link::source_document_id(ph);
     Some(link::add_link(&packet, &link::new_document_id(seed), &from, &ph.file_name))
 }
 
 /// A TIFF of `id` rendered with its edits (8 or 16 bits in `space`), with the export metadata
 /// (EXIF) and the linked XMP packet.
-fn linked_tiff(s: &mut Session, id: PhotoId, space: dac_pipeline::OutputSpace, depth: u8, seed: &str, cmd: &str) -> Result<Vec<u8>> {
+fn linked_tiff(s: &mut Session, id: PhotoId, space: lcc_pipeline::OutputSpace, depth: u8, seed: &str, cmd: &str) -> Result<Vec<u8>> {
     let r = render16(s, id, space, cmd)?;
     let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad(cmd, "no photo"))?;
     let meta = crate::export::export_metadata(&ph, &s.catalog, &crate::export::ExportOptions::default());
-    let exif = meta.as_ref().map(dac_meta::write_exif);
+    let exif = meta.as_ref().map(lcc_meta::write_exif);
     let xmp = linked_xmp(s, id, seed);
-    let profile = r.icc.clone().unwrap_or_else(|| dac_codecs::icc::write_named(crate::export::named_space(space)));
-    let em = dac_codecs::EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: None };
+    let profile = r.icc.clone().unwrap_or_else(|| lcc_codecs::icc::write_named(crate::export::named_space(space)));
+    let em = lcc_codecs::EncodeMeta { icc: Some(&profile), exif: exif.as_deref(), xmp: xmp.as_deref(), ppi: None };
     let eight: Vec<u8>;
     let img = if depth == 8 {
         eight = r.rgb.iter().map(|x| ((u32::from(*x) * 255 + 32_767) / 65_535) as u8).collect();
-        dac_codecs::EncodeImage::new(r.width, r.height, 3, dac_codecs::Samples::U8(&eight))
+        lcc_codecs::EncodeImage::new(r.width, r.height, 3, lcc_codecs::Samples::U8(&eight))
     } else {
-        dac_codecs::EncodeImage::new(r.width, r.height, 3, dac_codecs::Samples::U16(&r.rgb))
+        lcc_codecs::EncodeImage::new(r.width, r.height, 3, lcc_codecs::Samples::U16(&r.rgb))
     };
-    dac_codecs::encode_tiff(&img, dac_codecs::TiffCompression::Deflate, &em).map_err(|e| bad(cmd, e.to_string()))
+    lcc_codecs::encode_tiff(&img, lcc_codecs::TiffCompression::Deflate, &em).map_err(|e| bad(cmd, e.to_string()))
 }
 
 /// The mode Lightroom suggests for a photo: Edit Original for a PSD or TIFF (most likely an
@@ -804,12 +804,12 @@ mod tests {
         let a = Rendered16 { width: 4, height: 2, rgb: vec![1000; 4 * 2 * 3], icc: None };
         let b = Rendered16 { width: 2, height: 2, rgb: vec![60000; 2 * 2 * 3], icc: None };
         let bytes = layered_psd(&[("bottom".into(), a), ("top".into(), b)], 16, None, Some("<x:xmpmeta/>".into())).unwrap();
-        let f = dac_psd::PsdFile::from_bytes(&bytes).unwrap();
+        let f = lcc_psd::PsdFile::from_bytes(&bytes).unwrap();
         assert_eq!((f.header.width, f.header.height, f.header.depth), (4, 2, 16));
         assert_eq!(f.layer(0).unwrap().name(), "bottom");
         assert_eq!(f.layer(1).unwrap().name(), "top");
         // our own PSD reader sees the composite: the top layer centred over the bottom one
-        let d = dac_codecs::decode(&bytes, Default::default()).unwrap();
+        let d = lcc_codecs::decode(&bytes, Default::default()).unwrap();
         assert_eq!((d.width, d.height), (4, 2));
         assert_eq!(d.xmp.as_deref(), Some("<x:xmpmeta/>"));
         let px = d.to_srgb8();

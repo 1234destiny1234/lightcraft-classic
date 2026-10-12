@@ -2,7 +2,7 @@
 //! `{Camera}`, `{Lens}`, `{ISO}`, `{Exposure}`, `{Aperture}`, `{Focal}`, `{Creator}`, `{Copyright}`,
 //! `{Location}`, `{Sequence}`, `{Total}`. Unknown tokens stay as written so a typo is visible.
 
-use dac_catalog::Photo;
+use lcc_catalog::Photo;
 
 /// The per-photo values the tokens read.
 #[derive(Clone, Debug, Default, PartialEq)]

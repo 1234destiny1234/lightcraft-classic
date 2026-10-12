@@ -6,10 +6,10 @@ use std::cell::Cell;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use dac_engine::Session;
-use dac_engine::catalog::Source;
-use dac_engine::library::LibraryStores;
-use dac_ui_egui::{DacApp, Services, UiState};
+use lcc_engine::Session;
+use lcc_engine::catalog::Source;
+use lcc_engine::library::LibraryStores;
+use lcc_ui_egui::{LccApp, Services, UiState};
 use serde_json::json;
 use wasm_bindgen::JsCast;
 use wasm_bindgen::prelude::*;
@@ -224,8 +224,8 @@ fn services(originals: Originals, backend: Option<Backend>, files: Files, frozen
         write: Some(Box::new(download)),
         // downloads happen on the main thread: exports run in the foreground on the web
         write_shared: None,
-        png: Some(Box::new(|img: &dac_raster::Rgba8| {
-            dac_codecs::encode_png(&dac_codecs::EncodeImage::rgba8(img), &dac_codecs::EncodeMeta::default()).unwrap_or_default()
+        png: Some(Box::new(|img: &lcc_raster::Rgba8| {
+            lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()
         })),
         reveal: None,
         log_file: None,
@@ -302,7 +302,7 @@ async fn boot(opts: Options) -> Boot {
     if let Some(b) = &backend {
         if opts.reset {
             // everything this site keeps in the browser, photos included: never without asking
-            let ok = safety::confirm(&dac_brand::fill(
+            let ok = safety::confirm(&lcc_brand::fill(
                 "?reset deletes the {app} library stored in this browser, including every imported photo. \
                  This can't be undone. Delete it?",
             ));
@@ -334,7 +334,7 @@ async fn boot(opts: Options) -> Boot {
         }
         crate::backend::request_persistence(|granted| {
             if !granted {
-                notice(&dac_brand::fill(
+                notice(&lcc_brand::fill(
                     "This browser may delete {app}'s library when it runs short of space (persistent storage wasn't granted). \
                      Keep your original photos elsewhere and use File ▸ Back Up Library… now and then.",
                 ));
@@ -371,7 +371,7 @@ async fn boot(opts: Options) -> Boot {
 }
 
 struct WebApp {
-    app: DacApp,
+    app: LccApp,
     originals: Originals,
     files: Files,
     backend: Option<Backend>,
@@ -416,9 +416,9 @@ impl WebApp {
                 log::error!("opening the library failed: {e}");
                 session = Session::new();
                 originals.install(&mut session);
-                problem = Some(dac_ui_egui::panels::library_problem::LibraryProblem {
+                problem = Some(lcc_ui_egui::panels::library_problem::LibraryProblem {
                     can_retry: false,
-                    ..dac_ui_egui::panels::library_problem::LibraryProblem::new(
+                    ..lcc_ui_egui::panels::library_problem::LibraryProblem::new(
                         "the browser's storage for this page",
                         format!("{e}. Reload the page to try again."),
                     )
@@ -426,7 +426,7 @@ impl WebApp {
             }
         }
         if backend.is_some() {
-            notice(&dac_brand::fill(
+            notice(&lcc_brand::fill(
                 "{app} in the browser is experimental. Your library is kept in this browser's storage: keep your original photos \
                  elsewhere and back up with File ▸ Back Up Library….",
             ));
@@ -434,7 +434,7 @@ impl WebApp {
         // previews are large (≤ 2560 px, f32): keep few in a 32-bit address space
         session.media.preview_capacity = 3;
         let frozen = Rc::new(Cell::new(false));
-        let mut app = DacApp::new(session, services(originals.clone(), backend.clone(), files.clone(), frozen.clone(), cc.egui_ctx.clone()))
+        let mut app = LccApp::new(session, services(originals.clone(), backend.clone(), files.clone(), frozen.clone(), cc.egui_ctx.clone()))
             .with_chinese_font(chinese_font);
         let ui_written = files.get("ui.json").unwrap_or_default();
         if let Ok(ui) = serde_json::from_slice::<UiState>(&ui_written) {
@@ -463,7 +463,7 @@ impl WebApp {
         }
         log::info!("app: {n} render workers");
         CTX.with(|c| *c.borrow_mut() = Some(cc.egui_ctx.clone()));
-        let origin = dac_ui_egui::now_ms() - perf_now();
+        let origin = lcc_ui_egui::now_ms() - perf_now();
         WebApp {
             app,
             originals,
@@ -676,9 +676,9 @@ pub fn start(chinese_font: Vec<u8>) {
     log::info!("app: wasm instantiated at {:.0} ms", perf_now());
     // index.html is static: the page title and loading text come from the brand
     if let Some(doc) = window().and_then(|w| w.document()) {
-        doc.set_title(dac_brand::DISPLAY_NAME);
+        doc.set_title(lcc_brand::DISPLAY_NAME);
         if let Some(el) = doc.get_element_by_id("app_loading") {
-            el.set_text_content(Some(&format!("Loading {}…", dac_brand::DISPLAY_NAME)));
+            el.set_text_content(Some(&format!("Loading {}…", lcc_brand::DISPLAY_NAME)));
         }
     }
     if chinese_font.is_empty() {
@@ -688,7 +688,7 @@ pub fn start(chinese_font: Vec<u8>) {
     wasm_bindgen_futures::spawn_local(async move {
         // one tab per library: two would each keep their own copy and overwrite each other's saves
         if opts.store != "memory" && safety::acquire_tab_lock().await == Some(false) {
-            safety::show_blocking(&dac_brand::fill(
+            safety::show_blocking(&lcc_brand::fill(
                 "{app} is already open in another tab or window of this browser.\n\n\
                  Switch to that tab, or close it and reload this page. (Two tabs would overwrite each other's changes.)",
             ));
@@ -712,8 +712,8 @@ pub fn start(chinese_font: Vec<u8>) {
                 }
             }
             Err(e) => {
-                log::error!("{} failed to start: {e:?}", dac_brand::DISPLAY_NAME);
-                set_status(&format!("{} failed to start: {e:?}", dac_brand::DISPLAY_NAME));
+                log::error!("{} failed to start: {e:?}", lcc_brand::DISPLAY_NAME);
+                set_status(&format!("{} failed to start: {e:?}", lcc_brand::DISPLAY_NAME));
             }
         }
     });

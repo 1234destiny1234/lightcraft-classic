@@ -8,15 +8,15 @@
 use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
-use dac_video::{FrameReader, VideoError, poster, probe};
 use filmcraft_isobmff::{Brand, FourCc, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
+use lcc_video::{FrameReader, VideoError, poster, probe};
 
 const FRAMES: usize = 12;
 const W: u32 = 64;
 const H: u32 = 48;
 
 fn scratch(name: &str) -> PathBuf {
-    let dir = std::env::temp_dir().join(format!("dac-video-formats-{}", std::process::id()));
+    let dir = std::env::temp_dir().join(format!("lcc-video-formats-{}", std::process::id()));
     std::fs::create_dir_all(&dir).expect("scratch dir");
     dir.join(name)
 }
@@ -33,7 +33,7 @@ fn level8(k: usize) -> u16 {
 }
 
 /// Frame index from a decoded frame's mean green (inverting sRGB and the video range).
-fn which(img: &dac_raster::Rgb32f) -> usize {
+fn which(img: &lcc_raster::Rgb32f) -> usize {
     let n = img.data.len().max(1) as f32;
     let g = img.data.iter().map(|p| p[1]).sum::<f32>() / n;
     let v = if g <= 0.0031308 { g * 12.92 } else { 1.055 * g.powf(1.0 / 2.4) - 0.055 };

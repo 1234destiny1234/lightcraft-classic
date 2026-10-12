@@ -4,7 +4,7 @@ The README screenshots in `docs/images/classic/` are rendered headless (no windo
 library by [`classic.jsonl`](classic.jsonl), a list of control-protocol requests:
 
 ```sh
-cargo run --release -p dac-cli -- snapshot --demo --script docs/showcase/classic.jsonl --size 1600x1000
+cargo run --release -p lcc-cli -- snapshot --demo --script docs/showcase/classic.jsonl --size 1600x1000
 # compress for the repo (ImageMagick): 1280 px wide JPEGs, well under 300 KB each
 magick mogrify -format jpg -resize 1280x -quality 82 docs/images/classic/*.png && rm docs/images/classic/*.png
 ```

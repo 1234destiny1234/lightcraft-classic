@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 18: export speed and audio codecs, 12–20 h left; gap 18: M14 video stack landed, 15–25 h left; gap 18: video sequential decode, pixel aspect, deinterlace; gap 18: video engine commands; gap 18: video plan, 55–80 h, `dac-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 18: export speed and audio codecs, 12–20 h left; gap 18: M14 video stack landed, 15–25 h left; gap 18: video sequential decode, pixel aspect, deinterlace; gap 18: video engine commands; gap 18: video plan, 55–80 h, `lcc-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -81,10 +81,10 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 | 2026-10-12 | minor | Gap 18: export no longer CPU-bound (pipeline + GPU grade), audio from AAC/Opus/AC-3/PCM/MP3; 15–25 → 12–20 h |
 | 2026-10-12 | minor | Gap 18: M14 video stack landed (playback, trim, poster, Capture Frame, global grading, export); remaining work listed, 55–80 → 15–25 h |
 | 2026-10-12 | minor | Gap 18: engine half of video playback, trim, poster frame and Capture Frame (`video.*` commands) |
-| 2026-10-12 | minor | Gap 18: `dac-video` sequential playback API (`seek`/`next_frame`/`frames_from`), pixel aspect ratio, MPEG-2 deinterlace; decode cost measured |
-| 2026-10-12 | minor | Gap 18: `dac-video` adds Matroska/WebM, MPEG-TS/M2TS/MTS and MXF, and VP9, AV1, ProRes, DNxHR, APV and MPEG-2 decoding; AVCHD 1080i (interlaced H.264) reported unsupported |
+| 2026-10-12 | minor | Gap 18: `lcc-video` sequential playback API (`seek`/`next_frame`/`frames_from`), pixel aspect ratio, MPEG-2 deinterlace; decode cost measured |
+| 2026-10-12 | minor | Gap 18: `lcc-video` adds Matroska/WebM, MPEG-TS/M2TS/MTS and MXF, and VP9, AV1, ProRes, DNxHR, APV and MPEG-2 decoding; AVCHD 1080i (interlaced H.264) reported unsupported |
 | 2026-10-12 | minor | Gap 18: video import facts and graded poster thumbnails (M14.2/M14.3) |
-| 2026-10-12 | minor | Gap 18: `dac-video` crate decodes MP4/MOV H.264/HEVC frames and posters (M14.1); no player, trim or export yet |
+| 2026-10-12 | minor | Gap 18: `lcc-video` crate decodes MP4/MOV H.264/HEVC frames and posters (M14.1); no player, trim or export yet |
 | 2026-10-12 | minor | Gap 18: video planned via FilmCraft crates, estimate 25–45 → 55–80 h, audio output decision pending |
 | 2026-10-12 | minor | Gap 18: video frame grading (CPU/GPU) and 33³ LUT playback path, timings in video.md |
 | 2026-10-12 | minor | Gap 18: video UI pieces (control bar, trim handles, poster marker, grid badge, controls greyed for video) |

@@ -1,5 +1,5 @@
 [package]
-name = "dac-sysmem"
+name = "lcc-sysmem"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -16,4 +16,4 @@ dbg_macro = "warn"
 todo = "warn"
 
 [dependencies]
-dac-brand = { workspace = true }
+lcc-brand = { workspace = true }

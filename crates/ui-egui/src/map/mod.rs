@@ -3,8 +3,8 @@
 //! saved locations (private ones keep their photos' positions out of exports), a location
 //! filter, place search and opt-in reverse geocoding.
 //!
-//! The library side is `dac_engine::cmd::map` (`map.pins`, `map.geotag`, `map.saveLocation`, …);
-//! tiles, clustering, tracks and geocoders are `dac_geo`. This module holds the view state
+//! The library side is `lcc_engine::cmd::map` (`map.pins`, `map.geotag`, `map.saveLocation`, …);
+//! tiles, clustering, tracks and geocoders are `lcc_geo`. This module holds the view state
 //! (centre, zoom, style, tracks), persisted in `<settings>/map.json`, and the UI commands that
 //! drive it (`map.view`, `map.style`, `map.addServer`, `map.loadTrack`, `map.geotagAt`, …).
 
@@ -20,12 +20,12 @@ use std::sync::mpsc::Receiver;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
-use dac_engine::cmd::map::LocationFilter;
-use dac_geo::LatLon;
-use dac_geo::tiles::{TileKind, TileServer};
-use dac_geo::tracks::Track;
+use lcc_engine::cmd::map::LocationFilter;
+use lcc_geo::LatLon;
+use lcc_geo::tiles::{TileKind, TileServer};
+use lcc_geo::tracks::Track;
 
-use crate::DacApp;
+use crate::LccApp;
 use crate::module::{Module, ModuleId, ModuleKey, PanelId};
 
 /// What `map.json` keeps.
@@ -56,9 +56,9 @@ impl Default for MapPrefs {
             style: "osm".into(),
             servers: Vec::new(),
             geocoder: "off".into(),
-            endpoint: dac_geo::geocode::NOMINATIM_DEFAULT.into(),
+            endpoint: lcc_geo::geocode::NOMINATIM_DEFAULT.into(),
             online_consent: false,
-            cache_mb: dac_geo::cache::DEFAULT_MAX_BYTES / (1024 * 1024),
+            cache_mb: lcc_geo::cache::DEFAULT_MAX_BYTES / (1024 * 1024),
         }
     }
 }
@@ -103,7 +103,7 @@ pub struct MapUi {
     pub drawn: Vec<(egui::Pos2, Vec<u64>)>,
     /// The map canvas (screen), last frame.
     pub canvas: Option<egui::Rect>,
-    pins_cache: Option<(u64, usize, String, i64, std::sync::Arc<Vec<dac_geo::Cluster<u64>>>)>,
+    pins_cache: Option<(u64, usize, String, i64, std::sync::Arc<Vec<lcc_geo::Cluster<u64>>>)>,
 }
 
 impl Default for MapUi {
@@ -138,7 +138,7 @@ fn settings_dir() -> Option<PathBuf> {
     }
     #[cfg(not(target_arch = "wasm32"))]
     {
-        dac_engine::config::config_dir()
+        lcc_engine::config::config_dir()
     }
     #[cfg(target_arch = "wasm32")]
     {
@@ -178,11 +178,11 @@ impl MapUi {
         if !LatLon::new(p.lat, p.lon).is_valid() {
             (p.lat, p.lon) = (30.0, 0.0);
         }
-        p.lat = p.lat.clamp(-dac_geo::mercator::MAX_LAT, dac_geo::mercator::MAX_LAT);
+        p.lat = p.lat.clamp(-lcc_geo::mercator::MAX_LAT, lcc_geo::mercator::MAX_LAT);
         if !p.zoom.is_finite() {
             p.zoom = 2.0;
         }
-        p.zoom = p.zoom.clamp(1.0, f64::from(dac_geo::mercator::MAX_ZOOM));
+        p.zoom = p.zoom.clamp(1.0, f64::from(lcc_geo::mercator::MAX_ZOOM));
         p.servers.retain(|s| s.validate().is_ok());
         if !self.servers().iter().any(|s| s.id == self.prefs.style) {
             self.prefs.style = "osm".into();
@@ -202,7 +202,7 @@ impl MapUi {
     }
 
     pub fn servers(&self) -> Vec<TileServer> {
-        dac_geo::tiles::all(&self.prefs.servers)
+        lcc_geo::tiles::all(&self.prefs.servers)
     }
 
     pub fn server(&self) -> TileServer {
@@ -225,7 +225,7 @@ impl MapUi {
 
     pub fn set_view(&mut self, c: LatLon, zoom: f64) {
         if c.is_valid() {
-            self.prefs.lat = c.lat.clamp(-dac_geo::mercator::MAX_LAT, dac_geo::mercator::MAX_LAT);
+            self.prefs.lat = c.lat.clamp(-lcc_geo::mercator::MAX_LAT, lcc_geo::mercator::MAX_LAT);
             self.prefs.lon = (c.lon + 180.0).rem_euclid(360.0) - 180.0;
         }
         if zoom.is_finite() {
@@ -235,7 +235,7 @@ impl MapUi {
 
     /// The pins for the photos in view at the current zoom (cached per catalog revision, filter and zoom step;
     /// shared, so a frame doesn't copy 50k clusters — P6.1).
-    pub fn pins(&mut self, app_session: &mut dac_engine::Session) -> std::sync::Arc<Vec<dac_geo::Cluster<u64>>> {
+    pub fn pins(&mut self, app_session: &mut lcc_engine::Session) -> std::sync::Arc<Vec<lcc_geo::Cluster<u64>>> {
         let rev = app_session.catalog.revision;
         let n = app_session.visible().len();
         let zkey = (self.prefs.zoom * 4.0).round() as i64;
@@ -249,8 +249,8 @@ impl MapUi {
             return std::sync::Arc::clone(pins);
         }
         let pts: Vec<(u64, LatLon)> =
-            dac_engine::cmd::map::filtered(app_session, &self.filter).into_iter().filter_map(|(id, g)| g.map(|g| (id.0, g))).collect();
-        let pins = std::sync::Arc::new(dac_geo::cluster(&pts, zkey as f64 / 4.0, 44.0));
+            lcc_engine::cmd::map::filtered(app_session, &self.filter).into_iter().filter_map(|(id, g)| g.map(|g| (id.0, g))).collect();
+        let pins = std::sync::Arc::new(lcc_geo::cluster(&pts, zkey as f64 / 4.0, 44.0));
         self.pins_cache = Some((rev, n, fkey, zkey, std::sync::Arc::clone(&pins)));
         pins
     }
@@ -271,8 +271,8 @@ impl Module for MapModule {
     fn right_panels(&self) -> &'static [PanelId] {
         &[]
     }
-    fn toolbar(&self, _ui: &mut egui::Ui, _app: &mut DacApp) {}
-    fn center(&self, ui: &mut egui::Ui, app: &mut DacApp) {
+    fn toolbar(&self, _ui: &mut egui::Ui, _app: &mut LccApp) {}
+    fn center(&self, ui: &mut egui::Ui, app: &mut LccApp) {
         view::center(ui, app);
     }
     fn keymap(&self) -> &'static [ModuleKey] {
@@ -314,7 +314,7 @@ fn s<'a>(p: &'a Value, k: &str) -> Option<&'a str> {
     p.get(k).and_then(Value::as_str)
 }
 
-fn view_json(app: &DacApp) -> Value {
+fn view_json(app: &LccApp) -> Value {
     let m = &app.map;
     json!({
         "lat": m.prefs.lat, "lon": m.prefs.lon, "zoom": m.prefs.zoom, "style": m.prefs.style,
@@ -326,7 +326,7 @@ fn view_json(app: &DacApp) -> Value {
 }
 
 /// Run a map UI command; `None`: not one.
-pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     if !COMMANDS.iter().any(|c| c.0 == id) {
         return None;
     }
@@ -334,7 +334,7 @@ pub fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value, String
     Some(run_inner(app, id, p))
 }
 
-fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
+fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     match id {
         "map.view" => {
             let c = app.map.centre();
@@ -443,10 +443,10 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             }
             let text = std::fs::read_to_string(&path).map_err(|e| format!("can't read {path}: {e}"))?;
             let name = std::path::Path::new(&path).file_name().map(|n| n.to_string_lossy().into_owned()).unwrap_or_default();
-            let track = dac_geo::tracks::parse(&name, &text).map_err(|e| e.to_string())?;
+            let track = lcc_geo::tracks::parse(&name, &text).map_err(|e| e.to_string())?;
             let pts: Vec<LatLon> = track.all_points().collect();
             let fit = app.map.canvas.map(|r| (f64::from(r.width()), f64::from(r.height()))).unwrap_or((1000.0, 700.0));
-            if let Some((c, z)) = dac_geo::mercator::fit(&pts, fit.0, fit.1) {
+            if let Some((c, z)) = lcc_geo::mercator::fit(&pts, fit.0, fit.1) {
                 app.map.set_view(c, z);
             }
             let out = json!({"name": track.name, "points": track.points(), "segments": track.segments.len(), "timed": track.timed});
@@ -484,7 +484,7 @@ fn run_inner(app: &mut DacApp, id: &str, p: &Value) -> Result<Value, String> {
             let pins = app.map.pins(&mut app.session);
             let pts: Vec<LatLon> = pins.iter().map(|c| c.centre).collect();
             let size = app.map.canvas.map(|r| (f64::from(r.width()), f64::from(r.height()))).unwrap_or((1000.0, 700.0));
-            let (c, z) = dac_geo::mercator::fit(&pts, size.0, size.1).ok_or("no photos with a location in view")?;
+            let (c, z) = lcc_geo::mercator::fit(&pts, size.0, size.1).ok_or("no photos with a location in view")?;
             app.map.set_view(c, z);
             Ok(view_json(app))
         }

@@ -1,7 +1,7 @@
 //! Filter presets: the filter bar's settings saved under a name ("Five stars", "Unedited raws")
 //! and applied in one step. Saved with the library.
 
-use dac_catalog::Filter;
+use lcc_catalog::Filter;
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
