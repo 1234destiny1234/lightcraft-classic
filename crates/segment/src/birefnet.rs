@@ -20,6 +20,7 @@
 //! restructured for candle; Swin Transformer: Liu et al., ICCV 2021 (paper); modulated
 //! deformable convolution: Zhu et al., "Deformable ConvNets v2", CVPR 2019 (paper).
 
+use std::collections::HashMap;
 use std::path::Path;
 use std::sync::Arc;
 
@@ -972,10 +973,104 @@ fn resample_cols(src: &[f32], w: usize, h: usize, nh: usize) -> Vec<f32> {
     out
 }
 
+/// A checkpoint of the BiRefNet_lite layout with tiny widths and random weights (tests of
+/// the plumbing; Swin width `e`, window 3, one head and two blocks per stage).
+#[doc(hidden)]
+pub fn tiny_checkpoint(e: usize) -> Result<HashMap<String, Tensor>> {
+    let mut specs: Vec<(String, Vec<usize>)> = Vec::new();
+    let mut put = |name: String, shape: &[usize]| specs.push((name, shape.to_vec()));
+    let ln = |put: &mut dyn FnMut(String, &[usize]), p: &str, d: usize| {
+        put(format!("{p}.weight"), &[d]);
+        put(format!("{p}.bias"), &[d]);
+    };
+    let conv = |put: &mut dyn FnMut(String, &[usize]), p: &str, o: usize, i: usize, k: usize, bias: bool| {
+        put(format!("{p}.weight"), &[o, i, k, k]);
+        if bias {
+            put(format!("{p}.bias"), &[o]);
+        }
+    };
+    let bn = |put: &mut dyn FnMut(String, &[usize]), p: &str, d: usize| {
+        for n in ["weight", "bias", "running_mean", "running_var"] {
+            put(format!("{p}.{n}"), &[d]);
+        }
+    };
+    // Swin: window 3, one head per stage, two blocks per stage
+    conv(&mut put, "bb.patch_embed.proj", e, 3, 4, true);
+    ln(&mut put, "bb.patch_embed.norm", e);
+    for i in 0..4 {
+        let d = e << i;
+        for j in 0..2 {
+            let p = format!("bb.layers.{i}.blocks.{j}");
+            ln(&mut put, &format!("{p}.norm1"), d);
+            ln(&mut put, &format!("{p}.norm2"), d);
+            put(format!("{p}.attn.qkv.weight"), &[3 * d, d]);
+            put(format!("{p}.attn.qkv.bias"), &[3 * d]);
+            put(format!("{p}.attn.proj.weight"), &[d, d]);
+            put(format!("{p}.attn.proj.bias"), &[d]);
+            put(format!("{p}.attn.relative_position_bias_table"), &[25, 1]);
+            put(format!("{p}.mlp.fc1.weight"), &[4 * d, d]);
+            put(format!("{p}.mlp.fc1.bias"), &[4 * d]);
+            put(format!("{p}.mlp.fc2.weight"), &[d, 4 * d]);
+            put(format!("{p}.mlp.fc2.bias"), &[d]);
+        }
+        if i < 3 {
+            ln(&mut put, &format!("bb.layers.{i}.downsample.norm"), 4 * d);
+            put(format!("bb.layers.{i}.downsample.reduction.weight"), &[2 * d, 4 * d]);
+        }
+        ln(&mut put, &format!("bb.norm{i}"), d);
+    }
+    let dec_block = |put: &mut dyn FnMut(String, &[usize]), p: &str, i: usize, o: usize| {
+        conv(put, &format!("{p}.conv_in"), 64, i, 3, true);
+        bn(put, &format!("{p}.bn_in"), 64);
+        for (b, k) in [("aspp1", 1), ("aspp_deforms.0", 1), ("aspp_deforms.1", 3), ("aspp_deforms.2", 7)] {
+            let q = format!("{p}.dec_att.{b}");
+            conv(put, &format!("{q}.atrous_conv.offset_conv"), 2 * k * k, 64, k, true);
+            conv(put, &format!("{q}.atrous_conv.modulator_conv"), k * k, 64, k, true);
+            conv(put, &format!("{q}.atrous_conv.regular_conv"), 256, 64, k, false);
+            bn(put, &format!("{q}.bn"), 256);
+        }
+        conv(put, &format!("{p}.dec_att.global_avg_pool.1"), 256, 64, 1, false);
+        bn(put, &format!("{p}.dec_att.global_avg_pool.2"), 256);
+        conv(put, &format!("{p}.dec_att.conv1"), 64, 1280, 1, false);
+        bn(put, &format!("{p}.dec_att.bn1"), 64);
+        conv(put, &format!("{p}.conv_out"), o, 64, 3, true);
+        bn(put, &format!("{p}.bn_out"), o);
+    };
+    let [c0, c1, c2, c3] = [16 * e, 8 * e, 4 * e, 2 * e];
+    dec_block(&mut put, "squeeze_module.0", c0 + c1 + c2 + c3, c0);
+    dec_block(&mut put, "decoder.decoder_block4", c0 + c0 / 8, c1);
+    dec_block(&mut put, "decoder.decoder_block3", c1 + c0 / 8, c2);
+    dec_block(&mut put, "decoder.decoder_block2", c2 + c1 / 8, c3);
+    dec_block(&mut put, "decoder.decoder_block1", c3 + c2 / 8, c3 / 2);
+    for (i, inp, out) in [(5, 3072, c0 / 8), (4, 768, c0 / 8), (3, 192, c1 / 8), (2, 48, c2 / 8), (1, 3, c3 / 8)] {
+        conv(&mut put, &format!("decoder.ipt_blk{i}.conv1"), 64, inp, 3, true);
+        conv(&mut put, &format!("decoder.ipt_blk{i}.conv_out"), out, 64, 3, true);
+    }
+    for (i, ch) in [(4, c1), (3, c2), (2, c3)] {
+        conv(&mut put, &format!("decoder.lateral_block{i}.conv"), ch, ch, 1, true);
+        conv(&mut put, &format!("decoder.gdt_convs_{i}.0"), 16, ch, 3, true);
+        bn(&mut put, &format!("decoder.gdt_convs_{i}.1"), 16);
+        conv(&mut put, &format!("decoder.gdt_convs_attn_{i}.0"), 1, 16, 1, true);
+    }
+    conv(&mut put, "decoder.conv_out1.0", 1, c3 / 2 + c3 / 8, 1, true);
+    let mut t = HashMap::new();
+    for (name, shape) in specs {
+        let r = (Tensor::randn(0f32, 1.0, shape.as_slice(), &Device::Cpu)? * 0.05)?;
+        // batch-norm variances must be positive
+        let r = if name.ends_with("running_var") { (r.abs()? + 1.0)? } else { r };
+        t.insert(name, r);
+    }
+    Ok(t)
+}
+
+/// [`tiny_checkpoint`] written to `path` (tests of the plumbing elsewhere).
+#[doc(hidden)]
+pub fn write_tiny_checkpoint(path: &Path, e: usize) -> Result<()> {
+    Ok(candle_core::safetensors::save(&tiny_checkpoint(e)?, path)?)
+}
+
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
-
     use super::*;
 
     fn v(t: &Tensor) -> Vec<f32> {
@@ -1055,97 +1150,6 @@ mod tests {
         assert_eq!(v(&roll(&x, 2, 0, false).unwrap()), [3.0, 4.0, 0.0, 1.0, 2.0]);
     }
 
-    /// A checkpoint of the BiRefNet_lite layout with tiny widths and random weights.
-    fn tiny_checkpoint(e: usize) -> HashMap<String, Tensor> {
-        let mut t = HashMap::new();
-        let dev = Device::Cpu;
-        let mut put = |name: String, shape: &[usize]| {
-            let r = (Tensor::randn(0f32, 1.0, shape, &dev).unwrap() * 0.05).unwrap();
-            t.insert(name, r);
-        };
-        let ln = |put: &mut dyn FnMut(String, &[usize]), p: &str, d: usize| {
-            put(format!("{p}.weight"), &[d]);
-            put(format!("{p}.bias"), &[d]);
-        };
-        let conv = |put: &mut dyn FnMut(String, &[usize]), p: &str, o: usize, i: usize, k: usize, bias: bool| {
-            put(format!("{p}.weight"), &[o, i, k, k]);
-            if bias {
-                put(format!("{p}.bias"), &[o]);
-            }
-        };
-        let bn = |put: &mut dyn FnMut(String, &[usize]), p: &str, d: usize| {
-            for n in ["weight", "bias", "running_mean", "running_var"] {
-                put(format!("{p}.{n}"), &[d]);
-            }
-        };
-        // Swin: window 3, one head per stage, two blocks per stage
-        conv(&mut put, "bb.patch_embed.proj", e, 3, 4, true);
-        ln(&mut put, "bb.patch_embed.norm", e);
-        for i in 0..4 {
-            let d = e << i;
-            for j in 0..2 {
-                let p = format!("bb.layers.{i}.blocks.{j}");
-                ln(&mut put, &format!("{p}.norm1"), d);
-                ln(&mut put, &format!("{p}.norm2"), d);
-                put(format!("{p}.attn.qkv.weight"), &[3 * d, d]);
-                put(format!("{p}.attn.qkv.bias"), &[3 * d]);
-                put(format!("{p}.attn.proj.weight"), &[d, d]);
-                put(format!("{p}.attn.proj.bias"), &[d]);
-                put(format!("{p}.attn.relative_position_bias_table"), &[25, 1]);
-                put(format!("{p}.mlp.fc1.weight"), &[4 * d, d]);
-                put(format!("{p}.mlp.fc1.bias"), &[4 * d]);
-                put(format!("{p}.mlp.fc2.weight"), &[d, 4 * d]);
-                put(format!("{p}.mlp.fc2.bias"), &[d]);
-            }
-            if i < 3 {
-                ln(&mut put, &format!("bb.layers.{i}.downsample.norm"), 4 * d);
-                put(format!("bb.layers.{i}.downsample.reduction.weight"), &[2 * d, 4 * d]);
-            }
-            ln(&mut put, &format!("bb.norm{i}"), d);
-        }
-        let dec_block = |put: &mut dyn FnMut(String, &[usize]), p: &str, i: usize, o: usize| {
-            conv(put, &format!("{p}.conv_in"), 64, i, 3, true);
-            bn(put, &format!("{p}.bn_in"), 64);
-            for (b, k) in [("aspp1", 1), ("aspp_deforms.0", 1), ("aspp_deforms.1", 3), ("aspp_deforms.2", 7)] {
-                let q = format!("{p}.dec_att.{b}");
-                conv(put, &format!("{q}.atrous_conv.offset_conv"), 2 * k * k, 64, k, true);
-                conv(put, &format!("{q}.atrous_conv.modulator_conv"), k * k, 64, k, true);
-                conv(put, &format!("{q}.atrous_conv.regular_conv"), 256, 64, k, false);
-                bn(put, &format!("{q}.bn"), 256);
-            }
-            conv(put, &format!("{p}.dec_att.global_avg_pool.1"), 256, 64, 1, false);
-            bn(put, &format!("{p}.dec_att.global_avg_pool.2"), 256);
-            conv(put, &format!("{p}.dec_att.conv1"), 64, 1280, 1, false);
-            bn(put, &format!("{p}.dec_att.bn1"), 64);
-            conv(put, &format!("{p}.conv_out"), o, 64, 3, true);
-            bn(put, &format!("{p}.bn_out"), o);
-        };
-        let [c0, c1, c2, c3] = [16 * e, 8 * e, 4 * e, 2 * e];
-        dec_block(&mut put, "squeeze_module.0", c0 + c1 + c2 + c3, c0);
-        dec_block(&mut put, "decoder.decoder_block4", c0 + c0 / 8, c1);
-        dec_block(&mut put, "decoder.decoder_block3", c1 + c0 / 8, c2);
-        dec_block(&mut put, "decoder.decoder_block2", c2 + c1 / 8, c3);
-        dec_block(&mut put, "decoder.decoder_block1", c3 + c2 / 8, c3 / 2);
-        for (i, inp, out) in [(5, 3072, c0 / 8), (4, 768, c0 / 8), (3, 192, c1 / 8), (2, 48, c2 / 8), (1, 3, c3 / 8)] {
-            conv(&mut put, &format!("decoder.ipt_blk{i}.conv1"), 64, inp, 3, true);
-            conv(&mut put, &format!("decoder.ipt_blk{i}.conv_out"), out, 64, 3, true);
-        }
-        for (i, ch) in [(4, c1), (3, c2), (2, c3)] {
-            conv(&mut put, &format!("decoder.lateral_block{i}.conv"), ch, ch, 1, true);
-            conv(&mut put, &format!("decoder.gdt_convs_{i}.0"), 16, ch, 3, true);
-            bn(&mut put, &format!("decoder.gdt_convs_{i}.1"), 16);
-            conv(&mut put, &format!("decoder.gdt_convs_attn_{i}.0"), 1, 16, 1, true);
-        }
-        conv(&mut put, "decoder.conv_out1.0", 1, c3 / 2 + c3 / 8, 1, true);
-        // batch-norm variances must be positive
-        for (name, ten) in t.iter_mut() {
-            if name.ends_with("running_var") {
-                *ten = (ten.abs().unwrap() + 1.0).unwrap();
-            }
-        }
-        t
-    }
-
     fn tmp(name: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("lc-birefnet-{name}-{}", std::process::id()));
         std::fs::create_dir_all(&d).unwrap();
@@ -1155,7 +1159,7 @@ mod tests {
     #[test]
     fn tiny_checkpoint_loads_and_predicts_a_matte() {
         let dir = tmp("tiny");
-        candle_core::safetensors::save(&tiny_checkpoint(8), dir.join(WEIGHTS_FILE)).unwrap();
+        candle_core::safetensors::save(&tiny_checkpoint(8).unwrap(), dir.join(WEIGHTS_FILE)).unwrap();
         let mut m = BiRefNet::load_on(&dir, Device::Cpu).unwrap();
         assert_eq!(*m.swin(), SwinConfig { embed: 8, depths: vec![2; 4], heads: vec![1; 4], window: 3 });
         m.set_input(64);
@@ -1177,7 +1181,7 @@ mod tests {
         std::fs::write(dir.join(WEIGHTS_FILE), b"not a safetensors file").unwrap();
         assert!(BiRefNet::load_on(&dir, Device::Cpu).is_err());
         // a checkpoint missing its decoder
-        let mut t = tiny_checkpoint(8);
+        let mut t = tiny_checkpoint(8).unwrap();
         t.retain(|k, _| k.starts_with("bb."));
         candle_core::safetensors::save(&t, dir.join(WEIGHTS_FILE)).unwrap();
         assert!(BiRefNet::load_on(&dir, Device::Cpu).is_err());

@@ -146,13 +146,104 @@ pub fn for_source(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings) -> Arc<A
     if let Some((_, a)) = CACHE.lock().unwrap_or_else(PoisonError::into_inner).iter().find(|(k, _)| *k == key) {
         return a.clone();
     }
-    let a = Arc::new(analyze(&proxy(src, info, s)));
+    let mut analysed = analyze(&proxy(src, info, s));
+    if let Some(subject) = model_subject(src, info, s) {
+        analysed.subject = subject;
+    }
+    let a = Arc::new(analysed);
     let mut c = CACHE.lock().unwrap_or_else(PoisonError::into_inner);
     if c.len() >= CACHE_LEN {
         c.remove(0);
     }
     c.push((key, a.clone()));
     a
+}
+
+/// A segmentation model for the Subject (and, inverted, Background) selection: given the whole
+/// uncropped, oriented photo as 8-bit sRGB (`w × h`, row-major RGB), a `0..1` grid of any size
+/// covering the same frame, or `None` when it can't (the photo analysis is used then). The engine
+/// installs one when the model is installed ([`set_subject_model`]); this layer only calls it.
+pub type SubjectModel = dyn Fn(&[u8], usize, usize) -> Option<Plane> + Send + Sync;
+
+static SUBJECT_MODEL: std::sync::RwLock<Option<Arc<SubjectModel>>> = std::sync::RwLock::new(None);
+/// Model selections by photo (pixels and framing; white balance left out, so a WB drag never
+/// re-runs the model).
+static SUBJECT_CACHE: Mutex<Vec<(u64, Plane)>> = Mutex::new(Vec::new());
+/// Held while the model runs: a second render of the same photo waits and takes the cached result.
+static SUBJECT_BUSY: Mutex<()> = Mutex::new(());
+
+/// Long edge of the image the subject model is given.
+pub const MODEL_EDGE: usize = 1024;
+
+/// Install (or with `None` remove) the subject model; cached model selections are dropped.
+pub fn set_subject_model(m: Option<Arc<SubjectModel>>) {
+    *SUBJECT_MODEL.write().unwrap_or_else(PoisonError::into_inner) = m;
+    SUBJECT_CACHE.lock().unwrap_or_else(PoisonError::into_inner).clear();
+    CACHE.lock().unwrap_or_else(PoisonError::into_inner).clear();
+}
+
+/// Whether a subject model is installed.
+pub fn has_subject_model() -> bool {
+    SUBJECT_MODEL.read().unwrap_or_else(PoisonError::into_inner).is_some()
+}
+
+/// The photo as the subject model sees it: framed, exposure-normalized to its median, a gentle
+/// display curve, sRGB primaries and encoding.
+pub fn model_input(img: &Rgb32f) -> Vec<u8> {
+    let mut ys: Vec<f32> = img.data.iter().map(|c| 0.2627 * c[0] + 0.678 * c[1] + 0.0593 * c[2]).collect();
+    let k = ys.len() / 2;
+    let gain = if ys.is_empty() {
+        1.0
+    } else {
+        ys.select_nth_unstable_by(k, |a, b| a.total_cmp(b));
+        0.18 / ys.get(k).copied().unwrap_or(0.18).max(1e-4)
+    };
+    let mut out = Vec::with_capacity(img.data.len() * 3);
+    for c in &img.data {
+        // linear Rec.2020 → linear sRGB (ITU-R BT.2087)
+        let [r, g, b] = c.map(|v| (v * gain).max(0.0));
+        let srgb = [1.6605 * r - 0.5876 * g - 0.0728 * b, -0.1246 * r + 1.1329 * g - 0.0083 * b, -0.0182 * r - 0.1006 * g + 1.1187 * b];
+        for v in srgb {
+            let v = v.max(0.0);
+            out.push(lcc_color::transfer::encode_srgb8((1.5 * v / (1.0 + v)).min(1.0)));
+        }
+    }
+    out
+}
+
+/// The installed model's Subject selection of `src` under `s` (cached), if there is a model.
+fn model_subject(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings) -> Option<Plane> {
+    let model = SUBJECT_MODEL.read().unwrap_or_else(PoisonError::into_inner).clone()?;
+    let frame = crate::frame_for(src, info, s, false);
+    let mut hs = std::collections::hash_map::DefaultHasher::new();
+    (src.width, src.height, format!("{frame:?}")).hash(&mut hs);
+    let step = (src.data.len() / 4096).max(1);
+    for c in src.data.iter().step_by(step) {
+        c.map(f32::to_bits).hash(&mut hs);
+    }
+    let key = hs.finish();
+    let cached = || SUBJECT_CACHE.lock().unwrap_or_else(PoisonError::into_inner).iter().find(|(k, _)| *k == key).map(|(_, p)| p.clone());
+    if let Some(p) = cached() {
+        return Some(p);
+    }
+    let _busy = SUBJECT_BUSY.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some(p) = cached() {
+        return Some(p);
+    }
+    let (w, h) = frame.fit(MODEL_EDGE, MODEL_EDGE);
+    let (w, h) = (w.max(1), h.max(1));
+    let img = frame.sample(src, w, h);
+    let rgb = model_input(&img);
+    let p = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| model(&rgb, w, h))).ok().flatten()?;
+    if p.width == 0 || p.height == 0 || p.data.len() != p.width * p.height {
+        return None;
+    }
+    let mut c = SUBJECT_CACHE.lock().unwrap_or_else(PoisonError::into_inner);
+    if c.len() >= CACHE_LEN {
+        c.remove(0);
+    }
+    c.push((key, p.clone()));
+    Some(p)
 }
 
 fn smooth(e0: f32, e1: f32, x: f32) -> f32 {

@@ -194,7 +194,7 @@ pub fn shape_alpha(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &R
         if let Some(grid) = grid.filter(|_| crate::auto_mask::wants(shape)) {
             let coarse = crate::auto_mask::sample(grid, frame, w, h);
             // snap the coarse grid's edges to the photo's (radius: a grid cell)
-            let cell = (frame_px(frame, w) / crate::auto_mask::EDGE as f32).max(1.0);
+            let cell = (frame_px(frame, w) / grid.width.max(grid.height).max(1) as f32).max(1.0);
             let mut a = guided_cross(log_l, &coarse, 1.5 * cell, 0.01);
             if matches!(shape, MaskShape::Background) {
                 a.data.iter_mut().for_each(|v| *v = 1.0 - *v);
