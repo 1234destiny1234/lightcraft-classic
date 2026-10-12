@@ -603,12 +603,8 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
                 // where the visible part of the content ends (screen x), for what stays at the edge
                 d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + viewport.max.x);
             });
-            let src = app.session.source;
-            classic::catalog_section(app, ui, total, picks, deleted, false);
-            ui.add_space(10.0);
-            if row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0).clicked() {
-                let _ = app.run("library.source", json!({"kind": "recentlyDeleted"}));
-            }
+            // My Photos: the catalog's sources, Recently Deleted with them (upstream's grouping)
+            classic::catalog_section(app, ui, total, picks, deleted, true);
             // the album just made: the folders down to it open, once (also when the section is shut)
             let reveal = app.ui.reveal_album.take();
             if reveal.is_some() {

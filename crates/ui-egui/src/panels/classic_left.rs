@@ -51,6 +51,7 @@ fn columns(app: &mut DacApp, ui: &mut egui::Ui, viewport: Rect, total: usize, pi
             PanelId::Catalog => {
                 if crate::panels::classic::header(app, ui, p, side).1 {
                     catalog_section(app, ui, total, picks, deleted, true);
+                    ui.add_space(6.0);
                     dates_section(app, ui);
                 }
             }
@@ -115,7 +116,6 @@ pub(super) fn catalog_section(app: &mut DacApp, ui: &mut egui::Ui, total: usize,
     if with_deleted {
         recently_deleted_row(app, ui, deleted);
     }
-    ui.add_space(6.0);
 }
 
 fn recently_deleted_row(app: &mut DacApp, ui: &mut egui::Ui, deleted: usize) {

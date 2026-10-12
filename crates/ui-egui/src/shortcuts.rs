@@ -363,6 +363,8 @@ pub fn handle(app: &mut DacApp, ctx: &egui::Context) {
     let popup_open = egui::Popup::is_any_open(ctx);
     // Esc that just took a text field's focus away (it gives back the field's text) does nothing else
     let popup_open = popup_open || app.text_focus;
+    // Esc during a sidebar section's drag gives the drag up (`panels::left`), and does not also leave the loupe
+    let popup_open = popup_open || app.ui.dragging_section.is_some();
     let (module_keys, mut consumed) = (classic::module_keys(app.ui.module), Vec::new());
     classic::deferred_tabs(&mut app.deferred_tabs, keymap, &mut fire);
     ctx.input(|i| {
