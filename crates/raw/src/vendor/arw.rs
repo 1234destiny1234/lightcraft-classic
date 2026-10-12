@@ -566,6 +566,87 @@ fn recorded_size_crop(full: (u64, u64), exif: Option<(u64, u64)>, w: usize, h: u
     (height * 2 >= h).then(|| Rect::new(x, ((h - height) / 2) & !1, fw, height))
 }
 
+/// The DSLR-A100 (2006) keeps its raw data outside any image IFD: IFD0 tag 330 (`SubIFDs`, ExifTool's
+/// `A100DataOffset`) is a plain offset to an ARW1 stream (see `arw1.rs`) that runs to the end of the file, and
+/// `DNGPrivateData` points to a Minolta-style `\0MRI` block whose `\0PRD` record gives the coded frame (2608 × 3880,
+/// little-endian `u16`s at 8 and 10: the image is the frame less the 8 extra coded rows) and the recorded image size
+/// (2592 × 3872 at 12 and 14), and whose `\0WBG` record holds the as-shot levels (four little-endian `u16`s after four
+/// scale bytes, R, G, G, B). Measured on the CC0 raw.pixls.us `_DSC0258.ARW`: the stream decodes to exactly that
+/// frame, its darkest samples are 15–25 (black 0, like the A200's ARW1), and the RGGB phase follows from the WB
+/// levels (the brighter non-green phase is the one with the smaller gain).
+fn decode_a100(bytes: &[u8], tiff: &Tiff, mode: Mode) -> Result<RawImage> {
+    let ifd0 = &tiff.ifds[0];
+    let start =
+        ifd0.u64(t::SUB_IFDS).and_then(|o| usize::try_from(o).ok()).ok_or_else(|| RawError::Corrupt("A100 ARW without a data offset".into()))?;
+    let src = bytes.get(start..).filter(|s| !s.is_empty()).ok_or_else(|| RawError::Corrupt("A100 ARW: data offset outside the file".into()))?;
+    // DNGPrivateData holds the block's offset as four bytes in the file's byte order
+    let mri = ifd0
+        .bytes(t::DNG_PRIVATE_DATA)
+        .and_then(|b| tiff.order.read_u32(b, 0))
+        .and_then(|o| usize::try_from(o).ok())
+        .and_then(|o| bytes.get(o..))
+        .unwrap_or_default();
+    let record = |name: &[u8; 4]| -> Option<&[u8]> {
+        // `\0MRI` + length, then records of `\0XYZ` + little-endian u32 length + data
+        let body = mri.strip_prefix(b"\0MRI")?;
+        let len = u32::from_le_bytes(body.get(..4)?.try_into().ok()?) as usize;
+        let mut rest = body.get(4..4 + len.min(4096))?;
+        while rest.len() >= 8 {
+            let n = u32::from_le_bytes(rest.get(4..8)?.try_into().ok()?) as usize;
+            let data = rest.get(8..8usize.checked_add(n)?)?;
+            if rest.get(..4) == Some(name) {
+                return Some(data);
+            }
+            rest = rest.get(8 + n..)?;
+        }
+        None
+    };
+    let u16_at = |d: &[u8], i: usize| d.get(i..i + 2).map(|b| u16::from_le_bytes([b[0], b[1]]) as usize);
+    let prd = record(b"\0PRD");
+    let (frame_h, w) = prd.and_then(|p| Some((u16_at(p, 8)?, u16_at(p, 10)?))).unwrap_or((2608, 3880));
+    let (img_h, img_w) = prd.and_then(|p| Some((u16_at(p, 12)?, u16_at(p, 14)?))).unwrap_or((2592, 3872));
+    let h = frame_h.checked_sub(8).filter(|h| *h > 0 && w > 0).ok_or_else(|| RawError::Corrupt("A100 ARW: bad frame size".into()))?;
+    let data = match mode {
+        Mode::Header => Vec::new(),
+        Mode::Full => super::arw1::decode(src, w, h)?,
+    };
+    let wb = record(b"\0WBG").and_then(|g| {
+        let l = |i: usize| u16_at(g, 4 + 2 * i).map(|v| v as f32);
+        let (r, g1, b) = (l(0)?, l(1)?, l(3)?);
+        let (r, b) = (r / g1.max(1.0), b / g1.max(1.0));
+        ((0.2..=8.0).contains(&r) && (0.2..=8.0).contains(&b)).then_some([r, 1.0, b])
+    });
+    let crop = if img_w <= w && img_h <= h { Rect::new(((w - img_w) / 2) & !1, ((h - img_h) / 2) & !1, img_w, img_h) } else { Rect::new(0, 0, w, h) };
+    let mut metadata = lcc_meta::from_tiff(tiff);
+    metadata.width = Some(crop.width as u32);
+    metadata.height = Some(crop.height as u32);
+    let white = match mode {
+        Mode::Full => super::white_from_data(&data, 12),
+        Mode::Header => 4095.0,
+    };
+    let img = RawImage {
+        format: RawFormat::Arw,
+        width: w,
+        height: h,
+        cpp: 1,
+        data: RawData::U16(data),
+        cfa: Some(Cfa::bayer_static("RGGB")),
+        bits: 12,
+        black: BlackLevel::uniform(0.0),
+        white: vec![white],
+        active_area: Rect::new(0, 0, w, h),
+        crop,
+        orientation: Orientation::from_exif(ifd0.u16(t::ORIENTATION).unwrap_or(1)),
+        color: ColorData::default(),
+        wb_multipliers: wb,
+        linearized: false,
+        opcodes: OpcodeLists::default(),
+        metadata,
+    };
+    img.validate_for(mode)?;
+    Ok(img)
+}
+
 fn raw_ifd(tiff: &Tiff) -> Option<&Ifd> {
     tiff.all_ifds()
         .into_iter()
@@ -576,7 +657,12 @@ fn raw_ifd(tiff: &Tiff) -> Option<&Ifd> {
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let tiff = Tiff::parse(bytes)?;
     let ifd0 = &tiff.ifds[0];
-    let raw = raw_ifd(&tiff).ok_or_else(|| RawError::Unsupported("ARW without a CFA image IFD (old ARW or SR2)".into()))?;
+    let Some(raw) = raw_ifd(&tiff) else {
+        if ifd0.string(t::MODEL).as_deref().map(str::trim) == Some("DSLR-A100") {
+            return decode_a100(bytes, &tiff, mode);
+        }
+        return Err(RawError::Unsupported("ARW without a CFA image IFD (old ARW or SR2)".into()));
+    };
     let info = raw.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
     if w * h > crate::MAX_SAMPLES {
@@ -625,6 +711,14 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
             });
             (RawData::U16(data), 12)
         }
+        // ARW version 1 (DSLR-A200…A390): a Huffman-coded 12-bit strip, see `arw1.rs`
+        32767 if bits == 12 && chunks.len() == 1 => {
+            let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
+            match mode {
+                Mode::Header => (RawData::U16(Vec::new()), 12),
+                Mode::Full => (RawData::U16(super::arw1::decode(src, w, h)?), 12),
+            }
+        }
         32767 => return Err(RawError::Unsupported("Sony ARW version 1 / packed compressed variant (raw strip is not one byte per pixel)".into())),
         7 if is_quad_tiled(bytes, &info) => match mode {
             Mode::Full => (RawData::U16(read_quad_tiles(bytes, &info)?), bits),
@@ -666,7 +760,16 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         (Some([2, 2]), Some(p)) if p.len() == 4 && p.iter().all(|&c| c <= 2) => Cfa { width: 2, height: 2, pattern: p.to_vec() },
         _ => Cfa::bayer_static("RGGB"),
     };
-    let default_black = if scale_bits >= 14 { 512.0 } else { 128.0 };
+    // ARW1 strips have the black level subtracted in camera: the darkest samples of the A200 sample are 0 in every
+    // CFA channel (1st percentile 0-4)
+    let arw1 = info.compression == 32767 && bits == 12 && !one_byte_per_sample && !packed12;
+    let default_black = if arw1 {
+        0.0
+    } else if scale_bits >= 14 {
+        512.0
+    } else {
+        128.0
+    };
     // the decrypted SR2SubIFD, read once and only when a plain black level or white balance is missing
     let sr2_cell = std::cell::OnceCell::new();
     let sr2 = || sr2_cell.get_or_init(|| super::sr2::SubIfd::read(bytes, ifd0, tiff.order)).as_ref();
@@ -835,11 +938,11 @@ mod tests {
 
     #[test]
     fn strip_larger_or_smaller_than_one_byte_per_pixel_is_the_packed_variant() {
+        // read as ARW1 (a zero-filled strip is not a valid ARW1 stream)
         for strip in [32 * 4 + 8, 32 * 4 * 5 / 4 - 1, 32 * 4 - 1] {
-            for mode in [Mode::Header, Mode::Full] {
-                let err = decode(&arw_with_strip(strip), mode).unwrap_err();
-                assert!(matches!(err, RawError::Unsupported(ref m) if m.contains("packed compressed variant")), "{strip} {mode:?}: {err:?}");
-            }
+            assert!(decode(&arw_with_strip(strip), Mode::Header).is_ok(), "{strip}");
+            let err = decode(&arw_with_strip(strip), Mode::Full).unwrap_err();
+            assert!(matches!(err, RawError::Corrupt(ref m) if m.contains("ARW1")), "{strip}: {err:?}");
         }
         for mode in [Mode::Header, Mode::Full] {
             let r = decode(&arw_with_strip(32 * 4), mode);
@@ -895,14 +998,13 @@ mod tests {
         let (w, h) = (8usize, 4usize);
         let exact = w * h * 3 / 2;
         for strip in [exact - 1, exact + 1, exact + 3 * h] {
-            for mode in [Mode::Header, Mode::Full] {
-                let err = decode(&packed_arw(w as u32, h as u32, vec![0u8; strip]), mode).unwrap_err();
-                assert!(matches!(err, RawError::Unsupported(ref m) if m.contains("packed compressed variant")), "{strip} {mode:?}: {err:?}");
-            }
+            // not packed: read as ARW1, which a zero-filled strip is not
+            let err = decode(&packed_arw(w as u32, h as u32, vec![0u8; strip]), Mode::Full).unwrap_err();
+            assert!(matches!(err, RawError::Corrupt(ref m) if m.contains("ARW1")), "{strip}: {err:?}");
         }
         // an odd width cannot be packed in pairs
         let err = decode(&packed_arw(7, 4, vec![0u8; 7 * 4 * 3 / 2]), Mode::Full).unwrap_err();
-        assert!(matches!(err, RawError::Unsupported(_)), "{err:?}");
+        assert!(matches!(err, RawError::Corrupt(ref m) if m.contains("ARW1")), "{err:?}");
     }
 
     /// Encode one 16-value set as an ARW2 block (the paper's scheme, used here to test the decoder).
