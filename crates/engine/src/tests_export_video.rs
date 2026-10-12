@@ -218,3 +218,67 @@ fn hostile_video_options() {
     assert!(files.iter().all(|f| f["error"].is_string()), "{files:?}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Timing of a graded 10 s 1080p export of the corpus clip (`cargo xtask corpus --download`):
+/// `VIDEO_BENCH_CLIP=<clip> cargo test --release -p dac-engine export_speed_1080p -- --ignored --nocapture`.
+#[test]
+#[ignore = "needs corpus/video/h264-1080p-bbb.mp4; a benchmark"]
+fn export_speed_1080p() {
+    let src = std::env::var_os("VIDEO_BENCH_CLIP")
+        .map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/video/h264-1080p-bbb.mp4"), PathBuf::from);
+    if !src.exists() {
+        eprintln!("skipped: {} missing", src.display());
+        return;
+    }
+    let mut settings = dac_develop::DevelopSettings::default();
+    settings.light.exposure = 0.5;
+    settings.light.contrast = 20.0;
+    settings.color.vibrance = 15.0;
+    for format in [crate::export_video::VideoFormat::H264, crate::export_video::VideoFormat::ProRes] {
+        let w = crate::export_video::VideoWork {
+            src: src.clone(),
+            trim: (0.0, Some(10.0)),
+            settings: settings.clone(),
+            format,
+            quality: 80,
+            max_side: None,
+            file_name: "bench".into(),
+            hooks: VideoHooks::default(),
+        };
+        let t = std::time::Instant::now();
+        let out = crate::export_video::run(w).unwrap();
+        eprintln!("{format:?}: {}×{} in {:.1} s ({} bytes)", out.width, out.height, t.elapsed().as_secs_f64(), out.file.len());
+    }
+}
+
+/// The GPU grade of an exported (H.264) frame matches the CPU float grade within 8-bit rounding.
+#[test]
+fn gpu_grade_matches_cpu_grade() {
+    if !dac_gpu::available() {
+        eprintln!("skipped: no GPU");
+        return;
+    }
+    let frame = dac_raster::Rgb32f::from_fn(96, 64, |x, y| {
+        let (u, v) = (x as f32 / 95.0, y as f32 / 63.0);
+        [u * u, v * 0.8, (1.0 - u) * 0.5 * v]
+    });
+    let mut d = dac_develop::DevelopSettings::default();
+    d.light.exposure = 0.5;
+    d.light.contrast = 20.0;
+    d.color.vibrance = 15.0;
+    let vs = dac_pipeline::grade::video_settings(&d);
+    let (mut cpu, mut gpu) = (frame.clone(), frame);
+    crate::export_video::grade_linear(&mut cpu, &vs).unwrap();
+    if crate::export_video::grade_gpu(&mut gpu, &vs).is_none() {
+        eprintln!("skipped: the GPU did not render");
+        return;
+    }
+    let enc = |v: f32| dac_color::transfer::linear_to_srgb(v.clamp(0.0, 1.0)) * 255.0;
+    let mut worst = 0f32;
+    for (a, b) in cpu.data.iter().zip(&gpu.data) {
+        for k in 0..3 {
+            worst = worst.max((enc(a[k]) - enc(b[k])).abs());
+        }
+    }
+    assert!(worst <= 3.0, "GPU vs CPU differ by {worst} 8-bit codes");
+}

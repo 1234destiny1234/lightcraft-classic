@@ -24,6 +24,11 @@ fn scratch(name: &str) -> PathBuf {
 /// A 2 s, 25 fps, 64×48 H.264 clip of mid grey (Y=126, neutral chroma), optionally with a
 /// 440 Hz stereo AAC track.
 fn make_clip(path: &Path, audio: bool) {
+    make_clip_with(path, audio, |_| 126);
+}
+
+/// [`make_clip`] with frame `i` at luma `luma(i)`.
+fn make_clip_with(path: &Path, audio: bool, luma: impl Fn(u32) -> u8) {
     let mut cfg = filmcraft_h264enc::EncoderConfig::new(W, H, FPS, 1);
     cfg.format = filmcraft_h264enc::PacketFormat::LengthPrefixed;
     cfg.aud = false;
@@ -42,7 +47,6 @@ fn make_clip(path: &Path, audio: bool) {
         t.media_start = Some(i64::from(a.priming_samples()));
         mux.add_track(t).unwrap()
     });
-    let y = vec![126u8; (W * H) as usize];
     let c = vec![128u8; (W * H / 4) as usize];
     let write = |mux: &mut Mp4Writer<_>, ps: Vec<filmcraft_h264enc::Packet>| {
         for p in ps {
@@ -52,6 +56,7 @@ fn make_clip(path: &Path, audio: bool) {
     };
     let spf = (SR / FPS) as usize;
     for i in 0..FRAMES {
+        let y = vec![luma(i); (W * H) as usize];
         let ps = enc
             .encode(&filmcraft_h264enc::YuvFrame { y: &y, u: &c, v: &c, y_stride: W as usize, uv_stride: (W / 2) as usize }, i64::from(i))
             .unwrap();
@@ -213,7 +218,10 @@ fn cancel_stops_early_and_leaves_no_file() {
     };
     let r = export_clip(&src, (0.0, None), &grade, &opts(out.clone(), ClipFormat::H264Mp4), &cancel, &|_| {});
     assert!(matches!(r, Err(ExportClipError::Cancelled)), "{r:?}");
-    assert_eq!(graded.load(Ordering::Relaxed), 5);
+    // the grade runs on a few frames at once: at most one more per grading thread (≤ 4) and
+    // the frames already queued
+    let n = graded.load(Ordering::Relaxed);
+    assert!((5..=5 + 4 + 8).contains(&n), "{n}");
     assert!(!out.exists());
     assert!(!dir.join("out.mp4.partial").exists());
     std::fs::remove_dir_all(&dir).ok();
@@ -268,6 +276,55 @@ fn hostile_inputs_error() {
     // a panicking grade becomes an error
     let boom = |_: &mut RgbFrame| panic!("boom");
     assert!(matches!(export_clip(&src, (0.0, Some(0.2)), &boom, &o, &none, &|_| {}), Err(ExportClipError::Internal)));
+    assert!(!out.exists() && !dir.join("out.mp4.partial").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// Frames graded out of order on the worker threads are still encoded in order.
+#[test]
+fn parallel_grading_keeps_frame_order() {
+    let dir = scratch("order");
+    let src = dir.join("in.mp4");
+    make_clip_with(&src, false, |i| 40 + 3 * i as u8);
+    let out = dir.join("out.mp4");
+    let none = AtomicBool::new(false);
+    // a frame-dependent delay so frames finish out of order
+    let grade = |f: &mut RgbFrame| {
+        let v = f.data.first().map_or(0.0, |p| p[1]);
+        std::thread::sleep(std::time::Duration::from_millis(((v * 9973.0) as u64) % 7));
+    };
+    export_clip(&src, (0.0, None), &grade, &opts(out.clone(), ClipFormat::H264Mp4), &none, &|_| {}).unwrap();
+    let mut a = dac_video::FrameReader::open(&src).unwrap();
+    let mut b = dac_video::FrameReader::open(&out).unwrap();
+    let times = b.frame_times();
+    assert_eq!(times.len(), FRAMES as usize);
+    let mean = |f: dac_video::Frame| f.image.data.iter().map(|p| p[1]).sum::<f32>() / f.image.data.len() as f32;
+    for t in times {
+        let (x, y) = (mean(a.frame_at(t, None).unwrap()), mean(b.frame_at(t, None).unwrap()));
+        assert!((x - y).abs() < 0.01 + 0.05 * x, "frame at {t}: {x} vs {y}");
+    }
+    std::fs::remove_dir_all(&dir).ok();
+}
+
+/// A cancel while every stage is busy (slow grade) stops promptly and leaves no file.
+#[test]
+fn cancel_mid_pipeline_is_prompt() {
+    let dir = scratch("cancel-mid");
+    let src = dir.join("in.mp4");
+    make_clip(&src, false);
+    let out = dir.join("out.mp4");
+    let cancel = AtomicBool::new(false);
+    let grade = |_: &mut RgbFrame| std::thread::sleep(std::time::Duration::from_millis(20));
+    let t = std::time::Instant::now();
+    let r = std::thread::scope(|sc| {
+        sc.spawn(|| {
+            std::thread::sleep(std::time::Duration::from_millis(100));
+            cancel.store(true, Ordering::Relaxed);
+        });
+        export_clip(&src, (0.0, None), &grade, &opts(out.clone(), ClipFormat::H264Mp4), &cancel, &|_| {})
+    });
+    assert!(matches!(r, Err(ExportClipError::Cancelled)), "{r:?}");
+    assert!(t.elapsed() < std::time::Duration::from_millis(800), "{:?}", t.elapsed());
     assert!(!out.exists() && !dir.join("out.mp4.partial").exists());
     std::fs::remove_dir_all(&dir).ok();
 }

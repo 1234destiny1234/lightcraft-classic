@@ -149,6 +149,32 @@ pub fn grade_linear(frame: &mut dac_raster::Rgb32f, settings: &dac_develop::Deve
     Ok(())
 }
 
+/// Grade one linear frame on the GPU (8-bit sRGB output decoded back to linear). `None` when the
+/// GPU did not render it (unavailable, switched off or failed): grade on the CPU then. Used for
+/// 8-bit H.264 only, where the encoder quantises to 8 bits anyway (within one code value of the
+/// CPU float grade); 10-bit ProRes always takes the float CPU path.
+pub fn grade_gpu(frame: &mut dac_raster::Rgb32f, video_settings: &dac_develop::DevelopSettings) -> Option<()> {
+    use dac_pipeline::grade;
+    let req = grade::grade_request(frame.width, frame.height, dac_pipeline::Quality::Full);
+    let src = Arc::new(std::mem::replace(frame, dac_raster::Rgb32f::new(0, 0)));
+    let r = dac_gpu::try_render(&src, &grade::video_source_info(), video_settings, &req, None);
+    *frame = Arc::try_unwrap(src).unwrap_or_else(|a| (*a).clone());
+    let img = r.ok()?.image;
+    if (img.width, img.height) != (frame.width, frame.height) || img.data.len() != frame.data.len() {
+        return None;
+    }
+    let lut = srgb8_lut();
+    for (d, p) in frame.data.iter_mut().zip(&img.data) {
+        *d = [lut[usize::from(p[0])], lut[usize::from(p[1])], lut[usize::from(p[2])]];
+    }
+    Some(())
+}
+
+fn srgb8_lut() -> &'static [f32; 256] {
+    static LUT: std::sync::OnceLock<[f32; 256]> = std::sync::OnceLock::new();
+    LUT.get_or_init(|| std::array::from_fn(|i| dac_color::transfer::srgb_to_linear(i as f32 / 255.0)))
+}
+
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
     use dac_video_export::{ClipExportOptions, ClipFormat, export_clip};
@@ -159,13 +185,19 @@ pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
     let tmp = temp_path(format.extension());
     let opts = ClipExportOptions { format, quality: w.quality, max_side: w.max_side, out: tmp.clone() };
     // a default grade is the identity: skip the pipeline
-    let neutral = dac_pipeline::grade::video_settings(&w.settings) == dac_pipeline::grade::video_settings(&dac_develop::DevelopSettings::default());
+    // the clip's settings are reduced once, not per frame
+    let video_settings = dac_pipeline::grade::video_settings(&w.settings);
+    let neutral = video_settings == dac_pipeline::grade::video_settings(&dac_develop::DevelopSettings::default());
+    let gpu = w.format == VideoFormat::H264 && dac_gpu::enabled() && dac_gpu::available();
     let failed: std::sync::Mutex<Option<String>> = std::sync::Mutex::new(None);
     let grade = |f: &mut dac_raster::Rgb32f| {
         if neutral {
             return;
         }
-        if let Err(e) = grade_linear(f, &w.settings) {
+        if gpu && grade_gpu(f, &video_settings).is_some() {
+            return;
+        }
+        if let Err(e) = grade_linear(f, &video_settings) {
             let mut g = failed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             g.get_or_insert(e);
         }
