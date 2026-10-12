@@ -1251,6 +1251,11 @@
   "terms unclear": "条件不明",
   "the graphics card": "グラフィックカード",
   "the graphics card is not used": "グラフィックカードは使用しません",
+  "is today": "が今日",
+  "is yesterday": "が昨日",
+  "is in this week": "が今週",
+  "is in this month": "が今月",
+  "is in this year": "が今年",
   "Check for Updates…": "更新を確認…",
   "Install Update and Relaunch": "更新をインストールして再起動",
   "Checking for updates…": "更新を確認しています…",
@@ -1270,9 +1275,4 @@
   "Check for updates when the app starts": "起動時に更新を確認する",
   "Include prereleases (release candidates)": "プリリリース（RC）も含める",
   "These settings are saved in the app's settings folder.": "これらの設定はアプリの設定フォルダーに保存されます。"
-  "is today": "が今日",
-  "is yesterday": "が昨日",
-  "is in this week": "が今週",
-  "is in this month": "が今月",
-  "is in this year": "が今年"
 }

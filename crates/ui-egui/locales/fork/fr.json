@@ -1160,6 +1160,11 @@
   "Duplicate Album": "Dupliquer l’album",
   "Another album with the same photos, to arrange in its own order": "Un autre album avec les mêmes photos, à organiser dans son propre ordre",
   "Switch Brush A / B": "Basculer pinceau A / B",
+  "is today": "est aujourd'hui",
+  "is yesterday": "est hier",
+  "is in this week": "est dans cette semaine",
+  "is in this month": "est dans ce mois",
+  "is in this year": "est dans cette année",
   "Check for Updates…": "Rechercher des mises à jour…",
   "Install Update and Relaunch": "Installer la mise à jour et redémarrer",
   "Checking for updates…": "Recherche des mises à jour…",
@@ -1179,9 +1184,4 @@
   "Check for updates when the app starts": "Rechercher des mises à jour au démarrage",
   "Include prereleases (release candidates)": "Inclure les préversions (release candidates)",
   "These settings are saved in the app's settings folder.": "Ces réglages sont enregistrés dans le dossier de réglages de l’application."
-  "is today": "est aujourd'hui",
-  "is yesterday": "est hier",
-  "is in this week": "est dans cette semaine",
-  "is in this month": "est dans ce mois",
-  "is in this year": "est dans cette année"
 }

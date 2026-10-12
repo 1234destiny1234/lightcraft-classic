@@ -1164,6 +1164,11 @@
   "Duplicate Album": "复制相册",
   "Another album with the same photos, to arrange in its own order": "包含相同照片的另一个相册，可按自己的顺序排列",
   "Switch Brush A / B": "切换画笔 A / B",
+  "is today": "是今天",
+  "is yesterday": "是昨天",
+  "is in this week": "在本周",
+  "is in this month": "在本月",
+  "is in this year": "在今年",
   "Check for Updates…": "检查更新…",
   "Install Update and Relaunch": "安装更新并重启",
   "Checking for updates…": "正在检查更新…",
@@ -1183,9 +1188,4 @@
   "Check for updates when the app starts": "启动时检查更新",
   "Include prereleases (release candidates)": "包含预发版（RC）",
   "These settings are saved in the app's settings folder.": "这些设置保存在应用的设置文件夹中。"
-  "is today": "是今天",
-  "is yesterday": "是昨天",
-  "is in this week": "在本周",
-  "is in this month": "在本月",
-  "is in this year": "在今年"
 }

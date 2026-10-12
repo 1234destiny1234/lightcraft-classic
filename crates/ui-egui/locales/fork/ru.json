@@ -1460,6 +1460,11 @@
   "Another album with the same photos, to arrange in its own order": "Ещё один альбом с теми же фото, чтобы упорядочить их по-своему",
   "Switch Brush A / B": "Переключить кисть A / B",
   "OK": "ОК",
+  "is today": "сегодня",
+  "is yesterday": "вчера",
+  "is in this week": "на этой неделе",
+  "is in this month": "в этом месяце",
+  "is in this year": "в этом году",
   "Check for Updates…": "Проверить обновления…",
   "Install Update and Relaunch": "Установить обновление и перезапустить",
   "Checking for updates…": "Проверка обновлений…",
@@ -1478,9 +1483,4 @@
   "Check for updates when the app starts": "Проверять обновления при запуске",
   "Include prereleases (release candidates)": "Включать предварительные версии (RC)",
   "These settings are saved in the app's settings folder.": "Эти настройки сохраняются в папке настроек приложения."
-  "is today": "сегодня",
-  "is yesterday": "вчера",
-  "is in this week": "на этой неделе",
-  "is in this month": "в этом месяце",
-  "is in this year": "в этом году"
 }

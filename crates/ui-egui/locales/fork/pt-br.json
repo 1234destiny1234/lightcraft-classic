@@ -1251,6 +1251,11 @@
   "terms unclear": "termos pouco claros",
   "the graphics card": "a placa de vídeo",
   "the graphics card is not used": "a placa de vídeo não é usada",
+  "is today": "é hoje",
+  "is yesterday": "é ontem",
+  "is in this week": "está nesta semana",
+  "is in this month": "está neste mês",
+  "is in this year": "está neste ano",
   "Check for Updates…": "Verificar atualizações…",
   "Install Update and Relaunch": "Instalar a atualização e reiniciar",
   "Checking for updates…": "Verificando atualizações…",
@@ -1270,9 +1275,4 @@
   "Check for updates when the app starts": "Verificar atualizações ao iniciar o aplicativo",
   "Include prereleases (release candidates)": "Incluir pré-lançamentos (release candidates)",
   "These settings are saved in the app's settings folder.": "Estes ajustes são salvos na pasta de configurações do aplicativo."
-  "is today": "é hoje",
-  "is yesterday": "é ontem",
-  "is in this week": "está nesta semana",
-  "is in this month": "está neste mês",
-  "is in this year": "está neste ano"
 }

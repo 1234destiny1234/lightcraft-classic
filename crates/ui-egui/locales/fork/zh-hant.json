@@ -1250,6 +1250,11 @@
   "terms unclear": "條款不明確",
   "the graphics card": "顯示卡",
   "the graphics card is not used": "未使用顯示卡",
+  "is today": "是今天",
+  "is yesterday": "是昨天",
+  "is in this week": "在本週",
+  "is in this month": "在本月",
+  "is in this year": "在今年",
   "Check for Updates…": "檢查更新…",
   "Install Update and Relaunch": "安裝更新並重新啟動",
   "Checking for updates…": "正在檢查更新…",
@@ -1269,9 +1274,4 @@
   "Check for updates when the app starts": "啟動時檢查更新",
   "Include prereleases (release candidates)": "包含預發版（RC）",
   "These settings are saved in the app's settings folder.": "這些設定保存在應用的設定資料夹中。"
-  "is today": "是今天",
-  "is yesterday": "是昨天",
-  "is in this week": "在本週",
-  "is in this month": "在本月",
-  "is in this year": "在今年"
 }
