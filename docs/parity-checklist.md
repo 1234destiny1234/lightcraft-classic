@@ -448,7 +448,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VID-TRIM | Trim | P1 | ⬜ | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim` | catalog format 10 stores and validates the trim (undoable, in sidecars as `lcvid:trimIn/trimOut`); no UI or commands yet |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster` | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); no poster rendering yet |
-| LR-VID-EXPORT | Video export | P2 | ⬜ | | Planned (M14.8): H.264 + AAC MP4 (and ProRes) via FilmCraft encoders, honouring trim and grade, in the activity stack with cancel; CLI and MCP |
+| LR-VID-EXPORT | Video export | P2 | ⬜ | `crates/video-export/src/native.rs` | core loop only (M14.8): trimmed decode, per-frame grade, H.264+AAC MP4 / ProRes MOV; not yet wired to engine, UI, CLI or MCP |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)
