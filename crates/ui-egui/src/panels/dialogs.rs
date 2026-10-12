@@ -939,7 +939,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                     if opts.format == F::Dng {
                         use lcc_engine::export::DngCompression as Z;
-                        choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None")], &mut opts.dng_compression);
+                        choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None"), (Z::Lossy, "Lossy")], &mut opts.dng_compression);
                     }
                     let naming_id = egui::Id::new("export-naming");
                     let tags_open = field(ui, "File name", |ui| {
