@@ -22,7 +22,7 @@ impl VideoBackend for Mock {
         if path.to_string_lossy().contains("broken") {
             return Err("not an MP4".into());
         }
-        Ok(VideoInfo { duration: 10.0, fps_num: 25, fps_den: 1, width: 8, height: 6, codec: "h264".into(), ..Default::default() })
+        Ok(VideoInfo { duration: 10.0, fps_num: 25, fps_den: 1, width: 8, height: 6, codec: "h264".into(), has_audio: false })
     }
     fn frame_at(&self, _: &Path, t: f64, _: Option<u32>) -> Result<FrameImage, String> {
         self.frames.lock().unwrap().push(t);
@@ -272,4 +272,17 @@ fn commands_are_listed_with_docs() {
         let c = crate::cmd::find_command(id).unwrap_or_else(|| panic!("{id}"));
         assert!(!c.params.is_empty() && !c.label.is_empty());
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+#[test]
+fn the_native_backend_reports_a_garbage_clip_as_an_error() {
+    let d = tmp("native");
+    let (mut s, _) = session(&d);
+    std::fs::write(d.join("clip.mp4"), b"not really a movie").unwrap();
+    s.video = super::VideoState::default();
+    assert!(s.video.backend.is_some(), "native builds decode with dac-video");
+    let e = s.execute("video.get", &json!({})).unwrap_err().to_string();
+    assert!(e.contains("can't read the video"), "{e}");
+    let _ = std::fs::remove_dir_all(&d);
 }

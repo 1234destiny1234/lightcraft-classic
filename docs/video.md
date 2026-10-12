@@ -1,6 +1,6 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** M14.8 core: `dac-video-export` crate (S3: option A)
+> **Last updated:** 2026-10-12 · **Change:** minor (M14.4 / M14.6 engine: `video.*` commands)
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
@@ -47,6 +47,30 @@ plain `fn()` factories rendering a `filmcraft-project` sequence, so a per-export
 without global state, and the crate pulls `project`/`render`/`text`/`audio-dsp` plus `filmcraft-media`/`-codecs`
 (symphonia, MPL-2.0: rejected by `cargo deny`). Option A is ~600 lines over isobmff, h264enc, prores and aac.
 
+## Engine: playback, trim, poster, Capture Frame (M14.4 / M14.6)
+
+`crates/engine/src/video/` holds the state, `crates/engine/src/cmd/video.rs` the commands. The engine decodes through
+a `VideoBackend` (`probe`, `frame_at`) in `session.video.backend`: native builds install `video::native::DacVideo`
+(`dac-video`); the web build has none, and every `video.*` command is then disabled with "video playback isn't
+available in this build". Commands act on the active photo and are enabled only when it is a video; a clip without
+`Photo::video` is probed on first use (`Op::SetVideoMeta`, not an undo step).
+
+| Command | Params | Result |
+|---|---|---|
+| `video.get` | — | `{id, duration, fps, frameRate, width, height, codec, hasAudio, canPlayAudio, current, frame, playing, looping, trimIn, trimOut, trimmed, poster, posterSet}` |
+| `video.play` | `{loop?}` | plays from the current position (from the trim start when at the end) |
+| `video.pause`, `video.togglePlay` | — | |
+| `video.seek` | `{time}` | snaps to the frame start, clamped into the trim |
+| `video.stepFrame` | `{delta?}` (whole frames, default 1, at most ±1 000 000) | pauses, moves by frames inside the trim |
+| `video.setTrim` | `{in, out?}` | `0 ≤ in < out ≤ duration`, otherwise an error; one undo step (`Op::SetVideoTrim`) |
+| `video.resetTrim` | — | undoable; no step when the clip isn't trimmed |
+| `video.setPoster` | `{time}` or `{time: null}` | snapped to a frame; undoable (`Op::SetVideoPoster`); `null` = default (10 % in) |
+| `video.captureFrame` | `{time?}` (default: current position) | JPEG next to the clip (`<name>-<m>m<ss>s<mmm>.jpg`, never overwriting), imported and stacked under the clip, one undo step, an activity row while it runs → `{id, path, time, clip}` |
+
+The position follows `session.video.clock` (monotonic seconds, injectable in tests): it advances while playing, stops
+at the trim end, or wraps to the trim start with `loop`. Playback is muted (`canPlayAudio` false). Every command
+answers the `video.get` state, so UI, CLI and MCP see the same thing. Captured frames are not graded yet (M14.7).
+
 ## Licences: why not `filmcraft-codecs`
 
 The plan named `filmcraft-codecs` (the container/codec hub with GOP caching). At rev 156086dc it depends
@@ -71,6 +95,7 @@ cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [ma
 
 ## Revision history
 
+- 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
 
 ## Next

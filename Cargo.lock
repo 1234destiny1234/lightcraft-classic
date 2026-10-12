@@ -1871,6 +1871,7 @@ dependencies = [
  "dac-segment",
  "dac-tether",
  "dac-tiff",
+ "dac-video",
  "dac-webgallery",
  "fs4",
  "harfrust",

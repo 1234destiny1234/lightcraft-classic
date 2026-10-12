@@ -1,12 +1,11 @@
-//! Where a clip's [`VideoMeta`] lives and how it changes. The only module that knows; at the M14
-//! merge its bodies switch to `photo.video` and the catalog's `Op::SetVideoMeta` /
-//! `Op::SetVideoTrim` / `Op::SetVideoPoster` (a few lines each), the commands stay as they are.
+//! Where a clip's [`VideoMeta`] lives (`Photo::video`) and how it changes (the catalog's
+//! `Op::SetVideoMeta` / `Op::SetVideoTrim` / `Op::SetVideoPoster`).
 
 use std::path::PathBuf;
 
-use dac_catalog::{MediaKind, PhotoId, Source};
+use dac_catalog::{MediaKind, Op, PhotoId, Source};
 
-use super::mirror::{VideoMeta, VideoOp};
+use super::VideoMeta;
 use super::{UNAVAILABLE, VideoBackend};
 use crate::{EngineError, Result, Session};
 
@@ -29,13 +28,13 @@ pub fn clip_path(s: &Session, id: PhotoId) -> Result<PathBuf> {
     }
 }
 
-/// The clip's metadata: as stored, or probed now (and kept, not as an undo step).
+/// The clip's metadata: as catalogued, or probed now (and saved, not as an undo step).
 pub fn meta(s: &mut Session, id: PhotoId) -> Result<VideoMeta> {
     if !is_video(s, id) {
         return Err(EngineError::Other("the photo isn't a video".into()));
     }
-    if let Some(m) = s.video.mirror.meta.get(&id) {
-        return Ok(m.clone());
+    if let Some(m) = s.catalog.photo(id).and_then(|p| p.video.clone()) {
+        return Ok(m);
     }
     let be = backend(s)?;
     let path = clip_path(s, id)?;
@@ -43,17 +42,17 @@ pub fn meta(s: &mut Session, id: PhotoId) -> Result<VideoMeta> {
     if !(info.duration.is_finite() && info.duration > 0.0) || info.fps_num == 0 || info.fps_den == 0 {
         return Err(EngineError::Other("can't read the video: no duration or frame rate".into()));
     }
-    let m = VideoMeta::from_info(&info);
-    s.video.mirror.meta.insert(id, m.clone());
+    let m = info.to_meta();
+    s.apply_unrecorded(Op::SetVideoMeta { id, meta: Some(m.clone()) })?;
     Ok(m)
 }
 
 /// Set the trim (an undo step labelled `label`).
 pub fn commit_trim(s: &mut Session, id: PhotoId, trim_in: f64, trim_out: Option<f64>, label: &str) -> Result<()> {
-    s.commit_video_mirror(label, VideoOp::SetTrim { id, trim_in, trim_out })
+    s.commit(label, Op::SetVideoTrim { id, trim_in, trim_out })
 }
 
 /// Set the poster frame time (an undo step labelled `label`).
 pub fn commit_poster(s: &mut Session, id: PhotoId, time: Option<f64>, label: &str) -> Result<()> {
-    s.commit_video_mirror(label, VideoOp::SetPoster { id, time })
+    s.commit(label, Op::SetVideoPoster { id, time })
 }

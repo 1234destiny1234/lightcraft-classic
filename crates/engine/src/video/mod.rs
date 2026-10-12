@@ -9,12 +9,13 @@
 //!   trim bounds).
 //! - [`adapter`]: the few functions that read and change a clip's [`VideoMeta`]; the only code
 //!   that knows where it is stored.
-//! - [`mirror`]: TEMPORARY stand-ins for the catalog's video types and ops until they merge.
+//! - [`native`]: the `dac-video` backend, installed by default on native builds.
 //!
 //! Sources: own design.
 
 pub mod adapter;
-pub mod mirror;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod native;
 pub mod player;
 #[cfg(test)]
 mod tests;
@@ -22,7 +23,7 @@ mod tests;
 use std::path::Path;
 use std::sync::Arc;
 
-pub use mirror::{VideoInfo, VideoMeta};
+pub use dac_catalog::VideoMeta;
 pub use player::Player;
 
 /// What every video command answers when no decoder backend is installed.
@@ -30,6 +31,36 @@ pub const UNAVAILABLE: &str = "video playback isn't available in this build";
 
 /// A decoded frame: linear-light sRGB-primaries RGB (what the pipeline takes from a JPEG/TIFF).
 pub type FrameImage = dac_raster::Rgb32f;
+
+/// What a backend's probe reports about a clip.
+#[derive(Clone, Debug, Default, PartialEq)]
+pub struct VideoInfo {
+    pub duration: f64,
+    pub fps_num: u32,
+    pub fps_den: u32,
+    pub width: u32,
+    pub height: u32,
+    pub codec: String,
+    pub has_audio: bool,
+}
+
+impl VideoInfo {
+    /// The catalog record of a freshly probed clip: no trim, default poster.
+    pub fn to_meta(&self) -> VideoMeta {
+        VideoMeta {
+            duration: self.duration,
+            fps_num: self.fps_num,
+            fps_den: self.fps_den,
+            width: self.width,
+            height: self.height,
+            codec: self.codec.clone(),
+            has_audio: self.has_audio,
+            trim_in: 0.0,
+            trim_out: None,
+            poster_time: None,
+        }
+    }
+}
 
 /// A video decoder the host provides (`dac-video` on native). Errors are user-facing messages.
 pub trait VideoBackend: Send + Sync {
@@ -44,18 +75,16 @@ pub type Clock = Box<dyn Fn() -> f64 + Send>;
 
 /// The session's video state.
 pub struct VideoState {
-    /// The decoder; `None` = video isn't available in this build.
+    /// The decoder (`dac-video` on native by default); `None` = video isn't available in this build.
     pub backend: Option<Arc<dyn VideoBackend>>,
     pub player: Player,
     /// Monotonic time source driving playback.
     pub clock: Clock,
-    /// TEMPORARY (M14 merge): clip metadata until `Photo::video` lands in the catalog.
-    pub(crate) mirror: mirror::Store,
 }
 
 impl Default for VideoState {
     fn default() -> Self {
-        Self { backend: None, player: Player::default(), clock: default_clock(), mirror: mirror::Store::default() }
+        Self { backend: default_backend(), player: Player::default(), clock: default_clock() }
     }
 }
 
@@ -63,6 +92,16 @@ impl std::fmt::Debug for VideoState {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("VideoState").field("backend", &self.backend.is_some()).field("player", &self.player).finish()
     }
+}
+
+#[cfg(not(target_arch = "wasm32"))]
+fn default_backend() -> Option<Arc<dyn VideoBackend>> {
+    Some(Arc::new(native::DacVideo::default()))
+}
+
+#[cfg(target_arch = "wasm32")]
+fn default_backend() -> Option<Arc<dyn VideoBackend>> {
+    None
 }
 
 #[cfg(not(target_arch = "wasm32"))]
