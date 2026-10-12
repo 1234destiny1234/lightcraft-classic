@@ -128,7 +128,8 @@ fn linear_playback_frames_carry_the_lut() {
     let first = |mut p: Playback| {
         let t = Instant::now();
         loop {
-            if let Some(f) = p.poll(10.0, 0.0).frame {
+            // at t = 0 only the first frame is due, whatever the worker has decoded since
+            if let Some(f) = p.poll(0.0, 0.0).frame {
                 return f;
             }
             assert!(t.elapsed().as_secs() < 30, "no frame");

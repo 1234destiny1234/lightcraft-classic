@@ -12,6 +12,9 @@ impl MoveFs for Faults {
     fn is_file(&self, p: &Path) -> bool {
         RealFs.is_file(p)
     }
+    fn listed(&self, p: &Path) -> bool {
+        RealFs.listed(p)
+    }
     fn same_file(&self, a: &Path, b: &Path) -> bool {
         RealFs.same_file(a, b)
     }
@@ -119,6 +122,7 @@ fn replace(p: &Path, held: &Path, in_place: bool) -> (Vec<u8>, Vec<u8>) {
 
 #[test]
 fn replaced_and_in_place_companions_block_save_autowrite_retry_and_file_history() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     for style in [SidecarNaming::Stem, SidecarNaming::Full] {
         for upper_stem in [false, true] {
             for upper_full in [false, true] {
@@ -165,6 +169,7 @@ fn replaced_and_in_place_companions_block_save_autowrite_retry_and_file_history(
 
 #[test]
 fn failed_redo_and_discarded_or_pruned_history_keep_companion_provenance() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     for owner in ["redo", "discarded", "pruned"] {
         let mut f = partial(SidecarNaming::Stem, false, false, false);
         if owner == "pruned" {
@@ -223,6 +228,7 @@ fn two_repairs() -> Option<Partial> {
 
 #[test]
 fn absent_peer_destinations_are_not_owned_and_retirement_records_only_completed_packets() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     let Some(mut f) = two_repairs() else { return };
     let future = path(&f.b, SidecarNaming::Full, false);
     let upper = path(&f.b, SidecarNaming::Full, true);
@@ -257,6 +263,7 @@ fn absent_peer_destinations_are_not_owned_and_retirement_records_only_completed_
 
 #[test]
 fn own_atomic_shared_packet_writes_advance_retained_versions_and_failures_do_not() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     let mut f = partial(SidecarNaming::Stem, false, false, true);
     let shared = path(&f.a, SidecarNaming::Stem, false);
     let shared_before = std::fs::read(&shared).unwrap();
@@ -297,6 +304,7 @@ fn own_atomic_shared_packet_writes_advance_retained_versions_and_failures_do_not
 
 #[test]
 fn replaced_copy_keeps_its_shared_original_and_repair_source_byte_identical() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     let mut f = partial(SidecarNaming::Stem, true, true, true);
     let shared = path(&f.a, SidecarNaming::Stem, true);
     let shared_before = std::fs::read(&shared).unwrap();
@@ -322,6 +330,7 @@ fn replaced_copy_keeps_its_shared_original_and_repair_source_byte_identical() {
 
 #[test]
 fn changed_separated_sources_are_not_moved_or_retired() {
+    crate::tests_xmp::skip_on_case_insensitive_volume!();
     for style in [SidecarNaming::Stem, SidecarNaming::Full] {
         let mut f = partial(style, false, true, false);
         let held = f.dir.join("source-original-held.xmp");

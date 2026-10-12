@@ -12,7 +12,9 @@ on:
 
 concurrency:
   group: ci-${{ github.ref }}
-  cancel-in-progress: true
+  # On main every push keeps its run (a newer push waits behind it), so a run of merges still gets
+  # a result; on other refs a newer push replaces the older run.
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 permissions:
   contents: read
