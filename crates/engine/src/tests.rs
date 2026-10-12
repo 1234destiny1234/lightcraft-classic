@@ -432,6 +432,19 @@ fn masks_reorder_and_duplicate_and_invert() {
 }
 
 #[test]
+fn mask_feather_is_set_clamped_and_undoable() {
+    let mut s = demo();
+    s.execute("mask.add", &json!({"kind": "radial"})).unwrap();
+    s.execute("mask.feather", &json!({"value": 40.0})).unwrap();
+    assert_eq!(active_dev(&s).masks[0].feather, 40.0);
+    s.execute("mask.feather", &json!({"value": 250.0})).unwrap();
+    assert_eq!(active_dev(&s).masks[0].feather, 100.0);
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(active_dev(&s).masks[0].feather, 40.0);
+    assert!(s.execute("mask.feather", &json!({"id": 9999, "value": 10.0})).is_err());
+}
+
+#[test]
 fn before_is_the_import_state_and_can_be_set_copied_and_swapped() {
     let mut s = demo();
     let id = s.active().unwrap();
