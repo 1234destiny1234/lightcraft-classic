@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-12 (version 0.6.4). Revision history: [Log](#log).*
+*Last updated 2026-10-12 (version 0.7.0). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
