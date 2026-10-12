@@ -94,8 +94,8 @@ problem (an "Update Folder Location" for a renamed or replaced drive, journal gr
 the Classic model: photos point to a folder id (root + relative path), and the records keyed by path become those rows.
 
 Image navigation now supports native pinch zoom and two-finger pan in Detail, Compare and Reference views.
-The whole-image preview still has a configurable size cap (2,560 px default), so 100% on larger photos does not
-yet guarantee original-pixel detail; visible-region rendering remains a gap (LR-VIEW-ZOOM).
+The whole-image preview has a configurable size cap (2,560 px default); zoomed views add tiled windows of the
+photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and soft proofing too (LR-VIEW-ZOOM).
 
 ## Milestones
 
@@ -230,6 +230,7 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-13: LR-VIEW-ZOOM closed: mask overlays and soft proofing confirmed as tiled zoom windows at 1:1–8:1.
 - 2026-10-13: compressed Olympus / OM ORF decodes (`orf.rs` `decode_compressed`; E-M1 and E-M10 Mark III verified): use-weighted share of photographers whose camera decodes 85% → 87%; gap 6 closed.
 - 2026-10-12: video export pipelined with GPU grade for H.264 (10 s 1080p: H.264 243 s → 45–52 s, ProRes 343 s → 55 s), audio from AAC/Opus/AC-3/PCM/MP3; LR-VID-EXPORT ✅; M14 12–20 h left.
 - 2026-10-12: M14 video stack merged (decode via FilmCraft crates, loupe playback with LUT grading, trim, poster, Capture Frame, global grading, H.264/ProRes export with audio, CLI `--trim`, MCP); R. Video rows updated; HDR & video ~25% → ~50%; 15–25 h left.
