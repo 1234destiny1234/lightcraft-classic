@@ -30,7 +30,7 @@ HERE = os.path.dirname(os.path.abspath(__file__))
 # Olympus ORF bodies that write uncompressed / packed data (crates/raw/src/vendor/orf.rs). Everything else
 # writes compressed ORF, decoded by `decode_compressed` in the same file.
 ORF_DECODED = re.compile(r"^(E-1|E-10|E-20|EVOLT E-300|EVOLT E-330|EVOLT E-400|EVOLT E-500|E-300|E-330|E-500|Camedia C-\S+.*|Stylus XZ-2 iHS)$")
-# Samsung SRW bodies with compressed raw data (crates/raw/src/vendor/srw.rs refuses 32770 / 32772 / 32773).
+# Samsung SRW bodies with compressed raw data (32770 / 32772 / 32773, decoded by crates/raw/src/vendor/srwc.rs).
 SRW_COMPRESSED = re.compile(r"(^|\W)(NX1|NX30|NX300|NX300M|NX500|NX2000|NX3000|NX3300|NX mini|EK-GN\d+|EK-KN\d+)(\W|$)")
 # Fujifilm bodies before the X series whose RAF has no raw IFD (crates/raw/src/vendor/raf.rs).
 RAF_OLD = re.compile(r"^(FinePix (E|F|S\d|S\d{3,4}|IS)|IS Pro|S5Pro|S3Pro|S2Pro)", re.I)
@@ -80,7 +80,7 @@ def classify(maker, camera, ext_field):
             return "unverified", "ORF", "compressed ORF decoder"
         if e == "SRW":
             if SRW_COMPRESSED.search(camera):
-                return "preview", "SRW", "compressed SRW is not decoded"
+                return "unverified", "SRW", "compressed SRW (srwc.rs)"
             return "unverified", "SRW", "uncompressed / packed SRW"
     e = es[0] if es else ""
     if e in ("CRW", "3FR", "FFF", "IIQ", "MOS", "ERF", "KDC", "MRW", "X3F", "RAW", "ORI"):

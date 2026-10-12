@@ -1098,18 +1098,18 @@ Ricoh	GXR with GR LENS A16 24-85 F3.5-5.5	DNG	2010	unverified	DNG decoder (uncom
 Ricoh	GXR with GR LENS S10 24-72mm F2.5-4.4 VC	DNG	2008	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Ricoh	GXR with GR LENS Mount A12	DNG	2010	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Ricoh	THETA Z1	DNG	2018	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
-Samsung	EK-GN100	SRW	2012	preview	compressed SRW is not decoded
-Samsung	EK-GN110	SRW	2012	preview	compressed SRW is not decoded
-Samsung	EK-GN120	SRW	2012	preview	compressed SRW is not decoded
-Samsung	EK-KN120	SRW	2012	preview	compressed SRW is not decoded
+Samsung	EK-GN100	SRW	2012	unverified	compressed SRW (srwc.rs)
+Samsung	EK-GN110	SRW	2012	unverified	compressed SRW (srwc.rs)
+Samsung	EK-GN120	SRW	2012	unverified	compressed SRW (srwc.rs)
+Samsung	EK-KN120	SRW	2012	unverified	compressed SRW (srwc.rs)
 Samsung	EX2F	SRW	2012	unverified	uncompressed / packed SRW
-Samsung	NX300	SRW	2012	preview	compressed SRW is not decoded
-Samsung	NX500	SRW	2015	preview	compressed SRW is not decoded
+Samsung	NX300	SRW	2012	verified	corpus: crates/raw/tests/corpus.rs corpus_samsung_srw (xtask RAW_SAMPLES)
+Samsung	NX500	SRW	2015	verified	corpus: crates/raw/tests/corpus.rs corpus_samsung_srw (xtask RAW_SAMPLES)
 Samsung	NX1000	SRW	2012	unverified	uncompressed / packed SRW
 Samsung	NX1100	SRW	2012	unverified	uncompressed / packed SRW
-Samsung	NX2000	SRW	2012	preview	compressed SRW is not decoded
-Samsung	NX3000	SRW	2013	preview	compressed SRW is not decoded
-Samsung	NX3300	SRW	2015	preview	compressed SRW is not decoded
+Samsung	NX2000	SRW	2012	verified	corpus: crates/raw/tests/corpus.rs corpus_samsung_srw (xtask RAW_SAMPLES)
+Samsung	NX3000	SRW	2013	verified	corpus: crates/raw/tests/corpus.rs corpus_samsung_srw (xtask RAW_SAMPLES)
+Samsung	NX3300	SRW	2015	unverified	compressed SRW (srwc.rs)
 Samsung	NX U	SRW	2012	unverified	uncompressed / packed SRW
 Samsung	Pro 815	DNG	2003	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Samsung	TL350 (WB2000)	SRW	2010	unverified	uncompressed / packed SRW

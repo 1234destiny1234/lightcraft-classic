@@ -807,6 +807,15 @@ fn corpus_samsung_srw() {
         ("srw-samsung-nx10.srw", 12, (4592, 3056), (4592, 3056), "BGGR", true),
         ("srw-samsung-nx20.srw", 12, (5472, 3648), (5472, 3648), "GRBG", true),
         ("srw-samsung-ex1.srw", 14, (3648, 2736), (3648, 2736), "RGGB", true),
+        // the compressed codings: 32770 with a row table (NX300, NX2000, NX30), 32772 (NX3000, NX mini), 32773 (NX1,
+        // NX500); the CFA layout of these comes from the embedded JPEG, the files state wrong ones
+        ("srw-samsung-nx300.srw", 12, (5448, 3648), (5448, 3648), "GRBG", true),
+        ("srw-samsung-nx3000.srw", 12, (5472, 3648), (5472, 3648), "GRBG", true),
+        ("srw-samsung-nx2000.srw", 12, (5448, 3648), (5448, 3648), "GRBG", true),
+        ("srw-samsung-nx30.srw", 12, (5448, 3648), (5448, 3648), "GRBG", true),
+        ("srw-samsung-nxmini.srw", 12, (5472, 3648), (5472, 3648), "RGGB", true),
+        ("srw-samsung-nx1.srw", 14, (6480, 4320), (6480, 4320), "GRBG", true),
+        ("srw-samsung-nx500.srw", 14, (6480, 4320), (6480, 4320), "GRBG", true),
     ];
     let mut seen = 0;
     for (name, bits, active, crop, cfa, whole) in cases {
@@ -823,7 +832,9 @@ fn corpus_samsung_srw() {
         let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no as-shot white balance"));
         assert!(wb[0] > 1.0 && wb[1] == 1.0 && wb[2] > 0.5, "{name}: white balance {wb:?}");
         assert!(img.white_at(0) > (1u32 << bits) as f32 * 0.9 && img.white_at(0) <= ((1u32 << bits) - 1) as f32, "{name}: white {}", img.white_at(0));
-        assert!(img.black.mean() < 8.0, "{name}: black {}", img.black.mean());
+        // the 32773 bodies keep a pedestal (NX1: 128)
+        let max_black = if bits == 14 && name.contains("nx") { 600.0 } else { 8.0 };
+        assert!(img.black.mean() < max_black, "{name}: black {}", img.black.mean());
         // the mosaic inside the framing holds no marker or padding values above the saturation level
         let lcc_raw::RawData::U16(d) = &img.data else { panic!("float data") };
         let a = img.active_area;

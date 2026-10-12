@@ -769,6 +769,41 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "a084890fd9d7995ceb746c18ecf5be48c95baf14286d5c0c480cc3daa25f3e37",
     ),
     (
+        "srw-samsung-nx300.srw",
+        "https://raw.pixls.us/data/Samsung/NX300/nx300.SRW",
+        "2087d4b351134e307c1c5e7a4fbf5691998a4c7b20451ba46f8f577d87b38052",
+    ),
+    (
+        "srw-samsung-nx3000.srw",
+        "https://raw.pixls.us/data/Samsung/NX3000/_3184416.SRW",
+        "b517dbe12d6d25a9b89116663892d0461e11f3160633e707ddc49c94e5469385",
+    ),
+    (
+        "srw-samsung-nx1.srw",
+        "https://raw.pixls.us/data/Samsung/NX1/2016-07-23-142101_sam_9364.srw",
+        "ec57f83c23094766b723ba9446cdf79388c527934d6689c1ac5b1b6ab3ea8378",
+    ),
+    (
+        "srw-samsung-nx500.srw",
+        "https://raw.pixls.us/data/Samsung/NX500/SAM_2922.SRW",
+        "3a1aeeb631b15dfa5be1bebe0e9c96f660ec96021eb6c45c073e33e982ab61b7",
+    ),
+    (
+        "srw-samsung-nx2000.srw",
+        "https://raw.pixls.us/data/Samsung/NX2000/_3240014.SRW",
+        "79ec05b29fbe86f978eac0e82ad76e026b8480e99772044142464505c32f2cd0",
+    ),
+    (
+        "srw-samsung-nx30.srw",
+        "https://raw.pixls.us/data/Samsung/NX30/2015-03-07-163604_sam_7204.srw",
+        "691438acdecd54ab96d326b96f83daa02fa68f7d66a38ff2fee4e8dd00c79d24",
+    ),
+    (
+        "srw-samsung-nxmini.srw",
+        "https://raw.pixls.us/data/Samsung/NX%20mini/SAM_0295.SRW",
+        "8e1bd19fff8c3b458f63bd6cf0ceda97e708efaf576424cf6c8ebf58eb0c3fc3",
+    ),
+    (
         "raf-fuji-xa2-12bit-bayer.raf",
         "https://raw.pixls.us/getfile.php/2883/nice/Fujifilm%20-%20X-A2%20-%2012bit%2012bit%20uncompressed%20%283:2%29.RAF",
         "58ad687b23138c3c49ebeb6c1f80daf13185349be364b947e2bf27e39a462d2f",
