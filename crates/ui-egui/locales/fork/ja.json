@@ -1160,5 +1160,7 @@
   "Cross-Fade Frames": "クロスフェードのフレーム数",
   "Fit (letterbox)": "フィット（レターボックス）",
   "Fill (crop)": "フィル（切り抜き）",
-  "Each photo with its own edits, in the order shown. No audio.": "各写真はそれぞれの編集で、表示順に並びます。音声なし。"
+  "Each photo with its own edits, in the order shown. No audio.": "各写真はそれぞれの編集で、表示順に並びます。音声なし。",
+  "Duplicate Album": "アルバムを複製",
+  "Another album with the same photos, to arrange in its own order": "同じ写真で別の並び順を作るためのアルバム"
 }

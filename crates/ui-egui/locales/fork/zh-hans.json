@@ -1159,5 +1159,7 @@
   "Cross-Fade Frames": "交叉淡化帧数",
   "Fit (letterbox)": "适合（加黑边）",
   "Fill (crop)": "填充（裁剪）",
-  "Each photo with its own edits, in the order shown. No audio.": "每张照片使用各自的编辑，按显示顺序排列。无音频。"
+  "Each photo with its own edits, in the order shown. No audio.": "每张照片使用各自的编辑，按显示顺序排列。无音频。",
+  "Duplicate Album": "复制相册",
+  "Another album with the same photos, to arrange in its own order": "包含相同照片的另一个相册，可按自己的顺序排列"
 }
