@@ -369,6 +369,11 @@ pub struct NrColor {
     pub t: f32,
 }
 
+/// Colour NR blurs at half resolution from this radius (px) on: the chromaticity is smooth at such
+/// radii, so a quarter of the pixels at half the radius gives the same result well within a
+/// display step, in about half the time (gap 26). Sources: own design (pyramid-level blur).
+pub const HALF_RES_NR_SIGMA: f32 = 4.0;
+
 /// Noise-reduction parameters at an output long edge of `out_long` px (see [`denoise`]).
 pub fn nr_params(s: &DevelopSettings, src_long: usize, out_long: usize) -> (Option<NrLum>, Option<NrColor>) {
     let lum = (s.detail.nr_luminance / 100.0) as f32;
@@ -410,22 +415,73 @@ pub fn denoise(img: &mut Rgb32f, s: &DevelopSettings, src_long: usize, out_long:
     }
     if let Some(nr) = col {
         let _t = crate::profiling().then(std::time::Instant::now);
-        let chroma = img.map(|c| {
-            let y = luminance_2020(c).max(1e-6);
-            [c[0] / y, c[1] / y, c[2] / y]
-        });
-        let b = gaussian(&chroma, nr.sigma);
-        for_rows(&mut img.data, w, |y, row| {
-            for (x, p) in row.iter_mut().enumerate() {
-                let i = y * w + x;
-                let yl = luminance_2020(*p);
-                let c0 = chroma.data[i];
-                let cb = b.data[i];
-                *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
-            }
-        });
+        colour_nr(img, nr, nr.sigma >= HALF_RES_NR_SIGMA);
         if let Some(t) = _t {
             eprintln!("    nr colour: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
+        }
+    }
+}
+
+/// Colour noise reduction: the chromaticity (rgb / Y) blurred, mixed in by `nr.t`, under the
+/// original luminance; with `half_res` the blur runs at half resolution ([`HALF_RES_NR_SIGMA`]).
+fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
+    let w = img.width;
+    {
+        let chroma_of = |c: [f32; 3]| {
+            let y = luminance_2020(c).max(1e-6);
+            [c[0] / y, c[1] / y, c[2] / y]
+        };
+        if half_res && img.width >= 2 && img.height >= 2 {
+            // chromaticity is smooth at these radii: blur it at half resolution (a quarter of
+            // the pixels, half the radius) and read it back bilinearly
+            let (hw, hh) = (img.width.div_ceil(2), img.height.div_ceil(2));
+            let src = &*img;
+            let mut half = Rgb32f::new(hw, hh);
+            for_rows(&mut half.data, hw, |y, row| {
+                for (x, o) in row.iter_mut().enumerate() {
+                    let (sx, sy) = (2 * x as isize, 2 * y as isize);
+                    let mut acc = [0.0f32; 3];
+                    for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                        let c = chroma_of(src.get_clamped(sx + dx, sy + dy));
+                        acc = [0, 1, 2].map(|k| acc[k] + 0.25 * c[k]);
+                    }
+                    *o = acc;
+                }
+            });
+            let b = gaussian(&half, nr.sigma * 0.5);
+            for_rows(&mut img.data, w, |y, row| {
+                // half-res pixel centres sit at 2x + 0.5 in full-res pixel units
+                let fy = ((y as f32 - 0.5) * 0.5).max(0.0);
+                let (y0, ty) = (fy as usize, fy.fract());
+                let y1 = (y0 + 1).min(hh - 1);
+                let (r0, r1) = (b.data.get(y0 * hw..(y0 + 1) * hw).unwrap_or(&[]), b.data.get(y1 * hw..(y1 + 1) * hw).unwrap_or(&[]));
+                for (x, p) in row.iter_mut().enumerate() {
+                    let fx = ((x as f32 - 0.5) * 0.5).max(0.0);
+                    let (x0, tx) = (fx as usize, fx.fract());
+                    let x1 = (x0 + 1).min(hw - 1);
+                    let g = |r: &[[f32; 3]], i: usize| r.get(i).copied().unwrap_or_default();
+                    let (a, bb, c, d) = (g(r0, x0), g(r0, x1), g(r1, x0), g(r1, x1));
+                    let cb = [0, 1, 2].map(|k| {
+                        let top = a[k] + (bb[k] - a[k]) * tx;
+                        let bot = c[k] + (d[k] - c[k]) * tx;
+                        top + (bot - top) * ty
+                    });
+                    let yl = luminance_2020(*p);
+                    let c0 = chroma_of(*p);
+                    *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
+                }
+            });
+        } else {
+            let chroma = img.map(chroma_of);
+            let b = gaussian(&chroma, nr.sigma);
+            for_rows(&mut img.data, w, |y, row| {
+                for (x, p) in row.iter_mut().enumerate() {
+                    let i = y * w + x;
+                    let yl = luminance_2020(*p);
+                    let (Some(&c0), Some(&cb)) = (chroma.data.get(i), b.data.get(i)) else { continue };
+                    *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
+                }
+            });
         }
     }
 }
@@ -719,5 +775,71 @@ mod nr_tests {
         let (v1, m1) = var(&img);
         assert!(v1 < v0 * 0.5, "{v0} -> {v1}");
         assert!((m1 - m0).abs() < 0.01);
+    }
+
+    /// The half-resolution colour blur matches the full-resolution one closely.
+    #[test]
+    fn half_res_colour_nr_matches_full_res() {
+        let (w, h) = (161usize, 97usize);
+        let img = Rgb32f::from_fn(w, h, |x, y| {
+            let n = (((x * 7919 + y * 104729) % 97) as f32 / 97.0 - 0.5) * 0.08;
+            let edge = if x > 80 { 0.15 } else { 0.0 };
+            [0.2 + n + edge, 0.2 - n, 0.25 + edge * 0.5]
+        });
+        let mut s = DevelopSettings::default();
+        s.detail.nr_color = 60.0;
+        let (_, Some(nr)) = nr_params(&s, w, w) else { panic!("colour NR on") };
+        assert!(nr.sigma >= HALF_RES_NR_SIGMA);
+        let mut fast = img.clone();
+        denoise(&mut fast, &s, w, w);
+        // reference: the full-resolution blur
+        let mut full = img.clone();
+        colour_nr(&mut full, nr, false);
+        let mut worst = 0.0f32;
+        let mut sum = 0.0f32;
+        for (a, b) in full.data.iter().zip(&fast.data) {
+            for k in 0..3 {
+                let d = (a[k] - b[k]).abs();
+                worst = worst.max(d);
+                sum += d;
+            }
+        }
+        let mean = sum / (img.len() * 3) as f32;
+        assert!(mean < 0.002 && worst < 0.02, "mean {mean} worst {worst}");
+        // and it removes colour noise like the full-resolution blur
+        let spread = |im: &Rgb32f| im.data.iter().take(70).map(|p| (p[0] - p[1]).abs()).sum::<f32>();
+        assert!(spread(&fast) < spread(&img) * 0.6);
+        // tiny images take the full-resolution path
+        let mut one = Rgb32f::filled(1, 3, [0.2, 0.3, 0.1]);
+        denoise(&mut one, &s, 1, 1);
+        assert!(one.data.iter().all(|p| p.iter().all(|v| v.is_finite())));
+    }
+
+    /// Timing of colour NR at the loupe (~2.5 MP) and full (24 MP) sizes (gap 26; ignored:
+    /// `cargo test --release -p lcc-pipeline colour_nr_timing -- --ignored --nocapture`).
+    #[test]
+    #[ignore]
+    fn colour_nr_timing() {
+        for (w, h) in [(1936usize, 1290usize), (6000, 4000)] {
+            let img = Rgb32f::from_fn(w, h, |x, y| {
+                let n = (((x * 7919 + y * 104729) % 97) as f32 / 97.0 - 0.5) * 0.06;
+                [0.2 + n, 0.2 - n, 0.2]
+            });
+            let mut s = DevelopSettings::default();
+            s.detail.nr_color = 50.0;
+            let (_, Some(nr)) = nr_params(&s, w, w) else { panic!("colour NR on") };
+            // the two paths interleaved: the machine's load hits both alike
+            let mut best = [f64::MAX; 2];
+            for _ in 0..5 {
+                for (k, half) in [false, true].into_iter().enumerate() {
+                    let mut a = img.clone();
+                    let t = std::time::Instant::now();
+                    colour_nr(&mut a, nr, half);
+                    best[k] = best[k].min(t.elapsed().as_secs_f64() * 1e3);
+                }
+            }
+            let best = format!("full-res blur {:.1} ms, half-res blur {:.1} ms", best[0], best[1]);
+            eprintln!("colour NR {w}x{h} (sigma {:.1}): {best} (best of 5)", nr.sigma);
+        }
     }
 }
