@@ -13,7 +13,7 @@ plug-ins are not supported.
 | Metadata and keyword suggestions | `hooks.metadata: true` | `{"hook":"metadata","photos":[photo.inspect JSON]}` → `{"suggestions":[{photo, fields?, keywords?}]}` |
 | A publish service (kind `plugin:<id>` in `publish.addService`) | `publish: {id, name}` | `{"hook":"publish.upload","service","item":{path, photo, title, caption, keywords, remoteId?}}` → `{remoteId, url?}`; `{"hook":"publish.delete","service","remoteId"}` |
 | Export destinations ("Then send to" in the Export dialog) | `exportDestinations: [{id, name, dialog}]` | `{"hook":"export.destination","destination","args","files":[{path, photo}]}` after the files are written and the export hooks ran; the files are lent to the call; a `message` in the reply is shown |
-| Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel on every selected photo (`plugin.setField {ids}`; differing values read `< mixed >`), read-only ones only the plug-in sets. The plug-in's data stays the source; the app keeps an in-memory index of it (`Photo.plugin_fields`, never saved with the catalog, so its format is unchanged: rebuilt when a library opens and after every plug-in command and export hook): Library filter text search finds the values (`key:value` for one field), smart-album and filter rules test them as `plugin:<id>/<key>` (Rules ▸ Plug-in Fields; text operators), and XMP sidecars carry them as `lcpf:fields` (a bag of `{lcpf:plugin, lcpf:key, lcpf:value}`, namespace `<homepage>/ns/plugin-fields/1.0/`, from `homepage` in `brand.toml`) when metadata is saved, and give them back to the plug-in's data on import, Synchronize Folder and Read Metadata from File (installed, enabled plug-ins only; read-only fields included; values the field doesn't take are skipped) |
+| Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel on every selected photo (`plugin.setField {ids}`; differing values read `< mixed >`), read-only ones only the plug-in sets. The plug-in's data stays the source; the app keeps an in-memory index of it (`Photo.plugin_fields`, never saved with the catalog, so its format is unchanged: rebuilt when a library opens and after every plug-in command and export hook): Library filter text search finds the values (`key:value` for one field), smart-album and filter rules test them as `plugin:<id>/<key>` (Rules ▸ Plug-in Fields; text operators, number fields compare as numbers: is ≥, is between, …), and XMP sidecars carry them as `lcpf:fields` (a bag of `{lcpf:plugin, lcpf:key, lcpf:value}`, namespace `<homepage>/ns/plugin-fields/1.0/`, from `homepage` in `brand.toml`) when metadata is saved, and give them back to the plug-in's data on import, Synchronize Folder and Read Metadata from File (installed, enabled plug-ins only; read-only fields included; values the field doesn't take are skipped) |
 
 Commands appear under File ▸ Plug-in Extras and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
 control channel and MCP all use this command. `plugin.commands` lists the commands so front
@@ -40,7 +40,10 @@ are the granted permissions intersected with the requested ones.
 
 Every plug-in can always use its own **metadata namespace** (`ns.get {photo}`,
 `ns.set {photo, key, value}`, `ns.photos`). The namespace is stored next to the module, never in
-the catalog.
+the catalog. Photo ids are only unique within one library, so the namespace is kept per library:
+a plug-in always sees the data of the library that is open (each library gets a stable
+`libraryId` in its `catalog-settings.json` the first time; a library without a folder, e.g. one
+held in memory, shares one unnamed namespace).
 
 ## Limits
 
@@ -227,7 +230,9 @@ toast and to `ui.inspect` → `export.last.plugins` when they finish. An export 
 
 Plug-ins are installed per user in `<settings_dir>/plugins`, or in `<PREFIX>_PLUGINS` if that
 is set. That folder holds `<id>.wasm`, `plugins.json` (enabled state and grants) and
-`data/<id>.json` (the plug-in's namespace). A module copied into the folder by hand loads
+`data/<id>.json` (the plug-in's namespace: `{"format": 2, "libraries": {<library id>: {<photo id>:
+{…}}}}`; a file written before namespaces were kept per library is claimed whole by the first
+library opened from a folder, so no value is lost). A module copied into the folder by hand loads
 disabled and with no permissions granted.
 
 ## Not done yet
@@ -235,7 +240,6 @@ disabled and with no permissions granted.
 - A plug-in call that has started can't be interrupted (✕ takes effect between plug-ins), and one
   export's hooks run at a time: hooks for an export that ends while the previous ones still run
   are skipped with a message.
-- Plug-in fields in rules use text operators (a number compares as text).
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
   server the user types" isn't possible; the author names the hosts.
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.
