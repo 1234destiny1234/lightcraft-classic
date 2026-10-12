@@ -9,6 +9,22 @@ use serde_json::json;
 
 use crate::{LibrarySource, Session};
 
+#[test]
+fn up_and_down_move_by_rows_and_stop_at_the_ends() {
+    let mut s = Session::with_demo();
+    let vis = s.visible_cloned();
+    assert!(vis.len() >= 6);
+    s.selection = crate::Selection::single(vis[0]);
+    s.execute("library.down", &json!({"rows": 4})).unwrap();
+    assert_eq!(s.selection.active, Some(vis[4]));
+    s.execute("library.up", &json!({})).unwrap();
+    assert_eq!(s.selection.active, Some(vis[3]), "default is one photo (the filmstrip)");
+    s.execute("library.up", &json!({"rows": 99})).unwrap();
+    assert_eq!(s.selection.active, Some(vis[0]), "clamped at the first photo");
+    s.execute("library.down", &json!({"rows": u64::MAX})).unwrap();
+    assert_eq!(s.selection.active, vis.last().copied(), "hostile counts clamp, never overflow");
+}
+
 fn temp_dir(tag: &str) -> PathBuf {
     let d = std::env::temp_dir().join(format!("lc-catcmd-{tag}-{}", std::process::id()));
     let _ = std::fs::remove_dir_all(&d);
