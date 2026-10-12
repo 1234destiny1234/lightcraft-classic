@@ -33,10 +33,11 @@ filmcraft-prores = { git = "https://github.com/storytold/filmcraft", rev = "1560
 filmcraft-mpeg2v = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-apv = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-dnx = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
-# audio (std-only, MIT OR Apache-2.0)
+# audio (std-only, MIT OR Apache-2.0; puremp3 is MIT OR CC0-1.0, no unsafe)
 filmcraft-aac = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-opus = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-ac3 = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+puremp3 = "0.1"
 
 # Dev-only `test_util::write_clip` (synthetic H.264 MP4s for other crates' tests); never on in a product build.
 filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31", optional = true }

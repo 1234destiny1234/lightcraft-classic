@@ -1,5 +1,6 @@
 //! Native audio decode: the first decodable audio track of the clip's container (MP4/MOV,
-//! Matroska/WebM, MPEG-TS/PS), decoded with FilmCraft's AAC-LC, Opus and AC-3 / E-AC-3 decoders.
+//! Matroska/WebM, MPEG-TS/PS, MXF), decoded with FilmCraft's AAC-LC, Opus and AC-3 / E-AC-3
+//! decoders, `puremp3` for MP3 (MIT OR CC0), and in-crate integer / float PCM unpacking.
 //!
 //! Times count from the clip's first shown video frame, like [`crate::FrameReader`]'s, so a block
 //! at `time` plays with the frame at `time`.
@@ -18,11 +19,143 @@ const RESYNC_DIV: u32 = 50;
 const MAX_BAD_PACKETS: usize = 32;
 /// Samples per channel one packet may decode to (E-AC-3 has 1536, Opus at most 5760).
 const MAX_PACKET_SAMPLES: usize = 8192;
+/// Sample frames one PCM packet may unpack to (an MP4 chunk of PCM is often a second or more).
+const MAX_PCM_FRAMES: usize = 1 << 20;
+/// Sample frames per synthetic packet of MXF sound (MXF stores sound as sample ranges).
+const MXF_BLOCK: u64 = 4096;
 
 enum Track {
-    Mp4 { track: usize },
-    Mkv { track: usize },
-    Ts { stream: usize },
+    Mp4 {
+        track: usize,
+    },
+    Mkv {
+        track: usize,
+    },
+    Ts {
+        stream: usize,
+    },
+    /// `first`: stored sample frame shown with the first video frame; `frames`: frames from it.
+    Mxf {
+        track: usize,
+        first: u64,
+        frames: u64,
+    },
+}
+
+/// Uncompressed PCM layout of one packet.
+#[derive(Clone, Copy, Debug)]
+struct Pcm {
+    /// Bytes per sample (the container width: 20-bit samples sit left-justified in 3 bytes).
+    bytes: usize,
+    float: bool,
+    big_endian: bool,
+    signed: bool,
+    channels: usize,
+    /// Channels stored per frame (Blu-ray LPCM pads odd counts with an empty one).
+    coded_channels: usize,
+    /// Header bytes before the samples of each packet (4 for Blu-ray LPCM).
+    skip: usize,
+}
+
+impl Pcm {
+    fn new(bits: u32, float: bool, big_endian: bool, signed: bool, channels: usize) -> Option<Pcm> {
+        let bytes = bits.div_ceil(8) as usize;
+        let ok = if float { bytes == 4 || bytes == 8 } else { (1..=4).contains(&bytes) };
+        (ok && (1..=MAX_CHANNELS).contains(&channels)).then_some(Pcm {
+            bytes,
+            float,
+            big_endian,
+            signed,
+            channels,
+            coded_channels: channels,
+            skip: 0,
+        })
+    }
+
+    fn sample(&self, b: &[u8]) -> f32 {
+        let mut v = 0u64;
+        for i in 0..b.len() {
+            let byte = if self.big_endian { b.get(i) } else { b.get(b.len() - 1 - i) };
+            v = (v << 8) | u64::from(byte.copied().unwrap_or(0));
+        }
+        if self.float {
+            return if b.len() == 4 { f32::from_bits(v as u32) } else { f64::from_bits(v) as f32 };
+        }
+        let w = 8 * b.len() as u32;
+        let half = (1u64 << (w - 1)) as f64;
+        let x = if self.signed { ((v << (64 - w)) as i64 >> (64 - w)) as f64 } else { v as f64 - half };
+        (x / half) as f32
+    }
+
+    /// Planar samples of one packet (a trailing partial frame is dropped).
+    fn decode(&self, data: &[u8]) -> Vec<Vec<f32>> {
+        let body = data.get(self.skip..).unwrap_or(&[]);
+        let frame = self.bytes.saturating_mul(self.coded_channels).max(1);
+        let n = (body.len() / frame).min(MAX_PCM_FRAMES);
+        let mut out = vec![Vec::with_capacity(n); self.channels];
+        for f in body.chunks_exact(frame).take(n) {
+            for (c, o) in out.iter_mut().enumerate() {
+                let s = f.get(c * self.bytes..(c + 1) * self.bytes).unwrap_or(&[]);
+                let x = self.sample(s);
+                // NaN / inf in float PCM would poison mixing and resampling
+                o.push(if x.is_finite() { x.clamp(-1.0, 1.0) } else { 0.0 });
+            }
+        }
+        out
+    }
+}
+
+/// Blu-ray / AVCHD LPCM from the 4-byte header of a PES payload: (layout, sample rate).
+fn bluray_lpcm(h: &[u8]) -> Option<(Pcm, u32)> {
+    let (&b2, &b3) = (h.get(2)?, h.get(3)?);
+    let channels = match b2 >> 4 {
+        1 => 1,
+        3 => 2,
+        4 | 5 => 3,
+        6 | 7 => 4,
+        8 => 5,
+        9 | 10 => 6,
+        11 => 8,
+        _ => return None,
+    };
+    let rate = match b2 & 0x0F {
+        1 => 48_000,
+        4 => 96_000,
+        5 => 192_000,
+        _ => return None,
+    };
+    let bits = match b3 >> 6 {
+        1 => 16,
+        2 | 3 => 24,
+        _ => return None,
+    };
+    let mut p = Pcm::new(bits, false, true, true, channels)?;
+    p.coded_channels = channels + channels % 2;
+    p.skip = 4;
+    Some((p, rate))
+}
+
+/// MP3 (MPEG-1/2/2.5 Layer III); each packet is one frame, fed through the decoder's reader so
+/// the bit reservoir and overlap carry across packets.
+struct Mp3(puremp3::Mp3Decoder<std::io::Cursor<Vec<u8>>>);
+
+impl Mp3 {
+    fn new() -> Mp3 {
+        Mp3(puremp3::Mp3Decoder::new(std::io::Cursor::new(Vec::new())))
+    }
+
+    /// Planar samples and the frame's (sample rate, channels).
+    fn decode(&mut self, data: &[u8]) -> Result<(Vec<Vec<f32>>, u32, usize), String> {
+        *self.0.get_mut() = std::io::Cursor::new(data.to_vec());
+        let f = self.0.next_frame().map_err(|e| format!("MP3: {e}"))?;
+        if f.header.layer != puremp3::MpegLayer::Layer3 {
+            return Err("MPEG audio layer I / II is not decoded".into());
+        }
+        let ch = if f.header.channels == puremp3::Channels::Mono { 1 } else { 2 };
+        let n = f.num_samples.min(1152);
+        let planar = f.samples.iter().take(ch).map(|s| s.get(..n).unwrap_or(&[]).to_vec()).collect();
+        Ok((planar, f.header.sample_rate.hz(), ch))
+    }
 }
 
 enum Dec {
@@ -33,6 +166,8 @@ enum Dec {
     },
     Opus(filmcraft_opus::Decoder),
     Ac3(Box<filmcraft_ac3::Decoder>),
+    Pcm(Pcm),
+    Mp3(Box<Mp3>),
 }
 
 impl Dec {
@@ -41,6 +176,8 @@ impl Dec {
             Dec::Aac { dec, .. } => dec.reset(),
             Dec::Opus(d) => d.reset(),
             Dec::Ac3(d) => d.reset(),
+            Dec::Pcm(_) => {}
+            Dec::Mp3(d) => **d = Mp3::new(),
         }
     }
 
@@ -63,7 +200,14 @@ impl Dec {
                 let out = d.decode(data).map_err(|e| e.to_string())?;
                 Ok((!out.channels.is_empty()).then_some(out.channels))
             }
+            Dec::Pcm(p) => Ok(Some(p.decode(data))),
+            Dec::Mp3(d) => d.decode(data).map(|(p, ..)| Some(p)),
         }
+    }
+
+    /// Samples per channel one packet may decode to.
+    fn max_samples(&self) -> usize {
+        if matches!(self, Dec::Pcm(_)) { MAX_PCM_FRAMES } else { MAX_PACKET_SAMPLES }
     }
 }
 
@@ -112,6 +256,11 @@ impl Reader {
                         Some(CodecConfig::Opus(c)) => opus_from_mp4(c, a.channels).map(|d| (Dec::Opus(d), "opus")),
                         Some(CodecConfig::Ac3 { .. }) => Some((Dec::Ac3(Box::default()), "ac3")),
                         Some(CodecConfig::Eac3 { .. }) => Some((Dec::Ac3(Box::default()), "eac3")),
+                        Some(CodecConfig::Mp3) => Some((Dec::Mp3(Box::new(Mp3::new())), "mp3")),
+                        Some(CodecConfig::Pcm(p)) => {
+                            let ch = if p.channels > 0 { p.channels } else { a.channels } as usize;
+                            Pcm::new(u32::from(p.bits), p.float, p.big_endian, p.signed, ch).map(|p| (Dec::Pcm(p), "pcm"))
+                        }
                         _ => None,
                     };
                     if let Some((dec, name)) = dec {
@@ -122,7 +271,7 @@ impl Reader {
                         break;
                     }
                 }
-                found.ok_or_else(|| unsupported("no decodable audio track (AAC, Opus, AC-3)"))?
+                found.ok_or_else(|| unsupported("no decodable audio track (AAC, Opus, AC-3, MP3, PCM)"))?
             }
             Container::Mkv { file, track: vt } => {
                 use filmcraft_matroska::{Codec, TrackKind};
@@ -145,6 +294,12 @@ impl Reader {
                             (Dec::Opus(d), "opus")
                         }),
                         Codec::Ac3 => Some((Dec::Ac3(Box::default()), "ac3")),
+                        Codec::Mp3 => Some((Dec::Mp3(Box::new(Mp3::new())), "mp3")),
+                        // Matroska: 8-bit A_PCM/INT/LIT is unsigned (as in WAVE)
+                        Codec::Pcm { float, big_endian, bits } => {
+                            let bits = if *bits > 0 { u32::from(*bits) } else { u32::try_from(a.bit_depth.unwrap_or(16)).unwrap_or(0) };
+                            Pcm::new(bits, *float, *big_endian, *float || *big_endian || bits > 8, a.channels as usize).map(|p| (Dec::Pcm(p), "pcm"))
+                        }
                         _ => None,
                     };
                     if let Some((dec, name)) = dec {
@@ -155,10 +310,11 @@ impl Reader {
                         break;
                     }
                 }
-                found.ok_or_else(|| unsupported("no decodable audio track (AAC, Opus, AC-3)"))?
+                found.ok_or_else(|| unsupported("no decodable audio track (AAC, Opus, AC-3, MP3, PCM)"))?
             }
             Container::Ts { file, stream: vs, units } => {
                 use filmcraft_mpegts::{Codec as T, Kind};
+                let mut lpcm_rate = 0u32;
                 let origin = file
                     .streams
                     .get(*vs)
@@ -166,8 +322,8 @@ impl Reader {
                     .and_then(|u| u.pts)
                     .map_or(0.0, |p| p as f64 / 90_000.0);
                 let stream = file
-                    .find(Kind::Audio, |c| matches!(c, T::AacAdts | T::Ac3 | T::Eac3))
-                    .ok_or_else(|| unsupported("no decodable audio stream (ADTS AAC, AC-3)"))?;
+                    .find(Kind::Audio, |c| matches!(c, T::AacAdts | T::Ac3 | T::Eac3 | T::MpegAudio | T::LpcmBluray | T::LpcmDvd))
+                    .ok_or_else(|| unsupported("no decodable audio stream (ADTS AAC, AC-3, MP3, LPCM)"))?;
                 let st = file.streams.get(stream).ok_or_else(|| unsupported("no audio stream"))?;
                 let (dec, name) = match st.codec {
                     T::AacAdts => {
@@ -177,13 +333,49 @@ impl Reader {
                         (Dec::Aac { dec, adts: true }, "aac")
                     }
                     T::Eac3 => (Dec::Ac3(Box::default()), "eac3"),
+                    T::MpegAudio => (Dec::Mp3(Box::new(Mp3::new())), "mp3"),
+                    T::LpcmBluray => {
+                        let first = file.read_unit(&clip.src, stream, 0).map_err(|e| VideoError::Invalid(e.to_string()))?;
+                        let (p, rate) = bluray_lpcm(&first).ok_or_else(|| unsupported("Blu-ray LPCM format"))?;
+                        lpcm_rate = rate;
+                        (Dec::Pcm(p), "pcm")
+                    }
+                    T::LpcmDvd => {
+                        // 20- and 24-bit DVD LPCM interleave sample groups; only 16-bit is plain
+                        let f = st.lpcm.filter(|f| f.bits == 16).ok_or_else(|| unsupported("DVD LPCM other than 16-bit"))?;
+                        lpcm_rate = f.sample_rate;
+                        let p = Pcm::new(16, false, true, true, f.channels as usize).ok_or_else(|| unsupported("DVD LPCM channels"))?;
+                        (Dec::Pcm(p), "pcm")
+                    }
                     _ => (Dec::Ac3(Box::default()), "ac3"),
                 };
                 let times = st.units.iter().map(|u| u.pts.map(|p| p as f64 / 90_000.0 - origin)).collect();
-                // rate and channels come from the first decoded packet
-                (Track::Ts { stream }, dec, name, times, 0.0, 0)
+                // rate and channels come from the first decoded packet (LPCM: its header)
+                (Track::Ts { stream }, dec, name, times, f64::from(lpcm_rate), 0)
             }
-            Container::Es { .. } | Container::Mxf { .. } => return Err(unsupported("audio in this container is not decoded")),
+            Container::Mxf { file, .. } => {
+                use filmcraft_mxf::{SoundFormat, TrackKind};
+                let a = file
+                    .tracks
+                    .iter()
+                    .position(|t| t.kind == TrackKind::Sound && !t.chunks.is_empty() && t.sound_format != SoundFormat::Other && t.sound.is_some())
+                    .ok_or_else(|| unsupported("no decodable audio track (PCM, AES3)"))?;
+                let t = file.tracks.get(a).ok_or_else(|| unsupported("no audio track"))?;
+                let si = t.sound.clone().unwrap_or_default();
+                let sr = si.sample_rate;
+                let rate = if sr.num > 0 && sr.den > 0 { f64::from(sr.num) / f64::from(sr.den) } else { 0.0 };
+                // the zero point of the sound track lines up with the video track's
+                let (n, d) = t.samples_per_edit_unit();
+                let first = u64::try_from(t.first_edit_unit().saturating_mul(n) / d.max(1)).unwrap_or(0);
+                let frames = t.stored_sample_frames().saturating_sub(first);
+                let blocks = frames.div_ceil(MXF_BLOCK).min(1 << 24);
+                let times = (0..blocks).map(|k| Some((k * MXF_BLOCK) as f64 / rate.max(1.0))).collect();
+                // blocks arrive as planar f32 re-packed little-endian
+                let p = Pcm::new(32, true, false, true, si.channels as usize)
+                    .ok_or_else(|| unsupported(format!("{} MXF audio channels", si.channels)))?;
+                (Track::Mxf { track: a, first, frames }, Dec::Pcm(p), "pcm", times, rate, si.channels as usize)
+            }
+            Container::Es { .. } => return Err(unsupported("audio in this container is not decoded")),
         };
         let mut r =
             Reader { clip, track, dec, info: AudioInfo { codec: codec.into(), sample_rate: 0, channels: 0 }, times, next: 0, cursor: 0, from: 0 };
@@ -198,6 +390,18 @@ impl Reader {
         let (rate, channels) = match &self.dec {
             Dec::Aac { dec, .. } => (dec.sample_rate(), dec.channels()),
             Dec::Opus(d) => (d.sample_rate(), d.channels()),
+            Dec::Pcm(p) => (container_rate.round() as u32, p.channels),
+            Dec::Mp3(_) => {
+                let mut found = None;
+                for i in 0..self.times.len().min(MAX_BAD_PACKETS) {
+                    let Ok(data) = self.read(i) else { continue };
+                    if let Ok((_, rate, ch)) = guarded("audio", || Mp3::new().decode(&data).map_err(VideoError::Decode)) {
+                        found = Some((rate, ch));
+                        break;
+                    }
+                }
+                found.unwrap_or((container_rate as u32, container_channels))
+            }
             Dec::Ac3(_) => {
                 let mut found = None;
                 for i in 0..self.times.len().min(MAX_BAD_PACKETS) {
@@ -231,6 +435,18 @@ impl Reader {
             (Track::Mp4 { track }, Container::Mp4 { file, .. }) => file.read_sample(&self.clip.src, *track, i).map_err(demux::demux_error),
             (Track::Mkv { track }, Container::Mkv { file, .. }) => file.read_sample(&self.clip.src, *track, i).map_err(|e| invalid(e.to_string())),
             (Track::Ts { stream }, Container::Ts { file, .. }) => file.read_unit(&self.clip.src, *stream, i).map_err(|e| invalid(e.to_string())),
+            (Track::Mxf { track, first, frames }, Container::Mxf { file, .. }) => {
+                let at = (i as u64).saturating_mul(MXF_BLOCK);
+                let n = frames.saturating_sub(at).min(MXF_BLOCK) as usize;
+                let planar = file.read_pcm(&self.clip.src, *track, first.saturating_add(at), n).map_err(|e| invalid(e.to_string()))?;
+                let mut bytes = Vec::with_capacity(n * planar.len() * 4);
+                for k in 0..n {
+                    for c in &planar {
+                        bytes.extend_from_slice(&c.get(k).copied().unwrap_or(0.0).to_le_bytes());
+                    }
+                }
+                Ok(bytes)
+            }
             _ => Err(invalid("audio track mismatch".into())),
         }
     }
@@ -289,7 +505,7 @@ impl Reader {
             };
             bad = 0;
             let ch = self.info.channels;
-            let n = planar.iter().map(Vec::len).min().unwrap_or(0).min(MAX_PACKET_SAMPLES);
+            let n = planar.iter().map(Vec::len).min().unwrap_or(0).min(self.dec.max_samples());
             let start = self.cursor;
             self.cursor = self.cursor.saturating_add(n as i64);
             if n == 0 || self.cursor <= self.from {
@@ -329,4 +545,41 @@ fn opus_from_mp4(c: &filmcraft_isobmff::OpusConfig, entry_channels: u32) -> Opti
     let mut d = filmcraft_opus::Decoder::from_head(head, 48_000).ok()?;
     d.set_trim_pre_skip(false);
     Some(d)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn bluray_lpcm_header_and_padding() {
+        // 3 channels (3/0), 48 kHz, 16-bit: stored as 4 channels
+        let (p, rate) = bluray_lpcm(&[0, 0, 0x41, 0x40]).unwrap();
+        assert_eq!((rate, p.channels, p.coded_channels, p.bytes, p.skip), (48_000, 3, 4, 2, 4));
+        let mut data = vec![0, 0, 0x41, 0x40];
+        data.extend([0x40, 0x00, 0xC0, 0x00, 0x00, 0x01, 0x7F, 0xFF, 0x12]); // one frame + a stray byte
+        let out = p.decode(&data);
+        assert_eq!(out.len(), 3);
+        assert_eq!(out[0], [0.5]);
+        assert_eq!(out[1], [-0.5]);
+        assert!(bluray_lpcm(&[0, 0, 0x02, 0x40]).is_none());
+        assert!(bluray_lpcm(&[0, 0]).is_none());
+    }
+
+    #[test]
+    fn unsigned_8_bit_and_bad_layouts() {
+        let p = Pcm::new(8, false, false, false, 1).unwrap();
+        assert_eq!(p.decode(&[128, 0, 255]), [vec![0.0, -1.0, 127.0 / 128.0]]);
+        assert!(Pcm::new(0, false, false, true, 2).is_none());
+        assert!(Pcm::new(16, true, false, true, 2).is_none());
+        assert!(Pcm::new(16, false, false, true, 0).is_none());
+        let f = Pcm::new(32, true, false, true, 1).unwrap();
+        assert_eq!(f.decode(&f32::NAN.to_le_bytes()), [vec![0.0]]);
+    }
+
+    #[test]
+    fn garbage_mp3_is_an_error() {
+        assert!(Mp3::new().decode(&[0xFF, 0xFB, 0x94]).is_err());
+        assert!(Mp3::new().decode(&[]).is_err());
+    }
 }
