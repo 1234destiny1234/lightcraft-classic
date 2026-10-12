@@ -264,7 +264,7 @@ pub fn local(p: &Photo, cfg: &SyncConfig, excluded: &dyn Fn(&str) -> bool) -> Sn
         description: text.trim().to_string(),
         keywords: p.meta.keywords.iter().filter(|k| !excluded(k)).map(|k| norm_keyword(k)).filter(|k| !k.is_empty()).collect(),
         location: p.meta.gps.and_then(|(a, b)| location(Some(a), Some(b))),
-        captured: p.captured.as_deref().and_then(norm_time),
+        captured: crate::mapping::captured(p).and_then(norm_time),
     }
 }
 

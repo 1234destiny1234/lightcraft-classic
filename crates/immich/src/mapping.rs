@@ -51,8 +51,21 @@ pub fn apply(a: &Asset, p: &mut Photo) {
             *field = v;
         }
     }
-    if p.captured.is_none() {
+    if captured(p).is_none() {
         p.captured = a.local_capture();
+    }
+}
+
+/// `p`'s capture date, unless it is only its file's modification time: an import gives an undated
+/// file its file's date, and a date Immich read from the photo itself is better than that.
+pub fn captured(p: &Photo) -> Option<&str> {
+    let c = p.captured.as_deref()?;
+    let lcc_catalog::Source::File { path } = &p.source else { return Some(c) };
+    let modified = std::fs::metadata(path).ok().and_then(|m| m.modified().ok());
+    let secs = modified.and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).and_then(|d| i64::try_from(d.as_secs()).ok());
+    match secs {
+        Some(s) if lcc_catalog::dates::civil(s) == c => None,
+        _ => Some(c),
     }
 }
 

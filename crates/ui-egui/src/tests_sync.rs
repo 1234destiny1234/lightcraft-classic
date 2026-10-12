@@ -64,7 +64,7 @@ fn changed_folder(dir: &Scratch) -> Headless {
     write_png(&dir.path("trip/c.png"), 3);
     std::fs::remove_file(dir.path("trip/b.png")).unwrap();
     let app = LccApp::new(session, Services { png: None, ..Default::default() });
-    let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
+    let mut h = Headless::new(app, [1400.0, 1200.0], 1.0);
     let r = h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
