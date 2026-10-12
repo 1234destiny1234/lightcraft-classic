@@ -4,7 +4,7 @@
 use std::path::{Path, PathBuf};
 use std::sync::{Mutex, PoisonError};
 
-use super::{FrameImage, VideoBackend, VideoInfo};
+use super::{FrameImage, FrameIter, VideoBackend, VideoInfo};
 
 #[derive(Default)]
 pub struct DacVideo {
@@ -44,5 +44,24 @@ impl VideoBackend for DacVideo {
                 Err(e.to_string())
             }
         }
+    }
+
+    fn frames_from(&self, path: &Path, t: f64, max_side: Option<u32>) -> Result<FrameIter, String> {
+        let mut r = dac_video::FrameReader::open(path).map_err(|e| e.to_string())?;
+        r.seek(t);
+        let mut failed = false;
+        Ok(Box::new(std::iter::from_fn(move || {
+            if failed {
+                return None;
+            }
+            match r.next_frame(max_side) {
+                Ok(Some(f)) => Some(Ok((f.time, f.image))),
+                Ok(None) => None,
+                Err(e) => {
+                    failed = true;
+                    Some(Err(e.to_string()))
+                }
+            }
+        })))
     }
 }

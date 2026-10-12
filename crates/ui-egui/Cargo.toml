@@ -50,6 +50,8 @@ dac-denoise = { workspace = true, features = ["runtime"] }
 dac-codecs = { workspace = true }
 dac-faces = { workspace = true }
 dac-merge = { workspace = true }
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 wat = "1.228" # G19: a slow export-hook plug-in for the worker test
 
 [build-dependencies]

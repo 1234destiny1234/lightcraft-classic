@@ -120,14 +120,16 @@ fn has_command(id: &str) -> bool {
 }
 
 /// Draw the control bar in `rect` and send what it asks for through the command dispatch.
-pub fn show_bar(app: &mut DacApp, ui: &mut Ui, rect: Rect, id: PhotoId) {
-    let Some(state) = state_of(app, id) else { return };
+/// Returns the state after the requests ran (what the loupe shows).
+pub fn show_bar(app: &mut DacApp, ui: &mut Ui, rect: Rect, id: PhotoId) -> Option<VideoUiState> {
+    let state = state_of(app, id)?;
     let out = ui.scope_builder(egui::UiBuilder::new().max_rect(rect), |ui| control_bar(ui, &state)).inner;
     for (cmd, params) in out.requests {
         if let Err(e) = app.run(cmd, params) {
             app.toast(ui.ctx(), e);
         }
     }
+    state_of(app, id)
 }
 
 /// What [`control_bar`] drew and asked for.
@@ -204,7 +206,10 @@ pub fn control_bar(ui: &mut Ui, s: &VideoUiState) -> BarOutput {
     register(ui.ctx(), "video:track", track);
     let p = ui.painter().clone();
     p.rect_filled(track, 3.0, Color32::from_gray(70));
-    let (a, b) = s.trim();
+    // a trim handle being dragged: drawn where it is, committed (one undo step) on release
+    let preview_id = egui::Id::new("video-trim-preview");
+    let preview: Option<(f64, f64)> = ui.ctx().data(|d| d.get_temp(preview_id));
+    let (a, b) = preview.unwrap_or_else(|| s.trim());
     let (xa, xb) = (time_x(track, s, a), time_x(track, s, b));
     p.rect_filled(Rect::from_min_max(pos2(xa, track.top()), pos2(xb, track.bottom())), 3.0, Color32::from_gray(150));
     // the scrub area: a click or drag seeks
@@ -236,8 +241,15 @@ pub fn control_bar(ui: &mut Ui, s: &VideoUiState) -> BarOutput {
         if resp.dragged()
             && let Some(pos) = resp.interact_pointer_pos()
         {
+            // the handles stay at least a frame apart (the engine refuses in ≥ out)
+            let gap = if s.fps > 0.0 { 1.0 / s.fps } else { 0.0 };
             let tt = x_time(track, s, pos.x);
-            let (ni, no) = if is_in { (tt.min(b), b) } else { (a, tt.max(a)) };
+            let (ni, no) = if is_in { ((tt.min(b - gap)).max(0.0), b) } else { (a, (tt.max(a + gap)).min(s.len())) };
+            ui.ctx().data_mut(|d| d.insert_temp(preview_id, (ni, no)));
+        }
+        if resp.drag_stopped()
+            && let Some((ni, no)) = ui.ctx().data_mut(|d| d.remove_temp::<(f64, f64)>(preview_id))
+        {
             // the end at the clip's end is "no trim" (None)
             let out = if (no - s.len()).abs() < 1e-6 { Value::Null } else { json!(no) };
             requests.push(("video.setTrim", json!({"in": ni, "out": out})));

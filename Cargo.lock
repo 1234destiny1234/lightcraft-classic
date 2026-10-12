@@ -2355,6 +2355,8 @@ dependencies = [
  "dac-webgallery",
  "egui",
  "egui_kittest",
+ "filmcraft-h264enc",
+ "filmcraft-isobmff",
  "image",
  "log",
  "resvg",

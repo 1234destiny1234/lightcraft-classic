@@ -78,6 +78,19 @@ available in this build". Commands act on the active photo and are enabled only 
 The position follows `session.video.clock` (monotonic seconds, injectable in tests): it advances while playing, stops
 at the trim end, or wraps to the trim start with `loop`. Playback is muted (`canPlayAudio` false). Every command
 answers the `video.get` state, so UI, CLI and MCP see the same thing. Captured frames are not graded yet (M14.7).
+## Loupe playback (M14.4)
+
+`dac_engine::video::playback`: `Playback::start(backend, path, t, max_side, &develop)` runs a worker that decodes
+sequentially (`VideoBackend::frames_from`, native: `FrameReader::seek` + `next_frame`) at ≤ 960 px, grades each frame
+with a `GradeLut` baked from `video_settings(develop)` (rebaked only when that changes: `set_settings`), and sends
+it over an 8-frame bounded queue; frames more than a frame behind `set_target(t)` are skipped before grading.
+`poll(now, slack)` returns the newest due frame (earlier ones are dropped as late). `spawn_still` renders one
+full-quality frame (`grade_frame`) on its own thread. The UI (`crates/ui-egui/src/video_view.rs`) polls once per frame:
+playing, it shows the worker's frames by `video.get.current` (restarting the worker after a seek or loop), requests
+repaints, and on a decode error pauses (`video.pause`) with one toast (and a log line); paused, it shows the still for
+(time, look, size), so develop edits re-render it. Trim handles drag a preview and send one `video.setTrim` on release.
+`ui.inspect` → `loupe.source` reads `video` / `video-still`. Neither is an activity row (interactive, long-lived).
+
 ## Supported formats
 Probe works for every container below; frames decode when the codec cell says so. "Unsupported" streams probe with
 `decodable: false`, and `FrameReader::open` returns `VideoError::Unsupported(reason)`.
@@ -165,6 +178,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 ## Revision history
 
+- 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
 - 2026-10-12: sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost.
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).

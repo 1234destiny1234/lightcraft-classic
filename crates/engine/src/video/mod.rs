@@ -16,6 +16,7 @@
 pub mod adapter;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
+pub mod playback;
 pub mod player;
 #[cfg(test)]
 mod tests;
@@ -68,7 +69,16 @@ pub trait VideoBackend: Send + Sync {
     fn probe(&self, path: &Path) -> Result<VideoInfo, String>;
     /// The frame shown at `t` seconds, scaled so its longer side is at most `max_side` (None = full size).
     fn frame_at(&self, path: &Path, t: f64, max_side: Option<u32>) -> Result<FrameImage, String>;
+    /// Frames in presentation order from the one shown at `t` (a reader of its own, for a
+    /// playback worker). Each item is `(presentation time, frame)`; the iterator ends at the clip's end.
+    fn frames_from(&self, path: &Path, t: f64, max_side: Option<u32>) -> Result<FrameIter, String> {
+        let _ = (path, t, max_side);
+        Err("sequential decoding isn't available in this build".into())
+    }
 }
+
+/// What [`VideoBackend::frames_from`] returns.
+pub type FrameIter = Box<dyn Iterator<Item = Result<(f64, FrameImage), String>> + Send>;
 
 /// Seconds on a monotonic clock (injectable for tests).
 pub type Clock = Box<dyn Fn() -> f64 + Send>;

@@ -58,6 +58,7 @@ pub mod text_field;
 pub mod theme;
 pub mod titlebar;
 pub mod video_ui;
+pub mod video_view;
 pub mod web_module;
 pub mod widgets;
 
@@ -374,6 +375,8 @@ pub struct DacApp {
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
     /// "thumb", "none").
     pub loupe_shown: Option<(dac_catalog::PhotoId, &'static str)>,
+    /// The loupe's video frames (playback worker, paused still).
+    pub video_view: video_view::VideoView,
     /// The zoomed view the loupe asked tiles for last (see [`region`]): the frame, the part its
     /// on-screen tiles cover and their look; for drawing while a pinch runs, and the inspector.
     pub region_view: Option<region::RegionView>,
@@ -495,6 +498,7 @@ impl DacApp {
             gesture: None,
             brush_live: None,
             loupe_shown: None,
+            video_view: Default::default(),
             region_view: None,
             region_before_view: None,
             size_hold: Default::default(),
