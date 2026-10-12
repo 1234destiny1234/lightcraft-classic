@@ -140,6 +140,8 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
                     };
                     Ok(field(target, op, json!({"n": n, "unit": unit})))
                 }
+                // "is today", "is yesterday", "is in this week / month / year" [inferred operator names]
+                op if lcc_catalog::rules::CALENDAR_OPS.contains(&op) => Ok(field(target, op, Value::Null)),
                 _ => Err(unsupported()),
             }
         }
@@ -254,6 +256,7 @@ mod tests {
                      { criteria = "captureTime", operation = "in", value = "2024-01-01", value2 = "2024-12-31" },
                      { criteria = "touchTime", operation = "inLast", value = 3, value_units = "weeks" },
                      { criteria = "captureTime", operation = ">", value = "2023-06-01T10:00:00" },
+                     { criteria = "touchTime", operation = "thisWeek" },
                      combine = "intersect" }"#,
             &cols,
         )
@@ -264,6 +267,7 @@ mod tests {
         assert_eq!(set.rules[2], field("captureDate", "between", json!(["2024-01-01", "2024-12-31"])));
         assert_eq!(set.rules[3], field("editDate", "inLast", json!({"n": 3.0, "unit": "week"})));
         assert_eq!(set.rules[4], field("captureDate", "after", json!("2023-06-01")));
+        assert_eq!(set.rules[5], field("editDate", "thisWeek", Value::Null));
         for bad in [
             r#"s = { { criteria = "collection", operation = "all", value = "spain" } }"#,
             r#"s = { { criteria = "captureTime", operation = "==", value = "last tuesday" } }"#,

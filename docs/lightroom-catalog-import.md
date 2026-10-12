@@ -56,10 +56,10 @@ flag, color label, has-adjustments, ISO, focal length and aperture comparisons; 
 keywords, filename, camera, lens, title, caption, creator, copyright, location fields and file
 format (contains all / any / none, begins/ends with, is, empty); capture date and edit date
 (`captureTime` / `touchTime`: is, after, before, in range, in / not in the last N hours, days,
-weeks, months or years); collection-name rules (contains all / any, begins/ends with, is), which
+weeks, months or years; is today, yesterday, in this week (Monday to Sunday), month or year); collection-name rules (contains all / any, begins/ends with, is), which
 become "in album" rules for the collections imported with it whose names match (resolved at import:
 a collection made later isn't picked up by name); and nested match-all / any /
-none groups. Any other rule (metadata status, relative dates such as "today", …) keeps the collection as a
+none groups. Any other rule (metadata status, …) keeps the collection as a
 regular album with its current membership, and the report names the rule. On reimport an album keeps
 its kind: an existing smart album keeps its current (possibly edited) rules, and a regular album
 made by an earlier import stays regular and gains new members, with a warning (delete it and
@@ -73,7 +73,12 @@ what the app can reproduce of it). When the newest step differs from the photo's
 "Lightroom catalog" entry holds them, so History ends where the photo is. Steps that can't be read
 are skipped with a warning; at most the newest 200 are kept. The report counts them as
 `historySteps`. A photo whose edits are preserved (reimport without `updateExisting`) keeps its
-History. Snapshots stay archived source data, not versions yet.
+History. Lightroom snapshots (`Adobe_libraryImageDevelopSnapshot`) become the photo's Versions, in
+Lightroom's order and under their names, mapped the same way; unreadable ones are skipped with a
+warning and the report counts them as `snapshots`. Of the 113 flat `crs:` develop fields in Adobe's
+public XMP documentation, 105 map (test `develop_field_coverage_over_public_crs_fields`); the other
+eight have no equivalent and are reported: `AutoWhiteVersion`, `LensProfileSetup`, `UprightPreview`,
+`UprightCenterMode`, `UprightFocalLength35mm`, the pre-2012 `Defringe`, `HDRMaxValue` and `SDRBlend`.
 A Custom white balance on a raw the app develops relative to its as-shot look (ARW, NEF, RW2,
 RAF, CR3, CR2, PEF, SRW; Lightroom names them all `RAW`) can't be taken as Kelvin: the catalog keeps no
 as-shot white for Custom photos, so the photo stays As Shot and `Temperature, Tint` are reported

@@ -988,5 +988,10 @@
   "Panels": "Панелі",
   "Reset Panel Layout": "Скинути розташування панелей",
   "Resize panel window": "Змінити розмір вікна панелі",
-  "Resize panels": "Змінити розміри панелей"
+  "Resize panels": "Змінити розміри панелей",
+  "is today": "сьогодні",
+  "is yesterday": "учора",
+  "is in this week": "цього тижня",
+  "is in this month": "цього місяця",
+  "is in this year": "цього року"
 }

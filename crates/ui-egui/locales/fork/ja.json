@@ -1249,5 +1249,10 @@
   "starts using it for AI Denoise": "AIノイズ除去に使い始めます",
   "terms unclear": "条件不明",
   "the graphics card": "グラフィックカード",
-  "the graphics card is not used": "グラフィックカードは使用しません"
+  "the graphics card is not used": "グラフィックカードは使用しません",
+  "is today": "が今日",
+  "is yesterday": "が昨日",
+  "is in this week": "が今週",
+  "is in this month": "が今月",
+  "is in this year": "が今年"
 }

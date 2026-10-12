@@ -1248,5 +1248,10 @@
   "starts using it for AI Denoise": "開始用它進行 AI 降噪",
   "terms unclear": "條款不明確",
   "the graphics card": "顯示卡",
-  "the graphics card is not used": "未使用顯示卡"
+  "the graphics card is not used": "未使用顯示卡",
+  "is today": "是今天",
+  "is yesterday": "是昨天",
+  "is in this week": "在本週",
+  "is in this month": "在本月",
+  "is in this year": "在今年"
 }
