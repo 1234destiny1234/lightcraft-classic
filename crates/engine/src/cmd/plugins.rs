@@ -41,6 +41,13 @@ pub fn manager() -> MutexGuard<'static, Option<Manager>> {
     g
 }
 
+/// The library now open (its stable id, `""` for one without): plug-ins' data is kept per library.
+pub fn set_library(id: &str) {
+    if let Some(m) = manager().as_mut() {
+        m.set_library(id);
+    }
+}
+
 fn with_manager<R>(f: impl FnOnce(&mut Manager) -> Result<R>) -> Result<R> {
     let mut g = manager();
     let m = g.get_or_insert_with(Manager::in_memory);
@@ -596,7 +603,21 @@ pub fn sync_fields(s: &mut Session) -> usize {
 /// [`sync_fields`]; `write_sidecars: false` only builds the index (a library just opened: its
 /// sidecars already have what the plug-ins hold).
 pub(crate) fn sync_fields_with(s: &mut Session, write_sidecars: bool) -> usize {
-    let (values, skipped) = manager().as_mut().map(|m| m.field_values()).unwrap_or_default();
+    let (values, skipped) = {
+        let mut g = manager();
+        // rules compare number fields as numbers
+        if let Some(m) = g.as_ref() {
+            lcc_catalog::rules::set_numeric_plugin_fields(m.list().filter(|p| p.enabled).flat_map(|p| {
+                let man = p.plugin.manifest();
+                man.metadata_fields
+                    .iter()
+                    .filter(|f| matches!(f.kind, lcc_plugins::FieldKind::Number { .. }))
+                    .map(|f| format!("{}/{}", man.id, f.key))
+                    .collect::<Vec<_>>()
+            }));
+        }
+        g.as_mut().map(|m| m.field_values()).unwrap_or_default()
+    };
     let kept = |k: &str| skipped.iter().any(|p| k.split_once('/').is_some_and(|(id, _)| id == p));
     let mut changes = Vec::new();
     for p in s.catalog.photos() {
@@ -784,10 +805,10 @@ mod tests {
         manager().get_or_insert_with(Manager::in_memory).uninstall("test.relay").unwrap();
     }
 
-    /// A plug-in with custom metadata fields `job` (text) and `ok` (bool) and no code to speak of.
+    /// A plug-in with custom metadata fields `job` (text), `ok` (bool) and `n` (number) and no code to speak of.
     fn fields_module(id: &str) -> Vec<u8> {
         let manifest = format!(
-            r#"{{"id":"{id}","name":"Jobs","metadataFields":[{{"key":"job","label":"Job","type":"text"}},{{"key":"ok","label":"OK","type":"bool"}}]}}"#
+            r#"{{"id":"{id}","name":"Jobs","metadataFields":[{{"key":"job","label":"Job","type":"text"}},{{"key":"ok","label":"OK","type":"bool"}},{{"key":"n","label":"N","type":"number","min":0,"max":1000,"default":0}}]}}"#
         );
         let reply = r#"{"ok":{}}"#;
         let esc = |s: &str| s.replace('"', "\\\"");
@@ -921,6 +942,53 @@ mod tests {
             let _ = std::fs::remove_dir_all(d);
         }
         manager().get_or_insert_with(Manager::in_memory).uninstall("test.back").unwrap();
+    }
+
+    /// G19: plug-in data is kept per library: photo 1 of one library never shows (or is searched
+    /// by) the value set on photo 1 of another, also after reopening; number fields compare as
+    /// numbers in rules.
+    #[test]
+    fn plugin_fields_are_kept_per_library() {
+        let _turn = turn();
+        manager().get_or_insert_with(Manager::in_memory).install_bytes(&fields_module("test.libs"), None).unwrap();
+        let a = crate::tests_xmp::temp_dir("pf-lib-a");
+        let b = crate::tests_xmp::temp_dir("pf-lib-b");
+        let job = |s: &Session, id: u64| s.catalog.photo(lcc_catalog::PhotoId(id)).and_then(|p| p.plugin_fields.get("test.libs/job").cloned());
+        let mut s = Session::new();
+        s.open_library(&a, true).unwrap();
+        let first = s.visible_cloned()[0].0;
+        s.execute("plugin.setField", &json!({"plugin": "test.libs", "field": "job", "value": "A-1", "id": first})).unwrap();
+        s.execute("plugin.setField", &json!({"plugin": "test.libs", "field": "n", "value": 10, "id": first})).unwrap();
+        let second = s.visible_cloned()[1].0;
+        s.execute("plugin.setField", &json!({"plugin": "test.libs", "field": "n", "value": 9, "id": second})).unwrap();
+        let rule: lcc_catalog::rules::RuleSet =
+            serde_json::from_value(json!({"rules": [{"field": "plugin:test.libs/n", "op": "gt", "value": 9.5}]})).unwrap();
+        assert!(rule.check(&s.catalog).is_empty());
+        let found: Vec<u64> = s.catalog.photos().filter(|p| rule.matches(p, &s.catalog)).map(|p| p.id.0).collect();
+        assert_eq!(found, vec![first], "10 > 9.5 > 9, as numbers");
+        drop(s);
+        let mut t = Session::new();
+        t.open_library(&b, true).unwrap();
+        assert!(t.catalog.photo(lcc_catalog::PhotoId(first)).is_some(), "the same photo id in both libraries");
+        assert_eq!(job(&t, first), None, "library B doesn't get library A's value");
+        let f = t.execute("plugin.metadataFields", &json!({"id": first})).unwrap();
+        let mine = f["plugins"].as_array().unwrap().iter().find(|p| p["plugin"] == "test.libs").cloned().unwrap();
+        assert!(mine["fields"][0]["value"].is_null(), "{mine}");
+        t.execute("plugin.setField", &json!({"plugin": "test.libs", "field": "job", "value": "B-1", "id": first})).unwrap();
+        drop(t);
+        let mut s = Session::new();
+        s.open_library(&a, false).unwrap();
+        assert_eq!(job(&s, first), Some(json!("A-1")), "library A keeps its own");
+        drop(s);
+        let mut t = Session::new();
+        t.open_library(&b, false).unwrap();
+        assert_eq!(job(&t, first), Some(json!("B-1")));
+        drop(t);
+        for d in [a, b] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+        set_library("");
+        manager().get_or_insert_with(Manager::in_memory).uninstall("test.libs").unwrap();
     }
 
     #[test]

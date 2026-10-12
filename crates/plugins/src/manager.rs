@@ -108,6 +108,8 @@ pub struct Manager {
     plugins: BTreeMap<String, Installed>,
     /// `(file, error)` for modules in the folder that failed to load.
     pub failed: Vec<(String, String)>,
+    /// The open library's id: plug-in data is kept per library (photo ids are per library).
+    library: String,
 }
 
 impl Manager {
@@ -151,6 +153,23 @@ impl Manager {
     }
 
     /// Limits for plug-ins installed from now on.
+    /// The library now open (a stable id; `""`: none). Plug-in data is kept per library, since
+    /// photo ids are only unique within one: every read and write from now on goes to this one's.
+    /// The first library with an id claims data saved before data was kept per library.
+    pub fn set_library(&mut self, library: &str) {
+        self.library = library.to_string();
+        for p in self.plugins.values_mut() {
+            if let Some(store) = p.store.as_mut() {
+                scope(store, library);
+            }
+        }
+    }
+
+    /// The open library's id (see [`Manager::set_library`]).
+    pub fn library(&self) -> &str {
+        &self.library
+    }
+
     pub fn set_limits(&mut self, limits: Limits) {
         self.limits = limits;
     }
@@ -250,6 +269,7 @@ impl Manager {
     /// worker thread while the manager's lock is free), then is handed back with [`Manager::end`]. The
     /// plug-in's data is lent to the call: until then, other calls of the same plug-in are refused as busy.
     pub fn begin(&mut self, id: &str, request: Value, lent: Vec<PathBuf>) -> Result<PendingCall> {
+        let library = self.library.clone();
         let dir = self.dir.clone();
         let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
         if !p.enabled {
@@ -263,6 +283,9 @@ impl Manager {
                 Some(d) => NamespaceStore::open(d.join("data").join(format!("{id}.json")))?,
                 None => NamespaceStore::in_memory(),
             });
+        }
+        if let Some(store) = p.store.as_mut() {
+            scope(store, &library);
         }
         let perms = p.effective();
         let plugin = p.plugin.clone();
@@ -381,6 +404,7 @@ impl Manager {
     }
 
     fn store_mut(&mut self, id: &str) -> Result<&mut Installed> {
+        let library = self.library.clone();
         let dir = self.dir.clone();
         let p = self.plugins.get_mut(id).ok_or_else(|| Error::NotFound(id.into()))?;
         // its data is lent to a call running elsewhere: opening it again would fork it
@@ -392,6 +416,9 @@ impl Manager {
                 Some(d) => NamespaceStore::open(d.join("data").join(format!("{id}.json")))?,
                 None => NamespaceStore::in_memory(),
             });
+        }
+        if let Some(store) = p.store.as_mut() {
+            scope(store, &library);
         }
         Ok(p)
     }
@@ -500,6 +527,16 @@ impl Manager {
             .filter(|p| p.enabled)
             .filter_map(|p| p.plugin.manifest().publish.clone().map(|s| (p.plugin.id().to_string(), s)))
             .collect()
+    }
+}
+
+/// Points `store` at `library`; data it claims from before is saved at once, so another library
+/// can't claim it on the next start.
+fn scope(store: &mut NamespaceStore, library: &str) {
+    if store.set_scope(library)
+        && let Err(e) = store.save()
+    {
+        log::warn!("plug-in data: {e}");
     }
 }
 

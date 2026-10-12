@@ -270,6 +270,14 @@ fn custom_fields_example_shows_and_edits_fields() {
     m.set_metadata_field(id, "3", "client", &Value::Null).unwrap();
     assert!(value(&m.metadata_fields("3"), "client").is_null());
 
+    // photo 3 of another library has none of these values (data is kept per library)
+    m.set_library("other-library");
+    assert!(value(&m.metadata_fields("3"), "job").is_null());
+    m.run_command(id, "set", &json!({"client": "B", "job": "B-1", "usage": "Commercial"}), &["3".into()], &mut host).unwrap();
+    assert_eq!(value(&m.metadata_fields("3"), "job"), "B-1");
+    m.set_library("");
+    assert_eq!(value(&m.metadata_fields("3"), "job"), "J-2");
+
     // survives a restart; disabled plug-ins show no fields
     drop(m);
     let mut m = Manager::open(&dir).unwrap();
