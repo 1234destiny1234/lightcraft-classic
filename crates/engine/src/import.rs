@@ -1255,6 +1255,8 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     let mut ops = Vec::new();
     // Move: placed at the destination, sources untouched until the records are committed
     let mut placed: Vec<crate::import_move::Placed> = Vec::new();
+    // plug-in fields from sidecars: into the plug-ins' data once the photos are catalogued
+    let mut plugin_fields: Vec<(PhotoId, Vec<(String, String, String)>)> = Vec::new();
     // photos added by this batch, by content (a duplicate of a file earlier in the import names it)
     let mut new_hash: HashMap<String, PhotoId> = HashMap::new();
     // Fresh: trashed photos a new import replaces (by content or by file), each removed once
@@ -1333,6 +1335,9 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 p.duration = info.duration;
                 apply_import_defaults(s, &mut p);
                 if let Some(sc) = &sidecar {
+                    if !sc.plugin_fields.is_empty() {
+                        plugin_fields.push((id, sc.plugin_fields.clone()));
+                    }
                     crate::sidecar::merge_into(&mut p, sc, &now);
                     report.sidecars += 1;
                     report.warnings.extend(sc.warnings.iter().cloned().map(|mut warning| {
@@ -1386,6 +1391,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
     if !placed.is_empty() {
         finish_moves(s, placed, log0, &mut report);
     }
+    crate::cmd::plugins::restore_fields(s, &plugin_fields);
     // photos that came with an XMP sidecar start in step with it (the metadata-vs-file badge)
     // (not browsed Local records: a stamp would count as a change the user made and keep them)
     let with_xmp: Vec<PhotoId> = report.imported.iter().map(|i| PhotoId(*i)).filter(|id| s.catalog.photo(*id).is_some_and(|p| !p.local)).collect();

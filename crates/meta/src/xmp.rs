@@ -166,6 +166,7 @@ fn canonical(qname: &str, scopes: &[Vec<(String, String)>]) -> String {
         Some(u) => match NAMESPACES.iter().find(|(_, nu)| *nu == u) {
             Some((p, _)) => format!("{p}:{local}"),
             None if u == video_ns() => format!("{VIDEO_PREFIX}:{local}"),
+            None if u == plugin_fields_ns() => format!("lcpf:{local}"),
             None if prefix.is_empty() => local.to_string(),
             None => qname.to_string(),
         },
@@ -590,6 +591,22 @@ pub fn video_ns() -> String {
 /// Like [`write_xmp`], with any number of simple `lc:<name>` properties (e.g. `settings`, `flag`).
 pub fn write_xmp_lc(meta: &Metadata, lc: &[(&str, &str)]) -> String {
     write_xmp_ext(meta, lc, &[])
+}
+
+/// The plug-in custom metadata fields a packet carries (`lcpf:fields`, see [`plugin_fields_ns`]):
+/// `(plug-in id, key, value)`, items missing a part skipped, at most 4096 items.
+pub fn plugin_fields(d: &XmpData) -> Vec<(String, String, String)> {
+    let Some(XmpValue::Array(items)) = d.values.get("lcpf:fields") else { return Vec::new() };
+    items
+        .iter()
+        .filter_map(|it| {
+            let part = |k: &str| it.field(k).and_then(XmpValue::text).map(str::to_string);
+            let plugin = part("lcpf:plugin").filter(|s| !s.is_empty())?;
+            let key = part("lcpf:key").filter(|s| !s.is_empty())?;
+            Some((plugin, key, part("lcpf:value").unwrap_or_default()))
+        })
+        .take(4096)
+        .collect()
 }
 
 /// [`write_xmp_lc`], plus plug-in custom metadata fields `(plug-in id, field key, value)` in
@@ -1092,5 +1109,22 @@ mod tests {
         let mut a = Metadata::default();
         a.overlay_user_fields(&b);
         assert_eq!(a.regions, vec![with_region]);
+    }
+
+    #[test]
+    fn plugin_fields_read_back_under_any_prefix() {
+        let x = write_xmp_ext(&Metadata::default(), &[], &[("com.ex.jobs", "job", "J-1 <&>"), ("com.ex.jobs", "ok", "true")]);
+        let d = parse_xmp(&x).unwrap();
+        assert_eq!(
+            plugin_fields(&d),
+            vec![("com.ex.jobs".into(), "job".into(), "J-1 <&>".into()), ("com.ex.jobs".into(), "ok".into(), "true".into())]
+        );
+        // another prefix for the same namespace; an item without a key is skipped
+        let ns = plugin_fields_ns();
+        let y = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:pf="{ns}"><pf:fields><rdf:Bag><rdf:li rdf:parseType="Resource"><pf:plugin>a</pf:plugin><pf:key>k</pf:key><pf:value>v</pf:value></rdf:li><rdf:li rdf:parseType="Resource"><pf:plugin>a</pf:plugin></rdf:li></rdf:Bag></pf:fields></rdf:Description></rdf:RDF></x:xmpmeta>"#
+        );
+        assert_eq!(plugin_fields(&parse_xmp(&y).unwrap()), vec![("a".into(), "k".into(), "v".into())]);
+        assert!(plugin_fields(&parse_xmp(&write_xmp_ext(&Metadata::default(), &[], &[])).unwrap()).is_empty());
     }
 }

@@ -40,10 +40,12 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
     let mut failed = Vec::new();
     let mut stamped = Vec::new();
     let mut warnings = Vec::new();
+    let mut fields = Vec::new();
     for id in s.targets(p) {
         match s.read_sidecar_op_with_warnings(id) {
-            Ok(Some((op, from, mut photo_warnings))) => {
+            Ok(Some((op, from, mut photo_warnings, plugin_fields))) => {
                 ops.push(op);
+                fields.push((id, plugin_fields));
                 stamped.push(id);
                 read.push(json!({"id": id.0, "from": from.display().to_string()}));
                 warnings.append(&mut photo_warnings);
@@ -57,7 +59,11 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
         // what was just read is what the catalog holds: in step with the file
         s.record_xmp_stamps(&stamped, false);
     }
+    let restored = crate::cmd::plugins::restore_fields(s, &fields);
     let mut result = json!({"read": read, "failed": failed});
+    if restored > 0 {
+        result["pluginFields"] = json!(restored);
+    }
     if !warnings.is_empty() {
         result["warnings"] = serde_json::to_value(warnings).unwrap_or_default();
     }
