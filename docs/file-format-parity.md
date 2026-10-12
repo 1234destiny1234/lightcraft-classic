@@ -1,6 +1,6 @@
 # File format parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-12 · **Change:** minor (lossy DNG export; HEIC / HEIF and AVIF metadata read from the container, #693) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (AVIF import; Render to DNG command and export format; lossy DNG export; HEIC / HEIF and AVIF metadata read from the container, #693) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every format Lightroom reads or writes, with our support, fidelity and tests. Camera raw formats are
 deep enough to have their own document: [raw-parity.md](raw-parity.md).
@@ -20,7 +20,7 @@ import and export formats. Ours come from `crates/codecs/src/sniff.rs`, `crates/
 | PNG | ✅ | ✅ | ✅ | ✅ | |
 | PSD / PSB | ✅ (maximized-compatibility composite) | ✅ (Classic: PSD export, edit-in round trip) | ✅ merged composite | ⬜ (external-editor round trip writes 16-bit TIFF) | `crates/codecs/src/psd.rs` |
 | HEIC / HEIF | ✅ | ⬜ (Classic) / HDR only | ✅ in every release build (`crates/heif`, heic-rs) | ⬜ | `heif` feature on by packaging scripts; EXIF and XMP read from the container in every build (`crates/meta/src/heif.rs`, #693) |
-| AVIF | ✅ | ✅ (HDR) | ⬜ recognised, not decoded (no permissive pure-Rust AV1 decoder) | ✅ 8/10-bit, PQ HDR | EXIF and XMP read from the container (`crates/meta/src/heif.rs`); exported EXIF reads back |
+| AVIF | ✅ | ✅ (HDR) | ✅ native builds, `filmcraft-av1` (pure Rust): 8/10/12-bit, 4:2:0/4:2:2/4:4:4/mono, grids, nclx / ICC, PQ / HLG to linear (highlights kept), clap / irot / imir; alpha ignored, image sequences unsupported; ⬜ web (refused: a decoder panic would abort the page) | ✅ 8/10-bit, PQ HDR | `crates/codecs/src/avif.rs`; EXIF and XMP read from the container (`crates/meta/src/heif.rs`), also by the decode; exported EXIF reads back |
 | JPEG XL | ✅ | ✅ | ✅ (`jxl-oxide`) incl. DNG 1.7 JXL tiles | ✅ lossy / lossless, 8/16-bit, PQ HDR (`jixel`, native only; ⬜ web) | `crates/engine/src/tests_export.rs` |
 | WebP | not in its document types | ⬜ | ✅ | ✅ | beyond target |
 | GIF, BMP | ⬜ | ⬜ | ✅ | ⬜ | beyond target |
@@ -63,13 +63,13 @@ import and export formats. Ours come from `crates/codecs/src/sniff.rs`, `crates/
 
 | Part | Weight | Ready for real work | Kind |
 |---|---:|---:|---|
-| Standard image import / export | 35% | ~85% | estimated (table above; missing: AVIF read) |
+| Standard image import / export | 35% | ~85% | estimated (table above; nothing listed missing) |
 | Sidecars, metadata, presets | 25% | ~85% | estimated |
 | Lightroom catalog migration | 25% | ~50% | estimated (one-way, approximate rendering of unsupported settings) |
 | HDR, print, video output | 15% | ~35% | estimated |
 | **Non-raw file formats** | 100% | **~70%** | estimated; raw is in [raw-parity.md](raw-parity.md) (~50%) |
 
-Remaining: **19–32 h** (AVIF decode 8–15 h if a permissive decoder is written or found; HLG 3–5 h; catalog import depth 8–12 h).
+Remaining: **11–17 h** (HLG 3–5 h; catalog import depth 8–12 h).
 
 ## Revision history
 
@@ -80,3 +80,5 @@ Remaining: **19–32 h** (AVIF decode 8–15 h if a permissive decoder is writte
 | 2026-10-12 | minor | HEIC / HEIF and AVIF: EXIF and XMP read from the container, without the decoder (#693); statuses unchanged |
 | 2026-10-12 | minor | Lossy DNG export (JPEG tiles, `dngCompression: "lossy"`); PSD write had already landed (#953), so it leaves the remaining hours |
 | 2026-10-13 | minor | Render to DNG: Photo ▸ Render to DNG (rendered DNGs stacked with their originals, on a worker in the desktop app) and the "Rendered DNG" export format |
+| 2026-10-13 | minor | AVIF import (`crates/codecs/src/avif.rs`, `filmcraft-av1`) |
+| 2026-10-13 | minor | AVIF import (`crates/codecs/src/avif.rs`, `filmcraft-av1`, native builds) |

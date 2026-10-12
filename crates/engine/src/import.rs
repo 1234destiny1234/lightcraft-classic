@@ -38,7 +38,7 @@ pub const EXTENSIONS: &[&str] = &[
     "jxl", "gif", "bmp",
     // Decoded when built with the codecs' `heif` feature; otherwise the import reports them as
     // failed with the reason ("HEIC/HEIF support isn't included in this build").
-    "heic", "heif", "avif", // no AV1 decoder yet: reported as failed, like a HEIC without the feature
+    "heic", "heif", "avif", // a HEIC without the `heif` feature is reported as failed
     "iiq", "crw", "mrw", "x3f", "kdc", "mos", "erf", "3fr", "fff", // video clips (MediaKind::Video; see VIDEO_EXTENSIONS)
     "mp4", "m4v", "mov", "mkv", "webm", "mts", "m2ts", "3gp", "mxf",
 ];

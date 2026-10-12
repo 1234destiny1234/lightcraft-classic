@@ -4500,6 +4500,7 @@ version = "0.7.0"
 dependencies = [
  "avif-serialize",
  "bytemuck",
+ "filmcraft-av1",
  "image",
  "image-webp",
  "jixel",
@@ -4510,6 +4511,7 @@ dependencies = [
  "lcc-color",
  "lcc-geom",
  "lcc-heif",
+ "lcc-meta",
  "lcc-raster",
  "moxcms 0.9.1",
  "png 0.18.1",
