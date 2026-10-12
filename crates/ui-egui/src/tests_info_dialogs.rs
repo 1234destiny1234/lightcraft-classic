@@ -38,7 +38,13 @@ fn information_dialogs_end_with_one_close() {
         assert!(!text.iter().any(|t| t == "Cancel" || t == "OK"), "{id}: no Cancel / OK: {text:?}");
         let r = h.request("ui.clickWidget", json!({"id": "button:dialogOk"}), T);
         assert_eq!(r["ok"], true, "{id}: {r}");
-        h.step();
+        // the click lands on a later frame under load
+        for _ in 0..50 {
+            if h.app.ui.dialog.is_none() {
+                break;
+            }
+            h.step();
+        }
         assert!(h.app.ui.dialog.is_none(), "{id}: Close closes the dialog");
         // Esc still closes it too
         open(&mut h, id);
