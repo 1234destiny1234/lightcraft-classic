@@ -9,6 +9,7 @@ description = "Video clip export (L3, native only): trimmed decode, per-frame gr
 workspace = true
 
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+dac-brand = { workspace = true }
 dac-raster = { workspace = true }
 dac-video = { workspace = true }
 filmcraft-color = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }

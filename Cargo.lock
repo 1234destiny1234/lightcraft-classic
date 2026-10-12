@@ -2417,6 +2417,7 @@ dependencies = [
 name = "dac-video-export"
 version = "0.6.4"
 dependencies = [
+ "dac-brand",
  "dac-raster",
  "dac-video",
  "filmcraft-aac",

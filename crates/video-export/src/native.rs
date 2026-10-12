@@ -4,7 +4,8 @@ use std::fs::File;
 use std::io::{BufWriter, Write};
 use std::panic::{AssertUnwindSafe, catch_unwind};
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
+use std::time::Instant;
 
 use dac_raster::Rgb32f;
 use dac_video::FrameReader;
@@ -227,10 +228,13 @@ fn run(
     let stop = AtomicBool::new(false);
     let halted = || cancel.load(Ordering::Relaxed) || stop.load(Ordering::Relaxed);
     let (dtx, drx) = std::sync::mpsc::sync_channel::<Result<(usize, Rgb32f)>>(QUEUE);
-    let (gtx, grx) = std::sync::mpsc::sync_channel::<Result<(usize, Rgb32f)>>(QUEUE + threads);
+    let (gtx, grx) = std::sync::mpsc::sync_channel::<Result<(usize, Prepared)>>(QUEUE + threads);
+    let stages = Stages::default();
+    let started = Instant::now();
+    let prep = video.prep();
     let drx = std::sync::Mutex::new(drx);
     let encoded: Result<()> = std::thread::scope(|sc| {
-        let (halted, drx) = (&halted, &drx);
+        let (halted, drx, stages, prep) = (&halted, &drx, &stages, &prep);
         let mut handles = Vec::with_capacity(threads + 1);
         handles.push(sc.spawn(move || {
             for (i, k) in (k0..k1).enumerate() {
@@ -238,7 +242,9 @@ fn run(
                     return;
                 }
                 let t = times.get(k).copied().unwrap_or(t0);
+                let at = Instant::now();
                 let r = reader.frame_at(t, Some(w.max(h))).map_err(video_err).map(|d| (i, fit(&d.image, w as usize, h as usize)));
+                Stages::add(&stages.decode, at);
                 let failed = r.is_err();
                 if dtx.send(r).is_err() || failed {
                     return;
@@ -257,11 +263,16 @@ fn run(
                         continue;
                     }
                     let item = item.and_then(|(i, mut frame)| {
+                        let at = Instant::now();
                         grade(&mut frame);
+                        Stages::add(&stages.grade, at);
                         if frame.width != w as usize || frame.height != h as usize || frame.data.len() != w as usize * h as usize {
                             return Err(ExportClipError::Encode("the grade changed the frame size".into()));
                         }
-                        Ok((i, frame))
+                        let at = Instant::now();
+                        let p = prep.prepare(&frame);
+                        Stages::add(&stages.convert, at);
+                        Ok((i, p?))
                     });
                     if gtx.send(item).is_err() {
                         return;
@@ -277,6 +288,7 @@ fn run(
                 if cancel.load(Ordering::Relaxed) {
                     return Err(ExportClipError::Cancelled);
                 }
+                let at = Instant::now();
                 let frame = match pending.remove(&i) {
                     Some(f) => f,
                     None => match grx.recv() {
@@ -293,10 +305,13 @@ fn run(
                         Err(_) => return Err(ExportClipError::Internal),
                     },
                 };
-                for p in video.encode(&frame, i as i64)? {
+                Stages::add(&stages.wait, at);
+                let at = Instant::now();
+                for p in video.encode(frame, i as i64)? {
                     mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key })
                         .map_err(enc)?;
                 }
+                Stages::add(&stages.encode, at);
                 i += 1;
                 progress(i as f64 / total as f64);
             }
@@ -314,6 +329,7 @@ fn run(
         r.and(joined)
     });
     encoded?;
+    stages.report(total, started.elapsed().as_secs_f64(), threads);
     if cancel.load(Ordering::Relaxed) {
         return Err(ExportClipError::Cancelled);
     }
@@ -338,6 +354,40 @@ fn run(
         height: h,
         has_audio: audio.is_some(),
     })
+}
+
+/// Per-stage busy time (nanoseconds, summed over threads), printed under `{ENV_PREFIX}_PROFILE`.
+#[derive(Default)]
+struct Stages {
+    decode: AtomicU64,
+    grade: AtomicU64,
+    /// Y'CbCr conversion + plane packing (+ the ProRes encode, which runs on the workers).
+    convert: AtomicU64,
+    /// H.264 encode + mux on the calling thread.
+    encode: AtomicU64,
+    /// The calling thread waiting for the next frame.
+    wait: AtomicU64,
+}
+
+impl Stages {
+    fn add(slot: &AtomicU64, since: Instant) {
+        slot.fetch_add(u64::try_from(since.elapsed().as_nanos()).unwrap_or(u64::MAX), Ordering::Relaxed);
+    }
+    fn report(&self, frames: usize, wall: f64, workers: usize) {
+        if !dac_brand::env_is_set("PROFILE") {
+            return;
+        }
+        let ms = |a: &AtomicU64| a.load(Ordering::Relaxed) as f64 / 1e6 / frames.max(1) as f64;
+        eprintln!(
+            "clip export: {frames} frames in {wall:.1} s ({:.1} fps), {workers} workers; per frame: decode {:.1} ms, grade {:.1} ms, convert {:.1} ms, encode+mux {:.1} ms, encoder waiting {:.1} ms",
+            frames as f64 / wall.max(1e-9),
+            ms(&self.decode),
+            ms(&self.grade),
+            ms(&self.convert),
+            ms(&self.encode),
+            ms(&self.wait)
+        );
+    }
 }
 
 /// Frames waiting between two stages.
@@ -379,6 +429,80 @@ fn code_c(v: f32, bits: u32) -> u16 {
     let s = (1u32 << (bits - 8)) as f32;
     let max = ((1u32 << bits) - 1) as f32;
     (128.0 * s + v.clamp(-0.5, 0.5) * 224.0 * s).round().clamp(0.0, max) as u16
+}
+
+/// Turns a graded frame into encoder input. H.264 is stateful (references, rate control) and
+/// stays on one thread; ProRes frames are intra-only and its encoder keeps no state between
+/// frames, so whole frames are encoded here, in parallel, and muxed in order (same bytes as a
+/// sequential encode).
+enum Prep {
+    H264 { w: usize, h: usize },
+    ProRes { enc: filmcraft_prores::Encoder, w: usize, h: usize },
+}
+
+enum Prepared {
+    Yuv420 { y: Vec<u8>, u: Vec<u8>, v: Vec<u8> },
+    Coded(Packet),
+}
+
+impl Prep {
+    fn prepare(&self, frame: &Rgb32f) -> Result<Prepared> {
+        let yc = ycbcr(frame);
+        match self {
+            Prep::H264 { w, h } => {
+                let (w, h) = (*w, *h);
+                let (cw, ch) = (w / 2, h / 2);
+                let y: Vec<u8> = yc.iter().map(|p| code_y(p[0], 8) as u8).collect();
+                let (mut u, mut v) = (vec![0u8; cw * ch], vec![0u8; cw * ch]);
+                for cy in 0..ch {
+                    for cx in 0..cw {
+                        let (mut cb, mut cr) = (0.0, 0.0);
+                        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
+                            if let Some(p) = yc.get((cy * 2 + dy) * w + cx * 2 + dx) {
+                                cb += p[1];
+                                cr += p[2];
+                            }
+                        }
+                        let i = cy * cw + cx;
+                        if let (Some(u), Some(v)) = (u.get_mut(i), v.get_mut(i)) {
+                            *u = code_c(cb / 4.0, 8) as u8;
+                            *v = code_c(cr / 4.0, 8) as u8;
+                        }
+                    }
+                }
+                Ok(Prepared::Yuv420 { y, u, v })
+            }
+            Prep::ProRes { enc, w, h } => {
+                let (w, h) = (*w, *h);
+                let mut fr = filmcraft_prores::Frame::new(w as u32, h as u32, filmcraft_prores::ChromaFormat::Yuv422, 10, false);
+                let cw = w / 2;
+                for (d, p) in fr.y.iter_mut().zip(&yc) {
+                    *d = code_y(p[0], 10);
+                }
+                for y in 0..h {
+                    for cx in 0..cw {
+                        let a = yc.get(y * w + cx * 2);
+                        let b = yc.get(y * w + cx * 2 + 1).or(a);
+                        let (Some(a), Some(b)) = (a, b) else { continue };
+                        let i = y * cw + cx;
+                        if let Some(d) = fr.cb.get_mut(i) {
+                            *d = code_c((a[1] + b[1]) / 2.0, 10);
+                        }
+                        if let Some(d) = fr.cr.get_mut(i) {
+                            *d = code_c((a[2] + b[2]) / 2.0, 10);
+                        }
+                    }
+                }
+                // a clone per frame: the encoder is a config, and `encode` needs `&mut`
+                let data = enc.clone().encode(&fr).map_err(enc_err)?;
+                Ok(Prepared::Coded(Packet { data, key: true, cto: 0 }))
+            }
+        }
+    }
+}
+
+fn enc_err(e: impl std::fmt::Display) -> ExportClipError {
+    enc(e)
 }
 
 struct Packet {
@@ -438,58 +562,24 @@ impl VideoOut {
         }
     }
 
-    fn encode(&mut self, frame: &Rgb32f, index: i64) -> Result<Vec<Packet>> {
-        let yc = ycbcr(frame);
+    /// The per-frame work that can run on the grade workers.
+    fn prep(&self) -> Prep {
         match self {
-            VideoOut::H264 { enc, w, h, den } => {
-                let (w, h) = (*w as usize, *h as usize);
-                let (cw, ch) = (w / 2, h / 2);
-                let ys: Vec<u8> = yc.iter().map(|p| code_y(p[0], 8) as u8).collect();
-                let (mut us, mut vs) = (vec![0u8; cw * ch], vec![0u8; cw * ch]);
-                for cy in 0..ch {
-                    for cx in 0..cw {
-                        let (mut cb, mut cr) = (0.0, 0.0);
-                        for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                            if let Some(p) = yc.get((cy * 2 + dy) * w + cx * 2 + dx) {
-                                cb += p[1];
-                                cr += p[2];
-                            }
-                        }
-                        let i = cy * cw + cx;
-                        if let (Some(u), Some(v)) = (us.get_mut(i), vs.get_mut(i)) {
-                            *u = code_c(cb / 4.0, 8) as u8;
-                            *v = code_c(cr / 4.0, 8) as u8;
-                        }
-                    }
-                }
-                let yuv = filmcraft_h264enc::YuvFrame { y: &ys, u: &us, v: &vs, y_stride: w, uv_stride: cw };
+            VideoOut::H264 { w, h, .. } => Prep::H264 { w: *w as usize, h: *h as usize },
+            VideoOut::ProRes { enc, w, h, .. } => Prep::ProRes { enc: enc.clone(), w: *w as usize, h: *h as usize },
+        }
+    }
+
+    fn encode(&mut self, frame: Prepared, index: i64) -> Result<Vec<Packet>> {
+        match (self, frame) {
+            (VideoOut::H264 { enc, w, den, .. }, Prepared::Yuv420 { y, u, v }) => {
+                let w = *w as usize;
+                let yuv = filmcraft_h264enc::YuvFrame { y: &y, u: &u, v: &v, y_stride: w, uv_stride: w / 2 };
                 let ps = enc.try_encode(&yuv, index.saturating_mul(i64::from(*den))).map_err(self::enc)?;
                 Ok(h264_packets(ps))
             }
-            VideoOut::ProRes { enc, w, h, .. } => {
-                let mut fr = filmcraft_prores::Frame::new(*w, *h, filmcraft_prores::ChromaFormat::Yuv422, 10, false);
-                let (w, h) = (*w as usize, *h as usize);
-                let cw = w / 2;
-                for (d, p) in fr.y.iter_mut().zip(&yc) {
-                    *d = code_y(p[0], 10);
-                }
-                for y in 0..h {
-                    for cx in 0..cw {
-                        let a = yc.get(y * w + cx * 2);
-                        let b = yc.get(y * w + cx * 2 + 1).or(a);
-                        let (Some(a), Some(b)) = (a, b) else { continue };
-                        let i = y * cw + cx;
-                        if let Some(d) = fr.cb.get_mut(i) {
-                            *d = code_c((a[1] + b[1]) / 2.0, 10);
-                        }
-                        if let Some(d) = fr.cr.get_mut(i) {
-                            *d = code_c((a[2] + b[2]) / 2.0, 10);
-                        }
-                    }
-                }
-                let data = enc.encode(&fr).map_err(self::enc)?;
-                Ok(vec![Packet { data, key: true, cto: 0 }])
-            }
+            (VideoOut::ProRes { .. }, Prepared::Coded(p)) => Ok(vec![p]),
+            _ => Err(ExportClipError::Internal),
         }
     }
 
