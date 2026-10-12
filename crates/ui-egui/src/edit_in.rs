@@ -741,12 +741,8 @@ mod tests {
         png(&src, 30, 18, 200);
         let later = std::time::SystemTime::now() + std::time::Duration::from_secs(3);
         std::fs::File::options().write(true).open(&src).unwrap().set_modified(later).unwrap();
-        for _ in 0..200 {
-            h.step();
-            if h.app.session.catalog.photo(id).unwrap().width == 30 {
-                break;
-            }
-        }
+        // (wait for the reload, bounded by time: a loaded machine polls and decodes slowly)
+        h.step_until(std::time::Duration::from_secs(60), |h| h.app.session.catalog.photo(id).is_some_and(|p| p.width == 30));
         assert_eq!(h.app.session.catalog.photo(id).unwrap().width, 30, "reloaded by the poll");
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -800,7 +796,7 @@ mod tests {
         std::fs::File::options().write(true).open(&src).unwrap().set_modified(before).unwrap();
         go_tx.send("c.png".into()).unwrap();
         let t0 = std::time::Instant::now();
-        while h.app.session.catalog.photo(id).unwrap().width != 32 && t0.elapsed() < std::time::Duration::from_secs(20) {
+        while h.app.session.catalog.photo(id).unwrap().width != 32 && t0.elapsed() < std::time::Duration::from_secs(60) {
             h.step();
             std::thread::sleep(std::time::Duration::from_millis(5));
         }

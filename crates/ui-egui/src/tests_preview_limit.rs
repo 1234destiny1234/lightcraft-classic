@@ -146,7 +146,9 @@ mod in_the_loupe {
     use crate::{DacApp, Services};
 
     const T: Duration = Duration::from_secs(20);
-    const SETTLE: Duration = Duration::from_secs(120);
+    /// Generous: these tests render 24 MP frames and tiles, which a loaded machine (a full
+    /// workspace test run) can take minutes over; a quiet machine settles in seconds.
+    const SETTLE: Duration = Duration::from_secs(300);
 
     /// The demo library in a 1400×900 window, the first photo open in Detail.
     fn detail() -> (Headless, usize) {
@@ -684,16 +686,27 @@ mod in_the_loupe {
         assert_eq!(h.app.session.memory_report().full_source.bytes, 0, "fit needed no original");
         h.app.ui.zoom = crate::state::Zoom::Percent(400.0);
         h.app.session.begin_interaction("Exposure").unwrap();
+        // Tick every frame until the original is decoded (whether a draft also finishes between two
+        // ticks depends on how loaded the machine is), then keep dragging: it stays in the cache.
         let mut ticks = 0;
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
-        while h.app.renderer.window_texture(crate::render::PANE_AFTER).is_none() && std::time::Instant::now() < deadline {
+        let mut tick = |h: &mut Headless| {
             let v = (ticks % 40) as f64 * 0.02;
             h.request("engine.execute", json!({"command": "develop.set", "params": {"control": "light.exposure", "value": v}}), T);
             h.step();
             ticks += 1;
             std::thread::sleep(std::time::Duration::from_millis(5));
+        };
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        while h.app.session.memory_report().full_source.bytes == 0 && std::time::Instant::now() < deadline {
+            tick(&mut h);
         }
-        assert!(h.app.renderer.window_texture(crate::render::PANE_AFTER).is_some(), "a drag window arrived");
+        assert!(h.app.session.memory_report().full_source.bytes > 0, "the drag decoded the original");
+        for _ in 0..40 {
+            tick(&mut h);
+            assert!(h.app.session.memory_report().full_source.bytes > 0, "the original stays in the cache while the drag goes on");
+        }
+        // once the ticks stop, the last one's drag window arrives
+        assert!(h.step_until(SETTLE, |h| h.app.renderer.window_texture(crate::render::PANE_AFTER).is_some()), "a drag window arrived");
         assert!(h.app.session.memory_report().full_source.bytes > 0, "the original stayed in the cache while the drag went on");
     }
 

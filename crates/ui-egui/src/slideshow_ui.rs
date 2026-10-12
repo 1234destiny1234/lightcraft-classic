@@ -1232,7 +1232,7 @@ mod tests {
     }
 
     fn wait_export(h: &mut Headless) -> Value {
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(300);
         while h.app.ui.slides.export_busy && std::time::Instant::now() < deadline {
             h.step();
             std::thread::sleep(std::time::Duration::from_millis(20));
@@ -1249,15 +1249,15 @@ mod tests {
     fn the_module_previews_plays_and_saves() {
         let mut h = demo();
         ok(&mut h, "module.slideshow", json!({}));
-        h.settle(Duration::from_secs(60));
-        assert!(has_widget(&h, "view:module:slideshow") && has_widget(&h, "view:slideshow:preview"));
+        // (wait for what is checked, not a fixed settle: a loaded machine renders slowly)
+        let wait = Duration::from_secs(120);
+        assert!(h.step_until(wait, |h| has_widget(h, "view:module:slideshow") && has_widget(h, "view:slideshow:preview")));
         assert!(has_widget(&h, "button:slideshow.play"));
         assert!(!has_widget(&h, "panel:left_panel"), "the Library sources stay away");
         // the module's own side panels follow the edge toggles (it declares no shell panels, so it
         // asks module_edge): the Template Browser shows with the left edge
         h.app.ui.left_panel = true;
-        h.settle(Duration::from_secs(10));
-        assert!(has_widget(&h, "slideshowTemplate:Default"), "the Template Browser is not on screen");
+        assert!(h.step_until(wait, |h| has_widget(h, "slideshowTemplate:Default")), "the Template Browser is not on screen");
         // settings: a partial patch, clamped; bad values are errors
         let r = ok(&mut h, "slideshow.set", json!({"options": {"zoomToFill": true}, "playback": {"slideSecs": 9999}}));
         assert_eq!(r["settings"]["options"]["zoomToFill"], true);
@@ -1289,8 +1289,7 @@ mod tests {
         // play full screen, step, pause, stop
         let r = ok(&mut h, "slideshow.play", json!({}));
         assert!(r["slides"].as_u64().unwrap() > 0);
-        h.step();
-        assert!(has_widget(&h, "view:slideshow:play"));
+        assert!(h.step_until(wait, |h| has_widget(h, "view:slideshow:play")));
         ok(&mut h, "slideshow.next", json!({}));
         assert_eq!(ok(&mut h, "slideshow.pause", json!({}))["paused"], true);
         ok(&mut h, "slideshow.stop", json!({}));

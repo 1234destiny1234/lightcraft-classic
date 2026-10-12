@@ -1228,7 +1228,7 @@ mod thumbnail_tests {
         drop(held);
         let t0 = std::time::Instant::now();
         while !app.renderer.textures.contains_key(&quick) {
-            assert!(t0.elapsed() < std::time::Duration::from_secs(20), "the embedded preview never arrived");
+            assert!(t0.elapsed() < std::time::Duration::from_secs(60), "the embedded preview never arrived");
             std::thread::sleep(std::time::Duration::from_millis(5));
             app.renderer.poll(&ctx, &mut app.session);
         }

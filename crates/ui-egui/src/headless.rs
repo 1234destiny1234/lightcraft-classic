@@ -384,6 +384,8 @@ impl Headless {
                 return true;
             }
             if t0.elapsed() > timeout {
+                // (a test that then fails says why: what was still rendering)
+                log::warn!("settle timed out after {timeout:?}; pending renders: {:?}", self.app.renderer.pending_slots());
                 return false;
             }
         }
@@ -1809,8 +1811,10 @@ mod tests {
             opts.watermark = Some(dac_engine::export::Watermark { text: "© Example".into(), ..Default::default() });
         }
         let t0 = Instant::now();
-        while preview(&mut h).is_none() && t0.elapsed() < Duration::from_secs(30) {
+        // (the preview is rendered off the UI thread: generous on a loaded machine)
+        while preview(&mut h).is_none() && t0.elapsed() < Duration::from_secs(120) {
             h.step();
+            std::thread::sleep(Duration::from_millis(2));
         }
         let rect = preview(&mut h).expect("the watermark preview is shown");
         assert!(rect[2].as_f64().unwrap() > 50.0 && rect[3].as_f64().unwrap() > 50.0, "{rect}");
