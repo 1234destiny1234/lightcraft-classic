@@ -31,7 +31,7 @@ decoded.
 ## Verified sensor decoding
 
 CRX version `0x100`, four Bayer planes and `ff01`/`ff02`/`ff03` marker headers
-support lossless RAW and three-level C-RAW with horizontal tiles. Uniform
+support lossless RAW and three-level C-RAW with horizontal tiles; vertical and grid tiles (version `0x100`) decode by the same overlap rule at top/bottom tile edges, covered by synthetic tests only. Uniform
 quantization values 4–43 are independently verified; 44 continues the sequence (step 102, checked against a measured step on an EOS R50 C-RAW file). Version `0x200` C-RAW
 supports the `ff11`/`ff12`/`ff13` marker family, a single 14-bit Bayer tile and
 its adaptive quantization map. C-RAW is quantized, so next to clipped highlights
