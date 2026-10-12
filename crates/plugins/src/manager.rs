@@ -471,6 +471,24 @@ impl Manager {
         Ok(v)
     }
 
+    /// Restore a metadata field value read from an XMP sidecar (`text`, as the sidecar writes it) into
+    /// plug-in `id`'s namespace for `photo`. Unlike [`Manager::set_metadata_field`] read-only fields
+    /// are restored too (the plug-in set them). `Ok(false)`: nothing to do (no such plug-in or field,
+    /// disabled, or the value is already there); a value the field doesn't take is an error.
+    pub fn restore_metadata_field(&mut self, id: &str, photo: &str, key: &str, text: &str) -> Result<bool> {
+        let Some(p) = self.plugins.get(id).filter(|p| p.enabled) else { return Ok(false) };
+        let Some(f) = p.plugin.manifest().metadata_field(key) else { return Ok(false) };
+        let v = f.as_field().from_text(text).map_err(Error::Params)?;
+        let p = self.store_mut(id)?;
+        let store = p.store.get_or_insert_with(NamespaceStore::in_memory);
+        if store.get(photo).get(key) == Some(&v) {
+            return Ok(false);
+        }
+        store.set(photo, key, v).map_err(Error::Params)?;
+        store.save()?;
+        Ok(true)
+    }
+
     fn with_hook(&self, f: impl Fn(&crate::Manifest) -> bool) -> Vec<String> {
         self.plugins.values().filter(|p| p.enabled && f(p.plugin.manifest())).map(|p| p.plugin.id().to_string()).collect()
     }

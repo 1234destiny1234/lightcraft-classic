@@ -670,7 +670,13 @@ impl SyncCommit {
             }
             SyncStep::Sidecars(read) => {
                 let mut ops = Vec::new();
+                let mut fields = Vec::new();
                 for (id, path, sc) in read {
+                    if let Ok(sc) = &sc
+                        && !sc.plugin_fields.is_empty()
+                    {
+                        fields.push((id, sc.plugin_fields.clone()));
+                    }
                     match sc.map_err(EngineError::Other).and_then(|sc| s.sidecar_op(id, sc)) {
                         Ok(op) => ops.push(op),
                         Err(e) => report.failed.push((path, e.to_string())),
@@ -683,6 +689,7 @@ impl SyncCommit {
                         Err(e) => report.failed.push((String::new(), e.to_string())),
                     }
                 }
+                crate::cmd::plugins::restore_fields(s, &fields);
             }
         }
     }

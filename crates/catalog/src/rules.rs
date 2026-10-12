@@ -268,7 +268,7 @@ fn field_problem(field: &str, op: &str, value: &Value, cat: &Catalog, owner: Opt
     if !ops_for(kind).iter().any(|o| o.0 == op) {
         return Some((Issue::NoSuchOperator, format!("`{field}` has no operator `{op}`")));
     }
-    if matches!(op, "isEmpty" | "isNotEmpty") {
+    if !takes_value(op) {
         return None;
     }
     match kind {
@@ -569,6 +569,11 @@ pub fn ops_for(kind: Kind) -> &'static [(&'static str, &'static str)] {
             ("between", "is between"),
             ("inLast", "is in the last"),
             ("notInLast", "isn't in the last"),
+            ("today", "is today"),
+            ("yesterday", "is yesterday"),
+            ("thisWeek", "is in this week"),
+            ("thisMonth", "is in this month"),
+            ("thisYear", "is in this year"),
             ("isEmpty", "is unknown"),
         ],
         Kind::Choice(_) | Kind::Album => &[("is", "is"), ("isNot", "isn't")],
@@ -599,6 +604,31 @@ pub fn plugin_value_text(v: &Value) -> String {
         Value::Null => String::new(),
         Value::String(s) => s.clone(),
         other => other.to_string(),
+    }
+}
+
+/// Date operators that name a calendar span around [`now`] (weeks start on Monday) and take no value.
+pub const CALENDAR_OPS: [&str; 5] = ["today", "yesterday", "thisWeek", "thisMonth", "thisYear"];
+
+/// Whether a rule with operator `op` needs a value (`isEmpty` and the calendar spans don't).
+pub fn takes_value(op: &str) -> bool {
+    !matches!(op, "isEmpty" | "isNotEmpty") && !CALENDAR_OPS.contains(&op)
+}
+
+/// Whether the date part of `have` (an ISO time) falls in the calendar span `op` names around `now`.
+fn calendar_op(op: &str, have: &str, now: &str) -> bool {
+    let (Some(day), Some(today)) = (have.get(..10), now.get(..10)) else { return false };
+    let back = |days: i64| crate::dates::shift_iso(today, -days * 86_400).and_then(|d| d.get(..10).map(str::to_string));
+    match op {
+        "today" => day == today,
+        "yesterday" => back(1).is_some_and(|y| day == y),
+        "thisWeek" => {
+            let since_monday = crate::dates::weekday(today).and_then(|w| crate::dates::WEEKDAYS.iter().position(|d| *d == w)).unwrap_or(0);
+            back(since_monday as i64).is_some_and(|monday| day >= monday.as_str() && day <= today)
+        }
+        "thisMonth" => today.get(..7).is_some_and(|m| day.starts_with(m)),
+        "thisYear" => today.get(..4).is_some_and(|y| day.starts_with(y)),
+        _ => false,
     }
 }
 
@@ -790,6 +820,7 @@ fn date_op(op: &str, have: Option<&str>, value: &Value) -> bool {
             let Some(from) = crate::dates::shift_iso(&now(), -secs) else { return op == "inLast" };
             (h >= from.as_str()) == (op == "inLast")
         }
+        op if CALENDAR_OPS.contains(&op) => calendar_op(op, h, &now()),
         _ => false,
     }
 }
@@ -957,7 +988,7 @@ impl RuleSet {
     pub fn depends_on_now(&self) -> bool {
         self.rules.iter().any(|r| match r {
             Rule::Group { group } => group.depends_on_now(),
-            Rule::Field { op, .. } => op == "inLast" || op == "notInLast",
+            Rule::Field { op, .. } => op == "inLast" || op == "notInLast" || CALENDAR_OPS.contains(&op.as_str()),
         })
     }
 
@@ -1176,6 +1207,25 @@ mod tests {
         no(json!({"rules": [{"field": "captureDate", "op": "inLast", "value": {"n": 1, "unit": "weeks"}}]}));
         yes(json!({"rules": [{"field": "captureDate", "op": "notInLast", "value": 7}]}));
         set_now(None);
+        // calendar spans: weeks start on Monday
+        for (now, yes_ops, no_ops) in [
+            ("2026-08-14T23:00:00", vec!["today", "thisWeek", "thisMonth", "thisYear"], vec!["yesterday"]),
+            ("2026-08-15T08:00:00", vec!["yesterday", "thisWeek", "thisMonth", "thisYear"], vec!["today"]),
+            ("2026-08-17T08:00:00", vec!["thisMonth", "thisYear"], vec!["today", "yesterday", "thisWeek"]),
+            ("2026-09-01T08:00:00", vec!["thisYear"], vec!["thisMonth", "thisWeek"]),
+            ("2027-08-14T08:00:00", vec![], vec!["thisYear", "thisWeek", "yesterday"]),
+        ] {
+            set_now(Some(now.into()));
+            for op in yes_ops {
+                yes(json!({"rules": [{"field": "captureDate", "op": op}]}));
+            }
+            for op in no_ops {
+                no(json!({"rules": [{"field": "captureDate", "op": op}]}));
+            }
+        }
+        set_now(None);
+        assert!(rs(json!({"rules": [{"field": "captureDate", "op": "today"}]})).depends_on_now());
+        assert!(rs(json!({"rules": [{"field": "captureDate", "op": "today"}]})).check(&cat).is_empty());
         // an empty rule list: all → everything, any → nothing
         yes(json!({"rules": []}));
         no(json!({"match": "any", "rules": []}));

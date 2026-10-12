@@ -121,7 +121,11 @@ pub(crate) fn unpack_row(src: &[u8], bits: u32, words32: bool, out: &mut [u16]) 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let h = header(bytes)?;
     let raw = h.raw.ok_or_else(|| RawError::Corrupt("RAF without raw data".into()))?;
-    let ifd = raw_ifd(raw)?;
+    let ifd = match raw_ifd(raw) {
+        Ok(ifd) => ifd,
+        Err(_) if super::raf_superccd::applies(&h) => return super::raf_superccd::decode(&h, raw, &camera_name(bytes), mode),
+        Err(e) => return Err(e),
+    };
     let get = |t: u16| ifd.u64(t).map(|v| usize::try_from(v).map_err(|_| RawError::Limit("RAF IFD value too large"))).transpose();
     let (w, hgt) = (get(0xf001)?.unwrap_or(0), get(0xf002)?.unwrap_or(0));
     let bits = ifd.u64(0xf003).and_then(|v| u32::try_from(v).ok()).unwrap_or(0);

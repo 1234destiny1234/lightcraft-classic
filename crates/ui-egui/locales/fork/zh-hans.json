@@ -1099,6 +1099,7 @@
   "New Photos to Publish": "要发布的新照片",
   "Modified Photos to Re-Publish": "要重新发布的已修改照片",
   "Published Photos": "已发布的照片",
+  "Deleted Photos to Remove": "要移除的已删除照片",
   "Then send to": "然后发送到",
   "Plug-in fields": "增效工具字段",
   "Adds:": "添加:",
@@ -1182,4 +1183,9 @@
   "Check for updates when the app starts": "启动时检查更新",
   "Include prereleases (release candidates)": "包含预发版（RC）",
   "These settings are saved in the app's settings folder.": "这些设置保存在应用的设置文件夹中。"
+  "is today": "是今天",
+  "is yesterday": "是昨天",
+  "is in this week": "在本周",
+  "is in this month": "在本月",
+  "is in this year": "在今年"
 }

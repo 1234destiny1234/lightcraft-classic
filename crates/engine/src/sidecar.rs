@@ -111,6 +111,9 @@ pub struct SidecarData {
     /// Actionable diagnostics for foreign develop settings that were not fully carried over.
     /// These are surfaced in the photo import report and never persisted in the catalog.
     pub warnings: Vec<crate::import::ImportWarning>,
+    /// Plug-in custom metadata fields (`lcpf:fields`): `(plug-in id, key, value as text)`. They go back
+    /// to the plug-ins' own data ([`crate::cmd::plugins::restore_fields`]), not into the photo record.
+    pub plugin_fields: Vec<(String, String, String)>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -129,6 +132,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
     let m = &d.metadata;
     let lc = |k: &str| d.properties.get(&format!("lc:{k}")).and_then(|v| v.first()).cloned();
     let mut out = SidecarData {
+        plugin_fields: lcc_meta::plugin_fields(&d),
         title: m.title.clone(),
         caption: m.caption.clone(),
         copyright: m.copyright.clone(),
@@ -623,11 +627,16 @@ impl Session {
 
     /// The op that applies a photo's sidecar (or embedded XMP) to the catalog, if there is one.
     pub fn read_sidecar_op(&self, id: PhotoId) -> Result<Option<(Op, PathBuf)>> {
-        self.read_sidecar_op_with_warnings(id).map(|result| result.map(|(op, from, _)| (op, from)))
+        self.read_sidecar_op_with_warnings(id).map(|result| result.map(|(op, from, _, _)| (op, from)))
     }
 
     /// Like [`Session::read_sidecar_op`], retaining transient diagnostics for the command report.
-    pub fn read_sidecar_op_with_warnings(&self, id: PhotoId) -> Result<Option<(Op, PathBuf, Vec<crate::import::ImportWarning>)>> {
+    /// The sidecar's plug-in fields come back too (see [`SidecarData::plugin_fields`]).
+    #[allow(clippy::type_complexity)]
+    pub fn read_sidecar_op_with_warnings(
+        &self,
+        id: PhotoId,
+    ) -> Result<Option<(Op, PathBuf, Vec<crate::import::ImportWarning>, Vec<(String, String, String)>)>> {
         let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         let Some(orig) = file_path(p) else { return Ok(None) };
         let Some((packet, from)) = read_packet(orig, p.kind, self.sidecar_naming(id)) else { return Ok(None) };
@@ -636,8 +645,9 @@ impl Session {
         for warning in &mut warnings {
             warning.path = orig.to_string();
         }
+        let fields = sc.plugin_fields.clone();
         let op = self.sidecar_op(id, sc)?;
-        Ok(Some((op, from, warnings)))
+        Ok(Some((op, from, warnings, fields)))
     }
 
     /// The op that applies what a sidecar says (already read and parsed, e.g. on a worker

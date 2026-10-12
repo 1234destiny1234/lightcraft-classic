@@ -1394,6 +1394,7 @@
   "New Photos to Publish": "Новые фото для публикации",
   "Modified Photos to Re-Publish": "Изменённые фото для повторной публикации",
   "Published Photos": "Опубликованные фото",
+  "Deleted Photos to Remove": "Удалённые фото для снятия",
   "Then send to": "Затем отправить в",
   "Plug-in fields": "Поля плагинов",
   "Adds:": "Добавляет:",
@@ -1477,4 +1478,9 @@
   "Check for updates when the app starts": "Проверять обновления при запуске",
   "Include prereleases (release candidates)": "Включать предварительные версии (RC)",
   "These settings are saved in the app's settings folder.": "Эти настройки сохраняются в папке настроек приложения."
+  "is today": "сегодня",
+  "is yesterday": "вчера",
+  "is in this week": "на этой неделе",
+  "is in this month": "в этом месяце",
+  "is in this year": "в этом году"
 }

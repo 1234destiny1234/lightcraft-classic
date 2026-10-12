@@ -1100,6 +1100,7 @@
   "New Photos to Publish": "公開する新しい写真",
   "Modified Photos to Re-Publish": "再公開する変更された写真",
   "Published Photos": "公開済みの写真",
+  "Deleted Photos to Remove": "削除する写真",
   "Then send to": "書き出し後の送信先",
   "Plug-in fields": "プラグインのフィールド",
   "Adds:": "追加内容:",
@@ -1269,4 +1270,9 @@
   "Check for updates when the app starts": "起動時に更新を確認する",
   "Include prereleases (release candidates)": "プリリリース（RC）も含める",
   "These settings are saved in the app's settings folder.": "これらの設定はアプリの設定フォルダーに保存されます。"
+  "is today": "が今日",
+  "is yesterday": "が昨日",
+  "is in this week": "が今週",
+  "is in this month": "が今月",
+  "is in this year": "が今年"
 }

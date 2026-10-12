@@ -206,6 +206,17 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
     if let Some(on) = boolean(props, "crs:HDREditMode") {
         put(o, "hdr.enabled", json!(on));
     }
+    // the HDR panel's SDR rendition sliders (same −100..100 scale)
+    for (crs, path) in [
+        ("SDRBrightness", "hdr.sdr_brightness"),
+        ("SDRContrast", "hdr.sdr_contrast"),
+        ("SDRHighlights", "hdr.sdr_highlights"),
+        ("SDRShadows", "hdr.sdr_shadows"),
+        ("SDRWhites", "hdr.sdr_whites"),
+        ("SDRClarity", "hdr.sdr_clarity"),
+    ] {
+        n(o, crs, path);
+    }
     // older process versions (most `.lrtemplate` presets): approximate the 2012 sliders from the
     // earlier ones, relative to their defaults (contrast 25, blacks 5, brightness 50)
     let has = |o: &Value, path: &str| path.split('.').try_fold(o, |v, k| v.get(k)).is_some();
@@ -382,6 +393,9 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
     n(o, "GrainAmount", "grain.amount");
     n(o, "GrainSize", "grain.size");
     n(o, "GrainFrequency", "grain.roughness");
+    if let Some(seed) = num(props, "crs:GrainSeed").filter(|v| *v >= 0.0 && *v <= f64::from(u32::MAX)) {
+        put(o, "grain.seed", json!(seed as u32));
+    }
 
     // ---- Optics (manual corrections; lens profiles are ours, only the switch carries over).
     // Our profile corrections are the file's own (DNG-embedded) ones, which Lightroom applies
@@ -393,6 +407,10 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
     if let Some(b) = boolean(props, "crs:AutoLateralCA") {
         put(o, "optics.remove_ca", json!(b));
     }
+    n(o, "LensProfileDistortionScale", "optics.profile_distortion");
+    n(o, "LensProfileVignettingScale", "optics.profile_vignetting");
+    n(o, "ChromaticAberrationR", "optics.ca_red");
+    n(o, "ChromaticAberrationB", "optics.ca_blue");
     n(o, "LensManualDistortionAmount", "optics.distortion");
     n(o, "VignetteAmount", "optics.vignetting");
     n(o, "VignetteMidpoint", "optics.vignetting_midpoint");

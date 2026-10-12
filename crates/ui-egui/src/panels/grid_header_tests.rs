@@ -22,12 +22,12 @@ fn breadcrumbs_open_their_folder_as_spelled() {
 #[test]
 fn publish_sections_become_header_runs() {
     use lcc_catalog::PhotoId;
-    let ids: Vec<PhotoId> = (1..=6).map(PhotoId).collect();
+    let ids: Vec<PhotoId> = (1..=7).map(PhotoId).collect();
     let m: std::collections::HashMap<PhotoId, u8> =
-        [(1, 0), (2, 0), (3, 1), (4, 2), (5, 2), (6, 9)].into_iter().map(|(i, r)| (PhotoId(i), r)).collect();
+        [(1, 0), (2, 0), (3, 1), (4, 2), (5, 2), (6, 3), (7, 9)].into_iter().map(|(i, r)| (PhotoId(i), r)).collect();
     let runs = super::publish_runs(&m, &ids);
     let got: Vec<(&str, usize, usize)> = runs.iter().map(|r| (r.key.as_str(), r.start, r.count)).collect();
-    assert_eq!(got, vec![("publish:new", 0, 2), ("publish:modified", 2, 1), ("publish:published", 3, 2)]);
+    assert_eq!(got, vec![("publish:new", 0, 2), ("publish:modified", 2, 1), ("publish:published", 3, 2), ("publish:remove", 5, 1)]);
     assert!(runs.iter().all(|r| super::publish_section_label(&r.key).is_some()));
     assert!(super::publish_runs(&m, &[]).is_empty());
     assert_eq!(super::publish_section_label("2026-10-12"), None);

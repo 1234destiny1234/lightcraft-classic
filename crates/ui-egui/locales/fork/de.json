@@ -959,6 +959,7 @@
   "New Photos to Publish": "Neue zu veröffentlichende Fotos",
   "Modified Photos to Re-Publish": "Geänderte erneut zu veröffentlichende Fotos",
   "Published Photos": "Veröffentlichte Fotos",
+  "Deleted Photos to Remove": "Gelöschte Fotos zum Entfernen",
   "Then send to": "Danach senden an",
   "Plug-in fields": "Plug-in-Felder",
   "Adds:": "Fügt hinzu:",
@@ -1129,4 +1130,9 @@
   "Check for updates when the app starts": "Beim Start nach Updates suchen",
   "Include prereleases (release candidates)": "Vorabversionen (Release Candidates) einschließen",
   "These settings are saved in the app's settings folder.": "Diese Einstellungen werden im Einstellungsordner der App gespeichert."
+  "is today": "ist heute",
+  "is yesterday": "ist gestern",
+  "is in this week": "liegt in dieser Woche",
+  "is in this month": "liegt in diesem Monat",
+  "is in this year": "liegt in diesem Jahr"
 }

@@ -8,16 +8,22 @@ colour-manage the app's window (wgpu leaves its Metal layer without a colour spa
 unmatched), so on a P3 screen previews used to look more saturated than the exported files in Preview or Photos (issue
 #787). The profile is read again about once a second, so moving the window to another screen is followed.
 
+**Linux does the same** (`apps/app/src/screen_profile_linux.rs`, no `unsafe`): on X11 and XWayland it reads the
+`_ICC_PROFILE_n` root-window property (ICC Profiles in X) of the RandR monitor the window overlaps most, the one that
+colour-management daemons and calibration tools set; without it, the default profile colord assigns to that monitor
+(matched by `XRANDR_name`) over D-Bus. On pure Wayland a client can't learn which monitor it is on, so the first colord
+display device is used.
+
 ## Using it
 
 Settings ▸ Display ▸ **Choose Profile…** picks an `.icc` / `.icm` file (the dialog opens where the system keeps
 them: `~/.local/share/icc` on Linux, ColorSync's folders on macOS, `…\spool\drivers\color` on Windows). **Use sRGB**
-(on macOS **Use Screen Profile**) goes back to no profile. The choice is an app setting (`ui.json`, `displayProfile`)
+(on macOS and Linux **Use Screen Profile**) goes back to no profile. The choice is an app setting (`ui.json`, `displayProfile`)
 and applies at once; a file that can't be used is reported there and previews stay sRGB.
 
 Agents and scripts: `app.displayProfile {"path": "/path/to/monitor.icc"}` (`""` or `null`: none; no `path`: report
 only) returns `{path, description, kind: "matrix" | "lut", primaries: {red, green, blue: [x, y]}}`; the screen's
-profile (macOS, none chosen) reports `path: null, screen: true`. Hosts supply it as `Services::screen_profile`
+profile (macOS and Linux, none chosen) reports `path: null, screen: true`. Hosts supply it as `Services::screen_profile`
 (`apps/app/src/screen_profile.rs`); headless sessions have none and stay sRGB.
 
 ## How it works
@@ -47,5 +53,5 @@ LUT-based profile's correction about 65 ms. Drafts during slider drags skip the 
 
 ## Not yet
 
-- Picking up the profile the operating system assigns on Linux and Windows (X11 `_ICC_PROFILE`, colord, WCS) and
-  following the window across monitors there (macOS does both, above).
+- Picking up the profile Windows assigns (WCS) and following the window across monitors there.
+- Per-monitor profiles on pure Wayland (until a colour-management protocol tells clients their output).
