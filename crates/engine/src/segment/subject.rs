@@ -111,7 +111,10 @@ fn install(dir: &Path, activity: Activity) {
         let _task = activity.start("segment", "Finding the subject", crate::activity::Cancel::No);
         let mut m = model.lock().unwrap_or_else(PoisonError::into_inner);
         if m.is_none() {
-            match BiRefNet::load(&dir) {
+            match BiRefNet::load(&dir).or_else(|e| {
+                log::warn!("subject model on the GPU: {e}; using the CPU");
+                BiRefNet::load_cpu(&dir)
+            }) {
                 Ok(b) => *m = Some(b),
                 Err(e) => {
                     log::warn!("subject model: {e}");
@@ -120,7 +123,22 @@ fn install(dir: &Path, activity: Activity) {
             }
         }
         let started = std::time::Instant::now();
-        let matte = match m.as_ref()?.predict(rgb, w, h) {
+        let mut result = m.as_ref()?.predict(rgb, w, h);
+        // a GPU (Metal) run that fails — an op the device lacks, a virtual GPU without room —
+        // falls back to the CPU, which then keeps the model
+        if let Err(e) = &result
+            && !m.as_ref().is_some_and(BiRefNet::on_cpu)
+        {
+            log::warn!("subject model on the GPU: {e}; using the CPU");
+            match BiRefNet::load_cpu(&dir) {
+                Ok(b) => {
+                    result = b.predict(rgb, w, h);
+                    *m = Some(b);
+                }
+                Err(e) => log::warn!("subject model: {e}"),
+            }
+        }
+        let matte = match result {
             Ok(p) => p,
             Err(e) => {
                 log::warn!("subject model: {e}");

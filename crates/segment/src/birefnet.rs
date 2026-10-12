@@ -779,6 +779,16 @@ impl BiRefNet {
         Self::load_on(dir, crate::best_device())
     }
 
+    /// Load `model.safetensors` from `dir` on the CPU (the fallback when a GPU run fails).
+    pub fn load_cpu(dir: &Path) -> Result<Self> {
+        Self::load_on(dir, Device::Cpu)
+    }
+
+    /// Whether the model runs on the CPU.
+    pub fn on_cpu(&self) -> bool {
+        self.device().is_cpu()
+    }
+
     pub fn load_on(dir: &Path, device: Device) -> Result<Self> {
         if !is_model_dir(dir) {
             return Err(err(format!("no {WEIGHTS_FILE} in {}", dir.display())));
