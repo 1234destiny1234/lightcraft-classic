@@ -273,6 +273,22 @@ impl Field {
         }
     }
 
+    /// A value written as text (an XMP sidecar's `lcpf:value`) read as this field's type, then
+    /// checked like [`Field::coerce`].
+    pub fn from_text(&self, t: &str) -> std::result::Result<Value, String> {
+        let t = t.trim();
+        let v = match &self.kind {
+            FieldKind::Number { .. } => t.parse::<f64>().ok().filter(|x| x.is_finite()).map(Value::from).unwrap_or(Value::Null),
+            FieldKind::Bool { .. } => match t.to_ascii_lowercase().as_str() {
+                "true" | "1" | "yes" => Value::Bool(true),
+                "false" | "0" | "no" => Value::Bool(false),
+                _ => Value::Null,
+            },
+            _ => Value::from(t),
+        };
+        self.coerce(&v)
+    }
+
     /// `v` checked against the field (numbers clamped), or an error naming the field.
     pub fn coerce(&self, v: &Value) -> std::result::Result<Value, String> {
         let wrong = || format!("`{}` must be {}", self.key, self.kind_name());

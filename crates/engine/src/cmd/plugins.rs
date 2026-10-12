@@ -537,6 +537,38 @@ fn set_field(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"photo": shown, "count": photos.len(), "field": key, "value": set}))
 }
 
+/// Plug-in metadata fields read from XMP sidecars (`(photo, [(plug-in id, key, value text)])`) go
+/// back into the plug-ins' own data, the source, so a library rebuilt or moved to another machine
+/// keeps them. Plug-ins that aren't installed or enabled, unknown fields and values a field doesn't
+/// take are skipped (logged); read-only fields are restored too. Returns how many values changed.
+pub fn restore_fields(s: &mut Session, items: &[(lcc_catalog::PhotoId, Vec<(String, String, String)>)]) -> usize {
+    if items.iter().all(|(_, f)| f.is_empty()) {
+        return 0;
+    }
+    let mut n = 0;
+    {
+        let mut g = manager();
+        let Some(m) = g.as_mut() else { return 0 };
+        for (id, fields) in items {
+            if s.catalog.photo(*id).is_none() {
+                continue;
+            }
+            let photo = id.0.to_string();
+            for (plugin, key, text) in fields {
+                match m.restore_metadata_field(plugin, &photo, key, text) {
+                    Ok(true) => n += 1,
+                    Ok(false) => {}
+                    Err(e) => log::warn!("plug-in field {plugin}/{key} from XMP: {e}"),
+                }
+            }
+        }
+    }
+    // the sidecars already say this: only the index is rebuilt (also when the plug-in's data
+    // already held the values: these photo records may be new)
+    sync_fields_with(s, false);
+    n
+}
+
 /// The plug-in metadata fields rules can test: `(rule field id, "Plug-in ▸ Field")` of every enabled plug-in.
 pub fn rule_fields() -> Vec<(String, String)> {
     let g = manager();
@@ -833,6 +865,62 @@ mod tests {
         assert!(!s.catalog.photo(lcc_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
         s.execute("plugin.uninstall", &json!({"id": "test.jobs"})).unwrap();
         assert!(s.catalog.photo(lcc_catalog::PhotoId(ids[2])).unwrap().plugin_fields.is_empty());
+    }
+
+    /// G19: plug-in fields written to an XMP sidecar come back from it: Read Metadata from File and
+    /// an import into another library put them into the plug-in's data again; hostile values and
+    /// unknown plug-ins are skipped.
+    #[test]
+    fn plugin_fields_read_back_from_xmp() {
+        let _turn = turn();
+        manager().get_or_insert_with(Manager::in_memory).install_bytes(&fields_module("test.back"), None).unwrap();
+        let src = crate::tests_xmp::temp_dir("pf-src");
+        let lib = crate::tests_xmp::temp_dir("pf-lib");
+        let lib2 = crate::tests_xmp::temp_dir("pf-lib2");
+        let file = src.join("job.png");
+        crate::tests_xmp::write_png(&file, 3);
+        let mut s = Session::new().with_fs();
+        s.open_library(&lib, false).unwrap();
+        s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+        let id = s.catalog.photos().next().unwrap().id;
+        s.execute("plugin.setField", &json!({"plugin": "test.back", "field": "job", "value": "J-5", "id": id.0})).unwrap();
+        s.execute("plugin.setField", &json!({"plugin": "test.back", "field": "ok", "value": true, "id": id.0})).unwrap();
+        s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+        // the plug-in loses its data; reading the sidecar brings it back
+        s.execute("plugin.setField", &json!({"plugin": "test.back", "field": "job", "value": null, "id": id.0})).unwrap();
+        s.execute("plugin.setField", &json!({"plugin": "test.back", "field": "ok", "value": null, "id": id.0})).unwrap();
+        assert!(s.catalog.photo(id).unwrap().plugin_fields.is_empty());
+        let r = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+        assert_eq!(r["pluginFields"], 2, "{r}");
+        let p = s.catalog.photo(id).unwrap();
+        assert_eq!((p.plugin_fields.get("test.back/job"), p.plugin_fields.get("test.back/ok")), (Some(&json!("J-5")), Some(&json!(true))));
+        // an import into another library restores them for the new photo record
+        let mut t = Session::new().with_fs();
+        t.open_library(&lib2, false).unwrap();
+        t.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+        let id2 = t.catalog.photos().next().unwrap().id;
+        assert_eq!(t.catalog.photo(id2).unwrap().plugin_fields.get("test.back/job"), Some(&json!("J-5")));
+        // hostile sidecar: a bool that isn't one, an unknown field and plug-in, a huge value: skipped, no panic
+        let ns = lcc_meta::plugin_fields_ns();
+        let big = "x".repeat(70 * 1024);
+        let xmp = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description xmlns:lcpf="{ns}"><lcpf:fields><rdf:Bag>
+<rdf:li rdf:parseType="Resource"><lcpf:plugin>test.back</lcpf:plugin><lcpf:key>ok</lcpf:key><lcpf:value>maybe</lcpf:value></rdf:li>
+<rdf:li rdf:parseType="Resource"><lcpf:plugin>test.back</lcpf:plugin><lcpf:key>nope</lcpf:key><lcpf:value>1</lcpf:value></rdf:li>
+<rdf:li rdf:parseType="Resource"><lcpf:plugin>no.such</lcpf:plugin><lcpf:key>job</lcpf:key><lcpf:value>1</lcpf:value></rdf:li>
+<rdf:li rdf:parseType="Resource"><lcpf:plugin>test.back</lcpf:plugin><lcpf:key>job</lcpf:key><lcpf:value>{big}</lcpf:value></rdf:li>
+</rdf:Bag></lcpf:fields></rdf:Description></rdf:RDF></x:xmpmeta>"#
+        );
+        let sc = crate::sidecar::parse_sidecar(&xmp, crate::crs::Target::Rendered).unwrap();
+        assert_eq!(sc.plugin_fields.len(), 4);
+        assert_eq!(restore_fields(&mut t, &[(id2, sc.plugin_fields)]), 0);
+        let p = t.catalog.photo(id2).unwrap();
+        assert_eq!((p.plugin_fields.get("test.back/job"), p.plugin_fields.get("test.back/ok")), (Some(&json!("J-5")), Some(&json!(true))));
+        drop((s, t));
+        for d in [src, lib, lib2] {
+            let _ = std::fs::remove_dir_all(d);
+        }
+        manager().get_or_insert_with(Manager::in_memory).uninstall("test.back").unwrap();
     }
 
     #[test]
