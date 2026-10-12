@@ -4646,6 +4646,7 @@ dependencies = [
  "lcc-segment",
  "lcc-tether",
  "lcc-tiff",
+ "lcc-updater",
  "lcc-video",
  "lcc-video-export",
  "lcc-webgallery",
@@ -4657,6 +4658,7 @@ dependencies = [
  "rustix 1.1.5",
  "serde",
  "serde_json",
+ "sha2 0.10.9",
  "thiserror 2.0.21",
  "tiff",
  "unicode-segmentation",
@@ -5129,6 +5131,7 @@ dependencies = [
  "lcc-raster",
  "lcc-slideshow",
  "lcc-text",
+ "lcc-updater",
  "lcc-webgallery",
  "log",
  "resvg",
@@ -5137,6 +5140,17 @@ dependencies = [
  "toml",
  "wat",
  "web-time",
+]
+
+[[package]]
+name = "lcc-updater"
+version = "0.7.0"
+dependencies = [
+ "lcc-brand",
+ "lcc-net",
+ "log",
+ "serde_json",
+ "sha2 0.10.9",
 ]
 
 [[package]]

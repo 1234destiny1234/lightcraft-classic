@@ -90,7 +90,10 @@ impl Client {
         if let Some(c) = &opts.cancel {
             req = req.cancel(c.clone());
         }
-        let done_already = opts.size.is_some_and(|s| s == have && s > 0);
+        // A partial file that is already the whole size is only usable when nothing has to be
+        // verified against it: with an expected SHA-256 the transfer runs again (a resumed file's
+        // hash would never be checked otherwise, so a damaged one could be renamed into place).
+        let done_already = opts.size.is_some_and(|s| s == have && s > 0) && opts.sha256.is_none();
         if have > 0 && !done_already {
             req = req.header("Range", &format!("bytes={have}-"));
         }
