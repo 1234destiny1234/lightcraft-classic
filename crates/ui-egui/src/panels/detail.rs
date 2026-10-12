@@ -14,6 +14,23 @@ use crate::state::{BeforeAfter, RightPanel, Zoom};
 use crate::theme::Tokens;
 use crate::widgets::register;
 
+/// A clip's whole decoded frame drawn into `r` through the loupe's [`Frame`]: the crop, its
+/// straighten angle and the flips pick the part of the texture that shows (the uncropped frame
+/// while the Crop tool is open).
+fn video_frame_mesh(tex: egui::TextureId, r: Rect, frame: &Frame) -> egui::Shape {
+    let (w, h) = ((r.width().round() as usize).max(1), (r.height().round() as usize).max(1));
+    let to_uv = frame.out_to_norm(w, h);
+    let mut mesh = egui::epaint::Mesh::with_texture(tex);
+    for (x, y) in [(0.0, 0.0), (w as f64, 0.0), (w as f64, h as f64), (0.0, h as f64)] {
+        let uv = to_uv.apply(Point::new(x, y));
+        let pos = pos2(r.left() + (x / w as f64) as f32 * r.width(), r.top() + (y / h as f64) as f32 * r.height());
+        mesh.vertices.push(egui::epaint::Vertex { pos, uv: pos2(uv.x as f32, uv.y as f32), color: Color32::WHITE });
+    }
+    mesh.add_triangle(0, 1, 2);
+    mesh.add_triangle(0, 2, 3);
+    egui::Shape::mesh(mesh)
+}
+
 /// An in-progress on-canvas gesture.
 #[derive(Clone, Debug)]
 pub enum Gesture {
@@ -740,10 +757,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
         p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
         shown = "hover";
-    } else if let Some((tex, size, playing)) = video_tex {
+    } else if let Some((tex, _, playing)) = video_tex {
         // a clip: its current frame (playing or paused) over the poster render
         let _ = draw(Slot::Main, img_rect, canvas);
-        p.image(tex, fit_texture_rect(img_rect, size), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        p.add(video_frame_mesh(tex, img_rect, &frame));
         shown = if playing { "video" } else { "video-still" };
     } else {
         shown = draw(Slot::Main, img_rect, canvas);

@@ -122,6 +122,30 @@ fn clip_exports_trimmed_and_graded() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+// Feature: the export carries the clip's crop together with its trim and grade.
+#[test]
+fn clip_exports_cropped_trimmed_and_graded() {
+    let dir = scratch("cropped");
+    let src = dir.join("clip.mp4");
+    make_clip(&src);
+    let mut s = Session::new();
+    let id = add_clip(&mut s, &src, (0.4, Some(1.4)));
+    let mut d = (*s.develop_of(id).unwrap()).clone();
+    d.light.exposure = 1.0;
+    // the left half, full height: 32×48 of the 64×48 clip
+    d.crop.geometry.rect = lcc_geom::Rect { x0: 0.0, y0: 0.0, x1: 0.5, y1: 1.0 };
+    s.catalog.apply(Op::SetDevelop { id, settings: std::sync::Arc::new(d), label: "Crop".into(), edited: None }).unwrap();
+    let o = ExportOptions::from_params(&json!({"videoQuality": 95})).unwrap();
+    let files = export(&mut s, &[id], &o, &dir.join("out"), &VideoHooks::default()).unwrap();
+    let out = PathBuf::from(files[0]["path"].as_str().unwrap());
+    let info = lcc_video::probe(&out).unwrap();
+    assert_eq!((info.width, info.height), (W / 2, H), "cropped");
+    assert!((info.duration - 1.0).abs() < 0.05, "trimmed to 1 s: {}", info.duration);
+    let (src_y, out_y) = (mean_luma(&src, 0.5), mean_luma(&out, 0.5));
+    assert!((out_y / src_y - 2.0).abs() < 0.15, "+1 EV graded: {src_y} → {out_y}");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// The full-quality linear grade (no 8-bit step): +1 EV doubles a mid-tone exactly.
 #[test]
 fn linear_grade_doubles_on_plus_one_ev() {

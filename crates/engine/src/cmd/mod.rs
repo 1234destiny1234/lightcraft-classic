@@ -120,7 +120,7 @@ pub const NOT_FOR_VIDEO: &str = "Not available for video";
 /// Commands that edit what a video can't take (plan §7: global grading only): crop and
 /// geometry, masks, Remove / Heal spots, Red Eye and AI Denoise.
 pub fn photo_only(id: &str) -> bool {
-    ["crop.", "mask.", "spot.", "redeye."].iter().any(|p| id.starts_with(p)) || matches!(id, "denoise.queue" | "denoise.toggle")
+    ["mask.", "spot.", "redeye."].iter().any(|p| id.starts_with(p)) || matches!(id, "denoise.queue" | "denoise.toggle")
 }
 
 /// [`NOT_FOR_VIDEO`] for a [`photo_only`] command while the active photo is a video clip.

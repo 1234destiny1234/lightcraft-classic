@@ -340,13 +340,11 @@ pub fn control_allowed(id: &str) -> bool {
     matches!(section, "light" | "wb" | "color" | "curve" | "mixer" | "hsl" | "grading" | "profile")
 }
 
-/// UI and engine commands that a clip can't take: the Crop, Remove, Masking and Red Eye panels,
+/// UI and engine commands that a clip can't take: the Remove, Masking and Red Eye panels,
 /// the local-adjustment and Upright tools, and the engine's photo-only commands.
 pub fn photo_only(id: &str) -> bool {
-    matches!(
-        id,
-        "panel.crop" | "panel.remove" | "panel.masking" | "panel.redeye" | "tool.brush" | "tool.linear" | "tool.radial" | "tool.guidedUpright"
-    ) || lcc_engine::cmd::photo_only(id)
+    matches!(id, "panel.remove" | "panel.masking" | "panel.redeye" | "tool.brush" | "tool.linear" | "tool.radial" | "tool.guidedUpright")
+        || lcc_engine::cmd::photo_only(id)
 }
 
 /// `id` is [`photo_only`] and the active photo is a clip.

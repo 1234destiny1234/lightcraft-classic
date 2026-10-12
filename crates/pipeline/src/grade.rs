@@ -38,6 +38,30 @@ pub fn video_settings(s: &DevelopSettings) -> DevelopSettings {
     }
 }
 
+/// What a clip keeps of `s`: [`video_settings`] plus its crop and flips ([`video_framing`]).
+/// Posters, thumbnails and the stored settings use it; frames are graded by `video_settings`
+/// and framed by `video_framing` separately.
+pub fn video_develop(s: &DevelopSettings) -> DevelopSettings {
+    DevelopSettings { crop: s.crop, ..video_settings(s) }
+}
+
+/// The part of `s` that frames a video clip: the crop (with its straighten angle and aspect) and
+/// the flips. Everything else (orientation, lens, Upright) stays photo-only.
+pub fn video_framing(s: &DevelopSettings) -> DevelopSettings {
+    DevelopSettings { crop: s.crop, ..DevelopSettings::default() }
+}
+
+/// Whether [`video_framing`] changes the frame at all (a full-frame, unflipped crop does not).
+pub fn video_is_framed(s: &DevelopSettings) -> bool {
+    let d = DevelopSettings::default();
+    s.crop.geometry != d.crop.geometry || s.crop.flip_h || s.crop.flip_v
+}
+
+/// Draw a decoded `frame` into a `w × h` output under the clip's [`video_framing`].
+pub fn frame_video(frame: &Rgb32f, framing: &DevelopSettings, w: usize, h: usize) -> Rgb32f {
+    crate::geometry::Frame::new(frame.width, frame.height, framing, true).sample(frame, w, h)
+}
+
 /// The source facts a video frame is graded against: display-referred, relative white balance.
 pub fn video_source_info() -> SourceInfo {
     SourceInfo::default()

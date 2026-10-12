@@ -100,6 +100,14 @@ pub(crate) fn enc(e: impl std::fmt::Display) -> ExportClipError {
     ExportClipError::Encode(e.to_string())
 }
 
+/// A geometric step before the grade (crop, straighten, flips): `sample(frame, w, h)` draws the
+/// decoded source frame into a `w × h` output. `size` is that output's size at the source's own
+/// resolution, which sets the export's aspect and (with `max_side`) its pixel size.
+pub struct Reframe<'a> {
+    pub size: (f64, f64),
+    pub sample: &'a (dyn Fn(&Rgb32f, usize, usize) -> Rgb32f + Sync),
+}
+
 /// Export `src` from `trim.0` to `trim.1` (seconds; `None` = end of clip) to `opts.out`.
 ///
 /// `grade` runs on every output frame, on several frames at once on worker threads (decode, grade
@@ -113,8 +121,22 @@ pub fn export_clip(
     cancel: &AtomicBool,
     progress: &dyn Fn(f64),
 ) -> Result<ClipReport> {
+    export_clip_framed(src, trim, None, grade, opts, cancel, progress)
+}
+
+/// [`export_clip`] with an optional [`Reframe`] (crop) applied to every frame before the grade.
+pub fn export_clip_framed(
+    src: &Path,
+    trim: (f64, Option<f64>),
+    reframe: Option<&Reframe<'_>>,
+    grade: &(dyn Fn(&mut Rgb32f) + Sync),
+    opts: &ClipExportOptions,
+    cancel: &AtomicBool,
+    progress: &dyn Fn(f64),
+) -> Result<ClipReport> {
     let partial = partial_path(&opts.out)?;
-    let r = catch_unwind(AssertUnwindSafe(|| run(src, trim, grade, opts, cancel, progress, &partial))).unwrap_or(Err(ExportClipError::Internal));
+    let r =
+        catch_unwind(AssertUnwindSafe(|| run(src, trim, reframe, grade, opts, cancel, progress, &partial))).unwrap_or(Err(ExportClipError::Internal));
     match r {
         Ok(mut rep) => {
             rep.path = opts.out.clone();
@@ -182,9 +204,11 @@ fn video_err(e: lcc_video::VideoError) -> ExportClipError {
     }
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run(
     src: &Path,
     trim: (f64, Option<f64>),
+    reframe: Option<&Reframe<'_>>,
     grade: &(dyn Fn(&mut Rgb32f) + Sync),
     opts: &ClipExportOptions,
     cancel: &AtomicBool,
@@ -204,7 +228,16 @@ fn run(
     let (k0, k1) = select_frames(&times, info.duration, trim)?;
     let total = k1 - k0;
     let t0 = times.get(k0).copied().unwrap_or(0.0);
-    let (w, h) = output_size(info.width, info.height, opts.max_side)?;
+    let (w, h) = match reframe {
+        // a crop's own size, never above the source's pixels
+        Some(r) if r.size.0.is_finite() && r.size.1.is_finite() && r.size.0 >= 2.0 && r.size.1 >= 2.0 => {
+            output_size(r.size.0.min(f64::from(MAX_SIDE)).round() as u32, r.size.1.min(f64::from(MAX_SIDE)).round() as u32, opts.max_side)?
+        }
+        Some(_) => return Err(ExportClipError::BadOptions("the crop is empty".into())),
+        None => output_size(info.width, info.height, opts.max_side)?,
+    };
+    // a reframed export samples the frame at the source's size (the crop picks a part of it)
+    let decode_long = if reframe.is_some() { info.width.max(info.height) } else { w.max(h) };
     let quality = opts.quality.clamp(1, 100);
 
     let file = File::create(partial).map_err(io)?;
@@ -243,7 +276,13 @@ fn run(
                 }
                 let t = times.get(k).copied().unwrap_or(t0);
                 let at = Instant::now();
-                let r = reader.frame_at(t, Some(w.max(h))).map_err(video_err).map(|d| (i, fit(&d.image, w as usize, h as usize)));
+                let r = reader.frame_at(t, Some(decode_long)).map_err(video_err).map(|d| {
+                    let f = match reframe {
+                        Some(rf) => (rf.sample)(&d.image, w as usize, h as usize),
+                        None => fit(&d.image, w as usize, h as usize),
+                    };
+                    (i, f)
+                });
                 Stages::add(&stages.decode, at);
                 let failed = r.is_err();
                 if dtx.send(r).is_err() || failed {
@@ -267,7 +306,7 @@ fn run(
                         grade(&mut frame);
                         Stages::add(&stages.grade, at);
                         if frame.width != w as usize || frame.height != h as usize || frame.data.len() != w as usize * h as usize {
-                            return Err(ExportClipError::Encode("the grade changed the frame size".into()));
+                            return Err(ExportClipError::Encode("the crop or grade changed the frame size".into()));
                         }
                         let at = Instant::now();
                         let p = prep.prepare(&frame);

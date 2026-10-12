@@ -292,6 +292,18 @@ fn capture_frame_writes_a_jpeg_imports_and_stacks_it() {
     let _ = std::fs::remove_dir_all(&d);
 }
 
+// Feature: Capture Frame keeps the clip's crop, as the loupe and export show it.
+#[test]
+fn capture_frame_is_cropped() {
+    let d = tmp("capture-crop");
+    let (mut s, _) = session(&d);
+    run(&mut s, "crop.set", json!({"rect": [0.0, 0.0, 0.5, 1.0]}));
+    let r = run(&mut s, "video.captureFrame", json!({"time": 2.0}));
+    let img = lcc_codecs::decode(&std::fs::read(r["path"].as_str().unwrap()).unwrap(), Default::default()).unwrap().to_srgb8();
+    assert_eq!((img.width, img.height), (4, 6), "the left half of the 8×6 frame");
+    let _ = std::fs::remove_dir_all(&d);
+}
+
 #[test]
 fn capture_frame_bakes_the_clip_grade() {
     let mean = |path: &str| {
@@ -350,13 +362,15 @@ fn the_native_backend_reports_a_garbage_clip_as_an_error() {
 fn photo_only_tools_are_disabled_for_a_clip() {
     let dir = tmp("gating");
     let (mut s, _) = session(&dir);
-    for id in ["crop.set", "mask.add", "spot.add", "redeye.add", "denoise.queue"] {
+    for id in ["mask.add", "spot.add", "redeye.add", "denoise.queue"] {
         let info = crate::cmd::find_command(id).unwrap().info(&s);
         assert!(!info.enabled && info.disabled_reason.as_deref() == Some(crate::cmd::NOT_FOR_VIDEO), "{id}: {info:?}");
         let e = s.execute(id, &json!({})).unwrap_err().to_string();
         assert!(e.contains(crate::cmd::NOT_FOR_VIDEO), "{id}: {e}");
     }
     assert!(crate::cmd::find_command("develop.set").unwrap().info(&s).enabled);
+    // a clip can be cropped
+    assert!(crate::cmd::find_command("crop.set").unwrap().info(&s).enabled);
     select(&mut s, 901);
     assert!(crate::cmd::find_command("crop.set").unwrap().info(&s).disabled_reason.is_none_or(|r| r != crate::cmd::NOT_FOR_VIDEO));
 }
@@ -372,6 +386,20 @@ fn photo_only_tools_naming_a_clip_by_ids_are_refused_with_a_still_active() {
     assert!(ok.as_ref().err().is_none_or(|e| !e.to_string().contains(crate::cmd::NOT_FOR_VIDEO)), "{ok:?}");
     // a grading command still takes the clip
     assert!(s.execute("develop.set", &json!({"ids": [900], "values": {"light.exposure": 0.5}})).is_ok());
+}
+
+// Feature: a clip keeps its crop (posters, thumbnails and stored settings), unlike photo-only controls.
+#[test]
+fn a_clip_keeps_its_crop() {
+    let dir = tmp("crop");
+    let (mut s, _) = session(&dir);
+    s.execute("crop.set", &json!({"rect": [0.1, 0.2, 0.7, 0.8]})).unwrap();
+    let d = s.develop_of(PhotoId(900)).unwrap();
+    assert!((d.crop.geometry.rect.x0 - 0.1).abs() < 1e-6, "{:?}", d.crop.geometry);
+    assert!(lcc_pipeline::grade::video_is_framed(&d));
+    assert_eq!(lcc_pipeline::grade::video_develop(&d).crop, d.crop);
+    // the grade itself never sees the crop
+    assert_eq!(lcc_pipeline::grade::video_settings(&d).crop, lcc_develop::DevelopSettings::default().crop);
 }
 
 #[test]

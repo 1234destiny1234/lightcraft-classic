@@ -177,7 +177,7 @@ fn srgb8_lut() -> &'static [f32; 256] {
 
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
-    use lcc_video_export::{ClipExportOptions, ClipFormat, export_clip};
+    use lcc_video_export::{ClipExportOptions, ClipFormat, Reframe, export_clip_framed};
     let format = match w.format {
         VideoFormat::H264 => ClipFormat::H264Mp4,
         VideoFormat::ProRes => ClipFormat::ProResMov,
@@ -208,7 +208,17 @@ pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
             p(&name, x);
         }
     };
-    let r = export_clip(&w.src, w.trim, &grade, &opts, &w.hooks.cancel, &progress);
+    // the crop (straighten, flips) is drawn from the decoded frame before the grade
+    let framing = lcc_pipeline::grade::video_framing(&w.settings);
+    let sample = |f: &lcc_raster::Rgb32f, ow: usize, oh: usize| lcc_pipeline::grade::frame_video(f, &framing, ow, oh);
+    let reframe = if lcc_pipeline::grade::video_is_framed(&w.settings) {
+        let info = lcc_video::probe(&w.src).map_err(|e| format!("{}: {e}", w.file_name))?;
+        let size = lcc_pipeline::native_output_size(info.width as usize, info.height as usize, &framing);
+        Some(Reframe { size, sample: &sample })
+    } else {
+        None
+    };
+    let r = export_clip_framed(&w.src, w.trim, reframe.as_ref(), &grade, &opts, &w.hooks.cancel, &progress);
     let file = TempFile(tmp);
     let rep = r.map_err(|e| format!("{}: {e}", w.file_name))?;
     if let Some(e) = failed.into_inner().unwrap_or_else(std::sync::PoisonError::into_inner) {

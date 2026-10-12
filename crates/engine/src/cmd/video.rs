@@ -231,6 +231,15 @@ fn capture(s: &mut Session, p: &Value) -> Result<Value> {
     // Bake the clip's grade into the still (like Lightroom's Capture Frame): the JPEG looks like
     // the graded clip and the new photo starts with default settings, so it isn't graded twice.
     let develop = s.catalog.photo(x.id).map(|ph| ph.develop.clone()).unwrap_or_default();
+    // …and its crop, as the loupe and export show it
+    let frame = if lcc_pipeline::grade::video_is_framed(&develop) {
+        let framing = lcc_pipeline::grade::video_framing(&develop);
+        let (w, h) = lcc_pipeline::native_output_size(frame.width, frame.height, &framing);
+        let (w, h) = ((w.round() as usize).clamp(1, frame.width.max(frame.height)), (h.round() as usize).clamp(1, frame.width.max(frame.height)));
+        lcc_pipeline::grade::frame_video(&frame, &framing, w, h)
+    } else {
+        frame
+    };
     let graded = lcc_pipeline::grade::grade_frame(&frame, &develop, lcc_pipeline::Quality::Full);
     let opts = crate::export::ExportOptions::default();
     let bytes = crate::export::encode_image(&graded, &opts).map_err(|e| EngineError::Other(format!("can't encode the frame: {e}")))?;

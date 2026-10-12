@@ -853,8 +853,8 @@ impl Session {
     /// The op that sets a photo's develop settings and appends a History entry (for batches).
     pub fn develop_op(&self, id: PhotoId, settings: DevelopSettings, label: &str) -> Option<Op> {
         let p = self.catalog.photo(id)?;
-        // a clip takes only the global grading controls: presets, paste and sync drop the rest
-        let settings = Arc::new(if p.kind == lcc_catalog::MediaKind::Video { lcc_pipeline::grade::video_settings(&settings) } else { settings });
+        // a clip takes only the global grading controls and the crop: presets, paste and sync drop the rest
+        let settings = Arc::new(if p.kind == lcc_catalog::MediaKind::Video { lcc_pipeline::grade::video_develop(&settings) } else { settings });
         let step = lcc_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
         Some(Op::Batch {
             ops: vec![Op::SetDevelop { id, settings, label: label.into(), edited: Some((self.clock)()) }, Op::PushHistory { id, step }],

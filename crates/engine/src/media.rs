@@ -1147,8 +1147,8 @@ impl crate::Session {
     ) -> Option<RenderJob> {
         let p = self.catalog.photo(id)?.clone();
         let settings = if before { Arc::new(self.before_settings(&p)) } else { p.develop.clone() };
-        // a clip's poster is graded like its frames: the global controls only (`lcc_pipeline::grade`)
-        let settings = if p.kind == MediaKind::Video { Arc::new(lcc_pipeline::grade::video_settings(&settings)) } else { settings };
+        // a clip's poster is graded and cropped like its frames (`lcc_pipeline::grade::video_develop`)
+        let settings = if p.kind == MediaKind::Video { Arc::new(lcc_pipeline::grade::video_develop(&settings)) } else { settings };
         let level = SourceLevel::for_size(if thumb_bucket.is_some() {
             max_w.max(max_h) // (grid thumbnails of tight crops stay cheap)
         } else {

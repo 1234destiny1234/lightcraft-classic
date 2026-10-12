@@ -270,13 +270,15 @@ fn develop_clip() -> crate::headless::Headless {
 fn photo_only_panels_and_tools_are_blocked_for_a_clip() {
     let mut h = develop_clip();
     h.settle(std::time::Duration::from_secs(30));
-    for id in ["panel.crop", "panel.remove", "panel.masking", "panel.redeye", "tool.brush", "crop.set", "mask.add"] {
+    for id in ["panel.remove", "panel.masking", "panel.redeye", "tool.brush", "mask.add"] {
         assert!(!crate::menus::ui_enabled(&h.app, id), "{id}");
         let e = h.app.run(id, json!({})).unwrap_err();
         assert!(e.contains("video"), "{id}: {e}");
     }
     assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit, "no photo-only panel opened");
     assert!(crate::menus::ui_enabled(&h.app, "panel.edit"));
+    // a clip can be cropped
+    assert!(crate::menus::ui_enabled(&h.app, "panel.crop"));
     // a still takes them again
     h.app.run("library.select", json!({"ids": [2], "active": 2})).unwrap();
     assert!(crate::menus::ui_enabled(&h.app, "panel.crop"));

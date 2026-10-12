@@ -365,7 +365,7 @@ fn video_clip_over_mcp() {
             call(11, "set_develop", json!({"values": {"light.exposure": 1}})),
             call(12, "export", json!({"path": out.to_string_lossy(), "videoFormat": "h264"})),
             // photo-only tools refused while the clip is active, and by ids
-            call(13, "cmd_crop_set", json!({})),
+            call(13, "cmd_mask_add", json!({"kind": "linear"})),
             call(14, "cmd_denoise_queue", json!({"ids": [clip_id]})),
             // undo: exposure, the captured frame, then the trim
             call(15, "cmd_edit_undo", json!({})),

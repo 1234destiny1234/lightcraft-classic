@@ -284,66 +284,70 @@ fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     });
     divider(ui);
     header(ui, "Geometry");
-    padded(ui, |ui| {
-        ui.label(crate::i18n::tr("Upright"));
-        {
-            use lcc_develop::Upright;
-            let modes = [
-                ("Off", Upright::Off, "off"),
-                ("Auto", Upright::Auto, "auto"),
-                ("Guided", Upright::Guided, "guided"),
-                ("Level", Upright::Level, "level"),
-                ("Vertical", Upright::Vertical, "vertical"),
-                ("Full", Upright::Full, "full"),
-            ];
-            let items: Vec<(&str, &str)> = modes.iter().map(|(l, _, k)| (*l, *k)).collect();
-            let active = modes.iter().position(|(_, m, _)| *m == d.geometry.upright);
-            if let Some(i) = crate::widgets::segmented(ui, "upright", &items, active, 3) {
-                let (_, mode, key) = modes[i];
-                let _ = app.run("geometry.upright", json!({"mode": key}));
-                app.ui.tool = if mode == Upright::Guided { "guidedUpright".into() } else { String::new() };
-            }
-        }
-        let guided = d.geometry.upright == lcc_develop::Upright::Guided;
-        ui.horizontal_wrapped(|ui| {
-            if !guided
-                && d.geometry.upright != lcc_develop::Upright::Off
-                && text_button(ui, "uprightUpdate", crate::i18n::tr("Update"), false).clicked()
+    // a clip takes the crop, straighten and flips only: Upright and the transform sliders are photo-only
+    let video = crate::video_ui::photo_is_video(app, id);
+    crate::video_ui::video_gate(ui, video, |ui| {
+        padded(ui, |ui| {
+            ui.label(crate::i18n::tr("Upright"));
             {
-                let mode = serde_json::to_value(d.geometry.upright).unwrap_or_default();
-                let _ = app.run("geometry.upright", json!({"mode": mode}));
+                use lcc_develop::Upright;
+                let modes = [
+                    ("Off", Upright::Off, "off"),
+                    ("Auto", Upright::Auto, "auto"),
+                    ("Guided", Upright::Guided, "guided"),
+                    ("Level", Upright::Level, "level"),
+                    ("Vertical", Upright::Vertical, "vertical"),
+                    ("Full", Upright::Full, "full"),
+                ];
+                let items: Vec<(&str, &str)> = modes.iter().map(|(l, _, k)| (*l, *k)).collect();
+                let active = modes.iter().position(|(_, m, _)| *m == d.geometry.upright);
+                if let Some(i) = crate::widgets::segmented(ui, "upright", &items, active, 3) {
+                    let (_, mode, key) = modes[i];
+                    let _ = app.run("geometry.upright", json!({"mode": key}));
+                    app.ui.tool = if mode == Upright::Guided { "guidedUpright".into() } else { String::new() };
+                }
             }
+            let guided = d.geometry.upright == lcc_develop::Upright::Guided;
+            ui.horizontal_wrapped(|ui| {
+                if !guided
+                    && d.geometry.upright != lcc_develop::Upright::Off
+                    && text_button(ui, "uprightUpdate", crate::i18n::tr("Update"), false).clicked()
+                {
+                    let mode = serde_json::to_value(d.geometry.upright).unwrap_or_default();
+                    let _ = app.run("geometry.upright", json!({"mode": mode}));
+                }
+                if guided {
+                    let drawing = app.ui.tool == "guidedUpright";
+                    if text_button(ui, "uprightDraw", crate::i18n::tr("Draw Guides"), drawing).clicked() {
+                        app.ui.tool = if drawing { String::new() } else { "guidedUpright".into() };
+                    }
+                    if !d.geometry.guides.is_empty() && text_button(ui, "uprightClear", crate::i18n::tr("Clear Guides"), false).clicked() {
+                        let _ = app.run("geometry.guides", json!({"guides": []}));
+                    }
+                }
+            });
             if guided {
-                let drawing = app.ui.tool == "guidedUpright";
-                if text_button(ui, "uprightDraw", crate::i18n::tr("Draw Guides"), drawing).clicked() {
-                    app.ui.tool = if drawing { String::new() } else { "guidedUpright".into() };
-                }
-                if !d.geometry.guides.is_empty() && text_button(ui, "uprightClear", crate::i18n::tr("Clear Guides"), false).clicked() {
-                    let _ = app.run("geometry.guides", json!({"guides": []}));
-                }
+                ui.label(
+                    egui::RichText::new(crate::i18n::tr_format!(
+                        "{} of 4 guides — drag along lines that should be vertical or horizontal.",
+                        d.geometry.guides.len()
+                    ))
+                    .size(11.0)
+                    .color(Tokens::get(ui.ctx()).text_dim),
+                );
+            }
+            ui.add_space(4.0);
+            let mut c = d.geometry.constrain_crop;
+            if ui.checkbox(&mut c, crate::i18n::tr("Constrain Crop")).changed() {
+                let _ = app.run("develop.merge", json!({"settings": {"geometry": {"constrain_crop": c}}, "label": "Constrain Crop"}));
             }
         });
-        if guided {
-            ui.label(
-                egui::RichText::new(crate::i18n::tr_format!(
-                    "{} of 4 guides — drag along lines that should be vertical or horizontal.",
-                    d.geometry.guides.len()
-                ))
-                .size(11.0)
-                .color(Tokens::get(ui.ctx()).text_dim),
-            );
-        }
-        ui.add_space(4.0);
-        let mut c = d.geometry.constrain_crop;
-        if ui.checkbox(&mut c, crate::i18n::tr("Constrain Crop")).changed() {
-            let _ = app.run("develop.merge", json!({"settings": {"geometry": {"constrain_crop": c}}, "label": "Constrain Crop"}));
+        for spec in lcc_develop::controls::in_section(lcc_develop::Section::Geometry).filter(|c| c.id != "crop.angle") {
+            let v = lcc_develop::controls::get(&d, spec.id).unwrap_or(spec.default);
+            let out = slider(ui, spec, v, true, None);
+            super::edit::apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": spec.id, "value": v})));
         }
     });
-    for spec in lcc_develop::controls::in_section(lcc_develop::Section::Geometry).filter(|c| c.id != "crop.angle") {
-        let v = lcc_develop::controls::get(&d, spec.id).unwrap_or(spec.default);
-        let out = slider(ui, spec, v, true, None);
-        super::edit::apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": spec.id, "value": v})));
-    }
 }
 
 fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
