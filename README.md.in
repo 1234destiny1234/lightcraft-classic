@@ -213,6 +213,18 @@ so they stay smooth whether you have forty photos or forty thousand.
 
 <br>
 
+## Video, too
+
+Clips live in the same library as your photos. MP4, MOV, MKV, WebM, MPEG-TS and MXF with H.264, HEVC, VP9, AV1,
+ProRes, DNxHR, APV or MPEG-2 decode in pure Rust. Play a clip in the loupe (<kbd>Space</kbd>, <kbd>←</kbd> /
+<kbd>→</kbd> for single frames), drag the trim handles, pick the poster frame the grid shows, and capture any frame as
+a photo. The Light and Color controls (and presets that use only them) grade every frame. Export writes H.264 MP4 or
+ProRes MOV with the trim, the grade and the sound; `<cli> render clip.mov -o out.mp4 --trim 2,8` does the same from
+the command line. Playback is silent for now, and masks, spot removal, lens corrections and crop don't apply to video.
+See [docs/video.md](docs/video.md).
+
+<br>
+
 ## Built for agents
 
 Every menu item, slider, brush stroke, crop handle and keystroke in the app is a **command** with a stable id and
@@ -304,7 +316,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
   - **compressed Olympus raws and unsupported CR3 variants:** these use embedded JPEG previews when present. Fujifilm lossless/lossy compressed RAF now decodes sensor data; [verification and existing-library reload instructions](docs/raf-compression.md);
   - **AI masks and denoise:** subject and sky selection are classical heuristics;
   - **network libraries:** a preview reads the raw's header and its embedded JPEG only (56.5 MB → 5.9 MB, 10 s → 1 s on the test share), but the *developed* picture still needs the sensor data over the wire; see [docs/raw-preview-reads.md](docs/raw-preview-reads.md);
-  - **on-screen HDR display and video.**
+  - **on-screen HDR display; video is new** (silent playback, global edits only, slow export).
 - **What's next:** see [where we're going](ROADMAP.md#where-were-going).
 
 | Area | Status |
@@ -324,13 +336,14 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | HDR: HDR editing with a headroom limit, SDR rendition, Visualize HDR; export as ISO 21496-1 gain map JPEG, PQ or HLG AVIF, or 32-bit float TIFF | ✅ · HDR display ⬜ |
 | Library persistence (crash-safe op log + snapshots, background compaction, failed saves reported), disk thumbnail cache | ✅ |
 | Import: Add in place / Copy / Move, rename and folder templates, devices, duplicate detection, watched folders; Local folder browsing | ✅ |
-| Output: Print (printer ICC, intent, BPC, Print Adjustment, 16-bit, `ipps://`, driver options), Book (PDF, pair kerning), Slideshow (PDF/JPEG; no sound output yet), Web (HTML galleries, SFTP), publish services with grid sections | ✅ · slideshow sound and video export ⬜ |
+| Output: Print (printer ICC, intent, BPC, Print Adjustment, 16-bit, `ipps://`, driver options), Book (PDF, pair kerning), Slideshow (PDF/JPEG; no sound output yet), Web (HTML galleries, SFTP), publish services with grid sections | ✅ · slideshow sound ⬜ |
 | MCP server (headless or live app, persistent libraries), CLI, control channel | ✅ |
 | XMP sidecars (read/write, auto-write), reading `crs:` develop settings, preset files (`.lcpreset`, XMP presets) | ✅ |
 | Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · lensfun-format lens database set up or downloaded from Settings ▸ Lens profiles 🟡 · lens profiles of our own ⬜ |
 | Photo Merge: HDR (auto-align, deghost), Panorama (spherical/cylindrical/perspective, boundary warp, auto crop), HDR Panorama → DNG | ✅ |
 | GPU pipeline (wgpu compute, CPU-exact within 1/255), CPU fallback on device limits / errors | ✅ · WebGPU in the browser 🚧 |
-| AI: segmentation masks, AI denoise, super resolution, faces; video | ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
+| Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · sound output, interlaced H.264, local adjustments on video ⬜ |
+| AI: segmentation masks, AI denoise, super resolution, faces | ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
 | Web build (same UI in the browser via WASM): persistent library in OPFS/IndexedDB, Web Worker rendering, export downloads | ✅ · WebGPU, Safari/Firefox testing 🚧 |
 
 <sub>✅ works today · 🚧 in progress · ⬜ not started</sub>

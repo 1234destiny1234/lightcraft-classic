@@ -1143,5 +1143,10 @@
   "Codec": "編解碼器",
   "Resolution": "解析度",
   "Audio": "音訊",
-  "Trim": "修剪"
+  "Trim": "修剪",
+  "Playback stopped": "播放已停止",
+  "video clips export as movies, trimmed, with their video edits": "視訊剪輯將匯出為影片，包含修剪和視訊編輯",
+  "Video format": "視訊格式",
+  "Video quality": "視訊品質",
+  "Video long edge (px, 0 = full)": "視訊長邊（像素，0 = 原尺寸）"
 }
