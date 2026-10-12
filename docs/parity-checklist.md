@@ -116,7 +116,6 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Action | Ours | Lightroom desktop | Why |
 |---|---|---|---|
-| 2026-10-12 | minor | LR-VID-PLAY: new `dac-video` crate (probe, frame reader, poster frames on FilmCraft's MP4 demuxer and H.264/HEVC decoders); status unchanged (⬜) |
 | Pick flag | P | Z | Z = toggle zoom (Classic convention); P is the Classic pick key |
 | Photos panel (left) | ⌘⇧L | P | P = pick |
 | Expand/collapse edit sections | ⌘⌥1–5 | ⌘1–6 | ⌘0 = Zoom to Fit, ⌘1 = Zoom 100 %; Geometry lives in the Crop panel |
@@ -912,6 +911,8 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | R. Video (M14.4/M14.6 engine): `video.*` playback, trim, poster and Capture Frame commands; LR-VID-PLAY, LR-VID-TRIM, LR-VID-COVER, LRC-DEV-VIDEO, LRC-VID-FRAME ⬜ → 🟡 (player UI pending) |
+| 2026-10-12 | minor | LR-VID-PLAY: `dac-video` reads Matroska/WebM, MPEG-TS and MXF, decodes VP9, AV1, ProRes, DNxHR, APV and MPEG-2 too; interlaced H.264 reported unsupported; status unchanged (⬜) |
+| 2026-10-12 | minor | LR-VID-PLAY: new `dac-video` crate (probe, frame reader, poster frames on FilmCraft's MP4 demuxer and H.264/HEVC decoders); status unchanged (⬜) |
 | 2026-10-12 | minor | R. Video (LR-VID-PLAY/TRIM/EDIT/COVER/EXPORT): notes give the M14 plan via FilmCraft crates; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-VID-EDIT: video frame grading API (`dac_pipeline::grade`, `dac_gpu::grade_frame`), 3D-LUT playback path; status unchanged (⬜) |
 | 2026-10-12 | minor | M14.2: catalog format 10 (`VideoMeta`, trim, poster), video extensions import as videos, `video:yes` filter; LR-VID-TRIM / LR-VID-COVER notes, status unchanged (⬜) |
