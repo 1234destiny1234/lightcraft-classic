@@ -128,11 +128,11 @@ Canon	EOS-1D X Mark III	CR3	2019	unverified	CRX decoder: lossless and C-RAW 0x10
 Canon	EOS 5D	CR2	2005	unverified	CR2 lossless JPEG decoder
 Canon	EOS 5D Mark II	CR2	2008	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS-5D Mark III	CR2	2012	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Canon	EOS-5D Mark IV (** see note)	CR2	2015	unverified	CR2 lossless JPEG decoder
+Canon	EOS-5D Mark IV (** see note)	CR2	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 5DS	CR2	2015	unverified	CR2 lossless JPEG decoder
 Canon	EOS 5DS R	CR2	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 6D	CR2	2012	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Canon	EOS 6D Mark II	CR2	2015	unverified	CR2 lossless JPEG decoder
+Canon	EOS 6D Mark II	CR2	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 7D	CR2	2008	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 7D Mark II	CR2	2013	unverified	CR2 lossless JPEG decoder
 Canon	EOS 10D	CRW	2003	preview	CRW is opened from its embedded JPEG only
@@ -161,7 +161,7 @@ Canon	EOS 650D (EOS Digital Rebel T4i, EOS Kiss X4i)	CR2	2012	unverified	CR2 los
 Canon	EOS 700D (EOS Digital Rebel T5i, EOS Kiss X7i)	CR2	2012	unverified	CR2 lossless JPEG decoder
 Canon	EOS 1200D (EOS Digital Rebel T5, EOS Kiss X70)	CR2	2013	unverified	CR2 lossless JPEG decoder
 Canon	EOS 1300D (EOS Digital Rebel T6, EOS Kiss X80)	CR2	2015	unverified	CR2 lossless JPEG decoder
-Canon	EOS 1500D (EOS Rebel T7, EOS Kiss X90, EOS 2000D)	CR2	2017	unverified	CR2 lossless JPEG decoder
+Canon	EOS 1500D (EOS Rebel T7, EOS Kiss X90, EOS 2000D)	CR2	2017	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Canon	EOS 3000D (EOS Rebel T100, EOS 4000D)	CR2	2017	unverified	CR2 lossless JPEG decoder
 Canon	EOS 750D (EOS Digital Rebel T6i, EOS Kiss X8i)	CR2	2015	unverified	CR2 lossless JPEG decoder
 Canon	EOS 760D (EOS Digital Rebel T6s, EOS Kiss 8000D)	CR2	2015	unverified	CR2 lossless JPEG decoder
@@ -350,8 +350,8 @@ Fujifilm	FinePix X-S1	RAF	2012	unverified	RAF decoder (uncompressed, lossless / 
 Fujifilm	X100F	RAF	2015	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X100S	RAF	2012	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X100T	RAF	2013	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
-Fujifilm	X100V**	RAF	2019	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
-Fujifilm	X100VI	RAF	2023	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
+Fujifilm	X100V**	RAF	2019	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X100VI	RAF	2023	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X20	RAF	2012	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X30	RAF	2013	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X70	RAF	2015	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
@@ -366,7 +366,7 @@ Fujifilm	X-E1	RAF	2012	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SA
 Fujifilm	X-E2	RAF	2013	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-E2S	RAF	2015	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-E3	RAF	2017	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
-Fujifilm	X-E4	RAF	2020	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
+Fujifilm	X-E4	RAF	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X-E5	RAF	2024	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X-H1	RAF	2017	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-H2 IR	RAF	2024	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
@@ -375,8 +375,8 @@ Fujifilm	X-M5	RAF	2024	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SA
 Fujifilm	X-Pro1	RAF	2012	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-Pro2	RAF	2015	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-Pro3**	RAF	2019	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
-Fujifilm	X-S10	RAF	2020	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
-Fujifilm	X-S20	RAF	2022	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
+Fujifilm	X-S10	RAF	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-S20	RAF	2022	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X-T1	RAF	2013	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-T1 IR	RAF	2015	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-T2	RAF	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
@@ -386,7 +386,7 @@ Fujifilm	X-T5	RAF	2022	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SA
 Fujifilm	X-T10	RAF	2015	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-T20	RAF	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X-T30	RAF	2018	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
-Fujifilm	X-T30 II	RAF	2021	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
+Fujifilm	X-T30 II	RAF	2021	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X-T30 III	RAF	2022	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
 Fujifilm	X-T50	RAF	2023	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Fujifilm	X-T100	RAF	2017	unverified	RAF decoder (uncompressed, lossless / lossy compressed, Bayer and X-Trans)
@@ -520,7 +520,7 @@ Hasselblad	H5D-50	3FR	2012	preview	3FR is opened from its embedded JPEG only
 Hasselblad	H5D-50c	3FR	2013	preview	3FR is opened from its embedded JPEG only
 Hasselblad	H5D-60	3FR	2013	preview	3FR is opened from its embedded JPEG only
 Hasselblad	H6D-100c	3FR	2015	preview	3FR is opened from its embedded JPEG only
-Hasselblad	HV	ARW	2013	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Hasselblad	HV	ARW	2013	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Hasselblad	Lunar	3FR	2012	preview	3FR is opened from its embedded JPEG only
 Hasselblad	Stellar II	3FR	2015	preview	3FR is opened from its embedded JPEG only
 Hasselblad	X1D	3FR	2015	preview	3FR is opened from its embedded JPEG only
@@ -677,105 +677,105 @@ Mamiya	ZD	MEF	2005	unsupported	MEF is not imported
 Motorola	Moto G Power (2021) Front Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Motorola	Moto G Power (2021) Rear Macro Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Motorola	Moto G Power (2021) Rear Wide Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
-Nikon	1 J1	NEF	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 J2	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 J3	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 J4	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 J5	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 S1	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 S2	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 V1	NEF	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 V2	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	1 V3	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX 5000	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX 5400	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX 5700	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX 8400	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX 8700	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX 8800	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX A	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX A1000	NRW	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
+Nikon	1 J1	NEF	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 J2	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 J3	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 J4	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 J5	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 S1	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 S2	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 V1	NEF	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 V2	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 V3	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX 5000	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX 5400	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX 5700	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX 8400	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX 8700	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX 8800	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX A	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX A1000	NRW	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nikon	COOLPIX B700	NRW	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Nikon	COOLPIX P330	NRW	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P340	NRW	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P1000	NRW	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P1100	NRW	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P6000	NRW	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P7000	NRW	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P7100	NRW	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P7700	NRW	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P7800	NRW	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	COOLPIX P950	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D1	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D1H	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D1X	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D2H	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D2Hs	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D2X	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D2Xs	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3s	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3X	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D4	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D4S	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D5	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D40	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D40x	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D50	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D60	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D6	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D70	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D70S	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D80	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D90	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D100	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D200	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D300	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D300s	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D500	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D600	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D610	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D700	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D750	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D780	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D800	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D800E	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D810	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D810A	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D850	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3000	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3100	NEF	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3200	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3300	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3400	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D3500	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D5000	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
+Nikon	COOLPIX P330	NRW	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P340	NRW	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P1000	NRW	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P1100	NRW	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P6000	NRW	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P7000	NRW	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P7100	NRW	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P7700	NRW	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P7800	NRW	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	COOLPIX P950	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D1	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D1H	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D1X	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D2H	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D2Hs	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D2X	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D2Xs	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3s	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3X	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D4	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D4S	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D5	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D40	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D40x	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D50	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D60	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D6	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D70	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D70S	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D80	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D90	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D100	NEF	2003	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D200	NEF	2005	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D300	NEF	2007	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D300s	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D500	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D600	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D610	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D700	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D750	NEF	2013	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D780	NEF	2019	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D800	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D800E	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D810	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D810A	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D850	NEF	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D3000	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3100	NEF	2010	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3200	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3300	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3400	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D3500	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D5000	NEF	2008	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nikon	D5100	NEF	2010	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Nikon	D5200	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D5300	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D5500	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D5600	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
+Nikon	D5200	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D5300	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D5500	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D5600	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nikon	D7000	NEF	2010	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Nikon	D7100	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	D7200	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
+Nikon	D7100	NEF	2012	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	D7200	NEF	2015	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nikon	D7500	NEF	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Nikon	Df	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 30	NEF	2021	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 50	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 50 II	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 5	NEF	2019	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 5 2	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 5 2C	NEF	2025	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 6	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 6 II	NEF	2020	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 6 III	NEF	2023	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 7	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 7 II	NEF	2020	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 8	NEF	2022	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z 9 (*See note)	NEF	2021	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
-Nikon	Z fc	NEF	2020	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
+Nikon	Df	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 30	NEF	2021	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 50	NEF	2019	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z 50 II	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 5	NEF	2019	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z 5 2	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 5 2C	NEF	2025	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 6	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 6 II	NEF	2020	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (table-less "Packed 14 bits", #769)
+Nikon	Z 6 III	NEF	2023	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 7	NEF	2018	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 7 II	NEF	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z 8	NEF	2022	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z 9 (*See note)	NEF	2021	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	Z fc	NEF	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Nikon	Z f	NEF	2022	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Nikon	ZR	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only
+Nikon	ZR	NEF	2024	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
 Nokia	Lumia 1020	DNG	2013	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Nokia	HMD Global Nokia 9 PureView Front Camera	DNG	2018	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Nokia	HMD Global Nokia 9 PureView Rear Camera	DNG	2018	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
@@ -1018,18 +1018,18 @@ Pentax	*ist DS	PEF	2005	unverified	PEF decoder (uncompressed, Huffman, packed 12
 Pentax	*ist DS2	PEF	2005	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
 Pentax	K-01	DNG	2012	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-1	DNG	2015	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
-Pentax	K-1 II (* see note)	DNG	2017	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
+Pentax	K-1 II (* see note)	DNG	2017	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K-3	DNG	2013	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K-3 II († see note)	DNG	2015	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-5	DNG	2010	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-5 II	DNG	2012	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-5 IIs	DNG	2012	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K-7	PEF	2008	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
-Pentax	K-3 Mark III	DNG	2020	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
+Pentax	K-3 Mark III	DNG	2020	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K-3 Mark III Monochrome	DNG	2022	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-30	DNG	2012	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-50	DNG	2013	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
-Pentax	K-70	PEF	2015	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
+Pentax	K-70	PEF	2015	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K-500	DNG	2013	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	KP	DNG	2015	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K-r	PEF	2010	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
@@ -1043,7 +1043,7 @@ Pentax	K100D Super	PEF	2007	unverified	PEF decoder (uncompressed, Huffman, packe
 Pentax	K110D	PEF	2005	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
 Pentax	K200D	DNG	2007	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	K2000 K-m	PEF	2008	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
-Pentax	KF	PEF	2022	unverified	PEF decoder (uncompressed, Huffman, packed 12-bit)
+Pentax	KF	PEF	2022	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	MX-1	DNG	2012	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	Q	DNG	2010	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Pentax	Q7	DNG	2013	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
@@ -1243,12 +1243,12 @@ Sony	Xperia 1 V Front Camera	DNG	2022	unverified	DNG decoder (uncompressed, LJ92
 Sony	Xperia 1 V Ultrawide Camera	DNG	2022	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Sony	Xperia 1 V Wide Camera	DNG	2022	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Sony	Xperia 1 V Zoom Camera	DNG	2022	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
-Sony	A1 II (ILCE-1M2) (** see note)	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	A1 II (ILCE-1M2) (** see note)	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Sony	A7 (ILCE-7)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7 II (ILCE-A7M2)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies
 Sony	A7 III (ILCE-7M3)	ARW	2017	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7 IV (ILCE-7M4)	ARW	2021	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A7 V (ILCE-7M5) (** see note)	ARW	2025	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	A7 V (ILCE-7M5) (** see note)	ARW	2025	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Sony	A7C (ILCE-7C)	ARW	2020	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7C II (ILCE-7CM2)	ARW	2023	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7CR (ILCE-7CR)	ARW	2023	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -1275,25 +1275,25 @@ Sony	A77 II (ILCA-77M2)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of
 Sony	A7R IIIA (ILCE-7RM3A)	ARW	2020	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7R IVA (ILCE-7RM4A)	ARW	2020	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7R V (ILCE-7RM5)	ARW	2022	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A7R VI (ILCE-7RM6) (** see note)	ARW	2025	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	A7R VI (ILCE-7RM6) (** see note)	ARW	2025	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Sony	A99 (SLT-A99V)	ARW	2012	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies
 Sony	A99 II (ILCA-99M2)	ARW	2015	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A100 (DSLR-A100)	ARW	2005	unsupported	issue #702: regression, refused as not a readable photo
-Sony	A200 (DSLR-A200)	ARW	2007	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A230 (DSLR-A230)	ARW	2008	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A290 (DSLR-A290)	ARW	2010	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A300 (DSLR-A300)	ARW	2007	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A330 (DSLR A330)	ARW	2008	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A350 (DSLR-A350)	ARW	2007	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A380 (DSLR-A380)	ARW	2008	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A390 (DSLR-A390)	ARW	2010	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A100 (DSLR-A100)	ARW	2005	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A200 (DSLR-A200)	ARW	2007	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A230 (DSLR-A230)	ARW	2008	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A290 (DSLR-A290)	ARW	2010	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A300 (DSLR-A300)	ARW	2007	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A330 (DSLR A330)	ARW	2008	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A350 (DSLR-A350)	ARW	2007	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A380 (DSLR-A380)	ARW	2008	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A390 (DSLR-A390)	ARW	2010	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
 Sony	A450 (DSLR-A450)	ARW	2010	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A500 (DSLR-A500)	ARW	2008	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A550 (DSLR-A550)	ARW	2008	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A560 (DSLR-A560)	ARW	2010	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A580 (DSLR-A580)	ARW	2010	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A700 (DSLR-A700)	ARW	2007	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A850 (DSLR-A850)	ARW	2008	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A850 (DSLR-A850)	ARW	2008	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES); packed 12-bit like the A900
 Sony	A900 (DSLR-A900)	ARW	2008	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A3000 (ILCE-3000)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A3500 (ILCE-3500)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -1310,7 +1310,7 @@ Sony	DSC-F828	SRF	2003	unsupported	issue #702 (SRF refused); SRF not in the impo
 Sony	DSC-HX95	ARW	2018	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	DSC-HX99	ARW	2018	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	DSC-V3	SRF	2005	unsupported	SRF not in the import list
-Sony	DSC-RX100M7A	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	DSC-RX100M7A	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Sony	FX3 (ILME-FX3)	ARW	2020	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	FX30 (ILME-FX30)	ARW	2022	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	NEX-3	ARW	2010	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -1323,9 +1323,9 @@ Sony	NEX-6	ARW	2012	verified	issue #535: raw.pixls.us bulk check of all 100 Sony
 Sony	NEX-7	ARW	2010	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	NEX-C3	ARW	2010	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	NEX-F3	ARW	2012	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	NEX-VG20	ARW	2012	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	NEX-VG30	ARW	2012	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	NEX-VG900	ARW	2012	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	NEX-VG20	ARW	2012	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	NEX-VG30	ARW	2012	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	NEX-VG900	ARW	2012	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Sony	RX0 (DSC-RX0)	ARW	2017	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	RX0 II (DSC-RX0M2)	ARW	2018	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	RX1 (DSC-RX1)	ARW	2012	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -1335,7 +1335,7 @@ Sony	RX10 (DSC-RX10)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of al
 Sony	RX10 II (DSC-RX10M2)	ARW	2015	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	RX10 III (DSC-RX10M3)	ARW	2015	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	RX10 IV (DSC-RX10M4)	ARW	2017	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	RX10 V (DSC-RX10M5) (** see note)	ARW	2025	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	RX10 V (DSC-RX10M5) (** see note)	ARW	2025	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Sony	RX100 (DSC-RX100)	ARW	2012	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	RX100 II (DSC-RX100M2)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	RX100 III (DSC-RX100M3)	ARW	2013	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -1375,16 +1375,16 @@ Sony	Xperia 5 V Wide Camera	DNG	2023	unverified	DNG decoder (uncompressed, LJ92,
 Sony	Xperia Pro-I Rear Wide Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Sony	ZV-E10	ARW	2021	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	ZV-E1	ARW	2022	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	ZV-E10M2	ARW		unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	ZV-1M2	ARW	2022	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	ZV-1A	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	ILX-LR1	ARW	2023	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	ILCE - 1M2 (Final Support)	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	ILCE - 6100A	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	ILCE - 6400A	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	FX2 (ILMEFX2) (** see note)	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	FX3A (ILMEFX3A)	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
-Sony	RX1R III (DSC-RX1RM3)	ARW	2024	unverified	ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ZV-E10M2	ARW		unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ZV-1M2	ARW	2022	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ZV-1A	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ILX-LR1	ARW	2023	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ILCE - 1M2 (Final Support)	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ILCE - 6100A	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	ILCE - 6400A	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	FX2 (ILMEFX2) (** see note)	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	FX3A (ILMEFX3A)	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
+Sony	RX1R III (DSC-RX1RM3)	ARW	2024	unverified	ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)
 Xiaomi	Mi 11 Lite Front Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Xiaomi	Mi 11 Lite Rear Ultrawide Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)
 Xiaomi	Mi 11 Lite Rear Wide Camera	DNG	2021	unverified	DNG decoder (uncompressed, LJ92, lossy, Deflate, JPEG XL, LinearRaw)

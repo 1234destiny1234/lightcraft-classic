@@ -62,9 +62,9 @@ def classify(maker, camera, ext_field):
         if e == "CR3":
             return "unverified", "CR3", "CRX decoder: lossless and C-RAW 0x100 / 0x200 single-tile; other variants fall back to the preview"
         if e in ("NEF", "NRW"):
-            return "unverified", e, "NEF decoder (uncompressed, lossless, lossy, lossy after split); HE / HE* setting preview-only"
+            return "unverified", e, "NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only"
         if e == "ARW":
-            return "unverified", "ARW", "ARW decoder (uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)"
+            return "unverified", "ARW", "ARW decoder (ARW version 1, uncompressed, cRAW, packed 12-bit, lossless, downsized YCbCr)"
         if e == "SR2":
             return "unverified", "SR2", "SR2 decoder"
         if e == "RAF":

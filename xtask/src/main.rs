@@ -1037,6 +1037,139 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
         "https://raw.pixls.us/getfile.php/4204/nice/Leica%20-%20D-Lux%207%20-%204:3.RWL",
         "4f6db6492da83f7f2a5012591e370557249d1ed44d4c948784016605b799327c",
     ),
+    // one CC0 file per popular body not otherwise sampled (Nikon Z / D, Fujifilm X, Canon CR2, Pentax), plus the ARW
+    // version 1 bodies (DSLR-A100, A200…A390) and the A850: per-model verification (gaps.md row 10)
+    (
+        "arw-sony-a100-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A100/_DSC0258.ARW",
+        "4df7981ac4baec9648b4f106751ea4b09a6e27bc70a15f8ef09bec051fec362d",
+    ),
+    (
+        "arw-sony-a200-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A200/DSC00108.ARW",
+        "04eacd403d92e0c90da9d91b87615af8eda1afc963350d3ab774557c36763eef",
+    ),
+    (
+        "arw-sony-a230-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A230/DSC08026.ARW",
+        "09b1e3d96a286f2e36cc0ae7cbeae1ac19457d147fad2f43e4112c15754749f0",
+    ),
+    (
+        "arw-sony-a290-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A290/DSC00014.ARW",
+        "f56febc3621e0c4039a993ab289f9024c873e54f5749324e44cbaed59c4c2b8a",
+    ),
+    (
+        "arw-sony-a300-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A300/RAW_SONY_A300.ARW",
+        "daaa25127006b1178c298bce14de41c80ef0fd95101f0b3513e5126dfb8cced2",
+    ),
+    (
+        "arw-sony-a330-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A330/RAW_SONY_A330.ARW",
+        "e5737fc8debb5ddea8d557de050565f3516635e093d246450ea2b3d1a27947a3",
+    ),
+    (
+        "arw-sony-a350-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A350/DSC05472.ARW",
+        "6eb2ba8974aba7af9eab4a9350f8ab3fc294dc47b5afcc9e0d04be26643b2923",
+    ),
+    (
+        "arw-sony-a380-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A380/DSC05353.ARW",
+        "1bdf11f9bcc65568b855c4ab9aa456d566ba6104a888a5567b237cf175e75a6b",
+    ),
+    (
+        "arw-sony-a390-arw1.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A390/RAW_SONY_A390.ARW",
+        "6a4b2d1eea77993d3a37d8aeb4b6a14523f372354b1aaa00e3d0bd4e2da695a6",
+    ),
+    (
+        "arw-sony-a850.arw",
+        "https://raw.pixls.us/data/Sony/DSLR-A850/RAW_SONY_A850.ARW",
+        "b33cba6cd13158919fcb44efe47eb8dd29c333a74d9aa33fd67f25752394ec9f",
+    ),
+    (
+        "cr2-canon-2000d.cr2",
+        "https://raw.pixls.us/data/Canon/EOS%202000D/IMG_0531.CR2",
+        "84015493df96c877c0387071a627d6940187d75695b0598694901ac0ff83876a",
+    ),
+    (
+        "cr2-canon-5div.cr2",
+        "https://raw.pixls.us/data/Canon/EOS%205D%20Mark%20IV/B13A0729.CR2",
+        "85bfec149261ffbae90797e45caae5e204e1e61ac62b92783925b5ee0f267d76",
+    ),
+    (
+        "cr2-canon-6dii.cr2",
+        "https://raw.pixls.us/data/Canon/EOS%206D%20Mark%20II/6DII-RAW.CR2",
+        "712815b910fa473f7aaeb97c0804292d996b16dd6b974a3ab9a7195a2e41d90c",
+    ),
+    (
+        "nef-nikon-d750.nef",
+        "https://raw.pixls.us/data/Nikon/D750/compressed_12_bit.NEF",
+        "e4a3f85e014275fc0a47600a373af95ec850872a5f6cf87649bcaa42b77ef2e4",
+    ),
+    ("nef-nikon-d780.nef", "https://raw.pixls.us/data/Nikon/D780/DSC_0334.NEF", "3178d0656e3b5fbe90176e38a1cd608d0b69292299445932dddc9a0b2d196b36"),
+    (
+        "nef-nikon-d850.nef",
+        "https://raw.pixls.us/data/Nikon/D850/Nikon-D850-12bit-compressed.NEF",
+        "ba11bc767b4f67144a8b7b5d27fa0fe2be8e69e5fcc5e0161f80623794f294f4",
+    ),
+    ("nef-nikon-z5.nef", "https://raw.pixls.us/data/Nikon/Z%205/DSC_0517.NEF", "9870248c45532080c2459f3b52cdcc4a07bc8846ad50cbb81c7c1c6dc5e36d91"),
+    ("nef-nikon-z50.nef", "https://raw.pixls.us/data/Nikon/Z%2050/DSC_0441.NEF", "b25081cf9adcd51fec020b6d227ff094bc0327cbd26d76bad7e1dee3fb4c034a"),
+    (
+        "nef-nikon-z6ii-packed14.nef",
+        "https://raw.pixls.us/getfile.php/4162/nice/Nikon%20-%20Z%206_2%20-%2014bit%20uncompressed%20%283:2%29.NEF",
+        "4c75e683bd4e751615c93842f519579cde8e0e7fbee3cc58ba7f6a1a23f060dc",
+    ),
+    (
+        "nef-nikon-z7ii.nef",
+        "https://raw.pixls.us/data/Nikon/Z%207_2/Z72_0027.NEF",
+        "dc83d3e49db54ca9c3a1e41dc847afd213c822d482c40158e42d01ee8968f33b",
+    ),
+    ("nef-nikon-zfc.nef", "https://raw.pixls.us/data/Nikon/Z%20fc/_DSC0018.nef", "4099ecc46ebaca26e2a66a96a8313fed5e8c707b3836ccf0e77a134844b041c1"),
+    (
+        "pef-pentax-k1ii.pef",
+        "https://raw.pixls.us/data/Pentax/K-1%20Mark%20II/_IMG2388.PEF",
+        "c52a0c841dda9ce1e28c7dbb3176d1f00f1799d8b70bc2e642cff2a2f0a41580",
+    ),
+    (
+        "pef-pentax-k3iii.pef",
+        "https://raw.pixls.us/data/Pentax/K-3%20Mark%20III/IMGP9854.PEF",
+        "29714bc4cc754a81d2ab154a4ecf1eb5fa125d3901b10f3bd88d731c674f69c4",
+    ),
+    ("pef-pentax-k70.pef", "https://raw.pixls.us/data/Pentax/K-70/IMGP6854.PEF", "1d64c6aa71680642ba8f00b6f6105df3e66a4534e631f422fbf3316273c4408c"),
+    ("pef-pentax-kf.pef", "https://raw.pixls.us/data/Pentax/KF/IMGP0063.PEF", "ddc9cdf399a7210b203dee1765ab9f4165a2e695da59bce6bcabf75b77174a4b"),
+    (
+        "raf-fujifilm-x100v.raf",
+        "https://raw.pixls.us/data/Fujifilm/X100V/DSCF0733.RAF",
+        "c0011a458e2de30a8fb37b2284f525c2b986177acff56424f9d47b59a5ea6791",
+    ),
+    (
+        "raf-fujifilm-x100vi.raf",
+        "https://raw.pixls.us/data/Fujifilm/X100VI/DSCF0074.RAF",
+        "8e5e4d8d2e0a865ca79b3d40734b6abc2f4b00281afea8b9bd3d8c29808f2fb3",
+    ),
+    (
+        "raf-fujifilm-xe4.raf",
+        "https://raw.pixls.us/data/Fujifilm/X-E4/fuji_xe4_32_lossless.RAF",
+        "ce4215079e4c6c8a86d493e15f6e574e4aa7684b346ef3439026c835ed2c8948",
+    ),
+    (
+        "raf-fujifilm-xs10.raf",
+        "https://raw.pixls.us/data/Fujifilm/X-S10/Fujifilm-X-S10-compressed.RAF",
+        "9419d1408ebf850395e5dd563beb96309466546252caf541466034c9cb7e9724",
+    ),
+    (
+        "raf-fujifilm-xs20.raf",
+        "https://raw.pixls.us/data/Fujifilm/X-S20/DSCF2526.RAF",
+        "737c1551843282d4963ccb351a4d6409f3eaf172928d563bbaf72fe0f1f74fdd",
+    ),
+    (
+        "raf-fujifilm-xt30ii.raf",
+        "https://raw.pixls.us/data/Fujifilm/X-T30%20II/compressed_X-T30II.RAF",
+        "5e2678038377cc7f146ceb7693c08535fa1af162cec705d06b0446c3d3017d47",
+    ),
 ];
 
 /// Video test clips for M14 (`corpus/video/`), each `(file name, URL, sha256, licence and source)`.

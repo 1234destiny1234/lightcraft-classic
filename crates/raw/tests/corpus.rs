@@ -594,6 +594,52 @@ fn corpus_sony_a900_packed12() {
     assert_eq!((c.x, c.y, c.width, c.height), (16, 8, 6048, 4032));
 }
 
+/// Mean absolute step between same-colour neighbours (two columns apart) over the middle rows, relative to the mean
+/// level: a misread bit stream or layout is noise and scores far higher than a photo.
+fn same_colour_roughness(img: &lcc_raw::RawImage) -> f64 {
+    let lcc_raw::RawData::U16(d) = &img.data else { return f64::INFINITY };
+    let (w, h) = (img.width, img.height);
+    let (mut step, mut level) = (0f64, 0f64);
+    for y in (h / 4..3 * h / 4).step_by(7) {
+        for x in 0..w - 2 {
+            step += (f64::from(d[y * w + x]) - f64::from(d[y * w + x + 2])).abs();
+            level += f64::from(d[y * w + x]);
+        }
+    }
+    step / level.max(1.0)
+}
+
+/// Gap 10: Sony ARW version 1 (DSLR-A100, A200…A390, Huffman-coded columns) and the Z 6II's table-less "Packed
+/// 14 bits" NEF (#769) decode from sensor data with the measured geometry and black level, and read as a photo.
+#[test]
+fn corpus_arw1_and_packed_nef() {
+    let cases: &[(&str, (usize, usize, u32), f32)] = &[
+        ("arw-sony-a100-arw1.arw", (3880, 2600, 12), 0.0),
+        ("arw-sony-a200-arw1.arw", (3880, 2600, 12), 0.0),
+        ("arw-sony-a230-arw1.arw", (3880, 2600, 12), 0.0),
+        ("arw-sony-a290-arw1.arw", (4600, 3064, 12), 0.0),
+        ("arw-sony-a300-arw1.arw", (3880, 2600, 12), 0.0),
+        ("arw-sony-a330-arw1.arw", (3880, 2600, 12), 0.0),
+        ("arw-sony-a350-arw1.arw", (4600, 3064, 12), 0.0),
+        ("arw-sony-a380-arw1.arw", (4600, 3064, 12), 0.0),
+        ("arw-sony-a390-arw1.arw", (4600, 3064, 12), 0.0),
+        ("nef-nikon-z6ii-packed14.nef", (6064, 4040, 14), 1008.0),
+    ];
+    for &(name, dims, black) in cases {
+        let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
+            eprintln!("skip: {name} absent");
+            continue;
+        };
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!((img.width, img.height, img.bits), dims, "{name}");
+        assert_eq!(img.black.values.first().copied(), Some(black), "{name}");
+        let r = same_colour_roughness(&img);
+        assert!(r < 0.3, "{name}: same-colour roughness {r:.3}");
+        let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no as-shot WB"));
+        assert!(wb[0] > 1.0 && wb[2] > 1.0, "{name}: WB {wb:?}");
+    }
+}
+
 /// Issue #535: pre-2017 Sony bodies without crop tags shot in the camera's 16:9 mode. The ILCE-7SM2 records the
 /// 16:9 size in `FullImageSize`, the DSLR-A580 only in the Exif image size; both crops are centred vertically (each
 /// camera JPEG registered on its raw) and drop the right-edge padding, so the image matches its JPEG's aspect ratio

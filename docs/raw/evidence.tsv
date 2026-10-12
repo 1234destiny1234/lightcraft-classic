@@ -150,20 +150,20 @@ Pentax	K-5 IIs	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Pentax	K10D	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Ricoh	GR III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
 Samsung	TL500 (EX1)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
-Sony	A100 (DSLR-A100)	unsupported	issue #702: regression, refused as not a readable photo
-Sony	A200 (DSLR-A200)	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A230 (DSLR-A230)	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A290 (DSLR-A290)	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A300 (DSLR-A300)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A100 (DSLR-A100)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A200 (DSLR-A200)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A230 (DSLR-A230)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A290 (DSLR-A290)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A300 (DSLR-A300)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
 Sony	A3000 (ILCE-3000)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A33 (SLT-A33)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A330 (DSLR A330)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A330 (DSLR A330)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
 Sony	A35 (SLT-A35)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A350 (DSLR-A350)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A350 (DSLR-A350)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
 Sony	A3500 (ILCE-3500)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A37 (SLT-A37)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A380 (DSLR-A380)	preview	issue #535: preview-only on the raw.pixls.us sample
-Sony	A390 (DSLR-A390)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A380 (DSLR-A380)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
+Sony	A390 (DSLR-A390)	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (ARW version 1, xtask RAW_SAMPLES)
 Sony	A450 (DSLR-A450)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A500 (DSLR-A500)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A5000 (ILCE-5000)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -203,7 +203,7 @@ Sony	A7R V (ILCE-7RM5)	verified	issue #535: raw.pixls.us bulk check of all 100 S
 Sony	A7S (ILCE-7S)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7S II (ILCE-7SM2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A7s III (ILCE-7SM3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
-Sony	A850 (DSLR-A850)	preview	issue #535: preview-only on the raw.pixls.us sample
+Sony	A850 (DSLR-A850)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES); packed 12-bit like the A900
 Sony	A9 (ILCE-9)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A9 II (ILCE-9M2)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
 Sony	A9 III (ILCE-9M3)	verified	issue #535: raw.pixls.us bulk check of all 100 Sony bodies (decodes; BL/WL/crop/WB vs ExifTool)
@@ -260,3 +260,24 @@ Konica Minolta	DiMAGE A1	verified	corpus: crates/raw/tests/corpus.rs corpus_mino
 Konica Minolta	DiMAGE A2	verified	corpus: crates/raw/tests/corpus.rs corpus_minolta_mrw (xtask RAW_SAMPLES)
 Konica Minolta	DiMAGE A200	verified	corpus: crates/raw/tests/corpus.rs corpus_minolta_mrw (xtask RAW_SAMPLES)
 Konica Minolta	Maxxum 7D Dynax 7D	verified	corpus: crates/raw/tests/corpus.rs corpus_minolta_mrw (xtask RAW_SAMPLES)
+Nikon	Z 6 II	verified	corpus: crates/raw/tests/corpus.rs corpus_arw1_and_packed_nef (table-less "Packed 14 bits", #769)
+Nikon	Z 5	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z 50	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z 7 II	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	Z fc	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D850	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D750	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Nikon	D780	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X100V**	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X100VI	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-E4	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-S10	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-S20	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Fujifilm	X-T30 II	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS-5D Mark IV (** see note)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 6D Mark II	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Canon	EOS 1500D (EOS Rebel T7, EOS Kiss X90, EOS 2000D)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Pentax	K-1 II (* see note)	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Pentax	K-3 Mark III	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Pentax	K-70	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)
+Pentax	KF	verified	corpus: crates/raw/tests/corpus.rs (xtask RAW_SAMPLES)

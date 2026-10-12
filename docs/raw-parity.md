@@ -1,6 +1,6 @@
 # RAW parity: cameras, formats, demosaic, colour and lens profiles
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
 
 Raw processing is the deepest single dimension of Lightroom parity: a photographer whose camera
 does not decode, or decodes with the wrong colour, cannot switch. This document measures it model by
@@ -14,16 +14,16 @@ ranked in [gaps.md](gaps.md). Details per format: [cr3.md](cr3.md),
 | Measure | Value | Kind |
 |---|---:|---|
 | Adobe-listed camera models | **1,446** | measured: [raw/adobe-cameras.tsv](raw/adobe-cameras.tsv) |
-| Decoded from sensor data and **verified** on a real file | **247** (17%) | measured: [raw/evidence.tsv](raw/evidence.tsv) |
-| Decoder path should handle it, **unverified** | **1,016** (70%) | measured from the format rules (632 of them DNG, mostly phones) |
-| **Preview-only** (embedded JPEG) | **147** (10%) | measured |
-| **Unsupported** (not imported, refused or decodes wrongly) | **36** (2%) | measured |
-| Models added since 2017 (Camera Raw 10+): verified / unverified / preview / unsupported | 83 / 656 / 7 / 8 of 754 | measured |
-| **Share of photographers whose camera fully works** (decodes from sensor data), use-weighted | **~87%** | estimated: measured classes × written usage weights × per-format confidence |
-| …of which on a body we have verified | **~42%** | estimated, same weights |
+| Decoded from sensor data and **verified** on a real file | **278** (19%) | measured: [raw/evidence.tsv](raw/evidence.tsv) |
+| Decoder path should handle it, **unverified** | **995** (69%) | measured from the format rules (632 of them DNG, mostly phones) |
+| **Preview-only** (embedded JPEG) | **138** (10%) | measured |
+| **Unsupported** (not imported, refused or decodes wrongly) | **35** (2%) | measured |
+| Models added since 2017 (Camera Raw 10+): verified / unverified / preview / unsupported | 99 / 640 / 7 / 8 of 754 | measured |
+| **Share of photographers whose camera fully works** (decodes from sensor data), use-weighted | **~89%** | estimated: measured classes × written usage weights × per-format confidence |
+| …of which on a body we have verified | **~57%** | estimated, same weights |
 | Camera colour: Adobe profiles vs ours | 1,500 Adobe Standard profiles, 481 models with Camera Matching profiles vs **4 bundled profiles** + per-file fits + 52 spectral matrices | measured (bundle listing, Adobe list, `assets/camera-profiles`) |
 | Lens profiles: Adobe vs ours | **3,635 vs 0** (in-file corrections only) | measured |
-| **RAW readiness** (decoding 60%, colour 25%, lens 15%) | **~57%** (range 51–61%) | estimated, see [Scores](#scores) |
+| **RAW readiness** (decoding 60%, colour 25%, lens 15%) | **~58%** (range 52–62%) | estimated, see [Scores](#scores) |
 
 Re-measure with `python3 docs/raw/coverage.py` (standard library only): it classifies every Adobe
 model from the format rules in the script (which mirror `crates/raw/src`) plus the per-model evidence,
@@ -41,7 +41,7 @@ committed table is stale.
   `lcc_engine::import::EXTENSIONS`, and `KNOWN_UNSUPPORTED` in `crates/raw/tests/corpus.rs`. Doc
   claims were not used.
 - **Verified** means a real file from that body decoded from sensor data in: the corpus test over the
-  `RAW_SAMPLES` manifest (`xtask/src/main.rs`, 101 CC0 files; bodies whose sample is in
+  `RAW_SAMPLES` manifest (`xtask/src/main.rs`, 155 CC0 files; bodies whose sample is in
   `KNOWN_UNSUPPORTED` excluded), `crates/raw/tests/cr3_corpus.rs` (3 bodies exact against an external decoder;
   the EOS R5 Mark II pinned, with a QP-map check of 33,665 private files), the RAF reference
   check ([raf-compression.md](raf-compression.md)), and the raw.pixls.us bulk checks recorded in issue
@@ -63,38 +63,38 @@ committed table is stale.
 
 | Maker | Adobe models | verified | unverified | preview | unsupported | Main reason for preview / unsupported |
 |---|---:|---:|---:|---:|---:|---|
-| Sony | 149 | 86 | 51 | 9 | 3 | DSLR-A200…A390 and A850 12-bit compressed ARW (preview, #535); A100 and DSC-F828 refused (regression #702); SRF not imported |
-| Canon | 134 | 12 | 99 | 21 | 2 | CRW (2000–2004 bodies) preview; EOS-1D / 1Ds TIFF raws not imported |
+| Sony | 149 | 96 | 51 | 0 | 2 | SRF (DSC-F828, DSC-V3): encrypted four-colour RGBE data, not decoded |
+| Canon | 134 | 15 | 96 | 21 | 2 | CRW (2000–2004 bodies) preview; EOS-1D / 1Ds TIFF raws not imported |
 | Samsung | 128 | 5 | 123 | 0 | 0 | compressed SRW decodes (NX300, NX500, NX2000, NX3000 verified; NX1, NX30, NX mini checked too but not in Adobe's list as such) |
 | Apple | 113 | 1 | 112 | 0 | 0 | — (DNG / ProRAW) |
 | Panasonic | 104 | 93 | 11 | 0 | 0 | — |
-| Nikon | 99 | 5 | 94 | 0 | 0 | — (HE / HE★ is a per-shot setting, preview-only) |
-| Fujifilm | 97 | 16 | 55 | 26 | 0 | pre-X FinePix RAF without a raw IFD (estimated split) |
+| Nikon | 99 | 13 | 86 | 0 | 0 | — (HE / HE★ is a per-shot setting, preview-only) |
+| Fujifilm | 97 | 22 | 49 | 26 | 0 | pre-X FinePix RAF without a raw IFD (estimated split) |
 | Google | 88 | 1 | 87 | 0 | 0 | — |
 | Olympus | 71 | 5 | 66 | 0 | 0 | — (compressed ORF decodes since 2026-10-13; 2 bodies verified) |
 | Leica | 61 | 13 | 48 | 0 | 0 | — |
 | Xiaomi, Oppo, LG, Huawei, OnePlus, Motorola, Nokia | 139 | 0 | 139 | 0 | 0 | — (DNG) |
-| Pentax / Ricoh | 60 | 4 | 56 | 0 | 0 | — |
+| Pentax / Ricoh | 60 | 8 | 52 | 0 | 0 | — |
 | Hasselblad | 34 | 0 | 2 | 32 | 0 | Hasselblad-compressed 3FR / FFF |
 | Phase One / Leaf / Mamiya | 59 | 0 | 0 | 43 | 16 | IIQ, MOS preview; TIFF raws and MEF not imported |
 | Casio | 26 | 0 | 26 | 0 | 0 | — (DNG) |
 | DJI | 21 | 0 | 21 | 0 | 0 | — (DNG) |
 | OM Digital Solutions | 7 | 0 | 7 | 0 | 0 | — (compressed ORF, unverified) |
 | Kodak, Konica Minolta, Epson, Sigma, GoPro, Contax, others | 56 | 6 | 19 | 16 | 15 | DCR, GPR not imported; KDC, ERF, X3F preview (MRW decodes since 2026-10-13: DiMAGE 7, 7Hi, A1, A2, A200, Dynax 7D verified) |
-| **All** | **1,446** | **247 (17%)** | **1,016 (70%)** | **147 (10%)** | **36 (2%)** | |
+| **All** | **1,446** | **278 (19%)** | **995 (69%)** | **138 (10%)** | **35 (2%)** | |
 
 ## By use (estimated)
 
 | Bucket | Weight | Camera fully works | On a verified body | Why |
 |---|---:|---:|---:|---|
-| Canon | 33% | 73% | 19% | 18 of the 22 popular bodies write CR3; 4 of them verified (M50, R8, R100, R5 Mark II), the rest at 0.6 |
-| Sony | 27% | 98% | 91% | bulk-checked |
-| Nikon | 16% | 91% | 12% | decoders cover every NEF coding but HE; few bodies verified |
-| Fujifilm | 10% | 91% | 45% | |
+| Canon | 33% | 74% | 30% | 18 of the 22 popular bodies write CR3; 4 of them verified (M50, R8, R100, R5 Mark II), the rest at 0.6 |
+| Sony | 27% | 99% | 92% | bulk-checked; ARW version 1 (A100, A200…A390) decodes |
+| Nikon | 16% | 96% | 58% | decoders cover every NEF coding but HE; Z 5, Z 50, Z 6II, Z 7II, Z fc, D750, D780, D850 verified |
+| Fujifilm | 10% | 93% | 82% | X100V, X100VI, X-E4, X-S10, X-S20, X-T30 II added to the verified bodies |
 | Panasonic | 4% | 100% | 98% | bulk-checked |
 | OM / Olympus | 3% | 80% | 1% | compressed ORF decodes; 2 of the popular bodies' predecessors verified, the rest at 0.8 |
 | Phones | 3% | 93% | 1% | DNG |
-| Pentax / Ricoh | 1.5% | 94% | 14% | |
+| Pentax / Ricoh | 1.5% | 98% | 68% | K-1 II, K-3 III, K-70, KF verified |
 | Leica | 1% | 95% | 5% | |
 | DJI | 1% | 95% | 0% | |
 | Medium format and others | 0.5% | 29% | 3% | IIQ, 3FR, X3F; MRW decodes |
@@ -120,13 +120,13 @@ checked, and Canon, the largest bucket, is the weakest of the big four.
 | CR3 | dual-pixel raw | ⬜ | never substituted |
 | CRW | all | ⬜ | preview |
 | NEF | uncompressed, lossless, lossy type 1 / 2, lossy after split | ✅ | D5100, D7000, D7500, Z f corpus; ~60 NEFs by hand; #633 |
-| NEF | packed 14-bit stored under a compressed tag (Z 6II uncompressed) | ⬜ | #769; fix in PR #671 (not merged) |
+| NEF | packed 12 / 14-bit stored under a compressed tag without a linearization table (Z 6II "Packed 14 bits") | ✅ | #769; `nef.rs` `packed_lsb` (rows tight or padded to 16 bytes, the layouts of upstream PR #671); Z 6II CC0 file in the corpus |
 | NEF | High Efficiency / HE★ (JPEG XS) | ⬜ | named, preview (#193); needs a JPEG XS decoder |
 | ARW | uncompressed, cRAW (ARW2), lossless LJ92 (L / M / S) | ✅ | 86 bodies (#535); M/S black level 1024 |
-| ARW | packed 12-bit (A900) | ✅ | one CC0 file; A850 unmeasured |
+| ARW | packed 12-bit (A900, A850) | ✅ | one CC0 file each |
 | ARW | ARW6 Compressed / HQ (compression 32766; ILCE-7RM6) | ✅ | 8 CC0 files; 12-bit mode unsupported; `docs/arw6-compression.md` |
-| ARW | 12-bit compressed of DSLR-A200…A390 | ⬜ | preview (#535) |
-| ARW | A100 ARW; SRF (F828, V3) | ⬜ | refused (#702); SRF not imported |
+| ARW | ARW version 1: 12-bit Huffman-coded columns of the DSLR-A100 and A200…A390 | ✅ | `arw1.rs`; one CC0 file per body (9) in the corpus, black 0; the A100's frame and WB from its MRI block |
+| ARW | SRF (DSC-F828, V3) | ⬜ | preview only (#702); encrypted 14-bit RGBE (four-colour) data |
 | ARW | ARQ pixel shift | ⬜ | no code |
 | SR2 | DSC-R1 | ✅ | CC0 3221 sample |
 | RAF | uncompressed, lossless and lossy compressed; Bayer and X-Trans; GFX 14/16-bit | ✅ | 24 files from 13 bodies exact |
@@ -229,10 +229,10 @@ drone DNG users (~9% of photographers by the weights above); Adobe reaches nearl
 
 | Part | Weight | Score | Basis |
 |---|---:|---:|---|
-| Decoding | 60% | **78%** | use-weighted 87% × 0.9 (78.3%) for per-body decode bugs still surfacing (levels, crops, WB: #535, #455, #461, #702) |
+| Decoding | 60% | **80%** | use-weighted 89% × 0.9 (80.1%) for per-body decode bugs still surfacing (levels, crops, WB: #535, #455, #461, #702) |
 | Colour | 25% | **35%** | see [Colour](#colour) |
 | Lens profiles | 15% | **10%** | see [Lens profiles](#lens-profiles) |
-| **RAW readiness** | 100% | **~57%** (range 51–61%) | 47.0 + 8.75 + 1.5; demosaic and highlight quality unmeasured |
+| **RAW readiness** | 100% | **~58%** (range 52–62%) | 48.1 + 8.75 + 1.5; demosaic and highlight quality unmeasured |
 
 The previous estimate (earlier on 2026-10-10) was ~50%, with decoding at ~78% weighted by maker
 from the format list alone. Measured model by model, decoding comes out about the same; the change is
@@ -248,11 +248,9 @@ works, from [raw/usage-weights.tsv](raw/usage-weights.tsv).
 | # | Camera / variant | Gain (points of photographers) | Hours | Gain per hour | Needs |
 |---:|---|---:|---:|---:|---|
 | 1 | CR3: remaining CRX variants, then verify the other 14 popular CR3 bodies | +6.2 | 25–45 | ~0.19 | samples per body (raw.pixls.us has most) |
-| 2 | Verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies (one CC0 file each, fix what breaks) | +2.0 | 8–15 | ~0.17 | public samples |
-| 3 | Nikon packed 14-bit under a compressed tag (Z 6II uncompressed, #769) | +0.2 | 1–2 | ~0.13 | PR #671 exists |
-| 4 | Sony DSLR-A200…A390 / A850 12-bit compressed ARW | +0.4 | 3–6 | ~0.08 | samples on raw.pixls.us |
-| 5 | Pre-X FinePix RAF | +0.6 | 4–8 | ~0.08 | samples |
-| 6 | Sony A100 and DSC-F828 regression (#702) | +0.1 | 1–2 | ~0.07 | samples on raw.pixls.us |
+| 2 | Verify the remaining popular bodies (Canon 90D, 250D, X-H2S, Z 6III, Z 8, Z 9 lossless; one CC0 file each) | +0.5 | 3–6 | ~0.1 | raw.pixls.us has no 90D / 250D / X-H2S sample |
+| 5 | Pre-X FinePix RAF (SuperCCD: 16-bit big-endian words in a 45°-rotated lattice; SR / SR Pro bodies interleave two pixel sets) | +0.6 | 6–10 | ~0.07 | samples (E900, F700, S2Pro, S5Pro, S6500fd measured: strips are exactly `RawImageFullSize` × 2 bytes) |
+| 6 | Sony DSC-F828 / V3 SRF (encrypted, four-colour RGBE CFA) | < 0.1 | 3–6 | ~0.01 | a four-colour demosaic path |
 | 7 | Canon CRW (2000–2004 bodies) | +1.2 by the uniform tail weight, far less by real use | 6–12 | ≤ 0.1 | samples |
 | 8 | Nikon HE / HE★ NEF (Z 8, Z 9, Z 6III, Z f, Z50II, Z5II set to HE) | +1.1 | 20–40 | ~0.04 | a pure-Rust JPEG XS decoder |
 | 9 | ~~Compressed SRW~~, ~~MRW~~ (done 2026-10-13), Hasselblad 3FR, IIQ, X3F, KDC, ERF, DCR, MEF, GPR | +0.6 together | 45–85 | ~0.01 | samples; low use |
@@ -270,6 +268,7 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 (later) | minor | ARW version 1 (`arw1.rs`: DSLR-A100, A200…A390) and the Z 6II's table-less packed NEF (#769) decode; 31 CC0 files pinned (one per popular Nikon, Fujifilm, Canon CR2 and Pentax body, the ARW1 bodies and the A850); re-measured: 278 verified, 995 unverified, 138 preview, 35 unsupported; use-weighted 89% (57% on verified bodies); decoding 80%, RAW readiness ~58% |
 | 2026-10-13 | minor | Minolta MRW decoded (`vendor/mrw.rs`: 16-bit words and 12-bit packing, WBG white balance in layout order): 7 CC0 files from 6 bodies pinned and checked against the camera JPEG; re-measured: 247 verified, 1,016 unverified, 147 preview; use-weighted unchanged at 87% |
 | 2026-10-10 | minor | Compressed ORF: pointer to the two Olympus patents that describe the method, as a clean-room starting point |
 | 2026-10-13 | minor | Compressed Samsung SRW (32770 row blocks, 32772 Huffman, 32773 blocks) decoded: 7 CC0 files from 7 bodies pinned and checked against the camera JPEG; re-measured: 241 verified, 1,011 unverified, 158 preview; use-weighted unchanged at 87% (Samsung carries no weight bucket) |

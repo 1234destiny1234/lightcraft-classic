@@ -1,6 +1,6 @@
 # Target-app parity: the app vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close the app is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -47,7 +47,7 @@ phase #85, duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | Dimension | Breadth | Ready for real work | Remaining | Doc |
 |---|---:|---:|---:|---|
 | Features (weighted areas below) | ~77% (checklist 81.1%, measured) | ~61% | 600–1,100 h | [Features](#features) |
-| ↳ RAW cameras, colour and lens profiles (part of features) | 86% of Adobe's 1,446 models decode (16% verified), measured | ~57% | 240–465 h | [raw-parity.md](raw-parity.md) |
+| ↳ RAW cameras, colour and lens profiles (part of features) | 88% of Adobe's 1,446 models decode (19% verified), measured | ~58% | 240–465 h | [raw-parity.md](raw-parity.md) |
 | UI/UX fidelity | ~85% | ~70% | 40–70 h | [ui-parity.md](ui-parity.md) |
 | File formats (non-raw: images, sidecars, presets, catalogs) | ~85% | ~70% | 30–55 h | [file-format-parity.md](file-format-parity.md) |
 | Hardware | ~50% | ~40% | 40–80 h (+ tethering and printing, counted under Classic modules) | [hardware-parity.md](hardware-parity.md) |
@@ -67,7 +67,7 @@ from the checklist sections and the deep-dive documents.
 | Area | Weight | Breadth | Ready | Remaining | Notes |
 |---|---:|---:|---:|---:|---|
 | Import and library (import, folders, albums, smart albums, keywords, metadata, search, faces) | 15% | 90% | 80% | 25–45 h | checklist A–E 83–92%; robust journal; 85k-photo libraries |
-| RAW decoding and camera coverage | 15% | 86% | 78% | 105–205 h | [raw-parity.md](raw-parity.md), measured model by model: 87% of photographers' cameras decode (use-weighted), × 0.9 for per-body bugs; CR3 variants, HE NEF |
+| RAW decoding and camera coverage | 15% | 88% | 80% | 105–205 h | [raw-parity.md](raw-parity.md), measured model by model: 89% of photographers' cameras decode (use-weighted), × 0.9 for per-body bugs; CR3 variants, HE NEF |
 | Colour, camera profiles, render fidelity | 10% | 65% | 35% | 80–150 h | 4 bundled profiles vs Adobe's 1,500; per-file fits median ΔE ~5 vs the camera JPEG, ~10% far off; no fidelity suite ([raw-parity.md](raw-parity.md#colour)) |
 | Global develop adjustments (light, colour, curves, grading, effects, detail) | 15% | 93% | 70% | 30–60 h | checklist F 91.7%; character tuned by eye |
 | Optics, lens profiles, crop and geometry | 6% | 80% | 50% | 40–80 h | no lens database; crop / Upright complete |
@@ -297,6 +297,7 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | ARW version 1 and the Z 6II's packed NEF decode; 31 popular bodies verified (raw-parity.md): models that decode 87% → 88%, verified 17% → 19%, use-weighted 87% → 89%, RAW decoding 78% → 80%, RAW readiness ~57% → ~58%; headline unchanged after rounding |
 | 2026-10-13 | minor | Views row: LR-VIEW-ZOOM ✅ (mask overlays and soft proofing are zoom windows), remaining 15–30 h → 10–25 h; checklist P0 share moves by one row (see `cargo xtask parity`) |
 | 2026-10-13 | minor | Compressed ORF decoded (raw-parity.md): models that decode 81% → 86%, use-weighted share 85% → 87%, RAW decoding 77% → 78%, RAW remaining 255–480 → 240–465 h; full-app headline (~61%) unchanged after rounding; ORF dropped from the beta blockers |
 | 2026-10-11 | minor | EOS R5 Mark II CR3 verified (raw-parity.md): use-weighted share whose camera decodes 84% → 85%, RAW decoding 76% → 77%; full 60.6% → 60.7%, mainstream depth 71.8% → 72.1%, essentials depth 77.4% → 77.5%; the rounded numbers (~61%, ~49%, ~64%) are unchanged |
