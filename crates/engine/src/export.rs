@@ -1863,9 +1863,7 @@ impl PreparedExport {
                     DngCompression::Lossless => lcc_raw::DngCompression::Lj92 { tile: 256 },
                     DngCompression::Deflate => lcc_raw::DngCompression::Deflate { tile: 256, half: false },
                     DngCompression::Uncompressed => lcc_raw::DngCompression::Uncompressed,
-                    DngCompression::Lossy => {
-                        lcc_raw::DngCompression::LossyJpeg { tile: 256, quality: quality.clamp(1, 100), long_edge: lossy_edge }
-                    }
+                    DngCompression::Lossy => lcc_raw::DngCompression::LossyJpeg { tile: 256, quality: quality.clamp(1, 100), long_edge: lossy_edge },
                 };
                 let dng = lcc_raw::write_dng(&raw, &lcc_raw::DngWriteOptions { xmp: Some(packet), compression, ..Default::default() })
                     .map_err(|e| e.to_string())?;

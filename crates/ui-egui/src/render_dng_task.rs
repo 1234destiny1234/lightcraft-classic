@@ -16,7 +16,7 @@ use lcc_engine::activity::{Cancel, TaskGuard};
 use lcc_engine::render_dng::{self, Rendered};
 use serde_json::{Value, json};
 
-use crate::LightcraftApp;
+use crate::LccApp;
 
 pub struct RenderDngTask {
     pub total: usize,
@@ -27,7 +27,7 @@ pub struct RenderDngTask {
 
 /// Start Render to DNG for `p` on a worker → `{background: true, total}`; `None` when this app
 /// can't write from a worker (the engine command then runs as usual).
-pub fn start(app: &mut LightcraftApp, p: &Value) -> Option<Result<Value, String>> {
+pub fn start(app: &mut LccApp, p: &Value) -> Option<Result<Value, String>> {
     let write = app.services.write_shared.clone()?;
     if app.render_dng.is_some() {
         return Some(Err("Render to DNG is already running".into()));
@@ -65,7 +65,7 @@ pub fn start(app: &mut LightcraftApp, p: &Value) -> Option<Result<Value, String>
 }
 
 /// Per frame: keep the activity row up to date; when the worker is done, add the DNGs and report.
-pub fn poll(app: &mut LightcraftApp, ctx: &egui::Context) {
+pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     let Some(task) = &app.render_dng else { return };
     match task.rx.try_recv() {
         Ok((done, cancelled)) => {

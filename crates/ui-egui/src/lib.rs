@@ -45,9 +45,9 @@ pub mod plate;
 pub mod print_ui;
 pub mod region;
 pub mod render;
+pub mod render_dng_task;
 /// The module shell's frame steps (fork-owned).
 mod shell;
-pub mod render_dng_task;
 pub mod shortcuts;
 pub mod sidebar;
 pub mod slideshow_ui;
