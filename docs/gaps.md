@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 18: video crop in loupe, Capture Frame and export; gap 18: export speed and audio codecs, 12–20 h left; gap 18: M14 video stack landed, 15–25 h left; gap 18: video sequential decode, pixel aspect, deinterlace; gap 18: video engine commands; gap 18: video plan, 55–80 h, `lcc-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-13 · **Change:** minor (gap 23: arrow keys move the crop and Remove spots; gap 18: video crop in loupe, Capture Frame and export; gap 18: export speed and audio codecs, 12–20 h left; gap 18: M14 video stack landed, 15–25 h left; gap 18: video sequential decode, pixel aspect, deinterlace; gap 18: video engine commands; gap 18: video plan, 55–80 h, `lcc-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -39,7 +39,7 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 20 | **Long-tail raw formats**: compressed SRW, ARQ pixel shift, IIQ, Hasselblad compression, X3F, CRW, MRW, ERF, KDC, DCR, MEF, GPR, old FinePix | raw-parity.md | small user share each | 45–85 | [raw-parity](raw-parity.md) |
 | 21 | **Localization**: 9 of 15 shipped languages partial (74–99% of catalog messages), lower-layer errors English; Hindi, Arabic, Indonesian, Korean, Vietnamese absent; no RTL or complex shaping | measured from catalogs | non-English users see mixed English | 55–90 (shipped to full); 145–255 (five new) | [localization-parity](localization-parity.md) |
 | 22 | **Pen pressure**, OS monitor profiles, follow-window colour | hardware-parity.md | brush users with tablets; multi-monitor setups | 11–22 | [hardware-parity](hardware-parity.md) |
-| 23 | **Accessibility** audit with screen readers; canvas tools keyboard-reachable | LR-BEHAV-ACCESS 🟡 | blind and low-vision users | 10–20 | [ui-parity](ui-parity.md) |
+| 23 | **Accessibility** audit with screen readers; mask pins and brushing keyboard-reachable (crop and Remove spots answer the arrow keys) | LR-BEHAV-ACCESS 🟡 | blind and low-vision users | 10–20 | [ui-parity](ui-parity.md) |
 | 24 | **Brush live preview and masking feel** (#517, #518); Feather / Edge mask refinement (15.5) | issues | masking feels slower than Lightroom | 8–12 | [ui-parity](ui-parity.md) |
 | 25 | **File writes**: lossy DNG, Render to DNG; AVIF import (PSD export landed with Edit in PhotoCraft, #953) | file-format-parity.md | interchange edge cases | 21–37 | [file-format-parity](file-format-parity.md) |
 | 26 | **Performance at scale**: 85k-photo library opens in 1.7–4.7 s; 100k grid test pending; colour NR at half resolution | ROADMAP log, gpu-pipeline.md | large-catalog users | 15–30 | [target-app-parity](target-app-parity.md#by-dimension) |
@@ -79,6 +79,7 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-13 | minor | Gap 2 narrowed: CRX vertical / grid-tiled 0x100 C-RAW decodes (synthetic tests only); multi-tile 0x200 now refused explicitly instead of failing as corrupt |
+| 2026-10-13 | minor | Gap 23: arrow keys move the crop frame (⌥ resizes) and the selected Remove spot; gap 28's last key, Develop ⇧J, stays open until its Classic meaning is observed |
 | 2026-10-12 | minor | Gap 18: crop, straighten and flips on video clips (loupe, posters, Capture Frame, export) |
 | 2026-10-12 | minor | Gap 18: export no longer CPU-bound (pipeline + GPU grade), audio from AAC/Opus/AC-3/PCM/MP3; 15–25 → 12–20 h |
 | 2026-10-12 | minor | Gap 18: M14 video stack landed (playback, trim, poster, Capture Frame, global grading, export); remaining work listed, 55–80 → 15–25 h |
