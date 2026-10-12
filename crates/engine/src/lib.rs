@@ -68,6 +68,7 @@ pub mod segment;
 pub mod sidecar;
 pub mod smart;
 pub mod sync;
+pub mod video;
 mod view;
 pub mod walk;
 
@@ -123,6 +124,9 @@ pub struct UndoEntry {
     pub(crate) retry_inverse: Vec<Op>,
     /// Sidecars still separated from their photo after a failed move or rollback.
     pub(crate) retry_sidecars: Vec<rename::SidecarMove>,
+    /// TEMPORARY (M14 merge): the inverse of a video trim/poster change, until the catalog's
+    /// `Op::SetVideoTrim` / `Op::SetVideoPoster` land and these steps become plain catalog ops.
+    pub(crate) video: Option<video::mirror::VideoOp>,
 }
 
 /// The one photo an undo step changes, when it changes exactly one through its edit, rating, flag,
@@ -309,6 +313,8 @@ pub struct Session {
     /// Background tasks in flight (imports, exports, preview builds…), for the activity stack and
     /// `activity.list` / `activity.cancel`.
     pub activity: activity::Activity,
+    /// Video playback, trim and poster (M14.4/M14.6): the decoder backend and the player.
+    pub video: video::VideoState,
     /// The last (or running) Build Previews.
     pub preview_build: Option<std::sync::Arc<cmd::previews::PreviewBuild>>,
     /// Develop defaults applied on import (persisted in prefs.json).
@@ -421,6 +427,7 @@ impl Session {
             import_probes: Default::default(),
             folder_changes: None,
             activity: Default::default(),
+            video: Default::default(),
             preview_build: None,
             import_defaults: import::ImportDefaults::default(),
             cache_mb: 0,
@@ -518,7 +525,14 @@ impl Session {
         let fwd = op.clone();
         let inv = self.apply_catalog(op)?;
         self.pending_log.push(fwd);
-        self.undo.push(UndoEntry { label: label.to_string(), op: inv, folder: None, retry_inverse: Vec::new(), retry_sidecars: Vec::new() });
+        self.undo.push(UndoEntry {
+            label: label.to_string(),
+            op: inv,
+            folder: None,
+            retry_inverse: Vec::new(),
+            retry_sidecars: Vec::new(),
+            video: None,
+        });
         self.commits = self.commits.wrapping_add(1);
         if self.undo.len() > 1000 {
             let mut dropped = self.undo.remove(0);
@@ -526,6 +540,17 @@ impl Session {
         }
         for mut dropped in self.redo.drain(..) {
             self.pending_sidecar_repairs.append(&mut dropped.retry_sidecars);
+        }
+        Ok(())
+    }
+
+    /// TEMPORARY (M14 merge): commit a video trim/poster change held by [`video::mirror`] as an
+    /// undo step (its catalog op is empty). Replaced by `commit` with the catalog's video ops.
+    pub(crate) fn commit_video_mirror(&mut self, label: &str, op: video::mirror::VideoOp) -> Result<()> {
+        self.commit(label, Op::Batch { ops: Vec::new() })?;
+        let inv = self.video.mirror.apply(op);
+        if let Some(e) = self.undo.last_mut() {
+            e.video = Some(inv);
         }
         Ok(())
     }
@@ -613,7 +638,7 @@ impl Session {
         }
         let Some(entries) = self.undo.get(self.undo.len() - n..) else { return };
         // Folder moves and partially applied file steps stay on their own.
-        if entries.iter().any(|e| e.folder.is_some() || !e.retry_inverse.is_empty() || !e.retry_sidecars.is_empty()) {
+        if entries.iter().any(|e| e.folder.is_some() || e.video.is_some() || !e.retry_inverse.is_empty() || !e.retry_sidecars.is_empty()) {
             return;
         }
         let tail = self.undo.split_off(self.undo.len() - n);
@@ -624,6 +649,7 @@ impl Session {
             folder: None,
             retry_inverse: Vec::new(),
             retry_sidecars: Vec::new(),
+            video: None,
         });
     }
 
@@ -654,6 +680,7 @@ impl Session {
                 return Err(err);
             }
         };
+        let video = e.video.take().map(|v| self.video.mirror.apply(v));
         self.show_undone(&e.op);
         self.pending_log.push(e.op);
         self.redo.push(UndoEntry {
@@ -662,6 +689,7 @@ impl Session {
             folder: e.folder.as_ref().map(FolderMove::reversed),
             retry_inverse: Vec::new(),
             retry_sidecars: Vec::new(),
+            video,
         });
         Ok(e.label)
     }
@@ -679,6 +707,7 @@ impl Session {
                 return Err(err);
             }
         };
+        let video = e.video.take().map(|v| self.video.mirror.apply(v));
         self.show_undone(&e.op);
         self.pending_log.push(e.op);
         self.undo.push(UndoEntry {
@@ -687,6 +716,7 @@ impl Session {
             folder: e.folder.as_ref().map(FolderMove::reversed),
             retry_inverse: Vec::new(),
             retry_sidecars: Vec::new(),
+            video,
         });
         Ok(e.label)
     }

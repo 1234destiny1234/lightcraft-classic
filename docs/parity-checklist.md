@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: `video.*` playback / trim / poster / capture commands, engine half; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -43,7 +43,7 @@ cited here still exists. Formerly docs/parity.md.
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
-| R. Video (VID) | 0 | 0 | 5 | 1 | — | 0/2 (0%) |
+| R. Video (VID) | 0 | 3 | 2 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 15 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 2 | 0 | 0 | — | 0/1 (0%) |
@@ -52,11 +52,11 @@ cited here still exists. Formerly docs/parity.md.
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
-| Lightroom Classic extras | 99 | 19 | 7 | 0 | — | 34/38 (89%) |
+| Lightroom Classic extras | 99 | 21 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 483 | 55 | 43 | 27 | 193/201 (96%) | 161/175 (92%) |
+| **Total** | 483 | 60 | 38 | 27 | 193/201 (96%) | 161/175 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **87.9%** of 581 in-scope rows — P0 98.0% of 201 · P1 95.1% of 175 · P2 71.6% of 204.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.3%** of 581 in-scope rows — P0 98.0% of 201 · P1 95.7% of 175 · P2 72.3% of 204.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -443,10 +443,10 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs` | videos can be catalogued (kind, duration); no player |
-| LR-VID-TRIM | Trim | P1 | ⬜ | | |
+| LR-VID-PLAY | Video playback | P1 | 🟡 | `crates/catalog/src/model.rs`, `cmd:video.get`, `cmd:video.play`, `cmd:video.togglePlay`, `cmd:video.seek`, `cmd:video.stepFrame`, `crates/engine/src/video/player.rs` | engine half only (M14.4): play / pause / seek (snaps to frames) / frame step inside the trim, clock-driven position, stop or loop at the trim end, muted; needs the decoder backend (`VideoBackend`) wired in and the loupe player UI |
+| LR-VID-TRIM | Trim | P1 | 🟡 | `cmd:video.setTrim`, `cmd:video.resetTrim` | engine half (M14.6): validated `0 ≤ in < out ≤ duration`, one undo step, playback honours it; no trim handles in the UI yet, export doesn't use it yet |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
-| LR-VID-COVER | Cover frame | P2 | ⬜ | | |
+| LR-VID-COVER | Cover frame | P2 | 🟡 | `cmd:video.setPoster` | engine half (M14.6): poster time snapped to a frame, undoable, default 10 % in; grid thumbnails don't use it yet |
 | LR-VID-EXPORT | Video export | P2 | ⬜ | | |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
@@ -795,7 +795,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-DEV-DEFAULTS | Per-camera raw defaults | P1 | ✅ | `cmd:library.preferences` (`camera`, `import.perCamera`), `crates/ui-egui/src/panels/settings.rs` | Settings → Import: raw default and per-camera presets |
 | LRC-DEV-PROCESS | Process versions, Update to Current Process | P1 | ✅ | `cmd:develop.updateProcess`, `cmd:develop.reset`, `cmd:develop.get`, `crates/develop/src/settings.rs`, `crates/pipeline/src/finish.rs`, `docs/process-versions.md` | each photo records the rendering process its settings are interpreted by: settings saved before this existed load as V1, new photos and Reset get the latest, virtual copies inherit, copy / paste / sync / presets keep each photo's own; Photo ▸ Update to Current Process (one undo step, enabled while a selected photo is on an older process); a number from a newer version of the app is kept and renders with the newest known process. Only V1 exists so far: this is what lets a retuned default tone (#146) or stronger Light sliders (#196) ship without changing existing edits |
 | LRC-DEV-VIEWOPTIONS | Develop view options | P2 | ⬜ | | |
-| LRC-DEV-VIDEO | Video frame capture | P2 | ⬜ | | |
+| LRC-DEV-VIDEO | Video frame capture | P2 | 🟡 | `cmd:video.captureFrame` | engine half (M14.6): the frame as a JPEG next to the clip, imported and stacked with it (one undo step, activity row); ungraded (develop settings on video are M14.7); no menu item in the player yet |
 | LRC-MAP-VIEW | Map view | P2 | 🟡 | `cmd:map.view`, `cmd:map.style`, `cmd:map.addServer`, `cmd:map.fit`, `cmd:map.search`, `crates/ui-egui/src/map/view.rs`, `crates/geo/src/fetch.rs` | pan, wheel/double-click zoom around the pointer, zoom buttons, scale bar; style picker with user-added XYZ servers; on-screen tiles only (OSM tile policy), coarser tiles stand in while loading; search: lat/lon, saved locations, Nominatim with consent. No animated zoom |
 | LRC-MAP-GEOTAG | Drag photos onto the map | P2 | ✅ | `cmd:map.geotag`, `cmd:map.geotagAt`, `crates/ui-egui/src/map/view.rs` | drag from the filmstrip or grid onto the map; drag pins to move their photos; right-click ▸ Geotag Selected Photos Here; one undo step each |
 | LRC-MAP-LOCATIONS | Saved locations | P2 | ✅ | `cmd:map.saveLocation`, `cmd:map.deleteLocation`, `cmd:map.locations`, `crates/geo/src/places.rs` | name, centre, radius circle, photo counts, rename; stored in the catalog (format 6, undoable); private locations: photos inside are exported without GPS and location fields |
@@ -865,7 +865,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-EXP-EMAIL | Email photos | P2 | ⬜ |  | low priority |
 | LRC-EXP-POSTPROCESS | Post-processing after export (open in app, export actions) | P2 | 🟡 |  | unverified |
 | LRC-AUTO-ACTIONS | Recordable actions / batch scripts | P2 | ✅ | `cmd:actions.record`, `cmd:actions.stop`, `cmd:actions.play`, `cmd:actions.save`, `crates/engine/src/cmd/actions.rs` | record from the journal, parameters (`{{name}}`), per-photo replay on a selection, `app-cli run-action`, MCP via run_command; Window ▸ Actions panel (`cmd:panel.actions`, `crates/ui-egui/src/edit_in.rs`: record, stop, play, delete, set shortcut); saved shortcuts play their action in the desktop app |
-| LRC-VID-FRAME | Capture video frame as a still | P2 | ⬜ |  | see LRC-DEV-VIDEO and R. Video |
+| LRC-VID-FRAME | Capture video frame as a still | P2 | 🟡 | `cmd:video.captureFrame` | see LRC-DEV-VIDEO and R. Video |
 | KEYC-PANELS | Classic panel keys (Tab, ⇧Tab, T, F5–F8, solo) | P2 | ✅ | `cmd:panel.sides`, `cmd:panel.all`, `cmd:panel.toolbar`, `cmd:panel.top`, `cmd:panel.bottom`, `cmd:panel.left`, `cmd:panel.right`, `cmd:panel.solo` | P1.3 Classic set: Tab sides, ⇧Tab all, T toolbar, F5 module bar, F6 filmstrip, F7 left, F8 right; Tab outside a text field no longer moves focus. Solo is a command/menu item (no Classic key) |
 | KEYC-MODULES | Classic module switching (⌘⌥1–7) | P1 | ✅ | `cmd:module.library`, `cmd:module.develop`, `cmd:module.previous` | P1.3: ⌘⌥1–7 (Ctrl+Alt elsewhere), ⌘⌥↑ previous module, D Develop |
 | KEYC-VIEWS | Classic view keys (E, G, C, N, L, F, I, ⇧R, ⌘⌥0) | P2 | ✅ | `cmd:view.loupe`, `cmd:view.gridToggle`, `cmd:view.compare`, `cmd:view.survey`, `cmd:view.lightsOut`, `cmd:view.screenMode`, `cmd:view.zoom100` | P1.3 Classic set: E Library loupe, G grid, C compare, N survey, L lights out, F full-screen preview, ⇧F screen modes, ⌘⌥F normal, I info, ⇧R reference, ⌘⌥0 1:1 |
@@ -910,6 +910,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | R. Video (M14.4/M14.6 engine half): LR-VID-PLAY, LR-VID-TRIM, LR-VID-COVER, LRC-DEV-VIDEO, LRC-VID-FRAME ⬜ → 🟡 (`video.*` commands; decoder backend and UI pending) |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
 | 2026-10-12 | minor | KEYC-MODULE-OUTPUT (G28) 🟡 → ✅: Web module ⌘R reload preview and ⌘⌥P preview in browser |
