@@ -56,6 +56,7 @@ pub mod sync;
 pub mod tasks;
 pub mod text_field;
 pub mod theme;
+pub mod timelapse_ui;
 pub mod titlebar;
 pub mod video_ui;
 pub mod video_view;

@@ -1151,5 +1151,14 @@
   "Video quality": "ビデオ画質",
   "Video long edge (px, 0 = full)": "ビデオの長辺（px、0 = フルサイズ）",
   "H.264 (MP4)": "H.264 (MP4)",
-  "ProRes (MOV)": "ProRes (MOV)"
+  "ProRes (MOV)": "ProRes (MOV)",
+  "Timelapse Video…": "タイムラプスビデオ…",
+  "Export Timelapse Video": "タイムラプスビデオを書き出し",
+  "Timelapse Video": "タイムラプスビデオ",
+  "Choose File…": "ファイルを選択…",
+  "Frames per Photo": "写真あたりのフレーム数",
+  "Cross-Fade Frames": "クロスフェードのフレーム数",
+  "Fit (letterbox)": "フィット（レターボックス）",
+  "Fill (crop)": "フィル（切り抜き）",
+  "Each photo with its own edits, in the order shown. No audio.": "各写真はそれぞれの編集で、表示順に並びます。音声なし。"
 }

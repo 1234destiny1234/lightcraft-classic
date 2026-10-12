@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "Cache de tuiles : {mb} Mo, {n} tuiles",
   "Tagged {n} photos from the tracklog": "{n} photos marquées depuis le tracé",
   "Geotagged {n} photo(s)": "{n} photo(s) géolocalisée(s)",
-  "Location {n}": "Lieu {n}"
+  "Location {n}": "Lieu {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} photos · {frames} images · {secs} s",
+  "Exported timelapse: {photos} photos, {frames} frames": "Timelapse exporté : {photos} photos, {frames} images"
 }

@@ -1150,5 +1150,14 @@
   "Video quality": "视频质量",
   "Video long edge (px, 0 = full)": "视频长边（像素，0 = 原尺寸）",
   "H.264 (MP4)": "H.264 (MP4)",
-  "ProRes (MOV)": "ProRes (MOV)"
+  "ProRes (MOV)": "ProRes (MOV)",
+  "Timelapse Video…": "延时视频…",
+  "Export Timelapse Video": "导出延时视频",
+  "Timelapse Video": "延时视频",
+  "Choose File…": "选择文件…",
+  "Frames per Photo": "每张照片帧数",
+  "Cross-Fade Frames": "交叉淡化帧数",
+  "Fit (letterbox)": "适合（加黑边）",
+  "Fill (crop)": "填充（裁剪）",
+  "Each photo with its own edits, in the order shown. No audio.": "每张照片使用各自的编辑，按显示顺序排列。无音频。"
 }

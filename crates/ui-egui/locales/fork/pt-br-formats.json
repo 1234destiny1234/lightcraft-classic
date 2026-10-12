@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "Cache de blocos: {mb} MB, {n} blocos",
   "Tagged {n} photos from the tracklog": "{n} fotos marcadas pelo tracklog",
   "Geotagged {n} photo(s)": "{n} foto(s) georreferenciada(s)",
-  "Location {n}": "Local {n}"
+  "Location {n}": "Local {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} fotos · {frames} quadros · {secs} s",
+  "Exported timelapse: {photos} photos, {frames} frames": "Timelapse exportado: {photos} fotos, {frames} quadros"
 }

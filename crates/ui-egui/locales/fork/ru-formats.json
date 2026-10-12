@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "Кэш тайлов: {mb} МБ, тайлов: {n}",
   "Tagged {n} photos from the tracklog": "Отмечено фото по треку: {n}",
   "Geotagged {n} photo(s)": "Геометки поставлены фото: {n}",
-  "Location {n}": "Место {n}"
+  "Location {n}": "Место {n}",
+  "{n} photos · {frames} frames · {secs} s": "Фото: {n} · кадров: {frames} · {secs} с",
+  "Exported timelapse: {photos} photos, {frames} frames": "Таймлапс экспортирован: фото {photos}, кадров {frames}"
 }

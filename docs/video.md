@@ -2,6 +2,13 @@
 
 > **Last updated:** 2026-10-12 · **Change:** minor (one revision history; export speed and audio codecs in the tracker docs)
 
+> **Last updated:** 2026-10-12 · **Change:** minor (timelapse video from photos, upstream #497)
+> **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
+> **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
+> **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
+> **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
+> **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
+> **Last updated:** 2026-10-12 · **Change:** minor (M14.2 import side, M14.3 posters)
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
@@ -172,6 +179,20 @@ taken at load ~110 and is CPU-starved. Output is byte-identical in size for ProR
 Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; no "export current frame as
 JPEG" command yet.
 
+## Timelapse from photos (upstream #497)
+`export.timelapse {path, ids?, fps?, size?, fit?, hold?, crossfade?, format?, quality?}` (`crates/engine/src/timelapse.rs`;
+UI: File ▸ Export ▸ Timelapse Video…, `crates/ui-egui/src/timelapse_ui.rs`) turns stills into a silent movie. Photos: `ids`
+in the given order, else the selection in the shown order (the current sort, Custom Order in an album); video clips are
+left out (`skipped`). Each photo is rendered by the export render job with its own develop settings (sRGB, 8-bit) and
+placed in one `size` frame (`"WxH"` or `[w, h]`, 16–8192, rounded down to even; default 1920x1080): `fit` letterboxes in
+black, `fill` crops the centre. Each photo is held `hold` frames (1–1000, default 1) and `crossfade` extra frames
+(0–1000) blend it into the next, so a movie has `photos × hold + (photos − 1) × crossfade` frames at `fps` (1–120,
+default 24). `format` `h264` (MP4) or `prores` (MOV; the default follows the extension), `quality` 1–100 (80). The
+frames go to `dac_video_export::SequenceWriter` (same encoders and muxer as clip export; `push_encoded` takes the
+sRGB render values as BT.709 video), written to `<path>.partial` and renamed when done; an error or a cancel (activity
+row ✕, checked once per frame) leaves no file. The desktop app runs it on a worker; CLI/MCP run it in the call with its
+own activity row. Limits: no audio/music, no deflicker or pan/zoom, integer frame rates only, native only.
+
 ## Audio (decode always; sound only with `audio-out`)
 
 **Decode** (`dac-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
@@ -265,6 +286,17 @@ cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [ma
 cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_side]
 ```
 
+## Revision history
+
+- 2026-10-12: `export.timelapse` + File ▸ Export ▸ Timelapse Video… (upstream #497), `dac_video_export::SequenceWriter`.
+- 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
+- 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
+  active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`
+  `video_clip_over_mcp`) on clips from `dac_video::test_util::write_clip` (feature `test-util`, dev-only).
+- 2026-10-12: sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost.
+- 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
+- 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
+- 2026-10-12: M14.8 export through the engine (options, dialog, CLI, MCP, activity row).
 ## Import and posters (M14.2 import side, M14.3)
 - **Import** (`dac_engine::files::probe_video_file`, used by the native file probe for video extensions): the clip is
   hashed in 1 MiB chunks (content hash + SHA-1 of the whole file, equal to hashing its bytes at once, so duplicate

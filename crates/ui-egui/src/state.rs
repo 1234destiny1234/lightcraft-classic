@@ -814,6 +814,16 @@ pub struct NameEdit {
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq)]
 #[serde(tag = "kind", rename_all = "camelCase")]
 pub enum Dialog {
+    /// File ▸ Export ▸ Timelapse Video… (`crate::timelapse_ui`); `size` is "WxH".
+    Timelapse {
+        fps: u32,
+        size: String,
+        fill: bool,
+        hold: u32,
+        crossfade: u32,
+        prores: bool,
+        quality: u8,
+    },
     ContactSheet {
         options: dac_engine::contact_sheet::Options,
     },

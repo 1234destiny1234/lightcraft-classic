@@ -17,6 +17,7 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
         .chain(crate::print_ui::COMMANDS)
         .chain(crate::creations_ui::COMMANDS)
         .chain(PLUGIN_COMMANDS)
+        .chain(crate::timelapse_ui::COMMANDS)
 }
 
 /// P4.3: the Plug-in Manager (`crate::panels::plugins`); native only, so the web build lists none.
@@ -43,6 +44,9 @@ pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value,
     }
     #[cfg(not(target_arch = "wasm32"))]
     if let Some(r) = crate::panels::connections::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::timelapse_ui::run(app, id, p) {
         return Some(r);
     }
     if let Some(r) = crate::libtools::run(app, id, p) {
@@ -159,5 +163,5 @@ pub(super) fn run(app: &mut DacApp, id: &str, p: &Value) -> Option<Result<Value,
 
 /// Enabled state of the fork's modules' commands.
 pub(super) fn enabled(app: &DacApp, id: &str) -> Option<bool> {
-    crate::module::enabled(app, id).or_else(|| crate::catalog_ui::enabled(app, id))
+    crate::module::enabled(app, id).or_else(|| crate::catalog_ui::enabled(app, id)).or_else(|| crate::timelapse_ui::enabled(app, id))
 }

@@ -108,6 +108,7 @@ fn long_dialogs_fit_a_short_window() {
         "dialog.pasteSettings",
         "dialog.createPreset",
         "dialog.contactSheet",
+        "dialog.timelapse",
         "app.settings",
         "app.shortcuts",
         "app.whatsNew",
