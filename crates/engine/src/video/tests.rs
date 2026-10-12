@@ -308,3 +308,46 @@ fn the_native_backend_reports_a_garbage_clip_as_an_error() {
     assert!(e.contains("can't read the video"), "{e}");
     let _ = std::fs::remove_dir_all(&d);
 }
+
+#[test]
+fn photo_only_tools_are_disabled_for_a_clip() {
+    let dir = tmp("gating");
+    let (mut s, _) = session(&dir);
+    for id in ["crop.set", "mask.add", "spot.add", "redeye.add", "denoise.queue"] {
+        let info = crate::cmd::find_command(id).unwrap().info(&s);
+        assert!(!info.enabled && info.disabled_reason.as_deref() == Some(crate::cmd::NOT_FOR_VIDEO), "{id}: {info:?}");
+        let e = s.execute(id, &json!({})).unwrap_err().to_string();
+        assert!(e.contains(crate::cmd::NOT_FOR_VIDEO), "{id}: {e}");
+    }
+    assert!(crate::cmd::find_command("develop.set").unwrap().info(&s).enabled);
+    select(&mut s, 901);
+    assert!(crate::cmd::find_command("crop.set").unwrap().info(&s).disabled_reason.is_none_or(|r| r != crate::cmd::NOT_FOR_VIDEO));
+}
+
+#[test]
+fn presets_paste_and_sync_keep_only_video_controls() {
+    let dir = tmp("gating-preset");
+    let (mut s, _) = session(&dir);
+    let clip = PhotoId(900);
+    let mut d = dac_develop::DevelopSettings::default();
+    d.light.exposure = 1.0;
+    d.effects.clarity = 40.0;
+    d.detail.sharpen_amount = 80.0;
+    s.presets.push(dac_develop::Preset::from_settings("user.t", "T", "User", &d, &dac_develop::SettingsGroup::default_copy()));
+    s.execute("preset.apply", &json!({"id": "user.t"})).unwrap();
+    let got = s.develop_of(clip).unwrap();
+    assert_eq!(got.light.exposure, 1.0);
+    assert_eq!(got.effects.clarity, 0.0);
+    // paste from a still and sync from it drop the photo-only controls the same way
+    select(&mut s, 901);
+    s.execute("develop.merge", &json!({"settings": {"light": {"contrast": 30.0}, "effects": {"clarity": 25.0}}})).unwrap();
+    s.execute("develop.copy", &json!({})).unwrap();
+    select(&mut s, 900);
+    s.execute("develop.paste", &json!({})).unwrap();
+    let got = s.develop_of(clip).unwrap();
+    assert_eq!((got.light.contrast, got.effects.clarity), (30.0, 0.0));
+    s.execute("library.select", &json!({"ids": [901, 900], "active": 901})).unwrap();
+    s.execute("develop.sync", &json!({})).unwrap();
+    assert_eq!(s.develop_of(clip).unwrap().effects.clarity, 0.0);
+    assert_eq!(s.develop_of(PhotoId(901)).unwrap().effects.clarity, 25.0);
+}

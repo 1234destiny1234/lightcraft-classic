@@ -452,6 +452,7 @@ impl Session {
     pub fn execute(&mut self, id: &str, params: &Value) -> Result<Value> {
         let spec = find_command(id).ok_or_else(|| EngineError::UnknownCommand(id.to_string()))?;
         // a command that validates the photos a call names isn't held back by the selection
+        cmd::video_gate(self, id).map_err(|why| EngineError::Disabled(id.to_string(), why))?;
         if !(spec.explicit_targets && cmd::names_photos(params)) {
             (spec.enabled)(self).map_err(|why| EngineError::Disabled(id.to_string(), why))?;
         }
@@ -850,8 +851,9 @@ impl Session {
 
     /// The op that sets a photo's develop settings and appends a History entry (for batches).
     pub fn develop_op(&self, id: PhotoId, settings: DevelopSettings, label: &str) -> Option<Op> {
-        self.catalog.photo(id)?;
-        let settings = Arc::new(settings);
+        let p = self.catalog.photo(id)?;
+        // a clip takes only the global grading controls: presets, paste and sync drop the rest
+        let settings = Arc::new(if p.kind == dac_catalog::MediaKind::Video { dac_pipeline::grade::video_settings(&settings) } else { settings });
         let step = dac_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
         Some(Op::Batch {
             ops: vec![Op::SetDevelop { id, settings, label: label.into(), edited: Some((self.clock)()) }, Op::PushHistory { id, step }],
