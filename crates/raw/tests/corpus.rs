@@ -42,7 +42,7 @@ fn corpus_raw_decodes() {
         let preview = embedded_preview(&bytes);
         let tp = t0.elapsed().as_secs_f64() * 1e3;
         // DNG previews are optional (and some carry only an uncompressed RGB thumbnail); vendor raws embed a JPEG,
-        // except the Panasonic `.RAW` files of 2005–2007 and Canon's explicit HEVC preview tracks.
+        // except the Panasonic `.RAW` files of 2005–2007, Canon's explicit HEVC preview tracks and Mamiya MEF.
         if let Some(p) = &preview {
             let jpeg = p.starts_with(&[0xff, 0xd8]) && p.ends_with(&[0xff, 0xd9]);
             let jxl = p.starts_with(&[0xff, 0x0a]) || p.starts_with(b"\0\0\0\x0cJXL ");
@@ -51,7 +51,11 @@ fn corpus_raw_decodes() {
             let hevc_preview = fmt == RawFormat::Cr3
                 && lcc_meta::cr3::parse_cr3(&bytes)
                     .is_some_and(|c| c.tracks.iter().any(|t| t.kind == lcc_meta::cr3::Cr3TrackKind::Other(*b"HEVC") && t.data.is_some()));
-            assert!(fmt == RawFormat::Dng || name.starts_with("raw-panasonic-") || hevc_preview, "{name}: no embedded preview");
+            // the Mamiya ZD's previews are uncompressed RGB sub-IFDs, not JPEGs
+            assert!(
+                fmt == RawFormat::Dng || fmt == RawFormat::Mef || name.starts_with("raw-panasonic-") || hevc_preview,
+                "{name}: no embedded preview"
+            );
         }
         let preview_kb = preview.as_ref().map_or(0, |p| p.len() / 1024);
         let t1 = Instant::now();
@@ -1337,4 +1341,57 @@ fn corpus_fujifilm_superccd() {
         seen += 1;
     }
     eprintln!("SuperCCD RAFs checked: {seen}");
+/// Epson ERF (`crates/raw/src/vendor/erf.rs`): the 16-byte block strip decodes to a smooth 3040 x 2024 RGGB
+/// mosaic with the maker note's black levels, the 3008 x 2000 crop and a white balance measured from the
+/// preview's neutral pixels. Skips files that are absent.
+#[test]
+fn corpus_epson_erf() {
+    let root = corpus_root().join("raw");
+    let mut checked = 0;
+    for name in ["erf-epson-rd1.erf", "erf-epson-rd1s.erf", "erf-epson-rd1x.erf"] {
+        let Ok(bytes) = std::fs::read(root.join(name)) else {
+            eprintln!("skip: {name} absent");
+            continue;
+        };
+        assert_eq!(probe(&bytes), Some(RawFormat::Erf), "{name}");
+        let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
+        assert_eq!((img.width, img.height, img.bits), (3040, 2024, 12), "{name}");
+        assert_eq!((img.crop.x, img.crop.y, img.crop.width, img.crop.height), (20, 12, 3008, 2000), "{name}");
+        assert_eq!(img.cfa.as_ref().map(|c| c.name()).as_deref(), Some("RGGB"), "{name}");
+        assert!(img.black.values.len() == 4 && img.black.values.iter().all(|b| (55.0..=70.0).contains(b)), "{name}: {:?}", img.black.values);
+        let wb = img.wb_multipliers.unwrap_or_else(|| panic!("{name}: no white balance"));
+        eprintln!("{name}: wb {wb:?}");
+        if name == "erf-epson-rd1s.erf" {
+            assert!((wb[0] - 2.68).abs() < 0.1 && (wb[2] - 1.31).abs() < 0.1, "{name}: {wb:?}");
+        }
+        // same-colour neighbours differ little: the bit order is right
+        let lcc_raw::RawData::U16(d) = &img.data else { panic!("float data") };
+        let step: f64 = d.chunks(3040).take(400).flat_map(|r| r.windows(3).map(|w| f64::from(w[0].abs_diff(w[2])))).sum::<f64>() / (400.0 * 3038.0);
+        assert!(step < 40.0, "{name}: rough {step}");
+        assert!(embedded_preview(&bytes).is_some(), "{name}: no preview");
+        checked += 1;
+    }
+    eprintln!("ERF: {checked} corpus files checked");
+}
+
+/// Mamiya MEF (`crates/raw/src/vendor/mef.rs`): the uncompressed 12-bit strip decodes to a smooth 4016 x 5344 RGGB
+/// mosaic, the crop is the preview's window and the white balance comes from the RGB preview. Skips when absent.
+#[test]
+fn corpus_mamiya_mef() {
+    let Ok(bytes) = std::fs::read(corpus_root().join("raw").join("mef-mamiya-zd.mef")) else {
+        eprintln!("skip: mef-mamiya-zd.mef absent");
+        return;
+    };
+    assert_eq!(probe(&bytes), Some(RawFormat::Mef));
+    let img = decode(&bytes).unwrap_or_else(|e| panic!("{e}"));
+    assert_eq!((img.width, img.height, img.bits), (4016, 5344, 12));
+    assert_eq!((img.crop.x, img.crop.y, img.crop.width, img.crop.height), (24, 12, 3968, 5312));
+    assert_eq!(img.cfa.as_ref().map(|c| c.name()).as_deref(), Some("RGGB"));
+    assert_eq!(img.orientation, lcc_geom::Orientation::from_exif(6));
+    let wb = img.wb_multipliers.expect("white balance");
+    eprintln!("MEF wb {wb:?}");
+    assert!(wb.iter().all(|g| (0.5..=4.0).contains(g)), "{wb:?}");
+    let lcc_raw::RawData::U16(d) = &img.data else { panic!("float data") };
+    let step: f64 = d.chunks(4016).take(400).flat_map(|r| r.windows(3).map(|w| f64::from(w[0].abs_diff(w[2])))).sum::<f64>() / (400.0 * 4014.0);
+    assert!(step < 40.0, "rough {step}");
 }

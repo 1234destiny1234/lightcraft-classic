@@ -40,7 +40,7 @@ RAF_OLD = re.compile(r"^FinePix S20[05] EXR", re.I)
 # Probability that an unverified body of a format decodes correctly, used for the use-weighted share only.
 CONFIDENCE = {"DNG": 0.95, "CR2": 0.95, "CR3": 0.6, "NEF": 0.9, "NRW": 0.9, "ARW": 0.9, "SR2": 0.8, "RAF": 0.95,
               "RW2": 0.95, "RWL": 0.95, "RAW": 0.95, "PEF": 0.9, "ORF": 0.8, "SRW": 0.8,
-              "MRW": 0.9}
+              "MRW": 0.9, "ERF": 0.9, "MEF": 0.9}
 
 
 def read_tsv(name):
@@ -87,8 +87,12 @@ def classify(maker, camera, ext_field):
             return "unverified", "SRW", "uncompressed / packed SRW"
         if e == "MRW":
             return "unverified", "MRW", "MRW decoder (16-bit words, 12-bit packing; vendor/mrw.rs)"
+        if e == "MEF":
+            return "unverified", "MEF", "MEF decoder (uncompressed 12-bit; vendor/mef.rs)"
+        if e == "ERF":
+            return "unverified", "ERF", "ERF decoder (12-bit 16-byte blocks; vendor/erf.rs)"
     e = es[0] if es else ""
-    if e in ("CRW", "3FR", "FFF", "IIQ", "MOS", "ERF", "KDC", "X3F", "RAW", "ORI"):
+    if e in ("CRW", "3FR", "FFF", "IIQ", "MOS", "KDC", "X3F", "RAW", "ORI"):
         return "preview", e, f"{e} is opened from its embedded JPEG only"
     return "unsupported", e, f"{e or 'unknown'} is not imported"
 

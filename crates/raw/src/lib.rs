@@ -46,6 +46,7 @@ pub mod spectral;
 mod tiffraw;
 mod unpack;
 mod vendor;
+mod wb_estimate;
 
 pub use demosaic::{Method, demosaic};
 pub use dngwrite::{DngCompression, DngWriteOptions, write_dng, write_rendered_dng};
@@ -110,6 +111,10 @@ pub enum RawFormat {
     CfaTiff,
     /// Kodak DCS520C TIFF: a two-component lossless JPEG CFA sub-IFD with a response curve (`vendor::kodak`).
     KodakDcs,
+    /// Epson ERF: a CFA sub-IFD of 12-bit samples in 16-byte blocks (`vendor::erf`).
+    Erf,
+    /// Mamiya MEF: an uncompressed 12-bit packed CFA sub-IFD (`vendor::mef`).
+    Mef,
     /// Another TIFF-based raw (3FR, IIQ, ERF, KDC, DCR, MOS, …).
     OtherTiff,
 }
@@ -132,6 +137,8 @@ impl RawFormat {
                 | RawFormat::Srw
                 | RawFormat::KodakDcs
                 | RawFormat::Mrw
+                | RawFormat::Erf
+                | RawFormat::Mef
         )
     }
 }
@@ -202,6 +209,12 @@ pub fn probe(bytes: &[u8]) -> Option<RawFormat> {
     }
     if make.starts_with("SAMSUNG") && samsung_raw {
         return Some(RawFormat::Srw);
+    }
+    if vendor::erf::raw_ifd(&t, bytes.len()).is_some() {
+        return Some(RawFormat::Erf);
+    }
+    if vendor::mef::raw_ifd(&t, bytes.len()).is_some() {
+        return Some(RawFormat::Mef);
     }
     if vendor::kodak::raw_ifd(&t, bytes).is_some() {
         return Some(RawFormat::KodakDcs);
@@ -372,6 +385,8 @@ fn decode_with(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         RawFormat::Srw => vendor::srw::decode(bytes, mode),
         RawFormat::KodakDcs => vendor::kodak::decode(bytes, mode),
         RawFormat::Mrw => vendor::mrw::decode(bytes, mode),
+        RawFormat::Erf => vendor::erf::decode(bytes, mode),
+        RawFormat::Mef => vendor::mef::decode(bytes, mode),
         RawFormat::OtherTiff => Err(RawError::Unsupported(other_tiff_reason(bytes))),
         other => Err(RawError::Unsupported(format!("{other:?} files are not decoded yet"))),
     }

@@ -76,7 +76,7 @@ committed table is stale.
 | Xiaomi, Oppo, LG, Huawei, OnePlus, Motorola, Nokia | 139 | 0 | 139 | 0 | 0 | — (DNG) |
 | Pentax / Ricoh | 60 | 8 | 52 | 0 | 0 | — |
 | Hasselblad | 34 | 0 | 2 | 32 | 0 | Hasselblad-compressed 3FR / FFF |
-| Phase One / Leaf / Mamiya | 59 | 0 | 0 | 43 | 16 | IIQ, MOS preview; TIFF raws and MEF not imported |
+| Phase One / Leaf / Mamiya | 59 | 1 | 0 | 43 | 15 | IIQ, MOS preview; TIFF raws not imported; MEF decodes (Mamiya ZD verified) |
 | Casio | 26 | 0 | 26 | 0 | 0 | — (DNG) |
 | DJI | 21 | 0 | 21 | 0 | 0 | — (DNG) |
 | OM Digital Solutions | 7 | 0 | 7 | 0 | 0 | — (compressed ORF, unverified) |
@@ -97,7 +97,7 @@ committed table is stale.
 | Pentax / Ricoh | 1.5% | 98% | 68% | K-1 II, K-3 III, K-70, KF verified |
 | Leica | 1% | 95% | 5% | |
 | DJI | 1% | 95% | 0% | |
-| Medium format and others | 0.5% | 29% | 3% | IIQ, 3FR, X3F; MRW decodes |
+| Medium format and others | 0.5% | 31% | 6% | IIQ, 3FR, X3F; MRW, ERF, MEF decode |
 | **Weighted** | 100% | **87%** | **42%** | |
 
 About 5 in 6 raw photographers' cameras decode, but only about 2 in 5 use a body we have actually
@@ -147,8 +147,10 @@ checked, and Canon, the largest bucket, is the weakest of the big four.
 | 3FR / FFF | DNG-like layouts | 🟡 | decoded when uncompressed or LJ92 |
 | 3FR / FFF | Hasselblad compression | ⬜ | preview |
 | MRW | 16-bit words, 12-bit packing | ✅ | `vendor/mrw.rs`; DiMAGE 7, 7Hi, A1, A2, A200 (GBRG), Dynax / Maxxum 7D match the camera JPEG (colour agreement 0.73–0.99); as-shot WB from `\0WBG` |
-| IIQ, MOS, ERF, KDC, X3F | all | ⬜ | preview |
-| DCR, MEF, MFW, DXO, GPR, TIFF raws | all | ⬜ | not imported |
+| ERF | 12-bit 16-byte blocks | ✅ | `vendor/erf.rs`; R-D1, R-D1s, R-D1x; black from the maker note, WB measured from the preview (port of upstream #1087) |
+| MEF | uncompressed 12-bit | ✅ | `vendor/mef.rs`; Mamiya ZD; crop is the preview window, WB from the RGB preview (port of upstream #1105) |
+| IIQ, MOS, KDC, X3F | all | ⬜ | preview |
+| DCR, MFW, DXO, GPR, TIFF raws | all | ⬜ | not imported |
 
 ### Compressed ORF: a clean-room starting point
 
@@ -254,7 +256,7 @@ works, from [raw/usage-weights.tsv](raw/usage-weights.tsv).
 | 6 | Sony DSC-F828 / V3 SRF (encrypted, four-colour RGBE CFA) | < 0.1 | 3–6 | ~0.01 | a four-colour demosaic path |
 | 7 | Canon CRW (2000–2004 bodies) | +1.2 by the uniform tail weight, far less by real use | 6–12 | ≤ 0.1 | samples |
 | 8 | Nikon HE / HE★ NEF (Z 8, Z 9, Z 6III, Z f, Z50II, Z5II set to HE) | +1.1 | 20–40 | ~0.04 | a pure-Rust JPEG XS decoder |
-| 9 | ~~Compressed SRW~~, ~~MRW~~ (done 2026-10-13), Hasselblad 3FR, IIQ, X3F, KDC, ERF, DCR, MEF, GPR | +0.6 together | 45–85 | ~0.01 | samples; low use |
+| 9 | ~~Compressed SRW~~, ~~MRW~~, ~~ERF~~, ~~MEF~~ (done 2026-10-13), Hasselblad 3FR, IIQ, X3F, KDC, DCR, GPR | +0.6 together | 45–85 | ~0.01 | samples; low use |
 
 Beyond decoding:
 
