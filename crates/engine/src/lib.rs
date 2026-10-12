@@ -69,6 +69,7 @@ pub mod segment;
 pub mod sidecar;
 pub mod smart;
 pub mod sync;
+pub mod timelapse;
 pub mod video;
 mod view;
 pub mod walk;
@@ -1140,6 +1141,8 @@ mod tests_settings_files;
 mod tests_spots;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_timelapse;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_video_posters;
 #[cfg(test)]

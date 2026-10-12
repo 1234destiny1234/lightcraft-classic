@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-TIMELAPSE: photos → timelapse movie, upstream #497; LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -43,7 +43,7 @@ cited here still exists. Formerly docs/parity.md.
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
-| R. Video (VID) | 0 | 3 | 2 | 1 | — | 0/2 (0%) |
+| R. Video (VID) | 0 | 4 | 2 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 15 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 2 | 0 | 0 | — | 0/1 (0%) |
@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 99 | 21 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 483 | 60 | 38 | 27 | 193/201 (96%) | 161/175 (92%) |
+| **Total** | 483 | 61 | 38 | 27 | 193/201 (96%) | 161/175 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.3%** of 581 in-scope rows — P0 98.0% of 201 · P1 95.7% of 175 · P2 72.3% of 204.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.2%** of 582 in-scope rows — P0 98.0% of 201 · P1 95.7% of 175 · P2 72.3% of 204.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -448,6 +448,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video. Gating landed: `crop.*`, `mask.*`, `spot.*`, `redeye.*`, `denoise.queue`/`toggle` and the Crop / Remove / Masking / Red Eye panels and local tools are disabled for a clip ("Not available for video", also when a call names a clip in `ids`; `dac_engine::cmd::video_gate`, `crates/ui-egui/src/video_ui.rs` `blocked`); presets, paste and sync onto a clip keep only the video controls (`Session::develop_op`); Info panel shows duration, frame rate, codec, resolution, audio and trim |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster`, `crates/engine/src/media.rs` (`SourceRef::Video`, `video_poster`) | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); grid thumbnails and the loupe show the graded poster frame, a new poster time re-renders them, undecodable clips get a film placeholder tile (M14.3); no command or UI to pick the frame yet |
 | LR-VID-EXPORT | Video export | P2 | 🟡 | `crates/engine/src/export_video.rs`, `crates/video-export/src/native.rs` | M14.8: a clip in an `app.export` batch (app dialog Video section, CLI `render … -o x.mp4 [--trim IN,OUT]`, MCP `export`; end-to-end tests `apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`) exports as a movie with its trim and video-only develop settings graded at full quality in float (H.264+AAC MP4 or ProRes 422 MOV; `videoFormat`/`videoQuality`/`videoMaxSide`); photos in the batch export as before; activity row cancels within a frame. Limits: needs `Photo.video` from the import probe (lands with M14.2/engine wiring), frames graded one at a time on the CPU (~0.7 s per 1080p frame), AAC is the only audio kept, no web |
+| LR-VID-TIMELAPSE | Photos as a timelapse video (upstream #497; LRC has it only as Slideshow ▸ Export Video) | P3 | 🟡 | `cmd:export.timelapse`, `crates/ui-egui/src/timelapse_ui.rs`, `crates/engine/src/timelapse.rs`, `crates/video-export/src/sequence.rs`, `crates/engine/src/tests_timelapse.rs` | the selection in the shown order (Custom Order in an album), each photo with its own edits, fit (letterbox) or fill (crop) one frame size, 1–120 fps, frames per photo, cross-fade frames, H.264 MP4 or ProRes 422 MOV; worker + activity row with ✕; `.partial` then rename. Missing: music/audio, deflicker, Ken Burns pan/zoom, non-integer rates (29.97), web |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)

@@ -1438,5 +1438,14 @@
   "Codec": "Кодек",
   "Resolution": "Разрешение",
   "Audio": "Звук",
-  "Trim": "Обрезка"
+  "Trim": "Обрезка",
+  "Timelapse Video…": "Видео таймлапс…",
+  "Export Timelapse Video": "Экспорт видео таймлапс",
+  "Timelapse Video": "Видео таймлапс",
+  "Choose File…": "Выбрать файл…",
+  "Frames per Photo": "Кадров на фото",
+  "Cross-Fade Frames": "Кадров перехода",
+  "Fit (letterbox)": "Вписать (поля)",
+  "Fill (crop)": "Заполнить (обрезать)",
+  "Each photo with its own edits, in the order shown. No audio.": "Каждое фото со своими правками, в показанном порядке. Без звука."
 }

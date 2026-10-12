@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-12 · **Change:** minor (timelapse video from photos, upstream #497)
 > **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
@@ -127,6 +128,20 @@ quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 
 Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; frames are graded one at a
 time on the CPU (~0.7 s per 1080p frame, see Grading performance); no "export current frame as JPEG" command yet.
 
+## Timelapse from photos (upstream #497)
+`export.timelapse {path, ids?, fps?, size?, fit?, hold?, crossfade?, format?, quality?}` (`crates/engine/src/timelapse.rs`;
+UI: File ▸ Export ▸ Timelapse Video…, `crates/ui-egui/src/timelapse_ui.rs`) turns stills into a silent movie. Photos: `ids`
+in the given order, else the selection in the shown order (the current sort, Custom Order in an album); video clips are
+left out (`skipped`). Each photo is rendered by the export render job with its own develop settings (sRGB, 8-bit) and
+placed in one `size` frame (`"WxH"` or `[w, h]`, 16–8192, rounded down to even; default 1920x1080): `fit` letterboxes in
+black, `fill` crops the centre. Each photo is held `hold` frames (1–1000, default 1) and `crossfade` extra frames
+(0–1000) blend it into the next, so a movie has `photos × hold + (photos − 1) × crossfade` frames at `fps` (1–120,
+default 24). `format` `h264` (MP4) or `prores` (MOV; the default follows the extension), `quality` 1–100 (80). The
+frames go to `dac_video_export::SequenceWriter` (same encoders and muxer as clip export; `push_encoded` takes the
+sRGB render values as BT.709 video), written to `<path>.partial` and renamed when done; an error or a cancel (activity
+row ✕, checked once per frame) leaves no file. The desktop app runs it on a worker; CLI/MCP run it in the call with its
+own activity row. Limits: no audio/music, no deflicker or pan/zoom, integer frame rates only, native only.
+
 ## Audio (decode always; sound only with `audio-out`)
 
 **Decode** (`dac-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
@@ -212,6 +227,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 ## Revision history
 
+- 2026-10-12: `export.timelapse` + File ▸ Export ▸ Timelapse Video… (upstream #497), `dac_video_export::SequenceWriter`.
 - 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
   active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`

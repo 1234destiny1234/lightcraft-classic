@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "Kachel-Cache: {mb} MB, {n} Kacheln",
   "Tagged {n} photos from the tracklog": "{n} Fotos aus dem Tracklog getaggt",
   "Geotagged {n} photo(s)": "{n} Foto(s) geotaggt",
-  "Location {n}": "Ort {n}"
+  "Location {n}": "Ort {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} Fotos · {frames} Bilder · {secs} s",
+  "Exported timelapse: {photos} photos, {frames} frames": "Zeitraffer exportiert: {photos} Fotos, {frames} Bilder"
 }

@@ -33,3 +33,7 @@ pub use audio::{AudioCodecOut, AudioPacket, EncodedAudioTrack, encode_audio_rang
 mod native;
 #[cfg(not(target_arch = "wasm32"))]
 pub use native::*;
+#[cfg(not(target_arch = "wasm32"))]
+mod sequence;
+#[cfg(not(target_arch = "wasm32"))]
+pub use sequence::SequenceWriter;

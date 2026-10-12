@@ -1145,5 +1145,14 @@
   "Codec": "Codec",
   "Resolution": "Resolução",
   "Audio": "Áudio",
-  "Trim": "Corte"
+  "Trim": "Corte",
+  "Timelapse Video…": "Vídeo timelapse…",
+  "Export Timelapse Video": "Exportar vídeo timelapse",
+  "Timelapse Video": "Vídeo timelapse",
+  "Choose File…": "Escolher arquivo…",
+  "Frames per Photo": "Quadros por foto",
+  "Cross-Fade Frames": "Quadros de transição",
+  "Fit (letterbox)": "Ajustar (tarjas)",
+  "Fill (crop)": "Preencher (cortar)",
+  "Each photo with its own edits, in the order shown. No audio.": "Cada foto com suas próprias edições, na ordem exibida. Sem áudio."
 }

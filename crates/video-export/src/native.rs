@@ -90,12 +90,12 @@ pub enum ExportClipError {
     Internal,
 }
 
-type Result<T> = std::result::Result<T, ExportClipError>;
+pub(crate) type Result<T> = std::result::Result<T, ExportClipError>;
 
-fn io(e: impl std::fmt::Display) -> ExportClipError {
+pub(crate) fn io(e: impl std::fmt::Display) -> ExportClipError {
     ExportClipError::Io(e.to_string())
 }
-fn enc(e: impl std::fmt::Display) -> ExportClipError {
+pub(crate) fn enc(e: impl std::fmt::Display) -> ExportClipError {
     ExportClipError::Encode(e.to_string())
 }
 
@@ -130,7 +130,7 @@ pub fn export_clip(
     }
 }
 
-fn partial_path(out: &Path) -> Result<PathBuf> {
+pub(crate) fn partial_path(out: &Path) -> Result<PathBuf> {
     let name = out.file_name().ok_or_else(|| ExportClipError::BadOptions("the output path has no file name".into()))?;
     let mut n = name.to_os_string();
     n.push(".partial");
@@ -274,11 +274,19 @@ fn fit(img: &Rgb32f, w: usize, h: usize) -> Rgb32f {
 
 /// Linear → encoded R'G'B' (0..1) → normalised Y'CbCr, per pixel.
 fn ycbcr(frame: &Rgb32f) -> Vec<[f32; 3]> {
+    ycbcr_with(frame, true)
+}
+
+/// Per pixel Y'CbCr; `linear` = the frame is linear light (else already encoded R'G'B').
+pub(crate) fn ycbcr_with(frame: &Rgb32f, linear: bool) -> Vec<[f32; 3]> {
     frame
         .data
         .iter()
         .map(|p| {
-            let e = |v: f32| from_linear(if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 }, filmcraft_color::Transfer::Bt709);
+            let e = |v: f32| {
+                let v = if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
+                if linear { from_linear(v, filmcraft_color::Transfer::Bt709) } else { v }
+            };
             rgb_to_ycbcr(e(p[0]), e(p[1]), e(p[2]), Matrix::Bt709)
         })
         .collect()
@@ -296,19 +304,19 @@ fn code_c(v: f32, bits: u32) -> u16 {
     (128.0 * s + v.clamp(-0.5, 0.5) * 224.0 * s).round().clamp(0.0, max) as u16
 }
 
-struct Packet {
-    data: Vec<u8>,
-    key: bool,
-    cto: i32,
+pub(crate) struct Packet {
+    pub(crate) data: Vec<u8>,
+    pub(crate) key: bool,
+    pub(crate) cto: i32,
 }
 
-enum VideoOut {
+pub(crate) enum VideoOut {
     H264 { enc: Box<filmcraft_h264enc::Encoder>, w: u32, h: u32, den: u32 },
     ProRes { enc: filmcraft_prores::Encoder, profile: filmcraft_prores::Profile, w: u32, h: u32, num: u32 },
 }
 
 impl VideoOut {
-    fn new(format: ClipFormat, quality: u8, w: u32, h: u32, num: u32, den: u32) -> Result<Self> {
+    pub(crate) fn new(format: ClipFormat, quality: u8, w: u32, h: u32, num: u32, den: u32) -> Result<Self> {
         Ok(match format {
             ClipFormat::H264Mp4 => {
                 let mut cfg = filmcraft_h264enc::EncoderConfig::new(w, h, num, den);
@@ -333,7 +341,7 @@ impl VideoOut {
         })
     }
 
-    fn track_config(&self) -> TrackConfig {
+    pub(crate) fn track_config(&self) -> TrackConfig {
         match self {
             VideoOut::H264 { enc, w, h, den } => {
                 let cfg = AvcConfig::parse(&enc.avcc()).unwrap_or_else(|_| {
@@ -354,7 +362,10 @@ impl VideoOut {
     }
 
     fn encode(&mut self, frame: &Rgb32f, index: i64) -> Result<Vec<Packet>> {
-        let yc = ycbcr(frame);
+        self.encode_ycbcr(&ycbcr(frame), index)
+    }
+
+    pub(crate) fn encode_ycbcr(&mut self, yc: &[[f32; 3]], index: i64) -> Result<Vec<Packet>> {
         match self {
             VideoOut::H264 { enc, w, h, den } => {
                 let (w, h) = (*w as usize, *h as usize);
@@ -385,7 +396,7 @@ impl VideoOut {
                 let mut fr = filmcraft_prores::Frame::new(*w, *h, filmcraft_prores::ChromaFormat::Yuv422, 10, false);
                 let (w, h) = (*w as usize, *h as usize);
                 let cw = w / 2;
-                for (d, p) in fr.y.iter_mut().zip(&yc) {
+                for (d, p) in fr.y.iter_mut().zip(yc) {
                     *d = code_y(p[0], 10);
                 }
                 for y in 0..h {
@@ -408,7 +419,7 @@ impl VideoOut {
         }
     }
 
-    fn flush(&mut self) -> Vec<Packet> {
+    pub(crate) fn flush(&mut self) -> Vec<Packet> {
         match self {
             VideoOut::H264 { enc, .. } => h264_packets(enc.flush()),
             VideoOut::ProRes { .. } => Vec::new(),
