@@ -1,6 +1,6 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** minor (one revision history; export speed and audio codecs in the tracker docs)
+> **Last updated:** 2026-10-13 · **Change:** minor (clip sound on Linux/BSD through PulseAudio / PipeWire in every build)
 
 > **Last updated:** 2026-10-12 · **Change:** minor (timelapse video from photos, upstream #497)
 > **Last updated:** 2026-10-12 · **Change:** minor (GPU playback LUT: frames graded on the window GPU)
@@ -22,7 +22,7 @@ used as git dependencies pinned to one full revision. The app writes no codecs o
 - **Import** clips like photos (MP4, MOV, MKV, WebM, MPEG-TS, MXF). The grid shows a poster frame; the Info panel
   shows duration, frame rate, codec, resolution, audio and trim. `video:yes` in the search bar finds clips.
 - **Play** in the loupe: <kbd>Space</kbd> plays and pauses, <kbd>←</kbd> / <kbd>→</kbd> step one frame, drag the
-  playhead to scrub. Playback is silent in default builds (see [Audio](#audio-decode-always-sound-only-with-audio-out)).
+  playhead to scrub. Clip sound plays on Linux and the BSDs (PulseAudio / PipeWire) in every build, on macOS/Windows only with `audio-out` (see [Audio](#audio-decode-always-sound-on-linuxbsd-elsewhere-with-audio-out)).
 - **Trim**: drag the start and end handles on the bar; the drag is one undo step. Photo ▸ Video ▸ Reset Trim plays
   the whole clip again.
 - **Poster frame**: Set Poster Frame (bar button or Photo ▸ Video) uses the current frame for the grid.
@@ -105,8 +105,9 @@ available in this build". Commands act on the active photo and are enabled only 
 
 The position follows `session.video.clock` (monotonic seconds, injectable in tests): it advances while playing, stops
 at the trim end, or wraps to the trim start with `loop`. `session.video.follow_audio_clock(AudioClock)` makes the
-position follow an audio device instead (no jump), `follow_system_clock()` goes back. Playback is muted unless built
-with `audio-out` (`canPlayAudio`: true only then, and only for clips with decodable sound; see Audio below). Every command
+position follow an audio device instead (no jump), `follow_system_clock()` goes back. Playback has sound on Linux
+and the BSDs in every build (pure-Rust PulseAudio client) and elsewhere only with `audio-out` (`canPlayAudio`: true
+then, and only for clips with decodable sound; see Audio below). Every command
 answers the `video.get` state, so UI, CLI and MCP see the same thing. Captured frames are not graded yet (M14.7).
 ## Loupe playback (M14.4)
 
@@ -119,7 +120,7 @@ full-quality frame (`grade_frame`) on its own thread. The UI (`crates/ui-egui/sr
 playing, it shows the worker's frames by `video.get.current` (restarting the worker after a seek or loop), requests
 repaints, and on a decode error pauses (`video.pause`) with one toast (and a log line); paused, it shows the still for
 (time, look, size), so develop edits re-render it. Trim handles drag a preview and send one `video.setTrim` on release.
-`ui.inspect` → `loupe.source` reads `video` / `video-still`. With `audio-out` and `canPlayAudio`, playing also starts `playback::AudioPlayback` (an `AudioReader` feeder thread, resampled to `default_rate()`, stereo, ~1 s ahead) and the player follows its `AudioClock` (`follow_audio_clock`); pausing, seeking or leaving the clip drops it and returns to the system clock. Default builds stay on the system clock, muted. Neither is an activity row (interactive, long-lived).
+`ui.inspect` → `loupe.source` reads `video` / `video-still`. With `canPlayAudio` (Linux/BSD always, elsewhere with `audio-out`), playing also starts `playback::AudioPlayback` (an `AudioReader` feeder thread, resampled to `default_rate()`, stereo, ~1 s ahead) and the player follows its `AudioClock` (`follow_audio_clock`); pausing, seeking or leaving the clip drops it and returns to the system clock. Builds without a sound path (default macOS/Windows) stay on the system clock, muted; so does playback when no sound server is running. Neither is an activity row (interactive, long-lived).
 
 **GPU playback grade.** When the window renders with wgpu (`Services::video_gpu`, desktop
 `apps/app/src/video_gpu.rs`) and Settings ▸ GPU is on, the loupe starts the worker with `Playback::start_linear`: it
@@ -241,7 +242,7 @@ sRGB render values as BT.709 video), written to `<path>.partial` and renamed whe
 row ✕, checked once per frame) leaves no file. The desktop app runs it on a worker; CLI/MCP run it in the call with its
 own activity row. Limits: no audio/music, no deflicker or pan/zoom, integer frame rates only, native only.
 
-## Audio (decode always; sound only with `audio-out`)
+## Audio (decode always; sound on Linux/BSD, elsewhere with `audio-out`)
 
 **Decode** (`lcc-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
 returns interleaved f32 PCM at the source rate: `info()` → `AudioInfo {codec, sample_rate, channels}`; `seek(t)` +
@@ -276,16 +277,17 @@ Matroska; damaged copies).
 `Output::start(rate, channels, fill)` plays what `fill` writes; `output.clock()` is an `AudioClock` (frames the device
 pulled, as seconds) that the engine player can follow. `CAN_PLAY` says whether the build has sound.
 
-**Turning sound on (user decision pending).** Sound needs the cargo feature `audio-out`
+**Linux and the BSDs: always on.** `crates/audio-out/src/pulse.rs` speaks the PulseAudio native protocol (also served
+by PipeWire's `pipewire-pulse`) through the pure-Rust `pulseaudio` crate (MIT): no C library, so every build on those
+systems has sound (`CAN_PLAY` true, `canPlayAudio` true for clips with decodable sound). With no server running,
+`Output::start` errors and playback stays silent on the system clock.
+
+**macOS / Windows: the `audio-out` feature.** There sound needs the cargo feature `audio-out`
 (`cargo build -p lcc-app --features audio-out`; it forwards `lcc-engine/audio-out` → `lcc-audio-out/audio-out`, and
 `lcc-slideshow/audio-out` is the same switch). It brings in `cpal` (Apache-2.0), which on Linux links the system C
 library **libasound** (ALSA, through `alsa-sys` and pkg-config): a C dependency at build and run time, which the
-pure-Rust rule forbids by default. macOS (CoreAudio) and Windows (WASAPI) need no extra library. The choice for the
-maintainer: accept libasound on Linux (distro packages have it), or keep Linux silent and enable the feature only on
-macOS/Windows release builds. Until then no build enables it: `video.get` reports `canPlayAudio: false`, playback
-follows the system clock, slideshows play silently. Still to do once it is on: the playback worker starts an
-`Output` fed from `AudioReader` (resampled to `lcc_audio_out::default_rate()`) and calls
-`session.video.follow_audio_clock(output.clock())`.
+pure-Rust rule forbids by default. macOS (CoreAudio) and Windows (WASAPI) need no extra library. Linux doesn't need it (the PulseAudio path above). Without
+it, macOS and Windows builds report `canPlayAudio: false`, follow the system clock and play slideshows silently.
 
 Checked 2026-10-12: with default features no package (`lcc-app`, `lcc-cli`, `lcc-web`, `lcc-engine`, `lcc-slideshow`)
 has `cpal` in its tree (`cargo tree -p <pkg> -i cpal` finds none); `cargo deny check licenses` passes with default
@@ -403,6 +405,7 @@ Reproduce: `cargo test --release -p lcc-gpu --test grade -- --ignored --nocaptur
 ## Revision history
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Clip sound on Linux/BSD through the pure-Rust PulseAudio / PipeWire client in every build; `audio-out` only for macOS/Windows |
 | 2026-10-12 | minor | Collapsed the two revision histories and the stacked Last updated lines into one |
 | 2026-10-12 | minor | "Using video" section (M14.9). |
 | 2026-10-12 | minor | M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag. |

@@ -463,7 +463,7 @@ impl Session {
         #[cfg(not(target_arch = "wasm32"))]
         {
             let id = if on_disk { library_id(&dir) } else { String::new() };
-            crate::cmd::plugins::set_library(&id);
+            self.plugin_library = id;
             crate::cmd::plugins::sync_fields_with(self, false);
         }
         let mut settings = SettingsLoad::default();

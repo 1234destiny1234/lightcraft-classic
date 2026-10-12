@@ -41,15 +41,27 @@ pub fn manager() -> MutexGuard<'static, Option<Manager>> {
     g
 }
 
-/// The library now open (its stable id, `""` for one without): plug-ins' data is kept per library.
-pub fn set_library(id: &str) {
-    if let Some(m) = manager().as_mut() {
-        m.set_library(id);
+/// The manager pointed at `library` (a session's [`Session::plugin_library`]): plug-ins' data is
+/// kept per library, and sessions with different libraries share the process-wide manager.
+fn manager_for(library: &str) -> MutexGuard<'static, Option<Manager>> {
+    let mut g = manager();
+    if let Some(m) = g.as_mut()
+        && m.library() != library
+    {
+        m.set_library(library);
     }
+    g
 }
 
 fn with_manager<R>(f: impl FnOnce(&mut Manager) -> Result<R>) -> Result<R> {
     let mut g = manager();
+    let m = g.get_or_insert_with(Manager::in_memory);
+    f(m)
+}
+
+/// [`with_manager`] with the manager pointed at `library` (see [`manager_for`]).
+fn with_library<R>(library: &str, f: impl FnOnce(&mut Manager) -> Result<R>) -> Result<R> {
+    let mut g = manager_for(library);
     let m = g.get_or_insert_with(Manager::in_memory);
     f(m)
 }
@@ -147,7 +159,8 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.install";
     let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path` (a .wasm file)"))?;
     let grant = grant_param(p, C)?;
-    let r = with_manager(|m| m.install_file(std::path::Path::new(path), grant).map(|i| i.info()).map_err(|e| plugin_err(C, e)))?;
+    let lib = s.plugin_library.clone();
+    let r = with_library(&lib, |m| m.install_file(std::path::Path::new(path), grant).map(|i| i.info()).map_err(|e| plugin_err(C, e)))?;
     sync_fields(s);
     Ok(r)
 }
@@ -166,7 +179,8 @@ fn inspect_file(_: &mut Session, p: &Value) -> Result<Value> {
 fn uninstall(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.uninstall";
     let id = id_param(p, C)?;
-    with_manager(|m| m.uninstall(id).map(|_| Value::Null).map_err(|e| plugin_err(C, e)))?;
+    let lib = s.plugin_library.clone();
+    with_library(&lib, |m| m.uninstall(id).map(|_| Value::Null).map_err(|e| plugin_err(C, e)))?;
     sync_fields(s);
     Ok(Value::Null)
 }
@@ -175,7 +189,8 @@ fn enable(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.enable";
     let id = id_param(p, C)?;
     let on = bool_or(p, "enabled", true);
-    let r = with_manager(|m| m.set_enabled(id, on).map(|_| json!({"id": id, "enabled": on})).map_err(|e| plugin_err(C, e)))?;
+    let lib = s.plugin_library.clone();
+    let r = with_library(&lib, |m| m.set_enabled(id, on).map(|_| json!({"id": id, "enabled": on})).map_err(|e| plugin_err(C, e)))?;
     sync_fields(s);
     Ok(r)
 }
@@ -199,8 +214,9 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let command = str_param(p, "command").ok_or_else(|| bad(C, "missing `command`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
     let selection: Vec<String> = s.targets(p).iter().map(|i| i.0.to_string()).collect();
+    let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
-    let r = with_manager(|m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)));
+    let r = with_library(&lib, |m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)));
     // the command may have written the plug-in's own fields
     sync_fields(s);
     r
@@ -233,15 +249,17 @@ fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
         }
         photos.push(v);
     }
+    let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
-    with_manager(|m| Ok(Value::Array(m.suggest_metadata(&photos, &mut host))))
+    with_library(&lib, |m| Ok(Value::Array(m.suggest_metadata(&photos, &mut host))))
 }
 
 fn post_export(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.postExport";
     let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
+    let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
-    let r = with_manager(|m| Ok(Value::Array(m.post_export(files, &mut host))));
+    let r = with_library(&lib, |m| Ok(Value::Array(m.post_export(files, &mut host))));
     sync_fields(s);
     r
 }
@@ -338,7 +356,7 @@ impl Drop for PluginService {
 /// `destination` set). `None` when nothing ran. Runs here, on the caller's thread; the app runs
 /// the same calls on a worker ([`export_hooks`], [`ExportHooks::run`]).
 pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value>) -> Option<Vec<Value>> {
-    let hooks = export_hooks(files, destination)?;
+    let hooks = export_hooks(&s.plugin_library, files, destination)?;
     let r = hooks.run(&mut SessionHost(s), &|| false, &mut |_, _| {});
     // hooks may have written their own fields (a "delivered" mark)
     sync_fields(s);
@@ -348,12 +366,15 @@ pub fn after_export(s: &mut Session, files: &[Value], destination: Option<&Value
 /// The plug-in calls an export makes ([`after_export`]), planned under the manager's lock and run
 /// without it, so a long upload neither blocks the manager nor (on a worker) the window.
 pub struct ExportHooks {
+    /// The library of the session the export ran in (see [`Session::plugin_library`]).
+    library: String,
     #[allow(clippy::type_complexity)]
     calls: Vec<(String, Option<String>, std::result::Result<(Value, Vec<PathBuf>), lcc_plugins::Error>)>,
 }
 
-/// The plug-in calls after an export of `files` to `destination` (see [`after_export`]); `None` when there are none.
-pub fn export_hooks(files: &[Value], destination: Option<&Value>) -> Option<ExportHooks> {
+/// The plug-in calls after an export of `files` to `destination` from a session with `library`
+/// open ([`Session::plugin_library`], see [`after_export`]); `None` when there are none.
+pub fn export_hooks(library: &str, files: &[Value], destination: Option<&Value>) -> Option<ExportHooks> {
     let files: Vec<Value> = files.iter().filter(|f| f.get("path").and_then(Value::as_str).is_some()).cloned().collect();
     let destination = destination.filter(|d| d.is_object());
     if files.is_empty() {
@@ -361,8 +382,8 @@ pub fn export_hooks(files: &[Value], destination: Option<&Value>) -> Option<Expo
     }
     let dest = destination
         .map(|d| (d["plugin"].as_str().unwrap_or_default(), d["destination"].as_str().unwrap_or_default(), d.get("args").unwrap_or(&Value::Null)));
-    let calls = manager().as_ref().map(|m| m.export_calls(&files, dest)).unwrap_or_default();
-    (!calls.is_empty()).then_some(ExportHooks { calls })
+    let calls = manager_for(library).as_ref().map(|m| m.export_calls(&files, dest)).unwrap_or_default();
+    (!calls.is_empty()).then_some(ExportHooks { library: library.to_string(), calls })
 }
 
 impl ExportHooks {
@@ -387,9 +408,10 @@ impl ExportHooks {
                 Err("cancelled".to_string())
             } else {
                 call.map_err(|e| e.to_string()).and_then(|(req, lent)| {
-                    let mut pending = with_manager(|m| m.begin(&id, req, lent).map_err(|e| plugin_err("plugin", e))).map_err(|e| e.to_string())?;
+                    let mut pending =
+                        with_library(&self.library, |m| m.begin(&id, req, lent).map_err(|e| plugin_err("plugin", e))).map_err(|e| e.to_string())?;
                     let outcome = pending.run(host);
-                    let mut g = manager();
+                    let mut g = manager_for(&self.library);
                     let m = g.get_or_insert_with(Manager::in_memory);
                     m.end(pending, Some(outcome)).map_err(|e| e.to_string())
                 })
@@ -475,8 +497,9 @@ fn export_to(s: &mut Session, p: &Value) -> Result<Value> {
     let dest = str_param(p, "destination").ok_or_else(|| bad(C, "missing `destination`"))?;
     let files = p.get("files").and_then(Value::as_array).ok_or_else(|| bad(C, "missing `files: [{path, photo?}]`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
+    let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
-    let r = with_manager(|m| m.export_to(id, dest, &args, files, &mut host).map_err(|e| plugin_err(C, e)));
+    let r = with_library(&lib, |m| m.export_to(id, dest, &args, files, &mut host).map_err(|e| plugin_err(C, e)));
     sync_fields(s);
     r
 }
@@ -503,7 +526,8 @@ fn field_photos(s: &Session, p: &Value, cmd: &str) -> Result<Vec<String>> {
 
 fn metadata_fields(s: &mut Session, p: &Value) -> Result<Value> {
     let photos = field_photos(s, p, "plugin.metadataFields")?;
-    with_manager(|m| {
+    let lib = s.plugin_library.clone();
+    with_library(&lib, |m| {
         let mut merged: Vec<Value> = Vec::new();
         for (n, photo) in photos.iter().enumerate() {
             for (k, plugin) in m.metadata_fields(photo).into_iter().enumerate() {
@@ -532,7 +556,8 @@ fn set_field(s: &mut Session, p: &Value) -> Result<Value> {
     let plugin = str_param(p, "plugin").ok_or_else(|| bad(C, "missing `plugin`"))?;
     let key = str_param(p, "field").ok_or_else(|| bad(C, "missing `field`"))?;
     let value = p.get("value").cloned().unwrap_or(Value::Null);
-    let set = with_manager(|m| {
+    let lib = s.plugin_library.clone();
+    let set = with_library(&lib, |m| {
         let mut v = Value::Null;
         for photo in &photos {
             v = m.set_metadata_field(plugin, photo, key, &value).map_err(|e| plugin_err(C, e))?;
@@ -554,7 +579,7 @@ pub fn restore_fields(s: &mut Session, items: &[(lcc_catalog::PhotoId, Vec<(Stri
     }
     let mut n = 0;
     {
-        let mut g = manager();
+        let mut g = manager_for(&s.plugin_library);
         let Some(m) = g.as_mut() else { return 0 };
         for (id, fields) in items {
             if s.catalog.photo(*id).is_none() {
@@ -604,7 +629,7 @@ pub fn sync_fields(s: &mut Session) -> usize {
 /// sidecars already have what the plug-ins hold).
 pub(crate) fn sync_fields_with(s: &mut Session, write_sidecars: bool) -> usize {
     let (values, skipped) = {
-        let mut g = manager();
+        let mut g = manager_for(&s.plugin_library);
         // rules compare number fields as numbers
         if let Some(m) = g.as_ref() {
             lcc_catalog::rules::set_numeric_plugin_fields(m.list().filter(|p| p.enabled).flat_map(|p| {
@@ -773,7 +798,7 @@ mod tests {
         manager().get_or_insert_with(Manager::in_memory).install_bytes(&hook_module("test.relay"), None).unwrap();
         let files = [json!({"path": "/tmp/x.jpg"})];
         let d = json!({"plugin": "test.relay", "destination": "d"});
-        let hooks = export_hooks(&files, Some(&d)).unwrap();
+        let hooks = export_hooks("", &files, Some(&d)).unwrap();
         let (mut host, requests) = relay_host();
         let worker = std::thread::spawn(move || {
             // a catalog read from the worker waits for the session's thread to answer it
@@ -793,7 +818,7 @@ mod tests {
         drop(requests);
         assert!(host.catalog("catalog.stats", &json!({})).is_err());
         // cancelled before they start: no plug-in runs, none stays busy
-        let r = export_hooks(&files, None).unwrap().run(&mut lcc_plugins::NoHost, &|| true, &mut |_, _| {});
+        let r = export_hooks("", &files, None).unwrap().run(&mut lcc_plugins::NoHost, &|| true, &mut |_, _| {});
         assert!(r.iter().all(|v| v["error"] == "cancelled"), "{r:?}");
         // a plug-in whose call is out (on a worker) is busy for others until it comes back
         let call = with_manager(|m| m.begin("test.relay", json!({"hook": "export", "files": []}), vec![]).map_err(|e| plugin_err("t", e))).unwrap();
@@ -987,7 +1012,6 @@ mod tests {
         for d in [a, b] {
             let _ = std::fs::remove_dir_all(d);
         }
-        set_library("");
         manager().get_or_insert_with(Manager::in_memory).uninstall("test.libs").unwrap();
     }
 

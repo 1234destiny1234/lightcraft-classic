@@ -268,6 +268,9 @@ pub struct Session {
     pub library: Option<library::Library>,
     /// Identity of current library opening; refreshed only after a successful open.
     pub(crate) library_identity: Arc<()>,
+    /// The stable id of the open library as plug-ins' data is kept (`""`: none). The plug-in
+    /// manager is process-wide; each call made for this session points it at this library first.
+    pub(crate) plugin_library: String,
     /// XMP sidecar preferences (persisted with the library).
     pub xmp: sidecar::XmpPrefs,
     /// Parameters of the last export (`app.export` params, minus targets), persisted in prefs.json.
@@ -408,6 +411,7 @@ impl Session {
             active_spot: None,
             library: None,
             library_identity: Arc::new(()),
+            plugin_library: String::new(),
             xmp: sidecar::XmpPrefs::default(),
             last_export: None,
             previous_export: Vec::new(),
@@ -445,6 +449,11 @@ impl Session {
     }
 
     /// A session with the procedurally generated demo library loaded.
+    /// The open library's id as plug-in data is kept (`""`: none); see [`cmd::plugins::export_hooks`].
+    pub fn plugin_library(&self) -> &str {
+        &self.plugin_library
+    }
+
     pub fn with_demo() -> Session {
         let mut s = Session::new();
         demo::load(&mut s);
