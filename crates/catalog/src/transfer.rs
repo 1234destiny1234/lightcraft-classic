@@ -282,7 +282,7 @@ fn metadata_differs(a: &Photo, b: &Photo) -> bool {
 }
 
 fn settings_differ(a: &Photo, b: &Photo) -> bool {
-    a.develop != b.develop || a.history != b.history || a.versions != b.versions
+    a.develop != b.develop || a.history != b.history || a.history_cursor != b.history_cursor || a.versions != b.versions
 }
 
 /// An album's place: its folder names from the top, and its own name.
@@ -372,6 +372,7 @@ impl ImportPlan {
             if settings {
                 ops.push(Op::SetDevelop { id: c.target, settings: p.develop.clone(), label: "Import from Catalog".into(), edited: p.edited.clone() });
                 ops.push(Op::SetHistory { id: c.target, history: p.history.clone() });
+                ops.push(Op::SetHistoryCursor { id: c.target, cursor: p.history_cursor });
                 ops.push(Op::SetVersions { id: c.target, versions: p.versions.clone() });
             }
             if metadata {

@@ -244,8 +244,9 @@ fn op_variants_are_versioned() {
             Op::SetAsShotWb { .. } => 8,
             Op::SetAlbumPhotoOrder { .. } => 9,
             Op::SetVideoMeta { .. } | Op::SetVideoTrim { .. } | Op::SetVideoPoster { .. } => 10,
+            Op::SetHistoryCursor { .. } => 11,
         }
     }
-    let newest = since(&Op::SetVideoPoster { id: crate::PhotoId(1), time: None });
+    let newest = since(&Op::SetHistoryCursor { id: crate::PhotoId(1), cursor: None });
     assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
 }

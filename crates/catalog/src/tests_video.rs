@@ -1,6 +1,6 @@
 //! Catalog format 10: video clips (`Photo.video`, `Op::SetVideoMeta` / `SetVideoTrim` / `SetVideoPoster`).
 
-use crate::journal::{Journal, SNAPSHOT, VERSION};
+use crate::journal::{Journal, SNAPSHOT};
 use crate::query::{Filter, Sort};
 use crate::rules::RuleSet;
 use crate::{Catalog, MediaKind, MemStore, Op, Photo, PhotoId, Source, VideoMeta};
@@ -30,11 +30,6 @@ fn clip(c: &mut Catalog) -> PhotoId {
 
 fn roundtrip(op: Op) -> Op {
     serde_json::from_str(&serde_json::to_string(&op).unwrap()).unwrap()
-}
-
-#[test]
-fn format_is_ten() {
-    assert_eq!(VERSION, 10);
 }
 
 #[test]
