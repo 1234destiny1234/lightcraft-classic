@@ -15,6 +15,9 @@ impl MoveFs for PartialRename {
     fn is_file(&self, path: &Path) -> bool {
         RealFs.is_file(path)
     }
+    fn listed(&self, path: &Path) -> bool {
+        RealFs.listed(path)
+    }
     fn same_file(&self, a: &Path, b: &Path) -> bool {
         RealFs.same_file(a, b)
     }

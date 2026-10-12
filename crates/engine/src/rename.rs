@@ -316,6 +316,12 @@ pub(crate) trait MoveFs {
     /// Copy `a` to a new file `b` (an independent copy, never a link), failing when `b` exists.
     fn copy_no_replace(&self, a: &Path, b: &Path) -> std::io::Result<()>;
     fn remove_file(&self, p: &Path) -> std::io::Result<()>;
+    /// The folder lists a file spelled exactly `p`. On a case-insensitive volume `a.XMP` is a
+    /// file when only `a.xmp` is there; moving it by that spelling would change its name's case.
+    /// When the folder can't be listed: whether `p` is a file.
+    fn listed(&self, p: &Path) -> bool {
+        self.is_file(p)
+    }
     /// Another photo file beside the stem-named sidecar `sidecar` that shares its stem (e.g.
     /// `IMG_1.JPG` for `IMG_1.xmp`), which still uses that sidecar.
     fn stem_sibling(&self, sidecar: &Path) -> Option<String>;
@@ -407,6 +413,15 @@ impl MoveFs for RealFs {
 
     fn remove_file(&self, p: &Path) -> std::io::Result<()> {
         std::fs::remove_file(p)
+    }
+
+    fn listed(&self, p: &Path) -> bool {
+        let (Some(dir), Some(name)) = (p.parent(), p.file_name()) else { return self.is_file(p) };
+        let dir = if dir.as_os_str().is_empty() { Path::new(".") } else { dir };
+        match std::fs::read_dir(dir) {
+            Ok(entries) => self.is_file(p) && entries.flatten().any(|e| e.file_name() == name),
+            Err(_) => self.is_file(p),
+        }
     }
 
     fn stem_sibling(&self, sidecar: &Path) -> Option<String> {
@@ -702,12 +717,12 @@ pub(crate) fn move_file_with(fs: &dyn MoveFs, from: &str, to: &str) -> std::resu
     let mut packets: Vec<RetainedPacket> = sidecars(from)
         .into_iter()
         .map(|(p, _, _)| p)
-        .filter(|p| fs.is_file(p))
+        .filter(|p| fs.listed(p))
         .map(|path| RetainedPacket { version: fs.packet_version(&path).ok(), path })
         .collect();
     move_one(fs, f, t).map_err(|e| fail(format!("rename {from}: {e}")))?;
     let mut done: Vec<SidecarMove> = Vec::new();
-    let mut remaining = sidecars(from).into_iter().filter(|(sc, _, _)| fs.is_file(sc)).map(|(sc, naming, upper)| {
+    let mut remaining = sidecars(from).into_iter().filter(|(sc, _, _)| fs.listed(sc)).map(|(sc, naming, upper)| {
         let mut dst = crate::sidecar::sidecar_path(to, naming);
         if upper {
             dst = dst.with_extension("XMP");
@@ -1223,6 +1238,10 @@ pub(crate) mod tests {
             self.files.borrow_mut().remove(i);
             Ok(())
         }
+        fn listed(&self, p: &Path) -> bool {
+            let p = Self::norm(p);
+            self.files.borrow().iter().any(|(f, _)| *f == p)
+        }
         fn stem_sibling(&self, sidecar: &Path) -> Option<String> {
             let stem = Self::norm(&sidecar.with_extension(""));
             self.files.borrow().iter().map(|(f, _)| f.clone()).find(|f| {
@@ -1377,6 +1396,18 @@ pub(crate) mod tests {
         move_all(&fs, &moves).unwrap();
         s.catalog.apply(undo.clone()).unwrap();
         assert_eq!(fs.listing(), before);
+    }
+
+    /// On a case-insensitive volume (Windows, macOS) `a.XMP` answers for `a.xmp`: the sidecars
+    /// move by the spelling the folder lists, so they keep their extension's case.
+    #[test]
+    fn sidecars_move_by_their_listed_spelling_on_case_insensitive_volumes() {
+        let fs = FakeFs::new(true, &[("/p/a.jpg", "photo"), ("/p/a.xmp", "stem"), ("/p/a.jpg.XMP", "full")]);
+        move_file_with(&fs, "/p/a.jpg", "/p/Trip.jpg").unwrap();
+        assert_eq!(
+            fs.listing(),
+            vec![("/p/Trip.jpg".into(), "photo".into()), ("/p/Trip.jpg.XMP".into(), "full".into()), ("/p/Trip.xmp".into(), "stem".into())]
+        );
     }
 
     /// Issue #95: a case-only rename is a real change on a case-insensitive volume and never

@@ -12,6 +12,9 @@ impl MoveFs for Faults {
     fn is_file(&self, p: &Path) -> bool {
         RealFs.is_file(p)
     }
+    fn listed(&self, p: &Path) -> bool {
+        RealFs.listed(p)
+    }
     fn same_file(&self, a: &Path, b: &Path) -> bool {
         RealFs.same_file(a, b)
     }
