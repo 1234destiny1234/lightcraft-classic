@@ -251,17 +251,24 @@ fn scale_shift(red: i64, blue: i64) -> (i64, i64) {
     if wide && red % 20 == 0 && blue % 20 == 0 { (red / 20, blue / 20) } else { (red, blue) }
 }
 
+/// Highlight and shadow use 16 stored units per dial step, with the opposite sign
+/// (stored −16 is +1, stored 16 is −1). Half steps are multiples of 8, so stored 24 is −1.5.
+/// Values that are not on that grid, or outside the camera's −4..=+4 dial, stay unknown.
 fn tone_dial(v: i64) -> String {
-    match v {
-        -64 => "+4".to_string(),
-        -48 => "+3".to_string(),
-        -32 => "+2".to_string(),
-        -16 => "+1".to_string(),
-        0 => "0".to_string(),
-        16 => signed(-1),
-        32 => signed(-2),
-        other => format!("Unknown ({other})"),
+    if v % 8 != 0 {
+        return format!("Unknown ({v})");
     }
+    let Some(half_steps) = v.checked_div(8).and_then(i64::checked_neg) else {
+        return format!("Unknown ({v})");
+    };
+    if half_steps.unsigned_abs() > 8 {
+        return format!("Unknown ({v})");
+    }
+    if half_steps % 2 == 0 {
+        return signed(half_steps / 2);
+    }
+    let sign = if half_steps > 0 { "+" } else { "−" };
+    format!("{sign}{}.5", half_steps.unsigned_abs() / 2)
 }
 
 fn grain_roughness(v: i64) -> String {
@@ -452,6 +459,17 @@ mod tests {
 
     fn value<'a>(recipe: &'a FujiRecipe, label: &str) -> &'a str {
         recipe.rows.iter().find(|r| r.label == label).map(|r| r.value.as_str()).unwrap_or("")
+    }
+
+    #[test]
+    fn tone_half_steps() {
+        assert_eq!(tone_dial(-16), "+1");
+        assert_eq!(tone_dial(-32), "+2");
+        assert_eq!(tone_dial(16), "−1");
+        assert_eq!(tone_dial(24), "−1.5");
+        assert_eq!(tone_dial(-8), "+0.5");
+        assert_eq!(tone_dial(0), "0");
+        assert_eq!(tone_dial(7), "Unknown (7)");
     }
 
     #[test]
