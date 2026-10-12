@@ -2,9 +2,11 @@
 //! and [`AudioClock`], the device's position, which playback can follow instead of the system
 //! clock so pictures stay in step with the sound.
 //!
-//! Without the `audio-out` cargo feature (the default) nothing links to a sound library:
-//! [`CAN_PLAY`] is false and [`Output::start`] returns an error, so callers play silently.
-//! With it, output goes through cpal (on Linux that links the C library libasound).
+//! On Linux and the BSDs sound goes to a PulseAudio server (PulseAudio, or PipeWire through
+//! `pipewire-pulse`) over its native protocol in pure Rust ([`pulse`]), in every build. Elsewhere
+//! the `audio-out` cargo feature plays through cpal (CoreAudio, WASAPI; on Linux it would link the
+//! C library libasound, so there it is only a fallback when no PulseAudio server answers). With
+//! neither, [`CAN_PLAY`] is false and [`Output::start`] returns an error: callers play silently.
 //!
 //! Sources: own design (a sample counter advanced by the device callback).
 
@@ -14,8 +16,19 @@
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU64, Ordering};
 
-/// Whether this build can play sound.
-pub const CAN_PLAY: bool = cfg!(feature = "audio-out");
+#[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
+pub mod pulse;
+
+/// Whether this build has a sound path (PulseAudio / PipeWire on Linux and the BSDs, cpal with
+/// the `audio-out` feature). Playing still needs a running server or device.
+pub const CAN_PLAY: bool = cfg!(any(
+    feature = "audio-out",
+    target_os = "linux",
+    target_os = "freebsd",
+    target_os = "dragonfly",
+    target_os = "netbsd",
+    target_os = "openbsd"
+));
 
 /// Fills an interleaved output buffer; called on the audio thread.
 pub type Fill = Box<dyn FnMut(&mut [f32]) + Send>;
@@ -53,8 +66,12 @@ impl AudioClock {
     }
 }
 
-/// The default output device's preferred sample rate (None without a device or the feature).
+/// The default output device's preferred sample rate (None without a device or a sound path).
 pub fn default_rate() -> Option<u32> {
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
+    if let Some(r) = pulse::default_rate() {
+        return Some(r);
+    }
     #[cfg(feature = "audio-out")]
     {
         use cpal::traits::{DeviceTrait, HostTrait};
@@ -70,7 +87,9 @@ pub fn default_rate() -> Option<u32> {
 /// A stream playing on the default output device; dropping it stops the sound.
 pub struct Output {
     #[cfg(feature = "audio-out")]
-    _stream: cpal::Stream,
+    _stream: Option<cpal::Stream>,
+    #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
+    _pulse: Option<pulse::PulseOut>,
     clock: AudioClock,
 }
 
@@ -82,6 +101,35 @@ impl Output {
             return Err(format!("audio output: invalid format ({rate} Hz, {channels} channels)"));
         }
         let clock = AudioClock::new(rate);
+        #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
+        let fill = {
+            // PulseAudio / PipeWire first; without a server, hand `fill` back for cpal (if built)
+            let shared = std::sync::Arc::new(std::sync::Mutex::new(Some(fill)));
+            let s2 = shared.clone();
+            let relay: Fill = Box::new(move |out: &mut [f32]| {
+                if let Some(f) = s2.lock().unwrap_or_else(std::sync::PoisonError::into_inner).as_mut() {
+                    f(out);
+                }
+            });
+            match pulse::start(rate, channels, relay, clock.clone()) {
+                Ok(p) => {
+                    return Ok(Output {
+                        #[cfg(feature = "audio-out")]
+                        _stream: None,
+                        _pulse: Some(p),
+                        clock,
+                    });
+                }
+                Err(e) => {
+                    log::info!("{e}");
+                    let taken = shared.lock().unwrap_or_else(std::sync::PoisonError::into_inner).take();
+                    match taken {
+                        Some(f) => f,
+                        None => return Err(e),
+                    }
+                }
+            }
+        };
         #[cfg(feature = "audio-out")]
         {
             use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
@@ -103,12 +151,21 @@ impl Output {
                 )
                 .map_err(|e| format!("audio output: {e}"))?;
             stream.play().map_err(|e| format!("audio output: {e}"))?;
-            Ok(Output { _stream: stream, clock })
+            Ok(Output {
+                _stream: Some(stream),
+                #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
+                _pulse: None,
+                clock,
+            })
         }
         #[cfg(not(feature = "audio-out"))]
         {
             let _ = (fill, clock);
-            Err("this build plays without sound (built without the audio-out feature)".into())
+            if CAN_PLAY {
+                Err("audio output: no PulseAudio or PipeWire server to play through".into())
+            } else {
+                Err("this build plays without sound (built without the audio-out feature)".into())
+            }
         }
     }
 
