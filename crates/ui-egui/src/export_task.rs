@@ -32,6 +32,17 @@ pub struct ExportTask {
 }
 
 impl ExportTask {
+    /// A task without a plug-in destination (contact sheets, timelapses).
+    pub(crate) fn new(
+        total: usize,
+        progress: Arc<Mutex<(usize, String)>>,
+        cancel: Arc<AtomicBool>,
+        rx: Receiver<Result<(Vec<Value>, Option<Value>, bool), String>>,
+        guard: TaskGuard,
+    ) -> Self {
+        Self { total, progress, cancel, rx, guard, plugin_destination: None }
+    }
+
     /// `{total, done, current}` for `ui.inspect`.
     pub fn status(&self) -> Value {
         let (done, current) = self.progress.lock().map(|g| g.clone()).unwrap_or_default();
@@ -208,6 +219,14 @@ pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
                     let skipped = files.iter().filter(|f| f.get("skipped").is_some()).count();
                     let mut m =
                         crate::i18n::tr_format!("Exported {ok} of {total} photo{}", if total == 1 { "" } else { "s" }, ok = ok, total = total);
+                    let timelapse = files.first().filter(|f| f["timelapse"] == true);
+                    if let Some(t) = timelapse {
+                        m = crate::i18n::tr_format!(
+                            "Exported timelapse: {photos} photos, {frames} frames",
+                            photos = t["photos"].as_u64().unwrap_or(0),
+                            frames = t["frames"].as_u64().unwrap_or(0)
+                        );
+                    }
                     if let Some(sheet) = sheet {
                         m = format!("Exported contact sheet: {} photos, {} pages", sheet["photos"], sheet["pages"]);
                     }
@@ -227,7 +246,7 @@ pub fn poll(app: &mut DacApp, ctx: &egui::Context) {
                     app.last_export_result = Some(json!({"files": files, "cancelled": cancelled, "applePhotos": photos}));
                     // P4.3: plug-in export hooks, G19: destination; on a worker, reported when they finish
                     #[cfg(not(target_arch = "wasm32"))]
-                    if sheet.is_none() {
+                    if sheet.is_none() && timelapse.is_none() {
                         crate::panels::plugins::after_export(app, ctx, &files, destination.as_ref());
                     }
                     m

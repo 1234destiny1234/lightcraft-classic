@@ -1438,5 +1438,21 @@
   "Codec": "Кодек",
   "Resolution": "Разрешение",
   "Audio": "Звук",
-  "Trim": "Обрезка"
+  "Trim": "Обрезка",
+  "Playback stopped": "Воспроизведение остановлено",
+  "video clips export as movies, trimmed, with their video edits": "видеоклипы экспортируются как фильмы, обрезанными и с их видеоправками",
+  "Video format": "Формат видео",
+  "Video quality": "Качество видео",
+  "Video long edge (px, 0 = full)": "Длинная сторона видео (пикс., 0 = полный размер)",
+  "H.264 (MP4)": "H.264 (MP4)",
+  "ProRes (MOV)": "ProRes (MOV)",
+  "Timelapse Video…": "Видео таймлапс…",
+  "Export Timelapse Video": "Экспорт видео таймлапс",
+  "Timelapse Video": "Видео таймлапс",
+  "Choose File…": "Выбрать файл…",
+  "Frames per Photo": "Кадров на фото",
+  "Cross-Fade Frames": "Кадров перехода",
+  "Fit (letterbox)": "Вписать (поля)",
+  "Fill (crop)": "Заполнить (обрезать)",
+  "Each photo with its own edits, in the order shown. No audio.": "Каждое фото со своими правками, в показанном порядке. Без звука."
 }

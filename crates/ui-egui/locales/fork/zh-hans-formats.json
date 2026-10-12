@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "瓦片缓存：{mb} MB，{n} 个瓦片",
   "Tagged {n} photos from the tracklog": "已根据轨迹日志标记 {n} 张照片",
   "Geotagged {n} photo(s)": "已为 {n} 张照片添加地理标记",
-  "Location {n}": "位置 {n}"
+  "Location {n}": "位置 {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} 张照片 · {frames} 帧 · {secs} 秒",
+  "Exported timelapse: {photos} photos, {frames} frames": "已导出延时视频：{photos} 张照片，{frames} 帧"
 }

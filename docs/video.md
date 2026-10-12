@@ -1,7 +1,8 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** minor (clip audio: PCM in MP4/MOV/MKV/TS/MXF, MP3; FLAC/ALAC skipped)
-> **Last updated:** 2026-10-12 · **Change:** minor (faster clip export: pipelined decode/grade/encode, GPU grade for H.264)
+> **Last updated:** 2026-10-12 · **Change:** minor (one revision history; export speed and audio codecs in the tracker docs)
+
+> **Last updated:** 2026-10-12 · **Change:** minor (timelapse video from photos, upstream #497)
 > **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
@@ -12,6 +13,23 @@
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
 used as git dependencies pinned to one full revision. The app writes no codecs or containers of its own.
+
+## Using video
+
+- **Import** clips like photos (MP4, MOV, MKV, WebM, MPEG-TS, MXF). The grid shows a poster frame; the Info panel
+  shows duration, frame rate, codec, resolution, audio and trim. `video:yes` in the search bar finds clips.
+- **Play** in the loupe: <kbd>Space</kbd> plays and pauses, <kbd>←</kbd> / <kbd>→</kbd> step one frame, drag the
+  playhead to scrub. Playback is silent in default builds (see [Audio](#audio-decode-always-sound-only-with-audio-out)).
+- **Trim**: drag the start and end handles on the bar; the drag is one undo step. Photo ▸ Video ▸ Reset Trim plays
+  the whole clip again.
+- **Poster frame**: Set Poster Frame (bar button or Photo ▸ Video) uses the current frame for the grid.
+- **Capture Frame** (Photo ▸ Video) saves the current frame, graded, as a JPEG next to the clip and stacks it with it.
+- **Edit** with the Light and Color controls, tone curve, Color Mixer and Color Grading; presets apply only those.
+  Masks, spot removal, red eye, lens corrections, denoise and crop are greyed out ("Not available for video").
+- **Export**: put clips in an export batch; the dialog's Video section picks H.264 (MP4) or ProRes (MOV), quality and
+  long edge. The movie keeps the trim, the grade and the sound.
+- **CLI**: `<cli> render clip.mov -o out.mp4 --trim 2,8` (seconds; `--trim 2,` = to the end). MCP agents use the
+  `video.*` commands and `export`.
 
 ## `crates/video` (`dac-video`, L3, native only)
 
@@ -139,9 +157,6 @@ leaves nothing behind. `set_video_hooks(items, &VideoHooks { cancel, progress })
 activity-row flag (checked once per frame) and a per-clip progress callback: the desktop background export and the
 headless MCP export show it as the row's detail (`clip.mp4 42%`). The Export dialog shows a Video section (format,
 quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`), `--trim IN,OUT` (seconds; OUT empty = to the end) exports a range.
-Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; frames are graded one at a
-time on the CPU (~0.7 s per 1080p frame, see Grading performance); no "export current frame as JPEG" command yet.
-quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`).
 **Speed.** `export_clip` runs decode (one thread, in order), grading (`ceil(cores/8)` threads, 1–4, each frame's grade
 is itself parallel) and encode + mux (the calling thread, which reorders frames by index) as a pipeline joined by
 bounded queues (4 frames each), so memory stays at ~a dozen frames. Cancel is checked between frames in every stage;
@@ -159,10 +174,42 @@ other builds, load 30–110, so numbers are noisy):
 | pipelined, GPU grade (H.264) | 45–52 s | 55 s |
 | pipelined, `<PREFIX>_GPU=0`, load ~110 | 232 s | 397 s |
 
+**Stage profile** (`<PREFIX>_PROFILE=1` prints per-frame busy time per stage). The Y'CbCr conversion and plane
+packing used to run on the encoder thread; they now run on the grade workers, and ProRes frames (intra-only, the
+encoder keeps no state between frames) are encoded there too, in parallel, and muxed in index order. Both encoders
+are already slice-parallel (filmcraft `threads` feature, on by default). Output is byte-identical to before (same
+sizes, 38 211 291 B H.264 / 550 802 254 B ProRes for 600 frames). Measured 2026-10-12 on the same 32-core machine at
+load 115–185 (heavily shared, so noisy), same session, interleaved after/before/after:
+
+| | H.264 | ProRes |
+|---|---|---|
+| before (conversion on the encoder thread) | 264 s | 378 s |
+| after, run 1 / run 2 | 75 s / 94 s | 224 s / 180 s |
+
+Per frame after (busy time summed over threads; H.264 run 1): decode 78 ms, grade 47 ms (GPU), conversion 280 ms
+(on 4 workers), H.264 encode + mux 124 ms on the calling thread with ~0 ms waiting: the H.264 encoder is now the
+bottleneck (124 ms × 600 ≈ the 75 s wall). For ProRes the workers are (CPU grade 430–530 ms + conversion and encode
+760–960 ms per frame over 4 workers) and the muxer waits. Next steps: more ProRes workers, a faster (parallel or
+SIMD) conversion, and H.264 over independent GOPs.
+
 The 55 s ProRes run (same CPU grade path) shows the pipeline's gain on a less loaded machine; the `GPU=0` run was
 taken at load ~110 and is CPU-starved. Output is byte-identical in size for ProRes before/after (the same frames).
 Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; no "export current frame as
 JPEG" command yet.
+
+## Timelapse from photos (upstream #497)
+`export.timelapse {path, ids?, fps?, size?, fit?, hold?, crossfade?, format?, quality?}` (`crates/engine/src/timelapse.rs`;
+UI: File ▸ Export ▸ Timelapse Video…, `crates/ui-egui/src/timelapse_ui.rs`) turns stills into a silent movie. Photos: `ids`
+in the given order, else the selection in the shown order (the current sort, Custom Order in an album); video clips are
+left out (`skipped`). Each photo is rendered by the export render job with its own develop settings (sRGB, 8-bit) and
+placed in one `size` frame (`"WxH"` or `[w, h]`, 16–8192, rounded down to even; default 1920x1080): `fit` letterboxes in
+black, `fill` crops the centre. Each photo is held `hold` frames (1–1000, default 1) and `crossfade` extra frames
+(0–1000) blend it into the next, so a movie has `photos × hold + (photos − 1) × crossfade` frames at `fps` (1–120,
+default 24). `format` `h264` (MP4) or `prores` (MOV; the default follows the extension), `quality` 1–100 (80). The
+frames go to `dac_video_export::SequenceWriter` (same encoders and muxer as clip export; `push_encoded` takes the
+sRGB render values as BT.709 video), written to `<path>.partial` and renamed when done; an error or a cancel (activity
+row ✕, checked once per frame) leaves no file. The desktop app runs it on a worker; CLI/MCP run it in the call with its
+own activity row. Limits: no audio/music, no deflicker or pan/zoom, integer frame rates only, native only.
 
 ## Audio (decode always; sound only with `audio-out`)
 
@@ -259,7 +306,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 ## Revision history
 
-- 2026-10-12: M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag.
+- 2026-10-12: `export.timelapse` + File ▸ Export ▸ Timelapse Video… (upstream #497), `dac_video_export::SequenceWriter`.
 - 2026-10-12: clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`.
 - 2026-10-12: CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still
   active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`
@@ -268,7 +315,6 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
 - 2026-10-12: M14.8 export through the engine (options, dialog, CLI, MCP, activity row).
-- 2026-10-12: faster clip export (pipelined stages, parallel grading, GPU grade for H.264).
 ## Import and posters (M14.2 import side, M14.3)
 - **Import** (`dac_engine::files::probe_video_file`, used by the native file probe for video extensions): the clip is
   hashed in 1 MiB chunks (content hash + SHA-1 of the whole file, equal to hashing its bytes at once, so duplicate
@@ -291,7 +337,6 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 
 Catalog format 10 + import (M14.2), grid posters (M14.3), player (M14.4), trim/poster (M14.6), develop on video
 (M14.7), export (M14.8). See `plan/video-filmcraft.md` §9.
-> **Last updated:** 2026-10-12 · **Change:** minor (grading performance measured)
 ## Grading performance
 A clip has one `DevelopSettings`, applied to every frame through the display-referred (JPEG/TIFF) input path of the
 photo pipeline: `dac_pipeline::grade::grade_frame(&Rgb32f, &DevelopSettings, Quality) -> Rgba8` (CPU) and
@@ -326,6 +371,16 @@ Reproduce: `cargo test --release -p dac-gpu --test grade -- --ignored --nocaptur
 ## Revision history
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Collapsed the two revision histories and the stacked Last updated lines into one |
+| 2026-10-12 | minor | "Using video" section (M14.9). |
+| 2026-10-12 | minor | M14.4 loupe playback (decode-ahead worker, LUT grade, paused still), one-step trim drag. |
+| 2026-10-12 | minor | clip audio decode (`AudioReader`: AAC, Opus, AC-3 in MP4 / Matroska / TS; `resample`), `dac-audio-out` (shared with slideshows) with `AudioClock`, engine clock hook, `canPlayAudio`. |
+| 2026-10-12 | minor | CLI `render --trim`; photo-only commands naming a clip in `ids` are refused even with a still active (`cmd::video_gate_call`); end-to-end tests (`apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs` `video_clip_over_mcp`) on clips from `dac_video::test_util::write_clip` (feature `test-util`, dev-only). |
+| 2026-10-12 | minor | sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost. |
+| 2026-10-12 | minor | M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend. |
+| 2026-10-12 | minor | M14.8 core, `dac-video-export` (S3: option A). |
+| 2026-10-12 | minor | M14.8 export through the engine (options, dialog, CLI, MCP, activity row). |
+| 2026-10-12 | minor | faster clip export (pipelined stages, parallel grading, GPU grade for H.264). |
 | 2026-10-12 | minor | Import fills `VideoMeta`, size, duration, date, GPS (streamed hash); graded poster thumbnails and loupe, placeholder tile (M14.2/M14.3) |
 | 2026-10-12 | minor | Grading performance: CPU / GPU / LUT timings at 1080p and 4K |
 | 2026-10-12 | minor | Clip audio decode: PCM (MP4/MOV FourCCs, Matroska, Blu-ray/DVD LPCM, MXF PCM/AES3), MP3 (`puremp3`); FLAC and ALAC documented as skipped |

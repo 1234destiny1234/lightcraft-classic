@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "圖磚快取：{mb} MB，{n} 個圖磚",
   "Tagged {n} photos from the tracklog": "已依軌跡記錄標記 {n} 張相片",
   "Geotagged {n} photo(s)": "已為 {n} 張相片加上地理標記",
-  "Location {n}": "位置 {n}"
+  "Location {n}": "位置 {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} 張照片 · {frames} 個影格 · {secs} 秒",
+  "Exported timelapse: {photos} photos, {frames} frames": "已輸出縮時影片：{photos} 張照片，{frames} 個影格"
 }

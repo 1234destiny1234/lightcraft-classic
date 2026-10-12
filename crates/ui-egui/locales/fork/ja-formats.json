@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "タイルキャッシュ: {mb} MB、{n} タイル",
   "Tagged {n} photos from the tracklog": "トラックログから {n} 枚の写真にタグ付けしました",
   "Geotagged {n} photo(s)": "{n} 枚の写真にジオタグを付けました",
-  "Location {n}": "場所 {n}"
+  "Location {n}": "場所 {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} 枚の写真 · {frames} フレーム · {secs} 秒",
+  "Exported timelapse: {photos} photos, {frames} frames": "タイムラプスを書き出しました：写真 {photos} 枚、{frames} フレーム"
 }

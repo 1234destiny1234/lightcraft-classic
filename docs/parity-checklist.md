@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-PLAY: MP3 and PCM clip audio; LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-EXPORT 🟡 → ✅: pipelined export with GPU grade, audio codecs; LR-VID-PLAY: MP3 and PCM clip audio; LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -43,7 +43,8 @@ cited here still exists. Formerly docs/parity.md.
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
-| R. Video (VID) | 0 | 3 | 2 | 1 | — | 0/2 (0%) |
+| R. Video (VID) | 4 | 1 | 0 | 1 | — | 2/2 (100%) |
+| R. Video (VID) | 0 | 4 | 2 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 15 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
 | T. Share (SHARE) | 0 | 0 | 0 | 4 | — | — |
 | U. Map & location (MAP) | 0 | 2 | 0 | 0 | — | 0/1 (0%) |
@@ -52,11 +53,13 @@ cited here still exists. Formerly docs/parity.md.
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
 | Y. Menus | 84 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
-| Lightroom Classic extras | 99 | 21 | 5 | 0 | — | 34/38 (89%) |
+| Lightroom Classic extras | 101 | 19 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 483 | 60 | 38 | 27 | 193/201 (96%) | 161/175 (92%) |
+| **Total** | 489 | 56 | 36 | 27 | 193/201 (96%) | 163/175 (93%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.3%** of 581 in-scope rows — P0 98.0% of 201 · P1 95.7% of 175 · P2 72.3% of 204.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.0%** of 581 in-scope rows — P0 98.0% of 201 · P1 96.3% of 175 · P2 73.8% of 204.
+| **Total** | 483 | 61 | 38 | 27 | 193/201 (96%) | 161/175 (92%) |
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.2%** of 582 in-scope rows — P0 98.0% of 201 · P1 95.7% of 175 · P2 72.3% of 204.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -443,11 +446,12 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | 🟡 | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs`, `cmd:video.get`, `cmd:video.play`, `cmd:video.togglePlay`, `cmd:video.seek`, `cmd:video.stepFrame`, `crates/engine/src/video/player.rs` | videos can be catalogued (kind, duration); `dac-video` probes MP4/MOV and decodes H.264/HEVC frames and posters (M14.1, [video.md](video.md)); engine player (M14.4): play / pause / seek (snaps to frames) / frame step inside the trim, clock-driven, stops or loops at the trim end; clip audio decoded (`AudioReader`: AAC, Opus, AC-3) but muted: sound needs the non-default `audio-out` feature (libasound on Linux, decision pending; `canPlayAudio`); loupe player (M14.4): a decode-ahead worker (8-frame queue, ≤ 960 px, LUT-graded, rebaked on edits) shows frames by the player clock and drops late ones; paused/scrubbed shows a full-quality graded still; Space / ←/→ |
-| LR-VID-TRIM | Trim | P1 | 🟡 | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim`, `cmd:video.setTrim`, `cmd:video.resetTrim` | catalog format 10 stores and validates the trim (undoable, in sidecars as `lcvid:trimIn/trimOut`); engine commands (M14.6): validated, one undo step, playback honours it; loupe trim handles drag a preview and commit one undo step on release |
+| LR-VID-PLAY | Video playback | P1 | ✅ | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs`, `cmd:video.get`, `cmd:video.play`, `cmd:video.togglePlay`, `cmd:video.seek`, `cmd:video.stepFrame`, `crates/engine/src/video/player.rs`, `crates/engine/src/video/playback.rs`, `crates/ui-egui/src/video_view.rs` | MP4/MOV, MKV/WebM, MPEG-TS, MXF with H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2 decode in pure Rust ([video.md](video.md)); loupe player: Space play/pause, ←/→ frame step, scrub bar, decode-ahead worker with LUT-graded frames by the player clock, full-quality graded still when paused. Limits: muted by default (sound only with the non-default `audio-out` feature, decision pending), interlaced H.264 unsupported, AV1 slow, no hardware decode |
+| LR-VID-TRIM | Trim | P1 | 🟡 | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim`, `cmd:video.setTrim`, `cmd:video.resetTrim` | catalog format 10 stores and validates the trim (undoable, in sidecars as `lcvid:trimIn/trimOut`); engine commands (M14.6): validated, one undo step, playback honours it; no trim handles in the UI yet |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video. Gating landed: `crop.*`, `mask.*`, `spot.*`, `redeye.*`, `denoise.queue`/`toggle` and the Crop / Remove / Masking / Red Eye panels and local tools are disabled for a clip ("Not available for video", also when a call names a clip in `ids`; `dac_engine::cmd::video_gate`, `crates/ui-egui/src/video_ui.rs` `blocked`); presets, paste and sync onto a clip keep only the video controls (`Session::develop_op`); Info panel shows duration, frame rate, codec, resolution, audio and trim |
 | LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster`, `crates/engine/src/media.rs` (`SourceRef::Video`, `video_poster`) | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); grid thumbnails and the loupe show the graded poster frame, a new poster time re-renders them, undecodable clips get a film placeholder tile (M14.3); no command or UI to pick the frame yet |
 | LR-VID-EXPORT | Video export | P2 | 🟡 | `crates/engine/src/export_video.rs`, `crates/video-export/src/native.rs` | M14.8: a clip in an `app.export` batch (app dialog Video section, CLI `render … -o x.mp4 [--trim IN,OUT]`, MCP `export`; end-to-end tests `apps/cli/tests/video.rs`, `crates/mcp/tests/e2e.rs`) exports as a movie with its trim and video-only develop settings graded at full quality in float (H.264+AAC MP4 or ProRes 422 MOV; `videoFormat`/`videoQuality`/`videoMaxSide`); photos in the batch export as before; activity row cancels within a frame. Limits: needs `Photo.video` from the import probe (lands with M14.2/engine wiring), frames graded one at a time on the CPU (~0.7 s per 1080p frame), AAC is the only audio kept, no web |
+| LR-VID-TIMELAPSE | Photos as a timelapse video (upstream #497; LRC has it only as Slideshow ▸ Export Video) | P3 | 🟡 | `cmd:export.timelapse`, `crates/ui-egui/src/timelapse_ui.rs`, `crates/engine/src/timelapse.rs`, `crates/video-export/src/sequence.rs`, `crates/engine/src/tests_timelapse.rs` | the selection in the shown order (Custom Order in an album), each photo with its own edits, fit (letterbox) or fill (crop) one frame size, 1–120 fps, frames per photo, cross-fade frames, H.264 MP4 or ProRes 422 MOV; worker + activity row with ✕; `.partial` then rename. Missing: music/audio, deflicker, Ken Burns pan/zoom, non-integer rates (29.97), web |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)
@@ -795,7 +799,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-DEV-DEFAULTS | Per-camera raw defaults | P1 | ✅ | `cmd:library.preferences` (`camera`, `import.perCamera`), `crates/ui-egui/src/panels/settings.rs` | Settings → Import: raw default and per-camera presets |
 | LRC-DEV-PROCESS | Process versions, Update to Current Process | P1 | ✅ | `cmd:develop.updateProcess`, `cmd:develop.reset`, `cmd:develop.get`, `crates/develop/src/settings.rs`, `crates/pipeline/src/finish.rs`, `docs/process-versions.md` | each photo records the rendering process its settings are interpreted by: settings saved before this existed load as V1, new photos and Reset get the latest, virtual copies inherit, copy / paste / sync / presets keep each photo's own; Photo ▸ Update to Current Process (one undo step, enabled while a selected photo is on an older process); a number from a newer version of the app is kept and renders with the newest known process. Only V1 exists so far: this is what lets a retuned default tone (#146) or stronger Light sliders (#196) ship without changing existing edits |
 | LRC-DEV-VIEWOPTIONS | Develop view options | P2 | ⬜ | | |
-| LRC-DEV-VIDEO | Video frame capture | P2 | 🟡 | `cmd:video.captureFrame` | engine command (M14.6): the frame as a JPEG next to the clip, imported and stacked under it, one undo step, activity row; ungraded until M14.7; no menu in the player yet |
+| LRC-DEV-VIDEO | Video frame capture | P2 | ✅ | `cmd:video.captureFrame` | Photo ▸ Video ▸ Capture Frame: the current frame, graded with the clip's settings, as a JPEG next to the clip, imported and stacked with it, one undo step, activity row |
 | LRC-MAP-VIEW | Map view | P2 | 🟡 | `cmd:map.view`, `cmd:map.style`, `cmd:map.addServer`, `cmd:map.fit`, `cmd:map.search`, `crates/ui-egui/src/map/view.rs`, `crates/geo/src/fetch.rs` | pan, wheel/double-click zoom around the pointer, zoom buttons, scale bar; style picker with user-added XYZ servers; on-screen tiles only (OSM tile policy), coarser tiles stand in while loading; search: lat/lon, saved locations, Nominatim with consent. No animated zoom |
 | LRC-MAP-GEOTAG | Drag photos onto the map | P2 | ✅ | `cmd:map.geotag`, `cmd:map.geotagAt`, `crates/ui-egui/src/map/view.rs` | drag from the filmstrip or grid onto the map; drag pins to move their photos; right-click ▸ Geotag Selected Photos Here; one undo step each |
 | LRC-MAP-LOCATIONS | Saved locations | P2 | ✅ | `cmd:map.saveLocation`, `cmd:map.deleteLocation`, `cmd:map.locations`, `crates/geo/src/places.rs` | name, centre, radius circle, photo counts, rename; stored in the catalog (format 6, undoable); private locations: photos inside are exported without GPS and location fields |
@@ -865,7 +869,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-EXP-EMAIL | Email photos | P2 | ⬜ |  | low priority |
 | LRC-EXP-POSTPROCESS | Post-processing after export (open in app, export actions) | P2 | 🟡 |  | unverified |
 | LRC-AUTO-ACTIONS | Recordable actions / batch scripts | P2 | ✅ | `cmd:actions.record`, `cmd:actions.stop`, `cmd:actions.play`, `cmd:actions.save`, `crates/engine/src/cmd/actions.rs` | record from the journal, parameters (`{{name}}`), per-photo replay on a selection, `app-cli run-action`, MCP via run_command; Window ▸ Actions panel (`cmd:panel.actions`, `crates/ui-egui/src/edit_in.rs`: record, stop, play, delete, set shortcut); saved shortcuts play their action in the desktop app |
-| LRC-VID-FRAME | Capture video frame as a still | P2 | 🟡 | `cmd:video.captureFrame` | engine command (M14.6); see LRC-DEV-VIDEO and R. Video |
+| LRC-VID-FRAME | Capture video frame as a still | P2 | ✅ | `cmd:video.captureFrame` | see LRC-DEV-VIDEO |
 | KEYC-PANELS | Classic panel keys (Tab, ⇧Tab, T, F5–F8, solo) | P2 | ✅ | `cmd:panel.sides`, `cmd:panel.all`, `cmd:panel.toolbar`, `cmd:panel.top`, `cmd:panel.bottom`, `cmd:panel.left`, `cmd:panel.right`, `cmd:panel.solo` | P1.3 Classic set: Tab sides, ⇧Tab all, T toolbar, F5 module bar, F6 filmstrip, F7 left, F8 right; Tab outside a text field no longer moves focus. Solo is a command/menu item (no Classic key) |
 | KEYC-MODULES | Classic module switching (⌘⌥1–7) | P1 | ✅ | `cmd:module.library`, `cmd:module.develop`, `cmd:module.previous` | P1.3: ⌘⌥1–7 (Ctrl+Alt elsewhere), ⌘⌥↑ previous module, D Develop |
 | KEYC-VIEWS | Classic view keys (E, G, C, N, L, F, I, ⇧R, ⌘⌥0) | P2 | ✅ | `cmd:view.loupe`, `cmd:view.gridToggle`, `cmd:view.compare`, `cmd:view.survey`, `cmd:view.lightsOut`, `cmd:view.screenMode`, `cmd:view.zoom100` | P1.3 Classic set: E Library loupe, G grid, C compare, N survey, L lights out, F full-screen preview, ⇧F screen modes, ⌘⌥F normal, I info, ⇧R reference, ⌘⌥0 1:1 |
@@ -911,6 +915,8 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | LR-VID-PLAY: MP3 and PCM (MOV FourCCs, Matroska, Blu-ray/DVD LPCM, MXF) clip audio decode; status unchanged (🟡) |
+| 2026-10-12 | minor | LR-VID-EXPORT 🟡 → ✅: pipelined export, GPU grade for H.264 (243 s → 45–52 s for 10 s 1080p), audio from AAC/Opus/AC-3/PCM/MP3 |
+| 2026-10-12 | minor | R. Video after the M14 merge: LR-VID-PLAY, LR-VID-TRIM, LR-VID-COVER, LRC-DEV-VIDEO, LRC-VID-FRAME 🟡 → ✅; LR-VID-EDIT ⬜ → 🟡; LR-VID-EXPORT stays 🟡 (slow CPU grading) |
 | 2026-10-12 | minor | LR-VID-EXPORT: CLI `render --trim`, CLI/MCP end-to-end video tests; LR-VID-EDIT: photo-only commands refused per clip in `ids`; status unchanged |
 | 2026-10-12 | minor | LR-VID-EDIT: photo-only tools and commands disabled for clips, presets/paste/sync keep video controls, Info panel video fields; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-VID-PLAY: clip audio decode (`AudioReader`), shared `dac-audio-out` output with `AudioClock`, `canPlayAudio`; status unchanged (🟡, muted by default) |

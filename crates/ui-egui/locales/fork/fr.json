@@ -1139,5 +1139,21 @@
   "Codec": "Codec",
   "Resolution": "Résolution",
   "Audio": "Audio",
-  "Trim": "Découpe"
+  "Trim": "Découpe",
+  "Playback stopped": "Lecture arrêtée",
+  "video clips export as movies, trimmed, with their video edits": "les clips vidéo sont exportés en films, raccourcis, avec leurs retouches vidéo",
+  "Video format": "Format vidéo",
+  "Video quality": "Qualité vidéo",
+  "Video long edge (px, 0 = full)": "Grand côté de la vidéo (px, 0 = complet)",
+  "H.264 (MP4)": "H.264 (MP4)",
+  "ProRes (MOV)": "ProRes (MOV)",
+  "Timelapse Video…": "Vidéo timelapse…",
+  "Export Timelapse Video": "Exporter une vidéo timelapse",
+  "Timelapse Video": "Vidéo timelapse",
+  "Choose File…": "Choisir le fichier…",
+  "Frames per Photo": "Images par photo",
+  "Cross-Fade Frames": "Images de fondu",
+  "Fit (letterbox)": "Ajuster (bandes)",
+  "Fill (crop)": "Remplir (recadrer)",
+  "Each photo with its own edits, in the order shown. No audio.": "Chaque photo avec ses propres réglages, dans l’ordre affiché. Sans son."
 }

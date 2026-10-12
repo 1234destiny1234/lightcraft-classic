@@ -62,6 +62,7 @@ const OWNED: &[(&str, &str)] = &[
     ("panels/metadata.rs", include_str!("panels/metadata.rs")),
     ("panels/cells.rs", include_str!("panels/cells.rs")),
     ("video_ui.rs", include_str!("video_ui.rs")),
+    ("video_view.rs", include_str!("video_view.rs")),
 ];
 
 /// Calls whose first string literal is translated: `tr("…")`, and the helpers that call `tr` on

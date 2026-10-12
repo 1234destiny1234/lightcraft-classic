@@ -39,5 +39,7 @@
   "Tile cache: {mb} MB, {n} tiles": "Caché de teselas: {mb} MB, {n} teselas",
   "Tagged {n} photos from the tracklog": "{n} fotos etiquetadas desde el registro de ruta",
   "Geotagged {n} photo(s)": "{n} foto(s) geoetiquetada(s)",
-  "Location {n}": "Ubicación {n}"
+  "Location {n}": "Ubicación {n}",
+  "{n} photos · {frames} frames · {secs} s": "{n} fotos · {frames} fotogramas · {secs} s",
+  "Exported timelapse: {photos} photos, {frames} frames": "Time-lapse exportado: {photos} fotos, {frames} fotogramas"
 }
