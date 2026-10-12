@@ -14,6 +14,13 @@ colour-management daemons and calibration tools set; without it, the default pro
 (matched by `XRANDR_name`) over D-Bus. On pure Wayland a client can't learn which monitor it is on, so the first colord
 display device is used.
 
+**Windows** (`apps/app/src/screen_profile_windows.rs`, no `unsafe` in our code: the `winreg` crate's safe API) reads the
+Windows Color System association from the registry: the device's per-user `ICMProfile` list when "use my settings for
+this device" is on (`HKCU\…\ICM\ProfileAssociations\Display\{4d36e96e-…}\NNNN`), else the system-wide one
+(`HKLM\SYSTEM\CurrentControlSet\Control\Class\{4d36e96e-…}\NNNN`); the default is the list's last entry, a file in
+`%SystemRoot%\System32\spool\drivers\color` (or an absolute path), checked like on Linux. Finding the window's monitor
+needs FFI (`MonitorFromWindow`), so the first display device with a profile is used.
+
 ## Using it
 
 Settings ▸ Display ▸ **Choose Profile…** picks an `.icc` / `.icm` file (the dialog opens where the system keeps
@@ -53,5 +60,5 @@ LUT-based profile's correction about 65 ms. Drafts during slider drags skip the 
 
 ## Not yet
 
-- Picking up the profile Windows assigns (WCS) and following the window across monitors there.
+- Following the window across monitors on Windows (the first display device's profile is used).
 - Per-monitor profiles on pure Wayland (until a colour-management protocol tells clients their output).

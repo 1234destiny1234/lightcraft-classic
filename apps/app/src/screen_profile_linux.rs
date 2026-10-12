@@ -17,13 +17,12 @@
 
 use std::time::{Duration, Instant};
 
+use crate::screen_icc::{MAX_ICC, is_icc, read_icc_file};
 use x11rb::connection::Connection;
 use x11rb::protocol::randr::ConnectionExt as _;
 use x11rb::protocol::xproto::{self, AtomEnum, ConnectionExt as _};
 use x11rb::rust_connection::RustConnection;
 
-/// A profile larger than this is not a monitor profile (they are a few KB).
-const MAX_ICC: u32 = 16 << 20;
 /// How long a colord answer is reused (colord is a D-Bus round trip per device).
 const COLORD_TTL: Duration = Duration::from_secs(10);
 /// After a failed connection, how long until the next try.
@@ -201,15 +200,6 @@ fn monitor_index(monitors: &[Monitor], (x, y, w, h): (i32, i32, i32, i32)) -> us
     best.0
 }
 
-/// Whether the bytes look like an ICC profile: a header whose size fits and the `acsp` signature.
-fn is_icc(bytes: &[u8]) -> bool {
-    let Some(size) = bytes.get(0..4).and_then(|b| <[u8; 4]>::try_from(b).ok()).map(u32::from_be_bytes) else { return false };
-    bytes.len() >= 128
-        && (128..=MAX_ICC).contains(&size)
-        && usize::try_from(size).is_ok_and(|s| s <= bytes.len())
-        && bytes.get(36..40) == Some(b"acsp")
-}
-
 fn colord_read(conn: &zbus::blocking::Connection, monitor: Option<&str>) -> zbus::Result<Option<Vec<u8>>> {
     use zbus::zvariant::OwnedObjectPath;
     const DEST: &str = "org.freedesktop.ColorManager";
@@ -235,15 +225,6 @@ fn pick_device<'a, P>(devices: &'a [(Option<String>, Vec<P>)], monitor: Option<&
         Some((_, profiles)) => profiles.first(),
         None => devices.iter().find_map(|(_, p)| p.first()),
     }
-}
-
-fn read_icc_file(path: &std::path::Path) -> Option<Vec<u8>> {
-    let meta = std::fs::metadata(path).ok()?;
-    if meta.len() > u64::from(MAX_ICC) {
-        return None;
-    }
-    let bytes = std::fs::read(path).ok()?;
-    is_icc(&bytes).then_some(bytes)
 }
 
 #[cfg(test)]
