@@ -455,7 +455,10 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
         local_tone::enabled(info, s),
         src_long,
     ));
-    let lin_key = hash_of((pre_nr_key, [d.nr_luminance, d.nr_detail, d.nr_color, d.nr_color_detail, d.nr_color_smoothness].map(f64::to_bits)));
+    // a draft's colour NR may take the half-resolution blur: its result is never a final render's
+    let draft_nr = req.quality == Quality::Draft && d.nr_color > 0.0;
+    let lin_key =
+        hash_of((pre_nr_key, [d.nr_luminance, d.nr_detail, d.nr_color, d.nr_color_detail, d.nr_color_smoothness].map(f64::to_bits), draft_nr));
     // AI masks without a model: analysed once per photo look on the whole frame (cached)
     let mattes = if auto_mask::needed(s) {
         let mut m = info.mattes.as_deref().cloned().unwrap_or_default();
@@ -579,7 +582,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
             // Without a cache the resampled buffer is ours: work on it in place.
             let mut img = if shared.is_some() { (*sampled).clone() } else { Arc::unwrap_or_clone(sampled.clone()) };
             lin_cpu(&mut img, info, &plan);
-            local::denoise(&mut img, s, src_long, frame.output_long(w, h));
+            local::denoise(&mut img, s, src_long, frame.output_long(w, h), req.quality == Quality::Draft);
             Arc::new(img)
         }
     };

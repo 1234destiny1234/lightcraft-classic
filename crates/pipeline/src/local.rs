@@ -369,7 +369,7 @@ pub struct NrColor {
     pub t: f32,
 }
 
-/// Colour NR blurs at half resolution from this radius (px) on: the chromaticity is smooth at such
+/// Draft colour NR blurs at half resolution from this radius (px) on: the chromaticity is smooth at such
 /// radii, so a quarter of the pixels at half the radius gives the same result well within a
 /// display step, in about half the time (gap 26). Sources: own design (pyramid-level blur).
 pub const HALF_RES_NR_SIGMA: f32 = 4.0;
@@ -394,7 +394,11 @@ pub fn nr_params(s: &DevelopSettings, src_long: usize, out_long: usize) -> (Opti
 /// Noise reduction at output resolution: luminance via an edge-aware self-guided filter on
 /// log-luminance, colour by blurring chromaticity (rgb / Y) and re-applying the original luminance.
 /// Radii scale with how much the source was downsampled (preview noise is already averaged out).
-pub fn denoise(img: &mut Rgb32f, s: &DevelopSettings, src_long: usize, out_long: usize) {
+///
+/// `draft`: a draft render (a slider drag) may blur the chromaticity at half resolution
+/// ([`HALF_RES_NR_SIGMA`]); a full-quality render always takes the full-resolution blur, so it
+/// matches the GPU path and the look the photo always had.
+pub fn denoise(img: &mut Rgb32f, s: &DevelopSettings, src_long: usize, out_long: usize, draft: bool) {
     let (lum, col) = nr_params(s, src_long, out_long);
     let w = img.width;
     if let Some(nr) = lum {
@@ -415,7 +419,8 @@ pub fn denoise(img: &mut Rgb32f, s: &DevelopSettings, src_long: usize, out_long:
     }
     if let Some(nr) = col {
         let _t = crate::profiling().then(std::time::Instant::now);
-        colour_nr(img, nr, nr.sigma >= HALF_RES_NR_SIGMA);
+        // the half-resolution blur is a (slightly) different look: drafts only, never a final render
+        colour_nr(img, nr, draft && nr.sigma >= HALF_RES_NR_SIGMA);
         if let Some(t) = _t {
             eprintln!("    nr colour: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
         }
@@ -771,7 +776,7 @@ mod nr_tests {
         let (v0, m0) = var(&img);
         let mut s = DevelopSettings::default();
         s.detail.nr_luminance = 80.0;
-        denoise(&mut img, &s, 64, 64);
+        denoise(&mut img, &s, 64, 64, false);
         let (v1, m1) = var(&img);
         assert!(v1 < v0 * 0.5, "{v0} -> {v1}");
         assert!((m1 - m0).abs() < 0.01);
@@ -791,7 +796,7 @@ mod nr_tests {
         let (_, Some(nr)) = nr_params(&s, w, w) else { panic!("colour NR on") };
         assert!(nr.sigma >= HALF_RES_NR_SIGMA);
         let mut fast = img.clone();
-        denoise(&mut fast, &s, w, w);
+        denoise(&mut fast, &s, w, w, true);
         // reference: the full-resolution blur
         let mut full = img.clone();
         colour_nr(&mut full, nr, false);
@@ -806,12 +811,16 @@ mod nr_tests {
         }
         let mean = sum / (img.len() * 3) as f32;
         assert!(mean < 0.002 && worst < 0.02, "mean {mean} worst {worst}");
+        // a full-quality render keeps the full-resolution blur exactly (the GPU's, and every existing edit's look)
+        let mut final_render = img.clone();
+        denoise(&mut final_render, &s, w, w, false);
+        assert_eq!(final_render.data, full.data);
         // and it removes colour noise like the full-resolution blur
         let spread = |im: &Rgb32f| im.data.iter().take(70).map(|p| (p[0] - p[1]).abs()).sum::<f32>();
         assert!(spread(&fast) < spread(&img) * 0.6);
         // tiny images take the full-resolution path
         let mut one = Rgb32f::filled(1, 3, [0.2, 0.3, 0.1]);
-        denoise(&mut one, &s, 1, 1);
+        denoise(&mut one, &s, 1, 1, true);
         assert!(one.data.iter().all(|p| p.iter().all(|v| v.is_finite())));
     }
 

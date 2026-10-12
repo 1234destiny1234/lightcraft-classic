@@ -260,9 +260,10 @@ compilation: ~0.4 s once per process — the desktop app starts it on a backgrou
 the device on their first GPU render. `lcc_gpu::ready()` asks without blocking.
 
 **Colour NR on the CPU (gap 26, 2026-10-13).** From a blur radius of `HALF_RES_NR_SIGMA` (4 px)
-on, the CPU blurs the chromaticity at half resolution (2×2 box down, half the radius, bilinear back)
+on, a CPU *draft* render (slider drag) blurs the chromaticity at half resolution (2×2 box down, half the radius, bilinear back)
 instead of at full resolution; the luminance and the per-pixel mix stay at full resolution, and
-smaller radii keep the full-resolution blur. A test bounds the difference (mean < 0.002, worst
+smaller radii and every full-quality render keep the full-resolution blur, so final renders match the GPU
+and the look existing edits always had (half-res on final renders broke that; fixed 2026-10-13). A test bounds the difference (mean < 0.002, worst
 < 0.02 linear). Measured by `colour_nr_timing` (`cargo test --release -p lcc-pipeline
 colour_nr_timing -- --ignored --nocapture`), both paths interleaved in one run on a machine at load
 average ≈ 105 on 32 threads, so compare the ratio, not the absolute numbers: 1936×1290 140 → 78 ms,
