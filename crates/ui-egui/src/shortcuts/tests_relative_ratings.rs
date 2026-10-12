@@ -177,3 +177,24 @@ fn brackets_yield_to_text_focus_and_shortcut_recording() {
     assert_eq!(ratings(&app).unwrap(), [0, 2, 5]);
     assert!(app.session.undo.is_empty());
 }
+
+/// Lightroom's brush A / B: each preset keeps its own size, feather, flow and density; switching
+/// saves the brush in use and restores the other one, and a bad slot is an error, not a panic.
+#[test]
+fn brush_presets_a_and_b_remember_their_settings() -> lcc_engine::Result<()> {
+    let mut app = app()?;
+    assert_eq!(app.ui.brush_slot, 0);
+    (app.ui.brush_size, app.ui.brush_feather, app.ui.brush_flow, app.ui.brush_density) = (0.1, 10.0, 30.0, 70.0);
+    let r = app.run("brush.preset", json!({"slot": "b"})).unwrap();
+    assert_eq!(r["slot"], "b");
+    assert_eq!(app.ui.brush_slot, 1);
+    assert_ne!(app.ui.brush_size, 0.1);
+    app.ui.brush_density = 40.0;
+    // no slot: toggle back to A, which still has its settings
+    app.run("brush.preset", json!({})).unwrap();
+    assert_eq!((app.ui.brush_slot, app.ui.brush_size, app.ui.brush_feather, app.ui.brush_flow, app.ui.brush_density), (0, 0.1, 10.0, 30.0, 70.0));
+    app.run("brush.preset", json!({"slot": "B"})).unwrap();
+    assert_eq!(app.ui.brush_density, 40.0);
+    assert!(app.run("brush.preset", json!({"slot": "c"})).is_err());
+    Ok(())
+}
