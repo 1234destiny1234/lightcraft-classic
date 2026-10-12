@@ -616,7 +616,9 @@ mod tests {
                 f.extend_from_slice(part);
                 f.extend_from_slice(&[0u8; 7]);
             }
-            assert!(crate::probe(&f).is_some_and(|p| !p.is_supported()), "{head:?}");
+            // MRW decodes since `vendor/mrw.rs` (recognised and supported); CRW and X3F stay preview-only
+            let mrw = head.starts_with(b"\0MRM");
+            assert!(crate::probe(&f).is_some_and(|p| mrw || !p.is_supported()), "{head:?}");
             assert_eq!(embedded_preview(&f).as_deref(), Some(&big[..]), "{head:?}");
             for n in (0..f.len()).step_by(11) {
                 let _ = embedded_preview(&f[..n]);
