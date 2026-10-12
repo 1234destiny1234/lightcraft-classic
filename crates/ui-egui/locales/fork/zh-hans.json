@@ -1117,5 +1117,15 @@
   "Printer default": "打印机默认值",
   "Trust Certificate": "信任证书",
   "Trust a printer's certificate the first time": "首次连接时信任打印机的证书",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "此打印机的证书不受信任。请将其指纹与打印机状态页上的指纹进行比对:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "此打印机的证书不受信任。请将其指纹与打印机状态页上的指纹进行比对:",
+  "Not available for video": "不适用于视频",
+  "Previous Frame": "上一帧",
+  "Next Frame": "下一帧",
+  "Pause": "暂停",
+  "Set Poster Frame": "设为封面帧",
+  "Playhead": "播放头",
+  "Trim Start": "剪辑起点",
+  "Trim End": "剪辑终点",
+  "Drag to trim the start": "拖动以剪掉开头",
+  "Drag to trim the end": "拖动以剪掉结尾"
 }

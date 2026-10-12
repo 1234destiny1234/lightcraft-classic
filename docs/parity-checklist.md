@@ -917,6 +917,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | 2026-10-12 | minor | LR-VID-EDIT: video frame grading API (`dac_pipeline::grade`, `dac_gpu::grade_frame`), 3D-LUT playback path; status unchanged (⬜) |
 | 2026-10-12 | minor | M14.2/M14.3: import fills `VideoMeta` / size / duration / date / GPS; graded poster thumbnails (LR-VID-PLAY, LR-VID-COVER notes; status unchanged ⬜) |
 | 2026-10-12 | minor | M14.2: catalog format 10 (`VideoMeta`, trim, poster), video extensions import as videos, `video:yes` filter; LR-VID-TRIM / LR-VID-COVER notes, status unchanged (⬜) |
+| 2026-10-12 | minor | R. Video: UI side of M14.3/M14.4/M14.6 (control bar, trim handles, poster marker, grid badge, video-disabled controls); statuses unchanged until the engine commands land |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
 | 2026-10-12 | minor | KEYC-MODULE-OUTPUT (G28) 🟡 → ✅: Web module ⌘R reload preview and ⌘⌥P preview in browser |

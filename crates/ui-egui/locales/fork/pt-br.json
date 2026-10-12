@@ -1119,5 +1119,15 @@
   "Printer default": "Padrão da impressora",
   "Trust Certificate": "Confiar no certificado",
   "Trust a printer's certificate the first time": "Confiar no certificado de uma impressora na primeira vez",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "o certificado desta impressora não é confiável. Compare a impressão digital com a página de status da impressora:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "o certificado desta impressora não é confiável. Compare a impressão digital com a página de status da impressora:",
+  "Not available for video": "Não disponível para vídeo",
+  "Previous Frame": "Quadro anterior",
+  "Next Frame": "Próximo quadro",
+  "Pause": "Pausar",
+  "Set Poster Frame": "Definir quadro de capa",
+  "Playhead": "Indicador de reprodução",
+  "Trim Start": "Início do corte",
+  "Trim End": "Fim do corte",
+  "Drag to trim the start": "Arraste para cortar o início",
+  "Drag to trim the end": "Arraste para cortar o fim"
 }

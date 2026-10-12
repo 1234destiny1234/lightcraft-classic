@@ -608,6 +608,7 @@ fn cell(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
     if let Some(l) = photo.label {
         spoken.push_str(&crate::i18n::tr_format!(", {} label", crate::i18n::color_label(&app.session.catalog, l)));
     }
+    spoken.push_str(&crate::video_ui::spoken_suffix(&photo));
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, selected, &spoken));
     let active = state == dac_engine::SelectionState::Active;
     let p = ui.painter();
@@ -645,6 +646,7 @@ fn cell(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
             p.text(ph.center(), Align2::CENTER_CENTER, "!", t.semibold(18.0), t.text_dim);
         }
     }
+    crate::video_ui::grid_badge(ui, img_rect, &photo);
     // labels and badges
     if square && app.ui.lib.cell_style == crate::libtools::CellStyle::Expanded {
         super::cells::expanded_header(app, ui, &photo, r, index);

@@ -449,7 +449,13 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui) {
     let fullscreen = app.ui.fullscreen;
     let show_film = crate::module::edge_visible(app, crate::module::Edge::Bottom) && !fullscreen;
     let film_h = if show_film { t.film_h } else { 0.0 };
-    let canvas = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - film_h));
+    let mut canvas = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - film_h));
+    // a video: its control bar along the bottom of the canvas (photos keep the whole canvas)
+    if let Some(vid) = app.session.active().filter(|id| crate::video_ui::photo_is_video(app, *id)) {
+        let bar = Rect::from_min_max(pos2(canvas.left(), canvas.bottom() - crate::video_ui::BAR_H), canvas.max);
+        canvas.max.y = bar.top();
+        crate::video_ui::show_bar(app, ui, bar, vid);
+    }
     app.canvas_rect = Some(canvas);
     if show_film {
         filmstrip(app, ui, Rect::from_min_max(pos2(full.left(), canvas.bottom()), full.max));

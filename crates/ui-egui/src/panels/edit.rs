@@ -32,7 +32,8 @@ pub fn apply_slider_out(app: &mut DacApp, spec: &ControlSpec, out: SliderOut, mu
 pub(crate) fn control(app: &mut DacApp, ui: &mut egui::Ui, d: &DevelopSettings, id: &str, enabled: bool) {
     let Some(spec) = controls::find(id) else { return };
     let v = controls::get(d, id).unwrap_or(spec.default);
-    let out = slider(ui, spec, v, enabled, None);
+    // greyed out inside a disabled scope (a control video can't take)
+    let out = slider(ui, spec, v, enabled && ui.is_enabled(), None);
     apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": id, "value": v})));
 }
 
@@ -179,8 +180,9 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     divider(ui);
 
+    let video = crate::video_ui::photo_is_video(app, id);
     section(app, ui, &d, "light", "Light", |app, ui, d| {
-        hdr_row(app, ui, d);
+        crate::video_ui::video_gate(ui, video, |ui| hdr_row(app, ui, d));
         for c in ["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks"] {
             control(app, ui, d, c, true);
         }
@@ -263,7 +265,7 @@ pub fn show(app: &mut DacApp, ui: &mut egui::Ui, id: PhotoId) {
                 app.ui.toggle_flyout("pointColor");
             }
             if open {
-                point_color(app, ui, d);
+                crate::video_ui::video_gate(ui, video, |ui| point_color(app, ui, d));
             }
         }
         let open = app.ui.flyout_open("grading");
@@ -503,13 +505,16 @@ fn section(
 ) {
     let open = app.ui.section_open(id);
     let (resp, toggled) = section_header(ui, id, title, open, Some(d.section_enabled(id)));
-    if let Some(on) = toggled {
+    // video takes the global Light and Color controls only: the rest show greyed out
+    let blocked = !crate::video_ui::section_allowed(id) && app.session.active().is_some_and(|p| crate::video_ui::photo_is_video(app, p));
+    let resp = if blocked { resp.on_hover_text(crate::i18n::tr(crate::video_ui::NOT_FOR_VIDEO)) } else { resp };
+    if let Some(on) = toggled.filter(|_| !blocked) {
         let _ = app.run("develop.sectionEnabled", json!({"section": id, "enabled": on}));
     } else if resp.clicked() {
         app.ui.toggle_section(id);
     }
     if open {
-        body(app, ui, d);
+        crate::video_ui::video_gate(ui, blocked, |ui| body(app, ui, d));
     }
     divider(ui);
 }

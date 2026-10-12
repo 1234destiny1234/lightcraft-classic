@@ -173,6 +173,14 @@ icons! {
     OverlaySpiral,
     /// Crop overlay: none (an empty frame).
     OverlayNone,
+    /// Video: play.
+    Play,
+    /// Video: pause.
+    Pause,
+    /// Video: one frame forward.
+    StepForward,
+    /// Video: one frame back.
+    StepBack,
 }
 
 struct Pen<'a> {
@@ -898,6 +906,22 @@ fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, turn: Option<
         }
         Minus => {
             pen.line(&[(4.0, 10.0), (16.0, 10.0)]);
+        }
+        Play => {
+            // Lucide `play`
+            lucide!(pen, ["M6 3L20 12L6 21Z"]);
+        }
+        Pause => {
+            // Lucide `pause` (its two rounded rects as plain rectangles)
+            lucide!(pen, ["M6 4h4v16H6Z", "M14 4h4v16h-4Z"]);
+        }
+        StepForward => {
+            // Lucide `skip-forward`
+            lucide!(pen, ["M5 4L15 12L5 20Z", "M19 5v14"]);
+        }
+        StepBack => {
+            // Lucide `skip-back`
+            lucide!(pen, ["M19 20L9 12L19 4Z", "M5 19V5"]);
         }
         OverlayThirds | OverlayGrid | OverlayGolden | OverlayDiagonal | OverlayTriangle | OverlaySpiral | OverlayNone => {
             overlay_icon(&pen, icon);

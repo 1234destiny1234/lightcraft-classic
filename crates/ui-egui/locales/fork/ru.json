@@ -1412,5 +1412,15 @@
   "Printer default": "По умолчанию принтера",
   "Trust Certificate": "Доверять сертификату",
   "Trust a printer's certificate the first time": "Доверять сертификату принтера при первом подключении",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертификат этого принтера не является доверенным. Сравните его отпечаток со страницей состояния принтера:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертификат этого принтера не является доверенным. Сравните его отпечаток со страницей состояния принтера:",
+  "Not available for video": "Недоступно для видео",
+  "Previous Frame": "Предыдущий кадр",
+  "Next Frame": "Следующий кадр",
+  "Pause": "Пауза",
+  "Set Poster Frame": "Задать кадр обложки",
+  "Playhead": "Указатель воспроизведения",
+  "Trim Start": "Начало обрезки",
+  "Trim End": "Конец обрезки",
+  "Drag to trim the start": "Перетащите, чтобы обрезать начало",
+  "Drag to trim the end": "Перетащите, чтобы обрезать конец"
 }
