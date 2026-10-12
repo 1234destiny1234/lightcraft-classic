@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: planned approach via FilmCraft crates; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -443,11 +443,11 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs` | videos can be catalogued (kind, duration); no player |
-| LR-VID-TRIM | Trim | P1 | ⬜ | | |
-| LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
-| LR-VID-COVER | Cover frame | P2 | ⬜ | | |
-| LR-VID-EXPORT | Video export | P2 | ⬜ | | |
+| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs` | videos can be catalogued (kind, duration); no player. Planned (M14.1/M14.4): pure-Rust decode via FilmCraft crates (`dac-video`: probe, FrameReader, poster), decode-ahead player with play/pause/seek/step commands, muted in v1 (audio output pending decision) |
+| LR-VID-TRIM | Trim | P1 | ⬜ | | Planned (M14.6): `video.setTrim` / `video.resetTrim` with handles on the scrub bar, stored in the catalog (format 10), honoured by playback and export |
+| LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video |
+| LR-VID-COVER | Cover frame | P2 | ⬜ | | Planned (M14.3/M14.6): poster thumbnails in the grid (default 10 % in), `video.setPoster`, `video.captureFrame` |
+| LR-VID-EXPORT | Video export | P2 | ⬜ | | Planned (M14.8): H.264 + AAC MP4 (and ProRes) via FilmCraft encoders, honouring trim and grade, in the activity stack with cancel; CLI and MCP |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
 ## S. Export (EXP)
@@ -910,6 +910,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | R. Video (LR-VID-PLAY/TRIM/EDIT/COVER/EXPORT): notes give the M14 plan via FilmCraft crates; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
 | 2026-10-12 | minor | KEYC-MODULE-OUTPUT (G28) 🟡 → ✅: Web module ⌘R reload preview and ⌘⌥P preview in browser |
