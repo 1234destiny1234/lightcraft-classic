@@ -230,7 +230,7 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
-- 2026-10-13: Canon CRW (15 Bayer bodies), Epson ERF (R-D1 family) and Mamiya MEF (ZD) decode: 266 of 1,446 Adobe models verified; use-weighted share of photographers whose camera decodes 87% → 88%.
+- 2026-10-13: Canon CRW (15 Bayer bodies), Epson ERF (R-D1 family) and Mamiya MEF (ZD) decode: 314 of 1,446 Adobe models verified; use-weighted share of photographers whose camera decodes 89% → 90%.
 - 2026-10-13: LR-VIEW-ZOOM closed: mask overlays and soft proofing confirmed as tiled zoom windows at 1:1–8:1.
 - 2026-10-13: compressed Olympus / OM ORF decodes (`orf.rs` `decode_compressed`; E-M1 and E-M10 Mark III verified): use-weighted share of photographers whose camera decodes 85% → 87%; gap 6 closed.
 - 2026-10-12: video export pipelined with GPU grade for H.264 (10 s 1080p: H.264 243 s → 45–52 s, ProRes 343 s → 55 s), audio from AAC/Opus/AC-3/PCM/MP3; LR-VID-EXPORT ✅; M14 12–20 h left.
