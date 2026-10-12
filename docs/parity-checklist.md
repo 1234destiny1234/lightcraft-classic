@@ -443,10 +443,10 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs` | videos can be catalogued (kind, duration); no player |
-| LR-VID-TRIM | Trim | P1 | ⬜ | | |
-| LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
-| LR-VID-COVER | Cover frame | P2 | ⬜ | | |
+| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/ui-egui/src/video_ui.rs` | videos can be catalogued (kind, duration); the loupe's control bar (play/pause, time, scrub, frame steps, Space / ←→) and the grid's film + duration badge are drawn; they send `video.*` commands the engine doesn't have yet |
+| LR-VID-TRIM | Trim | P1 | ⬜ | `crates/ui-egui/src/video_ui.rs` | trim-in/out handles on the scrub bar send `video.setTrim`; engine command pending |
+| LR-VID-EDIT | Edits on video | P2 | ⬜ | `crates/ui-egui/src/video_ui.rs` | Edit panel greys out Effects, Detail, Optics, Calibration, HDR and Point Color for video ("Not available for video"); frame grading pending |
+| LR-VID-COVER | Cover frame | P2 | ⬜ | `crates/ui-egui/src/video_ui.rs` | poster marker on the scrub bar and a Set Poster Frame button (`video.setPoster`); engine command pending |
 | LR-VID-EXPORT | Video export | P2 | ⬜ | | |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
@@ -910,6 +910,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | R. Video: UI side of M14.3/M14.4/M14.6 (control bar, trim handles, poster marker, grid badge, video-disabled controls); statuses unchanged until the engine commands land |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
 | 2026-10-12 | minor | KEYC-MODULE-OUTPUT (G28) 🟡 → ✅: Web module ⌘R reload preview and ⌘⌥P preview in browser |

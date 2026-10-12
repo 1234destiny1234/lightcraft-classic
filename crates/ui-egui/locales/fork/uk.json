@@ -935,5 +935,15 @@
   "Printer default": "Типово для принтера",
   "Trust Certificate": "Довіряти сертифікату",
   "Trust a printer's certificate the first time": "Довіряти сертифікату принтера під час першого підключення",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертифікат цього принтера не є довіреним. Порівняйте його відбиток зі сторінкою стану принтера:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертифікат цього принтера не є довіреним. Порівняйте його відбиток зі сторінкою стану принтера:",
+  "Not available for video": "Недоступно для відео",
+  "Previous Frame": "Попередній кадр",
+  "Next Frame": "Наступний кадр",
+  "Pause": "Пауза",
+  "Set Poster Frame": "Задати кадр обкладинки",
+  "Playhead": "Покажчик відтворення",
+  "Trim Start": "Початок обрізання",
+  "Trim End": "Кінець обрізання",
+  "Drag to trim the start": "Перетягніть, щоб обрізати початок",
+  "Drag to trim the end": "Перетягніть, щоб обрізати кінець"
 }

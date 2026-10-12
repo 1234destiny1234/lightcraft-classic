@@ -346,6 +346,8 @@ pub fn handle(app: &mut DacApp, ctx: &egui::Context) {
     if keyboard_owned(app, ctx) || app.recording_shortcut.is_some() || app.ui.name_edit.is_some() {
         return;
     }
+    // a video in the loupe: Space plays / pauses, ←/→ step frames while paused
+    crate::video_ui::handle_keys(app, ctx);
     let mut fire: Vec<String> = Vec::new();
     // shortcuts the native menu bar handles (it consumes those key presses itself)
     let native = |sc: &str| app.native_shortcuts.contains(sc);

@@ -977,5 +977,15 @@
   "Printer default": "Druckerstandard",
   "Trust Certificate": "Zertifikat vertrauen",
   "Trust a printer's certificate the first time": "Dem Zertifikat eines Druckers beim ersten Mal vertrauen",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "Dem Zertifikat dieses Druckers wird nicht vertraut. Vergleichen Sie den Fingerabdruck mit der Statusseite des Druckers:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "Dem Zertifikat dieses Druckers wird nicht vertraut. Vergleichen Sie den Fingerabdruck mit der Statusseite des Druckers:",
+  "Not available for video": "Für Videos nicht verfügbar",
+  "Previous Frame": "Vorheriges Bild",
+  "Next Frame": "Nächstes Bild",
+  "Pause": "Pause",
+  "Set Poster Frame": "Posterbild festlegen",
+  "Playhead": "Abspielposition",
+  "Trim Start": "Trimmanfang",
+  "Trim End": "Trimmende",
+  "Drag to trim the start": "Ziehen, um den Anfang zu kürzen",
+  "Drag to trim the end": "Ziehen, um das Ende zu kürzen"
 }
