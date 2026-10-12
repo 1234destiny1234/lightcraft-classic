@@ -80,6 +80,7 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 |---|---|---|
 | 2026-10-12 | minor | Gap 18: `dac-video` crate decodes MP4/MOV H.264/HEVC frames and posters (M14.1); no player, trim or export yet |
 | 2026-10-12 | minor | Gap 18: video planned via FilmCraft crates, estimate 25–45 → 55–80 h, audio output decision pending |
+| 2026-10-12 | minor | Gap 18: video frame grading (CPU/GPU) and 33³ LUT playback path, timings in video.md |
 | 2026-10-12 | minor | Gap 28: Web module ⌘R reload preview and ⌘⌥P preview in browser are bound |
 | 2026-10-12 | minor | Gap 19: plug-in metadata fields edit the selection, are searchable and are written to XMP |
 | 2026-10-12 | minor | Gap 15: `ipps://` (TLS, certificates trusted by fingerprint or on first use) and printer driver options (paper type, tray, quality, two-sided) landed; 15–30 h → 10–22 h; Windows spooler and CMYK profiles remain |
