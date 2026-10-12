@@ -1,6 +1,6 @@
 # Target-app parity: the app vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close the app is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -47,7 +47,7 @@ phase #85, duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | Dimension | Breadth | Ready for real work | Remaining | Doc |
 |---|---:|---:|---:|---|
 | Features (weighted areas below) | ~77% (checklist 81.1%, measured) | ~61% | 600–1,100 h | [Features](#features) |
-| ↳ RAW cameras, colour and lens profiles (part of features) | 88% of Adobe's 1,446 models decode (19% verified), measured | ~58% | 240–465 h | [raw-parity.md](raw-parity.md) |
+| ↳ RAW cameras, colour and lens profiles (part of features) | 90% of Adobe's 1,446 models decode (20% verified), measured | ~58% | 240–465 h | [raw-parity.md](raw-parity.md) |
 | UI/UX fidelity | ~85% | ~70% | 40–70 h | [ui-parity.md](ui-parity.md) |
 | File formats (non-raw: images, sidecars, presets, catalogs) | ~85% | ~70% | 30–55 h | [file-format-parity.md](file-format-parity.md) |
 | Hardware | ~50% | ~40% | 40–80 h (+ tethering and printing, counted under Classic modules) | [hardware-parity.md](hardware-parity.md) |
@@ -297,6 +297,7 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Pre-X FinePix SuperCCD RAF decodes; Z 8 / Z 9 verified (raw-parity.md): models that decode 88% → 90%, verified 19% → 20%, use-weighted 89% (60% on verified bodies); headline unchanged after rounding |
 | 2026-10-13 | minor | ARW version 1 and the Z 6II's packed NEF decode; 31 popular bodies verified (raw-parity.md): models that decode 87% → 88%, verified 17% → 19%, use-weighted 87% → 89%, RAW decoding 78% → 80%, RAW readiness ~57% → ~58%; headline unchanged after rounding |
 | 2026-10-13 | minor | Views row: LR-VIEW-ZOOM ✅ (mask overlays and soft proofing are zoom windows), remaining 15–30 h → 10–25 h; checklist P0 share moves by one row (see `cargo xtask parity`) |
 | 2026-10-13 | minor | Compressed ORF decoded (raw-parity.md): models that decode 81% → 86%, use-weighted share 85% → 87%, RAW decoding 77% → 78%, RAW remaining 255–480 → 240–465 h; full-app headline (~61%) unchanged after rounding; ORF dropped from the beta blockers |
