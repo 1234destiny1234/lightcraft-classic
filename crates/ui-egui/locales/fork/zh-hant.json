@@ -1117,5 +1117,17 @@
   "Printer default": "印表機預設值",
   "Trust Certificate": "信任憑證",
   "Trust a printer's certificate the first time": "首次連線時信任印表機的憑證",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "此印表機的憑證不受信任。請將其指紋與印表機狀態頁上的指紋進行比對:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "此印表機的憑證不受信任。請將其指紋與印表機狀態頁上的指紋進行比對:",
+  "Pause": "暫停",
+  "Play / Pause": "播放 / 暫停",
+  "Video State": "視訊狀態",
+  "Go to Time": "前往時間",
+  "Step Frame": "逐格",
+  "Trim Video": "修剪視訊",
+  "Reset Trim": "重設修剪",
+  "Set Poster Frame": "設定海報影格",
+  "Capture Frame": "擷取影格",
+  "Capturing a video frame": "正在擷取視訊影格",
+  "video playback isn't available in this build": "此版本不支援視訊播放",
+  "the active photo isn't a video": "目前相片不是視訊"
 }

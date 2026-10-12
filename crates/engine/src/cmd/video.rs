@@ -220,8 +220,12 @@ fn capture(s: &mut Session, p: &Value) -> Result<Value> {
     if frame.width == 0 || frame.height == 0 || frame.data.len() != frame.width.saturating_mul(frame.height) {
         return Err(EngineError::Other("the decoder returned an empty frame".into()));
     }
+    // Bake the clip's grade into the still (like Lightroom's Capture Frame): the JPEG looks like
+    // the graded clip and the new photo starts with default settings, so it isn't graded twice.
+    let develop = s.catalog.photo(x.id).map(|ph| ph.develop.clone()).unwrap_or_default();
+    let graded = dac_pipeline::grade::grade_frame(&frame, &develop, dac_pipeline::Quality::Full);
     let opts = crate::export::ExportOptions::default();
-    let bytes = crate::export::encode_image(&frame.to_srgb8(), &opts).map_err(|e| EngineError::Other(format!("can't encode the frame: {e}")))?;
+    let bytes = crate::export::encode_image(&graded, &opts).map_err(|e| EngineError::Other(format!("can't encode the frame: {e}")))?;
     let out = frame_path(&clip, t)?;
     let out_s = out.to_string_lossy().to_string();
     crate::export::write_file_durable(&out_s, &bytes).map_err(|e| EngineError::Other(format!("can't write {out_s}: {e}")))?;
@@ -283,7 +287,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Capture Frame",
             ["Photo", "Video"],
             None,
-            "{time?: seconds (default: the current position)} — save the frame as a JPEG next to the clip, add it to the library stacked with the clip → {id, path, time, clip}",
+            "{time?: seconds (default: the current position)} — save the frame, graded with the clip's settings, as a JPEG next to the clip (the new photo starts with default settings), add it to the library stacked with the clip → {id, path, time, clip}",
             active_video,
             capture
         ),

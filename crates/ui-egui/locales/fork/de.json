@@ -977,5 +977,17 @@
   "Printer default": "Druckerstandard",
   "Trust Certificate": "Zertifikat vertrauen",
   "Trust a printer's certificate the first time": "Dem Zertifikat eines Druckers beim ersten Mal vertrauen",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "Dem Zertifikat dieses Druckers wird nicht vertraut. Vergleichen Sie den Fingerabdruck mit der Statusseite des Druckers:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "Dem Zertifikat dieses Druckers wird nicht vertraut. Vergleichen Sie den Fingerabdruck mit der Statusseite des Druckers:",
+  "Pause": "Pause",
+  "Play / Pause": "Wiedergabe / Pause",
+  "Video State": "Videostatus",
+  "Go to Time": "Gehe zu Zeit",
+  "Step Frame": "Einzelbild weiter",
+  "Trim Video": "Video zuschneiden",
+  "Reset Trim": "Zuschnitt zurücksetzen",
+  "Set Poster Frame": "Posterbild festlegen",
+  "Capture Frame": "Einzelbild erfassen",
+  "Capturing a video frame": "Videobild wird erfasst",
+  "video playback isn't available in this build": "Videowiedergabe ist in diesem Build nicht verfügbar",
+  "the active photo isn't a video": "das aktive Foto ist kein Video"
 }

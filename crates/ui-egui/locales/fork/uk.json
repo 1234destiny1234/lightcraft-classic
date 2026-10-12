@@ -935,5 +935,17 @@
   "Printer default": "Типово для принтера",
   "Trust Certificate": "Довіряти сертифікату",
   "Trust a printer's certificate the first time": "Довіряти сертифікату принтера під час першого підключення",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертифікат цього принтера не є довіреним. Порівняйте його відбиток зі сторінкою стану принтера:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертифікат цього принтера не є довіреним. Порівняйте його відбиток зі сторінкою стану принтера:",
+  "Pause": "Пауза",
+  "Play / Pause": "Відтворення / пауза",
+  "Video State": "Стан відео",
+  "Go to Time": "Перейти до часу",
+  "Step Frame": "Покроковий кадр",
+  "Trim Video": "Обрізати відео",
+  "Reset Trim": "Скинути обрізку",
+  "Set Poster Frame": "Задати кадр-обкладинку",
+  "Capture Frame": "Захопити кадр",
+  "Capturing a video frame": "Захоплення кадру відео",
+  "video playback isn't available in this build": "відтворення відео недоступне в цій збірці",
+  "the active photo isn't a video": "активне фото не є відео"
 }

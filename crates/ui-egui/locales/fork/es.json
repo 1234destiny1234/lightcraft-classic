@@ -1122,5 +1122,17 @@
   "Printer default": "Predeterminado de la impresora",
   "Trust Certificate": "Confiar en el certificado",
   "Trust a printer's certificate the first time": "Confiar en el certificado de una impresora la primera vez",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "el certificado de esta impresora no es de confianza. Compare su huella con la página de estado de la impresora:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "el certificado de esta impresora no es de confianza. Compare su huella con la página de estado de la impresora:",
+  "Pause": "Pausa",
+  "Play / Pause": "Reproducir / Pausa",
+  "Video State": "Estado del vídeo",
+  "Go to Time": "Ir al tiempo",
+  "Step Frame": "Avanzar fotograma",
+  "Trim Video": "Recortar vídeo",
+  "Reset Trim": "Restablecer recorte",
+  "Set Poster Frame": "Establecer fotograma de póster",
+  "Capture Frame": "Capturar fotograma",
+  "Capturing a video frame": "Capturando un fotograma de vídeo",
+  "video playback isn't available in this build": "la reproducción de vídeo no está disponible en esta compilación",
+  "the active photo isn't a video": "la foto activa no es un vídeo"
 }

@@ -1118,5 +1118,17 @@
   "Printer default": "プリンターの既定値",
   "Trust Certificate": "証明書を信頼",
   "Trust a printer's certificate the first time": "初回接続時にプリンターの証明書を信頼する",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "このプリンターの証明書は信頼されていません。フィンガープリントをプリンターのステータスページと照合してください:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "このプリンターの証明書は信頼されていません。フィンガープリントをプリンターのステータスページと照合してください:",
+  "Pause": "一時停止",
+  "Play / Pause": "再生 / 一時停止",
+  "Video State": "ビデオの状態",
+  "Go to Time": "時間へ移動",
+  "Step Frame": "コマ送り",
+  "Trim Video": "ビデオをトリミング",
+  "Reset Trim": "トリミングをリセット",
+  "Set Poster Frame": "ポスターフレームを設定",
+  "Capture Frame": "フレームをキャプチャ",
+  "Capturing a video frame": "ビデオフレームをキャプチャ中",
+  "video playback isn't available in this build": "このビルドではビデオ再生を利用できません",
+  "the active photo isn't a video": "アクティブな写真はビデオではありません"
 }

@@ -1412,5 +1412,17 @@
   "Printer default": "По умолчанию принтера",
   "Trust Certificate": "Доверять сертификату",
   "Trust a printer's certificate the first time": "Доверять сертификату принтера при первом подключении",
-  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертификат этого принтера не является доверенным. Сравните его отпечаток со страницей состояния принтера:"
+  "this printer's certificate isn't trusted. Compare its fingerprint with the printer's status page:": "сертификат этого принтера не является доверенным. Сравните его отпечаток со страницей состояния принтера:",
+  "Pause": "Пауза",
+  "Play / Pause": "Воспроизведение / пауза",
+  "Video State": "Состояние видео",
+  "Go to Time": "Перейти ко времени",
+  "Step Frame": "Покадровый шаг",
+  "Trim Video": "Обрезать видео",
+  "Reset Trim": "Сбросить обрезку",
+  "Set Poster Frame": "Задать кадр-обложку",
+  "Capture Frame": "Захватить кадр",
+  "Capturing a video frame": "Захват кадра видео",
+  "video playback isn't available in this build": "воспроизведение видео недоступно в этой сборке",
+  "the active photo isn't a video": "активное фото не является видео"
 }
