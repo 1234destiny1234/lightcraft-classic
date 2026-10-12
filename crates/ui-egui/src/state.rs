@@ -571,7 +571,8 @@ pub struct UiState {
     pub sidebar: crate::sidebar::SidebarLayout,
     /// The ids of other folded panels (the Classic modules' `panel:<key>` panels), saved here. Settings files
     /// from before [`UiState::sidebar`] listed the folded sidebar sections here too: [`UiState::sanitized`]
-    /// moves those over, so only ids that are not a [`crate::sidebar::SidebarSection`] stay.
+    /// moves those over, so only the `panel:<key>` ids stay (unknown ids are dropped).
+    #[serde(skip_serializing_if = "Vec::is_empty")]
     pub collapsed_sidebar: Vec<String>,
     /// A face's name being typed in the loupe.
     #[serde(skip)]
@@ -1277,7 +1278,7 @@ impl UiState {
         self.right_width = RIGHT_WIDTH.clamp(self.right_width);
         self.brush_size = self.brush_size.clamp(0.002, 0.5);
         self.sidebar.adopt_collapsed(&self.collapsed_sidebar);
-        self.collapsed_sidebar.retain(|id| crate::sidebar::SidebarSection::from_id(id).is_none());
+        self.collapsed_sidebar.retain(|id| id.starts_with("panel:"));
         self.dialog = None;
         self.fullscreen = false;
         if !crate::state::PREVIEW_LIMITS.contains(&self.settings.preview_limit) {

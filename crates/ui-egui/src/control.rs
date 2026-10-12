@@ -347,7 +347,8 @@ pub fn handle(app: &mut DacApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
                             u.sidebar.set_collapsed(section, ids.iter().any(|id| id.as_str() == Some(section.id())));
                         }
                     }
-                    u.collapsed_sidebar.clear();
+                    // the sections' folds now live in `sidebar`; the Classic panels' `panel:*` folds stay
+                    u.collapsed_sidebar.retain(|id| crate::sidebar::SidebarSection::from_id(id).is_none());
                     u.toast = app.ui.toast.clone();
                     u.dialog = app.ui.dialog.clone();
                     u.status = app.ui.status.clone();
