@@ -289,7 +289,10 @@ impl Op {
             | Op::SetXmpStamp { id, .. }
             | Op::SetPreview { id, .. }
             | Op::SetEmbeddedLens { id, .. }
-            | Op::SetAsShotWb { id, .. } => out(*id),
+            | Op::SetAsShotWb { id, .. }
+            | Op::SetVideoMeta { id, .. }
+            | Op::SetVideoTrim { id, .. }
+            | Op::SetVideoPoster { id, .. } => out(*id),
             Op::SetRemote { photo, .. } => out(*photo),
             Op::AddAlbum { album } => {
                 album.photos.iter().for_each(|p| out(*p));

@@ -444,9 +444,9 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
 | LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs` | videos can be catalogued (kind, duration); no player |
-| LR-VID-TRIM | Trim | P1 | ⬜ | | |
+| LR-VID-TRIM | Trim | P1 | ⬜ | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim` | catalog format 10 stores and validates the trim (undoable, in sidecars as `lcvid:trimIn/trimOut`); no UI or commands yet |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | |
-| LR-VID-COVER | Cover frame | P2 | ⬜ | | |
+| LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster` | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); no poster rendering yet |
 | LR-VID-EXPORT | Video export | P2 | ⬜ | | |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
@@ -910,6 +910,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | M14.2: catalog format 10 (`VideoMeta`, trim, poster), video extensions import as videos, `video:yes` filter; LR-VID-TRIM / LR-VID-COVER notes, status unchanged (⬜) |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
 | 2026-10-12 | minor | KEYC-MODULE-OUTPUT (G28) 🟡 → ✅: Web module ⌘R reload preview and ⌘⌥P preview in browser |
