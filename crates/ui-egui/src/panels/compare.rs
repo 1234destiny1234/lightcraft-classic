@@ -240,7 +240,7 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
     let pt = ui.painter();
     let mut x = cap.left() + 4.0;
     if !label.is_empty() {
-        let g = pt.layout_no_wrap(label.to_string(), t.semibold(12.0), if active { t.text } else { t.text_label });
+        let g = pt.layout_no_wrap(crate::i18n::tr(label).to_string(), t.semibold(12.0), if active { t.text } else { t.text_label });
         pt.galley(pos2(x, cap.center().y - g.size().y / 2.0), g.clone(), t.text);
         x += g.size().x + 10.0;
     }
