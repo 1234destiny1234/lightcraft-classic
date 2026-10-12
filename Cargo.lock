@@ -1643,6 +1643,8 @@ dependencies = [
  "dac-brand",
  "dac-codecs",
  "dac-engine",
+ "dac-gpu",
+ "dac-pipeline",
  "dac-raster",
  "dac-sysmem",
  "dac-ui-egui",
@@ -1898,6 +1900,7 @@ dependencies = [
  "libc",
  "log",
  "miniz_oxide 0.8.9",
+ "pollster 1.0.1",
  "rayon",
  "rustix 1.1.5",
  "serde",
@@ -1907,6 +1910,7 @@ dependencies = [
  "unicode-segmentation",
  "wat",
  "web-time",
+ "wgpu",
 ]
 
 [[package]]

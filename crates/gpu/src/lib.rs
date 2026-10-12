@@ -41,6 +41,8 @@ pub mod nn;
 mod params;
 #[cfg(not(target_arch = "wasm32"))]
 mod render;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod video_lut;
 
 #[cfg(not(target_arch = "wasm32"))]
 pub use render::GpuStages;

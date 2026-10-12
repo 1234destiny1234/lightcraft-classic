@@ -7,6 +7,9 @@
 //!   Frames already behind the playhead the host reports ([`Playback::set_target`]) are skipped
 //!   before grading, which holds real time on a slow decoder. The worker never blocks its host:
 //!   the host polls with [`Playback::poll`].
+//!   With [`Playback::start_linear`] the worker skips that grade and hands over the decoded
+//!   linear frame with the LUT ([`FramePixels::Linear`]) for the host to grade on the GPU
+//!   (`dac_gpu::video_lut`), which takes the per-frame LUT cost off the CPU.
 //! - [`spawn_still`]: one full-quality graded frame (the real pipeline, `grade_frame`) for a
 //!   paused or scrubbed clip, on a thread of its own.
 //!
@@ -21,7 +24,7 @@ use std::sync::{Arc, Mutex, PoisonError};
 use dac_develop::DevelopSettings;
 use dac_pipeline::Quality;
 use dac_pipeline::grade::{GradeLut, grade_frame, video_settings};
-use dac_raster::Rgba8;
+use dac_raster::{Rgb32f, Rgba8};
 
 use super::VideoBackend;
 
@@ -30,12 +33,32 @@ pub const QUEUE: usize = 8;
 /// Longest side of a frame decoded for playback.
 pub const PLAY_MAX_SIDE: u32 = 960;
 
-/// A graded frame ready to show.
+/// A frame's pixels.
+#[derive(Clone, Debug)]
+pub enum FramePixels {
+    /// Graded, display-encoded sRGB.
+    Graded(Arc<Rgba8>),
+    /// Decoded but not graded ([`Playback::start_linear`]): linear RGB, to be graded with `lut`
+    /// (whose identity is `key`: the same key, the same table).
+    Linear { image: Arc<Rgb32f>, lut: Arc<GradeLut>, key: u64 },
+}
+
+impl FramePixels {
+    /// The frame graded on the CPU (a linear frame is graded through its LUT here).
+    pub fn graded(&self) -> Arc<Rgba8> {
+        match self {
+            FramePixels::Graded(g) => g.clone(),
+            FramePixels::Linear { image, lut, .. } => Arc::new(lut.apply(image, Quality::Full)),
+        }
+    }
+}
+
+/// A frame ready to show.
 #[derive(Clone, Debug)]
 pub struct ShownFrame {
     /// Presentation time, seconds.
     pub time: f64,
-    pub image: Arc<Rgba8>,
+    pub pixels: FramePixels,
     /// Rendered by the full pipeline (paused) rather than the playback LUT.
     pub full: bool,
 }
@@ -74,6 +97,8 @@ pub struct Playback {
     pub start: f64,
     pub path: PathBuf,
     ended: bool,
+    /// Frames come ungraded ([`Playback::start_linear`]).
+    pub linear: bool,
 }
 
 impl std::fmt::Debug for Playback {
@@ -89,6 +114,28 @@ fn settings_key(d: &DevelopSettings) -> u64 {
 impl Playback {
     /// Start decoding `path` from `start` at most `max_side` px, graded with `develop`.
     pub fn start(backend: Arc<dyn VideoBackend>, path: PathBuf, start: f64, max_side: u32, develop: &DevelopSettings) -> Result<Playback, String> {
+        Playback::start_mode(backend, path, start, max_side, develop, false)
+    }
+
+    /// [`Playback::start`], but frames come ungraded ([`FramePixels::Linear`]) for a GPU grade.
+    pub fn start_linear(
+        backend: Arc<dyn VideoBackend>,
+        path: PathBuf,
+        start: f64,
+        max_side: u32,
+        develop: &DevelopSettings,
+    ) -> Result<Playback, String> {
+        Playback::start_mode(backend, path, start, max_side, develop, true)
+    }
+
+    fn start_mode(
+        backend: Arc<dyn VideoBackend>,
+        path: PathBuf,
+        start: f64,
+        max_side: u32,
+        develop: &DevelopSettings,
+        linear: bool,
+    ) -> Result<Playback, String> {
         let shared = Arc::new(Shared {
             settings: Mutex::new((settings_key(develop), develop.clone())),
             target: Mutex::new(start),
@@ -99,9 +146,9 @@ impl Playback {
         let side = max_side.clamp(16, PLAY_MAX_SIDE);
         std::thread::Builder::new()
             .name("video-playback".into())
-            .spawn(move || worker(backend, p, start, side, sh, tx))
+            .spawn(move || worker(backend, p, start, side, linear, sh, tx))
             .map_err(|e| format!("can't start video playback: {e}"))?;
-        Ok(Playback { rx, shared, ahead: None, start, path, ended: false })
+        Ok(Playback { rx, shared, ahead: None, start, path, ended: false, linear })
     }
 
     /// New develop settings: the worker rebakes its LUT when the video grade changed.
@@ -165,7 +212,7 @@ impl Drop for Playback {
     }
 }
 
-fn worker(backend: Arc<dyn VideoBackend>, path: PathBuf, start: f64, side: u32, sh: Arc<Shared>, tx: SyncSender<Msg>) {
+fn worker(backend: Arc<dyn VideoBackend>, path: PathBuf, start: f64, side: u32, linear: bool, sh: Arc<Shared>, tx: SyncSender<Msg>) {
     let fail = |tx: &SyncSender<Msg>, e: String| {
         log::warn!("video playback of {}: {e}", path.display());
         let _ = tx.send(Msg::Error(e));
@@ -198,9 +245,13 @@ fn worker(backend: Arc<dyn VideoBackend>, path: PathBuf, start: f64, side: u32, 
                 Err(e) => return fail(&tx, format!("can't grade the clip: {e}")),
             }
         }
-        let Some((_, lut)) = baked.as_ref() else { return };
-        let image = Arc::new(lut.apply(&img, Quality::Full));
-        if tx.send(Msg::Frame(ShownFrame { time, image, full: false })).is_err() {
+        let Some((key, lut)) = baked.as_ref() else { return };
+        let pixels = if linear {
+            FramePixels::Linear { image: Arc::new(img), lut: lut.clone(), key: *key }
+        } else {
+            FramePixels::Graded(Arc::new(lut.apply(&img, Quality::Full)))
+        };
+        if tx.send(Msg::Frame(ShownFrame { time, pixels, full: false })).is_err() {
             return;
         }
     }
@@ -222,7 +273,7 @@ pub fn spawn_still(
     let spawned = std::thread::Builder::new().name("video-still".into()).spawn(move || {
         let r = backend.frame_at(&path, t, Some(max_side.max(16))).map(|img| ShownFrame {
             time: t,
-            image: Arc::new(grade_frame(&img, &video_settings(&develop), Quality::Full)),
+            pixels: FramePixels::Graded(Arc::new(grade_frame(&img, &video_settings(&develop), Quality::Full))),
             full: true,
         });
         if let Err(e) = &r {

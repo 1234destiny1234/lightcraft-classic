@@ -89,6 +89,9 @@ wat = "1.228" # P4.3: plug-in test modules
 # M14.2/M14.3/M14.8: synthetic clips generated in-test (no media committed) and re-decoded
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 dac-video = { workspace = true, features = ["test-util"] }
+# M14.4: the GPU playback LUT benchmark (bench_playback)
+wgpu = { workspace = true }
+pollster = { workspace = true }
 filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 
