@@ -105,8 +105,8 @@ fn enc(e: impl std::fmt::Display) -> ExportClipError {
 
 /// Export `src` from `trim.0` to `trim.1` (seconds; `None` = end of clip) to `opts.out`.
 ///
-/// `grade` runs on every output frame (sequentially for now; `Sync` so a later version can grade
-/// frames in parallel). `progress` receives 0..=1. Setting `cancel` stops within one frame with
+/// `grade` runs on every output frame, on several frames at once on worker threads (decode, grade
+/// and encode are pipelined; frames are encoded in order). `progress` receives 0..=1. Setting `cancel` stops within one frame with
 /// [`ExportClipError::Cancelled`] and removes the partial file.
 pub fn export_clip(
     src: &Path,
@@ -225,28 +225,104 @@ fn run(
         None => None,
     };
 
-    for (i, k) in (k0..k1).enumerate() {
-        if cancel.load(Ordering::Relaxed) {
-            return Err(ExportClipError::Cancelled);
+    let threads = grade_threads();
+    // Decode, grade and encode run on separate threads joined by bounded queues; grading may run
+    // on several frames at once, and the encoder takes the frames back in order.
+    let stop = AtomicBool::new(false);
+    let halted = || cancel.load(Ordering::Relaxed) || stop.load(Ordering::Relaxed);
+    let (dtx, drx) = std::sync::mpsc::sync_channel::<Result<(usize, Rgb32f)>>(QUEUE);
+    let (gtx, grx) = std::sync::mpsc::sync_channel::<Result<(usize, Rgb32f)>>(QUEUE + threads);
+    let drx = std::sync::Mutex::new(drx);
+    let encoded: Result<()> = std::thread::scope(|sc| {
+        let (halted, drx) = (&halted, &drx);
+        let mut handles = Vec::with_capacity(threads + 1);
+        handles.push(sc.spawn(move || {
+            for (i, k) in (k0..k1).enumerate() {
+                if halted() {
+                    return;
+                }
+                let t = times.get(k).copied().unwrap_or(t0);
+                let r = reader.frame_at(t, Some(w.max(h))).map_err(video_err).map(|d| (i, fit(&d.image, w as usize, h as usize)));
+                let failed = r.is_err();
+                if dtx.send(r).is_err() || failed {
+                    return;
+                }
+            }
+        }));
+        for _ in 0..threads {
+            let gtx = gtx.clone();
+            handles.push(sc.spawn(move || {
+                loop {
+                    // ends when the decoder has stopped; once halted, frames are drained (so a
+                    // decoder blocked on a full queue sees the halt) and dropped
+                    let next = drx.lock().unwrap_or_else(std::sync::PoisonError::into_inner).recv();
+                    let Ok(item) = next else { return };
+                    if halted() {
+                        continue;
+                    }
+                    let item = item.and_then(|(i, mut frame)| {
+                        grade(&mut frame);
+                        if frame.width != w as usize || frame.height != h as usize || frame.data.len() != w as usize * h as usize {
+                            return Err(ExportClipError::Encode("the grade changed the frame size".into()));
+                        }
+                        Ok((i, frame))
+                    });
+                    if gtx.send(item).is_err() {
+                        return;
+                    }
+                }
+            }));
         }
-        let t = times.get(k).copied().unwrap_or(t0);
-        let decoded = reader.frame_at(t, Some(w.max(h))).map_err(video_err)?;
-        let mut frame = fit(&decoded.image, w as usize, h as usize);
-        grade(&mut frame);
-        if frame.width != w as usize || frame.height != h as usize || frame.data.len() != w as usize * h as usize {
-            return Err(ExportClipError::Encode("the grade changed the frame size".into()));
-        }
-        for p in video.encode(&frame, i as i64)? {
-            mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key }).map_err(enc)?;
-        }
-        if let (Some(a), Some(tr)) = (audio.as_mut(), atrack) {
-            let until = t0 + (i as f64 + 1.0) * f64::from(fden) / f64::from(fnum);
-            for au in a.encode_until(until)? {
-                mux.write_sample(tr, WriteSample { data: &au, duration: 1024, composition_offset: 0, is_sync: true }).map_err(enc)?;
+        drop(gtx);
+        let r = (|| {
+            let mut pending = std::collections::BTreeMap::new();
+            let mut i = 0usize;
+            while i < total {
+                if cancel.load(Ordering::Relaxed) {
+                    return Err(ExportClipError::Cancelled);
+                }
+                let frame = match pending.remove(&i) {
+                    Some(f) => f,
+                    None => match grx.recv() {
+                        Ok(item) => {
+                            let (j, f) = item?;
+                            if j != i {
+                                pending.insert(j, f);
+                                continue;
+                            }
+                            f
+                        }
+                        // every stage ended early: cancelled, or a thread failed
+                        Err(_) if cancel.load(Ordering::Relaxed) => return Err(ExportClipError::Cancelled),
+                        Err(_) => return Err(ExportClipError::Internal),
+                    },
+                };
+                for p in video.encode(&frame, i as i64)? {
+                    mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key }).map_err(enc)?;
+                }
+                if let (Some(a), Some(tr)) = (audio.as_mut(), atrack) {
+                    let until = t0 + (i as f64 + 1.0) * f64::from(fden) / f64::from(fnum);
+                    for au in a.encode_until(until)? {
+                        mux.write_sample(tr, WriteSample { data: &au, duration: 1024, composition_offset: 0, is_sync: true }).map_err(enc)?;
+                    }
+                }
+                i += 1;
+                progress(i as f64 / total as f64);
+            }
+            Ok(())
+        })();
+        // stop the other stages, then wait for them (their queues are drained by dropping them)
+        stop.store(true, Ordering::Relaxed);
+        drop(grx);
+        let mut joined = Ok(());
+        for hd in handles {
+            if hd.join().is_err() {
+                joined = Err(ExportClipError::Internal);
             }
         }
-        progress((i as f64 + 1.0) / total as f64);
-    }
+        r.and(joined)
+    });
+    encoded?;
     if cancel.load(Ordering::Relaxed) {
         return Err(ExportClipError::Cancelled);
     }
@@ -271,6 +347,14 @@ fn run(
         height: h,
         has_audio: audio.is_some(),
     })
+}
+
+/// Frames waiting between two stages.
+const QUEUE: usize = 4;
+
+/// Frames graded at once: a few, as the grade itself is parallel inside.
+fn grade_threads() -> usize {
+    std::thread::available_parallelism().map_or(1, |n| n.get()).div_ceil(8).clamp(1, 4)
 }
 
 /// Resample to exactly `w × h` (bilinear; a copy when the size already matches).
