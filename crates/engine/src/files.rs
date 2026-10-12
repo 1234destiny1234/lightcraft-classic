@@ -123,6 +123,80 @@ pub fn embedded_lens(raw: &dac_raw::RawInfo) -> Option<dac_develop::EmbeddedLens
     Some(dac_pipeline::optics::reorient_lens(&lens, raw.orientation, cw, ch))
 }
 
+/// Probe a video clip on disk (native): the content hash and SHA-1 of the whole file, streamed in
+/// 1 MiB chunks (a multi-GB clip is never read into memory; the hash equals [`dac_preview::hash_bytes`]
+/// of its bytes, so duplicate detection and Import → Copy's verification work as for photos), then
+/// the container's facts from [`dac_video::probe`]: display size, duration, frame rate, codec,
+/// audio, creation date (normalised like Exif dates, `YYYY-MM-DDThh:mm:ss[±hh:mm]`) and GPS. A clip
+/// whose container can't be read still imports (described by its file only, `video: None`).
+pub fn probe_video_file(path: &std::path::Path) -> Result<ProbeInfo, String> {
+    use std::io::Read;
+    let name = path.to_string_lossy().to_string();
+    let mut f = std::fs::File::open(path).map_err(|e| format!("{name}: {e}"))?;
+    let mut hash = dac_preview::Hasher128::new();
+    let mut sha = dac_hash::Sha1::new();
+    let mut buf = vec![0u8; 1 << 20];
+    let mut size = 0u64;
+    loop {
+        let n = match f.read(&mut buf) {
+            Ok(0) => break,
+            Ok(n) => n,
+            Err(e) if e.kind() == std::io::ErrorKind::Interrupted => continue,
+            Err(e) => return Err(format!("{name}: {e}")),
+        };
+        let chunk = buf.get(..n).unwrap_or_default();
+        hash.update(chunk);
+        sha.update(chunk);
+        size = size.saturating_add(n as u64);
+    }
+    let mut info = ProbeInfo {
+        width: 1,
+        height: 1,
+        format: ext_upper(&name),
+        kind: MediaKind::Video,
+        file_size: size,
+        content_hash: Some(hash.finish().to_string()),
+        sha1: Some(sha.finish().to_hex()),
+        ..Default::default()
+    };
+    match dac_video::probe(path) {
+        Ok(v) => apply_video_info(&mut info, &v),
+        Err(e) => log::debug!("{name}: no video facts ({e})"),
+    }
+    Ok(info)
+}
+
+/// Fill a clip's probe from [`dac_video::probe`]'s facts.
+pub(crate) fn apply_video_info(info: &mut ProbeInfo, v: &dac_video::VideoInfo) {
+    let duration = (v.duration.is_finite() && v.duration >= 0.0).then_some(v.duration);
+    if v.width > 0 && v.height > 0 {
+        (info.width, info.height) = (v.width, v.height);
+    }
+    info.duration = duration;
+    info.captured = v.created.as_deref().and_then(video_date);
+    info.meta.gps = v.gps.filter(|(la, lo)| la.is_finite() && lo.is_finite() && la.abs() <= 90.0 && lo.abs() <= 180.0);
+    info.video = Some(dac_catalog::VideoMeta {
+        duration: duration.unwrap_or(0.0),
+        fps_num: v.fps_num,
+        fps_den: v.fps_den,
+        width: v.width,
+        height: v.height,
+        codec: v.codec.clone(),
+        has_audio: v.has_audio,
+        trim_in: 0.0,
+        trim_out: None,
+        poster_time: None,
+    });
+}
+
+/// A clip's creation date (QuickTime `creationdate` / `©day`, ISO 8601) in the catalog's capture
+/// date form ([`dac_meta::DateTime::to_iso`], as photos' Exif dates). `None` when it isn't a date.
+pub(crate) fn video_date(s: &str) -> Option<String> {
+    let d = dac_meta::DateTime::parse_iso(s)?;
+    // a bare year (`2026`) or a zero date is no capture time
+    (d.year > 1900).then(|| d.to_iso())
+}
+
 fn ext_upper(name: &str) -> String {
     std::path::Path::new(name).extension().map(|e| e.to_string_lossy().to_uppercase()).unwrap_or_default()
 }
@@ -200,6 +274,8 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             xmp: dac_meta::embedded(bytes).xmp,
             preview_only: None,
             sha1,
+            video: None,
+            duration: None,
         });
     }
     let fmt = dac_codecs::sniff(bytes).ok_or("unrecognized file format")?;
@@ -234,6 +310,8 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         xmp: None,
         preview_only: None,
         sha1,
+        video: None,
+        duration: None,
     })
 }
 
@@ -868,6 +946,10 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         r
     });
     let probe: FileProbe = Arc::new(|path: &str| {
+        // a clip is streamed (hash) and its headers read in place: never all of it in memory
+        if crate::import::is_video_name(path) {
+            return probe_video_file(std::path::Path::new(path));
+        }
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let _permit = crate::memory::work_gate().acquire(len);
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;

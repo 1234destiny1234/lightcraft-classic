@@ -48,6 +48,8 @@ ab_glyph = { workspace = true }
 harfrust = { version = "0.12", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
 dac-segment = { workspace = true, optional = true }
+# video clips: probe and poster frames (every call is `Unsupported` on wasm32)
+dac-video = { workspace = true }
 
 # model downloads run natively only (the web build fetches no models)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -81,7 +83,7 @@ libc = { workspace = true }
 dac-tiff = { workspace = true }
 wat = "1.228" # P4.3: plug-in test modules
 
-# M14.8: synthetic clips generated in-test (no media committed) and re-decoded
+# M14.2/M14.3/M14.8: synthetic clips generated in-test (no media committed) and re-decoded
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 dac-video = { workspace = true }
 filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }

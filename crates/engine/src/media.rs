@@ -241,6 +241,13 @@ pub enum SourceRef {
     Smart {
         path: std::path::PathBuf,
     },
+    /// A video clip: its poster frame at `time` (`None`: [`dac_video::default_poster_time`]),
+    /// at most `max_edge` long (M14.3). A clip that can't be decoded gives [`video_placeholder`].
+    Video {
+        path: String,
+        time: Option<f64>,
+        max_edge: usize,
+    },
 }
 
 impl SourceRef {
@@ -294,12 +301,78 @@ impl SourceRef {
                     (r, _) => r,
                 };
             }
+            SourceRef::Video { path, time, max_edge } => Arc::new(video_poster(path, *time, *max_edge)?),
             #[cfg(not(target_arch = "wasm32"))]
             SourceRef::Smart { path } => return crate::smart::load(path),
             #[cfg(target_arch = "wasm32")]
             SourceRef::Smart { .. } => return Err("smart previews are not available here".into()),
         };
         Ok(DecodedSource::new(image, None))
+    }
+}
+
+/// A clip's poster frame (linear Rec.709, the JPEG/TIFF input path), `max_edge` long at most. An
+/// unreadable file is an error (offline drive: the tile says so); a clip we can't decode
+/// (unsupported codec, damaged stream, the web build) is [`video_placeholder`], not an error,
+/// so a grid full of such clips shows film tiles rather than a stream of failures.
+pub fn video_poster(path: &str, time: Option<f64>, max_edge: usize) -> Result<Rgb32f, String> {
+    let side = u32::try_from(max_edge.clamp(16, 16_384)).unwrap_or(16_384);
+    match dac_video::poster(std::path::Path::new(path), time, side) {
+        Ok(f) if f.image.width > 0 && f.image.height > 0 => Ok(f.image),
+        Ok(_) => Ok(video_placeholder(side as usize)),
+        Err(dac_video::VideoError::Io(e)) => Err(format!("{path}: {e}")),
+        Err(e) => {
+            log::debug!("{path}: video poster unavailable ({e}); showing a placeholder");
+            Ok(video_placeholder(side as usize))
+        }
+    }
+}
+
+/// A stand-in poster for a clip that can't be decoded: a dark 16:9 tile with a film-strip glyph
+/// (sprocket holes along two bands, a light frame between them). Drawn in code (original work).
+pub fn video_placeholder(max_edge: usize) -> Rgb32f {
+    let w = max_edge.clamp(16, 512);
+    let h = (w * 9 / 16).max(9);
+    let mut img = Rgb32f::new(w, h);
+    let (bg, strip, light) = (0.02f32, 0.006f32, 0.25f32);
+    let (sx0, sx1) = (w * 30 / 100, w * 70 / 100);
+    let (sy0, sy1) = (h * 20 / 100, h * 80 / 100);
+    let band = ((sx1 - sx0) / 7).max(1);
+    let hole = (band / 2).max(1);
+    for y in 0..h {
+        for x in 0..w {
+            let mut v = bg;
+            if (sx0..sx1).contains(&x) && (sy0..sy1).contains(&y) {
+                v = strip;
+                let in_band = x < sx0 + band || x >= sx1 - band;
+                if in_band {
+                    let bx = if x < sx0 + band { x - sx0 } else { x - (sx1 - band) };
+                    let pitch = (hole * 2).max(2);
+                    let hy = (y - sy0) % pitch;
+                    if (band - hole) / 2 <= bx && bx < (band - hole) / 2 + hole && hy < hole {
+                        v = light;
+                    }
+                } else if x >= sx0 + band + hole && x < sx1 - band - hole && y >= sy0 + hole * 2 && y < sy1 - hole * 2 {
+                    v = light * 0.5;
+                }
+            }
+            if let Some(px) = img.data.get_mut(y * w + x) {
+                *px = [v, v, v];
+            }
+        }
+    }
+    img
+}
+
+/// What identifies the pixels a photo's renders start from: [`content_key`], and for a video
+/// its poster time too (a new poster frame is new pixels: its thumbnail and view are rendered afresh).
+pub fn pixels_key(p: &Photo) -> String {
+    match (&p.video, p.kind) {
+        (Some(v), MediaKind::Video) => match v.poster_time {
+            Some(t) => format!("{}#poster={t}", content_key(p)),
+            None => content_key(p),
+        },
+        _ => content_key(p),
     }
 }
 
@@ -624,6 +697,12 @@ impl MediaCache {
     fn source_ref_plain(&mut self, p: &Photo, level: SourceLevel, cached: bool) -> SourceRef {
         if cached && let Some(a) = self.get_source(p.id, level) {
             return SourceRef::Loaded(Box::new(a));
+        }
+        if p.kind == MediaKind::Video
+            && let Source::File { path } = &p.source
+        {
+            let max_edge = level.max_edge().min(p.width.max(p.height).max(1) as usize);
+            return SourceRef::Video { path: path.clone(), time: p.video.as_ref().and_then(|v| v.poster_time), max_edge };
         }
         // Procedural scenes have a nominal size: "full" is that size, not unbounded.
         let max_edge = level.max_edge().min(match (&p.source, level) {
@@ -1068,6 +1147,8 @@ impl crate::Session {
     ) -> Option<RenderJob> {
         let p = self.catalog.photo(id)?.clone();
         let settings = if before { Arc::new(self.before_settings(&p)) } else { p.develop.clone() };
+        // a clip's poster is graded like its frames: the global controls only (`dac_pipeline::grade`)
+        let settings = if p.kind == MediaKind::Video { Arc::new(dac_pipeline::grade::video_settings(&settings)) } else { settings };
         let level = SourceLevel::for_size(if thumb_bucket.is_some() {
             max_w.max(max_h) // (grid thumbnails of tight crops stay cheap)
         } else {
@@ -1078,7 +1159,7 @@ impl crate::Session {
         // the photo id is part of the key: two photos with the same settings and size must not
         // share a result (a view slot showing photo A would otherwise look current for photo B)
         // …and so is the file's content: a file changed on disk (Reload) renders afresh
-        let content_key = content_key(&p);
+        let content_key = pixels_key(&p);
         let source_key = Hasher128::new().str(&content_key).finish();
         let content = source_key.0 as u64;
         // Temporary "before" settings must not replace the photo's cached develop hash.
@@ -1132,7 +1213,7 @@ impl crate::Session {
     /// Cache key of a variant thumbnail ([`Self::variant_job`]).
     pub fn variant_key(p: &Photo, settings: &DevelopSettings, edge: usize) -> Hash128 {
         Hasher128::new()
-            .str(&content_key(p))
+            .str(&pixels_key(p))
             .str("variant")
             .u64(settings.hash64())
             .u64(edge as u64)
@@ -1155,7 +1236,7 @@ impl crate::Session {
         Some(RenderJob {
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
-            source_key: Some(Hasher128::new().str(&content_key(&p)).finish()),
+            source_key: Some(Hasher128::new().str(&pixels_key(&p)).finish()),
             photo: id,
             level,
             source,
@@ -1201,7 +1282,7 @@ impl crate::Session {
         Some(RenderJob {
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
-            source_key: Some(Hasher128::new().str(&content_key(&p)).finish()),
+            source_key: Some(Hasher128::new().str(&pixels_key(&p)).finish()),
             photo: id,
             level,
             source,
@@ -1220,7 +1301,7 @@ impl crate::Session {
     /// Size-independent cache key of a photo's view render (loupe) for its current settings.
     fn view_key(p: &Photo, apply_crop: bool) -> Hash128 {
         Hasher128::new()
-            .str(&content_key(p))
+            .str(&pixels_key(p))
             .str("view")
             .u64(p.develop.hash64())
             .u64(apply_crop as u64)
@@ -1376,7 +1457,7 @@ impl crate::Session {
         if apply_crop {
             cached.push((self.media.rendered.clone(), Self::full_view_key(&p)));
         }
-        let h = Hasher128::new().str(&content_key(&p)).str("quick").u64(p.develop.hash64()).u64(apply_crop as u64).finish();
+        let h = Hasher128::new().str(&pixels_key(&p)).str("quick").u64(p.develop.hash64()).u64(apply_crop as u64).finish();
         let key = h.0 as u64;
         let embedded = self.embedded_of(&p).map(|(path, l)| (path, l, max_edge.clamp(1, SourceLevel::Preview.max_edge())));
         Some(QuickJob { request_id: 0, photo: id, key, cached, embedded, small: apply_crop.then(|| Box::new(small)) })
@@ -1404,7 +1485,7 @@ impl crate::Session {
     /// has wrong is corrected too ([`Self::learn_as_shot_wb`]).
     pub fn accept(&mut self, r: &RenderResult) {
         if let Some(src) = &r.loaded
-            && r.source_key.is_none_or(|key| self.catalog.photo(r.photo).is_some_and(|p| Hasher128::new().str(&content_key(p)).finish() == key))
+            && r.source_key.is_none_or(|key| self.catalog.photo(r.photo).is_some_and(|p| Hasher128::new().str(&pixels_key(p)).finish() == key))
         {
             if let Some(info) = &src.info {
                 self.learn_as_shot_wb(r.photo, info);
@@ -1527,6 +1608,11 @@ pub struct ProbeInfo {
     /// SHA-1 of the file's bytes (lowercase hex), computed in the same read pass as
     /// `content_hash`: what Immich stores for its assets (IMM-LINK).
     pub sha1: Option<String>,
+    /// A video clip's stream facts ([`crate::files::probe_video_file`]); `None` for photos and
+    /// for clips whose container could not be read.
+    pub video: Option<dac_catalog::VideoMeta>,
+    /// A video clip's duration in seconds.
+    pub duration: Option<f64>,
 }
 
 pub type FileProbe = Arc<dyn Fn(&str) -> Result<ProbeInfo, String> + Send + Sync>;
@@ -1549,11 +1635,11 @@ mod thumbnail_hash_tests {
             let b = thumb_bucket(edge);
             // Independent original formula: never asks the new hash cache for expected values.
             let settings = p.develop.hash64();
-            let content = Hasher128::new().str(&content_key(&p)).finish().0 as u64;
+            let content = Hasher128::new().str(&pixels_key(&p)).finish().0 as u64;
             let expected =
                 settings ^ ((b as u64) << 40) ^ ((b as u64) << 20) ^ 1 ^ p.id.0.wrapping_mul(0x9e37_79b9_7f4a_7c15) ^ content.rotate_left(17);
             let disk = Hasher128::new()
-                .str(&content_key(&p))
+                .str(&pixels_key(&p))
                 .u64(settings)
                 .u64(b as u64)
                 .u64(RENDER_CACHE_VERSION)

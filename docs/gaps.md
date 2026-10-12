@@ -80,6 +80,7 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 |---|---|---|
 | 2026-10-12 | minor | Gap 18: engine half of video playback, trim, poster frame and Capture Frame (`video.*` commands) |
 | 2026-10-12 | minor | Gap 18: `dac-video` adds Matroska/WebM, MPEG-TS/M2TS/MTS and MXF, and VP9, AV1, ProRes, DNxHR, APV and MPEG-2 decoding; AVCHD 1080i (interlaced H.264) reported unsupported |
+| 2026-10-12 | minor | Gap 18: video import facts and graded poster thumbnails (M14.2/M14.3) |
 | 2026-10-12 | minor | Gap 18: `dac-video` crate decodes MP4/MOV H.264/HEVC frames and posters (M14.1); no player, trim or export yet |
 | 2026-10-12 | minor | Gap 18: video planned via FilmCraft crates, estimate 25–45 → 55–80 h, audio output decision pending |
 | 2026-10-12 | minor | Gap 18: video frame grading (CPU/GPU) and 33³ LUT playback path, timings in video.md |
