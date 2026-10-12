@@ -1,6 +1,6 @@
 # Localization parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (first per-language measurement from the catalogs) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-13 · **Last updated:** 2026-10-13 · **Change:** minor (re-measured with the fork overlays; AI Denoise screens translated) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 How far each interface language is from `full`. How to add or maintain a language is in
 [localization.md](localization.md); per-language notes are in `localization-<code>.md`
@@ -18,15 +18,17 @@ go beyond the target.
 
 ## How the numbers are measured
 
-**Measured** (a Python count over `crates/ui-egui/locales/*.json`, 2026-10-10):
+**Measured** (a Python count over `crates/ui-egui/locales/*.json` merged with the fork overlays in
+`crates/ui-egui/locales/fork/`, 2026-10-13; the 2026-10-10 figures counted upstream's catalogs only):
 
-- The denominator is every message any catalog knows: the union of the plain catalogs' keys (2,074
+- The denominator is every message any catalog knows: the union of the plain catalogs' keys (3,094
   English source strings: menus, commands, controls, panels, dialogs, tooltips, presets, What's New
-  lines) plus the 230 messages of the formats catalogs (`*-formats.json`: text with runtime values and
-  date patterns), 2,304 messages in all.
+  lines) plus the 284 messages of the formats catalogs (`*-formats.json`: text with runtime values and
+  date patterns), 3,378 messages in all.
 - A message counts as translated when the catalog has a non-empty value that differs from the English
   key. Some identical values are correct (`ISO`, `OK` in German), so the figure slightly understates
-  coverage; on the other hand, strings that never reach a catalog (technical errors raised in lower
+  coverage — after the 2026-10-13 pass nearly every remaining identical value is such a cognate,
+  code or format (`Detail`, `Photo`, `GPS`, `A4 (210 × 297 mm)`, `{n} {noun}`); on the other hand, strings that never reach a catalog (technical errors raised in lower
   crates, some `format!` text outside `tr_format!`) are not in the denominator at all. That is why no
   language is `full` even at 99%.
 - The UI has 563 distinct `tr("…")` literals and 198 `tr_format!` messages in `crates/ui-egui` and
@@ -45,16 +47,16 @@ that is promising but is not recorded as review, so the column says `no (communi
 
 | # | Language | Code | UI strings translated | Dialogs / tooltips / help | Script support | Native review | Status | To `full` |
 |---|---|---|---:|---|---|---|---|---:|
-| 1 | English | `en` | 2,304 / 2,304 (100%, source) | all; Help ▸ What's New and the shortcut sheet; no full user manual | Latin (Inter) | n/a | **full** | 0 h |
-| 2 | Simplified Chinese | `zh-hans` | 1,994 / 2,304 (87%) | menus, panels, dialogs, presets, profiles, dates; lower-layer errors English | Hans via craft-fonts (Noto Sans CJK SC); IME through winit; no vertical text in UI (not in target either) | no (community edits) | partial | 6–10 h |
-| 3 | Spanish | `es` | 1,972 / 2,304 (86%) | as zh-hans | Latin | no (community edits) | partial | 6–10 h |
+| 1 | English | `en` | 3,378 / 3,378 (100%, source) | all; Help ▸ What's New and the shortcut sheet; no full user manual | Latin (Inter) | n/a | **full** | 0 h |
+| 2 | Simplified Chinese | `zh-hans` | 3,349 / 3,378 (99%) | menus, panels, dialogs, presets, profiles, dates; lower-layer errors English | Hans via craft-fonts (Noto Sans CJK SC); IME through winit; no vertical text in UI (not in target either) | no (community edits) | partial | 2–4 h |
+| 3 | Spanish | `es` | 3,324 / 3,378 (98%) | as zh-hans | Latin | no (community edits) | partial | 2–4 h |
 | 4 | Hindi | `hi` | 0 (0%) | none | **Devanagari shaping missing** (egui has no complex shaping) | no | none (target: not shipped) | 50–90 h (shaping 25–50 h, shared with Arabic) |
 | 5 | Arabic | `ar` | 0 (0%) | none | **RTL layout and Arabic shaping missing** | no | none (target: not shipped) | 60–110 h (RTL mirroring 30–50 h + shaping, shared with Hindi) |
-| 6 | French | `fr` | 2,021 / 2,304 (88%) | as zh-hans | Latin | no (community edits) | partial | 5–9 h |
-| 7 | Portuguese (Brazil) | `pt-br` | 1,966 / 2,304 (85%) | as zh-hans | Latin | no (community edits) | partial | 6–10 h |
+| 6 | French | `fr` | 3,247 / 3,378 (96%) | as zh-hans | Latin | no (community edits) | partial | 2–4 h |
+| 7 | Portuguese (Brazil) | `pt-br` | 3,310 / 3,378 (98%) | as zh-hans | Latin | no (community edits) | partial | 2–4 h |
 | 8 | Indonesian | `id` | 0 (0%) | none | Latin (Inter covers it) | no | none (target: not shipped) | 10–16 h |
-| 9 | Japanese | `ja` | 1,995 / 2,304 (87%) | as zh-hans; vertical export watermarks | Jpan via craft-fonts (BIZ UDPGothic / UDMincho); IME through winit | no (community edits) | partial | 6–10 h |
-| 10 | German | `de` | 2,104 / 2,304 (91%) | as zh-hans; What's New translated line by line | Latin | no (community edits) | partial | 4–8 h |
+| 9 | Japanese | `ja` | 3,351 / 3,378 (99%) | as zh-hans; vertical export watermarks | Jpan via craft-fonts (BIZ UDPGothic / UDMincho); IME through winit | no (community edits) | partial | 2–4 h |
+| 10 | German | `de` | 3,287 / 3,378 (97%) | as zh-hans; What's New translated line by line | Latin | no (community edits) | partial | 2–4 h |
 | 11 | Korean | `ko` | 0 (0%) | none | **no Korean (Hangul) face**: needs a non-Adobe OFL face in craft-fonts (Noto CJK is allowed only for Chinese) | no | none | 14–22 h |
 | 12 | Vietnamese | `vi` | 0 (0%) | none | Latin with stacked diacritics (Inter covers it; check combining marks) | no | none (target: not shipped) | 10–16 h |
 
@@ -62,9 +64,9 @@ that is promising but is not recorded as review, so the column says `no (communi
 
 | Language | Code | UI strings translated | Script | Native review | Status | To `full` |
 |---|---|---:|---|---|---|---:|
-| Traditional Chinese (Taiwan) | `zh-hant` | 1,993 / 2,304 (87%) | Hant; uses the Simplified Chinese face until craft-fonts has a TC face | no (community edits) | partial | 8–14 h (incl. the font) |
-| Russian | `ru` | 1,704 / 2,304 (74%) | Cyrillic (Inter) | no (community edits) | partial | 8–12 h |
-| Ukrainian | `uk` | 2,287 / 2,304 (99%) | Cyrillic (Inter) | no (community edits) | partial (lower-layer errors English) | 2–4 h |
+| Traditional Chinese (Taiwan) | `zh-hant` | 3,348 / 3,378 (99%) | Hant; uses the Simplified Chinese face until craft-fonts has a TC face | no (community edits) | partial | 4–8 h (incl. the font) |
+| Russian | `ru` | 3,347 / 3,378 (99%) | Cyrillic (Inter) | no (community edits) | partial | 2–4 h |
+| Ukrainian | `uk` | 3,347 / 3,378 (99%) | Cyrillic (Inter) | no (community edits) | partial (lower-layer errors English) | 2–4 h |
 
 Target languages the app lacks: Italian, Korean, Dutch, Polish, Swedish, Norwegian Bokmål, Thai
 (Thai needs shaping and line breaking without spaces). Each Latin-script one is ~10–16 h; Thai
@@ -89,4 +91,5 @@ Target languages the app lacks: Italian, Korean, Dutch, Polish, Swedish, Norwegi
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-13 | minor | Re-measured with the fork overlays (3,378 messages): 96–99% per language; AI Denoise screens translated in de, es, ja, pt-br, zh-hant; last denoise and panel-layout strings in zh-hans, ru, uk |
 | 2026-10-10 | major | Created: per-language counts measured from the catalogs, the twelve key languages, script support, estimates |

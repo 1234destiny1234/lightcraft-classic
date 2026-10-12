@@ -31,9 +31,9 @@
   "Meta's terms, not {app}'s. Downloading it means accepting them.": "Условия Meta, а не {app}. Загрузка означает их принятие.",
   "Quit {app}": "Выйти из {app}",
   "Source code": "Исходный код на GitHub",
-  "{app} does not know this model, so it assumed:": "{app} does not know this model, so it assumed:",
-  "Nothing is fetched until you accept. The model is kept on this computer only; {app} never uploads or shares it.": "Nothing is fetched until you accept. The model is kept on this computer only; {app} never uploads or shares it.",
-  "The model is kept on this computer only. {app} never uploads or shares it.": "The model is kept on this computer only. {app} never uploads or shares it.",
+  "{app} does not know this model, so it assumed:": "{app} не знает эту модель, поэтому предполагает:",
+  "Nothing is fetched until you accept. The model is kept on this computer only; {app} never uploads or shares it.": "Ничего не загружается, пока вы не согласитесь. Модель хранится только на этом компьютере; {app} никогда не выгружает её и не передаёт другим.",
+  "The model is kept on this computer only. {app} never uploads or shares it.": "Модель хранится только на этом компьютере. {app} никогда не выгружает её и не передаёт другим.",
   "Catalog": "Каталог",
   "Collections": "Коллекции",
   "Keywording": "Ключевые слова",
@@ -1457,5 +1457,6 @@
   "Each photo with its own edits, in the order shown. No audio.": "Каждое фото со своими правками, в показанном порядке. Без звука.",
   "Duplicate Album": "Дублировать альбом",
   "Another album with the same photos, to arrange in its own order": "Ещё один альбом с теми же фото, чтобы упорядочить их по-своему",
-  "Switch Brush A / B": "Переключить кисть A / B"
+  "Switch Brush A / B": "Переключить кисть A / B",
+  "OK": "ОК"
 }

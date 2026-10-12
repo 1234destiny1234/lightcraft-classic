@@ -5,7 +5,7 @@
   "{n} change{} saved in memory but not written to disk: {e}\n{app} retries automatically; quitting now would lose {}.": "Cambios guardados en memoria, pero no escritos en el disco: {n}{0:.0}: {e}\n{app} vuelve a intentarlo automáticamente; si se sale ahora, se perderán.{1:.0}",
   "{n} change{} saved in memory but not written to disk: {e} — {app} will retry": "Cambios guardados solo en memoria: {n}{:.0}: {e}; {app} volverá a intentarlo",
   "{app} can't decode this raw variant yet ({}). You're editing the camera's embedded JPEG preview, which already includes the camera's picture style (e.g. Monochrome) and white balance.": "{app} aún no puede decodificar esta variante RAW ({}). Se está editando la vista previa JPEG incrustada de la cámara, que ya incluye el estilo de imagen de la cámara (p. ej. Monocromo) y el balance de blancos.",
-  "Downloads from {host}. Once it has arrived and checked out, {app} installs it, {after}.": "Downloads from {host}. Once it has arrived and checked out, {app} installs it, {after}.",
+  "Downloads from {host}. Once it has arrived and checked out, {app} installs it, {after}.": "Se descarga de {host}. Cuando llegue y se compruebe, {app} lo instala y {after}.",
   "{n} selected": "{n} seleccionadas",
   "Create Folder in “{name}”": "Crear carpeta en «{name}»",
   "{added} added, {missing} missing, {changed} read from changed sidecars": "{added} añadidas, {missing} faltan, {changed} leídas de archivos auxiliares cambiados",
@@ -41,5 +41,15 @@
   "Geotagged {n} photo(s)": "{n} foto(s) geoetiquetada(s)",
   "Location {n}": "Ubicación {n}",
   "{n} photos · {frames} frames · {secs} s": "{n} fotos · {frames} fotogramas · {secs} s",
-  "Exported timelapse: {photos} photos, {frames} frames": "Time-lapse exportado: {photos} fotos, {frames} fotogramas"
+  "Exported timelapse: {photos} photos, {frames} frames": "Time-lapse exportado: {photos} fotos, {frames} fotogramas",
+  " · {queued} waiting": " · {queued} en espera",
+  "Denoising {name}: {done} of {total} tiles{}": "Reduciendo ruido de {name}: mosaico {done} de {total}{}",
+  "In line for AI Denoise ({ahead} ahead)…": "En cola para reducir ruido con IA ({ahead} por delante)…",
+  "Making the denoised picture… {}%": "Generando la imagen sin ruido… {}%",
+  "Running on the processor: {}.": "Se ejecuta en el procesador: {}.",
+  "Running on {}.": "Se ejecuta en {}.",
+  "Shows the model's terms, then downloads {} from {host}, installs it and starts using it. Nothing else is sent.": "Muestra las condiciones del modelo, luego descarga {} de {host}, lo instala y empieza a usarlo. No se envía nada más.",
+  "Trained on: {provenance}": "Entrenado con: {provenance}",
+  "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}. Se guardan en la carpeta «denoise» de la biblioteca; al alcanzar el límite, se eliminan primero las más antiguas que ninguna foto usa.",
+  "{} of {} from {host}": "{} de {} desde {host}"
 }

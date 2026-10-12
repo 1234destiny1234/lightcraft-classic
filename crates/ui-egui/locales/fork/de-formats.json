@@ -5,7 +5,7 @@
   "{n} change{} saved in memory but not written to disk: {e}\n{app} retries automatically; quitting now would lose {}.": "Ungespeicherte Änderungen: {n}{0:.0} im Arbeitsspeicher, aber nicht auf dem Datenträger: {e}\n{app} versucht es automatisch erneut; beim Beenden gingen diese Änderungen verloren.{1:.0}",
   "{n} change{} saved in memory but not written to disk: {e} — {app} will retry": "Änderungen nur im Arbeitsspeicher gespeichert: {n}{:.0}: {e} — {app} versucht es erneut",
   "{app} can't decode this raw variant yet ({}). You're editing the camera's embedded JPEG preview, which already includes the camera's picture style (e.g. Monochrome) and white balance.": "{app} kann diese RAW-Variante noch nicht dekodieren ({}). Du bearbeitest die eingebettete JPEG-Vorschau der Kamera. Sie enthält bereits deren Bildstil (z. B. Monochrom) und Weißabgleich.",
-  "Downloads from {host}. Once it has arrived and checked out, {app} installs it, {after}.": "Downloads from {host}. Once it has arrived and checked out, {app} installs it, {after}.",
+  "Downloads from {host}. Once it has arrived and checked out, {app} installs it, {after}.": "Lädt von {host}. Sobald das Modell angekommen und geprüft ist, installiert {app} es und {after}.",
   "{n} selected": "{n} ausgewählt",
   "Create Folder in “{name}”": "Ordner in „{name}“ erstellen",
   "{added} added, {missing} missing, {changed} read from changed sidecars": "{added} hinzugefügt, {missing} fehlen, {changed} aus geänderten Filialdateien gelesen",
@@ -41,5 +41,15 @@
   "Geotagged {n} photo(s)": "{n} Foto(s) geotaggt",
   "Location {n}": "Ort {n}",
   "{n} photos · {frames} frames · {secs} s": "{n} Fotos · {frames} Bilder · {secs} s",
-  "Exported timelapse: {photos} photos, {frames} frames": "Zeitraffer exportiert: {photos} Fotos, {frames} Bilder"
+  "Exported timelapse: {photos} photos, {frames} frames": "Zeitraffer exportiert: {photos} Fotos, {frames} Bilder",
+  " · {queued} waiting": " · {queued} wartend",
+  "Denoising {name}: {done} of {total} tiles{}": "{name} wird entrauscht: Kachel {done} von {total}{}",
+  "In line for AI Denoise ({ahead} ahead)…": "In der Warteschlange für KI-Entrauschen ({ahead} davor) …",
+  "Making the denoised picture… {}%": "Entrauschtes Bild wird berechnet … {}%",
+  "Running on the processor: {}.": "Läuft auf dem Prozessor: {}.",
+  "Running on {}.": "Läuft auf {}.",
+  "Shows the model's terms, then downloads {} from {host}, installs it and starts using it. Nothing else is sent.": "Zeigt die Bedingungen des Modells, lädt dann {} von {host} herunter, installiert es und verwendet es. Sonst wird nichts gesendet.",
+  "Trained on: {provenance}": "Trainiert mit: {provenance}",
+  "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}. Gespeichert im Ordner „denoise“ der Bibliothek; ist die Obergrenze erreicht, werden zuerst die ältesten Bilder entfernt, die kein Foto mehr verwendet.",
+  "{} of {} from {host}": "{} von {} von {host}"
 }
