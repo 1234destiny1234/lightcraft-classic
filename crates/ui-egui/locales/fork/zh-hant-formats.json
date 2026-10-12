@@ -18,6 +18,7 @@
   "Only {} keys": "僅顯示 {} 的按鍵",
   "{} keys": "{} 按鍵",
   "PDF in {dir}": "PDF 位於 {dir}",
+  "Video in {dir}": "視訊位於 {dir}",
   "{n} JPEGs in {dir}": "{dir} 中的 {n} 個 JPEG",
   "Slideshow {n}": "幻燈片 {n}",
   "{n} photos shared: {u}": "已分享 {n} 張相片：{u}",

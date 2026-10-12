@@ -18,6 +18,7 @@
   "Only {} keys": "{} のキーのみ",
   "{} keys": "{} のキー",
   "PDF in {dir}": "{dir} に PDF",
+  "Video in {dir}": "{dir} にビデオ",
   "{n} JPEGs in {dir}": "{dir} に JPEG {n} 枚",
   "Slideshow {n}": "スライドショー {n}",
   "{n} photos shared: {u}": "{n} 枚の写真を共有しました: {u}",

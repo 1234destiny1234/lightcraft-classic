@@ -777,6 +777,7 @@ pub const SHELL_COMMANDS: &[crate::menus::UiCommand] = &[
     ("slideshow.clearMusic", "Clear Slideshow Music", None, ""),
     ("slideshow.exportJpeg", "Export JPEG Slideshow…", None, "Slideshow"),
     ("slideshow.exportPdf", "Export PDF Slideshow…", None, "Slideshow"),
+    ("slideshow.exportVideo", "Export Video Slideshow…", None, "Slideshow"),
     // the Web module's background outputs (crate::web_module)
     ("webui.export", "Export Web Gallery…", None, ""),
     ("webui.upload", "Upload Web Gallery", None, ""),

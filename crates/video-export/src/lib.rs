@@ -28,7 +28,7 @@
 #[cfg(not(target_arch = "wasm32"))]
 mod audio;
 #[cfg(not(target_arch = "wasm32"))]
-pub use audio::{AudioCodecOut, AudioPacket, EncodedAudioTrack, encode_audio_range};
+pub use audio::{AudioCodecOut, AudioPacket, EncodedAudioTrack, encode_audio_range, encode_pcm_track};
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(not(target_arch = "wasm32"))]

@@ -107,6 +107,7 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     &["brand", "net"],
     &["brand", "credentials"],
     &["brand", "heif"],
+    &["brand", "audio-out"],
     &["geom", "color", "raster"],
     &["tiff", "raster"],
     &["denoise-core", "denoise"],
