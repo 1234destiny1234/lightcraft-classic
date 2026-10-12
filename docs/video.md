@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-12 · **Change:** minor (faster clip export: pipelined decode/grade/encode, GPU grade for H.264)
 > **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
@@ -123,8 +124,27 @@ leaves nothing behind. `set_video_hooks(items, &VideoHooks { cancel, progress })
 activity-row flag (checked once per frame) and a per-clip progress callback: the desktop background export and the
 headless MCP export show it as the row's detail (`clip.mp4 42%`). The Export dialog shows a Video section (format,
 quality, long edge) when the selection holds clips. CLI: `<cli> render clip.mp4 -o out.mp4` (or `.mov`).
-Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; frames are graded one at a
-time on the CPU (~0.7 s per 1080p frame, see Grading performance); no "export current frame as JPEG" command yet.
+**Speed.** `export_clip` runs decode (one thread, in order), grading (`ceil(cores/8)` threads, 1–4, each frame's grade
+is itself parallel) and encode + mux (the calling thread, which reorders frames by index) as a pipeline joined by
+bounded queues (4 frames each), so memory stays at ~a dozen frames. Cancel is checked between frames in every stage;
+on cancel or error the stages are halted and drained, the partial file removed. H.264 exports grade on the GPU when
+one is available (`export_video::grade_gpu`: the 8-bit sRGB GPU render decoded back to linear; within a few 8-bit
+codes of the CPU float grade, test `gpu_grade_matches_cpu_grade`; CPU fallback per frame); ProRes keeps the float
+CPU grade (10-bit). The settings are reduced to `video_settings` once per clip; a default grade skips the pipeline.
+Bench (`VIDEO_BENCH_CLIP=corpus/video/h264-1080p-bbb.mp4 cargo test --release -p dac-engine --lib export_speed_1080p
+-- --ignored --nocapture`; 10 s 1080p24 = 240 frames, exposure/contrast/vibrance grade, 32-core Linux shared with
+other builds, load 30–110, so numbers are noisy):
+
+| | H.264 | ProRes |
+|---|---|---|
+| before (sequential, CPU) | 243 s | 343 s |
+| pipelined, GPU grade (H.264) | 45–52 s | 55 s |
+| pipelined, `<PREFIX>_GPU=0`, load ~110 | 232 s | 397 s |
+
+The 55 s ProRes run (same CPU grade path) shows the pipeline's gain on a less loaded machine; the `GPU=0` run was
+taken at load ~110 and is CPU-starved. Output is byte-identical in size for ProRes before/after (the same frames).
+Limits: the import probe that fills `Photo.video` lands with the engine wiring of M14.2; no "export current frame as
+JPEG" command yet.
 
 ## Audio (decode always; sound only with `audio-out`)
 
@@ -216,6 +236,7 @@ cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_s
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
 - 2026-10-12: M14.8 export through the engine (options, dialog, CLI, MCP, activity row).
+- 2026-10-12: faster clip export (pipelined stages, parallel grading, GPU grade for H.264).
 ## Import and posters (M14.2 import side, M14.3)
 - **Import** (`dac_engine::files::probe_video_file`, used by the native file probe for video extensions): the clip is
   hashed in 1 MiB chunks (content hash + SHA-1 of the whole file, equal to hashing its bytes at once, so duplicate

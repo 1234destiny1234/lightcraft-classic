@@ -156,7 +156,7 @@ pub fn grade_linear(frame: &mut dac_raster::Rgb32f, settings: &dac_develop::Deve
 pub fn grade_gpu(frame: &mut dac_raster::Rgb32f, video_settings: &dac_develop::DevelopSettings) -> Option<()> {
     use dac_pipeline::grade;
     let req = grade::grade_request(frame.width, frame.height, dac_pipeline::Quality::Full);
-    let src = Arc::new(std::mem::take(frame));
+    let src = Arc::new(std::mem::replace(frame, dac_raster::Rgb32f::new(0, 0)));
     let r = dac_gpu::try_render(&src, &grade::video_source_info(), video_settings, &req, None);
     *frame = Arc::try_unwrap(src).unwrap_or_else(|a| (*a).clone());
     let img = r.ok()?.image;

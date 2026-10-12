@@ -294,7 +294,8 @@ fn run(
                     },
                 };
                 for p in video.encode(&frame, i as i64)? {
-                    mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key }).map_err(enc)?;
+                    mux.write_sample(vtrack, WriteSample { data: &p.data, duration: fden, composition_offset: p.cto, is_sync: p.key })
+                        .map_err(enc)?;
                 }
                 i += 1;
                 progress(i as f64 / total as f64);
