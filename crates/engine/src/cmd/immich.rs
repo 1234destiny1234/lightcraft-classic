@@ -679,11 +679,10 @@ pub fn pump(s: &mut Session, p: &Value) -> Result<Value> {
     }
     // the next SHA-1 batch
     if bool_or(p, "sha1", true) && !s.remote.sha1_busy && s.remote.sha1_idle_at != Some(s.catalog.revision) {
-        let mut todo = remote::sha1_pending(s);
+        let todo = remote::sha1_pending(s, remote::SHA1_BATCH);
         if todo.is_empty() {
             s.remote.sha1_idle_at = Some(s.catalog.revision);
         } else {
-            todo.truncate(remote::SHA1_BATCH);
             s.remote.sha1_busy = true;
             remote::spawn_sha1(s.remote.sender(), todo);
         }
