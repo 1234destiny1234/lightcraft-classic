@@ -170,8 +170,9 @@ fn desktop_exec(entry: &str) -> Option<PathBuf> {
         Some(rest) => rest.split('"').next()?,
         None => exec.split_whitespace().next()?,
     };
-    // a bare name (`photocraft %F`) was already looked for on the PATH
-    Some(PathBuf::from(program)).filter(|p| p.is_absolute())
+    // a bare name (`photocraft %F`) was already looked for on the PATH; entries hold Unix paths,
+    // which `is_absolute` rejects on Windows
+    Some(PathBuf::from(program)).filter(|p| p.is_absolute() || program.starts_with('/'))
 }
 
 #[cfg(test)]

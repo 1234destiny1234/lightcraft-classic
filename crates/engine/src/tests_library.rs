@@ -70,7 +70,15 @@ fn threshold_compaction_runs_in_the_background() {
         }
         // Windows locks the open store's byte ranges, so a running library can't be copied there
         if k == 30 && cfg!(not(windows)) {
-            // a crash while a compaction may be in flight
+            // a crash after a compaction: copying the store while the background thread writes it
+            // tears the copy (no real crash leaves a half-old, half-new file)
+            for _ in 0..10_000 {
+                s.persist_if_dirty();
+                if !s.library.as_ref().unwrap().journal().snapshot_running() {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
             let expect = s.catalog.to_snapshot();
             let copy = temp_dir("bg-compact-crash");
             std::fs::create_dir_all(&copy).unwrap();

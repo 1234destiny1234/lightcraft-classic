@@ -126,6 +126,7 @@ fn accelerator(sc: &str) -> Option<Accelerator> {
         "=" => Code::Equal,
         "-" => Code::Minus,
         "'" => Code::Quote,
+        "`" => Code::Backquote,
         "," => Code::Comma,
         "Delete" => Code::Backspace,
         // with modifiers only: a bare Enter belongs to text fields and tools
