@@ -839,7 +839,8 @@ fn component_menu(app: &mut LccApp, ui: &mut egui::Ui, op: &str) {
 fn brush_settings(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 0 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
+        // wraps at narrow panel widths (and long translations) rather than widening the panel
+        ui.horizontal_wrapped(|ui| {
             ui.label(egui::RichText::new(crate::i18n::tr("Brush")).font(t.semibold(13.0)));
             if text_button(ui, "brushAdd", crate::i18n::tr("Add"), !app.ui.brush_erase).clicked() {
                 app.ui.brush_erase = false;
