@@ -1342,6 +1342,8 @@ fn corpus_fujifilm_superccd() {
         seen += 1;
     }
     eprintln!("SuperCCD RAFs checked: {seen}");
+}
+
 /// Epson ERF (`crates/raw/src/vendor/erf.rs`): the 16-byte block strip decodes to a smooth 3040 x 2024 RGGB
 /// mosaic with the maker note's black levels, the 3008 x 2000 crop and a white balance measured from the
 /// preview's neutral pixels. Skips files that are absent.
