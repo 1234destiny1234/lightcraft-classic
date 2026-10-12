@@ -68,7 +68,7 @@ commands:
   ci              fmt --check, brand check, docs --check, clippy -D warnings, heif, test, parity refs, layers,
                   assets, deny, wasm (stops at first failure)
   corpus [--download]
-                  show where test corpora live; --download fetches PngSuite and CC0 raw samples (raw.pixls.us) into corpus/ and checks their sha256
+                  show where test corpora live; --download fetches PngSuite, CC0 raw samples (raw.pixls.us) and public-domain / CC-BY video clips into corpus/ and checks their sha256
   upstream-merge [--ref REF] [--no-ci]
                   merge upstream (default upstream/main) on merge/upstream-YYYYMMDD, keep our version of owned
                   paths (upstream-owned.txt), write target/upstream/review-YYYYMMDD.md, map crate names, run ci
@@ -968,6 +968,49 @@ const RAW_SAMPLES: &[(&str, &str, &str)] = &[
     ),
 ];
 
+/// Video test clips for M14 (`corpus/video/`), each `(file name, URL, sha256, licence and source)`.
+/// Public domain / CC0 first; CC-BY (Blender open movies) is acceptable in the gitignored corpus only, with the
+/// attribution kept here. Never committed. Not found yet as CC0/PD: HEVC Main10 (HLG) phone clip, ProRes MOV;
+/// tests synthesise those cases instead.
+const VIDEO_SAMPLES: &[(&str, &str, &str, &str)] = &[
+    (
+        "h264-aac-720p-nps-elk.mp4",
+        "https://archive.org/download/nps-video-yell-elk-bugle-three/yell-ElkBugle3_1280x720.mp4",
+        "81ccc045257c9d51b5dd3269f00833c31c33295fe1b52245e7d7879c276846bd",
+        "Public domain (US National Park Service, Neal Herbert; PDM 1.0), archive.org item nps-video-yell-elk-bugle-three: H.264 Constrained Baseline 1280x720 + AAC-LC 48 kHz, 5.8 MB",
+    ),
+    (
+        "h264-1080p-bbb.mp4",
+        "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h264/1080/Big_Buck_Bunny_1080_10s_5MB.mp4",
+        "e131ad42621442758a3acb899bfbdfeeab0b40c7e2f7c7e66683f58a09a99aee",
+        "CC-BY 3.0, Big Buck Bunny (c) Blender Foundation, peach.blender.org; 10 s excerpt by test-videos.co.uk: H.264 High 1920x1080 yuv420p, no audio, 5.2 MB",
+    ),
+    (
+        "hevc-1080p-bbb.mp4",
+        "https://test-videos.co.uk/vids/bigbuckbunny/mp4/h265/1080/Big_Buck_Bunny_1080_10s_5MB.mp4",
+        "8c9460e1791765030aa39dda710d709c69aaddee92eda82f3920b8c2d7b4b613",
+        "CC-BY 3.0, Big Buck Bunny (c) Blender Foundation; test-videos.co.uk excerpt: HEVC Main 8-bit 1920x1080, no audio, 5.3 MB",
+    ),
+    (
+        "vp9-1080p-bbb.webm",
+        "https://test-videos.co.uk/vids/bigbuckbunny/webm/vp9/1080/Big_Buck_Bunny_1080_10s_5MB.webm",
+        "3011a3d7dc742d6c0f37194ba8273e6b09b90fe768d5f11386ff140bc6745d52",
+        "CC-BY 3.0, Big Buck Bunny (c) Blender Foundation; test-videos.co.uk excerpt: VP9 Profile 0 1920x1080 WebM, no audio, 5.2 MB",
+    ),
+    (
+        "av1-1080p-bbb.webm",
+        "https://test-videos.co.uk/vids/bigbuckbunny/webm/av1/1080/Big_Buck_Bunny_1080_10s_5MB.webm",
+        "5e43740e2916afc1b17de09f4948f038b83065a5d42f0fcb16643d7faeb00ad7",
+        "CC-BY 3.0, Big Buck Bunny (c) Blender Foundation; test-videos.co.uk excerpt: AV1 Main 1920x1080 WebM, no audio, 5.3 MB",
+    ),
+    (
+        "avchd-interlaced-1080i-jvc.mts",
+        "https://archive.org/download/JVC_X900/00002.MTS",
+        "c37e41922c05ca8b56798886eea012cee4092aff2cf6475d9156f0844a9688be",
+        "Public domain (Wolfgang Winne, archive.org item JVC_X900): AVCHD MPEG-TS, H.264 High 1920x1080 interlaced (tff) + AC-3 + PGS; expected to report \"unsupported\", 10.6 MB",
+    ),
+];
+
 fn cmd_corpus(download: bool) -> Result<(), String> {
     let corpus = root().join("corpus");
     println!(
@@ -976,16 +1019,36 @@ Tests that use a corpus skip cleanly when it is absent.
 
   corpus/raw/        raw.pixls.us samples (CC0) — dac-raw decodes every file.
   corpus/images/     CC0 / public-domain JPEG/PNG/TIFF/HEIC samples (optional)
+  corpus/video/      public-domain / CC-BY test clips (see VIDEO_SAMPLES in xtask for provenance)
 ",
         corpus.display()
     );
     if !download {
         return Ok(());
     }
-    let dest = corpus.join("raw");
-    std::fs::create_dir_all(&dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
     let mut bad = Vec::new();
-    for (name, url, sha256) in RAW_SAMPLES {
+    let raw: Vec<_> = RAW_SAMPLES.iter().map(|(n, u, h)| (*n, *u, *h)).collect();
+    fetch_pinned(&corpus.join("raw"), &raw, &mut bad)?;
+    let video: Vec<_> = VIDEO_SAMPLES.iter().map(|(n, u, h, _)| (*n, *u, *h)).collect();
+    fetch_pinned(&corpus.join("video"), &video, &mut bad)?;
+    if bad.is_empty() {
+        return Ok(());
+    }
+    Err(format!(
+        "{} corpus file(s) do not match their pinned sha256:
+  {}",
+        bad.len(),
+        bad.join(
+            "
+  "
+        )
+    ))
+}
+
+/// Downloads each missing `(name, url, sha256)` into `dest` and checks its hash; mismatches are deleted and listed in `bad`.
+fn fetch_pinned(dest: &Path, samples: &[(&str, &str, &str)], bad: &mut Vec<String>) -> Result<(), String> {
+    std::fs::create_dir_all(dest).map_err(|e| format!("create {}: {e}", dest.display()))?;
+    for (name, url, sha256) in samples {
         let out = dest.join(name);
         if !out.exists() {
             let mut curl = Command::new("curl");
@@ -999,18 +1062,7 @@ Tests that use a corpus skip cleanly when it is absent.
             bad.push(format!("{name}: sha256 is {actual}, expected {sha256} (file deleted; source {url})"));
         }
     }
-    if bad.is_empty() {
-        return Ok(());
-    }
-    Err(format!(
-        "{} corpus file(s) do not match their pinned sha256:
-  {}",
-        bad.len(),
-        bad.join(
-            "
-  "
-        )
-    ))
+    Ok(())
 }
 
 fn file_sha256(path: &Path) -> Result<String, String> {
@@ -1040,7 +1092,19 @@ mod ci_jobs_tests {
 
 #[cfg(test)]
 mod corpus_tests {
-    use super::RAW_SAMPLES;
+    use super::{RAW_SAMPLES, VIDEO_SAMPLES};
+
+    #[test]
+    fn every_video_sample_has_a_unique_name_a_sha256_and_a_licence() {
+        let mut names: Vec<_> = VIDEO_SAMPLES.iter().map(|s| s.0).collect();
+        names.sort_unstable();
+        names.dedup();
+        assert_eq!(names.len(), VIDEO_SAMPLES.len(), "duplicate file name");
+        for (name, _, sha256, licence) in VIDEO_SAMPLES {
+            assert!(sha256.len() == 64 && sha256.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')), "{name}: not a lowercase sha256");
+            assert!(licence.starts_with("Public domain") || licence.starts_with("CC0") || licence.starts_with("CC-BY"), "{name}: licence");
+        }
+    }
 
     #[test]
     fn every_sample_has_a_unique_name_and_a_sha256() {

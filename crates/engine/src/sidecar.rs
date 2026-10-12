@@ -104,6 +104,10 @@ pub struct SidecarData {
     /// `xmp:CreateDate` (first found). Used only when the file itself has no capture time.
     pub captured: Option<String>,
     pub develop: Option<DevelopPatch>,
+    /// A video clip's trim (`lcvid:trimIn`, `lcvid:trimOut`; seconds, `None` out = the end), when stated.
+    pub video_trim: Option<(f64, Option<f64>)>,
+    /// A video clip's poster frame time (`lcvid:posterTime`), when stated.
+    pub video_poster: Option<f64>,
     /// Actionable diagnostics for foreign develop settings that were not fully carried over.
     /// These are surfaced in the photo import report and never persisted in the catalog.
     pub warnings: Vec<crate::import::ImportWarning>,
@@ -149,6 +153,17 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
         captured: m.capture_time.map(|d| d.to_iso()),
         ..Default::default()
     };
+    let vid = |k: &str| {
+        d.properties
+            .get(&format!("{}:{k}", dac_meta::VIDEO_PREFIX))
+            .and_then(|v| v.first())
+            .and_then(|t| t.trim().parse::<f64>().ok())
+            .filter(|t| t.is_finite())
+    };
+    if let Some(t_in) = vid("trimIn") {
+        out.video_trim = Some((t_in, vid("trimOut")));
+    }
+    out.video_poster = vid("posterTime");
     if let Some(r) = m.rating {
         if r < 0 {
             out.flag = Some(Flag::Reject);
@@ -276,6 +291,19 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
     if let Some(r) = &sc.regions {
         m.regions = r.clone();
     }
+    // a clip's trim and poster, when the photo is a probed clip and the values fit it (bad ones are ignored)
+    if let Some(v) = p.video.as_mut() {
+        if let Some((t_in, t_out)) = sc.video_trim
+            && dac_catalog::validate_trim(v.duration, t_in, t_out).is_ok()
+        {
+            (v.trim_in, v.trim_out) = (t_in, t_out);
+        }
+        if let Some(t) = sc.video_poster
+            && dac_catalog::validate_poster(v.duration, Some(t)).is_ok()
+        {
+            v.poster_time = Some(t);
+        }
+    }
     let develop = match &sc.develop {
         Some(DevelopPatch::Full(s)) => (**s).clone(),
         Some(DevelopPatch::Partial(v)) => {
@@ -359,7 +387,19 @@ pub fn sidecar_packet_with(p: &Photo, cat: &dac_catalog::Catalog, remove_locatio
         .filter_map(|(k, v)| k.split_once('/').map(|(plugin, key)| (plugin.to_string(), key.to_string(), dac_catalog::rules::plugin_value_text(v))))
         .collect();
     let fields: Vec<(&str, &str, &str)> = fields.iter().map(|(a, b, c)| (a.as_str(), b.as_str(), c.as_str())).collect();
-    dac_meta::write_xmp_ext(&meta, &lc, &fields)
+    // a video clip's trim and poster, in the fork's video namespace
+    let mut video: Vec<(&str, String)> = Vec::new();
+    if let Some(v) = &p.video {
+        video.push(("trimIn", v.trim_in.to_string()));
+        if let Some(o) = v.trim_out {
+            video.push(("trimOut", o.to_string()));
+        }
+        if let Some(t) = v.poster_time {
+            video.push(("posterTime", t.to_string()));
+        }
+    }
+    let video: Vec<(&str, &str)> = video.iter().map(|(k, v)| (*k, v.as_str())).collect();
+    dac_meta::write_xmp_video(&meta, &lc, &fields, &video)
 }
 
 /// The properties the app writes and owns in a sidecar: replaced on every save (removed when
@@ -383,6 +423,7 @@ pub const OWNED: &[&str] = &[
     "xmpRights:UsageTerms",
     "xmpRights:WebStatement",
     "lc:*",
+    "lcvid:*",
 ];
 
 /// Properties replaced only when the app has a value (capture time; GPS, which the app
@@ -737,6 +778,42 @@ mod tests {
         d.masks.push(dac_develop::Mask { id: 1, ..Default::default() });
         p.develop = Arc::new(d);
         p
+    }
+
+    /// A clip's trim and poster go out under the fork's video namespace and come back; values that don't
+    /// fit the clip are ignored on read; a still photo writes none.
+    #[test]
+    fn video_trim_and_poster_roundtrip() {
+        let mut p = Photo::new(PhotoId(3), Source::File { path: "/v/c.mp4".into() }, "c.mp4", "MP4", 1, 1, "2026-01-01T00:00:00");
+        p.kind = dac_catalog::MediaKind::Video;
+        let v = dac_catalog::VideoMeta {
+            duration: 12.0,
+            fps_num: 25,
+            fps_den: 1,
+            width: 1280,
+            height: 720,
+            codec: "h264".into(),
+            has_audio: false,
+            trim_in: 1.25,
+            trim_out: Some(9.5),
+            poster_time: Some(3.0),
+        };
+        p.video = Some(v.clone());
+        let x = sidecar_packet(&p, &dac_catalog::Catalog::new());
+        assert!(x.contains(&dac_meta::video_ns()) && x.contains("<lcvid:trimIn>1.25</lcvid:trimIn>"), "{x}");
+        let sc = parse_sidecar(&x, crate::crs::Target::Rendered).unwrap();
+        assert_eq!((sc.video_trim, sc.video_poster), (Some((1.25, Some(9.5))), Some(3.0)));
+        let mut q = p.clone();
+        q.video = Some(dac_catalog::VideoMeta { trim_in: 0.0, trim_out: None, poster_time: None, ..v.clone() });
+        merge_into(&mut q, &sc, "now");
+        assert_eq!(q.video, Some(v.clone()));
+        // a sidecar written for a longer clip: out of range, ignored
+        let other = x.replace("9.5</lcvid:trimOut>", "99</lcvid:trimOut>").replace(">3</lcvid:posterTime>", ">-4</lcvid:posterTime>");
+        let mut r = p.clone();
+        merge_into(&mut r, &parse_sidecar(&other, crate::crs::Target::Rendered).unwrap(), "now");
+        assert_eq!(r.video, Some(v));
+        // a still photo has no video properties
+        assert!(!sidecar_packet(&photo(), &dac_catalog::Catalog::new()).contains("lcvid"));
     }
 
     #[test]

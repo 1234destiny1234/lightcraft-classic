@@ -248,6 +248,22 @@ pub enum Op {
         id: PhotoId,
         wb: Option<(f64, f64)>,
     },
+    /// A video clip's probed facts, trim and poster (`None` = not a probed clip). Catalog format 10.
+    SetVideoMeta {
+        id: PhotoId,
+        meta: Option<VideoMeta>,
+    },
+    /// A video clip's trim (seconds; `trim_out: None` = the end). The photo needs [`Photo::video`]. Format 10.
+    SetVideoTrim {
+        id: PhotoId,
+        trim_in: f64,
+        trim_out: Option<f64>,
+    },
+    /// A video clip's poster frame time (`None` = the default, 10 % in). Format 10.
+    SetVideoPoster {
+        id: PhotoId,
+        time: Option<f64>,
+    },
     /// The name shown for a colour label (`None` = its colour's name).
     SetLabelName {
         label: ColorLabel,
@@ -868,6 +884,25 @@ impl Catalog {
                 let p = self.photo_mut(id)?;
                 Op::SetAsShotWb { id, wb: std::mem::replace(&mut p.as_shot_wb, wb) }
             }
+            Op::SetVideoMeta { id, meta } => {
+                if let Some(m) = &meta {
+                    m.validate().map_err(CatalogError::Invalid)?;
+                }
+                let p = self.photo_mut(id)?;
+                Op::SetVideoMeta { id, meta: std::mem::replace(&mut p.video, meta) }
+            }
+            Op::SetVideoTrim { id, trim_in, trim_out } => {
+                let p = self.photo_mut(id)?;
+                let Some(v) = p.video.as_mut() else { return Err(CatalogError::Invalid("not a video clip".into())) };
+                model::validate_trim(v.duration, trim_in, trim_out).map_err(CatalogError::Invalid)?;
+                Op::SetVideoTrim { id, trim_in: std::mem::replace(&mut v.trim_in, trim_in), trim_out: std::mem::replace(&mut v.trim_out, trim_out) }
+            }
+            Op::SetVideoPoster { id, time } => {
+                let p = self.photo_mut(id)?;
+                let Some(v) = p.video.as_mut() else { return Err(CatalogError::Invalid("not a video clip".into())) };
+                model::validate_poster(v.duration, time).map_err(CatalogError::Invalid)?;
+                Op::SetVideoPoster { id, time: std::mem::replace(&mut v.poster_time, time) }
+            }
             Op::SetFile { id, file_name, source } => {
                 if file_name.trim().is_empty() {
                     return Err(CatalogError::Invalid("empty file name".into()));
@@ -1117,3 +1152,5 @@ mod tests_torn_append;
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_v4;
+#[cfg(test)]
+mod tests_video;

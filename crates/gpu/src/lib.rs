@@ -441,6 +441,19 @@ pub fn render(src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &R
     try_render(src, info, s, req, stages).ok()
 }
 
+/// Grade one video frame ([`dac_pipeline::grade`]): on the GPU when it is available, else on the
+/// CPU. Returns the sRGB 8-bit frame and whether the GPU rendered it.
+pub fn grade_frame(img: &Arc<Rgb32f>, settings: &DevelopSettings, quality: dac_pipeline::Quality) -> (dac_raster::Rgba8, bool) {
+    use dac_pipeline::grade;
+    let s = grade::video_settings(settings);
+    let req = grade::grade_request(img.width, img.height, quality);
+    let info = grade::video_source_info();
+    match try_render(img, &info, &s, &req, None) {
+        Ok(r) => (r.image, true),
+        Err(_) => (dac_pipeline::render(img, &info, &s, &req).image, false),
+    }
+}
+
 /// [`render`], reporting why this render made no GPU image: [`Fallback::NotTried`] when the GPU
 /// was not used (callers can ask [`unavailable_reason`]), [`Fallback::Failed`] with the reason
 /// when the GPU render failed and the CPU must render it. The reason belongs to this call, unlike

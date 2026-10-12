@@ -76,7 +76,9 @@ pub const TABLE: &[(&str, Class)] = &[
     ("print", Class::Layer(3)),
     ("book", Class::Layer(3)),
     ("merge", Class::Layer(3)),
+    ("video-export", Class::Layer(3)),
     ("segment", Class::Layer(3)),
+    ("video", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("slideshow", Class::Layer(4)),
     ("ui-egui", Class::Layer(5)),
@@ -127,6 +129,8 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     &["layout", "book"],
     // IMM-PUBLISH: the Immich publish service implements the publish trait
     &["publish", "immich"],
+    // M14.8: clip export decodes through the video crate
+    &["video", "video-export"],
 ];
 
 fn intra_layer_allowed(from: &str, to: &str) -> bool {

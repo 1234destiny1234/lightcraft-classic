@@ -134,6 +134,20 @@ fn ext_upper(name: &str) -> String {
 pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
     let content_hash = Some(dac_preview::hash_bytes(bytes).to_string());
     let sha1 = Some(dac_hash::sha1_bytes(bytes).to_hex());
+    if crate::import::is_video_name(name) {
+        // A video clip: catalogued as MediaKind::Video. Its stream facts (size, duration, codec) come from
+        // the video backend's probe, which fills `Photo::video`; until then it is described by its file only.
+        return Ok(ProbeInfo {
+            width: 1,
+            height: 1,
+            format: ext_upper(name),
+            kind: MediaKind::Video,
+            file_size: bytes.len() as u64,
+            content_hash,
+            sha1,
+            ..Default::default()
+        });
+    }
     let m = dac_meta::extract(bytes);
     let (meta, captured) = meta_of(&m);
     if dac_raw::probe(bytes).is_some() {
@@ -1015,6 +1029,12 @@ mod tests {
             }
         }
         assert!(probe_bytes("x.jpg", b"not an image").is_err());
+        // video clips are catalogued as videos by extension (their streams are probed by the video backend)
+        for name in ["a.mp4", "B.MOV", "c.m2ts", "d.webm", "e.MXF"] {
+            let p = probe_bytes(name, b"\0\0\0\x18ftypisom").unwrap();
+            assert_eq!(p.kind, MediaKind::Video, "{name}");
+            assert!(crate::import::is_supported(std::path::Path::new(name)), "{name}");
+        }
     }
 
     /// Issue #548: a small preview bins the mosaic by 8; specular points that clip a single green sample

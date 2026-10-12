@@ -29,7 +29,10 @@ pub use exif::{from_tiff, read_exif, strip_exif_header, try_read_exif, write_exi
 pub use gpx::{GpxError, Match, TrackPoint, Tracklog, parse_gpx};
 pub use iptc::parse_iptc;
 pub use tags::{TagRow, file_tag_rows, tag_rows};
-pub use xmp::{CRS_NS, LC_NS, XmpData, XmpError, XmpValue, parse_xmp, plugin_fields_ns, write_xmp, write_xmp_ext, write_xmp_lc};
+pub use xmp::{
+    CRS_NS, LC_NS, VIDEO_PREFIX, XmpData, XmpError, XmpValue, parse_xmp, plugin_fields_ns, video_ns, write_xmp, write_xmp_ext, write_xmp_lc,
+    write_xmp_video,
+};
 pub use xmp_merge::{MergeRules, merge_xmp};
 
 use serde::{Deserialize, Serialize};

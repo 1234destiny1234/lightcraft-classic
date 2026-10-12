@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-12 (version 0.6.3). Revision history: [Log](#log).*
+*Last updated 2026-10-12 (version 0.6.4). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
@@ -117,7 +117,7 @@ yet guarantee original-pixel detail; visible-region rendering remains a gap (LR-
 | M11 | RAW II | CR3, RAF (X-Trans), ORF, RW2, PEF, SRW, 3FR, IIQ + long tail; camera calibration DB; HEIC/AVIF/JXL import | 20–35 | 🚧 (CR3 lossless CRX and C-RAW, RAF uncompressed and lossless/lossy compressed, RW2 (every raw format), PEF, ORF uncompressed ✅; **camera colour calibration** 🚧 (guarded ARW, NEF, RW2 and RAF preview fitting; measured database still missing), CR3, compressed ORF ⬜) |
 | M12 | AI & smart features | subject/sky/background/people/object masks, semantic search, faces/People (permissively licensed models, pure-Rust inference) | 20–40 | ⬜ |
 | M13 | Merge | HDR merge (deghost), panorama (projections, boundary warp, fill edges), HDR panorama | 10–15 | ✅ |
-| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 6–10 | ⬜ |
+| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 55–80 | 🚧 planned via FilmCraft crates |
 | M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey, Classic shell, Map, Book, Slideshow, Web, Print, publish ✅; print colour management, slideshow music/export, tethering, catalog settings 🟡/⬜) |
 | M16 | 1.0 polish | preferences, shortcut editor, accessibility, localization, packaging (dmg/msi/AppImage/web), hardening | 10–20 | 🚧 (settings, keyboard shortcuts sheet, packaging basics ✅; English/Chinese (Simplified, Traditional)/Japanese/Brazilian Portuguese/Spanish/German/Russian/Ukrainian localisation 🟡; accessibility and further locales ⬜) |
 
@@ -236,6 +236,7 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 - 2026-10-08: Fujifilm camera colour: guarded JPEG matching and relative WB, plus bundled X-H2S/X-T4 profiles from 201/545 photos. On 150 withheld files the pooled profiles improve mean ΔE slightly over per-file fitting (X-H2S 1.70 → 1.62, X-T4 2.43 → 2.34); dark X-H2S samples 8.74 → 2.25. Measured calibration remains open.
 - 2026-10-08: Fujifilm lossless/lossy compressed RAF: pure-Rust striped decoder; full sensor arrays verified against a black-box reference on 17 CC0 files and 7 supplied X-H2S / X-T4 files (13 camera bodies, 14/16-bit Bayer and X-Trans). Camera colour calibration remains a separate gap.
 - 2026-10-01: RAW II formats: RAF (uncompressed Bayer + X-Trans), RW2 (packed), PEF (incl. Huffman), ORF (uncompressed); embedded previews for every container incl. CR3; raw corpus test with 37 CC0 samples.
+- 2026-10-12: M14 video re-planned via FilmCraft crates (pure-Rust decode, player, trim, global grade, export); estimate 6–10 → 55–80 h; video test clips added to `cargo xtask corpus --download`.
 - 2026-10-03 – 10-05: community PRs (#42–#51, #60) and 25+ issues landed: compressed NEF, Move import, folder templates,
   Local roots and cleanup, 85k-photo grid and catalog performance, background compaction, failed-save errors, GPU
   export hardening, clippy 1.99. Added the honest *Where we stand* assessment and *Where we're going* priorities; added

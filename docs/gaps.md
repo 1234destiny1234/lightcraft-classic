@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 18: video engine commands; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (gap 18: video plan, 55–80 h, `dac-video` decoder crate; gap 28: Web module keys bound; gap 15: ipps:// and printer options landed) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -34,7 +34,7 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 15 | **Print to Windows printers**: the Windows spooler (needs the native print API; a spooler printer name now gets a clear unsupported error, IPP printers work), CMYK printer profiles (layouts, packages, IPP and `ipps://` printing with trusted printer certificates, the printer's paper type / tray / quality / two-sided options, print sharpening, printer ICC profile with intent and black point compensation, Print Adjustment and 16-bit PDF output exist; G2, G15) | LRC-PRINT-PAGESETUP 🟡 | Classic users who print, on Windows most of all | 10–22 | [target-app-parity](target-app-parity.md#features) |
 | 16 | **Classic output module finish**: Map, Book (incl. pair kerning, PDF text opacity), Slideshow, Web and publish services (with grid sections) exist; open: slideshow sound output (cpal needs C `libasound` on Linux: maintainer decision), backdrop image in preview / playback (upstream PR #808) and video export (upstream PR #929), a to-remove publish section, publish services beyond Hard Drive / SFTP / Immich (Flickr, SmugMug) | LRC-SS-BACKDROP / MUSIC / EXPORT, LRC-WEB-UPLOAD, LRC-LIB-PUBLISH 🟡 | Classic users; publish services matter for Flickr / SmugMug workflows | 15–35 | [target-app-parity](target-app-parity.md#features) |
 | 17 | **Tethered capture: verify native PTP on real bodies** (LRC-LIB-TETHER) | 🟡 | studio photographers | 5–15 + cameras | [hardware-parity](hardware-parity.md) |
-| 18 | **Video**: playback, trim, global edits, export | VID rows 0% done; engine commands for playback, trim, poster and Capture Frame landed (M14.4/M14.6, [video.md](video.md)), decoder, player UI, grading and export open | users who mix stills and clips | 25–45 | [target-app-parity](target-app-parity.md#features) |
+| 18 | **Video**: playback, trim, global edits, export | VID rows 0% (decoder crate `dac-video` landed, M14.1: probe, frames, posters for MP4/MOV H.264/HEVC); 🚧 planned (M14) via FilmCraft crates (pure-Rust decode, player, trim, global grade, H.264/AAC export); decisions pending: audio output (cpal needs libasound on Linux, v1 muted), dependency source | users who mix stills and clips | 55–80 | [target-app-parity](target-app-parity.md#features) |
 | 19 | **Plug-in ecosystem**: sandboxed wasm SDK with export hooks and destinations, publish services and custom metadata fields (G19, five SDK examples, author guide in [plugins](plugins.md)); left: fields not read back from XMP, no store/signing, no Lua plug-ins | 🟡 | pro workflows built on plug-ins (LR/Enfuse, Jeffrey's exporters, Negative Lab Pro) | 15–40 + owner decision | [target-app-parity](target-app-parity.md#by-dimension) |
 | 20 | **Long-tail raw formats**: compressed SRW, ARQ pixel shift, IIQ, Hasselblad compression, X3F, CRW, MRW, ERF, KDC, DCR, MEF, GPR, old FinePix | raw-parity.md | small user share each | 45–85 | [raw-parity](raw-parity.md) |
 | 21 | **Localization**: 9 of 15 shipped languages partial (74–99% of catalog messages), lower-layer errors English; Hindi, Arabic, Indonesian, Korean, Vietnamese absent; no RTL or complex shaping | measured from catalogs | non-English users see mixed English | 55–90 (shipped to full); 145–255 (five new) | [localization-parity](localization-parity.md) |
@@ -78,7 +78,9 @@ Beta-blocking gaps (B) total **~230–430 h**; with the stability and platform w
 
 | Date | Change | Summary |
 |---|---|---|
-| 2026-10-12 | minor | Gap 18: engine half of video playback, trim, poster frame and Capture Frame (`video.*` commands) |
+| 2026-10-12 | minor | Gap 18: `dac-video` crate decodes MP4/MOV H.264/HEVC frames and posters (M14.1); no player, trim or export yet |
+| 2026-10-12 | minor | Gap 18: video planned via FilmCraft crates, estimate 25–45 → 55–80 h, audio output decision pending |
+| 2026-10-12 | minor | Gap 18: video frame grading (CPU/GPU) and 33³ LUT playback path, timings in video.md |
 | 2026-10-12 | minor | Gap 28: Web module ⌘R reload preview and ⌘⌥P preview in browser are bound |
 | 2026-10-12 | minor | Gap 19: plug-in metadata fields edit the selection, are searchable and are written to XMP |
 | 2026-10-12 | minor | Gap 15: `ipps://` (TLS, certificates trusted by fingerprint or on first use) and printer driver options (paper type, tray, quality, two-sided) landed; 15–30 h → 10–22 h; Windows spooler and CMYK profiles remain |

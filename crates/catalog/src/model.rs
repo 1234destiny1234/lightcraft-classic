@@ -309,6 +309,83 @@ pub struct Photo {
     /// rebuilds it when a library opens and after plug-in calls ([`crate::Catalog::set_plugin_fields`]).
     #[serde(skip)]
     pub plugin_fields: std::collections::BTreeMap<String, serde_json::Value>,
+    /// A video clip's stream facts, trim and poster frame (`None` for stills, and for clips imported
+    /// before the video module). Catalog format 10.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub video: Option<VideoMeta>,
+}
+
+/// A video clip: what its file holds (from a probe) plus the user's trim and poster frame.
+/// Times are seconds from the clip's start.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+pub struct VideoMeta {
+    pub duration: f64,
+    pub fps_num: u32,
+    pub fps_den: u32,
+    pub width: u32,
+    pub height: u32,
+    /// e.g. "h264", "hevc".
+    pub codec: String,
+    #[serde(default)]
+    pub has_audio: bool,
+    /// Trim in point; 0.0 = the start.
+    #[serde(default)]
+    pub trim_in: f64,
+    /// Trim out point; `None` = the end.
+    #[serde(default)]
+    pub trim_out: Option<f64>,
+    /// The poster (thumbnail) frame's time; `None` = [`VideoMeta::default_poster_time`].
+    #[serde(default)]
+    pub poster_time: Option<f64>,
+}
+
+impl VideoMeta {
+    /// Frames per second (`None` when the rate is unknown, `fps_den == 0`).
+    pub fn fps(&self) -> Option<f64> {
+        (self.fps_den != 0 && self.fps_num != 0).then(|| f64::from(self.fps_num) / f64::from(self.fps_den))
+    }
+    /// The trimmed range's end: `trim_out`, or the clip's duration.
+    pub fn trim_end(&self) -> f64 {
+        self.trim_out.unwrap_or(self.duration)
+    }
+    /// 10 % into the clip.
+    pub fn default_poster_time(&self) -> f64 {
+        self.duration * 0.1
+    }
+    /// The poster frame's time: the chosen one or the default.
+    pub fn poster(&self) -> f64 {
+        self.poster_time.unwrap_or_else(|| self.default_poster_time())
+    }
+    /// Checks the facts and trim/poster: finite, non-negative duration, `0 <= in < out <= duration`, poster
+    /// within the clip. An error message, never a panic.
+    pub fn validate(&self) -> std::result::Result<(), String> {
+        if !(self.duration.is_finite() && self.duration >= 0.0) {
+            return Err("video duration is not a non-negative number".into());
+        }
+        validate_trim(self.duration, self.trim_in, self.trim_out)?;
+        validate_poster(self.duration, self.poster_time)
+    }
+}
+
+/// `0 <= trim_in < trim_out <= duration`, all finite.
+pub fn validate_trim(duration: f64, trim_in: f64, trim_out: Option<f64>) -> std::result::Result<(), String> {
+    if !trim_in.is_finite() || trim_out.is_some_and(|o| !o.is_finite()) {
+        return Err("video trim is not a number".into());
+    }
+    let out = trim_out.unwrap_or(duration);
+    if trim_in < 0.0 || trim_in >= out || out > duration {
+        return Err(format!("video trim {trim_in}..{out} s is outside 0..{duration} s (in must be before out)"));
+    }
+    Ok(())
+}
+
+/// A poster time within `0..=duration`, finite.
+pub fn validate_poster(duration: f64, time: Option<f64>) -> std::result::Result<(), String> {
+    match time {
+        Some(t) if !t.is_finite() => Err("video poster time is not a number".into()),
+        Some(t) if t < 0.0 || t > duration => Err(format!("video poster time {t} s is outside 0..{duration} s")),
+        _ => Ok(()),
+    }
 }
 
 /// What assisted culling measured on a photo.
@@ -379,6 +456,7 @@ impl Photo {
             sha1: None,
             xmp: None,
             plugin_fields: Default::default(),
+            video: None,
         }
     }
     /// A raw file developed from its sensor data: not a rendered image, and not a raw shown from
