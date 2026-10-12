@@ -2412,6 +2412,7 @@ dependencies = [
  "filmcraft-color",
  "filmcraft-h264enc",
  "filmcraft-isobmff",
+ "filmcraft-matroska",
  "filmcraft-prores",
  "thiserror 2.0.21",
 ]

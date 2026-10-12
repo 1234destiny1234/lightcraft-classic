@@ -12,9 +12,10 @@
 //! 3. **Encode**: RGB → Y'CbCr (BT.709 coefficients from `filmcraft-color`, limited range) as
 //!    8-bit 4:2:0 for H.264 (`filmcraft-h264enc`) or 10-bit 4:2:2 for ProRes 422
 //!    (`filmcraft-prores`).
-//! 4. **Audio**: the primary AAC track of the trimmed range, decoded and re-encoded as AAC-LC
-//!    (`filmcraft-aac`, pre-roll decoded before the in point, the source edit list honoured); the
-//!    encoder delay is hidden with an edit list (`media_start` = priming samples).
+//! 4. **Audio** ([`encode_audio_range`]): the first audio track `dac_video::AudioReader` decodes
+//!    (AAC, Opus, AC-3 / E-AC-3; MP4/MOV, Matroska, TS) for the trimmed range, folded to mono or
+//!    stereo, encoded once per clip: AAC-LC for MP4 (encoder delay hidden with an edit list,
+//!    resampled to 48 kHz when the rate is not an AAC rate), 16-bit PCM (`sowt`) for ProRes MOV.
 //! 5. **Mux**: `filmcraft-isobmff`'s `Mp4Writer` (MP4 brand for H.264, QuickTime for ProRes).
 //!
 //! The file is written to `<out>.partial` and renamed on success; an error or a cancel removes
@@ -24,6 +25,10 @@
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 #![forbid(unsafe_code)]
 
+#[cfg(not(target_arch = "wasm32"))]
+mod audio;
+#[cfg(not(target_arch = "wasm32"))]
+pub use audio::{AudioCodecOut, AudioPacket, EncodedAudioTrack, encode_audio_range};
 #[cfg(not(target_arch = "wasm32"))]
 mod native;
 #[cfg(not(target_arch = "wasm32"))]

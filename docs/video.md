@@ -1,6 +1,6 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** minor (clip audio decode `AudioReader`, `dac-audio-out` with `AudioClock`, `canPlayAudio`)
+> **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
 > **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
@@ -47,9 +47,12 @@ truncations, random byte corruption and garbage files.
 displayed at the in point, decoded from the previous sync sample), runs `grade(&mut dac_raster::Rgb32f)` on every
 frame (linear Rec.709, display-referred), converts to BT.709 limited-range Y'CbCr and encodes H.264 High 4:2:0
 (`filmcraft-h264enc`, CRF from quality) into MP4 or ProRes 422 10-bit (`filmcraft-prores`, HQ/Standard/LT) into MOV.
-A source AAC track is decoded (with pre-roll, honouring its edit list) and re-encoded as AAC-LC for the same range,
-the encoder delay hidden by an edit list. Output goes to `<out>.partial` and is renamed on success; errors, panics and
-cancel remove it. Other source audio codecs export without audio for now.
+Audio (`encode_audio_range(src, start, end, format, cancel) -> Result<Option<EncodedAudioTrack>>`, called once per
+clip): the first track `AudioReader` decodes (AAC, Opus, AC-3 / E-AC-3 from MP4/MOV, Matroska, TS) for the trimmed
+range, placed by block time relative to the first exported frame (gaps → silence), folded to mono/stereo (−3 dB
+centre/surround), then AAC-LC for MP4 (encoder delay hidden by an edit list; resampled to 48 kHz if the rate is not an
+AAC rate) or 16-bit little-endian PCM (`sowt`) for ProRes MOV. Clips with no decodable audio export silent. Output
+goes to `<out>.partial` and is renamed on success; errors, panics and cancel remove it.
 
 **Spike S3 (export option A vs B):** option A. `filmcraft-export`'s `FrameRenderer` hook is a global registry of
 plain `fn()` factories rendering a `filmcraft-project` sequence, so a per-export grade closure cannot be passed
@@ -272,3 +275,4 @@ Reproduce: `cargo test --release -p dac-gpu --test grade -- --ignored --nocaptur
 |---|---|---|
 | 2026-10-12 | minor | Import fills `VideoMeta`, size, duration, date, GPS (streamed hash); graded poster thumbnails and loupe, placeholder tile (M14.2/M14.3) |
 | 2026-10-12 | minor | Grading performance: CPU / GPU / LUT timings at 1080p and 4K |
+| 2026-10-12 | minor | Export audio from any decodable source codec (AAC/Opus/AC-3/E-AC-3, MP4/MOV/MKV/TS); PCM in ProRes MOV (M14.8) |
