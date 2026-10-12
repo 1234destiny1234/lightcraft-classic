@@ -4,10 +4,14 @@
 //! Codecs: AAC-LC (MP4/MOV, Matroska, ADTS in MPEG-TS; the HE-AAC SBR band is not
 //! reconstructed, so HE-AAC plays as its band-limited core at half rate), Opus (MP4, Matroska),
 //! AC-3 / E-AC-3 (MP4, Matroska, MPEG-TS), all FilmCraft decoders (MIT OR Apache-2.0, no
-//! symphonia). MXF and elementary-stream audio is not read.
+//! symphonia); MP3 Layer III (MP4, Matroska, MPEG-TS/PS) through `puremp3`; PCM: QuickTime / ISO
+//! `lpcm`-family FourCCs, Matroska `A_PCM/*`, Blu-ray and 16-bit DVD LPCM, MXF PCM / AES3.
+//! FLAC, ALAC and elementary-stream audio are not read.
 //!
 //! Sources: ISO/IEC 14496-3 (AAC, ADTS), RFC 6716 / RFC 7845 (Opus), ATSC A/52 (AC-3, E-AC-3) as
-//! implemented by FilmCraft; packet selection, pre-roll, timing and the resampler are own design.
+//! implemented by FilmCraft; ISO/IEC 11172-3 (MP3) as implemented by `puremp3`; Apple QuickTime
+//! File Format and Matroska codec-ID prose specs (PCM layouts); the Blu-ray LPCM header layout from
+//! public format notes; packet selection, pre-roll, timing, PCM unpacking and the resampler are own design.
 
 use std::path::Path;
 

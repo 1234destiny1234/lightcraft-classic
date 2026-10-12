@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-12 · **Change:** minor (clip audio: PCM in MP4/MOV/MKV/TS/MXF, MP3; FLAC/ALAC skipped)
 > **Last updated:** 2026-10-12 · **Change:** minor (export audio from any decodable codec; PCM in ProRes MOV)
 > **Last updated:** 2026-10-12 · **Change:** minor (CLI `--trim`, end-to-end CLI/MCP tests, per-`ids` gating)
 > **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
@@ -149,17 +150,27 @@ trimmed range (capped at `MAX_RANGE_SECONDS`); `resample(samples, channels, from
 code). Times count from the clip's first shown frame, like `FrameReader`'s (MP4 edit lists, Matroska `CodecDelay`
 and encoder priming are honoured; Matroska timestamps are whole milliseconds, so it is within 1 ms there).
 
-| Container | AAC-LC | Opus | AC-3 / E-AC-3 |
-|---|---|---|---|
-| MP4 / MOV | ✅ | ✅ (`dOps`) | ✅ |
-| Matroska / WebM | ✅ | ✅ | AC-3 |
-| MPEG-TS / PS | ✅ (ADTS; not LATM) | — | ✅ |
+| Container | AAC-LC | Opus | AC-3 / E-AC-3 | MP3 | PCM |
+|---|---|---|---|---|---|
+| MP4 / MOV | ✅ | ✅ (`dOps`) | ✅ | ✅ | ✅ `lpcm`, `sowt`, `twos`, `in24`, `in32`, `fl32`, `fl64`, `raw ` |
+| Matroska / WebM | ✅ | ✅ | AC-3 | ✅ `A_MPEG/L3` | ✅ `A_PCM/INT/LIT`, `/INT/BIG`, `/FLOAT/IEEE` |
+| MPEG-TS / PS | ✅ (ADTS; not LATM) | — | ✅ | ✅ | ✅ Blu-ray / AVCHD LPCM; DVD LPCM 16-bit only |
+| MXF | — | — | — | — | ✅ PCM (BWF) and AES3 (ST 331) |
 
-HE-AAC plays as its AAC-LC core (FilmCraft doesn't rebuild the SBR band); MP3, FLAC, PCM, ALAC and MXF audio are not
-read yet (`AudioReader::open` → `Unsupported`). Decoders: `filmcraft-aac`, `filmcraft-opus`, `filmcraft-ac3` (std-only,
-MIT OR Apache-2.0); never `filmcraft-codecs` (symphonia). A bad packet is skipped; 32 bad in a row is an error.
+PCM is 8-bit (unsigned where the container says so) to 32-bit integer and 32/64-bit float, either byte order, up to
+`MAX_CHANNELS`; 20-bit samples are read left-justified in 3 bytes. HE-AAC plays as its AAC-LC core (FilmCraft doesn't
+rebuild the SBR band). MP3 is MPEG-1/2/2.5 Layer III only (Layer I/II are refused per packet). Not read
+(`AudioReader::open` → `Unsupported` when no other track decodes): **FLAC** — the one pure-Rust decoder, `claxon`
+(Apache-2.0), uses `unsafe` with uninitialised-buffer `set_len` on metadata reads, so it stays out until a safe
+decoder exists; **ALAC** — the only pure-Rust decoder is symphonia's (MPL-2.0); MPEG-1 Layer II, DTS, TrueHD, LATM AAC;
+20/24-bit DVD LPCM (grouped sample layout). Decoders: `filmcraft-aac`, `filmcraft-opus`, `filmcraft-ac3` (std-only,
+MIT OR Apache-2.0), `puremp3` (MIT OR CC0-1.0, no `unsafe`; panics are caught per packet), PCM unpacking in
+`audio_native.rs` (own code; MXF through `filmcraft-mxf::read_pcm`); never `filmcraft-codecs` (symphonia). A bad
+packet is skipped; 32 bad in a row is an error.
 Tests: `crates/video/tests/audio.rs` (a synthetic AAC tone in MP4, Matroska and TS, phase-checked; resampling;
-damaged copies; the corpus clip `h264-aac-720p-nps-elk.mp4` when present).
+damaged copies; the corpus clip `h264-aac-720p-nps-elk.mp4` when present) and `crates/video/tests/audio_pcm.rs`
+(sample-exact PCM tones in MP4/MOV under each FourCC, Matroska and OP1a MXF; synthetic silent MP3 frames in
+Matroska; damaged copies).
 
 **Output** (`crates/audio-out` = `dac-audio-out`, L0): the one sound-card path, shared with slideshow music.
 `Output::start(rate, channels, fill)` plays what `fill` writes; `output.clock()` is an `AudioClock` (frames the device
@@ -293,4 +304,5 @@ Reproduce: `cargo test --release -p dac-gpu --test grade -- --ignored --nocaptur
 |---|---|---|
 | 2026-10-12 | minor | Import fills `VideoMeta`, size, duration, date, GPS (streamed hash); graded poster thumbnails and loupe, placeholder tile (M14.2/M14.3) |
 | 2026-10-12 | minor | Grading performance: CPU / GPU / LUT timings at 1080p and 4K |
+| 2026-10-12 | minor | Clip audio decode: PCM (MP4/MOV FourCCs, Matroska, Blu-ray/DVD LPCM, MXF PCM/AES3), MP3 (`puremp3`); FLAC and ALAC documented as skipped |
 | 2026-10-12 | minor | Export audio from any decodable source codec (AAC/Opus/AC-3/E-AC-3, MP4/MOV/MKV/TS); PCM in ProRes MOV (M14.8) |

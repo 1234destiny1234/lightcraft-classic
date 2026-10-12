@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (LR-VID-PLAY: MP3 and PCM clip audio; LR-VID-EXPORT: CLI `--trim`, end-to-end tests; LR-VID-EDIT: per-`ids` gating; LR-VID-EDIT: video tool gating; R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -910,6 +910,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | LR-VID-PLAY: MP3 and PCM (MOV FourCCs, Matroska, Blu-ray/DVD LPCM, MXF) clip audio decode; status unchanged (🟡) |
 | 2026-10-12 | minor | LR-VID-EXPORT: CLI `render --trim`, CLI/MCP end-to-end video tests; LR-VID-EDIT: photo-only commands refused per clip in `ids`; status unchanged |
 | 2026-10-12 | minor | LR-VID-EDIT: photo-only tools and commands disabled for clips, presets/paste/sync keep video controls, Info panel video fields; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-VID-PLAY: clip audio decode (`AudioReader`), shared `dac-audio-out` output with `AudioClock`, `canPlayAudio`; status unchanged (🟡, muted by default) |
