@@ -1322,6 +1322,9 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 p.sha1 = info.sha1.filter(|h| h.len() == 40 && h.bytes().all(|b| b.is_ascii_hexdigit()));
                 p.embedded_lens = info.embedded_lens.map(Box::new);
                 p.preview_only = info.preview_only.clone();
+                // a clip's stream facts land with the photo record: one undo step with the import
+                p.video = info.video;
+                p.duration = info.duration;
                 apply_import_defaults(s, &mut p);
                 if let Some(sc) = &sidecar {
                     crate::sidecar::merge_into(&mut p, sc, &now);

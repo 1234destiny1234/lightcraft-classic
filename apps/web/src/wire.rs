@@ -67,6 +67,7 @@ impl WireJob {
             SourceRef::Demo { max_edge, .. } | SourceRef::File { max_edge, .. } => *max_edge,
             SourceRef::Loaded(img) => img.image.width.max(img.image.height),
             SourceRef::Smart { .. } => 2560,
+            SourceRef::Video { max_edge, .. } => *max_edge,
         };
         WireJob {
             cache_generation: job.cache_generation,

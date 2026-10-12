@@ -1,6 +1,6 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** new (M14.1: `dac-video` crate)
+> **Last updated:** 2026-10-12 · **Change:** minor (M14.2 import side, M14.3 posters)
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
@@ -53,6 +53,25 @@ the tests generate their clips in-test, so no media is committed.
 cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [max_side]
 ```
 
+## Import and posters (M14.2 import side, M14.3)
+
+- **Import** (`dac_engine::files::probe_video_file`, used by the native file probe for video extensions): the clip is
+  hashed in 1 MiB chunks (content hash + SHA-1 of the whole file, equal to hashing its bytes at once, so duplicate
+  detection and Import → Copy verification work as for photos; never the whole clip in memory), then
+  `dac_video::probe` fills `Photo.video` (`VideoMeta`), the display width/height, `Photo.duration`, the capture date
+  (QuickTime `creationdate` / `©day`, normalised to the Exif-date form `YYYY-MM-DDThh:mm:ss[±hh:mm]`) and GPS
+  (ISO 6709). All of it lands in the photo record, so it is one undo step with the import. A clip whose container
+  can't be read still imports (`video: None`, 1×1).
+- **Posters** (`SourceRef::Video`, `media::video_poster`): a video's thumbnail, loupe and preview renders start from
+  its poster frame (`dac_video::poster` at `VideoMeta::poster_time`, default 10 % in) at the level's size, graded
+  with `dac_pipeline::grade::video_settings` of its develop settings on the display-referred path (exactly what
+  `grade_frame` does, but through the ordinary render jobs, so thumbnails use the preview cache, its workers and
+  the activity rows of preview builds). The render cache keys (`media::pixels_key`) include the poster time, and
+  `Op::SetVideoPoster` / `Op::SetVideoMeta` drop the clip's decoded sources: a new poster renders afresh.
+- A clip we can't decode (unsupported codec, damaged stream, the web build) gets `media::video_placeholder`, a dark
+  film-strip tile drawn in code, instead of an error (logged at debug); an unreadable file (offline drive) stays an
+  error.
+
 ## Next
 
 Catalog format 10 + import (M14.2), grid posters (M14.3), player (M14.4), trim/poster (M14.6), develop on video
@@ -92,4 +111,5 @@ Reproduce: `cargo test --release -p dac-gpu --test grade -- --ignored --nocaptur
 ## Revision history
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | Import fills `VideoMeta`, size, duration, date, GPS (streamed hash); graded poster thumbnails and loupe, placeholder tile (M14.2/M14.3) |
 | 2026-10-12 | minor | Grading performance: CPU / GPU / LUT timings at 1080p and 4K |

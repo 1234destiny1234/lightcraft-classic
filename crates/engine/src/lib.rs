@@ -536,6 +536,8 @@ impl Session {
         while let Some(op) = pending.pop() {
             match op {
                 Op::SetFile { id, .. } | Op::Relink { id, .. } | Op::SetContent { id, .. } | Op::RemovePhoto { id } => self.media.forget(*id),
+                // a video's decoded source is its poster frame: a new poster time (or new stream facts) needs a new one
+                Op::SetVideoPoster { id, .. } | Op::SetVideoMeta { id, .. } => self.media.forget(*id),
                 Op::AddPhoto { photo } => self.media.forget(photo.id),
                 Op::Batch { ops } => pending.extend(ops),
                 _ => {}
@@ -1129,5 +1131,7 @@ mod tests_settings_files;
 mod tests_spots;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_video_posters;
 #[cfg(test)]
 mod tests_xmp;

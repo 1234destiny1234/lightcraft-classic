@@ -48,6 +48,8 @@ ab_glyph = { workspace = true }
 harfrust = { version = "0.12", default-features = false, features = ["std"] }
 unicode-segmentation = "1.13"
 dac-segment = { workspace = true, optional = true }
+# video clips: probe and poster frames (every call is `Unsupported` on wasm32)
+dac-video = { workspace = true }
 
 # model downloads run natively only (the web build fetches no models)
 [target.'cfg(not(target_arch = "wasm32"))'.dependencies]
@@ -77,6 +79,11 @@ dac-heif = { workspace = true, features = ["testdata"] }
 libc = { workspace = true }
 dac-tiff = { workspace = true }
 wat = "1.228" # P4.3: plug-in test modules
+
+# synthetic video clips for the import / poster tests (M14.2, M14.3)
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 
 [target.'cfg(windows)'.dependencies]
 # free space on Windows (the Folders panel); its own unsafe FFI stays inside the crate

@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: import facts and graded poster thumbnails, M14.3; planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -444,10 +444,10 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs` | videos can be catalogued (kind, duration); `dac-video` probes MP4/MOV and decodes H.264/HEVC frames and posters (M14.1, [video.md](video.md)); no player |
+| LR-VID-PLAY | Video playback | P1 | ⬜ | `crates/catalog/src/model.rs`, `crates/video/src/lib.rs` | videos are catalogued with their stream facts, size, duration, date and GPS (M14.2); `dac-video` probes MP4/MOV and decodes H.264/HEVC frames and posters (M14.1, [video.md](video.md)); no player |
 | LR-VID-TRIM | Trim | P1 | ⬜ | `crates/catalog/src/model.rs` (`VideoMeta`), `Op::SetVideoTrim` | catalog format 10 stores and validates the trim (undoable, in sidecars as `lcvid:trimIn/trimOut`); no UI or commands yet |
 | LR-VID-EDIT | Edits on video | P2 | ⬜ | | Planned (M14.7): global develop controls only (WB, tone, curve, HSL, colour grading, presets touching them) applied per frame, draft while playing; masks, spots, lens, denoise, crop disabled for video |
-| LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster` | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); no poster rendering yet |
+| LR-VID-COVER | Cover frame | P2 | ⬜ | `Op::SetVideoPoster`, `crates/engine/src/media.rs` (`SourceRef::Video`, `video_poster`) | catalog stores the poster time (default 10 % in; sidecar `lcvid:posterTime`); grid thumbnails and the loupe show the graded poster frame, a new poster time re-renders them, undecodable clips get a film placeholder tile (M14.3); no command or UI to pick the frame yet |
 | LR-VID-EXPORT | Video export | P2 | ⬜ | | Planned (M14.8): H.264 + AAC MP4 (and ProRes) via FilmCraft encoders, honouring trim and grade, in the activity stack with cancel; CLI and MCP |
 | LR-VID-PHOTO2VIDEO | Photo to video (generative) | OOS | 🚫 | | |
 
@@ -913,6 +913,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 |---|---|---|
 | 2026-10-12 | minor | R. Video (LR-VID-PLAY/TRIM/EDIT/COVER/EXPORT): notes give the M14 plan via FilmCraft crates; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-VID-EDIT: video frame grading API (`dac_pipeline::grade`, `dac_gpu::grade_frame`), 3D-LUT playback path; status unchanged (⬜) |
+| 2026-10-12 | minor | M14.2/M14.3: import fills `VideoMeta` / size / duration / date / GPS; graded poster thumbnails (LR-VID-PLAY, LR-VID-COVER notes; status unchanged ⬜) |
 | 2026-10-12 | minor | M14.2: catalog format 10 (`VideoMeta`, trim, poster), video extensions import as videos, `video:yes` filter; LR-VID-TRIM / LR-VID-COVER notes, status unchanged (⬜) |
 | 2026-10-12 | minor | LR-FILT-SORT: Custom Order — drag to reorder a regular album's photos in the grid or filmstrip (catalog format 9, upstream PR #1155); status unchanged (✅) |
 | 2026-10-12 | minor | LR-EDIT-OPTICS-PROFILE: corrections in a fixed order (file, chosen lens, name match) reported by `lens.db.photo`, and `lens.db.list` for a lens picker; status unchanged (🟡) |
