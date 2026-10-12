@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-12 · **Change:** minor (R. Video: sequential decode, pixel aspect, MPEG-2 deinterlace; R. Video: `video.*` engine commands; R. Video: planned approach via FilmCraft crates, `dac-video` frame reader; LR-FILT-SORT: Custom Order in albums; LR-EDIT-OPTICS-PROFILE: lens correction order, chosen lens, lens list; KEYC-MODULE-OUTPUT: Web ⌘R reload, ⌘⌥P preview in browser; G15: LRC-PRINT-PAGESETUP gains ipps:// and printer driver options) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -911,6 +911,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-12 | minor | R. Video (M14.4/M14.6 engine): `video.*` playback, trim, poster and Capture Frame commands; LR-VID-PLAY, LR-VID-TRIM, LR-VID-COVER, LRC-DEV-VIDEO, LRC-VID-FRAME ⬜ → 🟡 (player UI pending) |
+| 2026-10-12 | minor | LR-VID-PLAY: `dac-video` sequential `next_frame` decoding, pixel aspect ratio, MPEG-2 deinterlace; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-VID-PLAY: `dac-video` reads Matroska/WebM, MPEG-TS and MXF, decodes VP9, AV1, ProRes, DNxHR, APV and MPEG-2 too; interlaced H.264 reported unsupported; status unchanged (⬜) |
 | 2026-10-12 | minor | LR-VID-PLAY: new `dac-video` crate (probe, frame reader, poster frames on FilmCraft's MP4 demuxer and H.264/HEVC decoders); status unchanged (⬜) |
 | 2026-10-12 | minor | R. Video (LR-VID-PLAY/TRIM/EDIT/COVER/EXPORT): notes give the M14 plan via FilmCraft crates; status unchanged (⬜) |

@@ -70,7 +70,8 @@ pub struct VideoInfo {
     pub duration: f64,
     pub fps_num: u32,
     pub fps_den: u32,
-    /// Display size (after the container's rotation).
+    /// Display size: after the pixel aspect ratio (anamorphic clips are stretched, never
+    /// squeezed) and the container's rotation. Frames come out at this aspect.
     pub width: u32,
     pub height: u32,
     /// `h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`; for codecs we don't decode,
@@ -87,6 +88,18 @@ pub struct VideoInfo {
     pub hdr: bool,
     /// Whether [`FrameReader`] can decode this clip's video.
     pub decodable: bool,
+    /// Stored (coded, cropped) picture size, after rotation; differs from `width`/`height` for
+    /// non-square pixels.
+    pub coded_width: u32,
+    pub coded_height: u32,
+    /// Pixel (sample) aspect ratio, reduced; 1:1 for square pixels. From the container (MP4
+    /// `pasp`, Matroska `DisplayWidth`/`DisplayHeight`, MXF aspect ratio), else the bitstream
+    /// (H.264 / HEVC VUI, MPEG-2 sequence header).
+    pub par_num: u32,
+    pub par_den: u32,
+    /// Interlaced MPEG-2 sequence: frames are deinterlaced (linear, first field kept) instead of
+    /// showing woven combing.
+    pub interlaced: bool,
 }
 
 /// One decoded frame.
@@ -167,6 +180,50 @@ impl FrameReader {
         {
             Vec::new()
         }
+    }
+
+    /// Move the playback cursor so [`FrameReader::next_frame`] returns the frame shown at `t`
+    /// seconds next (clamped to the clip). Decoding happens on the next call, not here.
+    pub fn seek(&mut self, t: f64) {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.inner.seek(t)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = t;
+        }
+    }
+
+    /// The next frame in presentation order (after the last [`FrameReader::frame_at`] /
+    /// [`FrameReader::next_frame`], or from [`FrameReader::seek`]); `None` at the end of the clip.
+    /// Decodes forward without re-seeking, so a decode-ahead playback worker costs one decode
+    /// per frame. `max_side` as in [`FrameReader::frame_at`].
+    pub fn next_frame(&mut self, max_side: Option<u32>) -> Result<Option<Frame>, VideoError> {
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.inner.next_frame(max_side)
+        }
+        #[cfg(target_arch = "wasm32")]
+        {
+            let _ = max_side;
+            Err(unsupported_web())
+        }
+    }
+
+    /// [`FrameReader::seek`] to `t`, then iterate [`FrameReader::next_frame`] to the end of the
+    /// clip (stops after the first error).
+    pub fn frames_from(&mut self, t: f64, max_side: Option<u32>) -> impl Iterator<Item = Result<Frame, VideoError>> + '_ {
+        self.seek(t);
+        let mut failed = false;
+        std::iter::from_fn(move || {
+            if failed {
+                return None;
+            }
+            let r = self.next_frame(max_side).transpose();
+            failed = matches!(r, Some(Err(_)));
+            r
+        })
     }
 
     /// The frame displayed at `t` seconds (clamped to the clip), decimated so its longer side is
