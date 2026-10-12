@@ -19,11 +19,15 @@ pub(crate) fn temp_dir(tag: &str) -> PathBuf {
 /// there. Fixtures that need both spellings as separate files skip; `rename::tests::FakeFs` models
 /// such volumes instead.
 pub(crate) fn case_insensitive_volume() -> bool {
-    let d = temp_dir("case-probe");
-    std::fs::write(d.join("Probe.xmp"), b"").unwrap();
-    let insensitive = d.join("probe.XMP").exists();
-    let _ = std::fs::remove_dir_all(&d);
-    insensitive
+    // probed once: parallel tests must not share (and delete) one probe folder
+    static PROBE: std::sync::OnceLock<bool> = std::sync::OnceLock::new();
+    *PROBE.get_or_init(|| {
+        let d = temp_dir("case-probe");
+        std::fs::write(d.join("Probe.xmp"), b"").unwrap();
+        let insensitive = d.join("probe.XMP").exists();
+        let _ = std::fs::remove_dir_all(&d);
+        insensitive
+    })
 }
 
 /// Skip a real-disk fixture that writes case-variant sidecars as distinct files.
