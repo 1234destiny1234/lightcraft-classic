@@ -1475,6 +1475,8 @@ mod tests_folders;
 #[cfg(test)]
 mod tests_forget_local;
 #[cfg(test)]
+mod tests_fuji;
+#[cfg(test)]
 mod tests_history_cursor;
 #[cfg(test)]
 mod tests_history_groups;
