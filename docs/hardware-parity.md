@@ -1,6 +1,6 @@
 # Hardware parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-10 · **Change:** major (created from the code, gpu-pipeline.md and the parity checklist) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Linux reads the screen's monitor profile and follows the window) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 What Lightroom does with the machine's hardware, per platform, and what the app does. Sources:
 [gpu-pipeline.md](gpu-pipeline.md), [display-profiles.md](display-profiles.md), [denoise.md](denoise.md),
@@ -12,7 +12,7 @@ What Lightroom does with the machine's hardware, per platform, and what the app 
 | GPU export | ✅ | ✅ (6000 × 4000 in ~0.3 s vs ~1.2 s CPU) | ✅ | ✅ | — | ✅ (black-export fix on an Intel iGPU, #78) |
 | AI on GPU / neural engine | Metal / DirectML / Core ML, model per feature | AI denoise on GPU or CPU (setting); SAM 3 on Metal via candle; faces on CPU | CPU / GPU denoise | CPU / GPU denoise | — | 🟡 no Core ML / Neural Engine / DirectML |
 | HDR (EDR) display | ✅ (macOS EDR, Windows HDR) | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ (LR-VIEW-HDR-DISPLAY) |
-| Monitor profile | automatic per display, follows the window | 🟡 picked by hand | 🟡 | 🟡 | — | 🟡 OS profile not read; no follow across monitors |
+| Monitor profile | automatic per display, follows the window | 🟡 picked by hand | 🟡 | 🟡 | — | 🟡 macOS and Linux read the screen's profile and follow the window (X11 `_ICC_PROFILE_n` per RandR monitor, colord); Wayland gets the first colord display only; Windows not read |
 | Second window / second monitor | ✅ (Classic) | ✅ (⌘F11) | ✅ | ✅ | — | ✅ (Classic secondary-window keys missing) |
 | Pen pressure / tilt (brush masks) | ✅ pressure for size / flow | ⬜ | ⬜ | ⬜ | ⬜ | ⬜ |
 | Trackpad gestures | pinch zoom, pan | ✅ pinch, two-finger pan | 🟡 (winit) | 🟡 | 🟡 | ✅ on macOS |
@@ -27,7 +27,7 @@ What Lightroom does with the machine's hardware, per platform, and what the app 
 
 **~40% ready** (estimated): the GPU editing path is real and fast (measured: 24 MP exposure drag
 3.9 ms on GPU vs 22–42 ms CPU; NR drag 18 ms vs 301–471 ms), but HDR display, pen pressure,
-tethering, printing, automatic monitor profiles and neural-engine inference are missing. GPU
+tethering, printing, Windows monitor profiles and neural-engine inference are missing. GPU
 correctness is proven on Apple GPUs; other vendors rely on user reports.
 
 ## Remaining (Opus 5.5 agent hours)
@@ -35,7 +35,7 @@ correctness is proven on Apple GPUs; other vendors rely on user reports.
 | Work | Hours | Needs |
 |---|---:|---|
 | HDR display (EDR on macOS, Windows HDR, Linux where possible) | 10–20 | an HDR display to verify (human) |
-| OS monitor profile, follow window across displays | 5–10 | multi-monitor setup |
+| OS monitor profile on Windows (WCS); per-monitor on Wayland | 3–6 | multi-monitor setup |
 | Pen pressure for brush masks (winit tablet events or a pure-Rust tablet layer) | 6–12 | a tablet |
 | Remaining stages on GPU (defringe, spot removal, masks) | 10–20 | |
 | Tethered capture: native PTP exists (pure Rust, USB via nusb, PTP/IP, simulated camera); verify on Canon / Nikon / Sony bodies | 5–15 | cameras (human) |
@@ -48,3 +48,4 @@ correctness is proven on Apple GPUs; other vendors rely on user reports.
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-10 | major | Created |
+| 2026-10-13 | minor | Linux: the screen's profile from X11 `_ICC_PROFILE` / colord, followed across monitors; 5–10 h → 3–6 h |

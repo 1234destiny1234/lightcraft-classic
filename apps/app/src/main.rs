@@ -34,6 +34,8 @@ mod logging;
 mod native_menu;
 #[cfg(target_os = "macos")]
 mod screen_profile;
+#[cfg(target_os = "linux")]
+mod screen_profile_linux;
 mod video_gpu;
 mod window_gpu;
 
@@ -527,10 +529,15 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .map(|p| vec![p.to_string_lossy().to_string()])
                 .unwrap_or_default()
         })),
-        // macOS doesn't colour-manage the window: previews follow the screen's profile (#787)
+        // macOS and Linux don't colour-manage the window: previews follow the screen's profile (#787)
         #[cfg(target_os = "macos")]
         screen_profile: Some(Box::new(screen_profile::icc)),
-        #[cfg(not(target_os = "macos"))]
+        #[cfg(target_os = "linux")]
+        screen_profile: Some({
+            let mut reader = screen_profile_linux::ScreenProfile::default();
+            Box::new(move || reader.icc())
+        }),
+        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
         screen_profile: None,
         pick_display_profile: Some(Box::new(|| {
             let mut d = file_dialog()
