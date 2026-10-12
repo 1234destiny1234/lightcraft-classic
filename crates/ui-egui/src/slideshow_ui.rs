@@ -34,6 +34,27 @@ pub enum UsePhotos {
     Flagged,
 }
 
+/// The backdrop image's texture for `path`, decoded on first use and cached in egui's memory by
+/// path; `None` when the path is empty or the file can't be read (the export reports why).
+fn backdrop_texture(ctx: &egui::Context, path: &str) -> Option<egui::TextureHandle> {
+    let path = path.trim();
+    if path.is_empty() {
+        return None;
+    }
+    let key = egui::Id::new(("slideshow-backdrop", path.to_string()));
+    if let Some(cached) = ctx.data(|d| d.get_temp::<Option<egui::TextureHandle>>(key)) {
+        return cached;
+    }
+    let tex = lcc_slideshow::export::load_background(path).ok().map(|img| {
+        let pixels = img.data.iter().map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])).collect();
+        let size = [img.width, img.height];
+        let color = egui::ColorImage { size, source_size: vec2(size[0] as f32, size[1] as f32), pixels };
+        ctx.load_texture("slideshow-backdrop", color, egui::TextureOptions::LINEAR)
+    });
+    ctx.data_mut(|d| d.insert_temp(key, tex.clone()));
+    tex
+}
+
 /// A show in progress (not saved).
 #[derive(Clone, Debug)]
 pub struct Playing {
@@ -558,6 +579,16 @@ fn paint_segment(app: &mut LccApp, ui: &egui::Ui, frame: Rect, seg: Segment, pho
     // backdrop
     let b = &s.backdrop;
     p.rect_filled(slide, 0.0, c32(b.color, alpha));
+    if b.image_opacity > 0.0
+        && let Some(bg) = backdrop_texture(ui.ctx(), &b.image)
+    {
+        // cover the slide with the image, centred (as the export does)
+        let [bw, bh] = bg.size().map(|v| v.max(1) as f32);
+        let k = (slide.width() / bw).max(slide.height() / bh).max(1e-6);
+        let (u, v) = ((slide.width() / k / bw).min(1.0), (slide.height() / k / bh).min(1.0));
+        let uv = egui::Rect::from_min_max(egui::pos2((1.0 - u) / 2.0, (1.0 - v) / 2.0), egui::pos2((1.0 + u) / 2.0, (1.0 + v) / 2.0));
+        p.image(bg.id(), slide, uv, Color32::from_white_alpha((b.image_opacity * alpha * 255.0).clamp(0.0, 255.0) as u8));
+    }
     if b.wash && b.wash_opacity > 0.0 {
         let a = b.wash_angle.to_radians();
         let (dx, dy) = (a.cos(), -a.sin());

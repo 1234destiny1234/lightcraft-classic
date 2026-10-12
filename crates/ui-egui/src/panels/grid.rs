@@ -82,7 +82,7 @@ pub struct GridCache {
 }
 
 /// Header keys of a published collection's sections, in the order the engine sorts them.
-const PUBLISH_SECTIONS: [&str; 3] = ["publish:new", "publish:modified", "publish:published"];
+const PUBLISH_SECTIONS: [&str; 4] = ["publish:new", "publish:modified", "publish:published", "publish:remove"];
 
 /// The header of a published collection's section, as Lightroom Classic names them.
 fn publish_section_label(key: &str) -> Option<&'static str> {
@@ -90,12 +90,13 @@ fn publish_section_label(key: &str) -> Option<&'static str> {
         "publish:new" => "New Photos to Publish",
         "publish:modified" => "Modified Photos to Re-Publish",
         "publish:published" => "Published Photos",
+        "publish:remove" => "Deleted Photos to Remove",
         _ => return None,
     })
 }
 
 /// A published collection's photos as runs of one section each (`ids` in the engine's order:
-/// new, modified, published); photos in no section are left out.
+/// new, modified, published, to remove); photos in no section are left out.
 pub fn publish_runs(sections: &HashMap<PhotoId, u8>, ids: &[PhotoId]) -> Vec<DateRun> {
     let mut runs: Vec<DateRun> = Vec::new();
     for (i, id) in ids.iter().enumerate() {
