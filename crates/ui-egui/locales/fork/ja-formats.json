@@ -51,5 +51,6 @@
   "Shows the model's terms, then downloads {} from {host}, installs it and starts using it. Nothing else is sent.": "モデルの利用条件を表示してから、{host}から{}をダウンロードし、インストールして使い始めます。それ以外の情報は送信しません。",
   "Trained on: {provenance}": "学習データ：{provenance}",
   "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}。ライブラリの「denoise」フォルダーに保存されます。上限に達すると、どの写真にも使われていない古いものから削除されます。",
-  "{} of {} from {host}": "{host}から {}/{}"
+  "{} of {} from {host}": "{host}から {}/{}",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "カラースペース：Rec. 2020 {curve}（HDR AVIF）"
 }

@@ -41,5 +41,6 @@
   "Geotagged {n} photo(s)": "{n} photo(s) géolocalisée(s)",
   "Location {n}": "Lieu {n}",
   "{n} photos · {frames} frames · {secs} s": "{n} photos · {frames} images · {secs} s",
-  "Exported timelapse: {photos} photos, {frames} frames": "Timelapse exporté : {photos} photos, {frames} images"
+  "Exported timelapse: {photos} photos, {frames} frames": "Timelapse exporté : {photos} photos, {frames} images",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Espace colorimétrique : Rec. 2020 {curve} (AVIF HDR)"
 }

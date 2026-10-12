@@ -240,5 +240,6 @@
   "{n} added to Apple Photos": "Добавлено в Apple Фото: {n}",
   "{n} photos opened for editing; each is stacked with its original": "Открыто для редактирования фото: {n}; каждое объединено в стопку с оригиналом",
   "· {in_source} identical copies": "· идентичных копий: {in_source}",
-  "Rendered {ok} of {total} to DNG": "В DNG отрисовано {ok} из {total}"
+  "Rendered {ok} of {total} to DNG": "В DNG отрисовано {ok} из {total}",
+  "{n} selected photos · {pages} pages": "Выбрано фото: {n} · страниц: {pages}"
 }

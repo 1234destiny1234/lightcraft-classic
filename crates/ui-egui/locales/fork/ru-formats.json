@@ -55,5 +55,6 @@
   "{} KB": "{} КБ",
   "{} MB": "{} МБ",
   "{} of {} from {host}": "{} из {} с {host}",
-  "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}. Хранятся в папке «denoise» библиотеки; при достижении ограничения первыми удаляются самые старые изображения, которые не использует ни одно фото."
+  "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}. Хранятся в папке «denoise» библиотеки; при достижении ограничения первыми удаляются самые старые изображения, которые не использует ни одно фото.",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Цветовое пространство: Rec. 2020 {curve} (HDR AVIF)"
 }

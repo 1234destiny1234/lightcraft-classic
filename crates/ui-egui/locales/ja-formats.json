@@ -240,5 +240,6 @@
   "{n} added to Apple Photos": "{n}件をAppleの写真に追加しました",
   "{n} photos opened for editing; each is stacked with its original": "{n}枚の写真を編集用に開きました。それぞれ元の写真とスタックされています",
   "· {in_source} identical copies": "・同一のコピー {in_source} 件",
-  "Rendered {ok} of {total} to DNG": "{total} 枚中 {ok} 枚を DNG にレンダリングしました"
+  "Rendered {ok} of {total} to DNG": "{total} 枚中 {ok} 枚を DNG にレンダリングしました",
+  "{n} selected photos · {pages} pages": "選択した写真 {n} 枚 · {pages} ページ"
 }

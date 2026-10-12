@@ -51,5 +51,6 @@
   "Shows the model's terms, then downloads {} from {host}, installs it and starts using it. Nothing else is sent.": "Mostra os termos do modelo, depois baixa {} de {host}, instala e começa a usá-lo. Nada mais é enviado.",
   "Trained on: {provenance}": "Treinado com: {provenance}",
   "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}. Guardadas na pasta “denoise” da biblioteca; ao atingir o limite, as mais antigas que nenhuma foto usa saem primeiro.",
-  "{} of {} from {host}": "{} de {} de {host}"
+  "{} of {} from {host}": "{} de {} de {host}",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Espaço de cor: Rec. 2020 {curve} (AVIF HDR)"
 }

@@ -240,5 +240,6 @@
   "{n} added to Apple Photos": "已將 {n} 個加入 Apple 照片",
   "{n} photos opened for editing; each is stacked with its original": "已開啟 {n} 張相片進行編輯；每張都與其原始相片堆疊在一起",
   "· {in_source} identical copies": "· {in_source} 個相同副本",
-  "Rendered {ok} of {total} to DNG": "已將 {total} 張中的 {ok} 張渲染為 DNG"
+  "Rendered {ok} of {total} to DNG": "已將 {total} 張中的 {ok} 張渲染為 DNG",
+  "{n} selected photos · {pages} pages": "已選取 {n} 張照片 · {pages} 頁"
 }

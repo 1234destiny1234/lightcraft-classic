@@ -240,5 +240,6 @@
   "{n} added to Apple Photos": "{n} añadidas a Fotos de Apple",
   "{n} photos opened for editing; each is stacked with its original": "{n} fotos abiertas para editar; cada una está apilada con su original",
   "· {in_source} identical copies": "· {in_source} copias idénticas",
-  "Rendered {ok} of {total} to DNG": "{ok} de {total} renderizadas a DNG"
+  "Rendered {ok} of {total} to DNG": "{ok} de {total} renderizadas a DNG",
+  "{n} selected photos · {pages} pages": "{n} fotos seleccionadas · {pages} páginas"
 }

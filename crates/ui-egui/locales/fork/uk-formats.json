@@ -41,5 +41,6 @@
   "Geotagged {n} photo(s)": "Геомітки додано фото: {n}",
   "Location {n}": "Місце {n}",
   "{n} photos · {frames} frames · {secs} s": "Фото: {n} · кадрів: {frames} · {secs} с",
-  "Exported timelapse: {photos} photos, {frames} frames": "Таймлапс експортовано: фото {photos}, кадрів {frames}"
+  "Exported timelapse: {photos} photos, {frames} frames": "Таймлапс експортовано: фото {photos}, кадрів {frames}",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Колірний простір: Rec. 2020 {curve} (HDR AVIF)"
 }
