@@ -17,11 +17,13 @@ struct Clip {
     bframes: u8,
     keyint: u32,
     color: ColorConfig,
+    /// VUI sample aspect ratio.
+    sar: (u16, u16),
 }
 
 impl Clip {
     fn new(w: u32, h: u32, frames: usize) -> Self {
-        Clip { w, h, frames, fps: (30, 1), bframes: 0, keyint: 250, color: ColorConfig::default() }
+        Clip { w, h, frames, fps: (30, 1), bframes: 0, keyint: 250, color: ColorConfig::default(), sar: (1, 1) }
     }
 }
 
@@ -41,6 +43,7 @@ fn write_clip(clip: &Clip, pic: impl Fn(usize) -> (Vec<u8>, Vec<u8>, Vec<u8>)) -
     cfg.rate = RateControl::Crf(12.0);
     cfg.color = clip.color;
     cfg.threads = 1;
+    cfg.sar = clip.sar;
     let mut enc = Encoder::new(cfg).expect("encoder");
     let den = clip.fps.1 as i64;
     let mut packets = Vec::new();
@@ -192,6 +195,20 @@ fn seeking_returns_the_frame_at_the_time() {
             let f = rd.frame_at(k as f64 / 30.0, Some(32)).expect("play");
             assert_eq!(which(&f.image), k, "bframes {bframes} play");
         }
+        // next_frame continues after frame_at without re-seeking, across GOPs, in order
+        rd.frame_at(7.0 / 30.0, None).expect("frame 7");
+        for k in 8..30 {
+            let f = rd.next_frame(Some(32)).expect("next").expect("a frame");
+            assert_eq!(which(&f.image), k, "bframes {bframes} next");
+        }
+        assert!(rd.next_frame(None).expect("end").is_none());
+        // seek + frames_from: backwards and forwards
+        let got: Vec<usize> = rd.frames_from(12.0 / 30.0 + 0.01, Some(16)).map(|f| which(&f.expect("frame").image)).collect();
+        assert_eq!(got, (12..30).collect::<Vec<_>>(), "bframes {bframes}");
+        rd.seek(2.0 / 30.0);
+        assert_eq!(which(&rd.next_frame(None).expect("2").expect("frame").image), 2);
+        rd.seek(f64::NAN);
+        assert_eq!(which(&rd.next_frame(None).expect("0").expect("frame").image), 0);
         // out of range times clamp
         assert_eq!(which(&rd.frame_at(99.0, None).expect("end").image), 29);
         assert_eq!(which(&rd.frame_at(-5.0, None).expect("start").image), 0);
@@ -246,4 +263,26 @@ fn truncated_and_garbage_files_never_panic() {
     }
     // a missing file is an I/O error
     assert!(matches!(probe(&scratch("missing.mp4")), Err(VideoError::Io(_))));
+}
+
+#[test]
+fn anamorphic_vui_sar_is_shown_at_display_aspect() {
+    // 4:3 pixels (HDV-style 1440 → 1920): 96×64 stored, 128×64 shown
+    let clip = Clip { sar: (4, 3), ..Clip::new(96, 64, 3) };
+    let path = save("sar.mp4", &write_clip(&clip, |_| flat(&clip, 120, 128, 128)));
+    let info = probe(&path).expect("probe");
+    assert_eq!((info.par_num, info.par_den), (4, 3));
+    assert_eq!((info.coded_width, info.coded_height), (96, 64));
+    assert_eq!((info.width, info.height), (128, 64));
+    assert!(!info.interlaced);
+    let mut rd = FrameReader::open(&path).expect("open");
+    let f = rd.frame_at(0.0, None).expect("frame");
+    assert_eq!((f.image.width, f.image.height), (128, 64));
+    let f = rd.frame_at(0.0, Some(64)).expect("small");
+    assert_eq!((f.image.width, f.image.height), (64, 32));
+    // square pixels are untouched
+    let sq = Clip::new(96, 64, 2);
+    let path = save("square.mp4", &write_clip(&sq, |_| flat(&sq, 120, 128, 128)));
+    let info = probe(&path).expect("probe");
+    assert_eq!((info.par_num, info.par_den, info.width, info.coded_width), (1, 1, 96, 96));
 }

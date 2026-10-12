@@ -38,6 +38,8 @@ pub enum Codec {
 
 /// A decoded picture with its pts (the value fed with its sample).
 pub struct Pic {
+    /// Interlaced picture (both fields woven into one frame): Some(top field first).
+    pub field: Option<bool>,
     pub pts: i64,
     pub frame: VideoFrame,
 }
@@ -149,9 +151,13 @@ impl Decoder {
                 }
                 dec.decode_pts(data, pts).map_err(|e| decode_error("AV1", e))?.into_iter().map(av1_pic).collect()
             }
-            Decoder::ProRes => vec![Pic { pts, frame: prores_frame(filmcraft_prores::decode_frame(data).map_err(|e| decode_error("ProRes", e))?) }],
-            Decoder::Apv => vec![Pic { pts, frame: apv_frame(filmcraft_apv::decode_frame(data).map_err(|e| decode_error("APV", e))?) }],
-            Decoder::Dnx => vec![Pic { pts, frame: dnx_frame(filmcraft_dnx::decode_frame(data).map_err(|e| decode_error("DNxHD", e))?) }],
+            Decoder::ProRes => {
+                vec![Pic { field: None, pts, frame: prores_frame(filmcraft_prores::decode_frame(data).map_err(|e| decode_error("ProRes", e))?) }]
+            }
+            Decoder::Apv => vec![Pic { field: None, pts, frame: apv_frame(filmcraft_apv::decode_frame(data).map_err(|e| decode_error("APV", e))?) }],
+            Decoder::Dnx => {
+                vec![Pic { field: None, pts, frame: dnx_frame(filmcraft_dnx::decode_frame(data).map_err(|e| decode_error("DNxHD", e))?) }]
+            }
             Decoder::Mpeg2(d) => d.decode(data, pts).map_err(|e| decode_error("MPEG-2", e))?.into_iter().map(mpeg2_pic).collect(),
         };
         Ok(with_container_colour(pics, colr))
@@ -218,7 +224,7 @@ fn h264_pic(p: filmcraft_h264::Picture) -> Pic {
     let c = p.color;
     let color = coded_colour(p.width, p.height, vui(c.primaries, c.transfer, c.matrix, c.full_range));
     let planes = [tight(&p.y, p.y_stride, w, h), tight(&p.u, p.uv_stride, cw, ch), tight(&p.v, p.uv_stride, cw, ch)].map(Arc::new);
-    Pic { pts: p.pts, frame: frame(p.width, p.height, PixelData::Yuv8 { planes, chroma: Chroma::C420, alpha: None }, color) }
+    Pic { field: None, pts: p.pts, frame: frame(p.width, p.height, PixelData::Yuv8 { planes, chroma: Chroma::C420, alpha: None }, color) }
 }
 
 fn hevc_pic(p: filmcraft_hevc::Picture) -> Pic {
@@ -246,7 +252,7 @@ fn hevc_pic(p: filmcraft_hevc::Picture) -> Pic {
             alpha: None,
         },
     };
-    Pic { pts: p.pts, frame: frame(p.width, p.height, data, color) }
+    Pic { field: None, pts: p.pts, frame: frame(p.width, p.height, data, color) }
 }
 
 fn vp9_pic(p: filmcraft_vp9::Picture) -> Option<Pic> {
@@ -281,7 +287,7 @@ fn vp9_pic(p: filmcraft_vp9::Picture) -> Option<Pic> {
         }
         let mut f = VideoFrame::rgba8(p.width, p.height, rgba);
         f.color = ColorInfo { range: Range::Full, transfer: Transfer::Srgb, ..color };
-        return Some(Pic { pts: p.pts, frame: f });
+        return Some(Pic { field: None, pts: p.pts, frame: f });
     }
     // 4:4:0 has no frame format of its own: chroma rows are repeated to 4:4:4
     let (chroma, rows_440) = match (p.subsampling_x, p.subsampling_y) {
@@ -320,7 +326,7 @@ fn vp9_pic(p: filmcraft_vp9::Picture) -> Option<Pic> {
         },
         _ => return None,
     };
-    Some(Pic { pts: p.pts, frame: frame(p.width, p.height, data, color) })
+    Some(Pic { field: None, pts: p.pts, frame: frame(p.width, p.height, data, color) })
 }
 
 fn av1_pic(p: filmcraft_av1::Picture) -> Pic {
@@ -358,7 +364,7 @@ fn av1_pic(p: filmcraft_av1::Picture) -> Pic {
     } else {
         PixelData::Yuv16 { planes: [Arc::new(y), Arc::new(u), Arc::new(v)], chroma, bits: u32::from(p.bit_depth), alpha: None }
     };
-    Pic { pts: p.pts, frame: frame(p.width, p.height, data, color) }
+    Pic { field: None, pts: p.pts, frame: frame(p.width, p.height, data, color) }
 }
 
 fn prores_frame(f: filmcraft_prores::Frame) -> VideoFrame {
@@ -452,8 +458,46 @@ fn mpeg2_pic(p: filmcraft_mpeg2v::Picture) -> Pic {
         filmcraft_mpeg2v::ChromaFormat::Yuv422 => Chroma::C422,
         filmcraft_mpeg2v::ChromaFormat::Yuv444 => Chroma::C444,
     };
+    let field = (!p.progressive_frame).then_some(p.top_field_first);
     let data = PixelData::Yuv8 { planes: [Arc::new(p.y), Arc::new(p.cb), Arc::new(p.cr)], chroma, alpha: None };
-    Pic { pts: p.pts, frame: frame(p.width, p.height, data, color) }
+    Pic { field, pts: p.pts, frame: frame(p.width, p.height, data, color) }
+}
+
+/// Linear (bob) deinterlace of a woven 8-bit frame in place: the first field's rows are kept,
+/// the other field's rows are rebuilt from the rows above and below. Each plane is treated alike
+/// (4:2:0 interlaced chroma alternates fields row by row too). Other pixel formats are left as is.
+pub fn deinterlace(f: &mut VideoFrame, top_first: bool) {
+    let (w, h) = (f.width as usize, f.height as usize);
+    let PixelData::Yuv8 { planes, chroma, .. } = &mut f.data else { return };
+    let (cw, ch) = match chroma {
+        Chroma::C420 => (w.div_ceil(2), h.div_ceil(2)),
+        Chroma::C422 => (w.div_ceil(2), h),
+        _ => (w, h),
+    };
+    for (k, plane) in planes.iter_mut().enumerate() {
+        let (pw, ph) = if k == 0 { (w, h) } else { (cw, ch) };
+        if pw == 0 || ph < 2 || plane.len() < pw.saturating_mul(ph) {
+            continue;
+        }
+        let p = Arc::make_mut(plane);
+        let skip = usize::from(top_first);
+        for y in (skip..ph).step_by(2) {
+            let above = y.checked_sub(1);
+            let below = (y + 1 < ph).then_some(y + 1);
+            let (a, b) = match (above, below) {
+                (Some(a), Some(b)) => (a, b),
+                (Some(a), None) => (a, a),
+                (None, Some(b)) => (b, b),
+                (None, None) => continue,
+            };
+            for x in 0..pw {
+                let (Some(&va), Some(&vb)) = (p.get(a * pw + x), p.get(b * pw + x)) else { continue };
+                if let Some(o) = p.get_mut(y * pw + x) {
+                    *o = (u16::from(va) + u16::from(vb)).div_ceil(2) as u8;
+                }
+            }
+        }
+    }
 }
 
 /// Whether a frame's planes hold as many samples as its size and chroma format say (the
@@ -480,5 +524,34 @@ pub fn complete(f: &VideoFrame) -> bool {
             planes[0].len() >= n && planes[1].len() >= c && planes[2].len() >= c && alpha.as_ref().is_none_or(|a| a.len() >= n)
         }
         _ => true,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn deinterlace_rebuilds_the_second_field() {
+        // 2×4 luma woven from fields 10 (top) and 200 (bottom); chroma 1×2
+        let y = vec![10, 10, 200, 200, 10, 10, 200, 200];
+        let data = PixelData::Yuv8 { planes: [Arc::new(y), Arc::new(vec![128, 60]), Arc::new(vec![128, 60])], chroma: Chroma::C420, alpha: None };
+        let mut f = frame(2, 4, data.clone(), ColorInfo::REC709);
+        deinterlace(&mut f, true);
+        let PixelData::Yuv8 { planes, .. } = &f.data else { panic!("format") };
+        assert_eq!(*planes[0], vec![10, 10, 10, 10, 10, 10, 10, 10]);
+        assert_eq!(*planes[1], vec![128, 128]);
+        let mut f = frame(2, 4, data, ColorInfo::REC709);
+        deinterlace(&mut f, false);
+        let PixelData::Yuv8 { planes, .. } = &f.data else { panic!("format") };
+        assert_eq!(*planes[0], vec![200, 200, 200, 200, 200, 200, 200, 200]);
+        // short planes are left alone
+        let mut f = frame(
+            4,
+            4,
+            PixelData::Yuv8 { planes: [Arc::new(vec![1]), Arc::new(vec![]), Arc::new(vec![])], chroma: Chroma::C420, alpha: None },
+            ColorInfo::REC709,
+        );
+        deinterlace(&mut f, true);
     }
 }

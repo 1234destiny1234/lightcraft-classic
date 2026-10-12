@@ -1,6 +1,6 @@
 # Video
 
-> **Last updated:** 2026-10-12 · **Change:** minor (M14.4 / M14.6 engine: `video.*` commands)
+> **Last updated:** 2026-10-12 · **Change:** minor (sequential `next_frame` / `seek`, pixel aspect, MPEG-2 deinterlace, decode cost)
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.1: Matroska/WebM, MPEG-TS, MXF; VP9, AV1, ProRes, DNxHR, APV, MPEG-2)
 > **Last updated:** 2026-10-12 · **Change:** M14.8: video export wired through `dac_engine::export`
 > **Last updated:** 2026-10-12 · **Change:** minor (M14.2 import side, M14.3 posters)
@@ -13,9 +13,10 @@ used as git dependencies pinned to one full revision. The app writes no codecs o
 
 | API | What it does |
 |---|---|
-| `probe(path) -> Result<VideoInfo, VideoError>` | Container and stream headers, no decoding: `duration` (s), `fps_num`/`fps_den`, display `width`/`height` (after rotation), `codec` (`h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`, or the container's name for codecs we don't decode), `has_audio`, `created` (QuickTime `creationdate`/`©day` as written; Matroska `DateUTC` as RFC 3339), `gps` (ISO 6709), `rotation`, `hdr`, `decodable`. |
+| `probe(path) -> Result<VideoInfo, VideoError>` | Container and stream headers, no decoding: `duration` (s), `fps_num`/`fps_den`, display `width`/`height` (after rotation), `codec` (`h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`, or the container's name for codecs we don't decode), `has_audio`, `created` (QuickTime `creationdate`/`©day` as written; Matroska `DateUTC` as RFC 3339), `gps` (ISO 6709), `rotation`, `hdr`, `decodable`, `coded_width`/`coded_height`, `par_num`/`par_den` (pixel aspect), `interlaced` (MPEG-2). `width`/`height` are the display size after the pixel aspect. |
 | `FrameReader::open(path)` | Opens a clip with a decodable video track ([supported formats](#supported-formats)); a recognised but undecodable stream is `Unsupported` with the reason. |
 | `FrameReader::frame_at(t, max_side) -> Result<Frame, VideoError>` | The frame displayed at `t` seconds (clamped to the clip; NaN = 0), box-decimated so the longer side is at most `max_side`. `Frame { image: dac_raster::Rgb32f, time }`: linear Rec.709 RGB, the pipeline's JPEG/TIFF input type; `time` is the frame's presentation time. |
+| `FrameReader::seek(t)` / `next_frame(max_side) -> Result<Option<Frame>>` / `frames_from(t, max_side)` | Sequential playback for a decode-ahead worker: frames in presentation order from the cursor (`seek`, or just after the last `frame_at`/`next_frame`), decoding forward across GOPs without re-seeking; `None` at the end. `frames_from` is `seek` + an iterator that stops after the first error. |
 | `FrameReader::frame_times()` | Every frame's presentation time, sorted (frame stepping). |
 | `poster(path, t, max_side)` | One frame for thumbnails; `t = None` means `default_poster_time(duration)` = 10 % in. |
 
@@ -94,9 +95,12 @@ Probe works for every container below; frames decode when the codec cell says so
 | ProRes | `filmcraft-prores` | all 422/4444 profiles (alpha ignored) |
 | DNxHD / DNxHR | `filmcraft-dnx` | incl. RGB 4:4:4 |
 | APV | `filmcraft-apv` | |
-| MPEG-1/2 | `filmcraft-mpeg2v` | interlaced pictures come out as woven frames (no deinterlacing yet) |
+| MPEG-1/2 | `filmcraft-mpeg2v` | interlaced pictures are deinterlaced (linear: the first field kept, the other rebuilt from its neighbours; an even box decimation blends the fields instead) |
 | VP8, MJPEG, others | – | probed, unsupported |
-Pixel aspect ratio is not applied yet (anamorphic HDV / DV / DNxHD 1440 show unstretched). Only the first video track
+**Pixel aspect.** Read from the container (MP4 `pasp`, Matroska `DisplayWidth`/`DisplayHeight`, MXF aspect ratio),
+else the bitstream (H.264 / HEVC VUI SAR, MPEG-2 sequence header); frames come out at display aspect by stretching the
+wider axis (HDV / DNxHD 1440×1080 at 4:3 → 1920×1080; DV NTSC 720×480 at 10:11 → 720×528), bilinear after the box
+decimation. Only the first video track
 is read; audio is detected (`has_audio`) but not decoded (playback is muted in v1).
 ## Export through the engine (M14.8)
 `dac_engine::export` is the one export path for app, CLI and MCP (`crates/engine/src/export_video.rs`). A clip
@@ -139,7 +143,14 @@ the tests generate their clips in-test, so no media is committed.
 - First frame 2 s into a 1080p clip (decodes from the keyframe, single reader, no cache): H.264 ~0.6 s, HEVC ~0.5 s,
   VP9 ~0.7 s, AV1 ~3.1 s.
 
-**Tests.** `tests/clips.rs` (synthetic H.264 MP4: colour, seeking, fuzz), `tests/formats.rs` (synthetic ProRes,
+- Sequential decode with `next_frame` (`examples/seq_bench`, 300 frames from the start of each Big Buck Bunny 1080p
+  excerpt, release build; FilmCraft's decoders use several threads), ms per frame at full size → at 960 px:
+  H.264 8.8 → 5.7 (114 → 175 fps), HEVC 10.1 → 6.7 (99 → 150 fps), VP9 13.6 → 11.3 (73 → 88 fps), AV1 27.8 → 25.2
+  (36 → 40 fps). The 960 px output is box-decimated from the decoder's Y'CbCr planes before Y'CbCr → RGB, so it costs
+  less than full size; the decode itself dominates. The ≥ 30 fps target for 1080p H.264 at 960 px is met ~6×; AV1
+  is the only codec near the limit.
+
+**Tests.** `tests/clips.rs` (synthetic H.264 MP4: colour, seeking, `next_frame`/`frames_from`, VUI SAR 4:3 shown at display aspect, fuzz), `tests/formats.rs` (synthetic ProRes,
 DNxHR, APV in MOV/MP4, ProRes and DNxHR in MXF, H.264 with B-frames in Matroska and in a hand-muxed transport stream:
 probe fields, frame times, seeking, truncation and corruption sweeps), `tests/corpus.rs` (the clips from `cargo xtask
 corpus --download`, skipped when absent: probe fields, neighbour/far-frame PSNR, the four Big Buck Bunny decoders
@@ -149,10 +160,12 @@ only by FilmCraft's own tests.
 
 ```sh
 cargo run --release -p dac-video --example frame_png -- clip.mp4 1.5 out.png [max_side]
+cargo run --release -p dac-video --example seq_bench -- clip.mp4 [frames] [max_side]
 ```
 
 ## Revision history
 
+- 2026-10-12: sequential `seek`/`next_frame`/`frames_from`, pixel aspect ratio, MPEG-2 deinterlace, sequential decode cost.
 - 2026-10-12: M14.4 / M14.6 engine: `video.*` commands, player state machine, `dac-video` backend.
 - 2026-10-12: M14.8 core, `dac-video-export` (S3: option A).
 - 2026-10-12: M14.8 export through the engine (options, dialog, CLI, MCP, activity row).

@@ -151,17 +151,124 @@ pub fn open(path: &Path) -> Result<Clip, VideoError> {
     let src = FileSource::open(path).map_err(|e| io(path, e))?;
     let mut head = vec![0u8; src.len().min(64 << 10) as usize];
     src.read(0, &mut head).map_err(|e| io(path, e))?;
+    let mut clip = open_container(src, &head)?;
+    pixel_aspect(&mut clip);
+    Ok(clip)
+}
+
+fn open_container(src: FileSource, head: &[u8]) -> Result<Clip, VideoError> {
     if head.starts_with(&[0x1A, 0x45, 0xDF, 0xA3]) {
         open_mkv(src)
-    } else if filmcraft_mxf::sniff(&head) {
+    } else if filmcraft_mxf::sniff(head) {
         open_mxf(src)
-    } else if filmcraft_mpegts::sniff(&head).is_some() {
+    } else if filmcraft_mpegts::sniff(head).is_some() {
         open_ts(src)
     } else if head.starts_with(&[0, 0, 1, 0xB3]) {
         open_es(src)
     } else {
         open_mp4(src)
     }
+}
+
+/// Reduce a pixel aspect ratio; None for 1:1, zero or absurd values (outside 1:8 .. 8:1).
+pub fn reduce_par(n: u64, d: u64) -> Option<(u32, u32)> {
+    if n == 0 || d == 0 || n == d || n > d.saturating_mul(8) || d > n.saturating_mul(8) {
+        return None;
+    }
+    let g = gcd(n, d);
+    Some((u32::try_from(n / g).ok()?, u32::try_from(d / g).ok()?))
+}
+
+/// The container's pixel aspect ratio (MP4 `pasp`, Matroska display size, MXF aspect ratio).
+fn container_par(clip: &Clip, coded: (u32, u32)) -> Option<(u32, u32)> {
+    match &clip.container {
+        Container::Mp4 { file, track } => {
+            let e = file.tracks.get(*track)?.entries.first()?;
+            let (h, v) = e.video.as_ref()?.pixel_aspect?;
+            reduce_par(h.into(), v.into())
+        }
+        Container::Mkv { file, track } => {
+            let (n, d) = file.tracks.get(*track)?.video.as_ref()?.pixel_aspect();
+            reduce_par(n.into(), d.into())
+        }
+        Container::Mxf { file, track } => {
+            let ar = file.tracks.get(*track)?.picture.as_ref()?.aspect_ratio;
+            let (n, d) = (u64::try_from(ar.num).ok()?, u64::try_from(ar.den).ok()?);
+            // display aspect → PAR = DAR · h / w
+            reduce_par(n.checked_mul(coded.1.into())?, d.checked_mul(coded.0.into())?)
+        }
+        Container::Ts { .. } | Container::Es { .. } => None,
+    }
+}
+
+/// The bitstream's sample aspect ratio (H.264 / HEVC VUI, MPEG-2 sequence header) and whether the
+/// sequence is interlaced (MPEG-2 only).
+fn bitstream_par(clip: &Clip) -> (Option<(u32, u32)>, bool) {
+    let first = || clip.table.order.first().and_then(|&i| clip.read(i).ok()).or_else(|| clip.read(0).ok());
+    let vui_sar = |sar: (u16, u16)| reduce_par(sar.0.into(), sar.1.into());
+    let h264 = |nal: &[u8]| -> Option<(u32, u32)> {
+        let sps = filmcraft_h264::params::Sps::parse(&filmcraft_bitstream::unescape_rbsp(nal.get(1..)?)).ok()?;
+        vui_sar(sps.vui?.sar)
+    };
+    let hevc = |nal: &[u8]| -> Option<(u32, u32)> {
+        let sps = filmcraft_hevc::params::Sps::parse(&filmcraft_bitstream::unescape_rbsp(nal.get(2..)?)).ok()?;
+        vui_sar(sps.vui?.sar)
+    };
+    match &clip.codec {
+        Some(Codec::H264 { avcc: Some(a) }) => (filmcraft_isobmff::AvcConfig::parse(a).ok().and_then(|c| c.sps.first().and_then(|n| h264(n))), false),
+        Some(Codec::H264 { avcc: None }) => {
+            let sample = first().unwrap_or_default();
+            let nal = filmcraft_bitstream::annexb_nals(&sample).into_iter().find(|n| n.first().is_some_and(|h| h & 0x1f == 7)).map(<[u8]>::to_vec);
+            (nal.and_then(|n| h264(&n)), false)
+        }
+        Some(Codec::Hevc { hvcc: Some(c) }) => {
+            let cfg = filmcraft_isobmff::HevcConfig::parse(c).ok();
+            let nal = cfg.and_then(|c| c.arrays.into_iter().find(|a| a.nal_type == 33).and_then(|a| a.nalus.into_iter().next()));
+            (nal.and_then(|n| hevc(&n)), false)
+        }
+        Some(Codec::Hevc { hvcc: None }) => {
+            let sample = first().unwrap_or_default();
+            let nal =
+                filmcraft_bitstream::annexb_nals(&sample).into_iter().find(|n| n.first().is_some_and(|h| (h >> 1) & 0x3f == 33)).map(<[u8]>::to_vec);
+            (nal.and_then(|n| hevc(&n)), false)
+        }
+        Some(Codec::Mpeg2 { header }) => {
+            let seq = filmcraft_mpeg2v::probe(header).or_else(|| first().and_then(|s| filmcraft_mpeg2v::probe(&s)));
+            match seq {
+                Some(q) => (reduce_par(q.sar.0.into(), q.sar.1.into()), q.mpeg2 && !q.progressive_sequence),
+                None => (None, false),
+            }
+        }
+        _ => (None, false),
+    }
+}
+
+/// Display size of a `w × h` picture with pixel aspect `par`: the wider-than-square axis is
+/// stretched (anamorphic 1440×1080 at 4:3 → 1920×1080; 720×480 at 10:11 → 720×528).
+pub fn display_size(w: u32, h: u32, par: (u32, u32)) -> (u32, u32) {
+    let (n, d) = (u64::from(par.0.max(1)), u64::from(par.1.max(1)));
+    let scale = |v: u32, a: u64, b: u64| u32::try_from((u64::from(v) * a + b / 2) / b).unwrap_or(v).max(1);
+    if n > d {
+        (scale(w, n, d), h)
+    } else if n < d {
+        (w, scale(h, d, n))
+    } else {
+        (w, h)
+    }
+}
+
+/// Fill `par_*`, `coded_*` and `interlaced` and apply the pixel aspect to the display size.
+fn pixel_aspect(clip: &mut Clip) {
+    let rot = clip.info.rotation % 2 == 1;
+    let (w, h) = if rot { (clip.info.height, clip.info.width) } else { (clip.info.width, clip.info.height) };
+    let (bits, interlaced) = bitstream_par(clip);
+    // the container wins (it is what players honour), then the bitstream
+    let par = container_par(clip, (w, h)).or(bits).unwrap_or((1, 1));
+    let (dw, dh) = display_size(w, h, par);
+    let i = &mut clip.info;
+    (i.par_num, i.par_den, i.interlaced) = (par.0, par.1, interlaced);
+    (i.coded_width, i.coded_height) = if rot { (h, w) } else { (w, h) };
+    (i.width, i.height) = if rot { (dh, dw) } else { (dw, dh) };
 }
 
 fn gcd(mut a: u64, mut b: u64) -> u64 {
@@ -219,7 +326,25 @@ fn info(
 ) -> VideoInfo {
     let (width, height) = if rotation % 2 == 1 { (h, w) } else { (w, h) };
     let duration = if duration.is_finite() && duration > 0.0 { duration } else { 0.0 };
-    VideoInfo { duration, fps_num: fps.0, fps_den: fps.1, width, height, codec, has_audio, created, gps, rotation, hdr, decodable }
+    VideoInfo {
+        duration,
+        fps_num: fps.0,
+        fps_den: fps.1,
+        width,
+        height,
+        codec,
+        has_audio,
+        created,
+        gps,
+        rotation,
+        hdr,
+        decodable,
+        coded_width: width,
+        coded_height: height,
+        par_num: 1,
+        par_den: 1,
+        interlaced: false,
+    }
 }
 
 fn hdr_of(w: u32, h: u32, colr: Option<Codes>) -> bool {
@@ -729,6 +854,22 @@ fn open_mxf(src: FileSource) -> Result<Clip, VideoError> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn pixel_aspect_and_display_size() {
+        use super::*;
+        assert_eq!(reduce_par(4, 3), Some((4, 3)));
+        assert_eq!(reduce_par(16, 12), Some((4, 3)));
+        assert_eq!(reduce_par(1, 1), None);
+        assert_eq!(reduce_par(0, 3), None);
+        assert_eq!(reduce_par(100, 1), None);
+        assert_eq!(display_size(1440, 1080, (4, 3)), (1920, 1080));
+        assert_eq!(display_size(720, 480, (10, 11)), (720, 528));
+        assert_eq!(display_size(1280, 1080, (3, 2)), (1920, 1080));
+        assert_eq!(display_size(1920, 1080, (1, 1)), (1920, 1080));
+        assert_eq!(display_size(u32::MAX, 1, (8, 1)), (u32::MAX, 1));
+        assert_eq!(display_size(0, 0, (0, 0)), (0, 0));
+    }
+
     use super::*;
 
     #[test]
