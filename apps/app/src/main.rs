@@ -32,10 +32,14 @@ mod hdr_display;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
+#[cfg(any(target_os = "linux", windows))]
+mod screen_icc;
 #[cfg(target_os = "macos")]
 mod screen_profile;
 #[cfg(target_os = "linux")]
 mod screen_profile_linux;
+#[cfg(any(windows, test))]
+mod screen_profile_windows;
 mod video_gpu;
 mod window_gpu;
 
@@ -529,7 +533,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                 .map(|p| vec![p.to_string_lossy().to_string()])
                 .unwrap_or_default()
         })),
-        // macOS and Linux don't colour-manage the window: previews follow the screen's profile (#787)
+        // macOS, Linux and Windows don't colour-manage the window: previews follow the screen's profile (#787)
         #[cfg(target_os = "macos")]
         screen_profile: Some(Box::new(screen_profile::icc)),
         #[cfg(target_os = "linux")]
@@ -537,7 +541,12 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
             let mut reader = screen_profile_linux::ScreenProfile::default();
             Box::new(move || reader.icc())
         }),
-        #[cfg(not(any(target_os = "macos", target_os = "linux")))]
+        #[cfg(windows)]
+        screen_profile: Some({
+            let mut reader = screen_profile_windows::ScreenProfile::default();
+            Box::new(move || reader.icc())
+        }),
+        #[cfg(not(any(target_os = "macos", target_os = "linux", windows)))]
         screen_profile: None,
         pick_display_profile: Some(Box::new(|| {
             let mut d = file_dialog()
