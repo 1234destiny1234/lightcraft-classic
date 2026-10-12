@@ -1067,17 +1067,17 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "immich.resolveConflict", "Resolve Immich Sync Conflict", [], None, "{account?, keep: catalog|immich, ids?: photos, assetId?, field?, sync?: bool, background?: bool} — decide conflicts (default: all); the next sync applies them (sync: run it now) → {decided, sync?}", always, resolve),
         cmd!(query "immich.setSync", "Immich Sync Settings", [], None, "{account?, config: {rules?: {rating|favorite|archived|description|keywords|location|captured: {direction: twoWay|toImmich|fromImmich|off, policy: catalog|immich|newest|ask}}, favorite?: pick|fiveStars, description?: caption|title, intervalMinutes?, onPublish?, pushPeople?, albums?: {direction, policy} (collections ↔ albums, immich.syncAlbums; default off = only albums linked by hand, policy ask)}} → {config}", always, set_config),
         cmd!(query "immich.resolveDeletion", "Resolve Immich Deletion", [], None, "{account?, assets?: [asset ids] (default all queued), action: apply|keep} — apply: a photo whose asset is in Immich's trash goes to Recently Deleted, an asset whose photo was deleted goes to Immich's trash (never a hard delete); keep: dismiss → {resolved, failed}", always, resolve_deletion),
-        cmd!(query "immich.importPeople", "Import People from Immich", ["Library", "Immich"], None, "{account?, ids?: photos (default all linked), includeHidden?: bool} — read Immich's faces and people into the photos' face regions, marked from Immich (unconfirmed ones are replaced on the next import; regions the photo had are kept) → {photos, added, removed, skipped, more, people: [{id, name, birthDate, hidden}]}", always, import_people),
+        cmd!(query "immich.importPeople", "Import People from Immich", [], None, "{account?, ids?: photos (default all linked), includeHidden?: bool} — read Immich's faces and people into the photos' face regions, marked from Immich (unconfirmed ones are replaced on the next import; regions the photo had are kept) → {photos, added, removed, skipped, more, people: [{id, name, birthDate, hidden}]}", always, import_people),
         cmd!(
             "immich.confirmFaces",
             "Confirm Faces from Immich",
-            ["Library", "Immich"],
+            [],
             None,
             "{ids?} — keep the Immich face regions of the photos (default: selection) as confirmed → {confirmed}",
             always,
             confirm_faces
         ),
-        cmd!(query "immich.pushPeople", "Send Names to Immich", ["Library", "Immich"], None, "{account?, merge?: bool, dryRun?: bool} — rename Immich people to the names given to their faces in the app; with merge, people that now share a name are merged in Immich → {renames, merges, ok?}", always, push_people),
+        cmd!(query "immich.pushPeople", "Send Names to Immich", [], None, "{account?, merge?: bool, dryRun?: bool} — rename Immich people to the names given to their faces in the app; with merge, people that now share a name are merged in Immich → {renames, merges, ok?}", always, push_people),
         cmd!(query "immich.smartSearch", "Immich Smart Search", [], None, "{account?, query, mode?: smart|ocr|description|place, size?, page?, show?: bool — show the results as a temporary collection, saveAs?: album name} — natural-language (CLIP) or metadata search on the server, mapped to linked photos → {photos, unmatched, total, nextPage, shown?, album?}", always, smart_search),
     ]
 }

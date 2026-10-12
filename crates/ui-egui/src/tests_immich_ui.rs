@@ -112,17 +112,12 @@ fn immich_commands_are_in_library_immich() {
             _ => None,
         })
         .collect();
-    for id in [
-        "immich.link",
-        "immich.confirmLink",
-        "immich.unlink",
-        "immich.fetchOriginal",
-        "immich.writeSidecars",
-        "immich.scanLibraries",
-        "immich.connections",
-    ] {
-        assert!(ids.contains(&id), "{id} in {ids:?}");
-    }
+    // kept short: Immich Settings plus the everyday actions; the rest lives in the settings panel
+    let mut want = vec!["immich.connections", "immich.link", "immich.sync", "immich.fetchOriginal"];
+    let mut got = ids.clone();
+    want.sort_unstable();
+    got.sort_unstable();
+    assert_eq!(got, want);
 }
 
 /// A tiny Immich server: version, user, key permissions (`perms`); everything else is empty.

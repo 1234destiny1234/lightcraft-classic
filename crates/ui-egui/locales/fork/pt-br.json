@@ -208,7 +208,7 @@
   "Lock Key File": "Travar arquivo de chaves",
   "Choose Key Storage": "Escolher armazenamento de chaves",
   "Unlock System Keychain": "Destravar chaveiro do sistema",
-  "Immich Connections…": "Conexões do Immich…",
+  "Immich Settings…": "Configurações do Immich…",
   "Map": "Mapa",
   "Open in Immich": "Abrir no Immich",
   "Imported {} from Immich ({} already in the library, {} failed)": "{} importadas do Immich ({} já na biblioteca, {} com falha)",

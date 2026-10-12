@@ -208,7 +208,7 @@
   "Lock Key File": "キーファイルをロック",
   "Choose Key Storage": "キーの保管場所を選択",
   "Unlock System Keychain": "システムのキーチェーンのロックを解除",
-  "Immich Connections…": "Immich 接続…",
+  "Immich Settings…": "Immich 設定…",
   "Map": "マップ",
   "Open in Immich": "Immich で開く",
   "Imported {} from Immich ({} already in the library, {} failed)": "Immich から {} 枚を読み込みました（{} 枚は既にライブラリ内、{} 枚は失敗）",

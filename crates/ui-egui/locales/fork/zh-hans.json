@@ -206,7 +206,7 @@
   "Lock Key File": "锁定密钥文件",
   "Choose Key Storage": "选择密钥存储位置",
   "Unlock System Keychain": "解锁系统钥匙串",
-  "Immich Connections…": "Immich 连接…",
+  "Immich Settings…": "Immich 设置…",
   "Map": "地图",
   "Open in Immich": "在 Immich 中打开",
   "Imported {} from Immich ({} already in the library, {} failed)": "已从 Immich 导入 {} 张（{} 张已在图库中，{} 张失败）",

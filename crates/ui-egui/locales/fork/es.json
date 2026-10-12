@@ -211,7 +211,7 @@
   "Lock Key File": "Bloquear archivo de claves",
   "Choose Key Storage": "Elegir almacén de claves",
   "Unlock System Keychain": "Desbloquear llavero del sistema",
-  "Immich Connections…": "Conexiones de Immich…",
+  "Immich Settings…": "Ajustes de Immich…",
   "Map": "Mapa",
   "Open in Immich": "Abrir en Immich",
   "Imported {} from Immich ({} already in the library, {} failed)": "{} importadas desde Immich ({} ya en la biblioteca, {} con errores)",

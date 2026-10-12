@@ -390,6 +390,26 @@ fn background_connect_and_check_report_through_the_pump() {
     assert!(!format!("{:?}", s.journal).contains(KEY));
 }
 
+// Regression: a failed check ("no API key is stored") stayed on the account card after the key was
+// connected again, so the panel kept saying the key was missing.
+#[test]
+fn reconnecting_clears_a_stale_failed_check() {
+    let (url, _) = serve(Fake { assets: vec![] });
+    let mut s = session();
+    let r = s.execute("immich.connect", &json!({"url": url, "apiKey": KEY})).unwrap();
+    let account = r["account"].as_str().unwrap().to_string();
+    // lose the key, then check: the failure is remembered for the card
+    s.set_secret_store(Arc::new(MemorySecrets::default()));
+    s.execute("immich.status", &json!({"check": true, "background": true})).unwrap();
+    let st = s.execute("immich.status", &json!({})).unwrap();
+    assert_eq!(st["accounts"][0]["server"]["error"]["kind"], "noKey", "{st}");
+    // connect again: the old failure must not linger
+    s.execute("immich.connect", &json!({"url": url, "apiKey": KEY})).unwrap();
+    let st = s.execute("immich.status", &json!({})).unwrap();
+    assert_eq!(st["accounts"][0]["id"], account.as_str());
+    assert!(st["accounts"][0].get("server").is_none(), "{st}");
+}
+
 // Feature: without a usable keychain, keys live in an encrypted file unlocked once per session.
 #[test]
 fn encrypted_key_file_is_unlocked_once_and_keeps_keys() {

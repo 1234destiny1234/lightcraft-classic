@@ -221,7 +221,7 @@
   "Lock Key File": "Schlüsseldatei sperren",
   "Choose Key Storage": "Schlüsselspeicher wählen",
   "Unlock System Keychain": "Systemschlüsselbund entsperren",
-  "Immich Connections…": "Immich-Verbindungen…",
+  "Immich Settings…": "Immich-Einstellungen…",
   "Map": "Karte",
   "Open in Immich": "In Immich öffnen",
   "Imported {} from Immich ({} already in the library, {} failed)": "{} aus Immich importiert ({} bereits in der Bibliothek, {} fehlgeschlagen)",
