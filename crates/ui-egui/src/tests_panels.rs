@@ -24,6 +24,18 @@ fn demo(size: [f32; 2], ui: serde_json::Value) -> Headless {
     h
 }
 
+/// The fork's Library draws its Classic panels on the left (Navigator, Catalog, Folders,
+/// Collections); upstream's reorderable sections (Albums, Local, By Date, Folders, Keywords under
+/// My Photos) are the left sidebar of Develop. These tests are about those sections, so they run
+/// in Develop: the loupe with the edit panel, whatever view `ui` asks for.
+fn sections_demo(size: [f32; 2], mut ui: serde_json::Value) -> Headless {
+    ui["view"] = json!("detail");
+    ui["right"] = json!("edit");
+    let h = demo(size, ui);
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+    h
+}
+
 fn widget(h: &Headless, id: &str) -> egui::Rect {
     h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("no widget {id}"))
 }
@@ -264,7 +276,7 @@ fn sections_drawn(h: &Headless) -> Vec<String> {
 /// distance below what is above it.
 #[test]
 fn the_sidebar_draws_its_sections_as_arranged() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     // (Local is not on every platform)
     let listed = |drawn: &[String]| drawn.iter().filter(|s| s.as_str() != "local").cloned().collect::<Vec<_>>();
     let usual = sections_drawn(&h);
@@ -323,7 +335,7 @@ fn sidebar_menu_items(h: &Headless) -> Vec<(String, Option<bool>)> {
 /// as it was. The choice is part of the saved UI state.
 #[test]
 fn a_section_is_hidden_and_shown_from_the_view_menu() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let checked = |h: &Headless, id: &str| sidebar_menu_items(h).into_iter().find(|(s, _)| s == id).unwrap_or_else(|| panic!("no {id} item")).1;
     assert_eq!(checked(&h, "byDate"), Some(true));
     assert!(has(&h, "sidebarSection:byDate"));
@@ -350,7 +362,7 @@ fn a_section_is_hidden_and_shown_from_the_view_menu() {
 /// is shown and open again; the item is only offered when there is something to reset.
 #[test]
 fn resetting_the_sidebar_brings_every_section_back() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let reset_enabled = |h: &Headless| {
         let bar = crate::menubar::menu_bar(&h.app);
         let json = serde_json::to_string(&bar).unwrap();
@@ -372,7 +384,7 @@ fn resetting_the_sidebar_brings_every_section_back() {
 /// section is hidden; and the menu of the My Photos title, which is always there, shows it again.
 #[test]
 fn a_section_is_hidden_from_its_header_and_brought_back_from_the_title() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     right_click(&mut h, "sidebarSection:keywords");
     assert!(popup_open(&h), "the header has a menu");
     click(&mut h, "sidebarMenu:hide");
@@ -393,7 +405,7 @@ fn a_section_is_hidden_from_its_header_and_brought_back_from_the_title() {
 /// Given an album is being shown, when Albums is hidden, then the grid goes on showing the album.
 #[test]
 fn hiding_the_section_of_what_is_shown_keeps_showing_it() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let album = h.app.session.execute("album.create", &json!({"name": "Kept"})).unwrap()["id"].as_u64().unwrap();
     exec(&mut h, "library.source", json!({"kind": "album", "id": album}));
     let shown = h.app.session.source;
@@ -406,7 +418,7 @@ fn hiding_the_section_of_what_is_shown_keeps_showing_it() {
 /// and open, so the new album can be seen.
 #[test]
 fn a_new_album_brings_a_hidden_albums_section_back() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     exec(&mut h, "view.sidebarSection", json!({"section": "albums", "show": false, "collapsed": true}));
     exec(&mut h, "dialog.newAlbum", json!({"name": "Fresh"}));
     let r = h.request("ui.dialog.confirm", json!({}), T);
@@ -467,7 +479,7 @@ fn header(h: &Headless, id: &str) -> egui::Rect {
 #[test]
 fn dragging_a_header_moves_its_section() {
     // folders too: photos imported from a folder
-    let mut h = folders_app_sized(&["/pics/trip/a.jpg"], [1400.0, 1400.0]);
+    let mut h = folders_sections_app(&["/pics/trip/a.jpg"], [1400.0, 1400.0]);
     let usual = sections_drawn(&h);
     let with_local = usual.contains(&"local".to_string());
     let listed = |ids: &[&str]| ids.iter().filter(|s| with_local || **s != "local").map(|s| s.to_string()).collect::<Vec<_>>();
@@ -522,7 +534,7 @@ fn dragging_a_header_moves_its_section() {
 /// A drag that ends with Esc, or is released away from the sidebar, moves nothing.
 #[test]
 fn a_section_drag_that_is_given_up_moves_nothing() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let usual = sections_drawn(&h);
     let (from, to) = (header(&h, "keywords").center(), header(&h, "albums").center() - egui::vec2(0.0, 12.0));
     let esc = egui::Event::Key { key: egui::Key::Escape, physical_key: None, pressed: true, repeat: false, modifiers: egui::Modifiers::NONE };
@@ -537,7 +549,7 @@ fn a_section_drag_that_is_given_up_moves_nothing() {
 /// An album dragged to the Albums header is not a section drag, and the other way round.
 #[test]
 fn dragging_a_section_is_not_dragging_an_album() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let (from, to) = (header(&h, "albums").center(), header(&h, "keywords").center() + egui::vec2(0.0, 4.0));
     let before = h.app.session.catalog.revision;
     h.app.synthetic.push(egui::Event::PointerMoved(from));
@@ -574,7 +586,7 @@ fn dragging_a_section_is_not_dragging_an_album() {
 /// (stepping over hidden ones), and the command says when there is nowhere to go.
 #[test]
 fn a_section_moves_up_and_down_from_its_menu() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     // (Local is not on every platform: taken out, so the same sections are there everywhere)
     exec(&mut h, "view.sidebarSection", json!({"section": "local", "show": false}));
     exec(&mut h, "view.sidebarSection", json!({"section": "folders", "show": false}));
@@ -613,7 +625,7 @@ fn a_section_moves_up_and_down_from_its_menu() {
 /// Recently Deleted is one of My Photos' rows: right below the others, above every section.
 #[test]
 fn recently_deleted_is_listed_with_my_photos() {
-    let h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let (picks, deleted) = (widget(&h, "source:picks"), widget(&h, "source:recentlyDeleted"));
     assert_eq!(deleted.top(), picks.bottom(), "no gap: the same group");
     let first = sections_drawn(&h).remove(0);
@@ -692,7 +704,7 @@ fn a_year_opens_into_its_months() {
 /// click on it folds the section and brings the section's own header into view.
 #[test]
 fn the_header_of_a_long_section_stays_in_sight() {
-    let mut h = demo([1400.0, 700.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 700.0], json!({"view": "photoGrid", "leftPanel": true}));
     for i in 0..40 {
         h.app.session.execute("album.create", &json!({"name": format!("Album {i:02}")})).unwrap();
     }
@@ -749,7 +761,7 @@ fn scroll_sidebar(h: &mut Headless, dy: f32) {
 /// and not into the folder hidden under the header.
 #[test]
 fn a_drop_on_the_pinned_header_is_not_a_drop_on_the_row_beneath_it() {
-    let mut h = demo([1400.0, 700.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 700.0], json!({"view": "photoGrid", "leftPanel": true}));
     let make = |h: &mut Headless, params: serde_json::Value| h.app.session.execute("album.create", &params).unwrap()["id"].as_u64().unwrap();
     for i in 0..30 {
         make(&mut h, json!({"name": format!("Folder {i:02}"), "folder": true}));
@@ -782,7 +794,7 @@ fn a_drop_on_the_pinned_header_is_not_a_drop_on_the_row_beneath_it() {
 /// start scrolling until the pointer has left it.
 #[test]
 fn a_section_dragged_to_the_top_edge_scrolls_past_the_pinned_header() {
-    let mut h = demo([1400.0, 700.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 700.0], json!({"view": "photoGrid", "leftPanel": true}));
     for i in 0..40 {
         h.app.session.execute("album.create", &json!({"name": format!("Album {i:02}")})).unwrap();
     }
@@ -852,7 +864,7 @@ fn a_section_dragged_to_the_top_edge_scrolls_past_the_pinned_header() {
 /// into the next section pushes it out and pins that section's header instead.
 #[test]
 fn the_next_section_takes_over_the_pinned_header() {
-    let mut h = demo([1400.0, 500.0], json!({"view": "photoGrid", "leftPanel": true, "sidebar": ["albums", "keywords"]}));
+    let mut h = sections_demo([1400.0, 500.0], json!({"view": "photoGrid", "leftPanel": true, "sidebar": ["albums", "keywords"]}));
     exec(&mut h, "view.sidebarSection", json!({"section": "local", "show": false}));
     exec(&mut h, "view.sidebarSection", json!({"section": "byDate", "show": false}));
     exec(&mut h, "view.sidebarSection", json!({"section": "folders", "show": false}));
@@ -880,7 +892,7 @@ fn the_next_section_takes_over_the_pinned_header() {
 /// and the keyword made there is listed in the section.
 #[test]
 fn the_keywords_header_creates_a_keyword() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     // something picked in the Keyword List: not where a keyword made from the sidebar goes
     h.app.ui.keyword_list_selected = Some("aurora".into());
     let (button, head) = (widget(&h, "icon:keywordNew"), header(&h, "keywords"));
@@ -901,7 +913,7 @@ fn the_keywords_header_creates_a_keyword() {
 /// has its count at the edge.
 #[test]
 fn a_header_button_stays_with_a_folded_header() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     for (section, button) in [("keywords", "icon:keywordNew"), ("albums", "icon:albumNew")] {
         click(&mut h, &format!("sidebarSection:{section}"));
         assert!(h.app.ui.sidebar_section_collapsed(section));
@@ -919,7 +931,7 @@ fn a_header_button_stays_with_a_folded_header() {
 /// A keyword made elsewhere (the Keyword List) leaves the sidebar as it is.
 #[test]
 fn a_keyword_made_from_the_header_is_shown() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     exec(&mut h, "keyword.create", json!({"name": "places", "parent": null}));
     exec(&mut h, "keyword.setDefaultParent", json!({"keyword": "places"}));
     click(&mut h, "sidebarSection:keywords");
@@ -946,7 +958,7 @@ fn a_keyword_made_from_the_header_is_shown() {
 /// A press on a header's button that turns into a drag is not a drag of the section.
 #[test]
 fn dragging_from_a_header_button_does_not_drag_the_section() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     for button in ["icon:keywordNew", "icon:albumNew"] {
         let from = widget(&h, button).center();
         h.app.synthetic.push(egui::Event::PointerMoved(from));
@@ -979,7 +991,7 @@ fn dragging_from_a_header_button_does_not_drag_the_section() {
 /// doesn't need to.
 #[test]
 fn a_folded_section_says_how_much_it_holds() {
-    let mut h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let mut h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     assert!(!has(&h, "sidebarSectionCount:byDate"));
     click(&mut h, "sidebarSection:byDate");
     assert!(has(&h, "sidebarSectionCount:byDate"));
@@ -994,7 +1006,7 @@ fn a_folded_section_says_how_much_it_holds() {
 /// A section's chevron is in the same column as the triangles of the rows below it.
 #[test]
 fn section_chevrons_line_up_with_row_triangles() {
-    let h = demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let h = sections_demo([1400.0, 1400.0], json!({"view": "photoGrid", "leftPanel": true}));
     let triangle = h.app.widgets.iter().find(|(w, _)| w.starts_with("dateToggle:")).map(|(_, r)| *r).expect("a year has a triangle");
     for id in sections_drawn(&h) {
         assert_eq!(widget(&h, &format!("sidebarSectionChevron:{id}")).center().x, triangle.center().x, "{id}");
@@ -1497,6 +1509,17 @@ fn folders_app(paths: &[&str]) -> Headless {
 }
 
 fn folders_app_sized(paths: &[&str], size: [f32; 2]) -> Headless {
+    folders_app_with(paths, size, json!({"view": "photoGrid", "leftPanel": true, "moduleBar": false}))
+}
+
+/// [`folders_app_sized`] in Develop, whose left sidebar is upstream's sections (see [`sections_demo`]).
+fn folders_sections_app(paths: &[&str], size: [f32; 2]) -> Headless {
+    let h = folders_app_with(paths, size, json!({"view": "detail", "right": "edit", "leftPanel": true, "moduleBar": false}));
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+    h
+}
+
+fn folders_app_with(paths: &[&str], size: [f32; 2], ui: serde_json::Value) -> Headless {
     use dac_catalog::{Op, Photo, Source};
     let mut session = dac_engine::Session::new();
     for path in paths {
@@ -1508,7 +1531,7 @@ fn folders_app_sized(paths: &[&str], size: [f32; 2]) -> Headless {
     let mut h = Headless::new(app, size, 1.0);
     h.app.ui.toggle_sidebar_section("panel:navigator");
     // (the module bar off: these layouts were sized before it existed)
-    let r = h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true, "moduleBar": false}), T);
+    let r = h.request("ui.set", ui, T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     h
