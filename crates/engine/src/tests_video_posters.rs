@@ -1,12 +1,9 @@
 //! Video import facts and poster thumbnails (M14.2 import side, M14.3) on synthetic H.264 clips
 //! made in-test (filmcraft-h264enc + Mp4Writer, as `crates/video/tests/clips.rs` does).
 
-use std::io::Cursor;
 use std::path::{Path, PathBuf};
 
 use dac_catalog::{MediaKind, Op};
-use filmcraft_h264enc::{Encoder, EncoderConfig, PacketFormat, RateControl, YuvFrame};
-use filmcraft_isobmff::{AvcConfig, Brand, Mp4Writer, SampleEntry, TrackConfig, WriteSample, WriterOptions};
 use serde_json::json;
 
 use crate::Session;
@@ -18,35 +15,7 @@ fn temp_dir(tag: &str) -> PathBuf {
     d
 }
 
-/// A `w × h` 30 fps clip of `frames` flat grey frames, frame k's luma `luma(k)`, with udta metadata.
-fn write_clip(path: &Path, w: u32, h: u32, frames: usize, luma: impl Fn(usize) -> u8, metadata: &[(&str, &str)]) {
-    let mut cfg = EncoderConfig::new(w, h, 30, 1);
-    cfg.format = PacketFormat::LengthPrefixed;
-    cfg.bframes = 0;
-    cfg.keyint = 250;
-    cfg.scenecut = false;
-    cfg.rate = RateControl::Crf(12.0);
-    cfg.threads = 1;
-    let mut enc = Encoder::new(cfg).unwrap();
-    let (wu, hu) = (w as usize, h as usize);
-    let mut packets = Vec::new();
-    for k in 0..frames {
-        let (y, u, v) = (vec![luma(k); wu * hu], vec![128u8; wu * hu / 4], vec![128u8; wu * hu / 4]);
-        let f = YuvFrame { y: &y, u: &u, v: &v, y_stride: wu, uv_stride: wu / 2 };
-        packets.extend(enc.encode(&f, k as i64).unwrap());
-    }
-    packets.extend(enc.flush());
-    let avcc = AvcConfig::parse(&enc.avcc()).unwrap();
-    let mut opts = WriterOptions::new(Brand::Mp4);
-    opts.metadata = metadata.iter().map(|(k, v)| (k.to_string(), v.to_string())).collect();
-    let mut mux = Mp4Writer::new(Cursor::new(Vec::new()), opts).unwrap();
-    let t = mux.add_track(TrackConfig::new(SampleEntry::avc(avcc, w as u16, h as u16), 30)).unwrap();
-    for (k, p) in packets.iter().enumerate() {
-        let off = (p.pts - k as i64) as i32;
-        mux.write_sample(t, WriteSample { data: &p.data, duration: 1, composition_offset: off, is_sync: p.keyframe }).unwrap();
-    }
-    std::fs::write(path, mux.finish().unwrap().into_inner()).unwrap();
-}
+use dac_video::test_util::write_clip;
 
 fn mean(img: &dac_raster::Rgba8) -> f64 {
     let n = img.data.len().max(1) as f64;

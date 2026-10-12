@@ -362,6 +362,19 @@ fn photo_only_tools_are_disabled_for_a_clip() {
 }
 
 #[test]
+fn photo_only_tools_naming_a_clip_by_ids_are_refused_with_a_still_active() {
+    let dir = tmp("gating-ids");
+    let (mut s, _) = session(&dir);
+    select(&mut s, 901);
+    let e = s.execute("denoise.queue", &json!({"ids": [901, 900]})).unwrap_err().to_string();
+    assert!(e.contains(crate::cmd::NOT_FOR_VIDEO) && e.contains("900"), "{e}");
+    let ok = s.execute("denoise.queue", &json!({"ids": [901]}));
+    assert!(ok.as_ref().err().is_none_or(|e| !e.to_string().contains(crate::cmd::NOT_FOR_VIDEO)), "{ok:?}");
+    // a grading command still takes the clip
+    assert!(s.execute("develop.set", &json!({"ids": [900], "values": {"light.exposure": 0.5}})).is_ok());
+}
+
+#[test]
 fn presets_paste_and_sync_keep_only_video_controls() {
     let dir = tmp("gating-preset");
     let (mut s, _) = session(&dir);

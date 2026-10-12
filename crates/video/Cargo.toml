@@ -38,6 +38,12 @@ filmcraft-aac = { git = "https://github.com/storytold/filmcraft", rev = "156086d
 filmcraft-opus = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 filmcraft-ac3 = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 
+# Dev-only `test_util::write_clip` (synthetic H.264 MP4s for other crates' tests); never on in a product build.
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31", optional = true }
+
+[features]
+test-util = ["dep:filmcraft-h264enc"]
+
 [target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
 filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
 

@@ -3,7 +3,7 @@
 //! ```text
 //! <cli> run [--demo | --library DIR | --connect [ADDR]] [--import PATH]… CMD [key=value…]…
 //! <cli> mcp [--connect [ADDR]] [--demo] [--compact] [FILES/FOLDERS…]
-//! <cli> render <in> -o <out> [--set control=value]… [--settings FILE.json] [--preset ID] [--size N] [--quality Q]
+//! <cli> render <in> -o <out> [--set control=value]… [--settings FILE.json] [--preset ID] [--size N] [--quality Q] [--trim IN,OUT]
 //! <cli> snapshot [--library DIR | --demo] [--script FILE.jsonl] [-o OUT.png] [--size WxH] [--scale S] [FILES…]
 //! <cli> merge hdr|panorama|hdr-panorama [OPTIONS] FILES…
 //! <cli> synth-merge hdr|panorama -o DIR
@@ -60,12 +60,13 @@ USAGE:
         --compact         list only the helper tools (every command stays reachable via run_command)
   {cli} render <IN> -o <OUT> [OPTIONS]
       Develop one file and export it (.jpg, .png, .tif, .webp, .avif, .jxl, .psd or .dng by extension) with the
-      same encoder as the app's Export dialog. Options:
+      same encoder as the app's Export dialog; a video clip exports as a movie (.mp4 / .mov). Options:
         --set CONTROL=VALUE  set a develop slider, repeatable (e.g. --set light.exposure=0.5)
         --settings FILE      merge a partial develop-settings JSON file
         --preset ID          apply a preset (see `commands`/presets.list)
         --size N             long edge in pixels (default: full size, cropped)
         --quality Q          JPEG/AVIF/JPEG XL quality 1..100 (default 92)
+        --trim IN,OUT        video clips: export only IN..OUT seconds (OUT empty = to the end)
         --opt KEY=VALUE      any export option of `app.export`, repeatable (VALUE is JSON or a
                              string), e.g. --opt colorSpace=displayP3 --opt bitDepth=16
                              --opt percent=50 --opt shortEdge=1080 --opt ppi=300
@@ -711,9 +712,21 @@ fn render(args: &[String]) -> Result<(), String> {
     let mut size: Option<u64> = None;
     let mut quality = 92u8;
     let mut opts = serde_json::Map::new();
+    let mut trim: Option<Value> = None;
     let mut i = 0;
     while i < args.len() {
         match args[i].as_str() {
+            "--trim" => {
+                let v = take_value(args, &mut i, "--trim")?;
+                let (a, b) = v.split_once(',').ok_or_else(|| format!("--trim expects IN,OUT seconds (OUT may be empty = end), got `{v}`"))?;
+                let num =
+                    |x: &str| x.trim().parse::<f64>().ok().filter(|t| t.is_finite()).ok_or_else(|| format!("--trim: `{x}` is not a time in seconds"));
+                let mut t = json!({"in": num(a)?});
+                if !b.trim().is_empty() {
+                    t["out"] = json!(num(b)?);
+                }
+                trim = Some(t);
+            }
             "-o" | "--output" => output = Some(take_value(args, &mut i, "-o")?.to_string()),
             "--set" => {
                 let kv = take_value(args, &mut i, "--set")?;
@@ -756,6 +769,9 @@ fn render(args: &[String]) -> Result<(), String> {
     }
     if !values.is_empty() {
         run(&mut s, "develop.set", json!({"values": values}))?;
+    }
+    if let Some(t) = trim {
+        run(&mut s, "video.setTrim", t).map_err(|e| format!("--trim: {e}"))?;
     }
     use dac_engine::export::{ExportFormat, ExportOptions, export_photo};
     let mut p = json!({"quality": quality});
