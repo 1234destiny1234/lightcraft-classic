@@ -41,7 +41,8 @@ use lcc_raw::{
 /// 12: validated A7CR distortion, including the lens data stored with each smart preview.
 /// 13: a photo no look fits keeps its camera profile's colour instead of the neutral fallback; a camera profile's
 /// pooled tone curve continues a photo's own past what its JPEG showed; the bundled NIKON D780, D750 and D90 profiles.
-pub const LOOK_VERSION: u32 = 13;
+/// 14: DNG tone fitting uses a lens-corrected proxy when the file carries lens opcodes (upstream #1545).
+pub const LOOK_VERSION: u32 = 14;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CameraLook {
@@ -1271,7 +1272,10 @@ fn into_lens_geometry(img: &Rgb32f, raw: &RawImage, k: usize, lens: &LensGeometr
 fn sensor_proxy(raw: &RawImage, k: usize, edge: usize) -> Option<Rgb32f> {
     Some(match raw.develop_binned(k, SENSOR_CLIP).ok()? {
         Some(sensor) => sensor,
-        None if raw.cpp == 3 && raw.cfa.is_none() => fit(&raw.develop(lcc_raw::Method::Bilinear).ok()?, edge, edge, Filter::Box),
+        // Lens opcodes cannot be applied to a binned mosaic: they are defined at full resolution.
+        None if (raw.cpp == 3 && raw.cfa.is_none()) || (raw.format == RawFormat::Dng && !raw.opcodes.list3.is_empty()) => {
+            fit(&raw.develop(lcc_raw::Method::Bilinear).ok()?, edge, edge, Filter::Box)
+        }
         None => return None,
     })
 }
@@ -4399,6 +4403,21 @@ mod tests {
         plain.data.fill([0.2; 3]);
         correct_vignetting(&mut plain, None, lcc_geom::Orientation::Normal);
         assert!(plain.data.iter().all(|p| *p == [0.2; 3]));
+    }
+
+    /// The DNG fit's proxy carries the file's lens opcodes, applied once (this fork bins them with the
+    /// mosaic; a file whose opcodes cannot be binned falls back to a full-resolution development).
+    #[test]
+    fn dng_sensor_proxy_applies_lens_opcodes_once() {
+        use lcc_raw::Opcode;
+        let bytes = crate::tests_xmp::synthetic_dng_with(None, Default::default());
+        let mut raw = lcc_raw::decode(&bytes).unwrap();
+        raw.data = lcc_raw::RawData::U16(vec![4000; raw.width * raw.height]);
+        raw.opcodes.list3 = vec![Opcode::FixVignetteRadial { k: [1.0, 0.0, 0.0, 0.0, 0.0], center: [0.5, 0.5] }];
+        let proxy = sensor_proxy(&raw, 2, 32).expect("a corrected proxy");
+        let center = proxy.data[(proxy.height / 2) * proxy.width + proxy.width / 2][1];
+        let corner = proxy.data[0][1];
+        assert!((1.6..2.1).contains(&(corner / center)), "one vignetting gain, not zero or two: {corner} / {center}");
     }
 
     /// Which DNGs get a tone fitted to their camera JPEG: a colour matrix, a tone curve that is absent or the
