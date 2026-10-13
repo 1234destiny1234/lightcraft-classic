@@ -579,7 +579,7 @@ visible menu bar yet: the menu model is only exposed through the control channel
 | MENU-FILE-EXPORTPREV | Export with Previous | P0 | ✅ | `cmd:app.exportPrevious` | ⌥⇧⌘E |
 | MENU-FILE-EXPORTPRESETS | Export preset submenu | P0 | ✅ | `cmd:app.export` (`preset`), `crates/ui-egui/src/menubar.rs` (Export with Preset) | built-ins, then user presets, then Custom… (the dialog); exports to the last folder |
 | MENU-FILE-SHARE | Share / get link / invite | OOS | 🚫 | | |
-| MENU-FILE-PHOTOSHOP | Edit in external editor | P2 | ✅ | `cmd:photo.editInExternal` | Photo ▸ Edit In ▸ Edit in PhotoCraft / Edit in Other Editor, and Edit In on a photo's right-click menu |
+| MENU-FILE-PHOTOSHOP | Edit in external editor | P2 | ✅ | `cmd:photo.editInExternal` | Photo ▸ Edit In ▸ Edit in PhotoCraft / Edit in Other Editor, and Edit In on a photo's right-click menu. Every failure (editor missing, copy not written, editor wouldn't start) shows a toast from any entry point; PhotoCraft is found on macOS in /Applications, ~/Applications or by Spotlight (bundle id / name) and `open`'s exit status is checked; on Linux also through a desktop entry whose Exec is a name on the PATH, or a `*PhotoCraft*.AppImage` in ~/Applications or ~/.local/bin |
 | MENU-FILE-SHOWFINDER | Show in Finder | P0 | ✅ | `cmd:app.showInFinder` | ⌘R; Explorer on Windows, the folder on Linux; disabled for demo scenes and on the web |
 | MENU-FILE-OFFLINE | Store album locally | P2 | 🚫 | | not applicable: local-first |
 | MENU-FILE-CLOSE | Close Window | P1 | ✅ | `apps/app/src/native_menu.rs` | the system's Close Window item at the end of File (⌘W) |
