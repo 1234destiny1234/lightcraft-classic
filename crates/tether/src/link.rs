@@ -22,6 +22,9 @@ struct Link {
     downloaded: usize,
     /// The simulated camera (to press its shutter from tests and the demo).
     sim: Option<SimCamera>,
+    /// The folder this camera's shots download into (set by the session that connected it):
+    /// a scan of any other folder leaves the camera's events alone.
+    folder: Option<std::path::PathBuf>,
 }
 
 static LINK: Mutex<Option<Link>> = Mutex::new(None);
@@ -76,7 +79,7 @@ pub fn connect(device: &str, delete_from_card: bool, make: Option<crate::ptp::si
         return Err(PtpError::Unsupported(format!("unknown device `{device}` (sim, usb, usb:<bus>:<addr>, ptpip:<host>)")));
     };
     let mut g = link();
-    *g = Some(Link { camera, id: device.to_string(), delete_from_card, downloaded: 0, sim });
+    *g = Some(Link { camera, id: device.to_string(), delete_from_card, downloaded: 0, sim, folder: None });
     drop(g);
     Ok(status())
 }
@@ -89,6 +92,14 @@ pub fn disconnect() {
 
 pub fn connected() -> bool {
     link().is_some()
+}
+
+/// Where the connected camera's shots download: [`poll`] of any other folder (another
+/// session's studio capture) does nothing.
+pub fn set_folder(dir: &Path) {
+    if let Some(l) = link().as_mut() {
+        l.folder = Some(dir.to_path_buf());
+    }
 }
 
 pub fn set_delete_from_card(on: bool) {
@@ -169,6 +180,9 @@ fn download_into(l: &mut Link, handles: &[u32], dir: &Path) -> Result<Vec<String
 pub fn poll(dir: &Path) -> Result<Vec<String>, PtpError> {
     let mut g = link();
     let Some(l) = g.as_mut() else { return Ok(Vec::new()) };
+    if l.folder.as_deref().is_some_and(|f| f != dir) {
+        return Ok(Vec::new());
+    }
     let events = l.camera.poll_events(Duration::from_millis(5))?;
     let added: Vec<u32> = events.iter().filter(|e| e.code == crate::ptp::ev::OBJECT_ADDED).filter_map(|e| e.params.first().copied()).collect();
     download_into(l, &added, dir)
