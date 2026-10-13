@@ -22,7 +22,17 @@ The Linux job in `.github/workflows/ci.yml` runs on:
 - a **GitHub-hosted runner** for PRs from forks, which never run on the self-hosted machine. Outside
   contributors' workflow runs also need a maintainer's approval first.
 
-macOS, Windows, FreeBSD and the other workflows stay on GitHub-hosted runners and don't block merging.
+The Windows "clippy + test" job runs the same way on a self-hosted Windows runner (labels `self-hosted,
+windows, x64, lcc`). macOS (until its runner is set up), FreeBSD and the other workflows stay on
+GitHub-hosted runners. Only the Linux check blocks merging.
+
+### Windows runner notes
+
+The runner runs as a service under NETWORK SERVICE, so Rust is installed machine-wide
+(`RUSTUP_HOME=C:\rust\rustup`, `CARGO_HOME=C:\rust\cargo`, with `C:\rust\cargo\bin` on the machine
+`Path`) and NETWORK SERVICE may modify `C:\rust`. The runner's `.env` file sets those two variables and
+`CARGO_TARGET_DIR=C:\lcc-ci-target` (the persistent build cache); its `.path` file holds the machine
+`Path`. Visual Studio Build Tools (C++) provide the linker.
 
 ### Setting up the runner machine
 
