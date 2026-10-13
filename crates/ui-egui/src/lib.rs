@@ -117,6 +117,8 @@ mod tests_keyword_list;
 #[cfg(test)]
 mod tests_keyword_set;
 #[cfg(test)]
+mod tests_keyword_sidebar;
+#[cfg(test)]
 mod tests_keywording;
 #[cfg(test)]
 mod tests_labels;
@@ -154,6 +156,8 @@ mod tests_scroll;
 mod tests_switch_library;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(test)]
+mod tests_temp_slider;
 #[cfg(test)]
 mod tests_titlebar;
 #[cfg(test)]
@@ -194,6 +198,8 @@ pub type RevealFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 pub type OpenUrlFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 /// Open a file in an application (`app` = "" for the system's default one).
 pub type OpenWithFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
+/// Open several files with one start of an application (`app` as for [`OpenWithFn`]).
+pub type OpenAllWithFn = Box<dyn FnMut(&[String], &str) -> Result<(), String>>;
 /// The ICC profile of the screen showing the window, as the system colour-manages it (`None`:
 /// not known).
 pub type ScreenProfileFn = Box<dyn FnMut() -> Option<Vec<u8>>>;
@@ -271,6 +277,9 @@ pub struct Services {
     pub open_url: Option<OpenUrlFn>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
+    /// Open several files with one start of the editor (Open Original; desktop only): an editor
+    /// that keeps one window takes them all. None = [`Services::open_with`] for each.
+    pub open_all_with: Option<OpenAllWithFn>,
     /// Checked before Edit In renders a copy, so a missing editor leaves no copy behind (none =
     /// assume it can).
     pub check_editor: Option<CheckEditorFn>,
@@ -441,6 +450,9 @@ pub struct LccApp {
     preview_window: Option<bool>,
     /// The GPU preference last applied (`app.gpu`), to apply Settings changes once.
     gpu_applied: Option<bool>,
+    /// Say once, when the GPU device has been tried, that no graphics processor was found
+    /// ([`panels::notices::gpu_notice`]). The desktop app sets it; headless sessions and tests don't.
+    pub gpu_notice: bool,
     /// The memory budget setting last applied (MB, 0 = automatic).
     memory_applied: Option<u32>,
     /// The display profile setting last applied (`app.displayProfile`).
@@ -544,6 +556,7 @@ impl LccApp {
             window_is_fullscreen: false,
             preview_window: None,
             gpu_applied: None,
+            gpu_notice: false,
             memory_applied: None,
             display_applied: None,
             display_error: None,
@@ -884,6 +897,11 @@ impl LccApp {
     fn drain_control(&mut self, ctx: &egui::Context) {
         let Some(rx) = self.control_rx.take() else { return };
         while let Ok(req) = rx.try_recv() {
+            // a request its sender gave up on (the window drew nothing for a while) is not run
+            // late: it would happen twice once the sender retries (issue #718)
+            if !req.take() {
+                continue;
+            }
             let reply = req.reply.clone();
             match control::handle(self, ctx, &req) {
                 control::Outcome::Done(v) => {

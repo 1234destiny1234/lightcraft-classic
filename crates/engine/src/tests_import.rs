@@ -312,6 +312,27 @@ fn recently_added_covers_recent_imports_newest_first() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+#[test]
+fn recently_added_keeps_an_import_batch_in_file_order() {
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
+    let mut s = Session::new();
+    // one import batch: one `imported` string, ids running opposite to the names
+    let mut by_name = Vec::new();
+    for (n, name) in ["IMG_0001.png", "IMG_0002.png", "IMG_0003.png", "IMG_0004.png"].iter().enumerate() {
+        let id = PhotoId(5000 - n as u64);
+        let p = Photo::new(id, Source::File { path: name.to_string() }, name, "PNG", 16, 12, "2026-09-30T09:00:00");
+        s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        by_name.push(name.to_string());
+    }
+    s.clock = Box::new(|| "2026-10-01T09:00:00".to_string());
+    for ascending in [true, false] {
+        s.execute("library.sort", &serde_json::json!({"key": "captureDate", "ascending": ascending})).unwrap();
+        s.execute("library.source", &serde_json::json!({"kind": "recentlyAdded"})).unwrap();
+        let names: Vec<String> = s.visible_cloned().iter().map(|id| s.catalog.photo(*id).unwrap().file_name.clone()).collect();
+        assert_eq!(names, by_name, "ascending: {ascending}");
+    }
+}
+
 /// Copy imports: a destination folder, flat / by-month folders, renamed copies (numbered in
 /// import order), and a metadata preset on every photo.
 #[test]
@@ -563,6 +584,14 @@ fn cube_luts_become_profiles() {
     assert_eq!(s.profile_info(&id), Some(("Warm Test", "Film Looks")));
     s.execute("profile.favorite", &json!({"id": id})).unwrap();
     assert!(s.profile_favorites.contains(&id));
+    // `profiles.list` lists it next to the built-in profiles (#618)
+    let listed = |s: &mut Session| {
+        let list = s.execute("profiles.list", &json!({})).unwrap();
+        let list = list.as_array().unwrap();
+        assert!(list.iter().any(|p| p["id"] == "lc.color"), "built-in profiles stay listed");
+        list.iter().find(|p| p["id"] == id.as_str()).cloned()
+    };
+    assert_eq!(listed(&mut s), Some(json!({"id": id, "name": "Warm Test", "group": "Film Looks", "favorite": true, "imported": true})));
     // the library keeps it
     drop(s);
     lcc_pipeline::lut::unregister(&id);
@@ -572,8 +601,10 @@ fn cube_luts_become_profiles() {
     assert!(s.profile_favorites.contains(&id), "imported LUT favorite survives reopen");
     assert_eq!(s.profile_info(&id), Some(("Warm Test", "Film Looks")));
     assert!(lcc_pipeline::lut::get(&id).is_some(), "registered again on open");
+    assert!(listed(&mut s).is_some_and(|p| p["favorite"] == true), "listed after reopen");
     s.execute("profile.deleteImported", &json!({"id": id})).unwrap();
     assert!(lcc_pipeline::lut::get(&id).is_none());
+    assert_eq!(listed(&mut s), None, "a deleted profile is no longer listed");
     let _ = std::fs::remove_dir_all(&src);
     let _ = std::fs::remove_dir_all(&lib);
 }
@@ -1402,14 +1433,20 @@ fn smart_preview_look_marker_is_read_safely() {
     let dir = temp_dir("smartlook-marker");
     assert!(!crate::smart::look_checked(&dir), "no marker");
     let cur = crate::camera_preview::LOOK_VERSION;
+    let enc = crate::smart::ENCODE_VERSION;
     for (text, checked) in [
         (String::new(), false),
         ("banana".into(), false),
         ("-1".into(), false),
         (format!("{}", cur.saturating_sub(1)), false),
         ("9".repeat(200), false),
-        (format!("{cur}\n"), true),
-        (format!(" {}\n", cur + 1), true),
+        // Written before the encode version was recorded: only says the look was checked, so the
+        // folder is scanned once more and the old-encoding proxies are rebuilt.
+        (format!("{cur}\n"), false),
+        (format!("{cur} {}\n", enc.saturating_sub(1)), false),
+        (format!("{cur} banana\n"), false),
+        (format!("{cur} {enc}\n"), true),
+        (format!(" {} {}\n", cur + 1, enc + 1), true),
     ] {
         std::fs::write(dir.join("look-version"), &text).unwrap();
         assert_eq!(crate::smart::look_checked(&dir), checked, "{text:?}");
