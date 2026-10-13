@@ -571,7 +571,7 @@ mod tests {
         // quadratic took minutes here even in release; linear is well under a second
         assert!(started.elapsed() < std::time::Duration::from_secs(90), "{:?}", started.elapsed());
         // Read Metadata from File over all of them works the sidecar owners out once too
-        session.selection.ids = ids.iter().copied().collect();
+        session.selection.ids = ids.to_vec();
         let started = std::time::Instant::now();
         let read =
             session.execute("photo.readMetadataFromFile", &serde_json::json!({ "ids": ids.iter().map(|id| id.0).collect::<Vec<_>>() })).unwrap();
