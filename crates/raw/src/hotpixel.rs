@@ -161,7 +161,7 @@ impl RawImage {
             let mut buf = Vec::with_capacity(8);
             let n_cand = candidates.len();
             let kept: Vec<_> = candidates.into_iter().filter(|&(x, y, _)| !lit_around(&v, x, y, black, noise, &mut buf)).collect();
-            if std::env::var_os("LIGHTCRAFT_PROFILE").is_some() {
+            if lcc_brand::env_is_set("PROFILE") {
                 eprintln!(
                     "  hot pixels: noise σ² = {:.3}·L + {:.1} (σ at 0: {:.1}, at 1 %: {:.1}), {n_cand} candidates, {} real light",
                     noise.a,
