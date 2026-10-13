@@ -1213,5 +1213,13 @@
   "Stop Using as Target Collection": "Ne plus utiliser comme collection cible",
   "No collections yet": "Aucune collection pour l’instant",
   "Sort Collections A–Z": "Trier les collections de A à Z",
-  "Tone": "Tonalité"
+  "Tone": "Tonalité",
+  "Empty": "Vider",
+  "Duplicates": "Doublons",
+  "Don't Import Suspected Duplicates": "Ne pas importer les doublons potentiels",
+  "Will be copied": "Sera importé en copie",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Leurs réglages, mots-clés et appartenances aux collections sont supprimés ; les fichiers sur le disque sont conservés.",
+  "Include selected photos": "Inclure les photos sélectionnées",
+  "Adding photos…": "Ajout des photos…",
+  "Reading photos…": "Lecture des photos…"
 }

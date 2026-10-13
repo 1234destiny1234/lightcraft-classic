@@ -65,5 +65,5 @@
   "{done} of {total} ({percent} %)": "{done} von {total} ({percent} %)",
   "{done} downloaded": "{done} heruntergeladen",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} ist heruntergeladen und geprüft; installieren Sie es, um zu aktualisieren (die App startet neu).",
-  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Farbraum: Rec. 2020 {curve} (HDR-AVIF)"
+  "Remove {what} from the library for good?": "{what} endgültig aus der Bibliothek entfernen?"
 }

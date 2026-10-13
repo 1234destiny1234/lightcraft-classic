@@ -600,6 +600,36 @@ fn sil_workflow() {
         }
     }
 
+    // --- Recently Deleted: a re-import restores a deleted photo; emptying removes only the trash
+    let live = |s: &mut Sil| {
+        let trashed = s.deleted_ids();
+        s.ids().into_iter().filter(|i| !trashed.contains(i)).collect::<Vec<u64>>()
+    };
+    let before = live(&mut s);
+    // two photos of the shoot itself (not copies or versions made above)
+    let picked: Vec<u64> = ids[3..].iter().copied().filter(|i| before.contains(i)).take(2).collect();
+    if let [a, b] = picked[..] {
+        s.ok("photo.delete", json!({"ids": [a, b]}));
+        let r = s.ok("library.import", json!({"paths": [dir.to_string_lossy()], "mode": "add"}));
+        s.activity_drains();
+        let restored = r["restored"].as_array().map(|v| v.iter().filter_map(Value::as_u64).collect::<Vec<_>>()).unwrap_or_default();
+        s.check(restored.contains(&a) && restored.contains(&b), "a re-import did not restore the deleted photos", &r.to_string());
+        let now = live(&mut s);
+        s.check(now == before, "a re-import of deleted photos added or lost photos", &format!("{now:?} vs {before:?}"));
+        s.ok("photo.delete", json!({"ids": [a]}));
+        let gone = s.deleted_ids();
+        let r = s.ok("library.emptyRecentlyDeleted", json!({}));
+        s.check(r["deleted"].as_u64() == Some(gone.len() as u64), "Empty Recently Deleted removed the wrong number", &r.to_string());
+        let left = s.deleted_ids();
+        s.check(left.is_empty(), "photos left in Recently Deleted", &format!("{left:?}"));
+        let now = live(&mut s);
+        let expect: Vec<u64> = before.iter().copied().filter(|i| *i != a).collect();
+        s.check(now == expect, "emptying removed live photos", &format!("{now:?} vs {expect:?}"));
+        let files = std::fs::read_dir(&dir).map(|d| d.count()).unwrap_or(0);
+        s.check(files >= n, "emptying deleted files on disk", &format!("{files} of {n}"));
+        s.consistent();
+    }
+
     // --- quit and reopen: everything is still there
     s.consistent();
     s.reopen_keeps_everything();
