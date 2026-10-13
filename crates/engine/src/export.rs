@@ -1635,6 +1635,8 @@ impl Exported {
 /// Output size of photo `p` under `o` (its cropped full size when `o.resize` is `None`).
 pub fn output_size(p: &lcc_catalog::Photo, o: &ExportOptions) -> (usize, usize) {
     let (w, h) = lcc_pipeline::native_output_size(p.width.max(1) as usize, p.height.max(1) as usize, &p.develop);
+    // whole pixels first: a crop's float noise (5999.999… for 6000) must not decide a half-pixel tie
+    let (w, h) = (w.round().max(1.0), h.round().max(1.0));
     match &o.resize {
         Some(r) => r.apply(w, h),
         None => (w as usize, h as usize),

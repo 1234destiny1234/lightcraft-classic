@@ -12,6 +12,7 @@ use crate::LccApp;
 /// The Classic keymap set and keymap files (fork-owned).
 #[path = "keymap_classic.rs"]
 mod classic;
+pub(crate) use classic::tab_bound;
 pub use classic::{CLASSIC, KeymapSet, active_set, choose_set, default_in, export_file, import_file, import_value, keymap_file, set_active};
 
 /// The user's changes to the keymap: command id → shortcut (`""` = no shortcut). Saved with the

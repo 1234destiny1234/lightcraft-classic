@@ -165,11 +165,14 @@ fn screen_reader_increment_moves_a_slider() {
 }
 
 /// The canvas tools' settings (crop angle and offsets, spot size, mask amount) are reachable with
-/// Tab alone, and the arrow keys then adjust them.
+/// Tab alone, and the arrow keys then adjust them. In the Alternative keymap set: the Classic set
+/// gives Tab to Hide/Show Side Panels, as Lightroom does.
 #[test]
 fn canvas_tool_sliders_are_reachable_with_tab() {
     for right in [RightPanel::Crop, RightPanel::Remove] {
         let mut h = harness(ViewMode::Detail, right);
+        h.state_mut().ui.settings.keymap_set = lcc_ui_egui::shortcuts::KeymapSet::Alternative;
+        h.run_steps(2);
         let mut reached = None;
         for _ in 0..300 {
             h.key_press(egui::Key::Tab);

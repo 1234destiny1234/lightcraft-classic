@@ -1707,6 +1707,8 @@ mod tests {
             })
             .collect();
         assert_eq!(h.app.session.add_presets(many).len(), 5000);
+        // groups start folded: unfold them all, so thousands of rows could be built
+        h.app.ui.group_open.extend((0..10).map(|g| (format!("preset:Big {g:02}"), true)));
         h.request("ui.set", json!({"view": "detail"}), t);
         h.request("engine.execute", json!({"command": "panel.presets"}), t);
         h.app.ui.preset_thumbs = true;
@@ -4094,8 +4096,6 @@ mod tests {
         assert!(h.app.ui.settings.confirm_delete);
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(!h.app.ui.settings.confirm_delete);
-        h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
-        assert!(!h.app.ui.settings.confirm_delete, "on by default; the click turns it off");
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(h.app.ui.settings.confirm_delete);
         h.request("ui.clickWidget", json!({"id": "button:settingsStartup-2"}), t);
