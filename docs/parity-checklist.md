@@ -36,7 +36,7 @@ cited here still exists. Formerly docs/parity.md.
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 8 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
 | J. Red eye (EYE) | 2 | 0 | 0 | 0 | — | 1/1 (100%) |
-| K. Masking (MASK) | 13 | 5 | 5 | 0 | 7/8 (88%) | 5/5 (100%) |
+| K. Masking (MASK) | 14 | 5 | 5 | 0 | 7/8 (88%) | 6/6 (100%) |
 | L. Presets (PRE) | 6 | 0 | 1 | 1 | 2/2 (100%) | 2/2 (100%) |
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
 | N. Copy / paste / sync (SYNC) | 6 | 0 | 0 | 0 | 3/3 (100%) | 2/2 (100%) |
@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 102 | 18 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 490 | 57 | 38 | 27 | 194/201 (97%) | 162/176 (92%) |
+| **Total** | 491 | 57 | 38 | 27 | 194/201 (97%) | 163/177 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.6%** of 585 in-scope rows — P0 98.3% of 201 · P1 95.7% of 176 · P2 73.3% of 206.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.7%** of 586 in-scope rows — P0 98.3% of 201 · P1 95.8% of 177 · P2 73.3% of 206.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
