@@ -38,9 +38,14 @@ The runner runs as a service under NETWORK SERVICE, so Rust is installed machine
 (`RUSTUP_HOME=C:\rust\rustup`, `CARGO_HOME=C:\rust\cargo`, with `C:\rust\cargo\bin` on the machine
 `Path`) and NETWORK SERVICE may modify `C:\rust`. The runner's `.env` file sets those two variables and
 `CARGO_TARGET_DIR=C:\lcc-ci-target` (the persistent build cache); its `.path` file holds the machine
-`Path`. Visual Studio Build Tools (C++) provide the linker. The `.path` file puts
-`C:\Program Files\Git\bin` first, so workflow `bash` steps get Git Bash rather than the WSL launcher in
-`System32` (which fails under the service account).
+`Path`. Visual Studio Build Tools (C++) provide the linker. The runner reads `PATH` from `.env` (its
+`.path` file is not what step shells search), which puts `C:\Program Files\Git\bin` first, so workflow
+`bash` steps get Git Bash rather than the WSL launcher in `System32` (which fails under the service
+account). PowerShell 7 (`pwsh`, machine-wide MSI with "add to PATH") is required: actions such as
+`taiki-e/install-action` run their Windows steps with `shell: pwsh`, which the built-in Windows PowerShell
+5.1 doesn't provide. Windows PowerShell's machine execution policy is `RemoteSigned`, so the runner's
+temporary step scripts (`shell: powershell`) may run. After changing `.env`, restart the service
+(`Restart-Service actions.runner.*`).
 
 ### Setting up the runner machine
 
