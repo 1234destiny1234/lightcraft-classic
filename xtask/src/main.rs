@@ -12,6 +12,7 @@ mod ico;
 mod immich;
 mod layers;
 mod parity;
+mod quarantine;
 mod rename;
 mod shortcuts;
 mod stats;
@@ -61,6 +62,8 @@ commands:
   parity [--write]
                   check docs/parity-checklist.md (every cmd:/ctl: id and path it cites exists) and print the
                   Lightroom parity summary; --write refreshes the summary table in the document
+  quarantine check|filter|test [--platform linux|macos|windows]
+                  known-flaky tests (ci/quarantine.toml): validate, print the nextest filter, run the CI tests
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
   web [--serve [port]] [--dev]
                   build the browser app (apps/web) into <target>/web-site/;
@@ -102,6 +105,7 @@ fn main() -> ExitCode {
         Some("wasm") => cmd_wasm(),
         Some("web") => web::run(&rest),
         Some("ci") => cmd_ci(),
+        Some("quarantine") => quarantine::run(&root(), &rest),
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
         Some("upstream-merge") => upstream::merge(&root(), &rest),
         Some("upstream-pr") => upstream::pr(&root(), &rest),
@@ -138,7 +142,7 @@ pub fn cargo() -> Command {
     // Full Windows debuginfo plus one linker per CPU can exhaust RAM before any
     // tests run. Scope these overridable defaults to CI, including parity/WASM
     // subprocesses, without changing ordinary developer builds or GPU coverage.
-    if std::env::args().nth(1).as_deref() == Some("ci") {
+    if matches!(std::env::args().nth(1).as_deref(), Some("ci" | "quarantine")) {
         static JOBS: std::sync::OnceLock<(String, String)> = std::sync::OnceLock::new();
         let (build, threads) = JOBS.get_or_init(|| {
             let ram_mb = available_ram_mb().or_else(|| total_ram_gb().map(|gb| gb.saturating_mul(1024) / 2));
@@ -147,9 +151,12 @@ pub fn cargo() -> Command {
             // wall-clock frame-budget tests flaky on a loaded machine.
             (jobs.to_string(), jobs.min(4).to_string())
         });
-        for (key, value) in
-            [("CARGO_PROFILE_DEV_DEBUG", "line-tables-only"), ("CARGO_BUILD_JOBS", build.as_str()), ("RUST_TEST_THREADS", threads.as_str())]
-        {
+        for (key, value) in [
+            ("CARGO_PROFILE_DEV_DEBUG", "line-tables-only"),
+            ("CARGO_BUILD_JOBS", build.as_str()),
+            ("RUST_TEST_THREADS", threads.as_str()),
+            ("NEXTEST_TEST_THREADS", threads.as_str()),
+        ] {
             if std::env::var_os(key).is_none() {
                 c.env(key, value);
             }
@@ -329,6 +336,7 @@ pub fn cmd_ci() -> Result<(), String> {
             }),
         ),
         ("brand", Box::new(|| brand::check(&root()))),
+        ("quarantine", Box::new(|| quarantine::run(&root(), &["check"]))),
         ("docs", Box::new(|| docs::run(&root(), true))),
         (
             "clippy",
@@ -357,6 +365,11 @@ pub fn cmd_ci() -> Result<(), String> {
         (
             "test",
             Box::new(|| {
+                // on CI (`CI=true`): cargo-nextest with retries and the quarantine (ci/quarantine.toml);
+                // locally: strict `cargo test` unless `XTASK_NEXTEST=1` asks for the CI run
+                if std::env::var("CI").is_ok_and(|v| v == "true") || std::env::var_os("XTASK_NEXTEST").is_some() {
+                    return quarantine::ci_test(&root(), quarantine::host_platform());
+                }
                 let mut c = cargo();
                 c.args(["test", "--workspace"]);
                 run(c, "cargo test --workspace")
