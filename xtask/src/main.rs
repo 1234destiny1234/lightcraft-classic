@@ -35,6 +35,9 @@ commands:
   bench [FILE] [--strict] [--threshold PCT]
                   run the render benchmark, append to target/bench/history.jsonl, compare CPU time with
                   the previous run (default input: corpus/raw/arw-sony-a7m3-compressed.arw)
+  sil [workflow|raw|monkey] [--seed N] [--steps N]
+                  software-in-the-loop: drive the real app headless through user workflows and a seeded
+                  monkey, checking invariants (docs/testing-sil.md)
   bench-catalog [--photos N,N…] [--backend v3|v4] [--dir DIR]
                   catalog scale benchmark: import throughput, snapshot time, then (in a fresh process)
                   open time, peak RSS and filter latency (default 250000,1000000 photos, backend v4)
@@ -97,6 +100,7 @@ fn main() -> ExitCode {
         Some("layers") => cmd_layers(),
         Some("assets") => assets::run(&root()),
         Some("bench") => bench::run(&root(), &rest),
+        Some("sil") => cmd_sil(&rest),
         Some("bench-catalog") => cmd_bench_catalog(&rest),
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
@@ -1520,4 +1524,30 @@ mod corpus_tests {
             assert!(sha256.len() == 64 && sha256.bytes().all(|b| matches!(b, b'0'..=b'9' | b'a'..=b'f')), "{name}: not a lowercase sha256");
         }
     }
+}
+
+/// `cargo xtask sil`: the SIL harness (`apps/cli/tests/sil.rs`, docs/testing-sil.md).
+fn cmd_sil(args: &[&str]) -> Result<(), String> {
+    let mut c = cargo();
+    c.args(["test", "-p", "lcc-cli", "--test", "sil"]);
+    let mut filter = None;
+    let mut i = 0;
+    while i < args.len() {
+        match args[i] {
+            "--seed" | "--steps" => {
+                let v = args.get(i + 1).ok_or(format!("{} needs a value", args[i]))?;
+                c.env(if args[i] == "--seed" { "SIL_SEED" } else { "SIL_STEPS" }, v);
+                i += 1;
+            }
+            s if !s.starts_with('-') => filter = Some(format!("sil_{s}")),
+            other => return Err(format!("sil: unknown option `{other}`")),
+        }
+        i += 1;
+    }
+    if let Some(f) = &filter {
+        c.arg(f);
+    }
+    c.args(["--", "--nocapture"]);
+    let status = c.status().map_err(|e| format!("cargo test: {e}"))?;
+    if status.success() { Ok(()) } else { Err("SIL failed (see the report and replay paths above)".into()) }
 }

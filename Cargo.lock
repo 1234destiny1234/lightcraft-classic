@@ -4503,6 +4503,7 @@ dependencies = [
  "lcc-mcp",
  "lcc-merge",
  "lcc-raster",
+ "lcc-scenes",
  "lcc-sysmem",
  "lcc-ui-egui",
  "lcc-video",
