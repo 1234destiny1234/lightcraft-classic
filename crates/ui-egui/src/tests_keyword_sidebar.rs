@@ -12,7 +12,6 @@ use crate::headless::Headless;
 use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(30);
-const SETTLE: Duration = Duration::from_secs(120);
 
 /// `photos` photos with six keywords each out of `keywords` top-level ones (each with a child).
 fn library(photos: u64, keywords: u64) -> Session {
