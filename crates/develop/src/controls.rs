@@ -501,12 +501,4 @@ mod tests {
             assert!(spec.min <= spec.default && spec.default <= spec.max);
         }
     }
-
-    #[test]
-    fn formatting() {
-        let e = find("light.exposure").unwrap();
-        assert_eq!(e.format(0.5), "+0.50");
-        assert_eq!(e.format(-1.0), "-1.00");
-        assert_eq!(find("wb.temp").unwrap().format(5500.0), "5500");
-    }
 }

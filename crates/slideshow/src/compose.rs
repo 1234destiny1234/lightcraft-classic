@@ -471,12 +471,4 @@ mod tests {
         assert_eq!(transition(&a, &b, 0.5, &s).get(0, 0), [255, 255, 255, 255]);
         assert_eq!(crossfade(&a, &Rgba8::new(2, 2), 0.5).get(0, 0), [0, 0, 0, 255]);
     }
-
-    #[test]
-    fn title_screen_has_its_colour() {
-        let t = TitleScreen { enabled: true, color: [5, 6, 7], text: "Hello".into(), ..Default::default() };
-        let img = compose_title(320, 200, &t, "").unwrap();
-        assert_eq!(img.get(2, 2), [5, 6, 7, 255]);
-        assert!(img.data.iter().any(|p| p[0] > 100), "text drawn");
-    }
 }

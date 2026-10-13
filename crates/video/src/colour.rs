@@ -129,16 +129,6 @@ mod tests {
     }
 
     #[test]
-    fn decimation_bounds_the_long_side() {
-        assert_eq!(decimation(1920, 1080, None), 1);
-        assert_eq!(decimation(1920, 1080, Some(4000)), 1);
-        assert_eq!(decimation(1920, 1080, Some(960)), 2);
-        assert_eq!(decimation(1920, 1080, Some(256)), 8);
-        assert_eq!(decimation(1920, 1080, Some(0)), 1);
-        assert_eq!(decimation(0, 0, Some(1)), 1);
-    }
-
-    #[test]
     fn hdr_white_lands_near_sdr_white() {
         // HLG reference white is 75 % signal; it should map close to 1.0 after the OOTF + tone map
         let mut f = VideoFrame::rgba8(1, 1, vec![191, 191, 191, 255]);

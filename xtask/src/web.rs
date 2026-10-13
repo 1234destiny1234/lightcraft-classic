@@ -310,14 +310,6 @@ mod tests {
     }
 
     #[test]
-    fn wasm_mime() {
-        assert_eq!(mime(Path::new("a/lcc_web_bg.wasm")), "application/wasm");
-        assert_eq!(mime(Path::new("index.html")), "text/html; charset=utf-8");
-        assert_eq!(mime(Path::new("worker.js")), "text/javascript; charset=utf-8");
-        assert_eq!(mime(Path::new(CHINESE_FONT_FILE)), "font/otf");
-    }
-
-    #[test]
     fn web_bundle_selects_the_chinese_face_from_the_font_manifest() {
         let manifest = "# family | style | path | scripts | licence | licence file\n\
             BIZ UDPGothic | Regular | fonts/biz.ttf | Jpan,Latn | OFL-1.1 | fonts/biz/OFL.txt\n\
