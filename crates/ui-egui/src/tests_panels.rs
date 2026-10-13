@@ -40,7 +40,7 @@ fn sections_demo(size: [f32; 2], mut ui: serde_json::Value) -> Headless {
 }
 
 /// Leave only Develop's "My Photos" panel (upstream's sidebar) in the left column.
-fn my_photos_only(h: &mut Headless) {
+pub(crate) fn my_photos_only(h: &mut Headless) {
     use crate::module::PanelId;
     h.app.ui.hidden_panels = vec![PanelId::Navigator, PanelId::Presets, PanelId::Versions, PanelId::History, PanelId::Collections];
     h.settle(SETTLE);
@@ -2311,7 +2311,13 @@ fn an_album_menu_imports_into_that_album() {
     let id_of = |name: &str| h.app.session.catalog.albums().find(|a| a.name == name).map(|a| a.id.0).expect(name);
     let (album, folder) = (id_of("Garden"), id_of("Travel 2026"));
     let right_click = |h: &mut Headless, id: &str| {
-        let row = widget(h, id);
+        // the Classic column can put the Collections panel below the window: scroll the row into view
+        let mut row = widget(h, id);
+        if row.bottom() > 850.0 {
+            scroll_sidebar(h, 500.0 - row.bottom());
+            row = widget(h, id);
+        }
+        assert!(row.bottom() <= 850.0 && row.top() >= 0.0, "{id} on screen: {row:?}");
         let r = h.request("ui.click", json!({"x": row.center().x, "y": row.center().y, "button": "right"}), T);
         assert_eq!(r["ok"], true, "{r}");
         h.step();

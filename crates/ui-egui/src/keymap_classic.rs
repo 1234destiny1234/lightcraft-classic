@@ -186,6 +186,16 @@ pub(super) fn module_keys(module: crate::module::ModuleId) -> &'static [crate::m
     if active_set() == KeymapSet::Classic { crate::module::get(module).keymap() } else { &[] }
 }
 
+/// Whether `keymap` (in the active set) binds Tab with modifiers `m` to a command: only such a
+/// Tab is held back from egui's focus navigation ([`deferred_tabs`]); an unbound one moves the focus.
+pub(crate) fn tab_bound(keymap: &Keymap, m: Modifiers) -> bool {
+    bindable().iter().any(|b| {
+        binding(keymap, b.id, b.default())
+            .and_then(parse)
+            .is_some_and(|(bm, k)| k == Key::Tab && bm.shift == m.shift && bm.alt == m.alt && bm.command == m.command)
+    })
+}
+
 /// Tab presses held back from egui's focus navigation fire the commands bound to them.
 pub(super) fn deferred_tabs(deferred: &mut Vec<Modifiers>, keymap: &Keymap, fire: &mut Vec<String>) {
     for m in std::mem::take(deferred) {
