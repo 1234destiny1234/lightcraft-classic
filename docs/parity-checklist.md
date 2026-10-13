@@ -302,7 +302,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
 | LR-PROF-DROPDOWN | Profile menu | P0 | ✅ | `cmd:develop.profile`, `cmd:profiles.list`, `cmd:profiles.menu`, `cmd:profile.favorite`, `crates/ui-egui/src/panels/edit.rs` | Favorites, Recent (last 5), group submenus, favourite toggle; favourites/recent persist with the library; Amount slider under the menu for non-default profiles; Browse… opens the profile browser; resting on an entry previews it in the loupe |
-| LR-PROF-BROWSER | Profile browser | P1 | ✅ | `cmd:panel.profiles`, `crates/ui-egui/src/panels/profiles.rs`, `crates/engine/src/media.rs` | grid of live variant thumbnails of the current photo per group (Favorites first), star toggles favourites, amount slider, hover = loupe preview (no history), click applies |
+| LR-PROF-BROWSER | Profile browser | P1 | ✅ | `cmd:panel.profiles`, `crates/ui-egui/src/panels/profiles.rs`, `crates/engine/src/media.rs` | grid of live variant thumbnails of the current photo per group (Favorites first), star toggles favourites, amount slider, hover = loupe preview (no history), click applies; groups start folded except the one holding the current profile, and folding is remembered in ui.json (2026-10-13) |
 | LR-PROF-ADOBE | Standard raw looks (own equivalents) | P0 | ✅ | `crates/engine/src/presets.rs` (`PROFILES`), `crates/pipeline/src/profiles.rs` | six own looks: Color, Neutral, Vivid, Landscape, Portrait, Monochrome |
 | LR-PROF-ADAPTIVE | Adaptive profiles | P2 | ⬜ | | |
 | LR-PROF-CAMERA | Camera-matching looks | P2 | ⬜ | | |
@@ -385,7 +385,7 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-PRE-PANEL | Presets panel | P0 | ✅ | `cmd:panel.presets`, `cmd:preset.apply`, `crates/ui-egui/src/panels/presets.rs` | grouped list with amount; resting on a preset previews it in the loupe (no history entry); optional live thumbnails (⋯ → Show Thumbnails) |
+| LR-PRE-PANEL | Presets panel | P0 | ✅ | `cmd:panel.presets`, `cmd:preset.apply`, `crates/ui-egui/src/panels/presets.rs` | grouped list with amount; resting on a preset previews it in the loupe (no history entry); optional live thumbnails (⋯ → Show Thumbnails); groups start folded except the one holding the current preset, and folding is remembered in ui.json (2026-10-13) |
 | LR-PRE-CREATE | Create preset | P0 | ✅ | `cmd:dialog.createPreset`, `cmd:preset.create` (`groups`) | name, group and a checklist of settings groups (crop, masks, remove, red eye off by default; All / None) |
 | LR-PRE-MANAGE | Manage presets | P1 | ✅ | `cmd:preset.delete`, `cmd:preset.favorite`, `cmd:preset.import`, `cmd:preset.export`, `cmd:preset.rename`, `cmd:preset.update`, `cmd:preset.move` | rename, update with current settings, move to a group (existing or new); no hiding of groups |
 | LR-PRE-AMOUNT | Preset amount | P1 | ✅ | `cmd:preset.apply` (`amount` 0–200) | |

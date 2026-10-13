@@ -1516,6 +1516,31 @@ mod tests {
         h.settle(SETTLE);
     }
 
+    /// Profile groups start folded except the one holding the photo's profile; folding or
+    /// unfolding one is kept in the UI state (ui.json), so it survives a restart.
+    #[test]
+    fn profile_groups_start_folded_and_remember_their_state() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail"}), t);
+        h.request("engine.execute", json!({"command": "panel.profiles"}), t);
+        h.settle(SETTLE);
+        let current = h.app.session.active().and_then(|id| h.app.session.develop_of(id)).map(|d| d.profile.id.clone()).unwrap();
+        let cells = |h: &Headless| h.app.widgets.iter().filter(|(w, _)| w.starts_with("profileCell:")).map(|(w, _)| w.clone()).collect::<Vec<_>>();
+        let shown = cells(&h);
+        assert!(shown.iter().any(|w| w.ends_with(&current)), "the current profile's group is open: {shown:?}");
+        let groups: Vec<String> = h.app.widgets.iter().filter(|(w, _)| w.starts_with("profileGroup:")).map(|(w, _)| w.clone()).collect();
+        assert!(groups.len() > 1, "{groups:?}");
+        // a folded group opens on a click, and that is remembered
+        let folded = groups.iter().rfind(|g| !g.starts_with("profileGroup:lut:")).cloned().unwrap();
+        let before = cells(&h).len();
+        h.request("ui.clickWidget", json!({"id": folded}), t);
+        h.settle(SETTLE);
+        assert!(cells(&h).len() > before, "{folded} opened");
+        let saved = serde_json::to_value(&h.app.ui).unwrap();
+        assert_eq!(saved["groupOpen"][folded.replacen("profileGroup:", "profile:", 1)], true, "{}", saved["groupOpen"]);
+    }
+
     /// Presets column: resting on a preset previews it in the loupe without a history entry;
     /// thumbnails are variant renders; Create Preset includes only the checked groups.
     #[test]
@@ -1523,6 +1548,9 @@ mod tests {
         let mut h = demo([1400.0, 900.0]);
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail"}), t);
+        // (preset groups start folded)
+        let groups: Vec<String> = h.app.session.presets.iter().map(|p| format!("preset:{}", p.group)).collect();
+        h.app.ui.group_open.extend(groups.into_iter().map(|g| (g, true)));
         h.request("engine.execute", json!({"command": "panel.presets"}), t);
         h.settle(SETTLE);
         let id = h.app.session.active().unwrap();
