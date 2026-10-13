@@ -77,6 +77,7 @@ Remaining: **11–17 h** (HLG 3–5 h; catalog import depth 8–12 h).
 |---|---|---|
 | 2026-10-10 | major | Created from the code and the installed Lightroom's document types |
 | 2026-10-10 | minor | JPEG XL export (#247): JXL write ✅ (native only), PQ JPEG XL HDR |
+| 2026-10-12 | minor | Render to DNG: "Rendered DNG" export format (linear 16-bit float DNG of the rendered photo) |
 | 2026-10-12 | minor | HEIC / HEIF and AVIF: EXIF and XMP read from the container, without the decoder (#693); statuses unchanged |
 | 2026-10-12 | minor | Lossy DNG export (JPEG tiles, `dngCompression: "lossy"`); PSD write had already landed (#953), so it leaves the remaining hours |
 | 2026-10-13 | minor | Render to DNG: Photo ▸ Render to DNG (rendered DNGs stacked with their originals, on a worker in the desktop app) and the "Rendered DNG" export format |

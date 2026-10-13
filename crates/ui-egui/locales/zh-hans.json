@@ -2009,5 +2009,12 @@
   "Color space: Rec. 2020 PQ (HDR AVIF)": "色彩空间：Rec. 2020 PQ（HDR AVIF）",
   "Color space: Rec. 2020 PQ, 16-bit (HDR PNG)": "色彩空间：Rec. 2020 PQ，16 位（HDR PNG）",
   "Color space: Rec. 2020 PQ (HDR JPEG XL)": "色彩空间：Rec. 2020 PQ（HDR JPEG XL）",
-  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "不读取 PNG cICP 块的查看器会把 PQ 值当作 sRGB 显示：平淡且发灰。要在任何地方都显示正确，请使用 JPEG（增益图）。"
+  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "不读取 PNG cICP 块的查看器会把 PQ 值当作 sRGB 显示：平淡且发灰。要在任何地方都显示正确，请使用 JPEG（增益图）。",
+  "Locate Missing Files…": "定位缺失的文件…",
+  "Show All Mask Overlays": "显示所有蒙版叠加",
+  "Show all overlays": "显示所有叠加",
+  "Reading photos…": "正在读取照片…",
+  "Adding photos…": "正在添加照片…",
+  "No graphics processor found: {app} renders on the CPU, which is much slower. Details in Help → System Info.": "未找到图形处理器：{app} 改用 CPU 渲染，速度会慢很多。详情见“帮助 → 系统信息”。",
+  "On NixOS, start it from `nix develop`.": "在 NixOS 上，请从 `nix develop` 启动。"
 }

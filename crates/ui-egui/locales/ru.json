@@ -2163,5 +2163,12 @@
   "Color space: Rec. 2020 PQ (HDR AVIF)": "Цветовое пространство: Rec. 2020 PQ (HDR AVIF)",
   "Color space: Rec. 2020 PQ, 16-bit (HDR PNG)": "Цветовое пространство: Rec. 2020 PQ, 16 бит (HDR PNG)",
   "Color space: Rec. 2020 PQ (HDR JPEG XL)": "Цветовое пространство: Rec. 2020 PQ (HDR JPEG XL)",
-  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "Программы, не читающие блок cICP в PNG, показывают значения PQ как sRGB: плоско и блекло. Чтобы изображение везде выглядело правильно, используйте JPEG (карта усиления)."
+  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "Программы, не читающие блок cICP в PNG, показывают значения PQ как sRGB: плоско и блекло. Чтобы изображение везде выглядело правильно, используйте JPEG (карта усиления).",
+  "Locate Missing Files…": "Указать отсутствующие файлы…",
+  "Reading photos…": "Чтение фото…",
+  "Adding photos…": "Добавление фото…",
+  "Show All Mask Overlays": "Показать все наложения масок",
+  "Show all overlays": "Показать все наложения",
+  "No graphics processor found: {app} renders on the CPU, which is much slower. Details in Help → System Info.": "Графический процессор не найден: {app} выполняет рендеринг на CPU, а это намного медленнее. Подробности: Справка → Сведения о системе.",
+  "On NixOS, start it from `nix develop`.": "В NixOS запускайте его из `nix develop`."
 }

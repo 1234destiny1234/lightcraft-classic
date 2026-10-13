@@ -299,7 +299,7 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     let active = app.session.selection.active;
     // bring the active photo into view when it changes (keyboard, click, command) or the grid
     // comes back on screen; otherwise the scroll position is the user's
-    let scroll_to: Option<Rect> = if follow_active(ui.ctx(), egui::Id::new("grid-follow-active"), active) {
+    let scroll_to: Option<Rect> = if follow_active(ui.ctx(), egui::Id::new("grid-follow-active"), active, app.session.source) {
         active.and_then(|a| ids.iter().position(|x| *x == a)).and_then(|i| lay.cells.get(i).copied())
     } else {
         None
@@ -368,14 +368,27 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
 /// the strip was not drawn on the previous pass (view switch, panel shown again). Otherwise the
 /// scroll position is the user's: time passing, finished renders, edits to the photo or a released
 /// scroll bar never move it (issue #11).
-pub(crate) fn follow_active(ctx: &egui::Context, key: egui::Id, active: Option<PhotoId>) -> bool {
+pub(crate) fn follow_active(ctx: &egui::Context, key: egui::Id, active: Option<PhotoId>, source: lcc_engine::LibrarySource) -> bool {
     let pass = ctx.cumulative_pass_nr();
-    let last: Option<(Option<PhotoId>, u64)> = ctx.data(|d| d.get_temp(key));
-    ctx.data_mut(|d| d.insert_temp(key, (active, pass)));
+    let last: Option<(Option<PhotoId>, lcc_engine::LibrarySource, u64)> = ctx.data(|d| d.get_temp(key));
+    ctx.data_mut(|d| d.insert_temp(key, (active, source, pass)));
     match last {
-        Some((was, drawn)) => was != active || drawn + 1 < pass,
+        Some((was, where_, drawn)) => follow_changed(was, where_, drawn, active, source, pass),
         None => true,
     }
+}
+
+/// Scroll when the active photo changes, the strip was not drawn last pass, or the same photo
+/// sits in a different library source (another album) (#1142).
+pub(crate) fn follow_changed(
+    was: Option<PhotoId>,
+    where_was: lcc_engine::LibrarySource,
+    drawn: u64,
+    active: Option<PhotoId>,
+    source: lcc_engine::LibrarySource,
+    pass: u64,
+) -> bool {
+    was != active || where_was != source || drawn + 1 < pass
 }
 
 /// Height of a date header row (points).
@@ -556,6 +569,11 @@ fn group_header(app: &mut LccApp, ui: &mut egui::Ui, run: &DateRun, ids: &[Photo
 /// [`lcc_engine::media::Session::embedded_thumb_is_final`]), which for a folder of raws on a
 /// network share is the difference between reading every file whole and reading a preview each.
 pub fn request_thumb(app: &mut LccApp, id: PhotoId, size: usize, priority: u32) {
+    // A slider drag changes the photo every frame: its thumbnail follows once the drag ends, so its
+    // renders (a raw decode the first time) don't compete with the loupe's drafts.
+    if app.session.interaction.as_ref().is_some_and(|i| i.photo == id) && app.renderer.thumb(id).is_some() {
+        return;
+    }
     let bucket = lcc_engine::media::thumb_bucket(size);
     if let Some(photo) = app.session.catalog.photo(id)
         && app.renderer.thumb_current(photo, bucket, priority)
@@ -1099,6 +1117,16 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if ui.button(crate::i18n::tr("Edit in Other Editor")).clicked() {
                 let _ = app.run("photo.editInExternal", json!({}));
             }
+            // the raw itself, unrendered: for a raw developer set as the other editor
+            if ui
+                .add_enabled(
+                    crate::menus::ui_enabled(app, "photo.openOriginalInExternal"),
+                    egui::Button::new(crate::i18n::tr("Open Original in Other Editor (RAW, no copy)")),
+                )
+                .clicked()
+            {
+                let _ = app.run("photo.openOriginalInExternal", json!({}));
+            }
         });
     });
     if ui.button(crate::i18n::tr("Find Similar Photos")).clicked() {
@@ -1127,7 +1155,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     });
     ui.menu_button(crate::i18n::tr("Set Flag"), |ui| {
         for (l, f) in [("Pick", "pick"), ("Reject", "reject"), ("Unflagged", "none")] {
-            if ui.button(l).clicked() {
+            if ui.button(crate::i18n::tr(l)).clicked() {
                 let _ = app.run("photo.flag", json!({"flag": f}));
             }
         }
@@ -1216,7 +1244,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             ("Split Stack", "stack.split", stacked),
             ("Expand/Collapse Stack", "stack.toggle", stacked),
         ] {
-            if ui.add_enabled(on, egui::Button::new(label)).clicked() {
+            if ui.add_enabled(on, egui::Button::new(crate::i18n::tr(label))).clicked() {
                 let _ = app.run(cmd, json!({}));
             }
         }
@@ -1241,7 +1269,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     ui.menu_button(crate::i18n::tr("Photo Merge"), |ui| {
         let n = app.session.targets(&json!({})).len();
         for (id, label) in [("dialog.mergeHdr", "HDR…"), ("dialog.mergePanorama", "Panorama…"), ("dialog.mergeHdrPanorama", "HDR Panorama…")] {
-            if ui.add_enabled(n >= 2, egui::Button::new(label)).clicked() {
+            if ui.add_enabled(n >= 2, egui::Button::new(crate::i18n::tr(label))).clicked() {
                 let _ = app.run(id, json!({}));
             }
         }
@@ -1288,20 +1316,27 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         if ui.button(crate::i18n::tr("Delete Permanently")).clicked() {
             let _ = app.run("photo.deletePermanently", json!({}));
         }
-    } else if {
-        let b = ui.button(crate::i18n::tr("Delete Photo"));
-        register(ui.ctx(), "button:photoMenu-delete", b.rect);
-        b.clicked()
-    } && !crate::menus::confirm_delete(app)
-    {
-        // the same confirmation as the key and the menu bar (#1239)
-        let _ = app.run("photo.delete", json!({}));
+    } else {
+        let delete = ui.button(crate::i18n::tr("Delete Photo"));
+        register(ui.ctx(), "button:contextDeletePhoto", delete.rect);
+        if delete.clicked() {
+            let _ = crate::menubar::run_item(app, "photo.delete", json!({}));
+        }
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_same_photo_in_another_source_scrolls_into_view() {
+        let id = PhotoId(3);
+        let all = lcc_engine::LibrarySource::All;
+        let album = lcc_engine::LibrarySource::Album(lcc_catalog::AlbumId(9));
+        assert!(!follow_changed(Some(id), all, 4, Some(id), all, 5));
+        assert!(follow_changed(Some(id), all, 4, Some(id), album, 5));
+    }
 
     #[test]
     fn ungrouped_justified_rows_fill_the_width() {
@@ -1378,6 +1413,18 @@ mod tests {
                 assert_eq!(got, want, "square {square} {top}..{bottom}");
             }
         }
+    }
+
+    #[test]
+    fn library_context_menu_labels_have_french_translations() {
+        let saved = crate::i18n::language();
+        crate::i18n::set_language(crate::i18n::Locale::Fr);
+        for (label, expected) in
+            [("Pick", "Sélectionnée"), ("Reject", "Rejeter"), ("Group into Stack", "Regrouper en pile"), ("HDR Panorama…", "Panorama HDR…")]
+        {
+            assert_eq!(crate::i18n::tr(label), expected);
+        }
+        crate::i18n::set_language(saved);
     }
 
     #[test]

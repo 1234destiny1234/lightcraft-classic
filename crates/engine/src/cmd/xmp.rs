@@ -58,6 +58,10 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
         s.commit("Read Metadata from File", Op::Batch { ops })?;
         // what was just read is what the catalog holds: in step with the file
         s.record_xmp_stamps(&stamped, false);
+        // Don't auto-write the sidecars just read: that would add our `lc:settings` to one that had
+        // only another app's `crs:` settings, and later reads prefer `lc:settings`, so that app's
+        // next edits would be ignored (issue #934). The next edit, or Save Metadata, writes them.
+        s.skip_auto_write = true;
     }
     let restored = crate::cmd::plugins::restore_fields(s, &fields);
     let mut result = json!({"read": read, "failed": failed});
@@ -119,7 +123,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Read Metadata from File",
             ["Photo"],
             None,
-            "{ids?} — reads each photo's XMP sidecar (or a raw/DNG's embedded XMP): metadata and develop settings, one undo step → {read, failed, warnings?: [{path, code, profile?, mode?, fields?}]}",
+            "{ids?} — reads each photo's XMP sidecar (or a raw/DNG's embedded XMP): metadata and develop settings, one undo step; never writes the sidecar, even with auto-write on → {read, failed, warnings?: [{path, code, profile?, mode?, fields?}]}",
             has_selection,
             read
         ),

@@ -715,6 +715,11 @@ impl Filter {
     }
 }
 
+/// Case-insensitive file name order without allocating (compares per-character lowercase via `char::to_lowercase`).
+pub fn cmp_name(a: &str, b: &str) -> std::cmp::Ordering {
+    a.chars().flat_map(char::to_lowercase).cmp(b.chars().flat_map(char::to_lowercase))
+}
+
 impl Catalog {
     /// Photos matching `filter`, in `sort` order (ties broken by id for stability).
     pub fn query(&self, filter: &Filter, sort: &Sort) -> Vec<PhotoId> {

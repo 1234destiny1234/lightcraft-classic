@@ -1973,5 +1973,12 @@
   "Color space: Rec. 2020 PQ (HDR AVIF)": "カラースペース：Rec. 2020 PQ（HDR AVIF）",
   "Color space: Rec. 2020 PQ, 16-bit (HDR PNG)": "カラースペース：Rec. 2020 PQ、16 ビット（HDR PNG）",
   "Color space: Rec. 2020 PQ (HDR JPEG XL)": "カラースペース：Rec. 2020 PQ（HDR JPEG XL）",
-  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "PNG の cICP チャンクを読まないビューアは PQ の値を sRGB として表示するため、平坦で色あせて見えます。どこでも正しく見せるには JPEG（ゲインマップ）を使ってください。"
+  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "PNG の cICP チャンクを読まないビューアは PQ の値を sRGB として表示するため、平坦で色あせて見えます。どこでも正しく見せるには JPEG（ゲインマップ）を使ってください。",
+  "Locate Missing Files…": "見つからないファイルを指定…",
+  "Show All Mask Overlays": "すべてのマスクオーバーレイを表示",
+  "Show all overlays": "すべてのオーバーレイを表示",
+  "Reading photos…": "写真を確認中…",
+  "Adding photos…": "写真を追加中…",
+  "No graphics processor found: {app} renders on the CPU, which is much slower. Details in Help → System Info.": "グラフィックプロセッサが見つかりません。{app}はCPUで描画するため、かなり遅くなります。詳細は「ヘルプ → システム情報」を参照してください。",
+  "On NixOS, start it from `nix develop`.": "NixOSでは `nix develop` から起動してください。"
 }

@@ -79,6 +79,14 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Gap 10 shrinks: Leica Q3 verified by a recorded check of 38 private DNGs (236 models verified; Leica 14); gap not closed |
+| 2026-10-12 | minor | Camera-look deep shadows follow the JPEG toe (#1307); camera calibration remains partial |
+| 2026-10-12 | minor | Gap 23 (accessibility): the AccessKit tree audit and its fixes landed; what is left is canvas placement by keyboard and a real screen-reader session; 10–20 h → 4–8 h; gap not closed |
+| 2026-10-12 | minor | Gap 22: Linux previews use the display profile from colord |
+| 2026-10-12 | minor | Gap 27: the CPU ↔ GPU equivalence suite passes on an AMD Radeon 8060S (Vulkan, Linux), the first non-Apple GPU verified; 15–30 h → 13–27 h; gap not closed |
+| 2026-10-12 | minor | Gap 25: Render to DNG lands as an export format; lossy DNG and AVIF import remain |
+| 2026-10-12 | minor | Gap 10 shrinks: the Hasselblad Lunar (a Sony NEX-7 ARW under its own Make) decodes and is verified, 236 models (#1275) |
+| 2026-10-12 | minor | Gap 14: HLG AVIF export (`hdrTransfer`) and a tested SDR/HDR display decision |
 | 2026-10-13 | minor | Gap 5: BiRefNet_lite (MIT) adopted for Subject / Background (maintainer decision; plug-in store, signing and Lua of gap 19 on hold): pure-Rust port in `crates/segment`, download on request, used when installed, analysis otherwise |
 | 2026-10-13 | minor | Gap 5: SAM 3 Object / Describe verified with the real checkpoint; local-folder mirrors; vocab / merges pinned |
 | 2026-10-13 | minor | Gap 9 narrowed: `ci.yml` existed but was red; platform test failures fixed (Windows paths, sidecar case spelling, macOS accelerators, GL view formats, file URLs); main runs no longer cancelled; 6–12 h → 2–6 h |

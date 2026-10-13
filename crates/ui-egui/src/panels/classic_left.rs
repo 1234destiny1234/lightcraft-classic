@@ -205,7 +205,7 @@ fn collections_plus(app: &mut LccApp, ui: &mut egui::Ui, ar: Rect, viewport: Rec
     let plus = icon_button(&mut hdr, "albumNew", Icon::Plus, vec2(26.0, 26.0), false, true, "Create Collection");
     egui::Popup::menu(&plus).show(|ui| {
         if ui.button(crate::i18n::tr("Create Collection…")).clicked() {
-            app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: false, parent: None });
+            app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: false, parent: None, include_selected: true });
         }
         if ui.button(crate::i18n::tr("Create Smart Collection…")).clicked() {
             app.ui.dialog = Some(crate::state::Dialog::SmartRules {
@@ -219,7 +219,7 @@ fn collections_plus(app: &mut LccApp, ui: &mut egui::Ui, ar: Rect, viewport: Rec
             app.ui.dialog = Some(crate::state::Dialog::NewSmartAlbum { name: String::new(), parent: None });
         }
         if ui.button(crate::i18n::tr("Create Collection Set…")).clicked() {
-            app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: true, parent: None });
+            app.ui.dialog = Some(crate::state::Dialog::NewAlbum { name: String::new(), folder: true, parent: None, include_selected: false });
         }
         crate::panels::collections::import_item(app, ui, None);
         // only once the albums were put in an order by hand
