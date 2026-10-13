@@ -18,7 +18,10 @@ Every change goes on a branch, opens a PR and is set to auto-merge
 The Linux job in `.github/workflows/ci.yml` runs on:
 
 - a **self-hosted runner** (labels `self-hosted, linux, x64, lcc`) for pushes and for PRs from branches in this
-  repository: its build cache (`~/.cache/lcc-ci-target`) persists between runs, so most runs are incremental;
+  repository: its build cache persists between runs, so most runs are incremental. Each runner instance has
+  its own cache (`CARGO_TARGET_DIR` from the runner's `.env`, else `~/.cache/lcc-ci-target-<runner name>`), so
+  several instances on one machine (`gpu0` and `gpu0-b`) can run jobs at once without fighting over one
+  build directory;
 - a **GitHub-hosted runner** for PRs from forks, which never run on the self-hosted machine. Outside
   contributors' workflow runs also need a maintainer's approval first.
 
