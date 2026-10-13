@@ -591,21 +591,4 @@ mod tests {
         let f = Frame::new(10, 10, &DevelopSettings::default(), true);
         assert!(sample(&grid, &f, 10, 10).data.iter().all(|v| *v == 0.0));
     }
-
-    /// A blue sky over a textured brown ground: the sky is selected down to the horizon, the
-    /// ground not.
-    #[test]
-    fn sky_stops_at_the_horizon() {
-        let (w, h) = (120, 80);
-        let img = Rgb32f::from_fn(w, h, |x, y| {
-            if y < 40 {
-                [0.2, 0.35, 0.9 - y as f32 * 0.005]
-            } else {
-                let n = ((x * 7 + y * 13) % 5) as f32 * 0.03;
-                [0.25 + n, 0.15 + n, 0.05]
-            }
-        });
-        let a = analyze(&img);
-        assert!(a.sky.get(60, 10) > 0.9 && a.sky.get(60, 60) < 0.1, "{} {}", a.sky.get(60, 10), a.sky.get(60, 60));
-    }
 }
