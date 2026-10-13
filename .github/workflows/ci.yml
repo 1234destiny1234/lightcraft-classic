@@ -44,7 +44,9 @@ jobs:
           path: craft-fonts
       - name: Keep the build cache between runs (self-hosted)
         if: runner.environment == 'self-hosted'
-        run: echo "CARGO_TARGET_DIR=$HOME/.cache/lcc-ci-target" >> "$GITHUB_ENV"
+        # One cache per runner instance (several can share a machine and run at once); a runner's
+        # .env may set CARGO_TARGET_DIR itself.
+        run: echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/.cache/lcc-ci-target-$RUNNER_NAME}" >> "$GITHUB_ENV"
       - name: Install system libraries
         if: runner.environment != 'self-hosted'
         run: |
