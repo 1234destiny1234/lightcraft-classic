@@ -31,7 +31,9 @@ env:
 jobs:
   linux:
     name: Linux (cargo xtask ci)
-    runs-on: ubuntu-latest
+    # Our own branches run on the maintainer's self-hosted runner (warm build cache, minutes not an
+    # hour); PRs from forks never touch it and use a GitHub-hosted runner. See docs/ci.md.
+    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON('["self-hosted", "linux", "x64", "lcc"]') }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -40,7 +42,11 @@ jobs:
           repository: storytold/craft-fonts
           ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # same pin as release.yml / freebsd.yml
           path: craft-fonts
+      - name: Keep the build cache between runs (self-hosted)
+        if: runner.environment == 'self-hosted'
+        run: echo "CARGO_TARGET_DIR=$HOME/.cache/lcc-ci-target" >> "$GITHUB_ENV"
       - name: Install system libraries
+        if: runner.environment != 'self-hosted'
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
@@ -50,6 +56,7 @@ jobs:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+        if: runner.environment != 'self-hosted'
         with:
           key: ci-linux
           save-if: ${{ github.ref == 'refs/heads/main' }}

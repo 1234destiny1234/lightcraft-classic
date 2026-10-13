@@ -155,13 +155,21 @@ fn odd_folders_never_fail_the_check() {
     #[cfg(unix)]
     {
         use std::os::unix::ffi::OsStrExt;
-        let bad = root.join(std::ffi::OsStr::from_bytes(b"caf\xe9 Previews.lrdata"));
-        std::fs::create_dir_all(&bad).unwrap();
         std::fs::write(root.join("Cat.lrcat"), b"x").unwrap();
-        assert_eq!(lightroom_catalog_at(&bad), Some(LightroomPlace { catalog: Some(root.join("Cat.lrcat")) }), "non-UTF-8 name");
+        // macOS file systems (APFS, HFS+) refuse names that aren't UTF-8 (EILSEQ): only check
+        // them where the file system takes them
+        let bad = root.join(std::ffi::OsStr::from_bytes(b"caf\xe9 Previews.lrdata"));
         let lr = root.join(std::ffi::OsStr::from_bytes(b"\xff\xfe"));
-        std::fs::create_dir_all(&lr).unwrap();
-        std::fs::write(lr.join(std::ffi::OsStr::from_bytes(b"\xff.lrcat")), b"x").unwrap();
+        let lr = if std::fs::create_dir_all(&bad).is_ok() {
+            assert_eq!(lightroom_catalog_at(&bad), Some(LightroomPlace { catalog: Some(root.join("Cat.lrcat")) }), "non-UTF-8 name");
+            std::fs::create_dir_all(&lr).unwrap();
+            std::fs::write(lr.join(std::ffi::OsStr::from_bytes(b"\xff.lrcat")), b"x").unwrap();
+            lr
+        } else {
+            let lr = root.join("lr");
+            std::fs::create_dir_all(&lr).unwrap();
+            lr
+        };
         std::fs::write(lr.join("b.lrcat"), b"x").unwrap();
         assert_eq!(lightroom_catalog_at(&lr), Some(LightroomPlace { catalog: Some(lr.join("b.lrcat")) }), "non-UTF-8 entries skipped");
         // a symlink to a catalog folder is one too; a dangling one is not

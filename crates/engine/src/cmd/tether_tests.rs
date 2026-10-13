@@ -46,6 +46,10 @@ fn simulated_camera_captures_downloads_and_imports() {
 
     // the camera's own shutter: picked up by the scans, same develop settings as the previous shot
     s.execute("tether.simShoot", &json!({})).unwrap();
+    // another session's studio-capture scan (same process) leaves the camera's shot alone
+    let other = root.join("other");
+    std::fs::create_dir_all(&other).unwrap();
+    assert!(lcc_tether::link::poll(&other).unwrap().is_empty());
     let mut imported = Vec::new();
     for _ in 0..3 {
         let r = s.execute("tether.scan", &json!({})).unwrap();
