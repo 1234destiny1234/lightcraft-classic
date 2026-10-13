@@ -679,9 +679,15 @@ impl Session {
 
     /// What the file system says about photo `id`'s sidecar now (`None`: it has none, or isn't a file).
     pub fn sidecar_stat(&self, id: PhotoId) -> Option<SidecarStat> {
+        self.sidecar_stat_named(id, self.sidecar_naming(id))
+    }
+
+    /// [`Session::sidecar_stat`] with the photo's sidecar naming already worked out (working it
+    /// out is a pass over the whole catalog: per photo of a large import it is quadratic).
+    fn sidecar_stat_named(&self, id: PhotoId, naming: SidecarNaming) -> Option<SidecarStat> {
         let p = self.catalog.photo(id)?;
         let orig = file_path(p)?;
-        let f = find_sidecar(orig, self.sidecar_naming(id))?;
+        let f = find_sidecar(orig, naming)?;
         let m = std::fs::metadata(f).ok()?;
         let mtime =
             m.modified().ok().and_then(|t| t.duration_since(std::time::UNIX_EPOCH).ok()).and_then(|d| i64::try_from(d.as_secs()).ok()).unwrap_or(0);
@@ -700,8 +706,9 @@ impl Session {
     /// read from or write to the sidecar): app bookkeeping, journaled but not an undo step.
     /// With `only_with_sidecar`, photos without a sidecar file are skipped.
     pub(crate) fn record_xmp_stamps(&mut self, ids: &[PhotoId], only_with_sidecar: bool) {
-        for id in ids {
-            let stat = self.sidecar_stat(*id);
+        let namings = self.sidecar_namings(ids);
+        for (id, naming) in ids.iter().zip(namings) {
+            let stat = self.sidecar_stat_named(*id, naming);
             if only_with_sidecar && stat.is_none() {
                 continue;
             }
