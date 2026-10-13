@@ -476,6 +476,30 @@ mod tests {
         }
     }
 
+    /// The fork's own catalogs (`locales/fork/*.json`) are read by `build.rs` at compile time, so a
+    /// merge that mangles one fails the build with a JSON error. This says which file, and what is
+    /// wrong with it, in the test that already knows the name.
+    #[test]
+    fn fork_catalogs_are_valid_json() {
+        let dir = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("locales").join("fork");
+        let mut seen = 0;
+        for entry in std::fs::read_dir(&dir).expect("locales/fork") {
+            let path = entry.expect("a catalog").path();
+            if path.extension().is_none_or(|e| e != "json") {
+                continue;
+            }
+            seen += 1;
+            let text = std::fs::read_to_string(&path).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            let messages: std::collections::BTreeMap<String, String> =
+                serde_json::from_str(&text).unwrap_or_else(|e| panic!("{}: {e}", path.display()));
+            assert!(!messages.is_empty(), "{}: no messages", path.display());
+            for (key, value) in &messages {
+                assert!(!key.is_empty() && !value.is_empty(), "{}: empty message for {key:?}", path.display());
+            }
+        }
+        assert!(seen >= 2, "found only {seen} fork catalog(s) in {}", dir.display());
+    }
+
     /// Where two catalogs translate the same text they agree on its placeholders. Catalogs may cover
     /// different sets of messages (a message a language lacks shows in English): the gaps are
     /// reported, not failed, so a translation can grow at its own pace.

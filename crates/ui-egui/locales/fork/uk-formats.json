@@ -43,5 +43,15 @@
   "Location {n}": "Місце {n}",
   "{n} photos · {frames} frames · {secs} s": "Фото: {n} · кадрів: {frames} · {secs} с",
   "Exported timelapse: {photos} photos, {frames} frames": "Таймлапс експортовано: фото {photos}, кадрів {frames}",
+  "{app} {version}": "{app} {version}",
+  "{app} {version} is available (Help ▸ Check for Updates…)": "Доступна версія {app} {version} («Довідка» ▸ «Перевірити оновлення…»)",
+  "Version {version} is available.": "Доступна версія {version}.",
+  "{file} · {published}": "{file} · {published}",
+  "{info} · {size}": "{info} · {size}",
+  "Installing it will {action}.": "Під час встановлення: {action}.",
+  "Last checked {when}": "Остання перевірка: {when}",
+  "{done} of {total} ({percent} %)": "{done} з {total} ({percent} %)",
+  "{done} downloaded": "Завантажено: {done}",
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} завантажено й перевірено; встановіть його, щоб оновитися (застосунок перезапуститься).",
   "Color space: Rec. 2020 {curve} (HDR AVIF)": "Колірний простір: Rec. 2020 {curve} (HDR AVIF)"
 }

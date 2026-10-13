@@ -57,5 +57,15 @@
   "{} MB": "{} МБ",
   "{} of {} from {host}": "{} из {} с {host}",
   "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}. Хранятся в папке «denoise» библиотеки; при достижении ограничения первыми удаляются самые старые изображения, которые не использует ни одно фото.",
+  "{app} {version}": "{app} {version}",
+  "{app} {version} is available (Help ▸ Check for Updates…)": "Доступна версия {app} {version} («Справка» ▸ «Проверить обновления…»)",
+  "Version {version} is available.": "Доступна версия {version}.",
+  "{file} · {published}": "{file} · {published}",
+  "{info} · {size}": "{info} · {size}",
+  "Installing it will {action}.": "При установке: {action}.",
+  "Last checked {when}": "Последняя проверка: {when}",
+  "{done} of {total} ({percent} %)": "{done} из {total} ({percent} %)",
+  "{done} downloaded": "Загружено: {done}",
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} загружен и проверен; установите его, чтобы обновиться (приложение перезапустится).",
   "Color space: Rec. 2020 {curve} (HDR AVIF)": "Цветовое пространство: Rec. 2020 {curve} (HDR AVIF)"
 }

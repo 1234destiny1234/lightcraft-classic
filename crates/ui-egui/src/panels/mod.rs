@@ -45,6 +45,8 @@ pub mod strip;
 pub mod tether_bar;
 pub mod topbar;
 pub mod unnamed;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod update;
 
 use egui::{Align2, Rect, pos2, vec2};
 
