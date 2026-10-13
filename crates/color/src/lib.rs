@@ -224,5 +224,4 @@ mod tests {
         let v = b.apply(a.apply([0.2, 0.5, 0.9]));
         assert!((v[0] - 0.2).abs() < 1e-9 && (v[1] - 0.5).abs() < 1e-9 && (v[2] - 0.9).abs() < 1e-9);
     }
-
 }

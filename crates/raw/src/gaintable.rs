@@ -547,5 +547,4 @@ mod tests {
 /// `GTM_FILE=photo.dng cargo test --release -p lcc-raw gain_throughput -- --ignored --nocapture`:
 /// the cost of [`GainEval::gain`] per pixel on a real file's map.
 #[cfg(test)]
-mod bench {
-}
+mod bench {}

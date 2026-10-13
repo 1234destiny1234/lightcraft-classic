@@ -332,5 +332,4 @@ mod tests {
         assert_eq!(a.make.as_deref(), Some("A"));
         assert_eq!(a.keywords, vec!["k".to_string()]);
     }
-
 }

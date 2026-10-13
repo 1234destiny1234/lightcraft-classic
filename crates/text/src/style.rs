@@ -372,5 +372,4 @@ mod tests {
         assert_eq!(t.char_runs()[0].style.size_pt, 33.0);
         assert_eq!(t.paragraph_runs().len(), 1);
     }
-
 }

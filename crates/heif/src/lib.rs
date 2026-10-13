@@ -397,5 +397,4 @@ mod tests {
             assert!(decode_thumbnail(bytes, 1, &Options::default()).is_err());
         }
     }
-
 }
