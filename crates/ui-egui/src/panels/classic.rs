@@ -67,7 +67,7 @@ pub fn title(p: PanelId) -> &'static str {
         PanelId::Keywording => "Keywording",
         PanelId::KeywordList => "Keyword List",
         PanelId::Metadata => "Metadata",
-        PanelId::Sources => "Sources",
+        PanelId::Sources => "My Photos",
         PanelId::Presets => "Presets",
         PanelId::Edit => "Edit",
         PanelId::Crop => "Crop",
@@ -75,6 +75,7 @@ pub fn title(p: PanelId) -> &'static str {
         PanelId::Masking => "Masking",
         PanelId::RedEye => "Red Eye",
         PanelId::Versions => "Versions",
+        PanelId::History => "History",
         PanelId::Activity => "Activity",
         PanelId::Keywords => "Keywords",
         PanelId::Info => "Info",
@@ -155,9 +156,11 @@ pub fn reorder(list: &[PanelId], p: PanelId, slot: usize) -> Option<Vec<PanelId>
     Some(out)
 }
 
-/// The window edge a side's panels sit on.
+/// The window edge a side's panels sit on: a module's declared left column (Library's, Develop's)
+/// is drawn on the left, any other group of panels on the right. Callers pass the module's own
+/// declared list, so which list it is tells the two sides apart.
 fn side_edge(side: &[PanelId]) -> crate::module::Edge {
-    let left = side.first().is_some_and(|p| crate::module::LIBRARY_LEFT.contains(p) || matches!(p, PanelId::Sources | PanelId::Presets));
+    let left = std::ptr::eq(side, crate::module::LIBRARY_LEFT) || std::ptr::eq(side, crate::module::DEVELOP_LEFT);
     if left { crate::module::Edge::Left } else { crate::module::Edge::Right }
 }
 
