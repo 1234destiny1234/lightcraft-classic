@@ -300,6 +300,24 @@ fn masks_crop_and_render() {
 }
 
 #[test]
+fn auto_stays_applied_until_a_tone_slider_changes() {
+    let mut s = demo();
+    let id = s.active().unwrap();
+    assert!(!s.auto_is_current(id));
+    let r = s.execute("develop.auto", &json!({})).unwrap();
+    assert_eq!(r["current"], true, "{r}");
+    assert!(s.auto_is_current(id));
+    // a change elsewhere keeps it; a tone slider change ends it
+    s.execute("develop.set", &json!({"control": "effects.clarity", "value": 10})).unwrap();
+    assert!(s.auto_is_current(id));
+    s.execute("develop.set", &json!({"control": "light.contrast", "value": 3})).unwrap();
+    assert!(!s.auto_is_current(id));
+    // undoing that change brings the Auto values (and the state) back
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.auto_is_current(id));
+}
+
+#[test]
 fn versions_history_and_reset() {
     let mut s = demo();
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 1.0})).unwrap();

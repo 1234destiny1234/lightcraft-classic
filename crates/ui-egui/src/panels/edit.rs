@@ -103,7 +103,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 14 }).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            if text_button(ui, "auto", crate::i18n::tr("Auto"), false).clicked() {
+            // greyed out while the tone sliders still hold what Auto set (Lightroom Classic's look);
+            // any change to them makes it available again
+            let applied = app.session.auto_is_current(id);
+            let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
+            if r.clicked() {
                 let _ = app.run("develop.auto", json!({}));
                 app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
             }
