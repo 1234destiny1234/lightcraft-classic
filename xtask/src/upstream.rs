@@ -296,7 +296,7 @@ pub fn merge(root: &Path, args: &[&str]) -> Result<(), String> {
     }
     println!("merge staged on {branch} (not committed)");
     if run_ci {
-        crate::cmd_ci()?;
+        crate::cmd_ci(false)?;
     }
     println!("next: git commit (the merge), then commit name/brand fixes separately; review {}", report_path.display());
     Ok(())
