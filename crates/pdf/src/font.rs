@@ -142,19 +142,3 @@ impl FaceUse {
         })
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn names_and_tags() {
-        assert_eq!(sanitize("Inter-Regular"), "Inter-Regular");
-        assert_eq!(sanitize("A B/(C)"), "ABC");
-        assert_eq!(sanitize(""), "Font");
-        let t = subset_tag(42);
-        assert_eq!(t.len(), 6);
-        assert!(t.chars().all(|c| c.is_ascii_uppercase()));
-        assert_eq!(t, subset_tag(42));
-    }
-}

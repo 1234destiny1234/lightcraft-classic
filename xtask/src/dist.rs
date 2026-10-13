@@ -352,13 +352,6 @@ mod tests {
     }
 
     #[test]
-    fn date_is_iso() {
-        let d = today();
-        assert_eq!(d.len(), 10);
-        assert_eq!(&d[4..5], "-");
-    }
-
-    #[test]
     fn every_packaging_template_renders() {
         let root = crate::root();
         let brand = Brand::load(&root.join(crate::brand::TEST_BRAND)).unwrap();

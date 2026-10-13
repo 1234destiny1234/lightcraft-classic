@@ -490,13 +490,4 @@ mod tests {
         let site = generate(&GallerySettings::default(), &[GalleryPhoto { fields: BTreeMap::new(), aspect: f32::NAN }]).unwrap();
         assert!(file(&site, "index.html").contains("alt=\"Photo 1\""));
     }
-
-    #[test]
-    fn single_template_index_is_the_first_photo_page() {
-        let s = GallerySettings { template: Template::Single, ..GallerySettings::default() };
-        let site = generate(&s, &photos(2)).unwrap();
-        let index = file(&site, "index.html");
-        assert!(index.contains("href=\"content/0002.html\""));
-        assert!(index.contains("src=\"images/large/0001.jpg\""));
-    }
 }

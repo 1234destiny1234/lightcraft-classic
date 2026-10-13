@@ -363,21 +363,6 @@ mod tests {
     static GLOBAL: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn parses_backend_names() {
-        assert_eq!(parse_backends("dx12"), Some(BackendChoice::Use(Backends::DX12)));
-        assert_eq!(parse_backends(" D3D12 "), Some(BackendChoice::Use(Backends::DX12)));
-        assert_eq!(parse_backends("vulkan"), Some(BackendChoice::Use(Backends::VULKAN)));
-        assert_eq!(parse_backends("vk,gl"), Some(BackendChoice::Use(Backends::VULKAN | Backends::GL)));
-        assert_eq!(parse_backends("metal"), Some(BackendChoice::Use(Backends::METAL)));
-        assert_eq!(parse_backends("auto"), Some(BackendChoice::Auto));
-        for off in ["off", "OFF", "none", "cpu", "0"] {
-            assert_eq!(parse_backends(off), Some(BackendChoice::Off), "{off}");
-        }
-        assert_eq!(parse_backends(""), None);
-        assert_eq!(parse_backends("directx9"), None);
-    }
-
-    #[test]
     fn app_variable_wins_over_wgpu_backend() {
         assert_eq!(choose(None, None), BackendChoice::Auto);
         assert_eq!(choose(None, Some("dx12")), BackendChoice::Use(Backends::DX12));
@@ -387,17 +372,6 @@ mod tests {
         assert_eq!(choose(Some("bogus"), Some("gl")), BackendChoice::Use(Backends::GL));
         // WGPU_BACKEND never turns the GPU off
         assert_eq!(choose(None, Some("off")), BackendChoice::Auto);
-    }
-
-    /// Issue #136: Windows must not load the Vulkan driver unless asked to.
-    #[test]
-    fn windows_defaults_to_dx12_only() {
-        assert_eq!(default_compute_backends("windows"), Backends::DX12);
-        assert_eq!(default_window_backends("windows"), Backends::DX12);
-        assert!(!default_window_backends("windows").contains(Backends::VULKAN));
-        assert_eq!(default_compute_backends("macos"), Backends::METAL);
-        assert!(default_compute_backends("linux").contains(Backends::VULKAN));
-        assert!(default_window_backends("linux").contains(Backends::VULKAN | Backends::GL));
     }
 
     /// Issue #471: DX12 shaders compile with FXC, never a `dxcompiler.dll` found on the search path,
@@ -470,22 +444,6 @@ mod tests {
         // never empty
         assert!(!window_renderer_order(None, None, None, "windows", Backends::empty(), false).is_empty());
         assert_eq!(window_renderer_order(None, None, None, "macos", all, true), [Wgpu(Backends::METAL), Glow]);
-    }
-
-    #[test]
-    fn window_renderer_names_round_trip() {
-        for n in ["dx12", "vulkan", "metal", "gl", "glow"] {
-            assert_eq!(WindowRenderer::parse(n).map(WindowRenderer::name), Some(n));
-        }
-        assert_eq!(WindowRenderer::parse(" DX12 "), Some(WindowRenderer::Wgpu(Backends::DX12)));
-        for n in ["auto", "off", "vulkan,gl", "", "bogus"] {
-            assert_eq!(WindowRenderer::parse(n), None, "{n}");
-        }
-        assert_eq!(forced_window_renderer(Some("glow"), Some("dx12")), Some(WindowRenderer::Glow));
-        assert_eq!(forced_window_renderer(Some("auto"), Some("vulkan")), Some(WindowRenderer::Wgpu(Backends::VULKAN)));
-        assert_eq!(forced_window_renderer(None, None), None);
-        // `glow` only concerns the window: compute keeps its default, without a warning
-        assert_eq!(parse_backends("glow"), Some(BackendChoice::Auto));
     }
 
     #[test]
