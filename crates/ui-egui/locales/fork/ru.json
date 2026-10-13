@@ -1467,5 +1467,12 @@
   "is in this month": "в этом месяце",
   "is in this year": "в этом году",
   "File date": "Дата файла",
-  "HDR curve": "Кривая HDR"
+  "HDR curve": "Кривая HDR",
+  "Synchronize Settings…": "Синхронизировать настройки…",
+  "Synchronize Settings": "Синхронизировать настройки",
+  "Check None": "Снять все",
+  "Sync Metadata": "Синхронизировать метаданные",
+  "Previous": "Предыдущий",
+  "Turn on Auto Sync": "Включить автосинхронизацию",
+  "Auto Sync is on: edits apply to every selected photo": "Автосинхронизация включена: правки применяются ко всем выбранным фото"
 }

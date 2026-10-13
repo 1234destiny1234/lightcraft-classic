@@ -997,5 +997,12 @@
   "is in this month": "цього місяця",
   "is in this year": "цього року",
   "File date": "Дата файлу",
-  "HDR curve": "Крива HDR"
+  "HDR curve": "Крива HDR",
+  "Synchronize Settings…": "Синхронізувати налаштування…",
+  "Synchronize Settings": "Синхронізувати налаштування",
+  "Check None": "Зняти всі",
+  "Sync Metadata": "Синхронізувати метадані",
+  "Previous": "Попередній",
+  "Turn on Auto Sync": "Увімкнути автосинхронізацію",
+  "Auto Sync is on: edits apply to every selected photo": "Автосинхронізацію ввімкнено: зміни застосовуються до всіх вибраних фото"
 }

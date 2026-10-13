@@ -1023,6 +1023,11 @@ pub enum Dialog {
     CopySettings {
         groups: Vec<String>,
     },
+    /// Synchronize Settings (Lightroom Classic's Sync…): the groups the active photo's settings
+    /// carry to the other selected photos.
+    SyncSettings {
+        groups: Vec<String>,
+    },
     /// Paste Selected Settings: which of the copied groups to paste.
     PasteSettings {
         groups: Vec<String>,

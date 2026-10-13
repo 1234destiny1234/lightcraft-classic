@@ -1171,5 +1171,12 @@
   "is in this month": "在本月",
   "is in this year": "在今年",
   "File date": "文件日期",
-  "HDR curve": "HDR 曲线"
+  "HDR curve": "HDR 曲线",
+  "Synchronize Settings…": "同步设置…",
+  "Synchronize Settings": "同步设置",
+  "Check None": "全部不选",
+  "Sync Metadata": "同步元数据",
+  "Previous": "上一张",
+  "Turn on Auto Sync": "开启自动同步",
+  "Auto Sync is on: edits apply to every selected photo": "自动同步已开启：编辑会应用到所有选中的照片"
 }

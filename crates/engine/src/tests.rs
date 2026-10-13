@@ -654,6 +654,28 @@ fn paste_from_previous_and_copy_paste_metadata() {
 }
 
 #[test]
+fn sync_metadata_copies_the_active_photo_to_the_selection() {
+    let mut s = demo();
+    let ids: Vec<_> = s.visible().iter().copied().take(3).collect();
+    s.execute("library.select", &json!({"ids": [ids[0].0]})).unwrap();
+    s.execute("photo.setMeta", &json!({"title": "Dawn", "keywords": ["sky"], "creator": "Me"})).unwrap();
+    // alone it has nothing to sync to
+    assert!(s.execute("photo.syncMetadata", &json!({})).is_err());
+    s.execute("library.select", &json!({"ids": ids.iter().map(|i| i.0).collect::<Vec<_>>(), "active": ids[0].0})).unwrap();
+    s.execute("photo.syncMetadata", &json!({"fields": ["title", "keywords"]})).unwrap();
+    for id in &ids[1..] {
+        let m = &s.catalog.photo(*id).unwrap().meta;
+        assert_eq!((m.title.as_str(), m.keywords.clone()), ("Dawn", vec!["sky".to_string()]));
+        assert_ne!(m.creator, "Me", "only the chosen fields");
+    }
+    s.execute("photo.syncMetadata", &json!({})).unwrap();
+    assert_eq!(s.catalog.photo(ids[2]).unwrap().meta.creator, "Me");
+    // one undo step takes the whole sync back
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_ne!(s.catalog.photo(ids[2]).unwrap().meta.creator, "Me");
+}
+
+#[test]
 fn stacks_move_and_split() {
     let mut s = demo();
     let ids: Vec<_> = s.visible().iter().copied().take(5).collect();

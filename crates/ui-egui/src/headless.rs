@@ -3090,6 +3090,39 @@ mod tests {
         assert!(h.app.session.visible_cloned().is_empty());
     }
 
+    /// Develop's Sync… button opens Synchronize Settings; Synchronize carries only the checked
+    /// groups; the switch beside it turns Auto Sync on and off.
+    #[test]
+    fn sync_button_opens_synchronize_settings() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
+        let exec = |h: &mut Headless, c: &str, p: Value| h.request("engine.execute", json!({"command": c, "params": p}), t);
+        exec(&mut h, "library.select", json!({"ids": [ids[0]]}));
+        exec(&mut h, "develop.set", json!({"values": {"light.exposure": 1.0, "color.vibrance": 30}}));
+        exec(&mut h, "library.select", json!({"ids": ids, "active": ids[0]}));
+        exec(&mut h, "module.develop", json!({}));
+        h.settle(SETTLE);
+        let r = h.request("ui.clickWidget", json!({"id": "button:syncBar"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::SyncSettings { .. })), "{:?}", h.app.ui.dialog);
+        // Check None, then only Light
+        for w in ["syncGroup:none", "syncGroup:light"] {
+            assert_eq!(h.request("ui.clickWidget", json!({"id": w}), t)["ok"], true, "{w}");
+            h.settle(SETTLE);
+        }
+        assert_eq!(h.request("ui.dialog.confirm", json!({}), t)["ok"], true);
+        for id in &ids[1..] {
+            let d = h.app.session.develop_of(lcc_catalog::PhotoId(*id)).unwrap();
+            assert_eq!((d.light.exposure, d.color.vibrance), (1.0, 0.0));
+        }
+        assert!(!h.app.session.auto_sync);
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "button:autoSyncSwitch"}), t)["ok"], true);
+        h.settle(SETTLE);
+        assert!(h.app.session.auto_sync);
+    }
+
     /// Info panel → Edit Capture Time…: a time-zone shift moves the selected photos.
     #[test]
     #[ignore = "assumes upstream's docked panel sizes; the Classic panels differ"]

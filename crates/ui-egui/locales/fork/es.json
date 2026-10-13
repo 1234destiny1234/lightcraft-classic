@@ -1261,5 +1261,12 @@
   "is in this month": "está en este mes",
   "is in this year": "está en este año",
   "File date": "Fecha del archivo",
-  "HDR curve": "Curva HDR"
+  "HDR curve": "Curva HDR",
+  "Synchronize Settings…": "Sincronizar ajustes…",
+  "Synchronize Settings": "Sincronizar ajustes",
+  "Check None": "No marcar ninguno",
+  "Sync Metadata": "Sincronizar metadatos",
+  "Previous": "Anterior",
+  "Turn on Auto Sync": "Activar sincronización automática",
+  "Auto Sync is on: edits apply to every selected photo": "La sincronización automática está activada: los ajustes se aplican a todas las fotos seleccionadas"
 }

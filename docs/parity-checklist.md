@@ -39,7 +39,7 @@ cited here still exists. Formerly docs/parity.md.
 | K. Masking (MASK) | 13 | 5 | 5 | 0 | 7/8 (88%) | 5/5 (100%) |
 | L. Presets (PRE) | 6 | 0 | 1 | 1 | 2/2 (100%) | 2/2 (100%) |
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
-| N. Copy / paste / sync (SYNC) | 5 | 0 | 0 | 0 | 3/3 (100%) | 1/1 (100%) |
+| N. Copy / paste / sync (SYNC) | 6 | 0 | 0 | 0 | 3/3 (100%) | 2/2 (100%) |
 | O. Merge (MERGE) | 4 | 0 | 0 | 0 | — | — |
 | P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
 | Lightroom Classic extras | 102 | 18 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 488 | 57 | 38 | 27 | 194/201 (97%) | 161/175 (92%) |
+| **Total** | 489 | 57 | 38 | 27 | 194/201 (97%) | 162/176 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.6%** of 583 in-scope rows — P0 98.3% of 201 · P1 95.7% of 175 · P2 73.2% of 205.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.6%** of 584 in-scope rows — P0 98.3% of 201 · P1 95.7% of 176 · P2 73.2% of 205.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -411,7 +411,8 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-SYNC-COPY | Copy edit settings | P0 | ✅ | `cmd:develop.copy` | |
 | LR-SYNC-CHOOSE | Choose settings to copy | P0 | ✅ | `cmd:dialog.copySettings` | groups are coarser than per-slider |
 | LR-SYNC-PASTE | Paste to selection | P0 | ✅ | `cmd:develop.paste` | no separate "paste selected" (choose at copy time instead) |
-| LR-SYNC-SYNCBTN | Sync active → selected | P1 | ✅ | `cmd:develop.sync` | |
+| LR-SYNC-SYNCBTN | Sync active → selected | P1 | ✅ | `cmd:develop.sync`, `cmd:dialog.syncSettings` | Was only a menu command without a choice of settings (should have been 🟡); now Synchronize Settings (group checkboxes, Check All / Check None, Synchronize / Cancel) from Edit ▸ Synchronize Settings…, the Develop panel's Sync… button and Library's Sync Settings button (2026-10-13) |
+| LRC-LIB-SYNCMETA | Sync Metadata (active photo → selection) | P1 | ✅ | `cmd:photo.syncMetadata` | Photo ▸ Sync Metadata and Library's Sync Metadata button: the active photo's title, caption, copyright, creator, location and keywords to the other selected photos, one undo step; no field-picking dialog yet (`fields` param only) |
 | LR-SYNC-PREVIOUS | Paste from previous / auto sync [Classic] | P2 | ✅ | `cmd:develop.pastePrevious`, `cmd:develop.autoSync` | ⌥⌘V pastes the previously active photo's settings (copy groups); Auto Sync (⌥⇧⌘A) |
 
 ## O. Merge (MERGE)
@@ -790,7 +791,7 @@ PLAN.md §2 carry the status of that survey ("unverified" where it said so) unti
 | LRC-DEV-SNAPSHOTS | Named snapshots | P1 | ✅ | `cmd:version.create`, `cmd:version.restore` | = versions |
 | LRC-DEV-HISTORY | Full history panel | P1 | ✅ | `cmd:history.list`, `cmd:history.restore`, `cmd:history.previous`, `cmd:history.next`, `cmd:history.clear` | row menu: copy step to before, create version from step, clear history; clicking a step loads it without adding one (current step highlighted, later steps greyed and returnable until a new edit truncates them; one undo step; cursor saved in the catalog, old catalogs open at the latest step) |
 | LRC-DEV-SOFTPROOF | Soft proofing | P2 | ✅ | `cmd:view.softProof`, `crates/pipeline/src/output.rs` (`Proof`), `crates/engine/src/proof.rs`, `crates/ui-egui/src/panels/edit.rs` (`soft_proofing`) | S in the loupe (in grids S stays Expand/Collapse Stack): paper-white surround and "Proof Preview", proof profile (sRGB / Display P3 / Adobe RGB / ProPhoto / Rec. 2020), destination (red) and display (blue) gamut warnings (the display's gamut is the monitor profile's, `cmd:app.displayProfile`, else sRGB), Create Proof Copy (a named virtual copy). Printer / paper ICC profiles (RGB or CMYK, matrix or LUT; Profile ▸ Other…, `view.softProof {profile}`) through the CMS as a 33³ proof table (`crates/codecs/src/proof.rs`, `ProofLut`), rendering intent Perceptual / Relative, Simulate Paper & Ink (the profile's media white and unscaled ink black), destination gamut warning from the profile's round trip. Missing: a list of installed printer profiles, black-point compensation choice, the GPU proof path (proof renders run on the CPU) |
-| LRC-DEV-AUTOSYNC | Sync / auto sync / paste previous | P1 | ✅ | `cmd:develop.sync`, `cmd:develop.autoSync`, `cmd:develop.pastePrevious` | Edit ▸ Sync Settings / Auto Sync (⌥⇧⌘A): only the changed settings carry over, one undo step, slider drags sync on release, spots / red eye stay per photo; Edit panel banner |
+| LRC-DEV-AUTOSYNC | Sync / auto sync / paste previous | P1 | ✅ | `cmd:develop.sync`, `cmd:develop.autoSync`, `cmd:develop.pastePrevious` | Edit ▸ Sync Settings / Auto Sync (⌥⇧⌘A): only the changed settings carry over, one undo step, slider drags sync on release, spots / red eye stay per photo; Edit panel banner; the bar under the Develop panels has LrC's Auto Sync switch and its Previous (one photo) / Sync… (several) / Auto Sync (while on) button (2026-10-13) |
 | LRC-DEV-MATCHEXP | Match total exposures | P2 | ✅ | `cmd:develop.matchExposure` | Photo ▸ Match Total Exposures: the selected photos' Exposure set so shutter × ISO ÷ aperture² plus the slider matches the active photo's |
 | LRC-DEV-CALIB | Calibration panel | P1 | ✅ | `ctl:calibration.*` | |
 | LRC-DEV-TAT | Targeted adjustment tools | P1 | ✅ | `cmd:develop.targeted` (`target`: curve / hue / sat / lum) | |
