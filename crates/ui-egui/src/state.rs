@@ -1101,6 +1101,12 @@ pub enum Dialog {
     ConfirmDelete {
         count: usize,
     },
+    /// Confirm removing photos from the library for good: the selection in Recently Deleted
+    /// (`photo.deletePermanently`), or `all` of it (`library.emptyRecentlyDeleted`).
+    ConfirmPurge {
+        count: usize,
+        all: bool,
+    },
     /// Confirm taking a folder's photos out of the library (`library.removeFolder`).
     RemoveFolder {
         path: String,

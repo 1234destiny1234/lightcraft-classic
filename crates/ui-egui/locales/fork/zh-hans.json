@@ -1217,5 +1217,11 @@
   "Stop Using as Target Collection": "停止用作目标收藏夹",
   "No collections yet": "还没有收藏夹",
   "Sort Collections A–Z": "按 A–Z 排序收藏夹",
-  "Tone": "色调"
+  "Tone": "色调",
+  "Empty": "清空",
+  "Duplicates": "重复项",
+  "Don't Import Suspected Duplicates": "不导入可能重复的照片",
+  "Will be copied": "将作为副本导入",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "其编辑、关键字和收藏夹归属将被移除；磁盘上的文件会保留。",
+  "Include selected photos": "包含所选照片"
 }

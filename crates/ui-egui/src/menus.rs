@@ -2060,6 +2060,20 @@ pub fn confirm_delete(app: &mut LccApp) -> bool {
     true
 }
 
+/// Delete Permanently (`all`: Empty Recently Deleted) with "Confirm before deleting" on: open
+/// the confirmation dialog instead; true when it did (its OK runs the command).
+pub fn confirm_purge(app: &mut LccApp, all: bool) -> bool {
+    if !app.ui.settings.confirm_delete {
+        return false;
+    }
+    let count = if all { app.session.catalog.photos().filter(|p| p.deleted).count() } else { app.session.targets(&json!({})).len() };
+    if count == 0 {
+        return false;
+    }
+    app.ui.dialog = Some(Dialog::ConfirmPurge { count, all });
+    true
+}
+
 /// Platform-appropriate label for revealing a file in the system file manager.
 pub fn reveal_label() -> &'static str {
     if cfg!(target_os = "macos") {

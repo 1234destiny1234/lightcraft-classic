@@ -69,5 +69,5 @@
   "{done} of {total} ({percent} %)": "{done} из {total} ({percent} %)",
   "{done} downloaded": "Загружено: {done}",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} загружен и проверен; установите его, чтобы обновиться (приложение перезапустится).",
-  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Цветовое пространство: Rec. 2020 {curve} (HDR AVIF)"
+  "Remove {what} from the library for good?": "Окончательно удалить {what} из библиотеки?"
 }

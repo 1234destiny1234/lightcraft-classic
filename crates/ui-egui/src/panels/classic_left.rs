@@ -82,12 +82,13 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, side: &[PanelId]
                     crate::panels::collections::footer(app, ui);
                 }
             }
-            // Develop's own panels: the presets, the photo's versions and its history
+            // Develop's own panels: the presets, the photo's versions and its history.
+            // The presets are upstream's panel drawn whole — its title row, amount slider and
+            // scroll area are its own — so it is self-headered, like the Navigator; Versions and
+            // History draw the rows the right column shares with them, under a Classic header.
             PanelId::Presets => {
-                if crate::panels::classic::header(app, ui, p, side).1 {
-                    crate::panels::presets::inline(app, ui);
-                    ui.add_space(6.0);
-                }
+                crate::panels::presets::show(app, ui);
+                ui.add_space(6.0);
             }
             PanelId::Versions => {
                 if crate::panels::classic::header(app, ui, p, side).1 {
@@ -167,9 +168,17 @@ pub(super) fn catalog_section(app: &mut LccApp, ui: &mut egui::Ui, total: usize,
 
 fn recently_deleted_row(app: &mut LccApp, ui: &mut egui::Ui, deleted: usize) {
     let src = app.session.source;
-    if super::row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0).clicked() {
+    let r = super::row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0);
+    if r.clicked() {
         let _ = app.run("library.source", json!({"kind": "recentlyDeleted"}));
     }
+    r.context_menu(|ui| {
+        let b = ui.add_enabled(deleted > 0, egui::Button::new(crate::i18n::tr("Empty Recently Deleted")));
+        crate::widgets::register(ui.ctx(), "menu:emptyRecentlyDeleted", b.rect);
+        if b.clicked() {
+            let _ = crate::menubar::run_item(app, "library.emptyRecentlyDeleted", json!({}));
+        }
+    });
 }
 
 /// By Date: year → month → day rows.

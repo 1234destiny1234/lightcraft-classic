@@ -219,7 +219,18 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
             let (hr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::hover());
             ui.painter().rect_filled(hr, 0.0, t.canvas);
             let full = crate::i18n::source_title(&app.session);
-            let count_w = ui.painter().layout_no_wrap(cnt.clone(), t.font(12.5), t.text_dim).size().x;
+            let mut count_w = ui.painter().layout_no_wrap(cnt.clone(), t.font(12.5), t.text_dim).size().x;
+            // Recently Deleted: an Empty button left of the count (it asks first)
+            if app.session.source == lcc_engine::LibrarySource::RecentlyDeleted && !ids.is_empty() {
+                let label = crate::i18n::tr("Empty Recently Deleted");
+                let bw = ui.painter().layout_no_wrap(label.to_string(), t.semibold(11.5), t.text).size().x + 18.0;
+                let br = egui::Rect::from_center_size(pos2(hr.right() - 30.0 - count_w - bw / 2.0, hr.center().y), vec2(bw, 24.0));
+                let mut bar = ui.new_child(egui::UiBuilder::new().max_rect(br));
+                if crate::widgets::text_button(&mut bar, "emptyRecentlyDeleted", "Empty Recently Deleted", false).clicked() {
+                    let _ = crate::menubar::run_item(app, "library.emptyRecentlyDeleted", serde_json::json!({}));
+                }
+                count_w += bw + 10.0;
+            }
             // the title gives way to the count: a long album or folder name is trimmed, in full on hover
             let room = (hr.width() - 20.0 - count_w - 36.0).max(0.0);
             let font = t.semibold(17.0);
@@ -1314,7 +1325,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             let _ = app.run("photo.restore", json!({}));
         }
         if ui.button(crate::i18n::tr("Delete Permanently")).clicked() {
-            let _ = app.run("photo.deletePermanently", json!({}));
+            let _ = crate::menubar::run_item(app, "photo.deletePermanently", json!({}));
         }
     } else {
         let delete = ui.button(crate::i18n::tr("Delete Photo"));

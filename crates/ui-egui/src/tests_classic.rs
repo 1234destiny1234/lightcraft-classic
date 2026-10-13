@@ -273,12 +273,14 @@ fn top(h: &Headless, id: &str) -> f32 {
 #[test]
 fn develop_column_is_its_own_classic_stack() {
     let mut h = develop_demo();
-    // the Develop column's panels, each under a Classic header (the Navigator folds itself)
-    for p in ["presets", "versions", "history", "collections"] {
+    // the Develop column's panels: Versions, History and Collections under Classic headers, the
+    // Navigator and the presets under their own (upstream draws the presets panel whole)
+    for p in ["versions", "history", "collections"] {
         assert!(has(&h, &format!("classicPanel:{p}")), "{p}");
     }
     assert!(has(&h, "sidebarSection:navigator"), "the Navigator, where Classic puts it");
-    assert!(rows(&h, "presetGroup:") > 0, "the presets themselves, not just their header");
+    assert!(rows(&h, "presetGroup:") > 0, "the presets themselves");
+    assert!(!has(&h, "classicPanel:presets"), "the presets bring their own title row");
     // the Library's panels are not here
     for p in ["catalog", "folders", "publish"] {
         assert!(!has(&h, &format!("classicPanel:{p}")), "{p} belongs to Library");
@@ -293,28 +295,32 @@ fn develop_column_is_its_own_classic_stack() {
     assert!(!has(&h, "sidebarTitle") && !has(&h, "sidebarSection:albums"));
 }
 
-/// Develop's column folds, solos, reorders and hides its panels exactly as Library's does.
+/// Develop's column folds, solos, reorders and hides its Classic panels exactly as Library's does.
 #[test]
 fn develop_column_folds_solos_reorders_and_hides() {
     let mut h = develop_demo();
+    // the presets panel is upstream's own, drawn whole: it fills the column until it is out of the
+    // way, so the Classic headers below it are reachable (the panel above checks that it is there)
+    run(&mut h, "panel.show", json!({"panel": "presets", "visible": false}));
+    assert!(rows(&h, "presetGroup:") == 0, "hiding it takes the presets away");
     // a click folds a panel and unfolds it again
-    click(&mut h, "classicPanel:presets");
-    assert!(!classic::is_open(&h.app, PanelId::Presets) && rows(&h, "presetGroup:") == 0);
-    click(&mut h, "classicPanel:presets");
-    assert!(classic::is_open(&h.app, PanelId::Presets) && rows(&h, "presetGroup:") > 0);
+    click(&mut h, "classicPanel:versions");
+    assert!(!classic::is_open(&h.app, PanelId::Versions) && !has(&h, "button:versionCreate"));
+    click(&mut h, "classicPanel:versions");
+    assert!(classic::is_open(&h.app, PanelId::Versions) && has(&h, "button:versionCreate"));
     // Solo Mode: opening one panel folds the others on its side only
     run(&mut h, "panel.solo", json!({"on": true}));
     classic::set_open(&mut h.app, PanelId::History, false);
     classic::set_open(&mut h.app, PanelId::History, true);
     assert!(classic::is_open(&h.app, PanelId::History));
-    assert!(!classic::is_open(&h.app, PanelId::Presets) && !classic::is_open(&h.app, PanelId::Versions));
+    assert!(!classic::is_open(&h.app, PanelId::Versions) && !classic::is_open(&h.app, PanelId::Collections));
     run(&mut h, "panel.solo", json!({"on": false}));
     // hiding takes the panel (header and rows) out of the column
     run(&mut h, "panel.show", json!({"panel": "versions", "visible": false}));
-    assert!(!has(&h, "classicPanel:versions") && !has(&h, "versionCreate"));
+    assert!(!has(&h, "classicPanel:versions") && !has(&h, "button:versionCreate"));
     // and the order is the user's
-    run(&mut h, "panel.order", json!({"order": ["history", "presets"]}));
-    assert!(top(&h, "classicPanel:history") < top(&h, "classicPanel:presets"), "History moved above Presets");
+    run(&mut h, "panel.order", json!({"order": ["history", "collections"]}));
+    assert!(top(&h, "classicPanel:history") < top(&h, "classicPanel:collections"), "History moved above Collections");
 }
 
 /// A settings file written before Develop had its Classic column has never seen the My Photos
