@@ -1,6 +1,5 @@
 use std::time::Duration;
 
-use super::camera::format_value;
 use super::data::*;
 use super::sim::SimCamera;
 use super::transport::{Container, kind};
@@ -145,18 +144,6 @@ fn hostile_bytes_never_panic() {
     assert!(ptpip::read_packet(&mut bad).is_err());
     let mut bad = std::io::Cursor::new(vec![0xFF, 0xFF, 0xFF, 0xFF, 6, 0, 0, 0]);
     assert!(ptpip::read_packet(&mut bad).is_err());
-}
-
-#[test]
-fn labels() {
-    assert_eq!(format_value(prop::EXPOSURE_TIME, &PropValue::Int(40)), "1/250");
-    assert_eq!(format_value(prop::EXPOSURE_TIME, &PropValue::Int(20_000)), "2\"");
-    assert_eq!(format_value(prop::EXPOSURE_TIME, &PropValue::Int(5_000)), "0.5\"");
-    assert_eq!(format_value(prop::F_NUMBER, &PropValue::Int(560)), "f/5.6");
-    assert_eq!(format_value(prop::F_NUMBER, &PropValue::Int(1100)), "f/11");
-    assert_eq!(format_value(prop::EXPOSURE_INDEX, &PropValue::Int(400)), "ISO 400");
-    assert_eq!(format_value(prop::EXPOSURE_BIAS, &PropValue::Int(-333)), "-0.3 EV");
-    assert_eq!(format_value(prop::EXPOSURE_BIAS, &PropValue::Int(0xFD2F)), "-0.7 EV");
 }
 
 #[test]

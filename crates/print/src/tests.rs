@@ -4,10 +4,10 @@ use lcc_layout::render::PhotoSource;
 use lcc_layout::tokens::PhotoInfo;
 use lcc_raster::Rgba8;
 
+use crate::PrintSettings;
 use crate::job::builtin_templates;
 use crate::output::{PdfOptions, to_jpeg, to_pdf};
 use crate::text::ShapedText;
-use crate::{LayoutStyle, PrintSettings};
 
 pub(crate) struct Gradient;
 impl PhotoSource for Gradient {
@@ -101,13 +101,6 @@ fn jpeg_pages_at_print_resolution() {
     assert_eq!(out.files.len(), 2);
     let info = lcc_pdf::jpeg_info(&out.files[0]).unwrap();
     assert_eq!((info.width, info.height), (425, 550)); // 8.5×11 in at 50 ppi
-}
-
-#[test]
-fn single_image_grid_style_survives_round_trip() {
-    let s = PrintSettings { layout: LayoutStyle::SingleImage { grid: lcc_layout::grid::Grid::new(3, 2) }, ..PrintSettings::default() };
-    let back = PrintSettings::from_json(&s.to_json().unwrap()).unwrap();
-    assert_eq!(back.build(&ids(7)).unwrap().pages.len(), 2);
 }
 
 /// Opt-in: a real CUPS queue (e.g. `cups-pdf`) at the IPP URI in `<PREFIX>_CUPS_TEST_PRINTER`

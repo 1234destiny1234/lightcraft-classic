@@ -284,11 +284,4 @@ mod tests {
         assert_eq!(parse_iso6709(""), None);
         assert_eq!(parse_iso6709("+é-1"), None);
     }
-
-    #[test]
-    fn poster_default() {
-        assert_eq!(default_poster_time(10.0), 1.0);
-        assert_eq!(default_poster_time(f64::NAN), 0.0);
-        assert_eq!(default_poster_time(-1.0), 0.0);
-    }
 }

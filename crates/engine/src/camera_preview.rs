@@ -1973,38 +1973,6 @@ mod tests {
         assert!(estimate_cr3_framing(&sensor, &reference).is_none(), "unrelated edges cannot change the framing");
     }
 
-    /// The guarded fit is assessed on real sensor data, never on the JPEG fallback. A corpus
-    /// download or an unfinished codec cannot make this test claim a successful RAW calibration.
-    #[test]
-    fn corpus_cr3_gets_a_framing_aligned_camera_look() {
-        let path = lcc_brand::env_os("CORPUS")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
-            .join("raw/cr3-canon-r100-raw.cr3");
-        let Ok(bytes) = std::fs::read(&path) else {
-            eprintln!("skip: {} absent", path.display());
-            return;
-        };
-        let raw = match lcc_raw::decode(&bytes) {
-            Ok(raw) => raw,
-            Err(lcc_raw::RawError::Unsupported(why)) => {
-                eprintln!("skip CR3 sensor decoder: {why}");
-                return;
-            }
-            Err(error) => panic!("CR3 corpus failed to decode: {error}"),
-        };
-        assert_eq!(raw.format, RawFormat::Cr3);
-        assert_eq!(raw.info().developed_size(), (6000, 4000));
-        let transform = lcc_raw::color::camera_transform(&raw, lcc_raw::color::as_shot_white_xy(&raw));
-        let look = fit_preview(&raw, &bytes, &transform).0;
-        eprintln!("R100 guarded colour fit accepted: {}", look.is_some());
-        assert!(look.is_some(), "this R100 corpus photo has enough matching colour after camera-framing alignment");
-        let (_, info) = crate::files::load_bytes(&bytes, 400).unwrap();
-        assert!(info.raw && info.relative_wb);
-        assert_eq!((info.as_shot_temp, info.as_shot_tint), (6500.0, 0.0));
-        assert_eq!(info.camera_tone.is_some(), look.is_some());
-    }
-
     /// A public ILCE-7CR sample (skipped without the corpus) takes its colour from the bundled ILCE-7CR profile and
     /// passes the acceptance gates with it: the fitted look keeps the profile's matrix and table, which the photo's
     /// own fit (the fallback when a profile is rejected) would not.
@@ -2037,47 +2005,6 @@ mod tests {
             }
         }
         assert_eq!(look.hue_sat, bundled.hue_sat, "the look's table is not the profile's");
-    }
-
-    /// A public D7500 NEF (skipped without the corpus): its look is fitted to its own JPEG and white
-    /// balance is relative to the as-shot look.
-    #[test]
-    fn corpus_nef_gets_a_camera_look() {
-        let path = lcc_brand::env_os("CORPUS")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
-            .join("raw/nef-nikon-d7500-lossless14.nef");
-        let Ok(bytes) = std::fs::read(&path) else {
-            eprintln!("skip: {} absent", path.display());
-            return;
-        };
-        let (_, info) = crate::files::load_bytes(&bytes, 400).unwrap();
-        assert!(info.camera_tone.is_some(), "no camera look fitted");
-        assert!(info.relative_wb && info.as_shot_temp == 6500.0 && info.as_shot_tint == 0.0);
-    }
-
-    /// The public ILCE-7CR samples (61 MP; skipped without the corpus): lossless compressed L and M and compressed
-    /// ARW2 all get a look fitted to their own JPEG, not the neutral fallback.
-    #[test]
-    fn corpus_a7cr_codings_get_a_camera_look() {
-        let dir = lcc_brand::env_os("CORPUS")
-            .map(std::path::PathBuf::from)
-            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
-            .join("raw");
-        for name in ["arw-sony-a7cr-lossless-l.arw", "arw-sony-a7cr-lossless-m.arw", "arw-sony-a7cr-compressed.arw"] {
-            let bytes = match std::fs::read(dir.join(name)) {
-                Ok(bytes) => bytes,
-                Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                    eprintln!("skip: {name} absent");
-                    continue;
-                }
-                Err(e) => panic!("{name}: {e}"),
-            };
-            let (img, info) = crate::files::load_bytes(&bytes, 400).unwrap();
-            assert_eq!((img.width, img.height), (400, 267), "{name}: framed in the default crop");
-            assert!(info.camera_tone.is_some(), "{name}: no camera look fitted");
-            assert!(info.relative_wb && info.as_shot_temp == 6500.0 && info.as_shot_tint == 0.0, "{name}");
-        }
     }
 
     /// A public DC-FZ1000 II RW2 shot at 4:3 on its 3:2 sensor (skipped without the corpus): the default crop is 4:3

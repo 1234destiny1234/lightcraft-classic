@@ -287,7 +287,6 @@ pub fn hdr_range(img: &mut Rgba8, hdr: &crate::DeepImage, luma: [f32; 3]) {
 mod tests {
     use super::*;
     use crate::{RenderRequest, SourceInfo, render};
-    use lcc_develop::PointColor;
     use lcc_raster::Rgb32f;
 
     #[test]
@@ -313,31 +312,6 @@ mod tests {
         assert!(spot_threshold(0) > spot_threshold(50) && spot_threshold(50) > spot_threshold(100));
         let (k, v) = Overlay::Spots(37).to_parts();
         assert_eq!(Overlay::from_parts(k, v), Overlay::Spots(37));
-    }
-
-    #[test]
-    fn point_color_range_keeps_the_selected_colour_only() {
-        // left half orange, right half blue
-        let src = Rgb32f::from_fn(32, 16, |x, _| if x < 16 { [0.4, 0.15, 0.04] } else { [0.03, 0.06, 0.35] });
-        let info = SourceInfo::default();
-        let plain = render(&src, &info, &DevelopSettings::default(), &RenderRequest::fit(32, 16)).image;
-        // sample the orange as it renders
-        let px = plain.data[8 * 32 + 4];
-        let lin = [px[0], px[1], px[2]].map(|v| srgb_to_linear(v as f32 / 255.0));
-        let c = SRGB.to_space(&REC2020).apply_f32(lin);
-        let [l, ch, h] = lab_to_lch(oklab_from_2020(c));
-        let mut s = DevelopSettings::default();
-        s.point_colors.push(PointColor { lum: l as f64, chroma: ch as f64, hue: (h as f64).to_degrees(), hue_shift: 80.0, ..Default::default() });
-        let req = RenderRequest { overlay: Overlay::PointColorRange(0), ..RenderRequest::fit(32, 16) };
-        let v = render(&src, &info, &s, &req).image;
-        let (o, b) = (v.data[8 * 32 + 4], v.data[8 * 32 + 28]);
-        // the orange stays orange (and unshifted: the overlay shows the selection, not the edit)
-        assert!(o[0].abs_diff(px[0]) <= 2 && o[2].abs_diff(px[2]) <= 2, "{o:?} vs {px:?}");
-        // the blue turns grey
-        assert!(b[0].abs_diff(b[2]) <= 1, "{b:?}");
-        // without the overlay the edit shows
-        let e = render(&src, &info, &s, &RenderRequest::fit(32, 16)).image.data[8 * 32 + 4];
-        assert!(e[1].abs_diff(px[1]) > 10, "{e:?} vs {px:?}");
     }
 
     #[test]

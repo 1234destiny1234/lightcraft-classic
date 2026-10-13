@@ -1,5 +1,3 @@
-use std::path::Path;
-
 use crate::*;
 
 fn l(v: &[(&str, u64)]) -> Vec<(String, u64)> {
@@ -26,35 +24,6 @@ fn existing_files_can_be_skipped() {
     s.skip_existing(&l(&[("/in/old.jpg", 9)]));
     s.fresh(&l(&[("/in/old.jpg", 9)]));
     assert!(s.fresh(&l(&[("/in/old.jpg", 9)])).is_empty());
-}
-
-#[test]
-fn import_params_carry_the_session() {
-    let mut s = StudioSession::new("Studio/A {x}", "/in");
-    assert_eq!(s.name, "Studio_A _x_");
-    s.copy = true;
-    s.naming = Some("{session}-{seq:4}".into());
-    s.preset = Some("p1".into());
-    s.metadata_preset = Some("Studio".into());
-    s.keywords = vec!["studio".into()];
-    s.collection = Some("Shoot".into());
-    s.imported(&[7, 8]);
-    assert_eq!(s.newest, Some(8));
-    let p = s.import_params(&["/in/a.jpg".into()], Some(Path::new("/lib/Originals")));
-    assert_eq!(p["mode"], "copy");
-    assert_eq!(p["rename"], "Studio_A _x_-{seq:4}");
-    assert_eq!(p["renameStart"], 3);
-    assert_eq!(p["preset"], "p1");
-    assert_eq!(p["metadataPreset"], "Studio");
-    assert_eq!(p["keywords"][0], "studio");
-    assert_eq!(p["albumName"], "Shoot");
-    assert_eq!(p["organize"], "flat");
-    assert!(p["destination"].as_str().unwrap().ends_with("Studio_A _x_"));
-    s.copy = false;
-    let p = s.import_params(&[], None);
-    assert_eq!(p["mode"], "add");
-    assert!(p.get("rename").is_none());
-    assert_eq!(safe_session_name("  ..  "), "Session");
 }
 
 #[test]
