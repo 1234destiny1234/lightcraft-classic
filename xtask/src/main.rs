@@ -65,8 +65,9 @@ commands:
   web [--serve [port]] [--dev]
                   build the browser app (apps/web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
-  ci              fmt --check, brand check, docs --check, clippy -D warnings, heif, test, parity refs, layers,
-                  assets, deny, wasm (stops at first failure)
+  ci [--fast]     fmt --check, brand check, docs --check, clippy -D warnings, heif, test, parity refs, layers,
+                  assets, deny, wasm (stops at first failure); --fast (the PR gate) skips the test runs, which
+                  run in full before a release (docs/ci.md)
   corpus [--download]
                   show where test corpora live; --download fetches PngSuite, CC0 raw samples (raw.pixls.us) and public-domain / CC-BY video clips into corpus/ and checks their sha256
   upstream-merge [--ref REF] [--no-ci]
@@ -101,7 +102,7 @@ fn main() -> ExitCode {
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
         Some("web") => web::run(&rest),
-        Some("ci") => cmd_ci(),
+        Some("ci") => cmd_ci(rest.contains(&"--fast")),
         Some("corpus") => cmd_corpus(rest.contains(&"--download")),
         Some("upstream-merge") => upstream::merge(&root(), &rest),
         Some("upstream-pr") => upstream::pr(&root(), &rest),
@@ -317,9 +318,10 @@ fn cmd_deny() -> Result<(), String> {
     run(c, "cargo deny check licenses")
 }
 
-pub fn cmd_ci() -> Result<(), String> {
+/// `fast`: the PR gate, every check except the test runs (docs/ci.md); the full run is the release gate.
+pub fn cmd_ci(fast: bool) -> Result<(), String> {
     type Step = (&'static str, Box<dyn Fn() -> Result<(), String>>);
-    let steps: Vec<Step> = vec![
+    let mut steps: Vec<Step> = vec![
         (
             "fmt",
             Box::new(|| {
@@ -340,11 +342,14 @@ pub fn cmd_ci() -> Result<(), String> {
         ),
         (
             "heif",
-            Box::new(|| {
+            Box::new(move || {
                 // the optional HEIC/HEIF decoder is off in the workspace build above
                 let mut c = cargo();
                 c.args(["clippy", "-p", "lcc-codecs", "--features", "heif", "--all-targets", "--", "-D", "warnings"]);
                 run(c, "cargo clippy -p lcc-codecs --features heif --all-targets -- -D warnings")?;
+                if fast {
+                    return Ok(());
+                }
                 let mut c = cargo();
                 c.args(["test", "-p", "lcc-codecs", "-p", "lcc-heif", "--features", "lcc-codecs/heif"]);
                 run(c, "cargo test -p lcc-codecs -p lcc-heif --features lcc-codecs/heif")?;
@@ -369,6 +374,9 @@ pub fn cmd_ci() -> Result<(), String> {
         ("deny", Box::new(cmd_deny)),
         ("wasm", Box::new(cmd_wasm)),
     ];
+    if fast {
+        steps.retain(|(name, _)| *name != "test");
+    }
     let mut done = Vec::new();
     for (name, f) in &steps {
         eprintln!("\n=== ci: {name} ===");
