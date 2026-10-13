@@ -17,6 +17,7 @@
 
 #[cfg(feature = "sam")]
 mod download;
+pub mod subject;
 #[cfg(feature = "sam")]
 mod worker;
 
@@ -123,6 +124,8 @@ pub struct Segmenter {
     /// Run requests in the background and apply them in [`Session::segment_poll`] (the
     /// desktop app); otherwise commands wait for their result (CLI, MCP, tests).
     pub background: bool,
+    /// The Subject / Background model (BiRefNet).
+    pub subject: subject::Subject,
     pending: Option<PendingClicks>,
     messages: Vec<String>,
     #[cfg(feature = "sam")]
@@ -141,6 +144,7 @@ impl Default for Segmenter {
             dir: None,
             mirrors_file: None,
             background: false,
+            subject: subject::Subject::default(),
             pending: None,
             messages: Vec::new(),
             #[cfg(feature = "sam")]

@@ -1791,15 +1791,17 @@ mod tests {
             json!({"settings": {"job": {"dpi": 72, "color": {"intent": "relative", "adjust": true, "brightness": 20, "bit16": true}}}}),
         )
         .unwrap();
-        app.run("printui.print", json!({"path": "Print.pdf"})).unwrap();
+        // one photo: every demo photo is a full-size procedural render (~3 CPU-minutes for the
+        // whole library in a debug build), which on a loaded CI runner outlasted any deadline
+        app.run("printui.printOne", json!({"path": "Print.pdf"})).unwrap();
         let mut h = crate::headless::Headless::new(app, [1200.0, 800.0], 1.0);
-        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(120);
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(600);
         // until the job has reported: under load it may not be busy yet on the first frame
         while (h.app.print.busy || h.app.print.last.is_none()) && std::time::Instant::now() < deadline {
             h.step();
             std::thread::sleep(std::time::Duration::from_millis(20));
         }
-        let last = h.app.print.last.clone().expect("the print job reported within 120 s");
+        let last = h.app.print.last.clone().expect("the print job reported within 600 s");
         assert!(last.get("error").is_none(), "{last}");
         let pdf = bytes.lock().unwrap().clone();
         let has = |needle: &[u8]| pdf.windows(needle.len()).any(|w| w == needle);
