@@ -203,10 +203,9 @@ impl Store for FsStore {
 
 /// Flush a file to disk: `sync_all`, or `sync_data` when `data_only`.
 ///
-/// On macOS both are `F_FULLFSYNC`, which an SMB share refuses with ENOTSUP (issue #1407): the
-/// volume has no such flush, so the write stands as the share keeps it instead of failing. Any
-/// other error still fails the write.
-fn sync_file(f: &std::fs::File, data_only: bool) -> io::Result<()> {
+/// On macOS both are `F_FULLFSYNC`, which an SMB share refuses with ENOTSUP (upstream issue 1407) while a
+/// plain `fsync` works there: that is the fallback. If it fails too, the write fails.
+pub(crate) fn sync_file(f: &std::fs::File, data_only: bool) -> io::Result<()> {
     #[cfg(test)]
     let r = if NO_FULL_SYNC.with(std::cell::Cell::get) {
         Err(enotsup())
@@ -218,9 +217,15 @@ fn sync_file(f: &std::fs::File, data_only: bool) -> io::Result<()> {
     #[cfg(not(test))]
     let r = if data_only { f.sync_data() } else { f.sync_all() };
     match r {
-        Err(e) if flush_unsupported(&e) => Ok(()),
+        Err(e) if flush_unsupported(&e) => plain_fsync(f),
         r => r,
     }
+}
+
+fn plain_fsync(f: &std::fs::File) -> io::Result<()> {
+    #[cfg(test)]
+    PLAIN_FSYNCS.with(|c| c.set(c.get() + 1));
+    lcc_sysmem::fsync(f)
 }
 
 /// The volume can't flush a file to disk (ENOTSUP on macOS, `Unsupported` elsewhere).
@@ -232,6 +237,13 @@ fn flush_unsupported(e: &io::Error) -> bool {
 #[cfg(test)]
 thread_local! {
     static NO_FULL_SYNC: std::cell::Cell<bool> = const { std::cell::Cell::new(false) };
+    static PLAIN_FSYNCS: std::cell::Cell<u64> = const { std::cell::Cell::new(0) };
+}
+
+/// Tests: how many plain `fsync` fallbacks [`FsStore`] made on the calling thread.
+#[cfg(test)]
+pub(crate) fn plain_fsyncs() -> u64 {
+    PLAIN_FSYNCS.with(std::cell::Cell::get)
 }
 
 /// What a volume without a full flush answers (macOS: ENOTSUP, os error 45, from `F_FULLFSYNC`).
@@ -241,7 +253,7 @@ fn enotsup() -> io::Error {
 }
 
 /// Tests: while the guard lives, every file sync [`FsStore`] makes on the calling thread fails
-/// as on an SMB share mounted by macOS (issue #1407).
+/// as on an SMB share mounted by macOS (upstream issue 1407).
 #[cfg(test)]
 pub(crate) fn full_sync_unsupported() -> NoFullSync {
     NO_FULL_SYNC.with(|c| c.set(true));
