@@ -525,6 +525,53 @@ mod tests {
         std::fs::remove_dir_all(archive_dir).unwrap();
     }
 
+    /// A 7,984-photo Lightroom catalog sat for minutes after its tables were read: each photo's
+    /// XMP stamp worked out the whole catalog's sidecar owners again (quadratic). A large import
+    /// stamps its photos in time proportional to its size.
+    #[test]
+    fn a_large_import_stamps_its_photos_in_linear_time() {
+        let mut data = empty_data();
+        data.photos = (0..20_000)
+            .map(|source_id| lightroom_catalog::CatalogPhoto {
+                source_id,
+                uuid: format!("large-{source_id}"),
+                path: format!("/missing/large/IMG_{source_id:06}.jpg"),
+                image: std::collections::BTreeMap::from([
+                    ("id_local".into(), serde_json::json!(source_id)),
+                    ("fileFormat".into(), serde_json::json!("JPG")),
+                    ("fileWidth".into(), serde_json::json!(1)),
+                    ("fileHeight".into(), serde_json::json!(1)),
+                ]),
+                settings: String::new(),
+                xmp: String::new(),
+                keywords: Vec::new(),
+                history: Vec::new(),
+                snapshots: Vec::new(),
+            })
+            .collect();
+        let mut session = crate::Session::new();
+        let token = LightroomLibraryToken::capture(&session);
+        let prepared = PreparedLightroom {
+            data,
+            normal: Prepared::default(),
+            index: ImportIndex::default(),
+            archive_path: None,
+            token,
+            missing_sources: HashSet::new(),
+            update_existing: false,
+            now: "2026-01-01T00:00:00".into(),
+            cancelled: false,
+        };
+        let completion = commit_prepared(&mut session, prepared).unwrap();
+        assert_eq!(completion.report["photos"], 20_000);
+        // the photos' originals found at import start in step with their sidecars
+        let ids: Vec<_> = session.catalog.photos().map(|p| p.id).collect();
+        let started = std::time::Instant::now();
+        session.record_xmp_stamps(&ids, true);
+        // quadratic took minutes here even in release; linear is well under a second
+        assert!(started.elapsed() < std::time::Duration::from_secs(90), "{:?}", started.elapsed());
+    }
+
     #[test]
     fn execute_fn_import_does_not_rewrite_source_sidecar() {
         let dir = std::env::temp_dir().join(format!("app-lr-job-sidecar-{}", std::process::id()));
