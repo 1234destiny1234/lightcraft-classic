@@ -41,8 +41,10 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
     let mut stamped = Vec::new();
     let mut warnings = Vec::new();
     let mut fields = Vec::new();
-    for id in s.targets(p) {
-        match s.read_sidecar_op_with_warnings(id) {
+    let ids = s.targets(p);
+    let namings = s.sidecar_namings(&ids);
+    for (id, naming) in ids.into_iter().zip(namings) {
+        match s.read_sidecar_op_named(id, naming) {
             Ok(Some((op, from, mut photo_warnings, plugin_fields))) => {
                 ops.push(op);
                 fields.push((id, plugin_fields));

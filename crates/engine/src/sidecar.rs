@@ -642,9 +642,20 @@ impl Session {
         &self,
         id: PhotoId,
     ) -> Result<Option<(Op, PathBuf, Vec<crate::import::ImportWarning>, Vec<(String, String, String)>)>> {
+        self.read_sidecar_op_named(id, self.sidecar_naming(id))
+    }
+
+    /// [`Session::read_sidecar_op_with_warnings`] with the photo's sidecar naming already worked
+    /// out ([`Session::sidecar_namings`] once for many photos: per photo it is quadratic).
+    #[allow(clippy::type_complexity)]
+    pub(crate) fn read_sidecar_op_named(
+        &self,
+        id: PhotoId,
+        naming: SidecarNaming,
+    ) -> Result<Option<(Op, PathBuf, Vec<crate::import::ImportWarning>, Vec<(String, String, String)>)>> {
         let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         let Some(orig) = file_path(p) else { return Ok(None) };
-        let Some((packet, from)) = read_packet(orig, p.kind, self.sidecar_naming(id)) else { return Ok(None) };
+        let Some((packet, from)) = read_packet(orig, p.kind, naming) else { return Ok(None) };
         let sc = parse_sidecar(&packet, crate::crs::Target::for_photo(p)).map_err(|e| EngineError::Other(format!("{}: {e}", from.display())))?;
         let mut warnings = sc.warnings.clone();
         for warning in &mut warnings {

@@ -570,6 +570,13 @@ mod tests {
         session.record_xmp_stamps(&ids, true);
         // quadratic took minutes here even in release; linear is well under a second
         assert!(started.elapsed() < std::time::Duration::from_secs(90), "{:?}", started.elapsed());
+        // Read Metadata from File over all of them works the sidecar owners out once too
+        session.selection.ids = ids.to_vec();
+        let started = std::time::Instant::now();
+        let read =
+            session.execute("photo.readMetadataFromFile", &serde_json::json!({ "ids": ids.iter().map(|id| id.0).collect::<Vec<_>>() })).unwrap();
+        assert_eq!(read["failed"].as_array().map(Vec::len), Some(20_000), "no file has a sidecar here");
+        assert!(started.elapsed() < std::time::Duration::from_secs(90), "{:?}", started.elapsed());
     }
 
     #[test]
