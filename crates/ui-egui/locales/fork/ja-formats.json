@@ -65,5 +65,5 @@
   "{done} of {total} ({percent} %)": "{done} / {total}（{percent} %）",
   "{done} downloaded": "{done} ダウンロード済み",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} をダウンロードして検証しました。インストールすると更新されます（アプリは再起動します）。",
-  "Color space: Rec. 2020 {curve} (HDR AVIF)": "カラースペース：Rec. 2020 {curve}（HDR AVIF）"
+  "Remove {what} from the library for good?": "{what}をライブラリから完全に削除しますか？"
 }

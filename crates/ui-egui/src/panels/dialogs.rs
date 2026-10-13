@@ -251,6 +251,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Merge { opts } => opts.title(),
         Dialog::Settings { .. } => "Settings",
         Dialog::ConfirmDelete { .. } => "Delete Photos",
+        Dialog::ConfirmPurge { all: true, .. } => "Empty Recently Deleted",
+        Dialog::ConfirmPurge { .. } => "Delete Permanently",
         Dialog::LightroomCatalog { .. } => "Lightroom Classic Catalog",
         Dialog::RemoveFolder { disk: true, .. } => "Remove Disk from Library",
         Dialog::RemoveFolder { .. } => "Remove Folder from Library",
@@ -1191,6 +1193,14 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     ui.label(crate::i18n::tr_format!("Move {what} to Recently Deleted?", what = what));
                     ui.label(egui::RichText::new(crate::i18n::tr("They can be restored from Recently Deleted until it is emptied.")).color(t.text_dim));
                 }
+                Dialog::ConfirmPurge { count, .. } => {
+                    let what = if *count == 1 { crate::i18n::tr("this photo").to_string() } else { crate::i18n::tr_format!("these {count} photos", count = count) };
+                    ui.label(crate::i18n::tr_format!("Remove {what} from the library for good?", what = what));
+                    ui.label(
+                        egui::RichText::new(crate::i18n::tr("Their edits, keywords and collection memberships are removed; the files on disk are kept."))
+                            .color(t.text_dim),
+                    );
+                }
                 d @ Dialog::SynchronizeFolder { .. } => crate::sync::body(app, ui, d),
                 Dialog::LightroomCatalog { folder, catalog } => {
                     ui.label(crate::i18n::tr("This is a Lightroom catalog, not a {app} library. Import it into a {app} library instead?"));
@@ -1312,6 +1322,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::FaceModel { info, .. } if !informational && info["download"].is_string() => "Download",
                     Dialog::FaceModel { .. } if !informational => "Install",
                     Dialog::ConfirmDelete { .. } | Dialog::DeleteKeyword { .. } => "Delete",
+                    Dialog::ConfirmPurge { all: true, .. } => "Empty",
+                    Dialog::ConfirmPurge { .. } => "Delete Permanently",
                     // (not "Merge": that is photo merging, HDR / panorama, in some languages)
                     Dialog::MoveKeyword { .. } => "Merge Keywords",
                     Dialog::KeywordSet { .. } => "Save",
@@ -1761,6 +1773,8 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::Merge { opts } => crate::merge::start_final(app, opts),
         Dialog::Import { opts } => crate::import::start(app, opts),
         Dialog::ConfirmDelete { .. } => app.run("photo.delete", json!({})),
+        Dialog::ConfirmPurge { all: true, .. } => app.run("library.emptyRecentlyDeleted", json!({})),
+        Dialog::ConfirmPurge { .. } => app.run("photo.deletePermanently", json!({})),
         // the catalog found: no file dialog; none: File ▸ Import Lightroom Catalog… asks for it
         Dialog::LightroomCatalog { catalog, .. } => {
             app.run("file.importLightroom", catalog.as_ref().map_or_else(|| json!({}), |c| json!({"path": c})))
