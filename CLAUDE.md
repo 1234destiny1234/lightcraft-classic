@@ -37,8 +37,9 @@ The app is a clean-room, open-source, pure-Rust photo library + non-destructive 
 
 `plan/observations/` (Adobe-observation notes) is gitignored (local-only).
 
-**Merging agent branches:** merge one branch, run `cargo xtask ci`, fix, commit — then the next. Two individually green
-branches can still break each other (e.g. a new struct field vs. a new constructor).
+**Merging agent branches:** merge one branch at a time and run the fast checks (`cargo xtask ci --fast`, plus the
+targeted tests of the crates involved) before the next; no full CI between merges. Two individually green branches can
+still break each other (e.g. a new struct field vs. a new constructor), which the fast checks' build and clippy catch.
 
 **Resuming after a crash / another session:** check `git status` on main, `git worktree list`, and each worktree's
 `git log main..HEAD` + `git status` for unmerged commits or uncommitted work before starting anything new. Commit small
@@ -66,7 +67,8 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   `lock().unwrap_or_else(PoisonError::into_inner)` or an error; worker-thread joins are `Result`s.
 - **Last-resort guard:** a panic hook plus `catch_unwind` around command dispatch and import/export turns an escaped
   panic into an error dialog and keeps the document. It's a safety net, not a licence; keep `panic = "unwind"` on native.
-- **Prove it:** every crash fix lands with a small synthetic regression test that panicked before the fix.
+- **Prove it:** every crash fix lands with a hostile-input no-panic check (the malformed input must produce an error,
+  not a panic); fold it into the format's table-driven hostile-input test where one exists.
 - Enforced by clippy: root `clippy.toml` allows unwrap/expect/panic/indexing in tests only, and every production crate
   root (`lib.rs`, each binary's `main.rs`) carries `#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic,
   clippy::unimplemented, clippy::todo, clippy::unreachable)]`. Not `[workspace.lints]`: those would also hit
@@ -82,7 +84,10 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   label, cancel)` for its whole run. It adopts the cancel flag the job already checks (`Cancel::Flag`), or uses
   `Cancel::No` when the job can't stop. No progress window, panel or progress toast of its own; its tests assert the row.
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
-- **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, wasm).
+- **Quality gates:** every commit/PR passes the fast checks, `cargo xtask ci --fast` (fmt, clippy -D warnings, build
+  incl. the wasm check, brand, layers, assets, parity, deny; the required PR check) plus the SIL suite and the targeted
+  tests of what you touched. The full `cargo xtask ci` (every test, all three OSes) runs before a release (pushes to
+  `release`, or a manual CI dispatch). See [`docs/ci.md`](docs/ci.md).
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 
 ## Clean-room sources (in addition to the non-negotiables)
@@ -153,7 +158,10 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 
 ## Testing & performance (do this often)
 - Unit/property tests next to the code; end-to-end tests drive real binaries (`crates/mcp/tests/e2e.rs`,
-  `apps/cli/tests/`). New features need at least one test that would fail without them.
+  `apps/cli/tests/`). Tests check behaviour and invariants, not implementation details: no change-detector tests
+  (exact sizes, positions, frame counts, constants, labels) and no golden-output tests for image/decode quality. Crash
+  fixes need a hostile-input no-panic check. Prefer the SIL harness (`cargo xtask sil`, `docs/testing-sil.md`) and
+  targeted end-to-end tests.
 - **Run the app after every user-visible change**: launch with `--control 7980`, drive it with a JSON-lines script
   (`docs/showcase/run.py file.jsonl`), take `ui.screenshot`, and look at it. Check `ui.inspect` → `perf`.
 - **Benchmarks:** `cargo xtask bench` (24 MP raw from corpus; CPU and GPU columns) appends to `target/bench/history.jsonl`

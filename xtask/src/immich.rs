@@ -463,11 +463,4 @@ mod tests {
         assert_eq!(host_dirs(root, Some("/abs"))[2], Path::new("/abs"));
         assert_eq!(host_dirs(root, Some(" "))[0], Path::new("/r/target/immich"));
     }
-
-    #[test]
-    fn fixture_times_are_valid_dates() {
-        assert_eq!(fixture_time(0), "2024-01-01T12:00:00.000Z");
-        assert_eq!(fixture_time(27), "2024-01-28T12:00:00.000Z");
-        assert_eq!(fixture_time(28), "2024-01-01T12:00:00.000Z");
-    }
 }

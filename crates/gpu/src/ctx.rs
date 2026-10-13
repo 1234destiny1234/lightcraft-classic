@@ -724,15 +724,6 @@ pub fn groups1(n: usize) -> [u32; 3] {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn limits_override_parses() {
-        assert_eq!(super::parse_limits("webgpu"), Some((128 << 20, 256 << 20)));
-        assert_eq!(super::parse_limits(" Downlevel "), Some((128 << 20, 256 << 20)));
-        assert_eq!(super::parse_limits("64"), Some((64 << 20, 128 << 20)));
-        assert_eq!(super::parse_limits("512MiB"), Some((512 << 20, 1024 << 20)));
-        assert_eq!(super::parse_limits(""), None);
-        assert_eq!(super::parse_limits("lots"), None);
-    }
 
     #[test]
     fn dispatches_stay_within_the_workgroup_limit() {

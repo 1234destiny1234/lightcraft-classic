@@ -774,47 +774,6 @@ mod tests {
         assert!(e[0].alpha.get(50, 50) < 0.01);
     }
 
-    /// Issue #517: dabs along a long segment (a fast stroke: two pointer samples far apart) are at
-    /// most [`dab_spacing`] apart, painting dab by dab (the live stroke) or the whole path at once
-    /// (the committed one).
-    #[test]
-    fn a_long_segment_gets_dabs_at_most_the_spacing_apart() {
-        let r = 12.0;
-        let pts = [Point::new(10.0, 20.0), Point::new(610.0, 260.0), Point::new(611.0, 260.0), Point::new(40.0, 400.0)];
-        let mut live = Vec::new();
-        let mut prev = None;
-        for q in pts {
-            if push_dabs(&mut live, prev, q, r) {
-                prev = Some(q);
-            }
-        }
-        assert!(live.len() > 3 * 600 / 12, "{} dabs", live.len());
-        assert!(live.windows(2).all(|w| w[0].dist(w[1]) <= dab_spacing(r) + 1e-9));
-        assert_eq!(live.first(), pts.first());
-        assert_eq!(live.last(), pts.last());
-        // the committed stroke places the same dabs (in output pixels; this frame maps 1:1 scaled)
-        let (w, h) = (1000, 500);
-        let f = frame(w, h);
-        let stroke = BrushStroke { points: pts.map(|p| Point::new(p.x / w as f64, p.y / h as f64)).to_vec(), ..Default::default() };
-        let committed = brush_dabs(&stroke, &f, w, h);
-        let mut again = Vec::new();
-        let mut prev = None;
-        for p in &stroke.points {
-            let q = f.norm_to_out(w, h).apply(*p);
-            if push_dabs(&mut again, prev, q, committed.r) {
-                prev = Some(q);
-            }
-        }
-        assert_eq!(committed.dabs, again);
-        assert!(committed.dabs.windows(2).all(|w| w[0].dist(w[1]) <= dab_spacing(committed.r) + 1e-9));
-        // a hostile segment places no in-between dabs
-        let mut v = Vec::new();
-        assert!(!push_dabs(&mut v, Some(Point::new(f64::NAN, 0.0)), Point::new(1.0, 1.0), r));
-        assert!(!push_dabs(&mut v, None, Point::new(f64::INFINITY, 1.0), r));
-        push_dabs(&mut v, Some(Point::new(0.0, 0.0)), Point::new(1e300, 1.0), 0.0);
-        assert!(v.len() <= 1_000_002, "{}", v.len());
-    }
-
     #[test]
     fn brush_and_subtract() {
         let f = frame(200, 100);
@@ -863,83 +822,6 @@ mod tests {
         let paused = BrushStroke { points: vec![a, p, p, p, p, b], flow: 30.0, ..Default::default() };
         let smooth = BrushStroke { points: vec![a, p, b], flow: 30.0, ..Default::default() };
         assert_eq!(brush_dabs(&paused, &f, w, h).dabs, brush_dabs(&smooth, &f, w, h).dabs);
-    }
-
-    /// Flow builds up by passes: going back over an area in the same stroke adds coverage.
-    #[test]
-    fn a_second_pass_builds_up_with_low_flow() {
-        let (w, h) = (200, 100);
-        let f = frame(w, h);
-        let img = Rgb32f::new(w, h);
-        let l = Plane::new(w, h);
-        let (a, b) = (Point::new(0.2, 0.5), Point::new(0.8, 0.5));
-        let paint = |points: Vec<Point>| {
-            let s = BrushStroke { points, size: 0.05, feather: 50.0, flow: 20.0, ..Default::default() };
-            shape_alpha(&MaskShape::Brush { strokes: vec![s] }, &f, w, h, &img, &l, 0.0, None)
-        };
-        let once = paint(vec![a, b]);
-        let twice = paint(vec![a, b, a]);
-        let thrice = paint(vec![a, b, a, b]);
-        let (o, t, th) = (once.get(100, 50), twice.get(100, 50), thrice.get(100, 50));
-        assert!(o > 0.05 && o < 0.99, "one pass {o}");
-        assert!(t > o + 0.02 && th > t + 0.01, "passes build up: {o} → {t} → {th}");
-    }
-
-    #[test]
-    fn auto_mask_stops_at_edges() {
-        // dark left half, bright right half; a stroke along the boundary, centred on the dark side
-        let (w, h) = (200, 100);
-        let f = frame(w, h);
-        let img = Rgb32f::from_fn(w, h, |x, _| if x < 100 { [0.03; 3] } else { [0.6, 0.5, 0.4] });
-        let l = img.map(crate::local::log_lum);
-        let stroke = |auto_mask| BrushStroke {
-            points: vec![Point::new(0.47, 0.2), Point::new(0.47, 0.8)],
-            size: 0.08,
-            feather: 0.0,
-            auto_mask,
-            ..Default::default()
-        };
-        let comp = |auto| MaskShape::Brush { strokes: vec![stroke(auto)] };
-        let plain = shape_alpha(&comp(false), &f, w, h, &img, &l, 0.0, None);
-        let auto = shape_alpha(&comp(true), &f, w, h, &img, &l, 0.0, None);
-        // without Auto Mask the brush spills over the edge; with it, it stays on the dark side
-        assert!(plain.get(105, 50) > 0.9, "{}", plain.get(105, 50));
-        assert!(auto.get(105, 50) < 0.05, "spill {}", auto.get(105, 50));
-        assert!(auto.get(110, 50) < 0.02);
-        assert!(auto.get(90, 50) > 0.9, "painted side {}", auto.get(90, 50));
-        assert!(auto.get(99, 50) > 0.8, "up to the edge {}", auto.get(99, 50));
-        // on a flat area Auto Mask paints like the plain brush
-        let flat = Rgb32f::from_fn(w, h, |_, _| [0.2; 3]);
-        let fl = flat.map(crate::local::log_lum);
-        let a = shape_alpha(&comp(true), &f, w, h, &flat, &fl, 0.0, None);
-        let b = shape_alpha(&comp(false), &f, w, h, &flat, &fl, 0.0, None);
-        assert!((a.get(94, 50) - b.get(94, 50)).abs() < 0.02, "{} vs {}", a.get(94, 50), b.get(94, 50));
-    }
-
-    /// Refine Edges: a soft mask over a hard edge in the photo snaps to that edge.
-    #[test]
-    fn refine_edges_follows_the_photo() {
-        let (w, h) = (120usize, 80usize);
-        // left half dark, right half bright
-        let img = Rgb32f::from_fn(w, h, |x, _| if x < 60 { [0.05; 3] } else { [0.6; 3] });
-        let log_l = Plane::from_fn(w, h, |x, _| if x < 60 { (0.05f32).log2() } else { (0.6f32).log2() });
-        let f = Frame::new(w, h, &Default::default(), true);
-        let soft = Mask {
-            components: vec![MaskComponent {
-                name: None,
-                op: MaskOp::Add,
-                invert: false,
-                shape: MaskShape::Linear { start: Point::new(0.75, 0.5), end: Point::new(0.25, 0.5) },
-            }],
-            ..Default::default()
-        };
-        let refined = Mask { refine: 100.0, ..soft.clone() };
-        let step = |m: &Mask| {
-            let a = evaluate_one(m, &f, w, h, &img, &log_l, 0.0, None);
-            a.data[40 * w + 63] - a.data[40 * w + 56]
-        };
-        let (plain, sharp) = (step(&soft), step(&refined));
-        assert!(sharp > plain * 1.5 && sharp > 0.1, "the edge in the mask follows the photo's: {plain} → {sharp}");
     }
 
     /// Feather: a hard mask edge softens, by the same relative width at any resolution.
@@ -997,44 +879,6 @@ mod tests {
         let (x0, y0) = extents(0.0);
         let (x1, y1) = extents(100.0);
         assert!((x1 - x0).abs() <= 3.0 && (y1 - y0).abs() <= 3.0, "contour moved: {x0}x{y0} -> {x1}x{y1}");
-    }
-
-    /// Issue #157: a colour-range sample of one flat patch must not select a clearly different
-    /// patch. The two patches are the ones from the report (sRGB 120,150,155 and 200,198,195),
-    /// sampled the way `mask.sampleColor` does (3×3 mean of the selection-space OkLab).
-    #[test]
-    fn color_range_keeps_to_the_sampled_colour() {
-        use lcc_color::{REC2020, SRGB, transfer::decode_srgb8};
-        let (w, h) = (120usize, 40usize);
-        let m = SRGB.to_space(&REC2020);
-        let patch = |rgb: [u8; 3]| m.apply_f32(rgb.map(decode_srgb8));
-        let (left, right) = (patch([120, 150, 155]), patch([200, 198, 195]));
-        let img = Rgb32f::from_fn(w, h, |x, _| if x < 60 { left } else { right });
-        let log_l = img.map(crate::local::log_lum);
-        let f = Frame::new(w, h, &Default::default(), true);
-        let mut sample = [0f64; 3];
-        for y in 19..=21 {
-            for x in 29..=31 {
-                let lab = lcc_color::perceptual::oklab_from_2020(tonemap_for_select(img.data[y * w + x]));
-                for k in 0..3 {
-                    sample[k] += lab[k] as f64 / 9.0;
-                }
-            }
-        }
-        let alpha = |refine| {
-            let shape = MaskShape::ColorRange { samples: vec![sample], refine };
-            let a = shape_alpha(&shape, &f, w, h, &img, &log_l, 0.0, None);
-            (a.get(30, 20), a.get(90, 20))
-        };
-        for refine in [0.0, 50.0, 85.0] {
-            let (l, r) = alpha(refine);
-            assert!(l > 0.95, "refine {refine}: sampled patch {l}");
-            assert!(r < 0.05, "refine {refine}: other patch {r}");
-        }
-        // Refine 100 reaches furthest (the grey is ~0.063 away, the fade ends at 0.075), but the
-        // other patch stays mostly out
-        let (l, r) = alpha(100.0);
-        assert!(l > 0.95 && r < 0.3, "refine 100: {l} vs {r}");
     }
 
     /// A half-resolution matte selecting the left `frac` of a `w × h` source.

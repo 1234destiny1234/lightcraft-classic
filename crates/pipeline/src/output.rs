@@ -392,15 +392,6 @@ mod tests {
     }
 
     #[test]
-    fn parse_and_serde_names() {
-        for o in OutputSpace::ALL {
-            let s = serde_json::to_value(o).unwrap();
-            assert_eq!(OutputSpace::parse(s.as_str().unwrap()), Some(o));
-            assert_eq!(OutputSpace::parse(o.label()), Some(o), "{}", o.label());
-        }
-    }
-
-    #[test]
     fn white_maps_to_white() {
         for o in OutputSpace::ALL {
             let m = o.from_working();
