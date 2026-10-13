@@ -101,7 +101,8 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
 mod tests {
     use crate::Format;
 
-    /// The container header both builds recognise, whatever the feature says.
+    /// A HEIC container header.
+    #[cfg(not(feature = "heif"))]
     const HEIC_HEADER: &[u8] = b"\0\0\0\x18ftypheic\0\0\0\0mif1heic";
 
     #[cfg(not(feature = "heif"))]
