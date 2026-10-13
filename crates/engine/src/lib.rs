@@ -71,6 +71,8 @@ pub mod sidecar;
 pub mod smart;
 pub mod sync;
 pub mod timelapse;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod update;
 pub mod video;
 mod view;
 pub mod walk;
@@ -233,6 +235,9 @@ pub struct Session {
     /// Remote services: SHA-1 back-fill and Immich jobs ([`remote`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub remote: remote::State,
+    /// Auto updates: the last check, the download in flight, and the settings ([`update`]).
+    #[cfg(not(target_arch = "wasm32"))]
+    pub updater: update::Updater,
     /// Copied develop settings (partial JSON) for Paste.
     pub clipboard: Option<Value>,
     /// The folder on disk the [`LibrarySource::Folder`] view browses.
@@ -408,6 +413,8 @@ impl Session {
             faces: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             remote: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            updater: Default::default(),
             clipboard: None,
             meta_clipboard: None,
             browse: None,
@@ -691,6 +698,7 @@ impl Session {
                 return Err(err);
             }
         };
+        self.drop_gone_from_selection();
         self.show_undone(&e.op);
         self.pending_log.push(e.op);
         self.redo.push(UndoEntry {
@@ -716,6 +724,7 @@ impl Session {
                 return Err(err);
             }
         };
+        self.drop_gone_from_selection();
         self.show_undone(&e.op);
         self.pending_log.push(e.op);
         self.undo.push(UndoEntry {
@@ -726,6 +735,19 @@ impl Session {
             retry_sidecars: Vec::new(),
         });
         Ok(e.label)
+    }
+
+    /// An undo or redo that removes photos from the library (undoing an import, a virtual copy, a
+    /// duplicate…) takes them out of the selection too: a selection never names photos that don't
+    /// exist (found by the SIL harness, docs/testing-sil.md).
+    fn drop_gone_from_selection(&mut self) {
+        let catalog = &self.catalog;
+        self.selection.ids.retain(|&id| catalog.photo(id).is_some());
+        if self.selection.active.is_some_and(|a| !self.selection.ids.contains(&a)) {
+            self.selection.active = self.selection.ids.first().copied();
+            self.active_mask = None;
+            self.active_spot = None;
+        }
     }
 
     /// After an undo or redo that changed one photo (its edit, rating, flag, label, metadata or

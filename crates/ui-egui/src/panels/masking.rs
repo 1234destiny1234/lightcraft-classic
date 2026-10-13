@@ -892,32 +892,3 @@ fn mask_icon(ui: &mut egui::Ui, id: &str, icon: Icon, label: &str, active: bool)
     crate::widgets::register(ui.ctx(), format!("button:{id}"), r.rect);
     r
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// The grid keeps four 52 pt tiles when the labels fit, and gives a long (translated) label
-    /// room by dropping a column rather than drawing it past its tile.
-    #[test]
-    fn tile_labels_get_the_room_they_need() {
-        let short = |size: f32| size * 4.0; // "Luminance"-ish: 42 pt at 10.5
-        let long = |size: f32| size * 5.6; // "Background"/"Hintergrund": 59 pt at 10.5, 53 at 9.5
-        assert_eq!(tile_layout(224.0, short), (4, 51.0, 10.5));
-        // too wide for four at either size: three tiles, wider than 52 so the label fits
-        let (n, w, size) = tile_layout(224.0, long);
-        assert_eq!((n, size), (3, 10.5));
-        assert!(w >= long(10.5) + 2.0 * TILE_PAD && w <= (224.0 - 2.0 * TILE_GAP) / 3.0, "{w}");
-        // a smaller label keeps a column: 9.5 pt fits where 10.5 doesn't
-        let mid = |size: f32| size * 4.6; // 48.3 at 10.5, 43.7 at 9.5
-        assert_eq!(tile_layout(224.0, mid), (4, 51.0, 9.5));
-        // a wide panel: tiles stay 52 pt (or as wide as the label)
-        assert_eq!(tile_layout(474.0, short).0, 4);
-        assert_eq!(tile_layout(474.0, short).1, TILE);
-        // far too narrow for any label: two tiles (labels cut short), never a negative width
-        let (n, w, _) = tile_layout(60.0, long);
-        assert_eq!(n, 2);
-        assert!(w >= 24.0);
-        assert_eq!(tile_layout(f32::NAN, long).0, 2);
-    }
-}

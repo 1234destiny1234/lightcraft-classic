@@ -1231,6 +1231,18 @@ fn undo_and_redo_show_the_photo_they_change() {
     assert_eq!(s.selection, before, "a step over several photos keeps the selection");
 }
 
+/// Undoing a step that created photos (here a virtual copy) never leaves them in the selection.
+#[test]
+fn undo_never_leaves_vanished_photos_selected() {
+    let mut s = demo();
+    let r = s.execute("photo.virtualCopy", &json!({})).unwrap();
+    let copy = r["ids"][0].as_u64().unwrap();
+    s.execute("library.select", &json!({"ids": [copy]})).unwrap();
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(s.selection.ids.iter().all(|&id| s.catalog.photo(id).is_some()), "{:?}", s.selection);
+    assert!(s.selection.active.is_none_or(|a| s.selection.ids.contains(&a)));
+}
+
 #[test]
 fn hdr_edits_render_with_their_hdr_histogram() {
     let mut s = demo();

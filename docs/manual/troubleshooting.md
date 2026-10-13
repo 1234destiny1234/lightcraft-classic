@@ -47,6 +47,23 @@ and relinks them. Their edits and metadata are safe in the catalog meanwhile.
 - File → Test Catalog Integrity checks the store; File → Restore Library from Backup… or opening a copy from
   `backups/` gets you back to the last good state.
 
+## Updating the app
+
+Help → Check for Updates… reads the project's release feed and, when something newer exists, offers to
+download it for this system and install it; the app restarts afterwards. Things that can go wrong:
+
+- "Could not reach the release server" or "the release server answered 403": no internet, a proxy, or GitHub's
+  rate limit. The check uses the release's `latest.json` first, which usually still works; try again later.
+- "Release X has no download for this system": that release has no file for this platform (a platform added
+  after it was published, or one we don't package). Get it from the project's releases page, which the dialog
+  links to.
+- The download is checked against the size the release states and, when the release publishes
+  `SHA256SUMS.txt`, against that SHA-256. A file that fails the check is deleted and nothing is installed.
+- A tarball or zip (Linux riscv64, FreeBSD, or a Windows portable build) is downloaded and its folder shown:
+  quit the app and unpack it over the installation yourself.
+- Turning off "Check for updates when the app starts" stops the automatic check; Help → Check for Updates…
+  still works by hand. The setting lives in the app's own settings folder (`updates.json`), not in a catalog.
+
 ## Chinese or Japanese text shows boxes
 
 The build was made without craft-fonts. Release builds always include it; for source builds set
@@ -60,5 +77,7 @@ skipped when the session starts unless you turn that off ([tethering.md](tetheri
 
 ## Network features
 
-Map tiles, reverse geocoding, model downloads, Immich, SFTP upload and IPP printing are the only things that use
-the network, and each asks or is configured explicitly. Behind a proxy or offline, the rest of the app works.
+Two things reach the network on their own: the update check (once, a few seconds after start-up, unless
+"Check for updates when the app starts" is off — see above), and nothing else. Map tiles, reverse geocoding,
+model downloads, Immich, SFTP upload and IPP printing all use the network too, and each asks or is configured
+explicitly. Behind a proxy or offline, the rest of the app works.

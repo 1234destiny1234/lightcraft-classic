@@ -361,6 +361,8 @@ impl Headless {
             || self.app.import.is_some()
             || self.app.export.is_some()
             || self.app.session.denoise_busy()
+            || self.app.session.segmenter.busy()
+            || self.app.session.segmenter.analyzing()
             || !self.app.tasks.is_empty()
             || !self.app.synthetic.is_empty()
             || !self.events.is_empty()

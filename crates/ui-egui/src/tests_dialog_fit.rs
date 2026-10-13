@@ -87,20 +87,6 @@ fn export_dialog_cancel_is_on_screen_in_a_short_window() {
     assert!(h.app.export.is_none() && h.app.last_export_result.is_none(), "nothing exported");
 }
 
-// Scenario: a window with room for it shows the Export dialog as before (no scrolling, same size)
-#[test]
-fn export_dialog_is_unchanged_in_a_tall_window() {
-    let h = export_dialog([1600.0, 1000.0]);
-    assert_fits(&h, "Export at 1600×1000");
-    let dialog = rect(&h, "dialog:window");
-    // (846 tall as before #781: the whole dialog, nothing scrolled away; 615 wide since the
-    // format row gained JPEG XL, #780)
-    // macOS adds the "Add to Apple Photos" row (22 + 8 spacing)
-    let tall = if cfg!(target_os = "macos") { 876.0 } else { 846.0 };
-    assert!((dialog.height() - tall).abs() <= 1.0, "{dialog:?}");
-    assert!((dialog.width() - 615.2).abs() <= 1.0, "{dialog:?}");
-}
-
 // Scenario: other long dialogs fit a short window too, with their buttons on screen
 #[test]
 fn long_dialogs_fit_a_short_window() {

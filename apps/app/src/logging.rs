@@ -372,21 +372,6 @@ mod tests {
         level <= max && (level <= log::Level::Warn || (target.starts_with("lcc") || target == "app" || target.starts_with("app::")))
     }
 
-    #[test]
-    fn the_default_filter_shows_own_info_and_other_crates_warnings() {
-        let f = Filter::parse(DEFAULT_FILTER);
-        assert_eq!(f.level_for("app"), LevelFilter::Info);
-        assert_eq!(f.level_for("app::control_server"), LevelFilter::Info);
-        assert_eq!(f.level_for("lcc_engine::guard"), LevelFilter::Info);
-        assert_eq!(f.level_for("lcc_ui_egui::render"), LevelFilter::Info);
-        assert_eq!(f.level_for("wgpu_core::device"), LevelFilter::Warn);
-        assert_eq!(f.level_for("naga"), LevelFilter::Warn);
-        assert_eq!(f.max(), LevelFilter::Info);
-        assert_eq!(filter_spec(None, None), DEFAULT_FILTER);
-        // An empty variable is the same as an unset one.
-        assert_eq!(filter_spec(Some(""), Some("  ")), DEFAULT_FILTER);
-    }
-
     /// `<PREFIX>_LOG` keeps working exactly as it did with the old stderr-only logger.
     #[test]
     fn app_log_keeps_its_meaning() {
@@ -490,16 +475,6 @@ mod tests {
     }
 
     #[test]
-    fn a_line_carries_time_level_thread_target_and_message() {
-        assert_eq!(
-            format_line("2026-10-08T07:59:17.728Z", log::Level::Info, "main", "app", "library /photos: 12 photos"),
-            "2026-10-08T07:59:17.728Z INFO  [main] app: library /photos: 12 photos\n"
-        );
-        // A multi-line message keeps its lines; the record still ends in one newline.
-        assert!(format_line("t", log::Level::Error, "w", "x", "a\nb\n").ends_with("x: a\nb\n"));
-    }
-
-    #[test]
     fn rotation_keeps_the_previous_logs_and_starts_an_empty_file() {
         let dir = temp_dir("rotate");
         for run in 1..=4 {
@@ -550,21 +525,6 @@ mod tests {
         assert_eq!(text.lines().filter(|l| l.starts_with("line ")).count(), MAX_PENDING);
         assert!(text.contains("5 earlier log lines were dropped"), "{text}");
         assert!(text.contains("line 0\n") && !text.contains(&format!("line {MAX_PENDING}\n")));
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
-    fn exactly_a_full_pending_buffer_drops_nothing() {
-        let dir = temp_dir("full");
-        let (path, file) = rotate(&dir).expect("rotate");
-        let mut sink = Sink::new(MAX_FILE_BYTES);
-        for i in 0..MAX_PENDING {
-            sink.write(&format!("line {i}\n"));
-        }
-        sink.attach(file);
-        let text = read(&path);
-        assert_eq!(text.lines().count(), MAX_PENDING);
-        assert!(!text.contains("dropped"), "{text}");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

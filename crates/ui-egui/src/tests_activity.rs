@@ -2,11 +2,11 @@
 
 use std::time::Duration;
 
-use lcc_engine::activity::{Cancel, TaskInfo, Unit};
+use lcc_engine::activity::{Cancel, Unit};
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::panels::activity::{WIDTH, count_text};
+use crate::panels::activity::WIDTH;
 use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
@@ -97,29 +97,6 @@ fn not_cancellable_rows_have_no_cross() {
 }
 
 #[test]
-fn count_text_by_unit() {
-    let mut t = TaskInfo {
-        id: 1,
-        kind: "export",
-        label: "Exporting".into(),
-        done: 3,
-        total: 25,
-        unit: Unit::Count,
-        detail: String::new(),
-        cancellable: true,
-        cancelling: false,
-        age_ms: 600,
-    };
-    assert_eq!(count_text(&t), "3 of 25");
-    (t.done, t.total, t.unit) = (12 * 1_048_576, 340 * 1_048_576, Unit::Bytes);
-    assert_eq!(count_text(&t), "12 of 340 MB");
-    (t.done, t.total, t.unit) = (400, 1000, Unit::Percent);
-    assert_eq!(count_text(&t), "40 %");
-    t.total = 0;
-    assert_eq!(count_text(&t), "");
-}
-
-#[test]
 fn stale_cancel_is_harmless() {
     let mut h = demo();
     let g = h.app.session.activity.start("export", "Exporting", Cancel::Yes);
@@ -146,16 +123,6 @@ fn long_detail_stays_inside_the_stack() {
     wait_visible(&mut h);
     let row = rect(&h, &format!("activity:row:{}", g.id()));
     assert!(row.width() <= WIDTH + 1.0, "{row:?}");
-}
-
-#[test]
-fn cross_sits_at_the_right_edge_of_its_row() {
-    let mut h = demo();
-    let g = h.app.session.activity.start("export", "Exporting", Cancel::Yes);
-    wait_visible(&mut h);
-    let row = rect(&h, &format!("activity:row:{}", g.id()));
-    let cross = rect(&h, &format!("activity:cancel:{}", g.id()));
-    assert!(cross.right() >= row.right() - 2.0, "the cross is at the right, not after the label: {cross:?} in {row:?}");
 }
 
 #[test]

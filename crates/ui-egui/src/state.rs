@@ -829,6 +829,15 @@ pub struct UiState {
     /// A Settings section to bring into view once (`app.settings {section}`), e.g. `lensProfiles`.
     #[serde(skip)]
     pub settings_section: Option<String>,
+    /// The start-up update check has run (once per session; Help ▸ Check for Updates… is manual).
+    #[serde(skip)]
+    pub update_checked_at_startup: bool,
+    /// When an update check was last started (egui time, s).
+    #[serde(skip)]
+    pub update_checked_at: f64,
+    /// A newer release was found at start-up and the user has not been told yet.
+    #[serde(skip)]
+    pub update_pending: Option<String>,
 }
 
 /// Settings group ids (`SettingsGroup` serde names) a new preset includes by default: everything
@@ -1003,6 +1012,9 @@ pub enum Dialog {
     SystemInfo {
         rows: Vec<(String, String)>,
     },
+    /// Help ▸ Check for Updates…: the release feed's answer, the download and the install
+    /// (the panel state lives in the session's updater; see [`crate::panels::update`]).
+    Update,
     /// Every metadata field of a photo's file (`photo.allMetadata`), filtered by `search`.
     AllMetadata {
         title: String,
@@ -1271,6 +1283,9 @@ impl Default for UiState {
             status: String::new(),
             dialog: None,
             settings_section: None,
+            update_checked_at_startup: false,
+            update_checked_at: 0.0,
+            update_pending: None,
         }
     }
 }

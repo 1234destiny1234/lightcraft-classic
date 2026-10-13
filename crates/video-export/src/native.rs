@@ -313,9 +313,10 @@ fn run(
                         Stages::add(&stages.convert, at);
                         Ok((i, p?))
                     });
-                    if gtx.send(item).is_err() {
-                        return;
-                    }
+                    // The encoder has gone (it stops the pipeline before dropping its end): keep
+                    // draining, not leaving, until the decoder stops. A grader that left here
+                    // could strand the decoder on a full queue, and the scope then never joins.
+                    let _ = gtx.send(item);
                 }
             }));
         }

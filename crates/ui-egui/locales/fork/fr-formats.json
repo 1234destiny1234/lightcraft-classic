@@ -44,5 +44,16 @@
   "{n} photos · {frames} frames · {secs} s": "{n} photos · {frames} images · {secs} s",
   "Exported timelapse: {photos} photos, {frames} frames": "Timelapse exporté : {photos} photos, {frames} images",
   "Color space: Rec. 2020 {curve} (HDR AVIF)": "Espace colorimétrique : Rec. 2020 {curve} (AVIF HDR)",
-  "The checked settings of the active photo are copied to {n} other selected photo(s)": "Les paramètres cochés de la photo active sont copiés vers {n} autre(s) photo(s) sélectionnée(s)"
+  "The checked settings of the active photo are copied to {n} other selected photo(s)": "Les paramètres cochés de la photo active sont copiés vers {n} autre(s) photo(s) sélectionnée(s)",
+  "{app} {version}": "{app} {version}",
+  "{app} {version} is available (Help ▸ Check for Updates…)": "{app} {version} est disponible (Aide ▸ Rechercher des mises à jour…)",
+  "Version {version} is available.": "La version {version} est disponible.",
+  "{file} · {published}": "{file} · {published}",
+  "{info} · {size}": "{info} · {size}",
+  "Installing it will {action}.": "L’installation va : {action}.",
+  "Last checked {when}": "Dernière vérification : {when}",
+  "{done} of {total} ({percent} %)": "{done} sur {total} ({percent} %)",
+  "{done} downloaded": "{done} téléchargés",
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} est téléchargé et vérifié ; installez-le pour mettre à jour (l’application redémarre).",
+  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Espace colorimétrique : Rec. 2020 {curve} (AVIF HDR)"
 }
