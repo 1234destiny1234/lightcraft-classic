@@ -951,6 +951,7 @@ mod tests {
         let ctx = fonts_ctx(&[]);
         let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
+        show_my_photos(&mut app);
         let text = painted_text(&ctx, &mut app, Locale::Uk);
         assert!(text.contains("Мої фото") && text.contains("Усі фото"), "{text}");
         for (command, title) in [("app.about", "Про"), ("app.shortcuts", "Клавіатурні скорочення"), ("app.settings", "Налаштування")]
@@ -1083,6 +1084,7 @@ mod tests {
         let ctx = fonts_ctx(&[]);
         let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
+        show_my_photos(&mut app);
         let text = painted_text(&ctx, &mut app, Locale::De);
         assert!(text.contains("Meine Fotos") && text.contains("Alle Fotos"), "{text}");
         app.ui.view = crate::state::ViewMode::People;
@@ -1172,6 +1174,13 @@ mod tests {
         set_language(Locale::En);
     }
 
+    /// Upstream's My Photos sidebar is one of Develop's Classic panels now, hidden until it is
+    /// asked for: the tests that look for its labels (Meine Fotos, Мої фото, My Photos) show it
+    /// first, so what they read is on screen.
+    fn show_my_photos(app: &mut crate::LccApp) {
+        app.ui.hidden_panels.retain(|p| *p != crate::module::PanelId::Sources);
+    }
+
     /// The text the whole window paints over a few frames in `language`.
     fn painted_text(ctx: &egui::Context, app: &mut crate::LccApp, language: Locale) -> String {
         fn collect(shape: &egui::epaint::Shape, text: &mut String) {
@@ -1210,6 +1219,7 @@ mod tests {
         crate::theme::install_fonts(&ctx);
         let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
+        show_my_photos(&mut app);
         let ids = |app: &crate::LccApp| crate::menus::menu_entries(app).into_iter().map(|entry| entry.id).collect::<Vec<_>>();
         let english_ids = ids(&app);
         for language in Locale::ALL {

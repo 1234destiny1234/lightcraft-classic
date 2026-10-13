@@ -727,8 +727,14 @@ fn keyword_set(app: &mut LccApp, ui: &mut egui::Ui) {
 }
 
 fn versions(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     header(ui, "Versions");
+    versions_body(app, ui, id);
+}
+
+/// The Versions rows without the right column's own header: the fork's Develop column draws them
+/// under its Classic "Versions" header (see `panels::classic_left`).
+pub(crate) fn versions_body(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     let t = Tokens::get(ui.ctx());
     padded(ui, |ui| {
         if text_button(ui, "versionCreate", crate::i18n::tr("Create Version"), false).clicked() {
@@ -852,8 +858,14 @@ fn history_row(i: usize, cursor: Option<usize>) -> HistoryRow {
 }
 
 fn activity(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     header(ui, "History");
+    history_body(app, ui, id);
+}
+
+/// The History rows without the right column's own header: the fork's Develop column draws them
+/// under its Classic "History" header (see `panels::classic_left`).
+pub(crate) fn history_body(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     let t = Tokens::get(ui.ctx());
     padded(ui, |ui| {
         if p.history.is_empty() {

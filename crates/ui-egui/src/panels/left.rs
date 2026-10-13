@@ -1,4 +1,6 @@
-//! The left "My Photos" panel: library sources, albums tree, and date groups.
+//! The left panel: the module's Classic column (Library's and Develop's, `classic_left.rs`), or
+//! upstream's "My Photos" sidebar (library sources, albums tree, date groups), which Develop keeps
+//! as one of its panels.
 
 use egui::{Align2, Rect, Sense, pos2, vec2};
 use lcc_catalog::{Album, AlbumId, FolderNode, KeywordNode};
@@ -11,7 +13,7 @@ use crate::sidebar::SidebarSection;
 use crate::theme::Tokens;
 use crate::widgets::{icon_button, register};
 
-/// Library's Classic left column (fork-owned).
+/// Library's and Develop's Classic left columns (fork-owned).
 #[path = "classic_left.rs"]
 pub(crate) mod classic;
 
@@ -563,111 +565,137 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider));
     frame.show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        if app.ui.module == crate::module::ModuleId::Library {
-            return classic::show(app, ui);
+        // The module's Classic column, in `classic_left.rs` (fork-owned): Library's Navigator,
+        // Catalog, Folders, Collections and Publish Services, or Develop's Navigator, Presets,
+        // Versions, History and Collections. What is left below is upstream's My Photos column,
+        // which Develop offers as its hidden "My Photos" panel (`classic_left::columns`).
+        match app.ui.module {
+            crate::module::ModuleId::Library => return classic::show(app, ui, crate::module::LIBRARY_LEFT),
+            crate::module::ModuleId::Develop => return classic::show(app, ui, crate::module::DEVELOP_LEFT),
+            _ => {}
         }
-        // the title offers the sections' menu too: where hidden sections come back from
-        let (hr, title) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
-        register(ui.ctx(), "sidebarTitle", hr);
-        title.context_menu(|ui| sections_menu(app, ui, None));
-        // the open library's name under the title, so nobody edits in the wrong one (issue #902)
-        let library = crate::panels::settings::open_library_name(app);
-        let title_y = if library.is_some() { hr.center().y - 7.0 } else { hr.center().y };
-        ui.painter().text(pos2(hr.left() + 18.0, title_y), Align2::LEFT_CENTER, crate::i18n::tr("My Photos"), t.semibold(15.0), t.text);
-        if let Some(name) = library {
-            ui.painter().with_clip_rect(hr.shrink2(vec2(18.0, 0.0))).text(
-                pos2(hr.left() + 18.0, hr.center().y + 10.0),
-                Align2::LEFT_CENTER,
-                name,
-                t.font(11.0),
-                t.text_dim,
-            );
-            crate::widgets::register(ui.ctx(), "label:libraryName", hr);
-            if let Some(l) = app.session.library.as_ref() {
-                title.on_hover_text(l.dir.display().to_string());
-            }
-        }
-        let counts = app.caches.counts(&app.session.catalog);
-        let (total, picks, deleted) = (counts.total, counts.picks, counts.deleted);
-        egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
-            drag_auto_scroll(app, ui);
-            // where the visible part of the content starts (screen y), for the pinned header
-            let view_top = ui.cursor().top() + viewport.min.y;
-            ui.data_mut(|d| d.insert_temp(egui::Id::new("left-view-top"), view_top));
-            // rows are as wide as the widest one needs (last frame), at least the panel
-            let wide = viewport.width().max(content_width(ui.ctx()));
-            ui.set_min_width(wide);
-            ui.set_max_width(wide);
-            ui.data_mut(|d| {
-                d.insert_temp(egui::Id::new("left-content-width-next"), 0.0f32);
-                // where the visible part of the content ends (screen x), for what stays at the edge
-                d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + viewport.max.x);
-            });
-            // My Photos: the catalog's sources, Recently Deleted with them (upstream's grouping)
-            classic::catalog_section(app, ui, total, picks, deleted, true);
-            // the album just made: the folders down to it open, once (also when the section is shut)
-            let reveal = app.ui.reveal_album.take();
-            if reveal.is_some() {
-                // …and Albums itself is shown and opened, so the new album can be seen
-                app.ui.sidebar.reveal(SidebarSection::Albums);
-            }
-            // the keyword just made from Keywords' header: the section and the keywords above it open
-            if let Some(path) = app.ui.reveal_keyword.take() {
-                app.ui.sidebar.reveal(SidebarSection::Keywords);
-                let mut above = String::new();
-                let mut names = path.split('|').peekable();
-                while let Some(name) = names.next().filter(|_| names.peek().is_some()) {
-                    if !above.is_empty() {
-                        above.push('|');
-                    }
-                    above.push_str(name);
-                    set_tree_open(ui, egui::Id::new(("kw-open", above.to_lowercase())), true);
-                }
-            }
-            // Local keeps track of the folder being browsed whether or not it is drawn
-            let local = local_now(app, ui);
-            let shown: Vec<SidebarSection> = app.ui.sidebar.shown().collect();
-            let mut placed: Vec<PlacedSection> = Vec::with_capacity(shown.len());
-            for s in shown {
-                let at = match s {
-                    SidebarSection::Albums => {
-                        let rows = app.session.catalog.albums().filter(|a| a.parent.is_none()).count();
-                        section(app, ui, s, rows, |app, ui| albums_rows(app, ui, reveal))
-                    }
-                    SidebarSection::Local => {
-                        let Some(local) = &local else { continue };
-                        section(app, ui, s, local.places.places.len(), |app, ui| local_rows(app, ui, local))
-                    }
-                    SidebarSection::ByDate => {
-                        let rows = app.caches.date_groups(&app.session.catalog).len();
-                        section(app, ui, s, rows, date_rows)
-                    }
-                    SidebarSection::Folders => {
-                        let tree = app.caches.folder_tree(&app.session.catalog);
-                        section(app, ui, s, tree.len(), |app, ui| {
-                            reveal_chosen(app, ui, &tree);
-                            folder_rows(app, ui, &tree, 0.0);
-                        })
-                    }
-                    SidebarSection::Keywords => {
-                        let tree = app.caches.keyword_tree(&app.session.catalog);
-                        section(app, ui, s, tree.len(), |app, ui| keyword_rows(app, ui, &tree, 0.0))
-                    }
-                };
-                placed.push(at);
-            }
-            // room below the last section (a section dragged to the end is dropped here)
-            ui.add_space(SECTION_GAP * 2.0);
-            pinned_header(app, ui, &placed, view_top);
-            section_drag(app, ui, &placed);
-            // what the rows asked for becomes next frame's width
-            let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
-            if (next - content_width(ui.ctx())).abs() > 0.5 {
-                ui.data_mut(|d| d.insert_temp(egui::Id::new("left-content-width"), next));
-                ui.ctx().request_repaint();
-            }
-        });
+        my_photos_column(app, ui);
     });
+}
+
+/// Upstream's "My Photos" column: its title, then the sources and the sections in a scroll area.
+fn my_photos_column(app: &mut LccApp, ui: &mut egui::Ui) {
+    my_photos_title(app, ui);
+    egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+        drag_auto_scroll(app, ui);
+        // where the visible part of the content starts (screen y), for the pinned header
+        let view_top = ui.cursor().top() + viewport.min.y;
+        ui.data_mut(|d| d.insert_temp(egui::Id::new("left-view-top"), view_top));
+        // rows are as wide as the widest one needs (last frame), at least the panel
+        let wide = viewport.width().max(content_width(ui.ctx()));
+        ui.set_min_width(wide);
+        ui.set_max_width(wide);
+        ui.data_mut(|d| {
+            d.insert_temp(egui::Id::new("left-content-width-next"), 0.0f32);
+            // where the visible part of the content ends (screen x), for what stays at the edge
+            d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + viewport.max.x);
+        });
+        my_photos(app, ui, view_top);
+        // what the rows asked for becomes next frame's width
+        let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
+        if (next - content_width(ui.ctx())).abs() > 0.5 {
+            ui.data_mut(|d| d.insert_temp(egui::Id::new("left-content-width"), next));
+            ui.ctx().request_repaint();
+        }
+    });
+}
+
+/// Upstream's "My Photos" title row (widget `sidebarTitle`): it offers the sections' menu too —
+/// where hidden sections come back from — and the open library's name under it, so nobody edits in
+/// the wrong one (issue #902).
+fn my_photos_title(app: &mut LccApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
+    let (hr, title) = ui.allocate_exact_size(vec2(ui.available_width(), 44.0), Sense::click());
+    register(ui.ctx(), "sidebarTitle", hr);
+    title.context_menu(|ui| sections_menu(app, ui, None));
+    let library = crate::panels::settings::open_library_name(app);
+    let title_y = if library.is_some() { hr.center().y - 7.0 } else { hr.center().y };
+    ui.painter().text(pos2(hr.left() + 18.0, title_y), Align2::LEFT_CENTER, crate::i18n::tr("My Photos"), t.semibold(15.0), t.text);
+    if let Some(name) = library {
+        ui.painter().with_clip_rect(hr.shrink2(vec2(18.0, 0.0))).text(
+            pos2(hr.left() + 18.0, hr.center().y + 10.0),
+            Align2::LEFT_CENTER,
+            name,
+            t.font(11.0),
+            t.text_dim,
+        );
+        crate::widgets::register(ui.ctx(), "label:libraryName", hr);
+        if let Some(l) = app.session.library.as_ref() {
+            title.on_hover_text(l.dir.display().to_string());
+        }
+    }
+}
+
+/// Upstream's My Photos rows and sections: the catalog's sources, Recently Deleted with them
+/// (upstream's grouping), then Albums, Local, By Date, Folders and Keywords as the user arranged
+/// them. `view_top`: where the visible part starts (screen y) — the open section whose header has
+/// scrolled past it is the one pinned at the top. [`my_photos_column`] passes the top of its scroll
+/// area; Develop's column, drawing this as one of its panels, the top of the visible column.
+fn my_photos(app: &mut LccApp, ui: &mut egui::Ui, view_top: f32) {
+    let counts = app.caches.counts(&app.session.catalog);
+    let (total, picks, deleted) = (counts.total, counts.picks, counts.deleted);
+    // My Photos: the catalog's sources, Recently Deleted with them (upstream's grouping)
+    classic::catalog_section(app, ui, total, picks, deleted, true);
+    // the album just made: the folders down to it open, once (also when the section is shut)
+    let reveal = app.ui.reveal_album.take();
+    if reveal.is_some() {
+        // …and Albums itself is shown and opened, so the new album can be seen
+        app.ui.sidebar.reveal(SidebarSection::Albums);
+    }
+    // the keyword just made from Keywords' header: the section and the keywords above it open
+    if let Some(path) = app.ui.reveal_keyword.take() {
+        app.ui.sidebar.reveal(SidebarSection::Keywords);
+        let mut above = String::new();
+        let mut names = path.split('|').peekable();
+        while let Some(name) = names.next().filter(|_| names.peek().is_some()) {
+            if !above.is_empty() {
+                above.push('|');
+            }
+            above.push_str(name);
+            set_tree_open(ui, egui::Id::new(("kw-open", above.to_lowercase())), true);
+        }
+    }
+    // Local keeps track of the folder being browsed whether or not it is drawn
+    let local = local_now(app, ui);
+    let shown: Vec<SidebarSection> = app.ui.sidebar.shown().collect();
+    let mut placed: Vec<PlacedSection> = Vec::with_capacity(shown.len());
+    for s in shown {
+        let at = match s {
+            SidebarSection::Albums => {
+                let rows = app.session.catalog.albums().filter(|a| a.parent.is_none()).count();
+                section(app, ui, s, rows, |app, ui| albums_rows(app, ui, reveal))
+            }
+            SidebarSection::Local => {
+                let Some(local) = &local else { continue };
+                section(app, ui, s, local.places.places.len(), |app, ui| local_rows(app, ui, local))
+            }
+            SidebarSection::ByDate => {
+                let rows = app.caches.date_groups(&app.session.catalog).len();
+                section(app, ui, s, rows, date_rows)
+            }
+            SidebarSection::Folders => {
+                let tree = app.caches.folder_tree(&app.session.catalog);
+                section(app, ui, s, tree.len(), |app, ui| {
+                    reveal_chosen(app, ui, &tree);
+                    folder_rows(app, ui, &tree, 0.0);
+                })
+            }
+            SidebarSection::Keywords => {
+                let tree = app.caches.keyword_tree(&app.session.catalog);
+                section(app, ui, s, tree.len(), |app, ui| keyword_rows(app, ui, &tree, 0.0))
+            }
+        };
+        placed.push(at);
+    }
+    // room below the last section (a section dragged to the end is dropped here)
+    ui.add_space(SECTION_GAP * 2.0);
+    pinned_header(app, ui, &placed, view_top);
+    section_drag(app, ui, &placed);
 }
 
 /// Albums: the tree of albums and the folders they are sorted into. `reveal`: an album just made,

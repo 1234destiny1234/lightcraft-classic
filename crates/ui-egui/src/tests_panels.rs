@@ -25,15 +25,25 @@ fn demo(size: [f32; 2], ui: serde_json::Value) -> Headless {
 }
 
 /// The fork's Library draws its Classic panels on the left (Navigator, Catalog, Folders,
-/// Collections); upstream's reorderable sections (Albums, Local, By Date, Folders, Keywords under
-/// My Photos) are the left sidebar of Develop. These tests are about those sections, so they run
-/// in Develop: the loupe with the edit panel, whatever view `ui` asks for.
+/// Collections); Develop draws its own Classic stack (Navigator, Presets, Versions, History,
+/// Collections) and keeps upstream's reorderable sections (Albums, Local, By Date, Folders,
+/// Keywords under My Photos) as one more panel of that column, hidden until it is asked for. These
+/// tests are about those sections, so they ask for that panel and leave the rest of the column
+/// out: the loupe with the edit panel, whatever view `ui` asks for.
 fn sections_demo(size: [f32; 2], mut ui: serde_json::Value) -> Headless {
     ui["view"] = json!("detail");
     ui["right"] = json!("edit");
-    let h = demo(size, ui);
+    let mut h = demo(size, ui);
     assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+    my_photos_only(&mut h);
     h
+}
+
+/// Leave only Develop's "My Photos" panel (upstream's sidebar) in the left column.
+fn my_photos_only(h: &mut Headless) {
+    use crate::module::PanelId;
+    h.app.ui.hidden_panels = vec![PanelId::Navigator, PanelId::Presets, PanelId::Versions, PanelId::History, PanelId::Collections];
+    h.settle(SETTLE);
 }
 
 fn widget(h: &Headless, id: &str) -> egui::Rect {
@@ -1512,10 +1522,12 @@ fn folders_app_sized(paths: &[&str], size: [f32; 2]) -> Headless {
     folders_app_with(paths, size, json!({"view": "photoGrid", "leftPanel": true, "moduleBar": false}))
 }
 
-/// [`folders_app_sized`] in Develop, whose left sidebar is upstream's sections (see [`sections_demo`]).
+/// [`folders_app_sized`] in Develop, whose left column draws upstream's sections as its
+/// "My Photos" panel (see [`sections_demo`]).
 fn folders_sections_app(paths: &[&str], size: [f32; 2]) -> Headless {
-    let h = folders_app_with(paths, size, json!({"view": "detail", "right": "edit", "leftPanel": true, "moduleBar": false}));
+    let mut h = folders_app_with(paths, size, json!({"view": "detail", "right": "edit", "leftPanel": true, "moduleBar": false}));
     assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+    my_photos_only(&mut h);
     h
 }
 
