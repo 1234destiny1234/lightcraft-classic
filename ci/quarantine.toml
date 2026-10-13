@@ -7,17 +7,4 @@
 # binary    = "<tests/ file stem>"       (integration tests only)
 # platforms = any of "linux", "macos", "windows"
 
-[[test]]
-name = "lcc-ui-egui::tests_dialog_fit::export_dialog_is_unchanged_in_a_tall_window"
-platforms = ["macos"]
-issue = "#13"
-until = "2026-10-27"
-reason = "depends on window/dialog metrics on the macOS runner; robustness fix in progress"
-
-[[test]]
-name = "lcc-ui-egui::export_hooks_run_off_the_ui_thread_with_an_activity_row"
-binary = "plugin_worker"
-platforms = ["windows"]
-issue = "#14"
-until = "2026-10-27"
-reason = "timing-sensitive on the Windows runner; robustness fix in progress"
+# (no entries: #13 and #14 are fixed)

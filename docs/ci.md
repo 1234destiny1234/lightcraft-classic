@@ -1,6 +1,6 @@
 # CI and landing changes
 
-> **Last updated:** 2026-10-13 · **Change:** minor (test retries, flaky reports and the test quarantine); major (created: PR-only main, self-hosted runner, local status)
+> **Last updated:** 2026-10-13 · **Change:** minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
 
 ## How changes reach `main`
 
@@ -13,16 +13,34 @@
 Every change goes on a branch, opens a PR and is set to auto-merge
 (`gh pr merge <n> --repo <owner>/<repo> --auto --merge`); it lands when the check passes.
 
+## Fast gate on PRs, full CI before a release
+
+| Trigger | Linux ("Linux (cargo xtask ci)") | macOS / Windows |
+|---|---|---|
+| Pull request to `main`, push to `main` | `cargo xtask ci --fast` + SIL suite | build + clippy |
+| Push to `release`, manual dispatch (Actions → CI → Run workflow) | full `cargo xtask ci` + SIL suite | build + clippy + `cargo test --workspace` |
+
+`cargo xtask ci --fast` runs fmt, brand, docs, clippy `-D warnings` (incl. the HEIF feature), parity refs,
+shared-check, layers, assets, deny and the wasm check; it skips the workspace and HEIF test runs. The SIL step
+runs `cargo xtask sil` (docs/testing-sil.md) once that command exists and is skipped until then. Locally,
+`cargo xtask ci` stays the full run; use `--fast` per commit and run the targeted tests of what you touched.
+
+Before cutting a release, dispatch CI on the commit (or push it to `release`, which also starts
+`release.yml`) and make sure all three OSes are green.
+
 ## Where the required check runs
 
 The Linux job in `.github/workflows/ci.yml` runs on:
 
 - a **self-hosted runner** (labels `self-hosted, linux, x64, lcc`) for pushes and for PRs from branches in this
-  repository: its build cache (`~/.cache/lcc-ci-target`) persists between runs, so most runs are incremental;
+  repository: its build cache persists between runs, so most runs are incremental. Each runner instance has
+  its own cache (`CARGO_TARGET_DIR` from the runner's `.env`, else `~/.cache/lcc-ci-target-<runner name>`), so
+  several instances on one machine (`gpu0` and `gpu0-b`) can run jobs at once without fighting over one
+  build directory;
 - a **GitHub-hosted runner** for PRs from forks, which never run on the self-hosted machine. Outside
   contributors' workflow runs also need a maintainer's approval first.
 
-The macOS and Windows "clippy + test" jobs run the same way on self-hosted runners (labels `self-hosted,
+The macOS and Windows "clippy + build" jobs run the same way on self-hosted runners (labels `self-hosted,
 macOS, ARM64, lcc` and `self-hosted, windows, x64, lcc`). FreeBSD and the other workflows stay on
 GitHub-hosted runners. Only the Linux check blocks merging.
 
@@ -62,7 +80,7 @@ If the runner is offline, jobs for our own branches wait in the queue; post a lo
 
 ## Retries, flaky tests and the quarantine
 
-CI runs the tests with [cargo-nextest](https://nexte.st) (installed by `taiki-e/install-action`, into the
+The full pre-release run (`cargo xtask ci` without `--fast`, on a push to `release` or a manual dispatch) runs the tests with [cargo-nextest](https://nexte.st) (installed by `taiki-e/install-action`, into the
 runner's cargo home), profile `ci` in `.config/nextest.toml`:
 
 - **Retries:** a failing test is retried up to 2 times. One that then passes is reported as **FLAKY** in the
@@ -71,8 +89,8 @@ runner's cargo home), profile `ci` in `.config/nextest.toml`:
 - **Doctests:** nextest doesn't run them; `cargo test --workspace --doc` runs as a separate step.
 
 On Linux, `cargo xtask ci` uses nextest when `CI=true` (GitHub sets it) or `XTASK_NEXTEST=1` and nextest is
-installed; locally it stays a strict `cargo test --workspace`. The macOS and Windows jobs run
-`cargo xtask quarantine test`. Without nextest both fall back to plain `cargo test --workspace`.
+installed; locally it stays a strict `cargo test --workspace`. In the full run the macOS and Windows jobs run
+`cargo xtask quarantine test`; the fast PR gate runs no tests, so retries and the quarantine don't apply to it. Without nextest both fall back to plain `cargo test --workspace`.
 
 ### Quarantine
 
@@ -86,12 +104,12 @@ each then runs on its own, and a failure shows as a `Quarantined test failed` wa
   expiry the test gates again and every run warns `Quarantine entry expired`; fix it or renew the entry
   with a reason.
 - The entry comes out in the same PR as the fix, which closes the issue.
-- `cargo xtask quarantine check` (a `cargo xtask ci` step) rejects malformed entries; `cargo xtask quarantine
+- `cargo xtask quarantine check` (a step of both `cargo xtask ci` and `--fast`) rejects malformed entries; `cargo xtask quarantine
   filter --platform macos` prints the nextest filter a platform uses.
 
 ## Posting a local result
 
-When `cargo xtask ci` has to run anyway (or the runner is offline), run it locally on the pushed branch
+When `cargo xtask ci` (the full run) has to run anyway (or the runner is offline), run it locally on the pushed branch
 and post the result as the required check:
 
 ```

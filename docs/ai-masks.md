@@ -62,9 +62,8 @@ then snaps it to the photo's edges with a guided filter:
   `vegetation` (green). Mountains, architecture and the ground classes select nothing.
 
 **Evaluation.** The procedural demo scenes know what each pixel shows (`lcc_scenes::Label`). That
-makes every demo photo a labelled reference: `cargo test -p lcc-pipeline --release mask_eval --
---nocapture` prints a soft IoU per scene. Set `MASK_EVAL_DUMP=<dir>` to also write the photo,
-the mask and the reference side by side.
+made every demo photo a labelled reference; the soft IoU per scene below was measured with an
+evaluation harness that has since been removed from the test suite (2026-10-13 test audit).
 
 | Mask | Scenes | Before (per-pixel heuristic) | After |
 |---|---|---|---|

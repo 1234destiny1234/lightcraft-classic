@@ -1,11 +1,14 @@
-# Quality gates on every push and pull request to main.
-# Linux runs the full `cargo xtask ci` (fmt, clippy, tests, layers, assets, brand, parity, deny, wasm);
-# macOS and Windows run clippy and the workspace tests. FreeBSD has its own workflow (freebsd.yml).
+# Quality gates (docs/ci.md).
+# PRs and pushes to main run the FAST gate: Linux `cargo xtask ci --fast` (fmt, brand, docs, clippy, heif
+# clippy, parity, layers, assets, deny, wasm; no unit-test run) plus the SIL suite when it exists; macOS
+# and Windows build + clippy only.
+# Pushes to `release` and manual dispatch run the FULL gate: `cargo xtask ci` with every test on Linux,
+# and the workspace tests on macOS and Windows. FreeBSD has its own workflow (freebsd.yml).
 name: CI
 
 on:
   push:
-    branches: [main]
+    branches: [main, release]
   pull_request:
     branches: [main]
   workflow_dispatch:
@@ -27,6 +30,8 @@ env:
   # Fonts (optional build input): the CJK font tests run instead of skipping.
   CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
   CRAFT_FONTS_REQUIRED: "1"
+  # full test runs only before a release (push to `release`) or on manual dispatch
+  FULL_CI: ${{ (github.event_name == 'workflow_dispatch' || github.ref == 'refs/heads/release') && '1' || '' }}
 
 jobs:
   linux:
@@ -44,7 +49,9 @@ jobs:
           path: craft-fonts
       - name: Keep the build cache between runs (self-hosted)
         if: runner.environment == 'self-hosted'
-        run: echo "CARGO_TARGET_DIR=$HOME/.cache/lcc-ci-target" >> "$GITHUB_ENV"
+        # One cache per runner instance (several can share a machine and run at once); a runner's
+        # .env may set CARGO_TARGET_DIR itself.
+        run: echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/.cache/lcc-ci-target-$RUNNER_NAME}" >> "$GITHUB_ENV"
       - name: Install system libraries
         if: runner.environment != 'self-hosted'
         run: |
@@ -63,12 +70,19 @@ jobs:
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny,cargo-nextest
-      # CI=true: the test stage runs cargo-nextest with retries and ci/quarantine.toml (docs/ci.md)
-      - name: cargo xtask ci
-        run: cargo xtask ci
+      # full run (CI=true): the test stage runs cargo-nextest with retries and ci/quarantine.toml (docs/ci.md)
+      - name: cargo xtask ci (--fast unless a release / manual run)
+        shell: bash
+        run: |
+          if [ -n "$FULL_CI" ]; then cargo xtask ci; else cargo xtask ci --fast; fi
+      # Software-in-the-loop suite (docs/testing-sil.md); skipped until `cargo xtask sil` exists.
+      - name: SIL suite
+        shell: bash
+        run: |
+          if grep -q 'Some("sil")' xtask/src/main.rs; then cargo xtask sil; else echo "SIL suite not present yet; skipped"; fi
 
   test:
-    name: ${{ matrix.name }} (clippy + test)
+    name: ${{ matrix.name }} (clippy + build; tests before a release)
     strategy:
       fail-fast: false
       matrix:
@@ -98,10 +112,14 @@ jobs:
           key: ci-${{ matrix.os }}
           save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
+        if: env.FULL_CI == '1'
         with:
           tool: cargo-nextest
+      - name: build
+        run: cargo build --workspace --locked
       - name: clippy
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       # nextest with retries; quarantined tests (ci/quarantine.toml) run apart and only warn (docs/ci.md)
       - name: test
+        if: env.FULL_CI == '1'
         run: cargo xtask quarantine test

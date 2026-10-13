@@ -32,6 +32,9 @@ fn slow_hook(id: &str, spins: u32) -> Vec<u8> {
 /// drawing frames while it runs, and its result reaches the export's result when it's done.
 #[test]
 fn export_hooks_run_off_the_ui_thread_with_an_activity_row() {
+    // install into memory, never into the real user's settings folder (a failed run left the test
+    // plug-in installed there)
+    lcc_engine::cmd::plugins::use_in_memory_manager();
     let dir = std::env::temp_dir().join(format!("plugin-worker-{}", std::process::id()));
     std::fs::create_dir_all(&dir).unwrap();
     let wasm = dir.join("slow.wasm");
@@ -49,6 +52,9 @@ fn export_hooks_run_off_the_ui_thread_with_an_activity_row() {
     let row = h.app.session.activity.list().into_iter().find(|r| r.kind == "plugins").expect("an activity row");
     assert_eq!(row.label, "Running plug-in export hooks");
     assert!(row.cancellable);
+    // The UI isn't blocked: `after_export` returned at once (above) and frames keep coming while the
+    // hook runs. How many fit depends on the machine (a fast desktop finishes the spin loop within a
+    // couple of frames, the first of which is slow), so the test asks for one, not a frame count.
     let (frames, mut while_running) = (h.frames(), 0);
     let deadline = std::time::Instant::now() + std::time::Duration::from_secs(60);
     while lcc_ui_egui::panels::plugins::export_hooks_running() && std::time::Instant::now() < deadline {
@@ -56,7 +62,7 @@ fn export_hooks_run_off_the_ui_thread_with_an_activity_row() {
         while_running += 1;
     }
     assert!(!lcc_ui_egui::panels::plugins::export_hooks_running(), "the hooks finished");
-    assert!(while_running >= 3 && h.frames() >= frames + 3, "frames went on while the hook ran: {while_running}");
+    assert!(while_running >= 1 && h.frames() > frames, "frames went on while the hook ran: {while_running}");
     assert!(h.app.session.activity.list().iter().all(|r| r.kind != "plugins"), "the row is gone");
     let plugins = &h.app.last_export_result.as_ref().unwrap()["plugins"];
     assert!(plugins.as_array().unwrap().iter().any(|v| v["plugin"] == "test.slowhook" && v["ok"]["seen"] == true), "{plugins}");

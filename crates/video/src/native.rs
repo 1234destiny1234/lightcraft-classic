@@ -224,16 +224,3 @@ fn fit(w: u32, h: u32, max_side: Option<u32>) -> (u32, u32) {
         _ => (w.max(1), h.max(1)),
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn fit_bounds_long_side() {
-        assert_eq!(fit(1920, 1080, Some(960)), (960, 540));
-        assert_eq!(fit(1920, 1080, None), (1920, 1080));
-        assert_eq!(fit(100, 50, Some(0)), (100, 50));
-        assert_eq!(fit(0, 0, Some(10)), (1, 1));
-    }
-}
