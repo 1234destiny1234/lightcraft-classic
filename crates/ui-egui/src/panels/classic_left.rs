@@ -1,5 +1,8 @@
-//! Library's Classic left column (Navigator, Catalog, Folders, Collections) and the Catalog
-//! section's fork rows, kept out of the shared `left.rs` (U.5): `left::show` hands Library to
+//! Library's and Develop's Classic left columns (fork-owned). Library draws Navigator, Catalog,
+//! Folders, Collections and Publish Services; Develop draws Classic's Develop column — Navigator,
+//! Presets, Versions (Classic's Snapshots), History and Collections — with upstream's My Photos
+//! sidebar offered there as a panel of its own (hidden by default, so a pull from upstream stays
+//! mechanical). Kept out of the shared `left.rs` (U.5): `left::show` hands the module's side to
 //! [`show`], and the sidebar layout calls [`catalog_section`]. A child module of `left`, so it
 //! uses that file's private helpers without widening them.
 
@@ -13,8 +16,9 @@ use crate::icons::Icon;
 use crate::module::PanelId;
 use crate::widgets::icon_button;
 
-/// Library's left column: the panels in a scroll area as wide as its widest row.
-pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui) {
+/// A module's Classic left column: the panels of `side` in the user's order, each under its
+/// collapsible header, in a scroll area as wide as its widest row.
+pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
     let counts = app.caches.counts(&app.session.catalog);
     let (total, picks, deleted) = (counts.total, counts.picks, counts.deleted);
     egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
@@ -27,8 +31,10 @@ pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             d.insert_temp(egui::Id::new("left-content-width-next"), 0.0f32);
             // where the visible part of the content ends (screen x), for what stays at the edge
             d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + viewport.max.x);
+            // where it starts (screen y): what a section pinned at the top is measured against
+            d.insert_temp(egui::Id::new("left-view-top"), ui.cursor().top() + viewport.min.y);
         });
-        columns(app, ui, viewport, total, picks, deleted);
+        columns(app, ui, viewport, side, total, picks, deleted);
         // what the rows asked for becomes next frame's width
         let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
         if (next - super::content_width(ui.ctx())).abs() > 0.5 {
@@ -38,10 +44,10 @@ pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     });
 }
 
-/// Library's Classic left column: Navigator, Catalog, Folders, Collections, each under a
-/// collapsible header (see [`super::classic`]), in the user's order.
-fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, total: usize, picks: usize, deleted: usize) {
-    let side = crate::module::LIBRARY_LEFT;
+/// The panels of one side, in the user's order: Library's Classic column (Navigator, Catalog,
+/// Folders, Collections, Publish Services) or Develop's (Navigator, Presets, Versions, History,
+/// Collections, and My Photos when it is shown).
+fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, side: &[PanelId], total: usize, picks: usize, deleted: usize) {
     for p in crate::panels::classic::ordered(app, side) {
         match p {
             PanelId::Navigator => {
@@ -76,12 +82,59 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, total: usize, pi
                     crate::panels::collections::footer(app, ui);
                 }
             }
+            // Develop's own panels: the presets, the photo's versions and its history.
+            // The presets are upstream's panel drawn whole — its title row, amount slider and scroll
+            // area are its own — so it is self-headered, like the Navigator, and it is drawn once:
+            // while the presets column (Shift+P) is open, that column is the presets. It is given a
+            // share of the column, as Lightroom's Presets panel has: left to itself it takes all of
+            // it, and the panels below would be pushed out of sight.
+            PanelId::Presets if !app.ui.presets => {
+                let avail = ui.available_height();
+                let share = if avail.is_finite() { (avail * 0.5).clamp(200.0, 420.0) } else { 320.0 };
+                ui.allocate_ui(vec2(ui.available_width(), share), |ui| crate::panels::presets::show(app, ui));
+                ui.add_space(6.0);
+            }
+            PanelId::Presets => {}
+            PanelId::Versions => {
+                if crate::panels::classic::header(app, ui, p, side).1 {
+                    versions_or_history(app, ui, crate::panels::right::versions_body);
+                    ui.add_space(6.0);
+                }
+            }
+            PanelId::History => {
+                if crate::panels::classic::header(app, ui, p, side).1 {
+                    versions_or_history(app, ui, crate::panels::right::history_body);
+                    ui.add_space(6.0);
+                }
+            }
+            // upstream's My Photos sidebar (hidden until it is asked for): the whole column as
+            // upstream draws it — its title row (the open library's name, the sections' menu) and
+            // its own pinned headers — as one panel of this column. Self-headered, like the
+            // Navigator: it is folded and moved by its own list rather than by a Classic header,
+            // and another panel's menu (or `panel.show`) hides it.
+            PanelId::Sources => {
+                super::my_photos_title(app, ui);
+                super::my_photos(app, ui, ui.clip_rect().top());
+            }
             #[cfg(not(target_arch = "wasm32"))]
             PanelId::Publish => crate::panels::publish::show(app, ui, side),
             _ => {}
         }
     }
     ui.add_space(10.0);
+}
+
+/// The Versions or History rows of the photo being edited; with no photo, what to do about it.
+fn versions_or_history(app: &mut LccApp, ui: &mut egui::Ui, rows: fn(&mut LccApp, &mut egui::Ui, lcc_catalog::PhotoId)) {
+    match app.session.active() {
+        Some(id) => rows(app, ui, id),
+        None => {
+            let t = crate::theme::Tokens::get(ui.ctx());
+            ui.add_space(4.0);
+            ui.label(egui::RichText::new(crate::i18n::tr("No photo selected")).color(t.text_dim));
+            ui.add_space(4.0);
+        }
+    }
 }
 
 /// All Photos, Quick Collection, Previous Import, Recently Added, Picks, Missing (and, in the

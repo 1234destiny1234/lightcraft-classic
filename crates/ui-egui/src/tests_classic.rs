@@ -244,3 +244,115 @@ fn clicking_a_module_name_switches_module() {
     click(&mut h, "module:develop");
     assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
 }
+
+/// Widgets whose id starts with `prefix`.
+fn rows(h: &Headless, prefix: &str) -> usize {
+    h.app.widgets.iter().filter(|(w, _)| w.starts_with(prefix)).count()
+}
+
+/// The demo library in Develop, with the left column shown: a module keeps the edges it was left
+/// with (see `module::ModuleLayout`), and this one starts with the column out of the way.
+fn develop_demo() -> Headless {
+    let mut h = demo();
+    click(&mut h, "module:develop");
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+    h.request("ui.set", json!({"leftPanel": true}), T);
+    h.settle(SETTLE);
+    h
+}
+
+/// The top of a widget.
+fn top(h: &Headless, id: &str) -> f32 {
+    h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| r.top()).unwrap_or_else(|| panic!("no widget {id}"))
+}
+
+/// Develop's left column is its own Classic stack — Navigator, Presets, Versions, History,
+/// Collections — drawn like Library's, not the Library's structure in the editing module. The
+/// Catalog, Folders and Keywords panels stay in Library; upstream's My Photos sidebar is offered
+/// here as a panel of its own, hidden until it is asked for.
+#[test]
+fn develop_column_is_its_own_classic_stack() {
+    let mut h = develop_demo();
+    // the Develop column's panels: Versions, History and Collections under Classic headers, the
+    // Navigator and the presets under their own (upstream draws the presets panel whole)
+    for p in ["versions", "history", "collections"] {
+        assert!(has(&h, &format!("classicPanel:{p}")), "{p}");
+    }
+    assert!(has(&h, "sidebarSection:navigator"), "the Navigator, where Classic puts it");
+    assert!(rows(&h, "presetGroup:") > 0, "the presets themselves");
+    assert!(!has(&h, "classicPanel:presets"), "the presets bring their own title row");
+    // the presets are drawn once: with the presets column open (Shift+P), that column is the presets
+    let in_column = rows(&h, "presetGroup:");
+    run(&mut h, "panel.presets", json!({}));
+    assert!(h.app.ui.presets && !has(&h, "classicPanel:presets"));
+    assert!(rows(&h, "presetGroup:") <= in_column, "the presets are not drawn twice");
+    run(&mut h, "panel.presets", json!({}));
+    assert!(!h.app.ui.presets && rows(&h, "presetGroup:") == in_column, "back in the column");
+    // the Library's panels are not here
+    for p in ["catalog", "folders", "publish"] {
+        assert!(!has(&h, &format!("classicPanel:{p}")), "{p} belongs to Library");
+    }
+    assert!(!has(&h, "sidebarSection:keywords"), "Keywords stays in Library");
+    // upstream's My Photos sidebar: there once asked for, out of the way until then. It draws its
+    // own title row and sections (as the Navigator draws its own header), not a Classic header.
+    assert!(!has(&h, "sidebarTitle") && !has(&h, "sidebarSection:albums"));
+    run(&mut h, "panel.show", json!({"panel": "sources", "visible": true}));
+    assert!(!has(&h, "classicPanel:sources") && has(&h, "sidebarTitle") && has(&h, "sidebarSection:albums"));
+    run(&mut h, "panel.show", json!({"panel": "sources", "visible": false}));
+    assert!(!has(&h, "sidebarTitle") && !has(&h, "sidebarSection:albums"));
+}
+
+/// Develop's column folds, solos, reorders and hides its Classic panels exactly as Library's does.
+#[test]
+fn develop_column_folds_solos_reorders_and_hides() {
+    let mut h = develop_demo();
+    // a click folds a panel and unfolds it again (the presets panel above it is bounded, so these
+    // Classic headers are on screen without scrolling)
+    click(&mut h, "classicPanel:versions");
+    assert!(!classic::is_open(&h.app, PanelId::Versions) && !has(&h, "button:versionCreate"));
+    click(&mut h, "classicPanel:versions");
+    assert!(classic::is_open(&h.app, PanelId::Versions) && has(&h, "button:versionCreate"));
+    // Solo Mode: opening one panel folds the others on its side only
+    run(&mut h, "panel.solo", json!({"on": true}));
+    classic::set_open(&mut h.app, PanelId::History, false);
+    classic::set_open(&mut h.app, PanelId::History, true);
+    assert!(classic::is_open(&h.app, PanelId::History));
+    assert!(!classic::is_open(&h.app, PanelId::Versions) && !classic::is_open(&h.app, PanelId::Collections));
+    run(&mut h, "panel.solo", json!({"on": false}));
+    // hiding takes the panel (header and rows) out of the column
+    run(&mut h, "panel.show", json!({"panel": "versions", "visible": false}));
+    assert!(!has(&h, "classicPanel:versions") && !has(&h, "button:versionCreate"));
+    // and the order is the user's
+    run(&mut h, "panel.order", json!({"order": ["history", "collections"]}));
+    assert!(top(&h, "classicPanel:history") < top(&h, "classicPanel:collections"), "History moved above Collections");
+}
+
+/// A settings file written before Develop had its Classic column has never seen the My Photos
+/// panel that column offers: it starts hidden there, as for a fresh install, and what the file
+/// says about it from then on is kept.
+#[test]
+fn an_older_settings_file_keeps_the_my_photos_panel_hidden() {
+    let older = json!({
+        "leftPanel": true,
+        "hiddenPanels": [],
+        "layouts": {"develop": {"hidden": [], "order": []}},
+    });
+    let ui = serde_json::from_value::<crate::UiState>(older).unwrap().sanitized();
+    assert!(ui.hidden_panels.contains(&PanelId::Sources) && ui.develop_classic);
+    assert!(ui.layouts[&crate::module::ModuleId::Develop].hidden.contains(&PanelId::Sources), "the saved layout too");
+    // a file written since keeps whatever it says (here: shown on purpose)
+    let now = json!({"developClassic": true, "hiddenPanels": [], "layouts": {"develop": {"hidden": [], "order": []}}});
+    let ui = serde_json::from_value::<crate::UiState>(now).unwrap().sanitized();
+    assert!(ui.hidden_panels.is_empty() && ui.layouts[&crate::module::ModuleId::Develop].hidden.is_empty());
+}
+
+/// The tool strip belongs to Develop: Library's right column is its Classic panels, and offering
+/// the editing tools there sent a click into another module.
+#[test]
+fn the_tool_strip_is_develops_alone() {
+    let mut h = demo();
+    assert!(!has(&h, "icon:edit") && !has(&h, "icon:crop") && !has(&h, "icon:presets"), "no Develop tools in Library");
+    assert!(has(&h, "classicPanel:metadata"), "Library's right column is still there");
+    click(&mut h, "module:develop");
+    assert!(has(&h, "icon:edit") && has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
+}

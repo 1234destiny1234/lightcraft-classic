@@ -157,16 +157,21 @@ impl EdgeFlags {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum PanelId {
-    /// Library left: sources, albums, folders, keywords.
+    /// Develop left, optional: upstream's My Photos sidebar (sources, albums, local, by date,
+    /// folders, keywords). Kept so a pull from upstream stays mechanical; hidden by default,
+    /// because Classic's Develop column is [`DEVELOP_LEFT`].
     Sources,
-    /// Develop left: the presets column.
+    /// Develop left: the presets, with hover preview and the preset groups.
     Presets,
     Edit,
     Crop,
     Remove,
     Masking,
     RedEye,
+    /// Develop left (Classic: Snapshots) and the right group: the photo's versions.
     Versions,
+    /// Develop left: the edit history, step by step.
+    History,
     Activity,
     Keywords,
     Info,
@@ -213,6 +218,7 @@ impl PanelId {
             PanelId::Info => RightPanel::Info,
             PanelId::Sources
             | PanelId::Presets
+            | PanelId::History
             | PanelId::Navigator
             | PanelId::Catalog
             | PanelId::Folders
@@ -414,6 +420,16 @@ struct Develop;
 /// Library's Classic columns.
 pub const LIBRARY_LEFT: &[PanelId] = &[PanelId::Navigator, PanelId::Catalog, PanelId::Folders, PanelId::Collections, PanelId::Publish];
 pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata];
+
+/// Develop's Classic left column: the Navigator, the Presets, the photo's Versions (Classic's
+/// Snapshots) and its History, and the Collections — Lightroom Classic's Develop column, not the
+/// Library's structure. Catalog, Folders and Keywords stay in Library.
+///
+/// `Sources` is upstream's My Photos sidebar, offered here so a pull from upstream stays
+/// mechanical, but hidden by default (see `UiState::default`): the Classic stack is what Develop
+/// shows.
+pub const DEVELOP_LEFT: &[PanelId] =
+    &[PanelId::Navigator, PanelId::Presets, PanelId::Versions, PanelId::History, PanelId::Collections, PanelId::Sources];
 const DEVELOP_RIGHT: &[PanelId] = &[
     PanelId::Edit,
     PanelId::Crop,
@@ -475,7 +491,7 @@ impl Module for Develop {
         ModuleId::Develop
     }
     fn left_panels(&self) -> &'static [PanelId] {
-        &[PanelId::Sources, PanelId::Presets]
+        DEVELOP_LEFT
     }
     fn right_panels(&self) -> &'static [PanelId] {
         DEVELOP_RIGHT

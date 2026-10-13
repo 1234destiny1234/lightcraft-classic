@@ -20,10 +20,13 @@ Photo Grid and Square Grid (View menu), loupe (`E`), compare (`C`) and survey (`
 
 ## Develop
 
-`D` opens the active photo. Panels: Light, Color, Effects, Detail, Optics, Geometry, Calibration (`Cmd+1`…`Cmd+5`
-jump to sections), plus the tools above them: Crop (`R`), Remove (`Q`), Red Eye, Masking (`Shift+W`: brush `K`,
-linear `M`, radial `Shift+M`, colour and luminance range, AI subject/sky/background/object masks). Presets (`Shift+P`),
-profiles, snapshots, history and versions (`Shift+V`); before/after (`Y`, `\`); clipping (`J`); soft proofing (`S`).
+`D` opens the active photo. Its left column is Develop's own, as in Lightroom Classic: Navigator, Presets, Versions
+(snapshots), History and Collections — the Library's Catalog, Folders and Keywords stay in Library, and the My Photos
+sidebar is there as a panel to show from any panel's menu. Panels: Light, Color, Effects, Detail, Optics, Geometry,
+Calibration (`Cmd+1`…`Cmd+5` jump to sections), plus the tools above them: Crop (`R`), Remove (`Q`), Red Eye,
+Masking (`Shift+W`: brush `K`, linear `M`, radial `Shift+M`, colour and luminance range, AI
+subject/sky/background/object masks). Presets (`Shift+P`), profiles, snapshots, history and versions (`Shift+V`);
+before/after (`Y`, `\`); clipping (`J`); soft proofing (`S`).
 Copy and paste settings with `Cmd+C`/`Cmd+V` (`Cmd+Shift+C` to choose which). Photo → Photo Merge makes HDR and
 panorama DNGs. Every slider is a develop control: `<cli> controls` lists ids and ranges.
 

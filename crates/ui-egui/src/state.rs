@@ -772,6 +772,11 @@ pub struct UiState {
     /// The right group's order and hidden panels for the module on screen.
     pub panel_order: Vec<crate::module::PanelId>,
     pub hidden_panels: Vec<crate::module::PanelId>,
+    /// Whether these settings know the Develop module's Classic left column. An older file has
+    /// never seen the optional "My Photos" panel that column offers, so [`Self::sanitized`] keeps
+    /// that panel hidden rather than letting it appear beside the column it works with.
+    #[serde(default)]
+    pub develop_classic: bool,
     pub screen_mode: crate::module::ScreenMode,
     #[serde(skip)]
     pub lights_out: crate::module::LightsOut,
@@ -1269,7 +1274,11 @@ impl Default for UiState {
             auto_hide: Default::default(),
             peek: Default::default(),
             panel_order: Vec::new(),
-            hidden_panels: Vec::new(),
+            // Develop's Classic column offers upstream's My Photos sidebar as a panel of its own:
+            // there, but out of the way until it is asked for (the panel header's menu, or
+            // `panel.show {"panel": "sources", "visible": true}`)
+            hidden_panels: vec![crate::module::PanelId::Sources],
+            develop_classic: true,
             screen_mode: Default::default(),
             lights_out: Default::default(),
             identity_plate: Default::default(),
@@ -1381,6 +1390,21 @@ impl UiState {
         (self.brush_size, self.brush_feather, self.brush_flow, self.brush_density) = (cur.size, cur.feather, cur.flow, cur.density);
         self.sidebar.adopt_collapsed(&self.collapsed_sidebar);
         self.collapsed_sidebar.retain(|id| id.starts_with("panel:"));
+        // A settings file written before Develop had its Classic column knows nothing of the
+        // "My Photos" panel that column offers (upstream's sidebar, kept for upstream pulls): it
+        // starts hidden there, so the column is what Develop shows, as for a fresh install.
+        if !self.develop_classic {
+            self.develop_classic = true;
+            let hide = |hidden: &mut Vec<crate::module::PanelId>| {
+                if !hidden.contains(&crate::module::PanelId::Sources) {
+                    hidden.push(crate::module::PanelId::Sources);
+                }
+            };
+            hide(&mut self.hidden_panels);
+            for layout in self.layouts.values_mut() {
+                hide(&mut layout.hidden);
+            }
+        }
         self.dialog = None;
         self.fullscreen = false;
         if !crate::state::PREVIEW_LIMITS.contains(&self.settings.preview_limit) {
