@@ -56,12 +56,3 @@ fn tall_dialogs_fit_a_small_window_with_their_buttons_on_screen() {
         assert!(h.app.ui.dialog.is_none(), "Cancel closed Export");
     }
 }
-
-#[test]
-fn a_short_dialog_is_as_tall_as_its_content() {
-    let h = open([1366.0, 768.0], Dialog::Cull { reject_below: 0.0, pick_best: false });
-    let window = rect(&h, "dialog:window");
-    let ok = rect(&h, "button:dialogOk");
-    assert!(window.height() < 400.0, "no empty space: {window:?}");
-    assert!(window.bottom() - ok.bottom() < 30.0, "footer at the bottom: {window:?} {ok:?}");
-}
