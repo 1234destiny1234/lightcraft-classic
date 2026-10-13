@@ -1304,5 +1304,11 @@
   "Stop Using as Target Collection": "ターゲットコレクションの使用を停止",
   "No collections yet": "コレクションはまだありません",
   "Sort Collections A–Z": "コレクションを A–Z で並べ替え",
-  "Tone": "階調"
+  "Tone": "階調",
+  "Empty": "空にする",
+  "Duplicates": "重複",
+  "Don't Import Suspected Duplicates": "重複の可能性がある写真を読み込まない",
+  "Will be copied": "コピーとして読み込み",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "編集内容、キーワード、コレクションへの登録は削除されます。ディスク上のファイルは残ります。",
+  "Include selected photos": "選択した写真を含める"
 }

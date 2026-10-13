@@ -1043,5 +1043,13 @@
   "Stop Using as Target Collection": "Більше не використовувати як цільову колекцію",
   "No collections yet": "Колекцій поки немає",
   "Sort Collections A–Z": "Сортувати колекції А–Я",
-  "Tone": "Тон"
+  "Tone": "Тон",
+  "Empty": "Очистити",
+  "Duplicates": "Дублікати",
+  "Don't Import Suspected Duplicates": "Не імпортувати можливі дублікати",
+  "Will be copied": "Буде імпортовано як копію",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Їхні правки, ключові слова та належність до колекцій видаляються; файли на диску зберігаються.",
+  "Include selected photos": "Включити вибрані фотографії",
+  "Adding photos…": "Додавання фотографій…",
+  "Reading photos…": "Читання фотографій…"
 }

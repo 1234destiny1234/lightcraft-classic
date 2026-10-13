@@ -1303,5 +1303,11 @@
   "Stop Using as Target Collection": "停止用作目標收藏集",
   "No collections yet": "尚無收藏集",
   "Sort Collections A–Z": "依 A–Z 排序收藏集",
-  "Tone": "色調"
+  "Tone": "色調",
+  "Empty": "清空",
+  "Duplicates": "重複項目",
+  "Don't Import Suspected Duplicates": "不匯入可能重複的照片",
+  "Will be copied": "將作為副本匯入",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "其編輯、關鍵字和收藏集歸屬將被移除；磁碟上的檔案會保留。",
+  "Include selected photos": "包含所選照片"
 }

@@ -1307,5 +1307,11 @@
   "Stop Using as Target Collection": "Dejar de usar como colección de destino",
   "No collections yet": "Aún no hay colecciones",
   "Sort Collections A–Z": "Ordenar colecciones A–Z",
-  "Tone": "Tono"
+  "Tone": "Tono",
+  "Empty": "Vaciar",
+  "Duplicates": "Duplicados",
+  "Don't Import Suspected Duplicates": "No importar posibles duplicados",
+  "Will be copied": "Se importará como copia",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Se eliminan sus ajustes, palabras clave y pertenencia a colecciones; los archivos del disco se conservan.",
+  "Include selected photos": "Incluir fotos seleccionadas"
 }

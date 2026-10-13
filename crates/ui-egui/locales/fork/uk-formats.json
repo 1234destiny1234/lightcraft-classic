@@ -55,5 +55,5 @@
   "{done} of {total} ({percent} %)": "{done} з {total} ({percent} %)",
   "{done} downloaded": "Завантажено: {done}",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} завантажено й перевірено; встановіть його, щоб оновитися (застосунок перезапуститься).",
-  "Color space: Rec. 2020 {curve} (HDR AVIF)": "Колірний простір: Rec. 2020 {curve} (HDR AVIF)"
+  "Remove {what} from the library for good?": "Остаточно вилучити {what} з бібліотеки?"
 }

@@ -1164,5 +1164,10 @@
   "Stop Using as Target Collection": "Nicht mehr als Zielsammlung verwenden",
   "No collections yet": "Noch keine Sammlungen",
   "Sort Collections A–Z": "Sammlungen A–Z sortieren",
-  "Tone": "Tonwert"
+  "Tone": "Tonwert",
+  "Empty": "Leeren",
+  "Duplicates": "Duplikate",
+  "Don't Import Suspected Duplicates": "Mögliche Duplikate nicht importieren",
+  "Will be copied": "Wird als Kopie importiert",
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Ihre Bearbeitungen, Stichwörter und Sammlungszugehörigkeiten werden entfernt; die Dateien auf dem Datenträger bleiben erhalten."
 }

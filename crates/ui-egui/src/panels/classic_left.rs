@@ -120,9 +120,17 @@ pub(super) fn catalog_section(app: &mut LccApp, ui: &mut egui::Ui, total: usize,
 
 fn recently_deleted_row(app: &mut LccApp, ui: &mut egui::Ui, deleted: usize) {
     let src = app.session.source;
-    if super::row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0).clicked() {
+    let r = super::row(app, ui, "recentlyDeleted", Icon::Trash, "Recently Deleted", Some(deleted), src == LibrarySource::RecentlyDeleted, 0.0);
+    if r.clicked() {
         let _ = app.run("library.source", json!({"kind": "recentlyDeleted"}));
     }
+    r.context_menu(|ui| {
+        let b = ui.add_enabled(deleted > 0, egui::Button::new(crate::i18n::tr("Empty Recently Deleted")));
+        crate::widgets::register(ui.ctx(), "menu:emptyRecentlyDeleted", b.rect);
+        if b.clicked() {
+            let _ = crate::menubar::run_item(app, "library.emptyRecentlyDeleted", json!({}));
+        }
+    });
 }
 
 /// By Date: year → month → day rows.

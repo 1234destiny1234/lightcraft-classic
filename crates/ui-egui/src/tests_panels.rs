@@ -2435,3 +2435,27 @@ fn new_album_can_leave_the_selected_photos_out() {
     confirm(&mut h);
     assert!(photos(&h, "Nothing").is_empty());
 }
+
+/// Recently Deleted can be emptied from its view's button and from the sidebar row's right-click
+/// menu; both ask first, Cancel keeps the photos, and OK removes only the trashed photos.
+#[test]
+fn emptying_recently_deleted_asks_first_and_removes_only_trashed_photos() {
+    use crate::state::Dialog;
+    let mut h = demo([1400.0, 900.0], json!({"view": "photoGrid", "leftPanel": true}));
+    let all = h.app.session.visible_cloned();
+    let (gone, kept) = (vec![all[0].0, all[1].0], all.len() - 2);
+    exec(&mut h, "photo.delete", json!({"ids": gone}));
+    exec(&mut h, "library.source", json!({"kind": "recentlyDeleted"}));
+    h.settle(SETTLE);
+    click(&mut h, "button:emptyRecentlyDeleted");
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmPurge { count: 2, all: true }), "the view's button asks");
+    h.request("ui.dialog.cancel", json!({}), T);
+    assert_eq!(h.app.session.catalog.len(), all.len(), "Cancel keeps them");
+    right_click(&mut h, "source:recentlyDeleted");
+    click(&mut h, "menu:emptyRecentlyDeleted");
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmPurge { count: 2, all: true }), "the sidebar menu asks");
+    let r = h.request("ui.dialog.confirm", json!({}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.session.catalog.len(), kept, "only the trashed photos are gone");
+    assert!(h.app.session.catalog.photos().all(|p| !p.deleted));
+}
