@@ -71,14 +71,17 @@ fn left(app: &mut LccApp, ui: &mut egui::Ui) {
     }
 }
 
-/// Tab outside a text field toggles panels (Classic): keep it from moving egui's focus.
+/// Tab outside a text field toggles panels (Classic): keep it from moving egui's focus. A Tab
+/// the keymap gives no command (the Alternative set's) moves the keyboard focus, as usual.
 pub(crate) fn defer_tabs(app: &mut LccApp, raw: &mut egui::RawInput) {
     if app.text_focus || app.recording_shortcut.is_some() {
         return;
     }
+    crate::shortcuts::set_active(app.ui.settings.keymap_set);
+    let keymap = &app.ui.settings.keymap;
     let deferred = &mut app.deferred_tabs;
     raw.events.retain(|e| match e {
-        egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } => {
+        egui::Event::Key { key: egui::Key::Tab, pressed, modifiers, .. } if crate::shortcuts::tab_bound(keymap, *modifiers) => {
             if *pressed {
                 deferred.push(*modifiers);
             }
@@ -86,4 +89,32 @@ pub(crate) fn defer_tabs(app: &mut LccApp, raw: &mut egui::RawInput) {
         }
         _ => true,
     });
+}
+
+#[cfg(test)]
+mod tests {
+    use crate::shortcuts::KeymapSet;
+    use crate::{LccApp, Services};
+
+    fn tab(shift: bool) -> egui::Event {
+        let modifiers = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+        egui::Event::Key { key: egui::Key::Tab, physical_key: None, pressed: true, repeat: false, modifiers }
+    }
+
+    /// The Classic set's Tab hides the side panels and does not move the focus; in the
+    /// Alternative set, where no command has Tab, Tab moves the keyboard focus.
+    #[test]
+    fn only_a_tab_the_keymap_binds_is_held_back_from_focus_navigation() {
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+        let mut raw = egui::RawInput { events: vec![tab(false), tab(true)], ..Default::default() };
+        super::defer_tabs(&mut app, &mut raw);
+        assert!(raw.events.is_empty() && app.deferred_tabs.len() == 2, "Classic: Tab and Shift+Tab are commands");
+        app.deferred_tabs.clear();
+        app.ui.settings.keymap_set = KeymapSet::Alternative;
+        let mut raw = egui::RawInput { events: vec![tab(false), tab(true)], ..Default::default() };
+        super::defer_tabs(&mut app, &mut raw);
+        assert_eq!(raw.events.len(), 2, "Alternative: Tab moves the focus");
+        assert!(app.deferred_tabs.is_empty());
+        crate::shortcuts::set_active(KeymapSet::Classic);
+    }
 }

@@ -29,9 +29,10 @@ fn library(photos: u64, keywords: u64) -> Session {
 fn app(photos: u64, keywords: u64) -> Headless {
     let app = LccApp::new(library(photos, keywords), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
-    let r = h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true}), T);
+    // the Keywords section is upstream's My Photos sidebar's: Develop's "My Photos" panel, alone in its column
+    let r = h.request("ui.set", json!({"view": "detail", "right": "edit", "leftPanel": true}), T);
     assert_eq!(r["ok"], true, "{r}");
-    h.settle(SETTLE);
+    crate::tests_panels::my_photos_only(&mut h);
     h
 }
 
