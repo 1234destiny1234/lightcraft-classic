@@ -49,7 +49,10 @@ impl Weights {
             }
             let dtype = match v.get("dtype").and_then(|d| d.as_str()) {
                 Some("F32") => DType::F32,
-                other => return Err(Error::Model(format!("{name}: unsupported dtype {other:?} (the SAM 3 checkpoint is F32)"))),
+                // integer buffers (BiRefNet's relative position indices and batch-norm counters)
+                // are recomputed or unused: skipped, never read
+                Some("I64") => continue,
+                other => return Err(Error::Model(format!("{name}: unsupported dtype {other:?} (the checkpoints are F32)"))),
             };
             let shape: Vec<usize> = v
                 .get("shape")
@@ -70,6 +73,11 @@ impl Weights {
             entries.insert(name, Entry { shape, start, end });
         }
         Ok(Arc::new(Self { file: Mutex::new(file), entries, data_start: 8 + n }))
+    }
+
+    /// The shape of tensor `name`, if the file has it.
+    pub fn shape(&self, name: &str) -> Option<&[usize]> {
+        self.entries.get(name).map(|e| e.shape.as_slice())
     }
 
     pub fn contains(&self, name: &str) -> bool {

@@ -18,8 +18,21 @@ fn open(h: &mut Headless, id: &str) {
     let r = h.request("ui.menu.invoke", json!({"id": id}), T);
     assert_eq!(r["ok"], true, "{id}: {r}");
     assert!(h.app.ui.dialog.is_some(), "{id}: no dialog");
-    h.step();
-    h.step();
+    // a new window sizes itself over its first frames, and on a loaded machine renders still
+    // arriving keep the app busy: wait (by the clock, not a frame count) until nothing is pending
+    // and the Close button has stayed put for a few frames, so a click lands where it is drawn
+    let (mut last, mut still) = (None, 0);
+    let t0 = std::time::Instant::now();
+    while still < 5 && t0.elapsed() < SETTLE {
+        h.step();
+        let now = rect(h, "button:dialogOk");
+        still = if now.is_some() && now == last && !h.busy() { still + 1 } else { 0 };
+        last = now;
+    }
+}
+
+fn rect(h: &Headless, id: &str) -> Option<egui::Rect> {
+    h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r)
 }
 
 #[test]
@@ -38,19 +51,12 @@ fn information_dialogs_end_with_one_close() {
         assert!(!text.iter().any(|t| t == "Cancel" || t == "OK"), "{id}: no Cancel / OK: {text:?}");
         let r = h.request("ui.clickWidget", json!({"id": "button:dialogOk"}), T);
         assert_eq!(r["ok"], true, "{id}: {r}");
-        // the click lands on a later frame under load
-        for _ in 0..50 {
-            if h.app.ui.dialog.is_none() {
-                break;
-            }
-            h.step();
-        }
-        assert!(h.app.ui.dialog.is_none(), "{id}: Close closes the dialog");
+        let closed = h.step_until(SETTLE, |h| h.app.ui.dialog.is_none());
+        assert!(closed, "{id}: Close closes the dialog (clicked {}, button now at {:?})", r["result"], rect(&h, "button:dialogOk"));
         // Esc still closes it too
         open(&mut h, id);
         let r = h.request("ui.key", json!({"key": "Escape"}), T);
         assert_eq!(r["ok"], true, "{id}: {r}");
-        h.step();
-        assert!(h.app.ui.dialog.is_none(), "{id}: Esc closes the dialog");
+        assert!(h.step_until(SETTLE, |h| h.app.ui.dialog.is_none()), "{id}: Esc closes the dialog");
     }
 }
