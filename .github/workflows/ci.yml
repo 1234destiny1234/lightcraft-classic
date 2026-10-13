@@ -74,6 +74,7 @@ jobs:
         include:
           - name: macOS
             os: macos-latest
+            self_hosted: '["self-hosted", "macOS", "ARM64", "lcc"]'
           - name: Windows
             os: windows-latest
             # the maintainer's self-hosted runner, for our own branches (docs/ci.md)

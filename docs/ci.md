@@ -22,9 +22,15 @@ The Linux job in `.github/workflows/ci.yml` runs on:
 - a **GitHub-hosted runner** for PRs from forks, which never run on the self-hosted machine. Outside
   contributors' workflow runs also need a maintainer's approval first.
 
-The Windows "clippy + test" job runs the same way on a self-hosted Windows runner (labels `self-hosted,
-windows, x64, lcc`). macOS (until its runner is set up), FreeBSD and the other workflows stay on
+The macOS and Windows "clippy + test" jobs run the same way on self-hosted runners (labels `self-hosted,
+macOS, ARM64, lcc` and `self-hosted, windows, x64, lcc`). FreeBSD and the other workflows stay on
 GitHub-hosted runners. Only the Linux check blocks merging.
+
+### macOS runner notes
+
+The runner is a LaunchAgent of the logged-in user (`./svc.sh install` in `~/actions-runner`, no sudo), using
+that user's `rustup` in `~/.cargo/bin` (set in the runner's `.path`) and Xcode's toolchain. `.env` sets
+`CARGO_TARGET_DIR=~/.cache/lcc-ci-target`. A LaunchAgent runs only while that user is logged in.
 
 ### Windows runner notes
 
@@ -32,7 +38,9 @@ The runner runs as a service under NETWORK SERVICE, so Rust is installed machine
 (`RUSTUP_HOME=C:\rust\rustup`, `CARGO_HOME=C:\rust\cargo`, with `C:\rust\cargo\bin` on the machine
 `Path`) and NETWORK SERVICE may modify `C:\rust`. The runner's `.env` file sets those two variables and
 `CARGO_TARGET_DIR=C:\lcc-ci-target` (the persistent build cache); its `.path` file holds the machine
-`Path`. Visual Studio Build Tools (C++) provide the linker.
+`Path`. Visual Studio Build Tools (C++) provide the linker. The `.path` file puts
+`C:\Program Files\Git\bin` first, so workflow `bash` steps get Git Bash rather than the WSL launcher in
+`System32` (which fails under the service account).
 
 ### Setting up the runner machine
 
