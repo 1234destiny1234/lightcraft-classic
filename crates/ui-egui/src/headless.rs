@@ -464,7 +464,8 @@ mod tests {
     fn detail_offers_ai_denoise_for_raw_photos_and_leads_to_its_settings() {
         use crate::state::Dialog;
         use lcc_catalog::{MediaKind, Op, Photo, PhotoId, Source};
-        let mut h = demo([1400.0, 900.0]);
+        // tall enough that the Detail panel's setup button is on screen above the Sync bar, whatever the panel order
+        let mut h = demo([1400.0, 1600.0]);
         let t = Duration::from_secs(10);
         let dir = std::env::temp_dir().join(format!("lc-ui-denoise-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
