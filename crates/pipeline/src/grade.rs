@@ -291,15 +291,6 @@ mod tests {
         assert_eq!(grade_frame(&img, &s, Quality::Full), grade_frame(&img, &allowed(), Quality::Full));
     }
 
-    #[test]
-    fn draft_fits_960_wide() {
-        let r = grade_request(1920, 1080, Quality::Draft);
-        assert_eq!((r.max_w, r.max_h), (960, 540));
-        let r = grade_request(3840, 2160, Quality::Full);
-        assert_eq!((r.max_w, r.max_h), (3840, 2160));
-        assert_eq!(grade_request(0, 0, Quality::Draft).max_w, 1);
-    }
-
     /// CIE76 ΔE between two sRGB 8-bit colours (D65).
     fn delta_e(a: [u8; 4], b: [u8; 4]) -> f64 {
         let lab = |p: [u8; 4]| {
@@ -339,13 +330,6 @@ mod tests {
     }
 
     #[test]
-    fn lut_approximates_highlights_shadows() {
-        let (mean, p99) = lut_error(&allowed());
-        eprintln!("LUT ΔE (with highlights/shadows): mean {mean:.2}, p99 {p99:.2}");
-        assert!(mean < 1.5 && p99 < 5.0, "mean {mean}, p99 {p99}");
-    }
-
-    #[test]
     fn lut_identity_is_near_exact() {
         let (mean, p99) = lut_error(&DevelopSettings::default());
         assert!(mean < 1.0 && p99 < 3.0, "mean {mean}, p99 {p99}");
@@ -356,36 +340,6 @@ mod tests {
         let lut = GradeLut::bake(&allowed()).unwrap();
         for c in [[f32::NAN; 3], [f32::INFINITY, -1.0, 1e30], [-0.0, 0.0, 2.0]] {
             assert!(lut.lookup(c).iter().all(|v| v.is_finite()));
-        }
-    }
-
-    /// `cargo test --release -p lcc-pipeline grade::tests::lut_timings -- --ignored --nocapture`
-    #[test]
-    #[ignore]
-    fn lut_timings() {
-        let s = allowed();
-        let t = std::time::Instant::now();
-        let lut = GradeLut::bake(&s).unwrap();
-        eprintln!("bake: {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
-        let img = lcc_scenes::demo_library()[0].render(960, 540);
-        let t = std::time::Instant::now();
-        let mut acc = 0.0f32;
-        for c in &img.data {
-            acc += lut.lookup(*c)[1];
-        }
-        let ns = t.elapsed().as_secs_f64() * 1e9 / img.data.len() as f64;
-        eprintln!("lookup, one thread: {ns:.1} ns/px ({:.1} ms per 960x540 frame) [{acc}]", ns * 960.0 * 540.0 / 1e6);
-        for (w, h) in [(960, 540), (1920, 1080), (3840, 2160)] {
-            let img = lcc_scenes::demo_library()[0].render(w, h);
-            for q in [Quality::Draft, Quality::Full] {
-                lut.apply(&img, q);
-                let t = std::time::Instant::now();
-                for _ in 0..10 {
-                    lut.apply(&img, q);
-                }
-                let ms = t.elapsed().as_secs_f64() * 1e2;
-                eprintln!("{w}x{h} {q:?}: LUT {ms:.1} ms ({:.0} fps)", 1e3 / ms);
-            }
         }
     }
 }

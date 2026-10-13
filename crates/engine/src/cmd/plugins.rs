@@ -26,7 +26,7 @@ pub fn plugins_dir() -> Option<PathBuf> {
 /// The process-wide manager, opened on first use. A folder that can't be opened leaves an
 /// in-memory manager with the reason in its `failed` list.
 pub fn manager() -> MutexGuard<'static, Option<Manager>> {
-    let mut g = MANAGER.lock().unwrap_or_else(PoisonError::into_inner);
+    let mut g = manager_slot();
     if g.is_none() {
         let dir = if cfg!(test) { None } else { plugins_dir() };
         *g = Some(match dir {
@@ -39,6 +39,17 @@ pub fn manager() -> MutexGuard<'static, Option<Manager>> {
         });
     }
     g
+}
+
+/// Keeps plug-ins in memory for the rest of the process instead of the settings folder's
+/// `plugins` (unless the manager already opened). For tests of other crates, so installing a test
+/// plug-in never touches the real user's settings.
+pub fn use_in_memory_manager() {
+    manager_slot().get_or_insert_with(Manager::in_memory);
+}
+
+fn manager_slot() -> MutexGuard<'static, Option<Manager>> {
+    MANAGER.lock().unwrap_or_else(PoisonError::into_inner)
 }
 
 /// The manager pointed at `library` (a session's [`Session::plugin_library`]): plug-ins' data is

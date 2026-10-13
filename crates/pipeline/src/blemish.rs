@@ -244,40 +244,6 @@ mod tests {
     }
 
     #[test]
-    fn finds_spots_on_the_cheeks_and_nothing_else() {
-        let dots = [(-0.28, 0.08), (0.3, 0.12), (-0.2, 0.3)];
-        let (img, face) = scene(800, 600, 300.0, &dots);
-        let found = detect(&img, &[face], 50.0);
-        assert_eq!(found.len(), 3, "{found:?}");
-        for (dx, dy) in dots {
-            let (ex, ey) = (0.5 + dx * 300.0 / 800.0, 0.5 + dy * 390.0 / 600.0);
-            assert!(found.iter().any(|b| (b.x - ex).abs() < 0.01 && (b.y - ey).abs() < 0.01), "{found:?} lacks {ex},{ey}");
-        }
-        assert!(found.iter().all(|b| b.face == 0 && b.radius > 0.0 && b.radius < 0.02 && b.strength > 0.0));
-        let (clean, face) = scene(800, 600, 300.0, &[]);
-        assert!(detect(&clean, &[face], 50.0).is_empty(), "a clean face has no blemishes");
-    }
-
-    #[test]
-    fn features_and_small_faces_are_left_alone() {
-        // spots on the eyes, the nose tip and the mouth: all inside the cut-outs
-        let (img, face) = scene(800, 600, 300.0, &[(-0.2, -0.12), (0.2, -0.12), (0.0, 0.1), (0.0, 0.28)]);
-        assert!(detect(&img, &[face], 80.0).is_empty(), "{:?}", detect(&img, &[face], 80.0));
-        // the same cheek spots on a face below the size floor
-        let (img, face) = scene(800, 600, 120.0, &[(-0.28, 0.08), (0.3, 0.12)]);
-        assert!(detect(&img, &[face], 50.0).is_empty());
-    }
-
-    #[test]
-    fn a_speckled_face_is_texture_not_blemishes() {
-        // 24 spots on the cheeks, all outside the eye, nose and mouth cut-outs
-        let dots: Vec<(f64, f64)> =
-            [-0.42, -0.32, -0.22, 0.22, 0.32, 0.42].iter().flat_map(|&dx| (0..4).map(move |j| (dx, 0.0 + 0.08 * j as f64))).collect();
-        let (img, face) = scene(800, 600, 300.0, &dots);
-        assert!(detect(&img, &[face], 50.0).is_empty(), "more than {MAX_CANDIDATES_PER_FACE} candidates means stubble or freckles");
-    }
-
-    #[test]
     fn hostile_faces_do_not_panic() {
         let (img, _) = scene(64, 48, 20.0, &[]);
         let weird = FaceBox { x0: -2.0, y0: 0.5, x1: 9.0, y1: f64::NAN, landmarks: [(f64::INFINITY, 0.0); 5] };

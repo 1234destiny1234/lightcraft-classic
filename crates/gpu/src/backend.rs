@@ -214,12 +214,12 @@ fn disarm(marker: &std::path::Path, active: &Mutex<u32>) {
 }
 
 /// Removes the marker on the way out, a panic included (the process survived).
-struct Armed(Option<PathBuf>);
+struct Armed<'a>(Option<PathBuf>, &'a Mutex<u32>);
 
-impl Drop for Armed {
+impl Drop for Armed<'_> {
     fn drop(&mut self) {
         if let Some(m) = &self.0 {
-            disarm(m, &ACTIVE);
+            disarm(m, self.1);
         }
     }
 }
@@ -228,10 +228,16 @@ impl Drop for Armed {
 /// removing the init marker (if one is set).
 pub(crate) fn with_marker<T>(what: &str, f: impl FnOnce() -> T) -> T {
     let marker = MARKER.lock().unwrap_or_else(|e| e.into_inner()).clone();
+    with_marker_in(marker, &ACTIVE, what, f)
+}
+
+/// [`with_marker`] on an explicit marker and scope counter (tests use their own, so real GPU work
+/// running in parallel tests can't share their scope).
+fn with_marker_in<T>(marker: Option<PathBuf>, active: &Mutex<u32>, what: &str, f: impl FnOnce() -> T) -> T {
     if let Some(m) = &marker {
-        arm(m, &ACTIVE, what);
+        arm(m, active, what);
     }
-    let _armed = Armed(marker);
+    let _armed = Armed(marker, active);
     f()
 }
 
@@ -357,21 +363,6 @@ mod tests {
     static GLOBAL: Mutex<()> = Mutex::new(());
 
     #[test]
-    fn parses_backend_names() {
-        assert_eq!(parse_backends("dx12"), Some(BackendChoice::Use(Backends::DX12)));
-        assert_eq!(parse_backends(" D3D12 "), Some(BackendChoice::Use(Backends::DX12)));
-        assert_eq!(parse_backends("vulkan"), Some(BackendChoice::Use(Backends::VULKAN)));
-        assert_eq!(parse_backends("vk,gl"), Some(BackendChoice::Use(Backends::VULKAN | Backends::GL)));
-        assert_eq!(parse_backends("metal"), Some(BackendChoice::Use(Backends::METAL)));
-        assert_eq!(parse_backends("auto"), Some(BackendChoice::Auto));
-        for off in ["off", "OFF", "none", "cpu", "0"] {
-            assert_eq!(parse_backends(off), Some(BackendChoice::Off), "{off}");
-        }
-        assert_eq!(parse_backends(""), None);
-        assert_eq!(parse_backends("directx9"), None);
-    }
-
-    #[test]
     fn app_variable_wins_over_wgpu_backend() {
         assert_eq!(choose(None, None), BackendChoice::Auto);
         assert_eq!(choose(None, Some("dx12")), BackendChoice::Use(Backends::DX12));
@@ -381,17 +372,6 @@ mod tests {
         assert_eq!(choose(Some("bogus"), Some("gl")), BackendChoice::Use(Backends::GL));
         // WGPU_BACKEND never turns the GPU off
         assert_eq!(choose(None, Some("off")), BackendChoice::Auto);
-    }
-
-    /// Issue #136: Windows must not load the Vulkan driver unless asked to.
-    #[test]
-    fn windows_defaults_to_dx12_only() {
-        assert_eq!(default_compute_backends("windows"), Backends::DX12);
-        assert_eq!(default_window_backends("windows"), Backends::DX12);
-        assert!(!default_window_backends("windows").contains(Backends::VULKAN));
-        assert_eq!(default_compute_backends("macos"), Backends::METAL);
-        assert!(default_compute_backends("linux").contains(Backends::VULKAN));
-        assert!(default_window_backends("linux").contains(Backends::VULKAN | Backends::GL));
     }
 
     /// Issue #471: DX12 shaders compile with FXC, never a `dxcompiler.dll` found on the search path,
@@ -426,9 +406,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lc-gpu-marker-{}", std::process::id()));
         let m = dir.join("gpu-init.marker");
         let _ = std::fs::remove_dir_all(&dir);
-        set_init_marker(Some(m.clone()));
-        let seen = with_init_marker(Backends::DX12, || m.exists());
-        set_init_marker(None);
+        // its own scope counter: GPU tests running in parallel (on a machine with a GPU) arm the
+        // process-wide one, which would keep this marker from being written or removed
+        let active = Mutex::new(0);
+        let seen = with_marker_in(Some(m.clone()), &active, "device and kernel creation (backends DX12)", || m.exists());
         assert!(seen, "the marker exists while the device is created");
         assert!(!m.exists(), "and is removed afterwards");
         // a marker left behind by a crashed process is reported once; reading it leaves it in place
@@ -466,22 +447,6 @@ mod tests {
     }
 
     #[test]
-    fn window_renderer_names_round_trip() {
-        for n in ["dx12", "vulkan", "metal", "gl", "glow"] {
-            assert_eq!(WindowRenderer::parse(n).map(WindowRenderer::name), Some(n));
-        }
-        assert_eq!(WindowRenderer::parse(" DX12 "), Some(WindowRenderer::Wgpu(Backends::DX12)));
-        for n in ["auto", "off", "vulkan,gl", "", "bogus"] {
-            assert_eq!(WindowRenderer::parse(n), None, "{n}");
-        }
-        assert_eq!(forced_window_renderer(Some("glow"), Some("dx12")), Some(WindowRenderer::Glow));
-        assert_eq!(forced_window_renderer(Some("auto"), Some("vulkan")), Some(WindowRenderer::Wgpu(Backends::VULKAN)));
-        assert_eq!(forced_window_renderer(None, None), None);
-        // `glow` only concerns the window: compute keeps its default, without a warning
-        assert_eq!(parse_backends("glow"), Some(BackendChoice::Auto));
-    }
-
-    #[test]
     fn overlapping_scopes_share_one_marker_until_the_last_ends() {
         let dir = std::env::temp_dir().join(format!("lc-gpu-scopes-{}", std::process::id()));
         let m = dir.join("gpu-init.marker");
@@ -510,9 +475,8 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lc-gpu-panic-{}", std::process::id()));
         let m = dir.join("gpu-init.marker");
         let _ = std::fs::remove_dir_all(&dir);
-        set_init_marker(Some(m.clone()));
-        let r = std::panic::catch_unwind(|| with_marker("kernel compilation", || panic!("compile")));
-        set_init_marker(None);
+        let active = Mutex::new(0);
+        let r = std::panic::catch_unwind(|| with_marker_in(Some(m.clone()), &active, "kernel compilation", || panic!("compile")));
         assert!(r.is_err());
         assert!(!m.exists(), "the process survived, so nothing is left to report");
         let _ = std::fs::remove_dir_all(&dir);

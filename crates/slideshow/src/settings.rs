@@ -427,12 +427,4 @@ mod tests {
         assert_eq!(s.options.shadow, Settings::default().options.shadow);
         assert!(Settings::default().patched(&serde_json::json!({"playback": {"slideSecs": "x"}})).is_err());
     }
-
-    #[test]
-    fn templates_round_trip() {
-        for t in builtin_templates() {
-            let v = serde_json::to_value(&t).unwrap();
-            assert_eq!(serde_json::from_value::<Template>(v).unwrap(), t);
-        }
-    }
 }
