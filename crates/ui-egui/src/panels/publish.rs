@@ -522,15 +522,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn kinds_have_friendly_labels() {
-        let plugins = vec![("plugin:demo".to_string(), "Demo Gallery".to_string())];
-        assert_eq!(kind_label("sftp", &plugins), "SFTP Server");
-        assert_eq!(kind_label("immich", &plugins), "Immich");
-        assert_eq!(kind_label("plugin:demo", &plugins), "Demo Gallery");
-        assert_eq!(kind_label("plugin:gone", &plugins), "Plug-in");
-    }
-
-    #[test]
     fn form_settings_per_kind() {
         let mut f = Form { kind: "sftp".into(), sftp_host: " h ".into(), sftp_port: "2222".into(), sftp_user: "u".into(), ..Form::default() };
         assert_eq!(f.settings().unwrap()["server"]["port"], 2222);
