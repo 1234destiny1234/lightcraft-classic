@@ -328,3 +328,38 @@ fn cancel_mid_pipeline_is_prompt() {
     assert!(!out.exists() && !dir.join("out.mp4.partial").exists());
     std::fs::remove_dir_all(&dir).ok();
 }
+
+/// Every grader mid-frame when the cancel lands: they find the encoder gone, and the decoder,
+/// blocked on its full queue, must still be released (it once hung the export forever).
+#[test]
+fn cancel_while_every_grader_is_busy_does_not_hang() {
+    let dir = scratch("cancel-busy");
+    let src = dir.join("in.mp4");
+    make_clip(&src, false);
+    let out = dir.join("out.mp4");
+    let (tx, rx) = std::sync::mpsc::channel();
+    let (out2, cancel) = (out.clone(), std::sync::Arc::new(AtomicBool::new(false)));
+    std::thread::spawn(move || {
+        let calls = std::sync::atomic::AtomicUsize::new(0);
+        // the first frame is held until every grader has a frame and the decoder's queue is
+        // full; the others wait for the cancel and finish after it
+        let grade = |_: &mut RgbFrame| {
+            if calls.fetch_add(1, Ordering::Relaxed) == 0 {
+                std::thread::sleep(std::time::Duration::from_millis(500));
+                return;
+            }
+            let t = std::time::Instant::now();
+            while !cancel.load(Ordering::Relaxed) && t.elapsed() < std::time::Duration::from_secs(10) {
+                std::thread::sleep(std::time::Duration::from_millis(1));
+            }
+            std::thread::sleep(std::time::Duration::from_millis(100));
+        };
+        let progress = |_: f64| cancel.store(true, Ordering::Relaxed);
+        let r = export_clip(&src, (0.0, None), &grade, &opts(out2, ClipFormat::H264Mp4), &cancel, &progress);
+        let _ = tx.send(r);
+    });
+    let r = rx.recv_timeout(std::time::Duration::from_secs(60)).expect("the cancelled export returns");
+    assert!(matches!(r, Err(ExportClipError::Cancelled)), "{r:?}");
+    assert!(!out.exists() && !dir.join("out.mp4.partial").exists());
+    std::fs::remove_dir_all(&dir).ok();
+}
