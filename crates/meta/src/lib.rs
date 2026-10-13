@@ -227,19 +227,9 @@ impl Metadata {
         }
     }
 
-    /// Exposure time formatted like cameras show it: `1/250`, `0.5`, `2″`.
+    /// Exposure time formatted like cameras show it: `1/250`, `0.5`, `2″`, `1.3″`.
     pub fn exposure_display(&self) -> Option<String> {
-        let t = self.exposure_time?;
-        if t.is_nan() || t <= 0.0 {
-            return None;
-        }
-        Some(if t < 0.3 {
-            format!("1/{}", (1.0 / t).round())
-        } else if t < 1.0 {
-            format!("{}", (t * 10.0).round() / 10.0)
-        } else {
-            format!("{}″", (t * 10.0).round() / 10.0)
-        })
+        exposure_display_of(self.exposure_time?)
     }
 
     /// Human name of the metering mode.
@@ -271,6 +261,23 @@ impl Metadata {
             _ => "Not defined",
         })
     }
+}
+
+/// An exposure time in seconds, written the way cameras show it: `1/250`, `0.5`, `2″`, `1.3″`. The third-stop
+/// speeds between 1/4 s and 4 s keep their step (`0.4`, `0.8`, `1.3″`) instead of rounding to a whole one —
+/// `″` marks a whole second, so a reader showing the string beside " s" must not add a second unit.
+/// `None` for anything that isn't a positive, finite time.
+pub fn exposure_display_of(t: f64) -> Option<String> {
+    if !t.is_finite() || t <= 0.0 {
+        return None;
+    }
+    Some(if t < 0.3 {
+        format!("1/{}", (1.0 / t).round())
+    } else if t < 1.0 {
+        format!("{}", (t * 10.0).round() / 10.0)
+    } else {
+        format!("{}″", (t * 10.0).round() / 10.0)
+    })
 }
 
 /// Read everything we understand from a whole file (JPEG, PNG, WebP, TIFF-based incl. DNG/raw).
@@ -317,6 +324,29 @@ mod tests {
         assert_eq!(parse_number("1/0"), None);
         assert_eq!(parse_number("abc"), None);
         assert_eq!(parse_number("inf"), None);
+    }
+
+    /// The third-stop speeds between 1/4 s and 4 s keep their step, written as cameras show them (issue
+    /// #1619): 0.4 s is "0.4", not "1/2" (1/0.4 = 2.5, rounded to 2), and a whole second carries the ″.
+    #[test]
+    fn exposure_times_keep_their_step() {
+        for (t, want) in [
+            (1.0 / 250.0, "1/250"),
+            (0.3, "0.3"),
+            (0.4, "0.4"),
+            (0.5, "0.5"),
+            (0.8, "0.8"),
+            (1.0, "1\u{2033}"),
+            (1.3, "1.3\u{2033}"),
+            (2.5, "2.5\u{2033}"),
+            (30.0, "30\u{2033}"),
+        ] {
+            assert_eq!(exposure_display_of(t).as_deref(), Some(want), "{t} s");
+            assert_eq!(Metadata { exposure_time: Some(t), ..Default::default() }.exposure_display().as_deref(), Some(want), "{t} s");
+        }
+        for t in [0.0, -1.0, f64::NAN, f64::INFINITY] {
+            assert_eq!(exposure_display_of(t), None, "{t}");
+        }
     }
 
     #[test]
