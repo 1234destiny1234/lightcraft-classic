@@ -72,7 +72,7 @@ back to it as pull requests first.
 | **Keyboard map** | Its own shortcuts (the commands' declared keys) | Classic keymap by default (E loupe, D Develop, C Compare, N Survey, R crop, Shift+W masking, Tab panels, ⌘⌥1–7 modules, ⌘L Enable Filters, F full-screen preview, F11 full screen); upstream's set is kept as the *Alternative* keymap |
 | **Licence** | MIT OR Apache-2.0 (`crates/segment`, `crates/fetch`: Apache-2.0) | MIT (`crates/segment`, `crates/fetch`: Apache-2.0); upstream's copyright notices kept in `LICENSE` and `NOTICE` |
 | **Name and identity** | Upstream's own name, icon and app id | Everything from [`brand.toml`](brand.toml): name, binaries, app id, settings folder, env-var prefix, file extensions; reads upstream's settings, env vars and presets on first start |
-| **Release channel** | Upstream's GitHub Releases | Built-in auto-updater (checks this fork's release feed, downloads and installs); this repository's own `release` workflow: signed installers and archives for Windows, macOS, Linux, FreeBSD and the web, created as draft GitHub Releases of this fork and published after review ([docs/releasing.md](docs/releasing.md)) |
+| **Release channel** | Upstream's GitHub Releases | Built-in auto-updater (checks this fork's release feed, downloads and installs); this repository's own `release` workflow: signed installers and archives for Windows, macOS, Linux and the web, created as draft GitHub Releases of this fork and published after review ([docs/releasing.md](docs/releasing.md)) |
 | **Relationship** | The source | Forked at the `fork-base` tag; upstream is merged in regularly with `cargo xtask upstream-merge`; fork-only paths are listed in `upstream-owned.txt`; changes to shared crates go upstream as pull requests first ([docs/upstream-merge.md](docs/upstream-merge.md)) |
 
 ## Seven modules, one catalog
@@ -477,7 +477,6 @@ with `cargo xtask package`.
 |---|---|---|
 | x64 (64-bit Intel/AMD) | `<binary>-<ver>-windows-x64.msi` | `<binary>-<ver>-windows-x64-portable.zip` |
 | arm64 (Snapdragon and other ARM PCs) | `<binary>-<ver>-windows-arm64.msi` | `<binary>-<ver>-windows-arm64-portable.zip` |
-| x86 (32-bit) | `<binary>-<ver>-windows-x86.msi` | `<binary>-<ver>-windows-x86-portable.zip` |
 
 Installers and executables are code-signed. The installer asks where to install (`C:\Program Files\<app>` by
 default; upgrades stay in the folder you chose) and ends on a page confirming the app was installed, with an
@@ -499,14 +498,6 @@ option to start it. For unattended installs: `msiexec /i <binary>-<ver>-windows-
 | Debian/Ubuntu | `<binary>-<ver>-linux-x86_64.deb` | `<binary>-<ver>-linux-aarch64.deb` | |
 | Fedora/RHEL/openSUSE | `<binary>-<ver>-linux-x86_64.rpm` | `<binary>-<ver>-linux-aarch64.rpm` | |
 | Tarball | `<binary>-<ver>-linux-x86_64.tar.gz` | `<binary>-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
-
-RISC-V (riscv64): `<binary>-<ver>-linux-riscv64.tar.gz`, a tarball only (glibc 2.39 or newer, e.g. Ubuntu 24.04+).
-
-### FreeBSD
-
-| Build | File |
-|---|---|
-| x86_64 | `<binary>-<ver>-freebsd-x86_64.tar.gz` |
 
 ### Web (WebAssembly)
 
