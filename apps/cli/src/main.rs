@@ -857,7 +857,8 @@ fn snapshot(args: &[String]) -> Result<(), String> {
                 .with_system_clock()
                 .with_default_connections()
                 .with_default_face_models()
-                .with_default_lens_profiles();
+                .with_default_lens_profiles()
+                .with_default_sam3_model();
             catalog_migrate::migrate_with_progress(dir)?;
             s.open_library(dir, false).map_err(|e| library_error(dir, e))?;
             s
@@ -868,14 +869,16 @@ fn snapshot(args: &[String]) -> Result<(), String> {
             .with_system_clock()
             .with_default_connections()
             .with_default_face_models()
-            .with_default_lens_profiles(),
+            .with_default_lens_profiles()
+            .with_default_sam3_model(),
         None => Session::new()
             .with_fs()
             .with_default_denoise_models()
             .with_system_clock()
             .with_default_connections()
             .with_default_face_models()
-            .with_default_lens_profiles(),
+            .with_default_lens_profiles()
+            .with_default_sam3_model(),
     };
     // Apply compute policy before imports or the first scripted query can discover an adapter.
     session.execute("app.gpu", &json!({"enabled": false})).map_err(|e| e.to_string())?;
