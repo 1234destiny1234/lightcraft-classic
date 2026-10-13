@@ -278,3 +278,53 @@ fn a_running_model_download_shows_in_activity_and_cancels() {
     let _ = std::fs::remove_dir_all(&dir);
     let _ = std::fs::remove_file(&mirrors);
 }
+
+/// The Subject model is optional: without it the status says so and the download needs consent;
+/// with (tiny, synthetic) weights in its folder it becomes the pipeline's subject model, whose
+/// runs show in the activity stack, and Subject masks take its selection.
+#[test]
+fn subject_model_is_optional_and_used_once_installed() {
+    let mut s = Session::with_demo();
+    let st = s.execute("segment.subject.status", &json!({})).unwrap();
+    assert_eq!((st["installed"].as_bool(), st["active"].as_bool()), (Some(false), Some(false)));
+    assert!(s.execute("segment.subject.download", &json!({})).is_err());
+    if !Segmenter::AVAILABLE {
+        return;
+    }
+    // no folder set: an error, no download
+    assert!(s.execute("segment.subject.download", &json!({"acknowledged": true})).is_err());
+    #[cfg(feature = "sam")]
+    {
+        use lcc_develop::{DevelopSettings, Mask, MaskComponent, MaskShape};
+        let dir = tmp("subject");
+        std::fs::create_dir_all(&dir).unwrap();
+
+        lcc_segment::birefnet::write_tiny_checkpoint(&dir.join(lcc_segment::birefnet::WEIGHTS_FILE), 8).unwrap();
+        s.segmenter.subject.dir = Some(dir.clone());
+        let st = s.execute("segment.subject.status", &json!({})).unwrap();
+        assert_eq!((st["installed"].as_bool(), st["active"].as_bool()), (Some(true), Some(true)));
+        // a Subject mask on a demo photo runs the model (with a row in the activity stack)
+        let scene = &lcc_scenes::demo_library()[0];
+        let src = scene.render_fit(200);
+        let mut set = DevelopSettings::default();
+        set.masks.push(Mask {
+            components: vec![MaskComponent { name: None, op: Default::default(), invert: false, shape: MaskShape::Subject }],
+            ..Default::default()
+        });
+        let info = lcc_pipeline::SourceInfo::default();
+        let job = std::thread::spawn(move || lcc_pipeline::auto_mask::for_source(&src, &info, &set));
+        let mut seen = false;
+        while !job.is_finished() {
+            seen |= s.activity.list().iter().any(|t| t.kind == "segment");
+            std::thread::sleep(Duration::from_millis(5));
+        }
+        let auto = job.join().unwrap();
+        assert!(seen, "no activity row while the model ran");
+        assert_eq!((auto.subject.width, auto.subject.height), (1024, 1024), "the model's grid");
+        assert!(s.activity.list().iter().all(|t| t.kind != "segment"), "the row goes when the run ends");
+        // removing the weights removes the model
+        std::fs::remove_dir_all(&dir).unwrap();
+        s.execute("segment.subject.status", &json!({})).unwrap();
+        assert!(!lcc_pipeline::auto_mask::has_subject_model());
+    }
+}

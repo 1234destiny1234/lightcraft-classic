@@ -67,8 +67,40 @@ pub fn no_mirrors_message() -> String {
     )
 }
 
+/// The BiRefNet_lite checkpoint (`ZhengPeng7/BiRefNet_lite`, MIT) the Subject and Background
+/// masks use: one file, pinned by size and SHA-256 (Hugging Face LFS hash).
+pub const BIREFNET_FILES: &[FileSpec] = &[FileSpec {
+    name: crate::birefnet::WEIGHTS_FILE,
+    size: Some(BIREFNET_WEIGHTS_SIZE),
+    sha256: Some("4417d89795250e698c3cb0ae8df15743810065f646f48a694fdfa7ca052d0815"),
+    max: BIREFNET_WEIGHTS_SIZE,
+}];
+
+/// Size of BiRefNet_lite's `model.safetensors` (178 MB).
+pub const BIREFNET_WEIGHTS_SIZE: u64 = 177_634_392;
+
+/// Where BiRefNet_lite downloads from: the author's MIT repository on Hugging Face (not gated),
+/// pinned to a revision so the file can't change under the hash.
+pub const BIREFNET_MIRRORS: &[&str] = &["https://huggingface.co/ZhengPeng7/BiRefNet_lite/resolve/aa62cd87eafb9cc43056d08ef3615a14628b831d"];
+
+/// Environment variable (after the app prefix) with extra BiRefNet mirrors, tried first.
+pub const BIREFNET_MIRRORS_ENV: &str = "BIREFNET_MIRRORS";
+
+/// The mirrors to try for BiRefNet: the environment variable's, then [`BIREFNET_MIRRORS`].
+pub fn birefnet_mirrors(env: Option<&str>) -> Vec<String> {
+    lcc_fetch::mirrors(env, None, BIREFNET_MIRRORS)
+}
+
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn birefnet_downloads_from_the_pinned_revision() {
+        let m = super::birefnet_mirrors(None);
+        assert_eq!(m.len(), 1);
+        assert!(m[0].starts_with("https://huggingface.co/ZhengPeng7/BiRefNet_lite/resolve/"));
+        assert_eq!(super::BIREFNET_FILES[0].size, Some(super::BIREFNET_WEIGHTS_SIZE));
+    }
+
     use super::*;
 
     #[test]

@@ -51,6 +51,12 @@ impl Session {
     pub fn with_default_sam3_model(mut self) -> Self {
         self.segmenter.dir = default_sam3_dir();
         self.segmenter.mirrors_file = config_dir().map(|d| d.join("models").join("sam3-mirrors.txt"));
+        // the Subject / Background model: `$<PREFIX>_BIREFNET_DIR`, else `<config>/models/birefnet`
+        self.segmenter.subject.dir = lcc_brand::env_os("BIREFNET_DIR")
+            .filter(|v| !v.is_empty())
+            .map(PathBuf::from)
+            .or_else(|| config_dir().map(|d| d.join("models").join("birefnet")));
+        self.segmenter.subject.sync(&self.activity);
         self
     }
 

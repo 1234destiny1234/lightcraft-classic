@@ -111,10 +111,32 @@ pub fn load_dir(dir: &std::path::Path) -> Result<Vec<CraftFont>, String> {
 
 /// Loads and installs the checkout named by `CRAFT_FONTS_DIR` (a relative path resolves against
 /// the current directory, then its ancestors). Returns how many fonts were installed; 0 when
-/// the variable is unset or the checkout is unreadable.
+/// the variable is unset or the checkout is unreadable. The checkout is read once per process:
+/// later calls install the same font data again, so a face a [`crate::FontDb`] already holds
+/// stays identical to the installed one (callers compare them by address).
 pub fn install_from_env() -> usize {
+    static LOADED: std::sync::Mutex<Option<(std::ffi::OsString, Vec<CraftFont>)>> = std::sync::Mutex::new(None);
+    let key = std::env::var_os("CRAFT_FONTS_DIR").unwrap_or_default();
+    let mut loaded = LOADED.lock().unwrap_or_else(PoisonError::into_inner);
+    if let Some((k, fonts)) = loaded.as_ref()
+        && *k == key
+    {
+        let n = fonts.len();
+        install(fonts.clone());
+        return n;
+    }
+    let fonts = load_from_env();
+    let n = fonts.len();
+    if n > 0 {
+        install(fonts.clone());
+        *loaded = Some((key, fonts));
+    }
+    n
+}
+
+fn load_from_env() -> Vec<CraftFont> {
     let Some(dir) = std::env::var_os("CRAFT_FONTS_DIR").filter(|d| !d.is_empty()).map(std::path::PathBuf::from) else {
-        return 0;
+        return Vec::new();
     };
     let candidates: Vec<std::path::PathBuf> = if dir.is_absolute() {
         vec![dir]
@@ -123,12 +145,10 @@ pub fn install_from_env() -> usize {
     };
     for c in candidates {
         if let Ok(fonts) = load_dir(&c) {
-            let n = fonts.len();
-            install(fonts);
-            return n;
+            return fonts;
         }
     }
-    0
+    Vec::new()
 }
 
 /// The Japanese craft fonts in UI preference order: BIZ UDPGothic Regular first, then its other
@@ -276,5 +296,18 @@ mod tests {
         };
         assert_eq!((first.family.as_str(), first.style.as_str()), (UI_JAPANESE_FAMILY, "Regular"));
         assert!(v.iter().all(|f| f.is_japanese() && !f.bytes.as_ref().is_empty()));
+    }
+
+    #[test]
+    fn installing_from_env_again_keeps_the_same_font_data() {
+        // a parallel test re-installing must not swap the data under a FontDb built earlier
+        if install_from_env() == 0 {
+            eprintln!("skipping: CRAFT_FONTS_DIR not set");
+            return;
+        }
+        let before: Vec<usize> = installed().iter().map(|f| f.bytes.as_ref().as_ptr() as usize).collect();
+        install_from_env();
+        let after: Vec<usize> = installed().iter().map(|f| f.bytes.as_ref().as_ptr() as usize).collect();
+        assert_eq!(before, after);
     }
 }

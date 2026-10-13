@@ -478,6 +478,53 @@ pub fn specs() -> Vec<CommandSpec> {
             |s, _| Ok(json!({"cancelled": s.segmenter.cancel_download()}))
         ),
         cmd!(
+            query "segment.subject.status",
+            "Subject Mask Model Status",
+            [],
+            None,
+            "{} — the Subject / Background model (BiRefNet_lite, MIT): whether it is installed (and where), in use by masks, and its download's progress; a finished download is put to use here → {available, installed, active, dir, sizeBytes, license, licenseUrl, download: {running, done, total, file, error, finished}}",
+            super::always,
+            |s, _| {
+                s.segmenter.subject.sync(&s.activity);
+                let g = &s.segmenter.subject;
+                Ok(json!({
+                    "available": crate::segment::Segmenter::AVAILABLE,
+                    "installed": g.installed(),
+                    "active": g.active(),
+                    "dir": g.dir.as_ref().map(|d| d.display().to_string()),
+                    "sizeBytes": crate::segment::subject::MODEL_BYTES,
+                    "license": crate::segment::subject::LICENSE_NAME,
+                    "licenseUrl": crate::segment::subject::LICENSE_URL,
+                    "download": g.download_status(),
+                }))
+            }
+        ),
+        cmd!(
+            query "segment.subject.download",
+            "Download Subject Mask Model",
+            [],
+            None,
+            "{acknowledged: true} — download the Subject / Background model (BiRefNet_lite, about 178 MB, MIT) in the background from its author's Hugging Face repository (pinned revision, size and SHA-256); only after the user asked for it. Without it, Subject and Background use the photo analysis. Watch segment.subject.status → {started, installed, downloading}",
+            super::always,
+            |s, p| {
+                let c = "segment.subject.download";
+                if p.get("acknowledged").and_then(Value::as_bool) != Some(true) {
+                    return Err(bad(c, "the subject model is a 178 MB download: pass `acknowledged: true` once the user has asked for it"));
+                }
+                let started = s.segmenter.subject.start_download(&s.activity).map_err(ai_err)?;
+                Ok(json!({"started": started, "installed": s.segmenter.subject.installed(), "downloading": s.segmenter.subject.download_status().running}))
+            }
+        ),
+        cmd!(
+            query "segment.subject.cancel",
+            "Cancel Subject Mask Model Download",
+            [],
+            None,
+            "{} — stop the subject model download (it resumes later) → {cancelled}",
+            super::always,
+            |s, _| Ok(json!({"cancelled": s.segmenter.subject.cancel_download()}))
+        ),
+        cmd!(
             "mask.refine",
             "Refine Mask Edges",
             [],

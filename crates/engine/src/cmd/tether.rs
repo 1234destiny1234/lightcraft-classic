@@ -274,9 +274,12 @@ fn connect(s: &mut Session, p: &Value) -> Result<Value> {
     let make: Option<lcc_tether::ptp::sim::ShotMaker> = Some(Box::new(sim_shot));
     let cam =
         lcc_tether::link::connect(device, bool_or(p, "deleteFromCard", false), make).map_err(|e| bad(C, lcc_tether::link::fallback_message(&e)))?;
-    if let Err(e) = capture_folder(s, p, C) {
-        hang_up();
-        return Err(e);
+    match capture_folder(s, p, C) {
+        Ok(folder) => lcc_tether::link::set_folder(&folder),
+        Err(e) => {
+            hang_up();
+            return Err(e);
+        }
     }
     let name = cam.get("name").and_then(Value::as_str).unwrap_or("camera");
     let cancel = Arc::new(AtomicBool::new(false));
@@ -291,6 +294,7 @@ fn capture(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(C, "no camera connected (tether.connect); with studio capture, fire the camera from its own app"));
     }
     let folder = capture_folder(s, p, C)?;
+    lcc_tether::link::set_folder(&folder);
     let files = lcc_tether::link::capture(&folder).map_err(|e| bad(C, e.to_string()))?;
     connection_tick();
     // downloaded files are complete: two scans import them now
