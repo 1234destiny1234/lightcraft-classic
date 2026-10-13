@@ -71,6 +71,15 @@ fn dng_source(wp: &EmbeddedWarp, ch: usize, x: f64, y: f64, w: f64, h: f64) -> (
 }
 
 #[test]
+fn invalid_entries_are_skipped_and_valid_ones_load() {
+    let db = db();
+    assert!(!db.cameras.is_empty());
+    assert!(db.lenses.iter().all(|l| l.maker != "Broken"), "a lens without valid calibration is dropped");
+    let z = db.find_lens(Some("Testcam"), "Testcam 24-70mm f/2.8 & Co", None).expect("valid lens still loads");
+    assert!(!z.distortion.is_empty() && !z.tca.is_empty() && !z.vignetting.is_empty());
+}
+
+#[test]
 fn malformed_documents_are_errors_not_panics() {
     assert!(LensDb::parse("").is_err());
     assert!(LensDb::parse("<lensdatabase><lens><maker>").is_ok_and(|d| d.lenses.is_empty()));
