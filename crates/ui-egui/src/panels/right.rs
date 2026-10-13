@@ -175,9 +175,11 @@ fn custom_aspect(app: &mut LccApp, ui: &mut egui::Ui) {
     ui.horizontal(|ui| {
         ui.label(crate::i18n::tr("Custom"));
         let a = ui.add(egui::TextEdit::singleline(&mut w).desired_width(34.0));
+        crate::widgets::screen_reader_name(ui.ctx(), a.id, crate::i18n::tr("Width"));
         register(ui.ctx(), "field:cropCustomW", a.rect);
         ui.label("×");
         let b = ui.add(egui::TextEdit::singleline(&mut h).desired_width(34.0));
+        crate::widgets::screen_reader_name(ui.ctx(), b.id, crate::i18n::tr("Height"));
         register(ui.ctx(), "field:cropCustomH", b.rect);
         let go = text_button(ui, "cropCustomApply", "Apply", false);
         apply = go.clicked() || ((a.lost_focus() || b.lost_focus()) && ui.input(|i| i.key_pressed(egui::Key::Enter)));

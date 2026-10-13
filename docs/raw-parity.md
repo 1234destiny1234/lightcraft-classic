@@ -46,7 +46,9 @@ committed table is stale.
   the EOS R5 Mark II pinned, with a QP-map check of 33,665 private files), the RAF reference
   check ([raf-compression.md](raf-compression.md)), and the raw.pixls.us bulk checks recorded in issue
   #535 (all 100 Sony bodies there; 87 decode) and PR #215 (every Panasonic / Leica RW2 / RWL / RAW body
-  there, 178 files from 118 bodies). Bulk-check body lists were matched to Adobe names through the
+  there, 178 files from 118 bodies), and a recorded check of 38 private Leica Q3 DNGs (2026-10-11: every file
+  decoded and developed at full size, 9520 × 6336 and 6336 × 9520; mean CIE76 ΔE to the camera JPEG 6.3–13.9
+  at 400 px; the files are not committed). Bulk-check body lists were matched to Adobe names through the
   raw.pixls.us folder names. Checks without a body list (≈ 60 NEFs, 35 CR2 bodies for the CFA layout)
   are not counted as verified.
 - **Usage weights** ([raw/usage-weights.tsv](raw/usage-weights.tsv)): maker buckets from 2025 market
@@ -109,7 +111,7 @@ checked, and Canon, the largest bucket, is the weakest of the big four.
 
 | Format | Variant | Status | Evidence |
 |---|---|---|---|
-| CR2 | lossless JPEG slices | ✅ | 8 corpus bodies; CFA phase from `CR2CFAPattern` (#85, 35 bodies); masked-column black level |
+| CR2 | lossless JPEG slices | ✅ | 8 corpus bodies; CFA phase from `CR2CFAPattern` (#85, 35 bodies); masked-column black level; white level from the active area only (#1272: masked rows at 16383 hid the image plateau on the EOS 50D, 60D, 450D (Rebel XSi), 500D (Rebel T1i), 550D (Rebel T2i), 1200D (Rebel T5) and 100D (Rebel SL1), clipped highlights at 81–98%) |
 | CR2 | sRAW / mRAW (YCbCr) | ✅ | `vendor/cr2/sraw.rs`, 31 samples from 16 models |
 | CR3 | CRX lossless, version 0x100 | ✅ | M50, R100, R8 exact against a reference; R5 Mark II (odd-height planes) pinned |
 | CR3 | C-RAW 0x100 (horizontal tiles), 0x200 (single 14-bit tile, adaptive QP incl. the QP-map escape) | ✅ | same 3 bodies exact; R5 Mark II pinned, QP maps of 33,665 files decode exactly, matches the camera JPEG |
@@ -135,7 +137,7 @@ checked, and Canon, the largest bucket, is the weakest of the big four.
 | ORF | uncompressed 16-bit, 12-bit packed, two-field 12-bit, 12.8 bpp | ✅ | E-1, E-400, XZ-2 corpus; #651 |
 | ORF | **compressed** (every Olympus / OM body since ~2008) | 🟡 | `orf.rs` `decode_compressed`; E-M1 and E-M10 III corpus files decode and render correctly; OM-1 / OM-5 and the other ~70 bodies unverified |
 | RW2 / RWL / RAW | formats 2, 4, 5, 6, 7, 8 and 16-bit words | ✅ | 118 bodies (#215) |
-| PEF | uncompressed, Huffman, packed 12-bit | ✅ | K10D, K-3, K-5 IIs |
+| PEF | uncompressed, Huffman, packed 12-bit | ✅ | K10D, K-3, K-5 IIs; files without area tags lose their masked, empty and saturated border lines (#1271: KP, KF, K-3 Mark III, K-70, K-1, K-1 Mark II, K-S1, K-S2, 645Z) |
 | PEF / DNG | Pentax pixel shift | ⬜ | frames not combined |
 | SRW | uncompressed, 12-bit packed | ✅ | EX1 corpus; NX10, NX20 |
 | SRW | compressed 32770 / 32772 / 32773 | ✅ | `srwc.rs`; NX300, NX2000, NX30, NX3000, NX mini, NX1, NX500 match the camera JPEG (colour agreement 0.88–0.98); CFA layout from the embedded JPEG (the files state wrong ones) |
@@ -179,8 +181,10 @@ sample files. A pointer for contributors, not legal advice.
 | Foveon | ✅ (older bodies) | — | ⬜ |
 | Monochrome / LinearRaw | ✅ | handled, no demosaic | ✅ |
 | Pixel shift (Sony ARQ, Pentax, OM high-res, Nikon) | ✅ (Sony, Pentax, Nikon) | — | ⬜ |
-| Black and white levels | per model, calibrated | read from each file (masked columns, maker notes, SR2SubIFD, CMP1) | 🟡 per-body bugs keep surfacing: A450–A700 SR2 black level and M/S ARW pedestal (#535, fixed); 5D Mark IV CR2 renders dark (#455, open); white-level pile-up in phone DNGs (#548, fixed) |
+| Black and white levels | per model, calibrated | read from each file (masked columns, maker notes, SR2SubIFD, CMP1) | 🟡 per-body bugs keep surfacing: A450–A700 SR2 black level and M/S ARW pedestal (#535, fixed); 5D Mark IV CR2 renders dark (#455, open); white-level pile-up in phone DNGs (#548, fixed); CR2 white level taken from saturated masked rows (#1272, fixed) |
 | Crop masks and aspect | ✅ | DefaultCrop, Sony recorded size, Canon AspectInfo, Panasonic in-camera crops, Nikon CropArea | 🟡 7RM3 / 7RM4 crop origin 8–32 px off (cosmetic) |
+| Black and white levels | per model, calibrated | read from each file (masked columns, maker notes, SR2SubIFD, CMP1) | 🟡 per-body bugs keep surfacing: A450–A700 SR2 black level and M/S ARW pedestal (#535, fixed); 5D Mark IV CR2 renders dark (#455, open); white-level pile-up in phone DNGs (#548, fixed) |
+| Crop masks and aspect | ✅ | DefaultCrop, Sony recorded size, Canon AspectInfo, Panasonic in-camera crops, Nikon CropArea, measured Nikon bodies without it (D4, D90) | 🟡 7RM3 / 7RM4 crop origin 8–32 px off (cosmetic) |
 | Lens metadata | ✅ read for profile selection | EXIF lens fields read; used only for the in-file corrections below | 🟡 |
 | Highlight reconstruction | ✅ | neutral clip, chromaticity diffusion (`highlight.rs`) | 🟡 tuned by eye |
 | AI denoise | ✅ Bayer and X-Trans, model bundled | Bayer only, user-installed weights, pure-Rust CPU / GPU | 🟡 no X-Trans, no shippable weights |
@@ -196,7 +200,7 @@ sample files. A pointer for contributors, not legal advice.
 | Camera Matching looks | 481 models (plus phone-maker looks) | none (the per-file JPEG fit imitates the camera's own look) |
 | Creative profiles | Adobe Color, Portrait, Landscape, Vivid, Monochrome… | our own looks (Color, Neutral, Vivid, Landscape, Portrait, Monochrome) |
 | DCP / dual-illuminant model | ✅ | dual-illuminant DNG colour (ColorMatrix / ForwardMatrix 1-2, CameraCalibration, AnalogBalance), HueSatMap, LookTable, ProfileToneCurve; external `.dcp` never loaded (clean-room) |
-| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730); other raws keep the relative scale (#296) |
+| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where Sony's white-balance presets in the file give the scale (6 bodies, `kelvin_presets`); other raws keep the relative scale (#296) |
 
 **How far the default rendering is from Adobe's** (CIE ΔE; measured where stated):
 
@@ -271,12 +275,19 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-11 | minor | Leica Q3 verified by a recorded check of 38 private DNGs (no decode failure; mean ΔE to the camera JPEG 6.3–13.9): 236 verified, 941 unverified, Leica bucket on a verified body 5% → 21%, weighted shares unchanged |
+| 2026-10-12 | patch | CR2 white level from the active area, not the saturated masked rows above it (#1272: EOS 50D, 60D, 450D (Rebel XSi), 500D (Rebel T1i), 550D (Rebel T2i), 1200D (Rebel T5) and 100D (Rebel SL1)); scores unchanged |
+| 2026-10-12 | minor | Canon PowerShot G9: as-shot white balance from WBInfo (`0x0029`, the row of the preset in ShotInfo), issue #1273; render unchanged (the camera-look fit already absorbed it), As Shot now the camera's; counts unchanged |
+| 2026-10-12 | minor | Olympus E-10: as-shot white balance (`0x1017`/`0x1018`) and black level (`0x1012` in `0x102c` ValidBits units) from the main maker note, issue #1273; ΔE76 against its thumbnail 18.5 → 11.5, camera-look fit now accepted; counts unchanged |
+| 2026-10-13 | minor | Nikon D90 image area (4288 × 2848 at 10, 10) and white level (3830) measured on 10 of 550 NEFs from one body: its 42 filler columns no longer develop as a pink band |
+| 2026-10-12 | minor | Hasselblad Lunar verified (a Sony NEX-7 ARW under Make HASSELBLAD, now decoded): 236 verified, 232 preview; an uncompressed Leaf MOS is recognised as a raw (preview only) instead of opening as a greyscale image of its mosaic (#1275) |
 | 2026-10-13 (later) | minor | Canon CRW decoded (`vendor/crw.rs`; 16 CC0 files pinned, 15 Bayer bodies checked against the camera JPEG, CMYG G1 refused); Epson ERF and Mamiya MEF decoded (ports of upstream #1087 / #1105); re-measured: 314 verified, 1,002 unverified, 96 preview, 34 unsupported; use-weighted ~90% (60% on verified bodies) |
 | 2026-10-13 (last) | minor | Pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`: 45° lattice in both storage layouts demosaiced and resampled upright, S2Pro big-endian and turned, SR Pro S frame, SR S photosites upright); 19 CC0 FinePix files pinned; re-measured: 295 verified, 1,002 unverified, 114 preview, 35 unsupported; Fujifilm 99% fully working, use-weighted 89% (60% on verified bodies) |
 | 2026-10-13 (latest) | minor | Z 8 and Z 9 14-bit lossless NEFs verified (CC0, pinned; `corpus_nikon_z8_z9_lossless`): 280 verified, 993 unverified; use-weighted 89%, 59% on verified bodies; raw.pixls.us has no Z 6III file |
 | 2026-10-13 (later) | minor | ARW version 1 (`arw1.rs`: DSLR-A100, A200…A390) and the Z 6II's table-less packed NEF (#769) decode; 31 CC0 files pinned (one per popular Nikon, Fujifilm, Canon CR2 and Pentax body, the ARW1 bodies and the A850); re-measured: 278 verified, 995 unverified, 138 preview, 35 unsupported; use-weighted 89% (57% on verified bodies); decoding 80%, RAW readiness ~58% |
 | 2026-10-13 | minor | Minolta MRW decoded (`vendor/mrw.rs`: 16-bit words and 12-bit packing, WBG white balance in layout order): 7 CC0 files from 6 bodies pinned and checked against the camera JPEG; re-measured: 247 verified, 1,016 unverified, 147 preview; use-weighted unchanged at 87% |
 | 2026-10-10 | minor | Compressed ORF: pointer to the two Olympus patents that describe the method, as a clean-room starting point |
+| 2026-10-12 | minor | PEF without area tags: masked border rows and columns trimmed against the BlackPoint (issue #1271; KP, KF, K-3 Mark III, K-70, K-1, K-1 Mark II, K-S1, K-S2, 645Z); counts unchanged |
 | 2026-10-13 | minor | Compressed Samsung SRW (32770 row blocks, 32772 Huffman, 32773 blocks) decoded: 7 CC0 files from 7 bodies pinned and checked against the camera JPEG; re-measured: 241 verified, 1,011 unverified, 158 preview; use-weighted unchanged at 87% (Samsung carries no weight bucket) |
 | 2026-10-13 | minor | Compressed ORF decoded (`decode_compressed`); E-M1 and E-M10 Mark III verified on the corpus; re-measured with `coverage.py`: 237 verified, 1,006 unverified, 167 preview; OM / Olympus bucket 3% → 80% fully working; use-weighted 87%; decoding 78%, RAW readiness ~57% |
 | 2026-10-11 | minor | EOS R5 Mark II verified (CRX QP-map first literal and limited-length escape, odd-height Bayer planes; 4 CC0 files pinned, QP maps of 33,665 private files): 235 verified, 942 unverified; use-weighted 85% (42% on verified bodies); decoding 77%, RAW readiness unchanged at ~56% |

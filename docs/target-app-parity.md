@@ -297,6 +297,7 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-12 | minor | UI/UX remaining 40–70 h → 34–58 h (accessibility audit landed, ui-parity.md); percentages unchanged |
 | 2026-10-13 | minor | Canon CRW, Epson ERF and Mamiya MEF decoded: models that decode 90% → 91% (22% verified), use-weighted 89% → 90%, RAW decoding 80% → 81% |
 | 2026-10-13 | minor | Pre-X FinePix SuperCCD RAF decodes; Z 8 / Z 9 verified (raw-parity.md): models that decode 88% → 90%, verified 19% → 20%, use-weighted 89% (60% on verified bodies); headline unchanged after rounding |
 | 2026-10-13 | minor | ARW version 1 and the Z 6II's packed NEF decode; 31 popular bodies verified (raw-parity.md): models that decode 87% → 88%, verified 17% → 19%, use-weighted 87% → 89%, RAW decoding 78% → 80%, RAW readiness ~57% → ~58%; headline unchanged after rounding |

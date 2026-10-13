@@ -2126,5 +2126,13 @@
   "Color space: Rec. 2020 PQ (HDR AVIF)": "Farbraum: Rec. 2020 PQ (HDR-AVIF)",
   "Color space: Rec. 2020 PQ, 16-bit (HDR PNG)": "Farbraum: Rec. 2020 PQ, 16 Bit (HDR-PNG)",
   "Color space: Rec. 2020 PQ (HDR JPEG XL)": "Farbraum: Rec. 2020 PQ (HDR-JPEG XL)",
-  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "Programme, die den cICP-Block des PNGs nicht lesen, zeigen PQ-Werte als sRGB: flau und blass. Für ein Bild, das überall richtig aussieht, JPEG (Gain-Map) verwenden."
+  "Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map).": "Programme, die den cICP-Block des PNGs nicht lesen, zeigen PQ-Werte als sRGB: flau und blass. Für ein Bild, das überall richtig aussieht, JPEG (Gain-Map) verwenden.",
+  "Include selected photos": "Ausgewählte Fotos einschließen",
+  "Locate Missing Files…": "Fehlende Dateien suchen…",
+  "Show All Mask Overlays": "Alle Maskenüberlagerungen anzeigen",
+  "Show all overlays": "Alle Überlagerungen anzeigen",
+  "Reading photos…": "Fotos werden gelesen…",
+  "Adding photos…": "Fotos werden hinzugefügt…",
+  "No graphics processor found: {app} renders on the CPU, which is much slower. Details in Help → System Info.": "Kein Grafikprozessor gefunden: {app} rendert auf der CPU, was viel langsamer ist. Details unter Hilfe → Systeminformationen.",
+  "On NixOS, start it from `nix develop`.": "Unter NixOS starten Sie es aus `nix develop`."
 }
