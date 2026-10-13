@@ -1284,5 +1284,6 @@
   "Set as Target Collection (B adds to it)": "ターゲットコレクションに設定（B で追加）",
   "Stop Using as Target Collection": "ターゲットコレクションの使用を停止",
   "No collections yet": "コレクションはまだありません",
-  "Sort Collections A–Z": "コレクションを A–Z で並べ替え"
+  "Sort Collections A–Z": "コレクションを A–Z で並べ替え",
+  "Tone": "階調"
 }

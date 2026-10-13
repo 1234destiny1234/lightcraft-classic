@@ -1144,5 +1144,6 @@
   "Set as Target Collection (B adds to it)": "Als Zielsammlung festlegen (B fügt hinzu)",
   "Stop Using as Target Collection": "Nicht mehr als Zielsammlung verwenden",
   "No collections yet": "Noch keine Sammlungen",
-  "Sort Collections A–Z": "Sammlungen A–Z sortieren"
+  "Sort Collections A–Z": "Sammlungen A–Z sortieren",
+  "Tone": "Tonwert"
 }

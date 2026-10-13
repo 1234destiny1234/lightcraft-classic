@@ -1493,5 +1493,6 @@
   "Set as Target Collection (B adds to it)": "Сделать целевой коллекцией (B добавляет в неё)",
   "Stop Using as Target Collection": "Больше не использовать как целевую коллекцию",
   "No collections yet": "Коллекций пока нет",
-  "Sort Collections A–Z": "Сортировать коллекции А–Я"
+  "Sort Collections A–Z": "Сортировать коллекции А–Я",
+  "Tone": "Тон"
 }

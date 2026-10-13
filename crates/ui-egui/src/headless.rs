@@ -3090,6 +3090,24 @@ mod tests {
         assert!(h.app.session.visible_cloned().is_empty());
     }
 
+    /// White balance sits at the top of Light, above Exposure (Lightroom Classic's Basic panel), so
+    /// it is on screen with Color folded.
+    #[test]
+    fn white_balance_leads_the_light_section() {
+        let mut h = demo([1400.0, 1000.0]);
+        let t = Duration::from_secs(10);
+        let id = h.app.session.visible_cloned()[0].0;
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id]}}), t);
+        h.request("engine.execute", json!({"command": "module.develop", "params": {}}), t);
+        h.request("ui.set", json!({"openSections": ["light"]}), t);
+        h.settle(SETTLE);
+        let widgets = h.app.widgets.clone();
+        let top = |id: &str| widgets.iter().find(|(w, _)| w == id).map(|(_, r)| r.top());
+        let (picker, exposure) = (top("icon:wbPicker"), top("slider:light.exposure"));
+        assert!(picker.is_some() && exposure.is_some(), "{picker:?} {exposure:?}");
+        assert!(picker < exposure, "{picker:?} {exposure:?}");
+    }
+
     /// Develop's Sync… button opens Synchronize Settings; Synchronize carries only the checked
     /// groups; the switch beside it turns Auto Sync on and off.
     #[test]
