@@ -95,7 +95,9 @@ fn export_dialog_is_unchanged_in_a_tall_window() {
     let dialog = rect(&h, "dialog:window");
     // (846 tall as before #781: the whole dialog, nothing scrolled away; 615 wide since the
     // format row gained JPEG XL, #780)
-    assert!((dialog.height() - 846.0).abs() <= 1.0, "{dialog:?}");
+    // macOS adds the "Add to Apple Photos" row (22 + 8 spacing)
+    let tall = if cfg!(target_os = "macos") { 876.0 } else { 846.0 };
+    assert!((dialog.height() - tall).abs() <= 1.0, "{dialog:?}");
     assert!((dialog.width() - 615.2).abs() <= 1.0, "{dialog:?}");
 }
 
