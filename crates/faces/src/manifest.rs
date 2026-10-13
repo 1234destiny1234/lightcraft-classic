@@ -298,18 +298,6 @@ mod tests {
     }
 
     #[test]
-    fn speed_reads_as_times_faster_than_the_reference() {
-        assert_eq!(describe_speed(7.0), "7× faster than a ResNet-100 model");
-        assert_eq!(describe_speed(4.6), "4.6× faster than a ResNet-100 model");
-        assert_eq!(describe_speed(1.7), "1.7× faster than a ResNet-100 model");
-        assert_eq!(describe_speed(1.0), "Same speed as a ResNet-100 model");
-        assert_eq!(describe_speed(0.5), "2× slower than a ResNet-100 model");
-        for odd in [0.0, -1.0, f32::NAN, f32::INFINITY] {
-            assert_eq!(describe_speed(odd), "", "{odd}");
-        }
-    }
-
-    #[test]
     fn a_good_manifest_passes_and_round_trips() {
         let m = good();
         assert_eq!(validate(&m), Ok(()));

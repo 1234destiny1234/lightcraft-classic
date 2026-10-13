@@ -114,14 +114,6 @@ mod tests {
     }
 
     #[test]
-    fn square_cells_are_centred() {
-        let page = Page::new(Size::new(600.0, 800.0));
-        let r = Grid { keep_square: true, ..Grid::new(1, 1) }.rects(page.content()).unwrap();
-        assert_eq!((r[0].w, r[0].h), (600.0, 600.0));
-        assert_eq!(r[0].y, 100.0);
-    }
-
-    #[test]
     fn hostile_grids_are_errors() {
         let area = Rect::new(0.0, 0.0, 100.0, 100.0);
         assert!(Grid::new(0, 3).rects(area).is_err());

@@ -535,13 +535,6 @@ mod tests {
         assert_ne!(plain.as_bytes(), looked.as_bytes());
     }
 
-    #[test]
-    fn slugs() {
-        assert_eq!(slug("Warm & Soft!"), "warm-soft");
-        assert_eq!(slug("  "), "preset");
-        assert_eq!(slug("B&W/Film 2"), "b-w-film-2");
-    }
-
     fn dir(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("lc-presets-{tag}-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&d);

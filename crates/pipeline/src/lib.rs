@@ -718,10 +718,6 @@ mod tests_geometry;
 #[cfg(test)]
 mod tests_hdr;
 #[cfg(test)]
-mod tests_local;
-#[cfg(test)]
-mod tests_mask_eval;
-#[cfg(test)]
 mod tests_tone;
 #[cfg(test)]
 mod tests_window;

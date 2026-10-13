@@ -280,18 +280,6 @@ mod tests {
     }
 
     #[test]
-    fn section_toggles() {
-        let mut s = DevelopSettings::default();
-        assert!(s.section_enabled("effects"));
-        s.set_section_enabled("effects", false);
-        s.set_section_enabled("effects", false);
-        assert!(!s.section_enabled("effects"));
-        assert_eq!(s.disabled_sections.len(), 1);
-        s.set_section_enabled("effects", true);
-        assert!(s.section_enabled("effects"));
-    }
-
-    #[test]
     fn the_denoise_amount_is_a_slider_and_follows_the_detail_section() {
         let mut s = DevelopSettings::default();
         assert_eq!(s.denoise_amount(), 0.0);

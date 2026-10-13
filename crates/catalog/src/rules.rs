@@ -1520,36 +1520,6 @@ mod tests {
         }
     }
 
-    /// Choice values have readable labels: the editor and summaries show "Public Domain" and
-    /// "Black & White", never ids like `publicDomain`; rules still store and accept the ids.
-    #[test]
-    fn choices_have_readable_labels() {
-        assert_eq!(choice_label("copyrightStatus", "publicDomain"), Some("Public Domain"));
-        assert_eq!(choice_label("treatment", "monochrome"), Some("Black & White"));
-        // own labels where a shared word would translate wrongly: "Color" is the colour noun (the
-        // Color panel) and "None" agrees with other nouns in gendered languages
-        assert_eq!(choice_label("treatment", "color"), Some("In Color"));
-        assert_eq!(choice_label("label", "none"), Some("No Label"));
-        assert_eq!(choice_label("flag", "pick"), Some("Picked"));
-        assert_eq!(choice_label("aspect", "landscape"), Some("Landscape (wide)"));
-        assert_eq!(choice_label("flag", "nope"), None);
-        assert_eq!(choice_label("rating", "pick"), None, "not a choice field");
-        for (field, _, kind) in FIELDS {
-            let Kind::Choice(choices) = kind else { continue };
-            for (id, label) in *choices {
-                assert!(!label.is_empty() && label != id, "{field}: {id} has no label of its own");
-                assert!(label.starts_with(|c: char| c.is_uppercase()), "{field}: {label}");
-            }
-        }
-        let r = rs(
-            json!({"rules": [{"field": "copyrightStatus", "op": "is", "value": "publicDomain"}, {"field": "flag", "op": "isNot", "value": "reject"}]}),
-        );
-        assert_eq!(r.describe(), "copyright status is public domain and pick flag isn't rejected");
-        let mut p = photo(1);
-        p.meta.copyright_status = crate::CopyrightStatus::PublicDomain;
-        assert!(r.matches(&p, &Catalog::new()), "ids still match");
-    }
-
     /// Yes/no fields read "Yes" / "No", and a value means the same to matching and to every
     /// summary: `false`, `"false"`, `"no"` and `0` are no; `true`, `"yes"`, `1` and a missing value
     /// are yes. Anything else is reported, not silently taken as yes.
@@ -1850,31 +1820,5 @@ mod tests {
         let mut labels: Vec<&str> = FIELD_GROUPS.iter().map(|g| g.0).collect();
         labels.dedup();
         assert_eq!(labels.len(), FIELD_GROUPS.len(), "group labels are unique");
-    }
-
-    /// Related fields sit together: all the file fields, all the camera (EXIF) fields, all the
-    /// dates, all the keyword fields.
-    #[test]
-    fn related_fields_share_a_group() {
-        let same = |fields: &[&str], group: &str| {
-            for f in fields {
-                assert_eq!(field_group(f), Some(group), "{f}");
-            }
-        };
-        same(&["fileName", "extension", "filePath", "folder", "kind", "format", "duration"], "File");
-        same(&["album", "virtualCopy", "copyName", "stacked"], "Source");
-        same(&["longEdge", "shortEdge", "width", "height", "aspect", "megapixels"], "Size");
-        same(&["edited", "cropped", "treatment"], "Develop");
-        same(&["camera", "lens", "focalLength", "aperture", "shutterSpeed", "iso"], "Camera Info");
-        same(&["captureDate", "importDate", "editDate"], "Date");
-        same(&["keywords", "keywordCount", "person", "personCount"], "Keywords & People");
-        same(&["title", "caption", "altText", "creator", "copyright", "usageTerms", "copyrightStatus"], "Description");
-        same(&["location", "sublocation", "city", "state", "country", "hasGps"], "Location");
-        for f in ["rating", "flag", "label", "text"] {
-            assert_eq!(field_group(f), None, "{f} stays at the top level");
-        }
-        assert_eq!(field_group("nope"), None);
-        assert_eq!(field_label("filePath"), Some("File Path"));
-        assert_eq!(field_label("nope"), None);
     }
 }

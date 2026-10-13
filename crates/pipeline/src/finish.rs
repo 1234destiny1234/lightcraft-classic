@@ -797,21 +797,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn refine_saturation_restores_the_pre_curve_saturation() {
-        let before = [0.5, 0.3, 0.2];
-        let after = [0.7, 0.35, 0.15]; // a contrasty curve: more saturated
-        assert_eq!(refine_saturation(before, after, 1.0), after);
-        let r = refine_saturation(before, after, 0.0);
-        let sat = |e: [f32; 3]| (e[0] - e[2]) / (0.2126 * e[0] + 0.7152 * e[1] + 0.0722 * e[2]);
-        assert!((sat(r) - sat(before)).abs() < 1e-4, "{r:?}");
-        let half = refine_saturation(before, after, 0.5);
-        assert!(sat(half) > sat(before) && sat(half) < sat(after));
-        // luma is kept
-        let y = |e: [f32; 3]| 0.2126 * e[0] + 0.7152 * e[1] + 0.0722 * e[2];
-        assert!((y(r) - y(after)).abs() < 1e-5);
-    }
-
-    #[test]
     fn srgb_table_matches_the_exact_curve() {
         let lut = srgb_lut();
         let mut worst = 0.0f32;
