@@ -83,13 +83,18 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, side: &[PanelId]
                 }
             }
             // Develop's own panels: the presets, the photo's versions and its history.
-            // The presets are upstream's panel drawn whole — its title row, amount slider and
-            // scroll area are its own — so it is self-headered, like the Navigator; Versions and
-            // History draw the rows the right column shares with them, under a Classic header.
-            PanelId::Presets => {
-                crate::panels::presets::show(app, ui);
+            // The presets are upstream's panel drawn whole — its title row, amount slider and scroll
+            // area are its own — so it is self-headered, like the Navigator, and it is drawn once:
+            // while the presets column (Shift+P) is open, that column is the presets. It is given a
+            // share of the column, as Lightroom's Presets panel has: left to itself it takes all of
+            // it, and the panels below would be pushed out of sight.
+            PanelId::Presets if !app.ui.presets => {
+                let avail = ui.available_height();
+                let share = if avail.is_finite() { (avail * 0.5).clamp(200.0, 420.0) } else { 320.0 };
+                ui.allocate_ui(vec2(ui.available_width(), share), |ui| crate::panels::presets::show(app, ui));
                 ui.add_space(6.0);
             }
+            PanelId::Presets => {}
             PanelId::Versions => {
                 if crate::panels::classic::header(app, ui, p, side).1 {
                     versions_or_history(app, ui, crate::panels::right::versions_body);

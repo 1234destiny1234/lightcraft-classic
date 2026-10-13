@@ -281,6 +281,13 @@ fn develop_column_is_its_own_classic_stack() {
     assert!(has(&h, "sidebarSection:navigator"), "the Navigator, where Classic puts it");
     assert!(rows(&h, "presetGroup:") > 0, "the presets themselves");
     assert!(!has(&h, "classicPanel:presets"), "the presets bring their own title row");
+    // the presets are drawn once: with the presets column open (Shift+P), that column is the presets
+    let in_column = rows(&h, "presetGroup:");
+    run(&mut h, "panel.presets", json!({}));
+    assert!(h.app.ui.presets && !has(&h, "classicPanel:presets"));
+    assert!(rows(&h, "presetGroup:") <= in_column, "the presets are not drawn twice");
+    run(&mut h, "panel.presets", json!({}));
+    assert!(!h.app.ui.presets && rows(&h, "presetGroup:") == in_column, "back in the column");
     // the Library's panels are not here
     for p in ["catalog", "folders", "publish"] {
         assert!(!has(&h, &format!("classicPanel:{p}")), "{p} belongs to Library");
@@ -299,11 +306,8 @@ fn develop_column_is_its_own_classic_stack() {
 #[test]
 fn develop_column_folds_solos_reorders_and_hides() {
     let mut h = develop_demo();
-    // the presets panel is upstream's own, drawn whole: it fills the column until it is out of the
-    // way, so the Classic headers below it are reachable (the panel above checks that it is there)
-    run(&mut h, "panel.show", json!({"panel": "presets", "visible": false}));
-    assert!(rows(&h, "presetGroup:") == 0, "hiding it takes the presets away");
-    // a click folds a panel and unfolds it again
+    // a click folds a panel and unfolds it again (the presets panel above it is bounded, so these
+    // Classic headers are on screen without scrolling)
     click(&mut h, "classicPanel:versions");
     assert!(!classic::is_open(&h.app, PanelId::Versions) && !has(&h, "button:versionCreate"));
     click(&mut h, "classicPanel:versions");
