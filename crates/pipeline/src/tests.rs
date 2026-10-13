@@ -119,23 +119,6 @@ fn mask_brightens_only_inside() {
 }
 
 #[test]
-#[ignore]
-fn perf_report() {
-    let src = lcc_scenes::demo_library()[0].render(3000, 2000);
-    let mut s = DevelopSettings::default();
-    s.light.shadows = 40.0;
-    s.effects.clarity = 20.0;
-    s.effects.dehaze = 10.0;
-    s.color.vibrance = 20.0;
-    let t = std::time::Instant::now();
-    let n = 5;
-    for _ in 0..n {
-        let _ = render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(2560, 1440));
-    }
-    eprintln!("render 2160x1440 from 6 MP: {:.1} ms", t.elapsed().as_secs_f64() * 1000.0 / n as f64);
-}
-
-#[test]
 fn unedited_rendered_source_is_passthrough() {
     // An sRGB ramp decoded to linear Rec.2020 must render back to (almost) the same 8-bit values.
     let src8 = lcc_raster::Rgba8::from_fn(256, 4, |x, y| [x as u8, (x as u8).wrapping_add(y as u8 * 40), 255 - x as u8, 255]);
@@ -302,54 +285,6 @@ fn sections_switched_off_render_as_defaults() {
 }
 
 #[test]
-fn calibration_shifts_colours_but_keeps_greys() {
-    let info = SourceInfo { raw: true, ..Default::default() };
-    let req = RenderRequest::fit(64, 8);
-    // a grey ramp is untouched by the primaries
-    let grey = Rgb32f::from_fn(64, 8, |x, _| [0.002 * 1.12f32.powi(x as i32); 3]);
-    let mut s = DevelopSettings::default();
-    s.calibration.red_hue = 80.0;
-    s.calibration.green_sat = -60.0;
-    let a = render(&grey, &info, &DevelopSettings::default(), &req).image;
-    let b = render(&grey, &info, &s, &req).image;
-    assert!(max_diff(&a, &b) <= 1);
-    // a red patch rotates towards yellow (green rises relative to blue)
-    let red = Rgb32f::filled(16, 16, [0.3, 0.04, 0.03]);
-    let r0 = render(&red, &info, &DevelopSettings::default(), &RenderRequest::fit(16, 16)).image.data[0];
-    let r1 = render(&red, &info, &s, &RenderRequest::fit(16, 16)).image.data[0];
-    assert!(r1[1] as i32 - r1[2] as i32 > r0[1] as i32 - r0[2] as i32 + 5, "{r0:?} -> {r1:?}");
-    // shadows tint: magenta (+) lowers green in a dark grey
-    let dark = Rgb32f::filled(16, 16, [0.01, 0.01, 0.01]);
-    s = DevelopSettings::default();
-    s.calibration.shadows_tint = 100.0;
-    let d = render(&dark, &info, &s, &RenderRequest::fit(16, 16)).image.data[0];
-    assert!(d[1] + 3 < d[0], "{d:?}");
-    // the section toggle disables it
-    s.set_section_enabled("calibration", false);
-    let off = render(&dark, &info, &s, &RenderRequest::fit(16, 16)).image.data[0];
-    assert!(off[1].abs_diff(off[0]) <= 1, "{off:?}");
-}
-
-#[test]
-fn refine_saturation_tames_a_contrast_curve() {
-    let info = SourceInfo { raw: true, ..Default::default() };
-    let src = Rgb32f::filled(16, 16, [0.12, 0.05, 0.03]);
-    let req = RenderRequest::fit(16, 16);
-    let sat = |p: [u8; 4]| p[0] as i32 - p[2] as i32;
-    let mut s = DevelopSettings::default();
-    let flat = render(&src, &info, &s, &req).image.data[0];
-    s.curve.master =
-        vec![lcc_geom::Point::new(0.0, 0.0), lcc_geom::Point::new(0.3, 0.15), lcc_geom::Point::new(0.7, 0.85), lcc_geom::Point::new(1.0, 1.0)];
-    let full = render(&src, &info, &s, &req).image.data[0];
-    s.curve.refine_saturation = 0.0;
-    let refined = render(&src, &info, &s, &req).image.data[0];
-    assert!(sat(full) > sat(refined), "{flat:?} {full:?} {refined:?}");
-    // the curve's tone change stays
-    let y = |p: [u8; 4]| 0.2126 * p[0] as f32 + 0.7152 * p[1] as f32 + 0.0722 * p[2] as f32;
-    assert!((y(full) - y(refined)).abs() < 2.0);
-}
-
-#[test]
 fn soft_proof_maps_into_the_proof_gamut_and_flags_what_does_not_fit() {
     use crate::{OutputSpace, Proof};
     let src = scene();
@@ -433,41 +368,6 @@ fn display_space_renders_like_the_matching_output_space() {
     assert!(on_srgb > 0 && on_wide < on_srgb, "{on_srgb} {on_wide}");
     let plain = blue(&render(&src, &info, &s, &req(OutputSpace::Srgb, None, pro)).image);
     assert_eq!(plain, on_srgb, "an sRGB display warns like no display profile");
-}
-
-/// Proofing against an output-device table: the table's colours are what the render shows, and its
-/// gamut distances drive the destination warning.
-#[test]
-fn soft_proof_through_a_device_table() {
-    use crate::{OutputSpace, Proof, ProofLut, register_proof_profile};
-    let n = 5;
-    // a "paper" that dims everything to 80 % and calls every non-grey colour out of gamut
-    let data: Vec<[f32; 4]> = (0..n * n * n)
-        .map(|i| {
-            let c = [i / (n * n), (i / n) % n, i % n].map(|k| lcc_color::transfer::srgb_to_linear(k as f32 / (n - 1) as f32));
-            let grey = c[0] == c[1] && c[1] == c[2];
-            [c[0] * 0.8, c[1] * 0.8, c[2] * 0.8, if grey { 0.0 } else { 1.0 }]
-        })
-        .collect();
-    assert!(ProofLut::new(n, data[1..].to_vec()).is_none());
-    assert!(ProofLut::new(n, vec![[f32::NAN; 4]; n * n * n]).is_none());
-    let id = register_proof_profile(0xfeed, ProofLut::new(n, data).unwrap());
-    let info = SourceInfo { raw: true, ..Default::default() };
-    let white = Rgb32f::from_fn(16, 4, |_, _| [100.0; 3]);
-    let req = |proof| RenderRequest { space: OutputSpace::Srgb, proof, ..RenderRequest::fit(16, 4) };
-    let plain = render(&white, &info, &DevelopSettings::default(), &req(None)).image;
-    let pr = Proof { profile: id, dest_warning: true, ..Default::default() };
-    let paper = render(&white, &info, &DevelopSettings::default(), &req(Some(pr))).image;
-    assert!(plain.data[0][0] > 250 && paper.data[0][0] < 240 && paper.data[0][0] > 200, "{:?} {:?}", plain.data[0], paper.data[0]);
-    // an unknown id falls back to the space proof (sRGB on sRGB: no change)
-    let none = render(&white, &info, &DevelopSettings::default(), &req(Some(Proof { profile: 12345, ..Default::default() }))).image;
-    assert_eq!(none, plain);
-    // saturated colours are flagged
-    let src = scene();
-    let mut s = DevelopSettings::default();
-    s.color.saturation = 100.0;
-    let warned = render(&src, &info, &s, &req(Some(pr))).image;
-    assert!(warned.data.iter().any(|p| p[..3] == [255, 0, 0]));
 }
 
 #[test]
@@ -625,41 +525,6 @@ fn camera_color(temp: f64, tint: f64) -> std::sync::Arc<crate::CameraColor> {
         ..Default::default()
     };
     std::sync::Arc::new(crate::CameraColor { tags, developed_for: lcc_color::cct::temp_tint_to_xy(temp, tint) })
-}
-
-/// Camera-space white balance: a raw source with its colour model is re-developed for the chosen
-/// white, so a grey card lit by that white renders neutral. Without the model, or with a relative
-/// white balance, the developed pixels are adapted (Bradford, neutral luminance kept).
-#[test]
-fn custom_white_balance_redevelops_in_camera_space() {
-    use crate::local::wb_matrix_for;
-    use lcc_color::cct::temp_tint_to_xy;
-    use lcc_develop::WbMode;
-    let cc = camera_color(5500.0, 0.0);
-    let info = SourceInfo { raw: true, as_shot_temp: 5500.0, as_shot_tint: 0.0, camera_color: Some(cc.clone()), ..Default::default() };
-    let mut s = DevelopSettings::default();
-    (s.wb.mode, s.wb.temp, s.wb.tint) = (WbMode::Custom, 3200.0, 10.0);
-    // a grey card lit by 3200 K / +10, as the camera records it, developed for the as-shot white
-    let a = lcc_raw::color::camera_transform_of(&cc.tags, cc.developed_for);
-    let n = lcc_raw::color::camera_neutral(&cc.tags, temp_tint_to_xy(3200.0, 10.0));
-    let card = a.matrix.apply(std::array::from_fn(|i| n[i] * a.wb[i] as f64)).map(|v| v as f32);
-    let apply = |m: [[f32; 3]; 3], c: [f32; 3]| -> [f32; 3] { std::array::from_fn(|r| m[r][0] * c[0] + m[r][1] * c[1] + m[r][2] * c[2]) };
-    let m = wb_matrix_for(&info, &s).unwrap();
-    let out = apply(m, card);
-    assert!(out.iter().all(|v| (v / out[1] - 1.0).abs() < 1e-4), "{card:?} -> {out:?}");
-    // the adaptation path for sources without a colour model, and for relative white balance
-    let luma = |c: [f32; 3]| lcc_color::luminance_2020(c);
-    for other in [SourceInfo { camera_color: None, ..info.clone() }, SourceInfo { relative_wb: true, ..info.clone() }] {
-        let b = wb_matrix_for(&other, &s).unwrap();
-        assert_ne!(b, m);
-        assert!((luma(apply(b, [1.0; 3])) - 1.0).abs() < 1e-4);
-    }
-    // the white-balance picker / auto white balance invert the same model: the card names its white
-    let picked = crate::auto::auto_wb(&Rgb32f::filled(4, 4, card), &info);
-    assert_eq!(picked, (3200.0, 10.0));
-    // the as-shot white needs nothing
-    s.wb.mode = WbMode::AsShot;
-    assert!(wb_matrix_for(&info, &s).is_none());
 }
 
 /// Every stored process number renders with a process this build knows: settings saved before

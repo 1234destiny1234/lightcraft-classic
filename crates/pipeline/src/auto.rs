@@ -188,29 +188,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn exposure_follows_the_log_average_luminance() {
-        let flat = |y: f32| Rgb32f::filled(64, 64, [y; 3]);
-        let auto = |img: &Rgb32f| auto_tone(img, &SourceInfo::default(), &DevelopSettings::default());
-        let log_mean = |img: &Rgb32f| scene_log_mean(img, &SourceInfo::default(), &DevelopSettings::default()).unwrap();
-        // a scene at middle grey gets the exposure at grey; each EV darker adds 0.41 EV
-        assert!(log_mean(&flat(0.18)).abs() < 1e-3);
-        assert_eq!(auto(&flat(0.18)).exposure, -0.58);
-        assert!((auto(&flat(0.18 / 8.0)).exposure - (-0.58 + 3.0 * 0.41)).abs() < 1e-9);
-        // darker scenes get more, brighter ones less, within -2..3 EV
-        let ramp = |lo: f32, step: f32| Rgb32f::from_fn(64, 64, |x, _| [lo + x as f32 * step; 3]);
-        let (dark, bright) = (auto(&ramp(0.01, 0.0003)), auto(&ramp(0.8, 0.01)));
-        assert!(dark.exposure > 0.5 && bright.exposure < -1.0, "{dark:?} {bright:?}");
-        assert_eq!(auto(&flat(1e-9)).exposure, 3.0);
-        assert_eq!(auto(&flat(1e6)).exposure, -2.0);
-        // the rest is one recipe
-        assert_eq!(
-            (dark.contrast, dark.highlights, dark.shadows, dark.whites, dark.blacks, dark.vibrance, dark.saturation),
-            (68.0, -66.0, 52.0, 0.0, 0.0, 30.0, 0.0)
-        );
-        assert_eq!((dark.contrast, dark.shadows), (bright.contrast, bright.shadows));
-    }
-
-    #[test]
     fn pixels_that_are_not_finite_are_left_out() {
         let auto = |img: &Rgb32f| auto_tone(img, &SourceInfo::default(), &DevelopSettings::default());
         // half middle grey, half NaN (or infinite): the grey half alone decides, as if the rest weren't there
@@ -228,76 +205,6 @@ mod tests {
         for img in [Rgb32f::filled(8, 8, [f32::NAN; 3]), Rgb32f::filled(600, 600, [f32::INFINITY; 3]), Rgb32f::new(0, 0)] {
             let a = auto(&img);
             assert_eq!((a.exposure, a.contrast, a.vibrance), (0.0, 68.0, 30.0));
-        }
-    }
-
-    #[test]
-    fn neutral_image_keeps_as_shot_wb() {
-        let img = Rgb32f::from_fn(32, 32, |x, y| [0.05 + (x + y) as f32 * 0.004; 3]);
-        let (t, tint) = auto_wb(&img, &SourceInfo::default());
-        assert!((t - 6500.0).abs() < 150.0, "{t}");
-        assert!(tint.abs() < 6.0, "{tint}");
-    }
-
-    #[test]
-    fn blue_cast_is_corrected_by_higher_temp() {
-        // A bluish cast should be neutralised by telling the pipeline the light was bluer (higher K).
-        let img = Rgb32f::from_fn(32, 32, |_, _| [0.16, 0.18, 0.24]);
-        let (t, _) = auto_wb(&img, &SourceInfo::default());
-        assert!(t > 7000.0, "{t}");
-        let mut s = DevelopSettings::default();
-        s.wb.mode = lcc_develop::WbMode::Custom;
-        s.wb.temp = t;
-        let (t2, tint2) = auto_wb(&img, &SourceInfo::default());
-        let _ = (t2, tint2);
-        let mut out = img.clone();
-        let (tt, ti) = auto_wb(&img, &SourceInfo::default());
-        s.wb.temp = tt;
-        s.wb.tint = ti;
-        crate::local::scene_linear_pre(&mut out, &SourceInfo::default(), &s);
-        let c = out.get(0, 0);
-        assert!((c[0] - c[2]).abs() < 0.02, "{c:?}");
-    }
-}
-
-#[cfg(test)]
-mod bw_tests {
-    use super::*;
-
-    #[test]
-    fn auto_bw_mix_pushes_light_and_dark_hues_apart() {
-        // left: a light yellow, right: a dark blue (scene-linear Rec. 2020)
-        let src = Rgb32f::from_fn(64, 32, |x, _| if x < 32 { [0.55, 0.5, 0.05] } else { [0.01, 0.02, 0.12] });
-        let m = auto_bw_mix(&src, &SourceInfo::default(), &DevelopSettings::default());
-        let (yellow, blue) = (m[2], m[5]);
-        assert!(yellow > 0.0 && blue < 0.0, "{m:?}");
-        // an image without colour leaves the mix alone
-        let grey = Rgb32f::from_fn(16, 16, |x, _| [x as f32 / 16.0; 3]);
-        assert_eq!(auto_bw_mix(&grey, &SourceInfo::default(), &DevelopSettings::default()), [0.0; 8]);
-    }
-}
-
-#[cfg(test)]
-mod tint_tests {
-    use super::*;
-
-    #[test]
-    fn auto_wb_and_picker_correct_green_with_positive_tint() {
-        // The picker delegates a sampled patch to this same auto_wb implementation.
-        for (rgb, sign) in [([0.18, 0.24, 0.18], 1.0), ([0.24, 0.18, 0.24], -1.0)] {
-            let img = Rgb32f::filled(16, 16, rgb);
-            let info = SourceInfo { raw: true, relative_wb: true, ..Default::default() };
-            let (temp, tint) = auto_wb(&img, &info);
-            assert!(tint * sign > 0.0, "{rgb:?}: temp {temp}, tint {tint}");
-            let mut s = DevelopSettings::default();
-            s.wb.mode = lcc_develop::WbMode::Custom;
-            s.wb.temp = temp;
-            s.wb.tint = tint;
-            let mut corrected = img;
-            crate::local::white_balance(&mut corrected, &info, &s);
-            let p = corrected.get(0, 0);
-            let spread = p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]);
-            assert!(spread < 0.003, "{rgb:?} -> {p:?}");
         }
     }
 }

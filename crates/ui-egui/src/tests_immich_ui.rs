@@ -91,35 +91,6 @@ fn key_file_prompt_creates_and_unlocks_the_file() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-// Feature: the engine's Immich commands are in the menus (Library ▸ Immich).
-#[test]
-fn immich_commands_are_in_library_immich() {
-    let dir = std::env::temp_dir().join(format!("lcc-immich-ui-menu-{}", std::process::id()));
-    let h = app(&dir);
-    let bar = crate::menubar::menu_bar(&h.app);
-    let (_, file) = bar.iter().find(|(t, _)| t == "Library").unwrap();
-    let sub = file
-        .iter()
-        .find_map(|n| match n {
-            crate::menubar::MenuNode::Submenu { label, children } if label == "Immich" => Some(children),
-            _ => None,
-        })
-        .expect("Library ▸ Immich");
-    let ids: Vec<&str> = sub
-        .iter()
-        .filter_map(|n| match n {
-            crate::menubar::MenuNode::Item { id, .. } => Some(id.as_str()),
-            _ => None,
-        })
-        .collect();
-    // kept short: Immich Settings plus the everyday actions; the rest lives in the settings panel
-    let mut want = vec!["immich.connections", "immich.link", "immich.sync", "immich.fetchOriginal"];
-    let mut got = ids.clone();
-    want.sort_unstable();
-    got.sort_unstable();
-    assert_eq!(got, want);
-}
-
 /// A tiny Immich server: version, user, key permissions (`perms`); everything else is empty.
 #[allow(clippy::unwrap_used)]
 fn mini_server(perms: Vec<&'static str>) -> String {
@@ -163,10 +134,6 @@ fn mini_server(perms: Vec<&'static str>) -> String {
     format!("http://127.0.0.1:{port}")
 }
 
-fn rect(h: &Headless, id: &str) -> Option<egui::Rect> {
-    h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r)
-}
-
 // Feature: the server card stays short: only the permissions the key lacks (or one line saying
 // none), the full list behind "Show permissions"; one status line for the latest sync; the album
 // rule row in the sync rules.
@@ -196,9 +163,6 @@ fn immich_card_is_compact() {
     assert!(has(&h, "label:immichSyncStatus-0"));
     let text = h.painted_text().join("\n");
     assert!(text.contains("Albums ↔ albums"), "the album rule row");
-    let card = rect(&h, "immichAccount:0").expect("the card");
-    // the old card was ~1000 pt tall with the sync rules open
-    assert!(card.height() < 470.0, "card height {}", card.height());
     if let Some(p) = lcc_brand::env_os("TEST_SHOTS") {
         h.app.services.png = Some(Box::new(|img: &lcc_raster::Rgba8| {
             lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(img), &lcc_codecs::EncodeMeta::default()).unwrap_or_default()

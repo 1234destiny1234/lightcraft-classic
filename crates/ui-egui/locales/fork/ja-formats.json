@@ -53,5 +53,15 @@
   "Trained on: {provenance}": "学習データ：{provenance}",
   "{} · {}. Kept in the library's “denoise” folder; the oldest ones that no photo uses go first when the limit is reached.": "{} · {}。ライブラリの「denoise」フォルダーに保存されます。上限に達すると、どの写真にも使われていない古いものから削除されます。",
   "{} of {} from {host}": "{host}から {}/{}",
+  "{app} {version}": "{app} {version}",
+  "{app} {version} is available (Help ▸ Check for Updates…)": "{app} {version} が利用できます（ヘルプ ▸ 更新を確認…）",
+  "Version {version} is available.": "バージョン {version} が利用できます。",
+  "{file} · {published}": "{file} ・{published}",
+  "{info} · {size}": "{info} ・{size}",
+  "Installing it will {action}.": "インストールすると{action}。",
+  "Last checked {when}": "最後の確認: {when}",
+  "{done} of {total} ({percent} %)": "{done} / {total}（{percent} %）",
+  "{done} downloaded": "{done} ダウンロード済み",
+  "{file} is downloaded and checked; install it to update (the app restarts).": "{file} をダウンロードして検証しました。インストールすると更新されます（アプリは再起動します）。",
   "Color space: Rec. 2020 {curve} (HDR AVIF)": "カラースペース：Rec. 2020 {curve}（HDR AVIF）"
 }

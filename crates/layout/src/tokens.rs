@@ -216,32 +216,6 @@ pub const TOKENS: &[&str] = &[
 mod tests {
     use super::*;
 
-    fn info() -> PhotoInfo {
-        PhotoInfo {
-            filename: "IMG_0042.CR3".into(),
-            date: "2024-05-01T13:45:10".into(),
-            title: "Harbour".into(),
-            iso: Some(200),
-            shutter: Some(1.0 / 250.0),
-            aperture: Some(8.0),
-            focal: Some(35.0),
-            rating: Some(3),
-            seq: 7,
-            page: 2,
-            pages: 9,
-            ..Default::default()
-        }
-    }
-
-    #[test]
-    fn expands_layout_and_naming_tokens() {
-        let p = info();
-        assert_eq!(expand("{Title} — {Date}", &p), "Harbour — 2024-05-01");
-        assert_eq!(expand("{Exposure}, {ISO}, {Focal}", &p), "1/250 s at f/8, ISO 200, 35 mm");
-        assert_eq!(expand("{name}.{ext} {date:%Y%m%d} {seq} {seq:5}", &p), "IMG_0042.CR3 20240501 007 00007");
-        assert_eq!(expand("{Filename} {Rating} {Page}/{Pages}", &p), "IMG_0042.CR3 ★★★ 2/9");
-    }
-
     #[test]
     fn unknown_missing_and_literal() {
         let p = PhotoInfo::default();

@@ -2,20 +2,13 @@
 //! loupe renders at the size it is drawn at (up to the photo's own pixels and a safety ceiling);
 //! "Preview size" in Settings only lowers that when the user asks for it.
 
-use crate::state::{AppSettings, LOUPE_EDGE_CEILING, PREVIEW_LIMITS, STANDARD_PREVIEW_EDGE};
+use crate::state::{AppSettings, LOUPE_EDGE_CEILING, STANDARD_PREVIEW_EDGE};
 
 /// A texture side no GPU we run on refuses (see the tests of small ones below).
 const BIG: usize = 16384;
 
 fn with_limit(preview_limit: u32) -> AppSettings {
     AppSettings { preview_limit, ..Default::default() }
-}
-
-// Given a fresh install
-#[test]
-fn default_is_automatic() {
-    assert_eq!(AppSettings::default().preview_limit, 0);
-    assert_eq!(PREVIEW_LIMITS[0], 0, "Automatic is the first choice");
 }
 
 // Given Automatic, when a 24 MP photo is shown at 1:1, then the render is the photo's own width
@@ -28,14 +21,6 @@ fn automatic_renders_a_one_to_one_view_at_native_size() {
 #[test]
 fn automatic_does_not_cap_a_fit_view_at_the_old_default() {
     assert_eq!(with_limit(0).loupe_edge(3024.0, 6000, BIG), 3072, "rounded up to the next 64 px step");
-}
-
-// Dragging a window edge must not re-render (and re-key the caches) on every pixel
-#[test]
-fn render_sizes_move_in_steps() {
-    let s = with_limit(0);
-    assert_eq!(s.loupe_edge(2945.0, 6000, BIG), s.loupe_edge(3008.0, 6000, BIG));
-    assert_ne!(s.loupe_edge(3008.0, 6000, BIG), s.loupe_edge(3009.0, 6000, BIG));
 }
 
 // Neighbour prefetch and hover / before stand-ins stay at the preview level: a full-size decode

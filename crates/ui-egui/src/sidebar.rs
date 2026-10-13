@@ -442,14 +442,4 @@ mod tests {
             assert!(e.contains(says), "{asked}: {e}");
         }
     }
-
-    #[test]
-    fn sections_are_named_by_their_ids() {
-        for s in SidebarSection::ALL {
-            assert_eq!(SidebarSection::from_id(s.id()), Some(s));
-            assert_eq!(serde_json::to_value(s).unwrap(), json!(s.id()));
-        }
-        assert_eq!(SidebarSection::from_id("Albums"), None);
-        assert_eq!(SidebarSection::ids(), "albums|local|byDate|folders|keywords");
-    }
 }

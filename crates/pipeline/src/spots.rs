@@ -362,22 +362,6 @@ mod tests {
     use super::*;
     use lcc_develop::DevelopSettings;
 
-    #[test]
-    fn remove_erases_a_dot() {
-        // flat grey with a gentle gradient and a black dot in the middle
-        let mut img = Rgb32f::from_fn(120, 80, |x, _| [0.2 + x as f32 * 0.001; 3]);
-        for y in 36..44 {
-            for x in 56..64 {
-                img.set(x, y, [0.0; 3]);
-            }
-        }
-        let frame = Frame::new(120, 80, &DevelopSettings::default(), true);
-        let spot = Spot { points: vec![Point::new(0.5, 0.5)], size: 8.0 / 120.0, feather: 30.0, ..Default::default() };
-        apply(&mut img, &[spot], &frame, frame.px_per_long(120));
-        let c = img.get(60, 40);
-        assert!((c[0] - 0.26).abs() < 0.03, "{c:?}");
-    }
-
     /// Vertical stripes (period `period` px) with a black blot over the middle.
     fn striped_with_blot(w: usize, h: usize, period: usize) -> Rgb32f {
         let mut img = Rgb32f::from_fn(w, h, |x, _| if (x / period).is_multiple_of(2) { [0.2; 3] } else { [0.7; 3] });

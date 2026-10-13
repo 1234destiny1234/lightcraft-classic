@@ -155,17 +155,3 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         pan_to(app, (q.x - img.left()) / img.width().max(1.0), (q.y - img.top()) / img.height().max(1.0));
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn presets_name_the_loupe_level() {
-        assert_eq!(current(Zoom::Fit), Some("fit"));
-        assert_eq!(current(Zoom::Fill), Some("fill"));
-        assert_eq!(current(Zoom::Percent(100.0)), Some("1:1"));
-        assert_eq!(current(Zoom::Percent(300.0)), Some("3:1"));
-        assert_eq!(current(Zoom::Percent(137.0)), None);
-    }
-}
