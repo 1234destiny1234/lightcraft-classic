@@ -51,12 +51,12 @@ cited here still exists. Formerly docs/parity.md.
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
 | Y. Menus | 85 | 0 | 4 | 8 | 47/47 (100%) | 23/23 (100%) |
-| Z. Keyboard shortcuts (desktop) | 76 | 3 | 3 | 1 | 49/52 (94%) | 23/24 (96%) |
+| Z. Keyboard shortcuts (desktop) | 76 | 4 | 3 | 1 | 49/52 (94%) | 23/25 (92%) |
 | Lightroom Classic extras | 102 | 18 | 5 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 491 | 58 | 37 | 27 | 194/201 (97%) | 163/177 (92%) |
+| **Total** | 491 | 59 | 37 | 27 | 194/201 (97%) | 163/178 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.7%** of 586 in-scope rows — P0 98.3% of 201 · P1 95.8% of 177 · P2 73.5% of 206.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.7%** of 587 in-scope rows — P0 98.3% of 201 · P1 95.5% of 178 · P2 73.5% of 206.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
