@@ -112,11 +112,22 @@ pub fn plan(kind: Kind, file: &Path, version: &str) -> Plan {
 /// Apply `downloaded`: start the installer, replace the AppImage, or lay the file out. See
 /// [`Outcome::exit`].
 pub fn install(kind: Kind, downloaded: &Downloaded, version: &str) -> Result<Outcome, UpdateError> {
+    install_with(kind, downloaded, version, &mut |f: &Path| reveal(f).map_err(|e| e.to_string()))
+}
+
+/// [`install`], with the manual install's "show the file" done by `show` (so a headless caller
+/// can record it instead of opening the file manager).
+pub fn install_with(
+    kind: Kind,
+    downloaded: &Downloaded,
+    version: &str,
+    show: &mut dyn FnMut(&Path) -> Result<(), String>,
+) -> Result<Outcome, UpdateError> {
     match kind {
         Kind::Msi => install_msi(&downloaded.path),
         Kind::Dmg => install_dmg(&downloaded.path),
         Kind::AppImage => install_appimage(&downloaded.path),
-        Kind::Archive => reveal(&downloaded.path).map(|()| Outcome::manual(&downloaded.path)),
+        Kind::Archive => show(&downloaded.path).map_err(UpdateError::Install).map(|()| Outcome::manual(&downloaded.path)),
         Kind::Checksums => Err(UpdateError::Install("that file is the release's checksum list, not an update".into())),
     }
     .map_err(|e| match e {
@@ -322,7 +333,7 @@ fn file_name(path: &Path) -> String {
 // ---------- anything else: show the file
 
 /// Show `file` in the platform's file manager.
-fn reveal(file: &Path) -> Result<(), UpdateError> {
+pub fn reveal(file: &Path) -> Result<(), UpdateError> {
     if !file.is_file() {
         return Err(UpdateError::Install(format!("{} is not there any more", file.display())));
     }

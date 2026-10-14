@@ -787,9 +787,11 @@ pub fn plan(s: &Staged) -> lcc_updater::Plan {
     lcc_updater::plan(s.kind.to_crate(), &s.path, &s.version)
 }
 
-/// Apply a staged update. The returned [`Installed`] says whether the app has to quit.
-pub fn install(s: &Staged) -> Result<Installed, String> {
-    let outcome = lcc_updater::install(s.kind.to_crate(), &downloaded(s), &s.version).map_err(|e| e.to_string())?;
+/// Apply a staged update; a manual install shows the file through `desktop`. The returned
+/// [`Installed`] says whether the app has to quit.
+pub fn install(s: &Staged, desktop: &dyn crate::desktop::Desktop) -> Result<Installed, String> {
+    let mut reveal = |f: &std::path::Path| desktop.reveal(f);
+    let outcome = lcc_updater::install_with(s.kind.to_crate(), &downloaded(s), &s.version, &mut reveal).map_err(|e| e.to_string())?;
     Ok(Installed { version: s.version.clone(), message: outcome.message, exit: outcome.exit })
 }
 
