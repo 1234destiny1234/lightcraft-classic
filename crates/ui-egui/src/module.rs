@@ -430,17 +430,11 @@ pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::QuickDevelop, PanelId::Keywordi
 /// shows.
 pub const DEVELOP_LEFT: &[PanelId] =
     &[PanelId::Navigator, PanelId::Presets, PanelId::Versions, PanelId::History, PanelId::Collections, PanelId::Sources];
-const DEVELOP_RIGHT: &[PanelId] = &[
-    PanelId::Edit,
-    PanelId::Crop,
-    PanelId::Remove,
-    PanelId::Masking,
-    PanelId::RedEye,
-    PanelId::Versions,
-    PanelId::Activity,
-    PanelId::Keywords,
-    PanelId::Info,
-];
+/// Develop's right group: the panels its tool strip opens. They are Develop's own editing tools;
+/// the Library panels (Versions, Activity, Keywords, Info) are not among them — they have their own
+/// tab strip in Library, sit in Develop's left column where Classic puts them, and open from the
+/// Window menu and their shortcuts (#45, #108).
+const DEVELOP_RIGHT: &[PanelId] = &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::Masking, PanelId::RedEye];
 
 /// Library: (`[` / `]` rate in the grids, see `shortcuts::grid_bracket_command`); `\` the filter bar (in a loupe
 /// it stays Show Original, see `shortcuts::handle`); `=` / `-` thumbnail size; Home / End the first

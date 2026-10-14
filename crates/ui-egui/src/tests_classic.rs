@@ -8,6 +8,7 @@ use serde_json::json;
 use crate::headless::Headless;
 use crate::module::PanelId;
 use crate::panels::classic;
+use crate::state::RightPanel;
 use crate::{LccApp, Services};
 
 pub(crate) const T: Duration = Duration::from_secs(20);
@@ -357,15 +358,25 @@ fn an_older_settings_file_keeps_the_my_photos_panel_hidden() {
     assert!(ui.hidden_panels.is_empty() && ui.layouts[&crate::module::ModuleId::Develop].hidden.is_empty());
 }
 
-/// The tool strip belongs to Develop: Library's right column is its Classic panels, and offering
-/// the editing tools there sent a click into another module.
+/// The tool strip is per module: Develop's editing tools are not offered in Library (a click there
+/// would send the user into another module), and #108: Develop's strip holds Develop's tools only —
+/// the Versions, Activity and Keywords panels are not Develop's, even though they were written with
+/// it. Library's own strip has its panels (Versions, History & Activity), which open over its column.
 #[test]
 fn the_tool_strip_is_develops_alone() {
-    let mut h = demo();
-    assert!(!has(&h, "icon:edit") && !has(&h, "icon:crop") && !has(&h, "icon:presets"), "no Develop tools in Library");
-    assert!(has(&h, "classicPanel:metadata"), "Library's right column is still there");
-    click(&mut h, "module:develop");
+    let lib = demo();
+    assert!(!has(&lib, "icon:edit") && !has(&lib, "icon:crop") && !has(&lib, "icon:presets"), "no Develop tools in Library");
+    assert!(has(&lib, "classicPanel:metadata"), "Library's right column is still there");
+    assert!(has(&lib, "icon:versions") && has(&lib, "icon:activity"), "Library's strip has its own panels");
+    let mut h = develop_demo();
     assert!(has(&h, "icon:edit") && has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
+    for id in ["versions", "activity", "keywords", "info"] {
+        assert!(!has(&h, &format!("icon:{id}")), "Develop's strip is its tools, not {id}");
+    }
+    // Versions is still reached from Develop's own column and by its shortcut
+    assert!(has(&h, "classicPanel:versions"), "Develop's left column holds the Versions panel");
+    run(&mut h, "panel.versions", json!({}));
+    assert_eq!(h.app.ui.right, RightPanel::Versions, "the shortcut still opens Versions");
 }
 
 /// Issue #44: folded Classic panels (Library and Develop), folded edit sections and Solo Mode are
