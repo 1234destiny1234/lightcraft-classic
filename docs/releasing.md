@@ -7,8 +7,22 @@ The release pipeline is [`.github/workflows/release.yml`](../.github/workflows/r
 It runs on every push to the `release` branch. A maintainer can also dispatch it manually, with
 an optional version override such as `1.2.0-rc.1`. A manual dispatch is a **dry run** unless
 `dry_run` is unticked (`gh workflow run release.yml --ref <branch> -f dry_run=true`, the default): every
-platform builds unsigned, and the draft-release job is skipped, so nothing on GitHub's Releases page or its
-tags changes. With `dry_run=false` the release environment's branch restrictions still apply.
+platform builds unsigned, no draft is created and nothing is uploaded, so nothing on GitHub's Releases page or
+its tags changes. With `dry_run=false` only the `release` branch may run it: the version job refuses any other
+branch, and the release environment's branch restrictions still apply to the signing jobs.
+
+How a real run flows:
+
+1. **version** resolves the version and creates the draft release `v<version>` (or reuses an existing draft
+   for that tag, deleting its old assets and retargeting it at this commit). It stops if `v<version>` is
+   already published.
+2. Each **platform job** (macOS, Windows x64/ARM64, Linux, Flatpak, web, and riscv64/FreeBSD when enabled)
+   uploads its files to that draft with `gh release upload --clobber` as soon as it finishes, and its
+   `sha256sum` output as a tiny `sums-<platform>` artifact. Flatpak fetches the Linux tarball from the draft.
+   Files never round-trip through Actions artifacts, which are very slow from the self-hosted runners.
+3. **release** (after every platform, whether it built or not) writes `SHA256SUMS.txt` for the files on the
+   draft from those checksum artifacts, names failed platforms in the notes and the run summary, and uploads
+   `SHA256SUMS.txt` and `latest.json`. The release stays a **draft**; publishing is a separate manual step.
 
 ## Prepare and start a release
 
@@ -18,11 +32,11 @@ tags changes. With `dry_run=false` the release environment's branch restrictions
    Use a semantic version such as `1.2.0` or `1.2.0-rc.1`; versions containing a hyphen are
    marked as prereleases.
 3. Push to `release`, or dispatch the workflow on `release` (a dispatch on another branch is a dry run; see below).
-4. Check the workflow run and its artifacts. On success, the workflow creates or updates a **draft**
+4. Check the workflow run. On success, the workflow creates or updates a **draft**
    GitHub Release named `<app> v<version>`, targeted at the commit that triggered the run.
    Review the draft and its `SHA256SUMS.txt`, then publish it in GitHub Releases when ready.
 
-The workflow replaces assets when it updates an existing draft. It stops rather than overwriting a
+The workflow replaces assets when it updates an existing draft (the version job clears them first). It stops rather than overwriting a
 release that has already been published, so bump the version before producing another release.
 
 ## The update feed
@@ -34,8 +48,8 @@ artifact with its file name, download URL, size and SHA-256. The app reads
 Releases API, so the check keeps working when the API is rate-limited; `<PREFIX>_UPDATE_URL` points a
 build at another feed (a mirror, a fork, a local file server).
 
-The `release` job builds the manifest from the downloaded artifacts and the checksums it just computed, so
-only what is actually attached to the release is offered. It is uploaded with the rest of the assets and
+The `release` job builds the manifest from the draft's asset list (names and sizes) and the checksums the
+platform jobs computed, so only what is actually attached to the release is offered. It is uploaded with the rest of the assets and
 replaced on every run of the draft. Nothing else has to be maintained by hand: a new platform is offered as
 soon as its artifact name carries the OS and architecture slugs the pipeline already uses
 (`<binary>-<version>-<os>-<arch>…`).
@@ -77,7 +91,7 @@ All on the maintainer's self-hosted runners (docs/ci.md, *Where the jobs run*):
 
 | Job | Runner | Notes |
 |---|---|---|
-| version, web, draft release | gpu0 / gpu0-b | `nice -n 19`; the draft job fetches the GitHub CLI into the job's temp dir |
+| version, web, draft release | gpu0 / gpu0-b | `nice -n 19`; jobs fetch the GitHub CLI into the job's temp dir (`.github/scripts/install-gh.sh`) where the runner has none |
 | Linux x86_64 | gpu0, `ubuntu:22.04` container | Rust, registry and target dir in Docker volumes |
 | Flatpak x86_64 | gpu0, `ubuntu:24.04` container, `--privileged` | Flathub runtime/SDK kept in a Docker volume |
 | macOS universal | mac0 | `nice -n 19`; signing certificate in a temporary keychain in `$RUNNER_TEMP`, deleted (and taken off the search list) at the end of the job, stale ones removed at the start; the login keychain is never modified |
@@ -112,5 +126,6 @@ signing identity is signed but not notarized. Configure only the platform creden
   Trusted Signing credentials: `AZURE_TENANT_ID`, `AZURE_CLIENT_ID`, `AZURE_CLIENT_SECRET`,
   `AZURE_SIGNING_ENDPOINT`, `AZURE_SIGNING_ACCOUNT`, and `AZURE_CERT_PROFILE`.
 
-Linux and web artifacts are not code-signed by this workflow. The release job computes SHA-256
-checksums for the complete artifact set and attaches the checksum file to the draft release.
+Linux and web artifacts are not code-signed by this workflow. Each platform job computes the SHA-256
+of its own files; the release job gathers them into `SHA256SUMS.txt` for every file on the draft and
+attaches it.
