@@ -29,6 +29,7 @@ mod control_server;
 mod dialog_filter;
 mod editors;
 mod hdr_display;
+mod hdr_probe;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
@@ -41,6 +42,8 @@ mod screen_profile_linux;
 #[cfg(any(windows, test))]
 mod screen_profile_windows;
 mod video_gpu;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod wayland_hdr;
 mod window_gpu;
 
 use dialog_filter::FileDialogExt as _;
@@ -661,6 +664,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         system_theme: appearance::service(),
         // playing video frames graded on the window GPU (wgpu renderer only)
         video_gpu: cc.wgpu_render_state.as_ref().map(|s| Box::new(video_gpu::WindowVideoGpu::new(s)) as Box<dyn lcc_ui_egui::VideoGpu>),
+        hdr_output: cc.wgpu_render_state.as_ref().and_then(hdr_display::WindowHdr::new).map(|h| Box::new(h) as Box<dyn lcc_ui_egui::HdrOutput>),
     }
 }
 
@@ -736,12 +740,16 @@ OPTIONS:
   --memory         throwaway in-memory session (alias --demo); nothing is saved
   --control PORT   serve the JSON-lines control channel on 127.0.0.1:PORT (env {P}_CONTROL_PORT;
                    see docs/control-protocol.md)
+  --hdr-probe [S]  open a small window for S seconds (default 5) that reports HDR display output
+                   (surface formats, colour spaces, display headroom) to stderr and logs/hdr-probe.log
   --version, --help
 
 ENVIRONMENT:
   {P}_CONFIG_DIR=DIR   use this settings folder instead of the platform default (empty = no settings folder)
   {P}_GPU_BACKEND=dx12|vulkan|metal|auto|off   graphics backend (default: DX12 on Windows, Metal on macOS,
                    Vulkan on Linux; off = render on the CPU); else WGPU_BACKEND. {P}_GPU=0: CPU rendering.
+  {P}_HDR_DISPLAY=0   keep the window SDR. {P}_HDR_HEADROOM=X / {P}_HDR_PAPER_WHITE=NITS: the display's headroom
+                   (× SDR white) and SDR white where the system doesn't report them (Wayland)
   {P}_SAM3_DIR=DIR   the SAM 3 model for Object / Describe masks (default: <settings folder>/models/sam3;
                    optional: {app} offers to download it when first needed)
   {P}_SAM3_MIRRORS=URL,…   where to download the SAM 3 model from (base URLs, tried in order)
@@ -825,13 +833,18 @@ fn main() -> eframe::Result {
     let mut seed_demo = true;
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => control_port = control_port_from("--control", Some(args.next().unwrap_or_default())),
             "--library" => library_dir = args.next().map(std::path::PathBuf::from),
             "--no-demo" => seed_demo = false,
             "--memory" | "--demo" => in_memory = true,
+            "--hdr-probe" => {
+                // optional seconds (default 5)
+                let secs = args.next_if(|v| v.parse::<u64>().is_ok()).and_then(|v| v.parse().ok()).unwrap_or(5);
+                return hdr_probe::run(secs, log_dir());
+            }
             "--version" => {
                 println!("{} {}", lcc_brand::BINARY, env!("CARGO_PKG_VERSION"));
                 return Ok(());
@@ -912,7 +925,9 @@ fn main() -> eframe::Result {
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
     let win_files = std::sync::Arc::new(window_files(in_memory));
-    let window_gpu::Chosen { renderer, wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
+    let window_gpu::Chosen { renderer, mut wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
+    // HDR display output: an extended-range float surface where the platform and display offer it
+    hdr_display::configure(&mut wgpu_options);
     win_files.arm(window_renderer);
     let win_files_app = win_files.clone();
     let options = eframe::NativeOptions {
@@ -939,7 +954,9 @@ fn main() -> eframe::Result {
     // manager showed a "no" cursor. Run through XWayland when it's there; <PREFIX>_WAYLAND=1
     // keeps the native Wayland backend.
     #[cfg(all(unix, not(target_os = "macos")))]
-    if std::env::var_os("DISPLAY").is_some() && !lcc_brand::env_is_set("WAYLAND") {
+    // (an output with HDR headroom — the compositor says so — needs the native backend: XWayland
+    // windows are SDR)
+    if std::env::var_os("DISPLAY").is_some() && !lcc_brand::env_is_set("WAYLAND") && hdr_display::read_compositor_headroom().is_none() {
         options.event_loop_builder = Some(Box::new(|b| {
             use winit::platform::x11::EventLoopBuilderExtX11;
             b.with_x11();
@@ -964,7 +981,7 @@ fn main() -> eframe::Result {
                 // and the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
                 session = session.with_default_sam3_model();
                 // HDR display: SDR unless the surface, platform and display all allow HDR
-                let display = hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
+                let display = hdr_display::report(cc.wgpu_render_state.as_ref());
                 let mut app = LccApp::new(session, services(cc, app_log_file.as_deref()));
                 app.hdr_display_sdr = !display.is_hdr();
                 if let Some(ui) = prefs {
