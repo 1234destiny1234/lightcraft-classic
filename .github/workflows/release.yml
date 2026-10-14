@@ -328,7 +328,7 @@ jobs:
           dpkg-deb --contents dist/release/*.deb | grep -E "usr/bin/$BRAND_BINARY\$|metainfo|applications"
           ldd "${CARGO_TARGET_DIR:-target}/release/app"
           cargo xtask package --render-only
-          python3 -c "import yaml, os; a = os.environ['BRAND_APP_ID']; m = yaml.safe_load(open(f'target/package/linux/flatpak/{a}.yml')); assert m['id'] == a"
+          python3 -c "import yaml, os; a = os.environ['BRAND_APP_ID']; m = yaml.safe_load(open(os.path.join(os.environ.get('CARGO_TARGET_DIR', 'target'), f'package/linux/flatpak/{a}.yml'))); assert m['id'] == a"
           for appimage in dist/release/*.AppImage; do
             chmod +x "$appimage"
             APPIMAGE_EXTRACT_AND_RUN=1 "$appimage" --version
