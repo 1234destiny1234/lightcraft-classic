@@ -83,7 +83,7 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
             "sha256": staged.sha256,
         }));
     }
-    let installed = update::install(&staged).map_err(|e| bad(C, e))?;
+    let installed = update::install(&staged, s.desktop.as_ref()).map_err(|e| bad(C, e))?;
     let exit = installed.exit;
     let out = json!({"version": installed.version, "message": installed.message, "exit": exit});
     s.updater.set_installed(installed);
