@@ -43,7 +43,7 @@ Prerelease tags get a manifest too (with `prerelease: true`): the app only offer
 
 ## Builds and artifacts
 
-Release jobs build macOS universal, Windows x64/ARM64, Linux x86_64/aarch64,
+Release jobs build macOS universal, Windows x64/ARM64, Linux x86_64 (aarch64 paused),
 and the WASM web app. The platform scripts in [`packaging/`](../packaging/) write their outputs to
 `dist/release/` (the full list of files is the README's Downloads section):
 
