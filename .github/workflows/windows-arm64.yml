@@ -42,6 +42,9 @@ jobs:
       - name: Low priority, persistent build cache
         shell: pwsh
         run: |
+          # `bash` steps need Git Bash, not the WSL launcher in System32 (SNAPDRAGON's PATH finds that first)
+          $gitBash = 'C:\Program Files\Git\bin'
+          if (Test-Path "$gitBash\bash.exe") { Add-Content -Path $env:GITHUB_PATH -Value $gitBash }
           Get-Process -Name Runner.Worker -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'BelowNormal' }
           if (-not $env:CARGO_TARGET_DIR) { Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$env:LOCALAPPDATA\lcc-ci-target-$env:RUNNER_NAME" }
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable

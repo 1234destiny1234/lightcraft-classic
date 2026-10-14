@@ -175,14 +175,17 @@ jobs:
           repository: storytold/craft-fonts
           ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
           path: craft-fonts
-      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-        with:
-          targets: ${{ matrix.target }}
       - name: Low priority, release build cache
         shell: pwsh
         run: |
+          # `bash` steps need Git Bash, not the WSL launcher in System32 (SNAPDRAGON's PATH finds that first)
+          $gitBash = 'C:\Program Files\Git\bin'
+          if (Test-Path "$gitBash\bash.exe") { Add-Content -Path $env:GITHUB_PATH -Value $gitBash }
           Get-Process -Name Runner.Worker -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'BelowNormal' }
           Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$env:LOCALAPPDATA\lcc-release-target-$env:RUNNER_NAME"
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          targets: ${{ matrix.target }}
       - name: Apply version override
         if: inputs.version != ''
         shell: bash
