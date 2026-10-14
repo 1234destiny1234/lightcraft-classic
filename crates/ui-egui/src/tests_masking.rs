@@ -30,6 +30,14 @@ fn exec(h: &mut Headless, command: &str, params: serde_json::Value) -> serde_jso
     r["result"].clone()
 }
 
+/// The loupe in Library, whose left column carries the folder tree and the collections the sidebar
+/// tests browse: Develop's left column is its own Classic stack and has neither.
+fn library_loupe() -> Headless {
+    let mut h = detail("panel.edit");
+    exec(&mut h, "module.library", json!({}));
+    h
+}
+
 fn pointer(h: &mut Headless, events: serde_json::Value) {
     let r = h.request("ui.pointer", json!({"events": events}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -765,7 +773,7 @@ fn smart_album_edit_with_bad_rules_keeps_the_name() {
 /// The sidebar marks a smart album whose rules no longer check, so it can be fixed.
 #[test]
 fn sidebar_marks_smart_albums_with_problems() {
-    let mut h = detail("panel.edit");
+    let mut h = library_loupe();
     let trip = exec(&mut h, "album.create", json!({"name": "Trip", "addSelected": false}))["id"].as_u64().unwrap();
     let rules = json!({"ruleSet": {"rules": [{"field": "album", "op": "is", "value": trip}]}});
     let id = exec(&mut h, "album.createSmart", json!({"name": "In Trip", "rules": rules}))["id"].as_u64().unwrap();
@@ -888,7 +896,7 @@ fn local_folder_tree_expands_and_browses() {
     let _ = std::fs::remove_dir_all(&base);
     std::fs::create_dir_all(base.join("Trip/Day 1")).unwrap();
     std::fs::create_dir_all(base.join(".hidden")).unwrap();
-    let mut h = detail("panel.edit");
+    let mut h = library_loupe();
     exec(&mut h, "view.leftPanel", json!({"show": true}));
     h.app.ui.toggle_sidebar_section("panel:navigator");
     h.hide_home_above(&base);
@@ -921,7 +929,7 @@ fn local_folder_listed_twice_opens_and_closes_each_row() {
     let _ = std::fs::remove_dir_all(&base);
     let inner = base.join("Inner");
     std::fs::create_dir_all(inner.join("Sub")).unwrap();
-    let mut h = detail("panel.edit");
+    let mut h = library_loupe();
     exec(&mut h, "view.leftPanel", json!({"show": true}));
     h.hide_home_above(&base);
     let (base_s, inner_s) = (base.to_string_lossy().to_string(), inner.to_string_lossy().to_string());
@@ -1386,7 +1394,8 @@ fn ai_masks_without_the_model_offer_the_download() {
         assert!(h.app.widgets.iter().any(|(id, _)| id == "link:samHelp"), "no installation guide link");
         let shown = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let log = shown.clone();
-        h.app.services.reveal = Some(Box::new(move |p: &str| {
+        h.app.services.open_with = Some(Box::new(move |p: &str, editor: &str| {
+            assert_eq!(editor, "", "open the model directory with the default application");
             log.lock().unwrap().push(p.to_string());
             Ok(())
         }));

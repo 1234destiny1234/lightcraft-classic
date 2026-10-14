@@ -308,6 +308,11 @@ Therefore:
 | `segment.subject.cancel` | `{}` | stop that download → `{cancelled}` |
 
 `remote` reports the configured endpoint, not its health. `installed` describes local weights only.
+`download` is `{running, done, total, file, error, cancelled, finished}`: `cancelled` is true when the last
+download was cancelled (its `error` says so in words; decide on the flag). An AI mask command refused because
+the model is not installed (or still downloading) fails with an error that starts with "The SAM 3 model is
+not installed"; inside the app it is `ErrorKind::ModelMissing(Sam3)`, which is what the app offers the
+download on.
 
 Coordinates are normalized to the uncropped, oriented photo, like every mask shape. `seg` passes
 a stored segmentation (as `mask.list` / the develop settings hold it): the mask is made without
