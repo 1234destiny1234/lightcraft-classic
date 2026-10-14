@@ -453,6 +453,9 @@ pub struct LccApp {
     /// Say once, when the GPU device has been tried, that no graphics processor was found
     /// ([`panels::notices::gpu_notice`]). The desktop app sets it; headless sessions and tests don't.
     pub gpu_notice: bool,
+    /// The window shows SDR only (desktop: eframe's surface is 8-bit, `hdr_display::report`), so
+    /// the HDR button says HDR edits are seen through the SDR rendition. Headless/tests: false.
+    pub hdr_display_sdr: bool,
     /// The memory budget setting last applied (MB, 0 = automatic).
     memory_applied: Option<u32>,
     /// The display profile setting last applied (`app.displayProfile`).
@@ -557,6 +560,7 @@ impl LccApp {
             preview_window: None,
             gpu_applied: None,
             gpu_notice: false,
+            hdr_display_sdr: false,
             memory_applied: None,
             display_applied: None,
             display_error: None,
