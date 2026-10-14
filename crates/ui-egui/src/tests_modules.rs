@@ -273,6 +273,71 @@ fn secondary_window_has_its_own_switcher_filter_and_filmstrip() {
     assert_eq!(h.app.ui.second_filter, crate::panels::second::SecondFilter::default());
 }
 
+/// The tool in use is radio-style (Lightroom Classic): clicking its strip button leaves the
+/// module as it is. It used to close the tool panel, and Develop with no editing panel is
+/// Library's, so the click threw the user back into the grid.
+#[test]
+fn clicking_the_tool_in_use_keeps_develop() {
+    let mut h = demo();
+    run(&mut h, "module.develop", json!({}));
+    h.step();
+    for (cmd, icon, panel) in [
+        ("panel.edit", "edit", RightPanel::Edit),
+        ("panel.crop", "crop", RightPanel::Crop),
+        ("panel.masking", "masking", RightPanel::Masking),
+        ("panel.remove", "remove", RightPanel::Remove),
+    ] {
+        if h.app.ui.right != panel {
+            run(&mut h, cmd, json!({}));
+        }
+        assert_eq!(h.app.ui.right, panel, "{cmd} is the tool in use");
+        let r = h.request("ui.clickWidget", json!({"id": format!("icon:{icon}")}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.step();
+        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, panel), "clicking the {icon} tool in use leaves it on screen");
+    }
+    // another tool's button still switches
+    let r = h.request("ui.clickWidget", json!({"id": "icon:edit"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::Edit));
+}
+
+/// The tool strip's shortcuts and menu items keep toggling the tool off (Classic's `R`, `Q`…),
+/// but closing Develop's editing panel leaves Develop: it used to hand the Detail view, with no
+/// editing panel left, back to Library.
+#[test]
+fn closing_develops_tool_panel_stays_in_develop() {
+    let mut h = demo();
+    run(&mut h, "module.develop", json!({}));
+    h.step();
+    for (cmd, panel) in [
+        ("panel.edit", RightPanel::Edit),
+        ("panel.crop", RightPanel::Crop),
+        ("panel.masking", RightPanel::Masking),
+        ("panel.remove", RightPanel::Remove),
+        ("panel.redeye", RightPanel::RedEye),
+    ] {
+        if h.app.ui.right != panel {
+            run(&mut h, cmd, json!({}));
+        }
+        assert_eq!(h.app.ui.right, panel, "{cmd} is the tool in use");
+        run(&mut h, cmd, json!({}));
+        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::None), "{cmd} closes {panel:?} without leaving Develop");
+        run(&mut h, cmd, json!({}));
+        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, panel), "{cmd} opens {panel:?} again");
+    }
+    // the strip menu's hide leaves Develop too
+    run(&mut h, "panel.edit", json!({}));
+    run(&mut h, "panel.show", json!({"panel": "edit", "visible": false}));
+    assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::None));
+    // a grid view is still Library's
+    run(&mut h, "view.photoGrid", json!({}));
+    assert_eq!(h.app.ui.module, ModuleId::Library);
+}
+
 /// #45: the tool strip shows only the active module's tools; Library's Keywords and Info stay
 /// out of Develop's strip but still open through their commands, and the strip's tools aren't
 /// drawn in Library.
