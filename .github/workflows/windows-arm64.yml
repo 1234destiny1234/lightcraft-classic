@@ -31,6 +31,30 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
+  diag:
+    if: github.event_name == 'workflow_dispatch'
+    strategy:
+      fail-fast: false
+      matrix:
+        runner: ['["self-hosted","Windows","ARM64","lcc"]', '["self-hosted","Windows","X64","lcc"]']
+    runs-on: ${{ fromJSON(matrix.runner) }}
+    steps:
+      - shell: pwsh
+        continue-on-error: true
+        run: |
+          whoami; $env:USERPROFILE; $env:PATH
+          [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
+          Get-CimInstance Win32_OperatingSystem | Select Caption, Version
+          Get-PSDrive C | Select Used, Free
+          foreach ($c in 'cargo','rustup','rustc','git','dotnet','wix','pwsh','link','cl','signtool') { "$c => " + (Get-Command $c -ErrorAction SilentlyContinue).Source }
+          if (Get-Command rustup -ErrorAction SilentlyContinue) { rustup show }
+          $vw = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+          if (Test-Path $vw) { & $vw -all -products * -format text -property installationPath; & $vw -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath }
+          Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\*\*" -Directory -ErrorAction SilentlyContinue | Select -Expand FullName
+          Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Lib\*\um" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName; (Get-ChildItem $_.FullName -Directory).Name -join ',' }
+          dotnet --list-sdks
+          Get-ChildItem $env:RUNNER_TOOL_CACHE -ErrorAction SilentlyContinue | Select -Expand Name
+
   package:
     name: package (cross-compiled on x64)
     # Self-hosted x64 Windows runner (win0) cross-compiles; GitHub-hosted minutes are not used.
