@@ -2970,6 +2970,45 @@ mod tests {
         assert_eq!(h.app.session.undo.len(), undo0 + 1);
     }
 
+    /// A real click on a slider's value spans frames (press, then release a few frames later, as a
+    /// hand does): the field it opens stays open for typing (issues #59, upstream #1435 / #1669).
+    #[test]
+    fn a_slider_value_opens_for_typing_on_a_real_click() {
+        let mut h = demo([1300.0, 900.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail", "right": "edit"}), t);
+        h.settle(SETTLE);
+        let exposure = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().light.exposure;
+        let r = h.app.widgets.iter().find(|(id, _)| id == "sliderValue:light.exposure").map(|(_, r)| *r).unwrap();
+        let at = r.center();
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // a quick click, a usual one, one held for a second, and one whose hand shook a little
+        for (text, frames, jitter) in [("0.5", 1, 0.0), ("1,25", 4, 0.0), ("-0.75", 70, 0.0), ("0.25", 6, 2.0)] {
+            h.app.synthetic.push(egui::Event::PointerMoved(at));
+            h.app.synthetic.push(button(true));
+            for i in 0..frames {
+                if jitter > 0.0 {
+                    h.app.synthetic.push(egui::Event::PointerMoved(at + egui::vec2(if i % 2 == 0 { jitter } else { -jitter }, 0.0)));
+                }
+                h.step();
+            }
+            h.app.synthetic.push(egui::Event::PointerMoved(at));
+            h.app.synthetic.push(button(false));
+            for _ in 0..5 {
+                h.step();
+            }
+            assert_eq!(
+                h.view.ctx.memory(|m| m.focused()),
+                Some(crate::text_field::id("sliderField:light.exposure")),
+                "the field stays open after a {frames}-frame press"
+            );
+            h.request("ui.text", json!({"text": text}), t);
+            h.request("ui.key", json!({"key": "Enter"}), t);
+            let want: f64 = text.replace(',', ".").parse().unwrap();
+            assert!((exposure(&h) - want).abs() < 1e-9, "{text}: {}", exposure(&h));
+        }
+    }
+
     /// Reset takes precedence over the value being typed when its button is clicked.
     #[test]
     fn reset_button_wins_over_an_active_numeric_draft() {
