@@ -1997,8 +1997,6 @@ dependencies = [
 [[package]]
 name = "egui-wgpu"
 version = "0.36.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5cef1f6d1bba40b09a4d0d62cb822b81030922cfbf65c5373398c3a3caafc5bd"
 dependencies = [
  "ahash",
  "bytemuck",
@@ -4400,12 +4398,15 @@ dependencies = [
 name = "lcc-app"
 version = "0.8.1"
 dependencies = [
+ "bytemuck",
  "eframe",
  "egui",
+ "half",
  "lcc-brand",
  "lcc-codecs",
  "lcc-engine",
  "lcc-gpu",
+ "lcc-hdrmeta",
  "lcc-pipeline",
  "lcc-raster",
  "lcc-sysmem",
@@ -4418,6 +4419,8 @@ dependencies = [
  "pollster 1.0.1",
  "rfd",
  "serde_json",
+ "wayland-client",
+ "wayland-protocols",
  "winit",
  "winreg",
  "winresource",
@@ -4773,6 +4776,15 @@ name = "lcc-hash"
 version = "0.8.1"
 dependencies = [
  "sha1 0.10.7",
+]
+
+[[package]]
+name = "lcc-hdrmeta"
+version = "0.8.1"
+dependencies = [
+ "ash",
+ "wgpu",
+ "wgpu-hal",
 ]
 
 [[package]]

@@ -1052,11 +1052,11 @@
   "Include selected photos": "Включити вибрані фотографії",
   "Adding photos…": "Додавання фотографій…",
   "Reading photos…": "Читання фотографій…",
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "Цей дисплей не показує HDR (він SDR або HDR вимкнено в налаштуваннях системи), тому вікно показує SDR-версію. HDR-експорт зберігає весь діапазон.",
   "Add to Quick Collection": "Додати до швидкої колекції",
   "Remove from Quick Collection": "Вилучити зі швидкої колекції",
   "Add to Target Collection": "Додати до цільової колекції",
   "Remove from Target Collection": "Вилучити з цільової колекції",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "Виведення HDR на екран поки недоступне: це вікно показує SDR-версію навіть на HDR-дисплеї. HDR-експорт зберігає весь діапазон.",
   "Wheel scroll speed": "Швидкість прокручування коліщатком",
   "Fast": "Швидка",
   "Fastest": "Дуже швидка"

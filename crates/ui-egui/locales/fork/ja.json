@@ -1311,11 +1311,11 @@
   "Will be copied": "コピーとして読み込み",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "編集内容、キーワード、コレクションへの登録は削除されます。ディスク上のファイルは残ります。",
   "Include selected photos": "選択した写真を含める",
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "このディスプレイは HDR を表示していません（SDR ディスプレイか、システム設定で HDR がオフです）。そのため、ウィンドウには SDR 版が表示されます。HDR 書き出しは全範囲を保持します。",
   "Add to Quick Collection": "クイックコレクションに追加",
   "Remove from Quick Collection": "クイックコレクションから削除",
   "Add to Target Collection": "ターゲットコレクションに追加",
   "Remove from Target Collection": "ターゲットコレクションから削除",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 表示出力はまだ利用できません。HDR ディスプレイでも、このウィンドウには SDR 版が表示されます。HDR 書き出しは全範囲を保持します。",
   "Wheel scroll speed": "ホイールのスクロール速度",
   "Fast": "速い",
   "Fastest": "最速"
