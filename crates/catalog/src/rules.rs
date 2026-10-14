@@ -1396,6 +1396,19 @@ mod tests {
         for (s, want) in [("1/250", Some(0.004)), (" 1/250 s", Some(0.004)), ("0.5", Some(0.5)), ("2\"", Some(2.0)), ("30s", Some(30.0))] {
             assert_eq!(crate::parse_shutter_seconds(s), want, "{s}");
         }
+        // the same times as the app displays them (including the ″ of a whole second): the ingest string
+        // has to read back as the time it came from (issue #1619)
+        for (s, want) in [
+            ("1/250", Some(0.004)),
+            ("0.4", Some(0.4)),
+            ("0.8", Some(0.8)),
+            ("1\u{2033}", Some(1.0)),
+            ("1.3\u{2033}", Some(1.3)),
+            ("2.5\u{2033}", Some(2.5)),
+            ("30\u{2033}", Some(30.0)),
+        ] {
+            assert_eq!(crate::parse_shutter_seconds(s), want, "{s}");
+        }
         for s in ["", "1/0", "0", "-1/250", "fast", "inf", "NaN", "1/x"] {
             assert_eq!(crate::parse_shutter_seconds(s), None, "{s}");
         }
