@@ -5,8 +5,10 @@
 
 The release pipeline is [`.github/workflows/release.yml`](../.github/workflows/release.yml).
 It runs on every push to the `release` branch. A maintainer can also dispatch it manually, with
-an optional version override such as `1.2.0-rc.1`; the release environment's branch restrictions
-still apply.
+an optional version override such as `1.2.0-rc.1`. A manual dispatch is a **dry run** unless
+`dry_run` is unticked (`gh workflow run release.yml --ref <branch> -f dry_run=true`, the default): every
+platform builds unsigned, and the draft-release job is skipped, so nothing on GitHub's Releases page or its
+tags changes. With `dry_run=false` the release environment's branch restrictions still apply.
 
 ## Prepare and start a release
 
@@ -53,7 +55,7 @@ and the WASM web app. The platform scripts in [`packaging/`](../packaging/) writ
   architecture (`packaging/linux/package.sh`). Each AppImage embeds
   `gh-releases-zsync|<owner>|<repo>|latest|<binary>-*-linux-<arch>.AppImage.zsync`, so
   AppImageUpdate fetches only the changed blocks from the latest published (non-pre-) release.
-- Linux riscv64 (job disabled since 0.8.0; `if: false` in `release.yml`): `.tar.gz` only, cross-compiled on Ubuntu 24.04 against its riscv64 ports
+- Linux riscv64 (job disabled since 0.8.0; run only when the repository variable `RELEASE_RISCV64` is `true`): `.tar.gz` only, cross-compiled on Ubuntu 24.04 against its riscv64 ports
   libraries (so glibc 2.39 or newer), with the CLI smoke-tested under QEMU (`CROSS_*` variables
   of `packaging/linux/package.sh`).
 - Flatpak: a single-file `.flatpak` bundle for each architecture, repackaged from that
@@ -61,17 +63,28 @@ and the WASM web app. The platform scripts in [`packaging/`](../packaging/) writ
   `packaging/linux/flatpak/<app_id>.bundle.yml`; no Rust build). The from-source
   manifest `<app_id>.yml` is for Flathub; packaging-lint keeps their runtime and
   `finish-args` identical.
-- FreeBSD (job disabled since 0.8.0; `if: false` in `release.yml`, and `freebsd.yml` is disabled): `<binary>-<version>-freebsd-x86_64.tar.gz`, a `/usr/local`-style tree built in a
+- FreeBSD (job disabled since 0.8.0; run only when the repository variable `RELEASE_FREEBSD` is `true`, and `freebsd.yml` is disabled): `<binary>-<version>-freebsd-x86_64.tar.gz`, a `/usr/local`-style tree built in a
   FreeBSD 14.3 VM (`packaging/freebsd/package.sh`, the same packages as `freebsd.yml`). Install
   with `tar -xzf <file> --strip-components 1 -C /usr/local`.
 - Web: `<binary>-web-<version>.zip`.
 
-Only the macOS, Windows and draft-release jobs use the `release` environment. The others sign
-nothing, so dispatching the workflow on a branch (`gh workflow run release.yml --ref <branch>`)
-dry-runs them: the signing jobs are refused by the environment's branch rule, and the release job,
-which needs them, is skipped.
+Only the macOS, Windows and draft-release jobs use the `release` environment (not on a dry run). The
+others sign nothing.
 
-The Linux builds run on Ubuntu 22.04 and target glibc 2.35 or newer. AppImages and binaries may
+### Where the release jobs run
+
+All on the maintainer's self-hosted runners (docs/ci.md, *Where the jobs run*):
+
+| Job | Runner | Notes |
+|---|---|---|
+| version, web, draft release | gpu0 / gpu0-b | `nice -n 19`; the draft job fetches the GitHub CLI into the job's temp dir |
+| Linux x86_64 | gpu0, `ubuntu:22.04` container | Rust, registry and target dir in Docker volumes |
+| Flatpak x86_64 | gpu0, `ubuntu:24.04` container, `--privileged` | Flathub runtime/SDK kept in a Docker volume |
+| macOS universal | mac0 | `nice -n 19 taskpolicy -b`; signing certificate in a temporary keychain in `$RUNNER_TEMP`, deleted (and taken off the search list) at the end of the job, stale ones removed at the start; the login keychain is never modified |
+| Windows x64 | win0 | BelowNormal priority; .NET SDK and WiX in the runner tool cache |
+| Windows ARM64 | SNAPDRAGON | native ARM64 build (win0 has no ARM64 MSVC tools) |
+
+The Linux builds run in an Ubuntu 22.04 container and target glibc 2.35 or newer. AppImages and binaries may
 also require system libraries for the windowing stack; the `.deb` and `.rpm` packages declare
 their runtime dependencies.
 

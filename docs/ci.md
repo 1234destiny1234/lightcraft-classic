@@ -1,6 +1,6 @@
 # CI and landing changes
 
-> **Last updated:** 2026-10-13 · **Change:** minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
+> **Last updated:** 2026-10-14 · **Change:** major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
 
 ## How changes reach `main`
 
@@ -28,21 +28,64 @@ runs `cargo xtask sil` (docs/testing-sil.md) once that command exists and is ski
 Before cutting a release, dispatch CI on the commit (or push it to `release`, which also starts
 `release.yml`) and make sure all three OSes are green.
 
-## Where the required check runs
+## Where the jobs run
 
-The Linux job in `.github/workflows/ci.yml` runs on:
+GitHub-hosted minutes are used up, so **every job of every workflow runs on the maintainer's self-hosted
+runners** (all carry the label `lcc`):
 
-- a **self-hosted runner** (labels `self-hosted, linux, x64, lcc`) for pushes and for PRs from branches in this
-  repository: its build cache persists between runs, so most runs are incremental. Each runner instance has
-  its own cache (`CARGO_TARGET_DIR` from the runner's `.env`, else `~/.cache/lcc-ci-target-<runner name>`), so
-  several instances on one machine (`gpu0` and `gpu0-b`) can run jobs at once without fighting over one
-  build directory;
-- a **GitHub-hosted runner** for PRs from forks, which never run on the self-hosted machine. Outside
-  contributors' workflow runs also need a maintainer's approval first.
+| Runner | Labels | Machine | Runs |
+|---|---|---|---|
+| `gpu0`, `gpu0-b` | `self-hosted, Linux, X64, lcc` | CachyOS, two runner instances (`~/actions-runner`, `~/actions-runner-b`) | CI Linux, Brand, Immich, Release version/web/draft; in Docker containers: Packaging lint, Print, Release Linux and Flatpak |
+| `mac0` | `self-hosted, macOS, ARM64, lcc` | Apple silicon, LaunchAgent | CI macOS, Release macOS (signing, notarization) |
+| `win0` | `self-hosted, Windows, X64, lcc` | Windows 11 x64, service as NETWORK SERVICE | CI Windows, Packaging lint's MSI probe, Release Windows x64 |
+| `SNAPDRAGON` | `self-hosted, Windows, ARM64, lcc` | Windows 11 on ARM, service as NETWORK SERVICE | Windows ARM64 (native build + install test), Release Windows ARM64 |
 
-The macOS and Windows "clippy + build" jobs run the same way on self-hosted runners (labels `self-hosted,
-macOS, ARM64, lcc` and `self-hosted, windows, x64, lcc`). FreeBSD and the other workflows stay on
-GitHub-hosted runners. Only the Linux check blocks merging.
+`freebsd.yml` stays disabled; the disabled riscv64 and FreeBSD release jobs point at gpu0 but need work
+(a container, KVM) before they are re-enabled.
+
+Jobs run at low priority, since the machines are also used interactively: Linux steps run under
+`nice -n 19` (job `defaults.run.shell`), macOS release steps under `nice -n 19 taskpolicy -b`, and Windows
+jobs set the runner worker's priority class to BelowNormal in their first step (later steps inherit it).
+
+Each runner instance has its own build cache (`CARGO_TARGET_DIR` from the runner's `.env`, else
+`~/.cache/lcc-ci-target-<runner name>`), so several instances on one machine (`gpu0` and `gpu0-b`) can run
+jobs at once without fighting over one build directory. Release jobs use a separate
+`lcc-release-target-<runner name>` directory (`%LOCALAPPDATA%` on Windows) so release builds don't evict the
+CI cache. Only the Linux check blocks merging.
+
+### Containers on gpu0
+
+Jobs that need apt packages or an old glibc run in Docker containers on gpu0 (`container:` in the job):
+Packaging lint (`ubuntu:24.04`), Print (`rust:1-bookworm`, which starts its own `cupsd`), Release Linux
+(`ubuntu:22.04`, so the binaries need only glibc 2.35) and Release Flatpak (`ubuntu:24.04`, `--privileged`
+because flatpak-builder and `flatpak run` sandbox with bubblewrap). Immich runs cargo on the host and its
+server with the host's `docker compose`. Caches live in named Docker volumes, never in the runners' own
+target dirs: `lcc-ci-cargo-registry`, `lcc-ci-target-print`, `lcc-release-cargo-jammy`,
+`lcc-release-rustup-jammy`, `lcc-release-target-linux`, `lcc-release-flatpak-user`
+(`docker volume ls | grep lcc-`; `docker volume rm` one to start it clean). Containers run as root, so each
+container job ends by handing the workspace back to the runner user (`chown`), or the next checkout on the
+host would fail on root-owned files.
+
+Docker setup (once, by the maintainer): `sudo pacman -S docker docker-compose`, `sudo systemctl enable --now
+docker`, `sudo usermod -aG docker <runner user>`, then restart both runner services (`sudo ./svc.sh stop && sudo
+./svc.sh start` in each runner directory) so they pick up the group. `docker info` must work without sudo.
+
+### Outside contributors' PRs
+
+PRs from forks run on the same self-hosted runners. Settings → Actions → General → *Approval for running
+fork pull request workflows from contributors* is **Require approval for all external contributors**
+(`gh api repos/<owner>/<repo>/actions/permissions/fork-pr-contributor-approval` →
+`all_external_contributors`). Before approving a run, the maintainer reads the PR's whole diff, workflows
+and build scripts (`build.rs`, `xtask/`, `packaging/`) included, since the code runs on their machines;
+after any new push the run needs approving again. Re-review before every approval.
+
+### Windows on ARM runner notes
+
+SNAPDRAGON has Visual Studio 2022 Build Tools with the ARM64-hosted ARM64 MSVC tools and the Windows 11 SDK
+(10.0.26100), the machine-wide Rust in `C:\rust` (host `aarch64-pc-windows-msvc`), the .NET 8 SDK and WiX,
+so Windows ARM64 builds natively there. win0 has no ARM64 MSVC tools, so it doesn't cross-compile. Like
+win0, the runner account can't write to Program Files: workflows install the .NET SDK
+(`actions/setup-dotnet` with `DOTNET_INSTALL_DIR`) and WiX into the runner's tool cache.
 
 ### macOS runner notes
 
@@ -68,13 +111,15 @@ temporary step scripts (`shell: powershell`) may run. After changing `.env`, res
 ### Setting up the runner machine
 
 1. Install the system libraries the build needs (Wayland, X11, xkbcommon, OpenGL, udev development packages;
-   on Debian/Ubuntu the list is in the workflow's "Install system libraries" step), `git`, a C linker, and
+   on Debian/Ubuntu: `libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev
+   libudev-dev`), `git`, a C linker, and
    `rustup` (the workflow installs the stable toolchain, `wasm32-unknown-unknown`, rustfmt and clippy).
 2. Repository → Settings → Actions → Runners → **New self-hosted runner** (Linux x64); follow the commands,
    and when `config.sh` asks for labels add **`lcc`**.
 3. Run it as a service (`sudo ./svc.sh install && sudo ./svc.sh start`) under a normal user, not root.
 4. Settings → Actions → General → *Fork pull request workflows from outside collaborators*:
-   **Require approval for all outside collaborators**.
+   **Require approval for all outside collaborators** (see above).
+5. For the container jobs: Docker (see *Containers on gpu0*).
 
 If the runner is offline, jobs for our own branches wait in the queue; post a local result instead (below).
 
