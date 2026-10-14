@@ -1064,6 +1064,7 @@ impl LccApp {
     /// Per-frame logic before layout (control channel, renders, shortcuts, drops).
     pub fn logic(&mut self, ctx: &egui::Context) {
         i18n::set_language(self.ui.language);
+        widgets::sync_section_folds(ctx, &mut self.ui.section_open);
         let t0 = now_ms();
         panels::library_problem::logic(self);
         self.logic_inner(ctx);
@@ -1390,6 +1391,7 @@ impl LccApp {
     pub fn ui(&mut self, ui: &mut egui::Ui) {
         i18n::set_language(self.ui.language);
         let ctx = ui.ctx().clone();
+        widgets::sync_section_folds(&ctx, &mut self.ui.section_open);
         shortcuts::set_active(self.ui.settings.keymap_set);
         if !self.fonts_ready {
             ctx.request_repaint();

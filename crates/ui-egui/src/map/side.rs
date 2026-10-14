@@ -240,7 +240,7 @@ pub fn bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
 }
 
 fn section(ui: &mut egui::Ui, title: &str, open: bool, body: impl FnOnce(&mut egui::Ui)) {
-    egui::CollapsingHeader::new(RichText::new(tr(title)).strong()).id_salt(("map-side", title)).default_open(open).show(ui, body);
+    crate::widgets::folding_section(ui, &format!("map:{title}"), RichText::new(tr(title)).strong(), open, body);
 }
 
 /// The side panel.
