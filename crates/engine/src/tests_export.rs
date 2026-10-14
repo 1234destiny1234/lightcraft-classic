@@ -487,6 +487,29 @@ fn exported_avif_metadata_reads_back() {
     assert_eq!(back.capture_time.map(|d| d.to_iso()).as_deref(), Some("2026-10-12T12:34:56"));
 }
 
+/// Import → `photo.inspect` → export keeps a long exposure time (issue #1619): a 0.8 s photo reads as 0.8
+/// and leaves the export as 0.8 s, instead of being rounded to a whole stop on the way in (`1/1` → 1.0 s).
+#[test]
+fn an_imported_long_exposure_survives_the_trip_to_the_export() {
+    let dir = temp_dir("export-shutter-step");
+    let src = dir.join("lc_exposure_0.8s.jpg");
+    let in_meta = lcc_meta::Metadata { exposure_time: Some(0.8), ..Default::default() };
+    let img = lcc_raster::Rgba8::from_fn(64, 48, |x, y| [(x * 4) as u8, (y * 5) as u8, 90, 255]);
+    let o = ExportOptions::from_json(&json!({"format": "jpeg"}));
+    std::fs::write(&src, crate::export::encode_with_metadata(&img, &o, Some(&in_meta)).unwrap()).unwrap();
+
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let id = s.catalog.photos().next().unwrap().id;
+    assert_eq!(s.catalog.photo(id).unwrap().meta.shutter, "0.8", "the catalog shows the file's own step");
+
+    let e = export_photo(&mut s, id, &o, 1).unwrap();
+    let back = lcc_meta::extract(&e.bytes);
+    let t = back.exposure_time.expect("the export kept an exposure time");
+    assert!((t - 0.8).abs() < 0.01, "0.8 s in, {t} s out");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// "Remove location info" holds for the file-copying formats too: the sidecar and the DNG's
 /// packet carry no location, and an original that embeds GPS is refused rather than copied.
 #[test]

@@ -969,7 +969,8 @@ fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catal
             let m = &photo.meta;
             let mut exp = Vec::new();
             if !m.shutter.is_empty() {
-                exp.push(format!("{} s", m.shutter));
+                // "1/250 s", "0.4 s"; a whole second's own ″ needs no second unit
+                exp.push(if m.shutter.ends_with('″') { m.shutter.clone() } else { format!("{} s", m.shutter) });
             }
             if let Some(a) = m.aperture {
                 exp.push(format!("f/{a:.1}"));
@@ -2420,7 +2421,20 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     child.style_mut().always_scroll_the_only_direction = true;
     // only a new active photo (or the strip appearing) scrolls it; see `grid::follow_active`
     let follow = super::grid::follow_active(child.ctx(), egui::Id::new("film-follow-active"), active, app.session.source);
+    // a wheel notch scrolls a third of its width; see `grid::wheel_step`
+    register(ui.ctx(), "filmstrip", child.max_rect());
+    let wheel = super::grid::wheel_step(
+        &child,
+        egui::Id::new("film-wheel"),
+        child.max_rect(),
+        child.max_rect().width(),
+        true,
+        app.ui.settings.wheel_scroll_speed,
+    );
     egui::ScrollArea::horizontal().id_salt("filmstrip").auto_shrink([false, false]).show_viewport(&mut child, |ui, vp| {
+        if wheel != egui::Vec2::ZERO {
+            ui.scroll_with_delta_animation(wheel, egui::style::ScrollAnimation::none());
+        }
         let (area, _) = ui.allocate_exact_size(vec2(ids.len() as f32 * cell_w, r.height() - 16.0), Sense::hover());
         app.film_scroll = Some(vp.left());
         for (i, id) in ids.iter().enumerate() {

@@ -356,3 +356,31 @@ fn the_tool_strip_is_develops_alone() {
     click(&mut h, "module:develop");
     assert!(has(&h, "icon:edit") && has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
 }
+
+/// Issue #36: with a preset collection imported whole (thousands of presets), Quick Develop's
+/// Saved Preset menu builds only the rows in view; building one button per preset every frame
+/// made Library sluggish while it was open. Picking a preset still applies it.
+#[test]
+fn quick_develop_preset_menu_builds_only_visible_rows() {
+    let mut h = demo();
+    let many = (0..5000)
+        .map(|i| lcc_develop::Preset {
+            id: format!("user.big.{i}"),
+            name: format!("Look {i}"),
+            group: format!("Big {:02}", i / 500),
+            settings: json!({"light": {"exposure": 1.0}}),
+            favorite: false,
+            builtin: false,
+        })
+        .collect();
+    assert_eq!(h.app.session.add_presets(many).len(), 5000);
+    let id = h.app.session.visible_cloned()[0];
+    run(&mut h, "library.select", json!({"ids": [id.0]}));
+    let widgets = |h: &Headless| h.view.ctx.viewport(|v| v.prev_pass.widgets.layers().map(|(_, w)| w.len()).sum::<usize>());
+    h.step();
+    let closed = widgets(&h);
+    click(&mut h, "button:qd-preset");
+    h.step();
+    let open = widgets(&h);
+    assert!(open > closed + 5 && open < closed + 200, "the open menu built {} widgets", open.saturating_sub(closed));
+}
