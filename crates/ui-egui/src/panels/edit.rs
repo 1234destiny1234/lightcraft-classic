@@ -118,10 +118,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 let _ = app.run("develop.treatment", json!({}));
             }
             // HDR editing, next to B&W as Lightroom has it
-            if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled)
-                .on_hover_text(crate::i18n::tr("Edit in HDR: highlights above SDR white, for HDR exports and displays"))
-                .clicked()
-            {
+            if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
                 let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
             }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
@@ -1338,7 +1335,16 @@ fn wb_rows(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, raw: bool) 
     }
 }
 
-/// The Light panel's HDR row: the HDR switch and Visualize HDR, then (HDR on) the headroom limit.
+/// The HDR button's tooltip; `sdr_window`: the window can't show HDR, so say the screen shows the
+/// SDR rendition rather than let an HDR display look like the switch does nothing (issue #47).
+fn hdr_button_tip(sdr_window: bool) -> String {
+    let tip = crate::i18n::tr("Edit in HDR: highlights above SDR white, for HDR exports and displays");
+    if sdr_window { format!("{tip}\n\n{}", crate::i18n::tr(HDR_SDR_WINDOW_NOTE)) } else { tip.to_string() }
+}
+
+const HDR_SDR_WINDOW_NOTE: &str =
+    "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.";
+
 /// The Light panel's HDR settings while HDR editing is on (the switch itself is the HDR button
 /// next to B&W): Visualize HDR range and the headroom limit.
 fn hdr_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
@@ -1734,6 +1740,13 @@ mod curve_histogram_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn hdr_button_says_when_the_window_cannot_show_hdr() {
+        // issue #47: an HDR display showed no difference with no word why
+        assert!(hdr_button_tip(true).contains("SDR rendition"));
+        assert!(!hdr_button_tip(false).contains("SDR rendition"));
+    }
 
     #[test]
     fn an_hdr_edit_keeps_its_hdr_histogram_through_8_bit_renders() {

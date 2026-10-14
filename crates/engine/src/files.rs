@@ -14,7 +14,9 @@ use lcc_raster::resample::{Filter, fit};
 use crate::media::{DenoiseSpec, FileLoader, FileProbe, PairLoader, PreviewLoader, ProbeInfo};
 
 fn meta_of(m: &lcc_meta::Metadata) -> (Meta, Option<String>) {
-    let shutter = m.exposure_time.map(|t| if t >= 1.0 { format!("{t:.0}") } else { format!("1/{:.0}", 1.0 / t) }).unwrap_or_default();
+    // the camera's own wording, to the tenth of a second: `1/250`, `0.4`, `1.3″` (issue #1619: rounding
+    // `1/0.4` to `1/2` both showed and exported the wrong time)
+    let shutter = m.exposure_time.and_then(lcc_meta::exposure_display_of).unwrap_or_default();
     let camera = [m.make.clone().unwrap_or_default(), m.model.clone().unwrap_or_default()].join(" ").trim().to_string();
     let meta = Meta {
         camera,
@@ -1128,6 +1130,34 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(super::meta_of(&m).0.keywords, ["travel|Italy|Rome", "beach"]);
+    }
+
+    /// The third-stop speeds between 1/4 s and 4 s — tripod, night and long-exposure work — read as cameras
+    /// write them, not rounded to a whole step (issue #1619: 0.4 s showed and exported as 1/2, 1.3 s as 1″).
+    #[test]
+    fn imported_shutter_speeds_keep_their_step() {
+        let shutter = |t: f64| super::meta_of(&lcc_meta::Metadata { exposure_time: Some(t), ..Default::default() }).0.shutter;
+        for (t, want) in [
+            (0.3, "0.3"),
+            (0.4, "0.4"),
+            (0.6, "0.6"),
+            (0.8, "0.8"),
+            (1.3, "1.3\u{2033}"),
+            (1.6, "1.6\u{2033}"),
+            (2.5, "2.5\u{2033}"),
+            (3.2, "3.2\u{2033}"),
+        ] {
+            assert_eq!(shutter(t), want, "{t} s");
+            // ... and the catalog string reads back as the time the file held: what export writes to EXIF/XMP
+            let back = lcc_catalog::parse_shutter_seconds(&shutter(t));
+            assert!(back.is_some_and(|s| (s - t).abs() < 0.05), "{t} s → {back:?}");
+        }
+        // times the old rounding already got right are unchanged
+        for (t, want) in [(0.004, "1/250"), (0.5, "0.5"), (2.0, "2\u{2033}"), (30.0, "30\u{2033}")] {
+            assert_eq!(shutter(t), want, "{t} s");
+        }
+        assert_eq!(shutter(f64::NAN), "", "no time, no reading");
+        assert_eq!(shutter(-1.0), "", "no time, no reading");
     }
 
     use super::*;

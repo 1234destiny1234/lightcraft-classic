@@ -1518,5 +1518,10 @@
   "Don't Import Suspected Duplicates": "Не импортировать возможные дубликаты",
   "Will be copied": "Будет импортирован как копия",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Их правки, ключевые слова и членство в коллекциях удаляются; файлы на диске сохраняются.",
-  "Include selected photos": "Включить выбранные фотографии"
+  "Include selected photos": "Включить выбранные фотографии",
+  "Add to Quick Collection": "Добавить в быструю коллекцию",
+  "Remove from Quick Collection": "Удалить из быстрой коллекции",
+  "Add to Target Collection": "Добавить в целевую коллекцию",
+  "Remove from Target Collection": "Удалить из целевой коллекции",
+  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "Вывод HDR на экран пока недоступен: это окно показывает SDR-версию даже на HDR-дисплее. HDR-экспорт сохраняет весь диапазон."
 }

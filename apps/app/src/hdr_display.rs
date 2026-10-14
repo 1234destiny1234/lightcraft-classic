@@ -65,7 +65,6 @@ pub enum DisplayOutput {
 }
 
 impl DisplayOutput {
-    #[cfg_attr(not(test), allow(dead_code))] // read by the HDR view once the surface can be HDR
     pub fn is_hdr(self) -> bool {
         matches!(self, Self::Hdr { .. })
     }

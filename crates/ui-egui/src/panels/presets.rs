@@ -43,7 +43,8 @@ impl AppliedPreset {
             && session
                 .undo
                 .last()
-                .is_some_and(|entry| session.presets.iter().any(|preset| preset.id == self.id && entry.label == format!("Preset: {}", preset.name)))
+                .and_then(|entry| entry.label.strip_prefix("Preset: "))
+                .is_some_and(|name| session.presets.iter().any(|preset| preset.id == self.id && preset.name == name))
     }
 }
 

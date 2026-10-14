@@ -4757,6 +4757,7 @@ dependencies = [
  "lcc-color",
  "lcc-denoise",
  "lcc-develop",
+ "lcc-faces",
  "lcc-geom",
  "lcc-pipeline",
  "lcc-raster",
