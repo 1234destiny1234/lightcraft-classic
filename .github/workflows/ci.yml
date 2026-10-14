@@ -36,9 +36,13 @@ env:
 jobs:
   linux:
     name: Linux (cargo xtask ci)
-    # Our own branches run on the maintainer's self-hosted runner (warm build cache, minutes not an
-    # hour); PRs from forks never touch it and use a GitHub-hosted runner. See docs/ci.md.
-    runs-on: ${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository) && 'ubuntu-latest' || fromJSON('["self-hosted", "linux", "x64", "lcc"]') }}
+    # Every job runs on the maintainer's self-hosted runners (docs/ci.md). Runs for outside
+    # contributors' PRs wait for approval, given after the maintainer has read the PR's code.
+    runs-on: [self-hosted, Linux, X64, lcc]
+    defaults:
+      run:
+        # low priority: the runner machines are also used interactively
+        shell: nice -n 19 bash -e {0}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -47,26 +51,14 @@ jobs:
           repository: storytold/craft-fonts
           ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # same pin as release.yml / freebsd.yml
           path: craft-fonts
-      - name: Keep the build cache between runs (self-hosted)
-        if: runner.environment == 'self-hosted'
+      - name: Keep the build cache between runs
         # One cache per runner instance (several can share a machine and run at once); a runner's
         # .env may set CARGO_TARGET_DIR itself.
         run: echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/.cache/lcc-ci-target-$RUNNER_NAME}" >> "$GITHUB_ENV"
-      - name: Install system libraries
-        if: runner.environment != 'self-hosted'
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends \
-            libxkbcommon-dev libwayland-dev libx11-dev libxrandr-dev libxi-dev libgl1-mesa-dev libudev-dev
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: wasm32-unknown-unknown
           components: rustfmt, clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: runner.environment != 'self-hosted'
-        with:
-          key: ci-linux
-          save-if: ${{ github.ref == 'refs/heads/main' }}
       - uses: taiki-e/install-action@v2
         with:
           tool: cargo-deny,cargo-nextest
@@ -87,14 +79,12 @@ jobs:
       fail-fast: false
       matrix:
         include:
+          # the maintainer's self-hosted runners (docs/ci.md)
           - name: macOS
-            os: macos-latest
-            self_hosted: '["self-hosted", "macOS", "ARM64", "lcc"]'
+            runner: '["self-hosted", "macOS", "ARM64", "lcc"]'
           - name: Windows
-            os: windows-latest
-            # the maintainer's self-hosted runner, for our own branches (docs/ci.md)
-            self_hosted: '["self-hosted", "windows", "x64", "lcc"]'
-    runs-on: ${{ (matrix.self_hosted && !(github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository)) && fromJSON(matrix.self_hosted) || matrix.os }}
+            runner: '["self-hosted", "Windows", "X64", "lcc"]'
+    runs-on: ${{ fromJSON(matrix.runner) }}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -106,11 +96,13 @@ jobs:
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           components: clippy
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        if: runner.environment != 'self-hosted'
-        with:
-          key: ci-${{ matrix.os }}
-          save-if: ${{ github.ref == 'refs/heads/main' }}
+      - name: Low priority
+        shell: bash
+        run: |
+          case "$RUNNER_OS" in
+            Windows) powershell -NoProfile -Command "Get-Process -Name Runner.Worker | ForEach-Object { \$_.PriorityClass = 'BelowNormal' }" || true ;;
+            macOS) renice -n 19 -p $PPID >/dev/null; taskpolicy -b -p $PPID || true ;;
+          esac
       - uses: taiki-e/install-action@v2
         if: env.FULL_CI == '1'
         with:

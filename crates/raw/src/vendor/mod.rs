@@ -17,6 +17,7 @@ pub mod kodak;
 pub mod mef;
 pub mod mrw;
 pub mod nef;
+mod nef_lens;
 pub mod nefc;
 pub mod orf;
 pub mod pef;
