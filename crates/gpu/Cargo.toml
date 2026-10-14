@@ -15,6 +15,7 @@ lcc-geom = { workspace = true }
 lcc-color = { workspace = true }
 lcc-raster = { workspace = true }
 lcc-develop = { workspace = true }
+lcc-faces = { workspace = true }
 lcc-pipeline = { workspace = true }
 log = { workspace = true }
 
