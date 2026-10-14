@@ -103,7 +103,7 @@ jobs:
         run: |
           case "$RUNNER_OS" in
             Windows) powershell -NoProfile -Command "Get-Process -Name Runner.Worker | ForEach-Object { \$_.PriorityClass = 'BelowNormal' }" || true ;;
-            macOS) renice -n 19 -p $PPID >/dev/null; taskpolicy -b -p $PPID || true ;;
+            macOS) renice -n 19 -p $PPID >/dev/null ;;  # nice only: taskpolicy -b confines work to the efficiency cores
           esac
       - uses: taiki-e/install-action@v2
         if: env.FULL_CI == '1'
