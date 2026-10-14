@@ -163,6 +163,9 @@ impl Painter {
                 .surface
                 .display_hdr_info(&render_state.adapter),
         );
+        if let Some(hook) = &render_state.on_surface_configured {
+            hook(&render_state.device, &surface_state.surface);
+        }
     }
 
     /// Drop the existing [`wgpu::Surface`] for `viewport_id` and create a fresh one for the

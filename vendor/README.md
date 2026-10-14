@@ -24,6 +24,10 @@ each marked `Patch (HDR display output)` in the source:
   so the UI stays at SDR white ("paper white") while textures holding values above 1 (the
   loupe's HDR texture) go above it.
 
+- `WgpuConfiguration::{open_device, on_surface_configured}` (`RenderState::on_surface_configured`):
+  hooks to create the device (the app adds `VK_EXT_hdr_metadata` through `lcc-hdrmeta`) and to
+  run after every surface configure (the app sets HDR metadata on the new swapchain).
+
 To upgrade egui: copy the new egui-wgpu release over `vendor/egui-wgpu` (drop `.cargo-ok`,
 `.cargo_vcs_info.json`, `Cargo.lock`, `Cargo.toml.orig` and the `include` list), re-apply the
 marked changes, and run `cargo test -p lcc-app -- hdr`. Drop the patch once egui exposes the

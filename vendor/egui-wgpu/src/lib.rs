@@ -140,6 +140,9 @@ pub struct RenderState {
     /// is (re)configured. `None` before the first query or without a surface.
     pub display_hdr_info: Arc<RwLock<Option<wgpu::DisplayHdrInfo>>>,
 
+    /// Patch (HDR display output): [`WgpuConfiguration::on_surface_configured`].
+    pub on_surface_configured: Option<SurfaceConfiguredHook>,
+
     /// Egui renderer responsible for drawing the UI.
     pub renderer: Arc<RwLock<Renderer>>,
 
@@ -264,9 +267,19 @@ impl RenderState {
 
                 let (device, queue) = {
                     profiling::scope!("request_device");
-                    adapter
-                        .request_device(&(*device_descriptor)(&adapter))
-                        .await?
+                    let desc = (*device_descriptor)(&adapter);
+                    let hooked = match config.open_device.as_ref().and_then(|f| f(&adapter, &desc)) {
+                        Some(Ok(dq)) => Some(dq),
+                        Some(Err(err)) => {
+                            log::warn!("open_device hook failed ({err}); using request_device");
+                            None
+                        }
+                        None => None,
+                    };
+                    match hooked {
+                        Some(dq) => dq,
+                        None => adapter.request_device(&desc).await?,
+                    }
                 };
 
                 (instance.clone(), adapter, device, queue)
@@ -321,6 +334,7 @@ impl RenderState {
             target_color_space,
             surface_formats: offered,
             display_hdr_info: Arc::new(RwLock::new(display_hdr_info)),
+            on_surface_configured: config.on_surface_configured.clone(),
             renderer: Arc::new(RwLock::new(renderer)),
             surface_config: config.surface,
         })
@@ -386,7 +400,29 @@ pub struct WgpuConfiguration {
     /// linear sRGB when the surface offers it (see [`hdr_surface_format`]); egui's own drawing
     /// is then scaled by [`Renderer::set_output_scale`]. Default `false` (8-bit, as upstream).
     pub hdr_output: bool,
+
+    /// Patch (HDR display output): create the device instead of `Adapter::request_device`
+    /// (e.g. with an extra Vulkan extension). `None` from the hook, or an error (logged), falls
+    /// back to `request_device`.
+    pub open_device: Option<OpenDeviceHook>,
+
+    /// Patch (HDR display output): called after every window surface configure (a new
+    /// swapchain), e.g. to set HDR metadata on it.
+    pub on_surface_configured: Option<SurfaceConfiguredHook>,
 }
+
+/// See [`WgpuConfiguration::open_device`].
+pub type OpenDeviceHook = Arc<
+    dyn Fn(
+            &wgpu::Adapter,
+            &wgpu::DeviceDescriptor<'static>,
+        ) -> Option<Result<(wgpu::Device, wgpu::Queue), String>>
+        + Send
+        + Sync,
+>;
+
+/// See [`WgpuConfiguration::on_surface_configured`].
+pub type SurfaceConfiguredHook = Arc<dyn Fn(&wgpu::Device, &wgpu::Surface<'static>) + Send + Sync>;
 
 #[test]
 fn wgpu_config_impl_send_sync() {
@@ -401,11 +437,15 @@ impl core::fmt::Debug for WgpuConfiguration {
             wgpu_setup,
             on_surface_status: _,
             hdr_output,
+            open_device,
+            on_surface_configured,
         } = self;
         f.debug_struct("WgpuConfiguration")
             .field("surface", &surface)
             .field("wgpu_setup", &wgpu_setup)
             .field("hdr_output", &hdr_output)
+            .field("open_device", &open_device.is_some())
+            .field("on_surface_configured", &on_surface_configured.is_some())
             .finish_non_exhaustive()
     }
 }
@@ -450,6 +490,8 @@ impl Default for WgpuConfiguration {
                 }
             }),
             hdr_output: false,
+            open_device: None,
+            on_surface_configured: None,
         }
     }
 }

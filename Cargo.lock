@@ -4406,6 +4406,7 @@ dependencies = [
  "lcc-codecs",
  "lcc-engine",
  "lcc-gpu",
+ "lcc-hdrmeta",
  "lcc-pipeline",
  "lcc-raster",
  "lcc-sysmem",
@@ -4418,6 +4419,8 @@ dependencies = [
  "pollster 1.0.1",
  "rfd",
  "serde_json",
+ "wayland-client",
+ "wayland-protocols",
  "winit",
  "winreg",
  "winresource",
@@ -4773,6 +4776,15 @@ name = "lcc-hash"
 version = "0.8.0"
 dependencies = [
  "sha1 0.10.7",
+]
+
+[[package]]
+name = "lcc-hdrmeta"
+version = "0.8.0"
+dependencies = [
+ "ash",
+ "wgpu",
+ "wgpu-hal",
 ]
 
 [[package]]

@@ -42,6 +42,8 @@ mod screen_profile_linux;
 #[cfg(any(windows, test))]
 mod screen_profile_windows;
 mod video_gpu;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod wayland_hdr;
 mod window_gpu;
 
 use dialog_filter::FileDialogExt as _;
@@ -897,7 +899,7 @@ fn main() -> eframe::Result {
     let win_files = std::sync::Arc::new(window_files(in_memory));
     let window_gpu::Chosen { renderer, mut wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
     // HDR display output: an extended-range float surface where the platform and display offer it
-    wgpu_options.hdr_output = hdr_display::wanted();
+    hdr_display::configure(&mut wgpu_options);
     win_files.arm(window_renderer);
     let win_files_app = win_files.clone();
     let options = eframe::NativeOptions {
@@ -924,7 +926,9 @@ fn main() -> eframe::Result {
     // manager showed a "no" cursor. Run through XWayland when it's there; <PREFIX>_WAYLAND=1
     // keeps the native Wayland backend.
     #[cfg(all(unix, not(target_os = "macos")))]
-    if std::env::var_os("DISPLAY").is_some() && !lcc_brand::env_is_set("WAYLAND") {
+    // (an output with HDR headroom — the compositor says so — needs the native backend: XWayland
+    // windows are SDR)
+    if std::env::var_os("DISPLAY").is_some() && !lcc_brand::env_is_set("WAYLAND") && hdr_display::read_compositor_headroom().is_none() {
         options.event_loop_builder = Some(Box::new(|b| {
             use winit::platform::x11::EventLoopBuilderExtX11;
             b.with_x11();

@@ -152,7 +152,9 @@ pub fn run(seconds: u64, log_dir: Option<std::path::PathBuf>) -> eframe::Result 
         eprintln!("hdr-probe: writing {}", p.display());
     }
     let mut wgpu_options = crate::window_gpu::base_options();
+    hdr_display::configure(&mut wgpu_options);
     wgpu_options.hdr_output = true;
+    log.line(format!("compositor headroom: {:?}", hdr_display::read_compositor_headroom()));
     let options = eframe::NativeOptions {
         renderer: eframe::Renderer::Wgpu,
         viewport: egui::ViewportBuilder::default().with_title("HDR probe").with_inner_size([960.0, 300.0]),
