@@ -1,6 +1,6 @@
 # Hardware parity
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-13 · **Change:** minor (Windows reads the display's WCS profile; Linux reads the screen's monitor profile and follows the window) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-14 · **Change:** minor (HDR display output: vendored egui-wgpu patch, `--hdr-probe` (#47)) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 What Lightroom does with the machine's hardware, per platform, and what the app does. Sources:
 [gpu-pipeline.md](gpu-pipeline.md), [display-profiles.md](display-profiles.md), [denoise.md](denoise.md),
@@ -34,7 +34,7 @@ correctness is proven on Apple GPUs; other vendors rely on user reports.
 
 | Work | Hours | Needs |
 |---|---:|---|
-| HDR display (EDR on macOS, Windows HDR, Linux where possible) | 10–20 | an HDR display to verify (human); egui-wgpu 0.36 must let the app pick the surface format (`Rgba16Float`) and colour space (wgpu 30 `SurfaceColorSpace::ExtendedSrgbLinear`, scRGB on DXGI) and expose the surface for `display_hdr_info` (headroom), so: an egui-wgpu patch/upgrade, no `unsafe` needed. Until then the HDR button's tooltip says the window is SDR (#47) |
+| HDR display (EDR on macOS, Windows HDR, Linux where possible) | done (2026-10-14, #47) | the vendored egui-wgpu (`vendor/egui-wgpu`, see `vendor/README.md`) configures an `Rgba16Float` surface in extended linear sRGB (scRGB / EDR) where offered, reads the display's headroom and SDR white (`wgpu::DisplayHdrInfo`), and draws the UI at paper white; the loupe shows HDR edits from a float render up to the headroom (whole-frame render; zoomed tiles stay SDR). On Wayland the headroom comes from the compositor's colour-management protocol (output image description: target max ÷ reference; `apps/app/src/wayland_hdr.rs`), the app then runs native Wayland instead of XWayland, and `crates/hdrmeta` sets Vulkan HDR metadata (peak = headroom × 80 cd/m² × paper white) so KWin shows the range; overrides `<PREFIX>_HDR_HEADROOM` / `<PREFIX>_HDR_PAPER_WHITE`. `<binary> --hdr-probe` reports what a machine offers. Verified on Windows 11 / RTX 4090 (DX12, `Rgba16Float` scRGB, headroom ≈ 12.9×); Linux: the loupe in HDR confirmed on a laptop panel with KWin 6.7.5 EDR (AMD RADV, headroom 1.4× from the compositor); macOS EDR check pending; results per machine: PR body |
 | Per-monitor profile on Windows and Wayland | 2–4 | multi-monitor setup |
 | Pen pressure for brush masks (winit tablet events or a pure-Rust tablet layer) | 6–12 | a tablet |
 | Remaining stages on GPU (defringe, spot removal, masks) | 10–20 | |
@@ -52,3 +52,4 @@ correctness is proven on Apple GPUs; other vendors rely on user reports.
 | 2026-10-10 | major | Created |
 | 2026-10-13 | minor | Windows: the display's WCS default profile from the registry (first display device); 3–6 h → 2–4 h |
 | 2026-10-13 | minor | Linux: the screen's profile from X11 `_ICC_PROFILE` / colord, followed across monitors; 5–10 h → 3–6 h |
+| 2026-10-14 | minor | HDR display row done: vendored egui-wgpu patch, loupe in HDR on macOS EDR / Windows HDR, `--hdr-probe` (#47) |

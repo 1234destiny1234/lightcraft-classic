@@ -83,6 +83,8 @@ mod tests_compare;
 #[cfg(test)]
 mod tests_copy_paste_dialogs;
 #[cfg(test)]
+mod tests_crop_frame;
+#[cfg(test)]
 mod tests_crop_rotate;
 #[cfg(test)]
 mod tests_crop_tool;
@@ -215,6 +217,17 @@ pub type HostAction = Box<dyn FnMut(&mut Session) -> Result<Value, String>>;
 /// last heard and wakes the UI itself when that changes; it is never polled for changes.
 pub type SystemThemeFn = Box<dyn Fn(&egui::Context) -> Option<egui::Theme>>;
 
+/// HDR display output (desktop: an extended-range float window surface; LR-VIEW-HDR-DISPLAY).
+/// With it, the loupe shows an HDR edit above SDR white, up to the display's headroom.
+pub trait HdrOutput {
+    /// The display's peak over SDR white right now when the window shows HDR (`> 1`), else
+    /// `None` (an SDR display, HDR switched off in the OS, or unknown). Asked every frame.
+    fn headroom(&mut self) -> Option<f32>;
+    /// Upload a linear-light render (3 floats per pixel, row-major, SDR white = 1, sRGB
+    /// primaries) as the loupe's HDR texture, replacing the previous one.
+    fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+}
+
 /// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through
 /// `lcc_gpu::video_lut`), producing the texture to draw without a CPU grade or upload.
 pub trait VideoGpu {
@@ -293,6 +306,8 @@ pub struct Services {
     pub system_theme: Option<SystemThemeFn>,
     /// The GPU grade of playing video frames (none: graded on the CPU).
     pub video_gpu: Option<Box<dyn VideoGpu>>,
+    /// HDR display output (none: the window is SDR).
+    pub hdr_output: Option<Box<dyn HdrOutput>>,
 }
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -393,6 +408,8 @@ pub struct LccApp {
     pub widgets: Vec<(String, egui::Rect)>,
     /// In-progress on-canvas gesture (brush stroke points, gradient drag…).
     pub gesture: Option<panels::detail::Gesture>,
+    /// The crop tool's view held still while the crop is dragged, rotated or straightened (issue #60).
+    pub crop_layout: Option<panels::detail::CropLayout>,
     /// The brush stroke being painted, as drawn on the photo until it's committed (issue #517).
     pub brush_live: Option<brush_live::LiveStroke>,
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
@@ -456,6 +473,9 @@ pub struct LccApp {
     /// The window shows SDR only (desktop: eframe's surface is 8-bit, `hdr_display::report`), so
     /// the HDR button says HDR edits are seen through the SDR rendition. Headless/tests: false.
     pub hdr_display_sdr: bool,
+    /// The display's headroom when the window shows HDR now ([`HdrOutput::headroom`]): the loupe
+    /// then draws HDR edits from their HDR render ([`render::Slot::HdrView`]).
+    pub hdr_headroom: Option<f32>,
     /// The memory budget setting last applied (MB, 0 = automatic).
     memory_applied: Option<u32>,
     /// The display profile setting last applied (`app.displayProfile`).
@@ -532,6 +552,7 @@ impl LccApp {
             film_scroll: None,
             widgets: vec![],
             gesture: None,
+            crop_layout: None,
             brush_live: None,
             loupe_shown: None,
             video_view: Default::default(),
@@ -561,6 +582,7 @@ impl LccApp {
             gpu_applied: None,
             gpu_notice: false,
             hdr_display_sdr: false,
+            hdr_headroom: None,
             memory_applied: None,
             display_applied: None,
             display_error: None,
@@ -1071,6 +1093,11 @@ impl LccApp {
         widgets::sync_section_folds(ctx, &mut self.ui.section_open);
         let t0 = now_ms();
         panels::library_problem::logic(self);
+        // the display can switch between SDR and HDR (OS setting, another monitor) at any time
+        if let Some(h) = self.services.hdr_output.as_mut() {
+            self.hdr_headroom = h.headroom();
+            self.hdr_display_sdr = self.hdr_headroom.is_none();
+        }
         self.logic_inner(ctx);
         self.perf.logic_ms = now_ms() - t0;
     }

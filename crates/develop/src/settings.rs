@@ -87,18 +87,22 @@ pub enum Process {
     /// Dehaze estimates haze from a patch-minimum dark channel, eases in, and never pushes a
     /// pixel below a tenth of its darkest channel (issue #1237).
     V3,
+    /// Sharpening is an unsharp mask at the Radius (in source pixels) with Detail soft-clipping its
+    /// halos, instead of a boost of the Texture band (upstream #757 / #762).
+    V4,
 }
 
 impl Process {
     /// Every process, oldest first.
-    pub const ALL: [Process; 3] = [Process::V1, Process::V2, Process::V3];
-    pub const LATEST: Process = Process::V3;
+    pub const ALL: [Process; 4] = [Process::V1, Process::V2, Process::V3, Process::V4];
+    pub const LATEST: Process = Process::V4;
 
     pub const fn version(self) -> ProcessVersion {
         match self {
             Process::V1 => ProcessVersion(1),
             Process::V2 => ProcessVersion(2),
             Process::V3 => ProcessVersion(3),
+            Process::V4 => ProcessVersion(4),
         }
     }
 }
