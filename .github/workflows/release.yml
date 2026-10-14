@@ -202,6 +202,27 @@ jobs:
           $tools = Join-Path $env:RUNNER_TOOL_CACHE 'wix-5.0.2'
           if (-not (Test-Path (Join-Path $tools 'wix.exe'))) { dotnet tool install --tool-path $tools wix --version 5.0.2 }
           Add-Content -Path $env:GITHUB_PATH -Value $tools
+      - name: Clang for ring (ARM64 only; kept in the runner tool cache)
+        if: runner.arch == 'ARM64'
+        # ring's aarch64-pc-windows-msvc build needs clang, which Visual Studio's ARM64 tools lack. LLVM's
+        # MSI is unpacked (administrative install: no elevation, nothing registered) into the tool cache once.
+        shell: pwsh
+        env:
+          LLVM_VERSION: 23.1.3
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TOOL_CACHE "llvm-$env:LLVM_VERSION-arm64"
+          $clang = Get-ChildItem $root -Recurse -Filter clang.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $clang) {
+            $msi = Join-Path $env:RUNNER_TEMP 'llvm.msi'
+            Invoke-WebRequest -UseBasicParsing -OutFile $msi "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/LLVM-$env:LLVM_VERSION-woa64.msi"
+            $p = Start-Process msiexec.exe -ArgumentList '/a', "`"$msi`"", '/qn', "TARGETDIR=`"$root`"" -Wait -PassThru
+            Remove-Item $msi -Force
+            if ($p.ExitCode -ne 0) { throw "msiexec /a exited $($p.ExitCode)" }
+            $clang = Get-ChildItem $root -Recurse -Filter clang.exe | Select-Object -First 1
+          }
+          Write-Output "clang: $($clang.FullName)"
+          Add-Content -Path $env:GITHUB_PATH -Value $clang.DirectoryName
       - name: Build, sign, package
         shell: pwsh
         env:
