@@ -28,11 +28,14 @@ pub mod crs;
 pub mod crs_masks;
 pub mod demo;
 pub mod denoise;
+pub mod desktop;
 pub mod devices;
 pub mod display;
+mod errors;
 pub mod export;
 pub mod export_video;
 pub mod face_download;
+pub mod face_tiles;
 #[cfg(not(target_arch = "wasm32"))]
 mod faces_index;
 #[cfg(not(target_arch = "wasm32"))]
@@ -80,6 +83,7 @@ pub mod walk;
 use std::sync::Arc;
 
 pub use cmd::{CommandInfo, CommandSpec, command_specs, find_command};
+pub use errors::{AiModel, ErrorKind};
 pub use fonts::{CRAFT_FONTS, CraftFont};
 use lcc_catalog::{Catalog, Filter, Op, PhotoId, Sort};
 use lcc_develop::DevelopSettings;
@@ -110,6 +114,13 @@ pub enum EngineError {
     /// to import with `library.importLightroom`, when one was found.
     #[error("{} is a Lightroom Classic catalog, not a library of the app; import it into a library with File ▸ Import Lightroom Catalog…{}", path.display(), catalog.as_ref().map_or(String::new(), |c| format!(" ({})", c.display())))]
     LightroomCatalog { path: std::path::PathBuf, catalog: Option<std::path::PathBuf> },
+    /// The work was cancelled (by the person, an agent or a newer request): not a failure.
+    #[error("{0}")]
+    Cancelled(String),
+    /// The feature needs `model`, which is not installed (or still downloading): a frontend
+    /// offers its download (terms first) on [`ErrorKind::ModelMissing`], not on the message.
+    #[error("{msg}")]
+    ModelMissing { model: AiModel, msg: String },
     #[error("{0}")]
     Other(String),
 }
@@ -238,6 +249,9 @@ pub struct Session {
     /// Auto updates: the last check, the download in flight, and the settings ([`update`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub updater: update::Updater,
+    /// Showing files in the file manager and starting other programs ([`desktop`]); headless
+    /// harnesses swap in a [`desktop::Recorder`] so tests never open desktop windows.
+    pub desktop: std::sync::Arc<dyn desktop::Desktop>,
     /// Copied develop settings (partial JSON) for Paste.
     pub clipboard: Option<Value>,
     /// The folder on disk the [`LibrarySource::Folder`] view browses.
@@ -416,6 +430,7 @@ impl Session {
             remote: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             updater: Default::default(),
+            desktop: desktop::default_desktop(),
             clipboard: None,
             meta_clipboard: None,
             browse: None,
@@ -1166,6 +1181,9 @@ mod tests_face_models;
 #[cfg(test)]
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_face_recognize;
+#[cfg(test)]
+#[cfg(not(target_arch = "wasm32"))]
+mod tests_face_tiles;
 #[cfg(test)]
 mod tests_filesystem_history;
 #[cfg(test)]

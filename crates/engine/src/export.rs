@@ -108,6 +108,10 @@ impl Default for Resize {
     }
 }
 
+/// The most pixels an export enlarged past its photo's own size can have: 512 megapixels, also
+/// Lightroom's ceiling. A full-size or smaller export is never held to it.
+pub const MAX_ENLARGED_PIXELS: f64 = 512e6;
+
 impl Resize {
     pub fn long_edge(px: u32) -> Self {
         Self { value: px as f32, ..Default::default() }
@@ -131,8 +135,12 @@ impl Resize {
             ResizeMode::Percent => v / 100.0,
         };
         let k = if self.dont_enlarge { k.min(1.0) } else { k };
-        // at least one pixel, at most the encoders' 65535 limit
-        k.clamp(1.0 / short, 65_535.0 / long)
+        // an enlargement stops at 512 megapixels (Lightroom's ceiling too): 20000 typed for 2000
+        // with Don't Enlarge off asked for gigapixels, more memory than a computer has
+        let k = k.min((MAX_ENLARGED_PIXELS / (w * h)).sqrt().max(1.0));
+        // at least one pixel, at most the encoders' 65535 limit; the limit wins for a photo more
+        // than 65535 times as long as it is short (where `clamp` would panic: min above max)
+        k.max(1.0 / short).min(65_535.0 / long)
     }
 
     /// Output size for a `w × h` (cropped, full-resolution) photo.
@@ -152,6 +160,45 @@ pub enum Conflict {
     Overwrite,
     /// Leave the existing file and skip the photo.
     Skip,
+}
+
+/// Where a batch's files go (Lightroom Classic's Export To).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum DestinationMode {
+    /// One folder for the whole batch ([`Destination::dir`]).
+    #[default]
+    SpecificFolder,
+    /// Each photo's own folder: the folder its original is in. A photo without one on disk (a
+    /// demo photo, a photo in the browser's storage) or whose folder is gone gets an error.
+    SameAsOriginal,
+}
+
+impl DestinationMode {
+    /// `specificFolder` / `sameAsOriginal` (any case).
+    pub fn parse(s: &str) -> Option<Self> {
+        match s.trim().to_ascii_lowercase().as_str() {
+            "specificfolder" => Some(Self::SpecificFolder),
+            "sameasoriginal" => Some(Self::SameAsOriginal),
+            _ => None,
+        }
+    }
+}
+
+/// Why `name` can't be an export subfolder: it must be one plain folder name, created inside the
+/// destination folder, never a path out of it (no `..`, no absolute path, no separator).
+pub fn subfolder_problem(name: &str) -> Option<&'static str> {
+    let t = name.trim();
+    if t.is_empty() {
+        return None;
+    }
+    if t.chars().any(|c| matches!(c, '/' | '\\' | ':') || c.is_control()) {
+        return Some("the subfolder must be one folder name, without `/`, `\\`, `:` or control characters");
+    }
+    if t.chars().all(|c| c == '.') {
+        return Some("the subfolder can't be `.` or `..`");
+    }
+    None
 }
 
 /// A named set of `app.export` params.
@@ -674,6 +721,11 @@ pub struct ExportOptions {
     pub naming: String,
     /// First `{seq}` value.
     pub start_number: u32,
+    /// The text of the `{custom}` naming token (Lightroom's Custom Text, as in "Custom Name -
+    /// Sequence"); characters not allowed in file names are replaced.
+    pub custom_text: String,
+    /// A specific folder for the whole batch, or each photo's own folder.
+    pub destination_mode: DestinationMode,
     /// Created inside the destination folder (empty = none).
     pub subfolder: String,
     /// When a file of the same name exists in the destination folder.
@@ -732,6 +784,8 @@ impl Default for ExportOptions {
             sharpen_amount: SharpenAmount::Standard,
             naming: "{name}".into(),
             start_number: 1,
+            custom_text: String::new(),
+            destination_mode: DestinationMode::SpecificFolder,
             subfolder: String::new(),
             conflict: Conflict::Unique,
             tiff_compression: TiffCompression::Deflate,
@@ -777,6 +831,8 @@ pub const OPTION_PARAMS: &[&str] = &[
     "sharpenAmount",
     "naming",
     "startNumber",
+    "customText",
+    "destinationMode",
     "subfolder",
     "conflict",
     "tiffCompression",
@@ -970,13 +1026,19 @@ impl ExportOptions {
                         return Err(bad(format!("`{k}` can't contain a NUL character")));
                     }
                 }
-                "naming" | "subfolder" | "path" | "dir" | "preset" => {
+                "subfolder" => {
+                    if let Some(why) = subfolder_problem(string(cmd, k, v)?) {
+                        return Err(bad(format!("`{k}`: {why}")));
+                    }
+                }
+                "naming" | "customText" | "path" | "dir" | "preset" => {
                     string(cmd, k, v)?;
                 }
                 "sharpen" => one_of(k, v, &["none", "screen", "matte", "glossy"])?,
                 "sharpenAmount" => one_of(k, v, &["low", "standard", "high"])?,
                 "hdrTransfer" => one_of(k, v, &["pq", "hlg"])?,
                 "conflict" => one_of(k, v, &["unique", "overwrite", "skip"])?,
+                "destinationMode" => one_of(k, v, &["specificFolder", "sameAsOriginal"])?,
                 "tiffCompression" => one_of(k, v, &["none", "lzw", "zip", "deflate"])?,
                 "jxlEffort" => one_of(k, v, &["fast", "normal"])?,
                 "dngCompression" => {
@@ -1098,7 +1160,13 @@ impl ExportOptions {
             sharpen_amount: enm(p, "sharpenAmount").unwrap_or(d.sharpen_amount),
             naming: s("naming").map_or(d.naming, str::to_string),
             start_number: u("startNumber").map_or(d.start_number, |v| v.min(999_999) as u32),
-            subfolder: s("subfolder").map_or(d.subfolder, |v| v.trim().replace(['\\', ':', '\0'], "_")),
+            custom_text: s("customText").map_or(d.custom_text, str::to_string),
+            destination_mode: s("destinationMode").and_then(DestinationMode::parse).unwrap_or(d.destination_mode),
+            // stored prefs are read leniently: a subfolder that is a path becomes one folder name
+            subfolder: s("subfolder").map_or(d.subfolder, |v| {
+                let v = v.trim().replace(['/', '\\', ':', '\0'], "_");
+                if subfolder_problem(&v).is_some() { String::new() } else { v }
+            }),
             conflict: enm(p, "conflict").unwrap_or(d.conflict),
             tiff_compression: match s("tiffCompression").map(str::to_ascii_lowercase).as_deref() {
                 Some("none") => TiffCompression::None,
@@ -1268,7 +1336,7 @@ impl ExportOptions {
     pub fn file_name_for(&self, p: &lcc_catalog::Photo, seq: usize) -> String {
         let base = if self.naming.trim().is_empty() { "{name}" } else { self.naming.as_str() };
         let n = seq + self.start_number.max(1) as usize - 1;
-        let name = crate::rename::expand_tokens(base, p, n, 3);
+        let name = crate::rename::expand_tokens(base, p, n, 3).replace("{custom}", self.custom_text.trim());
         let mut name: String = name.chars().map(|c| if matches!(c, '/' | '\\' | ':' | '\0') { '_' } else { c }).collect();
         let (stem, ext) = p.file_name.rsplit_once('.').unwrap_or((&p.file_name, ""));
         if name.trim().is_empty() {
@@ -1655,6 +1723,9 @@ pub fn export_photo(session: &mut crate::Session, id: lcc_catalog::PhotoId, o: &
 pub struct PreparedExport {
     pub photo: lcc_catalog::PhotoId,
     pub file_name: String,
+    /// The folder of the photo's original on disk ([`DestinationMode::SameAsOriginal`]); `None`
+    /// for a demo photo or one in the browser's storage.
+    pub source_dir: Option<String>,
     work: Work,
     /// The library's originals, which [`run_batch`] never writes over (shared by a batch).
     guard: std::sync::Arc<crate::originals::OriginalGuard>,
@@ -1714,6 +1785,7 @@ fn prepare_guarded(
 ) -> Result<PreparedExport, String> {
     let p = session.catalog.photo(id).ok_or("no such photo")?;
     let mut file_name = o.file_name_for(p, seq);
+    let source_dir = original_folder(&p.source);
     if let Some(v) = p.video.as_ref().filter(|_| o.format.is_rendered()) {
         let lcc_catalog::Source::File { path } = &p.source else {
             return Err(format!("{}: a video clip without a file", p.file_name));
@@ -1733,7 +1805,7 @@ fn prepare_guarded(
         };
         // a decoded frame, its graded copy and the pipeline's planes, plus the encoder's frames
         let weight = px.saturating_mul(96);
-        return Ok(PreparedExport { photo: id, file_name, work: Work::Video(Box::new(work)), guard, weight });
+        return Ok(PreparedExport { photo: id, file_name, source_dir, work: Work::Video(Box::new(work)), guard, weight });
     }
     // HDR output only for photos edited in HDR; the rest of the batch exports as usual
     let sdr_opts;
@@ -1746,10 +1818,16 @@ fn prepare_guarded(
     let (full_px, long) = ((p.width as usize).saturating_mul(p.height as usize), p.width.max(p.height) as usize);
     let (work, weight) = if o.format.is_rendered() {
         let (w, h) = output_size(p, o);
+        let (nw, nh) = lcc_pipeline::native_output_size(p.width.max(1) as usize, p.height.max(1) as usize, &p.develop);
+        let native_px = (nw.round().max(1.0) * nh.round().max(1.0)) as usize;
+        let label = p.file_name.clone();
         let meta = export_metadata(p, &session.catalog, o);
         let gain_map = o.hdr_output() && o.format == ExportFormat::Jpeg;
         let job = session.export_job(id, w, h, o.effective_space(), o.effective_depth())?;
         let weight = render_weight(full_px, long, job.level, w.saturating_mul(h));
+        if let Some(why) = too_big_for_memory((w, h), native_px, weight, crate::memory::total_ram()) {
+            return Err(format!("{label}: {why}"));
+        }
         let hdr_job = if gain_map { Some(session.export_job(id, w, h, o.effective_space(), OutputDepth::F32Hdr)?) } else { None };
         (Work::Render(Box::new(RenderWork { job, hdr_job, meta, opts: o.clone() })), weight)
     } else {
@@ -1775,7 +1853,38 @@ fn prepare_guarded(
         };
         (work, weight)
     };
-    Ok(PreparedExport { photo: id, file_name, work, guard, weight })
+    Ok(PreparedExport { photo: id, file_name, source_dir, work, guard, weight })
+}
+
+/// The folder a photo's original is in, for [`DestinationMode::SameAsOriginal`]. None for a demo
+/// photo, and on the web, where an original lives in the browser's storage, not in a folder.
+fn original_folder(source: &lcc_catalog::Source) -> Option<String> {
+    let lcc_catalog::Source::File { path } = source else { return None };
+    if cfg!(target_arch = "wasm32") {
+        return None;
+    }
+    let dir = std::path::Path::new(path).parent()?.to_string_lossy().to_string();
+    (!dir.is_empty()).then_some(dir)
+}
+
+/// Why an export of `out` pixels (`w`, `h`), from a photo of `native_px` pixels at its own size,
+/// can't be made on a computer with `ram` bytes, given its working memory `weight`: an export
+/// enlarged past the photo's size that needs more memory than the computer has would fail to
+/// allocate, which ends the process rather than the export. Full-size and smaller exports, and
+/// computers whose memory isn't known, are never refused.
+fn too_big_for_memory(out: (usize, usize), native_px: usize, weight: usize, ram: Option<usize>) -> Option<String> {
+    let ram = ram?;
+    if out.0.saturating_mul(out.1) <= native_px || weight <= ram {
+        return None;
+    }
+    let gb = |b: usize| b as f64 / (1u64 << 30) as f64;
+    Some(format!(
+        "exporting at {} × {} needs about {:.0} GB of memory, more than this computer has ({:.0} GB); choose a smaller size",
+        out.0,
+        out.1,
+        gb(weight).ceil(),
+        gb(ram)
+    ))
 }
 
 /// Working memory of rendering a photo of `full_px` pixels (long edge `long`) from source level
@@ -2097,12 +2206,12 @@ fn run_batch_with(
             if !progress(i, &item.file_name) {
                 break;
             }
-            let (photo, name, guard) = (item.photo, item.file_name.clone(), item.guard.clone());
-            placer.place(photo, name, &guard, run_gated(item))?;
+            let (photo, name, guard, source_dir) = (item.photo, item.file_name.clone(), item.guard.clone(), item.source_dir.clone());
+            placer.place(photo, name, source_dir.as_deref(), &guard, run_gated(item))?;
         }
         return Ok(std::mem::take(&mut placer.out));
     }
-    let heads: Vec<_> = items.iter().map(|i| (i.photo, i.file_name.clone(), i.guard.clone())).collect();
+    let heads: Vec<_> = items.iter().map(|i| (i.photo, i.file_name.clone(), i.guard.clone(), i.source_dir.clone())).collect();
     let queue = Queue {
         lane: std::sync::Mutex::new(Lane { items: items.into_iter().map(Some).collect(), next: 0, placed: 0, stop: false, done: Default::default() }),
         cv: std::sync::Condvar::new(),
@@ -2117,12 +2226,12 @@ fn run_batch_with(
             }
         }
         let placed = || {
-            for (i, (photo, name, guard)) in heads.into_iter().enumerate() {
+            for (i, (photo, name, guard, source_dir)) in heads.into_iter().enumerate() {
                 if !progress(i, &name) {
                     break;
                 }
                 let e = queue.result(i);
-                placer.place(photo, name, &guard, e)?;
+                placer.place(photo, name, source_dir.as_deref(), &guard, e)?;
             }
             Ok::<_, String>(())
         };
@@ -2238,7 +2347,6 @@ impl Queue {
 struct Placer<'a> {
     o: &'a ExportOptions,
     to: &'a Destination,
-    dir: String,
     single: bool,
     taken: std::collections::HashSet<String>,
     out: Vec<serde_json::Value>,
@@ -2259,29 +2367,58 @@ impl<'a> Placer<'a> {
         exists: &'a dyn Fn(&str) -> bool,
         stop_on_error: bool,
     ) -> Placer<'a> {
-        let dir = if o.subfolder.is_empty() { to.dir.clone() } else { join_path(&to.dir, &o.subfolder) };
-        Placer { o, to, dir, single: false, taken: Default::default(), out: Vec::new(), write, exists, stop_on_error }
+        Placer { o, to, single: false, taken: Default::default(), out: Vec::new(), write, exists, stop_on_error }
     }
 
-    /// Place photo `photo`'s export result (file `name`): write it and record the outcome. `Err`
-    /// only when it failed and `stop_on_error` is set.
+    /// The folder photo `name` (its original in `source_dir`) is written to: the batch's folder or
+    /// the photo's own ([`DestinationMode`]), plus the subfolder. An error for a photo with no
+    /// folder of its own, whose folder is gone, or a subfolder that would leave the folder: never
+    /// a file written somewhere else instead.
+    fn folder_for(&self, name: &str, source_dir: Option<&str>) -> Result<String, String> {
+        if let Some(why) = subfolder_problem(&self.o.subfolder) {
+            return Err(format!("{name}: {why}"));
+        }
+        let base = match self.o.destination_mode {
+            DestinationMode::SpecificFolder => self.to.dir.clone(),
+            DestinationMode::SameAsOriginal => {
+                let Some(d) = source_dir else {
+                    return Err(format!(
+                        "{name}: the photo has no folder on disk (a demo photo or one in the browser's storage), so it can't be exported to the same folder as its original; choose a specific folder"
+                    ));
+                };
+                if !(self.exists)(d) {
+                    return Err(format!("{name}: the original's folder is missing ({d}); reconnect it or choose a specific folder"));
+                }
+                d.to_string()
+            }
+        };
+        let sub = self.o.subfolder.trim();
+        Ok(if sub.is_empty() { base } else { join_path(&base, sub) })
+    }
+
+    /// Place photo `photo`'s export result (file `name`, its original in `source_dir`): write it
+    /// and record the outcome. `Err` only when it failed and `stop_on_error` is set.
     fn place(
         &mut self,
         photo: lcc_catalog::PhotoId,
         name: String,
+        source_dir: Option<&str>,
         guard: &crate::originals::OriginalGuard,
         e: Result<Exported, String>,
     ) -> Result<(), String> {
         use serde_json::json;
-        let (o, dir, exists) = (self.o, &self.dir, self.exists);
-        let e = match e {
-            Ok(e) => e,
+        // an exact file path needs no folder
+        let dir = if self.to.exact.is_some() && self.single { Ok(String::new()) } else { self.folder_for(&name, source_dir) };
+        let (o, exists) = (self.o, self.exists);
+        let (dir, e) = match dir.and_then(|dir| e.map(|e| (dir, e))) {
+            Ok(v) => v,
             Err(err) if self.stop_on_error => return Err(err),
             Err(err) => {
                 self.out.push(json!({"photo": photo.0, "file": name, "error": err}));
                 return Ok(());
             }
         };
+        let dir = dir.as_str();
         // the exported file and its sidecars
         let group = |main: &str| std::iter::once(main.to_string()).chain(e.sidecars.iter().map(|(x, _)| sidecar_path(main, x))).collect::<Vec<_>>();
         let path = match self.to.exact.as_deref().filter(|_| self.single) {
@@ -2864,8 +3001,42 @@ mod tests {
         assert_eq!(ExportOptions::from_json(&ExportOptions::resize_json(None)).resize, None);
         assert_eq!(ExportOptions::from_json(&json!({"ppi": 300})).ppi, 300);
         // never larger than the encoders' limit, never empty
-        assert_eq!(size(json!({"percent": 10000, "dontEnlarge": false}), 6000.0, 4000.0), Some((65535, 43690)));
+        assert_eq!(size(json!({"percent": 10000, "dontEnlarge": false}), 6000.0, 4000.0), Some((27713, 18475)), "512 MP at most");
+        assert_eq!(size(json!({"width": 70000, "dontEnlarge": false}), 60000.0, 100.0), Some((65535, 109)), "65535 px an edge");
         assert_eq!(size(json!({"width": 1}), 6000.0, 40.0).map(|s| s.1), Some(1));
+    }
+
+    /// Typing 20000 for 2000 (or percent 10000) with Don't Enlarge off asked for gigapixels: the
+    /// render's first plane alone (34 GB at 65535 × 43690) failed to allocate, which aborts the
+    /// process. An enlargement stops at 512 megapixels; full-size and smaller exports of photos
+    /// larger than that are untouched.
+    #[test]
+    fn enlargements_stop_at_512_megapixels() {
+        let size = |p: serde_json::Value, w: f64, h: f64| ExportOptions::from_json(&p).resize.map(|r| r.apply(w, h)).unwrap();
+        for p in [json!({"longEdge": 60000, "dontEnlarge": false}), json!({"megapixels": 5000}), json!({"percent": 10000, "dontEnlarge": false})] {
+            let (w, h) = size(p.clone(), 6000.0, 4000.0);
+            assert!((w * h) as f64 <= MAX_ENLARGED_PIXELS * 1.001, "{p}: {w}×{h}");
+            assert!((w as f64 / h as f64 - 1.5).abs() < 0.001, "{p}: keeps the shape");
+        }
+        // below the ceiling an enlargement is as asked
+        assert_eq!(size(json!({"longEdge": 12000, "dontEnlarge": false}), 6000.0, 4000.0), (12000, 8000));
+        // a 600 MP panorama exports at full size, and smaller, as before; it is never enlarged
+        assert_eq!(size(json!({"percent": 100, "dontEnlarge": false}), 30000.0, 20000.0), (30000, 20000));
+        assert_eq!(size(json!({"percent": 50}), 30000.0, 20000.0), (15000, 10000));
+        assert_eq!(size(json!({"percent": 200, "dontEnlarge": false}), 30000.0, 20000.0), (30000, 20000));
+    }
+
+    /// An enlarged export that needs more memory than the computer has is refused with a message,
+    /// before it starts; everything else goes ahead.
+    #[test]
+    fn enlarged_exports_must_fit_the_computers_memory() {
+        let gb = 1usize << 30;
+        let why = too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, Some(16 * gb)).unwrap();
+        assert!(why.contains("27713 × 18475") && why.contains("20 GB") && why.contains("16 GB") && why.contains("smaller size"), "{why}");
+        assert_eq!(too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, Some(32 * gb)), None, "fits");
+        assert_eq!(too_big_for_memory((6000, 4000), 24_000_000, 20 * gb, Some(gb)), None, "full size is never refused");
+        assert_eq!(too_big_for_memory((3000, 2000), 24_000_000, 20 * gb, Some(gb)), None, "nor a smaller export");
+        assert_eq!(too_big_for_memory((27713, 18475), 24_000_000, 20 * gb, None), None, "unknown memory");
     }
 
     #[test]
@@ -2907,6 +3078,33 @@ mod tests {
                 }
             }
         }
+    }
+
+    /// A photo more than 65535 times as long as it is short (a 70000 × 1 strip) made `scale`
+    /// clamp with its lower bound above its upper one, which panics, in the export and in the
+    /// Export dialog's preview on the UI thread. The encoders' limit wins, the short edge keeps a
+    /// pixel.
+    #[test]
+    fn resize_survives_photos_too_long_for_the_encoders() {
+        let modes = [
+            json!({"longEdge": 2000}),
+            json!({"shortEdge": 1}),
+            json!({"width": 500, "height": 500}),
+            json!({"megapixels": 1}),
+            json!({"percent": 50}),
+            json!({"percent": 1000, "dontEnlarge": false}),
+        ];
+        for p in modes {
+            for (w, h) in [(70_000.0, 1.0), (1.0, 70_000.0), (1e9, 3.0), (65_536.0, 1.0)] {
+                let r = ExportOptions::from_json(&p).resize.unwrap();
+                let (ow, oh) = r.apply(w, h);
+                assert!((1..=65_535).contains(&ow) && (1..=65_535).contains(&oh), "{p} on {w}×{h}: {ow}×{oh}");
+                assert!(r.scale(w, h).is_finite());
+            }
+        }
+        // (a short edge under a pixel would be scaled up to one, which the limit then caps)
+        assert_eq!(Resize::long_edge(2000).apply(70_000.0, 1.0), (65_535, 1));
+        assert_eq!(Resize::long_edge(2000).apply(1.0, 70_000.0), (1, 65_535));
     }
 
     /// A flat field of a saturated green inside Display P3 but outside sRGB, rendered into `space`.

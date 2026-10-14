@@ -491,13 +491,15 @@ option to start it. For unattended installs: `msiexec /i <binary>-<ver>-windows-
 
 ### Linux
 
-| Format | x86_64 | aarch64 (ARM64) | Notes |
-|---|---|---|---|
-| AppImage | `<binary>-<ver>-linux-x86_64.AppImage` | `<binary>-<ver>-linux-aarch64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
-| Flatpak | `<binary>-<ver>-linux-x86_64.flatpak` | `<binary>-<ver>-linux-aarch64.flatpak` | Sandboxed; `flatpak install --user <file>` |
-| Debian/Ubuntu | `<binary>-<ver>-linux-x86_64.deb` | `<binary>-<ver>-linux-aarch64.deb` | |
-| Fedora/RHEL/openSUSE | `<binary>-<ver>-linux-x86_64.rpm` | `<binary>-<ver>-linux-aarch64.rpm` | |
-| Tarball | `<binary>-<ver>-linux-x86_64.tar.gz` | `<binary>-<ver>-linux-aarch64.tar.gz` | Unpack anywhere |
+| Format | x86_64 | Notes |
+|---|---|---|
+| AppImage | `<binary>-<ver>-linux-x86_64.AppImage` | Runs anywhere; updates itself with [AppImageUpdate](https://github.com/AppImageCommunity/AppImageUpdate) (`.zsync` files) |
+| Flatpak | `<binary>-<ver>-linux-x86_64.flatpak` | Sandboxed; `flatpak install --user <file>` |
+| Debian/Ubuntu | `<binary>-<ver>-linux-x86_64.deb` | |
+| Fedora/RHEL/openSUSE | `<binary>-<ver>-linux-x86_64.rpm` | |
+| Tarball | `<binary>-<ver>-linux-x86_64.tar.gz` | Unpack anywhere |
+
+Linux ARM64 (aarch64) builds are paused; `packaging/linux/package.sh aarch64` still builds one locally.
 
 ### Web (WebAssembly)
 

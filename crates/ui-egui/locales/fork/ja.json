@@ -1326,5 +1326,13 @@
   "Checking the GPU…": "GPU を確認中…",
   "CPU": "CPU",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "顔モデルが GPU を使うのは、同じ結果をより速く出せると確認できた場合だけです。",
-  "Checking the GPU for faces": "顔用の GPU を確認中"
+  "Checking the GPU for faces": "顔用の GPU を確認中",
+  "Export to": "書き出し先",
+  "Specific folder": "指定フォルダー",
+  "Same folder as original photo": "元の写真と同じフォルダー",
+  "Custom text": "カスタムテキスト",
+  "Filename - Sequence": "ファイル名 - 連番",
+  "Custom Name - Sequence": "カスタム名 - 連番",
+  "Custom Name": "カスタム名",
+  "Date - Filename": "日付 - ファイル名"
 }

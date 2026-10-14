@@ -983,6 +983,22 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         use lcc_engine::export::DngCompression as Z;
                         choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None"), (Z::Lossy, "Lossy")], &mut opts.dng_compression);
                     }
+                    // Lightroom Classic's File Naming templates; any other template is "Custom"
+                    let current = EXPORT_NAMING_TEMPLATES.iter().find(|(t, _)| *t == opts.naming).map_or("Custom", |(_, l)| *l);
+                    field(ui, "Template", |ui| {
+                        egui::ComboBox::from_id_salt("exportNamingTemplate").selected_text(crate::i18n::tr(current)).show_ui(ui, |ui| {
+                            for (t, l) in EXPORT_NAMING_TEMPLATES {
+                                if ui.selectable_label(opts.naming == *t, crate::i18n::tr(l)).clicked() {
+                                    opts.naming = (*t).to_string();
+                                }
+                            }
+                        });
+                    });
+                    if opts.naming.contains("{custom}") {
+                        field(ui, "Custom text", |ui| {
+                            crate::widgets::named(ui.add(egui::TextEdit::singleline(&mut opts.custom_text).desired_width(f32::INFINITY)), crate::i18n::tr("Custom text"))
+                        });
+                    }
                     let naming_id = egui::Id::new("export-naming");
                     let tags_open = field(ui, "File name", |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
@@ -1000,18 +1016,32 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             opts.start_number = v as u32;
                         }
                     }
-                    field(ui, "Folder", |ui| {
-                        trailing_button_row(ui, |ui| {
-                            if app.services.pick_folder.is_some()
-                                && crate::widgets::text_button(ui, "exportChooseFolder", crate::i18n::tr("Choose…"), false).clicked()
-                                && let Some(pick) = app.services.pick_folder.as_mut()
-                                && let Some(d) = pick()
-                            {
-                                *dir = d;
-                            }
-                            crate::widgets::named(ui.add(egui::TextEdit::singleline(dir).desired_width(ui.available_width())), crate::i18n::tr("Folder"));
+                    // like Lightroom Classic's Export To: one folder, or each photo's own folder (not on
+                    // the web, where originals live in the browser's storage, not in folders)
+                    use lcc_engine::export::DestinationMode as D;
+                    if !cfg!(target_arch = "wasm32") || opts.destination_mode != D::SpecificFolder {
+                    choices(
+                        ui,
+                        "Export to",
+                        "exportDestinationMode",
+                        &[(D::SpecificFolder, "Specific folder"), (D::SameAsOriginal, "Same folder as original photo")],
+                        &mut opts.destination_mode,
+                    );
+                    }
+                    if opts.destination_mode == D::SpecificFolder {
+                        field(ui, "Folder", |ui| {
+                            trailing_button_row(ui, |ui| {
+                                if app.services.pick_folder.is_some()
+                                    && crate::widgets::text_button(ui, "exportChooseFolder", crate::i18n::tr("Choose…"), false).clicked()
+                                    && let Some(pick) = app.services.pick_folder.as_mut()
+                                    && let Some(d) = pick()
+                                {
+                                    *dir = d;
+                                }
+                                crate::widgets::named(ui.add(egui::TextEdit::singleline(dir).desired_width(ui.available_width())), crate::i18n::tr("Folder"));
+                            });
                         });
-                    });
+                    }
                     field(ui, "Subfolder", |ui| {
                         crate::widgets::named(ui.add(egui::TextEdit::singleline(&mut opts.subfolder).hint_text(crate::i18n::tr("none")).desired_width(f32::INFINITY)), crate::i18n::tr("Subfolder"))
                     });
@@ -1496,11 +1526,32 @@ fn sam_by_hand(sam: &lcc_engine::segment::Segmenter) -> bool {
 /// The model installation guide.
 const SAM_HELP: &str = lcc_brand::REPOSITORY;
 
-/// Show the SAM 3 model folder in the file manager (created first, so there is something to show).
-fn show_model_folder(app: &mut LccApp, dir: &std::path::Path) -> Result<(), String> {
+/// Open the configured SAM 3 folder itself; revealing a file opens its parent instead.
+pub(crate) fn show_model_folder(app: &mut LccApp) -> Result<serde_json::Value, String> {
+    let dir = app.session.segmenter.dir.as_ref().ok_or("no folder is set for the SAM 3 model")?;
+    let path = dir.to_str().ok_or("the model folder path is not valid UTF-8")?;
+    let open = app.services.open_with.as_mut().ok_or("opening model folders is not available here")?;
+    // Create only after the host action is available. Existing model files are left alone.
     std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", dir.display()))?;
-    let reveal = app.services.reveal.as_mut().ok_or("not available here")?;
-    reveal(&dir.to_string_lossy())
+    #[cfg(target_os = "linux")]
+    if let Some(open_folder) = app.services.open_model_folder.clone() {
+        let path = path.to_string();
+        let folder = path.clone();
+        crate::tasks::spawn(
+            app,
+            "Show in File Manager",
+            Some("openModelFolder"),
+            move || open_folder(&folder),
+            |app, ctx, result| {
+                if let Err(e) = result {
+                    app.toast_error(ctx, e);
+                }
+            },
+        )?;
+        return Ok(json!({"path": path, "background": true}));
+    }
+    open(path, "")?;
+    Ok(json!({"path": path}))
 }
 
 /// The SAM 3 dialog: what the model is, its size and licence, and the download's progress.
@@ -1558,13 +1609,13 @@ fn sam_model_body(app: &mut LccApp, ui: &mut egui::Ui, error: Option<&str>) {
             .color(t.text_dim),
         );
         ui.horizontal_wrapped(|ui| {
-            if let Some(dir) = dir.filter(|_| app.services.reveal.is_some()) {
+            if dir.is_some() && crate::menus::ui_enabled(app, "app.openSamModelFolder") {
                 let r = ui.button(crate::i18n::tr(crate::menus::reveal_label()));
                 crate::widgets::register(ui.ctx(), "button:samFolder", r.rect);
                 if r.clicked()
-                    && let Err(e) = show_model_folder(app, &dir)
+                    && let Err(e) = app.run("app.openSamModelFolder", json!({}))
                 {
-                    app.toast(ui.ctx(), e);
+                    app.toast_error(ui.ctx(), e);
                 }
             }
             let r = ui.link(crate::i18n::tr("How to install the model")).on_hover_text(SAM_HELP);
@@ -1997,6 +2048,15 @@ fn trailing_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 /// A labelled row of mutually exclusive choice buttons (ids `button:{id}-{index}`).
+/// The Export dialog's File Naming templates (Lightroom Classic's), as `naming` templates.
+const EXPORT_NAMING_TEMPLATES: &[(&str, &str)] = &[
+    ("{name}", "Filename"),
+    ("{name}-{seq:1}", "Filename - Sequence"),
+    ("{custom}-{seq:1}", "Custom Name - Sequence"),
+    ("{custom}", "Custom Name"),
+    ("{date:%Y%m%d}-{name}", "Date - Filename"),
+];
+
 fn choices<V: PartialEq + Copy>(ui: &mut egui::Ui, label: &str, id: &str, options: &[(V, &str)], value: &mut V) {
     field(ui, label, |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
