@@ -969,7 +969,8 @@ fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catal
             let m = &photo.meta;
             let mut exp = Vec::new();
             if !m.shutter.is_empty() {
-                exp.push(format!("{} s", m.shutter));
+                // "1/250 s", "0.4 s"; a whole second's own ″ needs no second unit
+                exp.push(if m.shutter.ends_with('″') { m.shutter.clone() } else { format!("{} s", m.shutter) });
             }
             if let Some(a) = m.aperture {
                 exp.push(format!("f/{a:.1}"));
