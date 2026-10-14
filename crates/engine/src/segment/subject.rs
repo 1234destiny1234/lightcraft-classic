@@ -61,7 +61,15 @@ impl Subject {
         #[cfg(feature = "sam")]
         {
             let s = self.download.status();
-            super::DownloadStatus { running: s.running, done: s.done, total: s.total, file: s.file, error: s.error, finished: s.finished }
+            super::DownloadStatus {
+                running: s.running,
+                done: s.done,
+                total: s.total,
+                file: s.file,
+                error: s.error,
+                finished: s.finished,
+                cancelled: s.cancelled,
+            }
         }
         #[cfg(not(feature = "sam"))]
         super::DownloadStatus::default()
