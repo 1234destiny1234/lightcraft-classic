@@ -844,6 +844,28 @@ mod tests {
         assert!(egui::Popup::is_any_open(&h.view.ctx), "its context menu");
     }
 
+    /// Fork #46: the filmstrip's photo menu has Add to / Remove from Quick Collection (B), which
+    /// toggles the photo in it.
+    #[test]
+    fn context_menu_toggles_the_quick_collection() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail"}), t);
+        h.settle(SETTLE);
+        let id = h.app.session.selection.active.expect("an active photo");
+        let in_quick = |h: &Headless| {
+            h.app.session.catalog.quick_collection().and_then(|q| h.app.session.catalog.album(q)).is_some_and(|a| a.photos.contains(&id))
+        };
+        for want in [true, false] {
+            h.request("ui.clickWidget", json!({"id": format!("film:{}", id.0), "button": "right"}), t);
+            h.settle(SETTLE);
+            let r = h.request("ui.clickWidget", json!({"id": "button:contextQuickCollection"}), t);
+            assert_eq!(r["ok"], true, "{r}");
+            h.settle(SETTLE);
+            assert_eq!(in_quick(&h), want);
+        }
+    }
+
     /// #1239: deleting asks first by default, and the context menu's Delete Photo asks too.
     #[test]
     fn context_menu_delete_asks_first() {
