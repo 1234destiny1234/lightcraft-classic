@@ -1315,5 +1315,8 @@
   "Remove from Quick Collection": "クイックコレクションから削除",
   "Add to Target Collection": "ターゲットコレクションに追加",
   "Remove from Target Collection": "ターゲットコレクションから削除",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 表示出力はまだ利用できません。HDR ディスプレイでも、このウィンドウには SDR 版が表示されます。HDR 書き出しは全範囲を保持します。"
+  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 表示出力はまだ利用できません。HDR ディスプレイでも、このウィンドウには SDR 版が表示されます。HDR 書き出しは全範囲を保持します。",
+  "Wheel scroll speed": "ホイールのスクロール速度",
+  "Fast": "速い",
+  "Fastest": "最速"
 }

@@ -1314,5 +1314,8 @@
   "Remove from Quick Collection": "從快速集合中移除",
   "Add to Target Collection": "加入目標集合",
   "Remove from Target Collection": "從目標集合中移除",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 顯示輸出尚不可用：即使在 HDR 顯示器上，此視窗也顯示 SDR 版本。HDR 匯出保留完整範圍。"
+  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 顯示輸出尚不可用：即使在 HDR 顯示器上，此視窗也顯示 SDR 版本。HDR 匯出保留完整範圍。",
+  "Wheel scroll speed": "滾輪捲動速度",
+  "Fast": "快",
+  "Fastest": "最快"
 }
