@@ -284,8 +284,6 @@ jobs:
       CARGO_HOME: /opt/cargo
       RUSTUP_HOME: /opt/rustup
       CARGO_TARGET_DIR: /ci-target
-      # no FUSE in the container
-      APPIMAGE_EXTRACT_AND_RUN: "1"
     steps:
       - name: Install git (for the checkouts)
         run: |
@@ -323,6 +321,8 @@ jobs:
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
           CRAFT_FONTS_REQUIRED: "1"
+          # appimagetool is an AppImage; no FUSE in the container
+          APPIMAGE_EXTRACT_AND_RUN: "1"
         run: packaging/linux/package.sh
       - name: Check the packages
         run: |

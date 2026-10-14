@@ -43,6 +43,11 @@ cp "$HERE/_headers" "$HERE/.htaccess" "$WORK/$NAME/"
 brand_render "$HERE/HOSTING.md.in" "$WORK/$NAME/HOSTING.md"
 copy_docs "$WORK/$NAME"
 rm -f "$DIST/$NAME.zip"
-(cd "$WORK" && zip -qr9 "$DIST/$NAME.zip" "$NAME")
+if command -v zip >/dev/null; then
+  (cd "$WORK" && zip -qr9 "$DIST/$NAME.zip" "$NAME")
+else
+  # no zip (e.g. a minimal build host): Python's zipfile (deflate)
+  (cd "$WORK" && python3 -m zipfile -c "$DIST/$NAME.zip" "$NAME")
+fi
 echo "wrote $DIST/$NAME.zip"
 ls -lh "$DIST/$NAME.zip"
