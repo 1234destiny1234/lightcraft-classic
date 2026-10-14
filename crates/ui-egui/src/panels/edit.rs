@@ -1364,8 +1364,7 @@ fn hdr_button_tip(sdr_window: bool) -> String {
     if sdr_window { format!("{tip}\n\n{}", crate::i18n::tr(HDR_SDR_WINDOW_NOTE)) } else { tip.to_string() }
 }
 
-const HDR_SDR_WINDOW_NOTE: &str =
-    "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.";
+const HDR_SDR_WINDOW_NOTE: &str = "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.";
 
 /// The Light panel's HDR settings while HDR editing is on (the switch itself is the HDR button
 /// next to B&W): Visualize HDR range and the headroom limit.
