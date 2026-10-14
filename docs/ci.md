@@ -50,7 +50,7 @@ jobs set the runner worker's priority class to BelowNormal in their first step (
 Each runner instance has its own build cache (`CARGO_TARGET_DIR` from the runner's `.env`, else
 `~/.cache/lcc-ci-target-<runner name>`), so several instances on one machine (`gpu0` and `gpu0-b`) can run
 jobs at once without fighting over one build directory. Release jobs use a separate
-`lcc-release-target-<runner name>` directory (`%LOCALAPPDATA%` on Windows) so release builds don't evict the
+`lcc-release-target-<runner name>` directory (`C:\lcc-ci\release-<runner name>` on Windows: a short path, since `rc.exe` fails on long ones) so release builds don't evict the
 CI cache. Only the Linux check blocks merging.
 
 ### Containers on gpu0

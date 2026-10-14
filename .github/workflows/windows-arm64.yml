@@ -46,7 +46,12 @@ jobs:
           $gitBash = 'C:\Program Files\Git\bin'
           if (Test-Path "$gitBash\bash.exe") { Add-Content -Path $env:GITHUB_PATH -Value $gitBash }
           Get-Process -Name Runner.Worker -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'BelowNormal' }
-          if (-not $env:CARGO_TARGET_DIR) { Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$env:LOCALAPPDATA\lcc-ci-target-$env:RUNNER_NAME" }
+          # a short path: rc.exe fails on long ones (under LocalSystem, LOCALAPPDATA is deep in System32)
+          if (-not $env:CARGO_TARGET_DIR) {
+            $dir = "C:\lcc-ci\target-$env:RUNNER_NAME"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$dir"
+          }
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: aarch64-pc-windows-msvc
