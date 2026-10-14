@@ -34,7 +34,7 @@ correctness is proven on Apple GPUs; other vendors rely on user reports.
 
 | Work | Hours | Needs |
 |---|---:|---|
-| HDR display (EDR on macOS, Windows HDR, Linux where possible) | 10–20 | an HDR display to verify (human) |
+| HDR display (EDR on macOS, Windows HDR, Linux where possible) | 10–20 | an HDR display to verify (human); egui-wgpu 0.36 must let the app pick the surface format (`Rgba16Float`) and colour space (wgpu 30 `SurfaceColorSpace::ExtendedSrgbLinear`, scRGB on DXGI) and expose the surface for `display_hdr_info` (headroom), so: an egui-wgpu patch/upgrade, no `unsafe` needed. Until then the HDR button's tooltip says the window is SDR (#47) |
 | Per-monitor profile on Windows and Wayland | 2–4 | multi-monitor setup |
 | Pen pressure for brush masks (winit tablet events or a pure-Rust tablet layer) | 6–12 | a tablet |
 | Remaining stages on GPU (defringe, spot removal, masks) | 10–20 | |

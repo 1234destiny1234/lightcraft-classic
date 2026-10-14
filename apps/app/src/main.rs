@@ -936,8 +936,9 @@ fn main() -> eframe::Result {
                 // and the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
                 session = session.with_default_sam3_model();
                 // HDR display: SDR unless the surface, platform and display all allow HDR
-                hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
+                let display = hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
                 let mut app = LccApp::new(session, services(cc, app_log_file.as_deref()));
+                app.hdr_display_sdr = !display.is_hdr();
                 if let Some(ui) = prefs {
                     app.ui = ui;
                 }

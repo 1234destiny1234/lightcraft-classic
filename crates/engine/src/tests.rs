@@ -968,6 +968,15 @@ fn match_total_exposures() {
     assert_eq!((r["changed"].as_u64(), r["skipped"].clone()), (Some(1), json!([ids[2]])));
     let e = s.develop_of(PhotoId(ids[1])).unwrap().light.exposure;
     assert!((e - (-0.5)).abs() < 1e-9, "one stop more light → one stop less exposure: {e}");
+    // the same holds for a catalog string in the camera notation of a whole second (issue #1619): the
+    // reference is now 1.3 s, 130× the light of the target 1/100 s, so the slider tops out at +5 EV
+    let mut m = s.catalog.photo(PhotoId(ids[0])).unwrap().meta.clone();
+    m.shutter = "1.3\u{2033}".into();
+    s.commit("t", lcc_catalog::Op::SetMeta { id: PhotoId(ids[0]), meta: Box::new(m) }).unwrap();
+    let r = s.execute("develop.matchExposure", &json!({})).unwrap();
+    assert_eq!(r["changed"].as_u64(), Some(1), "{r}");
+    let e = s.develop_of(PhotoId(ids[1])).unwrap().light.exposure;
+    assert_eq!(e, 5.0, "1.3 s against 1/100 s is 7.0 stops, clamped: {e}");
 }
 
 #[test]

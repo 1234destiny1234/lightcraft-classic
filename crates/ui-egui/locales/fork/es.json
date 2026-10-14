@@ -1317,5 +1317,6 @@
   "Add to Quick Collection": "Añadir a colección rápida",
   "Remove from Quick Collection": "Quitar de colección rápida",
   "Add to Target Collection": "Añadir a colección de destino",
-  "Remove from Target Collection": "Quitar de colección de destino"
+  "Remove from Target Collection": "Quitar de colección de destino",
+  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "La salida HDR en pantalla aún no está disponible: esta ventana muestra la versión SDR, incluso en una pantalla HDR. Las exportaciones HDR conservan todo el rango."
 }
