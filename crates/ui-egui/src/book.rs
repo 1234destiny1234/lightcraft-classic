@@ -1106,7 +1106,7 @@ fn side_frame(ui: &mut egui::Ui, r: Rect, salt: &str, add: impl FnOnce(&mut egui
 }
 
 fn section(ui: &mut egui::Ui, title: &str, open: bool, add: impl FnOnce(&mut egui::Ui)) {
-    let resp = egui::CollapsingHeader::new(egui::RichText::new(crate::i18n::tr(title)).strong()).default_open(open).show(ui, add);
+    let resp = crate::widgets::folding_section(ui, &format!("book:{title}"), egui::RichText::new(crate::i18n::tr(title)).strong(), open, add);
     register(ui.ctx(), format!("book:panel:{title}"), resp.header_response.rect);
 }
 

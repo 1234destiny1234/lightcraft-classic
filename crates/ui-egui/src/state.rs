@@ -619,6 +619,11 @@ pub struct UiState {
     /// profile ([`UiState::group_is_open`]).
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub group_open: std::collections::BTreeMap<String, bool>,
+    /// The folded or unfolded sections of the Book, Slideshow and Map side panels (`<module>:<title>` → open),
+    /// as the user left them; a section not listed shows its default. Entries that aren't `true`/`false`
+    /// are dropped on load, so a hand-edited file can't keep the other settings from loading.
+    #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty", deserialize_with = "deserialize_section_open")]
+    pub section_open: std::collections::BTreeMap<String, bool>,
     /// A face's name being typed in the loupe.
     #[serde(skip)]
     pub name_edit: Option<NameEdit>,
@@ -1211,6 +1216,7 @@ impl Default for UiState {
             sidebar: Default::default(),
             collapsed_sidebar: Vec::new(),
             group_open: Default::default(),
+            section_open: Default::default(),
             name_edit: None,
             person_page: None,
             person_from: None,
@@ -1421,6 +1427,13 @@ impl UiState {
         }
         self
     }
+}
+
+/// The `sectionOpen` map, keeping only `name: true|false` entries (anything else is ignored).
+fn deserialize_section_open<'de, D: serde::Deserializer<'de>>(d: D) -> Result<std::collections::BTreeMap<String, bool>, D::Error> {
+    let value = serde_json::Value::deserialize(d)?;
+    let Some(map) = value.as_object() else { return Ok(Default::default()) };
+    Ok(map.iter().filter_map(|(k, v)| v.as_bool().map(|b| (k.clone(), b))).take(1024).collect())
 }
 
 fn deserialize_favorite_themes<'de, D: serde::Deserializer<'de>>(d: D) -> Result<Vec<String>, D::Error> {

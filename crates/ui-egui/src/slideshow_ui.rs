@@ -936,8 +936,7 @@ pub fn center(app: &mut LccApp, ui: &mut egui::Ui) {
 }
 
 fn heading(ui: &mut egui::Ui, text: &str) -> bool {
-    let id = ui.make_persistent_id(("slideshow-section", text));
-    let r = egui::CollapsingHeader::new(egui::RichText::new(crate::i18n::tr(text)).strong()).id_salt(id).default_open(true).show(ui, |_| ());
+    let r = crate::widgets::folding_section(ui, &format!("slideshow:{text}"), egui::RichText::new(crate::i18n::tr(text)).strong(), true, |_| ());
     r.fully_open() || r.openness > 0.0
 }
 

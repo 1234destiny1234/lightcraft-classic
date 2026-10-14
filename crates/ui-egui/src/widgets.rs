@@ -471,6 +471,46 @@ pub fn section_header(ui: &mut Ui, id: &str, title: &str, open: bool, enabled: O
     (resp, toggled)
 }
 
+fn section_folds_id() -> egui::Id {
+    egui::Id::new("persisted-section-folds")
+}
+
+/// Carry the side-panel folds between the UI state (saved in `ui.json`) and the frame: changes
+/// made by [`folding_section`] last frame go to `saved`, then `saved` is what this frame draws.
+pub fn sync_section_folds(ctx: &egui::Context, saved: &mut std::collections::BTreeMap<String, bool>) {
+    let changed: Option<(bool, std::collections::BTreeMap<String, bool>)> = ctx.data(|d| d.get_temp(section_folds_id()));
+    if let Some((true, folds)) = changed {
+        *saved = folds;
+    }
+    ctx.data_mut(|d| d.insert_temp(section_folds_id(), (false, saved.clone())));
+}
+
+/// A collapsible side-panel section whose open state is remembered across launches under `key`
+/// (see [`sync_section_folds`]); `default_open` until the user folds or unfolds it.
+pub fn folding_section<R>(
+    ui: &mut Ui,
+    key: &str,
+    title: impl Into<egui::WidgetText>,
+    default_open: bool,
+    body: impl FnOnce(&mut Ui) -> R,
+) -> egui::CollapsingResponse<R> {
+    let id = section_folds_id();
+    let open = ui
+        .ctx()
+        .data(|d| d.get_temp::<(bool, std::collections::BTreeMap<String, bool>)>(id))
+        .and_then(|(_, m)| m.get(key).copied())
+        .unwrap_or(default_open);
+    let r = egui::CollapsingHeader::new(title).id_salt(("folding-section", key)).open(Some(open)).show(ui, body);
+    if r.header_response.clicked() {
+        ui.ctx().data_mut(|d| {
+            let (dirty, folds) = d.get_temp_mut_or_default::<(bool, std::collections::BTreeMap<String, bool>)>(id);
+            *dirty = true;
+            folds.insert(key.to_string(), !open);
+        });
+    }
+    r
+}
+
 /// Thin divider between groups.
 pub fn divider(ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
