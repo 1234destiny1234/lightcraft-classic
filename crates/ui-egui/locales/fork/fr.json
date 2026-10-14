@@ -1221,5 +1221,9 @@
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Leurs réglages, mots-clés et appartenances aux collections sont supprimés ; les fichiers sur le disque sont conservés.",
   "Include selected photos": "Inclure les photos sélectionnées",
   "Adding photos…": "Ajout des photos…",
-  "Reading photos…": "Lecture des photos…"
+  "Reading photos…": "Lecture des photos…",
+  "Add to Quick Collection": "Ajouter à la collection rapide",
+  "Remove from Quick Collection": "Retirer de la collection rapide",
+  "Add to Target Collection": "Ajouter à la collection cible",
+  "Remove from Target Collection": "Retirer de la collection cible"
 }

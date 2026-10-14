@@ -1223,5 +1223,9 @@
   "Don't Import Suspected Duplicates": "不导入可能重复的照片",
   "Will be copied": "将作为副本导入",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "其编辑、关键字和收藏夹归属将被移除；磁盘上的文件会保留。",
-  "Include selected photos": "包含所选照片"
+  "Include selected photos": "包含所选照片",
+  "Add to Quick Collection": "添加到快速集合",
+  "Remove from Quick Collection": "从快速集合中移除",
+  "Add to Target Collection": "添加到目标集合",
+  "Remove from Target Collection": "从目标集合中移除"
 }

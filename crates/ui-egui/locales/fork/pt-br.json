@@ -1310,5 +1310,9 @@
   "Don't Import Suspected Duplicates": "Não importar possíveis duplicatas",
   "Will be copied": "Será importada como cópia",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Suas edições, palavras-chave e participações em coleções são removidas; os arquivos no disco são mantidos.",
-  "Include selected photos": "Incluir fotos selecionadas"
+  "Include selected photos": "Incluir fotos selecionadas",
+  "Add to Quick Collection": "Adicionar à coleção rápida",
+  "Remove from Quick Collection": "Remover da coleção rápida",
+  "Add to Target Collection": "Adicionar à coleção de destino",
+  "Remove from Target Collection": "Remover da coleção de destino"
 }

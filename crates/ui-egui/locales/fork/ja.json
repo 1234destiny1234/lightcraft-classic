@@ -1310,5 +1310,9 @@
   "Don't Import Suspected Duplicates": "重複の可能性がある写真を読み込まない",
   "Will be copied": "コピーとして読み込み",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "編集内容、キーワード、コレクションへの登録は削除されます。ディスク上のファイルは残ります。",
-  "Include selected photos": "選択した写真を含める"
+  "Include selected photos": "選択した写真を含める",
+  "Add to Quick Collection": "クイックコレクションに追加",
+  "Remove from Quick Collection": "クイックコレクションから削除",
+  "Add to Target Collection": "ターゲットコレクションに追加",
+  "Remove from Target Collection": "ターゲットコレクションから削除"
 }

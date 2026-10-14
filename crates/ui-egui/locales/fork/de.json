@@ -1169,5 +1169,9 @@
   "Duplicates": "Duplikate",
   "Don't Import Suspected Duplicates": "Mögliche Duplikate nicht importieren",
   "Will be copied": "Wird als Kopie importiert",
-  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Ihre Bearbeitungen, Stichwörter und Sammlungszugehörigkeiten werden entfernt; die Dateien auf dem Datenträger bleiben erhalten."
+  "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Ihre Bearbeitungen, Stichwörter und Sammlungszugehörigkeiten werden entfernt; die Dateien auf dem Datenträger bleiben erhalten.",
+  "Add to Quick Collection": "Zur Schnellsammlung hinzufügen",
+  "Remove from Quick Collection": "Aus Schnellsammlung entfernen",
+  "Add to Target Collection": "Zur Zielsammlung hinzufügen",
+  "Remove from Target Collection": "Aus Zielsammlung entfernen"
 }

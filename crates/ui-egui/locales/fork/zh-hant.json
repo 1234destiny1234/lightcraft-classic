@@ -1309,5 +1309,9 @@
   "Don't Import Suspected Duplicates": "不匯入可能重複的照片",
   "Will be copied": "將作為副本匯入",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "其編輯、關鍵字和收藏集歸屬將被移除；磁碟上的檔案會保留。",
-  "Include selected photos": "包含所選照片"
+  "Include selected photos": "包含所選照片",
+  "Add to Quick Collection": "加入快速集合",
+  "Remove from Quick Collection": "從快速集合中移除",
+  "Add to Target Collection": "加入目標集合",
+  "Remove from Target Collection": "從目標集合中移除"
 }
