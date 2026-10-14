@@ -58,7 +58,7 @@ back to it as pull requests first.
 
 | | LightCraft (upstream) | LightCraft Classic (this fork) |
 |---|---|---|
-| **UI shell** | Single-window layout modelled on the cloud-era Lightroom: grid, detail and edit views, side panels, presets column | Lightroom Classic layout: module picker (top right, `Window → Modules`), Navigator / Catalog / Folders / Collections on the left, Quick Develop / Keywording / Metadata on the right, filmstrip, identity plate, secondary window |
+| **UI shell** | Single-window layout modelled on the cloud-era Lightroom: grid, detail and edit views, side panels, presets column | Lightroom Classic layout: module picker (top right, `Window → Modules`), Navigator / Catalog / Folders / Collections on the left, Quick Develop / Keywording / Metadata on the right, filmstrip, identity plate, secondary window; adjustable mouse-wheel scroll speed |
 | **Modules** | Library and editing only | Library, Develop, Map, Book, Slideshow, Print, Web, sharing one catalog |
 | **Map** | No map view | Map module: OpenStreetMap tiles, drag-and-drop geotagging, saved locations, tracklogs, reverse geocoding |
 | **Book / Slideshow / Web** | Not available | Book (auto layout, templates, text cells with pair kerning and opacity, cover; PDF export), Slideshow (play with music, PDF / JPEG / video export), Web (static HTML galleries, live preview, SFTP upload) |
@@ -344,7 +344,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Photo Merge: HDR (auto-align, deghost), Panorama (spherical/cylindrical/perspective, boundary warp, auto crop), HDR Panorama → DNG | ✅ |
 | GPU pipeline (wgpu compute, CPU-exact within 1/255), CPU fallback on device limits / errors | ✅ · WebGPU in the browser 🚧 |
 | Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · interlaced H.264, local adjustments on video ⬜ |
-| AI: segmentation masks (BiRefNet, SAM 3), Bayer AI denoise, faces | 🟡 · super resolution ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
+| AI: segmentation masks (BiRefNet, SAM 3), Bayer AI denoise, faces (convolutions on the GPU when faster) | 🟡 · super resolution ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
 | Web build (same UI in the browser via WASM): persistent library in OPFS/IndexedDB, Web Worker rendering, export downloads | ✅ · WebGPU, Safari/Firefox testing 🚧 |
 
 <sub>✅ works today · 🚧 in progress · ⬜ not started</sub>
