@@ -38,7 +38,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     let video = crate::video_ui::blocked(app, &format!("panel.{id}"));
                     let tip = if video { crate::video_ui::NOT_FOR_VIDEO } else { tip };
                     let resp = icon_button(ui, id, icon, sz, on, (has_photo || !needs_photo) && !video, tip);
-                    if resp.clicked() {
+                    // The tool in use is radio-style (Lightroom Classic): clicking it leaves it
+                    // alone. It used to close the panel, and a Detail view with no editing panel
+                    // is Library's, so the click threw the user back into the grid.
+                    if resp.clicked() && app.ui.right != panel {
                         let _ = app.run(&format!("panel.{id}"), json!({}));
                     }
                     // the same header menu as the Classic columns: show/hide, solo, hiding mode
