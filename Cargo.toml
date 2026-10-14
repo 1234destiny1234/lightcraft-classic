@@ -1,6 +1,8 @@
 [workspace]
 resolver = "3"
 members = ["crates/*", "apps/*", "xtask"]
+# vendored third-party crates patched for the app (see vendor/README.md); not workspace members
+exclude = ["vendor"]
 
 [workspace.package]
 version = "0.8.0"
@@ -187,3 +189,8 @@ jpeg-decoder = { opt-level = 3 }
 jpeg-encoder = { opt-level = 3 }
 png = { opt-level = 3 }
 miniz_oxide = { opt-level = 3 }
+
+[patch.crates-io]
+# egui-wgpu 0.36.2 + HDR display output (an Rgba16Float / extended-linear surface, the display's
+# HDR facts, egui's output scaled to SDR white): see vendor/README.md and docs/hdr-display.md
+egui-wgpu = { path = "vendor/egui-wgpu" }
