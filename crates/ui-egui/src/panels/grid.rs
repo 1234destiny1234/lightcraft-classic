@@ -1203,13 +1203,6 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         let _ = app.run("photo.setReference", json!({"id": id.0}));
     }
     ui.separator();
-    ui.menu_button(crate::i18n::tr("Set Rating"), |ui| {
-        for r in 0..=5 {
-            if ui.button(if r == 0 { crate::i18n::tr("No Stars").to_string() } else { "★".repeat(r) }).clicked() {
-                let _ = app.run("photo.rate", json!({"rating": r}));
-            }
-        }
-    });
     ui.menu_button(crate::i18n::tr("Set Flag"), |ui| {
         for (l, f) in [("Pick", "pick"), ("Reject", "reject"), ("Unflagged", "none")] {
             if ui.button(crate::i18n::tr(l)).clicked() {
@@ -1217,7 +1210,16 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         }
     });
+    ui.menu_button(crate::i18n::tr("Set Rating"), |ui| {
+        for r in 0..=5 {
+            if ui.button(if r == 0 { crate::i18n::tr("No Stars").to_string() } else { "★".repeat(r) }).clicked() {
+                let _ = app.run("photo.rate", json!({"rating": r}));
+            }
+        }
+    });
     ui.menu_button(crate::i18n::tr("Set Color Label"), |ui| label_menu(app, ui));
+    ui.separator();
+    quick_collection_item(app, ui);
     if local_only(app, &app.session.targets(&serde_json::Value::Null)) {
         // albums hold library photos (issue #684): nothing here to add until they join My Photos
         let add = ui.add_enabled(false, egui::Button::new(crate::i18n::tr("Add to Collection"))).on_disabled_hover_text(albums_hint());
@@ -1259,28 +1261,6 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         if ui.button(crate::i18n::tr("Set as Album Cover")).clicked() {
             let _ = app.run("album.setCover", json!({"id": aid.0, "photo": id.0}));
         }
-    }
-    if ui.button(crate::i18n::tr("Rename…")).clicked() {
-        let _ = app.run("dialog.rename", json!({}));
-    }
-    let can_pick = app.services.pick_folder.is_some() || app.services.picker.is_some();
-    if can_pick && ui.button(crate::i18n::tr("Move to Folder…")).clicked() {
-        // the folder dialog goes through the shared picker (off the UI thread where the host has
-        // one: then photo.moveToFolder runs when it closes)
-        let req = crate::pick::PickRequest::folder(crate::i18n::tr("Move to Folder…"));
-        let picked =
-            crate::pick::ask(app, "photo.moveToFolder", &json!({}), "folder", req, |s| s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x]));
-        if let crate::pick::Picked::Now(v) = picked
-            && let Some(into) = v.into_iter().next()
-        {
-            match app.run("photo.moveToFolder", json!({"folder": into})) {
-                Ok(r) => app.toast(ui.ctx(), crate::i18n::tr_format!("Moved {} photo(s)", r["moved"])),
-                Err(e) => app.toast(ui.ctx(), e),
-            }
-        }
-    }
-    if ui.button(crate::i18n::tr("Reload from Disk")).clicked() {
-        let _ = app.run("photo.reload", json!({}));
     }
     if ui.button(crate::i18n::tr("Create Virtual Copy")).clicked() {
         let _ = app.run("photo.virtualCopy", json!({}));
@@ -1339,6 +1319,28 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         let _ = app.run("photo.rotateRight", json!({}));
     }
     ui.separator();
+    if ui.button(crate::i18n::tr("Rename…")).clicked() {
+        let _ = app.run("dialog.rename", json!({}));
+    }
+    let can_pick = app.services.pick_folder.is_some() || app.services.picker.is_some();
+    if can_pick && ui.button(crate::i18n::tr("Move to Folder…")).clicked() {
+        // the folder dialog goes through the shared picker (off the UI thread where the host has
+        // one: then photo.moveToFolder runs when it closes)
+        let req = crate::pick::PickRequest::folder(crate::i18n::tr("Move to Folder…"));
+        let picked =
+            crate::pick::ask(app, "photo.moveToFolder", &json!({}), "folder", req, |s| s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x]));
+        if let crate::pick::Picked::Now(v) = picked
+            && let Some(into) = v.into_iter().next()
+        {
+            match app.run("photo.moveToFolder", json!({"folder": into})) {
+                Ok(r) => app.toast(ui.ctx(), crate::i18n::tr_format!("Moved {} photo(s)", r["moved"])),
+                Err(e) => app.toast(ui.ctx(), e),
+            }
+        }
+    }
+    if ui.button(crate::i18n::tr("Reload from Disk")).clicked() {
+        let _ = app.run("photo.reload", json!({}));
+    }
     // the original moved or its drive is gone: point the photo at the file again
     // (a cached answer, checked off the UI thread)
     let missing = matches!(&app.session.catalog.photo(id).map(|p| p.source.clone()), Some(lcc_catalog::Source::File { path }) if app.session.media.availability.is_offline(path));
@@ -1378,6 +1380,36 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         register(ui.ctx(), "button:contextDeletePhoto", delete.rect);
         if delete.clicked() {
             let _ = crate::menubar::run_item(app, "photo.delete", json!({}));
+        }
+    }
+}
+
+/// Add to / Remove from Quick Collection (B), as Lightroom Classic's photo menu has it: the target
+/// album when one is set, labelled by whether the whole selection is already in it.
+fn quick_collection_item(app: &mut LccApp, ui: &mut egui::Ui) {
+    let s = &app.session;
+    let target = s.target_album.filter(|a| s.catalog.album(*a).is_some_and(|al| !al.is_smart() && !al.folder));
+    let quick = target.is_none();
+    let album = target.or_else(|| s.catalog.quick_collection()).and_then(|a| s.catalog.album(a));
+    let sel = s.targets(&serde_json::Value::Null);
+    let all_in = !sel.is_empty() && album.is_some_and(|al| sel.iter().all(|t| al.photos.contains(t)));
+    let text = match (all_in, quick) {
+        (false, true) => "Add to Quick Collection",
+        (true, true) => "Remove from Quick Collection",
+        (false, false) => "Add to Target Collection",
+        (true, false) => "Remove from Target Collection",
+    };
+    let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
+    let mut b = egui::Button::new(crate::i18n::tr(text));
+    if let Some(sc) = crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "album.toggleTarget") {
+        b = b.shortcut_text(crate::menubar::shortcut_text(sc, mac));
+    }
+    let r = ui.add_enabled(crate::menus::ui_enabled(app, "album.toggleTarget"), b);
+    register(ui.ctx(), "button:contextQuickCollection", r.rect);
+    if r.clicked() {
+        match app.run("album.toggleTarget", json!({})) {
+            Ok(r) => toast_skipped(app, ui.ctx(), &r),
+            Err(e) => app.toast(ui.ctx(), e),
         }
     }
 }

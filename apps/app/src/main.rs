@@ -243,6 +243,31 @@ fn load_prefs_at(path: &std::path::Path, set_aside_damaged: bool) -> (Option<UiS
     };
     match decode_saved_ui(&bytes) {
         Ok((ui, false)) => (Some(ui.sanitized()), None, false),
+        // Issue #44: a layout this build can't restore (a newer build's, or a damaged one) used to
+        // stop every save for the session, and so for every later session too: folded panels and
+        // sections opened again at each launch. The original file is copied aside (a newer build's
+        // layout isn't lost), the layout dropped, and the rest keeps being saved.
+        Ok((ui, true)) if set_aside_damaged => {
+            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let keep = path.with_file_name(format!("ui.json.layout-{secs}"));
+            match std::fs::copy(path, &keep) {
+                Ok(_) => {
+                    let msg = format!(
+                        "The saved panel layout in {} couldn't be restored, so the default layout is used. Other settings were loaded and keep being saved; the original file was kept as {}.",
+                        path.display(),
+                        keep.display()
+                    );
+                    (Some(ui.sanitized()), Some(msg), false)
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "The saved panel layout in {} couldn't be restored and the file couldn't be copied aside ({e}). Other settings were loaded; the original file is preserved and settings won't be saved this session.",
+                        path.display()
+                    );
+                    (Some(ui.sanitized()), Some(msg), true)
+                }
+            }
+        }
         Ok((ui, true)) => {
             let msg = format!(
                 "The saved panel layout in {} couldn't be restored. Other settings were loaded; the original file is preserved and settings won't be saved this session.",
@@ -326,10 +351,13 @@ impl PrefsWriter {
             return Ok(());
         }
         let Some(path) = self.path.clone() else { return Ok(()) };
-        if let Some(workspace) = &ui.docking {
-            workspace.validate()?;
+        // Issue #44: a layout that doesn't validate is left out of the file instead of failing
+        // the save, so the rest of the settings (panel folds, sections, library) are still kept.
+        let bytes = match &ui.docking {
+            Some(workspace) if workspace.validate().is_err() => serde_json::to_vec_pretty(&UiState { docking: None, ..ui.clone() }),
+            _ => serde_json::to_vec_pretty(ui),
         }
-        let bytes = serde_json::to_vec_pretty(ui).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
         if bytes == self.written {
             return Ok(());
         }
@@ -1165,13 +1193,59 @@ mod tests {
                 assert!(!loaded.filmstrip);
                 assert!(loaded.docking.is_none());
                 assert!(warning.unwrap().contains("Other settings were loaded"));
-                assert!(keep);
                 let mut writer = PrefsWriter { path: Some(path.clone()), keep_file: keep, ..Default::default() };
-                writer.save_ui(&loaded, false).unwrap();
-                assert_eq!(std::fs::read(&path).unwrap(), bytes);
-                assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1, "a future layout does not rename or replace the settings file");
+                let mut changed = loaded.clone();
+                changed.thumb_size += 40.0;
+                writer.save_ui(&changed, false).unwrap();
+                if !set_aside {
+                    // --memory: nothing is written or copied
+                    assert!(keep);
+                    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+                    assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+                    continue;
+                }
+                // Issue #44: the original is kept aside and the rest keeps being saved, so the next
+                // launch restores it without a warning (folds no longer reset at every launch)
+                assert!(!keep);
+                let copies: Vec<_> = std::fs::read_dir(&d)
+                    .unwrap()
+                    .map(|e| e.unwrap().path())
+                    .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("ui.json.layout-"))
+                    .collect();
+                assert_eq!(copies.len(), 1);
+                assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes);
+                std::fs::remove_file(&copies[0]).unwrap();
+                let (again, warning, keep) = load_prefs_at(&path, true);
+                assert!(warning.is_none() && !keep, "{warning:?}");
+                let again = again.unwrap();
+                assert_eq!(again.thumb_size, changed.thumb_size);
+                assert_eq!(again.settings.library_path, ui.settings.library_path);
             }
         }
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    /// Issue #44: a panel layout that doesn't validate no longer fails every save of the session;
+    /// it is left out and the rest of the settings are written.
+    #[test]
+    fn an_invalid_layout_does_not_stop_the_other_settings_being_saved() {
+        let d = dir("invalid-layout-save");
+        let path = d.join("ui.json");
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), Services::default());
+        app.run("ui.dock", serde_json::json!({"operation":"close", "panel":"tools"})).unwrap();
+        let mut ui = app.ui.clone();
+        let workspace = ui.docking.as_mut().unwrap();
+        let entry = workspace.hidden[0].clone();
+        workspace.hidden = vec![entry; lcc_ui_egui::docking::Panel::ALL.len() + 1];
+        assert!(workspace.validate().is_err());
+        ui.thumb_size += 40.0;
+        let mut writer = PrefsWriter { path: Some(path.clone()), ..Default::default() };
+        writer.save_ui(&ui, false).unwrap();
+        let (loaded, warning, keep) = load_prefs_at(&path, true);
+        assert!(warning.is_none() && !keep, "{warning:?}");
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.thumb_size, ui.thumb_size);
+        assert!(loaded.docking.is_none());
         std::fs::remove_dir_all(d).unwrap();
     }
 

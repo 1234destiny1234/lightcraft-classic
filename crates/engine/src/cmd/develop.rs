@@ -854,13 +854,28 @@ pub fn specs() -> Vec<CommandSpec> {
             "Sync Settings",
             [],
             None,
-            "{groups?} — copy the active photo's settings to all selected photos",
+            "{groups?: [settingsGroup], controls?: [controlId]} — copy the active photo's settings to the other selected photos: whole groups plus single controls (e.g. [\"light.exposure\"]); with only `controls`, nothing else is copied (default groups: all but crop, masks, remove) → {changed}",
             has_selection,
             |s, p| {
-                let id = active(s, "develop.sync")?;
-                let groups = groups_param(p).unwrap_or_else(SettingsGroup::default_copy);
+                let c = "develop.sync";
+                let id = active(s, c)?;
+                let controls: Vec<&'static str> = match p.get("controls") {
+                    None | Some(Value::Null) => Vec::new(),
+                    Some(Value::Array(a)) => a
+                        .iter()
+                        .map(|v| {
+                            v.as_str()
+                                .and_then(lcc_develop::controls::find)
+                                .map(|spec| spec.id)
+                                .ok_or_else(|| bad(c, format!("unknown control `{v}`")))
+                        })
+                        .collect::<Result<_>>()?,
+                    Some(_) => return Err(bad(c, "controls must be a list of control ids")),
+                };
+                let groups = groups_param(p).unwrap_or_else(|| if controls.is_empty() { SettingsGroup::default_copy() } else { Vec::new() });
                 let d = s.develop_of(id).unwrap_or_default();
                 let partial = lcc_develop::extract_groups(&d, &groups);
+                let values: Vec<(&str, f64)> = controls.iter().filter_map(|k| lcc_develop::controls::get(&d, k).map(|v| (*k, v))).collect();
                 let ops = s
                     .selection
                     .ids
@@ -868,7 +883,13 @@ pub fn specs() -> Vec<CommandSpec> {
                     .into_iter()
                     .filter(|x| *x != id)
                     .filter_map(|x| s.develop_of(x).map(|d| (x, d)))
-                    .filter_map(|(x, dd)| s.develop_op(x, lcc_develop::apply_partial(&dd, &partial, 1.0), "Sync Settings"))
+                    .filter_map(|(x, dd)| {
+                        let mut nd = lcc_develop::apply_partial(&dd, &partial, 1.0);
+                        for (k, v) in &values {
+                            lcc_develop::controls::set(&mut nd, k, *v);
+                        }
+                        s.develop_op(x, nd, "Sync Settings")
+                    })
                     .collect::<Vec<_>>();
                 let n = ops.len();
                 s.commit("Sync Settings", Op::Batch { ops })?;
@@ -1045,7 +1066,7 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         // ---- versions & history
-        cmd!("version.create", "Create Version", ["Photo"], Some("Cmd+Shift+S"), "{name?}", has_active, |s, p| {
+        cmd!("version.create", "Create Version", ["Photo"], None, "{name?}", has_active, |s, p| {
             let id = active(s, "version.create")?;
             let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad("version.create", "no photo"))?;
             let mut versions = ph.versions.clone();

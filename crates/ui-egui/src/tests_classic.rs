@@ -357,6 +357,68 @@ fn the_tool_strip_is_develops_alone() {
     assert!(has(&h, "icon:edit") && has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
 }
 
+/// Issue #44: folded Classic panels (Library and Develop), folded edit sections and Solo Mode are
+/// written to the settings file and come back folded in an app started from it.
+#[test]
+fn folded_panels_and_solo_mode_survive_a_restart() {
+    let mut h = develop_demo();
+    click(&mut h, "classicPanel:versions");
+    run(&mut h, "panel.solo", json!({"on": true}));
+    let section = h.app.ui.open_sections.first().cloned();
+    if let Some(s) = &section {
+        h.app.ui.toggle_section(s);
+    }
+    click(&mut h, "module:library");
+    click(&mut h, "classicPanel:catalog");
+    assert!(!classic::is_open(&h.app, PanelId::Catalog));
+    // the settings file, as the host writes and reads it
+    let dir = std::env::temp_dir().join(format!("lc-fold-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("ui.json");
+    std::fs::write(&path, serde_json::to_vec_pretty(&h.app.ui).unwrap()).unwrap();
+    let saved: crate::UiState = serde_json::from_slice(&std::fs::read(&path).unwrap()).unwrap();
+    let _ = std::fs::remove_dir_all(&dir);
+    let services = Services { png: None, ..Default::default() };
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+    app.ui = saved.sanitized();
+    let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
+    h.settle(SETTLE);
+    assert!(!classic::is_open(&h.app, PanelId::Catalog) && !has(&h, "source:all"), "Library's folded panel stays folded");
+    click(&mut h, "module:develop");
+    h.settle(SETTLE);
+    assert!(!classic::is_open(&h.app, PanelId::Versions) && !has(&h, "button:versionCreate"), "Develop's folded panel stays folded");
+    assert!(h.app.ui.single_panel, "Solo Mode is back on in Develop");
+    if let Some(s) = &section {
+        assert!(!h.app.ui.section_open(s), "the folded edit section {s} stays folded");
+    }
+}
+
+/// Issue #44: a folded Book side-panel section (egui's own collapsing header, kept in the UI
+/// state) stays folded in an app started from the saved settings; a junk entry is ignored.
+#[test]
+fn folded_book_section_survives_a_restart() {
+    let mut h = demo();
+    run(&mut h, "module.book", json!({}));
+    h.settle(SETTLE);
+    click(&mut h, "book:panel:Page Templates");
+    h.step();
+    assert_eq!(h.app.ui.section_open.get("book:Page Templates"), Some(&false));
+    let mut saved = serde_json::to_value(&h.app.ui).unwrap();
+    saved["sectionOpen"]["junk"] = json!(7);
+    let saved: crate::UiState = serde_json::from_value(saved).unwrap();
+    assert!(!saved.section_open.contains_key("junk"));
+    let services = Services { png: None, ..Default::default() };
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+    app.ui = saved.sanitized();
+    let mut h = Headless::new(app, [1400.0, 1000.0], 1.0);
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Book);
+    assert_eq!(h.app.ui.section_open.get("book:Page Templates"), Some(&false), "still folded after the restart");
+    click(&mut h, "book:panel:Page Templates");
+    h.step();
+    assert_eq!(h.app.ui.section_open.get("book:Page Templates"), Some(&true), "and unfolds again");
+}
+
 /// Issue #36: with a preset collection imported whole (thousands of presets), Quick Develop's
 /// Saved Preset menu builds only the rows in view; building one button per preset every frame
 /// made Library sluggish while it was open. Picking a preset still applies it.

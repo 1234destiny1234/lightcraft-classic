@@ -1314,5 +1314,12 @@
   "Will be copied": "Se importará como copia",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Se eliminan sus ajustes, palabras clave y pertenencia a colecciones; los archivos del disco se conservan.",
   "Include selected photos": "Incluir fotos seleccionadas",
-  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "Esta pantalla no muestra HDR (es SDR o el HDR está desactivado en la configuración del sistema), así que la ventana muestra la versión SDR. Las exportaciones HDR conservan todo el rango."
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "Esta pantalla no muestra HDR (es SDR o el HDR está desactivado en la configuración del sistema), así que la ventana muestra la versión SDR. Las exportaciones HDR conservan todo el rango.",
+  "Add to Quick Collection": "Añadir a colección rápida",
+  "Remove from Quick Collection": "Quitar de colección rápida",
+  "Add to Target Collection": "Añadir a colección de destino",
+  "Remove from Target Collection": "Quitar de colección de destino",
+  "Wheel scroll speed": "Velocidad de desplazamiento de la rueda",
+  "Fast": "Rápida",
+  "Fastest": "Muy rápida"
 }
