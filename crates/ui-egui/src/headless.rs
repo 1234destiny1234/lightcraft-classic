@@ -3324,6 +3324,44 @@ mod tests {
         assert!(h.app.session.auto_sync);
     }
 
+    /// Issue #61: Shift+Cmd+S opens Synchronize Settings (also Photo ▸ Develop Settings ▸ Sync
+    /// Settings…); with only Exposure ticked the other selected photos get the exposure and nothing else.
+    #[test]
+    fn sync_settings_shortcut_syncs_only_exposure() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let photo_menu = crate::menubar::menu_bar(&h.app).into_iter().find(|(m, _)| m == "Photo").unwrap().1;
+        let in_develop_settings = photo_menu.iter().any(|n| match n {
+            crate::menubar::MenuNode::Submenu { label, children } => {
+                label == "Develop Settings"
+                    && children.iter().any(|c| matches!(c, crate::menubar::MenuNode::Item { id, .. } if id == "dialog.syncSettings"))
+            }
+            _ => false,
+        });
+        assert!(in_develop_settings, "Photo ▸ Develop Settings ▸ Sync Settings… is missing");
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
+        let exec = |h: &mut Headless, c: &str, p: Value| h.request("engine.execute", json!({"command": c, "params": p}), t);
+        exec(&mut h, "library.select", json!({"ids": ids, "active": ids[0]}));
+        exec(&mut h, "module.develop", json!({}));
+        let before: Vec<_> = ids[1..].iter().map(|id| (*h.app.session.develop_of(lcc_catalog::PhotoId(*id)).unwrap()).clone()).collect();
+        exec(&mut h, "develop.set", json!({"id": ids[0], "values": {"light.exposure": 1.25, "light.contrast": 40, "color.vibrance": 30}}));
+        h.settle(SETTLE);
+        assert_eq!(h.request("ui.key", json!({"key": "S", "cmd": true, "shift": true}), t)["ok"], true);
+        h.settle(SETTLE);
+        assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::SyncSettings { .. })), "{:?}", h.app.ui.dialog);
+        for w in ["syncGroup:none", "syncControl:light.exposure"] {
+            assert_eq!(h.request("ui.clickWidget", json!({"id": w}), t)["ok"], true, "{w}");
+            h.settle(SETTLE);
+        }
+        assert_eq!(h.request("ui.dialog.confirm", json!({}), t)["ok"], true);
+        for (id, old) in ids[1..].iter().zip(before) {
+            let mut d = (*h.app.session.develop_of(lcc_catalog::PhotoId(*id)).unwrap()).clone();
+            assert_eq!(d.light.exposure, 1.25);
+            d.light.exposure = old.light.exposure;
+            assert_eq!(d, old, "only the exposure of photo {id} changes");
+        }
+    }
+
     /// Info panel → Edit Capture Time…: a time-zone shift moves the selected photos.
     #[test]
     #[ignore = "assumes upstream's docked panel sizes; the Classic panels differ"]
