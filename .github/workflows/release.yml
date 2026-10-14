@@ -387,9 +387,14 @@ jobs:
           # librsvg2-common: the SVG pixbuf loader. flatpak-builder runs the host's
           # `appstreamcli compose`, which renders the scalable icon and fails without it.
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
-            ca-certificates flatpak flatpak-builder librsvg2-common appstream git
+            ca-certificates flatpak flatpak-builder librsvg2-common appstream git dbus
       - name: Build the Flatpak bundle
-        run: packaging/linux/flatpak-bundle.sh "dist/linux/${{ needs.version.outputs.binary }}-$PACKAGE_VERSION-linux-${{ matrix.arch }}.tar.gz"
+        # `flatpak run` (the bundle's smoke test) needs a session bus and a runtime dir, which the
+        # container lacks
+        run: |
+          XDG_RUNTIME_DIR="$(mktemp -d)"
+          export XDG_RUNTIME_DIR
+          dbus-run-session -- packaging/linux/flatpak-bundle.sh "dist/linux/${{ needs.version.outputs.binary }}-$PACKAGE_VERSION-linux-${{ matrix.arch }}.tar.gz"
       - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: release-flatpak-${{ matrix.arch }}
