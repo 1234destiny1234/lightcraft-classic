@@ -183,7 +183,7 @@ fn fields(s: &Session, id: PhotoId) -> BTreeMap<String, String> {
     put("rating", if p.rating > 0 { "★".repeat(usize::from(p.rating.min(5))) } else { String::new() });
     put("iso", m.iso.map(|i| format!("ISO {i}")).unwrap_or_default());
     put("aperture", m.aperture.filter(|a| a.is_finite()).map(|a| format!("f/{a:.1}")).unwrap_or_default());
-    put("shutter", if m.shutter.is_empty() { String::new() } else { format!("{} s", m.shutter) });
+    put("shutter", if m.shutter.is_empty() || m.shutter.ends_with('″') { m.shutter.clone() } else { format!("{} s", m.shutter) });
     put("focal", m.focal_mm.filter(|a| a.is_finite()).map(|a| format!("{a:.0} mm")).unwrap_or_default());
     f
 }

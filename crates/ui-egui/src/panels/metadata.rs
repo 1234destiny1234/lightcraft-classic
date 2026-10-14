@@ -169,7 +169,7 @@ pub fn value(p: &Photo, key: &str) -> String {
             if p.develop.orientation.swaps_axes() { format!("{h} × {w}") } else { format!("{w} × {h}") }
         }
         "exposure" => {
-            let shutter = (!m.shutter.is_empty()).then(|| format!("{} sec", m.shutter));
+            let shutter = (!m.shutter.is_empty()).then(|| if m.shutter.ends_with('″') { m.shutter.clone() } else { format!("{} sec", m.shutter) });
             let f = m.aperture.map(|a| format!("f / {a:.1}").replace(".0", ""));
             [shutter, f].into_iter().flatten().collect::<Vec<_>>().join(" at ")
         }

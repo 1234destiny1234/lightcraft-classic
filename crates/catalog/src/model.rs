@@ -152,10 +152,11 @@ impl CopyrightStatus {
     }
 }
 
-/// A shutter speed as cameras write it (`1/250`, `0.5`, `2"`, `30s`) in seconds; `None` for
-/// anything that isn't a positive, finite time.
+/// A shutter speed as cameras write it (`1/250`, `0.5`, `2″`, `2"`, `30s`) in seconds; `None` for
+/// anything that isn't a positive, finite time. Both primes of a whole second parse: `″` (U+2033) is what
+/// [`lcc_meta::Metadata::exposure_display`] writes into the catalog, `"` what a user types.
 pub fn parse_shutter_seconds(s: &str) -> Option<f64> {
-    let s = s.trim().trim_end_matches(['s', '"']).trim();
+    let s = s.trim().trim_end_matches(['s', 'S']).trim().trim_end_matches(['″', '"', '\'', '”']).trim();
     match s.split_once('/') {
         Some((n, d)) => Some(n.trim().parse::<f64>().ok()? / d.trim().parse::<f64>().ok()?),
         None => s.parse().ok(),
