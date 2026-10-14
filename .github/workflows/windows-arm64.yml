@@ -1,5 +1,5 @@
-# Windows on ARM: package the ARM64 release the way release.yml does (cross-compiled on an x64
-# runner, unsigned here), then install that MSI on a Windows 11 ARM64 runner, check the installed
+# Windows on ARM: package the ARM64 release the way release.yml does (built natively on the
+# self-hosted Windows on ARM runner, unsigned here), then install that MSI on a Windows 11 ARM64 runner, check the installed
 # binaries are ARM64, run the CLI natively, and uninstall. (A native ARM64 `cargo test` job is left
 # out for now: PdfCraft saw an intermittent access violation in egui UI tests there.)
 name: Windows ARM64
@@ -32,20 +32,72 @@ env:
 
 jobs:
   package:
-    name: package (cross-compiled on x64)
-    runs-on: windows-latest
-    timeout-minutes: 90
+    name: package (native ARM64)
+    # Self-hosted Windows on ARM runner (SNAPDRAGON): Visual Studio Build Tools with the ARM64 MSVC tools
+    # and Windows SDK, so it builds natively. win0 (x64) has no ARM64 MSVC tools. See docs/ci.md.
+    runs-on: [self-hosted, Windows, ARM64, lcc]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Low priority, persistent build cache
+        shell: pwsh
+        run: |
+          # `bash` steps need Git Bash, not the WSL launcher in System32 (SNAPDRAGON's PATH finds that first)
+          $gitBash = 'C:\Program Files\Git\bin'
+          if (Test-Path "$gitBash\bash.exe") { Add-Content -Path $env:GITHUB_PATH -Value $gitBash }
+          Get-Process -Name Runner.Worker -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'BelowNormal' }
+          # a short path: rc.exe fails on long ones (under LocalSystem, LOCALAPPDATA is deep in System32)
+          if (-not $env:CARGO_TARGET_DIR) {
+            $dir = "C:\lcc-ci\target-$env:RUNNER_NAME"
+            New-Item -ItemType Directory -Force $dir | Out-Null
+            Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$dir"
+          }
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: aarch64-pc-windows-msvc
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
+      # The runner account can't write to Program Files: the .NET SDK and WiX go into the runner's own
+      # tool cache.
+      - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
         with:
-          key: windows-arm64-package
+          dotnet-version: 8.0.x
       - name: Install WiX
         shell: pwsh
-        run: dotnet tool install --global wix --version 5.0.2
+        run: |
+          $tools = Join-Path $env:RUNNER_TOOL_CACHE 'wix-5.0.2'
+          if (-not (Test-Path (Join-Path $tools 'wix.exe'))) { dotnet tool install --tool-path $tools wix --version 5.0.2 }
+          Add-Content -Path $env:GITHUB_PATH -Value $tools
+      - name: Clang for ring (ARM64 only; kept in the runner tool cache)
+        if: runner.arch == 'ARM64'
+        # ring's aarch64-pc-windows-msvc build needs clang, which Visual Studio's ARM64 tools lack. LLVM's
+        # portable build is unpacked into the tool cache once (nothing installed or registered).
+        shell: pwsh
+        env:
+          LLVM_VERSION: 23.1.3
+        run: |
+          $ErrorActionPreference = 'Stop'
+          $root = Join-Path $env:RUNNER_TOOL_CACHE "llvm-$env:LLVM_VERSION-arm64-portable"
+          $clang = Get-ChildItem $root -Recurse -Filter clang.exe -ErrorAction SilentlyContinue | Select-Object -First 1
+          if (-not $clang) {
+            # the portable tarball: msiexec is off limits to the runner account (error 1601)
+            $name = "clang+llvm-$env:LLVM_VERSION-aarch64-pc-windows-msvc"
+            New-Item -ItemType Directory -Force $root | Out-Null
+            $ok = $false
+            foreach ($ext in 'tar.zst', 'tar.xz') {
+              $tarball = Join-Path $env:RUNNER_TEMP "llvm.$ext"
+              Invoke-WebRequest -UseBasicParsing -OutFile $tarball "https://github.com/llvm/llvm-project/releases/download/llvmorg-$env:LLVM_VERSION/$name.$ext"
+              tar -xf $tarball -C $root
+              $code = $LASTEXITCODE
+              Remove-Item $tarball -Force
+              if ($code -eq 0) { $ok = $true; break }
+              Write-Output "tar could not unpack .$ext (exit $code)"
+            }
+            if (-not $ok) { throw "could not unpack LLVM" }
+            $clang = Get-ChildItem $root -Recurse -Filter clang.exe | Select-Object -First 1
+          }
+          Write-Output "clang: $($clang.FullName)"
+          Add-Content -Path $env:GITHUB_PATH -Value $clang.DirectoryName
       - name: Build and package (unsigned)
         shell: pwsh
         env:
@@ -61,7 +113,8 @@ jobs:
   install:
     name: install and run on ARM64
     needs: package
-    runs-on: windows-11-arm
+    # Self-hosted Windows on ARM runner (SNAPDRAGON).
+    runs-on: [self-hosted, Windows, ARM64, lcc]
     timeout-minutes: 30
     steps:
       # for brand.toml and packaging/windows/brand.ps1 (the product name lives only there)

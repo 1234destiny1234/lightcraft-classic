@@ -140,6 +140,8 @@ fn wait_runs_the_editor_and_reloads() {
     std::fs::write(&script, format!("#!/bin/sh\nfor f; do :; done\ncp '{}' \"$f\"\nexit 0\n", other.display())).unwrap();
     std::fs::set_permissions(&script, std::fs::Permissions::from_mode(0o755)).unwrap();
     let mut s = session(&dir);
+    // this test runs a real stand-in editor script
+    s.desktop = std::sync::Arc::new(crate::desktop::System);
     let ia = import(&mut s, &a);
     let r = s
         .execute(
