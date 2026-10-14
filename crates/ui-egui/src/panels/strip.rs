@@ -28,19 +28,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 if icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked() {
                     let _ = app.run("panel.presets", json!({}));
                 }
-                // the module's right group in the user's order, then the other panels (Library offers
-                // the editing tools as a way into Develop)
-                let mut order = crate::module::right_group(app);
-                for p in crate::module::get(crate::module::ModuleId::Develop).right_panels() {
-                    if !order.contains(p) && !app.ui.hidden_panels.contains(p) {
-                        order.push(*p);
-                    }
-                }
-                let group = order.len().min(crate::module::get(app.ui.module).right_panels().len());
-                for (i, p) in order.iter().enumerate() {
-                    if i == group && i > 0 {
-                        separator(ui, &t);
-                    }
+                // only the active module's tools: Keywords and Info are Library's (its Keywording and
+                // Metadata panels), so they stay out of Develop's strip and are reached through the
+                // Window menu and their shortcuts
+                let order: Vec<_> = crate::module::right_group(app).into_iter().filter(|p| in_strip(app.ui.module, *p)).collect();
+                for p in &order {
                     let Some((id, icon, panel, tip, needs_photo)) = entry(*p) else { continue };
                     let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
                     let video = crate::video_ui::blocked(app, &format!("panel.{id}"));
@@ -58,6 +50,14 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 }
             });
         });
+}
+
+/// Whether a right-group panel gets a strip button in `module` (Lightroom Classic shows only the
+/// active module's tools).
+pub(crate) fn in_strip(module: crate::module::ModuleId, p: crate::module::PanelId) -> bool {
+    use crate::module::PanelId as P;
+    let library_only = matches!(p, P::Keywords | P::Info);
+    !(module == crate::module::ModuleId::Develop && library_only) && entry(p).is_some()
 }
 
 /// The strip button of a right-group panel: (widget id, icon, panel, tooltip, needs a photo).
