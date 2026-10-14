@@ -715,9 +715,10 @@ fn cell(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
         let name = match app.ui.grid_info.as_str() {
             "exposure" => {
                 let parts: Vec<String> = [
-                    // whole seconds read "8 s"; fractions as written ("1/250")
-                    (!m.shutter.is_empty())
-                        .then(|| if m.shutter.contains('/') || m.shutter.ends_with('s') { m.shutter.clone() } else { format!("{} s", m.shutter) }),
+                    // whole seconds read "8 s"; the camera notation (1/250, 1.3″) already carries its unit
+                    (!m.shutter.is_empty()).then(|| {
+                        if m.shutter.contains('/') || m.shutter.ends_with(['s', '″']) { m.shutter.clone() } else { format!("{} s", m.shutter) }
+                    }),
                     m.aperture.map(|a| format!("f/{a:.1}").replace(".0", "")),
                     m.iso.map(|i| format!("ISO {i}")),
                     m.focal_mm.map(|f| format!("{f:.0} mm")),
