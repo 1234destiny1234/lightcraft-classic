@@ -152,6 +152,8 @@ fn a_manual_install_never_quits_the_app() {
     let dir = Scratch::new("manual");
     let mut h = app();
     let file = offer(&mut h, &dir, "9.9.9", lcc_engine::update::Kind::Archive);
+    let desktop = std::sync::Arc::new(lcc_engine::desktop::Recorder::default());
+    h.app.session.desktop = desktop.clone();
     ask(&mut h, "ui.menu.invoke", json!({"id": "app.checkForUpdates"}));
     h.step();
     // the archive path is a manual install: it shows the file and stays open
@@ -163,6 +165,8 @@ fn a_manual_install_never_quits_the_app() {
     let installed = h.app.session.updater.installed().expect("an outcome");
     assert!(!installed.exit);
     assert!(installed.message.contains("Quit the app"), "{}", installed.message);
+    // the file is shown through the session's desktop, never by starting the real file manager
+    assert_eq!(desktop.requests(), vec![lcc_engine::desktop::Request::Reveal(file.clone())]);
 }
 
 #[test]

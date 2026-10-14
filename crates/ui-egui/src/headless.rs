@@ -276,6 +276,8 @@ impl Headless {
         let (tx, rx) = std::sync::mpsc::channel();
         let mut app = app.with_control(rx);
         app.headless_host = true;
+        // a headless run never opens the file manager or starts other programs
+        app.session.desktop = std::sync::Arc::new(lcc_engine::desktop::Recorder::default());
         Headless {
             app,
             view: HeadlessView::new(),

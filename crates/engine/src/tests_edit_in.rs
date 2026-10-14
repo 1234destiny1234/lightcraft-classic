@@ -227,3 +227,22 @@ fn actions_record_parameterise_and_play_on_a_selection() {
     assert!(again.execute("actions.stop", &json!({})).is_err(), "not recording");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Handing a file to its editor goes through the session's desktop: a test session records the
+/// launch instead of starting a real program.
+#[test]
+fn launching_the_editor_goes_through_the_desktop_seam() {
+    let dir = temp_dir("launch");
+    let src = dir.join("pic.png");
+    write_png(&src, 3, 16, 16);
+    let mut s = session(&dir);
+    let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
+    s.desktop = desktop.clone();
+    let _ = import(&mut s, &src);
+    let r = s.execute("photo.editIn", &json!({"mode": "copy", "launch": true})).unwrap();
+    assert_eq!(r["opened"], json!("launched"), "{r}");
+    let path = r["path"].as_str().unwrap().to_string();
+    let calls = desktop.requests();
+    assert!(matches!(calls.as_slice(), [crate::desktop::Request::Launch(line)] if line.contains(&path)), "{calls:?}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

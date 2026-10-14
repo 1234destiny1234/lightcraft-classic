@@ -655,13 +655,16 @@ fn hand_over(s: &mut Session, pr: &EditorPreset, path: &Path, edited: u64, p: &V
         let line = editor::wait_command_line(&pr.app, &pr.args, path, caps);
         let who = if pr.name.is_empty() { pr.app.clone() } else { pr.name.clone() };
         let task = s.activity.start("editIn", &format!("Editing in {who}…"), crate::activity::Cancel::No);
-        let saved = editor::run_and_wait(&line).map_err(|e| bad(cmd, format!("couldn't start the editor: {e}")));
+        let saved = s.desktop.run_and_wait(&line).map_err(|e| bad(cmd, format!("couldn't start the editor: {e}")));
         drop(task);
         let saved = saved?;
         let r = s.execute("photo.reload", &json!({"ids": [edited]}))?;
         return Ok(json!({"waited": true, "saved": saved, "reloaded": r["reloaded"]}));
     }
-    launch(&pr.app, &pr.args, path).map(|_| json!("launched")).map_err(|e| bad(cmd, format!("couldn't start the editor: {e}")))
+    s.desktop
+        .launch(&command_line(&pr.app, &pr.args, path))
+        .map(|_| json!("launched"))
+        .map_err(|e| bad(cmd, format!("couldn't start the editor: {e}")))
 }
 
 /// The command line that opens `path` in `app` with `args`.
@@ -697,18 +700,6 @@ pub fn command_line(app: &str, args: &[String], path: &Path) -> Vec<String> {
         v.push(file);
     }
     v
-}
-
-#[cfg(not(target_arch = "wasm32"))]
-fn launch(app: &str, args: &[String], path: &Path) -> std::result::Result<(), String> {
-    let line = command_line(app, args, path);
-    let (prog, rest) = line.split_first().ok_or("no program")?;
-    std::process::Command::new(prog).args(rest).spawn().map(|_| ()).map_err(|e| format!("{prog}: {e}"))
-}
-
-#[cfg(target_arch = "wasm32")]
-fn launch(_: &str, _: &[String], _: &Path) -> std::result::Result<(), String> {
-    Err("not available in the browser".into())
 }
 
 /// Ask a PhotoCraft running with `--control` to open `path` (`auth`, then `app.open` with the path

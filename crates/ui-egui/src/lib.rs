@@ -519,6 +519,10 @@ pub struct LccApp {
 
 impl LccApp {
     pub fn new(mut session: Session, services: Services) -> Self {
+        if cfg!(test) {
+            // unit tests never open the file manager or start other programs
+            session.desktop = std::sync::Arc::new(lcc_engine::desktop::Recorder::default());
+        }
         // AI mask requests run on the model's worker; frames apply their results (never wait)
         session.segmenter.background = true;
         Self {

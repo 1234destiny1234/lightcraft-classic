@@ -121,19 +121,6 @@ pub fn wait_command_line(app: &str, args: &[String], path: &Path, caps: Caps) ->
     line
 }
 
-/// Start the editor and block until it exits. → whether it reported a save (exit code 0)
-#[cfg(not(target_arch = "wasm32"))]
-pub fn run_and_wait(line: &[String]) -> Result<bool, String> {
-    let (prog, rest) = line.split_first().ok_or("no program")?;
-    let status = std::process::Command::new(prog).args(rest).stdin(std::process::Stdio::null()).status().map_err(|e| format!("{prog}: {e}"))?;
-    Ok(status.success())
-}
-
-#[cfg(target_arch = "wasm32")]
-pub fn run_and_wait(_: &[String]) -> Result<bool, String> {
-    Err("not available in the browser".into())
-}
-
 /// One event from the editor.
 #[derive(Clone, Debug, PartialEq)]
 pub enum EditorEvent {
