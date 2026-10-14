@@ -53,6 +53,7 @@ struct Probe {
     ramp: Option<egui::TextureId>,
     until: Instant,
     last: Option<Option<f32>>,
+    closing: bool,
 }
 
 fn describe(state: &RenderState, log: &mut Log) {
@@ -131,10 +132,11 @@ impl eframe::App for Probe {
                 );
             }
         });
-        if left.is_zero() {
+        if left.is_zero() && !self.closing {
+            self.closing = true;
             self.log.line("done".into());
             ui.ctx().send_viewport_cmd(egui::ViewportCommand::Close);
-        } else {
+        } else if !self.closing {
             ui.ctx().request_repaint_after(Duration::from_millis(250));
         }
     }
@@ -172,7 +174,7 @@ pub fn run(seconds: u64, log_dir: Option<std::path::PathBuf>) -> eframe::Result 
                     None
                 }
             };
-            Ok(Box::new(Probe { log, hdr, ramp: None, until, last: None }))
+            Ok(Box::new(Probe { log, hdr, ramp: None, until, last: None, closing: false }))
         }),
     )
 }
