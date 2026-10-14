@@ -1667,3 +1667,129 @@ fn importing_suspected_duplicates_adds_copies_when_asked() {
     assert_eq!(s.catalog.len(), 1, "restored, not copied");
     let _ = std::fs::remove_dir_all(&src);
 }
+
+/// A raw beside a sidecar as Lightroom Classic / Camera Raw write it (xpacket wrapper, one
+/// `rdf:Description` holding attributes and child elements): rating, label, crop and develop
+/// sliders all arrive on import, in Add and in Copy mode (issue #43).
+#[test]
+fn raw_with_lightroom_sidecar_imports_rating_label_crop_and_develop() {
+    use lcc_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, Samples, encode_jpeg};
+    let src = temp_dir("lr-sidecar");
+    let nef = {
+        let px: Vec<u8> = (0..60 * 40).flat_map(|i| [(i % 251) as u8, 90, 200]).collect();
+        let j = encode_jpeg(&EncodeImage::new(60, 40, 3, Samples::U8(&px)), 90, ChromaSubsampling::S444, &EncodeMeta::default()).unwrap();
+        let off = 8 + 2 + 24 + 4;
+        let mut f = b"II*\0\x08\0\0\0\x02\0".to_vec();
+        for (tag, v) in [(513u16, off as u32), (514, j.len() as u32)] {
+            f.extend_from_slice(&tag.to_le_bytes());
+            f.extend_from_slice(&[4, 0, 1, 0, 0, 0]);
+            f.extend_from_slice(&v.to_le_bytes());
+        }
+        f.extend_from_slice(&[0, 0, 0, 0]);
+        f.extend_from_slice(&j);
+        f
+    };
+    std::fs::write(src.join("DSC_0001.NEF"), nef).unwrap();
+    let xmp = r#"<?xpacket begin="﻿" id="W5M0MpCehiHzreSzNTczkc9d"?>
+<x:xmpmeta xmlns:x="adobe:ns:meta/" x:xmptk="Adobe XMP Core 7.0-c000 1.000000, 0000/00/00-00:00:00        ">
+ <rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about=""
+    xmlns:xmp="http://ns.adobe.com/xap/1.0/"
+    xmlns:tiff="http://ns.adobe.com/tiff/1.0/"
+    xmlns:exif="http://ns.adobe.com/exif/1.0/"
+    xmlns:dc="http://purl.org/dc/elements/1.1/"
+    xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+   xmp:ModifyDate="2026-09-01T10:00:00+10:00"
+   xmp:Rating="4"
+   xmp:Label="Red"
+   tiff:Make="NIKON CORPORATION"
+   crs:Version="17.0"
+   crs:ProcessVersion="15.4"
+   crs:WhiteBalance="As Shot"
+   crs:Exposure2012="+0.75"
+   crs:Contrast2012="+20"
+   crs:Shadows2012="+30"
+   crs:HasSettings="True"
+   crs:CropTop="0.1"
+   crs:CropLeft="0.2"
+   crs:CropBottom="0.9"
+   crs:CropRight="0.8"
+   crs:CropAngle="2"
+   crs:CropConstrainToWarp="0"
+   crs:HasCrop="True"
+   crs:AlreadyApplied="False">
+   <dc:subject>
+    <rdf:Bag>
+     <rdf:li>beach</rdf:li>
+    </rdf:Bag>
+   </dc:subject>
+   <crs:ToneCurvePV2012>
+    <rdf:Seq>
+     <rdf:li>0, 0</rdf:li>
+     <rdf:li>255, 255</rdf:li>
+    </rdf:Seq>
+   </crs:ToneCurvePV2012>
+  </rdf:Description>
+ </rdf:RDF>
+</x:xmpmeta>
+<?xpacket end="w"?>"#;
+    std::fs::write(src.join("DSC_0001.xmp"), xmp).unwrap();
+    let dest = temp_dir("lr-sidecar-dest");
+    for args in
+        [json!({"paths": [src.to_string_lossy()]}), json!({"paths": [src.to_string_lossy()], "mode": "copy", "destination": dest.to_string_lossy()})]
+    {
+        let mut s = Session::new().with_fs();
+        let r = s.execute("library.import", &args).unwrap();
+        assert_eq!(ids(&r, "imported"), 1, "{r}");
+        assert_eq!(r["sidecars"], 1, "{r}");
+        let p = s.catalog.photos().next().unwrap();
+        assert_eq!(p.rating, 4, "{args}");
+        assert_eq!(p.label, Some(lcc_catalog::ColorLabel::Red), "{args}");
+        assert!(p.meta.keywords.iter().any(|k| k == "beach"));
+        let d = p.develop.to_json();
+        assert_eq!(d["light"]["exposure"], 0.75, "{d}");
+        assert_eq!(d["light"]["contrast"], 20.0, "{d}");
+        let c = &d["crop"]["geometry"];
+        assert!((c["rect"]["x0"].as_f64().unwrap() - 0.2).abs() < 1e-6, "{c}");
+        assert!((c["rect"]["y1"].as_f64().unwrap() - 0.9).abs() < 1e-6, "{c}");
+        assert!((c["angle"].as_f64().unwrap() - 2.0).abs() < 1e-6, "{c}");
+    }
+    // the user's own later edits survive a folder sync: the sidecar is older than them, so it is
+    // not read again over them
+    for (args, folder) in [
+        (json!({"paths": [src.to_string_lossy()]}), src.clone()),
+        (json!({"paths": [src.to_string_lossy()], "mode": "copy", "destination": dest.to_string_lossy(), "organize": "flat"}), dest.clone()),
+    ] {
+        let _ = std::fs::remove_dir_all(&dest);
+        let mut s = Session::new().with_fs().with_system_clock();
+        s.execute("library.import", &args).unwrap();
+        let id = s.catalog.photos().next().unwrap().id;
+        s.execute("library.select", &json!({"ids": [id.0]})).unwrap();
+        s.execute("photo.rate", &json!({"rating": 1})).unwrap();
+        s.execute("develop.set", &json!({"control": "light.exposure", "value": -1.0})).unwrap();
+        assert_eq!(s.catalog.photo(id).unwrap().rating, 1);
+        std::thread::sleep(std::time::Duration::from_millis(1100));
+        s.execute("folder.synchronize", &json!({"path": folder.to_string_lossy(), "readMetadata": true})).unwrap();
+        let p = s.catalog.photo(id).unwrap();
+        assert_eq!(p.rating, 1, "a re-read must not undo the user's rating");
+        assert_eq!(p.develop.to_json()["light"]["exposure"], -1.0, "nor their develop edits");
+    }
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&dest);
+
+    // malformed sidecars never panic and never stop the photo from coming in
+    for bad in [
+        "",
+        "<x:xmpmeta",
+        "<rdf:RDF><rdf:Description xmp:Rating=\"NaN\" crs:HasCrop=\"True\" crs:CropLeft=\"inf\" crs:CropRight=\"-1e309\"/>",
+        "\u{0}\u{feff}<<<>>>",
+    ] {
+        let dir = temp_dir("bad-sidecar");
+        write_png(&dir.join("b.png"), 3);
+        std::fs::write(dir.join("b.xmp"), bad).unwrap();
+        let mut s = Session::new().with_fs();
+        let r = s.execute("library.import", &json!({"paths": [dir.to_string_lossy()]})).unwrap();
+        assert!(ids(&r, "imported") >= 1, "{bad:?}: {r}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+}
