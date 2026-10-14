@@ -199,7 +199,7 @@ mod in_the_loupe {
         h.settle(SETTLE);
         let id = h.app.session.active().expect("a photo");
         let d = h.app.session.develop_of(id).expect("settings");
-        assert!(matches!(crate::panels::detail::view_overlay(&h.app, &d), lcc_pipeline::Overlay::Mask { .. }), "the mask overlay is shown");
+        assert!(matches!(crate::panels::detail::view_overlay(&h.app, &d, false), lcc_pipeline::Overlay::Mask { .. }), "the mask overlay is shown");
         assert_eq!((h.app.ui.zoom, h.app.ui.pan), (zoom, pan), "showing the overlay keeps zoom and pan");
         let main = rendered_long_edge(&h);
         assert!(main <= 2560 && main < native, "native {native}: the whole-frame render is {main}");

@@ -80,6 +80,8 @@ mod tests_catalog_ui;
 #[cfg(test)]
 mod tests_classic;
 #[cfg(test)]
+mod tests_clipping;
+#[cfg(test)]
 mod tests_compare;
 #[cfg(test)]
 mod tests_copy_paste_dialogs;
