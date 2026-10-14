@@ -95,7 +95,7 @@ jobs:
     defaults:
       run:
         # low priority: mac0 is also used interactively
-        shell: nice -n 19 taskpolicy -b bash -e {0}
+        shell: nice -n 19 bash -e {0}
     env:
       PACKAGE_VERSION: ${{ needs.version.outputs.version }}
       BUILD_DATE: ${{ needs.version.outputs.date }}
@@ -352,6 +352,9 @@ jobs:
   flatpak:
     name: Flatpak ${{ matrix.arch }}
     needs: [version, linux]
+    # Off while the repo variable RELEASE_FLATPAK is 'false' (the container smoke test can't reach a D-Bus
+    # session yet); on otherwise.
+    if: vars.RELEASE_FLATPAK != 'false'
     # Repackages the Linux job's tarball (the same binaries as the AppImage/deb/rpm); no Rust
     # build here. Self-hosted gpu0, in an Ubuntu 24.04 container (flatpak-builder 1.4); privileged,
     # because flatpak-builder and `flatpak run` sandbox with bubblewrap. The Flathub runtime and SDK
@@ -389,9 +392,11 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates flatpak flatpak-builder librsvg2-common appstream git dbus
       - name: Build the Flatpak bundle
-        # `flatpak run` (the bundle's smoke test) needs a session bus and a runtime dir, which the
-        # container lacks
+        # `flatpak run` (the bundle's smoke test) needs a system bus (else "Could not connect: No such
+        # file or directory"), a session bus and a runtime dir, none of which the container has.
         run: |
+          mkdir -p /run/dbus
+          dbus-daemon --system --fork
           XDG_RUNTIME_DIR="$(mktemp -d)"
           export XDG_RUNTIME_DIR
           dbus-run-session -- packaging/linux/flatpak-bundle.sh "dist/linux/${{ needs.version.outputs.binary }}-$PACKAGE_VERSION-linux-${{ matrix.arch }}.tar.gz"
