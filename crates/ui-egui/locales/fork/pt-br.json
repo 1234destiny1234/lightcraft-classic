@@ -1315,5 +1315,8 @@
   "Remove from Quick Collection": "Remover da coleção rápida",
   "Add to Target Collection": "Adicionar à coleção de destino",
   "Remove from Target Collection": "Remover da coleção de destino",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "A saída HDR na tela ainda não está disponível: esta janela mostra a versão SDR, mesmo em uma tela HDR. As exportações HDR mantêm todo o intervalo."
+  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "A saída HDR na tela ainda não está disponível: esta janela mostra a versão SDR, mesmo em uma tela HDR. As exportações HDR mantêm todo o intervalo.",
+  "Wheel scroll speed": "Velocidade de rolagem da roda",
+  "Fast": "Rápida",
+  "Fastest": "Muito rápida"
 }
