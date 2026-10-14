@@ -366,8 +366,11 @@ const FIT_PREVIEW_MAX_PIXELS: u64 = 128_000_000;
 /// and per proxy pixel whether any sensor sample it covers is clipped.
 fn proxies(raw: &RawImage, bytes: &[u8], transform: &CameraTransform, size: usize) -> Option<(Rgb32f, Rgb32f, Vec<bool>)> {
     let edge = (2 * size).max(384) as u32;
-    let decoded =
-        crate::files::decode_raw_preview(bytes, lcc_codecs::DecodeOptions { max_size: Some((edge, edge)), max_pixels: FIT_PREVIEW_MAX_PIXELS })?;
+    let decoded = crate::files::decode_raw_preview(
+        bytes,
+        lcc_codecs::DecodeOptions { max_size: Some((edge, edge)), max_pixels: FIT_PREVIEW_MAX_PIXELS },
+        None,
+    )?;
     let mut reference = decoded.to_working();
     let (a, crop) = (raw.active_area, raw.crop.clipped(raw.active_area.width, raw.active_area.height));
     if crop.width == 0 || crop.height == 0 || reference.width == 0 || reference.height == 0 {

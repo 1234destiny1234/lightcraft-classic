@@ -1,28 +1,94 @@
 //! Where the app keeps per-user data on this machine: the config folder (app settings, camera
 //! profiles, face and denoise models).
 //!
+//! [`config_dir`] picks it, in order:
+//! 1. `$<PREFIX>_CONFIG_DIR`, when set (tests, agents, custom setups).
+//! 2. **Portable mode**: a marker file ([`portable_markers`]) beside the executable puts everything in
+//!    `<exe dir>/<settings dir>Data` ([`portable_data_dir`]), so a copy on a USB stick leaves nothing in the
+//!    user profile. If that folder can't be written (read-only medium, Program Files), a warning is logged and
+//!    the platform folder is used.
+//! 3. The platform convention ([`lcc_brand::settings_dir`]).
+//!
 //! Hosts that have a file system (the desktop app, the CLI, the MCP server) share these defaults so a model
 //! installed from one is there for the others. Nothing here is applied automatically: a [`Session`] has no
 //! face-, denoise- or SAM 3 model folder until a host asks for one ([`Session::with_default_face_models`],
 //! [`Session::with_default_denoise_models`], [`Session::with_default_sam3_model`]), so tests stay hermetic.
 
 use std::ffi::OsString;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
+use std::sync::OnceLock;
 
 use crate::Session;
 
-/// The app's settings folder ([`lcc_brand::settings_dir`]). A nonempty `$<PREFIX>_CONFIG_DIR` overrides
-/// the platform default. The override is the complete directory; no application-name suffix is appended.
-/// An explicitly empty value disables the settings directory instead of falling back to a personal profile.
-pub fn config_dir() -> Option<PathBuf> {
-    config_dir_with(lcc_brand::env_os("CONFIG_DIR"), lcc_brand::settings_dir)
+/// Files beside the executable that switch on portable mode (either one; contents are ignored):
+/// `portable.txt` and `<binary>.portable`.
+pub fn portable_markers() -> [String; 2] {
+    ["portable.txt".to_owned(), format!("{}.portable", lcc_brand::BINARY)]
 }
 
-fn config_dir_with(over: Option<OsString>, default: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
+/// The data folder created beside the executable in portable mode: `<settings dir name>Data`, without spaces.
+pub fn portable_data_dir() -> String {
+    format!("{}Data", lcc_brand::SETTINGS_DIR.replace(' ', ""))
+}
+
+/// The app's settings folder ([`lcc_brand::settings_dir`]). A nonempty `$<PREFIX>_CONFIG_DIR` overrides
+/// portable mode and the platform default. The override is the complete directory; no application-name suffix
+/// is appended. An explicitly empty value disables the settings directory instead of falling back to a personal
+/// profile.
+pub fn config_dir() -> Option<PathBuf> {
+    config_dir_with(lcc_brand::env_os("CONFIG_DIR"), portable_dir, lcc_brand::settings_dir)
+}
+
+/// `portable` is asked only without an override, so an isolated run never probes beside the executable.
+fn config_dir_with(over: Option<OsString>, portable: impl FnOnce() -> Option<PathBuf>, default: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
     match over {
         Some(dir) => (!dir.is_empty()).then(|| PathBuf::from(dir)),
-        None => default(),
+        None => portable().or_else(default),
     }
+}
+
+/// This process's portable data folder, if a marker sits beside its executable and the folder can be
+/// written. Resolved once: the check creates the folder and writes a probe file.
+fn portable_dir() -> Option<PathBuf> {
+    static DIR: OnceLock<Option<PathBuf>> = OnceLock::new();
+    DIR.get_or_init(|| {
+        let exe = std::env::current_exe().ok()?;
+        match portable_dir_in(exe.parent()?) {
+            Ok(dir) => dir,
+            Err(why) => {
+                log::warn!("{why}");
+                None
+            }
+        }
+    })
+    .clone()
+}
+
+/// `<exe_dir>/<portable data dir>` when `exe_dir` holds a portable marker; `Err` says why a marked folder
+/// can't be used (the caller falls back to the platform folder).
+fn portable_dir_in(exe_dir: &Path) -> Result<Option<PathBuf>, String> {
+    let Some(marker) = portable_markers().iter().map(|m| exe_dir.join(m)).find(|p| p.is_file()) else {
+        return Ok(None);
+    };
+    let data = exe_dir.join(portable_data_dir());
+    match ensure_writable(&data) {
+        Ok(()) => Ok(Some(data)),
+        Err(e) => Err(format!(
+            "portable mode ({} found) but {} isn't writable ({e}); settings are kept in the usual folder instead",
+            marker.display(),
+            data.display()
+        )),
+    }
+}
+
+/// Create `dir` and prove a file can be written in it (a folder can exist yet be read-only).
+fn ensure_writable(dir: &Path) -> std::io::Result<()> {
+    std::fs::create_dir_all(dir)?;
+    let probe = dir.join(format!(".write-test-{}", std::process::id()));
+    std::fs::write(&probe, b"")?;
+    // A leftover probe is harmless; don't fail portable mode over it.
+    let _ = std::fs::remove_file(&probe);
+    Ok(())
 }
 
 /// Where face models are kept: `{ENV_PREFIX}_FACE_MODELS` if set, else `<config>/models`.
@@ -183,21 +249,57 @@ impl Session {
 mod config_tests {
     use super::*;
 
+    fn temp(tag: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("lcc-config-{tag}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    /// A marker beside the executable moves the settings folder next to it, ahead of the platform folder.
+    #[test]
+    fn portable_marker_puts_settings_beside_the_executable() {
+        for (i, marker) in portable_markers().iter().enumerate() {
+            let exe = temp(&format!("portable-{i}"));
+            assert_eq!(portable_dir_in(&exe), Ok(None), "no marker, no portable folder");
+            assert!(!exe.join(portable_data_dir()).exists());
+            std::fs::write(exe.join(marker), b"").unwrap();
+            let data = exe.join(portable_data_dir());
+            assert_eq!(portable_dir_in(&exe), Ok(Some(data.clone())));
+            assert!(data.is_dir());
+            assert_eq!(std::fs::read_dir(&data).unwrap().count(), 0, "the write probe is removed");
+            let found = portable_dir_in(&exe).unwrap();
+            assert_eq!(config_dir_with(None, || found, || Some(PathBuf::from("/roaming"))), Some(data));
+            let _ = std::fs::remove_dir_all(&exe);
+        }
+    }
+
+    /// A marked folder that can't hold the data folder (here: a file is in its place) is reported, not used.
+    #[test]
+    fn portable_folder_that_cannot_be_written_is_refused() {
+        let exe = temp("portable-blocked");
+        std::fs::write(exe.join("portable.txt"), b"").unwrap();
+        std::fs::write(exe.join(portable_data_dir()), b"").unwrap();
+        let why = portable_dir_in(&exe).unwrap_err();
+        assert!(why.contains("portable.txt") && why.contains(&portable_data_dir()), "{why}");
+        let _ = std::fs::remove_dir_all(&exe);
+    }
+
     #[test]
     fn config_override_wins_without_reading_user_profile() {
-        let actual = config_dir_with(Some(OsString::from("isolated/settings")), || panic!("the default is not read"));
+        let actual = config_dir_with(Some(OsString::from("isolated/settings")), || panic!("no portable probe"), || panic!("the default is not read"));
         assert_eq!(actual, Some(PathBuf::from("isolated/settings")));
     }
 
     #[test]
     fn config_empty_override_disables_profile_without_reading_defaults() {
-        assert_eq!(config_dir_with(Some(OsString::new()), || panic!("the default is not read")), None);
+        assert_eq!(config_dir_with(Some(OsString::new()), || panic!("no portable probe"), || panic!("the default is not read")), None);
     }
 
     #[test]
     fn config_unset_override_keeps_platform_defaults() {
-        assert_eq!(config_dir_with(None, || Some(PathBuf::from("/xdg/app"))), Some(PathBuf::from("/xdg/app")));
-        assert_eq!(config_dir_with(None, || None), None);
+        assert_eq!(config_dir_with(None, || None, || Some(PathBuf::from("/xdg/app"))), Some(PathBuf::from("/xdg/app")));
+        assert_eq!(config_dir_with(None, || None, || None), None);
     }
 
     #[cfg(unix)]
@@ -205,7 +307,7 @@ mod config_tests {
     fn config_override_preserves_non_unicode_paths() {
         use std::os::unix::ffi::OsStringExt as _;
         let value = OsString::from_vec(b"isolated/\xff".to_vec());
-        assert_eq!(config_dir_with(Some(value.clone()), || None), Some(PathBuf::from(value)));
+        assert_eq!(config_dir_with(Some(value.clone()), || None, || None), Some(PathBuf::from(value)));
     }
 }
 
