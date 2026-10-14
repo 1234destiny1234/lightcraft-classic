@@ -46,8 +46,17 @@ rm -f "$DIST/$NAME.zip"
 if command -v zip >/dev/null; then
   (cd "$WORK" && zip -qr9 "$DIST/$NAME.zip" "$NAME")
 else
-  # no zip (e.g. a minimal build host): Python's zipfile (deflate)
-  (cd "$WORK" && python3 -m zipfile -c "$DIST/$NAME.zip" "$NAME")
+  # no zip (e.g. a minimal build host): Python's zipfile, deflated
+  (cd "$WORK" && python3 - "$DIST/$NAME.zip" "$NAME" <<'PY'
+import os, sys, zipfile
+out, top = sys.argv[1], sys.argv[2]
+with zipfile.ZipFile(out, "w", zipfile.ZIP_DEFLATED, compresslevel=9) as z:
+    for d, _, files in os.walk(top):
+        z.write(d)
+        for f in sorted(files):
+            z.write(os.path.join(d, f))
+PY
+  )
 fi
 echo "wrote $DIST/$NAME.zip"
 ls -lh "$DIST/$NAME.zip"
