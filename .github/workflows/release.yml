@@ -95,7 +95,7 @@ jobs:
     defaults:
       run:
         # low priority: mac0 is also used interactively
-        shell: nice -n 19 taskpolicy -b bash -e {0}
+        shell: nice -n 19 bash -e {0}
     env:
       PACKAGE_VERSION: ${{ needs.version.outputs.version }}
       BUILD_DATE: ${{ needs.version.outputs.date }}
