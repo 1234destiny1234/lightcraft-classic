@@ -1224,12 +1224,20 @@
   "Will be copied": "将作为副本导入",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "其编辑、关键字和收藏夹归属将被移除；磁盘上的文件会保留。",
   "Include selected photos": "包含所选照片",
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "此显示器未显示 HDR（它是 SDR 显示器，或系统设置中已关闭 HDR），因此窗口显示 SDR 版本。HDR 导出保留完整范围。",
   "Add to Quick Collection": "添加到快速集合",
   "Remove from Quick Collection": "从快速集合中移除",
   "Add to Target Collection": "添加到目标集合",
   "Remove from Target Collection": "从目标集合中移除",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 显示输出尚不可用：即使在 HDR 显示器上，此窗口也显示 SDR 版本。HDR 导出保留完整范围。",
   "Wheel scroll speed": "滚轮滚动速度",
   "Fast": "快",
-  "Fastest": "最快"
+  "Fastest": "最快",
+  "Run face models on the CPU only": "仅在 CPU 上运行人脸模型",
+  "Detection": "检测",
+  "Recognition": "识别",
+  "Not loaded yet": "尚未加载",
+  "Checking the GPU…": "正在检查 GPU…",
+  "CPU": "CPU",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "只有检查表明 GPU 能更快给出相同结果时，人脸模型才会使用 GPU。",
+  "Checking the GPU for faces": "正在检查用于人脸的 GPU"
 }

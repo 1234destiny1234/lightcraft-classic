@@ -940,6 +940,28 @@ mod tests {
         assert_eq!(h.app.session.filter.text, "wedding", "and the library is filtered by it");
     }
 
+    /// Issue #1648: clearing the filters from the loupe's pill empties the search field too, so
+    /// the field never shows a search that is no longer applied.
+    #[test]
+    fn clearing_the_loupe_filters_empties_the_search_field() {
+        let mut h = demo([1200.0, 760.0]);
+        let t = Duration::from_secs(10);
+        h.settle(SETTLE);
+        for (method, params) in [("ui.clickWidget", json!({"id": "field:search"})), ("ui.text", json!({"text": "a"}))] {
+            let r = h.request(method, params, t);
+            assert_eq!(r["ok"], true, "{r}");
+            h.settle(SETTLE);
+        }
+        assert_eq!(h.app.session.filter.text, "a", "filtered while typing");
+        assert!(!h.app.session.visible_cloned().is_empty(), "the search finds photos, so the loupe has one to show");
+        h.request("engine.execute", json!({"command": "view.detail"}), t);
+        h.settle(SETTLE);
+        let r = h.request("ui.clickWidget", json!({"id": "loupe:filters"}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert_eq!((h.app.ui.search.as_str(), h.app.session.filter.text.as_str()), ("", ""));
+    }
+
     /// Esc in the search field gives back the search from before the edit, and the filter with it.
     #[test]
     fn escape_in_the_search_field_gives_back_the_search() {
@@ -2970,6 +2992,45 @@ mod tests {
         assert_eq!(h.app.session.undo.len(), undo0 + 1);
     }
 
+    /// A real click on a slider's value spans frames (press, then release a few frames later, as a
+    /// hand does): the field it opens stays open for typing (issues #59, upstream #1435 / #1669).
+    #[test]
+    fn a_slider_value_opens_for_typing_on_a_real_click() {
+        let mut h = demo([1300.0, 900.0]);
+        let t = Duration::from_secs(10);
+        h.request("ui.set", json!({"view": "detail", "right": "edit"}), t);
+        h.settle(SETTLE);
+        let exposure = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().light.exposure;
+        let r = h.app.widgets.iter().find(|(id, _)| id == "sliderValue:light.exposure").map(|(_, r)| *r).unwrap();
+        let at = r.center();
+        let button = |pressed| egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+        // a quick click, a usual one, one held for a second, and one whose hand shook a little
+        for (text, frames, jitter) in [("0.5", 1, 0.0), ("1,25", 4, 0.0), ("-0.75", 70, 0.0), ("0.25", 6, 2.0)] {
+            h.app.synthetic.push(egui::Event::PointerMoved(at));
+            h.app.synthetic.push(button(true));
+            for i in 0..frames {
+                if jitter > 0.0 {
+                    h.app.synthetic.push(egui::Event::PointerMoved(at + egui::vec2(if i % 2 == 0 { jitter } else { -jitter }, 0.0)));
+                }
+                h.step();
+            }
+            h.app.synthetic.push(egui::Event::PointerMoved(at));
+            h.app.synthetic.push(button(false));
+            for _ in 0..5 {
+                h.step();
+            }
+            assert_eq!(
+                h.view.ctx.memory(|m| m.focused()),
+                Some(crate::text_field::id("sliderField:light.exposure")),
+                "the field stays open after a {frames}-frame press"
+            );
+            h.request("ui.text", json!({"text": text}), t);
+            h.request("ui.key", json!({"key": "Enter"}), t);
+            let want: f64 = text.replace(',', ".").parse().unwrap();
+            assert!((exposure(&h) - want).abs() < 1e-9, "{text}: {}", exposure(&h));
+        }
+    }
+
     /// Reset takes precedence over the value being typed when its button is clicked.
     #[test]
     fn reset_button_wins_over_an_active_numeric_draft() {
@@ -3322,6 +3383,44 @@ mod tests {
         assert_eq!(h.request("ui.clickWidget", json!({"id": "button:autoSyncSwitch"}), t)["ok"], true);
         h.settle(SETTLE);
         assert!(h.app.session.auto_sync);
+    }
+
+    /// Issue #61: Shift+Cmd+S opens Synchronize Settings (also Photo ▸ Develop Settings ▸ Sync
+    /// Settings…); with only Exposure ticked the other selected photos get the exposure and nothing else.
+    #[test]
+    fn sync_settings_shortcut_syncs_only_exposure() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let photo_menu = crate::menubar::menu_bar(&h.app).into_iter().find(|(m, _)| m == "Photo").unwrap().1;
+        let in_develop_settings = photo_menu.iter().any(|n| match n {
+            crate::menubar::MenuNode::Submenu { label, children } => {
+                label == "Develop Settings"
+                    && children.iter().any(|c| matches!(c, crate::menubar::MenuNode::Item { id, .. } if id == "dialog.syncSettings"))
+            }
+            _ => false,
+        });
+        assert!(in_develop_settings, "Photo ▸ Develop Settings ▸ Sync Settings… is missing");
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
+        let exec = |h: &mut Headless, c: &str, p: Value| h.request("engine.execute", json!({"command": c, "params": p}), t);
+        exec(&mut h, "library.select", json!({"ids": ids, "active": ids[0]}));
+        exec(&mut h, "module.develop", json!({}));
+        let before: Vec<_> = ids[1..].iter().map(|id| (*h.app.session.develop_of(lcc_catalog::PhotoId(*id)).unwrap()).clone()).collect();
+        exec(&mut h, "develop.set", json!({"id": ids[0], "values": {"light.exposure": 1.25, "light.contrast": 40, "color.vibrance": 30}}));
+        h.settle(SETTLE);
+        assert_eq!(h.request("ui.key", json!({"key": "S", "cmd": true, "shift": true}), t)["ok"], true);
+        h.settle(SETTLE);
+        assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::SyncSettings { .. })), "{:?}", h.app.ui.dialog);
+        for w in ["syncGroup:none", "syncControl:light.exposure"] {
+            assert_eq!(h.request("ui.clickWidget", json!({"id": w}), t)["ok"], true, "{w}");
+            h.settle(SETTLE);
+        }
+        assert_eq!(h.request("ui.dialog.confirm", json!({}), t)["ok"], true);
+        for (id, old) in ids[1..].iter().zip(before) {
+            let mut d = (*h.app.session.develop_of(lcc_catalog::PhotoId(*id)).unwrap()).clone();
+            assert_eq!(d.light.exposure, 1.25);
+            d.light.exposure = old.light.exposure;
+            assert_eq!(d, old, "only the exposure of photo {id} changes");
+        }
     }
 
     /// Info panel → Edit Capture Time…: a time-zone shift moves the selected photos.
@@ -3722,6 +3821,40 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Importing while an album is shown (issue #1446): the new photos aren't in it, so the view
+    /// switches to All Photos with the first of them active, instead of an active photo the grid
+    /// and the filmstrip don't show.
+    #[test]
+    fn an_import_from_an_album_view_shows_the_first_new_photo() {
+        let dir = std::env::temp_dir().join(format!("lc-ui-import-show-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        for i in 0..3u8 {
+            let img = lcc_raster::Rgba8 { width: 8, height: 8, data: vec![[i * 40, 3, 9, 255]; 64] };
+            let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
+            std::fs::write(dir.join(format!("IMG_{i:02}.png")), png).unwrap();
+        }
+        let mut h = demo([1300.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let album = h.app.session.catalog.albums().find(|a| !a.folder && !a.is_smart()).map(|a| a.id.0).expect("a demo album");
+        let r = h.request("engine.execute", json!({"command": "library.source", "params": {"kind": "album", "id": album}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        let before: Vec<lcc_catalog::PhotoId> = h.app.session.catalog.photos().map(|p| p.id).collect();
+        let r = h.request("engine.execute", json!({"command": "file.addPhotos", "params": {"paths": [dir.to_string_lossy()]}}), t);
+        assert_eq!(r["result"]["scanning"], true, "{r}");
+        h.step_until(SETTLE, |h| matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })));
+        let r = h.request("ui.dialog.confirm", json!({}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        assert!(h.app.import.is_none(), "finished");
+        let active = h.app.session.selection.active.expect("a photo is active");
+        assert!(!before.contains(&active), "the active photo is a new one: {active:?}");
+        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::All);
+        assert!(h.app.session.visible_cloned().contains(&active), "the grid shows the active photo");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     /// Import dialog, copy mode: a chosen destination, one folder, renamed copies numbered across
     /// the import's batches.
     #[test]
@@ -3960,6 +4093,92 @@ mod tests {
         let img = h.snapshot(SETTLE);
         assert_eq!(img.size, [1300, 820]);
         assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::About), "switching tabs keeps the dialog open");
+    }
+
+    /// HDR display output (#47): with an HDR display, an HDR edit's loupe is drawn from its
+    /// linear float render (values above SDR white reach the window's HDR texture); an SDR
+    /// display, or an SDR edit, keeps the 8-bit loupe and uploads nothing.
+    #[test]
+    fn an_hdr_display_shows_hdr_edits_from_their_float_render() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        struct Fake(Option<f32>, Rc<RefCell<Vec<f32>>>);
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                self.0
+            }
+            fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
+                assert_eq!(rgb.len(), width * height * 3);
+                self.1.borrow_mut().push(rgb.iter().copied().fold(0.0, f32::max));
+                Ok(egui::TextureId::User(7))
+            }
+        }
+        let t = Duration::from_secs(10);
+        for (headroom, hdr_edit) in [(Some(4.0), true), (None, true), (Some(4.0), false)] {
+            let uploads = Rc::new(RefCell::new(Vec::new()));
+            let services = crate::Services { png: None, hdr_output: Some(Box::new(Fake(headroom, uploads.clone()))), ..Default::default() };
+            let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+            app.ui.view = crate::state::ViewMode::PhotoGrid;
+            let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+            h.request("ui.set", json!({"view": "detail"}), t);
+            if hdr_edit {
+                h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+                h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
+            }
+            let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+            if headroom.is_some() && hdr_edit {
+                assert!(h.step_until(SETTLE, hdr_shown), "the loupe shows the HDR texture");
+                assert!(uploads.borrow().iter().any(|m| *m > 1.0), "highlights above SDR white: {:?}", uploads.borrow());
+                assert!(!h.app.hdr_display_sdr, "no 'SDR window' note on the HDR button");
+            } else {
+                h.settle(SETTLE);
+                assert!(!hdr_shown(&h) && uploads.borrow().is_empty(), "{headroom:?} {hdr_edit}: 8-bit loupe");
+                assert_eq!(h.app.hdr_display_sdr, headroom.is_none());
+            }
+        }
+    }
+
+    /// HDR display output touches the loupe only: the navigator / filmstrip thumbnail and the
+    /// loupe's 8-bit render of an HDR edit are the same pixels with and without an HDR display
+    /// (8-bit SDR rendition, drawn at SDR white), so nothing but the loupe's HDR image can go
+    /// above SDR white.
+    #[test]
+    fn an_hdr_display_leaves_thumbnails_and_8_bit_renders_as_on_sdr() {
+        use crate::render::Slot;
+        struct Fake;
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(7))
+            }
+        }
+        let t = Duration::from_secs(10);
+        let mut seen = Vec::new();
+        for hdr in [true, false] {
+            let hdr_output: Option<Box<dyn crate::HdrOutput>> = if hdr { Some(Box::new(Fake)) } else { None };
+            let services = crate::Services { png: None, hdr_output, ..Default::default() };
+            let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+            app.ui.view = crate::state::ViewMode::PhotoGrid;
+            app.renderer.keep_pixels = true;
+            let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+            h.request("ui.set", json!({"view": "detail"}), t);
+            h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 1.5}}}), t);
+            let id = h.app.session.active().unwrap();
+            let ready = |h: &Headless| {
+                h.app.renderer.textures.get(&Slot::Thumb(id)).is_some_and(|t| t.pixels.is_some())
+                    && h.app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.pixels.is_some() && t.photo == id)
+                    && !h.app.renderer.is_pending(Slot::Main)
+            };
+            assert!(h.step_until(SETTLE, ready));
+            h.settle(SETTLE);
+            let px = |s: Slot| h.app.renderer.textures[&s].pixels.as_ref().unwrap().pixels.clone();
+            seen.push((px(Slot::Thumb(id)), px(Slot::Main)));
+        }
+        assert!(seen[0].0 == seen[1].0, "thumbnail differs with an HDR display");
+        assert!(seen[0].1 == seen[1].1, "the loupe's 8-bit render differs with an HDR display");
     }
 
     /// Settings ▸ Display / `app.displayProfile`: previews are shown through the monitor profile

@@ -83,6 +83,8 @@ pub struct HdrResult {
     pub orientation: lcc_geom::Orientation,
     pub metadata: lcc_meta::Metadata,
     pub baseline_exposure: f64,
+    /// The reference frame's lens corrections, for `radiance` ([`Frame::lens`]).
+    pub lens: Vec<lcc_raw::Opcode>,
 }
 
 #[inline]
@@ -277,6 +279,7 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         orientation: rf.orientation,
         metadata: rf.metadata.clone(),
         baseline_exposure: rf.baseline_exposure,
+        lens: rf.lens.clone(),
     })
 }
 

@@ -98,26 +98,14 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if app.ui.soft_proof {
         soft_proofing(app, ui, id);
     }
-    // header: Edit + Auto / B&W / HDR
+    // header: Edit + HDR (Classic: Auto sits in Basic ▸ Tone, the treatment above the profile)
     let mut reset_clicked = false;
     let (hr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
     ui.painter().text(pos2(hr.left() + 24.0, hr.bottom() - 10.0), Align2::LEFT_CENTER, crate::i18n::tr("Edit"), t.semibold(15.0), t.text);
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 14 }).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            // greyed out while the tone sliders still hold what Auto set (Lightroom Classic's look);
-            // any change to them makes it available again
-            let applied = app.session.auto_is_current(id);
-            let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
-            if r.clicked() {
-                let _ = app.run("develop.auto", json!({}));
-                app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
-            }
-            let bw = crate::is_bw(&d);
-            if text_button(ui, "bw", crate::i18n::tr("B&W"), bw).clicked() {
-                let _ = app.run("develop.treatment", json!({}));
-            }
-            // HDR editing, next to B&W as Lightroom has it
+            // HDR editing
             if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
                 let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
             }
@@ -151,6 +139,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         });
     }
     divider(ui);
+    // Lightroom Classic's Basic panel opens with Treatment, then Profile
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 14, bottom: 0 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr("Treatment")).font(t.font(13.0)).color(t.text_dim));
+            let bw = crate::is_bw(&d);
+            if let Some(i) = crate::widgets::segmented(ui, "treatment", &[("Color", "color"), ("Black & White", "bw")], Some(usize::from(bw)), 2)
+                && (i == 1) != bw
+            {
+                let _ = app.run("develop.treatment", json!({"bw": i == 1}));
+            }
+        });
+    });
     // profile row
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 14, bottom: 14 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -194,14 +194,24 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     divider(ui);
 
     let video = crate::video_ui::photo_is_video(app, id);
-    section(app, ui, &d, "light", "Light", |app, ui, d| {
-        // Lightroom Classic's Basic panel order: white balance, then tone
+    // Lightroom Classic's Basic panel: white balance, then Tone (with Auto), then Presence
+    section(app, ui, &d, "light", "Basic", |app, ui, d| {
         wb_rows(app, ui, d, raw);
-        sub_title(ui, crate::i18n::tr("Tone"));
+        tone_title(app, ui, id);
         crate::video_ui::video_gate(ui, video, |ui| hdr_row(app, ui, d));
         for c in ["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks"] {
             control(app, ui, d, c, true);
         }
+        ui.add_space(6.0);
+        sub_title(ui, crate::i18n::tr("Presence"));
+        // video takes no local-contrast effects
+        crate::video_ui::video_gate(ui, video, |ui| {
+            for c in ["effects.texture", "effects.clarity", "effects.dehaze"] {
+                control(app, ui, d, c, true);
+            }
+        });
+        control(app, ui, d, "color.vibrance", true);
+        control(app, ui, d, "color.saturation", true);
         ui.add_space(6.0);
         if d.hdr.enabled {
             let open = app.ui.flyout_open("sdrRendition");
@@ -227,9 +237,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.add_space(8.0);
     });
     section(app, ui, &d, "color", "Color", |app, ui, d| {
-        control(app, ui, d, "color.vibrance", true);
-        control(app, ui, d, "color.saturation", true);
-        ui.add_space(6.0);
         let open = app.ui.flyout_open("mixer");
         if flyout_row(ui, "mixer", if crate::is_bw(d) { "B&W Mixer" } else { "Color Mixer" }, Icon::Palette, open).clicked() {
             app.ui.toggle_flyout("mixer");
@@ -256,9 +263,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.add_space(8.0);
     });
     section(app, ui, &d, "effects", "Effects", |app, ui, d| {
-        for c in ["effects.texture", "effects.clarity", "effects.dehaze"] {
-            control(app, ui, d, c, true);
-        }
         sub_title(ui, crate::i18n::tr("Vignette"));
         {
             use lcc_develop::VignetteStyle as V;
@@ -465,6 +469,25 @@ fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     if let Some(id) = pick.0 {
         let _ = app.run("develop.profile", json!({"id": id}));
     }
+}
+
+/// Basic ▸ Tone's title row with Classic's Auto button at its right, greyed out while the tone sliders
+/// still hold what Auto set (any change to them makes it available again).
+fn tone_title(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    let t = Tokens::get(ui.ctx());
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 2 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            ui.label(egui::RichText::new(crate::i18n::tr("Tone")).font(t.semibold(13.0)).color(t.text_label));
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                let applied = app.session.auto_is_current(id);
+                let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
+                if r.clicked() {
+                    let _ = app.run("develop.auto", json!({}));
+                    app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
+                }
+            });
+        });
+    });
 }
 
 pub fn sub_title(ui: &mut egui::Ui, title: &str) {
@@ -908,7 +931,11 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
             "blue" => &d.curve.blue,
             _ => &d.curve.master,
         };
-        if v.is_empty() { vec![Point::new(0.0, 0.0), Point::new(1.0, 1.0)] } else { v.clone() }
+        // in the order the curve is drawn (points from a sidecar, a preset or an agent can come
+        // unsorted or not finite): the drag below keeps each point between its neighbours
+        let mut v: Vec<Point> = v.iter().copied().filter(|q| q.x.is_finite() && q.y.is_finite()).collect();
+        v.sort_by(|a, b| a.x.total_cmp(&b.x));
+        if v.len() < 2 { vec![Point::new(0.0, 0.0), Point::new(1.0, 1.0)] } else { v }
     };
     let pts = pts_of(d);
     let curve = lcc_color::spline::MonotoneCurve::new(&pts.iter().map(|q| (q.x, q.y)).collect::<Vec<_>>());
@@ -999,8 +1026,12 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
                 x = x.min(hi);
             } else if i + 1 == v.len() {
                 x = x.max(lo);
-            } else {
+            } else if lo <= hi {
                 x = x.clamp(lo, hi);
+            } else {
+                // neighbours closer than the 0.02 spacing (two clicks side by side, or points
+                // from a file) leave no room: the point stays midway (`clamp` would panic: min above max)
+                x = (v[i - 1].x + v[i + 1].x) / 2.0;
             }
             v[i] = Point::new(x, y);
             new_pts = Some(v);
@@ -1298,7 +1329,17 @@ fn wb_rows(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, raw: bool) 
     // White balance row
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 2 }).show(ui, |ui| {
         ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("White Balance")).font(t.font(13.0)).color(t.text_dim));
+            // Lightroom Classic: the selector on the left, then "WB:" and the preset menu
+            let active = app.ui.tool == "wbPicker";
+            if crate::widgets::icon_button(ui, "wbPicker", Icon::Picker, vec2(28.0, 28.0), active, true, "White Balance Selector (W)").clicked() {
+                if active {
+                    app.ui.tool.clear();
+                } else if let Err(e) = app.run("tool.wbPicker", json!({})) {
+                    // the same as W: from Compare, Survey or the grid it opens the photo in Detail
+                    app.toast(ui.ctx(), e);
+                }
+            }
+            ui.label(egui::RichText::new(crate::i18n::tr("WB:")).font(t.font(13.0)).color(t.text_dim));
             let r = crate::widgets::dropdown(ui, "wbMode", crate::i18n::tr(d.wb.mode.label()), t.font(14.0), t.text_label);
             egui::Popup::menu(&r).show(|ui| {
                 for m in WbMode::ALL {
@@ -1308,17 +1349,6 @@ fn wb_rows(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, raw: bool) 
                     if ui.selectable_label(d.wb.mode == m, m.label()).clicked() {
                         let mode = serde_json::to_value(m).unwrap_or_default();
                         let _ = app.run("develop.wb", json!({"mode": mode}));
-                    }
-                }
-            });
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let active = app.ui.tool == "wbPicker";
-                if crate::widgets::icon_button(ui, "wbPicker", Icon::Picker, vec2(28.0, 28.0), active, true, "White Balance Selector (W)").clicked() {
-                    if active {
-                        app.ui.tool.clear();
-                    } else if let Err(e) = app.run("tool.wbPicker", json!({})) {
-                        // the same as W: from Compare, Survey or the grid it opens the photo in Detail
-                        app.toast(ui.ctx(), e);
                     }
                 }
             });
@@ -1342,8 +1372,7 @@ fn hdr_button_tip(sdr_window: bool) -> String {
     if sdr_window { format!("{tip}\n\n{}", crate::i18n::tr(HDR_SDR_WINDOW_NOTE)) } else { tip.to_string() }
 }
 
-const HDR_SDR_WINDOW_NOTE: &str =
-    "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.";
+const HDR_SDR_WINDOW_NOTE: &str = "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.";
 
 /// The Light panel's HDR settings while HDR editing is on (the switch itself is the HDR button
 /// next to B&W): Visualize HDR range and the headroom limit.

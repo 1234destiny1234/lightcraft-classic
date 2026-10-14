@@ -80,7 +80,8 @@
     Program Files\<app>, or the installed version's folder on an upgrade; Change... browses, and a
     folder that can't be used (InvalidDirDlg) is refused before anything is installed. Failure and
     cancellation end on WiX's standard FatalError / UserExit dialogs. Maintenance (running the MSI
-    again, Repair/Remove from Apps) uses the standard maintenance dialogs.
+    again, Repair/Remove from Apps) uses the standard maintenance dialogs; every successful run (install, repair or remove)
+    then ends on the shared completion page.
 
     This is WixUI_InstallDir without its licence-acceptance page: the app is MIT, which asks nothing
     of people who just install and run it. Silent (/qn) and basic-UI (/passive, /qb) installs never
@@ -126,6 +127,11 @@
       <DialogRef Id="BrowseDlg" />
       <DialogRef Id="InvalidDirDlg" />
       <DialogRef Id="DiskCostDlg" />
+      <!-- Referenced by the Publish events below but never pulled in on its own: without this
+           ref the MSI ships without a completion page, so a successful install or remove ends
+           silently. The UI extension's fragment shows it on exit=success, which covers Remove
+           from Apps & features too. -->
+      <DialogRef Id="ExitDialog" />
       <DialogRef Id="VerifyReadyDlg" />
       <DialogRef Id="MaintenanceWelcomeDlg" />
       <DialogRef Id="MaintenanceTypeDlg" />

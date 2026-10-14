@@ -20,6 +20,30 @@ fn smooth(e0: f32, e1: f32, x: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Gain of the sharpening detail term (per unit of `Amount / 150`), in stops of luminance per stop of detail.
+pub const SHARPEN_GAIN: f32 = 7.0;
+
+/// Soft-clip limit (stops) of the sharpening detail term for Detail `0..=100`: 0.03 stops (large
+/// edge detail is flattened so halos stay small) up to 1.5 stops (practically linear).
+pub fn sharpen_limit(detail: f64) -> f32 {
+    let d = (detail / 100.0).clamp(0.0, 1.0) as f32;
+    0.03 * 50f32.powf(d)
+}
+
+/// The sharpening boost (stops) for pixel-scale detail `det` (log luminance minus its blur at the
+/// sharpen radius): linear for small detail, soft-clipped at `limit`, and gated by the Masking edge
+/// mask (`mask` = Masking / 100) so flat areas and noise can be left alone.
+#[inline]
+pub fn sharpen_term(det: f32, limit: f32, mask: f32) -> f32 {
+    let m = if mask > 0.0 { smooth(mask * 0.1, mask * 0.1 + 0.06, det.abs()) } else { 1.0 };
+    SHARPEN_GAIN * m * det / (1.0 + det.abs() / limit)
+}
+
+/// Whether `s` sharpens with process V4's unsharp mask (older processes boost the Texture band).
+pub fn sharpen_v4(s: &DevelopSettings) -> bool {
+    s.process.process() >= lcc_develop::Process::V4
+}
+
 /// Parametric region curve (encoded domain) composed with the master point curve.
 fn curve_luts(c: &ToneCurve) -> Option<[Lut1; 3]> {
     let parametric = c.highlights != 0.0 || c.lights != 0.0 || c.darks != 0.0 || c.shadows != 0.0;
@@ -192,8 +216,15 @@ pub struct FinishParams {
     pub dehaze: f32,
     /// Dehaze's process-V3 response ([`dehaze_v3_pixel`]) instead of V1's.
     pub dehaze_v3: bool,
+    /// Process-V4 sharpening (unsharp mask at the Radius, [`sharpen_term`]) instead of the
+    /// Texture-band boost of V1–V3.
+    pub sharpen_v4: bool,
     pub sharpen: f32,
     pub sharpen_mask: f32,
+    /// Soft-clip limit (stops) of the sharpening detail term: small damps halos (Detail 0), large keeps all (100).
+    pub sharpen_limit: f32,
+    /// 0..1: sharpening fades out as its blur radius drops under half a pixel.
+    pub sharpen_fade: f32,
     /// Airlight after and before exposure, exposure gain and EV (see [`crate::Prepared`]).
     pub air: f32,
     pub air_pre: f32,
@@ -261,9 +292,12 @@ impl FinishParams {
             clar,
             tex,
             dehaze,
-            dehaze_v3: matches!(s.process.process(), lcc_develop::Process::V3),
+            dehaze_v3: s.process.process() >= lcc_develop::Process::V3,
+            sharpen_v4: sharpen_v4(s),
             sharpen: (s.detail.sharpen_amount / 150.0) as f32,
             sharpen_mask: (s.detail.sharpen_masking / 100.0) as f32,
+            sharpen_limit: sharpen_limit(s.detail.sharpen_detail),
+            sharpen_fade: crate::local::sharpen_fade(crate::local::sharpen_sigma_raw(s, px_per_long, frame.ow.max(frame.oh))),
             air: air_pre * gain,
             air_pre,
             gain,
@@ -297,10 +331,20 @@ impl FinishParams {
 /// every arm is the SDR tone map. An HDR render keeps the camera's look through the midtones and
 /// lifts its highlights past white ([`ToneMap::camera_hdr`]), so it matches the SDR render below them.
 pub fn base_tone(s: &DevelopSettings, info: &SourceInfo, peak: f32) -> ToneMap {
+    // the SDR rendition of an HDR edit: the HDR curve, its highlights rolled off into SDR white
+    // (issue #69); SDR edits never get here (their rolloff peak is 1)
+    let rolloff = s.hdr.rolloff_peak();
+    if peak <= 1.0 && rolloff > 1.0 {
+        return base_tone_at(s, info, rolloff).sdr_rolloff(rolloff);
+    }
+    base_tone_at(s, info, peak)
+}
+
+fn base_tone_at(s: &DevelopSettings, info: &SourceInfo, peak: f32) -> ToneMap {
     let l = &s.light;
     match s.process.process() {
         // V2 changes the Highlights/Shadows base (`local::tone_base`), not the tone map
-        Process::V1 | Process::V2 | Process::V3 => match info.camera_tone.as_ref().filter(|_| info.raw) {
+        Process::V1 | Process::V2 | Process::V3 | Process::V4 => match info.camera_tone.as_ref().filter(|_| info.raw) {
             Some(curve) => ToneMap::camera_hdr(curve, l.contrast, l.whites, l.blacks, peak),
             None if info.raw => ToneMap::hdr(l.contrast, l.whites, l.blacks, peak),
             None => ToneMap::display_hdr(l.contrast, l.whites, l.blacks, peak),
@@ -397,8 +441,11 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
         tex,
         dehaze,
         dehaze_v3,
+        sharpen_v4,
         sharpen,
         sharpen_mask,
+        sharpen_limit,
+        sharpen_fade,
         air,
         air_pre,
         gain,
@@ -407,8 +454,10 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
         ..
     } = fp;
     let dehaze_v3 = *dehaze_v3;
+    let sharpen_v4 = *sharpen_v4;
     let (hl, sh, clar, tex, dehaze, sharpen, sharpen_mask, air, air_pre, gain, ev) =
         (*hl, *sh, *clar, *tex, *dehaze, *sharpen, *sharpen_mask, *air, *air_pre, *gain, *ev);
+    let (sharpen_limit, sharpen_fade) = (*sharpen_limit, *sharpen_fade);
     let terms: Vec<[f32; MASK_TERMS]> = p.masks.iter().map(|m| mask_terms(&m.adjust)).collect();
     let out_to_norm = fp.out_to_norm;
     let long = fp.ow.max(fp.oh);
@@ -524,17 +573,25 @@ pub(crate) fn finish_with<T: Copy + Default + Send>(
                 delta += cl * 0.85 * det * (0.35 + 0.65 * mid);
             }
             let tx = tex + l_tex;
-            let sp = l_sharp * 0.6 + sharpen;
-            if (tx != 0.0 || sp != 0.0)
+            // V1–V3 sharpen by boosting the Texture band; V4 has its own pixel-scale band
+            let sp_old = if sharpen_v4 { 0.0 } else { l_sharp * 0.6 + sharpen };
+            if (tx != 0.0 || sp_old != 0.0)
                 && let Some(b) = &p.texture_blur
             {
                 let det = l_pre - b.data[i];
                 let tame = 1.0 - 0.6 * smooth(0.4, 1.6, det.abs());
                 delta += tx * 1.1 * det.clamp(-1.0, 1.0) * tame;
-                if sp != 0.0 {
+                if sp_old != 0.0 {
                     let m = if sharpen_mask > 0.0 { smooth(sharpen_mask * 0.25, sharpen_mask * 0.25 + 0.15, det.abs()) } else { 1.0 };
-                    delta += sp * 1.3 * det.clamp(-0.8, 0.8) * m;
+                    delta += sp_old * 1.3 * det.clamp(-0.8, 0.8) * m;
                 }
+            }
+            // V4 sharpening (Amount and the mask brush's Sharpness): unsharp mask on the pixel-scale band
+            let sp = if sharpen_v4 { (l_sharp * 0.6 + sharpen) * sharpen_fade } else { 0.0 };
+            if sp != 0.0
+                && let Some(b) = &p.sharpen_blur
+            {
+                delta += sp * sharpen_term(l_pre - b.data[i], sharpen_limit, sharpen_mask);
             }
             // local Noise: smooth (or, negative, boost) small-amplitude detail, keep edges
             if l_noise != 0.0

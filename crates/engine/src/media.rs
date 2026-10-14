@@ -62,10 +62,21 @@ impl SettingsHashes {
 }
 
 /// Bump when the pipeline's output changes, to invalidate cached thumbnails.
-pub const RENDER_CACHE_VERSION: u64 = 62;
+pub const RENDER_CACHE_VERSION: u64 = 64;
 
 /// Thumbnails render at one of these long edges (so window/cell size changes reuse the cache).
 pub const THUMB_SIZES: [usize; 4] = [128, 256, 384, 512];
+
+/// Face tiles are rendered at a multiple of this many pixels ([`crate::Session::face_job`]): the
+/// tile's size follows the thumbnail slider and the screen's scale, and without steps every size
+/// in between would render (and cache) every face again.
+pub const FACE_EDGE_STEP: usize = 16;
+
+/// The edge a face tile asked to be `edge` pixels across is rendered at: the next
+/// [`FACE_EDGE_STEP`], 16..=512.
+pub fn face_edge(edge: usize) -> usize {
+    edge.clamp(16, SourceLevel::Thumb.max_edge()).div_ceil(FACE_EDGE_STEP).saturating_mul(FACE_EDGE_STEP).min(SourceLevel::Thumb.max_edge())
+}
 
 pub fn thumb_bucket(long_edge: usize) -> usize {
     THUMB_SIZES.iter().copied().find(|s| *s >= long_edge).unwrap_or(512)
@@ -107,6 +118,14 @@ impl SourceLevel {
 /// Pixels along the source's long edge that an output `out_long` pixels long needs: a crop shows
 /// only part of the photo, so its pixels come from a source that many times larger (the source
 /// level is chosen from this, or a tight crop shown at its own pixels would be a stretched preview).
+/// `s` without its crop box and straighten angle (flips and the aspect lock kept): what an
+/// uncropped render (the crop tool's view) depends on.
+fn without_crop(s: &DevelopSettings) -> DevelopSettings {
+    let mut s = s.clone();
+    s.crop.geometry = lcc_geom::CropGeometry::default();
+    s
+}
+
 fn source_edge_needed(p: &Photo, settings: &DevelopSettings, apply_crop: bool, out_long: usize) -> usize {
     let (w, h) = (f64::from(p.width.max(1)), f64::from(p.height.max(1)));
     let r = settings.crop.geometry.rect;
@@ -820,6 +839,9 @@ pub struct RenderJob {
     pub view_cache: Option<(Arc<PreviewCache>, Hash128)>,
     /// Render for this monitor profile ([`Self::with_display`]).
     pub display: Option<Arc<crate::display::Display>>,
+    /// A face tile that can be cut from the raw's embedded preview, tried before `source`
+    /// ([`crate::Session::face_job`]; `None` for every other job).
+    pub preview_cut: Option<crate::face_tiles::PreviewCut>,
 }
 
 pub struct RenderResult {
@@ -899,6 +921,7 @@ impl RenderJob {
         self.settings = Arc::new(s);
         self.cache = None;
         self.view_cache = None;
+        self.preview_cut = None;
         self
     }
 
@@ -952,6 +975,26 @@ impl RenderJob {
             && let Some(img) = cache.get_at(self.cache_generation, *key)
         {
             let image = Arc::unwrap_or_clone(img);
+            let histogram = Histogram::of_srgb8(&image);
+            return RenderResult {
+                request_id: self.request_id,
+                source_key: self.source_key,
+                photo: self.photo,
+                level: self.level,
+                key: self.key,
+                rendered: Ok(Rendered { image, histogram, deep: None }),
+                gpu_fallback: None,
+                loaded: None,
+                quick: None,
+                display: None,
+            };
+        }
+        // a face tile of an unedited raw: cut from the camera's embedded preview when it is big enough
+        // (the sensor data is never read for it), else rendered from `source` below
+        if let Some(image) = self.preview_cut.as_ref().and_then(|c| c.cut()) {
+            if let Some((cache, key)) = &self.cache {
+                cache.put_at(self.cache_generation, *key, Arc::new(image.clone()));
+            }
             let histogram = Histogram::of_srgb8(&image);
             return RenderResult {
                 request_id: self.request_id,
@@ -1224,6 +1267,10 @@ impl crate::Session {
         let settings = if before { Arc::new(self.before_settings(&p)) } else { p.develop.clone() };
         // a clip's poster is graded and cropped like its frames (`lcc_pipeline::grade::video_develop`)
         let settings = if p.kind == MediaKind::Video { Arc::new(lcc_pipeline::grade::video_develop(&settings)) } else { settings };
+        // the crop tool's uncropped view doesn't depend on the crop box or the straighten angle: a
+        // drag of either must not re-render it (issue #60)
+        let uncropped = !apply_crop && !settings.crop.geometry.is_identity();
+        let settings = if uncropped { Arc::new(without_crop(&settings)) } else { settings };
         let level = SourceLevel::for_size(if thumb_bucket.is_some() {
             max_w.max(max_h) // (grid thumbnails of tight crops stay cheap)
         } else {
@@ -1238,7 +1285,7 @@ impl crate::Session {
         let source_key = Hasher128::new().str(&content_key).finish();
         let content = source_key.0 as u64;
         // Temporary "before" settings must not replace the photo's cached develop hash.
-        let settings_hash = if before { settings.hash64() } else { self.media.settings_hashes.get(id, &settings) };
+        let settings_hash = if before || uncropped { settings.hash64() } else { self.media.settings_hashes.get(id, &settings) };
         let salt = self.media.denoise_salt(id, &settings);
         let key = settings_hash
             ^ ((max_w as u64) << 40)
@@ -1273,6 +1320,7 @@ impl crate::Session {
             stages: None,
             view_cache: None,
             display: None,
+            preview_cut: None,
         })
     }
 
@@ -1324,13 +1372,19 @@ impl crate::Session {
             stages: None,
             view_cache: None,
             display: None,
+            preview_cut: None,
         })
     }
 
     /// A square close-up of `face` (normalized, in the photo's upright frame) for a People card: the
     /// photo's own look with its crop replaced by a square around the face (room for hair and chin),
-    /// `edge` pixels across (≤ 512). The source level is the smallest that keeps the face sharp, up
-    /// to the preview. Cached like [`Self::variant_job`], and `key` likewise follows the content.
+    /// at least `edge` pixels across (rounded up to [`FACE_EDGE_STEP`], ≤ 512, so a tile size
+    /// between two steps reuses the cached one). An unedited raw's tile is cut from the camera's
+    /// embedded preview when that holds the square at [`crate::face_tiles::SOFT_LIMIT`] of the
+    /// size asked or more ([`crate::face_tiles`]); else, and for every other photo, the source
+    /// level is the smallest that keeps the face sharp, up to the preview. Cached (memory and the
+    /// library's thumbnail cache on disk) like [`Self::variant_job`], and `key` likewise follows
+    /// the content: a later launch shows the tile without reading the original.
     pub fn face_job(&mut self, id: PhotoId, face: lcc_geom::Rect, edge: usize) -> Option<RenderJob> {
         let p = self.catalog.photo(id)?.clone();
         // `face` is on the upright (EXIF-oriented) photo; the crop below is in the frame after the
@@ -1348,12 +1402,13 @@ impl crate::Session {
         let rect = lcc_geom::Rect { x0: x0 / w, y0: y0 / h, x1: (x0 + side) / w, y1: (y0 + side) / h };
         let mut settings = (*p.develop).clone();
         settings.crop = lcc_develop::Crop { geometry: lcc_geom::CropGeometry { rect, angle: 0.0 }, ..Default::default() };
-        let edge = edge.clamp(16, SourceLevel::Thumb.max_edge());
+        let edge = face_edge(edge);
         // pixels along the long edge that leave `edge` across the crop
         let needed = (edge as f64 * w.max(h) / side).ceil().min(SourceLevel::Preview.max_edge() as f64);
         let level = SourceLevel::for_size(needed as usize);
         let source = self.media.source_ref(&p, level);
         let ck = Self::variant_key(&p, &settings, edge);
+        let preview_cut = self.face_preview_cut(&p, rect, edge, needed as usize);
         Some(RenderJob {
             request_id: 0,
             cache_generation: self.media.rendered.generation(),
@@ -1370,7 +1425,23 @@ impl crate::Session {
             stages: None,
             view_cache: None,
             display: None,
+            preview_cut,
         })
+    }
+
+    /// How a face tile of `p` can come from its embedded preview ([`crate::face_tiles`]): only an
+    /// unedited raw (whose grid thumbnail is that preview too) not known to be offline, upright as
+    /// imported, with a preview loader installed. `rect` is the square around the face, `edge` the
+    /// tile, `needed` the source's long edge the develop render would ask for.
+    fn face_preview_cut(&self, p: &Photo, rect: lcc_geom::Rect, edge: usize, needed: usize) -> Option<crate::face_tiles::PreviewCut> {
+        let (path, loader) = self.embedded_of(p)?;
+        if p.develop.orientation != lcc_geom::Orientation::Normal || self.media.availability.is_offline(&path) || p.width == 0 || p.height == 0 {
+            return None;
+        }
+        let want = needed.max(edge).max(1);
+        let min = (want as f64 * crate::face_tiles::SOFT_LIMIT).ceil() as usize;
+        let aspect = f64::from(p.width) / f64::from(p.height);
+        Some(crate::face_tiles::PreviewCut { path, loader, want, min, rect, aspect, edge })
     }
 
     /// Size-independent cache key of a photo's view render (loupe) for its current settings.
@@ -1378,7 +1449,7 @@ impl crate::Session {
         Hasher128::new()
             .str(&pixels_key(p))
             .str("view")
-            .u64(p.develop.hash64())
+            .u64(if apply_crop { p.develop.hash64() } else { without_crop(&p.develop).hash64() })
             .u64(apply_crop as u64)
             .u64(RENDER_CACHE_VERSION)
             .u64(crate::camera_profiles::cache_key())
@@ -1540,8 +1611,10 @@ impl crate::Session {
 
     /// A first grid thumbnail for an unedited raw: the cached render for `job` (the real
     /// thumbnail job, from [`Self::thumb_job`]) if there is one — then the result carries
-    /// [`QuickSource::Cached`] and `job.key` and is final — else its embedded preview. `None` for
-    /// other photos (render them directly).
+    /// [`QuickSource::Cached`] and `job.key` and is final — else its embedded preview, else `job`
+    /// itself: the grid queues no render behind an unedited raw's quick thumbnail
+    /// ([`Self::embedded_thumb_is_final`]), so a preview that can't be read must not leave the
+    /// cell empty (issue #1448). `None` for other photos (render them directly).
     pub fn quick_thumb_job(&mut self, job: &RenderJob) -> Option<QuickJob> {
         let p = self.catalog.photo(job.photo)?.clone();
         let (path, l) = self.embedded_of(&p)?;
@@ -1552,7 +1625,7 @@ impl crate::Session {
             key: job.key,
             cached: job.cache.clone().into_iter().collect(),
             embedded: Some((path, l, edge)),
-            small: None,
+            small: Some(Box::new(job.clone())),
         })
     }
 
@@ -1742,6 +1815,27 @@ mod thumbnail_hash_tests {
         s.catalog.apply(undo).unwrap();
         s.thumb_job(PhotoId(1), 256).unwrap();
         assert_eq!(s.media.settings_hashes.computations, 3);
+    }
+    /// Issue #60: straightening or moving the crop box in the crop tool doesn't re-render its
+    /// uncropped view; the cropped view (and anything else) still changes with the crop.
+    #[test]
+    fn the_uncropped_view_ignores_the_crop_box_and_angle() {
+        let mut s = session();
+        let keys = |s: &mut crate::Session| {
+            let open = s.loupe_job(PhotoId(1), 800, 600, false).unwrap();
+            let shut = s.loupe_job(PhotoId(1), 800, 600, true).unwrap();
+            (open.key, open.view_cache.unwrap().1, shut.key)
+        };
+        let before = keys(&mut s);
+        let mut edit = (*s.catalog.photo(PhotoId(1)).unwrap().develop).clone();
+        edit.crop.geometry = lcc_geom::CropGeometry { rect: lcc_geom::Rect::new(0.2, 0.2, 0.7, 0.8), angle: 7.5 };
+        s.catalog.apply(Op::SetDevelop { id: PhotoId(1), settings: Arc::new(edit.clone()), label: "crop".into(), edited: None }).unwrap();
+        let cropped = keys(&mut s);
+        assert_eq!((before.0, before.1), (cropped.0, cropped.1), "the uncropped view is the same render");
+        assert_ne!(before.2, cropped.2, "the cropped view follows the crop");
+        edit.light.exposure = 1.0;
+        s.catalog.apply(Op::SetDevelop { id: PhotoId(1), settings: Arc::new(edit), label: "edit".into(), edited: None }).unwrap();
+        assert_ne!(keys(&mut s).0, cropped.0, "other edits still re-render it");
     }
     #[test]
     fn hash_cache_is_bounded_weak_and_shared_settings_remain_independent() {

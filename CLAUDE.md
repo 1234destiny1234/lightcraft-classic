@@ -32,7 +32,8 @@ The app is a clean-room, open-source, pure-Rust photo library + non-destructive 
    When you land a feature, update its row(s) and the gap entry in the same commit, and the numbers in `ROADMAP.md` /
    `docs/target-app-parity.md` when a listed gap closes (bump each doc's *Last updated* line and revision history, per
    craftrules `standards/progress-docs.md`); `cargo xtask parity` (part of `ci`) checks that every `cmd:`/`ctl:` id and
-   path the tracker cites still exists, and `cargo xtask parity --write` refreshes its summary.
+   path the tracker cites still exists and that `docs/gaps.md` lists each gap once, and `cargo xtask parity --write`
+   refreshes its summary.
 5. Follow the autonomous operation protocol (`plan/execution-plan.md` §7). Don't stop to ask unless §7 lists the decision as the user's.
 
 `plan/observations/` (Adobe-observation notes) is gitignored (local-only).
@@ -57,7 +58,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   "unsupported" error or is disabled. Sole exception: a provably infallible literal, as `#[allow(clippy::expect_used)]`
   + `.expect("why it can't fail")`.
 - **`unsafe` lives only in `crates/sysmem`** (one FFI call, `malloc_zone_pressure_relief`, that returns freed
-  allocator pages to macOS after raw decodes). Every other production crate root has `#![forbid(unsafe_code)]`. A new
+  allocator pages to macOS after raw decodes) **and `crates/hdrmeta`** (wgpu-hal calls on Linux / BSD: open the
+  window's Vulkan device with `VK_EXT_hdr_metadata`, and `vkSetHdrMetadataEXT` on its swapchain, so the Wayland
+  compositor shows HDR; no-op elsewhere). Every other production crate root has `#![forbid(unsafe_code)]`. A new
   unsafe need goes in an isolated, well-tested helper crate like it: `// SAFETY:` on every block, a safe API, a safe
   fallback where possible, and a line here naming it.
 - **Input-derived numbers are hostile:** `get()` instead of `[i]`/`[a..b]` for offsets from files, users, agents or

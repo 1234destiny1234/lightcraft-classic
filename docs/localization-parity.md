@@ -75,7 +75,9 @@ Target languages the app lacks: Italian, Korean, Dutch, Polish, Swedish, Norwegi
 ## Shared work before any language is `full` (counted once, ~20–35 h)
 
 - Route lower-layer error messages (catalog, raw, codecs, engine) through translatable message ids
-  instead of English `format!` strings (~12–20 h).
+  instead of English `format!` strings (~12–20 h). Translating them must not change what the app does:
+  since #1046 the interface decides on an error's kind (`lcc_engine::ErrorKind`, a download's or
+  Apple Photos import's `cancelled` flag), not its words; new decisions on an error go through a kind too.
 - A check in `cargo xtask ci` that every user-visible literal reaches a catalog (~4–8 h).
 - A user manual / help pages beyond What's New and the shortcut sheet (Lightroom links to online
   help; ~4–8 h for a translatable in-app help index).
@@ -92,4 +94,5 @@ Target languages the app lacks: Italian, Korean, Dutch, Polish, Swedish, Norwegi
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-13 | minor | Re-measured with the fork overlays (3,378 messages): 96–99% per language; AI Denoise screens translated in de, es, ja, pt-br, zh-hant; last denoise and panel-layout strings in zh-hans, ru, uk |
+| 2026-10-11 | minor | Shared work: the interface decides on error kinds, not English error text (#1046) |
 | 2026-10-10 | major | Created: per-language counts measured from the catalogs, the twelve key languages, script support, estimates |

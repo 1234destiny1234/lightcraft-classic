@@ -120,6 +120,12 @@ fn banded_full_size_render_matches() {
 fn cases() -> Vec<(&'static str, Edit)> {
     vec![
         ("default", |_| {}),
+        // issue #69: the SDR rendition of an HDR edit rolls its highlights off instead of clipping
+        ("hdr edit sdr rendition", |s| {
+            s.hdr.enabled = true;
+            s.light.exposure = 1.5;
+            s.hdr.sdr_whites = 20.0;
+        }),
         ("typical", typical),
         ("exposure/contrast/whites", |s| {
             s.light.exposure = -0.7;
@@ -199,6 +205,39 @@ fn cases() -> Vec<(&'static str, Edit)> {
         ("clarity/texture -", |s| {
             s.effects.clarity = -60.0;
             s.effects.texture = -40.0;
+        }),
+        ("sharpen radius 2.5 detail 100", |s| {
+            s.detail.sharpen_amount = 100.0;
+            s.detail.sharpen_radius = 2.5;
+            s.detail.sharpen_detail = 100.0;
+        }),
+        ("sharpen radius 0.6 detail 0", |s| {
+            s.detail.sharpen_amount = 80.0;
+            s.detail.sharpen_radius = 0.6;
+            s.detail.sharpen_detail = 0.0;
+        }),
+        ("sharpen + texture + masking", |s| {
+            s.detail.sharpen_amount = 70.0;
+            s.detail.sharpen_masking = 30.0;
+            s.effects.texture = 40.0;
+        }),
+        ("local sharpness", |s| {
+            s.masks = vec![Mask {
+                components: vec![MaskComponent {
+                    name: None,
+                    op: MaskOp::Add,
+                    invert: false,
+                    shape: MaskShape::Linear { start: Point::new(0.5, 0.0), end: Point::new(0.5, 0.6) },
+                }],
+                adjust: lcc_develop::LocalAdjustments { sharpness: 80.0, ..Default::default() },
+                ..Default::default()
+            }];
+        }),
+        ("sharpen + texture + masking on process V3", |s| {
+            s.process = lcc_develop::Process::V3.version();
+            s.detail.sharpen_amount = 70.0;
+            s.detail.sharpen_masking = 30.0;
+            s.effects.texture = 20.0;
         }),
         ("sharpen masking", |s| {
             s.detail.sharpen_amount = 90.0;

@@ -69,6 +69,11 @@ jobs:
               'Name="InstallFolder"' 'Value="LaunchApp"'; do
             grep -qF "$want" "$OUT/windows/app.wxs" || { echo "::error::app.wxs lost: $want"; exit 1; }
           done
+          # The completion page the Publish events point at must actually exist: a Publish alone
+          # does not pull the dialog fragment into the MSI, and without the DialogRef the
+          # installer finishes silently.
+          grep -qF '<DialogRef Id="ExitDialog" />' "$OUT/windows/app.wxs" \
+            || { echo "::error::ExitDialog is not referenced; installs and removes end without a completion dialog"; exit 1; }
           desktop-file-validate "$OUT/linux/$APP_ID.desktop"
           appstreamcli validate --no-net --explain "$OUT/linux/$APP_ID.metainfo.xml"
           python3 - <<'EOF'

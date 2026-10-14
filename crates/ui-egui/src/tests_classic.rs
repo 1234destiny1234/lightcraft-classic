@@ -446,3 +446,92 @@ fn quick_develop_preset_menu_builds_only_visible_rows() {
     let open = widgets(&h);
     assert!(open > closed + 5 && open < closed + 200, "the open menu built {} widgets", open.saturating_sub(closed));
 }
+
+/// Issue #46: Develop's Basic controls follow Lightroom Classic's order, top to bottom: Treatment and
+/// Profile, then white balance, then Tone (with Auto), then Presence. And clicking Black & White in the
+/// Treatment row makes the photo black and white.
+#[test]
+fn develop_basic_follows_classic_order() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 2400.0], 1.0);
+    h.settle(SETTLE);
+    let id = h.app.session.visible_cloned()[0].0;
+    run(&mut h, "library.select", json!({"ids": [id]}));
+    h.request("ui.set", json!({"view": "detail", "right": "edit", "openSections": ["light"], "histogram": false}), T);
+    h.settle(SETTLE);
+    let y = |h: &Headless, w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().y).unwrap_or_else(|| panic!("no widget {w}"));
+    let order = [
+        "button:treatment-bw",
+        "dropdown:profile",
+        "dropdown:wbMode",
+        "slider:wb.tempRel",
+        "slider:wb.tintRel",
+        "button:auto",
+        "slider:light.exposure",
+        "slider:light.blacks",
+        "slider:effects.texture",
+        "slider:effects.clarity",
+        "slider:effects.dehaze",
+        "slider:color.vibrance",
+        "slider:color.saturation",
+    ];
+    for pair in order.windows(2) {
+        assert!(y(&h, pair[0]) < y(&h, pair[1]), "{} should sit above {}", pair[0], pair[1]);
+    }
+    let x = |w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().x).unwrap_or_else(|| panic!("no widget {w}"));
+    assert!(x("icon:wbPicker") < x("dropdown:wbMode"), "the WB selector sits left of the WB menu");
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "button:treatment-bw"}), T)["ok"], true);
+    h.settle(SETTLE);
+    assert!(crate::is_bw(&h.app.session.develop_of(lcc_catalog::PhotoId(id)).unwrap_or_default()), "Black & White sets the treatment");
+}
+
+/// Issue #46: Library's Quick Develop keeps Classic's order: Treatment, then White Balance, then Tone Control.
+#[test]
+fn quick_develop_follows_classic_order() {
+    let mut h = demo();
+    let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
+    run(&mut h, "library.select", json!({"ids": ids}));
+    let y = |w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().y).unwrap_or_else(|| panic!("no widget {w}"));
+    let order = ["button:qd-treatment", "button:qd-wb", "button:qd-wb.temp-0", "button:qd-autoTone", "button:qd-light.exposure-0"];
+    for pair in order.windows(2) {
+        assert!(y(pair[0]) < y(pair[1]), "{} should sit above {}", pair[0], pair[1]);
+    }
+}
+
+/// Issue #76: the Navigator stays at the top of the left column — the loupe's presets and the
+/// photo itself — while the panels below it scroll under it, as in Lightroom Classic. The panels
+/// below are what scrolls, and the Navigator keeps taking clicks where it sits.
+#[test]
+fn the_navigator_stays_at_the_top_while_the_panels_scroll_under_it() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    // a window too short for the column, so the panels below have somewhere to scroll
+    let mut h = Headless::new(app, [1400.0, 600.0], 1.0);
+    h.settle(SETTLE);
+    // a module keeps the edges it was left with, and this one starts with the column out of the
+    // way: switch first, then show it (see `develop_demo`)
+    run(&mut h, "module.library", json!({}));
+    h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true, "right": "none"}), T);
+    h.settle(SETTLE);
+    // better than the 1400 × 900 `demo()`: four panels under the Navigator overflow 600 points
+    let nav = h.app.widgets.iter().find(|(w, _)| w == "sidebarSection:navigator").map(|(_, r)| *r).expect("the Navigator is drawn");
+    let panel = h.app.widgets.iter().find(|(w, _)| w == "panel:left_panel").map(|(_, r)| *r).expect("the left panel is drawn");
+    assert!(nav.top() >= panel.top() - 1.0 && nav.bottom() <= panel.bottom() + 1.0, "the Navigator is inside the column: {nav:?} {panel:?}");
+    let all = |h: &Headless| h.app.widgets.iter().find(|(w, _)| w == "source:all").map(|(_, r)| r.top()).expect("All Photos");
+    let before = all(&h);
+    // the wheel scrolls the column the pointer is over
+    h.request("ui.move", json!({"x": 120.0, "y": 300.0}), T);
+    let r = h.request("ui.scroll", json!({"dy": -220.0}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    for _ in 0..40 {
+        h.step();
+    }
+    let after = all(&h);
+    assert!(after < before - 40.0, "the panels below scrolled: {before} -> {after}");
+    let nav_after = h.app.widgets.iter().find(|(w, _)| w == "sidebarSection:navigator").map(|(_, r)| *r).expect("the Navigator is still drawn");
+    assert!((nav_after.top() - nav.top()).abs() < 1.0, "the Navigator stayed put: {:?} -> {:?}", nav.top(), nav_after.top());
+    assert!(nav_after.bottom() <= panel.bottom() + 1.0, "and is not pushed out of the column: {nav_after:?} {panel:?}");
+    // the presets are still where they are drawn: a click there reaches the loupe
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "navigator:1:1"}), T)["ok"], true);
+    h.step();
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0), "the pinned Navigator takes clicks");
+}

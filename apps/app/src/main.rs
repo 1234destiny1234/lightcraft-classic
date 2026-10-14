@@ -29,6 +29,7 @@ mod control_server;
 mod dialog_filter;
 mod editors;
 mod hdr_display;
+mod hdr_probe;
 mod logging;
 #[cfg(target_os = "macos")]
 mod native_menu;
@@ -41,6 +42,8 @@ mod screen_profile_linux;
 #[cfg(any(windows, test))]
 mod screen_profile_windows;
 mod video_gpu;
+#[cfg(all(unix, not(target_os = "macos")))]
+mod wayland_hdr;
 mod window_gpu;
 
 use dialog_filter::FileDialogExt as _;
@@ -240,6 +243,31 @@ fn load_prefs_at(path: &std::path::Path, set_aside_damaged: bool) -> (Option<UiS
     };
     match decode_saved_ui(&bytes) {
         Ok((ui, false)) => (Some(ui.sanitized()), None, false),
+        // Issue #44: a layout this build can't restore (a newer build's, or a damaged one) used to
+        // stop every save for the session, and so for every later session too: folded panels and
+        // sections opened again at each launch. The original file is copied aside (a newer build's
+        // layout isn't lost), the layout dropped, and the rest keeps being saved.
+        Ok((ui, true)) if set_aside_damaged => {
+            let secs = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0);
+            let keep = path.with_file_name(format!("ui.json.layout-{secs}"));
+            match std::fs::copy(path, &keep) {
+                Ok(_) => {
+                    let msg = format!(
+                        "The saved panel layout in {} couldn't be restored, so the default layout is used. Other settings were loaded and keep being saved; the original file was kept as {}.",
+                        path.display(),
+                        keep.display()
+                    );
+                    (Some(ui.sanitized()), Some(msg), false)
+                }
+                Err(e) => {
+                    let msg = format!(
+                        "The saved panel layout in {} couldn't be restored and the file couldn't be copied aside ({e}). Other settings were loaded; the original file is preserved and settings won't be saved this session.",
+                        path.display()
+                    );
+                    (Some(ui.sanitized()), Some(msg), true)
+                }
+            }
+        }
         Ok((ui, true)) => {
             let msg = format!(
                 "The saved panel layout in {} couldn't be restored. Other settings were loaded; the original file is preserved and settings won't be saved this session.",
@@ -323,10 +351,13 @@ impl PrefsWriter {
             return Ok(());
         }
         let Some(path) = self.path.clone() else { return Ok(()) };
-        if let Some(workspace) = &ui.docking {
-            workspace.validate()?;
+        // Issue #44: a layout that doesn't validate is left out of the file instead of failing
+        // the save, so the rest of the settings (panel folds, sections, library) are still kept.
+        let bytes = match &ui.docking {
+            Some(workspace) if workspace.validate().is_err() => serde_json::to_vec_pretty(&UiState { docking: None, ..ui.clone() }),
+            _ => serde_json::to_vec_pretty(ui),
         }
-        let bytes = serde_json::to_vec_pretty(ui).map_err(|e| e.to_string())?;
+        .map_err(|e| e.to_string())?;
         if bytes == self.written {
             return Ok(());
         }
@@ -469,6 +500,14 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         })),
         pick_folder: Some(Box::new(|| {
             file_dialog().set_title(lcc_ui_egui::i18n::tr("Open Library")).pick_folder().map(|p| p.to_string_lossy().to_string())
+        })),
+        #[cfg(target_os = "linux")]
+        open_model_folder: Some(std::sync::Arc::new(|path: &str| {
+            std::process::Command::new("xdg-open")
+                .arg(path)
+                .status()
+                .map_err(|e| e.to_string())
+                .and_then(|s| if s.success() { Ok(()) } else { Err(format!("opening folder failed: {s}")) })
         })),
         open_with: Some(Box::new(editors::open_with)),
         open_all_with: Some(Box::new(editors::open_all_with)),
@@ -633,6 +672,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         system_theme: appearance::service(),
         // playing video frames graded on the window GPU (wgpu renderer only)
         video_gpu: cc.wgpu_render_state.as_ref().map(|s| Box::new(video_gpu::WindowVideoGpu::new(s)) as Box<dyn lcc_ui_egui::VideoGpu>),
+        hdr_output: cc.wgpu_render_state.as_ref().and_then(hdr_display::WindowHdr::new).map(|h| Box::new(h) as Box<dyn lcc_ui_egui::HdrOutput>),
     }
 }
 
@@ -708,12 +748,17 @@ OPTIONS:
   --memory         throwaway in-memory session (alias --demo); nothing is saved
   --control PORT   serve the JSON-lines control channel on 127.0.0.1:PORT (env {P}_CONTROL_PORT;
                    see docs/control-protocol.md)
+  --hdr-probe [S]  open a small window for S seconds (default 5) that reports HDR display output
+                   (surface formats, colour spaces, display headroom) to stderr and logs/hdr-probe.log
   --version, --help
 
 ENVIRONMENT:
-  {P}_CONFIG_DIR=DIR   use this settings folder instead of the platform default (empty = no settings folder)
+  {P}_CONFIG_DIR=DIR   use this settings folder instead of the platform default (empty = no settings folder).
+                   Without it, a portable.txt file next to the program puts the folder beside it
   {P}_GPU_BACKEND=dx12|vulkan|metal|auto|off   graphics backend (default: DX12 on Windows, Metal on macOS,
                    Vulkan on Linux; off = render on the CPU); else WGPU_BACKEND. {P}_GPU=0: CPU rendering.
+  {P}_HDR_DISPLAY=0   keep the window SDR. {P}_HDR_HEADROOM=X / {P}_HDR_PAPER_WHITE=NITS: the display's headroom
+                   (× SDR white) and SDR white where the system doesn't report them (Wayland)
   {P}_SAM3_DIR=DIR   the SAM 3 model for Object / Describe masks (default: <settings folder>/models/sam3;
                    optional: {app} offers to download it when first needed)
   {P}_SAM3_MIRRORS=URL,…   where to download the SAM 3 model from (base URLs, tried in order)
@@ -797,13 +842,18 @@ fn main() -> eframe::Result {
     let mut seed_demo = true;
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
-    let mut args = std::env::args().skip(1);
+    let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => control_port = control_port_from("--control", Some(args.next().unwrap_or_default())),
             "--library" => library_dir = args.next().map(std::path::PathBuf::from),
             "--no-demo" => seed_demo = false,
             "--memory" | "--demo" => in_memory = true,
+            "--hdr-probe" => {
+                // optional seconds (default 5)
+                let secs = args.next_if(|v| v.parse::<u64>().is_ok()).and_then(|v| v.parse().ok()).unwrap_or(5);
+                return hdr_probe::run(secs, log_dir());
+            }
             "--version" => {
                 println!("{} {}", lcc_brand::BINARY, env!("CARGO_PKG_VERSION"));
                 return Ok(());
@@ -884,7 +934,9 @@ fn main() -> eframe::Result {
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
     let win_files = std::sync::Arc::new(window_files(in_memory));
-    let window_gpu::Chosen { renderer, wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
+    let window_gpu::Chosen { renderer, mut wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
+    // HDR display output: an extended-range float surface where the platform and display offer it
+    hdr_display::configure(&mut wgpu_options);
     win_files.arm(window_renderer);
     let win_files_app = win_files.clone();
     let options = eframe::NativeOptions {
@@ -911,7 +963,9 @@ fn main() -> eframe::Result {
     // manager showed a "no" cursor. Run through XWayland when it's there; <PREFIX>_WAYLAND=1
     // keeps the native Wayland backend.
     #[cfg(all(unix, not(target_os = "macos")))]
-    if std::env::var_os("DISPLAY").is_some() && !lcc_brand::env_is_set("WAYLAND") {
+    // (an output with HDR headroom — the compositor says so — needs the native backend: XWayland
+    // windows are SDR)
+    if std::env::var_os("DISPLAY").is_some() && !lcc_brand::env_is_set("WAYLAND") && hdr_display::read_compositor_headroom().is_none() {
         options.event_loop_builder = Some(Box::new(|b| {
             use winit::platform::x11::EventLoopBuilderExtX11;
             b.with_x11();
@@ -936,7 +990,7 @@ fn main() -> eframe::Result {
                 // and the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
                 session = session.with_default_sam3_model();
                 // HDR display: SDR unless the surface, platform and display all allow HDR
-                let display = hdr_display::report(cc.wgpu_render_state.as_ref().map(|r| r.target_format));
+                let display = hdr_display::report(cc.wgpu_render_state.as_ref());
                 let mut app = LccApp::new(session, services(cc, app_log_file.as_deref()));
                 app.hdr_display_sdr = !display.is_hdr();
                 if let Some(ui) = prefs {
@@ -1148,13 +1202,59 @@ mod tests {
                 assert!(!loaded.filmstrip);
                 assert!(loaded.docking.is_none());
                 assert!(warning.unwrap().contains("Other settings were loaded"));
-                assert!(keep);
                 let mut writer = PrefsWriter { path: Some(path.clone()), keep_file: keep, ..Default::default() };
-                writer.save_ui(&loaded, false).unwrap();
-                assert_eq!(std::fs::read(&path).unwrap(), bytes);
-                assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1, "a future layout does not rename or replace the settings file");
+                let mut changed = loaded.clone();
+                changed.thumb_size += 40.0;
+                writer.save_ui(&changed, false).unwrap();
+                if !set_aside {
+                    // --memory: nothing is written or copied
+                    assert!(keep);
+                    assert_eq!(std::fs::read(&path).unwrap(), bytes);
+                    assert_eq!(std::fs::read_dir(&d).unwrap().count(), 1);
+                    continue;
+                }
+                // Issue #44: the original is kept aside and the rest keeps being saved, so the next
+                // launch restores it without a warning (folds no longer reset at every launch)
+                assert!(!keep);
+                let copies: Vec<_> = std::fs::read_dir(&d)
+                    .unwrap()
+                    .map(|e| e.unwrap().path())
+                    .filter(|p| p.file_name().unwrap().to_string_lossy().starts_with("ui.json.layout-"))
+                    .collect();
+                assert_eq!(copies.len(), 1);
+                assert_eq!(std::fs::read(&copies[0]).unwrap(), bytes);
+                std::fs::remove_file(&copies[0]).unwrap();
+                let (again, warning, keep) = load_prefs_at(&path, true);
+                assert!(warning.is_none() && !keep, "{warning:?}");
+                let again = again.unwrap();
+                assert_eq!(again.thumb_size, changed.thumb_size);
+                assert_eq!(again.settings.library_path, ui.settings.library_path);
             }
         }
+        std::fs::remove_dir_all(d).unwrap();
+    }
+
+    /// Issue #44: a panel layout that doesn't validate no longer fails every save of the session;
+    /// it is left out and the rest of the settings are written.
+    #[test]
+    fn an_invalid_layout_does_not_stop_the_other_settings_being_saved() {
+        let d = dir("invalid-layout-save");
+        let path = d.join("ui.json");
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), Services::default());
+        app.run("ui.dock", serde_json::json!({"operation":"close", "panel":"tools"})).unwrap();
+        let mut ui = app.ui.clone();
+        let workspace = ui.docking.as_mut().unwrap();
+        let entry = workspace.hidden[0].clone();
+        workspace.hidden = vec![entry; lcc_ui_egui::docking::Panel::ALL.len() + 1];
+        assert!(workspace.validate().is_err());
+        ui.thumb_size += 40.0;
+        let mut writer = PrefsWriter { path: Some(path.clone()), ..Default::default() };
+        writer.save_ui(&ui, false).unwrap();
+        let (loaded, warning, keep) = load_prefs_at(&path, true);
+        assert!(warning.is_none() && !keep, "{warning:?}");
+        let loaded = loaded.unwrap();
+        assert_eq!(loaded.thumb_size, ui.thumb_size);
+        assert!(loaded.docking.is_none());
         std::fs::remove_dir_all(d).unwrap();
     }
 
