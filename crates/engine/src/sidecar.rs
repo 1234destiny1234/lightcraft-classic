@@ -63,16 +63,24 @@ pub fn sidecar_path(original: &str, naming: SidecarNaming) -> PathBuf {
 }
 
 /// An existing sidecar for `original`: the preferred naming first, then the other one (also
-/// accepting an upper-case `.XMP`).
+/// accepting `.XMP` and `.Xmp`, and a full name whose photo extension differs in case, such as
+/// `IMG_1.cr3.xmp` beside `IMG_1.CR3`, which a case-sensitive file system would otherwise miss).
 pub fn find_sidecar(original: &str, naming: SidecarNaming) -> Option<PathBuf> {
     let other = if naming == SidecarNaming::Stem { SidecarNaming::Full } else { SidecarNaming::Stem };
+    let ext = Path::new(original).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+    let base = Path::new(original).with_extension("");
+    let recased = |e: String| (e != ext).then(|| format!("{}.{e}", base.to_string_lossy()));
+    let full_variants: Vec<String> = [recased(ext.to_lowercase()), recased(ext.to_uppercase())].into_iter().flatten().collect();
     [naming, other]
         .into_iter()
         .flat_map(|n| {
-            let p = sidecar_path(original, n);
-            let upper = p.with_extension("XMP");
-            [p, upper]
+            let mut v = vec![sidecar_path(original, n)];
+            if n == SidecarNaming::Full {
+                v.extend(full_variants.iter().map(|o| sidecar_path(o, n)));
+            }
+            v
         })
+        .flat_map(|p| [p.clone(), p.with_extension("XMP"), p.with_extension("Xmp")])
         .find(|p| p.is_file())
 }
 
@@ -887,6 +895,71 @@ mod tests {
         assert_eq!(p.develop.color.vibrance, 12.0);
         assert_eq!(p.develop.effects.clarity, before.effects.clarity, "crs partial keeps unrelated settings");
         assert_eq!(p.meta.title, "Dune & sky", "fields the sidecar doesn't state are kept");
+    }
+
+    /// Sidecars as other apps write them (issue #43): the rating and crop arrive whatever the
+    /// writer's prefixes, attribute/element form, `True`/`true` spelling or Description split.
+    #[test]
+    fn rating_and_crop_from_sidecars_of_other_writers() {
+        const RDF: &str = r#"xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#""#;
+        const XMP: &str = r#"xmlns:xmp="http://ns.adobe.com/xap/1.0/""#;
+        const CRS: &str = r#"xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/""#;
+        let wrap = |body: &str| {
+            format!(
+                r#"<?xpacket begin="" id="W5M0MpCehiHzreSzNTczkc9d"?><x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF {RDF}>{body}</rdf:RDF></x:xmpmeta><?xpacket end="w"?>"#
+            )
+        };
+        let crop = r#"crs:HasCrop="true" crs:CropTop="0.1" crs:CropLeft="0.2" crs:CropBottom="0.9" crs:CropRight="0.8" crs:CropAngle="-3.5" crs:CropConstrainToWarp="1""#;
+        let cases: Vec<(&str, String, u8, bool)> = vec![
+            // darktable: `photo.NEF.xmp`, its own history namespace (crop lives there, not in crs)
+            (
+                "darktable",
+                wrap(&format!(
+                    r#"<rdf:Description rdf:about="" {XMP} xmlns:darktable="http://darktable.sf.net/" xmp:Rating="3" darktable:xmp_version="5" darktable:history_end="2"><darktable:history><rdf:Seq><rdf:li darktable:operation="clipping" darktable:enabled="1"/></rdf:Seq></darktable:history></rdf:Description>"#
+                )),
+                3,
+                false,
+            ),
+            // element-form rating, lower-case `true`, older `xap` prefix
+            (
+                "element",
+                wrap(&format!(
+                    r#"<rdf:Description rdf:about="" xmlns:xap="http://ns.adobe.com/xap/1.0/" {CRS} {crop}><xap:Rating>4</xap:Rating></rdf:Description>"#
+                )),
+                4,
+                true,
+            ),
+            // ExifTool / Capture One / digiKam: one Description per namespace, rating as `5.0`
+            (
+                "split",
+                wrap(&format!(
+                    r#"<rdf:Description rdf:about="" xmlns:MicrosoftPhoto="http://ns.microsoft.com/photo/1.0/" MicrosoftPhoto:Rating="99"/><rdf:Description rdf:about="" {XMP} xmp:Rating=" 5.0 "/><rdf:Description rdf:about="" {CRS} {crop}/>"#
+                )),
+                5,
+                true,
+            ),
+            // Bridge / Camera Raw from Photoshop: crs elements rather than attributes
+            (
+                "acr-elements",
+                wrap(&format!(
+                    r#"<rdf:Description rdf:about="" {XMP} {CRS}><xmp:Rating>2</xmp:Rating><crs:HasCrop>True</crs:HasCrop><crs:CropLeft>0.2</crs:CropLeft><crs:CropTop>0.1</crs:CropTop><crs:CropRight>0.8</crs:CropRight><crs:CropBottom>0.9</crs:CropBottom><crs:CropAngle>-3.5</crs:CropAngle></rdf:Description>"#
+                )),
+                2,
+                true,
+            ),
+        ];
+        for (name, x, rating, has_crop) in cases {
+            let sc = parse_sidecar(&x, crate::crs::Target::RawAbsolute).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(sc.rating, Some(rating), "{name}");
+            let mut p = photo();
+            merge_into(&mut p, &sc, "t");
+            assert_eq!(p.rating, rating, "{name}");
+            let g = p.develop.to_json()["crop"]["geometry"].clone();
+            if has_crop {
+                assert!((g["rect"]["x0"].as_f64().unwrap_or(0.0) - 0.2).abs() < 1e-6, "{name}: {g}");
+                assert!((g["angle"].as_f64().unwrap_or(0.0) + 3.5).abs() < 1e-6, "{name}: {g}");
+            }
+        }
     }
 
     #[test]
