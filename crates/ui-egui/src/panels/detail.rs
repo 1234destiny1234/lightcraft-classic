@@ -273,10 +273,22 @@ pub(crate) fn navigate_gesture(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui:
     }
     let (mut factor, mut delta, anchor) =
         ui.input(|i| (i.zoom_delta(), i.translation_delta(), i.multi_touch().map(|t| t.center_pos).or(i.pointer.hover_pos())));
+
+    let notches = ui.input(|i| wheel_notches(&i.events));
+    if app.ui.settings.wheel_resizes_brush && notches != 0.0 && (app.ui.tool == "brush" || app.ui.tool == "remove") {
+        if app.ui.tool == "brush" {
+            app.ui.brush_size = (app.ui.brush_size * (1.0 + notches * 0.1)).clamp(0.002, 0.5);
+        } else if app.ui.tool == "remove" {
+            app.ui.remove_size = (app.ui.remove_size * (1.0 + notches * 0.1)).clamp(0.002, 0.5);
+        }
+        ui.ctx().request_repaint();
+        return true;
+    }
+
     // A notched mouse wheel (line/page units, no modifier) zooms around the pointer, through egui's smoothed wheel
     // delta like Ctrl+wheel (so it glides instead of jumping); trackpads report points and still pan.
     let wheel_id = egui::Id::new("loupe-wheel-zoom");
-    if ui.input(|i| wheel_notches(&i.events)) != 0.0 {
+    if notches != 0.0 {
         ui.data_mut(|d| d.insert_temp(wheel_id, true));
     }
     if ui.data(|d| d.get_temp::<bool>(wheel_id)).unwrap_or(false) {
