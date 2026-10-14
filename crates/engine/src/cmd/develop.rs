@@ -933,12 +933,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 // log2 of the light the photo gathered (shutter s × ISO / f-number²)
                 let gathered = |s: &Session, id: PhotoId| -> Option<f64> {
                     let m = &s.catalog.photo(id)?.meta;
-                    let t = match m.shutter.split_once('/') {
-                        Some((a, b)) => a.trim().parse::<f64>().ok()? / b.trim().parse::<f64>().ok()?,
-                        None => m.shutter.trim().trim_end_matches('s').trim().parse::<f64>().ok()?,
-                    };
+                    let t = lcc_catalog::parse_shutter_seconds(&m.shutter)?;
                     let (n, iso) = (m.aperture? as f64, m.iso? as f64);
-                    (t > 0.0 && n > 0.0 && iso > 0.0).then(|| (t * iso / (n * n)).log2())
+                    (n > 0.0 && iso > 0.0).then(|| (t * iso / (n * n)).log2())
                 };
                 let r_ev = gathered(s, reference).ok_or_else(|| bad(c, "the active photo has no shutter / aperture / ISO"))?;
                 let r_slider = s.develop_of(reference).map(|d| d.light.exposure).unwrap_or(0.0);
