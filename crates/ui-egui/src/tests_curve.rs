@@ -13,7 +13,7 @@ const T: Duration = Duration::from_secs(20);
 fn curve_open(channel: &str) -> Headless {
     let services = Services { png: None, ..Default::default() };
     let app = LccApp::new(lcc_engine::Session::with_demo(), services);
-    let mut h = Headless::new(app, [1200.0, 1400.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 2000.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.app.ui.right = crate::state::RightPanel::Edit;
