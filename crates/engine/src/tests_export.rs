@@ -409,9 +409,12 @@ fn hdr_jpeg_export_writes_a_gain_map_and_sdr_edits_stay_plain() {
     assert!(gainmap::is_gain_map_jpeg(&e.bytes));
     let gm = gainmap::read_jpeg(&e.bytes).unwrap();
     assert!(gm.meta.alternate_headroom > 0.5 && gm.meta.alternate_headroom <= 3.05, "headroom {}", gm.meta.alternate_headroom);
-    // the base is the SDR rendition: the same pixels as the SDR export (the decoders agree)
+    // the base is the edit's SDR rendition: the same pixels as an SDR export of the same HDR edit (the decoders
+    // agree). Not the HDR-off export: the SDR rendition rolls highlights off instead of clipping them (#69).
+    let sdr = export_photo(&mut s, id, &ExportOptions::from_json(&json!({"longEdge": 320, "hdr": false})), 1).unwrap();
+    assert!(!gainmap::is_gain_map_jpeg(&sdr.bytes), "no HDR output asked for: a plain JPEG");
     let a = lcc_codecs::decode(&e.bytes, Default::default()).unwrap();
-    let b = lcc_codecs::decode(&plain.bytes, Default::default()).unwrap();
+    let b = lcc_codecs::decode(&sdr.bytes, Default::default()).unwrap();
     assert_eq!((a.width, a.height), (b.width, b.height));
     let diff = a.image.data.iter().zip(&b.image.data).map(|(p, q)| (p[1] - q[1]).abs()).fold(0.0f32, f32::max);
     assert!(diff < 0.02, "base differs from the SDR export by {diff}");
