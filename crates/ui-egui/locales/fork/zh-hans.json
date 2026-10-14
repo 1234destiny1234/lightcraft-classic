@@ -1231,5 +1231,13 @@
   "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 显示输出尚不可用：即使在 HDR 显示器上，此窗口也显示 SDR 版本。HDR 导出保留完整范围。",
   "Wheel scroll speed": "滚轮滚动速度",
   "Fast": "快",
-  "Fastest": "最快"
+  "Fastest": "最快",
+  "Run face models on the CPU only": "仅在 CPU 上运行人脸模型",
+  "Detection": "检测",
+  "Recognition": "识别",
+  "Not loaded yet": "尚未加载",
+  "Checking the GPU…": "正在检查 GPU…",
+  "CPU": "CPU",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "只有检查表明 GPU 能更快给出相同结果时，人脸模型才会使用 GPU。",
+  "Checking the GPU for faces": "正在检查用于人脸的 GPU"
 }

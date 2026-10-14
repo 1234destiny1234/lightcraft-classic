@@ -1321,5 +1321,13 @@
   "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "La salida HDR en pantalla aún no está disponible: esta ventana muestra la versión SDR, incluso en una pantalla HDR. Las exportaciones HDR conservan todo el rango.",
   "Wheel scroll speed": "Velocidad de desplazamiento de la rueda",
   "Fast": "Rápida",
-  "Fastest": "Muy rápida"
+  "Fastest": "Muy rápida",
+  "Run face models on the CPU only": "Ejecutar los modelos de caras solo en la CPU",
+  "Detection": "Detección",
+  "Recognition": "Reconocimiento",
+  "Not loaded yet": "Aún no cargado",
+  "Checking the GPU…": "Comprobando la GPU…",
+  "CPU": "CPU",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "Un modelo de caras usa la GPU solo cuando una comprobación muestra que da los mismos resultados más rápido.",
+  "Checking the GPU for faces": "Comprobando la GPU para las caras"
 }

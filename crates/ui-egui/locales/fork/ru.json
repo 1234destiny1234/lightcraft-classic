@@ -1526,5 +1526,13 @@
   "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "Вывод HDR на экран пока недоступен: это окно показывает SDR-версию даже на HDR-дисплее. HDR-экспорт сохраняет весь диапазон.",
   "Wheel scroll speed": "Скорость прокрутки колесом",
   "Fast": "Быстрая",
-  "Fastest": "Очень быстрая"
+  "Fastest": "Очень быстрая",
+  "Run face models on the CPU only": "Запускать модели лиц только на ЦП",
+  "Detection": "Обнаружение",
+  "Recognition": "Распознавание",
+  "Not loaded yet": "Ещё не загружена",
+  "Checking the GPU…": "Проверка ГП…",
+  "CPU": "ЦП",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "Модель лиц использует ГП, только если проверка показала, что он даёт те же результаты быстрее.",
+  "Checking the GPU for faces": "Проверка ГП для лиц"
 }
