@@ -237,7 +237,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                     "preset": {"type": "string", "description": "Export preset id or name"},
                     "background": {"type": "boolean", "description": "Desktop background export (headless exports remain blocking)"},
                     "resize": {"type": "object", "description": "Full Resize options; alternatively use the size helpers below"},
-                    "subfolder": {"type": "string"},
+                    "subfolder": {"type": "string", "description": "One folder name created inside the destination folder (no `..`, `/`, `\\`)"},
                     "conflict": {"type": "string", "enum": ["unique", "overwrite", "skip"]},
                     "tiffCompression": {"type": "string", "enum": ["none", "lzw", "zip"]},
                     "dngCompression": {"type": "string", "enum": ["lossless", "deflate", "uncompressed", "lossy"]},
@@ -273,6 +273,8 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                 if let (Some(o), serde_json::Value::Object(v)) = (
                     props.as_object_mut(),
                     json!({
+                        "destinationMode": {"type": "string", "enum": ["specificFolder", "sameAsOriginal"], "description": "specificFolder (default) = everything into `dir`; sameAsOriginal = each photo into the folder of its original (+ `subfolder`); a photo with no folder on disk or whose folder is gone gets an error"},
+                        "customText": {"type": "string", "description": "Text of the `{custom}` naming token, e.g. naming `{custom}-{seq:1}`"},
                         "videoFormat": {"type": "string", "enum": ["h264", "prores"], "description": "Video clips in the batch (rendered formats) export as movies with their trim and video edits: h264 = H.264 + AAC MP4 (default), prores = ProRes 422 + AAC MOV"},
                         "videoQuality": {"type": "integer", "description": "Video quality 1..100 (default 80): H.264 CRF 40..14, ProRes HQ >= 80, Standard >= 50, else LT"},
                         "videoMaxSide": {"type": "integer", "description": "Video: longest output side in px, 16..8192 (0 = the clip's size, the default; never upscales)"}
@@ -764,6 +766,8 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
                         "preset",
                         "background",
                         "resize",
+                        "destinationMode",
+                        "customText",
                         "subfolder",
                         "conflict",
                         "tiffCompression",
