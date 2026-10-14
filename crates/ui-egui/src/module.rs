@@ -573,9 +573,13 @@ fn views(ui: &mut egui::Ui, app: &mut LccApp) {
     }
 }
 
-/// The module the current view and right panel belong to (Library or Develop).
-fn implied(view: ViewMode, right: RightPanel) -> ModuleId {
-    if view == ViewMode::Reference || (view == ViewMode::Detail && right.is_edit_tool()) { ModuleId::Develop } else { ModuleId::Library }
+/// The module the view, the right panel and the module in use imply (Library or Develop).
+fn implied(module: ModuleId, view: ViewMode, right: RightPanel) -> ModuleId {
+    // Closing Develop's editing panel (its shortcut toggling the tool off, its strip menu hiding
+    // it) leaves Develop where it is: the module needs a photo, not a panel, so it must not hand
+    // the user back to the grid.
+    let editing = right.is_edit_tool() || (right == RightPanel::None && module == ModuleId::Develop);
+    if view == ViewMode::Reference || (view == ViewMode::Detail && editing) { ModuleId::Develop } else { ModuleId::Library }
 }
 
 /// The live panel state as a layout.
@@ -647,13 +651,13 @@ pub fn sync(app: &mut LccApp) {
             None => app.ui.placeholder_from = Some(now),
             Some(was) if was != now => {
                 app.ui.placeholder_from = None;
-                swap(app, implied(now.0, now.1), false);
+                swap(app, implied(app.ui.module, now.0, now.1), false);
             }
             _ => {}
         }
         return;
     }
-    let want = implied(now.0, now.1);
+    let want = implied(app.ui.module, now.0, now.1);
     if want != app.ui.module {
         swap(app, want, false);
     }
