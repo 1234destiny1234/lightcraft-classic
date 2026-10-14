@@ -21,31 +21,29 @@ concurrency:
 
 jobs:
   lint:
-    runs-on: ubuntu-latest
+    # Self-hosted gpu0 (docs/ci.md), in an Ubuntu container for the apt-packaged linters (needs Docker
+    # on the runner).
+    runs-on: [self-hosted, Linux, X64, lcc]
+    container: ubuntu:24.04
+    defaults:
+      run:
+        shell: bash -e {0}
     env:
       ACTIONLINT_VERSION: 1.7.12
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Install tools
+        # git first, so the checkout is a real repository (actionlint looks for .git)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends shellcheck desktop-file-utils appstream libxml2-utils python3-yaml
+          apt-get update
+          apt-get install -y --no-install-recommends ca-certificates curl git shellcheck desktop-file-utils appstream libxml2-utils python3-yaml
           curl -fsSL "https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz" \
             | tar -xz -C "$RUNNER_TEMP" actionlint
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: actionlint
         run: |
           "$RUNNER_TEMP/actionlint" -color
       - name: shellcheck
         run: shellcheck packaging/*.sh packaging/*/*.sh
-      - name: PowerShell
-        shell: pwsh
-        run: |
-          foreach ($f in Get-ChildItem packaging/windows/*.ps1) {
-            $errors = $null
-            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
-            if ($errors) { $errors | ForEach-Object { Write-Output "::error file=$($f.Name)::$_" }; exit 1 }
-            Write-Output "ok $($f.Name)"
-          }
       - name: Render the packaging templates (brand.toml)
         run: |
           . packaging/env.sh
@@ -91,15 +89,38 @@ jobs:
           EOF
       - name: FreeBSD tarball layout (stub binaries)
         run: bash packaging/freebsd/package.sh --dry-run
+      - name: hand the workspace back to the runner user
+        if: always()
+        # the container runs as root; root-owned files would break the next checkout on the host
+        run: chown -R "$(stat -c %u:%g "$GITHUB_WORKSPACE/..")" "$GITHUB_WORKSPACE"
 
   windows-install-folder:
-    runs-on: windows-latest
-    timeout-minutes: 10
+    # Self-hosted win0 (docs/ci.md). Its runner account can't write to Program Files: WiX goes into the
+    # runner's tool cache.
+    runs-on: [self-hosted, Windows, X64, lcc]
+    timeout-minutes: 15
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: PowerShell scripts parse
+        shell: pwsh
+        run: |
+          foreach ($f in Get-ChildItem packaging/windows/*.ps1) {
+            $errors = $null
+            [System.Management.Automation.Language.Parser]::ParseFile($f.FullName, [ref]$null, [ref]$errors) | Out-Null
+            if ($errors) { $errors | ForEach-Object { Write-Output "::error file=$($f.Name)::$_" }; exit 1 }
+            Write-Output "ok $($f.Name)"
+          }
+      - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
+        with:
+          dotnet-version: 8.0.x
       - name: Install WiX
         shell: pwsh
-        run: dotnet tool install --global wix --version 5.0.2
+        run: |
+          $tools = Join-Path $env:RUNNER_TOOL_CACHE 'wix-5.0.2'
+          if (-not (Test-Path (Join-Path $tools 'wix.exe'))) { dotnet tool install --tool-path $tools wix --version 5.0.2 }
+          Add-Content -Path $env:GITHUB_PATH -Value $tools
       - name: Install-folder fallback and precedence (real MSI AppSearch)
         shell: pwsh
         run: |
