@@ -392,9 +392,11 @@ jobs:
           DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends \
             ca-certificates flatpak flatpak-builder librsvg2-common appstream git dbus
       - name: Build the Flatpak bundle
-        # `flatpak run` (the bundle's smoke test) needs a session bus and a runtime dir, which the
-        # container lacks
+        # `flatpak run` (the bundle's smoke test) needs a system bus (else "Could not connect: No such
+        # file or directory"), a session bus and a runtime dir, none of which the container has.
         run: |
+          mkdir -p /run/dbus
+          dbus-daemon --system --fork
           XDG_RUNTIME_DIR="$(mktemp -d)"
           export XDG_RUNTIME_DIR
           dbus-run-session -- packaging/linux/flatpak-bundle.sh "dist/linux/${{ needs.version.outputs.binary }}-$PACKAGE_VERSION-linux-${{ matrix.arch }}.tar.gz"
