@@ -983,6 +983,22 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         use lcc_engine::export::DngCompression as Z;
                         choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None"), (Z::Lossy, "Lossy")], &mut opts.dng_compression);
                     }
+                    // Lightroom Classic's File Naming templates; any other template is "Custom"
+                    let current = EXPORT_NAMING_TEMPLATES.iter().find(|(t, _)| *t == opts.naming).map_or("Custom", |(_, l)| *l);
+                    field(ui, "Template", |ui| {
+                        egui::ComboBox::from_id_salt("exportNamingTemplate").selected_text(crate::i18n::tr(current)).show_ui(ui, |ui| {
+                            for (t, l) in EXPORT_NAMING_TEMPLATES {
+                                if ui.selectable_label(opts.naming == *t, crate::i18n::tr(l)).clicked() {
+                                    opts.naming = (*t).to_string();
+                                }
+                            }
+                        });
+                    });
+                    if opts.naming.contains("{custom}") {
+                        field(ui, "Custom text", |ui| {
+                            crate::widgets::named(ui.add(egui::TextEdit::singleline(&mut opts.custom_text).desired_width(f32::INFINITY)), crate::i18n::tr("Custom text"))
+                        });
+                    }
                     let naming_id = egui::Id::new("export-naming");
                     let tags_open = field(ui, "File name", |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
@@ -1000,18 +1016,32 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             opts.start_number = v as u32;
                         }
                     }
-                    field(ui, "Folder", |ui| {
-                        trailing_button_row(ui, |ui| {
-                            if app.services.pick_folder.is_some()
-                                && crate::widgets::text_button(ui, "exportChooseFolder", crate::i18n::tr("Choose…"), false).clicked()
-                                && let Some(pick) = app.services.pick_folder.as_mut()
-                                && let Some(d) = pick()
-                            {
-                                *dir = d;
-                            }
-                            crate::widgets::named(ui.add(egui::TextEdit::singleline(dir).desired_width(ui.available_width())), crate::i18n::tr("Folder"));
+                    // like Lightroom Classic's Export To: one folder, or each photo's own folder (not on
+                    // the web, where originals live in the browser's storage, not in folders)
+                    use lcc_engine::export::DestinationMode as D;
+                    if !cfg!(target_arch = "wasm32") || opts.destination_mode != D::SpecificFolder {
+                    choices(
+                        ui,
+                        "Export to",
+                        "exportDestinationMode",
+                        &[(D::SpecificFolder, "Specific folder"), (D::SameAsOriginal, "Same folder as original photo")],
+                        &mut opts.destination_mode,
+                    );
+                    }
+                    if opts.destination_mode == D::SpecificFolder {
+                        field(ui, "Folder", |ui| {
+                            trailing_button_row(ui, |ui| {
+                                if app.services.pick_folder.is_some()
+                                    && crate::widgets::text_button(ui, "exportChooseFolder", crate::i18n::tr("Choose…"), false).clicked()
+                                    && let Some(pick) = app.services.pick_folder.as_mut()
+                                    && let Some(d) = pick()
+                                {
+                                    *dir = d;
+                                }
+                                crate::widgets::named(ui.add(egui::TextEdit::singleline(dir).desired_width(ui.available_width())), crate::i18n::tr("Folder"));
+                            });
                         });
-                    });
+                    }
                     field(ui, "Subfolder", |ui| {
                         crate::widgets::named(ui.add(egui::TextEdit::singleline(&mut opts.subfolder).hint_text(crate::i18n::tr("none")).desired_width(f32::INFINITY)), crate::i18n::tr("Subfolder"))
                     });
@@ -2018,6 +2048,15 @@ fn trailing_button_row(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 }
 
 /// A labelled row of mutually exclusive choice buttons (ids `button:{id}-{index}`).
+/// The Export dialog's File Naming templates (Lightroom Classic's), as `naming` templates.
+const EXPORT_NAMING_TEMPLATES: &[(&str, &str)] = &[
+    ("{name}", "Filename"),
+    ("{name}-{seq:1}", "Filename - Sequence"),
+    ("{custom}-{seq:1}", "Custom Name - Sequence"),
+    ("{custom}", "Custom Name"),
+    ("{date:%Y%m%d}-{name}", "Date - Filename"),
+];
+
 fn choices<V: PartialEq + Copy>(ui: &mut egui::Ui, label: &str, id: &str, options: &[(V, &str)], value: &mut V) {
     field(ui, label, |ui| {
         ui.spacing_mut().item_spacing.x = 4.0;
