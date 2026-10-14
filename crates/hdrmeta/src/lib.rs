@@ -5,7 +5,7 @@
 //! reference white = 80 cd/m²): the content asks for no headroom, so KWin's EDR neither raises
 //! the backlight nor keeps values above 1.0. `vkSetHdrMetadataEXT` makes Mesa add the mastering
 //! luminance and max-CLL to the surface's image description, which KWin honours (verified on
-//! KWin 6.7.5 / Mesa 26.2.4 RADV, issue #47).
+//! KWin 6.7.5 / Mesa 26.2.4 RADV).
 //!
 //! wgpu 30 can neither enable the extension nor set the metadata, so this crate goes through
 //! wgpu-hal: [`open_device`] creates the device with the extension, [`set_metadata`] sets the

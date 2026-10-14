@@ -9,7 +9,7 @@ own licences, and change as little as possible so that an upgrade is a re-copy p
 Source: crates.io `egui-wgpu` 0.36.2 (<https://github.com/emilk/egui>), copyright Emil
 Ernerfeldt and the egui contributors; licence texts in `LICENSE-MIT` / `LICENSE-APACHE`.
 
-Patch: HDR display output (LR-VIEW-HDR-DISPLAY, issue #47). Upstream egui-wgpu always picks an
+Patch: HDR display output (LR-VIEW-HDR-DISPLAY). Upstream egui-wgpu always picks an
 8-bit surface in the default colour space and never hands the surface to the app. The changes,
 each marked `Patch (HDR display output)` in the source:
 
@@ -25,10 +25,10 @@ each marked `Patch (HDR display output)` in the source:
   loupe's HDR texture) go above it.
 
 - `WgpuConfiguration::{open_device, on_surface_configured}` (`RenderState::on_surface_configured`):
-  hooks to create the device (the app adds `VK_EXT_hdr_metadata` through `lcc-hdrmeta`) and to
+  hooks to create the device (the app adds `VK_EXT_hdr_metadata` through `crates/hdrmeta`) and to
   run after every surface configure (the app sets HDR metadata on the new swapchain).
 
 To upgrade egui: copy the new egui-wgpu release over `vendor/egui-wgpu` (drop `.cargo-ok`,
 `.cargo_vcs_info.json`, `Cargo.lock`, `Cargo.toml.orig` and the `include` list), re-apply the
-marked changes, and run `cargo test -p lcc-app -- hdr`. Drop the patch once egui exposes the
+marked changes, and run the app's HDR tests (`hdr_display`, `crates/hdrmeta`). Drop the patch once egui exposes the
 surface format, colour space and display HDR info itself.
