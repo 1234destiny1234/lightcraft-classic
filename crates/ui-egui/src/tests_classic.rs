@@ -497,3 +497,41 @@ fn quick_develop_follows_classic_order() {
         assert!(y(pair[0]) < y(pair[1]), "{} should sit above {}", pair[0], pair[1]);
     }
 }
+
+/// Issue #76: the Navigator stays at the top of the left column — the loupe's presets and the
+/// photo itself — while the panels below it scroll under it, as in Lightroom Classic. The panels
+/// below are what scrolls, and the Navigator keeps taking clicks where it sits.
+#[test]
+fn the_navigator_stays_at_the_top_while_the_panels_scroll_under_it() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    // a window too short for the column, so the panels below have somewhere to scroll
+    let mut h = Headless::new(app, [1400.0, 600.0], 1.0);
+    h.settle(SETTLE);
+    // a module keeps the edges it was left with, and this one starts with the column out of the
+    // way: switch first, then show it (see `develop_demo`)
+    run(&mut h, "module.library", json!({}));
+    h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true, "right": "none"}), T);
+    h.settle(SETTLE);
+    // better than the 1400 × 900 `demo()`: four panels under the Navigator overflow 600 points
+    let nav = h.app.widgets.iter().find(|(w, _)| w == "sidebarSection:navigator").map(|(_, r)| *r).expect("the Navigator is drawn");
+    let panel = h.app.widgets.iter().find(|(w, _)| w == "panel:left_panel").map(|(_, r)| *r).expect("the left panel is drawn");
+    assert!(nav.top() >= panel.top() - 1.0 && nav.bottom() <= panel.bottom() + 1.0, "the Navigator is inside the column: {nav:?} {panel:?}");
+    let all = |h: &Headless| h.app.widgets.iter().find(|(w, _)| w == "source:all").map(|(_, r)| r.top()).expect("All Photos");
+    let before = all(&h);
+    // the wheel scrolls the column the pointer is over
+    h.request("ui.move", json!({"x": 120.0, "y": 300.0}), T);
+    let r = h.request("ui.scroll", json!({"dy": -220.0}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    for _ in 0..40 {
+        h.step();
+    }
+    let after = all(&h);
+    assert!(after < before - 40.0, "the panels below scrolled: {before} -> {after}");
+    let nav_after = h.app.widgets.iter().find(|(w, _)| w == "sidebarSection:navigator").map(|(_, r)| *r).expect("the Navigator is still drawn");
+    assert!((nav_after.top() - nav.top()).abs() < 1.0, "the Navigator stayed put: {:?} -> {:?}", nav.top(), nav_after.top());
+    assert!(nav_after.bottom() <= panel.bottom() + 1.0, "and is not pushed out of the column: {nav_after:?} {panel:?}");
+    // the presets are still where they are drawn: a click there reaches the loupe
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "navigator:1:1"}), T)["ok"], true);
+    h.step();
+    assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0), "the pinned Navigator takes clicks");
+}

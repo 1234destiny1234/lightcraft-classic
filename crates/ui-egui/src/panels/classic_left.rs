@@ -2,7 +2,8 @@
 //! Folders, Collections and Publish Services; Develop draws Classic's Develop column — Navigator,
 //! Presets, Versions (Classic's Snapshots), History and Collections — with upstream's My Photos
 //! sidebar offered there as a panel of its own (hidden by default, so a pull from upstream stays
-//! mechanical). Kept out of the shared `left.rs` (U.5): `left::show` hands the module's side to
+//! mechanical), and it pins the Navigator above the scroll area, where Lightroom Classic keeps it.
+//! Kept out of the shared `left.rs` (U.5): `left::show` hands the module's side to
 //! [`show`], and the sidebar layout calls [`catalog_section`]. A child module of `left`, so it
 //! uses that file's private helpers without widening them.
 
@@ -21,6 +22,12 @@ use crate::widgets::icon_button;
 pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
     let counts = app.caches.counts(&app.session.catalog);
     let (total, picks, deleted) = (counts.total, counts.picks, counts.deleted);
+    // The Navigator stays at the top of the column and the panels below it scroll under it, as in
+    // Lightroom Classic (issue #76): the loupe's level and the way back to it are always in reach,
+    // wherever the column was left scrolled. It is not a panel of the scroll: `columns` skips it.
+    if !app.ui.hidden_panels.contains(&PanelId::Navigator) {
+        pinned_navigator(app, ui);
+    }
     egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
         super::drag_auto_scroll(app, ui);
         // rows are as wide as the widest one needs (last frame), at least the panel
@@ -44,16 +51,28 @@ pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
     });
 }
 
-/// The panels of one side, in the user's order: Library's Classic column (Navigator, Catalog,
-/// Folders, Collections, Publish Services) or Develop's (Navigator, Presets, Versions, History,
-/// Collections, and My Photos when it is shown).
+/// The Navigator, pinned at the top of the column above the scroll area; the panels below scroll
+/// under it, so the loupe's level (and the way back to the photo) never leaves the panel. Drawn at
+/// the panel's width — it does not travel sideways with the rows below — and its own header folds
+/// it, so a folded Navigator is just its header row.
+fn pinned_navigator(app: &mut LccApp, ui: &mut egui::Ui) {
+    let (w, avail) = (ui.available_width(), ui.available_height());
+    ui.data_mut(|d| d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + w));
+    // the navigator's own height is what comes back, so the scroll area starts under it
+    ui.allocate_ui_with_layout(vec2(w, avail), egui::Layout::top_down(egui::Align::Min), |ui| {
+        ui.spacing_mut().item_spacing.y = 0.0;
+        crate::panels::navigator::show(app, ui);
+    });
+}
+
+/// The panels of one side, in the user's order: Library's Classic column (Catalog, Folders,
+/// Collections, Publish Services) or Develop's (Presets, Versions, History, Collections, and My
+/// Photos when it is shown). The Navigator is not among them: [`pinned_navigator`] draws it above
+/// the scroll area, where it stays.
 fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, side: &[PanelId], total: usize, picks: usize, deleted: usize) {
     for p in crate::panels::classic::ordered(app, side) {
         match p {
-            PanelId::Navigator => {
-                crate::panels::navigator::show(app, ui);
-                ui.add_space(4.0);
-            }
+            PanelId::Navigator => {}
             PanelId::Catalog => {
                 if crate::panels::classic::header(app, ui, p, side).1 {
                     catalog_section(app, ui, total, picks, deleted, true);
