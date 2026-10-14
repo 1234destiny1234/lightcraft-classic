@@ -1311,12 +1311,20 @@
   "Will be copied": "Será importada como cópia",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Suas edições, palavras-chave e participações em coleções são removidas; os arquivos no disco são mantidos.",
   "Include selected photos": "Incluir fotos selecionadas",
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "Esta tela não está exibindo HDR (ela é SDR ou o HDR está desativado nas configurações do sistema), então a janela mostra a versão SDR. As exportações HDR mantêm todo o intervalo.",
   "Add to Quick Collection": "Adicionar à coleção rápida",
   "Remove from Quick Collection": "Remover da coleção rápida",
   "Add to Target Collection": "Adicionar à coleção de destino",
   "Remove from Target Collection": "Remover da coleção de destino",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "A saída HDR na tela ainda não está disponível: esta janela mostra a versão SDR, mesmo em uma tela HDR. As exportações HDR mantêm todo o intervalo.",
   "Wheel scroll speed": "Velocidade de rolagem da roda",
   "Fast": "Rápida",
-  "Fastest": "Muito rápida"
+  "Fastest": "Muito rápida",
+  "Run face models on the CPU only": "Executar os modelos de rostos só na CPU",
+  "Detection": "Detecção",
+  "Recognition": "Reconhecimento",
+  "Not loaded yet": "Ainda não carregado",
+  "Checking the GPU…": "Verificando a GPU…",
+  "CPU": "CPU",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "Um modelo de rostos só usa a GPU quando uma verificação mostra que ela dá os mesmos resultados mais rápido.",
+  "Checking the GPU for faces": "Verificando a GPU para rostos"
 }

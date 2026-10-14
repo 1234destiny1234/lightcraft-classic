@@ -693,6 +693,21 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             app.renderer.wait_for_draft(ui.ctx(), &mut app.session, budget);
         }
     }
+    // an HDR display: an HDR edit's whole frame also as linear float with its highlights above
+    // SDR white, drawn in place of the 8-bit render once it is there (not while dragging: the
+    // drafts show; nor with an overlay or soft proof, which are 8-bit views)
+    let hdr_key = (app.hdr_headroom.is_some() && d.hdr.enabled && !interacting && overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
+        .then(|| app.session.render_job(id, rw.max(8), rh.max(8), false, !crop_tool))
+        .flatten()
+        .map(|job| {
+            let job = hdr_view_job(job.with_hidden_grading(app.ui.grading_hidden_for(id)));
+            let key = job.key;
+            if app.renderer.hdr_view.is_none_or(|v| v.key != key) {
+                app.renderer.request(Slot::HdrView, job, 98);
+            }
+            key
+        });
+    upload_hdr_view(app);
     // hovering a preset or profile: the photo with that look, shown instead of the loupe render
     // once it is ready (nothing is committed)
     let hover_key = match app.hover_preview.clone() {
@@ -818,7 +833,15 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let p = ui.painter_at(canvas);
     // what a view slot shows: its own render of this photo, else the stand-ins (no blank frame
     // between photos, and the full render replaces them in place)
+    let hdr_view = app.renderer.hdr_view.filter(|v| v.photo == id && Some(v.key) == hdr_key);
     let draw = |slot: Slot, r: Rect, clip: Rect| -> &'static str {
+        if slot == Slot::Main
+            && let Some(v) = hdr_view
+        {
+            let image_rect = fit_texture_rect(r, v.size);
+            p.with_clip_rect(clip).image(v.tex, image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+            return "hdr";
+        }
         let mine = |s: Slot| app.renderer.textures.get(&s).filter(|t| t.photo == id);
         let (tex, what) = if let Some(t) = mine(slot) {
             (t, "render")
@@ -1491,6 +1514,31 @@ fn targeted_drag(app: &mut LccApp, resp: &egui::Response, map: &CanvasMap, targe
 
 /// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
 /// Visualize Spots).
+/// The loupe's HDR render for an HDR display: `job` (a whole-frame render of the open photo, no
+/// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key.
+pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine::media::RenderJob {
+    job.request.depth = lcc_pipeline::OutputDepth::F32Hdr;
+    job.request.space = lcc_pipeline::OutputSpace::Srgb;
+    job.cache = None;
+    job.view_cache = None;
+    job.stages = None;
+    job.display = None;
+    job.request.display = None;
+    job.key ^= 0x4844_525f_5649_4557;
+    job
+}
+
+/// Hand a finished [`Slot::HdrView`] render to the window's HDR output as the loupe's texture.
+fn upload_hdr_view(app: &mut LccApp) {
+    let Some((photo, key, deep)) = app.renderer.hdr_view_result.take() else { return };
+    let Some(out) = app.services.hdr_output.as_mut() else { return };
+    let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { return };
+    match out.upload(deep.width, deep.height, rgb) {
+        Ok(tex) => app.renderer.hdr_view = Some(crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height] }),
+        Err(e) => log::warn!("HDR loupe texture: {e}"),
+    }
+}
+
 pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings) -> lcc_pipeline::Overlay {
     use lcc_pipeline::{MaskView, Overlay};
     if app.ui.fullscreen {

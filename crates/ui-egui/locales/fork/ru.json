@@ -1519,12 +1519,20 @@
   "Will be copied": "Будет импортирован как копия",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Их правки, ключевые слова и членство в коллекциях удаляются; файлы на диске сохраняются.",
   "Include selected photos": "Включить выбранные фотографии",
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "Этот дисплей не показывает HDR (он SDR или HDR выключен в настройках системы), поэтому окно показывает SDR-версию. HDR-экспорт сохраняет весь диапазон.",
   "Add to Quick Collection": "Добавить в быструю коллекцию",
   "Remove from Quick Collection": "Удалить из быстрой коллекции",
   "Add to Target Collection": "Добавить в целевую коллекцию",
   "Remove from Target Collection": "Удалить из целевой коллекции",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "Вывод HDR на экран пока недоступен: это окно показывает SDR-версию даже на HDR-дисплее. HDR-экспорт сохраняет весь диапазон.",
   "Wheel scroll speed": "Скорость прокрутки колесом",
   "Fast": "Быстрая",
-  "Fastest": "Очень быстрая"
+  "Fastest": "Очень быстрая",
+  "Run face models on the CPU only": "Запускать модели лиц только на ЦП",
+  "Detection": "Обнаружение",
+  "Recognition": "Распознавание",
+  "Not loaded yet": "Ещё не загружена",
+  "Checking the GPU…": "Проверка ГП…",
+  "CPU": "ЦП",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "Модель лиц использует ГП, только если проверка показала, что он даёт те же результаты быстрее.",
+  "Checking the GPU for faces": "Проверка ГП для лиц"
 }
