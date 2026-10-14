@@ -55,17 +55,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     }
     ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} selected", n = n)).size(11.5).color(t.text_dim));
     // Saved Preset
-    let presets: Vec<(String, String)> = app.session.presets.iter().map(|p| (p.id.clone(), p.name.clone())).collect();
+    // Only the rows in view are built: a collection imported whole is thousands of presets.
+    let presets = &app.session.presets;
     if let Some(p) = choice_row(ui, "qd-preset", "Saved Preset", "Choose…", |ui| {
-        let mut pick = None;
-        egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            for (id, name) in &presets {
-                if ui.button(name).clicked() {
-                    pick = Some(id.clone());
-                }
-            }
-        });
-        pick.map(|id| json!({"preset": id}))
+        crate::panels::presets::picker_rows(ui, "qd-preset", presets, None).map(|id| json!({"preset": id}))
     }) {
         quick_set(app, ui, p);
     }
