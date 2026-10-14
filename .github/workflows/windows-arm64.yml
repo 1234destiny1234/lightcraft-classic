@@ -44,12 +44,19 @@ jobs:
       - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
         with:
           key: windows-arm64-package
-      - uses: actions/setup-dotnet@v4 # an SDK in the runner's tool cache (win0 has only the .NET runtime)
+      # win0 has only the .NET runtime, and its runner account can't write to Program Files: the SDK and WiX go
+      # into the runner's own tool cache.
+      - uses: actions/setup-dotnet@v4
+        env:
+          DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
         with:
           dotnet-version: 8.0.x
       - name: Install WiX
         shell: pwsh
-        run: dotnet tool install --global wix --version 5.0.2
+        run: |
+          $tools = Join-Path $env:RUNNER_TOOL_CACHE 'wix-5.0.2'
+          if (-not (Test-Path (Join-Path $tools 'wix.exe'))) { dotnet tool install --tool-path $tools wix --version 5.0.2 }
+          Add-Content -Path $env:GITHUB_PATH -Value $tools
       - name: Build and package (unsigned)
         shell: pwsh
         env:
