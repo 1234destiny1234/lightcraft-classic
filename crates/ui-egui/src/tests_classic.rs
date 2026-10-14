@@ -323,7 +323,7 @@ fn develop_column_is_its_own_classic_stack() {
     }
     assert!(has(&h, "sidebarSection:navigator"), "the Navigator, where Classic puts it");
     assert!(rows(&h, "presetGroup:") > 0, "the presets themselves");
-    // the presets are drawn once: with the presets column open (Shift+P), that column is the
+    // the presets are drawn once: with the presets column open (Window ▸ Presets), that column is the
     // presets — the same panel, with a header of its own
     let in_column = rows(&h, "presetGroup:");
     run(&mut h, "panel.presets", json!({}));
@@ -544,7 +544,7 @@ fn the_presets_fold_from_their_header() {
     assert_eq!(top(&h, "classicPanel:versions"), versions_top, "the panels below are back where they were");
 }
 
-/// The presets fold in the left column only: opening the presets column (Shift+P) after folding
+/// The presets fold in the left column only: opening the presets column (Window ▸ Presets) after folding
 /// them there shows the presets, not an empty column, and closing it brings the folded panel back.
 #[test]
 fn folding_the_presets_in_the_column_leaves_the_presets_column_whole() {

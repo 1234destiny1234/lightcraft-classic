@@ -24,7 +24,7 @@ const THUMB_EDGE: usize = 128;
 /// the panel takes in the left column.
 pub const HEADER_H: f32 = 28.0;
 
-/// The state the Presets panel of Develop's left column folds under. The presets column (Shift+P)
+/// The state the Presets panel of Develop's left column folds under. The presets column (Window ▸ Presets)
 /// is the same panel somewhere else and folds under the panel's usual `panel:presets`: a state of
 /// its own here means folding the panel in the column cannot leave that column open and empty (a
 /// dead end), and closing the column brings the panel back as it was.
@@ -60,7 +60,7 @@ impl AppliedPreset {
 }
 
 /// `in_column`: drawn as the Presets panel of Develop's left column (which gives it a share of the
-/// column and lets it fold). The presets column (Shift+P) draws the same panel whole.
+/// column and lets it fold). The presets column (Window ▸ Presets) draws the same panel whole.
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], in_column: bool) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider)).show(ui, |ui| {
@@ -69,7 +69,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], in_column: bo
         // it: the chevron on the left of the bar folds the list and the header's menu shows or
         // hides the side's panels, so someone who does not use presets can give the panels below
         // the room (issue #75). In the left column it folds under `IN_COLUMN_KEY`, a state of its
-        // own, so folding it there cannot leave the presets column (Shift+P) open and empty. The
+        // own, so folding it there cannot leave the presets column (Window ▸ Presets) open and empty. The
         // two buttons sit at the bar's right edge, as a header button does on upstream's sidebar,
         // and the header keeps them room.
         let (hr, unfolded) = if in_column {
