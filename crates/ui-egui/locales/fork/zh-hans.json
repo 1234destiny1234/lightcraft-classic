@@ -1223,5 +1223,6 @@
   "Don't Import Suspected Duplicates": "不导入可能重复的照片",
   "Will be copied": "将作为副本导入",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "其编辑、关键字和收藏夹归属将被移除；磁盘上的文件会保留。",
-  "Include selected photos": "包含所选照片"
+  "Include selected photos": "包含所选照片",
+  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "HDR 显示输出尚不可用：即使在 HDR 显示器上，此窗口也显示 SDR 版本。HDR 导出保留完整范围。"
 }
