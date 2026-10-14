@@ -230,6 +230,9 @@ pub struct AppSettings {
     pub film_badges: bool,
     /// Grid: when to show the rating / flag / edited badges.
     pub grid_badges: GridBadges,
+    /// How far a mouse-wheel notch scrolls the grid and filmstrip, times [`crate::theme::WHEEL_STRIP_SHARE`]
+    /// (1 = a third of the view; Preferences → Interface → Wheel scroll speed).
+    pub wheel_scroll_speed: f32,
     /// Shortcuts the user changed (Help ▸ Keyboard Shortcuts): command id → shortcut, `""` = none.
     pub keymap: crate::shortcuts::Keymap,
     /// The keymap set the user's changes apply over (Classic by default).
@@ -265,6 +268,7 @@ impl Default for AppSettings {
             film_names: true,
             film_badges: true,
             grid_badges: GridBadges::Auto,
+            wheel_scroll_speed: 1.0,
             keymap: Default::default(),
             keymap_set: Default::default(),
             appearance_mode: AppearanceMode::Dark,
