@@ -352,6 +352,9 @@ jobs:
   flatpak:
     name: Flatpak ${{ matrix.arch }}
     needs: [version, linux]
+    # Off while the repo variable RELEASE_FLATPAK is 'false' (the container smoke test can't reach a D-Bus
+    # session yet); on otherwise.
+    if: vars.RELEASE_FLATPAK != 'false'
     # Repackages the Linux job's tarball (the same binaries as the AppImage/deb/rpm); no Rust
     # build here. Self-hosted gpu0, in an Ubuntu 24.04 container (flatpak-builder 1.4); privileged,
     # because flatpak-builder and `flatpak run` sandbox with bubblewrap. The Flathub runtime and SDK
