@@ -28,6 +28,7 @@ pub mod crs;
 pub mod crs_masks;
 pub mod demo;
 pub mod denoise;
+pub mod desktop;
 pub mod devices;
 pub mod display;
 pub mod export;
@@ -238,6 +239,9 @@ pub struct Session {
     /// Auto updates: the last check, the download in flight, and the settings ([`update`]).
     #[cfg(not(target_arch = "wasm32"))]
     pub updater: update::Updater,
+    /// Showing files in the file manager and starting other programs ([`desktop`]); headless
+    /// harnesses swap in a [`desktop::Recorder`] so tests never open desktop windows.
+    pub desktop: std::sync::Arc<dyn desktop::Desktop>,
     /// Copied develop settings (partial JSON) for Paste.
     pub clipboard: Option<Value>,
     /// The folder on disk the [`LibrarySource::Folder`] view browses.
@@ -416,6 +420,7 @@ impl Session {
             remote: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             updater: Default::default(),
+            desktop: desktop::default_desktop(),
             clipboard: None,
             meta_clipboard: None,
             browse: None,

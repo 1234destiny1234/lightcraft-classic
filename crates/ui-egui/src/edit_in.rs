@@ -282,21 +282,20 @@ fn start_control(c: lcc_engine::cmd::edit_in::Control, path: PathBuf) {
 fn start_editor(app: &mut LccApp, tool: String, args: Vec<String>, label: String, path: PathBuf) {
     let tx = ROUND_TRIP.with_borrow(|rt| rt.tx.clone());
     let activity = app.session.activity.clone();
+    let desktop = app.session.desktop.clone();
     let spawned = std::thread::Builder::new().name("edit-in-editor".into()).spawn(move || {
         let caps = editor::capabilities(&tool, &args);
         if !caps.wait {
             let line = lcc_engine::cmd::edit_in::command_line(&tool, &args, &path);
-            if let Some((prog, rest)) = line.split_first()
-                && let Err(e) = std::process::Command::new(prog).args(rest).spawn()
-            {
-                let _ = tx.send(Msg::Error(format!("{prog}: {e}")));
+            if let Err(e) = desktop.launch(&line) {
+                let _ = tx.send(Msg::Error(e));
             }
             return;
         }
         let line = editor::wait_command_line(&tool, &args, &path, caps);
         let name = path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default();
         let task = activity.start("editIn", &format!("Editing {name} in {label}…"), lcc_engine::activity::Cancel::No);
-        let r = editor::run_and_wait(&line);
+        let r = desktop.run_and_wait(&line);
         drop(task);
         match r {
             Ok(_) => {
