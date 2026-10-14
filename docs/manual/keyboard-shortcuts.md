@@ -42,11 +42,12 @@ Alternative keymap set. Keys that work without a menu item (ratings `0`–`5`, l
 
 | Shortcut | Command | Menu | Id |
 |---|---|---|---|
-| `Cmd+N` | New Album… |  | `dialog.newAlbum` |
-| `Cmd+Shift+N` | New Folder… |  | `dialog.newFolder` |
-| `Cmd+Alt+N` | New Smart Album from Filter… |  | `dialog.newSmartAlbum` |
+| `Cmd+N` | New Collection… |  | `dialog.newAlbum` |
+| `Cmd+Shift+N` | New Collection Set… |  | `dialog.newFolder` |
+| `Cmd+Alt+N` | New Smart Collection from Filter… |  | `dialog.newSmartAlbum` |
 | `Cmd+F` | Find… |  | `view.focusSearch` |
 | `F2` | Rename Photos… |  | `dialog.rename` |
+| `Cmd+L` | Enable Filters |  | `filter.toggleEnabled` |
 
 ## Photo
 
@@ -54,7 +55,9 @@ Alternative keymap set. Keys that work without a menu item (ratings `0`–`5`, l
 |---|---|---|---|
 | `Cmd+Alt+K` | Painter |  | `tool.painter` |
 | `Cmd+Shift+P` | Create Preset… |  | `dialog.createPreset` |
-| `Cmd+Shift+E` | Edit in External Editor |  | `photo.editInExternal` |
+| `Cmd+Shift+S` | Sync Settings… | Develop Settings | `dialog.syncSettings` |
+| `Cmd+Shift+E` | Edit in PhotoCraft | Edit In | `photo.editInPhotoCraft` |
+| `Cmd+Alt+E` | Edit in Other Editor | Edit In | `photo.editInExternal` |
 | `Ctrl+H` | HDR… | Photo Merge | `dialog.mergeHdr` |
 | `Ctrl+M` | Panorama… | Photo Merge | `dialog.mergePanorama` |
 | `Ctrl+Shift+H` | HDR with Last Settings | Photo Merge | `merge.hdrLast` |
@@ -72,7 +75,6 @@ Alternative keymap set. Keys that work without a menu item (ratings `0`–`5`, l
 | `Cmd+Shift+R` | Reset Edits |  | `develop.reset` |
 | `Shift+A` | Auto Settings |  | `develop.auto` |
 | `V` | Black & White |  | `develop.treatment` |
-| `Cmd+Shift+S` | Create Version |  | `version.create` |
 | `Cmd+'` | Create Virtual Copy |  | `photo.virtualCopy` |
 | `Cmd+G` | Group into Stack | Stack | `stack.group` |
 | `Cmd+Shift+G` | Ungroup Stack | Stack | `stack.ungroup` |
@@ -103,6 +105,7 @@ Alternative keymap set. Keys that work without a menu item (ratings `0`–`5`, l
 | `S` | Soft Proofing |  | `view.softProof` |
 | `Cmd+Shift+H` | Histogram |  | `view.histogram` |
 | `O` | Show Mask Overlay |  | `view.maskOverlay` |
+| `Cmd+Shift+O` | Show All Mask Overlays |  | `view.maskOverlayAll` |
 | `A` | Visualize Spots |  | `view.visualizeSpots` |
 | `Shift+O` | Cycle Crop Overlay |  | `view.cropOverlay` |
 | `F` | Full Screen Preview |  | `view.fullScreenPreview` |

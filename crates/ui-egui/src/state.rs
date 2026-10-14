@@ -1063,9 +1063,10 @@ pub enum Dialog {
         groups: Vec<String>,
     },
     /// Synchronize Settings (Lightroom Classic's Sync…): the groups the active photo's settings
-    /// carry to the other selected photos.
+    /// carry to the other selected photos, plus single Basic Tone controls when Light is unchecked.
     SyncSettings {
         groups: Vec<String>,
+        controls: Vec<String>,
     },
     /// Paste Selected Settings: which of the copied groups to paste.
     PasteSettings {

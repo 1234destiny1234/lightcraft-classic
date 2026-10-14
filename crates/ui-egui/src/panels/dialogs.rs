@@ -641,16 +641,21 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     crate::widgets::named(ui.add(egui::TextEdit::singleline(name).hint_text(crate::i18n::tr("Preset name")).desired_width(f32::INFINITY)), crate::i18n::tr("Preset name"));
                     crate::widgets::named(ui.add(egui::TextEdit::singleline(group).hint_text(crate::i18n::tr("Group")).desired_width(f32::INFINITY)), crate::i18n::tr("Group"));
                     ui.label(egui::RichText::new(crate::i18n::tr("Settings to include")).color(t.text_dim));
-                    group_checklist(ui, "presetInclude", groups);
+                    let _ = group_checklist(ui, "presetInclude", groups);
                 }
-                Dialog::CopySettings { groups } => group_checklist(ui, "copyGroup", groups),
-                Dialog::SyncSettings { groups } => {
+                Dialog::CopySettings { groups } => {
+                    let _ = group_checklist(ui, "copyGroup", groups);
+                }
+                Dialog::SyncSettings { groups, controls } => {
                     let n = app.session.selection.ids.len().saturating_sub(1);
                     ui.label(
                         egui::RichText::new(crate::i18n::tr_format!("The checked settings of the active photo are copied to {n} other selected photo(s)", n = n))
                             .color(t.text_dim),
                     );
-                    group_checklist(ui, "syncGroup", groups);
+                    if group_checklist(ui, "syncGroup", groups).is_some() {
+                        controls.clear();
+                    }
+                    basic_tone_checklist(ui, groups, controls);
                 }
                 Dialog::PasteSettings { groups } => {
                     let n = app.session.targets(&json!({})).len();
@@ -658,7 +663,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         egui::RichText::new(crate::i18n::tr_format!("Paste into {n} photo{} — only settings that were copied are pasted", if n == 1 { "" } else { "s" }, n = n))
                             .color(t.text_dim),
                     );
-                    group_checklist(ui, "pasteGroup", groups);
+                    let _ = group_checklist(ui, "pasteGroup", groups);
                 }
                 Dialog::ContactSheet { options } => {
                     options.columns = options.columns.clamp(1, 8);
@@ -1759,7 +1764,7 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::Timelapse { .. } => app.run("app.timelapse", crate::timelapse_ui::dialog_params(dlg).unwrap_or_default()),
         Dialog::CopySettings { groups } => app.run("develop.copy", json!({"groups": groups})),
         Dialog::PasteSettings { groups } => app.run("develop.paste", json!({"groups": groups})),
-        Dialog::SyncSettings { groups } => app.run("develop.sync", json!({"groups": groups})),
+        Dialog::SyncSettings { groups, controls } => app.run("develop.sync", json!({"groups": groups, "controls": controls})),
         Dialog::Export { opts, full_size, resize, limit_kb, dir, .. } => {
             let mut p = export_dialog_params(opts, *full_size, resize, *limit_kb);
             p["dir"] = json!(dir);
@@ -1806,7 +1811,8 @@ fn export_dialog_params(
 // ------------------------------------------------------------------------------------------ dialog widgets
 
 /// Two columns of settings-group checkboxes (Copy Settings, Create Preset) plus All / None.
-fn group_checklist(ui: &mut egui::Ui, tag: &str, groups: &mut Vec<String>) {
+/// Returns `Some(true)` after Check All, `Some(false)` after Check None.
+fn group_checklist(ui: &mut egui::Ui, tag: &str, groups: &mut Vec<String>) -> Option<bool> {
     let key_of = |g: &SettingsGroup| serde_json::to_value(g).ok().and_then(|v| v.as_str().map(str::to_string)).unwrap_or_default();
     ui.columns(2, |cols| {
         for (i, g) in SettingsGroup::ALL.iter().enumerate() {
@@ -1828,11 +1834,38 @@ fn group_checklist(ui: &mut egui::Ui, tag: &str, groups: &mut Vec<String>) {
         crate::widgets::register(ui.ctx(), format!("{tag}:all"), all.rect);
         if all.clicked() {
             *groups = SettingsGroup::ALL.iter().map(key_of).collect();
+            return Some(true);
         }
         let none = ui.small_button(crate::i18n::tr("Check None"));
         crate::widgets::register(ui.ctx(), format!("{tag}:none"), none.rect);
         if none.clicked() {
             groups.clear();
+            return Some(false);
+        }
+        None
+    })
+    .inner
+}
+
+/// Synchronize Settings' Basic Tone controls, one by one (Lightroom Classic lists them under Basic):
+/// with Light checked they all go and show checked; with it unchecked, only the ticked ones.
+fn basic_tone_checklist(ui: &mut egui::Ui, groups: &[String], controls: &mut Vec<String>) {
+    const TONE: [&str; 6] = ["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks"];
+    let whole = groups.iter().any(|g| g == "light");
+    ui.add_space(4.0);
+    ui.label(crate::i18n::tr("Basic Tone"));
+    ui.horizontal_wrapped(|ui| {
+        for id in TONE {
+            let Some(spec) = lcc_develop::controls::find(id) else { continue };
+            let mut on = whole || controls.iter().any(|c| c == id);
+            let r = ui.add_enabled(!whole, egui::Checkbox::new(&mut on, crate::i18n::tr(spec.label)));
+            crate::widgets::register(ui.ctx(), format!("syncControl:{id}"), r.rect);
+            if r.changed() {
+                controls.retain(|c| c != id);
+                if on {
+                    controls.push(id.to_string());
+                }
+            }
         }
     });
 }
