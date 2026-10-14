@@ -1317,5 +1317,13 @@
   "Remove from Target Collection": "從目標集合中移除",
   "Wheel scroll speed": "滾輪捲動速度",
   "Fast": "快",
-  "Fastest": "最快"
+  "Fastest": "最快",
+  "Run face models on the CPU only": "僅在 CPU 上執行臉孔模型",
+  "Detection": "偵測",
+  "Recognition": "辨識",
+  "Not loaded yet": "尚未載入",
+  "Checking the GPU…": "正在檢查 GPU…",
+  "CPU": "CPU",
+  "A face model uses the GPU only when a check shows it gives the same results faster.": "只有在檢查顯示 GPU 能更快得出相同結果時，臉孔模型才會使用 GPU。",
+  "Checking the GPU for faces": "正在檢查用於臉孔的 GPU"
 }
