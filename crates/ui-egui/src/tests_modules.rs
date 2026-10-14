@@ -272,3 +272,26 @@ fn secondary_window_has_its_own_switcher_filter_and_filmstrip() {
     run(&mut h, "second.filter", json!({"clear": true}));
     assert_eq!(h.app.ui.second_filter, crate::panels::second::SecondFilter::default());
 }
+
+/// #45: the tool strip shows only the active module's tools; Library's Keywords and Info stay
+/// out of Develop's strip but still open through their commands, and the strip's tools aren't
+/// drawn in Library.
+#[test]
+fn tool_strip_shows_only_the_active_modules_tools() {
+    let mut h = demo();
+    run(&mut h, "module.develop", json!({}));
+    h.step();
+    for id in ["edit", "crop", "masking", "versions", "activity"] {
+        assert!(has_widget(&h, &format!("icon:{id}")), "Develop strip has {id}");
+    }
+    for id in ["keywords", "info"] {
+        assert!(!has_widget(&h, &format!("icon:{id}")), "Develop strip lacks Library's {id}");
+    }
+    run(&mut h, "panel.info", json!({}));
+    assert_eq!(h.app.ui.right, RightPanel::Info, "Info still opens by command");
+    run(&mut h, "module.library", json!({}));
+    h.step();
+    for id in ["edit", "crop", "masking"] {
+        assert!(!has_widget(&h, &format!("icon:{id}")), "Library has no {id} strip button");
+    }
+}
