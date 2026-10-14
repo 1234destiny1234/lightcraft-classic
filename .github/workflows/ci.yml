@@ -42,7 +42,7 @@ jobs:
     defaults:
       run:
         # low priority: the runner machines are also used interactively
-        shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+        shell: nice -n 19 bash -e {0}
     timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1

@@ -27,7 +27,7 @@ jobs:
     container: ubuntu:24.04
     defaults:
       run:
-        shell: bash --noprofile --norc -eo pipefail {0}
+        shell: bash -e {0}
     env:
       ACTIONLINT_VERSION: 1.7.12
     steps:

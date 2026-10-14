@@ -95,7 +95,7 @@ jobs:
     defaults:
       run:
         # low priority: mac0 is also used interactively
-        shell: nice -n 19 taskpolicy -b bash --noprofile --norc -eo pipefail {0}
+        shell: nice -n 19 taskpolicy -b bash -e {0}
     env:
       PACKAGE_VERSION: ${{ needs.version.outputs.version }}
       BUILD_DATE: ${{ needs.version.outputs.date }}
@@ -259,7 +259,7 @@ jobs:
         - lcc-release-target-linux:/ci-target
     defaults:
       run:
-        shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+        shell: nice -n 19 bash -e {0}
     strategy:
       fail-fast: false
       matrix:
@@ -352,7 +352,7 @@ jobs:
         - lcc-release-flatpak-user:/flatpak-user
     defaults:
       run:
-        shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+        shell: nice -n 19 bash -e {0}
     strategy:
       fail-fast: false
       matrix:
@@ -527,7 +527,7 @@ jobs:
     runs-on: [self-hosted, Linux, X64, lcc]
     defaults:
       run:
-        shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+        shell: nice -n 19 bash -e {0}
     env:
       PACKAGE_VERSION: ${{ needs.version.outputs.version }}
       BUILD_DATE: ${{ needs.version.outputs.date }}

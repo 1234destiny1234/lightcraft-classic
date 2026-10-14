@@ -34,7 +34,7 @@ jobs:
     timeout-minutes: 60
     defaults:
       run:
-        shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+        shell: nice -n 19 bash -e {0}
     strategy:
       fail-fast: false
       max-parallel: 1

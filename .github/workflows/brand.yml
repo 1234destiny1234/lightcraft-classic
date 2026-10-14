@@ -28,7 +28,7 @@ env:
 # CARGO_TARGET_DIR, so builds stay incremental between runs.
 defaults:
   run:
-    shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+    shell: nice -n 19 bash -e {0}
 
 jobs:
   check:
