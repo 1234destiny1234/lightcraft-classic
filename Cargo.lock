@@ -4780,7 +4780,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-hdrmeta"
-version = "0.8.0"
+version = "0.8.1"
 dependencies = [
  "ash",
  "wgpu",
