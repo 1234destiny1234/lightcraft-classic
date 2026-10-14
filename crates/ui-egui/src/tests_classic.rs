@@ -446,3 +446,54 @@ fn quick_develop_preset_menu_builds_only_visible_rows() {
     let open = widgets(&h);
     assert!(open > closed + 5 && open < closed + 200, "the open menu built {} widgets", open.saturating_sub(closed));
 }
+
+/// Issue #46: Develop's Basic controls follow Lightroom Classic's order, top to bottom: Treatment and
+/// Profile, then white balance, then Tone (with Auto), then Presence. And clicking Black & White in the
+/// Treatment row makes the photo black and white.
+#[test]
+fn develop_basic_follows_classic_order() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 2400.0], 1.0);
+    h.settle(SETTLE);
+    let id = h.app.session.visible_cloned()[0].0;
+    run(&mut h, "library.select", json!({"ids": [id]}));
+    h.request("ui.set", json!({"view": "detail", "right": "edit", "openSections": ["light"], "histogram": false}), T);
+    h.settle(SETTLE);
+    let y = |h: &Headless, w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().y).unwrap_or_else(|| panic!("no widget {w}"));
+    let order = [
+        "button:treatment-bw",
+        "dropdown:profile",
+        "dropdown:wbMode",
+        "slider:wb.tempRel",
+        "slider:wb.tintRel",
+        "button:auto",
+        "slider:light.exposure",
+        "slider:light.blacks",
+        "slider:effects.texture",
+        "slider:effects.clarity",
+        "slider:effects.dehaze",
+        "slider:color.vibrance",
+        "slider:color.saturation",
+    ];
+    for pair in order.windows(2) {
+        assert!(y(&h, pair[0]) < y(&h, pair[1]), "{} should sit above {}", pair[0], pair[1]);
+    }
+    let x = |w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().x).unwrap_or_else(|| panic!("no widget {w}"));
+    assert!(x("icon:wbPicker") < x("dropdown:wbMode"), "the WB selector sits left of the WB menu");
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "button:treatment-bw"}), T)["ok"], true);
+    h.settle(SETTLE);
+    assert!(crate::is_bw(&h.app.session.develop_of(lcc_catalog::PhotoId(id)).unwrap_or_default()), "Black & White sets the treatment");
+}
+
+/// Issue #46: Library's Quick Develop keeps Classic's order: Treatment, then White Balance, then Tone Control.
+#[test]
+fn quick_develop_follows_classic_order() {
+    let mut h = demo();
+    let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
+    run(&mut h, "library.select", json!({"ids": ids}));
+    let y = |w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().y).unwrap_or_else(|| panic!("no widget {w}"));
+    let order = ["button:qd-treatment", "button:qd-wb", "button:qd-wb.temp-0", "button:qd-autoTone", "button:qd-light.exposure-0"];
+    for pair in order.windows(2) {
+        assert!(y(pair[0]) < y(pair[1]), "{} should sit above {}", pair[0], pair[1]);
+    }
+}
