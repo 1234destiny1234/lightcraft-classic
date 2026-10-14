@@ -139,19 +139,43 @@ impl Net {
     }
 
     /// Use `accelerator` for this net's convolutions, but only after it gave the CPU's outputs on `probe` (every
-    /// output value within `tolerance` of the CPU's, relative to that output's largest magnitude). Returns why it was
-    /// not used, so the caller can say so; the net then stays on the CPU.
-    pub fn attach_checked(&self, accelerator: Arc<dyn Accelerator>, probe: &Tensor, tolerance: f32) -> std::result::Result<(), String> {
+    /// output value within `tolerance` of the CPU's, relative to that output's largest magnitude) and, with
+    /// `require_faster`, ran it faster than the CPU did (a GPU's per-layer round trip can cost more than a small
+    /// model's layers). Returns why it was not used, so the caller can say so; the net then stays on the CPU.
+    pub fn attach_checked(
+        &self,
+        accelerator: Arc<dyn Accelerator>,
+        probe: &Tensor,
+        tolerance: f32,
+        require_faster: bool,
+    ) -> std::result::Result<(), String> {
         self.detach();
+        let started = web_time::Instant::now();
         let cpu = self.run(probe.clone()).map_err(|e| e.to_string())?;
+        let cpu_time = started.elapsed();
         *self.accelerator.write().unwrap_or_else(PoisonError::into_inner) = Some(accelerator);
+        // the first run also uploads the weights and builds the kernels: time a second one
         let fast = self.run(probe.clone()).map_err(|e| e.to_string());
-        let used = self.accelerator().is_some();
-        let verdict = match fast {
+        let mut verdict = match fast {
             Err(e) => Err(e),
-            Ok(_) if !used => Err("the device failed on the test input".into()),
+            Ok(_) if self.accelerator().is_none() => Err("the device failed on the test input".into()),
             Ok(fast) => agree(&cpu, &fast, tolerance),
         };
+        if verdict.is_ok() && require_faster {
+            let started = web_time::Instant::now();
+            let again = self.run(probe.clone()).map_err(|e| e.to_string());
+            let fast_time = started.elapsed();
+            verdict = match again {
+                Err(e) => Err(e),
+                Ok(_) if self.accelerator().is_none() => Err("the device failed on the test input".into()),
+                Ok(_) if fast_time >= cpu_time => Err(format!(
+                    "the device is not faster for this model ({:.0} ms against {:.0} ms on the CPU)",
+                    fast_time.as_secs_f64() * 1000.0,
+                    cpu_time.as_secs_f64() * 1000.0
+                )),
+                Ok(_) => Ok(()),
+            };
+        }
         if verdict.is_err() {
             self.detach();
         }
@@ -280,7 +304,7 @@ fn agree(a: &[(String, Tensor)], b: &[(String, Tensor)], tolerance: f32) -> std:
         }
         let scale = x.data.iter().fold(0f32, |m, v| m.max(v.abs())).max(1e-6);
         let worst = x.data.iter().zip(&y.data).fold(0f32, |m, (p, q)| m.max((p - q).abs()));
-        if !(worst <= tolerance * scale) {
+        if worst.is_nan() || worst > tolerance * scale {
             return Err(format!("the device's `{name}` differs from the CPU's by {:.2e} (of {scale:.2e})", worst));
         }
     }
@@ -698,11 +722,11 @@ mod tests {
         let net = Net::new(g).unwrap();
         let cpu = net.run(x.clone()).unwrap();
         let good = Arc::new(Fake { skew: 0.0, fail_after: usize::MAX.into() });
-        net.attach_checked(good, &x, 1e-4).unwrap();
+        net.attach_checked(good, &x, 1e-4, false).unwrap();
         assert!(net.accelerator().is_some());
         assert_eq!(net.run(x.clone()).unwrap()[0].1.shape, cpu[0].1.shape);
         let wrong = Arc::new(Fake { skew: 0.5, fail_after: usize::MAX.into() });
-        assert!(net.attach_checked(wrong, &x, 1e-4).is_err());
+        assert!(net.attach_checked(wrong, &x, 1e-4, false).is_err());
         assert!(net.accelerator().is_none(), "a device that disagrees is not used");
         assert_eq!(net.run(x).unwrap(), cpu);
     }
@@ -713,7 +737,7 @@ mod tests {
         let net = Net::new(g).unwrap();
         let cpu = net.run(x.clone()).unwrap();
         // agrees on the probe (two convs), then fails on the second conv of the next run
-        net.attach_checked(Arc::new(Fake { skew: 0.0, fail_after: 3.into() }), &x, 1e-4).unwrap();
+        net.attach_checked(Arc::new(Fake { skew: 0.0, fail_after: 3.into() }), &x, 1e-4, false).unwrap();
         let out = net.run(x).unwrap();
         assert!(net.accelerator().is_none());
         for (a, b) in out[0].1.data.iter().zip(&cpu[0].1.data) {
