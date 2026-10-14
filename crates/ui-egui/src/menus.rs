@@ -2101,11 +2101,13 @@ pub fn confirm_delete(app: &mut LccApp) -> bool {
     if !app.ui.settings.confirm_delete {
         return false;
     }
-    let count = app.session.targets(&json!({})).len();
+    let targets = app.session.targets(&json!({}));
+    let count = targets.len();
     if count == 0 {
         return false;
     }
-    app.ui.dialog = Some(Dialog::ConfirmDelete { count });
+    let (_, disk_files) = lcc_engine::disk_delete::preview(&app.session.catalog, &targets);
+    app.ui.dialog = Some(Dialog::ConfirmDelete { count, disk_files });
     true
 }
 

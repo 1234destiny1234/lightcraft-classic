@@ -2376,12 +2376,12 @@ fn deleting_a_photo_asks_first_from_the_key_the_menu_and_the_right_click_menu() 
 
     // ⌫ and Photo ▸ Delete Photo ask; Cancel keeps the photo
     h.request("ui.key", json!({"key": "delete"}), T);
-    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1 }), "the key asks");
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1, disk_files: 0 }), "the key asks");
     h.request("ui.dialog.cancel", json!({}), T);
     assert!(!deleted(&h));
     // (what a click on the menu bar's item runs; `ui.menu.invoke` is the agents' engine.execute)
     crate::menubar::run_item(&mut h.app, "photo.delete", json!({})).unwrap();
-    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1 }), "the menu asks");
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1, disk_files: 0 }), "the menu asks");
     h.request("ui.dialog.cancel", json!({}), T);
     assert!(!deleted(&h));
 
@@ -2389,7 +2389,7 @@ fn deleting_a_photo_asks_first_from_the_key_the_menu_and_the_right_click_menu() 
     let thumb = format!("thumb:{}", photo.0);
     right_click(&mut h, &thumb);
     click(&mut h, "button:contextDeletePhoto");
-    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1 }), "the right-click menu asks");
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1, disk_files: 0 }), "the right-click menu asks");
     assert!(!deleted(&h), "nothing deleted before the answer");
     let r = h.request("ui.dialog.confirm", json!({}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -2476,4 +2476,55 @@ fn emptying_recently_deleted_asks_first_and_removes_only_trashed_photos() {
     assert_eq!(r["ok"], true, "{r}");
     assert_eq!(h.app.session.catalog.len(), kept, "only the trashed photos are gone");
     assert!(h.app.session.catalog.photos().all(|p| !p.deleted));
+}
+
+/// Delete from Disk in confirmation dialog moves the file to trash and permanently deletes from catalog.
+#[test]
+fn delete_from_disk_dialog_trashes_file_and_removes_from_catalog() {
+    use crate::state::Dialog;
+    let mut h = demo([1400.0, 900.0], json!({"view": "photoGrid"}));
+
+    let tmp = std::env::temp_dir().join(format!("lcc-test-ui-delete-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&tmp);
+    std::fs::create_dir_all(&tmp).unwrap();
+    let file = tmp.join("disk_photo.jpg");
+    std::fs::write(&file, b"content").unwrap();
+
+    let id = h.app.session.catalog.alloc_photo_id();
+    let op = lcc_catalog::Op::AddPhoto {
+        photo: Box::new(lcc_catalog::Photo::new(
+            id,
+            lcc_catalog::Source::File { path: file.to_string_lossy().to_string() },
+            "disk_photo.jpg",
+            "JPEG",
+            100,
+            100,
+            "2026-01-01",
+        )),
+    };
+    h.app.session.commit("Add photo", op).unwrap();
+
+    let trashed = std::sync::Arc::new(std::sync::Mutex::new(Vec::new()));
+    let t_clone = trashed.clone();
+    h.app.session.trash = Some(std::sync::Arc::new(move |p: &std::path::Path| {
+        t_clone.lock().unwrap().push(p.to_path_buf());
+        Ok(())
+    }));
+
+    exec(&mut h, "library.select", json!({"ids": [id.0]}));
+    h.request("ui.key", json!({"key": "delete"}), T);
+
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1, disk_files: 1 }));
+    h.step();
+    assert!(has(&h, "button:dialogDeleteFromDisk"));
+
+    click(&mut h, "button:dialogDeleteFromDisk");
+    assert_eq!(h.app.ui.dialog, None);
+    assert!(trashed.lock().unwrap().contains(&file));
+    assert!(h.app.session.catalog.photo(id).is_none());
+
+    exec(&mut h, "edit.undo", json!({}));
+    assert!(h.app.session.catalog.photo(id).is_some());
+
+    let _ = std::fs::remove_dir_all(&tmp);
 }

@@ -1122,9 +1122,12 @@ pub enum Dialog {
         folder: String,
         catalog: Option<String>,
     },
-    /// Confirm moving photos to Recently Deleted.
+    /// Confirm moving photos to Recently Deleted or deleting from disk.
     ConfirmDelete {
         count: usize,
+        /// How many originals would be moved to the trash by "Delete from Disk".
+        #[serde(default)]
+        disk_files: usize,
     },
     /// Confirm removing photos from the library for good: the selection in Recently Deleted
     /// (`photo.deletePermanently`), or `all` of it (`library.emptyRecentlyDeleted`).

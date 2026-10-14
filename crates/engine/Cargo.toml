@@ -65,6 +65,7 @@ lcc-webgallery = { workspace = true, features = ["sftp"] }
 lcc-plugins = { workspace = true }
 # M14.8: video clips in an export batch
 lcc-video-export = { workspace = true }
+trash = { workspace = true }
 
 # free disk space of a volume (Folders panel)
 [target.'cfg(all(unix, not(target_arch = "wasm32")))'.dependencies]
