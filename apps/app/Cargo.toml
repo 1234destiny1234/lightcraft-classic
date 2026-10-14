@@ -39,6 +39,9 @@ pollster = { workspace = true }
 egui = { workspace = true }
 serde_json = { workspace = true }
 log = { workspace = true }
+# the loupe's HDR texture (`hdr_display`): f32 → f16 texels, uploaded as bytes
+half = { workspace = true }
+bytemuck = { workspace = true }
 
 [build-dependencies]
 # Icon + VERSIONINFO for the desktop executable; build.rs only uses it when targeting Windows.

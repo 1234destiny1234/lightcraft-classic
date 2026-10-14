@@ -4398,8 +4398,10 @@ dependencies = [
 name = "lcc-app"
 version = "0.8.0"
 dependencies = [
+ "bytemuck",
  "eframe",
  "egui",
+ "half",
  "lcc-brand",
  "lcc-codecs",
  "lcc-engine",

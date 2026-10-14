@@ -1311,5 +1311,5 @@
   "Will be copied": "Será importada como cópia",
   "Their edits, keywords and collection memberships are removed; the files on disk are kept.": "Suas edições, palavras-chave e participações em coleções são removidas; os arquivos no disco são mantidos.",
   "Include selected photos": "Incluir fotos selecionadas",
-  "HDR display output isn't available yet: this window shows the SDR rendition, even on an HDR display. HDR exports keep the full range.": "A saída HDR na tela ainda não está disponível: esta janela mostra a versão SDR, mesmo em uma tela HDR. As exportações HDR mantêm todo o intervalo."
+  "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.": "Esta tela não está exibindo HDR (ela é SDR ou o HDR está desativado nas configurações do sistema), então a janela mostra a versão SDR. As exportações HDR mantêm todo o intervalo."
 }

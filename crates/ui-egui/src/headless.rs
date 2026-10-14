@@ -3940,6 +3940,49 @@ mod tests {
         assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::About), "switching tabs keeps the dialog open");
     }
 
+    /// HDR display output (#47): with an HDR display, an HDR edit's loupe is drawn from its
+    /// linear float render (values above SDR white reach the window's HDR texture); an SDR
+    /// display, or an SDR edit, keeps the 8-bit loupe and uploads nothing.
+    #[test]
+    fn an_hdr_display_shows_hdr_edits_from_their_float_render() {
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        struct Fake(Option<f32>, Rc<RefCell<Vec<f32>>>);
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                self.0
+            }
+            fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
+                assert_eq!(rgb.len(), width * height * 3);
+                self.1.borrow_mut().push(rgb.iter().copied().fold(0.0, f32::max));
+                Ok(egui::TextureId::User(7))
+            }
+        }
+        let t = Duration::from_secs(10);
+        for (headroom, hdr_edit) in [(Some(4.0), true), (None, true), (Some(4.0), false)] {
+            let uploads = Rc::new(RefCell::new(Vec::new()));
+            let services = crate::Services { png: None, hdr_output: Some(Box::new(Fake(headroom, uploads.clone()))), ..Default::default() };
+            let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+            app.ui.view = crate::state::ViewMode::PhotoGrid;
+            let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+            h.request("ui.set", json!({"view": "detail"}), t);
+            if hdr_edit {
+                h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+                h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
+            }
+            let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+            if headroom.is_some() && hdr_edit {
+                assert!(h.step_until(SETTLE, hdr_shown), "the loupe shows the HDR texture");
+                assert!(uploads.borrow().iter().any(|m| *m > 1.0), "highlights above SDR white: {:?}", uploads.borrow());
+                assert!(!h.app.hdr_display_sdr, "no 'SDR window' note on the HDR button");
+            } else {
+                h.settle(SETTLE);
+                assert!(!hdr_shown(&h) && uploads.borrow().is_empty(), "{headroom:?} {hdr_edit}: 8-bit loupe");
+                assert_eq!(h.app.hdr_display_sdr, headroom.is_none());
+            }
+        }
+    }
+
     /// Settings ▸ Display / `app.displayProfile`: previews are shown through the monitor profile
     /// (the loupe rendered for the display, thumbnails converted from sRGB, the histogram still
     /// sRGB); a file that can't be used is an error, or, as the setting, reported with previews
