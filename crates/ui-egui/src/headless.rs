@@ -3983,6 +3983,49 @@ mod tests {
         }
     }
 
+    /// HDR display output touches the loupe only: the navigator / filmstrip thumbnail and the
+    /// loupe's 8-bit render of an HDR edit are the same pixels with and without an HDR display
+    /// (8-bit SDR rendition, drawn at SDR white), so nothing but the loupe's HDR image can go
+    /// above SDR white.
+    #[test]
+    fn an_hdr_display_leaves_thumbnails_and_8_bit_renders_as_on_sdr() {
+        use crate::render::Slot;
+        struct Fake;
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(7))
+            }
+        }
+        let t = Duration::from_secs(10);
+        let mut seen = Vec::new();
+        for hdr in [true, false] {
+            let hdr_output: Option<Box<dyn crate::HdrOutput>> = if hdr { Some(Box::new(Fake)) } else { None };
+            let services = crate::Services { png: None, hdr_output, ..Default::default() };
+            let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+            app.ui.view = crate::state::ViewMode::PhotoGrid;
+            app.renderer.keep_pixels = true;
+            let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+            h.request("ui.set", json!({"view": "detail"}), t);
+            h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 1.5}}}), t);
+            let id = h.app.session.active().unwrap();
+            let ready = |h: &Headless| {
+                h.app.renderer.textures.get(&Slot::Thumb(id)).is_some_and(|t| t.pixels.is_some())
+                    && h.app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.pixels.is_some() && t.photo == id)
+                    && !h.app.renderer.is_pending(Slot::Main)
+            };
+            assert!(h.step_until(SETTLE, ready));
+            h.settle(SETTLE);
+            let px = |s: Slot| h.app.renderer.textures[&s].pixels.as_ref().unwrap().pixels.clone();
+            seen.push((px(Slot::Thumb(id)), px(Slot::Main)));
+        }
+        assert!(seen[0].0 == seen[1].0, "thumbnail differs with an HDR display");
+        assert!(seen[0].1 == seen[1].1, "the loupe's 8-bit render differs with an HDR display");
+    }
+
     /// Settings ▸ Display / `app.displayProfile`: previews are shown through the monitor profile
     /// (the loupe rendered for the display, thumbnails converted from sRGB, the histogram still
     /// sRGB); a file that can't be used is an error, or, as the setting, reported with previews
