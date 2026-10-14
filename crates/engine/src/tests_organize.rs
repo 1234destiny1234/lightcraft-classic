@@ -259,6 +259,19 @@ fn filter_chips_clear_one_filter_and_total_ignores_the_filter() {
     assert_eq!(s.filter, Default::default());
 }
 
+#[test]
+fn filter_faces_chip_and_clear() {
+    let dir = temp_dir("faces-chip");
+    let mut s = open(&dir);
+    s.execute("library.filter", &json!({"faces": "2+"})).unwrap();
+    assert_eq!(s.filter.faces.as_deref(), Some("2+"));
+    let chips = crate::filter_chips(&s.filter, &s.catalog);
+    assert_eq!(chips.len(), 1);
+    assert_eq!(chips[0].label, "Faces: 2+");
+    s.execute("library.filter", &chips[0].clear).unwrap();
+    assert_eq!(s.filter.faces, None);
+}
+
 /// A shuffle is part of the saved view: the same seed (and so the same grid) is back on the next launch.
 #[test]
 fn random_sort_persists_with_the_view() {

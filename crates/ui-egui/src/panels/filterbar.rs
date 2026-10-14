@@ -291,6 +291,44 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         picker(app, ui, id, &shown, current.is_some(), items);
     }
 
+    // faces picker
+    let face_options: &[(&str, &str)] = &[
+        ("No faces (0)", "0"),
+        ("1 face", "1"),
+        ("2 faces", "2"),
+        ("3+ faces", "3+"),
+        ("4+ faces", "4+"),
+        ("5+ faces", "5+"),
+        ("1+ faces", "1+"),
+        ("6–10 faces", "6-10"),
+        ("10+ faces", "10+"),
+    ];
+    let mut face_items = vec![("Any faces".to_string(), json!({"faces": Value::Null}), f.faces.is_none())];
+    let mut matched_preset = false;
+    for (label, val) in face_options {
+        let sel = f.faces.as_deref() == Some(*val);
+        if sel {
+            matched_preset = true;
+        }
+        face_items.push((label.to_string(), json!({"faces": val}), sel));
+    }
+    if let Some(custom) = &f.faces
+        && !matched_preset
+    {
+        face_items.push((format!("{custom} faces"), json!({"faces": custom}), true));
+    }
+    let shown_faces = match f.faces.as_deref() {
+        None => "Faces".to_string(),
+        Some(v) => {
+            if let Some((lbl, _)) = face_options.iter().find(|(_, val)| *val == v) {
+                lbl.to_string()
+            } else {
+                format!("{v} faces")
+            }
+        }
+    };
+    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), face_items);
+
     // save / clear
     ui.add_space(14.0);
     let filtering = app.session.filter != Default::default();

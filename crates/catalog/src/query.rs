@@ -64,6 +64,10 @@ pub struct Filter {
     /// A folder on disk: its files only (browsed ones too); `subfolders` includes everything below.
     pub folder: Option<String>,
     pub subfolders: bool,
+    /// Detected face count filter: exact count ("0", "1", "2"), minimum ("3+", ">=2", ">0"),
+    /// maximum ("<=2", "<3"), or range ("1-5", "2..4"). Accepts strings or numbers in JSON.
+    #[serde(default, deserialize_with = "deserialize_faces", skip_serializing_if = "Option::is_none")]
+    pub faces: Option<String>,
     /// Smart-album rules (all / any / none, nested groups; see [`crate::rules`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rule_set: Option<crate::RuleSet>,
@@ -456,6 +460,110 @@ fn shuffle_rank(seed: u64, id: PhotoId) -> u64 {
     mix64(mix64(seed) ^ id.0)
 }
 
+fn deserialize_faces<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum FaceCountVal {
+        Num(u64),
+        Str(String),
+    }
+
+    match Option::<FaceCountVal>::deserialize(deserializer)? {
+        None => Ok(None),
+        Some(FaceCountVal::Num(n)) => Ok(Some(n.to_string())),
+        Some(FaceCountVal::Str(s)) => {
+            let trimmed = s.trim();
+            if trimmed.is_empty() { Ok(None) } else { Ok(Some(trimmed.to_string())) }
+        }
+    }
+}
+
+/// Whether a photo's detected face count matches `spec`.
+///
+/// Supported specs:
+/// - Exact: `"0"`, `"1"`, `"2"`, `"=2"`, `"none"` (0)
+/// - Minimum: `"3+"`, `">=3"`, `">2"`, `"+3"`, `"1+"`
+/// - Maximum: `"<=2"`, `"<3"`
+/// - Range: `"1-10"`, `"1..10"`, `"1..=10"`
+pub fn matches_face_spec(count: usize, spec: &str) -> bool {
+    let s = spec.trim();
+    if s.is_empty() {
+        return true;
+    }
+    if s.eq_ignore_ascii_case("none") {
+        return count == 0;
+    }
+    if s.eq_ignore_ascii_case("any") {
+        return count > 0;
+    }
+    // "3+" or "+3"
+    if let Some(rest) = s.strip_suffix('+')
+        && let Ok(min) = rest.trim().parse::<usize>()
+    {
+        return count >= min;
+    }
+    if let Some(rest) = s.strip_prefix('+')
+        && let Ok(min) = rest.trim().parse::<usize>()
+    {
+        return count >= min;
+    }
+    // ">=", "<=", ">", "<", "="
+    if let Some(rest) = s.strip_prefix(">=")
+        && let Ok(v) = rest.trim().parse::<usize>()
+    {
+        return count >= v;
+    }
+    if let Some(rest) = s.strip_prefix("<=")
+        && let Ok(v) = rest.trim().parse::<usize>()
+    {
+        return count <= v;
+    }
+    if let Some(rest) = s.strip_prefix('>')
+        && let Ok(v) = rest.trim().parse::<usize>()
+    {
+        return count > v;
+    }
+    if let Some(rest) = s.strip_prefix('<')
+        && let Ok(v) = rest.trim().parse::<usize>()
+    {
+        return count < v;
+    }
+    if let Some(rest) = s.strip_prefix('=')
+        && let Ok(v) = rest.trim().parse::<usize>()
+    {
+        return count == v;
+    }
+    // Ranges: "1..=10", "1..10", "1-10", "1–10" (en-dash)
+    if let Some((start, end)) = s.split_once("..=")
+        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
+    {
+        return count >= a && count <= b;
+    }
+    if let Some((start, end)) = s.split_once("..")
+        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
+    {
+        return count >= a && count <= b;
+    }
+    if let Some((start, end)) = s.split_once('–')
+        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
+    {
+        return count >= a && count <= b;
+    }
+    if let Some((start, end)) = s.split_once('-')
+        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
+    {
+        return count >= a && count <= b;
+    }
+    // Exact number
+    if let Ok(v) = s.parse::<usize>() {
+        return count == v;
+    }
+    false
+}
+
 fn token_matches(p: &Photo, tok: &str) -> bool {
     let t = tok.to_lowercase();
     if let Some((field, val)) = t.split_once(':') {
@@ -483,6 +591,7 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             "lens" => p.meta.lens.to_lowercase().contains(val),
             "keyword" | "kw" => p.meta.keywords.iter().any(|k| crate::keywords::is_under(k, val)),
             "person" | "who" => has_person(p, val),
+            "faces" | "face" | "facecount" => matches_face_spec(p.face_count(), val),
             "type" | "kind" => format!("{:?}", p.kind).eq_ignore_ascii_case(val),
             "video" => (val == "true" || val == "yes") == (p.kind == MediaKind::Video),
             "edited" => (val == "true" || val == "yes") == p.is_edited(),
@@ -562,6 +671,9 @@ impl Filter {
             (Some(a), None) => v.push(format!("captured from {a}")),
             (None, Some(b)) => v.push(format!("captured until {b}")),
             _ => {}
+        }
+        if let Some(fcs) = &self.faces {
+            v.push(format!("faces {fcs}"));
         }
         if !self.text.trim().is_empty() {
             v.push(format!("“{}”", self.text.trim()));
@@ -708,6 +820,11 @@ impl Filter {
         }
         if let Some(c) = &self.camera
             && !p.meta.camera.eq_ignore_ascii_case(c)
+        {
+            return false;
+        }
+        if let Some(fcs) = &self.faces
+            && !matches_face_spec(p.face_count(), fcs)
         {
             return false;
         }
