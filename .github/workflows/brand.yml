@@ -24,22 +24,25 @@ env:
   CARGO_TERM_COLOR: always
   CARGO_INCREMENTAL: 0
 
+# Self-hosted Linux runners (docs/ci.md), at low priority. Each runner's .env sets its own
+# CARGO_TARGET_DIR, so builds stay incremental between runs.
+defaults:
+  run:
+    shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
+
 jobs:
   check:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, lcc]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: brand-check
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - name: brand check
         run: cargo xtask brand check
       - name: docs up to date
         run: cargo xtask docs --check
 
   deny:
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, lcc]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - uses: taiki-e/install-action@v2
@@ -50,13 +53,9 @@ jobs:
 
   test-brand:
     name: throw-away brand
-    runs-on: ubuntu-latest
+    runs-on: [self-hosted, Linux, X64, lcc]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: brand-test
-          workspaces: ". -> target/brand-test"
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - name: cargo xtask brand test
         run: cargo xtask brand test

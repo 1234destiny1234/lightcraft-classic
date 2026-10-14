@@ -27,18 +27,22 @@ env:
 
 jobs:
   live:
-    runs-on: ubuntu-latest
+    # Self-hosted gpu0 (docs/ci.md): cargo on the host (the runner's own CARGO_TARGET_DIR), the Immich
+    # server in the host's Docker (the runner user is in the docker group). One version at a time:
+    # both use the same compose project and ports.
+    runs-on: [self-hosted, Linux, X64, lcc]
     timeout-minutes: 60
+    defaults:
+      run:
+        shell: nice -n 19 bash --noprofile --norc -eo pipefail {0}
     strategy:
       fail-fast: false
+      max-parallel: 1
       matrix:
         version: [min, latest]
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      - uses: dtolnay/rust-toolchain@stable
-      - uses: Swatinem/rust-cache@v2
-        with:
-          key: immich-live
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
       - name: start Immich (${{ matrix.version }})
         run: cargo xtask immich up --version ${{ matrix.version }}
       - name: seed

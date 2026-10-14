@@ -1,5 +1,5 @@
-# Windows on ARM: package the ARM64 release the way release.yml does (cross-compiled on an x64
-# runner, unsigned here), then install that MSI on a Windows 11 ARM64 runner, check the installed
+# Windows on ARM: package the ARM64 release the way release.yml does (built natively on the
+# self-hosted Windows on ARM runner, unsigned here), then install that MSI on a Windows 11 ARM64 runner, check the installed
 # binaries are ARM64, run the CLI natively, and uninstall. (A native ARM64 `cargo test` job is left
 # out for now: PdfCraft saw an intermittent access violation in egui UI tests there.)
 name: Windows ARM64
@@ -31,45 +31,24 @@ env:
   CARGO_INCREMENTAL: 0
 
 jobs:
-  diag:
-    if: github.event_name == 'workflow_dispatch'
-    strategy:
-      fail-fast: false
-      matrix:
-        runner: ['["self-hosted","Windows","ARM64","lcc"]', '["self-hosted","Windows","X64","lcc"]']
-    runs-on: ${{ fromJSON(matrix.runner) }}
-    steps:
-      - shell: pwsh
-        continue-on-error: true
-        run: |
-          whoami; $env:USERPROFILE; $env:PATH
-          [System.Runtime.InteropServices.RuntimeInformation]::OSArchitecture
-          Get-CimInstance Win32_OperatingSystem | Select Caption, Version
-          Get-PSDrive C | Select Used, Free
-          foreach ($c in 'cargo','rustup','rustc','git','dotnet','wix','pwsh','link','cl','signtool') { "$c => " + (Get-Command $c -ErrorAction SilentlyContinue).Source }
-          if (Get-Command rustup -ErrorAction SilentlyContinue) { rustup show }
-          $vw = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-          if (Test-Path $vw) { & $vw -all -products * -format text -property installationPath; & $vw -all -products * -requires Microsoft.VisualStudio.Component.VC.Tools.ARM64 -property installationPath }
-          Get-ChildItem "C:\Program Files*\Microsoft Visual Studio\*\*\VC\Tools\MSVC\*\bin\*\*" -Directory -ErrorAction SilentlyContinue | Select -Expand FullName
-          Get-ChildItem "C:\Program Files (x86)\Windows Kits\10\Lib\*\um" -Directory -ErrorAction SilentlyContinue | ForEach-Object { $_.FullName; (Get-ChildItem $_.FullName -Directory).Name -join ',' }
-          dotnet --list-sdks
-          Get-ChildItem $env:RUNNER_TOOL_CACHE -ErrorAction SilentlyContinue | Select -Expand Name
-
   package:
-    name: package (cross-compiled on x64)
-    # Self-hosted x64 Windows runner (win0) cross-compiles; GitHub-hosted minutes are not used.
-    runs-on: [self-hosted, Windows, X64, lcc]
-    timeout-minutes: 90
+    name: package (native ARM64)
+    # Self-hosted Windows on ARM runner (SNAPDRAGON): Visual Studio Build Tools with the ARM64 MSVC tools
+    # and Windows SDK, so it builds natively. win0 (x64) has no ARM64 MSVC tools. See docs/ci.md.
+    runs-on: [self-hosted, Windows, ARM64, lcc]
+    timeout-minutes: 120
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - name: Low priority, persistent build cache
+        shell: pwsh
+        run: |
+          Get-Process -Name Runner.Worker -ErrorAction SilentlyContinue | ForEach-Object { $_.PriorityClass = 'BelowNormal' }
+          if (-not $env:CARGO_TARGET_DIR) { Add-Content -Path $env:GITHUB_ENV -Value "CARGO_TARGET_DIR=$env:LOCALAPPDATA\lcc-ci-target-$env:RUNNER_NAME" }
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
           targets: aarch64-pc-windows-msvc
-      - uses: Swatinem/rust-cache@6323deb102c322ba6fcbdcafc7e3dddab59af2b6 # v2.9.2
-        with:
-          key: windows-arm64-package
-      # win0 has only the .NET runtime, and its runner account can't write to Program Files: the SDK and WiX go
-      # into the runner's own tool cache.
+      # The runner account can't write to Program Files: the .NET SDK and WiX go into the runner's own
+      # tool cache.
       - uses: actions/setup-dotnet@v4
         env:
           DOTNET_INSTALL_DIR: ${{ runner.tool_cache }}\dotnet
