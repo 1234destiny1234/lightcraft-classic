@@ -20,6 +20,17 @@ fn detail_edit() -> Headless {
     h
 }
 
+/// What the slider does when a drag starts: an undo interaction plus the dragged control's id.
+fn begin_drag(h: &mut Headless, control: &str) {
+    h.app.session.begin_interaction("Drag").unwrap();
+    h.app.ui.dragging_control = Some(control.to_string());
+}
+
+fn end_drag(h: &mut Headless) {
+    h.app.session.end_interaction().unwrap();
+    h.app.ui.dragging_control = None;
+}
+
 #[test]
 fn clipping_overlay_toggled_via_j_shortcut() {
     let mut h = detail_edit();
@@ -49,25 +60,25 @@ fn alt_drag_on_tone_sliders_shows_threshold_mask() {
     let d = (*h.app.session.develop_of(id).unwrap_or_default()).clone();
 
     // Highlights / Exposure / Whites:
-    for control in ["Exposure", "Highlights", "Whites"] {
-        h.app.session.begin_interaction(control).unwrap();
+    for control in ["light.exposure", "light.highlights", "light.whites"] {
+        begin_drag(&mut h, control);
         // Without alt held: no clipping overlay
         assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::None);
         // With alt held: highlights clipping threshold (Some(false))
         assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::Clipping(Some(false)));
-        h.app.session.end_interaction().unwrap();
+        end_drag(&mut h);
         // Once interaction ends: no clipping overlay even if alt is held
         assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::None);
     }
 
     // Shadows / Blacks:
-    for control in ["Shadows", "Blacks"] {
-        h.app.session.begin_interaction(control).unwrap();
+    for control in ["light.shadows", "light.blacks"] {
+        begin_drag(&mut h, control);
         // Without alt held: no clipping overlay
         assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::None);
         // With alt held: shadows clipping threshold (Some(true))
         assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::Clipping(Some(true)));
-        h.app.session.end_interaction().unwrap();
+        end_drag(&mut h);
         // Once interaction ends: no clipping overlay even if alt is held
         assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::None);
     }
@@ -84,17 +95,31 @@ fn alt_drag_takes_precedence_over_j_clipping_overlay() {
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::Clipping(None));
 
     // Alt-drag Exposure overrides to highlight threshold
-    h.app.session.begin_interaction("Exposure").unwrap();
+    begin_drag(&mut h, "light.exposure");
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::Clipping(Some(false)));
     // Without Alt, it still shows J overlay
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::Clipping(None));
 
     // Alt-drag Shadows overrides to shadow threshold
-    h.app.session.end_interaction().unwrap();
-    h.app.session.begin_interaction("Shadows").unwrap();
+    end_drag(&mut h);
+    begin_drag(&mut h, "light.shadows");
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::Clipping(Some(true)));
 
     // End interaction reverts to J overlay
-    h.app.session.end_interaction().unwrap();
+    end_drag(&mut h);
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::Clipping(None));
+}
+
+#[test]
+fn alt_drag_on_a_mask_exposure_slider_shows_no_clipping_mask() {
+    let mut h = detail_edit();
+    let id = h.app.session.active().expect("active photo");
+    let d = (*h.app.session.develop_of(id).unwrap_or_default()).clone();
+
+    // A mask's Exposure slider: same "Exposure" label, but no global tone control is dragged.
+    h.app.session.begin_interaction("Exposure").unwrap();
+    assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::None);
+    h.app.ui.dragging_control = Some("mask.exposure".to_string());
+    assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, true), Overlay::None);
+    end_drag(&mut h);
 }

@@ -39,7 +39,9 @@ pub enum Overlay {
     /// Visualize HDR (photos edited in HDR): the SDR image dimmed to grey, with every pixel the HDR
     /// rendition puts above SDR white painted by how far above it is ([`HDR_BANDS`]).
     HdrRange,
-    /// Shows clipped pixels. If `Some(true)` (shadows), background is white and clipped shadows are shown. If `Some(false)` (highlights), background is black and clipped highlights are shown. If `None`, background is the original image with pure red for highlights and pure blue for shadows.
+    /// Shows clipped pixels. `Some(true)` (shadows): white background with the clipped shadow
+    /// channels shown. `Some(false)` (highlights): black background with the clipped highlight
+    /// channels shown. `None`: the image with clipped highlights pure red and crushed shadows pure blue.
     Clipping(Option<bool>),
 }
 
@@ -285,10 +287,6 @@ fn spots(img: &mut Rgba8, t: u8, ppl: f64) {
 }
 
 fn clipping(img: &mut Rgba8, mode: Option<bool>) {
-    let (w, h) = (img.width, img.height);
-    if w == 0 || h == 0 {
-        return;
-    }
     for px in &mut img.data {
         let (r, g, b) = (px[0], px[1], px[2]);
         match mode {
