@@ -107,9 +107,38 @@ pub fn uninstall(id: &str) -> Result<bool, String> {
     Ok(true)
 }
 
-/// How `plugin.list` shows a filter plug-in.
+/// Plug-ins known to want the Source stage that don't declare `stage` in their manifest yet.
+const STAGE_HINTS: &[(&str, lcc_develop::FilterStage)] = &[
+    ("io.github.smyrgeorge.film-lab.convert", lcc_develop::FilterStage::Source),
+    ("io.github.smyrgeorge.film-lab.convert-advanced", lcc_develop::FilterStage::Source),
+];
+
+/// The stage a new entry of `f` starts at: the manifest's `stage`, else the built-in hint, else Display.
+pub fn preferred_stage(f: &Filter) -> lcc_develop::FilterStage {
+    use lcc_develop::FilterStage;
+    match f.manifest().stage {
+        Some(lcc_filters::Stage::Source) => FilterStage::Source,
+        Some(lcc_filters::Stage::Display) => FilterStage::Display,
+        None => STAGE_HINTS.iter().find(|(id, _)| *id == f.id()).map(|(_, s)| *s).unwrap_or_default(),
+    }
+}
+
+/// How `plugin.list` shows a filter plug-in. `params` is an object (no key order in JSON), so
+/// `paramOrder` lists its keys in the manifest's order; each spec carries its display `label`.
 pub fn info(f: &Filter) -> Value {
     let m = f.manifest();
+    let mut params = serde_json::Map::new();
+    for (k, spec) in &m.params {
+        let mut v = serde_json::to_value(spec).unwrap_or(Value::Null);
+        if let Some(o) = v.as_object_mut() {
+            o.insert("label".into(), Value::from(m.param_label(k)));
+        }
+        params.insert(k.clone(), v);
+    }
+    let stage = match preferred_stage(f) {
+        lcc_develop::FilterStage::Source => "source",
+        lcc_develop::FilterStage::Display => "display",
+    };
     json!({
         "id": m.id,
         "name": m.name,
@@ -117,7 +146,9 @@ pub fn info(f: &Filter) -> Value {
         "kind": "filter",
         "description": m.description,
         "author": m.author,
-        "params": serde_json::to_value(m).ok().and_then(|v| v.get("params").cloned()).unwrap_or(Value::Null),
+        "params": params,
+        "paramOrder": m.params.iter().map(|(k, _)| k.as_str()).collect::<Vec<_>>(),
+        "stage": stage,
         "overlap": m.overlap,
         "moduleHash": f.module_hash(),
         "analyze": f.has_analyze(),

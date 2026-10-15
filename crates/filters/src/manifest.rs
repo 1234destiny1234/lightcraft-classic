@@ -88,6 +88,33 @@ pub struct Manifest {
     pub overlap: u32,
     #[serde(default)]
     pub area: Area,
+    /// Where in a raw developer's pipeline the filter belongs (`"stage": "source" | "display"`, an
+    /// ABI v1.1 proposal; hosts without stages ignore it). Unknown values are ignored.
+    #[serde(default, deserialize_with = "lenient_stage", skip_serializing_if = "Option::is_none")]
+    pub stage: Option<Stage>,
+    /// Display labels of parameters that declare one (`{"type": …, "label": "Dynamic range"}`), by
+    /// parameter name. Read by [`Manifest::parse`]; labels that aren't 1-64 printable characters are dropped.
+    #[serde(skip)]
+    pub labels: Vec<(String, String)>,
+}
+
+/// The pipeline stage a filter asks for (see [`Manifest::stage`]).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum Stage {
+    /// On the decoded source, before the develop adjustments (e.g. a negative conversion).
+    Source,
+    /// On the finished image.
+    Display,
+}
+
+fn lenient_stage<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Stage>, D::Error> {
+    let v = Value::deserialize(d)?;
+    Ok(match v.as_str() {
+        Some("source") => Some(Stage::Source),
+        Some("display") => Some(Stage::Display),
+        _ => None,
+    })
 }
 
 impl Manifest {
@@ -97,8 +124,21 @@ impl Manifest {
             return Err(Error::Manifest(format!("manifest is {} bytes (limit {MAX_MANIFEST_BYTES})", bytes.len())));
         }
         let text = std::str::from_utf8(bytes).map_err(|_| Error::Manifest("manifest is not UTF-8".into()))?;
-        let man: Manifest = serde_json::from_str(text).map_err(|e| Error::Manifest(format!("manifest: {e}")))?;
+        let mut man: Manifest = serde_json::from_str(text).map_err(|e| Error::Manifest(format!("manifest: {e}")))?;
         man.validate()?;
+        // optional per-parameter labels (unknown keys to the parameter schema itself)
+        let raw: Value = serde_json::from_str(text).map_err(|e| Error::Manifest(format!("manifest: {e}")))?;
+        if let Some(ps) = raw.get("params").and_then(Value::as_object) {
+            man.labels = man
+                .params
+                .iter()
+                .filter_map(|(k, _)| {
+                    let l = ps.get(k)?.get("label")?.as_str()?.trim();
+                    let ok = l.chars().count() <= 64 && l.chars().all(|c| !c.is_control() && !hidden_format(c)) && l.chars().any(visible);
+                    ok.then(|| (k.clone(), l.to_string()))
+                })
+                .collect();
+        }
         Ok(man)
     }
 
@@ -140,6 +180,15 @@ impl Manifest {
             }
         }
         Ok(())
+    }
+
+    /// The display label of parameter `key`: the manifest's `label`, else the key humanised
+    /// (`dynamic_range` / `dynamicRange` → "Dynamic range").
+    pub fn param_label(&self, key: &str) -> String {
+        match self.labels.iter().find(|(k, _)| k == key) {
+            Some((_, l)) => l.clone(),
+            None => humanise(key),
+        }
     }
 
     /// The parameter notation the command registry and the generated dialogs use
@@ -245,6 +294,48 @@ fn params_as_object<S: serde::Serializer>(p: &[(String, ParamSpec)], s: S) -> st
         m.serialize_entry(k, v)?;
     }
     m.end()
+}
+
+/// A parameter name as a label: words split at `_` and lower→upper case changes, the first capitalised.
+pub fn humanise(key: &str) -> String {
+    let mut words: Vec<String> = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower = false;
+    for c in key.chars() {
+        if c == '_' || c == '-' || c == ' ' {
+            if !cur.is_empty() {
+                words.push(std::mem::take(&mut cur));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if c.is_uppercase() && prev_lower && !cur.is_empty() {
+            words.push(std::mem::take(&mut cur));
+        }
+        prev_lower = c.is_lowercase() || c.is_ascii_digit();
+        cur.push(c);
+    }
+    if !cur.is_empty() {
+        words.push(cur);
+    }
+    let mut out = String::new();
+    for (i, w) in words.iter().enumerate() {
+        if i > 0 {
+            out.push(' ');
+        }
+        // keep acronyms (`ISO`) as they are; lower-case the rest after the first word
+        let lowered = if w.chars().all(|c| !c.is_lowercase()) && w.chars().count() > 1 { w.clone() } else { w.to_lowercase() };
+        if i == 0 {
+            let mut cs = lowered.chars();
+            if let Some(f) = cs.next() {
+                out.extend(f.to_uppercase());
+                out.push_str(cs.as_str());
+            }
+        } else {
+            out.push_str(&lowered);
+        }
+    }
+    if out.is_empty() { key.to_string() } else { out }
 }
 
 /// `[A-Za-z0-9._-]{1,64}`.
@@ -364,6 +455,27 @@ mod tests {
         // In-range defaults are unchanged.
         let full = Manifest::parse(FULL.as_bytes()).unwrap();
         assert_eq!(Value::Object(full.resolve_params(&json!({})).unwrap()), json!({"amount": 50.0, "mode": "hard", "mono": false, "seed": 0}));
+    }
+
+    #[test]
+    fn labels_and_stage_are_optional_and_lenient() {
+        let m = Manifest::parse(
+            br#"{"id":"a.b","name":"N","kind":"filter","stage":"source",
+                "params":{"temp":{"type":"number","min":0,"max":1,"default":0},
+                          "dynamic_range":{"type":"number","min":0,"max":1,"default":0},
+                          "filmBase":{"type":"bool","label":"Film base colour"},
+                          "x":{"type":"bool","label":"\u202Eevil"}}}"#,
+        )
+        .unwrap();
+        assert_eq!(m.stage, Some(Stage::Source));
+        assert_eq!(m.param_label("temp"), "Temp");
+        assert_eq!(m.param_label("dynamic_range"), "Dynamic range");
+        assert_eq!(m.param_label("filmBase"), "Film base colour");
+        assert_eq!(m.param_label("x"), "X", "an unprintable label falls back to the key");
+        assert_eq!(humanise("dynamicRange"), "Dynamic range");
+        assert_eq!(humanise("ISO_boost"), "ISO boost");
+        let odd = Manifest::parse(br#"{"id":"a.b","name":"N","kind":"filter","stage":7}"#).unwrap();
+        assert_eq!(odd.stage, None, "an unknown stage is ignored, not an error");
     }
 
     #[test]

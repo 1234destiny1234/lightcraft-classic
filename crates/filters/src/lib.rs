@@ -27,7 +27,7 @@ mod runtime;
 mod sniff;
 
 pub use apply::FrameInfo;
-pub use manifest::{Area, Kind, Manifest, ParamSpec};
+pub use manifest::{Area, Kind, Manifest, ParamSpec, Stage};
 pub use registry::{FolderReport, Registry};
 pub use runtime::{ABI_VERSION, Filter, Limits};
 pub use sniff::is_filter_module;

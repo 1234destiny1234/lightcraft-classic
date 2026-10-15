@@ -228,6 +228,8 @@ pub struct Session {
     pub(crate) skip_auto_write: bool,
     /// AI denoise: the model in use, the photos that have their picture and the work in progress.
     pub(crate) denoise: denoise::State,
+    /// Plug-in filter measurements (`develop.pluginFilter.analyze`) running in the background.
+    pub(crate) filter_analyses: cmd::plugin_filters::Analyses,
     /// Where the host keeps face models (one folder each); `None` where there is no file system (the web).
     pub face_models_dir: Option<std::path::PathBuf>,
     /// Face model downloads started this session (the staged files wait in `<face_models_dir>/.downloads`).
@@ -423,6 +425,7 @@ impl Session {
             interaction: None,
             skip_auto_write: false,
             denoise: Default::default(),
+            filter_analyses: Default::default(),
             face_models_dir: None,
             face_downloads: Default::default(),
             lens_db: Default::default(),
