@@ -819,6 +819,11 @@ pub fn run_item(app: &mut LccApp, id: &str, params: Value) -> Result<Value, Stri
     if id == "photo.delete" && crate::menus::confirm_delete(app) {
         return Ok(Value::Null);
     }
+    // moves files: always asks first, even with "Confirm before deleting" off (without a
+    // selection the command itself reports why nothing happens)
+    if id == "photo.deleteFromDisk" && crate::menus::confirm_delete_from_disk(app) {
+        return Ok(Value::Null);
+    }
     if matches!(id, "photo.deletePermanently" | "library.emptyRecentlyDeleted")
         && crate::menus::confirm_purge(app, id == "library.emptyRecentlyDeleted")
     {

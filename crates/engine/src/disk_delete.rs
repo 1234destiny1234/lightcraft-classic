@@ -1,4 +1,4 @@
-//! Delete from Disk (`photo.deleteFromDisk`, issue #1706): the photos' files go to the system trash
+//! Delete from Disk (`photo.deleteFromDisk`): the photos' files go to the system trash
 //! (the macOS Trash, the Windows Recycle Bin, the freedesktop trash on Linux and the BSDs) and the
 //! photos leave the library.
 //!
@@ -17,6 +17,12 @@
 //! - a photo whose file isn't there (a disk that isn't connected) or couldn't be moved to the
 //!   trash: it stays in the library and the report says why, so no photo leaves the library
 //!   while its file is still somewhere on disk.
+//!
+//! Callers outside the UI (CLI, MCP, the control channel) must pass `confirm: true`: the command
+//! moves files, so it never runs on an id alone. The desktop app asks in its Delete dialog first.
+//!
+//! The trashing holds an activity row ("Deleting from disk", with progress; cancellable between
+//! files: what was moved by then leaves the library, the rest stays).
 //!
 //! One undo step brings the catalog records back, pointing at their old paths: put the files back
 //! from the trash and the photos find them again, with their edits.
@@ -43,28 +49,15 @@ pub fn system_trash() -> TrashFn {
     Arc::new(|path: &Path| trash::delete(path).map_err(|e| e.to_string()))
 }
 
-/// What the system trash is called on this platform, for messages.
-pub fn trash_name() -> &'static str {
-    if cfg!(target_os = "macos") {
-        "the Trash"
-    } else if cfg!(target_os = "windows") {
-        "the Recycle Bin"
-    } else {
-        "the trash"
-    }
-}
-
 /// One file to move to the trash and the photos that leave the library with it.
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Group {
     pub photos: Vec<PhotoId>,
     pub original: PathBuf,
-    /// Its XMP sidecars that go too (each moved only if it is still there by then).
-    pub sidecars: Vec<PathBuf>,
 }
 
-/// What Delete from Disk would do with a set of photos (no file is touched to work it out except
-/// for listing the folders, to tell whether a stem sidecar is shared).
+/// What Delete from Disk would do with a set of photos, from the catalog alone (no file is
+/// touched: the sidecars are looked up while trashing, see [`sidecars_of`]).
 #[derive(Debug, Default, Clone, PartialEq, Eq)]
 pub(crate) struct Plan {
     pub groups: Vec<Group>,
@@ -98,17 +91,19 @@ pub(crate) fn plan(cat: &Catalog, targets: &[PhotoId]) -> Plan {
             _ => None,
         })
         .collect();
-    let originals: HashSet<PathBuf> = by_path.keys().filter(|p| !shared.contains(p.as_str())).map(PathBuf::from).collect();
     for (path, photos) in &by_path {
         if shared.contains(path.as_str()) {
             plan.keep_file.extend(photos.iter().map(|id| (*id, path.clone())));
             continue;
         }
-        let original = PathBuf::from(path);
-        let sidecars = sidecars_of(&original, &originals);
-        plan.groups.push(Group { photos: photos.clone(), original, sidecars });
+        plan.groups.push(Group { photos: photos.clone(), original: PathBuf::from(path) });
     }
     plan
+}
+
+/// The originals of `plan` that go to the trash (the set [`sidecars_of`] takes).
+fn originals(plan: &Plan) -> HashSet<PathBuf> {
+    plan.groups.iter().map(|g| g.original.clone()).collect()
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
@@ -125,7 +120,7 @@ fn same_path(a: &Path, b: &Path) -> bool {
 /// The XMP sidecars of `original` that go with it: `<file>.xmp` always, `<stem>.xmp` only when no
 /// other file in the folder (besides `leaving`, the originals going too) shares its stem. Only
 /// existing files are listed.
-fn sidecars_of(original: &Path, leaving: &HashSet<PathBuf>) -> Vec<PathBuf> {
+pub(crate) fn sidecars_of(original: &Path, leaving: &HashSet<PathBuf>) -> Vec<PathBuf> {
     const EXTS: [&str; 3] = ["xmp", "XMP", "Xmp"];
     let mut v: Vec<PathBuf> = Vec::new();
     for e in EXTS {
@@ -167,17 +162,32 @@ fn stem_shared(original: &Path, leaving: &HashSet<PathBuf>) -> bool {
 /// `photo.deleteFromDisk`: move the targets' files to the trash and take the photos out of the
 /// library (one undo step). See the module docs.
 pub(crate) fn delete_from_disk(s: &mut Session, p: &Value) -> Result<Value> {
+    if p.get("confirm").and_then(Value::as_bool) != Some(true) {
+        return Err(crate::cmd::bad("photo.deleteFromDisk", "moves the photos' files to the system trash: pass confirm: true to go ahead"));
+    }
     let Some(trash) = s.trash.clone() else {
-        return Err(EngineError::Other(format!("Delete from Disk isn't available here: this build can't move files to {}", trash_name())));
+        return Err(EngineError::Other("Delete from Disk isn't available here: this build can't move files to the system trash".into()));
     };
     let targets = s.targets(p);
     if targets.is_empty() {
         return Err(crate::cmd::bad("photo.deleteFromDisk", "no photos to delete"));
     }
     let plan = plan(&s.catalog, &targets);
+    let leaving = originals(&plan);
     let shown = |path: &Path| path.to_string_lossy().to_string();
     let (mut remove, mut trashed, mut kept, mut failed) = (Vec::new(), Vec::new(), Vec::new(), Vec::<(String, String)>::new());
-    for g in &plan.groups {
+    let task = s.activity.start("deleteFromDisk", "Deleting from disk", crate::activity::Cancel::Yes);
+    let total = u64::try_from(plan.groups.len()).unwrap_or(u64::MAX);
+    let mut cancelled = 0usize;
+    for (i, g) in plan.groups.iter().enumerate() {
+        if task.is_cancelled() {
+            cancelled = cancelled.saturating_add(1);
+            continue;
+        }
+        task.progress(u64::try_from(i).unwrap_or(u64::MAX), total);
+        if let Some(name) = g.original.file_name() {
+            task.detail(&name.to_string_lossy());
+        }
         // never remove a photo whose file is still somewhere: an unplugged disk, a folder
         match std::fs::symlink_metadata(&g.original) {
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
@@ -194,13 +204,15 @@ pub(crate) fn delete_from_disk(s: &mut Session, p: &Value) -> Result<Value> {
             }
             Ok(_) => {}
         }
+        // looked up before the original goes, so the folder still shows which stems are shared
+        let sidecars = sidecars_of(&g.original, &leaving);
         if let Err(e) = trash(&g.original) {
             failed.push((shown(&g.original), e));
             continue;
         }
         trashed.push(shown(&g.original));
         remove.extend(g.photos.iter().copied());
-        for sc in &g.sidecars {
+        for sc in &sidecars {
             // (on a case-insensitive disk `a.xmp` and `a.XMP` are one file, gone with the first)
             if !sc.is_file() {
                 continue;
@@ -211,6 +223,7 @@ pub(crate) fn delete_from_disk(s: &mut Session, p: &Value) -> Result<Value> {
             }
         }
     }
+    drop(task);
     for (id, path) in &plan.keep_file {
         remove.push(*id);
         kept.push(path.clone());
@@ -220,17 +233,22 @@ pub(crate) fn delete_from_disk(s: &mut Session, p: &Value) -> Result<Value> {
         failed.push((name, "not a file on disk".into()));
     }
     if remove.is_empty() {
-        let why = failed.first().map(|(path, e)| format!("{path}: {e}")).unwrap_or_else(|| "no photos to delete".into());
-        return Err(EngineError::Other(format!("Nothing was moved to {}. {why}", trash_name())));
+        let why = if cancelled > 0 {
+            "cancelled".to_string()
+        } else {
+            failed.first().map(|(path, e)| format!("{path}: {e}")).unwrap_or_else(|| "no photos to delete".into())
+        };
+        return Err(EngineError::Other(format!("Nothing was moved to the system trash. {why}")));
     }
     let op = s.catalog.delete_photos_permanently_ops(&remove);
     s.commit("Delete from Disk", op)?;
     kept.dedup();
-    Ok(json!({"deleted": remove.len(), "trashed": trashed, "kept": kept, "failed": failed}))
+    Ok(json!({"deleted": remove.len(), "trashed": trashed, "kept": kept, "failed": failed, "cancelled": cancelled}))
 }
 
 /// The photos among `targets` (with their virtual copies) whose file Delete from Disk would move
-/// to the trash, and how many files that is (originals only): what the confirmation shows.
+/// to the trash, and how many files that is (originals only): what the confirmation shows. Works
+/// from the catalog alone, so it stays quick for thousands of photos.
 pub fn preview(cat: &Catalog, targets: &[PhotoId]) -> (usize, usize) {
     let plan = plan(cat, targets);
     let photos = plan.groups.iter().map(|g| g.photos.len()).sum::<usize>() + plan.keep_file.len();
@@ -302,7 +320,7 @@ mod tests {
         assert_eq!(p.groups.len(), 1);
         assert_eq!(p.groups[0].photos, vec![id]);
         assert_eq!(p.groups[0].original, file);
-        assert!(p.groups[0].sidecars.is_empty());
+        assert!(sidecars_of(&file, &originals(&p)).is_empty());
         assert!(p.keep_file.is_empty());
         assert!(p.no_file.is_empty());
 
@@ -326,7 +344,7 @@ mod tests {
 
         // Alone without test.jpg: both test.cr3.xmp and test.xmp are sidecars
         let p = plan(&s.catalog, &[id_cr3]);
-        assert_eq!(p.groups[0].sidecars.len(), 2);
+        assert_eq!(sidecars_of(&cr3, &originals(&p)).len(), 2);
 
         // Now add test.jpg on disk and in catalog
         std::fs::write(&jpg, b"jpeg").unwrap();
@@ -334,11 +352,11 @@ mod tests {
 
         // Only deleting CR3: test.xmp is shared with test.jpg, so only test.cr3.xmp goes
         let p_cr3_only = plan(&s.catalog, &[id_cr3]);
-        assert_eq!(p_cr3_only.groups[0].sidecars, vec![cr3_xmp.clone()]);
+        assert_eq!(sidecars_of(&cr3, &originals(&p_cr3_only)), vec![cr3_xmp.clone()]);
 
         // Deleting both CR3 and JPG: test.xmp is included because all owners leave
         let p_both = plan(&s.catalog, &[id_cr3, id_jpg]);
-        let all_sidecars: Vec<PathBuf> = p_both.groups.iter().flat_map(|g| g.sidecars.clone()).collect();
+        let all_sidecars: Vec<PathBuf> = p_both.groups.iter().flat_map(|g| sidecars_of(&g.original, &originals(&p_both))).collect();
         assert!(all_sidecars.contains(&cr3_xmp));
         assert!(all_sidecars.contains(&stem_xmp));
     }
@@ -385,7 +403,7 @@ mod tests {
         let id = add_test_photo(&mut s, &file);
         s.selection = crate::Selection::single(id);
 
-        let r = s.execute("photo.deleteFromDisk", &json!({"ids": [id.0]})).unwrap();
+        let r = s.execute("photo.deleteFromDisk", &json!({"ids": [id.0], "confirm": true})).unwrap();
         assert_eq!(r["deleted"], 1);
 
         let trashed_paths = trashed.lock().unwrap().clone();
@@ -416,7 +434,7 @@ mod tests {
         let copy = add_virtual_copy(&mut s, master);
         s.selection = crate::Selection::single(copy);
 
-        let r = s.execute("photo.deleteFromDisk", &json!({"ids": [copy.0]})).unwrap();
+        let r = s.execute("photo.deleteFromDisk", &json!({"ids": [copy.0], "confirm": true})).unwrap();
         assert_eq!(r["deleted"], 1);
         assert!(trashed.lock().unwrap().is_empty(), "file was NOT trashed");
         assert!(s.catalog.photo(copy).is_none(), "copy was removed");
@@ -442,13 +460,76 @@ mod tests {
         s.selection = crate::Selection::single(id);
 
         // Without trash
-        let err = s.execute("photo.deleteFromDisk", &json!({"ids": [id.0]})).unwrap_err();
+        let err = s.execute("photo.deleteFromDisk", &json!({"ids": [id.0], "confirm": true})).unwrap_err();
         assert!(err.to_string().contains("Delete from Disk isn't available here"));
 
         // With trash, but file doesn't exist
         s.trash = Some(Arc::new(|_| Ok(())));
-        let err = s.execute("photo.deleteFromDisk", &json!({"ids": [id.0]})).unwrap_err();
+        let err = s.execute("photo.deleteFromDisk", &json!({"ids": [id.0], "confirm": true})).unwrap_err();
         assert!(err.to_string().contains("Nothing was moved"));
         assert!(s.catalog.photo(id).is_some(), "photo stayed in library");
+    }
+
+    /// CLI, MCP and the control channel can't move files to the trash without saying so.
+    #[test]
+    fn delete_from_disk_requires_confirm() {
+        let tmp = TempDir::new("confirm");
+        let file = tmp.path.join("photo.jpg");
+        std::fs::write(&file, b"photo").unwrap();
+        let mut s = Session::new();
+        let trashed = Arc::new(Mutex::new(Vec::new()));
+        let t_clone = trashed.clone();
+        s.trash = Some(Arc::new(move |p: &Path| {
+            t_clone.lock().unwrap().push(p.to_path_buf());
+            Ok(())
+        }));
+        let id = add_test_photo(&mut s, &file);
+        s.selection = crate::Selection::single(id);
+        for p in [json!({"ids": [id.0]}), json!({"ids": [id.0], "confirm": false}), json!({"ids": [id.0], "confirm": "yes"})] {
+            assert!(s.execute("photo.deleteFromDisk", &p).is_err(), "{p}");
+        }
+        assert!(trashed.lock().unwrap().is_empty(), "nothing trashed without confirm");
+        assert!(s.catalog.photo(id).is_some());
+    }
+
+    /// The trashing shows in the activity stack while it runs and leaves no row behind.
+    #[test]
+    fn delete_from_disk_shows_in_the_activity_stack() {
+        let tmp = TempDir::new("activity");
+        let file = tmp.path.join("photo.jpg");
+        std::fs::write(&file, b"photo").unwrap();
+        let mut s = Session::new();
+        let seen = Arc::new(Mutex::new(Vec::new()));
+        let (activity, seen2) = (s.activity.clone(), seen.clone());
+        s.trash = Some(Arc::new(move |_: &Path| {
+            seen2.lock().unwrap().extend(activity.list().into_iter().map(|t| t.kind));
+            Ok(())
+        }));
+        let id = add_test_photo(&mut s, &file);
+        s.selection = crate::Selection::single(id);
+        s.execute("photo.deleteFromDisk", &json!({"ids": [id.0], "confirm": true})).unwrap();
+        assert!(seen.lock().unwrap().contains(&"deleteFromDisk"), "a row while trashing");
+        assert!(s.activity.list().is_empty(), "no row afterwards");
+    }
+
+    /// Cancelling from the stack stops between files: what was moved leaves the library, the rest stays.
+    #[test]
+    fn delete_from_disk_cancel_keeps_the_rest() {
+        let tmp = TempDir::new("cancel");
+        let (a, b) = (tmp.path.join("a.jpg"), tmp.path.join("b.jpg"));
+        std::fs::write(&a, b"a").unwrap();
+        std::fs::write(&b, b"b").unwrap();
+        let mut s = Session::new();
+        let activity = s.activity.clone();
+        s.trash = Some(Arc::new(move |_: &Path| {
+            activity.cancel_all();
+            Ok(())
+        }));
+        let (ia, ib) = (add_test_photo(&mut s, &a), add_test_photo(&mut s, &b));
+        s.selection = crate::Selection::single(ia);
+        let r = s.execute("photo.deleteFromDisk", &json!({"ids": [ia.0, ib.0], "confirm": true})).unwrap();
+        assert_eq!(r["deleted"], 1);
+        assert_eq!(r["cancelled"], 1);
+        assert_eq!([ia, ib].iter().filter(|id| s.catalog.photo(**id).is_some()).count(), 1);
     }
 }

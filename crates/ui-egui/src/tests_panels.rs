@@ -2526,5 +2526,16 @@ fn delete_from_disk_dialog_trashes_file_and_removes_from_catalog() {
     exec(&mut h, "edit.undo", json!({}));
     assert!(h.app.session.catalog.photo(id).is_some());
 
+    // with "Confirm before deleting" off, Photo ▸ Delete from Disk still asks first
+    h.app.ui.settings.confirm_delete = false;
+    exec(&mut h, "library.select", json!({"ids": [id.0]}));
+    crate::menubar::run_item(&mut h.app, "photo.deleteFromDisk", json!({})).unwrap();
+    assert_eq!(h.app.ui.dialog, Some(Dialog::ConfirmDelete { count: 1, disk_files: 1 }), "the menu asks");
+    h.request("ui.dialog.cancel", json!({}), T);
+    assert!(h.app.session.catalog.photo(id).is_some(), "cancel keeps the photo");
+    // and an agent calling the command directly has to confirm
+    assert!(h.app.session.execute("photo.deleteFromDisk", &json!({})).is_err());
+    assert!(h.app.session.catalog.photo(id).is_some());
+
     let _ = std::fs::remove_dir_all(&tmp);
 }

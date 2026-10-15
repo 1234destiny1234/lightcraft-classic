@@ -1333,5 +1333,10 @@
   "Filename - Sequence": "檔案名稱 - 序號",
   "Custom Name - Sequence": "自訂名稱 - 序號",
   "Custom Name": "自訂名稱",
-  "Date - Filename": "日期 - 檔案名稱"
+  "Date - Filename": "日期 - 檔案名稱",
+  "Delete this photo from disk, or only remove it from the library?": "要從磁碟刪除這張照片，還是只從圖庫中移除？",
+  "Delete from Disk moves 1 file to the system trash.": "「從磁碟刪除」會將 1 個檔案移到系統垃圾桶。",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "「移除」會保留磁碟上的檔案，並將照片移到「最近刪除」。",
+  "Delete from Disk": "從磁碟刪除",
+  "Deleting from disk": "正在從磁碟刪除"
 }

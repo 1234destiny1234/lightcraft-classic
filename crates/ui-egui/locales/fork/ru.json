@@ -1542,5 +1542,10 @@
   "Filename - Sequence": "Имя файла - Номер",
   "Custom Name - Sequence": "Своё имя - Номер",
   "Custom Name": "Своё имя",
-  "Date - Filename": "Дата - Имя файла"
+  "Date - Filename": "Дата - Имя файла",
+  "Delete this photo from disk, or only remove it from the library?": "Удалить это фото с диска или только убрать его из библиотеки?",
+  "Delete from Disk moves 1 file to the system trash.": "«Удалить с диска» перемещает 1 файл в системную корзину.",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "«Убрать» оставляет файлы на диске и перемещает фото в «Недавно удалённые».",
+  "Delete from Disk": "Удалить с диска",
+  "Deleting from disk": "Удаление с диска"
 }

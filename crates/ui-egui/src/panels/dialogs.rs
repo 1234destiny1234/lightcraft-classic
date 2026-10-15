@@ -1226,24 +1226,23 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 Dialog::ConfirmDelete { count, disk_files } => {
                     let what = if *count == 1 { crate::i18n::tr("this photo").to_string() } else { crate::i18n::tr_format!("these {count} photos", count = count) };
                     if *disk_files > 0 && app.session.trash.is_some() {
-                        let files_str = if *disk_files == 1 {
-                            crate::i18n::tr("1 file").to_string()
+                        ui.label(if *count == 1 {
+                            crate::i18n::tr("Delete this photo from disk, or only remove it from the library?").to_string()
                         } else {
-                            format!("{disk_files} {}", crate::i18n::tr("files"))
+                            crate::i18n::tr_format!("Delete these {count} photos from disk, or only remove them from the library?", count = count)
+                        });
+                        let files = if *disk_files == 1 {
+                            crate::i18n::tr("Delete from Disk moves 1 file to the system trash.").to_string()
+                        } else {
+                            crate::i18n::tr_format!("Delete from Disk moves {n} files to the system trash.", n = disk_files)
                         };
-                        ui.label(format!("{} {what}?", crate::i18n::tr("Delete from disk, or remove from the library")));
+                        ui.label(egui::RichText::new(files).color(t.text_dim));
                         ui.label(
-                            egui::RichText::new(format!(
-                                "{} {files_str} {}. {}",
-                                crate::i18n::tr("Deleting from disk moves"),
-                                crate::i18n::tr("to the Trash / Recycle Bin"),
-                                crate::i18n::tr("Removing keeps the files on disk and moves them to Recently Deleted in the library.")
-                            ))
-                            .color(t.text_dim),
+                            egui::RichText::new(crate::i18n::tr("Remove keeps the files on disk and moves the photos to Recently Deleted.")).color(t.text_dim),
                         );
                     } else {
                         ui.label(crate::i18n::tr_format!("Move {what} to Recently Deleted?", what = what));
-                        ui.label(egui::RichText::new(crate::i18n::tr("They can be restored from Recently Deleted until it is emptied. The files on disk are kept.")).color(t.text_dim));
+                        ui.label(egui::RichText::new(crate::i18n::tr("They can be restored from Recently Deleted until it is emptied.")).color(t.text_dim));
                     }
                 }
                 Dialog::ConfirmPurge { count, .. } => {
@@ -1363,7 +1362,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     let r = ui.button(crate::i18n::tr("Delete from Disk"));
                     crate::widgets::register(ui.ctx(), "button:dialogDeleteFromDisk", r.rect);
                     if r.clicked() {
-                        if let Err(e) = app.run("photo.deleteFromDisk", json!({})) {
+                        if let Err(e) = app.run("photo.deleteFromDisk", json!({"confirm": true})) {
                             app.toast_error(ui.ctx(), e);
                         }
                         close = true;

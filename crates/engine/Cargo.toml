@@ -65,6 +65,7 @@ lcc-webgallery = { workspace = true, features = ["sftp"] }
 lcc-plugins = { workspace = true }
 # M14.8: video clips in an export batch
 lcc-video-export = { workspace = true }
+# Delete from Disk (`photo.deleteFromDisk`): the system trash; the web build has none (`Session::trash` stays None)
 trash = { workspace = true }
 
 # free disk space of a volume (Folders panel)

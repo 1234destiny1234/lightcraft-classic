@@ -2098,9 +2098,17 @@ pub fn menu_entries(app: &LccApp) -> Vec<MenuEntry> {
 /// With Settings → General → "Confirm before deleting" on, open the confirmation dialog instead
 /// of deleting; true when it did (the dialog's OK runs `photo.delete`).
 pub fn confirm_delete(app: &mut LccApp) -> bool {
-    if !app.ui.settings.confirm_delete {
-        return false;
-    }
+    app.ui.settings.confirm_delete && open_delete_dialog(app)
+}
+
+/// Photo ▸ Delete from Disk: always asks (whatever the Confirm setting says), in the Delete
+/// dialog, whose Delete from Disk button runs `photo.deleteFromDisk` with `confirm: true`.
+pub fn confirm_delete_from_disk(app: &mut LccApp) -> bool {
+    open_delete_dialog(app)
+}
+
+/// The Delete dialog for the selection; false when nothing is selected.
+fn open_delete_dialog(app: &mut LccApp) -> bool {
     let targets = app.session.targets(&json!({}));
     let count = targets.len();
     if count == 0 {

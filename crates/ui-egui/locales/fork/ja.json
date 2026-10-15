@@ -1334,5 +1334,10 @@
   "Filename - Sequence": "ファイル名 - 連番",
   "Custom Name - Sequence": "カスタム名 - 連番",
   "Custom Name": "カスタム名",
-  "Date - Filename": "日付 - ファイル名"
+  "Date - Filename": "日付 - ファイル名",
+  "Delete this photo from disk, or only remove it from the library?": "この写真をディスクから削除しますか？それともライブラリから取り除くだけにしますか？",
+  "Delete from Disk moves 1 file to the system trash.": "「ディスクから削除」は 1 個のファイルをシステムのゴミ箱に移動します。",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "「取り除く」はファイルをディスクに残し、写真を「最近削除した写真」に移動します。",
+  "Delete from Disk": "ディスクから削除",
+  "Deleting from disk": "ディスクから削除中"
 }
