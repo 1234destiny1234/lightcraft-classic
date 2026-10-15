@@ -38,10 +38,11 @@ if let Some(update) = lcc_updater::check(&opts, None, None)? {
 - **Installing** is `install::plan` (what will happen, in words, before anything does) and
   `install::install`: `msiexec` runs the Windows installer, a macOS script mounts the disk image and
   copies the app over the running one from a terminal window, a Linux script waits (up to 30 s) for
-  the app to quit, renames the running AppImage aside as `.old` and starts the new one, and anything
+  the app to quit, keeps the running AppImage as `.old` (hard link, else copy), renames the new one
+  over it in one atomic step and starts it, and anything
   else is revealed in the file manager for a manual unpack. The Linux script is written with
   `O_EXCL` into a fresh 0700 folder (under `$XDG_RUNTIME_DIR`, else the download folder) and deletes
-  itself when done; if the app doesn't quit in time or a rename fails, the original stays, the
+  itself when done; if the app doesn't quit in time or a step fails, the original stays, the
   staged file is deleted, nothing starts, and the reason is left for the next start to log
   (`clean_up_after_update`, which also deletes the `.old` beside `$APPIMAGE`). Every path ends with the app running again or with a sentence saying what to do.
 - **Never a panic.** No network, a rate-limited API, a release without a file for this machine, a

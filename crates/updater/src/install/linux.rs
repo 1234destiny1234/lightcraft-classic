@@ -1,12 +1,14 @@
 //! Replacing a running AppImage: the swap script, the private folder it is written to, and the
 //! clean-up on the next start.
 //!
-//! The app cannot replace its own file while it runs, so it starts a small POSIX `sh` script and
-//! quits. The script waits for this process to exit (`kill -0 <pid>`, up to [`WAIT_FOR_EXIT`]),
-//! renames the running file aside as `<file>.old`, renames the staged `<file>.new-<pid>` into its
-//! place and starts it. If the app is still running when the wait ends, or a rename fails, the
-//! original file stays (or is put back), the staged file is deleted, nothing is started, and the
-//! reason is written to [`FAILURE_NOTE`] in the download folder for the next start to log.
+//! The app does not swap its own file while it runs: it starts a small POSIX `sh` script and quits.
+//! The script waits for this process to exit (`kill -0 <pid>`, up to [`WAIT_FOR_EXIT`]), keeps the
+//! running file as `<file>.old` (a hard link, else a copy), then renames the staged
+//! `<file>.new-<pid>` over the running path in one atomic rename and starts it. The running path
+//! names a whole AppImage at every moment, even if the script is stopped half way. If the app is
+//! still running when the wait ends, or a step fails, the original file stays, the staged file is
+//! deleted, nothing is started, and the reason is written to [`FAILURE_NOTE`] in the download
+//! folder for the next start to log.
 //!
 //! The script lives in a fresh folder only this user can open (mode 0700, under
 //! `$XDG_RUNTIME_DIR`, else the download folder), created with `mkdir` and `O_EXCL` so a file or
@@ -29,7 +31,6 @@ use std::process::{Command, Stdio};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::time::Duration;
 
-use super::sh_quote;
 use crate::error::UpdateError;
 
 /// How long the script waits for the app to quit before it gives up on the update.
@@ -43,6 +44,11 @@ const SCRIPT_NAME: &str = "swap.sh";
 
 /// The longest failure note read back (it is one sentence).
 const MAX_NOTE_BYTES: u64 = 4096;
+
+/// `'…'` for a POSIX shell: an embedded `'` is closed, escaped and reopened.
+pub(super) fn sh_quote(text: &str) -> String {
+    format!("'{}'", text.replace('\'', "'\\''"))
+}
 
 /// What one swap moves, where it reports, and whom it waits for.
 pub(super) struct Swap<'a> {
@@ -84,17 +90,19 @@ pub(super) fn swap_script(swap: &Swap) -> String {
          \x20 exit 1\n\
          }}\n\
          n=0\n\
+         # `kill -0` takes a zombie for alive: an app nobody reaps makes the wait time out and the\n\
+         # update fail with the note, never swap early (the AppImage runtime and launchers reap it)\n\
          while kill -0 \"$pid\" 2>/dev/null; do\n\
          \x20 if [ \"$n\" -ge {tenths} ]; then fail 'The app was still running {secs} s after it was asked to quit, so the update was not installed. The previous version is unchanged.'; fi\n\
          \x20 sleep 0.1\n\
          \x20 n=$((n + 1))\n\
          done\n\
          if [ ! -f \"$staged\" ]; then fail 'The downloaded update was gone before it could be installed. The previous version is unchanged.'; fi\n\
-         if ! mv -f -- \"$running\" \"$old\" 2>/dev/null; then fail 'The running version could not be moved aside, so the update was not installed. The previous version is unchanged.'; fi\n\
-         if ! mv -f -- \"$staged\" \"$running\" 2>/dev/null; then\n\
-         \x20 mv -f -- \"$old\" \"$running\" 2>/dev/null\n\
-         \x20 fail 'The new version could not be put in place; the previous one was kept.'\n\
+         if ! ln -f -- \"$running\" \"$old\" 2>/dev/null && ! cp -p -- \"$running\" \"$old\" 2>/dev/null; then\n\
+         \x20 rm -f -- \"$old\"\n\
+         \x20 fail 'A copy of the running version could not be kept, so the update was not installed. The previous version is unchanged.'\n\
          fi\n\
+         if ! mv -f -- \"$staged\" \"$running\" 2>/dev/null; then fail 'The new version could not be put in place; the previous version is unchanged.'; fi\n\
          if command -v setsid >/dev/null 2>&1; then\n\
          \x20 setsid \"$running\" >/dev/null 2>&1 < /dev/null &\n\
          else\n\
@@ -283,15 +291,53 @@ mod tests {
 
     /// Write the script for `s` in a private folder and run it with `/bin/sh`.
     fn run_swap(s: &Setup, pid: u32, wait: Duration) -> (Child, PathBuf) {
+        run_swap_with(s, pid, wait, None)
+    }
+
+    /// [`run_swap`], with the folder `shims` searched first for the script's tools, and in a
+    /// process group of its own (so a test can stop it and its tools together).
+    fn run_swap_with(s: &Setup, pid: u32, wait: Duration, shims: Option<&Path>) -> (Child, PathBuf) {
         let folder = private_folder(&s.dir).expect("private folder");
         let body = swap_script(&Swap { running: &s.running, staged: &s.staged, old: &s.old, note: &s.note, folder: &folder, pid, wait });
         let script = write_script(&folder, &body).expect("script");
-        let child = Command::new("/bin/sh").arg(&script).spawn().expect("run the script");
-        (child, folder)
+        let mut cmd = Command::new("/bin/sh");
+        cmd.arg(&script).process_group(0);
+        if let Some(shims) = shims {
+            let path = std::env::var_os("PATH").unwrap_or_default();
+            let mut dirs = vec![shims.to_path_buf()];
+            dirs.extend(std::env::split_paths(&path));
+            cmd.env("PATH", std::env::join_paths(dirs).expect("PATH"));
+        }
+        (cmd.spawn().expect("run the script"), folder)
+    }
+
+    /// A folder holding an `mv` that runs `on_new` (sh) when its source is a staged `.new-*` file,
+    /// and the real `mv` otherwise.
+    fn mv_shim(dir: &Path, on_new: &str) -> PathBuf {
+        let shims = dir.join("shims");
+        fs::create_dir(&shims).expect("shims");
+        let mv = shims.join("mv");
+        fs::write(&mv, format!("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in *.new-*) {on_new} ;; esac; done\nexec /bin/mv \"$@\"\n"))
+            .expect("shim");
+        fs::set_permissions(&mv, fs::Permissions::from_mode(0o755)).expect("chmod");
+        shims
+    }
+
+    /// The pid of a process that has already exited (and been reaped).
+    fn gone_app() -> u32 {
+        let mut gone = Command::new("true").spawn().expect("stand-in app");
+        let _ = gone.wait();
+        gone.id()
     }
 
     fn content(p: &Path) -> String {
         fs::read_to_string(p).unwrap_or_default()
+    }
+
+    #[test]
+    fn quoting_keeps_a_path_one_argument() {
+        assert_eq!(sh_quote("/tmp/a b"), "'/tmp/a b'");
+        assert_eq!(sh_quote("/tmp/it's"), "'/tmp/it'\\''s'");
     }
 
     #[test]
@@ -350,6 +396,37 @@ mod tests {
         assert!(!s.marker.exists(), "nothing is started");
         assert!(!content(&s.note).is_empty(), "the reason is left for the next start");
         assert!(!folder.exists(), "the script deletes itself and its folder");
+        let _ = fs::remove_dir_all(&s.dir);
+    }
+
+    #[test]
+    fn a_rename_that_fails_keeps_the_original_and_starts_nothing() {
+        let s = setup("mv fails");
+        let shims = mv_shim(&s.dir, "exit 1");
+        let (mut script, folder) = run_swap_with(&s, gone_app(), Duration::from_secs(5), Some(&shims));
+        assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(content(&s.running).contains("old"), "the original file is untouched at its path");
+        assert!(!s.staged.exists(), "no .new file is left behind");
+        assert!(!s.marker.exists(), "nothing is started");
+        assert!(content(&s.note).contains("could not be put in place"), "the reason is left for the next start: {:?}", content(&s.note));
+        assert!(!folder.exists(), "the script deletes itself and its folder");
+        let _ = fs::remove_dir_all(&s.dir);
+    }
+
+    #[test]
+    fn a_swap_stopped_half_way_still_leaves_a_runnable_file() {
+        let s = setup("stopped");
+        let reached = s.dir.join("reached");
+        // the rename of the new version hangs: the script is stopped there
+        let shims = mv_shim(&s.dir, &format!(": > {}; sleep 30", sh_quote(&reached.to_string_lossy())));
+        let (mut script, _folder) = run_swap_with(&s, gone_app(), Duration::from_secs(5), Some(&shims));
+        assert!(wait_until(Duration::from_secs(10), || reached.exists()), "the script reaches the final rename");
+        // stop the script and its tools at that point
+        let _ = Command::new("kill").arg("-KILL").arg(format!("-{}", script.id())).status();
+        assert!(finished(&mut script, Duration::from_secs(10)), "the script is stopped");
+        assert!(content(&s.running).contains("old"), "the running path still names the previous version");
+        assert!(content(&s.old).contains("old"), "and a copy is kept as .old");
         let _ = fs::remove_dir_all(&s.dir);
     }
 

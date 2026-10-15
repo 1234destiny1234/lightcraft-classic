@@ -164,12 +164,6 @@ fn current_exe() -> Option<PathBuf> {
     Some(std::fs::canonicalize(&exe).unwrap_or(exe))
 }
 
-/// `'…'` for a POSIX shell: an embedded `'` is closed, escaped and reopened.
-#[cfg(unix)]
-fn sh_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\\''"))
-}
-
 // ---------- Windows
 
 #[cfg(windows)]
@@ -222,9 +216,9 @@ fn install_dmg(dmg: &Path) -> Result<Outcome, UpdateError> {
          echo \"Starting {app}…\"\n\
          open {target}/{app}\n",
         binary = lcc_brand::BINARY,
-        dmg = sh_quote(&dmg.to_string_lossy()),
-        target = sh_quote(&target.to_string_lossy()),
-        app = sh_quote(&app),
+        dmg = linux::sh_quote(&dmg.to_string_lossy()),
+        target = linux::sh_quote(&target.to_string_lossy()),
+        app = linux::sh_quote(&app),
     );
     std::fs::write(&script, body).map_err(|e| UpdateError::Io(format!("could not write {}: {e}", script.display())))?;
     // `osascript` opens Terminal on the script: the app quits, the script finishes the job and
@@ -281,8 +275,9 @@ fn install_appimage(new: &Path) -> Result<Outcome, UpdateError> {
     }
     let old = running.with_file_name(format!("{}.old", file_name(&running)));
     let note = stage.join(linux::FAILURE_NOTE);
-    // A script finishes the swap once this process has exited: a running executable cannot be
-    // replaced underneath itself, but it can be renamed, and the new one started in its place.
+    // A script finishes the swap once this process has exited: writing into a running executable
+    // fails (ETXTBSY), but renaming another file over it is allowed, so the new one is renamed
+    // into its place (atomically: the path always names a whole AppImage) and started.
     // Waiting for the exit matters: the new version would otherwise find the library still open.
     let base = linux::script_base(std::env::var_os("XDG_RUNTIME_DIR"), stage);
     linux::start(
@@ -379,15 +374,6 @@ mod tests {
 
     fn downloaded(name: &str) -> Downloaded {
         Downloaded { path: PathBuf::from("/tmp").join(name), bytes: 1, sha256: String::new(), name: name.into() }
-    }
-
-    #[test]
-    fn quoting_keeps_a_path_one_argument() {
-        #[cfg(unix)]
-        {
-            assert_eq!(sh_quote("/tmp/a b"), "'/tmp/a b'");
-            assert_eq!(sh_quote("/tmp/it's"), "'/tmp/it'\\''s'");
-        }
     }
 
     #[test]
