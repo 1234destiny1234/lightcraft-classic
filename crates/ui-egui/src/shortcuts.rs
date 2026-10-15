@@ -1372,3 +1372,7 @@ mod relative_rating_tests;
 #[cfg(test)]
 #[path = "shortcuts/tests_flag_cycle.rs"]
 mod flag_cycle_tests;
+
+#[cfg(test)]
+#[path = "shortcuts/tests_filter_bar_key.rs"]
+mod filter_bar_key_tests;
