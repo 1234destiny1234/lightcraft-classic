@@ -653,7 +653,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let drawn_long = target_rect.width().max(target_rect.height()) * ppp;
     // the whole frame at about canvas size; the zoomed part of it is a window render (below)
     let look = d.hash64();
-    let overlay = view_overlay(app, &d);
+    let overlay = view_overlay(app, &d, ui.input(|i| i.modifiers.alt));
     let sizes = crate::region::ViewSizes {
         drawn_long,
         canvas_long: canvas.width().max(canvas.height()) * ppp,
@@ -951,9 +951,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     }
     if app.ui.before_after == BeforeAfter::SplitTopBottom {
         p.line_segment([pos2(img_rect.left(), line.y), pos2(img_rect.right(), line.y)], Stroke::new(1.5, Color32::WHITE));
-    }
-    if app.ui.show_clipping && !show_before && !fullscreen {
-        clipping_overlay(app, &p, img_rect);
     }
     register(ui.ctx(), "canvas:image", img_rect);
     let map = crop_view.map_or_else(|| CanvasMap::new(&frame, img_rect), |v| v.map);
@@ -1514,8 +1511,6 @@ fn targeted_drag(app: &mut LccApp, resp: &egui::Response, map: &CanvasMap, targe
     }
 }
 
-/// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
-/// Visualize Spots).
 /// The loupe's HDR render for an HDR display: `job` (a whole-frame render of the open photo, no
 /// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key.
 pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine::media::RenderJob {
@@ -1541,7 +1536,10 @@ fn upload_hdr_view(app: &mut LccApp) {
     }
 }
 
-pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings) -> lcc_pipeline::Overlay {
+/// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
+/// Visualize Spots, Visualize HDR, and the clipping overlay: J's per-pixel red/blue tint, or the
+/// black/white clipping mask while ⌥/Alt-dragging a global tone slider).
+pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings, alt_held: bool) -> lcc_pipeline::Overlay {
     use lcc_pipeline::{MaskView, Overlay};
     if app.ui.fullscreen {
         return Overlay::None;
@@ -1577,20 +1575,24 @@ pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings) -> lcc_pipeline::O
     if edit && app.ui.hdr_visualize && d.hdr.enabled {
         return Overlay::HdrRange;
     }
-    Overlay::None
-}
 
-fn clipping_overlay(app: &LccApp, p: &egui::Painter, r: Rect) {
-    // Highlight clipped regions using the histogram's extremes isn't spatial; show a subtle frame hint.
-    if let Some(h) = app.renderer.textures.get(&Slot::Main).and_then(|t| t.histogram.as_ref()) {
-        let (lo, hi) = h.clipping();
-        if hi > 0.003 {
-            p.rect_stroke(r, 0.0, Stroke::new(2.0, Color32::from_rgb(255, 60, 60)), StrokeKind::Outside);
+    if app.ui.right != RightPanel::Crop {
+        // Keyed by the dragged control's id, not the interaction label: a mask's "Exposure" slider
+        // must not bring up the global clipping mask.
+        if alt_held && app.session.interaction.is_some() {
+            match app.ui.dragging_control.as_deref() {
+                Some("light.exposure" | "light.highlights" | "light.whites") => return Overlay::Clipping(Some(false)),
+                Some("light.shadows" | "light.blacks") => return Overlay::Clipping(Some(true)),
+                _ => {}
+            }
         }
-        if lo > 0.003 {
-            p.rect_stroke(r.expand(3.0), 0.0, Stroke::new(2.0, Color32::from_rgb(60, 120, 255)), StrokeKind::Outside);
+
+        if app.ui.show_clipping {
+            return Overlay::Clipping(None);
         }
     }
+
+    Overlay::None
 }
 
 fn general_cursor(app: &LccApp, ui: &egui::Ui, resp: &egui::Response, img: Rect, canvas: Rect) {

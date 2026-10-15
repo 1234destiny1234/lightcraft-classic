@@ -443,7 +443,7 @@ pub fn show(app: &mut crate::LccApp, ui: &mut egui::Ui) {
                 crate::widgets::register(ui.ctx(), "panel:right_panel", ui.max_rect());
                 crate::panels::right::show(app, ui);
             }
-            Panel::Presets => crate::panels::presets::show(app, ui),
+            Panel::Presets => crate::panels::presets::show(app, ui, crate::module::DEVELOP_LEFT, false),
         },
     );
     if let Some(mut canvas) = canvas {

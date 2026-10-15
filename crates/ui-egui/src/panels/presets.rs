@@ -12,12 +12,23 @@ use lcc_engine::presets::PresetList;
 use serde_json::json;
 
 use crate::icons::{Icon, paint};
+use crate::module::PanelId;
 use crate::theme::Tokens;
 use crate::widgets::{divider, icon_button, register, slider};
 use crate::{HoverPreview, LccApp};
 
 /// Long edge of preset thumbnails (px).
 const THUMB_EDGE: usize = 128;
+
+/// Height of the panel's Classic header ([`crate::panels::classic::header`]): folded, it is all
+/// the panel takes in the left column.
+pub const HEADER_H: f32 = 28.0;
+
+/// The state the Presets panel of Develop's left column folds under. The presets column (Shift+P)
+/// is the same panel somewhere else and folds under the panel's usual `panel:presets`: a state of
+/// its own here means folding the panel in the column cannot leave that column open and empty (a
+/// dead end), and closing the column brings the panel back as it was.
+pub const IN_COLUMN_KEY: &str = "panel:presets-inline";
 
 /// The preset amount slider may replace only the undo step it created.
 #[derive(Clone)]
@@ -48,31 +59,44 @@ impl AppliedPreset {
     }
 }
 
-pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
+/// `in_column`: drawn as the Presets panel of Develop's left column (which gives it a share of the
+/// column and lets it fold). The presets column (Shift+P) draws the same panel whole.
+pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], in_column: bool) {
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider)).show(ui, |ui| {
         ui.spacing_mut().item_spacing.y = 0.0;
-        let (hr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 46.0), Sense::hover());
-        ui.painter().text(pos2(hr.left() + 24.0, hr.center().y + 2.0), Align2::LEFT_CENTER, crate::i18n::tr("Presets"), t.semibold(15.0), t.text);
+        // The panel's own Classic header, like the Versions, History and Collections panels below
+        // it: the chevron on the left of the bar folds the list and the header's menu shows or
+        // hides the side's panels, so someone who does not use presets can give the panels below
+        // the room (issue #75). In the left column it folds under `IN_COLUMN_KEY`, a state of its
+        // own, so folding it there cannot leave the presets column (Shift+P) open and empty. The
+        // two buttons sit at the bar's right edge, as a header button does on upstream's sidebar,
+        // and the header keeps them room.
+        let (hr, unfolded) = if in_column {
+            super::classic::header_inset(app, ui, PanelId::Presets, side, IN_COLUMN_KEY, 62.0)
+        } else {
+            super::classic::header(app, ui, PanelId::Presets, side)
+        };
         let mut hdr = ui.new_child(
             egui::UiBuilder::new()
                 .max_rect(Rect::from_min_max(pos2(hr.right() - 80.0, hr.top()), hr.right_bottom()))
                 .layout(egui::Layout::right_to_left(egui::Align::Center)),
         );
-        if icon_button(
+        let plus = icon_button(
             &mut hdr,
             "presetCreate",
             Icon::Plus,
-            vec2(28.0, 28.0),
+            vec2(26.0, 22.0),
             false,
             app.session.active().is_some(),
             crate::i18n::tr("Create Preset…"),
-        )
-        .clicked()
-        {
+        );
+        register(ui.ctx(), "icon:presetCreate", plus.rect);
+        if plus.clicked() {
             app.ui.dialog = Some(crate::state::Dialog::create_preset());
         }
-        let more = icon_button(&mut hdr, "presetMore", Icon::More, vec2(28.0, 28.0), false, true, crate::i18n::tr("More preset options"));
+        let more = icon_button(&mut hdr, "presetMore", Icon::More, vec2(26.0, 22.0), false, true, crate::i18n::tr("More preset options"));
+        register(ui.ctx(), "icon:presetMore", more.rect);
         egui::Popup::menu(&more).show(|ui| {
             let r = ui.checkbox(&mut app.ui.preset_thumbs, crate::i18n::tr("Show Thumbnails"));
             register(ui.ctx(), "presetMenu:thumbnails", r.rect);
@@ -85,6 +109,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 let _ = app.run("file.exportPresets", json!({}));
             }
         });
+        // folded: the header is the whole panel, and the hairline under it closes it off from the
+        // panels below
+        if !unfolded {
+            divider(ui);
+            return;
+        }
         divider(ui);
         // amount slider (applies to the last applied preset)
         let amt_id = egui::Id::new("preset-amount");
