@@ -72,11 +72,11 @@ pub struct CatalogUi {
     frames: u32,
     /// Files from the command line of a first start, imported once a catalog is open.
     pub pending_import: Vec<String>,
-    /// The welcome dialog's "Check for updates when the app starts" was ticked: saved through
-    /// `update.prefs` once a catalog is open other than the one open then (the inner value; `None`:
-    /// none was). Kept here, not in the dialog, because a folder dialog may answer frames later,
-    /// after the welcome dialog has gone.
-    pub pending_updates: Option<Option<PathBuf>>,
+    /// The welcome dialog's "Check for updates when the app starts", as it was when its Create /
+    /// Open action ran: saved through `update.prefs` when that action opens a catalog (at once, or
+    /// when its folder dialog answers, frames later), and dropped when it doesn't (cancelled or
+    /// failed). It belongs to that one action, never to a later one.
+    pub pending_updates: bool,
 }
 
 /// The welcome dialog: a new catalog under the Pictures folder by default.
@@ -87,6 +87,8 @@ pub fn welcome(app: &mut LccApp, foreign: Vec<String>) {
         .unwrap_or_default();
     app.catalog_ui.dialog =
         Some(CatalogDialog::Welcome { parent, name: lcc_brand::LIBRARY_DEFAULT.to_string(), demo: false, updates: false, foreign });
+    // a fresh dialog: an earlier one's choice is not this one's
+    app.catalog_ui.pending_updates = false;
 }
 
 impl CatalogUi {
@@ -131,6 +133,12 @@ fn open_catalog(app: &mut LccApp, path: &str) -> Result<Value, String> {
 fn open_dir(app: &mut LccApp, dir: &Path, demo: bool) -> Result<Value, String> {
     let r = crate::panels::settings::open_library(app, &json!({"path": dir.to_string_lossy(), "demo": demo}))?;
     app.catalog_ui.touch(dir);
+    // the welcome dialog's update choice, made for this catalog
+    if std::mem::take(&mut app.catalog_ui.pending_updates)
+        && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": true}))
+    {
+        log::warn!("update.prefs: {e}");
+    }
     app.catalog_ui.dialog = None;
     Ok(r)
 }
@@ -292,21 +300,22 @@ fn display_name(p: &Path) -> String {
     format!("{name} — {}", dir.parent().map(|d| d.display().to_string()).unwrap_or_default())
 }
 
-/// The welcome dialog's update choice, saved once the catalog it was made for is open.
-fn apply_pending_updates(app: &mut LccApp) {
-    let Some(before) = &app.catalog_ui.pending_updates else { return };
-    if app.session.library.is_none() || app.session.catalog_dir() == before.as_deref() {
-        return;
-    }
-    app.catalog_ui.pending_updates = None;
-    if let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": true})) {
-        log::warn!("update.prefs: {e}");
+/// Whether Open Catalog…'s folder dialog is still up.
+fn picking_catalog(app: &LccApp) -> bool {
+    app.pending_picks.iter().any(|p| p.command == "catalog.open")
+}
+
+/// The welcome dialog's update choice, once its action ended without opening a catalog (an open
+/// saves it in [`open_dir`]): forgotten, so no later action saves it.
+fn drop_unused_updates(app: &mut LccApp) {
+    if app.catalog_ui.pending_updates && !picking_catalog(app) {
+        app.catalog_ui.pending_updates = false;
     }
 }
 
 /// Each frame: Alt held while the window opens shows the chooser; then the dialog, if any.
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
-    apply_pending_updates(app);
+    drop_unused_updates(app);
     if app.catalog_ui.frames < 30 {
         app.catalog_ui.frames += 1;
         let alt = ctx.input(|i| i.modifiers.alt);
@@ -419,8 +428,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             layout.footer(ui, |_| {});
         });
     crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
-    // the welcome dialog's update choice, applied once its catalog is open (now, or when a
-    // folder dialog that answers later has opened it)
+    // the welcome dialog's update choice, for its action below
     let updates = matches!(dlg, CatalogDialog::Welcome { updates: true, .. });
     if app.catalog_ui.dialog.is_some() {
         app.catalog_ui.dialog = Some(dlg);
@@ -435,17 +443,18 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if let Some((cmd, params)) = action {
         // the command may open the next dialog (Chooser ▸ New Catalog…); on an error, or for the
         // Catalog Settings buttons, this one stays
-        if updates {
-            app.catalog_ui.pending_updates = Some(app.session.catalog_dir().map(Path::to_path_buf));
+        if welcoming {
+            // every welcome action carries the box as it is now, ticked or not
+            app.catalog_ui.pending_updates = updates;
         }
         let prev = app.catalog_ui.dialog.take();
         let r = app.run(&cmd, params);
-        if updates && r.is_err() {
-            // nothing opened: the dialog stays, and its box is asked again with the next try
-            app.catalog_ui.pending_updates = None;
-        }
-        apply_pending_updates(app);
-        let keep = r.is_err() || matches!(cmd.as_str(), "catalog.backup" | "catalog.checkIntegrity" | "catalog.optimize");
+        drop_unused_updates(app);
+        // the welcome dialog also stays while its folder dialog is up: cancelling that leaves
+        // the user where they were, not without a dialog or a catalog
+        let keep = r.is_err()
+            || (welcoming && picking_catalog(app))
+            || matches!(cmd.as_str(), "catalog.backup" | "catalog.checkIntegrity" | "catalog.optimize");
         if keep && app.catalog_ui.dialog.is_none() {
             app.catalog_ui.dialog = prev;
         }

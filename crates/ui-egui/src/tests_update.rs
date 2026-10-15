@@ -384,16 +384,13 @@ fn quitting_from_the_welcome_dialog_saves_nothing() {
     assert!(!h.app.session.updater.prefs().check_at_startup);
 }
 
-/// The desktop app's file dialogs answer later, on another thread: Open Catalog… from the welcome
-/// dialog returns before a catalog is chosen, and the catalog opens when the dialog closes. The
-/// ticked box still counts then.
-#[test]
-fn a_ticked_welcome_box_survives_a_file_dialog_that_answers_later() {
-    let (dir, root) = (Scratch::new("welcome-later"), Scratch::new("welcome-later-lib"));
-    let entry = lcc_catalog::library::create(&root.0, "Existing").unwrap();
-    let mut h = welcome(&dir, &root);
-    // a host that shows its folder dialog elsewhere, and a synchronous one that is never asked
-    let answers: std::sync::Arc<std::sync::Mutex<Vec<std::sync::mpsc::Sender<Vec<String>>>>> = Default::default();
+/// The answers to the folder dialogs a host shows elsewhere, in the order they were asked for.
+type Answers = std::sync::Arc<std::sync::Mutex<Vec<std::sync::mpsc::Sender<Vec<String>>>>>;
+
+/// Give the app the desktop's kind of folder dialog: shown elsewhere, answered frames later (the
+/// synchronous one is never asked).
+fn background_dialogs(h: &mut Headless) -> Answers {
+    let answers: Answers = Default::default();
     let a = answers.clone();
     h.app.services.picker = Some(Box::new(move |_req| {
         let (tx, rx) = std::sync::mpsc::channel();
@@ -402,6 +399,72 @@ fn a_ticked_welcome_box_survives_a_file_dialog_that_answers_later() {
     }));
     h.app.services.pick_folder = Some(Box::new(|| panic!("the background dialog answers")));
     h.step();
+    answers
+}
+
+/// Tick the welcome box, choose Open Catalog…, and cancel its folder dialog.
+fn tick_open_and_cancel(h: &mut Headless, answers: &Answers) {
+    ask(h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    ask(h, "ui.clickWidget", json!({"id": "button:welcomeOpen"}));
+    h.step();
+    assert_eq!(answers.lock().unwrap().len(), 1, "the folder dialog is up");
+    answers.lock().unwrap()[0].send(Vec::new()).unwrap();
+    run_without_a_check(h, 3);
+    assert!(h.app.session.library.is_none(), "cancelled: no catalog");
+    assert!(
+        matches!(h.app.catalog_ui.dialog, Some(crate::catalog_ui::CatalogDialog::Welcome { .. })),
+        "cancelling the folder dialog leaves the welcome dialog up"
+    );
+}
+
+#[test]
+fn a_cancelled_open_forgets_the_box_before_the_next_welcome_dialog() {
+    let (dir, root) = (Scratch::new("welcome-cancel"), Scratch::new("welcome-cancel-lib"));
+    let mut h = welcome(&dir, &root);
+    let answers = background_dialogs(&mut h);
+    tick_open_and_cancel(&mut h, &answers);
+    // File ▸ Welcome…, and a catalog created with the box left unticked
+    h.app.run("catalog.welcome", json!({})).unwrap();
+    if let Some(crate::catalog_ui::CatalogDialog::Welcome { parent, .. }) = &mut h.app.catalog_ui.dialog {
+        *parent = root.0.to_string_lossy().into_owned();
+    }
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeCreate"}));
+    run_without_a_check(&mut h, 2);
+    assert!(h.app.session.library.is_some(), "the catalog is open");
+    assert_ne!(saved_check_at_startup(&dir), Some(true), "unticked: the earlier, cancelled choice is not saved");
+    assert!(!h.app.session.updater.prefs().check_at_startup);
+    h.app.session.close_library().unwrap();
+}
+
+#[test]
+fn a_cancelled_open_forgets_the_box_before_a_later_open_catalog() {
+    let (dir, root) = (Scratch::new("welcome-cancel-menu"), Scratch::new("welcome-cancel-menu-lib"));
+    let entry = lcc_catalog::library::create(&root.0, "Existing").unwrap();
+    let mut h = welcome(&dir, &root);
+    let answers = background_dialogs(&mut h);
+    tick_open_and_cancel(&mut h, &answers);
+    // File ▸ Open Catalog…, answered with a catalog this time
+    ask(&mut h, "ui.menu.invoke", json!({"id": "catalog.open"}));
+    h.step();
+    assert_eq!(answers.lock().unwrap().len(), 2, "the folder dialog is up again");
+    answers.lock().unwrap()[1].send(vec![entry.to_string_lossy().into_owned()]).unwrap();
+    run_without_a_check(&mut h, 3);
+    assert!(h.app.session.library.is_some(), "the chosen catalog is open");
+    assert_ne!(saved_check_at_startup(&dir), Some(true), "the cancelled welcome choice is not saved");
+    h.app.session.close_library().unwrap();
+}
+
+/// The desktop app's file dialogs answer later, on another thread: Open Catalog… from the welcome
+/// dialog returns before a catalog is chosen, and the catalog opens when the dialog closes. The
+/// ticked box still counts then.
+#[test]
+fn a_ticked_welcome_box_survives_a_file_dialog_that_answers_later() {
+    let (dir, root) = (Scratch::new("welcome-later"), Scratch::new("welcome-later-lib"));
+    let entry = lcc_catalog::library::create(&root.0, "Existing").unwrap();
+    let mut h = welcome(&dir, &root);
+    let answers = background_dialogs(&mut h);
     ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
     h.step();
     ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeOpen"}));
