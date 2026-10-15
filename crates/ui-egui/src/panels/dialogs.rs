@@ -284,13 +284,22 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     // The Print dialog sizes itself to the window and scrolls its settings column on its own.
     let print = matches!(dlg, Dialog::Print);
     let window_id = window_id(&dlg);
+    // Settings keeps its top edge, and the widest it has been, while tabs of different sizes are
+    // shown, so its tab row stays under the pointer (centred like the others, the row jumped with
+    // each tab's height)
+    let settings = matches!(dlg, Dialog::Settings { .. });
+    let top = (screen.height() * 0.08).clamp(crate::dialog_frame::SCREEN_MARGIN, 96.0);
+    let widest_id = window_id.with("widest");
+    let widest = if settings { ctx.data(|d| d.get_temp::<f32>(widest_id)).unwrap_or(0.0).min(screen.width() * 0.9) } else { 0.0 };
+    let mut content_w = 0.0f32;
     let shown = egui::Window::new(crate::i18n::tr(&title)).id(window_id)
         .collapsible(false)
         .resizable(import)
         .vscroll(import)
         .resize(|r| if import { r.default_height(crate::import::DIALOG_SIZE[1]) } else { r })
         .frame(frame)
-        .anchor(egui::Align2::CENTER_CENTER, [0.0, 0.0])
+        .anchor(if settings { egui::Align2::CENTER_TOP } else { egui::Align2::CENTER_CENTER }, [0.0, if settings { top } else { 0.0 }])
+        .min_width(widest)
         .default_width(match dlg {
             Dialog::Import { .. } => crate::import::DIALOG_SIZE[0],
             Dialog::SmartRules { .. } => 680.0,
@@ -306,7 +315,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             ui.spacing_mut().item_spacing.y = 8.0;
             // fixed header (tabs) / scrolling body / fixed footer (buttons), capped to the screen;
             // the import review sizes and scrolls itself (it can be resized)
-            let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
+            let mut layout = if settings {
+                crate::dialog_frame::ModalLayout::begin_below(ui, window_id, top)
+            } else {
+                crate::dialog_frame::ModalLayout::begin(ui, window_id)
+            };
             match &mut dlg {
                 Dialog::Settings { tab } => crate::panels::settings::tabs(ui, tab),
                 Dialog::About => about_tabs(ui),
@@ -1554,7 +1567,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             if import {
                 crate::import::note_dialog_bottom(ui);
             }
+            content_w = ui.min_rect().width();
         });
+    if settings && content_w > widest + 0.5 {
+        ctx.data_mut(|d| d.insert_temp(widest_id, content_w));
+    }
     if !import {
         crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
     }
