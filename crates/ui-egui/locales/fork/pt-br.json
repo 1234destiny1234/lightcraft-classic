@@ -1335,5 +1335,10 @@
   "Filename - Sequence": "Nome do arquivo - Sequência",
   "Custom Name - Sequence": "Nome personalizado - Sequência",
   "Custom Name": "Nome personalizado",
-  "Date - Filename": "Data - Nome do arquivo"
+  "Date - Filename": "Data - Nome do arquivo",
+  "Delete this photo from disk, or only remove it from the library?": "Excluir esta foto do disco ou apenas removê-la da biblioteca?",
+  "Delete from Disk moves 1 file to the system trash.": "Excluir do disco move 1 arquivo para a lixeira do sistema.",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "Remover mantém os arquivos no disco e move as fotos para Excluídos recentemente.",
+  "Delete from Disk": "Excluir do disco",
+  "Deleting from disk": "Excluindo do disco"
 }

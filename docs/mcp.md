@@ -303,6 +303,14 @@ the terminal running `<cli>`) to control Photos. After that, any client can add 
 read to the user's Photos library (and so to iCloud Photos when that is on), not only exported ones: see [Who
 can add what](apple-photos.md#how-it-works).
 
+## Delete from Disk
+
+`photo.deleteFromDisk {ids?, confirm}` moves the photos' files (and their XMP sidecars) to the system trash and
+takes the photos out of the library in one undo step. It moves files, so it refuses unless `confirm` is `true`; ask
+the person first. The result lists `deleted`, `trashed`, `kept` (files other photos still use), `failed` (with why:
+a disk that isn't connected keeps its photo) and `cancelled`. The headless server without a file system and the web
+build have no trash and refuse it.
+
 ## Export progress and cancellation
 
 Headless direct `export`, `command_run` / `run_command` with `app.export`, and `cmd_app_export`
