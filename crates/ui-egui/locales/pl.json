@@ -2287,5 +2287,12 @@
   "Return to Latest": "Wróć do najnowszego",
   "Enhance": "Ulepsz",
   "Plug-in Filters": "Filtry wtyczek",
-  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Zapobiegaj migotaniu G-SYNC/FreeSync (po ponownym uruchomieniu)"
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Zapobiegaj migotaniu G-SYNC/FreeSync (po ponownym uruchomieniu)",
+  "AI Denoise needs a model, and none is available for this version yet. Meanwhile, Luminance and Color under Detail reduce noise.": "Odszumianie AI wymaga modelu, a dla tej wersji żaden nie jest jeszcze dostępny. Do tego czasu szum zmniejszą Luminancja i Kolor w sekcji Szczegóły.",
+  "{app}'s own denoise model is still being trained, so this version comes without one and there is nothing to download yet. You don't need to find or install anything.": "Własny model odszumiania {app} wciąż jest trenowany, więc ta wersja go nie zawiera i nie ma jeszcze nic do pobrania. Nie musisz niczego szukać ani instalować.",
+  "Meanwhile your raw photos use the standard noise reduction: Luminance and Color under Detail in the Edit panel. It works on every photo.": "Do tego czasu twoje zdjęcia raw korzystają ze standardowej redukcji szumu: Luminancja i Kolor w sekcji Szczegóły panelu Edycja. Działa na każdym zdjęciu.",
+  "No AI Denoise model is available yet": "Nie ma jeszcze modelu odszumiania AI",
+  "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):": "Tylko jeśli otrzymano model odszumiania {app} (folder z plikiem .onnx i denoise-model.json):",
+  "When the model is ready, an update will offer it here as a one-click download.": "Gdy model będzie gotowy, aktualizacja udostępni go tu do pobrania jednym kliknięciem.",
+  "Why?": "Dlaczego?"
 }
