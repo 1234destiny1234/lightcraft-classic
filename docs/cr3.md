@@ -66,6 +66,11 @@ control. The exact inputs and reference hashes are:
 | Canon RP C-RAW, raw.pixls.us 4672 | `bd3270610593d37ff8a399908bb9406a4e32f9151d55bf19ac1cf8f10d787b46` | `f48df06ca1d67382` |
 | Canon RP RAW, 1.6× crop, raw.pixls.us 4673 | `7d4ba45dc9264d598336133593c677b09774bcdf13b602ee770e72415a652a16` | `46808a9de3b3dcc7` |
 | Canon RP C-RAW, 1.6× crop, raw.pixls.us 4671 | `4a859ab137f792aedaf3416b0aad1497ebaab02052a49453902e226699154aa7` | `39a60c4efed4e1f4` |
+| Canon R6 RAW, private file 1 (not redistributable) | `7a8967ff68a21e076a3bd658fbdd2089c8b8285de0396da70feb5eb3ce8bfadf` | `00b01d2b9179a8cb` |
+| Canon R6 RAW, private file 2 (not redistributable) | `b8c26ebc480985f0bc7bf7c2cba33976e57e5bd4de148e171d49707fb613572e` | `f6636c02e7116eac` |
+| Canon R6 RAW, private file 3 (not redistributable) | `56a7b5e5131522e716c2d82ac38a4a2e132270c8508d6ff250ac702f4aa471af` | `d0062a8b5d5c5d35` |
+| Canon R6 RAW, private file 4 (not redistributable) | `bb9c4ab3da862029ef807ebc8e64ed77c08087586b3127dd58cf49c16a1e8af3` | `0a4c3b71b3a6efa4` |
+| Canon R6 RAW, private file 5 (not redistributable) | `0fe2f4c3a5695516056a295c87a35696939bae6f09b9d21137b93a601f41f8b1` | `e9450c7637487a3c` |
 
 The EOS R5 Mark II files (raw.pixls.us 7881–7884, CC0) are pinned to the app's own decode; no external
 decoder was run on them:
@@ -85,7 +90,9 @@ The RP references came from the same release's Windows x64 binary (ZIP SHA-256
 `d3add6b71568bf5f7938468b0b40a0ee1eaec01e0057fe78dcc453188010be9a`), after it
 reproduced the M50 RAW hash above. The RP's 1.6× crop mode writes a single
 4032×2656 tile, where full frame (6384×4224) uses two 3192-wide horizontal
-tiles. All ten sensor comparisons pass. R8 HEVC preview tracks are distinguished from
+tiles. The R6 references came from the same release's Linux x64 binary, which
+reproduced the M50 RAW hash before checking the R6 files. All fifteen sensor
+comparisons pass. R8 HEVC preview tracks are distinguished from
 the primary Bayer RAW; the HEVC preview itself is not decoded. Missing corpus
 files are reported as skipped by the tests.
 

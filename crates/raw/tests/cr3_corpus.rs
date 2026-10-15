@@ -125,3 +125,24 @@ fn canon_rp_crop_mode_craw_sensor_is_exact() {
     // 4a859ab137f792aedaf3416b0aad1497ebaab02052a49453902e226699154aa7
     check("cr3-canon-rp-craw-crop.cr3", 0x39a6_0c4e_fed4_e1f4, (4032, 2656), (3888, 2592));
 }
+
+// Canon EOS R6 lossless RAW: five private files supplied by the maintainer (not redistributable, so
+// absent for everyone else and skipped), checked against the same DNGLab 0.8.0 release (Linux x64
+// binary, which first reproduced the M50 RAW hash above). Sensor 5568x3708, developed 5472x3648.
+#[test]
+fn canon_r6_lossless_sensor_is_exact() {
+    for (name, hash) in [
+        // SHA256 7a8967ff68a21e076a3bd658fbdd2089c8b8285de0396da70feb5eb3ce8bfadf
+        ("cr3-canon-r6-1.cr3", 0x00b0_1d2b_9179_a8cb),
+        // SHA256 b8c26ebc480985f0bc7bf7c2cba33976e57e5bd4de148e171d49707fb613572e
+        ("cr3-canon-r6-2.cr3", 0xf663_6c02_e711_6eac),
+        // SHA256 56a7b5e5131522e716c2d82ac38a4a2e132270c8508d6ff250ac702f4aa471af
+        ("cr3-canon-r6-3.cr3", 0xd006_2a8b_5d5c_5d35),
+        // SHA256 bb9c4ab3da862029ef807ebc8e64ed77c08087586b3127dd58cf49c16a1e8af3
+        ("cr3-canon-r6-4.cr3", 0x0a4c_3b71_b3a6_efa4),
+        // SHA256 0fe2f4c3a5695516056a295c87a35696939bae6f09b9d21137b93a601f41f8b1
+        ("cr3-canon-r6-5.cr3", 0xe945_0c76_3748_7a3c),
+    ] {
+        check(name, hash, (5568, 3708), (5472, 3648));
+    }
+}

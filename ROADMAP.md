@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-14 (version 0.8.2). Revision history: [Log](#log).*
+*Last updated 2026-10-15 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
@@ -230,6 +230,7 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-15: Canon EOS R6 CR3 verified (5 private files, exact sensor hashes): 315 of 1,446 Adobe models verified; use-weighted share unchanged at 90%.
 - 2026-10-14: release 0.8.2: HDR display output (Windows, Linux), faces fully on the GPU, sharpening Radius/Detail (process V4), crop & straighten under a fixed box, Classic Basic panel order, upstream batch 35 merged; CI on own runners; no dimension changes stage.
 - 2026-10-14: release 0.8.1: user-report fixes (preset Amount fade, large preset collections, wheel scroll speed, Quick Collection menu, Develop tool strip, folded panels), faces convolutions on the GPU; no dimension changes stage.
 - 2026-10-13: release 0.8.0: upstream merged through upstream 0.7.1 + batch 32 (Kelvin slider, Render to DNG, HLG AVIF, preset scale, raw fixes); no dimension changes stage.
