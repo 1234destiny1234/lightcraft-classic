@@ -314,7 +314,7 @@ pub(crate) fn copy_verified(src: &Path, dst: &Path, expect: Option<lcc_preview::
         if injected(Fault::Corrupt) {
             out.write_all(b"!")?;
         }
-        out.sync_all()?;
+        lcc_catalog::safe_file::sync_file(&out, false)?;
         if let Ok(m) = fs::metadata(src).and_then(|m| m.modified()) {
             let _ = out.set_modified(m);
         }
