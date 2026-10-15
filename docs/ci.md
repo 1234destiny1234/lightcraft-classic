@@ -1,6 +1,6 @@
 # CI and landing changes
 
-> **Last updated:** 2026-10-14 · **Change:** major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
+> **Last updated:** 2026-10-15 · **Change:** minor (release jobs upload straight to the draft release, not via Actions artifacts); major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
 
 ## How changes reach `main`
 
@@ -42,6 +42,13 @@ runners** (all carry the label `lcc`):
 
 `freebsd.yml` stays disabled; the disabled riscv64 and FreeBSD release jobs point at gpu0 but need work
 (a container, KVM) before they are re-enabled.
+
+Release platform jobs upload their files straight to the draft GitHub release with `gh release upload`
+(`.github/scripts/install-gh.sh` fetches the CLI into `$RUNNER_TEMP` where a runner lacks it), not through
+Actions artifacts: from these runners `actions/download-artifact` ran at about 0.3 MB/s (the 0.8.2 release
+job spent over an hour downloading), `gh release` at about 11 MB/s. Only a few-byte checksum file per platform
+(and, on a dry run, the Linux tarball for the Flatpak job) still goes through artifacts. See
+[releasing.md](releasing.md).
 
 Jobs run at low priority, since the machines are also used interactively: Linux steps run under
 `nice -n 19` (job `defaults.run.shell`), macOS steps under `nice -n 19` (not `taskpolicy -b`: background QoS confines builds to the efficiency cores), and Windows
