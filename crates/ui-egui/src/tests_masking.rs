@@ -951,6 +951,9 @@ fn local_folder_listed_twice_opens_and_closes_each_row() {
     let inner = base.join("Inner");
     std::fs::create_dir_all(inner.join("Sub")).unwrap();
     let mut h = library_loupe();
+    // tall enough that both rows sit above the left column's Import / Export bar (#118): a row
+    // scrolled under it is still registered, and a click there lands on the bar
+    assert_eq!(h.request("ui.resize", json!({"width": 1600, "height": 1400}), T)["ok"], true);
     exec(&mut h, "view.leftPanel", json!({"show": true}));
     h.hide_home_above(&base);
     let (base_s, inner_s) = (base.to_string_lossy().to_string(), inner.to_string_lossy().to_string());
