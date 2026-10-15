@@ -122,6 +122,9 @@ pub struct SidecarData {
     /// Plug-in custom metadata fields (`lcpf:fields`): `(plug-in id, key, value as text)`. They go back
     /// to the plug-ins' own data ([`crate::cmd::plugins::restore_fields`]), not into the photo record.
     pub plugin_fields: Vec<(String, String, String)>,
+    /// The pixel-filter plug-in stack (`lcpx:filters`), checked, uids reassigned; `None` when the sidecar has none
+    /// (then `lc:settings`, if any, decides).
+    pub plugin_filters: Option<Vec<lcc_develop::PluginFilter>>,
 }
 
 #[derive(Clone, Debug, PartialEq)]
@@ -141,6 +144,9 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
     let lc = |k: &str| d.properties.get(&format!("lc:{k}")).and_then(|v| v.first()).cloned();
     let mut out = SidecarData {
         plugin_fields: lcc_meta::plugin_fields(&d),
+        // read a few more than fit, so skipped malformed entries don't hide good ones after them
+        plugin_filters: lcc_meta::plugin_filters(&d, lcc_develop::MAX_PLUGIN_FILTERS.saturating_mul(4))
+            .map(|e| crate::cmd::plugin_filters::stack_from_xmp(&e)),
         title: m.title.clone(),
         caption: m.caption.clone(),
         copyright: m.copyright.clone(),
@@ -316,7 +322,7 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
             v.poster_time = Some(t);
         }
     }
-    let develop = match &sc.develop {
+    let mut develop = match &sc.develop {
         Some(DevelopPatch::Full(s)) => (**s).clone(),
         Some(DevelopPatch::Partial(v)) => {
             let mut v = v.clone();
@@ -325,8 +331,12 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
             }
             lcc_develop::apply_partial(&p.develop, &v, 1.0)
         }
+        None if sc.plugin_filters.is_some() => (*p.develop).clone(),
         None => return false,
     };
+    if let Some(f) = &sc.plugin_filters {
+        develop.plugin_filters = f.clone();
+    }
     if develop == *p.develop {
         return false;
     }
@@ -382,7 +392,15 @@ pub fn sidecar_packet_with(p: &Photo, cat: &lcc_catalog::Catalog, remove_locatio
     if remove_location {
         (meta.sublocation, meta.city, meta.state, meta.country, meta.gps) = (None, None, None, None, None);
     }
-    let settings = serde_json::to_string(&*p.develop).unwrap_or_default();
+    // the pixel-filter stack goes in its own namespace, not in `lc:settings`
+    let filters: Vec<lcc_meta::XmpPluginFilter> = p.develop.plugin_filters.iter().map(crate::cmd::plugin_filters::to_xmp).collect();
+    let settings = if filters.is_empty() {
+        serde_json::to_string(&*p.develop).unwrap_or_default()
+    } else {
+        let mut d = (*p.develop).clone();
+        d.plugin_filters.clear();
+        serde_json::to_string(&d).unwrap_or_default()
+    };
     let flag = match p.flag {
         Flag::None => "none",
         Flag::Pick => "pick",
@@ -411,7 +429,7 @@ pub fn sidecar_packet_with(p: &Photo, cat: &lcc_catalog::Catalog, remove_locatio
         }
     }
     let video: Vec<(&str, &str)> = video.iter().map(|(k, v)| (*k, v.as_str())).collect();
-    lcc_meta::write_xmp_video(&meta, &lc, &fields, &video)
+    lcc_meta::write_xmp_filters(&meta, &lc, &fields, &video, &filters)
 }
 
 /// The properties the app writes and owns in a sidecar: replaced on every save (removed when
@@ -436,6 +454,7 @@ pub const OWNED: &[&str] = &[
     "xmpRights:WebStatement",
     "lc:*",
     "lcvid:*",
+    "lcpx:*",
 ];
 
 /// Properties replaced only when the app has a value (capture time; GPS, which the app
@@ -924,6 +943,113 @@ mod tests {
         assert_eq!(r.video, Some(v));
         // a still photo has no video properties
         assert!(!sidecar_packet(&photo(), &lcc_catalog::Catalog::new()).contains("lcvid"));
+    }
+
+    fn filter(plugin: &str, stage: lcc_develop::FilterStage) -> lcc_develop::PluginFilter {
+        let mut params = serde_json::Map::new();
+        params.insert("strength".into(), serde_json::json!(0.5));
+        params.insert("mode".into(), serde_json::json!("a<b & \"c\""));
+        lcc_develop::PluginFilter {
+            uid: 40,
+            plugin: plugin.into(),
+            module_hash: "abc123".into(),
+            name: "Neg & <Pos>".into(),
+            params,
+            enabled: false,
+            stage,
+            analysis: Some(serde_json::json!({"base": [0.1, 0.2, 0.3]})),
+        }
+    }
+
+    /// The pixel-filter stack goes out under its own namespace (not in `lc:settings`), in order, and comes back
+    /// with fresh uids, through a merge into another writer's sidecar too.
+    #[test]
+    fn plugin_filter_stack_roundtrip() {
+        let mut p = photo();
+        let mut d = (*p.develop).clone();
+        d.plugin_filters = vec![filter("x.neg", lcc_develop::FilterStage::Source), filter("x.sharp", lcc_develop::FilterStage::Display)];
+        d.plugin_filters[1].enabled = true;
+        d.plugin_filters[1].analysis = None;
+        p.develop = Arc::new(d);
+        let x = sidecar_packet(&p, &lcc_catalog::Catalog::new());
+        assert!(x.contains(&lcc_meta::plugin_filters_ns()) && x.contains("<lcpx:filters>"), "{x}");
+        let sc = parse_sidecar(&x, crate::crs::Target::Rendered).unwrap();
+        let Some(DevelopPatch::Full(full)) = &sc.develop else { panic!("no lc:settings") };
+        assert!(full.plugin_filters.is_empty(), "the stack is not duplicated in lc:settings");
+        let got = sc.plugin_filters.clone().unwrap();
+        let plugins: Vec<&str> = got.iter().map(|f| f.plugin.as_str()).collect();
+        assert_eq!(plugins, ["x.neg", "x.sharp"]);
+        assert_eq!(got.iter().map(|f| f.uid).collect::<Vec<_>>(), [1, 2]);
+        let mut q = photo();
+        merge_into(&mut q, &sc, "now");
+        let strip = |v: &[lcc_develop::PluginFilter]| v.iter().map(|f| lcc_develop::PluginFilter { uid: 0, ..f.clone() }).collect::<Vec<_>>();
+        assert_eq!(strip(&q.develop.plugin_filters), strip(&p.develop.plugin_filters));
+        // merged into a sidecar another app wrote, the stack survives and a later empty stack removes it
+        let foreign = "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"\" xmlns:xmp=\"http://ns.adobe.com/xap/1.0/\" xmp:Rating=\"2\"/></rdf:RDF></x:xmpmeta>";
+        let rules = lcc_meta::MergeRules { owned: OWNED, owned_if_present: OWNED_IF_STATED };
+        let merged = lcc_meta::merge_xmp(foreign, &x, rules).unwrap();
+        let back = parse_sidecar(&merged, crate::crs::Target::Rendered).unwrap().plugin_filters.unwrap();
+        assert_eq!(strip(&back), strip(&p.develop.plugin_filters));
+        let cleared = lcc_meta::merge_xmp(&merged, &sidecar_packet(&photo(), &lcc_catalog::Catalog::new()), rules).unwrap();
+        assert!(!cleared.contains("lcpx:filters"), "{cleared}");
+        let mut r = p.clone();
+        merge_into(&mut r, &parse_sidecar(&cleared, crate::crs::Target::Rendered).unwrap(), "now");
+        assert!(r.develop.plugin_filters.is_empty());
+    }
+
+    /// No stack: nothing of the namespace is written and `lc:settings` is the settings JSON as before.
+    #[test]
+    fn empty_plugin_filter_stack_writes_nothing() {
+        let p = photo();
+        let x = sidecar_packet(&p, &lcc_catalog::Catalog::new());
+        assert!(!x.contains("lcpx") && !x.contains(&lcc_meta::plugin_filters_ns()), "{x}");
+        let d = lcc_meta::parse_xmp(&x).unwrap();
+        assert_eq!(d.lc_settings.as_deref(), Some(serde_json::to_string(&*p.develop).unwrap().as_str()));
+        assert_eq!(parse_sidecar(&x, crate::crs::Target::Rendered).unwrap().plugin_filters, None);
+    }
+
+    /// Hostile stack entries are skipped (never a panic); the good ones around them are kept, and the count is capped.
+    #[test]
+    fn hostile_plugin_filter_entries_are_skipped() {
+        let ns = lcc_meta::plugin_filters_ns();
+        let li = |body: &str| format!("<rdf:li rdf:parseType=\"Resource\">{body}</rdf:li>");
+        let good = li("<p:plugin>ok.one</p:plugin><p:moduleHash>h</p:moduleHash><p:name>One</p:name>");
+        let big = "x".repeat(300);
+        let huge = "y".repeat(lcc_meta::MAX_FILTER_PART + 1);
+        let bad: Vec<String> = vec![
+            li("<p:moduleHash>h</p:moduleHash><p:name>no plugin</p:name>"),
+            li("<p:plugin>a</p:plugin><p:name>no hash</p:name>"),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash>"),
+            li(&format!("<p:plugin>{big}</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name>")),
+            li(&format!("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>{huge}</p:name>")),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:stage>middle</p:stage>"),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:enabled>maybe</p:enabled>"),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:params>{not json</p:params>"),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:params>[1,2]</p:params>"),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:params>{\"k\":{\"nested\":1}}</p:params>"),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:params>{\"k\":1e999}</p:params>"),
+            li(&format!("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:analysis>{}</p:analysis>", "[".repeat(5000))),
+            li("<p:plugin>a</p:plugin><p:moduleHash>h</p:moduleHash><p:name>n</p:name><p:analysis>nope</p:analysis>"),
+            li("<p:plugin><rdf:Bag><rdf:li>a</rdf:li></rdf:Bag></p:plugin>"),
+            "<rdf:li>just text</rdf:li>".into(),
+        ];
+        for b in &bad {
+            let x = format!(
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description xmlns:p=\"{ns}\"><p:filters><rdf:Seq>{good}{b}{good}</rdf:Seq></p:filters></rdf:Description></rdf:RDF></x:xmpmeta>"
+            );
+            let got = parse_sidecar(&x, crate::crs::Target::Rendered).unwrap().plugin_filters.unwrap();
+            assert_eq!(got.len(), 2, "{b}");
+            assert_eq!(got.iter().map(|f| f.uid).collect::<Vec<_>>(), [1, 2]);
+        }
+        // a lone value instead of a seq, and far too many entries
+        let many = good.repeat(lcc_develop::MAX_PLUGIN_FILTERS * 10);
+        for body in ["<p:filters>text</p:filters>".to_string(), format!("<p:filters><rdf:Seq>{many}</rdf:Seq></p:filters>")] {
+            let x = format!(
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description xmlns:p=\"{ns}\">{body}</rdf:Description></rdf:RDF></x:xmpmeta>"
+            );
+            let got = parse_sidecar(&x, crate::crs::Target::Rendered).unwrap().plugin_filters.unwrap_or_default();
+            assert!(got.len() <= lcc_develop::MAX_PLUGIN_FILTERS);
+        }
     }
 
     #[test]

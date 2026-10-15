@@ -167,6 +167,7 @@ fn canonical(qname: &str, scopes: &[Vec<(String, String)>]) -> String {
             Some((p, _)) => format!("{p}:{local}"),
             None if u == video_ns() => format!("{VIDEO_PREFIX}:{local}"),
             None if u == plugin_fields_ns() => format!("lcpf:{local}"),
+            None if u == plugin_filters_ns() => format!("{FILTERS_PREFIX}:{local}"),
             None if prefix.is_empty() => local.to_string(),
             None => qname.to_string(),
         },
@@ -579,6 +580,65 @@ pub fn plugin_fields_ns() -> String {
     format!("{}/ns/plugin-fields/1.0/", lcc_brand::HOMEPAGE.trim_end_matches('/'))
 }
 
+/// Prefix of the pixel-filter stack namespace ([`plugin_filters_ns`]) as [`parse_xmp`] reports it.
+pub const FILTERS_PREFIX: &str = "lcpx";
+
+/// Namespace of a photo's pixel-filter plug-in stack in sidecars (prefix [`FILTERS_PREFIX`]): `lcpx:filters`, a
+/// seq of `{lcpx:plugin, lcpx:moduleHash, lcpx:name, lcpx:enabled, lcpx:stage, lcpx:params, lcpx:analysis}`
+/// (`params` and `analysis` as JSON text). Under the app's homepage: `<homepage>/ns/plugin-filters/1.0/`.
+pub fn plugin_filters_ns() -> String {
+    format!("{}/ns/plugin-filters/1.0/", lcc_brand::HOMEPAGE.trim_end_matches('/'))
+}
+
+/// One entry of a sidecar's pixel-filter stack, as text (checking the values is the caller's business).
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct XmpPluginFilter {
+    pub plugin: String,
+    pub module_hash: String,
+    pub name: String,
+    /// `"True"` / `"False"`.
+    pub enabled: String,
+    /// `"source"` / `"display"`.
+    pub stage: String,
+    /// JSON object text.
+    pub params: String,
+    /// JSON text; empty when the filter has no analysis.
+    pub analysis: String,
+}
+
+/// Longest text one stack entry part may have when read ([`plugin_filters`]); longer entries are skipped.
+pub const MAX_FILTER_PART: usize = 128 * 1024;
+
+/// The pixel-filter stack a packet carries (`lcpx:filters`, see [`plugin_filters_ns`]), in order: `None` when the
+/// packet has none, entries without a plug-in id or with an over-long part skipped, at most `max` entries.
+pub fn plugin_filters(d: &XmpData, max: usize) -> Option<Vec<XmpPluginFilter>> {
+    let v = d.values.get(&format!("{FILTERS_PREFIX}:filters"))?;
+    let out = v
+        .items()
+        .iter()
+        .filter_map(|it| {
+            let part = |k: &str| -> Option<String> {
+                match it.field(&format!("{FILTERS_PREFIX}:{k}")) {
+                    None => Some(String::new()),
+                    Some(x) => x.text().filter(|s| s.len() <= MAX_FILTER_PART).map(str::to_string),
+                }
+            };
+            let e = XmpPluginFilter {
+                plugin: part("plugin")?,
+                module_hash: part("moduleHash")?,
+                name: part("name")?,
+                enabled: part("enabled")?,
+                stage: part("stage")?,
+                params: part("params")?,
+                analysis: part("analysis")?,
+            };
+            (!e.plugin.is_empty()).then_some(e)
+        })
+        .take(max)
+        .collect();
+    Some(out)
+}
+
 /// Prefix of the video clip namespace ([`video_ns`]) as [`parse_xmp`] reports it, whatever prefix a packet uses.
 pub const VIDEO_PREFIX: &str = "lcvid";
 
@@ -617,6 +677,17 @@ pub fn write_xmp_ext(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&st
 
 /// [`write_xmp_ext`], plus simple video clip properties `(name, value)` in [`video_ns`] (`lcvid:<name>`).
 pub fn write_xmp_video(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&str, &str, &str)], video: &[(&str, &str)]) -> String {
+    write_xmp_filters(meta, lc, plugin_fields, video, &[])
+}
+
+/// [`write_xmp_video`], plus a pixel-filter stack in [`plugin_filters_ns`] (`lcpx:filters`; nothing when empty).
+pub fn write_xmp_filters(
+    meta: &Metadata,
+    lc: &[(&str, &str)],
+    plugin_fields: &[(&str, &str, &str)],
+    video: &[(&str, &str)],
+    filters: &[XmpPluginFilter],
+) -> String {
     let mut simple: Vec<(&str, String)> = Vec::new();
     let mut push = |k: &'static str, v: Option<String>| {
         if let Some(v) = v {
@@ -672,6 +743,9 @@ pub fn write_xmp_video(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&
     }
     if !plugin_fields.is_empty() {
         x.push_str(&format!("\n    xmlns:lcpf=\"{}\"", plugin_fields_ns()));
+    }
+    if !filters.is_empty() {
+        x.push_str(&format!("\n    xmlns:{FILTERS_PREFIX}=\"{}\"", plugin_filters_ns()));
     }
     if !video.is_empty() {
         x.push_str(&format!("\n    xmlns:{VIDEO_PREFIX}=\"{}\"", video_ns()));
@@ -742,6 +816,28 @@ pub fn write_xmp_video(meta: &Metadata, lc: &[(&str, &str)], plugin_fields: &[(&
             ));
         }
         x.push_str("    </rdf:Bag>\n   </lcpf:fields>\n");
+    }
+    if !filters.is_empty() {
+        let p = FILTERS_PREFIX;
+        x.push_str(&format!("   <{p}:filters>\n    <rdf:Seq>\n"));
+        for f in filters {
+            x.push_str("     <rdf:li rdf:parseType=\"Resource\">\n");
+            for (k, v) in [
+                ("plugin", &f.plugin),
+                ("moduleHash", &f.module_hash),
+                ("name", &f.name),
+                ("enabled", &f.enabled),
+                ("stage", &f.stage),
+                ("params", &f.params),
+                ("analysis", &f.analysis),
+            ] {
+                if !v.is_empty() {
+                    x.push_str(&format!("      <{p}:{k}>{}</{p}:{k}>\n", partial_escape(v.as_str())));
+                }
+            }
+            x.push_str("     </rdf:li>\n");
+        }
+        x.push_str(&format!("    </rdf:Seq>\n   </{p}:filters>\n"));
     }
     x.push_str("  </rdf:Description>\n </rdf:RDF>\n</x:xmpmeta>\n<?xpacket end=\"w\"?>");
     x
