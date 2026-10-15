@@ -12,8 +12,8 @@
 //! `_setting_raw` and `_setting` (a label: `Off`, `Auto`, `Auto (ILCE-1)`, `Auto fixed by lens`, `No correction
 //! params available`). A file that doesn't decode must still have a row, and fails the check when it has one.
 //!
-//! Any decode error fails the check except an unsupported variant (`RawError::Unsupported`, e.g. the packed ARW of
-//! some older bodies): those are counted, and the count must equal `<PREFIX>_SONY_LENS_UNSUPPORTED` (default 0).
+//! Any decode error fails the check except an unsupported variant (`RawError::Unsupported`, e.g. the 12-bit mode of
+//! the ARW6 compression): those are counted, and the count must equal `<PREFIX>_SONY_LENS_UNSUPPORTED` (default 0).
 //!
 //! `<PREFIX>_SONY_LENS_DIR=… <PREFIX>_SONY_LENS_INVENTORY=….csv cargo test -p lcc-raw --release --test
 //! sony_lens_inventory -- --nocapture`
@@ -289,8 +289,9 @@ impl Drop for Scratch {
     }
 }
 
-/// A small Sony CFA file with a distortion setting (a lens record), or, `unsupported`, the packed 12-bit ARW variant
-/// the decoder refuses as unsupported.
+/// A small Sony CFA file with a distortion setting (a lens record), or, `unsupported`, a variant the decoder refuses
+/// as unsupported: the ARW6 compression (32766) in its 12-bit mode. (The 12-bit ARW version 1 strip this used to be
+/// now decodes, see `vendor/arw1.rs`.)
 fn synthetic_arw(unsupported: bool) -> Vec<u8> {
     use lcc_tiff::{IfdBuilder, ImageData, TiffWriter, Value, tags as t};
     let mut raw = IfdBuilder::new();
@@ -303,7 +304,7 @@ fn synthetic_arw(unsupported: bool) -> Vec<u8> {
     raw.set(0x7036, Value::Short(vec![0]));
     if unsupported {
         raw.set(t::BITS_PER_SAMPLE, Value::Short(vec![12]));
-        raw.set(t::COMPRESSION, Value::Short(vec![32767]));
+        raw.set(t::COMPRESSION, Value::Short(vec![32766]));
         raw.set(0x7010, Value::Short(vec![8000, 10400, 12900, 14100]));
         raw.set_image(ImageData::Strips { rows_per_strip: 4, strips: vec![vec![0; 32 * 4 + 8]] });
     } else {
@@ -326,7 +327,7 @@ fn files_that_fail_to_decode_fail_the_check() {
     // an unsupported variant is counted, and must be expected
     let dir = Scratch::new("unsupported");
     std::fs::write(dir.0.join("good.arw"), synthetic_arw(false)).unwrap();
-    std::fs::write(dir.0.join("packed.arw"), synthetic_arw(true)).unwrap();
+    std::fs::write(dir.0.join("arw6-12bit.arw"), synthetic_arw(true)).unwrap();
     let report = check(&dir.0, None, false, 0);
     assert_eq!((report.files, report.records, report.unsupported), (2, 1, 1));
     assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
@@ -338,12 +339,12 @@ fn files_that_fail_to_decode_fail_the_check() {
     let mut report = check(&dir.0, Some(&csv), false, 1);
     report.problems.sort();
     assert_eq!(report.problems.len(), 1, "{:?}", report.problems);
-    assert!(report.problems[0].contains("packed.arw") && report.problems[0].contains("not in the inventory"), "{:?}", report.problems);
+    assert!(report.problems[0].contains("arw6-12bit.arw") && report.problems[0].contains("not in the inventory"), "{:?}", report.problems);
     // listed but failing, and listed and decoding
-    std::fs::write(&csv, "file,distortion_setting_raw\ngood.arw,0\npacked.arw,0\n").unwrap();
+    std::fs::write(&csv, "file,distortion_setting_raw\ngood.arw,0\narw6-12bit.arw,0\n").unwrap();
     let report = check(&dir.0, Some(&csv), false, 1);
-    assert!(report.problems.len() == 1 && report.problems[0].contains("packed.arw: does not decode"), "{:?}", report.problems);
-    std::fs::remove_file(dir.0.join("packed.arw")).unwrap();
+    assert!(report.problems.len() == 1 && report.problems[0].contains("arw6-12bit.arw: does not decode"), "{:?}", report.problems);
+    std::fs::remove_file(dir.0.join("arw6-12bit.arw")).unwrap();
     std::fs::write(&csv, "file,distortion_setting_raw\ngood.arw,0\n").unwrap();
     assert!(check(&dir.0, Some(&csv), false, 0).problems.is_empty());
     std::fs::write(&csv, "file,distortion_setting_raw\ngood.arw,17\n").unwrap();
