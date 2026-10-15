@@ -1,6 +1,6 @@
 # Lightroom parity checklist
 
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-15 · **Change:** minor (LR-LIB-DELETE: Delete from Disk, fork #98; LR-MASK-BRUSH: mouse wheel resizes the brush, fork #96; LR-VIEW-HDR-DISPLAY ⬜ → 🟡: HDR display output (#47); LRC-SHELL-PANELS: the tool strip is radio-style, so clicking the tool in use keeps it and Develop) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-15 · **Change:** minor (LR-FILT-KEYWORD, LR-FILT-CAMERA: search box in the filter-bar pickers, fork #105; LR-LIB-DELETE: Delete from Disk, fork #98; LR-MASK-BRUSH: mouse wheel resizes the brush, fork #96; LR-VIEW-HDR-DISPLAY ⬜ → 🟡: HDR display output (#47); LRC-SHELL-PANELS: the tool strip is radio-style, so clicking the tool in use keeps it and Develop) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 The measured, row-by-row checklist: one row per Lightroom feature, menu item and shortcut, what we
 have and what is missing. It answers *does the feature exist?* (feature breadth). Whether it is good
@@ -223,8 +223,8 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-FILT-FLAG | Flag filter | P0 | ✅ | `cmd:library.filter` (`flag`), `crates/ui-egui/src/panels/filterbar.rs` | picked / rejected / unflagged (one at a time) |
 | LR-FILT-LABEL | Colour-label filter | P1 | ✅ | `cmd:library.filter` (`label`), `crates/ui-egui/src/panels/filterbar.rs` | one label at a time; no “no label” choice |
 | LR-FILT-TYPE | Type / edited filter | P1 | ✅ | `cmd:library.filter` (`kind`, `merged`, `edited`), `crates/ui-egui/src/panels/filterbar.rs`, `crates/catalog/src/query.rs` (`merged_kind`) | photos / raw / videos / HDR / panoramas / HDR panoramas (merge results by name), edited / unedited; no depth kind |
-| LR-FILT-KEYWORD | Keyword filter | P1 | ✅ | `cmd:library.filter` (`keyword`), `crates/ui-egui/src/panels/filterbar.rs` | keyword picker |
-| LR-FILT-CAMERA | Camera / lens filter | P1 | ✅ | `cmd:library.filter` (`camera`, `lens`), `crates/ui-egui/src/panels/filterbar.rs` | camera and lens pickers |
+| LR-FILT-KEYWORD | Keyword filter | P1 | ✅ | `cmd:library.filter` (`keyword`), `crates/ui-egui/src/panels/filterbar.rs` | keyword picker, with a search box that narrows the list as you type (focused on open, "Any keyword" kept) |
+| LR-FILT-CAMERA | Camera / lens filter | P1 | ✅ | `cmd:library.filter` (`camera`, `lens`), `crates/ui-egui/src/panels/filterbar.rs` | camera and lens pickers, each with a search box that narrows the list as you type |
 | LR-FILT-LOCATION | Location filter | P2 | ✅ | `cmd:library.filter` (`text`, `ruleSet` field `location`) | free text, or a rule on location / city / state / country (smart albums, `library.filter`) |
 | LR-FILT-PEOPLE | People filter | P2 | 🟡 | `cmd:library.filter`, `crates/catalog/src/query.rs` | filter by a person's name (case-insensitive, named Face regions only) from the People view, a filter chip or `person:`; by the number of detected faces, named or not (filter bar Faces menu, `faces` in `library.filter`: 2, 3+, <=2, 1-5, none / any; an unreadable spec is an error, not an empty grid; `faces:` search token; Face Count smart-album rule; fork #100); no unnamed / suggested people |
 | LR-FILT-CULL | Culling-score filters | P2 | ✅ | `cmd:library.filter` (`ruleSet` fields `sharpness`, `bestOfGroup`) | Focus and Best of Similar Shots in the rule editor / smart albums |
@@ -993,3 +993,4 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | 2026-10-14 | minor | LR-VIEW-HDR-DISPLAY ⬜ → 🟡: HDR display output (extended-linear float surface via vendored egui-wgpu, paper-white UI, loupe up to the display's headroom, `--hdr-probe`; #47); LR-HDR-EDIT note updated |
 | 2026-10-15 | minor | LR-LIB-DELETE: Delete from Disk (`cmd:photo.deleteFromDisk`, fork #98): originals and sidecars to the system trash, always confirmed; status unchanged (✅) |
 | 2026-10-15 | minor | LR-MASK-BRUSH: mouse wheel resizes the brush (fork #96); status unchanged (🟡) |
+| 2026-10-15 | minor | LR-FILT-KEYWORD, LR-FILT-CAMERA: the camera / lens / keyword pickers search as you type (fork #105, issue #99); status unchanged (✅) |
