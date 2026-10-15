@@ -79,7 +79,16 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
             "sha256": staged.sha256,
         }));
     }
-    let installed = update::install(&staged, s.desktop.as_ref()).map_err(|e| bad(C, e))?;
+    let installed = match update::install(&staged, s.desktop.as_ref()) {
+        Ok(installed) => installed,
+        Err(why) => {
+            // a file deleted by the last check is no longer ready: the dialog says why
+            if !staged.path.exists() {
+                s.updater.set_progress(Progress::Failed(why.clone()));
+            }
+            return Err(bad(C, why));
+        }
+    };
     let exit = installed.exit;
     let out = json!({"version": installed.version, "message": installed.message, "exit": exit});
     s.updater.set_installed(installed);

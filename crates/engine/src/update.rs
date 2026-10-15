@@ -828,9 +828,21 @@ fn available_json(a: &Available, verified: bool) -> Value {
     })
 }
 
-/// `<repository>/releases/tag/<tag>`: where the release can be downloaded by hand.
+/// `<repository>/releases/tag/<tag>`: where the release can be downloaded by hand. A tag that is
+/// not a plain release name (anything but letters, digits and `.-_+`) gives the list of releases
+/// instead, so the feed can't steer the link elsewhere.
 pub fn release_page(tag: &str) -> String {
-    format!("{}/releases/tag/{}", lcc_brand::REPOSITORY.trim_end_matches('/'), tag.trim())
+    let tag = tag.trim();
+    let plain = !tag.is_empty() && !tag.starts_with('.') && tag.chars().all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '_' | '+'));
+    if !plain {
+        return releases_page();
+    }
+    format!("{}/releases/tag/{tag}", lcc_brand::REPOSITORY.trim_end_matches('/'))
+}
+
+/// `<repository>/releases`: every release, for when there is no particular one to point at.
+pub fn releases_page() -> String {
+    format!("{}/releases", lcc_brand::REPOSITORY.trim_end_matches('/'))
 }
 
 fn staged_json(s: &Staged) -> Value {
@@ -850,8 +862,12 @@ pub fn plan(s: &Staged) -> lcc_updater::Plan {
 }
 
 /// Apply a staged update; a manual install shows the file through `desktop`. The returned
-/// [`Installed`] says whether the app has to quit.
+/// [`Installed`] says whether the app has to quit. The file must still hash to what the download
+/// step checked ([`lcc_updater::recheck`]); otherwise it is deleted and nothing is installed.
 pub fn install(s: &Staged, desktop: &dyn crate::desktop::Desktop) -> Result<Installed, String> {
+    // the file is hashed again right before it is used: one swapped in the cache folder since the
+    // download checked it is deleted, not installed
+    lcc_updater::recheck(&downloaded(s)).map_err(|e| e.to_string())?;
     let mut reveal = |f: &std::path::Path| desktop.reveal(f);
     let outcome = lcc_updater::install_with(s.kind.to_crate(), &downloaded(s), &s.version, &mut reveal).map_err(|e| e.to_string())?;
     Ok(Installed { version: s.version.clone(), message: outcome.message, exit: outcome.exit })

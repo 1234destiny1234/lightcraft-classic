@@ -172,8 +172,32 @@ fn already_verified(dest: &Path, name: &str, size: Option<u64>, sha256: Option<&
     Some(Downloaded { path: dest.to_path_buf(), bytes, sha256: got, name: name.to_string() })
 }
 
+/// Hash a staged file again right before it is installed, against the SHA-256 the download step
+/// checked it with: the cache folder is on the user's machine, and a file swapped there after the
+/// check must not reach the installer. A mismatch (or a file that can't be read) deletes the file.
+pub fn recheck(staged: &Downloaded) -> Result<(), UpdateError> {
+    let got = match hash_file(&staged.path) {
+        Ok(got) => got,
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
+            return Err(UpdateError::Signature(format!("{} is no longer in the download folder; download it again", staged.name)));
+        }
+        Err(e) => {
+            remove_staged(&staged.path);
+            return Err(UpdateError::Signature(format!("{} could not be read again before installing ({e}); it was deleted", staged.name)));
+        }
+    };
+    if staged.sha256.is_empty() || !got.eq_ignore_ascii_case(&staged.sha256) {
+        remove_staged(&staged.path);
+        return Err(UpdateError::Signature(format!(
+            "{} changed after it was downloaded and checked; it was deleted, download it again",
+            staged.name
+        )));
+    }
+    Ok(())
+}
+
 /// Lower-case hex SHA-256 of a file, in chunks (an update can be hundreds of megabytes).
-fn hash_file(path: &Path) -> Result<String, std::io::Error> {
+pub fn hash_file(path: &Path) -> Result<String, std::io::Error> {
     use sha2::{Digest, Sha256};
     use std::io::Read as _;
     let mut file = std::fs::File::open(path)?;
@@ -345,6 +369,23 @@ mod tests {
         let mut h = sha2::Sha256::new();
         h.update(bytes);
         h.finalize().iter().map(|b| format!("{b:02x}")).collect()
+    }
+
+    #[test]
+    fn a_staged_file_swapped_before_install_is_refused_and_deleted() {
+        let dir = scratch("recheck");
+        let path = dir.join("app.msi");
+        std::fs::write(&path, b"the checked installer").unwrap();
+        let staged = Downloaded { path: path.clone(), bytes: 21, sha256: sha256_hex(b"the checked installer"), name: "app.msi".into() };
+        assert_eq!(recheck(&staged), Ok(()), "the file it was checked as passes");
+        assert!(path.exists(), "and stays");
+        std::fs::write(&path, b"something else entirely").unwrap();
+        let err = recheck(&staged).expect_err("a swapped file is refused");
+        assert!(matches!(err, UpdateError::Signature(_)) && err.to_string().contains("changed after"), "{err}");
+        assert!(!path.exists(), "the swapped file is deleted");
+        let err = recheck(&staged).expect_err("a missing file is refused");
+        assert!(err.to_string().contains("no longer in the download folder"), "{err}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]

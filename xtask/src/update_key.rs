@@ -243,13 +243,27 @@ mod tests {
 
     #[test]
     fn a_new_key_is_never_written_into_the_repository() {
-        let root = crate::root();
+        /// Deletes the stand-in repository however the test ends.
+        struct Gone(PathBuf);
+        impl Drop for Gone {
+            fn drop(&mut self) {
+                let _ = std::fs::remove_dir_all(&self.0);
+            }
+        }
+        // a stand-in repository in the temp folder, not this checkout: should the check ever
+        // regress, the key it writes lands here and is deleted, never left in the real repository
+        let repo = Gone(scratch("repo"));
+        let root = &repo.0;
+        std::fs::create_dir_all(root.join("xtask")).expect("subfolder");
         for out in [root.join("update-key-test.secret"), root.join("xtask").join("update-key-test.secret")] {
-            let err = new_key(&root, &out).expect_err("inside the repository");
+            let err = new_key(root, &out).expect_err("inside the repository");
             assert!(err.contains("inside the repository"), "{err}");
             assert!(!out.exists(), "nothing was written");
         }
-        let err = new_key(&root, &std::env::temp_dir().join("no-such-folder-xtask").join("k")).expect_err("no folder");
+        // a relative path resolves from the working folder: the same check holds through `..`
+        let sneaky = root.join("xtask").join("..").join("update-key-test.secret");
+        assert!(new_key(root, &sneaky).expect_err("inside, by another spelling").contains("inside the repository"));
+        let err = new_key(root, &std::env::temp_dir().join("no-such-folder-xtask").join("k")).expect_err("no folder");
         assert!(err.contains("must exist"), "{err}");
     }
 

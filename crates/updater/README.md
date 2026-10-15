@@ -50,7 +50,8 @@ if let Some(update) = lcc_updater::check(&opts, None, None)? {
 - **Downloads** resume from a `.part` file, are capped, and must match the size the feed states and
   the SHA-256 the signed list records before they are renamed into place. A file that fails its check
   is deleted. A file already there is re-hashed, not trusted by name; a hostile asset name (`../../…`)
-  is reduced to its last path segment.
+  is reduced to its last path segment. `recheck` hashes a staged file again right before it is
+  installed, and deletes it if it changed since its check.
 - **Installing** is `install::plan` (what will happen, in words, before anything does) and
   `install::install`: `msiexec` runs the Windows installer, a macOS script mounts the disk image and
   copies the app over the running one from a terminal window, a Linux script renames the running

@@ -697,3 +697,46 @@ fn a_local_http_feed_is_refused_without_the_test_origin() {
     assert_eq!(u.status()["feed"], format!("{base}/latest.json"), "the override is shown");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// A file swapped in the cache folder between the download's check and the install is hashed
+/// again, refused and deleted: the installer never sees it.
+#[test]
+fn a_staged_file_swapped_before_install_is_not_installed() {
+    let dir = scratch("swapped");
+    let file = dir.join("app-9.9.9-linux-x64.tar.gz");
+    std::fs::write(&file, b"the checked download").expect("write");
+    let mut s = crate::Session::new();
+    s.updater = Updater::new(Some(dir.clone()));
+    s.updater.trust_test_key(Some(test_key(5).1));
+    let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
+    s.desktop = desktop.clone();
+    s.updater.set_progress(Progress::Ready(Box::new(Staged {
+        version: "9.9.9".into(),
+        path: file.clone(),
+        bytes: 20,
+        sha256: sha256_hex(b"the checked download"),
+        file: "app-9.9.9-linux-x64.tar.gz".into(),
+        kind: Kind::Archive,
+        notes: String::new(),
+    })));
+    // swapped after the check (same size, other bytes)
+    std::fs::write(&file, b"THE CHECKED DOWNLOAD").expect("swap");
+    let err = s.execute("update.install", &json!({"confirm": true})).expect_err("refused");
+    assert!(err.to_string().contains("changed after it was downloaded"), "the error says why: {err}");
+    assert!(!file.exists(), "the swapped file is deleted");
+    assert!(desktop.requests().is_empty(), "nothing was handed on");
+    assert!(s.updater.installed().is_none());
+    assert_eq!(s.updater.status()["download"], "failed", "the dialog shows the cause");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn a_release_page_link_stays_on_the_repositorys_releases() {
+    let repo = lcc_brand::REPOSITORY.trim_end_matches('/');
+    assert_eq!(release_page("v9.9.9"), format!("{repo}/releases/tag/v9.9.9"));
+    assert_eq!(release_page("v1.0.0-rc.1+build"), format!("{repo}/releases/tag/v1.0.0-rc.1+build"));
+    // a tag that could steer the link anywhere else gives the list of releases
+    for tag in ["", "../../../evil", "v1?x=1", "v1#a", "v1/../../x", "..", "v 1", "v1\u{0}"] {
+        assert_eq!(release_page(tag), releases_page(), "{tag:?}");
+    }
+}

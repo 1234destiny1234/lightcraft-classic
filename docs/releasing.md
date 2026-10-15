@@ -159,11 +159,19 @@ The release job signs with `cargo xtask update-key sign` (`.github/scripts/sign-
 before anything is uploaded: a secret that doesn't match a pinned key fails the job. Without the secret it
 warns and uploads no `.sig`.
 
+The tool is built in a step of its own, *Build the signing tool (no secrets)*, with no secret or token in
+its environment and into fresh folders under `$RUNNER_TEMP` (its own `CARGO_HOME` and target folder, no
+compiler cache). The signing step then runs that built program and compiles nothing. Building runs code
+from dependencies (build scripts, proc-macros), and the self-hosted runner also builds other people's
+pull requests as the same user, so nothing they could have left in a shared cache runs while the key is
+in the environment. Run by hand, the script builds the tool with `cargo xtask` as usual.
+
 ### Create the key pair (once)
 
 1. On your own machine: `cargo xtask update-key new --out <a file outside the repository>`. It refuses a
    path inside the repository and an existing file, and creates the file readable by you only. Keep that
-   file somewhere safe (a password manager): losing it means rotating the key (below).
+   file somewhere safe (a password manager): a lost key is handled like a leaked one (see *Rotate the
+   key*), and costs every installed build one update by hand.
 2. Paste the file's whole contents (one line, `update-signing-secret:…`) into a new secret,
    `UPDATE_SIGNING_KEY`, in the `release` environment (Settings ▸ Environments ▸ release ▸ Add secret).
 3. Put the **public** key the command printed into `brand.toml` and commit it:
@@ -178,8 +186,9 @@ warns and uploads no `.sig`.
 
 The *Sign the checksums* step of the release job logs `SHA256SUMS.txt.sig verified`. To check by hand,
 download `SHA256SUMS.txt`, `SHA256SUMS.txt.sig` and one or more installers from the draft into an empty
-folder and run `cargo xtask update-key verify <folder>`: it checks the signature against `brand.toml` and
-every listed file present in the folder against its SHA-256.
+folder and run `cargo xtask update-key verify <folder>`: it checks the signature against the `brand.toml`
+of the commit you have checked out (check out the release's tag or commit first, so that is the key the
+release's builds carry) and every listed file present in the folder against its SHA-256.
 
 ### Rotate the key
 
@@ -197,5 +206,10 @@ the old key:
 A build from before step 2 trusts only the old key: if it skips every release signed with the old key, it
 can't install the first one signed with the new key, and its user updates once by hand from the release
 page (the dialog says why). So keep signing with the old key for a few releases before
-step 3. A leaked key is the exception: do step 3 at once, and say in the release notes that builds from
-before the rotation should be updated by hand.
+step 3.
+
+**A leaked or lost key** can't go through step 2: a leaked one must not sign again, and a lost one can't.
+Make a new key at once (step 1), put only the new public key in `brand.toml`
+(`public_keys = ["<new>"]`) and the new private key in `UPDATE_SIGNING_KEY`, and release. Builds from
+before then can't verify that release: each updates once by hand from the release page (the dialog says
+so and links to it), and installs automatically again from there. Say so in the release notes.

@@ -863,13 +863,24 @@ jobs:
       # signs with the UPDATE_SIGNING_KEY secret and checks the result against brand.toml before
       # anything is uploaded; without the secret it warns and writes no .sig (the app then links to
       # the release instead of installing it).
+      # The signing tool is built first, in a step that holds no secret and no token, into fresh
+      # folders under $RUNNER_TEMP: this runner also builds other people's pull requests as the same
+      # user, so no build script or proc-macro runs next to the key, and no cache they could have
+      # written (target dir, registry sources, compiler cache) goes into the tool.
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
-      - name: Release build cache
-        run: echo "CARGO_TARGET_DIR=$HOME/.cache/lcc-release-target-$RUNNER_NAME" >>"$GITHUB_ENV"
+      - name: Build the signing tool (no secrets)
+        env:
+          GH_TOKEN: ""
+          RUSTC_WRAPPER: ""
+        run: |
+          fresh="$(mktemp -d "$RUNNER_TEMP/update-key.XXXXXX")"
+          CARGO_HOME="$fresh/cargo-home" CARGO_TARGET_DIR="$fresh/target" nice -n 19 cargo build --locked -p xtask
+          echo "XTASK_BIN=$fresh/target/debug/xtask" >>"$GITHUB_ENV"
       - name: Sign the checksums
         env:
+          GH_TOKEN: ""
           UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
-        run: nice -n 19 bash .github/scripts/sign-checksums.sh out
+        run: bash .github/scripts/sign-checksums.sh out
       - name: Notes, checksums
         working-directory: out
         run: |
