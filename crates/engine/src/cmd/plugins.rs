@@ -224,7 +224,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let id = id_param(p, C)?;
     let command = str_param(p, "command").ok_or_else(|| bad(C, "missing `command`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
-    let selection: Vec<String> = s.targets(p).iter().map(|i| i.0.to_string()).collect();
+    let selection: Vec<String> = s.targets(p)?.iter().map(|i| i.0.to_string()).collect();
     let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
     let r = with_library(&lib, |m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)));
@@ -251,7 +251,7 @@ fn commands(_: &mut Session, _: &Value) -> Result<Value> {
 
 fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.suggestMetadata";
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let mut photos = Vec::new();
     for id in ids.iter().take(1000) {
         let mut v = s.execute("photo.inspect", &json!({"id": id.0})).map_err(|e| bad(C, e.to_string()))?;

@@ -54,6 +54,7 @@
 //! | 9 | custom photo order (upstream PR #1155) | `Op::SetAlbumPhotoOrder`, `Album.photo_order` |
 //! | 10 | video clips: VideoMeta, trim, poster | `Op::SetVideoMeta`, `Op::SetVideoTrim`, `Op::SetVideoPoster`, `Photo.video` |
 //! | 11 | History cursor: Go to History Step adds no step | `Op::SetHistoryCursor`, `Photo.history_cursor` |
+//! | 12 | upstream merge: preview-only recheck (upstream's 9, #662), the camera's focus point (#1480) | `Photo.preview_checked`, `Op::SetContent.preview_checked`, `Meta.focus` |
 //!
 //! Rules:
 //! - **Bump [`VERSION`]** (and add a row above) in the change that adds an [`Op`] variant or a
@@ -80,7 +81,7 @@ pub(crate) const FORMAT: &str = "lcc-catalog";
 pub(crate) const V4_FORMAT: &str = "lcc-catalog-db";
 /// The catalog format this build writes (and the newest it reads). See the module docs →
 /// *Format versions*; bump it whenever an [`Op`] variant or a serialized field is added.
-pub const VERSION: u32 = 11;
+pub const VERSION: u32 = 12;
 
 /// When [`Journal::wants_snapshot`] says it's time to compact the log.
 #[derive(Clone, Copy, Debug)]

@@ -11,6 +11,11 @@ use crate::state::RightPanel;
 use crate::theme::Tokens;
 use crate::widgets::icon_button;
 
+/// Height of one tool button.
+const BUTTON_H: f32 = 40.0;
+/// Space between tool buttons.
+const GAP: f32 = 6.0;
+
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     egui::Panel::right("tool_strip")
@@ -25,8 +30,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let has_photo = app.session.active().is_some();
             ui.vertical_centered(|ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                let sz = vec2(t.strip_w, 40.0);
+                ui.spacing_mut().item_spacing.y = GAP;
+                let sz = vec2(t.strip_w, BUTTON_H);
                 // the Presets column: Develop's, as in Lightroom Classic
                 if app.ui.module == ModuleId::Develop
                     && icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked()

@@ -267,7 +267,7 @@ pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
         "book.exportStatus" => Ok(serde_json::to_value(with_status(|s| s.clone())).unwrap_or(Value::Null)),
         "book.save" | "book.open" | "book.saved" | "book.deleteSaved" => saved(app, id, p),
         "book.autoLayout" if p.get("photos").is_none() => {
-            let mut ids = app.session.targets(&json!({}));
+            let mut ids = app.session.selected();
             if ids.len() < 2 {
                 ids = app.session.visible_cloned();
             }

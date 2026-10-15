@@ -168,7 +168,7 @@ pub(crate) fn delete_from_disk(s: &mut Session, p: &Value) -> Result<Value> {
     let Some(trash) = s.trash.clone() else {
         return Err(EngineError::Other("Delete from Disk isn't available here: this build can't move files to the system trash".into()));
     };
-    let targets = s.targets(p);
+    let targets = s.targets(p)?;
     if targets.is_empty() {
         return Err(crate::cmd::bad("photo.deleteFromDisk", "no photos to delete"));
     }

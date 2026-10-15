@@ -49,8 +49,19 @@ pub struct ModalLayout {
 impl ModalLayout {
     /// Starts the layout at the top of a dialog window's content. `id` is the window's id.
     pub fn begin(ui: &Ui, id: Id) -> Self {
+        Self::begin_with_max(ui, id, max_window_height(ui.ctx()))
+    }
+
+    /// [`begin`](Self::begin) for a window anchored `top` points below the viewport's top edge
+    /// rather than centred: it may reach down to [`SCREEN_MARGIN`] above the bottom.
+    pub fn begin_below(ui: &Ui, id: Id, top: f32) -> Self {
+        let room = (ui.ctx().content_rect().height() - top.max(0.0) - SCREEN_MARGIN).max(MIN_BODY * 2.0);
+        Self::begin_with_max(ui, id, room)
+    }
+
+    fn begin_with_max(ui: &Ui, id: Id, max_window: f32) -> Self {
         let chrome = ui.ctx().data(|d| d.get_temp::<f32>(id.with("dialog-chrome"))).unwrap_or(GUESS_CHROME);
-        let max_content = max_window_height(ui.ctx()) - chrome.clamp(0.0, 400.0);
+        let max_content = max_window - chrome.clamp(0.0, 400.0);
         Self { id, max_content, top: ui.cursor().top(), body_bottom: None }
     }
 

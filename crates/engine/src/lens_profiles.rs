@@ -286,8 +286,7 @@ pub fn for_raw(raw: &lcc_raw::RawInfo, meta: impl FnOnce() -> lcc_meta::Metadata
 pub fn resolve_raw(raw: &lcc_raw::RawInfo, meta: impl FnOnce() -> lcc_meta::Metadata, given: Option<&GivenLens>) -> Option<(EmbeddedLens, Applied)> {
     resolve(crate::files::embedded_lens(raw), || {
         let db = database()?;
-        let c = raw.crop.clipped(raw.active_area.width, raw.active_area.height);
-        let (w, h) = if c.width == 0 || c.height == 0 { (raw.active_area.width, raw.active_area.height) } else { (c.width, c.height) };
+        let (w, h) = raw.developed_size();
         lookup_with(&db, &meta(), given, w as f64, h as f64, raw.orientation)
     })
 }
