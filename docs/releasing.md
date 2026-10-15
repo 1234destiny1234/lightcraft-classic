@@ -159,12 +159,27 @@ The release job signs with `cargo xtask update-key sign` (`.github/scripts/sign-
 before anything is uploaded: a secret that doesn't match a pinned key fails the job. Without the secret it
 warns and uploads no `.sig`.
 
-The tool is built in a step of its own, *Build the signing tool (no secrets)*, with no secret or token in
-its environment and into fresh folders under `$RUNNER_TEMP` (its own `CARGO_HOME` and target folder, no
-compiler cache). The signing step then runs that built program and compiles nothing. Building runs code
-from dependencies (build scripts, proc-macros), and the self-hosted runner also builds other people's
-pull requests as the same user, so nothing they could have left in a shared cache runs while the key is
-in the environment. Run by hand, the script builds the tool with `cargo xtask` as usual.
+The tool is built in a step of its own, *Build the signing tool (no secrets)*, with `UPDATE_SIGNING_KEY`
+and `GH_TOKEN` unset and into fresh folders under `$RUNNER_TEMP` (its own `CARGO_HOME` and target folder,
+no compiler cache); the job's checkout keeps no token in `.git/config` (`persist-credentials: false`). The
+signing step then runs that built program and compiles nothing. So the code a build runs (build scripts,
+proc-macros) never runs while the key is in the environment, and no shared build cache goes into the
+tool. That is all it protects against: see *Runner trust*. Run by hand, the script builds the tool with
+`cargo xtask` as usual.
+
+### Runner trust
+
+The signing key is only as safe as the runner that holds it. The release job runs on the self-hosted
+runner, which also builds other people's pull requests as the same user. Such a job can still reach the
+signing step through:
+
+- a `.cargo/config.toml` in any parent folder of the checkout (including `~/.cargo/config.toml` when the
+  runner's work folder is under `$HOME`): a fresh `CARGO_HOME` doesn't stop cargo reading parent folders;
+- the shared toolchain: `~/.rustup` and `~/.cargo/bin/cargo`.
+
+The stronger option is to run the `release` job on a GitHub-hosted runner: it needs only `gh`, `jq` and
+an xtask build, none of the self-hosted runner's tools. That is the maintainer's decision; until then,
+treat anyone who can run code on that runner as able to reach the key.
 
 ### Create the key pair (once)
 
