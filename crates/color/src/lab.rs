@@ -64,11 +64,7 @@ mod tests {
     #[test]
     fn srgb_primaries_match_published_d50_values() {
         // Lindbloom's calculator, sRGB, Bradford adaptation to D50
-        for (rgb, lab) in [
-            ([255, 0, 0], [54.29, 80.80, 69.89]),
-            ([0, 255, 0], [87.82, -79.29, 80.99]),
-            ([0, 0, 255], [29.57, 68.29, -112.03]),
-        ] {
+        for (rgb, lab) in [([255, 0, 0], [54.29, 80.80, 69.89]), ([0, 255, 0], [87.82, -79.29, 80.99]), ([0, 0, 255], [29.57, 68.29, -112.03])] {
             let got = srgb8_to_lab(rgb);
             assert!(near(got, lab, 0.6), "{rgb:?}: {got:?} vs {lab:?}");
         }

@@ -83,6 +83,8 @@ mod tests_classic;
 #[cfg(test)]
 mod tests_clipping;
 #[cfg(test)]
+mod tests_color_readout;
+#[cfg(test)]
 mod tests_compare;
 #[cfg(test)]
 mod tests_copy_paste_dialogs;
@@ -108,8 +110,6 @@ mod tests_error_kinds;
 mod tests_filmstrip;
 #[cfg(test)]
 mod tests_filter_search;
-#[cfg(test)]
-mod tests_color_readout;
 #[cfg(test)]
 mod tests_grading;
 #[cfg(test)]
