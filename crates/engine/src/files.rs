@@ -627,6 +627,7 @@ fn load_bytes_now(
                 camera_tone,
                 mattes,
                 local_tone,
+                filters: None,
                 // (the catalog knows the original's size: `media::source_info`)
                 native_long: None,
             },

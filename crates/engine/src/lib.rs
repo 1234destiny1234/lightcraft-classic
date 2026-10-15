@@ -42,6 +42,7 @@ mod faces_index;
 #[cfg(not(target_arch = "wasm32"))]
 mod faces_worker;
 pub mod files;
+pub mod filter_plugins;
 #[cfg(not(target_arch = "wasm32"))]
 mod focus_scan;
 pub mod fonts;
@@ -262,6 +263,8 @@ pub struct Session {
     pub(crate) unsaved_sidecars: std::collections::BTreeSet<PhotoId>,
     /// AI denoise: the model in use, the photos that have their picture and the work in progress.
     pub(crate) denoise: denoise::State,
+    /// Plug-in filter measurements (`develop.pluginFilter.analyze`) running in the background.
+    pub(crate) filter_analyses: cmd::plugin_filters::Analyses,
     /// Where the host keeps face models (one folder each); `None` where there is no file system (the web).
     pub face_models_dir: Option<std::path::PathBuf>,
     /// Face model downloads started this session (the staged files wait in `<face_models_dir>/.downloads`).
@@ -468,6 +471,8 @@ impl Session {
     }
 
     pub fn new() -> Session {
+        // installed pixel-filter plug-ins become the renders' filter host
+        let _ = filter_plugins::registry();
         Session {
             library_generation: LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             auto_sync: false,
@@ -496,6 +501,7 @@ impl Session {
             skip_auto_write: false,
             unsaved_sidecars: Default::default(),
             denoise: Default::default(),
+            filter_analyses: Default::default(),
             face_models_dir: None,
             face_downloads: Default::default(),
             lens_db: Default::default(),
@@ -1469,6 +1475,8 @@ mod tests_move_to_share;
 mod tests_organize;
 #[cfg(test)]
 mod tests_persist;
+#[cfg(test)]
+mod tests_plugin_filters;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]

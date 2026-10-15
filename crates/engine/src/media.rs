@@ -1012,7 +1012,7 @@ impl RenderJob {
                 photo: self.photo,
                 level: self.level,
                 key: self.key,
-                rendered: Ok(Rendered { image, histogram, deep: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -1032,7 +1032,7 @@ impl RenderJob {
                 photo: self.photo,
                 level: self.level,
                 key: self.key,
-                rendered: Ok(Rendered { image, histogram, deep: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -1121,6 +1121,9 @@ pub fn develop_reporting(
     // an HDR edit's preview is its SDR rendition: its histogram shows the HDR range instead
     if let Some(h) = lcc_pipeline::hdr_histogram(src, info, s, req) {
         rendered.histogram = h;
+    }
+    for w in &rendered.warnings {
+        log::warn!("render: {w}");
     }
     (rendered, fallback)
 }
@@ -1217,7 +1220,7 @@ impl QuickJob {
         };
         let rendered = |image: Rgba8| {
             let histogram = Histogram::of_srgb8(&image);
-            Ok(Rendered { image, histogram, deep: None })
+            Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() })
         };
         for (cache, k) in &self.cached {
             if let Some(img) = cache.get(*k) {

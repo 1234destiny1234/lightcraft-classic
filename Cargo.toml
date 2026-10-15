@@ -47,6 +47,7 @@ lcc-net = { path = "crates/net" }
 lcc-updater = { path = "crates/updater" }
 lcc-credentials = { path = "crates/credentials" }
 lcc-hash = { path = "crates/hash" }
+lcc-filters = { path = "crates/filters" }
 lcc-fuzzkit = { path = "crates/fuzzkit" }
 lcc-layout = { path = "crates/layout" }
 lcc-immich = { path = "crates/immich" }

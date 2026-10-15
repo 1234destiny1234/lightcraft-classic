@@ -112,6 +112,8 @@ pub struct Tex {
     pub quick: Option<QuickSource>,
     /// CPU copy of the pixels (only with [`Renderer::keep_pixels`]; for headless screenshots).
     pub pixels: Option<std::sync::Arc<egui::ColorImage>>,
+    /// What went wrong without failing the render (e.g. a plug-in filter skipped).
+    pub warnings: Vec<String>,
 }
 
 /// Runs render jobs outside this thread's job pool (the browser build: Web Workers, each with its
@@ -667,7 +669,7 @@ impl Renderer {
         let color = std::sync::Arc::new(color_image(img));
         let pixels = self.keep_pixels.then(|| color.clone());
         let tex = ctx.load_texture(format!("tile {:?} {:?}", key.tile, key.pane), color, egui::TextureOptions::LINEAR);
-        Tex { key: key.look, photo: key.photo, tex, size: [img.width, img.height], histogram: None, ms, quick: None, pixels }
+        Tex { key: key.look, photo: key.photo, tex, size: [img.width, img.height], histogram: None, ms, quick: None, pixels, warnings: Vec::new() }
     }
 
     /// Drop queued tile renders `keep` says no to (tiles scrolled away). Running ones finish and
@@ -1015,6 +1017,7 @@ impl Renderer {
                     t.photo = r.photo;
                     t.size = [img.width, img.height];
                     t.histogram = Some(rendered.histogram);
+                    t.warnings = rendered.warnings;
                     t.ms = ms;
                     t.quick = r.quick;
                 }
@@ -1031,6 +1034,7 @@ impl Renderer {
                             ms,
                             quick: r.quick,
                             pixels,
+                            warnings: rendered.warnings,
                         },
                     );
                 }

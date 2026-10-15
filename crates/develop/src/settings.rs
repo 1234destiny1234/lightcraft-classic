@@ -149,6 +149,63 @@ pub struct DevelopSettings {
     pub calibration: Calibration,
     /// Section on/off toggles (the "eye" buttons on panel headers): section id → enabled.
     pub disabled_sections: Vec<String>,
+    /// Pixel-filter plug-ins applied in order (section id `pluginFilters` for the eye toggle). Not written while
+    /// empty, so settings saved before plug-in filters keep their JSON and `hash64`.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub plugin_filters: Vec<PluginFilter>,
+}
+
+/// Section id of the pixel-filter plug-in stack (its eye toggle in `disabled_sections`).
+pub const PLUGIN_FILTERS_SECTION: &str = "pluginFilters";
+
+/// Most pixel-filter plug-ins one photo's stack holds (input-derived lengths are capped).
+pub const MAX_PLUGIN_FILTERS: usize = 32;
+
+/// Where in the pipeline a pixel-filter plug-in runs.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, Serialize, Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum FilterStage {
+    /// On the decoded source, before white balance and tone (e.g. negative conversion).
+    Source,
+    /// On the display-referred result, after the develop adjustments.
+    #[default]
+    Display,
+}
+
+/// One pixel-filter plug-in in a photo's stack.
+#[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
+#[serde(default)]
+pub struct PluginFilter {
+    /// Stable per photo: how the UI and commands name this entry.
+    pub uid: u32,
+    /// Plug-in id from its manifest.
+    pub plugin: String,
+    /// Hash of the wasm module the parameters were made for.
+    pub module_hash: String,
+    /// Display label cached from the manifest.
+    pub name: String,
+    /// Parameter values by manifest key.
+    pub params: serde_json::Map<String, serde_json::Value>,
+    pub enabled: bool,
+    pub stage: FilterStage,
+    /// Whole-image measurement the filter computed once (e.g. film base / black / white points).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<serde_json::Value>,
+}
+
+impl Default for PluginFilter {
+    fn default() -> Self {
+        Self {
+            uid: 0,
+            plugin: String::new(),
+            module_hash: String::new(),
+            name: String::new(),
+            params: serde_json::Map::new(),
+            enabled: true,
+            stage: FilterStage::Display,
+            analysis: None,
+        }
+    }
 }
 
 impl Default for DevelopSettings {
@@ -182,6 +239,7 @@ impl Default for DevelopSettings {
             enhance: Enhance::default(),
             calibration: Calibration::default(),
             disabled_sections: Vec::new(),
+            plugin_filters: Vec::new(),
         }
     }
 }

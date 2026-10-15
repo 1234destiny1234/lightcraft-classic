@@ -32,6 +32,7 @@ pub mod navigator;
 pub mod notices;
 pub mod people;
 pub mod person;
+pub mod plugin_filters;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod plugins;
 pub mod presets;

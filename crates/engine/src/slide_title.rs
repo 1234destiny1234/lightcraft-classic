@@ -358,7 +358,7 @@ impl TitleCompose {
             photo: lcc_catalog::PhotoId(0),
             level: crate::media::SourceLevel::Preview,
             key: self.key(),
-            rendered: Ok(lcc_pipeline::Rendered { image, histogram, deep: None }),
+            rendered: Ok(lcc_pipeline::Rendered { image, histogram, deep: None, warnings: Vec::new() }),
             loaded: None,
             quick: None,
             display: None,

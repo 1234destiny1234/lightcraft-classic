@@ -1121,7 +1121,9 @@ fn spots_edit(s: &mut Session, c: &str, label: &str, f: impl FnOnce(&mut Vec<Spo
 fn pick_source(s: &mut Session, id: crate::PhotoId, d: &lcc_develop::DevelopSettings, spot: &Spot, avoid: Option<Point>) -> Option<Point> {
     let src = s.source_now(id, crate::media::SourceLevel::Thumb).ok()?;
     let info = s.source_info(id);
-    lcc_pipeline::spots::pick_source(&src, &info, d, spot, avoid)
+    // (on the photo as the Source plug-in filters turn it)
+    let aux = lcc_pipeline::source_stage::aux_source(&src, &info, d);
+    lcc_pipeline::spots::pick_source(aux.as_deref().unwrap_or(&src), &info, d, spot, avoid)
 }
 
 pub(crate) fn clamp_local(mut a: LocalAdjustments) -> LocalAdjustments {

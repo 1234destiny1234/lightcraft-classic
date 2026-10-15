@@ -9,6 +9,7 @@ description = "Engine: session, command registry, history, render jobs, view-mod
 workspace = true
 
 [dependencies]
+lcc-filters = { workspace = true }
 lcc-brand = { workspace = true }
 lcc-geom = { workspace = true }
 lcc-color = { workspace = true }

@@ -16,10 +16,13 @@ lcc-raster = { workspace = true }
 lcc-develop = { workspace = true }
 lcc-raw = { workspace = true }
 lcc-inpaint = { workspace = true }
+lcc-filters = { workspace = true }
+serde_json = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
 
 [dev-dependencies]
+wat = "1.228"
 lcc-scenes = { workspace = true }
 proptest = { workspace = true }
 image = { workspace = true }

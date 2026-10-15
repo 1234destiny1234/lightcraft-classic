@@ -44,11 +44,16 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+pub(crate) mod plugin_filters;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod plugins;
 /// The web build has no plug-ins: plug-in fields read from XMP have nowhere to go.
 #[cfg(target_arch = "wasm32")]
 pub mod plugins {
+    /// No plug-ins folder on the web.
+    pub fn plugins_dir() -> Option<std::path::PathBuf> {
+        None
+    }
     pub fn restore_fields(_s: &mut crate::Session, _items: &[(lcc_catalog::PhotoId, Vec<(String, String, String)>)]) -> usize {
         0
     }
@@ -204,6 +209,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(collections::specs());
         v.extend(develop::specs());
         v.extend(color::specs());
+        v.extend(plugin_filters::specs());
         v.extend(curves::specs());
         v.extend(masks::specs());
         v.extend(organize::specs());
