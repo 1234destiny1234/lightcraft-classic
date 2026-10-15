@@ -589,6 +589,16 @@ mod tests {
             (path("UPDATER_TEST_DMG"), path("UPDATER_TEST_BUNDLE"), path("UPDATER_TEST_CONFIG_DIR"), path("UPDATER_TEST_LIBRARY"));
         let version = std::env::var("UPDATER_TEST_VERSION").expect("set UPDATER_TEST_VERSION");
         assert!(!bundle.starts_with("/Applications"), "run this on a scratch copy, never on /Applications");
+        // the relaunched app must not check GitHub: the settings file is the engine's
+        // `{version, updates: {checkAtStartup}}`, and anything else reads as "check on"
+        let prefs: serde_json::Value =
+            std::fs::read_to_string(cfg.join("updates.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
+        assert_eq!(
+            prefs.pointer("/updates/checkAtStartup"),
+            Some(&serde_json::Value::Bool(false)),
+            "write {{\"version\": 1, \"updates\": {{\"checkAtStartup\": false}}}} to {}/updates.json first",
+            cfg.display()
+        );
         // what `relaunch` does, plus scratch settings and library: an app started by `open` gets
         // LaunchServices' environment, not this shell's
         let mut launch = |b: &Path| {

@@ -74,7 +74,8 @@ relaunched app reports the workspace version either way.
 ```sh
 export CARGO_TARGET_DIR=$PWD/target/agent-<name> S=$TMPDIR/updater-test
 mkdir -p "$S/old" "$S/cfg" "$S/lib" "$S/m"
-echo '{"checkAtStartup": false}' > "$S/cfg/updates.json"   # no update check in the relaunched app
+# no update check in the relaunched app (the test refuses to run without this)
+echo '{"version": 1, "updates": {"checkAtStartup": false}}' > "$S/cfg/updates.json"
 DIST="$S/a" PACKAGE_VERSION=0.0.1 packaging/macos/package.sh --arch aarch64
 DIST="$S/b" PACKAGE_VERSION=<version> packaging/macos/package.sh --arch aarch64 --skip-build
 hdiutil attach -readonly -nobrowse -mountpoint "$S/m" "$S"/a/*.dmg
@@ -85,6 +86,16 @@ UPDATER_TEST_DMG="$(ls "$S"/b/*.dmg)" UPDATER_TEST_BUNDLE="$S/old/<display name>
 ```
 
 Afterwards the scratch bundle's `Info.plist` names `<version>`, no `.partial` or `.old` is left
-beside it, and the app starts on the scratch settings and library. The test relaunches with those
+beside it, and the app starts on the scratch settings and library. Then:
+
+```sh
+pgrep -fl "$S/old/"                  # the relaunched app runs from the scratch bundle
+# look at its window (empty scratch library), then quit it with ⌘Q
+pgrep -fl "$S/old/" || echo quit     # nothing runs from it any more
+hdiutil info | grep -F "$S" || echo "nothing mounted"
+rm -r "$S"
+```
+
+The ignored test checks that `$S/cfg/updates.json` turns the start-up check off before it installs anything. The test relaunches with those
 added (`open --env <PREFIX>_CONFIG_DIR=… --args --library …`); the app's own relaunch is a plain
 `open -n` of the bundle once the app has quit.
