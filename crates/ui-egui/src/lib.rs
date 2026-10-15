@@ -106,6 +106,8 @@ mod tests_error_kinds;
 #[cfg(test)]
 mod tests_filmstrip;
 #[cfg(test)]
+mod tests_filter_search;
+#[cfg(test)]
 mod tests_grading;
 #[cfg(test)]
 mod tests_grid;
