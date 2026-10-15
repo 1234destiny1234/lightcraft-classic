@@ -302,7 +302,7 @@ pub(crate) fn switch_brush_preset(app: &mut LccApp, slot: u8) -> Value {
 
 /// `[` / `]` (size ×`k`) and ⇧`[` / ⇧`]` (feather +`df`) for the brush in use: the Remove tool's
 /// (and its selected spot's) or the Masking brush's.
-fn adjust_brush(app: &mut LccApp, k: f32, df: f32) -> Value {
+pub(crate) fn adjust_brush(app: &mut LccApp, k: f32, df: f32) -> Value {
     if app.ui.right == RightPanel::Remove {
         app.ui.remove_size = (app.ui.remove_size * k).clamp(0.001, 0.25);
         app.ui.remove_feather = (app.ui.remove_feather + df).clamp(0.0, 100.0);
@@ -2098,14 +2098,24 @@ pub fn menu_entries(app: &LccApp) -> Vec<MenuEntry> {
 /// With Settings → General → "Confirm before deleting" on, open the confirmation dialog instead
 /// of deleting; true when it did (the dialog's OK runs `photo.delete`).
 pub fn confirm_delete(app: &mut LccApp) -> bool {
-    if !app.ui.settings.confirm_delete {
-        return false;
-    }
-    let count = app.session.targets(&json!({})).len();
+    app.ui.settings.confirm_delete && open_delete_dialog(app)
+}
+
+/// Photo ▸ Delete from Disk: always asks (whatever the Confirm setting says), in the Delete
+/// dialog, whose Delete from Disk button runs `photo.deleteFromDisk` with `confirm: true`.
+pub fn confirm_delete_from_disk(app: &mut LccApp) -> bool {
+    open_delete_dialog(app)
+}
+
+/// The Delete dialog for the selection; false when nothing is selected.
+fn open_delete_dialog(app: &mut LccApp) -> bool {
+    let targets = app.session.targets(&json!({}));
+    let count = targets.len();
     if count == 0 {
         return false;
     }
-    app.ui.dialog = Some(Dialog::ConfirmDelete { count });
+    let (_, disk_files) = lcc_engine::disk_delete::preview(&app.session.catalog, &targets);
+    app.ui.dialog = Some(Dialog::ConfirmDelete { count, disk_files });
     true
 }
 
