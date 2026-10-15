@@ -74,3 +74,33 @@ fn optics_names_the_lens_the_database_lacks() {
     lcc_engine::lens_profiles::set_dir(before);
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Develop ▸ Optics says what photos imported from now on start from and can make these settings it
+/// (issue #148: the two checkboxes reset on every photo, so a batch wants a default) — without
+/// touching the photo on screen or any other photo already in the library.
+#[test]
+fn optics_can_become_the_default_for_new_photos() {
+    let mut h = demo();
+    let id = raw_in_develop(&mut h, "70-200mm F4");
+    // the second of the pair, as a person would turn it on
+    run(&mut h, "develop.merge", json!({"settings": {"optics": {"remove_ca": true}}, "label": "Remove CA"}));
+    let photo_before = (*h.app.session.develop_of(id).expect("the photo has settings")).clone();
+    assert!(has(&h, "button:opticsNewPhotoDefault"), "the Optics panel offers the action");
+
+    click(&mut h, "button:opticsNewPhotoDefault");
+
+    let toast = h.app.ui.toast.as_ref().map(|(t, _, _)| t.clone()).unwrap_or_default();
+    let pid = h
+        .app
+        .session
+        .import_defaults
+        .raw_preset
+        .clone()
+        .unwrap_or_else(|| panic!("new photos start from a preset now; active: {:?}, toast: {toast:?}", h.app.session.active()));
+    let saved = h.app.session.presets.iter().find(|p| p.id == pid).cloned().expect("the preset was saved");
+    assert_eq!(saved.settings["optics"]["lens_profile"], json!(true));
+    assert_eq!(saved.settings["optics"]["remove_ca"], json!(true));
+    assert!(saved.settings.get("light").is_none(), "only the group asked for, never the whole edit");
+    assert_eq!(*h.app.session.develop_of(id).expect("the photo has settings"), photo_before, "the photo on screen is untouched");
+    assert!(toast.contains("New photos will start from"), "the person is told what changed: {toast:?}");
+}

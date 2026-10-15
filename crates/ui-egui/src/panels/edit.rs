@@ -336,6 +336,33 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if lp && !has_lens {
                 lens_note(app, ui, id);
             }
+            // What photos imported from now on start from, and one action that makes these settings
+            // it (issue #148: the two checkboxes above reset on every photo, so a batch wants a
+            // default).
+            ui.add_space(6.0);
+            let photo_camera = app.session.catalog.photo(id).map(|p| p.meta.camera.trim().to_string()).unwrap_or_default();
+            let current = {
+                let defaults = &app.session.import_defaults;
+                if defaults.per_camera && !photo_camera.is_empty() {
+                    defaults.cameras.iter().find(|c| c.camera.eq_ignore_ascii_case(&photo_camera)).and_then(|c| c.preset.clone())
+                } else {
+                    defaults.raw_preset.clone()
+                }
+            };
+            let starts_from = current
+                .and_then(|pid| app.session.presets.iter().find(|p| p.id == pid).map(|p| crate::i18n::builtin_label(&p.name, p.builtin).to_string()))
+                .unwrap_or_else(|| crate::i18n::tr("{app} Default").to_string());
+            ui.horizontal_wrapped(|ui| {
+                ui.label(crate::i18n::tr("New photos start from"));
+                ui.label(RichText::new(starts_from).strong());
+                if text_button(ui, "opticsNewPhotoDefault", "Use These for New Photos", false).clicked() {
+                    match app.run("library.setImportDefault", json!({})) {
+                        Ok(_) => app.toast(ui.ctx(), crate::i18n::tr("New photos will start from these settings")),
+                        Err(e) => app.toast(ui.ctx(), e),
+                    }
+                }
+            });
+            ui.label(RichText::new(crate::i18n::tr("Photos imported from now on; photos already in the library keep theirs.")).small().weak());
         });
         if d.optics.lens_profile {
             for c in ["optics.profileDistortion", "optics.profileVignetting"] {
