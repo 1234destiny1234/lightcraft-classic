@@ -319,6 +319,15 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
         typing = Some((shown_value(spec, value).trim_start_matches('+').to_string(), 0, value_pressed));
     }
     let value_released = ui.input(|i| i.pointer.button_released(egui::PointerButton::Primary));
+    // A press that leaves the readout before its release is a cancelled gesture: the field it
+    // opened closes. A release on the readout keeps it open, however long the button was held
+    // (fork #59: a long press is past egui's click time, so it isn't a click).
+    let released_away = value_released && ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| !value_rect.contains(p));
+    if released_away && typing.as_ref().is_some_and(|(_, _, pressed)| *pressed) && !value_resp.clicked() {
+        typing = None;
+        ui.data_mut(|m| m.remove::<(String, u8, bool)>(typing_id));
+        ui.memory_mut(|m| m.surrender_focus(crate::text_field::id(&format!("sliderField:{}", spec.id))));
+    }
     let mut out = SliderOut::default();
     // value ↔ track position: linear, except for the Kelvin temperature (`ControlSpec::position`)
     let to_x = |v: f64| track_rect.left() + spec.position(v) as f32 * track_rect.width();
