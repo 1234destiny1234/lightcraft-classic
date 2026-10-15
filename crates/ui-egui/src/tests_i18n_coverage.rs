@@ -38,7 +38,11 @@ fn complete() -> impl Iterator<Item = Locale> {
 /// Print what a partial language lacks (a report, not a failure).
 fn report(what: &str, gaps: &[String]) {
     if !gaps.is_empty() {
-        eprintln!("{} {what} (partial languages, reported only); first ones:\n{}", gaps.len(), gaps.iter().take(20).cloned().collect::<Vec<_>>().join("\n"));
+        eprintln!(
+            "{} {what} (partial languages, reported only); first ones:\n{}",
+            gaps.len(),
+            gaps.iter().take(20).cloned().collect::<Vec<_>>().join("\n")
+        );
     }
 }
 
