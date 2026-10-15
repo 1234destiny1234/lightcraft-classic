@@ -274,6 +274,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Update => "Check for Updates",
         Dialog::Shortcuts => "Keyboard Shortcuts",
         Dialog::ViewOptions => "Library View Options",
+        Dialog::NewPhotoDefault { .. } => "Save as Default for New Photos",
     }
     .to_string();
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
@@ -1417,6 +1418,28 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),
                 Dialog::ViewOptions => crate::panels::cells::view_options(app, ui),
+                Dialog::NewPhotoDefault { name } => {
+                    ui.label(egui::RichText::new(crate::i18n::tr("Preset name")).color(t.text_dim));
+                    let r = crate::text_field::TextField::singleline("field:newPhotoDefaultName", name)
+                        .hint(crate::i18n::tr(lcc_engine::import::NEW_PHOTO_DEFAULT))
+                        .width(f32::INFINITY)
+                        .select_on_focus(true)
+                        .show(ui);
+                    if just_opened(ui, "new-photo-default") {
+                        r.response.request_focus();
+                    }
+                    // Return in the field saves, as the other naming dialogs do
+                    if r.ending == Some(crate::text_field::Ending::Return) {
+                        confirm = true;
+                    }
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(crate::i18n::tr(
+                            "Saves the active photo's Optics settings as this preset; photos already in the library keep theirs.",
+                        ))
+                        .color(t.text_dim),
+                    );
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 Dialog::Update => crate::panels::update::body(app, ui),
                 // the updater is native only; the web build has nothing to show here
@@ -1497,6 +1520,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     // (not "Merge": that is photo merging, HDR / panorama, in some languages)
                     Dialog::MoveKeyword { .. } => "Merge Keywords",
                     Dialog::KeywordSet { .. } => "Save",
+                    Dialog::NewPhotoDefault { .. } => "Save",
                     Dialog::KeywordTag { editing: None, .. } => "Create",
                     Dialog::KeywordTag { .. } => "Save",
                     Dialog::RemoveFolder { .. } => "Remove",
@@ -2054,6 +2078,7 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::DeleteEffects { names } => app.run("mask.deleteEffect", json!({"names": names})),
         Dialog::RemoveFolder { path, disk, .. } => app.run("library.removeFolder", json!({"path": path, "disk": disk})),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::confirm(app, d),
+        Dialog::NewPhotoDefault { name } => app.run("library.setImportDefault", json!({"name": name.trim()})),
         Dialog::About | Dialog::Shortcuts | Dialog::ViewOptions | Dialog::Settings { .. } | Dialog::Update | Dialog::ManageEffects { .. } => {
             Ok(serde_json::Value::Null)
         }

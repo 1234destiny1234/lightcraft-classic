@@ -336,6 +336,35 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if lp && !has_lens {
                 lens_note(app, ui, id);
             }
+            // What photos imported from now on start from, and one action that makes these settings
+            // it (issue #148: the two checkboxes above reset on every photo, so a batch wants a
+            // default).
+            ui.add_space(6.0);
+            let photo_camera = app.session.catalog.photo(id).map(|p| p.meta.camera.trim().to_string()).unwrap_or_default();
+            let current = {
+                let defaults = &app.session.import_defaults;
+                if defaults.per_camera && !photo_camera.is_empty() {
+                    defaults.cameras.iter().find(|c| c.camera.eq_ignore_ascii_case(&photo_camera)).and_then(|c| c.preset.clone())
+                } else {
+                    defaults.raw_preset.clone()
+                }
+            };
+            // the preset the default points at: its name for the row, and — when it is one of the
+            // user's own — the name the naming dialog starts from (a built-in's would make a twin)
+            let (starts_from, suggested) = match current.as_deref().and_then(|pid| app.session.presets.iter().find(|p| p.id == pid)) {
+                Some(p) => (crate::i18n::builtin_label(&p.name, p.builtin).to_string(), if p.builtin { String::new() } else { p.name.clone() }),
+                None => (crate::i18n::tr("{app} Default").to_string(), String::new()),
+            };
+            ui.horizontal_wrapped(|ui| {
+                ui.label(crate::i18n::tr("New photos start from"));
+                ui.label(RichText::new(starts_from).strong());
+                // "Save as…": the name is the user's, so several named optics defaults can live side
+                // by side (one per camera, say) instead of one fixed entry
+                if text_button(ui, "opticsNewPhotoDefault", "Save as…", false).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::NewPhotoDefault { name: suggested });
+                }
+            });
+            ui.label(RichText::new(crate::i18n::tr("Photos imported from now on; photos already in the library keep theirs.")).small().weak());
         });
         if d.optics.lens_profile {
             for c in ["optics.profileDistortion", "optics.profileVignetting"] {
