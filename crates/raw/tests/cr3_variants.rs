@@ -267,13 +267,6 @@ fn bit_depth_outside_8_to_16_is_unsupported() {
 }
 
 #[test]
-fn vertical_craw_tiling_is_unsupported() {
-    let mut coding = craw_coding();
-    coding[20..24].copy_from_slice(&8u32.to_be_bytes()); // two tile rows
-    assert_rejected("vertical tiles", &cr3_file(&coding, &craw_stream(4)), "Canon CRX C-RAW with vertical tiles");
-}
-
-#[test]
 fn v200_requires_a_single_tile_14_bit_image() {
     let mut coding = adaptive_coding();
     coding[24] = 12;

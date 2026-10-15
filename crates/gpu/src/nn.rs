@@ -1039,26 +1039,6 @@ mod tests {
         println!("gpu, 16 tiles from 2 threads: {:.0} ms per tile", t.elapsed().as_secs_f64() * 1000.0 / 16.0);
     }
 
-    /// How long the driver takes to build one conv kernel variant: `LC_SHADER=<file.wgsl> LC_BLOCKS=128,32,16`.
-    #[test]
-    #[ignore = "a probe for shader compile times"]
-    fn time_a_shader_build() {
-        let Some(path) = std::env::var_os("LC_SHADER") else { return };
-        let blocks: Vec<u32> = std::env::var("LC_BLOCKS").unwrap_or_else(|_| "128,32,16".into()).split(',').filter_map(|v| v.parse().ok()).collect();
-        let (bm, bn, bk) = (blocks[0], blocks[1], blocks[2]);
-        let src = std::fs::read_to_string(path)
-            .unwrap()
-            .replace("{{BM}}", &bm.to_string())
-            .replace("{{BN}}", &bn.to_string())
-            .replace("{{BK}}", &bk.to_string())
-            .replace("{{B_VECS}}", &(bk * bn / 4).to_string());
-        let d = dev().unwrap();
-        let layout = conv_bgl(d);
-        let started = std::time::Instant::now();
-        let _ = pipeline(d, "probe", &src, &layout);
-        println!("{} {bm}x{bn}x{bk}: built in {:.0} ms", d.info.backend.to_str(), started.elapsed().as_secs_f64() * 1000.0);
-    }
-
     #[test]
     fn a_tile_of_the_wrong_size_is_an_error_not_a_crash() {
         let n = net(16, 4, 1, 9);

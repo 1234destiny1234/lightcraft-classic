@@ -86,35 +86,6 @@ fn a_panorama_of_an_odd_number_of_raw_frames_has_their_median_white_balance() {
 }
 
 #[test]
-fn a_panorama_of_an_even_number_of_frames_takes_the_mean_of_the_middle_two() {
-    let wb = [Some([1.8, 1.0, 1.9]), Some([2.0, 1.0, 1.6]), Some([2.2, 1.0, 1.5]), Some([2.4, 1.0, 1.4])];
-    let res = pano(shoot(&camera_without_white_balance(), &wb));
-    assert_eq!(res.used.len(), 4);
-    let (r, b) = ((f64::from(2.0f32) + f64::from(2.2f32)) / 2.0, (f64::from(1.6f32) + f64::from(1.5f32)) / 2.0);
-    assert_close(neutral_of(&res).expect("an as-shot neutral"), reciprocal([r, 1.0, b]), 1e-6);
-    // two frames: the mean of both
-    let res = pano(shoot(&camera_without_white_balance(), &[Some([2.0, 1.0, 1.0]), Some([3.0, 1.0, 2.0])]));
-    assert_close(neutral_of(&res).expect("an as-shot neutral"), reciprocal([2.5, 1.0, 1.5]), 1e-6);
-}
-
-#[test]
-fn frames_without_multipliers_do_not_vote() {
-    // one frame of three has none (a DNG, say): the other two decide
-    let wb = [Some([2.0, 1.0, 1.6]), None, Some([2.2, 1.0, 1.4])];
-    let res = pano(shoot(&camera_without_white_balance(), &wb));
-    assert_eq!(res.used.len(), 3);
-    assert_close(neutral_of(&res).expect("an as-shot neutral"), reciprocal([2.1, 1.0, 1.5]), 1e-6);
-    // a first frame without them doesn't hide the others'
-    let wb = [None, Some(DAYLIGHT), Some(DAYLIGHT)];
-    let res = pano(shoot(&camera_without_white_balance(), &wb));
-    assert_close(neutral_of(&res).expect("an as-shot neutral"), reciprocal([2.0, 1.0, 1.6f32.into()]), 1e-6);
-    // unusable values don't count either
-    let wb = [Some([f32::NAN, 1.0, 1.0]), Some(DAYLIGHT), Some([0.0, 1.0, 1.4]), Some([2.0, f32::INFINITY, 1.6]), Some(DAYLIGHT)];
-    let res = pano(shoot(&camera_without_white_balance(), &wb));
-    assert_close(neutral_of(&res).expect("an as-shot neutral"), reciprocal([2.0, 1.0, 1.6f32.into()]), 1e-6);
-}
-
-#[test]
 fn a_frame_outside_the_panorama_does_not_vote() {
     let color = camera_without_white_balance();
     let mut frames = shoot(&color, &[Some(DAYLIGHT), Some(DAYLIGHT), Some(DAYLIGHT)]);

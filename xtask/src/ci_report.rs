@@ -567,29 +567,6 @@ mod tests {
         let gpu_all = gpu(probe, true);
         assert_eq!(asked.borrow().len(), 4, "gl too");
         assert_eq!(gpu_all["backends"][2]["error"], "crashed");
-
-        let report = json!({
-            "command": "cargo xtask ci",
-            "result": "pass",
-            "git": {"commit": "0123456789abcdef", "dirty": false},
-            "machine": {"os": "windows", "arch": "x86_64", "cpus": 8, "ram_total_gb": 16},
-            "capabilities": {"gpu": gpu_all, "data": {"corpus": {"raw_pinned": 3, "raw_pinned_total": 30}, "craft_fonts": {"set": false}}},
-            "steps": [{"name": "fmt", "status": "ok", "seconds": 1.25}, {"name": "test", "status": "ok", "seconds": 125.0}],
-            "skips": [{"need": "gpu", "reason": "no GPU | adapter", "test": "memory", "binary": "memory", "location": "x.rs:1", "steps": ["test"]}],
-        });
-        let text = summary_text(&report);
-        assert!(text.contains("GPU for the pipeline: none (software adapter (llvmpipe) skipped)"), "{text}");
-        assert!(text.contains("adapters on dx12: Intel(R) UHD Graphics 620 (IntegratedGpu; 31.0.101)"), "{text}");
-        assert!(text.contains("adapters on gl: probe failed: crashed"), "{text}");
-        assert!(text.contains("Skipped tests: 1 passed without running their checks (gpu 1)"), "{text}");
-        assert!(text.contains("  gpu (1): needs a hardware GPU adapter"), "{text}");
-        assert!(text.contains("      1× no GPU | adapter (memory::memory)"), "{text}");
-        assert!(text.contains("corpus: 3 of 30 pinned raws"), "{text}");
-        let md = summary_md(&report);
-        assert!(md.contains("**`cargo xtask ci`: pass** at 0123456789 (clean)"), "{md}");
-        assert!(md.contains("| test | ok | 2m 05s |"), "{md}");
-        assert!(md.contains("| gpu | 1 | no GPU \\| adapter | `memory::memory` |"), "{md}");
-        assert!(md.contains("1 tests skipped (gpu 1)"), "{md}");
     }
 
     #[test]

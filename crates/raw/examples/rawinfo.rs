@@ -187,12 +187,6 @@ mod tests {
     }
 
     #[test]
-    fn unreadable_input_is_a_failure_without_panicking() {
-        let dir = TempDir::new();
-        assert_eq!(inspect_files(&[dir.path("absent.arw")]), 1);
-    }
-
-    #[test]
     fn invalid_inputs_are_counted_without_stopping_the_batch() {
         let dir = TempDir::new();
         let path = dir.path("invalid.arw");

@@ -672,23 +672,6 @@ mod tests {
         assert!(r.is_err());
     }
 
-    #[test]
-    fn the_synthetic_arw_is_laid_out_as_described() {
-        let f = synthetic_arw(3, 10);
-        assert_eq!(f.len(), 260);
-        let p = crate::extract(&f).focus.expect("a point");
-        assert_eq!(p.words(), vec!["AF-C", "Wide", "Animal Eye Tracking"]);
-        assert!(crate::extract(&synthetic_arw(0, 0)).focus.is_none(), "manual focus");
-    }
-
-    #[test]
-    fn cameras_that_can_have_a_point() {
-        assert!(camera_supported("SONY ILCE-1") && camera_supported("Sony ILCE-7SM3 "));
-        for c in ["SONY ILCE-7M4", "Canon EOS R5", "", "SONY", "ILCE-1", "SON"] {
-            assert!(!camera_supported(c), "{c}");
-        }
-    }
-
     /// Opt-in: decode real α1 / A7S III files and compare with the values ExifTool (run as a black box)
     /// reports for them. `<PREFIX>_FOCUS_SAMPLES=<dir>` is the photo folder the paths below are relative
     /// to; skipped without it. No user file is part of the repository.

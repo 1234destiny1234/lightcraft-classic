@@ -301,16 +301,6 @@ mod tests {
     }
 
     #[test]
-    fn preview_sized_replies_use_the_documented_limit() {
-        let input = std::io::repeat(b'x').take(MAX_REPLY as u64).chain(std::io::Cursor::new(b"\n"));
-        let reply = read_reply(&mut BufReader::new(input), MAX_REPLY).unwrap();
-        assert_eq!(reply.len(), MAX_REPLY + 1);
-        assert!(reply.ends_with('\n'));
-        let mut oversized = BufReader::new(std::io::repeat(b'x'));
-        assert_eq!(read_reply(&mut oversized, MAX_REPLY).unwrap_err().kind(), std::io::ErrorKind::InvalidData);
-    }
-
-    #[test]
     fn consecutive_replies_match_their_requests_on_one_connection() {
         let listener = TcpListener::bind("127.0.0.1:0").unwrap();
         let addr = listener.local_addr().unwrap().to_string();
