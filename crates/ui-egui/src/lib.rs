@@ -15,6 +15,7 @@ pub mod catalog_ui;
 #[cfg(target_arch = "wasm32")]
 #[path = "catalog_ui_web.rs"]
 pub mod catalog_ui;
+pub mod color_readout;
 mod command_error;
 pub mod control;
 pub mod creations_ui;
@@ -81,6 +82,8 @@ mod tests_catalog_ui;
 mod tests_classic;
 #[cfg(test)]
 mod tests_clipping;
+#[cfg(test)]
+mod tests_color_readout;
 #[cfg(test)]
 mod tests_compare;
 #[cfg(test)]

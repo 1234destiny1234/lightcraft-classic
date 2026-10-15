@@ -1,4 +1,9 @@
 {
+  "Color Values": "カラー値",
+  "Color Readout": "カラー表示",
+  "Show RGB Color Values": "RGB カラー値を表示",
+  "Show HSL Color Values": "HSL カラー値を表示",
+  "Show Lab Color Values": "Lab カラー値を表示",
   "Cropped": "切り抜き済み",
   "Develop": "現像",
   "Purge Unused Keywords": "未使用のキーワードを削除",

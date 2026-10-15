@@ -1,4 +1,9 @@
 {
+  "Color Values": "Значення кольору",
+  "Color Readout": "Показ кольору",
+  "Show RGB Color Values": "Показувати значення RGB",
+  "Show HSL Color Values": "Показувати значення HSL",
+  "Show Lab Color Values": "Показувати значення Lab",
   "About {app}": "Про {app}",
   "{app} could not start": "Не вдалося запустити {app}",
   "Meta's terms, not {app}'s. Downloading it means accepting them.": "Умови Meta, а не {app}. Завантажуючи модель, ви приймаєте їх.",

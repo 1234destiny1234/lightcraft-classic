@@ -646,8 +646,30 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if resp.clicked() {
         app.ui.show_clipping = !app.ui.show_clipping;
     }
-    // EXIF strip
-    if let Some(ph) = app.session.catalog.photo(id) {
+    // the histogram's context menu: the format of the colour readout (Lightroom's "Show Lab
+    // Color Values")
+    resp.context_menu(|ui| {
+        for f in crate::color_readout::ColorReadout::ALL {
+            let label = match f {
+                crate::color_readout::ColorReadout::Rgb => crate::i18n::tr("Show RGB Color Values"),
+                crate::color_readout::ColorReadout::Hsl => crate::i18n::tr("Show HSL Color Values"),
+                crate::color_readout::ColorReadout::Lab => crate::i18n::tr("Show Lab Color Values"),
+            };
+            if ui.radio(app.ui.settings.color_readout == f, label).clicked() {
+                let _ = app.run(f.command(), json!({}));
+                ui.close();
+            }
+        }
+    });
+    // the colour under the pointer in the loupe replaces the EXIF strip while it is there
+    let pass = ui.ctx().cumulative_pass_nr();
+    let hover = app.ui.hover_color.filter(|(at, _)| pass.saturating_sub(*at) <= 1).map(|(_, c)| c);
+    if let Some(rgb) = hover {
+        let text = app.ui.settings.color_readout.format(rgb);
+        register(ui.ctx(), "histogramReadout", r);
+        p.text(pos2(r.left() + r.width() / 2.0, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+    } else if let Some(ph) = app.session.catalog.photo(id) {
+        // EXIF strip
         let m = &ph.meta;
         let parts: Vec<String> = [
             m.iso.map(|i| format!("ISO {i}")),
@@ -1259,7 +1281,10 @@ fn point_color(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
             for (i, p) in d.point_colors.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
                 register(ui.ctx(), format!("pointColor:{i}"), r);
-                ui.painter().rect_filled(r.shrink(2.0), 3.0, oklch_color(p.lum, p.chroma, p.hue));
+                let swatch = oklch_color(p.lum, p.chroma, p.hue);
+                ui.painter().rect_filled(r.shrink(2.0), 3.0, swatch);
+                // the sampled colour as RGB, HSL and Lab
+                let resp = crate::color_readout::on_picker(resp, [swatch.r(), swatch.g(), swatch.b()]);
                 if i == sel {
                     ui.painter().rect_stroke(r, 4.0, Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
                 }

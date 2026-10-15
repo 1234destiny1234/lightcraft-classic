@@ -998,7 +998,7 @@ fn left_column(app: &mut LccApp, ui: &mut egui::Ui) {
 }
 
 fn rgb(ui: &mut egui::Ui, c: &mut [u8; 3]) -> bool {
-    let r = ui.color_edit_button_srgb(c);
+    let r = crate::color_readout::on_picker(ui.color_edit_button_srgb(c), *c);
     crate::access::label(&r, "Color");
     r.changed()
 }

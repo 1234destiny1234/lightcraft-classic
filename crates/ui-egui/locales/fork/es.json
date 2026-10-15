@@ -1,4 +1,9 @@
 {
+  "Color Values": "Valores de color",
+  "Color Readout": "Lectura de color",
+  "Show RGB Color Values": "Mostrar valores de color RGB",
+  "Show HSL Color Values": "Mostrar valores de color HSL",
+  "Show Lab Color Values": "Mostrar valores de color Lab",
   "Nothing to survey": "Nada que mostrar en Vista múltiple",
   "Remove from survey": "Quitar de la Vista múltiple",
   "Select photos, then choose View → Survey (N)": "Seleccionar fotos y elegir Vista → Vista múltiple (N)",

@@ -1,4 +1,9 @@
 {
+  "Color Values": "颜色值",
+  "Color Readout": "颜色读数",
+  "Show RGB Color Values": "显示 RGB 颜色值",
+  "Show HSL Color Values": "显示 HSL 颜色值",
+  "Show Lab Color Values": "显示 Lab 颜色值",
   "Develop": "修改照片",
   "Filter Keywords": "筛选关键字",
   "No keywords yet": "尚无关键字",

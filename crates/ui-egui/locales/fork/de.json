@@ -1,4 +1,9 @@
 {
+  "Color Values": "Farbwerte",
+  "Color Readout": "Farbanzeige",
+  "Show RGB Color Values": "RGB-Farbwerte anzeigen",
+  "Show HSL Color Values": "HSL-Farbwerte anzeigen",
+  "Show Lab Color Values": "Lab-Farbwerte anzeigen",
   "Cropped": "Freigestellt",
   "Develop": "Entwickeln",
   "Create Keyword Tag": "Stichwort-Tag erstellen",

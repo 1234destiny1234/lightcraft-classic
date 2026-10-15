@@ -259,6 +259,8 @@ pub struct AppSettings {
     /// The monitor's ICC profile previews are shown through (`app.displayProfile`; "" = none:
     /// the display is treated as sRGB).
     pub display_profile: String,
+    /// The colour readout under the histogram: RGB, HSL or Lab (`view.colorReadout`).
+    pub color_readout: crate::color_readout::ColorReadout,
 }
 
 impl Default for AppSettings {
@@ -287,6 +289,7 @@ impl Default for AppSettings {
             light_theme: LightTheme::Silver,
             favorite_themes: Vec::new(),
             display_profile: String::new(),
+            color_readout: Default::default(),
         }
     }
 }
@@ -747,6 +750,9 @@ pub struct UiState {
     pub point_color_visualize: bool,
     /// Light panel "Visualize HDR": grey below SDR white, colour bands above (HDR edits).
     pub hdr_visualize: bool,
+    /// The sRGB colour under the pointer in the loupe and the pass it was read in (shown under
+    /// the histogram; [`crate::color_readout`]).
+    pub hover_color: Option<(u64, [u8; 3])>,
     /// Red Eye panel: selected correction, and whether new ones are pet eyes.
     pub eye: usize,
     pub eye_pet: bool,
@@ -1285,6 +1291,7 @@ impl Default for UiState {
             point_color: 0,
             point_color_visualize: false,
             hdr_visualize: false,
+            hover_color: None,
             eye: 0,
             eye_pet: false,
             visualize_spots: false,

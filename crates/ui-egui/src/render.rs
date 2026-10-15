@@ -944,7 +944,8 @@ impl Renderer {
             }
             let img = &rendered.image;
             let color = std::sync::Arc::new(color_image(img));
-            let pixels = self.keep_pixels.then(|| color.clone());
+            // the loupe's render stays readable on the CPU for the colour readout under the pointer
+            let pixels = (self.keep_pixels || slot == Slot::Main).then(|| color.clone());
             let name = format!("{slot:?}");
             match self.textures.get_mut(&slot) {
                 Some(t) => {

@@ -1,4 +1,9 @@
 {
+  "Color Values": "Valores de cor",
+  "Color Readout": "Leitura de cor",
+  "Show RGB Color Values": "Mostrar valores de cor RGB",
+  "Show HSL Color Values": "Mostrar valores de cor HSL",
+  "Show Lab Color Values": "Mostrar valores de cor Lab",
   "Develop": "Revelação",
   "Include on Export": "Incluir ao exportar",
   "Export Containing Keywords": "Exportar palavras-chave superiores",
