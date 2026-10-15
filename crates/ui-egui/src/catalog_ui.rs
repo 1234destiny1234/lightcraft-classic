@@ -22,7 +22,7 @@ pub enum CatalogDialog {
     /// open one. `foreign`: libraries of another app found where this app's would be (e.g. the
     /// upstream app's), which can't be opened here; named so the user knows why they don't open.
     /// `updates`: the user ticked "Check for updates when the app starts" (unticked at first).
-    /// Each action carries it as `checkForUpdates`, and it is saved through `update.prefs` only
+    /// Each action carries it as `checkAtStartup`, and it is saved through `update.prefs` only
     /// when that action opens a catalog; closing the dialog saves nothing.
     Welcome {
         parent: String,
@@ -125,18 +125,18 @@ fn open_catalog(app: &mut LccApp, path: &str, p: &Value) -> Result<Value, String
 }
 
 /// Whether the call carries the welcome dialog's ticked "Check for updates when the app starts"
-/// (`checkForUpdates: true`). It travels in the call's own parameters, so a folder dialog that
+/// (`checkAtStartup: true`). It travels in the call's own parameters, so a folder dialog that
 /// answers later brings it back with its answer, and no other call ever takes it.
-fn check_for_updates(p: &Value) -> bool {
-    p.get("checkForUpdates").and_then(Value::as_bool).unwrap_or(false)
+fn check_at_startup(p: &Value) -> bool {
+    p.get("checkAtStartup").and_then(Value::as_bool).unwrap_or(false)
 }
 
-/// Open the catalog in `dir`; with `checkForUpdates` in `p`, the start-up update check is turned
+/// Open the catalog in `dir`; with `checkAtStartup` in `p`, the start-up update check is turned
 /// on (through `update.prefs`) once it is open.
 fn open_dir(app: &mut LccApp, dir: &Path, demo: bool, p: &Value) -> Result<Value, String> {
     let r = crate::panels::settings::open_library(app, &json!({"path": dir.to_string_lossy(), "demo": demo}))?;
     app.catalog_ui.touch(dir);
-    if check_for_updates(p)
+    if check_at_startup(p)
         && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": true}))
     {
         log::warn!("update.prefs: {e}");
@@ -510,7 +510,7 @@ fn welcome_ui(
     let r = ui.add_enabled(ready, egui::Button::new(egui::RichText::new(crate::i18n::tr("Create Catalog")).strong()).min_size(egui::vec2(0.0, 26.0)));
     crate::widgets::register(ui.ctx(), "button:welcomeCreate", r.rect);
     if r.clicked() {
-        *action = Some(("catalog.new".into(), json!({"parent": parent.trim(), "name": name.trim(), "demo": *demo, "checkForUpdates": *updates})));
+        *action = Some(("catalog.new".into(), json!({"parent": parent.trim(), "name": name.trim(), "demo": *demo, "checkAtStartup": *updates})));
     }
     ui.separator();
     ui.label(egui::RichText::new(crate::i18n::tr("Open an existing catalog")).strong());
@@ -526,7 +526,7 @@ fn welcome_ui(
         let r = ui.selectable_label(false, display_name(p));
         crate::widgets::register(ui.ctx(), format!("item:welcomeRecent{i}"), r.rect);
         if r.clicked() {
-            *action = Some(("catalog.openRecent".into(), json!({"path": p, "checkForUpdates": *updates})));
+            *action = Some(("catalog.openRecent".into(), json!({"path": p, "checkAtStartup": *updates})));
         }
     }
     if !foreign.is_empty() {
@@ -540,7 +540,7 @@ fn welcome_ui(
         let r = ui.add_enabled(app.services.pick_folder.is_some(), egui::Button::new(crate::i18n::tr("Open Catalog…")));
         crate::widgets::register(ui.ctx(), "button:welcomeOpen", r.rect);
         if r.clicked() {
-            *action = Some(("catalog.open".into(), json!({"checkForUpdates": *updates})));
+            *action = Some(("catalog.open".into(), json!({"checkAtStartup": *updates})));
         }
         let r = ui.button(crate::i18n::tr("Quit"));
         crate::widgets::register(ui.ctx(), "button:welcomeQuit", r.rect);

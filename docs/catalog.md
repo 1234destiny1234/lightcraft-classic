@@ -187,7 +187,7 @@ both). Photos match by file path and virtual-copy name, so a photo whose origina
   `<PREFIX>_LIBRARY`, nothing remembered, no catalog at the default location) the welcome dialog asks: create a
   catalog (name, location — default `~/Pictures/<library_default>` — and sample photos only if ticked; `catalog.new
   {parent, name, demo}`) or open one. Its "Check for updates when the app starts" box (unticked at first) travels with the
-  action as `checkForUpdates: true` when ticked (`catalog.new`, `catalog.open`, `catalog.openRecent`), and turns the
+  action as `checkAtStartup: true` when ticked (`catalog.new`, `catalog.open`, `catalog.openRecent`), and turns the
   start-up check on through `update.prefs` only once that action has opened a catalog; while Open Catalog…'s folder
   dialog is up the welcome dialog waits, and cancelling it returns there. Another app's library (e.g. the upstream app's, named by settings copied from a
   previous name) is never opened as this app's own: its format is refused as `Foreign`, never upgraded in place, and
