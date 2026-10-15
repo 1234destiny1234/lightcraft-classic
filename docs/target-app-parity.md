@@ -1,6 +1,6 @@
 # Target-app parity: the app vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (upstream: RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327); minor (Canon CRW, Epson ERF, Mamiya MEF decoded: models that decode 90% → 91%, use-weighted 89% → 90%, RAW decoding 80% → 81%); minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (upstream batch 40 merged; full / mainstream readiness re-derived from the re-measured RAW share: ~62% / ~52% / ~65%); minor (upstream: RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327); minor (Canon CRW, Epson ERF, Mamiya MEF decoded: models that decode 90% → 91%, use-weighted 89% → 90%, RAW decoding 80% → 81%); minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close the app is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -14,9 +14,9 @@ have their own documents: [raw-parity.md](raw-parity.md), [file-format-parity.md
 |---|---:|---|
 | **Feature breadth**, checklist | **81.6%** of 532 in-scope rows (P0 98.0%, P1 95.2%, P2 50.0%) | **measured**: recount of [parity-checklist.md](parity-checklist.md) rows (✅ 1, 🟡 ½, 🚫 left out), the same rule `cargo xtask parity` uses |
 | **Feature breadth**, weighted by use | **~77%** | estimated: feature-area table below |
-| **Ready for real work** (full target) | **~61%** (range 56–66%) | estimated: weighted sum over the dimensions with written weights, see [below](#ready-for-real-work-mainstream-practitioner-and-essentials-user) |
-| **Mainstream practitioner** | **~51%** (range 46–56%) | estimated: weekly areas of a working photographer, depth 74.0% × 0.804 × colour 0.85 |
-| **Essentials user** | **~65%** (range 60–70%) | estimated: core features at default settings, depth 78.0% × 0.830 |
+| **Ready for real work** (full target) | **~62%** (range 57–67%) | estimated: weighted sum over the dimensions with written weights, see [below](#ready-for-real-work-mainstream-practitioner-and-essentials-user) |
+| **Mainstream practitioner** | **~52%** (range 47–57%) | estimated: weekly areas of a working photographer, depth 75.6% × 0.804 × colour 0.85 |
+| **Essentials user** | **~65%** (range 60–70%) | estimated: core features at default settings, depth 78.5% × 0.830 |
 | Remaining to **beta** | **~330–585 h** | estimated; ~60% parallelizes |
 | Remaining to **full parity** | **~1,000–1,800 h** | estimated; ~70% parallelizes |
 | **Stage** | **alpha** | see [Stage](#stage) |
@@ -118,11 +118,11 @@ work. Each has its own hours to ~95%, calibrated as in [How hours are calibrated
 
 | Audience | Ready | Opus 5.5 agent wall-clock hours to ~95% | Work that dominates |
 |---|---:|---:|---|
-| Full target (ready for real work) | **~61%** | **1,000–1,800 h** (~70% parallelizes) | raw colour, lens and camera data; AI models; Classic output modules; localization; plug-in ecosystem |
-| Mainstream practitioner | **~51%** | **450–840 h** (~60% parallelizes) | camera colour and render fidelity; CR3 / ORF / HE NEF; lens database; subject / sky masks; Lightroom XMP exchange; stability |
+| Full target (ready for real work) | **~62%** | **1,000–1,800 h** (~70% parallelizes) | raw colour, lens and camera data; AI models; Classic output modules; localization; plug-in ecosystem |
+| Mainstream practitioner | **~52%** | **450–840 h** (~60% parallelizes) | camera colour and render fidelity; CR3 / ORF / HE NEF; lens database; subject / sky masks; Lightroom XMP exchange; stability |
 | Essentials user | **~65%** | **160–300 h** (~50% parallelizes) | default raw look for popular cameras; launch stability; basic-slider feel; opening CR3 / HEIC files people send |
 
-### Full target (ready for real work): ~61%
+### Full target (ready for real work): ~62%
 
 Weighted sum over the dimensions of [By dimension](#by-dimension) (AI is left out because it
 overlaps the masking and Enhance feature areas). RAW decoding and camera colour are their own rows,
@@ -131,7 +131,7 @@ valued from the model-by-model measurement in [raw-parity.md](raw-parity.md):
 | Dimension | Weight | Ready |
 |---|---:|---:|
 | Features: the other 11 areas, weighted depth from [Features](#features) | 45% | 60.9% |
-| RAW decoding and camera coverage | 9% | 83% (92% use-weighted × 0.9) |
+| RAW decoding and camera coverage | 9% | 88% (98% use-weighted × 0.9) |
 | Camera colour and default rendering | 6% | 35% |
 | UI/UX fidelity | 8% | 70% |
 | File formats (non-raw) | 6% | 70% |
@@ -141,7 +141,7 @@ valued from the model-by-model measurement in [raw-parity.md](raw-parity.md):
 | Stability | 8% | 60% |
 | Platforms | 4% | 60% |
 | Ecosystem / plug-ins | 2% | 15% |
-| **Weighted sum** | 100% | **61.2% ≈ 61%** (range 56–66%) |
+| **Weighted sum** | 100% | **61.7% ≈ 62%** (range 57–67%) |
 
 Mainstream comes out lower than full: its scope is the raw-develop core, where the app is weakest
 (camera colour, CR3 coverage), and its discounts are multiplicative, while the full sum is lifted by
@@ -157,12 +157,12 @@ essentials replaces its guessed 45% raw look with 84% × 0.75 (+1 point).
 
 | Discount | Mainstream | Essentials | Evidence |
 |---|---:|---:|---|
-| Interaction fidelity / UI clarity | ×0.95 | ×0.95 | brush live preview gaps and feathering (#517, #518); crop artefacts and limits (#731, #742, #770, #771); Compare white-balance selector (#743–#745); low-res slider previews (#330); dialogs taller than the window (#781); mouse-wheel scroll (#714); 100% zoom capped (gap 4) |
+| Interaction fidelity / UI clarity | ×0.95 | ×0.95 | brush live preview gaps and feathering (#517, #518); crop artefacts and limits (#731, #742, #770, #771); Compare white-balance selector (#743–#745); low-res slider previews (#330); dialogs taller than the window (#781); mouse-wheel scroll (#714) |
 | Stability on real machines | ×0.92 | ×0.92 | launch and quit crashes or silent startup failures (#250 macOS 12 Intel, #315 Windows Intel GPU, #431 Intel Mac, #260, #462, #783 Linux / Nouveau, #790 Windows installer); tests run in CI on FreeBSD only (gap 9) |
 | File exchange with Lightroom users (mainstream) / opening files people send (essentials) | ×0.92 | ×0.95 | Adobe XMP sidecars change colours (#290), XMP CameraProfile and Upright ignored (#204, #205), catalog import fails (#599), same Light values render differently (#523, #209), no write-back to `.lrcat`; for casual users: CR3 beyond verified bodies, HE NEF open as previews (#473, #485, #556), HEIC trouble (#693) |
 | **Product** | **×0.804** | **×0.830** | |
 
-### Mainstream practitioner: ~51%
+### Mainstream practitioner: ~52%
 
 A working photographer (wedding, portrait, events, landscape) shooting raw on one current camera,
 weekly: import, cull, develop, a few masks, sync a look, export. Excluded: Classic output modules,
@@ -173,18 +173,18 @@ than the user's own.
 |---|---:|---:|
 | Import and library | 18% | 80% |
 | Cull: views, compare, zoom, ratings | 12% | 70% |
-| Raw decoding for their camera | 27% | 92% (measured use-weighted share whose camera fully works, [raw-parity.md](raw-parity.md#by-use-estimated)) |
+| Raw decoding for their camera | 27% | 98% (measured use-weighted share whose camera fully works, [raw-parity.md](raw-parity.md#by-use-estimated)) |
 | Global develop adjustments | 15% | 70% |
 | Crop, geometry, lens corrections | 6% | 50% |
 | Masking (manual, subject / sky; no generative) | 8% | 45% |
 | Heal / remove (no generative), denoise | 5% | 40% |
 | Presets, copy / paste / sync | 5% | 85% |
 | Export | 4% | 75% |
-| **Weighted depth** | 100% | **74.0%** |
+| **Weighted depth** | 100% | **75.6%** |
 
 Colour fidelity is a written discount, **×0.85**: most raws start near the camera's own look (median
 ΔE ~5), about 10% far off (ΔE ~18), none calibrated to Adobe Standard, so a working photographer
-corrects colour by hand (33 open colour issues). 74.0% × 0.804 × 0.85 = **~51%** (range 46–56%).
+corrects colour by hand (33 open colour issues). 75.6% × 0.804 × 0.85 = **~52%** (range 47–57%).
 
 ### Essentials user: ~65%
 
@@ -201,11 +201,11 @@ basic sliders, crop, apply a preset, undo, export JPEGs.
 | Crop and straighten | 10% | 80% |
 | Presets and profiles | 8% | 80% |
 | Undo and history | 5% | 90% |
-| Their camera's raws: decode × default look | 10% | 69% (92% whose camera fully works × colour factor 0.75) |
+| Their camera's raws: decode × default look | 10% | 74% (98% whose camera fully works × colour factor 0.75) |
 | Export JPEG | 10% | 85% |
-| **Weighted depth** | 100% | **78.0%** |
+| **Weighted depth** | 100% | **78.5%** |
 
-78.0% × 0.830 = **~65%** (range 60–70%).
+78.5% × 0.830 = **~65%** (range 60–70%).
 
 ### User evidence (GitHub issues, excluding the four maintainers)
 
@@ -229,19 +229,19 @@ with the standard, no new evidence. The stage stays **alpha**.
 ## Stage
 
 **Alpha.** Core workflows exist end to end (import, cull, develop, mask, export, catalog migration),
-but ready-for-real-work is ~61%, below the ~75% beta bar, and the main file formats have blocking
-gaps: Canon CR3 decodes from sensor data on three verified bodies only, HE NEF
-opens as previews, and colour on every non-DNG raw is estimated rather than measured.
+but ready-for-real-work is ~62%, below the ~75% beta bar, and the main file formats have blocking
+gaps: CR3 variants no public file uses and HE NEF
+open as previews, and colour on every non-DNG raw is estimated rather than measured.
 
 **Alpha gate:** all six core workflows (import, cull, develop, save and reopen, batch looks, export)
 work end to end on macOS; see the table in [roadmap.md](roadmap.md#alpha-gate). The partial rows (CR3
-variants, HE NEF as previews; capped 100% zoom) degrade but don't block a workflow.
+variants, HE NEF as previews) degrade but don't block a workflow.
 
-**To beta:** ~14 points of readiness, **~330–585 h**: the eight `B` gaps in [gaps.md](gaps.md)
+**To beta:** ~13 points of readiness, **~330–585 h**: the eight `B` gaps in [gaps.md](gaps.md)
 (~230–430 h), plus burning down the ~92 open core-path user issues (40–80 h) and stability work
 around them. Beta needs: CR3 and
 HE NEF decoding from sensor data; measured colour for the popular models and a fidelity suite with
-scores; full-resolution zoom; Subject / Sky / People masks; a lens profile database for the
+scores; Subject / Sky / People masks; a lens profile database for the
 popular lenses; tests in CI on macOS, Windows and Linux.
 
 ## How hours are calibrated
@@ -276,6 +276,7 @@ most of its list; what remains is the data-heavy part (colour, lenses, models) i
 
 | Date | Checklist (all / P0 / P1 / P2) | Ready for real work | Remaining to full parity | Source |
 |---|---|---|---|---|
+| 2026-10-15 | unchanged | ~62% full · ~52% mainstream · ~65% essentials | unchanged | RAW rows re-measured after the upstream merges (`docs/raw/coverage.py`: 98% use-weighted, 596 models verified) |
 | 2026-10-12 | 81.1% (unchanged) | ~61% full · ~51% mainstream · ~65% essentials | unchanged | 22 more CR3 bodies verified (raw-parity.md) |
 | 2026-10-10 (RAW) | 81.1% (unchanged) | ~61% full · ~49% mainstream · ~64% essentials | unchanged | RAW measured model by model against Adobe's list; RAW decode and colour as explicit rows |
 | 2026-10-10 (final) | 81.1% (unchanged) | ~59% full (weighted sum) · ~51% mainstream · ~63% essentials | full 1,000–1,800 h · mainstream 450–840 h · essentials 160–300 h | method aligned with the standard |
@@ -300,9 +301,11 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-15 | minor | Upstream batch 40 merged; the full / mainstream / essentials RAW rows now use the re-measured use-weighted 98% (was 92%) like the Features table: full 61.2% → 61.7% (~61% → ~62%), mainstream depth 74.0% → 75.6% (~51% → ~52%), essentials depth 78.0% → 78.5% (~65% unchanged); beta ~14 → ~13 points; Stage text: CR3 gap is the variants no public file uses |
 | 2026-10-14 | minor | Localization ~52% → ~55% (mean of the 12 key languages): de, es, fr, ja and uk catalogs filled |
 | 2026-10-12 | minor | UI/UX remaining 34–58 h → 32–54 h (canvas tools by keyboard); headline numbers unchanged |
 | 2026-10-14 | minor | Merge and HDR: merge 100% → 88% (LR-MERGE-HDR ✅ → 🟡 after testing on real 67 MP brackets; gap 29); area percentages unchanged |
+| 2026-10-14 | minor | Gap 4 (full-resolution zoom) closed: removed from the interaction-fidelity notes, the alpha-gate partial rows and the beta needs; headline numbers and the ×0.95 interaction factor unchanged |
 | 2026-10-12 | minor | UI/UX remaining 40–70 h → 34–58 h (accessibility audit landed, ui-parity.md); percentages unchanged |
 | 2026-10-14 | minor | Camera-coverage sweep (#1327): 30 models verified on 40 CC0 files (`coverage_sweep_corpus.rs`, `coverage-sweep.tsv`; `docs/raw/coverage.py` 515 → 545 verified rows); the counts above are not re-measured here. Sensor verification does not establish colour parity (#1277); headline numbers unchanged |
 | 2026-10-12 | minor | 22 more CR3 bodies verified on one CC0 file each (raw-parity.md): use-weighted share whose camera decodes 85% → 92%, RAW decoding 77% → 83%; full 60.7% → 61.2% (~61%), mainstream depth 72.1% → 74.0% (~49% → ~51%), essentials depth 77.5% → 78.0% (~64% → ~65%) |

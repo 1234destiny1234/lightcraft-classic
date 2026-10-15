@@ -115,8 +115,9 @@ committed table is stale.
 | Medium format and others | 0.5% | 35% | 11% | IIQ, 3FR, X3F; MRW, ERF, MEF decode |
 | **Weighted** | 100% | **98%** | **87%** | |
 
-About 5 in 6 raw photographers' cameras decode, but only about 2 in 5 use a body we have actually
-checked, and Canon, the largest bucket, is the weakest of the big four.
+Nearly every raw photographer's camera decodes (98%), and about 7 in 8 use a body we have actually
+checked (the per-model CC0 sweeps of October 2026); OM / Olympus bodies, which decode but are barely verified, are the
+largest gap left.
 
 ## Variant matrix (depth per format)
 
@@ -290,6 +291,7 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-15 | minor | Upstream batch 40 merged: action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies) was already done here and the fork's tables stay ahead; `coverage.py --check` passes, numbers unchanged (596 verified, use-weighted ~98%, 87% on verified bodies) |
 | 2026-10-15 | minor | Upstream merge: both sides' evidence combined and re-measured with `docs/raw/coverage.py`: 596 verified, 724 unverified, 89 preview, 37 unsupported; use-weighted ~98% (87% on verified bodies); decoding 88%, RAW readiness ~63% |
 | 2026-10-15 | minor | EOS R6 verified (CR3 lossless, 5568x3708, 14-bit; 5 private files checked against DNGLab 0.8.0 reference, exact FNV-1a hashes): 315 verified, 1,001 unverified; use-weighted unchanged at ~90% |
 | 2026-10-14 | minor | Camera-coverage sweep (#1327): 30 models verified on 40 CC0 files (`coverage_sweep_corpus.rs`, `coverage-sweep.tsv`; `docs/raw/coverage.py` 515 → 545 verified rows); the counts above are not re-measured here. Sensor verification does not establish colour parity (#1277) |
@@ -322,3 +324,4 @@ Beyond decoding:
 | 2026-10-10 (later) | minor | Lens profiles: Sony ILCE-7RM6 in-file distortion next to the ILCE-7RM4A's (its lateral CA parsed, off by default); lens score unchanged (~10%: one more body) |
 | 2026-10-14 | minor | 97 Canon CR2, Pentax and Ricoh models verified (one CC0 raw.pixls.us file each, pinned, checked against the camera JPEG; `canon_pentax_corpus.rs`): 334 verified, 844 unverified, 232 preview; 50% of photographers on a verified body; use-weighted 85% unchanged |
 | 2026-10-14 | minor | Integration batch 36: CC0 per-model verification for 117 Nikon/Fujifilm, 97 Canon CR2/Pentax/Ricoh, 21 Sony/Leica and 23 Olympus/Samsung bodies, 22 more CR3 bodies and 30 more models; Epson ERF and Mamiya MEF decode; measured Nikon image areas (#1053, #1770): 515 verified, 675 unverified, 218 preview, 38 unsupported (re-measured with `coverage.py`) |
+| 2026-10-15 | minor | Upstream (batch 40): by-maker and by-use tables re-measured with `coverage.py` after batches 36–39 (545 verified, 651 unverified, 212 preview, 38 unsupported; ~94% of photographers' cameras fully work, ~85% on a verified body); rows the per-model PRs had updated are current again |
