@@ -1196,8 +1196,6 @@ mod tests_filesystem_history;
 #[cfg(test)]
 mod tests_folders;
 #[cfg(test)]
-mod tests_plugin_filters;
-#[cfg(test)]
 mod tests_forget_local;
 #[cfg(test)]
 mod tests_history_cursor;
@@ -1223,6 +1221,8 @@ mod tests_merge;
 mod tests_organize;
 #[cfg(test)]
 mod tests_persist;
+#[cfg(test)]
+mod tests_plugin_filters;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]
