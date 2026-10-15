@@ -31,22 +31,18 @@ const SETTINGS_FILE: &str = "updates.json";
 /// Schema version of that file; a file from a newer build is left alone.
 const SETTINGS_VERSION: u32 = 1;
 
-/// What the user chose about updates (persisted in `updates.json`).
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
+/// What the user chose about updates (persisted in `updates.json`). The default is all off: no
+/// start-up check, no prereleases, nothing seen.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct Prefs {
-    /// Ask the release feed once when the app starts.
+    /// Ask the release feed once when the app starts. Off until the user turns it on: a file
+    /// that doesn't mention it (or no file) means off; a saved choice is kept as it is.
     pub check_at_startup: bool,
     /// Treat prereleases (`1.2.0-rc.1`) as updates.
     pub prerelease: bool,
     /// The last version the user answered about, so a start-up check does not ask twice.
     pub seen_version: Option<SeenVersion>,
-}
-
-impl Default for Prefs {
-    fn default() -> Self {
-        Prefs { check_at_startup: true, prerelease: false, seen_version: None }
-    }
 }
 
 /// The last version the user was shown.

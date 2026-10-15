@@ -21,10 +21,13 @@ pub enum CatalogDialog {
     /// First start, no catalog to open yet: create one (name, location, sample photos or not) or
     /// open one. `foreign`: libraries of another app found where this app's would be (e.g. the
     /// upstream app's), which can't be opened here; named so the user knows why they don't open.
+    /// `updates`: the user ticked "Check for updates when the app starts" (unticked at first;
+    /// saved through `update.prefs` once a catalog is open, never by closing the dialog).
     Welcome {
         parent: String,
         name: String,
         demo: bool,
+        updates: bool,
         foreign: Vec<String>,
     },
     /// Pick a catalog: the recent ones, New…, Open….
@@ -77,7 +80,8 @@ pub fn welcome(app: &mut LccApp, foreign: Vec<String>) {
         .and_then(|d| d.parent().map(Path::to_path_buf))
         .map(|d| d.to_string_lossy().into_owned())
         .unwrap_or_default();
-    app.catalog_ui.dialog = Some(CatalogDialog::Welcome { parent, name: lcc_brand::LIBRARY_DEFAULT.to_string(), demo: false, foreign });
+    app.catalog_ui.dialog =
+        Some(CatalogDialog::Welcome { parent, name: lcc_brand::LIBRARY_DEFAULT.to_string(), demo: false, updates: false, foreign });
 }
 
 impl CatalogUi {
@@ -330,8 +334,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             // with it in a window too short for the whole dialog
             let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
             layout.body(ui, |ui| match &mut dlg {
-                CatalogDialog::Welcome { parent, name, demo, foreign } => {
-                    welcome_ui(app, ui, &t, parent, name, demo, foreign, &mut action);
+                CatalogDialog::Welcome { parent, name, demo, updates, foreign } => {
+                    welcome_ui(app, ui, &t, parent, name, demo, updates, foreign, &mut action);
                 }
                 CatalogDialog::Chooser => chooser(app, ui, &mut action, &mut close),
                 CatalogDialog::NewCatalog { parent, name } => {
@@ -397,6 +401,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             layout.footer(ui, |_| {});
         });
     crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
+    // the welcome dialog's update choice, applied once its catalog is open
+    let updates = matches!(dlg, CatalogDialog::Welcome { updates: true, .. });
     if app.catalog_ui.dialog.is_some() {
         app.catalog_ui.dialog = Some(dlg);
     }
@@ -412,6 +418,9 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         // Catalog Settings buttons, this one stays
         let prev = app.catalog_ui.dialog.take();
         let r = app.run(&cmd, params);
+        if updates && r.is_ok() && app.session.library.is_some() {
+            let _ = app.session.execute("update.prefs", &json!({"checkAtStartup": true}));
+        }
         let keep = r.is_err() || matches!(cmd.as_str(), "catalog.backup" | "catalog.checkIntegrity" | "catalog.optimize");
         if keep && app.catalog_ui.dialog.is_none() {
             app.catalog_ui.dialog = prev;
@@ -443,6 +452,7 @@ fn welcome_ui(
     parent: &mut String,
     name: &mut String,
     demo: &mut bool,
+    updates: &mut bool,
     foreign: &[String],
     action: &mut Option<(String, Value)>,
 ) {
@@ -470,6 +480,8 @@ fn welcome_ui(
     });
     let r = ui.checkbox(demo, crate::i18n::tr("Add sample photos to try things out"));
     crate::widgets::register(ui.ctx(), "check:welcomeDemo", r.rect);
+    let r = ui.checkbox(updates, crate::i18n::tr("Check for updates when the app starts"));
+    crate::widgets::register(ui.ctx(), "check:welcomeUpdates", r.rect);
     let ready = !name.trim().is_empty() && !parent.trim().is_empty();
     let r = ui.add_enabled(ready, egui::Button::new(egui::RichText::new(crate::i18n::tr("Create Catalog")).strong()).min_size(egui::vec2(0.0, 26.0)));
     crate::widgets::register(ui.ctx(), "button:welcomeCreate", r.rect);

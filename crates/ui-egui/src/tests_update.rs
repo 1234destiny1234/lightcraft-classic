@@ -7,6 +7,8 @@
 //!   downloaded, installed or skipped.
 //! * Skipping remembers the version, so a start-up check does not ask about it again.
 //! * The two settings are in the dialog and are saved.
+//! * The start-up check is off until the user turns it on (Settings ▸ General, the welcome dialog
+//!   or this dialog), and headless sessions never check at start.
 //! * An install that only lays the file out never quits the app, and says what to do instead.
 //!
 //! The fixtures (a scratch folder, a fake downloaded file) are set up the short way this crate's
@@ -191,10 +193,10 @@ fn the_settings_in_the_dialog_are_saved() {
     let mut h = app();
     ask(&mut h, "ui.menu.invoke", json!({"id": "app.checkForUpdates"}));
     h.step();
-    assert!(h.app.session.updater.prefs().check_at_startup, "on by default");
+    assert!(!h.app.session.updater.prefs().check_at_startup, "off by default");
     ask(&mut h, "ui.clickWidget", json!({"id": "check:updateAtStartup"}));
     h.step();
-    assert!(!h.app.session.updater.prefs().check_at_startup, "turning it off is saved");
+    assert!(h.app.session.updater.prefs().check_at_startup, "turning it on is saved");
     ask(&mut h, "ui.clickWidget", json!({"id": "check:updatePrerelease"}));
     h.step();
     assert!(h.app.session.updater.prefs().prerelease);
@@ -226,4 +228,158 @@ fn a_checksum_list_is_never_offered_for_install() {
     h.step();
     let err = h.app.session.execute("update.install", &json!({"confirm": true})).expect_err("refused");
     assert!(err.to_string().contains("no file for this system"), "{err}");
+}
+
+// ---------------------------------------------------------------- the start-up check is opt-in
+//
+// Nothing here may reach the network: each frame asserts that no check was armed or started, so
+// on a build that would check, the test fails at the first frame, long before the 4 s are up.
+
+/// What `updates.json` in `dir` says about the start-up check (`None`: no file, or no such key).
+fn saved_check_at_startup(dir: &Scratch) -> Option<bool> {
+    let text = std::fs::read(dir.0.join("updates.json")).ok()?;
+    let file: serde_json::Value = serde_json::from_slice(&text).unwrap();
+    assert_eq!(file["version"], 1, "the settings file stays at version 1: {file}");
+    file["updates"]["checkAtStartup"].as_bool()
+}
+
+/// The app as `session` and its host would start it, with the updater's settings in `dir`.
+fn started(mut session: lcc_engine::Session, dir: &Scratch, desktop: bool) -> Headless {
+    session.updater = lcc_engine::update::Updater::new(Some(dir.0.clone()));
+    let mut app = LccApp::new(session, services());
+    // what the desktop app sets for a run with a settings folder of its own
+    app.startup_update_check = desktop;
+    Headless::new(app, [1200.0, 900.0], 1.0)
+}
+
+/// Run `frames` headless frames (1/60 s each), asserting at every one that no check was armed or
+/// started.
+fn run_without_a_check(h: &mut Headless, frames: usize) {
+    for frame in 0..frames {
+        h.step();
+        assert_eq!(h.app.ui.update_checked_at, 0.0, "frame {frame}: a start-up check was scheduled");
+        assert_eq!(h.app.session.updater.check(), &lcc_engine::update::Check::Never, "frame {frame}: a check ran");
+        assert!(!h.app.session.updater.checking(), "frame {frame}: a check is running");
+    }
+}
+
+/// Run frames until the start-up check is scheduled, and say when it would run (egui time, s).
+/// Never steps up to that time, so no check runs.
+fn scheduled_check(h: &mut Headless) -> f64 {
+    for _ in 0..3 {
+        h.step();
+        if h.app.ui.update_checked_at > 0.0 {
+            break;
+        }
+    }
+    assert!(!h.app.session.updater.checking(), "nothing runs before the delay");
+    h.app.ui.update_checked_at
+}
+
+#[test]
+fn an_empty_settings_folder_never_checks_at_start() {
+    let dir = Scratch::new("first-start");
+    let mut h = started(lcc_engine::Session::new(), &dir, true);
+    // ten seconds of the desktop app with no updates.json
+    run_without_a_check(&mut h, 600);
+    assert!(!h.app.session.updater.prefs().check_at_startup, "off until the user turns it on");
+    assert_eq!(saved_check_at_startup(&dir), None, "nothing was written");
+}
+
+#[test]
+fn headless_sessions_never_check_at_start_even_when_the_user_asked_for_it() {
+    let dir = Scratch::new("headless");
+    std::fs::write(dir.0.join("updates.json"), br#"{"version": 1, "updates": {"checkAtStartup": true}}"#).unwrap();
+    // the harness, `snapshot` and `--memory`/`--demo` runs: a demo session, and a host that
+    // doesn't set the start-up flag
+    let mut h = started(lcc_engine::Session::with_demo(), &dir, false);
+    assert!(h.app.session.updater.prefs().check_at_startup, "the preference is on");
+    run_without_a_check(&mut h, 600);
+}
+
+#[test]
+fn turning_the_check_on_in_settings_saves_it_and_the_next_start_checks_once() {
+    let dir = Scratch::new("settings");
+    let mut h = started(lcc_engine::Session::new(), &dir, true);
+    run_without_a_check(&mut h, 2);
+    ask(&mut h, "engine.execute", json!({"command": "app.settings", "params": {"tab": "general"}}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:settings.updateAtStartup"}));
+    h.step();
+    assert!(h.app.session.updater.prefs().check_at_startup, "the box turns it on");
+    assert_eq!(saved_check_at_startup(&dir), Some(true), "and it is saved");
+    // turning it on doesn't check now: that is for the next start
+    run_without_a_check(&mut h, 2);
+    drop(h);
+
+    let mut next = started(lcc_engine::Session::new(), &dir, true);
+    let at = scheduled_check(&mut next);
+    assert!((3.0..=5.0).contains(&at), "the next start checks about 4 s in (scheduled at {at} s)");
+}
+
+#[test]
+fn the_dialog_turns_the_check_on_and_the_next_start_checks() {
+    let dir = Scratch::new("dialog");
+    let mut h = started(lcc_engine::Session::new(), &dir, true);
+    run_without_a_check(&mut h, 1);
+    ask(&mut h, "ui.menu.invoke", json!({"id": "app.checkForUpdates"}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:updateAtStartup"}));
+    h.step();
+    assert_eq!(saved_check_at_startup(&dir), Some(true));
+    drop(h);
+    let mut next = started(lcc_engine::Session::new(), &dir, true);
+    assert!(scheduled_check(&mut next) > 0.0, "the next start checks");
+}
+
+/// The welcome dialog of a first start, its catalog location in `root`.
+fn welcome(dir: &Scratch, root: &Scratch) -> Headless {
+    let mut h = started(lcc_engine::Session::new().with_fs(), dir, true);
+    h.app.run("catalog.welcome", json!({})).unwrap();
+    if let Some(crate::catalog_ui::CatalogDialog::Welcome { parent, .. }) = &mut h.app.catalog_ui.dialog {
+        *parent = root.0.to_string_lossy().into_owned();
+    }
+    run_without_a_check(&mut h, 2);
+    assert!(h.app.widgets.iter().any(|(w, _)| w == "check:welcomeUpdates"), "the welcome dialog offers the check");
+    h
+}
+
+#[test]
+fn the_welcome_dialog_saves_the_check_only_when_it_is_ticked() {
+    // left unticked: the catalog is created and nothing about updates is saved
+    let (dir, root) = (Scratch::new("welcome-off"), Scratch::new("welcome-off-lib"));
+    let mut h = welcome(&dir, &root);
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeCreate"}));
+    h.step();
+    assert!(h.app.session.library.is_some(), "the catalog is open");
+    assert!(!h.app.session.updater.prefs().check_at_startup, "unticked: off");
+    assert_ne!(saved_check_at_startup(&dir), Some(true));
+    h.app.session.close_library().unwrap();
+    drop(h);
+
+    // ticked: saved as on with the new catalog
+    let (dir, root) = (Scratch::new("welcome-on"), Scratch::new("welcome-on-lib"));
+    let mut h = welcome(&dir, &root);
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    assert_eq!(saved_check_at_startup(&dir), None, "nothing is saved before a catalog is open");
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeCreate"}));
+    h.step();
+    assert!(h.app.session.library.is_some(), "the catalog is open");
+    assert_eq!(saved_check_at_startup(&dir), Some(true), "ticked: on");
+    run_without_a_check(&mut h, 2);
+    h.app.session.close_library().unwrap();
+}
+
+#[test]
+fn quitting_from_the_welcome_dialog_saves_nothing() {
+    let (dir, root) = (Scratch::new("welcome-quit"), Scratch::new("welcome-quit-lib"));
+    let mut h = welcome(&dir, &root);
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeQuit"}));
+    h.step();
+    assert!(h.quit_requested(), "Quit quits");
+    assert!(!dir.0.join("updates.json").exists(), "nothing was saved");
+    assert!(!h.app.session.updater.prefs().check_at_startup);
 }

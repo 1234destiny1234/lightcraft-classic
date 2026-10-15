@@ -247,7 +247,7 @@ mod tests {
         assert_eq!(v["version"], env!("CARGO_PKG_VERSION"));
         assert!(v["platform"].as_str().is_some_and(|p| p.contains('-')));
         assert_eq!(v["check"], "never");
-        assert_eq!(v["checkAtStartup"], true);
+        assert_eq!(v["checkAtStartup"], false, "off until the user turns it on");
         assert_eq!(v["prerelease"], false);
         assert!(v["page"].as_str().is_some_and(|p| p.ends_with("/releases")));
     }
