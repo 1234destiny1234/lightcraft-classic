@@ -98,18 +98,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if app.ui.soft_proof {
         soft_proofing(app, ui, id);
     }
-    // header: Edit + Reset, then Lightroom Classic's Basic button row: Auto, B&W | HDR (issue #124)
-    let mut reset_clicked = false;
+    // header: Edit (Reset sits in the bar under the panels, issue #116), then Lightroom Classic's Basic button row:
+    // Auto, B&W | HDR (issue #124)
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 14, bottom: 0 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if text_button(ui, "reset", crate::i18n::tr("Reset"), false).on_hover_text(crate::i18n::tr("Reset all edits (Cmd+Shift+R)")).clicked()
-                {
-                    reset_clicked = true;
-                }
-            });
-        });
+        ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
     });
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 10, bottom: 14 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -380,10 +372,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.add_space(8.0);
     });
     ui.add_space(40.0);
-    // A pending numeric edit commits on blur before the explicit Reset takes precedence.
-    if reset_clicked {
-        let _ = app.run("develop.reset", json!({}));
-    }
 }
 
 /// The profile dropdown: Favorites, Recent, one submenu per group, then favourite toggle and
