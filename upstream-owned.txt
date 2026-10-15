@@ -28,6 +28,7 @@ crates/fuzzkit/
 apps/cli/tests/robust_catalog.rs
 apps/cli/tests/legacy_pickup.rs
 crates/immich/
+crates/filters/
 crates/text/
 crates/pdf/
 crates/geo/
@@ -46,6 +47,7 @@ crates/plugins/
 sdk/
 docs/plugins.md
 crates/engine/src/cmd/plugins.rs
+crates/engine/src/cmd/plugin_filters.rs
 crates/ui-egui/src/panels/plugins.rs
 crates/publish/
 crates/tether/

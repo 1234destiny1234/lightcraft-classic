@@ -160,8 +160,11 @@ fn grant_param(p: &Value, cmd: &str) -> Result<Option<Permissions>> {
 
 fn list(_: &mut Session, _: &Value) -> Result<Value> {
     with_manager(|m| {
-        let plugins: Vec<Value> = m.list().map(|p| p.info()).collect();
-        let failed: Vec<Value> = m.failed.iter().map(|(f, e)| json!({"file": f, "error": e})).collect();
+        let mut plugins: Vec<Value> = m.list().map(|p| p.info()).collect();
+        // pixel-filter plug-ins (kind "filter"); the manager can't load their modules
+        plugins.extend(crate::filter_plugins::registry().list().iter().map(|f| crate::filter_plugins::info(f)));
+        let filter_files = crate::filter_plugins::sources();
+        let failed: Vec<Value> = m.failed.iter().filter(|(f, _)| !filter_files.contains(f)).map(|(f, e)| json!({"file": f, "error": e})).collect();
         Ok(json!({"dir": m.dir(), "plugins": plugins, "failed": failed}))
     })
 }
@@ -170,6 +173,11 @@ fn install(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.install";
     let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path` (a .wasm file)"))?;
     let grant = grant_param(p, C)?;
+    if crate::filter_plugins::is_filter_file(std::path::Path::new(path)) {
+        // a pixel filter: no capabilities to grant, nothing for the manager
+        let f = crate::filter_plugins::install_file(std::path::Path::new(path)).map_err(|e| bad(C, e))?;
+        return Ok(crate::filter_plugins::info(&f));
+    }
     let lib = s.plugin_library.clone();
     let r = with_library(&lib, |m| m.install_file(std::path::Path::new(path), grant).map(|i| i.info()).map_err(|e| plugin_err(C, e)))?;
     sync_fields(s);
@@ -180,6 +188,12 @@ fn inspect_file(_: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.inspectFile";
     let path = str_param(p, "path").ok_or_else(|| bad(C, "missing `path`"))?;
     let bytes = std::fs::read(path).map_err(|e| bad(C, format!("{path}: {e}")))?;
+    if lcc_filters::is_filter_module(&bytes) {
+        let f = lcc_filters::Filter::load(&bytes, lcc_filters::Limits::default()).map_err(|e| bad(C, e.to_string()))?;
+        let installed =
+            crate::filter_plugins::registry().get(f.id()).map(|i| json!({"version": i.manifest().version, "moduleHash": i.module_hash()}));
+        return Ok(json!({"manifest": crate::filter_plugins::info(&f), "installed": installed}));
+    }
     let plugin = lcc_plugins::Plugin::load(&bytes, lcc_plugins::Limits::default()).map_err(|e| plugin_err(C, e))?;
     let manifest = serde_json::to_value(plugin.manifest()).map_err(|e| bad(C, e.to_string()))?;
     // an update: what is granted now, so the dialog can show what the new version adds
@@ -190,6 +204,9 @@ fn inspect_file(_: &mut Session, p: &Value) -> Result<Value> {
 fn uninstall(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.uninstall";
     let id = id_param(p, C)?;
+    if crate::filter_plugins::uninstall(id).map_err(|e| bad(C, e))? {
+        return Ok(Value::Null);
+    }
     let lib = s.plugin_library.clone();
     with_library(&lib, |m| m.uninstall(id).map(|_| Value::Null).map_err(|e| plugin_err(C, e)))?;
     sync_fields(s);
@@ -224,7 +241,7 @@ fn run(s: &mut Session, p: &Value) -> Result<Value> {
     let id = id_param(p, C)?;
     let command = str_param(p, "command").ok_or_else(|| bad(C, "missing `command`"))?;
     let args = p.get("args").cloned().unwrap_or(Value::Null);
-    let selection: Vec<String> = s.targets(p).iter().map(|i| i.0.to_string()).collect();
+    let selection: Vec<String> = s.targets(p)?.iter().map(|i| i.0.to_string()).collect();
     let lib = s.plugin_library.clone();
     let mut host = SessionHost(s);
     let r = with_library(&lib, |m| m.run_command(id, command, &args, &selection, &mut host).map_err(|e| plugin_err(C, e)));
@@ -251,7 +268,7 @@ fn commands(_: &mut Session, _: &Value) -> Result<Value> {
 
 fn suggest(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "plugin.suggestMetadata";
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let mut photos = Vec::new();
     for id in ids.iter().take(1000) {
         let mut v = s.execute("photo.inspect", &json!({"id": id.0})).map_err(|e| bad(C, e.to_string()))?;

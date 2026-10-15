@@ -913,6 +913,26 @@ fn missing_photos_skip_local_browse_records() {
     assert_eq!(s.visible_cloned().len(), 4, "the view lists what the count counts");
 }
 
+/// `library.browse` follows `library.source`'s rule for the active photo (issue #1447): a library
+/// photo the folder doesn't show gives way to the folder's first photo; one it shows stays.
+#[test]
+fn browsing_a_folder_keeps_or_picks_the_active_photo() {
+    let dir = temp_dir("browse-active");
+    write_png(&dir.join("a.png"), 1);
+    write_png(&dir.join("b.png"), 2);
+    let mut s = Session::with_demo().with_fs();
+    let library = s.visible_cloned()[0];
+    s.execute("library.select", &json!({"ids": [library.0]})).unwrap();
+    s.execute("library.browse", &json!({"path": dir.to_string_lossy()})).unwrap();
+    let vis = s.visible_cloned();
+    assert_eq!(vis.len(), 2);
+    assert_eq!(s.selection.active, Some(vis[0]), "the folder's first photo, not {library:?}");
+    s.execute("library.select", &json!({"ids": [vis[1].0]})).unwrap();
+    s.execute("library.browse", &json!({"path": dir.to_string_lossy()})).unwrap();
+    assert_eq!(s.selection.active, Some(vis[1]), "a photo the folder shows stays active");
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Import a file that is in Recently Deleted (issues #298, #706): by default the photo comes
 /// back with its edits; `onDeleted: skip` leaves it there but the report says it is in the trash;
 /// `onDeleted: fresh` replaces the trashed record with a new one.
@@ -1115,7 +1135,7 @@ fn emptying_trashed_photos_of_one_album_and_stack_leaves_nothing_dangling() {
     s.execute("edit.undo", &json!({})).unwrap();
     assert_eq!(s.catalog.len(), 2, "one undo step brings both back");
     assert_eq!(s.catalog.album(lcc_catalog::AlbumId(al)).unwrap().photos.len(), 2);
-    assert!(s.catalog.stack_of(lcc_catalog::PhotoId(ids[0])).is_some());
+    assert!(s.catalog.stack_of(lcc_catalog::PhotoId(ids[0])).is_none(), "soft-delete already left the stack");
     assert!(s.catalog.photos().all(|p| p.deleted), "back in Recently Deleted");
     let _ = std::fs::remove_dir_all(&src);
 }
@@ -1841,4 +1861,72 @@ fn raw_sidecar_rating_and_crop_survive_naming_and_encoding_variants() {
         }
         let _ = std::fs::remove_dir_all(&src);
     }
+}
+
+/// Issue #1001: a Lightroom preset that names a profile applies it once the user has imported a
+/// profile of that name (before or after the preset), maps the basic Adobe profiles to ours, and
+/// reports the ones it can't use.
+#[test]
+fn presets_apply_the_imported_profile_they_name() {
+    let src = temp_dir("lookref");
+    let preset = |file: &str, name: &str, look: &str| {
+        let x = format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+             <rdf:Description rdf:about="" xmlns:crs="http://ns.adobe.com/camera-raw-settings/1.0/"
+               crs:PresetType="Normal" crs:Name="{name}" crs:UUID="{file}" crs:Exposure2012="0" crs:GrainAmount="20">
+              <crs:Look><rdf:Description crs:Name="{look}" crs:Amount="0.6" crs:UUID="1234ABCD">
+               <crs:Group><rdf:Alt><rdf:li xml:lang="x-default">Film Pack</rdf:li></rdf:Alt></crs:Group>
+              </rdf:Description></crs:Look>
+             </rdf:Description></rdf:RDF></x:xmpmeta>"#
+        );
+        std::fs::write(src.join(format!("{file}.xmp")), x).unwrap();
+    };
+    preset("a1", "Portra Soft", "Portra 400");
+    preset("a2", "Mono", "Adobe Monochrome");
+    preset("a3", "Artsy", "Artistic 01");
+    let mut s = Session::with_demo();
+    let r = s.execute("preset.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let by_name = |r: &serde_json::Value, n: &str| r["imported"].as_array().unwrap().iter().find(|i| i["name"] == n).cloned().unwrap();
+    assert_eq!(by_name(&r, "Portra Soft")["unmapped"], json!(["Profile “Portra 400” (not imported yet)"]), "{r}");
+    assert_eq!(by_name(&r, "Mono")["profile"], json!({"name": "Adobe Monochrome", "id": "lc.mono"}));
+    assert_eq!(by_name(&r, "Artsy")["unmapped"], json!(["Profile “Artistic 01” (Lightroom's own)"]));
+    let photo = s.catalog.photos().next().unwrap().id;
+    s.execute("library.select", &json!({"ids": [photo.0]})).unwrap();
+    let pid = |s: &Session, n: &str| s.presets.iter().find(|p| p.name == n).unwrap().id.clone();
+    let apply = |s: &mut Session, n: &str| {
+        let id = pid(s, n);
+        s.execute("preset.apply", &json!({"id": id})).unwrap();
+        s.develop_of(photo).unwrap()
+    };
+    // not imported yet: only grain comes across, the photo keeps its profile
+    let d = apply(&mut s, "Portra Soft");
+    assert_eq!((d.profile.id.as_str(), d.grain.amount), ("lc.color", 20.0));
+    // the basic Adobe profiles are ours
+    assert_eq!(apply(&mut s, "Mono").profile.id, "lc.mono");
+    s.execute("develop.profile", &json!({"id": "lc.color", "amount": 100})).unwrap();
+    assert_eq!(apply(&mut s, "Artsy").profile.id, "lc.color", "Lightroom's own creative profiles aren't ours");
+    // importing the profile afterwards makes the preset use it, at the preset's amount
+    let mut cube = String::from("TITLE \"Portra 400\"\nLUT_3D_SIZE 2\n");
+    for b in 0..2 {
+        for g in 0..2 {
+            for r in 0..2 {
+                cube.push_str(&format!("{r} {g} {b}\n"));
+            }
+        }
+    }
+    std::fs::create_dir_all(src.join("profiles/Film Pack")).unwrap();
+    std::fs::write(src.join("profiles/Film Pack/portra.cube"), &cube).unwrap();
+    let r = s.execute("profile.import", &json!({"paths": [src.join("profiles").to_string_lossy()]})).unwrap();
+    let lut = r["imported"][0]["id"].as_str().unwrap().to_string();
+    let d = apply(&mut s, "Portra Soft");
+    assert_eq!((d.profile.id.as_str(), d.profile.amount, d.grain.amount), (lut.as_str(), 60.0, 20.0));
+    // a preset imported after the profile resolves straight away
+    preset("a4", "Portra Hard", "portra  400");
+    let r = s.execute("preset.import", &json!({"paths": [src.join("a4.xmp").to_string_lossy()]})).unwrap();
+    assert_eq!((r["imported"][0]["profile"]["id"].as_str(), r["imported"][0]["unmapped"].clone()), (Some(lut.as_str()), json!([])), "{r}");
+    // deleting the profile leaves the photo's own profile alone again
+    s.execute("profile.deleteImported", &json!({"id": lut})).unwrap();
+    s.execute("develop.profile", &json!({"id": "lc.vivid", "amount": 100})).unwrap();
+    assert_eq!(apply(&mut s, "Portra Soft").profile.id, "lc.vivid");
+    let _ = std::fs::remove_dir_all(&src);
 }

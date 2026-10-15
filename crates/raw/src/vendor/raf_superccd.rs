@@ -190,6 +190,8 @@ pub(crate) fn decode(h: &Header, raw: &[u8], camera: &str, mode: Mode) -> Result
         linearized: false,
         opcodes: OpcodeLists::default(),
         metadata,
+        lens_metadata: Default::default(),
+        pixel_aspect: 1.0,
     };
     img.validate_for(mode)?;
     Ok(img)

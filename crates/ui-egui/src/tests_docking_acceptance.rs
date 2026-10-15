@@ -21,6 +21,7 @@ fn dock(h: &mut Headless, p: serde_json::Value) {
 fn rect(h: &Headless, id: &str) -> egui::Rect {
     h.app.widgets.iter().find(|(key, _)| key == id).unwrap().1
 }
+
 fn release(h: &mut Headless, pos: egui::Pos2) {
     h.app.synthetic.push(Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
     h.step();

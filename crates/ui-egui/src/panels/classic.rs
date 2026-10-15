@@ -264,6 +264,7 @@ pub fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
                         });
                     }
                 }
+                crate::widgets::follow_focus(ui);
             });
         });
     });

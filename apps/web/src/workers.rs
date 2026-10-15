@@ -97,7 +97,7 @@ async fn handle(scope: &web_sys::DedicatedWorkerGlobalScope, backend: Option<Bac
             match b.read(&key).await.ok().flatten().and_then(|bytes| lcc_preview::decode_jpeg(&bytes)) {
                 Some(image) => {
                     let histogram = Histogram::of_srgb8(&image);
-                    return Ok((Rendered { image, histogram, deep: None }, 0));
+                    return Ok((Rendered { image, histogram, deep: None, warnings: Vec::new() }, 0));
                 }
                 None => cache_miss = true,
             }
@@ -161,6 +161,8 @@ struct Busy {
     level: SourceLevel,
     key: u64,
     cache: Option<(Arc<PreviewCache>, Hash128)>,
+    /// A slideshow slide: the worker renders the photo, it is composed here when it comes back.
+    slide: Option<Arc<lcc_engine::slide::SlideCompose>>,
 }
 
 struct W {
@@ -323,7 +325,7 @@ impl Workers {
             let rgba = Uint8Array::new(&get(&data, "rgba")).to_vec();
             let hist = Uint32Array::new(&get(&data, "hist")).to_vec();
             match (Rgba8::from_bytes(wd, ht, &rgba), Histogram::from_words(&hist)) {
-                (Some(image), Some(histogram)) => Ok(Rendered { image, histogram, deep: None }),
+                (Some(image), Some(histogram)) => Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() }),
                 _ => Err("render worker: bad image".to_string()),
             }
         } else {
@@ -370,6 +372,13 @@ impl Workers {
             });
         }
         g.remote_done += 1;
+        let rendered = match (rendered, &b.slide) {
+            (Ok(mut r), Some(slide)) => {
+                r.image = slide.compose(&r.image);
+                Ok(r)
+            }
+            (r, _) => r,
+        };
         g.done.push((
             b.slot,
             RenderResult {
@@ -432,7 +441,7 @@ impl RenderOffload for Workers {
                 photo: job.photo,
                 level: job.level,
                 key: job.key,
-                rendered: Ok(Rendered { image, histogram, deep: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -493,6 +502,7 @@ impl RenderOffload for Workers {
             level: job.level,
             key: job.key,
             cache: job.cache,
+            slide: job.slide,
         });
         None
     }

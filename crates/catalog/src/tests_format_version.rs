@@ -87,6 +87,30 @@ fn v5_library_loads_and_is_upgraded() {
     assert_eq!(snapshot_version(&m), u64::from(VERSION));
 }
 
+/// A v11 library (before preview-only photos recorded which version decided it, upstream #662) opens
+/// with an empty stamp on its preview-only photos, so they are rechecked once, and is rewritten in
+/// the current format.
+#[test]
+fn v11_preview_only_photo_loads_unstamped_and_is_upgraded() {
+    let mut c = Catalog::new();
+    let id = c.alloc_photo_id();
+    let mut p = Photo::new(id, Source::File { path: "/p/a.cr3".into() }, "a.cr3", "CR3", 160, 120, "2026-01-01");
+    p.kind = MediaKind::Raw;
+    p.preview_only = Some("Cr3 files are not decoded yet".into());
+    c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    let snap = c.to_snapshot();
+    assert!(!snap.contains("preview_checked"), "an empty stamp isn't written");
+    let m = MemStore::new();
+    m.set(SNAPSHOT, format!("{{\"format\":\"lcc-catalog\",\"version\":11,\"seq\":1,\"catalog\":{snap}}}\n").into_bytes());
+    let (_, loaded, r) = Journal::open(Box::new(m.clone())).unwrap();
+    let p = loaded.photo(id).unwrap();
+    assert_eq!(p.preview_only.as_deref(), Some("Cr3 files are not decoded yet"));
+    assert_eq!(p.preview_checked, "");
+    assert!(p.preview_only_stale(), "unstamped: rechecked once");
+    assert_eq!(r.upgraded_from, Some(11));
+    assert_eq!(snapshot_version(&m), u64::from(VERSION));
+}
+
 /// A saved creation survives the journal, undo restores the plain album, and bad input is refused.
 #[test]
 fn saved_creation_round_trips_and_undoes() {
@@ -201,7 +225,8 @@ fn bad_crc_is_still_a_torn_tail() {
 
 /// Guard for the version rule (see `journal` → *Format versions*): adding an [`Op`] variant breaks
 /// this match. When it does, bump `journal::VERSION`, add a row to the format table, and add the
-/// variant here under the new version.
+/// variant here under the new version. A version that only adds serialized fields raises
+/// `NEWEST_FIELDS` instead.
 #[test]
 fn op_variants_are_versioned() {
     fn since(op: &Op) -> u32 {
@@ -247,6 +272,8 @@ fn op_variants_are_versioned() {
             Op::SetHistoryCursor { .. } => 11,
         }
     }
+    /// v12: `Photo.preview_checked`, `Op::SetContent.preview_checked` and `Meta.focus`.
+    const NEWEST_FIELDS: u32 = 12;
     let newest = since(&Op::SetHistoryCursor { id: crate::PhotoId(1), cursor: None });
-    assert_eq!(newest, VERSION, "the newest op's version must be the current format version");
+    assert_eq!(newest.max(NEWEST_FIELDS), VERSION, "the newest op's or fields' version must be the current format version");
 }

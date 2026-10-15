@@ -1,4 +1,9 @@
 {
+  "Color Values": "颜色值",
+  "Color Readout": "颜色读数",
+  "Show RGB Color Values": "显示 RGB 颜色值",
+  "Show HSL Color Values": "显示 HSL 颜色值",
+  "Show Lab Color Values": "显示 Lab 颜色值",
   "Develop": "修改照片",
   "Filter Keywords": "筛选关键字",
   "No keywords yet": "尚无关键字",
@@ -1262,5 +1267,18 @@
   "Delete from Disk moves 1 file to the system trash.": "“从磁盘删除”会将 1 个文件移到系统废纸篓。",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "“移除”会保留磁盘上的文件，并将照片移到“最近删除”。",
   "Delete from Disk": "从磁盘删除",
-  "Deleting from disk": "正在从磁盘删除"
+  "Deleting from disk": "正在从磁盘删除",
+  "Identity Plate Editor": "身份标识编辑器",
+  "Identity Plate:": "身份标识：",
+  "Personalized": "个性化",
+  "Show Status and Activity": "显示状态和活动",
+  "No options for the {app} identity plate.": "{app} 身份标识没有选项。",
+  "Personalize {app} with your own branding elements.": "用您自己的品牌元素个性化 {app}。",
+  "Use a styled text identity plate": "使用样式文本身份标识",
+  "Use a graphical identity plate": "使用图形身份标识",
+  "No image chosen": "未选择图像",
+  "Clear Image": "清除图像",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "SVG、PNG 或 JPEG 文件；以 32 点高度显示。",
+  "Theme Color": "主题颜色",
+  "Identity Plate Setup…": "身份标识设置…"
 }

@@ -15,6 +15,8 @@ mod container;
 pub mod cr3;
 mod datetime;
 mod exif;
+pub mod focus;
+mod focus_read;
 mod gpx;
 mod heif;
 mod iptc;
@@ -26,13 +28,14 @@ mod xmp_merge;
 pub use container::{Embedded, embedded, jpeg_segments, png_chunks, webp_chunks};
 pub use datetime::DateTime;
 pub use exif::{from_tiff, read_exif, strip_exif_header, try_read_exif, write_exif};
+pub use focus::FocusPoint;
 pub use gpx::{GpxError, Match, TrackPoint, Tracklog, parse_gpx};
 pub use iptc::parse_iptc;
 pub use lcc_geom::{Orientation, Rect};
 pub use tags::{TagRow, file_tag_rows, tag_rows};
 pub use xmp::{
-    CRS_NS, LC_NS, VIDEO_PREFIX, XmpData, XmpError, XmpValue, parse_xmp, plugin_fields, plugin_fields_ns, video_ns, write_xmp, write_xmp_ext,
-    write_xmp_lc, write_xmp_video,
+    CRS_NS, FILTERS_PREFIX, LC_NS, MAX_FILTER_PART, VIDEO_PREFIX, XmpData, XmpError, XmpPluginFilter, XmpValue, parse_xmp, plugin_fields,
+    plugin_fields_ns, plugin_filters, plugin_filters_ns, video_ns, write_xmp, write_xmp_ext, write_xmp_filters, write_xmp_lc, write_xmp_video,
 };
 pub use xmp_merge::{MergeRules, merge_xmp};
 
@@ -147,6 +150,9 @@ pub struct Metadata {
     pub label: Option<String>,
     /// Face/pet/focus/barcode regions (`mwg-rs:Regions`), read from XMP only.
     pub regions: Vec<Region>,
+    /// Where the camera focused, from its maker notes ([`focus`]; Sony only for now), on the upright photo.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub focus: Option<FocusPoint>,
 }
 
 macro_rules! fill {
@@ -209,6 +215,9 @@ impl Metadata {
         }
         if self.regions.is_empty() {
             self.regions = other.regions.clone();
+        }
+        if self.focus.is_none() {
+            self.focus = other.focus.clone();
         }
     }
 
@@ -303,6 +312,18 @@ pub fn embeds_location(bytes: &[u8]) -> bool {
     heif::embeds_location(bytes).unwrap_or_else(|| extract(bytes).gps.is_some())
 }
 
+/// A lens name from its focal and aperture range (Exif LensSpecification, or a Nikon maker note's Lens), written the
+/// way Lightroom shows a lens it has no name for: `50.0 mm f/1.8`, `18.0-135.0 mm f/3.5-5.6`.
+pub fn lens_spec_name(spec: [f64; 4]) -> Option<String> {
+    let [short, long, wide, narrow] = spec;
+    if ![short, long, wide, narrow].iter().all(|v| v.is_finite() && *v > 0.0) || long < short {
+        return None;
+    }
+    let focal = if (long - short).abs() < 0.05 { format!("{short:.1}") } else { format!("{short:.1}-{long:.1}") };
+    let aperture = if (narrow - wide).abs() < 0.05 { format!("{wide:.1}") } else { format!("{wide:.1}-{narrow:.1}") };
+    Some(format!("{focal} mm f/{aperture}"))
+}
+
 /// Lenient number parsing used by XMP/IPTC: `"28/10"`, `"2.8"`, `"+0.7"`.
 pub(crate) fn parse_number(s: &str) -> Option<f64> {
     let s = s.trim();
@@ -316,6 +337,17 @@ pub(crate) fn parse_number(s: &str) -> Option<f64> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn lens_names_from_a_spec_read_like_lightroom() {
+        assert_eq!(lens_spec_name([50.0, 50.0, 1.8, 1.8]).as_deref(), Some("50.0 mm f/1.8"));
+        assert_eq!(lens_spec_name([18.0, 135.0, 3.5, 5.6]).as_deref(), Some("18.0-135.0 mm f/3.5-5.6"));
+        assert_eq!(lens_spec_name([24.0, 70.0, 2.8, 2.8]).as_deref(), Some("24.0-70.0 mm f/2.8"));
+        assert_eq!(lens_spec_name([70.0, 210.0, 4.0, 5.6]).as_deref(), Some("70.0-210.0 mm f/4.0-5.6"));
+        assert_eq!(lens_spec_name([0.0, 0.0, 0.0, 0.0]), None);
+        assert_eq!(lens_spec_name([200.0, 80.0, 2.8, 2.8]), None);
+        assert_eq!(lens_spec_name([f64::NAN, 50.0, 1.8, 1.8]), None);
+    }
 
     #[test]
     fn numbers() {
