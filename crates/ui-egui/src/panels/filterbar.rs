@@ -68,46 +68,43 @@ fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: 
         ui.painter().rect_stroke(r.rect.expand(2.0), 4.0, Stroke::new(1.0, t.accent.gamma_multiply(0.7)), StrokeKind::Outside);
     }
     let mut chosen = None;
-    egui::Popup::menu(&r).show(|ui| {
-        let is_searchable = matches!(id, "camera" | "lens" | "keyword");
-        let mut search_query = String::new();
-        if is_searchable {
-            let search_id = ui.id().with("search");
-            search_query = ui.data_mut(|d| d.get_temp::<String>(search_id).unwrap_or_default());
-
-            let text_edit = egui::TextEdit::singleline(&mut search_query)
-                .hint_text(crate::i18n::tr("Search…"));
-            let response = ui.add(text_edit);
-
-            if response.changed() {
-                ui.data_mut(|d| d.insert_temp(search_id, search_query.clone()));
-            }
+    let searchable = matches!(id, "camera" | "lens" | "keyword");
+    // the search text of this picker alone; `None` until the dropdown opens, cleared when it closes
+    let key = egui::Id::new(("filterSearch", id));
+    let opened = egui::Popup::menu(&r).show(|ui| {
+        let mut query = String::new();
+        if searchable {
+            let previous: Option<String> = ui.data(|d| d.get_temp(key));
+            let just_opened = previous.is_none();
+            query = previous.unwrap_or_default();
+            let widget = format!("filterSearch:{id}");
+            crate::text_field::TextField::singleline(&widget, &mut query)
+                .hint(crate::i18n::tr("Search…"))
+                .width(220.0)
+                .begin_edit(just_opened)
+                .show(ui);
+            ui.data_mut(|d| d.insert_temp(key, query.clone()));
             ui.separator();
         }
-        let search_lower = search_query.to_lowercase();
-
+        let needle = query.to_lowercase();
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            for (label, patch, sel) in &items {
-                let is_null_patch = patch.get(id).is_some_and(|value| value.is_null());
-                if is_searchable && !is_null_patch && !search_lower.is_empty() && !label.to_lowercase().contains(&search_lower) {
+            for (n, (label, patch, sel)) in items.iter().enumerate() {
+                // the "Any …" row (a null patch) always stays
+                let any = patch.get(id).is_none_or(Value::is_null);
+                if searchable && !any && !needle.is_empty() && !label.to_lowercase().contains(&needle) {
                     continue;
                 }
-                if ui
-                    .selectable_label(
-                        *sel,
-                        if is_searchable && !is_null_patch {
-                            label.as_str()
-                        } else {
-                            crate::i18n::tr(label)
-                        },
-                    )
-                    .clicked()
-                {
+                let resp = ui.selectable_label(*sel, if searchable && !any { label.as_str() } else { crate::i18n::tr(label) });
+                register(ui.ctx(), format!("filterItem:{id}:{n}"), resp.rect);
+                if resp.clicked() {
                     chosen = Some(patch.clone());
                 }
             }
         });
     });
+    if opened.is_none() {
+        ui.data_mut(|d| d.remove::<String>(key));
+    }
     if let Some(p) = chosen {
         filter(app, p);
     }

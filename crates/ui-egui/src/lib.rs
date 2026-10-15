@@ -66,6 +66,8 @@ pub mod web_module;
 pub mod widgets;
 
 #[cfg(test)]
+mod tests_filter_search;
+#[cfg(test)]
 mod tests_access;
 #[cfg(test)]
 mod tests_activity;
