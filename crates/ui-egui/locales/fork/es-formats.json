@@ -65,5 +65,6 @@
   "{done} of {total} ({percent} %)": "{done} de {total} ({percent} %)",
   "{done} downloaded": "{done} descargados",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} se ha descargado y comprobado; instálalo para actualizar (la aplicación se reinicia).",
-  "Remove {what} from the library for good?": "¿Quitar {what} de la biblioteca definitivamente?"
+  "Remove {what} from the library for good?": "¿Quitar {what} de la biblioteca definitivamente?",
+  "Faces: {spec}": "Caras: {spec}"
 }

@@ -1247,5 +1247,14 @@
   "Filename - Sequence": "文件名 - 序号",
   "Custom Name - Sequence": "自定名称 - 序号",
   "Custom Name": "自定名称",
-  "Date - Filename": "日期 - 文件名"
+  "Date - Filename": "日期 - 文件名",
+  "Any faces": "任意人脸数",
+  "No faces": "无人脸",
+  "1 face": "1 张人脸",
+  "2 faces": "2 张人脸",
+  "1+ faces": "1 张及以上人脸",
+  "3+ faces": "3 张及以上人脸",
+  "5+ faces": "5 张及以上人脸",
+  "10+ faces": "10 张及以上人脸",
+  "Face Count": "人脸数"
 }

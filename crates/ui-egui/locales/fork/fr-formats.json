@@ -55,5 +55,6 @@
   "{done} of {total} ({percent} %)": "{done} sur {total} ({percent} %)",
   "{done} downloaded": "{done} téléchargés",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} est téléchargé et vérifié ; installez-le pour mettre à jour (l’application redémarre).",
-  "Remove {what} from the library for good?": "Retirer définitivement {what} de la bibliothèque ?"
+  "Remove {what} from the library for good?": "Retirer définitivement {what} de la bibliothèque ?",
+  "Faces: {spec}": "Visages : {spec}"
 }

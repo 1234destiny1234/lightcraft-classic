@@ -460,6 +460,8 @@ fn shuffle_rank(seed: u64, id: PhotoId) -> u64 {
     mix64(mix64(seed) ^ id.0)
 }
 
+/// Reads `faces` as a count (`2`) or a spec string, rejecting a spec [`parse_face_spec`] can't read
+/// so a typo is an error the caller sees rather than an empty grid.
 fn deserialize_faces<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
 where
     D: serde::Deserializer<'de>,
@@ -471,97 +473,76 @@ where
         Str(String),
     }
 
-    match Option::<FaceCountVal>::deserialize(deserializer)? {
-        None => Ok(None),
-        Some(FaceCountVal::Num(n)) => Ok(Some(n.to_string())),
-        Some(FaceCountVal::Str(s)) => {
-            let trimmed = s.trim();
-            if trimmed.is_empty() { Ok(None) } else { Ok(Some(trimmed.to_string())) }
-        }
+    let spec = match Option::<FaceCountVal>::deserialize(deserializer)? {
+        None => return Ok(None),
+        Some(FaceCountVal::Num(n)) => n.to_string(),
+        Some(FaceCountVal::Str(s)) => s.trim().to_string(),
+    };
+    if spec.is_empty() {
+        return Ok(None);
+    }
+    parse_face_spec(&spec).map_err(serde::de::Error::custom)?;
+    Ok(Some(spec))
+}
+
+/// A face-count condition: at least `min`, at most `max` (inclusive) when set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FaceSpec {
+    pub min: usize,
+    pub max: Option<usize>,
+}
+
+impl FaceSpec {
+    pub fn matches(self, count: usize) -> bool {
+        count >= self.min && self.max.is_none_or(|max| count <= max)
     }
 }
 
-/// Whether a photo's detected face count matches `spec`.
+/// Parses a face-count spec:
+/// - exact: `"0"`, `"2"`, `"=2"`, `"none"` (0)
+/// - minimum: `"3+"`, `"+3"`, `">=3"`, `">2"`, `"any"` (1 or more)
+/// - maximum: `"<=2"`, `"<3"`
+/// - range: `"1-10"`, `"1–10"`, `"1..10"`, `"1..=10"` (both ends included; `"5-2"` means 2–5)
 ///
-/// Supported specs:
-/// - Exact: `"0"`, `"1"`, `"2"`, `"=2"`, `"none"` (0)
-/// - Minimum: `"3+"`, `">=3"`, `">2"`, `"+3"`, `"1+"`
-/// - Maximum: `"<=2"`, `"<3"`
-/// - Range: `"1-10"`, `"1..10"`, `"1..=10"`
-pub fn matches_face_spec(count: usize, spec: &str) -> bool {
+/// Anything else, and `"<0"` (which nothing matches), is an error naming the accepted forms.
+pub fn parse_face_spec(spec: &str) -> Result<FaceSpec, String> {
     let s = spec.trim();
-    if s.is_empty() {
-        return true;
-    }
-    if s.eq_ignore_ascii_case("none") {
-        return count == 0;
-    }
-    if s.eq_ignore_ascii_case("any") {
-        return count > 0;
-    }
-    // "3+" or "+3"
-    if let Some(rest) = s.strip_suffix('+')
-        && let Ok(min) = rest.trim().parse::<usize>()
-    {
-        return count >= min;
-    }
-    if let Some(rest) = s.strip_prefix('+')
-        && let Ok(min) = rest.trim().parse::<usize>()
-    {
-        return count >= min;
-    }
-    // ">=", "<=", ">", "<", "="
-    if let Some(rest) = s.strip_prefix(">=")
-        && let Ok(v) = rest.trim().parse::<usize>()
-    {
-        return count >= v;
-    }
-    if let Some(rest) = s.strip_prefix("<=")
-        && let Ok(v) = rest.trim().parse::<usize>()
-    {
-        return count <= v;
-    }
-    if let Some(rest) = s.strip_prefix('>')
-        && let Ok(v) = rest.trim().parse::<usize>()
-    {
-        return count > v;
-    }
-    if let Some(rest) = s.strip_prefix('<')
-        && let Ok(v) = rest.trim().parse::<usize>()
-    {
-        return count < v;
-    }
-    if let Some(rest) = s.strip_prefix('=')
-        && let Ok(v) = rest.trim().parse::<usize>()
-    {
-        return count == v;
-    }
-    // Ranges: "1..=10", "1..10", "1-10", "1–10" (en-dash)
-    if let Some((start, end)) = s.split_once("..=")
-        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
-    {
-        return count >= a && count <= b;
-    }
-    if let Some((start, end)) = s.split_once("..")
-        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
-    {
-        return count >= a && count <= b;
-    }
-    if let Some((start, end)) = s.split_once('–')
-        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
-    {
-        return count >= a && count <= b;
-    }
-    if let Some((start, end)) = s.split_once('-')
-        && let (Ok(a), Ok(b)) = (start.trim().parse::<usize>(), end.trim().parse::<usize>())
-    {
-        return count >= a && count <= b;
-    }
-    // Exact number
-    if let Ok(v) = s.parse::<usize>() {
-        return count == v;
-    }
-    false
+    let num = |t: &str| t.trim().parse::<usize>().ok();
+    let exact = |v: usize| FaceSpec { min: v, max: Some(v) };
+    let at_least = |v: usize| FaceSpec { min: v, max: None };
+    let parsed = if s.eq_ignore_ascii_case("none") {
+        Some(exact(0))
+    } else if s.eq_ignore_ascii_case("any") {
+        Some(at_least(1))
+    } else if let Some(v) = s.strip_suffix('+').and_then(num).or_else(|| s.strip_prefix('+').and_then(num)) {
+        Some(at_least(v))
+    } else if let Some(rest) = s.strip_prefix(">=") {
+        num(rest).map(at_least)
+    } else if let Some(rest) = s.strip_prefix("<=") {
+        num(rest).map(|v| FaceSpec { min: 0, max: Some(v) })
+    } else if let Some(rest) = s.strip_prefix('>') {
+        num(rest).and_then(|v| v.checked_add(1)).map(at_least)
+    } else if let Some(rest) = s.strip_prefix('<') {
+        num(rest).and_then(|v| v.checked_sub(1)).map(|v| FaceSpec { min: 0, max: Some(v) })
+    } else if let Some(rest) = s.strip_prefix('=') {
+        num(rest).map(exact)
+    } else if let Some((a, b)) = ["..=", "..", "–", "-"].iter().find_map(|sep| s.split_once(sep)) {
+        match (num(a), num(b)) {
+            (Some(a), Some(b)) => Some(FaceSpec { min: a.min(b), max: Some(a.max(b)) }),
+            _ => None,
+        }
+    } else {
+        num(s).map(exact)
+    };
+    parsed.ok_or_else(|| {
+        format!("faces: can't read {spec:?}; use a count (2), a minimum (3+, >=3, >2), a maximum (<=2, <3), a range (1-5) or none / any")
+    })
+}
+
+/// Whether a photo's detected face count matches `spec` (see [`parse_face_spec`]); a spec that
+/// can't be read matches nothing.
+pub fn matches_face_spec(count: usize, spec: &str) -> bool {
+    parse_face_spec(spec).is_ok_and(|f| f.matches(count))
 }
 
 fn token_matches(p: &Photo, tok: &str) -> bool {

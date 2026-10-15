@@ -272,6 +272,18 @@ fn filter_faces_chip_and_clear() {
     assert_eq!(s.filter.faces, None);
 }
 
+/// A face-count spec `library.filter` can't read is an error the caller sees, and the filter
+/// stays as it was instead of emptying the grid.
+#[test]
+fn filter_faces_rejects_unreadable_spec() {
+    let dir = temp_dir("faces-bad");
+    let mut s = open(&dir);
+    s.execute("library.filter", &json!({"faces": "2+"})).unwrap();
+    let err = s.execute("library.filter", &json!({"faces": "two"})).unwrap_err();
+    assert!(err.to_string().contains("faces"), "{err}");
+    assert_eq!(s.filter.faces.as_deref(), Some("2+"));
+}
+
 /// A shuffle is part of the saved view: the same seed (and so the same grid) is back on the next launch.
 #[test]
 fn random_sort_persists_with_the_view() {

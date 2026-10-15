@@ -1334,5 +1334,14 @@
   "Filename - Sequence": "ファイル名 - 連番",
   "Custom Name - Sequence": "カスタム名 - 連番",
   "Custom Name": "カスタム名",
-  "Date - Filename": "日付 - ファイル名"
+  "Date - Filename": "日付 - ファイル名",
+  "Any faces": "顔の数を問わない",
+  "No faces": "顔なし",
+  "1 face": "顔 1 つ",
+  "2 faces": "顔 2 つ",
+  "1+ faces": "顔 1 つ以上",
+  "3+ faces": "顔 3 つ以上",
+  "5+ faces": "顔 5 つ以上",
+  "10+ faces": "顔 10 以上",
+  "Face Count": "顔の数"
 }

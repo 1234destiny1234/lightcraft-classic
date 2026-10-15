@@ -1542,5 +1542,14 @@
   "Filename - Sequence": "Имя файла - Номер",
   "Custom Name - Sequence": "Своё имя - Номер",
   "Custom Name": "Своё имя",
-  "Date - Filename": "Дата - Имя файла"
+  "Date - Filename": "Дата - Имя файла",
+  "Any faces": "Любое число лиц",
+  "No faces": "Без лиц",
+  "1 face": "1 лицо",
+  "2 faces": "2 лица",
+  "1+ faces": "1+ лиц",
+  "3+ faces": "3+ лиц",
+  "5+ faces": "5+ лиц",
+  "10+ faces": "10+ лиц",
+  "Face Count": "Число лиц"
 }

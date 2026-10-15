@@ -69,5 +69,6 @@
   "{done} of {total} ({percent} %)": "{done} из {total} ({percent} %)",
   "{done} downloaded": "Загружено: {done}",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} загружен и проверен; установите его, чтобы обновиться (приложение перезапустится).",
-  "Remove {what} from the library for good?": "Окончательно удалить {what} из библиотеки?"
+  "Remove {what} from the library for good?": "Окончательно удалить {what} из библиотеки?",
+  "Faces: {spec}": "Лица: {spec}"
 }

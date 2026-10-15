@@ -1337,5 +1337,14 @@
   "Filename - Sequence": "Nombre de archivo - Secuencia",
   "Custom Name - Sequence": "Nombre personalizado - Secuencia",
   "Custom Name": "Nombre personalizado",
-  "Date - Filename": "Fecha - Nombre de archivo"
+  "Date - Filename": "Fecha - Nombre de archivo",
+  "Any faces": "Cualquier número de caras",
+  "No faces": "Sin caras",
+  "1 face": "1 cara",
+  "2 faces": "2 caras",
+  "1+ faces": "1+ caras",
+  "3+ faces": "3+ caras",
+  "5+ faces": "5+ caras",
+  "10+ faces": "10+ caras",
+  "Face Count": "Número de caras"
 }

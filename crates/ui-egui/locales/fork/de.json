@@ -1193,5 +1193,14 @@
   "Filename - Sequence": "Dateiname - Sequenz",
   "Custom Name - Sequence": "Eigener Name - Sequenz",
   "Custom Name": "Eigener Name",
-  "Date - Filename": "Datum - Dateiname"
+  "Date - Filename": "Datum - Dateiname",
+  "Any faces": "Beliebig viele Gesichter",
+  "No faces": "Keine Gesichter",
+  "1 face": "1 Gesicht",
+  "2 faces": "2 Gesichter",
+  "1+ faces": "1+ Gesichter",
+  "3+ faces": "3+ Gesichter",
+  "5+ faces": "5+ Gesichter",
+  "10+ faces": "10+ Gesichter",
+  "Face Count": "Anzahl Gesichter"
 }

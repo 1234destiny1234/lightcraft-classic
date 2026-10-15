@@ -752,6 +752,13 @@ fn filter_by_face_count_and_matches_spec() {
     assert!(matches_face_spec(2, "1..3"));
     assert!(matches_face_spec(2, "any"));
     assert!(!matches_face_spec(0, "any"));
+    // reversed ranges cover the same counts; unreadable specs are rejected where they're read
+    assert!(matches_face_spec(3, "5-2") && matches_face_spec(2, "5..2") && !matches_face_spec(6, "5-2"));
+    for bad in ["abc", "3 faces", "<0", "-", "+", "1-x", ">", "99999999999999999999999"] {
+        assert!(!matches_face_spec(0, bad) && !matches_face_spec(3, bad), "{bad}");
+        let r: std::result::Result<Filter, _> = serde_json::from_value(serde_json::json!({"faces": bad}));
+        assert!(r.is_err_and(|e| e.to_string().contains("faces")), "{bad} must be rejected");
+    }
 
     // 2. Test deserialization of Filter with faces
     let f1: Filter = serde_json::from_value(serde_json::json!({"faces": 2})).unwrap();
@@ -792,16 +799,16 @@ fn filter_by_face_count_and_matches_spec() {
 
     let p0 = make_photo(1, vec![]);
     let p1 = make_photo(2, vec![region(Some("Alice"), RegionKind::Face)]);
-    let p2 = make_photo(3, vec![
-        region(Some("Alice"), RegionKind::Face),
-        region(Some("Bob"), RegionKind::Face),
-    ]);
-    let p3 = make_photo(4, vec![
-        region(Some("Alice"), RegionKind::Face),
-        region(None, RegionKind::Face), // unnamed face
-        region(Some("Charlie"), RegionKind::Face),
-        region(Some("Pet"), RegionKind::Pet), // pet should not count towards face_count
-    ]);
+    let p2 = make_photo(3, vec![region(Some("Alice"), RegionKind::Face), region(Some("Bob"), RegionKind::Face)]);
+    let p3 = make_photo(
+        4,
+        vec![
+            region(Some("Alice"), RegionKind::Face),
+            region(None, RegionKind::Face), // unnamed face
+            region(Some("Charlie"), RegionKind::Face),
+            region(Some("Pet"), RegionKind::Pet), // pet should not count towards face_count
+        ],
+    );
 
     assert_eq!(p0.face_count(), 0);
     assert_eq!(p1.face_count(), 1);

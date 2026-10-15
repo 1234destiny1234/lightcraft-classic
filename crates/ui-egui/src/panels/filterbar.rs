@@ -291,41 +291,21 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         picker(app, ui, id, &shown, current.is_some(), items);
     }
 
-    // faces picker
-    let face_options: &[(&str, &str)] = &[
-        ("No faces (0)", "0"),
-        ("1 face", "1"),
-        ("2 faces", "2"),
-        ("3+ faces", "3+"),
-        ("4+ faces", "4+"),
-        ("5+ faces", "5+"),
-        ("1+ faces", "1+"),
-        ("6–10 faces", "6-10"),
-        ("10+ faces", "10+"),
-    ];
-    let mut face_items = vec![("Any faces".to_string(), json!({"faces": Value::Null}), f.faces.is_none())];
-    let mut matched_preset = false;
-    for (label, val) in face_options {
-        let sel = f.faces.as_deref() == Some(*val);
-        if sel {
-            matched_preset = true;
-        }
-        face_items.push((label.to_string(), json!({"faces": val}), sel));
+    // faces picker: detected face boxes, named or not (`faces` in `library.filter`)
+    const FACE_OPTIONS: &[(&str, &str)] =
+        &[("No faces", "0"), ("1 face", "1"), ("2 faces", "2"), ("1+ faces", "1+"), ("3+ faces", "3+"), ("5+ faces", "5+"), ("10+ faces", "10+")];
+    let current_faces = f.faces.as_deref();
+    let preset = current_faces.and_then(|v| FACE_OPTIONS.iter().find(|(_, val)| *val == v));
+    let mut face_items = vec![("Any faces".to_string(), json!({"faces": Value::Null}), current_faces.is_none())];
+    face_items.extend(FACE_OPTIONS.iter().map(|(label, val)| (label.to_string(), json!({"faces": val}), current_faces == Some(*val))));
+    let custom = current_faces.filter(|_| preset.is_none()).map(|spec| crate::i18n::tr_format!("Faces: {spec}", spec = spec));
+    if let (Some(label), Some(spec)) = (&custom, current_faces) {
+        face_items.push((label.clone(), json!({"faces": spec}), true));
     }
-    if let Some(custom) = &f.faces
-        && !matched_preset
-    {
-        face_items.push((format!("{custom} faces"), json!({"faces": custom}), true));
-    }
-    let shown_faces = match f.faces.as_deref() {
-        None => "Faces".to_string(),
-        Some(v) => {
-            if let Some((lbl, _)) = face_options.iter().find(|(_, val)| *val == v) {
-                lbl.to_string()
-            } else {
-                format!("{v} faces")
-            }
-        }
+    let shown_faces = match (preset, custom) {
+        (Some((label, _)), _) => label.to_string(),
+        (None, Some(label)) => label,
+        (None, None) => "Faces".to_string(),
     };
     picker(app, ui, "faces", &shown_faces, f.faces.is_some(), face_items);
 
