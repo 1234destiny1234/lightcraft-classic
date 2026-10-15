@@ -1,5 +1,11 @@
 # What's new in {app}
 
+## 2026-10-15
+
+### Library comes back in the view you left it in
+- Going from Library to Develop and back through the module picker brought Library back in the loupe, whatever view
+  it was left in. It now returns to the grid, loupe, Compare or Survey it showed before (issue #144).
+
 ## 2026-10-14
 
 ### Folders and metadata badges on a network share
