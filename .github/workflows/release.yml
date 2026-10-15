@@ -238,9 +238,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: x64, target: x86_64-pc-windows-msvc, runner: '["self-hosted", "Windows", "X64", "lcc"]' }
-          - { arch: arm64, target: aarch64-pc-windows-msvc, runner: '["self-hosted", "Windows", "ARM64", "lcc"]' }
+          - { arch: x64, target: x86_64-pc-windows-msvc, jobs: default, runner: '["self-hosted", "Windows", "X64", "lcc"]' }
+          # SNAPDRAGON has 12 cores; the runner's own settings held cargo to 4. Two stay free for the desktop.
+          - { arch: arm64, target: aarch64-pc-windows-msvc, jobs: '10', runner: '["self-hosted", "Windows", "ARM64", "lcc"]' }
     env:
+      CARGO_BUILD_JOBS: ${{ matrix.jobs }}
       PACKAGE_VERSION: ${{ needs.version.outputs.version }}
       BUILD_DATE: ${{ needs.version.outputs.date }}
     steps:
