@@ -48,6 +48,9 @@ pub enum Row {
     Gps,
     Rating,
     Label,
+    /// Where the camera focused, and how (View ▸ Show Focus Point draws it): only shown when the
+    /// active photo's file records it.
+    Focus,
     /// Camera card details for one photo: virtual copy, focus analysis, offline state, All Metadata….
     Extras,
 }
@@ -65,6 +68,7 @@ pub fn rows(preset: &str) -> Vec<Row> {
         Info("iso", "ISO Speed Rating"),
         Info("camera", "Camera"),
         Info("lens", "Lens"),
+        Focus,
     ];
     let mut v = match preset {
         "exif" => {
@@ -272,6 +276,15 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             );
         }
     });
+    // a raw shown from its embedded preview says so first, where it is seen without scrolling; its
+    // Reload button tries the full decode again (a newer build may read the file now)
+    if let Some(why) = &active.preview_only {
+        padded(ui, |ui| {
+            if crate::widgets::preview_only_notice(ui, "info", why) {
+                crate::panels::edit::reload_preview_only(app, ui.ctx(), active.id);
+            }
+        });
+    }
     divider(ui);
     let preset = app.ui.lib.metadata_preset.clone();
     padded(ui, |ui| {
@@ -291,6 +304,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 Row::Gps => gps(app, ui, &photos, &ids),
                 Row::Rating => rating(app, ui, &photos),
                 Row::Label => label(app, ui, &photos),
+                Row::Focus => focus(ui, &active),
                 Row::Extras => extras(app, ui, &active),
             }
         }
@@ -602,13 +616,33 @@ fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     ui.add_space(6.0);
 }
 
-/// The active photo's extras: virtual copy, analysis, offline original / smart preview, All Metadata….
+/// The Focus row: the camera's focus mode, AF area and tracking of the active photo; nothing when
+/// its file records no focus point.
+fn focus(ui: &mut egui::Ui, p: &Photo) {
+    let Some(text) = focus_text(p.meta.focus.as_ref()) else { return };
+    let t = Tokens::get(ui.ctx());
+    // the panel's width, so "AF-C · Expanded Flexible Spot · Face tracking" wraps instead of being cut
+    let r = ui.horizontal_wrapped(|ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(110.0, 18.0), Sense::hover());
+        ui.painter().text(r.left_center(), egui::Align2::LEFT_CENTER, crate::i18n::tr("Focus"), t.font(11.5), t.text_dim);
+        ui.label(egui::RichText::new(text).size(12.0).color(t.text_label));
+    });
+    register(ui.ctx(), "info:focus", r.response.rect);
+    ui.add_space(2.0);
+}
+
+/// The camera's focus mode, AF area and tracking in the interface language ("AF-C · Wide · Animal Eye
+/// Tracking"), or `None` when the photo has no focus point.
+pub(crate) fn focus_text(f: Option<&lcc_meta::FocusPoint>) -> Option<String> {
+    let f = f?;
+    let words: Vec<&str> = f.words().into_iter().map(crate::i18n::tr).collect();
+    Some(if words.is_empty() { crate::i18n::tr("Focus point").to_string() } else { words.join(" · ") })
+}
+
+/// The active photo's extras: virtual copy, analysis, offline original / smart preview, All Metadata…
+/// (the preview-only notice heads the panel, see [`show`]).
 fn extras(app: &mut LccApp, ui: &mut egui::Ui, p: &Photo) {
     let t = Tokens::get(ui.ctx());
-    if let Some(why) = &p.preview_only {
-        crate::widgets::preview_only_notice(ui, "info", why);
-        ui.add_space(6.0);
-    }
     if let Some(name) = &p.copy_name {
         let of = p
             .copy_of
