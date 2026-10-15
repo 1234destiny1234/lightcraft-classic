@@ -109,6 +109,7 @@ fn every_interactive_node_has_a_name_in_every_view_and_tool() {
         "dialog.saveMetadataPreset",
         "dialog.autoStack",
         "dialog.contactSheet",
+        "dialog.watermark",
     ] {
         let mut h = harness(ViewMode::PhotoGrid, RightPanel::None);
         if let Err(e) = h.state_mut().run(dialog, serde_json::json!({})) {

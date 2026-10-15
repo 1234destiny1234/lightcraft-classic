@@ -225,6 +225,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // Edit panel ▸ Curve ▸ Point Curve dropdown
     ("file.importCurvePresets", "Import Point Curve Presets…", None, ""),
     ("file.exportCurvePresets", "Export Point Curve Presets…", None, ""),
+    ("dialog.watermark", "Edit Watermarks…", None, "Edit"),
     ("app.settings", "Settings…", Some("Cmd+,"), "Edit"),
     ("app.newLibrary", "New Library…", None, "File"),
     ("app.openLibrary", "Open Library…", None, "File"),
@@ -696,6 +697,13 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "view.navigator" => {
             app.ui.navigator = !app.ui.navigator;
             Ok(json!({"navigator": app.ui.navigator}))
+        }
+        "dialog.watermark" => {
+            let prev = app.session.last_export.clone().unwrap_or_default();
+            let opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            let wm = opts.watermark.unwrap_or_default();
+            app.ui.dialog = Some(Dialog::Watermark { wm, preset_name: String::new() });
+            Ok(Value::Null)
         }
         "app.settings" => {
             // a section opens its tab and is brought into view
