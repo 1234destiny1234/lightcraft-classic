@@ -586,13 +586,19 @@ pub fn auto_transform(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, mode
 
 /// Fill in a missing automatic Upright transform (settings from XMP/CLI that name a mode but carry no analysis).
 pub fn resolve<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings) -> Cow<'a, DevelopSettings> {
-    let g = &s.geometry;
-    if matches!(g.upright, Upright::Off | Upright::Guided) || g.upright_transform.is_some() || !s.section_enabled("geometry") {
+    if !pending(s) {
         return Cow::Borrowed(s);
     }
+    let g = &s.geometry;
     let mut e = s.clone();
     e.geometry.upright_transform = Some(auto_transform(src, info, s, g.upright));
     Cow::Owned(e)
+}
+
+/// Whether [`resolve`] has an automatic transform to solve (a mode without its stored analysis).
+pub fn pending(s: &DevelopSettings) -> bool {
+    let g = &s.geometry;
+    !(matches!(g.upright, Upright::Off | Upright::Guided) || g.upright_transform.is_some() || !s.section_enabled("geometry"))
 }
 
 /// The Upright homography in effect for settings (stored automatic transform, or solved from guides).

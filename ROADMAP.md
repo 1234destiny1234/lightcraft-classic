@@ -27,7 +27,7 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 
 | Dimension | Estimate | What's true today | Biggest gaps |
 |---|---:|---|---|
-| **Feature checklist** | 87.9% | P0 core and P1 nearly complete: import (Add / Copy / Move, templates, devices), library, grid/loupe/compare/survey, every Edit slider, curves, colour grading, masking tools, crop/Upright, heal/clone, content-aware Remove (PatchMatch Fill spots), presets/profiles, versions/history, sync, export, Edit In round trips, plug-in host with SDK examples, menus, shortcuts | P0: full-resolution zoom detail; P1: lens-profile database (import / lensfun download in review), catalog settings, `.lrcat` import depth; video playback/trim |
+| **Feature checklist** | 87.9% | P0 core and P1 nearly complete: import (Add / Copy / Move, templates, devices), library, grid/loupe/compare/survey, every Edit slider, curves, colour grading, masking tools, crop/Upright, heal/clone, content-aware Remove (PatchMatch Fill spots), presets/profiles, versions/history, sync, export, Edit In round trips, plug-in host with SDK examples, menus, shortcuts | P1: lens-profile database (import / lensfun download in review), catalog settings, `.lrcat` import depth; video playback/trim |
 | **RAW coverage** (formats people shoot) | ~55% | DNG (all kinds), CR2, CR3 lossless Bayer and version 0x100/0x200 C-RAW (M50/R100/R8 pixel-exact corpus), ARW, NEF (uncompressed + Huffman lossless/lossy), RAF (uncompressed, lossless/lossy compressed Bayer and X-Trans), ORF (uncompressed and compressed, E-M1 / E-M10 III verified), Samsung SRW (uncompressed and compressed 32770 / 32772 / 32773), Minolta MRW, Sony ARW v1, packed NEF, SuperCCD RAF, Canon CRW, Epson ERF, Mamiya MEF, RW2 / RWL / Panasonic RAW (every raw format, checked on 178 files from 118 Panasonic and Leica bodies), PEF; every container's embedded preview (incl. CR3) | Unverified **CR3** CRX variants, Nikon lossy-after-split, Canon sRAW, HEIC/AVIF. NEFs labelled compressed but stored uncompressed (Z 6 packed 14-bit, D850 12-bit uncompressed). Nikon High Efficiency NEF (HE / HE★: Z 8, Z 9, Z 6III, Z f; JPEG XS-based, preview only, #193). Per-model verification is thin (~55 corpus files vs >1,000 models) |
 | **Colour & image quality** | ~55–65% | Pipeline is complete and fast; GPU path CPU-exact within 1/255 | **No measured camera calibration database**: ARW, NEF, RW2, RAF, CR3, CR2 and PEF have guarded camera-JPEG colour estimates, with bundled ILCE-7CR, ILCE-7M4, X-H2S and X-T4 profiles (docs/camera-preview-colour.md); 52 models whose JPEG fit is rejected start from matrices fitted to measured spectral sensitivities; other non-DNG raws and rejected estimates use a neutral matrix. Colour fidelity remains incomplete. No lens-profile database. No measured fidelity against Lightroom (tone, highlights, texture/clarity, NR, sharpening are tuned by eye) |
 | **AI & computational** | ~15–20% | Assisted culling (focus, bursts), auto tone, HDR/panorama merge; subject/sky/background masks as classical heuristics, or the photo's own segmentation mattes when it ships them (DNG semantic masks, e.g. iPhone ProRAW's sky matte); non-destructive Bayer RAW denoise with opt-in weights on pure-Rust CPU/GPU; **faces (MVP, [docs/faces.md](docs/faces.md))**: a pure-Rust detector (a 232 KB opt-in download), opt-in recognition models (one-click download or add a file; they run on the shared pure-Rust CPU interpreter; pinned SFace/AuraFace embeddings agree with an independent reference runtime on 40 public crops; one-thread medians 34–36 / 233–252 ms (AuraFace remains expensive)), a background scan that finds and embeds faces, name suggestions, a person's page with look-alike faces to confirm, an Unnamed faces section (look-alikes together, select a group and name it at once) | Real segmentation masks (subject, sky, people, objects, landscape, depth), denoise model policy / linear RGB / quality verification, super resolution, lens blur, generative remove, natural-language search; for faces: clusters with separators between groups, small faces in large photos (the detector looks at 640 px), thresholds calibrated on live faces, writing face regions back to XMP. **Blocked on a model strategy** (licensable weights or our own training; pure-Rust inference is feasible) |
@@ -230,7 +230,31 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-15 (upstream batch 40): raw-parity action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies)
+  marked done upstream; already done here. `docs/raw/coverage.py --check` passes: 596 of 1,446 models verified, 98% of
+  photographers' cameras fully work (87% on a verified body); target-app-parity's readiness rows re-derived from it
+  (full ~62%, mainstream ~52%, essentials ~65%).
 - 2026-10-15: Canon EOS R6 CR3 verified (5 private files, exact sensor hashes): 315 of 1,446 Adobe models verified; use-weighted share unchanged at 90%.
+- 2026-10-14 (upstream): Camera-coverage sweep verifies 30 more models on 40 CC0 files, with file and sensor
+  hashes pinned (`docs/raw/coverage.py`: 515 → 545 verified). Eleven candidates excluded after rechecking
+  identity, provenance and camera-image agreement. Phone and drone DNG tone differences remain tracked in #1277.
+- 2026-10-14 (upstream): 97 Canon CR2, Pentax and Ricoh models verified, one CC0 raw.pixls.us file each pinned and
+  checked against the camera JPEG (`crates/raw/tests/canon_pentax_corpus.rs`). 334 models verified, ~50% of
+  photographers on a verified body; headline numbers unchanged.
+- 2026-10-12 (upstream): Mamiya MEF (ZD) decodes from sensor data and is imported; verified on a CC0 file. 241 models
+  verified, 35 unsupported; headline numbers unchanged.
+- 2026-10-12 (upstream): Epson ERF (R-D1, R-D1s, R-D1x) decodes from sensor data, white balance measured from each
+  file's preview; 3 bodies verified on CC0 files. 240 models verified; headline numbers unchanged.
+- 2026-10-12 (upstream): 22 more Canon CR3 bodies verified (EOS R, RP, R3, R5, R6, R6 Mark II / III, R7, R10, R50,
+  R50 V, 90D, 250D, 850D, M200, M50 Mark II, M6 Mark II, 1D X Mark III, PowerShot G5 X II, G7 X III, SX70,
+  V1): one CC0 file each pinned and checked against the camera JPEG; all 110 CC0 CR3s on raw.pixls.us
+  decode. The EOS R6 Mark III gets its as-shot white balance (`ColorData` 66). 259 models verified; RAW
+  decoding 77% → 83%; mainstream ~49% → ~51%, essentials ~64% → ~65%, full ~61%.
+- 2026-10-12 (upstream): 117 Nikon and Fujifilm bodies verified, one CC0 raw.pixls.us file each pinned and checked
+  against the camera JPEG (`crates/raw/tests/body_corpus.rs`); the sweep found COOLPIX 5700 / 8400 / 8800
+  decoding wrongly. 354 models verified, ~58% of photographers on a verified body; headline numbers unchanged.
+- 2026-10-11 (upstream): Sony ILCA-99M2 (α99 II) camera colour: bundled profile from 144 photos; on 30 withheld photos
+  mean ΔE vs the camera JPEG 5.11 → 4.87, 25 of them closer.
 - 2026-10-14: release 0.8.2: HDR display output (Windows, Linux), faces fully on the GPU, sharpening Radius/Detail (process V4), crop & straighten under a fixed box, Classic Basic panel order, upstream batch 35 merged; CI on own runners; no dimension changes stage.
 - 2026-10-14: release 0.8.1: user-report fixes (preset Amount fade, large preset collections, wheel scroll speed, Quick Collection menu, Develop tool strip, folded panels), faces convolutions on the GPU; no dimension changes stage.
 - 2026-10-13: release 0.8.0: upstream merged through upstream 0.7.1 + batch 32 (Kelvin slider, Render to DNG, HLG AVIF, preset scale, raw fixes); no dimension changes stage.

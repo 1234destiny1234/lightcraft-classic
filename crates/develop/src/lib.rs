@@ -76,6 +76,13 @@ impl DevelopSettings {
         a == d
     }
 
+    /// The pixel-filter plug-ins that render, in order: enabled entries of `stage`, none while the
+    /// `pluginFilters` section's eye is off.
+    pub fn active_plugin_filters(&self, stage: FilterStage) -> impl Iterator<Item = &PluginFilter> {
+        let on = self.section_enabled(PLUGIN_FILTERS_SECTION);
+        self.plugin_filters.iter().filter(move |f| on && f.enabled && f.stage == stage)
+    }
+
     pub fn section_enabled(&self, section: &str) -> bool {
         !self.disabled_sections.iter().any(|s| s == section)
     }
@@ -86,7 +93,7 @@ impl DevelopSettings {
     /// Calibration the pipeline switches off where it applies them. Borrowed when every section is on.
     pub fn effective(&self) -> std::borrow::Cow<'_, DevelopSettings> {
         let off = |section: &str| !self.section_enabled(section);
-        if !(off("light") || off("color") || off("detail")) {
+        if !(off("light") || off("color") || off("detail") || (off(PLUGIN_FILTERS_SECTION) && !self.plugin_filters.is_empty())) {
             return std::borrow::Cow::Borrowed(self);
         }
         let mut d = self.clone();
@@ -102,6 +109,9 @@ impl DevelopSettings {
         }
         if off("detail") {
             d.reset_section(Section::Detail);
+        }
+        if off(PLUGIN_FILTERS_SECTION) {
+            d.plugin_filters.clear();
         }
         std::borrow::Cow::Owned(d)
     }

@@ -160,3 +160,27 @@ fn the_process_is_not_an_edit_nor_part_of_copied_settings() {
 
 /// A process other than the latest: a newer version of the app's number (no older one than V1 exists).
 const LATEST_PLUS_ONE: u32 = ProcessVersion::LATEST.0 + 1;
+
+#[test]
+fn plugin_filters_absent_from_old_json_and_not_written_when_empty() {
+    let old = DevelopSettings::default();
+    let mut v = old.to_json();
+    assert!(v.get("plugin_filters").is_none(), "an empty stack is not written");
+    v.as_object_mut().unwrap().remove("plugin_filters");
+    let back = DevelopSettings::from_json(&v).unwrap();
+    assert!(back.plugin_filters.is_empty());
+    assert_eq!(back.hash64(), old.hash64());
+
+    let mut s = DevelopSettings::default();
+    s.plugin_filters.push(PluginFilter { uid: 1, plugin: "x.neg".into(), name: "Negative".into(), stage: FilterStage::Source, ..Default::default() });
+    let rt = DevelopSettings::from_json(&s.to_json()).unwrap();
+    assert_eq!(rt, s);
+    assert_ne!(s.hash64(), old.hash64());
+    assert_eq!(s.active_plugin_filters(FilterStage::Source).count(), 1);
+    s.set_section_enabled(PLUGIN_FILTERS_SECTION, false);
+    assert_eq!(s.active_plugin_filters(FilterStage::Source).count(), 0);
+    assert!(s.effective().plugin_filters.is_empty());
+    // Copying the group carries an empty stack too, so a paste clears the target's.
+    let empty = extract_groups(&DevelopSettings::default(), &[SettingsGroup::PluginFilters]);
+    assert_eq!(s.merged(&empty).unwrap().plugin_filters.len(), 0);
+}

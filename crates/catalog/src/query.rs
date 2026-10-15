@@ -102,6 +102,26 @@ pub struct Sort {
     pub seed: u64,
 }
 
+impl Sort {
+    /// Which of two photos comes first in this order: the order [`Catalog::query`] gives (never `Equal` for two
+    /// photos: the id decides last). [`SortKey::Custom`] orders as the capture date here, as it does where there
+    /// is no album's own order; an album's Custom Order is the album's, not the photos'.
+    pub fn order(&self, a: &Photo, b: &Photo) -> std::cmp::Ordering {
+        let o = match self.key {
+            SortKey::CaptureDate | SortKey::Custom => a.captured.as_deref().cmp(&b.captured.as_deref()).then_with(|| a.imported.cmp(&b.imported)),
+            SortKey::ImportDate => a.imported.cmp(&b.imported),
+            SortKey::EditDate => a.edited.as_deref().cmp(&b.edited.as_deref()),
+            // (as `sort_photos` keys them: the name lower-cased as a whole)
+            SortKey::FileName => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),
+            SortKey::Rating => a.rating.cmp(&b.rating),
+            SortKey::FileSize => a.file_size.cmp(&b.file_size),
+            SortKey::Random => shuffle_rank(self.seed, a.id).cmp(&shuffle_rank(self.seed, b.id)),
+        }
+        .then(a.id.cmp(&b.id));
+        if self.ascending { o } else { o.reverse() }
+    }
+}
+
 impl Default for Sort {
     fn default() -> Self {
         Sort { key: SortKey::CaptureDate, ascending: false, group: crate::GroupBy::Auto, seed: 0 }
@@ -455,6 +475,12 @@ pub fn immich_state_is(cat: &Catalog, id: PhotoId, want: &str) -> bool {
     }
 }
 
+/// What [`Filter::prepare`] works out once for a pass over many photos.
+pub(crate) struct Prepared {
+    root: Option<String>,
+    only: Option<std::collections::HashSet<PhotoId>>,
+}
+
 /// A photo's place in the shuffle for `seed`.
 fn shuffle_rank(seed: u64, id: PhotoId) -> u64 {
     mix64(mix64(seed) ^ id.0)
@@ -678,7 +704,18 @@ impl Filter {
     }
 
     pub fn matches(&self, p: &Photo, cat: &Catalog) -> bool {
-        self.matches_in(p, cat, self.library_root().as_deref())
+        self.matches_in(p, cat, &self.prepare_one())
+    }
+
+    /// [`Filter::prepare`] for testing one photo (the `only` ids are looked through, not hashed).
+    pub(crate) fn prepare_one(&self) -> Prepared {
+        Prepared { root: self.library_root(), only: None }
+    }
+
+    /// What [`Filter::matches_in`] needs worked out once for a pass over many photos rather than
+    /// once per photo: the library folder's identity and the `only` ids as a set.
+    pub(crate) fn prepare(&self) -> Prepared {
+        Prepared { root: self.library_root(), only: (!self.only.is_empty()).then(|| self.only.iter().copied().collect()) }
     }
 
     /// [`Filter::library_folder`] as a folder identity ([`folder_key`]); `None` without a choice.
@@ -688,9 +725,9 @@ impl Filter {
         self.library_folder.as_deref().filter(|d| !d.trim().is_empty()).map(folder_key)
     }
 
-    /// [`Filter::matches`] with the library folder already turned into its identity, so a query
-    /// over a big library does that once, not once per photo.
-    fn matches_in(&self, p: &Photo, cat: &Catalog, root: Option<&str>) -> bool {
+    /// [`Filter::matches`] with what [`Filter::prepare`] works out done already, so a query over a
+    /// big library does that once, not once per photo.
+    pub(crate) fn matches_in(&self, p: &Photo, cat: &Catalog, prepared: &Prepared) -> bool {
         if p.deleted != self.deleted {
             return false;
         }
@@ -729,7 +766,7 @@ impl Filter {
         if !self.labels.is_empty() && !p.label.is_some_and(|l| self.labels.contains(&l)) {
             return false;
         }
-        if !self.only.is_empty() && !self.only.contains(&p.id) {
+        if !self.only.is_empty() && !prepared.only.as_ref().map_or_else(|| self.only.contains(&p.id), |only| only.contains(&p.id)) {
             return false;
         }
         if let Some(want) = &self.immich
@@ -774,7 +811,7 @@ impl Filter {
         {
             return false;
         }
-        if let Some(root) = root
+        if let Some(root) = prepared.root.as_deref()
             && !photo_in_root(p, root)
         {
             return false;
@@ -824,10 +861,69 @@ impl Catalog {
         self.query_with(filter, sort, true)
     }
 
+    /// [`Catalog::query`], and with them the photos of `keep` that still match `within`, each at its place in `sort`
+    /// order: a view that holds the photos it showed when an edit makes them stop matching `filter` (a smart
+    /// album's rules, the filter bar), as long as they are still where the view looks (`within`: in the library,
+    /// the album, the folder; not deleted).
+    pub fn query_keeping(&self, filter: &Filter, sort: &Sort, keep: &std::collections::HashSet<PhotoId>, within: &Filter) -> Vec<PhotoId> {
+        self.query_inner(filter, sort, true, Some((keep, within)))
+    }
+
+    /// The list `was` (a [`Catalog::query`] of `filter` in `sort` order, or a [`Catalog::query_keeping`]), after ops
+    /// that touched only the photos `touched` (sorted by id, each once: [`Catalog::touched_since`]): those photos
+    /// taken out, and the ones that match `filter` now put back at their place in the order. With `within`, a
+    /// touched photo that was in the list and still matches `within` stays, as `query_keeping` would keep it. What
+    /// the query would give, without asking every photo again.
+    pub fn follow(&self, was: &[PhotoId], touched: &[PhotoId], filter: &Filter, sort: &Sort, within: Option<&Filter>) -> Vec<PhotoId> {
+        if sort.key == SortKey::Custom && filter.album.is_some_and(|a| self.has_custom_order(a)) {
+            // an album's own order is the album's, not the photos': asked whole, keeping what the list held (the
+            // untouched photos still match what they matched, or the ops would not have been followed)
+            let keep: std::collections::HashSet<PhotoId> = was.iter().copied().collect();
+            return self.query_keeping(filter, sort, &keep, within.unwrap_or(filter));
+        }
+        let listed: std::collections::HashSet<PhotoId> = was.iter().copied().filter(|id| touched.binary_search(id).is_ok()).collect();
+        let mut ids: Vec<PhotoId> = was.iter().copied().filter(|id| !listed.contains(id)).collect();
+        let (prepared, within_prepared) = (filter.prepare_one(), within.map(Filter::prepare_one));
+        for id in touched {
+            let Some(p) = self.photo(*id) else { continue };
+            let kept = within.zip(within_prepared.as_ref()).is_some_and(|(w, wp)| listed.contains(id) && w.matches_in(p, self, wp));
+            if filter.matches_in(p, self, &prepared) || kept {
+                // (the list is in order without the touched photos, and stays so as each is put back)
+                let at = ids.partition_point(|other| self.photo(*other).is_some_and(|o| sort.order(o, p).is_lt()));
+                ids.insert(at, *id);
+            }
+        }
+        ids
+    }
+
+    /// How many photos match `filter`: [`Catalog::query`]'s length without its sorting.
+    pub fn count(&self, filter: &Filter) -> usize {
+        let prepared = filter.prepare();
+        self.photos().filter(|p| filter.matches_in(p, self, &prepared)).count()
+    }
+
     /// [`Self::query`], with or without the kept sort orders (tests compare both).
     pub(crate) fn query_with(&self, filter: &Filter, sort: &Sort, cached: bool) -> Vec<PhotoId> {
-        let root = filter.library_root();
-        let keep = |p: &&Photo| filter.matches_in(p, self, root.as_deref());
+        self.query_inner(filter, sort, cached, None)
+    }
+
+    /// [`Self::query`], or [`Self::query_keeping`] with `keeping`.
+    fn query_inner(
+        &self,
+        filter: &Filter,
+        sort: &Sort,
+        cached: bool,
+        keeping: Option<(&std::collections::HashSet<PhotoId>, &Filter)>,
+    ) -> Vec<PhotoId> {
+        let prepared = filter.prepare();
+        // `within` only decides for the few kept photos: worked out per photo, not hashed
+        let within_prepared = keeping.map(|(_, within)| within.prepare_one());
+        let keep = |p: &&Photo| {
+            filter.matches_in(p, self, &prepared)
+                || keeping.zip(within_prepared.as_ref()).is_some_and(|((kept, within), wp)| kept.contains(&p.id) && within.matches_in(p, self, wp))
+        };
+        // (a rule that reads the clock is not asked on other threads)
+        let clocked = filter.depends_on_now() || keeping.is_some_and(|(_, within)| within.depends_on_now());
         if sort.key == SortKey::Custom {
             if let Some(a) = filter.album.filter(|a| self.has_custom_order(*a)) {
                 let rank: std::collections::HashMap<PhotoId, usize> =
@@ -841,7 +937,7 @@ impl Catalog {
                 return v.into_iter().map(|(_, id)| id).collect();
             }
             // no regular album: by capture date
-            return self.query_with(filter, &Sort { key: SortKey::CaptureDate, ..*sort }, cached);
+            return self.query_inner(filter, &Sort { key: SortKey::CaptureDate, ..*sort }, cached, keeping);
         }
         let all: Vec<&Photo> = self.photos().map(|p| p.as_ref()).collect();
         if cached && let Some(sorted) = self.sort_cache.sorted(sort, &all) {
@@ -854,7 +950,7 @@ impl Catalog {
                     marks.set(*r as usize);
                 }
             };
-            if all.len() >= PARALLEL_FROM && !filter.depends_on_now() {
+            if all.len() >= PARALLEL_FROM && !clocked {
                 par_each(&all, &mark);
             } else {
                 all.iter().enumerate().for_each(|(i, p)| mark(i, p));
@@ -867,8 +963,7 @@ impl Catalog {
             };
         }
         // large libraries: filter on several threads (not when a rule reads the thread's clock)
-        let v: Vec<&Photo> =
-            if all.len() >= PARALLEL_FROM && !filter.depends_on_now() { par_filter(&all, &keep) } else { all.into_iter().filter(keep).collect() };
+        let v: Vec<&Photo> = if all.len() >= PARALLEL_FROM && !clocked { par_filter(&all, &keep) } else { all.into_iter().filter(keep).collect() };
         sort_photos(v, sort)
     }
 
@@ -894,10 +989,13 @@ impl Catalog {
         let mut years: BTreeMap<&str, (BTreeMap<&str, usize>, BTreeMap<&str, usize>)> = BTreeMap::new();
         for p in self.photos().filter(|p| p.in_library()) {
             let Some(d) = p.captured.as_deref() else { continue };
-            if d.len() >= 10 {
-                let (months, days) = years.entry(&d[..4]).or_default();
-                *months.entry(&d[..7]).or_default() += 1;
-                *days.entry(&d[..10]).or_default() += 1;
+            // `get`, not `[..]`: a corrupt or foreign `captured` (a Lightroom catalog's
+            // captureTime is copied verbatim) may not be ASCII, and slicing it on a byte index
+            // would panic
+            if let (Some(year), Some(month), Some(day)) = (d.get(..4), d.get(..7), d.get(..10)) {
+                let (months, days) = years.entry(year).or_default();
+                *months.entry(month).or_default() += 1;
+                *days.entry(day).or_default() += 1;
             }
         }
         let newest_first = |m: BTreeMap<&str, usize>| m.into_iter().rev().map(|(k, n)| (k.to_string(), n)).collect::<Vec<_>>();
@@ -938,8 +1036,8 @@ impl Catalog {
     pub fn people_in(&self, filter: &Filter) -> Vec<Person> {
         let filter = Filter { person: None, ..filter.clone() };
         let mut m: std::collections::HashMap<String, (Person, f64)> = Default::default();
-        let root = filter.library_root();
-        for p in self.photos().filter(|p| filter.matches_in(p, self, root.as_deref())) {
+        let prepared = filter.prepare();
+        for p in self.photos().filter(|p| filter.matches_in(p, self, &prepared)) {
             let mut seen: Vec<String> = Vec::new();
             for r in p.meta.regions.iter().filter(|r| r.kind == lcc_meta::RegionKind::Face) {
                 let Some(name) = r.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else { continue };

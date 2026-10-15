@@ -102,6 +102,7 @@ fn scrolled_columns(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], total
             d.insert_temp(egui::Id::new("left-view-top"), ui.cursor().top() + viewport.min.y);
         });
         columns(app, ui, viewport, side, total, picks, deleted);
+        crate::widgets::follow_focus(ui);
         // what the rows asked for becomes next frame's width
         let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
         if (next - super::content_width(ui.ctx())).abs() > 0.5 {

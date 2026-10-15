@@ -188,7 +188,7 @@ fn play(s: &mut Session, p: &Value) -> Result<Value> {
         Some(_) => return Err(bad(C, "`args` must be an object")),
     };
     let steps = lcc_actions::bind(&a, args).map_err(|e| bad(C, e))?;
-    let targets = s.targets(p);
+    let targets = s.targets(p)?;
     let per_photo = p.get("perPhoto").and_then(Value::as_bool).unwrap_or(a.per_photo);
     if per_photo && targets.is_empty() {
         return Err(bad(C, "no photos selected"));

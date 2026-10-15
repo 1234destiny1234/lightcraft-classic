@@ -467,16 +467,10 @@ pub const DEVELOP_LEFT: &[PanelId] =
 const DEVELOP_RIGHT: &[PanelId] = &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::Masking, PanelId::RedEye];
 
 /// Library: (`[` / `]` rate in the grids, see `shortcuts::grid_bracket_command`); `\` the filter bar (in a loupe
-/// it stays Show Original, see `shortcuts::handle`); `=` / `-` thumbnail size; Home / End the first
-/// and last photo.
-pub const LIBRARY_KEYS: &[ModuleKey] = &[
-    ("\\", "view.filterBar", "{}"),
-    ("=", "view.thumbLarger", "{}"),
-    ("-", "view.thumbSmaller", "{}"),
-    ("Home", "library.first", "{}"),
-    ("End", "library.last", "{}"),
-    crate::help_overlay::KEY,
-];
+/// it stays Show Original, see `shortcuts::handle`); Home / End the first and last photo. `=` / `-`
+/// (thumbnail size) are the grids' `view.thumbSizeUp` / `view.thumbSizeDown`, not module keys.
+pub const LIBRARY_KEYS: &[ModuleKey] =
+    &[("\\", "view.filterBar", "{}"), ("Home", "library.first", "{}"), ("End", "library.last", "{}"), crate::help_overlay::KEY];
 
 /// Develop: ⌘U Auto (tone), ⇧⌘U Auto white balance, ⇧Q cycles the selected spot's mode
 /// (Remove → Heal → Clone), Home / End the first and last photo.

@@ -128,9 +128,13 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         });
     });
     if let Some(why) = &preview_only {
-        egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 12 }).show(ui, |ui| {
-            crate::widgets::preview_only_notice(ui, "edit", why);
-        });
+        let reload = egui::Frame::NONE
+            .inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 12 })
+            .show(ui, |ui| crate::widgets::preview_only_notice(ui, "edit", why))
+            .inner;
+        if reload {
+            reload_preview_only(app, ui.ctx(), id);
+        }
     }
     let n = app.session.selection.ids.len();
     if n > 1 && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
@@ -154,7 +158,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(crate::i18n::tr("Profile")).font(t.font(13.0)).color(t.text_dim));
             let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
-            let r = crate::widgets::dropdown(ui, "profile", crate::i18n::profile_label(&d.profile.id, name), t.font(15.0), t.text_label);
+            // a long name is cut short before Browse Profiles: a wider row would widen the whole panel's
+            // content, and the sliders below would run past its edge
+            let max = ui.available_width() - 28.0 - ui.spacing().item_spacing.x;
+            let r = crate::widgets::dropdown_within(ui, "profile", crate::i18n::profile_label(&d.profile.id, name), t.font(15.0), t.text_label, max);
             egui::Popup::menu(&r).show(|ui| profile_menu(app, ui, &d));
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if crate::widgets::icon_button(
@@ -371,6 +378,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
+    super::plugin_filters::show(app, ui, &d);
     ui.add_space(40.0);
 }
 
@@ -408,7 +416,7 @@ fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
         ui.separator();
     }
     for g in profile_groups() {
-        let r = ui.menu_button(crate::i18n::tr(g), |ui| {
+        let r = crate::widgets::menu_button(ui, crate::i18n::tr(g), |ui| {
             ui.set_min_width(170.0);
             for p in PROFILES.iter().filter(|p| p.group == g) {
                 item(ui, "group", p.id, p.name, &mut pick);
@@ -422,7 +430,7 @@ fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     lut_groups.dedup();
     for g in &lut_groups {
         // a folder's name as it is, and its own widget id even when it matches a built-in group
-        let r = ui.menu_button(g.as_str(), |ui| {
+        let r = crate::widgets::menu_button(ui, g.as_str(), |ui| {
             ui.set_min_width(170.0);
             for p in app.session.lut_profiles.iter().filter(|p| &p.group == g) {
                 item(ui, "group", &p.id, &p.name, &mut pick);
@@ -473,7 +481,7 @@ pub fn sub_title(ui: &mut egui::Ui, title: &str) {
     ui.painter().text(pos2(r.left() + 24.0, r.center().y + 4.0), Align2::LEFT_CENTER, crate::i18n::tr(title), t.semibold(13.0), t.text_label);
 }
 
-fn section(
+pub(crate) fn section(
     app: &mut LccApp,
     ui: &mut egui::Ui,
     d: &DevelopSettings,
@@ -489,8 +497,23 @@ fn section(
     if let Some(on) = toggled.filter(|_| !blocked) {
         let _ = app.run("develop.sectionEnabled", json!({"section": id, "enabled": on}));
     } else if resp.clicked() {
-        app.ui.toggle_section(id);
+        // ⌥-click opens just this section, as in Lightroom Classic
+        let solo = ui.input(|i| i.modifiers.alt);
+        if let Err(e) = app.run(&format!("section.{id}"), json!({"solo": solo})) {
+            app.toast(ui.ctx(), e);
+        }
     }
+    resp.context_menu(|ui| {
+        let mut solo = app.ui.single_panel;
+        let item = ui.checkbox(&mut solo, crate::i18n::tr("Solo Mode"));
+        register(ui.ctx(), "sectionMenu:solo", item.rect);
+        if item.clicked() {
+            if let Err(e) = app.run("view.soloSections", json!({"on": solo})) {
+                app.toast(ui.ctx(), e);
+            }
+            ui.close();
+        }
+    });
     if open {
         crate::video_ui::video_gate(ui, blocked, |ui| body(app, ui, d));
     }
@@ -550,6 +573,7 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let hdr = hist.as_ref().and_then(|h| h.hdr);
     let legend = if hdr.is_some() { 26.0 } else { 0.0 };
     let (r, resp) = ui.allocate_exact_size(vec2(w, 118.0 + legend), Sense::click());
+    crate::widgets::announce(&resp, crate::i18n::tr("Histogram"));
     register(ui.ctx(), "histogram", r);
     let p = ui.painter();
     p.rect_filled(r, 0.0, t.button);
@@ -578,6 +602,7 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             "Left: the standard (SDR) range up to SDR white. Right: the HDR range, one band per stop above SDR white (the orange line: the HDR headroom). With Visualize HDR range on, the bands take its colours.",
         ));
     }
+    let clipping = hist.as_ref().map(|h| h.clipping());
     if let Some(h) = hist {
         let smooth = |v: &[u32]| -> Vec<f32> {
             (0..256)
@@ -636,15 +661,62 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 p.add(egui::Shape::line(pts, Stroke::new(1.5, *c)));
             }
         }
-        let (lo, hi) = h.clipping();
-        for (on, x, active) in [(lo > 0.003, plot.left() + 12.0, app.ui.show_clipping), (hi > 0.003, plot.right() - 12.0, app.ui.show_clipping)] {
-            let tri = Rect::from_center_size(pos2(x, plot.top() + 10.0), vec2(14.0, 12.0));
-            p.rect_filled(tri, 2.0, if active { t.hover } else { Color32::from_gray(60) });
-            paint(p, tri.shrink(2.0), Icon::ChevronDown, if on { Color32::WHITE } else { Color32::from_gray(130) });
-        }
     }
-    if resp.clicked() {
-        app.ui.show_clipping = !app.ui.show_clipping;
+    let mut clicked = resp.clicked();
+    // the panel's floating scroll bar widens over the right edge when hovered: both buttons keep
+    // clear of it, the left one too so they stay symmetric (#1640)
+    let scroll = ui.spacing().scroll;
+    let inset = 20.0 + scroll.bar_width + scroll.bar_outer_margin;
+    for (name, x, label, clipped) in [
+        ("shadows", plot.left() + inset, "Shadow clipping", clipping.map(|(lo, _)| lo > 0.003)),
+        ("highlights", plot.right() - inset, "Highlight clipping", clipping.map(|(_, hi)| hi > 0.003)),
+    ] {
+        let rect = Rect::from_center_size(pos2(x, plot.top() + 14.0), vec2(24.0, 22.0));
+        let response = ui.interact(rect, ui.id().with(("histogram-clipping", name)), Sense::click());
+        register(ui.ctx(), format!("histogram:{name}"), rect);
+        response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), app.ui.show_clipping, crate::i18n::tr(label)));
+        clicked |= response.clicked();
+        let active = app.ui.show_clipping;
+        // Keep the hit target comfortable, with a smaller box and clear space to the plot edges.
+        let box_rect = rect.shrink2(vec2(2.0, 2.0));
+        p.rect_filled(
+            box_rect,
+            3.0,
+            if active {
+                t.pressed
+            } else if response.hovered() {
+                t.hover
+            } else {
+                Color32::from_gray(60)
+            },
+        );
+        if active {
+            p.rect_stroke(box_rect, 3.0, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
+        }
+        paint(
+            p,
+            Rect::from_center_size(rect.center(), vec2(16.0, 16.0)),
+            Icon::ChevronDown,
+            if clipped == Some(true) || active { t.text } else { t.text_dim },
+        );
+        let status = match clipped {
+            Some(true) => "Clipping detected in this preview.",
+            Some(false) => "No clipping detected in this preview.",
+            None => "Histogram not yet available.",
+        };
+        response.on_hover_text(format!(
+            "{}\n{}\n{}",
+            crate::i18n::tr(label),
+            crate::i18n::tr(if active {
+                "Click to hide clipping warnings for shadows and highlights."
+            } else {
+                "Click to show clipping warnings for shadows and highlights."
+            }),
+            crate::i18n::tr(status)
+        ));
+    }
+    if clicked {
+        let _ = app.run("view.clipping", json!({}));
     }
     // the histogram's context menu: the format of the colour readout (Lightroom's "Show Lab
     // Color Values")
@@ -721,7 +793,7 @@ fn soft_proofing(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             let device = app.ui.proof_profile.as_ref().map(|(_, n)| n.clone());
             let shown = device.clone().unwrap_or_else(|| cur.label().to_string());
             let mut pick = false;
-            egui::ComboBox::from_id_salt("proof-space").width(170.0).selected_text(shown).show_ui(ui, |ui| {
+            crate::widgets::combo_box("proof-space").width(170.0).selected_text(shown).show_ui(ui, |ui| {
                 for s in OutputSpace::ALL {
                     if ui.selectable_label(device.is_none() && cur == s, s.label()).clicked() {
                         let _ = app.run("view.softProof", json!({"space": s}));
@@ -834,6 +906,7 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
                 ("blue", hex("#3377ee")),
             ] {
                 let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
+                crate::widgets::announce(&resp, format!("{} {ch}", crate::i18n::tr("Curve channel")));
                 register(ui.ctx(), format!("curveChannel:{ch}"), r);
                 let sel = app.ui.curve_channel == ch;
                 if ch == "parametric" {
@@ -873,6 +946,7 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
     let (outer, _) = ui.allocate_exact_size(vec2(w, side + 12.0), Sense::hover());
     let r = Rect::from_min_size(pos2(outer.left() + 24.0, outer.top() + 6.0), vec2(side, side));
     let resp = ui.interact(r, egui::Id::new(("curve", &ch)), Sense::click_and_drag());
+    crate::widgets::announce(&resp, crate::i18n::tr("Tone Curve"));
     register(ui.ctx(), "curve", r);
     resp.context_menu(|ui| curve_reset_menu(app, ui, &ch));
     let p = ui.painter();
@@ -1189,6 +1263,7 @@ fn mixer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
             ui.spacing_mut().item_spacing.x = 5.0;
             for (i, b) in bands.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                crate::widgets::announce(&resp, crate::i18n::tr(b));
                 register(ui.ctx(), format!("mixerBand:{b}"), r);
                 ui.painter().circle_filled(r.center(), 9.0, hex(BAND_COLORS[i]));
                 if i == sel {
@@ -1280,6 +1355,7 @@ fn point_color(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
             }
             for (i, p) in d.point_colors.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
+                crate::widgets::announce(&resp, format!("{} {}", crate::i18n::tr("Point Color"), i + 1));
                 register(ui.ctx(), format!("pointColor:{i}"), r);
                 let swatch = oklch_color(p.lum, p.chroma, p.hue);
                 ui.painter().rect_filled(r.shrink(2.0), 3.0, swatch);
@@ -1469,6 +1545,7 @@ fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo
     let zone = r.expand(10.0);
     let hovering = ui.rect_contains_pointer(zone);
     let resp = ui.interact(r, egui::Id::new(("wheel", key)), Sense::click_and_drag());
+    crate::widgets::announce(&resp, format!("{} {key}", crate::i18n::tr("Color wheel")));
     let resp = resp.on_hover_text(crate::i18n::tr(
         "Drag to set hue and saturation. Hold Shift to keep the hue, Cmd/Ctrl to keep the saturation, Alt/Option to fine-adjust. Double-click to reset.",
     ));
@@ -1558,6 +1635,7 @@ fn grading_wheel(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo
     if hovering || hidden {
         let eye = Rect::from_center_size(r.left_bottom() + vec2(2.0, -2.0), vec2(16.0, 16.0));
         let er = ui.interact(eye, egui::Id::new(("wheelEye", key)), Sense::click());
+        crate::widgets::announce(&er, crate::i18n::tr("Show / hide"));
         register(ui.ctx(), format!("wheelEye:{key}"), eye);
         paint(ui.painter(), eye, if hidden { Icon::EyeOff } else { Icon::Eye }, if hidden { t.text_disabled } else { t.icon });
         let er = er.on_hover_text(crate::i18n::tr(if hidden { "Show this wheel's effect" } else { "Hide this wheel's effect" }));
@@ -1727,8 +1805,21 @@ fn quick_develop(app: &mut LccApp, ui: &mut egui::Ui, n: usize) {
         egui::Grid::new("quick-develop").num_columns(5).spacing([4.0, 3.0]).show(ui, |ui| {
             for (label, ctl, small, big) in rows {
                 ui.label(egui::RichText::new(crate::i18n::tr(label)).size(11.5).color(t.text_dim));
-                for (txt, d) in [("◀◀", -big), ("◀", -small), ("▶", small), ("▶▶", big)] {
-                    let r = ui.add(egui::Button::new(egui::RichText::new(txt).size(10.0)).min_size(egui::vec2(28.0, 18.0)));
+                // Keep the existing automation ids while drawing all step arrows as vectors.
+                for (txt, icon, d) in [
+                    ("◀◀", Icon::ChevronDoubleLeft, -big),
+                    ("◀", Icon::ChevronLeft, -small),
+                    ("▶", Icon::ChevronRight, small),
+                    ("▶▶", Icon::ChevronDoubleRight, big),
+                ] {
+                    let r = crate::widgets::arrow_button(ui, "", icon, false);
+                    r.widget_info(|| {
+                        egui::WidgetInfo::labeled(
+                            egui::WidgetType::Button,
+                            ui.is_enabled(),
+                            crate::i18n::tr_format!("{label} {d:+} on every selected photo", d = d, label = crate::i18n::tr(label)),
+                        )
+                    });
                     crate::widgets::register(ui.ctx(), format!("button:quick-{ctl}-{txt}"), r.rect);
                     if r.on_hover_text(crate::i18n::tr_format!("{label} {d:+} on every selected photo", d = d, label = crate::i18n::tr(label)))
                         .clicked()
@@ -1770,6 +1861,27 @@ fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
     crate::widgets::register(ui.ctx(), "label:lensNote", r.rect);
 }
 
+/// The preview-only notice's Reload from Disk: re-read the photo's file (a raw a newer version can
+/// decode, whose drive was offline when the library opened), and say what came of it.
+pub(crate) fn reload_preview_only(app: &mut LccApp, ctx: &egui::Context, id: PhotoId) {
+    let r = app.run("photo.reload", json!({"ids": [id.0]}));
+    let decoded = app.session.catalog.photo(id).is_some_and(|p| p.preview_only.is_none());
+    match r {
+        Err(e) => app.toast_error(ctx, e),
+        Ok(_) if decoded => app.toast(ctx, crate::i18n::tr("This raw is now developed from its raw data")),
+        Ok(_) => app.toast(ctx, crate::i18n::tr("This raw variant still can't be decoded")),
+    }
+}
+
+/// The Reset button's tooltip with the reset shortcut as this platform writes it (issue #1751).
+pub(crate) fn reset_tip(keymap: &crate::shortcuts::Keymap, mac: bool) -> String {
+    let base = crate::i18n::tr("Reset all edits");
+    match crate::shortcuts::shortcut_of(keymap, "develop.reset") {
+        Some(sc) => format!("{base} ({})", crate::menubar::shortcut_text(sc, mac)),
+        None => base.to_string(),
+    }
+}
+
 #[cfg(test)]
 mod curve_histogram_tests {
     use super::*;
@@ -1800,13 +1912,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hdr_button_says_when_the_window_cannot_show_hdr() {
-        // issue #47: an HDR display showed no difference with no word why
-        assert!(hdr_button_tip(true).contains("SDR rendition"));
-        assert!(!hdr_button_tip(false).contains("SDR rendition"));
-    }
-
-    #[test]
     fn an_hdr_edit_keeps_its_hdr_histogram_through_8_bit_renders() {
         let ctx = egui::Context::default();
         let id = PhotoId(7);
@@ -1825,5 +1930,17 @@ mod tests {
         // HDR turned off: the SDR histogram at once; other photos keep their own
         assert_eq!(steady_hdr_histogram(&ctx, id, false, Some(sdr.clone())), Some(sdr.clone()));
         assert_eq!(steady_hdr_histogram(&ctx, PhotoId(8), true, Some(sdr.clone())), Some(sdr));
+    }
+
+    /// Issue #1751: Windows and Linux read Ctrl where macOS reads Cmd, and a rebound shortcut shows.
+    #[test]
+    fn reset_tooltip_names_the_shortcut_of_this_platform() {
+        let keymap = crate::shortcuts::Keymap::new();
+        assert_eq!(reset_tip(&keymap, false), "Reset all edits (Ctrl+Shift+R)");
+        assert_eq!(reset_tip(&keymap, true), "Reset all edits (⌘⇧R)");
+        let rebound: crate::shortcuts::Keymap = [("develop.reset".to_string(), "Cmd+Alt+R".to_string())].into();
+        assert_eq!(reset_tip(&rebound, false), "Reset all edits (Ctrl+Alt+R)");
+        let unbound: crate::shortcuts::Keymap = [("develop.reset".to_string(), String::new())].into();
+        assert_eq!(reset_tip(&unbound, false), "Reset all edits");
     }
 }

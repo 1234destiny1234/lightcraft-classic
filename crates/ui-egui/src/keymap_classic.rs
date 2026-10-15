@@ -97,7 +97,10 @@ pub const CLASSIC: &[(&str, Option<&str>)] = &[
     ("tool.guidedUpright", Some("Shift+T")),
     ("panel.keywords", Some("Cmd+K")),
     // flags, collections
+    // ` toggles the Pick flag as in Lightroom Classic; cycling all three states (the
+    // Alternative set's `) has no key here, only its menu item
     ("photo.flagToggle", Some("`")),
+    ("photo.cycleFlag", None),
     ("album.toggleTarget", Some("B")),
     ("library.showQuickCollection", Some("Cmd+B")),
     ("album.clearQuick", Some("Cmd+Alt+B")),
@@ -212,16 +215,19 @@ pub(super) fn deferred_tabs(deferred: &mut Vec<Modifiers>, keymap: &Keymap, fire
     }
 }
 
-/// Module keys pressed this frame: their keys are `consumed` (the global keymap skips them).
+/// Module keys pressed this frame: their keys are `consumed` (the global keymap skips them). A
+/// key the user gave a command in `keymap` is theirs: the module key yields to it.
 pub(super) fn module_key_presses(
     i: &egui::InputState,
     keys: &[crate::module::ModuleKey],
+    keymap: &Keymap,
     consumed: &mut Vec<(Modifiers, Key)>,
     aliased: &mut Vec<(&str, Value)>,
 ) {
     for (sc, id, params) in keys {
         if let Some((m, k)) = parse(sc)
             && matches(i, m, k)
+            && !keymap.values().any(|user| parse(user) == Some((m, k)))
         {
             consumed.push((m, k));
             aliased.push((id, serde_json::from_str(params).unwrap_or_default()));

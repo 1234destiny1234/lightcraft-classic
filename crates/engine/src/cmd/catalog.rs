@@ -127,7 +127,7 @@ fn export(s: &mut Session, p: &Value) -> Result<Value> {
     let photos = match str_param(p, "scope") {
         Some("all") => s.catalog.photos().filter(|p| p.in_library()).map(|p| p.id).collect(),
         Some("visible") => s.visible_cloned(),
-        _ => s.targets(p),
+        _ => s.targets(p)?,
     };
     if photos.is_empty() {
         return Err(bad(C, "no photos to export"));

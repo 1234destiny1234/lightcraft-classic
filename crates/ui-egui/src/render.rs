@@ -59,6 +59,12 @@ pub enum Slot {
         col: u16,
         row: u16,
     },
+    /// A slideshow slide (the one up, the one fading out, the next ones prepared in advance; see
+    /// [`crate::panels::slideshow`]): a photo's, or a title screen.
+    Slide(lcc_engine::slideshow::Item),
+    /// The small composed slide in Settings ▸ Slideshow (the active photo with the layout being
+    /// edited).
+    SlidePreview,
     /// A slider drag's live HDR histogram: a small full-quality render of an HDR edit, beside the
     /// drafts (which have no HDR histogram), with no texture ([`Renderer::live_hdr_histogram`]).
     HdrHistogram,
@@ -106,6 +112,8 @@ pub struct Tex {
     pub quick: Option<QuickSource>,
     /// CPU copy of the pixels (only with [`Renderer::keep_pixels`]; for headless screenshots).
     pub pixels: Option<std::sync::Arc<egui::ColorImage>>,
+    /// What went wrong without failing the render (e.g. a plug-in filter skipped).
+    pub warnings: Vec<String>,
 }
 
 /// Runs render jobs outside this thread's job pool (the browser build: Web Workers, each with its
@@ -116,6 +124,14 @@ pub trait RenderOffload {
     fn try_start(&mut self, slot: Slot, job: RenderJob) -> Option<RenderJob>;
     /// Finished jobs since the last call: (slot, result, run time in ms).
     fn finished(&mut self) -> Vec<(Slot, RenderResult, f64)>;
+}
+
+/// A job's result as the pool hands it back: the render and its texture pixels, converted on the
+/// worker (`None` for prefetches and failures). A 10 MP zoom window's conversion took a few ms of
+/// the UI thread on every slider step.
+struct Finished {
+    result: RenderResult,
+    color: Option<Arc<egui::ColorImage>>,
 }
 
 struct Queued {
@@ -217,7 +233,7 @@ pub struct Renderer {
     thumb_inputs: HashMap<PhotoId, (std::sync::Weak<lcc_catalog::Photo>, usize, u64, bool)>,
     /// Photos whose grid thumbnail is the camera's embedded preview itself (no render behind it).
     embedded_thumbs: HashMap<PhotoId, (std::sync::Weak<lcc_catalog::Photo>, usize, u64)>,
-    pool: JobPool<Slot, RenderResult>,
+    pool: JobPool<Slot, Finished>,
     /// Jobs run elsewhere (see [`RenderOffload`]); `queue` holds the ones not started yet.
     offload: Option<Box<dyn RenderOffload>>,
     queue: Vec<Queued>,
@@ -256,6 +272,8 @@ pub struct Renderer {
     variant_want: usize,
     /// Frames polled so far.
     frame: u64,
+    /// Slideshow slides may be held ([`Self::release_slides`] has something to do).
+    slides_live: bool,
     /// Stage caches cleared to stay in budget (see [`stage_trim_order`]).
     stages_trimmed: u64,
     /// A budget other than the memory budget's share (tests).
@@ -291,7 +309,7 @@ impl Slot {
 
 impl Default for Renderer {
     fn default() -> Self {
-        let threads = if cfg!(target_arch = "wasm32") { 0 } else { JobPool::<Slot, RenderResult>::default_threads().min(6) };
+        let threads = if cfg!(target_arch = "wasm32") { 0 } else { JobPool::<Slot, Finished>::default_threads().min(6) };
         Self::with_worker_threads(threads)
     }
 }
@@ -334,6 +352,7 @@ impl Renderer {
             variant_used: HashMap::new(),
             variant_want: 0,
             frame: 0,
+            slides_live: false,
             stages_trimmed: 0,
             #[cfg(test)]
             stage_budget_override: None,
@@ -401,7 +420,7 @@ impl Renderer {
     /// Views that render straight into the display profile's primaries (wide gamut); everything
     /// else is rendered for sRGB and converted ([`lcc_engine::display::present`]).
     fn renders_for_display(slot: Slot) -> bool {
-        matches!(slot, Slot::Main | Slot::Before | Slot::Hover | Slot::Compare(_) | Slot::Second)
+        matches!(slot, Slot::Main | Slot::Before | Slot::Hover | Slot::Compare(_) | Slot::Second | Slot::Slide(_))
     }
 
     /// `job` as [`Self::request`] would run it for `slot` (its key included): views render for
@@ -430,12 +449,13 @@ impl Renderer {
     }
 
     /// Run `job` and make its image ready for `display` (on the worker thread).
-    fn run_for(job: impl FnOnce() -> RenderResult, display: &Option<Arc<lcc_engine::display::Display>>) -> RenderResult {
+    fn run_for(job: impl FnOnce() -> RenderResult, display: &Option<Arc<lcc_engine::display::Display>>) -> Finished {
         let mut r = job();
         if let Some(d) = display {
             lcc_engine::display::present(&mut r, d);
         }
-        r
+        let color = r.rendered.as_ref().ok().map(|x| Arc::new(color_image(&x.image)));
+        Finished { result: r, color }
     }
 
     fn request_needed(&self, slot: Slot, key: u64, priority: u32) -> bool {
@@ -476,6 +496,9 @@ impl Renderer {
 
     /// Request a render for `slot` (no-op if already current or pending at the same priority).
     pub fn request(&mut self, slot: Slot, job: RenderJob, priority: u32) {
+        if matches!(slot, Slot::Slide(_)) {
+            self.slides_live = true;
+        }
         let mut job = self.job_for(slot, job);
         if !self.request_needed(slot, job.key, priority) {
             return;
@@ -520,6 +543,24 @@ impl Renderer {
         self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(|| job.run(), &display)));
     }
 
+    /// Render a slideshow title screen into `slot` (once per screen key, like [`Self::request`]):
+    /// a slide with no photo, composed on a worker (on wasm: the job pool's inline runs, not the
+    /// offload, which only knows photo renders).
+    pub fn request_title(&mut self, slot: Slot, compose: Arc<lcc_engine::slide_title::TitleCompose>, priority: u32) {
+        if matches!(slot, Slot::Slide(_)) {
+            self.slides_live = true;
+        }
+        let key = compose.key();
+        if !self.request_needed(slot, key, priority) {
+            return;
+        }
+        self.pending.insert(slot, (key, priority));
+        let request_id = lcc_preview::next_tick();
+        self.request_ids.insert(slot, request_id);
+        let display = self.display.clone();
+        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(|| compose.result(request_id), &display)));
+    }
+
     /// Prepare a photo in the background (a [`Slot::Prefetch`] job runs once per key; a newer one
     /// replaces it while queued). Memory stays bounded by the engine's source caches.
     pub fn prefetch(&mut self, slot: Slot, mut job: RenderJob, priority: u32) {
@@ -531,7 +572,24 @@ impl Renderer {
         job.request_id = lcc_preview::next_tick();
         self.request_ids.insert(slot, job.request_id);
         let key = job.key;
-        self.pool.submit(slot, key, priority, Box::new(move || lcc_engine::memory::in_background(|| job.run())));
+        self.pool.submit(slot, key, priority, Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None }));
+    }
+
+    /// Drop the slideshow slides other than `keep`: their textures and their requests that have
+    /// not started (a slide that is no longer near is not worth rendering).
+    pub fn release_slides(&mut self, keep: &[lcc_engine::slideshow::Item]) {
+        if !self.slides_live {
+            return;
+        }
+        let gone = |s: &Slot| matches!(s, Slot::Slide(id) if !keep.contains(id));
+        self.textures.retain(|s, _| !gone(s));
+        let _ = self.pool.reprioritize(|s, p| if gone(s) { None } else { Some(p) });
+        self.queue.retain(|q| !gone(&q.slot));
+        // (a render already running finishes unclaimed: its result is dropped)
+        self.pending.retain(|s, _| !gone(s));
+        self.request_ids.retain(|s, _| !gone(s));
+        self.failed.retain(|s, _| !gone(s));
+        self.slides_live = !keep.is_empty();
     }
 
     /// Is a request for `slot` queued or running?
@@ -611,7 +669,7 @@ impl Renderer {
         let color = std::sync::Arc::new(color_image(img));
         let pixels = self.keep_pixels.then(|| color.clone());
         let tex = ctx.load_texture(format!("tile {:?} {:?}", key.tile, key.pane), color, egui::TextureOptions::LINEAR);
-        Tex { key: key.look, photo: key.photo, tex, size: [img.width, img.height], histogram: None, ms, quick: None, pixels }
+        Tex { key: key.look, photo: key.photo, tex, size: [img.width, img.height], histogram: None, ms, quick: None, pixels, warnings: Vec::new() }
     }
 
     /// Drop queued tile renders `keep` says no to (tiles scrolled away). Running ones finish and
@@ -840,14 +898,14 @@ impl Renderer {
     fn collect(&mut self, ctx: &egui::Context, session: &mut Session, inline_ms: f64) -> bool {
         let mut finished = Vec::new();
         while let Some(done) = self.pool.try_recv() {
-            finished.push((done.slot, done.result, if done.ms > 0.0 { done.ms } else { inline_ms }));
+            finished.push((done.slot, done.result.result, done.result.color, if done.ms > 0.0 { done.ms } else { inline_ms }));
         }
         if let Some(off) = self.offload.as_mut() {
-            finished.extend(off.finished());
+            finished.extend(off.finished().into_iter().map(|(slot, r, ms)| (slot, r, None, ms)));
         }
         self.dispatch();
         let mut changed = false;
-        for (mut slot, mut r, ms) in finished {
+        for (mut slot, mut r, mut color, ms) in finished {
             self.completed += 1;
             // made for another display profile than the one in use: obsolete
             if r.display.is_some_and(|id| Some(id) != self.display_id()) {
@@ -876,7 +934,11 @@ impl Renderer {
             }
             // (results from an offload, which doesn't know the display profile: converted here)
             if let Some(d) = &self.display {
+                let before = r.display;
                 lcc_engine::display::present(&mut r, d);
+                if r.display != before {
+                    color = None; // converted after the worker made its texture pixels
+                }
             }
             if self.pending.get(&slot).is_some_and(|p| p.0 == r.key) {
                 self.pending.remove(&slot);
@@ -943,7 +1005,7 @@ impl Renderer {
                 self.textures.remove(&Slot::ThumbQuick(id));
             }
             let img = &rendered.image;
-            let color = std::sync::Arc::new(color_image(img));
+            let color = color.unwrap_or_else(|| Arc::new(color_image(img)));
             // the loupe's render stays readable on the CPU for the colour readout under the pointer
             let pixels = (self.keep_pixels || slot == Slot::Main).then(|| color.clone());
             let name = format!("{slot:?}");
@@ -955,6 +1017,7 @@ impl Renderer {
                     t.photo = r.photo;
                     t.size = [img.width, img.height];
                     t.histogram = Some(rendered.histogram);
+                    t.warnings = rendered.warnings;
                     t.ms = ms;
                     t.quick = r.quick;
                 }
@@ -971,6 +1034,7 @@ impl Renderer {
                             ms,
                             quick: r.quick,
                             pixels,
+                            warnings: rendered.warnings,
                         },
                     );
                 }
@@ -1131,6 +1195,7 @@ mod thumbnail_tests {
                 file_size: 99,
                 content_hash: Some("changed".into()),
                 preview_only: None,
+                preview_checked: String::new(),
             })
             .unwrap();
         assert!(!r.thumb_current(catalog.photo(PhotoId(1)).unwrap(), 384, 10));
