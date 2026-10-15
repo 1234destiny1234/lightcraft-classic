@@ -36,9 +36,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         let full = ui.available_rect_before_wrap();
         let footer = (app.ui.right == RightPanel::Edit).then(|| Rect::from_min_max(pos2(full.left(), full.bottom() - SYNC_BAR_H), full.max));
         let body = footer.map_or(full, |f| Rect::from_min_max(full.min, pos2(full.right(), f.top())));
-        if let Some(f) = footer {
-            ui.scope_builder(egui::UiBuilder::new().max_rect(f), |ui| sync_bar(app, ui, f));
-        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
             egui::ScrollArea::vertical().id_salt("right-scroll").auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
@@ -57,6 +54,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 }
             });
         });
+        // drawn after the panels: a pending numeric edit commits on blur before Reset takes precedence
+        if let Some(f) = footer {
+            ui.scope_builder(egui::UiBuilder::new().max_rect(f), |ui| sync_bar(app, ui, f));
+        }
     });
 }
 
@@ -99,6 +100,13 @@ fn sync_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
                 (false, false) => app.run("develop.pastePrevious", json!({})),
             };
         }
+        // Lightroom Classic: Reset at the right end of the bar
+        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+            ui.add_space(8.0);
+            if text_button(ui, "reset", crate::i18n::tr("Reset"), false).on_hover_text(crate::i18n::tr("Reset all edits (Cmd+Shift+R)")).clicked() {
+                let _ = app.run("develop.reset", json!({}));
+            }
+        });
     });
 }
 
