@@ -106,6 +106,8 @@ mod tests_error_kinds;
 #[cfg(test)]
 mod tests_filmstrip;
 #[cfg(test)]
+mod tests_filter_search;
+#[cfg(test)]
 mod tests_grading;
 #[cfg(test)]
 mod tests_grid;
@@ -1493,6 +1495,7 @@ impl LccApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         catalog_ui::show(self, &ctx);
+        plate::show_setup(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::show(self, &ctx);
         panels::library_problem::show(self, &ctx);

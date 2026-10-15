@@ -51,6 +51,7 @@ const OWNED: &[(&str, &str)] = &[
     ("creations_ui.rs", include_str!("creations_ui.rs")),
     ("edit_in.rs", include_str!("edit_in.rs")),
     ("module.rs", include_str!("module.rs")),
+    ("plate.rs", include_str!("plate.rs")),
     ("help_overlay.rs", include_str!("help_overlay.rs")),
     ("access.rs", include_str!("access.rs")),
     ("panels/publish.rs", include_str!("panels/publish.rs")),
