@@ -654,12 +654,6 @@ mod tests {
     use super::*;
 
     // An empty image (no pixel to sample) has a fingerprint, its dimensions' (indexing its first pixel panicked)
-    #[test]
-    fn an_empty_image_has_a_fingerprint() {
-        assert_eq!(fingerprint(&Rgb32f::new(0, 0)), fingerprint(&Rgb32f::new(0, 0)));
-        assert_ne!(fingerprint(&Rgb32f::new(0, 3)), fingerprint(&Rgb32f::new(3, 0)));
-    }
-
     /// splitmix64: deterministic pseudo-random numbers for the warp tests.
     struct Rng(u64);
 

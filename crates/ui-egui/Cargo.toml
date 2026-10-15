@@ -26,7 +26,8 @@ lcc-layout = { workspace = true }
 lcc-pdf = { workspace = true }
 lcc-print = { workspace = true }
 lcc-preview = { workspace = true }
-lcc-slideshow = { path = "../slideshow" }
+lcc-slide = { workspace = true }
+lcc-slideshow = { workspace = true }
 # the Book module (owned, Phase 3)
 lcc-book = { workspace = true }
 lcc-text = { workspace = true }
@@ -45,6 +46,8 @@ resvg = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 image = { workspace = true }
+# tests record why they skip (`cargo xtask ci` lists the skips)
+lcc-testkit = { workspace = true }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 lcc-denoise = { workspace = true, features = ["runtime"] }
 # the model-setup tests run denoise models; only the app/CLI enable this in builds. test-support: the
@@ -55,8 +58,8 @@ lcc-faces = { workspace = true }
 lcc-merge = { workspace = true }
 # the update tests offer a release the way a check would (native only, like the updater itself)
 lcc-updater = { workspace = true }
-filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
-filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "8309f21a6c3f34ddf190af7fd9bfd913053a1fd5" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "8309f21a6c3f34ddf190af7fd9bfd913053a1fd5" }
 wat = "1.228" # G19: a slow export-hook plug-in for the worker test
 
 [build-dependencies]

@@ -52,6 +52,7 @@ env:
 
 jobs:
   version:
+    timeout-minutes: 10
     name: version
     runs-on: [self-hosted, Linux, X64, lcc]
     # No `environment: release` here or on the other jobs that sign nothing: no release secrets.
@@ -136,6 +137,7 @@ jobs:
           echo "publish=true" >>"$GITHUB_OUTPUT"
 
   macos:
+    timeout-minutes: 90
     name: macOS universal
     needs: version
     # uploads its files to the draft release (only when version says publish)
@@ -169,7 +171,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: storytold/craft-fonts
-          ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
@@ -222,6 +224,7 @@ jobs:
           security list-keychains -d user
 
   windows:
+    timeout-minutes: 90
     name: Windows ${{ matrix.arch }}
     needs: version
     # uploads its files to the draft release (only when version says publish)
@@ -235,9 +238,11 @@ jobs:
       fail-fast: false
       matrix:
         include:
-          - { arch: x64, target: x86_64-pc-windows-msvc, runner: '["self-hosted", "Windows", "X64", "lcc"]' }
-          - { arch: arm64, target: aarch64-pc-windows-msvc, runner: '["self-hosted", "Windows", "ARM64", "lcc"]' }
+          - { arch: x64, target: x86_64-pc-windows-msvc, jobs: default, runner: '["self-hosted", "Windows", "X64", "lcc"]' }
+          # SNAPDRAGON has 12 cores; the runner's own settings held cargo to 4. Two stay free for the desktop.
+          - { arch: arm64, target: aarch64-pc-windows-msvc, jobs: '10', runner: '["self-hosted", "Windows", "ARM64", "lcc"]' }
     env:
+      CARGO_BUILD_JOBS: ${{ matrix.jobs }}
       PACKAGE_VERSION: ${{ needs.version.outputs.version }}
       BUILD_DATE: ${{ needs.version.outputs.date }}
     steps:
@@ -246,7 +251,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: storytold/craft-fonts
-          ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - name: Low priority, release build cache
         shell: pwsh
@@ -349,6 +354,7 @@ jobs:
         run: gh release upload "$TAG" --clobber -- dist/release/*
 
   linux:
+    timeout-minutes: 90
     name: Linux ${{ matrix.arch }}
     needs: version
     # uploads its files to the draft release (only when version says publish)
@@ -391,7 +397,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: storytold/craft-fonts
-          ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - name: Install build and packaging tools
         run: |
@@ -470,6 +476,7 @@ jobs:
         run: chown -R "$(stat -c %u:%g "$GITHUB_WORKSPACE/..")" "$GITHUB_WORKSPACE"
 
   flatpak:
+    timeout-minutes: 90
     name: Flatpak ${{ matrix.arch }}
     needs: [version, linux]
     # uploads its files to the draft release (only when version says publish)
@@ -563,6 +570,7 @@ jobs:
         run: chown -R "$(stat -c %u:%g "$GITHUB_WORKSPACE/..")" "$GITHUB_WORKSPACE"
 
   linux-riscv64:
+    timeout-minutes: 90
     name: Linux riscv64
     needs: version
     # uploads its files to the draft release (only when version says publish)
@@ -586,7 +594,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: storytold/craft-fonts
-          ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
@@ -680,7 +688,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: storytold/craft-fonts
-          ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - name: Build and package in a FreeBSD VM (tar.gz)
         # vmactions/freebsd-vm v1.5.9, pinned by commit (it runs our build).
@@ -737,6 +745,7 @@ jobs:
         run: gh release upload "$TAG" --clobber -- dist/release/*
 
   web:
+    timeout-minutes: 90
     name: Web (wasm)
     needs: version
     # uploads its files to the draft release (only when version says publish)
@@ -756,7 +765,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           repository: storytold/craft-fonts
-          ref: 8dcdacd5153e64560d109541a47d806f26f048c0 # bump deliberately
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
@@ -806,6 +815,7 @@ jobs:
         run: gh release upload "$TAG" --clobber -- dist/release/*
 
   release:
+    timeout-minutes: 10
     name: Draft GitHub Release
     needs: [version, macos, windows, linux, flatpak, linux-riscv64, freebsd, web]
     # Finishes whatever built: a platform that failed is named in the run summary and the draft's notes,

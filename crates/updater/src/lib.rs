@@ -53,7 +53,7 @@ pub use check::{
 };
 pub use download::{Downloaded, client, download, hash_file, part_path, recheck, stage_dir};
 pub use error::{NO_KEY, UpdateError};
-pub use install::{Plan, Restart, install, install_with, plan, reveal};
+pub use install::{Plan, Restart, install, install_with, plan, reveal, runs_from_appimage};
 pub use release::{Release, newest, version_of};
 pub use signature::UpdateKey;
 pub use target::{Asset, Kind, Os, Target};

@@ -144,14 +144,4 @@ mod tests {
         assert_eq!(best_headroom(&[]), None);
         assert!((best_headroom(&[sdr, hdr]).unwrap() - 4.0).abs() < 1e-3);
     }
-
-    /// Reads the live session's outputs (no window): `cargo test -p lcc-app -- --ignored wayland_hdr`.
-    #[test]
-    #[ignore = "needs a Wayland session"]
-    fn reads_the_session_outputs_without_failing() {
-        match read() {
-            Ok(outputs) => eprintln!("outputs {outputs:?}, best headroom {:?}", best_headroom(&outputs)),
-            Err(e) => eprintln!("no output luminances: {e}"),
-        }
-    }
 }

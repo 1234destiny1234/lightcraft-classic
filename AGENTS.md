@@ -155,14 +155,18 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   with `/usr/bin/time`. Record numbers in `plan/STATUS.md` → Metrics. Budgets: slider update ≤ 16 ms (draft) / loupe
   ≤ 60 ms on ~2.5 MP; export ≤ 1 s per 24 MP JPEG.
 - Never commit media: test images are procedural (`lcc-scenes`) or CC0 downloads in the gitignored `corpus/`.
+- A test that can't run here (no GPU, corpus file, craft-fonts face, model) calls `lcc_testkit::skip!(Gpu, "why")`
+  before it returns, not a bare `eprintln!`. `cargo xtask ci` then lists the skips and the machine's GPU adapters and
+  data, and writes `target/ci/report.json` and `target/ci/summary.md` (Markdown for a PR).
 
 ## Map of the code
 `geom`, `color`, `raster`, `tiff` (L0) → `raw`, `codecs`, `meta`, `develop` (L1) → `pipeline` → `catalog` → `engine`
 → `ui-egui`, `mcp` (L5) → apps `lcc-app` (desktop, binary `app`), `lcc-cli` (render/commands/MCP, binary `app-cli`), `lcc-web`; `brand` (`lcc-brand`) carries `brand.toml` into code. `scenes` generates demo
-photos. `xtask` = tooling (`ci`, `layers`, `assets`, `parity`, `wasm`, `corpus`, `stats`, `brand check`, `docs`, `run`, `package`, `install`). `flake.nix` +
+photos. `xtask` = tooling (`ci`, `layers`, `assets`, `parity`, `wasm`, `corpus`, `stats`, `brand check`, `docs`, `run`, `package`, `install`); `testkit` (`lcc-testkit`) = test helpers
+(dev-dependency only). `flake.nix` +
 `nix/package.nix` = the Nix package (`nix build` builds both binaries with the craft-fonts input, installs the
-desktop file/icons/AppStream metadata and runs `cargo test --workspace`; `nix develop` = dev shell). Community-maintained and not
-in CI: it may lag behind the workspace; see README → Quick start.
+desktop file/icons/AppStream metadata and runs `cargo test --workspace`; `nix develop` = dev shell). Community-maintained; CI only
+evaluates it (`.github/workflows/nix.yml`), so the build may lag behind the workspace; see README → Quick start.
 
 ## Contributor credits (About window)
 

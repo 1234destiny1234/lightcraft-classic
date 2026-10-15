@@ -170,6 +170,34 @@ fn installing_without_an_update_is_refused_not_panicked() {
 }
 
 #[test]
+fn an_appimage_is_not_downloaded_for_a_copy_installed_another_way() {
+    let dir = scratch("not-appimage");
+    let activity = Activity::default();
+    let mut u = Updater::new(Some(dir.clone()));
+    let mut found = update("1.2.0");
+    found.asset = lcc_updater::Asset {
+        name: "app-1.2.0-linux-x86_64.AppImage".into(),
+        url: "http://127.0.0.1:1/app.AppImage".into(),
+        size: 123,
+        sha256: None,
+        kind: lcc_updater::Kind::AppImage,
+    };
+    u.apply(lcc_updater::Checked::Found(Box::new(found)));
+    u.appimage = false;
+    let err = u.start_download(&activity).expect_err("a .deb install can't take an AppImage");
+    assert!(err.contains("1.2.0") && err.contains("AppImage"), "{err}");
+    assert!(!u.downloading());
+    assert!(activity.list().is_empty(), "nothing started");
+    assert!(!u.stage.exists(), "nothing staged");
+    assert_eq!(u.status()["error"], err.as_str(), "the dialog says why");
+    // a copy that runs from an AppImage still downloads it
+    u.appimage = true;
+    u.start_download(&activity).expect("start");
+    u.wait_for_download();
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
 fn an_install_outcome_is_shown_once() {
     let mut u = Updater::new(None);
     assert!(u.installed().is_none());

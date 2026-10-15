@@ -79,6 +79,224 @@ pub fn texture(ctx: &egui::Context, path: &str) -> Option<egui::TextureHandle> {
     tex
 }
 
+/// The open Identity Plate Setup dialog (Edit ▸ Identity Plate Setup…). Its edits apply to the
+/// module bar as they are made; Cancel puts back the plate it opened with.
+#[derive(Clone, Debug, PartialEq)]
+pub struct Setup {
+    /// The plate when the dialog opened.
+    pub before: Box<crate::module::IdentityPlate>,
+    /// "Personalized" is chosen (else the app's own plate).
+    pub personalized: bool,
+    /// "Use a graphical identity plate" is chosen (possibly before any file is).
+    pub graphic: bool,
+}
+
+/// `dialog.identityPlateSetup`: `{}` opens the dialog; `{"personalized": bool}` picks the app's
+/// plate (`false` resets it) or a personalised one; `{"close": "ok" | "cancel"}` closes it, Cancel
+/// restoring the plate it opened with.
+pub fn setup_command(app: &mut crate::LccApp, p: &serde_json::Value) -> Result<serde_json::Value, String> {
+    use serde_json::{Value, json};
+    let close = p.get("close").map(|v| v.as_str().ok_or("dialog.identityPlateSetup: close is \"ok\" or \"cancel\"")).transpose()?;
+    let personalized = p.get("personalized").map(|v| v.as_bool().ok_or("dialog.identityPlateSetup: personalized is true or false")).transpose()?;
+    if close.is_none() && personalized.is_none() {
+        let plate = &mut app.ui.identity_plate;
+        if plate.setup.is_none() {
+            let before = crate::module::IdentityPlate { setup: None, ..plate.clone() };
+            let personalized = !before.is_default();
+            let graphic = before.graphic().is_some();
+            plate.setup = Some(Setup { before: Box::new(before), personalized, graphic });
+        }
+    }
+    if let Some(on) = personalized {
+        let setup = app.ui.identity_plate.setup.as_mut().ok_or("dialog.identityPlateSetup: the dialog isn't open")?;
+        setup.personalized = on;
+        if !on {
+            app.run("view.identityPlate", json!({"reset": true}))?;
+        }
+    }
+    match close {
+        None => {}
+        Some("ok") => app.ui.identity_plate.setup = None,
+        Some("cancel") => {
+            if let Some(setup) = app.ui.identity_plate.setup.take() {
+                app.ui.identity_plate = *setup.before;
+            }
+        }
+        Some(c) => return Err(format!("dialog.identityPlateSetup: close `{c}` is \"ok\" or \"cancel\"")),
+    }
+    let plate = &app.ui.identity_plate;
+    Ok(json!({"open": plate.setup.is_some(), "personalized": plate.setup.as_ref().map(|s| Value::Bool(s.personalized)), "plate": plate}))
+}
+
+/// Draws the Identity Plate Setup dialog while it is open.
+pub fn show_setup(app: &mut crate::LccApp, ctx: &egui::Context) {
+    use serde_json::{Value, json};
+    let plate = app.ui.identity_plate.clone();
+    let Some(setup) = plate.setup.clone() else { return };
+    let t = crate::theme::Tokens::get(ctx);
+    let mut actions: Vec<(&str, Value)> = Vec::new();
+    let window_id = egui::Id::new("identity-plate-setup");
+    let mut open = true;
+    let shown = egui::Window::new(crate::i18n::tr("Identity Plate Editor"))
+        .id(window_id)
+        .open(&mut open)
+        .collapsible(false)
+        .resizable(false)
+        .default_width(560.0)
+        .max_height(crate::dialog_frame::max_window_height(ctx))
+        .anchor(egui::Align2::CENTER_CENTER, egui::vec2(0.0, 0.0))
+        .show(ctx, |ui| {
+            let mut layout = crate::dialog_frame::ModalLayout::begin(ui, window_id);
+            ui.horizontal(|ui| {
+                ui.label(crate::i18n::tr("Identity Plate:"));
+                let current = if setup.personalized { crate::i18n::tr("Personalized").to_string() } else { lcc_brand::DISPLAY_NAME.to_string() };
+                let r = egui::ComboBox::from_id_salt("identityPlateKind").selected_text(current).width(180.0).show_ui(ui, |ui| {
+                    if ui.selectable_label(!setup.personalized, lcc_brand::DISPLAY_NAME).clicked() {
+                        actions.push(("dialog.identityPlateSetup", json!({"personalized": false})));
+                    }
+                    if ui.selectable_label(setup.personalized, crate::i18n::tr("Personalized")).clicked() {
+                        actions.push(("dialog.identityPlateSetup", json!({"personalized": true})));
+                    }
+                });
+                crate::widgets::register(ui.ctx(), "combo:identityPlateKind", r.response.rect);
+            });
+            let mut status = plate.show_status;
+            let r = ui.checkbox(&mut status, crate::i18n::tr("Show Status and Activity"));
+            crate::widgets::register(ui.ctx(), "check:identityPlateStatus", r.rect);
+            if r.changed() {
+                actions.push(("view.identityPlate", json!({"showStatus": status})));
+            }
+            ui.add_space(6.0);
+            layout.body(ui, |ui| {
+                egui::Frame::group(ui.style()).show(ui, |ui| {
+                    ui.set_width(ui.available_width());
+                    if !setup.personalized {
+                        ui.add_space(30.0);
+                        ui.vertical_centered(|ui| {
+                            ui.label(egui::RichText::new(crate::i18n::tr("No options for the {app} identity plate.")).italics())
+                        });
+                        ui.add_space(30.0);
+                        return;
+                    }
+                    ui.label(crate::i18n::tr("Personalize {app} with your own branding elements."));
+                    let graphic = setup.graphic;
+                    ui.horizontal(|ui| {
+                        let r = ui.radio(!graphic, crate::i18n::tr("Use a styled text identity plate"));
+                        crate::widgets::register(ui.ctx(), "radio:identityPlateText", r.rect);
+                        if r.clicked() {
+                            actions.push(("view.identityPlate", json!({"kind": "text"})));
+                        }
+                        let r = ui.radio(graphic, crate::i18n::tr("Use a graphical identity plate"));
+                        crate::widgets::register(ui.ctx(), "radio:identityPlateGraphic", r.rect);
+                        if r.clicked() {
+                            actions.push(("view.identityPlate", json!({"kind": "graphic"})));
+                        }
+                    });
+                    // the preview: the plate on the module bar's colour
+                    let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), 64.0), egui::Sense::hover());
+                    ui.painter().rect_filled(rect, 2.0, t.chrome);
+                    let shown = if graphic && plate.graphic().is_none() {
+                        None
+                    } else {
+                        Some(crate::module::paint_plate(ui, &plate, egui::pos2(rect.left() + 14.0, rect.center().y), rect.width() - 28.0))
+                    };
+                    if shown.is_none() {
+                        ui.painter().text(rect.center(), egui::Align2::CENTER_CENTER, crate::i18n::tr("No image chosen"), t.font(13.0), t.text_dim);
+                    }
+                    crate::widgets::register(ui.ctx(), "region:identityPlatePreview", rect);
+                    if graphic {
+                        ui.horizontal(|ui| {
+                            let r = ui.button(crate::i18n::tr("Choose File…"));
+                            crate::widgets::register(ui.ctx(), "button:identityPlateLocate", r.rect);
+                            if r.clicked() {
+                                actions.push(("dialog.identityPlateImage", json!({})));
+                            }
+                            let r = ui.add_enabled(!plate.image.is_empty(), egui::Button::new(crate::i18n::tr("Clear Image")));
+                            crate::widgets::register(ui.ctx(), "button:identityPlateClear", r.rect);
+                            if r.clicked() {
+                                actions.push(("view.identityPlate", json!({"image": ""})));
+                            }
+                        });
+                        ui.label(egui::RichText::new(crate::i18n::tr("An SVG, PNG or JPEG file; it is shown 32 points tall.")).weak());
+                        return;
+                    }
+                    ui.horizontal(|ui| {
+                        ui.label(crate::i18n::tr("Text"));
+                        let mut text = plate.text.clone();
+                        let r = crate::text_field::TextField::singleline("field:identityPlateText", &mut text)
+                            .hint(lcc_brand::DISPLAY_NAME)
+                            .width(260.0)
+                            .show(ui);
+                        if r.response.changed() {
+                            actions.push(("view.identityPlate", json!({"text": text})));
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(crate::i18n::tr("Size"));
+                        let mut size = plate.size;
+                        let r = ui.add(egui::Slider::new(&mut size, 9.0..=32.0).step_by(1.0).suffix(" pt"));
+                        crate::widgets::register(ui.ctx(), "slider:identityPlateSize", r.rect);
+                        if r.changed() {
+                            actions.push(("view.identityPlate", json!({"size": size})));
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        let mut bold = plate.bold;
+                        let r = ui.checkbox(&mut bold, crate::i18n::tr("Bold"));
+                        crate::widgets::register(ui.ctx(), "check:identityPlateBold", r.rect);
+                        if r.changed() {
+                            actions.push(("view.identityPlate", json!({"bold": bold})));
+                        }
+                        let mut mark = plate.mark;
+                        let r = ui.checkbox(&mut mark, crate::i18n::tr("Show Brand Mark"));
+                        crate::widgets::register(ui.ctx(), "check:identityPlateMark", r.rect);
+                        if r.changed() {
+                            actions.push(("view.identityPlate", json!({"mark": mark})));
+                        }
+                    });
+                    ui.horizontal(|ui| {
+                        ui.label(crate::i18n::tr("Color"));
+                        let mut col = plate.color.unwrap_or([t.text.r(), t.text.g(), t.text.b()]);
+                        let r = ui.color_edit_button_srgb(&mut col);
+                        crate::widgets::register(ui.ctx(), "color:identityPlateColor", r.rect);
+                        if r.changed() {
+                            actions.push(("view.identityPlate", json!({"color": format!("#{:02x}{:02x}{:02x}", col[0], col[1], col[2])})));
+                        }
+                        let r = ui.add_enabled(plate.color.is_some(), egui::Button::new(crate::i18n::tr("Theme Color")));
+                        crate::widgets::register(ui.ctx(), "button:identityPlateThemeColor", r.rect);
+                        if r.clicked() {
+                            actions.push(("view.identityPlate", json!({"color": null})));
+                        }
+                    });
+                });
+            });
+            layout.footer(ui, |ui| {
+                ui.add_space(6.0);
+                ui.horizontal(|ui| {
+                    let r = ui.button(crate::i18n::tr("Cancel"));
+                    crate::widgets::register(ui.ctx(), "button:identityPlateCancel", r.rect);
+                    if r.clicked() {
+                        actions.push(("dialog.identityPlateSetup", json!({"close": "cancel"})));
+                    }
+                    let r = ui.button(egui::RichText::new(crate::i18n::tr("OK")).strong());
+                    crate::widgets::register(ui.ctx(), "button:identityPlateOk", r.rect);
+                    if r.clicked() {
+                        actions.push(("dialog.identityPlateSetup", json!({"close": "ok"})));
+                    }
+                });
+            });
+        });
+    crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
+    if !open {
+        actions.push(("dialog.identityPlateSetup", json!({"close": "cancel"})));
+    }
+    for (cmd, params) in actions {
+        if let Err(e) = app.run(cmd, params) {
+            app.ui.status = e;
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;

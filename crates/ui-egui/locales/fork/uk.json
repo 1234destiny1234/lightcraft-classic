@@ -1,4 +1,9 @@
 {
+  "Color Values": "Значення кольору",
+  "Color Readout": "Показ кольору",
+  "Show RGB Color Values": "Показувати значення RGB",
+  "Show HSL Color Values": "Показувати значення HSL",
+  "Show Lab Color Values": "Показувати значення Lab",
   "About {app}": "Про {app}",
   "{app} could not start": "Не вдалося запустити {app}",
   "Meta's terms, not {app}'s. Downloading it means accepting them.": "Умови Meta, а не {app}. Завантажуючи модель, ви приймаєте їх.",
@@ -1091,5 +1096,18 @@
   "Delete from Disk moves 1 file to the system trash.": "«Видалити з диска» переміщує 1 файл до системного кошика.",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "«Прибрати» залишає файли на диску й переміщує фото до нещодавно видалених.",
   "Delete from Disk": "Видалити з диска",
-  "Deleting from disk": "Видалення з диска"
+  "Deleting from disk": "Видалення з диска",
+  "Identity Plate Editor": "Редактор фірмової таблички",
+  "Identity Plate:": "Фірмова табличка:",
+  "Personalized": "Персональна",
+  "Show Status and Activity": "Показувати стан і активність",
+  "No options for the {app} identity plate.": "Для таблички {app} немає параметрів.",
+  "Personalize {app} with your own branding elements.": "Оформте {app} власними елементами бренду.",
+  "Use a styled text identity plate": "Використовувати текстову табличку",
+  "Use a graphical identity plate": "Використовувати графічну табличку",
+  "No image chosen": "Зображення не вибрано",
+  "Clear Image": "Прибрати зображення",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Файл SVG, PNG або JPEG; показується заввишки 32 пункти.",
+  "Theme Color": "Колір теми",
+  "Identity Plate Setup…": "Налаштування фірмової таблички…"
 }

@@ -293,7 +293,7 @@ fn field(ui: &mut egui::Ui, id: &str, label: &str, text: &mut String) {
 fn color_row(ui: &mut egui::Ui, label: &str, hex: &mut String) {
     ui.horizontal(|ui| {
         let mut c = lcc_webgallery::settings::color_rgb(hex);
-        let r = ui.color_edit_button_srgb(&mut c);
+        let r = crate::color_readout::on_picker(ui.color_edit_button_srgb(&mut c), c);
         crate::access::label(&r, label);
         if r.changed() {
             *hex = to_hex(c);

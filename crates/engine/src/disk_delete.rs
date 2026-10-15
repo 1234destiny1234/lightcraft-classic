@@ -107,14 +107,10 @@ fn originals(plan: &Plan) -> HashSet<PathBuf> {
 }
 
 fn same_path(a: &Path, b: &Path) -> bool {
-    if a == b {
-        return true;
-    }
-    #[cfg(windows)]
-    if a.to_string_lossy().eq_ignore_ascii_case(&b.to_string_lossy()) {
-        return true;
-    }
-    false
+    // one file under two spellings on a case-insensitive volume (macOS, Windows): `test.xmp`
+    // and `test.XMP` would otherwise be listed, and trashed, as two sidecars
+    use crate::rename::MoveFs;
+    crate::rename::RealFs.same_file(a, b)
 }
 
 /// The XMP sidecars of `original` that go with it: `<file>.xmp` always, `<stem>.xmp` only when no
@@ -168,7 +164,7 @@ pub(crate) fn delete_from_disk(s: &mut Session, p: &Value) -> Result<Value> {
     let Some(trash) = s.trash.clone() else {
         return Err(EngineError::Other("Delete from Disk isn't available here: this build can't move files to the system trash".into()));
     };
-    let targets = s.targets(p);
+    let targets = s.targets(p)?;
     if targets.is_empty() {
         return Err(crate::cmd::bad("photo.deleteFromDisk", "no photos to delete"));
     }
