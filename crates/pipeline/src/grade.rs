@@ -160,7 +160,11 @@ impl GradeLut {
             masks: Vec::new(),
             px_per_long: plan.px_per_long,
         };
-        let out = crate::finish::finish(&prep, &plan.settings, &plan.frame, &info, crate::OutputSpace::Srgb, None, None);
+        // (a grading LUT for video: no plug-in filters)
+        let none = crate::plugin_filters::Stack::empty();
+        let mut warnings = Vec::new();
+        let post = crate::finish::Post { stack: &none, frame: Default::default(), warnings: std::cell::RefCell::new(&mut warnings) };
+        let out = crate::finish::finish(&prep, &plan.settings, &plan.frame, &info, crate::OutputSpace::Srgb, None, None, &post);
         if out.data.len() != n * n * n {
             return Err("grade LUT: unexpected output size".into());
         }

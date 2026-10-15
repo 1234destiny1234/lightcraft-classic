@@ -283,7 +283,7 @@ fn start_link(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn confirm(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let accounts: Vec<String> = match str_param(p, "account") {
         Some(a) => vec![a.to_string()],
         None => s.immich_accounts().map(|a| a.immich.iter().map(|x| x.id.clone()).collect()).unwrap_or_default(),
@@ -297,7 +297,7 @@ fn confirm(s: &mut Session, p: &Value) -> Result<Value> {
 }
 
 fn unlink(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let ops: Vec<Op> = ids
         .iter()
         .flat_map(|id| {
@@ -317,7 +317,7 @@ fn unlink(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// The photo's Immich assets and their web pages (Metadata panel → Open in Immich).
 fn links_of(s: &mut Session, p: &Value) -> Result<Value> {
-    let id = s.targets(p).first().copied().ok_or_else(|| bad("immich.links", "no photo"))?;
+    let id = s.targets(p)?.first().copied().ok_or_else(|| bad("immich.links", "no photo"))?;
     let accs = s.immich_accounts().map(|a| a.clone()).unwrap_or_default();
     let out: Vec<Value> = s
         .catalog
@@ -524,7 +524,7 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
 /// Download the original of a link-only photo (in the background).
 fn fetch_original(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "immich.fetchOriginal";
-    let id = s.targets(p).first().copied().ok_or_else(|| bad(C, "no photo"))?;
+    let id = s.targets(p)?.first().copied().ok_or_else(|| bad(C, "no photo"))?;
     let Some(ph) = s.catalog.photo(id) else { return Err(bad(C, "no such photo")) };
     if ph.preview_only.as_deref() != Some(LINK_ONLY) {
         return Ok(json!({"started": false, "reason": "the photo's original is already here"}));
@@ -734,6 +734,7 @@ fn finish_import(s: &mut Session, d: Downloaded, now: &str) {
                             file_size: a.file_size().unwrap_or(ph.file_size),
                             content_hash: ph.content_hash.clone(),
                             preview_only: Some(LINK_ONLY.into()),
+                            preview_checked: lcc_catalog::APP_VERSION.to_string(),
                         });
                     }
                     ops.push(lcc_catalog::Catalog::link_remote_op(lcc_catalog::RemoteIdentity {
@@ -788,6 +789,7 @@ fn adopt_original(s: &mut Session, id: PhotoId, account: &str, path: &Path) -> R
                 file_size: info.file_size,
                 content_hash: info.content_hash.clone(),
                 preview_only: None,
+                preview_checked: String::new(),
             });
             ops.push(Op::SetSha1 { id, sha1 });
             // the preview was a JPEG; the original may be a raw, a HEIF…
@@ -802,6 +804,7 @@ fn adopt_original(s: &mut Session, id: PhotoId, account: &str, path: &Path) -> R
             file_size: ph.file_size,
             content_hash: ph.content_hash.clone(),
             preview_only: None,
+            preview_checked: String::new(),
         }),
     }
     let _ = account;

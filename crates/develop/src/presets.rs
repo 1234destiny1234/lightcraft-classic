@@ -10,6 +10,7 @@
 
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value};
+use std::borrow::Cow;
 
 use crate::DevelopSettings;
 
@@ -37,10 +38,11 @@ pub enum SettingsGroup {
     RedEye,
     LensBlur,
     Calibration,
+    PluginFilters,
 }
 
 impl SettingsGroup {
-    pub const ALL: [SettingsGroup; 20] = [
+    pub const ALL: [SettingsGroup; 21] = [
         SettingsGroup::Profile,
         SettingsGroup::Treatment,
         SettingsGroup::WhiteBalance,
@@ -61,6 +63,7 @@ impl SettingsGroup {
         SettingsGroup::RedEye,
         SettingsGroup::LensBlur,
         SettingsGroup::Calibration,
+        SettingsGroup::PluginFilters,
     ];
 
     /// Groups included by default when copying (Lightroom excludes crop, masks and spots by default).
@@ -93,6 +96,7 @@ impl SettingsGroup {
             SettingsGroup::RedEye => "Red Eye",
             SettingsGroup::LensBlur => "Lens Blur",
             SettingsGroup::Calibration => "Calibration",
+            SettingsGroup::PluginFilters => "Plug-in Filters",
         }
     }
 
@@ -119,6 +123,7 @@ impl SettingsGroup {
             SettingsGroup::RedEye => &["red_eye"],
             SettingsGroup::LensBlur => &["lens_blur"],
             SettingsGroup::Calibration => &["calibration"],
+            SettingsGroup::PluginFilters => &["plugin_filters"],
         }
     }
 }
@@ -131,6 +136,9 @@ pub fn extract_groups(s: &DevelopSettings, groups: &[SettingsGroup]) -> Value {
         for k in g.keys() {
             if let Some(v) = full.get(*k) {
                 out.insert((*k).to_string(), v.clone());
+            } else if *k == "plugin_filters" {
+                // Not written while empty: an empty stack still replaces the target's on paste.
+                out.insert((*k).to_string(), Value::Array(Vec::new()));
             }
         }
     }
@@ -256,8 +264,7 @@ fn blend_curves(b: &[(f64, f64)], p: &[(f64, f64)], t: f64) -> Value {
 /// Apply a partial settings object with an amount (1.0 = 100 %). Out-of-range values are clamped
 /// through the control specs.
 pub fn apply_partial(s: &DevelopSettings, partial: &Value, amount: f64) -> DevelopSettings {
-    let base = s.to_json();
-    let patch = if (amount - 1.0).abs() < 1e-9 { partial.clone() } else { scale_patch(&base, partial, amount) };
+    let patch = if (amount - 1.0).abs() < 1e-9 { Cow::Borrowed(partial) } else { Cow::Owned(scale_patch(&s.to_json(), partial, amount)) };
     // (a white balance without a scale keeps its old meaning: `DevelopSettings::merged`)
     let mut out = s.merged(&patch).unwrap_or_else(|_| s.clone());
     for c in crate::controls::CONTROLS {

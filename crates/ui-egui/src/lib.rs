@@ -10,11 +10,14 @@ pub mod access;
 pub mod album_picker;
 pub mod book;
 pub mod brush_live;
+pub mod button;
+pub mod canvas_keys;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod catalog_ui;
 #[cfg(target_arch = "wasm32")]
 #[path = "catalog_ui_web.rs"]
 pub mod catalog_ui;
+pub mod color_readout;
 mod command_error;
 pub mod control;
 pub mod creations_ui;
@@ -24,6 +27,7 @@ pub mod dialog_frame;
 pub mod docking;
 mod edit_in;
 pub mod export_task;
+mod focus_scan;
 pub mod headless;
 pub mod help_overlay;
 pub mod i18n;
@@ -44,6 +48,8 @@ pub mod panels;
 pub mod pick;
 pub mod plate;
 pub mod print_ui;
+pub mod print_view;
+pub mod recheck;
 pub mod region;
 pub mod render;
 pub mod render_dng_task;
@@ -51,6 +57,7 @@ pub mod render_dng_task;
 mod shell;
 pub mod shortcuts;
 pub mod sidebar;
+pub mod slideshow_export;
 pub mod slideshow_ui;
 pub mod softpaint;
 pub mod state;
@@ -64,6 +71,7 @@ pub mod video_ui;
 pub mod video_view;
 pub mod web_module;
 pub mod widgets;
+pub mod window_place;
 
 #[cfg(test)]
 mod tests_access;
@@ -72,15 +80,25 @@ mod tests_activity;
 #[cfg(test)]
 mod tests_album_picker;
 #[cfg(test)]
+mod tests_album_remove;
+#[cfg(test)]
 mod tests_appearance;
 #[cfg(test)]
 mod tests_before_after;
+#[cfg(test)]
+mod tests_browse_active;
+#[cfg(test)]
+mod tests_button;
+#[cfg(test)]
+mod tests_canvas_keys;
 #[cfg(test)]
 mod tests_catalog_ui;
 #[cfg(test)]
 mod tests_classic;
 #[cfg(test)]
 mod tests_clipping;
+#[cfg(test)]
+mod tests_color_readout;
 #[cfg(test)]
 mod tests_compare;
 #[cfg(test)]
@@ -102,11 +120,19 @@ mod tests_dialog_frame;
 #[cfg(test)]
 mod tests_dialogs;
 #[cfg(test)]
+mod tests_edit_layout;
+#[cfg(test)]
+mod tests_empty_library;
+#[cfg(test)]
 mod tests_error_kinds;
 #[cfg(test)]
 mod tests_filmstrip;
 #[cfg(test)]
 mod tests_filter_search;
+#[cfg(test)]
+mod tests_focus_point;
+#[cfg(test)]
+mod tests_folder_drop;
 #[cfg(test)]
 mod tests_grading;
 #[cfg(test)]
@@ -132,11 +158,15 @@ mod tests_keywording;
 #[cfg(test)]
 mod tests_labels;
 #[cfg(test)]
+mod tests_layout_image;
+#[cfg(test)]
 mod tests_lens_db;
 #[cfg(test)]
 mod tests_library_problem;
 #[cfg(test)]
 mod tests_libtools;
+#[cfg(test)]
+mod tests_mask_effects;
 #[cfg(test)]
 mod tests_masking;
 #[cfg(test)]
@@ -158,19 +188,37 @@ mod tests_preset_import;
 #[cfg(test)]
 mod tests_preview_limit;
 #[cfg(test)]
+mod tests_print;
+#[cfg(test)]
+mod tests_profiles_layout;
+#[cfg(test)]
 mod tests_quit_unsaved;
+#[cfg(test)]
+mod tests_recheck;
+#[cfg(test)]
+mod tests_rename_person;
 #[cfg(test)]
 mod tests_sam_setup;
 #[cfg(test)]
 mod tests_scroll;
 #[cfg(test)]
+mod tests_slider_reset;
+#[cfg(test)]
+mod tests_slideshow;
+#[cfg(test)]
+mod tests_solo_sections;
+#[cfg(test)]
 mod tests_switch_library;
 #[cfg(test)]
 mod tests_sync;
 #[cfg(test)]
+mod tests_tallies;
+#[cfg(test)]
 mod tests_temp_slider;
 #[cfg(test)]
 mod tests_titlebar;
+#[cfg(test)]
+mod tests_tool_overlay;
 #[cfg(test)]
 mod tests_unsaved;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -285,6 +333,10 @@ pub struct Services {
     pub pick_list_file: Option<PickFiles>,
     /// Save dialog for a list file (the suggested name carries the extension).
     pub save_list_file: Option<SaveFile>,
+    /// Open dialog for slideshow template files (`.json`; Settings ▸ Slideshow ▸ Templates ▸ Import…).
+    pub pick_slideshow_templates: Option<PickFiles>,
+    /// Save dialog for an exported slideshow template (`.json`).
+    pub save_slideshow_template: Option<SaveFile>,
     pub write: Option<WriteFn>,
     /// Thread-safe writer: with it, UI-started exports run in the background (desktop only).
     pub write_shared: Option<SharedWrite>,
@@ -337,6 +389,9 @@ pub struct Perf {
     pub update_ms: f64,
     /// The slowest whole update since start.
     pub max_update_ms: f64,
+    /// The previous frame's whole time on this thread, painting (texture uploads) included, as
+    /// the host reports it (eframe's `cpu_usage`); `None` without a host report (headless).
+    pub host_frame_ms: Option<f64>,
     pub fps: f64,
 }
 
@@ -440,6 +495,8 @@ pub struct LccApp {
     pub region_before_view: Option<region::RegionView>,
     /// The loupe's render sizes while a pinch or two-finger scroll runs.
     pub(crate) size_hold: region::SizeHold,
+    /// The size of a slider drag's whole-frame drafts (full size where they keep up, issue #330).
+    pub(crate) drag_scale: region::DragScale,
     /// (photo, look, window frame size) a window was refused for: it reads more than one render holds.
     pub(crate) window_refused: Option<(lcc_catalog::PhotoId, u64, usize)>,
     /// (photo, look) whose 1:1 preview was last asked to be read from disk (see `detail`).
@@ -462,6 +519,8 @@ pub struct LccApp {
     pub lightroom_last: Option<Value>,
     /// Catalog dialogs and the Open Recent list (`catalog_ui`).
     pub catalog_ui: catalog_ui::CatalogUi,
+    /// A completed import result waiting for another modal dialog to close.
+    pub(crate) lightroom_result: Option<state::Dialog>,
     /// The library generation the window title and the recent list were last updated for.
     pub shown_library: Option<u64>,
     /// A background export in progress.
@@ -473,6 +532,8 @@ pub struct LccApp {
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
+    /// The last slideshow export's end has been told (a toast).
+    pub slideshow_export_reported: bool,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
     /// panels each frame; nothing is committed, no history entry).
     pub hover_preview: Option<HoverPreview>,
@@ -583,6 +644,7 @@ impl LccApp {
             region_view: None,
             region_before_view: None,
             size_hold: Default::default(),
+            drag_scale: Default::default(),
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
@@ -594,12 +656,14 @@ impl LccApp {
             lightroom: None,
             lightroom_last: None,
             catalog_ui: Default::default(),
+            lightroom_result: None,
             shown_library: None,
             export: None,
             render_dng: None,
             last_render_dng: None,
             tasks: Default::default(),
             last_export_result: None,
+            slideshow_export_reported: true,
             hover_preview: None,
             window_is_fullscreen: false,
             preview_window: None,
@@ -632,6 +696,22 @@ impl LccApp {
         // keep CPU copies of photo textures so `ui.screenshot {"headless": true}` can draw them
         self.renderer.keep_pixels = true;
         self
+    }
+
+    /// The open person page, the way back to it, and the photo it was opened from follow a rename.
+    fn follow_renamed_person(&mut self, from: &str, to: &str) {
+        let same = |n: &str| n.trim().to_lowercase() == from.trim().to_lowercase();
+        if self.ui.person_page.as_deref().is_some_and(same) {
+            self.ui.person_page = Some(to.to_string());
+        }
+        if self.ui.last_person.as_deref().is_some_and(same) {
+            self.ui.last_person = Some(to.to_string());
+        }
+        if let Some((Some(name), photo)) = self.ui.person_from.clone()
+            && same(&name)
+        {
+            self.ui.person_from = Some((Some(to.to_string()), photo));
+        }
     }
 
     /// Run a UI or engine command by id. The single entry point for every frontend path.
@@ -730,6 +810,13 @@ impl LccApp {
                 }
             }
             Ok(v) if id == "faces.detect" => self.ui.status = detect_summary(v),
+            Ok(v) if id == "faces.renamePerson" => {
+                let to = v["to"].as_str().unwrap_or("").to_string();
+                let from = params.get("from").and_then(Value::as_str).unwrap_or("");
+                if !to.is_empty() {
+                    self.follow_renamed_person(from, &to);
+                }
+            }
             Ok(_) => {}
         }
         r
@@ -776,28 +863,9 @@ impl LccApp {
     }
 
     /// Show a transient toast at the bottom of the canvas (like the reference app's HUD).
-    /// Advance a running slideshow (wrapping around at the end).
+    /// Advance a running slideshow.
     fn slideshow_tick(&mut self, ctx: &egui::Context) {
-        let Some((interval, due, paused)) = self.ui.slideshow else { return };
-        if !self.ui.fullscreen {
-            self.ui.slideshow = None;
-            return;
-        }
-        if paused {
-            return;
-        }
-        let now = ctx.input(|i| i.time);
-        if now >= due {
-            let (_, vis) = self.session.visible_shared();
-            if let Some(cur) = self.session.active()
-                && !vis.is_empty()
-            {
-                let i = vis.iter().position(|x| *x == cur).map_or(0, |i| (i + 1) % vis.len());
-                let _ = self.run("library.select", serde_json::json!({"ids": [vis[i].0]}));
-            }
-            self.ui.slideshow = Some((interval, now + interval, false));
-        }
-        ctx.request_repaint_after(std::time::Duration::from_secs_f64((due - now).clamp(0.05, interval)));
+        panels::slideshow::tick(self, ctx);
     }
 
     /// Announce the end of a Build Previews run.
@@ -1161,13 +1229,17 @@ impl LccApp {
         if ctx.input(|i| i.viewport().close_requested()) && !panels::notices::may_close(self) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
         }
-        let now = ctx.input(|i| i.time);
-        let dt = now - self.last_time;
-        if dt > 0.0 {
-            self.perf.fps = self.perf.fps * 0.9 + (1.0 / dt).min(240.0) * 0.1;
+        // (once a frame: a pass drawn again after a discard has no input of its own, and still the
+        // widgets of the pass thrown away, where a request would find them out of place)
+        if ctx.current_pass_index() == 0 {
+            let now = ctx.input(|i| i.time);
+            let dt = now - self.last_time;
+            if dt > 0.0 {
+                self.perf.fps = self.perf.fps * 0.9 + (1.0 / dt).min(240.0) * 0.1;
+            }
+            self.last_time = now;
+            self.drain_control(ctx);
         }
-        self.last_time = now;
-        self.drain_control(ctx);
         self.apply_settings(ctx);
         if !self.synthetic.is_empty() {
             ctx.request_repaint();
@@ -1179,6 +1251,7 @@ impl LccApp {
         sync::poll_run(self, ctx);
         import::tick(self, ctx);
         lightroom_import::tick(self, ctx);
+        recheck::tick(self);
         tasks::poll(self, ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::update::poll(self, ctx);
@@ -1238,10 +1311,49 @@ impl LccApp {
         }
         #[cfg(not(target_arch = "wasm32"))]
         panels::tether_bar::show(self, ctx);
+        // automatic XMP writes that failed (a network share offline): tried again every few seconds once their files
+        // are reachable, and said once when they start waiting and once when they're written
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            if self.session.unsaved_sidecars() > 0 {
+                let now = ctx.input(|i| i.time);
+                if now - self.ui.sidecar_retry_at >= 10.0 {
+                    self.ui.sidecar_retry_at = now;
+                    self.session.retry_unsaved_sidecars();
+                }
+                ctx.request_repaint_after(std::time::Duration::from_secs(10));
+            }
+            let waiting = self.session.unsaved_sidecars();
+            if waiting > 0 && self.ui.sidecars_waiting == 0 {
+                self.toast_for(
+                    ctx,
+                    crate::i18n::tr_format!(
+                        "The XMP sidecars of {n} photos couldn't be written (is their folder offline?). {app} keeps trying.",
+                        n = waiting
+                    ),
+                    8.0,
+                );
+            } else if waiting == 0 && self.ui.sidecars_waiting > 0 {
+                self.toast(ctx, crate::i18n::tr("Wrote the XMP sidecars that were waiting"));
+            }
+            self.ui.sidecars_waiting = waiting;
+        }
+        // Settings → Import: open the import review when a camera or card is connected
+        #[cfg(not(target_arch = "wasm32"))]
+        if self.session.import_defaults.show_on_card {
+            if let Some(now) = lcc_engine::devices::devices_scanned() {
+                import::cards_seen(self, now);
+            }
+            ctx.request_repaint_after(lcc_engine::devices::MAX_AGE);
+        } else {
+            self.ui.known_cards = None;
+        }
         self.session.persist_if_dirty();
         panels::denoise::pump(self, ctx);
+        panels::plugin_filters::pump(self, ctx);
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
+        focus_scan::pump(self, ctx);
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         edit_in::show(self, ctx);
@@ -1472,7 +1584,9 @@ impl LccApp {
         self.place_names_outcome(&ctx);
         if self.ui.fullscreen {
             // full-screen preview: the photo alone on black
-            egui::CentralPanel::default().frame(egui::Frame::NONE.fill(egui::Color32::BLACK)).show(ui, |ui| panels::detail::show(self, ui));
+            egui::CentralPanel::default()
+                .frame(egui::Frame::NONE.fill(egui::Color32::BLACK))
+                .show(ui, |ui| if self.ui.slideshow.is_some() { panels::slideshow::show(self, ui) } else { panels::detail::show(self, ui) });
             panels::second::show(self, &ctx);
             panels::notices::show(self, &ctx);
             panels::dialogs::show(self, &ctx);
@@ -1500,6 +1614,7 @@ impl LccApp {
         panels::notices::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         catalog_ui::show(self, &ctx);
+        plate::show_setup(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
@@ -1507,6 +1622,7 @@ impl LccApp {
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::poll(self, &ctx);
         render_dng_task::poll(self, &ctx);
+        slideshow_export::poll(self, &ctx);
         panels::activity::show(self, &ctx);
         export_task::poll_photos(self, &ctx);
         pick::poll(self, &ctx);
@@ -1594,7 +1710,7 @@ pub fn is_model_file(path: &str) -> bool {
 /// Files dropped on the window that are presets rather than photos.
 pub fn is_preset_file(path: &str) -> bool {
     let ext = std::path::Path::new(path).extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
-    ["lcpreset", "lrtemplate", "xmp", "zip", "cube", "lmp", "mplumpack"].contains(&ext.as_str())
+    ["lcpreset", "lrtemplate", "xmp", "zip", "cube", "lmp", "mplumpack", "lceffect"].contains(&ext.as_str())
 }
 
 /// Splits dropped files into presets and everything else. An `.xmp` dropped next to a photo with the same
@@ -1672,20 +1788,37 @@ pub struct Caches {
     keyword_names: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Chip>>)>,
     /// The Keywording box's chips, by library revision and selection.
     keyword_chips: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Chip>>)>,
+    /// How many photos of the library the selection is, by library revision and selection.
+    selected_photos: Option<(u64, u64, usize)>,
+    /// The Keywording box's chips grouped by the keyword they are inside, by library revision and
+    /// selection.
+    keyword_groups: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Group>>)>,
     /// The Keyword List's tick boxes, by library revision and selection.
     keyword_ticks: Option<(u64, u64, std::sync::Arc<panels::keyword_list::Ticks>)>,
-    folder_tree: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
+    /// The folder tree, made at a catalog revision and a disk folder listing generation.
+    folder_tree: Option<((u64, u64), std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
+    /// The catalog's part of the folder tree (before the disk folders are added), by catalog revision.
+    folder_base: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
     people: Option<(u64, lcc_catalog::Filter, std::sync::Arc<Vec<lcc_catalog::Person>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
+    /// What the Add keyword box offers for the text typed in it, by library revision, the
+    /// selection's keywords and that text.
+    completions: Option<(u64, std::sync::Arc<panels::keywording::Offers>)>,
     counts: Option<(u64, LibraryCounts)>,
     date_groups: Option<(u64, std::sync::Arc<Vec<lcc_catalog::DateGroup>>)>,
     filter_values: Option<(u64, std::sync::Arc<FilterValues>)>,
-    album_counts: Option<(u64, std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, usize>>)>,
-    /// How often the album counts were recomputed (tests check that unchanged frames don't).
+    /// The albums' counts: the minute they are of (while a smart album asks about "the last N days"), the tally
+    /// that follows edits, and the counts as the panels take them.
+    album_counts: Option<(String, lcc_catalog::tally::AlbumTally, std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, usize>>)>,
+    /// How often the album counts were made from every photo (tests check that unchanged frames, and edits to a
+    /// photo or a few, don't).
     pub album_count_scans: usize,
     /// What the open smart-album rule dialog shows besides the rules ([`Caches::rules_view`]).
     rules_view: Option<(u64, std::sync::Arc<RulesView>)>,
     pub rules_view_scans: usize,
+    /// A count an open dialog shows ([`Caches::dialog_count`]), by what it counts.
+    dialog_count: Option<(u64, usize)>,
+    pub dialog_count_scans: usize,
     /// The problems of every saved smart album that has some ([`Caches::smart_album_problems`]).
     smart_problems: Option<(u64, std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, Vec<lcc_catalog::rules::Problem>>>)>,
     pub smart_problem_scans: usize,
@@ -1701,6 +1834,8 @@ pub struct Caches {
     pub faces_indexed: u64,
     pub faces_pending: u64,
     pub faces_next_pump: f64,
+    /// When to ask the focus-point reader again (`focus_scan::pump`).
+    pub focus_next_pump: f64,
     /// When the user last dragged, typed or scrolled, and when they last moved the pointer (egui time).
     pub last_input: f64,
     /// The pace the face scan was last given, and whether the window was in front then (for `ui.inspect`).
@@ -1751,28 +1886,49 @@ pub(crate) fn key_of(parts: impl std::hash::Hash) -> u64 {
     BuildHasherDefault::<DefaultHasher>::default().hash_one(parts)
 }
 
+/// Whether a tally of the library made when the catalog was at `revision` is still right, given that it reads only
+/// `reads` of a photo: nothing changed since, or only other things of some photos did (a rating changes no folder's
+/// count, a slider changes none at all). Each of these tallies asks every photo, so one kept is a pass over the
+/// library saved on every edit.
+fn still_right(cat: &lcc_catalog::Catalog, revision: u64, reads: lcc_catalog::Aspects) -> bool {
+    revision == cat.revision || cat.aspects_since(revision).is_some_and(|changed| !changed.any_of(reads))
+}
+
+/// What the tallies below read of a photo, besides whether it is in the library.
+const READS_FILE: lcc_catalog::Aspects = lcc_catalog::Aspects::PRESENCE.with(lcc_catalog::Aspects::FILE);
+const READS_META: lcc_catalog::Aspects = lcc_catalog::Aspects::PRESENCE.with(lcc_catalog::Aspects::META);
+const READS_PEOPLE: lcc_catalog::Aspects = READS_META.with(lcc_catalog::Aspects::ANALYSIS);
+const READS_CAPTURED: lcc_catalog::Aspects = lcc_catalog::Aspects::PRESENCE.with(lcc_catalog::Aspects::CAPTURED);
+const READS_FLAG: lcc_catalog::Aspects = lcc_catalog::Aspects::PRESENCE.with(lcc_catalog::Aspects::FLAG);
+
 impl Caches {
     /// The folders the library's photos were imported from.
     pub fn folder_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::FolderNode>> {
-        match &self.folder_tree {
-            Some((r, t)) if *r == cat.revision => t.clone(),
-            _ => {
-                let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(cat.folder_tree()));
-                self.folder_tree = Some((cat.revision, t.clone()));
-                t
-            }
+        let key = (cat.revision, crate::panels::left::classic::disk_generation());
+        if let Some((k, t)) = &self.folder_tree
+            && *k == key
+        {
+            return t.clone();
         }
+        // a catalog change lists the disk folders again: a folder created, moved or removed changes no
+        // photo, so the catalog's own record of what changed can't tell
+        if self.folder_tree.as_ref().is_none_or(|((r, _), _)| *r != cat.revision) {
+            crate::panels::left::classic::invalidate_disk_folders();
+        }
+        // the catalog's part is made again only when a photo's file or presence changed
+        let base = self.folder_base.take().filter(|(r, _)| still_right(cat, *r, READS_FILE)).map(|(_, b)| b);
+        let base = base.unwrap_or_else(|| std::sync::Arc::new(cat.folder_tree()));
+        self.folder_base = Some((cat.revision, base.clone()));
+        let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(base.as_ref().clone()));
+        self.folder_tree = Some((key, t.clone()));
+        t
     }
     /// The library's keyword tree.
     pub fn keyword_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::KeywordNode>> {
-        match &self.keyword_tree {
-            Some((r, t)) if *r == cat.revision => t.clone(),
-            _ => {
-                let t = std::sync::Arc::new(cat.keyword_tree());
-                self.keyword_tree = Some((cat.revision, t.clone()));
-                t
-            }
-        }
+        let kept = self.keyword_tree.take().filter(|(r, _)| still_right(cat, *r, READS_META)).map(|(_, t)| t);
+        let t = kept.unwrap_or_else(|| std::sync::Arc::new(cat.keyword_tree()));
+        self.keyword_tree = Some((cat.revision, t.clone()));
+        t
     }
     /// The Keywording box's read-only names for the selection: what exported files carry
     /// (`export`), or the keywords with those containing them.
@@ -1812,6 +1968,36 @@ impl Caches {
             }
         }
     }
+    /// How many photos the selection is: each once, those the library has (what the Keywording
+    /// box's "N of M" counts).
+    pub(crate) fn selected_photos(&mut self, cat: &lcc_catalog::Catalog, selection: &[lcc_catalog::PhotoId]) -> usize {
+        let key = key_of(selection);
+        match self.selected_photos {
+            Some((r, k, n)) if r == cat.revision && k == key => n,
+            _ => {
+                let n = panels::keywording::distinct(cat, selection).len();
+                self.selected_photos = Some((cat.revision, key, n));
+                n
+            }
+        }
+    }
+    /// The selection's keywords grouped by the keyword they are inside (the grouped Keywording box).
+    pub(crate) fn keyword_groups(
+        &mut self,
+        cat: &lcc_catalog::Catalog,
+        selection: &[lcc_catalog::PhotoId],
+    ) -> std::sync::Arc<Vec<panels::keywording::Group>> {
+        let key = key_of(selection);
+        match &self.keyword_groups {
+            Some((r, k, g)) if *r == cat.revision && *k == key => g.clone(),
+            _ => {
+                let chips = self.keyword_chips(cat, selection);
+                let g = std::sync::Arc::new(panels::keywording::grouped(&chips));
+                self.keyword_groups = Some((cat.revision, key, g.clone()));
+                g
+            }
+        }
+    }
     /// How many selected photos have each keyword (the Keyword List's tick boxes).
     pub(crate) fn keyword_ticks(
         &mut self,
@@ -1844,8 +2030,9 @@ impl Caches {
     /// All Photos / Picks / Recently Deleted counts.
     pub fn counts(&mut self, cat: &lcc_catalog::Catalog) -> LibraryCounts {
         if let Some((r, c)) = self.counts
-            && r == cat.revision
+            && still_right(cat, r, READS_FLAG)
         {
+            self.counts = Some((cat.revision, c));
             return c;
         }
         let mut c = LibraryCounts::default();
@@ -1864,25 +2051,17 @@ impl Caches {
     }
     /// Everyone named on a face in the library (for completing a name as it is typed).
     pub fn person_names(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<String>> {
-        match &self.person_names {
-            Some((r, v)) if *r == cat.revision => v.clone(),
-            _ => {
-                let v = std::sync::Arc::new(cat.people().into_iter().map(|p| p.name).collect::<Vec<_>>());
-                self.person_names = Some((cat.revision, v.clone()));
-                v
-            }
-        }
+        let kept = self.person_names.take().filter(|(r, _)| still_right(cat, *r, READS_PEOPLE)).map(|(_, v)| v);
+        let v = kept.unwrap_or_else(|| std::sync::Arc::new(cat.people().into_iter().map(|p| p.name).collect::<Vec<_>>()));
+        self.person_names = Some((cat.revision, v.clone()));
+        v
     }
     /// The By Date tree.
     pub fn date_groups(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::DateGroup>> {
-        match &self.date_groups {
-            Some((r, g)) if *r == cat.revision => g.clone(),
-            _ => {
-                let g = std::sync::Arc::new(cat.date_groups());
-                self.date_groups = Some((cat.revision, g.clone()));
-                g
-            }
-        }
+        let kept = self.date_groups.take().filter(|(r, _)| still_right(cat, *r, READS_CAPTURED)).map(|(_, g)| g);
+        let g = kept.unwrap_or_else(|| std::sync::Arc::new(cat.date_groups()));
+        self.date_groups = Some((cat.revision, g.clone()));
+        g
     }
     /// Cameras, lenses and keywords in the library (filter bar pickers).
     pub fn filter_values(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<FilterValues> {
@@ -1902,6 +2081,20 @@ impl Caches {
                     keywords: cat.keywords().into_iter().map(|(k, _)| k).collect(),
                 });
                 self.filter_values = Some((cat.revision, v.clone()));
+                v
+            }
+        }
+    }
+    /// What the Add keyword box offers for `typed` (see [`panels::keywording::offers`]). Kept apart
+    /// from [`Self::suggestions`]: both are asked for on every frame of typing, and each looks
+    /// through the library's keywords.
+    pub(crate) fn completions(&mut self, cat: &lcc_catalog::Catalog, current: &[String], typed: &str) -> std::sync::Arc<panels::keywording::Offers> {
+        let k = key_of((cat.revision, current, typed));
+        match &self.completions {
+            Some((h, v)) if *h == k => v.clone(),
+            _ => {
+                let v = std::sync::Arc::new(panels::keywording::offers(cat, current, typed));
+                self.completions = Some((k, v.clone()));
                 v
             }
         }
@@ -1954,6 +2147,21 @@ impl Caches {
         v
     }
 
+    /// A count an open dialog shows (photos a filter matches, photos with a keyword…): `count` runs
+    /// again only when the catalog or `what` (what is counted) changes, not every frame.
+    pub(crate) fn dialog_count(&mut self, cat: &lcc_catalog::Catalog, what: impl std::hash::Hash, count: impl FnOnce() -> usize) -> usize {
+        let k = key_of((cat.revision, what));
+        if let Some((key, n)) = self.dialog_count
+            && key == k
+        {
+            return n;
+        }
+        let n = count();
+        self.dialog_count_scans += 1;
+        self.dialog_count = Some((k, n));
+        n
+    }
+
     /// The problems of every saved smart album that has some (`Catalog::smart_album_problems`),
     /// for the sidebar's ⚠ marks: worked out again only when the catalog changes.
     pub fn smart_album_problems(
@@ -1976,21 +2184,37 @@ impl Caches {
     pub fn album_counts(&mut self, cat: &lcc_catalog::Catalog, now: &str) -> std::sync::Arc<std::collections::HashMap<lcc_catalog::AlbumId, usize>> {
         let relative = cat.albums().any(|a| a.smart.as_ref().is_some_and(|f| f.depends_on_now()));
         let minute = if relative { now.get(..16).unwrap_or(now) } else { "" };
-        let k = key_of((cat.revision, minute));
-        match &self.album_counts {
-            Some((h, v)) if *h == k => v.clone(),
-            _ => {
-                if relative {
-                    // "in the last N days" counts back from the session clock, as in the grid
-                    lcc_catalog::rules::set_now(Some(now.to_string()));
-                }
-                let v: std::sync::Arc<std::collections::HashMap<_, _>> =
-                    std::sync::Arc::new(cat.albums().map(|a| (a.id, cat.album_count(a.id))).collect());
-                self.album_count_scans += 1;
-                self.album_counts = Some((k, v.clone()));
-                v
-            }
+        // the counts of this minute, if there are any: an edit to a photo or a few is followed from them, a smart
+        // album asking only those photos again; anything more, or a new minute, is counted from every photo
+        let kept = self.album_counts.take().filter(|(of, _, _)| of == minute);
+        if let Some((_, tally, shown)) = &kept
+            && tally.revision() == cat.revision
+        {
+            let shown = shown.clone();
+            self.album_counts = kept;
+            return shown;
         }
+        if relative {
+            // "in the last N days" counts back from the session clock, as in the grid. (Within a minute an edit asks
+            // only the photos it touched, at this second; the others were asked earlier in the minute. That is as
+            // far out as the counts already were between edits, and the next minute counts them all again.)
+            lcc_catalog::rules::set_now(Some(now.to_string()));
+        }
+        let tally = match kept {
+            Some((_, mut tally, _)) => {
+                if !tally.update(cat) {
+                    self.album_count_scans += 1;
+                }
+                tally
+            }
+            None => {
+                self.album_count_scans += 1;
+                lcc_catalog::tally::AlbumTally::of(cat)
+            }
+        };
+        let shown = std::sync::Arc::new(tally.counts().clone());
+        self.album_counts = Some((minute.to_string(), tally, shown.clone()));
+        shown
     }
 }
 
@@ -2031,16 +2255,17 @@ mod cache_tests {
             c.album_counts(&cat, "2026-09-30T12:00:40");
         }
         assert_eq!(c.album_count_scans, 1, "unchanged frames in the same minute don't rescan");
-        // metadata change
+        // a photo rated: followed from that photo, not counted from every one
         cat.apply(Op::SetRating { id: PhotoId(2), rating: 4 }).unwrap();
         assert_eq!(c.album_counts(&cat, now)[&AlbumId(10)], 2);
+        assert_eq!(c.album_count_scans, 1);
         // rule change
         let rs: RuleSet = serde_json::from_value(serde_json::json!({"rules": [{"field": "rating", "op": "gte", "value": 5}]})).unwrap();
         cat.apply(Op::SetAlbumRules { id: AlbumId(10), rules: Box::new(Filter { rule_set: Some(rs), ..Default::default() }) }).unwrap();
         assert_eq!(c.album_counts(&cat, now)[&AlbumId(10)], 1);
         // an hour later the 11:59:30 photo has left "in the last hour", with no catalog change
         assert_eq!(c.album_counts(&cat, "2026-09-30T13:00:10")[&AlbumId(11)], 0);
-        assert_eq!(c.album_count_scans, 4);
+        assert_eq!(c.album_count_scans, 3, "new rules and a new minute are counted from every photo; the rating was not");
         lcc_catalog::rules::set_now(None);
     }
 

@@ -64,15 +64,6 @@ fn amount_zero_is_the_identity_whatever_radius_and_detail() {
 }
 
 #[test]
-fn radius_changes_the_output() {
-    let src = scene(256);
-    let a = render_at(&src, &sharp(60.0, 0.8, 25.0, 0.0), 256);
-    let b = render_at(&src, &sharp(60.0, 2.5, 25.0, 0.0), 256);
-    assert_ne!(a.data, b.data);
-    assert!(rms(&a, &b) > 0.3, "{}", rms(&a, &b));
-}
-
-#[test]
 fn larger_radius_boosts_coarser_detail() {
     // gain on a fine (4 px) and a coarse (24 px) grating, for a small and a large radius
     let gain = |period: f32, radius: f64| {

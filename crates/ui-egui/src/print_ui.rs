@@ -1086,7 +1086,7 @@ fn settings_panels(ui: &mut egui::Ui, app: &mut LccApp) {
         let mut bg = Color32::from_rgba_unmultiplied(o.background[0], o.background[1], o.background[2], 255);
         ui.horizontal(|ui| {
             ui.label(crate::i18n::tr("Page Background Color"));
-            let r = ui.color_edit_button_srgba(&mut bg);
+            let r = crate::color_readout::on_picker(ui.color_edit_button_srgba(&mut bg), [bg.r(), bg.g(), bg.b()]);
             crate::access::label(&r, "Page Background Color");
             if r.changed() {
                 o.background = [bg.r(), bg.g(), bg.b(), 255];

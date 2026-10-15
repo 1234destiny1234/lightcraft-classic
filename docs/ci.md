@@ -53,6 +53,8 @@ job spent over an hour downloading), `gh release` at about 11 MB/s. Only a few-b
 Jobs run at low priority, since the machines are also used interactively: Linux steps run under
 `nice -n 19` (job `defaults.run.shell`), macOS steps under `nice -n 19` (not `taskpolicy -b`: background QoS confines builds to the efficiency cores), and Windows
 jobs set the runner worker's priority class to BelowNormal in their first step (later steps inherit it).
+The Windows ARM64 builds on SNAPDRAGON (12 cores) set `CARGO_BUILD_JOBS: 10` in the job, overriding the runner's own
+limit of 4 and leaving two cores for the desktop; the x64 Windows release job keeps cargo's default.
 
 Each runner instance has its own build cache (`CARGO_TARGET_DIR` from the runner's `.env`, else
 `~/.cache/lcc-ci-target-<runner name>`), so several instances on one machine (`gpu0` and `gpu0-b`) can run

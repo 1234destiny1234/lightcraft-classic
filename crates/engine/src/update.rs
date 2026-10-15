@@ -255,6 +255,8 @@ pub struct Updater {
     error: Option<String>,
     /// The download in flight.
     job: Option<Job>,
+    /// Whether this copy runs from an AppImage, the only kind an AppImage update can replace.
+    appimage: bool,
 }
 
 impl Default for Updater {
@@ -285,6 +287,7 @@ impl Updater {
             worker: None,
             error: None,
             job: None,
+            appimage: lcc_updater::runs_from_appimage(),
         }
     }
 
@@ -601,6 +604,15 @@ impl Updater {
         let available = self.available().cloned().ok_or("there is no update to download: check again first")?;
         if available.kind == Kind::Checksums {
             return Err("that release offers no file for this system".into());
+        }
+        if available.kind == Kind::AppImage && !self.appimage {
+            let why = format!(
+                "this copy of the app was not installed from an AppImage, so version {} can't replace it; update it the way it was installed (your package manager, or the releases page)",
+                available.version
+            );
+            // the dialog shows why, instead of fetching a file it can't install
+            self.progress = Progress::Failed(why.clone());
+            return Err(why);
         }
         if let Err(e) = std::fs::create_dir_all(&self.stage) {
             return Err(format!("could not create {}: {e}", self.stage.display()));

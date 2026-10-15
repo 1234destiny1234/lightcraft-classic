@@ -48,7 +48,7 @@ pub(crate) const PRESENCE_ROWS: &[(&str, &str, f64, f64)] = &[("Clarity", "effec
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
-    let n = app.session.targets(&json!({})).len();
+    let n = app.session.selected().len();
     if n == 0 {
         ui.label(egui::RichText::new(crate::i18n::tr("No photo selected")).color(t.text_dim));
         return;

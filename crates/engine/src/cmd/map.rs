@@ -84,7 +84,7 @@ fn round7(v: f64) -> f64 {
 
 fn geotag(s: &mut crate::Session, p: &Value) -> Result<Value> {
     const C: &str = "map.geotag";
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     if ids.is_empty() {
         return Err(bad(C, "no photos to geotag"));
     }
@@ -275,7 +275,7 @@ mod geocoding {
             return apply_given(s, p);
         }
         let overwrite = bool_or(p, "overwrite", false);
-        let ids = s.targets(p);
+        let ids = s.targets(p)?;
         let todo: Vec<(PhotoId, LatLon)> = ids
             .iter()
             .filter_map(|id| {

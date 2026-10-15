@@ -10,3 +10,7 @@ pub const CURVE_PRESETS_FORMAT: &str = "lightcraft.curvePresets";
 pub const NAME_WORD: &str = "lightcraft";
 /// The previous desktop executable name (lock owner notes).
 pub const BINARY: &str = "lightcraft";
+/// The `format` tag of an exported mask-effect preset file (written and read).
+pub const MASK_EFFECTS_FORMAT: &str = "lightcraft.maskEffects";
+/// The `format` tag of a slideshow template file (written and read; also in the built-in templates).
+pub const SLIDESHOW_TEMPLATE_FORMAT: &str = "lightcraft.slideshowTemplate";

@@ -1,4 +1,9 @@
 {
+  "Color Values": "Farbwerte",
+  "Color Readout": "Farbanzeige",
+  "Show RGB Color Values": "RGB-Farbwerte anzeigen",
+  "Show HSL Color Values": "HSL-Farbwerte anzeigen",
+  "Show Lab Color Values": "Lab-Farbwerte anzeigen",
   "Cropped": "Freigestellt",
   "Develop": "Entwickeln",
   "Create Keyword Tag": "Stichwort-Tag erstellen",
@@ -1210,5 +1215,18 @@
   "Delete from Disk moves 1 file to the system trash.": "„Vom Datenträger löschen“ verschiebt 1 Datei in den Papierkorb des Systems.",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "„Entfernen“ behält die Dateien auf dem Datenträger und verschiebt die Fotos nach „Zuletzt gelöscht“.",
   "Delete from Disk": "Vom Datenträger löschen",
-  "Deleting from disk": "Vom Datenträger löschen"
+  "Deleting from disk": "Vom Datenträger löschen",
+  "Identity Plate Editor": "Erkennungstafel-Editor",
+  "Identity Plate:": "Erkennungstafel:",
+  "Personalized": "Personalisiert",
+  "Show Status and Activity": "Status und Aktivität anzeigen",
+  "No options for the {app} identity plate.": "Keine Optionen für die Erkennungstafel von {app}.",
+  "Personalize {app} with your own branding elements.": "Gestalten Sie {app} mit Ihren eigenen Markenelementen.",
+  "Use a styled text identity plate": "Formatierte Text-Erkennungstafel verwenden",
+  "Use a graphical identity plate": "Grafische Erkennungstafel verwenden",
+  "No image chosen": "Kein Bild gewählt",
+  "Clear Image": "Bild entfernen",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Eine SVG-, PNG- oder JPEG-Datei; sie wird 32 Punkt hoch angezeigt.",
+  "Theme Color": "Designfarbe",
+  "Identity Plate Setup…": "Erkennungstafel einrichten …"
 }

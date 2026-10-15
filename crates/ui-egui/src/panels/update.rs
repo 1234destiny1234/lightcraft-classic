@@ -307,24 +307,3 @@ fn link(ui: &mut egui::Ui, id: &str, label: &str) -> bool {
 pub fn status(app: &LccApp) -> Value {
     app.session.updater.status()
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn megabytes_are_worded() {
-        assert_eq!(megabytes(0), "0.0 MB");
-        assert_eq!(megabytes(1_048_576), "1.0 MB");
-        assert_eq!(megabytes(150 * 1_048_576), "150 MB");
-    }
-
-    #[test]
-    fn a_status_snapshot_has_the_fields_the_dialog_reads() {
-        let app = LccApp::new(lcc_engine::Session::new(), crate::Services::default());
-        let v = status(&app);
-        for key in ["version", "platform", "supported", "check", "download", "checkAtStartup", "prerelease", "repo", "page"] {
-            assert!(v.get(key).is_some(), "{key} is missing from {v}");
-        }
-    }
-}

@@ -1,13 +1,20 @@
-//! The vertical tool strip at the far right (Presets, Edit, Crop, Remove, Masking, Red Eye …).
+//! The vertical tool strip at the far right: Develop's editing tools (Presets, Edit, Crop, Remove,
+//! Masking, Red Eye) and Library's own panels (Versions, History & Activity), each with More below.
 
 use egui::vec2;
 use serde_json::json;
 
 use crate::LccApp;
 use crate::icons::Icon;
+use crate::module::{ModuleId, PanelId};
 use crate::state::RightPanel;
 use crate::theme::Tokens;
 use crate::widgets::icon_button;
+
+/// Height of one tool button.
+const BUTTON_H: f32 = 40.0;
+/// Space between tool buttons.
+const GAP: f32 = 6.0;
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
@@ -23,29 +30,34 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         .show(ui, |ui| {
             let has_photo = app.session.active().is_some();
             ui.vertical_centered(|ui| {
-                ui.spacing_mut().item_spacing.y = 6.0;
-                let sz = vec2(t.strip_w, 40.0);
-                if icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked() {
+                ui.spacing_mut().item_spacing.y = GAP;
+                let sz = vec2(t.strip_w, BUTTON_H);
+                // the Presets column: Develop's, as in Lightroom Classic
+                if app.ui.module == ModuleId::Develop
+                    && icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets (Shift+P)").clicked()
+                {
                     let _ = app.run("panel.presets", json!({}));
                 }
-                // only the active module's tools: Keywords and Info are Library's (its Keywording and
-                // Metadata panels), so they stay out of Develop's strip and are reached through the
-                // Window menu and their shortcuts
-                let order: Vec<_> = crate::module::right_group(app).into_iter().filter(|p| in_strip(app.ui.module, *p)).collect();
-                for p in &order {
+                // Only the active module's tools: Develop's editing tools, Library's own panels
+                // (`Library`'s Versions and History & Activity). The Library panels sat in Develop's
+                // strip as if they were Develop's tools (#108), so each module declares its own.
+                let side = strip_panels(app);
+                for p in &side {
                     let Some((id, icon, panel, tip, needs_photo)) = entry(*p) else { continue };
                     let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
                     let video = crate::video_ui::blocked(app, &format!("panel.{id}"));
                     let tip = if video { crate::video_ui::NOT_FOR_VIDEO } else { tip };
                     let resp = icon_button(ui, id, icon, sz, on, (has_photo || !needs_photo) && !video, tip);
-                    // The tool in use is radio-style (Lightroom Classic): clicking it leaves it
-                    // alone. It used to close the panel, and a Detail view with no editing panel
-                    // is Library's, so the click threw the user back into the grid.
-                    if resp.clicked() && app.ui.right != panel {
+                    // The tool in use is radio-style (Lightroom Classic): in Develop, clicking it
+                    // leaves it alone. It used to close the panel, and a Detail view with no editing
+                    // panel is Library's, so the click threw the user back into the grid. Library's
+                    // strip is the tab strip over its Classic column, where a click on the tab that
+                    // is open closes it and the column comes back (as `panel.<id>` does).
+                    if resp.clicked() && (app.ui.module == ModuleId::Library || app.ui.right != panel) {
                         let _ = app.run(&format!("panel.{id}"), json!({}));
                     }
                     // the same header menu as the Classic columns: show/hide, solo, hiding mode
-                    crate::panels::classic::side_menu(app, &resp, crate::module::get(crate::module::ModuleId::Develop).right_panels());
+                    crate::panels::classic::side_menu(app, &resp, strip_declared(app.ui.module));
                 }
                 separator(ui, &t);
                 if icon_button(ui, "more", Icon::More, sz, false, true, "More").clicked() {
@@ -55,16 +67,31 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         });
 }
 
-/// Whether a right-group panel gets a strip button in `module` (Lightroom Classic shows only the
-/// active module's tools).
-pub(crate) fn in_strip(module: crate::module::ModuleId, p: crate::module::PanelId) -> bool {
-    use crate::module::PanelId as P;
-    let library_only = matches!(p, P::Keywords | P::Info);
-    !(module == crate::module::ModuleId::Develop && library_only) && entry(p).is_some()
+/// The panels a module's tool strip lists. Develop's are its editing tools; Library's are its own
+/// panels, which open over its Classic right column. The other modules have no strip.
+pub fn strip_declared(module: ModuleId) -> &'static [PanelId] {
+    match module {
+        ModuleId::Develop => &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::Masking, PanelId::RedEye],
+        ModuleId::Library => &[PanelId::Versions, PanelId::Activity],
+        _ => &[],
+    }
 }
 
-/// The strip button of a right-group panel: (widget id, icon, panel, tooltip, needs a photo).
-fn entry(p: crate::module::PanelId) -> Option<(&'static str, Icon, RightPanel, &'static str, bool)> {
+/// The active module's strip panels, in the user's order and without hidden ones.
+pub fn strip_panels(app: &LccApp) -> Vec<PanelId> {
+    let declared = strip_declared(app.ui.module);
+    let mut out: Vec<PanelId> = app.ui.panel_order.iter().copied().filter(|p| declared.contains(p)).collect();
+    for p in declared {
+        if !out.contains(p) {
+            out.push(*p);
+        }
+    }
+    out.retain(|p| !app.ui.hidden_panels.contains(p));
+    out
+}
+
+/// The strip button of a strip panel: (widget id, icon, panel, tooltip, needs a photo).
+fn entry(p: PanelId) -> Option<(&'static str, Icon, RightPanel, &'static str, bool)> {
     use crate::module::PanelId as P;
     Some(match p {
         P::Edit => ("edit", Icon::Sliders, RightPanel::Edit, "Edit", true),
@@ -72,10 +99,8 @@ fn entry(p: crate::module::PanelId) -> Option<(&'static str, Icon, RightPanel, &
         P::Remove => ("remove", Icon::Eraser, RightPanel::Remove, "Remove", true),
         P::Masking => ("masking", Icon::Mask, RightPanel::Masking, "Masking", true),
         P::RedEye => ("redeye", Icon::RedEye, RightPanel::RedEye, "Red Eye", true),
-        P::Versions => ("versions", Icon::Versions, RightPanel::Versions, "Versions", true),
+        P::Versions => ("versions", Icon::Versions, RightPanel::Versions, "Versions (Shift+V)", true),
         P::Activity => ("activity", Icon::Activity, RightPanel::Activity, "History & Activity", false),
-        P::Keywords => ("keywords", Icon::Tag, RightPanel::Keywords, "Keywords", true),
-        P::Info => ("info", Icon::Info, RightPanel::Info, "Info", true),
         _ => return None,
     })
 }

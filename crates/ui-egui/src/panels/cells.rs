@@ -192,32 +192,111 @@ pub fn view_options(app: &mut LccApp, ui: &mut egui::Ui) {
 const STAT_TTL: f64 = 5.0;
 
 /// The metadata-vs-XMP badge text, if the photo is out of step with its sidecar. Only photos that
-/// were read from / written to a sidecar have a stamp; the sidecar is stat'ed at most every
-/// [`STAT_TTL`] seconds per photo.
+/// were read from / written to a sidecar have a stamp. The sidecar is looked at off the UI thread
+/// ([`stat_worker`]; on a network share that is a round trip per file, for every cell on screen),
+/// at most every [`STAT_TTL`] seconds per photo; until the first look comes back, no badge.
 fn xmp_badge(app: &mut LccApp, ui: &egui::Ui, p: &Photo) -> Option<&'static str> {
     p.xmp?;
     let lcc_catalog::Source::File { path } = &p.source else { return None };
     let now = ui.input(|i| i.time);
     let stats = &mut app.ui.lib.sidecar_stats;
-    let stat = match stats.get(&p.id) {
-        Some((at, s)) if now - at < STAT_TTL => *s,
-        _ => {
-            let naming = app.session.sidecar_naming(p.id);
-            let s = lcc_engine::sidecar::find_sidecar(path, naming)
-                .and_then(|f| std::fs::metadata(f).ok())
-                .map(|m| SidecarStat { mtime: mtime(&m), size: m.len() });
-            if stats.len() > 4096 {
-                stats.clear();
-            }
-            stats.insert(p.id, (now, s));
-            s
+    #[cfg(not(target_arch = "wasm32"))]
+    for (id, s) in stat_worker::take() {
+        if stats.len() > 4096 {
+            stats.clear();
         }
-    };
+        stats.insert(id, (now, s));
+    }
+    let cached = stats.get(&p.id).copied();
+    if cached.is_none_or(|(at, _)| now - at >= STAT_TTL) {
+        let naming = app.session.sidecar_naming(p.id);
+        #[cfg(not(target_arch = "wasm32"))]
+        stat_worker::ask(p.id, path, naming, ui.ctx());
+        #[cfg(target_arch = "wasm32")]
+        app.ui.lib.sidecar_stats.insert(p.id, (now, stat_of(path, naming)));
+    }
+    let (_, stat) = cached?;
     match p.xmp_status(stat) {
         XmpStatus::ChangedInCatalog => Some("Metadata changed in the catalog: not yet saved to the file"),
         XmpStatus::ChangedOnDisk => Some("Metadata file changed on disk: read it from the file"),
         XmpStatus::Conflict => Some("Metadata conflict: changed both in the catalog and on disk"),
         XmpStatus::InSync | XmpStatus::Unknown => None,
+    }
+}
+
+/// The size and time of the sidecar of the original at `path`, if it has one.
+fn stat_of(path: &str, naming: lcc_engine::sidecar::SidecarNaming) -> Option<SidecarStat> {
+    lcc_engine::sidecar::find_sidecar(path, naming).and_then(|f| std::fs::metadata(f).ok()).map(|m| SidecarStat { mtime: mtime(&m), size: m.len() })
+}
+
+/// The badges' sidecar lookups, made one at a time on a thread of their own so a slow or offline
+/// network share never holds up a frame.
+#[cfg(not(target_arch = "wasm32"))]
+mod stat_worker {
+    use std::collections::HashSet;
+    use std::sync::{Mutex, OnceLock, PoisonError, mpsc};
+
+    use lcc_catalog::{PhotoId, SidecarStat};
+    use lcc_engine::sidecar::SidecarNaming;
+
+    type Job = (PhotoId, String, SidecarNaming);
+
+    #[derive(Default)]
+    struct Worker {
+        jobs: Mutex<Option<mpsc::Sender<Job>>>,
+        pending: Mutex<HashSet<PhotoId>>,
+        done: Mutex<Vec<(PhotoId, Option<SidecarStat>)>>,
+        ctx: Mutex<Option<egui::Context>>,
+    }
+
+    fn worker() -> &'static Worker {
+        static W: OnceLock<Worker> = OnceLock::new();
+        W.get_or_init(Worker::default)
+    }
+
+    /// Look at photo `id`'s sidecar (unless a look is already on its way); the frame is repainted
+    /// when it comes back.
+    pub fn ask(id: PhotoId, path: &str, naming: SidecarNaming, ctx: &egui::Context) {
+        let w = worker();
+        if !w.pending.lock().unwrap_or_else(PoisonError::into_inner).insert(id) {
+            return;
+        }
+        w.ctx.lock().unwrap_or_else(PoisonError::into_inner).get_or_insert_with(|| ctx.clone());
+        let mut jobs = w.jobs.lock().unwrap_or_else(PoisonError::into_inner);
+        if jobs.is_none() {
+            *jobs = start();
+        }
+        if jobs.as_ref().is_none_or(|tx| tx.send((id, path.to_string(), naming)).is_err()) {
+            *jobs = None;
+            w.pending.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
+        }
+    }
+
+    /// The looks that came back since the last call.
+    pub fn take() -> Vec<(PhotoId, Option<SidecarStat>)> {
+        std::mem::take(&mut *worker().done.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    fn start() -> Option<mpsc::Sender<Job>> {
+        let (tx, rx) = mpsc::channel::<Job>();
+        let spawned = std::thread::Builder::new().name("lcc-sidecar-stat".into()).spawn(move || {
+            for (id, path, naming) in rx {
+                let s = super::stat_of(&path, naming);
+                let w = worker();
+                w.done.lock().unwrap_or_else(PoisonError::into_inner).push((id, s));
+                w.pending.lock().unwrap_or_else(PoisonError::into_inner).remove(&id);
+                if let Some(ctx) = w.ctx.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+        match spawned {
+            Ok(_) => Some(tx),
+            Err(e) => {
+                log::warn!("could not start the sidecar lookups: {e}");
+                None
+            }
+        }
     }
 }
 
@@ -228,6 +307,30 @@ fn mtime(m: &std::fs::Metadata) -> i64 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// A badge's sidecar look happens on the worker thread and comes back through `take`.
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn sidecar_looks_come_back_from_the_worker() {
+        let d = std::env::temp_dir().join(format!("cells-stat-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        let original = d.join("DSC_0001.NEF");
+        std::fs::write(&original, b"raw").unwrap();
+        std::fs::write(d.join("DSC_0001.xmp"), b"<x:xmpmeta/>").unwrap();
+        let ctx = egui::Context::default();
+        let id = PhotoId(424242);
+        stat_worker::ask(id, &original.to_string_lossy(), lcc_engine::sidecar::SidecarNaming::Stem, &ctx);
+        let t = std::time::Instant::now();
+        let mut got = None;
+        while got.is_none() && t.elapsed() < std::time::Duration::from_secs(10) {
+            got = stat_worker::take().into_iter().find(|(i, _)| *i == id);
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
+        let (_, stat) = got.expect("the look came back");
+        assert_eq!(stat.map(|s| s.size), Some(12));
+        let _ = std::fs::remove_dir_all(&d);
+    }
 
     #[test]
     fn mtime_of_a_real_file_is_positive() {

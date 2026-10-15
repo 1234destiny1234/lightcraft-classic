@@ -43,7 +43,7 @@ pub fn specs() -> Vec<CommandSpec> {
         has_selection,
         |s, p| {
             let c = "develop.quickSet";
-            let ids = s.targets(p);
+            let ids = s.targets(p)?;
             if ids.is_empty() {
                 return Err(bad(c, "no photo selected"));
             }
