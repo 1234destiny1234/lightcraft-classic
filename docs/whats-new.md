@@ -1,5 +1,14 @@
 # What's new in LightCraft
 
+## 2026-10-15
+
+### Sharper HDR merges of handheld brackets
+- HDR merges line the photos up to about a tenth of a pixel instead of up to a pixel or two: the alignment found on
+  small versions of the photos is now checked and corrected at full size. A bright photo of the bracket that is mostly
+  clipped, which used to be merged without any alignment (a doubled picture), is now aligned too.
+- Merged photos (HDR and panorama) are resampled with a sharper filter that keeps fine detail. On a test scene shot
+  handheld, the merge keeps 99 % of the detail instead of 86 %.
+
 ## 2026-10-14
 
 ### Lightroom radial masks on the right side

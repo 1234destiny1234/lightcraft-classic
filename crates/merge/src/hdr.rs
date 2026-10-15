@@ -4,8 +4,9 @@
 //!    luminance without EXIF; ties by content); the middle one is the reference (geometry, colour
 //!    and the output's default brightness come from it). Everything below runs in that order, so
 //!    the result is the same whatever order the frames come in.
-//! 2. **Auto align** ([`crate::align`]): each frame is registered to the reference and resampled
-//!    into its geometry.
+//! 2. **Auto align** ([`crate::align`]): each frame is registered to the reference on small
+//!    versions, the fit refined at full size ([`crate::refine`]), and the frame resampled into the
+//!    reference's geometry (Lanczos-3, so the warp keeps fine detail).
 //! 3. **Exposure normalisation.** The exposure ratio between brightness-adjacent frames is
 //!    measured robustly — the median of log ratios over pixels well exposed in both — and chained
 //!    to the reference; EXIF is the fallback when too few pixels overlap. Radiance
@@ -31,6 +32,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::align::{self, Alignment};
 use crate::frame::{Frame, FrameColor, consensus_multipliers};
+use crate::refine;
 use crate::{MergeError, Progress, Result, check};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
@@ -187,9 +189,24 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         for (i, a) in al {
             alignments[i] = a;
         }
-        check(progress, 0.35, "Resampling")?;
-        // one frame at a time (the warp is parallel inside): each warped copy replaces its frame before the next is made
-        for i in (0..n).filter(|&i| i != reference && alignments[i].model != "identity") {
+        check(progress, 0.3, "Refining the alignment")?;
+        // the fit on small versions refined at full size (a tenth of a work pixel is most of a full one), then the
+        // frame resampled; one frame at a time (both are parallel inside): each warped copy replaces its frame
+        // before the next is made
+        let ref_luma = refine::luma(&frames[reference].image, g0 * rel[reference], frames[reference].clip);
+        for i in (0..n).filter(|&i| i != reference) {
+            let luma = refine::luma(&frames[i].image, g0 * rel[i], frames[i].clip);
+            alignments[i] = if alignments[i].model == "identity" {
+                // the small versions found nothing (a bright frame mostly clipped): patches at full size still may
+                refine::recover(&ref_luma, &luma, i as u64 + 1).unwrap_or_else(Alignment::identity)
+            } else {
+                refine::refine(&ref_luma, &luma, &alignments[i], refine::radius_for(feats[i].1), i as u64 + 1)
+            };
+            drop(luma);
+            if alignments[i].model == "identity" {
+                continue;
+            }
+            check(progress, 0.3 + 0.15 * i as f32 / n as f32, "Resampling")?;
             let (img, v) = align::warp(&frames[i].image, &alignments[i].h);
             frames[i].image = img;
             valid[i] = Some(v);
