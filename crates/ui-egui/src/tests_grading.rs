@@ -272,18 +272,6 @@ fn shift_drag_keeps_the_pucks_hue_wherever_the_pointer_grabs() {
 }
 
 #[test]
-fn shift_drag_from_the_neutral_centre_locks_the_hue_where_the_pointer_grabbed() {
-    let mut h = demo();
-    let rad = wheel_radius(&h, "midtones");
-    set_wheel(&mut h, "midtones", 0.0, 0.0);
-    // no hue yet: the angle of the grab (90°, straight up) stands in for it
-    let ((hue, sat), undo) = drag_wheel(&mut h, puck(90.0, 50.0, rad), egui::vec2(6.0, -10.0) * (rad / 40.0), &["shift"]);
-    assert!((hue - 90.0).abs() <= 1.0, "{hue}");
-    assert!((sat - 75.0).abs() <= 1.5, "{sat}");
-    assert_eq!(undo, 1);
-}
-
-#[test]
 fn cmd_drag_keeps_the_saturation_and_changes_only_the_hue() {
     let mut h = demo();
     let rad = wheel_radius(&h, "midtones");

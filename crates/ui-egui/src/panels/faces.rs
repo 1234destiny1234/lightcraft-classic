@@ -27,6 +27,13 @@ fn scan_pace(app: &LccApp, ctx: &egui::Context, now: f64) -> (&'static str, bool
     (pace_for(focused, minimized, now - app.caches.last_input, now - app.caches.last_move, watching), focused && !minimized)
 }
 
+/// The pace for other background work that reads the library's files (the focus-point reader): the face scan's, without
+/// the "watching" speed-up.
+pub(crate) fn background_pace(app: &LccApp, ctx: &egui::Context, now: f64) -> &'static str {
+    let (focused, minimized) = ctx.input(|i| (i.focused, i.raw.viewports.get(&i.raw.viewport_id).and_then(|v| v.minimized).unwrap_or(false)));
+    pace_for(focused, minimized, now - app.caches.last_input, now - app.caches.last_move, false)
+}
+
 /// The pace for a window that has the keyboard (or not) and is minimized (or not), `worked` seconds after the user last
 /// dragged, typed or scrolled and `moved` seconds after they last moved the pointer, while they are (or are not) looking
 /// at the scan's progress.
@@ -206,9 +213,7 @@ fn mb(bytes: Option<u64>) -> String {
 /// "its input is not an image" → "Its input is not an image."
 fn sentence(s: &str) -> String {
     let s = s.trim();
-    let mut c = s.chars();
-    let mut out: String = c.next().map(|f| f.to_uppercase().collect()).unwrap_or_default();
-    out.push_str(c.as_str());
+    let mut out = crate::i18n::upper_first(s);
     if !out.is_empty() && !out.ends_with(['.', '!', '?']) {
         out.push('.');
     }
@@ -282,12 +287,12 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     ui.add_space(6.0);
     ui.horizontal(|ui| {
         let can = app.services.pick_model_file.is_some();
-        let r = ui.add_enabled(can, egui::Button::new("Add a model file…"));
+        let r = ui.add_enabled(can, egui::Button::new(crate::i18n::tr("Add a model file…")));
         register(ui.ctx(), "faces:addModel", r.rect);
         if r.clicked() {
             let _ = app.run("dialog.faceModel", json!({}));
         }
-        ui.label(RichText::new("or drop a .onnx file on the window").color(t.text_dim));
+        ui.label(RichText::new(crate::i18n::tr("or drop a .onnx file on the window")).color(t.text_dim));
     });
     // what is wrong with the user's own catalog (catalog.json in the models folder), if anything
     for e in list["catalog"]["errors"].as_array().into_iter().flatten().filter_map(Value::as_str).take(3) {
@@ -330,9 +335,9 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
                         ui.label(RichText::new(size).color(t.text_dim));
                     }
                     if selected {
-                        ui.label(RichText::new("in use").color(t.accent));
+                        ui.label(RichText::new(crate::i18n::tr("in use")).color(t.accent));
                     } else if installed {
-                        ui.label(RichText::new("installed").color(t.text_dim));
+                        ui.label(RichText::new(crate::i18n::tr("installed")).color(t.text_dim));
                     }
                 });
                 ui.label(RichText::new(licence_line(m)).font(t.font(11.5)).color(if m["licence"]["commercial"] == "yes" {
@@ -366,7 +371,7 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
                         register(ui.ctx(), format!("faces:progress:{id}"), bar.rect);
                     }
                     (Some("done"), _) => {
-                        ui.label(RichText::new("Downloaded and checked. Installing…").font(t.font(11.5)).color(t.text_dim));
+                        ui.label(RichText::new(crate::i18n::tr("Downloaded and checked. Installing…")).font(t.font(11.5)).color(t.text_dim));
                     }
                     (Some("failed"), Some(d)) => {
                         let why = sentence(d["error"].as_str().unwrap_or("The download failed"));
@@ -377,7 +382,7 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
                 if installed {
-                    let r = ui.button("Remove");
+                    let r = ui.button(crate::i18n::tr("Remove"));
                     register(ui.ctx(), format!("faces:remove:{id}"), r.rect);
                     if r.clicked() {
                         let _ = app.run("faces.models.remove", json!({"id": id}));
@@ -394,7 +399,7 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
                 } else {
                     match dl_state {
                         Some("running") => {
-                            let r = ui.button("Cancel");
+                            let r = ui.button(crate::i18n::tr("Cancel"));
                             register(ui.ctx(), format!("faces:cancelDownload:{id}"), r.rect);
                             if r.clicked() {
                                 let _ = app.run("faces.models.downloadCancel", json!({"id": id}));
@@ -405,7 +410,7 @@ fn model_row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, m: &Value, dl: Opt
                         Some("done") => {}
                         _ => {
                             if let Some(url) = m["source"].as_str() {
-                                let r = ui.button("Open page").on_hover_text(crate::i18n::tr(
+                                let r = ui.button(crate::i18n::tr("Open page")).on_hover_text(crate::i18n::tr(
                                     "Opens the model's own page in your browser, to read about it or get the file yourself.",
                                 ));
                                 register(ui.ctx(), format!("faces:get:{id}"), r.rect);
@@ -440,7 +445,7 @@ pub fn model_dialog(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, info: &Valu
     let kind = info["kind"].as_str().unwrap_or("unsupported");
     let file = info["fileName"].as_str().unwrap_or("");
     if kind == "unsupported" {
-        ui.label(RichText::new("This file cannot be used yet").font(t.semibold(13.5)).color(t.caution));
+        ui.label(RichText::new(crate::i18n::tr("This file cannot be used yet")).font(t.semibold(13.5)).color(t.caution));
         ui.add(
             egui::Label::new(
                 RichText::new(sentence(crate::i18n::tr(info["reason"].as_str().unwrap_or("It is not a face recognition model {app} understands"))))
@@ -457,7 +462,7 @@ pub fn model_dialog(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, info: &Valu
         ui.label(RichText::new(mb(info["sizeBytes"].as_u64())).color(t.text_dim));
     });
     if info["alreadyInstalled"] == true {
-        ui.label(RichText::new("Already installed. Installing again is harmless.").color(t.text_dim));
+        ui.label(RichText::new(crate::i18n::tr("Already installed. Installing again is harmless.")).color(t.text_dim));
     }
     let download = info["download"].is_string();
     let detector = m["role"] == "detector";
@@ -483,7 +488,9 @@ pub fn model_dialog(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, info: &Valu
     }
     let provenance = m["provenance"].as_str().unwrap_or("");
     if !provenance.is_empty() {
-        ui.add(egui::Label::new(RichText::new(format!("Trained on: {provenance}")).color(t.text_dim)).wrap());
+        ui.add(
+            egui::Label::new(RichText::new(crate::i18n::tr_format!("Trained on: {provenance}", provenance = provenance)).color(t.text_dim)).wrap(),
+        );
     }
     if kind == "draft" {
         ui.add_space(2.0);
@@ -678,7 +685,7 @@ pub fn name_editor(
                     outcome = Editor::Setup;
                 }
             }
-            ui.label(RichText::new("Enter to confirm, Esc to cancel").font(t.font(11.0)).color(t.text_dim));
+            ui.label(RichText::new(crate::i18n::tr("Enter to confirm, Esc to cancel")).font(t.font(11.0)).color(t.text_dim));
         });
     });
     if ctx.input(|i| i.key_pressed(egui::Key::Escape)) {

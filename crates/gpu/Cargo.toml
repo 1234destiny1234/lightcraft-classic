@@ -31,5 +31,7 @@ default = []
 denoise = ["dep:lcc-denoise", "lcc-denoise/runtime"]
 
 [dev-dependencies]
+# tests record why they skip (`cargo xtask ci` lists the skips)
+lcc-testkit = { workspace = true }
 lcc-scenes = { workspace = true }
 lcc-raw = { workspace = true }

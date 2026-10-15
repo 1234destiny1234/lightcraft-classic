@@ -21,6 +21,7 @@ concurrency:
 
 jobs:
   lint:
+    timeout-minutes: 15
     # Self-hosted gpu0 (docs/ci.md), in an Ubuntu container for the apt-packaged linters (needs Docker
     # on the runner).
     runs-on: [self-hosted, Linux, X64, lcc]

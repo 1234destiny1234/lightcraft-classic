@@ -99,10 +99,12 @@ pub struct SourceInfo {
     /// Where pixel-filter plug-ins come from; `None`: the process default
     /// ([`plugin_filters::set_default_host`]).
     pub filters: Option<plugin_filters::FilterHostRef>,
-    /// Long edge of the photo at its full resolution, when the source buffer may be a reduced
-    /// decode (a preview level); 0: the buffer's own. Pixel-scale plug-in filters run at that
-    /// scale ([`source_stage`]), so a preview matches the export.
-    pub full_long: usize,
+    /// Long edge (px) of the original photo, when the source handed to the renderer is a smaller
+    /// copy of it (the app's thumbnail and preview levels); `None`: the source is the original.
+    /// Noise reduction sizes its radii in the original's pixels ([`Plan::detail_scale`]), and
+    /// pixel-scale plug-in filters run at that scale ([`source_stage`]), so a preview looks like
+    /// the full-size render scaled down (issue #960).
+    pub native_long: Option<usize>,
 }
 
 impl Default for SourceInfo {
@@ -119,7 +121,7 @@ impl Default for SourceInfo {
             mattes: None,
             local_tone: None,
             filters: None,
-            full_long: 0,
+            native_long: None,
         }
     }
 }
@@ -399,6 +401,9 @@ pub struct Plan<'a> {
     pub px_per_long: f64,
     /// Long edge of the source buffer (px).
     pub src_long: usize,
+    /// Output pixels per pixel of the original photo ([`SourceInfo::native_long`], else the source
+    /// buffer), at most 1: the scale of noise reduction, whose radii are in the original's pixels.
+    pub detail_scale: f32,
     /// Key of the resampled source (together with the source buffer's identity).
     pub geo: u64,
     /// Key of the white-balanced, retouched, denoised image (and of the planes computed from it).
@@ -479,6 +484,9 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
     let filter_frame = lcc_filters::FrameInfo { x: u(origin.0), y: u(origin.1), full_w: u(full_w), full_h: u(full_h) };
     let source_filters = Arc::new(plugin_filters::Stack::resolve(info, s, lcc_develop::FilterStage::Source));
     let src_long = src.width.max(src.height);
+    // (an original reported smaller than the source is the source)
+    let native_long = info.native_long.unwrap_or(0).max(src_long).max(1);
+    let detail_scale = local::detail_scale(px_per_long, native_long);
     let geo = hash_of((format!("{frame:?}"), w, h));
     let (wb_t, wb_tint) = local::effective_wb(info, s);
     let eyes = redeye::resolve(src, &s.red_eye, s.orientation, &frame, w, h, px_per_long);
@@ -498,8 +506,12 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
     ));
     // a draft's colour NR may take the half-resolution blur: its result is never a final render's
     let draft_nr = req.quality == Quality::Draft && d.nr_color > 0.0;
-    let lin_key =
-        hash_of((pre_nr_key, [d.nr_luminance, d.nr_detail, d.nr_color, d.nr_color_detail, d.nr_color_smoothness].map(f64::to_bits), draft_nr));
+    let lin_key = hash_of((
+        pre_nr_key,
+        [d.nr_luminance, d.nr_detail, d.nr_color, d.nr_color_detail, d.nr_color_smoothness].map(f64::to_bits),
+        detail_scale.to_bits(),
+        draft_nr,
+    ));
     // AI masks without a model: analysed once per photo look on the whole frame (cached)
     let mattes = if auto_mask::needed(s) {
         let mut m = info.mattes.as_deref().cloned().unwrap_or_default();
@@ -515,6 +527,7 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
         h,
         px_per_long,
         src_long,
+        detail_scale,
         geo,
         lin_key,
         pre_nr_key,
@@ -624,7 +637,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         Src::Shared(a) => a,
     };
     let plan = plan(src_img, info, s, req);
-    let Plan { ref frame, w, h, px_per_long, src_long, geo, lin_key, .. } = plan;
+    let Plan { ref frame, w, h, px_per_long, detail_scale, geo, lin_key, .. } = plan;
     let s = &*plan.settings;
     let mut warnings = Vec::new();
 
@@ -664,7 +677,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
             // Without a cache (or filters) the resampled buffer is ours: work on it in place.
             let mut img = if shared.is_some() || filtered.is_some() { (**base).clone() } else { Arc::unwrap_or_clone(sampled.clone()) };
             lin_cpu(&mut img, info, &plan);
-            local::denoise(&mut img, s, src_long, frame.output_long(w, h), req.quality == Quality::Draft);
+            local::denoise_with(&mut img, s, detail_scale, req.quality == Quality::Draft);
             Arc::new(img)
         }
     };
@@ -726,7 +739,11 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
 /// exposed scene colours, as [`MaskShape::ColorRange`](lcc_develop::MaskShape) compares
 /// them), averaged over 3 × 3 pixels of a render fitting `req`. `None` outside the image.
 pub fn color_range_sample(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, p: lcc_geom::Point) -> Option<[f64; 3]> {
-    let plan = plan(src, info, s, req);
+    // Pick from the same settings as the render: disabled panels contribute nothing, and an
+    // SDR preview of an HDR edit includes the SDR rendition's exposure offset.
+    let effective = s.effective();
+    let rendition = settings_for(&effective, req);
+    let plan = plan(src, info, &rendition, req);
     let mut img = plan.frame.sample(src, plan.w, plan.h);
     if !plan.source_filters.is_empty() {
         img = Arc::unwrap_or_clone(source_stage::run(src, info, &plan, &img, false, 0, &mut Vec::new()).1);
@@ -737,7 +754,7 @@ pub fn color_range_sample(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, 
     if cx < 0 || cy < 0 || cx >= plan.w as i64 || cy >= plan.h as i64 {
         return None;
     }
-    let gain = (s.light.exposure as f32).exp2();
+    let gain = (plan.settings.light.exposure as f32).exp2();
     let mut acc = [0f64; 3];
     let mut n = 0.0;
     for y in (cy - 1).max(0)..=(cy + 1).min(plan.h as i64 - 1) {
@@ -827,6 +844,8 @@ mod tests_hdr;
 mod tests_pixel_scale;
 #[cfg(test)]
 mod tests_plugin_filters;
+#[cfg(test)]
+mod tests_nr_scale;
 #[cfg(test)]
 mod tests_sharpen;
 #[cfg(test)]

@@ -12,7 +12,7 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     let mut merged = Vec::new();
     let mut backups = Vec::new();
     let mut failed = Vec::new();
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let owners = crate::sidecar::StemOwners::among(&s.catalog, &ids);
     let mut stamped = Vec::new();
     for id in ids {
@@ -42,7 +42,7 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
     let mut stamped = Vec::new();
     let mut warnings = Vec::new();
     let mut fields = Vec::new();
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let namings = s.sidecar_namings(&ids);
     for (id, naming) in ids.into_iter().zip(namings) {
         match s.read_sidecar_op_named(id, naming) {
@@ -80,7 +80,7 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
 fn status(s: &mut Session, p: &Value) -> Result<Value> {
     let mut counts = serde_json::Map::new();
     let photos: Vec<Value> = s
-        .targets(p)
+        .targets(p)?
         .into_iter()
         .map(|id| {
             let st = serde_json::to_value(s.xmp_status(id)).unwrap_or_default();
@@ -147,6 +147,18 @@ pub fn specs() -> Vec<CommandSpec> {
             "{autoWrite?: bool, naming?: stem (IMG_1.xmp, default) | full (IMG_1.CR3.xmp)} → current preferences (saved with the library)",
             always,
             prefs
+        ),
+        cmd!(
+            "library.retrySidecars",
+            "Write Waiting XMP Sidecars",
+            [],
+            None,
+            "{} — writes again the automatic XMP sidecars that failed (folder offline, read-only or full) whose originals are reachable now → {written, waiting}",
+            always,
+            |s, _| {
+                let written = s.retry_unsaved_sidecars();
+                Ok(json!({"written": written, "waiting": s.unsaved_sidecars()}))
+            }
         ),
         cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", always, |s, _| {
             let on = !s.xmp.auto_write;

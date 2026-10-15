@@ -144,21 +144,24 @@ fn settings_param(s: &Session, p: &Value, c: &str) -> Result<GallerySettings> {
 
 /// Target photos: `ids`, else a saved `gallery`'s photos, else the selection, else every visible
 /// photo.
-fn photo_ids(s: &mut Session, p: &Value) -> Vec<PhotoId> {
+fn photo_ids(s: &mut Session, p: &Value) -> Result<Vec<PhotoId>> {
     if !super::names_photos(p)
         && let Ok(Some(g)) = find_gallery(s, p, "web")
         && !g.photos.is_empty()
     {
-        return g
+        return Ok(g
             .photos
             .into_iter()
             .filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted))
             .take(lcc_webgallery::site::MAX_PHOTOS.saturating_add(1))
-            .collect();
+            .collect());
     }
-    let t = s.targets(p);
+    let t = s.targets(p)?;
     let t = if t.len() > 1 || super::names_photos(p) { t } else { s.visible().to_vec() };
-    t.into_iter().filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted)).take(lcc_webgallery::site::MAX_PHOTOS.saturating_add(1)).collect()
+    Ok(t.into_iter()
+        .filter(|id| s.catalog.photo(*id).is_some_and(|ph| !ph.deleted))
+        .take(lcc_webgallery::site::MAX_PHOTOS.saturating_add(1))
+        .collect())
 }
 
 /// The token fields of one photo.
@@ -255,7 +258,7 @@ pub(crate) fn server_param(s: &Session, p: &Value, c: &str) -> Result<Server> {
 fn preview(s: &mut Session, p: &Value) -> Result<Value> {
     const ID: &str = "web.preview";
     let g = settings_param(s, p, ID)?;
-    let ids = photo_ids(s, p);
+    let ids = photo_ids(s, p)?;
     let site = build(s, &g, &ids).map_err(|e| bad(ID, e))?;
     let files: Vec<Value> =
         site.files.iter().map(|f| json!({"path": f.path, "bytes": f.bytes.len(), "text": String::from_utf8_lossy(&f.bytes)})).collect();
@@ -377,7 +380,7 @@ pub fn prepare(s: &mut Session, c: &str, p: &Value) -> Result<WebJob> {
         }
         _ => return Err(bad(c, "not a web output command")),
     };
-    let ids = photo_ids(s, p);
+    let ids = photo_ids(s, p)?;
     let (pages, mut images) = prepare_site(s, &g, &ids, c)?;
     match &target {
         Target::Folder { dir } => {
@@ -490,7 +493,8 @@ fn save_gallery(s: &mut Session, p: &Value) -> Result<Value> {
     let name = str_param(p, "name").map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(ID, "missing `name`"))?.to_string();
     let settings = settings_param(s, p, ID)?;
     migrate_galleries(s, ID)?;
-    let ids: Option<Vec<PhotoId>> = super::names_photos(p).then(|| s.targets(p).into_iter().filter(|i| s.catalog.photo(*i).is_some()).collect());
+    let ids: Option<Vec<PhotoId>> =
+        if super::names_photos(p) { Some(s.targets(p)?.into_iter().filter(|i| s.catalog.photo(*i).is_some()).collect()) } else { None };
     let settings = serde_json::to_value(&settings).map_err(|e| bad(ID, e.to_string()))?;
     match creations::find_creation(s, CreationKind::Web, &name) {
         Some(g) => creations::update_settings(s, g.id, CreationKind::Web, settings, ids)?,

@@ -66,6 +66,13 @@ pub fn sidecar_path(original: &str, naming: SidecarNaming) -> PathBuf {
 /// accepting `.XMP` and `.Xmp`, and a full name whose photo extension differs in case, such as
 /// `IMG_1.cr3.xmp` beside `IMG_1.CR3`, which a case-sensitive file system would otherwise miss).
 pub fn find_sidecar(original: &str, naming: SidecarNaming) -> Option<PathBuf> {
+    sidecar_candidates(original, naming).find(|p| p.is_file())
+}
+
+/// The names `original`'s sidecar can have, in the order they are looked for: under `naming`,
+/// then under the other naming (the full name also with the photo extension in the other case),
+/// each as `.xmp`, `.XMP` and `.Xmp`.
+pub(crate) fn sidecar_candidates(original: &str, naming: SidecarNaming) -> impl Iterator<Item = PathBuf> {
     let other = if naming == SidecarNaming::Stem { SidecarNaming::Full } else { SidecarNaming::Stem };
     let ext = Path::new(original).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
     let base = Path::new(original).with_extension("");
@@ -73,7 +80,7 @@ pub fn find_sidecar(original: &str, naming: SidecarNaming) -> Option<PathBuf> {
     let full_variants: Vec<String> = [recased(ext.to_lowercase()), recased(ext.to_uppercase())].into_iter().flatten().collect();
     [naming, other]
         .into_iter()
-        .flat_map(|n| {
+        .flat_map(move |n| {
             let mut v = vec![sidecar_path(original, n)];
             if n == SidecarNaming::Full {
                 v.extend(full_variants.iter().map(|o| sidecar_path(o, n)));
@@ -81,7 +88,6 @@ pub fn find_sidecar(original: &str, naming: SidecarNaming) -> Option<PathBuf> {
             v
         })
         .flat_map(|p| [p.clone(), p.with_extension("XMP"), p.with_extension("Xmp")])
-        .find(|p| p.is_file())
 }
 
 /// What a sidecar (or embedded XMP packet) says about a photo. `None` = not stated.
@@ -578,10 +584,10 @@ pub fn read_packet(original: &str, kind: MediaKind, naming: SidecarNaming) -> Op
 /// Photo ids touched by an op (for auto-write).
 pub(crate) fn op_photos(op: &Op, out: &mut Vec<PhotoId>) {
     match op {
-        Op::SetRating { id, .. } | Op::SetFlag { id, .. } | Op::SetLabel { id, .. } | Op::SetDevelop { id, .. } | Op::SetMeta { id, .. } => {
-            if !out.contains(id) {
-                out.push(*id);
-            }
+        Op::SetRating { id, .. } | Op::SetFlag { id, .. } | Op::SetLabel { id, .. } | Op::SetDevelop { id, .. } | Op::SetMeta { id, .. }
+            if !out.contains(id) =>
+        {
+            out.push(*id);
         }
         Op::Batch { ops } => ops.iter().for_each(|o| op_photos(o, out)),
         _ => {}
@@ -857,12 +863,60 @@ impl Session {
         for id in ids {
             if self.catalog.photo(id).is_some_and(|p| file_path(p).is_some() && p.copy_of.is_none()) {
                 match self.save_sidecar_with(id, &owners) {
-                    Ok(_) => written.push(id),
-                    Err(e) => log::warn!("auto-write XMP: {e}"),
+                    Ok(_) => {
+                        self.unsaved_sidecars.remove(&id);
+                        written.push(id);
+                    }
+                    Err(e) => {
+                        // kept for a retry once the file is reachable: a network share that dropped out mustn't leave
+                        // the sidecar silently behind the edit
+                        log::warn!("auto-write XMP: {e}");
+                        self.unsaved_sidecars.insert(id);
+                    }
                 }
             }
         }
         self.record_xmp_stamps(&written, false);
+    }
+
+    /// How many photos have an automatic sidecar write waiting (it failed: the folder offline, read-only or full).
+    pub fn unsaved_sidecars(&self) -> usize {
+        self.unsaved_sidecars.len()
+    }
+
+    /// Write the waiting sidecars whose originals are reachable again (the availability cache answers without
+    /// touching the disk for the others); photos that are gone, or with auto-write off, are dropped from the wait.
+    /// Returns how many were written.
+    pub fn retry_unsaved_sidecars(&mut self) -> usize {
+        if !self.xmp.auto_write {
+            self.unsaved_sidecars.clear();
+            return 0;
+        }
+        let mut ready = Vec::new();
+        for id in self.unsaved_sidecars.clone() {
+            match self.catalog.photo(id).filter(|p| p.copy_of.is_none()).and_then(|p| file_path(p).map(str::to_owned)) {
+                None => {
+                    self.unsaved_sidecars.remove(&id);
+                }
+                Some(path) if self.media.availability.exists(&path) == Some(true) => ready.push(id),
+                Some(_) => {}
+            }
+        }
+        if ready.is_empty() {
+            return 0;
+        }
+        let owners = StemOwners::among(&self.catalog, &ready);
+        let mut written = 0;
+        for id in ready {
+            match self.save_sidecar_with(id, &owners) {
+                Ok(_) => {
+                    self.unsaved_sidecars.remove(&id);
+                    written += 1;
+                }
+                Err(e) => log::debug!("retry XMP: {e}"),
+            }
+        }
+        written
     }
 }
 

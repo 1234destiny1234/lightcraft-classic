@@ -247,7 +247,7 @@ fn document_from(s: &Session, c: &str, p: &Value, kind: Option<CreationKind>) ->
     } else {
         let name = p.get("template").and_then(Value::as_str).ok_or_else(|| bad(c, "give a `template` name or a `document`"))?;
         let t = find_template(name).ok_or_else(|| bad(c, format!("no template named {name:?} (see layout.templates)")))?;
-        let ids: Vec<String> = s.targets(p).into_iter().map(|id| id.0.to_string()).collect();
+        let ids: Vec<String> = s.targets(p)?.into_iter().map(|id| id.0.to_string()).collect();
         let repeat = p.get("repeatOne").and_then(Value::as_bool).unwrap_or(false);
         t.instantiate(&ids, repeat).map_err(|e| bad(c, e.to_string()))?
     };
@@ -334,7 +334,7 @@ fn save(s: &mut Session, p: &Value) -> Result<Value> {
     let name = p.get("name").and_then(Value::as_str).map(str::trim).filter(|n| !n.is_empty()).ok_or_else(|| bad(c, "missing name"))?;
     if settings_kind(kind) && p.get("document").is_none() && p.get("template").is_none() {
         let settings = p.get("settings").cloned().unwrap_or_else(|| json!({}));
-        let photos = s.targets(p).into_iter().filter(|i| s.catalog.photo(*i).is_some()).collect();
+        let photos = s.targets(p)?.into_iter().filter(|i| s.catalog.photo(*i).is_some()).collect();
         let id = save_settings(s, kind, name, settings, photos)?;
         return Ok(json!({"id": id.0, "kind": kind_name(kind), "pages": 0}));
     }

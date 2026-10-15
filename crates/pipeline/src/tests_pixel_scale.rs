@@ -183,7 +183,7 @@ fn pixel_scale_preview_from_a_reduced_decode_matches_the_export() {
     let export = render(&src, &info, &s, &RenderRequest::fit(192, 128));
     // a preview level: the photo decoded at half size, its full size known
     let half = lcc_raster::resample::resize(&src, 96, 64, lcc_raster::resample::Filter::Box);
-    let preview = render(&half, &SourceInfo { full_long: 192, ..info.clone() }, &s, &RenderRequest::fit(48, 32));
+    let preview = render(&half, &SourceInfo { native_long: Some(192), ..info.clone() }, &s, &RenderRequest::fit(48, 32));
     let err = mean_abs(&box_down(&export.image, 4), &preview.image);
     let plain = DevelopSettings { plugin_filters: vec![], ..s.clone() };
     let base = mean_abs(

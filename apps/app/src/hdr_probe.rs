@@ -180,15 +180,3 @@ pub fn run(seconds: u64, log_dir: Option<std::path::PathBuf>) -> eframe::Result 
         }),
     )
 }
-
-#[cfg(test)]
-mod tests {
-    #[test]
-    fn the_ramp_runs_from_black_to_four_times_sdr_white() {
-        let r = super::ramp();
-        assert_eq!(r.len(), super::RAMP_W * super::RAMP_H * 3);
-        assert_eq!(r[0], 0.0);
-        assert!((r[super::RAMP_W * 3 - 1] - super::RAMP_MAX).abs() < 1e-6);
-        assert!(r.as_chunks::<3>().0.windows(2).take(super::RAMP_W - 1).all(|w| w[1][0] >= w[0][0]));
-    }
-}

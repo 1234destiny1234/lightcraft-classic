@@ -14,6 +14,12 @@ pub(crate) fn overlay(code: &str) -> Option<&'static str> {
         "uk" => Some(include_str!("../locales/fork/uk.json")),
         "zh-hans" => Some(include_str!("../locales/fork/zh-hans.json")),
         "zh-hant" => Some(include_str!("../locales/fork/zh-hant.json")),
+        // languages upstream added after the fork's overlays: so far only the words the smart-album
+        // rule editor needs in every language (see `tests_i18n_coverage::PARTIAL`)
+        "pl" => Some(include_str!("../locales/fork/pl.json")),
+        "cs" => Some(include_str!("../locales/fork/cs.json")),
+        "it" => Some(include_str!("../locales/fork/it.json")),
+        "ka" => Some(include_str!("../locales/fork/ka.json")),
         _ => None,
     }
 }

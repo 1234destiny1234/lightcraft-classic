@@ -31,14 +31,14 @@ use crate::{Plan, SourceInfo, geometry::Frame, hash_of};
 /// then that of this size, the same for every render of the photo).
 pub const MAX_NATIVE_PIXELS: usize = if cfg!(target_arch = "wasm32") { 24_000_000 } else { 100_000_000 };
 
-/// The whole frame's size at the photo's full resolution ([`SourceInfo::full_long`], else the
+/// The whole frame's size at the photo's full resolution ([`SourceInfo::native_long`], else the
 /// source buffer's), capped at [`MAX_NATIVE_PIXELS`].
 pub fn native_size(frame: &Frame, info: &SourceInfo) -> (usize, usize) {
     let (nw, nh) = frame.native_size();
     // a reduced decode (a preview level) is scaled up to the photo's size; a decoder's buffer a few
     // pixels off the catalog's size is not
     let src_long = frame.src_w.max(frame.src_h).max(1) as f64;
-    let up = info.full_long as f64 / src_long;
+    let up = info.native_long.unwrap_or(0) as f64 / src_long;
     let up = if up.is_finite() && up > 1.05 { up } else { 1.0 };
     let (nw, nh) = (nw * up, nh * up);
     let (nw, nh) = (if nw.is_finite() { nw.max(1.0) } else { 1.0 }, if nh.is_finite() { nh.max(1.0) } else { 1.0 });
