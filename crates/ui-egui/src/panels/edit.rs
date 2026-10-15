@@ -98,21 +98,31 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if app.ui.soft_proof {
         soft_proofing(app, ui, id);
     }
-    // header: Edit + HDR (Classic: Auto sits in Basic ▸ Tone, the treatment above the profile)
-    let mut reset_clicked = false;
-    let (hr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::hover());
-    ui.painter().text(pos2(hr.left() + 24.0, hr.bottom() - 10.0), Align2::LEFT_CENTER, crate::i18n::tr("Edit"), t.semibold(15.0), t.text);
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 14 }).show(ui, |ui| {
+    // header: Edit (Reset sits in the bar under the panels, issue #116), then Lightroom Classic's Basic button row:
+    // Auto, B&W | HDR (issue #124)
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 14, bottom: 0 }).show(ui, |ui| {
+        ui.label(egui::RichText::new(crate::i18n::tr("Edit")).font(t.semibold(15.0)).color(t.text));
+    });
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 10, bottom: 14 }).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.spacing_mut().item_spacing.x = 8.0;
-            // HDR editing
-            if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
-                let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
-            }
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                if text_button(ui, "reset", crate::i18n::tr("Reset"), false).on_hover_text(crate::i18n::tr("Reset all edits (Cmd+Shift+R)")).clicked()
-                {
-                    reset_clicked = true;
+                ui.spacing_mut().item_spacing.x = 8.0;
+                if text_button(ui, "hdr", crate::i18n::tr("HDR"), d.hdr.enabled).on_hover_text(hdr_button_tip(app.hdr_display_sdr)).clicked() {
+                    let _ = app.run("develop.hdr", json!({"enabled": !d.hdr.enabled}));
+                }
+                // the separator between the treatment and HDR, as in Classic
+                let (sep, _) = ui.allocate_exact_size(vec2(1.0, 18.0), Sense::hover());
+                ui.painter().vline(sep.center().x, sep.y_range(), egui::Stroke::new(1.0, t.button_border));
+                let bw = crate::is_bw(&d);
+                if text_button(ui, "treatment-bw", crate::i18n::tr("B&W"), bw).on_hover_text(crate::i18n::tr("Black & White")).clicked() {
+                    let _ = app.run("develop.treatment", json!({"bw": !bw}));
+                }
+                let applied = app.session.auto_is_current(id);
+                let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
+                if r.clicked() {
+                    let _ = app.run("develop.auto", json!({}));
+                    app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
                 }
             });
         });
@@ -139,20 +149,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         });
     }
     divider(ui);
-    // Lightroom Classic's Basic panel opens with Treatment, then Profile
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 14, bottom: 0 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("Treatment")).font(t.font(13.0)).color(t.text_dim));
-            let bw = crate::is_bw(&d);
-            if let Some(i) = crate::widgets::segmented(ui, "treatment", &[("Color", "color"), ("Black & White", "bw")], Some(usize::from(bw)), 2)
-                && (i == 1) != bw
-            {
-                let _ = app.run("develop.treatment", json!({"bw": i == 1}));
-            }
-        });
-    });
     // profile row
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 14, bottom: 14 }).show(ui, |ui| {
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 12, bottom: 12 }).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(egui::RichText::new(crate::i18n::tr("Profile")).font(t.font(13.0)).color(t.text_dim));
             let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
@@ -197,7 +195,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // Lightroom Classic's Basic panel: white balance, then Tone (with Auto), then Presence
     section(app, ui, &d, "light", "Basic", |app, ui, d| {
         wb_rows(app, ui, d, raw);
-        tone_title(app, ui, id);
+        sub_title(ui, "Tone");
         crate::video_ui::video_gate(ui, video, |ui| hdr_row(app, ui, d));
         for c in ["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks"] {
             control(app, ui, d, c, true);
@@ -374,10 +372,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.add_space(8.0);
     });
     ui.add_space(40.0);
-    // A pending numeric edit commits on blur before the explicit Reset takes precedence.
-    if reset_clicked {
-        let _ = app.run("develop.reset", json!({}));
-    }
 }
 
 /// The profile dropdown: Favorites, Recent, one submenu per group, then favourite toggle and
@@ -473,23 +467,6 @@ fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 
 /// Basic ▸ Tone's title row with Classic's Auto button at its right, greyed out while the tone sliders
 /// still hold what Auto set (any change to them makes it available again).
-fn tone_title(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    let t = Tokens::get(ui.ctx());
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 8, bottom: 2 }).show(ui, |ui| {
-        ui.horizontal(|ui| {
-            ui.label(egui::RichText::new(crate::i18n::tr("Tone")).font(t.semibold(13.0)).color(t.text_label));
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let applied = app.session.auto_is_current(id);
-                let r = ui.add_enabled_ui(!applied, |ui| text_button(ui, "auto", crate::i18n::tr("Auto"), false)).inner;
-                if r.clicked() {
-                    let _ = app.run("develop.auto", json!({}));
-                    app.toast(ui.ctx(), crate::i18n::tr("Auto settings applied"));
-                }
-            });
-        });
-    });
-}
-
 pub fn sub_title(ui: &mut egui::Ui, title: &str) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
@@ -669,8 +646,30 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if resp.clicked() {
         app.ui.show_clipping = !app.ui.show_clipping;
     }
-    // EXIF strip
-    if let Some(ph) = app.session.catalog.photo(id) {
+    // the histogram's context menu: the format of the colour readout (Lightroom's "Show Lab
+    // Color Values")
+    resp.context_menu(|ui| {
+        for f in crate::color_readout::ColorReadout::ALL {
+            let label = match f {
+                crate::color_readout::ColorReadout::Rgb => crate::i18n::tr("Show RGB Color Values"),
+                crate::color_readout::ColorReadout::Hsl => crate::i18n::tr("Show HSL Color Values"),
+                crate::color_readout::ColorReadout::Lab => crate::i18n::tr("Show Lab Color Values"),
+            };
+            if ui.radio(app.ui.settings.color_readout == f, label).clicked() {
+                let _ = app.run(f.command(), json!({}));
+                ui.close();
+            }
+        }
+    });
+    // the colour under the pointer in the loupe replaces the EXIF strip while it is there
+    let pass = ui.ctx().cumulative_pass_nr();
+    let hover = app.ui.hover_color.filter(|(at, _)| pass.saturating_sub(*at) <= 1).map(|(_, c)| c);
+    if let Some(rgb) = hover {
+        let text = app.ui.settings.color_readout.format(rgb);
+        register(ui.ctx(), "histogramReadout", r);
+        p.text(pos2(r.left() + r.width() / 2.0, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+    } else if let Some(ph) = app.session.catalog.photo(id) {
+        // EXIF strip
         let m = &ph.meta;
         let parts: Vec<String> = [
             m.iso.map(|i| format!("ISO {i}")),
@@ -1282,7 +1281,10 @@ fn point_color(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
             for (i, p) in d.point_colors.iter().enumerate() {
                 let (r, resp) = ui.allocate_exact_size(vec2(22.0, 22.0), Sense::click());
                 register(ui.ctx(), format!("pointColor:{i}"), r);
-                ui.painter().rect_filled(r.shrink(2.0), 3.0, oklch_color(p.lum, p.chroma, p.hue));
+                let swatch = oklch_color(p.lum, p.chroma, p.hue);
+                ui.painter().rect_filled(r.shrink(2.0), 3.0, swatch);
+                // the sampled colour as RGB, HSL and Lab
+                let resp = crate::color_readout::on_picker(resp, [swatch.r(), swatch.g(), swatch.b()]);
                 if i == sel {
                     ui.painter().rect_stroke(r, 4.0, Stroke::new(1.5, t.text), egui::StrokeKind::Inside);
                 }
