@@ -366,6 +366,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.autoBwMix", e))?;
                 let info = s.source_info(id);
                 let d = s.develop_of(id).unwrap_or_default();
+                // Source plug-in filters (e.g. a negative conversion) change what the photo is
+                let src = lcc_pipeline::plugin_filters::filtered_source(&src, &info, &d, 1024);
                 let m = lcc_pipeline::auto::auto_bw_mix(&src, &info, &d);
                 edit(s, "develop.autoBwMix", "Auto B&W Mix", |d| {
                     d.treatment = Treatment::Bw;
@@ -381,6 +383,8 @@ pub fn specs() -> Vec<CommandSpec> {
             let src = s.source_now(id, SourceLevel::Thumb).map_err(|e| bad("develop.auto", e))?;
             let info = s.source_info(id);
             let d = s.develop_of(id).unwrap_or_default();
+            // Source plug-in filters (e.g. a negative conversion) change what the photo is
+            let src = lcc_pipeline::plugin_filters::filtered_source(&src, &info, &d, 1024);
             let a = lcc_pipeline::auto::auto_tone(&src, &info, &d);
             edit(s, "develop.auto", "Auto", |d| {
                 d.light.exposure = a.exposure;

@@ -141,8 +141,22 @@ fn label(name: &str) -> String {
 
 fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let c = "develop.pluginFilter.add";
-    let (plugin, module_hash, name) = (text(p, "plugin", c)?, text(p, "module_hash", c)?, text(p, "name", c)?);
-    let (params, stage) = (params(p, c)?.unwrap_or_default(), stage(p, c)?.unwrap_or_default());
+    let plugin = text(p, "plugin", c)?;
+    let (mut params, stage) = (params(p, c)?.unwrap_or_default(), stage(p, c)?.unwrap_or_default());
+    // an installed plug-in: checked against its manifest, defaults filled in, its build recorded
+    let (module_hash, name) = match crate::filter_plugins::registry().get(&plugin) {
+        Some(f) => {
+            params = f.manifest().resolve_params(&Value::Object(params)).map_err(|e| bad(c, e.to_string()))?;
+            if let Some(h) = p.get("module_hash").and_then(Value::as_str)
+                && h != f.module_hash()
+            {
+                return Err(bad(c, "`module_hash` is not the installed build of this plug-in"));
+            }
+            let name = p.get("name").and_then(Value::as_str).filter(|n| !n.is_empty() && n.len() <= MAX_TEXT).unwrap_or(&f.manifest().name);
+            (f.module_hash().to_string(), name.to_string())
+        }
+        None => (text(p, "module_hash", c)?, text(p, "name", c)?),
+    };
     let (id, mut d) = active(s, c)?;
     if d.plugin_filters.len() >= MAX_PLUGIN_FILTERS {
         return Err(bad(c, format!("at most {MAX_PLUGIN_FILTERS} plug-in filters")));
@@ -238,6 +252,32 @@ fn set_analysis(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(Value::Null)
 }
 
+/// Long edge of the whole frame `pc_analyze` measures.
+const ANALYZE_EDGE: usize = 1024;
+
+fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
+    let c = "develop.pluginFilter.analyze";
+    let u = uid(p, c)?;
+    let (id, d) = active(s, c)?;
+    let f = d.plugin_filters.get(position(&d, u, c)?).cloned().ok_or_else(|| bad(c, "no such plug-in filter"))?;
+    let filter = crate::filter_plugins::registry().get(&f.plugin).ok_or_else(|| bad(c, format!("plug-in {:?} is not installed", f.plugin)))?;
+    if !filter.has_analyze() {
+        return Err(bad(c, format!("unsupported: plug-in {:?} has no whole-image measurement (pc_analyze)", f.plugin)));
+    }
+    let src = s.source_now(id, crate::media::SourceLevel::Preview).map_err(|e| bad(c, e))?;
+    let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+    let _task = s.activity.start("pluginAnalyze", &format!("Measuring {}", f.name), crate::activity::Cancel::Flag(cancel.clone()));
+    let (data, w, h) = lcc_pipeline::plugin_filters::analysis_input(&src, ANALYZE_EDGE);
+    let (w, h) = (u32::try_from(w).map_err(|_| bad(c, "image too large"))?, u32::try_from(h).map_err(|_| bad(c, "image too large"))?);
+    let mut entry = f.clone();
+    entry.analysis = None;
+    let params = lcc_pipeline::plugin_filters::filter_params(&entry, "linear");
+    let result = filter.analyze_rgb(&data, w, h, &params, &cancel).map_err(|e| bad(c, e.to_string()))?;
+    let analysis = result.unwrap_or(Value::Null);
+    set_analysis(s, &json!({"uid": u, "analysis": analysis}))?;
+    Ok(json!({ "analysis": analysis }))
+}
+
 fn list(s: &mut Session, _p: &Value) -> Result<Value> {
     let (_, d) = active(s, "develop.pluginFilter.list")?;
     Ok(json!({
@@ -276,6 +316,15 @@ pub fn specs() -> Vec<CommandSpec> {
             "{uid, analysis: JSON (null clears)} — stores the filter's whole-image measurement",
             has_active,
             set_analysis
+        ),
+        cmd!(
+            "develop.pluginFilter.analyze",
+            "Measure Plug-in Filter on Photo",
+            [],
+            None,
+            "{uid} — runs the plug-in's whole-image measurement (pc_analyze) on the photo and stores it (setAnalysis); an `unsupported` error when the plug-in has none → {analysis}",
+            has_active,
+            analyze
         ),
         cmd!(query "develop.pluginFilter.list", "List Plug-in Filters", [], None, "{} — returns {enabled, filters: [...]}", has_active, list),
     ]

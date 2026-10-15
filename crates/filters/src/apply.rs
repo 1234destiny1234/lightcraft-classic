@@ -91,7 +91,7 @@ impl Filter {
     /// samples keep their original value. Setting `cancel` stops the run with
     /// [`Error::Cancelled`]; on any error `img` is left unchanged.
     pub fn apply_rgb(&self, img: &mut [f32], width: u32, height: u32, frame: FrameInfo, params: &Value, cancel: &AtomicBool) -> Result<()> {
-        let resolved = self.manifest().resolve_params(params)?;
+        let resolved = self.host_params(params)?;
         let (w, h) = (width as usize, height as usize);
         let samples = w.checked_mul(h).and_then(|n| n.checked_mul(CH)).ok_or_else(|| Error::Params("image size overflows".into()))?;
         if img.len() != samples {
@@ -137,6 +137,45 @@ impl Filter {
             }
         }
         Ok(())
+    }
+
+    /// `params` resolved against the manifest, plus the host's own keys the manifest can't
+    /// declare: `encoding` (`"linear"` / `"srgb"`, how the samples are encoded) and keys starting
+    /// with `_` (e.g. `_analysis`; `_image` is set per band).
+    fn host_params(&self, params: &Value) -> Result<serde_json::Map<String, Value>> {
+        let mut resolved = self.manifest().resolve_params(params)?;
+        if let Value::Object(given) = params {
+            for (k, v) in given {
+                if (k == "encoding" || k.starts_with('_')) && k != "_image" {
+                    resolved.insert(k.clone(), v.clone());
+                }
+            }
+        }
+        Ok(resolved)
+    }
+
+    /// Runs the module's optional `pc_analyze` export once on the whole `img` (interleaved RGB
+    /// `f32`, typically a downsampled frame) with `params` as [`Self::apply_rgb`] passes them, and
+    /// returns its JSON object (`None`: nothing measured). An error when the module has no
+    /// `pc_analyze` ([`Self::has_analyze`]). Budgeted like a filter run.
+    pub fn analyze_rgb(&self, img: &[f32], width: u32, height: u32, params: &Value, cancel: &AtomicBool) -> Result<Option<Value>> {
+        let mut base = self.host_params(params)?;
+        let (w, h) = (width as usize, height as usize);
+        let samples = w.checked_mul(h).and_then(|n| n.checked_mul(CH)).ok_or_else(|| Error::Params("image size overflows".into()))?;
+        if img.len() != samples || samples == 0 {
+            return Err(Error::Params(format!("buffer has {} samples, expected {width}×{height}×3", img.len())));
+        }
+        base.insert(
+            "_image".into(),
+            json!({"x": 0, "y": 0, "width": w, "height": h, "overlap": 0, "canvasWidth": w, "canvasHeight": h,
+                   "mode": "rgb", "depth": 32, "alpha": false, "channels": CH}),
+        );
+        let pbytes = serde_json::to_vec(&Value::Object(base)).map_err(|e| Error::Params(e.to_string()))?;
+        let deadline = Deadline::new(self.limits(), Some(cancel));
+        let run = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            self.analyze_buffer(img, width, height, CH as u32, FORMAT_RGB32, &pbytes, &deadline)
+        }));
+        run.map_err(|_| Error::Trap("the runtime panicked".into()))?
     }
 
     #[allow(clippy::too_many_arguments)]
