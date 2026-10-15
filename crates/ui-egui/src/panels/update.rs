@@ -253,8 +253,11 @@ fn settings(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     register(ui.ctx(), "check:updateAtStartup", r.rect);
     let r = ui.checkbox(&mut prerelease, tr("Include prereleases (release candidates)"));
     register(ui.ctx(), "check:updatePrerelease", r.rect);
-    if check_at_startup != app.session.updater.prefs().check_at_startup || prerelease != app.session.updater.prefs().prerelease {
-        let _ = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup, "prerelease": prerelease}));
+    // not saved: the boxes show the stored values again next frame
+    if (check_at_startup != app.session.updater.prefs().check_at_startup || prerelease != app.session.updater.prefs().prerelease)
+        && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup, "prerelease": prerelease}))
+    {
+        app.toast_error(ui.ctx(), format!("{}: {e}", tr("Could not save the update settings")));
     }
     if !app.session.updater.persistent() {
         ui.label(egui::RichText::new(tr("These settings are saved in the app's settings folder.")).font(t.font(11.0)).color(t.text_dim));

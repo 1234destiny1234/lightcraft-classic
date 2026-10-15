@@ -70,8 +70,8 @@ fn settings_are_written_and_read_back() {
         let mut u = Updater::new(Some(dir.clone()));
         assert!(!u.prefs().check_at_startup, "off by default");
         assert!(!u.prefs().prerelease);
-        assert!(u.set_prefs(Some(true), Some(true)), "a change is saved");
-        assert!(!u.set_prefs(Some(true), Some(true)), "the same values change nothing");
+        assert!(u.set_prefs(Some(true), Some(true)).expect("saved"), "a change is saved");
+        assert!(!u.set_prefs(Some(true), Some(true)).expect("saved"), "the same values change nothing");
         u.mark_seen("1.2.0", true);
     }
     let again = Updater::new(Some(dir.clone()));
@@ -116,7 +116,7 @@ fn an_existing_choice_about_the_start_up_check_is_kept() {
         let mut u = Updater::new(Some(dir.clone()));
         assert_eq!(u.prefs().check_at_startup, stored, "read as it was saved");
         // another setting saved later keeps the choice, and the file stays at version 1
-        assert!(u.set_prefs(None, Some(true)));
+        assert!(u.set_prefs(None, Some(true)).expect("saved"));
         let file: serde_json::Value = serde_json::from_slice(&std::fs::read(dir.join("updates.json")).expect("read")).expect("json");
         assert_eq!(file["version"], 1, "{file}");
         assert_eq!(file["updates"]["checkAtStartup"], stored, "{file}");
@@ -140,7 +140,7 @@ fn a_damaged_settings_file_is_survivable() {
 fn an_in_memory_session_writes_nothing() {
     let mut u = Updater::new(None);
     assert!(!u.persistent());
-    assert!(u.set_prefs(Some(true), None));
+    assert!(u.set_prefs(Some(true), None).expect("saved"));
     u.mark_seen("9.9.9", false);
     // staged in a temporary folder, which is where a download would land
     assert!(u.stage_dir().to_string_lossy().contains("updates"));
@@ -247,7 +247,7 @@ fn a_check_started_with_no_network_ends_as_a_message() {
 fn the_options_follow_the_prerelease_setting() {
     let mut u = Updater::new(None);
     assert!(!u.options().prerelease);
-    u.set_prefs(None, Some(true));
+    u.set_prefs(None, Some(true)).expect("saved");
     assert!(u.options().prerelease);
     assert_eq!(u.options().repo, lcc_brand::REPOSITORY);
 }

@@ -182,8 +182,11 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     #[cfg(not(target_arch = "wasm32"))]
     {
         let mut check_at_startup = app.session.updater.prefs().check_at_startup;
-        if check(ui, "settings.updateAtStartup", &mut check_at_startup, "Check for updates when the app starts") {
-            let _ = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup}));
+        if check(ui, "settings.updateAtStartup", &mut check_at_startup, "Check for updates when the app starts")
+            && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup}))
+        {
+            // not saved: the box shows the stored value again next frame
+            app.toast_error(ui.ctx(), format!("{}: {e}", crate::i18n::tr("Could not save the update settings")));
         }
     }
     heading(ui, t, crate::i18n::tr("Culling"));

@@ -309,8 +309,10 @@ impl Updater {
         &self.prefs
     }
 
-    /// Change the settings; `true` when something changed (and was written).
-    pub fn set_prefs(&mut self, check_at_startup: Option<bool>, prerelease: Option<bool>) -> bool {
+    /// Change the settings; `Ok(true)` when something changed and was written. When the file
+    /// can't be written the settings are left as they were (the app never acts on a setting that
+    /// isn't on disk) and the error names the file and why.
+    pub fn set_prefs(&mut self, check_at_startup: Option<bool>, prerelease: Option<bool>) -> Result<bool, String> {
         let before = self.prefs.clone();
         if let Some(v) = check_at_startup {
             self.prefs.check_at_startup = v;
@@ -319,17 +321,23 @@ impl Updater {
             self.prefs.prerelease = v;
         }
         if self.prefs == before {
-            return false;
+            return Ok(false);
         }
-        self.save();
-        true
+        if let Err(e) = self.save() {
+            self.prefs = before;
+            return Err(e);
+        }
+        Ok(true)
     }
 
     /// Remember which version the user answered about, so the next start-up check stays quiet
-    /// about it.
+    /// about it. Bookkeeping: if the file can't be written this is only logged and kept for this
+    /// session (the worst outcome is being asked about the version again after a restart).
     pub fn mark_seen(&mut self, version: &str, skipped: bool) {
         self.prefs.seen_version = Some(SeenVersion { version: version.to_string(), skipped });
-        self.save();
+        if let Err(e) = self.save() {
+            log::warn!("updates: {e}");
+        }
     }
 
     /// Whether the user has already been shown `version`.
@@ -337,27 +345,20 @@ impl Updater {
         self.prefs.seen_version.as_ref().is_some_and(|s| s.version == version)
     }
 
-    fn save(&self) {
-        let Some(dir) = &self.dir else { return };
-        let file = SettingsFile { version: SETTINGS_VERSION, updates: self.prefs.clone() };
-        let Ok(text) = serde_json::to_vec_pretty(&file) else {
-            log::warn!("updates: could not write the settings");
-            return;
-        };
-        if let Err(e) = std::fs::create_dir_all(dir) {
-            log::warn!("updates: {}: {e}", dir.display());
-            return;
-        }
-        // written beside and renamed: a crash mid-write cannot leave a half file behind
+    /// Write `updates.json` (nothing in an in-memory session). The error names the file and the
+    /// reason.
+    fn save(&self) -> Result<(), String> {
+        let Some(dir) = &self.dir else { return Ok(()) };
         let path = dir.join(SETTINGS_FILE);
+        let file = SettingsFile { version: SETTINGS_VERSION, updates: self.prefs.clone() };
+        let text = serde_json::to_vec_pretty(&file).map_err(|e| format!("{}: {e}", path.display()))?;
+        std::fs::create_dir_all(dir).map_err(|e| format!("{}: {e}", path.display()))?;
+        // written beside and renamed: a crash mid-write cannot leave a half file behind
         let part = dir.join(format!("{SETTINGS_FILE}.part"));
-        match std::fs::write(&part, &text).and_then(|()| std::fs::rename(&part, &path)) {
-            Ok(()) => {}
-            Err(e) => {
-                let _ = std::fs::remove_file(&part);
-                log::warn!("updates: {}: {e}", path.display());
-            }
-        }
+        std::fs::write(&part, &text).and_then(|()| std::fs::rename(&part, &path)).map_err(|e| {
+            let _ = std::fs::remove_file(&part);
+            format!("{}: {e}", path.display())
+        })
     }
 
     // ---------- state

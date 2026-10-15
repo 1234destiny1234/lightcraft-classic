@@ -1188,6 +1188,7 @@
   "Skip This Version": "跳过此版本",
   "Check for updates when the app starts": "启动时检查更新",
   "Could not turn on checking for updates when the app starts": "无法开启启动时检查更新",
+  "Could not save the update settings": "无法保存更新设置",
   "Include prereleases (release candidates)": "包含预发版（RC）",
   "These settings are saved in the app's settings folder.": "这些设置保存在应用的设置文件夹中。",
   "File date": "文件日期",

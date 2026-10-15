@@ -538,3 +538,67 @@ fn a_ticked_welcome_box_survives_a_file_dialog_that_answers_later() {
     assert_eq!(saved_check_at_startup(&dir), Some(true), "and the ticked box is saved");
     h.app.session.close_library().unwrap();
 }
+
+// ------------------------------------------------- a settings folder that can't be written (AC-8)
+
+/// Makes a scratch folder unwritable (0o555) until dropped; `None` when it stays writable
+/// (running as root), and the test is skipped.
+#[cfg(unix)]
+struct ReadOnly(PathBuf);
+
+#[cfg(unix)]
+fn read_only(dir: &Scratch) -> Option<ReadOnly> {
+    use std::os::unix::fs::PermissionsExt;
+    std::fs::set_permissions(&dir.0, std::fs::Permissions::from_mode(0o555)).unwrap();
+    let guard = ReadOnly(dir.0.clone());
+    if std::fs::write(dir.0.join("probe"), b"x").is_ok() {
+        eprintln!("skipped: {} is still writable (running as root?)", dir.0.display());
+        return None;
+    }
+    Some(guard)
+}
+
+#[cfg(unix)]
+impl Drop for ReadOnly {
+    fn drop(&mut self) {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+    }
+}
+
+fn toast_text(h: &Headless) -> String {
+    h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default()
+}
+
+#[cfg(unix)]
+#[test]
+fn the_welcome_dialog_says_so_when_its_choice_cannot_be_saved() {
+    let (dir, root) = (Scratch::new("welcome-ro"), Scratch::new("welcome-ro-lib"));
+    let Some(_ro) = read_only(&dir) else { return };
+    let mut h = welcome(&dir, &root);
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeCreate"}));
+    run_without_a_check(&mut h, 2);
+    assert!(h.app.session.library.is_some(), "the catalog is open all the same");
+    let toast = toast_text(&h);
+    assert!(toast.contains("updates.json"), "the error is shown, naming the file: {toast:?}");
+    assert!(!h.app.session.updater.prefs().check_at_startup, "the setting is still off: it isn't on disk");
+    h.app.session.close_library().unwrap();
+}
+
+#[cfg(unix)]
+#[test]
+fn the_settings_checkbox_says_so_when_it_cannot_be_saved() {
+    let dir = Scratch::new("settings-ro");
+    let Some(_ro) = read_only(&dir) else { return };
+    let mut h = started(lcc_engine::Session::new(), &dir, true);
+    run_without_a_check(&mut h, 1);
+    ask(&mut h, "engine.execute", json!({"command": "app.settings", "params": {"tab": "general"}}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:settings.updateAtStartup"}));
+    run_without_a_check(&mut h, 2);
+    let toast = toast_text(&h);
+    assert!(toast.contains("updates.json"), "the error is shown, naming the file: {toast:?}");
+    assert!(!h.app.session.updater.prefs().check_at_startup, "the box shows what is stored: off");
+}

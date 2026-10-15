@@ -1483,6 +1483,7 @@
   "Skip This Version": "Пропустить эту версию",
   "Check for updates when the app starts": "Проверять обновления при запуске",
   "Could not turn on checking for updates when the app starts": "Не удалось включить проверку обновлений при запуске",
+  "Could not save the update settings": "Не удалось сохранить настройки обновлений",
   "Include prereleases (release candidates)": "Включать предварительные версии (RC)",
   "These settings are saved in the app's settings folder.": "Эти настройки сохраняются в папке настроек приложения.",
   "File date": "Дата файла",

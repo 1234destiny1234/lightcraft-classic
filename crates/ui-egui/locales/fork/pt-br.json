@@ -1275,6 +1275,7 @@
   "Skip This Version": "Ignorar esta versão",
   "Check for updates when the app starts": "Verificar atualizações ao iniciar o aplicativo",
   "Could not turn on checking for updates when the app starts": "Não foi possível ativar a verificação de atualizações ao iniciar o aplicativo",
+  "Could not save the update settings": "Não foi possível salvar as configurações de atualização",
   "Include prereleases (release candidates)": "Incluir pré-lançamentos (release candidates)",
   "These settings are saved in the app's settings folder.": "Estes ajustes são salvos na pasta de configurações do aplicativo.",
   "File date": "Data do arquivo",

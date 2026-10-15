@@ -8,7 +8,7 @@ use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, cmd};
 use crate::update::{self, Kind, Progress, Staged};
-use crate::{Result, Session};
+use crate::{EngineError, Result, Session};
 
 fn status(s: &mut Session, _: &Value) -> Result<Value> {
     Ok(s.updater.status())
@@ -123,7 +123,7 @@ fn prefs(s: &mut Session, p: &Value) -> Result<Value> {
     let check_at_startup = flag("checkAtStartup")?;
     let prerelease = flag("prerelease")?;
     if check_at_startup.is_some() || prerelease.is_some() {
-        s.updater.set_prefs(check_at_startup, prerelease);
+        s.updater.set_prefs(check_at_startup, prerelease).map_err(|e| EngineError::Other(format!("could not write {e}")))?;
     }
     let mut v = s.updater.status();
     v["persistent"] = json!(s.updater.persistent());
@@ -212,7 +212,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Update Preferences",
             [],
             None,
-            "{checkAtStartup?: bool, prerelease?: bool} — ask the feed when the app starts, and whether prereleases count as updates (saved in the app's own settings folder, `updates.json`; `--memory`, `--demo` and `{env}_NO_PREFS` runs keep them in memory only). The start-up check is off by default, and headless sessions never run it → status + {persistent, staging}",
+            "{checkAtStartup?: bool, prerelease?: bool} — ask the feed when the app starts, and whether prereleases count as updates (saved in the app's own settings folder, `updates.json`; `--memory`, `--demo` and `{env}_NO_PREFS` runs keep them in memory only). The start-up check is off by default, and headless sessions never run it. A file that can't be written is an error naming it, and the settings stay as they were → status + {persistent, staging}",
             always,
             prefs
         ),
@@ -331,5 +331,50 @@ mod tests {
         assert_eq!(v["file"], "app-1.2.0-windows-x64.msi");
         assert_eq!(v["sha256"], "ab".repeat(32));
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A scratch settings folder nobody can write to (0o555) until it is dropped.
+    #[cfg(unix)]
+    struct ReadOnly(std::path::PathBuf);
+
+    #[cfg(unix)]
+    impl ReadOnly {
+        /// `None` when the folder can still be written (running as root): the test is skipped.
+        fn new(tag: &str) -> Option<ReadOnly> {
+            use std::os::unix::fs::PermissionsExt;
+            let dir = std::env::temp_dir().join(format!("lcc-engine-update-ro-{tag}-{}", std::process::id()));
+            let _ = std::fs::remove_dir_all(&dir);
+            std::fs::create_dir_all(&dir).expect("scratch");
+            let guard = ReadOnly(dir.clone());
+            std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o555)).expect("chmod");
+            if std::fs::write(dir.join("probe"), b"x").is_ok() {
+                eprintln!("skipped: {} is still writable (running as root?)", dir.display());
+                return None;
+            }
+            Some(guard)
+        }
+    }
+
+    #[cfg(unix)]
+    impl Drop for ReadOnly {
+        fn drop(&mut self) {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&self.0, std::fs::Permissions::from_mode(0o755));
+            let _ = std::fs::remove_dir_all(&self.0);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn a_settings_file_that_cannot_be_written_is_an_error_and_changes_nothing() {
+        let Some(dir) = ReadOnly::new("prefs") else { return };
+        let mut s = Session::new();
+        s.updater = crate::update::Updater::new(Some(dir.0.clone()));
+        let err = s.execute("update.prefs", &json!({"checkAtStartup": true})).expect_err("the folder can't be written");
+        let text = err.to_string();
+        assert!(text.contains("updates.json"), "names the file: {text}");
+        assert!(text.to_lowercase().contains("permission"), "says why: {text}");
+        assert!(!s.updater.prefs().check_at_startup, "the setting in memory is left as it was");
+        assert!(!dir.0.join("updates.json").exists());
     }
 }
