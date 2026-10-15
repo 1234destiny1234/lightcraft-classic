@@ -246,14 +246,30 @@ fn model_named(name: &str) -> Option<Model> {
     }
 }
 
+/// The motion models a fit chooses among, simplest first: (model, name, fewest inliers).
+pub type Models = [(Model, &'static str, usize)];
+
+/// Translation, similarity and homography: what a handheld frame may need.
+pub const ALL_MODELS: [(Model, &str, usize); 3] =
+    [(Model::Translation, "translation", 6), (Model::Similarity, "similarity", 8), (Model::Homography, "homography", 12)];
+
+/// Similarity only (a focus stack: focusing magnifies, a tripod adds nothing else, and a homography fitted to the
+/// sharp slice of a frame extrapolates badly).
+pub const SIMILARITY: [(Model, &str, usize); 1] = [(Model::Similarity, "similarity", 8)];
+
 /// Refine `a` (reference → frame, full resolution, found on small versions) at full size; both
 /// planes from [`luma`], `radius` from [`radius_for`]. Alignments that aren't a fitted model
 /// ("identity", "reference", …) are returned unchanged, as is `a` whenever refining fails.
 pub fn refine(reference: &Plane, frame: &Plane, a: &Alignment, radius: usize, seed: u64) -> Alignment {
+    refine_with(reference, frame, a, radius, seed, &ALL_MODELS)
+}
+
+/// [`refine`] choosing among `models`.
+pub fn refine_with(reference: &Plane, frame: &Plane, a: &Alignment, radius: usize, seed: u64, models: &Models) -> Alignment {
     if model_named(a.model).is_none() {
         return a.clone();
     }
-    fit(reference, frame, &a.h, radius, seed).unwrap_or_else(|| a.clone())
+    fit(reference, frame, &a.h, radius, seed, models).unwrap_or_else(|| a.clone())
 }
 
 /// Search radius for [`recover`] (pixels).
@@ -263,11 +279,11 @@ pub const RECOVER_RADIUS: usize = 16;
 /// features): patches matched within [`RECOVER_RADIUS`] pixels of where they are in the reference,
 /// a plain handheld shift and a fraction of a degree. `None` when that doesn't fit either.
 pub fn recover(reference: &Plane, frame: &Plane, seed: u64) -> Option<Alignment> {
-    fit(reference, frame, &Homography::IDENTITY, RECOVER_RADIUS, seed)
+    fit(reference, frame, &Homography::IDENTITY, RECOVER_RADIUS, seed, &ALL_MODELS)
 }
 
 /// Patches matched around `h` within `radius`, then within 2 px of that fit; the fitted model.
-fn fit(reference: &Plane, frame: &Plane, h: &Homography, radius: usize, seed: u64) -> Option<Alignment> {
+fn fit(reference: &Plane, frame: &Plane, h: &Homography, radius: usize, seed: u64, models: &Models) -> Option<Alignment> {
     let (w, ht) = (reference.width as f64, reference.height as f64);
     let mut cur: Option<Alignment> = None;
     for r in [radius.max(2), 2] {
@@ -280,9 +296,7 @@ fn fit(reference: &Plane, frame: &Plane, h: &Homography, radius: usize, seed: u6
         let pa: Vec<Point> = m.iter().map(|m| m.reference).collect();
         let pb: Vec<Point> = m.iter().map(|m| m.frame).collect();
         let mut fits: Vec<(&'static str, ransac::Fit)> = Vec::new();
-        for (model, name, min) in
-            [(Model::Translation, "translation", 6), (Model::Similarity, "similarity", 8), (Model::Homography, "homography", 12)]
-        {
+        for &(model, name, min) in models {
             let need = ((m.len() as f64 * MIN_SHARE).ceil() as usize).max(min);
             if let Some(f) = ransac::ransac(model, &pa, &pb, THRESH, need, seed)
                 && plausible(&f.h, w, ht, 0.12)
