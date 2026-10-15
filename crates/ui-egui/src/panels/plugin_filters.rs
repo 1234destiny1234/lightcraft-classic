@@ -78,6 +78,13 @@ fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     let installed = filter_plugins(&list);
     let can_measure = lcc_engine::find_command("develop.pluginFilter.analyze").is_some();
     let mut actions: Vec<Action> = Vec::new();
+    // the loupe's latest render of this photo: its warnings (a filter skipped or failed)
+    let warnings: Vec<String> = app
+        .session
+        .active()
+        .and_then(|p| app.renderer.textures.get(&crate::render::Slot::Main).filter(|t| t.photo == p))
+        .map(|t| t.warnings.clone())
+        .unwrap_or_default();
     let n = d.plugin_filters.len();
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 4, bottom: 4 }).show(ui, |ui| {
         if n == 0 {
@@ -87,6 +94,9 @@ fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
             let plugin = installed.iter().find(|p| p.id == f.plugin);
             ui.push_id(("pluginFilter", f.uid), |ui| row(ui, f, i, n, plugin, can_measure, &mut actions));
             ui.separator();
+        }
+        for w in &warnings {
+            ui.label(RichText::new(format!("⚠ {w}")).color(Color32::from_rgb(0xe0, 0xa0, 0x30)));
         }
         let r = ui.menu_button(tr("Add Filter…"), |ui| {
             ui.set_min_width(180.0);
@@ -134,7 +144,9 @@ fn row(ui: &mut egui::Ui, f: &PluginFilter, i: usize, n: usize, plugin: Option<&
         }
     });
     ui.horizontal(|ui| {
-        ui.label(tr("Stage"));
+        ui.label(RichText::new(tr("Stage")).strong()).on_hover_text(tr(
+            "Source: on the decoded raw, before white balance and tone (e.g. negative conversion). Display: after the develop adjustments.",
+        ));
         let name = |s: FilterStage| match s {
             FilterStage::Source => tr("Source"),
             FilterStage::Display => tr("Display"),
