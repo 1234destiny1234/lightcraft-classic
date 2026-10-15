@@ -302,7 +302,7 @@ pub(crate) fn switch_brush_preset(app: &mut LccApp, slot: u8) -> Value {
 
 /// `[` / `]` (size ×`k`) and ⇧`[` / ⇧`]` (feather +`df`) for the brush in use: the Remove tool's
 /// (and its selected spot's) or the Masking brush's.
-fn adjust_brush(app: &mut LccApp, k: f32, df: f32) -> Value {
+pub(crate) fn adjust_brush(app: &mut LccApp, k: f32, df: f32) -> Value {
     if app.ui.right == RightPanel::Remove {
         app.ui.remove_size = (app.ui.remove_size * k).clamp(0.001, 0.25);
         app.ui.remove_feather = (app.ui.remove_feather + df).clamp(0.0, 100.0);

@@ -1317,6 +1317,7 @@
   "Add to Target Collection": "ターゲットコレクションに追加",
   "Remove from Target Collection": "ターゲットコレクションから削除",
   "Wheel scroll speed": "ホイールのスクロール速度",
+  "Wheel resizes brush instead of zooming": "ホイールでズームの代わりにブラシサイズを変更",
   "Fast": "速い",
   "Fastest": "最速",
   "Run face models on the CPU only": "顔モデルを CPU だけで実行",
