@@ -1238,6 +1238,7 @@ impl LccApp {
         panels::tether_bar::show(self, ctx);
         self.session.persist_if_dirty();
         panels::denoise::pump(self, ctx);
+        panels::plugin_filters::pump(self, ctx);
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
         self.collect_screenshots(ctx);

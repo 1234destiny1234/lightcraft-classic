@@ -118,24 +118,36 @@ impl Stack {
             let filter = match r {
                 Ok(x) => x,
                 Err(e) => {
-                    warnings.push(format!("plug-in filter {:?} skipped: {e}", f.name));
+                    warnings.push(format!("{}skipped: {e}", warning_prefix(f)));
                     continue;
                 }
             };
             if !f.module_hash.is_empty() && f.module_hash != filter.module_hash() {
-                warnings.push(format!("plug-in filter {:?}: the installed build differs from the one this edit was made with", f.name));
+                warnings.push(format!("{}the installed build differs from the one this edit was made with", warning_prefix(f)));
             }
             let (Ok(w32), Ok(h32)) = (u32::try_from(w), u32::try_from(h)) else {
-                warnings.push(format!("plug-in filter {:?} skipped: image too large", f.name));
+                warnings.push(format!("{}skipped: image too large", warning_prefix(f)));
                 continue;
             };
             let params = filter_params(f, encoding);
             let r = crate::timed(&format!("plug-in {}", f.plugin), || filter.apply_rgb(img.as_flattened_mut(), w32, h32, frame, &params, &cancel));
             if let Err(e) = r {
-                warnings.push(format!("plug-in filter {:?} skipped: {e}", f.name));
+                warnings.push(format!("{}skipped: {e}", warning_prefix(f)));
             }
         }
     }
+}
+
+/// How a warning about stack entry `f` starts (`plug-in filter #3 "Negative" `): it names the entry
+/// for people and, by its uid, for [`warning_message`].
+pub fn warning_prefix(f: &PluginFilter) -> String {
+    format!("plug-in filter #{} {:?} ", f.uid, f.name)
+}
+
+/// The message of a render warning about entry `f` (without [`warning_prefix`]), or `None` when
+/// `warning` is about something else.
+pub fn warning_message<'a>(warning: &'a str, f: &PluginFilter) -> Option<&'a str> {
+    warning.strip_prefix(warning_prefix(f).as_str())
 }
 
 /// An entry's parameters as the module gets them: its values, `encoding`, and `_analysis`.

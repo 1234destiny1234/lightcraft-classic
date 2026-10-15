@@ -6,7 +6,7 @@
 use lcc_develop::{DevelopSettings, FilterStage, MAX_PLUGIN_FILTERS, PluginFilter};
 use serde_json::{Map, Value, json};
 
-use super::{CommandSpec, bad, cmd, has_active};
+use super::{CommandSpec, always, bad, cmd, has_active};
 use crate::catalog::PhotoId;
 use crate::{Result, Session};
 
@@ -142,10 +142,12 @@ fn label(name: &str) -> String {
 fn add(s: &mut Session, p: &Value) -> Result<Value> {
     let c = "develop.pluginFilter.add";
     let plugin = text(p, "plugin", c)?;
-    let (mut params, stage) = (params(p, c)?.unwrap_or_default(), stage(p, c)?.unwrap_or_default());
+    let (mut params, mut stage_given) = (params(p, c)?.unwrap_or_default(), stage(p, c)?);
     // an installed plug-in: checked against its manifest, defaults filled in, its build recorded
     let (module_hash, name) = match crate::filter_plugins::registry().get(&plugin) {
         Some(f) => {
+            // no stage given: the one the plug-in asks for
+            stage_given = stage_given.or(Some(crate::filter_plugins::preferred_stage(&f)));
             params = f.manifest().resolve_params(&Value::Object(params)).map_err(|e| bad(c, e.to_string()))?;
             if let Some(h) = p.get("module_hash").and_then(Value::as_str)
                 && h != f.module_hash()
@@ -157,6 +159,7 @@ fn add(s: &mut Session, p: &Value) -> Result<Value> {
         }
         None => (text(p, "module_hash", c)?, text(p, "name", c)?),
     };
+    let stage = stage_given.unwrap_or_default();
     let (id, mut d) = active(s, c)?;
     if d.plugin_filters.len() >= MAX_PLUGIN_FILTERS {
         return Err(bad(c, format!("at most {MAX_PLUGIN_FILTERS} plug-in filters")));
@@ -255,6 +258,48 @@ fn set_analysis(s: &mut Session, p: &Value) -> Result<Value> {
 /// Long edge of the whole frame `pc_analyze` measures.
 const ANALYZE_EDGE: usize = 1024;
 
+/// What a measurement thread sends back: the analysis, or why there is none.
+type Measured = std::result::Result<Value, String>;
+
+/// One measurement running in the background.
+pub(crate) struct Analysis {
+    photo: PhotoId,
+    uid: u32,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    rx: std::sync::mpsc::Receiver<Measured>,
+    /// The activity row, kept while the job runs.
+    _task: crate::activity::TaskGuard,
+}
+
+/// Measurements running in the background, and the latest failure of each entry.
+#[derive(Default)]
+pub(crate) struct Analyses {
+    running: Vec<Analysis>,
+    failed: Vec<(PhotoId, u32, String)>,
+}
+
+/// Measures `src` with `filter` for `entry` (its old analysis left out): the analysis (`Null` when the
+/// plug-in has none to give).
+fn measure(filter: &lcc_filters::Filter, entry: &PluginFilter, src: &lcc_raster::Rgb32f, cancel: &std::sync::atomic::AtomicBool) -> Measured {
+    let (data, w, h) = lcc_pipeline::plugin_filters::analysis_input(src, ANALYZE_EDGE);
+    let (w, h) = (u32::try_from(w).map_err(|_| "image too large")?, u32::try_from(h).map_err(|_| "image too large")?);
+    let mut entry = entry.clone();
+    entry.analysis = None;
+    let params = lcc_pipeline::plugin_filters::filter_params(&entry, "linear");
+    Ok(filter.analyze_rgb(&data, w, h, &params, cancel).map_err(|e| e.to_string())?.unwrap_or(Value::Null))
+}
+
+/// Stores `analysis` on entry `uid` of `photo` (one History step); false when the entry is gone.
+fn store_analysis(s: &mut Session, photo: PhotoId, uid: u32, analysis: Value) -> Result<bool> {
+    let Some(d) = s.develop_of(photo) else { return Ok(false) };
+    let mut d = (*d).clone();
+    let Some(f) = d.plugin_filters.iter_mut().find(|f| f.uid == uid) else { return Ok(false) };
+    f.analysis = (!analysis.is_null()).then_some(analysis);
+    let l = format!("{} › Measure", label(&f.name));
+    s.set_develop(photo, d, &l)?;
+    Ok(true)
+}
+
 fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     let c = "develop.pluginFilter.analyze";
     let u = uid(p, c)?;
@@ -264,18 +309,88 @@ fn analyze(s: &mut Session, p: &Value) -> Result<Value> {
     if !filter.has_analyze() {
         return Err(bad(c, format!("unsupported: plug-in {:?} has no whole-image measurement (pc_analyze)", f.plugin)));
     }
-    let src = s.source_now(id, crate::media::SourceLevel::Preview).map_err(|e| bad(c, e))?;
+    if s.filter_analyses.running.iter().any(|a| a.photo == id && a.uid == u) {
+        return Ok(json!({ "started": false, "running": true }));
+    }
+    s.filter_analyses.failed.retain(|(ph, x, _)| !(*ph == id && *x == u));
+    let wait = p.get("wait").and_then(Value::as_bool).unwrap_or(false);
     let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
-    let _task = s.activity.start("pluginAnalyze", &format!("Measuring {}", f.name), crate::activity::Cancel::Flag(cancel.clone()));
-    let (data, w, h) = lcc_pipeline::plugin_filters::analysis_input(&src, ANALYZE_EDGE);
-    let (w, h) = (u32::try_from(w).map_err(|_| bad(c, "image too large"))?, u32::try_from(h).map_err(|_| bad(c, "image too large"))?);
-    let mut entry = f.clone();
-    entry.analysis = None;
-    let params = lcc_pipeline::plugin_filters::filter_params(&entry, "linear");
-    let result = filter.analyze_rgb(&data, w, h, &params, &cancel).map_err(|e| bad(c, e.to_string()))?;
-    let analysis = result.unwrap_or(Value::Null);
-    set_analysis(s, &json!({"uid": u, "analysis": analysis}))?;
-    Ok(json!({ "analysis": analysis }))
+    let task = s.activity.start("pluginAnalyze", &format!("Measuring {}", f.name), crate::activity::Cancel::Flag(cancel.clone()));
+    let photo = s.catalog.photo(id).cloned().ok_or_else(|| bad(c, "no active photo"))?;
+    let source = s.media.source_ref(&photo, crate::media::SourceLevel::Preview);
+    let job = {
+        let (filter, cancel) = (filter.clone(), cancel.clone());
+        move || -> Measured {
+            let src = source.load_source()?;
+            measure(&filter, &f, &src.image, &cancel)
+        }
+    };
+    if wait {
+        let analysis = job().map_err(|e| bad(c, e))?;
+        drop(task);
+        store_analysis(s, id, u, analysis.clone())?;
+        return Ok(json!({ "analysis": analysis }));
+    }
+    let (tx, rx) = std::sync::mpsc::channel();
+    let spawned = std::thread::Builder::new().name("plugin-analyze".into()).spawn(move || {
+        let _ = tx.send(job());
+    });
+    if let Err(e) = spawned {
+        return Err(bad(c, format!("can't start the measurement: {e}")));
+    }
+    s.filter_analyses.running.push(Analysis { photo: id, uid: u, cancel, rx, _task: task });
+    Ok(json!({ "started": true }))
+}
+
+impl Session {
+    /// Takes in finished plug-in filter measurements (each stored as one History step) and drops
+    /// cancelled ones (nothing is stored). Cheap; the app calls it every frame. True when any landed.
+    pub fn plugin_analyze_pump(&mut self) -> bool {
+        use std::sync::mpsc::TryRecvError;
+        let mut landed = Vec::new();
+        let jobs = std::mem::take(&mut self.filter_analyses.running);
+        for a in jobs {
+            if a.cancel.load(std::sync::atomic::Ordering::Relaxed) {
+                continue;
+            }
+            match a.rx.try_recv() {
+                Err(TryRecvError::Empty) => self.filter_analyses.running.push(a),
+                Err(TryRecvError::Disconnected) => self.filter_analyses.failed.push((a.photo, a.uid, "the measurement stopped".into())),
+                Ok(Err(e)) => self.filter_analyses.failed.push((a.photo, a.uid, e)),
+                Ok(Ok(v)) => landed.push((a.photo, a.uid, v)),
+            }
+        }
+        self.filter_analyses.failed.truncate(64);
+        let any = !landed.is_empty();
+        for (photo, uid, v) in landed {
+            if let Err(e) = store_analysis(self, photo, uid, v) {
+                self.filter_analyses.failed.push((photo, uid, e.to_string()));
+            }
+        }
+        any
+    }
+
+    /// Whether any measurement is running (the app keeps polling while one is).
+    pub fn plugin_analyses_running(&self) -> bool {
+        !self.filter_analyses.running.is_empty()
+    }
+
+    /// Whether entry `uid` of `photo` is being measured.
+    pub fn plugin_analyzing(&self, photo: PhotoId, uid: u32) -> bool {
+        self.filter_analyses.running.iter().any(|a| a.photo == photo && a.uid == uid)
+    }
+
+    /// Why the last measurement of entry `uid` of `photo` failed, if it did.
+    pub fn plugin_analyze_error(&self, photo: PhotoId, uid: u32) -> Option<&str> {
+        self.filter_analyses.failed.iter().rev().find(|(p, u, _)| *p == photo && *u == uid).map(|(_, _, e)| e.as_str())
+    }
+}
+
+fn pump(s: &mut Session, _p: &Value) -> Result<Value> {
+    s.plugin_analyze_pump();
+    let running: Vec<Value> = s.filter_analyses.running.iter().map(|a| json!({"photo": a.photo.0, "uid": a.uid})).collect();
+    let failed: Vec<Value> = s.filter_analyses.failed.iter().map(|(p, u, e)| json!({"photo": p.0, "uid": u, "error": e})).collect();
+    Ok(json!({ "running": running, "failed": failed }))
 }
 
 fn list(s: &mut Session, _p: &Value) -> Result<Value> {
@@ -322,9 +437,18 @@ pub fn specs() -> Vec<CommandSpec> {
             "Measure Plug-in Filter on Photo",
             [],
             None,
-            "{uid} — runs the plug-in's whole-image measurement (pc_analyze) on the photo and stores it (setAnalysis); an `unsupported` error when the plug-in has none → {analysis}",
+            "{uid, wait?: false} — runs the plug-in's whole-image measurement (pc_analyze) on the photo in the background (an activity row; `develop.pluginFilter.pump` stores it as one History step when done) → {started}; `wait: true` measures before returning → {analysis}. An `unsupported` error when the plug-in has none",
             has_active,
             analyze
+        ),
+        cmd!(
+            query "develop.pluginFilter.pump",
+            "Plug-in Filter Measurements",
+            [],
+            None,
+            "{} → {running: [{photo, uid}], failed: [{photo, uid, error}]} — stores finished measurements (each one History step); called every frame by the app",
+            always,
+            pump
         ),
         cmd!(query "develop.pluginFilter.list", "List Plug-in Filters", [], None, "{} — returns {enabled, filters: [...]}", has_active, list),
     ]
