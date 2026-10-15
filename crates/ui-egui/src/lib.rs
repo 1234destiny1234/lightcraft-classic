@@ -107,6 +107,8 @@ mod tests_copy_paste_dialogs;
 #[cfg(test)]
 mod tests_crop_frame;
 #[cfg(test)]
+mod tests_crop_aspects;
+#[cfg(test)]
 mod tests_crop_rotate;
 #[cfg(test)]
 mod tests_crop_tool;
