@@ -266,7 +266,9 @@ skipped: the render goes on and reports a warning (logged as `render: …`).
 `pc_analyze(buf, len, w, h, channels, format, params, params_len) -> i64` returning
 `len << 32 | ptr` of a JSON object (0 = nothing). `develop.pluginFilter.analyze {uid}` runs it
 once on the whole uncropped photo (long edge 1024, linear sRGB primaries) and stores the result
-with the photo (`setAnalysis`); every later `pc_filter` call gets it as `_analysis`, so crop and
+with the photo (`setAnalysis`). It runs in the background as an activity row (kind
+`pluginAnalyze`, cancellable) and returns at once; `wait: true` runs it to the end and returns the
+result. Every later `pc_filter` call gets it as `_analysis`, so crop and
 zoom don't move the measurement. Modules without the export give an "unsupported" error.
 
 **Pixel scale.** A Source filter that reads neighbours (manifest `overlap` > 0: an unsharp mask,
@@ -292,5 +294,4 @@ filters turn it (long edge 2048, cached per photo and stack; a change of the sta
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.
 - Pixel filters: a Display filter with `overlap` > 0 still works in output pixels (it runs after
   every develop step, so a native-resolution pass would mean a full-size develop per preview), so
-  a preview and a larger export of one differ; `develop.pluginFilter.analyze` runs on the calling
-  thread.
+  a preview and a larger export of one differ.

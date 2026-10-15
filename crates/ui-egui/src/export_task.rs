@@ -292,6 +292,12 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
                     if let Some(first) = failed.first() {
                         m += &crate::i18n::tr_format!(" · {} failed: {}", failed.len(), first["error"].as_str().unwrap_or("error"));
                     }
+                    // what the renders reported without failing (e.g. a skipped plug-in filter)
+                    let warnings: Vec<&str> =
+                        files.iter().flat_map(|f| f["warnings"].as_array().into_iter().flatten()).filter_map(Value::as_str).collect();
+                    if let Some(first) = warnings.first() {
+                        m += &format!(" · {} warning{}: {first}", warnings.len(), if warnings.len() == 1 { "" } else { "s" });
+                    }
                     if cancelled {
                         m += " · cancelled";
                     }
