@@ -186,7 +186,7 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup}))
         {
             // not saved: the box shows the stored value again next frame
-            app.toast_error(ui.ctx(), format!("{}: {e}", crate::i18n::tr("Could not save the update settings")));
+            app.toast_error(ui.ctx(), format!("{}: {e}", crate::i18n::tr("Update settings not saved")));
         }
     }
     heading(ui, t, crate::i18n::tr("Culling"));

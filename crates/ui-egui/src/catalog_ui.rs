@@ -314,7 +314,7 @@ fn picking_catalog(app: &LccApp) -> bool {
 /// Each frame: Alt held while the window opens shows the chooser; then the dialog, if any.
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if let Some(e) = app.catalog_ui.update_error.take() {
-        app.toast_error(ctx, format!("{}: {e}", crate::i18n::tr("Could not turn on checking for updates when the app starts")));
+        app.toast_error(ctx, format!("{}: {e}", crate::i18n::tr("Checking for updates when the app starts is still off")));
     }
     if app.catalog_ui.frames < 30 {
         app.catalog_ui.frames += 1;
