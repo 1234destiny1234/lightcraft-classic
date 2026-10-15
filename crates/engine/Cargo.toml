@@ -98,8 +98,8 @@ lcc-video = { workspace = true, features = ["test-util"] }
 # M14.4: the GPU playback LUT benchmark (bench_playback)
 wgpu = { workspace = true }
 pollster = { workspace = true }
-filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
-filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "156086dc87282026aeec33f8a220e4629bccbe31" }
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "8309f21a6c3f34ddf190af7fd9bfd913053a1fd5" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "8309f21a6c3f34ddf190af7fd9bfd913053a1fd5" }
 
 [target.'cfg(windows)'.dependencies]
 # free space on Windows (the Folders panel); its own unsafe FFI stays inside the crate
