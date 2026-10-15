@@ -118,6 +118,8 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "library.selectNone",
             "@Select by",
             "---",
+            "dialog.watermark",
+            "---",
             "app.settings",
         ],
     ),
@@ -1386,6 +1388,32 @@ mod tests {
         crate::panels::dialogs::confirm_dialog(&mut app, &d).unwrap();
         let id = app.session.active().unwrap();
         assert_eq!(app.session.catalog.photo(id).unwrap().versions[0].name, "Final");
+    }
+
+    #[test]
+    fn edit_watermarks_opens_dialog_and_saves_preset() {
+        let mut app = app();
+        let bar = menu_bar(&app);
+        let edit = &bar.iter().find(|(t, _)| t == "Edit").expect("Edit menu").1;
+        assert!(find(edit, "dialog.watermark").is_some(), "dialog.watermark in Edit menu");
+
+        run_item(&mut app, "dialog.watermark", Value::Null).unwrap();
+        let Some(crate::state::Dialog::Watermark { wm, preset_name }) = &mut app.ui.dialog else {
+            panic!("expected Watermark dialog");
+        };
+        assert_eq!(wm.text, "");
+
+        wm.text = "© Test Watermark".to_string();
+        *preset_name = "Copyright Preset".to_string();
+
+        let d = app.ui.dialog.take().unwrap();
+        crate::panels::dialogs::confirm_dialog(&mut app, &d).unwrap();
+
+        let presets = app.session.all_export_presets();
+        let saved = presets.iter().find(|(p, _)| p.name == "Copyright Preset");
+        assert!(saved.is_some(), "preset saved");
+        let o = lcc_engine::export::ExportOptions::from_json(&saved.unwrap().0.params);
+        assert_eq!(o.watermark.map(|w| w.text).as_deref(), Some("© Test Watermark"));
     }
 
     #[test]

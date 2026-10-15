@@ -1399,6 +1399,12 @@ pub enum Dialog {
         #[serde(default)]
         name: String,
     },
+    /// Edit ▸ Edit Watermarks…
+    Watermark {
+        wm: lcc_engine::export::Watermark,
+        #[serde(default)]
+        preset_name: String,
+    },
 }
 
 fn yes() -> bool {
