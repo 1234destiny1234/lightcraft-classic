@@ -1248,5 +1248,10 @@
   "Filename - Sequence": "文件名 - 序号",
   "Custom Name - Sequence": "自定名称 - 序号",
   "Custom Name": "自定名称",
-  "Date - Filename": "日期 - 文件名"
+  "Date - Filename": "日期 - 文件名",
+  "Delete this photo from disk, or only remove it from the library?": "要从磁盘删除这张照片，还是只从图库中移除？",
+  "Delete from Disk moves 1 file to the system trash.": "“从磁盘删除”会将 1 个文件移到系统废纸篓。",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "“移除”会保留磁盘上的文件，并将照片移到“最近删除”。",
+  "Delete from Disk": "从磁盘删除",
+  "Deleting from disk": "正在从磁盘删除"
 }
