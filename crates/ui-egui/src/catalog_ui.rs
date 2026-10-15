@@ -72,6 +72,11 @@ pub struct CatalogUi {
     frames: u32,
     /// Files from the command line of a first start, imported once a catalog is open.
     pub pending_import: Vec<String>,
+    /// The welcome dialog's "Check for updates when the app starts" was ticked: saved through
+    /// `update.prefs` once a catalog is open other than the one open then (the inner value; `None`:
+    /// none was). Kept here, not in the dialog, because a folder dialog may answer frames later,
+    /// after the welcome dialog has gone.
+    pub pending_updates: Option<Option<PathBuf>>,
 }
 
 /// The welcome dialog: a new catalog under the Pictures folder by default.
@@ -287,8 +292,21 @@ fn display_name(p: &Path) -> String {
     format!("{name} — {}", dir.parent().map(|d| d.display().to_string()).unwrap_or_default())
 }
 
+/// The welcome dialog's update choice, saved once the catalog it was made for is open.
+fn apply_pending_updates(app: &mut LccApp) {
+    let Some(before) = &app.catalog_ui.pending_updates else { return };
+    if app.session.library.is_none() || app.session.catalog_dir() == before.as_deref() {
+        return;
+    }
+    app.catalog_ui.pending_updates = None;
+    if let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": true})) {
+        log::warn!("update.prefs: {e}");
+    }
+}
+
 /// Each frame: Alt held while the window opens shows the chooser; then the dialog, if any.
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
+    apply_pending_updates(app);
     if app.catalog_ui.frames < 30 {
         app.catalog_ui.frames += 1;
         let alt = ctx.input(|i| i.modifiers.alt);
@@ -401,7 +419,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             layout.footer(ui, |_| {});
         });
     crate::dialog_frame::ModalLayout::finish(ctx, window_id, shown.as_ref().map(|w| w.response.rect));
-    // the welcome dialog's update choice, applied once its catalog is open
+    // the welcome dialog's update choice, applied once its catalog is open (now, or when a
+    // folder dialog that answers later has opened it)
     let updates = matches!(dlg, CatalogDialog::Welcome { updates: true, .. });
     if app.catalog_ui.dialog.is_some() {
         app.catalog_ui.dialog = Some(dlg);
@@ -416,11 +435,16 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     if let Some((cmd, params)) = action {
         // the command may open the next dialog (Chooser ▸ New Catalog…); on an error, or for the
         // Catalog Settings buttons, this one stays
+        if updates {
+            app.catalog_ui.pending_updates = Some(app.session.catalog_dir().map(Path::to_path_buf));
+        }
         let prev = app.catalog_ui.dialog.take();
         let r = app.run(&cmd, params);
-        if updates && r.is_ok() && app.session.library.is_some() {
-            let _ = app.session.execute("update.prefs", &json!({"checkAtStartup": true}));
+        if updates && r.is_err() {
+            // nothing opened: the dialog stays, and its box is asked again with the next try
+            app.catalog_ui.pending_updates = None;
         }
+        apply_pending_updates(app);
         let keep = r.is_err() || matches!(cmd.as_str(), "catalog.backup" | "catalog.checkIntegrity" | "catalog.optimize");
         if keep && app.catalog_ui.dialog.is_none() {
             app.catalog_ui.dialog = prev;

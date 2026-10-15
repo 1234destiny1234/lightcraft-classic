@@ -383,3 +383,36 @@ fn quitting_from_the_welcome_dialog_saves_nothing() {
     assert!(!dir.0.join("updates.json").exists(), "nothing was saved");
     assert!(!h.app.session.updater.prefs().check_at_startup);
 }
+
+/// The desktop app's file dialogs answer later, on another thread: Open Catalog… from the welcome
+/// dialog returns before a catalog is chosen, and the catalog opens when the dialog closes. The
+/// ticked box still counts then.
+#[test]
+fn a_ticked_welcome_box_survives_a_file_dialog_that_answers_later() {
+    let (dir, root) = (Scratch::new("welcome-later"), Scratch::new("welcome-later-lib"));
+    let entry = lcc_catalog::library::create(&root.0, "Existing").unwrap();
+    let mut h = welcome(&dir, &root);
+    // a host that shows its folder dialog elsewhere, and a synchronous one that is never asked
+    let answers: std::sync::Arc<std::sync::Mutex<Vec<std::sync::mpsc::Sender<Vec<String>>>>> = Default::default();
+    let a = answers.clone();
+    h.app.services.picker = Some(Box::new(move |_req| {
+        let (tx, rx) = std::sync::mpsc::channel();
+        a.lock().unwrap().push(tx);
+        Ok(rx)
+    }));
+    h.app.services.pick_folder = Some(Box::new(|| panic!("the background dialog answers")));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeOpen"}));
+    h.step();
+    assert_eq!(answers.lock().unwrap().len(), 1, "the folder dialog is up");
+    assert!(h.app.session.library.is_none(), "no catalog chosen yet");
+    assert_eq!(saved_check_at_startup(&dir), None, "nothing is saved before a catalog is open");
+    // the dialog closes with the catalog chosen
+    answers.lock().unwrap()[0].send(vec![entry.to_string_lossy().into_owned()]).unwrap();
+    run_without_a_check(&mut h, 3);
+    assert!(h.app.session.library.is_some(), "the chosen catalog is open");
+    assert_eq!(saved_check_at_startup(&dir), Some(true), "and the ticked box is saved");
+    h.app.session.close_library().unwrap();
+}
