@@ -77,8 +77,12 @@ fn the_section_header_menu_turns_solo_mode_on() {
 fn option_click_opens_just_that_section() {
     let mut h = edit_open();
     click(&mut h, json!({"id": "section:color"}));
-    click(&mut h, json!({"id": "section:detail", "alt": true}));
-    assert_eq!(h.app.ui.open_sections, ["detail"], "⌥-click closes the others");
+    // (headers on screen: with Light and Color open, the ones below sit under the panel's
+    // Previous / Reset bar)
+    click(&mut h, json!({"id": "section:light", "alt": true}));
+    assert_eq!(h.app.ui.open_sections, ["light"], "⌥-click closes the others");
+    click(&mut h, json!({"id": "section:color", "alt": true}));
+    assert_eq!(h.app.ui.open_sections, ["color"], "⌥-click opens a closed section alone");
     assert!(!h.app.ui.single_panel, "⌥-click doesn't turn Solo Mode on");
     // agents do the same with the section's command (Calibration has one, though not in the menu)
     exec(&mut h, "section.calibration", json!({"solo": true}));
