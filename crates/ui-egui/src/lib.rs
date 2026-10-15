@@ -66,8 +66,6 @@ pub mod web_module;
 pub mod widgets;
 
 #[cfg(test)]
-mod tests_filter_search;
-#[cfg(test)]
 mod tests_access;
 #[cfg(test)]
 mod tests_activity;
@@ -107,6 +105,8 @@ mod tests_dialogs;
 mod tests_error_kinds;
 #[cfg(test)]
 mod tests_filmstrip;
+#[cfg(test)]
+mod tests_filter_search;
 #[cfg(test)]
 mod tests_grading;
 #[cfg(test)]

@@ -78,11 +78,16 @@ fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: 
             let just_opened = previous.is_none();
             query = previous.unwrap_or_default();
             let widget = format!("filterSearch:{id}");
-            crate::text_field::TextField::singleline(&widget, &mut query)
+            let field = crate::text_field::TextField::singleline(&widget, &mut query)
                 .hint(crate::i18n::tr("Search…"))
                 .width(220.0)
                 .begin_edit(just_opened)
                 .show(ui);
+            // the click that opened the dropdown can take the focus away on its release: while
+            // nothing else has it, the box takes it back so typing goes straight in
+            if !field.response.has_focus() && ui.memory(|m| m.focused().is_none()) {
+                field.response.request_focus();
+            }
             ui.data_mut(|d| d.insert_temp(key, query.clone()));
             ui.separator();
         }

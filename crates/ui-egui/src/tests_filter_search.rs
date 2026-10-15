@@ -26,6 +26,9 @@ fn rows(h: &Headless, picker: &str) -> Vec<String> {
 fn typing_narrows_the_keyword_rows_and_keeps_any() {
     let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1600.0, 1000.0], 1.0);
+    // the filter bar shows over the grid
+    h.app.ui.view = crate::state::ViewMode::PhotoGrid;
+    h.app.ui.filter_bar = true;
     h.settle(SETTLE);
     let keywords = h.app.caches.filter_values(&h.app.session.catalog).keywords.clone();
     assert!(keywords.len() >= 2, "the demo library has keywords: {keywords:?}");
