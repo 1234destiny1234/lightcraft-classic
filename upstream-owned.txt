@@ -28,6 +28,7 @@ crates/fuzzkit/
 apps/cli/tests/robust_catalog.rs
 apps/cli/tests/legacy_pickup.rs
 crates/immich/
+crates/filters/
 crates/text/
 crates/pdf/
 crates/geo/
