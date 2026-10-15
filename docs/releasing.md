@@ -148,9 +148,12 @@ attaches it.
 The in-app updater installs a release only when its `SHA256SUMS.txt` carries a valid ed25519 signature
 (`SHA256SUMS.txt.sig`, base64, over the file's exact bytes) from a public key pinned in `brand.toml`
 (`[updates] public_keys`), and the downloaded file matches the SHA-256 that signed list records. Anyone who
-can change a release's files can also change its checksums; they cannot sign them. A missing list or
-signature, a signature by another key, a list that doesn't name the file, or a file that doesn't match
-means no install, with a sentence saying why; the release page link still works. A build whose
+can change a release's files can also change its checksums; they cannot sign them. The file must also
+carry the offered version in its name (`<binary>-<version>-<os>-<arch>…`, as packaging names every
+artifact), so an older release's signed list and file, served under a newer tag, don't install as it:
+keep that naming. A missing list or signature, a signature by another key, a list that doesn't name the
+file, a file named for another version, or a file that doesn't match means no install, with a sentence
+saying why; the release page link still works. A build whose
 `brand.toml` has no key (a fork that hasn't made one, a dev build) checks for updates and links to the
 release, but never downloads or installs one.
 

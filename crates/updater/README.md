@@ -44,8 +44,10 @@ if let Some(update) = lcc_updater::check(&opts, None, None)? {
   match comes from that verified list only: the feed's `sha256` and GitHub's `digest` come from the
   same place as the file and are never trusted on their own. Fails closed: no key (`UpdateError::NoKey`,
   "this build can't verify updates"), a list or signature that cannot be fetched, a signature that does
-  not verify, or a list that does not name the file stops the update (`UpdateError::Signature`) and
-  deletes whatever was staged under that name. Keys are made and releases signed with
+  not verify, a list that does not name the file, or a file whose name doesn't carry the offered
+  version as a whole `-<version>-<os>-` token (`signature::names_version`: an older release's signed
+  list and file served under a newer tag) stops the update (`UpdateError::Signature`) and deletes
+  whatever was staged under that name. Keys are made and releases signed with
   `cargo xtask update-key` (docs/releasing.md → Update signing key).
 - **Downloads** resume from a `.part` file, are capped, and must match the size the feed states and
   the SHA-256 the signed list records before they are renamed into place. A file that fails its check

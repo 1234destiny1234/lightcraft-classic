@@ -740,3 +740,32 @@ fn a_release_page_link_stays_on_the_repositorys_releases() {
         assert_eq!(release_page(tag), releases_page(), "{tag:?}");
     }
 }
+
+/// AC-8: an older release's genuine signed list and file, served under a newer release, are not
+/// installed as that release: the vouched-for file must carry the offered version in its name.
+#[test]
+fn an_older_signed_release_offered_as_a_newer_one_is_not_installed() {
+    let (signing, key) = test_key(5);
+    let target = lcc_updater::Target::current().expect("a platform to update");
+    // signed for 1.0.0, offered by the feed as 9.9.9
+    let old = format!("app-1.0.0-{}-{}.msi", target.os.slug(), target.arch);
+    let installer = b"the genuine 1.0.0 installer".to_vec();
+    let dir = scratch("replayed");
+    let (base, hits) = serve_feed(Published::genuine(&signing, installer.clone(), old.clone()));
+    let mut s = crate::Session::new();
+    s.updater = updater_for(&dir, &base, Some(key));
+    let stage = s.updater.stage_dir().to_path_buf();
+    std::fs::create_dir_all(&stage).expect("stage");
+    std::fs::write(stage.join(&old), &installer).expect("left over");
+    let v = s.execute("update.check", &json!({"wait": true})).expect("check");
+    assert_eq!(v["available"]["version"], "9.9.9", "the feed offers it as 9.9.9: {v}");
+    let err = s.execute("update.download", &json!({"wait": true})).expect_err("an old release");
+    assert!(err.to_string().contains("is not version 9.9.9"), "the error names the cause: {err}");
+    assert!(s.updater.staged().is_none(), "nothing is offered for install");
+    assert_eq!(s.updater.status()["download"], "failed");
+    assert_eq!(std::fs::read_dir(&stage).expect("stage").count(), 0, "the staged file is deleted");
+    assert_eq!(hits.load(Ordering::SeqCst), 0, "the file itself is never fetched");
+    let err = s.execute("update.install", &json!({"confirm": true})).expect_err("nothing to install");
+    assert!(err.to_string().contains("no update has been downloaded"), "{err}");
+    let _ = std::fs::remove_dir_all(&dir);
+}

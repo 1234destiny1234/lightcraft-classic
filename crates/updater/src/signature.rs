@@ -20,6 +20,7 @@ use ed25519_dalek::{Signature, VerifyingKey};
 
 use crate::check::Update;
 use crate::error::UpdateError;
+use crate::target::Os;
 
 /// The checksum list's file name on a release.
 pub const SUMS_FILE: &str = "SHA256SUMS.txt";
@@ -133,8 +134,33 @@ pub fn signed_sha256(update: &Update, key: &UpdateKey, cancel: Option<Arc<Atomic
     key.verify(&list, &signature)?;
     // the file as it is saved (`dist/app.msi` → `app.msi`), which is the name the list records
     let name = crate::download::safe_file_name(&update.asset.name)?;
+    // an older release's list and file are signed too: served under a newer release, they must not
+    // install as it, so the file the list vouches for has to be the offered version's
+    let version = update.version.to_text();
+    if !names_version(&name, &version) {
+        return Err(UpdateError::Signature(format!(
+            "{name} is not version {version} (its name doesn't carry that version): the release's files belong to another release"
+        )));
+    }
     let text = String::from_utf8_lossy(&list);
     crate::checksum::lookup(&text, &name).ok_or_else(|| UpdateError::Signature(format!("the release's signed {SUMS_FILE} does not list {name}")))
+}
+
+/// Whether an artifact's name, `<binary>-<version>-<os>-<arch>…` (packaging/*/package.sh), carries
+/// exactly `version`: a whole `-<version>-<os>-` token, so `1.1.0` matches neither `1.1.0-rc.1`,
+/// `1.1.01` nor `11.1.0`. Case is ignored.
+pub fn names_version(name: &str, version: &str) -> bool {
+    let name = name.to_ascii_lowercase();
+    let version = version.trim().to_ascii_lowercase();
+    if version.is_empty() {
+        return false;
+    }
+    let token = format!("-{version}-");
+    name.match_indices(&token).any(|(at, _)| {
+        let rest = name.get(at.saturating_add(token.len())..).unwrap_or_default();
+        // a binary name comes first, and an OS slug right after the version
+        at > 0 && [Os::Windows, Os::Macos, Os::Linux, Os::Freebsd].iter().any(|os| rest.strip_prefix(os.slug()).is_some_and(|r| r.starts_with('-')))
+    })
 }
 
 #[cfg(test)]
@@ -154,6 +180,40 @@ mod tests {
     }
 
     const LIST: &[u8] = b"aa11bb22cc33dd44ee55ff6600112233445566778899aabbccddeeff00112233  app-1.2.3-windows-x64.msi\n";
+
+    #[test]
+    fn a_name_carries_a_version_only_as_a_whole_token() {
+        for (name, version) in [
+            ("app-1.1.0-windows-x64.msi", "1.1.0"),
+            ("App-1.1.0-Windows-x64.MSI", "1.1.0"),
+            ("lightweight-app-1.1.0-macos-universal.dmg", "1.1.0"),
+            ("app-1.1.0-linux-x86_64.AppImage", "1.1.0"),
+            ("app-1.1.0-linux-aarch64.tar.gz", "1.1.0"),
+            ("app-1.1.0-linux-x86_64.flatpak", "1.1.0"),
+            ("app-1.1.0-freebsd-x86_64.tar.gz", "1.1.0"),
+            ("app-1.2.0-rc.1-windows-x64.msi", "1.2.0-rc.1"),
+            ("app-1.0.0-linux-x86_64-1.1.0-linux-x86_64.tar.gz", "1.1.0"),
+        ] {
+            assert!(names_version(name, version), "{name} is {version}");
+        }
+        for (name, version) in [
+            ("app-1.0.0-windows-x64.msi", "1.1.0"),
+            ("app-1.1.0-rc.1-windows-x64.msi", "1.1.0"),
+            ("app-1.1.01-windows-x64.msi", "1.1.0"),
+            ("app-11.1.0-windows-x64.msi", "1.1.0"),
+            ("app-1.2.0-windows-x64.msi", "1.2.0-rc.1"),
+            ("-1.1.0-windows-x64.msi", "1.1.0"),
+            ("app-1.1.0-web.zip", "1.1.0"),
+            ("app-1.1.0-windowsx-x64.msi", "1.1.0"),
+            ("app-1.1.0.msi", "1.1.0"),
+            ("app-windows-x64.msi", "1.1.0"),
+            ("", "1.1.0"),
+            ("app-1.1.0-windows-x64.msi", ""),
+            ("app-\u{e9}1.1.0-windows-x64.msi", "1.1.0"),
+        ] {
+            assert!(!names_version(name, version), "{name} is not {version}");
+        }
+    }
 
     /// While the key is being rotated, the build trusts the old and the new one.
     #[test]

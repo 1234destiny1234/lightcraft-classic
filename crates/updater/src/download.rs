@@ -393,15 +393,15 @@ mod tests {
         let dir = scratch("ok");
         let (signing, key) = test_key(1);
         let bytes: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
-        let (url, _) = serve(signed(bytes.clone(), "app.msi", &signing));
+        let (url, _) = serve(signed(bytes.clone(), "app-2.0.0-windows-x64.msi", &signing));
         // the feed states no hash: the signed list is where it comes from
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", bytes.len() as u64, None);
         let mut seen = 0u64;
         let got = download(&u, Some(&key), &client(), &dir, None, Some(&mut |done, _| seen = done)).expect("download");
         assert_eq!((got.bytes, std::fs::read(&got.path).expect("read")), (bytes.len() as u64, bytes.clone()));
         assert_eq!(got.sha256, sha256_hex(&bytes));
         assert_eq!(seen, bytes.len() as u64, "progress reports the end");
-        assert!(!dir.join("app.msi.part").exists());
+        assert!(!dir.join("app-2.0.0-windows-x64.msi.part").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -412,11 +412,11 @@ mod tests {
         let dir = scratch("bad");
         let (signing, key) = test_key(1);
         let genuine = vec![7u8; 5_000];
-        let mut served = signed(genuine, "app.msi", &signing);
+        let mut served = signed(genuine, "app-2.0.0-windows-x64.msi", &signing);
         let tampered = vec![8u8; 5_000];
         served.file = tampered.clone();
         let (url, _) = serve(served);
-        let u = update(&format!("{url}/app.msi"), "app.msi", tampered.len() as u64, Some(sha256_hex(&tampered)));
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", tampered.len() as u64, Some(sha256_hex(&tampered)));
         let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err("must fail");
         assert!(matches!(err, UpdateError::Verify(_)), "{err}");
         assert!(err.to_string().contains("did not check out"), "the message names the check: {err}");
@@ -431,7 +431,7 @@ mod tests {
         let (signing, key) = test_key(1);
         let (other, _) = test_key(2);
         let file = vec![9u8; 3_000];
-        let genuine = signed(file.clone(), "app.msi", &signing);
+        let genuine = signed(file.clone(), "app-2.0.0-windows-x64.msi", &signing);
         let sums = genuine.sums.clone().expect("sums");
         let mut changed = sums.clone();
         // the list says another hash (the attacker's file), the signature is the genuine one
@@ -452,7 +452,7 @@ mod tests {
                     let sig = sign(&signing, &other_list);
                     Served { file: file.clone(), sums: Some(other_list), sig: Some(sig) }
                 },
-                "does not list app.msi",
+                "does not list app-2.0.0-windows-x64.msi",
             ),
             (
                 "a signature that is not one",
@@ -463,10 +463,10 @@ mod tests {
         for (what, served, says) in cases {
             let dir = scratch("unvouched");
             // what an earlier download left: it must not stay staged
-            std::fs::write(dir.join("app.msi"), &file).expect("staged");
-            std::fs::write(dir.join("app.msi.part"), &file[..100]).expect("part");
+            std::fs::write(dir.join("app-2.0.0-windows-x64.msi"), &file).expect("staged");
+            std::fs::write(dir.join("app-2.0.0-windows-x64.msi.part"), &file[..100]).expect("part");
             let (url, file_hits) = serve(served);
-            let u = update(&format!("{url}/app.msi"), "app.msi", file.len() as u64, Some(sha256_hex(&file)));
+            let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", file.len() as u64, Some(sha256_hex(&file)));
             let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err(what);
             assert!(matches!(err, UpdateError::Signature(_)), "{what}: {err}");
             assert!(err.to_string().contains(says), "{what}: the message names the cause: {err}");
@@ -477,11 +477,58 @@ mod tests {
         }
     }
 
+    /// AC-8: an older release's genuine signed list and file, served under a newer tag, are not
+    /// installed as the newer version: the file must carry the offered version in its name, as a
+    /// whole `-<version>-<os>-` token (a prefix of another version doesn't count).
+    #[test]
+    fn an_older_releases_signed_files_are_not_offered_as_a_newer_one() {
+        let (signing, key) = test_key(1);
+        let file = vec![6u8; 2_000];
+        let cases = [
+            ("1.1.0", "app-1.0.0-windows-x64.msi", "an older release under a new tag"),
+            ("1.1.0", "app-1.1.0-rc.1-windows-x64.msi", "its release candidate"),
+            ("1.1.0", "app-1.1.01-windows-x64.msi", "a version the offer is a prefix of"),
+            ("1.1.0", "app-11.1.0-windows-x64.msi", "a version the offer is a suffix of"),
+            ("1.2.0-rc.1", "app-1.2.0-windows-x64.msi", "the release offered as its candidate"),
+            ("1.1.0", "app-windows-x64.msi", "a name with no version"),
+        ];
+        for (offered, name, what) in cases {
+            let dir = scratch("replay");
+            std::fs::write(dir.join(name), &file).expect("staged");
+            let (url, file_hits) = serve(signed(file.clone(), name, &signing));
+            let mut u = update(&format!("{url}/{name}"), name, file.len() as u64, None);
+            u.version = Version::parse(offered).expect("v");
+            u.tag = format!("v{offered}");
+            let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err(what);
+            assert!(matches!(err, UpdateError::Signature(_)), "{what}: {err}");
+            assert!(err.to_string().contains(&format!("is not version {offered}")), "{what}: the message names the cause: {err}");
+            assert_eq!(file_hits.load(Ordering::SeqCst), 0, "{what}: the file itself is not fetched");
+            assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0, "{what}: nothing stays staged");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+        // the matching names still install, prereleases and every platform's file included
+        for (offered, name) in [
+            ("1.2.0-rc.1", "app-1.2.0-rc.1-windows-x64.msi"),
+            ("1.1.0", "lightweight-app-1.1.0-macos-universal.dmg"),
+            ("1.1.0", "app-1.1.0-linux-x86_64.AppImage"),
+            ("1.1.0", "app-1.1.0-freebsd-x86_64.tar.gz"),
+        ] {
+            let dir = scratch("replay-ok");
+            let (url, _) = serve(signed(file.clone(), name, &signing));
+            let mut u = update(&format!("{url}/{name}"), name, file.len() as u64, None);
+            u.version = Version::parse(offered).expect("v");
+            u.tag = format!("v{offered}");
+            let got = download(&u, Some(&key), &client(), &dir, None, None).unwrap_or_else(|e| panic!("{name}: {e}"));
+            assert_eq!(got.name, name);
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
     #[test]
     fn a_list_that_cannot_be_reached_stops_the_update() {
         let dir = scratch("nolist");
         let (_, key) = test_key(1);
-        let u = update("http://127.0.0.1:1/v2.0.0/app.msi", "app.msi", 10, Some("ab".repeat(32)));
+        let u = update("http://127.0.0.1:1/v2.0.0/app-2.0.0-windows-x64.msi", "app-2.0.0-windows-x64.msi", 10, Some("ab".repeat(32)));
         let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err("must fail");
         assert!(matches!(err, UpdateError::Signature(_)), "{err}");
         assert!(err.to_string().contains("SHA256SUMS.txt"), "{err}");
@@ -495,8 +542,8 @@ mod tests {
         let dir = scratch("nokey");
         let (signing, _) = test_key(1);
         let bytes = vec![4u8; 1_000];
-        let (url, file_hits) = serve(signed(bytes.clone(), "app.msi", &signing));
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
+        let (url, file_hits) = serve(signed(bytes.clone(), "app-2.0.0-windows-x64.msi", &signing));
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
         let err = download(&u, None, &client(), &dir, None, None).expect_err("no key");
         assert_eq!(err, UpdateError::NoKey);
         assert!(err.to_string().starts_with("this build can't verify updates"), "{err}");
@@ -510,12 +557,12 @@ mod tests {
         let dir = scratch("short");
         let (signing, key) = test_key(1);
         let bytes = vec![1u8; 5_000];
-        let (url, _) = serve(signed(bytes, "app.msi", &signing));
+        let (url, _) = serve(signed(bytes, "app-2.0.0-windows-x64.msi", &signing));
         // the release says 9 000 bytes; the server sends 5 000
-        let u = update(&format!("{url}/app.msi"), "app.msi", 9_000, None);
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", 9_000, None);
         let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err("must fail");
         assert!(matches!(err, UpdateError::Verify(_)), "{err}");
-        assert!(!dir.join("app.msi").exists());
+        assert!(!dir.join("app-2.0.0-windows-x64.msi").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -524,8 +571,8 @@ mod tests {
         let dir = scratch("again");
         let (signing, key) = test_key(1);
         let bytes = vec![3u8; 4_000];
-        let (url, file_hits) = serve(signed(bytes.clone(), "app.msi", &signing));
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        let (url, file_hits) = serve(signed(bytes.clone(), "app-2.0.0-windows-x64.msi", &signing));
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", bytes.len() as u64, None);
         let first = download(&u, Some(&key), &client(), &dir, None, None).expect("first");
         // the list is read again, the file is not: the verified copy is used as it is
         let again = download(&u, Some(&key), &client(), &dir, None, None).expect("second");
@@ -541,9 +588,9 @@ mod tests {
         let (signing, key) = test_key(1);
         let bytes: Vec<u8> = (0..9_000u32).map(|i| (i % 97) as u8).collect();
         // what an earlier, different build left under the same name
-        std::fs::write(dir.join("app.msi"), vec![0u8; bytes.len()]).expect("stale");
-        let (url, _) = serve(signed(bytes.clone(), "app.msi", &signing));
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        std::fs::write(dir.join("app-2.0.0-windows-x64.msi"), vec![0u8; bytes.len()]).expect("stale");
+        let (url, _) = serve(signed(bytes.clone(), "app-2.0.0-windows-x64.msi", &signing));
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", bytes.len() as u64, None);
         let got = download(&u, Some(&key), &client(), &dir, None, None).expect("re-download");
         assert_eq!(std::fs::read(&got.path).expect("read"), bytes);
         let _ = std::fs::remove_dir_all(&dir);
@@ -556,13 +603,13 @@ mod tests {
         let bytes: Vec<u8> = (0..20_000u32).map(|i| (i % 241) as u8).collect();
         let half = bytes.len() / 2;
         // what an interrupted transfer left behind
-        std::fs::write(dir.join("app.msi.part"), &bytes[..half]).expect("part");
-        let (url, _) = serve(signed(bytes.clone(), "app.msi", &signing));
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        std::fs::write(dir.join("app-2.0.0-windows-x64.msi.part"), &bytes[..half]).expect("part");
+        let (url, _) = serve(signed(bytes.clone(), "app-2.0.0-windows-x64.msi", &signing));
+        let u = update(&format!("{url}/app-2.0.0-windows-x64.msi"), "app-2.0.0-windows-x64.msi", bytes.len() as u64, None);
         let got = download(&u, Some(&key), &client(), &dir, None, None).expect("resume");
         assert_eq!(got.bytes, bytes.len() as u64);
         assert_eq!(std::fs::read(&got.path).expect("read"), bytes);
-        assert!(!dir.join("app.msi.part").exists());
+        assert!(!dir.join("app-2.0.0-windows-x64.msi.part").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
@@ -571,12 +618,13 @@ mod tests {
         let dir = scratch("hostile");
         let (signing, key) = test_key(1);
         let bytes = vec![5u8; 100];
-        let (url, _) = serve(signed(bytes.clone(), "escaped.msi", &signing));
-        let u = update(&format!("{url}/evil"), "../../escaped.msi", bytes.len() as u64, None);
+        let name = "escaped-2.0.0-windows-x64.msi";
+        let (url, _) = serve(signed(bytes.clone(), name, &signing));
+        let u = update(&format!("{url}/evil"), &format!("../../{name}"), bytes.len() as u64, None);
         let got = download(&u, Some(&key), &client(), &dir, None, None).expect("download");
         assert_eq!(got.path.parent(), Some(dir.as_path()));
-        assert_eq!(got.name, "escaped.msi");
-        assert!(!dir.parent().expect("parent").join("escaped.msi").exists());
+        assert_eq!(got.name, name);
+        assert!(!dir.parent().expect("parent").join(name).exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
