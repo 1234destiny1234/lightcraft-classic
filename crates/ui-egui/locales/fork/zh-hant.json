@@ -1353,5 +1353,18 @@
   "Delete from Disk moves 1 file to the system trash.": "「從磁碟刪除」會將 1 個檔案移到系統垃圾桶。",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "「移除」會保留磁碟上的檔案，並將照片移到「最近刪除」。",
   "Delete from Disk": "從磁碟刪除",
-  "Deleting from disk": "正在從磁碟刪除"
+  "Deleting from disk": "正在從磁碟刪除",
+  "Identity Plate Editor": "身分識別編輯器",
+  "Identity Plate:": "身分識別：",
+  "Personalized": "個人化",
+  "Show Status and Activity": "顯示狀態和活動",
+  "No options for the {app} identity plate.": "{app} 身分識別沒有選項。",
+  "Personalize {app} with your own branding elements.": "用您自己的品牌元素個人化 {app}。",
+  "Use a styled text identity plate": "使用樣式文字身分識別",
+  "Use a graphical identity plate": "使用圖形身分識別",
+  "No image chosen": "未選擇影像",
+  "Clear Image": "清除影像",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "SVG、PNG 或 JPEG 檔案；以 32 點高度顯示。",
+  "Theme Color": "主題顏色",
+  "Identity Plate Setup…": "身分識別設定…"
 }

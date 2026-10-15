@@ -1357,5 +1357,18 @@
   "Delete from Disk moves 1 file to the system trash.": "Eliminar del disco mueve 1 archivo a la papelera del sistema.",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "Quitar conserva los archivos en el disco y mueve las fotos a Eliminadas recientemente.",
   "Delete from Disk": "Eliminar del disco",
-  "Deleting from disk": "Eliminando del disco"
+  "Deleting from disk": "Eliminando del disco",
+  "Identity Plate Editor": "Editor de placa de identidad",
+  "Identity Plate:": "Placa de identidad:",
+  "Personalized": "Personalizada",
+  "Show Status and Activity": "Mostrar estado y actividad",
+  "No options for the {app} identity plate.": "No hay opciones para la placa de identidad de {app}.",
+  "Personalize {app} with your own branding elements.": "Personaliza {app} con tus propios elementos de marca.",
+  "Use a styled text identity plate": "Usar una placa de identidad de texto con estilo",
+  "Use a graphical identity plate": "Usar una placa de identidad gráfica",
+  "No image chosen": "Ninguna imagen elegida",
+  "Clear Image": "Quitar imagen",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Un archivo SVG, PNG o JPEG; se muestra con 32 puntos de alto.",
+  "Theme Color": "Color del tema",
+  "Identity Plate Setup…": "Configuración de placa de identidad…"
 }
