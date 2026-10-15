@@ -84,6 +84,9 @@ pub fn resizable_side(
     let panel = if left { egui::Panel::left(pid) } else { egui::Panel::right(pid) };
     let r = panel.frame(frame).resizable(true).size_range(limits.min..=max).default_size(limits.clamp(width).min(max)).show(ui, add);
     crate::widgets::register(ui.ctx(), format!("panel:{id}"), r.response.rect);
+    // the edge egui draws for resizing takes the pointer: screen readers get its name
+    let edge = if left { "Resize the left panel" } else { "Resize the right panel" };
+    crate::widgets::screen_reader_name(ui.ctx(), pid.with("__resize"), crate::i18n::tr(edge));
     // egui names the edge's drag widget `<panel id>.with("__resize")`; the width is measured from
     // the panel's fixed edge to the pointer (contents wider than the panel don't count)
     if !ui.ctx().is_being_dragged(pid.with("__resize")) {

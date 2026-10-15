@@ -624,6 +624,7 @@ fn my_photos_column(app: &mut LccApp, ui: &mut egui::Ui) {
             d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + viewport.max.x);
         });
         my_photos(app, ui, view_top);
+        crate::widgets::follow_focus(ui);
         // what the rows asked for becomes next frame's width
         let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
         if (next - content_width(ui.ctx())).abs() > 0.5 {
