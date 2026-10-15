@@ -67,26 +67,36 @@ their own small disk images (`hdiutil create`) with fake bundles in a temp folde
 
 A real install of a real build, from a scratch copy and with no feed involved (never on
 `/Applications`, never with the user's settings or library). Build once, package it twice under two
-versions, install the newer image over the older bundle. `<version>` is the workspace version
+versions, install the newer image over the older bundle. `$V` is the workspace version
 (`Cargo.toml`): the binary is the same in both, so only `Info.plist` tells the two apart, and the
-relaunched app reports the workspace version either way.
+relaunched app reports the workspace version either way. Run it from the repository root, in bash
+or zsh:
 
 ```sh
-export CARGO_TARGET_DIR=$PWD/target/agent-<name> S=$TMPDIR/updater-test
+export CARGO_TARGET_DIR="$PWD/target/macos-hand-test" S="$TMPDIR/updater-test"
+V="$(sed -n 's/^version *= *"\(.*\)"/\1/p' Cargo.toml | head -n 1)"                  # workspace version
+APP="$(sed -n 's/^display_name *= *"\([^"]*\)".*/\1/p' brand.toml | head -n 1).app"  # bundle name
+unset MACOS_SIGN_IDENTITY APPLE_ID APPLE_PASSWORD APPLE_TEAM_ID   # ad-hoc signing, no notarization
 mkdir -p "$S/old" "$S/cfg" "$S/lib" "$S/m"
 # no update check in the relaunched app (the test refuses to run without this)
 echo '{"version": 1, "updates": {"checkAtStartup": false}}' > "$S/cfg/updates.json"
 DIST="$S/a" PACKAGE_VERSION=0.0.1 packaging/macos/package.sh --arch aarch64
-DIST="$S/b" PACKAGE_VERSION=<version> packaging/macos/package.sh --arch aarch64 --skip-build
+DIST="$S/b" PACKAGE_VERSION="$V" packaging/macos/package.sh --arch aarch64 --skip-build
 hdiutil attach -readonly -nobrowse -mountpoint "$S/m" "$S"/a/*.dmg
-ditto "$S/m/<display name>.app" "$S/old/<display name>.app" && hdiutil detach "$S/m"
-UPDATER_TEST_DMG="$(ls "$S"/b/*.dmg)" UPDATER_TEST_BUNDLE="$S/old/<display name>.app" \
-  UPDATER_TEST_VERSION=<version> UPDATER_TEST_CONFIG_DIR="$S/cfg" UPDATER_TEST_LIBRARY="$S/lib" \
+ditto "$S/m/$APP" "$S/old/$APP" && hdiutil detach "$S/m"
+UPDATER_TEST_DMG="$(ls "$S"/b/*.dmg)" UPDATER_TEST_BUNDLE="$S/old/$APP" \
+  UPDATER_TEST_VERSION="$V" UPDATER_TEST_CONFIG_DIR="$S/cfg" UPDATER_TEST_LIBRARY="$S/lib" \
   cargo test -p lcc-updater --lib a_real_build_is_replaced_in_place -- --ignored --nocapture
 ```
 
-Afterwards the scratch bundle's `Info.plist` names `<version>`, no `.partial` or `.old` is left
-beside it, and the app starts on the scratch settings and library. Then:
+The ignored test refuses to run unless `$S/cfg/updates.json` turns the start-up check off. It then
+installs, and starts the new bundle on the scratch settings and library: unlike the app's own
+relaunch (a plain `open -n` of the bundle once the app has quit), it passes them with
+`open --env <PREFIX>_CONFIG_DIR=… --args --library …`, because an app started by `open` doesn't
+inherit the shell's environment.
+
+Afterwards the scratch bundle's `Info.plist` names `$V`, no `.partial` or `.old` is left beside
+it, and the app runs on the scratch settings and library. Then:
 
 ```sh
 pgrep -fl "$S/old/"                  # the relaunched app runs from the scratch bundle
@@ -95,7 +105,3 @@ pgrep -fl "$S/old/" || echo quit     # nothing runs from it any more
 hdiutil info | grep -F "$S" || echo "nothing mounted"
 rm -r "$S"
 ```
-
-The ignored test checks that `$S/cfg/updates.json` turns the start-up check off before it installs anything. The test relaunches with those
-added (`open --env <PREFIX>_CONFIG_DIR=… --args --library …`); the app's own relaunch is a plain
-`open -n` of the bundle once the app has quit.

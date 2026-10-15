@@ -660,9 +660,10 @@ mod tests {
         // `{version, updates: {checkAtStartup}}`, and anything else reads as "check on"
         let prefs: serde_json::Value =
             std::fs::read_to_string(cfg.join("updates.json")).ok().and_then(|t| serde_json::from_str(&t).ok()).unwrap_or_default();
-        assert_eq!(
-            prefs.pointer("/updates/checkAtStartup"),
-            Some(&serde_json::Value::Bool(false)),
+        // a settings file newer than version 1 is ignored by the engine, which then checks
+        let readable = prefs.get("version").is_none_or(|v| v.as_u64() == Some(1));
+        assert!(
+            readable && prefs.pointer("/updates/checkAtStartup") == Some(&serde_json::Value::Bool(false)),
             "write {{\"version\": 1, \"updates\": {{\"checkAtStartup\": false}}}} to {}/updates.json first",
             cfg.display()
         );
@@ -772,7 +773,7 @@ mod tests {
                    <key>UTExportedTypeDeclarations</key><array><dict>\
                    <key>CFBundleShortVersionString</key><string>9.9.9</string>\
                    </dict></array>\
-                   <!-- <key>CFBundleShortVersionString</key><string>8.8.8</string> -->\
+                   <!-- old > <key>CFBundleShortVersionString</key><string>8.8.8</string> -->\
                    <key>CFBundleShortVersionString</key><string>1.2.3</string>\
                    </dict></plist>";
         assert_eq!(plist_string(xml, "CFBundleShortVersionString").as_deref(), Some("1.2.3"));
