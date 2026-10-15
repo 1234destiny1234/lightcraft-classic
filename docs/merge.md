@@ -31,7 +31,10 @@ homography (the simplest model that explains ≥ 97 % of the matches), then refi
 patches at the most textured spot of each of ~24 cells along the long edge, matched by normalised cross-correlation
 over the pixels usable in both frames (clipped ones aren't) with a sub-pixel peak, and the model fitted again at
 0.75 px. A frame the small versions can't align at all (a bright frame mostly clipped) is recovered the same way
-from no alignment, searching ±16 px. Frames are resampled with Lanczos-3, held to the range of their 4 × 4
+from no alignment, searching ±16 px. What one model leaves (parallax between near and far things when the camera
+moved, lens distortion, rolling shutter) is corrected tile by tile (`flow.rs`): ~96 tiles along the long edge, each
+matched within ±5 px, outliers against their neighbours' median dropped, gaps filled, the field smoothed; each
+frame is resampled once through the homography plus the local shift. Frames are resampled with Lanczos-3, held to the range of their 4 × 4
 neighbours so edges don't ring (`lightcraft_raster::sample`); bilinear lost a third of the finest detail. Exposure ratios are measured
 (median log ratio of well-exposed pixels between brightness neighbours), EXIF is the fallback.
 Radiance is a weighted mean in linear light, weight `k · (1 − smoothstep(0.8·clip, 0.96·clip, max
@@ -75,6 +78,9 @@ scale in `BaselineExposure`; raw sources keep their DNG colour tags (camera RGB)
   corner error 0.014 and 0.11 px, 98.8 % of the scene's detail kept; before the refinement and the Lanczos-3 warp
   0.43 and 6.2 px (the bright frame wasn't aligned) and 86 %. Measured with `metrics.rs` (`detail`, `detail_ratio`,
   `MaxDetail` for focus stacks, `residual`).
+- Real handheld bracket (Sony, 33 MP, gravel a few metres away, a building ~1 km off; `tests/real_bracket.rs`, run
+  by hand): the global fit, dominated by the foreground, left the building 2.3 px off (median; 95th percentile
+  3.0 px) and the merge doubled its inscription; with local alignment 0.20 px (0.43 px), the whole frame 0.13 px.
 - Real brackets (Sony A7R VI, 67 MP, 2026-10-14): frames agree with the merged radiance within ~1 % from 3 to 90 % of
   their clip in all three channels; measured exposure steps match EXIF within 0.03 EV.
 - Panorama, 5 views over 182° with a 1.3× exposure drift: relative rotations < 0.1°, focal < 1 %,

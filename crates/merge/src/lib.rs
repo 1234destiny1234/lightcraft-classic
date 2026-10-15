@@ -15,6 +15,7 @@
 
 pub mod align;
 pub mod features;
+pub mod flow;
 pub mod frame;
 pub mod hdr;
 pub mod linalg;

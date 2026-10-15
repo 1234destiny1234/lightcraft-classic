@@ -32,8 +32,8 @@ use serde::{Deserialize, Serialize};
 
 use crate::align::{self, Alignment};
 use crate::frame::{Frame, FrameColor, consensus_multipliers};
-use crate::refine;
 use crate::{MergeError, Progress, Result, check};
+use crate::{flow, refine};
 
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -84,6 +84,9 @@ pub struct HdrResult {
     /// The same from EXIF, when every frame had it.
     pub ev_exif: Option<Vec<f64>>,
     pub alignments: Vec<Alignment>,
+    /// Per input: the largest local shift (pixels) left after its alignment and corrected tile by tile
+    /// ([`crate::flow`]); 0 for the reference and frames not aligned.
+    pub local_shift: Vec<f32>,
     pub color: FrameColor,
     pub raw: bool,
     pub orientation: lightcraft_geom::Orientation,
@@ -162,6 +165,7 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
 
     // 2. alignment
     let mut alignments = vec![Alignment::identity(); n];
+    let mut local_shift = vec![0f32; n];
     let mut valid: Vec<Option<Vec<bool>>> = vec![None; n];
     if opts.align {
         check(progress, 0.05, "Aligning")?;
@@ -202,12 +206,15 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
             } else {
                 refine::refine(&ref_luma, &luma, &alignments[i], refine::radius_for(feats[i].1), i as u64 + 1)
             };
-            drop(luma);
             if alignments[i].model == "identity" {
                 continue;
             }
             check(progress, 0.3 + 0.15 * i as f32 / n as f32, "Resampling")?;
-            let (img, v) = align::warp(&frames[i].image, &alignments[i].h);
+            // what the one model leaves (parallax, distortion): shifts measured tile by tile
+            let fl = flow::estimate(&ref_luma, &flow::warp_plane(&luma, &alignments[i].h), flow::RADIUS);
+            drop(luma);
+            local_shift[i] = fl.max();
+            let (img, v) = flow::warp(&frames[i].image, &alignments[i].h, &fl);
             frames[i].image = img;
             valid[i] = Some(v);
         }
@@ -315,9 +322,11 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
     // per-frame results in the caller's order
     let mut ev_in = vec![0.0; n];
     let mut alignments_in = vec![Alignment::identity(); n];
+    let mut local_in = vec![0f32; n];
     for (p, &i) in input.iter().enumerate() {
         ev_in[i] = ev[p];
         alignments_in[i] = alignments[p].clone();
+        local_in[i] = local_shift[p];
     }
     let ev_exif = ev_exif.map(|e: Vec<f64>| {
         let mut v = vec![0.0; n];
@@ -340,6 +349,7 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         ev: ev_in,
         ev_exif,
         alignments: alignments_in,
+        local_shift: local_in,
         color,
         raw: rf.raw,
         orientation: rf.orientation,
