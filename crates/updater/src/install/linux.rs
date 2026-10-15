@@ -83,6 +83,9 @@ pub(super) fn swap_script(swap: &Swap) -> String {
          old={old}\n\
          note={note}\n\
          folder={folder}\n\
+         # the tools are looked up on PATH (NixOS has no /bin/mv); an empty PATH still finds them\n\
+         PATH=\"${{PATH:+$PATH:}}/usr/bin:/bin\"\n\
+         export PATH\n\
          trap 'rm -f -- \"$folder\"/{script}; rmdir -- \"$folder\" 2>/dev/null' EXIT\n\
          fail() {{\n\
          \x20 rm -f -- \"$staged\"\n\
@@ -98,7 +101,11 @@ pub(super) fn swap_script(swap: &Swap) -> String {
          \x20 n=$((n + 1))\n\
          done\n\
          if [ ! -f \"$staged\" ]; then fail 'The downloaded update was gone before it could be installed. The previous version is unchanged.'; fi\n\
-         if ! ln -f -- \"$running\" \"$old\" 2>/dev/null && ! cp -p -- \"$running\" \"$old\" 2>/dev/null; then\n\
+         # whatever is left at .old goes first: `rm -f` removes a file or a link (never what it points\n\
+         # to); a folder stays and stops the update, since `ln` and `cp` would put the copy inside it\n\
+         rm -f -- \"$old\" 2>/dev/null\n\
+         if [ -e \"$old\" ] || [ -L \"$old\" ]; then fail \"Something that is not a file is in the way at $old, so the update was not installed. The previous version is unchanged.\"; fi\n\
+         if ! ln -- \"$running\" \"$old\" 2>/dev/null && ! cp -p -- \"$running\" \"$old\" 2>/dev/null; then\n\
          \x20 rm -f -- \"$old\"\n\
          \x20 fail 'A copy of the running version could not be kept, so the update was not installed. The previous version is unchanged.'\n\
          fi\n\
@@ -239,12 +246,28 @@ mod tests {
     use std::process::Child;
     use std::time::Instant;
 
-    /// A fresh folder for one test, with a space and a quote in its name (AC-6).
-    fn scratch(tag: &str) -> PathBuf {
+    /// A fresh folder for one test, with a space and a quote in its name (AC-6), deleted when
+    /// the test ends, failed or not.
+    struct Scratch(PathBuf);
+
+    impl std::ops::Deref for Scratch {
+        type Target = PathBuf;
+        fn deref(&self) -> &PathBuf {
+            &self.0
+        }
+    }
+
+    impl Drop for Scratch {
+        fn drop(&mut self) {
+            let _ = fs::remove_dir_all(&self.0);
+        }
+    }
+
+    fn scratch(tag: &str) -> Scratch {
         let d = std::env::temp_dir().join(format!("lcc-updater-swap {tag} it's-{}", std::process::id()));
         let _ = fs::remove_dir_all(&d);
         fs::create_dir_all(&d).expect("scratch dir");
-        d
+        Scratch(d)
     }
 
     /// A stand-in AppImage: a script that writes `who` to `marker` when started.
@@ -269,7 +292,7 @@ mod tests {
     }
 
     struct Setup {
-        dir: PathBuf,
+        dir: Scratch,
         running: PathBuf,
         staged: PathBuf,
         old: PathBuf,
@@ -311,16 +334,28 @@ mod tests {
         (cmd.spawn().expect("run the script"), folder)
     }
 
-    /// A folder holding an `mv` that runs `on_new` (sh) when its source is a staged `.new-*` file,
-    /// and the real `mv` otherwise.
-    fn mv_shim(dir: &Path, on_new: &str) -> PathBuf {
+    /// Put a `tool` in `dir/shims` (made if needed) that runs `before` (sh), then the real tool,
+    /// found on this PATH now (no fixed `/bin` path: NixOS and the Nix sandbox have none).
+    fn shim(dir: &Path, tool: &str, before: &str) -> PathBuf {
         let shims = dir.join("shims");
-        fs::create_dir(&shims).expect("shims");
-        let mv = shims.join("mv");
-        fs::write(&mv, format!("#!/bin/sh\nfor a in \"$@\"; do case \"$a\" in *.new-*) {on_new} ;; esac; done\nexec /bin/mv \"$@\"\n"))
-            .expect("shim");
-        fs::set_permissions(&mv, fs::Permissions::from_mode(0o755)).expect("chmod");
+        fs::create_dir_all(&shims).expect("shims");
+        let found = Command::new("/bin/sh").arg("-c").arg(format!("command -v {tool}")).output().expect("command -v");
+        let real = String::from_utf8_lossy(&found.stdout).trim().to_string();
+        assert!(found.status.success() && real.starts_with('/'), "the real {tool} is on PATH: {real:?}");
+        let path = shims.join(tool);
+        fs::write(&path, format!("#!/bin/sh\n{before}\nexec {} \"$@\"\n", sh_quote(&real))).expect("shim");
+        fs::set_permissions(&path, fs::Permissions::from_mode(0o755)).expect("chmod");
         shims
+    }
+
+    /// A shim `mv` that runs `on_new` (sh) when an argument is a staged `.new-*` file.
+    fn mv_shim(dir: &Path, on_new: &str) -> PathBuf {
+        shim(dir, "mv", &format!("for a in \"$@\"; do case \"$a\" in *.new-*) {on_new} ;; esac; done"))
+    }
+
+    /// A shim `ln` that always fails, as on a file system without hard links.
+    fn ln_fails(dir: &Path) -> PathBuf {
+        shim(dir, "ln", "exit 1")
     }
 
     /// The pid of a process that has already exited (and been reaped).
@@ -346,7 +381,7 @@ mod tests {
         let mut app = Command::new("sleep").arg("30").spawn().expect("stand-in app");
         let (mut script, folder) = run_swap(&s, app.id(), Duration::from_secs(20));
         std::thread::sleep(Duration::from_millis(700));
-        assert!(content(&s.running).contains("old"), "the running file must not be replaced while the app runs");
+        assert!(content(&s.running).contains("'old'"), "the running file must not be replaced while the app runs");
         assert!(s.staged.exists() && !s.old.exists(), "nothing is moved while the app runs");
         assert!(!s.marker.exists(), "nothing is started while the app runs");
         assert!(matches!(script.try_wait(), Ok(None)), "the script is still waiting");
@@ -355,12 +390,11 @@ mod tests {
         let _ = app.wait();
         assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes once the app has quit");
         assert!(wait_until(Duration::from_secs(10), || content(&s.marker) == "new"), "the new version is started");
-        assert!(content(&s.running).contains("new"), "the new version is in the running file's place");
-        assert!(content(&s.old).contains("old"), "the previous version is kept as .old");
+        assert!(content(&s.running).contains("'new'"), "the new version is in the running file's place");
+        assert!(content(&s.old).contains("'old'"), "the previous version is kept as .old");
         assert!(!s.staged.exists(), "the staged file was moved, not copied");
         assert!(!s.note.exists(), "a swap that worked leaves no failure note");
         assert!(!folder.exists(), "the script deletes itself and its folder");
-        let _ = fs::remove_dir_all(&s.dir);
     }
 
     #[test]
@@ -370,7 +404,7 @@ mod tests {
         let (mut script, folder) = run_swap(&s, app.id(), Duration::from_millis(300));
         assert!(finished(&mut script, Duration::from_secs(10)), "the script gives up after its wait");
         std::thread::sleep(Duration::from_millis(200));
-        assert!(content(&s.running).contains("old"), "the original file is untouched");
+        assert!(content(&s.running).contains("'old'"), "the original file is untouched");
         assert!(!s.old.exists(), "the original was not moved aside");
         assert!(!s.staged.exists(), "the staged file is deleted");
         assert!(!s.marker.exists(), "nothing is started");
@@ -378,7 +412,6 @@ mod tests {
         assert!(!folder.exists(), "the script deletes itself and its folder");
         let _ = app.kill();
         let _ = app.wait();
-        let _ = fs::remove_dir_all(&s.dir);
     }
 
     #[test]
@@ -391,12 +424,11 @@ mod tests {
         let (mut script, folder) = run_swap(&s, gone.id(), Duration::from_secs(5));
         assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
         std::thread::sleep(Duration::from_millis(200));
-        assert!(content(&s.running).contains("old"), "the original file is in place");
+        assert!(content(&s.running).contains("'old'"), "the original file is in place");
         assert!(!s.old.exists() && !s.staged.exists(), "no .old or .new file is left behind");
         assert!(!s.marker.exists(), "nothing is started");
         assert!(!content(&s.note).is_empty(), "the reason is left for the next start");
         assert!(!folder.exists(), "the script deletes itself and its folder");
-        let _ = fs::remove_dir_all(&s.dir);
     }
 
     #[test]
@@ -406,12 +438,11 @@ mod tests {
         let (mut script, folder) = run_swap_with(&s, gone_app(), Duration::from_secs(5), Some(&shims));
         assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
         std::thread::sleep(Duration::from_millis(200));
-        assert!(content(&s.running).contains("old"), "the original file is untouched at its path");
+        assert!(content(&s.running).contains("'old'"), "the original file is untouched at its path");
         assert!(!s.staged.exists(), "no .new file is left behind");
         assert!(!s.marker.exists(), "nothing is started");
         assert!(content(&s.note).contains("could not be put in place"), "the reason is left for the next start: {:?}", content(&s.note));
         assert!(!folder.exists(), "the script deletes itself and its folder");
-        let _ = fs::remove_dir_all(&s.dir);
     }
 
     #[test]
@@ -423,11 +454,62 @@ mod tests {
         let (mut script, _folder) = run_swap_with(&s, gone_app(), Duration::from_secs(5), Some(&shims));
         assert!(wait_until(Duration::from_secs(10), || reached.exists()), "the script reaches the final rename");
         // stop the script and its tools at that point
-        let _ = Command::new("kill").arg("-KILL").arg(format!("-{}", script.id())).status();
+        let killed = Command::new("kill").args(["-s", "KILL", "--"]).arg(format!("-{}", script.id())).status().expect("kill");
+        assert!(killed.success(), "the script's process group is stopped");
         assert!(finished(&mut script, Duration::from_secs(10)), "the script is stopped");
-        assert!(content(&s.running).contains("old"), "the running path still names the previous version");
-        assert!(content(&s.old).contains("old"), "and a copy is kept as .old");
-        let _ = fs::remove_dir_all(&s.dir);
+        assert!(content(&s.running).contains("'old'"), "the running path still names the previous version");
+        assert!(content(&s.old).contains("'old'"), "and a copy is kept as .old");
+    }
+
+    /// Run a whole swap for an app that has quit, with `ln` failing when `no_links` (so the copy
+    /// fallback runs).
+    fn swap_after_quit(s: &Setup, no_links: bool) {
+        let shims = no_links.then(|| ln_fails(&s.dir));
+        let (mut script, folder) = run_swap_with(s, gone_app(), Duration::from_secs(5), shims.as_deref());
+        assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
+        std::thread::sleep(Duration::from_millis(200));
+        assert!(!folder.exists(), "the script deletes itself and its folder");
+    }
+
+    #[test]
+    fn a_link_left_at_old_is_replaced_never_written_through() {
+        for no_links in [false, true] {
+            for to_folder in [false, true] {
+                let s = setup(&format!("old link {no_links} {to_folder}"));
+                let victim = s.dir.join(if to_folder { "victim dir" } else { "victim" });
+                if to_folder {
+                    fs::create_dir(&victim).expect("victim dir");
+                } else {
+                    fs::write(&victim, "precious").expect("victim");
+                }
+                symlink(&victim, &s.old).expect("plant a link at .old");
+                swap_after_quit(&s, no_links);
+                let case = format!("(no hard links: {no_links}, link to a folder: {to_folder})");
+                if to_folder {
+                    assert_eq!(fs::read_dir(&victim).expect("list").count(), 0, "nothing is copied behind the link {case}");
+                } else {
+                    assert_eq!(content(&victim), "precious", "the link's target is untouched {case}");
+                }
+                let meta = fs::symlink_metadata(&s.old).expect(".old");
+                assert!(meta.file_type().is_file() && content(&s.old).contains("'old'"), "the previous version is kept as a plain .old {case}");
+                assert!(wait_until(Duration::from_secs(5), || content(&s.marker) == "new"), "the update went ahead {case}");
+            }
+        }
+    }
+
+    #[test]
+    fn a_folder_at_old_stops_the_update_safely() {
+        for no_links in [false, true] {
+            let s = setup(&format!("old folder {no_links}"));
+            fs::create_dir(&s.old).expect("folder at .old");
+            swap_after_quit(&s, no_links);
+            let case = format!("(no hard links: {no_links})");
+            assert!(content(&s.running).contains("'old'"), "the original stays in place {case}");
+            assert!(!s.staged.exists(), "the staged file is deleted {case}");
+            assert!(!s.marker.exists(), "nothing is started {case}");
+            assert_eq!(fs::read_dir(&s.old).expect("list").count(), 0, "nothing is copied into the folder {case}");
+            assert!(content(&s.note).contains("in the way"), "the note says why {case}: {:?}", content(&s.note));
+        }
     }
 
     #[test]
@@ -439,8 +521,7 @@ mod tests {
         let err = start(&base, |_| String::from("exit 0\n"), &s.staged).expect_err("refused");
         assert!(matches!(err, UpdateError::Install(_)), "{err}");
         assert!(!s.staged.exists(), "the staged file is deleted when the swap can't start");
-        assert!(content(&s.running).contains("old"), "the running file is untouched");
-        let _ = fs::remove_dir_all(&s.dir);
+        assert!(content(&s.running).contains("'old'"), "the running file is untouched");
     }
 
     #[test]
@@ -475,18 +556,16 @@ mod tests {
         symlink(&elsewhere, &planted).expect("plant a folder link");
         assert!(create_private_dir(&planted).is_err(), "an existing link is not a fresh folder");
         assert_eq!(fs::read_dir(&elsewhere).expect("list").count(), 0, "nothing was written behind the link");
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn the_script_folder_is_under_the_runtime_dir_when_there_is_one() {
         let dir = scratch("base");
         let fallback = dir.join("updates");
-        assert_eq!(script_base(Some(dir.clone().into_os_string()), &fallback), dir);
+        assert_eq!(script_base(Some(dir.clone().into_os_string()), &fallback), *dir);
         assert_eq!(script_base(None, &fallback), fallback);
         assert_eq!(script_base(Some("relative".into()), &fallback), fallback, "a relative value is not trusted");
         assert_eq!(script_base(Some(dir.join("missing").into_os_string()), &fallback), fallback);
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -512,7 +591,6 @@ mod tests {
         fs::create_dir(&old).expect("dir");
         assert_eq!(remove_previous(Some(running.clone().into_os_string())).expect("ok"), None);
         assert!(old.is_dir());
-        let _ = fs::remove_dir_all(&dir);
     }
 
     #[test]
@@ -522,6 +600,5 @@ mod tests {
         fs::write(dir.join(FAILURE_NOTE), "The app was still running.\n").expect("note");
         assert_eq!(take_failure_note(&dir).as_deref(), Some("The app was still running."));
         assert_eq!(take_failure_note(&dir), None, "the note is deleted once read");
-        let _ = fs::remove_dir_all(&dir);
     }
 }
