@@ -281,6 +281,24 @@ fn import_cancelled_by_command_reports_cancelled() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
+/// A photo chosen while an import runs stays the active one when the import ends: the import
+/// selects its first photo only if nobody picked something else meanwhile (issue #1446).
+#[test]
+fn a_photo_chosen_during_an_import_stays_selected() {
+    let (mut h, dir) = slow_import("chosen", 20);
+    crate::import::start_paths(&mut h.app, vec![dir.to_string_lossy().to_string()]).unwrap();
+    assert!(h.step_until(Duration::from_secs(60), |h| h.app.import.as_ref().is_some_and(|t| t.imported >= 2)));
+    // the newest photo so far, never the import's first
+    let chosen = h.app.session.catalog.photos().map(|p| p.id).max().expect("photos arrived");
+    let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [chosen.0]}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert!(h.app.import.is_some(), "still importing");
+    assert!(h.step_until(Duration::from_secs(60), |h| h.app.import.is_none()));
+    assert_eq!(h.app.session.catalog.len(), 20, "all imported");
+    assert_eq!(h.app.session.selection.active, Some(chosen));
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 #[test]
 fn scan_shows_a_row_and_cancel_closes_it() {
     let (mut h, dir) = slow_import("scan", 120);
@@ -392,4 +410,23 @@ fn rows_added_later_grow_the_stack() {
         let r = rect(&h, &format!("activity:row:{}", g.id()));
         assert!(stack.contains_rect(r), "row {} at {r:?} is cut off by the stack at {stack:?}", g.id());
     }
+}
+
+#[test]
+fn immediate_library_commands_and_auto_sync_show_completion() {
+    let mut h = demo();
+    assert!(h.app.run("library.clearPreviews", json!({})).is_ok());
+    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("✓ Clear Preview Cache"));
+
+    assert_eq!(h.app.run("develop.autoSync", json!({"on": true})).unwrap()["on"], true);
+    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Auto Sync: On"));
+
+    assert_eq!(h.app.run("develop.autoSync", json!({"on": false})).unwrap()["on"], false);
+    assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Auto Sync: Off"));
+
+    // This demo has no on-disk library to optimize. A failed command must not
+    // report completion (or accidentally keep its preceding success toast).
+    h.app.ui.toast = None;
+    assert!(h.app.run("library.compact", json!({})).is_err());
+    assert!(h.app.ui.toast.is_none());
 }

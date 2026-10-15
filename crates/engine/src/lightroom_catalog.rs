@@ -4,7 +4,7 @@
 use std::collections::{BTreeMap, HashMap, HashSet};
 use std::fs::{File, Metadata};
 use std::io::{Read, Seek, SeekFrom};
-use std::path::{Path, PathBuf};
+use std::path::{Component, Path, PathBuf};
 use std::sync::{
     Arc,
     atomic::{AtomicBool, AtomicUsize, Ordering},
@@ -436,6 +436,29 @@ fn file_snapshot(file: &File, prefix_limit: usize) -> Result<FileSnapshot, Strin
     Ok(FileSnapshot { stamp, prefix })
 }
 
+/// Where a root folder is when its `absolutePath` isn't a folder here (the catalog came from
+/// another computer): `relativePathFromCatalog`, which Lightroom records for roots on the
+/// catalog's volume, resolved against the catalog's folder, if that is a folder.
+fn relocated_root(absolute: &str, relative: &str, catalog: &Path) -> Option<PathBuf> {
+    if relative.is_empty() || !Path::new(relative).is_relative() || Path::new(absolute).is_dir() {
+        return None;
+    }
+    let dir = std::path::absolute(catalog).ok()?.parent()?.join(relative);
+    let mut out = PathBuf::new();
+    for part in dir.components() {
+        match part {
+            Component::ParentDir => {
+                if !out.pop() {
+                    return None;
+                }
+            }
+            Component::CurDir => {}
+            part => out.push(part),
+        }
+    }
+    out.is_dir().then_some(out)
+}
+
 /// Inspect `.lrcat` plus committed WAL pages without modifying either source file.
 pub fn read(path: &Path) -> Result<CatalogImport, String> {
     let cancel = AtomicBool::new(false);
@@ -540,6 +563,22 @@ pub fn read_with_progress(path: &Path, cancel: &AtomicBool, total: &AtomicUsize,
         }
         out
     };
+    let mut root_paths = HashMap::new();
+    let mut root_ids: Vec<_> = roots.keys().copied().collect();
+    root_ids.sort_unstable();
+    for (id, root) in root_ids.iter().filter_map(|id| Some((*id, roots.get(id)?))) {
+        ensure_read_active(cancel)?;
+        let absolute = text(root, "absolutePath");
+        let resolved = match relocated_root(absolute, text(root, "relativePathFromCatalog"), path) {
+            Some(found) => {
+                let found = found.to_string_lossy().to_string();
+                warnings.push(format!("root folder {}: {absolute} not found; using {found} (relative to the catalog)", text(root, "name")));
+                found
+            }
+            None => absolute.to_string(),
+        };
+        root_paths.insert(id, resolved);
+    }
     let mut history = group(optional_table("Adobe_libraryImageDevelopHistoryStep", &mut warnings)?);
     let mut snapshots = group(optional_table("Adobe_libraryImageDevelopSnapshot", &mut warnings)?);
     let mut out = CatalogImport {
@@ -556,7 +595,7 @@ pub fn read_with_progress(path: &Path, cancel: &AtomicBool, total: &AtomicUsize,
         let file = files.get(&number(&image, "rootFile")).ok_or_else(|| format!("image {id}: missing file record"))?;
         let folder = folders.get(&number(file, "folder")).ok_or_else(|| format!("image {id}: missing folder record"))?;
         let root = roots.get(&number(folder, "rootFolder")).ok_or_else(|| format!("image {id}: missing root record"))?;
-        let root_path = text(root, "absolutePath");
+        let root_path = root_paths.get(&number(root, "id_local")).map_or("", String::as_str);
         let folder_path = text(folder, "pathFromRoot");
         let name = text(file, "idx_filename");
         if root_path.is_empty() || name.is_empty() {
@@ -1400,6 +1439,53 @@ mod tests {
         page[offset + 8..offset + 10].copy_from_slice(&(end as u16).to_be_bytes());
     }
 
+    /// A one-row-per-table SQLite file: `(name, columns, row)` each.
+    fn native_catalog(tables: &[(&str, &str, Vec<SqlValue>)]) -> Vec<u8> {
+        use SqlValue::{Integer as I, Text as T};
+        let mut bytes = vec![0u8; 5 * 2048];
+        bytes[..16].copy_from_slice(b"SQLite format 3\0");
+        bytes[16..18].copy_from_slice(&2048u16.to_be_bytes());
+        bytes[18] = 1;
+        bytes[19] = 1;
+        bytes[21] = 64;
+        bytes[22] = 32;
+        bytes[23] = 32;
+        bytes[28..32].copy_from_slice(&5u32.to_be_bytes());
+        bytes[44..48].copy_from_slice(&4u32.to_be_bytes());
+        bytes[56..60].copy_from_slice(&1u32.to_be_bytes());
+        let mut schema = Vec::new();
+        for (i, (name, columns, row)) in tables.iter().enumerate() {
+            schema.push(vec![
+                T("table".into()),
+                T((*name).into()),
+                T((*name).into()),
+                I(i as i64 + 2),
+                T(format!("CREATE TABLE {name} ({columns})")),
+            ]);
+            leaf(&mut bytes[(i + 1) * 2048..(i + 2) * 2048], 0, std::slice::from_ref(row));
+        }
+        leaf(&mut bytes[..2048], 100, &schema);
+        bytes
+    }
+
+    fn photo_tables(root: (&str, &str)) -> Vec<(&'static str, &'static str, Vec<SqlValue>)> {
+        use SqlValue::{Integer as I, Null as N, Text as T};
+        vec![
+            (
+                "AgLibraryRootFolder",
+                "id_local INTEGER PRIMARY KEY, absolutePath, name, relativePathFromCatalog",
+                vec![N, T(root.0.into()), T("Photos".into()), T(root.1.into())],
+            ),
+            ("AgLibraryFolder", "id_local INTEGER PRIMARY KEY, rootFolder, pathFromRoot", vec![N, I(1), T("Photos/".into())]),
+            ("AgLibraryFile", "id_local INTEGER PRIMARY KEY, folder, idx_filename", vec![N, I(1), T("test.ARW".into())]),
+            (
+                "Adobe_images",
+                "id_local INTEGER PRIMARY KEY, id_global, rootFile, fileFormat, fileWidth, fileHeight, rating, pick",
+                vec![N, T("fixture-image".into()), I(1), T("ARW".into()), I(20), I(10), I(5), I(1)],
+            ),
+        ]
+    }
+
     struct SparseCatalogFixture {
         path: PathBuf,
         keep: bool,
@@ -2074,6 +2160,77 @@ mod tests {
         assert!(!missing.exists(), "failed open must not create a source file");
     }
 
+    #[test]
+    fn reads_native_catalog_fixture_without_lightroom_or_external_processes() {
+        let bytes = native_catalog(&photo_tables(("/catalog/", "")));
+        let path = std::env::temp_dir().join(format!("lightcraft-native-catalog-{}.lrcat", std::process::id()));
+        std::fs::write(&path, &bytes).unwrap();
+        let catalog = read(&path).unwrap();
+        assert_eq!(catalog.photos.len(), 1);
+        assert_eq!(catalog.photos[0].uuid, "fixture-image");
+        assert_eq!(number(&catalog.photos[0].image, "rating"), 5);
+        assert!(catalog.photos[0].path.ends_with("test.ARW"));
+        std::fs::write(&path, b"bad catalog").unwrap();
+        assert!(read(&path).is_err());
+        std::fs::remove_file(path).unwrap();
+    }
+    #[test]
+    fn a_root_missing_here_is_found_relative_to_the_catalog() {
+        let dir = std::env::temp_dir().join(format!("lightcraft-relocated-catalog-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("Lightroom")).unwrap();
+        std::fs::create_dir_all(dir.join("RAW")).unwrap();
+        let path = dir.join("Lightroom").join("Lightroom.lrcat");
+        std::fs::write(&path, native_catalog(&photo_tables(("C:/Users/me/Project/RAW/", "../RAW/")))).unwrap();
+        let catalog = read(&path).unwrap();
+        assert_eq!(Path::new(&catalog.photos[0].path), dir.join("RAW").join("Photos").join("test.ARW"));
+        assert!(catalog.warnings.iter().any(|w| w.contains("relative to the catalog")), "{:?}", catalog.warnings);
+        // a relative path that leads nowhere keeps the recorded one
+        std::fs::write(&path, native_catalog(&photo_tables(("C:/Users/me/Project/RAW/", "../Elsewhere/")))).unwrap();
+        let catalog = read(&path).unwrap();
+        assert!(catalog.photos[0].path.starts_with("C:/Users/me/Project/RAW/"), "{}", catalog.photos[0].path);
+        assert!(catalog.warnings.is_empty(), "{:?}", catalog.warnings);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+    #[test]
+    fn oversized_optional_table_warns_and_is_skipped_upstream_fixture() {
+        let mut main = vec![0u8; 2 * 512];
+        main[..16].copy_from_slice(b"SQLite format 3\0");
+        main[16..18].copy_from_slice(&512u16.to_be_bytes());
+        main[18] = 1;
+        main[19] = 1;
+        main[21] = 64;
+        main[22] = 32;
+        main[23] = 32;
+        main[28..32].copy_from_slice(&2u32.to_be_bytes());
+        main[44..48].copy_from_slice(&4u32.to_be_bytes());
+        main[56..60].copy_from_slice(&1u32.to_be_bytes());
+        main[100] = 0x0d;
+        let schema = vec![
+            SqlValue::Text("table".into()),
+            SqlValue::Text("optional_history".into()),
+            SqlValue::Text("optional_history".into()),
+            SqlValue::Integer(2),
+            SqlValue::Text("CREATE TABLE optional_history (payload BLOB)".into()),
+        ];
+        leaf_one(&mut main[..512], 100, 1, &schema);
+        let page = &mut main[512..];
+        page[0] = 0x0d;
+        page[3..5].copy_from_slice(&1u16.to_be_bytes());
+        let mut cell = varint((64 * 1024 * 1024 + 1) as u64);
+        cell.extend(varint(1));
+        let start = 500 - cell.len();
+        page[start..start + cell.len()].copy_from_slice(&cell);
+        page[8..10].copy_from_slice(&u16::try_from(start).unwrap_or(0).to_be_bytes());
+        page[5..7].copy_from_slice(&u16::try_from(start).unwrap_or(0).to_be_bytes());
+        let db = Database::open_with_wal(main, &[]).unwrap();
+        let reader = Reader { db };
+        let mut warnings = Vec::new();
+        let cancel = AtomicBool::new(false);
+        let rows = reader.optional_table("optional_history", &mut warnings, &cancel).unwrap();
+        assert!(rows.is_empty());
+        assert!(warnings.iter().any(|warning| warning.contains("optional_history")));
+    }
     #[test]
     fn reads_native_sqlite_tables_without_lightroom_or_external_processes() {
         let fixture = sparse_catalog_fixture(false);
