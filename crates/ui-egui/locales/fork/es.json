@@ -1320,6 +1320,7 @@
   "Add to Target Collection": "Añadir a colección de destino",
   "Remove from Target Collection": "Quitar de colección de destino",
   "Wheel scroll speed": "Velocidad de desplazamiento de la rueda",
+  "Wheel resizes brush instead of zooming": "La rueda del ratón cambia el tamaño del pincel en lugar de hacer zoom",
   "Fast": "Rápida",
   "Fastest": "Muy rápida",
   "Run face models on the CPU only": "Ejecutar los modelos de caras solo en la CPU",

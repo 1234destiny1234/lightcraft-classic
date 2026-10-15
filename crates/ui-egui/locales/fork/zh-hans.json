@@ -1230,6 +1230,7 @@
   "Add to Target Collection": "添加到目标集合",
   "Remove from Target Collection": "从目标集合中移除",
   "Wheel scroll speed": "滚轮滚动速度",
+  "Wheel resizes brush instead of zooming": "滚轮调整画笔大小而不是缩放",
   "Fast": "快",
   "Fastest": "最快",
   "Run face models on the CPU only": "仅在 CPU 上运行人脸模型",

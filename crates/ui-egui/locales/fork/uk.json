@@ -1058,6 +1058,7 @@
   "Add to Target Collection": "Додати до цільової колекції",
   "Remove from Target Collection": "Вилучити з цільової колекції",
   "Wheel scroll speed": "Швидкість прокручування коліщатком",
+  "Wheel resizes brush instead of zooming": "Коліщатко миші змінює розмір пензля замість масштабування",
   "Fast": "Швидка",
   "Fastest": "Дуже швидка",
   "Run face models on the CPU only": "Запускати моделі облич лише на ЦП",
