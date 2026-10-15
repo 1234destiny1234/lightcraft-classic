@@ -42,6 +42,7 @@ mod faces_index;
 #[cfg(not(target_arch = "wasm32"))]
 mod faces_worker;
 pub mod files;
+pub mod filter_plugins;
 pub mod fonts;
 pub mod guard;
 pub mod import;
@@ -399,6 +400,8 @@ impl Session {
     }
 
     pub fn new() -> Session {
+        // installed pixel-filter plug-ins become the renders' filter host
+        let _ = filter_plugins::registry();
         Session {
             library_generation: LIBRARY_GEN.fetch_add(1, std::sync::atomic::Ordering::Relaxed),
             auto_sync: false,
@@ -1192,6 +1195,8 @@ mod tests_face_tiles;
 mod tests_filesystem_history;
 #[cfg(test)]
 mod tests_folders;
+#[cfg(test)]
+mod tests_plugin_filters;
 #[cfg(test)]
 mod tests_forget_local;
 #[cfg(test)]

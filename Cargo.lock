@@ -4642,6 +4642,7 @@ dependencies = [
  "lcc-develop",
  "lcc-faces",
  "lcc-fetch",
+ "lcc-filters",
  "lcc-geo",
  "lcc-geocode",
  "lcc-geom",

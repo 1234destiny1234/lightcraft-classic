@@ -1092,6 +1092,9 @@ pub fn develop_reporting(
     if let Some(h) = lcc_pipeline::hdr_histogram(src, info, s, req) {
         rendered.histogram = h;
     }
+    for w in &rendered.warnings {
+        log::warn!("render: {w}");
+    }
     (rendered, fallback)
 }
 
