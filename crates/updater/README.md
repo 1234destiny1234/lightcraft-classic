@@ -36,9 +36,12 @@ if let Some(update) = lcc_updater::check(&opts, None, None)? {
   into place. A file that fails its check is deleted. A file already there is re-hashed, not trusted
   by name; a hostile asset name (`../../…`) is reduced to its last path segment.
 - **Installing** is `install::plan` (what will happen, in words, before anything does) and
-  `install::install`: `msiexec` runs the Windows installer, a macOS script mounts the disk image and
-  copies the app over the running one from a terminal window, a Linux script renames the running
-  AppImage aside and starts the new one, and anything else is revealed in the file manager for a
+  `install::install`: `msiexec` runs the Windows installer; on macOS the disk image is mounted
+  read-only, its `<display name>.app` (by that name, never a link) is copied beside the running
+  bundle, checked against the release's version and swapped in with two renames that are undone if
+  anything fails, then started again once the app has quit (in-process: no Terminal, no script; a
+  program that isn't inside an `.app` is pointed to the release page instead); a Linux script
+  renames the running AppImage aside and starts the new one, and anything else is revealed in the file manager for a
   manual unpack. Every path ends with the app running again or with a sentence saying what to do.
 - **Never a panic.** No network, a rate-limited API, a release without a file for this machine, a
   truncated download, a full disk, an installer that refuses: all are `UpdateError` values a dialog
@@ -54,3 +57,34 @@ code.
 
 Tests use local HTTP servers for the feed, the checksum list and the file: they make no internet
 requests. The end-to-end path (feed → download → staged file) is covered in `lcc-engine`.
+
+The macOS install is after craft-launcher's in-process disk image install
+([storytold/craft-launcher](https://github.com/storytold/craft-launcher), Apache-2.0), written anew
+from the documented options of `hdiutil(1)`, `ditto(1)`, `plutil(1)` and `open(1)`. Its tests make
+their own small disk images (`hdiutil create`) with fake bundles in a temp folder.
+
+## Testing the macOS install by hand
+
+A real install of a real build, from a scratch copy and with no feed involved (never on
+`/Applications`, never with the user's settings or library). Build once, package it twice under two
+versions, install the newer image over the older bundle. `<version>` is the workspace version
+(`Cargo.toml`): the binary is the same in both, so only `Info.plist` tells the two apart, and the
+relaunched app reports the workspace version either way.
+
+```sh
+export CARGO_TARGET_DIR=$PWD/target/agent-<name> S=$TMPDIR/updater-test
+mkdir -p "$S/old" "$S/cfg" "$S/lib" "$S/m"
+echo '{"checkAtStartup": false}' > "$S/cfg/updates.json"   # no update check in the relaunched app
+DIST="$S/a" PACKAGE_VERSION=0.0.1 packaging/macos/package.sh --arch aarch64
+DIST="$S/b" PACKAGE_VERSION=<version> packaging/macos/package.sh --arch aarch64 --skip-build
+hdiutil attach -readonly -nobrowse -mountpoint "$S/m" "$S"/a/*.dmg
+ditto "$S/m/<display name>.app" "$S/old/<display name>.app" && hdiutil detach "$S/m"
+UPDATER_TEST_DMG="$(ls "$S"/b/*.dmg)" UPDATER_TEST_BUNDLE="$S/old/<display name>.app" \
+  UPDATER_TEST_VERSION=<version> UPDATER_TEST_CONFIG_DIR="$S/cfg" UPDATER_TEST_LIBRARY="$S/lib" \
+  cargo test -p lcc-updater --lib a_real_build_is_replaced_in_place -- --ignored --nocapture
+```
+
+Afterwards the scratch bundle's `Info.plist` names `<version>`, no `.partial` or `.old` is left
+beside it, and the app starts on the scratch settings and library. The test relaunches with those
+added (`open --env <PREFIX>_CONFIG_DIR=… --args --library …`); the app's own relaunch is a plain
+`open -n` of the bundle once the app has quit.
