@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+### Oldest photos first
+- The grid now sorts by capture date with the oldest photo first by default, as Lightroom Classic does, instead of
+  the newest first. A library you already use keeps its sort: Ascending and Descending are in the sort menu.
+
 ### Updates on Linux packages
 - A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
