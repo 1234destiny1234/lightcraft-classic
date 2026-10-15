@@ -22,7 +22,7 @@ pub(crate) fn rename_preview(
 ) -> (Option<Vec<lcc_engine::rename::RenamePlan>>, usize) {
     use std::hash::{Hash, Hasher};
     type Rows = std::sync::Arc<std::sync::Mutex<Option<Vec<lcc_engine::rename::RenamePlan>>>>;
-    let ids = app.session.targets(&json!({}));
+    let ids = app.session.selected();
     let photos = lcc_engine::rename::rename_photos(&app.session.catalog, &ids);
     let total = photos.len();
     let mut h = std::collections::hash_map::DefaultHasher::new();
@@ -66,7 +66,7 @@ fn watermark_preview(app: &mut LccApp, ui: &mut egui::Ui, wm: &lcc_engine::expor
     type Base = std::sync::Arc<std::sync::Mutex<(u8, Option<Result<lcc_raster::Rgba8, String>>)>>;
     type Shown = (u64, u8, lcc_engine::export::Watermark, usize, egui::TextureHandle);
     let t = Tokens::get(ui.ctx());
-    let Some(&id) = app.session.targets(&json!({})).first() else { return };
+    let Some(&id) = app.session.selected().first() else { return };
     let Some(photo) = app.session.catalog.photo(id).cloned() else { return };
     let (out_w, out_h) = lcc_engine::export::output_size(&photo, &lcc_engine::export::ExportOptions { resize, ..Default::default() });
     let export_short = out_w.min(out_h);
@@ -171,6 +171,7 @@ pub const WHATS_NEW: &str = include_str!("../../../../docs/whats-new.md");
 fn window_id(dialog: &Dialog) -> egui::Id {
     egui::Id::new(match dialog {
         Dialog::Import { .. } => "app-import-dialog",
+        Dialog::Print => "app-print-dialog",
         Dialog::Settings { .. } => "app-settings-dialog",
         _ => "app-dialog",
     })
@@ -221,9 +222,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::RenameAlbum { .. } => "Rename Collection",
         Dialog::Rename { .. } => "Rename Photos",
         Dialog::Import { .. } => "Import Photos",
+        Dialog::LightroomResult { .. } => "Lightroom Catalog Import",
         Dialog::LabelNames { .. } => "Edit Color Label Names",
         Dialog::CaptureTime { .. } => "Edit Capture Time",
         Dialog::RenameKeyword { .. } => "Rename Keyword",
+        Dialog::RenamePerson { .. } => "Rename Person",
         Dialog::KeywordTag { editing: None, .. } => "Create Keyword Tag",
         Dialog::KeywordTag { .. } => "Edit Keyword Tag",
         Dialog::DeleteKeyword { .. } => "Delete Keyword",
@@ -248,12 +251,19 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Export { .. } => "Export",
         Dialog::ContactSheet { .. } => "Contact Sheet PDF",
         Dialog::Timelapse { .. } => "Timelapse Video",
+        Dialog::SlideshowExport { .. } => "Export Slideshow",
+        Dialog::Print => "Print",
         Dialog::Merge { opts } => opts.title(),
         Dialog::Settings { .. } => "Settings",
         Dialog::ConfirmDelete { .. } => "Delete Photos",
         Dialog::ConfirmPurge { all: true, .. } => "Empty Recently Deleted",
         Dialog::ConfirmPurge { .. } => "Delete Permanently",
+        Dialog::MovePhotos { .. } => "Move Photos",
         Dialog::LightroomCatalog { .. } => "Lightroom Classic Catalog",
+        Dialog::SaveEffect { .. } => "New Effect Preset",
+        Dialog::ManageEffects { .. } => "Manage Effect Presets",
+        Dialog::DeleteEffects { names } if names.len() == 1 => "Delete Effect Preset",
+        Dialog::DeleteEffects { .. } => "Delete Effect Presets",
         Dialog::RemoveFolder { disk: true, .. } => "Remove Disk from Library",
         Dialog::RemoveFolder { .. } => "Remove Folder from Library",
         Dialog::SynchronizeFolder { .. } => "Synchronize Folder",
@@ -271,6 +281,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     // own so the size it is given doesn't carry over to the other dialogs. Its content scrolls
     // rather than growing the window when the options below the grid get taller (e.g. Copy).
     let import = matches!(dlg, Dialog::Import { .. });
+    // The Print dialog sizes itself to the window and scrolls its settings column on its own.
+    let print = matches!(dlg, Dialog::Print);
     let window_id = window_id(&dlg);
     let shown = egui::Window::new(crate::i18n::tr(&title)).id(window_id)
         .collapsible(false)
@@ -284,8 +296,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             Dialog::SmartRules { .. } => 680.0,
             Dialog::AllMetadata { .. } => 620.0,
             Dialog::Update => 500.0,
+            Dialog::Print => 1100.0,
             Dialog::FaceModel { .. } => 460.0,
             Dialog::LightroomCatalog { .. } => 440.0,
+            Dialog::ManageEffects { .. } => 560.0,
             _ => 380.0,
         })
         .show(ctx, |ui| {
@@ -348,6 +362,20 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::DenoiseModel { info, accepted } => crate::panels::denoise::model_dialog(app, ui, &t, info, accepted),
                 Dialog::FaceModel { info, accepted, .. } => crate::panels::faces::model_dialog(app, ui, &t, info, accepted),
+                Dialog::LightroomResult { summary, library, details, .. } => {
+                    ui.label(summary.as_str());
+                    ui.add_space(8.0);
+                    if let Some(library) = library {
+                        ui.label(crate::i18n::tr("Destination library"));
+                        ui.add(egui::Label::new(library.as_str()).wrap().selectable(true));
+                        ui.label(crate::i18n::tr("Lightroom catalogs import into the open library; no separate catalog folder is created."));
+                    } else {
+                        ui.label(crate::i18n::tr("These photos are only in memory. Open a library on disk and import the catalog again to save them."));
+                    }
+                    for detail in details.iter() {
+                        ui.add(egui::Label::new(detail).wrap().selectable(true));
+                    }
+                }
                 Dialog::SystemInfo { rows } => {
                     egui::Grid::new("sysinfo").num_columns(2).spacing([16.0, 4.0]).striped(true).show(ui, |ui| {
                         for (k, v) in rows.iter() {
@@ -434,7 +462,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         confirm = true;
                     }
                     let rules = app.session.view_rules();
-                    let n = app.session.catalog.query(&rules, &Default::default()).len();
+                    // counted when the library or the rules change (or, for "in the last…" rules, the minute), not every frame
+                    let now = (app.session.clock)();
+                    let minute = if rules.depends_on_now() { now.get(..16).unwrap_or(&now) } else { "" };
+                    let n = app.caches.dialog_count(&app.session.catalog, ("smartAlbum", format!("{rules:?}"), minute), || {
+                        lcc_catalog::rules::set_now(Some(now.clone()));
+                        app.session.catalog.query(&rules, &Default::default()).len()
+                    });
                     ui.label(egui::RichText::new(crate::i18n::tr_format!("Matches: {}", crate::i18n::filter_label(&rules, &app.session.catalog))).color(t.text_label));
                     ui.label(
                         egui::RichText::new(crate::i18n::tr_format!("{n} photo{} now · updates automatically as photos change", if n == 1 { "" } else { "s" }, n = n))
@@ -442,7 +476,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     );
                 }
                 Dialog::CaptureTime { mode, time, days, hours, minutes, zone } => {
-                    let n = app.session.targets(&json!({})).len();
+                    let n = app.session.selected().len();
                     field(ui, "Change", |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
                         for (i, (label, m)) in [("Set date & time", "set"), ("Shift by", "shift"), ("Time zone", "zone"), ("File date", "file")].iter().enumerate() {
@@ -535,7 +569,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     );
                 }
                 Dialog::Rename { template, start } => {
-                    let n = app.session.targets(&json!({})).len();
+                    let n = app.session.selected().len();
                     ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
                     let template_id = egui::Id::new("rename-template");
                     let tags_open = field(ui, "Template", |ui| {
@@ -570,7 +604,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             egui::Grid::new("rename-preview").num_columns(3).spacing([8.0, 2.0]).show(ui, |ui| {
                                 for pl in rows {
                                     ui.label(egui::RichText::new(&pl.from).color(t.text_dim));
-                                    ui.label(egui::RichText::new("→").color(t.text_dim));
+                                    let (arrow, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
+                                    crate::icons::paint(ui.painter(), arrow, crate::icons::Icon::ChevronRight, t.text_dim);
                                     ui.label(egui::RichText::new(&pl.to).color(t.text));
                                     ui.end_row();
                                 }
@@ -585,8 +620,40 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         ui.label(egui::RichText::new(crate::i18n::tr_format!("… and {more} more", more = more)).color(t.text_dim));
                     }
                 }
+                Dialog::RenamePerson { from, to, merge } => {
+                    let submitted = dialog_field(ui, "field:personName", to, "Name");
+                    let plan = person_rename_plan(&app.session.catalog, from, to);
+                    if !plan.needs_merge {
+                        *merge = false;
+                    }
+                    if submitted && plan.block.is_none() && (!plan.needs_merge || *merge) {
+                        confirm = true;
+                    }
+                    if let Some(why) = plan.block {
+                        ui.label(egui::RichText::new(crate::i18n::tr(why)).color(t.caution));
+                    } else {
+                        ui.label(
+                            egui::RichText::new(crate::i18n::tr_format!(
+                                "Renames {n} face{} across the library. The files are not changed.",
+                                if plan.faces == 1 { "" } else { "s" },
+                                n = plan.faces
+                            ))
+                            .color(t.text_dim),
+                        );
+                    }
+                    if plan.needs_merge {
+                        ui.label(
+                            egui::RichText::new(crate::i18n::tr_format!("“{to}” is already a person. Combining them makes one person; Undo separates them again.", to = to.trim()))
+                                .color(t.caution),
+                        );
+                        let r = ui.checkbox(merge, crate::i18n::tr("Combine with the existing person"));
+                        crate::widgets::register(ui.ctx(), "check:personMerge", r.rect);
+                    }
+                }
                 Dialog::RenameKeyword { from, to } => {
-                    let n = app.session.catalog.photos().filter(|p| p.meta.keywords.iter().any(|k| lcc_catalog::keywords::is_under(k, from))).count();
+                    let n = app.caches.dialog_count(&app.session.catalog, ("renameKeyword", from.as_str()), || {
+                        app.session.catalog.photos().filter(|p| p.meta.keywords.iter().any(|k| lcc_catalog::keywords::is_under(k, from))).count()
+                    });
                     if dialog_field(ui, "field:keywordName", to, "New name") {
                         confirm = true;
                     }
@@ -602,11 +669,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         confirm = true;
                     }
                     let options: Vec<String> = app
-                        .session
-                        .catalog
-                        .keyword_suggestions(from, into, 12)
-                        .into_iter()
+                        .caches
+                        .suggestions(&app.session.catalog, from, into, 12)
+                        .iter()
                         .filter(|k| !from.iter().any(|f| lcc_catalog::keywords::is_under(k, f)))
+                        .cloned()
                         .collect();
                     ui.horizontal_wrapped(|ui| {
                         for k in options {
@@ -626,7 +693,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         confirm = true;
                     }
                     // as in Lightroom, the option is only there when something is selected
-                    if !*folder && !app.session.targets(&json!({})).is_empty() {
+                    if !*folder && !app.session.selected().is_empty() {
                         ui.add_space(6.0);
                         let r = ui.checkbox(include_selected, crate::i18n::tr("Include selected photos"));
                         crate::widgets::register(ui.ctx(), "check:albumIncludeSelected", r.rect);
@@ -658,20 +725,21 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     basic_tone_checklist(ui, groups, controls);
                 }
                 Dialog::PasteSettings { groups } => {
-                    let n = app.session.targets(&json!({})).len();
+                    let n = app.session.selected().len();
                     ui.label(
                         egui::RichText::new(crate::i18n::tr_format!("Paste into {n} photo{} — only settings that were copied are pasted", if n == 1 { "" } else { "s" }, n = n))
                             .color(t.text_dim),
                     );
                     let _ = group_checklist(ui, "pasteGroup", groups);
                 }
+                Dialog::SlideshowExport { settings } => slideshow_export_body(app, ui, settings),
                 Dialog::ContactSheet { options } => {
                     options.columns = options.columns.clamp(1, 8);
                     options.rows = options.rows.clamp(1, 10);
-                    let n = app.session.targets(&json!({})).len();
+                    let n = app.session.selected().len();
                     ui.label(crate::i18n::tr_format!("{n} selected photos · {pages} pages", n = n, pages = n.div_ceil(options.columns * options.rows)));
                     field(ui, "Paper", |ui| {
-                        egui::ComboBox::from_id_salt("contactSheetPaper").selected_text(&options.paper).show_ui(ui, |ui| {
+                        crate::widgets::combo_box("contactSheetPaper").selected_text(&options.paper).show_ui(ui, |ui| {
                             ui.selectable_value(&mut options.paper, "a4".into(), "A4");
                             ui.selectable_value(&mut options.paper, "letter".into(), crate::i18n::tr("Letter"));
                         });
@@ -684,7 +752,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     ui.label(crate::i18n::tr("Choose a PDF destination after confirming. Print the PDF from your viewer."));
                 }
                 Dialog::Timelapse { fps, size, fill, hold, crossfade, prores, quality } => {
-                    let n = app.session.targets(&json!({})).len();
+                    let n = app.session.selected().len();
                     let per = u64::from(*hold);
                     let frames = (n as u64 * per + (n as u64).saturating_sub(1) * u64::from(*crossfade)).max(1);
                     ui.label(
@@ -720,7 +788,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     // Preset: load a built-in or saved set of options into the dialog
                     field(ui, "Preset", |ui| {
                         let mut chosen = None;
-                        let c = egui::ComboBox::from_id_salt("exportPreset").width(220.0).selected_text(crate::i18n::tr("Choose…")).show_ui(ui, |ui| {
+                        let c = crate::widgets::combo_box("exportPreset").width(220.0).selected_text(crate::i18n::tr("Choose…")).show_ui(ui, |ui| {
                             let mut builtin = true;
                             for (p, b) in app.session.all_export_presets() {
                                 if builtin && !b {
@@ -796,8 +864,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                     if !rendered {
                     } else if opts.format == F::Avif && opts.hdr {
-                        let curve = if opts.hdr_transfer == lcc_engine::export::HdrCurve::Hlg { "HLG" } else { "PQ" };
-                        ui.label(egui::RichText::new(crate::i18n::tr_format!("Color space: Rec. 2020 {curve} (HDR AVIF)", curve = curve)).color(t.text_dim));
+                        let label = if opts.hdr_transfer == lcc_engine::export::HdrCurve::Hlg {
+                            crate::i18n::tr("Color space: Rec. 2020 HLG (HDR AVIF)")
+                        } else {
+                            crate::i18n::tr("Color space: Rec. 2020 PQ (HDR AVIF)")
+                        };
+                        ui.label(egui::RichText::new(label).color(t.text_dim));
                     } else if opts.format == F::Png && opts.hdr {
                         ui.label(egui::RichText::new(crate::i18n::tr("Color space: Rec. 2020 PQ, 16-bit (HDR PNG)")).color(t.text_dim))
                             .on_hover_text(crate::i18n::tr("Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map)."));
@@ -1223,6 +1295,22 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         .color(t.text_dim),
                     );
                 }
+                Dialog::SaveEffect { name, group, fields, amount, brush } => {
+                    if crate::panels::mask_effects::save_body(app, ui, name, group, fields, amount, brush) {
+                        confirm = true;
+                    }
+                }
+                Dialog::ManageEffects { search, selected, rename, confirm_delete, new_group } => {
+                    crate::panels::mask_effects::manage_body(app, ui, search, selected, rename, confirm_delete, new_group)
+                }
+                Dialog::DeleteEffects { names } => {
+                    let what = match names.as_slice() {
+                        [one] => crate::i18n::tr_format!("Delete the effect preset “{name}”?", name = one),
+                        _ => crate::i18n::tr_format!("Delete these {n} effect presets?", n = names.len()),
+                    };
+                    ui.label(what);
+                    ui.label(egui::RichText::new(crate::i18n::tr("Masks keep their sliders. Export presets first to keep a copy.")).color(t.text_dim));
+                }
                 Dialog::ConfirmDelete { count, disk_files } => {
                     let what = if *count == 1 { crate::i18n::tr("this photo").to_string() } else { crate::i18n::tr_format!("these {count} photos", count = count) };
                     if *disk_files > 0 && app.session.trash.is_some() {
@@ -1252,6 +1340,15 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         egui::RichText::new(crate::i18n::tr("Their edits, keywords and collection memberships are removed; the files on disk are kept."))
                             .color(t.text_dim),
                     );
+                }
+                Dialog::MovePhotos { ids, name, dont_ask, .. } => {
+                    let n = ids.len();
+                    ui.label(crate::i18n::tr_format!("Move {n} photo{} to “{}”?", if n == 1 { "" } else { "s" }, name, n = n));
+                    ui.label(egui::RichText::new(crate::i18n::tr("Their files and XMP sidecars move on disk. Edit → Undo moves them back.")).color(t.text_dim));
+                    ui.add_space(4.0);
+                    let c = ui.checkbox(dont_ask, crate::i18n::tr("Don't ask again"));
+                    crate::widgets::register(ui.ctx(), "check:moveDontAsk", c.rect);
+                    c.on_hover_text(crate::i18n::tr("Settings → Confirm before moving photos to another folder on disk turns it back on"));
                 }
                 d @ Dialog::SynchronizeFolder { .. } => crate::sync::body(app, ui, d),
                 Dialog::LightroomCatalog { folder, catalog } => {
@@ -1314,31 +1411,27 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 Dialog::Update => {
                     ui.label(crate::i18n::tr("The web build updates by reloading the page."));
                 }
+                Dialog::Print => crate::print_view::body(app, ui, &t),
             };
-            if import {
+            // the import review and Print size and scroll themselves
+            if import || print {
                 body(ui);
             } else {
                 layout.body(ui, body);
             }
             layout.footer(ui, |ui| {
             ui.add_space(4.0);
-            ui.horizontal(|ui| {
+            // the confirm on the right with Cancel to its left (macOS and GNOME's order), filled with
+            // the accent when it is the dialog's primary action. The row spans the width the window
+            // gives its content this frame (its default width, or its content's if wider), so it
+            // reaches the edge without widening the window.
+            let row_w = ui.available_width().max(ui.min_rect().width()).max(1.0);
+            let row_h = ui.spacing().interact_size.y;
+            ui.allocate_ui_with_layout(egui::vec2(row_w, row_h), egui::Layout::left_to_right(egui::Align::Center), |ui| {
                 // a model file the app cannot use has nothing to confirm, nor has a dialog that
                 // only shows something (one Close, no Cancel / OK)
                 let unusable_model = matches!(&dlg, Dialog::DenoiseModel { info, .. } | Dialog::FaceModel { info, .. } if info["kind"] == "unsupported");
-                let informational = unusable_model
-                    || matches!(
-                        dlg,
-                        Dialog::About
-                            | Dialog::Shortcuts
-                            | Dialog::ViewOptions
-                            | Dialog::Settings { .. }
-                            | Dialog::SystemInfo { .. }
-                            | Dialog::AllMetadata { .. }
-                            | Dialog::WhatsNew
-                            // the updater has its own buttons in the body; the footer only closes
-                            | Dialog::Update
-                    );
+                let informational = unusable_model || matches!(dlg, Dialog::LightroomResult { first: None, .. }) || only_shows(&dlg);
                 let sam = &app.session.segmenter;
                 let (sam_installed, sam_running, sam_failed) = (sam.installed(), sam.download_status().running, sam.download_status().error.is_some());
                 // no download location in this build: nothing to offer but the manual install
@@ -1346,22 +1439,15 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 let cancel = match &dlg {
                     Dialog::SamModel { .. } if sam_running || sam_installed || sam_nowhere => "Close",
                     Dialog::SamModel { .. } => "Not Now",
+                    Dialog::LightroomResult { .. } => "Close",
                     _ => "Cancel",
                 };
-                if !informational {
-                    let r = ui.button(crate::i18n::tr(cancel));
-                    crate::widgets::register(ui.ctx(), "button:dialogCancel", r.rect);
-                    if r.clicked() {
-                        close = true;
-                    }
-                }
                 if let Dialog::ConfirmDelete { disk_files, .. } = &dlg
                     && *disk_files > 0
                     && app.session.trash.is_some()
                 {
-                    let r = ui.button(crate::i18n::tr("Delete from Disk"));
-                    crate::widgets::register(ui.ctx(), "button:dialogDeleteFromDisk", r.rect);
-                    if r.clicked() {
+                    // (on the left of the row: Cancel and the confirm sit on the right)
+                    if crate::button::Button::new("Delete from Disk").widget("button:dialogDeleteFromDisk").show(ui).clicked() {
                         if let Err(e) = app.run("photo.deleteFromDisk", json!({"confirm": true})) {
                             app.toast_error(ui.ctx(), e);
                         }
@@ -1379,17 +1465,22 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         add_label = crate::i18n::tr_format!("{verb} {n} Photo{}", if n == 1 { "" } else { "s" }, verb = crate::i18n::tr(verb), n = n);
                         add_label.as_str()
                     }
+                    Dialog::LightroomResult { first: Some(_), .. } => "Show in Library",
                     Dialog::ContactSheet { .. } => "Choose PDF…",
                     Dialog::Timelapse { .. } => "Choose File…",
+                    Dialog::SlideshowExport { .. } => "Export…",
+                    Dialog::Print => "Print to PDF…",
                     Dialog::Merge { .. } => "Merge",
                     Dialog::DenoiseModel { info, .. } if info["download"].is_string() => "Accept & Download",
                     Dialog::DenoiseModel { .. } => "Install",
                     Dialog::FaceModel { info, .. } if !informational && info["download"].is_string() => "Download",
                     Dialog::FaceModel { .. } if !informational => "Install",
                     Dialog::ConfirmDelete { disk_files, .. } if *disk_files > 0 && app.session.trash.is_some() => "Remove",
-                    Dialog::ConfirmDelete { .. } | Dialog::DeleteKeyword { .. } => "Delete",
+                    Dialog::ConfirmDelete { .. } | Dialog::DeleteKeyword { .. } | Dialog::DeleteEffects { .. } => "Delete",
                     Dialog::ConfirmPurge { all: true, .. } => "Empty",
                     Dialog::ConfirmPurge { .. } => "Delete Permanently",
+                    Dialog::SaveEffect { .. } => "Create",
+                    Dialog::MovePhotos { .. } => "Move",
                     // (not "Merge": that is photo merging, HDR / panorama, in some languages)
                     Dialog::MoveKeyword { .. } => "Merge Keywords",
                     Dialog::KeywordSet { .. } => "Save",
@@ -1404,22 +1495,53 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::SamModel { .. } => "Download",
                     // the updater's own buttons are in its body; the footer only closes
                     Dialog::Update => "",
+                    Dialog::RenamePerson { from, to, .. } if person_rename_plan(&app.session.catalog, from, to).needs_merge => "Merge",
                     _ if informational => "Close",
                     _ => "OK",
                 };
                 // installing waits for the licence to be accepted
                 // (and Synchronize waits for the scan)
-                let can_confirm = informational
-                    || !matches!(
-                        &dlg,
-                        Dialog::DenoiseModel { accepted: false, .. } | Dialog::FaceModel { accepted: false, .. } | Dialog::SynchronizeFolder { counts: None, .. }
-                    )
-                        // smart-album rules that can't mean anything wait to be fixed
-                        && !matches!(&dlg, Dialog::SmartRules { id, rules, .. } if !rules.check_for(&app.session.catalog, id.map(lcc_catalog::AlbumId)).is_empty());
-                let r = (!ok.is_empty()).then(|| ui.add_enabled(can_confirm, egui::Button::new(crate::i18n::tr(ok))));
-                if let Some(r) = &r {
-                    crate::widgets::register(ui.ctx(), "button:dialogOk", r.rect);
+                let rename_blocked = match &dlg {
+                    Dialog::RenamePerson { from, to, merge } => {
+                        let plan = person_rename_plan(&app.session.catalog, from, to);
+                        plan.block.is_some() || (plan.needs_merge && !*merge)
+                    }
+                    _ => false,
+                };
+                let can_confirm = !rename_blocked
+                    && (informational
+                        || !matches!(
+                            &dlg,
+                            Dialog::DenoiseModel { accepted: false, .. } | Dialog::FaceModel { accepted: false, .. } | Dialog::SynchronizeFolder { counts: None, .. }
+                        )
+                            // smart-album rules that can't mean anything wait to be fixed
+                            && !matches!(&dlg, Dialog::SmartRules { id, rules, .. } if !rules.check_for(&app.session.catalog, id.map(lcc_catalog::AlbumId)).is_empty()));
+                let primary = !informational && can_confirm && confirm_style(&dlg) == ConfirmStyle::Primary;
+                use crate::button::{Button, Kind};
+                // (each kind of dialog its own buttons: the keyboard's place doesn't carry from a
+                // dialog to the one it opens)
+                let kind = std::mem::discriminant(&dlg);
+                let cancel_button = Button::new(cancel).widget("button:dialogCancel").id_salt(kind).min_width(72.0);
+                let ok_button = Button::new(ok)
+                    .kind(if primary { Kind::Primary } else { Kind::Secondary })
+                    .enabled(can_confirm)
+                    .widget("button:dialogOk")
+                    .id_salt(kind)
+                    .min_width(72.0);
+                // (Cancel first, then the confirm: the keyboard goes through them as the eye does)
+                let gap = ui.spacing().item_spacing.x;
+                let mut buttons_w = 0.0;
+                if !informational {
+                    buttons_w += cancel_button.desired_size(ui).x + gap;
                 }
+                if !ok.is_empty() {
+                    buttons_w += ok_button.desired_size(ui).x;
+                }
+                ui.add_space((ui.available_width() - buttons_w).max(0.0));
+                if !informational && cancel_button.show(ui).clicked() {
+                    close = true;
+                }
+                let r = (!ok.is_empty()).then(|| ok_button.show(ui));
                 if r.is_some_and(|r| r.clicked()) {
                     if informational {
                         close = true;
@@ -1457,12 +1579,15 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         | Dialog::Export { .. }
                         | Dialog::ContactSheet { .. }
                         | Dialog::Timelapse { .. }
+                        | Dialog::SlideshowExport { .. }
+                        | Dialog::Print
                         | Dialog::NewAlbum { .. }
                         | Dialog::NewSmartAlbum { .. }
                         | Dialog::SmartRules { .. }
                         | Dialog::KeywordTag { .. }
                         | Dialog::KeywordSet { .. }
                         | Dialog::SynchronizeFolder { .. }
+                        | Dialog::SaveEffect { .. }
                 ) =>
             {
                 app.toast(ctx, e)
@@ -1476,6 +1601,18 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             Ok(r) if matches!(dlg, Dialog::NewAlbum { .. }) && r.get("skipped").and_then(serde_json::Value::as_u64).is_some_and(|n| n > 0) => {
                 // albums hold library photos (issue #684): say which part of the selection stayed out
                 crate::panels::grid::toast_skipped(app, ctx, &r);
+                close = true;
+            }
+            // a move says how it went, or why nothing moved
+            Ok(r) if matches!(dlg, Dialog::MovePhotos { .. }) => {
+                if let Dialog::MovePhotos { name, .. } = &dlg {
+                    let text = crate::panels::left::moved_text(r["moved"].as_u64().unwrap_or(0), name);
+                    app.toast(ctx, text);
+                }
+                close = true;
+            }
+            Err(e) if matches!(dlg, Dialog::MovePhotos { .. }) => {
+                app.toast(ctx, e);
                 close = true;
             }
             Ok(_) if keeps_open(app, &dlg) => {
@@ -1683,6 +1820,20 @@ pub(crate) fn album_entries(cat: &lcc_catalog::Catalog, editing: Option<u64>) ->
 
 pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Value, String> {
     match dlg {
+        Dialog::LightroomResult { first, .. } => {
+            if let Some(first) = first {
+                app.run("library.source", json!({"kind": "all"}))?;
+                let mut filter = serde_json::to_value(lcc_catalog::Filter::default()).map_err(|e| e.to_string())?;
+                // The filter command merges a patch; these defaults are omitted by serde.
+                filter["only"] = json!([]);
+                filter["labels"] = json!([]);
+                filter["ruleSet"] = serde_json::Value::Null;
+                app.run("library.filter", filter)?;
+                app.run("library.select", json!({"ids": [first]}))?;
+                app.ui.view = crate::state::ViewMode::PhotoGrid;
+            }
+            Ok(serde_json::Value::Null)
+        }
         Dialog::SamModel { then, .. } => {
             if app.session.segmenter.installed() {
                 // installed: start what the user was doing
@@ -1728,6 +1879,7 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         }
         Dialog::Rename { template, start } => app.run("photo.rename", json!({"template": template, "start": start})),
         Dialog::RenameKeyword { from, to } => app.run("keyword.rename", json!({"from": from, "to": to})),
+        Dialog::RenamePerson { from, to, merge } => app.run("faces.renamePerson", json!({"from": from, "to": to.trim(), "merge": merge})),
         Dialog::KeywordTag {
             editing,
             name,
@@ -1844,6 +1996,8 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         ),
         Dialog::ContactSheet { options } => app.run("app.contactSheet", json!(options)),
         Dialog::Timelapse { .. } => app.run("app.timelapse", crate::timelapse_ui::dialog_params(dlg).unwrap_or_default()),
+        Dialog::SlideshowExport { settings } => app.run("app.slideshowExport", json!(settings)),
+        Dialog::Print => app.run("app.print", json!({})),
         Dialog::CopySettings { groups } => app.run("develop.copy", json!({"groups": groups})),
         Dialog::PasteSettings { groups } => app.run("develop.paste", json!({"groups": groups})),
         Dialog::SyncSettings { groups, controls } => app.run("develop.sync", json!({"groups": groups, "controls": controls})),
@@ -1862,13 +2016,30 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::ConfirmDelete { .. } => app.run("photo.delete", json!({})),
         Dialog::ConfirmPurge { all: true, .. } => app.run("library.emptyRecentlyDeleted", json!({})),
         Dialog::ConfirmPurge { .. } => app.run("photo.deletePermanently", json!({})),
+        Dialog::MovePhotos { ids, folder, dont_ask, library, .. } => {
+            // another library opened meanwhile (from the menu bar, an agent): these numbers are
+            // other photos there
+            if *library != app.session.library_generation() {
+                return Err(crate::i18n::tr("Another library was opened since the photos were dropped: nothing was moved").to_string());
+            }
+            if *dont_ask {
+                app.ui.settings.ask_before_move = false;
+            }
+            crate::panels::left::move_photos(app, Some(ids), folder).map(|n| json!({"moved": n}))
+        }
         // the catalog found: no file dialog; none: File ▸ Import Lightroom Catalog… asks for it
         Dialog::LightroomCatalog { catalog, .. } => {
             app.run("file.importLightroom", catalog.as_ref().map_or_else(|| json!({}), |c| json!({"path": c})))
         }
+        Dialog::SaveEffect { name, group, fields, amount, brush } => {
+            crate::panels::mask_effects::save_confirm(app, name, group, fields, *amount, *brush)
+        }
+        Dialog::DeleteEffects { names } => app.run("mask.deleteEffect", json!({"names": names})),
         Dialog::RemoveFolder { path, disk, .. } => app.run("library.removeFolder", json!({"path": path, "disk": disk})),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::confirm(app, d),
-        Dialog::About | Dialog::Shortcuts | Dialog::ViewOptions | Dialog::Settings { .. } | Dialog::Update => Ok(serde_json::Value::Null),
+        Dialog::About | Dialog::Shortcuts | Dialog::ViewOptions | Dialog::Settings { .. } | Dialog::Update | Dialog::ManageEffects { .. } => {
+            Ok(serde_json::Value::Null)
+        }
     }
 }
 
@@ -1988,7 +2159,7 @@ fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::R
         field(ui, "Resize to", |ui| {
             let cur = MODES.iter().find(|m| m.0 == r.mode).map_or("Long Edge", |m| m.1);
             let before = r.mode;
-            let c = egui::ComboBox::from_id_salt("exportResizeMode").width(150.0).selected_text(crate::i18n::tr(cur)).show_ui(ui, |ui| {
+            let c = crate::widgets::combo_box("exportResizeMode").width(150.0).selected_text(crate::i18n::tr(cur)).show_ui(ui, |ui| {
                 for (m, l) in MODES {
                     ui.selectable_value(&mut r.mode, m, crate::i18n::tr(l));
                 }
@@ -2058,6 +2229,60 @@ fn num(ui: &mut egui::Ui, spec: &ControlSpec, v: &mut f64) -> bool {
 }
 
 /// A labelled row (fixed label column).
+/// View ▸ Export Slideshow…: what to write (PDF, JPEG sequence, video) and how big; where comes
+/// after (a save dialog).
+fn slideshow_export_body(app: &mut LccApp, ui: &mut egui::Ui, settings: &mut lcc_engine::slideshow_export::ExportSettings) {
+    use lcc_engine::slideshow_export::{ExportSettings, Format};
+    let t = Tokens::get(ui.ctx());
+    let photos = app.session.visible_cloned().len();
+    let slide = app.session.slideshow.slide_duration;
+    let (intro, ending) = app.session.slide_titles.durations(slide);
+    let titles = usize::from(intro.is_some()) + usize::from(ending.is_some());
+    let seconds = photos as f64 * slide + intro.unwrap_or(0.0) + ending.unwrap_or(0.0);
+    let summary = crate::i18n::tr_format!(
+        "{n} photos in view · {slides} slides · {time}",
+        n = photos,
+        slides = photos + titles,
+        time = format!("{}:{:02}", (seconds / 60.0).floor() as u64, (seconds % 60.0).round() as u64)
+    );
+    ui.label(egui::RichText::new(summary).color(t.text_dim));
+    let before = settings.format;
+    choices(ui, "Format", "slideshowExportFormat", &[(Format::Pdf, "PDF"), (Format::Jpeg, "JPEG"), (Format::Video, "Video")], &mut settings.format);
+    if settings.format != before {
+        *settings = ExportSettings { full_screen: settings.full_screen, ..ExportSettings::for_format(settings.format) };
+    }
+    match settings.format {
+        Format::Video => {
+            choices(ui, "Size", "slideshowExportSize", &[(720, "720p"), (1080, "1080p")], &mut settings.size);
+            choices(ui, "Frame rate", "slideshowExportFps", &[(24, "24 fps"), (30, "30 fps")], &mut settings.fps);
+            let mut webm = settings.container == "webm";
+            choices(ui, "Container", "slideshowExportContainer", &[(false, "MP4"), (true, "WebM")], &mut webm);
+            settings.container = if webm { "webm".into() } else { "mp4".into() };
+        }
+        _ => {
+            choices(ui, "Size", "slideshowExportSize", &[(1024, "1024 px"), (1920, "1920 px"), (3840, "3840 px")], &mut settings.size);
+        }
+    }
+    field(ui, "Quality", |ui| {
+        let r = ui.add(egui::Slider::new(&mut settings.quality, 1..=100));
+        crate::widgets::register(ui.ctx(), "slider:slideshowExportQuality", r.rect);
+    });
+    let note = match settings.format {
+        Format::Pdf => {
+            let r = ui.checkbox(&mut settings.full_screen, crate::i18n::tr("Automatically show full screen"));
+            crate::widgets::register(ui.ctx(), "check:slideshowExportFullScreen", r.rect);
+            "One page per slide (the long side in pixels = points), with the slide duration and fade for the viewer's presentation mode."
+        }
+        Format::Jpeg => "Numbered JPEG files (name-001.jpg…) in a new folder named in the next step.",
+        Format::Video => "AV1 video, each slide held for its duration with its fades. No sound: music is not exported yet.",
+    };
+    ui.label(egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+    ui.label(
+        egui::RichText::new(crate::i18n::tr("Slides use the slideshow's layout, overlays and intro and ending screens, in view order."))
+            .color(t.text_dim),
+    );
+}
+
 fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
@@ -2105,6 +2330,54 @@ fn return_confirms(dlg: &Dialog) -> bool {
     matches!(dlg, Dialog::CopySettings { .. } | Dialog::PasteSettings { .. } | Dialog::SyncSettings { .. })
 }
 
+struct PersonRenamePlan {
+    faces: usize,
+    needs_merge: bool,
+    /// Why Rename stays disabled. `None` when the typed name can be applied.
+    block: Option<&'static str>,
+}
+
+/// What renaming `from` to `to` would do, using the same rules as `faces.renamePerson`.
+fn person_rename_plan(cat: &lcc_catalog::Catalog, from: &str, to: &str) -> PersonRenamePlan {
+    let to_trim = to.trim();
+    if to_trim.is_empty() {
+        return PersonRenamePlan { faces: 0, needs_merge: false, block: Some("Type a name") };
+    }
+    if to_trim.chars().count() > 200 || to_trim.chars().any(char::is_control) {
+        return PersonRenamePlan { faces: 0, needs_merge: false, block: Some("A name is at most 200 characters, without control characters") };
+    }
+    let from_key = from.trim().to_lowercase();
+    let to_key = to_trim.to_lowercase();
+    let mut matched = 0usize;
+    let mut faces = 0usize;
+    let mut needs_merge = false;
+    if !from_key.is_empty() {
+        for photo in cat.photos().filter(|p| p.in_library()) {
+            for region in photo.meta.regions.iter().filter(|r| r.kind == lcc_meta::RegionKind::Face) {
+                let Some(name) = region.name.as_deref().map(str::trim).filter(|n| !n.is_empty()) else { continue };
+                let key = name.to_lowercase();
+                if key == from_key {
+                    matched += 1;
+                    if region.name.as_deref() != Some(to_trim) {
+                        faces += 1;
+                    }
+                } else if key == to_key {
+                    needs_merge = true;
+                }
+            }
+        }
+    }
+    let block = if matched == 0 {
+        Some("No person by that name")
+    } else if faces == 0 {
+        Some("That is already their name")
+    } else {
+        None
+    };
+    // a case-only change is the same person, not a merge
+    PersonRenamePlan { faces, needs_merge: needs_merge && from_key != to_key, block }
+}
+
 /// A dialog's one text field: it keeps the focus (except while its own menu has it) and opens
 /// with its text selected, so typing replaces it. True when Return confirms the dialog; Esc
 /// cancels the dialog (`show`). Taking the focus back with a bare `TextEdit` every frame hid the
@@ -2150,4 +2423,42 @@ mod watermark_position_tests {
             assert_eq!(WM_POSITIONS.iter().filter(|(position, _)| *position == anchor).count(), 1);
         }
     }
+}
+
+/// How a dialog's confirm button looks: [`ConfirmStyle::Primary`] (the accent's fill) when it
+/// makes or brings in something, plain when it deletes or removes (never the eye-catching
+/// default) or when the dialog only shows something (its Close).
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum ConfirmStyle {
+    Primary,
+    Plain,
+}
+
+pub fn confirm_style(dlg: &Dialog) -> ConfirmStyle {
+    match dlg {
+        Dialog::ConfirmDelete { .. }
+        | Dialog::ConfirmPurge { .. }
+        | Dialog::DeleteKeyword { .. }
+        | Dialog::DeleteEffects { .. }
+        | Dialog::RemoveFolder { .. } => ConfirmStyle::Plain,
+        _ if only_shows(dlg) => ConfirmStyle::Plain,
+        _ => ConfirmStyle::Primary,
+    }
+}
+
+/// A dialog that only shows something: one Close, nothing to confirm or cancel.
+fn only_shows(dlg: &Dialog) -> bool {
+    matches!(
+        dlg,
+        Dialog::About
+            | Dialog::Shortcuts
+            | Dialog::ViewOptions
+            | Dialog::Settings { .. }
+            | Dialog::SystemInfo { .. }
+            | Dialog::AllMetadata { .. }
+            | Dialog::WhatsNew
+            | Dialog::ManageEffects { .. }
+            // the updater has its own buttons in the body; the footer only closes
+            | Dialog::Update
+    )
 }

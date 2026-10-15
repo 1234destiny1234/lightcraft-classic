@@ -26,7 +26,8 @@ lcc-layout = { workspace = true }
 lcc-pdf = { workspace = true }
 lcc-print = { workspace = true }
 lcc-preview = { workspace = true }
-lcc-slideshow = { path = "../slideshow" }
+lcc-slide = { workspace = true }
+lcc-slideshow = { workspace = true }
 # the Book module (owned, Phase 3)
 lcc-book = { workspace = true }
 lcc-text = { workspace = true }
@@ -45,6 +46,8 @@ resvg = { version = "0.45", default-features = false }
 
 [dev-dependencies]
 image = { workspace = true }
+# tests record why they skip (`cargo xtask ci` lists the skips)
+lcc-testkit = { workspace = true }
 egui_kittest = { workspace = true, features = ["wgpu", "snapshot"] }
 lcc-denoise = { workspace = true, features = ["runtime"] }
 # the model-setup tests run denoise models; only the app/CLI enable this in builds

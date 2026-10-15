@@ -123,6 +123,8 @@ mod tests {
             linearized: false,
             opcodes: lcc_raw::OpcodeLists::default(),
             metadata: lcc_raw::Metadata { make: Some("Example".into()), model: Some("Example X1".into()), ..Default::default() },
+            lens_metadata: Default::default(),
+            pixel_aspect: 1.0,
         };
         lcc_raw::write_dng(&raw, &lcc_raw::DngWriteOptions::default()).unwrap()
     }

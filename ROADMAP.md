@@ -231,6 +231,26 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 
 ## Log
 - 2026-10-15: Canon EOS R6 CR3 verified (5 private files, exact sensor hashes): 315 of 1,446 Adobe models verified; use-weighted share unchanged at 90%.
+- 2026-10-14 (upstream): Camera-coverage sweep verifies 30 more models on 40 CC0 files, with file and sensor
+  hashes pinned (`docs/raw/coverage.py`: 515 → 545 verified). Eleven candidates excluded after rechecking
+  identity, provenance and camera-image agreement. Phone and drone DNG tone differences remain tracked in #1277.
+- 2026-10-14 (upstream): 97 Canon CR2, Pentax and Ricoh models verified, one CC0 raw.pixls.us file each pinned and
+  checked against the camera JPEG (`crates/raw/tests/canon_pentax_corpus.rs`). 334 models verified, ~50% of
+  photographers on a verified body; headline numbers unchanged.
+- 2026-10-12 (upstream): Mamiya MEF (ZD) decodes from sensor data and is imported; verified on a CC0 file. 241 models
+  verified, 35 unsupported; headline numbers unchanged.
+- 2026-10-12 (upstream): Epson ERF (R-D1, R-D1s, R-D1x) decodes from sensor data, white balance measured from each
+  file's preview; 3 bodies verified on CC0 files. 240 models verified; headline numbers unchanged.
+- 2026-10-12 (upstream): 22 more Canon CR3 bodies verified (EOS R, RP, R3, R5, R6, R6 Mark II / III, R7, R10, R50,
+  R50 V, 90D, 250D, 850D, M200, M50 Mark II, M6 Mark II, 1D X Mark III, PowerShot G5 X II, G7 X III, SX70,
+  V1): one CC0 file each pinned and checked against the camera JPEG; all 110 CC0 CR3s on raw.pixls.us
+  decode. The EOS R6 Mark III gets its as-shot white balance (`ColorData` 66). 259 models verified; RAW
+  decoding 77% → 83%; mainstream ~49% → ~51%, essentials ~64% → ~65%, full ~61%.
+- 2026-10-12 (upstream): 117 Nikon and Fujifilm bodies verified, one CC0 raw.pixls.us file each pinned and checked
+  against the camera JPEG (`crates/raw/tests/body_corpus.rs`); the sweep found COOLPIX 5700 / 8400 / 8800
+  decoding wrongly. 354 models verified, ~58% of photographers on a verified body; headline numbers unchanged.
+- 2026-10-11 (upstream): Sony ILCA-99M2 (α99 II) camera colour: bundled profile from 144 photos; on 30 withheld photos
+  mean ΔE vs the camera JPEG 5.11 → 4.87, 25 of them closer.
 - 2026-10-14: release 0.8.2: HDR display output (Windows, Linux), faces fully on the GPU, sharpening Radius/Detail (process V4), crop & straighten under a fixed box, Classic Basic panel order, upstream batch 35 merged; CI on own runners; no dimension changes stage.
 - 2026-10-14: release 0.8.1: user-report fixes (preset Amount fade, large preset collections, wheel scroll speed, Quick Collection menu, Develop tool strip, folded panels), faces convolutions on the GPU; no dimension changes stage.
 - 2026-10-13: release 0.8.0: upstream merged through upstream 0.7.1 + batch 32 (Kelvin slider, Render to DNG, HLG AVIF, preset scale, raw fixes); no dimension changes stage.

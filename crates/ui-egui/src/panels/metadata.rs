@@ -243,7 +243,7 @@ fn padded(ui: &mut egui::Ui, add: impl FnOnce(&mut egui::Ui)) {
 /// The panel. `id` is the active photo; the fields show (and edit) every selected photo.
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
-    let targets: Vec<PhotoId> = app.session.targets(&json!({}));
+    let targets: Vec<PhotoId> = app.session.selected();
     let photos: Vec<Arc<Photo>> = {
         let mut v: Vec<Arc<Photo>> = targets.iter().filter_map(|i| app.session.catalog.photo(*i).cloned()).collect();
         if v.is_empty()

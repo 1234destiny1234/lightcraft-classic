@@ -23,4 +23,6 @@ sha2 = { workspace = true }
 thiserror = { workspace = true }
 
 [dev-dependencies]
+# tests record why they skip (`cargo xtask ci` lists the skips)
+lcc-testkit = { workspace = true }
 proptest = { workspace = true }

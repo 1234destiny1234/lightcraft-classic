@@ -37,7 +37,8 @@ impl Default for Headless {
                 .with_default_connections()
                 .with_default_face_models()
                 .with_default_lens_profiles()
-                .with_default_sam3_model(),
+                .with_default_sam3_model()
+                .with_default_slide_templates(),
         )
     }
 }
@@ -57,7 +58,8 @@ impl Headless {
                 .with_default_connections()
                 .with_default_face_models()
                 .with_default_lens_profiles()
-                .with_default_sam3_model(),
+                .with_default_sam3_model()
+                .with_default_slide_templates(),
         )
     }
 

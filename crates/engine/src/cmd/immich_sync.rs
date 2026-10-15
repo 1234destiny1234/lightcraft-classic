@@ -935,7 +935,7 @@ fn import_people(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Confirm the Immich face regions of the photos (default: selection).
 fn confirm_faces(s: &mut Session, p: &Value) -> Result<Value> {
-    let ids = s.targets(p);
+    let ids = s.targets(p)?;
     let mut ops = Vec::new();
     for id in ids {
         let Some(ph) = s.catalog.photo(id) else { continue };

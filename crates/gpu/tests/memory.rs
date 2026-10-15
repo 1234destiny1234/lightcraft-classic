@@ -9,7 +9,7 @@ use lcc_pipeline::{RenderRequest, SourceInfo, StageCache};
 #[test]
 fn stages_are_counted_and_the_pool_is_bounded_and_trimmed() {
     if !lcc_gpu::available() {
-        eprintln!("skipped: no GPU adapter");
+        lcc_testkit::skip!(Gpu, "no GPU adapter");
         return;
     }
     let limit = 64u64 << 20;

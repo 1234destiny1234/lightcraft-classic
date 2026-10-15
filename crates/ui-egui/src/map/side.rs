@@ -79,7 +79,7 @@ pub fn lookup(app: &mut LccApp, p: &Value) -> Result<Value, String> {
             }
             #[cfg(not(target_arch = "wasm32"))]
             {
-                let ids: Vec<lcc_catalog::PhotoId> = app.session.targets(&params);
+                let ids: Vec<lcc_catalog::PhotoId> = app.session.targets(&params).map_err(|e| e.to_string())?;
                 let todo: Vec<(u64, LatLon)> =
                     ids.iter().filter_map(|id| app.session.catalog.photo(*id)?.meta.gps.map(|(a, b)| (id.0, LatLon::new(a, b)))).take(500).collect();
                 if todo.is_empty() {

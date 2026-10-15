@@ -323,6 +323,8 @@ pub struct ImportDefaults {
     pub auto_folder: Option<String>,
     pub auto_copy: bool,
     pub auto_album: Option<String>,
+    /// Open the import review when a camera or memory card is connected.
+    pub show_on_card: bool,
 }
 
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
@@ -481,6 +483,12 @@ pub fn launch_path(arg: &str, cwd: Option<&Path>, home: Option<&Path>, dcim: imp
 pub(crate) fn probe_paths(s: &Session, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
     let progress = ScanProgress::default();
     probe_all(s.media.file_probe.as_ref(), paths, &progress.done, &progress.cancel)
+}
+
+/// Probe files with `probe` (a clone of the session's file probe), off the session: on a worker thread.
+pub(crate) fn probe_with(probe: &crate::media::FileProbe, paths: &[String]) -> Vec<Result<ProbeInfo, String>> {
+    let progress = ScanProgress::default();
+    probe_all(Some(probe), paths, &progress.done, &progress.cancel)
 }
 
 /// Probe `paths` (several at once), counting each in `done`. Stops before the next file once
@@ -1408,7 +1416,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 p.content_hash = info.content_hash;
                 p.sha1 = info.sha1.filter(|h| h.len() == 40 && h.bytes().all(|b| b.is_ascii_hexdigit()));
                 p.embedded_lens = info.embedded_lens.map(Box::new);
-                p.preview_only = info.preview_only.clone();
+                p.set_preview_only(info.preview_only.clone());
                 // a clip's stream facts land with the photo record: one undo step with the import
                 p.video = info.video;
                 p.duration = info.duration;
@@ -1567,6 +1575,7 @@ impl Session {
             stages: None,
             view_cache: None,
             display: None,
+            slide: None,
             preview_cut: None,
         };
         let embedded = match (&self.media.preview_loader, c.kind) {

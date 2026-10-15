@@ -37,6 +37,7 @@ lcc-merge = { workspace = true }
 lcc-geocode = { workspace = true }
 lcc-psd = { workspace = true }
 lcc-actions = { workspace = true }
+lcc-slide = { workspace = true }
 tiff = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }
@@ -82,6 +83,8 @@ denoise = ["dep:lcc-denoise", "lcc-denoise/runtime", "lcc-gpu/denoise"]
 rawnind-model = ["denoise", "lcc-denoise/rawnind-model", "lcc-denoise-core/rawnind-model"]
 
 [dev-dependencies]
+# tests record why they skip (`cargo xtask ci` lists the skips)
+lcc-testkit = { workspace = true }
 # HDR JPEG XL tests read the file's colour encoding
 jxl-oxide = { workspace = true }
 # the updater's end-to-end test builds a release with a real checksum

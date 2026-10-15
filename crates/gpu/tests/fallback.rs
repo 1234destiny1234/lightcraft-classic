@@ -38,7 +38,7 @@ fn masked(s: &mut DevelopSettings, k: usize) {
 #[test]
 fn failed_gpu_renders_fall_back_with_a_reason() {
     if !lcc_gpu::available() {
-        eprintln!("skipped: no GPU adapter ({:?})", lcc_gpu::unavailable_reason());
+        lcc_testkit::skip!(Gpu, "no GPU adapter ({})", lcc_gpu::unavailable_reason().unwrap_or_default());
         return;
     }
     assert_eq!(lcc_gpu::unavailable_reason(), None);

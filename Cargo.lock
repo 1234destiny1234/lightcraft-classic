@@ -4410,6 +4410,7 @@ dependencies = [
  "lcc-pipeline",
  "lcc-raster",
  "lcc-sysmem",
+ "lcc-testkit",
  "lcc-ui-egui",
  "log",
  "muda",
@@ -4533,6 +4534,7 @@ dependencies = [
  "lcc-heif",
  "lcc-meta",
  "lcc-raster",
+ "lcc-testkit",
  "moxcms 0.9.1",
  "png 0.18.1",
  "proptest",
@@ -4663,6 +4665,8 @@ dependencies = [
  "lcc-raw",
  "lcc-scenes",
  "lcc-segment",
+ "lcc-slide",
+ "lcc-testkit",
  "lcc-tether",
  "lcc-tiff",
  "lcc-updater",
@@ -4692,6 +4696,7 @@ name = "lcc-faces"
 version = "0.8.2"
 dependencies = [
  "lcc-brand",
+ "lcc-testkit",
  "matrixmultiply",
  "ndarray",
  "proptest",
@@ -4767,6 +4772,7 @@ dependencies = [
  "lcc-raster",
  "lcc-raw",
  "lcc-scenes",
+ "lcc-testkit",
  "log",
  "pollster 1.0.1",
  "wgpu",
@@ -5023,6 +5029,7 @@ dependencies = [
 name = "lcc-raw"
 version = "0.8.2"
 dependencies = [
+ "dhat",
  "jpeg-encoder",
  "jxl-oxide",
  "lcc-brand",
@@ -5030,6 +5037,7 @@ dependencies = [
  "lcc-geom",
  "lcc-meta",
  "lcc-raster",
+ "lcc-testkit",
  "lcc-tiff",
  "miniz_oxide 0.8.9",
  "proptest",
@@ -5062,11 +5070,21 @@ dependencies = [
  "candle-nn",
  "lcc-brand",
  "lcc-fetch",
+ "lcc-testkit",
  "log",
  "rayon",
  "serde",
  "serde_json",
  "thiserror 2.0.21",
+]
+
+[[package]]
+name = "lcc-slide"
+version = "0.8.2"
+dependencies = [
+ "lcc-raster",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
@@ -5095,6 +5113,13 @@ dependencies = [
 
 [[package]]
 name = "lcc-sysmem"
+version = "0.8.2"
+dependencies = [
+ "lcc-brand",
+]
+
+[[package]]
+name = "lcc-testkit"
 version = "0.8.2"
 dependencies = [
  "lcc-brand",
@@ -5162,7 +5187,9 @@ dependencies = [
  "lcc-print",
  "lcc-publish",
  "lcc-raster",
+ "lcc-slide",
  "lcc-slideshow",
+ "lcc-testkit",
  "lcc-text",
  "lcc-updater",
  "lcc-webgallery",
