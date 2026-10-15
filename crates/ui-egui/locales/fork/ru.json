@@ -1,4 +1,9 @@
 {
+  "Color Values": "Значения цвета",
+  "Color Readout": "Показ цвета",
+  "Show RGB Color Values": "Показывать значения RGB",
+  "Show HSL Color Values": "Показывать значения HSL",
+  "Show Lab Color Values": "Показывать значения Lab",
   "Decrease Rating": "Понизить оценку",
   "Increase Rating": "Повысить оценку",
   "is <": "<",

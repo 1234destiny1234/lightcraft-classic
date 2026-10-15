@@ -94,6 +94,10 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View"),
     ("view.clipping", "Show Clipping", Some("J"), "View"),
     ("view.visualizeHdr", "Visualize HDR", None, "View"),
+    ("view.colorReadout", "Color Readout", None, ""),
+    ("view.colorReadoutRgb", "Show RGB Color Values", None, "View>Color Values"),
+    ("view.colorReadoutHsl", "Show HSL Color Values", None, "View>Color Values"),
+    ("view.colorReadoutLab", "Show Lab Color Values", None, "View>Color Values"),
     // in grids S expands/collapses stacks (the engine command it shadows)
     ("view.softProof", "Soft Proofing", Some("S"), "View"),
     ("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View"),

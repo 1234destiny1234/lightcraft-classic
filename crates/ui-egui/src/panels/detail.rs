@@ -929,6 +929,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         }
     }
     app.loupe_shown = Some((id, shown));
+    // the colour under the pointer, for the readout under the histogram (the After render only)
+    if shown == "render" && !split && !show_before && crop_view.is_none()
+        && let Some(q) = resp.hover_pos().filter(|q| canvas.contains(*q))
+        && let Some(tex) = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id)
+        && let Some(px) = tex.pixels.as_deref()
+    {
+        let r = fit_texture_rect(img_rect, tex.size);
+        let (u, v) = ((q.x - r.left()) / r.width().max(1.0), (q.y - r.top()) / r.height().max(1.0));
+        if let Some(rgb) = crate::color_readout::srgb_at(px, u, v, app.renderer.display().map(|d| d.as_ref())) {
+            app.ui.hover_color = Some((ui.ctx().cumulative_pass_nr(), rgb));
+        }
+    }
     // a wipe shows the Before whole-frame render on its side of the line…
     let line = crate::region::wipe_line(img_rect, canvas);
     if app.ui.before_after == BeforeAfter::Split

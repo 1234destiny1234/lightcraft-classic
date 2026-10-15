@@ -1,4 +1,9 @@
 {
+  "Color Values": "顏色值",
+  "Color Readout": "顏色讀數",
+  "Show RGB Color Values": "顯示 RGB 顏色值",
+  "Show HSL Color Values": "顯示 HSL 顏色值",
+  "Show Lab Color Values": "顯示 Lab 顏色值",
   "Develop": "編輯相片",
   "Export Containing Keywords": "匯出包含的關鍵字",
   "Export Keywords": "轉存關鍵字",

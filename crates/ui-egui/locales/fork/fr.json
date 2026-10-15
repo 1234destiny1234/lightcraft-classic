@@ -1,4 +1,9 @@
 {
+  "Color Values": "Valeurs colorimétriques",
+  "Color Readout": "Lecture des couleurs",
+  "Show RGB Color Values": "Afficher les valeurs RVB",
+  "Show HSL Color Values": "Afficher les valeurs TSL",
+  "Show Lab Color Values": "Afficher les valeurs Lab",
   "About {app}": "À propos de {app}",
   "Hide {app}": "Masquer {app}",
   "In-memory session: these settings last until {app} quits.": "Session en mémoire : ces réglages durent jusqu'à la fermeture de {app}.",
