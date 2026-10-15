@@ -371,6 +371,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
+    super::plugin_filters::show(app, ui, &d);
     ui.add_space(40.0);
 }
 
@@ -473,7 +474,7 @@ pub fn sub_title(ui: &mut egui::Ui, title: &str) {
     ui.painter().text(pos2(r.left() + 24.0, r.center().y + 4.0), Align2::LEFT_CENTER, crate::i18n::tr(title), t.semibold(13.0), t.text_label);
 }
 
-fn section(
+pub(crate) fn section(
     app: &mut LccApp,
     ui: &mut egui::Ui,
     d: &DevelopSettings,
