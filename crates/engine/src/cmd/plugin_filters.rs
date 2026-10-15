@@ -62,6 +62,69 @@ fn params(p: &Value, c: &str) -> Result<Option<Map<String, Value>>> {
     Ok(Some(m.clone()))
 }
 
+/// A stack entry as a sidecar stores it (see `lcc_meta::plugin_filters_ns`).
+pub(crate) fn to_xmp(f: &PluginFilter) -> lcc_meta::XmpPluginFilter {
+    lcc_meta::XmpPluginFilter {
+        plugin: f.plugin.clone(),
+        module_hash: f.module_hash.clone(),
+        name: f.name.clone(),
+        enabled: if f.enabled { "True" } else { "False" }.into(),
+        stage: match f.stage {
+            FilterStage::Source => "source",
+            FilterStage::Display => "display",
+        }
+        .into(),
+        params: serde_json::to_string(&f.params).unwrap_or_default(),
+        analysis: f.analysis.as_ref().and_then(|a| serde_json::to_string(a).ok()).unwrap_or_default(),
+    }
+}
+
+/// A sidecar's stack entry checked like `develop.pluginFilter.add` checks its arguments, or `None` when any part
+/// is malformed (the entry is skipped). `uid` is the caller's: sidecars don't store uids.
+pub(crate) fn from_xmp(e: &lcc_meta::XmpPluginFilter, uid: u32) -> Option<PluginFilter> {
+    let c = "sidecar";
+    let params_v: Value = if e.params.is_empty() { Value::Null } else { serde_json::from_str(&e.params).ok()? };
+    let p = json!({ "plugin": e.plugin, "module_hash": e.module_hash, "name": e.name, "params": params_v, "stage": (!e.stage.is_empty()).then_some(&e.stage) });
+    let enabled = match e.enabled.as_str() {
+        "" | "True" | "true" => true,
+        "False" | "false" => false,
+        _ => return None,
+    };
+    let analysis = if e.analysis.is_empty() {
+        None
+    } else {
+        if e.analysis.len() > MAX_ANALYSIS {
+            return None;
+        }
+        Some(serde_json::from_str::<Value>(&e.analysis).ok()?)
+    };
+    Some(PluginFilter {
+        uid,
+        plugin: text(&p, "plugin", c).ok()?,
+        module_hash: text(&p, "module_hash", c).ok()?,
+        name: text(&p, "name", c).ok()?,
+        params: params(&p, c).ok()?.unwrap_or_default(),
+        enabled,
+        stage: stage(&p, c).ok()?.unwrap_or_default(),
+        analysis,
+    })
+}
+
+/// A sidecar's whole stack: malformed entries skipped, at most [`MAX_PLUGIN_FILTERS`], uids 1, 2, …
+pub(crate) fn stack_from_xmp(entries: &[lcc_meta::XmpPluginFilter]) -> Vec<PluginFilter> {
+    let mut out: Vec<PluginFilter> = Vec::new();
+    for e in entries {
+        if out.len() >= MAX_PLUGIN_FILTERS {
+            break;
+        }
+        let uid = u32::try_from(out.len()).unwrap_or(u32::MAX).saturating_add(1);
+        if let Some(f) = from_xmp(e, uid) {
+            out.push(f);
+        }
+    }
+    out
+}
+
 fn active(s: &Session, c: &str) -> Result<(PhotoId, DevelopSettings)> {
     let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
     let d = s.develop_of(id).ok_or_else(|| bad(c, "no active photo"))?;
