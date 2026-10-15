@@ -7,6 +7,10 @@
   rendered. Choosing Medium Contrast or Strong Contrast bends the line into its S-curve instead of leaving a
   straight diagonal, and dragging the line still lands where the pointer lets go.
 
+### Library comes back in the view you left it in
+- Going from Library to Develop and back through the module picker brought Library back in the loupe, whatever view
+  it was left in. It now returns to the grid, loupe, Compare or Survey it showed before (issue #144).
+
 ### Updates on Linux packages
 - A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
