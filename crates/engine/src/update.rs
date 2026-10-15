@@ -272,10 +272,7 @@ impl Updater {
     /// An updater with no settings folder of its own.
     pub fn new(dir: Option<PathBuf>) -> Updater {
         let prefs = dir.as_deref().map(load_prefs).unwrap_or_default();
-        let stage = match &dir {
-            Some(d) => lcc_updater::stage_dir(d),
-            None => std::env::temp_dir().join(format!("{}-updates", lcc_brand::BINARY)),
-        };
+        let stage = stage_for(dir.as_deref());
         Updater {
             prefs,
             dir,
@@ -695,6 +692,26 @@ impl Drop for Updater {
         if let Some(job) = &self.job {
             job.cancel.store(true, Ordering::Relaxed);
         }
+    }
+}
+
+/// Where downloads are staged for a settings folder `dir` (a temporary folder without one).
+fn stage_for(dir: Option<&Path>) -> PathBuf {
+    match dir {
+        Some(d) => lcc_updater::stage_dir(d),
+        None => std::env::temp_dir().join(format!("{}-updates", lcc_brand::BINARY)),
+    }
+}
+
+/// Tidy up after an update, once per app start, on a thread of its own so the start never waits
+/// for it: log why the last AppImage swap did not happen, if it didn't, and delete the previous
+/// AppImage (`<file>.old` beside `$APPIMAGE`) a successful one left. Nothing to do on other
+/// installs. Never fails: what it can't do is logged.
+pub fn clean_up_after_update() {
+    let stage = stage_for(crate::config::config_dir().as_deref());
+    let spawned = std::thread::Builder::new().name("update-cleanup".into()).spawn(move || lcc_updater::clean_up_after_update(&stage));
+    if let Err(e) = spawned {
+        log::warn!("updates: could not start the clean-up after an update: {e}");
     }
 }
 

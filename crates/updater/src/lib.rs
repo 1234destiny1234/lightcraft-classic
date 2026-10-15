@@ -42,7 +42,7 @@ mod target;
 pub use check::{Cache, Checked, MAX_DOWNLOAD_BYTES, Options, REUSE_AFTER, Update, api_url, check, from_release, manifest_url, override_url};
 pub use download::{Downloaded, client, download, part_path, stage_dir};
 pub use error::UpdateError;
-pub use install::{Plan, Restart, install, install_with, plan, reveal};
+pub use install::{Plan, Restart, clean_up_after_update, install, install_with, plan, reveal};
 pub use release::{Release, newest, version_of};
 pub use target::{Asset, Kind, Os, Target};
 pub use version::Version;

@@ -894,6 +894,11 @@ fn main() -> eframe::Result {
             Err(e) => log::warn!("could not copy the previous settings folder: {e}"),
         }
     }
+    // the start after an update: delete the previous AppImage, log a swap that failed (in the
+    // background; the start never waits for it)
+    if !in_memory {
+        lcc_engine::update::clean_up_after_update();
+    }
     // what the arguments name, resolved now: an empty or relative argument never becomes a drive
     // root, and a whole drive or home folder is not walked (issue #374)
     let (files, launch_notices) = launch_imports(&files);
