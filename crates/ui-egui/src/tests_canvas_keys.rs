@@ -76,9 +76,12 @@ fn crop_corner_moves_with_the_arrows_and_shift_moves_further() {
     assert!((after.x1 - after.x0 - (before.x1 - before.x0)).abs() < 1e-6, "{before:?} -> {after:?}");
 }
 
+/// Tab walks the focus to the crop handles where no command has Tab: the Alternative set (the
+/// Classic set's Tab hides the side panels, as in Lightroom Classic; see `shell::tests`).
 #[test]
 fn tab_reaches_the_crop_handles() {
     let mut h = detail("panel.crop");
+    h.app.ui.settings.keymap_set = crate::shortcuts::KeymapSet::Alternative;
     let handles: Vec<egui::Id> = (0..9).map(|i| canvas_keys::id(&format!("crop:{i}"))).collect();
     let mut reached = false;
     for _ in 0..200 {
