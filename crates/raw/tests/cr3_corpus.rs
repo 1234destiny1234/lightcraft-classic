@@ -126,7 +126,6 @@ fn canon_rp_crop_mode_craw_sensor_is_exact() {
     check("cr3-canon-rp-craw-crop.cr3", 0x39a6_0c4e_fed4_e1f4, (4032, 2656), (3888, 2592));
 }
 
-
 // Canon EOS R6 lossless RAW: five private files supplied by the maintainer (not redistributable, so
 // absent for everyone else and skipped), checked against the same DNGLab 0.8.0 release (Linux x64
 // binary, which first reproduced the M50 RAW hash above). Sensor 5568x3708, developed 5472x3648.
