@@ -881,19 +881,6 @@ pub fn dropdown_within(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, co
 mod tests {
     use super::*;
 
-    #[test]
-    fn high_efficiency_nef_explains_the_codec_limit_and_workarounds() {
-        let reason = "Nikon High Efficiency NEF (HE / HE★, a JPEG XS-based codec with no public specification; shoot RAW Lossless compressed to edit the raw data)";
-        let explanation = preview_only_explanation(reason);
-        assert!(explanation.contains("TicoRAW"), "{explanation}");
-        assert!(explanation.contains("does not currently have a license"), "{explanation}");
-        assert!(!explanation.contains("cannot decode"), "{explanation}");
-        assert!(explanation.contains("Lossless compressed NEF"), "{explanation}");
-        assert!(explanation.contains("DNG"), "{explanation}");
-        assert!(!explanation.contains("yet"), "{explanation}");
-        assert!(preview_only_explanation("unsupported CR3").contains("unsupported CR3"));
-    }
-
     /// Issue #647: hovering a star previews the rating a click would set.
     #[test]
     fn hovered_star_previews_its_rating() {

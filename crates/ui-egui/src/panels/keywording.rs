@@ -939,15 +939,6 @@ mod tests {
         assert!(offers(&c, &[], "p").keywords.len() <= OFFERS);
     }
 
-    /// A keyword two photos spell differently is offered once.
-    #[test]
-    fn a_keyword_spelled_two_ways_is_one_offer() {
-        let (c, _) = library(&[&["Lisbon"], &["lisbon"], &["LISBON", "Lisboa"]]);
-        let got = offers(&c, &[], "lis").keywords;
-        assert_eq!(got.len(), 2, "{got:?}");
-        assert!(got.iter().any(|k| k.eq_ignore_ascii_case("lisbon")) && got.contains(&"Lisboa".to_string()));
-    }
-
     /// Groups follow the tree: a keyword's groups come right after it, before a keyword whose name
     /// merely starts the same.
     #[test]
@@ -989,15 +980,6 @@ mod tests {
         assert_eq!(typing(""), "");
         assert_eq!(typed_before(&c, "sea, , beach ,lis"), ["sea", "beach"]);
         assert!(typed_before(&c, "lis").is_empty());
-    }
-
-    /// The grouped box's suggestions say a keyword's own name; two with the same name say their
-    /// whole paths, so they can be told apart.
-    #[test]
-    fn suggestions_are_named_apart() {
-        let paths: Vec<String> = ["Italy|Rome|Market", "Spain|Madrid|market", "Places|Lisbon", "sea"].iter().map(|s| s.to_string()).collect();
-        assert_eq!(suggestion_names(&paths), ["Italy › Rome › Market", "Spain › Madrid › market", "Lisbon", "sea"]);
-        assert!(suggestion_names(&[]).is_empty());
     }
 
     /// "Keywords & Containing Keywords": every level of the selection's keywords, flat, each

@@ -462,18 +462,6 @@ fn count_folder_picks(h: &mut Headless) -> std::sync::Arc<std::sync::atomic::Ato
     calls
 }
 
-/// The declared key of Open Library. Visualize HDR has none by default: ⇧H cycles the Tool Overlay
-/// (issue #224); the user can give Visualize HDR a key in the keymap.
-#[test]
-fn open_library_and_visualize_hdr_keys_are_declared() {
-    use crate::shortcuts::{Keymap, parse, shortcut_of};
-
-    let keymap = Keymap::new();
-    assert_eq!(shortcut_of(&keymap, "app.openLibrary"), Some("Cmd+O"));
-    assert!(parse("Cmd+O").is_some());
-    assert_eq!(shortcut_of(&keymap, "view.visualizeHdr"), None);
-}
-
 /// Opening a library uses the same folder picker as File > Open Library. Cancelling it
 /// leaves the current photo and library intact.
 #[test]

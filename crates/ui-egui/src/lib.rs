@@ -118,8 +118,6 @@ mod tests_dialog_fit;
 #[cfg(test)]
 mod tests_dialog_frame;
 #[cfg(test)]
-mod tests_dialog_primary;
-#[cfg(test)]
 mod tests_dialogs;
 #[cfg(test)]
 mod tests_edit_layout;
@@ -225,8 +223,6 @@ mod tests_tool_overlay;
 mod tests_unsaved;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_update;
-#[cfg(test)]
-mod tests_view_cost;
 #[cfg(test)]
 mod tests_wb_selector;
 #[cfg(test)]

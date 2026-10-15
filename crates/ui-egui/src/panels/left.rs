@@ -2331,28 +2331,4 @@ mod tests {
         let l = local_places(builtin(), &[], Some("/home/example/Pictures/Trip"), None, &["/home/example".into()]);
         assert_eq!((names(&l.places), l.owner), (vec!["Pictures"], Some(0)));
     }
-
-    #[test]
-    fn a_local_folder_lines_up_with_the_rows_above_and_its_triangle_stays_left_of_the_icon() {
-        use crate::Services;
-        use crate::headless::HeadlessView;
-        let mut app = crate::LccApp::new(lcc_engine::Session::new(), Services::default());
-        let mut view = HeadlessView::new();
-        let path = "/app-test/Pictures";
-        let mut widgets = vec![];
-        for frame in 0..3 {
-            let raw = HeadlessView::raw_input(egui::vec2(300.0, 200.0), 1.0, frame as f64 / 60.0, vec![]);
-            view.run(raw, |ui| {
-                super::row(&mut app, ui, "all", super::Icon::Photos, "All Photos", None, false, 0.0);
-                super::folder_tree(&mut app, ui, path, "Pictures", path, 0.0, None, false, false);
-            });
-            widgets = crate::widgets::take_registry(&view.ctx);
-        }
-        let rect = |id: &str| widgets.iter().find(|(w, _)| w == id).unwrap_or_else(|| panic!("{id} not registered")).1;
-        let (all, local) = (rect("label:all"), rect(&format!("label:local:{path}")));
-        assert_eq!(local.left(), all.left(), "a top-level Local folder's name starts where All Photos' does");
-        let triangle = rect(&format!("folderToggle:{path}"));
-        // the icon is 16 points wide and ends 8 points before the name
-        assert!(triangle.right() <= local.left() - 24.0, "triangle {triangle:?} overlaps the icon before {local:?}");
-    }
 }

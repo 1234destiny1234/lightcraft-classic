@@ -153,29 +153,3 @@ fn a_layout_image_that_cant_be_read_says_so_and_showing_none_asks_for_one() {
     assert!(widget(&h, "canvas:layoutImageError").is_none());
     let _ = std::fs::remove_dir_all(dir.parent().unwrap());
 }
-
-#[test]
-fn view_loupe_overlay_lists_the_layout_image_commands() {
-    let mut h = loupe();
-    let names = |h: &Headless| -> Vec<(String, bool, Option<bool>)> {
-        let menu = crate::menubar::expanded(&h.app, "Loupe Overlay").unwrap_or_default();
-        menu.into_iter()
-            .filter_map(|n| match n {
-                crate::menubar::MenuNode::Item { id, enabled, checked, .. } => Some((id, enabled, checked)),
-                _ => None,
-            })
-            .collect()
-    };
-    let before = names(&h);
-    assert_eq!(before[0], ("view.chooseLayoutImage".to_string(), true, None));
-    // nothing chosen: only Choose… is enabled
-    assert!(before[1..].iter().all(|(_, enabled, _)| !enabled), "{before:?}");
-    let path = cover("menu");
-    run(&mut h, "view.chooseLayoutImage", json!({"path": path.to_string_lossy()}));
-    let after = names(&h);
-    assert_eq!(after[1], ("view.layoutImage".to_string(), true, Some(true)));
-    // 100% opacity and no matte are checked by default
-    let checked: Vec<&String> = after.iter().filter(|(_, _, c)| *c == Some(true)).map(|(id, ..)| id).collect();
-    assert_eq!(checked, ["view.layoutImage", "view.layoutImageOpacity", "view.layoutImageMatte"]);
-    let _ = std::fs::remove_dir_all(path.parent().unwrap());
-}

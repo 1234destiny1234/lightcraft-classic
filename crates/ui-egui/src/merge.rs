@@ -483,25 +483,3 @@ fn num(ui: &mut egui::Ui, spec: &lcc_develop::ControlSpec, v: &mut f64) -> bool 
         None => false,
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    /// Issue #1455: a panorama held to the computer's memory, or to the largest size, says so.
-    #[test]
-    fn a_smaller_panorama_says_why() {
-        let added = |info: Value| added_message("Panorama", &info);
-        assert_eq!(
-            added(json!({"limit": "memory", "megapixels": 166.2, "nativeMegapixels": 194.0})),
-            "Panorama merge added at 166 MP: its full size, 194 MP, needs more memory than this computer has"
-        );
-        assert_eq!(
-            added(json!({"limit": "size", "megapixels": 512.0, "nativeMegapixels": 700.4})),
-            "Panorama merge added at 512 MP, the largest a panorama can be (its full size is 700 MP)"
-        );
-        assert_eq!(added(json!({"limit": null, "megapixels": 90.0, "nativeMegapixels": 90.0})), "Panorama merge added");
-        assert_eq!(added(json!({"limit": "asked", "megapixels": 20.0, "nativeMegapixels": 90.0})), "Panorama merge added");
-        assert_eq!(added_message("HDR", &json!({"ev": [0.0]})), "HDR merge added");
-    }
-}

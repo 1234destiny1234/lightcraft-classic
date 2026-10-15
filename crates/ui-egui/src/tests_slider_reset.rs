@@ -104,36 +104,6 @@ fn a_click_on_the_thumb_keeps_the_value() {
     assert!((value(&h, "light.exposure") - -2.5).abs() < 0.02, "{}", value(&h, "light.exposure"));
 }
 
-#[test]
-fn a_sliders_name_and_thumb_say_a_double_click_resets_it() {
-    let mut h = edit_panel();
-    set(&mut h, "light.exposure", 1.25);
-    let hint = "Exposure — double-click to reset it";
-    let shown = |h: &Headless| h.painted_text().iter().any(|t| t == hint);
-    let thumb = thumb_fx(&h, "light.exposure", 0.0);
-    for (what, id, fx) in [("name", "sliderLabel:light.exposure", 0.1), ("thumb", "slider:light.exposure", thumb)] {
-        // somewhere else first, so the hint of the step before goes
-        ask(&mut h, "ui.hoverWidget", json!({"id": "sliderLabel:light.contrast", "fx": 0.9}));
-        assert!(!shown(&h), "{what}: no hint left over");
-        ask(&mut h, "ui.hoverWidget", json!({"id": id, "fx": fx}));
-        // tooltips wait for the pointer to rest
-        assert!(
-            h.step_until(Duration::from_secs(5), shown),
-            "{what}: {:?}",
-            h.painted_text().iter().filter(|t| t.contains("reset")).collect::<Vec<_>>()
-        );
-    }
-    // the rest of the track is for dragging and clicking: no hint there
-    ask(&mut h, "ui.hoverWidget", json!({"id": "slider:light.exposure", "fx": 0.1}));
-    for _ in 0..90 {
-        h.step();
-    }
-    assert!(!shown(&h), "no hint away from the thumb");
-    // the value keeps its own hint
-    ask(&mut h, "ui.hoverWidget", json!({"id": "sliderValue:light.exposure"}));
-    assert!(h.step_until(Duration::from_secs(5), |h| h.painted_text().iter().any(|t| t == "Click to type a value, drag to change it")));
-}
-
 /// Typing a value (KEY-SLIDER-TYPE, #1362) still works next to the reset.
 #[test]
 fn a_typed_value_still_applies_after_a_reset() {

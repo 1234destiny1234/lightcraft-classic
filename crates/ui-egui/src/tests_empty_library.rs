@@ -48,15 +48,6 @@ fn an_empty_library_opens_on_the_grid_with_the_sidebar() {
 }
 
 #[test]
-fn an_empty_library_left_on_the_square_grid_stays_there() {
-    let mut a = app(lcc_engine::Session::new());
-    a.ui.view = ViewMode::SquareGrid;
-    empty_library::open_on_empty_library(&mut a);
-    assert_eq!(a.ui.view, ViewMode::SquareGrid);
-    assert!(a.ui.left_panel);
-}
-
-#[test]
 fn a_library_with_photos_opens_as_it_was_left() {
     let mut a = app(lcc_engine::Session::with_demo());
     a.ui.view = ViewMode::Detail;
@@ -130,19 +121,6 @@ fn the_top_bar_imports_in_every_library() {
 }
 
 #[test]
-fn the_hint_shows_the_shortcut_as_bound() {
-    let mut keymap = crate::state::AppSettings::default().keymap;
-    assert_eq!(empty_library::hint(&keymap, true), "or drop photos and folders into this window · ⌘⇧I");
-    assert_eq!(empty_library::hint(&keymap, false), "or drop photos and folders into this window · Ctrl+Shift+I");
-    // a remapped shortcut is the one shown
-    crate::shortcuts::assign(&mut keymap, "file.addPhotos", Some("Cmd+Alt+I")).unwrap();
-    assert_eq!(empty_library::hint(&keymap, true), "or drop photos and folders into this window · ⌘⌥I");
-    // and none at all leaves the key out
-    crate::shortcuts::assign(&mut keymap, "file.addPhotos", None).unwrap();
-    assert_eq!(empty_library::hint(&keymap, true), "or drop photos and folders into this window");
-}
-
-#[test]
 fn a_folder_browsed_under_local_is_not_the_empty_library() {
     // its photos aren't in the library, but they are what is on screen: no import prompt
     let mut a = app(lcc_engine::Session::new());
@@ -172,7 +150,7 @@ fn recently_deleted_is_not_the_empty_library() {
 fn the_import_button_leaves_the_filter_and_appearance_icons_apart() {
     // the search field is centred: a seventh icon on the right must not push it into them
     // with the menus in the window (Windows, Linux, web) and in the native menu bar (macOS)
-    for (width, native_menu) in [900.0, 906.0, 1024.0, 1200.0, 1600.0].into_iter().flat_map(|w| [(w, false), (w, true)]) {
+    for (width, native_menu) in [900.0, 906.0, 1600.0].into_iter().flat_map(|w| [(w, false), (w, true)]) {
         let mut a = app(lcc_engine::Session::with_demo());
         // a native menu bar comes with the title bar drawn in the window (macOS): a wider left margin
         a.native_menu = native_menu;

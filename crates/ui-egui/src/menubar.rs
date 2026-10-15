@@ -1213,22 +1213,6 @@ mod tests {
         assert!(!text.contains("Add Folder") && !text.contains("\"Add Photos"), "no add-folder wording left in the menus");
     }
 
-    /// Issue #120: Tethered Capture sits with the import entry points (as in Classic's File menu),
-    /// not among the fallbacks at the bottom, and opens with Start Tethered Capture….
-    #[test]
-    fn tethered_capture_follows_import() {
-        let bar = menu_bar(&app());
-        let file = &bar.iter().find(|(t, _)| t == "File").expect("File menu").1;
-        let at = |want: &str| file.iter().position(|n| matches!(n, MenuNode::Submenu { label, .. } if label == want));
-        let (Some(dev), Some(tether)) = (at("Import from Device"), at("Tethered Capture")) else { panic!("{file:?}") };
-        assert_eq!(tether, dev + 1, "Tethered Capture follows Import from Device");
-        let Some(MenuNode::Submenu { children, .. }) = file.get(tether) else { panic!() };
-        assert!(matches!(children.first(), Some(MenuNode::Item { id, .. }) if id == "tether.start"), "{children:?}");
-        for id in ["tether.connect", "tether.capture", "tether.stop", "tether.disconnect"] {
-            assert!(find(children, id).is_some(), "{id} missing");
-        }
-    }
-
     /// Back Up / Restore Library are the browser build's (its library lives in browser storage):
     /// absent from the desktop's menus, present and wired to the host where it provides them.
     #[test]

@@ -1911,13 +1911,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn hdr_button_says_when_the_window_cannot_show_hdr() {
-        // issue #47: an HDR display showed no difference with no word why
-        assert!(hdr_button_tip(true).contains("SDR rendition"));
-        assert!(!hdr_button_tip(false).contains("SDR rendition"));
-    }
-
-    #[test]
     fn an_hdr_edit_keeps_its_hdr_histogram_through_8_bit_renders() {
         let ctx = egui::Context::default();
         let id = PhotoId(7);

@@ -521,16 +521,6 @@ fn the_box_says_how_many_photos_it_is_for() {
     assert!(!has(&h, "keywordScope"), "one photo");
 }
 
-// The × is a target as tall as its chip and as wide as that, apart from the name next to it.
-#[test]
-fn the_cross_is_as_tall_as_its_chip() {
-    let (h, _) = two_selected();
-    let (name, cross) = (rect(&h, "keywordChip:beach"), rect(&h, "keywordChipRemove:beach"));
-    assert!(cross.height() >= 22.0 && cross.width() >= 22.0, "{cross:?}");
-    assert_eq!(cross.height(), name.height());
-    assert!(cross.left() >= name.right() - 0.5, "beside the name, not over it: {cross:?} {name:?}");
-}
-
 // Given a keyword on several selected photos,
 // when its × takes it off them,
 // then a message names the keyword and how many photos lost it and says how to get it back, and

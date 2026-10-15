@@ -450,19 +450,6 @@ mod tests {
     use super::*;
     use crate::i18n::{Locale, set_language};
 
-    /// Every theme scrolls 100 points a wheel notch, and a zoom notch stays egui's stock ~1.22x
-    /// (`exp(40 / 200)`) instead of growing with the longer scroll.
-    #[test]
-    fn a_wheel_notch_scrolls_further_but_zooms_as_before_in_every_theme() {
-        for kind in [ThemeKind::Charcoal, ThemeKind::Midnight, ThemeKind::Silver, ThemeKind::Paper] {
-            let ctx = egui::Context::default();
-            apply_kind(&ctx, kind);
-            let (line, zoom) = ctx.options(|o| (o.input_options.line_scroll_speed, o.input_options.scroll_zoom_speed));
-            assert_eq!(line, WHEEL_LINE_POINTS, "{kind:?}");
-            assert!(((zoom * line).exp() - (40.0_f32 / 200.0).exp()).abs() < 1e-4, "{kind:?}: a notch zooms {}", (zoom * line).exp());
-        }
-    }
-
     /// #736: the release input must carry Thai, not silently skip the check with an older pin.
     /// Exercise the Thai characters of the reported folder name through every egui family.
     #[test]

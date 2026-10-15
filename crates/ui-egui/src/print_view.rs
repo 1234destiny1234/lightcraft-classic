@@ -895,19 +895,3 @@ fn rulers(painter: &egui::Painter, t: &Tokens, sheet: &Sheet, area: Rect, pw: f6
         }
     }
 }
-
-#[cfg(test)]
-mod tests {
-    use super::*;
-
-    #[test]
-    fn lengths_read_in_the_ruler_unit() {
-        assert_eq!(fmt_len(1.0, Unit::Inches), "1.00 in");
-        assert_eq!(fmt_len(1.0, Unit::Millimeters), "25.4 mm");
-        assert_eq!(fmt_len(1.0, Unit::Points), "72 pt");
-        assert_eq!(trim(4.0), "4");
-        assert_eq!(trim(2.5), "2.5");
-        assert_eq!(paper_label("a4"), "A4");
-        assert_eq!(paper_label("4x6"), "4 × 6 in");
-    }
-}

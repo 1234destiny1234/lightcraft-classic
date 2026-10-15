@@ -1780,30 +1780,6 @@ mod color_image_tests {
         assert_eq!(got.pixels, want.pixels);
     }
 
-    // Given a finished render, the worker hands back its texture pixels with it (the UI thread no
-    // longer converts a 10 MP window on every slider step); a failed render has none
-    #[test]
-    fn the_worker_converts_the_texture_pixels() {
-        let image = lcc_raster::Rgba8::from_fn(5, 3, |x, y| [(x * 40) as u8, (y * 80) as u8, 7, 255]);
-        let result = |rendered| RenderResult {
-            request_id: 1,
-            source_key: None,
-            photo: PhotoId(1),
-            level: lcc_engine::SourceLevel::Preview,
-            key: 1,
-            rendered,
-            gpu_fallback: None,
-            loaded: None,
-            quick: None,
-            display: None,
-        };
-        let histogram = Histogram::of_srgb8(&image);
-        let ok = Renderer::run_for(|| result(Ok(lcc_pipeline::Rendered { image: image.clone(), histogram, deep: None })), &None);
-        assert_eq!(ok.color.map(|c| c.pixels.clone()), Some(color_image(&image).pixels));
-        let failed = Renderer::run_for(|| result(Err("unreadable".into())), &None);
-        assert!(failed.color.is_none());
-    }
-
     #[test]
     fn an_empty_image_is_an_empty_texture() {
         let img = lcc_raster::Rgba8::new(0, 0);

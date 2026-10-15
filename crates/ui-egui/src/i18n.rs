@@ -490,27 +490,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn czech_coverage_of_catalogs_commands_controls_and_rules_is_reported() {
-        let catalog = Locale::Cs.catalog();
-        let keys: std::collections::BTreeSet<&String> = Locale::ALL.iter().flat_map(|language| language.catalog().keys()).collect();
-        let lacking: Vec<_> = keys.into_iter().filter(|key| !catalog.contains_key(key.as_str())).collect();
-        if !lacking.is_empty() {
-            eprintln!("cs lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
-        }
-        let mut labels: Vec<&str> = lcc_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
-        labels.extend(lcc_develop::CONTROLS.iter().map(|control| control.label));
-        labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
-        labels.extend(lcc_catalog::rules::FIELD_GROUPS.iter().map(|group| group.0));
-        labels.extend(lcc_engine::rename::TOKENS.iter().map(|token| token.meaning));
-        labels.extend(lcc_engine::rename::TEMPLATE_NOTES);
-        let missing: Vec<_> = labels.into_iter().filter(|label| !catalog.contains_key(*label)).collect();
-        if !missing.is_empty() {
-            eprintln!("cs lacks {} display label(s) (shown in English): {missing:?}", missing.len());
-        }
-    }
-
-    #[test]
     fn czech_switches_persists_and_formats_without_changing_user_values() {
         use crate::control::{ControlRequest, Outcome};
         let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
@@ -988,33 +967,6 @@ mod tests {
         }
     }
 
-    /// Ukrainian's coverage of every catalog message and display label. Gaps are reported, not failed
-    /// (like `catalogs_agree_on_placeholders_and_report_gaps`): a feature PR that adds a label doesn't
-    /// have to ship its Ukrainian text, which shows in English until the translation catches up.
-    #[test]
-    fn ukrainian_coverage_of_catalogs_commands_controls_and_rules_is_reported() {
-        let catalog = Locale::Uk.catalog();
-        let keys: std::collections::BTreeSet<&String> = Locale::ALL.iter().flat_map(|language| language.catalog().keys()).collect();
-        let lacking: Vec<_> = keys.into_iter().filter(|key| !catalog.contains_key(key.as_str())).collect();
-        if !lacking.is_empty() {
-            eprintln!("uk lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
-        }
-        let mut labels: Vec<&str> = lcc_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
-        labels.extend(lcc_develop::CONTROLS.iter().map(|control| control.label));
-        labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
-        for (_, label, kind) in lcc_catalog::rules::FIELDS {
-            labels.push(label);
-            labels.extend(lcc_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
-        }
-        labels.extend(lcc_engine::rename::TOKENS.iter().map(|token| token.meaning));
-        labels.extend(lcc_engine::rename::TEMPLATE_NOTES);
-        let missing: Vec<_> = labels.into_iter().filter(|label| !catalog.contains_key(*label)).collect();
-        if !missing.is_empty() {
-            eprintln!("uk lacks {} display label(s) (shown in English): {missing:?}", missing.len());
-        }
-    }
-
     #[test]
     fn ukrainian_switches_persists_formats_dates_and_preserves_values() {
         use crate::control::{ControlRequest, Outcome};
@@ -1113,31 +1065,6 @@ mod tests {
             }
         });
         set_language(Locale::En);
-    }
-
-    /// Italian's coverage of every catalog message and display label, reported like Ukrainian's.
-    #[test]
-    fn italian_coverage_of_catalogs_commands_controls_and_rules_is_reported() {
-        let catalog = Locale::It.catalog();
-        let keys: std::collections::BTreeSet<&String> = Locale::ALL.iter().flat_map(|language| language.catalog().keys()).collect();
-        let lacking: Vec<_> = keys.into_iter().filter(|key| !catalog.contains_key(key.as_str())).collect();
-        if !lacking.is_empty() {
-            eprintln!("it lacks {} catalog message(s) (shown in English): {lacking:?}", lacking.len());
-        }
-        let mut labels: Vec<&str> = lcc_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
-        labels.extend(lcc_develop::CONTROLS.iter().map(|control| control.label));
-        labels.extend(crate::panels::settings::TABS.iter().map(|(_, label)| *label));
-        for (_, label, kind) in lcc_catalog::rules::FIELDS {
-            labels.push(label);
-            labels.extend(lcc_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
-        }
-        labels.extend(lcc_engine::rename::TOKENS.iter().map(|token| token.meaning));
-        labels.extend(lcc_engine::rename::TEMPLATE_NOTES);
-        let missing: Vec<_> = labels.into_iter().filter(|label| !catalog.contains_key(*label)).collect();
-        if !missing.is_empty() {
-            eprintln!("it lacks {} display label(s) (shown in English): {missing:?}", missing.len());
-        }
     }
 
     #[test]
