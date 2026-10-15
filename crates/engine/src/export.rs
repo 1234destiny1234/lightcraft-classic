@@ -1676,6 +1676,8 @@ pub struct Exported {
     /// Set when the render was tried on the GPU and fell back to the CPU: why (see
     /// `docs/gpu-pipeline.md`). The file holds the CPU render either way.
     pub gpu_fallback: Option<String>,
+    /// What the render reported without failing (e.g. a plug-in filter that was skipped).
+    pub warnings: Vec<String>,
     /// A video clip's movie, in a temporary file (`bytes` is then empty): moved into place instead
     /// of written ([`Exported::save`]).
     pub video_file: Option<crate::export_video::TempFile>,
@@ -1925,6 +1927,7 @@ impl PreparedExport {
                     height: out.height,
                     sidecars: Vec::new(),
                     gpu_fallback: None,
+                    warnings: Vec::new(),
                     video_file: Some(out.file),
                 })
             }
@@ -1941,7 +1944,16 @@ impl PreparedExport {
                     }
                     None => encode_rendered(&r, &opts, meta.as_ref())?,
                 };
-                Ok(Exported { file_name, bytes, width: r.image.width, height: r.image.height, sidecars: Vec::new(), gpu_fallback, video_file: None })
+                Ok(Exported {
+                    file_name,
+                    bytes,
+                    width: r.image.width,
+                    height: r.image.height,
+                    sidecars: Vec::new(),
+                    gpu_fallback,
+                    warnings: r.warnings.clone(),
+                    video_file: None,
+                })
             }
             Work::File { path, read, packet, dng, quality, lossy_edge, label, size, remove_location } => {
                 let bytes = match &read {
@@ -1962,6 +1974,7 @@ impl PreparedExport {
                         height: size.1,
                         sidecars: vec![("xmp", packet.into_bytes())],
                         gpu_fallback: None,
+                        warnings: Vec::new(),
                         video_file: None,
                     });
                 };
@@ -1985,6 +1998,7 @@ impl PreparedExport {
                     height: raw.height,
                     sidecars: Vec::new(),
                     gpu_fallback: None,
+                    warnings: Vec::new(),
                     video_file: None,
                 })
             }
@@ -2473,6 +2487,9 @@ impl<'a> Placer<'a> {
                 }
                 if let Some(why) = &e.gpu_fallback {
                     entry["gpuFallback"] = json!(why);
+                }
+                if !e.warnings.is_empty() {
+                    entry["warnings"] = json!(e.warnings);
                 }
                 self.out.push(entry);
             }
