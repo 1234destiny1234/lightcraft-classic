@@ -7,6 +7,8 @@
 //! - [`MaxDetail`] / [`TextureKept`]: for a focus stack, the result's detail against the most any
 //!   aligned frame has at each pixel (what "sharp throughout" could at best keep), split in thirds
 //!   by that maximum, so low-contrast texture lost to averaging shows on its own.
+//! - [`detail_gain`]: the result's fine detail projected onto a known truth's: blur lowers it, noise
+//!   doesn't count.
 //! - [`residual`]: how far two aligned frames still are apart, per tile, in pixels (patches
 //!   matched as in [`crate::refine`]).
 
@@ -58,6 +60,43 @@ pub fn detail_ratio(result: &Plane, reference: &Plane, keep: impl Fn(usize, usiz
         })
         .reduce(|| (0.0, 0.0), |p, q| (p.0 + q.0, p.1 + q.1));
     (b > 0.0).then(|| a / b)
+}
+
+/// How much of `truth`'s fine detail `result` carries: the result's high-pass (√luminance minus a
+/// σ = 1 px blur) projected onto the truth's, Σ hp(result)·hp(truth) / Σ hp(truth)², over the pixels
+/// `keep` accepts. 1 keeps the texture at full contrast; noise, uncorrelated with the truth, doesn't
+/// count (unlike [`detail_ratio`]). `None` when the sizes differ or the truth has no detail there.
+pub fn detail_gain(result: &Rgb32f, truth: &Rgb32f, keep: impl Fn(usize, usize) -> bool + Sync) -> Option<f64> {
+    if result.width != truth.width || result.height != truth.height || result.width == 0 {
+        return None;
+    }
+    let hp = |img: &Rgb32f| {
+        let y = img.map(|c| (0.25 * c[0] + 0.6 * c[1] + 0.15 * c[2]).max(0.0).sqrt());
+        let b = gaussian(&y, 1.0);
+        let mut d = y;
+        d.data.par_iter_mut().zip(b.data.par_iter()).for_each(|(v, b)| *v -= b);
+        d
+    };
+    let (r, t) = (hp(result), hp(truth));
+    let w = r.width;
+    let (rt, tt) = r
+        .data
+        .par_chunks(w)
+        .zip(t.data.par_chunks(w))
+        .enumerate()
+        .map(|(y, (rr, tr))| {
+            let mut s = (0f64, 0f64);
+            for x in 0..w {
+                let (a, b) = (rr[x] as f64, tr[x] as f64);
+                if keep(x, y) && a.is_finite() && b.is_finite() {
+                    s.0 += a * b;
+                    s.1 += b * b;
+                }
+            }
+            s
+        })
+        .reduce(|| (0.0, 0.0), |p, q| (p.0 + q.0, p.1 + q.1));
+    (tt > 0.0).then(|| rt / tt)
 }
 
 /// Detail kept by a merge against the most of it any frame has, overall and in thirds of that
@@ -165,6 +204,24 @@ mod tests {
         assert!(r < 0.5, "{r}");
         assert!((detail_ratio(&detail(&sharp), &detail(&sharp), |_, _| true).unwrap() - 1.0).abs() < 1e-9);
         assert!(detail_ratio(&detail(&sharp), &Plane::new(3, 3), |_, _| true).is_none());
+    }
+
+    #[test]
+    fn detail_gain_ignores_noise_and_sees_blur() {
+        let sharp = tex(200, 150, 0.0, 0.0);
+        let mut noisy = sharp.clone();
+        let mut seed = 7u64;
+        for p in noisy.data.iter_mut() {
+            seed ^= seed << 13;
+            seed ^= seed >> 7;
+            seed ^= seed << 17;
+            let n = ((seed >> 40) as f32 / (1u64 << 24) as f32 - 0.5) * 0.05;
+            *p = p.map(|v| v + n);
+        }
+        let g = detail_gain(&noisy, &sharp, |_, _| true).unwrap();
+        assert!((g - 1.0).abs() < 0.05, "noise: {g}");
+        assert!(detail_gain(&tex(200, 150, 0.0, 1.0), &sharp, |_, _| true).unwrap() < 0.7, "an amplitude: blur that halves the energy leaves √½");
+        assert!(detail_gain(&sharp, &Rgb32f::new(2, 2), |_, _| true).is_none());
     }
 
     #[test]

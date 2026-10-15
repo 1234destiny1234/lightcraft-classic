@@ -9,7 +9,7 @@
 use lightcraft_geom::{Homography, Point};
 use lightcraft_merge::frame::Frame;
 use lightcraft_merge::hdr::{Deghost, HdrOptions, merge_hdr};
-use lightcraft_merge::metrics::{detail, detail_ratio};
+use lightcraft_merge::metrics::{detail, detail_gain, detail_ratio};
 use lightcraft_merge::no_progress;
 use lightcraft_raster::Rgb32f;
 
@@ -95,7 +95,37 @@ fn handheld_bracket_merges_sharp() {
         x > 40 && y > 40 && x < W - 40 && y < H - 40 && ((x as f64 - 2200.0).powi(2) + (y as f64 - 600.0).powi(2)) > 330f64.powi(2)
     };
     let ratio = detail_ratio(&detail(&r.radiance), &detail(&truth), keep).unwrap();
+    // the same without noise counting: the merge's fine detail projected onto the scene's
+    let gain = detail_gain(&r.radiance, &truth, keep).unwrap();
+    eprintln!("detail gain {gain:.3}");
     eprintln!("alignment corner error {errs:.3?} px, detail kept {ratio:.3}, {secs:.1} s");
     assert!(errs.iter().all(|e| *e < 0.2), "alignment corner error {errs:?} px");
     assert!(ratio > 0.9, "detail kept {ratio}");
+}
+
+/// The merge keeps the reference's fine detail where the reference is well exposed, even when the other frames are
+/// a little soft (resampled, aligned to a fraction of a pixel): here blurred σ = 0.7 px and merged as they are.
+#[test]
+fn soft_frames_dont_soften_the_merge() {
+    let ks = [0.25f32, 1.0, 4.0];
+    let frames: Vec<Frame> = (0..3)
+        .map(|i| {
+            let mut f = shoot(ks[i], &Homography::IDENTITY, i as u64 + 1);
+            if i != 1 {
+                f.image = lightcraft_raster::blur::gaussian(&f.image, 0.7);
+            }
+            f
+        })
+        .collect();
+    let r = merge_hdr(frames, &HdrOptions { align: false, deghost: Deghost::None }, &no_progress).unwrap();
+    let truth = Rgb32f::from_fn(W, H, |x, y| [scene(x as f64 + 0.5, y as f64 + 0.5); 3]);
+    // where the reference is well exposed (scene radiance 0.05 to 0.6 of its clip), away from the bright disc
+    let keep = |x: usize, y: usize| {
+        let v = truth.get(x, y)[0];
+        x > 40 && y > 40 && x < W - 40 && y < H - 40 && (0.05..0.6).contains(&v)
+    };
+    let gain = detail_gain(&r.radiance, &truth, keep).unwrap();
+    eprintln!("soft frames: detail gain {gain:.3}");
+    // 0.656 without the reference's detail, 0.971 with it
+    assert!(gain > 0.95, "detail gain {gain}");
 }

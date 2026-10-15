@@ -24,6 +24,9 @@
 //!    disagree by more than a threshold (in log units, with a noise floor) are masked there. Masks
 //!    are dilated and feathered (Gaussian), upsampled, and remove the frame's weight. Their union
 //!    is the deghost overlay.
+//! 6. **Reference detail.** Where the reference is well exposed, the merge's finest detail (below
+//!    [`DETAIL_SIGMA`]) is the reference's own: it is the one frame neither resampled nor aligned
+//!    to only a fraction of a pixel ([`reference_detail`]).
 
 use lightcraft_raster::blur::gaussian;
 use lightcraft_raster::{Plane, Rgb32f};
@@ -303,6 +306,9 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
             }
         }
     });
+    check(progress, 0.9, "Merging")?;
+    // 6. the reference's own fine detail where it is well exposed
+    reference_detail(&mut out, &frames[reference], &sat[reference]);
     check(progress, 0.92, "Merging")?;
 
     let ghost = match &ghost_small {
@@ -358,6 +364,60 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         lens: rf.lens.clone(),
         wb_multipliers,
     })
+}
+
+/// Below this scale (Gaussian σ, pixels) the merge's detail comes from the reference where it is well exposed.
+const DETAIL_SIGMA: f32 = 2.0;
+
+/// Give `out` (the merged radiance, in the reference's units) the reference frame's finest detail where the reference
+/// is well exposed. Every other frame was resampled into the reference's geometry (Lanczos-3 still softens the finest
+/// detail a little) and is aligned to a fraction of a pixel, not exactly; the brightest frames carry the most weight
+/// in the midtones and shadows, so the merge was a little softer than the reference alone. On luminance in √ space:
+/// `√Y' = √Y + α · (d − blur(d))` with `d = √Y_ref − √Y`, i.e. the merge's detail below [`DETAIL_SIGMA`] swapped for the
+/// reference's, and every channel scaled by `Y'/Y` so colour stays the merge's. `α` fades out where the reference nears
+/// its clip (its highlights come from darker frames) and where it is dark (there its detail is mostly noise, and the
+/// brighter frames' is cleaner).
+fn reference_detail(out: &mut Rgb32f, rf: &Frame, sat: &[f32]) {
+    let (w, h) = (out.width, out.height);
+    if rf.image.width != w || rf.image.height != h || sat.len() != w * h || w == 0 {
+        return;
+    }
+    let y = |p: [f32; 3]| (0.25 * p[0] + 0.6 * p[1] + 0.15 * p[2]).max(0.0);
+    let c = rf.clip;
+    let (lo, hi) = if rf.raw { (0.01, 0.05) } else { (0.04, 0.12) };
+    // d = √Y_ref − √Y_merge
+    let mut d = Plane::new(w, h);
+    d.data.par_chunks_mut(w).enumerate().for_each(|(row, dr)| {
+        for (x, v) in dr.iter_mut().enumerate() {
+            let i = row * w + x;
+            let (m, r) = (out.data.get(i).copied().unwrap_or_default(), rf.image.data.get(i).copied().unwrap_or_default());
+            let dv = y(r).sqrt() - y(m).sqrt();
+            *v = if dv.is_finite() { dv } else { 0.0 };
+        }
+    });
+    let blurred = gaussian(&d, DETAIL_SIGMA);
+    out.data.par_chunks_mut(w).enumerate().for_each(|(row, orow)| {
+        for (x, p) in orow.iter_mut().enumerate() {
+            let i = row * w + x;
+            let (Some(&dv), Some(&bv), Some(&s), Some(&r)) = (d.data.get(i), blurred.data.get(i), sat.get(i), rf.image.data.get(i)) else {
+                continue;
+            };
+            let level = maxc(r);
+            let alpha = smoothstep(lo * c, hi * c, level) * (1.0 - smoothstep(0.8 * c, 0.95 * c, s));
+            if alpha <= 0.0 {
+                continue;
+            }
+            let ym = y(*p);
+            if ym <= 1e-12 {
+                continue;
+            }
+            let sq = (ym.sqrt() + alpha * (dv - bv)).max(0.0);
+            let scale = sq * sq / ym;
+            if scale.is_finite() {
+                *p = p.map(|v| v * scale);
+            }
+        }
+    });
 }
 
 /// Bilinear sample of a plane at continuous coordinates (pixel centres at +0.5).
