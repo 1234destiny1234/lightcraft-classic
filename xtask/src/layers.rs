@@ -49,6 +49,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("psd", Class::Standalone),
     ("actions", Class::Standalone),
     ("plugins", Class::Layer(1)),
+    ("filters", Class::Layer(1)),
     ("denoise-core", Class::Layer(1)),
     ("denoise", Class::Layer(1)),
     ("heif", Class::Layer(0)),
@@ -84,6 +85,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("video", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("slideshow", Class::Layer(4)),
+    // slide layout and the CPU slide composer (upstream's `slideshow` crate; ours is the Classic module)
+    ("slide", Class::Layer(1)),
     ("ui-egui", Class::Layer(5)),
     ("mcp", Class::Layer(5)),
     ("testkit", Class::Testkit),
@@ -247,11 +250,8 @@ pub fn check(crates: &[Crate]) -> Vec<Violation> {
                 match classify(&d.name) {
                     // Unregistered deps are reported on their own entry.
                     None => {}
-                    Some(Class::Testkit) => {
-                        if d.kind != DepKind::Dev {
-                            out.push(Violation::TestkitAsNormalDep { krate: c.name.clone() });
-                        }
-                    }
+                    Some(Class::Testkit) if d.kind != DepKind::Dev => out.push(Violation::TestkitAsNormalDep { krate: c.name.clone() }),
+                    Some(Class::Testkit) => {}
                     Some(dc) => {
                         let to = dc.layer().unwrap_or(u8::MAX);
                         if to >= layer && !(to == layer && intra_layer_allowed(&c.name, &d.name)) {

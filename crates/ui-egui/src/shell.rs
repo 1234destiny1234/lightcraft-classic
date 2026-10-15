@@ -18,14 +18,14 @@ pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
     }
     panels::library_problem::banner(app, ui);
     if module::edge_visible(app, module::Edge::Right) && !m.own_sides() {
-        // The tool strip is Develop's: its buttons are the editing tools, and clicking one in
-        // Library switched to Develop. Library's right column is its Classic panels, which carry
-        // their own headers, so the strip stays out of Library.
-        if app.ui.module == module::ModuleId::Develop {
+        // The tool strip: each module declares its own panels (`strip_declared`) — Develop its
+        // editing tools, Library its Versions and History & Activity. A module with no strip of its
+        // own (Map, Book, …) draws none.
+        if !panels::strip::strip_declared(app.ui.module).is_empty() {
             panels::strip::show(app, ui);
         }
-        // Library's right column is its Classic panels, unless a Library panel of the strip
-        // (Info, Keywords, Versions, Activity) was opened in its place
+        // Library's right column is its Classic panels, unless one of the strip's panels (Versions,
+        // History & Activity) is open in its place
         if app.ui.module == module::ModuleId::Library && app.ui.right == state::RightPanel::None {
             panels::classic::right_column(app, ui);
         } else if app.ui.right != state::RightPanel::None {

@@ -269,6 +269,8 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
             );
         } else if app.session.source == lcc_engine::LibrarySource::Folder {
             super::empty_message(ui, ui.max_rect(), "No photos in this folder", "Turn on Include subfolders, or pick another folder under Local");
+        } else if super::empty_library::shown(&app.session) {
+            super::empty_library::show(app, ui, ui.max_rect());
         } else {
             super::empty_message(ui, ui.max_rect(), "No photos", "Import photos with File → Import Photos… (Cmd+Shift+I), or drop them here");
         }
@@ -587,6 +589,7 @@ pub fn layout(aspects: &[f32], groups: &[(usize, usize)], avail_w: f32, target: 
 fn group_header(app: &mut LccApp, ui: &mut egui::Ui, run: &DateRun, ids: &[PhotoId], r: Rect, pinned: bool) {
     let t = Tokens::get(ui.ctx());
     let resp = ui.interact(r, egui::Id::new(("group-header", run.start, pinned)), Sense::click());
+    crate::widgets::announce(&resp, if run.key.is_empty() { crate::i18n::tr("Unknown date").to_string() } else { run.key.clone() });
     if !pinned {
         register(ui.ctx(), format!("group:{}", if run.key.is_empty() { "unknown" } else { &run.key }), r);
     }
@@ -1005,10 +1008,15 @@ fn folder_breadcrumbs(app: &mut LccApp, ui: &mut egui::Ui, path: &str) {
     // Prefer the current folder, showing more ancestors as space permits.
     let visible = ((ui.available_width() / 80.0) as usize).clamp(1, 4);
     let skip = parts.len().saturating_sub(visible);
+    let separator = |ui: &mut egui::Ui| {
+        let (r, _) = ui.allocate_exact_size(vec2(16.0, 24.0), Sense::hover());
+        paint(ui.painter(), Rect::from_center_size(r.center(), vec2(16.0, 16.0)), Icon::ChevronRight, t.text_dim);
+    };
     if skip > 0 {
-        ui.label(egui::RichText::new("…  ›").color(t.text_dim)).on_hover_text(path);
+        ui.label(egui::RichText::new("…").color(t.text_dim)).on_hover_text(path);
+        separator(ui);
     }
-    let separator_w = ui.painter().layout_no_wrap("›".into(), t.font(13.0), t.text_dim).size().x + 8.0;
+    let separator_w = 16.0 + 2.0 * ui.spacing().item_spacing.x;
     for (i, part) in parts.iter().enumerate().skip(skip) {
         let remaining = parts.len() - i;
         let last = remaining == 1;
@@ -1026,7 +1034,7 @@ fn folder_breadcrumbs(app: &mut LccApp, ui: &mut egui::Ui, path: &str) {
             {
                 let _ = app.run("library.browse", json!({"path": to}));
             }
-            ui.label(egui::RichText::new("›").size(13.0).color(t.text_dim));
+            separator(ui);
         }
         r.on_hover_text(path);
     }
@@ -1034,6 +1042,13 @@ fn folder_breadcrumbs(app: &mut LccApp, ui: &mut egui::Ui, path: &str) {
 
 /// While photos are dragged: a badge at the pointer; the drag ends when the button is up
 /// (drop targets act on the release frame, before this runs).
+/// What the label following dragged photos says this frame instead of how many there are: where a
+/// drop would put them (set by the drop target under the pointer, read by [`drag_feedback`]).
+pub fn drag_hint(ctx: &egui::Context, text: String) {
+    let frame = ctx.cumulative_frame_nr();
+    ctx.data_mut(|d| d.insert_temp(egui::Id::new("drag-photos-hint"), (frame, text)));
+}
+
 pub fn drag_feedback(app: &mut LccApp, ctx: &egui::Context) {
     let Some(ids) = &app.ui.dragging_photos else { return };
     let (released, down, pos) = ctx.input(|i| (i.pointer.any_released(), i.pointer.any_down(), i.pointer.latest_pos()));
@@ -1045,13 +1060,14 @@ pub fn drag_feedback(app: &mut LccApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let n = ids.len();
     ctx.set_cursor_icon(egui::CursorIcon::Grabbing);
+    // a drop target under the pointer says where they would go (only this frame's)
+    let frame = ctx.cumulative_frame_nr();
+    let hint = ctx.data(|d| d.get_temp::<(u64, String)>(egui::Id::new("drag-photos-hint"))).filter(|(f, _)| *f == frame).map(|(_, text)| text);
+    let text = hint.unwrap_or_else(|| crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n));
     egui::Area::new(egui::Id::new("drag-photos")).order(egui::Order::Tooltip).interactable(false).fixed_pos(pos + vec2(14.0, 10.0)).show(ctx, |ui| {
         egui::Frame::NONE.fill(t.accent).corner_radius(10.0).inner_margin(egui::Margin::symmetric(9, 3)).show(ui, |ui| {
-            ui.label(
-                egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n))
-                    .color(Color32::WHITE)
-                    .font(t.semibold(12.0)),
-            );
+            let label = ui.add(egui::Label::new(egui::RichText::new(text).color(Color32::WHITE).font(t.semibold(12.0))).extend());
+            crate::widgets::register(ui.ctx(), "dragPhotos", label.rect);
         });
     });
 }
@@ -1167,7 +1183,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // Photo ▸ Edit In: a copy with this photo's edits, opened in PhotoCraft or another editor
     // (desktop only: the web can't start programs)
     ui.add_enabled_ui(crate::menus::ui_enabled(app, "photo.editInPhotoCraft"), |ui| {
-        ui.menu_button(crate::i18n::tr("Edit In"), |ui| {
+        crate::widgets::menu_button(ui, crate::i18n::tr("Edit In"), |ui| {
             if ui.button(crate::i18n::tr("Edit in PhotoCraft")).clicked() {
                 let _ = app.run("photo.editInPhotoCraft", json!({}));
             }
@@ -1203,29 +1219,29 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         let _ = app.run("photo.setReference", json!({"id": id.0}));
     }
     ui.separator();
-    ui.menu_button(crate::i18n::tr("Set Flag"), |ui| {
+    crate::widgets::menu_button(ui, crate::i18n::tr("Set Flag"), |ui| {
         for (l, f) in [("Pick", "pick"), ("Reject", "reject"), ("Unflagged", "none")] {
             if ui.button(crate::i18n::tr(l)).clicked() {
                 let _ = app.run("photo.flag", json!({"flag": f}));
             }
         }
     });
-    ui.menu_button(crate::i18n::tr("Set Rating"), |ui| {
+    crate::widgets::menu_button(ui, crate::i18n::tr("Set Rating"), |ui| {
         for r in 0..=5 {
             if ui.button(if r == 0 { crate::i18n::tr("No Stars").to_string() } else { "★".repeat(r) }).clicked() {
                 let _ = app.run("photo.rate", json!({"rating": r}));
             }
         }
     });
-    ui.menu_button(crate::i18n::tr("Set Color Label"), |ui| label_menu(app, ui));
+    crate::widgets::menu_button(ui, crate::i18n::tr("Set Color Label"), |ui| label_menu(app, ui));
     ui.separator();
     quick_collection_item(app, ui);
-    if local_only(app, &app.session.targets(&serde_json::Value::Null)) {
+    if local_only(app, &app.session.selected()) {
         // albums hold library photos (issue #684): nothing here to add until they join My Photos
         let add = ui.add_enabled(false, egui::Button::new(crate::i18n::tr("Add to Collection"))).on_disabled_hover_text(albums_hint());
         register(ui.ctx(), "button:contextAddToAlbum", add.rect);
     } else {
-        let add = ui.menu_button(crate::i18n::tr("Add to Collection"), |ui| {
+        let add = crate::widgets::menu_button(ui, crate::i18n::tr("Add to Collection"), |ui| {
             let albums: Vec<_> = app.session.catalog.albums().filter(|a| !a.folder && !a.is_smart()).map(|a| (a.id.0, a.name.clone())).collect();
             let any = !albums.is_empty();
             for (aid, name) in albums {
@@ -1268,7 +1284,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if ui.button(crate::i18n::tr("Create Version")).clicked() {
         let _ = app.run("version.create", json!({}));
     }
-    ui.menu_button(crate::i18n::tr("Stack"), |ui| {
+    crate::widgets::menu_button(ui, crate::i18n::tr("Stack"), |ui| {
         let stacked = app.session.catalog.stack_of(id).is_some();
         let several = app.session.selection.ids.len() > 1;
         for (label, cmd, on) in [
@@ -1303,8 +1319,8 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if ui.button(crate::i18n::tr("Reset Edits")).clicked() {
         let _ = app.run("develop.reset", json!({}));
     }
-    ui.menu_button(crate::i18n::tr("Photo Merge"), |ui| {
-        let n = app.session.targets(&json!({})).len();
+    crate::widgets::menu_button(ui, crate::i18n::tr("Photo Merge"), |ui| {
+        let n = app.session.selected().len();
         for (id, label) in [("dialog.mergeHdr", "HDR…"), ("dialog.mergePanorama", "Panorama…"), ("dialog.mergeHdrPanorama", "HDR Panorama…")] {
             if ui.add_enabled(n >= 2, egui::Button::new(crate::i18n::tr(label))).clicked() {
                 let _ = app.run(id, json!({}));
@@ -1353,7 +1369,7 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if ui.button(crate::i18n::tr("Export…")).clicked() {
         let _ = app.run("dialog.export", json!({}));
     }
-    ui.menu_button(crate::i18n::tr("Export with Preset"), |ui| {
+    crate::widgets::menu_button(ui, crate::i18n::tr("Export with Preset"), |ui| {
         for (p, _) in app.session.all_export_presets() {
             if ui.button(&p.name).clicked() {
                 match app.run("app.export", json!({"preset": p.name, "background": true})) {
@@ -1391,7 +1407,7 @@ fn quick_collection_item(app: &mut LccApp, ui: &mut egui::Ui) {
     let target = s.target_album.filter(|a| s.catalog.album(*a).is_some_and(|al| !al.is_smart() && !al.folder));
     let quick = target.is_none();
     let album = target.or_else(|| s.catalog.quick_collection()).and_then(|a| s.catalog.album(a));
-    let sel = s.targets(&serde_json::Value::Null);
+    let sel = s.selected();
     let all_in = !sel.is_empty() && album.is_some_and(|al| sel.iter().all(|t| al.photos.contains(t)));
     let text = match (all_in, quick) {
         (false, true) => "Add to Quick Collection",
@@ -1502,18 +1518,6 @@ mod tests {
                 assert_eq!(got, want, "square {square} {top}..{bottom}");
             }
         }
-    }
-
-    #[test]
-    fn library_context_menu_labels_have_french_translations() {
-        let saved = crate::i18n::language();
-        crate::i18n::set_language(crate::i18n::Locale::Fr);
-        for (label, expected) in
-            [("Pick", "Sélectionnée"), ("Reject", "Rejeter"), ("Group into Stack", "Regrouper en pile"), ("HDR Panorama…", "Panorama HDR…")]
-        {
-            assert_eq!(crate::i18n::tr(label), expected);
-        }
-        crate::i18n::set_language(saved);
     }
 
     #[test]

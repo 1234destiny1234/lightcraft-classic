@@ -283,7 +283,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let Some(k) = current_keywords(s).get(i as usize - 1).cloned().filter(|k| !k.is_empty()) else {
                     return Ok(json!({"changed": 0}));
                 };
-                let ids = s.targets(p);
+                let ids = s.targets(p)?;
                 let all = !ids.is_empty()
                     && ids.iter().all(|id| {
                         s.catalog.photo(*id).is_some_and(|ph| ph.meta.keywords.iter().any(|x| lcc_catalog::keywords::same(&clean(x), &clean(&k))))
@@ -324,7 +324,7 @@ pub fn specs() -> Vec<CommandSpec> {
             super::has_selection,
             |s, p| {
                 let k = s.keyword_shortcut.clone().ok_or_else(|| bad("keyword.toggleShortcut", "no keyword shortcut: set one first (⌥⇧K)"))?;
-                let ids = s.targets(p);
+                let ids = s.targets(p)?;
                 let all = !ids.is_empty()
                     && ids.iter().all(|id| s.catalog.photo(*id).is_some_and(|ph| ph.meta.keywords.iter().any(|x| x.eq_ignore_ascii_case(&k))));
                 let ids: Vec<u64> = ids.iter().map(|i| i.0).collect();
@@ -347,7 +347,7 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             |s, p| {
                 let mut current: Vec<String> = Vec::new();
-                for id in s.targets(p) {
+                for id in s.targets(p)? {
                     if let Some(ph) = s.catalog.photo(id) {
                         current.extend(ph.meta.keywords.iter().cloned());
                     }
@@ -395,7 +395,7 @@ pub fn specs() -> Vec<CommandSpec> {
                     Some(parent) => format!("{parent}|{name}"),
                     None => name,
                 });
-                let photos = if bool_or(p, "addToSelected", false) { s.targets(p) } else { Vec::new() };
+                let photos = if bool_or(p, "addToSelected", false) { s.targets(p)? } else { Vec::new() };
                 let op = s
                     .catalog
                     .create_keyword_ops(&path, info_from(p, KeywordInfo::default()), &photos)

@@ -235,6 +235,55 @@ is set. That folder holds `<id>.wasm`, `plugins.json` (enabled state and grants)
 library opened from a folder, so no value is lost). A module copied into the folder by hand loads
 disabled and with no permissions granted.
 
+## Pixel filters (PhotoCraft ABI)
+
+Besides the plug-ins above, <app> runs **pixel filters** written for PhotoCraft's plug-in ABI v1
+(the `lcc-filters` crate, `crates/filters/README.md`): a module with no imports exporting
+`memory`, `pc_abi_version`, `pc_manifest`, `pc_alloc` and `pc_filter`. They install the same way
+(File ▸ Plug-in Manager…, or `<cli> commands plugin.install '{"path": "film.wasm"}'`): the host
+sniffs the exports and keeps filter modules in the same folder, in a registry of their own.
+`plugin.list` shows each as `{id, name, version, kind: "filter", params, moduleHash, analyze}`
+(`params` is the manifest's spec); `plugin.uninstall` removes one. Filters ask for no permissions.
+
+A photo's filter stack is part of its develop settings (`develop.pluginFilter.add {plugin,
+stage?, params?}` — `params` are checked against the installed manifest and defaults filled in —
+`.set`, `.move`, `.remove`, `.list`); every change is one History step, and the stack is copied,
+synced and written to XMP with the other settings. Two stages:
+
+| stage | runs | samples handed over |
+| --- | --- | --- |
+| `source` | after geometry (crop, lens, perspective), before white balance, tone and every other step | linear light, sRGB primaries, `"encoding": "linear"` |
+| `display` (default) | after the develop adjustments, before quantisation | sRGB-curve encoded in the output's primaries, `"encoding": "srgb"`; linear for HDR renders |
+
+Each filter gets its resolved parameters plus `encoding`, `_analysis` (below) and `_image` (the
+band's place in the whole output frame, so a zoomed view and an export line up). Source results
+are cached: dragging other sliders doesn't re-run the filter; a draft while a filter's own
+parameter changes runs it on a reduced copy (at most 0.5 MP), the full render after it is exact.
+Renders with plug-in filters use the CPU pipeline. A filter that isn't installed or fails is
+skipped: the render goes on and reports a warning (logged as `render: …`).
+
+**Whole-image measurement (ABI v1.1 proposal).** A module may export
+`pc_analyze(buf, len, w, h, channels, format, params, params_len) -> i64` returning
+`len << 32 | ptr` of a JSON object (0 = nothing). `develop.pluginFilter.analyze {uid}` runs it
+once on the whole uncropped photo (long edge 1024, linear sRGB primaries) and stores the result
+with the photo (`setAnalysis`). It runs in the background as an activity row (kind
+`pluginAnalyze`, cancellable) and returns at once; `wait: true` runs it to the end and returns the
+result. Every later `pc_filter` call gets it as `_analysis`, so crop and
+zoom don't move the measurement. Modules without the export give an "unsupported" error.
+
+**Pixel scale.** A Source filter that reads neighbours (manifest `overlap` > 0: an unsharp mask,
+grain, a blur) would look different at each render size, its kernel spanning more of the photo in
+a small preview than in a full-size export. Such a stack runs once on the whole frame at the
+source's own resolution (capped at 100 MP, 24 MP on the web) and every render (preview, loupe,
+zoomed window, export at any size) is resampled from that result, so they agree. The result is
+kept per photo, frame and stack: other sliders, zooming and a later export reuse it; a draft that
+finds none shows the reduced-copy proxy until the full render replaces it. Per-pixel filters
+(`overlap` 0) run on the render's own pixels.
+
+Auto (tone), Auto B&W Mix, Upright (and Auto straighten), the auto masks (with or without a
+model), automatic spot sources and a zoomed view's dehaze estimate read the photo as the Source
+filters turn it (long edge 2048, cached per photo and stack; a change of the stack re-runs them).
+
 ## Not done yet
 
 - A plug-in call that has started can't be interrupted (✕ takes effect between plug-ins), and one
@@ -243,3 +292,6 @@ disabled and with no permissions granted.
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
   server the user types" isn't possible; the author names the hosts.
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.
+- Pixel filters: a Display filter with `overlap` > 0 still works in output pixels (it runs after
+  every develop step, so a native-resolution pass would mean a full-size develop per preview), so
+  a preview and a larger export of one differ.

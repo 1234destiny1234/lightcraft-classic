@@ -1,7 +1,7 @@
 //! Crop & Straighten on a large photo (issue #60): the frame stays put on screen while the photo
 //! rotates and moves beneath it, and a drag doesn't re-render the uncropped photo every frame.
 
-use std::time::{Duration, Instant};
+use std::time::Duration;
 
 use serde_json::json;
 
@@ -130,84 +130,4 @@ fn dragging_inside_the_box_moves_the_photo() {
     let now = box_corners(&h);
     assert!(start.iter().zip(&now).all(|(a, b)| near(*a, *b)), "the box stays put: {start:?} → {now:?}");
     release(&mut h, at + egui::vec2(40.0, 0.0));
-}
-
-fn big_photo(tag: &str, w: usize, h: usize) -> (Headless, std::path::PathBuf) {
-    let dir = std::env::temp_dir().join(format!("lc-crop-frame-{tag}-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&dir);
-    std::fs::create_dir_all(&dir).unwrap();
-    let mut data = Vec::with_capacity(w * h);
-    for y in 0..h {
-        for x in 0..w {
-            let v = ((x * 7 + y * 3) % 256) as u8;
-            data.push([v, ((x / 40 + y / 40) % 2 * 200) as u8, (y * 255 / h) as u8, 255]);
-        }
-    }
-    let img = lcc_raster::Rgba8 { width: w, height: h, data };
-    let jpg = lcc_codecs::encode_jpeg(&lcc_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &Default::default()).unwrap();
-    let path = dir.join("big.jpg");
-    std::fs::write(&path, jpg).unwrap();
-    let mut app = LccApp::new(lcc_engine::Session::new().with_fs(), Services { png: None, ..Default::default() });
-    app.run("library.import", json!({"paths": [path.to_string_lossy()]})).unwrap();
-    let mut h = Headless::new(app, [1600.0, 1000.0], 1.0);
-    for (method, params) in [("ui.set", json!({"view": "detail"})), ("engine.execute", json!({"command": "panel.crop"}))] {
-        let r = h.request(method, params, T);
-        assert_eq!(r["ok"], true, "{r}");
-    }
-    h.settle(T);
-    (h, dir)
-}
-
-/// Measurement (run by hand): per drag tick, the frame time, the time until the screen is current
-/// again, and how many ticks asked for a new render of the photo.
-fn measure(h: &mut Headless, what: &str, tick: impl Fn(&mut Headless, usize)) {
-    h.app.run("develop.beginInteraction", json!({"label": "Crop"})).unwrap();
-    let (mut frame_ms, mut settle_ms, mut renders) = (Vec::new(), Vec::new(), 0);
-    let mut wanted = h.app.renderer.wanted(crate::render::Slot::Main);
-    for i in 1..=20 {
-        tick(h, i);
-        let t0 = Instant::now();
-        h.step();
-        frame_ms.push(t0.elapsed().as_secs_f64() * 1000.0);
-        let now = h.app.renderer.wanted(crate::render::Slot::Main);
-        if now != wanted {
-            renders += 1;
-            wanted = now;
-        }
-        // until the photo on screen is the current render (the draft has arrived)
-        let t1 = Instant::now();
-        h.step_until(T, |h| h.app.renderer.in_flight() == 0 && !h.app.renderer.is_pending(crate::render::Slot::Main));
-        settle_ms.push(t1.elapsed().as_secs_f64() * 1000.0 + frame_ms.last().copied().unwrap_or(0.0));
-        h.settle(T);
-    }
-    h.app.run("develop.endInteraction", json!({})).unwrap();
-    h.settle(T);
-    let avg = |v: &[f64]| v.iter().sum::<f64>() / v.len() as f64;
-    let max = |v: &[f64]| v.iter().cloned().fold(0.0, f64::max);
-    eprintln!(
-        "MEASURE {what}: frame avg {:.1} ms max {:.1} ms; until current avg {:.1} ms max {:.1} ms; new renders {renders}/20",
-        avg(&frame_ms),
-        max(&frame_ms),
-        avg(&settle_ms),
-        max(&settle_ms)
-    );
-}
-
-#[test]
-#[ignore]
-fn measure_crop_drags() {
-    let (mut h, dir) = big_photo("measure", 6000, 4000);
-    let id = h.app.session.active().unwrap();
-    eprintln!("MEASURE photo {}x{}", h.app.session.catalog.photo(id).unwrap().width, h.app.session.catalog.photo(id).unwrap().height);
-    measure(&mut h, "straighten", |h, i| {
-        h.app.run("crop.straighten", json!({"angle": i as f64 * 0.5})).unwrap();
-    });
-    h.app.run("crop.straighten", json!({"angle": 0.0})).unwrap();
-    h.app.run("crop.set", json!({"rect": [0.2, 0.2, 0.7, 0.7]})).ok();
-    h.settle(T);
-    measure(&mut h, "move", |h, i| {
-        let x = 0.2 + i as f64 * 0.005;
-        h.app.run("crop.drag", json!({"handle": 8, "from": [0.45, 0.45], "to": [x + 0.25, 0.45], "start": [0.2, 0.2, 0.7, 0.7]})).unwrap();
-    });
-    let _ = std::fs::remove_dir_all(&dir);
 }

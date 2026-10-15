@@ -230,7 +230,7 @@ fn create_collection(s: &mut Session, p: &Value) -> Result<Value> {
     let mut al = Album::new(album, name);
     al.parent = parent;
     let mut ops = vec![Op::AddAlbum { album: al }];
-    let photos = if super::bool_or(p, "addSelected", false) { s.targets(&Value::Null) } else { Vec::new() };
+    let photos = if super::bool_or(p, "addSelected", false) { s.targets(&Value::Null)? } else { Vec::new() };
     if !photos.is_empty() {
         ops.push(Op::SetAlbumCover { id: album, cover: photos.first().copied() });
         ops.push(Op::SetAlbumPhotos { id: album, photos });

@@ -260,7 +260,7 @@ fn build(s: &mut Session, p: &Value) -> Result<Value> {
     // 1:1 previews past their time go first (the build may need the room)
     auto_discard(s);
     // explicit ids, else the selection, else everything in view
-    let ids = if p.get("ids").is_some() || p.get("id").is_some() || !s.selection.ids.is_empty() { s.targets(p) } else { s.visible_cloned() };
+    let ids = if p.get("ids").is_some() || p.get("id").is_some() || !s.selection.ids.is_empty() { s.targets(p)? } else { s.visible_cloned() };
     let jobs: Vec<Vec<RenderJob>> = ids.iter().map(|id| jobs_for(s, *id, edge)).filter(|j| !j.is_empty()).collect();
     let state = Arc::new(PreviewBuild { total: jobs.len(), ..Default::default() });
     s.preview_build = Some(state.clone());
@@ -334,7 +334,7 @@ fn discard(s: &mut Session, p: &Value) -> Result<Value> {
     let d = if p.get("auto").and_then(Value::as_bool) == Some(true) {
         auto_discard(s)
     } else {
-        let ids = if p.get("ids").is_some() || p.get("id").is_some() || !s.selection.ids.is_empty() { s.targets(p) } else { s.visible_cloned() };
+        let ids = if p.get("ids").is_some() || p.get("id").is_some() || !s.selection.ids.is_empty() { s.targets(p)? } else { s.visible_cloned() };
         discard_full(s, &ids, None)
     };
     Ok(json!({"removed": d.removed, "kept": d.kept}))
@@ -526,7 +526,7 @@ fn smart(s: &mut Session, p: &Value) -> Result<Value> {
     if background && s.preview_build.as_ref().is_some_and(|b| !b.finished.load(Ordering::Relaxed)) {
         return Err(bad(C, "a preview build is already running"));
     }
-    let ids = if p.get("ids").is_some() || !s.selection.ids.is_empty() { s.targets(p) } else { s.visible_cloned() };
+    let ids = if p.get("ids").is_some() || !s.selection.ids.is_empty() { s.targets(p)? } else { s.visible_cloned() };
     let mut jobs: Vec<SmartJob> = Vec::new();
     for id in ids {
         let Some(ph) = s.catalog.photo(id).cloned() else { continue };
@@ -705,7 +705,7 @@ pub fn specs() -> Vec<CommandSpec> {
             smart_location
         ),
         cmd!(query "photo.smartPreview", "Smart Preview Status", [], None, "{id?} → {smartPreview: bool, originalOnline: bool}", always, |s, p| {
-            let id = s.targets(p).first().copied().ok_or_else(|| bad("photo.smartPreview", "no photo"))?;
+            let id = s.targets(p)?.first().copied().ok_or_else(|| bad("photo.smartPreview", "no photo"))?;
             let online = match s.catalog.photo(id).map(|p| p.source.clone()) {
                 Some(lcc_catalog::Source::File { path }) => std::path::Path::new(&path).exists(),
                 _ => true,
