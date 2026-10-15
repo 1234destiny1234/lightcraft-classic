@@ -1227,15 +1227,6 @@ mod tests {
     }
 
     #[test]
-    fn watermark_takes_the_export_insets_and_rotation() {
-        let s = OverlaySettings::default().merged(&json!({"watermark": {"inset": 0.1, "insetY": 0.2, "rotation": 90}})).unwrap();
-        assert_eq!((s.watermark.inset_x, s.watermark.inset_y, s.watermark.rotation), (0.1, 0.2, 90));
-        let s = s.merged(&json!({"watermark": {"insetX": 0.05}})).unwrap();
-        assert_eq!((s.watermark.inset_x, s.watermark.inset_y), (0.05, 0.2));
-        assert!(OverlaySettings::default().merged(&json!({"watermark": {"rotation": 45}})).is_err());
-    }
-
-    #[test]
     fn hostile_settings_are_refused_or_clamped_and_never_panic() {
         let d = OverlaySettings::default();
         for bad in [

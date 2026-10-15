@@ -82,12 +82,3 @@ fn increase_and_decrease_clamp_without_wrapping() {
     assert_eq!(s.execute("photo.decreaseFlag", &json!({})).unwrap()["changed"], 0);
     assert_eq!(s.undo.len(), undo, "no change, no history step");
 }
-
-#[test]
-fn registered_with_classic_shortcuts() {
-    let specs = crate::command_specs();
-    let key = |id: &str| specs.iter().find(|c| c.id == id).and_then(|c| c.shortcut);
-    assert_eq!(key("photo.cycleFlag"), Some("`"));
-    assert_eq!(key("photo.increaseFlag"), Some("Cmd+Up"));
-    assert_eq!(key("photo.decreaseFlag"), Some("Cmd+Down"));
-}

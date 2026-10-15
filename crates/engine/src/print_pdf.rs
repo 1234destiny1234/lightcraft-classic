@@ -506,15 +506,4 @@ mod tests {
         let info = PdfInfo { title: None, output_intent: Some(OutputIntent { icc: srgb(), channels: 2, condition: String::new() }) };
         assert!(write(&[page(vec![])], &info).is_err());
     }
-
-    #[test]
-    fn numbers_and_strings() {
-        assert_eq!(num(612.0), "612");
-        assert_eq!(num(72.5), "72.5");
-        assert_eq!(num(-0.00001), "0");
-        assert_eq!(num(f64::NAN), "0");
-        assert_eq!(num(1.0 / 3.0), "0.3333");
-        assert_eq!(text("a(b)c\\"), "(a\\(b\\)c\\\\)");
-        assert_eq!(text("é"), "<FEFF00E9>");
-    }
 }

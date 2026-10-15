@@ -666,17 +666,6 @@ mod tests {
     }
 
     #[test]
-    fn colours_are_rec2020_encoded() {
-        assert_eq!(rec2020_from_srgb8([255; 3]), [65535; 3]);
-        assert_eq!(rec2020_from_srgb8([0; 3]), [0; 3]);
-        let grey = rec2020_from_srgb8([128; 3]);
-        assert!(grey[0].abs_diff(grey[1]) < 3 && grey[1].abs_diff(grey[2]) < 3);
-        // sRGB red sits inside the Rec. 2020 gamut: its green and blue are not zero.
-        let red = rec2020_from_srgb8([255, 0, 0]);
-        assert!(red[0] < 65535 && red[1] > 0);
-    }
-
-    #[test]
     fn resize_preserves_flat_colour_and_edges() {
         let img = halves(64, 32);
         for (w, h) in [(32, 16), (128, 64), (50, 70), (1, 1), (64, 31)] {

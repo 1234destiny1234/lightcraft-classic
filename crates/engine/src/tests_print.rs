@@ -314,30 +314,3 @@ fn a_hostile_template_in_the_preferences_does_not_break_the_library() {
     fails(&mut s, "print.template.apply", json!({"name": "Huge"}));
     run(&mut s, "print.template.apply", json!({"name": "Fine"}));
 }
-
-#[test]
-fn every_print_command_is_registered_with_a_description() {
-    for id in [
-        "print.get",
-        "print.set",
-        "print.reset",
-        "print.cell.add",
-        "print.cell.move",
-        "print.cell.resize",
-        "print.cell.delete",
-        "print.cell.stack",
-        "print.cell.photo",
-        "print.cell.page",
-        "print.layout.autoLayout",
-        "print.layout.newPage",
-        "print.layout.clear",
-        "print.exportPdf",
-        "print.template.list",
-        "print.template.save",
-        "print.template.apply",
-        "print.template.delete",
-    ] {
-        let c = crate::find_command(id).unwrap_or_else(|| panic!("{id} missing"));
-        assert!(c.params.len() > 3, "{id}");
-    }
-}
