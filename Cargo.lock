@@ -4715,6 +4715,19 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcc-filters"
+version = "0.8.2"
+dependencies = [
+ "rayon",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "thiserror 2.0.21",
+ "wasmi",
+ "wat",
+]
+
+[[package]]
 name = "lcc-fuzzkit"
 version = "0.8.2"
 dependencies = [
