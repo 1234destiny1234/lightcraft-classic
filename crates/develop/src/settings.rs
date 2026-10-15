@@ -188,6 +188,9 @@ pub struct PluginFilter {
     pub params: serde_json::Map<String, serde_json::Value>,
     pub enabled: bool,
     pub stage: FilterStage,
+    /// Whole-image measurement the filter computed once (e.g. film base / black / white points).
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub analysis: Option<serde_json::Value>,
 }
 
 impl Default for PluginFilter {
@@ -200,6 +203,7 @@ impl Default for PluginFilter {
             params: serde_json::Map::new(),
             enabled: true,
             stage: FilterStage::Display,
+            analysis: None,
         }
     }
 }

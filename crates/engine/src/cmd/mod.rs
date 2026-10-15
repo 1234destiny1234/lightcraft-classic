@@ -41,6 +41,7 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+mod plugin_filters;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod plugins;
 /// The web build has no plug-ins: plug-in fields read from XMP have nowhere to go.
@@ -198,6 +199,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(collections::specs());
         v.extend(develop::specs());
         v.extend(color::specs());
+        v.extend(plugin_filters::specs());
         v.extend(curves::specs());
         v.extend(masks::specs());
         v.extend(organize::specs());

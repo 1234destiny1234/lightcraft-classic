@@ -46,6 +46,7 @@ crates/plugins/
 sdk/
 docs/plugins.md
 crates/engine/src/cmd/plugins.rs
+crates/engine/src/cmd/plugin_filters.rs
 crates/ui-egui/src/panels/plugins.rs
 crates/publish/
 crates/tether/
