@@ -41,7 +41,7 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
-mod plugin_filters;
+pub(crate) mod plugin_filters;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod plugins;
 /// The web build has no plug-ins: plug-in fields read from XMP have nowhere to go.
