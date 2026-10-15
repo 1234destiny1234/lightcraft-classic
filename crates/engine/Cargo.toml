@@ -9,6 +9,7 @@ description = "Engine: session, command registry, history, render jobs, view-mod
 workspace = true
 
 [dependencies]
+lcc-filters = { workspace = true }
 lcc-brand = { workspace = true }
 lcc-geom = { workspace = true }
 lcc-color = { workspace = true }
@@ -63,7 +64,6 @@ lcc-tether = { workspace = true }
 lcc-credentials = { workspace = true }
 lcc-webgallery = { workspace = true, features = ["sftp"] }
 lcc-plugins = { workspace = true }
-lcc-filters = { workspace = true }
 # M14.8: video clips in an export batch
 lcc-video-export = { workspace = true }
 # Delete from Disk (`photo.deleteFromDisk`): the system trash; the web build has none (`Session::trash` stays None)
