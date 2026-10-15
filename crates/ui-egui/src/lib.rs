@@ -1757,7 +1757,11 @@ impl Caches {
         let key = (cat.revision, crate::panels::left::classic::disk_generation());
         match &self.folder_tree {
             Some((k, t)) if *k == key => t.clone(),
-            _ => {
+            cached => {
+                // a catalog change (a folder created, moved or removed) lists the disk folders again
+                if cached.as_ref().is_none_or(|((r, _), _)| *r != cat.revision) {
+                    crate::panels::left::classic::invalidate_disk_folders();
+                }
                 let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(cat.folder_tree()));
                 self.folder_tree = Some((key, t.clone()));
                 t

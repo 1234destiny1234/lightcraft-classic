@@ -374,6 +374,12 @@ pub fn with_disk_folders(tree: Vec<lcc_catalog::FolderNode>) -> Vec<lcc_catalog:
     tree
 }
 
+/// The catalog changed: list the disk folders again (the tree keeps the old listings meanwhile).
+pub fn invalidate_disk_folders() {
+    #[cfg(not(target_arch = "wasm32"))]
+    disk::invalidate();
+}
+
 /// Changes whenever a disk folder listing comes in: part of the folder tree's cache key.
 pub fn disk_generation() -> u64 {
     #[cfg(not(target_arch = "wasm32"))]
@@ -435,10 +441,8 @@ pub(crate) mod disk {
     use std::collections::{HashMap, HashSet};
     use std::sync::atomic::{AtomicU64, Ordering};
     use std::sync::{Mutex, OnceLock, PoisonError, mpsc};
-    use std::time::{Duration, Instant};
+    use std::time::Instant;
 
-    /// How long a listing is used before the folder is listed again (when the tree is next made).
-    const FRESH: Duration = Duration::from_secs(30);
     /// Most folders whose listing is kept.
     const MAX_KEPT: usize = 8_192;
 
@@ -449,6 +453,8 @@ pub(crate) mod disk {
         jobs: Mutex<Option<mpsc::Sender<String>>>,
         generation: AtomicU64,
         ctx: Mutex<Option<egui::Context>>,
+        /// Listings started before this are stale ([`invalidate`]).
+        stale_before: Mutex<Option<Instant>>,
     }
 
     fn lister() -> &'static Lister {
@@ -468,15 +474,34 @@ pub(crate) mod disk {
         lister().generation.load(Ordering::Relaxed)
     }
 
+    /// Every listing made so far is out of date (the catalog changed: a folder may have been
+    /// created, moved or removed). The folders are listed again as the tree asks for them; until
+    /// then the tree keeps the old listings.
+    pub fn invalidate() {
+        *lister().stale_before.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+    }
+
     /// The names of the folders inside `path` as last listed (`None` until it has been), asking
-    /// for a listing when there is none or it is older than [`FRESH`].
+    /// for a listing when there is none or it is stale ([`invalidate`]).
     pub fn subfolders(path: &str) -> Option<Vec<String>> {
         let l = lister();
         let cached = l.listed.lock().unwrap_or_else(PoisonError::into_inner).get(path).cloned();
-        if cached.as_ref().is_none_or(|(at, _)| at.elapsed() >= FRESH) {
+        let stale_before = *l.stale_before.lock().unwrap_or_else(PoisonError::into_inner);
+        if needs_listing(cached.as_ref().map(|(at, _)| *at), stale_before) {
             queue(path);
         }
         cached.map(|(_, names)| names)
+    }
+
+    /// Whether a folder last listed at `listed` (`None`: never) is listed again. Only a catalog
+    /// change makes a listing stale, never its age, so a pass over a slow share ends: a tree made
+    /// again because listings came in doesn't ask for the same folders once more.
+    pub(super) fn needs_listing(listed: Option<Instant>, stale_before: Option<Instant>) -> bool {
+        match (listed, stale_before) {
+            (None, _) => true,
+            (Some(at), Some(s)) => at < s,
+            (Some(_), None) => false,
+        }
     }
 
     fn queue(path: &str) {
@@ -499,6 +524,8 @@ pub(crate) mod disk {
         let (tx, rx) = mpsc::channel::<String>();
         let spawned = std::thread::Builder::new().name("lcc-disk-folders".into()).spawn(move || {
             for path in rx {
+                // the listing counts from when it started: a change made while it ran makes it stale
+                let started = Instant::now();
                 let names = read(&path);
                 let l = lister();
                 {
@@ -506,7 +533,7 @@ pub(crate) mod disk {
                     if listed.len() >= MAX_KEPT {
                         listed.clear();
                     }
-                    listed.insert(path.clone(), (Instant::now(), names));
+                    listed.insert(path.clone(), (started, names));
                 }
                 l.pending.lock().unwrap_or_else(PoisonError::into_inner).remove(&path);
                 l.generation.fetch_add(1, Ordering::Relaxed);
@@ -610,6 +637,60 @@ mod tests {
         }
         assert_eq!(out[0].children.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["2026"]);
         assert_eq!(out[0].children[0].children[0].name, "10-14 - Lake", "and the folders inside new ones, as they're listed");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Only a catalog change makes a listing stale, not its age: a tree made again because a
+    /// listing came in asks for no folder already listed since, so a pass over a slow network share
+    /// ends instead of starting over.
+    #[test]
+    fn a_listing_is_made_again_only_after_a_catalog_change() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_secs(60);
+        assert!(super::disk::needs_listing(None, None), "never listed");
+        assert!(!super::disk::needs_listing(Some(t0), None), "listed long ago, nothing changed since");
+        assert!(super::disk::needs_listing(Some(t0), Some(t1)), "listed before a catalog change");
+        assert!(!super::disk::needs_listing(Some(t1), Some(t0)), "listed after it");
+    }
+
+    /// A folder created after the first listing (New Folder…, which changes the catalog) shows up
+    /// once the folders are listed again, without waiting for the listing to age.
+    #[test]
+    fn a_new_folder_shows_up_after_a_catalog_change() {
+        let d = std::env::temp_dir().join(format!("libfolders-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("old")).unwrap();
+        let p = d.to_string_lossy().replace('\\', "/");
+        let tree = || {
+            vec![lcc_catalog::FolderNode {
+                name: "root".into(),
+                path: p.clone(),
+                count: 1,
+                own: 1,
+                volume: false,
+                selectable: true,
+                label: None,
+                children: vec![],
+            }]
+        };
+        let names = |out: &[lcc_catalog::FolderNode]| out[0].children.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let wait_for = |want: &[&str]| {
+            let t = std::time::Instant::now();
+            let mut got = Vec::new();
+            while t.elapsed() < std::time::Duration::from_secs(10) {
+                got = names(&super::with_disk_folders(tree()));
+                if got == want {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            got
+        };
+        assert_eq!(wait_for(&["old"]), ["old"]);
+        std::fs::create_dir_all(d.join("new")).unwrap();
+        super::invalidate_disk_folders();
+        assert_eq!(wait_for(&["new", "old"]), ["new", "old"], "the new folder is listed after the catalog change");
         let _ = std::fs::remove_dir_all(&d);
     }
 }
