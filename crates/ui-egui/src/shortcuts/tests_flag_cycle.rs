@@ -1,4 +1,6 @@
-//! The backtick (`) key cycles the flag of the selection / active photo; Cmd+Up / Cmd+Down raise / lower it.
+//! In the Alternative keymap set the backtick (`) key cycles the flag of the selection / active
+//! photo; Cmd+Up / Cmd+Down raise / lower it. In the Classic set ` toggles the Pick flag
+//! (`photo.flagToggle`, covered in `tests_keymap`) and cycling has no key.
 use egui::{Key, Modifiers};
 use lcc_catalog::{Flag, Op, Photo, PhotoId, Source};
 use serde_json::json;
@@ -22,7 +24,10 @@ fn app() -> lcc_engine::Result<LccApp> {
     }
     s.execute("library.sort", &json!({"key": "fileName", "ascending": true}))?;
     s.execute("library.select", &json!({"ids": [2]}))?;
-    Ok(LccApp::new(s, crate::Services { png: None, ..Default::default() }))
+    let mut app = LccApp::new(s, crate::Services { png: None, ..Default::default() });
+    app.ui.settings.keymap_set = super::KeymapSet::Alternative;
+    super::set_active(super::KeymapSet::Alternative);
+    Ok(app)
 }
 
 fn flags(app: &LccApp) -> Vec<Flag> {
@@ -53,7 +58,11 @@ fn tick(app: &mut LccApp, ctx: &egui::Context) {
 fn backtick_parses_and_formats_as_the_grave_key() {
     assert_eq!(super::parse("`"), Some((Modifiers::NONE, Key::Backtick)));
     assert_eq!(super::format(Modifiers::NONE, Key::Backtick).as_deref(), Some("`"));
+    super::set_active(super::KeymapSet::Alternative);
     assert_eq!(super::shortcut_of(&Default::default(), "photo.cycleFlag"), Some("`"));
+    super::set_active(super::KeymapSet::Classic);
+    assert_eq!(super::shortcut_of(&Default::default(), "photo.cycleFlag"), None);
+    assert_eq!(super::shortcut_of(&Default::default(), "photo.flagToggle"), Some("`"));
 }
 
 #[test]

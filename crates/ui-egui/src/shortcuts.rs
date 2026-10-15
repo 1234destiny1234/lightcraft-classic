@@ -390,7 +390,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
     let (module_keys, mut consumed) = (classic::module_keys(app.ui.module), Vec::new());
     classic::deferred_tabs(&mut app.deferred_tabs, keymap, &mut fire);
     ctx.input(|i| {
-        classic::module_key_presses(i, module_keys, &mut consumed, &mut aliased);
+        classic::module_key_presses(i, module_keys, keymap, &mut consumed, &mut aliased);
         // Enter opens the active grid photo; widgets, popups and custom bindings keep the key.
         if grid
             && app.session.active().is_some()

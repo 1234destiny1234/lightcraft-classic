@@ -156,9 +156,9 @@ fn shift_h_and_the_command_cycle_the_tool_overlay() {
         assert_eq!(r["ok"], false, "{r}");
     }
     assert_eq!(h.app.ui.tool_overlay, ToolOverlay::Selected);
-    // plain H still opens Remove (from Edit), and leaves the mode alone
+    // the Remove key (Q in the Classic set) still opens Remove (from Edit), and leaves the mode alone
     exec(&mut h, "panel.edit", json!({}));
-    h.request("ui.key", json!({"key": "h"}), T);
+    h.request("ui.key", json!({"key": "q"}), T);
     assert_eq!(h.app.ui.right, RightPanel::Remove);
     assert_eq!(h.app.ui.tool_overlay, ToolOverlay::Selected);
     assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "view.toolOverlay"), Some("Shift+H"));

@@ -266,7 +266,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("file.exportCurvePresets", "Export Point Curve Presets…", None, ""),
     ("app.settings", "Settings…", Some("Cmd+,"), "Edit"),
     ("app.newLibrary", "New Library…", None, "File"),
-    ("app.openLibrary", "Open Library…", None, "File"),
+    ("app.openLibrary", "Open Library…", Some("Cmd+O"), "File"),
     // catalogs (crate::catalog_ui)
     ("catalog.new", "New Catalog…", None, "File"),
     ("catalog.open", "Open Catalog…", None, "File"),

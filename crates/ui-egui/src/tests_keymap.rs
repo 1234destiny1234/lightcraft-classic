@@ -494,10 +494,13 @@ fn home_and_end_select_the_ends_of_the_grid() {
     press(&mut h, "Home", &[]);
     assert_eq!(h.app.session.active(), Some(first), "the Square Grid has the keys too");
 
+    // in the Classic set Home / End are Library module keys (`library.first` / `library.last`), so
+    // the Library loupe has them too, as in Lightroom Classic
     select(&mut h, last);
     view(&mut h, json!({ "view": "detail" }));
     press(&mut h, "Home", &[]);
-    assert_eq!(h.app.session.active(), Some(last), "Home is a grid key");
+    assert_eq!(h.app.session.active(), Some(first), "Home goes to the first photo in the loupe");
+    select(&mut h, last);
 
     view(&mut h, json!({ "view": "photoGrid" }));
     let r = h.app.run("app.setShortcut", json!({"id": "view.survey", "shortcut": "Home"})).unwrap();
@@ -584,15 +587,16 @@ fn navigation_open_library_and_hdr_keys_wait_for_a_text_field() {
     assert!(h.app.ui.dialog.is_none());
 }
 
-/// Home / End and Shift+Left / Shift+Right belong to the grid: while the full-screen preview covers it
-/// they leave the selection alone.
+/// Shift+Left / Shift+Right belong to the grid: while the full-screen preview covers it they leave
+/// the selection alone. (Home / End are Library module keys in the Classic set and step to the
+/// first / last photo there too.)
 #[test]
 fn grid_navigation_keys_do_nothing_in_the_full_screen_preview() {
     let (mut h, vis, middle) = grid_demo();
     h.app.run("view.fullScreenPreview", json!({})).unwrap();
     assert!(h.app.ui.fullscreen);
     assert_eq!(h.app.ui.view, ViewMode::PhotoGrid, "the grid is the view behind the preview");
-    for (key, mods) in [("Home", &[][..]), ("End", &[][..]), ("Right", &["shift"][..]), ("Left", &["shift"][..])] {
+    for (key, mods) in [("Right", &["shift"][..]), ("Left", &["shift"][..])] {
         press(&mut h, key, mods);
         assert_eq!(h.app.session.active(), Some(middle), "{mods:?}+{key} moved the active photo in the full-screen preview");
         assert_eq!(h.app.session.selection.ids, vec![middle], "{mods:?}+{key} changed the selection in the full-screen preview");
