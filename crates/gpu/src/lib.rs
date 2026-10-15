@@ -476,7 +476,13 @@ pub fn try_render(
         let s: &DevelopSettings = &effective;
         // the kernel writes 8-bit output: high-bit-depth exports (and soft proofs) render on the CPU
         // Visualize HDR needs the float HDR render: CPU too
-        if !enabled() || req.depth != lcc_pipeline::OutputDepth::U8 || req.proof.is_some() || req.overlay == lcc_pipeline::Overlay::HdrRange {
+        // pixel-filter plug-ins run in the CPU pipeline
+        if !enabled()
+            || req.depth != lcc_pipeline::OutputDepth::U8
+            || req.proof.is_some()
+            || req.overlay == lcc_pipeline::Overlay::HdrRange
+            || lcc_pipeline::plugin_filters::any_active(s)
+        {
             return Err(Fallback::NotTried);
         }
         let s = &*lcc_pipeline::settings_for(s, req);

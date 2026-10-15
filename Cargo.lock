@@ -4939,6 +4939,7 @@ dependencies = [
  "lcc-brand",
  "lcc-color",
  "lcc-develop",
+ "lcc-filters",
  "lcc-geom",
  "lcc-inpaint",
  "lcc-raster",
@@ -4948,6 +4949,7 @@ dependencies = [
  "rayon",
  "serde",
  "serde_json",
+ "wat",
 ]
 
 [[package]]

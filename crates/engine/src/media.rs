@@ -982,7 +982,7 @@ impl RenderJob {
                 photo: self.photo,
                 level: self.level,
                 key: self.key,
-                rendered: Ok(Rendered { image, histogram, deep: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -1002,7 +1002,7 @@ impl RenderJob {
                 photo: self.photo,
                 level: self.level,
                 key: self.key,
-                rendered: Ok(Rendered { image, histogram, deep: None }),
+                rendered: Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() }),
                 gpu_fallback: None,
                 loaded: None,
                 quick: None,
@@ -1187,7 +1187,7 @@ impl QuickJob {
         };
         let rendered = |image: Rgba8| {
             let histogram = Histogram::of_srgb8(&image);
-            Ok(Rendered { image, histogram, deep: None })
+            Ok(Rendered { image, histogram, deep: None, warnings: Vec::new() })
         };
         for (cache, k) in &self.cached {
             if let Some(img) = cache.get(*k) {
