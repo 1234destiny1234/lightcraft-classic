@@ -80,7 +80,7 @@ All on the maintainer's self-hosted runners (docs/ci.md, *Where the jobs run*):
 | version, web, draft release | gpu0 / gpu0-b | `nice -n 19`; the draft job fetches the GitHub CLI into the job's temp dir |
 | Linux x86_64 | gpu0, `ubuntu:22.04` container | Rust, registry and target dir in Docker volumes |
 | Flatpak x86_64 | gpu0, `ubuntu:24.04` container, `--privileged` | Flathub runtime/SDK kept in a Docker volume |
-| macOS universal | mac0 | `nice -n 19 taskpolicy -b`; signing certificate in a temporary keychain in `$RUNNER_TEMP`, deleted (and taken off the search list) at the end of the job, stale ones removed at the start; the login keychain is never modified |
+| macOS universal | mac0 | `nice -n 19`; signing certificate in a temporary keychain in `$RUNNER_TEMP`, deleted (and taken off the search list) at the end of the job, stale ones removed at the start; the login keychain is never modified |
 | Windows x64 | win0 | BelowNormal priority; .NET SDK and WiX in the runner tool cache |
 | Windows ARM64 | SNAPDRAGON | native ARM64 build (win0 has no ARM64 MSVC tools) |
 
