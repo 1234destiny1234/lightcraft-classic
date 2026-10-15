@@ -1557,5 +1557,18 @@
   "Delete from Disk moves 1 file to the system trash.": "«Удалить с диска» перемещает 1 файл в системную корзину.",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "«Убрать» оставляет файлы на диске и перемещает фото в «Недавно удалённые».",
   "Delete from Disk": "Удалить с диска",
-  "Deleting from disk": "Удаление с диска"
+  "Deleting from disk": "Удаление с диска",
+  "Identity Plate Editor": "Редактор фирменной таблички",
+  "Identity Plate:": "Фирменная табличка:",
+  "Personalized": "Персональная",
+  "Show Status and Activity": "Показывать состояние и активность",
+  "No options for the {app} identity plate.": "Для таблички {app} нет параметров.",
+  "Personalize {app} with your own branding elements.": "Оформите {app} собственными элементами бренда.",
+  "Use a styled text identity plate": "Использовать текстовую табличку",
+  "Use a graphical identity plate": "Использовать графическую табличку",
+  "No image chosen": "Изображение не выбрано",
+  "Clear Image": "Убрать изображение",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Файл SVG, PNG или JPEG; показывается высотой 32 пункта.",
+  "Theme Color": "Цвет темы",
+  "Identity Plate Setup…": "Настройка фирменной таблички…"
 }

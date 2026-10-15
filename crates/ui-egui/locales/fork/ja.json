@@ -1349,5 +1349,18 @@
   "Delete from Disk moves 1 file to the system trash.": "「ディスクから削除」は 1 個のファイルをシステムのゴミ箱に移動します。",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "「取り除く」はファイルをディスクに残し、写真を「最近削除した写真」に移動します。",
   "Delete from Disk": "ディスクから削除",
-  "Deleting from disk": "ディスクから削除中"
+  "Deleting from disk": "ディスクから削除中",
+  "Identity Plate Editor": "ID プレートエディター",
+  "Identity Plate:": "ID プレート:",
+  "Personalized": "パーソナライズ",
+  "Show Status and Activity": "ステータスとアクティビティを表示",
+  "No options for the {app} identity plate.": "{app} の ID プレートにはオプションがありません。",
+  "Personalize {app} with your own branding elements.": "独自のブランド要素で {app} をパーソナライズします。",
+  "Use a styled text identity plate": "スタイル付きテキストの ID プレートを使用",
+  "Use a graphical identity plate": "グラフィックの ID プレートを使用",
+  "No image chosen": "画像が選択されていません",
+  "Clear Image": "画像をクリア",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "SVG、PNG、JPEG ファイル。高さ 32 ポイントで表示されます。",
+  "Theme Color": "テーマの色",
+  "Identity Plate Setup…": "ID プレート設定…"
 }

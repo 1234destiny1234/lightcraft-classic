@@ -360,3 +360,52 @@ fn tool_strip_shows_only_the_active_modules_tools() {
         assert!(!has_widget(&h, &format!("icon:{id}")), "Library has no {id} strip button");
     }
 }
+
+#[test]
+fn identity_plate_setup_edits_the_plate_and_cancel_restores_it() {
+    let mut h = demo();
+    // Edit ▸ Identity Plate Setup… lists the dialog
+    let bar = crate::menubar::menu_bar(&h.app);
+    let edit = &bar.iter().find(|(t, _)| t == "Edit").unwrap().1;
+    assert!(format!("{edit:?}").contains("dialog.identityPlateSetup"), "{edit:?}");
+    let r = run(&mut h, "dialog.identityPlateSetup", json!({}));
+    assert_eq!((r["open"].clone(), r["personalized"].clone()), (json!(true), json!(false)));
+    h.step();
+    assert!(has_widget(&h, "combo:identityPlateKind"));
+    // personalise: the text options show, and edits reach the module bar while the dialog is open
+    run(&mut h, "dialog.identityPlateSetup", json!({"personalized": true}));
+    h.step();
+    assert!(has_widget(&h, "field:identityPlateText") && has_widget(&h, "region:identityPlatePreview"));
+    run(&mut h, "view.identityPlate", json!({"text": "Studio North", "bold": true, "showStatus": false}));
+    assert_eq!(h.app.ui.identity_plate.text, "Studio North");
+    // Cancel puts back the plate it opened with
+    let r = h.request("ui.clickWidget", json!({"id": "button:identityPlateCancel"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    assert!(h.app.ui.identity_plate.setup.is_none() && h.app.ui.identity_plate.is_default(), "{:?}", h.app.ui.identity_plate);
+    // OK keeps the edits, and they survive a save/load of the settings
+    run(&mut h, "dialog.identityPlateSetup", json!({}));
+    run(&mut h, "dialog.identityPlateSetup", json!({"personalized": true}));
+    run(&mut h, "view.identityPlate", json!({"text": "Studio North", "kind": "graphic"}));
+    h.step();
+    assert!(has_widget(&h, "button:identityPlateLocate") && !has_widget(&h, "field:identityPlateText"));
+    run(&mut h, "view.identityPlate", json!({"kind": "text"}));
+    run(&mut h, "dialog.identityPlateSetup", json!({"close": "ok"}));
+    h.step();
+    assert!(!has_widget(&h, "combo:identityPlateKind"));
+    let saved: crate::UiState = serde_json::from_str(&serde_json::to_string(&h.app.ui).unwrap()).unwrap();
+    assert_eq!(saved.identity_plate.text, "Studio North");
+    assert!(saved.identity_plate.setup.is_none());
+    // choosing the app's own plate resets it
+    run(&mut h, "dialog.identityPlateSetup", json!({}));
+    run(&mut h, "dialog.identityPlateSetup", json!({"personalized": false}));
+    assert!(h.app.ui.identity_plate.is_default());
+    // bad arguments are errors, not panics
+    for bad in [json!({"close": "maybe"}), json!({"close": 1}), json!({"personalized": "yes"})] {
+        let r = h.request("engine.execute", json!({"command": "dialog.identityPlateSetup", "params": bad}), T);
+        assert_eq!(r["ok"], false, "{r}");
+    }
+    let r = h.request("engine.execute", json!({"command": "view.identityPlate", "params": {"kind": "banner"}}), T);
+    assert_eq!(r["ok"], false, "{r}");
+}
