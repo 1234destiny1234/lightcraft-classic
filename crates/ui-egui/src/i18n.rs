@@ -1121,6 +1121,7 @@ mod tests {
         let ctx = fonts_ctx(&[]);
         let mut app = crate::LccApp::new(lcc_engine::Session::with_demo(), Default::default());
         app.ui.left_panel = true;
+        show_my_photos(&mut app);
         let text = painted_text(&ctx, &mut app, Locale::It);
         assert!(text.contains("Le mie foto") && text.contains("Tutte le foto"), "{text}");
         for (command, title) in [
