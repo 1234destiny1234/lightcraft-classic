@@ -178,6 +178,13 @@ pub fn import_file(app: &mut LccApp, path: &str) -> Result<Value, String> {
     import_value(app, &v)
 }
 
+/// Whether `dialog` hosts the shortcut editor, so a row may stay recording: Help ▸ Keyboard
+/// Shortcuts, or the Shortcuts tab of Settings (#155).
+pub(super) fn records_shortcuts(dialog: Option<&crate::state::Dialog>) -> bool {
+    use crate::state::Dialog;
+    matches!(dialog, Some(Dialog::Shortcuts)) || matches!(dialog, Some(Dialog::Settings { tab }) if tab == "shortcuts")
+}
+
 /// Keys the active set gives a command: the fixed bindings (aliases, ratings) yield to them
 /// (Classic's ⇧E is the secondary loupe, not export).
 pub(super) fn taken() -> Vec<(Modifiers, Key)> {
