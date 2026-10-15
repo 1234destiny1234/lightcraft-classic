@@ -28,6 +28,66 @@ pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
     if !app.ui.hidden_panels.contains(&PanelId::Navigator) {
         pinned_navigator(app, ui);
     }
+    // Lightroom Classic's two buttons under the column (issue #118): Import… / Export… in
+    // Library, Copy… / Paste in Develop. Outside the scroll area, so they never scroll away.
+    let full = ui.available_rect_before_wrap();
+    let bar = Rect::from_min_max(pos2(full.left(), full.bottom() - BOTTOM_BAR_H), full.max);
+    ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| bottom_bar(app, ui, bar));
+    let body = Rect::from_min_max(full.min, pos2(full.right(), bar.top()));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| scrolled_columns(app, ui, side, total, picks, deleted));
+}
+
+/// Height of the Import… / Export… (Copy… / Paste) bar at the foot of the left column.
+const BOTTOM_BAR_H: f32 = 46.0;
+
+/// The buttons of the bar at the foot of the left column, by module: (widget id, label, command).
+pub(crate) fn bottom_bar_buttons(module: crate::module::ModuleId) -> [(&'static str, &'static str, &'static str); 2] {
+    match module {
+        crate::module::ModuleId::Develop => [("leftBar-copy", "Copy…", "dialog.copySettings"), ("leftBar-paste", "Paste", "develop.paste")],
+        _ => [("leftBar-import", "Import…", "file.addPhotos"), ("leftBar-export", "Export…", "dialog.export")],
+    }
+}
+
+/// Lightroom Classic's bar under the left column: two buttons sharing its width.
+fn bottom_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    ui.painter().rect_filled(r, 0.0, t.chrome);
+    ui.painter().hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0, t.divider));
+    let inner = r.shrink2(vec2(10.0, 11.0));
+    let gap = 8.0;
+    let w = ((inner.width() - gap) / 2.0).max(0.0);
+    for (i, (id, label, cmd)) in bottom_bar_buttons(app.ui.module).into_iter().enumerate() {
+        let x = inner.left() + i as f32 * (w + gap);
+        let br = Rect::from_min_size(pos2(x, inner.top()), vec2(w, inner.height()));
+        let enabled = match cmd {
+            "develop.paste" => app.session.active().is_some() && app.session.clipboard.is_some(),
+            c => crate::menus::ui_enabled(app, c),
+        };
+        let label = crate::i18n::tr(label);
+        let resp = ui.interact(br, egui::Id::new(("left-bottom-bar", id)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+        crate::widgets::register(ui.ctx(), format!("button:{id}"), br);
+        let fill = if !enabled {
+            t.button
+        } else if resp.is_pointer_button_down_on() {
+            t.pressed
+        } else if resp.hovered() {
+            t.hover
+        } else {
+            t.button
+        };
+        let p = ui.painter();
+        p.rect(br, egui::CornerRadius::same(3), fill, egui::Stroke::new(1.0, t.button_border), egui::StrokeKind::Inside);
+        let color = if enabled { t.text } else { t.text_dim };
+        p.with_clip_rect(br).text(br.center(), egui::Align2::CENTER_CENTER, label, t.font(12.5), color);
+        if resp.clicked() {
+            let _ = app.run(cmd, json!({}));
+        }
+    }
+}
+
+/// The column's panels under the pinned Navigator, in their scroll area.
+fn scrolled_columns(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], total: usize, picks: usize, deleted: usize) {
     egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
         super::drag_auto_scroll(app, ui);
         // rows are as wide as the widest one needs (last frame), at least the panel
