@@ -1673,7 +1673,8 @@ pub struct Caches {
     keyword_chips: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Chip>>)>,
     /// The Keyword List's tick boxes, by library revision and selection.
     keyword_ticks: Option<(u64, u64, std::sync::Arc<panels::keyword_list::Ticks>)>,
-    folder_tree: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
+    /// The folder tree, made at a catalog revision and a disk folder listing generation.
+    folder_tree: Option<((u64, u64), std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
     people: Option<(u64, lcc_catalog::Filter, std::sync::Arc<Vec<lcc_catalog::Person>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
     counts: Option<(u64, LibraryCounts)>,
@@ -1753,11 +1754,16 @@ pub(crate) fn key_of(parts: impl std::hash::Hash) -> u64 {
 impl Caches {
     /// The folders the library's photos were imported from.
     pub fn folder_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::FolderNode>> {
+        let key = (cat.revision, crate::panels::left::classic::disk_generation());
         match &self.folder_tree {
-            Some((r, t)) if *r == cat.revision => t.clone(),
-            _ => {
+            Some((k, t)) if *k == key => t.clone(),
+            cached => {
+                // a catalog change (a folder created, moved or removed) lists the disk folders again
+                if cached.as_ref().is_none_or(|((r, _), _)| *r != cat.revision) {
+                    crate::panels::left::classic::invalidate_disk_folders();
+                }
                 let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(cat.folder_tree()));
-                self.folder_tree = Some((cat.revision, t.clone()));
+                self.folder_tree = Some((key, t.clone()));
                 t
             }
         }
