@@ -68,6 +68,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "file.addPhotos",
             "file.addFolder",
             "@Import from Device",
+            "@Tethered Capture",
             "---",
             "catalog.new",
             "catalog.open",
@@ -343,6 +344,9 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "view.histogram" => Some(u.histogram),
         "view.clipping" => Some(u.show_clipping),
         "view.visualizeHdr" => Some(u.hdr_visualize),
+        "view.colorReadoutRgb" => Some(u.settings.color_readout == crate::color_readout::ColorReadout::Rgb),
+        "view.colorReadoutHsl" => Some(u.settings.color_readout == crate::color_readout::ColorReadout::Hsl),
+        "view.colorReadoutLab" => Some(u.settings.color_readout == crate::color_readout::ColorReadout::Lab),
         "view.softProof" => Some(u.soft_proof),
         "view.maskOverlay" => Some(u.mask_overlay),
         "view.maskOverlayAll" => Some(u.mask_overlay_all),
@@ -765,6 +769,13 @@ pub fn menu_bar(app: &LccApp) -> Vec<(String, Vec<MenuNode>)> {
                 }
             }
             if !dialogs.is_empty() {
+                // Tethered Capture opens with Start Tethered Capture… (as in Classic); elsewhere
+                // the dialog commands close the submenu
+                if name == "Tethered Capture" {
+                    dialogs.push(MenuNode::Separator);
+                    dialogs.extend(children);
+                    return dialogs;
+                }
                 children.push(MenuNode::Separator);
                 children.extend(dialogs);
             }
@@ -817,6 +828,11 @@ pub fn run_item(app: &mut LccApp, id: &str, params: Value) -> Result<Value, Stri
         crate::panels::compare::target_active(app, &mut params);
     }
     if id == "photo.delete" && crate::menus::confirm_delete(app) {
+        return Ok(Value::Null);
+    }
+    // moves files: always asks first, even with "Confirm before deleting" off (without a
+    // selection the command itself reports why nothing happens)
+    if id == "photo.deleteFromDisk" && crate::menus::confirm_delete_from_disk(app) {
         return Ok(Value::Null);
     }
     if matches!(id, "photo.deletePermanently" | "library.emptyRecentlyDeleted")
@@ -1097,6 +1113,22 @@ mod tests {
         let all: Vec<MenuNode> = bar.iter().flat_map(|(_, v)| v.clone()).collect();
         let text = serde_json::to_string(&all).unwrap();
         assert!(!text.contains("Add Folder") && !text.contains("\"Add Photos"), "no add-folder wording left in the menus");
+    }
+
+    /// Issue #120: Tethered Capture sits with the import entry points (as in Classic's File menu),
+    /// not among the fallbacks at the bottom, and opens with Start Tethered Capture….
+    #[test]
+    fn tethered_capture_follows_import() {
+        let bar = menu_bar(&app());
+        let file = &bar.iter().find(|(t, _)| t == "File").expect("File menu").1;
+        let at = |want: &str| file.iter().position(|n| matches!(n, MenuNode::Submenu { label, .. } if label == want));
+        let (Some(dev), Some(tether)) = (at("Import from Device"), at("Tethered Capture")) else { panic!("{file:?}") };
+        assert_eq!(tether, dev + 1, "Tethered Capture follows Import from Device");
+        let Some(MenuNode::Submenu { children, .. }) = file.get(tether) else { panic!() };
+        assert!(matches!(children.first(), Some(MenuNode::Item { id, .. }) if id == "tether.start"), "{children:?}");
+        for id in ["tether.connect", "tether.capture", "tether.stop", "tether.disconnect"] {
+            assert!(find(children, id).is_some(), "{id} missing");
+        }
     }
 
     /// Back Up / Restore Library are the browser build's (its library lives in browser storage):

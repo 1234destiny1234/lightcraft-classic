@@ -169,23 +169,23 @@ fn mask_adjustments_hide_overlay_without_disabling_the_mask() {
     let d = develop(&h);
     assert!(d.masks[0].adjust.exposure > 0.0);
     assert!(d.masks[0].visible, "hiding the overlay must not disable the mask");
-    assert_eq!(crate::panels::detail::view_overlay(&h.app, &d), Overlay::None);
+    assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::None);
     let mask = d.masks[0].clone();
 
     let r = h.request("ui.key", json!({"key": "o"}), T);
     assert_eq!(r["ok"], true, "{r}");
     assert!(h.app.ui.mask_overlay, "O can restore the overlay");
     assert_eq!(develop(&h).masks[0], mask, "toggling the overlay leaves the mask and its effect unchanged");
-    assert!(matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h)), Overlay::Mask { .. }));
+    assert!(matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h), false), Overlay::Mask { .. }));
 
     // Ctrl+Shift+O / Cmd+Shift+O shows every visible mask's region at once (the new command), ahead of the selected
     // mask overlay so it is not shadowed by the always-on single-mask overlay.
     exec(&mut h, "view.maskOverlayAll", json!({}));
     assert!(h.app.ui.mask_overlay_all, "the all-masks overlay command turns it on");
-    assert!(matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h)), Overlay::AllMasks { .. }));
+    assert!(matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h), false), Overlay::AllMasks { .. }));
     exec(&mut h, "view.maskOverlayAll", json!({}));
     assert!(!h.app.ui.mask_overlay_all, "the all-masks overlay command toggles it off");
-    assert!(!matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h)), Overlay::AllMasks { .. }));
+    assert!(!matches!(crate::panels::detail::view_overlay(&h.app, &develop(&h), false), Overlay::AllMasks { .. }));
 
     // Failed edits and global adjustments must not hide the mask overlay.
     assert!(h.app.run("mask.adjust", json!({"id": 999, "values": {"exposure": 1.0}})).is_err());
@@ -284,12 +284,12 @@ fn mask_overlay_keys_and_pins() {
     assert_eq!(h.app.session.active_mask, Some(2));
     // the loupe asks the renderer for the selected mask's overlay
     let d = develop(&h);
-    let o = crate::panels::detail::view_overlay(&h.app, &d);
+    let o = crate::panels::detail::view_overlay(&h.app, &d, false);
     assert_eq!(o, Overlay::Mask { id: 2, view: MaskView::Color, color: [230, 30, 40], opacity: 50 });
     // O toggles it, Shift+O cycles the colour (and leaves the crop overlay alone)
     h.request("ui.key", json!({"key": "o"}), T);
     assert!(!h.app.ui.mask_overlay);
-    assert_eq!(crate::panels::detail::view_overlay(&h.app, &d), Overlay::None);
+    assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), Overlay::None);
     h.request("ui.key", json!({"key": "o"}), T);
     let crop = h.app.ui.crop_overlay;
     let colour = h.app.ui.mask_overlay_color;
@@ -477,6 +477,27 @@ fn mask_list_rename_hide_and_overlay_colour() {
     let all = crate::panels::masking::OVERLAY_COLORS;
     let i = all.iter().position(|c| *c == before).unwrap();
     assert_eq!(h.app.ui.mask_overlay_color, all[(i + 1) % all.len()]);
+}
+
+/// Issue #82: "show all overlays" and Show Pins sit beside the overlay colours and work in every overlay mode;
+/// Refine Edges and Feather sit under the overlay options and appear only with a mask selected.
+#[test]
+fn overlay_row_toggles_in_every_mode_and_edge_sliders_follow_the_selection() {
+    let mut h = detail("panel.masking");
+    exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.5, 0.5], "rx": 0.2, "ry": 0.2}));
+    h.settle(Duration::from_secs(5));
+    let has = |h: &mut Headless, id: &str| h.request("ui.widgets", json!({"filter": id}), T).to_string().contains(&format!("\"{id}\""));
+    for mode in ["color", "whiteOnBlack"] {
+        exec(&mut h, "view.maskOverlayMode", json!({"mode": mode}));
+        h.settle(Duration::from_secs(5));
+        let all = h.app.ui.mask_overlay_all;
+        click(&mut h, "icon:maskOverlayAll");
+        assert_eq!(h.app.ui.mask_overlay_all, !all, "show-all toggles in {mode}");
+    }
+    assert!(has(&mut h, "slider:refine") && has(&mut h, "slider:maskFeather"), "edge sliders with a selected mask");
+    h.app.session.active_mask = None;
+    h.settle(Duration::from_secs(5));
+    assert!(!has(&mut h, "slider:refine") && !has(&mut h, "slider:maskFeather"), "no edge sliders without a selection");
 }
 
 #[test]
@@ -1595,4 +1616,39 @@ fn mask_action_icons_name_themselves_on_hover() {
     let before = develop(&h).masks[0].invert;
     click(&mut h, "button:maskInvert");
     assert_ne!(develop(&h).masks[0].invert, before, "Invert inverts");
+}
+
+/// Fork #93: with the Masking brush active, a plain mouse-wheel notch over the photo resizes the brush (as
+/// `[` / `]` do) instead of zooming; with the preference off, the wheel zooms again.
+#[test]
+fn a_wheel_notch_resizes_the_brush_instead_of_zooming() {
+    let mut h = detail("panel.masking");
+    h.settle(SETTLE);
+    exec(&mut h, "tool.brush", json!({"new": true}));
+    pointer(&mut h, json!([{"kind": "move", "x": 0.5, "y": 0.5}]));
+    h.settle(SETTLE);
+    let notch = |h: &mut Headless, dy: f32| {
+        h.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, dy),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        for _ in 0..30 {
+            h.step();
+        }
+    };
+    let (size0, zoom0) = (h.app.ui.brush_size, h.app.ui.zoom);
+    notch(&mut h, 1.0);
+    assert!(h.app.ui.brush_size > size0, "a notch up grows the brush: {size0} -> {}", h.app.ui.brush_size);
+    assert_eq!(h.app.ui.zoom, zoom0, "and does not zoom");
+    let size1 = h.app.ui.brush_size;
+    notch(&mut h, -1.0);
+    assert!(h.app.ui.brush_size < size1, "a notch down shrinks it");
+    // the preference off: the wheel zooms, the brush keeps its size
+    h.app.ui.settings.wheel_resizes_brush = false;
+    let size2 = h.app.ui.brush_size;
+    notch(&mut h, 1.0);
+    assert_eq!(h.app.ui.brush_size, size2);
+    assert_ne!(h.app.ui.zoom, zoom0, "with the preference off the wheel zooms");
 }

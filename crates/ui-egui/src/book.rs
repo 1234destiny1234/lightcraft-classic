@@ -1625,7 +1625,7 @@ fn type_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let mut col = s.color;
     ui.horizontal(|ui| {
         ui.label(crate::i18n::tr("Character Color"));
-        let r = ui.color_edit_button_srgb(&mut col);
+        let r = crate::color_readout::on_picker(ui.color_edit_button_srgb(&mut col), col);
         crate::access::label(&r, "Character Color");
         if r.changed() {
             set(app, json!({"color": col}));
@@ -1723,7 +1723,7 @@ fn background_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let mut col = bg.color;
     ui.horizontal(|ui| {
         ui.label(crate::i18n::tr("Background Color"));
-        let r = ui.color_edit_button_srgb(&mut col);
+        let r = crate::color_readout::on_picker(ui.color_edit_button_srgb(&mut col), col);
         crate::access::label(&r, "Background Color");
         if r.changed() {
             set(app, json!({"color": col}));
@@ -1757,7 +1757,7 @@ fn background_panel(ui: &mut egui::Ui, app: &mut LccApp) {
     let mut gc = bg.graphic_color;
     ui.horizontal(|ui| {
         ui.label(crate::i18n::tr("Graphic Color"));
-        let r = ui.color_edit_button_srgb(&mut gc);
+        let r = crate::color_readout::on_picker(ui.color_edit_button_srgb(&mut gc), gc);
         crate::access::label(&r, "Graphic Color");
         if r.changed() {
             set(app, json!({"graphicColor": gc}));

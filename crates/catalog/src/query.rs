@@ -64,6 +64,10 @@ pub struct Filter {
     /// A folder on disk: its files only (browsed ones too); `subfolders` includes everything below.
     pub folder: Option<String>,
     pub subfolders: bool,
+    /// Detected face count filter: exact count ("0", "1", "2"), minimum ("3+", ">=2", ">0"),
+    /// maximum ("<=2", "<3"), or range ("1-5", "2..4"). Accepts strings or numbers in JSON.
+    #[serde(default, deserialize_with = "deserialize_faces", skip_serializing_if = "Option::is_none")]
+    pub faces: Option<String>,
     /// Smart-album rules (all / any / none, nested groups; see [`crate::rules`]).
     #[serde(skip_serializing_if = "Option::is_none")]
     pub rule_set: Option<crate::RuleSet>,
@@ -456,6 +460,91 @@ fn shuffle_rank(seed: u64, id: PhotoId) -> u64 {
     mix64(mix64(seed) ^ id.0)
 }
 
+/// Reads `faces` as a count (`2`) or a spec string, rejecting a spec [`parse_face_spec`] can't read
+/// so a typo is an error the caller sees rather than an empty grid.
+fn deserialize_faces<'de, D>(deserializer: D) -> Result<Option<String>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    #[derive(Deserialize)]
+    #[serde(untagged)]
+    enum FaceCountVal {
+        Num(u64),
+        Str(String),
+    }
+
+    let spec = match Option::<FaceCountVal>::deserialize(deserializer)? {
+        None => return Ok(None),
+        Some(FaceCountVal::Num(n)) => n.to_string(),
+        Some(FaceCountVal::Str(s)) => s.trim().to_string(),
+    };
+    if spec.is_empty() {
+        return Ok(None);
+    }
+    parse_face_spec(&spec).map_err(serde::de::Error::custom)?;
+    Ok(Some(spec))
+}
+
+/// A face-count condition: at least `min`, at most `max` (inclusive) when set.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct FaceSpec {
+    pub min: usize,
+    pub max: Option<usize>,
+}
+
+impl FaceSpec {
+    pub fn matches(self, count: usize) -> bool {
+        count >= self.min && self.max.is_none_or(|max| count <= max)
+    }
+}
+
+/// Parses a face-count spec:
+/// - exact: `"0"`, `"2"`, `"=2"`, `"none"` (0)
+/// - minimum: `"3+"`, `"+3"`, `">=3"`, `">2"`, `"any"` (1 or more)
+/// - maximum: `"<=2"`, `"<3"`
+/// - range: `"1-10"`, `"1–10"`, `"1..10"`, `"1..=10"` (both ends included; `"5-2"` means 2–5)
+///
+/// Anything else, and `"<0"` (which nothing matches), is an error naming the accepted forms.
+pub fn parse_face_spec(spec: &str) -> Result<FaceSpec, String> {
+    let s = spec.trim();
+    let num = |t: &str| t.trim().parse::<usize>().ok();
+    let exact = |v: usize| FaceSpec { min: v, max: Some(v) };
+    let at_least = |v: usize| FaceSpec { min: v, max: None };
+    let parsed = if s.eq_ignore_ascii_case("none") {
+        Some(exact(0))
+    } else if s.eq_ignore_ascii_case("any") {
+        Some(at_least(1))
+    } else if let Some(v) = s.strip_suffix('+').and_then(num).or_else(|| s.strip_prefix('+').and_then(num)) {
+        Some(at_least(v))
+    } else if let Some(rest) = s.strip_prefix(">=") {
+        num(rest).map(at_least)
+    } else if let Some(rest) = s.strip_prefix("<=") {
+        num(rest).map(|v| FaceSpec { min: 0, max: Some(v) })
+    } else if let Some(rest) = s.strip_prefix('>') {
+        num(rest).and_then(|v| v.checked_add(1)).map(at_least)
+    } else if let Some(rest) = s.strip_prefix('<') {
+        num(rest).and_then(|v| v.checked_sub(1)).map(|v| FaceSpec { min: 0, max: Some(v) })
+    } else if let Some(rest) = s.strip_prefix('=') {
+        num(rest).map(exact)
+    } else if let Some((a, b)) = ["..=", "..", "–", "-"].iter().find_map(|sep| s.split_once(sep)) {
+        match (num(a), num(b)) {
+            (Some(a), Some(b)) => Some(FaceSpec { min: a.min(b), max: Some(a.max(b)) }),
+            _ => None,
+        }
+    } else {
+        num(s).map(exact)
+    };
+    parsed.ok_or_else(|| {
+        format!("faces: can't read {spec:?}; use a count (2), a minimum (3+, >=3, >2), a maximum (<=2, <3), a range (1-5) or none / any")
+    })
+}
+
+/// Whether a photo's detected face count matches `spec` (see [`parse_face_spec`]); a spec that
+/// can't be read matches nothing.
+pub fn matches_face_spec(count: usize, spec: &str) -> bool {
+    parse_face_spec(spec).is_ok_and(|f| f.matches(count))
+}
+
 fn token_matches(p: &Photo, tok: &str) -> bool {
     let t = tok.to_lowercase();
     if let Some((field, val)) = t.split_once(':') {
@@ -483,6 +572,7 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             "lens" => p.meta.lens.to_lowercase().contains(val),
             "keyword" | "kw" => p.meta.keywords.iter().any(|k| crate::keywords::is_under(k, val)),
             "person" | "who" => has_person(p, val),
+            "faces" | "face" | "facecount" => matches_face_spec(p.face_count(), val),
             "type" | "kind" => format!("{:?}", p.kind).eq_ignore_ascii_case(val),
             "video" => (val == "true" || val == "yes") == (p.kind == MediaKind::Video),
             "edited" => (val == "true" || val == "yes") == p.is_edited(),
@@ -562,6 +652,9 @@ impl Filter {
             (Some(a), None) => v.push(format!("captured from {a}")),
             (None, Some(b)) => v.push(format!("captured until {b}")),
             _ => {}
+        }
+        if let Some(fcs) = &self.faces {
+            v.push(format!("faces {fcs}"));
         }
         if !self.text.trim().is_empty() {
             v.push(format!("“{}”", self.text.trim()));
@@ -708,6 +801,11 @@ impl Filter {
         }
         if let Some(c) = &self.camera
             && !p.meta.camera.eq_ignore_ascii_case(c)
+        {
+            return false;
+        }
+        if let Some(fcs) = &self.faces
+            && !matches_face_spec(p.face_count(), fcs)
         {
             return false;
         }

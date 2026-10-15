@@ -68,25 +68,48 @@ fn picker(app: &mut LccApp, ui: &mut egui::Ui, id: &str, current: &str, active: 
         ui.painter().rect_stroke(r.rect.expand(2.0), 4.0, Stroke::new(1.0, t.accent.gamma_multiply(0.7)), StrokeKind::Outside);
     }
     let mut chosen = None;
-    egui::Popup::menu(&r).show(|ui| {
+    let searchable = matches!(id, "camera" | "lens" | "keyword");
+    // the search text of this picker alone; `None` until the dropdown opens, cleared when it closes
+    let key = egui::Id::new(("filterSearch", id));
+    let opened = egui::Popup::menu(&r).show(|ui| {
+        let mut query = String::new();
+        if searchable {
+            let previous: Option<String> = ui.data(|d| d.get_temp(key));
+            let just_opened = previous.is_none();
+            query = previous.unwrap_or_default();
+            let widget = format!("filterSearch:{id}");
+            let field = crate::text_field::TextField::singleline(&widget, &mut query)
+                .hint(crate::i18n::tr("Search…"))
+                .width(220.0)
+                .begin_edit(just_opened)
+                .show(ui);
+            // the click that opened the dropdown can take the focus away on its release: while
+            // nothing else has it, the box takes it back so typing goes straight in
+            if !field.response.has_focus() && ui.memory(|m| m.focused().is_none()) {
+                field.response.request_focus();
+            }
+            ui.data_mut(|d| d.insert_temp(key, query.clone()));
+            ui.separator();
+        }
+        let needle = query.to_lowercase();
         egui::ScrollArea::vertical().max_height(320.0).show(ui, |ui| {
-            for (label, patch, sel) in &items {
-                if ui
-                    .selectable_label(
-                        *sel,
-                        if matches!(id, "camera" | "lens" | "keyword") && patch.get(id).is_some_and(|value| !value.is_null()) {
-                            label.as_str()
-                        } else {
-                            crate::i18n::tr(label)
-                        },
-                    )
-                    .clicked()
-                {
+            for (n, (label, patch, sel)) in items.iter().enumerate() {
+                // the "Any …" row (a null patch) always stays
+                let any = patch.get(id).is_none_or(Value::is_null);
+                if searchable && !any && !needle.is_empty() && !label.to_lowercase().contains(&needle) {
+                    continue;
+                }
+                let resp = ui.selectable_label(*sel, if searchable && !any { label.as_str() } else { crate::i18n::tr(label) });
+                register(ui.ctx(), format!("filterItem:{id}:{n}"), resp.rect);
+                if resp.clicked() {
                     chosen = Some(patch.clone());
                 }
             }
         });
     });
+    if opened.is_none() {
+        ui.data_mut(|d| d.remove::<String>(key));
+    }
     if let Some(p) = chosen {
         filter(app, p);
     }
@@ -290,6 +313,24 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         let shown = if shown.chars().count() > 22 { format!("{}…", shown.chars().take(21).collect::<String>()) } else { shown };
         picker(app, ui, id, &shown, current.is_some(), items);
     }
+
+    // faces picker: detected face boxes, named or not (`faces` in `library.filter`)
+    const FACE_OPTIONS: &[(&str, &str)] =
+        &[("No faces", "0"), ("1 face", "1"), ("2 faces", "2"), ("1+ faces", "1+"), ("3+ faces", "3+"), ("5+ faces", "5+"), ("10+ faces", "10+")];
+    let current_faces = f.faces.as_deref();
+    let preset = current_faces.and_then(|v| FACE_OPTIONS.iter().find(|(_, val)| *val == v));
+    let mut face_items = vec![("Any faces".to_string(), json!({"faces": Value::Null}), current_faces.is_none())];
+    face_items.extend(FACE_OPTIONS.iter().map(|(label, val)| (label.to_string(), json!({"faces": val}), current_faces == Some(*val))));
+    let custom = current_faces.filter(|_| preset.is_none()).map(|spec| crate::i18n::tr_format!("Faces: {spec}", spec = spec));
+    if let (Some(label), Some(spec)) = (&custom, current_faces) {
+        face_items.push((label.clone(), json!({"faces": spec}), true));
+    }
+    let shown_faces = match (preset, custom) {
+        (Some((label, _)), _) => label.to_string(),
+        (None, Some(label)) => label,
+        (None, None) => "Faces".to_string(),
+    };
+    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), face_items);
 
     // save / clear
     ui.add_space(14.0);

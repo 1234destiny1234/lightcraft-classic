@@ -883,7 +883,7 @@ mod tests {
         let r = h.request("ui.clickWidget", json!({"id": "button:contextDeletePhoto"}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.settle(SETTLE);
-        assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::ConfirmDelete { count: 1 }));
+        assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::ConfirmDelete { count: 1, disk_files: 0 }));
         assert!(!h.app.session.catalog.photo(id).unwrap().deleted, "not deleted before the answer");
         h.request("ui.dialog.confirm", json!({}), t);
         h.settle(SETTLE);
@@ -1804,6 +1804,12 @@ mod tests {
         assert_eq!(r["ok"], true, "{r}");
         let smart = h.app.session.catalog.albums().find(|a| a.is_smart()).expect("smart album").id;
         assert_eq!(h.app.session.catalog.album_count(smart), n);
+        let r = h.request("ui.clickWidget", json!({"id": "dropdown:filter-faces"}), t);
+        assert_eq!(r["ok"], true, "dropdown:filter-faces: {r}");
+        h.request("engine.execute", json!({"command": "library.filter", "params": {"faces": "1"}}), t);
+        assert_eq!(h.app.session.filter.faces.as_deref(), Some("1"));
+        let chips = lcc_engine::filter_chips(&h.app.session.filter, &h.app.session.catalog);
+        assert!(chips.iter().any(|c| c.label == "Faces: 1"));
         h.request("ui.clickWidget", json!({"id": "button:filterClear"}), t);
         assert_eq!(h.app.session.filter, Default::default());
         assert_eq!(h.app.session.visible_cloned().len(), all);
@@ -4384,7 +4390,7 @@ mod tests {
         assert_eq!(h.app.ui.dialog, None);
         let active = h.app.session.active().unwrap();
         h.request("ui.key", json!({"key": "delete"}), t);
-        assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::ConfirmDelete { count: 1 }));
+        assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::ConfirmDelete { count: 1, disk_files: 0 }));
         assert!(!h.app.session.catalog.photo(active).unwrap().deleted);
         let r = h.request("ui.dialog.confirm", json!({}), t);
         assert_eq!(r["ok"], true, "{r}");

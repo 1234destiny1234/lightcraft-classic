@@ -127,8 +127,10 @@ impl Selection {
                 self.active = self.ids.last().copied();
             }
         } else {
+            // Lightroom Classic: adding to a selection keeps the photo that was active (the
+            // "most selected" one, e.g. the source of Sync Settings) active (#119).
             self.ids.push(id);
-            self.active = Some(id);
+            self.active = self.active.or(Some(id));
         }
     }
     /// Shift-click: select the range between the active photo and `id` in `order`.
@@ -144,7 +146,8 @@ impl Selection {
                 self.ids.push(*x);
             }
         }
-        self.active = Some(id);
+        // The anchor stays the active photo, as in Lightroom Classic (#119).
+        self.active = Some(anchor);
     }
 }
 
@@ -202,9 +205,13 @@ pub fn filter_chips(f: &Filter, cat: &Catalog) -> Vec<FilterChip> {
     if let Some(e) = f.edited {
         add(if e { "Edited".into() } else { "Unedited".into() }, json!({"edited": Null}));
     }
-    for (name, key, val) in
-        [("Camera", "camera", &f.camera), ("Lens", "lens", &f.lens), ("Keyword", "keyword", &f.keyword), ("Person", "person", &f.person)]
-    {
+    for (name, key, val) in [
+        ("Camera", "camera", &f.camera),
+        ("Lens", "lens", &f.lens),
+        ("Keyword", "keyword", &f.keyword),
+        ("Person", "person", &f.person),
+        ("Faces", "faces", &f.faces),
+    ] {
         if let Some(x) = val {
             add(format!("{name}: {x}"), json!({key: Null}));
         }
@@ -260,5 +267,19 @@ mod selection_state_tests {
         assert_eq!(s.state_of(ids[0]), SelectionState::Active);
         assert_eq!(s.state_of(ids[1]), SelectionState::Selected);
         assert_eq!(s.state_of(PhotoId(9)), SelectionState::NotSelected);
+    }
+
+    /// #119: the first photo clicked stays active (primary) when ⌘/Ctrl- or Shift-clicking more.
+    #[test]
+    fn adding_to_a_selection_keeps_the_first_photo_active() {
+        let order: Vec<PhotoId> = (1..=5).map(PhotoId).collect();
+        let mut s = Selection::single(order[1]);
+        s.toggle(order[3]);
+        assert_eq!(s.active, Some(order[1]));
+        s.extend_to(order[4], &order);
+        assert_eq!(s.active, Some(order[1]));
+        assert_eq!(s.ids.len(), 4);
+        s.toggle(order[1]);
+        assert!(s.active.is_some_and(|a| s.contains(a)));
     }
 }

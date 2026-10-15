@@ -89,6 +89,7 @@ pub const FIELDS: &[(&str, &str, Kind)] = &[
     ("keywordCount", "Keyword Count", Kind::Number),
     ("person", "People", Kind::Keywords),
     ("personCount", "People Count", Kind::Number),
+    ("faceCount", "Face Count", Kind::Number),
     // Description
     ("title", "Title", Kind::Text),
     ("caption", "Caption", Kind::Text),
@@ -140,7 +141,7 @@ pub const FIELD_GROUPS: &[(&str, &[&str])] = &[
     ("Source", &["album", "virtualCopy", "copyName", "stacked", "immich"]),
     ("File", &["fileName", "extension", "filePath", "folder", "kind", "format", "duration"]),
     ("Date", &["captureDate", "importDate", "editDate"]),
-    ("Keywords & People", &["keywords", "keywordCount", "person", "personCount"]),
+    ("Keywords & People", &["keywords", "keywordCount", "person", "personCount", "faceCount"]),
     ("Description", &["title", "caption", "altText", "creator", "copyright", "usageTerms", "copyrightStatus"]),
     ("Camera Info", &["camera", "lens", "focalLength", "aperture", "shutterSpeed", "iso"]),
     ("Location", &["location", "sublocation", "city", "state", "country", "hasGps"]),
@@ -884,6 +885,7 @@ impl Rule {
             "keywordCount" => num_op(op, Some(p.keyword_count() as f64), value),
             "person" => names_op(op, &p.people(), &want),
             "personCount" => num_op(op, Some(p.people().len() as f64), value),
+            "faceCount" => num_op(op, Some(p.face_count() as f64), value),
             "text" => {
                 let all = [
                     p.file_name.as_str(),
@@ -1355,7 +1357,7 @@ mod tests {
         let m = |p: &Photo, field: &str, op: &str, value: serde_json::Value| {
             rs(json!({"rules": [{"field": field, "op": op, "value": value}]})).matches(p, &cat)
         };
-        assert!(m(&p, "person", "isEmpty", json!(null)) && m(&p, "personCount", "is", json!(0)));
+        assert!(m(&p, "person", "isEmpty", json!(null)) && m(&p, "personCount", "is", json!(0)) && m(&p, "faceCount", "is", json!(0)));
         p.meta.regions = vec![
             region(Some("Ana Lima"), RegionKind::Face),
             region(Some(" ana lima "), RegionKind::Face),
@@ -1369,7 +1371,10 @@ mod tests {
         assert!(m(&p, "person", "notContains", json!("rex")));
         assert!(m(&p, "person", "isNotEmpty", json!(null)));
         assert!(m(&p, "personCount", "is", json!(2)), "Ana Lima once, Bo; not the pet or the unnamed face");
+        assert!(m(&p, "faceCount", "is", json!(4)), "4 face regions: Ana Lima twice, unnamed face, Bo; not the pet");
+        assert!(m(&p, "faceCount", "gte", json!(3)));
         assert_eq!(field_group("person"), Some("Keywords & People"));
+        assert_eq!(field_group("faceCount"), Some("Keywords & People"));
     }
 
     /// Shutter Speed compares exposure times in seconds, written as the camera shows them: a

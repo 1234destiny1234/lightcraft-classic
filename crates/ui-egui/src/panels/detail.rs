@@ -273,10 +273,20 @@ pub(crate) fn navigate_gesture(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui:
     }
     let (mut factor, mut delta, anchor) =
         ui.input(|i| (i.zoom_delta(), i.translation_delta(), i.multi_touch().map(|t| t.center_pos).or(i.pointer.hover_pos())));
+
+    let notches = ui.input(|i| wheel_notches(&i.events));
+    // With the Masking brush active, a plain wheel notch resizes the brush (like `[` / `]`) instead of zooming
+    // (Preferences → Interface); Ctrl/Cmd+wheel still zooms.
+    if app.ui.settings.wheel_resizes_brush && notches != 0.0 && app.ui.tool == "brush" {
+        crate::menus::adjust_brush(app, 1.0 + (notches * 0.1).clamp(-0.5, 0.5), 0.0);
+        ui.ctx().request_repaint();
+        return true;
+    }
+
     // A notched mouse wheel (line/page units, no modifier) zooms around the pointer, through egui's smoothed wheel
     // delta like Ctrl+wheel (so it glides instead of jumping); trackpads report points and still pan.
     let wheel_id = egui::Id::new("loupe-wheel-zoom");
-    if ui.input(|i| wheel_notches(&i.events)) != 0.0 {
+    if notches != 0.0 {
         ui.data_mut(|d| d.insert_temp(wheel_id, true));
     }
     if ui.data(|d| d.get_temp::<bool>(wheel_id)).unwrap_or(false) {
@@ -653,7 +663,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let drawn_long = target_rect.width().max(target_rect.height()) * ppp;
     // the whole frame at about canvas size; the zoomed part of it is a window render (below)
     let look = d.hash64();
-    let overlay = view_overlay(app, &d);
+    let overlay = view_overlay(app, &d, ui.input(|i| i.modifiers.alt));
     let sizes = crate::region::ViewSizes {
         drawn_long,
         canvas_long: canvas.width().max(canvas.height()) * ppp,
@@ -919,6 +929,21 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         }
     }
     app.loupe_shown = Some((id, shown));
+    // the colour under the pointer, for the readout under the histogram (the After render only)
+    if shown == "render"
+        && !split
+        && !show_before
+        && crop_view.is_none()
+        && let Some(q) = resp.hover_pos().filter(|q| canvas.contains(*q))
+        && let Some(tex) = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id)
+        && let Some(px) = tex.pixels.as_deref()
+    {
+        let r = fit_texture_rect(img_rect, tex.size);
+        let (u, v) = ((q.x - r.left()) / r.width().max(1.0), (q.y - r.top()) / r.height().max(1.0));
+        if let Some(rgb) = crate::color_readout::srgb_at(px, u, v, app.renderer.display().map(|d| d.as_ref())) {
+            app.ui.hover_color = Some((ui.ctx().cumulative_pass_nr(), rgb));
+        }
+    }
     // a wipe shows the Before whole-frame render on its side of the line…
     let line = crate::region::wipe_line(img_rect, canvas);
     if app.ui.before_after == BeforeAfter::Split
@@ -951,9 +976,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     }
     if app.ui.before_after == BeforeAfter::SplitTopBottom {
         p.line_segment([pos2(img_rect.left(), line.y), pos2(img_rect.right(), line.y)], Stroke::new(1.5, Color32::WHITE));
-    }
-    if app.ui.show_clipping && !show_before && !fullscreen {
-        clipping_overlay(app, &p, img_rect);
     }
     register(ui.ctx(), "canvas:image", img_rect);
     let map = crop_view.map_or_else(|| CanvasMap::new(&frame, img_rect), |v| v.map);
@@ -1514,8 +1536,6 @@ fn targeted_drag(app: &mut LccApp, resp: &egui::Response, map: &CanvasMap, targe
     }
 }
 
-/// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
-/// Visualize Spots).
 /// The loupe's HDR render for an HDR display: `job` (a whole-frame render of the open photo, no
 /// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key.
 pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine::media::RenderJob {
@@ -1541,7 +1561,10 @@ fn upload_hdr_view(app: &mut LccApp) {
     }
 }
 
-pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings) -> lcc_pipeline::Overlay {
+/// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
+/// Visualize Spots, Visualize HDR, and the clipping overlay: J's per-pixel red/blue tint, or the
+/// black/white clipping mask while ⌥/Alt-dragging a global tone slider).
+pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings, alt_held: bool) -> lcc_pipeline::Overlay {
     use lcc_pipeline::{MaskView, Overlay};
     if app.ui.fullscreen {
         return Overlay::None;
@@ -1577,20 +1600,24 @@ pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings) -> lcc_pipeline::O
     if edit && app.ui.hdr_visualize && d.hdr.enabled {
         return Overlay::HdrRange;
     }
-    Overlay::None
-}
 
-fn clipping_overlay(app: &LccApp, p: &egui::Painter, r: Rect) {
-    // Highlight clipped regions using the histogram's extremes isn't spatial; show a subtle frame hint.
-    if let Some(h) = app.renderer.textures.get(&Slot::Main).and_then(|t| t.histogram.as_ref()) {
-        let (lo, hi) = h.clipping();
-        if hi > 0.003 {
-            p.rect_stroke(r, 0.0, Stroke::new(2.0, Color32::from_rgb(255, 60, 60)), StrokeKind::Outside);
+    if app.ui.right != RightPanel::Crop {
+        // Keyed by the dragged control's id, not the interaction label: a mask's "Exposure" slider
+        // must not bring up the global clipping mask.
+        if alt_held && app.session.interaction.is_some() {
+            match app.ui.dragging_control.as_deref() {
+                Some("light.exposure" | "light.highlights" | "light.whites") => return Overlay::Clipping(Some(false)),
+                Some("light.shadows" | "light.blacks") => return Overlay::Clipping(Some(true)),
+                _ => {}
+            }
         }
-        if lo > 0.003 {
-            p.rect_stroke(r.expand(3.0), 0.0, Stroke::new(2.0, Color32::from_rgb(60, 120, 255)), StrokeKind::Outside);
+
+        if app.ui.show_clipping {
+            return Overlay::Clipping(None);
         }
     }
+
+    Overlay::None
 }
 
 fn general_cursor(app: &LccApp, ui: &egui::Ui, resp: &egui::Response, img: Rect, canvas: Rect) {

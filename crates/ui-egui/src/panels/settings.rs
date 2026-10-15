@@ -561,7 +561,10 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     } else {
         format!("GPU: {}", gpu::adapter_name().unwrap_or_else(|| "starting…".into()))
     };
-    hint(ui, t, &status);
+    // One line, the whole text on hover: the reason can be a long driver message (no adapter
+    // among the backends …), and the GPU state is process-wide, so it may change between frames;
+    // a hint that wrapped would move every control below it under the pointer.
+    ui.add(egui::Label::new(RichText::new(crate::i18n::tr(&status)).size(11.0).color(t.text_dim)).truncate()).on_hover_text(&status);
     row(ui, t, crate::i18n::tr("Preview size"), |ui| {
         let opts: Vec<(u32, String)> =
             PREVIEW_LIMITS.iter().map(|e| (*e, if *e == 0 { crate::i18n::tr("Automatic").to_string() } else { format!("{e} px") })).collect();
@@ -807,6 +810,7 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     row(ui, t, crate::i18n::tr("Wheel scroll speed"), |ui| {
         choices(ui, "settingsWheelSpeed", &[(1.0, "Normal"), (2.0, "Fast"), (3.0, "Fastest")], &mut app.ui.settings.wheel_scroll_speed);
     });
+    check(ui, "settings.wheelResizesBrush", &mut app.ui.settings.wheel_resizes_brush, "Wheel resizes brush instead of zooming");
     heading(ui, t, crate::i18n::tr("Detail"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
     row(ui, t, crate::i18n::tr("Info overlay"), |ui| {

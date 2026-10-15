@@ -57,6 +57,22 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         return Some(r);
     }
     Some(match id {
+        "view.colorReadout" | "view.colorReadoutRgb" | "view.colorReadoutHsl" | "view.colorReadoutLab" => {
+            // {format?: rgb|hsl|lab}; `view.colorReadout` without one cycles RGB → HSL → Lab
+            use crate::color_readout::ColorReadout;
+            let format = match (id, p.get("format")) {
+                ("view.colorReadoutRgb", _) => ColorReadout::Rgb,
+                ("view.colorReadoutHsl", _) => ColorReadout::Hsl,
+                ("view.colorReadoutLab", _) => ColorReadout::Lab,
+                (_, None | Some(Value::Null)) => app.ui.settings.color_readout.next(),
+                (_, Some(v)) => match v.as_str().and_then(ColorReadout::parse) {
+                    Some(f) => f,
+                    None => return Some(Err(format!("view.colorReadout: unknown format {v} (rgb|hsl|lab)"))),
+                },
+            };
+            app.ui.settings.color_readout = format;
+            Ok(json!({"format": format.id()}))
+        }
         "view.zoomLevel" => {
             // {level: fit|fill|1:4|1:3|1:2|1:1|2:1|3:1|4:1|8:1|11:1} → {zoom}
             const LEVELS: &str = "fit, fill, 1:4, 1:3, 1:2, 1:1, 2:1, 3:1, 4:1, 8:1 or 11:1";

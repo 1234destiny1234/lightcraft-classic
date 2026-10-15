@@ -443,7 +443,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Filter",
             [],
             None,
-            "partial Filter: {text?, rating?, ratingOp?: atLeast|exactly|atMost, flag?: pick|reject|none|null, label?, kind?, merged?: hdr|panorama|hdrPanorama|any, immich?: linked|notLinked|probable, edited?, date?, libraryFolder?: a path from library.folders, keyword?, person?, camera?}",
+            "partial Filter: {text?, rating?, ratingOp?: atLeast|exactly|atMost, flag?: pick|reject|none|null, label?, kind?, merged?: hdr|panorama|hdrPanorama|any, immich?: linked|notLinked|probable, edited?, date?, libraryFolder?: a path from library.folders, keyword?, person?, camera?, faces?: count|min+|range}",
             always,
             |s, p| {
                 let mut v = serde_json::to_value(&s.filter).unwrap_or_default();
@@ -916,6 +916,20 @@ pub fn specs() -> Vec<CommandSpec> {
             select_after_deletion(s, &before);
             Ok(json!({"deleted": t.len()}))
         }),
+        cmd!(
+            "photo.deleteFromDisk",
+            "Delete from Disk",
+            ["Photo"],
+            None,
+            "{ids?} — moves the photos' files to the system trash and removes them from the library",
+            has_selection,
+            |s, p| {
+                let before = s.visible_cloned();
+                let r = crate::disk_delete::delete_from_disk(s, p)?;
+                select_after_deletion(s, &before);
+                Ok(r)
+            }
+        ),
         // ---- metadata
         cmd!(
             "photo.setMeta",
