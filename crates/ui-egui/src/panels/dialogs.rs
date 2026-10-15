@@ -1400,7 +1400,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             ui.label(egui::RichText::new(lcc_brand::DISPLAY_NAME).font(t.semibold(20.0)).color(t.text));
                             ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
                             ui.label(crate::i18n::tr_format!(
-                                "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
+                                "MIT AND Apache-2.0. Fonts: {} (OFL). Icons: original.",
                                 crate::theme::font_credits(app.chinese_font.is_some())
                             ));
                             ui.add_space(10.0);
