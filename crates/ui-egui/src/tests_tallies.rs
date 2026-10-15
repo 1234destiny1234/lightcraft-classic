@@ -131,11 +131,12 @@ fn a_rating_or_a_slider_keeps_every_tally_and_a_keyword_keeps_the_folders_and_da
     a.session.execute("photo.rate", &json!({"rating": 2})).unwrap();
     a.session.execute("develop.set", &json!({"control": "light.exposure", "value": 0.4})).unwrap();
     let now = look(&mut a);
-    assert!(Arc::ptr_eq(&was.0, &now.0) && Arc::ptr_eq(&was.1, &now.1) && Arc::ptr_eq(&was.2, &now.2) && Arc::ptr_eq(&was.3, &now.3));
+    // (the folder tree is left out: its disk folders are listed again after any catalog change, off the UI thread)
+    assert!(Arc::ptr_eq(&was.1, &now.1) && Arc::ptr_eq(&was.2, &now.2) && Arc::ptr_eq(&was.3, &now.3));
     // a keyword: the keyword tree is made again, the folders and the dates are not
     a.session.execute("photo.setMeta", &json!({"addKeywords": ["travel"]})).unwrap();
     let now = look(&mut a);
-    assert!(Arc::ptr_eq(&was.0, &now.0) && Arc::ptr_eq(&was.2, &now.2), "folders and dates kept");
+    assert!(Arc::ptr_eq(&was.2, &now.2), "dates kept");
     assert!(!Arc::ptr_eq(&was.1, &now.1), "keywords tallied again");
     // a photo deleted: every tally is made again
     a.session.execute("photo.delete", &json!({})).unwrap();

@@ -1793,7 +1793,10 @@ pub struct Caches {
     keyword_groups: Option<(u64, u64, std::sync::Arc<Vec<panels::keywording::Group>>)>,
     /// The Keyword List's tick boxes, by library revision and selection.
     keyword_ticks: Option<(u64, u64, std::sync::Arc<panels::keyword_list::Ticks>)>,
-    folder_tree: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
+    /// The folder tree, made at a catalog revision and a disk folder listing generation.
+    folder_tree: Option<((u64, u64), std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
+    /// The catalog's part of the folder tree (before the disk folders are added), by catalog revision.
+    folder_base: Option<(u64, std::sync::Arc<Vec<lcc_catalog::FolderNode>>)>,
     people: Option<(u64, lcc_catalog::Filter, std::sync::Arc<Vec<lcc_catalog::Person>>)>,
     suggestions: Option<(u64, std::sync::Arc<Vec<String>>)>,
     /// What the Add keyword box offers for the text typed in it, by library revision, the
@@ -1899,9 +1902,23 @@ const READS_FLAG: lcc_catalog::Aspects = lcc_catalog::Aspects::PRESENCE.with(lcc
 impl Caches {
     /// The folders the library's photos were imported from.
     pub fn folder_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::FolderNode>> {
-        let kept = self.folder_tree.take().filter(|(r, _)| still_right(cat, *r, READS_FILE)).map(|(_, t)| t);
-        let t = kept.unwrap_or_else(|| std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(cat.folder_tree())));
-        self.folder_tree = Some((cat.revision, t.clone()));
+        let key = (cat.revision, crate::panels::left::classic::disk_generation());
+        if let Some((k, t)) = &self.folder_tree
+            && *k == key
+        {
+            return t.clone();
+        }
+        // a catalog change lists the disk folders again: a folder created, moved or removed changes no
+        // photo, so the catalog's own record of what changed can't tell
+        if self.folder_tree.as_ref().is_none_or(|((r, _), _)| *r != cat.revision) {
+            crate::panels::left::classic::invalidate_disk_folders();
+        }
+        // the catalog's part is made again only when a photo's file or presence changed
+        let base = self.folder_base.take().filter(|(r, _)| still_right(cat, *r, READS_FILE)).map(|(_, b)| b);
+        let base = base.unwrap_or_else(|| std::sync::Arc::new(cat.folder_tree()));
+        self.folder_base = Some((cat.revision, base.clone()));
+        let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(base.as_ref().clone()));
+        self.folder_tree = Some((key, t.clone()));
         t
     }
     /// The library's keyword tree.
