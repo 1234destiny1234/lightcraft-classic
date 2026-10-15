@@ -1273,6 +1273,7 @@
   "Install and Relaunch": "安裝並重新啟動",
   "Skip This Version": "跳過此版本",
   "Check for updates when the app starts": "啟動時檢查更新",
+  "Could not turn on checking for updates when the app starts": "無法開啟啟動時檢查更新",
   "Include prereleases (release candidates)": "包含預發版（RC）",
   "These settings are saved in the app's settings folder.": "這些設定保存在應用的設定資料夹中。",
   "File date": "檔案日期",

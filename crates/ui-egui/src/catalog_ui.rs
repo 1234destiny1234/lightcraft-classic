@@ -73,6 +73,9 @@ pub struct CatalogUi {
     frames: u32,
     /// Files from the command line of a first start, imported once a catalog is open.
     pub pending_import: Vec<String>,
+    /// Why the welcome dialog's "Check for updates when the app starts" couldn't be turned on once
+    /// its catalog opened: said in a toast on the next frame.
+    pub update_error: Option<String>,
 }
 
 /// The welcome dialog: a new catalog under the Pictures folder by default.
@@ -140,6 +143,7 @@ fn open_dir(app: &mut LccApp, dir: &Path, demo: bool, p: &Value) -> Result<Value
         && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": true}))
     {
         log::warn!("update.prefs: {e}");
+        app.catalog_ui.update_error = Some(e.to_string());
     }
     app.catalog_ui.dialog = None;
     Ok(r)
@@ -309,6 +313,9 @@ fn picking_catalog(app: &LccApp) -> bool {
 
 /// Each frame: Alt held while the window opens shows the chooser; then the dialog, if any.
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
+    if let Some(e) = app.catalog_ui.update_error.take() {
+        app.toast_error(ctx, format!("{}: {e}", crate::i18n::tr("Could not turn on checking for updates when the app starts")));
+    }
     if app.catalog_ui.frames < 30 {
         app.catalog_ui.frames += 1;
         let alt = ctx.input(|i| i.modifiers.alt);

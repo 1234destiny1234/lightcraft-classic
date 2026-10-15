@@ -1277,6 +1277,7 @@
   "Install and Relaunch": "Instalar y reiniciar",
   "Skip This Version": "Omitir esta versión",
   "Check for updates when the app starts": "Buscar actualizaciones al iniciar la aplicación",
+  "Could not turn on checking for updates when the app starts": "No se pudo activar la búsqueda de actualizaciones al iniciar la aplicación",
   "Include prereleases (release candidates)": "Incluir versiones preliminares (candidatas)",
   "These settings are saved in the app's settings folder.": "Estos ajustes se guardan en la carpeta de ajustes de la aplicación.",
   "File date": "Fecha del archivo",
