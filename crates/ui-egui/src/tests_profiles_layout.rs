@@ -25,6 +25,10 @@ fn panel(width: f32) -> (Vec<egui::epaint::TextShape>, Vec<(String, Rect)>) {
         file: String::new(),
     });
     app.run("develop.profile", json!({"id": LONG_ID})).unwrap();
+    // every group open (only the applied profile's opens by itself, as in Lightroom Classic)
+    for g in lcc_engine::presets::profile_groups() {
+        app.ui.group_open.insert(format!("profile:{g}"), true);
+    }
     let photo = app.session.active().unwrap();
     let ctx = egui::Context::default();
     crate::theme::install_fonts(&ctx);
