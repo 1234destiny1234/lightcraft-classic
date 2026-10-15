@@ -291,6 +291,24 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         picker(app, ui, id, &shown, current.is_some(), items);
     }
 
+    // faces picker: detected face boxes, named or not (`faces` in `library.filter`)
+    const FACE_OPTIONS: &[(&str, &str)] =
+        &[("No faces", "0"), ("1 face", "1"), ("2 faces", "2"), ("1+ faces", "1+"), ("3+ faces", "3+"), ("5+ faces", "5+"), ("10+ faces", "10+")];
+    let current_faces = f.faces.as_deref();
+    let preset = current_faces.and_then(|v| FACE_OPTIONS.iter().find(|(_, val)| *val == v));
+    let mut face_items = vec![("Any faces".to_string(), json!({"faces": Value::Null}), current_faces.is_none())];
+    face_items.extend(FACE_OPTIONS.iter().map(|(label, val)| (label.to_string(), json!({"faces": val}), current_faces == Some(*val))));
+    let custom = current_faces.filter(|_| preset.is_none()).map(|spec| crate::i18n::tr_format!("Faces: {spec}", spec = spec));
+    if let (Some(label), Some(spec)) = (&custom, current_faces) {
+        face_items.push((label.clone(), json!({"faces": spec}), true));
+    }
+    let shown_faces = match (preset, custom) {
+        (Some((label, _)), _) => label.to_string(),
+        (None, Some(label)) => label,
+        (None, None) => "Faces".to_string(),
+    };
+    picker(app, ui, "faces", &shown_faces, f.faces.is_some(), face_items);
+
     // save / clear
     ui.add_space(14.0);
     let filtering = app.session.filter != Default::default();

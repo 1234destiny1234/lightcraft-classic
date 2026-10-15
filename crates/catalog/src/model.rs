@@ -562,6 +562,10 @@ impl Photo {
         }
         out
     }
+    /// Number of detected face regions on the photo (named or unnamed).
+    pub fn face_count(&self) -> usize {
+        self.meta.regions.iter().filter(|r| r.kind == lcc_meta::RegionKind::Face).count()
+    }
     /// In the library: not deleted and not only browsed (Local).
     pub fn in_library(&self) -> bool {
         !self.deleted && !self.local
