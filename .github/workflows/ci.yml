@@ -14,7 +14,9 @@ on:
   workflow_dispatch:
 
 concurrency:
-  group: ci-${{ github.ref }}
+  # A manual (full) run has its own group: GitHub keeps one waiting run per group, so a push to the same
+  # ref would otherwise replace a dispatched pre-release run that is still waiting for a runner.
+  group: ci-${{ github.ref }}-${{ github.event_name == 'workflow_dispatch' && 'full' || 'push' }}
   # On main every push keeps its run (a newer push waits behind it), so a run of merges still gets
   # a result; on other refs a newer push replaces the older run.
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -101,7 +103,7 @@ jobs:
         run: |
           case "$RUNNER_OS" in
             Windows) powershell -NoProfile -Command "Get-Process -Name Runner.Worker | ForEach-Object { \$_.PriorityClass = 'BelowNormal' }" || true ;;
-            macOS) renice -n 19 -p $PPID >/dev/null; taskpolicy -b -p $PPID || true ;;
+            macOS) renice -n 19 -p $PPID >/dev/null ;;  # nice only: taskpolicy -b confines work to the efficiency cores
           esac
       - uses: taiki-e/install-action@v2
         if: env.FULL_CI == '1'

@@ -1534,5 +1534,13 @@
   "Checking the GPU…": "Проверка ГП…",
   "CPU": "ЦП",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Модель лиц использует ГП, только если проверка показала, что он даёт те же результаты быстрее.",
-  "Checking the GPU for faces": "Проверка ГП для лиц"
+  "Checking the GPU for faces": "Проверка ГП для лиц",
+  "Export to": "Экспортировать в",
+  "Specific folder": "Указанная папка",
+  "Same folder as original photo": "Та же папка, что и оригинал",
+  "Custom text": "Свой текст",
+  "Filename - Sequence": "Имя файла - Номер",
+  "Custom Name - Sequence": "Своё имя - Номер",
+  "Custom Name": "Своё имя",
+  "Date - Filename": "Дата - Имя файла"
 }

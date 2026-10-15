@@ -1237,5 +1237,13 @@
   "Checking the GPU…": "Vérification du GPU…",
   "CPU": "Processeur",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Un modèle de visages n’utilise le GPU que si une vérification montre qu’il donne les mêmes résultats plus vite.",
-  "Checking the GPU for faces": "Vérification du GPU pour les visages"
+  "Checking the GPU for faces": "Vérification du GPU pour les visages",
+  "Export to": "Exporter vers",
+  "Specific folder": "Dossier spécifique",
+  "Same folder as original photo": "Même dossier que la photo d’origine",
+  "Custom text": "Texte personnalisé",
+  "Filename - Sequence": "Nom de fichier - Séquence",
+  "Custom Name - Sequence": "Nom personnalisé - Séquence",
+  "Custom Name": "Nom personnalisé",
+  "Date - Filename": "Date - Nom de fichier"
 }
