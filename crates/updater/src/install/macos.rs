@@ -76,6 +76,11 @@ pub(super) fn install_dmg_at(
     let name = name.to_string_lossy();
     let staged = dir.join(format!(".{name}.partial"));
     let old = dir.join(format!(".{name}.old"));
+    // Gatekeeper runs a quarantined app from a random read-only folder until the user moves it:
+    // there is nothing there to replace, and the copy would vanish at the next start
+    if bundle.components().any(|c| c.as_os_str() == "AppTranslocation") {
+        return Err(move_first(bundle));
+    }
     if !bundle.is_dir() {
         // an install interrupted between its two renames leaves the previous app as `.old`
         let hint = if old.is_dir() { format!("; the previous version may be at {}: rename it back to use it", old.display()) } else { String::new() };
@@ -201,6 +206,10 @@ impl Drop for Mount {
 }
 
 /// Copy the bundle `from` to `to` (which must not exist); a failed copy leaves nothing behind.
+///
+/// `--noextattr` also drops `com.apple.quarantine`, so Gatekeeper does not assess the new bundle
+/// on its first start. That is acceptable because the download was checked against the release's
+/// SHA-256 before it got here; checking the release's signature is a separate step (U2).
 fn copy(from: &Path, to: &Path) -> Result<(), UpdateError> {
     let out = Command::new(DITTO).args(["--norsrc", "--noextattr", "--noacl"]).arg(from).arg(to).stdin(Stdio::null()).output();
     let failed = match out {
@@ -210,15 +219,36 @@ fn copy(from: &Path, to: &Path) -> Result<(), UpdateError> {
     };
     remove_quietly(to);
     let dir = to.parent().unwrap_or(to);
+    if failed.contains("Read-only file system") {
+        return Err(move_first(dir));
+    }
     Err(UpdateError::Install(format!(
         "could not copy the new version into {} ({failed}); check that the folder is writable and the disk has room. The installed app was not changed",
         dir.display()
     )))
 }
 
+/// The app runs from somewhere read-only (its disk image, a translocated copy): it has to be
+/// moved somewhere writable before it can be updated.
+fn move_first(place: &Path) -> UpdateError {
+    UpdateError::Install(format!(
+        "the app is running from a read-only place ({}), probably straight from its disk image or a download folder macOS keeps apart. Move {}.app to the Applications folder (or another folder you can write to), start it from there and update again",
+        place.display(),
+        lcc_brand::DISPLAY_NAME
+    ))
+}
+
 /// The staged bundle must have a readable `Info.plist` that names the release's version.
 fn check_version(bundle: &Path, version: &str) -> Result<(), UpdateError> {
-    let plist = bundle.join("Contents").join("Info.plist");
+    let contents = bundle.join("Contents");
+    // `ditto` copies links as links: a `Contents` pointing elsewhere would show someone else's
+    // Info.plist (and run someone else's code)
+    if !std::fs::symlink_metadata(&contents).is_ok_and(|m| m.is_dir()) {
+        return Err(UpdateError::Install(
+            "the new version's Contents folder is missing or a link; the disk image is not a release of this app".into(),
+        ));
+    }
+    let plist = contents.join("Info.plist");
     let unreadable = |why: String| {
         UpdateError::Install(format!(
             "the new version's Info.plist could not be read ({why}); the disk image is damaged or not a release of this app"
@@ -258,13 +288,50 @@ fn check_version(bundle: &Path, version: &str) -> Result<(), UpdateError> {
     Ok(())
 }
 
-/// The `<string>` value of a top-level `key` in an XML property list.
+/// The `<string>` value of `key` in the top-level `<dict>` of an XML property list (keys of
+/// nested dictionaries, such as the document types', and comments are skipped).
 fn plist_string(xml: &str, key: &str) -> Option<String> {
-    let tag = format!("<key>{key}</key>");
-    let at = xml.find(&tag)?.checked_add(tag.len())?;
-    let rest = xml.get(at..)?.trim_start().strip_prefix("<string>")?;
-    let value = rest.get(..rest.find("</string>")?)?.trim();
-    Some(value.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&"))
+    let mut depth: usize = 0;
+    let mut matched = false;
+    let mut rest = xml;
+    while let Some(lt) = rest.find('<') {
+        rest = rest.get(lt..)?;
+        if rest.starts_with("<!--") {
+            let end = rest.find("-->")?;
+            rest = rest.get(end.checked_add(3)?..)?;
+            continue;
+        }
+        let gt = rest.find('>')?;
+        let tag = rest.get(1..gt)?;
+        rest = rest.get(gt.checked_add(1)?..)?;
+        if tag.starts_with(['?', '!']) {
+            continue;
+        }
+        let open = !tag.ends_with('/');
+        let name = tag.trim_end_matches('/').split_whitespace().next().unwrap_or_default();
+        if matched {
+            // the element right after the key is its value
+            if name != "string" || !open {
+                return None;
+            }
+            return Some(unescape(rest.get(..rest.find("</string>")?)?.trim()));
+        }
+        match name {
+            "dict" | "array" if open => depth = depth.saturating_add(1),
+            "/dict" | "/array" => depth = depth.saturating_sub(1),
+            "key" if open => {
+                let end = rest.find("</key>")?;
+                matched = depth == 1 && unescape(rest.get(..end)?.trim()) == key;
+                rest = rest.get(end.checked_add("</key>".len())?..)?;
+            }
+            _ => {}
+        }
+    }
+    None
+}
+
+fn unescape(text: &str) -> String {
+    text.replace("&lt;", "<").replace("&gt;", ">").replace("&quot;", "\"").replace("&apos;", "'").replace("&amp;", "&")
 }
 
 /// Put `staged` where `bundle` is, keeping the old bundle as `old` until the new one is in.
@@ -641,6 +708,79 @@ mod tests {
     }
 
     #[test]
+    fn a_new_bundle_whose_contents_is_a_symlink_is_refused() {
+        let s = Scratch::new("contents link");
+        let app = installed(&s);
+        // a bundle whose Contents points elsewhere: its Info.plist would be someone else's
+        let elsewhere = s.0.join("elsewhere");
+        fake_app(&elsewhere, Some(RELEASE), "new");
+        let dmg = image(&s, |root| {
+            let new = root.join(app_name());
+            std::fs::create_dir_all(&new).expect("bundle folder");
+            std::os::unix::fs::symlink(elsewhere.join("Contents"), new.join("Contents")).expect("symlink");
+        });
+        let (r, launched) = run(&dmg, Some(&app), RELEASE);
+        let err = r.expect_err("a Contents that is a link is not this app's");
+        assert!(err.to_string().contains("Contents"), "{err}");
+        assert_eq!(marker(&app), "old");
+        assert!(launched.is_empty());
+        assert!(leftovers(&s.apps()).is_empty(), "nothing should be left behind: {:?}", leftovers(&s.apps()));
+        assert_unmounted(&s);
+    }
+
+    #[test]
+    fn an_app_run_from_a_translocated_copy_is_told_to_move_first() {
+        let s = Scratch::new("translocated");
+        let app = s.0.join("AppTranslocation").join("5D3F").join("d").join(app_name());
+        fake_app(&app, Some("0.0.1"), "old");
+        let dmg = image(&s, |root| fake_app(&root.join(app_name()), Some(RELEASE), "new"));
+        let (r, launched) = run(&dmg, Some(&app), RELEASE);
+        let err = r.expect_err("a translocated copy is read-only and temporary");
+        assert!(err.to_string().contains("Applications"), "the error should say where to move the app: {err}");
+        assert_eq!(marker(&app), "old");
+        assert!(launched.is_empty());
+    }
+
+    #[test]
+    fn an_app_on_a_read_only_disk_is_told_to_move_first() {
+        let s = Scratch::new("read-only disk");
+        // the installed app lives on a read-only volume (a disk image mounted read-only)
+        let ro = s.0.join("ro image");
+        fake_app(&ro.join(app_name()), Some("0.0.1"), "old");
+        let ro_dmg = s.0.join("ro.dmg");
+        let out = Command::new("/usr/bin/hdiutil")
+            .args(["create", "-quiet", "-ov", "-format", "UDRO", "-fs", "HFS+", "-volname", "RO Test", "-srcfolder"])
+            .arg(&ro)
+            .arg(&ro_dmg)
+            .output()
+            .expect("hdiutil create runs");
+        assert!(out.status.success(), "hdiutil create failed: {}", String::from_utf8_lossy(&out.stderr));
+        let mounted = Mount::attach(&ro_dmg).expect("mount the read-only disk");
+        let app = mounted.point.join(app_name());
+        let dmg = image(&s, |root| fake_app(&root.join(app_name()), Some(RELEASE), "new"));
+        let (r, launched) = run(&dmg, Some(&app), RELEASE);
+        let err = r.expect_err("a read-only disk can't take the new version");
+        assert!(err.to_string().contains("Applications"), "the error should say where to move the app: {err}");
+        assert_eq!(marker(&app), "old");
+        assert!(launched.is_empty());
+        assert_unmounted(&s);
+    }
+
+    #[test]
+    fn only_top_level_keys_are_read_from_info_plist() {
+        let xml = "<plist version=\"1.0\"><dict>\
+                   <key>UTExportedTypeDeclarations</key><array><dict>\
+                   <key>CFBundleShortVersionString</key><string>9.9.9</string>\
+                   </dict></array>\
+                   <!-- <key>CFBundleShortVersionString</key><string>8.8.8</string> -->\
+                   <key>CFBundleShortVersionString</key><string>1.2.3</string>\
+                   </dict></plist>";
+        assert_eq!(plist_string(xml, "CFBundleShortVersionString").as_deref(), Some("1.2.3"));
+        let nested_only = "<plist><dict><key>A</key><dict><key>CFBundleShortVersionString</key><string>9.9.9</string></dict></dict></plist>";
+        assert_eq!(plist_string(nested_only, "CFBundleShortVersionString"), None, "a nested key is not the bundle's");
+    }
+
+    #[test]
     fn the_version_is_read_from_an_xml_info_plist() {
         let xml = info_plist("2.0.1");
         assert_eq!(plist_string(&xml, "CFBundleShortVersionString").as_deref(), Some("2.0.1"));
@@ -658,6 +798,9 @@ mod tests {
             assert!(sources.iter().all(|s| !s.contains(needle)), "the install must not use {needle}");
         }
         assert!(!RELAUNCH.contains(" sleep ") && RELAUNCH.contains("/usr/bin/open"), "the relaunch calls its tools by absolute path");
+        for tool in [HDIUTIL, DITTO, PLUTIL, SH] {
+            assert!(tool.starts_with('/'), "{tool} must be an absolute path");
+        }
         for tool in ["hdiutil", "ditto", "open", "plutil"] {
             let bare = format!("Command::new(\"{tool}\")");
             assert!(sources.iter().all(|s| !s.contains(&bare)), "{tool} must be called by absolute path");
