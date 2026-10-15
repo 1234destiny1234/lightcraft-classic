@@ -460,7 +460,7 @@ fn quick_develop_preset_menu_builds_only_visible_rows() {
 
 /// Issue #46: Develop's Basic controls follow Lightroom Classic's order, top to bottom: Treatment and
 /// Profile, then white balance, then Tone (with Auto), then Presence. And clicking Black & White in the
-/// Treatment row makes the photo black and white.
+/// Treatment row makes the photo black and white. Issue #124: Auto, B&W and HDR share one button row.
 #[test]
 fn develop_basic_follows_classic_order() {
     let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
@@ -472,12 +472,11 @@ fn develop_basic_follows_classic_order() {
     h.settle(SETTLE);
     let y = |h: &Headless, w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().y).unwrap_or_else(|| panic!("no widget {w}"));
     let order = [
-        "button:treatment-bw",
+        "button:auto",
         "dropdown:profile",
         "dropdown:wbMode",
         "slider:wb.tempRel",
         "slider:wb.tintRel",
-        "button:auto",
         "slider:light.exposure",
         "slider:light.blacks",
         "slider:effects.texture",
@@ -491,9 +490,18 @@ fn develop_basic_follows_classic_order() {
     }
     let x = |w: &str| h.app.widgets.iter().find(|(n, _)| n == w).map(|(_, r)| r.center().x).unwrap_or_else(|| panic!("no widget {w}"));
     assert!(x("icon:wbPicker") < x("dropdown:wbMode"), "the WB selector sits left of the WB menu");
+    // issue #124: Auto, B&W and HDR share one row, in that order
+    for pair in ["button:auto", "button:treatment-bw", "button:hdr"].windows(2) {
+        assert_eq!(y(&h, pair[0]), y(&h, pair[1]), "{} shares the row with {}", pair[0], pair[1]);
+        assert!(x(pair[0]) < x(pair[1]), "{} sits left of {}", pair[0], pair[1]);
+    }
     assert_eq!(h.request("ui.clickWidget", json!({"id": "button:treatment-bw"}), T)["ok"], true);
     h.settle(SETTLE);
     assert!(crate::is_bw(&h.app.session.develop_of(lcc_catalog::PhotoId(id)).unwrap_or_default()), "Black & White sets the treatment");
+    // B&W toggles: a second click is back in colour
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "button:treatment-bw"}), T)["ok"], true);
+    h.settle(SETTLE);
+    assert!(!crate::is_bw(&h.app.session.develop_of(lcc_catalog::PhotoId(id)).unwrap_or_default()), "B&W toggles back to colour");
 }
 
 /// Issue #75: the Presets panel folds from its own Classic header, exactly as the Versions,
