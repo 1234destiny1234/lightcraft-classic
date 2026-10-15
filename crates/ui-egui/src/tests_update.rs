@@ -64,6 +64,10 @@ fn app() -> Headless {
     let mut session = lcc_engine::Session::new();
     // a fresh updater: the settings are the defaults, not whatever this machine's are
     session.updater = lcc_engine::update::Updater::new(None);
+    // a throwaway test key (never a release key): these tests are about the dialog, and a build
+    // without a key installs nothing (lcc-engine's update tests cover that)
+    let key = lcc_updater::UpdateKey::parse("GX9rI+FshTLGq8g4+s1ep4m+DHaykgM0A5v6iz02jWE=").unwrap();
+    session.updater.trust_test_key(Some(key));
     let app = LccApp::new(session, services());
     let mut h = Headless::new(app, [1200.0, 900.0], 1.0);
     // no start-up check: these tests drive the dialog themselves

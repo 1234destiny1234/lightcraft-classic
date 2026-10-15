@@ -16,6 +16,7 @@ mod quarantine;
 mod rename;
 mod shortcuts;
 mod stats;
+mod update_key;
 mod upstream;
 mod version;
 mod web;
@@ -84,6 +85,12 @@ commands:
   shared-check [--strict]
                   commits since the last upstream merge that change shared paths without `UPSTREAM-PR:`
                   (warns; --strict fails)
+  update-key new --out FILE | sign FOLDER [--key-file FILE] | verify FOLDER
+                  the key a release's SHA256SUMS.txt is signed with (the in-app updater installs
+                  nothing else): new writes a private key to FILE (outside the repository) and prints
+                  the public key for brand.toml [updates]; sign writes FOLDER/SHA256SUMS.txt.sig (key
+                  from FILE or $UPDATE_SIGNING_KEY); verify checks it and the files present against
+                  brand.toml (docs/releasing.md)
   stats [--exact] count tests and lines per crate (--exact: ask the test harness via `-- --list`)
 ";
 
@@ -116,6 +123,7 @@ fn main() -> ExitCode {
         Some("upstream-pr") => upstream::pr(&root(), &rest),
         Some("shared-check") => upstream::shared_check(&root(), &rest, false),
         Some("stats") => stats::run(&root(), rest.contains(&"--exact")),
+        Some("update-key") => update_key::run(&root(), &rest),
         Some("shortcuts") => shortcuts::run(&root()),
         Some("-h" | "--help" | "help") | None => {
             print!("{USAGE}");

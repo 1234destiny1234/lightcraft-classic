@@ -14,6 +14,7 @@ use lcc_net::{Client, DownloadOptions};
 use crate::check::MAX_DOWNLOAD_BYTES;
 use crate::check::Update;
 use crate::error::UpdateError;
+use crate::signature::UpdateKey;
 
 /// Progress: `(bytes so far, total when known)`.
 pub type Progress<'a> = &'a mut dyn FnMut(u64, Option<u64>);
@@ -70,34 +71,53 @@ pub fn safe_file_name(name: &str) -> Result<String, UpdateError> {
     Ok(base.to_string())
 }
 
-/// Download `update`'s file into `dir`, checking it against the feed's size and its SHA-256.
+/// Download `update`'s file into `dir`, checking it against the release's signed checksum list.
 ///
-/// A file already there that still matches its SHA-256 is returned as it is (a second click starts
-/// no second transfer); a `.part` from an interrupted one is resumed.
+/// First the release's `SHA256SUMS.txt` and its signature are fetched and checked against `key`
+/// (the build's pinned key, [`UpdateKey::pinned`]); the SHA-256 the verified list records for the
+/// file is the one the download must match, and the size must be what the feed states. The feed's
+/// own hash is not used. No key ([`UpdateError::NoKey`]), a list that cannot be fetched, a missing
+/// or wrong signature, or a file the list does not name stop it before the transfer, and whatever
+/// was staged under that name is deleted.
+///
+/// A file already there that still matches the signed SHA-256 is returned as it is (a second click
+/// starts no second transfer); a `.part` from an interrupted one is resumed.
 pub fn download(
     update: &Update,
+    key: Option<&UpdateKey>,
     client: &Client,
     dir: &Path,
     cancel: Option<Arc<AtomicBool>>,
     progress: Option<Progress<'_>>,
 ) -> Result<Downloaded, UpdateError> {
     let name = safe_file_name(&update.asset.name)?;
+    let Some(key) = key else { return Err(UpdateError::NoKey) };
     std::fs::create_dir_all(dir).map_err(|e| UpdateError::Io(format!("could not create {}: {e}", dir.display())))?;
     let dest = dir.join(&name);
     // where it must not escape to
     if dest.parent() != Some(dir) {
         return Err(UpdateError::Io(format!("refusing to write outside {}", dir.display())));
     }
+    // the hash comes from the signed list, and from nowhere else
+    let hash_we_want = match crate::signature::signed_sha256(update, key, cancel.clone()) {
+        Ok(sha) => sha,
+        Err(e) => {
+            if e != UpdateError::Cancelled {
+                // nothing the release no longer vouches for stays staged
+                remove_staged(&dest);
+            }
+            return Err(e);
+        }
+    };
     let size = (update.asset.size > 0).then_some(update.asset.size);
-    if let Some(done) = already_verified(&dest, &name, size, update.sha256.as_deref()) {
+    if let Some(done) = already_verified(&dest, &name, size, Some(&hash_we_want)) {
         return Ok(done);
     }
     let cap = match size {
         Some(bytes) => bytes.max(1),
         None => MAX_DOWNLOAD_BYTES,
     };
-    let hash_we_want = update.sha256.clone();
-    let opts = DownloadOptions { size, sha256: hash_we_want.clone(), max_size: cap, headers: Vec::new(), cancel, progress };
+    let opts = DownloadOptions { size, sha256: Some(hash_we_want), max_size: cap, headers: Vec::new(), cancel, progress };
     let got = client.download(&update.asset.url, &dest, opts).map_err(|e| match e {
         lcc_net::NetError::Cancelled => UpdateError::Cancelled,
         lcc_net::NetError::Verify(why) => UpdateError::Verify(why),
@@ -114,6 +134,17 @@ pub fn download(
         return Err(UpdateError::Verify(format!("the release says {size} bytes, the file has {}", got.bytes)));
     }
     Ok(Downloaded { path: dest, bytes: got.bytes, sha256: got.sha256, name })
+}
+
+/// Delete `dest` and its `.part`: a file that may not be installed is not kept.
+fn remove_staged(dest: &Path) {
+    for path in [dest.to_path_buf(), part_path(dest)] {
+        if let Err(e) = std::fs::remove_file(&path)
+            && e.kind() != std::io::ErrorKind::NotFound
+        {
+            log::warn!("update: {}: {e}", path.display());
+        }
+    }
 }
 
 /// A file already staged from an earlier download that still checks out, if there is one.
@@ -163,6 +194,9 @@ mod tests {
     use super::*;
     use crate::target::{Asset, Kind, Os, Target};
     use crate::version::Version;
+    use base64::Engine as _;
+    use ed25519_dalek::{Signer as _, SigningKey};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     fn update(url: &str, name: &str, size: u64, sha: Option<String>) -> Update {
         Update {
@@ -176,6 +210,17 @@ mod tests {
             notes: String::new(),
             action: Target { os: Os::Linux, arch: "x86_64" }.describe(),
         }
+    }
+
+    /// A throwaway signing key for these tests (never a release key) and its public half.
+    fn test_key(seed: u8) -> (SigningKey, UpdateKey) {
+        let signing = SigningKey::from_bytes(&[seed; 32]);
+        let text = base64::engine::general_purpose::STANDARD.encode(signing.verifying_key().as_bytes());
+        (signing, UpdateKey::parse(&text).expect("a key"))
+    }
+
+    fn sign(key: &SigningKey, list: &[u8]) -> Vec<u8> {
+        base64::engine::general_purpose::STANDARD.encode(key.sign(list).to_bytes()).into_bytes()
     }
 
     #[test]
@@ -201,15 +246,36 @@ mod tests {
         assert_eq!(stage_dir(Path::new("/cache")), PathBuf::from("/cache/updates"));
     }
 
-    /// A local server that answers `n` requests with `body` (and a broken one that hangs up).
-    fn serve(n: usize, body: Vec<u8>) -> String {
+    /// What the local release serves: the file, its `SHA256SUMS.txt` and the list's signature
+    /// (`None`: a 404, as on a release that was never signed).
+    struct Served {
+        file: Vec<u8>,
+        sums: Option<Vec<u8>>,
+        sig: Option<Vec<u8>>,
+    }
+
+    /// A release whose list names `name` with the file's real hash, signed by `key`.
+    fn signed(file: Vec<u8>, name: &str, key: &SigningKey) -> Served {
+        let sums = format!("{}  {name}\n", sha256_hex(&file)).into_bytes();
+        let sig = sign(key, &sums);
+        Served { file, sums: Some(sums), sig: Some(sig) }
+    }
+
+    /// A local release folder: `<base>/SHA256SUMS.txt`, `<base>/SHA256SUMS.txt.sig`, and the file
+    /// at any other path (with `Range` resume). Returns the folder's URL and how many times the file
+    /// itself was asked for.
+    fn serve(served: Served) -> (String, Arc<AtomicUsize>) {
         use std::io::{BufRead, BufReader, Write};
         let l = std::net::TcpListener::bind("127.0.0.1:0").expect("bind");
-        let base = format!("http://{}/f", l.local_addr().expect("addr"));
+        let base = format!("http://{}/v2.0.0", l.local_addr().expect("addr"));
+        let file_hits = Arc::new(AtomicUsize::new(0));
+        let hits = file_hits.clone();
         std::thread::spawn(move || {
-            for _ in 0..n {
-                let Ok((mut s, _)) = l.accept() else { return };
+            for stream in l.incoming() {
+                let Ok(mut s) = stream else { return };
                 let mut r = BufReader::new(s.try_clone().expect("clone"));
+                let mut request = String::new();
+                let _ = r.read_line(&mut request);
                 let mut range = String::new();
                 loop {
                     let mut line = String::new();
@@ -220,25 +286,47 @@ mod tests {
                         range = line[6..].trim().to_string();
                     }
                 }
-                let start: usize = range.strip_prefix("bytes=").and_then(|r| r.split('-').next()).and_then(|s| s.parse().ok()).unwrap_or(0);
-                let slice = body.get(start..).unwrap_or_default();
-                if start > 0 {
-                    let _ = s.write_all(
-                        format!(
-                            "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{}/{}\r\nConnection: close\r\n\r\n",
-                            slice.len(),
-                            body.len().saturating_sub(1),
-                            body.len()
-                        )
-                        .as_bytes(),
-                    );
+                let path = request.split_whitespace().nth(1).unwrap_or("").to_string();
+                let small = if path.ends_with("/SHA256SUMS.txt") {
+                    Some(served.sums.as_deref())
+                } else if path.ends_with("/SHA256SUMS.txt.sig") {
+                    Some(served.sig.as_deref())
                 } else {
-                    let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", slice.len()).as_bytes());
+                    None
+                };
+                match small {
+                    Some(Some(body)) => {
+                        let _ = s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", body.len()).as_bytes());
+                        let _ = s.write_all(body);
+                    }
+                    Some(None) => {
+                        let _ = s.write_all(b"HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n");
+                    }
+                    None => {
+                        hits.fetch_add(1, Ordering::SeqCst);
+                        let body = &served.file;
+                        let start: usize = range.strip_prefix("bytes=").and_then(|r| r.split('-').next()).and_then(|s| s.parse().ok()).unwrap_or(0);
+                        let slice = body.get(start..).unwrap_or_default();
+                        if start > 0 {
+                            let _ = s.write_all(
+                                format!(
+                                    "HTTP/1.1 206 Partial Content\r\nContent-Length: {}\r\nContent-Range: bytes {start}-{}/{}\r\nConnection: close\r\n\r\n",
+                                    slice.len(),
+                                    body.len().saturating_sub(1),
+                                    body.len()
+                                )
+                                .as_bytes(),
+                            );
+                        } else {
+                            let _ =
+                                s.write_all(format!("HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n", slice.len()).as_bytes());
+                        }
+                        let _ = s.write_all(slice);
+                    }
                 }
-                let _ = s.write_all(slice);
             }
         });
-        base
+        (base, file_hits)
     }
 
     fn scratch(tag: &str) -> PathBuf {
@@ -262,11 +350,13 @@ mod tests {
     #[test]
     fn downloads_checks_and_leaves_no_part() {
         let dir = scratch("ok");
+        let (signing, key) = test_key(1);
         let bytes: Vec<u8> = (0..50_000u32).map(|i| (i % 251) as u8).collect();
-        let url = serve(1, bytes.clone());
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
+        let (url, _) = serve(signed(bytes.clone(), "app.msi", &signing));
+        // the feed states no hash: the signed list is where it comes from
+        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
         let mut seen = 0u64;
-        let got = download(&u, &client(), &dir, None, Some(&mut |done, _| seen = done)).expect("download");
+        let got = download(&u, Some(&key), &client(), &dir, None, Some(&mut |done, _| seen = done)).expect("download");
         assert_eq!((got.bytes, std::fs::read(&got.path).expect("read")), (bytes.len() as u64, bytes.clone()));
         assert_eq!(got.sha256, sha256_hex(&bytes));
         assert_eq!(seen, bytes.len() as u64, "progress reports the end");
@@ -274,52 +364,132 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// Someone who can change the release swaps the file and gives the feed its hash: the signed
+    /// list still names the genuine file, so the swapped one is thrown away.
     #[test]
-    fn a_wrong_hash_is_thrown_away() {
+    fn a_tampered_file_is_thrown_away_whatever_the_feed_says() {
         let dir = scratch("bad");
-        let bytes = vec![7u8; 5_000];
-        let url = serve(1, bytes.clone());
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some("00".repeat(32)));
-        let err = download(&u, &client(), &dir, None, None).expect_err("must fail");
+        let (signing, key) = test_key(1);
+        let genuine = vec![7u8; 5_000];
+        let mut served = signed(genuine, "app.msi", &signing);
+        let tampered = vec![8u8; 5_000];
+        served.file = tampered.clone();
+        let (url, _) = serve(served);
+        let u = update(&format!("{url}/app.msi"), "app.msi", tampered.len() as u64, Some(sha256_hex(&tampered)));
+        let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err("must fail");
         assert!(matches!(err, UpdateError::Verify(_)), "{err}");
+        assert!(err.to_string().contains("did not check out"), "the message names the check: {err}");
         assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0, "neither the file nor its part is kept");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Each way the list can fail to vouch for the file stops the update before the transfer, with
+    /// a message naming why, and deletes what an earlier download staged under that name.
+    #[test]
+    fn a_list_that_does_not_vouch_for_the_file_stops_the_update() {
+        let (signing, key) = test_key(1);
+        let (other, _) = test_key(2);
+        let file = vec![9u8; 3_000];
+        let genuine = signed(file.clone(), "app.msi", &signing);
+        let sums = genuine.sums.clone().expect("sums");
+        let mut changed = sums.clone();
+        // the list says another hash (the attacker's file), the signature is the genuine one
+        changed[0] = if changed[0] == b'0' { b'1' } else { b'0' };
+        let cases: Vec<(&str, Served, &str)> = vec![
+            ("a tampered list", Served { file: file.clone(), sums: Some(changed), sig: genuine.sig.clone() }, "not signed by this app's update key"),
+            (
+                "another key",
+                Served { file: file.clone(), sums: Some(sums.clone()), sig: Some(sign(&other, &sums)) },
+                "not signed by this app's update key",
+            ),
+            ("no signature", Served { file: file.clone(), sums: Some(sums.clone()), sig: None }, "SHA256SUMS.txt.sig is missing"),
+            ("no list", Served { file: file.clone(), sums: None, sig: genuine.sig.clone() }, "checksum list (SHA256SUMS.txt) could not be read"),
+            (
+                "a list without the file",
+                {
+                    let other_list = format!("{}  app-other.msi\n", sha256_hex(&file)).into_bytes();
+                    let sig = sign(&signing, &other_list);
+                    Served { file: file.clone(), sums: Some(other_list), sig: Some(sig) }
+                },
+                "does not list app.msi",
+            ),
+            (
+                "a signature that is not one",
+                Served { file: file.clone(), sums: Some(sums.clone()), sig: Some(b"<html>".to_vec()) },
+                "is not a signature",
+            ),
+        ];
+        for (what, served, says) in cases {
+            let dir = scratch("unvouched");
+            // what an earlier download left: it must not stay staged
+            std::fs::write(dir.join("app.msi"), &file).expect("staged");
+            std::fs::write(dir.join("app.msi.part"), &file[..100]).expect("part");
+            let (url, file_hits) = serve(served);
+            let u = update(&format!("{url}/app.msi"), "app.msi", file.len() as u64, Some(sha256_hex(&file)));
+            let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err(what);
+            assert!(matches!(err, UpdateError::Signature(_)), "{what}: {err}");
+            assert!(err.to_string().contains(says), "{what}: the message names the cause: {err}");
+            assert!(err.to_string().contains("not installed"), "{what}: {err}");
+            assert_eq!(file_hits.load(Ordering::SeqCst), 0, "{what}: the file itself is not fetched");
+            assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0, "{what}: nothing stays staged");
+            let _ = std::fs::remove_dir_all(&dir);
+        }
+    }
+
+    #[test]
+    fn a_list_that_cannot_be_reached_stops_the_update() {
+        let dir = scratch("nolist");
+        let (_, key) = test_key(1);
+        let u = update("http://127.0.0.1:1/v2.0.0/app.msi", "app.msi", 10, Some("ab".repeat(32)));
+        let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err("must fail");
+        assert!(matches!(err, UpdateError::Signature(_)), "{err}");
+        assert!(err.to_string().contains("SHA256SUMS.txt"), "{err}");
+        assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0);
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// No key, no download: the build cannot tell a genuine release from a swapped one.
+    #[test]
+    fn without_a_key_nothing_is_downloaded() {
+        let dir = scratch("nokey");
+        let (signing, _) = test_key(1);
+        let bytes = vec![4u8; 1_000];
+        let (url, file_hits) = serve(signed(bytes.clone(), "app.msi", &signing));
+        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
+        let err = download(&u, None, &client(), &dir, None, None).expect_err("no key");
+        assert_eq!(err, UpdateError::NoKey);
+        assert!(err.to_string().starts_with("this build can't verify updates"), "{err}");
+        assert_eq!(file_hits.load(Ordering::SeqCst), 0);
+        assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0);
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
     fn a_truncated_file_is_not_renamed_into_place() {
         let dir = scratch("short");
+        let (signing, key) = test_key(1);
         let bytes = vec![1u8; 5_000];
-        let url = serve(1, bytes.clone());
+        let (url, _) = serve(signed(bytes, "app.msi", &signing));
         // the release says 9 000 bytes; the server sends 5 000
         let u = update(&format!("{url}/app.msi"), "app.msi", 9_000, None);
-        let err = download(&u, &client(), &dir, None, None).expect_err("must fail");
+        let err = download(&u, Some(&key), &client(), &dir, None, None).expect_err("must fail");
         assert!(matches!(err, UpdateError::Verify(_)), "{err}");
         assert!(!dir.join("app.msi").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
     #[test]
-    fn an_unreachable_server_is_an_error_not_a_panic() {
-        let dir = scratch("down");
-        let u = update("http://127.0.0.1:1/app.msi", "app.msi", 10, None);
-        let err = download(&u, &client(), &dir, None, None).expect_err("must fail");
-        assert!(matches!(err, UpdateError::Net(_)), "{err}");
-        assert_eq!(std::fs::read_dir(&dir).expect("dir").count(), 0);
-        let _ = std::fs::remove_dir_all(&dir);
-    }
-
-    #[test]
     fn a_second_call_reuses_the_verified_file() {
         let dir = scratch("again");
+        let (signing, key) = test_key(1);
         let bytes = vec![3u8; 4_000];
-        // one request: the second call finds the verified file already there
-        let url = serve(1, bytes.clone());
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
-        let first = download(&u, &client(), &dir, None, None).expect("first");
-        // nothing listens now: the verified copy is used as it is
-        let again = download(&u, &client(), &dir, None, None).expect("second");
+        let (url, file_hits) = serve(signed(bytes.clone(), "app.msi", &signing));
+        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        let first = download(&u, Some(&key), &client(), &dir, None, None).expect("first");
+        // the list is read again, the file is not: the verified copy is used as it is
+        let again = download(&u, Some(&key), &client(), &dir, None, None).expect("second");
         assert_eq!(first, again);
+        assert_eq!(file_hits.load(Ordering::SeqCst), 1, "one transfer");
         assert_eq!(std::fs::read(&again.path).expect("read"), bytes);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -327,12 +497,13 @@ mod tests {
     #[test]
     fn a_staged_file_that_no_longer_matches_is_fetched_again() {
         let dir = scratch("stale");
+        let (signing, key) = test_key(1);
         let bytes: Vec<u8> = (0..9_000u32).map(|i| (i % 97) as u8).collect();
         // what an earlier, different build left under the same name
         std::fs::write(dir.join("app.msi"), vec![0u8; bytes.len()]).expect("stale");
-        let url = serve(1, bytes.clone());
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
-        let got = download(&u, &client(), &dir, None, None).expect("re-download");
+        let (url, _) = serve(signed(bytes.clone(), "app.msi", &signing));
+        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        let got = download(&u, Some(&key), &client(), &dir, None, None).expect("re-download");
         assert_eq!(std::fs::read(&got.path).expect("read"), bytes);
         let _ = std::fs::remove_dir_all(&dir);
     }
@@ -340,13 +511,14 @@ mod tests {
     #[test]
     fn an_interrupted_transfer_resumes() {
         let dir = scratch("resume");
+        let (signing, key) = test_key(1);
         let bytes: Vec<u8> = (0..20_000u32).map(|i| (i % 241) as u8).collect();
         let half = bytes.len() / 2;
         // what an interrupted transfer left behind
         std::fs::write(dir.join("app.msi.part"), &bytes[..half]).expect("part");
-        let url = serve(1, bytes.clone());
-        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
-        let got = download(&u, &client(), &dir, None, None).expect("resume");
+        let (url, _) = serve(signed(bytes.clone(), "app.msi", &signing));
+        let u = update(&format!("{url}/app.msi"), "app.msi", bytes.len() as u64, None);
+        let got = download(&u, Some(&key), &client(), &dir, None, None).expect("resume");
         assert_eq!(got.bytes, bytes.len() as u64);
         assert_eq!(std::fs::read(&got.path).expect("read"), bytes);
         assert!(!dir.join("app.msi.part").exists());
@@ -356,10 +528,11 @@ mod tests {
     #[test]
     fn a_hostile_name_stays_in_the_staging_folder() {
         let dir = scratch("hostile");
+        let (signing, key) = test_key(1);
         let bytes = vec![5u8; 100];
-        let url = serve(1, bytes.clone());
-        let u = update(&format!("{url}/evil"), "../../escaped.msi", bytes.len() as u64, Some(sha256_hex(&bytes)));
-        let got = download(&u, &client(), &dir, None, None).expect("download");
+        let (url, _) = serve(signed(bytes.clone(), "escaped.msi", &signing));
+        let u = update(&format!("{url}/evil"), "../../escaped.msi", bytes.len() as u64, None);
+        let got = download(&u, Some(&key), &client(), &dir, None, None).expect("download");
         assert_eq!(got.path.parent(), Some(dir.as_path()));
         assert_eq!(got.name, "escaped.msi");
         assert!(!dir.parent().expect("parent").join("escaped.msi").exists());

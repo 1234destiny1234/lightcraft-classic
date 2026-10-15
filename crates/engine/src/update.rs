@@ -125,7 +125,8 @@ pub struct Available {
     pub kind: Kind,
     /// Where it downloads from. Not shown in the status: it is long, and the dialog shows the file.
     pub url: String,
-    /// The SHA-256 to check it against, when the release publishes one.
+    /// The SHA-256 the feed states (shown, never trusted: the download is checked against the
+    /// release's signed checksum list).
     pub sha256: Option<String>,
 }
 
@@ -249,6 +250,10 @@ pub struct Updater {
     /// Tests only: one more origin whose feed and files are trusted, plain `http` included
     /// ([`lcc_updater::Options::extra_origin`]). Only this crate's tests can set it.
     extra_origin: Option<String>,
+    /// The key a release's checksum list must be signed with: the brand's
+    /// ([`lcc_updater::UpdateKey::pinned`]). `None`: this build checks for updates but downloads and
+    /// installs none. Only tests change it (`Updater::trust_test_key`).
+    key: Option<lcc_updater::UpdateKey>,
     /// Where downloads are staged.
     stage: PathBuf,
     cache: lcc_updater::Cache,
@@ -285,6 +290,7 @@ impl Updater {
             dir,
             manifest_url: None,
             extra_origin: None,
+            key: lcc_updater::UpdateKey::pinned(),
             stage,
             cache: lcc_updater::Cache::default(),
             check: Check::Never,
@@ -446,7 +452,7 @@ impl Updater {
             v["feed"] = json!(feed);
         }
         if let Check::Found(a) = &self.check {
-            v["available"] = available_json(a);
+            v["available"] = available_json(a, self.key.is_some());
         }
         match &self.progress {
             Progress::Running { bytes, total } => v["progress"] = json!({"bytes": bytes, "total": total}),
@@ -489,6 +495,23 @@ impl Updater {
     #[cfg(test)]
     pub(crate) fn trust_test_origin(&mut self, origin: Option<String>) {
         self.extra_origin = origin.map(|o| o.trim().to_string()).filter(|o| !o.is_empty());
+    }
+
+    /// Tests only: verify releases against `key` (a throwaway test key) instead of the brand's.
+    /// Compiled into this crate's tests and, through the `test-support` feature, other crates'
+    /// tests; no app build has it, and no command, control request or MCP tool reaches it.
+    #[cfg(any(test, feature = "test-support"))]
+    pub fn trust_test_key(&mut self, key: Option<lcc_updater::UpdateKey>) {
+        self.key = key;
+    }
+
+    /// `Ok` when this build can verify an update (it carries an update key); otherwise the
+    /// sentence a download or an install answers with.
+    pub fn can_verify(&self) -> Result<(), String> {
+        match self.key {
+            Some(_) => Ok(()),
+            None => Err(lcc_updater::NO_KEY.to_string()),
+        }
     }
 
     /// The feed URL in use (`None`: the project's own).
@@ -624,6 +647,13 @@ impl Updater {
         if self.downloading() {
             return Err("an update is already downloading".into());
         }
+        if let Err(why) = self.can_verify() {
+            // the dialog shows why its Download did nothing
+            if self.available().is_some() {
+                self.progress = Progress::Failed(why.clone());
+            }
+            return Err(why);
+        }
         let available = self.available().cloned().ok_or("there is no update to download: check again first")?;
         if available.kind == Kind::Checksums {
             return Err("that release offers no file for this system".into());
@@ -643,6 +673,7 @@ impl Updater {
         let handle = task.handle();
         let stage = self.stage.clone();
         let update = available.to_crate();
+        let key = self.key.clone();
         let worker_progress = progress.clone();
         let worker_cancel = cancel.clone();
         let spawned = std::thread::Builder::new().name("lc-update-download".into()).spawn(move || {
@@ -655,8 +686,8 @@ impl Updater {
                     *lock(&worker_progress) = Progress::Running { bytes, total };
                     handle.progress(bytes, total);
                 };
-                let got =
-                    lcc_updater::download(&update, &client, &stage, Some(worker_cancel.clone()), Some(&mut report)).map_err(|e| e.to_string())?;
+                let got = lcc_updater::download(&update, key.as_ref(), &client, &stage, Some(worker_cancel.clone()), Some(&mut report))
+                    .map_err(|e| e.to_string())?;
                 Ok::<_, String>(Staged {
                     version: update.version.to_text(),
                     path: got.path,
@@ -778,7 +809,9 @@ fn civil_from_days(days: i64) -> (i64, u32, u32) {
     (if m <= 2 { y + 1 } else { y }, m, d)
 }
 
-fn available_json(a: &Available) -> Value {
+/// `verified`: whether this build can check the release's signature (without it, nothing is
+/// downloaded or installed); `page`: the release's own page.
+fn available_json(a: &Available, verified: bool) -> Value {
     json!({
         "version": a.version,
         "current": a.current,
@@ -789,9 +822,15 @@ fn available_json(a: &Available) -> Value {
         "file": a.file,
         "size": a.size,
         "action": a.action,
-        "verified": a.sha256.is_some(),
+        "verified": verified,
+        "page": release_page(&a.tag),
         "kind": a.kind.text(),
     })
+}
+
+/// `<repository>/releases/tag/<tag>`: where the release can be downloaded by hand.
+pub fn release_page(tag: &str) -> String {
+    format!("{}/releases/tag/{}", lcc_brand::REPOSITORY.trim_end_matches('/'), tag.trim())
 }
 
 fn staged_json(s: &Staged) -> Value {

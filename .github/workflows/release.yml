@@ -848,7 +848,7 @@ jobs:
       - name: Checksums
         run: |
           # the platforms' own sums (binary-mode `*name` normalised), only for files on the draft
-          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.size)"' | grep -v -e '^SHA256SUMS.txt ' -e '^latest.json ' >out/assets.txt || true
+          gh release view "$TAG" --json assets --jq '.assets[] | "\(.name) \(.size)"' | grep -v -e '^SHA256SUMS.txt ' -e '^SHA256SUMS.txt.sig ' -e '^latest.json ' >out/assets.txt || true
           [ -s out/assets.txt ] || { echo "::error::draft $TAG has no assets"; exit 1; }
           cat sums/*.txt 2>/dev/null | sed 's/^\([0-9a-f]\{64\}\) [ *]/\1  /' | sort -k2 -u >out/all-sums.txt
           : >out/SHA256SUMS.txt
@@ -858,6 +858,18 @@ jobs:
             echo "$line" >>out/SHA256SUMS.txt
           done <out/assets.txt
           cat out/SHA256SUMS.txt
+      # The in-app updater installs a release only when SHA256SUMS.txt carries a signature from the key
+      # pinned in brand.toml ([updates] public_keys; docs/releasing.md → Update signing key). The step
+      # signs with the UPDATE_SIGNING_KEY secret and checks the result against brand.toml before
+      # anything is uploaded; without the secret it warns and writes no .sig (the app then links to
+      # the release instead of installing it).
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+      - name: Release build cache
+        run: echo "CARGO_TARGET_DIR=$HOME/.cache/lcc-release-target-$RUNNER_NAME" >>"$GITHUB_ENV"
+      - name: Sign the checksums
+        env:
+          UPDATE_SIGNING_KEY: ${{ secrets.UPDATE_SIGNING_KEY }}
+        run: nice -n 19 bash .github/scripts/sign-checksums.sh out
       - name: Notes, checksums
         working-directory: out
         run: |
@@ -871,9 +883,17 @@ jobs:
           $notes"
           fi
           gh release edit "$TAG" --draft --notes "$notes"
-          gh release upload "$TAG" --clobber SHA256SUMS.txt
+          if [ -f SHA256SUMS.txt.sig ]; then
+            gh release upload "$TAG" --clobber SHA256SUMS.txt SHA256SUMS.txt.sig
+            signed="signed (\`SHA256SUMS.txt.sig\`)"
+          else
+            gh release upload "$TAG" --clobber SHA256SUMS.txt
+            # an earlier run's signature would not match this list
+            gh release delete-asset "$TAG" SHA256SUMS.txt.sig --yes 2>/dev/null || true
+            signed="**not signed**: the app will not install this release by itself"
+          fi
           {
-            echo "Draft release **$title** at \`${GITHUB_SHA::9}\`:"
+            echo "Draft release **$title** at \`${GITHUB_SHA::9}\`; checksums $signed:"
             echo
             sed 's/^/    /' SHA256SUMS.txt
           } >>"$GITHUB_STEP_SUMMARY"

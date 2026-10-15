@@ -4624,6 +4624,8 @@ name = "lcc-engine"
 version = "0.8.2"
 dependencies = [
  "ab_glyph",
+ "base64",
+ "ed25519-dalek 2.2.0",
  "filmcraft-h264enc",
  "filmcraft-isobmff",
  "fs4",
@@ -5179,6 +5181,8 @@ dependencies = [
 name = "lcc-updater"
 version = "0.8.2"
 dependencies = [
+ "base64",
+ "ed25519-dalek 2.2.0",
  "lcc-brand",
  "lcc-net",
  "log",
@@ -10248,8 +10252,11 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 name = "xtask"
 version = "0.8.2"
 dependencies = [
+ "base64",
  "brotli",
+ "ed25519-dalek 2.2.0",
  "flate2",
+ "getrandom 0.3.4",
  "serde_json",
  "sha2 0.10.9",
  "toml",
