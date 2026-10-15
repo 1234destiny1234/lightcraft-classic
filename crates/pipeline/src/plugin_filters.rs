@@ -110,6 +110,13 @@ impl Stack {
         self.entries.is_empty()
     }
 
+    /// Whether a filter of the stack reads neighbouring pixels (manifest `overlap` > 0): its look
+    /// depends on the pixel scale, so the pipeline runs it at the frame's native resolution
+    /// ([`crate::source_stage`]).
+    pub fn pixel_scale(&self) -> bool {
+        self.entries.iter().any(|(_, r)| r.as_ref().is_ok_and(|f| f.manifest().overlap > 0))
+    }
+
     /// Runs the stack on `img` (interleaved RGB as `encoding` says), in order; each filter that is
     /// missing or fails leaves the image as it was and adds a warning.
     pub fn apply(&self, img: &mut [[f32; 3]], w: usize, h: usize, frame: lcc_filters::FrameInfo, encoding: &str, warnings: &mut Vec<String>) {

@@ -625,7 +625,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 let src = s.source_now(id, SourceLevel::Preview).map_err(|e| bad("crop.autoStraighten", e))?;
                 let info = s.source_info(id);
                 let d = s.develop_of(id).unwrap_or_default();
-                let Some(level) = lcc_pipeline::upright::level_degrees(&src, &info, &d) else {
+                let aux = lcc_pipeline::source_stage::aux_source(&src, &info, &d);
+                let Some(level) = lcc_pipeline::upright::level_degrees(aux.as_deref().unwrap_or(&src), &info, &d) else {
                     return Ok(json!({"changed": false, "reason": "no dominant horizontal or vertical lines"}));
                 };
                 // Same convention as the crop angle (verified: a horizon descending 6° to the right
@@ -748,7 +749,8 @@ pub fn specs() -> Vec<CommandSpec> {
                     m => {
                         let src = s.source_now(id, SourceLevel::Preview).map_err(|e| bad("geometry.upright", e))?;
                         let info = s.source_info(id);
-                        Some(lcc_pipeline::upright::auto_transform(&src, &info, &d, m))
+                        let aux = lcc_pipeline::source_stage::aux_source(&src, &info, &d);
+                        Some(lcc_pipeline::upright::auto_transform(aux.as_deref().unwrap_or(&src), &info, &d, m))
                     }
                 };
                 edit(s, "geometry.upright", "Upright", |d| {

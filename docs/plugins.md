@@ -269,7 +269,18 @@ once on the whole uncropped photo (long edge 1024, linear sRGB primaries) and st
 with the photo (`setAnalysis`); every later `pc_filter` call gets it as `_analysis`, so crop and
 zoom don't move the measurement. Modules without the export give an "unsupported" error.
 
-Auto (tone) and Auto B&W Mix measure the photo as the Source filters turn it.
+**Pixel scale.** A Source filter that reads neighbours (manifest `overlap` > 0: an unsharp mask,
+grain, a blur) would look different at each render size, its kernel spanning more of the photo in
+a small preview than in a full-size export. Such a stack runs once on the whole frame at the
+source's own resolution (capped at 100 MP, 24 MP on the web) and every render (preview, loupe,
+zoomed window, export at any size) is resampled from that result, so they agree. The result is
+kept per photo, frame and stack: other sliders, zooming and a later export reuse it; a draft that
+finds none shows the reduced-copy proxy until the full render replaces it. Per-pixel filters
+(`overlap` 0) run on the render's own pixels.
+
+Auto (tone), Auto B&W Mix, Upright (and Auto straighten), the auto masks (with or without a
+model), automatic spot sources and a zoomed view's dehaze estimate read the photo as the Source
+filters turn it (long edge 2048, cached per photo and stack; a change of the stack re-runs them).
 
 ## Not done yet
 
@@ -279,7 +290,7 @@ Auto (tone) and Auto B&W Mix measure the photo as the Source filters turn it.
 - Network and filesystem permissions are fixed in the manifest: a WebDAV destination for "any
   server the user types" isn't possible; the author names the hosts.
 - No plug-in store, signing or automatic updates; Lightroom Lua plug-ins don't run.
-- Pixel filters: auto masks, Upright, spot-source picking and the zoomed-view dehaze estimate
-  still read the unfiltered source; a filter with `overlap` > 0 works in output pixels, so a
-  preview and a larger export of a pixel-scale filter differ; `develop.pluginFilter.analyze` runs
-  on the calling thread.
+- Pixel filters: a Display filter with `overlap` > 0 still works in output pixels (it runs after
+  every develop step, so a native-resolution pass would mean a full-size develop per preview), so
+  a preview and a larger export of one differ; `develop.pluginFilter.analyze` runs on the calling
+  thread.

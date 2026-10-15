@@ -41,6 +41,7 @@ pub mod output;
 pub mod plugin_filters;
 pub mod profiles;
 pub mod redeye;
+pub mod source_stage;
 pub mod spots;
 pub mod tone;
 pub mod transform;
@@ -284,6 +285,7 @@ impl StageCache {
     /// Drop everything (e.g. when memory is needed).
     pub fn clear(&self) {
         self.lock().clear();
+        source_stage::clear();
         *self.ext.lock().unwrap_or_else(|e| e.into_inner()) = None;
     }
 
@@ -414,6 +416,9 @@ pub struct Plan<'a> {
     /// Where the rendered pixels sit in the whole output frame (`x, y, full_w, full_h`), for
     /// position-dependent plug-in filters.
     pub filter_frame: lcc_filters::FrameInfo,
+    /// The whole output frame (before any window), at which pixel-scale Source filters run
+    /// ([`source_stage`]).
+    pub whole_frame: geometry::Frame,
 }
 
 /// Long edge of the small render a windowed render estimates the whole frame's airlight from.
@@ -421,22 +426,26 @@ const AIRLIGHT_PROXY_EDGE: usize = 384;
 
 /// Resolve `s` against `src` for `req` (see [`Plan`]).
 pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &RenderRequest) -> Plan<'a> {
+    // the whole-photo helpers below read the photo as the Source plug-in filters turn it
+    let aux_cell = std::cell::OnceCell::new();
+    let aux = || -> &Rgb32f { aux_cell.get_or_init(|| source_stage::aux_source(src, info, s)).as_deref().unwrap_or(src) };
     let mut settings: Cow<'a, DevelopSettings> = match profiles::effective(s) {
-        Cow::Borrowed(b) => upright::resolve(src, info, b),
-        Cow::Owned(o) => Cow::Owned(upright::resolve(src, info, &o).into_owned()),
+        Cow::Borrowed(b) => upright::resolve(if upright::pending(b) { aux() } else { src }, info, b),
+        Cow::Owned(o) => Cow::Owned(upright::resolve(if upright::pending(&o) { aux() } else { src }, info, &o).into_owned()),
     };
     visualize::adjust_settings(req.overlay, &mut settings);
     // a window must not choose a spot's source from the pixels it happens to hold: fix them
     // from a fixed-size render of the whole frame first
     if req.window.is_some() && settings.spots.iter().any(|sp| sp.source_offset.is_none()) {
         let picked: Vec<Option<lcc_geom::Point>> =
-            settings.spots.iter().map(|sp| sp.source_offset.or_else(|| spots::pick_source(src, info, &settings, sp, None))).collect();
+            settings.spots.iter().map(|sp| sp.source_offset.or_else(|| spots::pick_source(aux(), info, &settings, sp, None))).collect();
         for (sp, o) in settings.to_mut().spots.iter_mut().zip(picked) {
             sp.source_offset = o;
         }
     }
     let s = &*settings;
     let frame = frame_for(src, info, s, req.apply_crop);
+    let whole_frame = frame.clone();
     let (full_w, full_h) = frame.fit(req.max_w, req.max_h);
     // sizes and scale are those of the whole output; a window only narrows what is drawn
     let px_per_long = frame.px_per_long(full_w);
@@ -449,7 +458,7 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
             if s.section_enabled("effects") && (s.effects.dehaze != 0.0 || s.masks.iter().any(|m| m.adjust.dehaze != 0.0)) {
                 let k = (AIRLIGHT_PROXY_EDGE as f64 / full_w.max(full_h) as f64).min(1.0);
                 let (pw, ph) = (((full_w as f64 * k).round() as usize).max(1), ((full_h as f64 * k).round() as usize).max(1));
-                fixed_air = Some(local::frame_airlight(src, info, s, &frame, pw, ph));
+                fixed_air = Some(local::frame_airlight(aux(), info, s, &frame, pw, ph));
             }
             // (spots grow the rendered window; only 8-bit renders are cut back to the request)
             let work = if req.depth == OutputDepth::U8 { spots::window_for_reads(s, &frame, full_w, full_h, px_per_long, win) } else { win };
@@ -489,12 +498,29 @@ pub fn plan<'a>(src: &Rgb32f, info: &SourceInfo, s: &'a DevelopSettings, req: &R
     // AI masks without a model: analysed once per photo look on the whole frame (cached)
     let mattes = if auto_mask::needed(s) {
         let mut m = info.mattes.as_deref().cloned().unwrap_or_default();
-        m.auto = Some(auto_mask::for_source(src, info, s));
+        m.auto = Some(auto_mask::for_source(aux(), info, s));
         Some(Arc::new(m))
     } else {
         info.mattes.clone()
     };
-    Plan { settings, frame, w, h, px_per_long, src_long, geo, lin_key, pre_nr_key, eyes, fixed_air, keep, mattes, source_filters, filter_frame }
+    Plan {
+        settings,
+        frame,
+        w,
+        h,
+        px_per_long,
+        src_long,
+        geo,
+        lin_key,
+        pre_nr_key,
+        eyes,
+        fixed_air,
+        keep,
+        mattes,
+        source_filters,
+        filter_frame,
+        whole_frame,
+    }
 }
 
 /// Whether the scene-linear stage needs work only the CPU does (defringe, spot removal).
@@ -619,11 +645,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         let hit = cached.as_ref().and_then(|e| e.filtered.clone()).filter(|(k, _)| *k == stack.key || (draft && *k == draft_key));
         filtered = Some(match hit {
             Some(h) => h,
-            None => {
-                let mut img = (*sampled).clone();
-                plugin_filters::apply_source(stack, &mut img, plan.filter_frame, draft, &mut warnings);
-                (if draft { draft_key } else { stack.key }, Arc::new(img))
-            }
+            None => source_stage::run(src_img, &plan, &sampled, draft, draft_key, &mut warnings),
         });
         draft_src = filtered.as_ref().is_some_and(|(k, _)| *k == draft_key);
         lap("plug-in filters (source)", &mut t);
@@ -701,7 +723,9 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
 pub fn color_range_sample(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest, p: lcc_geom::Point) -> Option<[f64; 3]> {
     let plan = plan(src, info, s, req);
     let mut img = plan.frame.sample(src, plan.w, plan.h);
-    plugin_filters::apply_source(&plan.source_filters, &mut img, plan.filter_frame, false, &mut Vec::new());
+    if !plan.source_filters.is_empty() {
+        img = Arc::unwrap_or_clone(source_stage::run(src, &plan, &img, false, 0, &mut Vec::new()).1);
+    }
     lin_cpu(&mut img, info, &plan);
     let o = plan.frame.norm_to_out(plan.w, plan.h).apply(p);
     let (cx, cy) = (o.x.floor() as i64, o.y.floor() as i64);
@@ -794,6 +818,8 @@ mod tests_dehaze;
 mod tests_geometry;
 #[cfg(test)]
 mod tests_hdr;
+#[cfg(test)]
+mod tests_pixel_scale;
 #[cfg(test)]
 mod tests_plugin_filters;
 #[cfg(test)]
