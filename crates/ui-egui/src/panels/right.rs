@@ -28,6 +28,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                         });
                     }
                     super::keyword_list::show(app, ui);
+                    crate::widgets::follow_focus(ui);
                 });
                 return;
             }
@@ -73,6 +74,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     RightPanel::Activity => activity(app, ui, id),
                     RightPanel::None => {}
                 }
+                crate::widgets::follow_focus(ui);
             });
             ui.data_mut(|d| d.insert_temp(egui::Id::new(AREA), scrolled.id));
         });
@@ -102,6 +104,7 @@ fn sync_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
         // the switch
         let (sr, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
         register(ui.ctx(), "button:autoSyncSwitch", sr);
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, auto, crate::i18n::tr("Auto Sync")));
         let p = ui.painter();
         p.rect_filled(sr, 8.0, if auto { t.accent } else { t.divider });
         let knob = if auto { sr.right() - 8.0 } else { sr.left() + 8.0 };

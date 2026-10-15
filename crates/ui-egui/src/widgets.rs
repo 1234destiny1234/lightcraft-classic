@@ -55,6 +55,26 @@ pub fn register(ctx: &egui::Context, id: impl Into<String>, rect: Rect) {
     ctx.data_mut(|d| d.get_temp_mut_or_default::<Registry>(egui::Id::new("lc-registry")).0.push((id, rect)));
 }
 
+/// Called at the end of a scroll area's contents: when the keyboard focus (Tab) has just moved onto
+/// one of its widgets that lies scrolled out of view, scroll it in, so the focused control is never
+/// hidden (egui leaves that to each widget). A pass with a pointer press or release is left alone:
+/// the pointer's widget is already in view, a drag must not scroll under it, and egui's response
+/// lookup would hand the focus back on a click elsewhere.
+pub fn follow_focus(ui: &Ui) {
+    if ui.input(|i| i.pointer.any_down() || i.pointer.any_pressed() || i.pointer.any_released()) {
+        return;
+    }
+    let Some(r) = ui.memory(|m| m.focused()).and_then(|id| ui.ctx().read_response(id)) else {
+        return;
+    };
+    if !r.gained_focus() {
+        return;
+    }
+    if r.layer_id == ui.layer_id() && ui.min_rect().contains_rect(r.rect) && !ui.clip_rect().contains_rect(r.rect) {
+        r.scroll_to_me_animation(None, egui::style::ScrollAnimation::none());
+    }
+}
+
 /// Esc was handled this frame by something nested (an open popup closed on it): containers such
 /// as dialogs shouldn't close too. Keyed to the frame, so it lapses by itself on the next one.
 pub fn take_escape(ctx: &egui::Context) {
