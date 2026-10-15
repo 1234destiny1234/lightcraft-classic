@@ -1525,6 +1525,7 @@
   "Add to Target Collection": "Добавить в целевую коллекцию",
   "Remove from Target Collection": "Удалить из целевой коллекции",
   "Wheel scroll speed": "Скорость прокрутки колесом",
+  "Wheel resizes brush instead of zooming": "Колесо мыши меняет размер кисти вместо масштабирования",
   "Fast": "Быстрая",
   "Fastest": "Очень быстрая",
   "Run face models on the CPU only": "Запускать модели лиц только на ЦП",
