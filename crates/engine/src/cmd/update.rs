@@ -212,7 +212,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Update Preferences",
             [],
             None,
-            "{checkAtStartup?: bool, prerelease?: bool} — ask the feed when the app starts, and whether prereleases count as updates (saved in the app's own settings folder, `updates.json`; a session opened without a library keeps them in memory only) → status + {persistent, staging}",
+            "{checkAtStartup?: bool, prerelease?: bool} — ask the feed when the app starts, and whether prereleases count as updates (saved in the app's own settings folder, `updates.json`; `--memory`, `--demo` and `{env}_NO_PREFS` runs keep them in memory only). The start-up check is off by default, and headless sessions never run it → status + {persistent, staging}",
             always,
             prefs
         ),
@@ -271,8 +271,9 @@ mod tests {
     #[test]
     fn the_settings_round_trip_and_are_validated() {
         let mut s = session();
-        let v = s.execute("update.prefs", &json!({"checkAtStartup": false, "prerelease": true})).expect("prefs");
-        assert_eq!((v["checkAtStartup"].as_bool(), v["prerelease"].as_bool()), (Some(false), Some(true)));
+        let v = s.execute("update.prefs", &json!({"checkAtStartup": true, "prerelease": true})).expect("prefs");
+        assert_eq!((v["checkAtStartup"].as_bool(), v["prerelease"].as_bool()), (Some(true), Some(true)));
+        assert!(s.updater.prefs().check_at_startup, "the start-up check is on (the default is off)");
         assert_eq!(v["persistent"], false, "an in-memory session remembers nothing");
         let err = s.execute("update.prefs", &json!({"prerelease": "yes"})).expect_err("not a bool");
         assert!(err.to_string().contains("true or false"), "{err}");
