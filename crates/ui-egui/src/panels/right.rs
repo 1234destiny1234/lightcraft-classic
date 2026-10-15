@@ -28,6 +28,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                         });
                     }
                     super::keyword_list::show(app, ui);
+                    crate::widgets::follow_focus(ui);
                 });
                 return;
             }
@@ -73,6 +74,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     RightPanel::Activity => activity(app, ui, id),
                     RightPanel::None => {}
                 }
+                crate::widgets::follow_focus(ui);
             });
             ui.data_mut(|d| d.insert_temp(egui::Id::new(AREA), scrolled.id));
         });
