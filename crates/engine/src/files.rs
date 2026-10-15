@@ -598,6 +598,7 @@ fn load_bytes_now(
                 mattes,
                 local_tone,
                 filters: None,
+                full_long: 0,
             },
         ));
     }

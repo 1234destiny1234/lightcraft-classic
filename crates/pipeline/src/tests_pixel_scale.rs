@@ -176,3 +176,19 @@ fn aux_source_is_the_filtered_photo_and_follows_the_stack() {
     s.plugin_filters[0].enabled = false;
     assert!(crate::source_stage::aux_source(&src, &info, &s).is_none());
 }
+
+#[test]
+fn pixel_scale_preview_from_a_reduced_decode_matches_the_export() {
+    let (src, info, s) = (source(0.35), info(), settings());
+    let export = render(&src, &info, &s, &RenderRequest::fit(192, 128));
+    // a preview level: the photo decoded at half size, its full size known
+    let half = lcc_raster::resample::resize(&src, 96, 64, lcc_raster::resample::Filter::Box);
+    let preview = render(&half, &SourceInfo { full_long: 192, ..info.clone() }, &s, &RenderRequest::fit(48, 32));
+    let err = mean_abs(&box_down(&export.image, 4), &preview.image);
+    let plain = DevelopSettings { plugin_filters: vec![], ..s.clone() };
+    let base = mean_abs(
+        &box_down(&render(&src, &info, &plain, &RenderRequest::fit(192, 128)).image, 4),
+        &render(&half, &info, &plain, &RenderRequest::fit(48, 32)).image,
+    );
+    assert!(err < base + 0.5, "preview differs from the downsampled export by {err} (resampling alone: {base})");
+}

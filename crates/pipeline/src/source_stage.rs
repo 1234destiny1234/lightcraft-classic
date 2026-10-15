@@ -31,9 +31,16 @@ use crate::{Plan, SourceInfo, geometry::Frame, hash_of};
 /// then that of this size, the same for every render of the photo).
 pub const MAX_NATIVE_PIXELS: usize = if cfg!(target_arch = "wasm32") { 24_000_000 } else { 100_000_000 };
 
-/// The whole frame's size at the source's own resolution, capped at [`MAX_NATIVE_PIXELS`].
-pub fn native_size(frame: &Frame) -> (usize, usize) {
+/// The whole frame's size at the photo's full resolution ([`SourceInfo::full_long`], else the
+/// source buffer's), capped at [`MAX_NATIVE_PIXELS`].
+pub fn native_size(frame: &Frame, info: &SourceInfo) -> (usize, usize) {
     let (nw, nh) = frame.native_size();
+    // a reduced decode (a preview level) is scaled up to the photo's size; a decoder's buffer a few
+    // pixels off the catalog's size is not
+    let src_long = frame.src_w.max(frame.src_h).max(1) as f64;
+    let up = info.full_long as f64 / src_long;
+    let up = if up.is_finite() && up > 1.05 { up } else { 1.0 };
+    let (nw, nh) = (nw * up, nh * up);
     let (nw, nh) = (if nw.is_finite() { nw.max(1.0) } else { 1.0 }, if nh.is_finite() { nh.max(1.0) } else { 1.0 });
     let k = (MAX_NATIVE_PIXELS as f64 / (nw * nh)).sqrt().min(1.0);
     frame.fit(((nw * k).round() as usize).max(1), ((nh * k).round() as usize).max(1))
@@ -56,10 +63,18 @@ pub fn clear() {
 
 /// The Source stack of `plan` on the render's pixels: `sampled` (the render's resampled source)
 /// filtered, with the key it is cached under (`stack.key`, or `draft_key` for a draft proxy).
-pub(crate) fn run(src: &Rgb32f, plan: &Plan<'_>, sampled: &Rgb32f, draft: bool, draft_key: u64, warnings: &mut Vec<String>) -> (u64, Arc<Rgb32f>) {
+pub(crate) fn run(
+    src: &Rgb32f,
+    info: &SourceInfo,
+    plan: &Plan<'_>,
+    sampled: &Rgb32f,
+    draft: bool,
+    draft_key: u64,
+    warnings: &mut Vec<String>,
+) -> (u64, Arc<Rgb32f>) {
     let stack = &plan.source_filters;
     if stack.pixel_scale() {
-        let (nw, nh) = native_size(&plan.whole_frame);
+        let (nw, nh) = native_size(&plan.whole_frame, info);
         let key = hash_of((stack.key, crate::optics::fingerprint(src), src.width, src.height, format!("{:?}", plan.whole_frame), nw, nh));
         let hit = {
             let g = NATIVE.lock().unwrap_or_else(PoisonError::into_inner);
@@ -73,7 +88,10 @@ pub(crate) fn run(src: &Rgb32f, plan: &Plan<'_>, sampled: &Rgb32f, draft: bool, 
             // a draft doesn't wait for the full-resolution run: its proxy stands in
             None if draft => None,
             None => {
-                let mut img = plan.whole_frame.sample(src, nw, nh);
+                // (a whole-frame render at the native size has sampled exactly this already)
+                let f = plan.filter_frame;
+                let same = (f.x, f.y, f.full_w as usize, f.full_h as usize, sampled.width, sampled.height) == (0, 0, nw, nh, nw, nh);
+                let mut img = if same { sampled.clone() } else { plan.whole_frame.sample(src, nw, nh) };
                 let mut w = Vec::new();
                 plugin_filters::apply_source(stack, &mut img, lcc_filters::FrameInfo::whole(u32_of(nw), u32_of(nh)), false, &mut w);
                 let img = Arc::new(img);

@@ -99,6 +99,10 @@ pub struct SourceInfo {
     /// Where pixel-filter plug-ins come from; `None`: the process default
     /// ([`plugin_filters::set_default_host`]).
     pub filters: Option<plugin_filters::FilterHostRef>,
+    /// Long edge of the photo at its full resolution, when the source buffer may be a reduced
+    /// decode (a preview level); 0: the buffer's own. Pixel-scale plug-in filters run at that
+    /// scale ([`source_stage`]), so a preview matches the export.
+    pub full_long: usize,
 }
 
 impl Default for SourceInfo {
@@ -115,6 +119,7 @@ impl Default for SourceInfo {
             mattes: None,
             local_tone: None,
             filters: None,
+            full_long: 0,
         }
     }
 }
@@ -645,7 +650,7 @@ fn render_impl(src: Src<'_>, info: &SourceInfo, s: &DevelopSettings, req: &Rende
         let hit = cached.as_ref().and_then(|e| e.filtered.clone()).filter(|(k, _)| *k == stack.key || (draft && *k == draft_key));
         filtered = Some(match hit {
             Some(h) => h,
-            None => source_stage::run(src_img, &plan, &sampled, draft, draft_key, &mut warnings),
+            None => source_stage::run(src_img, info, &plan, &sampled, draft, draft_key, &mut warnings),
         });
         draft_src = filtered.as_ref().is_some_and(|(k, _)| *k == draft_key);
         lap("plug-in filters (source)", &mut t);
@@ -724,7 +729,7 @@ pub fn color_range_sample(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, 
     let plan = plan(src, info, s, req);
     let mut img = plan.frame.sample(src, plan.w, plan.h);
     if !plan.source_filters.is_empty() {
-        img = Arc::unwrap_or_clone(source_stage::run(src, &plan, &img, false, 0, &mut Vec::new()).1);
+        img = Arc::unwrap_or_clone(source_stage::run(src, info, &plan, &img, false, 0, &mut Vec::new()).1);
     }
     lin_cpu(&mut img, info, &plan);
     let o = plan.frame.norm_to_out(plan.w, plan.h).apply(p);

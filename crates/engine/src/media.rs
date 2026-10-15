@@ -235,7 +235,10 @@ impl DecodedSource {
     /// What to render these pixels against: the decoder's facts, else `header` (the catalog's)
     /// with any stored camera tone curve.
     pub fn info_or(&self, header: SourceInfo) -> SourceInfo {
-        self.info.clone().unwrap_or_else(|| SourceInfo { camera_tone: self.camera_tone.or(header.camera_tone), ..header })
+        // (the decoder knows its buffer, the catalog the photo's full size)
+        let full_long = header.full_long;
+        let i = self.info.clone().unwrap_or_else(|| SourceInfo { camera_tone: self.camera_tone.or(header.camera_tone), ..header });
+        SourceInfo { full_long, ..i }
     }
 }
 
@@ -1220,6 +1223,10 @@ pub fn content_key(p: &Photo) -> String {
 }
 
 pub fn source_info(p: &Photo) -> SourceInfo {
+    SourceInfo { full_long: p.width.max(p.height) as usize, ..source_facts_of(p) }
+}
+
+fn source_facts_of(p: &Photo) -> SourceInfo {
     // Procedural demo scenes are scene-referred HDR (like raw files): use the filmic tone map.
     if matches!(p.source, Source::Demo { .. }) {
         return SourceInfo { raw: true, ..Default::default() };
