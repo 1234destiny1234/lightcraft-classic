@@ -15,7 +15,7 @@ import and export formats. Ours come from `crates/codecs/src/sniff.rs`, `crates/
 
 | Format | Target reads | Target writes | The app reads | The app writes | Notes / tests |
 |---|---|---|---|---|---|
-| JPEG | ✅ | ✅ | ✅ (parallel decoder, ICC, EXIF orientation) | ✅ quality, size limit, ICC, metadata | `crates/codecs/src/jpeg.rs`, export tests |
+| JPEG | ✅ | ✅ | ✅ (parallel decoder, ICC, EXIF orientation) | ✅ quality, size limit, ICC, metadata; Huffman tables optimized per image (issue #1373) | `crates/codecs/src/jpeg.rs`, `crates/codecs/src/jpeg_par.rs`, export tests |
 | TIFF | ✅ 8/16/32-bit | ✅ 8/16-bit, LZW/ZIP | ✅ 1–64-bit integer, 16–64-bit float, bilevel, CCITT fax, WhiteIsZero | ✅ 8/16-bit, 32-bit float linear, none / LZW / ZIP | `crates/tiff`, `crates/codecs/src/tiff_codec.rs` |
 | PNG | ✅ | ✅ | ✅ | ✅ | |
 | PSD / PSB | ✅ (maximized-compatibility composite) | ✅ (Classic: PSD export, edit-in round trip) | ✅ merged composite | ⬜ (external-editor round trip writes 16-bit TIFF) | `crates/codecs/src/psd.rs` |
@@ -83,3 +83,4 @@ Remaining: **11–17 h** (HLG 3–5 h; catalog import depth 8–12 h).
 | 2026-10-13 | minor | Render to DNG: Photo ▸ Render to DNG (rendered DNGs stacked with their originals, on a worker in the desktop app) and the "Rendered DNG" export format |
 | 2026-10-13 | minor | AVIF import (`crates/codecs/src/avif.rs`, `filmcraft-av1`) |
 | 2026-10-13 | minor | AVIF import (`crates/codecs/src/avif.rs`, `filmcraft-av1`, native builds) |
+| 2026-10-13 | patch | JPEG write (#1373): Huffman tables made for each image, 12–14 % smaller files at the same pixels; statuses unchanged |

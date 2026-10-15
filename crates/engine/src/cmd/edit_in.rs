@@ -578,7 +578,7 @@ fn edit_in(s: &mut Session, p: &Value) -> Result<Value> {
 fn open_as_layers(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "photo.openAsLayers";
     let pr = resolve(s, &json!({"preset": str_param(p, "preset").unwrap_or("PhotoCraft")}), C)?;
-    let ids: Vec<PhotoId> = s.targets(p).into_iter().filter(|i| s.catalog.photo(*i).is_some()).collect();
+    let ids: Vec<PhotoId> = s.targets(p)?.into_iter().filter(|i| s.catalog.photo(*i).is_some()).collect();
     if ids.len() < 2 {
         return Err(bad(C, "select at least two photos"));
     }

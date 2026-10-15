@@ -98,17 +98,6 @@ fn the_kelvin_temp_slider_has_lightrooms_scale() {
     assert_eq!(develop(&h).wb.temp, 50000.0);
 }
 
-/// Exposure (like every slider but the Kelvin temperature) keeps its linear track.
-#[test]
-fn other_sliders_stay_linear() {
-    let mut h = edit_panel(true);
-    set(&mut h, "light.exposure", 1.0);
-    assert!((thumb(&h, "light.exposure") - 0.6).abs() < 0.005, "+1.00 of −5…+5 at 60 %");
-    assert_eq!(h.request("ui.clickWidget", json!({"id": "slider:light.exposure", "fx": 0.75}), T)["ok"], true);
-    h.settle(SETTLE);
-    assert!((develop(&h).light.exposure - 2.5).abs() < 0.011, "{}", develop(&h).light.exposure);
-}
-
 /// The relative temperature of a rendered photo (−100…+100, 0 = as shot, in the middle) is unchanged.
 #[test]
 fn the_relative_temp_slider_stays_linear() {

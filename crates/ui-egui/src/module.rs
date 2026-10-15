@@ -348,11 +348,41 @@ pub struct IdentityPlate {
     /// The text plate's colour (`None` = the theme's text colour).
     pub color: Option<[u8; 3]>,
     pub bold: bool,
+    /// Show the styled text plate even though `image` names a graphic (the setup dialog's
+    /// "styled text" choice keeps the chosen file for when the graphic is picked again).
+    pub text_plate: bool,
+    /// Show the status and activity line beside the plate.
+    pub show_status: bool,
+    /// The open Identity Plate Setup dialog (`crate::plate::Setup`); never saved.
+    #[serde(skip)]
+    pub setup: Option<crate::plate::Setup>,
 }
 
 impl Default for IdentityPlate {
     fn default() -> Self {
-        IdentityPlate { text: String::new(), mark: true, image: String::new(), size: 17.0, color: None, bold: false }
+        IdentityPlate {
+            text: String::new(),
+            mark: true,
+            image: String::new(),
+            size: 17.0,
+            color: None,
+            bold: false,
+            text_plate: false,
+            show_status: true,
+            setup: None,
+        }
+    }
+}
+
+impl IdentityPlate {
+    /// The graphic file shown, if the plate is a graphical one.
+    pub fn graphic(&self) -> Option<&str> {
+        (!self.text_plate && !self.image.is_empty()).then_some(self.image.as_str())
+    }
+
+    /// The app's own plate (the defaults), ignoring an open setup dialog.
+    pub fn is_default(&self) -> bool {
+        IdentityPlate { setup: None, ..self.clone() } == IdentityPlate::default()
     }
 }
 
@@ -430,29 +460,17 @@ pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::QuickDevelop, PanelId::Keywordi
 /// shows.
 pub const DEVELOP_LEFT: &[PanelId] =
     &[PanelId::Navigator, PanelId::Presets, PanelId::Versions, PanelId::History, PanelId::Collections, PanelId::Sources];
-const DEVELOP_RIGHT: &[PanelId] = &[
-    PanelId::Edit,
-    PanelId::Crop,
-    PanelId::Remove,
-    PanelId::Masking,
-    PanelId::RedEye,
-    PanelId::Versions,
-    PanelId::Activity,
-    PanelId::Keywords,
-    PanelId::Info,
-];
+/// Develop's right group: the panels its tool strip opens. They are Develop's own editing tools;
+/// the Library panels (Versions, Activity, Keywords, Info) are not among them — they have their own
+/// tab strip in Library, sit in Develop's left column where Classic puts them, and open from the
+/// Window menu and their shortcuts (#45, #108).
+const DEVELOP_RIGHT: &[PanelId] = &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::Masking, PanelId::RedEye];
 
 /// Library: (`[` / `]` rate in the grids, see `shortcuts::grid_bracket_command`); `\` the filter bar (in a loupe
-/// it stays Show Original, see `shortcuts::handle`); `=` / `-` thumbnail size; Home / End the first
-/// and last photo.
-pub const LIBRARY_KEYS: &[ModuleKey] = &[
-    ("\\", "view.filterBar", "{}"),
-    ("=", "view.thumbLarger", "{}"),
-    ("-", "view.thumbSmaller", "{}"),
-    ("Home", "library.first", "{}"),
-    ("End", "library.last", "{}"),
-    crate::help_overlay::KEY,
-];
+/// it stays Show Original, see `shortcuts::handle`); Home / End the first and last photo. `=` / `-`
+/// (thumbnail size) are the grids' `view.thumbSizeUp` / `view.thumbSizeDown`, not module keys.
+pub const LIBRARY_KEYS: &[ModuleKey] =
+    &[("\\", "view.filterBar", "{}"), ("Home", "library.first", "{}"), ("End", "library.last", "{}"), crate::help_overlay::KEY];
 
 /// Develop: ⌘U Auto (tone), ⇧⌘U Auto white balance, ⇧Q cycles the selected spot's mode
 /// (Remove → Heal → Clone), Home / End the first and last photo.
@@ -768,6 +786,7 @@ pub const SHELL_COMMANDS: &[crate::menus::UiCommand] = &[
     ("view.lightsOut", "Next Lights Out Mode", None, "Window>Lights Out"),
     ("view.identityPlate", "Identity Plate", None, ""),
     ("dialog.identityPlateImage", "Choose Identity Plate Image…", None, ""),
+    ("dialog.identityPlateSetup", "Identity Plate Setup…", None, "Edit"),
     ("second.grid", "Secondary Grid", None, "Window>Secondary Display"),
     ("second.loupe", "Secondary Loupe", None, "Window>Secondary Display"),
     ("second.live", "Secondary Loupe – Live", None, "Window>Secondary Display"),
@@ -1052,7 +1071,12 @@ fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
                 crate::pick::Picked::Unavailable => Err("no file dialog on this platform: run view.identityPlate {image: path}".into()),
             }
         }
+        "dialog.identityPlateSetup" => crate::plate::setup_command(app, p),
         "view.identityPlate" => {
+            if bool_param(p, "reset") == Some(true) {
+                let setup = app.ui.identity_plate.setup.take();
+                app.ui.identity_plate = IdentityPlate { setup, ..IdentityPlate::default() };
+            }
             if let Some(t) = p.get("text").and_then(Value::as_str) {
                 // a name, not a document: cap it
                 app.ui.identity_plate.text = t.chars().take(80).collect();
@@ -1076,6 +1100,20 @@ fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
             if let Some(b) = bool_param(p, "bold") {
                 app.ui.identity_plate.bold = b;
             }
+            if let Some(b) = bool_param(p, "showStatus") {
+                app.ui.identity_plate.show_status = b;
+            }
+            match p.get("kind").and_then(Value::as_str) {
+                None => {}
+                Some(k @ ("text" | "graphic")) => {
+                    let ip = &mut app.ui.identity_plate;
+                    ip.text_plate = k == "text";
+                    if let Some(setup) = ip.setup.as_mut() {
+                        setup.graphic = k == "graphic";
+                    }
+                }
+                Some(k) => return Err(format!("view.identityPlate: kind `{k}` is \"text\" or \"graphic\"")),
+            }
             if let Some(path) = p.get("image").and_then(Value::as_str) {
                 if path.is_empty() {
                     app.ui.identity_plate.image.clear();
@@ -1083,6 +1121,10 @@ fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
                     // checked now, so a bad file is an answer, not a silently empty plate
                     crate::plate::load(path)?;
                     app.ui.identity_plate.image = path.to_string();
+                    app.ui.identity_plate.text_plate = false;
+                    if let Some(setup) = app.ui.identity_plate.setup.as_mut() {
+                        setup.graphic = true;
+                    }
                 }
             }
             Ok(json!(app.ui.identity_plate))
@@ -1194,8 +1236,8 @@ fn plate_menu(app: &mut LccApp, ui: &mut egui::Ui, plate: Rect) {
             let _ = app.run("dialog.identityPlateImage", json!({}));
             ui.close();
         }
-        if !app.ui.identity_plate.image.is_empty() && ui.button(crate::i18n::tr("Use Text Plate")).clicked() {
-            let _ = app.run("view.identityPlate", json!({"image": ""}));
+        if app.ui.identity_plate.graphic().is_some() && ui.button(crate::i18n::tr("Use Text Plate")).clicked() {
+            let _ = app.run("view.identityPlate", json!({"kind": "text"}));
             ui.close();
         }
         let mut mark = app.ui.identity_plate.mark;
@@ -1205,6 +1247,11 @@ fn plate_menu(app: &mut LccApp, ui: &mut egui::Ui, plate: Rect) {
         let mut bold = app.ui.identity_plate.bold;
         if ui.checkbox(&mut bold, crate::i18n::tr("Bold")).changed() {
             let _ = app.run("view.identityPlate", json!({"bold": bold}));
+        }
+        ui.separator();
+        if ui.button(crate::i18n::tr("Identity Plate Setup…")).clicked() {
+            let _ = app.run("dialog.identityPlateSetup", json!({}));
+            ui.close();
         }
     });
 }
@@ -1225,35 +1272,11 @@ pub fn module_bar(app: &mut LccApp, ui: &mut egui::Ui) {
             register(ui.ctx(), "region:moduleBar", full);
             // identity plate
             let ip = app.ui.identity_plate.clone();
-            let image = (!ip.image.is_empty()).then(|| crate::plate::texture(ui.ctx(), &ip.image)).flatten();
-            let plate = if let Some(tex) = image {
-                // a graphical plate: the file, 32 px tall, instead of the mark and text
-                let [w, h] = tex.size();
-                let height = 32.0;
-                let width = (w as f32 * height / h.max(1) as f32).min(full.width() * 0.4);
-                let r = Rect::from_min_size(pos2(full.left(), full.center().y - height / 2.0), vec2(width, height));
-                ui.painter().image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), egui::Color32::WHITE);
-                r
-            } else {
-                let mut x = full.left();
-                if ip.mark {
-                    let r = Rect::from_center_size(pos2(x + 13.0, full.center().y), vec2(24.0, 24.0));
-                    paint_mark(ui.painter(), r);
-                    x += 32.0;
-                }
-                let text = if ip.text.trim().is_empty() { lcc_brand::DISPLAY_NAME.to_string() } else { ip.text.clone() };
-                let color = ip.color.map_or(t.text, |[r, g, b]| egui::Color32::from_rgb(r, g, b));
-                let size = if ip.size.is_finite() { ip.size.clamp(9.0, 32.0) } else { 17.0 };
-                let font = if ip.bold { t.semibold(size) } else { t.font(size) };
-                let g = ui.painter().layout_no_wrap(text, font, color);
-                let plate = Rect::from_min_size(pos2(full.left(), full.center().y - 12.0), vec2(x - full.left() + g.size().x, 24.0));
-                ui.painter().galley(pos2(x, full.center().y - g.size().y / 2.0), g, color);
-                plate
-            };
+            let plate = paint_plate(ui, &ip, pos2(full.left(), full.center().y), full.width() * 0.4);
             register(ui.ctx(), "region:identityPlate", plate);
             plate_menu(app, ui, plate);
             // activity: the status line (imports, exports, builds report here)
-            if !app.ui.status.is_empty() {
+            if ip.show_status && !app.ui.status.is_empty() {
                 let w = (full.width() * 0.3).max(120.0);
                 let status: String = app.ui.status.chars().take(120).collect();
                 let g = ui.painter().layout(status, t.font(12.0), t.text_dim, w);
@@ -1318,6 +1341,34 @@ fn picker_menu(app: &mut LccApp, ui: &mut egui::Ui) {
         app.ui.hidden_modules.clear();
         ui.close();
     }
+}
+
+/// Paints the identity plate with its left edge at `left`'s x, centred on its y: the graphic
+/// (32 pt tall, at most `max_width` wide) or the brand mark and styled text. Returns its rect.
+pub(crate) fn paint_plate(ui: &egui::Ui, ip: &IdentityPlate, left: egui::Pos2, max_width: f32) -> Rect {
+    let t = Tokens::get(ui.ctx());
+    if let Some(tex) = ip.graphic().and_then(|path| crate::plate::texture(ui.ctx(), path)) {
+        let [w, h] = tex.size();
+        let height = 32.0;
+        let width = (w as f32 * height / h.max(1) as f32).min(max_width.max(1.0));
+        let r = Rect::from_min_size(pos2(left.x, left.y - height / 2.0), vec2(width, height));
+        ui.painter().image(tex.id(), r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        return r;
+    }
+    let mut x = left.x;
+    if ip.mark {
+        let r = Rect::from_center_size(pos2(x + 13.0, left.y), vec2(24.0, 24.0));
+        paint_mark(ui.painter(), r);
+        x += 32.0;
+    }
+    let text = if ip.text.trim().is_empty() { lcc_brand::DISPLAY_NAME.to_string() } else { ip.text.clone() };
+    let color = ip.color.map_or(t.text, |[r, g, b]| Color32::from_rgb(r, g, b));
+    let size = if ip.size.is_finite() { ip.size.clamp(9.0, 32.0) } else { 17.0 };
+    let font = if ip.bold { t.semibold(size) } else { t.font(size) };
+    let g = ui.painter().layout_no_wrap(text, font, color);
+    let plate = Rect::from_min_size(pos2(left.x, left.y - 12.0), vec2(x - left.x + g.size().x, 24.0));
+    ui.painter().galley(pos2(x, left.y - g.size().y / 2.0), g, color);
+    plate
 }
 
 /// The brand mark: a six-blade aperture (drawn in code, after `brand/logo.svg`).

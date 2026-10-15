@@ -37,6 +37,9 @@ jobs:
     # and Windows SDK, so it builds natively. win0 (x64) has no ARM64 MSVC tools. See docs/ci.md.
     runs-on: [self-hosted, Windows, ARM64, lcc]
     timeout-minutes: 120
+    env:
+      # SNAPDRAGON has 12 cores; the runner's own settings held cargo to 4. Two stay free for the desktop.
+      CARGO_BUILD_JOBS: 10
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Low priority, persistent build cache

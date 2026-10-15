@@ -310,6 +310,12 @@ fn install_appimage(new: &Path) -> Result<Outcome, UpdateError> {
     Err(UpdateError::Install(format!("{} is an AppImage; this system installs it another way", new.display())))
 }
 
+/// Whether this copy runs from an AppImage (the runtime names the file in `$APPIMAGE`). Only such a
+/// copy can take an AppImage update; a package, a tarball or a Flatpak can't.
+pub fn runs_from_appimage() -> bool {
+    std::env::var_os("APPIMAGE").is_some_and(|v| Path::new(&v).is_file())
+}
+
 /// The AppImage file to replace, from the runtime's `$APPIMAGE` (an existing file, canonical).
 #[cfg(all(unix, not(target_os = "macos")))]
 fn appimage_path(var: Option<std::ffi::OsString>) -> Option<PathBuf> {

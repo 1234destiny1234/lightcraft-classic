@@ -303,14 +303,3 @@ mod tests {
         assert_eq!(sp.icc(), None);
     }
 }
-
-#[cfg(test)]
-mod probe {
-    /// Manual check on a real desktop: `cargo test -p lcc-app probe_this_desktop -- --ignored --nocapture`.
-    #[test]
-    #[ignore = "reads the real screen profile of this desktop"]
-    fn probe_this_desktop() {
-        let icc = super::ScreenProfile::default().icc();
-        println!("screen profile: {:?} bytes", icc.map(|b| b.len()));
-    }
-}

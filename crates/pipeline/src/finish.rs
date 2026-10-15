@@ -352,6 +352,49 @@ fn base_tone_at(s: &DevelopSettings, info: &SourceInfo, peak: f32) -> ToneMap {
     }
 }
 
+/// The Display-stage plug-in filters a finish runs before its final encoding.
+pub(crate) struct Post<'a, 'w> {
+    pub stack: &'a crate::plugin_filters::Stack,
+    pub frame: lcc_filters::FrameInfo,
+    pub warnings: std::cell::RefCell<&'w mut Vec<String>>,
+}
+
+/// [`finish_with`], with the Display plug-in filters run on its samples (`linear`: on the linear
+/// values of the sRGB curve, for HDR) before `store`.
+fn finish_post<T: Copy + Default + Send>(
+    p: &Prepared,
+    fp: &FinishParams,
+    exact: bool,
+    post: &Post<'_, '_>,
+    linear: bool,
+    store: impl Fn([f32; 3]) -> T + Sync + Send,
+) -> Vec<T> {
+    if post.stack.is_empty() {
+        return finish_with(p, fp, exact, store);
+    }
+    let (w, h) = (p.img.width, p.img.height);
+    let mut v = if linear { finish_with(p, fp, true, |e| e.map(srgb_to_linear_ext)) } else { finish_with(p, fp, exact, |e| e) };
+    crate::plugin_filters::apply_display(post.stack, &mut v, w, h, post.frame, linear, &mut post.warnings.borrow_mut());
+    let mut out = vec![T::default(); v.len()];
+    for_rows(&mut out, w.max(1), |y, row| {
+        for (x, o) in row.iter_mut().enumerate() {
+            let e = v.get(y * w + x).copied().unwrap_or_default();
+            *o = store(if linear { e.map(linear_to_srgb_ext) } else { e });
+        }
+    });
+    out
+}
+
+/// The sRGB curve extended to all values (odd), as the finish encodes HDR values above 1.
+fn srgb_to_linear_ext(v: f32) -> f32 {
+    v.signum() * lcc_color::transfer::srgb_to_linear(v.abs())
+}
+
+fn linear_to_srgb_ext(v: f32) -> f32 {
+    v.signum() * lcc_color::transfer::linear_to_srgb(v.abs())
+}
+
+#[allow(clippy::too_many_arguments)]
 pub(crate) fn finish(
     p: &Prepared,
     s: &DevelopSettings,
@@ -360,6 +403,7 @@ pub(crate) fn finish(
     space: OutputSpace,
     display: Option<&crate::DisplaySpace>,
     proof: Option<crate::Proof>,
+    post: &Post<'_, '_>,
 ) -> Rgba8 {
     let (w, h) = (p.img.width, p.img.height);
     let mut fp = FinishParams::new(s, frame, info, w, h, p.px_per_long, p.air, space);
@@ -368,7 +412,7 @@ pub(crate) fn finish(
         fp.for_display(d, proof);
     }
     let trc = fp.out_trc;
-    let data = finish_with(p, &fp, false, |e| match trc {
+    let data = finish_post(p, &fp, false, post, false, |e| match trc {
         OutputTrc::Srgb => [enc(e[0]), enc(e[1]), enc(e[2]), 255],
         t => {
             let x = e.map(|v| enc(t.encode(lcc_color::transfer::srgb_to_linear(v.clamp(0.0, 1.0)))));
@@ -388,6 +432,7 @@ pub(crate) fn finish_deep(
     space: OutputSpace,
     depth: OutputDepth,
     proof: Option<crate::Proof>,
+    post: &Post<'_, '_>,
 ) -> DeepImage {
     use lcc_color::transfer::srgb_to_linear;
     let (w, h) = (p.img.width, p.img.height);
@@ -396,18 +441,18 @@ pub(crate) fn finish_deep(
     let trc = fp.out_trc;
     let samples = match depth {
         OutputDepth::F32Linear => {
-            let v = finish_with(p, &fp, true, |e| e.map(|v| srgb_to_linear(v.clamp(0.0, 1.0))));
+            let v = finish_post(p, &fp, true, post, false, |e| e.map(|v| srgb_to_linear(v.clamp(0.0, 1.0))));
             DeepSamples::F32(v.into_flattened())
         }
         OutputDepth::F32Hdr => {
             // the sRGB curve extended past 1 (it is unbounded), so values up to `peak` survive
             let peak = fp.peak;
-            let v = finish_with(p, &fp, true, |e| e.map(|v| srgb_to_linear(v.max(0.0)).clamp(0.0, peak)));
+            let v = finish_post(p, &fp, true, post, true, |e| e.map(|v| srgb_to_linear(v.max(0.0)).clamp(0.0, peak)));
             DeepSamples::F32(v.into_flattened())
         }
         _ => {
             let q = |v: f32| (v.clamp(0.0, 1.0) * 65535.0 + 0.5) as u16;
-            let v = finish_with(p, &fp, true, |e| match trc {
+            let v = finish_post(p, &fp, true, post, false, |e| match trc {
                 OutputTrc::Srgb => e.map(q),
                 t => e.map(|v| q(t.encode(srgb_to_linear(v.clamp(0.0, 1.0))))),
             });

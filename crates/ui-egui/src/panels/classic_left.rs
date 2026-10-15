@@ -28,6 +28,66 @@ pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
     if !app.ui.hidden_panels.contains(&PanelId::Navigator) {
         pinned_navigator(app, ui);
     }
+    // Lightroom Classic's two buttons under the column (issue #118): Import… / Export… in
+    // Library, Copy… / Paste in Develop. Outside the scroll area, so they never scroll away.
+    let full = ui.available_rect_before_wrap();
+    let bar = Rect::from_min_max(pos2(full.left(), full.bottom() - BOTTOM_BAR_H), full.max);
+    ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| bottom_bar(app, ui, bar));
+    let body = Rect::from_min_max(full.min, pos2(full.right(), bar.top()));
+    ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| scrolled_columns(app, ui, side, total, picks, deleted));
+}
+
+/// Height of the Import… / Export… (Copy… / Paste) bar at the foot of the left column.
+const BOTTOM_BAR_H: f32 = 46.0;
+
+/// The buttons of the bar at the foot of the left column, by module: (widget id, label, command).
+pub(crate) fn bottom_bar_buttons(module: crate::module::ModuleId) -> [(&'static str, &'static str, &'static str); 2] {
+    match module {
+        crate::module::ModuleId::Develop => [("leftBar-copy", "Copy…", "dialog.copySettings"), ("leftBar-paste", "Paste", "develop.paste")],
+        _ => [("leftBar-import", "Import…", "file.addPhotos"), ("leftBar-export", "Export…", "dialog.export")],
+    }
+}
+
+/// Lightroom Classic's bar under the left column: two buttons sharing its width.
+fn bottom_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
+    let t = crate::theme::Tokens::get(ui.ctx());
+    ui.painter().rect_filled(r, 0.0, t.chrome);
+    ui.painter().hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0, t.divider));
+    let inner = r.shrink2(vec2(10.0, 11.0));
+    let gap = 8.0;
+    let w = ((inner.width() - gap) / 2.0).max(0.0);
+    for (i, (id, label, cmd)) in bottom_bar_buttons(app.ui.module).into_iter().enumerate() {
+        let x = inner.left() + i as f32 * (w + gap);
+        let br = Rect::from_min_size(pos2(x, inner.top()), vec2(w, inner.height()));
+        let enabled = match cmd {
+            "develop.paste" => app.session.active().is_some() && app.session.clipboard.is_some(),
+            c => crate::menus::ui_enabled(app, c),
+        };
+        let label = crate::i18n::tr(label);
+        let resp = ui.interact(br, egui::Id::new(("left-bottom-bar", id)), if enabled { egui::Sense::click() } else { egui::Sense::hover() });
+        resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, enabled, label));
+        crate::widgets::register(ui.ctx(), format!("button:{id}"), br);
+        let fill = if !enabled {
+            t.button
+        } else if resp.is_pointer_button_down_on() {
+            t.pressed
+        } else if resp.hovered() {
+            t.hover
+        } else {
+            t.button
+        };
+        let p = ui.painter();
+        p.rect(br, egui::CornerRadius::same(3), fill, egui::Stroke::new(1.0, t.button_border), egui::StrokeKind::Inside);
+        let color = if enabled { t.text } else { t.text_dim };
+        p.with_clip_rect(br).text(br.center(), egui::Align2::CENTER_CENTER, label, t.font(12.5), color);
+        if resp.clicked() {
+            let _ = app.run(cmd, json!({}));
+        }
+    }
+}
+
+/// The column's panels under the pinned Navigator, in their scroll area.
+fn scrolled_columns(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], total: usize, picks: usize, deleted: usize) {
     egui::ScrollArea::both().id_salt("left-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
         super::drag_auto_scroll(app, ui);
         // rows are as wide as the widest one needs (last frame), at least the panel
@@ -42,6 +102,7 @@ pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
             d.insert_temp(egui::Id::new("left-view-top"), ui.cursor().top() + viewport.min.y);
         });
         columns(app, ui, viewport, side, total, picks, deleted);
+        crate::widgets::follow_focus(ui);
         // what the rows asked for becomes next frame's width
         let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
         if (next - super::content_width(ui.ctx())).abs() > 0.5 {
@@ -290,6 +351,8 @@ fn albums_body(app: &mut LccApp, ui: &mut egui::Ui) {
 
 /// The Classic Folders panel's tree (no section header of its own).
 fn folders_body(app: &mut LccApp, ui: &mut egui::Ui) {
+    #[cfg(not(target_arch = "wasm32"))]
+    disk::set_ctx(ui.ctx());
     let tree = app.caches.folder_tree(&app.session.catalog);
     super::reveal_chosen(app, ui, &tree);
     super::folder_rows(app, ui, &tree, 0.0);
@@ -299,13 +362,40 @@ fn folders_body(app: &mut LccApp, ui: &mut egui::Ui) {
 /// New Folder…) under each folder that holds photos, as Classic's Folders panel lists them. Only
 /// below folders with photos of their own (a parent like `Users` would list half the disk), a few
 /// levels down, and capped, so a huge tree can't stall a frame.
-pub fn with_disk_folders(mut tree: Vec<lcc_catalog::FolderNode>) -> Vec<lcc_catalog::FolderNode> {
+///
+/// The folders are listed off the UI thread ([`disk`]): this uses what the last listing of each
+/// folder found and asks for the ones not listed yet (or listed a while ago), and the tree is made
+/// again when they come in ([`disk_generation`]). Listing a folder tree on a network share can take
+/// many seconds when the share's directory cache has expired, and the tree is made again after
+/// every change to the catalog.
+pub fn with_disk_folders(tree: Vec<lcc_catalog::FolderNode>) -> Vec<lcc_catalog::FolderNode> {
     #[cfg(not(target_arch = "wasm32"))]
-    {
-        let mut budget = MAX_DISK_FOLDERS;
-        for n in &mut tree {
-            add_disk_folders(n, 0, &mut budget);
-        }
+    return merge_disk_folders(tree, &mut disk::subfolders);
+    #[cfg(target_arch = "wasm32")]
+    tree
+}
+
+/// The catalog changed: list the disk folders again (the tree keeps the old listings meanwhile).
+pub fn invalidate_disk_folders() {
+    #[cfg(not(target_arch = "wasm32"))]
+    disk::invalidate();
+}
+
+/// Changes whenever a disk folder listing comes in: part of the folder tree's cache key.
+pub fn disk_generation() -> u64 {
+    #[cfg(not(target_arch = "wasm32"))]
+    return disk::generation();
+    #[cfg(target_arch = "wasm32")]
+    0
+}
+
+/// [`with_disk_folders`] with `list` giving the names of the folders inside a folder (`None`: not
+/// known yet).
+#[cfg(not(target_arch = "wasm32"))]
+fn merge_disk_folders(mut tree: Vec<lcc_catalog::FolderNode>, list: &mut dyn FnMut(&str) -> Option<Vec<String>>) -> Vec<lcc_catalog::FolderNode> {
+    let mut budget = MAX_DISK_FOLDERS;
+    for n in &mut tree {
+        add_disk_folders(n, 0, &mut budget, list);
     }
     tree
 }
@@ -315,9 +405,9 @@ pub fn with_disk_folders(mut tree: Vec<lcc_catalog::FolderNode>) -> Vec<lcc_cata
 const MAX_DISK_FOLDERS: usize = 2_000;
 
 #[cfg(not(target_arch = "wasm32"))]
-fn add_disk_folders(n: &mut lcc_catalog::FolderNode, empty_depth: usize, budget: &mut usize) {
+fn add_disk_folders(n: &mut lcc_catalog::FolderNode, empty_depth: usize, budget: &mut usize, list: &mut dyn FnMut(&str) -> Option<Vec<String>>) {
     for c in &mut n.children {
-        add_disk_folders(c, 0, budget);
+        add_disk_folders(c, 0, budget, list);
     }
     // a folder with photos of its own, or one this pass added (up to 3 levels)
     let scan = !n.volume && n.selectable && (n.own > 0 || (n.count == 0 && empty_depth > 0)) && empty_depth <= 3;
@@ -325,19 +415,11 @@ fn add_disk_folders(n: &mut lcc_catalog::FolderNode, empty_depth: usize, budget:
         return;
     }
     *budget -= 1;
-    let Ok(rd) = std::fs::read_dir(&n.path) else { return };
+    let Some(names) = list(&n.path) else { return };
     let mut added = Vec::new();
-    for e in rd.flatten() {
+    for name in names {
         if *budget == 0 {
             break;
-        }
-        let Ok(t) = e.file_type() else { continue };
-        if !t.is_dir() {
-            continue;
-        }
-        let name = e.file_name().to_string_lossy().to_string();
-        if name.starts_with('.') {
-            continue;
         }
         let path = format!("{}/{}", n.path.trim_end_matches(['/', '\\']), name);
         if n.children.iter().any(|c| super::same_folder(&c.path, &path)) {
@@ -345,12 +427,143 @@ fn add_disk_folders(n: &mut lcc_catalog::FolderNode, empty_depth: usize, budget:
         }
         *budget -= 1;
         let mut child = lcc_catalog::FolderNode { name, path, count: 0, own: 0, volume: false, selectable: true, label: None, children: Vec::new() };
-        add_disk_folders(&mut child, empty_depth + 1, budget);
+        add_disk_folders(&mut child, empty_depth + 1, budget, list);
         added.push(child);
     }
     added.sort_by_cached_key(|c| c.name.to_lowercase());
     n.children.extend(added);
     n.children.sort_by_cached_key(|c| c.name.to_lowercase());
+}
+
+/// The disk folder listings behind [`with_disk_folders`], made on a thread of their own so a slow
+/// or offline network share never holds up a frame.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) mod disk {
+    use std::collections::{HashMap, HashSet};
+    use std::sync::atomic::{AtomicU64, Ordering};
+    use std::sync::{Mutex, OnceLock, PoisonError, mpsc};
+    use std::time::Instant;
+
+    /// Most folders whose listing is kept.
+    const MAX_KEPT: usize = 8_192;
+
+    #[derive(Default)]
+    struct Lister {
+        listed: Mutex<HashMap<String, (Instant, Vec<String>)>>,
+        pending: Mutex<HashSet<String>>,
+        jobs: Mutex<Option<mpsc::Sender<String>>>,
+        generation: AtomicU64,
+        ctx: Mutex<Option<egui::Context>>,
+        /// Listings started before this are stale ([`invalidate`]).
+        stale_before: Mutex<Option<Instant>>,
+    }
+
+    fn lister() -> &'static Lister {
+        static L: OnceLock<Lister> = OnceLock::new();
+        L.get_or_init(Lister::default)
+    }
+
+    /// The context to repaint when a listing comes in.
+    pub fn set_ctx(ctx: &egui::Context) {
+        let mut c = lister().ctx.lock().unwrap_or_else(PoisonError::into_inner);
+        if c.is_none() {
+            *c = Some(ctx.clone());
+        }
+    }
+
+    pub fn generation() -> u64 {
+        lister().generation.load(Ordering::Relaxed)
+    }
+
+    /// Every listing made so far is out of date (the catalog changed: a folder may have been
+    /// created, moved or removed). The folders are listed again as the tree asks for them; until
+    /// then the tree keeps the old listings.
+    pub fn invalidate() {
+        *lister().stale_before.lock().unwrap_or_else(PoisonError::into_inner) = Some(Instant::now());
+    }
+
+    /// The names of the folders inside `path` as last listed (`None` until it has been), asking
+    /// for a listing when there is none or it is stale ([`invalidate`]).
+    pub fn subfolders(path: &str) -> Option<Vec<String>> {
+        let l = lister();
+        let cached = l.listed.lock().unwrap_or_else(PoisonError::into_inner).get(path).cloned();
+        let stale_before = *l.stale_before.lock().unwrap_or_else(PoisonError::into_inner);
+        if needs_listing(cached.as_ref().map(|(at, _)| *at), stale_before) {
+            queue(path);
+        }
+        cached.map(|(_, names)| names)
+    }
+
+    /// Whether a folder last listed at `listed` (`None`: never) is listed again. Only a catalog
+    /// change makes a listing stale, never its age, so a pass over a slow share ends: a tree made
+    /// again because listings came in doesn't ask for the same folders once more.
+    pub(super) fn needs_listing(listed: Option<Instant>, stale_before: Option<Instant>) -> bool {
+        match (listed, stale_before) {
+            (None, _) => true,
+            (Some(at), Some(s)) => at < s,
+            (Some(_), None) => false,
+        }
+    }
+
+    fn queue(path: &str) {
+        let l = lister();
+        if !l.pending.lock().unwrap_or_else(PoisonError::into_inner).insert(path.to_string()) {
+            return;
+        }
+        let mut jobs = l.jobs.lock().unwrap_or_else(PoisonError::into_inner);
+        if jobs.is_none() {
+            *jobs = start();
+        }
+        if jobs.as_ref().is_none_or(|tx| tx.send(path.to_string()).is_err()) {
+            *jobs = None;
+            l.pending.lock().unwrap_or_else(PoisonError::into_inner).remove(path);
+        }
+    }
+
+    /// The thread that lists folders, one at a time.
+    fn start() -> Option<mpsc::Sender<String>> {
+        let (tx, rx) = mpsc::channel::<String>();
+        let spawned = std::thread::Builder::new().name("lcc-disk-folders".into()).spawn(move || {
+            for path in rx {
+                // the listing counts from when it started: a change made while it ran makes it stale
+                let started = Instant::now();
+                let names = read(&path);
+                let l = lister();
+                {
+                    let mut listed = l.listed.lock().unwrap_or_else(PoisonError::into_inner);
+                    if listed.len() >= MAX_KEPT {
+                        listed.clear();
+                    }
+                    listed.insert(path.clone(), (started, names));
+                }
+                l.pending.lock().unwrap_or_else(PoisonError::into_inner).remove(&path);
+                l.generation.fetch_add(1, Ordering::Relaxed);
+                if let Some(ctx) = l.ctx.lock().unwrap_or_else(PoisonError::into_inner).as_ref() {
+                    ctx.request_repaint();
+                }
+            }
+        });
+        match spawned {
+            Ok(_) => Some(tx),
+            Err(e) => {
+                log::warn!("could not start the disk folder listing: {e}");
+                None
+            }
+        }
+    }
+
+    /// The visible folders inside `path`, sorted; none when it can't be read (gone, offline).
+    pub fn read(path: &str) -> Vec<String> {
+        let Ok(rd) = std::fs::read_dir(path) else { return Vec::new() };
+        let mut names: Vec<String> = rd
+            .flatten()
+            .filter(|e| e.file_type().is_ok_and(|t| t.is_dir()))
+            .map(|e| e.file_name().to_string_lossy().to_string())
+            .filter(|n| !n.starts_with('.'))
+            .collect();
+        names.sort();
+        names
+    }
 }
 
 #[cfg(test)]
@@ -376,15 +589,109 @@ mod tests {
             children,
         };
         let tree = vec![node("root", p.clone(), 3, vec![node("shoot", format!("{p}/shoot"), 2, vec![])])];
-        let out = super::with_disk_folders(tree);
+        let out = super::merge_disk_folders(tree, &mut |p| Some(super::disk::read(p)));
         let names: Vec<&str> = out[0].children.iter().map(|c| c.name.as_str()).collect();
         assert_eq!(names, ["new", "shoot"]);
         assert_eq!(out[0].children[0].count, 0);
         assert_eq!(out[0].children[0].children[0].name, "inner", "a level inside a new folder too");
         assert_eq!(out[0].children[1].count, 2, "the folder with photos is kept as it was");
         // a missing folder is no error
-        let gone = super::with_disk_folders(vec![node("gone", format!("{p}/nope"), 1, vec![])]);
+        let gone = super::merge_disk_folders(vec![node("gone", format!("{p}/nope"), 1, vec![])], &mut |p| Some(super::disk::read(p)));
         assert!(gone[0].children.is_empty());
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// The disk folders are listed off the UI thread: the first tree comes back at once without
+    /// them (a folder on a network share can take seconds to list), and they are there once the
+    /// listing has come in, which changes the generation the tree is cached under.
+    #[test]
+    fn disk_folders_are_listed_off_the_ui_thread() {
+        let d = std::env::temp_dir().join(format!("libfolders-async-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("2026/10-14 - Lake")).unwrap();
+        let p = d.to_string_lossy().replace('\\', "/");
+        let tree = || {
+            vec![lcc_catalog::FolderNode {
+                name: "root".into(),
+                path: p.clone(),
+                count: 1,
+                own: 1,
+                volume: false,
+                selectable: true,
+                label: None,
+                children: vec![],
+            }]
+        };
+        let before = super::disk_generation();
+        let first = super::with_disk_folders(tree());
+        assert!(first[0].children.is_empty(), "nothing waits for the disk");
+        let t = std::time::Instant::now();
+        let mut out = first;
+        while t.elapsed() < std::time::Duration::from_secs(10) {
+            if super::disk_generation() != before {
+                out = super::with_disk_folders(tree());
+                if out[0].children.first().is_some_and(|c| !c.children.is_empty()) {
+                    break;
+                }
+            }
+            std::thread::sleep(std::time::Duration::from_millis(20));
+        }
+        assert_eq!(out[0].children.iter().map(|c| c.name.as_str()).collect::<Vec<_>>(), ["2026"]);
+        assert_eq!(out[0].children[0].children[0].name, "10-14 - Lake", "and the folders inside new ones, as they're listed");
+        let _ = std::fs::remove_dir_all(&d);
+    }
+
+    /// Only a catalog change makes a listing stale, not its age: a tree made again because a
+    /// listing came in asks for no folder already listed since, so a pass over a slow network share
+    /// ends instead of starting over.
+    #[test]
+    fn a_listing_is_made_again_only_after_a_catalog_change() {
+        use std::time::{Duration, Instant};
+        let t0 = Instant::now();
+        let t1 = t0 + Duration::from_secs(60);
+        assert!(super::disk::needs_listing(None, None), "never listed");
+        assert!(!super::disk::needs_listing(Some(t0), None), "listed long ago, nothing changed since");
+        assert!(super::disk::needs_listing(Some(t0), Some(t1)), "listed before a catalog change");
+        assert!(!super::disk::needs_listing(Some(t1), Some(t0)), "listed after it");
+    }
+
+    /// A folder created after the first listing (New Folder…, which changes the catalog) shows up
+    /// once the folders are listed again, without waiting for the listing to age.
+    #[test]
+    fn a_new_folder_shows_up_after_a_catalog_change() {
+        let d = std::env::temp_dir().join(format!("libfolders-new-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(d.join("old")).unwrap();
+        let p = d.to_string_lossy().replace('\\', "/");
+        let tree = || {
+            vec![lcc_catalog::FolderNode {
+                name: "root".into(),
+                path: p.clone(),
+                count: 1,
+                own: 1,
+                volume: false,
+                selectable: true,
+                label: None,
+                children: vec![],
+            }]
+        };
+        let names = |out: &[lcc_catalog::FolderNode]| out[0].children.iter().map(|c| c.name.clone()).collect::<Vec<_>>();
+        let wait_for = |want: &[&str]| {
+            let t = std::time::Instant::now();
+            let mut got = Vec::new();
+            while t.elapsed() < std::time::Duration::from_secs(10) {
+                got = names(&super::with_disk_folders(tree()));
+                if got == want {
+                    break;
+                }
+                std::thread::sleep(std::time::Duration::from_millis(20));
+            }
+            got
+        };
+        assert_eq!(wait_for(&["old"]), ["old"]);
+        std::fs::create_dir_all(d.join("new")).unwrap();
+        super::invalidate_disk_folders();
+        assert_eq!(wait_for(&["new", "old"]), ["new", "old"], "the new folder is listed after the catalog change");
         let _ = std::fs::remove_dir_all(&d);
     }
 }

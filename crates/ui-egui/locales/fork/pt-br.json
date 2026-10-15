@@ -1,4 +1,9 @@
 {
+  "Color Values": "Valores de cor",
+  "Color Readout": "Leitura de cor",
+  "Show RGB Color Values": "Mostrar valores de cor RGB",
+  "Show HSL Color Values": "Mostrar valores de cor HSL",
+  "Show Lab Color Values": "Mostrar valores de cor Lab",
   "Develop": "Revelação",
   "Include on Export": "Incluir ao exportar",
   "Export Containing Keywords": "Exportar palavras-chave superiores",
@@ -1349,5 +1354,18 @@
   "Delete from Disk moves 1 file to the system trash.": "Excluir do disco move 1 arquivo para a lixeira do sistema.",
   "Remove keeps the files on disk and moves the photos to Recently Deleted.": "Remover mantém os arquivos no disco e move as fotos para Excluídos recentemente.",
   "Delete from Disk": "Excluir do disco",
-  "Deleting from disk": "Excluindo do disco"
+  "Deleting from disk": "Excluindo do disco",
+  "Identity Plate Editor": "Editor de placa de identidade",
+  "Identity Plate:": "Placa de identidade:",
+  "Personalized": "Personalizada",
+  "Show Status and Activity": "Mostrar status e atividade",
+  "No options for the {app} identity plate.": "Não há opções para a placa de identidade do {app}.",
+  "Personalize {app} with your own branding elements.": "Personalize o {app} com seus próprios elementos de marca.",
+  "Use a styled text identity plate": "Usar uma placa de identidade de texto estilizado",
+  "Use a graphical identity plate": "Usar uma placa de identidade gráfica",
+  "No image chosen": "Nenhuma imagem escolhida",
+  "Clear Image": "Limpar imagem",
+  "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Um arquivo SVG, PNG ou JPEG; é exibido com 32 pontos de altura.",
+  "Theme Color": "Cor do tema",
+  "Identity Plate Setup…": "Configurar placa de identidade…"
 }
