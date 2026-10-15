@@ -66,5 +66,7 @@
   "{done} downloaded": "已下载 {done}",
   "{file} is downloaded and checked; install it to update (the app restarts).": "已下载并校验 {file}；安装即可更新（应用将重启）。",
   "Remove {what} from the library for good?": "要将{what}从图库中永久移除吗？",
-  "Faces: {spec}": "人脸：{spec}"
+  "Faces: {spec}": "人脸：{spec}",
+  "Delete these {count} photos from disk, or only remove them from the library?": "要从磁盘删除这 {count} 张照片，还是只从图库中移除？",
+  "Delete from Disk moves {n} files to the system trash.": "“从磁盘删除”会将 {n} 个文件移到系统废纸篓。"
 }

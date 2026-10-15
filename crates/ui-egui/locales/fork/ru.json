@@ -1525,6 +1525,7 @@
   "Add to Target Collection": "Добавить в целевую коллекцию",
   "Remove from Target Collection": "Удалить из целевой коллекции",
   "Wheel scroll speed": "Скорость прокрутки колесом",
+  "Wheel resizes brush instead of zooming": "Колесо мыши меняет размер кисти вместо масштабирования",
   "Fast": "Быстрая",
   "Fastest": "Очень быстрая",
   "Run face models on the CPU only": "Запускать модели лиц только на ЦП",
@@ -1551,5 +1552,10 @@
   "3+ faces": "3+ лиц",
   "5+ faces": "5+ лиц",
   "10+ faces": "10+ лиц",
-  "Face Count": "Число лиц"
+  "Face Count": "Число лиц",
+  "Delete this photo from disk, or only remove it from the library?": "Удалить это фото с диска или только убрать его из библиотеки?",
+  "Delete from Disk moves 1 file to the system trash.": "«Удалить с диска» перемещает 1 файл в системную корзину.",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "«Убрать» оставляет файлы на диске и перемещает фото в «Недавно удалённые».",
+  "Delete from Disk": "Удалить с диска",
+  "Deleting from disk": "Удаление с диска"
 }

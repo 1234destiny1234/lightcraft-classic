@@ -1317,6 +1317,7 @@
   "Add to Target Collection": "ターゲットコレクションに追加",
   "Remove from Target Collection": "ターゲットコレクションから削除",
   "Wheel scroll speed": "ホイールのスクロール速度",
+  "Wheel resizes brush instead of zooming": "ホイールでズームの代わりにブラシサイズを変更",
   "Fast": "速い",
   "Fastest": "最速",
   "Run face models on the CPU only": "顔モデルを CPU だけで実行",
@@ -1343,5 +1344,10 @@
   "3+ faces": "顔 3 つ以上",
   "5+ faces": "顔 5 つ以上",
   "10+ faces": "顔 10 以上",
-  "Face Count": "顔の数"
+  "Face Count": "顔の数",
+  "Delete this photo from disk, or only remove it from the library?": "この写真をディスクから削除しますか？それともライブラリから取り除くだけにしますか？",
+  "Delete from Disk moves 1 file to the system trash.": "「ディスクから削除」は 1 個のファイルをシステムのゴミ箱に移動します。",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "「取り除く」はファイルをディスクに残し、写真を「最近削除した写真」に移動します。",
+  "Delete from Disk": "ディスクから削除",
+  "Deleting from disk": "ディスクから削除中"
 }

@@ -479,6 +479,27 @@ fn mask_list_rename_hide_and_overlay_colour() {
     assert_eq!(h.app.ui.mask_overlay_color, all[(i + 1) % all.len()]);
 }
 
+/// Issue #82: "show all overlays" and Show Pins sit beside the overlay colours and work in every overlay mode;
+/// Refine Edges and Feather sit under the overlay options and appear only with a mask selected.
+#[test]
+fn overlay_row_toggles_in_every_mode_and_edge_sliders_follow_the_selection() {
+    let mut h = detail("panel.masking");
+    exec(&mut h, "mask.add", json!({"kind": "radial", "center": [0.5, 0.5], "rx": 0.2, "ry": 0.2}));
+    h.settle(Duration::from_secs(5));
+    let has = |h: &mut Headless, id: &str| h.request("ui.widgets", json!({"filter": id}), T).to_string().contains(&format!("\"{id}\""));
+    for mode in ["color", "whiteOnBlack"] {
+        exec(&mut h, "view.maskOverlayMode", json!({"mode": mode}));
+        h.settle(Duration::from_secs(5));
+        let all = h.app.ui.mask_overlay_all;
+        click(&mut h, "icon:maskOverlayAll");
+        assert_eq!(h.app.ui.mask_overlay_all, !all, "show-all toggles in {mode}");
+    }
+    assert!(has(&mut h, "slider:refine") && has(&mut h, "slider:maskFeather"), "edge sliders with a selected mask");
+    h.app.session.active_mask = None;
+    h.settle(Duration::from_secs(5));
+    assert!(!has(&mut h, "slider:refine") && !has(&mut h, "slider:maskFeather"), "no edge sliders without a selection");
+}
+
 #[test]
 fn command_drag_straightens_in_crop() {
     let mut h = detail("panel.crop");
@@ -1595,4 +1616,39 @@ fn mask_action_icons_name_themselves_on_hover() {
     let before = develop(&h).masks[0].invert;
     click(&mut h, "button:maskInvert");
     assert_ne!(develop(&h).masks[0].invert, before, "Invert inverts");
+}
+
+/// Fork #93: with the Masking brush active, a plain mouse-wheel notch over the photo resizes the brush (as
+/// `[` / `]` do) instead of zooming; with the preference off, the wheel zooms again.
+#[test]
+fn a_wheel_notch_resizes_the_brush_instead_of_zooming() {
+    let mut h = detail("panel.masking");
+    h.settle(SETTLE);
+    exec(&mut h, "tool.brush", json!({"new": true}));
+    pointer(&mut h, json!([{"kind": "move", "x": 0.5, "y": 0.5}]));
+    h.settle(SETTLE);
+    let notch = |h: &mut Headless, dy: f32| {
+        h.events.push(egui::Event::MouseWheel {
+            unit: egui::MouseWheelUnit::Line,
+            delta: egui::vec2(0.0, dy),
+            phase: egui::TouchPhase::Move,
+            modifiers: egui::Modifiers::NONE,
+        });
+        for _ in 0..30 {
+            h.step();
+        }
+    };
+    let (size0, zoom0) = (h.app.ui.brush_size, h.app.ui.zoom);
+    notch(&mut h, 1.0);
+    assert!(h.app.ui.brush_size > size0, "a notch up grows the brush: {size0} -> {}", h.app.ui.brush_size);
+    assert_eq!(h.app.ui.zoom, zoom0, "and does not zoom");
+    let size1 = h.app.ui.brush_size;
+    notch(&mut h, -1.0);
+    assert!(h.app.ui.brush_size < size1, "a notch down shrinks it");
+    // the preference off: the wheel zooms, the brush keeps its size
+    h.app.ui.settings.wheel_resizes_brush = false;
+    let size2 = h.app.ui.brush_size;
+    notch(&mut h, 1.0);
+    assert_eq!(h.app.ui.brush_size, size2);
+    assert_ne!(h.app.ui.zoom, zoom0, "with the preference off the wheel zooms");
 }

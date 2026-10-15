@@ -66,5 +66,7 @@
   "{done} downloaded": "{done} ダウンロード済み",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} をダウンロードして検証しました。インストールすると更新されます（アプリは再起動します）。",
   "Remove {what} from the library for good?": "{what}をライブラリから完全に削除しますか？",
-  "Faces: {spec}": "顔：{spec}"
+  "Faces: {spec}": "顔：{spec}",
+  "Delete these {count} photos from disk, or only remove them from the library?": "これらの {count} 枚の写真をディスクから削除しますか？それともライブラリから取り除くだけにしますか？",
+  "Delete from Disk moves {n} files to the system trash.": "「ディスクから削除」は {n} 個のファイルをシステムのゴミ箱に移動します。"
 }

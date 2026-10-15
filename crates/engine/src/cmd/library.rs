@@ -916,6 +916,20 @@ pub fn specs() -> Vec<CommandSpec> {
             select_after_deletion(s, &before);
             Ok(json!({"deleted": t.len()}))
         }),
+        cmd!(
+            "photo.deleteFromDisk",
+            "Delete from Disk",
+            ["Photo"],
+            None,
+            "{ids?} — moves the photos' files to the system trash and removes them from the library",
+            has_selection,
+            |s, p| {
+                let before = s.visible_cloned();
+                let r = crate::disk_delete::delete_from_disk(s, p)?;
+                select_after_deletion(s, &before);
+                Ok(r)
+            }
+        ),
         // ---- metadata
         cmd!(
             "photo.setMeta",

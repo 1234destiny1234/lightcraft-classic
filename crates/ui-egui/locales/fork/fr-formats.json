@@ -56,5 +56,7 @@
   "{done} downloaded": "{done} téléchargés",
   "{file} is downloaded and checked; install it to update (the app restarts).": "{file} est téléchargé et vérifié ; installez-le pour mettre à jour (l’application redémarre).",
   "Remove {what} from the library for good?": "Retirer définitivement {what} de la bibliothèque ?",
-  "Faces: {spec}": "Visages : {spec}"
+  "Faces: {spec}": "Visages : {spec}",
+  "Delete these {count} photos from disk, or only remove them from the library?": "Supprimer ces {count} photos du disque, ou seulement les retirer de la bibliothèque ?",
+  "Delete from Disk moves {n} files to the system trash.": "Supprimer du disque place {n} fichiers dans la corbeille du système."
 }

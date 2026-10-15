@@ -1320,6 +1320,7 @@
   "Add to Target Collection": "Añadir a colección de destino",
   "Remove from Target Collection": "Quitar de colección de destino",
   "Wheel scroll speed": "Velocidad de desplazamiento de la rueda",
+  "Wheel resizes brush instead of zooming": "La rueda del ratón cambia el tamaño del pincel en lugar de hacer zoom",
   "Fast": "Rápida",
   "Fastest": "Muy rápida",
   "Run face models on the CPU only": "Ejecutar los modelos de caras solo en la CPU",
@@ -1346,5 +1347,10 @@
   "3+ faces": "3+ caras",
   "5+ faces": "5+ caras",
   "10+ faces": "10+ caras",
-  "Face Count": "Número de caras"
+  "Face Count": "Número de caras",
+  "Delete this photo from disk, or only remove it from the library?": "¿Eliminar esta foto del disco o solo quitarla de la biblioteca?",
+  "Delete from Disk moves 1 file to the system trash.": "Eliminar del disco mueve 1 archivo a la papelera del sistema.",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "Quitar conserva los archivos en el disco y mueve las fotos a Eliminadas recientemente.",
+  "Delete from Disk": "Eliminar del disco",
+  "Deleting from disk": "Eliminando del disco"
 }

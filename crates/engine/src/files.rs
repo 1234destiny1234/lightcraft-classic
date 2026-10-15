@@ -1138,6 +1138,10 @@ impl crate::Session {
         {
             self.apple_photos = Some(crate::apple_photos::osascript());
         }
+        #[cfg(not(target_arch = "wasm32"))]
+        {
+            self.trash = Some(crate::disk_delete::system_trash());
+        }
         self
     }
 }

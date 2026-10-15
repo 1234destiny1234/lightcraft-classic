@@ -1230,6 +1230,7 @@
   "Add to Target Collection": "添加到目标集合",
   "Remove from Target Collection": "从目标集合中移除",
   "Wheel scroll speed": "滚轮滚动速度",
+  "Wheel resizes brush instead of zooming": "滚轮调整画笔大小而不是缩放",
   "Fast": "快",
   "Fastest": "最快",
   "Run face models on the CPU only": "仅在 CPU 上运行人脸模型",
@@ -1256,5 +1257,10 @@
   "3+ faces": "3 张及以上人脸",
   "5+ faces": "5 张及以上人脸",
   "10+ faces": "10 张及以上人脸",
-  "Face Count": "人脸数"
+  "Face Count": "人脸数",
+  "Delete this photo from disk, or only remove it from the library?": "要从磁盘删除这张照片，还是只从图库中移除？",
+  "Delete from Disk moves 1 file to the system trash.": "“从磁盘删除”会将 1 个文件移到系统废纸篓。",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "“移除”会保留磁盘上的文件，并将照片移到“最近删除”。",
+  "Delete from Disk": "从磁盘删除",
+  "Deleting from disk": "正在从磁盘删除"
 }
