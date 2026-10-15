@@ -104,7 +104,8 @@ pub(super) fn swap_script(swap: &Swap) -> String {
          # whatever is left at .old goes first: `rm -f` removes a file or a link (never what it points\n\
          # to); a folder stays and stops the update, since `ln` and `cp` would put the copy inside it\n\
          rm -f -- \"$old\" 2>/dev/null\n\
-         if [ -e \"$old\" ] || [ -L \"$old\" ]; then fail \"Something that is not a file is in the way at $old, so the update was not installed. The previous version is unchanged.\"; fi\n\
+         if [ -d \"$old\" ] && [ ! -L \"$old\" ]; then fail \"A folder is in the way at $old, so the update was not installed. The previous version is unchanged.\"; fi\n\
+         if [ -e \"$old\" ] || [ -L \"$old\" ]; then fail \"$old could not be removed to keep the previous version there, so the update was not installed. The previous version is unchanged.\"; fi\n\
          if ! ln -- \"$running\" \"$old\" 2>/dev/null && ! cp -p -- \"$running\" \"$old\" 2>/dev/null; then\n\
          \x20 rm -f -- \"$old\"\n\
          \x20 fail 'A copy of the running version could not be kept, so the update was not installed. The previous version is unchanged.'\n\
@@ -494,7 +495,55 @@ mod tests {
                 assert!(meta.file_type().is_file() && content(&s.old).contains("'old'"), "the previous version is kept as a plain .old {case}");
                 assert!(wait_until(Duration::from_secs(5), || content(&s.marker) == "new"), "the update went ahead {case}");
             }
+            // a link to nothing, and a named pipe, are removed like any file
+            for kind in ["dangling link", "fifo"] {
+                let s = setup(&format!("old {kind} {no_links}"));
+                if kind == "fifo" {
+                    assert!(Command::new("mkfifo").arg(&s.old).status().expect("mkfifo").success(), "a fifo at .old");
+                } else {
+                    symlink(s.dir.join("nowhere"), &s.old).expect("plant a dangling link at .old");
+                }
+                swap_after_quit(&s, no_links);
+                let case = format!("({kind}, no hard links: {no_links})");
+                let meta = fs::symlink_metadata(&s.old).expect(".old");
+                assert!(meta.file_type().is_file() && content(&s.old).contains("'old'"), "the previous version is kept as a plain .old {case}");
+                assert!(wait_until(Duration::from_secs(5), || content(&s.marker) == "new"), "the update went ahead {case}");
+            }
         }
+    }
+
+    /// Makes a folder writable again when dropped, so the scratch folder can be deleted.
+    struct RestoreWritable(PathBuf);
+
+    impl Drop for RestoreWritable {
+        fn drop(&mut self) {
+            let _ = fs::set_permissions(&self.0, fs::Permissions::from_mode(0o755));
+        }
+    }
+
+    #[test]
+    fn an_old_file_that_cannot_be_removed_stops_the_update_safely() {
+        let mut s = setup("old locked");
+        // the AppImage in a folder of its own, made read-only; the note stays writable
+        let app = s.dir.join("app");
+        fs::create_dir(&app).expect("app dir");
+        s.running = app.join("App Image's.AppImage");
+        s.staged = app.join("App Image's.AppImage.new-1");
+        s.old = app.join("App Image's.AppImage.old");
+        stand_in(&s.running, "old", &s.marker);
+        stand_in(&s.staged, "new", &s.marker);
+        fs::write(&s.old, "an earlier version").expect(".old");
+        fs::set_permissions(&app, fs::Permissions::from_mode(0o555)).expect("read-only");
+        let _restore = RestoreWritable(app.clone());
+        if fs::write(app.join("probe"), "").is_ok() {
+            // running as root: permissions don't stop anything, so there is nothing to test
+            return;
+        }
+        swap_after_quit(&s, false);
+        assert!(content(&s.running).contains("'old'"), "the original stays in place");
+        assert_eq!(content(&s.old), "an earlier version", ".old is untouched");
+        assert!(!s.marker.exists(), "nothing is started");
+        assert!(content(&s.note).contains("could not be removed"), "the note says why: {:?}", content(&s.note));
     }
 
     #[test]
@@ -508,7 +557,7 @@ mod tests {
             assert!(!s.staged.exists(), "the staged file is deleted {case}");
             assert!(!s.marker.exists(), "nothing is started {case}");
             assert_eq!(fs::read_dir(&s.old).expect("list").count(), 0, "nothing is copied into the folder {case}");
-            assert!(content(&s.note).contains("in the way"), "the note says why {case}: {:?}", content(&s.note));
+            assert!(content(&s.note).contains("A folder is in the way"), "the note says why {case}: {:?}", content(&s.note));
         }
     }
 
