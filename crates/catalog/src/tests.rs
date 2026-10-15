@@ -725,3 +725,128 @@ fn saved_locations_apply_undo_and_privacy() {
     assert!(c.apply(Op::SetSavedLocation { name: "x".into(), location: Some(bad) }).is_err());
     assert!(c.apply(Op::SetSavedLocation { name: " ".into(), location: None }).is_err());
 }
+
+#[test]
+fn filter_by_face_count_and_matches_spec() {
+    use crate::query::matches_face_spec;
+    use lcc_meta::{Rect, Region, RegionKind};
+
+    // 1. Test matches_face_spec
+    assert!(matches_face_spec(0, "0"));
+    assert!(matches_face_spec(0, "none"));
+    assert!(!matches_face_spec(1, "0"));
+    assert!(matches_face_spec(1, "1"));
+    assert!(matches_face_spec(2, "=2"));
+    assert!(matches_face_spec(3, "3+"));
+    assert!(matches_face_spec(4, "3+"));
+    assert!(!matches_face_spec(2, "3+"));
+    assert!(matches_face_spec(3, ">=3"));
+    assert!(matches_face_spec(4, ">3"));
+    assert!(!matches_face_spec(3, ">3"));
+    assert!(matches_face_spec(2, "<=2"));
+    assert!(matches_face_spec(1, "<2"));
+    assert!(matches_face_spec(2, "1-3"));
+    assert!(matches_face_spec(1, "1-3"));
+    assert!(matches_face_spec(3, "1-3"));
+    assert!(!matches_face_spec(4, "1-3"));
+    assert!(matches_face_spec(2, "1..3"));
+    assert!(matches_face_spec(2, "any"));
+    assert!(!matches_face_spec(0, "any"));
+    // reversed ranges cover the same counts; unreadable specs are rejected where they're read
+    assert!(matches_face_spec(3, "5-2") && matches_face_spec(2, "5..2") && !matches_face_spec(6, "5-2"));
+    for bad in ["abc", "3 faces", "<0", "-", "+", "1-x", ">", "99999999999999999999999"] {
+        assert!(!matches_face_spec(0, bad) && !matches_face_spec(3, bad), "{bad}");
+        let r: std::result::Result<Filter, _> = serde_json::from_value(serde_json::json!({"faces": bad}));
+        assert!(r.is_err_and(|e| e.to_string().contains("faces")), "{bad} must be rejected");
+    }
+
+    // 2. Test deserialization of Filter with faces
+    let f1: Filter = serde_json::from_value(serde_json::json!({"faces": 2})).unwrap();
+    assert_eq!(f1.faces.as_deref(), Some("2"));
+
+    let f2: Filter = serde_json::from_value(serde_json::json!({"faces": "3+"})).unwrap();
+    assert_eq!(f2.faces.as_deref(), Some("3+"));
+
+    let f3: Filter = serde_json::from_value(serde_json::json!({"faces": null})).unwrap();
+    assert_eq!(f3.faces, None);
+
+    let f4: Filter = serde_json::from_value(serde_json::json!({})).unwrap();
+    assert_eq!(f4.faces, None);
+
+    // 3. Catalog query with face count
+    let mut c = Catalog::new();
+    let region = |name: Option<&str>, kind: RegionKind| Region {
+        rect: Rect { x0: 0.1, y0: 0.1, x1: 0.2, y1: 0.2 },
+        kind,
+        name: name.map(str::to_string),
+        description: None,
+    };
+
+    let make_photo = |id: u64, regions: Vec<Region>| {
+        let mut p = Photo::new(
+            PhotoId(id),
+            crate::Source::File { path: format!("/x/test_{id}.jpg") },
+            &format!("test_{id}.jpg"),
+            "JPEG",
+            100,
+            100,
+            "2026-04-12T10:00:00Z",
+        );
+        p.captured = Some("2026-04-12T10:00:00Z".into());
+        p.meta.regions = regions;
+        p
+    };
+
+    let p0 = make_photo(1, vec![]);
+    let p1 = make_photo(2, vec![region(Some("Alice"), RegionKind::Face)]);
+    let p2 = make_photo(3, vec![region(Some("Alice"), RegionKind::Face), region(Some("Bob"), RegionKind::Face)]);
+    let p3 = make_photo(
+        4,
+        vec![
+            region(Some("Alice"), RegionKind::Face),
+            region(None, RegionKind::Face), // unnamed face
+            region(Some("Charlie"), RegionKind::Face),
+            region(Some("Pet"), RegionKind::Pet), // pet should not count towards face_count
+        ],
+    );
+
+    assert_eq!(p0.face_count(), 0);
+    assert_eq!(p1.face_count(), 1);
+    assert_eq!(p2.face_count(), 2);
+    assert_eq!(p3.face_count(), 3);
+
+    for p in [p0, p1, p2, p3] {
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    }
+
+    let q = |f: &Filter| c.query(f, &Sort::default());
+
+    // Exact 1 face
+    let f_one = Filter { faces: Some("1".into()), ..Default::default() };
+    assert_eq!(q(&f_one), vec![PhotoId(2)]);
+
+    // Exact 0 faces
+    let f_zero = Filter { faces: Some("0".into()), ..Default::default() };
+    assert_eq!(q(&f_zero), vec![PhotoId(1)]);
+
+    // 2+ faces
+    let f_two_plus = Filter { faces: Some("2+".into()), ..Default::default() };
+    assert_eq!(q(&f_two_plus), vec![PhotoId(4), PhotoId(3)]);
+
+    // Range 1-2 faces
+    let f_range = Filter { faces: Some("1-2".into()), ..Default::default() };
+    assert_eq!(q(&f_range), vec![PhotoId(3), PhotoId(2)]);
+
+    // 4. Token search in text: faces:1, faces:3+, faces:none
+    let f_tok1 = Filter { text: "faces:1".into(), ..Default::default() };
+    assert_eq!(q(&f_tok1), vec![PhotoId(2)]);
+
+    let f_tok_none = Filter { text: "faces:none".into(), ..Default::default() };
+    assert_eq!(q(&f_tok_none), vec![PhotoId(1)]);
+
+    let f_tok_plus = Filter { text: "faces:>=2".into(), ..Default::default() };
+    assert_eq!(q(&f_tok_plus), vec![PhotoId(4), PhotoId(3)]);
+
+    // 5. Describe
+    assert_eq!(f_two_plus.describe(), "faces 2+");
+}
