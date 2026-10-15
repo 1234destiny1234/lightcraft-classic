@@ -18,9 +18,21 @@ lightcraft-cli run --library "LightCraft Library" library.inspectLightroom path=
 lightcraft-cli run --library "LightCraft Library" library.importLightroom path="Lightroom Catalog.lrcat"
 ```
 
+Import adds records to the currently open LightCraft library; it does not create a separate
+folder named after the Lightroom catalog. The desktop result stays open until dismissed and
+shows the destination library, the number of records added, missing originals and warnings.
+**Show in Library** opens All Photos, clears filters and selects an imported record. Errors stay
+readable in the same result window. If another dialog is open, the result waits until that dialog closes. The result
+is also available through `library.importLightroom {"status":true}` during that session.
+
 Original files are referenced in place. Ratings, picks/rejects, color labels, XMP metadata,
 hierarchical keywords, regular collections/collection sets, virtual copies and mapped develop
-settings are imported. Missing originals remain catalogued for relinking. Existing LightCraft
+settings are imported. Missing originals remain catalogued for relinking, count as added records and are reported
+separately from failures reading files that are present. Known-missing originals are not probed
+again. Previously browsed Local records join All Photos even when their originals are offline;
+their promotion is counted once and undone together with the catalog import.
+Virtual copies count as added records too; reimport reports zero additions when all
+records already exist. Existing LightCraft
 edits are preserved by default; `updateExisting=true` explicitly replaces them. Persistent import
 identity prevents reimport from duplicating virtual copies and collections. One undo step reverses
 catalog changes; any saved recovery archives remain available.
@@ -35,16 +47,17 @@ retained. Oldest managed archives are retired; legacy `.json` archives remain un
 `Interop/lightroom-index.json` records imported identities. Source catalogs and originals are
 never overwritten.
 
-Native import reads MAIN database pages on demand (no 1 GiB file-size cutoff) and streams WAL
-validation into a compact committed-page index (WAL capped at 1 GiB and 4,000,000 frames).
-MAIN is still structurally bounded to 16,777,216 pages (up to 1 TiB logical size with 64 KiB
-pages); each table B-tree walk is bounded to 4,000,000 visited pages and 1,000,000 rows. A record
-is capped at 64 MiB and aggregate table payload at 256 MiB; XMP packets are capped at 16 MiB.
-These limits bound work and decoded data, so a catalog can be below the file-size ceiling and still
-exceed a structural or per-table limit. The in-tree, read-only Rust SQLite B-tree reader follows
-SQLite’s public file-format specification; it introduces no dependency or C runtime. Close every
-catalog writer first: the metadata/header/companion checks are best-effort change detection, not a
-transactional snapshot.
+Native import reads MAIN database pages on demand; no whole-file size cutoff or MAIN-file read
+allocation is used. Committed WAL validation is streamed into a compact page index; WAL remains
+capped at 1 GiB and 4,000,000 frames.
+MAIN is structurally bounded to 16,777,216 pages (up to 1 TiB logical size with 64 KiB pages);
+each table B-tree walk is bounded to 4,000,000 visited pages and 1,000,000 rows. A record is
+capped at 64 MiB and aggregate table payload at 256 MiB; XMP packets are capped at 16 MiB. These
+bounds limit work and decoded data: a catalog within the page-count cap may still exceed a
+per-table or record limit. The in-tree, read-only Rust SQLite B-tree reader follows SQLite’s public
+file-format specification; it introduces no dependency or C runtime. Close every catalog writer
+first: metadata/header/companion checks are best-effort change detection, not a transactional
+snapshot.
 Optional history, keyword and collection tables that exceed limits are skipped with warnings;
 required photo tables still report errors. Unrelated unsupported schemas are ignored. A needed
 WITHOUT ROWID or virtual table produces an explicit error, handled as a warning when optional.
@@ -70,6 +83,12 @@ until Reload reads it.
 Lightroom's `-999999` deferred-adjustment sentinel is omitted from both catalog and XMP mappings;
 it is reported, included in any saved archive, and never clamped into a real slider value. Deferred Adobe Auto Tone
 is not evaluated by the importer; LightCraft's Auto control remains available after migration.
+
+New photo records are moved into staged operations; only masters needed for virtual copies
+retain a second owned record while the import commits.
+Applying catalog operations collects affected source-cache IDs before consuming the operations,
+avoiding another full operation copy. Full-strength develop patches reuse their JSON without
+serializing an unused copy of the current settings.
 
 Native desktop inspection/import runs on a cancellable background worker with progress. Only
 prepared catalog operations commit on the owner thread; archive index writing stays on a worker.
