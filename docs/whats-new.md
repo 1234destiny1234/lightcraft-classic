@@ -6,6 +6,10 @@
 - The grid now sorts by capture date with the oldest photo first by default, as Lightroom Classic does, instead of
   the newest first. A library you already use keeps its sort: Ascending and Descending are in the sort menu.
 
+### Library comes back in the view you left it in
+- Going from Library to Develop and back through the module picker brought Library back in the loupe, whatever view
+  it was left in. It now returns to the grid, loupe, Compare or Survey it showed before (issue #144).
+
 ### Updates on Linux packages
 - A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was

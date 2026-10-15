@@ -98,6 +98,28 @@ fn a_grid_view_from_develop_shows_library_panels() {
     assert!(!h.app.ui.right.is_edit_tool(), "{:?}", h.app.ui.right);
 }
 
+// Regression (#144): Library came back in the loupe after Develop, whatever view it was left in.
+#[test]
+fn library_returns_to_its_own_view_after_develop() {
+    let mut h = demo();
+    run(&mut h, "view.photoGrid", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "module.library", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::PhotoGrid));
+    // left in the loupe, it comes back in the loupe
+    run(&mut h, "view.loupe", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    run(&mut h, "module.library", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    // and across a save/load of ui.json
+    run(&mut h, "view.photoGrid", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    let saved = serde_json::to_string(&h.app.ui).unwrap();
+    let back = serde_json::from_str::<crate::UiState>(&saved).unwrap().sanitized();
+    assert_eq!(back.layouts.get(&ModuleId::Library).and_then(|l| l.view), Some(ViewMode::PhotoGrid));
+}
+
 #[test]
 fn panel_state_is_per_module_and_persists() {
     let mut h = demo();
