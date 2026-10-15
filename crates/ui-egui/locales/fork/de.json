@@ -1176,6 +1176,7 @@
   "Add to Target Collection": "Zur Zielsammlung hinzufügen",
   "Remove from Target Collection": "Aus Zielsammlung entfernen",
   "Wheel scroll speed": "Scrollgeschwindigkeit des Mausrads",
+  "Wheel resizes brush instead of zooming": "Mausrad ändert die Pinselgröße statt zu zoomen",
   "Fast": "Schnell",
   "Fastest": "Am schnellsten",
   "Run face models on the CPU only": "Gesichtsmodelle nur auf der CPU ausführen",
@@ -1193,5 +1194,10 @@
   "Filename - Sequence": "Dateiname - Sequenz",
   "Custom Name - Sequence": "Eigener Name - Sequenz",
   "Custom Name": "Eigener Name",
-  "Date - Filename": "Datum - Dateiname"
+  "Date - Filename": "Datum - Dateiname",
+  "Delete this photo from disk, or only remove it from the library?": "Dieses Foto vom Datenträger löschen oder nur aus der Bibliothek entfernen?",
+  "Delete from Disk moves 1 file to the system trash.": "„Vom Datenträger löschen“ verschiebt 1 Datei in den Papierkorb des Systems.",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "„Entfernen“ behält die Dateien auf dem Datenträger und verschiebt die Fotos nach „Zuletzt gelöscht“.",
+  "Delete from Disk": "Vom Datenträger löschen",
+  "Deleting from disk": "Vom Datenträger löschen"
 }

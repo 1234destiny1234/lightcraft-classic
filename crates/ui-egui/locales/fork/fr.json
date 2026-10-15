@@ -1228,6 +1228,7 @@
   "Add to Target Collection": "Ajouter à la collection cible",
   "Remove from Target Collection": "Retirer de la collection cible",
   "Wheel scroll speed": "Vitesse de défilement de la molette",
+  "Wheel resizes brush instead of zooming": "La molette redimensionne le pinceau au lieu de zoomer",
   "Fast": "Rapide",
   "Fastest": "Très rapide",
   "Run face models on the CPU only": "Exécuter les modèles de visages sur le processeur uniquement",
@@ -1245,5 +1246,10 @@
   "Filename - Sequence": "Nom de fichier - Séquence",
   "Custom Name - Sequence": "Nom personnalisé - Séquence",
   "Custom Name": "Nom personnalisé",
-  "Date - Filename": "Date - Nom de fichier"
+  "Date - Filename": "Date - Nom de fichier",
+  "Delete this photo from disk, or only remove it from the library?": "Supprimer cette photo du disque, ou seulement la retirer de la bibliothèque ?",
+  "Delete from Disk moves 1 file to the system trash.": "Supprimer du disque place 1 fichier dans la corbeille du système.",
+  "Remove keeps the files on disk and moves the photos to Recently Deleted.": "Retirer conserve les fichiers sur le disque et place les photos dans Supprimées récemment.",
+  "Delete from Disk": "Supprimer du disque",
+  "Deleting from disk": "Suppression du disque"
 }

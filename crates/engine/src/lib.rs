@@ -30,6 +30,7 @@ pub mod demo;
 pub mod denoise;
 pub mod desktop;
 pub mod devices;
+pub mod disk_delete;
 pub mod display;
 mod errors;
 pub mod export;
@@ -369,6 +370,8 @@ pub struct Session {
     /// (lcc-cli, a script) never ends in the middle of one.
     #[cfg(not(target_arch = "wasm32"))]
     pub apple_photos_background: bool,
+    /// Moves a file to the system trash (`photo.deleteFromDisk`). `None` in wasm and sessions without a filesystem.
+    pub trash: Option<disk_delete::TrashFn>,
 }
 
 impl Default for Session {
@@ -485,6 +488,7 @@ impl Session {
             apple_photos_imports: Default::default(),
             #[cfg(not(target_arch = "wasm32"))]
             apple_photos_background: false,
+            trash: None,
         }
     }
 
