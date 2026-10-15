@@ -275,12 +275,10 @@ pub(crate) fn navigate_gesture(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui:
         ui.input(|i| (i.zoom_delta(), i.translation_delta(), i.multi_touch().map(|t| t.center_pos).or(i.pointer.hover_pos())));
 
     let notches = ui.input(|i| wheel_notches(&i.events));
-    if app.ui.settings.wheel_resizes_brush && notches != 0.0 && (app.ui.tool == "brush" || app.ui.tool == "remove") {
-        if app.ui.tool == "brush" {
-            app.ui.brush_size = (app.ui.brush_size * (1.0 + notches * 0.1)).clamp(0.002, 0.5);
-        } else if app.ui.tool == "remove" {
-            app.ui.remove_size = (app.ui.remove_size * (1.0 + notches * 0.1)).clamp(0.002, 0.5);
-        }
+    // With the Masking brush active, a plain wheel notch resizes the brush (like `[` / `]`) instead of zooming
+    // (Preferences → Interface); Ctrl/Cmd+wheel still zooms.
+    if app.ui.settings.wheel_resizes_brush && notches != 0.0 && app.ui.tool == "brush" {
+        crate::menus::adjust_brush(app, 1.0 + (notches * 0.1).clamp(-0.5, 0.5), 0.0);
         ui.ctx().request_repaint();
         return true;
     }
