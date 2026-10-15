@@ -841,11 +841,11 @@ mod tests_geometry;
 #[cfg(test)]
 mod tests_hdr;
 #[cfg(test)]
+mod tests_nr_scale;
+#[cfg(test)]
 mod tests_pixel_scale;
 #[cfg(test)]
 mod tests_plugin_filters;
-#[cfg(test)]
-mod tests_nr_scale;
 #[cfg(test)]
 mod tests_sharpen;
 #[cfg(test)]
