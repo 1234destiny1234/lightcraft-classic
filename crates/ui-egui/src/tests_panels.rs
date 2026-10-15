@@ -529,7 +529,10 @@ fn dragging_a_header_moves_its_section() {
     assert!(!has(&h, "sidebarSectionDrop"));
     assert_eq!(sections_drawn(&h), listed(&["folders", "albums", "local", "byDate", "keywords"]));
     // dragged below everything: last
-    let end = egui::pos2(header(&h, "keywords").center().x, widget(&h, "panel:left_panel").bottom() - 20.0);
+    // (above the column's Import / Export bar when it has one, #118: the bar is not part of the list)
+    let foot =
+        h.app.widgets.iter().find(|(w, _)| w.starts_with("button:leftBar-")).map_or(widget(&h, "panel:left_panel").bottom(), |(_, r)| r.top() - 11.0);
+    let end = egui::pos2(header(&h, "keywords").center().x, foot - 20.0);
     let from = header(&h, "albums").center();
     drag_between(&mut h, from, end, Vec::new());
     assert_eq!(sections_drawn(&h), listed(&["folders", "local", "byDate", "keywords", "albums"]));
