@@ -412,10 +412,69 @@ fn tick_open_and_cancel(h: &mut Headless, answers: &Answers) {
     answers.lock().unwrap()[0].send(Vec::new()).unwrap();
     run_without_a_check(h, 3);
     assert!(h.app.session.library.is_none(), "cancelled: no catalog");
-    assert!(
-        matches!(h.app.catalog_ui.dialog, Some(crate::catalog_ui::CatalogDialog::Welcome { .. })),
-        "cancelling the folder dialog leaves the welcome dialog up"
-    );
+}
+
+fn welcome_is_up(h: &Headless) -> bool {
+    matches!(h.app.catalog_ui.dialog, Some(crate::catalog_ui::CatalogDialog::Welcome { .. }))
+}
+
+#[test]
+fn cancelling_open_catalog_returns_to_the_welcome_dialog() {
+    let (dir, root) = (Scratch::new("welcome-back"), Scratch::new("welcome-back-lib"));
+    let mut h = welcome(&dir, &root);
+    let answers = background_dialogs(&mut h);
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeOpen"}));
+    h.step();
+    answers.lock().unwrap()[0].send(Vec::new()).unwrap();
+    run_without_a_check(&mut h, 3);
+    assert!(h.app.session.library.is_none(), "cancelled: no catalog");
+    assert!(welcome_is_up(&h), "cancelling the folder dialog leaves the welcome dialog up");
+}
+
+#[test]
+fn the_welcome_dialog_waits_while_its_folder_dialog_is_up() {
+    let (dir, root) = (Scratch::new("welcome-wait"), Scratch::new("welcome-wait-lib"));
+    let mut h = welcome(&dir, &root);
+    let answers = background_dialogs(&mut h);
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeOpen"}));
+    h.step();
+    h.step();
+    // Create, while the folder dialog is up: nothing happens
+    let _ = h.request("ui.clickWidget", json!({"id": "button:welcomeCreate"}), T);
+    run_without_a_check(&mut h, 2);
+    assert!(h.app.session.library.is_none(), "no catalog was created behind the folder dialog");
+    assert!(welcome_is_up(&h), "the welcome dialog is still there, waiting");
+    assert_eq!(saved_check_at_startup(&dir), None, "nothing saved");
+    // the folder dialog is cancelled: back to the welcome dialog, nothing open
+    answers.lock().unwrap()[0].send(Vec::new()).unwrap();
+    run_without_a_check(&mut h, 3);
+    assert!(h.app.session.library.is_none(), "cancelled: no catalog");
+    assert!(welcome_is_up(&h), "back to the welcome dialog");
+    assert_eq!(saved_check_at_startup(&dir), None, "nothing saved");
+}
+
+#[test]
+fn another_open_while_the_welcome_folder_dialog_is_up_does_not_take_its_choice() {
+    let (dir, root) = (Scratch::new("welcome-other"), Scratch::new("welcome-other-lib"));
+    let other = lcc_catalog::library::create(&root.0, "Other").unwrap();
+    let mut h = welcome(&dir, &root);
+    let answers = background_dialogs(&mut h);
+    ask(&mut h, "ui.clickWidget", json!({"id": "check:welcomeUpdates"}));
+    h.step();
+    ask(&mut h, "ui.clickWidget", json!({"id": "button:welcomeOpen"}));
+    h.step();
+    // an agent opens a catalog by path while the welcome's folder dialog is still up
+    ask(&mut h, "engine.execute", json!({"command": "catalog.open", "params": {"path": other.to_string_lossy()}}));
+    run_without_a_check(&mut h, 2);
+    assert!(h.app.session.library.is_some(), "the agent's catalog is open");
+    assert_ne!(saved_check_at_startup(&dir), Some(true), "the welcome's choice is not the agent's open");
+    // and the welcome's folder dialog is cancelled
+    answers.lock().unwrap()[0].send(Vec::new()).unwrap();
+    run_without_a_check(&mut h, 3);
+    assert_ne!(saved_check_at_startup(&dir), Some(true), "nothing saved");
+    h.app.session.close_library().unwrap();
 }
 
 #[test]
