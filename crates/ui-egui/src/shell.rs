@@ -37,7 +37,7 @@ pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
                 .exact_size(t.panel_w)
                 .resizable(false)
                 .frame(egui::Frame::NONE)
-                .show(ui, |ui| panels::presets::show(app, ui));
+                .show(ui, |ui| panels::presets::show(app, ui, module::DEVELOP_LEFT, false));
         }
     }
     if module::edge_visible(app, module::Edge::Left) && !m.own_sides() {

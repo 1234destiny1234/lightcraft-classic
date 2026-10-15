@@ -266,6 +266,17 @@ fn top(h: &Headless, id: &str) -> f32 {
     h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| r.top()).unwrap_or_else(|| panic!("no widget {id}"))
 }
 
+/// The lowest bottom edge among the preset rows of the Presets panel (where the panel's own list
+/// ends): the group headers and the presets themselves.
+fn presets_bottom(h: &Headless) -> f32 {
+    h.app
+        .widgets
+        .iter()
+        .filter(|(w, _)| w.starts_with("presetGroup:") || w.starts_with("preset:") && !w.starts_with("presetMenu:"))
+        .map(|(_, r)| r.bottom())
+        .fold(f32::MIN, f32::max)
+}
+
 /// Develop's left column is its own Classic stack — Navigator, Presets, Versions, History,
 /// Collections — drawn like Library's, not the Library's structure in the editing module. The
 /// Catalog, Folders and Keywords panels stay in Library; upstream's My Photos sidebar is offered
@@ -273,18 +284,18 @@ fn top(h: &Headless, id: &str) -> f32 {
 #[test]
 fn develop_column_is_its_own_classic_stack() {
     let mut h = develop_demo();
-    // the Develop column's panels: Versions, History and Collections under Classic headers, the
-    // Navigator and the presets under their own (upstream draws the presets panel whole)
-    for p in ["versions", "history", "collections"] {
+    // the Develop column's panels: the Navigator pinned above, then the presets and the Versions,
+    // History and Collections panels, each under its Classic header
+    for p in ["presets", "versions", "history", "collections"] {
         assert!(has(&h, &format!("classicPanel:{p}")), "{p}");
     }
     assert!(has(&h, "sidebarSection:navigator"), "the Navigator, where Classic puts it");
     assert!(rows(&h, "presetGroup:") > 0, "the presets themselves");
-    assert!(!has(&h, "classicPanel:presets"), "the presets bring their own title row");
-    // the presets are drawn once: with the presets column open (Shift+P), that column is the presets
+    // the presets are drawn once: with the presets column open (Shift+P), that column is the
+    // presets — the same panel, with a header of its own
     let in_column = rows(&h, "presetGroup:");
     run(&mut h, "panel.presets", json!({}));
-    assert!(h.app.ui.presets && !has(&h, "classicPanel:presets"));
+    assert!(h.app.ui.presets);
     assert!(rows(&h, "presetGroup:") <= in_column, "the presets are not drawn twice");
     run(&mut h, "panel.presets", json!({}));
     assert!(!h.app.ui.presets && rows(&h, "presetGroup:") == in_column, "back in the column");
@@ -483,6 +494,46 @@ fn develop_basic_follows_classic_order() {
     assert_eq!(h.request("ui.clickWidget", json!({"id": "button:treatment-bw"}), T)["ok"], true);
     h.settle(SETTLE);
     assert!(crate::is_bw(&h.app.session.develop_of(lcc_catalog::PhotoId(id)).unwrap_or_default()), "Black & White sets the treatment");
+}
+
+/// Issue #75: the Presets panel folds from its own Classic header, exactly as the Versions,
+/// History and Collections panels below it do. Folded, the panels below are that much higher up
+/// the column; unfolded, the presets are back. The header and its buttons stay either way.
+#[test]
+fn the_presets_fold_from_their_header() {
+    let mut h = develop_demo();
+    let open = |h: &Headless| classic::is_open_with_key(&h.app, crate::panels::presets::IN_COLUMN_KEY);
+    assert!(rows(&h, "presetGroup:") > 0, "the presets are listed");
+    assert!(has(&h, "classicPanel:presets"), "a Classic header like the panels below");
+    // the panel's foot, and where the panels below it start
+    let open_bottom = presets_bottom(&h);
+    let versions_top = top(&h, "classicPanel:versions");
+    click(&mut h, "classicPanel:presets");
+    assert!(!open(&h), "folded");
+    assert_eq!(rows(&h, "presetGroup:"), 0, "the list is folded away");
+    assert!(has(&h, "classicPanel:presets") && has(&h, "icon:presetCreate") && has(&h, "icon:presetMore"), "the header stays");
+    assert!(presets_bottom(&h) < open_bottom, "the panel is shorter: {open_bottom} -> {}", presets_bottom(&h));
+    assert!(top(&h, "classicPanel:versions") < versions_top, "the panels below moved up: {versions_top} -> {}", top(&h, "classicPanel:versions"));
+    // and back
+    click(&mut h, "classicPanel:presets");
+    assert!(open(&h) && rows(&h, "presetGroup:") > 0, "unfolded again");
+    assert_eq!(top(&h, "classicPanel:versions"), versions_top, "the panels below are back where they were");
+}
+
+/// The presets fold in the left column only: opening the presets column (Shift+P) after folding
+/// them there shows the presets, not an empty column, and closing it brings the folded panel back.
+#[test]
+fn folding_the_presets_in_the_column_leaves_the_presets_column_whole() {
+    let mut h = develop_demo();
+    click(&mut h, "classicPanel:presets");
+    assert!(!classic::is_open_with_key(&h.app, crate::panels::presets::IN_COLUMN_KEY), "folded in the column");
+    run(&mut h, "panel.presets", json!({}));
+    assert!(h.app.ui.presets, "the presets column is open");
+    assert!(rows(&h, "presetGroup:") > 0, "and it shows the presets");
+    run(&mut h, "panel.presets", json!({}));
+    assert!(!h.app.ui.presets && rows(&h, "presetGroup:") == 0, "the column is closed and the column's panel is still folded");
+    click(&mut h, "classicPanel:presets");
+    assert!(rows(&h, "presetGroup:") > 0, "unfolded again");
 }
 
 /// Issue #46: Library's Quick Develop keeps Classic's order: Treatment, then White Balance, then Tone Control.
