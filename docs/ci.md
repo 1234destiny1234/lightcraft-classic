@@ -44,7 +44,7 @@ runners** (all carry the label `lcc`):
 (a container, KVM) before they are re-enabled.
 
 Jobs run at low priority, since the machines are also used interactively: Linux steps run under
-`nice -n 19` (job `defaults.run.shell`), macOS release steps under `nice -n 19 taskpolicy -b`, and Windows
+`nice -n 19` (job `defaults.run.shell`), macOS steps under `nice -n 19` (not `taskpolicy -b`: background QoS confines builds to the efficiency cores), and Windows
 jobs set the runner worker's priority class to BelowNormal in their first step (later steps inherit it).
 
 Each runner instance has its own build cache (`CARGO_TARGET_DIR` from the runner's `.env`, else

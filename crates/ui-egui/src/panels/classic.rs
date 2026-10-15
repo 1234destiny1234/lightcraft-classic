@@ -21,9 +21,21 @@ pub fn is_open(app: &LccApp, p: PanelId) -> bool {
     !app.ui.sidebar_section_collapsed(&state_key(p))
 }
 
+/// Whether the panel folded under `key` is unfolded: a panel drawn in more than one place (the
+/// presets, in the left column and in their own column) keeps a state per place.
+pub fn is_open_with_key(app: &LccApp, key: &str) -> bool {
+    !app.ui.sidebar_section_collapsed(key)
+}
+
 /// Fold or unfold a Classic panel; in Solo Mode, unfolding one folds the others on its side.
 pub fn set_open(app: &mut LccApp, p: PanelId, open: bool) {
-    if open == is_open(app, p) {
+    set_open_with_key(app, p, &state_key(p), open);
+}
+
+/// [`set_open`] for a panel with a state of its own (`key`): the side's other panels are still the
+/// ones Solo Mode folds.
+pub fn set_open_with_key(app: &mut LccApp, p: PanelId, key: &str, open: bool) {
+    if open == is_open_with_key(app, key) {
         return;
     }
     if open && app.ui.single_panel {
@@ -35,7 +47,7 @@ pub fn set_open(app: &mut LccApp, p: PanelId, open: bool) {
             }
         }
     }
-    app.ui.toggle_sidebar_section(&state_key(p));
+    app.ui.toggle_sidebar_section(key);
 }
 
 pub fn toggle(app: &mut LccApp, p: PanelId) {
@@ -86,21 +98,32 @@ pub fn title(p: PanelId) -> &'static str {
 /// panel, the context menu lists the side's panels (show/hide) and Solo Mode. Returns the header
 /// rect and whether the panel is open. `widget id`: `classicPanel:<key>`.
 pub fn header(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId, side: &[PanelId]) -> (Rect, bool) {
+    let key = state_key(p);
+    header_inset(app, ui, p, side, &key, 0.0)
+}
+
+/// [`header`] for a panel that folds under a state of its own (`key`): the presets in the left
+/// column fold there without touching the same panel in its own column (see `PanelId::Presets`).
+/// `right_inset` points at the bar's right end are kept for what the panel draws there (the presets
+/// put their Create and More buttons at the edge, as the sections of upstream's sidebar do with
+/// their own), so the disclosure triangle does not land on them.
+pub fn header_inset(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId, side: &[PanelId], key: &str, right_inset: f32) -> (Rect, bool) {
     let t = Tokens::get(ui.ctx());
     let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 28.0), Sense::click_and_drag());
     register(ui.ctx(), format!("classicPanel:{}", p.key()), r);
     if resp.clicked() {
-        toggle(app, p);
+        let open = is_open_with_key(app, key);
+        set_open_with_key(app, p, key, !open);
     }
     drag_to_reorder(app, ui, p, side, r, &resp);
-    let open = is_open(app, p);
+    let open = is_open_with_key(app, key);
     let name = crate::i18n::tr(title(p));
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, name));
     let painter = ui.painter();
     painter.line_segment([pos2(r.left(), r.top()), pos2(r.right(), r.top())], Stroke::new(1.0, t.divider));
     let col = if resp.hovered() { t.text } else { t.text_dim };
     // at the visible edge when the column scrolls sideways
-    let right = ui.clip_rect().right().min(r.right());
+    let right = ui.clip_rect().right().min(r.right()) - right_inset;
     triangle(painter, pos2(right - 16.0, r.center().y), open, col);
     painter.text(pos2(r.left() + 14.0, r.center().y), Align2::LEFT_CENTER, name, t.semibold(12.5), t.text);
     side_menu(app, &resp, side);

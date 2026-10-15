@@ -219,6 +219,16 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 if icon_button(ui, "maskOverlay", Icon::Eye, vec2(24.0, 24.0), on, true, "Show overlay (O)").clicked() {
                     app.ui.mask_overlay = !on;
                 }
+                let all = app.ui.mask_overlay_all;
+                let all_mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
+                let all_base = crate::i18n::tr("Show all overlays");
+                let all_tip = match crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.maskOverlayAll") {
+                    Some(sc) => format!("{all_base} ({})", crate::menubar::shortcut_text(sc, all_mac)),
+                    None => all_base.to_string(),
+                };
+                if icon_button(ui, "maskOverlayAll", Icon::Stack, vec2(24.0, 24.0), all, true, &all_tip).clicked() {
+                    app.ui.mask_overlay_all = !all;
+                }
             });
         });
         if d.masks.is_empty() {
@@ -307,8 +317,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         if !d.masks.is_empty() {
             ui.add_space(6.0);
-            let active_mask = app.session.active_mask.and_then(|id| d.masks.iter().find(|m| m.id == id).cloned());
-            overlay_options(app, ui, active_mask.as_ref());
+            let refine_feather = app.session.active_mask.and_then(|id| d.masks.iter().find(|m| m.id == id).map(|m| (m.refine, m.feather)));
+            overlay_options(app, ui, refine_feather);
         }
     });
     let Some(mid) = app.session.active_mask else { return };
@@ -448,7 +458,27 @@ fn mask_menu(app: &mut LccApp, ui: &mut egui::Ui, id: u32, name: &str, visible: 
 pub const OVERLAY_COLORS: [[u8; 3]; 5] = [[230, 30, 40], [40, 200, 70], [40, 110, 240], [250, 210, 30], [255, 255, 255]];
 
 /// How the selected mask is shown: overlay mode, colour, opacity, pins.
-fn overlay_options(app: &mut LccApp, ui: &mut egui::Ui, active_mask: Option<&lcc_develop::Mask>) {
+fn mask_overlay_extras(app: &mut LccApp, ui: &mut egui::Ui) {
+    let all = app.ui.mask_overlay_all;
+    let all_mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
+    let all_base = crate::i18n::tr("Show all overlays");
+    let all_tip = match crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.maskOverlayAll") {
+        Some(sc) => format!("{all_base} ({})", crate::menubar::shortcut_text(sc, all_mac)),
+        None => all_base.to_string(),
+    };
+    if icon_button(ui, "maskOverlayAll", Icon::Stack, vec2(24.0, 24.0), all, true, &all_tip).clicked() {
+        app.ui.mask_overlay_all = !all;
+    }
+
+    ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+        let mut pins = app.ui.mask_pins;
+        if ui.checkbox(&mut pins, crate::i18n::tr("Show Pins")).changed() {
+            let _ = app.run("view.maskPins", json!({"show": pins}));
+        }
+    });
+}
+
+fn overlay_options(app: &mut LccApp, ui: &mut egui::Ui, refine_feather: Option<(f64, f64)>) {
     use lcc_pipeline::MaskView;
     let t = Tokens::get(ui.ctx());
     let view = MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default();
@@ -480,45 +510,11 @@ fn overlay_options(app: &mut LccApp, ui: &mut egui::Ui, active_mask: Option<&lcc
 
             ui.add_space(8.0);
 
-            let all = app.ui.mask_overlay_all;
-            let all_mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
-            let all_base = crate::i18n::tr("Show all overlays");
-            let all_tip = match crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.maskOverlayAll") {
-                Some(sc) => format!("{all_base} ({})", crate::menubar::shortcut_text(sc, all_mac)),
-                None => all_base.to_string(),
-            };
-            if icon_button(ui, "maskOverlayAll", Icon::Stack, vec2(18.0, 18.0), all, true, &all_tip).clicked() {
-                app.ui.mask_overlay_all = !all;
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let mut pins = app.ui.mask_pins;
-                if ui.checkbox(&mut pins, crate::i18n::tr("Show Pins")).changed() {
-                    let _ = app.run("view.maskPins", json!({"show": pins}));
-                }
-            });
+            mask_overlay_extras(app, ui);
         });
     } else {
-        // If not colored, we still might want to show the stack icon and pins checkbox,
-        // but the prompt didn't say. Usually they go in the same row. Let's put them on their own line or align.
         ui.horizontal(|ui| {
-            let all = app.ui.mask_overlay_all;
-            let all_mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
-            let all_base = crate::i18n::tr("Show all overlays");
-            let all_tip = match crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "view.maskOverlayAll") {
-                Some(sc) => format!("{all_base} ({})", crate::menubar::shortcut_text(sc, all_mac)),
-                None => all_base.to_string(),
-            };
-            if icon_button(ui, "maskOverlayAll", Icon::Stack, vec2(18.0, 18.0), all, true, &all_tip).clicked() {
-                app.ui.mask_overlay_all = !all;
-            }
-
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let mut pins = app.ui.mask_pins;
-                if ui.checkbox(&mut pins, crate::i18n::tr("Show Pins")).changed() {
-                    let _ = app.run("view.maskPins", json!({"show": pins}));
-                }
-            });
+            mask_overlay_extras(app, ui);
         });
     }
 
@@ -538,7 +534,7 @@ fn overlay_options(app: &mut LccApp, ui: &mut egui::Ui, active_mask: Option<&lcc
         app.ui.mask_overlay_opacity = v as f32;
     }
 
-    if let Some(m) = active_mask {
+    if let Some((refine_val, feather_val)) = refine_feather {
         let refine = ControlSpec {
             id: "refine",
             label: "Refine Edges",
@@ -550,10 +546,10 @@ fn overlay_options(app: &mut LccApp, ui: &mut egui::Ui, active_mask: Option<&lcc
             decimals: 0,
             track: Track::Plain,
         };
-        let out = slider(ui, &refine, m.refine, true, None);
+        let out = slider(ui, &refine, refine_val, true, None);
         apply_slider_out(app, &refine, out, |app, v| app.run("mask.refine", json!({"value": v})));
         let feather = ControlSpec { id: "maskFeather", label: "Feather", ..refine };
-        let out = slider(ui, &feather, m.feather, true, None);
+        let out = slider(ui, &feather, feather_val, true, None);
         apply_slider_out(app, &feather, out, |app, v| app.run("mask.feather", json!({"value": v})));
     }
 }

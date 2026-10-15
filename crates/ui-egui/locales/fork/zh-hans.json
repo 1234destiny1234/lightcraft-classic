@@ -1239,5 +1239,13 @@
   "Checking the GPU…": "正在检查 GPU…",
   "CPU": "CPU",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "只有检查表明 GPU 能更快给出相同结果时，人脸模型才会使用 GPU。",
-  "Checking the GPU for faces": "正在检查用于人脸的 GPU"
+  "Checking the GPU for faces": "正在检查用于人脸的 GPU",
+  "Export to": "导出到",
+  "Specific folder": "指定文件夹",
+  "Same folder as original photo": "与原始照片相同的文件夹",
+  "Custom text": "自定文本",
+  "Filename - Sequence": "文件名 - 序号",
+  "Custom Name - Sequence": "自定名称 - 序号",
+  "Custom Name": "自定名称",
+  "Date - Filename": "日期 - 文件名"
 }
