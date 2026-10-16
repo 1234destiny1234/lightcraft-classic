@@ -180,6 +180,8 @@ mod tests_module_help;
 #[cfg(test)]
 mod tests_modules;
 #[cfg(test)]
+mod tests_merge_preview;
+#[cfg(test)]
 mod tests_offline;
 #[cfg(test)]
 mod tests_open_lightroom;
