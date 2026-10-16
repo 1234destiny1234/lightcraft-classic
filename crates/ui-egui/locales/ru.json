@@ -2348,5 +2348,8 @@
   "Checking the GPU…": "Проверка ГП…",
   "CPU": "ЦП",
   "A face model uses the GPU only when a check shows it gives the same results faster.": "Модель лиц использует ГП, только если проверка показала, что он даёт те же результаты быстрее.",
-  "Checking the GPU for faces": "Проверка ГП для лиц"
+  "Checking the GPU for faces": "Проверка ГП для лиц",
+  "Return to Latest": "Вернуться к последнему",
+  "Enhance": "Улучшение",
+  "Plug-in Filters": "Фильтры плагинов"
 }
