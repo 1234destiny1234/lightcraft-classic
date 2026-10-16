@@ -566,3 +566,29 @@ fn the_navigator_stays_at_the_top_while_the_panels_scroll_under_it() {
     h.step();
     assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0), "the pinned Navigator takes clicks");
 }
+
+/// #155: Settings ▸ Shortcuts hosts the same editor as Help ▸ Keyboard Shortcuts, but a click on a
+/// shortcut there stopped recording on the next frame, so no key could be set.
+#[test]
+fn settings_shortcuts_tab_records_a_key() {
+    let mut h = demo();
+    run(&mut h, "app.settings", json!({"tab": "shortcuts"}));
+    let r = h.request("ui.clickWidget", json!({"id": "field:shortcutsSearch"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert_eq!(h.request("ui.text", json!({"text": "compare"}), T)["ok"], true);
+    h.step();
+    h.step();
+    let r = h.request("ui.clickWidget", json!({"id": "button:shortcut-view.compare"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    assert_eq!(h.app.recording_shortcut.as_deref(), Some("view.compare"));
+    let r = h.request("ui.key", json!({"key": "J", "shift": true}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    assert_eq!(h.app.recording_shortcut, None);
+    assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "view.compare"), Some("Shift+J"));
+    assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { .. })));
+}
