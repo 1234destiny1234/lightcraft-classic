@@ -604,7 +604,17 @@ pub fn read_packet(original: &str, kind: MediaKind, naming: SidecarNaming) -> Op
     }
     if kind == MediaKind::Image {
         let mut file = std::fs::File::open(original).ok()?;
-        let x = read_jpeg_xmp(&mut file, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS)?;
+        let mut soi = [0; 2];
+        file.read_exact(&mut soi).ok()?;
+        file.seek(SeekFrom::Start(0)).ok()?;
+        // A JPEG is read only up to its first XMP segment; other images (TIFF, PNG, ...) whole.
+        let x = if soi == [0xff, 0xd8] {
+            read_jpeg_xmp(&mut file, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS)?
+        } else {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).ok()?;
+            lcc_meta::embedded(&bytes).xmp?
+        };
         return Some((x, PathBuf::from(original)));
     }
     None
