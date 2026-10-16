@@ -14,7 +14,7 @@
 //!    ([`crate::refine::match_patch`]: masked correlation, sub-pixel peak, ambiguous and textureless
 //!    patches dropped).
 //! 2. **Clean.** A shift more than [`OUTLIER`] px from the median of its measured neighbours is
-//!    dropped (a person walking, a mismatch). Tiles without a measurement take the mean of their
+//!    dropped (a person walking, a mismatch), as is one with no measured neighbour to check it by. Tiles without a measurement take the mean of their
 //!    measured neighbours, spreading outwards until every tile has one.
 //! 3. **Smooth** with two 3 × 3 box passes, so the field bends gently.
 //! 4. **Warp.** Each output pixel `p` samples the frame at `h(p + flow(p))` (the flow interpolated
@@ -98,7 +98,8 @@ pub fn estimate(reference: &Plane, frame: &Plane, h: &Homography, radius: usize)
             let v = at(&raw, t)?;
             let n = neighbours(|k| at(&raw, k), gw, gh, t);
             let med = [median(n.iter().map(|v| v[0]).collect()), median(n.iter().map(|v| v[1]).collect())];
-            (n.len() < 3 || (v[0] - med[0]).hypot(v[1] - med[1]) <= OUTLIER).then_some(v)
+            // a tile with no measured neighbour can't be checked, and the fill would spread it: dropped
+            (!n.is_empty() && (v[0] - med[0]).hypot(v[1] - med[1]) <= OUTLIER).then_some(v)
         })
         .collect();
     //    fill outwards from measured tiles

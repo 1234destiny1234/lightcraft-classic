@@ -111,3 +111,27 @@ fn soft_frames_dont_soften_the_merge() {
     // 0.656 without the reference's detail, 0.971 with it
     assert!(gain > 0.95, "detail gain {gain}");
 }
+
+/// The reference's clipped highlights don't leak into their surroundings: next to the bright disc (clipped in the
+/// reference, its radiance from the darker frame) the merge stays as bright as the scene.
+#[test]
+fn no_bright_rim_around_clipped_highlights() {
+    let ks = [0.25f32, 1.0, 4.0];
+    let frames: Vec<Frame> = (0..3).map(|i| shoot(ks[i], &Homography::IDENTITY, i as u64 + 1)).collect();
+    let r = merge_hdr(frames, &HdrOptions { align: false, deghost: Deghost::None }, &no_progress).unwrap();
+    // mean merged / true luminance in a ring 2 to 10 px outside the disc
+    let (mut sum, mut n) = (0f64, 0usize);
+    for y in 250..950 {
+        for x in 1850..2550 {
+            let d = ((x as f64 + 0.5 - 2200.0).powi(2) + (y as f64 + 0.5 - 600.0).powi(2)).sqrt();
+            if (302.0..310.0).contains(&d) {
+                let t = scene(x as f64 + 0.5, y as f64 + 0.5) as f64;
+                sum += r.radiance.get(x, y)[1] as f64 / t.max(1e-6);
+                n += 1;
+            }
+        }
+    }
+    let ratio = sum / n as f64;
+    eprintln!("next to the clipped disc: merge / scene {ratio:.3}");
+    assert!((ratio - 1.0).abs() < 0.03, "merge / scene next to the clipped disc: {ratio}");
+}
