@@ -59,6 +59,15 @@
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
   installed (issue #145).
 
+## 2026-10-16
+
+### Panorama previews without the memory spike
+- The Photo Merge dialog no longer decodes every photo at full size for its preview: a dozen 48 MP drone DNGs took
+  40 GB of memory and minutes before the preview appeared; now 2 GB and 2 seconds. Changing an option (projection,
+  deghost amount) reuses the photos already decoded, so the preview updates in about a second.
+- HDR panoramas are merged one bracket at a time, so only one bracket's photos are held at full size.
+- DNGs that correct lens shading with a gain map (DJI drones and others) show their previews and thumbnails sooner.
+
 ## 2026-10-14
 
 ### Folders and metadata badges on a network share
@@ -94,7 +103,35 @@
   number a selection by it. Agents: `album.orderPhotos`, `album.setPhotoOrder`, `library.sort {"key": "custom"}`.
   Libraries saved with it can't be opened by older versions (catalog format 9).
 
+## 2026-10-15
+
+### Photo Merge takes each photo once
+- A merge that names the same photo more than once (through `ids` on the control channel, MCP or the CLI) now merges
+  it once (issue #1947). Naming one photo three times no longer "merges" it with itself, and a long repeated list no
+  longer decodes the photo again for every entry.
+
+## 2026-10-15
+
+### Sharper HDR merges of handheld brackets
+- HDR merges line the photos up to about a tenth of a pixel instead of up to a pixel or two: the alignment found on
+  small versions of the photos is now checked and corrected at full size. A bright photo of the bracket that is mostly
+  clipped, which used to be merged without any alignment (a doubled picture), is now aligned too.
+- When the camera moved between shots, near and far things shift by different amounts, and one correction for the
+  whole photo left distant detail doubled (a building behind a close foreground was 2–3 pixels off). The merge now
+  lines up each part of the photo on its own.
+- Where the middle photo of the bracket is well exposed, the merge keeps its finest detail as it is, so a merged
+  photo is as crisp as the single photo instead of a little softer.
+- Merged photos (HDR and panorama) are resampled with a sharper filter that keeps fine detail. On a test scene shot
+  handheld, the merge keeps 99 % of the detail instead of 86 %.
+
 ## 2026-10-14
+
+### Focus stacking
+- Photo ▸ Photo Merge ▸ Focus Stack… merges photos focused at different distances into one DNG that is sharp
+  throughout, named `<name>-Focus.dng`, something Lightroom doesn't do. The photos are put in capture-time order
+  for you; with Auto Align on, they are lined up with each other, and a photo that can't be lined up is left out
+  and the dialog says how many were. Focus Stack with Last Settings merges without the dialog, and the type filter
+  finds the results under Focus Stacks.
 
 ### Lightroom radial masks on the right side
 - Radial masks brought over from Lightroom Classic (catalog import, XMP sidecars, edits inside DNGs and presets) now
