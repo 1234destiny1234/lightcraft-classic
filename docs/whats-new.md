@@ -2,6 +2,10 @@
 
 ## 2026-10-15
 
+### AppImage updates wait for the app to quit
+- The new version starts once the old one has quit, so it no longer finds the library still open. The previous
+  AppImage, kept until then in case the swap fails, is deleted on the next start.
+
 ### Updates on Linux packages
 - A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
