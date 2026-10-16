@@ -47,6 +47,7 @@ pub mod filter_plugins;
 mod focus_scan;
 pub mod fonts;
 pub mod guard;
+pub mod history_groups;
 pub mod import;
 mod import_move;
 pub mod legacy;
@@ -1044,10 +1045,33 @@ impl Session {
         let p = self.catalog.photo(id)?;
         // a clip takes only the global grading controls and the crop: presets, paste and sync drop the rest
         let settings = Arc::new(if p.kind == lcc_catalog::MediaKind::Video { lcc_pipeline::grade::video_develop(&settings) } else { settings });
+        // An edit made at a past History step (not a move between steps) rewrites the history:
+        // the later groups are kept and replayed on top (see `history_groups::rewrite`).
+        if let Some(c) = p.history_cursor.filter(|c| c.saturating_add(1) < p.history.len())
+            && !label.starts_with("History:")
+            && let Some(op) = self.history_rewrite_op(id, c, &settings, label)
+        {
+            return Some(op);
+        }
         let step = lcc_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
         Some(Op::Batch {
             ops: vec![Op::SetDevelop { id, settings, label: label.into(), edited: Some((self.clock)()) }, Op::PushHistory { id, step }],
         })
+    }
+
+    /// The op that records `settings` (labelled `label`) as an edit made at History step `at` of
+    /// photo `id`: the settings land there and the later groups are replayed on top (one undo
+    /// step). The cursor stays on the new step unless it is the latest.
+    pub fn history_rewrite_op(&self, id: PhotoId, at: usize, settings: &Arc<DevelopSettings>, label: &str) -> Option<Op> {
+        let p = self.catalog.photo(id)?;
+        let r = history_groups::rewrite(&p.history, at, (**settings).clone(), label)?;
+        let (mut history, mut at) = (r.history, r.at);
+        let over = history.len().saturating_sub(lcc_catalog::HISTORY_LIMIT);
+        history.drain(..over);
+        at = at.saturating_sub(over);
+        let cursor = (at.saturating_add(1) < history.len()).then_some(at);
+        let set = Op::SetDevelop { id, settings: settings.clone(), label: label.into(), edited: Some((self.clock)()) };
+        Some(Op::Batch { ops: vec![set, Op::SetHistory { id, history }, Op::SetHistoryCursor { id, cursor }] })
     }
 
     pub fn begin_interaction(&mut self, label: &str) -> Result<()> {
@@ -1447,6 +1471,8 @@ mod tests_folders;
 mod tests_forget_local;
 #[cfg(test)]
 mod tests_history_cursor;
+#[cfg(test)]
+mod tests_history_groups;
 #[cfg(test)]
 mod tests_hold_view;
 #[cfg(test)]

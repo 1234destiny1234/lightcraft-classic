@@ -1154,8 +1154,35 @@ fn activity(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     history_body(app, ui, id);
 }
 
+/// The heading of a History group: its Develop section, or for a step that spans several sections
+/// (a preset, paste, sync…) the step itself.
+fn group_title(section: Option<&str>, step_label: &str, presets: &[lcc_develop::Preset]) -> String {
+    let name = match section {
+        Some("basic") => "Basic",
+        Some("curve") => "Tone Curve",
+        Some("color") => "Color",
+        Some("grading") => "Color Grading",
+        Some("detail") => "Detail",
+        Some("effects") => "Effects",
+        Some("lens") => "Lens Corrections",
+        Some("geometry") => "Geometry",
+        Some("crop") => "Crop",
+        Some("masking") => "Masking",
+        Some("healing") => "Remove",
+        Some("lensBlur") => "Lens Blur",
+        Some("enhance") => "Enhance",
+        Some("calibration") => "Calibration",
+        Some("pluginFilters") => "Plug-in Filters",
+        Some(other) => other,
+        None => return crate::i18n::history_label(step_label, presets),
+    };
+    crate::i18n::tr(name).to_string()
+}
+
 /// The History rows without the right column's own header: the fork's Develop column draws them
-/// under its Classic "History" header (see `panels::classic_left`).
+/// under its Classic "History" header (see `panels::classic_left`). Two levels, newest first:
+/// groups of consecutive steps on one section, each expanding (its chevron) to its steps. Going
+/// back to a step and editing there keeps the later groups and replays them on top.
 pub(crate) fn history_body(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let Some(p) = app.session.catalog.photo(id).cloned() else { return };
     let t = Tokens::get(ui.ctx());
@@ -1164,41 +1191,89 @@ pub(crate) fn history_body(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             ui.label(egui::RichText::new(crate::i18n::tr("No edits yet.")).color(t.text_dim));
         }
         let cursor = p.history_index();
-        for (i, h) in p.history.iter().enumerate().rev() {
-            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
-            crate::widgets::announce(&resp, crate::i18n::tr(&h.label));
-            register(ui.ctx(), format!("history:{i}"), r);
-            let row = history_row(i, cursor);
-            if row == HistoryRow::Current {
-                ui.painter().rect_filled(r, 3.0, t.pressed);
-            } else if resp.hovered() {
-                ui.painter().rect_filled(r, 3.0, t.hover);
+        if p.history_cursor.is_some_and(|c| c.saturating_add(1) < p.history.len())
+            && text_button(ui, "historyLatest", "Return to Latest", false).clicked()
+        {
+            let _ = app.run("history.latest", json!({}));
+        }
+        for g in lcc_engine::history_groups::groups(&p.history).into_iter().rev() {
+            let several = g.end > g.start;
+            let open_id = egui::Id::new(("historyGroupOpen", id.0, g.start));
+            let open = several && ui.ctx().data(|d| d.get_temp::<bool>(open_id)).unwrap_or(false);
+            let Some(newest) = p.history.get(g.end) else { continue };
+            let first = p.history.get(g.start).map_or("", |h| h.label.as_str());
+            let title = group_title(g.section.as_deref(), first, &app.session.presets);
+            let title = if several { format!("{title} ({})", g.end - g.start + 1) } else { title };
+            let holds_cursor = cursor.is_some_and(|c| (g.start..=g.end).contains(&c));
+            // a closed group reads as its newest step: current when the cursor is inside it
+            let row = if holds_cursor && !open { HistoryRow::Current } else { history_row(g.end, cursor) };
+            let lead = if !several {
+                Icon::Clock
+            } else if open {
+                Icon::ChevronDown
+            } else {
+                Icon::ChevronRight
+            };
+            let (r, resp) = history_row_ui(ui, &t, &title, lead, row, 0.0, true);
+            register(ui.ctx(), format!("historyGroup:{}", g.start), r);
+            if !several {
+                register(ui.ctx(), format!("history:{}", g.end), r);
             }
-            let (icon, text) = if row == HistoryRow::Undone { (t.text_disabled, t.text_disabled) } else { (t.icon, t.text_label) };
-            paint(ui.painter(), Rect::from_min_size(r.min + vec2(0.0, 4.0), vec2(16.0, 16.0)), Icon::Clock, icon);
-            ui.painter().text(
-                pos2(r.left() + 24.0, r.center().y),
-                Align2::LEFT_CENTER,
-                crate::i18n::history_label(&h.label, &app.session.presets),
-                t.font(12.5),
-                text,
-            );
             if resp.clicked() {
-                let _ = app.run("history.restore", json!({"index": i}));
+                // the chevron expands; the rest of the row goes to the group's newest step
+                if several && resp.interact_pointer_pos().is_some_and(|pos| pos.x < r.left() + 20.0) {
+                    ui.ctx().data_mut(|d| d.insert_temp(open_id, !open));
+                } else {
+                    let _ = app.run("history.restore", json!({"index": g.end}));
+                }
             }
-            resp.context_menu(|ui| {
-                if ui.button(crate::i18n::tr("Copy History Step Settings to Before")).clicked() {
-                    let _ = app.run("beforeAfter.setBefore", json!({"source": "history", "index": i}));
-                }
-                if ui.button(crate::i18n::tr("Create Version from Step")).clicked() {
+            step_menu(app, &resp, &newest.label, g.end);
+            if !open {
+                continue;
+            }
+            for i in (g.start..=g.end).rev() {
+                let Some(h) = p.history.get(i) else { continue };
+                let label = crate::i18n::history_label(&h.label, &app.session.presets);
+                let (r, resp) = history_row_ui(ui, &t, &label, Icon::Clock, history_row(i, cursor), 20.0, false);
+                register(ui.ctx(), format!("history:{i}"), r);
+                if resp.clicked() {
                     let _ = app.run("history.restore", json!({"index": i}));
-                    let _ = app.run("version.create", json!({"name": h.label}));
                 }
-                ui.separator();
-                if ui.button(crate::i18n::tr("Clear History")).clicked() {
-                    let _ = app.run("history.clear", json!({}));
-                }
-            });
+                step_menu(app, &resp, &h.label, i);
+            }
+        }
+    });
+}
+
+/// One History row (a group heading in semibold, or an indented step), drawn by its `row` state.
+fn history_row_ui(ui: &mut egui::Ui, t: &Tokens, text: &str, icon: Icon, row: HistoryRow, indent: f32, heading: bool) -> (Rect, egui::Response) {
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::click());
+    crate::widgets::announce(&resp, text);
+    if row == HistoryRow::Current {
+        ui.painter().rect_filled(r, 3.0, t.pressed);
+    } else if resp.hovered() {
+        ui.painter().rect_filled(r, 3.0, t.hover);
+    }
+    let (ic, tc) = if row == HistoryRow::Undone { (t.text_disabled, t.text_disabled) } else { (t.icon, t.text_label) };
+    paint(ui.painter(), Rect::from_min_size(r.min + vec2(indent, 4.0), vec2(16.0, 16.0)), icon, ic);
+    let font = if heading { t.semibold(12.5) } else { t.font(12.5) };
+    ui.painter().text(pos2(r.left() + indent + 24.0, r.center().y), Align2::LEFT_CENTER, text, font, tc);
+    (r, resp)
+}
+
+/// The context menu of History step `i` (labelled `label`).
+fn step_menu(app: &mut LccApp, resp: &egui::Response, label: &str, i: usize) {
+    resp.context_menu(|ui| {
+        if ui.button(crate::i18n::tr("Copy History Step Settings to Before")).clicked() {
+            let _ = app.run("beforeAfter.setBefore", json!({"source": "history", "index": i}));
+        }
+        if ui.button(crate::i18n::tr("Create Version from Step")).clicked() {
+            let _ = app.run("history.restore", json!({"index": i}));
+            let _ = app.run("version.create", json!({"name": label}));
+        }
+        ui.separator();
+        if ui.button(crate::i18n::tr("Clear History")).clicked() {
+            let _ = app.run("history.clear", json!({}));
         }
     });
 }

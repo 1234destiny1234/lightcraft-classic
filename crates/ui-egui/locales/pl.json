@@ -2152,5 +2152,8 @@
   "This is a Lightroom catalog, not a {app} library. Import it into a {app} library instead?": "To jest katalog Lightrooma, a nie biblioteka {app}. Zaimportować go zamiast tego do biblioteki {app}?",
   "Unnamed Faces": "Nienazwane twarze",
   "Vertical inset (% of short edge)": "Margines pionowy (% krótszego boku)",
-  "not added to Apple Photos (cancelled)": "nie dodano do aplikacji Zdjęcia (anulowano)"
+  "not added to Apple Photos (cancelled)": "nie dodano do aplikacji Zdjęcia (anulowano)",
+  "Return to Latest": "Wróć do najnowszego",
+  "Enhance": "Ulepsz",
+  "Plug-in Filters": "Filtry wtyczek"
 }
