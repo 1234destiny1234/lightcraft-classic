@@ -39,6 +39,12 @@ pub fn config_dir() -> Option<PathBuf> {
     config_dir_with(lcc_brand::env_os("CONFIG_DIR"), portable_dir, lcc_brand::settings_dir)
 }
 
+/// The recent-catalogs list (File ▸ Open Recent Catalog, the startup default) in [`config_dir`], like every
+/// other settings file: `<PREFIX>_CONFIG_DIR` and portable mode apply; an empty override keeps no list.
+pub fn recent_catalogs_file() -> Option<PathBuf> {
+    config_dir().map(|d| crate::catalog::library::RecentCatalogs::file_in(&d))
+}
+
 /// `portable` is asked only without an override, so an isolated run never probes beside the executable.
 fn config_dir_with(over: Option<OsString>, portable: impl FnOnce() -> Option<PathBuf>, default: impl FnOnce() -> Option<PathBuf>) -> Option<PathBuf> {
     match over {
@@ -314,6 +320,37 @@ mod config_tests {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    /// Issue #163: the recent-catalogs list follows the config-dir resolver, never the platform folder
+    /// when `<PREFIX>_CONFIG_DIR` is set, and none at all when it is empty.
+    #[test]
+    fn recent_catalogs_follow_the_config_dir() {
+        use crate::catalog::library::RecentCatalogs;
+        let tmp = std::env::temp_dir().join(format!("lcc-recent-163-{}", std::process::id()));
+        let (scratch, platform) = (tmp.join("scratch"), tmp.join("platform"));
+        let platform_file = RecentCatalogs::file_in(&platform);
+        let real = RecentCatalogs { default: Some(platform.join("real-lib")), ..Default::default() };
+        real.save(&platform_file).unwrap();
+        let resolve = |over: Option<OsString>| config_dir_with(over, || None, || Some(platform.clone())).map(|d| RecentCatalogs::file_in(&d));
+        // AC-1/AC-2: with an override, the list lives in the override and the platform default isn't read.
+        let file = resolve(Some(scratch.clone().into_os_string())).unwrap();
+        assert!(file.starts_with(&scratch));
+        assert_eq!(RecentCatalogs::load(&file).default, None);
+        RecentCatalogs { paths: vec![scratch.join("lib")], ..Default::default() }.save(&file).unwrap();
+        assert!(file.exists());
+        assert_eq!(RecentCatalogs::load(&platform_file).default, real.default);
+        // AC-3: empty override, no list.
+        assert_eq!(resolve(Some(OsString::new())), None);
+        // AC-4: portable mode.
+        let portable = tmp.join("portable");
+        let p = config_dir_with(None, || Some(portable.clone()), || Some(platform.clone())).unwrap();
+        assert!(RecentCatalogs::file_in(&p).starts_with(&portable));
+        // AC-5: no override, the platform folder as before.
+        assert_eq!(resolve(None), Some(platform_file));
+        // AC-6: the public resolver agrees with config_dir.
+        assert_eq!(recent_catalogs_file(), config_dir().map(|d| RecentCatalogs::file_in(&d)));
+        let _ = std::fs::remove_dir_all(&tmp);
+    }
 
     /// A non-empty `<PREFIX>_SAM3_DIR` wins; unset or empty falls back to `<config>/models/sam3` (issue #619).
     #[test]
