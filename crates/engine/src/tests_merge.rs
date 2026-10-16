@@ -315,8 +315,7 @@ fn focus_stack_command_creates_and_imports_a_dng() {
     let mut paths = Vec::new();
     let (_, frames) = lcc_merge::synth::focus_bracket(480, 320, 4).unwrap();
     for (i, v) in frames.into_iter().enumerate() {
-        let png =
-            lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&v.to_srgb8()), &lcc_codecs::EncodeMeta::default()).unwrap();
+        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&v.to_srgb8()), &lcc_codecs::EncodeMeta::default()).unwrap();
         let p = dir.join(format!("F_{i}.png"));
         std::fs::write(&p, png).unwrap();
         paths.push(p.to_string_lossy().to_string());

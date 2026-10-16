@@ -263,9 +263,7 @@ impl MergeJob {
                     let ev: Option<Vec<f64>> = self
                         .sources
                         .iter()
-                        .map(|(_, path)| {
-                            (self.read)(path).ok().and_then(|bytes| lcc_merge::frame::exif_exposure(&lcc_meta::extract(&bytes)))
-                        })
+                        .map(|(_, path)| (self.read)(path).ok().and_then(|bytes| lcc_merge::frame::exif_exposure(&lcc_meta::extract(&bytes))))
                         .collect();
                     ev.as_deref().and_then(detect_bracket).ok_or("could not detect the bracket size from EXIF; set it")?
                 };
@@ -322,11 +320,12 @@ impl MergeJob {
                     // only the reference's colour is the result's
                     let colour: &lcc_merge::RawColour =
                         if what == Load::Reference { &crate::camera_preview::starting_colour_tags } else { &no_colour };
-                    let f = lcc_merge::load_frame_with(&bytes, if what == Load::Align { small } else { self.preview }, false, colour)
-                        .map_err(|e| match e {
+                    let f = lcc_merge::load_frame_with(&bytes, if what == Load::Align { small } else { self.preview }, false, colour).map_err(
+                        |e| match e {
                             MergeError::Decode(m) => MergeError::Decode(format!("{path}: {m}")),
                             e => e,
-                        })?;
+                        },
+                    )?;
                     if reuse && what == Load::Align {
                         kept.lock().unwrap_or_else(std::sync::PoisonError::into_inner).insert(i, f.clone());
                     }

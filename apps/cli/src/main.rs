@@ -551,9 +551,8 @@ fn synth_merge(args: &[String]) -> Result<(), String> {
             let (_, frames) = lcc_merge::synth::focus_bracket(1800, 1200, 8).map_err(|e| e.to_string())?;
             for (k, v) in frames.into_iter().enumerate() {
                 let p = Path::new(&dir).join(format!("focus-{k}.png"));
-                let png =
-                    lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&v.to_srgb8()), &lcc_codecs::EncodeMeta::default())
-                        .map_err(|e| e.to_string())?;
+                let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&v.to_srgb8()), &lcc_codecs::EncodeMeta::default())
+                    .map_err(|e| e.to_string())?;
                 std::fs::write(&p, png).map_err(|e| e.to_string())?;
                 written.push(p);
             }
