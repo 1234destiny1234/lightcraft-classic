@@ -45,7 +45,7 @@ frame is resampled once through the homography plus the local shift. Where the r
 merge's finest detail (below a σ = 2 px blur, on luminance) is the reference's own, the one frame neither resampled
 nor aligned to only a fraction of a pixel; it fades out towards the reference's clip and its shadows, where other
 frames carry cleaner detail. Frames are resampled with Lanczos-3, held to the range of their 4 × 4
-neighbours so edges don't ring (`lightcraft_raster::sample`); bilinear lost a third of the finest detail. Exposure ratios are measured
+neighbours so edges don't ring (`lcc_raster::sample`); bilinear lost a third of the finest detail. Exposure ratios are measured
 (median log ratio of well-exposed pixels between brightness neighbours), EXIF is the fallback.
 Radiance is a weighted mean in linear light, weight `k · (1 − smoothstep(0.8·clip, 0.96·clip, max
 channel within 1 px))`: a pixel next to clipped photosites was demosaiced from them and reads low in the clipped

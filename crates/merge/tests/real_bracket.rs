@@ -1,7 +1,7 @@
 //! Diagnostics on a real bracket (not run by default): how far apart the frames still are after the
 //! HDR merge's alignment, tile by tile.
 //!
-//! `LIGHTCRAFT_BRACKET=a.ARW,b.ARW,c.ARW [LIGHTCRAFT_REGION=x0,y0,x1,y1] cargo test --release -p lightcraft-merge
+//! `MERGE_BRACKET=a.ARW,b.ARW,c.ARW [MERGE_REGION=x0,y0,x1,y1] cargo test --release -p lcc-merge
 //! --test real_bracket -- --ignored --nocapture`
 
 use lcc_geom::Homography;
@@ -17,11 +17,11 @@ fn crop(p: &Plane, r: [usize; 4]) -> Plane {
 #[test]
 #[ignore]
 fn residual_after_alignment() {
-    let Ok(paths) = std::env::var("LIGHTCRAFT_BRACKET") else { return };
+    let Ok(paths) = std::env::var("MERGE_BRACKET") else { return };
     let frames: Vec<_> = paths.split(',').map(|p| load_frame(&std::fs::read(p).unwrap(), None, true).unwrap()).collect();
     let r = merge_hdr(frames.clone(), &HdrOptions { align: true, deghost: Deghost::None }, &no_progress).unwrap();
     let (w, h) = (frames[0].width(), frames[0].height());
-    let region = std::env::var("LIGHTCRAFT_REGION")
+    let region = std::env::var("MERGE_REGION")
         .ok()
         .and_then(|s| s.split(',').map(|v| v.parse().ok()).collect::<Option<Vec<usize>>>())
         .and_then(|v| v.try_into().ok())
@@ -51,7 +51,7 @@ fn residual_after_alignment() {
         let (rr, rl) = (crop(&ref_luma, region), crop(&l, region));
         let local = metrics::residual(&rr, &rl);
         eprintln!("frame {i}: {} ({} inliers, rms {:.2}); residual whole {whole:.2?}; region {region:?} {local:.2?}", a.model, a.inliers, a.rms);
-        if std::env::var("LIGHTCRAFT_TILES").is_ok() {
+        if std::env::var("MERGE_TILES").is_ok() {
             for s in refine::sites(&rr, 5) {
                 if let Some(m) = refine::match_patch(&rr, s, &rl, &Homography::IDENTITY, 3) {
                     eprintln!(
