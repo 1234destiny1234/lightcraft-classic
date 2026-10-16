@@ -1163,12 +1163,20 @@ pub fn specs() -> Vec<CommandSpec> {
                 .ok_or_else(|| bad(c, "at the latest History step"))?;
             go_to_history_step(s, c, id, i)
         }),
-        cmd!("history.latest", "Return to Latest History Step", [], None, "{} — loads the latest step's settings (after editing at an earlier one)", has_history_after, |s, _| {
-            let c = "history.latest";
-            let id = active(s, c)?;
-            let last = s.catalog.photo(id).and_then(|ph| ph.history.len().checked_sub(1)).ok_or_else(|| bad(c, "no history"))?;
-            go_to_history_step(s, c, id, last)
-        }),
+        cmd!(
+            "history.latest",
+            "Return to Latest History Step",
+            [],
+            None,
+            "{} — loads the latest step's settings (after editing at an earlier one)",
+            has_history_after,
+            |s, _| {
+                let c = "history.latest";
+                let id = active(s, c)?;
+                let last = s.catalog.photo(id).and_then(|ph| ph.history.len().checked_sub(1)).ok_or_else(|| bad(c, "no history"))?;
+                go_to_history_step(s, c, id, last)
+            }
+        ),
         cmd!(
             "history.editAt",
             "Edit at History Step",
