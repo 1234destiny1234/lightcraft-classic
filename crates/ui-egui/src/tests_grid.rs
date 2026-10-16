@@ -25,6 +25,8 @@ fn library() -> Session {
 
 fn library_of(n: u64) -> Session {
     let mut s = Session::new();
+    // newest first: the tests here were written around the newest day heading the grid
+    s.sort.ascending = false;
     for i in 0..n {
         let (w, h) = if i % 5 == 4 { (4000, 6000) } else { (6000, 4000) };
         let path = format!("/app-grid-test/IMG_{i:05}.jpg");
@@ -248,4 +250,29 @@ fn scale_100k_grid_frames() {
         let budget = if what.ends_with("frame") && !what.starts_with("first") || what.contains("frame after") { 250.0 } else { 5000.0 };
         assert!(*v < budget, "{what}: {v:.0} ms over {budget} ms");
     }
+}
+
+/// Issue #144: a double-click opens the loupe in Library by default (as in Lightroom Classic) and
+/// Develop when the preference is on; the setting survives a save/load of the settings.
+#[test]
+fn double_click_opens_the_loupe_or_develop_per_preference() {
+    use crate::module::ModuleId;
+    let mut app = LccApp::new(library_of(5), Services { png: None, ..Default::default() });
+    app.ui.view = ViewMode::PhotoGrid;
+    crate::panels::grid::open_photo(&mut app, PhotoId(3));
+    assert_eq!(app.session.selection.active, Some(PhotoId(3)));
+    assert_eq!(app.ui.view, ViewMode::Detail);
+    assert_eq!(app.ui.module, ModuleId::Library);
+
+    let _ = app.run("module.library", json!({}));
+    app.ui.view = ViewMode::PhotoGrid;
+    app.ui.settings.double_click_develop = true;
+    crate::panels::grid::open_photo(&mut app, PhotoId(4));
+    assert_eq!(app.session.selection.active, Some(PhotoId(4)));
+    assert_eq!(app.ui.module, ModuleId::Develop);
+
+    let s: crate::state::AppSettings = serde_json::from_value(serde_json::to_value(&app.ui.settings).unwrap()).unwrap();
+    assert!(s.double_click_develop);
+    let old: crate::state::AppSettings = serde_json::from_value(json!({})).unwrap();
+    assert!(!old.double_click_develop);
 }

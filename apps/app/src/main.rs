@@ -239,10 +239,14 @@ fn config_dir() -> Option<std::path::PathBuf> {
 }
 
 /// The window at the size it was last used at, zoomed if it was (`window`), or at the usual size
-/// when nothing is remembered. A zoomed window is given the size it goes back to. Where it
-/// opens is the system's to say.
+/// when nothing is remembered, where it was left if that is known (issue #153). A zoomed window is
+/// given the size and place it goes back to.
 fn as_remembered(builder: egui::ViewportBuilder, window: Option<lcc_ui_egui::window_place::WindowPlace>) -> egui::ViewportBuilder {
     let builder = builder.with_inner_size(window.map_or(lcc_ui_egui::window_place::DEFAULT_SIZE, |w| w.size));
+    let builder = match window.and_then(|w| w.position) {
+        Some(at) => builder.with_position(at),
+        None => builder,
+    };
     // (only ever asked to zoom: asked not to, macOS un-zooms a window whose size fills the screen
     // to a size of its own choosing)
     if window.is_some_and(|w| w.zoomed) { builder.with_maximized(true) } else { builder }
@@ -1096,6 +1100,12 @@ fn main() -> eframe::Result {
                 // (never required: without it, AI masks offer to download it; see docs/ai-masks.md)
                 // and the user's own download locations, one base URL per line (<PREFIX>_SAM3_MIRRORS too)
                 session = session.with_default_sam3_model();
+                // updates: a run that keeps no settings (--memory, <PREFIX>_NO_PREFS) neither reads
+                // nor writes the settings folder's updates.json, and never checks at start
+                let keeps_settings = !in_memory && !lcc_brand::env_is_set("NO_PREFS");
+                if !keeps_settings {
+                    session.updater = lcc_engine::update::Updater::new(None);
+                }
                 // HDR display: SDR unless the surface, platform and display all allow HDR
                 let display = hdr_display::report(cc.wgpu_render_state.as_ref());
                 let mut app = LccApp::new(session, services(cc, app_log_file.as_deref()));
@@ -1110,6 +1120,8 @@ fn main() -> eframe::Result {
                 app.notices.extend(launch_notices);
                 app.notices.extend(window_notice);
                 app.gpu_notice = true;
+                // the start-up update check, when the user turned it on (off by default)
+                app.startup_update_check = keeps_settings;
                 // an empty library opens where Import is offered (a grid, with the sidebar); before
                 // the snapshot below, so this alone isn't written to the settings file
                 if problem.is_none() && files.is_empty() {
@@ -1625,11 +1637,17 @@ mod tests {
         use lcc_ui_egui::window_place::{DEFAULT_SIZE, WindowPlace};
         let fresh = as_remembered(egui::ViewportBuilder::default(), None);
         assert_eq!((fresh.inner_size, fresh.position, fresh.maximized), (Some(egui::Vec2::from(DEFAULT_SIZE)), None, None));
-        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: true }));
+        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: true, position: None }));
         assert_eq!((b.inner_size, b.position, b.maximized), (Some(egui::vec2(1300.0, 800.0)), None, Some(true)));
         // (not asked to un-zoom: macOS would then resize a window that fills its screen)
-        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: false }));
+        let b = as_remembered(egui::ViewportBuilder::default(), Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: None }));
         assert_eq!((b.inner_size, b.position, b.maximized), (Some(egui::vec2(1300.0, 800.0)), None, None));
+        // where it was left (issue #153)
+        let b = as_remembered(
+            egui::ViewportBuilder::default(),
+            Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: Some([-900.0, 40.0]) }),
+        );
+        assert_eq!((b.inner_size, b.position), (Some(egui::vec2(1300.0, 800.0)), Some(egui::pos2(-900.0, 40.0))));
     }
 
     /// Given a window that rests at a size, when the settings are written and read again, then
@@ -1646,7 +1664,7 @@ mod tests {
         let mut writer = PrefsWriter { path: Some(path.clone()), ..Default::default() };
         writer.save(&app).unwrap();
         assert!(!std::fs::read_to_string(&path).unwrap().contains("\"window\""), "nothing to remember yet");
-        let window = WindowPlace { size: [1300.0, 800.0], zoomed: true };
+        let window = WindowPlace { size: [1300.0, 800.0], zoomed: true, position: None };
         app.ui.window = Some(window);
         writer.save(&app).unwrap();
         let (restored, warning, _) = load_prefs_at(&path, false);
@@ -1665,11 +1683,11 @@ mod tests {
 
         // resized, and the app quits a moment later: the new size is what is written
         let mut writer = PrefsWriter { path: Some(path.clone()), ..Default::default() };
-        let rest = Some(WindowPlace { size: [1300.0, 800.0], zoomed: false });
+        let rest = Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: None });
         writer.window.note(rest, &Seen { size: Some([1500.0, 900.0]), ..Default::default() }, 0.0);
         writer.window_since = std::time::Instant::now().checked_sub(std::time::Duration::from_millis(400));
         assert!(writer.window_since.is_some());
-        assert_eq!(writer.window_at_exit(rest), Some(WindowPlace { size: [1500.0, 900.0], zoomed: false }));
+        assert_eq!(writer.window_at_exit(rest), Some(WindowPlace { size: [1500.0, 900.0], zoomed: false, position: None }));
         assert_eq!(PrefsWriter::default().window_at_exit(rest), rest, "a window that was never seen");
         let _ = std::fs::remove_dir_all(&d);
     }
@@ -1695,14 +1713,14 @@ mod tests {
         for _ in 0..3 {
             pass(&mut |_| {});
         }
-        app.ui.window = Some(WindowPlace { size: [f32::NAN, 800.0], zoomed: true });
+        app.ui.window = Some(WindowPlace { size: [f32::NAN, 800.0], zoomed: true, position: None });
         let asked = pass(&mut |ctx| writer.tick(&mut app, ctx));
         assert_eq!(app.ui.window, None, "no window, and not yet at rest");
         assert!(asked.is_some_and(|wait| wait <= std::time::Duration::from_secs(1)), "{asked:?}");
         // a second later
         writer.window_since = writer.window_since.and_then(|since| since.checked_sub(std::time::Duration::from_secs(1)));
         pass(&mut |ctx| writer.tick(&mut app, ctx));
-        assert_eq!(app.ui.window, Some(WindowPlace { size: [1300.0, 800.0], zoomed: false }));
+        assert_eq!(app.ui.window, Some(WindowPlace { size: [1300.0, 800.0], zoomed: false, position: None }));
         let asked = pass(&mut |ctx| writer.tick(&mut app, ctx));
         assert!(asked.is_none_or(|wait| wait > std::time::Duration::from_secs(3600)), "at rest and remembered: {asked:?}");
     }
