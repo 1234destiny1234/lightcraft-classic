@@ -41,6 +41,7 @@ pub fn config_dir() -> Option<PathBuf> {
 
 /// The recent-catalogs list (File ▸ Open Recent Catalog, the startup default) in [`config_dir`], like every
 /// other settings file: `<PREFIX>_CONFIG_DIR` and portable mode apply; an empty override keeps no list.
+#[cfg(not(target_arch = "wasm32"))]
 pub fn recent_catalogs_file() -> Option<PathBuf> {
     config_dir().map(|d| crate::catalog::library::RecentCatalogs::file_in(&d))
 }
