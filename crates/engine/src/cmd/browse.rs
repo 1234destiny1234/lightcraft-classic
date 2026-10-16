@@ -496,7 +496,7 @@ pub(crate) fn move_folder(s: &mut Session, from: &str, to: &str) -> std::result:
     if !src.is_dir() {
         return Err(format!("{from} is not a folder"));
     }
-    if s.library.as_ref().is_some_and(|l| l.dir.starts_with(src) || src.starts_with(&l.dir)) {
+    if s.library.as_ref().is_some_and(|l| l.dir.starts_with(src) || src == l.dir) {
         return Err("the library's own folders can't be moved here".into());
     }
     // Repairs retain their exact old paths, including those on surviving history entries.
