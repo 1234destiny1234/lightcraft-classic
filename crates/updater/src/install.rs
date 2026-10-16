@@ -8,7 +8,7 @@
 //! |---|---|---|
 //! | Windows | `.msi` | the installer runs (`msiexec`), then the app starts again |
 //! | macOS | `.dmg` | mounted, its app copied beside the running bundle, checked and swapped in, relaunched |
-//! | Linux | `.AppImage` | the running file is replaced and the new one started |
+//! | Linux | `.AppImage` | once the app has quit, the running file is replaced and the new one started |
 //! | anywhere else | `.tar.gz` / `.zip` | the folder it is in is shown, to unpack it yourself |
 //!
 //! The caller quits the app when [`Outcome::exit`] is `true` — the installer or the replacement
@@ -21,6 +21,8 @@ use crate::download::Downloaded;
 use crate::error::UpdateError;
 use crate::target::Kind;
 
+#[cfg(unix)]
+mod linux;
 #[cfg(target_os = "macos")]
 mod macos;
 
@@ -92,8 +94,8 @@ pub fn plan(kind: Kind, file: &Path, version: &str) -> Plan {
         Kind::AppImage => Plan {
             summary: format!("Replace this program with {version}"),
             steps: vec![
-                "The running program is replaced by the new one (the old one is kept beside it as .old).".into(),
-                "The new version starts as soon as this one quits.".into(),
+                "Once this program has quit, the new version takes its place (the old one is kept as .old).".into(),
+                "The new version starts as soon as this one has quit.".into(),
             ],
             destination: current_exe(),
             restart: Restart::QuitAndRelaunch,
@@ -170,12 +172,6 @@ fn current_exe() -> Option<PathBuf> {
     Some(std::fs::canonicalize(&exe).unwrap_or(exe))
 }
 
-/// `'…'` for a POSIX shell: an embedded `'` is closed, escaped and reopened.
-#[cfg(all(unix, not(target_os = "macos")))]
-fn sh_quote(text: &str) -> String {
-    format!("'{}'", text.replace('\'', "'\\''"))
-}
-
 // ---------- Windows
 
 #[cfg(windows)]
@@ -231,44 +227,42 @@ fn install_appimage(new: &Path) -> Result<Outcome, UpdateError> {
             new.display()
         ))
     })?;
+    // the download folder (in the user's cache): the failure note goes there, and the script too
+    // when there is no `$XDG_RUNTIME_DIR`
+    let stage = new.parent().unwrap_or_else(|| Path::new("."));
     // the new file goes beside the old one first, so replacing it is a rename on the same file
     // system (atomic, and it cannot fail half way across devices)
     let staged = running.with_file_name(format!("{}.new-{}", file_name(&running), std::process::id()));
     std::fs::copy(new, &staged).map_err(|e| UpdateError::Install(format!("could not place the new version next to {}: {e}", running.display())))?;
-    std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755))
-        .map_err(|e| UpdateError::Install(format!("could not make {} runnable: {e}", staged.display())))?;
+    if let Err(e) = std::fs::set_permissions(&staged, std::fs::Permissions::from_mode(0o755)) {
+        let _ = std::fs::remove_file(&staged);
+        return Err(UpdateError::Install(format!("could not make {} runnable: {e}", staged.display())));
+    }
     let old = running.with_file_name(format!("{}.old", file_name(&running)));
-    // A script finishes the swap after this process is gone: a running executable cannot be
-    // replaced underneath itself, but it can be renamed, and the new one started in its place.
-    let script = std::env::temp_dir().join(format!("{}-update-{}.sh", lcc_brand::BINARY, std::process::id()));
-    let body = format!(
-        "#!/bin/sh\n\
-         # written by the app's updater: replace the running AppImage once it has quit, then start it\n\
-         for i in $(seq 1 100); do\n\
-         \x20 if mv {running} {old} 2>/dev/null; then break; fi\n\
-         \x20 sleep 0.1\n\
-         done\n\
-         if ! mv {staged} {running} 2>/dev/null; then\n\
-         \x20 echo 'The new version could not be put in place; the old one was kept.' >&2\n\
-         \x20 mv {old} {running} 2>/dev/null || true\n\
-         \x20 exit 1\n\
-         fi\n\
-         setsid {running} \"$@\" >/dev/null 2>&1 < /dev/null &\n",
-        running = sh_quote(&running.to_string_lossy()),
-        old = sh_quote(&old.to_string_lossy()),
-        staged = sh_quote(&staged.to_string_lossy()),
-    );
-    std::fs::write(&script, body).map_err(|e| UpdateError::Io(format!("could not write {}: {e}", script.display())))?;
-    Command::new("/bin/sh")
-        .arg(&script)
-        .stdin(std::process::Stdio::null())
-        .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .spawn()
-        .map_err(|e| UpdateError::Install(format!("could not start the replacement: {e}")))?;
+    let note = stage.join(linux::FAILURE_NOTE);
+    // A script finishes the swap once this process has exited: writing into a running executable
+    // fails (ETXTBSY), but renaming another file over it is allowed, so the new one is renamed
+    // into its place (atomically: the path always names a whole AppImage) and started.
+    // Waiting for the exit matters: the new version would otherwise find the library still open.
+    let base = linux::script_base(std::env::var_os("XDG_RUNTIME_DIR"), stage);
+    linux::start(
+        &base,
+        |folder| {
+            linux::swap_script(&linux::Swap {
+                running: &running,
+                staged: &staged,
+                old: &old,
+                note: &note,
+                folder,
+                pid: std::process::id(),
+                wait: linux::WAIT_FOR_EXIT,
+            })
+        },
+        &staged,
+    )?;
     Ok(Outcome {
         message: format!(
-            "The new version replaces {} and starts as soon as the app quits. The previous file is kept as {}.",
+            "The new version replaces {} and starts once the app has quit. The previous file is kept as {} until then.",
             running.display(),
             old.display()
         ),
@@ -302,6 +296,25 @@ fn file_name(path: &Path) -> String {
     path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| lcc_brand::BINARY.to_string())
 }
 
+/// Tidy up after an update, once, when the app starts: log why the last AppImage swap did not
+/// happen (if it left a note in `stage`, the download folder), and delete the `<file>.old` an
+/// update left beside the AppImage this copy runs from (`$APPIMAGE`; nothing without it). Never
+/// fails and never panics: anything it can't do is logged.
+pub fn clean_up_after_update(stage: &Path) {
+    #[cfg(unix)]
+    if let Some(note) = linux::take_failure_note(stage) {
+        log::warn!("updates: the last update was not installed: {note}");
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    match linux::remove_previous(std::env::var_os("APPIMAGE")) {
+        Ok(Some(old)) => log::info!("updates: deleted the previous version, {}", old.display()),
+        Ok(None) => {}
+        Err(e) => log::warn!("updates: could not delete the previous version beside $APPIMAGE: {e}"),
+    }
+    #[cfg(not(unix))]
+    let _ = stage;
+}
+
 // ---------- anything else: show the file
 
 /// Show `file` in the platform's file manager.
@@ -332,15 +345,6 @@ mod tests {
 
     fn downloaded(name: &str) -> Downloaded {
         Downloaded { path: PathBuf::from("/tmp").join(name), bytes: 1, sha256: String::new(), name: name.into() }
-    }
-
-    #[test]
-    fn quoting_keeps_a_path_one_argument() {
-        #[cfg(all(unix, not(target_os = "macos")))]
-        {
-            assert_eq!(sh_quote("/tmp/a b"), "'/tmp/a b'");
-            assert_eq!(sh_quote("/tmp/it's"), "'/tmp/it'\\''s'");
-        }
     }
 
     #[test]

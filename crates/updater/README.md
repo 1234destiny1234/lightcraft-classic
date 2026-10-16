@@ -44,10 +44,16 @@ if let Some(update) = lcc_updater::check(&opts, None, None)? {
   `install::install`: `msiexec` runs the Windows installer; on macOS the disk image is mounted
   read-only, its `<display name>.app` (by that name, never a link) is copied beside the running
   bundle, checked against the release's version and swapped in with two renames that are undone if
-  anything fails, then started again once the app has quit (in-process: no Terminal, no script; a
-  program that isn't inside an `.app` is pointed to the release page instead); a Linux script
-  renames the running AppImage aside and starts the new one, and anything else is revealed in the file manager for a
-  manual unpack. Every path ends with the app running again or with a sentence saying what to do.
+  anything fails, then started again once the app has quit (in-process: no Terminal, no script); a
+  program that isn't inside an `.app` is pointed to the release page instead. A Linux script waits
+  (up to 30 s) for the app to quit, keeps the running AppImage as `.old` (hard link, else copy),
+  renames the new one over it in one atomic step and starts it, and anything else is revealed in the
+  file manager for a manual unpack. The Linux script is written with `O_EXCL` into a fresh 0700
+  folder (under `$XDG_RUNTIME_DIR`, else the download folder) and deletes itself when done; if the
+  app doesn't quit in time or a step fails, the original stays, the staged file is deleted, nothing
+  starts, and the reason is left for the next start to log (`clean_up_after_update`, which also
+  deletes the `.old` beside `$APPIMAGE`). Every path ends with the app running again or with a
+  sentence saying what to do.
 - **Never a panic.** No network, a rate-limited API, a release without a file for this machine, a
   truncated download, a full disk, an installer that refuses: all are `UpdateError` values a dialog
   can show, and all leave the current installation untouched.
