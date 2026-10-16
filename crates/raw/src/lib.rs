@@ -34,6 +34,7 @@ pub mod gaintable;
 pub mod highlight;
 #[cfg(feature = "jxl")]
 mod jxl;
+pub mod kelvin_builtin;
 pub mod kelvin_presets;
 pub mod lens_metadata;
 pub mod ljpeg;
@@ -651,7 +652,7 @@ pub struct ColorData {
     /// "Camera local tone mapping" option asks for it (`lcc_pipeline::local_tone`).
     #[serde(default)]
     pub profile: profile::ProfileLook,
-    /// The camera's white-balance presets at stated temperatures (Sony ARW), which give a raw without colour
+    /// The camera's white-balance presets at stated temperatures (Sony ARW, Canon CR2), which give a raw without colour
     /// matrices a Kelvin scale ([`kelvin_presets`]). Not a DNG tag: nothing else reads it.
     #[serde(default)]
     pub kelvin_presets: Option<kelvin_presets::KelvinPresets>,
