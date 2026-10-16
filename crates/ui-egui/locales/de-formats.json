@@ -80,7 +80,7 @@
   "Lightroom import complete: {imported} photos added; index warning: {warning}": "Lightroom-Import abgeschlossen: {imported} Fotos hinzugefügt; Index-Warnung: {warning}",
   "Lightroom import failed: {e}{warning}": "Lightroom-Import fehlgeschlagen: {e}{warning}",
   "Lightroom inspection failed: {e}{warning}": "Lightroom-Prüfung fehlgeschlagen: {e}{warning}",
-  "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT ODER Apache-2.0. Schriften: {} (OFL). Symbole: eigene Gestaltung.",
+  "MIT AND Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT UND Apache-2.0. Schriften: {} (OFL). Symbole: eigene Gestaltung.",
   "Matches: {}": "Treffer: {}",
   "Merging… {stage} {:.0}%": "Wird zusammengefügt… {stage} {:.0}%",
   "Move {what} to Recently Deleted?": "{what} nach „Zuletzt gelöscht“ verschieben?",
