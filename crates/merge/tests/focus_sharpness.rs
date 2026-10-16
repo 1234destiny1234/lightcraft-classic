@@ -15,6 +15,9 @@ use lightcraft_merge::frame::Frame;
 use lightcraft_merge::metrics::detail_gain;
 use lightcraft_merge::{MergeError, no_progress};
 use lightcraft_raster::Rgb32f;
+
+mod common;
+use common::Rng;
 use lightcraft_raster::resample::{Filter, fit};
 
 const W: usize = 3200;
@@ -88,20 +91,6 @@ fn zoom(k: usize) -> f64 {
 fn to_scene(x: f64, y: f64, z: f64) -> (f64, f64) {
     let (cx, cy) = (W as f64 / 2.0, H as f64 / 2.0);
     (cx + (x - cx) / z, cy + (y - cy) / z)
-}
-
-struct Rng(u64);
-impl Rng {
-    fn gauss(&mut self) -> f32 {
-        let mut u = || {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            ((self.0 >> 11) as f64 / (1u64 << 53) as f64).max(1e-12)
-        };
-        let (a, b) = (u(), u());
-        ((-2.0 * a.ln()).sqrt() * (std::f64::consts::TAU * b).cos()) as f32
-    }
 }
 
 fn frame(k: usize, w: &[(f64, f64, f64)]) -> Rgb32f {

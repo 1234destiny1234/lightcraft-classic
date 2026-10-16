@@ -12,21 +12,10 @@
 use std::sync::OnceLock;
 
 use crate::Rgb32f;
+use crate::resample::Filter;
 
 /// Phases of a pixel the kernel's taps are tabulated for.
 const PHASES: usize = 1024;
-
-fn lanczos3(x: f32) -> f32 {
-    let x = x.abs();
-    if x < 1e-6 {
-        1.0
-    } else if x < 3.0 {
-        let px = std::f32::consts::PI * x;
-        3.0 * px.sin() * (px / 3.0).sin() / (px * px)
-    } else {
-        0.0
-    }
-}
 
 /// The six Lanczos-3 weights (summing to 1) for a sample `t` (0..1) past the third of the six
 /// pixels it reads: pixel `k` (0..6) is at distance `t + 2 − k`.
@@ -36,7 +25,7 @@ pub fn lanczos3_taps(t: f32) -> [f32; 6] {
         (0..=PHASES)
             .map(|i| {
                 let t = i as f32 / PHASES as f32;
-                let w: [f32; 6] = std::array::from_fn(|k| lanczos3(t + 2.0 - k as f32));
+                let w: [f32; 6] = std::array::from_fn(|k| Filter::Lanczos3.eval(t + 2.0 - k as f32));
                 let s: f32 = w.iter().sum();
                 w.map(|v| v / s)
             })
@@ -65,28 +54,25 @@ impl Rgb32f {
         let row: [usize; 6] = std::array::from_fn(|k| (y0 + k as isize - 2).clamp(0, h as isize - 1) as usize * w);
         let px = |r: usize, c: usize| self.data.get(r + c).copied().unwrap_or_default();
         let mut acc = [0f32; 3];
-        for (r, &wr) in row.iter().zip(&wy) {
+        // and the range of the 4 × 4 pixels around the sample (taps 1 to 4 on each axis)
+        let mut lo = [f32::INFINITY; 3];
+        let mut hi = [f32::NEG_INFINITY; 3];
+        for (j, (r, &wr)) in row.iter().zip(&wy).enumerate() {
             let mut line = [0f32; 3];
-            for (&c, &wc) in col.iter().zip(&wx) {
+            for (i, (&c, &wc)) in col.iter().zip(&wx).enumerate() {
                 let p = px(*r, c);
                 for ch in 0..3 {
                     line[ch] += wc * p[ch];
                 }
+                if (1..5).contains(&i) && (1..5).contains(&j) {
+                    for ch in 0..3 {
+                        lo[ch] = lo[ch].min(p[ch]);
+                        hi[ch] = hi[ch].max(p[ch]);
+                    }
+                }
             }
             for ch in 0..3 {
                 acc[ch] += wr * line[ch];
-            }
-        }
-        // the 4 × 4 pixels around the sample: taps 1 to 4 on each axis
-        let mut lo = [f32::INFINITY; 3];
-        let mut hi = [f32::NEG_INFINITY; 3];
-        for &r in &row[1..5] {
-            for &c in &col[1..5] {
-                let p = px(r, c);
-                for ch in 0..3 {
-                    lo[ch] = lo[ch].min(p[ch]);
-                    hi[ch] = hi[ch].max(p[ch]);
-                }
             }
         }
         std::array::from_fn(|ch| acc[ch].clamp(lo[ch], hi[ch]))

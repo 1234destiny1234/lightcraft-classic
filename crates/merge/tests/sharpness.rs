@@ -13,6 +13,9 @@ use lightcraft_merge::metrics::{detail, detail_gain, detail_ratio};
 use lightcraft_merge::no_progress;
 use lightcraft_raster::Rgb32f;
 
+mod common;
+use common::{Rng, corner_error};
+
 const W: usize = 3000;
 const H: usize = 2000;
 
@@ -40,20 +43,6 @@ fn motion(deg: f64, dx: f64, dy: f64) -> Homography {
     Homography([c, -s, cx - c * cx + s * cy + dx, s, c, cy - s * cx - c * cy + dy, 0.0, 0.0, 1.0])
 }
 
-struct Rng(u64);
-impl Rng {
-    fn gauss(&mut self) -> f32 {
-        let mut u = || {
-            self.0 ^= self.0 << 13;
-            self.0 ^= self.0 >> 7;
-            self.0 ^= self.0 << 17;
-            ((self.0 >> 11) as f64 / (1u64 << 53) as f64).max(1e-12)
-        };
-        let (a, b) = (u(), u());
-        ((-2.0 * a.ln()).sqrt() * (std::f64::consts::TAU * b).cos()) as f32
-    }
-}
-
 fn shoot(k: f32, m: &Homography, seed: u64) -> Frame {
     let mut rng = Rng(seed * 0x9e37_79b9 + 11);
     let mut img = Rgb32f::from_fn(W, H, |x, y| {
@@ -71,13 +60,6 @@ fn shoot(k: f32, m: &Homography, seed: u64) -> Frame {
     f
 }
 
-fn corner_error(a: &Homography, b: &Homography) -> f64 {
-    [(0.0, 0.0), (W as f64, 0.0), (0.0, H as f64), (W as f64, H as f64)]
-        .iter()
-        .map(|&(x, y)| a.apply(Point::new(x, y)).dist(b.apply(Point::new(x, y))))
-        .fold(0.0, f64::max)
-}
-
 #[test]
 fn handheld_bracket_merges_sharp() {
     let motions = [motion(0.11, 2.31, -1.73), Homography::IDENTITY, motion(-0.07, -3.13, 2.62)];
@@ -88,7 +70,7 @@ fn handheld_bracket_merges_sharp() {
     let secs = t0.elapsed().as_secs_f64();
     assert_eq!(r.reference, 1);
     // alignment: reference → frame is the inverse of the frame's motion
-    let errs: Vec<f64> = [0, 2].iter().map(|&i| corner_error(&r.alignments[i].h, &motions[i].inverse().unwrap())).collect();
+    let errs: Vec<f64> = [0, 2].iter().map(|&i| corner_error(&r.alignments[i].h, &motions[i].inverse().unwrap(), W as f64, H as f64)).collect();
     // detail against the scene itself, away from the edges and the clipped disc
     let truth = Rgb32f::from_fn(W, H, |x, y| [scene(x as f64 + 0.5, y as f64 + 0.5); 3]);
     let keep = |x: usize, y: usize| {

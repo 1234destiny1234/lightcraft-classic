@@ -26,8 +26,8 @@ use lightcraft_geom::{Homography, Point};
 use lightcraft_raster::{Plane, Rgb32f};
 use rayon::prelude::*;
 
-use crate::align::{Alignment, plausible};
-use crate::ransac::{self, Model};
+use crate::align::{Alignment, Models, choose_model, luma as lum};
+use crate::ransac::Model;
 
 /// Side of a matched patch (pixels).
 pub const PATCH: usize = 48;
@@ -55,7 +55,7 @@ pub fn luma(img: &Rgb32f, gain: f32, clip: f32) -> Plane {
         if c[0].max(c[1]).max(c[2]) >= 0.95 * clip {
             return f32::NAN;
         }
-        let y = (0.25 * c[0] + 0.6 * c[1] + 0.15 * c[2]) * g;
+        let y = lum(c) * g;
         if y.is_finite() && y < 1.0 { y.max(0.0).powf(1.0 / 2.2) } else { f32::NAN }
     })
 }
@@ -237,18 +237,6 @@ fn correlation(a: &[f32], b: impl Fn(usize, usize) -> f32) -> Option<f32> {
     c.is_finite().then_some(c as f32)
 }
 
-fn model_named(name: &str) -> Option<Model> {
-    match name {
-        "translation" => Some(Model::Translation),
-        "similarity" => Some(Model::Similarity),
-        "homography" => Some(Model::Homography),
-        _ => None,
-    }
-}
-
-/// The motion models a fit chooses among, simplest first: (model, name, fewest inliers).
-pub type Models = [(Model, &'static str, usize)];
-
 /// Translation, similarity and homography: what a handheld frame may need.
 pub const ALL_MODELS: [(Model, &str, usize); 3] =
     [(Model::Translation, "translation", 6), (Model::Similarity, "similarity", 8), (Model::Homography, "homography", 12)];
@@ -257,66 +245,41 @@ pub const ALL_MODELS: [(Model, &str, usize); 3] =
 /// sharp slice of a frame extrapolates badly).
 pub const SIMILARITY: [(Model, &str, usize); 1] = [(Model::Similarity, "similarity", 8)];
 
-/// Refine `a` (reference → frame, full resolution, found on small versions) at full size; both
-/// planes from [`luma`], `radius` from [`radius_for`]. Alignments that aren't a fitted model
-/// ("identity", "reference", …) are returned unchanged, as is `a` whenever refining fails.
-pub fn refine(reference: &Plane, frame: &Plane, a: &Alignment, radius: usize, seed: u64) -> Alignment {
-    refine_with(reference, frame, a, radius, seed, &ALL_MODELS)
-}
-
-/// [`refine`] choosing among `models`.
-pub fn refine_with(reference: &Plane, frame: &Plane, a: &Alignment, radius: usize, seed: u64, models: &Models) -> Alignment {
-    if model_named(a.model).is_none() {
-        return a.clone();
-    }
-    fit(reference, frame, &a.h, radius, seed, models).unwrap_or_else(|| a.clone())
-}
-
-/// Search radius for [`recover`] (pixels).
+/// Search radius (pixels) for a frame with no alignment to start from (the small versions found
+/// none: a bright frame mostly clipped, too little texture left for features).
 pub const RECOVER_RADIUS: usize = 16;
 
-/// Align a frame the small versions couldn't (too much of it clipped, too little texture left for
-/// features): patches matched within [`RECOVER_RADIUS`] pixels of where they are in the reference,
-/// a plain handheld shift and a fraction of a degree. `None` when that doesn't fit either.
-pub fn recover(reference: &Plane, frame: &Plane, seed: u64) -> Option<Alignment> {
-    fit(reference, frame, &Homography::IDENTITY, RECOVER_RADIUS, seed, &ALL_MODELS)
-}
-
-/// Patches matched around `h` within `radius`, then within 2 px of that fit; the fitted model.
-fn fit(reference: &Plane, frame: &Plane, h: &Homography, radius: usize, seed: u64, models: &Models) -> Option<Alignment> {
+/// Fit `models` (reference → frame, full resolution) to patches of `reference` matched in `frame`
+/// around `start` within `radius` pixels, then again within 2 px of that fit; both planes from
+/// [`luma`]. `start` is an alignment found on small versions (`radius` from [`radius_for`]), or the
+/// identity with [`RECOVER_RADIUS`]. `None` when too few patches match or no fit is a plausible
+/// handheld motion: the caller keeps what it had.
+pub fn fit(reference: &Plane, frame: &Plane, start: &Homography, radius: usize, seed: u64, models: &Models) -> Option<Alignment> {
     let (w, ht) = (reference.width as f64, reference.height as f64);
+    let r0 = radius.max(2);
+    // the sites for the widest search fit the narrower one too
+    let s = sites(reference, r0 + 2);
     let mut cur: Option<Alignment> = None;
-    for r in [radius.max(2), 2] {
-        let start = cur.as_ref().map_or(*h, |a| a.h);
-        let s = sites(reference, r + 2);
-        let m: Vec<Match> = s.par_iter().filter_map(|&p| match_patch(reference, p, frame, &start, r)).collect();
+    for r in [r0, 2] {
+        let h = cur.as_ref().map_or(*start, |a| a.h);
+        let m: Vec<Match> = s.par_iter().filter_map(|&p| match_patch(reference, p, frame, &h, r)).collect();
         if m.len() < MIN_MATCHES {
             break;
         }
         let pa: Vec<Point> = m.iter().map(|m| m.reference).collect();
         let pb: Vec<Point> = m.iter().map(|m| m.frame).collect();
-        let mut fits: Vec<(&'static str, ransac::Fit)> = Vec::new();
-        for &(model, name, min) in models {
-            let need = ((m.len() as f64 * MIN_SHARE).ceil() as usize).max(min);
-            if let Some(f) = ransac::ransac(model, &pa, &pb, THRESH, need, seed)
-                && plausible(&f.h, w, ht, 0.12)
-            {
-                fits.push((name, f));
-            }
-        }
-        let Some(most) = fits.iter().map(|(_, f)| f.inliers.len()).max() else { break };
-        let Some((name, f)) = fits.into_iter().find(|(_, f)| f.inliers.len() as f64 >= most as f64 * 0.97) else { break };
+        let Some((name, f)) = choose_model(models, &pa, &pb, THRESH, MIN_SHARE, (w, ht), seed) else { break };
         cur = Some(Alignment { h: f.h, model: name, inliers: f.inliers.len(), rms: f.rms });
     }
     cur
 }
 
 #[cfg(test)]
-mod tests {
+pub(crate) mod tests {
     use super::*;
 
     /// A smooth random texture, sampled anywhere.
-    fn tex(x: f64, y: f64) -> f32 {
+    pub(crate) fn tex(x: f64, y: f64) -> f32 {
         let mut v = 0.45;
         for k in 0..9 {
             let a = k as f64 * 2.399;
@@ -349,9 +312,8 @@ mod tests {
         let truth = s.inverse().unwrap();
         let frame = plane(w, h, &s);
         let rough = Homography([truth.0[0], truth.0[1], truth.0[2] + 1.6, truth.0[3], truth.0[4], truth.0[5] - 1.2, 0.0, 0.0, 1.0]);
-        let a = Alignment { h: rough, model: "similarity", inliers: 0, rms: 0.0 };
-        assert!(corner_error(&a.h, &truth, w as f64, h as f64) > 1.5);
-        let r = refine(&reference, &frame, &a, 4, 1);
+        assert!(corner_error(&rough, &truth, w as f64, h as f64) > 1.5);
+        let r = fit(&reference, &frame, &rough, 4, 1, &ALL_MODELS).unwrap();
         let e = corner_error(&r.h, &truth, w as f64, h as f64);
         assert!(e < 0.1, "corner error {e} px, model {}", r.model);
         assert!(r.inliers >= MIN_MATCHES);
@@ -364,26 +326,21 @@ mod tests {
         let reference = plane(w, h, &Homography::IDENTITY);
         let (c, sn) = (0.1f64.to_radians().cos(), 0.1f64.to_radians().sin());
         let s = Homography([c, -sn, -4.6, sn, c, 2.1, 0.0, 0.0, 1.0]);
-        let r = recover(&reference, &plane(w, h, &s), 1).unwrap();
+        let r = fit(&reference, &plane(w, h, &s), &Homography::IDENTITY, RECOVER_RADIUS, 1, &ALL_MODELS).unwrap();
         let e = corner_error(&r.h, &s.inverse().unwrap(), w as f64, h as f64);
         assert!(e < 0.1, "corner error {e} px, model {}", r.model);
-        assert!(recover(&reference, &Plane::from_fn(w, h, |_, _| 0.5), 1).is_none());
+        assert!(fit(&reference, &Plane::from_fn(w, h, |_, _| 0.5), &Homography::IDENTITY, RECOVER_RADIUS, 1, &ALL_MODELS).is_none());
     }
 
-    /// Nothing to match (a flat frame, or an alignment that isn't a model): the alignment stays.
+    /// Nothing to match (a flat frame, planes too small for a patch, empty ones): no fit.
     #[test]
-    fn keeps_the_alignment_when_nothing_matches() {
+    fn no_fit_when_nothing_matches() {
+        let h = Homography([1.0, 0.0, 0.7, 0.0, 1.0, 0.2, 0.0, 0.0, 1.0]);
         let flat = Plane::from_fn(400, 300, |_, _| 0.5);
-        let a = Alignment { h: Homography([1.0, 0.0, 0.7, 0.0, 1.0, 0.2, 0.0, 0.0, 1.0]), model: "translation", inliers: 9, rms: 0.3 };
-        let r = refine(&flat, &flat, &a, 4, 1);
-        assert_eq!((r.h, r.model, r.inliers), (a.h, a.model, a.inliers));
-        let id = Alignment::identity();
-        let t = plane(400, 300, &Homography::IDENTITY);
-        assert_eq!(refine(&t, &t, &id, 4, 1).model, "identity");
-        // planes too small for a patch, and empty ones
+        assert!(fit(&flat, &flat, &h, 4, 1, &ALL_MODELS).is_none());
         let tiny = Plane::from_fn(20, 20, |x, _| x as f32);
-        assert_eq!(refine(&tiny, &tiny, &a, 4, 1).h, a.h);
-        assert_eq!(refine(&Plane::new(0, 0), &Plane::new(0, 0), &a, 4, 1).h, a.h);
+        assert!(fit(&tiny, &tiny, &h, 4, 1, &ALL_MODELS).is_none());
+        assert!(fit(&Plane::new(0, 0), &Plane::new(0, 0), &h, 4, 1, &ALL_MODELS).is_none());
     }
 
     #[test]
