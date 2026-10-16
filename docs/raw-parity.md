@@ -1,6 +1,6 @@
 # RAW parity: cameras, formats, demosaic, colour and lens profiles
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (upstream: integration batch 36 and the camera-coverage sweep #1327, 545 models verified upstream; re-measured after the merge: 596 verified; Canon EOS R6 verified: 315 verified, use-weighted ~90%; Canon CRW decoded, 15 bodies verified; Epson ERF and Mamiya MEF decoded, 4 bodies verified: 314 verified, use-weighted ~90%; compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies; Z 8 and Z 9 lossless verified: 280 verified, 59% on verified bodies; pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`), 15 FinePix bodies verified: 295 verified, Fujifilm 93% → 99%, 60% on verified bodies) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-16 · **Change:** minor (Kelvin white balance for Canon ColorData presets and the Nikon Z5II; upstream: integration batch 36 and the camera-coverage sweep #1327, 545 models verified upstream; re-measured after the merge: 596 verified; Canon EOS R6 verified: 315 verified, use-weighted ~90%; Canon CRW decoded, 15 bodies verified; Epson ERF and Mamiya MEF decoded, 4 bodies verified: 314 verified, use-weighted ~90%; compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies; Z 8 and Z 9 lossless verified: 280 verified, 59% on verified bodies; pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`), 15 FinePix bodies verified: 295 verified, Fujifilm 93% → 99%, 60% on verified bodies) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
 
 Raw processing is the deepest single dimension of Lightroom parity: a photographer whose camera
 does not decode, or decodes with the wrong colour, cannot switch. This document measures it model by
@@ -216,7 +216,7 @@ sample files. A pointer for contributors, not legal advice.
 | Camera Matching looks | 481 models (plus phone-maker looks) | none (the per-file JPEG fit imitates the camera's own look) |
 | Creative profiles | Adobe Color, Portrait, Landscape, Vivid, Monochrome… | our own looks (Color, Neutral, Vivid, Landscape, Portrait, Monochrome) |
 | DCP / dual-illuminant model | ✅ | dual-illuminant DNG colour (ColorMatrix / ForwardMatrix 1-2, CameraCalibration, AnalogBalance), HueSatMap, LookTable, ProfileToneCurve; external `.dcp` never loaded (clean-room) |
-| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where Sony's white-balance presets in the file give the scale (6 bodies, `kelvin_presets`); other raws keep the relative scale (#296) |
+| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where the camera's white-balance presets in the file give the scale (6 Sony bodies and the Canon PowerShot G1 X Mark III, `kelvin_presets`); other raws keep the relative scale (#296) |
 
 **How far the default rendering is from Adobe's** (CIE ΔE; measured where stated):
 
@@ -291,6 +291,7 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | Kelvin white balance from Canon CR2 `ColorData` presets (PowerShot G1 X Mark III) and a built-in preset table for the Nikon Z5II |
 | 2026-10-15 | minor | Upstream batch 40 merged: action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies) was already done here and the fork's tables stay ahead; `coverage.py --check` passes, numbers unchanged (596 verified, use-weighted ~98%, 87% on verified bodies) |
 | 2026-10-15 | minor | Upstream merge: both sides' evidence combined and re-measured with `docs/raw/coverage.py`: 596 verified, 724 unverified, 89 preview, 37 unsupported; use-weighted ~98% (87% on verified bodies); decoding 88%, RAW readiness ~63% |
 | 2026-10-15 | minor | EOS R6 verified (CR3 lossless, 5568x3708, 14-bit; 5 private files checked against DNGLab 0.8.0 reference, exact FNV-1a hashes): 315 verified, 1,001 unverified; use-weighted unchanged at ~90% |

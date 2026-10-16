@@ -2,6 +2,38 @@
 
 ## 2026-10-15
 
+### AppImage updates wait for the app to quit
+- The new version starts once the old one has quit, so it no longer finds the library still open. The previous
+  AppImage, kept until then in case the swap fails, is deleted on the next start.
+
+### Shortcuts in Settings
+- Settings → Shortcuts records a new key again. Clicking a shortcut there used to stop listening on the next frame,
+  so no key could be set; only Help → Keyboard Shortcuts worked (issue #155).
+
+### The start-up update check is opt-in
+- The app no longer contacts GitHub at start unless you ask it to: turn on "Check for updates when the app
+  starts" in Settings ▸ General, in the welcome dialog of a first start, or in the update window. Help ▸ Check for
+  Updates… works as before. Settings that were already saved are kept.
+
+### Updates on macOS install in place
+- Install and Relaunch now copies the new version beside the app and swaps it in, puts the old one back if
+  anything fails, and starts the new version without opening Terminal or asking for automation access. A copy that
+  isn't inside an app bundle (a source build) links to the release page instead of replacing the app in
+  /Applications.
+
+### Oldest photos first
+- The grid now sorts by capture date with the oldest photo first by default, as Lightroom Classic does, instead of
+  the newest first. A library you already use keeps its sort: Ascending and Descending are in the sort menu.
+
+### The parametric curve shows the Point Curve preset
+- The Tone Curve's parametric graph now draws the Point Curve on top of the region sliders, as the photo is
+  rendered. Choosing Medium Contrast or Strong Contrast bends the line into its S-curve instead of leaving a
+  straight diagonal, and dragging the line still lands where the pointer lets go.
+
+### Library comes back in the view you left it in
+- Going from Library to Develop and back through the module picker brought Library back in the loupe, whatever view
+  it was left in. It now returns to the grid, loupe, Compare or Survey it showed before (issue #144).
+
 ### Updates on Linux packages
 - A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was

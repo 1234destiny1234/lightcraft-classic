@@ -14,8 +14,7 @@ pub fn backup_if_due(session: &mut Session) {
 
 /// The catalog chosen to open at startup (the chooser's default), if it still exists.
 pub fn startup_catalog() -> Option<std::path::PathBuf> {
-    let file = lcc_engine::catalog::library::RecentCatalogs::default_file()
-        .filter(|_| !lcc_brand::env_is_set("NO_PREFS") && !lcc_brand::env_is_set("LIBRARY"))?;
+    let file = lcc_engine::config::recent_catalogs_file().filter(|_| !lcc_brand::env_is_set("NO_PREFS") && !lcc_brand::env_is_set("LIBRARY"))?;
     let d = lcc_engine::catalog::library::RecentCatalogs::load(&file).default?;
     lcc_engine::catalog::library::resolve(&d).ok()
 }
@@ -23,7 +22,7 @@ pub fn startup_catalog() -> Option<std::path::PathBuf> {
 /// File ▸ Open Recent Catalog and the startup chooser (not for throwaway sessions).
 pub fn remember_recent(app: &mut LccApp, in_memory: bool) {
     if !in_memory && !lcc_brand::env_is_set("NO_PREFS") {
-        app.catalog_ui.recent_file = lcc_engine::catalog::library::RecentCatalogs::default_file();
+        app.catalog_ui.recent_file = lcc_engine::config::recent_catalogs_file();
         if let Some(dir) = app.session.catalog_dir().map(std::path::Path::to_path_buf) {
             app.catalog_ui.touch(&dir);
         }

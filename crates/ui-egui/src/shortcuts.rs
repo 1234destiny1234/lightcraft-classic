@@ -350,7 +350,7 @@ fn keyboard_owned(app: &LccApp, ctx: &egui::Context) -> bool {
 }
 
 pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
-    if !matches!(app.ui.dialog, Some(crate::state::Dialog::Shortcuts)) {
+    if !classic::records_shortcuts(app.ui.dialog.as_ref()) {
         app.recording_shortcut = None;
     }
     // Dialogs own their keys (including Esc and text editing); background photo actions wait.
