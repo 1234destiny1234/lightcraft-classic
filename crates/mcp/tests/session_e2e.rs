@@ -57,7 +57,13 @@ struct Mcp {
 
 impl Mcp {
     fn start(library: &Path, home: &Path) -> Mcp {
-        let mut child = Command::new(app_cli())
+        let mut cmd = Command::new(app_cli());
+        // an inherited <PREFIX>_CONFIG_DIR (any prefix) outranks HOME: the account would be saved there and
+        // break the next run (issue #167)
+        for prefix in std::iter::once(lcc_brand::ENV_PREFIX).chain(lcc_brand::LEGACY_ENV_PREFIXES.iter().copied()) {
+            cmd.env_remove(format!("{prefix}_CONFIG_DIR"));
+        }
+        let mut child = cmd
             .args(["mcp", "--library"])
             .arg(library)
             .env("HOME", home)
@@ -774,6 +780,11 @@ fn tether_cull_develop_publish_sync_print() {
     assert!(images >= 1, "the contact sheet holds the photos");
 
     drop(mcp);
+    let saved = walk(&home);
+    assert!(
+        saved.iter().any(|p| p.file_name().is_some_and(|n| n == "connections.json")),
+        "the Immich account is saved in the test's own home, not an inherited settings folder: {saved:?}"
+    );
     let _ = std::fs::remove_dir_all(&root);
 }
 
