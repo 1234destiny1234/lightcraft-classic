@@ -745,6 +745,7 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // bins are, the same values `view.histogram.mode` / `view.histogram.scale` select
     let menu_rect = Rect::from_min_size(pos2(r.left() + 4.0, r.bottom() - 22.0), vec2(72.0, 18.0));
     let menu = ui.interact(menu_rect, ui.id().with("histogram-display"), Sense::click());
+    menu.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, ui.is_enabled(), crate::i18n::tr("Histogram display")));
     register(ui.ctx(), "histogram:display", menu_rect);
     let col = if menu.hovered() { t.text } else { t.text_label };
     let menu_clicked = menu.clicked();
