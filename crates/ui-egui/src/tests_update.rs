@@ -566,6 +566,7 @@ impl Drop for ReadOnly {
     }
 }
 
+#[cfg(unix)]
 fn toast_text(h: &Headless) -> String {
     h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default()
 }
