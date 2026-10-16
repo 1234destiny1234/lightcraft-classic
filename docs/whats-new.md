@@ -6,6 +6,11 @@
 - Settings → Shortcuts records a new key again. Clicking a shortcut there used to stop listening on the next frame,
   so no key could be set; only Help → Keyboard Shortcuts worked (issue #155).
 
+### The start-up update check is opt-in
+- The app no longer contacts GitHub at start unless you ask it to: turn on "Check for updates when the app
+  starts" in Settings ▸ General, in the welcome dialog of a first start, or in the update window. Help ▸ Check for
+  Updates… works as before. Settings that were already saved are kept.
+
 ### Updates on macOS install in place
 - Install and Relaunch now copies the new version beside the app and swaps it in, puts the old one back if
   anything fails, and starts the new version without opening Terminal or asking for automation access. A copy that
