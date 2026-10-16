@@ -1180,6 +1180,10 @@ fn snapshot_leaves_desktop_gpu_preferences_untouched() {
     for gpu_environment in [None, Some("1")] {
         let image = dir.join(format!("{}.png", gpu_environment.unwrap_or("default")));
         let mut cmd = Command::new(BIN);
+        // an inherited <PREFIX>_CONFIG_DIR (any prefix) outranks XDG_CONFIG_HOME (issue #167)
+        for prefix in std::iter::once(lcc_brand::ENV_PREFIX).chain(lcc_brand::LEGACY_ENV_PREFIXES.iter().copied()) {
+            cmd.env_remove(format!("{prefix}_CONFIG_DIR"));
+        }
         cmd.env("XDG_CONFIG_HOME", &config)
             .env_remove(lcc_brand::env_var("GPU"))
             .env_remove(lcc_brand::env_var("GPU_BACKEND"))
