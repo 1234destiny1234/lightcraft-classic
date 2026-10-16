@@ -1,15 +1,20 @@
-//! The histogram's tonal zones, as in Lightroom Classic: hovering one names it and shows its value,
-//! dragging one sideways moves its Basic control, and a double-click puts that control back to its
-//! default.
+//! The histogram's tonal zones *and* its plot, as in Lightroom Classic: hovering a zone names it
+//! and shows its value, dragging one sideways moves its Basic control, and a double-click puts that
+//! control back to its default.
 //!
 //! The zone a press landed in stays locked for the whole drag, so the pointer may cross the others;
 //! every step is a `develop.set` between `develop.beginInteraction` and `develop.endInteraction`, the
 //! path the panel's sliders take: the draft render follows the drag live and the whole drag lands as
 //! one undo step (`end_interaction`).
+//!
+//! The plot itself is drawn in the mode `view.histogram.mode` selected and at the scale
+//! `view.histogram.scale` selected (see [`paint_plot`]).
 
-use egui::{Painter, Pos2, Rect, Response, pos2};
+use egui::epaint::{Mesh, Vertex};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Shape, Stroke, pos2, vec2};
 use lcc_catalog::PhotoId;
 use lcc_develop::{ControlSpec, controls};
+use lcc_raster::{Histogram, HistogramMode, HistogramScale, robust_peak, scope_rgb, scope_uv};
 use serde_json::json;
 
 use crate::LccApp;
@@ -115,6 +120,12 @@ impl Active {
 /// `plot` is the plot's rect: the strip under it (the readout and the EXIF line) is not a zone, and
 /// neither are the clipping buttons in the plot's top corners, which take their own presses.
 pub fn interact(app: &mut LccApp, ui: &egui::Ui, resp: &Response, plot: Rect, id: PhotoId) -> Option<Active> {
+    if mode_of(app).is_scope() {
+        if matches!(app.gesture, Some(Gesture::HistogramDrag { .. })) {
+            finish(app);
+        }
+        return None;
+    }
     let width = plot.width();
     let in_plot = |q: Pos2| plot.contains(q);
     let zone_of = |q: Pos2| in_plot(q).then(|| (q.x - plot.left()) / width).and_then(zone_at);
@@ -207,6 +218,298 @@ fn value_of(app: &LccApp, id: PhotoId, spec: &ControlSpec) -> f64 {
 pub fn paint_zone(painter: &Painter, plot: Rect, active: &Active, tokens: &Tokens) {
     let tint = if active.dragging { tokens.pressed } else { tokens.hover };
     painter.rect_filled(active.zone.rect(plot), 0.0, tint.gamma_multiply(if active.dragging { 0.75 } else { 0.45 }));
+}
+
+// ------------------------------------------------------------------ the distribution
+
+/// The histogram mode the settings name (as `view.histogram.mode` writes it). A value written by
+/// another build — or hand-edited — reads as the default rather than failing.
+pub fn mode_of(app: &LccApp) -> HistogramMode {
+    HistogramMode::parse(&app.ui.histogram_mode).unwrap_or_default()
+}
+
+/// The histogram scale the settings name (as `view.histogram.scale` writes it).
+pub fn scale_of(app: &LccApp) -> HistogramScale {
+    HistogramScale::parse(&app.ui.histogram_scale).unwrap_or_default()
+}
+
+/// The red, green and blue a channel is drawn in.
+pub const CHANNEL_COLORS: [Color32; 3] = [Color32::from_rgb(223, 57, 57), Color32::from_rgb(68, 176, 114), Color32::from_rgb(59, 111, 224)];
+
+/// The five-bin box smoothing the panel draws its curves with: raw 256-bin histograms of a photo
+/// are spiky, and a single-bin spike would draw as a one-pixel needle.
+pub fn smooth(bins: &[u32]) -> Vec<f32> {
+    (0..Histogram::BINS)
+        .map(|i| {
+            let from = i.saturating_sub(2);
+            let to = (i + 3).min(Histogram::BINS);
+            let sum: u32 = bins.get(from..to).map_or(0, |w| w.iter().copied().fold(0u32, u32::saturating_add));
+            let n = to.saturating_sub(from).max(1);
+            sum as f32 / n as f32
+        })
+        .collect()
+}
+
+/// The height every drawn bin is normalized against: the 99th percentile of the bins' counts, so a
+/// single spike (a blown sky, a crushed black) does not flatten the rest of the curve.
+fn peak(all: &[&[f32]]) -> f32 {
+    let mut v: Vec<f32> = Vec::with_capacity(all.len() * Histogram::BINS);
+    for b in all {
+        v.extend_from_slice(b);
+    }
+    robust_peak(&v, 0.99)
+}
+
+/// Bin `i` of `bins` as a height in 0..1 against `peak`.
+fn height(scale: HistogramScale, bins: &[f32], i: usize, peak: f32) -> f32 {
+    scale.height(bins.get(i).copied().unwrap_or(0.0), peak)
+}
+
+/// The point the curve of bin `i` reaches in `track` (0 = the track's bottom, 1 = its top).
+fn point(track: Rect, i: usize, v: f32) -> Pos2 {
+    let x = track.left() + track.width() * i as f32 / (Histogram::BINS - 1) as f32;
+    pos2(x, track.bottom() - track.height() * if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 })
+}
+
+/// The horizontal span of bin `i` of a `width`-point-wide plot, a hair wider than its own column so
+/// neighbouring columns meet without a seam.
+fn column(left: f32, width: f32, i: usize) -> (f32, f32) {
+    let w = width / Histogram::BINS as f32;
+    let x0 = left + w * i as f32;
+    let x1 = if i + 1 < Histogram::BINS { x0 + w + 0.4 } else { left + width };
+    (x0, x1)
+}
+
+/// Add one filled rectangle to `mesh` (four vertices and two triangles: one draw call per plot).
+fn push_quad(mesh: &mut Mesh, rect: Rect, color: Color32) {
+    let k = u32::try_from(mesh.vertices.len()).unwrap_or(0);
+    for pos in [rect.left_top(), rect.right_top(), rect.right_bottom(), rect.left_bottom()] {
+        mesh.vertices.push(Vertex { pos, uv: Pos2::ZERO, color });
+    }
+    mesh.indices.extend([k, k.saturating_add(1), k.saturating_add(2), k, k.saturating_add(2), k.saturating_add(3)]);
+}
+
+/// The three vertical bands of one column of the RGB-overlap histogram, bottom up: with the three
+/// channel heights `h` the lowest band is where every channel reaches, the middle where the two
+/// taller ones do and the top where only the tallest does. Returns the bands and how many there are
+/// (0..=3; a column no channel reaches has none). `NaN` heights count as zero.
+pub fn overlap_bands(h: [f32; 3]) -> ([(f32, f32, [bool; 3]); 3], usize) {
+    // a height that isn't a number counts as zero, before the ordering, so a `NaN` channel cannot
+    // claim a band
+    let hs: [f32; 3] = h.map(|v| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 });
+    let mut order = [0usize, 1, 2];
+    order.sort_by(|a, b| hs[*a].total_cmp(&hs[*b]));
+    // the same heights, shortest first, with `order` saying which channel each came from
+    let sorted: [f32; 3] = order.map(|k| hs[k]);
+    let mut out = [(0.0f32, 0.0f32, [false; 3]); 3];
+    let mut n = 0;
+    for (k, (from, to)) in [(0usize, (0.0, sorted[0])), (1, (sorted[0], sorted[1])), (2, (sorted[1], sorted[2]))] {
+        if to <= from {
+            continue;
+        }
+        let mut parts = [false; 3];
+        for j in order.iter().skip(k) {
+            if let Some(slot) = parts.get_mut(*j) {
+                *slot = true;
+            }
+        }
+        if let Some(slot) = out.get_mut(n) {
+            *slot = (from, to, parts);
+            n += 1;
+        }
+    }
+    (out, n)
+}
+
+/// The colour of an overlap band: neutral light grey where all three channels reach, the secondary
+/// colours where two do, a channel's own colour where only that one does (so the plot adds up the
+/// way the channels do).
+pub fn blend_color(parts: [bool; 3]) -> Color32 {
+    match parts {
+        [true, true, true] => Color32::from_gray(235),
+        [true, true, false] => Color32::from_rgb(226, 210, 74),
+        [false, true, true] => Color32::from_rgb(74, 208, 214),
+        [true, false, true] => Color32::from_rgb(214, 74, 206),
+        [true, false, false] => CHANNEL_COLORS[0],
+        [false, true, false] => CHANNEL_COLORS[1],
+        [false, false, true] => CHANNEL_COLORS[2],
+        [false, false, false] => Color32::TRANSPARENT,
+    }
+}
+
+/// Add the trapezoid under one step of a curve to `mesh`: `a` and `b` are consecutive curve points
+/// and `bottom` the floor they stand on.
+fn push_step(mesh: &mut Mesh, a: Pos2, b: Pos2, bottom: f32, color: Color32) {
+    if a.y >= bottom && b.y >= bottom {
+        return;
+    }
+    let (x0, x1) = (a.x.min(b.x), a.x.max(b.x));
+    if x1 <= x0 {
+        return;
+    }
+    let k = u32::try_from(mesh.vertices.len()).unwrap_or(0);
+    for pos in [pos2(x0, a.y), pos2(x1, b.y), pos2(x1, bottom), pos2(x0, bottom)] {
+        mesh.vertices.push(Vertex { pos, uv: Pos2::ZERO, color });
+    }
+    mesh.indices.extend([k, k.saturating_add(1), k.saturating_add(2), k, k.saturating_add(2), k.saturating_add(3)]);
+}
+
+/// Fill the area under `bins` with `color`, inside `track`.
+fn fill_curve(p: &Painter, track: Rect, bins: &[f32], scale: HistogramScale, peak: f32, color: Color32) {
+    let mut mesh = Mesh::default();
+    let mut prev: Option<Pos2> = None;
+    for i in 0..Histogram::BINS {
+        let top = point(track, i, height(scale, bins, i, peak));
+        if let Some(a) = prev {
+            push_step(&mut mesh, a, top, track.bottom(), color);
+        }
+        prev = Some(top);
+    }
+    p.add(mesh);
+}
+
+/// The hairline of `bins` itself, over its fill.
+fn stroke_curve(p: &Painter, track: Rect, bins: &[f32], scale: HistogramScale, peak: f32, stroke: Stroke) {
+    let pts: Vec<Pos2> = (0..Histogram::BINS).map(|i| point(track, i, height(scale, bins, i, peak))).collect();
+    p.add(Shape::line(pts, stroke));
+}
+
+/// The six primary and secondary colour targets around the vectorscope graticule: label, pure
+/// display-encoded RGB (which determines the target's angle and radius in `scope_uv`), and the
+/// colour its ring and label are drawn in.
+pub const SCOPE_TARGETS: [(&str, [u8; 3], Color32); 6] = [
+    ("R", [255, 0, 0], CHANNEL_COLORS[0]),
+    ("Mg", [255, 0, 255], Color32::from_rgb(214, 74, 206)),
+    ("B", [0, 0, 255], CHANNEL_COLORS[2]),
+    ("Cy", [0, 255, 255], Color32::from_rgb(74, 208, 214)),
+    ("G", [0, 255, 0], CHANNEL_COLORS[1]),
+    ("Yl", [255, 255, 0], Color32::from_rgb(226, 210, 74)),
+];
+
+/// The skin-tone ("I") line angle on the vectorscope graticule: 123° counter-clockwise from `+Cb`
+/// (33° left of straight-up `+Cr`, between Red and Yellow).
+pub const SKIN_TONE_ANGLE_RAD: f32 = 123.0 * std::f32::consts::PI / 180.0;
+
+/// Centre and radius of the vectorscope disc inside `plot`.
+pub fn scope_disc(plot: Rect) -> (Pos2, f32) {
+    let radius = (plot.width().min(plot.height()) * 0.5 - 3.0).max(1.0);
+    (plot.center(), radius)
+}
+
+/// Screen position in `plot`'s vectorscope disc for normalized chrominance `(u, v)` (`+u` right,
+/// `+v` up).
+pub fn scope_pos(center: Pos2, radius: f32, u: f32, v: f32) -> Pos2 {
+    pos2(center.x + u * radius, center.y - v * radius)
+}
+
+/// Draw the polar chrominance vectorscope of `h` inside `plot` at `scale`.
+fn paint_vectorscope(p: &Painter, plot: Rect, h: &Histogram, scale: HistogramScale) {
+    let (center, radius) = scope_disc(plot);
+    // 1. Graticule backing, concentric saturation rings (25%, 50%, 75%), crosshairs and skin-tone line
+    p.circle_filled(center, radius, Color32::from_black_alpha(65));
+    let ring_stroke = Stroke::new(1.0, Color32::from_gray(84).gamma_multiply(0.55));
+    for r in [0.25, 0.50, 0.75] {
+        p.circle_stroke(center, radius * r, ring_stroke);
+    }
+    let axis_stroke = Stroke::new(1.0, Color32::from_gray(92).gamma_multiply(0.65));
+    p.line_segment([pos2(center.x - radius, center.y), pos2(center.x + radius, center.y)], axis_stroke);
+    p.line_segment([pos2(center.x, center.y - radius), pos2(center.x, center.y + radius)], axis_stroke);
+    let (su, sv) = (SKIN_TONE_ANGLE_RAD.cos(), SKIN_TONE_ANGLE_RAD.sin());
+    p.line_segment([center, scope_pos(center, radius, su, sv)], Stroke::new(1.0, Color32::from_rgb(218, 162, 106).gamma_multiply(0.75)));
+
+    // 2. 2D chrominance cloud: one quad per occupied cell, normalized against the 98th percentile
+    // of non-empty cells so a neutral background spike does not hide subtle colour casts
+    let non_zero: Vec<f32> = h.scope.iter().copied().filter(|&c| c > 0).map(|c| c as f32).collect();
+    let peak = robust_peak(&non_zero, 0.98);
+    let mid = Histogram::SCOPE_MID as f32;
+    let half = (radius / mid).max(0.85) * 0.62;
+    let mut mesh = Mesh::default();
+    for by in 0..Histogram::SCOPE_BINS {
+        for bx in 0..Histogram::SCOPE_BINS {
+            let count = h.scope_at(bx, by);
+            if count == 0 {
+                continue;
+            }
+            let u = (bx as f32 - mid) / mid;
+            let v = (mid - by as f32) / mid;
+            if u * u + v * v > 1.02 {
+                continue;
+            }
+            let d = scale.height(count as f32, peak);
+            let [cr, cg, cb] = scope_rgb(u, v);
+            let color = Color32::from_rgb(cr, cg, cb).gamma_multiply(0.28 + 0.72 * d);
+            let pt = scope_pos(center, radius, u, v);
+            push_quad(&mut mesh, Rect::from_center_size(pt, vec2(half * 2.0, half * 2.0)), color);
+        }
+    }
+    p.add(mesh);
+
+    // 3. Outer 100% ring and the six 75%-saturation primary/secondary target boxes and labels
+    p.circle_stroke(center, radius, Stroke::new(1.0, Color32::from_gray(124)));
+    for (label, rgb, color) in SCOPE_TARGETS {
+        let (u, v) = scope_uv(rgb[0], rgb[1], rgb[2]);
+        let target = scope_pos(center, radius, u * 0.75, v * 0.75);
+        p.circle_stroke(target, 2.8, Stroke::new(1.0, color.gamma_multiply(0.85)));
+        if radius >= 36.0 {
+            let label_pos = scope_pos(center, radius, u * 0.91, v * 0.91);
+            p.text(label_pos, Align2::CENTER_CENTER, label, FontId::proportional(9.5), color.gamma_multiply(0.9));
+        }
+    }
+}
+
+/// Draw `h`'s distribution in `plot`, in `mode` and at `scale`.
+pub fn paint_plot(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, scale: HistogramScale) {
+    if !(plot.width() > 1.0 && plot.height() > 1.0) {
+        return;
+    }
+    if mode == HistogramMode::Vectorscope {
+        paint_vectorscope(p, plot, h, scale);
+        return;
+    }
+    let (r, g, b) = (smooth(&h.r), smooth(&h.g), smooth(&h.b));
+    let (luma, chroma) = (smooth(&h.luma), smooth(&h.chroma));
+    match mode {
+        HistogramMode::RgbOverlap => {
+            let peak = peak(&[&r, &g, &b]);
+            let mut mesh = Mesh::default();
+            for i in 0..Histogram::BINS {
+                let hs = [height(scale, &r, i, peak), height(scale, &g, i, peak), height(scale, &b, i, peak)];
+                let (bands, n) = overlap_bands(hs);
+                let (x0, x1) = column(plot.left(), plot.width(), i);
+                for (from, to, parts) in bands.iter().take(n) {
+                    let rect = Rect::from_min_max(pos2(x0, plot.bottom() - plot.height() * *to), pos2(x1, plot.bottom() - plot.height() * *from));
+                    push_quad(&mut mesh, rect, blend_color(*parts));
+                }
+            }
+            p.add(mesh);
+            // the perceptual luminance as a hairline over the three channels
+            stroke_curve(p, plot, &luma, scale, peak, Stroke::new(1.0, Color32::from_gray(235).gamma_multiply(0.8)));
+        }
+        HistogramMode::Luminance => {
+            let peak = peak(&[&luma]);
+            fill_curve(p, plot, &luma, scale, peak, Color32::from_gray(118));
+            stroke_curve(p, plot, &luma, scale, peak, Stroke::new(1.5, Color32::from_gray(226)));
+        }
+        HistogramMode::Chroma => {
+            let peak = peak(&[&chroma]);
+            fill_curve(p, plot, &chroma, scale, peak, Color32::from_rgb(92, 100, 146));
+            stroke_curve(p, plot, &chroma, scale, peak, Stroke::new(1.5, Color32::from_rgb(190, 200, 244)));
+        }
+        HistogramMode::ChannelsSeparated => {
+            // one scale for all three tracks, so their peaks can be compared at a glance
+            let peak = peak(&[&r, &g, &b]);
+            let gap = 3.0;
+            let track_h = ((plot.height() - gap * 2.0) / 3.0).max(1.0);
+            for (k, bins) in [&r, &g, &b].into_iter().enumerate() {
+                let top = plot.top() + (track_h + gap) * k as f32;
+                let track = Rect::from_min_max(pos2(plot.left(), top), pos2(plot.right(), (top + track_h).min(plot.bottom())));
+                let color = CHANNEL_COLORS.get(k).copied().unwrap_or(Color32::GRAY);
+                fill_curve(p, track, bins, scale, peak, color.gamma_multiply(0.45));
+                stroke_curve(p, track, bins, scale, peak, Stroke::new(1.5, color));
+            }
+        }
+        HistogramMode::Vectorscope => {}
+    }
 }
 
 #[cfg(test)]
@@ -338,5 +641,102 @@ mod tests {
         assert_eq!(active("light.blacks", 0.0, false).readout().as_deref(), Some("Blacks: 0"));
         assert_eq!(active("light.highlights", -100.0, false).readout().as_deref(), Some("Highlights: -100"));
         assert_eq!(active("light.whites", 13.0, false).readout().as_deref(), Some("Whites: +13"));
+    }
+
+    /// The overlap bands add the channels up: the bottom band is where every channel reaches, the
+    /// middle where the two taller ones do, the top where only the tallest does.
+    #[test]
+    fn the_overlap_bands_stack_by_channel_height() {
+        // red 0.2, green 0.6, blue 0.9
+        let (bands, n) = overlap_bands([0.2, 0.6, 0.9]);
+        assert_eq!(n, 3);
+        assert_eq!(bands[0], (0.0, 0.2, [true, true, true]), "all three");
+        assert_eq!(bands[1], (0.2, 0.6, [false, true, true]), "green + blue = cyan");
+        assert_eq!(bands[2], (0.6, 0.9, [false, false, true]), "blue alone");
+        // the order the channels are given in does not matter
+        assert_eq!(overlap_bands([0.9, 0.2, 0.6]).0[1].2, [true, false, true], "red + blue = magenta");
+        // equal heights make one band, empty ones make none
+        let (bands, n) = overlap_bands([0.5, 0.5, 0.5]);
+        assert_eq!((n, bands[0]), (1, (0.0, 0.5, [true; 3])));
+        assert_eq!(overlap_bands([0.0, 0.0, 0.0]).1, 0);
+        assert_eq!(overlap_bands([0.0, 0.0, 0.4]).1, 1, "only blue reaches anything");
+        // hostile heights stay inside the plot and never claim a channel that isn't there
+        let (bands, n) = overlap_bands([1.5, -1.0, f32::NAN]);
+        assert_eq!((n, bands[0]), (1, (0.0, 1.0, [true, false, false])), "the NaN and negative channels are absent");
+        for h in [[f32::NAN; 3], [f32::INFINITY, -1.0, 2.0], [0.0, 0.0, 0.0]] {
+            let (bands, n) = overlap_bands(h);
+            assert!(n <= 3);
+            for (from, to, _) in bands.iter().take(n) {
+                assert!((0.0..=1.0).contains(from) && to > from && *to <= 1.0, "{h:?} → ({from}, {to})");
+            }
+        }
+    }
+
+    /// An overlap band's colour is the sum of its channels: neutral where all three reach, the
+    /// secondary colours where a pair does, a channel's own colour where it is alone.
+    #[test]
+    fn an_overlap_band_takes_the_colour_of_its_channels() {
+        assert_eq!(blend_color([true, true, true]), Color32::from_gray(235), "neutral light grey");
+        assert_eq!(blend_color([true, true, false]), Color32::from_rgb(226, 210, 74), "yellow = R + G");
+        assert_eq!(blend_color([false, true, true]), Color32::from_rgb(74, 208, 214), "cyan = G + B");
+        assert_eq!(blend_color([true, false, true]), Color32::from_rgb(214, 74, 206), "magenta = R + B");
+        assert_eq!(blend_color([true, false, false]), CHANNEL_COLORS[0]);
+        assert_eq!(blend_color([false, true, false]), CHANNEL_COLORS[1]);
+        assert_eq!(blend_color([false, false, true]), CHANNEL_COLORS[2]);
+        assert_eq!(blend_color([false, false, false]), Color32::TRANSPARENT);
+        // the three primaries are distinct, and none of them is neutral
+        for (i, c) in CHANNEL_COLORS.iter().enumerate() {
+            assert!(c.r() != c.g() || c.g() != c.b(), "channel {i} is drawn in a colour");
+            assert_eq!(CHANNEL_COLORS.iter().filter(|o| *o == c).count(), 1);
+        }
+    }
+
+    /// The curves are smoothed (a one-bin spike spreads over five bins), short or hostile bin lists
+    /// still give one value per bin, and the peak ignores a spike.
+    #[test]
+    fn the_curve_smoothing_keeps_a_spike_from_drawing_as_a_needle() {
+        let mut spike = vec![0u32; Histogram::BINS];
+        spike[128] = 1000;
+        let s = smooth(&spike);
+        assert_eq!(s.len(), Histogram::BINS);
+        assert!(s[128] > 0.0 && s[128] < 1000.0, "{}", s[128]);
+        assert!(s[126] > 0.0 && s[130] > 0.0, "the spike reaches its neighbours");
+        assert_eq!(s[100], 0.0);
+        assert!(s.iter().all(|v| v.is_finite()));
+        assert_eq!(smooth(&[]).len(), Histogram::BINS, "no bins draws flat");
+        assert!(smooth(&[1, 2, 3]).iter().all(|v| v.is_finite()));
+        // the peak is the 99th percentile of the bins, so the spike does not flatten the rest
+        let spiked = peak(&[&s]);
+        assert!(spiked > 0.0 && spiked <= s[128], "the peak sits below the spike itself: {spiked} of {}", s[128]);
+        let flat = vec![4.0f32; Histogram::BINS];
+        assert_eq!(peak(&[&flat, &flat]), 4.0);
+        assert!(peak(&[]).is_finite() && peak(&[]) > 0.0, "an empty plot still has a scale");
+    }
+
+    /// The vectorscope fits inside the plot, puts neutral at its centre, and places the six 75 %
+    /// primary and secondary targets inside the disc in opposite pairs.
+    #[test]
+    fn the_vectorscope_fits_the_plot_and_places_its_six_targets_around_the_disc() {
+        let plot = Rect::from_min_max(pos2(20.0, 10.0), pos2(280.0, 166.0));
+        let (center, radius) = scope_disc(plot);
+        assert_eq!(center, plot.center());
+        assert!(radius > 40.0 && radius * 2.0 <= plot.height() && radius * 2.0 <= plot.width());
+        assert_eq!(scope_pos(center, radius, 0.0, 0.0), center, "neutral is the centre of the disc");
+        assert_eq!(scope_pos(center, radius, 1.0, 0.0), pos2(center.x + radius, center.y), "+Cb is right");
+        assert_eq!(scope_pos(center, radius, 0.0, 1.0), pos2(center.x, center.y - radius), "+Cr is up");
+        assert_eq!(SCOPE_TARGETS.len(), 6);
+        for &(label, rgb, _) in &SCOPE_TARGETS {
+            let (u, v) = scope_uv(rgb[0], rgb[1], rgb[2]);
+            let p = scope_pos(center, radius, u * 0.75, v * 0.75);
+            let dist = (p - center).length();
+            assert!(dist > radius * 0.35 && dist <= radius * 0.85, "{label} sits on the 75% ring: {dist} of {radius}");
+            assert!(plot.contains(p), "{label} stays inside the plot: {p:?}");
+        }
+        // opposite pairs (R/Cy, G/Mg, B/Yl) balance across the centre
+        for (a, b) in [(0, 3), (4, 1), (2, 5)] {
+            let (ua, va) = scope_uv(SCOPE_TARGETS[a].1[0], SCOPE_TARGETS[a].1[1], SCOPE_TARGETS[a].1[2]);
+            let (ub, vb) = scope_uv(SCOPE_TARGETS[b].1[0], SCOPE_TARGETS[b].1[1], SCOPE_TARGETS[b].1[2]);
+            assert!((ua + ub).abs() < 0.02 && (va + vb).abs() < 0.02, "{} vs {}: ({ua},{va}) + ({ub},{vb})", SCOPE_TARGETS[a].0, SCOPE_TARGETS[b].0);
+        }
     }
 }

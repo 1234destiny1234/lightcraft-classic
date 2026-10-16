@@ -114,6 +114,11 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // in grids S expands/collapses stacks (the engine command it shadows)
     ("view.softProof", "Soft Proofing", Some("S"), "View"),
     ("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View"),
+    // histograms & scopes (issue #206): which distribution the panel draws, and how tall its bins
+    // are. Both take the value to select, or step to the next one with no parameter, so the menu,
+    // a shortcut, the control channel and MCP all reach them by id.
+    ("view.histogram.mode", "Histogram Mode", None, "View"),
+    ("view.histogram.scale", "Histogram Scale", None, "View"),
     ("view.maskOverlay", "Show Mask Overlay", Some("O"), "View"),
     // Ctrl+Shift+O / Cmd+Shift+O: every mask's region at once, not just the selected one
     ("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View"),
@@ -1032,6 +1037,43 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "view.histogram" => {
             app.ui.histogram = !app.ui.histogram;
             Ok(Value::Null)
+        }
+        "view.histogram.mode" => {
+            // {mode?: rgb | luminance | channels | chroma}; no parameter steps to the next one, as
+            // the overlay-mode commands do. Selecting a mode shows the panel it is about.
+            use lcc_raster::HistogramMode;
+            let cur = HistogramMode::parse(&app.ui.histogram_mode).unwrap_or_default();
+            let next = match p.get("mode").and_then(Value::as_str) {
+                Some(m) => match HistogramMode::parse(m) {
+                    Some(v) => v,
+                    None => {
+                        let names: Vec<&str> = HistogramMode::ALL.iter().map(|m| m.name()).collect();
+                        return Some(Err(format!("view.histogram.mode: unknown mode `{m}` ({})", names.join("|"))));
+                    }
+                },
+                None => cur.next(),
+            };
+            app.ui.histogram_mode = next.name().into();
+            app.ui.histogram = true;
+            Ok(json!({"mode": next.name()}))
+        }
+        "view.histogram.scale" => {
+            // {scale?: linear | logarithmic}; no parameter steps to the other one
+            use lcc_raster::HistogramScale;
+            let cur = HistogramScale::parse(&app.ui.histogram_scale).unwrap_or_default();
+            let next = match p.get("scale").and_then(Value::as_str) {
+                Some(s) => match HistogramScale::parse(s) {
+                    Some(v) => v,
+                    None => {
+                        let names: Vec<&str> = HistogramScale::ALL.iter().map(|m| m.name()).collect();
+                        return Some(Err(format!("view.histogram.scale: unknown scale `{s}` ({})", names.join("|"))));
+                    }
+                },
+                None => cur.next(),
+            };
+            app.ui.histogram_scale = next.name().into();
+            app.ui.histogram = true;
+            Ok(json!({"scale": next.name()}))
         }
         "view.maskOverlay" => {
             app.ui.mask_overlay = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.mask_overlay);
