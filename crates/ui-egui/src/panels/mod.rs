@@ -19,6 +19,7 @@ pub mod faces;
 pub mod filterbar;
 pub mod folders;
 pub mod grid;
+pub mod histogram;
 pub mod keymap;
 pub mod keyword_list;
 pub mod keywording;
