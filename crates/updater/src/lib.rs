@@ -13,8 +13,8 @@
 //!    capped, and checked against the size the feed states and the release's `SHA256SUMS.txt`
 //!    ([`checksum`]) before it is renamed into place. A file that fails its check is deleted.
 //! 3. [`install`] says what installing will do ([`install::Plan`]) and, when asked, does it: the
-//!    Windows installer runs, a macOS disk image is mounted and its app copied over the running
-//!    one, an AppImage replaces itself, and anything else is laid out where the user can unpack
+//!    Windows installer runs, a macOS disk image is mounted and its app checked and swapped in for
+//!    the running one, an AppImage replaces itself, and anything else is laid out where the user can unpack
 //!    it. Every path ends with the app running again, or with a sentence saying what to do.
 //!
 //! Never a panic: no network, a rate-limited API, a release without a file for this machine, a
