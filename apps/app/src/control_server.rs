@@ -157,10 +157,11 @@ fn parse_line(bytes: &[u8]) -> Line {
     }
 }
 
-/// [`serve_lines`] on a socket, then close it so the peer reads every reply.
+/// [`serve_lines`] on a socket, then close it so the peer reads every reply. Reads and writes go
+/// through the one stream, not a `try_clone`: on Windows a cloned socket handle is inheritable, and
+/// a program the app starts (browser, Explorer, an editor) would keep the connection open (#1991).
 fn serve_stream(stream: TcpStream, token: &str, handle: impl FnMut(String, Value) -> Option<Value>) {
-    let Ok(read) = stream.try_clone() else { return };
-    serve_lines(read, &stream, token, handle);
+    serve_lines(&stream, &stream, token, handle);
     close_gracefully(&stream);
 }
 
