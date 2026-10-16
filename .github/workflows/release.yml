@@ -815,7 +815,8 @@ jobs:
         run: gh release upload "$TAG" --clobber -- dist/release/*
 
   release:
-    timeout-minutes: 10
+    # room for the cold build of the signing tool (fresh CARGO_HOME, no cache, nice 19) before the upload
+    timeout-minutes: 30
     name: Draft GitHub Release
     needs: [version, macos, windows, linux, flatpak, linux-riscv64, freebsd, web]
     # Finishes whatever built: a platform that failed is named in the run summary and the draft's notes,

@@ -174,6 +174,7 @@ fn an_appimage_is_not_downloaded_for_a_copy_installed_another_way() {
     let dir = scratch("not-appimage");
     let activity = Activity::default();
     let mut u = Updater::new(Some(dir.clone()));
+    u.trust_test_key(Some(test_key(5).1));
     let mut found = update("1.2.0");
     found.asset = lcc_updater::Asset {
         name: "app-1.2.0-linux-x86_64.AppImage".into(),
