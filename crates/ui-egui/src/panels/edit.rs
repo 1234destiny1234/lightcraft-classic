@@ -615,11 +615,14 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // rendered it)
     let hist = live.or_else(|| preview_histogram(app, id));
     let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
-    // an HDR edit's histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR label
-    // row under the plot
-    let hdr = hist.as_ref().and_then(|h| h.hdr);
+    let mode = super::histogram::mode_of(app);
+    let scale = super::histogram::scale_of(app);
+    // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
+    // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
+    let hdr = hist.as_ref().and_then(|h| h.hdr).filter(|_| !mode.is_scope());
     let legend = if hdr.is_some() { 26.0 } else { 0.0 };
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 118.0 + legend), Sense::click_and_drag());
+    let height = if mode.is_scope() { 184.0 } else { 118.0 + legend };
+    let (r, resp) = ui.allocate_exact_size(vec2(w, height), Sense::click_and_drag());
     crate::widgets::announce(&resp, crate::i18n::tr("Histogram"));
     register(ui.ctx(), "histogram", r);
     let p = ui.painter();
@@ -658,8 +661,6 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ));
     }
     let clipping = hist.as_ref().map(|h| h.clipping_channels());
-    let mode = super::histogram::mode_of(app);
-    let scale = super::histogram::scale_of(app);
     // HDR: SDR on the left half, a solid line at SDR white and dashed ones between the stops
     if let Some(b) = hdr {
         let x0 = plot.left() + plot.width() * b.from as f32 / 255.0;

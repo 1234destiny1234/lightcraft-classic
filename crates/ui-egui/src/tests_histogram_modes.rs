@@ -80,14 +80,14 @@ fn the_mode_and_scale_commands_select_step_and_reject_junk() {
     assert_eq!(h.app.ui.histogram_mode, "rgb", "the panel opens on the target app's own overlay");
     assert_eq!(h.app.ui.histogram_scale, "linear");
 
-    for mode in ["luminance", "channels", "chroma", "rgb"] {
+    for mode in ["luminance", "channels", "chroma", "vectorscope", "rgb"] {
         let out = h.app.run("view.histogram.mode", json!({"mode": mode})).expect("a known mode");
         assert_eq!(out["mode"], mode);
         assert_eq!(h.app.ui.histogram_mode, mode);
         h.step();
     }
     // no parameter: the next mode, wrapping at the end
-    for (from, to) in [("rgb", "luminance"), ("luminance", "channels"), ("channels", "chroma"), ("chroma", "rgb")] {
+    for (from, to) in [("rgb", "luminance"), ("luminance", "channels"), ("channels", "chroma"), ("chroma", "vectorscope"), ("vectorscope", "rgb")] {
         set(&mut h, "view.histogram.mode", "mode", from);
         let out = h.app.run("view.histogram.mode", json!({})).expect("a step");
         assert_eq!(out["mode"], to, "stepping from {from}");
@@ -105,7 +105,7 @@ fn the_mode_and_scale_commands_select_step_and_reject_junk() {
     // anything else is an error naming the values it takes, and changes nothing
     for bad in ["LUMINANCE", "parade", "", "rgb "] {
         let e = h.app.run("view.histogram.mode", json!({"mode": bad})).expect_err("an unknown mode");
-        assert!(e.contains("rgb|luminance|channels|chroma"), "{bad}: {e}");
+        assert!(e.contains("rgb|luminance|channels|chroma|vectorscope"), "{bad}: {e}");
         assert_eq!(h.app.ui.histogram_mode, "rgb");
     }
     let e = h.app.run("view.histogram.scale", json!({"scale": "log"})).expect_err("an unknown scale");
@@ -120,7 +120,7 @@ fn the_mode_and_scale_commands_select_step_and_reject_junk() {
     assert_eq!(h.app.ui.histogram_mode, "chroma");
     h.step();
 
-    // â€¦and a key the user gives one fires it, the way any other command's does
+    // …and a key the user gives one fires it, the way any other command's does
     set(&mut h, "view.histogram.mode", "mode", "rgb");
     let r = h.app.run("app.setShortcut", json!({"id": "view.histogram.mode", "shortcut": "Shift+U"})).expect("a free key");
     assert_eq!(r["shortcut"], "Shift+U", "{r}");
@@ -132,7 +132,9 @@ fn the_mode_and_scale_commands_select_step_and_reject_junk() {
 
 /// Each mode paints its own distribution: the RGB overlay only ever uses the seven additive
 /// colours, the luminance is neutral, the separated channels are the three channel colours in
-/// three tracks, and the chroma is its own colour Ã¢â‚¬â€ with the luminance hairline staying neutral.
+/// three tracks, the chroma is its own colour — with the luminance hairline staying neutral — and
+/// the vectorscope draws its circular graticule, six target boxes (`R`, `Mg`, `B`, `Cy`, `G`, `Yl`)
+/// and 2D chrominance cloud inside the disc.
 #[test]
 fn every_mode_paints_its_own_distribution() {
     let mut h = edit_panel();
@@ -195,6 +197,38 @@ fn every_mode_paints_its_own_distribution() {
             "a track is drawn in a channel's own colour, not {c:?}",
         );
     }
+
+    // the vectorscope gets a taller plot, paints its circular graticule and six hue targets, and
+    // does not offer 1D tonal-zone dragging across the disc
+    let plot_1d = rect(&h, "histogram:plot");
+    set(&mut h, "view.histogram.mode", "mode", "vectorscope");
+    h.step();
+    let plot_scope = rect(&h, "histogram:plot");
+    assert!(plot_scope.height() > plot_1d.height() + 40.0, "the scope gets room for its disc: {plot_scope:?} vs {plot_1d:?}");
+    let texts = h.painted_text();
+    for target in ["Vector", "R", "Mg", "B", "Cy", "G", "Yl"] {
+        assert!(texts.iter().any(|t| t == target), "the vectorscope draws {target}: {texts:?}");
+    }
+    let mut circles = 0usize;
+    let mut cloud_vertices = 0usize;
+    for shape in h.view.painted_shapes() {
+        match shape {
+            egui::Shape::Circle(c) if plot_scope.contains(c.center) => circles += 1,
+            egui::Shape::Mesh(m) => {
+                cloud_vertices += m.vertices.iter().filter(|v| plot_scope.contains(v.pos)).count();
+            }
+            _ => {}
+        }
+    }
+    assert!(circles >= 11, "the disc fill, four saturation rings and six hue target rings are drawn: {circles}");
+    assert!(cloud_vertices >= 4, "the photo's 2D chrominance cloud is drawn inside the disc: {cloud_vertices}");
+    let r = h.request("ui.hoverWidget", json!({"id": "histogram:plot", "fx": 0.5, "fy": 0.5}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert!(
+        !h.painted_text().iter().any(|t| t.starts_with("Exposure:")),
+        "hovering the vectorscope disc does not activate the 1D Exposure tonal zone",
+    );
 }
 
 /// The log scale draws the quiet end of the distribution higher than the linear one, and neither
@@ -240,7 +274,7 @@ fn the_panels_own_selector_lists_the_modes_and_scales() {
     assert!(egui::Popup::is_any_open(&h.view.ctx), "the selector's menu");
     assert!(!h.app.ui.show_clipping, "the selector is not the plot: a click on it leaves the overlay alone");
     let texts = h.painted_text();
-    for label in ["RGB Overlay", "Luminance", "Separated Channels", "Chroma", "Linear", "Logarithmic"] {
+    for label in ["RGB Overlay", "Luminance", "Separated Channels", "Chroma", "Vectorscope", "Linear", "Logarithmic"] {
         assert!(texts.iter().any(|t| t == label), "the menu lists {label}: {texts:?}");
     }
     // right-clicking the plot opens the same menu
@@ -274,7 +308,7 @@ fn the_mode_and_scale_survive_the_settings() {
     assert_eq!((old.histogram_mode.as_str(), old.histogram_scale.as_str()), ("rgb", "linear"));
     let junk = serde_json::from_str::<crate::UiState>(r#"{"histogramMode": "vector", "histogramScale": 7}"#).expect("a hand-edited file").sanitized();
     assert_eq!((junk.histogram_mode.as_str(), junk.histogram_scale.as_str()), ("rgb", "linear"), "junk is the default");
-    // Ã¢â‚¬Â¦and the panel draws the default rather than failing on it
+    // …and the panel draws the default rather than failing on it
     h.app.ui.histogram_mode = "vector".into();
     h.step();
     assert!(!plot_colors(&h).is_empty());

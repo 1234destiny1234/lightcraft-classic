@@ -14,7 +14,7 @@ pub mod histogram;
 pub mod morph;
 pub mod resample;
 
-pub use histogram::{Channel, Clipped, Clipping, HdrBins, Histogram, HistogramMode, HistogramScale, robust_peak};
+pub use histogram::{Channel, Clipped, Clipping, HdrBins, Histogram, HistogramMode, HistogramScale, robust_peak, scope_cell, scope_rgb, scope_uv};
 
 /// Run `f` over row chunks, in parallel when the `parallel` feature is on.
 pub fn par_rows<T: Send>(data: &mut [T], row_len: usize, f: impl Fn(usize, &mut [T]) + Sync + Send) {

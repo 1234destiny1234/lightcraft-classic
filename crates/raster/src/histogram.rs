@@ -1,8 +1,8 @@
-﻿//! Histograms of display-encoded images (what the Histogram panel shows).
+//! Histograms of display-encoded images (what the Histogram panel shows).
 //!
 //! Every histogram carries five 256-bin channels of the same pixels: red, green, blue, luminance
 //! (`0.2126 R + 0.7152 G + 0.0722 B` of the display-encoded values) and chroma (HSV saturation,
-//! `(max âˆ’ min) / max` of the display-encoded values). Which of them the panel draws, and how, is
+//! `(max − min) / max` of the display-encoded values). Which of them the panel draws, and how, is
 //! [`HistogramMode`]; how tall the bars are is [`HistogramScale`].
 //!
 //! An HDR histogram ([`Histogram::of_hdr`]) keeps the same 256 bins: the first
@@ -19,9 +19,14 @@ pub struct Histogram {
     pub g: Vec<u32>,
     pub b: Vec<u32>,
     pub luma: Vec<u32>,
-    /// HSV saturation of each pixel, `(max âˆ’ min) / max` of its display-encoded channels, in 256
+    /// HSV saturation of each pixel, `(max − min) / max` of its display-encoded channels, in 256
     /// bins (a neutral pixel is bin 0).
     pub chroma: Vec<u32>,
+    /// 2D chrominance grid (`SCOPE_BINS × SCOPE_BINS`, row-major top-to-bottom `+Cr..-Cr` and
+    /// left-to-right `-Cb..+Cb`) for the Vectorscope view ([`HistogramMode::Vectorscope`]). A
+    /// neutral pixel (`R == G == B`) lands in the middle cell `(SCOPE_MID, SCOPE_MID)`.
+    #[serde(skip)]
+    pub scope: Vec<u32>,
     pub total: u32,
     /// HDR histograms: the first bin above SDR white, and the stops above SDR white the last bin
     /// reaches. `None` for SDR histograms (every bin is SDR).
@@ -82,10 +87,13 @@ pub enum HistogramMode {
     ChannelsSeparated,
     /// One monochrome curve of the perceptual chroma (saturation).
     Chroma,
+    /// Polar chrominance scope (`Cb` horizontal, `Cr` vertical) with primary/secondary targets and
+    /// the skin-tone line.
+    Vectorscope,
 }
 
 impl HistogramMode {
-    pub const ALL: [HistogramMode; 4] = [Self::RgbOverlap, Self::Luminance, Self::ChannelsSeparated, Self::Chroma];
+    pub const ALL: [HistogramMode; 5] = [Self::RgbOverlap, Self::Luminance, Self::ChannelsSeparated, Self::Chroma, Self::Vectorscope];
 
     /// The id the commands, the control channel and the settings file use.
     pub fn name(self) -> &'static str {
@@ -94,6 +102,7 @@ impl HistogramMode {
             Self::Luminance => "luminance",
             Self::ChannelsSeparated => "channels",
             Self::Chroma => "chroma",
+            Self::Vectorscope => "vectorscope",
         }
     }
 
@@ -104,6 +113,7 @@ impl HistogramMode {
             Self::Luminance => "Luminance",
             Self::ChannelsSeparated => "Separated Channels",
             Self::Chroma => "Chroma",
+            Self::Vectorscope => "Vectorscope",
         }
     }
 
@@ -114,7 +124,13 @@ impl HistogramMode {
             Self::Luminance => "Luma",
             Self::ChannelsSeparated => "R/G/B",
             Self::Chroma => "Chroma",
+            Self::Vectorscope => "Vector",
         }
+    }
+
+    /// Whether this mode is a 2D scope rather than a left-to-right tonal curve.
+    pub fn is_scope(self) -> bool {
+        matches!(self, Self::Vectorscope)
     }
 
     /// The mode a settings file or command parameter names; `None` for anything else (callers fall
@@ -281,7 +297,7 @@ fn saturation_scale(max: u8) -> u32 {
     (255u32 << 16).checked_div(max as u32).unwrap_or(0)
 }
 
-/// The chroma bin of a display-encoded pixel: HSV saturation `(max âˆ’ min) / max`, 0..=255. A
+/// The chroma bin of a display-encoded pixel: HSV saturation `(max − min) / max`, 0..=255. A
 /// neutral or black pixel is bin 0.
 #[inline]
 fn chroma_bin(scale: &[u32; 256], r: u8, g: u8, b: u8) -> usize {
@@ -296,8 +312,69 @@ fn saturation_table() -> [u32; 256] {
     std::array::from_fn(|m| saturation_scale(m as u8))
 }
 
+/// The `(u, v)` chrominance coordinates of a display-encoded pixel in `[-1.0, 1.0]`, where
+/// `(0, 0)` is neutral (`r == g == b`), `+u` is towards blue (`Cb`) and `+v` is towards red (`Cr`).
+///
+/// The integer weights sum to zero (`-169 - 331 + 500 == 0` and `500 - 419 - 81 == 0`), so any
+/// neutral pixel lands at `(0.0, 0.0)` and every 8-bit colour stays inside the unit disc
+/// (`u² + v² < 1`).
+pub fn scope_uv(r: u8, g: u8, b: u8) -> (f32, f32) {
+    let (r, g, b) = (i32::from(r), i32::from(g), i32::from(b));
+    let cb = -169 * r - 331 * g + 500 * b;
+    let cr = 500 * r - 419 * g - 81 * b;
+    ((cb as f32 / 140_000.0).clamp(-1.0, 1.0), (cr as f32 / 140_000.0).clamp(-1.0, 1.0))
+}
+
+/// The `(bx, by)` cell in `0..Histogram::SCOPE_BINS` a display-encoded pixel lands in: `(32, 32)`
+/// is the neutral centre, `bx` increases with `+Cb` (right) and `by` increases with `-Cr` (down,
+/// screen order). Computed in integer arithmetic (`32 × 4375 == 140_000`).
+#[inline]
+pub fn scope_cell(r: u8, g: u8, b: u8) -> (usize, usize) {
+    let (r, g, b) = (i32::from(r), i32::from(g), i32::from(b));
+    let cb = -169 * r - 331 * g + 500 * b;
+    let cr = 500 * r - 419 * g - 81 * b;
+    let step = |v: i32| if v >= 0 { (v + 2187) / 4375 } else { (v - 2187) / 4375 };
+    let mid = Histogram::SCOPE_MID as i32;
+    let last = (Histogram::SCOPE_BINS - 1) as i32;
+    let bx = (mid + step(cb)).clamp(0, last) as usize;
+    let by = (mid - step(cr)).clamp(0, last) as usize;
+    (bx, by)
+}
+
+/// Display-encoded `[r, g, b]` colour of a vectorscope coordinate `(u, v)` in `[-1.0, 1.0]` at a
+/// readable mid-high luma: `(0, 0)` is neutral grey (`r == g == b`) and the six primaries /
+/// secondaries read in their own hues around the rim. Non-finite coordinates fall back to neutral.
+pub fn scope_rgb(u: f32, v: f32) -> [u8; 3] {
+    if !u.is_finite() || !v.is_finite() {
+        return [166, 166, 166];
+    }
+    let cb = u.clamp(-1.0, 1.0) * (140_000.0 / 255_000.0);
+    let cr = v.clamp(-1.0, 1.0) * (140_000.0 / 255_000.0);
+    let y = 0.65f32;
+    let r = (y + 1.402 * cr).clamp(0.0, 1.0);
+    let g = (y - 0.344_136 * cb - 0.714_136 * cr).clamp(0.0, 1.0);
+    let b = (y + 1.772 * cb).clamp(0.0, 1.0);
+    let byte = |x: f32| (x * 255.0 + 0.5) as u8;
+    [byte(r), byte(g), byte(b)]
+}
+
+#[inline]
+fn bump_scope(scope: &mut [u32], r: u8, g: u8, b: u8) {
+    let (bx, by) = scope_cell(r, g, b);
+    if let Some(c) = scope.get_mut(by * Histogram::SCOPE_BINS + bx) {
+        *c = c.saturating_add(1);
+    }
+}
+
 impl Histogram {
     pub const BINS: usize = 256;
+    /// Side length of the square vectorscope grid (odd so [`Self::SCOPE_MID`] is the exact neutral
+    /// origin `(0, 0)`).
+    pub const SCOPE_BINS: usize = 65;
+    /// Neutral centre index (`32`) along each axis of the vectorscope grid.
+    pub const SCOPE_MID: usize = Self::SCOPE_BINS / 2;
+    /// Total cells in [`Self::scope`] (`65 × 65 = 4,225`).
+    pub const SCOPE_CELLS: usize = Self::SCOPE_BINS * Self::SCOPE_BINS;
     /// HDR histograms: the first bin above SDR white (SDR takes the left half).
     pub const HDR_FROM: usize = Self::BINS / 2;
     /// Fraction of a channel's pixels at one end from which the panel calls that channel clipped
@@ -306,7 +383,12 @@ impl Histogram {
 
     fn empty(hdr: Option<HdrBins>) -> Histogram {
         let bins = || vec![0; Self::BINS];
-        Histogram { r: bins(), g: bins(), b: bins(), luma: bins(), chroma: bins(), total: 0, hdr }
+        Histogram { r: bins(), g: bins(), b: bins(), luma: bins(), chroma: bins(), scope: vec![0; Self::SCOPE_CELLS], total: 0, hdr }
+    }
+
+    /// Count in cell `(bx, by)` of the vectorscope grid, or 0 outside `0..SCOPE_BINS`.
+    pub fn scope_at(&self, bx: usize, by: usize) -> u32 {
+        if bx < Self::SCOPE_BINS && by < Self::SCOPE_BINS { self.scope.get(by * Self::SCOPE_BINS + bx).copied().unwrap_or(0) } else { 0 }
     }
 
     /// Histogram of linear RGB samples (1 = SDR white) reaching `stops` stops above SDR white.
@@ -318,21 +400,24 @@ impl Histogram {
         let step = (samples.len() / 1_000_000).max(1);
         for c in samples.iter().step_by(step) {
             let (r, g, b) = (c[0], c[1], c[2]);
-            // the same display encoding the SDR histogram bins by, so chroma means one thing
+            // the same display encoding the SDR histogram bins by, so chroma and the vectorscope
+            // mean one thing
             let e = lcc_color::transfer::encode_srgb8;
+            let (er, eg, eb) = (e(r), e(g), e(b));
             bump(&mut h.r, bins.bin(r));
             bump(&mut h.g, bins.bin(g));
             bump(&mut h.b, bins.bin(b));
             bump(&mut h.luma, bins.bin(0.2126 * r + 0.7152 * g + 0.0722 * b));
-            bump(&mut h.chroma, chroma_bin(&scale, e(r), e(g), e(b)));
+            bump(&mut h.chroma, chroma_bin(&scale, er, eg, eb));
+            bump_scope(&mut h.scope, er, eg, eb);
             h.total = h.total.saturating_add(1);
         }
         h
     }
 
     /// HDR histogram of per-pixel bins already computed with `bins` (`[r, g, b, luma]` each),
-    /// visiting at most ~1 MP of them. Chroma is binned from the channels' own bin indices, the
-    /// only colour this caller still has.
+    /// visiting at most ~1 MP of them. Chroma and the vectorscope are binned from the channels' own
+    /// bin indices, the only colour this caller still has.
     pub fn of_bins(px: impl ExactSizeIterator<Item = [u8; 4]>, bins: HdrBins) -> Histogram {
         let mut h = Self::empty(Some(bins));
         let scale = saturation_table();
@@ -343,32 +428,38 @@ impl Histogram {
             bump(&mut h.b, b as usize);
             bump(&mut h.luma, l as usize);
             bump(&mut h.chroma, chroma_bin(&scale, r, g, b));
+            bump_scope(&mut h.scope, r, g, b);
             h.total = h.total.saturating_add(1);
         }
         h
     }
 
     /// The histogram as flat words (to cross a worker boundary): r, g, b, luma, chroma (256 each),
-    /// the total, then the first HDR bin (0: SDR) and the HDR stops as `f32` bits.
+    /// the total, the first HDR bin (0: SDR) and the HDR stops as `f32` bits, then the vectorscope
+    /// grid (`SCOPE_CELLS` words).
     pub fn to_words(&self) -> Vec<u32> {
-        let mut w = Vec::with_capacity(5 * Self::BINS + 3);
+        let mut w = Vec::with_capacity(5 * Self::BINS + 3 + Self::SCOPE_CELLS);
         for ch in [&self.r, &self.g, &self.b, &self.luma, &self.chroma] {
             w.extend(ch.iter().copied().chain(std::iter::repeat(0)).take(Self::BINS));
         }
         w.push(self.total);
         let (from, stops) = self.hdr.map_or((0, 0.0), |b| (b.from as u32, b.stops));
         w.extend([from, stops.to_bits()]);
+        w.extend(self.scope.iter().copied().chain(std::iter::repeat(0)).take(Self::SCOPE_CELLS));
         w
     }
 
-    /// [`Histogram::to_words`] back; also takes the older layouts without the chroma channel or the
-    /// HDR words. `None` for anything malformed.
+    /// [`Histogram::to_words`] back; also takes the older layouts without the vectorscope grid, the
+    /// chroma channel or the HDR words. `None` for anything malformed.
     pub fn from_words(w: &[u32]) -> Option<Histogram> {
         let n = Self::BINS;
-        // 4 channels (before chroma existed) or 5, with or without the two HDR words
-        let channels = match w.len() {
-            l if l == 4 * n + 1 || l == 4 * n + 3 => 4,
-            l if l == 5 * n + 1 || l == 5 * n + 3 => 5,
+        let sc = Self::SCOPE_CELLS;
+        // 4 channels (before chroma existed) or 5, with or without the two HDR words and the
+        // vectorscope tail
+        let (channels, has_scope) = match w.len() {
+            l if l == 4 * n + 1 || l == 4 * n + 3 => (4, false),
+            l if l == 5 * n + 1 || l == 5 * n + 3 => (5, false),
+            l if l == 5 * n + 3 + sc => (5, true),
             _ => return None,
         };
         let ch = |k: usize| w.get(k * n..(k + 1) * n).map(<[u32]>::to_vec);
@@ -380,7 +471,8 @@ impl Histogram {
             }
             _ => None,
         };
-        Some(Histogram { r: ch(0)?, g: ch(1)?, b: ch(2)?, luma: ch(3)?, chroma, total: *w.get(channels * n)?, hdr })
+        let scope = if has_scope { w.get(5 * n + 3..5 * n + 3 + sc)?.to_vec() } else { vec![0; sc] };
+        Some(Histogram { r: ch(0)?, g: ch(1)?, b: ch(2)?, luma: ch(3)?, chroma, scope, total: *w.get(channels * n)?, hdr })
     }
 
     /// The five bin sets, by [`Channel`].
@@ -418,6 +510,7 @@ impl Histogram {
                 let l = (p[0] as u32 * 54 + p[1] as u32 * 183 + p[2] as u32 * 19) >> 8;
                 bump(&mut h.luma, (l.min(255)) as usize);
                 bump(&mut h.chroma, chroma_bin(&scale, p[0], p[1], p[2]));
+                bump_scope(&mut h.scope, p[0], p[1], p[2]);
                 h.total = h.total.saturating_add(1);
             }
         }
@@ -505,6 +598,41 @@ mod tests {
         assert_eq!(Histogram::of_srgb8(&Rgba8::from_fn(4, 4, |_, _| [0, 0, 0, 255])).chroma[0], 16);
     }
 
+    /// The vectorscope places every neutral pixel in the middle cell, places opposite primaries /
+    /// secondaries symmetrically across the centre inside the unit disc, and colours each cell by
+    /// its own chrominance.
+    #[test]
+    fn vectorscope_places_neutrals_at_the_centre_and_primaries_around_the_disc() {
+        let mid = Histogram::SCOPE_MID;
+        let ramp = Rgba8::from_fn(256, 1, |x, _| [x as u8, x as u8, x as u8, 255]);
+        let h = Histogram::of_srgb8(&ramp);
+        assert_eq!(h.scope_at(mid, mid), 256, "every neutral pixel lands in the exact centre");
+        assert_eq!(h.scope.iter().copied().sum::<u32>(), 256);
+        assert_eq!(h.scope_at(Histogram::SCOPE_BINS, 0), 0, "outside the grid is 0");
+        assert_eq!(scope_uv(128, 128, 128), (0.0, 0.0));
+        assert_eq!(scope_rgb(0.0, 0.0), [166, 166, 166], "the centre cell is neutral grey");
+        assert_eq!(scope_rgb(f32::NAN, f32::INFINITY), [166, 166, 166]);
+
+        // Opposite colour pairs sit on opposite sides of `(mid, mid)` and stay inside the circle.
+        for ([r0, g0, b0], [r1, g1, b1]) in [([255, 0, 0], [0, 255, 255]), ([0, 255, 0], [255, 0, 255]), ([0, 0, 255], [255, 255, 0])] {
+            let (x0, y0) = scope_cell(r0, g0, b0);
+            let (x1, y1) = scope_cell(r1, g1, b1);
+            assert_eq!((x0 + x1, y0 + y1), (2 * mid, 2 * mid), "antipodes across the centre");
+            for (x, y) in [(x0, y0), (x1, y1)] {
+                let (dx, dy) = (x as isize - mid as isize, y as isize - mid as isize);
+                assert!(dx * dx + dy * dy > 16 * 16 && dx * dx + dy * dy <= (mid * mid) as isize, "({x}, {y})");
+            }
+        }
+        // Red is upper-left (-Cb, +Cr -> bx < mid, by < mid) and Blue is to the right (+Cb -> bx > mid).
+        let (rx, ry) = scope_cell(255, 0, 0);
+        let (bx, _) = scope_cell(0, 0, 255);
+        assert!(rx < mid && ry < mid && bx > mid, "red=({rx},{ry}), blue x={bx}");
+        let red_rgb = scope_rgb(scope_uv(255, 0, 0).0, scope_uv(255, 0, 0).1);
+        let blue_rgb = scope_rgb(scope_uv(0, 0, 255).0, scope_uv(0, 0, 255).1);
+        assert!(red_rgb[0] > red_rgb[1] + 60 && red_rgb[0] > red_rgb[2] + 60, "{red_rgb:?}");
+        assert!(blue_rgb[2] > blue_rgb[0] + 60 && blue_rgb[2] > blue_rgb[1] + 60, "{blue_rgb:?}");
+    }
+
     /// `height` normalizes either way, never draws above the plot, and hostile input draws flat.
     #[test]
     fn the_scale_normalizes_and_stays_in_range() {
@@ -522,7 +650,7 @@ mod tests {
             for count in [0.0, 1.0, f32::NAN, f32::INFINITY, 1e30] {
                 for s in HistogramScale::ALL {
                     let h = s.height(count, peak);
-                    assert!((0.0..=1.0).contains(&h) && h.is_finite(), "{s:?} {count} {peak} â†’ {h}");
+                    assert!((0.0..=1.0).contains(&h) && h.is_finite(), "{s:?} {count} {peak} → {h}");
                 }
             }
         }
@@ -575,18 +703,20 @@ mod tests {
     fn modes_and_scales_round_trip_through_their_names() {
         assert_eq!(HistogramMode::default(), HistogramMode::RgbOverlap);
         assert_eq!(HistogramScale::default(), HistogramScale::Linear);
-        assert_eq!(HistogramMode::ALL.len(), 4);
+        assert_eq!(HistogramMode::ALL.len(), 5);
         assert_eq!(HistogramScale::ALL.len(), 2);
         for m in HistogramMode::ALL {
             assert_eq!(HistogramMode::parse(m.name()), Some(m));
             assert!(!m.label().is_empty());
+            assert_eq!(m.is_scope(), m == HistogramMode::Vectorscope);
         }
         for s in HistogramScale::ALL {
             assert_eq!(HistogramScale::parse(s.name()), Some(s));
             assert!(!s.label().is_empty());
         }
         assert_eq!(HistogramMode::RgbOverlap.next(), HistogramMode::Luminance);
-        assert_eq!(HistogramMode::Chroma.next(), HistogramMode::RgbOverlap, "the cycle wraps");
+        assert_eq!(HistogramMode::Chroma.next(), HistogramMode::Vectorscope);
+        assert_eq!(HistogramMode::Vectorscope.next(), HistogramMode::RgbOverlap, "the cycle wraps");
         assert_eq!(HistogramScale::Logarithmic.next(), HistogramScale::Linear);
         assert_eq!(HistogramMode::parse("nope"), None);
         assert_eq!(HistogramScale::parse(""), None);
@@ -627,21 +757,27 @@ mod tests {
         // bin 0 and the one with a colourless NaN/negative pair plus +inf lands at the top
         assert_eq!(h.chroma[0], 4, "the four neutral samples (black, 1, 4 and 16)");
         assert_eq!(h.chroma[255], 1, "+inf blue against a black red and green");
+        assert_eq!(h.scope_at(Histogram::SCOPE_MID, Histogram::SCOPE_MID), 4, "the four neutral HDR samples sit at the vectorscope centre");
     }
 
     #[test]
     fn words_round_trip_and_reject_garbage() {
         let img = Rgba8::from_fn(8, 8, |x, y| [(x * 30) as u8, (y * 30) as u8, 9, 255]);
         let sdr = Histogram::of_srgb8(&img);
-        assert_eq!(sdr.to_words().len(), 5 * Histogram::BINS + 3);
+        assert_eq!(sdr.to_words().len(), 5 * Histogram::BINS + 3 + Histogram::SCOPE_CELLS);
         assert_eq!(Histogram::from_words(&sdr.to_words()), Some(sdr.clone()));
         let hdr = Histogram::of_hdr(&[[0.5, 2.0, 9.0]], 4.0);
         assert_eq!(Histogram::from_words(&hdr.to_words()), Some(hdr));
-        // the older layouts (four channels, with or without the HDR words) still read: chroma empty
+        // the older layouts (four or five channels without the vectorscope tail) still read
         let four = 4 * Histogram::BINS;
         let mut legacy: Vec<u32> = sdr.to_words()[..four].to_vec();
         legacy.push(sdr.total);
-        assert_eq!(Histogram::from_words(&legacy), Some(Histogram { chroma: vec![0; Histogram::BINS], ..sdr.clone() }));
+        assert_eq!(
+            Histogram::from_words(&legacy),
+            Some(Histogram { chroma: vec![0; Histogram::BINS], scope: vec![0; Histogram::SCOPE_CELLS], ..sdr.clone() }),
+        );
+        let five_no_scope = &sdr.to_words()[..5 * Histogram::BINS + 3];
+        assert_eq!(Histogram::from_words(five_no_scope), Some(Histogram { scope: vec![0; Histogram::SCOPE_CELLS], ..sdr.clone() }),);
         assert_eq!(Histogram::from_words(&[1, 2, 3]), None);
         assert_eq!(Histogram::from_words(&legacy[..four]), None, "a truncated histogram is nothing");
         assert_eq!(Histogram::from_words(&sdr.to_words()[..four + 2]), None, "a half-written HDR tail is nothing");
@@ -665,11 +801,11 @@ mod tests {
         }
     }
 
-    /// Measuring a real preview, to keep the chroma channel honest: run
-    /// `cargo test -p lightcraft-raster --release -- --ignored --nocapture histogram_cost`.
+    /// Measuring a real preview, to keep the chroma and vectorscope channels honest: run
+    /// `cargo test -p lcc-raster --release -- --ignored --nocapture histogram_cost`.
     /// A 1.7 MP image samples 0.43 MP (step 2): ~1.6 ms for the four older channels, ~2.7 ms with
-    /// chroma (a noisy shared machine reads 2.6â€“3.7 ms), so a 2.5 MP preview stays well inside the
-    /// 16 ms slider-draft budget.
+    /// chroma and the vectorscope, so a 2.5 MP preview stays well inside the 16 ms slider-draft
+    /// budget.
     #[test]
     #[ignore = "timing probe"]
     fn histogram_cost() {

@@ -1,4 +1,4 @@
-﻿//! The histogram's tonal zones *and* its plot, as in Lightroom Classic: hovering a zone names it
+//! The histogram's tonal zones *and* its plot, as in Lightroom Classic: hovering a zone names it
 //! and shows its value, dragging one sideways moves its Basic control, and a double-click puts that
 //! control back to its default.
 //!
@@ -11,10 +11,10 @@
 //! `view.histogram.scale` selected (see [`paint_plot`]).
 
 use egui::epaint::{Mesh, Vertex};
-use egui::{Color32, Painter, Pos2, Rect, Response, Shape, Stroke, pos2};
+use egui::{Align2, Color32, FontId, Painter, Pos2, Rect, Response, Shape, Stroke, pos2, vec2};
 use lcc_catalog::PhotoId;
 use lcc_develop::{ControlSpec, controls};
-use lcc_raster::{Histogram, HistogramMode, HistogramScale, robust_peak};
+use lcc_raster::{Histogram, HistogramMode, HistogramScale, robust_peak, scope_rgb, scope_uv};
 use serde_json::json;
 
 use crate::LccApp;
@@ -120,6 +120,12 @@ impl Active {
 /// `plot` is the plot's rect: the strip under it (the readout and the EXIF line) is not a zone, and
 /// neither are the clipping buttons in the plot's top corners, which take their own presses.
 pub fn interact(app: &mut LccApp, ui: &egui::Ui, resp: &Response, plot: Rect, id: PhotoId) -> Option<Active> {
+    if mode_of(app).is_scope() {
+        if matches!(app.gesture, Some(Gesture::HistogramDrag { .. })) {
+            finish(app);
+        }
+        return None;
+    }
     let width = plot.width();
     let in_plot = |q: Pos2| plot.contains(q);
     let zone_of = |q: Pos2| in_plot(q).then(|| (q.x - plot.left()) / width).and_then(zone_at);
@@ -128,7 +134,7 @@ pub fn interact(app: &mut LccApp, ui: &egui::Ui, resp: &Response, plot: Rect, id
     let hovered = resp.hover_pos().and_then(zone_of);
     let pressed = ui.input(|i| i.pointer.press_origin()).or_else(|| resp.interact_pointer_pos()).and_then(zone_of);
     let was_dragging = matches!(app.gesture, Some(Gesture::HistogramDrag { .. }));
-    // a drag cut short â€” the release went elsewhere, the panel closed â€” leaves the interaction open:
+    // a drag cut short — the release went elsewhere, the panel closed — leaves the interaction open:
     // with no button held the gesture is over, as the crop tool's gestures decide too
     if was_dragging && !resp.drag_stopped() && !ui.input(|i| i.pointer.any_down()) {
         finish(app);
@@ -151,8 +157,8 @@ pub fn interact(app: &mut LccApp, ui: &egui::Ui, resp: &Response, plot: Rect, id
             // The frame a drag is first reported, take the whole travel from the press: egui only
             // starts reporting a drag once the pointer has left its click threshold, and those first
             // points are the user's movement too. Later frames add their own delta (a one-frame flick
-            // reports the drag as started and stopped together: then this is its delta), so Shift â€”
-            // a tenth â€” scales the travel it was held for, as the sliders' fine drag does. The
+            // reports the drag as started and stopped together: then this is its delta), so Shift —
+            // a tenth — scales the travel it was held for, as the sliders' fine drag does. The
             // unrounded value is kept from frame to frame, so a slow drag adds up instead of rounding
             // back to the step it already has.
             let dx = if resp.drag_started() {
@@ -217,7 +223,7 @@ pub fn paint_zone(painter: &Painter, plot: Rect, active: &Active, tokens: &Token
 // ------------------------------------------------------------------ the distribution
 
 /// The histogram mode the settings name (as `view.histogram.mode` writes it). A value written by
-/// another build â€” or hand-edited â€” reads as the default rather than failing.
+/// another build — or hand-edited — reads as the default rather than failing.
 pub fn mode_of(app: &LccApp) -> HistogramMode {
     HistogramMode::parse(&app.ui.histogram_mode).unwrap_or_default()
 }
@@ -368,9 +374,96 @@ fn stroke_curve(p: &Painter, track: Rect, bins: &[f32], scale: HistogramScale, p
     p.add(Shape::line(pts, stroke));
 }
 
+/// The six primary and secondary colour targets around the vectorscope graticule: label, pure
+/// display-encoded RGB (which determines the target's angle and radius in `scope_uv`), and the
+/// colour its ring and label are drawn in.
+pub const SCOPE_TARGETS: [(&str, [u8; 3], Color32); 6] = [
+    ("R", [255, 0, 0], CHANNEL_COLORS[0]),
+    ("Mg", [255, 0, 255], Color32::from_rgb(214, 74, 206)),
+    ("B", [0, 0, 255], CHANNEL_COLORS[2]),
+    ("Cy", [0, 255, 255], Color32::from_rgb(74, 208, 214)),
+    ("G", [0, 255, 0], CHANNEL_COLORS[1]),
+    ("Yl", [255, 255, 0], Color32::from_rgb(226, 210, 74)),
+];
+
+/// The skin-tone ("I") line angle on the vectorscope graticule: 123° counter-clockwise from `+Cb`
+/// (33° left of straight-up `+Cr`, between Red and Yellow).
+pub const SKIN_TONE_ANGLE_RAD: f32 = 123.0 * std::f32::consts::PI / 180.0;
+
+/// Centre and radius of the vectorscope disc inside `plot`.
+pub fn scope_disc(plot: Rect) -> (Pos2, f32) {
+    let radius = (plot.width().min(plot.height()) * 0.5 - 3.0).max(1.0);
+    (plot.center(), radius)
+}
+
+/// Screen position in `plot`'s vectorscope disc for normalized chrominance `(u, v)` (`+u` right,
+/// `+v` up).
+pub fn scope_pos(center: Pos2, radius: f32, u: f32, v: f32) -> Pos2 {
+    pos2(center.x + u * radius, center.y - v * radius)
+}
+
+/// Draw the polar chrominance vectorscope of `h` inside `plot` at `scale`.
+fn paint_vectorscope(p: &Painter, plot: Rect, h: &Histogram, scale: HistogramScale) {
+    let (center, radius) = scope_disc(plot);
+    // 1. Graticule backing, concentric saturation rings (25%, 50%, 75%), crosshairs and skin-tone line
+    p.circle_filled(center, radius, Color32::from_black_alpha(65));
+    let ring_stroke = Stroke::new(1.0, Color32::from_gray(84).gamma_multiply(0.55));
+    for r in [0.25, 0.50, 0.75] {
+        p.circle_stroke(center, radius * r, ring_stroke);
+    }
+    let axis_stroke = Stroke::new(1.0, Color32::from_gray(92).gamma_multiply(0.65));
+    p.line_segment([pos2(center.x - radius, center.y), pos2(center.x + radius, center.y)], axis_stroke);
+    p.line_segment([pos2(center.x, center.y - radius), pos2(center.x, center.y + radius)], axis_stroke);
+    let (su, sv) = (SKIN_TONE_ANGLE_RAD.cos(), SKIN_TONE_ANGLE_RAD.sin());
+    p.line_segment([center, scope_pos(center, radius, su, sv)], Stroke::new(1.0, Color32::from_rgb(218, 162, 106).gamma_multiply(0.75)));
+
+    // 2. 2D chrominance cloud: one quad per occupied cell, normalized against the 98th percentile
+    // of non-empty cells so a neutral background spike does not hide subtle colour casts
+    let non_zero: Vec<f32> = h.scope.iter().copied().filter(|&c| c > 0).map(|c| c as f32).collect();
+    let peak = robust_peak(&non_zero, 0.98);
+    let mid = Histogram::SCOPE_MID as f32;
+    let half = (radius / mid).max(0.85) * 0.62;
+    let mut mesh = Mesh::default();
+    for by in 0..Histogram::SCOPE_BINS {
+        for bx in 0..Histogram::SCOPE_BINS {
+            let count = h.scope_at(bx, by);
+            if count == 0 {
+                continue;
+            }
+            let u = (bx as f32 - mid) / mid;
+            let v = (mid - by as f32) / mid;
+            if u * u + v * v > 1.02 {
+                continue;
+            }
+            let d = scale.height(count as f32, peak);
+            let [cr, cg, cb] = scope_rgb(u, v);
+            let color = Color32::from_rgb(cr, cg, cb).gamma_multiply(0.28 + 0.72 * d);
+            let pt = scope_pos(center, radius, u, v);
+            push_quad(&mut mesh, Rect::from_center_size(pt, vec2(half * 2.0, half * 2.0)), color);
+        }
+    }
+    p.add(mesh);
+
+    // 3. Outer 100% ring and the six 75%-saturation primary/secondary target boxes and labels
+    p.circle_stroke(center, radius, Stroke::new(1.0, Color32::from_gray(124)));
+    for (label, rgb, color) in SCOPE_TARGETS {
+        let (u, v) = scope_uv(rgb[0], rgb[1], rgb[2]);
+        let target = scope_pos(center, radius, u * 0.75, v * 0.75);
+        p.circle_stroke(target, 2.8, Stroke::new(1.0, color.gamma_multiply(0.85)));
+        if radius >= 36.0 {
+            let label_pos = scope_pos(center, radius, u * 0.91, v * 0.91);
+            p.text(label_pos, Align2::CENTER_CENTER, label, FontId::proportional(9.5), color.gamma_multiply(0.9));
+        }
+    }
+}
+
 /// Draw `h`'s distribution in `plot`, in `mode` and at `scale`.
 pub fn paint_plot(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, scale: HistogramScale) {
     if !(plot.width() > 1.0 && plot.height() > 1.0) {
+        return;
+    }
+    if mode == HistogramMode::Vectorscope {
+        paint_vectorscope(p, plot, h, scale);
         return;
     }
     let (r, g, b) = (smooth(&h.r), smooth(&h.g), smooth(&h.b));
@@ -415,6 +508,7 @@ pub fn paint_plot(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
                 stroke_curve(p, track, bins, scale, peak, Stroke::new(1.5, color));
             }
         }
+        HistogramMode::Vectorscope => {}
     }
 }
 
@@ -445,8 +539,8 @@ mod tests {
         }
     }
 
-    /// A position across the plot picks its zone, at the boundaries too; anything off the plot â€”
-    /// including NaN â€” picks none.
+    /// A position across the plot picks its zone, at the boundaries too; anything off the plot —
+    /// including NaN — picks none.
     #[test]
     fn a_position_across_the_plot_picks_its_zone() {
         for (fx, control) in [
@@ -492,7 +586,7 @@ mod tests {
     fn a_drag_sweeps_the_control_and_clamps_at_its_ends() {
         let exposure = spec_of("light.exposure");
         let blacks = spec_of("light.blacks");
-        assert!((dragged(exposure, 0.0, 20.0, 200.0, false) - 1.0).abs() < 1e-9, "a tenth of the plot is a tenth of Â±5 EV");
+        assert!((dragged(exposure, 0.0, 20.0, 200.0, false) - 1.0).abs() < 1e-9, "a tenth of the plot is a tenth of ±5 EV");
         assert!((dragged(blacks, 0.0, 20.0, 200.0, false) - 20.0).abs() < 1e-9);
         assert!((dragged(blacks, 0.0, 200.0, 200.0, false) - 100.0).abs() < 1e-9);
         assert_eq!(dragged(blacks, 0.0, 400.0, 200.0, false), 100.0, "past the right end it stays");
@@ -528,7 +622,7 @@ mod tests {
         assert!((quantized(exposure, 0.454) - 0.45).abs() < 1e-9, "{}", quantized(exposure, 0.454));
         for v in [-1e9, -3.7, 0.0, 2.2, 1e9] {
             let q = quantized(exposure, v);
-            assert!((exposure.min..=exposure.max).contains(&q), "{v} â†’ {q}");
+            assert!((exposure.min..=exposure.max).contains(&q), "{v} → {q}");
         }
     }
 
@@ -573,7 +667,7 @@ mod tests {
             let (bands, n) = overlap_bands(h);
             assert!(n <= 3);
             for (from, to, _) in bands.iter().take(n) {
-                assert!((0.0..=1.0).contains(from) && to > from && *to <= 1.0, "{h:?} â†’ ({from}, {to})");
+                assert!((0.0..=1.0).contains(from) && to > from && *to <= 1.0, "{h:?} → ({from}, {to})");
             }
         }
     }
@@ -617,5 +711,32 @@ mod tests {
         let flat = vec![4.0f32; Histogram::BINS];
         assert_eq!(peak(&[&flat, &flat]), 4.0);
         assert!(peak(&[]).is_finite() && peak(&[]) > 0.0, "an empty plot still has a scale");
+    }
+
+    /// The vectorscope fits inside the plot, puts neutral at its centre, and places the six 75 %
+    /// primary and secondary targets inside the disc in opposite pairs.
+    #[test]
+    fn the_vectorscope_fits_the_plot_and_places_its_six_targets_around_the_disc() {
+        let plot = Rect::from_min_max(pos2(20.0, 10.0), pos2(280.0, 166.0));
+        let (center, radius) = scope_disc(plot);
+        assert_eq!(center, plot.center());
+        assert!(radius > 40.0 && radius * 2.0 <= plot.height() && radius * 2.0 <= plot.width());
+        assert_eq!(scope_pos(center, radius, 0.0, 0.0), center, "neutral is the centre of the disc");
+        assert_eq!(scope_pos(center, radius, 1.0, 0.0), pos2(center.x + radius, center.y), "+Cb is right");
+        assert_eq!(scope_pos(center, radius, 0.0, 1.0), pos2(center.x, center.y - radius), "+Cr is up");
+        assert_eq!(SCOPE_TARGETS.len(), 6);
+        for &(label, rgb, _) in &SCOPE_TARGETS {
+            let (u, v) = scope_uv(rgb[0], rgb[1], rgb[2]);
+            let p = scope_pos(center, radius, u * 0.75, v * 0.75);
+            let dist = (p - center).length();
+            assert!(dist > radius * 0.35 && dist <= radius * 0.85, "{label} sits on the 75% ring: {dist} of {radius}");
+            assert!(plot.contains(p), "{label} stays inside the plot: {p:?}");
+        }
+        // opposite pairs (R/Cy, G/Mg, B/Yl) balance across the centre
+        for (a, b) in [(0, 3), (4, 1), (2, 5)] {
+            let (ua, va) = scope_uv(SCOPE_TARGETS[a].1[0], SCOPE_TARGETS[a].1[1], SCOPE_TARGETS[a].1[2]);
+            let (ub, vb) = scope_uv(SCOPE_TARGETS[b].1[0], SCOPE_TARGETS[b].1[1], SCOPE_TARGETS[b].1[2]);
+            assert!((ua + ub).abs() < 0.02 && (va + vb).abs() < 0.02, "{} vs {}: ({ua},{va}) + ({ub},{vb})", SCOPE_TARGETS[a].0, SCOPE_TARGETS[b].0);
+        }
     }
 }
