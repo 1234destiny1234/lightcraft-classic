@@ -21,7 +21,7 @@ fn main() {
         .set("ProductName", lcc_brand::DISPLAY_NAME)
         .set("FileDescription", &format!("{}: {}", lcc_brand::DISPLAY_NAME, lcc_brand::TAGLINE))
         .set("CompanyName", lcc_brand::VENDOR)
-        .set("LegalCopyright", &format!("Copyright (c) {}. MIT OR Apache-2.0.", lcc_brand::VENDOR))
+        .set("LegalCopyright", &format!("Copyright (c) {}. MIT AND Apache-2.0.", lcc_brand::VENDOR))
         .set("OriginalFilename", &format!("{}.exe", lcc_brand::BINARY))
         .set("InternalName", lcc_brand::BINARY);
     if let Err(e) = res.compile() {
