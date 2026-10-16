@@ -233,7 +233,7 @@ fn panorama_size_is_held_to_memory() {
 fn a_photo_named_twice_is_merged_once() {
     let dir = temp_dir("dup-ids");
     let mut paths = Vec::new();
-    for (i, b) in lightcraft_merge::synth::bracket_dngs(96, 64, &[-1.0, 1.0]).unwrap().into_iter().enumerate() {
+    for (i, b) in lcc_merge::synth::bracket_dngs(96, 64, &[-1.0, 1.0]).unwrap().into_iter().enumerate() {
         let p = dir.join(format!("IMG_{i}.dng"));
         std::fs::write(&p, b).unwrap();
         paths.push(p.to_string_lossy().to_string());
@@ -246,7 +246,47 @@ fn a_photo_named_twice_is_merged_once() {
         assert!(e.to_string().contains("at least 2"), "{cmd}: {e}");
     }
     let (kind, finish) = crate::merge::parse("merge.hdr", &json!({})).unwrap();
-    let job = s.plan_merge(kind, finish, &[a, b, a, b, a].map(lightcraft_catalog::PhotoId), true).unwrap();
+    let job = s.plan_merge(kind, finish, &[a, b, a, b, a].map(lcc_catalog::PhotoId), true).unwrap();
     assert_eq!(job.sources.iter().map(|(p, _)| p.0).collect::<Vec<_>>(), vec![a, b]);
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn focus_stack_command_creates_and_imports_a_dng() {
+    let dir = temp_dir("focus");
+    let mut paths = Vec::new();
+    let (_, frames) = lcc_merge::synth::focus_bracket(480, 320, 4).unwrap();
+    for (i, v) in frames.into_iter().enumerate() {
+        let png =
+            lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&v.to_srgb8()), &lcc_codecs::EncodeMeta::default()).unwrap();
+        let p = dir.join(format!("F_{i}.png"));
+        std::fs::write(&p, png).unwrap();
+        paths.push(p.to_string_lossy().to_string());
+    }
+    let mut s = Session::new().with_fs();
+    let ids = import(&mut s, paths);
+    // preview: nothing added
+    let png = dir.join("preview.png");
+    let pv = s.execute("merge.focusStack", &json!({"ids": ids, "preview": true, "previewPath": png})).unwrap();
+    assert!(png.exists() && pv["previewSize"][0].as_u64().unwrap() > 100, "{pv}");
+    assert_eq!(s.catalog.photos().count(), 4);
+    // picked in any order, the photos stack in shooting order (capture time, then file name): each is
+    // aligned to its neighbour
+    let picked = [ids[2], ids[0], ids[3], ids[1]];
+    let r = s.execute("merge.focusStack", &json!({"ids": picked, "autoSettings": false, "stack": true})).unwrap();
+    assert!(r["path"].as_str().unwrap().ends_with("F_0-Focus.dng"), "{r}");
+    // the most magnified (last) frame is the reference
+    assert_eq!(r["reference"], ids[3]);
+    let models: Vec<&str> = r["alignment"].as_array().unwrap().iter().map(|a| a["model"].as_str().unwrap()).collect();
+    assert_eq!(models, ["similarity", "similarity", "similarity", "reference"], "{r}");
+    assert_eq!(r["skipped"], json!([]));
+    assert!(r["ev"].as_array().unwrap().iter().all(|v| v.as_f64().unwrap() == 0.0), "{r}");
+    let id = lcc_catalog::PhotoId(r["id"].as_u64().unwrap());
+    let p = s.catalog.photo(id).unwrap().clone();
+    assert_eq!((p.width, p.height), (480, 320));
+    assert_eq!(s.catalog.stack_of(id).expect("stacked on its sources").top(), id);
+    s.execute("library.filter", &json!({"merged": "focusStack"})).unwrap();
+    assert_eq!(s.catalog.query(&s.filter, &Default::default()), vec![id]);
+    assert!(s.execute("merge.focusStack", &json!({"ids": [ids[0]]})).is_err());
     let _ = std::fs::remove_dir_all(&dir);
 }
