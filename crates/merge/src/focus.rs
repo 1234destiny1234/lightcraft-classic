@@ -156,7 +156,7 @@ pub fn stack_focus(n: usize, load: &Loader, opts: &FocusOptions, progress: &Prog
         // features are found on the work image, so its size is the small frame's (a loader may hand over more than
         // WORK_EDGE pixels)
         let (p, _) = align::work_image(&f.image, gain, align::WORK_EDGE);
-        let thumb = fit(&f.image, THUMB_EDGE, THUMB_EDGE, Filter::Box).map(|c| 0.25 * c[0] + 0.6 * c[1] + 0.15 * c[2]);
+        let thumb = fit(&f.image, THUMB_EDGE, THUMB_EDGE, Filter::Box).map(align::luma);
         let k = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
         check(progress, 0.25 * k as f32 / n as f32, "Aligning")?;
         Ok(Small {
@@ -312,6 +312,10 @@ pub fn stack_focus(n: usize, load: &Loader, opts: &FocusOptions, progress: &Prog
                     alignments[i] = Alignment { h: hfull, ..r };
                 }
                 prev = Some((l, hfull));
+                // the reference is the neighbour of the first frame on each side only: free it after its last use
+                if above.first() == Some(&i) || (above.is_empty() && below.first() == Some(&i)) {
+                    ref_luma = None;
+                }
             }
         }
         fu.fill(&f.image, (i != reference).then_some(&hfull), gain);
