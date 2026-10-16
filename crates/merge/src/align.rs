@@ -5,7 +5,6 @@
 use lcc_geom::{Homography, Point};
 use lcc_raster::resample::{Filter, fit};
 use lcc_raster::{Plane, Rgb32f};
-use rayon::prelude::*;
 
 use crate::features::{self, Features};
 use crate::ransac::{self, Model};

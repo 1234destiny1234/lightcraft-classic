@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::{LightcraftApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(120);
 
@@ -30,16 +30,16 @@ fn a_click_on_the_merge_preview_zooms_in_and_a_drag_pans() {
     let _ = std::fs::remove_dir_all(&dir);
     std::fs::create_dir_all(&dir).unwrap();
     let mut paths = Vec::new();
-    for (i, bytes) in lightcraft_merge::synth::bracket_dngs(1600, 1200, &[-2.0, 0.0, 2.0]).unwrap().into_iter().enumerate() {
+    for (i, bytes) in lcc_merge::synth::bracket_dngs(1600, 1200, &[-2.0, 0.0, 2.0]).unwrap().into_iter().enumerate() {
         let p = dir.join(format!("IMG_{i}.dng"));
         std::fs::write(&p, bytes).unwrap();
         paths.push(p.to_string_lossy().to_string());
     }
-    let mut session = lightcraft_engine::Session::new().with_fs();
+    let mut session = lcc_engine::Session::new().with_fs();
     let r = session.execute("library.import", &json!({"paths": paths})).unwrap();
     let ids: Vec<u64> = r["imported"].as_array().unwrap().iter().map(|v| v.as_u64().unwrap()).collect();
     session.execute("library.select", &json!({"ids": ids})).unwrap();
-    let mut h = Headless::new(LightcraftApp::new(session, Services { png: None, ..Default::default() }), [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(LccApp::new(session, Services { png: None, ..Default::default() }), [1200.0, 800.0], 1.0);
     h.settle(T);
     crate::merge::open(&mut h.app, "merge.hdr").unwrap();
     assert!(h.step_until(T, |h| h.app.merge.preview.is_some() && h.app.merge.preview_task.is_none()), "the preview rendered");

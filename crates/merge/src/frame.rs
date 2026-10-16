@@ -277,23 +277,6 @@ fn raw_frame(
     Ok(f)
 }
 
-/// A raw's pixels at full size (AHD), or for a size limit of 1200 px or less a quick version: whole
-/// `k × k` blocks of the mosaic binned ([`lcc_raw::RawImage::develop_binned`]) to no less than
-/// the limit, else a bilinear demosaic.
-fn develop(raw: &lcc_raw::RawImage, max_edge: Option<usize>) -> Result<Rgb32f> {
-    let err = |e: lcc_raw::RawError| MergeError::Decode(e.to_string());
-    let Some(m) = max_edge.filter(|m| (1..=1200).contains(m)) else { return raw.develop(lcc_raw::Method::Ahd).map_err(err) };
-    let crop = raw.develop_crop(raw.active_area.width, raw.active_area.height);
-    for k in (2..=crop.width.max(crop.height) / m).rev() {
-        if raw.can_bin(k)
-            && let Some(img) = raw.develop_binned(k, 0.99).map_err(err)?
-        {
-            return Ok(img);
-        }
-    }
-    raw.develop(lcc_raw::Method::Bilinear).map_err(err)
-}
-
 /// Negative values to 0, and NaN / infinite ones (a damaged float file) too: one would spread over
 /// every filter that reads it.
 fn sanitize(img: &mut Rgb32f) {
