@@ -1770,3 +1770,28 @@ fn malformed_photo_targets_are_refused_not_widened() {
     let preset = s.presets.first().unwrap().id.clone();
     s.execute("preset.apply", &json!({"id": preset})).unwrap();
 }
+
+/// Issue #160: the stack commands are on exactly when a selected photo is stacked, however many
+/// unstacked photos are selected with it.
+#[test]
+fn stack_commands_need_a_stacked_photo_in_the_selection() {
+    let mut s = demo();
+    let on = |s: &Session, id: &str| s.commands().into_iter().find(|c| c.id == id).map(|c| (c.enabled, c.disabled_reason.clone()));
+    let ids: Vec<_> = s.visible().to_vec();
+    assert!(ids.len() >= 4);
+    let select = |s: &mut Session, sel: &[lcc_catalog::PhotoId]| {
+        s.execute("library.select", &json!({"ids": sel.iter().map(|i| i.0).collect::<Vec<_>>(), "active": sel[0].0})).unwrap();
+    };
+    select(&mut s, &ids[..2]);
+    s.execute("stack.group", &json!({"collapsed": false})).unwrap();
+    for id in ["stack.ungroup", "stack.remove", "stack.setTop", "stack.moveUp", "stack.moveDown", "stack.split", "stack.toggle"] {
+        select(&mut s, &ids[2..]);
+        let (enabled, why) = on(&s, id).unwrap();
+        assert!(!enabled && why.as_deref() == Some("no stacked photo selected"), "{id}: {why:?}");
+        // one stacked photo among many unstacked ones turns it on
+        let mut sel = ids[2..].to_vec();
+        sel.push(ids[1]);
+        select(&mut s, &sel);
+        assert!(on(&s, id).unwrap().0, "{id}");
+    }
+}
