@@ -1002,8 +1002,9 @@ fn main() -> eframe::Result {
         }
     }
     // the start after an update: delete the previous AppImage, log a swap that failed (in the
-    // background; the start never waits for it)
-    if !in_memory {
+    // background; the start never waits for it). Not in a run that keeps no settings (--memory,
+    // <PREFIX>_NO_PREFS): its updater stages in the temp folder, not the settings folder's.
+    if !in_memory && !lcc_brand::env_is_set("NO_PREFS") {
         lcc_engine::update::clean_up_after_update();
     }
     // what the arguments name, resolved now: an empty or relative argument never becomes a drive
