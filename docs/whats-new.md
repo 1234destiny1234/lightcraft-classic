@@ -2,6 +2,11 @@
 
 ## 2026-10-15
 
+### The start-up update check is opt-in
+- The app no longer contacts GitHub at start unless you ask it to: turn on "Check for updates when the app
+  starts" in Settings ▸ General, in the welcome dialog of a first start, or in the update window. Help ▸ Check for
+  Updates… works as before. Settings that were already saved are kept.
+
 ### Updates on Linux packages
 - A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
   install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
