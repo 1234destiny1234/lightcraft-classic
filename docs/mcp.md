@@ -14,7 +14,7 @@ It runs in one of two modes:
 | Mode | Command | What it drives |
 |---|---|---|
 | **Headless** (default) | `<cli> mcp [--demo] [FILES/FOLDERS…]` | An in-process engine `Session`. Develop, render and export without a window. |
-| **Connect** | `<cli> mcp --connect [127.0.0.1:7980]` | A running desktop app started with `<binary> --control 7980`, through its loopback JSON-lines control channel ([control-protocol.md](control-protocol.md)). Adds the UI tools (screenshot, clicks, keys, pointer gestures). |
+| **Connect** | `<cli> mcp --connect [127.0.0.1:7980]` | A running desktop app started with `<binary> --control 7980`, through its loopback JSON-lines control channel ([control-protocol.md](control-protocol.md)); it authenticates with the token the app wrote for that port, or `<PREFIX>_CONTROL_TOKEN` ([Authentication](control-protocol.md#authentication)). Adds the UI tools (screenshot, clicks, keys, pointer gestures). |
 
 Options: `--library DIR` opens (or creates) a persistent library — the same crash-safe
 format the desktop app uses (`~/Pictures/<app> Library` by default there) — so ratings, edits and albums
