@@ -1397,6 +1397,12 @@ pub enum Dialog {
     Shortcuts,
     /// Library ▸ View Options (⌘J): grid cell style, index numbers, badges.
     ViewOptions,
+    /// Develop ▸ Optics ▸ Save as…: name the preset new photos start from.
+    NewPhotoDefault {
+        /// Empty = the engine's own name ([`lcc_engine::import::NEW_PHOTO_DEFAULT`]).
+        #[serde(default)]
+        name: String,
+    },
     /// Edit ▸ Edit Watermarks…
     Watermark {
         wm: lcc_engine::export::Watermark,
