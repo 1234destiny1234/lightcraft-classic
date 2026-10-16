@@ -2413,11 +2413,10 @@
   "Enhance": "Vylepšit",
   "Plug-in Filters": "Filtry zásuvných modulů",
   "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Zabránit blikání G-SYNC/FreeSync (platí po dalším spuštění)",
-  "AI Denoise needs a model, and none is available for this version yet. Meanwhile, Luminance and Color under Detail reduce noise.": "Redukce šumu pomocí AI potřebuje model a pro tuto verzi zatím žádný není. Mezitím šum omezí Jas a Barva v části Detail.",
-  "{app}'s own denoise model is still being trained, so this version comes without one and there is nothing to download yet. You don't need to find or install anything.": "Vlastní model {app}u pro redukci šumu se ještě trénuje, proto tato verze žádný nemá a zatím není co stahovat. Nemusíte nic hledat ani instalovat.",
   "Meanwhile your raw photos use the standard noise reduction: Luminance and Color under Detail in the Edit panel. It works on every photo.": "Mezitím vaše raw fotografie používají standardní redukci šumu: Jas a Barva v části Detail panelu Úpravy. Funguje na každé fotografii.",
-  "No AI Denoise model is available yet": "Zatím není k dispozici žádný model pro redukci šumu pomocí AI",
   "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):": "Jen pokud jste dostali model {app}u pro redukci šumu (složku se souborem .onnx a denoise-model.json):",
-  "When the model is ready, an update will offer it here as a one-click download.": "Až bude model hotový, aktualizace ho tu nabídne ke stažení jedním klepnutím.",
-  "Why?": "Proč?"
+  "Why?": "Proč?",
+  "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI odšumění potřebuje model a žádný není nainstalován. Mezitím šum omezí Jas a Barva v části Detaily.",
+  "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "Tato verze neobsahuje žádný model pro AI odšumění a zatím si ho odsud nelze stáhnout.",
+  "No AI Denoise model is installed": "Není nainstalován žádný model pro AI odšumění"
 }

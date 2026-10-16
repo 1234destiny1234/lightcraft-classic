@@ -2380,11 +2380,10 @@
   "Image on Black": "黒地に画像",
   "Image on White": "白地に画像",
   "White on Black": "黒地に白",
-  "AI Denoise needs a model, and none is available for this version yet. Meanwhile, Luminance and Color under Detail reduce noise.": "AI ノイズ除去にはモデルが必要ですが、このバージョンではまだ利用できません。それまでは「ディテール」の「輝度」と「カラー」でノイズを軽減できます。",
-  "{app}'s own denoise model is still being trained, so this version comes without one and there is nothing to download yet. You don't need to find or install anything.": "{app} 独自のノイズ除去モデルはまだトレーニング中のため、このバージョンには含まれておらず、ダウンロードできるものもまだありません。何かを探したりインストールしたりする必要はありません。",
   "Meanwhile your raw photos use the standard noise reduction: Luminance and Color under Detail in the Edit panel. It works on every photo.": "それまでは、RAW 写真には標準のノイズ軽減が使われます。編集パネルの「ディテール」にある「輝度」と「カラー」です。すべての写真で使えます。",
-  "No AI Denoise model is available yet": "利用できる AI ノイズ除去モデルはまだありません",
   "Only if you were given a {app} denoise model (a folder with a .onnx file and denoise-model.json):": "{app} のノイズ除去モデル（.onnx ファイルと denoise-model.json を含むフォルダー）を受け取った場合のみ：",
-  "When the model is ready, an update will offer it here as a one-click download.": "モデルの準備ができたら、アップデートでここからワンクリックでダウンロードできるようになります。",
-  "Why?": "理由は？"
+  "Why?": "理由は？",
+  "AI Denoise needs a model, and none is installed. Meanwhile, Luminance and Color under Detail reduce noise.": "AI ノイズ除去にはモデルが必要ですが、インストールされていません。それまでは「ディテール」の「輝度」と「カラー」でノイズを軽減できます。",
+  "This version doesn't come with an AI Denoise model, and none can be downloaded from here yet.": "このバージョンには AI ノイズ除去モデルが含まれておらず、まだここからダウンロードすることもできません。",
+  "No AI Denoise model is installed": "AI ノイズ除去モデルはインストールされていません"
 }
