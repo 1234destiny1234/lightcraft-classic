@@ -28,6 +28,7 @@
 //!    [`DETAIL_SIGMA`]) is the reference's own: it is the one frame neither resampled nor aligned
 //!    to only a fraction of a pixel ([`reference_detail`]).
 
+use lightcraft_geom::Homography;
 use lightcraft_raster::blur::gaussian;
 use lightcraft_raster::{Plane, Rgb32f};
 use rayon::prelude::*;
@@ -203,18 +204,22 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         let ref_luma = refine::luma(&frames[reference].image, g0 * rel[reference], frames[reference].clip);
         for i in (0..n).filter(|&i| i != reference) {
             let luma = refine::luma(&frames[i].image, g0 * rel[i], frames[i].clip);
-            alignments[i] = if alignments[i].model == "identity" {
-                // the small versions found nothing (a bright frame mostly clipped): patches at full size still may
-                refine::recover(&ref_luma, &luma, i as u64 + 1).unwrap_or_else(Alignment::identity)
+            // the small versions' fit refined at full size; where they found nothing (a bright frame mostly clipped),
+            // patches at full size still may, searching wider
+            let (start, radius) = if alignments[i].model == "identity" {
+                (Homography::IDENTITY, refine::RECOVER_RADIUS)
             } else {
-                refine::refine(&ref_luma, &luma, &alignments[i], refine::radius_for(feats[i].1), i as u64 + 1)
+                (alignments[i].h, refine::radius_for(feats[i].1))
             };
+            if let Some(a) = refine::fit(&ref_luma, &luma, &start, radius, i as u64 + 1, &refine::ALL_MODELS) {
+                alignments[i] = a;
+            }
             if alignments[i].model == "identity" {
                 continue;
             }
             check(progress, 0.3 + 0.15 * i as f32 / n as f32, "Resampling")?;
             // what the one model leaves (parallax, distortion): shifts measured tile by tile
-            let fl = flow::estimate(&ref_luma, &flow::warp_plane(&luma, &alignments[i].h), flow::RADIUS);
+            let fl = flow::estimate(&ref_luma, &luma, &alignments[i].h, flow::RADIUS);
             drop(luma);
             local_shift[i] = fl.max();
             let (img, v) = flow::warp(&frames[i].image, &alignments[i].h, &fl);
@@ -382,7 +387,7 @@ fn reference_detail(out: &mut Rgb32f, rf: &Frame, sat: &[f32]) {
     if rf.image.width != w || rf.image.height != h || sat.len() != w * h || w == 0 {
         return;
     }
-    let y = |p: [f32; 3]| (0.25 * p[0] + 0.6 * p[1] + 0.15 * p[2]).max(0.0);
+    let y = |p: [f32; 3]| align::luma(p).max(0.0);
     let c = rf.clip;
     let (lo, hi) = if rf.raw { (0.01, 0.05) } else { (0.04, 0.12) };
     // d = √Y_ref − √Y_merge

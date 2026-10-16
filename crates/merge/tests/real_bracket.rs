@@ -35,7 +35,7 @@ fn residual_after_alignment() {
         let raw = refine::luma(&frames[i].image, gain(i), frames[i].clip);
         let (global, _) = align::warp(&frames[i].image, &a.h);
         let lg = refine::luma(&global, gain(i), frames[i].clip);
-        let fl = flow::estimate(&ref_luma, &flow::warp_plane(&raw, &a.h), flow::RADIUS);
+        let fl = flow::estimate(&ref_luma, &raw, &a.h, flow::RADIUS);
         let (warped, _) = flow::warp(&frames[i].image, &a.h, &fl);
         let l = refine::luma(&warped, gain(i), frames[i].clip);
         eprintln!(
@@ -44,7 +44,7 @@ fn residual_after_alignment() {
             metrics::residual(&crop(&ref_luma, region), &crop(&lg, region)),
             fl.max(),
             fl.measured,
-            fl.gw * fl.gh,
+            fl.dx.width * fl.dx.height,
             r.local_shift[i]
         );
         let whole = metrics::residual(&ref_luma, &l);
