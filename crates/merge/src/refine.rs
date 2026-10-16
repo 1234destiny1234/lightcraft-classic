@@ -174,7 +174,8 @@ pub fn match_patch(reference: &Plane, site: (usize, usize), frame: &Plane, h: &H
         }
     }
     let d = 2 * r + 1;
-    let mut score = vec![-1f32; d * d];
+    // offsets that can't be scored (too few usable pixels) stay at −∞
+    let mut score = vec![f32::NEG_INFINITY; d * d];
     for dy in 0..d {
         for dx in 0..d {
             if let Some(c) = correlation(&pr, |u, v| win.get((v + dy) * s + dx + u).copied().unwrap_or(f32::NAN)) {
@@ -194,6 +195,10 @@ pub fn match_patch(reference: &Plane, site: (usize, usize), frame: &Plane, h: &H
         return None;
     }
     let at = |x: usize, y: usize| score[y * d + x];
+    // the sub-pixel parabola needs the peak's four neighbours: one that couldn't be scored would pull it away
+    if [at(bx - 1, by), at(bx + 1, by), at(bx, by - 1), at(bx, by + 1)].iter().any(|v| !v.is_finite()) {
+        return None;
+    }
     let sub = |m: f32, c: f32, p: f32| {
         let den = m - 2.0 * c + p;
         if den < -1e-9 { (0.5 * (m - p) / den).clamp(-0.5, 0.5) } else { 0.0 }

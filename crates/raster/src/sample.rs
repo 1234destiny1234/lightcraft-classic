@@ -75,7 +75,8 @@ impl Rgb32f {
                 acc[ch] += wr * line[ch];
             }
         }
-        std::array::from_fn(|ch| acc[ch].clamp(lo[ch], hi[ch]))
+        // no finite pixel in the 4 × 4 range (NaN all around): nothing to hold the sample to
+        std::array::from_fn(|ch| if lo[ch] <= hi[ch] { acc[ch].clamp(lo[ch], hi[ch]) } else { acc[ch] })
     }
 }
 
@@ -145,6 +146,9 @@ mod tests {
             assert!(v.iter().all(|c| c.is_finite()), "{v:?}");
         }
         assert_eq!(Rgb32f::new(0, 0).sample_lanczos3(1.0, 1.0), [0.0; 3]);
+        // pixels that are all NaN (a damaged float file) give a NaN sample, never a panic
+        let nan = Rgb32f::from_fn(8, 8, |_, _| [f32::NAN; 3]);
+        assert!(nan.sample_lanczos3(4.3, 4.6).iter().all(|v| v.is_nan()));
         assert_eq!(img.sample_lanczos3(0.5, 0.5), [0.0, 0.0, 1.0]);
     }
 }

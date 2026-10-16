@@ -203,6 +203,7 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         // before the next is made
         let ref_luma = refine::luma(&frames[reference].image, g0 * rel[reference], frames[reference].clip);
         for i in (0..n).filter(|&i| i != reference) {
+            check(progress, 0.3 + 0.15 * i as f32 / n as f32, "Refining the alignment")?;
             let luma = refine::luma(&frames[i].image, g0 * rel[i], frames[i].clip);
             // the small versions' fit refined at full size; where they found nothing (a bright frame mostly clipped),
             // patches at full size still may, searching wider
@@ -390,33 +391,40 @@ fn reference_detail(out: &mut Rgb32f, rf: &Frame, sat: &[f32]) {
     let y = |p: [f32; 3]| align::luma(p).max(0.0);
     let c = rf.clip;
     let (lo, hi) = if rf.raw { (0.01, 0.05) } else { (0.04, 0.12) };
-    // d = √Y_ref − √Y_merge
-    let mut d = Plane::new(w, h);
-    d.data.par_chunks_mut(w).enumerate().for_each(|(row, dr)| {
-        for (x, v) in dr.iter_mut().enumerate() {
+    let d_at = |i: usize| {
+        let (m, r) = (out.data.get(i).copied().unwrap_or_default(), rf.image.data.get(i).copied().unwrap_or_default());
+        let dv = y(r).sqrt() - y(m).sqrt();
+        if dv.is_finite() { dv } else { 0.0 }
+    };
+    // α per pixel, and α·d (d = √Y_ref − √Y_merge)
+    let mut alpha = Plane::new(w, h);
+    let mut ad = Plane::new(w, h);
+    alpha.data.par_chunks_mut(w).zip(ad.data.par_chunks_mut(w)).enumerate().for_each(|(row, (arow, drow))| {
+        for (x, (a, dv)) in arow.iter_mut().zip(drow.iter_mut()).enumerate() {
             let i = row * w + x;
-            let (m, r) = (out.data.get(i).copied().unwrap_or_default(), rf.image.data.get(i).copied().unwrap_or_default());
-            let dv = y(r).sqrt() - y(m).sqrt();
-            *v = if dv.is_finite() { dv } else { 0.0 };
+            let (Some(&s), Some(&r)) = (sat.get(i), rf.image.data.get(i)) else { continue };
+            *a = smoothstep(lo * c, hi * c, maxc(r)) * (1.0 - smoothstep(0.8 * c, 0.95 * c, s));
+            *dv = *a * d_at(i);
         }
     });
-    let blurred = gaussian(&d, DETAIL_SIGMA);
+    // d's blur over the pixels it applies to only (normalised by α's blur): the reference's clipped highlights,
+    // where d is far below zero, must not pull their neighbours' blur down (that left a bright rim around them)
+    let (ba, bad) = (gaussian(&alpha, DETAIL_SIGMA), gaussian(&ad, DETAIL_SIGMA));
+    drop(ad);
     out.data.par_chunks_mut(w).enumerate().for_each(|(row, orow)| {
         for (x, p) in orow.iter_mut().enumerate() {
             let i = row * w + x;
-            let (Some(&dv), Some(&bv), Some(&s), Some(&r)) = (d.data.get(i), blurred.data.get(i), sat.get(i), rf.image.data.get(i)) else {
-                continue;
-            };
-            let level = maxc(r);
-            let alpha = smoothstep(lo * c, hi * c, level) * (1.0 - smoothstep(0.8 * c, 0.95 * c, s));
-            if alpha <= 0.0 {
-                continue;
-            }
+            let (Some(&a), Some(&wa), Some(&wd)) = (alpha.data.get(i), ba.data.get(i), bad.data.get(i)) else { continue };
             let ym = y(*p);
-            if ym <= 1e-12 {
+            if a <= 0.0 || wa <= 1e-4 || ym <= 1e-12 {
                 continue;
             }
-            let sq = (ym.sqrt() + alpha * (dv - bv)).max(0.0);
+            let dv = {
+                let (m, r) = (*p, rf.image.data.get(i).copied().unwrap_or_default());
+                let v = y(r).sqrt() - y(m).sqrt();
+                if v.is_finite() { v } else { 0.0 }
+            };
+            let sq = (ym.sqrt() + a * (dv - wd / wa)).max(0.0);
             let scale = sq * sq / ym;
             if scale.is_finite() {
                 *p = p.map(|v| v * scale);
