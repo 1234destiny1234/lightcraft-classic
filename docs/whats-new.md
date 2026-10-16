@@ -6,6 +6,15 @@
 - Settings → Shortcuts records a new key again. Clicking a shortcut there used to stop listening on the next frame,
   so no key could be set; only Help → Keyboard Shortcuts worked (issue #155).
 
+### Library comes back in the view you left it in
+- Going from Library to Develop and back through the module picker brought Library back in the loupe, whatever view
+  it was left in. It now returns to the grid, loupe, Compare or Survey it showed before (issue #144).
+
+### Updates on Linux packages
+- A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
+  install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
+  installed (issue #145).
+
 ## 2026-10-14
 
 ### Folders and metadata badges on a network share

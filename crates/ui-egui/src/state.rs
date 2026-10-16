@@ -1393,6 +1393,12 @@ pub enum Dialog {
     Shortcuts,
     /// Library ▸ View Options (⌘J): grid cell style, index numbers, badges.
     ViewOptions,
+    /// Edit ▸ Edit Watermarks…
+    Watermark {
+        wm: lcc_engine::export::Watermark,
+        #[serde(default)]
+        preset_name: String,
+    },
 }
 
 fn yes() -> bool {

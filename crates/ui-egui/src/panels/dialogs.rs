@@ -274,6 +274,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Update => "Check for Updates",
         Dialog::Shortcuts => "Keyboard Shortcuts",
         Dialog::ViewOptions => "Library View Options",
+        Dialog::Watermark { .. } => "Watermark Editor",
     }
     .to_string();
     let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
@@ -1399,7 +1400,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             ui.label(egui::RichText::new(lcc_brand::DISPLAY_NAME).font(t.semibold(20.0)).color(t.text));
                             ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
                             ui.label(crate::i18n::tr_format!(
-                                "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
+                                "MIT AND Apache-2.0. Fonts: {} (OFL). Icons: original.",
                                 crate::theme::font_credits(app.chinese_font.is_some())
                             ));
                             ui.add_space(10.0);
@@ -1423,6 +1424,102 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 #[cfg(target_arch = "wasm32")]
                 Dialog::Update => {
                     ui.label(crate::i18n::tr("The web build updates by reloading the page."));
+                }
+                Dialog::Watermark { wm, preset_name } => {
+                    field(ui, "Preset", |ui| {
+                        let mut chosen_wm = None;
+                        let mut chosen_name = None;
+                        let selected_text = if preset_name.is_empty() { crate::i18n::tr("Custom / Unsaved").to_string() } else { preset_name.clone() };
+                        let c = egui::ComboBox::from_id_salt("watermarkDialogPreset").width(220.0).selected_text(selected_text).show_ui(ui, |ui| {
+                            for (p, b) in app.session.all_export_presets() {
+                                let o = lcc_engine::export::ExportOptions::from_json(&p.params);
+                                if let Some(w) = o.watermark
+                                    && ui.selectable_label(preset_name == &p.name, crate::i18n::builtin_label(&p.name, b)).clicked()
+                                {
+                                    chosen_wm = Some(w);
+                                    chosen_name = Some(p.name);
+                                }
+                            }
+                        });
+                        crate::widgets::register(ui.ctx(), "combo:watermarkDialogPreset", c.response.rect);
+                        if let (Some(w), Some(n)) = (chosen_wm, chosen_name) {
+                            *wm = w;
+                            *preset_name = n;
+                        }
+                    });
+                    ui.add_space(4.0);
+                    watermark_preview(app, ui, wm, None);
+                    ui.add_space(4.0);
+                    let mut graphic = !wm.image.is_empty() || ui.data(|d| d.get_temp::<bool>(egui::Id::new("wm-dialog-graphic"))).unwrap_or(false);
+                    let before = graphic;
+                    choices(ui, "Style", "watermarkDialogStyle", &[(false, "Text"), (true, "Graphic")], &mut graphic);
+                    if graphic != before {
+                        ui.data_mut(|d| d.insert_temp(egui::Id::new("wm-dialog-graphic"), graphic));
+                        if !graphic {
+                            wm.image.clear();
+                        }
+                    }
+                    if graphic {
+                        field(ui, "Graphic", |ui| {
+                            trailing_button_row(ui, |ui| {
+                                if app.services.pick_files.is_some()
+                                    && crate::widgets::text_button(ui, "watermarkDialogChoose", crate::i18n::tr("Choose…"), false).clicked()
+                                    && let Some(f) = app.services.pick_files.as_mut().and_then(|pick| pick().into_iter().next())
+                                {
+                                    wm.image = f;
+                                }
+                                crate::widgets::named(ui.add(egui::TextEdit::singleline(&mut wm.image).hint_text("logo.png").desired_width(ui.available_width())), crate::i18n::tr("Image"));
+                            });
+                        });
+                        let mut width = wm.image_width as f64 * 100.0;
+                        if num(ui, &WM_IMAGE_WIDTH, &mut width) {
+                            wm.image_width = (width / 100.0) as f32;
+                        }
+                    } else {
+                        choices(ui, app.ui.language.tr("Text direction"), "watermarkDialogOrientation", &[(false, app.ui.language.tr("Horizontal text")), (true, app.ui.language.tr("Vertical text"))], &mut wm.vertical);
+                        field(ui, "Text", |ui| {
+                            crate::widgets::named(ui.add(egui::TextEdit::multiline(&mut wm.text).desired_rows(2).hint_text(crate::i18n::tr("© Your Name")).desired_width(f32::INFINITY)), crate::i18n::tr("Text"))
+                        });
+                    }
+                    choices(ui, "Position", "watermarkDialogAnchor", &WM_POSITIONS, &mut wm.anchor);
+                    choices(ui, "Rotate", "watermarkDialogRotation", &[(0u16, "0°"), (90, "90°"), (180, "180°"), (270, "270°")], &mut wm.rotation);
+                    let mut size = wm.size as f64 * 100.0;
+                    if !graphic && num(ui, &WM_SIZE, &mut size) {
+                        wm.size = (size / 100.0) as f32;
+                    }
+                    let mut op = wm.opacity as f64 * 100.0;
+                    if num(ui, &WM_OPACITY, &mut op) {
+                        wm.opacity = (op / 100.0) as f32;
+                    }
+                    use lcc_engine::export::Anchor as P;
+                    let across = !matches!(wm.anchor, P::Top | P::Center | P::Bottom);
+                    if let Some(v) = crate::widgets::slider(ui, &WM_INSET_X, wm.inset_x as f64 * 100.0, across, None).value {
+                        wm.inset_x = (v / 100.0) as f32;
+                    }
+                    let down = !matches!(wm.anchor, P::Left | P::Center | P::Right);
+                    if let Some(v) = crate::widgets::slider(ui, &WM_INSET_Y, wm.inset_y as f64 * 100.0, down, None).value {
+                        wm.inset_y = (v / 100.0) as f32;
+                    }
+                    if !graphic {
+                        ui.checkbox(&mut wm.shadow, crate::i18n::tr("Shadow"));
+                    }
+                    ui.add_space(4.0);
+                    field(ui, "Save preset", |ui| {
+                        trailing_button_row(ui, |ui| {
+                            let named = !preset_name.trim().is_empty();
+                            if crate::widgets::text_button(ui, "watermarkDialogSavePreset", crate::i18n::tr("Save"), false).clicked() && named {
+                                let mut params = app.session.last_export.clone().unwrap_or_default();
+                                params["watermark"] = serde_json::to_value(&wm).unwrap_or_default();
+                                match app.run("export.savePreset", json!({"name": preset_name.trim(), "params": params})) {
+                                    Ok(_) => {
+                                        app.toast(ui.ctx(), format!("Saved watermark preset “{}”", preset_name.trim()));
+                                    }
+                                    Err(e) => app.toast(ui.ctx(), e),
+                                }
+                            }
+                            crate::widgets::named(ui.add(egui::TextEdit::singleline(preset_name).hint_text(crate::i18n::tr("Preset name")).desired_width(ui.available_width())), crate::i18n::tr("Preset name"));
+                        });
+                    });
                 }
                 Dialog::Print => crate::print_view::body(app, ui, &t),
             };
@@ -2054,6 +2151,15 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::DeleteEffects { names } => app.run("mask.deleteEffect", json!({"names": names})),
         Dialog::RemoveFolder { path, disk, .. } => app.run("library.removeFolder", json!({"path": path, "disk": disk})),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::confirm(app, d),
+        Dialog::Watermark { wm, preset_name } => {
+            let mut params = app.session.last_export.clone().unwrap_or_default();
+            params["watermark"] = serde_json::to_value(wm).unwrap_or_default();
+            app.session.last_export = Some(params.clone());
+            if !preset_name.trim().is_empty() {
+                let _ = app.run("export.savePreset", json!({"name": preset_name.trim(), "params": params}));
+            }
+            Ok(serde_json::Value::Null)
+        }
         Dialog::About | Dialog::Shortcuts | Dialog::ViewOptions | Dialog::Settings { .. } | Dialog::Update | Dialog::ManageEffects { .. } => {
             Ok(serde_json::Value::Null)
         }
