@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-15 · **Change:** minor (gap 19: pixel-filter plug-ins in the develop pipeline; upstream batch 40: gap 2 narrowed to CR3 variants no public file uses, Canon 98% fully working; gap 14: HDR display output on EDR / Windows HDR (#47); upstream: gap 10: 515 of 1,446 models verified, ~84% of photographers on a verified body) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-17 · **Change:** minor (gap 30: the histogram has its four display modes and two scales, but no waveform or vectorscope scope yet, issue #206) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -46,6 +46,7 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 27 | **Windows / Linux runtime coverage**: Windows installer UI unverified on Windows (#79); GPU path proven on Apple only; the Linux riscv64 tarball (new in 0.6.0, #844) is cross-compiled and never run beyond a QEMU smoke test | ROADMAP, issues, `release.yml` | non-Mac users find bugs first | 15–30 | [hardware-parity](hardware-parity.md) |
 | 28 | **Small Classic shortcuts and keys**: rating `[` `]`, \` flag toggle, `\` filter bar, F1 help, panel keys (Tab, ⇧Tab, F5–F8) and ⌘L Enable Filters are bound (G28); Web module ⌘R / ⌘⌥P bound too; left: Develop ⇧J (meaning unverified) | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
 | 29 | **HDR merge leftovers** (LR-MERGE-HDR): AI Denoise doesn't run on merged (linear) DNGs; JPEG brackets are treated as linear (no camera response curve); every frame is held as 32-bit float, ~0.86 GB per 67 MP frame (half-float frames would halve it) | tested on Sony A7R VI brackets 2026-10-14 ([merge.md](merge.md)); Lightroom's Denoise supports HDR DNGs | HDR shooters who denoise their merges, merge JPEGs, or merge 7+ frames of high-resolution raws on 16 GB machines | 10–20 (+ denoise linear-RGB contract, gap 11) | [merge](merge.md) |
+| 30 | **No waveform or vectorscope scopes** (issue #206's other half): the histogram draws an RGB overlay, a luminance curve, separated channel tracks and a chroma curve, at a linear or a logarithmic scale, but Waveform, RGB Parade and Vectorscope views are absent (LR-VIEW-HISTOGRAM-MODES is ✅ for the histogram modes alone) | [parity-checklist](parity-checklist.md) (LR-VIEW-HISTOGRAM-MODES), `crates/raster/src/histogram.rs` | colour graders who judge exposure and hue spatially rather than per channel | 6–12 | [ui-parity](ui-parity.md) |
 
 Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform work they need around them,
 **~330–585 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).
@@ -53,7 +54,7 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 ## Gaps by kind
 
 - **Feature:** 5, 8, 11, 12, 13, 15, 16, 18, 19, 29
-- **UI / UX:** 4, 23, 24, 28
+- **UI / UX:** 4, 23, 24, 28, 30
 - **File format:** 2, 7, 10, 13, 20, 25 (raw ones in [raw-parity.md](raw-parity.md))
 - **Hardware:** 14, 17, 22, 27
 - **Localization:** 21

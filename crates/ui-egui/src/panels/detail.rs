@@ -1726,7 +1726,8 @@ pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings, alt_held: bool) ->
             }
         }
 
-        if app.ui.show_clipping {
+        // the persistent clipping overlay (J), or the one a hovered histogram indicator previews
+        if app.ui.show_clipping || app.clipping_preview {
             return Overlay::Clipping(None);
         }
     }
