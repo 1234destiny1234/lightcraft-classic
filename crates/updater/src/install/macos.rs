@@ -209,7 +209,8 @@ impl Drop for Mount {
 ///
 /// `--noextattr` also drops `com.apple.quarantine`, so Gatekeeper does not assess the new bundle
 /// on its first start. That is acceptable because the download was checked against the release's
-/// SHA-256 before it got here; checking the release's signature is a separate step (U2).
+/// SHA-256 before it got here; anything that authenticates the release (a signature) belongs to that
+/// download step, not here.
 fn copy(from: &Path, to: &Path) -> Result<(), UpdateError> {
     let out = Command::new(DITTO).args(["--norsrc", "--noextattr", "--noacl"]).arg(from).arg(to).stdin(Stdio::null()).output();
     let failed = match out {
