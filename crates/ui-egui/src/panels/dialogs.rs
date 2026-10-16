@@ -1753,6 +1753,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 app.toast(ctx, e);
                 close = true;
             }
+            Err(e) if matches!(dlg, Dialog::TextPrompt { .. }) => {
+                app.toast(ctx, e);
+                close = true;
+            }
             Ok(_) if keeps_open(app, &dlg) => {
                 if let Dialog::SamModel { error, .. } = &mut dlg {
                     *error = None;
