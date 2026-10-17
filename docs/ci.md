@@ -20,10 +20,10 @@ Every change goes on a branch, opens a PR and is set to auto-merge
 | Pull request to `main`, push to `main` | `cargo xtask ci --fast` + SIL suite | build + clippy |
 | Push to `release`, manual dispatch (Actions → CI → Run workflow) | full `cargo xtask ci` + SIL suite | build + clippy + `cargo test --workspace` |
 
-`cargo xtask ci --fast` runs fmt, brand, docs, clippy `-D warnings` (incl. the HEIF feature), parity refs,
-shared-check, layers, assets, deny and the wasm check; it skips the workspace and HEIF test runs. The SIL step
-runs `cargo xtask sil` (docs/testing-sil.md) once that command exists and is skipped until then. Locally,
-`cargo xtask ci` stays the full run; use `--fast` per commit and run the targeted tests of what you touched.
+`cargo xtask ci --fast` runs fmt, brand, docs, notes (release-note entries, `docs/whats-new/README.md`), clippy
+`-D warnings` (incl. the HEIF feature), parity refs, shared-check, layers, assets, deny and the wasm check; it skips
+the workspace and HEIF test runs. The SIL step runs `cargo xtask sil` (docs/testing-sil.md) once that command
+exists and is skipped until then. Locally, `cargo xtask ci` stays the full run; use `--fast` per commit and run the targeted tests of what you touched.
 
 Before cutting a release, dispatch CI on the commit (or push it to `release`, which also starts
 `release.yml`) and make sure all three OSes are green.

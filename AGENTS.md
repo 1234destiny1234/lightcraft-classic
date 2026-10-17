@@ -80,6 +80,12 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
 - **Quality gates** before every commit: `cargo xtask ci` (fmt, clippy -D warnings, tests, layers, assets, wasm).
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
+- **Release notes, one file per change:** a user-visible change adds `docs/whats-new/<YYYY-MM-DD>-<slug>.md` (one
+  `### Title` and its bullets, for Help ▸ What's New) and, when the release's changelog should mention it,
+  `docs/changelog/unreleased/<YYYY-MM-DD>-<slug>.md` (one `## Section` and its bullets); the READMEs there say how.
+  Never add to `docs/whats-new.md` (upstream's entries, changed only by upstream merges) or to a released
+  `docs/changelog/<version>.md`. `cargo xtask notes --check` (part of `ci`) checks every entry and fails when
+  `docs/whats-new.md` changed outside an upstream merge.
 
 ## Clean-room sources (in addition to the non-negotiables)
 - darktable and Ansel may be used **as running applications, manuals and prose design notes only**.

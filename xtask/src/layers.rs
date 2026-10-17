@@ -46,6 +46,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("updater", Class::Layer(0)),
     ("credentials", Class::Layer(0)),
     ("hash", Class::Layer(0)),
+    ("notes", Class::Standalone),
     ("psd", Class::Standalone),
     ("actions", Class::Standalone),
     ("plugins", Class::Layer(1)),

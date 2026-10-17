@@ -24,6 +24,11 @@ omastore.toml
 crates/net/
 crates/credentials/
 crates/hash/
+# release notes, one file per change (docs/whats-new/README.md)
+crates/notes/
+xtask/src/notes.rs
+docs/whats-new/
+docs/changelog/
 crates/fuzzkit/
 apps/cli/tests/robust_catalog.rs
 apps/cli/tests/legacy_pickup.rs
