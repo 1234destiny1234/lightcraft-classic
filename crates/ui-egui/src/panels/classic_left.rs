@@ -166,7 +166,7 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, side: &[PanelId]
             // The presets are given a share of the column, as Lightroom's Presets panel has: left
             // to itself it takes all of it, and the panels below would be pushed out of sight. Its
             // own Classic header folds it (issue #75): folded it takes only that header, and the
-            // panels below get the room back. It is drawn once: while the presets column (Shift+P)
+            // panels below get the room back. It is drawn once: while the presets column (Window ▸ Presets)
             // is open, that column is the presets.
             PanelId::Presets if !app.ui.presets => {
                 let avail = ui.available_height();

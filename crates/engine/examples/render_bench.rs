@@ -149,7 +149,7 @@ fn main() {
             }
             println!("  {:<36} {}", "load_bytes(2560):", best(n, || drop(lcc_engine::files::load_bytes(&bytes, 2560).expect("load"))));
             let (loader, _) = lcc_engine::files::fs_hooks();
-            println!("  {:<36} {}", "fs loader (2560, read+load):", best(n, || drop(loader(path, 2560).expect("load"))));
+            println!("  {:<36} {}", "fs loader (2560, read+load):", best(n, || drop(loader(path, 2560, false).expect("load"))));
         }
         return;
     }

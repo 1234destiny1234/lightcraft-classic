@@ -15,6 +15,7 @@ mod color;
 pub(crate) mod convert;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod credentials;
+pub mod crop_aspects;
 mod cull;
 pub mod curves;
 pub(crate) mod denoise;
@@ -213,6 +214,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(color::specs());
         v.extend(plugin_filters::specs());
         v.extend(curves::specs());
+        v.extend(crop_aspects::specs());
         v.extend(masks::specs());
         v.extend(organize::specs());
         v.extend(keywords::specs());
