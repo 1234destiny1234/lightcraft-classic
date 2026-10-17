@@ -708,7 +708,19 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                         app.ui.view = ViewMode::People;
                         app.ui.person_page = name;
                     }
-                    _ => app.ui.view = ViewMode::PhotoGrid,
+                    _ => {
+                        let prev_grid = app
+                            .ui
+                            .layouts
+                            .get(&crate::module::ModuleId::Library)
+                            .and_then(|l| l.view)
+                            .filter(|v| *v != ViewMode::Detail && *v != ViewMode::Reference);
+                        let target_grid = prev_grid.unwrap_or(ViewMode::PhotoGrid);
+                        if app.ui.module == crate::module::ModuleId::Develop {
+                            let _ = crate::module::switch(app, crate::module::ModuleId::Library);
+                        }
+                        app.ui.view = target_grid;
+                    }
                 }
             }
             Ok(Value::Null)

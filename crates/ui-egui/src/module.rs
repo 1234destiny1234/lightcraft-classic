@@ -682,6 +682,14 @@ pub fn sync(app: &mut LccApp) {
     let want = implied(app.ui.module, now.0, now.1);
     if want != app.ui.module {
         swap(app, want, false);
+    } else if app.ui.module == ModuleId::Library && app.ui.view != ViewMode::Detail && app.ui.view != ViewMode::Reference {
+        if let Some(l) = app.ui.layouts.get_mut(&ModuleId::Library) {
+            l.view = Some(app.ui.view);
+        } else {
+            let mut captured = capture(app);
+            captured.view = Some(app.ui.view);
+            app.ui.layouts.insert(ModuleId::Library, captured);
+        }
     }
 }
 
