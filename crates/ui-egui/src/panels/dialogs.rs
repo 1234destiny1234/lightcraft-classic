@@ -163,8 +163,8 @@ fn watermark_preview(app: &mut LccApp, ui: &mut egui::Ui, wm: &lcc_engine::expor
 /// About dialog tabs: (widget id suffix, label). The credits come from `crate::credits`.
 pub const ABOUT_TABS: &[(&str, &str)] = &[("about", "About"), ("contributors", "Contributors"), ("models", "Models")];
 
-/// Help ▸ What's New (docs/whats-new.md).
-pub const WHATS_NEW: &str = include_str!("../../../../docs/whats-new.md");
+/// Help ▸ What's New: upstream's docs/whats-new.md and our docs/whats-new/ entries, joined by build.rs.
+pub const WHATS_NEW: &str = include_str!(concat!(env!("OUT_DIR"), "/whats-new.md"));
 
 /// The import review and Settings keep window ids of their own, so the size each is given
 /// doesn't carry over to the other dialogs.
@@ -274,6 +274,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Update => "Check for Updates",
         Dialog::Shortcuts => "Keyboard Shortcuts",
         Dialog::ViewOptions => "Library View Options",
+        Dialog::NewPhotoDefault { .. } => "Save as Default for New Photos",
         Dialog::Watermark { .. } => "Watermark Editor",
     }
     .to_string();
@@ -1400,7 +1401,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             ui.label(egui::RichText::new(lcc_brand::DISPLAY_NAME).font(t.semibold(20.0)).color(t.text));
                             ui.label(crate::i18n::tr_format!("Version {} — a clean-room, pure-Rust photo library and raw developer.", env!("CARGO_PKG_VERSION")));
                             ui.label(crate::i18n::tr_format!(
-                                "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.",
+                                "MIT AND Apache-2.0. Fonts: {} (OFL). Icons: original.",
                                 crate::theme::font_credits(app.chinese_font.is_some())
                             ));
                             ui.add_space(10.0);
@@ -1418,6 +1419,28 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),
                 Dialog::ViewOptions => crate::panels::cells::view_options(app, ui),
+                Dialog::NewPhotoDefault { name } => {
+                    ui.label(egui::RichText::new(crate::i18n::tr("Preset name")).color(t.text_dim));
+                    let r = crate::text_field::TextField::singleline("field:newPhotoDefaultName", name)
+                        .hint(crate::i18n::tr(lcc_engine::import::NEW_PHOTO_DEFAULT))
+                        .width(f32::INFINITY)
+                        .select_on_focus(true)
+                        .show(ui);
+                    if just_opened(ui, "new-photo-default") {
+                        r.response.request_focus();
+                    }
+                    // Return in the field saves, as the other naming dialogs do
+                    if r.ending == Some(crate::text_field::Ending::Return) {
+                        confirm = true;
+                    }
+                    ui.add_space(6.0);
+                    ui.label(
+                        egui::RichText::new(crate::i18n::tr(
+                            "Saves the active photo's Optics settings as this preset; photos already in the library keep theirs.",
+                        ))
+                        .color(t.text_dim),
+                    );
+                }
                 #[cfg(not(target_arch = "wasm32"))]
                 Dialog::Update => crate::panels::update::body(app, ui),
                 // the updater is native only; the web build has nothing to show here
@@ -1594,6 +1617,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     // (not "Merge": that is photo merging, HDR / panorama, in some languages)
                     Dialog::MoveKeyword { .. } => "Merge Keywords",
                     Dialog::KeywordSet { .. } => "Save",
+                    Dialog::NewPhotoDefault { .. } => "Save",
                     Dialog::KeywordTag { editing: None, .. } => "Create",
                     Dialog::KeywordTag { .. } => "Save",
                     Dialog::RemoveFolder { .. } => "Remove",
@@ -1603,8 +1627,6 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::SamModel { .. } if sam_installed || sam_running || sam_nowhere => "",
                     Dialog::SamModel { error, .. } if error.is_some() || sam_failed => "Try Again",
                     Dialog::SamModel { .. } => "Download",
-                    // the updater's own buttons are in its body; the footer only closes
-                    Dialog::Update => "",
                     Dialog::RenamePerson { from, to, .. } if person_rename_plan(&app.session.catalog, from, to).needs_merge => "Merge",
                     _ if informational => "Close",
                     _ => "OK",
@@ -1726,6 +1748,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 close = true;
             }
             Err(e) if matches!(dlg, Dialog::MovePhotos { .. }) => {
+                app.toast(ctx, e);
+                close = true;
+            }
+            Err(e) if matches!(dlg, Dialog::TextPrompt { .. }) => {
                 app.toast(ctx, e);
                 close = true;
             }
@@ -2151,6 +2177,7 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
         Dialog::DeleteEffects { names } => app.run("mask.deleteEffect", json!({"names": names})),
         Dialog::RemoveFolder { path, disk, .. } => app.run("library.removeFolder", json!({"path": path, "disk": disk})),
         d @ Dialog::SynchronizeFolder { .. } => crate::sync::confirm(app, d),
+        Dialog::NewPhotoDefault { name } => app.run("library.setImportDefault", json!({"name": name.trim()})),
         Dialog::Watermark { wm, preset_name } => {
             let mut params = app.session.last_export.clone().unwrap_or_default();
             params["watermark"] = serde_json::to_value(wm).unwrap_or_default();

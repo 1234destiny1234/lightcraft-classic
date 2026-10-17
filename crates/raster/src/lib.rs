@@ -2,10 +2,11 @@
 //!
 //! - [`Image<T>`]: interleaved, row-major pixels (`Rgb32f = Image<[f32; 3]>`, `Rgba8 = Image<[u8; 4]>`,
 //!   `Plane = Image<f32>`).
-//! - Resampling ([`resample`]): separable Lanczos-3 / Mitchell / box, rayon-parallel.
+//! - Resampling ([`resample`]): separable Lanczos-3 / Mitchell / box, rayon-parallel; point sampling for warps
+//!   ([`sample`]: Lanczos-3 held to its neighbours' range).
 //! - Blur ([`blur`]): separable Gaussian via repeated box filters (O(1) per pixel in the radius).
 //! - Morphology ([`morph`]): square min / max filters (van Herk / Gil-Werman, O(1) per pixel in the radius).
-//! - [`Histogram`] of display-encoded RGB + luminance.
+//! - [`Histogram`] of display-encoded RGB, luminance and chroma.
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
@@ -13,8 +14,9 @@ pub mod blur;
 pub mod histogram;
 pub mod morph;
 pub mod resample;
+pub mod sample;
 
-pub use histogram::{HdrBins, Histogram};
+pub use histogram::{Channel, Clipped, Clipping, HdrBins, Histogram, HistogramMode, HistogramScale, robust_peak, scope_cell, scope_rgb, scope_uv};
 
 /// Run `f` over row chunks, in parallel when the `parallel` feature is on.
 pub fn par_rows<T: Send>(data: &mut [T], row_len: usize, f: impl Fn(usize, &mut [T]) + Sync + Send) {

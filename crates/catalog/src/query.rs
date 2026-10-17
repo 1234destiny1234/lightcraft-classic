@@ -56,7 +56,7 @@ pub struct Filter {
     pub imported: Option<String>,
     /// Imported at or after this time (ISO; Recently Added).
     pub imported_from: Option<String>,
-    /// Photo Merge results: `hdr`, `panorama`, `hdrPanorama` or `any` (see [`merged_kind`]).
+    /// Photo Merge results: `hdr`, `panorama`, `hdrPanorama`, `focusStack` or `any` (see [`merged_kind`]).
     pub merged: Option<String>,
     /// Immich link state: `linked`, `notLinked` (no confirmed link) or `probable`.
     #[serde(skip_serializing_if = "Option::is_none")]
@@ -123,8 +123,9 @@ impl Sort {
 }
 
 impl Default for Sort {
+    /// Capture date, oldest first: Lightroom Classic's default sort.
     fn default() -> Self {
-        Sort { key: SortKey::CaptureDate, ascending: false, group: crate::GroupBy::Auto, seed: 0 }
+        Sort { key: SortKey::CaptureDate, ascending: true, group: crate::GroupBy::Auto, seed: 0 }
     }
 }
 
@@ -1198,8 +1199,8 @@ pub(crate) fn key_within(p: &str, r: &str) -> bool {
 }
 
 /// The kind of Photo Merge result a file is, from the name merges give it (`IMG_1-HDR.dng`,
-/// `IMG_1-Pano.dng`, `IMG_1-HDR-Pano.dng` — also the names other raw editors use):
-/// `hdr`, `panorama` or `hdrPanorama`.
+/// `IMG_1-Pano.dng`, `IMG_1-HDR-Pano.dng` — also the names other raw editors use — and
+/// `IMG_1-Focus.dng`): `hdr`, `panorama`, `hdrPanorama` or `focusStack`.
 pub fn merged_kind(file_name: &str) -> Option<&'static str> {
     let stem = file_name.rsplit_once('.').map_or(file_name, |(s, _)| s).to_ascii_lowercase();
     let stem = stem.trim_end_matches(|c: char| c.is_ascii_digit() || c == '-' || c == ' ');
@@ -1209,6 +1210,8 @@ pub fn merged_kind(file_name: &str) -> Option<&'static str> {
         Some("hdr")
     } else if stem.ends_with("-pano") {
         Some("panorama")
+    } else if stem.ends_with("-focus") {
+        Some("focusStack")
     } else {
         None
     }

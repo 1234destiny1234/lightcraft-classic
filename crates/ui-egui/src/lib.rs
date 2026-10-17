@@ -60,6 +60,7 @@ pub mod sidebar;
 pub mod slideshow_export;
 pub mod slideshow_ui;
 pub mod softpaint;
+pub mod space_hand;
 pub mod state;
 pub mod sync;
 pub mod tasks;
@@ -104,6 +105,8 @@ mod tests_compare;
 #[cfg(test)]
 mod tests_copy_paste_dialogs;
 #[cfg(test)]
+mod tests_crop_aspects;
+#[cfg(test)]
 mod tests_crop_frame;
 #[cfg(test)]
 mod tests_crop_rotate;
@@ -137,6 +140,10 @@ mod tests_folder_drop;
 mod tests_grading;
 #[cfg(test)]
 mod tests_grid;
+#[cfg(test)]
+mod tests_histogram_drag;
+#[cfg(test)]
+mod tests_histogram_modes;
 #[cfg(test)]
 mod tests_i18n_coverage;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -174,6 +181,8 @@ mod tests_masking_layout;
 #[cfg(test)]
 mod tests_menubar;
 #[cfg(test)]
+mod tests_merge_preview;
+#[cfg(test)]
 mod tests_module_help;
 #[cfg(test)]
 mod tests_modules;
@@ -183,6 +192,8 @@ mod tests_offline;
 mod tests_open_lightroom;
 #[cfg(test)]
 mod tests_panels;
+#[cfg(test)]
+mod tests_preset_favorites;
 #[cfg(test)]
 mod tests_preset_import;
 #[cfg(test)]
@@ -207,6 +218,8 @@ mod tests_slider_reset;
 mod tests_slideshow;
 #[cfg(test)]
 mod tests_solo_sections;
+#[cfg(test)]
+mod tests_space_hand;
 #[cfg(test)]
 mod tests_switch_library;
 #[cfg(test)]
@@ -477,10 +490,15 @@ pub struct LccApp {
     pub film_scroll: Option<f32>,
     /// Widget registry from the last frame (automation ids → rects).
     pub widgets: Vec<(String, egui::Rect)>,
+    /// A histogram clipping indicator is hovered this frame: the clipping overlay is previewed on
+    /// the photo without turning the persistent one on ([`Self::hover_preview`]'s pattern).
+    pub clipping_preview: bool,
     /// In-progress on-canvas gesture (brush stroke points, gradient drag…).
     pub gesture: Option<panels::detail::Gesture>,
     /// The crop tool's view held still while the crop is dragged, rotated or straightened (issue #60).
     pub crop_layout: Option<panels::detail::CropLayout>,
+    /// Space is held over a tool on the photo: the view's hand has the pointer ([`space_hand`]).
+    pub space_hand: Option<space_hand::SpaceHand>,
     /// The brush stroke being painted, as drawn on the photo until it's committed (issue #517).
     pub brush_live: Option<brush_live::LiveStroke>,
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
@@ -547,6 +565,10 @@ pub struct LccApp {
     /// Say once, when the GPU device has been tried, that no graphics processor was found
     /// ([`panels::notices::gpu_notice`]). The desktop app sets it; headless sessions and tests don't.
     pub gpu_notice: bool,
+    /// This host may run the start-up update check (when the user turned it on): the desktop app
+    /// with a settings folder of its own sets it. Headless sessions (the test harness, `snapshot`,
+    /// MCP), `--memory` and `<PREFIX>_NO_PREFS` runs don't, so they never check at start.
+    pub startup_update_check: bool,
     /// The window shows SDR only (desktop: eframe's surface is 8-bit, `hdr_display::report`), so
     /// the HDR button says HDR edits are seen through the SDR rendition. Headless/tests: false.
     pub hdr_display_sdr: bool,
@@ -634,6 +656,7 @@ impl LccApp {
             widgets: vec![],
             gesture: None,
             crop_layout: None,
+            space_hand: None,
             brush_live: None,
             loupe_shown: None,
             video_view: Default::default(),
@@ -661,10 +684,12 @@ impl LccApp {
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,
+            clipping_preview: false,
             window_is_fullscreen: false,
             preview_window: None,
             gpu_applied: None,
             gpu_notice: false,
+            startup_update_check: false,
             hdr_display_sdr: false,
             hdr_headroom: None,
             memory_applied: None,
@@ -1493,9 +1518,19 @@ impl LccApp {
             shell::defer_tabs(self, raw);
             return;
         }
-        let n = match self.synthetic[0] {
-            egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. } => 1,
-            _ => self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map_or(self.synthetic.len(), |i| i + 1),
+        let pointer =
+            |e: &egui::Event| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. });
+        let n = if pointer(&self.synthetic[0]) {
+            1
+        } else {
+            // a key sequence up to its release; a key held down (no release yet) stops before the
+            // pointer events that follow, which then still come one per frame
+            let release = self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map(|i| i + 1);
+            let next_pointer = self.synthetic.iter().position(pointer);
+            match (release, next_pointer) {
+                (Some(r), Some(q)) => r.min(q),
+                (r, q) => r.or(q).unwrap_or(self.synthetic.len()),
+            }
         };
         if let Some(egui::Event::PointerMoved(p) | egui::Event::PointerButton { pos: p, .. }) = self.synthetic.first() {
             raw.events.push(egui::Event::PointerMoved(*p));
@@ -1532,6 +1567,19 @@ impl LccApp {
         self.perf.frame_ms = now_ms() - t0;
         self.perf.update_ms = self.perf.logic_ms + self.perf.frame_ms;
         self.perf.max_update_ms = self.perf.max_update_ms.max(self.perf.update_ms);
+        // Windows only: G-SYNC / FreeSync brightness flicker workaround.
+        #[cfg(target_os = "windows")]
+        if self.ui.settings.vrr_flicker_workaround && !self.headless_host {
+            let active = ctx.input(|i| {
+                let focused = i.focused;
+                let minimized =
+                    i.viewport().minimized.unwrap_or(false) || i.raw.viewports.get(&i.raw.viewport_id).and_then(|v| v.minimized).unwrap_or(false);
+                focused && !minimized
+            });
+            if active {
+                ctx.request_repaint();
+            }
+        }
     }
 
     /// Once per library opened (at launch too): name it in the window title, so nobody edits in
@@ -1575,6 +1623,8 @@ impl LccApp {
         self.library_changed(&ctx);
         // panels set it again this frame while the pointer rests on a preset or profile
         self.hover_preview = None;
+        // …and the histogram sets this while the pointer rests on a clipping indicator
+        self.clipping_preview = false;
         self.ai_mask_detail(&ctx);
         self.place_names_outcome(&ctx);
         if self.ui.fullscreen {

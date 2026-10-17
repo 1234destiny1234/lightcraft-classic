@@ -6,7 +6,7 @@ use egui::{Align2, Color32, Pos2, Rect, RichText, Sense, Stroke, pos2, vec2};
 use lcc_catalog::PhotoId;
 use lcc_develop::{ControlSpec, DevelopSettings, Section, ToneCurve, Track, WbMode, controls};
 use lcc_geom::Point;
-use lcc_raster::Histogram;
+use lcc_raster::{Clipped, Histogram, HistogramMode, HistogramScale};
 use serde_json::{Value, json};
 
 use crate::LccApp;
@@ -237,7 +237,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             app.ui.toggle_flyout("curve");
         }
         if open {
-            curve_editor(app, ui, id, d);
+            curve_editor(app, ui, id, d, CurveTarget::Photo);
         }
         ui.add_space(8.0);
     });
@@ -316,6 +316,15 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         {
             control(app, ui, d, c, true);
         }
+        // single outlier photosites, replaced in the raw mosaic (#1345): raws only
+        if app.session.catalog.photo(id).is_some_and(|p| p.develops_raw()) {
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 4, bottom: 0 }).show(ui, |ui| {
+                let mut on = d.detail.nr_outliers;
+                if super::settings::check(ui, "detail.nrOutliers", &mut on, "Remove Hot Pixels") {
+                    let _ = app.run("develop.merge", json!({"settings": {"detail": {"nr_outliers": on}}, "label": "Remove Hot Pixels"}));
+                }
+            });
+        }
         ui.add_space(8.0);
     });
     section(app, ui, &d, "optics", "Optics", |app, ui, d| {
@@ -336,6 +345,35 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if lp && !has_lens {
                 lens_note(app, ui, id);
             }
+            // What photos imported from now on start from, and one action that makes these settings
+            // it (issue #148: the two checkboxes above reset on every photo, so a batch wants a
+            // default).
+            ui.add_space(6.0);
+            let photo_camera = app.session.catalog.photo(id).map(|p| p.meta.camera.trim().to_string()).unwrap_or_default();
+            let current = {
+                let defaults = &app.session.import_defaults;
+                if defaults.per_camera && !photo_camera.is_empty() {
+                    defaults.cameras.iter().find(|c| c.camera.eq_ignore_ascii_case(&photo_camera)).and_then(|c| c.preset.clone())
+                } else {
+                    defaults.raw_preset.clone()
+                }
+            };
+            // the preset the default points at: its name for the row, and — when it is one of the
+            // user's own — the name the naming dialog starts from (a built-in's would make a twin)
+            let (starts_from, suggested) = match current.as_deref().and_then(|pid| app.session.presets.iter().find(|p| p.id == pid)) {
+                Some(p) => (crate::i18n::builtin_label(&p.name, p.builtin).to_string(), if p.builtin { String::new() } else { p.name.clone() }),
+                None => (crate::i18n::tr("{app} Default").to_string(), String::new()),
+            };
+            ui.horizontal_wrapped(|ui| {
+                ui.label(crate::i18n::tr("New photos start from"));
+                ui.label(RichText::new(starts_from).strong());
+                // "Save as…": the name is the user's, so several named optics defaults can live side
+                // by side (one per camera, say) instead of one fixed entry
+                if text_button(ui, "opticsNewPhotoDefault", "Save as…", false).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::NewPhotoDefault { name: suggested });
+                }
+            });
+            ui.label(RichText::new(crate::i18n::tr("Photos imported from now on; photos already in the library keep theirs.")).small().weak());
         });
         if d.optics.lens_profile {
             for c in ["optics.profileDistortion", "optics.profileVignetting"] {
@@ -522,6 +560,24 @@ pub(crate) fn section(
 
 // ------------------------------------------------------------------------------ histogram
 
+/// One of the histogram's clipping indicators: a small triangle in the plot's top corner pointing
+/// out of it (left for the shadows, right for the highlights). Filled with the colour of the
+/// channels that clip — or while the per-pixel overlay is on — and hollow while none of them do.
+fn paint_clip_triangle(p: &egui::Painter, rect: Rect, out: f32, color: Color32, lit: bool) {
+    let c = rect.center();
+    let (w, h) = (7.0, 8.0);
+    let pts = if out < 0.0 {
+        vec![pos2(c.x - w, c.y), pos2(c.x + w * 0.6, c.y - h), pos2(c.x + w * 0.6, c.y + h)]
+    } else {
+        vec![pos2(c.x + w, c.y), pos2(c.x - w * 0.6, c.y - h), pos2(c.x - w * 0.6, c.y + h)]
+    };
+    if lit {
+        p.add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
+    } else {
+        p.add(egui::Shape::closed_line(pts, Stroke::new(1.2, color)));
+    }
+}
+
 /// The current photo's existing preview histogram, shared by Histogram and Tone Curve.
 fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
     app.renderer
@@ -568,16 +624,27 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // rendered it)
     let hist = live.or_else(|| preview_histogram(app, id));
     let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
-    // an HDR edit's histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR label
-    // row under the plot
-    let hdr = hist.as_ref().and_then(|h| h.hdr);
+    let mode = super::histogram::mode_of(app);
+    let scale = super::histogram::scale_of(app);
+    // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
+    // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
+    let hdr = hist.as_ref().and_then(|h| h.hdr).filter(|_| !mode.is_scope());
     let legend = if hdr.is_some() { 26.0 } else { 0.0 };
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 118.0 + legend), Sense::click());
+    let height = if mode.is_scope() { 184.0 } else { 118.0 + legend };
+    let (r, resp) = ui.allocate_exact_size(vec2(w, height), Sense::click_and_drag());
     crate::widgets::announce(&resp, crate::i18n::tr("Histogram"));
     register(ui.ctx(), "histogram", r);
     let p = ui.painter();
     p.rect_filled(r, 0.0, t.button);
     let plot = Rect::from_min_max(r.min + vec2(0.0, 6.0), pos2(r.right(), r.bottom() - 26.0 - legend));
+    register(ui.ctx(), "histogram:plot", plot);
+    // Lightroom Classic's tonal zones (Blacks / Shadows / Exposure / Highlights / Whites across the
+    // plot): a drag over one moves its control (the band and the readout show which and how far), a
+    // double-click puts it back to its default, and Shift drags a tenth as far
+    let zone = super::histogram::interact(app, ui, &resp, plot, id);
+    if let Some(a) = &zone {
+        super::histogram::paint_zone(p, plot, a, &t);
+    }
     if let Some(b) = hdr {
         // white for SDR, then one band per stop above SDR white: white too, or (Visualize HDR
         // range on) in its colours
@@ -602,81 +669,54 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             "Left: the standard (SDR) range up to SDR white. Right: the HDR range, one band per stop above SDR white (the orange line: the HDR headroom). With Visualize HDR range on, the bands take its colours.",
         ));
     }
-    let clipping = hist.as_ref().map(|h| h.clipping());
-    if let Some(h) = hist {
-        let smooth = |v: &[u32]| -> Vec<f32> {
-            (0..256)
-                .map(|i| {
-                    let (a, b) = (i.max(2) - 2, (i + 3).min(256));
-                    v[a..b].iter().map(|x| *x as f32).sum::<f32>() / (b - a) as f32
-                })
-                .collect()
-        };
-        // HDR: SDR on the left half, a solid line at SDR white and dashed ones between the stops
-        if let Some(b) = h.hdr {
-            let x0 = plot.left() + plot.width() * b.from as f32 / 255.0;
-            let stops = b.stops.round().max(1.0) as usize;
-            for k in 1..stops {
-                let x = x0 + (plot.right() - x0) * k as f32 / stops as f32;
-                let mut y = plot.top();
-                while y < plot.bottom() {
-                    p.line_segment([pos2(x, y), pos2(x, (y + 5.0).min(plot.bottom()))], Stroke::new(1.0, Color32::from_gray(150)));
-                    y += 9.0;
-                }
-            }
-            p.line_segment([pos2(x0, plot.top()), pos2(x0, plot.bottom())], Stroke::new(1.5, Color32::from_gray(160)));
-            // the photo's headroom limit on the fixed scale: marked, the range past it dimmed
-            let limit = app.session.develop_of(id).map_or(b.stops, |d| d.hdr.max_ev as f32);
-            if limit.is_finite() && limit >= 0.0 && limit < b.stops - 0.05 {
-                let x = x0 + (plot.right() - x0) * (limit / b.stops).clamp(0.0, 1.0);
-                p.rect_filled(Rect::from_min_max(pos2(x, plot.top()), plot.max), 0.0, Color32::from_black_alpha(70));
-                p.line_segment([pos2(x, plot.top()), pos2(x, plot.bottom())], Stroke::new(1.0, Color32::from_rgb(230, 150, 60)));
+    let clipping = hist.as_ref().map(|h| h.clipping_channels());
+    // HDR: SDR on the left half, a solid line at SDR white and dashed ones between the stops
+    if let Some(b) = hdr {
+        let x0 = plot.left() + plot.width() * b.from as f32 / 255.0;
+        let stops = b.stops.round().max(1.0) as usize;
+        for k in 1..stops {
+            let x = x0 + (plot.right() - x0) * k as f32 / stops as f32;
+            let mut y = plot.top();
+            while y < plot.bottom() {
+                p.line_segment([pos2(x, y), pos2(x, (y + 5.0).min(plot.bottom()))], Stroke::new(1.0, Color32::from_gray(150)));
+                y += 9.0;
             }
         }
-        let chans = [(smooth(&h.r), hex("#df3939")), (smooth(&h.g), hex("#44b072")), (smooth(&h.b), hex("#3b6fe0"))];
-        let peak = chans.iter().flat_map(|(v, _)| v.iter().skip(2).take(252)).fold(1.0f32, |a, b| a.max(*b));
-        let to = |i: usize, v: f32| pos2(plot.left() + plot.width() * i as f32 / 255.0, plot.bottom() - plot.height() * (v / peak).sqrt().min(1.0));
-        // luminance fill
-        let lum = smooth(&h.luma);
-        let mut mesh = Mesh::default();
-        for i in 0..256 {
-            let top = to(i, lum[i]);
-            mesh.vertices.push(Vertex { pos: top, uv: Pos2::ZERO, color: Color32::from_gray(120).gamma_multiply(0.35) });
-            mesh.vertices.push(Vertex { pos: pos2(top.x, plot.bottom()), uv: Pos2::ZERO, color: Color32::from_gray(120).gamma_multiply(0.35) });
-            if i > 0 {
-                let k = (i as u32) * 2;
-                mesh.indices.extend([k - 2, k - 1, k, k - 1, k + 1, k]);
-            }
+        p.line_segment([pos2(x0, plot.top()), pos2(x0, plot.bottom())], Stroke::new(1.5, Color32::from_gray(160)));
+        // the photo's headroom limit on the fixed scale: marked, the range past it dimmed
+        let limit = app.session.develop_of(id).map_or(b.stops, |d| d.hdr.max_ev as f32);
+        if limit.is_finite() && limit >= 0.0 && limit < b.stops - 0.05 {
+            let x = x0 + (plot.right() - x0) * (limit / b.stops).clamp(0.0, 1.0);
+            p.rect_filled(Rect::from_min_max(pos2(x, plot.top()), plot.max), 0.0, Color32::from_black_alpha(70));
+            p.line_segment([pos2(x, plot.top()), pos2(x, plot.bottom())], Stroke::new(1.0, Color32::from_rgb(230, 150, 60)));
         }
-        p.add(mesh);
-        // greyscale images: the three channels coincide — draw one neutral line
-        let spread: f32 = (0..256).map(|i| (chans[0].0[i] - chans[1].0[i]).abs() + (chans[1].0[i] - chans[2].0[i]).abs()).sum();
-        let total: f32 = chans[1].0.iter().sum::<f32>().max(1.0);
-        if spread / total < 0.02 {
-            let pts: Vec<Pos2> = (0..256).map(|i| to(i, chans[1].0[i])).collect();
-            p.add(egui::Shape::line(pts, Stroke::new(1.5, Color32::from_gray(200))));
-        } else {
-            for (v, c) in &chans {
-                let pts: Vec<Pos2> = (0..256).map(|i| to(i, v[i])).collect();
-                p.add(egui::Shape::line(pts, Stroke::new(1.5, *c)));
-            }
-        }
+    }
+    if let Some(h) = &hist {
+        super::histogram::paint_plot(p, plot, h, mode, scale);
     }
     let mut clicked = resp.clicked();
     // the panel's floating scroll bar widens over the right edge when hovered: both buttons keep
     // clear of it, the left one too so they stay symmetric (#1640)
     let scroll = ui.spacing().scroll;
     let inset = 20.0 + scroll.bar_width + scroll.bar_outer_margin;
-    for (name, x, label, clipped) in [
-        ("shadows", plot.left() + inset, "Shadow clipping", clipping.map(|(lo, _)| lo > 0.003)),
-        ("highlights", plot.right() - inset, "Highlight clipping", clipping.map(|(_, hi)| hi > 0.003)),
+    // the clipping mask the pointer is resting on, previewed on the photo this frame
+    let mut preview = false;
+    for (name, x, out, label, clipped) in [
+        ("shadows", plot.left() + inset, -1.0, "Shadow clipping", clipping.map(|c| c.shadow_channels())),
+        ("highlights", plot.right() - inset, 1.0, "Highlight clipping", clipping.map(|c| c.highlight_channels())),
     ] {
         let rect = Rect::from_center_size(pos2(x, plot.top() + 14.0), vec2(24.0, 22.0));
         let response = ui.interact(rect, ui.id().with(("histogram-clipping", name)), Sense::click());
         register(ui.ctx(), format!("histogram:{name}"), rect);
         response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), app.ui.show_clipping, crate::i18n::tr(label)));
         clicked |= response.clicked();
+        preview |= response.hovered();
         let active = app.ui.show_clipping;
+        // which channels reach this end of the histogram: the triangle takes their blend (white for
+        // all three, yellow / cyan / magenta for a pair, a channel's own colour for one), and stays
+        // hollow while none of them clip
+        let parts = clipped.unwrap_or(Clipped::NONE);
+        let lit = parts.any() || active;
         // Keep the hit target comfortable, with a smaller box and clear space to the plot edges.
         let box_rect = rect.shrink2(vec2(2.0, 2.0));
         p.rect_filled(
@@ -693,15 +733,10 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         if active {
             p.rect_stroke(box_rect, 3.0, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
         }
-        paint(
-            p,
-            Rect::from_center_size(rect.center(), vec2(16.0, 16.0)),
-            Icon::ChevronDown,
-            if clipped == Some(true) || active { t.text } else { t.text_dim },
-        );
+        paint_clip_triangle(p, rect, out, if lit { super::histogram::blend_color(parts.parts()) } else { t.text_dim }, lit);
         let status = match clipped {
-            Some(true) => "Clipping detected in this preview.",
-            Some(false) => "No clipping detected in this preview.",
+            Some(c) if c.any() => "Clipping detected in this preview.",
+            Some(_) => "No clipping detected in this preview.",
             None => "Histogram not yet available.",
         };
         response.on_hover_text(format!(
@@ -715,12 +750,34 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             crate::i18n::tr(status)
         ));
     }
-    if clicked {
+    // the plot's own controls, in the strip under it: which distribution it draws and how tall its
+    // bins are, the same values `view.histogram.mode` / `view.histogram.scale` select
+    let menu_rect = Rect::from_min_size(pos2(r.left() + 4.0, r.bottom() - 22.0), vec2(72.0, 18.0));
+    let menu = ui.interact(menu_rect, ui.id().with("histogram-display"), Sense::click());
+    menu.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, ui.is_enabled(), crate::i18n::tr("Histogram display")));
+    register(ui.ctx(), "histogram:display", menu_rect);
+    let col = if menu.hovered() { t.text } else { t.text_label };
+    let menu_clicked = menu.clicked();
+    p.text(pos2(menu_rect.left() + 3.0, menu_rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(mode.short()), t.font(11.5), col);
+    paint(p, Rect::from_center_size(pos2(menu_rect.right() - 8.0, menu_rect.center().y), vec2(12.0, 12.0)), Icon::ChevronDown, col);
+    menu.clone().on_hover_text(format!(
+        "{}\n{}\n{}",
+        crate::i18n::tr("Histogram display"),
+        crate::i18n::tr(mode.label()),
+        crate::i18n::tr(scale.label())
+    ));
+    egui::Popup::menu(&menu).show(|ui| histogram_display_menu(app, ui, mode, scale));
+    // a press on the plot's own controls is theirs: only the plot itself toggles the clipping
+    // warnings, as it always has
+    if clicked && !menu_clicked {
         let _ = app.run("view.clipping", json!({}));
     }
-    // the histogram's context menu: the format of the colour readout (Lightroom's "Show Lab
-    // Color Values")
+    app.clipping_preview = preview;
+    // the histogram's context menu: which distribution it draws and how tall its bins are, then the
+    // format of the colour readout (Lightroom's "Show Lab Color Values")
     resp.context_menu(|ui| {
+        histogram_display_menu(app, ui, mode, scale);
+        ui.separator();
         for f in crate::color_readout::ColorReadout::ALL {
             let label = match f {
                 crate::color_readout::ColorReadout::Rgb => crate::i18n::tr("Show RGB Color Values"),
@@ -733,13 +790,21 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         }
     });
-    // the colour under the pointer in the loupe replaces the EXIF strip while it is there
+    // the colour under the pointer in the loupe, and the tonal zone the pointer is on, replace the
+    // EXIF strip while either is there (the histogram's own readout comes first: it is what the
+    // pointer is on). All three are centred in the room the mode selector leaves, so the two never
+    // run into each other in a narrow panel
+    let footer = Rect::from_min_max(pos2(menu_rect.right() + 4.0, r.bottom() - 26.0), pos2(r.right(), r.bottom()));
+    let footer_x = footer.center().x;
     let pass = ui.ctx().cumulative_pass_nr();
     let hover = app.ui.hover_color.filter(|(at, _)| pass.saturating_sub(*at) <= 1).map(|(_, c)| c);
-    if let Some(rgb) = hover {
+    if let Some(text) = zone.as_ref().and_then(|a| a.readout()) {
+        register(ui.ctx(), "histogramReadout", r);
+        p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+    } else if let Some(rgb) = hover {
         let text = app.ui.settings.color_readout.format(rgb);
         register(ui.ctx(), "histogramReadout", r);
-        p.text(pos2(r.left() + r.width() / 2.0, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+        p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
     } else if let Some(ph) = app.session.catalog.photo(id) {
         // EXIF strip
         let m = &ph.meta;
@@ -755,9 +820,28 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 
         if !parts.is_empty() {
             let text = parts.join(" · ");
-            let y = r.bottom() - 13.0;
-            let x = r.left() + r.width() / 2.0;
-            p.text(pos2(x, y), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+            p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+        }
+    }
+}
+
+/// The histogram's own display menu, shared by the selector under the plot and the plot's
+/// right-click menu: the distribution it draws, then the scale it draws it at.
+fn histogram_display_menu(app: &mut LccApp, ui: &mut egui::Ui, mode: HistogramMode, scale: HistogramScale) {
+    let t = Tokens::get(ui.ctx());
+    ui.label(RichText::new(crate::i18n::tr("Histogram Mode")).color(t.text_label));
+    for m in HistogramMode::ALL {
+        if ui.selectable_label(mode == m, crate::i18n::tr(m.label())).clicked() {
+            let _ = app.run("view.histogram.mode", json!({"mode": m.name()}));
+            ui.close();
+        }
+    }
+    ui.separator();
+    ui.label(RichText::new(crate::i18n::tr("Scale")).color(t.text_label));
+    for s in HistogramScale::ALL {
+        if ui.selectable_label(scale == s, crate::i18n::tr(s.label())).clicked() {
+            let _ = app.run("view.histogram.scale", json!({"scale": s.name()}));
+            ui.close();
         }
     }
 }
@@ -1036,6 +1120,56 @@ impl ParametricCurve {
     }
 }
 
+/// What the parametric graph draws and drags: the region curve with the master point curve on top
+/// of it, stacked as `lcc_pipeline::finish::curve_luts` stacks them. A Point Curve preset such as
+/// Medium Contrast shows in the line, as in Lightroom; a drag still moves only the region sliders.
+pub(crate) struct StackedCurve {
+    pub(crate) param: ParametricCurve,
+    /// The master point curve, `None` while it is the identity.
+    master: Option<lcc_color::spline::MonotoneCurve>,
+}
+
+impl StackedCurve {
+    pub(crate) fn new(c: &ToneCurve) -> StackedCurve {
+        let master = (!ToneCurve::point_curve_is_identity(&c.master))
+            .then(|| lcc_color::spline::MonotoneCurve::new(&c.master.iter().map(|q| (q.x, q.y)).collect::<Vec<_>>()));
+        StackedCurve { param: ParametricCurve::new(c), master }
+    }
+
+    /// The master point curve at a level.
+    pub(crate) fn master_at(&self, y: f64) -> f64 {
+        match &self.master {
+            Some(m) => m.eval(y.clamp(0.0, 1.0)).clamp(0.0, 1.0),
+            None => y,
+        }
+    }
+
+    /// The tone the renderer gives graph position `x`.
+    pub(crate) fn at(&self, x: f64) -> f64 {
+        self.master_at(self.param.at(x))
+    }
+
+    /// The region-curve level the master curve takes to `level`: what a drag on the drawn line
+    /// asks of the region sliders. Found by halving, as the master curve rises (falls, if it is
+    /// drawn upside down); where it is flat, any level of the flat part is a fine answer.
+    pub(crate) fn param_level(&self, level: f64) -> f64 {
+        if self.master.is_none() {
+            return level;
+        }
+        let rising = self.master_at(1.0) >= self.master_at(0.0);
+        let (mut lo, mut hi) = (0.0_f64, 1.0_f64);
+        for _ in 0..40 {
+            let mid = (lo + hi) / 2.0;
+            if (self.master_at(mid) < level) == rising {
+                lo = mid;
+            } else {
+                hi = mid;
+            }
+        }
+        (lo + hi) / 2.0
+    }
+}
+
 /// Close a graph drag's `develop` interaction, as one undo step.
 ///
 /// It is closed when the drag ends *or* the pointer comes up without egui reporting `drag_stopped`
@@ -1062,13 +1196,14 @@ const PARAM_GRAB: f32 = 14.0;
 /// slider, the curve and what is drawn are the same state rather than three things kept in step.
 fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Response, d: &DevelopSettings) {
     let t = Tokens::get(ui.ctx());
-    let model = ParametricCurve::new(&d.curve);
+    let stacked = StackedCurve::new(&d.curve);
+    let model = &stacked.param;
     let to_screen = |x: f64, y: f64| pos2(r.left() + x as f32 * r.width(), r.bottom() - y as f32 * r.height());
     let from_screen_x = |q: Pos2| ((q.x - r.left()) / r.width()).clamp(0.0, 1.0) as f64;
     // the graph x of a point, and how far it is from the drawn curve (in screen points)
     let near_curve = |q: Pos2| {
         let x = from_screen_x(q);
-        to_screen(x, model.at(x)).distance(q)
+        to_screen(x, stacked.at(x)).distance(q)
     };
     let drag_id = egui::Id::new("curve-param-drag");
     let cursor_id = egui::Id::new("curve-param-cursor");
@@ -1087,7 +1222,7 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         let x = from_screen_x(q);
         let _ = app.run("develop.beginInteraction", json!({"label": "Parametric Curve"}));
         dragged = Some((model.region_at(x), x));
-        ui.data_mut(|dd| dd.insert_temp(cursor_id, to_screen(x, model.at(x))));
+        ui.data_mut(|dd| dd.insert_temp(cursor_id, to_screen(x, stacked.at(x))));
     }
     if let Some((region, x)) = dragged
         && resp.dragged()
@@ -1097,11 +1232,13 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
         let alt = ui.input(|i| i.modifiers.alt);
         let dd = ui.input(|i| i.pointer.delta());
         let step = if alt { vec2(dd.x * 0.1, dd.y * 0.1) } else { vec2(dd.x, dd.y) };
-        let start = to_screen(x, model.handle_level_at(region, model.amounts[region], x));
+        let start = to_screen(x, stacked.master_at(model.handle_level_at(region, model.amounts[region], x)));
         let cursor = ui.data(|d| d.get_temp::<Pos2>(cursor_id)).unwrap_or(start) + step;
         ui.data_mut(|d| d.insert_temp(cursor_id, cursor));
+        // the pointer is on the drawn (stacked) line: the region curve has to reach what the
+        // master curve takes to that level
         let level = ((r.bottom() - cursor.y) / r.height()).clamp(0.0, 1.0) as f64;
-        set = Some((PARAM_AMOUNTS[region], model.amount_at_level(region, level, x)));
+        set = Some((PARAM_AMOUNTS[region], model.amount_at_level(region, stacked.param_level(level), x)));
     }
     if let Some((id, v)) = set {
         let _ = app.run("develop.set", json!({"control": id, "value": v}));
@@ -1131,8 +1268,66 @@ fn param_drag(app: &mut LccApp, ui: &mut egui::Ui, r: Rect, resp: &egui::Respons
     }
 }
 
-fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSettings) {
+/// Whose point curves a curve editor edits: the photo's Tone Curve, or one mask's local Curve (the
+/// same editor without the parametric curve, Refine Saturation and the targeted adjustment; the curve
+/// commands take the mask's id as `mask`).
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub(crate) enum CurveTarget {
+    Photo,
+    Mask(u32),
+}
+
+impl CurveTarget {
+    /// The name of one of the editor's widgets: `curve…` for the Tone Curve, `maskCurve…` for a mask's.
+    fn widget(self, suffix: &str) -> String {
+        match self {
+            CurveTarget::Photo => format!("curve{suffix}"),
+            CurveTarget::Mask(_) => format!("maskCurve{suffix}"),
+        }
+    }
+    /// Command parameters `p` for this target (`mask` added for a mask's curve).
+    fn params(self, mut p: Value) -> Value {
+        if let (CurveTarget::Mask(m), Some(o)) = (self, p.as_object_mut()) {
+            o.insert("mask".into(), json!(m));
+        }
+        p
+    }
+    /// The point curves this target edits in `d` (a mask that is gone has none).
+    fn points(self, d: &DevelopSettings) -> lcc_develop::PointCurves {
+        match self {
+            CurveTarget::Photo => d.curve.points(),
+            CurveTarget::Mask(m) => d.masks.iter().find(|x| x.id == m).map(|x| x.curve.clone()).unwrap_or_default(),
+        }
+    }
+    /// The channel shown: the Tone Curve's and the masks' are remembered apart.
+    fn channel(self, app: &LccApp) -> String {
+        match self {
+            CurveTarget::Photo => app.ui.curve_channel.clone(),
+            CurveTarget::Mask(_) => app.ui.mask_curve_channel.clone(),
+        }
+    }
+    fn set_channel(self, app: &mut LccApp, ch: &str) {
+        match self {
+            CurveTarget::Photo => app.ui.curve_channel = ch.into(),
+            CurveTarget::Mask(_) => app.ui.mask_curve_channel = ch.into(),
+        }
+    }
+    /// The undo label of a drag.
+    fn label(self) -> &'static str {
+        match self {
+            CurveTarget::Photo => "Tone Curve",
+            CurveTarget::Mask(_) => "Mask Curve",
+        }
+    }
+}
+
+/// The Tone Curve editor (`CurveTarget::Photo`) or a mask's local Curve editor.
+pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSettings, target: CurveTarget) {
     let t = Tokens::get(ui.ctx());
+    let photo = target == CurveTarget::Photo;
+    if !photo && !lcc_develop::PointCurves::CHANNELS.contains(&target.channel(app).as_str()) {
+        target.set_channel(app, "master");
+    }
     // channel selector
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 4 }).show(ui, |ui| {
         ui.horizontal(|ui| {
@@ -1143,10 +1338,13 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
                 ("green", hex("#33bb55")),
                 ("blue", hex("#3377ee")),
             ] {
+                if ch == "parametric" && !photo {
+                    continue;
+                }
                 let (r, resp) = ui.allocate_exact_size(vec2(24.0, 24.0), Sense::click());
                 crate::widgets::announce(&resp, format!("{} {ch}", crate::i18n::tr("Curve channel")));
-                register(ui.ctx(), format!("curveChannel:{ch}"), r);
-                let sel = app.ui.curve_channel == ch;
+                register(ui.ctx(), target.widget(&format!("Channel:{ch}")), r);
+                let sel = target.channel(app) == ch;
                 if ch == "parametric" {
                     paint(ui.painter(), r.shrink(4.0), Icon::Curve, if sel { t.text } else { t.icon });
                 } else {
@@ -1167,26 +1365,28 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
                 };
                 let resp = resp.on_hover_text(crate::i18n::tr_format!("{name} — double-click to reset it", name = name));
                 if resp.double_clicked() {
-                    app.ui.curve_channel = ch.into();
-                    let _ = app.run("curve.reset", json!({"channel": ch}));
+                    target.set_channel(app, ch);
+                    let _ = app.run("curve.reset", target.params(json!({"channel": ch})));
                 } else if resp.clicked() {
-                    app.ui.curve_channel = ch.into();
+                    target.set_channel(app, ch);
                 }
             }
-            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                tat_button(app, ui, "tat:curve", "Targeted adjustment: drag up/down on the photo to adjust the curve there");
-            });
+            if photo {
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    tat_button(app, ui, "tat:curve", "Targeted adjustment: drag up/down on the photo to adjust the curve there");
+                });
+            }
         });
     });
-    let ch = app.ui.curve_channel.clone();
+    let ch = target.channel(app);
     let w = ui.available_width();
     let side = (w - 48.0).max(80.0);
     let (outer, _) = ui.allocate_exact_size(vec2(w, side + 12.0), Sense::hover());
     let r = Rect::from_min_size(pos2(outer.left() + 24.0, outer.top() + 6.0), vec2(side, side));
-    let resp = ui.interact(r, egui::Id::new(("curve", &ch)), Sense::click_and_drag());
-    crate::widgets::announce(&resp, crate::i18n::tr("Tone Curve"));
-    register(ui.ctx(), "curve", r);
-    resp.context_menu(|ui| curve_reset_menu(app, ui, &ch));
+    let resp = ui.interact(r, egui::Id::new(("curve", target.widget(""), &ch)), Sense::click_and_drag());
+    crate::widgets::announce(&resp, crate::i18n::tr(target.label()));
+    register(ui.ctx(), target.widget(""), r);
+    resp.context_menu(|ui| curve_reset_menu(app, ui, &ch, target));
     let p = ui.painter();
     p.rect_filled(r, 2.0, t.canvas);
     if let Some(hist) = preview_histogram(app, id) {
@@ -1206,37 +1406,34 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
     p.line_segment([r.left_bottom(), r.right_top()], Stroke::new(1.0, Color32::from_gray(70)));
     let to_screen = |x: f64, y: f64| pos2(r.left() + x as f32 * r.width(), r.bottom() - y as f32 * r.height());
     let from_screen = |q: Pos2| (((q.x - r.left()) / r.width()).clamp(0.0, 1.0) as f64, ((r.bottom() - q.y) / r.height()).clamp(0.0, 1.0) as f64);
-    if ch == "parametric" {
-        // The Effective curve: the model the renderer builds from the four region sliders, sampled
-        // here and rebuilt every frame. The graph holds no state of its own, so a slider moved by
-        // hand, a Reset or an Undo redraws it from the settings in the same frame it changes.
+    if ch == "parametric" && photo {
+        // The Effective curve: the model the renderer builds from the four region sliders, with the
+        // master point curve on top, sampled here and rebuilt every frame. The graph holds no state
+        // of its own, so a slider moved by hand, a preset, a Reset or an Undo redraws it from the
+        // settings in the same frame it changes.
         let c = &d.curve;
-        let model = ParametricCurve::new(c);
+        let model = StackedCurve::new(c);
         let pts: Vec<Pos2> =
             (0..=CURVE_SAMPLES).map(|i| to_screen(i as f64 / CURVE_SAMPLES as f64, model.at(i as f64 / CURVE_SAMPLES as f64))).collect();
         p.add(egui::Shape::line(pts, Stroke::new(2.0, Color32::from_gray(220))));
         param_drag(app, ui, r, &resp, d);
-        curve_footer(app, ui, d);
+        curve_footer(app, ui, d, target);
         for c in PARAM_AMOUNTS {
             control(app, ui, d, c, true);
         }
         control(app, ui, d, "curve.refineSaturation", true);
         return;
     }
-    let pts_of = |d: &DevelopSettings| -> Vec<Point> {
-        let v = match ch.as_str() {
-            "red" => &d.curve.red,
-            "green" => &d.curve.green,
-            "blue" => &d.curve.blue,
-            _ => &d.curve.master,
-        };
+    let curves = target.points(d);
+    let pts_of = |c: &lcc_develop::PointCurves| -> Vec<Point> {
+        let v = c.channel(&ch).map_or(&c.master, |v| v);
         // in the order the curve is drawn (points from a sidecar, a preset or an agent can come
         // unsorted or not finite): the drag below keeps each point between its neighbours
         let mut v: Vec<Point> = v.iter().copied().filter(|q| q.x.is_finite() && q.y.is_finite()).collect();
         v.sort_by(|a, b| a.x.total_cmp(&b.x));
         if v.len() < 2 { vec![Point::new(0.0, 0.0), Point::new(1.0, 1.0)] } else { v }
     };
-    let pts = pts_of(d);
+    let pts = pts_of(&curves);
     let curve = lcc_color::spline::MonotoneCurve::new(&pts.iter().map(|q| (q.x, q.y)).collect::<Vec<_>>());
     let color = match ch.as_str() {
         "red" => hex("#dd3333"),
@@ -1248,7 +1445,7 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
     p.add(egui::Shape::line(line, Stroke::new(2.0, color)));
     // interaction: drag a point (both axes, between its neighbours; ⌥ = fine), drag empty space to add and
     // drag a new point, click empty space to add, double-click a point to delete it
-    let drag_id = egui::Id::new(("curve-drag", &ch));
+    let drag_id = egui::Id::new(("curve-drag", target.widget(""), &ch));
     // the point being dragged (stored as `Option<usize>` so a stale value can be cleared)
     let mut dragging: Option<usize> = ui.data(|dd| dd.get_temp::<Option<usize>>(drag_id)).flatten();
     let nearest = |q: Pos2| pts.iter().enumerate().map(|(i, p)| (i, to_screen(p.x, p.y).distance(q))).min_by(|a, b| a.1.total_cmp(&b.1));
@@ -1292,7 +1489,7 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
         && let Some(q) = ui.input(|i| i.pointer.press_origin()).or(resp.interact_pointer_pos())
     {
         // pick the point under the press, not where the pointer is once the drag threshold passed
-        let _ = app.run("develop.beginInteraction", json!({"label": "Tone Curve"}));
+        let _ = app.run("develop.beginInteraction", json!({"label": target.label()}));
         match nearest(q) {
             Some((i, dist)) if dist < 10.0 => dragging = Some(i),
             _ => {
@@ -1347,7 +1544,7 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
     }
     if let Some(v) = new_pts {
         let arr: Vec<[f64; 2]> = v.iter().map(|p| [p.x, p.y]).collect();
-        let _ = app.run("develop.curve", json!({"channel": ch, "points": arr}));
+        let _ = app.run("develop.curve", target.params(json!({"channel": ch, "points": arr})));
     }
     // the drag is over when egui says so, or when the pointer comes up without it saying so (a
     // release outside the window would otherwise leave the interaction open, and every later edit a
@@ -1356,22 +1553,24 @@ fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSet
         dragging = None;
     }
     ui.data_mut(|dd| dd.insert_temp(drag_id, dragging));
-    curve_footer(app, ui, d);
-    control(app, ui, d, "curve.refineSaturation", true);
+    curve_footer(app, ui, d, target);
+    if photo {
+        control(app, ui, d, "curve.refineSaturation", true);
+    }
     let _ = id;
 }
 
 /// The row under the curve graph: point-curve presets and reset every curve.
-fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
-    use lcc_engine::cmd::curves::{all_presets, matching_preset};
+fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, target: CurveTarget) {
+    use lcc_engine::cmd::curves::{all_presets, matching_points_preset};
     let t = Tokens::get(ui.ctx());
     egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 4 }).show(ui, |ui| {
         ui.horizontal(|ui| {
             ui.label(RichText::new(crate::i18n::tr("Point Curve")).font(t.font(12.0)).color(t.text_label));
-            let current = matching_preset(&app.session, &d.curve);
+            let current = matching_points_preset(&app.session, &target.points(d));
             let builtin = current.as_ref().is_none_or(|name| all_presets(&app.session).iter().any(|p| p.builtin && &p.name == name));
             let label = crate::i18n::builtin_label(current.as_deref().unwrap_or("Custom"), builtin);
-            let r = crate::widgets::dropdown(ui, "curvePreset", label, t.font(12.0), t.text);
+            let r = crate::widgets::dropdown(ui, &target.widget("Preset"), label, t.font(12.0), t.text);
             egui::Popup::menu(&r).show(|ui| {
                 ui.set_min_width(180.0);
                 let presets = all_presets(&app.session);
@@ -1382,9 +1581,9 @@ fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
                         ui.separator();
                     }
                     let r = ui.selectable_label(current.as_deref() == Some(p.name.as_str()), crate::i18n::builtin_label(&p.name, p.builtin));
-                    register(ui.ctx(), format!("curvePreset:{}", p.name), r.rect);
+                    register(ui.ctx(), target.widget(&format!("Preset:{}", p.name)), r.rect);
                     if r.clicked() {
-                        let _ = app.run("curve.applyPreset", json!({"name": p.name}));
+                        let _ = app.run("curve.applyPreset", target.params(json!({"name": p.name})));
                         ui.close();
                     }
                     if !p.builtin {
@@ -1399,9 +1598,17 @@ fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
                 ui.separator();
                 let shaped = current.as_deref() != Some("Linear");
                 let r = ui.add_enabled(shaped, egui::Button::new(crate::i18n::tr("Save Point Curve…")));
-                register(ui.ctx(), "curvePresetMenu:save", r.rect);
+                register(ui.ctx(), target.widget("PresetMenu:save"), r.rect);
                 if r.clicked() {
-                    crate::panels::dialogs::prompt(app, "Save Point Curve Preset", "Preset name", "", "curve.savePreset", json!({}), "name");
+                    crate::panels::dialogs::prompt(
+                        app,
+                        "Save Point Curve Preset",
+                        "Preset name",
+                        "",
+                        "curve.savePreset",
+                        target.params(json!({})),
+                        "name",
+                    );
                     ui.close();
                 }
                 if ui.add_enabled(app.services.pick_curve_preset_files.is_some(), egui::Button::new(crate::i18n::tr("Import Presets…"))).clicked() {
@@ -1418,11 +1625,15 @@ fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
                 }
             });
             ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                let r = text_button(ui, "curveReset", crate::i18n::tr("Reset"), false).on_hover_text(crate::i18n::tr(
-                    "Reset all curves: point curves (all channels) and parametric (double-click a channel to reset only that one)",
-                ));
+                let tip = match target {
+                    CurveTarget::Photo => {
+                        "Reset all curves: point curves (all channels) and parametric (double-click a channel to reset only that one)"
+                    }
+                    CurveTarget::Mask(_) => "Reset the mask's curve, all channels (double-click a channel to reset only that one)",
+                };
+                let r = text_button(ui, &target.widget("Reset"), crate::i18n::tr("Reset"), false).on_hover_text(crate::i18n::tr(tip));
                 if r.clicked() {
-                    let _ = app.run("curve.reset", json!({"channel": "all"}));
+                    let _ = app.run("curve.reset", target.params(json!({"channel": "all"})));
                 }
             });
         });
@@ -1430,22 +1641,22 @@ fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 }
 
 /// Right-click menu of the curve graph.
-fn curve_reset_menu(app: &mut LccApp, ui: &mut egui::Ui, ch: &str) {
+fn curve_reset_menu(app: &mut LccApp, ui: &mut egui::Ui, ch: &str, target: CurveTarget) {
     let label = if ch == "parametric" {
         crate::i18n::tr("Reset Parametric Curve").to_string()
     } else {
         crate::i18n::tr_format!("Reset {} Channel", crate::i18n::tr(channel_label(ch)))
     };
     let r = ui.button(label);
-    register(ui.ctx(), "curveMenu:resetChannel", r.rect);
+    register(ui.ctx(), target.widget("Menu:resetChannel"), r.rect);
     if r.clicked() {
-        let _ = app.run("curve.reset", json!({"channel": ch}));
+        let _ = app.run("curve.reset", target.params(json!({"channel": ch})));
         ui.close();
     }
     let r = ui.button(crate::i18n::tr("Reset All Curves"));
-    register(ui.ctx(), "curveMenu:resetAll", r.rect);
+    register(ui.ctx(), target.widget("Menu:resetAll"), r.rect);
     if r.clicked() {
-        let _ = app.run("curve.reset", json!({"channel": "all"}));
+        let _ = app.run("curve.reset", target.params(json!({"channel": "all"})));
         ui.close();
     }
 }

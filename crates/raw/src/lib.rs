@@ -27,13 +27,16 @@
 
 mod binned;
 pub mod color;
+pub mod dctjpeg;
 pub mod demosaic;
 mod dng;
 pub mod dngwrite;
 pub mod gaintable;
 pub mod highlight;
+mod hotpixel;
 #[cfg(feature = "jxl")]
 mod jxl;
+pub mod kelvin_builtin;
 pub mod kelvin_presets;
 pub mod lens_metadata;
 pub mod ljpeg;
@@ -110,7 +113,7 @@ pub enum RawFormat {
     X3f,
     /// A TIFF-based raw that has no DNG version tag but describes itself the way DNG does (a
     /// full-resolution CFA image with black/white levels, a default crop and `AsShotNeutral`):
-    /// Hasselblad 3FR and FFF. Read by the DNG reader.
+    /// Hasselblad 3FR and FFF. Read by `vendor::hasselblad` (the DNG reader plus what Hasselblad adds).
     CfaTiff,
     /// Kodak DCS520C TIFF: a two-component lossless JPEG CFA sub-IFD with a response curve (`vendor::kodak`).
     KodakDcs,
@@ -343,7 +346,7 @@ fn other_tiff_reason(bytes: &[u8]) -> String {
         && let Some(info) = dng::raw_ifd(t).and_then(|i| i.image().ok())
         && info.compression == lcc_tiff::tags::compression::JPEG
         && let Some(src) = info.chunks(bytes.len() as u64).first().and_then(|c| lcc_tiff::image::chunk_bytes(bytes, c))
-        && let Err(e) = ljpeg::frame_info(src)
+        && let Err(e) = if dctjpeg::is_dct(src) { dctjpeg::frame_info(src) } else { ljpeg::frame_info(src) }
     {
         return format!("raw image coded as lossless JPEG that is not decoded yet ({e})");
     }
@@ -399,7 +402,7 @@ fn decode_with(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         RawFormat::Rw2 => vendor::rw2::decode(bytes, mode),
         RawFormat::Pef => vendor::pef::decode(bytes, mode),
         RawFormat::Orf => vendor::orf::decode(bytes, mode),
-        RawFormat::CfaTiff => dng::decode_as(bytes, mode, RawFormat::CfaTiff).map(lift_clipped),
+        RawFormat::CfaTiff => vendor::hasselblad::decode(bytes, mode).map(lift_clipped),
         RawFormat::Srw => vendor::srw::decode(bytes, mode),
         RawFormat::KodakDcs => vendor::kodak::decode(bytes, mode),
         RawFormat::Mrw => vendor::mrw::decode(bytes, mode),
@@ -651,10 +654,15 @@ pub struct ColorData {
     /// "Camera local tone mapping" option asks for it (`lcc_pipeline::local_tone`).
     #[serde(default)]
     pub profile: profile::ProfileLook,
-    /// The camera's white-balance presets at stated temperatures (Sony ARW), which give a raw without colour
+    /// The camera's white-balance presets at stated temperatures (Sony ARW, Canon CR2), which give a raw without colour
     /// matrices a Kelvin scale ([`kelvin_presets`]). Not a DNG tag: nothing else reads it.
     #[serde(default)]
     pub kelvin_presets: Option<kelvin_presets::KelvinPresets>,
+    /// The camera's as-shot white-balance multipliers when the data come already balanced by them and
+    /// [`RawImage::wb_multipliers`] is unit (Sony's downsized lossless ARW, linear YCbCr): what a Kelvin scale reads
+    /// as As Shot. Not a DNG tag; the render never applies it.
+    #[serde(default)]
+    pub balanced_as_shot: Option<[f32; 3]>,
 }
 
 /// A decoded raw image.

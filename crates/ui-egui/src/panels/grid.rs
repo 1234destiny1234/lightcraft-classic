@@ -875,8 +875,7 @@ fn cell(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
         let _ = app.run("library.select", json!({"ids": [id.0], "mode": mode}));
     }
     if resp.double_clicked() {
-        let _ = app.run("library.select", json!({"ids": [id.0]}));
-        let _ = app.run("view.detail", json!({}));
+        open_photo(app, id);
     }
     // drag the selection (this photo joins it, or replaces it when it wasn't selected)
     if resp.drag_started() {
@@ -888,6 +887,14 @@ fn cell(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: Rect, square: bool,
         reorder_drop(app, ui, id, r, &dragged);
     }
     resp.context_menu(|ui| context_menu(app, ui, id));
+}
+
+/// A double-click on a grid photo: select it and show it in the loupe, or in Develop when the
+/// user chose that in Preferences → Interface (issue #144).
+pub fn open_photo(app: &mut LccApp, id: PhotoId) {
+    let _ = app.run("library.select", json!({"ids": [id.0]}));
+    let cmd = if app.ui.settings.double_click_develop { "module.develop" } else { "view.detail" };
+    let _ = app.run(cmd, json!({}));
 }
 
 /// The regular album the library shows: the one whose photos can be put in Custom Order.
@@ -1321,7 +1328,12 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     crate::widgets::menu_button(ui, crate::i18n::tr("Photo Merge"), |ui| {
         let n = app.session.selected().len();
-        for (id, label) in [("dialog.mergeHdr", "HDR…"), ("dialog.mergePanorama", "Panorama…"), ("dialog.mergeHdrPanorama", "HDR Panorama…")] {
+        for (id, label) in [
+            ("dialog.mergeHdr", "HDR…"),
+            ("dialog.mergePanorama", "Panorama…"),
+            ("dialog.mergeHdrPanorama", "HDR Panorama…"),
+            ("dialog.mergeFocusStack", "Focus Stack…"),
+        ] {
             if ui.add_enabled(n >= 2, egui::Button::new(crate::i18n::tr(label))).clicked() {
                 let _ = app.run(id, json!({}));
             }

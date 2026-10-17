@@ -15,7 +15,11 @@ const SETTLE: Duration = Duration::from_secs(120);
 
 fn demo() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
+    let mut session = lcc_engine::Session::with_demo();
+    // newest first, the newest photo open: written around it
+    session.execute("library.sort", &json!({"ascending": false})).unwrap();
+    session.selection = lcc_engine::Selection::single(session.visible_cloned()[0]);
+    let app = LccApp::new(session, services);
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail"}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -624,4 +628,23 @@ fn cmd_o_does_not_fire_while_a_dialog_is_open() {
     h.app.ui.dialog = None;
     press(&mut h, "O", &["cmd"]);
     assert_eq!(calls.load(std::sync::atomic::Ordering::SeqCst), 1);
+}
+
+/// The dialog's header controls don't overlap: Reset All used to be squeezed onto the filter row
+/// and drawn over "Only Library keys" (issue #154).
+#[test]
+fn shortcuts_header_controls_do_not_overlap() {
+    let mut h = demo();
+    for module in ["library", "develop"] {
+        h.app.run("app.shortcuts", json!({})).unwrap();
+        let _ = h.app.run(&format!("module.{module}"), json!({}));
+        h.step();
+        h.step();
+        let rect = |h: &Headless, id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("no widget {id}"));
+        let reset = rect(&h, "button:shortcutsResetAll");
+        for id in ["field:shortcutsSearch", "check:shortcuts.showAll", "check:shortcuts.moduleOnly"] {
+            let other = rect(&h, id);
+            assert!(!reset.intersects(other), "{module}: Reset All {reset:?} overlaps {id} {other:?}");
+        }
+    }
 }

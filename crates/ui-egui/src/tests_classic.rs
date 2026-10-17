@@ -1,5 +1,5 @@
 //! Headless tests of Library's Classic panels (P1.4): the panel stacks, Folders, Collections,
-//! Quick Develop, Keywording and Keyword List.
+//! Quick Develop, Keywording and Keyword List; and Help ▸ What's New, joined from release-note files.
 
 use std::time::Duration;
 
@@ -43,6 +43,37 @@ pub(crate) fn click(h: &mut Headless, id: &str) {
     assert_eq!(r["ok"], true, "{id}: {r}");
     h.step();
     h.step();
+}
+
+/// Help ▸ What's New shows upstream's file and every entry file in docs/whats-new/, line for line (so their
+/// translations still match), and nothing else but the date headings that group them.
+#[test]
+fn whats_new_shows_upstreams_file_and_every_entry_file() {
+    let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+    let mut sources = vec![std::fs::read_to_string(docs.join("whats-new.md")).unwrap()];
+    for item in std::fs::read_dir(docs.join("whats-new")).unwrap().flatten() {
+        let name = item.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".md") && name != "README.md" {
+            sources.push(std::fs::read_to_string(item.path()).unwrap());
+        }
+    }
+    assert!(sources.len() > 1, "docs/whats-new/ holds entries");
+    let shown: std::collections::BTreeSet<&str> = crate::panels::dialogs::WHATS_NEW.lines().map(str::trim_end).collect();
+    let written: std::collections::BTreeSet<&str> = sources.iter().flat_map(|s| s.lines()).map(str::trim_end).collect();
+    let lost: Vec<&&str> = written.difference(&shown).collect();
+    assert!(lost.is_empty(), "every line of the entries and of upstream's file is shown; missing: {lost:?}");
+    let extra: Vec<&&str> =
+        shown.difference(&written).filter(|l| !l.strip_prefix("## ").is_some_and(|d| d.len() == 10 && d.starts_with("20"))).collect();
+    assert!(extra.is_empty(), "nothing but date headings is added: {extra:?}");
+    let dates: Vec<&str> = crate::panels::dialogs::WHATS_NEW
+        .lines()
+        .filter_map(|l| l.strip_prefix("## "))
+        .filter(|d| d.starts_with(|c: char| c.is_ascii_digit()))
+        .collect();
+    let mut newest_first = dates.clone();
+    newest_first.sort_by(|a, b| b.cmp(a));
+    newest_first.dedup();
+    assert_eq!(dates, newest_first, "each date once, newest first");
 }
 
 /// Quick Develop: a step button adds to every selected photo's own value in one undo step; the
@@ -292,7 +323,7 @@ fn develop_column_is_its_own_classic_stack() {
     }
     assert!(has(&h, "sidebarSection:navigator"), "the Navigator, where Classic puts it");
     assert!(rows(&h, "presetGroup:") > 0, "the presets themselves");
-    // the presets are drawn once: with the presets column open (Shift+P), that column is the
+    // the presets are drawn once: with the presets column open (Window ▸ Presets), that column is the
     // presets — the same panel, with a header of its own
     let in_column = rows(&h, "presetGroup:");
     run(&mut h, "panel.presets", json!({}));
@@ -513,7 +544,7 @@ fn the_presets_fold_from_their_header() {
     assert_eq!(top(&h, "classicPanel:versions"), versions_top, "the panels below are back where they were");
 }
 
-/// The presets fold in the left column only: opening the presets column (Shift+P) after folding
+/// The presets fold in the left column only: opening the presets column (Window ▸ Presets) after folding
 /// them there shows the presets, not an empty column, and closing it brings the folded panel back.
 #[test]
 fn folding_the_presets_in_the_column_leaves_the_presets_column_whole() {
@@ -565,4 +596,45 @@ fn the_navigator_stays_at_the_top_while_the_panels_scroll_under_it() {
     assert_eq!(h.request("ui.clickWidget", json!({"id": "navigator:1:1"}), T)["ok"], true);
     h.step();
     assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0), "the pinned Navigator takes clicks");
+}
+
+/// #155: Settings ▸ Shortcuts hosts the same editor as Help ▸ Keyboard Shortcuts, but a click on a
+/// shortcut there stopped recording on the next frame, so no key could be set.
+#[test]
+fn settings_shortcuts_tab_records_a_key() {
+    let mut h = demo();
+    run(&mut h, "app.settings", json!({"tab": "shortcuts"}));
+    let r = h.request("ui.clickWidget", json!({"id": "field:shortcutsSearch"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert_eq!(h.request("ui.text", json!({"text": "compare"}), T)["ok"], true);
+    h.step();
+    h.step();
+    let r = h.request("ui.clickWidget", json!({"id": "button:shortcut-view.compare"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    assert_eq!(h.app.recording_shortcut.as_deref(), Some("view.compare"));
+    let r = h.request("ui.key", json!({"key": "J", "shift": true}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    assert_eq!(h.app.recording_shortcut, None);
+    assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "view.compare"), Some("Shift+J"));
+    assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { .. })));
+}
+
+/// #219: In Classic Library view, the Keyword List panel renders its filter box and rows
+/// directly under its Classic panel header, without a nested collapsible section header.
+#[test]
+fn keyword_list_has_no_nested_collapsible_header_in_classic() {
+    let mut h = demo();
+    run(&mut h, "panel.right", json!({"show": true}));
+    classic::set_open(&mut h.app, PanelId::KeywordList, true);
+    h.step();
+    h.step();
+    assert!(has(&h, "classicPanel:keywordList"), "Classic header is shown");
+    assert!(has(&h, "field:keywordFilter"), "Filter field is shown in body");
+    assert!(has(&h, "keywordList:create"), "+ button is shown in body");
+    assert!(!has(&h, "section:keywordList"), "No nested collapsible fold title in Classic view");
 }

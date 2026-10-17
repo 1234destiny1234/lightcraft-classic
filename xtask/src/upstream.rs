@@ -290,9 +290,16 @@ pub fn merge(root: &Path, args: &[&str]) -> Result<(), String> {
     }
 
     let left = conflicted(root)?;
+    // What's New: docs/whats-new.md is upstream's entries only; record the merged file (`cargo xtask notes`)
+    let whats_new = "docs/whats-new.md";
+    if !left.iter().any(|f| f == whats_new) {
+        crate::notes::record_upstream(root)?;
+        git(root, &["add", "--", &format!("docs/whats-new/{}", lcc_notes::UPSTREAM_STAMP)])?;
+    }
     if !left.is_empty() {
         let list: String = left.iter().map(|f| format!("\n  {f}")).collect();
-        return Err(format!("{} conflicted file(s) left; resolve them, `git add`, then `cargo xtask ci` and `git commit`:{list}", left.len()));
+        let notes = if left.iter().any(|f| f == whats_new) { ", `cargo xtask notes --upstream` once docs/whats-new.md is resolved" } else { "" };
+        return Err(format!("{} conflicted file(s) left; resolve them, `git add`{notes}, then `cargo xtask ci` and `git commit`:{list}", left.len()));
     }
     println!("merge staged on {branch} (not committed)");
     if run_ci {

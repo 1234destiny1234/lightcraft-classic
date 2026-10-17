@@ -4,9 +4,10 @@
 
 use std::sync::{Arc, Mutex};
 
+use lcc_color::spline::Lut1;
 use lcc_develop::DevelopSettings;
 use lcc_geom::Orientation;
-use lcc_pipeline::finish::{FinishParams, MASK_TERMS, mask_terms};
+use lcc_pipeline::finish::{FinishParams, MASK_TERMS, local_curve_luts, mask_terms};
 use lcc_pipeline::geometry::SampleMode;
 use lcc_pipeline::local::plane_at;
 use lcc_pipeline::{Plan, RenderRequest, Rendered, SourceInfo, local};
@@ -182,7 +183,7 @@ impl<'a> Cx<'a> {
         if let Some(enc) = self.enc.take() {
             self.gpu.submit([enc.finish()]);
         }
-        let _ = self.gpu.device.poll(wgpu::PollType::wait_indefinitely());
+        let _ = self.gpu.poll(wgpu::PollType::wait_indefinitely());
     }
 
     /// A zero-filled buffer (the clear is recorded).
@@ -486,7 +487,11 @@ fn shared_source(src: &Arc<Rgb32f>, upload: impl FnOnce() -> Buf) -> Arc<Buf> {
     *g = None;
     SOURCE_UPLOADS.fetch_add(1, std::sync::atomic::Ordering::Relaxed);
     let buf = Arc::new(upload());
-    *g = Some((Arc::downgrade(src), buf.clone()));
+    // an upload that failed (out of memory, over the limit) holds a placeholder: this render
+    // fails, and no other render may be handed it as the photo
+    if !crate::ctx::failed() {
+        *g = Some((Arc::downgrade(src), buf.clone()));
+    }
     buf
 }
 
@@ -627,6 +632,7 @@ pub fn render(
         Some(crate::Fault::Limit(bytes)) => Some(crate::ctx::LimitOverride::new(bytes)),
         _ => None,
     };
+    let _oom = (fault == Some(crate::Fault::OutOfMemory)).then(crate::ctx::SimulatedOom::new);
     if !gpu.fits(n * 3) {
         fail(
             FailKind::Limit,
@@ -687,7 +693,7 @@ pub fn render(
     }
 
     // 4. masks
-    let (masks, terms) = masks(&mut cx, &lin, &prep, &plan, &mut host);
+    let (masks, terms, curves) = masks(&mut cx, &lin, &prep, &plan, &mut host);
     lap("masks", &mut t, &mut cx);
 
     // 5. per-pixel stage
@@ -714,7 +720,7 @@ pub fn render(
         (Some(b), None) | (None, Some(b)) => Some(b.clone()),
         (None, None) => None,
     };
-    let (p, aux) = finish_block(&fp, &terms, &present);
+    let (p, aux) = finish_block(&fp, &terms, &curves, &present);
     let aux = gpu.upload(&aux);
     // cleared, so that work which never ran cannot pass for an image (see the check below)
     let out = cx.zeroed(n);
@@ -988,14 +994,14 @@ fn guided_cross_max(cx: &mut Cx<'_>, guide: &Buf, p: &Buf, w: usize, h: usize, s
 }
 
 /// Evaluate the masks (`lcc_pipeline::masks::evaluate`): their alpha planes (concatenated,
-/// followed by the blurred chromaticity when local Moiré / Noise need it) and their adjustment
-/// terms. Shapes without a kernel (Sky, Subject, …) run on the CPU.
-fn masks(cx: &mut Cx<'_>, lin: &Buf, prep: &Prep, plan: &Plan<'_>, host: &mut Host) -> (Option<Buf>, Vec<[f32; MASK_TERMS]>) {
+/// followed by the blurred chromaticity when local Moiré / Noise need it), their adjustment
+/// terms and their local Curves. Shapes without a kernel (Sky, Subject, …) run on the CPU.
+fn masks(cx: &mut Cx<'_>, lin: &Buf, prep: &Prep, plan: &Plan<'_>, host: &mut Host) -> (Option<Buf>, Vec<[f32; MASK_TERMS]>, Vec<Option<[Lut1; 3]>>) {
     use lcc_develop::{MaskOp, MaskShape};
     let s = &*plan.settings;
     let list: Vec<_> = s.masks.iter().filter(|m| m.visible && !m.components.is_empty()).collect();
     if list.is_empty() {
-        return (None, Vec::new());
+        return (None, Vec::new(), Vec::new());
     }
     let (w, h) = (plan.w, plan.h);
     let n = w * h;
@@ -1123,7 +1129,8 @@ fn masks(cx: &mut Cx<'_>, lin: &Buf, prep: &Prep, plan: &Plan<'_>, host: &mut Ho
         );
     }
     let terms = list.iter().map(|m| mask_terms(&m.adjust)).collect();
-    (Some(alpha), terms)
+    let curves = list.iter().map(|m| local_curve_luts(&m.curve)).collect();
+    (Some(alpha), terms, curves)
 }
 
 #[cfg(test)]

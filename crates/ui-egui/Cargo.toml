@@ -64,5 +64,7 @@ wat = "1.228" # G19: a slow export-hook plug-in for the worker test
 
 [build-dependencies]
 lcc-brand = { workspace = true }
+# What's New: joins docs/whats-new/ and docs/whats-new.md into $OUT_DIR/whats-new.md
+lcc-notes = { workspace = true }
 serde_json = { workspace = true }
 toml = "1"

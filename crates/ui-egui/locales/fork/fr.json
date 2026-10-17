@@ -1189,6 +1189,8 @@
   "Install and Relaunch": "Installer et redémarrer",
   "Skip This Version": "Ignorer cette version",
   "Check for updates when the app starts": "Rechercher des mises à jour au démarrage",
+  "Checking for updates when the app starts is still off": "La recherche de mises à jour au démarrage reste désactivée",
+  "Update settings not saved": "Réglages de mise à jour non enregistrés",
   "Include prereleases (release candidates)": "Inclure les préversions (release candidates)",
   "These settings are saved in the app's settings folder.": "Ces réglages sont enregistrés dans le dossier de réglages de l’application.",
   "File date": "Date du fichier",
@@ -1235,6 +1237,7 @@
   "Remove from Target Collection": "Retirer de la collection cible",
   "Wheel scroll speed": "Vitesse de défilement de la molette",
   "Wheel resizes brush instead of zooming": "La molette redimensionne le pinceau au lieu de zoomer",
+  "Double-click opens the photo in Develop": "Un double-clic ouvre la photo dans Développement",
   "Fast": "Rapide",
   "Fastest": "Très rapide",
   "Run face models on the CPU only": "Exécuter les modèles de visages sur le processeur uniquement",
@@ -1279,5 +1282,8 @@
   "Clear Image": "Effacer l’image",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Un fichier SVG, PNG ou JPEG ; il est affiché sur 32 points de haut.",
   "Theme Color": "Couleur du thème",
-  "Identity Plate Setup…": "Configuration de la plaque d’identité…"
+  "Identity Plate Setup…": "Configuration de la plaque d’identité…",
+  "Remove Hot Pixels": "Supprimer les pixels chauds",
+  "Film recipe": "Recette de film",
+  "Copy recipe": "Copier la recette"
 }

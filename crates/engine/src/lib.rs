@@ -23,6 +23,7 @@ pub mod camera_profiles;
 pub mod cmd;
 pub mod config;
 pub mod contact_sheet;
+pub mod control_auth;
 pub mod creations;
 pub mod crs;
 pub mod crs_masks;
@@ -47,6 +48,7 @@ pub mod filter_plugins;
 mod focus_scan;
 pub mod fonts;
 pub mod guard;
+pub mod history_groups;
 pub mod import;
 mod import_move;
 pub mod legacy;
@@ -342,6 +344,10 @@ pub struct Session {
     pub last_export: Option<serde_json::Value>,
     /// The photos of the last export (the Previous Export source), persisted in view.json.
     pub previous_export: Vec<PhotoId>,
+    /// The options of the last Photo Merge started, per command (`merge.hdr`, `merge.panorama`,
+    /// `merge.hdrPanorama`): the merge dialog opens with them and "… with Last Settings" uses
+    /// them. Persisted in prefs.json.
+    pub last_merge: std::collections::BTreeMap<String, serde_json::Value>,
     /// The user's export presets (built-ins: [`export::builtin_presets`]), persisted in prefs.json.
     pub export_presets: Vec<export::ExportPreset>,
     /// The Print module's current layout, image settings, page, guides and job (`print.*`). Lives
@@ -356,6 +362,8 @@ pub struct Session {
     /// The user's point-curve presets (`curve.*`; built-ins: [`cmd::curves::builtin_presets`]),
     /// persisted in prefs.json.
     pub curve_presets: Vec<cmd::curves::CurvePreset>,
+    /// The crop tool's saved and hidden aspect ratios (`crop.saveAspect`…), persisted in prefs.json.
+    pub crop_aspects: cmd::crop_aspects::CropAspects,
     /// Mask effect presets (the Masking panel's Effect menu).
     pub mask_effects: Vec<cmd::mask_effects::MaskEffect>,
     /// The effect a new mask of each kind (`brush`, `linear`…) starts with: the one last applied
@@ -542,12 +550,14 @@ impl Session {
             xmp: sidecar::XmpPrefs::default(),
             last_export: None,
             previous_export: Vec::new(),
+            last_merge: Default::default(),
             export_presets: Vec::new(),
             print: Default::default(),
             print_templates: Vec::new(),
             metadata_presets: Vec::new(),
             filter_presets: Vec::new(),
             curve_presets: Vec::new(),
+            crop_aspects: Default::default(),
             mask_effects: Vec::new(),
             mask_tool_effects: Default::default(),
             label_sets: Vec::new(),
@@ -1044,10 +1054,33 @@ impl Session {
         let p = self.catalog.photo(id)?;
         // a clip takes only the global grading controls and the crop: presets, paste and sync drop the rest
         let settings = Arc::new(if p.kind == lcc_catalog::MediaKind::Video { lcc_pipeline::grade::video_develop(&settings) } else { settings });
+        // An edit made at a past History step (not a move between steps) rewrites the history:
+        // the later groups are kept and replayed on top (see `history_groups::rewrite`).
+        if let Some(c) = p.history_cursor.filter(|c| c.saturating_add(1) < p.history.len())
+            && !label.starts_with("History:")
+            && let Some(op) = self.history_rewrite_op(id, c, &settings, label)
+        {
+            return Some(op);
+        }
         let step = lcc_catalog::HistoryStep { label: label.into(), settings: settings.clone() };
         Some(Op::Batch {
             ops: vec![Op::SetDevelop { id, settings, label: label.into(), edited: Some((self.clock)()) }, Op::PushHistory { id, step }],
         })
+    }
+
+    /// The op that records `settings` (labelled `label`) as an edit made at History step `at` of
+    /// photo `id`: the settings land there and the later groups are replayed on top (one undo
+    /// step). The cursor stays on the new step unless it is the latest.
+    pub fn history_rewrite_op(&self, id: PhotoId, at: usize, settings: &Arc<DevelopSettings>, label: &str) -> Option<Op> {
+        let p = self.catalog.photo(id)?;
+        let r = history_groups::rewrite(&p.history, at, (**settings).clone(), label)?;
+        let (mut history, mut at) = (r.history, r.at);
+        let over = history.len().saturating_sub(lcc_catalog::HISTORY_LIMIT);
+        history.drain(..over);
+        at = at.saturating_sub(over);
+        let cursor = (at.saturating_add(1) < history.len()).then_some(at);
+        let set = Op::SetDevelop { id, settings: settings.clone(), label: label.into(), edited: Some((self.clock)()) };
+        Some(Op::Batch { ops: vec![set, Op::SetHistory { id, history }, Op::SetHistoryCursor { id, cursor }] })
     }
 
     pub fn begin_interaction(&mut self, label: &str) -> Result<()> {
@@ -1420,6 +1453,8 @@ mod tests_color;
 #[cfg(test)]
 mod tests_crop_angle;
 #[cfg(test)]
+mod tests_crop_aspects;
+#[cfg(test)]
 mod tests_denoise;
 #[cfg(test)]
 mod tests_edit_in;
@@ -1446,7 +1481,11 @@ mod tests_folders;
 #[cfg(test)]
 mod tests_forget_local;
 #[cfg(test)]
+mod tests_fuji;
+#[cfg(test)]
 mod tests_history_cursor;
+#[cfg(test)]
+mod tests_history_groups;
 #[cfg(test)]
 mod tests_hold_view;
 #[cfg(test)]

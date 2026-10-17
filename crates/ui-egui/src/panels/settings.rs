@@ -184,6 +184,18 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             &mut app.ui.settings.startup_view,
         );
     });
+    // the updater is native only (the web build updates by reloading the page); saved through
+    // `update.prefs`, like the update dialog's own checkbox
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        let mut check_at_startup = app.session.updater.prefs().check_at_startup;
+        if check(ui, "settings.updateAtStartup", &mut check_at_startup, "Check for updates when the app starts")
+            && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup}))
+        {
+            // not saved: the box shows the stored value again next frame
+            app.toast_error(ui.ctx(), format!("{}: {e}", crate::i18n::tr("Update settings not saved")));
+        }
+    }
     heading(ui, t, crate::i18n::tr("Culling"));
     check(ui, "settings.autoAdvance", &mut app.ui.auto_advance, "Auto Advance: move to the next photo after rating or flagging");
     check(ui, "settings.confirmDelete", &mut app.ui.settings.confirm_delete, "Confirm before moving photos to Recently Deleted");
@@ -802,6 +814,18 @@ fn display_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     );
     #[cfg(target_os = "linux")]
     hint(ui, t, crate::i18n::tr("Profiles assigned in your desktop's colour settings are usually in ~/.local/share/icc."));
+    #[cfg(target_os = "windows")]
+    {
+        heading(ui, t, crate::i18n::tr("Refresh rate"));
+        check(ui, "settings.vrrFlickerWorkaround", &mut app.ui.settings.vrr_flicker_workaround, "Prevent VRR flicker on OLED and VA monitors");
+        hint(
+            ui,
+            t,
+            crate::i18n::tr(
+                "Renders continuously at the monitor's refresh rate to avoid brightness and gamma shifts caused by G-SYNC / FreeSync variable refresh rate changes. Increases GPU and battery usage.",
+            ),
+        );
+    }
 }
 
 fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
@@ -819,6 +843,7 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             &mut app.ui.settings.grid_badges,
         );
     });
+    check(ui, "settings.doubleClickDevelop", &mut app.ui.settings.double_click_develop, "Double-click opens the photo in Develop");
     check(ui, "settings.showFilenames", &mut app.ui.show_filenames, "Square Grid: show file names and formats");
     row(ui, t, crate::i18n::tr("Wheel scroll speed"), |ui| {
         choices(ui, "settingsWheelSpeed", &[(1.0, "Normal"), (2.0, "Fast"), (3.0, "Fastest")], &mut app.ui.settings.wheel_scroll_speed);

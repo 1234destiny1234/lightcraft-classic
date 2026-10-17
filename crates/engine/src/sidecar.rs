@@ -17,13 +17,16 @@
 //! the first by file name — [`Session::sidecar_naming`]); the others use `<file>.xmp`
 //! (`IMG_0001.JPG.xmp`) for writing and reading, so neither overwrites the other.
 //!
-//! **Read** (on import, and `photo.readMetadataFromFile`): the sidecar wins for metadata, except
-//! the capture time: a time embedded in the file wins, and the sidecar's (`exif:DateTimeOriginal`,
+//! **Read** (on import, and `photo.readMetadataFromFile`): the sidecar wins for metadata (GPS
+//! included: a position in the sidecar replaces the one the camera embedded, as the MWG guidelines
+//! have it for XMP over Exif), except the capture time: a time embedded in the file wins, and the sidecar's (`exif:DateTimeOriginal`,
 //! else `photoshop:DateCreated`, else `xmp:CreateDate`) fills in only when the file has none; develop
 //! settings are restored from `lc:settings` when present, else mapped from interoperable `crs:`
 //! fields ([`crate::crs`]). For raw/DNG files without a sidecar the file's embedded XMP is used.
+//! Manual reads also accept the first complete standard XMP APP1 in a bounded JPEG header (see `read_jpeg_xmp`).
 
 use std::collections::HashMap;
+use std::io::{Read, Seek, SeekFrom};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 
@@ -112,6 +115,8 @@ pub struct SidecarData {
     pub country: Option<String>,
     pub alt_text: Option<String>,
     pub extended_description: Option<String>,
+    /// `exif:GPSLatitude` / `exif:GPSLongitude` (latitude, longitude): wins over a position embedded in the file.
+    pub gps: Option<(f64, f64)>,
     pub keywords: Option<Vec<String>>,
     pub regions: Option<Vec<lcc_meta::Region>>,
     /// Capture time (ISO 8601) from `exif:DateTimeOriginal`, `photoshop:DateCreated` or
@@ -166,6 +171,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
         country: m.country.clone(),
         alt_text: m.alt_text.clone(),
         extended_description: m.extended_description.clone(),
+        gps: m.gps.map(|g| (g.latitude, g.longitude)),
         keywords: (!m.keywords.is_empty() || !m.hierarchical_keywords.is_empty())
             .then(|| lcc_catalog::keywords::from_file(&m.keywords, &m.hierarchical_keywords)),
         // A sidecar that has `mwg-rs:Regions` at all (even an empty list) was written by an app that
@@ -275,7 +281,8 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
 /// Apply sidecar data to a photo record (the sidecar wins, except that a capture time embedded in
 /// the file is kept). Returns true if develop changed.
 pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
-    if p.captured.is_none() {
+    // (a date import guessed from the file's modification time is no capture time: the sidecar's wins)
+    if p.captured_stated().is_none() && sc.captured.is_some() {
         p.captured = sc.captured.clone();
     }
     if let Some(r) = sc.rating {
@@ -305,6 +312,9 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
         if let Some(v) = src {
             *dst = v.clone();
         }
+    }
+    if let Some(gps) = sc.gps {
+        m.gps = Some(gps);
     }
     if let Some(marked) = sc.copyright_marked {
         m.copyright_status = lcc_catalog::CopyrightStatus::from_marked(Some(marked));
@@ -371,6 +381,11 @@ pub fn sidecar_packet(p: &Photo, cat: &lcc_catalog::Catalog) -> String {
 /// [`sidecar_packet`], without any location (GPS, sublocation, city, state, country) when
 /// `remove_location` is set (an export with "Remove location info").
 pub fn sidecar_packet_with(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool) -> String {
+    packet(p, cat, remove_location, true)
+}
+
+/// [`sidecar_packet_with`]; the GPS position is left out unless `gps` is set.
+fn packet(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool, gps: bool) -> String {
     let nz = |s: &str| (!s.trim().is_empty()).then(|| s.to_string());
     let meta = lcc_meta::Metadata {
         software: Some(lcc_brand::DISPLAY_NAME.into()),
@@ -390,8 +405,9 @@ pub fn sidecar_packet_with(p: &Photo, cat: &lcc_catalog::Catalog, remove_locatio
         keywords: p.meta.keywords.clone(),
         rating: Some(p.rating.min(5) as i8),
         label: p.label.map(|l| cat.label_name(l)),
-        capture_time: p.captured.as_deref().and_then(lcc_meta::DateTime::parse_iso),
-        gps: p.meta.gps.map(|(latitude, longitude)| lcc_meta::Gps { latitude, longitude, altitude: None }),
+        // (never the file's modification time standing in for a capture time nobody stated)
+        capture_time: p.captured_stated().and_then(lcc_meta::DateTime::parse_iso),
+        gps: p.meta.gps.filter(|_| gps).map(|(latitude, longitude)| lcc_meta::Gps { latitude, longitude, altitude: None }),
         ..Default::default()
     };
     let mut meta = meta;
@@ -463,8 +479,8 @@ pub const OWNED: &[&str] = &[
     "lcpx:*",
 ];
 
-/// Properties replaced only when the app has a value (capture time; GPS, which the app
-/// doesn't read from sidecars): otherwise the sidecar's own value stays. Anything else the app
+/// Properties replaced only when the app has a value (capture time, GPS): otherwise the
+/// sidecar's own value stays. Anything else the app
 /// writes (`xmp:CreatorTool`) goes only into new sidecars.
 pub const OWNED_IF_STATED: &[&str] = &["exif:DateTimeOriginal", "photoshop:DateCreated", "exif:GPSLatitude", "exif:GPSLongitude"];
 
@@ -504,27 +520,38 @@ pub struct SidecarSaved {
     pub backup: Option<PathBuf>,
 }
 
-/// The new contents for the sidecar at `path`: `fresh` merged into the existing file, if any.
-/// Returns (contents, merged, backup).
-fn sidecar_contents(path: &Path, fresh: String, stamp: &str) -> std::io::Result<(String, bool, Option<PathBuf>)> {
+/// The new contents for photo `p`'s sidecar at `path`: its packet merged into the existing file,
+/// if any. Returns (contents, merged, backup).
+fn sidecar_contents(path: &Path, p: &Photo, cat: &lcc_catalog::Catalog, stamp: &str) -> std::io::Result<(String, bool, Option<PathBuf>)> {
     let bytes = match std::fs::read(path) {
         Ok(b) => b,
-        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((fresh, false, None)),
+        Err(e) if e.kind() == std::io::ErrorKind::NotFound => return Ok((sidecar_packet(p, cat), false, None)),
         // can't see what is there: never overwrite it blindly
         Err(e) => return Err(e),
     };
     if bytes.iter().all(u8::is_ascii_whitespace) {
-        return Ok((fresh, false, None));
+        return Ok((sidecar_packet(p, cat), false, None));
     }
     let rules = lcc_meta::MergeRules { owned: OWNED, owned_if_present: OWNED_IF_STATED };
-    match std::str::from_utf8(&bytes).map_err(|e| e.to_string()).and_then(|old| lcc_meta::merge_xmp(old, &fresh, rules).map_err(|e| e.to_string())) {
+    match std::str::from_utf8(&bytes)
+        .map_err(|e| e.to_string())
+        .and_then(|old| lcc_meta::merge_xmp(old, &packet(p, cat, false, !states_gps(old, p.meta.gps)), rules).map_err(|e| e.to_string()))
+    {
         Ok(merged) => Ok((merged, true, None)),
         Err(why) => {
             let b = backup(path, stamp)?;
             log::warn!("{}: not readable as XMP ({why}); kept a copy as {} before replacing it", path.display(), b.display());
-            Ok((fresh, false, Some(b)))
+            Ok((sidecar_packet(p, cat), false, Some(b)))
         }
     }
+}
+
+/// Whether packet `old` already states position `gps` (to about a centimetre). Saving leaves such a
+/// position as the file writes it, in its own precision and form, rather than rewriting it from the
+/// library's copy: GPS read from a sidecar goes back unchanged unless it was changed here.
+fn states_gps(old: &str, gps: Option<(f64, f64)>) -> bool {
+    let (Some((lat, lon)), Some(g)) = (gps, lcc_meta::parse_xmp(old).ok().and_then(|d| d.metadata.gps)) else { return false };
+    (g.latitude - lat).abs() < 1e-7 && (g.longitude - lon).abs() < 1e-7
 }
 
 /// Key of the stem sidecar a file maps to (case-insensitive).
@@ -566,17 +593,86 @@ pub(crate) fn file_path(p: &Photo) -> Option<&str> {
     }
 }
 
-/// The XMP packet that describes a photo on disk: its sidecar, else (raw/DNG) the embedded XMP.
+/// The XMP packet that describes a photo on disk: its sidecar, else embedded raw/DNG or JPEG XMP.
 pub fn read_packet(original: &str, kind: MediaKind, naming: SidecarNaming) -> Option<(String, PathBuf)> {
-    if let Some(sc) = find_sidecar(original, naming)
-        && let Ok(s) = std::fs::read_to_string(&sc)
-    {
-        return Some((s, sc));
+    if let Some(sc) = find_sidecar(original, naming) {
+        // A discovered sidecar keeps precedence even when reading it fails.
+        return std::fs::read_to_string(&sc).ok().map(|s| (s, sc));
     }
     if kind == MediaKind::Raw {
         let bytes = std::fs::read(original).ok()?;
         let x = lcc_meta::embedded(&bytes).xmp?;
         return Some((x, PathBuf::from(original)));
+    }
+    if kind == MediaKind::Image {
+        let mut file = std::fs::File::open(original).ok()?;
+        let mut soi = [0; 2];
+        file.read_exact(&mut soi).ok()?;
+        file.seek(SeekFrom::Start(0)).ok()?;
+        // A JPEG is read only up to its first XMP segment; other images (TIFF, PNG, ...) whole.
+        let x = if soi == [0xff, 0xd8] {
+            read_jpeg_xmp(&mut file, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS)?
+        } else {
+            let mut bytes = Vec::new();
+            file.read_to_end(&mut bytes).ok()?;
+            lcc_meta::embedded(&bytes).xmp?
+        };
+        return Some((x, PathBuf::from(original)));
+    }
+    None
+}
+
+const JPEG_XMP_HEADER_SPAN: u64 = 16 * 1024 * 1024;
+const JPEG_XMP_HEADER_STEPS: usize = 4096;
+
+/// Read from SOI at the current position, stopping at the first standard XMP packet or SOS/EOI.
+/// The span includes SOI, segment headers and skipped payloads; each marker/fill step after SOI
+/// consumes one iteration. Only a complete APP1 payload (at most 65533 bytes) reaches the shared
+/// parser, in a single SOI+APP1 wrapper (at most 65539 bytes). This does not validate the whole JPEG.
+fn read_jpeg_xmp(reader: &mut (impl Read + Seek), header_span: u64, marker_steps: usize) -> Option<String> {
+    let mut header = reader.take(header_span);
+    let mut soi = [0; 2];
+    header.read_exact(&mut soi).ok()?;
+    if soi != [0xff, 0xd8] {
+        return None;
+    }
+    let mut filled = false;
+    for _ in 0..marker_steps {
+        if !filled {
+            let mut prefix = [0];
+            header.read_exact(&mut prefix).ok()?;
+            if prefix != [0xff] {
+                return None;
+            }
+        }
+        let mut code = [0];
+        header.read_exact(&mut code).ok()?;
+        let [marker] = code;
+        filled = marker == 0xff;
+        match marker {
+            0xff | 0xd8 | 0xd0..=0xd7 | 0x01 => continue,
+            0xd9 | 0xda => return None,
+            _ => {}
+        }
+        let mut length = [0; 2];
+        header.read_exact(&mut length).ok()?;
+        let payload_len = u16::from_be_bytes(length).checked_sub(2)?;
+        let remaining = header.limit().checked_sub(u64::from(payload_len))?;
+        if marker != 0xe1 {
+            // Seeking must spend the same span budget as reading, before the seek is attempted.
+            header.set_limit(remaining);
+            header.get_mut().seek(SeekFrom::Current(i64::from(payload_len))).ok()?;
+            continue;
+        }
+        let segment_len = 6usize.checked_add(usize::from(payload_len))?;
+        let [hi, lo] = length;
+        let mut segment = Vec::with_capacity(segment_len);
+        segment.extend_from_slice(&[0xff, 0xd8, 0xff, 0xe1, hi, lo]);
+        segment.resize(segment_len, 0);
+        header.read_exact(segment.get_mut(6..)?).ok()?;
+        if let Some(xmp) = lcc_meta::jpeg_segments(&segment).xmp {
+            return Some(xmp);
+        }
     }
     None
 }
@@ -726,7 +822,7 @@ impl Session {
         self.validate_sidecar_packets_for_paths(std::slice::from_ref(&path), &crate::rename::RealFs)?;
         let p = self.catalog.photo(id).ok_or(lcc_catalog::CatalogError::NoPhoto(id))?;
         let err = |e: std::io::Error| EngineError::Other(format!("{}: {e}", path.display()));
-        let (data, merged, backup) = sidecar_contents(&path, sidecar_packet(p, &self.catalog), &(self.clock)()).map_err(err)?;
+        let (data, merged, backup) = sidecar_contents(&path, p, &self.catalog, &(self.clock)()).map_err(err)?;
         write_atomic(&path, data.as_bytes()).map_err(err)?;
         self.note_sidecar_write(&path, data.as_bytes());
         Ok(SidecarSaved { path, merged, backup })
@@ -1243,3 +1339,220 @@ mod tests_repair_provenance;
 #[cfg(test)]
 #[path = "sidecar/tests_stem_owners.rs"]
 mod tests_stem_owners;
+
+#[cfg(test)]
+mod jpeg_header_tests {
+    use super::{JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS, read_jpeg_xmp};
+    use std::io::{self, Cursor, Read, Seek, SeekFrom};
+
+    struct CountedReader {
+        cursor: Cursor<Vec<u8>>,
+        bytes_read: usize,
+        largest_read: usize,
+        seeks: usize,
+        chunk: usize,
+        read_error_at: Option<u64>,
+        seek_error: bool,
+    }
+
+    impl CountedReader {
+        fn new(bytes: Vec<u8>) -> Self {
+            Self { cursor: Cursor::new(bytes), bytes_read: 0, largest_read: 0, seeks: 0, chunk: usize::MAX, read_error_at: None, seek_error: false }
+        }
+    }
+
+    impl Read for CountedReader {
+        fn read(&mut self, buf: &mut [u8]) -> io::Result<usize> {
+            self.largest_read = self.largest_read.max(buf.len());
+            if self.read_error_at.is_some_and(|at| self.cursor.position() >= at) {
+                return Err(io::Error::other("injected header read failure"));
+            }
+            let len = buf.len().min(self.chunk);
+            let read = self.cursor.read(&mut buf[..len])?;
+            self.bytes_read += read;
+            Ok(read)
+        }
+    }
+
+    impl Seek for CountedReader {
+        fn seek(&mut self, pos: SeekFrom) -> io::Result<u64> {
+            self.seeks += 1;
+            if self.seek_error {
+                return Err(io::Error::other("injected header seek failure"));
+            }
+            self.cursor.seek(pos)
+        }
+    }
+
+    fn segment(marker: u8, payload: &[u8]) -> Vec<u8> {
+        let len = u16::try_from(payload.len() + 2).unwrap();
+        let mut bytes = vec![0xff, marker];
+        bytes.extend_from_slice(&len.to_be_bytes());
+        bytes.extend_from_slice(payload);
+        bytes
+    }
+
+    fn packet(rating: i8) -> String {
+        lcc_meta::write_xmp(&lcc_meta::Metadata { rating: Some(rating), ..Default::default() }, None)
+    }
+
+    fn xmp_segment(packet: &str) -> Vec<u8> {
+        let mut payload = b"http://ns.adobe.com/xap/1.0/\0".to_vec();
+        payload.extend_from_slice(packet.as_bytes());
+        segment(0xe1, &payload)
+    }
+
+    fn jpeg(packet: &str) -> Vec<u8> {
+        let mut bytes = vec![0xff, 0xd8];
+        bytes.extend(xmp_segment(packet));
+        bytes
+    }
+
+    #[test]
+    fn first_standard_packet_skips_other_segments_and_stops_before_tail() {
+        let first = packet(2);
+        let first_payload_len = xmp_segment(&first).len() - 4;
+        let mut bytes = vec![0xff, 0xd8];
+        bytes.extend(segment(0xe0, &[7; 17]));
+        bytes.extend(segment(0xe1, b"Exif\0\0tiny"));
+        let mut extended = b"http://ns.adobe.com/xmp/extension/\0".to_vec();
+        extended.extend_from_slice(&[0; 40]);
+        extended.extend_from_slice(b"not a standard packet");
+        bytes.extend(segment(0xe1, &extended));
+        bytes.extend(xmp_segment(&first));
+        let end = bytes.len();
+        bytes.extend(xmp_segment(&packet(5)));
+        bytes.extend_from_slice(&[0xff, 0xda, 0, 2]);
+        bytes.extend_from_slice(&[3; 128]);
+        let mut reader = CountedReader::new(bytes);
+        reader.read_error_at = Some(end as u64);
+        assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS), Some(first));
+        assert_eq!(reader.cursor.position(), end as u64, "later packets and image bytes are not read");
+        assert_eq!(reader.bytes_read, end - 17, "APP0 payload is skipped, not buffered");
+        assert_eq!(reader.seeks, 1);
+        assert_eq!(reader.largest_read, first_payload_len, "reads at most one complete APP1 payload at a time");
+    }
+
+    #[test]
+    fn stops_at_sos_or_eoi_without_reading_later_xmp() {
+        for stop in [0xda, 0xd9] {
+            let mut bytes = vec![0xff, 0xd8, 0xff, stop];
+            bytes.extend(xmp_segment(&packet(3)));
+            let mut reader = CountedReader::new(bytes);
+            reader.read_error_at = Some(4);
+            assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS), None);
+            assert_eq!((reader.bytes_read, reader.cursor.position(), reader.seeks), (4, 4, 0));
+        }
+    }
+
+    #[test]
+    fn rejects_incomplete_app1_even_when_partial_xmp_parses() {
+        let expected = packet(4);
+        let mut bytes = jpeg(&expected);
+        let declared = u16::from_be_bytes([bytes[4], bytes[5]]) + 7;
+        bytes[4..6].copy_from_slice(&declared.to_be_bytes());
+        let partial = lcc_meta::jpeg_segments(&bytes).xmp.unwrap();
+        assert_eq!(partial, expected, "the shared extractor tolerates a truncated declared payload");
+        assert_eq!(super::parse_sidecar(&partial, crate::crs::Target::Rendered).unwrap().rating, Some(4));
+        let len = bytes.len();
+        let mut reader = CountedReader::new(bytes);
+        assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS), None);
+        assert_eq!(reader.bytes_read, len);
+    }
+
+    #[test]
+    fn span_budget_counts_soi_headers_and_skipped_payloads() {
+        let expected = packet(3);
+        let mut bytes = vec![0xff, 0xd8];
+        bytes.extend(segment(0xe0, &[9; 23]));
+        bytes.extend(xmp_segment(&expected));
+        let end = bytes.len();
+        let mut exact = CountedReader::new(bytes.clone());
+        assert_eq!(read_jpeg_xmp(&mut exact, end as u64, JPEG_XMP_HEADER_STEPS), Some(expected));
+        assert_eq!(exact.cursor.position(), end as u64, "a complete early APP1 does not require EOI");
+        assert_eq!(exact.bytes_read, end - 23);
+        let mut short = CountedReader::new(bytes);
+        assert_eq!(read_jpeg_xmp(&mut short, (end - 1) as u64, JPEG_XMP_HEADER_STEPS), None);
+        assert_eq!((short.bytes_read, short.cursor.position(), short.seeks), (10, 33, 1), "reject before APP1 payload read");
+        assert_eq!(short.largest_read, 2);
+    }
+
+    #[test]
+    fn span_budget_rejects_skip_before_seeking() {
+        let mut bytes = vec![0xff, 0xd8];
+        bytes.extend(segment(0xe0, &[8; 18]));
+        bytes.extend(xmp_segment(&packet(1)));
+        let mut reader = CountedReader::new(bytes);
+        assert_eq!(read_jpeg_xmp(&mut reader, 6, JPEG_XMP_HEADER_STEPS), None);
+        assert_eq!((reader.bytes_read, reader.cursor.position(), reader.seeks), (6, 6, 0));
+    }
+
+    #[test]
+    fn marker_budget_counts_fill_and_standalone_markers() {
+        let expected = packet(1);
+        // Two fill steps, SOI, TEM, RST3, then APP1: six steps after the initial SOI.
+        let mut bytes = vec![0xff, 0xd8, 0xff, 0xff, 0xff, 0xd8, 0xff, 0x01, 0xff, 0xd3];
+        bytes.extend(xmp_segment(&expected));
+        for (steps, end) in [(0, 2), (5, 10)] {
+            let mut reader = CountedReader::new(bytes.clone());
+            assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, steps), None);
+            assert_eq!((reader.bytes_read, reader.cursor.position()), (end, end as u64));
+        }
+        let mut reader = CountedReader::new(bytes);
+        assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, 6), Some(expected));
+    }
+
+    #[test]
+    fn rejects_invalid_headers_and_segment_lengths() {
+        for bytes in [
+            vec![],
+            vec![0xff],
+            b"\x89PNG\r\n\x1a\n".to_vec(),
+            vec![0xff, 0xd8, 0, 0xe1, 0, 2],
+            vec![0xff, 0xd8, 0xff, 0xe1, 0],
+            vec![0xff, 0xd8, 0xff, 0xe1, 0, 0],
+            vec![0xff, 0xd8, 0xff, 0xe1, 0, 1],
+            vec![0xff, 0xd8, 0xff, 0xe1, 0, 3],
+        ] {
+            let len = bytes.len();
+            let mut reader = CountedReader::new(bytes);
+            assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS), None);
+            assert!(reader.bytes_read <= len);
+        }
+    }
+
+    #[test]
+    fn propagates_read_and_seek_failures() {
+        for at in [0, 6] {
+            let mut reader = CountedReader::new(jpeg(&packet(4)));
+            reader.read_error_at = Some(at);
+            assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS), None);
+            assert_eq!(reader.bytes_read as u64, at);
+        }
+        let mut bytes = vec![0xff, 0xd8];
+        bytes.extend(segment(0xe0, &[1]));
+        bytes.extend(xmp_segment(&packet(4)));
+        let mut reader = CountedReader::new(bytes);
+        reader.seek_error = true;
+        assert_eq!(read_jpeg_xmp(&mut reader, JPEG_XMP_HEADER_SPAN, JPEG_XMP_HEADER_STEPS), None);
+        assert_eq!((reader.bytes_read, reader.seeks), (6, 1));
+    }
+
+    #[test]
+    fn handles_short_reads_without_bypassing_span_limit() {
+        let expected = packet(2);
+        let bytes = jpeg(&expected);
+        let end = bytes.len();
+        let mut exact = CountedReader::new(bytes.clone());
+        exact.chunk = 1;
+        assert_eq!(read_jpeg_xmp(&mut exact, end as u64, JPEG_XMP_HEADER_STEPS), Some(expected));
+        assert_eq!(exact.bytes_read, end);
+        for (span, read) in [(0, 0), (1, 1), (end - 1, 6)] {
+            let mut reader = CountedReader::new(bytes.clone());
+            reader.chunk = 1;
+            assert_eq!(read_jpeg_xmp(&mut reader, span as u64, JPEG_XMP_HEADER_STEPS), None);
+            assert_eq!(reader.bytes_read, read);
+            assert!(reader.cursor.position() <= span as u64);
+        }
+    }
+}

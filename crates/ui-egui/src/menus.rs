@@ -114,6 +114,11 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // in grids S expands/collapses stacks (the engine command it shadows)
     ("view.softProof", "Soft Proofing", Some("S"), "View"),
     ("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View"),
+    // histograms & scopes (issue #206): which distribution the panel draws, and how tall its bins
+    // are. Both take the value to select, or step to the next one with no parameter, so the menu,
+    // a shortcut, the control channel and MCP all reach them by id.
+    ("view.histogram.mode", "Histogram Mode", None, "View"),
+    ("view.histogram.scale", "Histogram Scale", None, "View"),
     ("view.maskOverlay", "Show Mask Overlay", Some("O"), "View"),
     // Ctrl+Shift+O / Cmd+Shift+O: every mask's region at once, not just the selected one
     ("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View"),
@@ -148,7 +153,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.remove", "Remove", Some("H"), "Window"),
     ("panel.masking", "Masking", Some("M"), "Window"),
     ("panel.redeye", "Red Eye", None, "Window"),
-    ("panel.presets", "Presets", Some("Shift+P"), "Window"),
+    // no default key: Shift+P is Lightroom Classic's pick-and-advance (a `shortcuts::ALIASES` entry)
+    ("panel.presets", "Presets", None, "Window"),
     ("panel.info", "Info", Some("I"), "Window"),
     ("panel.keywords", "Keywords", Some("K"), "Window"),
     ("panel.versions", "Versions", Some("Shift+V"), "Window"),
@@ -238,9 +244,11 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
     ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
     ("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
+    ("dialog.mergeFocusStack", "Focus Stack…", None, "Photo>Photo Merge"),
     ("merge.hdrLast", "HDR with Last Settings", Some("Ctrl+Shift+H"), "Photo>Photo Merge"),
     ("merge.panoramaLast", "Panorama with Last Settings", Some("Ctrl+Shift+M"), "Photo>Photo Merge"),
     ("merge.hdrPanoramaLast", "HDR Panorama with Last Settings", None, "Photo>Photo Merge"),
+    ("merge.focusStackLast", "Focus Stack with Last Settings", None, "Photo>Photo Merge"),
     ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
     ("file.addFolder", "Import from Folder…", None, "File"),
     ("file.importLightroom", "Import Lightroom Catalog…", None, "File"),
@@ -702,7 +710,19 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                         app.ui.view = ViewMode::People;
                         app.ui.person_page = name;
                     }
-                    _ => app.ui.view = ViewMode::PhotoGrid,
+                    _ => {
+                        let prev_grid = app
+                            .ui
+                            .layouts
+                            .get(&crate::module::ModuleId::Library)
+                            .and_then(|l| l.view)
+                            .filter(|v| *v != ViewMode::Detail && *v != ViewMode::Reference);
+                        let target_grid = prev_grid.unwrap_or(ViewMode::PhotoGrid);
+                        if app.ui.module == crate::module::ModuleId::Develop {
+                            let _ = crate::module::switch(app, crate::module::ModuleId::Library);
+                        }
+                        app.ui.view = target_grid;
+                    }
                 }
             }
             Ok(Value::Null)
@@ -1033,6 +1053,43 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "view.histogram" => {
             app.ui.histogram = !app.ui.histogram;
             Ok(Value::Null)
+        }
+        "view.histogram.mode" => {
+            // {mode?: rgb | luminance | channels | chroma}; no parameter steps to the next one, as
+            // the overlay-mode commands do. Selecting a mode shows the panel it is about.
+            use lcc_raster::HistogramMode;
+            let cur = HistogramMode::parse(&app.ui.histogram_mode).unwrap_or_default();
+            let next = match p.get("mode").and_then(Value::as_str) {
+                Some(m) => match HistogramMode::parse(m) {
+                    Some(v) => v,
+                    None => {
+                        let names: Vec<&str> = HistogramMode::ALL.iter().map(|m| m.name()).collect();
+                        return Some(Err(format!("view.histogram.mode: unknown mode `{m}` ({})", names.join("|"))));
+                    }
+                },
+                None => cur.next(),
+            };
+            app.ui.histogram_mode = next.name().into();
+            app.ui.histogram = true;
+            Ok(json!({"mode": next.name()}))
+        }
+        "view.histogram.scale" => {
+            // {scale?: linear | logarithmic}; no parameter steps to the other one
+            use lcc_raster::HistogramScale;
+            let cur = HistogramScale::parse(&app.ui.histogram_scale).unwrap_or_default();
+            let next = match p.get("scale").and_then(Value::as_str) {
+                Some(s) => match HistogramScale::parse(s) {
+                    Some(v) => v,
+                    None => {
+                        let names: Vec<&str> = HistogramScale::ALL.iter().map(|m| m.name()).collect();
+                        return Some(Err(format!("view.histogram.scale: unknown scale `{s}` ({})", names.join("|"))));
+                    }
+                },
+                None => cur.next(),
+            };
+            app.ui.histogram_scale = next.name().into();
+            app.ui.histogram = true;
+            Ok(json!({"scale": next.name()}))
         }
         "view.maskOverlay" => {
             app.ui.mask_overlay = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.mask_overlay);
@@ -1504,6 +1561,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "merge.hdrBatch" => crate::merge::start_batch(app, p),
         "merge.panoramaLast" => crate::merge::start_last(app, "merge.panorama"),
         "merge.hdrPanoramaLast" => crate::merge::start_last(app, "merge.hdrPanorama"),
+        "merge.focusStackLast" => crate::merge::start_last(app, "merge.focusStack"),
         "dialog.mergeHdr" => crate::merge::open(app, "merge.hdr"),
         "dialog.faceModel" => {
             let path = match p.get("path").and_then(Value::as_str) {
@@ -1517,6 +1575,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "dialog.mergePanorama" => crate::merge::open(app, "merge.panorama"),
         "dialog.mergeHdrPanorama" => crate::merge::open(app, "merge.hdrPanorama"),
+        "dialog.mergeFocusStack" => crate::merge::open(app, "merge.focusStack"),
         "app.openSamModelFolder" => crate::panels::dialogs::show_model_folder(app),
         "app.about" => {
             app.ui.dialog = Some(Dialog::About);

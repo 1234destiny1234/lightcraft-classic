@@ -273,6 +273,8 @@ struct PrefsFile {
     /// Parameters of the last export (for Export with Previous).
     #[serde(alias = "last_export")]
     last_export: Option<serde_json::Value>,
+    /// Options of the last Photo Merge, per command.
+    last_merge: std::collections::BTreeMap<String, serde_json::Value>,
     /// The user's export presets.
     export_presets: Vec<crate::export::ExportPreset>,
     /// Print templates.
@@ -283,6 +285,8 @@ struct PrefsFile {
     filter_presets: Vec<crate::cmd::filters::FilterPreset>,
     /// Point-curve presets.
     curve_presets: Vec<crate::cmd::curves::CurvePreset>,
+    /// The crop tool's saved and hidden aspect ratios.
+    crop_aspects: crate::cmd::crop_aspects::CropAspects,
     /// Mask effect presets.
     mask_effects: Vec<crate::cmd::mask_effects::MaskEffect>,
     /// The effect new masks of each kind start with.
@@ -571,11 +575,13 @@ impl Session {
         let prefs = settings.read::<PrefsFile>(files.as_mut(), "prefs.json").unwrap_or_default();
         self.xmp = prefs.xmp;
         self.last_export = prefs.last_export;
+        self.last_merge = prefs.last_merge;
         self.export_presets = prefs.export_presets;
         self.print_templates = prefs.print_templates;
         self.metadata_presets = prefs.metadata_presets;
         self.filter_presets = prefs.filter_presets;
         self.curve_presets = prefs.curve_presets;
+        self.crop_aspects = prefs.crop_aspects.sanitized();
         self.mask_effects = prefs.mask_effects;
         self.mask_tool_effects = prefs.mask_tool_effects;
         self.label_sets = prefs.label_sets;
@@ -838,11 +844,13 @@ impl Session {
         let v = serde_json::to_vec_pretty(&PrefsFile {
             xmp: self.xmp,
             last_export: self.last_export.clone(),
+            last_merge: self.last_merge.clone(),
             export_presets: self.export_presets.clone(),
             print_templates: self.print_templates.clone(),
             metadata_presets: self.metadata_presets.clone(),
             filter_presets: self.filter_presets.clone(),
             curve_presets: self.curve_presets.clone(),
+            crop_aspects: self.crop_aspects.clone(),
             mask_effects: self.mask_effects.clone(),
             mask_tool_effects: self.mask_tool_effects.clone(),
             label_sets: self.label_sets.clone(),

@@ -20,7 +20,7 @@ fn cli(home: &Path) -> Command {
     let mut c = Command::new(BIN);
     c.env("HOME", home).env("XDG_CONFIG_HOME", home.join("cfg")).env("APPDATA", home.join("cfg"));
     for prefix in std::iter::once(lcc_brand::ENV_PREFIX).chain(lcc_brand::LEGACY_ENV_PREFIXES.iter().copied()) {
-        c.env_remove(format!("{prefix}_NO_PREFS"));
+        c.env_remove(format!("{prefix}_NO_PREFS")).env_remove(format!("{prefix}_CONFIG_DIR"));
     }
     c
 }

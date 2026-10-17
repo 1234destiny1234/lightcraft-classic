@@ -1260,6 +1260,49 @@ fn curve_reset_by_channel_and_whole() {
 }
 
 #[test]
+fn a_masks_local_curve_through_the_curve_commands() {
+    let mut s = demo();
+    let s_curve = json!([[0.0, 0.0], [0.25, 0.15], [0.75, 0.85], [1.0, 1.0]]);
+    s.execute("mask.add", &json!({"kind": "radial"})).unwrap();
+    s.execute("mask.add", &json!({"kind": "linear"})).unwrap();
+    let ids: Vec<u32> = active_dev(&s).masks.iter().map(|m| m.id).collect();
+    let curve_of = |s: &crate::Session, k: usize| active_dev(s).masks[k].curve.clone();
+    // a channel of one mask's curve: the other mask and the photo's Tone Curve stay linear
+    s.execute("develop.curve", &json!({"channel": "red", "points": s_curve, "mask": ids[0]})).unwrap();
+    s.execute("develop.curve", &json!({"channel": "master", "points": [[0.0, 0.1], [1.0, 1.0]], "mask": ids[0]})).unwrap();
+    assert_eq!(curve_of(&s, 0).red.len(), 4);
+    assert_eq!(curve_of(&s, 0).master.len(), 2);
+    assert!(curve_of(&s, 1).is_empty());
+    assert_eq!(active_dev(&s).curve, lcc_develop::ToneCurve::default());
+    // one undo step per change
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert!(curve_of(&s, 0).master.is_empty() && curve_of(&s, 0).red.len() == 4);
+    // what isn't a mask's curve is refused, nothing changed
+    let before = active_dev(&s);
+    assert!(s.execute("develop.curve", &json!({"channel": "red", "points": s_curve, "mask": 99})).is_err());
+    assert!(s.execute("develop.curve", &json!({"channel": "parametric", "points": s_curve, "mask": ids[0]})).is_err());
+    assert!(s.execute("develop.curve", &json!({"channel": "red", "points": s_curve, "mask": "first"})).is_err());
+    assert!(s.execute("curve.reset", &json!({"channel": "parametric", "mask": ids[0]})).is_err());
+    assert_eq!(active_dev(&s), before);
+    // presets: applied to, matched on and saved from a mask's curve
+    s.execute("curve.applyPreset", &json!({"name": "Strong Contrast", "mask": ids[1]})).unwrap();
+    assert_eq!(s.execute("curve.presets", &json!({"mask": ids[1]})).unwrap()["current"], "Strong Contrast");
+    assert_eq!(s.execute("curve.presets", &json!({})).unwrap()["current"], "Linear", "the photo's curve is untouched");
+    assert!(active_dev(&s).curve.master.is_empty());
+    s.execute("curve.savePreset", &json!({"name": "Red Lift", "mask": ids[0]})).unwrap();
+    let saved = s.curve_presets.iter().find(|p| p.name == "Red Lift").unwrap().clone();
+    assert_eq!((saved.red.len(), saved.master.len()), (4, 0));
+    s.execute("curve.applyPreset", &json!({"name": "Red Lift"})).unwrap();
+    assert_eq!(active_dev(&s).curve.red.len(), 4, "a mask's curve as a preset for the Tone Curve");
+    // reset: one channel, then all of it
+    s.execute("curve.reset", &json!({"channel": "red", "mask": ids[0]})).unwrap();
+    assert!(curve_of(&s, 0).is_empty());
+    s.execute("curve.reset", &json!({"mask": ids[1]})).unwrap();
+    assert!(curve_of(&s, 1).is_empty());
+    assert_eq!(active_dev(&s).curve.red.len(), 4, "the Tone Curve stays");
+}
+
+#[test]
 fn ai_masks_without_the_model_explain_themselves() {
     let mut s = demo();
     let id = s.active().unwrap();
@@ -1769,4 +1812,67 @@ fn malformed_photo_targets_are_refused_not_widened() {
     // a preset's id is not a photo target
     let preset = s.presets.first().unwrap().id.clone();
     s.execute("preset.apply", &json!({"id": preset})).unwrap();
+}
+
+/// Issue #160: the stack commands are on exactly when a selected photo is stacked, however many
+/// unstacked photos are selected with it.
+#[test]
+fn stack_commands_need_a_stacked_photo_in_the_selection() {
+    let mut s = demo();
+    let on = |s: &Session, id: &str| s.commands().into_iter().find(|c| c.id == id).map(|c| (c.enabled, c.disabled_reason.clone()));
+    let ids: Vec<_> = s.visible().to_vec();
+    assert!(ids.len() >= 4);
+    let select = |s: &mut Session, sel: &[lcc_catalog::PhotoId]| {
+        s.execute("library.select", &json!({"ids": sel.iter().map(|i| i.0).collect::<Vec<_>>(), "active": sel[0].0})).unwrap();
+    };
+    select(&mut s, &ids[..2]);
+    s.execute("stack.group", &json!({"collapsed": false})).unwrap();
+    for id in ["stack.ungroup", "stack.remove", "stack.setTop", "stack.moveUp", "stack.moveDown", "stack.split", "stack.toggle"] {
+        select(&mut s, &ids[2..]);
+        let (enabled, why) = on(&s, id).unwrap();
+        assert!(!enabled && why.as_deref() == Some("no stacked photo selected"), "{id}: {why:?}");
+        // one stacked photo among many unstacked ones turns it on
+        let mut sel = ids[2..].to_vec();
+        sel.push(ids[1]);
+        select(&mut s, &sel);
+        assert!(on(&s, id).unwrap().0, "{id}");
+    }
+}
+
+/// Issue #175 (AC-2 of #160): evaluating the stack commands' `enabled` does work proportional to
+/// the selected and stacked photos, not their product. Counts the photos and stacks the checks
+/// look at (not time): a library four times larger costs less than eight times the work.
+#[test]
+fn stack_command_enabled_work_grows_linearly_with_the_library() {
+    use crate::cmd::STACK_WORK;
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
+    const STACK_CMDS: [&str; 7] = ["stack.ungroup", "stack.remove", "stack.setTop", "stack.moveUp", "stack.moveDown", "stack.split", "stack.toggle"];
+    // `n` photos in stacks of two, all selected; `last_only` stacks just the last pair instead.
+    let work_for = |n: u64, last_only: bool| -> u64 {
+        let mut s = demo();
+        let mut ids = Vec::new();
+        for i in 0..n {
+            let id = s.catalog.alloc_photo_id();
+            let p = Photo::new(id, Source::Demo { scene: 1 }, &format!("s{i}.jpg"), "JPEG", 6, 4, "2026-01-01T00:00:00");
+            s.catalog.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+            ids.push(id);
+        }
+        let pairs: Vec<&[PhotoId]> = if last_only { vec![&ids[ids.len() - 2..]] } else { ids.chunks(2).collect() };
+        for pair in pairs {
+            let op = s.catalog.group_ops(pair[0], &pair[1..], false).unwrap();
+            s.catalog.apply(op).unwrap();
+        }
+        s.selection = Selection { ids: ids.clone(), active: ids.first().copied() };
+        STACK_WORK.with(|w| w.set(0));
+        let specs = command_specs();
+        for id in STACK_CMDS {
+            let spec = specs.iter().find(|c| c.id == id).unwrap();
+            assert!((spec.enabled)(&s).is_ok(), "{id} is on with stacked photos selected");
+        }
+        STACK_WORK.with(std::cell::Cell::get)
+    };
+    for last_only in [false, true] {
+        let (small, large) = (work_for(1000, last_only), work_for(4000, last_only));
+        assert!(large < small.max(1) * 8, "last_only={last_only}: work {small} -> {large} for 4x the photos");
+    }
 }

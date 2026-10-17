@@ -253,6 +253,8 @@ pub struct ModuleLayout {
     pub order: Vec<PanelId>,
     /// Panels hidden from the right group (its context menu).
     pub hidden: Vec<PanelId>,
+    /// Library: the view it was left in (grid, loupe, Compare …), restored on coming back.
+    pub view: Option<ViewMode>,
 }
 
 impl Default for ModuleLayout {
@@ -267,6 +269,7 @@ impl Default for ModuleLayout {
             solo: false,
             order: Vec::new(),
             hidden: Vec::new(),
+            view: None,
         }
     }
 }
@@ -617,6 +620,7 @@ fn capture(app: &LccApp) -> ModuleLayout {
         solo: u.single_panel,
         order: u.panel_order.clone(),
         hidden: u.hidden_panels.clone(),
+        view: (u.module == ModuleId::Library).then_some(u.view),
     }
 }
 
@@ -678,6 +682,14 @@ pub fn sync(app: &mut LccApp) {
     let want = implied(app.ui.module, now.0, now.1);
     if want != app.ui.module {
         swap(app, want, false);
+    } else if app.ui.module == ModuleId::Library && app.ui.view != ViewMode::Detail && app.ui.view != ViewMode::Reference {
+        if let Some(l) = app.ui.layouts.get_mut(&ModuleId::Library) {
+            l.view = Some(app.ui.view);
+        } else {
+            let mut captured = capture(app);
+            captured.view = Some(app.ui.view);
+            app.ui.layouts.insert(ModuleId::Library, captured);
+        }
     }
 }
 
@@ -704,6 +716,10 @@ pub fn switch(app: &mut LccApp, to: ModuleId) -> Result<Value, String> {
         }
         ModuleId::Library => {
             swap(app, to, true);
+            // back to the view Library was left in (Develop put the loupe on screen)
+            if let Some(v) = app.ui.layouts.get(&ModuleId::Library).and_then(|l| l.view) {
+                app.ui.view = v;
+            }
             if app.ui.view == ViewMode::Reference {
                 app.ui.view = ViewMode::Detail;
             }

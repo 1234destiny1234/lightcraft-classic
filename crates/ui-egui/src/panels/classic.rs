@@ -256,7 +256,10 @@ pub fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
             egui::ScrollArea::vertical().id_salt("classic-right-scroll").auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 for p in ordered(app, declared) {
-                    let (_, open) = header(app, ui, p, declared);
+                    let (r, open) = header(app, ui, p, declared);
+                    if p == PanelId::KeywordList {
+                        super::keyword_list::header_drop(app, ui, r);
+                    }
                     if open {
                         egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 12, top: 4, bottom: 10 }).show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = 4.0;
@@ -302,7 +305,7 @@ fn body(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId) {
     match p {
         PanelId::QuickDevelop => super::quick_develop::show(app, ui),
         PanelId::Keywording => super::right::keywording(app, ui),
-        PanelId::KeywordList => super::keyword_list::show(app, ui),
+        PanelId::KeywordList => super::keyword_list::show_body(app, ui),
         PanelId::Metadata => super::right::metadata_panel(app, ui),
         _ => {}
     }

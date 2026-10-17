@@ -18,8 +18,8 @@
 //!    a file that fails its check stops the update and deletes what was staged; a build without a
 //!    key ([`UpdateError::NoKey`]) checks for updates but downloads and installs none.
 //! 3. [`install`] says what installing will do ([`install::Plan`]) and, when asked, does it: the
-//!    Windows installer runs, a macOS disk image is mounted and its app copied over the running
-//!    one, an AppImage replaces itself, and anything else is laid out where the user can unpack
+//!    Windows installer runs, a macOS disk image is mounted and its app checked and swapped in for
+//!    the running one, an AppImage replaces itself, and anything else is laid out where the user can unpack
 //!    it. Every path ends with the app running again, or with a sentence saying what to do.
 //!
 //! Never a panic: no network, a rate-limited API, a release without a file for this machine, a
@@ -53,7 +53,7 @@ pub use check::{
 };
 pub use download::{Downloaded, client, download, hash_file, part_path, recheck, stage_dir};
 pub use error::{NO_KEY, UpdateError};
-pub use install::{Plan, Restart, install, install_with, plan, reveal, runs_from_appimage};
+pub use install::{Plan, Restart, clean_up_after_update, install, install_with, plan, reveal, runs_from_appimage};
 pub use release::{Release, newest, version_of};
 pub use signature::UpdateKey;
 pub use target::{Asset, Kind, Os, Target};

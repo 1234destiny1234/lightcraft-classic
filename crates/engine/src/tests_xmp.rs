@@ -91,6 +91,8 @@ fn save_delete_library_reimport_restores_edits() {
     s.execute("develop.set", &json!({"control": "light.exposure", "value": 0.8})).unwrap();
     s.execute("develop.set", &json!({"control": "effects.clarity", "value": 25})).unwrap();
     s.execute("mask.add", &json!({"kind": "radial"})).unwrap();
+    let mask = s.develop_of(id).unwrap().masks[0].id;
+    s.execute("develop.curve", &json!({"channel": "blue", "points": [[0.0, 0.1], [0.5, 0.6], [1.0, 1.0]], "mask": mask})).unwrap();
     let edited = s.catalog.photo(id).unwrap().clone();
     let r = s.execute("photo.saveMetadataToFile", &json!({})).unwrap();
     assert_eq!(r["written"][0], src.join("dune.xmp").to_string_lossy().as_ref(), "{r}");
@@ -108,6 +110,7 @@ fn save_delete_library_reimport_restores_edits() {
     let p = s.catalog.photos().find(|p| p.file_name == "dune.png").unwrap().clone();
     assert_eq!(p.develop, edited.develop, "develop settings restored exactly");
     assert_eq!(p.develop.masks.len(), 1);
+    assert_eq!(p.develop.masks[0].curve.blue.len(), 3, "the mask's local Curve");
     assert_eq!((p.rating, p.flag, p.label), (4, Flag::Pick, Some(ColorLabel::Blue)));
     assert_eq!(p.meta.title, "Dune");
     assert_eq!(p.meta.caption, "Evening light");
@@ -647,6 +650,214 @@ fn dng_embedded_crs_settings_are_read_on_import() {
     let _ = std::fs::remove_dir_all(&src);
 }
 
+fn jpeg_xmp_packet(rating: i8, title: &str) -> String {
+    lcc_meta::write_xmp(&lcc_meta::Metadata { rating: Some(rating), title: Some(title.into()), ..Default::default() }, None)
+}
+
+fn write_jpeg_xmp(path: &Path, packet: &str) -> Vec<u8> {
+    let img = lcc_raster::Rgba8::from_fn(32, 24, |x, y| [(x * 7) as u8, (y * 9) as u8, 90, 255]);
+    let meta = lcc_codecs::EncodeMeta { xmp: Some(packet), ..Default::default() };
+    let bytes = lcc_codecs::encode_jpeg(&lcc_codecs::EncodeImage::rgba8(&img), 90, Default::default(), &meta).unwrap();
+    assert_eq!(lcc_meta::embedded(&bytes).xmp.as_deref(), Some(packet), "the procedural JPEG carries the requested packet");
+    std::fs::write(path, &bytes).unwrap();
+    bytes
+}
+
+#[test]
+fn embedded_jpeg_xmp_reread_refreshes_metadata_and_undoes_once() {
+    let src = temp_dir("jpeg-xmp-refresh");
+    let file = src.join("photo.jpg");
+    let initial = write_jpeg_xmp(&file, &jpeg_xmp_packet(1, "Initial embedded title"));
+    let mut s = Session::new().with_fs();
+    let imported = s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+    assert_eq!(imported["imported"].as_array().unwrap().len(), 1, "{imported}");
+    let id = only(&s);
+    assert_eq!(s.catalog.photo(id).unwrap().kind, lcc_catalog::MediaKind::Image);
+    s.execute("library.select", &json!({"ids": [id.0]})).unwrap();
+    s.execute("photo.rate", &json!({"rating": 2})).unwrap();
+    s.execute("photo.setMeta", &json!({"title": "Catalog title"})).unwrap();
+    let before = s.catalog.photo(id).unwrap().clone();
+    assert!(!s.xmp.auto_write);
+
+    // Change the packet after import: rereading must use the file, not the imported metadata.
+    let changed = write_jpeg_xmp(&file, &jpeg_xmp_packet(4, "Changed embedded title"));
+    assert_ne!(initial, changed);
+    assert!(!src.join("photo.xmp").exists() && !src.join("photo.jpg.xmp").exists());
+    let read = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(read["read"], json!([{"id": id.0, "from": file.to_string_lossy()}]), "embedded JPEG XMP must be reread: {read}");
+    assert_eq!(read["failed"], json!([]), "{read}");
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, photo.meta.title.as_str()), (4, "Changed embedded title"));
+    assert_eq!(photo.develop, before.develop);
+
+    s.execute("edit.undo", &json!({})).unwrap();
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, &photo.meta.title), (before.rating, &before.meta.title), "one undo restores both fields");
+    assert_eq!(std::fs::read(&file).unwrap(), changed, "reading and undo never rewrite the original");
+    assert!(!src.join("photo.xmp").exists() && !src.join("photo.jpg.xmp").exists());
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+#[test]
+fn embedded_jpeg_xmp_reread_keeps_sidecar_precedence() {
+    let src = temp_dir("jpeg-xmp-sidecar");
+    let file = src.join("photo.jpg");
+    let original = write_jpeg_xmp(&file, &jpeg_xmp_packet(4, "Embedded title"));
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    let sidecar = src.join("photo.xmp");
+    let packet = jpeg_xmp_packet(5, "Sidecar title");
+    std::fs::write(&sidecar, &packet).unwrap();
+    let read = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(read["read"], json!([{"id": id.0, "from": sidecar.to_string_lossy()}]), "{read}");
+    assert_eq!(read["failed"], json!([]), "{read}");
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, photo.meta.title.as_str()), (5, "Sidecar title"));
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), packet);
+
+    // A malformed sidecar must report its failure, not fall back to the valid embedded packet.
+    let malformed = "<a>".repeat(1000);
+    assert!(lcc_meta::parse_xmp(&malformed).is_err());
+    std::fs::write(&sidecar, &malformed).unwrap();
+    let read = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(read["read"], json!([]), "{read}");
+    assert_eq!(read["failed"].as_array().unwrap().len(), 1, "{read}");
+    assert_eq!(read["failed"][0]["id"], id.0);
+    assert!(!read["failed"][0]["error"].as_str().unwrap().is_empty());
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, photo.meta.title.as_str()), (5, "Sidecar title"));
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), malformed);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+#[test]
+fn embedded_jpeg_xmp_reread_malformed_input_preserves_state_and_undo() {
+    let src = temp_dir("jpeg-xmp-malformed");
+    let file = src.join("photo.jpg");
+    write_jpeg_xmp(&file, &jpeg_xmp_packet(1, "Original title"));
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    s.execute("library.select", &json!({"ids": [id.0]})).unwrap();
+    s.execute("photo.rate", &json!({"rating": 2})).unwrap();
+    let previous_title = s.catalog.photo(id).unwrap().meta.title.clone();
+    s.execute("photo.setMeta", &json!({"title": "Catalog title"})).unwrap();
+    let before = s.catalog.photo(id).unwrap().clone();
+    let malformed = "<a>".repeat(1000);
+    assert!(lcc_meta::parse_xmp(&malformed).is_err());
+    let broken_packet = write_jpeg_xmp(&file, &malformed);
+    let truncated_container = vec![0xff, 0xd8, 0xff, 0xe1, 0, 40, b'x'];
+    for bytes in [broken_packet, truncated_container] {
+        std::fs::write(&file, &bytes).unwrap();
+        let read = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+        assert_eq!(read["read"], json!([]), "{read}");
+        assert_eq!(read["failed"].as_array().unwrap().len(), 1, "{read}");
+        assert_eq!(read["failed"][0]["id"], id.0);
+        assert!(!read["failed"][0]["error"].as_str().unwrap().is_empty());
+        let photo = s.catalog.photo(id).unwrap();
+        assert_eq!((photo.rating, &photo.meta.title), (before.rating, &before.meta.title));
+        assert_eq!(photo.develop, before.develop);
+        assert_eq!(std::fs::read(&file).unwrap(), bytes);
+        assert!(!src.join("photo.xmp").exists() && !src.join("photo.jpg.xmp").exists());
+    }
+    // Failed reads do not add an undo entry: the last successful title edit is still next.
+    s.execute("edit.undo", &json!({})).unwrap();
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, &photo.meta.title), (2, &previous_title));
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+#[test]
+fn embedded_jpeg_xmp_reread_non_utf8_sidecar_preserves_state_and_undo() {
+    let src = temp_dir("jpeg-xmp-non-utf8-sidecar");
+    let file = src.join("photo.jpg");
+    let original = write_jpeg_xmp(&file, &jpeg_xmp_packet(4, "Embedded title"));
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    assert!(!s.xmp.auto_write);
+    s.execute("library.select", &json!({"ids": [id.0]})).unwrap();
+    s.execute("photo.rate", &json!({"rating": 2})).unwrap();
+    let previous_title = s.catalog.photo(id).unwrap().meta.title.clone();
+    s.execute("photo.setMeta", &json!({"title": "Catalog title"})).unwrap();
+    let before = s.catalog.photo(id).unwrap().clone();
+    let sidecar = src.join("photo.xmp");
+    let invalid = [0xff, 0xfe, 0x80];
+    std::fs::write(&sidecar, invalid).unwrap();
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap_err().kind(), std::io::ErrorKind::InvalidData);
+    assert_eq!(crate::sidecar::find_sidecar(file.to_str().unwrap(), s.sidecar_naming(id)), Some(sidecar.clone()));
+
+    let read = s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(read["read"], json!([]), "an existing non-UTF-8 sidecar must not fall back to embedded JPEG XMP: {read}");
+    assert_eq!(read["failed"].as_array().unwrap().len(), 1, "{read}");
+    assert_eq!(read["failed"][0]["id"], id.0);
+    assert!(!read["failed"][0]["error"].as_str().unwrap().is_empty());
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, &photo.meta.title), (before.rating, &before.meta.title));
+    assert_eq!(photo.develop, before.develop);
+
+    s.execute("edit.undo", &json!({})).unwrap();
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, &photo.meta.title), (2, &previous_title), "failed reads must not add an undo entry");
+    assert_eq!(photo.develop, before.develop);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    assert_eq!(std::fs::read(&sidecar).unwrap(), invalid);
+    assert!(!src.join("photo.jpg.xmp").exists());
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+#[test]
+fn embedded_jpeg_xmp_reread_all_metadata_uses_supplied_bytes() {
+    use std::sync::Arc;
+    use std::sync::atomic::{AtomicUsize, Ordering};
+
+    let src = temp_dir("jpeg-xmp-all-metadata");
+    let file = src.join("photo.jpg");
+    let original = write_jpeg_xmp(&file, &jpeg_xmp_packet(1, "On-disk title"));
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [file.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    assert!(!s.xmp.auto_write);
+    let before = s.catalog.photo(id).unwrap().clone();
+    let supplied = write_jpeg_xmp(&src.join("supplied.jpg"), &jpeg_xmp_packet(4, "Supplied title"));
+    let reads = Arc::new(AtomicUsize::new(0));
+    let counted = reads.clone();
+    let expected_path = file.to_string_lossy().into_owned();
+    s.media.file_bytes = Some(Arc::new(move |path| {
+        assert_eq!(path, expected_path);
+        counted.fetch_add(1, Ordering::SeqCst);
+        Ok(supplied.clone())
+    }));
+
+    let query = s.execute("photo.allMetadata", &json!({"id": id.0})).unwrap();
+    assert_eq!(reads.load(Ordering::SeqCst), 1);
+    let xmp = query["xmp"].as_array().unwrap();
+    assert!(
+        xmp.iter().any(|x| x["name"] == "dc:title" && x["value"] == "Supplied title"),
+        "All Metadata must use the bytes already supplied: {query}"
+    );
+    assert!(xmp.iter().any(|x| x["name"] == "xmp:Rating" && x["value"] == "4"), "{query}");
+    assert!(!xmp.iter().any(|x| x["value"] == "On-disk title"), "{query}");
+
+    let sidecar = src.join("photo.xmp");
+    let packet = jpeg_xmp_packet(5, "Sidecar title");
+    std::fs::write(&sidecar, &packet).unwrap();
+    let query = s.execute("photo.allMetadata", &json!({"id": id.0})).unwrap();
+    assert_eq!(reads.load(Ordering::SeqCst), 2);
+    let xmp = query["xmp"].as_array().unwrap();
+    assert!(xmp.iter().any(|x| x["name"] == "dc:title" && x["value"] == "Sidecar title"), "{query}");
+    assert!(xmp.iter().any(|x| x["name"] == "xmp:Rating" && x["value"] == "5"), "{query}");
+    assert!(!xmp.iter().any(|x| x["value"] == "Supplied title"), "{query}");
+    let photo = s.catalog.photo(id).unwrap();
+    assert_eq!((photo.rating, &photo.meta.title), (before.rating, &before.meta.title));
+    assert_eq!(photo.develop, before.develop);
+    assert_eq!(std::fs::read(&file).unwrap(), original);
+    assert_eq!(std::fs::read_to_string(&sidecar).unwrap(), packet);
+    let _ = std::fs::remove_dir_all(&src);
+}
+
 #[test]
 fn demo_photos_have_no_sidecar() {
     let mut s = Session::with_demo();
@@ -944,6 +1155,125 @@ fn gps_typed_in_is_saved_to_xmp() {
     assert!(s.execute("photo.setMeta", &json!({"gps": "north pole-ish"})).is_err());
     s.execute("photo.setMeta", &json!({"gps": null})).unwrap();
     assert!(s.catalog.photo(id).unwrap().meta.gps.is_none());
+}
+
+/// A PNG whose EXIF places it at (`lat`, `lon`), as a camera's GPS does.
+fn write_png_at(path: &Path, lat: f64, lon: f64) {
+    let img = lcc_raster::Rgba8 { width: 8, height: 8, data: vec![[90, 120, 150, 255]; 64] };
+    let gps = lcc_meta::Metadata { gps: Some(lcc_meta::Gps { latitude: lat, longitude: lon, altitude: None }), ..Default::default() };
+    let exif = lcc_meta::write_exif(&gps);
+    let meta = lcc_codecs::EncodeMeta { exif: Some(&exif), ..Default::default() };
+    std::fs::write(path, lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &meta).unwrap()).unwrap();
+}
+
+/// A sidecar's GPS wins over the camera's (MWG: XMP over Exif), on import and on Read Metadata from
+/// File; saving leaves the sidecar's position as it was written, and writes it only when it was
+/// changed here.
+#[test]
+fn sidecar_gps_wins_over_the_cameras_and_survives_a_save() {
+    let src = temp_dir("sidecar-gps");
+    write_png_at(&src.join("walk.png"), 10.5, 20.25);
+    let sidecar = |lat: &str, lon: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="2">
+   <exif:GPSLatitude>{lat}</exif:GPSLatitude>
+   <exif:GPSLongitude>{lon}</exif:GPSLongitude>
+  </rdf:Description>
+</rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    std::fs::write(src.join("walk.xmp"), sidecar("12,30.12345N", "45,15.54321W")).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    let near = |(a, b): (f64, f64), (c, d): (f64, f64)| (a - c).abs() < 1e-6 && (b - d).abs() < 1e-6;
+    let gps = |s: &Session| s.catalog.photo(id).unwrap().meta.gps.unwrap();
+    assert!(near(gps(&s), (12.5020575, -45.2590535)), "the sidecar's position, not the camera's: {:?}", gps(&s));
+    // a save that didn't change the position leaves it in the file exactly as written
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 4})).unwrap();
+    s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+    let saved = std::fs::read_to_string(src.join("walk.xmp")).unwrap();
+    assert!(saved.contains("<exif:GPSLatitude>12,30.12345N</exif:GPSLatitude>"), "{saved}");
+    assert!(saved.contains("<exif:GPSLongitude>45,15.54321W</exif:GPSLongitude>"), "{saved}");
+    assert_eq!(lcc_meta::parse_xmp(&saved).unwrap().metadata.rating, Some(4), "the save happened");
+    // another app moved the photo: reading the sidecar again takes its position
+    std::fs::write(src.join("walk.xmp"), sidecar("5,6.60000S", "100,30.30000E")).unwrap();
+    s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert!(near(gps(&s), (-5.11, 100.505)), "{:?}", gps(&s));
+    // a position typed in here is written
+    s.execute("photo.setMeta", &json!({"ids": [id.0], "gps": "1.2345, 6.789"})).unwrap();
+    s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+    let g = lcc_meta::parse_xmp(&std::fs::read_to_string(src.join("walk.xmp")).unwrap()).unwrap().metadata.gps.unwrap();
+    assert!(near((g.latitude, g.longitude), (1.2345, 6.789)), "{g:?}");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// Lightroom Classic writes a sidecar's GPS as attributes on `rdf:Description`, with GPSVersionID and
+/// GPSAltitude beside it; a file with no position of its own (a raw without GPS) takes it (fork issue #247).
+#[test]
+fn lightroom_attribute_gps_in_a_sidecar_is_read() {
+    let src = temp_dir("sidecar-gps-lr");
+    let img = lcc_raster::Rgba8 { width: 8, height: 8, data: vec![[90, 120, 150, 255]; 64] };
+    std::fs::write(src.join("nef.png"), lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &Default::default()).unwrap()).unwrap();
+    std::fs::write(
+        src.join("nef.xmp"),
+        r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/"
+   exif:GPSLatitude="41,53.6349N"
+   exif:GPSLongitude="12,29.60904E"
+   exif:GPSVersionID="2.2.0.0"
+   exif:GPSAltitude="441000/10000"/>
+</rdf:RDF></x:xmpmeta>"#,
+    )
+    .unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let (lat, lon) = s.catalog.photo(only(&s)).unwrap().meta.gps.expect("the sidecar's position");
+    assert!((lat - (41.0 + 53.6349 / 60.0)).abs() < 1e-6 && (lon - (12.0 + 29.60904 / 60.0)).abs() < 1e-6, "{lat} {lon}");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
+/// A photo with no capture time in the file or its sidecar is dated by the file's modification time, but
+/// that guess is never written to the sidecar as its capture time; a time read from the sidecar later, or
+/// set here, replaces it and is written.
+#[test]
+fn a_file_date_guess_is_never_saved_as_the_capture_time() {
+    let src = temp_dir("file-date");
+    write_png(&src.join("scan.png"), 3);
+    let rated = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="2"/>
+</rdf:RDF></x:xmpmeta>"#;
+    std::fs::write(src.join("scan.xmp"), rated).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    let p = s.catalog.photo(id).unwrap().clone();
+    assert!(p.captured.is_some(), "dated by the file, as Lightroom does");
+    assert_eq!(p.captured_fallback, p.captured);
+    let dates = |src: &Path| {
+        let d = lcc_meta::parse_xmp(&std::fs::read_to_string(src.join("scan.xmp")).unwrap()).unwrap();
+        ["exif:DateTimeOriginal", "photoshop:DateCreated"].map(|k| d.properties.get(k).and_then(|v| v.first()).cloned())
+    };
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 3})).unwrap();
+    s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(dates(&src), [None, None], "no capture time is made up");
+    // the sidecar learns the real time elsewhere: reading it replaces the guess
+    std::fs::write(
+        src.join("scan.xmp"),
+        rated.replace(
+            "xmp:Rating=\"2\"",
+            "xmp:Rating=\"2\" xmlns:exif=\"http://ns.adobe.com/exif/1.0/\" exif:DateTimeOriginal=\"2019-07-01T10:20:30\"",
+        ),
+    )
+    .unwrap();
+    s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().captured.as_deref(), Some("2019-07-01T10:20:30"));
+    // a time set here is the user's, and is written
+    s.execute("photo.setCaptureTime", &json!({"ids": [id.0], "time": "2020-01-02T03:04:05"})).unwrap();
+    s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+    assert_eq!(dates(&src), [Some("2020-01-02T03:04:05".to_string()), Some("2020-01-02T03:04:05".to_string())]);
+    let _ = std::fs::remove_dir_all(&src);
 }
 
 /// DNG export compression: lossless, zip and none all decode; none is the biggest.

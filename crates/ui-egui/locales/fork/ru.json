@@ -1488,6 +1488,8 @@
   "Install and Relaunch": "Установить и перезапустить",
   "Skip This Version": "Пропустить эту версию",
   "Check for updates when the app starts": "Проверять обновления при запуске",
+  "Checking for updates when the app starts is still off": "Проверка обновлений при запуске по-прежнему выключена",
+  "Update settings not saved": "Настройки обновлений не сохранены",
   "Include prereleases (release candidates)": "Включать предварительные версии (RC)",
   "These settings are saved in the app's settings folder.": "Эти настройки сохраняются в папке настроек приложения.",
   "File date": "Дата файла",
@@ -1532,6 +1534,7 @@
   "Remove from Target Collection": "Удалить из целевой коллекции",
   "Wheel scroll speed": "Скорость прокрутки колесом",
   "Wheel resizes brush instead of zooming": "Колесо мыши меняет размер кисти вместо масштабирования",
+  "Double-click opens the photo in Develop": "Двойной щелчок открывает фото в модуле обработки",
   "Fast": "Быстрая",
   "Fastest": "Очень быстрая",
   "Run face models on the CPU only": "Запускать модели лиц только на ЦП",
@@ -1576,5 +1579,8 @@
   "Clear Image": "Убрать изображение",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Файл SVG, PNG или JPEG; показывается высотой 32 пункта.",
   "Theme Color": "Цвет темы",
-  "Identity Plate Setup…": "Настройка фирменной таблички…"
+  "Identity Plate Setup…": "Настройка фирменной таблички…",
+  "Remove Hot Pixels": "Удалить горячие пиксели",
+  "Film recipe": "Плёночный рецепт",
+  "Copy recipe": "Копировать рецепт"
 }

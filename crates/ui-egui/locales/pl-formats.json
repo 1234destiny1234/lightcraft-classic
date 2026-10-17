@@ -75,7 +75,7 @@
   "Lightroom import complete: {imported} photos added; index warning: {warning}": "Import z Lightroom zakończony: dodano {imported} zdjęć; ostrzeżenie indeksu: {warning}",
   "Lightroom import failed: {e}{warning}": "Import z Lightroom nieudany: {e}{warning}",
   "Lightroom inspection failed: {e}{warning}": "Sprawdzanie katalogu Lightroom nieudane: {e}{warning}",
-  "MIT OR Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT lub Apache-2.0. Czcionki: {} (OFL). Ikony: oryginalne.",
+  "MIT AND Apache-2.0. Fonts: {} (OFL). Icons: original.": "MIT i Apache-2.0. Czcionki: {} (OFL). Ikony: oryginalne.",
   "Matches: {}": "Dopasowania: {}",
   "Merging… {stage} {:.0}%": "Scalanie… {stage} {:.0}%",
   "Move {what} to Recently Deleted?": "Przenieść {what} do Ostatnio usuniętych?",
@@ -295,5 +295,8 @@
   "Already in “{}”": "Już w „{}”",
   "Move {n} photo{} to “{}”": "Przenieś do „{1}” — zdjęcia: {n}{0:.0}",
   "Move {n} photo{} to “{}”?": "Przenieść do „{1}” — zdjęcia: {n}{0:.0}?",
-  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Przeniesiono do „{1}” — zdjęcia: {n}{0:.0}. Edytuj → Cofnij przywróci je."
+  "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Przeniesiono do „{1}” — zdjęcia: {n}{0:.0}. Edytuj → Cofnij przywróci je.",
+  "{} photos · not aligned": "{} zdjęć · bez wyrównania",
+  "{} photos · {} aligned": "{} zdjęć · wyrównano {}",
+  "{} photos · {} aligned · {} left out": "{} zdjęć · wyrównano {} · pominięto {}"
 }

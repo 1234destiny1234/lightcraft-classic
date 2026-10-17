@@ -33,6 +33,18 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         register(ui.ctx(), "check:shortcuts.showAll", r.rect);
         let r = ui.checkbox(&mut module_only, crate::i18n::tr_format!("Only {} keys", crate::i18n::tr(module.label())));
         register(ui.ctx(), "check:shortcuts.moduleOnly", r.rect);
+    });
+    ui.data_mut(|d| {
+        d.insert_temp(search_id, search.clone());
+        d.insert_temp(all_id, show_all);
+        d.insert_temp(module_id, module_only);
+    });
+    // a search looks through every command; otherwise (by default) only the current module's
+    let module_only = module_only && search.trim().is_empty();
+    // Reset All sits on the hint's row, right-aligned: on the filter row it collided with the
+    // checkboxes once their (translated) labels filled the width (issue #154)
+    ui.horizontal(|ui| {
+        ui.label(RichText::new(crate::i18n::tr("Click a shortcut, then press the new keys (Esc cancels).")).size(11.0).color(t.text_dim));
         ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
             let r = ui.add_enabled(!app.ui.settings.keymap.is_empty(), egui::Button::new(crate::i18n::tr("Reset All")));
             register(ui.ctx(), "button:shortcutsResetAll", r.rect);
@@ -42,14 +54,6 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             }
         });
     });
-    ui.data_mut(|d| {
-        d.insert_temp(search_id, search.clone());
-        d.insert_temp(all_id, show_all);
-        d.insert_temp(module_id, module_only);
-    });
-    // a search looks through every command; otherwise (by default) only the current module's
-    let module_only = module_only && search.trim().is_empty();
-    ui.label(RichText::new(crate::i18n::tr("Click a shortcut, then press the new keys (Esc cancels).")).size(11.0).color(t.text_dim));
     ui.add_space(4.0);
 
     let needle = search.trim().to_lowercase();
@@ -218,7 +222,6 @@ fn row(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, b: &Bindable, sc: Option
     }
     // keys whose command changes in the Library grids (see `shortcuts::handle`)
     let hover = match b.id {
-        "panel.presets" => format!("{} — {}", b.id, crate::i18n::tr("In Photo Grid and Square Grid: Flag as Pick and advance")),
         "view.softProof" => format!("{} — {}", b.id, crate::i18n::tr("In Photo Grid and Square Grid: expand or collapse the stack")),
         _ => b.id.to_string(),
     };

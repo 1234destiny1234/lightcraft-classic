@@ -16,7 +16,11 @@ const SETTLE: Duration = Duration::from_secs(120);
 
 fn demo() -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
+    let mut session = lcc_engine::Session::with_demo();
+    // newest first, the newest photo open: written around it
+    session.execute("library.sort", &json!({"ascending": false})).unwrap();
+    session.selection = lcc_engine::Selection::single(session.visible_cloned()[0]);
+    let app = LccApp::new(session, services);
     let mut h = Headless::new(app, [1400.0, 900.0], 1.0);
     h.settle(SETTLE);
     run(&mut h, "module.library", json!({}));
@@ -92,6 +96,60 @@ fn a_grid_view_from_develop_shows_library_panels() {
     run(&mut h, "view.photoGrid", json!({}));
     assert_eq!(h.app.ui.module, ModuleId::Library);
     assert!(!h.app.ui.right.is_edit_tool(), "{:?}", h.app.ui.right);
+}
+
+// Regression (#144): Library came back in the loupe after Develop, whatever view it was left in.
+#[test]
+fn library_returns_to_its_own_view_after_develop() {
+    let mut h = demo();
+    run(&mut h, "view.photoGrid", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "module.library", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::PhotoGrid));
+    // left in the loupe, it comes back in the loupe
+    run(&mut h, "view.loupe", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    run(&mut h, "module.library", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    // and across a save/load of ui.json
+    run(&mut h, "view.photoGrid", json!({}));
+    run(&mut h, "module.develop", json!({}));
+    let saved = serde_json::to_string(&h.app.ui).unwrap();
+    let back = serde_json::from_str::<crate::UiState>(&saved).unwrap().sanitized();
+    assert_eq!(back.layouts.get(&ModuleId::Library).and_then(|l| l.view), Some(ViewMode::PhotoGrid));
+}
+
+// Issue #227: Returning to Library from Develop preserves the non-default view (Square Grid, Compare, etc.)
+// and redundant top-bar navigation arrows are removed.
+#[test]
+fn library_preserves_non_default_view_when_returning_from_develop() {
+    let mut h = demo();
+    // Top-bar navigation arrows are removed
+    assert!(!has_widget(&h, "icon:back"));
+    assert!(!has_widget(&h, "icon:forward"));
+
+    // Square grid preserved via module.library
+    run(&mut h, "view.squareGrid", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::SquareGrid);
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "module.library", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::SquareGrid));
+
+    // Square grid preserved when returning via view.back (Escape)
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "view.back", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::SquareGrid));
+
+    // Compare view preserved when returning via module.library
+    run(&mut h, "view.compare", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Compare);
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "module.library", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::Compare));
 }
 
 #[test]

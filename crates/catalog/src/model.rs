@@ -240,6 +240,12 @@ pub struct Photo {
     /// ISO 8601 local capture time.
     #[serde(default)]
     pub captured: Option<String>,
+    /// The file's modification time, when import dated the photo by it because neither the file nor
+    /// its sidecar had a capture time (as Lightroom does). While [`Photo::captured`] is still this
+    /// guess, it is not a capture time anyone stated: it is never written to XMP, and a capture time
+    /// read from a sidecar later replaces it ([`Photo::captured_stated`]).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub captured_fallback: Option<String>,
     pub imported: String,
     #[serde(default)]
     pub meta: Meta,
@@ -469,6 +475,7 @@ impl Photo {
             height,
             file_size: 0,
             captured: None,
+            captured_fallback: None,
             imported: imported.to_string(),
             meta: Meta::default(),
             rating: 0,
@@ -497,6 +504,11 @@ impl Photo {
             plugin_fields: Default::default(),
             video: None,
         }
+    }
+    /// [`Photo::captured`], unless it is still the file-date guess import made
+    /// ([`Photo::captured_fallback`]): a capture time the file, a sidecar or the user stated.
+    pub fn captured_stated(&self) -> Option<&str> {
+        self.captured.as_deref().filter(|c| self.captured_fallback.as_deref() != Some(*c))
     }
     /// Sets [`Photo::preview_only`] as this build decided it, with its stamp.
     pub fn set_preview_only(&mut self, preview_only: Option<String>) {
@@ -790,11 +802,19 @@ mod edited_tests {
             ("NIKON CORPORATION NIKON D850", "NEF", false),
             ("Canon Canon EOS 5D Mark III", "CR2", false),
             ("Canon Canon EOS R6m2", "CR3", false),
+            ("Canon Canon EOS R6 Mark II", "CR3", false),
             ("Canon Canon EOS R7", "CR3", true),
             ("FUJIFILM X-T4", "RAF", false),
             ("ILCE-7M3", "ARW", false),
-            ("SONY ILCE-7M2", "ARW", true),
-            ("SONY ILCE-1", "ARW", true),
+            ("SONY ILCE-7M2", "ARW", false),
+            ("SONY ILCA-99M2", "ARW", false),
+            ("SONY SLT-A33", "ARW", false),
+            ("SONY ILCE-1", "ARW", false),
+            ("SONY ILCE-1M2", "ARW", false),
+            ("SONY ZV-E10M2", "ARW", false),
+            // the Sony bodies without presets, and a Sony sensor sold under another name
+            ("SONY DSLR-A100", "ARW", true),
+            ("HASSELBLAD Lunar", "ARW", true),
             ("", "ARW", true),
             ("SONY ILCE-7M3", "DNG", false),
         ] {

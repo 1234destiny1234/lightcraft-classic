@@ -1,53 +1,5 @@
 # What's new in {app}
 
-## 2026-10-15
-
-### Updates are signed
-- The app installs an update only when the release's checksum list carries a valid signature from the key built
-  into it and lists the downloaded file. A release that fails any of these checks isn't installed, and the update
-  window says why. A build without a key (a fork, a dev build) still tells you about new versions and opens the
-  release page.
-
-### Updates on Linux packages
-- A copy installed from a `.deb` or another package no longer downloads the AppImage of a new version that it can't
-  install. Downloading it now says the copy wasn't installed from an AppImage and to update it the way it was
-  installed (issue #145).
-
-## 2026-10-14
-
-### Folders and metadata badges on a network share
-- The Folders panel lists the folders on disk without photos yet, and the grid checks each photo's XMP sidecar for
-  its metadata badge, on threads of their own now. On a network share, listing a large folder tree can take many
-  seconds once the system's cache of it has expired (22 s for 344 folders on SMB after two idle minutes), and the
-  panel did it every time the catalog changed, so an edit could freeze the window. The panel now shows what it
-  has at once and adds the new folders when their listing comes in (issue #123).
-
-## 2026-10-13
-
-### Long exposure times keep their step
-- Photos between 1/4 s and 4 s no longer read and export as a whole stop: a 0.4 s file showed `1/2` and was
-  written to the exported EXIF and XMP as 0.5 s; it now reads and exports as 0.4 s (0.8 s, 1.3 s, 2.5 s and the
-  rest likewise). Times of 1/4 s and shorter are unchanged (issue #1619).
-
-### Recently Deleted and duplicates
-- Recently Deleted can be emptied from a button in its view and from its row's right-click menu in the sidebar
-  (also Photo → Empty Recently Deleted). Emptying and Delete Permanently ask first (Settings → General → Confirm
-  before moving photos to Recently Deleted turns that off) and can be undone; they remove the photos from the
-  library only, never the files on disk.
-- The import dialog has Lightroom's "Don't Import Suspected Duplicates" (on by default). Untick it to import copies
-  of photos the library already has as new photos. Files whose photo is in Recently Deleted are still restored,
-  with their edits, rather than skipped. Agents: `library.import {"importDuplicates": true}`.
-
-## 2026-10-12
-
-### Custom Order in albums
-- Put an album's photos in the order of your story: View → Sort → Custom Order (or the sort menu in the bottom
-  bar), then drag photos in the grid or along the filmstrip; a line shows where they land. Dragging while another
-  sort is on switches to Custom Order, as in Lightroom Classic. The order is saved with the album; photos added
-  later go at the end. Slideshow, Book, Print and Web take the photos in this order, and Rename `{seq}` and export
-  number a selection by it. Agents: `album.orderPhotos`, `album.setPhotoOrder`, `library.sort {"key": "custom"}`.
-  Libraries saved with it can't be opened by older versions (catalog format 9).
-
 ## 2026-10-14
 
 ### Lightroom radial masks on the right side

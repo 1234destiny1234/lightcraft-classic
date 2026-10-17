@@ -1,6 +1,6 @@
 # RAW parity: cameras, formats, demosaic, colour and lens profiles
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (upstream: integration batch 36 and the camera-coverage sweep #1327, 545 models verified upstream; re-measured after the merge: 596 verified; Canon EOS R6 verified: 315 verified, use-weighted ~90%; Canon CRW decoded, 15 bodies verified; Epson ERF and Mamiya MEF decoded, 4 bodies verified: 314 verified, use-weighted ~90%; compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies; Z 8 and Z 9 lossless verified: 280 verified, 59% on verified bodies; pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`), 15 FinePix bodies verified: 295 verified, Fujifilm 93% → 99%, 60% on verified bodies) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-16 · **Change:** minor (Kelvin white balance for Canon ColorData presets and the Nikon Z5II; upstream: integration batch 36 and the camera-coverage sweep #1327, 545 models verified upstream; re-measured after the merge: 596 verified; Canon EOS R6 verified: 315 verified, use-weighted ~90%; Canon CRW decoded, 15 bodies verified; Epson ERF and Mamiya MEF decoded, 4 bodies verified: 314 verified, use-weighted ~90%; compressed ORF decoded: E-M1 and E-M10 Mark III verified; use-weighted 85% → 87%; compressed Samsung SRW 32770 / 32772 / 32773 decoded, 7 bodies checked; Minolta MRW decoded, 6 bodies verified; ARW version 1 and the Z 6II's packed NEF decode, 31 popular bodies verified: use-weighted 87% → 89%, 57% on verified bodies; Z 8 and Z 9 lossless verified: 280 verified, 59% on verified bodies; pre-X FinePix SuperCCD RAF decoded (`raf_superccd.rs`), 15 FinePix bodies verified: 295 verified, Fujifilm 93% → 99%, 60% on verified bodies) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6 (Camera Raw 18.7)
 
 Raw processing is the deepest single dimension of Lightroom parity: a photographer whose camera
 does not decode, or decodes with the wrong colour, cannot switch. This document measures it model by
@@ -22,7 +22,7 @@ ranked in [gaps.md](gaps.md). Details per format: [cr3.md](cr3.md),
 | Models added since 2017 (Camera Raw 10+): verified / unverified / preview / unsupported | 184 / 557 / 5 / 8 of 754 | measured |
 | **Share of photographers whose camera fully works** (decodes from sensor data), use-weighted | **~98%** | estimated: measured classes × written usage weights × per-format confidence |
 | …of which on a body we have verified | **~87%** | estimated, same weights |
-| Camera colour: Adobe profiles vs ours | 1,500 Adobe Standard profiles, 481 models with Camera Matching profiles vs **8 bundled profiles** + per-file fits + 52 spectral matrices | measured (bundle listing, Adobe list, `assets/camera-profiles`) |
+| Camera colour: Adobe profiles vs ours | 1,500 Adobe Standard profiles, 481 models with Camera Matching profiles vs **11 bundled profiles** + per-file fits + 52 spectral matrices | measured (bundle listing, Adobe list, `assets/camera-profiles`) |
 | Lens profiles: Adobe vs ours | **3,635 vs 0** (in-file corrections only) | measured |
 | **RAW readiness** (decoding 60%, colour 25%, lens 15%) | **~63%** (range 57–67%) | estimated, see [Scores](#scores) |
 
@@ -139,7 +139,7 @@ largest gap left.
 | CRW | CIFF, Huffman blocks, 10-bit and 12-bit with low bits | ✅ | `vendor/crw.rs`; EOS D30, D60, 10D, 300D, PowerShot G2, G3, G5, G6, Pro1, S30, S40, S45, S50, S60, S70 match the camera JPEG (colour agreement 0.77–0.99); as-shot WB from `0x10a9` / `0x102c` / `0x0032` or measured from the JPEG; CMYG bodies (G1, Pro90 IS, Pro70, 600, A5, A50) refused, preview |
 | NEF | uncompressed, lossless, lossy type 1 / 2, lossy after split | ✅ | D5100, D7000, D7500, Z f corpus; ~60 NEFs by hand; #633; D4, D90, D5000, D600 and D610 image area measured against the camera JPEG (white level too for the D4, D90 and D5000) |
 | NEF | packed 12 / 14-bit stored under a compressed tag without a linearization table (Z 6II "Packed 14 bits") | ✅ | #769; `nef.rs` `packed_lsb` (rows tight or padded to 16 bytes, the layouts of upstream PR #671); Z 6II CC0 file in the corpus |
-| NEF | High Efficiency / HE★ (JPEG XS) | ⬜ | named, preview (#193); needs a JPEG XS decoder |
+| NEF | High Efficiency / HE★ (JPEG XS) | 🟡 | verified profile decodes (Z50 II HE / HE★, `vendor/nefhe.rs`, `docs/nikon-he.md`); other profiles named, preview (#193) |
 | ARW | uncompressed, cRAW (ARW2), lossless LJ92 (L / M / S) | ✅ | 86 bodies (#535); M/S black level 1024 |
 | ARW | packed 12-bit (A900, A850) | ✅ | one CC0 file each |
 | ARW | ARW6 Compressed / HQ (compression 32766; ILCE-7RM6) | ✅ | 8 CC0 files; 12-bit mode unsupported; `docs/arw6-compression.md` |
@@ -212,11 +212,11 @@ sample files. A pointer for contributors, not legal advice.
 
 | Item | Adobe | The app |
 |---|---|---|
-| Default profile per model | Adobe Standard for every model (1,500 profile names in the bundle) | the DNG's own matrices; else a pooled profile (**5 bundled**: ILCA-99M2, ILCE-7CR, ILCE-7M4, X-H2S, X-T4); else a guarded per-file fit to the camera's embedded JPEG; else spectral matrices (**52 models**, rawtoaces-data); else a neutral matrix |
+| Default profile per model | Adobe Standard for every model (1,500 profile names in the bundle) | the DNG's own matrices; else a pooled profile (**11 bundled**: ILCA-99M2, ILCE-7CR, ILCE-7M4, X-H2S, X-T4, NIKON Z 6_2, Z 8, D5300, D750, D780, D90); else a guarded per-file fit to the camera's embedded JPEG; else spectral matrices (**52 models**, rawtoaces-data); else a neutral matrix |
 | Camera Matching looks | 481 models (plus phone-maker looks) | none (the per-file JPEG fit imitates the camera's own look) |
 | Creative profiles | Adobe Color, Portrait, Landscape, Vivid, Monochrome… | our own looks (Color, Neutral, Vivid, Landscape, Portrait, Monochrome) |
 | DCP / dual-illuminant model | ✅ | dual-illuminant DNG colour (ColorMatrix / ForwardMatrix 1-2, CameraCalibration, AnalogBalance), HueSatMap, LookTable, ProfileToneCurve; external `.dcp` never loaded (clean-room) |
-| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where Sony's white-balance presets in the file give the scale (6 bodies, `kelvin_presets`); other raws keep the relative scale (#296) |
+| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where the camera's white-balance presets in the file give the scale (6 Sony bodies and the Canon PowerShot G1 X Mark III, `kelvin_presets`); other raws keep the relative scale (#296) |
 
 **How far the default rendering is from Adobe's** (CIE ΔE; measured where stated):
 
@@ -241,7 +241,7 @@ essentials user (the default look is what they keep).
 | Item | Adobe | The app |
 |---|---|---|
 | Profile database | 3,635 profile files, 56 makers, auto-selected | **0** (Adobe LCPs never used; no database of our own) |
-| In-file corrections | ✅ | DNG opcodes (WarpRectilinear, FixVignetteRadial, GainMap…) applied; Panasonic / Leica RW2 distortion (79 photos, 13 bodies, 11 lenses); Sony tag 0x7037 distortion for the ILCE-7RM4A (2 lenses) and the ILCE-7RM6 (3 lenses, 54 photos; `sony-ilce7rm6-lens-corrections.md`); Nikon NikonNEFInfo distortion (tag `0xc7d5`, about the sensor-shifted optical centre) for the Z 6II and Z f: F-mount lenses on the FTZ within 0.2 px of the camera JPEG, Z lenses within 0.5–1.5 px except the 24-70's wide end (7 px median; `docs/nikon-lens-corrections.md`) |
+| In-file corrections | ✅ | DNG opcodes (WarpRectilinear, FixVignetteRadial, GainMap…) applied; Panasonic / Leica RW2 distortion (79 photos, 13 bodies, 11 lenses); Sony tag 0x7037 distortion for the ILCE-7RM4A (2 lenses), full-frame Bayer 3:2 ILCE-7CR files with correction Auto or forced Auto (3 lenses; see sony-lens-corrections.md for residuals and limits) and the ILCE-7RM6 (3 lenses, 54 photos; `sony-ilce7rm6-lens-corrections.md`); Nikon NikonNEFInfo distortion (tag `0xc7d5`, about the sensor-shifted optical centre) for the Z 6II and Z f: F-mount lenses on the FTZ within 0.2 px of the camera JPEG, Z lenses within 0.5–1.5 px except the 24-70's wide end (7 px median; `docs/nikon-lens-corrections.md`) |
 | Vignetting / lateral CA from maker notes | ✅ | ⬜ |
 | Manual distortion, vignetting, CA, defringe | ✅ | ✅ |
 
@@ -291,6 +291,7 @@ Beyond decoding:
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-16 | minor | Kelvin white balance from Canon CR2 `ColorData` presets (PowerShot G1 X Mark III) and a built-in preset table for the Nikon Z5II |
 | 2026-10-15 | minor | Upstream batch 40 merged: action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies) was already done here and the fork's tables stay ahead; `coverage.py --check` passes, numbers unchanged (596 verified, use-weighted ~98%, 87% on verified bodies) |
 | 2026-10-15 | minor | Upstream merge: both sides' evidence combined and re-measured with `docs/raw/coverage.py`: 596 verified, 724 unverified, 89 preview, 37 unsupported; use-weighted ~98% (87% on verified bodies); decoding 88%, RAW readiness ~63% |
 | 2026-10-15 | minor | EOS R6 verified (CR3 lossless, 5568x3708, 14-bit; 5 private files checked against DNGLab 0.8.0 reference, exact FNV-1a hashes): 315 verified, 1,001 unverified; use-weighted unchanged at ~90% |
@@ -303,6 +304,7 @@ Beyond decoding:
 | 2026-10-12 | patch | CR2 white level from the active area, not the saturated masked rows above it (#1272: EOS 50D, 60D, 450D (Rebel XSi), 500D (Rebel T1i), 550D (Rebel T2i), 1200D (Rebel T5) and 100D (Rebel SL1)); scores unchanged |
 | 2026-10-12 | minor | Canon PowerShot G9: as-shot white balance from WBInfo (`0x0029`, the row of the preset in ShotInfo), issue #1273; render unchanged (the camera-look fit already absorbed it), As Shot now the camera's; counts unchanged |
 | 2026-10-12 | minor | Olympus E-10: as-shot white balance (`0x1017`/`0x1018`) and black level (`0x1012` in `0x102c` ValidBits units) from the main maker note, issue #1273; ΔE76 against its thumbnail 18.5 → 11.5, camera-look fit now accepted; counts unchanged |
+| 2026-10-12 | minor | Nikon D2H, D70 and D70s: as-shot white balance from the unenciphered ColorBalance block (`0x0097`), issue #1273 (the D50's is enciphered: not read); renders unchanged (the camera-look fit already absorbed it), As Shot now the camera's; counts unchanged |
 | 2026-10-13 | minor | Nikon D90 image area (4288 × 2848 at 10, 10) and white level (3830) measured on 10 of 550 NEFs from one body: its 42 filler columns no longer develop as a pink band |
 | 2026-10-12 | minor | Hasselblad Lunar verified (a Sony NEX-7 ARW under Make HASSELBLAD, now decoded): 236 verified, 232 preview; an uncompressed Leaf MOS is recognised as a raw (preview only) instead of opening as a greyscale image of its mosaic (#1275) |
 | 2026-10-13 (later) | minor | Canon CRW decoded (`vendor/crw.rs`; 16 CC0 files pinned, 15 Bayer bodies checked against the camera JPEG, CMYG G1 refused); Epson ERF and Mamiya MEF decoded (ports of upstream #1087 / #1105); re-measured: 314 verified, 1,002 unverified, 96 preview, 34 unsupported; use-weighted ~90% (60% on verified bodies) |

@@ -1140,6 +1140,8 @@
   "Install and Relaunch": "Installieren und neu starten",
   "Skip This Version": "Diese Version überspringen",
   "Check for updates when the app starts": "Beim Start nach Updates suchen",
+  "Checking for updates when the app starts is still off": "Die Update-Prüfung beim Start bleibt ausgeschaltet",
+  "Update settings not saved": "Update-Einstellungen nicht gespeichert",
   "Include prereleases (release candidates)": "Vorabversionen (Release Candidates) einschließen",
   "These settings are saved in the app's settings folder.": "Diese Einstellungen werden im Einstellungsordner der App gespeichert.",
   "File date": "Dateidatum",
@@ -1183,6 +1185,7 @@
   "Remove from Target Collection": "Aus Zielsammlung entfernen",
   "Wheel scroll speed": "Scrollgeschwindigkeit des Mausrads",
   "Wheel resizes brush instead of zooming": "Mausrad ändert die Pinselgröße statt zu zoomen",
+  "Double-click opens the photo in Develop": "Doppelklick öffnet das Foto im Entwickeln-Modul",
   "Fast": "Schnell",
   "Fastest": "Am schnellsten",
   "Run face models on the CPU only": "Gesichtsmodelle nur auf der CPU ausführen",
@@ -1227,5 +1230,7 @@
   "Clear Image": "Bild entfernen",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Eine SVG-, PNG- oder JPEG-Datei; sie wird 32 Punkt hoch angezeigt.",
   "Theme Color": "Designfarbe",
-  "Identity Plate Setup…": "Erkennungstafel einrichten …"
+  "Identity Plate Setup…": "Erkennungstafel einrichten …",
+  "Film recipe": "Filmrezept",
+  "Copy recipe": "Rezept kopieren"
 }

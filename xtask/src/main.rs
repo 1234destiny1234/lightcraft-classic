@@ -12,6 +12,7 @@ mod docs;
 mod ico;
 mod immich;
 mod layers;
+mod notes;
 mod parity;
 mod quarantine;
 mod rename;
@@ -44,6 +45,11 @@ commands:
   bench-catalog [--photos N,N…] [--backend v3|v4] [--dir DIR]
                   catalog scale benchmark: import throughput, snapshot time, then (in a fresh process)
                   open time, peak RSS and filter latency (default 250000,1000000 photos, backend v4)
+  notes --check | --upstream | --release <version> [--dry-run]
+                  release notes, one file per change: --check (in ci) checks docs/whats-new/ and
+                  docs/changelog/unreleased/ entries and that docs/whats-new.md is upstream's as last recorded;
+                  --upstream records it after an upstream merge; --release gathers the changelog entries into
+                  docs/changelog/<version>.md and deletes them
   deny            cargo deny check licenses (deny.toml), skipped with a message if cargo-deny is missing
   shortcuts       regenerate docs/manual/keyboard-shortcuts.md from the command registry (builds lcc-cli)
   docs [--check]  render README.md.in and docs/**/*.md.in ({{app}}, {{binary}}, … from brand.toml) into
@@ -74,7 +80,7 @@ commands:
                   build the browser app (apps/web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
   ci [--fast] [--hardware] [--summary-md]
-                  fmt --check, brand check, docs --check, clippy -D warnings, heif, test, GPU probe, parity refs,
+                  fmt --check, brand check, docs --check, notes --check, clippy -D warnings, heif, test, GPU probe, parity refs,
                   layers, assets, deny, wasm (stops at first failure); writes target/ci/report.json (machine, GPU
                   adapters, data, steps, skipped tests) and target/ci/summary.md; --fast (the PR gate) skips the
                   test runs, which run in full before a release (docs/ci.md); --hardware also runs the GPU tests
@@ -109,6 +115,7 @@ fn main() -> ExitCode {
     let result = match args.first().map(String::as_str) {
         Some("brand") => brand::run(&root(), &rest),
         Some("docs") => docs::run(&root(), rest.contains(&"--check")),
+        Some("notes") => notes::run(&root(), &rest),
         Some("deny") => cmd_deny(),
         Some("run") => dist::cmd_run(&root(), &rest),
         Some("install") => dist::cmd_install(&root(), &rest),
@@ -420,6 +427,7 @@ fn run_ci(fast: bool, hardware: bool, print_md: bool, args: &[&str]) -> Result<(
         ("brand", Box::new(|| brand::check(&root))),
         ("quarantine", Box::new(|| quarantine::run(&root, &["check"]))),
         ("docs", Box::new(|| docs::run(&root, true))),
+        ("notes", Box::new(|| notes::check(&root))),
         (
             "clippy",
             Box::new(|| {

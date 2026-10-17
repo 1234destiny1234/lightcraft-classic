@@ -41,6 +41,9 @@ Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) 
   (`git am --3way`) with our crate names mapped back to upstream's (`lcc-x` → upstream's prefix, `-p lcc-app` →
   upstream's app package), in the patches and the touched files. It never pushes: it prints the push/PR steps. Our
   copy of the commit then carries `UPSTREAM-PR: <link>` in its message.
+  A What's New entry in those commits is a file in `docs/whats-new/`, which upstream doesn't read: on the upstream
+  branch, move its lines into upstream's `docs/whats-new.md` by hand. When that upstream PR comes back in a merge,
+  delete our entry file, or Help ▸ What's New shows it twice.
 - **`cargo xtask shared-check [--strict]`** (a warning step in `cargo xtask ci`) lists commits since the last
   upstream merge (else the `fork-base` tag) that change shared paths without an `UPSTREAM-PR:` line. It warns and
   exits 0 unless `--strict`; without the `upstream` remote or the tag it warns and skips.
@@ -81,9 +84,13 @@ Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) 
 5. **Regenerate and verify.**
    ```sh
    cargo xtask docs          # re-render *.md.in after upstream doc changes
-   cargo xtask ci            # fmt, brand check, docs --check, clippy, tests, parity, layers, assets, deny, wasm
+   cargo xtask ci            # fmt, brand check, docs --check, notes --check, clippy, tests, parity, layers, assets, deny, wasm
    cargo xtask brand test    # optional locally; CI runs it: the throw-away brand shows nowhere else
    ```
+   `docs/whats-new.md` holds upstream's What's New only (ours are files in `docs/whats-new/`): take upstream's side
+   of any conflict there, then record the result with `cargo xtask notes --upstream` (`upstream-merge` does this
+   itself when the file merged cleanly); `notes --check` in `ci` fails until it is recorded. Product-name fixes
+   to that file change it again: run `cargo xtask notes --upstream` once more after them.
 6. **Commit, review, merge.** Commit the merge (one commit for the merge itself, separate commits for the
    rename and brand fixes keep the history readable), open a PR from `merge/upstream-YYYYMMDD`, and merge it into
    `main` once CI is green.

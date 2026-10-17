@@ -26,7 +26,7 @@ fn section_param(p: &Value, c: &str) -> Result<Section> {
     serde_json::from_value(v).map_err(|e| bad(c, e.to_string()))
 }
 
-fn groups_param(p: &Value, c: &str) -> Result<Option<Vec<SettingsGroup>>> {
+pub(super) fn groups_param(p: &Value, c: &str) -> Result<Option<Vec<SettingsGroup>>> {
     match p.get("groups") {
         None | Some(Value::Null) => Ok(None),
         Some(v) => serde_json::from_value(v.clone()).map(Some).map_err(|e| bad(c, format!("invalid `groups`: {e}"))),
@@ -510,28 +510,44 @@ pub fn specs() -> Vec<CommandSpec> {
             }
             Ok(json!({"favorite": want}))
         }),
-        cmd!("develop.curve", "Set Point Curve", [], None, "{channel: master|red|green|blue, points: [[x,y],...] in 0..1}", has_active, |s, p| {
-            let ch = str_param(p, "channel").unwrap_or("master").to_string();
-            let mut pts: Vec<Point> = p
-                .get("points")
-                .and_then(Value::as_array)
-                .ok_or_else(|| bad("develop.curve", "missing points"))?
-                .iter()
-                .filter_map(|q| Some(Point::new(q.get(0)?.as_f64()?.clamp(0.0, 1.0), q.get(1)?.as_f64()?.clamp(0.0, 1.0))))
-                .collect();
-            // stored in the order the curve runs, as the editor draws and drags them
-            pts.sort_by(|a, b| a.x.total_cmp(&b.x));
-            edit(s, "develop.curve", "Tone Curve", |d| {
-                match ch.as_str() {
-                    "master" | "rgb" => d.curve.master = pts,
-                    "red" => d.curve.red = pts,
-                    "green" => d.curve.green = pts,
-                    "blue" => d.curve.blue = pts,
-                    other => return Err(bad("develop.curve", format!("unknown channel `{other}`"))),
+        cmd!(
+            "develop.curve",
+            "Set Point Curve",
+            [],
+            None,
+            "{channel: master|red|green|blue, points: [[x,y],...] in 0..1, mask?: id (that mask's local Curve instead of the Tone Curve)}",
+            has_active,
+            |s, p| {
+                let ch = str_param(p, "channel").unwrap_or("master").to_string();
+                let mask = super::curves::mask_param(p, "develop.curve")?;
+                let mut pts: Vec<Point> = p
+                    .get("points")
+                    .and_then(Value::as_array)
+                    .ok_or_else(|| bad("develop.curve", "missing points"))?
+                    .iter()
+                    .filter_map(|q| Some(Point::new(q.get(0)?.as_f64()?.clamp(0.0, 1.0), q.get(1)?.as_f64()?.clamp(0.0, 1.0))))
+                    .collect();
+                // stored in the order the curve runs, as the editor draws and drags them
+                pts.sort_by(|a, b| a.x.total_cmp(&b.x));
+                if let Some(m) = mask {
+                    return edit(s, "develop.curve", "Mask Curve", |d| {
+                        let c = super::curves::mask_curve_mut(d, m, "develop.curve")?;
+                        *c.channel_mut(&ch).ok_or_else(|| bad("develop.curve", format!("unknown channel `{ch}`")))? = pts;
+                        Ok(())
+                    });
                 }
-                Ok(())
-            })
-        }),
+                edit(s, "develop.curve", "Tone Curve", |d| {
+                    match ch.as_str() {
+                        "master" | "rgb" => d.curve.master = pts,
+                        "red" => d.curve.red = pts,
+                        "green" => d.curve.green = pts,
+                        "blue" => d.curve.blue = pts,
+                        other => return Err(bad("develop.curve", format!("unknown channel `{other}`"))),
+                    }
+                    Ok(())
+                })
+            }
+        ),
         // ---- crop & rotate
         cmd!("crop.set", "Set Crop", [], None, "{rect?: [x0,y0,x1,y1] normalized in the straightened frame, angle?: degrees}", has_active, |s, p| {
             let id = active(s, "crop.set")?;
@@ -1163,6 +1179,58 @@ pub fn specs() -> Vec<CommandSpec> {
                 .ok_or_else(|| bad(c, "at the latest History step"))?;
             go_to_history_step(s, c, id, i)
         }),
+        cmd!(
+            "history.latest",
+            "Return to Latest History Step",
+            [],
+            None,
+            "{} — loads the latest step's settings (after editing at an earlier one)",
+            has_history_after,
+            |s, _| {
+                let c = "history.latest";
+                let id = active(s, c)?;
+                let last = s.catalog.photo(id).and_then(|ph| ph.history.len().checked_sub(1)).ok_or_else(|| bad(c, "no history"))?;
+                go_to_history_step(s, c, id, last)
+            }
+        ),
+        cmd!(
+            "history.editAt",
+            "Edit at History Step",
+            [],
+            None,
+            "{index, control?: controlId, value?: number, values?: {controlId: number}} — changes controls as of step `index`: on that step's group's section it replaces the group's later steps, otherwise it starts a new group there; every later group is kept and replayed on top (one undo step); the settings stay at the new step",
+            has_active,
+            |s, p| {
+                let c = "history.editAt";
+                let id = active(s, c)?;
+                let i = index_req(p, "index", c)?;
+                let base = s.catalog.photo(id).and_then(|ph| ph.history.get(i)).map(|h| h.settings.clone()).ok_or_else(|| bad(c, "no such step"))?;
+                let mut vals: Vec<(String, f64)> = Vec::new();
+                if let (Some(k), Some(v)) = (str_param(p, "control"), p.get("value").and_then(Value::as_f64)) {
+                    vals.push((k.to_string(), v));
+                }
+                for (k, v) in p.get("values").and_then(Value::as_object).into_iter().flatten() {
+                    vals.push((k.clone(), v.as_f64().ok_or_else(|| bad(c, format!("`{k}` must be a number")))?));
+                }
+                if vals.is_empty() {
+                    return Err(bad(c, "give `control`+`value` or `values`"));
+                }
+                let mut d = (*base).clone();
+                for (k, v) in &vals {
+                    if controls::find(k).is_none() {
+                        return Err(bad(c, format!("unknown control `{k}`")));
+                    }
+                    controls::set(&mut d, k, *v);
+                }
+                let label = match vals.as_slice() {
+                    [(k, _)] => controls::find(k).map(|c| c.label).unwrap_or("Edit").to_string(),
+                    _ => "Edit".into(),
+                };
+                let op = s.history_rewrite_op(id, i, &std::sync::Arc::new(d), &label).ok_or_else(|| bad(c, "no such step"))?;
+                s.commit(&label, op)?;
+                ok()
+            }
+        ),
         // ---- interactions (slider drags, brush strokes)
         cmd!("develop.beginInteraction", "Begin Interaction", [], None, "{label}", has_active, |s, p| {
             s.begin_interaction(str_param(p, "label").unwrap_or("Edit"))?;

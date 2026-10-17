@@ -228,6 +228,13 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
     }
     let m = lcc_meta::extract(bytes);
     let (meta, captured) = meta_of(&m);
+    let (rating, flag) = match m.rating {
+        Some(r) if r < 0 => (0, lcc_catalog::Flag::Reject),
+        Some(r) => (r.clamp(0, 5) as u8, lcc_catalog::Flag::None),
+        None => (0, lcc_catalog::Flag::None),
+    };
+    let label = m.label.as_deref().and_then(|l| lcc_catalog::ColorLabel::parse(l.trim()));
+    let label_text = m.label.clone();
     if lcc_raw::probe(bytes).is_some() {
         let raw = match lcc_raw::probe_info(bytes).map_err(|e| preview_reason(bytes, e)) {
             Ok(r) => r,
@@ -242,6 +249,10 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
                     file_size: bytes.len() as u64,
                     captured,
                     meta,
+                    rating,
+                    flag,
+                    label,
+                    label_text,
                     as_shot_wb: None,
                     content_hash,
                     xmp: lcc_meta::embedded(bytes).xmp,
@@ -271,7 +282,12 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             file_size: bytes.len() as u64,
             captured,
             file_modified: None,
+            captured_is_file_date: false,
             meta,
+            rating,
+            flag,
+            label,
+            label_text,
             as_shot_wb,
             content_hash,
             xmp: lcc_meta::embedded(bytes).xmp,
@@ -306,7 +322,12 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         file_size: bytes.len() as u64,
         captured,
         file_modified: None,
+        captured_is_file_date: false,
         meta,
+        rating,
+        flag,
+        label,
+        label_text,
         as_shot_wb: None,
         content_hash,
         embedded_lens: None,
@@ -381,7 +402,7 @@ impl CameraColourModel<'_> {
                     }
                     let out = hue_sat.apply_lanes(rgb);
                     for (l, p) in chunk.iter_mut().enumerate() {
-                        *p = [out[0][l], out[1][l], out[2][l]].map(|v| v.max(0.0));
+                        *p = finite([out[0][l], out[1][l], out[2][l]]);
                     }
                 }
             });
@@ -403,8 +424,20 @@ impl CameraColourModel<'_> {
             Some(tables) => tables.apply(rgb, gain),
             None => rgb.map(|v| v * gain),
         };
-        self.hue_sat.map_or(rgb, |h| h.apply(rgb)).map(|v| v.max(0.0))
+        finite(self.hue_sat.map_or(rgb, |h| h.apply(rgb)))
     }
+}
+
+/// `rgb` (linear Rec.2020) as decoding leaves it for the stages after: negative channels kept, non-finite ones zero.
+/// Near black, negative channels are sensor noise through the colour matrix, and keeping them keeps the noise zero-mean
+/// until noise reduction and the output's gamut mapping (which moves a colour toward its luminance until it is in
+/// range) deal with it. Clamping each channel at zero here kept only the positive half of every channel's noise:
+/// through a saturating camera matrix (red row 3.5, −2.4, −0.1 on a NIKON D780 profile) red and blue have the widest
+/// noise, so pushed shadows and dark frames came out magenta (a black frame pushed 4 EV rendered at sRGB (64, 28, 65)
+/// in its darkest 40%, (2, 4, 4) without the clamp). Moving each such colour toward its luminance instead still left
+/// it pink, at (34, 14, 22): any per-pixel rule that treats pixels by the sign of their noise biases the mean.
+fn finite(rgb: [f32; 3]) -> [f32; 3] {
+    rgb.map(|v| if v.is_finite() { v } else { 0.0 })
 }
 
 /// The white-balanced camera RGB that `model` (white-balanced camera RGB → linear Rec.2020) renders
@@ -467,20 +500,26 @@ pub fn bin_factor(raw: &lcc_raw::RawImage, max_edge: usize) -> Option<usize> {
 /// instead of each one waking the pool from outside and waiting for it (which costs more than the
 /// loops themselves when the machine is busy).
 pub fn load_bytes(bytes: &[u8], max_edge: usize) -> Result<(Rgb32f, SourceInfo), String> {
-    rayon::scope(|_| load_bytes_now(std::borrow::Cow::Borrowed(bytes), max_edge, None).map(|(img, _, info)| (img, info)))
+    load_bytes_with(bytes, max_edge, false)
+}
+
+/// [`load_bytes`], with a raw's single outlier photosites replaced in the mosaic first when `outliers` is set
+/// ([`lcc_develop::Detail::nr_outliers`]).
+pub fn load_bytes_with(bytes: &[u8], max_edge: usize, outliers: bool) -> Result<(Rgb32f, SourceInfo), String> {
+    rayon::scope(|_| load_bytes_now(std::borrow::Cow::Borrowed(bytes), max_edge, None, outliers).map(|(img, _, info)| (img, info)))
 }
 
 /// [`load_bytes`] taking the file's bytes: a raw file's bytes are freed as soon as it is decoded
 /// (less memory held while it is developed).
-pub fn load_vec(bytes: Vec<u8>, max_edge: usize) -> Result<(Rgb32f, SourceInfo), String> {
-    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, None).map(|(img, _, info)| (img, info)))
+pub fn load_vec(bytes: Vec<u8>, max_edge: usize, outliers: bool) -> Result<(Rgb32f, SourceInfo), String> {
+    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, None, outliers).map(|(img, _, info)| (img, info)))
 }
 
 /// [`load_vec`] that also develops the photo's cached denoised picture (`spec`) from the same decode: the plain
 /// picture, the denoised one (`None` when it cannot be read or does not fit this raw: the plain one is then all
 /// there is) and the source facts. Both pictures are the same size.
-pub fn load_vec_pair(bytes: Vec<u8>, max_edge: usize, spec: &DenoiseSpec) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
-    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, Some(spec)))
+pub fn load_vec_pair(bytes: Vec<u8>, max_edge: usize, spec: &DenoiseSpec, outliers: bool) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
+    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, Some(spec), outliers))
 }
 
 /// The denoised camera RGB of `raw` from its cached product, as the plain development would have it: the default
@@ -509,6 +548,7 @@ fn load_bytes_now(
     bytes: std::borrow::Cow<'_, [u8]>,
     max_edge: usize,
     denoise: Option<&DenoiseSpec>,
+    outliers: bool,
 ) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
     if lcc_raw::probe(&bytes).is_some() {
         let mut raw = match lcc_raw::decode(&bytes).map_err(|e| preview_reason(&bytes, e)) {
@@ -521,6 +561,14 @@ fn load_bytes_now(
             }
             Err(Err(e)) => return Err(e),
         };
+        // single outlier photosites, replaced in the mosaic before anything is developed from it (#1345)
+        if outliers {
+            let t = std::time::Instant::now();
+            let n = raw.suppress_hot_pixels();
+            if lcc_pipeline::profiling() {
+                eprintln!("[profile] raw outliers: {n} photosites replaced in {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
+            }
+        }
         // Embedded lens corrections are applied by the pipeline ("Enable Profile Corrections"), not baked in
         // (removed before the camera look's binned sensor proxy too, which needs an empty `OpcodeList3`).
         let info = raw.info();
@@ -675,9 +723,11 @@ impl WbScaleOf {
         let model = meta.model.as_deref().filter(|_| fitted);
         let camera = model.and_then(|model| lcc_raw::spectral::find(meta.make.as_deref(), model));
         let presets = camera.is_none() && model.is_some_and(|model| lcc_raw::kelvin_presets::covers(meta.make.as_deref(), model));
+        // data the camera balanced already (unit multipliers) read As Shot from the levels it balanced them with
+        let shot = color.balanced_as_shot.or(wb_multipliers);
         let scale_white = match camera {
-            Some(c) => lcc_raw::spectral::as_shot_white_through(c, color, wb_multipliers),
-            None if presets => lcc_raw::kelvin_presets::as_shot_white(color, wb_multipliers),
+            Some(c) => lcc_raw::spectral::as_shot_white_through(c, color, shot),
+            None if presets => lcc_raw::kelvin_presets::as_shot_white(color, shot),
             None => None,
         };
         let covered = camera.is_some() || presets;
@@ -799,8 +849,9 @@ fn stand_in_image(bytes: &[u8], covering: Option<usize>) -> Option<std::borrow::
 /// [`stand_in_image`]).
 pub(crate) fn decode_raw_preview(bytes: &[u8], opts: lcc_codecs::DecodeOptions, covering: Option<usize>) -> Option<lcc_codecs::Decoded> {
     let jpeg = stand_in_image(bytes, covering)?;
-    // the colour space is a property of the JPEG; a TIFF stand-in is read by the TIFF reader
-    let is_jpeg = matches!(jpeg, std::borrow::Cow::Owned(_));
+    // the colour space is a property of the JPEG; a TIFF stand-in (the file itself, or a Hasselblad RGB preview
+    // wrapped as a TIFF) and a JPEG XL preview are read by their own decoders
+    let is_jpeg = jpeg.starts_with(&[0xff, 0xd8]);
     match lcc_raw::embedded_preview_color_space(bytes).filter(|_| is_jpeg) {
         Some(space) => {
             let space = match space {
@@ -1131,13 +1182,13 @@ fn quick_image_srgb(header: &[u8], window: &[u8], adobe_rgb: bool, max_edge: usi
 /// The filesystem-backed [`PairLoader`]: the file is read and decoded once, and developed as usual and from the photo's
 /// denoised picture. It holds two pictures at once, so it counts for more at the memory gate than a plain load.
 pub fn fs_pair_loader() -> PairLoader {
-    Arc::new(|path: &str, max_edge: usize, spec: &DenoiseSpec| {
+    Arc::new(|path: &str, max_edge: usize, spec: &DenoiseSpec, outliers: bool| {
         let len = std::fs::metadata(path).map(|m| m.len() as usize).unwrap_or(0);
         let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 4 } else { 10 };
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-        let r = load_vec_pair(bytes, max_edge, spec);
+        let r = load_vec_pair(bytes, max_edge, spec, outliers);
         crate::memory::release();
         r
     })
@@ -1151,13 +1202,13 @@ pub fn fs_pair_loader() -> PairLoader {
 /// interactive loads (the loupe, exports) never wait — they are counted, so background work
 /// yields to them.
 pub fn fs_hooks() -> (FileLoader, FileProbe) {
-    let loader: FileLoader = Arc::new(|path: &str, max_edge: usize| {
+    let loader: FileLoader = Arc::new(|path: &str, max_edge: usize, outliers: bool| {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 3 } else { 6 };
         let gate = crate::memory::work_gate();
         let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-        let r = load_vec(bytes, max_edge);
+        let r = load_vec(bytes, max_edge, outliers);
         // the file, the samples and the intermediate images are gone: give their pages back
         crate::memory::release();
         r
@@ -1286,11 +1337,11 @@ pub(crate) mod tests {
             let (t, tint) = xy_to_temp_tint(d65);
             (t.round(), tint.round())
         });
-        // a camera without measured matrices: relative, whatever the multipliers
-        let a7m2 = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "ILCE-7M2"));
-        assert!(a7m2.relative && !a7m2.legacy_relative && a7m2.scale_white.is_none());
-        assert_eq!(a7m2.as_shot(d65), (6500.0, 0.0));
-        assert!(lcc_catalog::relative_wb_camera("ARW", "SONY ILCE-7M2"));
+        // a camera without measured matrices or presets (the DSLR-A100 predates them): relative, whatever the multipliers
+        let a100 = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "DSLR-A100"));
+        assert!(a100.relative && !a100.legacy_relative && a100.scale_white.is_none());
+        assert_eq!(a100.as_shot(d65), (6500.0, 0.0));
+        assert!(lcc_catalog::relative_wb_camera("ARW", "SONY DSLR-A100"));
         // a camera without matrices whose presets give the scale: Kelvin through them, Sony's daylight preset as
         // 5500 K or so; without presets in the file the scale is Kelvin still, the white the tags' (D65)
         let g = |r: f32, b: f32| [r / 1024.0, 1.0, b / 1024.0];
@@ -1307,10 +1358,39 @@ pub(crate) mod tests {
         let (t, tint) = a99m2.as_shot(d65);
         assert!((5000.0..6000.0).contains(&t) && tint.abs() < 10.0 && t.fract() == 0.0, "{t} {tint}");
         assert!(!lcc_catalog::relative_wb_camera("ARW", "SONY ILCA-99M2"));
+        // a Canon body without matrices, through the presets its ColorData lists (PowerShot G1 X Mark III, a
+        // Daylight shot with the camera's white balance shifted towards blue: below Daylight's 5651 K)
+        let canon = lcc_raw::kelvin_presets::KelvinPresets::from_unordered([
+            (5651.0, g(1418.0, 1357.0)),
+            (7505.0, g(1653.0, 1171.0)),
+            (6594.0, g(1533.0, 1259.0)),
+            (3174.0, g(963.0, 2016.0)),
+            (8529.0, g(1807.0, 1080.0)),
+        ]);
+        let with_canon = ColorData { kelvin_presets: canon, ..Default::default() };
+        let g1x3 = WbScaleOf::new(RawFormat::Cr2, &with_canon, Some(g(1264.0, 1537.0)), &meta("Canon", "Canon PowerShot G1 X Mark III"));
+        assert!(!g1x3.relative && g1x3.scale_white.is_some());
+        let (t, tint) = g1x3.as_shot(d65);
+        assert!((4300.0..5200.0).contains(&t) && tint.abs() < 10.0, "{t} {tint}");
+        assert!(!lcc_catalog::relative_wb_camera("CR2", "Canon Canon PowerShot G1 X Mark III"));
         let bare = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "ILCA-99M2"));
         assert!(bare.legacy_relative && bare.scale_white.is_none());
-        // presets in a file of a camera not listed: relative, as the catalog decides from the camera alone
-        let other = WbScaleOf::new(RawFormat::Arw, &with, mul, &meta("SONY", "ILCE-1"));
+        // data the camera balanced already (Sony's downsized lossless ARW: unit multipliers) read As Shot from the
+        // levels it balanced them with, through the presets and through measured matrices alike; read as unit
+        // multipliers, the ILCE-7M3's matrices would put them near 1700 K
+        let balanced = ColorData { balanced_as_shot: Some(g(2500.0, 1668.0)), ..with.clone() };
+        let ycbcr = WbScaleOf::new(RawFormat::Arw, &balanced, Some([1.0; 3]), &meta("SONY", "ILCA-99M2"));
+        assert_eq!(ycbcr.as_shot(d65), a99m2.as_shot(d65));
+        let balanced = ColorData { balanced_as_shot: mul, ..Default::default() };
+        let ycbcr = WbScaleOf::new(RawFormat::Arw, &balanced, Some([1.0; 3]), &meta("SONY", "ILCE-7M3"));
+        assert_eq!(ycbcr.as_shot(d65), a7m3.as_shot(d65));
+        let unit = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), Some([1.0; 3]), &meta("SONY", "ILCE-7M3"));
+        assert!(unit.as_shot(d65).0 < 2500.0, "{:?}", unit.as_shot(d65));
+        // every Sony body but the three without presets is covered (the ILCE-1 has no measured matrices)
+        let a1 = WbScaleOf::new(RawFormat::Arw, &with, Some(g(2500.0, 1668.0)), &meta("SONY", "ILCE-1"));
+        assert!(!a1.relative && a1.scale_white.is_some() && !lcc_catalog::relative_wb_camera("ARW", "SONY ILCE-1"));
+        // presets in a file whose camera isn't named as a Sony body: relative, as the catalog decides from the camera alone
+        let other = WbScaleOf::new(RawFormat::Arw, &with, mul, &meta("HASSELBLAD", "Lunar"));
         assert!(other.relative && other.scale_white.is_none());
         let unknown = WbScaleOf::new(RawFormat::Nef, &ColorData::default(), mul, &lcc_meta::Metadata::default());
         assert!(unknown.relative && unknown.as_shot(d65) == (6500.0, 0.0));
@@ -1343,7 +1423,7 @@ pub(crate) mod tests {
         let cases = [
             (RawFormat::Arw, ColorData::default(), [2.5039f32, 1.0, 1.5078], meta("SONY", "ILCE-7M3")),
             (RawFormat::Arw, with_presets, g(2500.0, 1668.0), meta("SONY", "ILCA-99M2")),
-            (RawFormat::Arw, ColorData::default(), [2.2, 1.0, 1.6], meta("SONY", "ILCE-7M2")),
+            (RawFormat::Arw, ColorData::default(), [2.2, 1.0, 1.6], meta("SONY", "DSLR-A100")),
             (RawFormat::Rw2, ColorData::default(), [2.0, 1.0, 1.4], meta("Panasonic", "DC-G9")),
         ];
         for (format, color, mul, meta) in cases {
@@ -1735,7 +1815,7 @@ pub(crate) mod tests {
         product::write(&path, &camera_rgb, key).unwrap();
         let spec = DenoiseSpec { product: path, key: key.into(), make: None };
         let (ordinary, _) = load_bytes(&bytes, 2048).unwrap();
-        let (plain, cached, _) = load_vec_pair(bytes, 2048, &spec).unwrap();
+        let (plain, cached, _) = load_vec_pair(bytes, 2048, &spec, false).unwrap();
         assert_eq!(plain.data, ordinary.data, "requesting a twin must not change the ordinary path");
         let cached = cached.unwrap();
         assert_eq!((plain.width, plain.height), (24, 32));
@@ -1787,6 +1867,49 @@ pub(crate) mod tests {
             }
         }
         Some((best.1, best.0))
+    }
+
+    #[test]
+    fn corpus_a7cr_warp_keeps_coordinates_after_orientation_and_resizing() {
+        use lcc_geom::{Orientation, Point};
+        use lcc_pipeline::optics::Warp;
+        let root = lcc_brand::env_os("CORPUS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
+        for name in ["arw-sony-a7cr-compressed.arw", "arw-sony-a7cr-lossless-l.arw"] {
+            let Ok(mut bytes) = std::fs::read(root.join("raw").join(name)) else { continue };
+            let off = lcc_raw::probe_info(&bytes).unwrap();
+            assert!(embedded_lens(&off).is_none());
+            let tiff = lcc_tiff::Tiff::parse(&bytes).unwrap();
+            let at = tiff.find(0x7036).unwrap().offset as usize;
+            let mut enabled = Vec::new();
+            tiff.order.put_u16(&mut enabled, 17);
+            bytes[at..at + 2].copy_from_slice(&enabled);
+            let mut raw = lcc_raw::probe_info(&bytes).unwrap();
+            raw.orientation = Orientation::Normal;
+            let mut settings = lcc_develop::DevelopSettings::default();
+            settings.optics.lens_profile = true;
+            let base_lens = embedded_lens(&raw).unwrap();
+            let base = Warp::from_settings(9504.0, 6336.0, &settings, Some(&base_lens));
+            for orientation in 1..=8 {
+                let o = Orientation::from_exif(orientation);
+                raw.orientation = o;
+                let lens = embedded_lens(&raw).unwrap();
+                for edge in [1200.0, 2560.0, 9504.0] {
+                    let scale = edge / 9504.0;
+                    let (w, h) = if o.swaps_axes() { (6336.0 * scale, edge) } else { (edge, 6336.0 * scale) };
+                    let oriented = Warp::from_settings(w, h, &settings, Some(&lens));
+                    for (x, y) in [(0.05, 0.1), (0.5, 0.5), (0.9, 0.8)] {
+                        let point = Point::new(x * 9504.0, y * 6336.0);
+                        let source = base.corrected_to_source(point, 1);
+                        let (px, py) = o.map(point.x, point.y, 9504.0, 6336.0);
+                        let (sx, sy) = o.map(source.x, source.y, 9504.0, 6336.0);
+                        let got = oriented.corrected_to_source(Point::new(px * scale, py * scale), 1);
+                        assert!((got.x - sx * scale).hypot(got.y - sy * scale) < 1e-8, "{name} orientation {orientation} edge {edge}");
+                    }
+                }
+            }
+        }
     }
 
     /// Issue #256: public Panasonic / Leica raws (skipped without the corpus) are corrected for distortion the way the
@@ -1967,6 +2090,39 @@ pub(crate) mod tests {
 
     /// A fitted camera look applied in lanes, on rows that aren't a whole number of them, gives the bits of the
     /// pixel-by-pixel path, awkward pixels (black, negative, huge, NaN, infinite) included.
+    #[test]
+    fn decoding_keeps_negative_channels_and_zeroes_non_finite_ones() {
+        assert_eq!(finite([0.6, 0.05, -0.04]), [0.6, 0.05, -0.04]);
+        assert_eq!(finite([f32::NAN, -0.1, f32::INFINITY]), [0.0, -0.1, 0.0]);
+    }
+
+    /// Dark sensor noise through a saturating camera matrix (a NIKON D780 profile's) averages to a neutral colour: the
+    /// per-channel clamp at zero decoding had kept red's and blue's wider positive halves and turned it magenta.
+    #[test]
+    fn dark_noise_through_a_saturating_matrix_stays_neutral() {
+        let matrix = lcc_color::Mat3([[3.48, -2.41, -0.06], [-0.41, 1.57, -0.16], [0.32, -1.86, 2.58]]);
+        let colour = CameraColourModel { wb: [1.0; 3], matrix, gain: 1.0, tables: None, hue_sat: None };
+        // a grey 0.002 above black with ±0.004 of noise per channel (a deterministic sequence)
+        let mut state = 12345u32;
+        let mut noise = || {
+            state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+            (state >> 8) as f32 / (1u32 << 24) as f32 * 0.008 - 0.004
+        };
+        let mut img = Rgb32f::new(200, 200);
+        for p in img.data.iter_mut() {
+            *p = [0.002 + noise(), 0.002 + noise(), 0.002 + noise()];
+        }
+        colour.apply(&mut img);
+        let mut mean = [0.0f64; 3];
+        for p in &img.data {
+            for (m, v) in mean.iter_mut().zip(p) {
+                *m += f64::from(*v);
+            }
+        }
+        let (hi, lo) = (mean[0].max(mean[1]).max(mean[2]), mean[0].min(mean[1]).min(mean[2]));
+        assert!(lo > 0.0 && hi / lo < 1.2, "mean {mean:?} is tinted");
+    }
+
     #[test]
     fn camera_look_in_lanes_matches_pixel_by_pixel() {
         let data = (0..72 * 5 * 5).map(|i| [((i * 37) % 61) as f32 - 30.0, 0.6 + ((i * 11) % 13) as f32 / 13.0, 1.0]).collect();

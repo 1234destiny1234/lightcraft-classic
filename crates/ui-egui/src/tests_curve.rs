@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::panels::edit::ParametricCurve;
+use crate::panels::edit::{ParametricCurve, StackedCurve};
 use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
@@ -288,6 +288,70 @@ fn the_parametric_graph_paints_the_model_the_renderer_uses() {
     assert!(model.at(0.6) > model.at(0.3), "the region bumps still bend the curve");
 }
 
+/// A Point Curve preset shows in the parametric graph: Medium Contrast bends the line into its
+/// S-curve, which the renderer stacks on top of the region sliders, though the sliders stay at 0.
+#[test]
+fn the_parametric_graph_shows_the_point_curve_preset() {
+    let mut h = curve_open("parametric");
+    let straight = painted_tone(&mut h, 0.25);
+    assert!((straight - 0.25).abs() < 0.02, "a linear curve is the diagonal: {straight}");
+    click_widget(&mut h, "dropdown:curvePreset", 1);
+    click_widget(&mut h, "curvePreset:Medium Contrast", 1);
+    let c = develop(&h).curve;
+    assert_eq!((c.shadows, c.darks, c.lights, c.highlights), (0.0, 0.0, 0.0, 0.0), "the preset leaves the sliders alone");
+    let (dark, light) = (painted_tone(&mut h, 0.25), painted_tone(&mut h, 0.75));
+    assert!(dark < 0.22 && light > 0.78, "the line is the preset's S-curve: {dark} at 0.25, {light} at 0.75");
+    let r = curve_graph_rect(&mut h);
+    let painted = painted_param_curve(&h, r);
+    let model = StackedCurve::new(&c);
+    for i in 0..=24 {
+        let x = i as f64 / 24.0;
+        assert!((painted(x) - model.at(x)).abs() < 0.02, "the painted curve is the stacked one at {x}: {} vs {}", painted(x), model.at(x));
+    }
+}
+
+/// With a Point Curve preset under it, the line still follows the hand: a drag moves the slider of
+/// the region under the pointer, leaves the preset as it was, and the drawn line ends up where the
+/// pointer let go.
+#[test]
+fn dragging_the_curve_over_a_point_curve_preset_moves_the_region_slider() {
+    let mut h = curve_open("parametric");
+    click_widget(&mut h, "dropdown:curvePreset", 1);
+    click_widget(&mut h, "curvePreset:Medium Contrast", 1);
+    h.step();
+    let r = curve_graph_rect(&mut h);
+    let c = develop(&h).curve;
+    let model = StackedCurve::new(&c);
+    let (x, fx) = (r[0] + 0.625 * r[2], 0.625);
+    let y = r[1] + (1.0 - model.at(fx) as f32) * r[3];
+    let to = y - 0.05 * r[3];
+    // one step: the whole move lands on the frame the drag starts, so none of it goes to egui's
+    // drag threshold and the line should end exactly under the pointer
+    let d = h.request("ui.drag", json!({"x": x, "y": y, "toX": x, "toY": to, "steps": 1}), T);
+    assert_eq!(d["ok"], true, "{d}");
+    h.step();
+    let after = develop(&h).curve;
+    assert!(after.lights > 0.0, "the Lights slider follows the line up: {}", after.lights);
+    assert_eq!(after.master, c.master, "the preset is untouched");
+    let want = ((r[1] + r[3] - to) / r[3]) as f64;
+    let got = painted_tone(&mut h, fx);
+    assert!((got - want).abs() < 0.01, "the line is where the pointer let go: {got} vs {want}");
+}
+
+/// The level a drag asks of the region curve is the one the master curve takes to the pointer.
+#[test]
+fn the_stacked_curve_inverts_its_point_curve() {
+    let master = [(0.0, 0.0), (0.25, 0.2), (0.5, 0.5), (0.75, 0.8), (1.0, 1.0)].map(|(x, y)| lcc_geom::Point::new(x, y)).to_vec();
+    let c = lcc_develop::ToneCurve { master, ..Default::default() };
+    let s = StackedCurve::new(&c);
+    for i in 1..20 {
+        let y = i as f64 / 20.0;
+        let back = s.master_at(s.param_level(y));
+        assert!((back - y).abs() < 1e-6, "the master curve takes param_level({y}) back to {y}: {back}");
+    }
+    assert_eq!(StackedCurve::new(&lcc_develop::ToneCurve::default()).param_level(0.3), 0.3, "no point curve, no change");
+}
+
 /// The graph rect as `[left, top, width, height]` plus a reader for the painted curve's height at a
 /// graph fraction (0 = the bottom of the graph, 1 = the top).
 fn curve_graph_rect(h: &mut Headless) -> [f32; 4] {
@@ -560,4 +624,90 @@ fn the_four_regions_tile_the_graph() {
         assert!(r >= prev, "the regions never go backwards: {r} after {prev}");
         prev = r;
     }
+}
+
+/// Detail view with the Masking panel on a new radial mask (selected) and its Curve flyout open.
+fn mask_curve_open() -> (Headless, u32) {
+    let services = Services { png: None, ..Default::default() };
+    let app = LccApp::new(lcc_engine::Session::with_demo(), services);
+    let mut h = Headless::new(app, [1200.0, 2600.0], 1.0);
+    let r = h.request("ui.set", json!({"view": "detail"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    exec(&mut h, "panel.masking", json!({}));
+    exec(&mut h, "mask.add", json!({"kind": "radial"}));
+    let mask = h.app.session.active_mask.expect("the new mask is selected");
+    h.step();
+    h.step();
+    click_widget(&mut h, "flyout:maskCurve", 1);
+    h.step();
+    (h, mask)
+}
+
+fn mask_curve(h: &Headless, id: u32) -> lcc_develop::PointCurves {
+    develop(h).masks.iter().find(|m| m.id == id).expect("the mask").curve.clone()
+}
+
+#[test]
+fn a_masks_curve_editor_edits_that_masks_curve_only() {
+    let (mut h, mask) = mask_curve_open();
+    assert!(h.app.ui.flyout_open("maskCurve"), "the Curve flyout opens");
+    let r = h.request("ui.widgets", json!({"filter": "maskCurve"}), T);
+    let ids: Vec<String> = r["result"].as_array().unwrap().iter().filter_map(|w| w["id"].as_str().map(str::to_string)).collect();
+    for id in ["maskCurve", "maskCurveChannel:master", "maskCurveChannel:red", "maskCurveChannel:green", "maskCurveChannel:blue"] {
+        assert!(ids.iter().any(|x| x == id), "{id} on screen: {ids:?}");
+    }
+    assert!(!ids.iter().any(|x| x == "maskCurveChannel:parametric"), "no parametric curve in a mask: {ids:?}");
+    // dragging the middle of the RGB curve up adds a point to the mask's curve, in one undo step
+    let r = h.request("ui.widgets", json!({"filter": "maskCurve"}), T);
+    let side = r["result"].as_array().unwrap().iter().find(|w| w["id"] == "maskCurve").unwrap()["rect"][2].as_f64().unwrap();
+    let undo_before = h.app.session.undo.len();
+    let r = h.request("ui.dragWidget", json!({"id": "maskCurve", "fx": 0.5, "fy": 0.5, "dx": 0.0, "dy": -0.2 * side, "steps": 12}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    let c = pts(&mask_curve(&h, mask).master);
+    assert_eq!(c.len(), 3, "{c:?}");
+    assert!((c[1].0 - 0.5).abs() < 0.03 && (c[1].1 - 0.7).abs() < 0.03, "{c:?}");
+    assert_eq!(h.app.session.undo.len(), undo_before + 1, "one undo step per drag");
+    assert_eq!(develop(&h).curve, lcc_develop::ToneCurve::default(), "the Tone Curve stays linear");
+    // another channel, then double-click resets only it
+    click_widget(&mut h, "maskCurveChannel:red", 1);
+    assert_eq!(h.app.ui.mask_curve_channel, "red");
+    assert_eq!(h.app.ui.curve_channel, "parametric", "the Tone Curve's channel is remembered apart");
+    exec(&mut h, "develop.curve", json!({"channel": "red", "points": S_CURVE, "mask": mask}));
+    h.step();
+    click_widget(&mut h, "maskCurveChannel:red", 2);
+    let c = mask_curve(&h, mask);
+    assert!(c.red.is_empty() && c.master.len() == 3, "only red resets: {c:?}");
+}
+
+#[test]
+fn a_masks_curve_takes_the_point_curve_presets_and_resets() {
+    let (mut h, mask) = mask_curve_open();
+    click_widget(&mut h, "dropdown:maskCurvePreset", 1);
+    click_widget(&mut h, "maskCurvePreset:Strong Contrast", 1);
+    let c = mask_curve(&h, mask);
+    assert_eq!(c.master.len(), 5, "the preset's S-curve: {c:?}");
+    assert!(develop(&h).curve.master.is_empty(), "applied to the mask, not the photo");
+    // saving from the mask's dropdown saves the mask's curve
+    exec(&mut h, "develop.curve", json!({"channel": "blue", "points": [[0.0, 0.08], [1.0, 1.0]], "mask": mask}));
+    h.step();
+    click_widget(&mut h, "dropdown:maskCurvePreset", 1);
+    click_widget(&mut h, "maskCurvePresetMenu:save", 1);
+    let mut dlg = h.app.ui.dialog.take().expect("a name prompt opens");
+    match &mut dlg {
+        crate::state::Dialog::TextPrompt { command, value, params, .. } => {
+            assert_eq!(command, "curve.savePreset");
+            assert_eq!(params["mask"], mask, "{params}");
+            *value = "Mask Look".into();
+        }
+        _ => panic!("a name prompt opens"),
+    }
+    let r = crate::panels::dialogs::confirm_dialog(&mut h.app, &dlg);
+    assert!(r.is_ok(), "{r:?}");
+    h.step();
+    let saved = h.app.session.curve_presets.iter().find(|p| p.name == "Mask Look").expect("saved").clone();
+    assert_eq!((saved.master.len(), saved.blue.len()), (5, 2));
+    // the Reset button under the graph resets the mask's whole curve
+    click_widget(&mut h, "button:maskCurveReset", 1);
+    assert!(mask_curve(&h, mask).is_empty());
 }

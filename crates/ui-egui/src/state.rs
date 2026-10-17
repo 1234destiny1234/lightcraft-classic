@@ -368,6 +368,12 @@ pub struct AppSettings {
     /// View ▸ Zoom to Focus Point: Toggle Zoom (Z) centres the zoomed view on the camera's focus point
     /// when the photo has one (`view.zoomToFocus`).
     pub zoom_to_focus: bool,
+    /// Double-clicking a grid photo opens it in Develop instead of the Library loupe (issue #144;
+    /// off by default, as in Lightroom Classic).
+    pub double_click_develop: bool,
+    /// Windows only (inert elsewhere; the field stays on every platform so settings files remain portable).
+    /// Keep repainting continuously at display refresh rate to eliminate VRR / G-SYNC brightness flicker on OLED/VA panels.
+    pub vrr_flicker_workaround: bool,
 }
 
 impl Default for AppSettings {
@@ -401,6 +407,8 @@ impl Default for AppSettings {
             keyword_chips: KeywordChips::default(),
             focus_point: false,
             zoom_to_focus: true,
+            double_click_develop: false,
+            vrr_flicker_workaround: false,
         }
     }
 }
@@ -719,6 +727,16 @@ pub struct UiState {
     pub single_panel: bool,
     pub show_clipping: bool,
     pub histogram: bool,
+    /// Which distribution the Histogram panel draws and how tall its bins are, as the *names* of a
+    /// [`lcc_raster::HistogramMode`] / [`lcc_raster::HistogramScale`]
+    /// (`view.histogram.mode`, `view.histogram.scale`). Stored as text so a value another build
+    /// wrote reads as the default instead of failing the whole settings file, and read leniently so
+    /// even a value of the wrong *kind* costs only these two settings ([`UiState::sanitized`]
+    /// normalizes what they hold).
+    #[serde(deserialize_with = "lenient")]
+    pub histogram_mode: String,
+    #[serde(deserialize_with = "lenient")]
+    pub histogram_scale: String,
     /// Soft proofing (S in the loupe): render as `proof` would hold the photo.
     pub soft_proof: bool,
     pub proof: lcc_engine::pipeline::Proof,
@@ -864,6 +882,8 @@ pub struct UiState {
     pub dragging_section: Option<crate::sidebar::SidebarSection>,
     /// Selected curve channel in the Curve flyout.
     pub curve_channel: String,
+    /// Selected channel of a mask's Curve (no parametric one): "master" | "red" | "green" | "blue".
+    pub mask_curve_channel: String,
     /// Selected mixer mode: "hue" | "saturation" | "luminance" | "all".
     pub mixer_mode: String,
     /// Selected colour grading tab: "3way" | "shadows" | "midtones" | "highlights".
@@ -1393,6 +1413,12 @@ pub enum Dialog {
     Shortcuts,
     /// Library ▸ View Options (⌘J): grid cell style, index numbers, badges.
     ViewOptions,
+    /// Develop ▸ Optics ▸ Save as…: name the preset new photos start from.
+    NewPhotoDefault {
+        /// Empty = the engine's own name ([`lcc_engine::import::NEW_PHOTO_DEFAULT`]).
+        #[serde(default)]
+        name: String,
+    },
     /// Edit ▸ Edit Watermarks…
     Watermark {
         wm: lcc_engine::export::Watermark,
@@ -1449,6 +1475,8 @@ impl Default for UiState {
             single_panel: false,
             show_clipping: false,
             histogram: true,
+            histogram_mode: lcc_raster::HistogramMode::default().name().into(),
+            histogram_scale: lcc_raster::HistogramScale::default().name().into(),
             soft_proof: false,
             proof: lcc_engine::pipeline::Proof { dest_warning: false, ..Default::default() },
             proof_profile: None,
@@ -1503,6 +1531,7 @@ impl Default for UiState {
             dragging_album: None,
             dragging_section: None,
             curve_channel: "parametric".into(),
+            mask_curve_channel: "master".into(),
             mixer_mode: "hue".into(),
             grading_mode: "3way".into(),
             grading_hidden: None,
@@ -1686,6 +1715,13 @@ impl UiState {
         self.left_width = LEFT_WIDTH.clamp(self.left_width);
         self.right_width = RIGHT_WIDTH.clamp(self.right_width);
         self.brush_size = self.brush_size.clamp(0.002, 0.5);
+        // a histogram mode or scale another build wrote (or a hand-edited file) is the default
+        if lcc_raster::HistogramMode::parse(&self.histogram_mode).is_none() {
+            self.histogram_mode = lcc_raster::HistogramMode::default().name().into();
+        }
+        if lcc_raster::HistogramScale::parse(&self.histogram_scale).is_none() {
+            self.histogram_scale = lcc_raster::HistogramScale::default().name().into();
+        }
         self.brush_slot = self.brush_slot.min(1);
         self.brush_presets = self.brush_presets.map(BrushPreset::sanitized);
         let cur = BrushPreset { size: self.brush_size, feather: self.brush_feather, flow: self.brush_flow, density: self.brush_density }.sanitized();

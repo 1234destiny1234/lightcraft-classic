@@ -4388,7 +4388,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-actions"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "serde",
  "serde_json",
@@ -4396,11 +4396,12 @@ dependencies = [
 
 [[package]]
 name = "lcc-app"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "bytemuck",
  "eframe",
  "egui",
+ "getrandom 0.3.4",
  "half",
  "lcc-brand",
  "lcc-codecs",
@@ -4431,7 +4432,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-audio-out"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "cpal",
  "futures",
@@ -4442,7 +4443,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-book"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "hayro",
  "lcc-codecs",
@@ -4459,11 +4460,11 @@ dependencies = [
 
 [[package]]
 name = "lcc-brand"
-version = "0.9.0-rc1"
+version = "0.9.1"
 
 [[package]]
 name = "lcc-camdb"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -4474,7 +4475,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-catalog"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "crc32fast",
  "lcc-brand",
@@ -4496,7 +4497,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-cli"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "dhat",
  "lcc-brand",
@@ -4517,7 +4518,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-codecs"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "avif-serialize",
  "bytemuck",
@@ -4550,7 +4551,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-color"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-geom",
@@ -4560,7 +4561,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-credentials"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "argon2 0.5.3",
  "chacha20poly1305",
@@ -4576,7 +4577,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-denoise"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "faer-core",
  "lcc-brand",
@@ -4594,7 +4595,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-denoise-core"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-raster",
@@ -4610,7 +4611,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-develop"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -4623,7 +4624,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-engine"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "ab_glyph",
  "base64",
@@ -4696,7 +4697,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-faces"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-testkit",
@@ -4712,7 +4713,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-fetch"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "log",
@@ -4724,7 +4725,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-filters"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "rayon",
  "serde",
@@ -4737,14 +4738,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-fuzzkit"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "lcc-geo"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "flate2",
  "image",
@@ -4758,7 +4759,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-geocode"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "miniz_oxide 0.8.9",
  "serde",
@@ -4766,7 +4767,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-geom"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "proptest",
@@ -4775,7 +4776,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-gpu"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "bytemuck",
  "lcc-brand",
@@ -4796,14 +4797,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-hash"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "sha1 0.10.7",
 ]
 
 [[package]]
 name = "lcc-hdrmeta"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "ash",
  "wgpu",
@@ -4812,7 +4813,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-heif"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "heic-rs",
  "lcc-brand",
@@ -4821,7 +4822,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-immich"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-catalog",
  "lcc-credentials",
@@ -4838,14 +4839,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-inpaint"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "lcc-layout"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-raster",
@@ -4856,7 +4857,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-lensdb"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-develop",
  "lcc-geom",
@@ -4865,7 +4866,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-mcp"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
@@ -4882,7 +4883,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-merge"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
@@ -4899,7 +4900,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-meta"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-geom",
@@ -4912,7 +4913,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-net"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "flate2",
  "lcc-brand",
@@ -4927,8 +4928,12 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcc-notes"
+version = "0.9.1"
+
+[[package]]
 name = "lcc-pdf"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "hayro",
  "lcc-fuzzkit",
@@ -4942,7 +4947,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-pipeline"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "image",
  "lcc-brand",
@@ -4963,7 +4968,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-plugins"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-net",
@@ -4977,7 +4982,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-preview"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "jpeg-encoder",
  "lcc-brand",
@@ -4990,7 +4995,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-print"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
@@ -5010,7 +5015,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-psd"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "flate2",
  "lcc-psd",
@@ -5021,7 +5026,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-publish"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-catalog",
  "lcc-fuzzkit",
@@ -5032,7 +5037,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-raster"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -5045,7 +5050,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-raw"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "dhat",
  "jpeg-encoder",
@@ -5058,6 +5063,7 @@ dependencies = [
  "lcc-testkit",
  "lcc-tiff",
  "miniz_oxide 0.8.9",
+ "oxideav-jpegxs",
  "proptest",
  "rayon",
  "serde",
@@ -5070,7 +5076,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-scenes"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "image",
  "lcc-brand",
@@ -5082,7 +5088,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-segment"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -5098,7 +5104,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-slide"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-raster",
  "serde",
@@ -5107,7 +5113,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-slideshow"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "claxon",
  "hayro",
@@ -5131,21 +5137,21 @@ dependencies = [
 
 [[package]]
 name = "lcc-sysmem"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
 ]
 
 [[package]]
 name = "lcc-testkit"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
 ]
 
 [[package]]
 name = "lcc-tether"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-fuzzkit",
  "nusb",
@@ -5155,7 +5161,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-text"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-fuzzkit",
  "parley",
@@ -5166,7 +5172,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-tiff"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-brand",
  "proptest",
@@ -5176,7 +5182,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-ui-egui"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "craft-ui",
  "egui",
@@ -5199,6 +5205,7 @@ dependencies = [
  "lcc-layout",
  "lcc-merge",
  "lcc-meta",
+ "lcc-notes",
  "lcc-pdf",
  "lcc-pipeline",
  "lcc-preview",
@@ -5222,7 +5229,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-updater"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "base64",
  "ed25519-dalek 2.2.0",
@@ -5235,7 +5242,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-video"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "filmcraft-aac",
  "filmcraft-ac3",
@@ -5265,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-video-export"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "filmcraft-aac",
  "filmcraft-color",
@@ -5281,7 +5288,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-web"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "crc32fast",
  "eframe",
@@ -5303,7 +5310,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-webgallery"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "lcc-fuzzkit",
  "russh",
@@ -6432,6 +6439,12 @@ checksum = "36820e9051aca1014ddc75770aab4d68bc1e9e632f0f5627c4086bc216fb583b"
 dependencies = [
  "ttf-parser",
 ]
+
+[[package]]
+name = "oxideav-jpegxs"
+version = "0.0.8"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "3e0e6600faa598e04d089d3d4c77337bac8addd3f9674662d673e22627c9e85d"
 
 [[package]]
 name = "p256"
@@ -10293,13 +10306,14 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.9.0-rc1"
+version = "0.9.1"
 dependencies = [
  "base64",
  "brotli",
  "ed25519-dalek 2.2.0",
  "flate2",
  "getrandom 0.3.4",
+ "lcc-notes",
  "serde_json",
  "sha2 0.10.9",
  "toml",

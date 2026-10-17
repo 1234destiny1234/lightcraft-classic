@@ -141,13 +141,32 @@ pub fn specs() -> Vec<CommandSpec> {
                 .into_iter()
                 .map(|r| json!({"group": r.group, "tag": r.tag, "name": r.name, "value": r.value}))
                 .collect();
-            // XMP: the sidecar if there is one, else the file's own packet
-            let packet = crate::sidecar::read_packet(path, ph.kind, s.sidecar_naming(ph.id)).map(|(x, _)| x).or_else(|| lcc_meta::embedded(&bytes).xmp);
+            // XMP: the sidecar if there is one, else the packet in the bytes already loaded
+            let packet = match crate::sidecar::find_sidecar(path, s.sidecar_naming(ph.id)) {
+                Some(sc) => std::fs::read_to_string(sc).ok(),
+                None => lcc_meta::embedded(&bytes).xmp,
+            };
             let xmp: Vec<Value> = packet
                 .and_then(|x| lcc_meta::parse_xmp(&x).ok())
                 .map(|d| d.properties.into_iter().filter(|(k, _)| !k.starts_with("lc:")).map(|(k, v)| json!({"name": k, "value": v.join("; ")})).collect())
                 .unwrap_or_default();
             Ok(json!({"exif": exif, "xmp": xmp}))
+        }),
+        cmd!(query "photo.fujiRecipe", "Fujifilm Recipe", [], None, "{id?} → {present, text, lines: [{tag, label, value}]} — in-camera film settings from a Fujifilm MakerNote, or present: false", always, |s, p| {
+            let id = photo_arg(s, p, "photo.fujiRecipe")?;
+            let ph = s.catalog.photo(id).ok_or_else(|| super::bad("photo.fujiRecipe", "no such photo"))?.clone();
+            let lcc_catalog::Source::File { path } = &ph.source else {
+                return Ok(json!({"present": false}));
+            };
+            let recipe = if let Some(read) = &s.media.file_bytes {
+                let bytes = read(path).map_err(|e| super::bad("photo.fujiRecipe", e))?;
+                lcc_meta::recipe_from_bytes(&bytes)
+            } else {
+                lcc_meta::read_recipe_file(std::path::Path::new(path)).map_err(|e| super::bad("photo.fujiRecipe", e))?
+            };
+            let Some(recipe) = recipe else { return Ok(json!({"present": false})) };
+            let lines: Vec<Value> = recipe.rows.iter().map(|r| json!({"tag": r.tag, "label": r.label, "value": r.value})).collect();
+            Ok(json!({"present": true, "text": recipe.text(), "lines": lines}))
         }),
         cmd!(query "albums.list", "List Albums", [], None, "{}", always, |s, _| {
             let all: Vec<Album> = s.catalog.albums().cloned().collect();
@@ -224,6 +243,20 @@ pub fn specs() -> Vec<CommandSpec> {
                 "cursor": ph.history_index(),
                 "versions": ph.versions.iter().map(|v| json!({"name": v.name, "created": v.created})).collect::<Vec<_>>(),
             }))
+        }),
+        cmd!(query "history.groups", "List History Groups", [], None, "{id?} — returns {groups: [{section (null = several sections: a preset, paste, sync…; replays but can't be edited inside), start, end, steps: [{index, label}]}] oldest first, cursor, latest}", has_active, |s, p| {
+            let id = photo_arg(s, p, "history.groups")?;
+            let ph = s.catalog.photo(id).ok_or_else(|| bad("history.groups", "no such photo"))?;
+            let groups: Vec<Value> = crate::history_groups::groups(&ph.history)
+                .into_iter()
+                .map(|g| {
+                    let steps: Vec<Value> = (g.start..=g.end)
+                        .filter_map(|i| ph.history.get(i).map(|h| json!({"index": i, "label": h.label})))
+                        .collect();
+                    json!({"section": g.section, "start": g.start, "end": g.end, "steps": steps})
+                })
+                .collect();
+            Ok(json!({"groups": groups, "cursor": ph.history_index(), "latest": ph.history_cursor.is_none()}))
         }),
         cmd!(query "app.gpu", "GPU Rendering", [], None, "{enabled?: bool} — allow/forbid GPU rendering (CPU fallback; `{ENV_PREFIX}_GPU=0` forbids it for the process); returns {enabled, available, adapter, reason (why the GPU is off), lastFallback (latest render redone on the CPU, and why)}", always, |_, p| {
             if let Some(on) = p.get("enabled").and_then(Value::as_bool) {

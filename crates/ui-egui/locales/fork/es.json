@@ -1283,6 +1283,8 @@
   "Install and Relaunch": "Instalar y reiniciar",
   "Skip This Version": "Omitir esta versión",
   "Check for updates when the app starts": "Buscar actualizaciones al iniciar la aplicación",
+  "Checking for updates when the app starts is still off": "La búsqueda de actualizaciones al iniciar la aplicación sigue desactivada",
+  "Update settings not saved": "Configuración de actualizaciones no guardada",
   "Include prereleases (release candidates)": "Incluir versiones preliminares (candidatas)",
   "These settings are saved in the app's settings folder.": "Estos ajustes se guardan en la carpeta de ajustes de la aplicación.",
   "File date": "Fecha del archivo",
@@ -1327,6 +1329,7 @@
   "Remove from Target Collection": "Quitar de colección de destino",
   "Wheel scroll speed": "Velocidad de desplazamiento de la rueda",
   "Wheel resizes brush instead of zooming": "La rueda del ratón cambia el tamaño del pincel en lugar de hacer zoom",
+  "Double-click opens the photo in Develop": "El doble clic abre la foto en Revelar",
   "Fast": "Rápida",
   "Fastest": "Muy rápida",
   "Run face models on the CPU only": "Ejecutar los modelos de caras solo en la CPU",
@@ -1371,5 +1374,8 @@
   "Clear Image": "Quitar imagen",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Un archivo SVG, PNG o JPEG; se muestra con 32 puntos de alto.",
   "Theme Color": "Color del tema",
-  "Identity Plate Setup…": "Configuración de placa de identidad…"
+  "Identity Plate Setup…": "Configuración de placa de identidad…",
+  "Remove Hot Pixels": "Eliminar píxeles calientes",
+  "Film recipe": "Receta de película",
+  "Copy recipe": "Copiar receta"
 }
