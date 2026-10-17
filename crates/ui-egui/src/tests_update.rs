@@ -124,6 +124,7 @@ fn the_help_menu_opens_the_dialog_and_it_lists_what_is_available() {
     assert!(h.app.widgets.iter().any(|(w, _)| w == "button:updateCheck"));
     assert!(h.app.widgets.iter().any(|(w, _)| w == "button:updateInstall"), "a downloaded file can be installed");
     assert!(h.app.widgets.iter().any(|(w, _)| w == "button:updateSkip"));
+    assert!(h.app.widgets.iter().any(|(w, _)| w == "button:dialogOk"), "Close button is present in footer");
     assert!(h.app.widgets.iter().any(|(w, _)| w == "check:updateAtStartup"));
     assert!(h.app.widgets.iter().any(|(w, _)| w == "check:updatePrerelease"));
     let text = h.painted_text().join(" ");
@@ -133,6 +134,18 @@ fn the_help_menu_opens_the_dialog_and_it_lists_what_is_available() {
     h.request("ui.key", json!({"key": "Escape"}), T);
     h.step();
     assert_eq!(h.app.ui.dialog, None, "Esc closes the dialog");
+}
+
+#[test]
+fn update_dialog_close_button_in_footer_dismisses_dialog() {
+    let mut h = app();
+    ask(&mut h, "ui.menu.invoke", json!({"id": "app.checkForUpdates"}));
+    h.step();
+    assert_eq!(h.app.ui.dialog, Some(Dialog::Update));
+    let r = h.request("ui.clickWidget", json!({"id": "button:dialogOk"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    assert_eq!(h.app.ui.dialog, None, "Close button closes the update dialog");
 }
 
 #[test]
