@@ -1,10 +1,13 @@
 {
+  "Copy recipe": "Kopiuj przepis",
   "Face Count": "Liczba twarzy",
+  "Film recipe": "Przepis filmowy",
   "Height (pixels)": "Wysokość (piksele)",
   "Immich": "Immich",
   "Linked": "Połączone",
   "Not Linked": "Niepołączone",
   "Probably Linked": "Prawdopodobnie połączone",
+  "Remove Hot Pixels": "Usuń gorące piksele",
   "Sublocation": "Podlokalizacja",
   "Width (pixels)": "Szerokość (piksele)",
   "is in this month": "jest w tym miesiącu",

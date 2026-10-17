@@ -1111,5 +1111,8 @@
   "Clear Image": "Прибрати зображення",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Файл SVG, PNG або JPEG; показується заввишки 32 пункти.",
   "Theme Color": "Колір теми",
-  "Identity Plate Setup…": "Налаштування фірмової таблички…"
+  "Identity Plate Setup…": "Налаштування фірмової таблички…",
+  "Remove Hot Pixels": "Видалити гарячі пікселі",
+  "Film recipe": "Плівковий рецепт",
+  "Copy recipe": "Копіювати рецепт"
 }
