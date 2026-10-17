@@ -1470,7 +1470,8 @@ mod tests {
     fn refuses_unvalidated_models_even_with_a_valid_table() {
         assert!(distortion("ILCE-7RM4A", &TELE, AREA, AREA).is_some());
         assert!(distortion("ILCE-7M3", &TELE, AREA, AREA).is_some());
-        for model in ["", "ILCE-7M3 ", "ILCE-7SM3", "ILCE-7M4", "ILCE-7RM4", "ILCE-7RM5", "ILCE-9M2", "DSC-RX100M3", "ILCE-7RM4A unknown", "ILCE-7CR"] {
+        for model in ["", "ILCE-7M3 ", "ILCE-7SM3", "ILCE-7M4", "ILCE-7RM4", "ILCE-7RM5", "ILCE-9M2", "DSC-RX100M3", "ILCE-7RM4A unknown", "ILCE-7CR"]
+        {
             assert!(distortion(model, &TELE, AREA, AREA).is_none(), "{model}");
         }
     }

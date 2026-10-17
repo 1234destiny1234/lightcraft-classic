@@ -177,7 +177,10 @@ fn starting_colour_from(
             Some(camera) => {
                 camera.fill(&mut raw.color);
                 if lcc_pipeline::profiling() {
-                    eprintln!("[profile] {:?} camera colour from spectral sensitivities: {} {}, standing in for this body", raw.format, camera.make, camera.model);
+                    eprintln!(
+                        "[profile] {:?} camera colour from spectral sensitivities: {} {}, standing in for this body",
+                        raw.format, camera.make, camera.model
+                    );
                 }
                 start(raw)
             }

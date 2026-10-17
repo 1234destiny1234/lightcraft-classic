@@ -1827,7 +1827,7 @@ pub(crate) mod tests {
     fn corpus_a7cr_warp_keeps_coordinates_after_orientation_and_resizing() {
         use lcc_geom::{Orientation, Point};
         use lcc_pipeline::optics::Warp;
-        let root = std::env::var_os("LIGHTCRAFT_CORPUS")
+        let root = lcc_brand::env_os("CORPUS")
             .map(std::path::PathBuf::from)
             .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
         for name in ["arw-sony-a7cr-compressed.arw", "arw-sony-a7cr-lossless-l.arw"] {

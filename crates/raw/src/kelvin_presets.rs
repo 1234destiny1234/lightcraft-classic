@@ -322,7 +322,18 @@ mod tests {
             assert!(covers_camera(c), "{c}");
         }
         // the three bodies without presets, other makes, a bare make, a make-less model of another maker
-        for c in ["SONY DSC-R1", "SONY DSC-F828", "sony dslr-a100", "Canon SLT-A33", "NIKON CORPORATION NIKON D850", "", "SONY", "D850", "Lunar", "Canon Canon PowerShot G1 X Mark II"] {
+        for c in [
+            "SONY DSC-R1",
+            "SONY DSC-F828",
+            "sony dslr-a100",
+            "Canon SLT-A33",
+            "NIKON CORPORATION NIKON D850",
+            "",
+            "SONY",
+            "D850",
+            "Lunar",
+            "Canon Canon PowerShot G1 X Mark II",
+        ] {
             assert!(!covers_camera(c), "{c}");
         }
         assert!(covers(Some("SONY"), "ILCA-99M2") && covers(None, "ILCA-99M2") && !covers(Some("NIKON CORPORATION"), "ILCA-99M2"));
