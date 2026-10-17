@@ -312,17 +312,12 @@ pub(crate) fn fit_preview(raw: &RawImage, bytes: &[u8], transform: &CameraTransf
     // try its colour first and fit tone/chroma per photo (picture styles vary).
     let profile = raw.metadata.model.as_deref().and_then(crate::camera_profiles::get);
     let colour = profile.as_ref().and_then(|p| Some((p.matrix().mul(&transform.matrix.inverse()?), p.hue_sat.clone())));
-    let look = match fit_look(&sensor, &reference, &clipped, colour.clone()) {
-        Some(look) => look,
-        // A black-and-white JPEG has no colour to fit: the profile's colour and the JPEG's tone curve
-        // (`monochrome_look` does it without a profile).
-        None if colour.is_some() && black_and_white => {
-            let unclipped = without_clipped(&sensor, &clipped);
-            let Some(look) = fit_tone_only(unclipped.as_ref().unwrap_or(&sensor), &reference, colour) else { return (None, true) };
-            look
-        }
-        None => return (None, black_and_white),
+    let fitted = fit_look(&sensor, &reference, &clipped, colour.clone());
+    let tone_only = |colour| {
+        let unclipped = without_clipped(&sensor, &clipped);
+        fit_tone_only(unclipped.as_ref().unwrap_or(&sensor), &reference, Some(colour))
     };
+    let Some(look) = with_profile_colour(fitted, colour, tone_only) else { return (None, black_and_white) };
     // Sony's Dynamic Range Optimizer (on by default) brightens the camera JPEG's darker regions,
     // not the raw: keep the colour fitted to the JPEG, take the tone curve without DRO.
     let dro = lcc_raw::embedded_preview_dynamic_range_optimized(bytes) == Some(true);
@@ -338,6 +333,23 @@ pub(crate) fn fit_preview(raw: &RawImage, bytes: &[u8], transform: &CameraTransf
         );
     }
     (Some(look), black_and_white)
+}
+
+/// `fitted`, the photo's own look, or when no look fits it (a black-and-white JPEG has no colour; a dark one too few
+/// colour pairs) its camera profile's `colour`: with the JPEG's tone curve when [`fit_tone_only`] finds one
+/// (`monochrome_look` does it without a profile), else the default raw tone curve. Dropping the profile there for the
+/// neutral fallback left a NIKON D780 frame 3.7 EV under, pushed back up, at 37% of its properly exposed twin's chroma
+/// (88-99% with the profile's colour).
+fn with_profile_colour(
+    fitted: Option<CameraLook>,
+    colour: Option<(Mat3, Option<HsvTable>)>,
+    tone_only: impl FnOnce((Mat3, Option<HsvTable>)) -> Option<CameraLook>,
+) -> Option<CameraLook> {
+    if fitted.is_some() {
+        return fitted;
+    }
+    let colour = colour?;
+    tone_only(colour.clone()).or_else(|| Some(CameraLook { matrix: colour.0, tone: CameraTone::default_raw()?, hue_sat: colour.1 }))
 }
 
 /// Sensor level (normalised, white = 1) at or above which a raw channel counts as clipped, as in
@@ -4007,5 +4019,25 @@ mod tests {
         assert!(1024.0 >= floor(7008.0));
         assert!(256.0 < floor(7008.0));
         assert!(1024.0 >= floor(9504.0), "a 61 MP raw too");
+    }
+
+    #[test]
+    fn a_photo_no_look_fits_keeps_its_camera_profiles_colour() {
+        let colour = (
+            Mat3([[1.8, -0.6, -0.2], [-0.3, 1.5, -0.2], [0.0, -0.4, 1.4]]),
+            dro_test_look(&std::array::from_fn(|i| 0.01 + i as f32 * 0.01), &|x| x).hue_sat,
+        );
+        // too dark for any look, no tone either: the profile's colour, the default raw tone curve
+        let look = with_profile_colour(None, Some(colour.clone()), |_| None).expect("the profile's colour");
+        assert_eq!((look.matrix, look.hue_sat.is_some()), (colour.0, true));
+        assert_eq!(look.tone, CameraTone::default_raw().unwrap());
+        // the JPEG's tone curve when it has one
+        let toned = dro_test_look(&std::array::from_fn(|i| 0.01 + i as f32 * 0.01), &|x| 0.9 * x);
+        let look = with_profile_colour(None, Some(colour.clone()), |c| Some(CameraLook { matrix: c.0, ..toned.clone() })).unwrap();
+        assert_eq!((look.matrix, look.tone), (colour.0, toned.tone));
+        // a photo's own look wins; without a profile there is nothing to keep (the neutral fallback follows)
+        let own = with_profile_colour(Some(toned.clone()), Some(colour), |_| unreachable!()).unwrap();
+        assert_eq!(own.matrix, toned.matrix);
+        assert!(with_profile_colour(None, None, |_| unreachable!()).is_none());
     }
 }
