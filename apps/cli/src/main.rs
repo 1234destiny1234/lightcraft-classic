@@ -347,11 +347,12 @@ fn calibrate(args: &[String]) -> Result<(), String> {
             Ok(profile) => {
                 let path = lcc_engine::camera_profiles::save(&profile, &dir)?;
                 println!(
-                    "{}: {} photos, {} colour pairs, hue/saturation table {} → {}",
+                    "{}: {} photos, {} colour pairs, hue/saturation table {}, tone curve {} → {}",
                     profile.model,
                     profile.files,
                     profile.samples,
                     profile.hue_sat.is_some(),
+                    profile.tone.is_some(),
                     path.display()
                 );
                 written += 1;
