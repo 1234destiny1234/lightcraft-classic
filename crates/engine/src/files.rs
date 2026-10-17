@@ -271,6 +271,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             file_size: bytes.len() as u64,
             captured,
             file_modified: None,
+            captured_is_file_date: false,
             meta,
             as_shot_wb,
             content_hash,
@@ -306,6 +307,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         file_size: bytes.len() as u64,
         captured,
         file_modified: None,
+        captured_is_file_date: false,
         meta,
         as_shot_wb: None,
         content_hash,
@@ -675,9 +677,11 @@ impl WbScaleOf {
         let model = meta.model.as_deref().filter(|_| fitted);
         let camera = model.and_then(|model| lcc_raw::spectral::find(meta.make.as_deref(), model));
         let presets = camera.is_none() && model.is_some_and(|model| lcc_raw::kelvin_presets::covers(meta.make.as_deref(), model));
+        // data the camera balanced already (unit multipliers) read As Shot from the levels it balanced them with
+        let shot = color.balanced_as_shot.or(wb_multipliers);
         let scale_white = match camera {
-            Some(c) => lcc_raw::spectral::as_shot_white_through(c, color, wb_multipliers),
-            None if presets => lcc_raw::kelvin_presets::as_shot_white(color, wb_multipliers),
+            Some(c) => lcc_raw::spectral::as_shot_white_through(c, color, shot),
+            None if presets => lcc_raw::kelvin_presets::as_shot_white(color, shot),
             None => None,
         };
         let covered = camera.is_some() || presets;
@@ -799,8 +803,9 @@ fn stand_in_image(bytes: &[u8], covering: Option<usize>) -> Option<std::borrow::
 /// [`stand_in_image`]).
 pub(crate) fn decode_raw_preview(bytes: &[u8], opts: lcc_codecs::DecodeOptions, covering: Option<usize>) -> Option<lcc_codecs::Decoded> {
     let jpeg = stand_in_image(bytes, covering)?;
-    // the colour space is a property of the JPEG; a TIFF stand-in is read by the TIFF reader
-    let is_jpeg = matches!(jpeg, std::borrow::Cow::Owned(_));
+    // the colour space is a property of the JPEG; a TIFF stand-in (the file itself, or a Hasselblad RGB preview
+    // wrapped as a TIFF) and a JPEG XL preview are read by their own decoders
+    let is_jpeg = jpeg.starts_with(&[0xff, 0xd8]);
     match lcc_raw::embedded_preview_color_space(bytes).filter(|_| is_jpeg) {
         Some(space) => {
             let space = match space {
@@ -1286,11 +1291,11 @@ pub(crate) mod tests {
             let (t, tint) = xy_to_temp_tint(d65);
             (t.round(), tint.round())
         });
-        // a camera without measured matrices: relative, whatever the multipliers
-        let a7m2 = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "ILCE-7M2"));
-        assert!(a7m2.relative && !a7m2.legacy_relative && a7m2.scale_white.is_none());
-        assert_eq!(a7m2.as_shot(d65), (6500.0, 0.0));
-        assert!(lcc_catalog::relative_wb_camera("ARW", "SONY ILCE-7M2"));
+        // a camera without measured matrices or presets (the DSLR-A100 predates them): relative, whatever the multipliers
+        let a100 = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "DSLR-A100"));
+        assert!(a100.relative && !a100.legacy_relative && a100.scale_white.is_none());
+        assert_eq!(a100.as_shot(d65), (6500.0, 0.0));
+        assert!(lcc_catalog::relative_wb_camera("ARW", "SONY DSLR-A100"));
         // a camera without matrices whose presets give the scale: Kelvin through them, Sony's daylight preset as
         // 5500 K or so; without presets in the file the scale is Kelvin still, the white the tags' (D65)
         let g = |r: f32, b: f32| [r / 1024.0, 1.0, b / 1024.0];
@@ -1324,8 +1329,22 @@ pub(crate) mod tests {
         assert!(!lcc_catalog::relative_wb_camera("CR2", "Canon Canon PowerShot G1 X Mark III"));
         let bare = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), mul, &meta("SONY", "ILCA-99M2"));
         assert!(bare.legacy_relative && bare.scale_white.is_none());
-        // presets in a file of a camera not listed: relative, as the catalog decides from the camera alone
-        let other = WbScaleOf::new(RawFormat::Arw, &with, mul, &meta("SONY", "ILCE-1"));
+        // data the camera balanced already (Sony's downsized lossless ARW: unit multipliers) read As Shot from the
+        // levels it balanced them with, through the presets and through measured matrices alike; read as unit
+        // multipliers, the ILCE-7M3's matrices would put them near 1700 K
+        let balanced = ColorData { balanced_as_shot: Some(g(2500.0, 1668.0)), ..with.clone() };
+        let ycbcr = WbScaleOf::new(RawFormat::Arw, &balanced, Some([1.0; 3]), &meta("SONY", "ILCA-99M2"));
+        assert_eq!(ycbcr.as_shot(d65), a99m2.as_shot(d65));
+        let balanced = ColorData { balanced_as_shot: mul, ..Default::default() };
+        let ycbcr = WbScaleOf::new(RawFormat::Arw, &balanced, Some([1.0; 3]), &meta("SONY", "ILCE-7M3"));
+        assert_eq!(ycbcr.as_shot(d65), a7m3.as_shot(d65));
+        let unit = WbScaleOf::new(RawFormat::Arw, &ColorData::default(), Some([1.0; 3]), &meta("SONY", "ILCE-7M3"));
+        assert!(unit.as_shot(d65).0 < 2500.0, "{:?}", unit.as_shot(d65));
+        // every Sony body but the three without presets is covered (the ILCE-1 has no measured matrices)
+        let a1 = WbScaleOf::new(RawFormat::Arw, &with, Some(g(2500.0, 1668.0)), &meta("SONY", "ILCE-1"));
+        assert!(!a1.relative && a1.scale_white.is_some() && !lcc_catalog::relative_wb_camera("ARW", "SONY ILCE-1"));
+        // presets in a file whose camera isn't named as a Sony body: relative, as the catalog decides from the camera alone
+        let other = WbScaleOf::new(RawFormat::Arw, &with, mul, &meta("HASSELBLAD", "Lunar"));
         assert!(other.relative && other.scale_white.is_none());
         let unknown = WbScaleOf::new(RawFormat::Nef, &ColorData::default(), mul, &lcc_meta::Metadata::default());
         assert!(unknown.relative && unknown.as_shot(d65) == (6500.0, 0.0));
@@ -1358,7 +1377,7 @@ pub(crate) mod tests {
         let cases = [
             (RawFormat::Arw, ColorData::default(), [2.5039f32, 1.0, 1.5078], meta("SONY", "ILCE-7M3")),
             (RawFormat::Arw, with_presets, g(2500.0, 1668.0), meta("SONY", "ILCA-99M2")),
-            (RawFormat::Arw, ColorData::default(), [2.2, 1.0, 1.6], meta("SONY", "ILCE-7M2")),
+            (RawFormat::Arw, ColorData::default(), [2.2, 1.0, 1.6], meta("SONY", "DSLR-A100")),
             (RawFormat::Rw2, ColorData::default(), [2.0, 1.0, 1.4], meta("Panasonic", "DC-G9")),
         ];
         for (format, color, mul, meta) in cases {
@@ -1802,6 +1821,49 @@ pub(crate) mod tests {
             }
         }
         Some((best.1, best.0))
+    }
+
+    #[test]
+    fn corpus_a7cr_warp_keeps_coordinates_after_orientation_and_resizing() {
+        use lcc_geom::{Orientation, Point};
+        use lcc_pipeline::optics::Warp;
+        let root = lcc_brand::env_os("CORPUS")
+            .map(std::path::PathBuf::from)
+            .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"));
+        for name in ["arw-sony-a7cr-compressed.arw", "arw-sony-a7cr-lossless-l.arw"] {
+            let Ok(mut bytes) = std::fs::read(root.join("raw").join(name)) else { continue };
+            let off = lcc_raw::probe_info(&bytes).unwrap();
+            assert!(embedded_lens(&off).is_none());
+            let tiff = lcc_tiff::Tiff::parse(&bytes).unwrap();
+            let at = tiff.find(0x7036).unwrap().offset as usize;
+            let mut enabled = Vec::new();
+            tiff.order.put_u16(&mut enabled, 17);
+            bytes[at..at + 2].copy_from_slice(&enabled);
+            let mut raw = lcc_raw::probe_info(&bytes).unwrap();
+            raw.orientation = Orientation::Normal;
+            let mut settings = lcc_develop::DevelopSettings::default();
+            settings.optics.lens_profile = true;
+            let base_lens = embedded_lens(&raw).unwrap();
+            let base = Warp::from_settings(9504.0, 6336.0, &settings, Some(&base_lens));
+            for orientation in 1..=8 {
+                let o = Orientation::from_exif(orientation);
+                raw.orientation = o;
+                let lens = embedded_lens(&raw).unwrap();
+                for edge in [1200.0, 2560.0, 9504.0] {
+                    let scale = edge / 9504.0;
+                    let (w, h) = if o.swaps_axes() { (6336.0 * scale, edge) } else { (edge, 6336.0 * scale) };
+                    let oriented = Warp::from_settings(w, h, &settings, Some(&lens));
+                    for (x, y) in [(0.05, 0.1), (0.5, 0.5), (0.9, 0.8)] {
+                        let point = Point::new(x * 9504.0, y * 6336.0);
+                        let source = base.corrected_to_source(point, 1);
+                        let (px, py) = o.map(point.x, point.y, 9504.0, 6336.0);
+                        let (sx, sy) = o.map(source.x, source.y, 9504.0, 6336.0);
+                        let got = oriented.corrected_to_source(Point::new(px * scale, py * scale), 1);
+                        assert!((got.x - sx * scale).hypot(got.y - sy * scale) < 1e-8, "{name} orientation {orientation} edge {edge}");
+                    }
+                }
+            }
+        }
     }
 
     /// Issue #256: public Panasonic / Leica raws (skipped without the corpus) are corrected for distortion the way the

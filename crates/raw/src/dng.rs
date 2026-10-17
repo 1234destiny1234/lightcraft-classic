@@ -122,6 +122,7 @@ pub(crate) fn color_data(ifd0: &Ifd, raw: &Ifd, order: ByteOrder) -> ColorData {
         baseline_sharpness: get(t::BASELINE_SHARPNESS).and_then(|v| v.first().copied()).filter(|v| v.is_finite() && *v > 0.0 && *v <= 16.0),
         profile: profile_look(ifd0, raw, order),
         kelvin_presets: None,
+        balanced_as_shot: None,
     }
 }
 
@@ -180,11 +181,12 @@ pub(crate) fn is_plain_cfa_tiff(tiff: &Tiff, bytes: &[u8]) -> bool {
     }
     match info.compression {
         t::compression::NONE => true,
-        t::compression::JPEG => info
-            .chunks(bytes.len() as u64)
-            .first()
-            .and_then(|c| lcc_tiff::image::chunk_bytes(bytes, c))
-            .is_some_and(|src| crate::ljpeg::frame_info(src).is_ok()),
+        t::compression::JPEG => info.chunks(bytes.len() as u64).first().and_then(|c| lcc_tiff::image::chunk_bytes(bytes, c)).is_some_and(|src| {
+            match crate::dctjpeg::is_dct(src) {
+                true => crate::dctjpeg::frame_info(src).is_ok(),
+                false => crate::ljpeg::frame_info(src).is_ok(),
+            }
+        }),
         _ => false,
     }
 }
