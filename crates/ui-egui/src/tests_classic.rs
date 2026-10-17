@@ -623,3 +623,18 @@ fn settings_shortcuts_tab_records_a_key() {
     assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "view.compare"), Some("Shift+J"));
     assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { .. })));
 }
+
+/// #219: In Classic Library view, the Keyword List panel renders its filter box and rows
+/// directly under its Classic panel header, without a nested collapsible section header.
+#[test]
+fn keyword_list_has_no_nested_collapsible_header_in_classic() {
+    let mut h = demo();
+    run(&mut h, "panel.right", json!({"show": true}));
+    classic::set_open(&mut h.app, PanelId::KeywordList, true);
+    h.step();
+    h.step();
+    assert!(has(&h, "classicPanel:keywordList"), "Classic header is shown");
+    assert!(has(&h, "field:keywordFilter"), "Filter field is shown in body");
+    assert!(has(&h, "keywordList:create"), "+ button is shown in body");
+    assert!(!has(&h, "section:keywordList"), "No nested collapsible fold title in Classic view");
+}
