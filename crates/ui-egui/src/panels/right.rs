@@ -1076,6 +1076,9 @@ fn keyword_set(app: &mut LccApp, ui: &mut egui::Ui) {
             // an empty slot: an idle button, so the others keep their ⌥ keys
             if k.is_empty() {
                 let r = ui.add_enabled_ui(false, |ui| ui.add_sized([bw, 22.0], egui::Button::new(""))).inner.on_disabled_hover_text(key(i));
+                // (named for screen readers by the set and its key, as the slot has no text)
+                let said = format!("{} {}", crate::i18n::tr("Keyword Set"), key(i));
+                r.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, false, &said));
                 register(ui.ctx(), format!("kwSetEmpty:{}", i + 1), r.rect);
                 if i % 3 == 2 {
                     ui.end_row();
