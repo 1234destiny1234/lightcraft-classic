@@ -104,8 +104,8 @@ pub(crate) fn finish_render(
         let h = srgb.as_ref().map(|s| Histogram::of_srgb8_covered(s, coverage));
         (srgb, h)
     } else {
-        let sample = histogram_sample(image, coverage);
-        (None, display.profile.to_srgb(&sample).map_err(warn).ok().map(|s| Histogram::of_srgb8(&s)))
+        let (sample, covered) = histogram_sample(image, coverage);
+        (None, display.profile.to_srgb(&sample).map_err(warn).ok().map(|s| Histogram::of_srgb8_covered(&s, covered.as_ref())))
     };
     if let Err(e) = display.profile.correct(image) {
         warn(e);
@@ -113,28 +113,37 @@ pub(crate) fn finish_render(
     (srgb, histogram)
 }
 
-/// The pixels [`Histogram::of_srgb8_covered`] reads (at most ~1 MP, a regular grid, those `coverage`
-/// says show the photo), as an image of their own (which it then reads whole).
-fn histogram_sample(img: &Rgba8, coverage: Option<&Coverage>) -> Rgba8 {
+/// The pixels [`Histogram::of_srgb8_covered`] reads (at most ~1 MP, a regular grid), as an image of
+/// their own, with which of them `coverage` says show the photo. The grid keeps each pixel's place, so
+/// the Waveform and Parade columns come out as in the full image's histogram.
+fn histogram_sample(img: &Rgba8, coverage: Option<&Coverage>) -> (Rgba8, Option<Coverage>) {
     let coverage = coverage.filter(|c| c.width() == img.width && c.height() == img.height);
     let step = ((img.len() as f64 / 1_000_000.0).sqrt().ceil() as usize).max(1);
-    if step == 1 && coverage.is_none() {
-        return img.clone();
+    if step == 1 {
+        return (img.clone(), coverage.cloned());
     }
     let (w, h) = (img.width.div_ceil(step), img.height.div_ceil(step));
-    let mut data = Vec::with_capacity(w * h);
+    let mut data = Vec::with_capacity(w.saturating_mul(h));
     for y in (0..img.height).step_by(step) {
         for x in (0..img.width).step_by(step) {
-            if coverage.is_none_or(|c| c.covers(x, y)) {
-                data.push(img.get(x, y));
-            }
+            data.push(img.get(x, y));
         }
     }
-    // a pixel left out leaves the grid ragged: one row then (at most ~1 MP, so read whole)
-    match coverage {
-        Some(_) => Rgba8 { width: data.len(), height: 1, data },
-        None => Rgba8 { width: w, height: h, data },
-    }
+    let covered = coverage.and_then(|c| {
+        let row = Coverage::row_words(w);
+        let mut words = vec![0u32; row.saturating_mul(h)];
+        for (gy, y) in (0..img.height).step_by(step).enumerate() {
+            for (gx, x) in (0..img.width).step_by(step).enumerate() {
+                if c.covers(x, y)
+                    && let Some(word) = words.get_mut(gy * row + gx / 32)
+                {
+                    *word |= 1 << (gx % 32);
+                }
+            }
+        }
+        Coverage::from_words(w, h, words)
+    });
+    (Rgba8 { width: w, height: h, data }, covered)
 }
 
 #[cfg(test)]
