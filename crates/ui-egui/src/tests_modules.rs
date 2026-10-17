@@ -120,6 +120,38 @@ fn library_returns_to_its_own_view_after_develop() {
     assert_eq!(back.layouts.get(&ModuleId::Library).and_then(|l| l.view), Some(ViewMode::PhotoGrid));
 }
 
+// Issue #227: Returning to Library from Develop preserves the non-default view (Square Grid, Compare, etc.)
+// and redundant top-bar navigation arrows are removed.
+#[test]
+fn library_preserves_non_default_view_when_returning_from_develop() {
+    let mut h = demo();
+    // Top-bar navigation arrows are removed
+    assert!(!has_widget(&h, "icon:back"));
+    assert!(!has_widget(&h, "icon:forward"));
+
+    // Square grid preserved via module.library
+    run(&mut h, "view.squareGrid", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::SquareGrid);
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "module.library", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::SquareGrid));
+
+    // Square grid preserved when returning via view.back (Escape)
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "view.back", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::SquareGrid));
+
+    // Compare view preserved when returning via module.library
+    run(&mut h, "view.compare", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Compare);
+    run(&mut h, "module.develop", json!({}));
+    assert_eq!(h.app.ui.view, ViewMode::Detail);
+    run(&mut h, "module.library", json!({}));
+    assert_eq!((h.app.ui.module, h.app.ui.view), (ModuleId::Library, ViewMode::Compare));
+}
+
 #[test]
 fn panel_state_is_per_module_and_persists() {
     let mut h = demo();

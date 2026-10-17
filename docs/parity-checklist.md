@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 78 | 4 | 2 | 1 | 49/52 (94%) | 24/26 (92%) |
 | Lightroom Classic extras | 103 | 19 | 4 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 496 | 62 | 35 | 27 | 194/201 (97%) | 165/180 (92%) |
+| **Total** | 496 | 63 | 35 | 27 | 194/201 (97%) | 165/180 (92%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.9%** of 593 in-scope rows — P0 98.3% of 201 · P1 95.6% of 180 · P2 74.3% of 210.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.8%** of 594 in-scope rows — P0 98.3% of 201 · P1 95.6% of 180 · P2 74.2% of 211.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
