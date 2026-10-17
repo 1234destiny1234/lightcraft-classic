@@ -1408,7 +1408,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             for (label, url) in [
                                 ("{app} website", crate::links::APP_PAGE),
                                 ("Source code", crate::links::GITHUB),
-                            ] {
+                                ("Join the Discord", crate::links::DISCORD),
+                            ]
+                            .into_iter()
+                            .filter(|(_, url)| !url.is_empty())
+                            {
                                 let r = ui.link(crate::i18n::tr(label)).on_hover_text(url);
                                 if r.clicked() {
                                     let _ = crate::links::open(app, url);

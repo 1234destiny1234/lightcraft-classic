@@ -303,6 +303,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.feedback", "Send Feedback…", None, "Help"),
     ("app.website", "{app} Website", None, "Help"),
     ("app.github", "{app} Source Code", None, "Help"),
+    ("app.discord", "Join the Discord", None, "Help"),
     ("app.shortcuts", "Keyboard Shortcuts", Some("Cmd+/"), "Help"),
     ("app.setShortcut", "Set Keyboard Shortcut", None, ""),
     ("app.resetShortcuts", "Reset All Keyboard Shortcuts", None, ""),
@@ -2307,7 +2308,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "photo.renderToDng" => return crate::render_dng_task::start(app, p),
         "app.showInFinder" => show_in_finder(app),
         "app.openLogFolder" => open_log_folder(app),
-        "app.website" | "app.github" | "app.help" | "app.feedback" => {
+        "app.website" | "app.github" | "app.help" | "app.feedback" | "app.discord" => {
             let url = crate::links::url_of(id).unwrap_or(crate::links::APP_PAGE);
             crate::links::open(app, url)
         }
