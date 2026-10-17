@@ -1,6 +1,6 @@
 //! Space held over a tool on the photo: the view's hand, as in Lightroom (issue #1895).
 //!
-//! Crop, Masking, Remove, Red Eye and the pickers (white balance, colour range, point colour, a
+//! Masking, Remove, Red Eye and the pickers (white balance, colour range, point colour, a
 //! targeted adjustment) take the primary click and drag on the photo, so the loupe's own click
 //! zoom and drag pan are out of reach while one is open. Holding Space lends them back until the
 //! key goes up: a click zooms (Fit ↔ the click-zoom ratio, at the point clicked), a drag pans the
@@ -11,7 +11,7 @@
 use egui::{CursorIcon, Key, Rect, Sense};
 use serde_json::json;
 
-use crate::LightcraftApp;
+use crate::LccApp;
 use crate::state::{RightPanel, ViewMode};
 
 /// The longest Space press (s) that still toggles the zoom when it lets go without a click.
@@ -27,16 +27,17 @@ pub struct SpaceHand {
 }
 
 /// A tool on the photo takes the primary click and drag, so Space has to lend them to the view.
-pub(crate) fn tool_owns_pointer(app: &LightcraftApp) -> bool {
+/// (Not Crop: the Classic crop view always shows the whole photo and is not zoomed or panned.)
+pub(crate) fn tool_owns_pointer(app: &LccApp) -> bool {
     // the full-screen preview shows no tool overlays, but a picker still takes its click there
-    let panel = !app.ui.fullscreen && matches!(app.ui.right, RightPanel::Crop | RightPanel::Masking | RightPanel::Remove | RightPanel::RedEye);
+    let panel = !app.ui.fullscreen && matches!(app.ui.right, RightPanel::Masking | RightPanel::Remove | RightPanel::RedEye);
     let picker = matches!(app.ui.tool.as_str(), "wbPicker" | "colorRange" | "pointColor") || app.ui.tool.starts_with("tat:");
     app.ui.view == ViewMode::Detail && app.ui.slideshow.is_none() && app.session.active().is_some() && (panel || picker)
 }
 
 /// Space went down (a fresh press, not a repeat). Over a tool the hand takes over until the key
 /// is up and the press does nothing else (true); otherwise false leaves it to Toggle Zoom.
-pub(crate) fn begin(app: &mut LightcraftApp, ctx: &egui::Context) -> bool {
+pub(crate) fn begin(app: &mut LccApp, ctx: &egui::Context) -> bool {
     if !tool_owns_pointer(app) {
         return false;
     }
@@ -51,7 +52,7 @@ pub(crate) fn begin(app: &mut LightcraftApp, ctx: &egui::Context) -> bool {
 /// Runs every frame before the shortcuts: ends the hold once Space is up and a drag it started has
 /// ended, or at once when the tool closes or a dialog opens. A quick tap with no click toggles the
 /// zoom as it ends.
-pub(crate) fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
+pub(crate) fn tick(app: &mut LccApp, ctx: &egui::Context) {
     let Some(mut hand) = app.space_hand else { return };
     let (held, pointer, now) = ctx.input(|i| (i.key_down(Key::Space), i.pointer.any_down(), i.time));
     hand.used |= pointer;
@@ -71,7 +72,7 @@ pub(crate) fn tick(app: &mut LightcraftApp, ctx: &egui::Context) {
 /// (the navigator stays above it), so it takes the click or the drag and they get neither: they
 /// still draw, without the pointer. `main` is the pane the photo `img` is laid out in; `before`
 /// the Before pane of a side-by-side or stacked view with its photo, where a press there acts.
-pub(crate) fn interact(app: &mut LightcraftApp, ui: &mut egui::Ui, canvas: Rect, main: (Rect, Rect), before: Option<(Rect, Rect)>) {
+pub(crate) fn interact(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect, main: (Rect, Rect), before: Option<(Rect, Rect)>) {
     if app.space_hand.is_none() {
         return;
     }

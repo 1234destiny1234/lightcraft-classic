@@ -1808,7 +1808,7 @@ pub(crate) fn zoomed(img: Rect, canvas: Rect) -> bool {
 
 /// The loupe's own click and drag (also Space's hand over a tool, `space_hand`): a click toggles
 /// Fit ↔ the chosen click-zoom ratio at the clicked point, a drag pans when zoomed.
-pub(crate) fn click_zoom_and_pan(app: &mut LightcraftApp, resp: &egui::Response, img: Rect, canvas: Rect) {
+pub(crate) fn click_zoom_and_pan(app: &mut LccApp, resp: &egui::Response, img: Rect, canvas: Rect) {
     let zoomed = zoomed(img, canvas);
     if resp.double_clicked() || (resp.clicked() && !zoomed) {
         if let Some(q) = resp.interact_pointer_pos() {

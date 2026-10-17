@@ -1,5 +1,5 @@
 //! Headless tests of Space held over a tool on the photo (issue #1895): the view's hand pans and
-//! click-zooms while the tool (Remove, a mask brush, Crop) gets neither, a quick tap still toggles
+//! click-zooms while the tool (Remove, a mask brush) gets neither, a quick tap still toggles
 //! the zoom, and a held key's auto-repeat never toggles it again.
 
 use std::time::Duration;
@@ -8,13 +8,13 @@ use serde_json::json;
 
 use crate::headless::Headless;
 use crate::state::{RightPanel, Zoom};
-use crate::{LightcraftApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 
 fn detail(panel: Option<&str>) -> Headless {
     let services = Services { png: None, ..Default::default() };
-    let mut app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), services);
+    let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
     app.ui.settings.gpu = false;
     // Space and click zoom go straight to the ratio, not to the camera's focus point
     app.ui.settings.zoom_to_focus = false;
@@ -68,7 +68,7 @@ fn click(h: &mut Headless, (x, y): (f32, f32)) {
     pointer(h, json!([{"kind": "down", "x": x, "y": y}, {"kind": "up", "x": x, "y": y}]));
 }
 
-fn develop(h: &Headless) -> lightcraft_develop::DevelopSettings {
+fn develop(h: &Headless) -> lcc_develop::DevelopSettings {
     let id = h.app.session.active().expect("active photo");
     (*h.app.session.develop_of(id).unwrap_or_default()).clone()
 }
@@ -201,20 +201,4 @@ fn space_held_over_a_mask_brush_paints_nothing() {
     assert_eq!(develop(&h), before, "the drag painted the mask");
     assert_ne!(h.app.ui.pan, pan, "the drag did not pan");
     assert!(h.app.brush_live.is_none());
-}
-
-#[test]
-fn space_held_over_the_crop_tool_pans_and_leaves_the_crop() {
-    let mut h = detail(Some("panel.crop"));
-    assert_eq!(h.app.ui.right, RightPanel::Crop);
-    let r = h.request("engine.execute", json!({"command": "crop.set", "params": {"rect": [0.1, 0.1, 0.8, 0.9]}}), T);
-    assert_eq!(r["ok"], true, "{r}");
-    zoom_in(&mut h);
-    let before = develop(&h);
-    let pan = h.app.ui.pan;
-    space(&mut h, "down");
-    drag(&mut h);
-    space(&mut h, "up");
-    assert_eq!(develop(&h), before, "the drag moved the crop");
-    assert_ne!(h.app.ui.pan, pan, "the drag did not pan");
 }
