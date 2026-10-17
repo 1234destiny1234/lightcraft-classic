@@ -236,7 +236,7 @@ fn tab_walks_the_right_panels_top_to_bottom() {
             .children_recursive()
             .map(|n| n.accesskit_node())
             // (upstream's strip labels Edit "Edit (E)"; the fork's starts with Presets)
-            .find(|n| matches!(n.label().as_deref(), Some("Edit (E)" | "Presets (Shift+P)")))
+            .find(|n| matches!(n.label().as_deref(), Some("Edit (E)" | "Presets")))
             .and_then(|n| n.bounding_box())
             .map(|b| b.x0 as f32)
             .unwrap_or(f32::INFINITY);
