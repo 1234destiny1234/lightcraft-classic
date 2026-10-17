@@ -603,7 +603,7 @@ pub fn hdr_histogram(src: &Rgb32f, info: &SourceInfo, s: &DevelopSettings, req: 
     let r = render(src, info, s, &hreq);
     let deep = r.deep?;
     let DeepSamples::F32(v) = &deep.samples else { return None };
-    Some(Histogram::of_hdr_covered(v.as_chunks::<3>().0, r.coverage.as_deref(), lcc_develop::Hdr::MAX_EV_LIMIT as f32))
+    Some(Histogram::of_hdr_image(v.as_chunks::<3>().0, deep.width, r.coverage.as_deref(), lcc_develop::Hdr::MAX_EV_LIMIT as f32))
 }
 
 /// Render `src` with settings `s`.
