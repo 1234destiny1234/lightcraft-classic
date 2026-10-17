@@ -10,6 +10,8 @@ workspace = true
 
 [dependencies]
 serde_json = { workspace = true }
+# release notes: `cargo xtask notes`
+lcc-notes = { workspace = true }
 # corpus download checksums
 sha2 = { workspace = true }
 # precompressed web bundle (`cargo xtask web`); pure Rust

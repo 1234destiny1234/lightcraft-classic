@@ -26,7 +26,10 @@ How a real run flows:
 
 ## Prepare and start a release
 
-1. Merge the release-ready changes into `release`.
+1. Gather the changelog on `main`, in a PR: `cargo xtask notes --release <version>` writes
+   `docs/changelog/<version>.md` from the entries in `docs/changelog/unreleased/` (adding to the file if it was
+   already started) and deletes them; `--dry-run` shows it first. Edit it as usual. Gathering on `main` keeps the
+   entries from being gathered again for the next release. Then merge the release-ready changes into `release`.
 2. Set the workspace version in `Cargo.toml` (for example, with `cargo xtask version set 1.2.0`).
    For a manual workflow run, the version input can override the workspace version for that run.
    Use a semantic version such as `1.2.0` or `1.2.0-rc.1`; versions containing a hyphen are

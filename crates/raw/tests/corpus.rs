@@ -17,7 +17,7 @@ fn corpus_root() -> PathBuf {
 /// Variants known not to decode yet (see the crate docs): matched against the lower-case file name.
 const KNOWN_UNSUPPORTED: &[&str] = &[
     "cr3-",            // Unverified CRX coding variants; exact supported cases live in cr3_corpus.rs.
-    "-he.nef",         // Nikon High Efficiency (HE / HE★) NEF, issue #193
+    "-he.nef",         // Unverified Nikon HE profiles (issue #193); verified cases live in nikon_he_corpus.rs
     "sraw",            // Canon sRAW / mRAW
     "crw-canon-g1",    // CMYG colour filter
     "finepix-s200exr", // SuperCCD EXR stored upright without a raw IFD: no Bayer phase matches the camera JPEG
@@ -231,8 +231,9 @@ fn corpus_nef_compressed_matches_uncompressed() {
 
 /// raw.pixls.us has the same D7500 scene as 12- and 14-bit lossless compressed NEF. Both store black level 400 in
 /// maker note 0x003d (14-bit units): after subtracting the black level and scaling to white, the two must agree.
-/// Issue #193: the Z f's High Efficiency NEF (no `0x0096` table, a JPEG XS codestream) is named as such and keeps a
-/// full-size embedded JPEG to edit, while the same body's Lossless compressed NEF decodes.
+/// Issue #193: the Z f's High Efficiency NEF (no `0x0096` table, a JPEG XS-derived codestream) decodes when its
+/// profile is one `nefhe` verifies, else is named as such; either way it keeps a full-size embedded JPEG, while the
+/// same body's Lossless compressed NEF decodes.
 #[test]
 fn corpus_nef_high_efficiency_is_named() {
     let dir = corpus_root().join("raw");
@@ -241,8 +242,11 @@ fn corpus_nef_high_efficiency_is_named() {
         return;
     };
     for result in [decode(&he).map(|_| ()), probe_info(&he).map(|_| ())] {
-        let Err(RawError::Unsupported(why)) = result else { panic!("Z f HE: expected unsupported") };
-        assert!(why.starts_with("Nikon High Efficiency NEF ("), "{why}");
+        match result {
+            Ok(()) => {}
+            Err(RawError::Unsupported(why)) => assert!(why.starts_with("Nikon High Efficiency NEF ("), "{why}"),
+            Err(e) => panic!("Z f HE: {e}"),
+        }
     }
     assert!(embedded_preview(&he).is_some_and(|p| p.len() > 1 << 20), "Z f HE: no full-size preview");
     let img = decode(&lossless).unwrap();
@@ -1204,8 +1208,8 @@ fn sony_embedded_distortion_is_limited_to_validated_models() {
     for (name, model, expected) in [
         ("arw-sony-a7rm4a-compressed.arw", "ILCE-7RM4A", 1),
         ("arw-sony-a9m2-compressed.arw", "ILCE-9M2", 0),
-        ("arw-sony-a7m3-compressed.arw", "ILCE-7M3", 0),
-        ("arw-sony-a7m3-uncompressed.arw", "ILCE-7M3", 0),
+        ("arw-sony-a7m3-compressed.arw", "ILCE-7M3", 1),
+        ("arw-sony-a7m3-uncompressed.arw", "ILCE-7M3", 1),
         ("arw-sony-a7m4-14bit.arw", "ILCE-7M4", 0),
         ("arw-sony-a7m4-lossless-l.arw", "ILCE-7M4", 0),
         ("arw-sony-a7m4-lossless-m.arw", "ILCE-7M4", 0),
@@ -1391,7 +1395,7 @@ fn sony_lens_records_of_the_public_samples() {
             "arw-sony-a7cr-compressed.arw",
             [272, 1, 0],
             (a7cr_shading, a7cr_ca, a7cr_distortion),
-            SonyLensStatus::NotValidatedModel,
+            SonyLensStatus::CameraCorrectionDisabled,
             (9600, 6376),
             32767,
             false,
@@ -1402,7 +1406,7 @@ fn sony_lens_records_of_the_public_samples() {
             "arw-sony-a7cr-lossless-l.arw",
             [272, 1, 0],
             (a7cr_shading, a7cr_ca, a7cr_distortion),
-            SonyLensStatus::NotValidatedModel,
+            SonyLensStatus::CameraCorrectionDisabled,
             (9728, 6656),
             7,
             false,
@@ -1413,7 +1417,7 @@ fn sony_lens_records_of_the_public_samples() {
             "arw-sony-a7cr-lossless-m.arw",
             [272, 1, 0],
             (a7cr_shading, a7cr_ca, a7cr_distortion),
-            SonyLensStatus::NotValidatedModel,
+            SonyLensStatus::NotValidatedMode,
             (6656, 4608),
             7,
             true,
@@ -1498,6 +1502,38 @@ fn sony_lens_records_of_the_public_samples() {
         checked += 1;
     }
     eprintln!("Sony lens records: {checked} checks on corpus files");
+}
+
+/// These pinned JPEGs have correction Off. Changing only the raw-IFD setting tests decoder wiring,
+/// not agreement with those JPEGs. The empirical corrected references are documented separately.
+#[test]
+fn a7cr_enabled_distortion_agrees_in_header_full_and_dng() {
+    use lcc_raw::lens_metadata::SonyLensStatus;
+    let root = corpus_root().join("raw");
+    let mut checked = 0;
+    for name in ["arw-sony-a7cr-compressed.arw", "arw-sony-a7cr-lossless-l.arw", "arw-sony-a7cr-lossless-m.arw"] {
+        let Some(mut bytes) = pinned_sony(&root, name) else { continue };
+        let original = probe_info(&bytes).unwrap();
+        assert!(original.opcodes.list3.is_empty(), "Off files must remain uncorrected");
+        let tiff = lcc_tiff::Tiff::parse(&bytes).unwrap();
+        let at = tiff.find(0x7036).unwrap().offset as usize;
+        let mut enabled = Vec::new();
+        tiff.order.put_u16(&mut enabled, 17);
+        bytes[at..at + 2].copy_from_slice(&enabled);
+        let header = probe_info(&bytes).unwrap();
+        let full = decode(&bytes).unwrap();
+        assert_eq!(header, full.info(), "{name}");
+        let s = full.lens_metadata.sony.as_ref().unwrap();
+        let linear = s.geometry.linear_ycbcr;
+        assert_eq!(s.distortion.status, if linear { SonyLensStatus::NotValidatedMode } else { SonyLensStatus::Applied });
+        assert_eq!(full.opcodes.list3.len(), usize::from(!linear));
+        // DNG export keeps the normalized map, including the different lossless storage padding.
+        let dng = lcc_raw::write_dng(&full, &Default::default()).unwrap();
+        let back = probe_info(&dng).unwrap();
+        assert_eq!(back.opcodes.list3, full.opcodes.list3, "{name}");
+        checked += 1;
+    }
+    assert!(checked == 0 || checked == 3, "run with all three pinned A7CR codings");
 }
 
 /// Kodak DCS520C (`crates/raw/src/vendor/kodak.rs`): the two-component lossless JPEG strip decodes through the

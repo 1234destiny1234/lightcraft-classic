@@ -232,3 +232,21 @@ fn load_dir_reads_xml_files_and_reports_bad_ones() {
     assert_eq!(errs.len(), 1, "{errs:?}");
     assert!(LensDb::load_dir(Path::new("/nonexistent/lensdb")).is_err());
 }
+
+#[test]
+fn built_in_lens_matches_by_camera_mount_and_focal_range() {
+    let xml = r#"<lensdatabase>
+  <camera><maker>Canon</maker><model>Canon PowerShot S5 IS</model><model lang="en">PowerShot S5 IS</model><mount>canonS5</mount><cropfactor>6.0</cropfactor></camera>
+  <lens><maker>Canon</maker><model>Canon PowerShot S5 IS &amp; compatibles</model><mount>canonS5</mount><cropfactor>6.0</cropfactor>
+    <calibration><distortion model="poly3" focal="6" k1="0.01" /><distortion model="poly3" focal="72" k1="0.0" /></calibration></lens>
+  <lens><maker>Canon</maker><model>Canon EF 50mm f/1.8</model><mount>Canon EF</mount>
+    <calibration><distortion model="poly3" focal="50" k1="0.01" /></calibration></lens>
+</lensdatabase>"#;
+    let db = LensDb::parse(xml).unwrap();
+    let cam = db.find_camera("Canon", "Canon PowerShot S5 IS");
+    assert!(cam.is_some());
+    assert!(db.find_camera("Canon", "PowerShot S5 IS").is_some());
+    let l = db.find_lens(None, "6.0-72.0 mm f/2.7-3.5", cam).unwrap();
+    assert_eq!(l.mounts, ["canonS5"]);
+    assert!(db.find_lens(None, "6.0-72.0 mm f/2.7-3.5", None).is_none());
+}

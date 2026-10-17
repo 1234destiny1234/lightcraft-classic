@@ -62,7 +62,7 @@ impl SettingsHashes {
 }
 
 /// Bump when the pipeline's output changes, to invalidate cached thumbnails.
-pub const RENDER_CACHE_VERSION: u64 = 64;
+pub const RENDER_CACHE_VERSION: u64 = 65;
 
 /// Thumbnails render at one of these long edges (so window/cell size changes reuse the cache).
 pub const THUMB_SIZES: [usize; 4] = [128, 256, 384, 512];
@@ -1788,6 +1788,9 @@ pub struct ProbeInfo {
     /// capture date of a file whose metadata has none, as Lightroom does (exports saved without
     /// metadata would otherwise all land under "Unknown Date").
     pub file_modified: Option<String>,
+    /// [`ProbeInfo::captured`] is [`ProbeInfo::file_modified`] standing in for a capture time that
+    /// neither the file nor its sidecar has (set by the import, which dates such files so).
+    pub captured_is_file_date: bool,
     pub meta: lcc_catalog::Meta,
     pub rating: u8,
     pub flag: lcc_catalog::Flag,

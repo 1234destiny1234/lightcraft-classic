@@ -17,7 +17,7 @@ use crate::widgets::register;
 const ROW_H: f32 = 24.0;
 const INDENT: f32 = 14.0;
 
-/// The Keyword List section: a filter box, then the rows.
+/// The Keyword List section with its own collapsible section header (for embedders like `RightPanel::Keywords`).
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     crate::widgets::divider(ui);
@@ -42,6 +42,27 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if !open {
         return;
     }
+    show_body(app, ui);
+}
+
+/// When rendered under a Classic panel header, the header can accept a dropped keyword to move it
+/// to the top level.
+pub(crate) fn header_drop(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
+    register(ui.ctx(), "keywordList:topLevel", r);
+    let Some(k) = app.ui.dragging_keyword.clone() else { return };
+    let (pointer, released) = ui.input(|i| (i.pointer.latest_pos(), i.pointer.any_released()));
+    if shown_under(ui, r, pointer) {
+        let t = Tokens::get(ui.ctx());
+        ui.painter().rect_stroke(r.shrink2(vec2(8.0, 2.0)), 4.0, Stroke::new(1.5, t.accent), StrokeKind::Inside);
+        if released {
+            drop_keyword(app, ui.ctx(), &k, None);
+        }
+    }
+}
+
+/// The Keyword List panel body without a section header (for Classic panel stack `PanelId::KeywordList`).
+pub fn show_body(app: &mut LccApp, ui: &mut egui::Ui) {
+    let t = Tokens::get(ui.ctx());
     let fid = egui::Id::new("keyword-list-filter");
     let mut filter: String = ui.data(|d| d.get_temp(fid)).unwrap_or_default();
     ui.horizontal(|ui| {

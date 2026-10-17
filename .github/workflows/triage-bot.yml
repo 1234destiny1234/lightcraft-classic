@@ -20,7 +20,7 @@ jobs:
   triage:
     if: >-
       startsWith(github.event.comment.body, '/') &&
-      contains(fromJSON('["clydebrown","deunderscorepaul","endthestart"]'), github.event.comment.user.login)
+      contains(fromJSON('["clydecbrown","deunderscorepaul","endthestart"]'), github.event.comment.user.login)
     runs-on: ubuntu-latest
     timeout-minutes: 5
     permissions:

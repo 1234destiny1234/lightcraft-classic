@@ -32,10 +32,11 @@ use serde::{Deserialize, Serialize};
 use crate::Session;
 use crate::media::ProbeInfo;
 
-/// File extensions the app imports (lower case).
+/// File extensions offered by import discovery and file pickers (lower case).
+/// This includes preview-only raws; the file probe decides whether sensor decoding is available.
 pub const EXTENSIONS: &[&str] = &[
-    "jpg", "jpeg", "png", "tif", "tiff", "webp", "dng", "cr2", "cr3", "nef", "nrw", "arw", "raf", "orf", "rw2", "rwl", "raw", "pef", "srw", "psd",
-    "jxl", "gif", "bmp",
+    "jpg", "jpeg", "png", "tif", "tiff", "webp", "dng", "cr2", "cr3", "nef", "nrw", "arw", "sr2", "srf", "raf", "orf", "rw2", "rwl", "raw", "pef",
+    "srw", "psd", "jxl", "gif", "bmp",
     // Decoded when built with the codecs' `heif` feature; otherwise the import reports them as
     // failed with the reason ("HEIC/HEIF support isn't included in this build").
     "heic", "heif", "avif", // a HEIC without the `heif` feature is reported as failed
@@ -1097,9 +1098,11 @@ impl ImportJob {
             if info.captured.is_none() {
                 info.captured = sidecar.as_ref().and_then(|sc| sc.captured.clone());
             }
-            // no date in the file or its sidecar: the file's own date, as Lightroom does
+            // no date in the file or its sidecar: the file's own date, as Lightroom does (a guess:
+            // never written to a sidecar as the capture time)
             if info.captured.is_none() {
                 info.captured = info.file_modified.clone();
+                info.captured_is_file_date = info.captured.is_some();
             }
             let stored = match (mode, &self.copy_root) {
                 (ImportMode::Copy | ImportMode::Move, Some(root))
@@ -1444,6 +1447,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                 let mut p = Photo::new(id, Source::File { path: stored }, &name, &info.format, info.width, info.height, &now);
                 p.kind = info.kind;
                 p.file_size = info.file_size;
+                p.captured_fallback = info.captured.clone().filter(|_| info.captured_is_file_date);
                 p.captured = info.captured;
                 p.meta = info.meta;
                 p.rating = info.rating;

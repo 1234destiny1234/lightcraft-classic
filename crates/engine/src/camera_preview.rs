@@ -34,7 +34,11 @@ use lcc_raw::{
 /// 7: the sensor proxy follows the file's lens warp when the camera JPEG is lens-corrected.
 /// 8: the bundled NIKON Z 6_2 profile.
 /// 9: the bundled NIKON Z 8 and NIKON D5300 profiles.
-pub const LOOK_VERSION: u32 = 9;
+/// 10: DNG tone fit for profiles with a look table and for 1024 px (Lightroom) previews.
+/// 11: a failed fit of an ARW whose body has no spectral matrices takes the ILCE-7M3's (`spectral::stand_in`), not the
+/// neutral fallback's colour.
+/// 12: validated A7CR distortion, including the lens data stored with each smart preview.
+pub const LOOK_VERSION: u32 = 12;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CameraLook {
@@ -77,7 +81,9 @@ pub(crate) fn file_local_look(format: RawFormat) -> bool {
 /// matrices from the camera database (`lcc_camdb`: camera-native DNG, chart or manufacturer data); a look fitted to
 /// the file's JPEG ([`fit_preview`]: with the camera profile for its model when there is one, else with colour fitted
 /// to this photo alone); the model's other database matrices (from measured spectral sensitivities,
-/// `lcc_raw::spectral`); the neutral fallback. The spectral matrices only stand in for the neutral fallback, so a
+/// `lcc_raw::spectral`); for an ARW of a Sony body without them, another Sony sensor's (`spectral::stand_in`, the
+/// ILCE-7M3's: about 1 CIE76 from the measured Sony bodies' own colour where the neutral fallback is about 15 off);
+/// the neutral fallback. The spectral matrices only stand in for the neutral fallback, so a
 /// photo whose JPEG fit is accepted renders as without them. Database matrices, when used, are written into
 /// `raw.color`, where the DNG colour model interpolates them by the white's temperature; the database's black and
 /// white level overrides are applied first. A photo whose JPEG is black and white (a monochrome picture style) has no
@@ -112,14 +118,13 @@ fn identity_tone_curve(curve: Option<&lcc_raw::profile::ToneCurve>) -> bool {
 }
 
 /// A DNG with its own colour model whose tone is not (yet) defined by the file: a matrix, no
-/// non-identity `ProfileToneCurve`, no `LookTable` (a look table is the file's own rendering).
+/// non-identity `ProfileToneCurve` and no `ProfileGainTableMap`. A `LookTable` does not define the tone: an
+/// Adobe Standard profile carries one without a tone curve and is rendered with Lightroom's default curve on
+/// top (Lightroom Classic's lossy DNGs rendered flat and dull without a fit), and the fit applies the tables
+/// to its proxy, so it fits only the tone around them.
 pub(crate) fn dng_tone_eligible(raw: &RawImage, t: &CameraTransform) -> bool {
     let p = &raw.color.profile;
-    raw.format == RawFormat::Dng
-        && !t.matrix_is_fallback
-        && identity_tone_curve(p.tone_curve.as_ref())
-        && p.look_table.is_none()
-        && p.gain_table_map.is_none()
+    raw.format == RawFormat::Dng && !t.matrix_is_fallback && identity_tone_curve(p.tone_curve.as_ref()) && p.gain_table_map.is_none()
 }
 
 /// [`starting_colour`] with the JPEG fit (the look, and whether the JPEG is black and white) and the black-and-white
@@ -167,7 +172,20 @@ fn starting_colour_from(
             }
             start(raw)
         }
-        _ => (xy, t),
+        // a Sony body without database matrices: another Sony sensor's are far closer than the neutral fallback's
+        _ => match lcc_raw::spectral::stand_in(raw.format) {
+            Some(camera) => {
+                camera.fill(&mut raw.color);
+                if lcc_pipeline::profiling() {
+                    eprintln!(
+                        "[profile] {:?} camera colour from spectral sensitivities: {} {}, standing in for this body",
+                        raw.format, camera.make, camera.model
+                    );
+                }
+                start(raw)
+            }
+            None => (xy, t),
+        },
     };
     // only a black-and-white JPEG: a colour one that gave no look pays nothing more
     let look = if black_and_white { monochrome(raw, &t) } else { None };
@@ -251,6 +269,7 @@ pub(crate) fn dng_colour(tags: &ColorData, declared: &crate::files::DngWhite, t:
         baseline_exposure: t.baseline_exposure + k.log2(),
         baseline_sharpness: tags.baseline_sharpness,
         kelvin_presets: None,
+        balanced_as_shot: None,
         profile: ProfileLook {
             hue_sat_map: [look.and_then(|l| l.hue_sat.clone()), None],
             tone_curve: look.and_then(|l| dng_tone_curve(&l.tone)),
@@ -447,9 +466,9 @@ const FIT_PREVIEW_MAX_PIXELS: u64 = 128_000_000;
 
 /// A DNG's tone and chroma curves fitted to its own camera JPEG ([`dng_tone_eligible`]); the file's colour model
 /// (matrix, profile tables, white balance) stays as it is: the proxy goes through the file's tables and the given
-/// colour of the search is the identity. Same held-out acceptance gates as [`fit_look`]; the preview must be near
-/// the raw's size, show the same picture ([`structure_agrees`]), and the curve must not clip more highlights than
-/// the plain render ([`clips_more`]).
+/// colour of the search is the identity. Same held-out acceptance gates as [`fit_look`]; the preview must not be a
+/// thumbnail ([`MIN_PREVIEW_FRACTION`]), must show the same picture ([`structure_agrees`]), and the curve must not
+/// clip more highlights than the plain render ([`clips_more`]).
 fn fit_dng_tone(raw: &RawImage, bytes: &[u8], transform: &CameraTransform, lens: Option<&lcc_develop::EmbeddedLens>) -> Option<CameraLook> {
     // Logged under `<PREFIX>_PROFILE` so a corpus run can count the outcome per gate.
     let refuse = |why: &str| {
@@ -523,8 +542,9 @@ fn correct_vignetting(sensor: &mut Rgb32f, lens: Option<&lcc_develop::EmbeddedLe
 }
 
 /// The embedded preview's long edge must be at least this share of the raw's (and 384 px): a DNG whose preview is a
-/// small thumbnail is not fitted.
-const MIN_PREVIEW_FRACTION: f64 = 0.9;
+/// small thumbnail is not fitted. The fit itself runs on a proxy of at most 384 px, so the 1024 px preview
+/// Lightroom writes into its DNGs (15% of a 33 MP raw's long edge) is plenty.
+const MIN_PREVIEW_FRACTION: f64 = 0.1;
 
 /// Lowest preview luminance and channel value a tone-only fit trains on (the other fits use 0.015 and 0.004): a dark
 /// night scene has most of its pixels below 0.015, and a curve fitted without them overshoots its shadows.
@@ -2715,6 +2735,42 @@ mod tests {
         assert!(starting_colour(&mut raw, &[], None, None).1.matrix_is_fallback);
     }
 
+    /// Step 5 for an ARW: a Sony body outside the table whose fit fails (here: no camera JPEG; on a night sky, too few
+    /// pixels above the fit's floors) takes the stand-in's matrices instead of the neutral fallback's colour, also
+    /// without a model and under another make (every ARW is a Sony sensor). The Kelvin scale is not its doing: the
+    /// body still has no measured matrices for the catalog and the white-balance scale.
+    #[test]
+    fn a_sony_body_outside_the_table_takes_the_stand_in() {
+        let stand_in = lcc_raw::spectral::stand_in(RawFormat::Arw).unwrap();
+        for (make, model) in [("SONY", "ILCE-1M2"), ("SONY", ""), ("HASSELBLAD", "Lunar")] {
+            let mut raw = raw_of(RawFormat::Arw, make, model, Default::default());
+            if model.is_empty() {
+                raw.metadata.model = None;
+            }
+            let (xy, t, look) = starting_colour_with(
+                &mut raw,
+                |_, t| {
+                    assert!(t.matrix_is_fallback, "the fit sees the raw without the stand-in");
+                    (None, false)
+                },
+                |_, _| panic!("a colour JPEG never takes the black-and-white step"),
+            );
+            assert!(look.is_none() && !t.matrix_is_fallback, "{model}");
+            assert_eq!(raw.color.forward_matrix, stand_in.forward_matrix.map(Some), "{model}");
+            assert_eq!(xy, lcc_raw::color::as_shot_white_xy(&raw));
+            // white-balanced white stays white
+            let w = t.matrix.apply([1.0; 3]);
+            assert!(w.iter().all(|v| (v - 1.0).abs() < 1e-4), "{w:?}");
+        }
+        assert_eq!(lcc_raw::spectral::find(Some("SONY"), "ILCE-1M2"), None);
+        assert_eq!(lcc_catalog::relative_wb_camera("ARW", "SONY ILCE-1M2"), !lcc_raw::kelvin_presets::covers(Some("SONY"), "ILCE-1M2"));
+        // the same failure outside ARW keeps the neutral fallback
+        let mut raw = raw_of(RawFormat::Nef, "NIKON CORPORATION", "NIKON D3", Default::default());
+        let (_, t, _) = starting_colour_with(&mut raw, |_, _| (None, false), |_, _| None);
+        assert!(t.matrix_is_fallback);
+        assert_eq!(raw.color, lcc_raw::ColorData::default());
+    }
+
     /// The colour precedence on public raws (each skipped without its corpus file): a photo whose JPEG fit is
     /// accepted keeps it and its colour data; one whose fit fails takes its spectral matrices when its model has
     /// them; a DNG keeps its own matrices. White balance stays relative to the as-shot look for every raw without
@@ -3919,7 +3975,7 @@ mod tests {
     }
 
     /// Which DNGs get a tone fitted to their camera JPEG: a colour matrix, a tone curve that is absent or the
-    /// identity, no look table; and no other raw format.
+    /// identity, with or without a look table; and no other raw format.
     #[test]
     fn dng_tone_gates_follow_the_files_own_tags() {
         use lcc_raw::profile::{HsvTable, ToneCurve};
@@ -3941,6 +3997,15 @@ mod tests {
         assert!(curved.profile.tone_curve.is_some() && !eligible(RawFormat::Dng, curved), "the file's own tone curve is kept");
         let mut looked = color;
         looked.profile.look_table = HsvTable::from_tags(&[1, 2, 1], &[0.0, 1.0, 1.0, 0.0, 1.0, 1.0], 0);
-        assert!(looked.profile.look_table.is_some() && !eligible(RawFormat::Dng, looked), "a look table is the file's own rendering");
+        assert!(looked.profile.look_table.is_some() && eligible(RawFormat::Dng, looked), "a look table defines colour, not tone");
+    }
+
+    /// The 1024 px preview Lightroom Classic writes into a 7008 px DNG is fitted; a 256 px thumbnail is not.
+    #[test]
+    fn dng_tone_fit_takes_lightroom_sized_previews() {
+        let floor = |raw_long: f64| (MIN_PREVIEW_FRACTION * raw_long).max(384.0);
+        assert!(1024.0 >= floor(7008.0));
+        assert!(256.0 < floor(7008.0));
+        assert!(1024.0 >= floor(9504.0), "a 61 MP raw too");
     }
 }
