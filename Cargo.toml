@@ -77,7 +77,7 @@ sha2 = "0.10"
 serde = { version = "1", features = ["derive", "rc"] }
 serde_json = { version = "1", features = ["float_roundtrip"] }
 log = "0.4"
-# the control port token (`apps/lightcraft`)
+# the control port token (`apps/app`)
 getrandom = "0.3"
 rayon = "1"
 proptest = "1"

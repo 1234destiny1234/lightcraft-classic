@@ -4,7 +4,7 @@ use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpStream, ToSocketAddrs};
 use std::time::Duration;
 
-use lightcraft_engine::control_auth;
+use lcc_engine::control_auth;
 use serde_json::{Value, json};
 
 /// Reply payloads include base64-encoded previews and screenshots, unlike the small requests.
@@ -41,7 +41,7 @@ const AUTH_ID: u64 = 0;
 
 impl Remote {
     /// Connect to `addr` (e.g. `127.0.0.1:7980`), failing fast when nothing is listening or the
-    /// app refuses the token. The token is `$LIGHTCRAFT_CONTROL_TOKEN`, else the one the app wrote
+    /// app refuses the token. The token is `$<PREFIX>_CONTROL_TOKEN`, else the one the app wrote
     /// for that port ([`control_auth::client_token`]).
     pub fn connect(addr: &str) -> std::io::Result<Self> {
         let mut r = Self::lazy(addr);
@@ -89,7 +89,7 @@ impl Remote {
     }
 
     /// Open a fresh connection with the `auth` request. A refused token, or a token source that
-    /// can't be used (a malformed `LIGHTCRAFT_CONTROL_TOKEN` or token file), is a `PermissionDenied`
+    /// can't be used (a malformed `<PREFIX>_CONTROL_TOKEN` or token file), is a `PermissionDenied`
     /// error carrying the reason; without a token nothing is sent (the first request then
     /// gets the app's "authentication required" reply).
     fn authenticate(&self, (reader, writer): &mut (BufReader<TcpStream>, TcpStream)) -> std::io::Result<()> {
@@ -197,7 +197,7 @@ impl Backend for Remote {
                     if sent {
                         self.unknown_outcome(method, &e)
                     } else if e.kind() == std::io::ErrorKind::PermissionDenied {
-                        format!("LightCraft app at {} refused the connection: {e}", self.addr)
+                        format!("{} app at {} refused the connection: {e}", lcc_brand::DISPLAY_NAME, self.addr)
                     } else {
                         format!(
                             "{} at {} is not reachable: {e} (start it with `{} --control PORT`)",
