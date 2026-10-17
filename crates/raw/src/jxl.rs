@@ -21,6 +21,11 @@
 //! so the lossy coder spends its bits where the eye notices (Adobe DNG Converter's lossy JPEG XL DNGs
 //! declare the sRGB curve with BT.2020 primaries). The samples are still the raw values: decoding to the
 //! declared encoding gives them back, so the curve is re-applied here exactly as the encoder removed it.
+//! Lightroom Classic's lossy LinearRaw DNGs (Convert to DNG with lossy compression) store perceptually
+//! shaped samples, label them with the sRGB curve and linearise them with a cubic `MapPolynomial` per plane
+//! in `OpcodeList2`. Measured against Lightroom's own preview of two such files, the polynomial applied to
+//! the samples in the declared encoding tracks Lightroom's rendering; applied to the decoder's linear
+//! output it is 3.6 EV too dark.
 //!
 //! Every tile is decoded with wide (32-bit) modular buffers. A lossy tile whose header sets
 //! `modular_16bit_buffers` can still carry values that need more than 16 bits; the narrow buffers then
@@ -483,6 +488,11 @@ mod tests {
             assert!(bad(3, ColourEncoding::Enum(e), 255.0), "{tf:?}");
         }
         let mut e = EnumColourEncoding::srgb_linear(RenderingIntent::Relative);
+        for tf in [TransferFunction::Pq, TransferFunction::Hlg, TransferFunction::Unknown, TransferFunction::Gamma { g: 0, inverted: true }] {
+            e.tf = tf;
+            assert!(bad(3, ColourEncoding::Enum(e.clone()), 255.0), "{tf:?}");
+        }
+        e.tf = TransferFunction::Linear;
         e.white_point = WhitePoint::Dci;
         assert!(bad(3, ColourEncoding::Enum(e.clone()), 255.0), "white point");
         e.white_point = WhitePoint::D65;
