@@ -38,7 +38,9 @@ use lcc_raw::{
 /// 11: a failed fit of an ARW whose body has no spectral matrices takes the ILCE-7M3's (`spectral::stand_in`), not the
 /// neutral fallback's colour.
 /// 12: validated A7CR distortion, including the lens data stored with each smart preview.
-pub const LOOK_VERSION: u32 = 12;
+/// 13: a photo no look fits keeps its camera profile's colour instead of the neutral fallback; a camera profile's
+/// pooled tone curve continues a photo's own past what its JPEG showed; the bundled NIKON D780, D750 and D90 profiles.
+pub const LOOK_VERSION: u32 = 13;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CameraLook {

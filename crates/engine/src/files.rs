@@ -2085,7 +2085,7 @@ pub(crate) mod tests {
     /// per-channel clamp at zero decoding had kept red's and blue's wider positive halves and turned it magenta.
     #[test]
     fn dark_noise_through_a_saturating_matrix_stays_neutral() {
-        let matrix = lightcraft_color::Mat3([[3.48, -2.41, -0.06], [-0.41, 1.57, -0.16], [0.32, -1.86, 2.58]]);
+        let matrix = lcc_color::Mat3([[3.48, -2.41, -0.06], [-0.41, 1.57, -0.16], [0.32, -1.86, 2.58]]);
         let colour = CameraColourModel { wb: [1.0; 3], matrix, gain: 1.0, tables: None, hue_sat: None };
         // a grey 0.002 above black with ±0.004 of noise per channel (a deterministic sequence)
         let mut state = 12345u32;
