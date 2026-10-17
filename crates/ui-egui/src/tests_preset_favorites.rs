@@ -5,7 +5,7 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::{LightcraftApp, Services};
+use crate::{LccApp, Services};
 
 const SETTLE: Duration = Duration::from_secs(120);
 
@@ -15,10 +15,12 @@ fn rect(h: &Headless, id: &str) -> Option<egui::Rect> {
 
 #[test]
 fn a_starred_preset_is_listed_first_in_favorites_and_stays_in_its_group() {
-    let app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
     h.settle(SETTLE);
     h.app.run("panel.presets", json!({})).unwrap();
+    // groups start folded here except the one holding the current preset: open B&W
+    h.app.ui.group_open.insert("preset:B&W".into(), true);
     h.step();
     h.step();
     assert!(rect(&h, "preset:lc.bw-selenium").is_some(), "the B&W group is in view");
@@ -37,10 +39,10 @@ fn a_starred_preset_is_listed_first_in_favorites_and_stays_in_its_group() {
     if let Some(path) = std::env::var_os("PRESET_FAVORITES_SCREENSHOT_DIR") {
         let pixels = h.paint();
         let image =
-            lightcraft_raster::Rgba8 { width: pixels.size[0], height: pixels.size[1], data: pixels.pixels.iter().map(|c| c.to_array()).collect() };
-        let png = lightcraft_codecs::encode_png(&lightcraft_codecs::EncodeImage::rgba8(&image), &lightcraft_codecs::EncodeMeta::default()).unwrap();
+            lcc_raster::Rgba8 { width: pixels.size[0], height: pixels.size[1], data: pixels.pixels.iter().map(|c| c.to_array()).collect() };
+        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&image), &lcc_codecs::EncodeMeta::default()).unwrap();
         std::fs::create_dir_all(&path).unwrap();
-        std::fs::write(std::path::Path::new(&path).join("lightcraft-presetfav.png"), png).unwrap();
+        std::fs::write(std::path::Path::new(&path).join("lcc-presetfav.png"), png).unwrap();
     }
 
     h.app.run("preset.favorite", json!({"id": "lc.bw-selenium"})).unwrap();

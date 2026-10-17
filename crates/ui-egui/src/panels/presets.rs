@@ -163,7 +163,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], in_column: bo
                 let key = if favorites { "presetFavorites".to_string() } else { format!("preset:{g}") };
                 let holds_current =
                     last.as_ref().is_some_and(|l| grp.items.iter().any(|&i| app.session.presets.get(i).is_some_and(|p| p.id == l.id)));
-                let open = app.ui.group_is_open(&key, holds_current);
+                // the Favorites group starts open: it is there to be reached at once
+                let open = app.ui.group_is_open(&key, holds_current || favorites);
                 let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 32.0), Sense::click());
                 let label = if favorites { crate::i18n::tr("Favorites") } else { crate::i18n::builtin_label(&g, builtin) };
                 crate::widgets::announce(&resp, label.to_string());
@@ -450,7 +451,7 @@ mod tests {
     /// shows them below, and stay in their own groups; a user group named "Favorites" is not it.
     #[test]
     fn favorites_group_comes_first_in_panel_order() {
-        let mut session = lightcraft_engine::Session::with_demo();
+        let mut session = lcc_engine::Session::with_demo();
         let base = session.presets.iter().find(|p| p.id == "lc.warm-glow").unwrap().clone();
         for (id, group, favorite) in [("user.mine", "Mine", true), ("user.plain", "Favorites", false)] {
             session.presets.push(Preset { id: id.into(), name: id.into(), group: group.into(), favorite, builtin: false, ..base.clone() });
