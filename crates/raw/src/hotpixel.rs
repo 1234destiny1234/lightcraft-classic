@@ -376,6 +376,8 @@ mod tests {
             linearized: false,
             opcodes: OpcodeLists::default(),
             metadata: Metadata::default(),
+            pixel_aspect: 1.0,
+            lens_metadata: Default::default(),
         }
     }
 
