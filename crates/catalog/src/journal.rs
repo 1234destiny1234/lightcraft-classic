@@ -283,11 +283,13 @@ fn newer(what: String) -> CatalogError {
 /// A line that doesn't decode but ends with a whole record: a fragment of a failed append followed
 /// by the record that retried it (the retry re-encodes the same ops with the same `seq`s). Returns
 /// the fragment's length and the record, if that record continues the log (`seq <= last + 1`).
-/// The record's CRC must match, so damage is never mistaken for it.
+/// The record's CRC must match, so damage is never mistaken for it. The record runs to the end of
+/// the line, so only the last few record starts are tried: a damaged line full of them stays linear.
 fn resync(line: &[u8], last: u64) -> Option<(usize, (u64, Op))> {
     const START: &[u8] = b"{\"seq\":";
-    (1..line.len().saturating_sub(START.len() - 1)).filter(|&i| line[i..].starts_with(START)).find_map(|i| {
-        let rec = std::str::from_utf8(&line[i..]).ok().map(|l| l.trim_end_matches('\r')).and_then(decode_record)?;
+    const TRIES: usize = 8;
+    (1..line.len().saturating_sub(START.len() - 1)).rev().filter(|&i| line.get(i..).is_some_and(|l| l.starts_with(START))).take(TRIES).find_map(|i| {
+        let rec = std::str::from_utf8(line.get(i..)?).ok().map(|l| l.trim_end_matches('\r')).and_then(decode_record)?;
         (rec.0 <= last.saturating_add(1)).then_some((i, rec))
     })
 }
