@@ -801,8 +801,9 @@ fn stand_in_image(bytes: &[u8], covering: Option<usize>) -> Option<std::borrow::
 /// [`stand_in_image`]).
 pub(crate) fn decode_raw_preview(bytes: &[u8], opts: lcc_codecs::DecodeOptions, covering: Option<usize>) -> Option<lcc_codecs::Decoded> {
     let jpeg = stand_in_image(bytes, covering)?;
-    // the colour space is a property of the JPEG; a TIFF stand-in is read by the TIFF reader
-    let is_jpeg = matches!(jpeg, std::borrow::Cow::Owned(_));
+    // the colour space is a property of the JPEG; a TIFF stand-in (the file itself, or a Hasselblad RGB preview
+    // wrapped as a TIFF) and a JPEG XL preview are read by their own decoders
+    let is_jpeg = jpeg.starts_with(&[0xff, 0xd8]);
     match lcc_raw::embedded_preview_color_space(bytes).filter(|_| is_jpeg) {
         Some(space) => {
             let space = match space {

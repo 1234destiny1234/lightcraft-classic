@@ -14,6 +14,7 @@ pub mod crw;
 pub mod crx;
 pub(crate) mod crx_wavelet;
 pub mod erf;
+pub(crate) mod hasselblad;
 pub mod kodak;
 pub mod mef;
 pub mod mrw;
