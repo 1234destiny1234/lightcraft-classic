@@ -28,6 +28,13 @@
 //! On 150 ILCE-7SM2 photos read both ways, the temperatures agree to ±4 mired around a constant offset (Sony's
 //! Kelvin is about 8 % above the matrices', as #730 found for the ILCE-7M3's dial) and the tint to −9 ± 4: the
 //! matrices put Sony's presets slightly off the locus, the presets themselves are tint 0 here.
+//!
+//! The scale holds on every body: on the public raw.pixls.us samples of the 97 bodies whose raws decode (159 files,
+//! 2007 to 2025, compacts to the ILCE-1M2), Sony's other presets read through the five as Daylight 5200–5384 K,
+//! Cloudy 6010–6345 K, Shade 7336–8276 K and Tungsten 2713–3200 K, tint within ±12, and the files shot on the
+//! Kelvin setting read back what the dial said: ILCE-3500 5600 K → 5594 K, ILCE-7CR 5600 K → 5602 K (four files,
+//! one of them downsized lossless), ILME-FX3 5500 K → 5530 K. Sony's downsized lossless ARWs (linear YCbCr) come
+//! balanced already; their As Shot is read from the levels they were balanced with (`ColorData::balanced_as_shot`).
 use crate::ColorData;
 use lcc_color::{Xy, cct};
 use serde::{Deserialize, Serialize};
@@ -40,38 +47,49 @@ const MIN_K: f64 = 2000.0;
 const MAX_K: f64 = 50000.0;
 const MAX_TINT: f64 = 150.0;
 
-/// Models whose white balance is edited in Kelvin through their presets, as (brand, Exif model without the brand),
-/// each checked to carry them: the Sony bodies on 80–150 own photos each, or the public corpus samples for the
-/// ILCE-3500 and ILCE-7S; the Canon PowerShot G1 X Mark III on a reporter's nine photos, one per white-balance
-/// setting (issue #157 of a downstream fork). A camera with measured matrices (`crate::spectral`) is read through
-/// those instead.
-const MODELS: &[(&str, &str)] = &[
-    ("SONY", "DSC-RX10"),
-    ("SONY", "ILCA-77M2"),
-    ("SONY", "ILCA-99M2"),
-    ("SONY", "ILCE-3500"),
-    ("SONY", "ILCE-7S"),
-    ("SONY", "SLT-A33"),
-    ("CANON", "PowerShot G1 X Mark III"),
-];
+/// Models other than Sony's whose white balance is edited in Kelvin through their presets, as (brand, Exif model
+/// without the brand), each checked to carry them: the Canon PowerShot G1 X Mark III on a reporter's nine photos, one
+/// per white-balance setting (issue #157 of a downstream fork). A camera with measured matrices (`crate::spectral`)
+/// is read through those instead.
+const MODELS: &[(&str, &str)] = &[("CANON", "PowerShot G1 X Mark III")];
 
-/// Whether a raw of this Exif make and model is edited in Kelvin through its presets (when it has no colour
-/// matrices of its own or measured: see [`crate::spectral::find`], which comes first), from the file's presets or
-/// built-in ones ([`crate::kelvin_builtin`]).
+/// The Sony models whose files carry no white-balance presets, which predate them: the DSC-F828 (SRF), the DSC-R1
+/// (SR2) and the DSLR-A100. Every other Sony body has them: on the public raw.pixls.us samples of 105 bodies, from the
+/// DSLR-A200 (2008) to the ILCE-1M2, ILME-FX2 and ZV-E10M2, all 167 raws (166 ARWs and an ARQ) carry the five; the
+/// three listed here are the only bodies of the 108 sampled without them.
+const WITHOUT_PRESETS: &[&str] = &["DSC-F828", "DSC-R1", "DSLR-A100"];
+
+/// How Sony names its raw-shooting bodies, for a model given without its make (a Lightroom catalog's camera).
+const SONY_MODEL_PREFIXES: &[&str] = &["DSC-", "DSLR-", "ILCA-", "ILCE-", "ILME-", "NEX-", "SLT-", "UMC-", "ZV-"];
+
+/// Whether a raw of this Exif make and model is edited in Kelvin through its presets: a Sony body other than the
+/// three without them ([`WITHOUT_PRESETS`]); without a make, a model named as Sony names its bodies; or one of
+/// [`MODELS`], or a body with built-in presets ([`crate::kelvin_builtin`]). A camera with
+/// colour matrices of its own or measured comes first (see [`crate::spectral::find`]): the catalog and the file's
+/// scale ask that before this.
 pub fn covers(make: Option<&str>, model: &str) -> bool {
     if crate::kelvin_builtin::covers(make, model) {
         return true;
     }
     let model = model.trim();
     let brand = make.and_then(|m| m.split_whitespace().next());
-    MODELS.iter().any(|(b, m)| {
+    let listed = MODELS.iter().any(|(b, m)| {
         let bare = model
             .get(..b.len())
             .zip(model.get(b.len()..))
             .filter(|(p, rest)| p.eq_ignore_ascii_case(b) && rest.starts_with(' '))
             .map_or(model, |(_, rest)| rest.trim_start());
         brand.is_none_or(|x| x.eq_ignore_ascii_case(b)) && bare.eq_ignore_ascii_case(m)
-    })
+    });
+    if listed {
+        return true;
+    }
+    let model = model.strip_prefix("SONY ").or_else(|| model.strip_prefix("Sony ")).unwrap_or(model);
+    let sony = match make {
+        Some(m) => m.split_whitespace().next().is_some_and(|b| b.eq_ignore_ascii_case("SONY")),
+        None => SONY_MODEL_PREFIXES.iter().any(|p| model.get(..p.len()).is_some_and(|m| m.eq_ignore_ascii_case(p))),
+    };
+    sony && !model.is_empty() && !WITHOUT_PRESETS.iter().any(|m| m.eq_ignore_ascii_case(model))
 }
 
 /// [`covers`] for make and model joined by a space, as the catalog keeps them (`"SONY ILCA-99M2"`).
@@ -298,23 +316,16 @@ mod tests {
 
     #[test]
     fn covered_models() {
-        for c in [
-            "SONY ILCA-99M2",
-            "SONY DSC-RX10",
-            "SONY ILCA-77M2",
-            "SONY SLT-A33",
-            "ILCA-99M2",
-            "Sony ilca-99m2",
-            "Canon Canon PowerShot G1 X Mark III",
-            "Canon PowerShot G1 X Mark III",
-        ] {
+        let covered = ["SONY ILCA-99M2", "SONY DSC-RX10", "SONY ILCE-1M2", "SONY ILCE-1", "SONY DSLR-A200", "SONY ZV-E10M2", "SONY ILME-FX3A"];
+        let canon = ["Canon Canon PowerShot G1 X Mark III", "Canon PowerShot G1 X Mark III"];
+        for c in covered.into_iter().chain(canon).chain(["ILCA-99M2", "Sony ilca-99m2", "ILCE-9M3", "SONY SONY ILCE-6700"]) {
             assert!(covers_camera(c), "{c}");
         }
-        for c in
-            ["SONY ILCE-7M3", "SONY DSC-RX10M4", "Canon SLT-A33", "", "SONY", "Canon Canon PowerShot G1 X Mark II", "SONY PowerShot G1 X Mark III"]
-        {
+        // the three bodies without presets, other makes, a bare make, a make-less model of another maker
+        for c in ["SONY DSC-R1", "SONY DSC-F828", "sony dslr-a100", "Canon SLT-A33", "NIKON CORPORATION NIKON D850", "", "SONY", "D850", "Lunar", "Canon Canon PowerShot G1 X Mark II"] {
             assert!(!covers_camera(c), "{c}");
         }
         assert!(covers(Some("SONY"), "ILCA-99M2") && covers(None, "ILCA-99M2") && !covers(Some("NIKON CORPORATION"), "ILCA-99M2"));
+        assert!(!covers(Some("SONY"), "  ") && !covers(Some("HASSELBLAD"), "Lunar") && !covers(None, "ILC"));
     }
 }
