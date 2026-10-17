@@ -54,5 +54,13 @@ fn tall_dialogs_fit_a_small_window_with_their_buttons_on_screen() {
         assert_eq!(r["ok"], true, "{r}");
         settle(&mut h);
         assert!(h.app.ui.dialog.is_none(), "Cancel closed Export");
+
+        h.app.ui.dialog = Some(Dialog::Update);
+        settle(&mut h);
+        assert_fits(&h, size, "Update");
+        let r = h.request("ui.clickWidget", json!({"id": "button:dialogOk"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        settle(&mut h);
+        assert!(h.app.ui.dialog.is_none(), "Close closed Update");
     }
 }

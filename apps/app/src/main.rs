@@ -48,6 +48,7 @@ mod window_gpu;
 
 use dialog_filter::FileDialogExt as _;
 use lcc_engine::Session;
+use lcc_engine::control_auth;
 use lcc_ui_egui::panels::library_problem::LibraryProblem;
 use lcc_ui_egui::{LccApp, Services, UiState};
 
@@ -854,7 +855,9 @@ OPTIONS:
   --no-demo        don't seed a new library with the procedural demo photos
   --memory         throwaway in-memory session (alias --demo); nothing is saved
   --control PORT   serve the JSON-lines control channel on 127.0.0.1:PORT (env {P}_CONTROL_PORT;
-                   see docs/control-protocol.md)
+                   see docs/control-protocol.md). Clients must first send the run's token, which the app
+                   writes to <settings folder>/control-token-PORT
+  --control-token HEX   use this token (64 hex digits; env {P}_CONTROL_TOKEN) instead of a fresh one
   --hdr-probe [S]  open a small window for S seconds (default 5) that reports HDR display output
                    (surface formats, colour spaces, display headroom) to stderr and logs/hdr-probe.log
   --version, --help
@@ -926,6 +929,30 @@ fn control_port_from(what: &str, value: Option<String>) -> Option<u16> {
     port
 }
 
+/// The control channel's token for this run: `supplied` (`--control-token` or
+/// `<PREFIX>_CONTROL_TOKEN`) when given, else 32 fresh bytes from the operating system's random
+/// source. `Err` says why there is none (then there is no control server).
+fn control_token(supplied: Option<String>) -> Result<String, String> {
+    if let Some(token) = supplied {
+        return control_auth::validate(&token);
+    }
+    let mut bytes = [0u8; control_auth::TOKEN_HEX_LEN / 2];
+    getrandom::fill(&mut bytes).map_err(|e| format!("no random source for the control token: {e}"))?;
+    Ok(control_auth::encode(&bytes))
+}
+
+/// Write the token where clients on this machine find it ([`control_auth::token_file`]).
+fn publish_control_token(port: u16, token: &str, supplied: bool) {
+    match control_auth::token_file(port).map(|path| (control_auth::write_token_file(&path, token), path)) {
+        Some((Ok(()), path)) => log::info!("control token for port {port}: {}", path.display()),
+        Some((Err(e), _)) if supplied => log::warn!("could not store the control token ({e}); clients need {}", control_auth::token_env()),
+        None if supplied => log::info!("no settings folder; clients need {}", control_auth::token_env()),
+        // Nowhere to put a fresh token: show it once on stderr (not in the log file).
+        Some((Err(e), _)) => eprintln!("{}: could not store the control token ({e}); token: {token}", lcc_brand::BINARY),
+        None => eprintln!("{}: no settings folder for the control token; token: {token}", lcc_brand::BINARY),
+    }
+}
+
 /// An isolated profile keeps the emergency crash log with its other app data. With no
 /// override (or an empty override), retain the historical system-temp location.
 fn panic_log_path_with(env: impl Fn(&str) -> Option<std::ffi::OsString>, temp: std::path::PathBuf) -> std::path::PathBuf {
@@ -945,6 +972,7 @@ fn main() -> eframe::Result {
     }
     alloc_release::install();
     let mut control_port = control_port_from(&lcc_brand::env_var("CONTROL_PORT"), lcc_brand::env("CONTROL_PORT").filter(|v| !v.is_empty()));
+    let mut control_token_arg = control_auth::env_token().filter(|v| !v.trim().is_empty());
     let mut files = Vec::new();
     let mut seed_demo = true;
     let mut in_memory = false;
@@ -953,6 +981,7 @@ fn main() -> eframe::Result {
     while let Some(a) = args.next() {
         match a.as_str() {
             "--control" => control_port = control_port_from("--control", Some(args.next().unwrap_or_default())),
+            "--control-token" => control_token_arg = Some(args.next().unwrap_or_default()),
             "--library" => library_dir = args.next().map(std::path::PathBuf::from),
             "--no-demo" => seed_demo = false,
             "--memory" | "--demo" => in_memory = true,
@@ -1147,8 +1176,15 @@ fn main() -> eframe::Result {
                     app.notices.push(notice);
                 }
                 if let Some(port) = control_port {
-                    let rx = control_server::start(port, cc.egui_ctx.clone());
-                    app = app.with_control(rx);
+                    let supplied = control_token_arg.is_some();
+                    match control_token(control_token_arg) {
+                        Ok(token) => {
+                            publish_control_token(port, &token, supplied);
+                            let rx = control_server::start(port, token, cc.egui_ctx.clone());
+                            app = app.with_control(rx);
+                        }
+                        Err(e) => log::error!("no control server: {e}"),
+                    }
                 }
                 if let Some(foreign) = welcome {
                     // a first start: create a catalog or open one (command-line files wait for it)

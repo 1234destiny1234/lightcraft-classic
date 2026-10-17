@@ -60,6 +60,7 @@ pub mod sidebar;
 pub mod slideshow_export;
 pub mod slideshow_ui;
 pub mod softpaint;
+pub mod space_hand;
 pub mod state;
 pub mod sync;
 pub mod tasks;
@@ -103,6 +104,8 @@ mod tests_color_readout;
 mod tests_compare;
 #[cfg(test)]
 mod tests_copy_paste_dialogs;
+#[cfg(test)]
+mod tests_crop_aspects;
 #[cfg(test)]
 mod tests_crop_frame;
 #[cfg(test)]
@@ -190,6 +193,8 @@ mod tests_open_lightroom;
 #[cfg(test)]
 mod tests_panels;
 #[cfg(test)]
+mod tests_preset_favorites;
+#[cfg(test)]
 mod tests_preset_import;
 #[cfg(test)]
 mod tests_preview_limit;
@@ -213,6 +218,8 @@ mod tests_slider_reset;
 mod tests_slideshow;
 #[cfg(test)]
 mod tests_solo_sections;
+#[cfg(test)]
+mod tests_space_hand;
 #[cfg(test)]
 mod tests_switch_library;
 #[cfg(test)]
@@ -490,6 +497,8 @@ pub struct LccApp {
     pub gesture: Option<panels::detail::Gesture>,
     /// The crop tool's view held still while the crop is dragged, rotated or straightened (issue #60).
     pub crop_layout: Option<panels::detail::CropLayout>,
+    /// Space is held over a tool on the photo: the view's hand has the pointer ([`space_hand`]).
+    pub space_hand: Option<space_hand::SpaceHand>,
     /// The brush stroke being painted, as drawn on the photo until it's committed (issue #517).
     pub brush_live: Option<brush_live::LiveStroke>,
     /// What the loupe drew last frame: photo and source ("render", "cached", "embedded", "small",
@@ -647,6 +656,7 @@ impl LccApp {
             widgets: vec![],
             gesture: None,
             crop_layout: None,
+            space_hand: None,
             brush_live: None,
             loupe_shown: None,
             video_view: Default::default(),
@@ -1508,9 +1518,19 @@ impl LccApp {
             shell::defer_tabs(self, raw);
             return;
         }
-        let n = match self.synthetic[0] {
-            egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. } => 1,
-            _ => self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map_or(self.synthetic.len(), |i| i + 1),
+        let pointer =
+            |e: &egui::Event| matches!(e, egui::Event::PointerMoved(_) | egui::Event::PointerButton { .. } | egui::Event::MouseWheel { .. });
+        let n = if pointer(&self.synthetic[0]) {
+            1
+        } else {
+            // a key sequence up to its release; a key held down (no release yet) stops before the
+            // pointer events that follow, which then still come one per frame
+            let release = self.synthetic.iter().position(|e| matches!(e, egui::Event::Key { pressed: false, .. })).map(|i| i + 1);
+            let next_pointer = self.synthetic.iter().position(pointer);
+            match (release, next_pointer) {
+                (Some(r), Some(q)) => r.min(q),
+                (r, q) => r.or(q).unwrap_or(self.synthetic.len()),
+            }
         };
         if let Some(egui::Event::PointerMoved(p) | egui::Event::PointerButton { pos: p, .. }) = self.synthetic.first() {
             raw.events.push(egui::Event::PointerMoved(*p));

@@ -1370,5 +1370,8 @@
   "Clear Image": "画像をクリア",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "SVG、PNG、JPEG ファイル。高さ 32 ポイントで表示されます。",
   "Theme Color": "テーマの色",
-  "Identity Plate Setup…": "ID プレート設定…"
+  "Identity Plate Setup…": "ID プレート設定…",
+  "Remove Hot Pixels": "ホットピクセルを除去",
+  "Film recipe": "フィルムレシピ",
+  "Copy recipe": "レシピをコピー"
 }

@@ -4,13 +4,39 @@
 > [`brand.toml`](../brand.toml); see the README.
 
 `<binary> --control 7980` (or `<PREFIX>_CONTROL_PORT=7980`) starts a JSON-lines server on
-`127.0.0.1:7980` (loopback only). One request per line, one reply per line, in order:
+`127.0.0.1:7980` (loopback only). One request per line, one reply per line, in order. The first request
+on every connection authenticates (see [Authentication](#authentication)):
 
 ```text
+→ {"id": 0, "method": "auth", "params": {"token": "<64 hex digits>"}}
+← {"id": 0, "ok": true, "result": {"authenticated": true}}
 → {"id": 1, "method": "engine.execute", "params": {"command": "photo.rate", "params": {"rating": 4}}}
 ← {"id": 1, "ok": true, "result": null}
 ← {"id": 2, "ok": false, "error": "unknown command `nope`"}
 ```
+
+## Authentication
+
+Loopback keeps other machines out, but not other programs on this one, or a web page that gets the
+browser to send a line to the port. So the first request on each connection must be `auth` with the
+run's token; until then nothing else runs. A connection that opens with any other request, a missing
+or wrong token, or a line that isn't a request gets one error reply (`authentication required` /
+`wrong control token`; it never contains the token) and is closed.
+
+- **The token:** 64 hex digits (32 random bytes). The app makes a fresh one each run, or uses
+  `--control-token HEX` / `<PREFIX>_CONTROL_TOKEN=HEX` when given (handy for scripts that start the
+  app themselves).
+- **Where clients find it:** the app writes it to `control-token-<port>` in its settings folder
+  (`<settings_dir>` in the platform's settings location, beside the program in portable mode, or
+  `<PREFIX>_CONFIG_DIR`); on Unix only you can read it. A page in
+  a browser can't read files, and the HTTP request line it must send first is refused anyway.
+  Without a settings folder (`<PREFIX>_CONFIG_DIR` set empty) a fresh token is printed on stderr.
+- **Clients:** `<cli> run --connect` and `<cli> mcp --connect` send
+  `<PREFIX>_CONTROL_TOKEN` if set, else the token in that file for the port they connect to, and
+  report a refused token as such. [`docs/showcase/run.py`](showcase/run.py) does the same.
+  Implementation: `crates/engine/src/control_auth.rs`.
+
+Anyone who can read your settings folder can drive the app, so only enable the port when you need it.
 
 Requests are answered on the UI thread between frames (timeout 60 s). A request is given up
 if the app has not started it and draws no frame for 5 s. The reply is then `{"ok": false, "error": "the app drew no frame for 5 s, …"}`,
@@ -27,7 +53,7 @@ optional; blank lines are skipped). Anything else — text that isn't JSON, a JS
 it on that connection runs. This keeps an HTTP request (for example a web page's cross-origin `fetch` to
 `127.0.0.1:<port>`) from smuggling a command in its body: its request line is rejected first. Junk never reaches the
 UI thread, and at most 16 connections are served at once (further ones get an error line and are closed). Clients
-that hit an error reply should reconnect. The port has no authentication, so only enable it when you need it. The MCP server's connect
+that hit an error reply should reconnect (and authenticate again). The MCP server's connect
 mode ([mcp.md](mcp.md)) is a thin layer over this channel. Implementation:
 `crates/ui-egui/src/control.rs` (methods) and `apps/app/src/control_server.rs` (transport).
 
@@ -73,7 +99,7 @@ filmstrip is visible.
 | `ui.clickWidget` / `ui.dragWidget` / `ui.hoverWidget` | `{id, count?, button?, fx?, fy?}` (`button: "right"` right-clicks) / `{id, toX?, toY?, dx?, dy?, steps?}` / `{id, fx?, fy?}` | Real egui input on a widget (hover: the pointer rests on it, e.g. for preset/profile previews) |
 | `ui.move` / `ui.click` / `ui.drag` | `{x, y, count?, button?}` / `{x, y, toX, toY, steps?}` | Raw pointer input, screen points |
 | `ui.pointer` | `{events: [{kind: down\|drag\|up, x, y}], alt?, shift?, cmd?}` | Gesture in normalized image coordinates (Detail view) |
-| `ui.key` | `{key, cmd?, shift?, alt?, ctrl?}` | Key press |
+| `ui.key` | `{key, action?: press\|down\|up, cmd?, shift?, alt?, ctrl?}` | Key press (default), or the key going `down` and staying held until an `up` (Space held over a `ui.pointer` drag) |
 | `ui.text` | `{text}` | Text input |
 | `ui.clipboard` | `{action: cut\|copy\|paste, text?}` | Cut, copy or paste in the focused text field, as the system does for ⌘X / ⌘C / ⌘V; `paste` pastes `text`, or the system clipboard without it. Refused when no text field has the focus (outside one, ⌘C / ⌘V are the commands `develop.copy` / `develop.paste`). In the desktop app cut and copy write the system clipboard. `ui.inspect` → `copied` is the text the UI last put on the clipboard |
 | `ui.scroll` | `{dx, dy, cmd?, ctrl?, shift?, alt?}` | Wheel / two-finger scroll at the current pointer; pans over the image, modifier-scroll zooms |

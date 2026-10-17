@@ -141,13 +141,32 @@ pub fn specs() -> Vec<CommandSpec> {
                 .into_iter()
                 .map(|r| json!({"group": r.group, "tag": r.tag, "name": r.name, "value": r.value}))
                 .collect();
-            // XMP: the sidecar if there is one, else the file's own packet
-            let packet = crate::sidecar::read_packet(path, ph.kind, s.sidecar_naming(ph.id)).map(|(x, _)| x).or_else(|| lcc_meta::embedded(&bytes).xmp);
+            // XMP: the sidecar if there is one, else the packet in the bytes already loaded
+            let packet = match crate::sidecar::find_sidecar(path, s.sidecar_naming(ph.id)) {
+                Some(sc) => std::fs::read_to_string(sc).ok(),
+                None => lcc_meta::embedded(&bytes).xmp,
+            };
             let xmp: Vec<Value> = packet
                 .and_then(|x| lcc_meta::parse_xmp(&x).ok())
                 .map(|d| d.properties.into_iter().filter(|(k, _)| !k.starts_with("lc:")).map(|(k, v)| json!({"name": k, "value": v.join("; ")})).collect())
                 .unwrap_or_default();
             Ok(json!({"exif": exif, "xmp": xmp}))
+        }),
+        cmd!(query "photo.fujiRecipe", "Fujifilm Recipe", [], None, "{id?} → {present, text, lines: [{tag, label, value}]} — in-camera film settings from a Fujifilm MakerNote, or present: false", always, |s, p| {
+            let id = photo_arg(s, p, "photo.fujiRecipe")?;
+            let ph = s.catalog.photo(id).ok_or_else(|| super::bad("photo.fujiRecipe", "no such photo"))?.clone();
+            let lcc_catalog::Source::File { path } = &ph.source else {
+                return Ok(json!({"present": false}));
+            };
+            let recipe = if let Some(read) = &s.media.file_bytes {
+                let bytes = read(path).map_err(|e| super::bad("photo.fujiRecipe", e))?;
+                lcc_meta::recipe_from_bytes(&bytes)
+            } else {
+                lcc_meta::read_recipe_file(std::path::Path::new(path)).map_err(|e| super::bad("photo.fujiRecipe", e))?
+            };
+            let Some(recipe) = recipe else { return Ok(json!({"present": false})) };
+            let lines: Vec<Value> = recipe.rows.iter().map(|r| json!({"tag": r.tag, "label": r.label, "value": r.value})).collect();
+            Ok(json!({"present": true, "text": recipe.text(), "lines": lines}))
         }),
         cmd!(query "albums.list", "List Albums", [], None, "{}", always, |s, _| {
             let all: Vec<Album> = s.catalog.albums().cloned().collect();
