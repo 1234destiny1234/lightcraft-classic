@@ -1,8 +1,8 @@
 //! Pixel tests of a mask's local Curve (`Mask::curve`).
 
-use lightcraft_develop::{DevelopSettings, Mask, MaskComponent, MaskOp, MaskShape, PointCurves};
-use lightcraft_geom::Point;
-use lightcraft_raster::{Rgb32f, Rgba8};
+use lcc_develop::{DevelopSettings, Mask, MaskComponent, MaskOp, MaskShape, PointCurves};
+use lcc_geom::Point;
+use lcc_raster::{Rgb32f, Rgba8};
 
 use crate::{RenderRequest, SourceInfo, render};
 
@@ -48,7 +48,7 @@ fn lift() -> Vec<Point> {
 
 /// The inverse of [`lift`], as a curve through 33 of its points with the axes swapped.
 fn unlift() -> Vec<Point> {
-    let c = lightcraft_color::spline::MonotoneCurve::new(&[(0.0, 0.0), (0.5, 0.7), (1.0, 1.0)]);
+    let c = lcc_color::spline::MonotoneCurve::new(&[(0.0, 0.0), (0.5, 0.7), (1.0, 1.0)]);
     (0..=32).map(|i| i as f64 / 32.0).map(|x| Point::new(c.eval(x), x)).collect()
 }
 

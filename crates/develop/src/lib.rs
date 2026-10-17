@@ -198,7 +198,7 @@ mod tests {
 
     #[test]
     fn a_masks_local_curve_is_written_only_when_it_has_points() {
-        use lightcraft_geom::Point;
+        use lcc_geom::Point;
         let mut s = DevelopSettings::default();
         s.masks.push(Mask { id: 1, ..Default::default() });
         // no curve: the mask's JSON (and so `hash64`) is what it was before masks had one

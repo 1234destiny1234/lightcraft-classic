@@ -1325,7 +1325,7 @@ impl CurveTarget {
 pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: &DevelopSettings, target: CurveTarget) {
     let t = Tokens::get(ui.ctx());
     let photo = target == CurveTarget::Photo;
-    if !photo && !lightcraft_develop::PointCurves::CHANNELS.contains(&target.channel(app).as_str()) {
+    if !photo && !lcc_develop::PointCurves::CHANNELS.contains(&target.channel(app).as_str()) {
         target.set_channel(app, "master");
     }
     // channel selector
@@ -1425,7 +1425,7 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
         return;
     }
     let curves = target.points(d);
-    let pts_of = |c: &lightcraft_develop::PointCurves| -> Vec<Point> {
+    let pts_of = |c: &lcc_develop::PointCurves| -> Vec<Point> {
         let v = c.channel(&ch).map_or(&c.master, |v| v);
         // in the order the curve is drawn (points from a sidecar, a preset or an agent can come
         // unsorted or not finite): the drag below keeps each point between its neighbours

@@ -433,7 +433,7 @@ fn cases() -> Vec<(&'static str, Edit)> {
             }];
         }),
         ("masks (local curves)", |s| {
-            use lightcraft_develop::{LocalAdjustments as L, PointCurves};
+            use lcc_develop::{LocalAdjustments as L, PointCurves};
             let pts = |v: &[(f64, f64)]| v.iter().map(|p| Point::new(p.0, p.1)).collect::<Vec<_>>();
             let m = |shape, adjust, curve, invert| Mask {
                 components: vec![MaskComponent { name: None, op: MaskOp::Add, invert: false, shape }],
@@ -495,11 +495,11 @@ fn local_curves_render_on_the_gpu() {
     let edit = cases().into_iter().find(|(name, _)| *name == "masks (local curves)").map(|c| c.1).unwrap();
     edit(&mut s);
     check("local curves", &src, &raw, &s, &req);
-    let with = lightcraft_gpu::render(&src, &raw, &s, &req, None).expect("gpu render").image;
+    let with = lcc_gpu::render(&src, &raw, &s, &req, None).expect("gpu render").image;
     for m in &mut s.masks {
         m.curve = Default::default();
     }
-    let without = lightcraft_gpu::render(&src, &raw, &s, &req, None).expect("gpu render").image;
+    let without = lcc_gpu::render(&src, &raw, &s, &req, None).expect("gpu render").image;
     let (mean, max, _) = diff(&with, &without);
     assert!(mean > 2.0 && max > 20, "the curves change the GPU render: mean {mean:.2}, max {max}");
 }

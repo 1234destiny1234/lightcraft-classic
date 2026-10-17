@@ -152,7 +152,7 @@ pub struct Present {
 
 /// The `finish` kernel's parameter block and auxiliary table (tone LUT | chroma curve | sRGB LUT | curve LUTs |
 /// mask terms | local-curve slots | local-curve LUTs) for `fp` with `masks` (their local adjustments' terms) and
-/// `curves` (their local Curves, [`lightcraft_pipeline::finish::local_curve_luts`], in the same order).
+/// `curves` (their local Curves, [`lcc_pipeline::finish::local_curve_luts`], in the same order).
 pub fn finish_block(fp: &FinishParams, masks: &[[f32; MASK_TERMS]], curves: &[Option<[Lut1; 3]>], present: &Present) -> (Vec<u32>, Vec<f32>) {
     let mut aux: Vec<f32> = fp.tone.lut().to_vec();
     aux.extend_from_slice(fp.tone.chroma_lut());

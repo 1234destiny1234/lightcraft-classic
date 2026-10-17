@@ -1273,7 +1273,7 @@ fn a_masks_local_curve_through_the_curve_commands() {
     assert_eq!(curve_of(&s, 0).red.len(), 4);
     assert_eq!(curve_of(&s, 0).master.len(), 2);
     assert!(curve_of(&s, 1).is_empty());
-    assert_eq!(active_dev(&s).curve, lightcraft_develop::ToneCurve::default());
+    assert_eq!(active_dev(&s).curve, lcc_develop::ToneCurve::default());
     // one undo step per change
     s.execute("edit.undo", &json!({})).unwrap();
     assert!(curve_of(&s, 0).master.is_empty() && curve_of(&s, 0).red.len() == 4);
