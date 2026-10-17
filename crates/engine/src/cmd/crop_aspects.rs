@@ -75,7 +75,7 @@ pub fn valid_ratio(w: f64, h: f64) -> bool {
         && h > 0.0
         && w * 100.0 <= f64::from(u32::MAX)
         && h * 100.0 <= f64::from(u32::MAX)
-        && (1.0 / lightcraft_geom::MAX_RATIO..=lightcraft_geom::MAX_RATIO).contains(&r)
+        && (1.0 / lcc_geom::MAX_RATIO..=lcc_geom::MAX_RATIO).contains(&r)
 }
 
 /// A built-in ratio the menu may leave out (every one but Free and Original).

@@ -11,7 +11,7 @@ use crate::state::RightPanel;
 use crate::text_field::{Ending, TextField};
 use crate::theme::Tokens;
 use crate::widgets::{divider, register, slider, text_button};
-use lightcraft_engine::cmd::crop_aspects::{BUILTIN_ASPECTS, CustomAspect};
+use lcc_engine::cmd::crop_aspects::{BUILTIN_ASPECTS, CustomAspect};
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
@@ -290,7 +290,7 @@ const ASPECT_EDITING: &str = "crop-aspect-edit";
 /// The aspect menu: the built-in ratios the user didn't hide, the saved ones, the Custom rows,
 /// and Edit List, which turns the list into one to reorder, delete and hide in (the menu stays
 /// open for it).
-fn aspect_menu(app: &mut LightcraftApp, ui: &mut egui::Ui) {
+fn aspect_menu(app: &mut LccApp, ui: &mut egui::Ui) {
     let editing_id = egui::Id::new(ASPECT_EDITING);
     let editing = ui.data(|d| d.get_temp::<bool>(editing_id)).unwrap_or(false);
     if editing {

@@ -7,13 +7,13 @@ use std::time::Duration;
 use serde_json::json;
 
 use crate::headless::Headless;
-use crate::{LightcraftApp, Services};
+use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
 fn crop_panel() -> Headless {
-    let app = LightcraftApp::new(lightcraft_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1200.0, 1000.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail"}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -64,7 +64,7 @@ fn custom_names(h: &Headless) -> Vec<String> {
 
 #[test]
 fn the_aspect_button_names_a_saved_ratio() {
-    let custom = [lightcraft_engine::cmd::crop_aspects::CustomAspect { name: "Instagram Portrait".into(), aspect: [1080.0, 1350.0] }];
+    let custom = [lcc_engine::cmd::crop_aspects::CustomAspect { name: "Instagram Portrait".into(), aspect: [1080.0, 1350.0] }];
     let label = |a| crate::panels::right::aspect_label(a, Some(1.5), &custom);
     assert_eq!(label(Some((400, 500))), "Instagram Portrait", "the user's name, in either orientation");
     assert_eq!(label(Some((500, 400))), "Instagram Portrait");
