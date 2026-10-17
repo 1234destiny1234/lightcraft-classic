@@ -1,22 +1,5 @@
 # What's new in {app}
 
-## 2026-10-15
-
-### Shift+P picks and advances everywhere
-- `Shift+P` now flags a photo as a Pick and moves to the next one in Detail, Compare and Survey too, not only in the
-  grids, as in Lightroom Classic (issue #1707). `Shift+X`, `Shift+U`, `Shift+0–5` and `Shift+6–9` already did. The
-  Presets panel loses its `Shift+P` key: open it from Window ▸ Presets or the edit strip, or give it a key in
-  Help ▸ Keyboard Shortcuts. Photo ▸ Auto Advance makes the plain keys advance too.
-
-## 2026-10-17
-
-### A Curve in every mask
-- Masks have a Curve of their own (issue #1932): open Curve under Blacks in a mask's adjustments. It is the Tone
-  Curve's editor with the RGB, Red, Green and Blue point curves (click to add a point, drag it, double-click to
-  remove it, double-click a channel to reset it) and the same Point Curve presets, so a curve saved from the Tone
-  Curve can be used in a mask and the other way round. It works inside the mask only, faded by its feather and
-  Amount, after the photo's Tone Curve. Local adjustment presets don't keep it yet.
-
 ## 2026-10-14
 
 ### Lightroom radial masks on the right side
