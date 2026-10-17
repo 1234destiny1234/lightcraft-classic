@@ -37,7 +37,8 @@ use lcc_raw::{
 /// 10: DNG tone fit for profiles with a look table and for 1024 px (Lightroom) previews.
 /// 11: a failed fit of an ARW whose body has no spectral matrices takes the ILCE-7M3's (`spectral::stand_in`), not the
 /// neutral fallback's colour.
-pub const LOOK_VERSION: u32 = 11;
+/// 12: validated A7CR distortion, including the lens data stored with each smart preview.
+pub const LOOK_VERSION: u32 = 12;
 
 #[derive(Clone, Debug)]
 pub(crate) struct CameraLook {
