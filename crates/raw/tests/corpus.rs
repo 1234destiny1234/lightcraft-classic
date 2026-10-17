@@ -17,7 +17,7 @@ fn corpus_root() -> PathBuf {
 /// Variants known not to decode yet (see the crate docs): matched against the lower-case file name.
 const KNOWN_UNSUPPORTED: &[&str] = &[
     "cr3-",            // Unverified CRX coding variants; exact supported cases live in cr3_corpus.rs.
-    "-he.nef",         // Nikon High Efficiency (HE / HE★) NEF, issue #193
+    "-he.nef",         // Unverified Nikon HE profiles (issue #193); verified cases live in nikon_he_corpus.rs
     "sraw",            // Canon sRAW / mRAW
     "crw-canon-g1",    // CMYG colour filter
     "finepix-s200exr", // SuperCCD EXR stored upright without a raw IFD: no Bayer phase matches the camera JPEG
@@ -231,8 +231,9 @@ fn corpus_nef_compressed_matches_uncompressed() {
 
 /// raw.pixls.us has the same D7500 scene as 12- and 14-bit lossless compressed NEF. Both store black level 400 in
 /// maker note 0x003d (14-bit units): after subtracting the black level and scaling to white, the two must agree.
-/// Issue #193: the Z f's High Efficiency NEF (no `0x0096` table, a JPEG XS codestream) is named as such and keeps a
-/// full-size embedded JPEG to edit, while the same body's Lossless compressed NEF decodes.
+/// Issue #193: the Z f's High Efficiency NEF (no `0x0096` table, a JPEG XS-derived codestream) decodes when its
+/// profile is one `nefhe` verifies, else is named as such; either way it keeps a full-size embedded JPEG, while the
+/// same body's Lossless compressed NEF decodes.
 #[test]
 fn corpus_nef_high_efficiency_is_named() {
     let dir = corpus_root().join("raw");
@@ -241,8 +242,11 @@ fn corpus_nef_high_efficiency_is_named() {
         return;
     };
     for result in [decode(&he).map(|_| ()), probe_info(&he).map(|_| ())] {
-        let Err(RawError::Unsupported(why)) = result else { panic!("Z f HE: expected unsupported") };
-        assert!(why.starts_with("Nikon High Efficiency NEF ("), "{why}");
+        match result {
+            Ok(()) => {}
+            Err(RawError::Unsupported(why)) => assert!(why.starts_with("Nikon High Efficiency NEF ("), "{why}"),
+            Err(e) => panic!("Z f HE: {e}"),
+        }
     }
     assert!(embedded_preview(&he).is_some_and(|p| p.len() > 1 << 20), "Z f HE: no full-size preview");
     let img = decode(&lossless).unwrap();
