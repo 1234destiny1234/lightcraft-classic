@@ -1281,5 +1281,9 @@
   "Clear Image": "Effacer l’image",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Un fichier SVG, PNG ou JPEG ; il est affiché sur 32 points de haut.",
   "Theme Color": "Couleur du thème",
-  "Identity Plate Setup…": "Configuration de la plaque d’identité…"
+  "Identity Plate Setup…": "Configuration de la plaque d’identité…",
+  "Tiny": "Minuscule",
+  "Small": "Petite",
+  "Medium": "Moyenne",
+  "Large": "Grande"
 }

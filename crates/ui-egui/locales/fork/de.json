@@ -1229,5 +1229,9 @@
   "Clear Image": "Bild entfernen",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Eine SVG-, PNG- oder JPEG-Datei; sie wird 32 Punkt hoch angezeigt.",
   "Theme Color": "Designfarbe",
-  "Identity Plate Setup…": "Erkennungstafel einrichten …"
+  "Identity Plate Setup…": "Erkennungstafel einrichten …",
+  "Tiny": "Winzig",
+  "Small": "Klein",
+  "Medium": "Mittel",
+  "Large": "Groß"
 }

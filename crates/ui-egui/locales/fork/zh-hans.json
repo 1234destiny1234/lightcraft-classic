@@ -1283,5 +1283,9 @@
   "Clear Image": "清除图像",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "SVG、PNG 或 JPEG 文件；以 32 点高度显示。",
   "Theme Color": "主题颜色",
-  "Identity Plate Setup…": "身份标识设置…"
+  "Identity Plate Setup…": "身份标识设置…",
+  "Tiny": "极小",
+  "Small": "小",
+  "Medium": "中",
+  "Large": "大"
 }

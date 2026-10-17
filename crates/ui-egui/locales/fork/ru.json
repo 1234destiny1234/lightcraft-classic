@@ -1578,5 +1578,9 @@
   "Clear Image": "Убрать изображение",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Файл SVG, PNG или JPEG; показывается высотой 32 пункта.",
   "Theme Color": "Цвет темы",
-  "Identity Plate Setup…": "Настройка фирменной таблички…"
+  "Identity Plate Setup…": "Настройка фирменной таблички…",
+  "Tiny": "Крошечный",
+  "Small": "Мелкий",
+  "Medium": "Средний",
+  "Large": "Крупный"
 }

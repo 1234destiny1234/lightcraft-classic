@@ -1373,5 +1373,9 @@
   "Clear Image": "Quitar imagen",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "Un archivo SVG, PNG o JPEG; se muestra con 32 puntos de alto.",
   "Theme Color": "Color del tema",
-  "Identity Plate Setup…": "Configuración de placa de identidad…"
+  "Identity Plate Setup…": "Configuración de placa de identidad…",
+  "Tiny": "Diminuto",
+  "Small": "Pequeño",
+  "Medium": "Mediano",
+  "Large": "Grande"
 }
