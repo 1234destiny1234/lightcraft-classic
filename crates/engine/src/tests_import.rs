@@ -41,11 +41,16 @@ fn recursive_discovery_includes_sony_sr2_and_srf_case_insensitively() {
     }
     std::fs::write(src.join("trip/notes.txt"), b"not a photo").unwrap();
 
-    let mut found = crate::import::expand(&[src.to_string_lossy().into_owned()], None);
-    found.sort();
+    // (compared with `/` separators: on Windows the names above join with `/`, the folder walk with `\`)
+    let slashes = |v: Vec<String>| {
+        let mut v: Vec<String> = v.into_iter().map(|p| p.replace('\\', "/")).collect();
+        v.sort();
+        v
+    };
+    let found = slashes(crate::import::expand(&[src.to_string_lossy().into_owned()], None));
     expected.sort();
-    assert_eq!(found, expected);
-    assert_eq!(crate::import::expand(&expected, None), expected, "folder and direct discovery agree");
+    assert_eq!(found, slashes(expected.clone()));
+    assert_eq!(slashes(crate::import::expand(&expected, None)), slashes(expected.clone()), "folder and direct discovery agree");
     std::fs::remove_dir_all(src).unwrap();
 }
 
