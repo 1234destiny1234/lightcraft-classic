@@ -888,7 +888,7 @@ mod tests {
     #[test]
     fn a_poll_on_a_lost_device_neither_panics_nor_aborts() {
         if run_child("lost_poll_child").is_none() {
-            lightcraft_testkit::skip!(Gpu, "no GPU device");
+            lcc_testkit::skip!(Gpu, "no GPU device");
         }
     }
 
@@ -896,7 +896,7 @@ mod tests {
     #[test]
     fn a_really_lost_device_is_not_polled_again() {
         if run_child("really_lost_child").is_none() {
-            lightcraft_testkit::skip!(Gpu, "no GPU device, or one that can't be lost on purpose here");
+            lcc_testkit::skip!(Gpu, "no GPU device, or one that can't be lost on purpose here");
         }
     }
 
@@ -905,7 +905,7 @@ mod tests {
     #[test]
     fn a_retired_but_live_device_is_still_polled() {
         if run_child("retired_child").is_none() {
-            lightcraft_testkit::skip!(Gpu, "no GPU device");
+            lcc_testkit::skip!(Gpu, "no GPU device");
         }
     }
 
