@@ -3008,6 +3008,11 @@ mod tests {
     fn corpus_a7cr_uses_the_bundled_profile() {
         corpus_uses_the_bundled_profile("arw-sony-a7cr-lossless-l.arw", "ILCE-7CR");
     }
+
+    #[test]
+    fn corpus_d780_uses_the_bundled_profile() {
+        corpus_uses_the_bundled_profile("nef-nikon-d780.nef", "NIKON D780");
+    }
     /// A public DC-FZ1000 II RW2 shot at 4:3 on its 3:2 sensor (skipped without the corpus): the default crop is 4:3
     /// while the embedded JPEG shows the whole sensor; the look is still fitted, against the matching part of it.
     #[test]
