@@ -1,8 +1,8 @@
 //! `photo.fujiRecipe` reads a Fujifilm MakerNote from a JPEG, or from a RAF's embedded JPEG only.
 
-use lightcraft_catalog::{Op, Photo, Source};
-use lightcraft_tiff::tags;
-use lightcraft_tiff::{ByteOrder, IfdBuilder, TiffWriter, Value};
+use lcc_catalog::{Op, Photo, Source};
+use lcc_tiff::tags;
+use lcc_tiff::{ByteOrder, IfdBuilder, TiffWriter, Value};
 use serde_json::json;
 
 use crate::Session;

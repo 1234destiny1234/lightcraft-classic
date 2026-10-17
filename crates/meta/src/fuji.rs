@@ -8,8 +8,8 @@ use std::fs::File;
 use std::io::{Read, Seek, SeekFrom};
 use std::path::Path;
 
-use lightcraft_tiff::makernote::{MakerNoteKind, parse_makernote};
-use lightcraft_tiff::{Ifd, Tiff};
+use lcc_tiff::makernote::{MakerNoteKind, parse_makernote};
+use lcc_tiff::{Ifd, Tiff};
 use serde::{Deserialize, Serialize};
 
 use crate::strip_exif_header;
@@ -372,8 +372,8 @@ fn signed(v: i64) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use lightcraft_tiff::tags;
-    use lightcraft_tiff::{ByteOrder, IfdBuilder, TiffWriter, Value};
+    use lcc_tiff::tags;
+    use lcc_tiff::{ByteOrder, IfdBuilder, TiffWriter, Value};
 
     fn inline(tag: u16, ty: u16, count: u32, val: [u8; 4]) -> [u8; 12] {
         let mut e = [0u8; 12];
