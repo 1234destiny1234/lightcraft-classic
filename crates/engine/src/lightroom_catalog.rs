@@ -2915,7 +2915,7 @@ mod tests {
         let images = tables.iter_mut().find(|t| t.0 == "Adobe_images").unwrap();
         // a second image whose rootFile (99) has no AgLibraryFile row
         images.2.push(vec![N, T("orphan-image".into()), I(99), T("ARW".into()), I(20), I(10), I(0), I(0)]);
-        let path = std::env::temp_dir().join(format!("lightcraft-orphan-catalog-{}.lrcat", std::process::id()));
+        let path = std::env::temp_dir().join(format!("app-orphan-catalog-{}.lrcat", std::process::id()));
         std::fs::write(&path, native_catalog_rows(&tables)).unwrap();
         let catalog = read(&path).unwrap();
         assert_eq!(catalog.photos.len(), 1, "the image that can be located is imported");

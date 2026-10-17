@@ -537,7 +537,7 @@ mod tests {
   </rdf:Description></rdf:li>
  </rdf:Seq></crs:MaskGroupBasedCorrections>
 </rdf:Description></rdf:RDF></x:xmpmeta>"#;
-        let d = lightcraft_meta::parse_xmp(x).unwrap();
+        let d = lcc_meta::parse_xmp(x).unwrap();
         let (partial, unmapped) = crate::crs::to_partial_report(&d.properties, Some(&d.values), crate::crs::Target::Any, 1.5);
         let s = DevelopSettings::default().merged(&partial).expect("valid settings");
         let MaskShape::LuminanceRange { hi, hi_feather, .. } = &s.masks[0].components[0].shape else { panic!() };
