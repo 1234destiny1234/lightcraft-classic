@@ -83,6 +83,14 @@ fn failed_gpu_renders_fall_back_with_a_reason() {
     assert!(lcc_gpu::available(), "{:?}", lcc_gpu::unavailable_reason());
     ok("after the limit faults");
 
+    // out of device memory (upstream #1764): caught as each buffer is created, so no invalid buffer
+    // reaches the shared pool; the render is retried with the device to itself and comes back
+    // from the GPU, which stays in use
+    lcc_gpu::inject_fault(Fault::OutOfMemory);
+    ok("out of memory, then retried alone");
+    assert!(lcc_gpu::available(), "running out of memory is no device failure: {:?}", lcc_gpu::unavailable_reason());
+    ok("after running out of memory");
+
     // a device (validation) error: captured by the render's error scope; the GPU is not used again
     // on this thread — other threads keep it (a simulated failure, not a real one)
     lcc_gpu::inject_fault(Fault::Validation);

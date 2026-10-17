@@ -1,10 +1,13 @@
 {
+  "Copy recipe": "Copia ricetta",
   "Face Count": "Numero di volti",
+  "Film recipe": "Ricetta pellicola",
   "Height (pixels)": "Altezza (pixel)",
   "Immich": "Immich",
   "Linked": "Collegata",
   "Not Linked": "Non collegata",
   "Probably Linked": "Probabilmente collegata",
+  "Remove Hot Pixels": "Rimuovi pixel caldi",
   "Sublocation": "Sottolocalità",
   "Width (pixels)": "Larghezza (pixel)",
   "is in this month": "è in questo mese",

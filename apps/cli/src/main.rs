@@ -663,10 +663,10 @@ fn run(args: &[String]) -> Result<(), String> {
             if demo || library.is_some() || !imports.is_empty() {
                 return Err("--demo, --library and --import apply to headless mode only".into());
             }
-            Box::new(
-                Remote::connect(&addr)
-                    .map_err(|e| format!("{APP} is not reachable at {addr} ({e}); start it with `{BIN} --control {}`", connect_port(&addr)))?,
-            )
+            Box::new(Remote::connect(&addr).map_err(|e| match e.kind() {
+                std::io::ErrorKind::PermissionDenied => format!("{APP} at {addr} refused the connection: {e}"),
+                _ => format!("{APP} is not reachable at {addr} ({e}); start it with `{BIN} --control {}`", connect_port(&addr)),
+            })?)
         }
         None => {
             let mut h = match &library {

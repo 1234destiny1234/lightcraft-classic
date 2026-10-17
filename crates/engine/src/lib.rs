@@ -23,6 +23,7 @@ pub mod camera_profiles;
 pub mod cmd;
 pub mod config;
 pub mod contact_sheet;
+pub mod control_auth;
 pub mod creations;
 pub mod crs;
 pub mod crs_masks;
@@ -361,6 +362,8 @@ pub struct Session {
     /// The user's point-curve presets (`curve.*`; built-ins: [`cmd::curves::builtin_presets`]),
     /// persisted in prefs.json.
     pub curve_presets: Vec<cmd::curves::CurvePreset>,
+    /// The crop tool's saved and hidden aspect ratios (`crop.saveAspect`…), persisted in prefs.json.
+    pub crop_aspects: cmd::crop_aspects::CropAspects,
     /// Mask effect presets (the Masking panel's Effect menu).
     pub mask_effects: Vec<cmd::mask_effects::MaskEffect>,
     /// The effect a new mask of each kind (`brush`, `linear`…) starts with: the one last applied
@@ -554,6 +557,7 @@ impl Session {
             metadata_presets: Vec::new(),
             filter_presets: Vec::new(),
             curve_presets: Vec::new(),
+            crop_aspects: Default::default(),
             mask_effects: Vec::new(),
             mask_tool_effects: Default::default(),
             label_sets: Vec::new(),
@@ -1449,6 +1453,8 @@ mod tests_color;
 #[cfg(test)]
 mod tests_crop_angle;
 #[cfg(test)]
+mod tests_crop_aspects;
+#[cfg(test)]
 mod tests_denoise;
 #[cfg(test)]
 mod tests_edit_in;
@@ -1474,6 +1480,8 @@ mod tests_focus_scan;
 mod tests_folders;
 #[cfg(test)]
 mod tests_forget_local;
+#[cfg(test)]
+mod tests_fuji;
 #[cfg(test)]
 mod tests_history_cursor;
 #[cfg(test)]

@@ -1369,5 +1369,8 @@
   "Clear Image": "清除影像",
   "An SVG, PNG or JPEG file; it is shown 32 points tall.": "SVG、PNG 或 JPEG 檔案；以 32 點高度顯示。",
   "Theme Color": "主題顏色",
-  "Identity Plate Setup…": "身分識別設定…"
+  "Identity Plate Setup…": "身分識別設定…",
+  "Remove Hot Pixels": "去除熱像素",
+  "Film recipe": "底片配方",
+  "Copy recipe": "複製配方"
 }
