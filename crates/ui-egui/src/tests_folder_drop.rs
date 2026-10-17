@@ -50,6 +50,17 @@ fn widget(h: &Headless, id: &str) -> Option<Rect> {
     h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r)
 }
 
+/// Fold the sidebar's Local section. On Windows the temp folder lies under the home folder, so
+/// browsing it opens Local at every folder on the way (all of `AppData\Local`'s), which pushes
+/// the Folders rows below the window and a drag never reaches them.
+fn fold_local(h: &mut Headless) {
+    if !h.app.ui.sidebar_section_collapsed("local") {
+        h.app.ui.toggle_sidebar_section("local");
+    }
+    h.step();
+    h.step();
+}
+
 /// `dir` as the folder tree spells it: the catalog's folder paths use `/` (`C:/Users/…` on Windows).
 fn tree_path(dir: &Path) -> String {
     dir.to_string_lossy().replace('\\', "/")
@@ -168,6 +179,7 @@ fn local_photos_are_refused_with_the_reason() {
     h.step_until(std::time::Duration::from_secs(20), |h| shown(h));
     let beach = id_of(&h, "beach.png");
     assert!(h.app.session.catalog.photo(lcc_catalog::PhotoId(beach)).unwrap().local);
+    fold_local(&mut h);
     let target = folder_row(&h, &home).expect("the imported folder");
     let from = widget(&h, &format!("thumb:{beach}")).unwrap().center();
     press(&mut h, from);
