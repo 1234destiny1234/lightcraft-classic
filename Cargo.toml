@@ -15,6 +15,7 @@ repository = "https://example.invalid/repo"
 craft-ui = { git = "https://github.com/storytold/craft-libs", rev = "5c874d51eeb3de70e735c8ce87a59a7dedd47675", features = ["serde"] }
 # internal
 lcc-brand = { path = "crates/brand" }
+lcc-notes = { path = "crates/notes" }
 lcc-denoise-core = { path = "crates/denoise-core" }
 lcc-denoise = { path = "crates/denoise", default-features = false }
 lcc-geom = { path = "crates/geom" }

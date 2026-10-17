@@ -4925,6 +4925,10 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcc-notes"
+version = "0.9.0"
+
+[[package]]
 name = "lcc-pdf"
 version = "0.9.0"
 dependencies = [
@@ -5197,6 +5201,7 @@ dependencies = [
  "lcc-layout",
  "lcc-merge",
  "lcc-meta",
+ "lcc-notes",
  "lcc-pdf",
  "lcc-pipeline",
  "lcc-preview",
@@ -10293,6 +10298,7 @@ version = "0.9.0"
 dependencies = [
  "brotli",
  "flate2",
+ "lcc-notes",
  "serde_json",
  "sha2 0.10.9",
  "toml",

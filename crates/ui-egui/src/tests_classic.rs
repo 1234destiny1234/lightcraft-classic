@@ -1,5 +1,5 @@
 //! Headless tests of Library's Classic panels (P1.4): the panel stacks, Folders, Collections,
-//! Quick Develop, Keywording and Keyword List.
+//! Quick Develop, Keywording and Keyword List; and Help ▸ What's New, joined from release-note files.
 
 use std::time::Duration;
 
@@ -591,4 +591,35 @@ fn settings_shortcuts_tab_records_a_key() {
     assert_eq!(h.app.recording_shortcut, None);
     assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "view.compare"), Some("Shift+J"));
     assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { .. })));
+}
+
+/// Help ▸ What's New shows upstream's file and every entry file in docs/whats-new/, line for line (so their
+/// translations still match), and nothing else but the date headings that group them.
+#[test]
+fn whats_new_shows_upstreams_file_and_every_entry_file() {
+    let docs = std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../docs");
+    let mut sources = vec![std::fs::read_to_string(docs.join("whats-new.md")).unwrap()];
+    for item in std::fs::read_dir(docs.join("whats-new")).unwrap().flatten() {
+        let name = item.file_name().to_string_lossy().into_owned();
+        if name.ends_with(".md") && name != "README.md" {
+            sources.push(std::fs::read_to_string(item.path()).unwrap());
+        }
+    }
+    assert!(sources.len() > 1, "docs/whats-new/ holds entries");
+    let shown: std::collections::BTreeSet<&str> = crate::panels::dialogs::WHATS_NEW.lines().map(str::trim_end).collect();
+    let written: std::collections::BTreeSet<&str> = sources.iter().flat_map(|s| s.lines()).map(str::trim_end).collect();
+    let lost: Vec<&&str> = written.difference(&shown).collect();
+    assert!(lost.is_empty(), "every line of the entries and of upstream's file is shown; missing: {lost:?}");
+    let extra: Vec<&&str> =
+        shown.difference(&written).filter(|l| !l.strip_prefix("## ").is_some_and(|d| d.len() == 10 && d.starts_with("20"))).collect();
+    assert!(extra.is_empty(), "nothing but date headings is added: {extra:?}");
+    let dates: Vec<&str> = crate::panels::dialogs::WHATS_NEW
+        .lines()
+        .filter_map(|l| l.strip_prefix("## "))
+        .filter(|d| d.starts_with(|c: char| c.is_ascii_digit()))
+        .collect();
+    let mut newest_first = dates.clone();
+    newest_first.sort_by(|a, b| b.cmp(a));
+    newest_first.dedup();
+    assert_eq!(dates, newest_first, "each date once, newest first");
 }

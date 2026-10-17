@@ -125,7 +125,8 @@ when a region has no dedicated entry.
 
 ## Release notes
 
-Help ▸ What's New shows `docs/whats-new.md`, and each of its lines (a heading, or one wrapped line of a
+Help ▸ What's New shows upstream's `docs/whats-new.md` joined with our entries in `docs/whats-new/` (one file
+per change; the app's build joins them), and each of its lines (a heading, or one wrapped line of a
 bullet, without the `- ` or `### `) is looked up like any message, so a catalog can translate the notes
 line by line (German does). A line that is re-wrapped or edited no longer matches its translation and
 shows in English until the catalog is updated; untranslated lines are reported by
