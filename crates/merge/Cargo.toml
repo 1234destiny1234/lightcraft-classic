@@ -3,7 +3,7 @@ name = "lcc-merge"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Photo Merge: HDR merge (align, deghost) and panorama stitching (L3)"
+description = "Photo Merge: HDR merge (align, deghost) panorama stitching and focus stacking (L3)"
 
 [lints]
 workspace = true

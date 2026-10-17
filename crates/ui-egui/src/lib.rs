@@ -140,6 +140,8 @@ mod tests_grid;
 #[cfg(test)]
 mod tests_histogram_drag;
 #[cfg(test)]
+mod tests_histogram_modes;
+#[cfg(test)]
 mod tests_i18n_coverage;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_immich_ui;
@@ -175,6 +177,8 @@ mod tests_masking;
 mod tests_masking_layout;
 #[cfg(test)]
 mod tests_menubar;
+#[cfg(test)]
+mod tests_merge_preview;
 #[cfg(test)]
 mod tests_module_help;
 #[cfg(test)]
@@ -479,6 +483,9 @@ pub struct LccApp {
     pub film_scroll: Option<f32>,
     /// Widget registry from the last frame (automation ids → rects).
     pub widgets: Vec<(String, egui::Rect)>,
+    /// A histogram clipping indicator is hovered this frame: the clipping overlay is previewed on
+    /// the photo without turning the persistent one on ([`Self::hover_preview`]'s pattern).
+    pub clipping_preview: bool,
     /// In-progress on-canvas gesture (brush stroke points, gradient drag…).
     pub gesture: Option<panels::detail::Gesture>,
     /// The crop tool's view held still while the crop is dragged, rotated or straightened (issue #60).
@@ -667,6 +674,7 @@ impl LccApp {
             last_export_result: None,
             slideshow_export_reported: true,
             hover_preview: None,
+            clipping_preview: false,
             window_is_fullscreen: false,
             preview_window: None,
             gpu_applied: None,
@@ -1582,6 +1590,8 @@ impl LccApp {
         self.library_changed(&ctx);
         // panels set it again this frame while the pointer rests on a preset or profile
         self.hover_preview = None;
+        // …and the histogram sets this while the pointer rests on a clipping indicator
+        self.clipping_preview = false;
         self.ai_mask_detail(&ctx);
         self.place_names_outcome(&ctx);
         if self.ui.fullscreen {

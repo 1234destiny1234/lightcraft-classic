@@ -225,6 +225,20 @@ pub fn specs() -> Vec<CommandSpec> {
                 "versions": ph.versions.iter().map(|v| json!({"name": v.name, "created": v.created})).collect::<Vec<_>>(),
             }))
         }),
+        cmd!(query "history.groups", "List History Groups", [], None, "{id?} — returns {groups: [{section (null = several sections: a preset, paste, sync…; replays but can't be edited inside), start, end, steps: [{index, label}]}] oldest first, cursor, latest}", has_active, |s, p| {
+            let id = photo_arg(s, p, "history.groups")?;
+            let ph = s.catalog.photo(id).ok_or_else(|| bad("history.groups", "no such photo"))?;
+            let groups: Vec<Value> = crate::history_groups::groups(&ph.history)
+                .into_iter()
+                .map(|g| {
+                    let steps: Vec<Value> = (g.start..=g.end)
+                        .filter_map(|i| ph.history.get(i).map(|h| json!({"index": i, "label": h.label})))
+                        .collect();
+                    json!({"section": g.section, "start": g.start, "end": g.end, "steps": steps})
+                })
+                .collect();
+            Ok(json!({"groups": groups, "cursor": ph.history_index(), "latest": ph.history_cursor.is_none()}))
+        }),
         cmd!(query "app.gpu", "GPU Rendering", [], None, "{enabled?: bool} — allow/forbid GPU rendering (CPU fallback; `{ENV_PREFIX}_GPU=0` forbids it for the process); returns {enabled, available, adapter, reason (why the GPU is off), lastFallback (latest render redone on the CPU, and why)}", always, |_, p| {
             if let Some(on) = p.get("enabled").and_then(Value::as_bool) {
                 lcc_gpu::set_enabled(on);

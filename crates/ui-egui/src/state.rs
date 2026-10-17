@@ -723,6 +723,16 @@ pub struct UiState {
     pub single_panel: bool,
     pub show_clipping: bool,
     pub histogram: bool,
+    /// Which distribution the Histogram panel draws and how tall its bins are, as the *names* of a
+    /// [`lcc_raster::HistogramMode`] / [`lcc_raster::HistogramScale`]
+    /// (`view.histogram.mode`, `view.histogram.scale`). Stored as text so a value another build
+    /// wrote reads as the default instead of failing the whole settings file, and read leniently so
+    /// even a value of the wrong *kind* costs only these two settings ([`UiState::sanitized`]
+    /// normalizes what they hold).
+    #[serde(deserialize_with = "lenient")]
+    pub histogram_mode: String,
+    #[serde(deserialize_with = "lenient")]
+    pub histogram_scale: String,
     /// Soft proofing (S in the loupe): render as `proof` would hold the photo.
     pub soft_proof: bool,
     pub proof: lcc_engine::pipeline::Proof,
@@ -1459,6 +1469,8 @@ impl Default for UiState {
             single_panel: false,
             show_clipping: false,
             histogram: true,
+            histogram_mode: lcc_raster::HistogramMode::default().name().into(),
+            histogram_scale: lcc_raster::HistogramScale::default().name().into(),
             soft_proof: false,
             proof: lcc_engine::pipeline::Proof { dest_warning: false, ..Default::default() },
             proof_profile: None,
@@ -1696,6 +1708,13 @@ impl UiState {
         self.left_width = LEFT_WIDTH.clamp(self.left_width);
         self.right_width = RIGHT_WIDTH.clamp(self.right_width);
         self.brush_size = self.brush_size.clamp(0.002, 0.5);
+        // a histogram mode or scale another build wrote (or a hand-edited file) is the default
+        if lcc_raster::HistogramMode::parse(&self.histogram_mode).is_none() {
+            self.histogram_mode = lcc_raster::HistogramMode::default().name().into();
+        }
+        if lcc_raster::HistogramScale::parse(&self.histogram_scale).is_none() {
+            self.histogram_scale = lcc_raster::HistogramScale::default().name().into();
+        }
         self.brush_slot = self.brush_slot.min(1);
         self.brush_presets = self.brush_presets.map(BrushPreset::sanitized);
         let cur = BrushPreset { size: self.brush_size, feather: self.brush_feather, flow: self.brush_flow, density: self.brush_density }.sanitized();

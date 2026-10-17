@@ -6,7 +6,7 @@ use egui::{Align2, Color32, Pos2, Rect, RichText, Sense, Stroke, pos2, vec2};
 use lcc_catalog::PhotoId;
 use lcc_develop::{ControlSpec, DevelopSettings, Section, ToneCurve, Track, WbMode, controls};
 use lcc_geom::Point;
-use lcc_raster::Histogram;
+use lcc_raster::{Clipped, Histogram, HistogramMode, HistogramScale};
 use serde_json::{Value, json};
 
 use crate::LccApp;
@@ -551,6 +551,24 @@ pub(crate) fn section(
 
 // ------------------------------------------------------------------------------ histogram
 
+/// One of the histogram's clipping indicators: a small triangle in the plot's top corner pointing
+/// out of it (left for the shadows, right for the highlights). Filled with the colour of the
+/// channels that clip — or while the per-pixel overlay is on — and hollow while none of them do.
+fn paint_clip_triangle(p: &egui::Painter, rect: Rect, out: f32, color: Color32, lit: bool) {
+    let c = rect.center();
+    let (w, h) = (7.0, 8.0);
+    let pts = if out < 0.0 {
+        vec![pos2(c.x - w, c.y), pos2(c.x + w * 0.6, c.y - h), pos2(c.x + w * 0.6, c.y + h)]
+    } else {
+        vec![pos2(c.x + w, c.y), pos2(c.x - w * 0.6, c.y - h), pos2(c.x - w * 0.6, c.y + h)]
+    };
+    if lit {
+        p.add(egui::Shape::convex_polygon(pts, color, Stroke::NONE));
+    } else {
+        p.add(egui::Shape::closed_line(pts, Stroke::new(1.2, color)));
+    }
+}
+
 /// The current photo's existing preview histogram, shared by Histogram and Tone Curve.
 fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
     app.renderer
@@ -597,16 +615,20 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // rendered it)
     let hist = live.or_else(|| preview_histogram(app, id));
     let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
-    // an HDR edit's histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR label
-    // row under the plot
-    let hdr = hist.as_ref().and_then(|h| h.hdr);
+    let mode = super::histogram::mode_of(app);
+    let scale = super::histogram::scale_of(app);
+    // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
+    // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
+    let hdr = hist.as_ref().and_then(|h| h.hdr).filter(|_| !mode.is_scope());
     let legend = if hdr.is_some() { 26.0 } else { 0.0 };
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 118.0 + legend), Sense::click_and_drag());
+    let height = if mode.is_scope() { 184.0 } else { 118.0 + legend };
+    let (r, resp) = ui.allocate_exact_size(vec2(w, height), Sense::click_and_drag());
     crate::widgets::announce(&resp, crate::i18n::tr("Histogram"));
     register(ui.ctx(), "histogram", r);
     let p = ui.painter();
     p.rect_filled(r, 0.0, t.button);
     let plot = Rect::from_min_max(r.min + vec2(0.0, 6.0), pos2(r.right(), r.bottom() - 26.0 - legend));
+    register(ui.ctx(), "histogram:plot", plot);
     // Lightroom Classic's tonal zones (Blacks / Shadows / Exposure / Highlights / Whites across the
     // plot): a drag over one moves its control (the band and the readout show which and how far), a
     // double-click puts it back to its default, and Shift drags a tenth as far
@@ -638,81 +660,54 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             "Left: the standard (SDR) range up to SDR white. Right: the HDR range, one band per stop above SDR white (the orange line: the HDR headroom). With Visualize HDR range on, the bands take its colours.",
         ));
     }
-    let clipping = hist.as_ref().map(|h| h.clipping());
-    if let Some(h) = hist {
-        let smooth = |v: &[u32]| -> Vec<f32> {
-            (0..256)
-                .map(|i| {
-                    let (a, b) = (i.max(2) - 2, (i + 3).min(256));
-                    v[a..b].iter().map(|x| *x as f32).sum::<f32>() / (b - a) as f32
-                })
-                .collect()
-        };
-        // HDR: SDR on the left half, a solid line at SDR white and dashed ones between the stops
-        if let Some(b) = h.hdr {
-            let x0 = plot.left() + plot.width() * b.from as f32 / 255.0;
-            let stops = b.stops.round().max(1.0) as usize;
-            for k in 1..stops {
-                let x = x0 + (plot.right() - x0) * k as f32 / stops as f32;
-                let mut y = plot.top();
-                while y < plot.bottom() {
-                    p.line_segment([pos2(x, y), pos2(x, (y + 5.0).min(plot.bottom()))], Stroke::new(1.0, Color32::from_gray(150)));
-                    y += 9.0;
-                }
-            }
-            p.line_segment([pos2(x0, plot.top()), pos2(x0, plot.bottom())], Stroke::new(1.5, Color32::from_gray(160)));
-            // the photo's headroom limit on the fixed scale: marked, the range past it dimmed
-            let limit = app.session.develop_of(id).map_or(b.stops, |d| d.hdr.max_ev as f32);
-            if limit.is_finite() && limit >= 0.0 && limit < b.stops - 0.05 {
-                let x = x0 + (plot.right() - x0) * (limit / b.stops).clamp(0.0, 1.0);
-                p.rect_filled(Rect::from_min_max(pos2(x, plot.top()), plot.max), 0.0, Color32::from_black_alpha(70));
-                p.line_segment([pos2(x, plot.top()), pos2(x, plot.bottom())], Stroke::new(1.0, Color32::from_rgb(230, 150, 60)));
+    let clipping = hist.as_ref().map(|h| h.clipping_channels());
+    // HDR: SDR on the left half, a solid line at SDR white and dashed ones between the stops
+    if let Some(b) = hdr {
+        let x0 = plot.left() + plot.width() * b.from as f32 / 255.0;
+        let stops = b.stops.round().max(1.0) as usize;
+        for k in 1..stops {
+            let x = x0 + (plot.right() - x0) * k as f32 / stops as f32;
+            let mut y = plot.top();
+            while y < plot.bottom() {
+                p.line_segment([pos2(x, y), pos2(x, (y + 5.0).min(plot.bottom()))], Stroke::new(1.0, Color32::from_gray(150)));
+                y += 9.0;
             }
         }
-        let chans = [(smooth(&h.r), hex("#df3939")), (smooth(&h.g), hex("#44b072")), (smooth(&h.b), hex("#3b6fe0"))];
-        let peak = chans.iter().flat_map(|(v, _)| v.iter().skip(2).take(252)).fold(1.0f32, |a, b| a.max(*b));
-        let to = |i: usize, v: f32| pos2(plot.left() + plot.width() * i as f32 / 255.0, plot.bottom() - plot.height() * (v / peak).sqrt().min(1.0));
-        // luminance fill
-        let lum = smooth(&h.luma);
-        let mut mesh = Mesh::default();
-        for i in 0..256 {
-            let top = to(i, lum[i]);
-            mesh.vertices.push(Vertex { pos: top, uv: Pos2::ZERO, color: Color32::from_gray(120).gamma_multiply(0.35) });
-            mesh.vertices.push(Vertex { pos: pos2(top.x, plot.bottom()), uv: Pos2::ZERO, color: Color32::from_gray(120).gamma_multiply(0.35) });
-            if i > 0 {
-                let k = (i as u32) * 2;
-                mesh.indices.extend([k - 2, k - 1, k, k - 1, k + 1, k]);
-            }
+        p.line_segment([pos2(x0, plot.top()), pos2(x0, plot.bottom())], Stroke::new(1.5, Color32::from_gray(160)));
+        // the photo's headroom limit on the fixed scale: marked, the range past it dimmed
+        let limit = app.session.develop_of(id).map_or(b.stops, |d| d.hdr.max_ev as f32);
+        if limit.is_finite() && limit >= 0.0 && limit < b.stops - 0.05 {
+            let x = x0 + (plot.right() - x0) * (limit / b.stops).clamp(0.0, 1.0);
+            p.rect_filled(Rect::from_min_max(pos2(x, plot.top()), plot.max), 0.0, Color32::from_black_alpha(70));
+            p.line_segment([pos2(x, plot.top()), pos2(x, plot.bottom())], Stroke::new(1.0, Color32::from_rgb(230, 150, 60)));
         }
-        p.add(mesh);
-        // greyscale images: the three channels coincide — draw one neutral line
-        let spread: f32 = (0..256).map(|i| (chans[0].0[i] - chans[1].0[i]).abs() + (chans[1].0[i] - chans[2].0[i]).abs()).sum();
-        let total: f32 = chans[1].0.iter().sum::<f32>().max(1.0);
-        if spread / total < 0.02 {
-            let pts: Vec<Pos2> = (0..256).map(|i| to(i, chans[1].0[i])).collect();
-            p.add(egui::Shape::line(pts, Stroke::new(1.5, Color32::from_gray(200))));
-        } else {
-            for (v, c) in &chans {
-                let pts: Vec<Pos2> = (0..256).map(|i| to(i, v[i])).collect();
-                p.add(egui::Shape::line(pts, Stroke::new(1.5, *c)));
-            }
-        }
+    }
+    if let Some(h) = &hist {
+        super::histogram::paint_plot(p, plot, h, mode, scale);
     }
     let mut clicked = resp.clicked();
     // the panel's floating scroll bar widens over the right edge when hovered: both buttons keep
     // clear of it, the left one too so they stay symmetric (#1640)
     let scroll = ui.spacing().scroll;
     let inset = 20.0 + scroll.bar_width + scroll.bar_outer_margin;
-    for (name, x, label, clipped) in [
-        ("shadows", plot.left() + inset, "Shadow clipping", clipping.map(|(lo, _)| lo > 0.003)),
-        ("highlights", plot.right() - inset, "Highlight clipping", clipping.map(|(_, hi)| hi > 0.003)),
+    // the clipping mask the pointer is resting on, previewed on the photo this frame
+    let mut preview = false;
+    for (name, x, out, label, clipped) in [
+        ("shadows", plot.left() + inset, -1.0, "Shadow clipping", clipping.map(|c| c.shadow_channels())),
+        ("highlights", plot.right() - inset, 1.0, "Highlight clipping", clipping.map(|c| c.highlight_channels())),
     ] {
         let rect = Rect::from_center_size(pos2(x, plot.top() + 14.0), vec2(24.0, 22.0));
         let response = ui.interact(rect, ui.id().with(("histogram-clipping", name)), Sense::click());
         register(ui.ctx(), format!("histogram:{name}"), rect);
         response.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, ui.is_enabled(), app.ui.show_clipping, crate::i18n::tr(label)));
         clicked |= response.clicked();
+        preview |= response.hovered();
         let active = app.ui.show_clipping;
+        // which channels reach this end of the histogram: the triangle takes their blend (white for
+        // all three, yellow / cyan / magenta for a pair, a channel's own colour for one), and stays
+        // hollow while none of them clip
+        let parts = clipped.unwrap_or(Clipped::NONE);
+        let lit = parts.any() || active;
         // Keep the hit target comfortable, with a smaller box and clear space to the plot edges.
         let box_rect = rect.shrink2(vec2(2.0, 2.0));
         p.rect_filled(
@@ -729,15 +724,10 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         if active {
             p.rect_stroke(box_rect, 3.0, Stroke::new(1.0, t.text), egui::StrokeKind::Inside);
         }
-        paint(
-            p,
-            Rect::from_center_size(rect.center(), vec2(16.0, 16.0)),
-            Icon::ChevronDown,
-            if clipped == Some(true) || active { t.text } else { t.text_dim },
-        );
+        paint_clip_triangle(p, rect, out, if lit { super::histogram::blend_color(parts.parts()) } else { t.text_dim }, lit);
         let status = match clipped {
-            Some(true) => "Clipping detected in this preview.",
-            Some(false) => "No clipping detected in this preview.",
+            Some(c) if c.any() => "Clipping detected in this preview.",
+            Some(_) => "No clipping detected in this preview.",
             None => "Histogram not yet available.",
         };
         response.on_hover_text(format!(
@@ -751,12 +741,34 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             crate::i18n::tr(status)
         ));
     }
-    if clicked {
+    // the plot's own controls, in the strip under it: which distribution it draws and how tall its
+    // bins are, the same values `view.histogram.mode` / `view.histogram.scale` select
+    let menu_rect = Rect::from_min_size(pos2(r.left() + 4.0, r.bottom() - 22.0), vec2(72.0, 18.0));
+    let menu = ui.interact(menu_rect, ui.id().with("histogram-display"), Sense::click());
+    menu.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::ComboBox, ui.is_enabled(), crate::i18n::tr("Histogram display")));
+    register(ui.ctx(), "histogram:display", menu_rect);
+    let col = if menu.hovered() { t.text } else { t.text_label };
+    let menu_clicked = menu.clicked();
+    p.text(pos2(menu_rect.left() + 3.0, menu_rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(mode.short()), t.font(11.5), col);
+    paint(p, Rect::from_center_size(pos2(menu_rect.right() - 8.0, menu_rect.center().y), vec2(12.0, 12.0)), Icon::ChevronDown, col);
+    menu.clone().on_hover_text(format!(
+        "{}\n{}\n{}",
+        crate::i18n::tr("Histogram display"),
+        crate::i18n::tr(mode.label()),
+        crate::i18n::tr(scale.label())
+    ));
+    egui::Popup::menu(&menu).show(|ui| histogram_display_menu(app, ui, mode, scale));
+    // a press on the plot's own controls is theirs: only the plot itself toggles the clipping
+    // warnings, as it always has
+    if clicked && !menu_clicked {
         let _ = app.run("view.clipping", json!({}));
     }
-    // the histogram's context menu: the format of the colour readout (Lightroom's "Show Lab
-    // Color Values")
+    app.clipping_preview = preview;
+    // the histogram's context menu: which distribution it draws and how tall its bins are, then the
+    // format of the colour readout (Lightroom's "Show Lab Color Values")
     resp.context_menu(|ui| {
+        histogram_display_menu(app, ui, mode, scale);
+        ui.separator();
         for f in crate::color_readout::ColorReadout::ALL {
             let label = match f {
                 crate::color_readout::ColorReadout::Rgb => crate::i18n::tr("Show RGB Color Values"),
@@ -771,16 +783,19 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     });
     // the colour under the pointer in the loupe, and the tonal zone the pointer is on, replace the
     // EXIF strip while either is there (the histogram's own readout comes first: it is what the
-    // pointer is on)
+    // pointer is on). All three are centred in the room the mode selector leaves, so the two never
+    // run into each other in a narrow panel
+    let footer = Rect::from_min_max(pos2(menu_rect.right() + 4.0, r.bottom() - 26.0), pos2(r.right(), r.bottom()));
+    let footer_x = footer.center().x;
     let pass = ui.ctx().cumulative_pass_nr();
     let hover = app.ui.hover_color.filter(|(at, _)| pass.saturating_sub(*at) <= 1).map(|(_, c)| c);
     if let Some(text) = zone.as_ref().and_then(|a| a.readout()) {
         register(ui.ctx(), "histogramReadout", r);
-        p.text(pos2(r.left() + r.width() / 2.0, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+        p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
     } else if let Some(rgb) = hover {
         let text = app.ui.settings.color_readout.format(rgb);
         register(ui.ctx(), "histogramReadout", r);
-        p.text(pos2(r.left() + r.width() / 2.0, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+        p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
     } else if let Some(ph) = app.session.catalog.photo(id) {
         // EXIF strip
         let m = &ph.meta;
@@ -796,9 +811,28 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 
         if !parts.is_empty() {
             let text = parts.join(" · ");
-            let y = r.bottom() - 13.0;
-            let x = r.left() + r.width() / 2.0;
-            p.text(pos2(x, y), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+            p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+        }
+    }
+}
+
+/// The histogram's own display menu, shared by the selector under the plot and the plot's
+/// right-click menu: the distribution it draws, then the scale it draws it at.
+fn histogram_display_menu(app: &mut LccApp, ui: &mut egui::Ui, mode: HistogramMode, scale: HistogramScale) {
+    let t = Tokens::get(ui.ctx());
+    ui.label(RichText::new(crate::i18n::tr("Histogram Mode")).color(t.text_label));
+    for m in HistogramMode::ALL {
+        if ui.selectable_label(mode == m, crate::i18n::tr(m.label())).clicked() {
+            let _ = app.run("view.histogram.mode", json!({"mode": m.name()}));
+            ui.close();
+        }
+    }
+    ui.separator();
+    ui.label(RichText::new(crate::i18n::tr("Scale")).color(t.text_label));
+    for s in HistogramScale::ALL {
+        if ui.selectable_label(scale == s, crate::i18n::tr(s.label())).clicked() {
+            let _ = app.run("view.histogram.scale", json!({"scale": s.name()}));
+            ui.close();
         }
     }
 }
