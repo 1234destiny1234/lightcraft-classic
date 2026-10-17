@@ -83,6 +83,9 @@ const REQUIRED: &[&str] = &[
 const OPTIONAL: &[(&str, &str, &str)] = &[
     // no key: the updater checks and links to the release, but installs nothing
     ("updates.public_keys", "UPDATES_PUBLIC_KEYS", "&[&str] = &[]"),
+    // no upstream: the About window credits no upstream project
+    ("upstream.name", "UPSTREAM_NAME", "&str = \"\""),
+    ("upstream.repository", "UPSTREAM_REPOSITORY", "&str = \"\""),
 ];
 
 enum Value {

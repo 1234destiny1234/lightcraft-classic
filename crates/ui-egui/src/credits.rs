@@ -268,6 +268,17 @@ pub fn contributors_ui(app: &mut LccApp, ui: &mut egui::Ui) {
     });
     let list = sorted(CONTRIBUTORS, v.names, v.key, v.ascending);
     ui.label(RichText::new(crate::i18n::tr_format!("{} contributors · {} commits", list.len(), group(TOTAL_COMMITS))).small().color(t.text_dim));
+    // the people listed are this repository's; upstream's are credited as a whole, with a link to them
+    if !lcc_brand::UPSTREAM_NAME.is_empty() && !lcc_brand::UPSTREAM_REPOSITORY.is_empty() {
+        ui.horizontal_wrapped(|ui| {
+            ui.spacing_mut().item_spacing.x = 4.0;
+            ui.label(RichText::new(crate::i18n::tr("Also the contributors to")).small().color(t.text_dim));
+            let url = format!("{}/graphs/contributors", lcc_brand::UPSTREAM_REPOSITORY.trim_end_matches('/'));
+            if ui.link(RichText::new(lcc_brand::UPSTREAM_NAME).small()).on_hover_text(&url).clicked() {
+                let _ = crate::links::open(app, &url);
+            }
+        });
+    }
     ui.separator();
     let list_h = crate::panels::dialogs::list_height(ui, LIST_HEIGHT);
     egui::ScrollArea::both().id_salt("credits_scroll").max_height(list_h).auto_shrink([false, true]).show(ui, |ui| {
