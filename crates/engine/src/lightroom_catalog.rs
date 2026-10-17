@@ -626,17 +626,37 @@ pub fn read_with_progress(path: &Path, cancel: &AtomicBool, total: &AtomicUsize,
         stacks: optional_table("AgLibraryFolderStackImage", &mut warnings)?,
         warnings,
     };
+    // An image row whose file, folder or root record is gone (Lightroom leaves such rows behind, and its integrity
+    // check passes them) can't be located: it is left out with a warning, and the rest of the catalog imports
+    // (issue #1588). The first few are named, then only counted.
+    let mut left_out = 0usize;
+    let mut leave_out = |warnings: &mut Vec<String>, why: String| {
+        left_out += 1;
+        if left_out <= LEFT_OUT_NAMED {
+            warnings.push(format!("{why}; left out"));
+        }
+    };
     for image in table("Adobe_images", true)? {
         ensure_read_active(cancel)?;
         let id = number(&image, "id_local");
-        let file = files.get(&number(&image, "rootFile")).ok_or_else(|| format!("image {id}: missing file record"))?;
-        let folder = folders.get(&number(file, "folder")).ok_or_else(|| format!("image {id}: missing folder record"))?;
-        let root = roots.get(&number(folder, "rootFolder")).ok_or_else(|| format!("image {id}: missing root record"))?;
+        let Some(file) = files.get(&number(&image, "rootFile")) else {
+            leave_out(&mut out.warnings, format!("image {id}: missing file record"));
+            continue;
+        };
+        let Some(folder) = folders.get(&number(file, "folder")) else {
+            leave_out(&mut out.warnings, format!("image {id}: missing folder record"));
+            continue;
+        };
+        let Some(root) = roots.get(&number(folder, "rootFolder")) else {
+            leave_out(&mut out.warnings, format!("image {id}: missing root record"));
+            continue;
+        };
         let root_path = root_paths.get(&number(root, "id_local")).map_or("", String::as_str);
         let folder_path = text(folder, "pathFromRoot");
         let name = text(file, "idx_filename");
         if root_path.is_empty() || name.is_empty() {
-            return Err(format!("image {id}: incomplete original path"));
+            leave_out(&mut out.warnings, format!("image {id}: incomplete original path"));
+            continue;
         }
         let path = Path::new(root_path).join(folder_path).join(name).to_string_lossy().to_string();
         let packet = match xmp(metadata.get(&id).and_then(|r| r.get("xmp"))) {
@@ -658,10 +678,16 @@ pub fn read_with_progress(path: &Path, cancel: &AtomicBool, total: &AtomicUsize,
             snapshots: snapshots.remove(&id).unwrap_or_default(),
         });
     }
+    if left_out > LEFT_OUT_NAMED {
+        out.warnings.push(format!("{left_out} images left out in all: their original's file, folder or root record is missing or incomplete"));
+    }
     ensure_read_active(cancel)?;
     source_guard.verify()?;
     Ok(out)
 }
+
+/// How many of the images left out of an import (no file, folder or root record) the warnings name one by one.
+const LEFT_OUT_NAMED: usize = 20;
 
 fn ensure_read_active(cancel: &AtomicBool) -> Result<(), String> {
     if cancel.load(Ordering::Relaxed) { Err("Lightroom import cancelled".into()) } else { Ok(()) }
@@ -982,6 +1008,10 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
             }
             p
         };
+        // Offline videos bypass file probing; Lightroom's format still identifies their kind.
+        if text(&src.image, "fileFormat").eq_ignore_ascii_case("VIDEO") {
+            p.kind = lcc_catalog::MediaKind::Video;
+        }
         ids.insert(src.source_id, p.id);
         index.photos.insert(identity(&data, src), p.id.0);
         let keep_develop = existing_id.is_some() && p.edited.is_some() && !update_existing;
@@ -1060,7 +1090,14 @@ pub(crate) fn apply_prepared(s: &mut crate::Session, data: CatalogImport, contex
         if copy_masters.contains(&src.source_id) {
             planned.insert(photo_id, p.clone());
         }
-        if s.catalog.photo(p.id).is_some() {
+        if let Some(old) = s.catalog.photo(p.id) {
+            if old.kind != p.kind {
+                // Repair older imports with existing reversible operations. Removing just the
+                // record leaves album/stack membership intact; the enclosing batch is atomic.
+                let mut repaired = (**old).clone();
+                repaired.kind = p.kind;
+                ops.extend([Op::RemovePhoto { id: p.id }, Op::AddPhoto { photo: Box::new(repaired) }]);
+            }
             if was_local && promoted.insert(p.id) {
                 imported += 1;
                 ops.push(Op::SetLocal { id: p.id, local: false });
@@ -1995,6 +2032,12 @@ mod tests {
 
     /// A one-row-per-table SQLite file: `(name, columns, row)` each.
     fn native_catalog(tables: &[(&str, &str, Vec<SqlValue>)]) -> Vec<u8> {
+        let tables: Vec<(&str, &str, Vec<Vec<SqlValue>>)> = tables.iter().map(|(n, c, row)| (*n, *c, vec![row.clone()])).collect();
+        native_catalog_rows(&tables)
+    }
+
+    /// A SQLite file with one page of rows per table: `(name, columns, rows)` each.
+    fn native_catalog_rows(tables: &[(&str, &str, Vec<Vec<SqlValue>>)]) -> Vec<u8> {
         use SqlValue::{Integer as I, Text as T};
         let pages = tables.len() + 1;
         let mut bytes = vec![0u8; pages * 2048];
@@ -2009,7 +2052,7 @@ mod tests {
         bytes[44..48].copy_from_slice(&4u32.to_be_bytes());
         bytes[56..60].copy_from_slice(&1u32.to_be_bytes());
         let mut schema = Vec::new();
-        for (i, (name, columns, row)) in tables.iter().enumerate() {
+        for (i, (name, columns, rows)) in tables.iter().enumerate() {
             schema.push(vec![
                 T("table".into()),
                 T((*name).into()),
@@ -2017,7 +2060,7 @@ mod tests {
                 I(i as i64 + 2),
                 T(format!("CREATE TABLE {name} ({columns})")),
             ]);
-            leaf(&mut bytes[(i + 1) * 2048..(i + 2) * 2048], 0, std::slice::from_ref(row));
+            leaf(&mut bytes[(i + 1) * 2048..(i + 2) * 2048], 0, rows);
         }
         leaf(&mut bytes[..2048], 100, &schema);
         bytes
@@ -2438,6 +2481,83 @@ mod tests {
     }
 
     #[test]
+    fn native_video_import_is_visible_in_video_filter() {
+        let dir = std::env::temp_dir().join(format!("app-lrcat-video-filter-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("videos.lrcat");
+        let mut tables = photo_tables((dir.to_str().unwrap(), ""));
+        tables[2].2[2] = SqlValue::Text("clip.MOV".into());
+        tables[3].2[3] = SqlValue::Text("VIDEO".into());
+        std::fs::write(&path, native_catalog(&tables)).unwrap();
+        let mut s = crate::Session::new();
+        let imported = s.execute("library.importLightroom", &json!({"path": path})).unwrap();
+        let id = PhotoId(imported["mapping"]["1"].as_u64().unwrap());
+        assert_eq!(s.catalog.photo(id).unwrap().kind, lcc_catalog::MediaKind::Video);
+        s.execute("library.filter", &json!({"kind": "video"})).unwrap();
+        assert_eq!(s.visible(), &[id]);
+        s.execute("library.filter", &json!({"kind": "image"})).unwrap();
+        assert!(s.visible().is_empty());
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert!(s.catalog.is_empty());
+        s.execute("edit.redo", &json!({})).unwrap();
+        s.execute("library.filter", &json!({"kind": "video"})).unwrap();
+        assert_eq!(s.visible(), &[id]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
+    fn native_video_reimport_repairs_kind_without_losing_edits_or_memberships() {
+        let dir = std::env::temp_dir().join(format!("app-lrcat-video-reimport-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("videos.lrcat");
+        let mut tables = photo_tables((dir.to_str().unwrap(), ""));
+        tables[2].2[2] = SqlValue::Text("clip.MOV".into());
+        tables[3].2[3] = SqlValue::Text("VIDEO".into());
+        std::fs::write(&path, native_catalog(&tables)).unwrap();
+        let mut s = crate::Session::new();
+        let id = s.catalog.alloc_photo_id();
+        let mut photo =
+            Photo::new(id, Source::File { path: dir.join("Photos/clip.MOV").to_string_lossy().into() }, "clip.MOV", "VIDEO", 1920, 1080, "before");
+        photo.rating = 5;
+        photo.flag = Flag::Pick;
+        photo.file_size = 1234;
+        photo.content_hash = Some("existing-content".into());
+        s.commit("Previous import", Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+        let mut settings = lcc_develop::DevelopSettings::default();
+        settings.light.exposure = 0.75;
+        s.set_develop(id, settings, "Personal edit").unwrap();
+        let peer_id = s.catalog.alloc_photo_id();
+        let peer = Photo::new(peer_id, Source::File { path: "/missing/peer.jpg".into() }, "peer.jpg", "JPEG", 20, 10, "before");
+        s.commit("Peer", Op::AddPhoto { photo: Box::new(peer) }).unwrap();
+        let mut album = Album::new(s.catalog.alloc_album_id(), "Personal album");
+        album.photos = vec![id, peer_id];
+        s.commit("Album", Op::AddAlbum { album: album.clone() }).unwrap();
+        let stack = lcc_catalog::Stack { id: s.catalog.alloc_stack_id(), photos: vec![id, peer_id], collapsed: false };
+        s.commit("Stack", Op::AddStack { stack: stack.clone() }).unwrap();
+        let before = s.catalog.to_snapshot();
+        let mut expected = (**s.catalog.photo(id).unwrap()).clone();
+        expected.kind = lcc_catalog::MediaKind::Video;
+        s.execute("library.filter", &json!({"kind": "video"})).unwrap();
+        assert!(s.visible().is_empty());
+        let result = s.execute("library.importLightroom", &json!({"path": path})).unwrap();
+        assert_eq!(result["mapping"]["1"], id.0);
+        assert_eq!(result["imported"], 0);
+        assert_eq!(result["preservedExistingEdits"], 1);
+        assert_eq!(s.catalog.photo(id).unwrap().as_ref(), &expected);
+        assert_eq!(s.visible(), &[id]);
+        let after = s.catalog.to_snapshot();
+        assert_eq!(s.catalog.album(album.id), Some(&album));
+        assert_eq!(s.catalog.stack(stack.id), Some(&stack));
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(s.catalog.to_snapshot(), before);
+        assert!(s.visible().is_empty());
+        s.execute("edit.redo", &json!({})).unwrap();
+        assert_eq!(s.catalog.to_snapshot(), after);
+        assert_eq!(s.visible(), &[id]);
+        std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    #[test]
     fn cancellation_stops_catalog_btree_traversal_between_pages() {
         use std::sync::atomic::Ordering;
 
@@ -2783,6 +2903,25 @@ mod tests {
         }
         assert_eq!(probes.load(Ordering::Relaxed), 1);
         std::fs::remove_dir_all(dir).unwrap();
+    }
+
+    /// An image row whose file record is gone (Lightroom keeps such rows, and its integrity check passes them) is left
+    /// out with a warning instead of failing the whole import (issue #1588).
+    #[test]
+    fn an_image_without_a_file_record_is_left_out() {
+        use SqlValue::{Integer as I, Null as N, Text as T};
+        let mut tables: Vec<(&str, &str, Vec<Vec<SqlValue>>)> =
+            photo_tables(("/catalog/", "")).into_iter().map(|(n, c, row)| (n, c, vec![row])).collect();
+        let images = tables.iter_mut().find(|t| t.0 == "Adobe_images").unwrap();
+        // a second image whose rootFile (99) has no AgLibraryFile row
+        images.2.push(vec![N, T("orphan-image".into()), I(99), T("ARW".into()), I(20), I(10), I(0), I(0)]);
+        let path = std::env::temp_dir().join(format!("app-orphan-catalog-{}.lrcat", std::process::id()));
+        std::fs::write(&path, native_catalog_rows(&tables)).unwrap();
+        let catalog = read(&path).unwrap();
+        assert_eq!(catalog.photos.len(), 1, "the image that can be located is imported");
+        assert_eq!(catalog.photos[0].uuid, "fixture-image");
+        assert!(catalog.warnings.iter().any(|w| w.contains("image 2: missing file record; left out")), "{:?}", catalog.warnings);
+        std::fs::remove_file(path).unwrap();
     }
 
     #[test]
