@@ -33,8 +33,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 ui.spacing_mut().item_spacing.y = GAP;
                 let sz = vec2(t.strip_w, BUTTON_H);
                 // the Presets column: Develop's, as in Lightroom Classic
-                if app.ui.module == ModuleId::Develop
-                    && icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets").clicked()
+                if app.ui.module == ModuleId::Develop && icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets").clicked()
                 {
                     let _ = app.run("panel.presets", json!({}));
                 }

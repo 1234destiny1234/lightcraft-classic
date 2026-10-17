@@ -38,8 +38,7 @@ fn a_starred_preset_is_listed_first_in_favorites_and_stays_in_its_group() {
     assert!(fav.top() < own.top());
     if let Some(path) = std::env::var_os("PRESET_FAVORITES_SCREENSHOT_DIR") {
         let pixels = h.paint();
-        let image =
-            lcc_raster::Rgba8 { width: pixels.size[0], height: pixels.size[1], data: pixels.pixels.iter().map(|c| c.to_array()).collect() };
+        let image = lcc_raster::Rgba8 { width: pixels.size[0], height: pixels.size[1], data: pixels.pixels.iter().map(|c| c.to_array()).collect() };
         let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&image), &lcc_codecs::EncodeMeta::default()).unwrap();
         std::fs::create_dir_all(&path).unwrap();
         std::fs::write(std::path::Path::new(&path).join("lcc-presetfav.png"), png).unwrap();
