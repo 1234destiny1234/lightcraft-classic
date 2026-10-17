@@ -35,7 +35,7 @@ catalog_magic        = "PHOTO-CATALOG"      # file-format magic; neutral on purp
 # updates and links to the release, but never downloads or installs one. A fork sets its own.
 # Changing it: docs/releasing.md → Update signing key.
 [updates]
-public_keys = []
+public_keys = ["PtE/NoJCHCje8yQ9XftBT1GN6aT/5TSu6URW9Vp1aaI="]
 
 # Previous identities, read on startup for migration (settings, catalogs, presets, env vars).
 [legacy]

@@ -26,6 +26,7 @@ mod export;
 pub(crate) mod face_detect;
 mod face_models;
 mod face_recognize;
+pub(crate) mod facets;
 pub mod filters;
 mod focus;
 pub mod folders;
@@ -71,6 +72,7 @@ mod query;
 mod quick;
 pub mod recheck;
 mod slideshow;
+pub(crate) mod source;
 mod sync;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod tether;
@@ -223,12 +225,14 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(previews::specs());
         v.extend(lut_profiles::specs());
         v.extend(lens_db::specs());
+        v.extend(source::specs());
         v.extend(mask_effects::specs());
         v.extend(cull::specs());
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());
         v.extend(query::specs());
+        v.extend(facets::specs());
         v.extend(quick::specs());
         v.extend(xmp::specs());
         #[cfg(not(target_arch = "wasm32"))]

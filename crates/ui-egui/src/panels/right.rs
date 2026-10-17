@@ -99,12 +99,15 @@ fn sync_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     ui.painter().hline(r.x_range(), r.top() + 0.5, egui::Stroke::new(1.0, t.divider));
     let auto = app.session.auto_sync;
     let several = app.session.selection.ids.len() > 1;
+    // after the switch, the two buttons share the rest of the bar (issue #221)
+    let (left, switch_w, gap, right) = (16.0, 30.0, 8.0, 12.0);
+    let w = crate::widgets::shared_width(r.width() - left - switch_w - gap - right, 2, gap);
     ui.add_space(10.0);
     ui.horizontal(|ui| {
-        ui.add_space(16.0);
-        ui.spacing_mut().item_spacing.x = 8.0;
+        ui.add_space(left);
+        ui.spacing_mut().item_spacing.x = gap;
         // the switch
-        let (sr, resp) = ui.allocate_exact_size(vec2(30.0, 16.0), Sense::click());
+        let (sr, resp) = ui.allocate_exact_size(vec2(switch_w, 16.0), Sense::click());
         register(ui.ctx(), "button:autoSyncSwitch", sr);
         resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Checkbox, true, auto, crate::i18n::tr("Auto Sync")));
         let p = ui.painter();
@@ -120,23 +123,20 @@ fn sync_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
             (false, true) => ("syncBar", "Sync…"),
             (false, false) => ("previousBar", "Previous"),
         };
-        if text_button(ui, id, crate::i18n::tr(label), auto).clicked() {
+        if crate::widgets::text_button_wide(ui, id, crate::i18n::tr(label), auto, w).clicked() {
             let _ = match (auto, several) {
                 (true, _) => app.run("develop.autoSync", json!({"on": false})),
                 (false, true) => app.run("dialog.syncSettings", json!({})),
                 (false, false) => app.run("develop.pastePrevious", json!({})),
             };
         }
-        // Lightroom Classic: Reset at the right end of the bar
-        ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-            ui.add_space(8.0);
-            if text_button(ui, "reset", crate::i18n::tr("Reset"), false)
-                .on_hover_text(super::edit::reset_tip(&app.ui.settings.keymap, ui.ctx().os() == egui::os::OperatingSystem::Mac))
-                .clicked()
-            {
-                let _ = app.run("develop.reset", json!({}));
-            }
-        });
+        // Lightroom Classic: Reset fills the bar's right half
+        if crate::widgets::text_button_wide(ui, "reset", crate::i18n::tr("Reset"), false, w)
+            .on_hover_text(super::edit::reset_tip(&app.ui.settings.keymap, ui.ctx().os() == egui::os::OperatingSystem::Mac))
+            .clicked()
+        {
+            let _ = app.run("develop.reset", json!({}));
+        }
     });
 }
 
@@ -945,24 +945,33 @@ pub(crate) fn keywording(app: &mut LccApp, ui: &mut egui::Ui) {
         ui.add_space(10.0);
         // suggestions: keywords used together with the selection's keywords, else the most used
         // ones (what matches the text being typed is offered under the box itself)
-        let suggestions = (*app.caches.suggestions(&app.session.catalog, &have, "", 12)).clone();
+        // nine of them in three equal columns, like the keyword set above (issue #222)
+        let suggestions = (*app.caches.suggestions(&app.session.catalog, &have, "", 9)).clone();
         if !suggestions.is_empty() {
             ui.label(egui::RichText::new(crate::i18n::tr("Suggestions")).color(t.text_dim));
-            // grouped: the keyword's own name, its whole path in the tooltip
+            // grouped: the keyword's own name; else its path. Either is cut from the front so its own name stays,
+            // and the whole path is in the tooltip.
             let grouped = app.ui.settings.keyword_chips == crate::state::KeywordChips::Grouped;
             let names = if grouped { super::keywording::suggestion_names(&suggestions) } else { Vec::new() };
-            ui.horizontal_wrapped(|ui| {
-                if grouped {
-                    ui.spacing_mut().item_spacing = vec2(6.0, 4.0);
-                }
+            let bw = ((ui.available_width() - 8.0) / 3.0).floor().max(40.0);
+            let font = t.font(11.5);
+            egui::Grid::new("kw-suggest-grid").num_columns(3).spacing([4.0, 4.0]).show(ui, |ui| {
                 for (i, k) in suggestions.into_iter().enumerate() {
                     let whole = k.replace('|', " › ");
-                    let name = names.get(i).unwrap_or(&whole);
-                    let r = ui.add(egui::Button::new(egui::RichText::new(format!("+ {name}")).color(t.text_label)).corner_radius(10.0));
-                    let r = if grouped { r.on_hover_text(&whole) } else { r };
+                    // (a grouped name shared by two keywords is the whole path again)
+                    let shown = names.get(i).filter(|n| !n.contains(" › ")).map_or(k.as_str(), String::as_str);
+                    let name = super::keywording::chip_label(shown, false, bw - 12.0, |s| {
+                        ui.painter().layout_no_wrap(s.to_string(), font.clone(), t.text_label).size().x
+                    });
+                    let r = ui
+                        .add_sized([bw, 22.0], egui::Button::new(egui::RichText::new(name).font(font.clone()).color(t.text_label)).truncate())
+                        .on_hover_text(&whole);
                     register(ui.ctx(), format!("kwSuggest:{k}"), r.rect);
                     if r.clicked() {
                         let _ = app.run("photo.setMeta", json!({"addKeywords": [k]}));
+                    }
+                    if i % 3 == 2 {
+                        ui.end_row();
                     }
                 }
             });
@@ -999,8 +1008,8 @@ fn hold_list_in_place(ui: &mut egui::Ui, top: f32) {
     ui.ctx().request_discard("the Keyword List holds its place");
 }
 
-/// The keyword set: pick a set, then nine buttons (⌥1–⌥9) that toggle its keywords on the
-/// selected photos; "Save as Set…" keeps the current nine under a name.
+/// The keyword set: pick a set, then nine buttons (⌥1–⌥9; Alt+1–Alt+9 off macOS) that toggle its keywords on
+/// the selected photos, empty slots included; "Save as Set…" keeps the current nine under a name.
 fn keyword_set(app: &mut LccApp, ui: &mut egui::Ui) {
     // on: every selected photo has it (⌥1–⌥9 then take it off them); partly on: only some do
     let selection = app.session.selected();
@@ -1053,17 +1062,20 @@ fn keyword_set(app: &mut LccApp, ui: &mut egui::Ui) {
             });
         register(ui.ctx(), "keywordSetCombo", combo.response.rect);
     });
-    let kws: Vec<String> = sets["keywords"].as_array().into_iter().flatten().filter_map(|k| k.as_str().map(str::to_string)).collect();
+    let mut kws: Vec<String> = sets["keywords"].as_array().into_iter().flatten().filter_map(|k| k.as_str().map(str::to_string)).collect();
+    // nothing in the set yet (no recent keywords): its nine slots show empty, as they will fill, rather
+    // than a sentence about them (issue #220); each still names its key
     if kws.is_empty() {
-        ui.label(egui::RichText::new(crate::i18n::tr("Keywords you add appear here; ⌥1–⌥9 apply them.")).color(t.text_dim));
-        return;
+        kws = vec![String::new(); 9];
     }
+    let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
+    let key = |i: usize| crate::menubar::shortcut_text(&format!("Alt+{}", i + 1), mac);
     let bw = ((ui.available_width() - 8.0) / 3.0).floor().max(40.0);
     egui::Grid::new("kw-set-grid").num_columns(3).spacing([4.0, 4.0]).show(ui, |ui| {
         for (i, k) in kws.iter().enumerate() {
             // an empty slot: an idle button, so the others keep their ⌥ keys
             if k.is_empty() {
-                let r = ui.add_enabled_ui(false, |ui| ui.add_sized([bw, 22.0], egui::Button::new(""))).inner;
+                let r = ui.add_enabled_ui(false, |ui| ui.add_sized([bw, 22.0], egui::Button::new(""))).inner.on_disabled_hover_text(key(i));
                 register(ui.ctx(), format!("kwSetEmpty:{}", i + 1), r.rect);
                 if i % 3 == 2 {
                     ui.end_row();
@@ -1079,7 +1091,7 @@ fn keyword_set(app: &mut LccApp, ui: &mut egui::Ui) {
                     [bw, 22.0],
                     egui::Button::new(egui::RichText::new(short).size(11.5).color(if on { t.text } else { t.text_label })).selected(on).truncate(),
                 )
-                .on_hover_text(format!("{} — ⌥{}", k.replace('|', " › "), i + 1));
+                .on_hover_text(format!("{} — {}", k.replace('|', " › "), key(i)));
             register(ui.ctx(), format!("kwSet:{}", i + 1), r.rect);
             if on {
                 register(ui.ctx(), format!("kwSetOn:{}", i + 1), r.rect);

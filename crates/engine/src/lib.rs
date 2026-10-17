@@ -89,6 +89,7 @@ pub mod slide_title;
 pub mod slideshow;
 pub mod slideshow_export;
 pub mod smart;
+pub mod source_report;
 pub mod sync;
 pub mod text;
 pub mod timelapse;
@@ -1274,7 +1275,7 @@ impl Session {
     }
 
     /// `source` as a filter over `base` (the filter bar's, or none), with the folder it shows.
-    fn view_filter(&self, source: LibrarySource, base: &Filter) -> Filter {
+    pub(crate) fn view_filter(&self, source: LibrarySource, base: &Filter) -> Filter {
         let mut f = source.to_filter(base, &self.catalog);
         if source == LibrarySource::Folder {
             // no folder chosen: nothing (an empty path matches nothing)
@@ -1473,6 +1474,8 @@ mod tests_face_recognize;
 #[cfg(not(target_arch = "wasm32"))]
 mod tests_face_tiles;
 #[cfg(test)]
+mod tests_facets;
+#[cfg(test)]
 mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_focus_scan;
@@ -1536,6 +1539,8 @@ mod tests_settings_files;
 mod tests_slide;
 #[cfg(test)]
 mod tests_slideshow_export;
+#[cfg(test)]
+mod tests_source_report;
 #[cfg(test)]
 mod tests_spots;
 #[cfg(test)]

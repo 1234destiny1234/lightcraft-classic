@@ -829,3 +829,12 @@ fn an_older_signed_release_offered_as_a_newer_one_is_not_installed() {
     assert!(err.to_string().contains("no update has been downloaded"), "{err}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+#[test]
+fn a_portable_marker_beside_the_program_makes_the_check_portable() {
+    let dir = scratch("portable");
+    assert!(!portable_in(&dir), "no marker, an installed copy");
+    std::fs::write(dir.join("portable.txt"), b"").unwrap();
+    assert!(portable_in(&dir), "portable.txt beside the program");
+    let _ = std::fs::remove_dir_all(&dir);
+}
