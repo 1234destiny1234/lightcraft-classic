@@ -2174,6 +2174,12 @@ fn local_photos_cannot_be_added_to_albums_until_they_join_my_photos() {
     assert_eq!(vis.len(), 1, "{vis:?}");
     let local = vis[0];
     assert!(h.app.session.catalog.photo(local).unwrap().local);
+    // Local folded: on Windows the temp folder lies under the home folder, so browsing it opens Local
+    // at every folder on the way, which pushes the album row below the window
+    if !h.app.ui.sidebar_section_collapsed("local") {
+        h.app.ui.toggle_sidebar_section("local");
+    }
+    h.settle(SETTLE);
     let thumb = widget(&h, &format!("thumb:{}", local.0));
 
     // right-click: Add to Album is there but off, so hovering opens no album entries

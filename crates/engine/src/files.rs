@@ -228,6 +228,13 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
     }
     let m = lcc_meta::extract(bytes);
     let (meta, captured) = meta_of(&m);
+    let (rating, flag) = match m.rating {
+        Some(r) if r < 0 => (0, lcc_catalog::Flag::Reject),
+        Some(r) => (r.clamp(0, 5) as u8, lcc_catalog::Flag::None),
+        None => (0, lcc_catalog::Flag::None),
+    };
+    let label = m.label.as_deref().and_then(|l| lcc_catalog::ColorLabel::parse(l.trim()));
+    let label_text = m.label.clone();
     if lcc_raw::probe(bytes).is_some() {
         let raw = match lcc_raw::probe_info(bytes).map_err(|e| preview_reason(bytes, e)) {
             Ok(r) => r,
@@ -242,6 +249,10 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
                     file_size: bytes.len() as u64,
                     captured,
                     meta,
+                    rating,
+                    flag,
+                    label,
+                    label_text,
                     as_shot_wb: None,
                     content_hash,
                     xmp: lcc_meta::embedded(bytes).xmp,
@@ -273,6 +284,10 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             file_modified: None,
             captured_is_file_date: false,
             meta,
+            rating,
+            flag,
+            label,
+            label_text,
             as_shot_wb,
             content_hash,
             xmp: lcc_meta::embedded(bytes).xmp,
@@ -309,6 +324,10 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         file_modified: None,
         captured_is_file_date: false,
         meta,
+        rating,
+        flag,
+        label,
+        label_text,
         as_shot_wb: None,
         content_hash,
         embedded_lens: None,

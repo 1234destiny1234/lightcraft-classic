@@ -1813,6 +1813,10 @@ pub struct ProbeInfo {
     /// neither the file nor its sidecar has (set by the import, which dates such files so).
     pub captured_is_file_date: bool,
     pub meta: lcc_catalog::Meta,
+    pub rating: u8,
+    pub flag: lcc_catalog::Flag,
+    pub label: Option<lcc_catalog::ColorLabel>,
+    pub label_text: Option<String>,
     pub as_shot_wb: Option<(f64, f64)>,
     /// Hash of the file's bytes (hex), for duplicate detection. When it is a 32-digit
     /// [`lcc_preview::hash_bytes`] of the whole file (as the native probe computes it),
