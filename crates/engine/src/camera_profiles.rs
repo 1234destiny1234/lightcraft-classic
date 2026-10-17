@@ -32,6 +32,7 @@ pub const BUNDLED: &[(&str, &str)] = &[
     ("NIKON D5300", include_str!("../../../assets/camera-profiles/NIKON_D5300.json")),
     ("NIKON D750", include_str!("../../../assets/camera-profiles/NIKON_D750.json")),
     ("NIKON D780", include_str!("../../../assets/camera-profiles/NIKON_D780.json")),
+    ("NIKON D90", include_str!("../../../assets/camera-profiles/NIKON_D90.json")),
     ("NIKON Z 6_2", include_str!("../../../assets/camera-profiles/NIKON_Z_6_2.json")),
     ("NIKON Z 8", include_str!("../../../assets/camera-profiles/NIKON_Z_8.json")),
     ("X-H2S", include_str!("../../../assets/camera-profiles/X-H2S.json")),

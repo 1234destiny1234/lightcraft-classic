@@ -2,10 +2,12 @@
 
 ## 2026-10-16
 
-### Nikon D750 and D780 colour profiles from one library
-- Raws from the Nikon D750 and D780 now start from a built-in colour profile, made with `lightcraft-cli calibrate` from
-  about 300 photos per camera, with the camera's tone curve. Colours that one photo shows only a little of, and
-  shadows you push up, keep the camera's colour instead of whatever that photo's own fit learned.
+### Nikon D750, D780 and D90 colour profiles from one library
+- Raws from the Nikon D750, D780 and D90 now start from a built-in colour profile, made with
+  `lightcraft-cli calibrate` from about 300 photos per camera, with the camera's tone curve. Colours that one photo
+  shows only a little of, and shadows you push up, keep the camera's colour instead of whatever that photo's own fit
+  learned.
+
 ### Pushed shadows of raws no longer turn magenta
 - Raw decoding no longer clips each colour channel at zero. Near black, sensor noise through the camera's colour
   matrix has negative values, and clipping kept only the positive half of each channel's noise, so dark areas
