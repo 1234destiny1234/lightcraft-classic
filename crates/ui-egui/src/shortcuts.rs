@@ -924,7 +924,7 @@ mod tests {
     #[test]
     fn shift_flag_keys_advance_in_every_view() {
         use crate::state::ViewMode;
-        use lightcraft_catalog::{Flag, PhotoId};
+        use lcc_catalog::{Flag, PhotoId};
         for view in [ViewMode::PhotoGrid, ViewMode::SquareGrid, ViewMode::Detail] {
             let mut h = library();
             h.app.ui.view = view;
