@@ -222,8 +222,8 @@ fn fs_store_truncates_a_missing_file_quietly() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// A damaged log line full of record starts (`{"seq":` over and over) loads in linear time: only
-/// the last few starts in the line can be the retried record, so only those are decoded.
+/// A damaged log line full of record starts (`{"seq":` over and over) loads in linear time: only the line's
+/// last JSON object can be the retried record, so only that one is decoded.
 #[test]
 fn line_of_record_starts_loads_quickly() {
     let m = MemStore::new();
