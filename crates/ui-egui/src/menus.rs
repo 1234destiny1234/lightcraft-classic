@@ -291,6 +291,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // Settings ▸ Display
     ("app.displayProfile", "Display Profile", None, ""),
     ("app.lensDbFolder", "Choose Lens Database Folder…", None, ""),
+    ("app.folders", "Folders", None, ""),
+    ("app.exportFolder", "Choose Export Folder…", None, ""),
     ("app.about", "About {app}", None, "Help"),
     ("app.checkForUpdates", "Check for Updates…", None, "Help"),
     ("app.installUpdate", "Install Update and Relaunch", None, "Help"),
@@ -867,6 +869,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "app.clearRecentLibraries" => crate::panels::settings::recent_libraries(app, &json!({"clear": true})),
         "app.displayProfile" => crate::panels::settings::display_profile(app, p),
         "app.lensDbFolder" => crate::panels::settings::lens_db_folder(app, p),
+        "app.folders" => Ok(crate::panels::settings_folders::folders(app)),
+        "app.exportFolder" => crate::panels::settings_folders::export_folder(app, p),
         "file.backupLibrary" | "file.restoreLibrary" => {
             let action = if id == "file.backupLibrary" { app.services.backup_library.as_mut() } else { app.services.restore_library.as_mut() };
             match action {
