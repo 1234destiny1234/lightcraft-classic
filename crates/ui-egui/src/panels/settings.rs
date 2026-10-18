@@ -1,4 +1,4 @@
-//! The Settings dialog (⌘,): General, Import, Performance, Display, Interface, Slideshow, Faces,
+//! The Settings dialog (⌘,): General, Import, Folders, Performance, Display, Interface, Slideshow, Faces,
 //! AI Denoise.
 //!
 //! Changes apply immediately (no OK/Cancel). Where they are stored:
@@ -26,6 +26,7 @@ pub const SECTIONS: &[(&str, &str)] = &[("lensProfiles", "import")];
 pub const TABS: &[(&str, &str)] = &[
     ("general", "General"),
     ("import", "Import"),
+    ("folders", "Folders"),
     ("performance", "Performance"),
     ("display", "Display"),
     ("interface", "Interface"),
@@ -40,7 +41,7 @@ pub const TABS: &[(&str, &str)] = &[
 /// Thumbnail cache sizes offered (MB).
 const CACHE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
 
-const LABEL_W: f32 = 150.0;
+pub(super) const LABEL_W: f32 = 150.0;
 
 /// The tab row: the dialog's fixed header, above the scrolling [`body`].
 pub fn tabs(ui: &mut egui::Ui, tab: &mut String) {
@@ -64,6 +65,7 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &str) {
     ui.add_space(2.0);
     match tab {
         "import" => import_tab(app, ui, &t),
+        "folders" => super::settings_folders::settings_tab(app, ui, &t),
         "performance" => performance_tab(app, ui, &t),
         "display" => display_tab(app, ui, &t),
         "interface" => interface_tab(app, ui, &t),
