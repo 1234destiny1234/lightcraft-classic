@@ -593,6 +593,9 @@ pub struct LccApp {
     /// Immich: Connections settings, the Import dialog's Immich source, background pump state.
     #[cfg(not(target_arch = "wasm32"))]
     pub immich: panels::connections::ImmichUi,
+    /// Settings ▸ Sync: the last status and whether the app is looking for devices.
+    #[cfg(not(target_arch = "wasm32"))]
+    pub peer_sync: panels::peer_sync::PeerSyncUi,
     /// The Print module's settings and job state.
     pub print: print_ui::PrintUi,
     /// The activity stack shows every task, not just the first few ("+N more" was clicked).
@@ -618,6 +621,8 @@ impl LccApp {
             session,
             #[cfg(not(target_arch = "wasm32"))]
             immich: Default::default(),
+            #[cfg(not(target_arch = "wasm32"))]
+            peer_sync: Default::default(),
             print: Default::default(),
             map: Default::default(),
             help: Default::default(),
@@ -1285,6 +1290,8 @@ impl LccApp {
         panels::faces::pump(self, ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::connections::pump(self, ctx);
+        #[cfg(not(target_arch = "wasm32"))]
+        panels::peer_sync::pump(self, ctx);
         // back from an external editor: pick up the files it saved
         let focused = ctx.input(|i| i.focused);
         if focused && !self.ui.was_focused && !self.ui.external_edits.is_empty() {

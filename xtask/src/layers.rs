@@ -41,6 +41,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("sysmem", Class::Layer(0)),
     ("hdrmeta", Class::Layer(0)),
     ("android-host", Class::Layer(0)),
+    ("peer", Class::Layer(0)),
     ("audio-out", Class::Layer(0)),
     ("fetch", Class::Layer(0)),
     ("net", Class::Layer(0)),
@@ -116,6 +117,7 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     // the updater reads the release feed over the network crate, for the brand's repository
     &["brand", "net", "updater"],
     &["brand", "credentials"],
+    &["brand", "peer"],
     &["brand", "heif"],
     &["brand", "audio-out"],
     &["geom", "color", "raster"],

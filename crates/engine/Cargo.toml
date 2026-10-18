@@ -62,6 +62,8 @@ lcc-fetch = { workspace = true }
 # auto updates: the release feed, the download, and starting the install
 lcc-updater = { workspace = true }
 lcc-immich = { workspace = true }
+# peer sync between devices on the local network (Settings ▸ Sync)
+lcc-peer = { workspace = true }
 lcc-publish = { workspace = true }
 lcc-tether = { workspace = true }
 lcc-credentials = { workspace = true }
