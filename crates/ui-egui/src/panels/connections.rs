@@ -301,6 +301,9 @@ fn open_url(app: &mut LccApp, url: &str) {
 // --------------------------------------------------------------------- Settings → Connections
 
 fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if crate::dialog_frame::in_form(ui) {
+        return crate::dialog_frame::form_row(ui, label, add);
+    }
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(vec2(120.0, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
             ui.set_min_width(120.0);
@@ -309,6 +312,12 @@ fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui
         add(ui)
     })
     .inner
+}
+
+/// Indents a row's content to the control column of the rows above it.
+fn control_indent(ui: &mut egui::Ui) {
+    let indent = if crate::dialog_frame::in_form(ui) { crate::dialog_frame::control_indent(ui) } else { 124.0 };
+    ui.add_space(indent.max(0.0));
 }
 
 /// Test the form's server on a worker thread (`immich.test` in a session of its own), or connect
@@ -387,7 +396,7 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         register(ui.ctx(), "field:immichKey", r.rect);
     });
     ui.horizontal(|ui| {
-        ui.add_space(124.0);
+        control_indent(ui);
         let base = lcc_immich::client::normalize_url(&app.immich.url).ok();
         if ui
             .add_enabled_ui(base.is_some(), |ui| text_button(ui, "immichKeyPage", crate::i18n::tr("Create an API key on the server…"), false))
@@ -406,7 +415,7 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let ready =
         !app.immich.url.trim().is_empty() && !app.immich.key.trim().is_empty() && app.immich.pending.is_none() && !app.immich.awaiting_connect;
     ui.horizontal(|ui| {
-        ui.add_space(124.0);
+        control_indent(ui);
         if ui.add_enabled_ui(ready, |ui| text_button(ui, "immichTest", crate::i18n::tr("Test"), false)).inner.clicked() {
             start_test(app, false);
         }
@@ -463,7 +472,7 @@ fn key_storage(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     }
     if st["system"]["state"] == "locked" || st["error"]["kind"] == "locked" {
         ui.horizontal(|ui| {
-            ui.add_space(124.0);
+            control_indent(ui);
             if ui
                 .add_enabled_ui(st["unlocking"] != true, |ui| text_button(ui, "credUnlockSystem", crate::i18n::tr("Unlock Keychain…"), false))
                 .inner
@@ -484,7 +493,7 @@ fn key_storage(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             trf!("Keys are in the system keychain ({}).", active)
         };
         ui.horizontal(|ui| {
-            ui.add_space(124.0);
+            control_indent(ui);
             let l = ui.label(RichText::new(label).color(t.text_label));
             register(ui.ctx(), "label:credStore", l.rect);
             if st["file"]["unlocked"] == true && text_button(ui, "credLock", crate::i18n::tr("Lock"), false).clicked() {
@@ -527,7 +536,7 @@ pub(crate) fn unlock_box(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, st: &V
         let same = exists || app.immich.passphrase == app.immich.passphrase2;
         let busy = st["unlocking"] == true;
         ui.horizontal(|ui| {
-            ui.add_space(124.0);
+            control_indent(ui);
             let label = if exists { "Unlock" } else { "Create" };
             let clicked = ui.add_enabled_ui(long && same && !busy, |ui| text_button(ui, "credUnlock", crate::i18n::tr(label), true)).inner.clicked();
             if (clicked || submit) && long && same && !busy {

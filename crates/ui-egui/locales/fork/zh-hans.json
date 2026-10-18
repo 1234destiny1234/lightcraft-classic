@@ -1,4 +1,10 @@
 {
+  "File Settings": "文件设置",
+  "Image Sizing": "图像大小",
+  "Output Sharpening": "输出锐化",
+  "Watermarking": "水印",
+  "File Naming": "文件命名",
+  "Export Location": "导出位置",
   "Color Values": "颜色值",
   "Color Readout": "颜色读数",
   "Show RGB Color Values": "显示 RGB 颜色值",

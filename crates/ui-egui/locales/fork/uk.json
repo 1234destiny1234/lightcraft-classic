@@ -1,4 +1,10 @@
 {
+  "File Settings": "Параметри файлу",
+  "Image Sizing": "Розмір зображення",
+  "Output Sharpening": "Різкість під час виводу",
+  "Watermarking": "Водяний знак",
+  "File Naming": "Імена файлів",
+  "Export Location": "Місце експорту",
   "Color Values": "Значення кольору",
   "Color Readout": "Показ кольору",
   "Show RGB Color Values": "Показувати значення RGB",

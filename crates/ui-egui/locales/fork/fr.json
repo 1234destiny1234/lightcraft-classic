@@ -1,4 +1,10 @@
 {
+  "File Settings": "Paramètres du fichier",
+  "Image Sizing": "Dimensionnement de l’image",
+  "Output Sharpening": "Accentuation de sortie",
+  "Watermarking": "Filigrane",
+  "File Naming": "Dénomination des fichiers",
+  "Export Location": "Emplacement d’exportation",
   "Color Values": "Valeurs colorimétriques",
   "Color Readout": "Lecture des couleurs",
   "Show RGB Color Values": "Afficher les valeurs RVB",
