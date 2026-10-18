@@ -1457,6 +1457,10 @@ fn region_overlay(
     edit
 }
 
+/// The filter pill's inset from the canvas corner and its height (the info overlay goes below it).
+const FILTER_PILL_INSET: f32 = 3.0;
+const FILTER_PILL_HEIGHT: f32 = 20.0;
+
 /// A small pill at the loupe's top left naming the active filters: the filmstrip and Next / Previous
 /// follow them, so a filter must never be invisible here. A click clears them all. It sits in the
 /// canvas margin, so the photo does not move.
@@ -1471,9 +1475,9 @@ fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) -> Option<Rect
         chips.iter().map(|c| crate::panels::chips::display_label(c, &app.session.filter, &app.session.catalog)).collect::<Vec<_>>().join("  ·  ");
     let g = p.layout_no_wrap(crate::i18n::tr_format!("Filtered: {label}", label = label), t.font(12.0), Color32::from_gray(225));
     // the same inset from the left as from the top, so the pill sits in the corner (#1645)
-    let inset = 3.0;
+    let inset = FILTER_PILL_INSET;
     let w = (g.size().x + 40.0).min((canvas.width() - 2.0 * inset).max(60.0));
-    let r = Rect::from_min_size(canvas.min + vec2(inset, inset), vec2(w, 20.0));
+    let r = Rect::from_min_size(canvas.min + vec2(inset, inset), vec2(w, FILTER_PILL_HEIGHT));
     let resp = ui.interact(r, egui::Id::new("loupe-filter-pill"), Sense::click());
     crate::widgets::announce(&resp, crate::i18n::tr("Filters"));
     register(ui.ctx(), "loupe:filters", r);

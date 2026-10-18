@@ -249,9 +249,10 @@ pub(crate) fn shown_value(spec: &ControlSpec, v: f64) -> String {
 const SCRUB_START: f32 = 3.0;
 
 /// The radius of a slider's hollow ring thumb.
-const THUMB_RING: f32 = 7.0;
+const THUMB_RING: f32 = 5.5;
 
-/// A Lightroom slider row (label + value above a track with a hollow ring thumb).
+/// A Lightroom Classic slider row: the name (right-aligned in a column the panel's sliders share),
+/// a track with a hollow ring thumb, and the value, all on one line.
 /// Double-click the label or thumb to reset (hovering either says so). Shift-drag = fine adjustment.
 /// Scroll sideways over it to nudge it. Click the value to type one: Return or clicking away applies it,
 /// Esc keeps the old one. Drag the value sideways to scrub it, as if dragging the thumb (Shift: a tenth
@@ -260,12 +261,14 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (row, _) = ui.allocate_exact_size(vec2(w, t.slider_row_h), Sense::hover());
-    let pad_l = 24.0;
-    let pad_r = 22.0;
-    let label_rect = Rect::from_min_size(pos2(row.left() + pad_l, row.top() + 4.0), vec2(w - pad_l - pad_r, 18.0));
-    let track_rect = Rect::from_min_max(pos2(row.left() + pad_l, row.top() + 22.0), pos2(row.right() - pad_r, row.top() + 40.0));
+    // one row, as Lightroom Classic: name (right-aligned in a shared column) | track | value
+    let label_str = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
+    let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(12.5), t.text_label).size().x;
+    let label_col = label_column(ui, w, label_w);
+    let geo = SliderGeometry::new(row, label_col);
+    let (label_rect, track_rect, value_rect) = (geo.label, geo.track, geo.value);
     let id = ui.id().with(spec.id);
-    let resp = ui.interact(track_rect.expand2(vec2(8.0, 2.0)), id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
+    let resp = ui.interact(track_rect.expand2(vec2(THUMB_RING - 1.0, 0.0)), id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
     // A click selects the slider for arrow/wheel adjustments. Keep scroll-to-adjust
     // opt-in so hovering an unfocused slider still scrolls the containing panel.
     // Tab reaching the slider selects it as a click does: the arrow keys then adjust it
@@ -299,9 +302,7 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     crate::widgets::announce(&label_resp, crate::i18n::tr_format!("Reset {name}", name = label_text.clone()));
     register(ui.ctx(), format!("sliderLabel:{}", spec.id), label_rect);
     register(ui.ctx(), format!("slider:{}", spec.id), track_rect);
-    // the value: click it to type an exact one, drag it sideways to scrub (over the label, so it
-    // takes the click)
-    let value_rect = Rect::from_min_max(pos2(label_rect.right() - 64.0, label_rect.top()), label_rect.max);
+    // the value: click it to type an exact one, drag it sideways to scrub
     let value_resp = ui.interact(value_rect, id.with("value"), if enabled { Sense::click_and_drag() } else { Sense::hover() });
     crate::widgets::announce(&value_resp, format!("{label_text}: {}", crate::i18n::tr("Click to type a value, drag to change it")));
     register(ui.ctx(), format!("sliderValue:{}", spec.id), value_rect);
@@ -547,9 +548,14 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let hovered = resp.hovered() || resp.dragged();
     let text_c = if enabled { t.text_label } else { t.text_disabled };
     let p = ui.painter();
-    p.text(label_rect.left_center(), Align2::LEFT_CENTER, crate::i18n::tr(label_override.unwrap_or(spec.label)), t.font(12.5), text_c);
+    // the name, right-aligned against the track; ellipsized when the column is too narrow for it
+    let mut job = egui::text::LayoutJob::simple_singleline(label_str, t.font(12.5), text_c);
+    job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let galley = ui.painter().layout_job(job);
+    let gpos = pos2(label_rect.right() - galley.size().x, label_rect.center().y - galley.size().y / 2.0);
+    p.galley(gpos, galley, text_c);
     if typing.is_none() {
-        p.text(label_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(12.5), text_c);
+        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(12.5), text_c);
         // the scrub pointer, as over Lightroom's values: a drag here changes the value
         if enabled && (value_resp.hovered() || scrub.is_some()) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -572,6 +578,44 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
     out
+}
+
+/// Where a one-row slider's parts go: name column, track and value.
+struct SliderGeometry {
+    label: Rect,
+    track: Rect,
+    value: Rect,
+}
+
+/// Width of a slider's value column (fits "+100", "5600", "-4.00").
+const VALUE_W: f32 = 40.0;
+
+impl SliderGeometry {
+    fn new(row: Rect, label_col: f32) -> Self {
+        let (pad_l, pad_r, gap) = (16.0, 18.0, 10.0);
+        let label = Rect::from_min_size(pos2(row.left() + pad_l, row.top()), vec2(label_col, row.height()));
+        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
+        let track_l = label.right() + gap;
+        let track_r = (value.left() - gap).max(track_l + 1.0);
+        let track = Rect::from_min_max(pos2(track_l, row.top()), pos2(track_r, row.bottom()));
+        Self { label, track, value }
+    }
+}
+
+/// The name column's width for a slider in `ui`: the widest name drawn in the same container
+/// (this frame or the last), so a section's tracks line up, limited to a share of the row so the
+/// track always keeps room (names past it are ellipsized).
+fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
+    let key = ui.id().with("slider-label-column");
+    let frame = ui.ctx().cumulative_pass_nr();
+    let (seen, prev, cur) = ui.data(|d| d.get_temp::<(u64, f32, f32)>(key)).unwrap_or((frame, 0.0, 0.0));
+    // a new frame: the last one's widest name carries over, so a long name further down counts
+    let (prev, cur) = if seen == frame { (prev, cur) } else { (cur, 0.0) };
+    let cur = cur.max(label_w);
+    ui.data_mut(|d| d.insert_temp(key, (frame, prev, cur)));
+    let widest = prev.max(cur).ceil();
+    let max_col = ((row_w - 32.0) * 0.42).max(24.0);
+    widest.clamp(24.0_f32.min(max_col), max_col)
 }
 
 /// Convert vertical wheel movement to bounded slider steps, keeping sub-notch
@@ -598,7 +642,7 @@ pub fn section_header(ui: &mut Ui, id: &str, title: &str, open: bool, enabled: O
     let title = crate::i18n::tr(title);
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
-    let (r, resp) = ui.allocate_exact_size(vec2(w, 52.0), Sense::click());
+    let (r, resp) = ui.allocate_exact_size(vec2(w, 40.0), Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, open, title));
     register(ui.ctx(), format!("section:{id}"), r);
     let p = ui.painter();

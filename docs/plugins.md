@@ -15,7 +15,7 @@ plug-ins are not supported.
 | Export destinations ("Then send to" in the Export dialog) | `exportDestinations: [{id, name, dialog}]` | `{"hook":"export.destination","destination","args","files":[{path, photo}]}` after the files are written and the export hooks ran; the files are lent to the call; a `message` in the reply is shown |
 | Custom metadata fields (Metadata panel ▸ Plug-in fields) | `metadataFields: [{key, label, type, …, readOnly?}]` | none: the values are the plug-in's namespace entries under each field's `key` (`ns.set {photo, key, value}`); the user edits them in the panel on every selected photo (`plugin.setField {ids}`; differing values read `< mixed >`), read-only ones only the plug-in sets. The plug-in's data stays the source; the app keeps an in-memory index of it (`Photo.plugin_fields`, never saved with the catalog, so its format is unchanged: rebuilt when a library opens and after every plug-in command and export hook): Library filter text search finds the values (`key:value` for one field), smart-album and filter rules test them as `plugin:<id>/<key>` (Rules ▸ Plug-in Fields; text operators, number fields compare as numbers: is ≥, is between, …), and XMP sidecars carry them as `lcpf:fields` (a bag of `{lcpf:plugin, lcpf:key, lcpf:value}`, namespace `<homepage>/ns/plugin-fields/1.0/`, from `homepage` in `brand.toml`) when metadata is saved, and give them back to the plug-in's data on import, Synchronize Folder and Read Metadata from File (installed, enabled plug-ins only; read-only fields included; values the field doesn't take are skipped) |
 
-Commands appear under File ▸ Plug-in Extras and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
+Commands appear under File ▸ Plug-ins and run as the engine command `plugin.run {plugin, command, args?, ids?}`. The UI, CLI,
 control channel and MCP all use this command. `plugin.commands` lists the commands so front
 ends can build menus and dialogs. Dialog fields are `{key, label, type}`, where `type` is one of
 `text` (`default`), `number` (`min`, `max`, `default`), `bool` (`default`) or `choice`
@@ -86,7 +86,7 @@ rustup target add wasm32-unknown-unknown
 cd sdk/examples/catalog-tools
 cargo build --release --target wasm32-unknown-unknown
 # install target/wasm32-unknown-unknown/release/catalog_tools.wasm:
-#   File ▸ Plug-in Manager…, or  <cli> commands plugin.install '{"path": "…"}'
+#   File ▸ Plug-ins ▸ Plug-in Manager…, or  <cli> commands plugin.install '{"path": "…"}'
 ```
 
 `lcc-plugins`' test suite (`crates/plugins/tests/example.rs`) builds every example to wasm32 and
@@ -150,7 +150,7 @@ The manifest fields:
 | `id` | stable, `[A-Za-z0-9._-]{1,64}`, reverse-DNS style; an install with the same id is an update |
 | `name`, `version`, `description`, `author` | shown in the Plug-in Manager |
 | `permissions` | what the plug-in asks for (see [Permissions](#permissions)); ask for as little as possible |
-| `commands` | `[{id, label, menu?, dialog?}]`, File ▸ Plug-in Extras ▸ `name` ▸ `menu` ▸ `label` |
+| `commands` | `[{id, label, menu?, dialog?}]`, File ▸ Plug-ins ▸ `name` ▸ `menu` ▸ `label` |
 | `hooks` | `{export?: true, metadata?: true}` |
 | `publish` | `{id, name}`: one publish service |
 | `exportDestinations` | `[{id, name, dialog?}]`, at most 16 |
@@ -197,7 +197,7 @@ The manifest fields:
 ### 6. Test and ship
 
 - Unit-test your logic natively (`cargo test`; the host calls answer "no host" off wasm).
-- Build `--release --target wasm32-unknown-unknown`, then install from File ▸ Plug-in Manager…
+- Build `--release --target wasm32-unknown-unknown`, then install from File ▸ Plug-ins ▸ Plug-in Manager…
   (*Install…* shows every permission for approval) or `<cli> commands plugin.install`.
 - Drive it without the UI: `plugin.run`, `plugin.exportTo`, `plugin.setField`, `plugin.log` from
   the CLI, the control channel or MCP.
@@ -240,7 +240,7 @@ disabled and with no permissions granted.
 Besides the plug-ins above, <app> runs **pixel filters** written for PhotoCraft's plug-in ABI v1
 (the `lcc-filters` crate, `crates/filters/README.md`): a module with no imports exporting
 `memory`, `pc_abi_version`, `pc_manifest`, `pc_alloc` and `pc_filter`. They install the same way
-(File ▸ Plug-in Manager…, or `<cli> commands plugin.install '{"path": "film.wasm"}'`): the host
+(File ▸ Plug-ins ▸ Plug-in Manager…, or `<cli> commands plugin.install '{"path": "film.wasm"}'`): the host
 sniffs the exports and keeps filter modules in the same folder, in a registry of their own.
 `plugin.list` shows each as `{id, name, version, kind: "filter", params, moduleHash, analyze}`
 (`params` is the manifest's spec); `plugin.uninstall` removes one. Filters ask for no permissions.

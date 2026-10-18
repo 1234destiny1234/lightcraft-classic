@@ -1,4 +1,10 @@
 {
+  "File Settings": "Параметри файлу",
+  "Image Sizing": "Розмір зображення",
+  "Output Sharpening": "Різкість під час виводу",
+  "Watermarking": "Водяний знак",
+  "File Naming": "Імена файлів",
+  "Export Location": "Місце експорту",
   "Color Values": "Значення кольору",
   "Color Readout": "Показ кольору",
   "Show RGB Color Values": "Показувати значення RGB",
@@ -1151,5 +1157,17 @@
   "Last synced {} h ago": "Остання синхронізація: {} год тому",
   "Last synced on {}": "Остання синхронізація: {}",
   "{} wants to sync its library “{}” with this library.": "{} пропонує синхронізувати свою бібліотеку «{}» з цією бібліотекою.",
-  "{} photos updated, {} copies": "Оновлено фото: {}, копій: {}"
+  "{} photos updated, {} copies": "Оновлено фото: {}, копій: {}",
+  "More Imports": "Інші способи імпорту",
+  "More Exports": "Інші способи експорту",
+  "Libraries": "Бібліотеки",
+  "Plug-ins": "Плагіни",
+  "Filters": "Фільтри",
+  "Rotate & Flip": "Поворот і віддзеркалення",
+  "Loupe Info": "Відомості в лупі",
+  "Before/After": "До/після",
+  "Edit Panels": "Панелі редагування",
+  "Screen Mode": "Режим екрана",
+  "Metadata Filter Columns": "Стовпці фільтра метаданих",
+  "Metadata columns: click a value to narrow the view": "Стовпці метаданих: клацніть значення, щоб звузити перегляд"
 }

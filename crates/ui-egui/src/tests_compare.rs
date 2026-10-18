@@ -209,3 +209,24 @@ fn a_compare_pane_says_when_its_render_failed() {
     assert!(h.step_until(SETTLE, failed), "the failure is said");
     assert!(!h.app.widgets.iter().any(|(w, _)| w.starts_with("compare:rendering:")));
 }
+
+/// Issue #264: the ✕ over a Survey photo (shown while the pointer is over it) takes the photo out
+/// of the survey; the others stay.
+#[test]
+fn survey_x_removes_the_photo_from_the_survey() {
+    let mut h = demo();
+    let vis: Vec<u64> = h.app.session.visible_cloned().iter().map(|p| p.0).collect();
+    let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [vis[0], vis[1], vis[2]], "active": vis[1]}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.app.ui.view = crate::state::ViewMode::Survey;
+    h.settle(SETTLE);
+    let img = h.app.image_rect.expect("the active photo is drawn");
+    h.request("ui.move", json!({"x": img.center().x, "y": img.center().y}), T);
+    h.settle(SETTLE);
+    let r = h.request("ui.clickWidget", json!({"id": format!("surveyRemove:{}", vis[1])}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let s = &h.app.session.selection;
+    let left: Vec<u64> = vis.iter().copied().filter(|v| s.contains(lcc_catalog::PhotoId(*v))).collect();
+    assert_eq!(left, vec![vis[0], vis[2]], "the clicked photo left the survey");
+}

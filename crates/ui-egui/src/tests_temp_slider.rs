@@ -49,7 +49,7 @@ fn thumb(h: &Headless, control: &str) -> f32 {
         .painted_shapes()
         .iter()
         .filter_map(|s| match s {
-            egui::epaint::Shape::Circle(c) if c.radius == 7.0 && (c.center.y - track.center().y).abs() < 0.5 => Some(c.center.x),
+            egui::epaint::Shape::Circle(c) if c.stroke.width > 0.0 && (c.center.y - track.center().y).abs() < 0.5 => Some(c.center.x),
             _ => None,
         })
         .filter(|x| (track.left() - 0.5..=track.right() + 0.5).contains(x))

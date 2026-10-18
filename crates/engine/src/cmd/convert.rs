@@ -110,7 +110,7 @@ pub fn specs() -> Vec<CommandSpec> {
     vec![cmd!(
         "photo.convertToDng",
         "Convert to DNG",
-        ["Photo"],
+        ["Photo", "File"],
         None,
         "{ids?} — write each raw photo as a lossless DNG next to it (settings embedded) and relink the photo to it; originals are kept → {converted: [{id, path, original}], skipped}",
         has_selection,
@@ -403,7 +403,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.duplicate",
             "Duplicate",
-            ["Photo"],
+            ["Photo", "File"],
             None,
             "{ids?} — copy each photo's file next to it (`-copy`) and add it with the same settings, metadata and albums (a real file, unlike a virtual copy) → {ids}",
             has_selection,
@@ -412,7 +412,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.reload",
             "Reload from Disk",
-            ["Photo"],
+            ["Photo", "File"],
             None,
             "{ids?} — re-read photos whose files changed on disk (e.g. saved by an external editor), or raws shown from their embedded preview that can be decoded now; camera fields the catalog lacks are filled in, and so is the lens data the file carries (an untouched photo then gets its lens correction turned on as import would; an edited one keeps its settings) → {reloaded}",
             has_selection,
@@ -432,7 +432,7 @@ pub fn edit_specs() -> Vec<CommandSpec> {
             ..cmd!(
                 "photo.renderToDng",
                 "Render to DNG",
-                ["Photo"],
+                ["Photo", "File"],
                 None,
                 "{ids?, colorSpace?: proPhoto (default) | rec2020 | adobeRgb | displayP3 | srgb, dir?} — render each selected photo (or `ids`, at most 500) with its edits as a linear 16-bit float DNG `<name>-Rendered.dng` next to it (a demo photo into `dir`), add each stacked on its original and select them; a batch shows in the activity stack and can be cancelled between photos → {copies: [{path, id, original}], failed: [{id, error}], cancelled}",
                 has_selection,

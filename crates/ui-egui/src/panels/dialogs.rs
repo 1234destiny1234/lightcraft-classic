@@ -128,7 +128,7 @@ fn watermark_preview(app: &mut LccApp, ui: &mut egui::Ui, wm: &lcc_engine::expor
                 Ok(img) => img,
                 Err(e) => {
                     let note = if e.is_some() { "Preview unavailable" } else { "Loading preview…" };
-                    let r = ui.label(egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+                    let r = crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
                     if let Some(e) = e {
                         r.on_hover_text(e);
                     }
@@ -311,6 +311,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             Dialog::FaceModel { .. } => 460.0,
             Dialog::LightroomCatalog { .. } => 440.0,
             Dialog::ManageEffects { .. } => 560.0,
+            // (a form: the label column beside the controls)
+            Dialog::Export { .. } => 600.0,
+            Dialog::Rename { .. } | Dialog::ContactSheet { .. } | Dialog::Timelapse { .. } | Dialog::SlideshowExport { .. } => 480.0,
+            Dialog::CaptureTime { .. } | Dialog::LabelNames { .. } | Dialog::CreatePreset { .. } => 440.0,
             _ => 380.0,
         })
         .show(ctx, |ui| {
@@ -322,11 +326,24 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             } else {
                 crate::dialog_frame::ModalLayout::begin(ui, window_id)
             };
-            match &mut dlg {
-                Dialog::Settings { tab } => crate::panels::settings::tabs(ui, tab),
-                Dialog::About => about_tabs(ui),
-                _ => {}
+            if matches!(dlg, Dialog::About) {
+                about_tabs(ui);
             }
+            // (Settings keeps its category list in place and scrolls its content itself)
+            let settings_height = layout.body_max_height(ui);
+            // dialogs laid out as a form (a label column beside the controls)
+            let formed = matches!(
+                dlg,
+                Dialog::Export { .. }
+                    | Dialog::CreatePreset { .. }
+                    | Dialog::Rename { .. }
+                    | Dialog::ContactSheet { .. }
+                    | Dialog::Timelapse { .. }
+                    | Dialog::CaptureTime { .. }
+                    | Dialog::LabelNames { .. }
+                    | Dialog::Watermark { .. }
+                    | Dialog::SlideshowExport { .. }
+            );
             let mut body = |ui: &mut egui::Ui| match &mut dlg {
                 Dialog::AutoStack { gap } => {
                     ui.label(egui::RichText::new(crate::i18n::tr("Stack photos taken within this time of each other:")).color(t.text_label));
@@ -340,7 +357,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     crate::widgets::named(r, crate::i18n::tr("Stack photos taken within this time of each other:"));
                     let preview = app.session.execute("stack.auto", &json!({"gap": *gap, "preview": true})).unwrap_or_default();
                     let scope = if app.session.selection.ids.len() > 1 { "the selected photos" } else { "the photos in view" };
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr_format!("Creates {} stacks from {} of {scope}", preview["stacks"], preview["photos"], scope = crate::i18n::tr(scope))).color(t.text_dim),
                     );
                 }
@@ -351,10 +368,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     ui.add_space(6.0);
                     let r = ui.add(egui::Slider::new(reject_below, 0.0..=80.0).text(crate::i18n::tr("Reject below focus")).step_by(1.0));
                     crate::widgets::register(ui.ctx(), "field:cullReject", r.rect);
-                    ui.label(egui::RichText::new(crate::i18n::tr(if *reject_below > 0.0 { "Blurry photos below the score are flagged as rejects." } else { "0: nothing is rejected." })).color(t.text_dim));
-                    let r = ui.checkbox(pick_best, crate::i18n::tr("Pick the sharpest photo of each burst"));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(if *reject_below > 0.0 { "Blurry photos below the score are flagged as rejects." } else { "0: nothing is rejected." })).color(t.text_dim));
+                    let r = crate::dialog_frame::checkbox(ui, pick_best, crate::i18n::tr("Pick the sharpest photo of each burst"));
                     crate::widgets::register(ui.ctx(), "check:cullPick", r.rect);
-                    ui.label(egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Scores stay on the photos: filter or make smart albums with Focus and Best of Similar Shots.")).color(t.text_dim));
                 }
                 Dialog::WhatsNew => {
                     ui.scope(|ui| {
@@ -394,7 +411,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 Dialog::SystemInfo { rows } => {
                     egui::Grid::new("sysinfo").num_columns(2).spacing([16.0, 4.0]).striped(true).show(ui, |ui| {
                         for (k, v) in rows.iter() {
-                            ui.label(egui::RichText::new(crate::i18n::tr(k)).color(t.text_dim));
+                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(k)).color(t.text_dim));
                             ui.add(egui::Label::new(egui::RichText::new(v).color(t.text_label)).wrap());
                             ui.end_row();
                         }
@@ -433,14 +450,14 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                     ui.scope(|ui| {
                         if groups.is_empty() {
-                            ui.label(egui::RichText::new(crate::i18n::tr(rows["note"].as_str().unwrap_or("No metadata found"))).color(t.text_dim));
+                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(rows["note"].as_str().unwrap_or("No metadata found"))).color(t.text_dim));
                         }
                         for (g, list) in &groups {
                             ui.add_space(6.0);
                             ui.label(egui::RichText::new(g).font(t.semibold(12.5)).color(t.text));
                             egui::Grid::new(format!("meta-{g}")).num_columns(2).spacing([16.0, 3.0]).striped(true).show(ui, |ui| {
                                 for (n, v) in list {
-                                    ui.label(egui::RichText::new(n).color(t.text_dim));
+                                    crate::dialog_frame::note(ui, egui::RichText::new(n).color(t.text_dim));
                                     ui.add(egui::Label::new(egui::RichText::new(v).color(t.text_label)).wrap());
                                     ui.end_row();
                                 }
@@ -464,7 +481,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     let n = view.count;
                     ui.add_space(4.0);
                     if view.problems.is_empty() {
-                        ui.label(
+                        crate::dialog_frame::note(ui,
                             egui::RichText::new(crate::i18n::tr_format!("{n} photo{} match · updates automatically as photos change", if n == 1 { "" } else { "s" }, n = n))
                                 .color(t.text_dim),
                         );
@@ -485,7 +502,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         app.session.catalog.query(&rules, &Default::default()).len()
                     });
                     ui.label(egui::RichText::new(crate::i18n::tr_format!("Matches: {}", crate::i18n::filter_label(&rules, &app.session.catalog))).color(t.text_label));
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr_format!("{n} photo{} now · updates automatically as photos change", if n == 1 { "" } else { "s" }, n = n))
                             .color(t.text_dim),
                     );
@@ -549,7 +566,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         );
                     }
                     if n > 1 {
-                        ui.label(egui::RichText::new(crate::i18n::tr_format!("All {n} selected photos move by the same amount.", n = n)).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr_format!("All {n} selected photos move by the same amount.", n = n)).color(t.text_dim));
                     }
                 }
                 Dialog::LabelNames { names, save_as } => {
@@ -578,14 +595,14 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         let te = crate::widgets::named(ui.add(egui::TextEdit::singleline(save_as).hint_text(crate::i18n::tr("Optional name")).desired_width(f32::INFINITY)), crate::i18n::tr("Save as set"));
                         crate::widgets::register(ui.ctx(), "field:labelSetName", te.rect);
                     });
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr("Names appear in the label menu, the filter bar and the Info panel, and are written to XMP. Empty = the colour's name."))
                             .color(t.text_dim),
                     );
                 }
                 Dialog::Rename { template, start } => {
                     let n = app.session.selected().len();
-                    ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
                     let template_id = egui::Id::new("rename-template");
                     let tags_open = field(ui, "Template", |ui| {
                         ui.spacing_mut().item_spacing.x = 4.0;
@@ -618,7 +635,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         Some(rows) => {
                             egui::Grid::new("rename-preview").num_columns(3).spacing([8.0, 2.0]).show(ui, |ui| {
                                 for pl in rows {
-                                    ui.label(egui::RichText::new(&pl.from).color(t.text_dim));
+                                    crate::dialog_frame::note(ui, egui::RichText::new(&pl.from).color(t.text_dim));
                                     let (arrow, _) = ui.allocate_exact_size(egui::vec2(16.0, 16.0), egui::Sense::hover());
                                     crate::icons::paint(ui.painter(), arrow, crate::icons::Icon::ChevronRight, t.text_dim);
                                     ui.label(egui::RichText::new(&pl.to).color(t.text));
@@ -627,12 +644,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             });
                         }
                         None => {
-                            ui.label(egui::RichText::new(crate::i18n::tr("Checking names…")).color(t.text_dim));
+                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Checking names…")).color(t.text_dim));
                         }
                     }
                     let more = total.saturating_sub(RENAME_PREVIEW_ROWS);
                     if more > 0 {
-                        ui.label(egui::RichText::new(crate::i18n::tr_format!("… and {more} more", more = more)).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr_format!("… and {more} more", more = more)).color(t.text_dim));
                     }
                 }
                 Dialog::RenamePerson { from, to, merge } => {
@@ -661,7 +678,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             egui::RichText::new(crate::i18n::tr_format!("“{to}” is already a person. Combining them makes one person; Undo separates them again.", to = to.trim()))
                                 .color(t.caution),
                         );
-                        let r = ui.checkbox(merge, crate::i18n::tr("Combine with the existing person"));
+                        let r = crate::dialog_frame::checkbox(ui, merge, crate::i18n::tr("Combine with the existing person"));
                         crate::widgets::register(ui.ctx(), "check:personMerge", r.rect);
                     }
                 }
@@ -672,7 +689,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     if dialog_field(ui, "field:keywordName", to, "New name") {
                         confirm = true;
                     }
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr_format!("Renames “{from}” on {n} photo{} (keywords below it too). Use | for levels, e.g. Travel|Italy. An existing name merges the two.",
                             if n == 1 { "" } else { "s" }, from = from, n = n))
                         .color(t.text_dim),
@@ -710,7 +727,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     // as in Lightroom, the option is only there when something is selected
                     if !*folder && !app.session.selected().is_empty() {
                         ui.add_space(6.0);
-                        let r = ui.checkbox(include_selected, crate::i18n::tr("Include selected photos"));
+                        let r = crate::dialog_frame::checkbox(ui, include_selected, crate::i18n::tr("Include selected photos"));
                         crate::widgets::register(ui.ctx(), "check:albumIncludeSelected", r.rect);
                     }
                 }
@@ -720,9 +737,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                 }
                 Dialog::CreatePreset { name, group, groups } => {
-                    crate::widgets::named(ui.add(egui::TextEdit::singleline(name).hint_text(crate::i18n::tr("Preset name")).desired_width(f32::INFINITY)), crate::i18n::tr("Preset name"));
-                    crate::widgets::named(ui.add(egui::TextEdit::singleline(group).hint_text(crate::i18n::tr("Group")).desired_width(f32::INFINITY)), crate::i18n::tr("Group"));
-                    ui.label(egui::RichText::new(crate::i18n::tr("Settings to include")).color(t.text_dim));
+                    field(ui, "Preset name", |ui| {
+                        crate::widgets::named(ui.add(egui::TextEdit::singleline(name).hint_text(crate::i18n::tr("Preset name")).desired_width(f32::INFINITY)), crate::i18n::tr("Preset name"));
+                    });
+                    field(ui, "Group", |ui| {
+                        crate::widgets::named(ui.add(egui::TextEdit::singleline(group).hint_text(crate::i18n::tr("Group")).desired_width(f32::INFINITY)), crate::i18n::tr("Group"));
+                    });
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Settings to include")));
                     let _ = group_checklist(ui, "presetInclude", groups);
                 }
                 Dialog::CopySettings { groups } => {
@@ -730,7 +751,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::SyncSettings { groups, controls } => {
                     let n = app.session.selection.ids.len().saturating_sub(1);
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr_format!("The checked settings of the active photo are copied to {n} other selected photo(s)", n = n))
                             .color(t.text_dim),
                     );
@@ -741,7 +762,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::PasteSettings { groups } => {
                     let n = app.session.selected().len();
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr_format!("Paste into {n} photo{} — only settings that were copied are pasted", if n == 1 { "" } else { "s" }, n = n))
                             .color(t.text_dim),
                     );
@@ -759,10 +780,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             ui.selectable_value(&mut options.paper, "letter".into(), crate::i18n::tr("Letter"));
                         });
                     });
-                    ui.checkbox(&mut options.landscape, crate::i18n::tr("Landscape"));
+                    crate::dialog_frame::checkbox(ui, &mut options.landscape, crate::i18n::tr("Landscape"));
                     field(ui, "Columns", |ui| { ui.add(egui::DragValue::new(&mut options.columns).range(1..=8)); });
                     field(ui, "Rows", |ui| { ui.add(egui::DragValue::new(&mut options.rows).range(1..=10)); });
-                    ui.checkbox(&mut options.captions, crate::i18n::tr("Filename captions"));
+                    crate::dialog_frame::checkbox(ui, &mut options.captions, crate::i18n::tr("Filename captions"));
                     ui.label(crate::i18n::tr("150 dpi · sRGB · current edits · fit without cropping"));
                     ui.label(crate::i18n::tr("Choose a PDF destination after confirming. Print the PDF from your viewer."));
                 }
@@ -794,12 +815,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     field(ui, "Cross-Fade Frames", |ui| { ui.add(egui::DragValue::new(crossfade).range(0..=lcc_engine::timelapse::MAX_HOLD)); });
                     choices(ui, "Format", "timelapseFormat", &[(false, "H.264 (MP4)"), (true, "ProRes 422 (MOV)")], prores);
                     field(ui, "Quality", |ui| { ui.add(egui::Slider::new(quality, 1..=100)); });
-                    ui.label(egui::RichText::new(crate::i18n::tr("Each photo with its own edits, in the order shown. No audio.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Each photo with its own edits, in the order shown. No audio.")).color(t.text_dim));
                 }
                 Dialog::Export { opts, full_size, resize, preset_name, limit_kb, dir } => {
                     use lcc_engine::export::{ExportFormat as F, MetadataPolicy as M, SharpenAmount as A, SharpenFor as S};
                     let n = app.session.selection.ids.len().max(1);
-                    ui.label(egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
+                    crate::dialog_frame::group_begin(ui, None);
+                    crate::dialog_frame::note(ui,egui::RichText::new(crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)).color(t.text_dim));
                     // Preset: load a built-in or saved set of options into the dialog
                     field(ui, "Preset", |ui| {
                         let mut chosen = None;
@@ -826,7 +848,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             *opts = o;
                         }
                     });
-                    ui.add_space(4.0);
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("File Settings")));
                     let before = opts.format;
                     // "Rendered DNG" is a DNG option (below), not a format of its own in this list
                     let mut shown = if opts.format == F::RenderedDng { F::Dng } else { opts.format };
@@ -849,7 +871,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         } else {
                             "The original files, unchanged, each with an XMP sidecar holding its edits."
                         };
-                        ui.label(egui::RichText::new(note).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(note).color(t.text_dim));
                     }
                     if opts.format != before {
                         // each format starts at its own default depth (TIFF 16-bit, others 8-bit)
@@ -862,11 +884,19 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         choices(ui, "Bit depth", "exportBitDepth", depths, &mut bd);
                         opts.bit_depth = Some(bd);
                     }
+                    if opts.format == F::Tiff {
+                        use lcc_engine::export::TiffCompression as Z;
+                        choices(ui, "Compression", "exportTiffCompression", &[(Z::None, "None"), (Z::Lzw, "LZW"), (Z::Deflate, "ZIP")], &mut opts.tiff_compression);
+                    }
+                    if opts.format == F::Dng {
+                        use lcc_engine::export::DngCompression as Z;
+                        choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None"), (Z::Lossy, "Lossy")], &mut opts.dng_compression);
+                    }
                     if matches!(opts.format, F::Jpeg | F::Tiff | F::Avif | F::Png | F::Jxl) {
                         let tip = crate::i18n::tr("Photos edited in HDR: JPEG with an HDR gain map (looks right everywhere, brighter highlights on HDR displays), AVIF as 10-bit, PNG and JPEG XL as 16-bit Rec. 2020 PQ; TIFF needs 32-bit float");
-                        ui.checkbox(&mut opts.hdr, crate::i18n::tr("HDR output")).on_hover_text(tip);
+                        crate::dialog_frame::checkbox(ui, &mut opts.hdr, crate::i18n::tr("HDR output")).on_hover_text(tip);
                         if opts.hdr && !opts.hdr_output() {
-                            ui.label(egui::RichText::new(crate::i18n::tr("HDR TIFF needs 32-bit float.")).color(t.text_dim));
+                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("HDR TIFF needs 32-bit float.")).color(t.text_dim));
                         }
                         if opts.hdr && opts.format == F::Avif {
                             use lcc_engine::export::HdrCurve as H;
@@ -884,14 +914,14 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         } else {
                             crate::i18n::tr("Color space: Rec. 2020 PQ (HDR AVIF)")
                         };
-                        ui.label(egui::RichText::new(label).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(label).color(t.text_dim));
                     } else if opts.format == F::Png && opts.hdr {
-                        ui.label(egui::RichText::new(crate::i18n::tr("Color space: Rec. 2020 PQ, 16-bit (HDR PNG)")).color(t.text_dim))
+                        crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Color space: Rec. 2020 PQ, 16-bit (HDR PNG)")).color(t.text_dim))
                             .on_hover_text(crate::i18n::tr("Viewers that don't read the PNG cICP chunk show PQ values as sRGB: flat and washed out. For a picture that looks right everywhere, use JPEG (gain map)."));
                     } else if opts.format == F::Jxl && opts.hdr {
-                        ui.label(egui::RichText::new(crate::i18n::tr("Color space: Rec. 2020 PQ (HDR JPEG XL)")).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Color space: Rec. 2020 PQ (HDR JPEG XL)")).color(t.text_dim));
                     } else if opts.format == F::Avif {
-                        ui.label(egui::RichText::new(crate::i18n::tr("Color space: sRGB (AVIF)")).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Color space: sRGB (AVIF)")).color(t.text_dim));
                     } else {
                         use lcc_engine::export::OutputSpace as C;
                         choices(
@@ -909,12 +939,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         );
                         if opts.effective_space() != opts.color_space {
                             let note = "Lossy JPEG XL writes Adobe RGB and ProPhoto as Rec. 2020; choose Lossless to keep them.";
-                            ui.label(egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+                            crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
                         }
                     }
                     if opts.format == F::Jxl {
                         let tip = "Mathematically lossless: every pixel is kept exactly (larger files)";
-                        ui.checkbox(&mut opts.jxl_lossless, crate::i18n::tr("Lossless")).on_hover_text(crate::i18n::tr(tip));
+                        crate::dialog_frame::checkbox(ui, &mut opts.jxl_lossless, crate::i18n::tr("Lossless")).on_hover_text(crate::i18n::tr(tip));
                     }
                     if matches!(opts.format, F::Jpeg | F::Avif) || (opts.format == F::Jxl && !opts.jxl_lossless) {
                         let mut q = opts.quality as f64;
@@ -926,7 +956,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         use lcc_engine::export::JxlEffort as E;
                         choices(ui, "Effort", "exportJxlEffort", &[(E::Fast, "Fast"), (E::Normal, "Normal")], &mut opts.jxl_effort);
                         let tip = "Shows a coarse version first and refines it as the file loads";
-                        ui.checkbox(&mut opts.jxl_progressive, crate::i18n::tr("Progressive")).on_hover_text(crate::i18n::tr(tip));
+                        crate::dialog_frame::checkbox(ui, &mut opts.jxl_progressive, crate::i18n::tr("Progressive")).on_hover_text(crate::i18n::tr(tip));
                     }
                     if opts.format == F::Jpeg {
                         let mut k = *limit_kb as f64;
@@ -938,10 +968,9 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     let videos = app.session.selection.ids.iter().filter(|id| app.session.catalog.photo(**id).is_some_and(|p| p.video.is_some())).count();
                     if rendered && videos > 0 {
                         use lcc_engine::export_video::VideoFormat as V;
-                        ui.add_space(4.0);
-                        ui.label(egui::RichText::new(crate::i18n::tr("Video")).strong());
+                        crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Video")));
                         let note = format!("{videos} · {}", crate::i18n::tr("video clips export as movies, trimmed, with their video edits"));
-                        ui.label(egui::RichText::new(note).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(note).color(t.text_dim));
                         choices(ui, "Video format", "exportVideoFormat", &[(V::H264, "H.264 (MP4)"), (V::ProRes, "ProRes (MOV)")], &mut opts.video_format);
                         let mut q = opts.video_quality as f64;
                         if num(ui, &VIDEO_QUALITY, &mut q) {
@@ -953,9 +982,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         }
                     }
                     if rendered {
+                        crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Image Sizing")));
                         export_size(ui, full_size, resize, &mut opts.ppi);
                     }
                     if rendered {
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Output Sharpening")));
                     choices(
                         ui,
                         "Sharpen",
@@ -974,6 +1005,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                     }
                     if rendered {
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Metadata")));
                     choices(
                         ui,
                         "Metadata",
@@ -982,10 +1014,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         &mut opts.metadata,
                     );
                     if !matches!(opts.metadata, M::None | M::Copyright) {
-                        ui.checkbox(&mut opts.remove_location, crate::i18n::tr("Remove location info"));
+                        crate::dialog_frame::checkbox(ui, &mut opts.remove_location, crate::i18n::tr("Remove location info"));
                     }
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Watermarking")));
                     let mut wm_on = opts.watermark.is_some();
-                    if ui.checkbox(&mut wm_on, crate::i18n::tr("Watermark")).changed() {
+                    if crate::dialog_frame::checkbox(ui, &mut wm_on, crate::i18n::tr("Watermark")).changed() {
                         opts.watermark = wm_on.then(|| lcc_engine::export::Watermark { text: "© ".into(), ..Default::default() });
                     }
                     let wm_shown = opts.watermark.clone();
@@ -1053,7 +1086,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                             wm.inset_y = (v / 100.0) as f32;
                         }
                         if !graphic {
-                            ui.checkbox(&mut wm.shadow, crate::i18n::tr("Shadow"));
+                            crate::dialog_frame::checkbox(ui, &mut wm.shadow, crate::i18n::tr("Shadow"));
                         }
                     }
                     if opts.watermark != wm_shown {
@@ -1061,15 +1094,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         ui.ctx().request_repaint();
                     }
                     }
-                    ui.add_space(4.0);
-                    if opts.format == F::Tiff {
-                        use lcc_engine::export::TiffCompression as Z;
-                        choices(ui, "Compression", "exportTiffCompression", &[(Z::None, "None"), (Z::Lzw, "LZW"), (Z::Deflate, "ZIP")], &mut opts.tiff_compression);
-                    }
-                    if opts.format == F::Dng {
-                        use lcc_engine::export::DngCompression as Z;
-                        choices(ui, "Compression", "exportDngCompression", &[(Z::Lossless, "Lossless"), (Z::Deflate, "ZIP"), (Z::Uncompressed, "None"), (Z::Lossy, "Lossy")], &mut opts.dng_compression);
-                    }
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("File Naming")));
                     // Lightroom Classic's File Naming templates; any other template is "Custom"
                     let current = EXPORT_NAMING_TEMPLATES.iter().find(|(t, _)| *t == opts.naming).map_or("Custom", |(_, l)| *l);
                     field(ui, "Template", |ui| {
@@ -1105,6 +1130,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                     // like Lightroom Classic's Export To: one folder, or each photo's own folder (not on
                     // the web, where originals live in the browser's storage, not in folders)
+                    crate::dialog_frame::group_begin(ui, Some(crate::i18n::tr("Export Location")));
                     use lcc_engine::export::DestinationMode as D;
                     if !cfg!(target_arch = "wasm32") || opts.destination_mode != D::SpecificFolder {
                     choices(
@@ -1146,13 +1172,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     // After export: Apple Photos imports the files written (macOS only)
                     #[cfg(target_os = "macos")]
                     {
-                        let r = ui.checkbox(&mut opts.add_to_photos, crate::i18n::tr("Add to Apple Photos"));
+                        let r = crate::dialog_frame::checkbox(ui, &mut opts.add_to_photos, crate::i18n::tr("Add to Apple Photos"));
                         crate::widgets::register(ui.ctx(), "exportAddToPhotos", r.rect);
                         if opts.add_to_photos {
                             field(ui, "Album", |ui| {
                                 crate::widgets::named(ui.add(egui::TextEdit::singleline(&mut opts.photos_album).hint_text(crate::i18n::tr("none")).desired_width(f32::INFINITY)), crate::i18n::tr("Album"))
                             });
-                            ui.label(
+                            crate::dialog_frame::note(ui,
                                 egui::RichText::new(crate::i18n::tr("The first time, macOS asks whether {app} may control Photos."))
                                     .size(11.0)
                                     .color(t.text_dim),
@@ -1164,7 +1190,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     {
                         opts.add_to_photos = false;
                     }
-                    ui.add_space(4.0);
+                    crate::dialog_frame::group_begin(ui, None);
                     field(ui, "Save preset", |ui| {
                         trailing_button_row(ui, |ui| {
                             let named = !preset_name.trim().is_empty();
@@ -1184,7 +1210,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 Dialog::Merge { opts } => crate::merge::body(app, ui, opts),
                 Dialog::Import { opts } => crate::import::body(app, ui, opts),
-                Dialog::Settings { tab } => crate::panels::settings::body(app, ui, tab),
+                Dialog::Settings { tab } => crate::panels::settings::body(app, ui, tab, settings_height),
                 Dialog::SamModel { error, .. } => sam_model_body(app, ui, error.as_deref()),
                 Dialog::KeywordTag {
                     editing,
@@ -1199,7 +1225,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     add_to_selected,
                     ..
                 } => {
-                    ui.label(egui::RichText::new(crate::i18n::tr("Keyword Name")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Keyword Name")).color(t.text_dim));
                     // several fields: the name takes the focus when the dialog opens, not after
                     let r = crate::text_field::TextField::singleline("field:keywordTagName", name)
                         .hint(crate::i18n::tr("Keyword Name"))
@@ -1213,7 +1239,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         confirm = true;
                     }
                     ui.add_space(4.0);
-                    ui.label(egui::RichText::new(crate::i18n::tr("Synonyms")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Synonyms")).color(t.text_dim));
                     // Return in either field creates (or saves) the keyword
                     let r = crate::text_field::TextField::singleline("field:keywordSynonyms", synonyms)
                         .hint(crate::i18n::tr("Separated by commas"))
@@ -1225,7 +1251,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     ui.add_space(6.0);
                     if editing.is_none() {
                         if let Some(p) = parent {
-                            let r = ui.checkbox(inside, crate::i18n::tr_format!("Put inside “{parent}”", parent = p.replace('|', " › ")));
+                            let r = crate::dialog_frame::checkbox(ui, inside, crate::i18n::tr_format!("Put inside “{parent}”", parent = p.replace('|', " › ")));
                             crate::widgets::register(ui.ctx(), "check:keywordInside", r.rect);
                         }
                         let n = app.session.selection.ids.len();
@@ -1233,19 +1259,19 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         crate::widgets::register(ui.ctx(), "check:keywordAddToSelected", r.rect);
                         ui.add_space(4.0);
                     }
-                    ui.label(egui::RichText::new(crate::i18n::tr("Keyword Tag Options")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Keyword Tag Options")).color(t.text_dim));
                     for (on, label, id) in [
                         (include_on_export, "Include on Export", "check:keywordIncludeOnExport"),
                         (export_containing, "Export Containing Keywords", "check:keywordExportContaining"),
                         (export_synonyms, "Export Synonyms", "check:keywordExportSynonyms"),
                         (person, "Person", "check:keywordPerson"),
                     ] {
-                        let r = ui.checkbox(on, crate::i18n::tr(label));
+                        let r = crate::dialog_frame::checkbox(ui, on, crate::i18n::tr(label));
                         crate::widgets::register(ui.ctx(), id, r.rect);
                     }
                 }
                 Dialog::KeywordSet { replaces, name, slots, as_new } => {
-                    ui.label(egui::RichText::new(crate::i18n::tr("Set name")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Set name")).color(t.text_dim));
                     let r = crate::text_field::TextField::singleline("field:keywordSetName", name)
                         .hint(crate::i18n::tr("Set name"))
                         .width(f32::INFINITY)
@@ -1256,7 +1282,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                     let mut returned = r.ending == Some(crate::text_field::Ending::Return);
                     ui.add_space(6.0);
-                    ui.label(egui::RichText::new(crate::i18n::tr("Keywords (⌥1–⌥9)")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Keywords (⌥1–⌥9)")).color(t.text_dim));
                     slots.resize(9, String::new());
                     // equal columns of a set width (the window is still finding its own)
                     let w = 130.0;
@@ -1274,7 +1300,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     });
                     if replaces.is_some() {
                         ui.add_space(6.0);
-                        let r = ui.checkbox(as_new, crate::i18n::tr("Save as a new set"));
+                        let r = crate::dialog_frame::checkbox(ui, as_new, crate::i18n::tr("Save as a new set"));
                         crate::widgets::register(ui.ctx(), "check:keywordSetAsNew", r.rect);
                     }
                     // Return in any field saves the set
@@ -1292,7 +1318,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         )),
                         None => ui.label(crate::i18n::tr_format!("There is a “{name}” at the top level already. Merge the two?", name = name)),
                     };
-                    ui.label(egui::RichText::new(crate::i18n::tr("Their photos and the keywords below them come together under one keyword.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Their photos and the keywords below them come together under one keyword.")).color(t.text_dim));
                 }
                 Dialog::DeleteKeyword { keyword, count } => {
                     let name = keyword.replace('|', " › ");
@@ -1324,7 +1350,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         _ => crate::i18n::tr_format!("Delete these {n} effect presets?", n = names.len()),
                     };
                     ui.label(what);
-                    ui.label(egui::RichText::new(crate::i18n::tr("Masks keep their sliders. Export presets first to keep a copy.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Masks keep their sliders. Export presets first to keep a copy.")).color(t.text_dim));
                 }
                 Dialog::ConfirmDelete { count, disk_files } => {
                     let what = if *count == 1 { crate::i18n::tr("this photo").to_string() } else { crate::i18n::tr_format!("these {count} photos", count = count) };
@@ -1339,19 +1365,19 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         } else {
                             crate::i18n::tr_format!("Delete from Disk moves {n} files to the system trash.", n = disk_files)
                         };
-                        ui.label(egui::RichText::new(files).color(t.text_dim));
-                        ui.label(
+                        crate::dialog_frame::note(ui, egui::RichText::new(files).color(t.text_dim));
+                        crate::dialog_frame::note(ui,
                             egui::RichText::new(crate::i18n::tr("Remove keeps the files on disk and moves the photos to Recently Deleted.")).color(t.text_dim),
                         );
                     } else {
                         ui.label(crate::i18n::tr_format!("Move {what} to Recently Deleted?", what = what));
-                        ui.label(egui::RichText::new(crate::i18n::tr("They can be restored from Recently Deleted until it is emptied.")).color(t.text_dim));
+                        crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("They can be restored from Recently Deleted until it is emptied.")).color(t.text_dim));
                     }
                 }
                 Dialog::ConfirmPurge { count, .. } => {
                     let what = if *count == 1 { crate::i18n::tr("this photo").to_string() } else { crate::i18n::tr_format!("these {count} photos", count = count) };
                     ui.label(crate::i18n::tr_format!("Remove {what} from the library for good?", what = what));
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr("Their edits, keywords and collection memberships are removed; the files on disk are kept."))
                             .color(t.text_dim),
                     );
@@ -1359,17 +1385,17 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 Dialog::MovePhotos { ids, name, dont_ask, .. } => {
                     let n = ids.len();
                     ui.label(crate::i18n::tr_format!("Move {n} photo{} to “{}”?", if n == 1 { "" } else { "s" }, name, n = n));
-                    ui.label(egui::RichText::new(crate::i18n::tr("Their files and XMP sidecars move on disk. Edit → Undo moves them back.")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Their files and XMP sidecars move on disk. Edit → Undo moves them back.")).color(t.text_dim));
                     ui.add_space(4.0);
-                    let c = ui.checkbox(dont_ask, crate::i18n::tr("Don't ask again"));
+                    let c = crate::dialog_frame::checkbox(ui, dont_ask, crate::i18n::tr("Don't ask again"));
                     crate::widgets::register(ui.ctx(), "check:moveDontAsk", c.rect);
                     c.on_hover_text(crate::i18n::tr("Settings → Confirm before moving photos to another folder on disk turns it back on"));
                 }
                 d @ Dialog::SynchronizeFolder { .. } => crate::sync::body(app, ui, d),
                 Dialog::LightroomCatalog { folder, catalog } => {
                     ui.label(crate::i18n::tr("This is a Lightroom catalog, not a {app} library. Import it into a {app} library instead?"));
-                    ui.label(egui::RichText::new(catalog.as_deref().unwrap_or(folder.as_str())).color(t.text_dim));
-                    ui.label(
+                    crate::dialog_frame::note(ui, egui::RichText::new(catalog.as_deref().unwrap_or(folder.as_str())).color(t.text_dim));
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr(
                             "The import reads the catalog without changing it and adds its photos, edits, keywords and collections to the library open now.",
                         ))
@@ -1383,10 +1409,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         name = name,
                         count = count
                     ));
-                    ui.label(egui::RichText::new(path.as_str()).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(path.as_str()).color(t.text_dim));
                     let scope = if *disk { "All the photos imported from this disk are included." } else { "That includes the photos in the folders inside it." };
-                    ui.label(egui::RichText::new(crate::i18n::tr(scope)).color(t.text_dim));
-                    ui.label(
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(scope)).color(t.text_dim));
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr("They move to Recently Deleted and can be restored; no file on disk is touched."))
                             .color(t.text_dim),
                     );
@@ -1424,7 +1450,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),
                 Dialog::ViewOptions => crate::panels::cells::view_options(app, ui),
                 Dialog::NewPhotoDefault { name } => {
-                    ui.label(egui::RichText::new(crate::i18n::tr("Preset name")).color(t.text_dim));
+                    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Preset name")).color(t.text_dim));
                     let r = crate::text_field::TextField::singleline("field:newPhotoDefaultName", name)
                         .hint(crate::i18n::tr(lcc_engine::import::NEW_PHOTO_DEFAULT))
                         .width(f32::INFINITY)
@@ -1438,7 +1464,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         confirm = true;
                     }
                     ui.add_space(6.0);
-                    ui.label(
+                    crate::dialog_frame::note(ui,
                         egui::RichText::new(crate::i18n::tr(
                             "Saves the active photo's Optics settings as this preset; photos already in the library keep theirs.",
                         ))
@@ -1528,9 +1554,9 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         wm.inset_y = (v / 100.0) as f32;
                     }
                     if !graphic {
-                        ui.checkbox(&mut wm.shadow, crate::i18n::tr("Shadow"));
+                        crate::dialog_frame::checkbox(ui, &mut wm.shadow, crate::i18n::tr("Shadow"));
                     }
-                    ui.add_space(4.0);
+                    crate::dialog_frame::group_begin(ui, None);
                     field(ui, "Save preset", |ui| {
                         trailing_button_row(ui, |ui| {
                             let named = !preset_name.trim().is_empty();
@@ -1553,10 +1579,21 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             // the import review and Print size and scroll themselves
             if import || print {
                 body(ui);
+            } else if formed {
+                // labels right-aligned in a column, controls, checkboxes and notes beside them
+                // (in one group, unless the dialog starts groups of its own)
+                layout.body(ui, |ui| {
+                    crate::dialog_frame::form(ui, FORM_LABEL_W, |ui| {
+                        crate::dialog_frame::group_begin(ui, None);
+                        body(ui)
+                    })
+                });
             } else {
                 layout.body(ui, body);
             }
             layout.footer(ui, |ui| {
+            // a rule across the dialog sets the buttons off from its content
+            crate::dialog_frame::footer_rule(ui);
             ui.add_space(4.0);
             // the confirm on the right with Cancel to its left (macOS and GNOME's order), filled with
             // the accent when it is the dialog's primary action. The row spans the width the window
@@ -1907,14 +1944,17 @@ fn sam_model_body(app: &mut LccApp, ui: &mut egui::Ui, error: Option<&str>) {
         if r.clicked() {
             app.session.segmenter.cancel_download();
         }
-        ui.label(egui::RichText::new(crate::i18n::tr("You can close this: the download continues, and resumes if interrupted.")).color(t.text_dim));
+        crate::dialog_frame::note(
+            ui,
+            egui::RichText::new(crate::i18n::tr("You can close this: the download continues, and resumes if interrupted.")).color(t.text_dim),
+        );
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         return;
     }
     if seg.mirrors().is_empty() {
         // nothing to download from: say how to install it by hand, with the folder and the guide a click away
         let dir = seg.dir.clone();
-        ui.label(
+        crate::dialog_frame::note(ui,
             egui::RichText::new(crate::i18n::tr(
                 "This build can't download the model yet. To install it by hand, put model.safetensors, vocab.json and merges.txt from Meta's facebook/sam3 in the folder above: Object and Describe work as soon as they are there.",
             ))
@@ -2279,6 +2319,8 @@ fn basic_tone_checklist(ui: &mut egui::Ui, groups: &[String], controls: &mut Vec
 
 /// Width of the label column in dialogs.
 const LABEL_W: f32 = 78.0;
+/// The label column of the dialogs laid out as a form (Export, Rename, …).
+const FORM_LABEL_W: f32 = 112.0;
 
 const fn spec(id: &'static str, label: &'static str, min: f64, max: f64, default: f64, step: f64) -> ControlSpec {
     ControlSpec { id, label, section: Section::Light, min, max, default, step, decimals: 0, track: Track::Plain }
@@ -2307,7 +2349,7 @@ fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::R
         (R::Megapixels, "Megapixels"),
         (R::Percent, "Percentage"),
     ];
-    let r_full = ui.checkbox(full, crate::i18n::tr("Full size"));
+    let r_full = crate::dialog_frame::checkbox(ui, full, crate::i18n::tr("Full size"));
     crate::widgets::register(ui.ctx(), "check:exportFullSize", r_full.rect);
     if !*full {
         field(ui, "Resize to", |ui| {
@@ -2348,7 +2390,7 @@ fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::R
                 r.height = h as u32;
             }
         }
-        let c = ui.checkbox(&mut r.dont_enlarge, crate::i18n::tr("Don't enlarge"));
+        let c = crate::dialog_frame::checkbox(ui, &mut r.dont_enlarge, crate::i18n::tr("Don't enlarge"));
         crate::widgets::register(ui.ctx(), "check:exportDontEnlarge", c.rect);
     }
     let mut p = *ppi as f64;
@@ -2373,7 +2415,7 @@ const WM_INSET_Y: ControlSpec =
 
 /// A themed slider row editing `v`; true when it changed.
 fn num(ui: &mut egui::Ui, spec: &ControlSpec, v: &mut f64) -> bool {
-    match crate::widgets::slider(ui, spec, *v, true, None).value {
+    match crate::dialog_frame::in_control_column(ui, |ui| crate::widgets::slider(ui, spec, *v, true, None).value) {
         Some(n) => {
             *v = n;
             true
@@ -2399,7 +2441,7 @@ fn slideshow_export_body(app: &mut LccApp, ui: &mut egui::Ui, settings: &mut lcc
         slides = photos + titles,
         time = format!("{}:{:02}", (seconds / 60.0).floor() as u64, (seconds % 60.0).round() as u64)
     );
-    ui.label(egui::RichText::new(summary).color(t.text_dim));
+    crate::dialog_frame::note(ui, egui::RichText::new(summary).color(t.text_dim));
     let before = settings.format;
     choices(ui, "Format", "slideshowExportFormat", &[(Format::Pdf, "PDF"), (Format::Jpeg, "JPEG"), (Format::Video, "Video")], &mut settings.format);
     if settings.format != before {
@@ -2423,21 +2465,25 @@ fn slideshow_export_body(app: &mut LccApp, ui: &mut egui::Ui, settings: &mut lcc
     });
     let note = match settings.format {
         Format::Pdf => {
-            let r = ui.checkbox(&mut settings.full_screen, crate::i18n::tr("Automatically show full screen"));
+            let r = crate::dialog_frame::checkbox(ui, &mut settings.full_screen, crate::i18n::tr("Automatically show full screen"));
             crate::widgets::register(ui.ctx(), "check:slideshowExportFullScreen", r.rect);
             "One page per slide (the long side in pixels = points), with the slide duration and fade for the viewer's presentation mode."
         }
         Format::Jpeg => "Numbered JPEG files (name-001.jpg…) in a new folder named in the next step.",
         Format::Video => "AV1 video, each slide held for its duration with its fades. No sound: music is not exported yet.",
     };
-    ui.label(egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
-    ui.label(
+    crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr(note)).color(t.text_dim));
+    crate::dialog_frame::note(
+        ui,
         egui::RichText::new(crate::i18n::tr("Slides use the slideshow's layout, overlays and intro and ending screens, in view order."))
             .color(t.text_dim),
     );
 }
 
 fn field<R>(ui: &mut egui::Ui, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if crate::dialog_frame::in_form(ui) {
+        return crate::dialog_frame::form_row(ui, label, add);
+    }
     let t = Tokens::get(ui.ctx());
     ui.horizontal(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {

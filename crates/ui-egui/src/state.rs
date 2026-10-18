@@ -937,6 +937,8 @@ pub struct UiState {
     pub spots_threshold: f32,
     /// The library filter bar above the grid.
     pub filter_bar: bool,
+    /// The filter bar's Metadata columns (issue #218): the field each column lists; empty = hidden.
+    pub filter_columns: Vec<String>,
     /// Folders kept in Local (Browse Folder…, Keep in Local / Add to Local; `local.addRoot`):
     /// listed after the built-in locations, across restarts, whatever is browsed.
     pub local_roots: Vec<String>,
@@ -1610,6 +1612,7 @@ impl Default for UiState {
             settings: AppSettings::default(),
             window_fullscreen: None,
             filter_bar: false,
+            filter_columns: Vec::new(),
             local_roots: Vec::new(),
             local_browse_root: None,
             compare: None,

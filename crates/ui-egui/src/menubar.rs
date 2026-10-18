@@ -56,11 +56,12 @@ pub fn display_item_label<'a>(id: &str, params: &Value, label: &'a str) -> &'a s
 }
 
 /// Top-level menus in order (the macOS app menu is added by the host).
-pub const MENUS: &[&str] = &["File", "Edit", "Library", "Photo", "View", "Window", "Help"];
+pub const MENUS: &[&str] = &["File", "Edit", "Library", "Photo", "Metadata", "View", "Window", "Help"];
 
 /// Order and grouping per menu: command ids, `---` separators and `@Submenu` placeholders.
 /// Entries with a menu path that aren't listed are appended at the end of their menu, before any
-/// [`LAST`] item.
+/// [`LAST`] item. Each menu keeps to about fifteen top-level rows (Lightroom Classic's grouping):
+/// what is used less goes one level down, into a submenu named by the second part of its path.
 const LAYOUT: &[(&str, &[&str])] = &[
     (
         "File",
@@ -68,36 +69,20 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "file.addPhotos",
             "file.addFolder",
             "@Import from Device",
+            "@More Imports",
             "@Tethered Capture",
             "---",
-            "catalog.new",
-            "catalog.open",
+            "@Catalog",
             "@Open Recent Catalog",
-            "app.newLibrary",
-            "app.openLibrary",
-            "@Open Recent Library",
-            "file.backupLibrary",
-            "file.restoreLibrary",
-            "---",
-            "dialog.exportCatalog",
-            "dialog.importCatalog",
-            "catalog.backup",
-            "catalog.checkIntegrity",
-            "catalog.optimize",
-            "---",
-            "file.importPresets",
-            "file.exportPresets",
-            "file.importKeywords",
-            "file.exportKeywords",
+            "@Libraries",
             "---",
             "dialog.export",
             "app.exportPrevious",
             "@Export with Preset",
+            "@More Exports",
             "---",
-            "plugins.manager",
-            "@Plug-in Extras",
-            "---",
-            "library.toggleAutoWriteXmp",
+            "dialog.print",
+            "@Plug-ins",
             "---",
             "app.quit",
         ],
@@ -108,82 +93,18 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "edit.undo",
             "edit.redo",
             "---",
-            "develop.copy",
-            "dialog.copySettings",
-            "develop.paste",
-            "dialog.pasteSettings",
-            "develop.autoSync",
-            "---",
             "library.selectAll",
             "library.selectNone",
+            "library.selectOnlyActive",
             "@Select by",
             "---",
             "dialog.watermark",
+            "dialog.identityPlateSetup",
             "---",
+            "dialog.catalogSettings",
             "app.settings",
-        ],
-    ),
-    (
-        "View",
-        &[
-            "view.photoGrid",
-            "view.squareGrid",
-            "@Grid Info",
-            "view.thumbSizeUp",
-            "view.thumbSizeDown",
-            "view.detail",
-            "view.compare",
-            "view.survey",
-            "view.people",
-            "---",
-            "view.leftPanel",
-            "@Sidebar Sections",
-            "view.photoCounts",
-            "view.faceBoxes",
-            "view.focusPoint",
-            "view.zoomToFocus",
-            "view.filmstrip",
-            "view.histogram",
-            "view.navigator",
-            "view.infoOverlay",
-            "@Loupe Overlay",
-            "@Appearance",
-            "---",
-            "view.fullScreenPreview",
-            "view.lightsOut",
-            "view.enterFullScreen",
-            "---",
-            "view.showOriginal",
-            "view.beforeAfter",
-            "view.beforeAfterSplit",
-            "@Before/After Settings",
-            "---",
-            "view.zoomIn",
-            "view.zoomOut",
-            "view.zoomToggle",
-            "view.zoomFit",
-            "view.zoom100",
-            "---",
-            "view.clipping",
-            "view.visualizeHdr",
-            "view.softProof",
-            "view.maskOverlay",
-            "view.maskOverlayAll",
-            "view.maskOverlayMode",
-            "view.maskOverlayColor",
-            "view.maskPins",
-            "@Tool Overlay",
-            "view.cropOverlay",
-            "---",
-            "@Sort",
-            "@Stacks",
-            "view.filterBar",
-            "library.clearFilter",
-            "library.refresh",
-            "library.holdView",
-            "---",
-            "compare.swap",
-            "compare.makeSelect",
+            "@Keymap",
+            "@Language",
         ],
     ),
     (
@@ -195,9 +116,14 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "dialog.newSmartAlbum",
             "---",
             "view.focusSearch",
+            "library.findSimilar",
+            "@Filters",
+            "---",
+            "dialog.cull",
+            "tool.painter",
+            "faces.detect",
             "---",
             "dialog.rename",
-            "---",
             "file.findMissing",
             "@Previews",
             "---",
@@ -209,38 +135,23 @@ const LAYOUT: &[(&str, &[&str])] = &[
         &[
             "@Add to Collection",
             "---",
-            "@Set Rating",
             "@Set Flag",
+            "@Set Rating",
             "@Set Color Label",
-            "@Metadata Preset",
             "view.autoAdvance",
             "---",
-            "photo.rotateLeft",
-            "photo.rotateRight",
-            "photo.flipHorizontal",
-            "photo.flipVertical",
-            "---",
-            "version.create",
+            "@Rotate & Flip",
             "photo.virtualCopy",
             "@Stack",
             "@Photo Merge",
+            "@Edit In",
+            "@Video",
             "---",
             "develop.auto",
-            "develop.treatment",
             "develop.reset",
-            "develop.updateProcess",
-            "dialog.createPreset",
             "@Develop Settings",
             "---",
-            "photo.syncMetadata",
-            "photo.saveMetadataToFile",
-            "photo.readMetadataFromFile",
-            "photo.reload",
-            "photo.readFocusPoints",
-            "app.showInFinder",
-            "dialog.captureTime",
-            "photo.tagFromTracklog",
-            "---",
+            "@File",
             "album.removePhotos",
             "photo.delete",
             "photo.restore",
@@ -248,41 +159,235 @@ const LAYOUT: &[(&str, &[&str])] = &[
         ],
     ),
     (
+        "Metadata",
+        &[
+            "@Metadata Preset",
+            "---",
+            "photo.copyMetadata",
+            "photo.pasteMetadata",
+            "photo.syncMetadata",
+            "dialog.captureTime",
+            "dialog.allMetadata",
+            "---",
+            "photo.saveMetadataToFile",
+            "photo.readMetadataFromFile",
+            "library.toggleAutoWriteXmp",
+            "photo.readFocusPoints",
+            "---",
+            "keyword.toggleShortcut",
+            "---",
+            "photo.tagFromTracklog",
+            "metadata.reverseGeocode",
+            "metadata.downloadPlaceNames",
+        ],
+    ),
+    (
+        "View",
+        &[
+            "view.photoGrid",
+            "view.detail",
+            "view.compare",
+            "view.survey",
+            "view.people",
+            "@Grid View Style",
+            "---",
+            "@Loupe Info",
+            "@Loupe Overlay",
+            "@Tool Overlay",
+            "---",
+            "@Before/After",
+            "@Zoom",
+            "---",
+            "view.clipping",
+            "view.softProof",
+            "---",
+            "@Sort",
+            "---",
+            "compare.swap",
+            "compare.makeSelect",
+        ],
+    ),
+    (
         "Window",
         &[
-            "panel.edit",
-            "panel.crop",
-            "panel.remove",
-            "panel.masking",
-            "panel.redeye",
+            "@Modules",
+            "module.previous",
             "---",
-            "panel.presets",
-            "panel.versions",
-            "panel.activity",
-            "panel.info",
-            "panel.keywords",
-            "---",
+            "@Edit Panels",
             "@Edit Sections",
             "@Tools",
+            "@Panels",
+            "@Sidebar Sections",
+            "---",
+            "@Screen Mode",
+            "@Lights Out",
+            "@Appearance",
+            "@Slideshow",
+            "---",
+            "view.secondWindow",
+            "@Secondary Display",
         ],
     ),
     (
         "Help",
         &[
-            "app.feedback",
+            "app.help",
+            "app.whatsNew",
+            "app.shortcuts",
+            "module.help",
             "---",
+            "app.feedback",
             "app.website",
             "app.github",
             "app.discord",
             "---",
-            "app.whatsNew",
-            "app.shortcuts",
+            "app.checkForUpdates",
+            "app.installUpdate",
+            "---",
             "app.systemInfo",
             "app.openLogFolder",
             "---",
             "app.about",
         ],
     ),
+];
+
+/// Order inside submenus whose items come from the registry: (menu, submenu, ids and `---`).
+/// Items not listed follow in registry order, dialogs (labels ending in `…`) last.
+const SUB_LAYOUT: &[(&str, &str, &[&str])] = &[
+    (
+        "Photo",
+        "Develop Settings",
+        &[
+            "develop.copy",
+            "dialog.copySettings",
+            "develop.paste",
+            "dialog.pasteSettings",
+            "develop.pastePrevious",
+            "dialog.syncSettings",
+            "develop.autoSync",
+            "---",
+            "develop.treatment",
+            "develop.matchExposure",
+            "develop.updateProcess",
+            "---",
+            "version.create",
+            "dialog.createPreset",
+        ],
+    ),
+    (
+        "Photo",
+        "File",
+        &[
+            "app.showInFinder",
+            "photo.reload",
+            "photo.addToLibrary",
+            "---",
+            "photo.duplicate",
+            "photo.convertToDng",
+            "photo.renderToDng",
+            "---",
+            "photo.deleteFromDisk",
+        ],
+    ),
+    ("Photo", "Rotate & Flip", &["photo.rotateLeft", "photo.rotateRight", "---", "photo.flipHorizontal", "photo.flipVertical"]),
+    (
+        "File",
+        "Catalog",
+        &["catalog.new", "catalog.open", "---", "dialog.exportCatalog", "---", "catalog.backup", "catalog.checkIntegrity", "catalog.optimize"],
+    ),
+    ("File", "Libraries", &["app.newLibrary", "app.openLibrary", "---", "file.backupLibrary", "file.restoreLibrary", "library.compact"]),
+    (
+        "File",
+        "More Imports",
+        &["dialog.importCatalog", "file.importLightroom", "file.importImmich", "---", "file.importPresets", "file.importKeywords"],
+    ),
+    ("Library", "Filters", &["view.filterBar", "filter.toggleEnabled", "library.clearFilter", "---", "library.refresh", "library.holdView"]),
+    (
+        "View",
+        "Before/After",
+        &[
+            "view.showOriginal",
+            "view.beforeAfter",
+            "view.beforeAfterSplit",
+            "view.beforeAfterTopBottom",
+            "view.beforeAfterSplitTopBottom",
+            "view.reference",
+            "---",
+        ],
+    ),
+    ("View", "Zoom", &["view.zoomIn", "view.zoomOut", "---", "view.zoomToggle", "view.zoomFit", "view.zoom100"]),
+    (
+        "View",
+        "Loupe Info",
+        &[
+            "view.infoOverlay",
+            "view.focusPoint",
+            "view.zoomToFocus",
+            "view.faceBoxes",
+            "view.visualizeHdr",
+            "---",
+            "view.colorReadoutRgb",
+            "view.colorReadoutHsl",
+            "view.colorReadoutLab",
+        ],
+    ),
+    (
+        "View",
+        "Tool Overlay",
+        &[
+            "view.maskOverlay",
+            "view.maskOverlayAll",
+            "view.maskOverlayMode",
+            "view.maskOverlayColor",
+            "view.maskPins",
+            "---",
+            "view.visualizeSpots",
+            "view.cropOverlay",
+            "view.cropOverlayOrientation",
+        ],
+    ),
+    (
+        "View",
+        "Grid View Style",
+        &[
+            "view.squareGrid",
+            "---",
+            "view.cellCompact",
+            "view.cellExpanded",
+            "view.cellIndex",
+            "view.cellBadges",
+            "---",
+            "view.thumbSizeUp",
+            "view.thumbSizeDown",
+            "view.thumbLarger",
+            "view.thumbSmaller",
+        ],
+    ),
+    ("Window", "Edit Panels", &["panel.edit", "panel.profiles", "panel.crop", "panel.remove", "panel.masking", "panel.redeye"]),
+    (
+        "Window",
+        "Panels",
+        &[
+            "panel.presets",
+            "panel.versions",
+            "panel.activity",
+            "panel.info",
+            "panel.keywords",
+            "panel.actions",
+            "---",
+            "view.leftPanel",
+            "view.photoCounts",
+            "view.filmstrip",
+            "panel.toolbar",
+            "view.navigator",
+            "view.histogram",
+            "view.histogram.mode",
+            "view.histogram.scale",
+            "---",
+        ],
+    ),
+    ("Window", "Screen Mode", &["view.fullScreenPreview", "view.enterFullScreen", "---"]),
 ];
 
 /// Items that always end their menu in their own separator group, after the entries appended
@@ -304,6 +409,9 @@ const HIDDEN: &[&str] = &[
     "album.create",
     "library.import",
     "preset.create",
+    // the Loupe Overlay submenu lists them with its opacity and matte choices
+    "view.chooseLayoutImage",
+    "view.layoutImage",
 ];
 
 /// The selection includes a photo in Recently Deleted.
@@ -324,6 +432,9 @@ fn host_supports(app: &LccApp, id: &str) -> bool {
         "album.removePhotos" => in_normal_album(app) && !selection_deleted(app),
         // only where the trash is on screen
         "library.emptyRecentlyDeleted" => app.session.source == lcc_engine::LibrarySource::RecentlyDeleted,
+        // what only one view or kind of photo can use shows only there, so the menus stay short
+        "compare.swap" | "compare.makeSelect" => app.ui.view == ViewMode::Compare,
+        _ if id.starts_with("video.") => lcc_engine::cmd::video::active_video(&app.session).is_ok(),
         _ => true,
     }
 }
@@ -613,7 +724,7 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
             v.push(item("view.toolOverlay", Value::Null, "Cycle Tool Overlay", shortcut, true, None));
             v
         }
-        "Grid Info" => ["filename", "exposure", "date"]
+        "Grid View Style" => ["filename", "exposure", "date"]
             .into_iter()
             .zip(["File Name", "Exposure (shutter · aperture · ISO)", "Capture Date"])
             .map(|(k, label)| item("view.gridInfo", json!({"info": k}), label, None, true, Some(app.ui.grid_info == k)))
@@ -667,7 +778,7 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
             v
         }
         #[cfg(not(target_arch = "wasm32"))]
-        "Plug-in Extras" => crate::panels::plugins::menu_items(app).into_iter().map(|(id, p, label)| item(&id, p, label, None, true, None)).collect(),
+        "Plug-ins" => crate::panels::plugins::menu_items(app).into_iter().map(|(id, p, label)| item(&id, p, label, None, true, None)).collect(),
         "Open Recent Catalog" => {
             let mut v: Vec<MenuNode> =
                 crate::catalog_ui::recent_items(app).into_iter().map(|(label, p)| item("catalog.openRecent", p, label, None, true, None)).collect();
@@ -678,7 +789,7 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
             v.push(item("catalog.chooser", Value::Null, "Choose Catalog…", None, true, None));
             v
         }
-        "Open Recent Library" => {
+        "Libraries" => {
             let can = crate::panels::settings::can_switch_library(app).is_ok();
             let open = app.session.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone());
             let mut v: Vec<MenuNode> = app
@@ -836,9 +947,21 @@ pub fn menu_bar(app: &LccApp) -> Vec<(String, Vec<MenuNode>)> {
         let mut last = Vec::new();
         let sub = |name: &str, used: &mut [bool]| -> Vec<MenuNode> {
             let mut children = expanded(app, name).unwrap_or_default();
+            // the registry's items follow the generated ones in their own group
+            children.push(MenuNode::Separator);
+            let here = |e: &MenuEntry| e.menu.len() == 2 && e.menu[0] == *title && e.menu[1] == name;
+            let order = SUB_LAYOUT.iter().find(|(m, s, _)| m == title && *s == name).map(|(_, _, o)| *o).unwrap_or(&[]);
+            for slot in order {
+                if *slot == "---" {
+                    children.push(MenuNode::Separator);
+                } else if let Some(i) = entries.iter().enumerate().position(|(i, e)| !used[i] && e.id == *slot && here(e)) {
+                    used[i] = true;
+                    children.push(node(app, &entries[i]));
+                }
+            }
             let mut dialogs = Vec::new();
             for (i, e) in entries.iter().enumerate() {
-                if !used[i] && e.menu.len() == 2 && e.menu[0] == *title && e.menu[1] == name {
+                if !used[i] && here(e) {
                     used[i] = true;
                     // commands that open a dialog go last, after a separator
                     if e.label.ends_with('…') { dialogs.push(node(app, e)) } else { children.push(node(app, e)) }
@@ -897,6 +1020,33 @@ pub fn menu_bar(app: &LccApp) -> Vec<(String, Vec<MenuNode>)> {
 
 /// Run a menu item. Rating, flag and label items behave like their keys (the active photo only in
 /// Compare/Survey; Auto Advance moves on).
+/// The text-editing shortcuts a focused text field owns (⌘A / ⌘C / ⌘X / ⌘V / ⌘Z / ⇧⌘Z).
+pub const TEXT_EDIT_SHORTCUTS: &[&str] = &["Cmd+A", "Cmd+C", "Cmd+V", "Cmd+X", "Cmd+Z", "Cmd+Shift+Z"];
+
+/// A menu item reached by a text-editing shortcut while a text field has the keyboard focus
+/// (issue #281: the macOS menu bar can still deliver ⌘A to Library ▸ Select All): the field gets
+/// the edit (select its text, copy, paste…) instead of the command. Returns whether it did.
+pub fn forward_to_text_field(app: &mut LccApp, ctx: &egui::Context, shortcut: Option<&str>) -> bool {
+    let Some(sc) = shortcut.filter(|sc| TEXT_EDIT_SHORTCUTS.contains(sc)) else { return false };
+    if !ctx.egui_wants_keyboard_input() {
+        return false;
+    }
+    let command = egui::Modifiers::COMMAND;
+    let key = |key: egui::Key, modifiers: egui::Modifiers| {
+        [true, false].map(|pressed| egui::Event::Key { key, physical_key: Some(key), pressed, repeat: false, modifiers })
+    };
+    match sc {
+        "Cmd+C" => app.synthetic.push(egui::Event::Copy),
+        "Cmd+X" => app.synthetic.push(egui::Event::Cut),
+        "Cmd+V" => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+        "Cmd+A" => app.synthetic.extend(key(egui::Key::A, command)),
+        "Cmd+Z" => app.synthetic.extend(key(egui::Key::Z, command)),
+        _ => app.synthetic.extend(key(egui::Key::Z, command | egui::Modifiers::SHIFT)),
+    }
+    ctx.request_repaint();
+    true
+}
+
 pub fn run_item(app: &mut LccApp, id: &str, params: Value) -> Result<Value, String> {
     let mut params = if params.is_null() { json!({}) } else { params };
     let culling_cmd = matches!(
@@ -1138,6 +1288,28 @@ mod tests {
         LccApp::new(lcc_engine::Session::with_demo(), Default::default())
     }
 
+    /// Every menu fits a laptop screen without scrolling: about fifteen top-level rows (one more
+    /// where a state adds an item, like Remove from Collection in a collection), and submenus never
+    /// open a third level.
+    #[test]
+    fn menus_stay_short_and_two_levels_deep() {
+        let mut a = app();
+        let check = |a: &LccApp| {
+            for (title, items) in menu_bar(a) {
+                let rows = items.iter().filter(|n| **n != MenuNode::Separator).count();
+                assert!(rows <= 16, "{title} has {rows} top-level rows");
+                for n in &items {
+                    if let MenuNode::Submenu { label, children } = n {
+                        assert!(!children.iter().any(|c| matches!(c, MenuNode::Submenu { .. })), "{title} ▸ {label} nests a submenu");
+                    }
+                }
+            }
+        };
+        check(&a);
+        a.ui.view = ViewMode::Compare;
+        check(&a);
+    }
+
     fn find<'a>(nodes: &'a [MenuNode], id: &str) -> Option<&'a MenuNode> {
         nodes.iter().find_map(|n| match n {
             MenuNode::Item { id: i, .. } if i == id => Some(n),
@@ -1147,9 +1319,9 @@ mod tests {
     }
 
     #[test]
-    fn view_menu_offers_the_hold_and_the_refresh_and_checks_the_hold_while_it_is_on() {
+    fn library_menu_offers_the_hold_and_the_refresh_and_checks_the_hold_while_it_is_on() {
         let mut a = app();
-        let view = |a: &LccApp| menu_bar(a).into_iter().find(|(t, _)| t == "View").expect("View menu").1;
+        let view = |a: &LccApp| menu_bar(a).into_iter().find(|(t, _)| t == "Library").expect("Library menu").1;
         let items = view(&a);
         assert!(matches!(find(&items, "library.refresh"), Some(MenuNode::Item { enabled: true, .. })));
         assert!(matches!(find(&items, "library.holdView"), Some(MenuNode::Item { checked: Some(false), .. })), "off unless asked for");
@@ -1301,7 +1473,12 @@ mod tests {
         let listed = LAYOUT.iter().find(|(t, _)| *t == "File").unwrap().1;
         let unlisted: Vec<String> = crate::menus::menu_entries(&app)
             .into_iter()
-            .filter(|e| e.menu.first().map(String::as_str) == Some("File") && !listed.contains(&e.id.as_str()) && !HIDDEN.contains(&e.id.as_str()))
+            .filter(|e| {
+                e.menu.first().map(String::as_str) == Some("File")
+                    && !listed.contains(&e.id.as_str())
+                    && !HIDDEN.contains(&e.id.as_str())
+                    && host_supports(&app, &e.id)
+            })
             .map(|e| e.id)
             .collect();
         assert!(!unlisted.is_empty(), "no fallback File entries to order");
@@ -1668,9 +1845,9 @@ mod tests {
         app.session.execute("library.select", &json!({"ids": [id]})).unwrap();
         app.session.execute("photo.setCaptureTime", &json!({"time": "2026-05-01T12:01:00", "each": true})).unwrap();
         app.session.execute("photo.setMeta", &json!({"gps": null})).unwrap();
-        // in the Photo menu; without a file dialog (headless) it is disabled
-        let photo_menu = menu_bar(&app).into_iter().find(|(t, _)| t == "Photo").unwrap().1;
-        let Some(MenuNode::Item { enabled, .. }) = find(&photo_menu, "photo.tagFromTracklog") else { panic!("not in the Photo menu") };
+        // in the Metadata menu; without a file dialog (headless) it is disabled
+        let photo_menu = menu_bar(&app).into_iter().find(|(t, _)| t == "Metadata").unwrap().1;
+        let Some(MenuNode::Item { enabled, .. }) = find(&photo_menu, "photo.tagFromTracklog") else { panic!("not in the Metadata menu") };
         assert!(!enabled);
         // a file without an offset asks for the camera's time zone; confirming runs the tagging
         run_item(&mut app, "photo.tagFromTracklog", json!({"path": gpx.to_string_lossy()})).unwrap();

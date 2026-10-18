@@ -131,3 +131,241 @@ fn remember(ctx: &egui::Context, key: Id, value: f32) {
         ctx.request_discard("dialog layout measured");
     }
 }
+
+// ------------------------------------------------------------------------------- Form building
+//
+// The look every dialog shares (Settings is the reference): titled **groups** drawn as subtle inset
+// panels, a two-column **form** inside them (labels right-aligned in a fixed column, controls to
+// their right), checkboxes and **help** text aligned to the control column, and, for dialogs with
+// categories, a **sidebar** list on the left.
+
+use egui::{Align, Layout, RichText, Shape, StrokeKind, layers::ShapeIdx, vec2};
+
+use crate::theme::Tokens;
+
+/// The label column of a form, in points (each form may set its own with [`form`]).
+pub const LABEL_W: f32 = 150.0;
+/// The gap between the label column and the control column.
+pub const LABEL_GAP: f32 = 10.0;
+/// How far a group's panel reaches past its content on each side.
+pub const GROUP_PAD: f32 = 10.0;
+/// The height of one form row.
+const ROW_H: f32 = 24.0;
+
+/// The label column width the form in `ui` uses (set by [`form`], else [`LABEL_W`]).
+pub fn label_width(ui: &Ui) -> f32 {
+    ui.ctx().data(|d| d.get_temp::<f32>(Id::new("dialog-form-label-w"))).unwrap_or(LABEL_W)
+}
+
+fn set_label_width(ui: &Ui, width: f32) {
+    let width = if width.is_finite() { width.clamp(40.0, 400.0) } else { LABEL_W };
+    ui.ctx().data_mut(|d| d.insert_temp(Id::new("dialog-form-label-w"), width));
+}
+
+/// The x offset of the control column from the form's left edge.
+pub fn control_indent(ui: &Ui) -> f32 {
+    label_width(ui) + LABEL_GAP
+}
+
+/// One form row: `label` right-aligned in the label column, then the control(s) `add` draws.
+pub fn form_row<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let w = label_width(ui);
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        let gap = ui.spacing().item_spacing.x;
+        ui.allocate_ui_with_layout(vec2(w, ROW_H), Layout::right_to_left(Align::Center), |ui| {
+            ui.set_min_width(w);
+            if !label.is_empty() {
+                ui.add(egui::Label::new(RichText::new(crate::i18n::tr(label)).color(t.text_label)).truncate());
+            }
+        });
+        ui.add_space((LABEL_GAP - gap).max(0.0));
+        // a row of many choices wraps inside the control column instead of widening the dialog
+        let room = vec2(ui.available_width().max(40.0), ROW_H);
+        ui.allocate_ui_with_layout(room, Layout::left_to_right(Align::Center).with_main_wrap(true), add).inner
+    })
+    .inner
+}
+
+/// Draws `add` in the control column (indented past the labels) when `ui` lays out top-down; inside
+/// a row (left to right) it draws in place.
+pub fn in_control_column<R>(ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+    if !in_form(ui) || !ui.layout().main_dir().is_vertical() {
+        return add(ui);
+    }
+    let indent = control_indent(ui);
+    ui.horizontal_top(|ui| {
+        ui.add_space(indent);
+        ui.vertical(|ui| {
+            // help text wraps at the panel's edge, not past it
+            ui.set_max_width(ui.available_width());
+            add(ui)
+        })
+        .inner
+    })
+    .inner
+}
+
+/// Help / description text: small and muted, in the control column.
+pub fn help(ui: &mut Ui, text: &str) {
+    let t = Tokens::get(ui.ctx());
+    let text = RichText::new(crate::i18n::tr(text)).size(11.0).color(t.text_dim);
+    in_control_column(ui, |ui| {
+        ui.add(egui::Label::new(text).wrap());
+    });
+}
+
+/// A checkbox in the control column, addressable as `check:{id}`; true when toggled.
+pub fn form_check(ui: &mut Ui, id: &str, value: &mut bool, label: &str) -> bool {
+    let label = crate::i18n::tr(label).to_string();
+    in_control_column(ui, |ui| {
+        let r = ui.checkbox(value, label);
+        crate::widgets::register(ui.ctx(), format!("check:{id}"), r.rect);
+        r.changed()
+    })
+}
+
+/// `ui.checkbox`, in the control column in a form.
+pub fn checkbox(ui: &mut Ui, value: &mut bool, text: impl Into<egui::WidgetText>) -> egui::Response {
+    in_control_column(ui, |ui| ui.checkbox(value, text))
+}
+
+/// A note (`ui.label`), in the control column in a form.
+pub fn note(ui: &mut Ui, text: impl Into<egui::WidgetText>) -> egui::Response {
+    in_control_column(ui, |ui| ui.label(text))
+}
+
+/// The open group of a form: the reserved panel shape, filled in when the group closes.
+#[derive(Clone, Copy)]
+struct OpenGroup {
+    shape: ShapeIdx,
+    top: f32,
+    left: f32,
+    right: f32,
+}
+
+fn group_key(ui: &Ui) -> Id {
+    Id::new("dialog-open-group").with(ui.layer_id())
+}
+
+/// Starts a titled group: a heading, then an inset panel behind everything drawn until the next
+/// [`group_begin`] or [`group_end`]. Lets a long, linear form be grouped without nesting closures
+/// (Settings' tabs); use [`group`] where a closure is handy.
+pub fn group_begin(ui: &mut Ui, title: Option<&str>) {
+    group_end(ui);
+    let t = Tokens::get(ui.ctx());
+    if !in_form(ui) {
+        if let Some(title) = title.filter(|s| !s.is_empty()) {
+            ui.label(RichText::new(crate::i18n::tr(title)).font(t.semibold(12.0)).color(t.text));
+        }
+        return;
+    }
+    ui.add_space(4.0);
+    if let Some(title) = title.filter(|s| !s.is_empty()) {
+        ui.label(RichText::new(crate::i18n::tr(title)).font(t.semibold(12.0)).color(t.text));
+    }
+    let shape = ui.painter().add(Shape::Noop);
+    let rect = ui.max_rect();
+    let open = OpenGroup { shape, top: ui.cursor().top(), left: rect.left() - GROUP_PAD, right: rect.right() + GROUP_PAD };
+    ui.ctx().data_mut(|d| d.insert_temp(group_key(ui), open));
+    ui.add_space(4.0);
+}
+
+/// Closes the open group (if any), painting its panel.
+pub fn group_end(ui: &mut Ui) {
+    let key = group_key(ui);
+    let Some(open) = ui.ctx().data(|d| d.get_temp::<OpenGroup>(key)) else { return };
+    ui.ctx().data_mut(|d| d.remove::<OpenGroup>(key));
+    // nothing drawn in it (a category that starts with a titled group): no empty panel
+    if ui.cursor().top() <= open.top + 4.0 + ui.spacing().item_spacing.y + 0.5 {
+        return;
+    }
+    ui.add_space(4.0);
+    let t = Tokens::get(ui.ctx());
+    let bottom = ui.cursor().top() - ui.spacing().item_spacing.y + 2.0;
+    let rect = Rect::from_min_max(egui::pos2(open.left, open.top), egui::pos2(open.right, bottom.max(open.top)));
+    let panel = egui::epaint::RectShape::new(rect, 4.0, t.inset, egui::Stroke::new(1.0, t.divider), StrokeKind::Inside);
+    ui.painter().set(open.shape, panel);
+    ui.add_space(6.0);
+}
+
+/// A titled group around `add` (see [`group_begin`]).
+pub fn group<R>(ui: &mut Ui, title: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
+    group_begin(ui, Some(title));
+    let out = add(ui);
+    group_end(ui);
+    out
+}
+
+/// A form body: room on both sides for the group panels, and the label column width.
+pub fn form<R>(ui: &mut Ui, label_w: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    set_label_width(ui, label_w);
+    let active = Id::new("dialog-form-active");
+    let outer = in_form(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(active, true));
+    let pad = GROUP_PAD as i8 + 1;
+    egui::Frame::NONE
+        .inner_margin(egui::Margin { left: pad, right: pad, top: 0, bottom: 0 })
+        .show(ui, |ui| {
+            let out = add(ui);
+            group_end(ui);
+            ui.ctx().data_mut(|d| d.insert_temp(active, outer));
+            out
+        })
+        .inner
+}
+
+/// Whether `ui` is drawing inside a [`form`] (its helpers then lay out as a form; elsewhere, e.g.
+/// in a side panel, they keep to the panel's own flow).
+pub fn in_form(ui: &Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp::<bool>(Id::new("dialog-form-active"))).unwrap_or(false)
+}
+
+/// The category list on the left of a dialog with sections (Settings): one full-width row per
+/// `(id, label)`, the selected one highlighted, each addressable as `button:{prefix}-{id}`. True
+/// when the selection changed.
+pub fn sidebar(ui: &mut Ui, prefix: &str, items: &[(&str, &str)], selected: &mut String, width: f32) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let mut changed = false;
+    ui.vertical(|ui| {
+        ui.set_width(width);
+        ui.spacing_mut().item_spacing.y = 1.0;
+        for (id, label) in items {
+            let label = crate::i18n::tr(label);
+            let on = selected == id;
+            let (rect, resp) = ui.allocate_exact_size(vec2(width, 26.0), egui::Sense::click());
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, label));
+            crate::widgets::register(ui.ctx(), format!("button:{prefix}-{id}"), rect);
+            let fill = if on {
+                t.pressed
+            } else if resp.hovered() {
+                t.hover
+            } else {
+                egui::Color32::TRANSPARENT
+            };
+            let p = ui.painter();
+            p.rect_filled(rect, 4.0, fill);
+            if on {
+                let bar = Rect::from_min_size(rect.left_top() + vec2(0.0, 5.0), vec2(3.0, rect.height() - 10.0));
+                p.rect_filled(bar, 1.5, t.accent);
+            }
+            let font = if on { t.semibold(12.5) } else { egui::FontId::proportional(12.5) };
+            let galley = p.layout_no_wrap(label.to_string(), font, if on { t.text } else { t.text_label });
+            let pos = egui::pos2(rect.left() + 12.0, rect.center().y - galley.size().y / 2.0);
+            p.with_clip_rect(rect.intersect(p.clip_rect())).galley(pos, galley, t.text);
+            if resp.clicked() && !on {
+                *selected = id.to_string();
+                changed = true;
+            }
+        }
+    });
+    changed
+}
+
+/// A thin rule across the dialog above its footer buttons.
+pub fn footer_rule(ui: &mut Ui) {
+    let t = Tokens::get(ui.ctx());
+    let w = ui.available_width().max(ui.min_rect().width());
+    let (rect, _) = ui.allocate_exact_size(vec2(w, 1.0), egui::Sense::hover());
+    ui.painter().hline(rect.x_range(), rect.center().y, egui::Stroke::new(1.0, t.divider));
+}

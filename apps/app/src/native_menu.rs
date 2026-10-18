@@ -30,7 +30,7 @@ const SETTINGS_KEY: &str = "Cmd+,";
 /// handler, which knows the context.
 const CONTEXTUAL: &[&str] = &["X", "Delete", "Cmd+Up", "Cmd+Down"];
 /// Shortcuts text fields need while they have focus.
-const TEXT_EDIT: &[&str] = &["Cmd+A", "Cmd+C", "Cmd+V", "Cmd+X", "Cmd+Z", "Cmd+Shift+Z"];
+const TEXT_EDIT: &[&str] = lcc_ui_egui::menubar::TEXT_EDIT_SHORTCUTS;
 
 enum Handle {
     Plain(MenuItem),
@@ -380,14 +380,20 @@ impl NativeMenu {
                 continue;
             }
             if let Some(it) = self.items.get(&key) {
+                // ⌘A, ⌘C… while a text field has the focus edit the field, never the photos (#281)
+                if lcc_ui_egui::menubar::forward_to_text_field(app, ctx, it.shortcut.as_deref()) {
+                    continue;
+                }
                 let (cmd, params) = (it.cmd.clone(), it.params.clone());
                 let _ = lcc_ui_egui::menubar::run_item(app, &cmd, params);
             }
         }
         let bar = menu_bar(app);
-        if structure_of(&bar) != self.structure {
+        let rebuilt = structure_of(&bar) != self.structure;
+        if rebuilt {
+            // (a rebuilt menu installs every accelerator: the text-focus sync below takes the
+            // text-editing ones off again at once, issue #281)
             self.rebuild(app);
-            return quit;
         }
         fn walk(nodes: &[MenuNode], items: &mut HashMap<String, Item>) {
             for n in nodes {
@@ -421,7 +427,9 @@ impl NativeMenu {
                 }
             }
         }
-        walk(&bar.iter().flat_map(|(_, v)| v.clone()).collect::<Vec<_>>(), &mut self.items);
+        if !rebuilt {
+            walk(&bar.iter().flat_map(|(_, v)| v.clone()).collect::<Vec<_>>(), &mut self.items);
+        }
 
         let focus = ctx.egui_wants_keyboard_input();
         let capturing = app.recording_shortcut.is_some();

@@ -2,6 +2,8 @@
 //! edited state and camera / lens / keyword pickers (several values each, any of which matches) — every
 //! control drives `library.filter`.
 //! "Save as Smart Album…" keeps the current view as a live album; "Clear" resets the filter.
+//! The Metadata columns under it (issue #218, `view.filterColumns`) list each field's values among the photos in
+//! view with counts (`library.facets`); a click narrows the view (`library.facetPick`) and the columns cascade.
 
 use egui::{Color32, Rect, Sense, Stroke, StrokeKind, vec2};
 use lcc_catalog::{ColorLabel, Flag, MediaKind, RatingOp};
@@ -14,7 +16,7 @@ use crate::widgets::register;
 
 pub const HEIGHT: f32 = 40.0;
 /// Bar width (points) below which the controls take two rows.
-const WIDE: f32 = 1240.0;
+const WIDE: f32 = 1300.0;
 
 /// Colour-label swatches (UI colours, our own choice).
 pub use crate::theme::label_color;
@@ -137,11 +139,16 @@ fn chosen_values(single: Option<&str>, list: &[String]) -> Vec<String> {
     out
 }
 
-pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
+pub fn show(app: &mut LccApp, outer: &mut egui::Ui) {
+    let ui = &mut *outer;
     let t = Tokens::get(ui.ctx());
     // one row when there is room, else the metadata pickers and actions go to a second row
     let two_rows = ui.available_width() < WIDE;
-    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), if two_rows { 2.0 * HEIGHT - 8.0 } else { HEIGHT }), Sense::hover());
+    let rows_height = if two_rows { 2.0 * HEIGHT - 8.0 } else { HEIGHT };
+    // the Metadata columns (issue #218) go under the rows
+    let extra = if app.ui.filter_columns.is_empty() { 0.0 } else { COLUMNS_HEIGHT };
+    let (bar, _) = ui.allocate_exact_size(vec2(ui.available_width(), rows_height + extra), Sense::hover());
+    let columns_area = (extra > 0.0).then(|| Rect::from_min_max(bar.min + vec2(16.0, rows_height), bar.max - vec2(16.0, 8.0)));
     ui.painter().rect_filled(bar, 0.0, t.chrome);
     ui.painter().line_segment([bar.left_bottom(), bar.right_bottom()], Stroke::new(1.0, t.divider));
     register(ui.ctx(), "filterbar", bar);
@@ -370,6 +377,20 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     };
     picker(app, ui, "faces", &shown_faces, f.faces.is_some(), face_items);
 
+    // the Metadata columns' switch (issue #218)
+    let on = !app.ui.filter_columns.is_empty();
+    let resp = toggle(ui, "columns", on, "Metadata columns: click a value to narrow the view", |p, r, c| {
+        let w = r.width() / 3.0;
+        for i in 0..3 {
+            let col = Rect::from_min_size(r.min + vec2(i as f32 * w + 1.0, 1.0), vec2(w - 2.0, r.height() - 2.0));
+            p.rect_stroke(col, 1.0, Stroke::new(1.2, c), StrokeKind::Inside);
+        }
+    });
+    register(ui.ctx(), "button:filterColumns", resp.rect);
+    if resp.clicked() {
+        let _ = app.run("view.filterColumns", json!({"show": !on}));
+    }
+
     // save / clear
     ui.add_space(14.0);
     let filtering = app.session.filter != Default::default();
@@ -408,4 +429,228 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             crate::panels::dialogs::prompt(app, "Save Filter Preset", "Preset name", "", "filter.savePreset", json!({}), "name");
         }
     });
+    // the Metadata columns, under the rows
+    if !app.ui.filter_columns.is_empty()
+        && let Some(area) = columns_area
+    {
+        columns(app, outer, area);
+    }
+}
+
+/// The Metadata columns' height (points), under the filter bar's rows.
+pub const COLUMNS_HEIGHT: f32 = 170.0;
+/// The fields a Metadata column can list (`library.facetPick`'s fields), with their headers.
+pub const COLUMN_FIELDS: [(&str, &str); 9] = [
+    ("year", "Date"),
+    ("camera", "Camera"),
+    ("lens", "Lens"),
+    ("keyword", "Keyword"),
+    ("person", "People"),
+    ("label", "Label"),
+    ("flag", "Flag"),
+    ("rating", "Rating"),
+    ("kind", "File Type"),
+];
+/// The columns first shown, as Lightroom Classic's Metadata filter starts.
+const DEFAULT_COLUMNS: [&str; 4] = ["year", "camera", "lens", "label"];
+/// Most columns side by side.
+const MAX_COLUMNS: usize = 6;
+
+/// The filter bar's commands (`menus_fork`).
+pub const COMMANDS: &[crate::menus::UiCommand] = &[("view.filterColumns", "Metadata Filter Columns", None, "")];
+
+/// `view.filterColumns {show?: bool, column?: index, field?: name, count?: 1..6}` → `{columns}`: shows or hides the
+/// filter bar's Metadata columns (no argument toggles), sets the field one column lists, or the number of columns.
+pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
+    if id != "view.filterColumns" {
+        return None;
+    }
+    Some(filter_columns(app, p))
+}
+
+fn filter_columns(app: &mut LccApp, p: &Value) -> Result<Value, String> {
+    const C: &str = "view.filterColumns";
+    let index = |key: &str, range: std::ops::RangeInclusive<usize>| -> Result<Option<usize>, String> {
+        match p.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => v
+                .as_u64()
+                .and_then(|c| usize::try_from(c).ok())
+                .filter(|c| range.contains(c))
+                .map(Some)
+                .ok_or_else(|| format!("{C}: {key} is {} to {}", range.start(), range.end())),
+        }
+    };
+    let field = match p.get("field") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(
+            v.as_str()
+                .filter(|f| COLUMN_FIELDS.iter().any(|(k, _)| k == f))
+                .ok_or_else(|| format!("{C}: field is one of {}", COLUMN_FIELDS.map(|(k, _)| k).join(", ")))?,
+        ),
+    };
+    let column = index("column", 0..=MAX_COLUMNS - 1)?;
+    let count = index("count", 1..=MAX_COLUMNS)?;
+    let show = match p.get("show") {
+        None | Some(Value::Null) => None,
+        Some(v) => Some(v.as_bool().ok_or_else(|| format!("{C}: show is true or false"))?),
+    };
+    if field.is_some() != column.is_some() {
+        return Err(format!("{C}: column and field go together"));
+    }
+    let shown = !app.ui.filter_columns.is_empty();
+    // nothing but a toggle: show ⇄ hide
+    let show = show.unwrap_or(field.is_some() || count.is_some() || !shown);
+    if !show {
+        app.ui.filter_columns.clear();
+        return Ok(json!({"columns": []}));
+    }
+    if app.ui.filter_columns.is_empty() {
+        app.ui.filter_columns = DEFAULT_COLUMNS.iter().map(|f| f.to_string()).collect();
+    }
+    if let Some(n) = count {
+        let spare: Vec<String> = COLUMN_FIELDS.iter().map(|(k, _)| k.to_string()).filter(|k| !app.ui.filter_columns.contains(k)).collect();
+        let mut spare = spare.into_iter();
+        app.ui.filter_columns.truncate(n);
+        while app.ui.filter_columns.len() < n {
+            app.ui.filter_columns.push(spare.next().unwrap_or_else(|| "camera".to_string()));
+        }
+    }
+    if let (Some(c), Some(f)) = (column, field) {
+        let n = app.ui.filter_columns.len();
+        let Some(slot) = app.ui.filter_columns.get_mut(c) else {
+            return Err(format!("{C}: there are {n} columns"));
+        };
+        *slot = f.to_string();
+    }
+    // the columns live in the filter bar, over the grid
+    app.ui.filter_bar = true;
+    if !matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+    }
+    Ok(json!({"columns": app.ui.filter_columns}))
+}
+
+/// `library.facets` for the columns, computed again only when the library, the source or the filter changed.
+fn facets(app: &mut LccApp, ctx: &egui::Context, fields: &[String]) -> std::sync::Arc<Value> {
+    let key = format!(
+        "{}|{:?}|{}|{}",
+        app.session.catalog.revision,
+        app.session.source,
+        serde_json::to_string(&app.session.filter).unwrap_or_default(),
+        fields.join(",")
+    );
+    let id = egui::Id::new("filterColumnsFacets");
+    if let Some((k, v)) = ctx.data(|d| d.get_temp::<(String, std::sync::Arc<Value>)>(id))
+        && k == key
+    {
+        return v;
+    }
+    let v = std::sync::Arc::new(app.session.execute("library.facets", &json!({"fields": fields})).unwrap_or(Value::Null));
+    ctx.data_mut(|d| d.insert_temp(id, (key, v.clone())));
+    v
+}
+
+/// How a column shows a value `library.facets` lists.
+fn value_label(field: &str, value: &str) -> String {
+    let tr = |s: &str| crate::i18n::tr(s).to_string();
+    match (field, value) {
+        ("flag", "pick") => tr("Picked"),
+        ("flag", "reject") => tr("Rejected"),
+        ("flag", "none") => tr("Unflagged"),
+        ("kind", "image") => tr("Photos"),
+        ("kind", "raw") => tr("Raw"),
+        ("kind", "video") => tr("Videos"),
+        ("rating", "0") => tr("Unrated"),
+        ("rating", n) => n.parse::<usize>().map(|n| "★".repeat(n.min(5))).unwrap_or_else(|_| n.to_string()),
+        _ => value.to_string(),
+    }
+}
+
+/// One row of a Metadata column: the value, its count at the right. Returns whether it was clicked.
+fn value_row(ui: &mut egui::Ui, widget: String, text: String, count: u64, on: bool, clickable: bool) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let (rr, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 18.0), if clickable { Sense::click() } else { Sense::hover() });
+    register(ui.ctx(), widget, rr);
+    crate::widgets::announce_selected(&resp, text.clone(), on);
+    if on {
+        ui.painter().rect_filled(rr, 3.0, t.tool_active);
+    } else if clickable && resp.hovered() {
+        ui.painter().rect_filled(rr, 3.0, t.hover);
+    }
+    let color = if !clickable {
+        t.text_dim
+    } else if on {
+        t.text
+    } else {
+        t.text_label
+    };
+    let cg = ui.painter().layout_no_wrap(count.to_string(), t.font(11.5), t.text_dim);
+    let room = (rr.width() - cg.size().x - 14.0).max(10.0);
+    let mut job = egui::text::LayoutJob::simple_singleline(text, t.font(12.0), color);
+    job.wrap = egui::text::TextWrapping::truncate_at_width(room);
+    let g = ui.painter().layout_job(job);
+    ui.painter().galley(egui::pos2(rr.left() + 4.0, rr.center().y - g.size().y / 2.0), g, color);
+    ui.painter().galley(egui::pos2(rr.right() - 4.0 - cg.size().x, rr.center().y - cg.size().y / 2.0), cg, t.text_dim);
+    clickable && resp.clicked()
+}
+
+/// The Metadata columns (issue #218): each lists one field's values among the photos in view with how many photos
+/// have each; a click narrows the view (`library.facetPick`), and the columns after it count only what is left.
+fn columns(app: &mut LccApp, ui: &mut egui::Ui, area: Rect) {
+    let t = Tokens::get(ui.ctx());
+    let fields: Vec<String> = app.ui.filter_columns.iter().take(MAX_COLUMNS).cloned().collect();
+    let n = fields.len().max(1);
+    let facets = facets(app, ui.ctx(), &fields);
+    let gap = 8.0;
+    let w = ((area.width() - gap * (n as f32 - 1.0)) / n as f32).max(60.0);
+    register(ui.ctx(), "filterColumns", area);
+    let mut picked: Option<(String, Value)> = None;
+    let mut retitle: Option<(usize, &'static str)> = None;
+    for (i, field) in fields.iter().enumerate() {
+        let r = Rect::from_min_size(area.min + vec2(i as f32 * (w + gap), 0.0), vec2(w, area.height()));
+        ui.painter().rect_stroke(r, 4.0, Stroke::new(1.0, t.divider), StrokeKind::Inside);
+        let mut c = ui.new_child(egui::UiBuilder::new().max_rect(r.shrink(4.0)).layout(egui::Layout::top_down(egui::Align::Min)));
+        c.spacing_mut().item_spacing.y = 1.0;
+        let title = COLUMN_FIELDS.iter().find(|(k, _)| k == field).map_or("Camera", |(_, l)| *l);
+        let head = crate::widgets::dropdown_within(&mut c, &format!("filterColumn{i}"), crate::i18n::tr(title), t.semibold(12.5), t.text, w - 8.0);
+        egui::Popup::menu(&head).id(egui::Id::new(("filterColumnField", i))).show(|ui| {
+            for (k, label) in COLUMN_FIELDS {
+                let resp = ui.selectable_label(k == field, crate::i18n::tr(label));
+                register(ui.ctx(), format!("filterColumnField:{i}:{k}"), resp.rect);
+                if resp.clicked() {
+                    retitle = Some((i, k));
+                }
+            }
+        });
+        c.separator();
+        let data = &facets[field.as_str()];
+        let chosen: Vec<&str> = data["chosen"].as_array().map(|a| a.iter().filter_map(Value::as_str).collect()).unwrap_or_default();
+        let all = format!("{} ({})", crate::i18n::tr("All"), data["distinct"].as_u64().unwrap_or(0));
+        if value_row(&mut c, format!("filterValue:{i}:0"), all, data["photos"].as_u64().unwrap_or(0), chosen.is_empty(), true) {
+            picked = Some((field.clone(), Value::Null));
+        }
+        egui::ScrollArea::vertical().id_salt(("filterColumnRows", i)).auto_shrink([false, false]).show(&mut c, |ui| {
+            let values = data["values"].as_array().map(Vec::as_slice).unwrap_or(&[]);
+            for (n, v) in values.iter().enumerate() {
+                let (Some(value), Some(count)) = (v["value"].as_str(), v["count"].as_u64()) else { continue };
+                let on = chosen.iter().any(|c| c.eq_ignore_ascii_case(value));
+                // the filter has no "unrated only": a rating of 0 asks nothing
+                let clickable = !(field == "rating" && value == "0");
+                if value_row(ui, format!("filterValue:{i}:{}", n + 1), value_label(field, value), count, on, clickable) {
+                    picked = Some((field.clone(), json!(value)));
+                }
+            }
+            let none = data["none"].as_u64().unwrap_or(0);
+            if none > 0 {
+                value_row(ui, format!("filterValue:{i}:{}", values.len() + 1), crate::i18n::tr("Unknown").to_string(), none, false, false);
+            }
+        });
+    }
+    if let Some((field, value)) = picked {
+        let _ = app.run("library.facetPick", json!({"field": field, "value": value}));
+    }
+    if let Some((column, field)) = retitle {
+        let _ = app.run("view.filterColumns", json!({"column": column, "field": field}));
+    }
 }

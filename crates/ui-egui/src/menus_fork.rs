@@ -18,12 +18,13 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
         .chain(crate::creations_ui::COMMANDS)
         .chain(PLUGIN_COMMANDS)
         .chain(crate::timelapse_ui::COMMANDS)
+        .chain(crate::panels::filterbar::COMMANDS)
 }
 
 /// P4.3: the Plug-in Manager (`crate::panels::plugins`); native only, so the web build lists none.
 #[cfg(not(target_arch = "wasm32"))]
 const PLUGIN_COMMANDS: &[UiCommand] = &[
-    ("plugins.manager", "Plug-in Manager…", None, "File"),
+    ("plugins.manager", "Plug-in Manager…", None, "File>Plug-ins"),
     ("plugins.install", "Install Plug-in…", None, ""),
     ("plugins.runItem", "Run Plug-in Command", None, ""),
 ];
@@ -47,6 +48,9 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         return Some(r);
     }
     if let Some(r) = crate::timelapse_ui::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::panels::filterbar::run(app, id, p) {
         return Some(r);
     }
     if let Some(r) = crate::libtools::run(app, id, p) {

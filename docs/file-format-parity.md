@@ -25,7 +25,7 @@ import and export formats. Ours come from `crates/codecs/src/sniff.rs`, `crates/
 | WebP | not in its document types | ⬜ | ✅ | ✅ | beyond target |
 | GIF, BMP | ⬜ | ⬜ | ✅ | ⬜ | beyond target |
 | DNG (from raw) | ✅ | ✅ incl. lossy, embedded original | ✅ | ✅ uncompressed, LJ92, Deflate or lossy (JPEG tiles, optional long edge); ⬜ embedded original | `crates/raw/src/dngwrite.rs` |
-| Render to DNG (15.5) | — | ✅ | — | ✅ Photo ▸ Render to DNG (stacked with the original) and the "Rendered DNG" export (linear float DNG, edit baked in) | `crates/raw/src/dngwrite.rs` (`write_rendered_dng`), `crates/engine/src/render_dng.rs` |
+| Render to DNG (15.5) | — | ✅ | — | ✅ Photo ▸ File ▸ Render to DNG (stacked with the original) and the "Rendered DNG" export (linear float DNG, edit baked in) | `crates/raw/src/dngwrite.rs` (`write_rendered_dng`), `crates/engine/src/render_dng.rs` |
 | Original + sidecar | — | ✅ | — | ✅ | |
 | HDR gain map JPEG (ISO 21496-1) | ✅ | ✅ | ✅ (gain map read) | ✅ | `crates/codecs/src/gainmap.rs` |
 | PQ / HLG HDR | ✅ | ✅ AVIF, JXL, TIFF | — | 🟡 PQ AVIF, PQ JPEG XL, float TIFF; no HLG | |
@@ -80,7 +80,7 @@ Remaining: **11–17 h** (HLG 3–5 h; catalog import depth 8–12 h).
 | 2026-10-12 | minor | Render to DNG: "Rendered DNG" export format (linear 16-bit float DNG of the rendered photo) |
 | 2026-10-12 | minor | HEIC / HEIF and AVIF: EXIF and XMP read from the container, without the decoder (#693); statuses unchanged |
 | 2026-10-12 | minor | Lossy DNG export (JPEG tiles, `dngCompression: "lossy"`); PSD write had already landed (#953), so it leaves the remaining hours |
-| 2026-10-13 | minor | Render to DNG: Photo ▸ Render to DNG (rendered DNGs stacked with their originals, on a worker in the desktop app) and the "Rendered DNG" export format |
+| 2026-10-13 | minor | Render to DNG: Photo ▸ File ▸ Render to DNG (rendered DNGs stacked with their originals, on a worker in the desktop app) and the "Rendered DNG" export format |
 | 2026-10-13 | minor | AVIF import (`crates/codecs/src/avif.rs`, `filmcraft-av1`) |
 | 2026-10-13 | minor | AVIF import (`crates/codecs/src/avif.rs`, `filmcraft-av1`, native builds) |
 | 2026-10-13 | patch | JPEG write (#1373): Huffman tables made for each image, 12–14 % smaller files at the same pixels; statuses unchanged |
