@@ -1,8 +1,10 @@
-//! The running peer service: beacons out, beacons in, connections in, and the pairing in progress.
+//! The running peer service: mDNS adverts out, adverts in, connections in, and the pairing in progress.
 //!
-//! Threads: one sends beacons (only while looking for devices or when paired devices exist), one
-//! listens for beacons, one accepts connections, and each connection gets its own short-lived
-//! thread. Every loop checks the stop flag at least twice a second, so dropping the [`Service`]
+//! Discovery is multicast DNS service discovery (RFC 6762 / RFC 6763, see [`crate::beacon`]):
+//! while looking for devices or when paired devices exist, one thread announces this device every
+//! couple of seconds (and a goodbye when it stops), and browses for the service type; one thread
+//! reads the multicast group (answers, and queries it answers by announcing); one accepts
+//! connections, and each connection gets its own short-lived thread. Every loop checks the stop flag at least twice a second, so dropping the [`Service`]
 //! ends them promptly. Nothing here panics on what the network sends.
 
 use std::collections::HashMap;
@@ -17,12 +19,19 @@ use std::time::{Duration, Instant};
 use serde::{Deserialize, Serialize};
 
 use crate::beacon::{self, Beacon};
+use crate::dns::{self, Data, Message, Question, Record};
 use crate::identity::{Peer, Store, clean_name};
 use crate::secure::Channel;
 use crate::{Error, Result};
 
-/// How often beacons go out.
+/// How often this device announces itself.
 const BEACON_EVERY: Duration = Duration::from_secs(2);
+/// How often it asks who else is there.
+const QUERY_EVERY: Duration = Duration::from_millis(2500);
+/// The TTL of the advertised records (short: devices come and go).
+const RECORD_TTL: u32 = 10;
+/// The most devices remembered; a busy network can't grow the list without bound.
+const MAX_FOUND: usize = 256;
 /// A device not heard from for this long is no longer listed (or online).
 const GONE_AFTER: Duration = Duration::from_secs(8);
 /// How long a pairing waits for the people to compare codes.
@@ -156,25 +165,33 @@ impl std::fmt::Debug for Service {
     }
 }
 
-fn discovery_socket(port: u16) -> Result<UdpSocket> {
+/// The multicast DNS socket: shared with other responders on the machine (the system's own, other
+/// copies of the app), joined to the mDNS group.
+fn mdns_socket(port: u16) -> Result<UdpSocket> {
     use socket2::{Domain, Protocol, Socket, Type};
     let s = Socket::new(Domain::IPV4, Type::DGRAM, Some(Protocol::UDP))?;
     s.set_reuse_address(true)?;
     #[cfg(all(unix, not(any(target_os = "solaris", target_os = "illumos"))))]
     s.set_reuse_port(true)?;
-    s.set_broadcast(true)?;
     s.bind(&SocketAddr::from((Ipv4Addr::UNSPECIFIED, port)).into())?;
     let udp: UdpSocket = s.into();
+    // no multicast route (no network yet): keep running, nothing is found until there is one
+    if let Err(e) = udp.join_multicast_v4(&beacon::GROUP, &Ipv4Addr::UNSPECIFIED) {
+        log::info!("peer: can't join the mDNS group: {e}");
+    }
+    udp.set_multicast_loop_v4(true)?;
+    udp.set_multicast_ttl_v4(255)?;
     udp.set_read_timeout(Some(Duration::from_millis(400)))?;
     Ok(udp)
 }
 
 impl Service {
     /// Opens (or creates) the store at `store_path` and starts listening. `default_name` names a
-    /// new device. `port` is the discovery port ([`beacon::PORT`]; tests pass their own).
+    /// new device. `port` is the multicast DNS port ([`beacon::PORT`], 5353; tests pass their own
+    /// so they neither hear the network nor each other).
     pub fn start(store_path: PathBuf, default_name: &str, port: u16) -> Result<Service> {
         let store = Store::load_or_create(&store_path, default_name)?;
-        let udp = discovery_socket(port)?;
+        let udp = mdns_socket(port)?;
         let tcp = TcpListener::bind((Ipv4Addr::UNSPECIFIED, 0))?;
         tcp.set_nonblocking(true)?;
         let tcp_port = tcp.local_addr()?.port();
@@ -193,7 +210,7 @@ impl Service {
             |name: &str, f: Box<dyn FnOnce() + Send>| std::thread::Builder::new().name(name.into()).spawn(f).map_err(|e| Error::Io(e.to_string()));
         let send_udp = udp.try_clone()?;
         let i = inner.clone();
-        threads.push(spawn("peer-beacon", Box::new(move || beacon_loop(&i, &send_udp, port)))?);
+        threads.push(spawn("peer-announce", Box::new(move || announce_loop(&i, &send_udp, port)))?);
         let i = inner.clone();
         threads.push(spawn("peer-listen", Box::new(move || listen_loop(&i, &udp)))?);
         let i = inner.clone();
@@ -388,38 +405,138 @@ fn my_beacon(inner: &Inner) -> Option<Beacon> {
     })
 }
 
-fn beacon_loop(inner: &Inner, udp: &UdpSocket, port: u16) {
-    let mut last: Option<Instant> = None;
+/// The IPv4 address other devices reach this one at (the route to the mDNS group), if any.
+fn local_ip() -> Option<Ipv4Addr> {
+    let s = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)).ok()?;
+    s.connect((beacon::GROUP, beacon::PORT)).ok()?;
+    match s.local_addr().ok()?.ip() {
+        IpAddr::V4(ip) if !ip.is_unspecified() => Some(ip),
+        _ => None,
+    }
+}
+
+/// The records that advertise `b`: PTR (type → instance), SRV (instance → host, port), TXT, and A
+/// (host → address) when the address is known. `ttl` 0 is the goodbye.
+fn advert(b: &Beacon, stype: &str, ttl: u32) -> Message {
+    let instance = format!("{}.{stype}", b.device_id);
+    let host = format!("{}.local", b.device_id);
+    let mut records = vec![
+        Record { name: stype.to_string(), ttl, flush: false, data: Data::Ptr(instance.clone()) },
+        Record { name: instance.clone(), ttl, flush: true, data: Data::Srv { port: b.port, target: host.clone() } },
+        Record { name: instance, ttl, flush: true, data: Data::Txt(b.txt()) },
+    ];
+    if let Some(ip) = local_ip() {
+        records.push(Record { name: host, ttl, flush: true, data: Data::A(ip) });
+    }
+    Message { flags: dns::FLAGS_RESPONSE, questions: vec![], records }
+}
+
+fn send(udp: &UdpSocket, port: u16, msg: &Message) {
+    let Some(bytes) = msg.encode() else {
+        log::debug!("peer: an mDNS message couldn't be encoded");
+        return;
+    };
+    if let Err(e) = udp.send_to(&bytes, SocketAddr::from((beacon::GROUP, port))) {
+        log::debug!("peer: mDNS message not sent: {e}");
+    }
+}
+
+fn announce_loop(inner: &Inner, udp: &UdpSocket, port: u16) {
+    let stype = beacon::service_type();
+    let query = Message { flags: 0, questions: vec![Question { name: stype.clone(), qtype: dns::TYPE_PTR }], records: vec![] };
+    let mut last_announce: Option<Instant> = None;
+    let mut last_query: Option<Instant> = None;
+    // what was last announced, for the goodbye
+    let mut announced: Option<Beacon> = None;
     while !inner.stop.load(Ordering::Relaxed) {
-        let due = last.is_none_or(|t| t.elapsed() >= BEACON_EVERY) || inner.nudge.swap(false, Ordering::Relaxed);
         let wanted = inner.finding.load(Ordering::Relaxed) || !lock(&inner.store).peers.is_empty();
-        if due && wanted {
-            if let Some(b) = my_beacon(inner) {
-                let to = SocketAddr::from((Ipv4Addr::BROADCAST, port));
-                if let Err(e) = udp.send_to(&b.encode(), to) {
-                    log::debug!("peer: beacon not sent: {e}");
+        if wanted {
+            let due = last_announce.is_none_or(|t| t.elapsed() >= BEACON_EVERY) || inner.nudge.swap(false, Ordering::Relaxed);
+            if due {
+                if let Some(b) = my_beacon(inner) {
+                    send(udp, port, &advert(&b, &stype, RECORD_TTL));
+                    announced = Some(b);
                 }
+                last_announce = Some(Instant::now());
             }
-            last = Some(Instant::now());
+            if last_query.is_none_or(|t| t.elapsed() >= QUERY_EVERY) {
+                send(udp, port, &query);
+                last_query = Some(Instant::now());
+            }
+        } else if let Some(old) = announced.take() {
+            send(udp, port, &advert(&old, &stype, 0));
+            last_announce = None;
         }
         std::thread::sleep(Duration::from_millis(100));
+    }
+    if let Some(old) = announced {
+        send(udp, port, &advert(&old, &stype, 0));
     }
 }
 
 fn listen_loop(inner: &Inner, udp: &UdpSocket) {
-    let mut buf = [0u8; beacon::MAX_LEN];
+    let stype = beacon::service_type();
+    let mut buf = vec![0u8; beacon::MAX_LEN];
     while !inner.stop.load(Ordering::Relaxed) {
         let Ok((n, from)) = udp.recv_from(&mut buf) else { continue };
-        let Some(b) = buf.get(..n).and_then(Beacon::decode) else { continue };
-        if b.device_id == lock(&inner.store).identity.device_id {
+        let Some(msg) = buf.get(..n).and_then(Message::decode) else { continue };
+        if msg.is_response() {
+            let me = lock(&inner.store).identity.device_id.to_ascii_lowercase();
+            let mut st = lock(&inner.state);
+            take_answers(&mut st.found, &msg, from.ip(), &stype, &me, Instant::now());
+        } else if msg.questions.iter().any(|q| q.name.eq_ignore_ascii_case(&stype) && matches!(q.qtype, dns::TYPE_PTR | 255)) {
+            // someone browses for us: answer by announcing now
+            inner.nudge.store(true, Ordering::Relaxed);
+        }
+    }
+}
+
+/// Adds the devices a response advertises to `found` (and removes those saying goodbye).
+fn take_answers(found: &mut HashMap<String, Found>, msg: &Message, from: IpAddr, stype: &str, me: &str, now: Instant) {
+    let suffix = format!(".{}", stype.to_ascii_lowercase());
+    let label = |instance: &str| instance.strip_suffix(suffix.as_str()).map(str::to_string);
+    let mut srv: HashMap<String, (u16, String, u32)> = HashMap::new();
+    let mut txt: HashMap<String, &Vec<Vec<u8>>> = HashMap::new();
+    let mut addr: HashMap<String, IpAddr> = HashMap::new();
+    for r in &msg.records {
+        let name = r.name.to_ascii_lowercase();
+        match &r.data {
+            Data::Srv { port, target } if name.ends_with(&suffix) => {
+                srv.insert(name, (*port, target.to_ascii_lowercase(), r.ttl));
+            }
+            Data::Txt(t) if name.ends_with(&suffix) => {
+                txt.insert(name, t);
+            }
+            Data::A(ip) if !ip.is_unspecified() => {
+                addr.insert(name, IpAddr::V4(*ip));
+            }
+            Data::Aaaa(ip) if !ip.is_unspecified() => {
+                addr.entry(name).or_insert(IpAddr::V6(*ip));
+            }
+            Data::Ptr(instance) if r.ttl == 0 && name == stype.to_ascii_lowercase() => {
+                if let Some(id) = label(&instance.to_ascii_lowercase()) {
+                    found.remove(&id);
+                }
+            }
+            _ => {}
+        }
+    }
+    for (instance, (port, target, ttl)) in srv {
+        if ttl == 0 {
+            if let Some(id) = label(&instance) {
+                found.remove(&id);
+            }
             continue;
         }
-        let mut st = lock(&inner.state);
-        // a busy network can't grow the list without bound
-        if st.found.len() >= 256 && !st.found.contains_key(&b.device_id) {
+        let Some(b) = txt.get(&instance).and_then(|t| Beacon::from_txt(t, port)) else { continue };
+        if b.device_id == me {
             continue;
         }
-        st.found.insert(b.device_id.clone(), Found { beacon: b, ip: from.ip(), seen: Instant::now() });
+        if found.len() >= MAX_FOUND && !found.contains_key(&b.device_id) {
+            continue;
+        }
+        let ip = addr.get(&target).copied().unwrap_or(from);
+        found.insert(b.device_id.clone(), Found { beacon: b, ip, seen: now });
     }
 }
 
@@ -549,6 +666,20 @@ fn finish(inner: &Inner, r: Result<Peer>) {
 mod tests {
     use super::*;
 
+    /// Whether multicast to the mDNS group loops back on this machine (it doesn't in some sandboxes).
+    fn multicast_loops_back(port: u16) -> bool {
+        let Ok(rx) = mdns_socket(port) else { return false };
+        let Ok(tx) = UdpSocket::bind((Ipv4Addr::UNSPECIFIED, 0)) else { return false };
+        let mut buf = [0u8; 64];
+        for _ in 0..5 {
+            let _ = tx.send_to(b"probe", (beacon::GROUP, port));
+            if rx.recv_from(&mut buf).is_ok_and(|(n, _)| &buf[..n] == b"probe") {
+                return true;
+            }
+        }
+        false
+    }
+
     fn wait(what: &str, mut f: impl FnMut() -> bool) {
         let t = Instant::now();
         while !f() {
@@ -557,7 +688,7 @@ mod tests {
         }
     }
 
-    /// Two services on this machine find each other by broadcast and pair; then each knows the
+    /// Two services on this machine find each other over mDNS and pair; then each knows the
     /// other as paired, and a third party's attempt is refused while they aren't looking.
     #[test]
     fn two_devices_find_each_other_and_pair() {
@@ -565,6 +696,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
         // a port of its own, so parallel test runs don't hear each other
         let port = 40000 + (std::process::id() % 20000) as u16;
+        if !multicast_loops_back(port) {
+            lcc_testkit::skip!(System, "multicast doesn't loop back here");
+            return;
+        }
         let a = Service::start(dir.join("a.json"), "Desk", port).unwrap();
         let b = Service::start(dir.join("b.json"), "Tablet", port).unwrap();
         a.set_finding(true);
@@ -572,7 +707,6 @@ mod tests {
         let b_id = b.status().device_id;
         let a_id = a.status().device_id;
         wait("a to see b", || a.status().found.iter().any(|f| f.device_id == b_id));
-        // broadcast may not loop back on every machine: then there is nothing more to test here
         a.pair(&b_id).unwrap();
         wait("both to show the code", || {
             let (sa, sb) = (a.status(), b.status());
@@ -597,6 +731,10 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lcc-peer-no-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let port = 40000 + ((std::process::id() + 7) % 20000) as u16;
+        if !multicast_loops_back(port) {
+            lcc_testkit::skip!(System, "multicast doesn't loop back here");
+            return;
+        }
         let a = Service::start(dir.join("a.json"), "Desk", port).unwrap();
         let b = Service::start(dir.join("b.json"), "Tablet", port).unwrap();
         a.set_finding(true);
@@ -611,5 +749,67 @@ mod tests {
         assert!(a.status().paired.is_empty());
         assert!(b.status().paired.is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn advert_of(id: &str, pairing: bool, ttl: u32) -> Message {
+        let b = Beacon {
+            app: lcc_brand::ENV_PREFIX.into(),
+            v: beacon::VERSION,
+            device_id: id.into(),
+            name: "Tablet".into(),
+            key: "k".into(),
+            port: 4000,
+            pairing,
+        };
+        advert(&b, &beacon::service_type(), ttl)
+    }
+
+    #[test]
+    fn answers_fill_and_empty_the_found_list() {
+        let stype = beacon::service_type();
+        let src: IpAddr = Ipv4Addr::new(10, 0, 0, 9).into();
+        let now = Instant::now();
+        let mut found = HashMap::new();
+        take_answers(&mut found, &advert_of("ab12", true, 10), src, &stype, "ff", now);
+        let f = found.get("ab12").unwrap();
+        assert!(f.beacon.pairing);
+        assert_eq!(f.beacon.port, 4000);
+        // our own advert is not a found device
+        take_answers(&mut found, &advert_of("ff", true, 10), src, &stype, "ff", now);
+        assert!(!found.contains_key("ff"));
+        // a goodbye removes it
+        take_answers(&mut found, &advert_of("ab12", true, 0), src, &stype, "ff", now);
+        assert!(found.is_empty());
+        // the list is capped
+        for i in 0..(MAX_FOUND + 20) {
+            take_answers(&mut found, &advert_of(&format!("{i:x}"), false, 10), src, &stype, "ff", now);
+        }
+        assert_eq!(found.len(), MAX_FOUND);
+    }
+
+    #[test]
+    fn hostile_answers_are_ignored() {
+        let stype = beacon::service_type();
+        let src: IpAddr = Ipv4Addr::LOCALHOST.into();
+        let instance = format!("ab.{stype}");
+        let mut found = HashMap::new();
+        let cases = [
+            // TXT without an SRV, SRV without a TXT, an SRV for another service type, a TXT of junk
+            vec![Record { name: instance.clone(), ttl: 10, flush: true, data: Data::Txt(vec![b"id=ab".to_vec()]) }],
+            vec![Record { name: instance.clone(), ttl: 10, flush: true, data: Data::Srv { port: 1, target: "x.local".into() } }],
+            vec![
+                Record { name: "ab._other._tcp.local".into(), ttl: 10, flush: true, data: Data::Srv { port: 1, target: "x".into() } },
+                Record { name: "ab._other._tcp.local".into(), ttl: 10, flush: true, data: advert_of("ab", true, 10).records[2].data.clone() },
+            ],
+            vec![
+                Record { name: instance.clone(), ttl: 10, flush: true, data: Data::Srv { port: 1, target: "x".into() } },
+                Record { name: instance.clone(), ttl: 10, flush: true, data: Data::Txt(vec![vec![0xff; 255]; 40]) },
+            ],
+        ];
+        for records in cases {
+            let msg = Message { flags: dns::FLAGS_RESPONSE, questions: vec![], records };
+            take_answers(&mut found, &msg, src, &stype, "ff", Instant::now());
+        }
+        assert!(found.is_empty());
     }
 }

@@ -100,7 +100,7 @@ impl Hub {
 pub struct State {
     /// `<settings>/sync/peers.json`; `None` keeps the feature off (tests, `--memory`).
     pub store_path: Option<PathBuf>,
-    /// The discovery port; `None` = [`lcc_peer::beacon::PORT`] (tests use their own).
+    /// The multicast DNS port; `None` = [`lcc_peer::beacon::PORT`] (5353; tests use their own).
     pub port: Option<u16>,
     service: Option<Arc<lcc_peer::Service>>,
     /// The activity row while looking for devices, and its cancel flag.
