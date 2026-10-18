@@ -326,9 +326,8 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
             } else {
                 crate::dialog_frame::ModalLayout::begin(ui, window_id)
             };
-            match &mut dlg {
-                Dialog::About => about_tabs(ui),
-                _ => {}
+            if matches!(dlg, Dialog::About) {
+                about_tabs(ui);
             }
             // (Settings keeps its category list in place and scrolls its content itself)
             let settings_height = layout.body_max_height(ui);
