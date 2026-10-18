@@ -753,4 +753,3 @@ fn horizontal_scale_breaks_paragraph_lines_at_the_scaled_width() {
         assert!((ln.x1 - 130.0).abs() < 0.5, "{ln:?}");
     }
 }
-

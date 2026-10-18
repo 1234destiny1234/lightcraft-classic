@@ -287,7 +287,10 @@ mod tests {
                 Descriptor { name: UnicodeString::new_nul("Trim"), class_id: crate::descriptor::Id::Str(b"trim".to_vec()), items: Vec::new() }
                     .with(
                         "trimBasedOn",
-                        Value::Enumerated { type_id: crate::descriptor::Id::new("trimBasedOn"), value: crate::descriptor::Id::new("topLeftPixelColor") },
+                        Value::Enumerated {
+                            type_id: crate::descriptor::Id::new("trimBasedOn"),
+                            value: crate::descriptor::Id::new("topLeftPixelColor"),
+                        },
                     )
                     .with("Top ", Value::Boolean(true)),
             ),

@@ -129,7 +129,10 @@ pub fn write(contours: &[ShcContour]) -> Result<Vec<u8>> {
     out.put_u16(1);
     out.put_u32(contours.len() as u32);
     for c in contours {
-        let n = u16::try_from(c.points.len()).ok().filter(|n| usize::from(*n) <= MAX_POINTS).ok_or(PsdError::LimitExceeded("too many points in a contour"))?;
+        let n = u16::try_from(c.points.len())
+            .ok()
+            .filter(|n| usize::from(*n) <= MAX_POINTS)
+            .ok_or(PsdError::LimitExceeded("too many points in a contour"))?;
         out.put_u32(2);
         // Capped on a character boundary, so a surrogate pair is never split.
         let units = crate::io::utf16_units(&c.name, MAX_NAME_UNITS);

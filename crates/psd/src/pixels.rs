@@ -207,7 +207,13 @@ fn unmatte_to_u8(color: &[u8], alpha: &[u8], depth: u16) -> Result<Vec<u8>> {
             .zip(alpha.as_chunks::<2>().0)
             .map(|(c, a)| convert(f32::from(u16::from_be_bytes(*c)) / 65535.0, f32::from(u16::from_be_bytes(*a)) / 65535.0))
             .collect(),
-        32 => color.as_chunks::<4>().0.iter().zip(alpha.as_chunks::<4>().0).map(|(c, a)| convert(f32::from_be_bytes(*c), f32::from_be_bytes(*a))).collect(),
+        32 => color
+            .as_chunks::<4>()
+            .0
+            .iter()
+            .zip(alpha.as_chunks::<4>().0)
+            .map(|(c, a)| convert(f32::from_be_bytes(*c), f32::from_be_bytes(*a)))
+            .collect(),
         d => return Err(PsdError::Unsupported(format!("RGB composite depth {d}"))),
     })
 }

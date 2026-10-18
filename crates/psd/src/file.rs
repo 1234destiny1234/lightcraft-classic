@@ -175,8 +175,17 @@ impl PsdFile {
             }
         }
         let image_data = ImageData { compression: Compression::Raw, data: Vec::new() };
-        let mut file =
-            PsdFile { header, color_mode_data, resources, layer_info, layer_info_placement, global_layer_mask, global_blocks, layer_mask_trailing, image_data };
+        let mut file = PsdFile {
+            header,
+            color_mode_data,
+            resources,
+            layer_info,
+            layer_info_placement,
+            global_layer_mask,
+            global_blocks,
+            layer_mask_trailing,
+            image_data,
+        };
         let mut encoded = r.clone();
         let merged = if want(&file) {
             file.read_merged_decoded(&mut r).map(Some)
@@ -538,8 +547,10 @@ mod write_tests {
                 // Photoshop writes an empty (or 8-bit compatibility) Layer Info section
                 // alongside the global Lr16/Lr32 block (#4928).
                 let mut compat_file = file.clone();
-                compat_file.layer_info =
-                    Some(LayerInfo { layers: vec![LayerRecord { name: b"CompatibilityLayer".to_vec(), ..Default::default() }], ..Default::default() });
+                compat_file.layer_info = Some(LayerInfo {
+                    layers: vec![LayerRecord { name: b"CompatibilityLayer".to_vec(), ..Default::default() }],
+                    ..Default::default()
+                });
                 compat_file.layer_info_placement = LayerInfoPlacement::Section;
                 compat_file.global_blocks.insert(0, TaggedBlock::new(key, lr_data));
 

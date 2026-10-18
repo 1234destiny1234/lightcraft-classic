@@ -159,7 +159,8 @@ impl ImageSourceData {
             // Pad to 4 without cloning the layers (and all their pixel data) just to set `padding`.
             let pad = info.pad_len(version, 4)?;
             let mut data = Vec::new();
-            data.try_reserve(info.channel_data_len().saturating_add(pad)).map_err(|_| PsdError::LimitExceeded("not enough memory for the layer data"))?;
+            data.try_reserve(info.channel_data_len().saturating_add(pad))
+                .map_err(|_| PsdError::LimitExceeded("not enough memory for the layer data"))?;
             info.write_unpadded(&mut data, version)?;
             data.resize(data.len() + pad, 0);
             padded_block(self.layer_info_key, data).write(&mut body, version, 4)?;
@@ -2380,7 +2381,8 @@ mod tests {
     #[test]
     fn global_blocks_written_without_copies_keep_their_bytes() {
         for version in [Version::Psd, Version::Psb] {
-            let mut d = ImageSourceData { version, global_layer_mask: Some(GlobalLayerMask { data: vec![0, 1, 0, 2, 0, 3, 0, 4, 9] }), ..Default::default() };
+            let mut d =
+                ImageSourceData { version, global_layer_mask: Some(GlobalLayerMask { data: vec![0, 1, 0, 2, 0, 3, 0, 4, 9] }), ..Default::default() };
             for n in 0..8u8 {
                 d.global_blocks.push(TaggedBlock::new(*b"FMsk", (0..n).collect()));
             }

@@ -155,7 +155,8 @@ fn grd_gradient_count_is_capped() {
 #[test]
 fn grd_stop_counts_are_capped() {
     let stop = GrdStop { location: 0.5, midpoint: 0.5, color: GrdColor::Rgb([1.0, 0.0, 0.0]) };
-    let over = GrdGradient { name: "wide".into(), noise: false, stops: vec![stop; grd::MAX_STOPS + 1], opacity: vec![(0.5, 1.0, 0.5); grd::MAX_STOPS + 1] };
+    let over =
+        GrdGradient { name: "wide".into(), noise: false, stops: vec![stop; grd::MAX_STOPS + 1], opacity: vec![(0.5, 1.0, 0.5); grd::MAX_STOPS + 1] };
     let bytes = grd::write(std::slice::from_ref(&over));
     // Precondition by size: a file carrying one stop more than the cap must be larger than the
     // same file at the cap. Counting `Lctn` windows would not work — it appears in both the colour
@@ -166,10 +167,16 @@ fn grd_stop_counts_are_capped() {
     let capped_opacity = over.opacity[..grd::MAX_STOPS].to_vec();
     let colour_only_over = GrdGradient { opacity: Vec::new(), ..over.clone() };
     let colour_only_capped = GrdGradient { stops: capped_stops, opacity: Vec::new(), ..over.clone() };
-    assert!(grd::write(&[colour_only_over]).len() > grd::write(&[colour_only_capped]).len(), "colour stops over the cap are not larger than at the cap");
+    assert!(
+        grd::write(&[colour_only_over]).len() > grd::write(&[colour_only_capped]).len(),
+        "colour stops over the cap are not larger than at the cap"
+    );
     let trans_only_over = GrdGradient { stops: Vec::new(), ..over.clone() };
     let trans_only_capped = GrdGradient { stops: Vec::new(), opacity: capped_opacity, ..over };
-    assert!(grd::write(&[trans_only_over]).len() > grd::write(&[trans_only_capped]).len(), "transparency stops over the cap are not larger than at the cap");
+    assert!(
+        grd::write(&[trans_only_over]).len() > grd::write(&[trans_only_capped]).len(),
+        "transparency stops over the cap are not larger than at the cap"
+    );
     let f = grd::parse(&bytes).expect("a file over the stop cap still parses");
     assert_eq!(f[0].stops.len(), grd::MAX_STOPS, "colour stops must be capped at MAX_STOPS");
     assert_eq!(f[0].opacity.len(), grd::MAX_STOPS, "transparency stops must be capped at MAX_STOPS");
@@ -775,7 +782,10 @@ fn grd_deeply_nested_descriptor_hits_the_depth_limit() {
     g.extend_from_slice(&5u16.to_be_bytes());
     g.extend_from_slice(&VersionedDescriptor::new(d).to_bytes());
     // This is the real assertion: nesting past the limit is refused, not recursed into.
-    assert!(matches!(grd::parse(&g), Err(PsdError::LimitExceeded(_))), "nesting past MAX_DEPTH must be refused through the .grd path, not recursed into");
+    assert!(
+        matches!(grd::parse(&g), Err(PsdError::LimitExceeded(_))),
+        "nesting past MAX_DEPTH must be refused through the .grd path, not recursed into"
+    );
 
     // The limit discriminates rather than being a blanket refusal: a shallow nesting is accepted
     // (rejected later, for holding no gradients — a different error), while a deep one is a depth

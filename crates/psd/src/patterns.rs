@@ -226,10 +226,13 @@ fn read_pattern(r: &mut Rd, budget: &mut PatternBudget) -> Result<PsdPattern> {
         let channel_bytes = channel_layout.total_bytes()?;
         let layout = PlaneLayout { planes: 1, width: w as usize, height: h as usize, depth: d, version: Version::Psd };
         let plane_bytes = layout.total_bytes()?;
-        budget.decoded_left = budget.decoded_left.checked_sub(plane_bytes).ok_or(PsdError::LimitExceeded("pattern data exceeds MAX_DECODED_BYTES"))?;
+        budget.decoded_left =
+            budget.decoded_left.checked_sub(plane_bytes).ok_or(PsdError::LimitExceeded("pattern data exceeds MAX_DECODED_BYTES"))?;
         if cw != w as usize || ch != h as usize {
-            budget.padded_left =
-                budget.padded_left.checked_sub(plane_bytes).ok_or(PsdError::LimitExceeded("padded pattern channels exceed MAX_PADDED_PATTERN_BYTES"))?;
+            budget.padded_left = budget
+                .padded_left
+                .checked_sub(plane_bytes)
+                .ok_or(PsdError::LimitExceeded("padded pattern channels exceed MAX_PADDED_PATTERN_BYTES"))?;
         }
         let _ = layout.decoded_len()?;
         let compression = if comp == 1 {

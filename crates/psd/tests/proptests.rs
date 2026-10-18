@@ -343,10 +343,11 @@ proptest! {
 /// A small, valid pattern at a byte-aligned depth, generated the way the unit `pat()` helper builds
 /// one: `mode_channels(mode)` colour planes of `width × height × bytes-per-sample`, optional alpha.
 fn pattern_strategy() -> impl Strategy<Value = patterns::PsdPattern> {
-    (prop_oneof![Just(1u32), Just(3u32), Just(4u32)], 1u32..8, 1u32..6, prop_oneof![Just(8u16), Just(16), Just(32)], any::<bool>(), any::<u64>()).prop_map(
-        |(mode, width, height, depth, alpha, seed)| {
+    (prop_oneof![Just(1u32), Just(3u32), Just(4u32)], 1u32..8, 1u32..6, prop_oneof![Just(8u16), Just(16), Just(32)], any::<bool>(), any::<u64>())
+        .prop_map(|(mode, width, height, depth, alpha, seed)| {
             let bpp = usize::from(depth / 8);
-            let plane = |s: u64| (0..width as usize * height as usize * bpp).map(|i| (i as u64).wrapping_mul(31).wrapping_add(s) as u8).collect::<Vec<u8>>();
+            let plane =
+                |s: u64| (0..width as usize * height as usize * bpp).map(|i| (i as u64).wrapping_mul(31).wrapping_add(s) as u8).collect::<Vec<u8>>();
             let nc = patterns::mode_channels(mode);
             patterns::PsdPattern {
                 mode,
@@ -359,8 +360,7 @@ fn pattern_strategy() -> impl Strategy<Value = patterns::PsdPattern> {
                 channels: (0..nc).map(|c| plane(seed.wrapping_add(c as u64 + 1))).collect(),
                 alpha: alpha.then(|| plane(seed ^ 0xffff)),
             }
-        },
-    )
+        })
 }
 
 proptest! {

@@ -746,7 +746,11 @@ impl LayerInfo {
     /// Bytes of channel data and their compression fields: the part of the body worth reserving up
     /// front (the records are small next to the pixels). Saturates instead of overflowing.
     pub(crate) fn channel_data_len(&self) -> usize {
-        self.layers.iter().flat_map(|l| &l.channels).filter(|c| c.compression.is_some()).fold(0usize, |n, c| n.saturating_add(2).saturating_add(c.data.len()))
+        self.layers
+            .iter()
+            .flat_map(|l| &l.channels)
+            .filter(|c| c.compression.is_some())
+            .fold(0usize, |n, c| n.saturating_add(2).saturating_add(c.data.len()))
     }
 
     /// Serializes the body without any trailing padding (the padding field is ignored).

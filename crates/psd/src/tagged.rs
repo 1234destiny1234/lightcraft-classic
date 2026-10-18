@@ -480,8 +480,11 @@ pub(crate) fn read_blocks_with(
         let default = TaggedBlock::default_padding(data.len(), alignment);
         let pad = pad.unwrap_or_else(|| if rest.get(..default).is_some_and(|p| p.iter().all(|&b| b == 0)) { default } else { 0 });
         let pad_bytes = r.bytes(pad)?.to_vec();
-        let padding =
-            if pad_bytes.len() == TaggedBlock::default_padding(data.len(), alignment) && pad_bytes.iter().all(|&b| b == 0) { None } else { Some(pad_bytes) };
+        let padding = if pad_bytes.len() == TaggedBlock::default_padding(data.len(), alignment) && pad_bytes.iter().all(|&b| b == 0) {
+            None
+        } else {
+            Some(pad_bytes)
+        };
         if !consume(blocks.len(), signature, key, data, &padding) {
             blocks.push(TaggedBlock { signature, key, data: data.to_vec(), padding });
         }
