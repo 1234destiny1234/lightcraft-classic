@@ -50,3 +50,4 @@ the original value. Every failure is an `Error`; on error the image is left unch
 Ported from the PhotoCraft plug-in host (`crates/plugins`: `runtime.rs`, `manifest.rs`,
 `apply.rs`, `registry.rs`; same authors, MIT/Apache-2.0), adapted from tiled surfaces to an RGB
 buffer, with cancellation, a module hash, an export sniff and an instance-based registry added.
+Synced with PhotoCraft 8d2e615 (2026-10-18).
