@@ -374,6 +374,8 @@ pub struct AppSettings {
     /// Double-clicking a grid photo opens it in Develop instead of the Library loupe (issue #144;
     /// off by default, as in Lightroom Classic).
     pub double_click_develop: bool,
+    /// Hide active filter text / indicator in Develop mode (Settings ▸ Interface ▸ Detail).
+    pub hide_filter_in_develop: bool,
     /// Windows only (inert elsewhere; the field stays on every platform so settings files remain portable).
     /// Keep repainting continuously at display refresh rate to eliminate VRR / G-SYNC brightness flicker on OLED/VA panels.
     pub vrr_flicker_workaround: bool,
@@ -412,6 +414,7 @@ impl Default for AppSettings {
             focus_point: false,
             zoom_to_focus: true,
             double_click_develop: false,
+            hide_filter_in_develop: false,
             vrr_flicker_workaround: false,
         }
     }
