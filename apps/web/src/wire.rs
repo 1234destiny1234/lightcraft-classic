@@ -15,7 +15,7 @@ use std::sync::{Arc, Weak};
 
 use lcc_engine::catalog::Source;
 use lcc_engine::develop::{DevelopSettings, EmbeddedLens};
-use lcc_engine::media::{DecodedSource, MediaCache, RenderJob, SourceLevel, SourceRef};
+use lcc_engine::media::{DecodedSource, LoadOptions, MediaCache, RenderJob, SourceLevel, SourceRef};
 use lcc_engine::pipeline::{Quality, RenderRequest, Rendered, SourceInfo, StageCache};
 use lcc_preview::{Hash128, Lru, PreviewCache};
 use serde::{Deserialize, Serialize};
@@ -131,7 +131,7 @@ impl WireJob {
     fn source_key(&self) -> String {
         match &self.origin {
             Source::File { path } => {
-                format!("{}:{:?}:{}:{}:{path}", self.cache_generation, self.source_identity, self.max_edge, self.settings.detail.nr_outliers)
+                format!("{}:{:?}:{}:{:?}:{path}", self.cache_generation, self.source_identity, self.max_edge, LoadOptions::of(&self.settings))
             }
             Source::Demo { scene } => format!("{}:{:?}:{}:demo:{scene}", self.cache_generation, self.source_identity, self.max_edge),
         }
@@ -184,9 +184,9 @@ impl WorkerCore {
             None => {
                 let src = match (&job.origin, original) {
                     (Source::File { .. }, Some(bytes)) => {
-                        let outliers = job.settings.detail.nr_outliers;
-                        let (image, info) = lcc_engine::files::load_bytes_with(bytes, job.max_edge, outliers)?;
-                        DecodedSource { outliers, ..DecodedSource::new(Arc::new(image), Some(info)) }
+                        let options = LoadOptions::of(&job.settings);
+                        let (image, info) = lcc_engine::files::load_bytes_with(bytes, job.max_edge, options)?;
+                        DecodedSource { options, ..DecodedSource::new(Arc::new(image), Some(info)) }
                     }
                     (Source::File { path }, None) => return Err(format!("{path}: original not found in browser storage")),
                     (origin @ Source::Demo { .. }, _) => self.media.origin_ref(origin, job.max_edge).load_source()?,

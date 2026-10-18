@@ -27,8 +27,14 @@ pub fn report(bytes: &[u8]) -> Result<Value, String> {
     let scale = crate::files::WbScaleOf::new(raw.format, &raw.color, raw.wb_multipliers, &raw.metadata);
     let profile = raw.color.profile.clone();
     let mut trace = StartTrace::default();
-    let (_, t, look) =
-        crate::camera_preview::starting_colour_traced(&mut raw, bytes, lens_geometry.as_ref(), lens.as_ref().map(|(l, _)| l), &mut trace);
+    let (_, t, look) = crate::camera_preview::starting_colour_traced(
+        &mut raw,
+        bytes,
+        lens_geometry.as_ref(),
+        lens.as_ref().map(|(l, _)| l),
+        lcc_develop::CameraColour::Auto,
+        &mut trace,
+    );
     // a look's tone curve wins over the file's own `ProfileToneCurve` (`files::load_bytes_now`)
     let tone = match trace.tone {
         ToneSource::None if profile.tone_curve.is_some() => json!("dngProfileCurve"),
