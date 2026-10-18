@@ -162,3 +162,22 @@ fn new_album_from_selection_keeps_the_shown_order() {
     let got: Vec<u64> = s.catalog.album_photo_order(AlbumId(b)).iter().map(|p| p.0).collect();
     assert_eq!(got, rev);
 }
+
+/// Custom order drag-drop with descending sort: dropping on the left side of a photo means
+/// "after" in the saved order (PR #1155).
+#[test]
+fn descending_sort_inverts_drop_position() {
+    let mut s = Session::with_demo();
+    let (a, ids) = album(&mut s);
+    s.execute("album.setPhotoOrder", &json!({"album": a, "ids": ids[0..4].to_vec()})).unwrap();
+    s.execute("library.sort", &json!({"key": "custom", "ascending": false})).unwrap();
+    let o = shown(&mut s);
+    // o is [ids[3], ids[2], ids[1], ids[0]] (descending)
+    // In descending sort, left side visually = after in saved order.
+    // "After ids[2]" in saved order means before ids[1].
+    let r = s.execute("album.orderPhotos", &json!({"album": a, "ids": [o[3]], "before": o[2]})).unwrap();
+    let new_order = order(&r);
+    let pos_moved = new_order.iter().position(|p| *p == o[3]).unwrap();
+    let pos_target = new_order.iter().position(|p| *p == o[2]).unwrap();
+    assert!(pos_moved < pos_target, "photo should be before target in saved order: {new_order:?}");
+}

@@ -157,11 +157,19 @@ impl CropView {
 
 /// Lay the crop tool's view out in `area`: held as `layout` says while the crop is being changed,
 /// otherwise the turned photo fitted into `area`. `frame` is the uncropped frame the loupe renders.
-pub(crate) fn crop_view(frame: &Frame, crop: lcc_geom::CropGeometry, area: Rect, layout: Option<CropLayout>) -> CropView {
+pub(crate) fn crop_view(
+    frame: &Frame,
+    crop: lcc_geom::CropGeometry,
+    area: Rect,
+    layout: Option<CropLayout>,
+    zoom: Zoom,
+    _img_px: [usize; 2],
+    ppp: f32,
+    pan: (f32, f32),
+) -> CropView {
     let cf = Frame { crop, ..frame.clone() };
     let (nw, nh) = cf.native_size();
     let (nw, nh) = ((nw as f32).max(1e-3), (nh as f32).max(1e-3));
-    // the uncropped render's corners, as normalized photo points (its flips included)
     let uv_to_norm = frame.out_to_norm(1, 1);
     let corners = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| uv_to_norm.apply(Point::new(u, v)));
     let finite = |k: f32| k.is_finite() && k > 0.0;
@@ -171,13 +179,26 @@ pub(crate) fn crop_view(frame: &Frame, crop: lcc_geom::CropGeometry, area: Rect,
             let (centre, k) = match layout {
                 Some(CropLayout::Pinned { centre, k }) if centre.is_finite() && finite(k) => (centre, k),
                 _ => {
-                    // the turned photo at one point per pixel around a box centred on the origin,
-                    // scaled and placed to fit the area
-                    let unit = CanvasMap::new(&cf, Rect::from_center_size(Pos2::ZERO, vec2(nw, nh)));
-                    let b = Rect::from_points(&corners.map(|c| unit.screen(c)));
-                    let k = (area.width() / b.width()).min(area.height() / b.height());
-                    let k = if finite(k) { k } else { 1.0 };
-                    (area.center() - b.center().to_vec2() * k, k)
+                    let (w, h) = match zoom {
+                        Zoom::Percent(p) if p > 0.0 => {
+                            let scale = p / 100.0 / ppp;
+                            (nw * scale, nh * scale)
+                        }
+                        _ => {
+                            let unit = CanvasMap::new(&cf, Rect::from_center_size(Pos2::ZERO, vec2(nw, nh)));
+                            let b = Rect::from_points(&corners.map(|c| unit.screen(c)));
+                            let k = (area.width() / b.width()).min(area.height() / b.height());
+                            let k = if finite(k) { k } else { 1.0 };
+                            (b.width() * k, b.height() * k)
+                        }
+                    };
+                    let pan_offset = vec2(
+                        (pan.0 - 0.5) * (nw - w),
+                        (pan.1 - 0.5) * (nh - h),
+                    );
+                    let centre = area.center() + pan_offset;
+                    let k = w / nw;
+                    (centre, if finite(k) { k } else { 1.0 })
                 }
             };
             CanvasMap::new(&cf, Rect::from_center_size(centre, vec2(nw * k, nh * k)))
@@ -726,7 +747,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if !crop_tool || app.session.interaction.is_none() {
         app.crop_layout = None;
     }
-    let crop_view = crop_tool.then(|| crop_view(&frame, d.crop.geometry, main_area, app.crop_layout));
+    let crop_view = crop_tool.then(|| crop_view(&frame, d.crop.geometry, main_area, app.crop_layout, app.ui.zoom, native, ppp, app.ui.pan));
     if let Some(v) = &crop_view {
         if app.session.interaction.is_some() && app.crop_layout.is_none() {
             app.crop_layout = Some(CropLayout::Pinned { centre: v.centre, k: v.k });
