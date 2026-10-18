@@ -1618,5 +1618,15 @@
   "Last synced {} h ago": "Последняя синхронизация: {} ч назад",
   "Last synced on {}": "Последняя синхронизация: {}",
   "{} wants to sync its library “{}” with this library.": "{} предлагает синхронизировать свою библиотеку «{}» с этой библиотекой.",
-  "{} photos updated, {} copies": "Обновлено фото: {}, копий: {}"
+  "{} photos updated, {} copies": "Обновлено фото: {}, копий: {}",
+  "More Imports": "Другие способы импорта",
+  "More Exports": "Другие способы экспорта",
+  "Libraries": "Библиотеки",
+  "Plug-ins": "Подключаемые модули",
+  "Filters": "Фильтры",
+  "Rotate & Flip": "Поворот и отражение",
+  "Loupe Info": "Сведения в лупе",
+  "Before/After": "До/после",
+  "Edit Panels": "Панели правки",
+  "Screen Mode": "Режим экрана"
 }

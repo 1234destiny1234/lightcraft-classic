@@ -12,7 +12,7 @@ other tools), and let the app pick up edits made elsewhere.
 | | |
 |---|---|
 | Name | `<stem>.xmp` by default (`IMG_0001.CR3` → `IMG_0001.xmp`); `<file>.xmp` (`IMG_0001.CR3.xmp`) with `naming: "full"`. Reading accepts either (preferred first) and `.XMP`. With stem naming, files sharing a stem don't share a sidecar: see *Shared names* below. |
-| Write | `photo.saveMetadataToFile {ids?}` (Photo ▸ Save Metadata to File, ⌘S), or automatically after every change with `library.xmpPreferences {autoWrite: true}` (File ▸ Automatically Write Changes into XMP). Slider drags are written once, when the drag ends; undo/redo rewrite the sidecar. An existing sidecar is **merged into, never replaced** (see *Saving into an existing sidecar*). Written atomically (temp file, fsync, rename). The result lists `written`, `merged` and `backups`. |
+| Write | `photo.saveMetadataToFile {ids?}` (Metadata ▸ Save Metadata to File, ⌘S), or automatically after every change with `library.xmpPreferences {autoWrite: true}` (Metadata ▸ Automatically Write Changes into XMP). Slider drags are written once, when the drag ends; undo/redo rewrite the sidecar. An existing sidecar is **merged into, never replaced** (see *Saving into an existing sidecar*). Written atomically (temp file, fsync, rename). The result lists `written`, `merged` and `backups`. |
 | Read | On import (`library.import`, the report counts `sidecars`), and `photo.readMetadataFromFile {ids?}` (one undo step). Manual rereading uses embedded XMP in raw/DNG and JPEG files when no sidecar exists. A discovered sidecar that cannot be read or parsed is reported in `failed`, without applying embedded values. `photo.readMetadataFromFile` never writes the sidecar, even with auto-write on: writing back what it has just read would add `lc:settings`, which later reads prefer over another app's `crs:` edits (issue #934). |
 | Preferences | `library.xmpPreferences {autoWrite?, naming?: stem\|full}`, stored in the library's `prefs.json`. |
 
@@ -238,7 +238,7 @@ carry over are listed in `preset.import`'s `unmapped` as `Mask: <kind>`.
 
 ## Local adjustment presets (mask effects)
 
-`mask.importEffects {path | paths, group?, dryRun?}` (and `preset.import`, File ▸ Import Profiles & Presets…, drag & drop)
+`mask.importEffects {path | paths, group?, dryRun?}` (and `preset.import`, File ▸ More Imports ▸ Import Profiles & Presets…, drag & drop)
 reads these into the Masking panel's Effect menu (`crates/engine/src/cmd/mask_effect_files.rs`):
 
 | File | How it is read |
@@ -273,7 +273,7 @@ mask's kind: the next brush / linear / radial / … mask starts with it (`mask.t
 | | |
 |---|---|
 | Ours: `.lcpreset` | JSON `{"format": "<binary>.preset", "version": 1, "presets": [{id, name, group, settings}]}`, where `settings` is a partial develop-settings object (only the groups the preset includes). A file can hold one preset or many, and every preset keeps its group. Import also accepts a bare preset object or an array of them. |
-| Export | `preset.export {path, ids?, group?}`: all user presets by default, or the given ids or one group. In the app: File ▸ Export Presets…, Presets panel ▸ ⋯ ▸ Export User Presets…, or right-click a group ▸ Export Group…. |
+| Export | `preset.export {path, ids?, group?}`: all user presets by default, or the given ids or one group. In the app: File ▸ More Exports ▸ Export Presets…, Presets panel ▸ ⋯ ▸ Export User Presets…, or right-click a group ▸ Export Group…. |
 | Import | `preset.import {paths, group?, dryRun?}`: files or folders (recursive): `.lcpreset`, `.xmp`, classic `.lrtemplate` (a Lua table: `value.settings` holds the same field names as `crs:`), photos that carry their edits in XMP ("DNG presets" from mobile apps; their crop, geometry and custom white balance are left out) and `.zip` bundles of any of these. Local adjustment (brush) presets — Lightroom Classic's `.lrtemplate` with `type = "LocalizedAdjustmentPreset"`, Camera Raw's local-correction `.xmp`, our `.lceffect`, also inside zips — become mask effects (`mask.effects`) instead (see *Local adjustment presets* below); the result lists them under `effects`, and divider presets under `effectDividers`. Presets in a folder (or a folder inside a zip) go to a group named after it, unless the file names its own group. The result lists, per preset, the settings that couldn't be carried over (`unmapped`, e.g. `CameraProfile`, a profile named by `Look` that isn't imported, local masks), and the app's toast names them; fields that only describe the preset or the photo (`Cluster`, `SortName`, `Description`, `SupportsAmount2`, `RequiresRGBTables`, `CropConstrainToWarp`, `OverrideLookVignette`, `AsShotTemperature` / `AsShotTint`, empty `PointColors` slots) aren't listed. Older (process version 2010) fields — `Exposure`, `Contrast`, `FillLight`, `HighlightRecovery`, `Shadows`, `Brightness`, `Clarity`, `ToneCurve` — are approximated with today's sliders when a preset has no 2012-era fields. Dropping preset files on the window imports them too. In the app: File ▸ Import Presets…, or Presets panel ▸ ⋯ ▸ Import Presets…. A preset that's already there (same name, group and settings) is skipped. If an id clashes, the import gets a fresh `user.*` id, and built-in presets are never replaced. |
 | XMP presets | Read with the `crs:` table above, with `crs:Name` as the name (falling back to the file name) and `crs:Group` as the group (falling back to "Imported Presets"). Only the fields the preset sets are included, so applying it leaves everything else alone and the Amount slider scales it like any other preset. We only read XMP presets; we don't write them. |
 
@@ -281,7 +281,7 @@ The app ships no third-party presets. Its built-in presets are its own values (`
 
 ## Luminar looks (`.lmp`, `.mplumpack`)
 
-`preset.import` (and drag & drop, File ▸ Import Profiles & Presets…) also reads Luminar looks: an `.lmp` file is an
+`preset.import` (and drag & drop, File ▸ More Imports ▸ Import Profiles & Presets…) also reads Luminar looks: an `.lmp` file is an
 XML property list of adjustment layers (each with effects and named sliders, mostly on a −100..100 scale); newer looks
 may be a bundle folder `Name.lmp/Contents/preset.lmp`. An `.mplumpack` collection is a zip of `.lmp` files whose
 `PresetsInfo.plist` names the group (`GroupName`); the pack's file name is the fallback. Looks get their own name
@@ -305,7 +305,7 @@ with a blend mode other than Normal or with a mask are reported, not applied. Bi
 
 ## Profiles: 3D LUTs (`.cube`)
 
-`profile.import {paths}` (File ▸ Import Profiles & Presets…, drag & drop) reads `.cube` 3D LUTs — single files, folders
+`profile.import {paths}` (File ▸ More Imports ▸ Import Profiles & Presets…, drag & drop) reads `.cube` 3D LUTs — single files, folders
 or `.zip` bundles — as creative profiles: they appear in the profile browser under their folder's (or zip's) name and
 take the Amount slider (0–200 %) like the built-in looks. The LUT is applied to the finished, display-encoded colour
 (trilinear; `DOMAIN_MIN` / `DOMAIN_MAX` honoured; 1D LUTs are not supported); photos with a LUT profile render on the

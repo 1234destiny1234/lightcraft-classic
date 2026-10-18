@@ -294,7 +294,7 @@ pub fn specs() -> Vec<CommandSpec> {
             ..cmd!(
                 "develop.updateProcess",
                 "Update to Current Process",
-                ["Photo"],
+                ["Photo", "Develop Settings"],
                 None,
                 "{ids?}: moves the target photos (`ids`, else the selection) that are on an older rendering process to the current one, as one undo step (their look can change; the sliders keep their values; see docs/process-versions.md). Enabled while a selected photo is on an older process; named photos are checked themselves (each must exist, one must be on an older process) → {changed, process}",
                 has_outdated_process,
@@ -476,13 +476,21 @@ pub fn specs() -> Vec<CommandSpec> {
             })?;
             Ok(json!({"temp": t, "tint": tint}))
         }),
-        cmd!("develop.treatment", "Black & White", ["Photo"], Some("V"), "{bw?: bool} (toggles when omitted)", has_active, |s, p| {
-            edit(s, "develop.treatment", "Treatment", |d| {
-                let bw = p.get("bw").and_then(Value::as_bool).unwrap_or(d.treatment != Treatment::Bw);
-                d.treatment = if bw { Treatment::Bw } else { Treatment::Color };
-                Ok(())
-            })
-        }),
+        cmd!(
+            "develop.treatment",
+            "Black & White",
+            ["Photo", "Develop Settings"],
+            Some("V"),
+            "{bw?: bool} (toggles when omitted)",
+            has_active,
+            |s, p| {
+                edit(s, "develop.treatment", "Treatment", |d| {
+                    let bw = p.get("bw").and_then(Value::as_bool).unwrap_or(d.treatment != Treatment::Bw);
+                    d.treatment = if bw { Treatment::Bw } else { Treatment::Color };
+                    Ok(())
+                })
+            }
+        ),
         cmd!("develop.profile", "Set Profile", [], None, "{id: profile id (see profiles.list), amount?: 0..200}", has_active, |s, p| {
             let id = str_param(p, "id").ok_or_else(|| bad("develop.profile", "missing id"))?.to_string();
             if !crate::presets::PROFILES.iter().any(|x| x.id == id) && !s.lut_profiles.iter().any(|x| x.id == id) {
@@ -813,7 +821,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "develop.copy",
             "Copy Edit Settings",
-            ["Edit"],
+            ["Photo", "Develop Settings"],
             Some("Cmd+C"),
             "{groups?: [settingsGroup]} (default: all but crop, masks, remove)",
             has_active,
@@ -831,7 +839,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "develop.pastePrevious",
             "Paste Settings from Previous",
-            ["Edit"],
+            ["Photo", "Develop Settings"],
             Some("Cmd+Alt+V"),
             "{ids?, groups?: [settingsGroup] (default: the copy groups)} — from the photo that was active before this one",
             has_active,
@@ -855,7 +863,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "develop.paste",
             "Paste Edit Settings",
-            ["Edit"],
+            ["Photo", "Develop Settings"],
             Some("Cmd+V"),
             "{ids?, groups?: [settingsGroup] (paste only these of the copied groups)}",
             has_clipboard,
@@ -974,7 +982,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "develop.matchExposure",
             "Match Total Exposures",
-            ["Photo"],
+            ["Photo", "Develop Settings"],
             None,
             "{ids?} — set each selected photo's Exposure so its total exposure (shutter × ISO ÷ aperture², plus the slider) equals the active photo's; photos without exposure data are skipped → {changed, skipped}",
             has_selection,
@@ -1011,7 +1019,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "develop.autoSync",
             "Auto Sync",
-            ["Edit"],
+            ["Photo", "Develop Settings"],
             Some("Cmd+Alt+Shift+A"),
             "{on?: bool} (toggles when omitted) — edits to the active photo also change the other selected photos (only the settings that changed; not spot removal / red eye) → {on}",
             always,
@@ -1098,7 +1106,7 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         // ---- versions & history
-        cmd!("version.create", "Create Version", ["Photo"], None, "{name?}", has_active, |s, p| {
+        cmd!("version.create", "Create Version", ["Photo", "Develop Settings"], None, "{name?}", has_active, |s, p| {
             let id = active(s, "version.create")?;
             let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad("version.create", "no photo"))?;
             let mut versions = ph.versions.clone();

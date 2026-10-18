@@ -1410,5 +1410,15 @@
   "Last synced {} h ago": "Última sincronização há {} h",
   "Last synced on {}": "Última sincronização em {}",
   "{} wants to sync its library “{}” with this library.": "{} quer sincronizar a biblioteca “{}” com esta biblioteca.",
-  "{} photos updated, {} copies": "{} fotos atualizadas, {} cópias"
+  "{} photos updated, {} copies": "{} fotos atualizadas, {} cópias",
+  "More Imports": "Mais importações",
+  "More Exports": "Mais exportações",
+  "Libraries": "Bibliotecas",
+  "Plug-ins": "Plug-ins",
+  "Filters": "Filtros",
+  "Rotate & Flip": "Girar e espelhar",
+  "Loupe Info": "Informações da lupa",
+  "Before/After": "Antes/Depois",
+  "Edit Panels": "Painéis de edição",
+  "Screen Mode": "Modo de tela"
 }

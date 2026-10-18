@@ -326,7 +326,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "keyword.toggleShortcut",
             "Add Keyword Shortcut",
-            ["Photo"],
+            ["Metadata"],
             Some("Shift+K"),
             "{ids?} — the keyword shortcut: added to the target photos, or removed when they all have it",
             super::has_selection,

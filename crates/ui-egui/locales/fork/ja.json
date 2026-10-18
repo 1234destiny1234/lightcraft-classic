@@ -1410,5 +1410,15 @@
   "Last synced {} h ago": "最終同期：{} 時間前",
   "Last synced on {}": "最終同期：{}",
   "{} wants to sync its library “{}” with this library.": "{} がライブラリ「{}」をこのライブラリと同期しようとしています。",
-  "{} photos updated, {} copies": "{} 枚の写真を更新、{} 件のコピー"
+  "{} photos updated, {} copies": "{} 枚の写真を更新、{} 件のコピー",
+  "More Imports": "その他の読み込み",
+  "More Exports": "その他の書き出し",
+  "Libraries": "ライブラリ",
+  "Plug-ins": "プラグイン",
+  "Filters": "フィルター",
+  "Rotate & Flip": "回転と反転",
+  "Loupe Info": "ルーペ情報",
+  "Before/After": "補正前/補正後",
+  "Edit Panels": "編集パネル",
+  "Screen Mode": "画面モード"
 }
