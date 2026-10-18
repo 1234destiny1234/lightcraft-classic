@@ -125,12 +125,15 @@ impl LibrarySync {
 #[serde(rename_all = "camelCase", default)]
 pub struct Base {
     pub sync_id: String,
-    /// key → digest of this library's record after the last exchange.
+    /// key → digest of this library's record as last sent to the other device.
     pub local: HashMap<String, String>,
     /// key → digest of the other library's record at the last exchange.
     pub remote: HashMap<String, String>,
     /// When the last exchange finished (Unix seconds).
     pub last: u64,
+    /// Photos this side kept both versions of (a copy) that the other side hasn't been told about
+    /// yet: told, it keeps both too instead of taking this side's version.
+    pub conflicts: std::collections::BTreeSet<String>,
 }
 
 impl Base {
@@ -159,10 +162,21 @@ pub struct CatalogInfo {
 #[derive(Serialize, Deserialize)]
 #[serde(tag = "t", rename_all = "camelCase")]
 enum Msg {
-    Catalogs { list: Vec<CatalogInfo> },
-    Digests { map: BTreeMap<String, String> },
-    Want { keys: Vec<String> },
-    Records { batch: Vec<(String, Record)>, last: bool },
+    Catalogs {
+        list: Vec<CatalogInfo>,
+    },
+    Digests {
+        map: BTreeMap<String, String>,
+        #[serde(default)]
+        conflicts: Vec<String>,
+    },
+    Want {
+        keys: Vec<String>,
+    },
+    Records {
+        batch: Vec<(String, Record)>,
+        last: bool,
+    },
 }
 
 /// This side's part in an exchange.
@@ -172,6 +186,8 @@ pub struct Local {
     pub records: Arc<Records>,
     /// What this side last saw of the other's records (key → digest).
     pub base_remote: HashMap<String, String>,
+    /// Photos this side kept both versions of, not yet told ([`Base::conflicts`]).
+    pub conflicts: Vec<String>,
 }
 
 /// What an exchange brought back, for the UI thread to merge.
@@ -182,6 +198,12 @@ pub struct Outcome {
     pub remote: HashMap<String, String>,
     /// The full records this side asked for.
     pub records: HashMap<String, Record>,
+    /// This side's digests as sent (what the other side now believes about this library).
+    pub sent: HashMap<String, String>,
+    /// The collisions this side told the other about (now delivered).
+    pub told: Vec<String>,
+    /// Photos the other side kept both versions of.
+    pub remote_conflicts: std::collections::HashSet<String>,
     /// The other side offered a library this one doesn't share yet.
     pub offer: Option<CatalogInfo>,
 }
@@ -254,7 +276,9 @@ pub fn exchange(ch: &mut Channel, initiator: bool, local: &Local, on_records: &m
     };
 
     let my_digests: BTreeMap<String, String> = local.records.iter().map(|(k, (_, r))| (k.clone(), r.digest())).collect();
-    let Msg::Digests { map: remote } = swap(ch, initiator, &Msg::Digests { map: my_digests.clone() })? else {
+    let Msg::Digests { map: remote, conflicts: remote_conflicts } =
+        swap(ch, initiator, &Msg::Digests { map: my_digests.clone(), conflicts: local.conflicts.clone() })?
+    else {
         return Err("unexpected message".into());
     };
     if remote.len() > MAX_KEYS {
@@ -279,7 +303,15 @@ pub fn exchange(ch: &mut Channel, initiator: bool, local: &Local, on_records: &m
         send_records(ch, &local.records, &their_want)?;
         r
     };
-    Ok(Outcome { sync_id: Some(sync_id), remote: remote.into_iter().collect(), records, offer: None })
+    Ok(Outcome {
+        sync_id: Some(sync_id),
+        remote: remote.into_iter().collect(),
+        records,
+        sent: my_digests.into_iter().collect(),
+        told: local.conflicts.clone(),
+        remote_conflicts: remote_conflicts.into_iter().take(MAX_KEYS).collect(),
+        offer: None,
+    })
 }
 
 /// What the merge does with one photo.
@@ -293,7 +325,8 @@ pub enum Action {
 }
 
 /// The three-way decision for one photo present on both sides.
-pub fn decide(local: &Record, remote_digest: &str, remote: Option<&Record>, base: &Base, key: &str) -> Action {
+/// `remote_conflict`: the other side kept both versions of this photo, so this side does too.
+pub fn decide(local: &Record, remote_digest: &str, remote: Option<&Record>, base: &Base, key: &str, remote_conflict: bool) -> Action {
     let ld = local.digest();
     if ld == remote_digest {
         return Action::Keep;
@@ -303,6 +336,7 @@ pub fn decide(local: &Record, remote_digest: &str, remote: Option<&Record>, base
         base.remote.get(key).is_none_or(|b| b != remote_digest) && !(!base.remote.contains_key(key) && remote.is_some_and(Record::untouched));
     match (local_changed, remote_changed, remote) {
         (_, false, _) | (_, true, None) => Action::Keep,
+        (false, true, Some(r)) if remote_conflict => Action::Copy(r.clone()),
         (false, true, Some(r)) => Action::Take(r.clone()),
         (true, true, Some(r)) => Action::Copy(r.clone()),
     }
@@ -319,16 +353,22 @@ mod tests {
     }
 
     fn base(local: &Record, remote: &Record) -> Base {
-        Base { sync_id: "s".into(), local: [("k".to_string(), local.digest())].into(), remote: [("k".to_string(), remote.digest())].into(), last: 0 }
+        Base {
+            sync_id: "s".into(),
+            local: [("k".to_string(), local.digest())].into(),
+            remote: [("k".to_string(), remote.digest())].into(),
+            last: 0,
+            conflicts: Default::default(),
+        }
     }
 
     #[test]
     fn a_change_on_one_side_is_taken_by_the_other() {
         let old = rec(0.5, 1);
         let new = rec(1.0, 1);
-        assert_eq!(decide(&old, &new.digest(), Some(&new), &base(&old, &old), "k"), Action::Take(new.clone()));
+        assert_eq!(decide(&old, &new.digest(), Some(&new), &base(&old, &old), "k", false), Action::Take(new.clone()));
         // the side that made the change keeps it
-        assert_eq!(decide(&new, &old.digest(), Some(&old), &base(&old, &old), "k"), Action::Keep);
+        assert_eq!(decide(&new, &old.digest(), Some(&old), &base(&old, &old), "k", false), Action::Keep);
     }
 
     #[test]
@@ -336,9 +376,9 @@ mod tests {
         let old = rec(0.5, 1);
         let mine = rec(1.0, 1);
         let theirs = rec(-1.0, 3);
-        assert_eq!(decide(&mine, &theirs.digest(), Some(&theirs), &base(&old, &old), "k"), Action::Copy(theirs.clone()));
+        assert_eq!(decide(&mine, &theirs.digest(), Some(&theirs), &base(&old, &old), "k", false), Action::Copy(theirs.clone()));
         // after the exchange each side's base holds what it saw: no second copy
-        assert_eq!(decide(&mine, &theirs.digest(), Some(&theirs), &base(&mine, &theirs), "k"), Action::Keep);
+        assert_eq!(decide(&mine, &theirs.digest(), Some(&theirs), &base(&mine, &theirs), "k", false), Action::Keep);
     }
 
     #[test]
@@ -346,11 +386,21 @@ mod tests {
         let fresh = Record { develop: Arc::new(DevelopSettings::default()), rating: 0, flag: Flag::None, label: None };
         let edited = rec(1.0, 4);
         let empty = Base::default();
-        assert_eq!(decide(&fresh, &edited.digest(), Some(&edited), &empty, "k"), Action::Take(edited.clone()));
-        assert_eq!(decide(&edited, &fresh.digest(), Some(&fresh), &empty, "k"), Action::Keep);
+        assert_eq!(decide(&fresh, &edited.digest(), Some(&edited), &empty, "k", false), Action::Take(edited.clone()));
+        assert_eq!(decide(&edited, &fresh.digest(), Some(&fresh), &empty, "k", false), Action::Keep);
         // both edited before they first met: a copy
         let other = rec(-0.5, 2);
-        assert_eq!(decide(&edited, &other.digest(), Some(&other), &empty, "k"), Action::Copy(other));
+        assert_eq!(decide(&edited, &other.digest(), Some(&other), &empty, "k", false), Action::Copy(other));
+    }
+
+    #[test]
+    fn a_collision_the_other_side_resolved_is_kept_on_both() {
+        let old = rec(0.5, 1);
+        let mine = rec(1.0, 1);
+        let theirs = rec(-1.0, 3);
+        // the other side saw "mine" and kept both: here too, both stay
+        assert_eq!(decide(&mine, &theirs.digest(), Some(&theirs), &base(&mine, &old), "k", true), Action::Copy(theirs.clone()));
+        assert_eq!(decide(&mine, &theirs.digest(), Some(&theirs), &base(&mine, &old), "k", false), Action::Take(theirs));
     }
 
     #[test]

@@ -22,7 +22,7 @@ use crate::{EngineError, Result, Session};
 /// How often the device with the lower id starts an exchange with each paired device online.
 const EXCHANGE_EVERY: Duration = Duration::from_secs(15);
 /// How often the shared records are refreshed for incoming exchanges.
-const PUBLISH_EVERY: Duration = Duration::from_secs(3);
+const PUBLISH_EVERY: Duration = Duration::from_secs(1);
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -75,12 +75,15 @@ impl Hub {
                 .as_ref()
                 .filter(|p| p.sync.shared_with(&peer.device_id))
                 .and_then(|p| p.sync.sync_id.clone().map(|id| CatalogInfo { sync_id: id, name: p.name.clone() }));
-            let base_remote = match (&published, &catalog) {
-                (Some(p), Some(c)) => Base::load(&p.library, &peer.device_id, &c.sync_id).remote,
-                _ => HashMap::new(),
+            let (base_remote, conflicts) = match (&published, &catalog) {
+                (Some(p), Some(c)) => {
+                    let b = Base::load(&p.library, &peer.device_id, &c.sync_id);
+                    (b.remote, b.conflicts.into_iter().collect())
+                }
+                _ => (HashMap::new(), Vec::new()),
             };
             let records = published.as_ref().map(|p| p.records.clone()).unwrap_or_default();
-            let local = px::Local { catalog, records, base_remote };
+            let local = px::Local { catalog, records, base_remote, conflicts };
             // the activity row only while records actually travel
             let mut task: Option<TaskGuard> = None;
             let activity = self.activity.clone();
@@ -102,6 +105,8 @@ pub struct State {
     pub store_path: Option<PathBuf>,
     /// The discovery port; `None` = [`lcc_peer::beacon::PORT`] (tests use their own).
     pub port: Option<u16>,
+    /// How often exchanges start; `None` = [`EXCHANGE_EVERY`] (tests go faster).
+    pub exchange_every: Option<Duration>,
     service: Option<Arc<lcc_peer::Service>>,
     /// The activity row while looking for devices, and its cancel flag.
     finding: Option<(TaskGuard, Arc<AtomicBool>)>,
@@ -394,9 +399,10 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
     let current = px::records(&s.catalog);
     let label = format!("Sync from {}", peer.name);
     let (mut taken, mut copies) = (0, 0);
+    let mut new_conflicts = Vec::new();
     for (key, remote_digest) in &o.remote {
         let Some((id, local)) = current.get(key) else { continue };
-        match px::decide(local, remote_digest, o.records.get(key), &base, key) {
+        match px::decide(local, remote_digest, o.records.get(key), &base, key, o.remote_conflicts.contains(key)) {
             Action::Take(r) => {
                 apply_record(s, *id, &r, &label)?;
                 taken += 1;
@@ -407,14 +413,24 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
                     apply_record(s, copy, &r, &label)?;
                     copies += 1;
                 }
+                // tell the other side next time, unless it kept both already
+                if !o.remote_conflicts.contains(key) {
+                    new_conflicts.push(key.clone());
+                }
             }
             Action::Keep => {}
         }
-        if let Some(p) = s.catalog.photo(*id) {
-            base.local.insert(key.clone(), Record::of(p).digest());
+        // what the other side now believes about this photo here: the digest it was sent (the
+        // record may have changed since; that change counts next time)
+        if let Some(sent) = o.sent.get(key) {
+            base.local.insert(key.clone(), sent.clone());
         }
         base.remote.insert(key.clone(), remote_digest.clone());
     }
+    for told in &o.told {
+        base.conflicts.remove(told);
+    }
+    base.conflicts.extend(new_conflicts);
     base.last = now_secs();
     base.save(library, &peer.device_id).map_err(EngineError::Other)?;
     Ok((taken, copies))
@@ -439,7 +455,8 @@ pub(crate) fn tick(s: &mut Session) -> Result<Value> {
         if me >= peer.device_id || lock(&hub.running).contains(&peer.device_id) {
             continue;
         }
-        let due = lock(&hub.tried).get(&peer.device_id).is_none_or(|t| t.elapsed() >= EXCHANGE_EVERY);
+        let every = s.peers.exchange_every.unwrap_or(EXCHANGE_EVERY);
+        let due = lock(&hub.tried).get(&peer.device_id).is_none_or(|t| t.elapsed() >= every);
         if !due {
             continue;
         }
@@ -499,6 +516,7 @@ mod tests {
         let mut s = Session::new();
         s.peers.store_path = Some(dir.join(format!("{name}.json")));
         s.peers.port = Some(port);
+        s.peers.exchange_every = Some(Duration::from_millis(200));
         s
     }
 
@@ -549,6 +567,189 @@ mod tests {
         ] {
             assert!(a.execute(cmd, &p).is_err(), "{cmd}");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn write_png(path: &std::path::Path) {
+        let (w, h) = (16usize, 12usize);
+        let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 9) as u8, (i / w * 13) as u8, 7, 255]).collect();
+        let img = lcc_raster::Rgba8 { width: w, height: h, data };
+        let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
+        std::fs::write(path, bytes).unwrap();
+    }
+
+    /// Ticks both sessions (as their UIs would) until `done`.
+    fn tick_until(a: &mut Session, b: &mut Session, what: &str, done: impl Fn(&Session, &Session) -> bool) {
+        let t = Instant::now();
+        while !done(a, b) {
+            a.execute("sync.tick", &json!({})).unwrap();
+            b.execute("sync.tick", &json!({})).unwrap();
+            assert!(t.elapsed() < Duration::from_secs(60), "timed out waiting for {what}");
+            std::thread::sleep(Duration::from_millis(50));
+        }
+    }
+
+    fn only_master(s: &Session) -> lcc_catalog::PhotoId {
+        s.catalog.photos().find(|p| p.copy_of.is_none()).map(|p| p.id).unwrap()
+    }
+
+    /// The whole flow on two libraries holding the same photo: share, accept the offer, an edit
+    /// on one side arrives on the other, and edits on both sides end as a copy in a stack.
+    #[test]
+    fn shared_libraries_exchange_edits_and_keep_both_sides_of_a_collision() {
+        let dir = std::env::temp_dir().join(format!("lcc-engine-exchange-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let photo = dir.join("src/p.png");
+        write_png(&photo);
+        let port = 31000 + (std::process::id() % 9000) as u16;
+        let open = |name: &str| {
+            let mut s = session(&dir, name, port);
+            s = s.with_fs();
+            s.open_library(dir.join(format!("{name}-lib")), false).unwrap();
+            s.execute("library.import", &json!({"paths": [photo.to_string_lossy()]})).unwrap();
+            s
+        };
+        let (mut a, mut b) = (open("a"), open("b"));
+        // pair
+        a.execute("sync.find", &json!({"on": true})).unwrap();
+        b.execute("sync.find", &json!({"on": true})).unwrap();
+        let b_id = b.execute("sync.status", &json!({})).unwrap()["deviceId"].as_str().unwrap().to_string();
+        let a_id = a.execute("sync.status", &json!({})).unwrap()["deviceId"].as_str().unwrap().to_string();
+        until(&mut a, "a to find b", |v| v["found"].as_array().is_some_and(|f| f.iter().any(|d| d["deviceId"] == b_id.as_str())));
+        a.execute("sync.pair", &json!({"device": b_id})).unwrap();
+        until(&mut a, "a's code", |v| v["pairing"]["stage"] == "confirm");
+        until(&mut b, "b's code", |v| v["pairing"]["stage"] == "confirm");
+        a.execute("sync.confirm", &json!({"accept": true})).unwrap();
+        b.execute("sync.confirm", &json!({"accept": true})).unwrap();
+        until(&mut a, "paired", |v| v["paired"].as_array().is_some_and(|p| p.len() == 1));
+        until(&mut b, "paired", |v| v["paired"].as_array().is_some_and(|p| p.len() == 1));
+
+        // a shares; b sees the offer and takes it up
+        a.execute("sync.share", &json!({"device": b_id, "on": true})).unwrap();
+        tick_until(&mut a, &mut b, "the offer", |_, b| b.peers.hub.as_ref().is_some_and(|h| !lock(&h.offers).is_empty()));
+        b.execute("sync.answerOffer", &json!({"device": a_id, "accept": true})).unwrap();
+
+        // an edit on a reaches b
+        let pa = only_master(&a);
+        a.execute("photo.rate", &json!({"ids": [pa.0], "rating": 4})).unwrap();
+        let mut d = (*a.catalog.photo(pa).unwrap().develop).clone();
+        d.light.exposure = 1.0;
+        a.set_develop(pa, d, "test").unwrap();
+        tick_until(&mut a, &mut b, "b to take a's edit", |_, b| {
+            let p = b.catalog.photo(only_master(b)).unwrap();
+            p.rating == 4 && p.develop.light.exposure == 1.0
+        });
+        assert_eq!(b.catalog.photos().count(), 1, "no copy for a one-sided edit");
+
+        // both edit: each keeps its own and gains the other's as a stacked copy
+        let pb = only_master(&b);
+        let mut da = (*a.catalog.photo(pa).unwrap().develop).clone();
+        da.light.exposure = 2.0;
+        a.set_develop(pa, da, "test").unwrap();
+        let mut db = (*b.catalog.photo(pb).unwrap().develop).clone();
+        db.light.exposure = -2.0;
+        b.set_develop(pb, db, "test").unwrap();
+        tick_until(&mut a, &mut b, "copies on both sides", |a, b| a.catalog.photos().count() == 2 && b.catalog.photos().count() == 2);
+        assert_eq!(a.catalog.photo(pa).unwrap().develop.light.exposure, 2.0);
+        assert_eq!(b.catalog.photo(pb).unwrap().develop.light.exposure, -2.0);
+        let copy = a.catalog.photos().find(|p| p.copy_of == Some(pa)).unwrap();
+        assert_eq!(copy.develop.light.exposure, -2.0);
+        assert!(a.catalog.stack_of(pa).is_some(), "the copy is stacked with its original");
+        // and it settles: more rounds make no more copies
+        for _ in 0..3 {
+            a.peers.hub.as_ref().map(|h| lock(&h.tried).clear());
+            b.peers.hub.as_ref().map(|h| lock(&h.tried).clear());
+            std::thread::sleep(Duration::from_millis(300));
+            a.execute("sync.tick", &json!({})).unwrap();
+            b.execute("sync.tick", &json!({})).unwrap();
+        }
+        std::thread::sleep(Duration::from_millis(500));
+        a.execute("sync.tick", &json!({})).unwrap();
+        b.execute("sync.tick", &json!({})).unwrap();
+        assert_eq!((a.catalog.photos().count(), b.catalog.photos().count()), (2, 2));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    fn device_id(s: &mut Session) -> String {
+        s.execute("sync.status", &json!({})).unwrap()["deviceId"].as_str().unwrap().to_string()
+    }
+
+    /// Pairs two looking sessions through the commands.
+    fn pair_up(a: &mut Session, b: &mut Session) {
+        let b_id = device_id(b);
+        until(a, "a to find b", |v| v["found"].as_array().is_some_and(|f| f.iter().any(|d| d["deviceId"] == b_id.as_str())));
+        a.execute("sync.pair", &json!({"device": b_id})).unwrap();
+        until(a, "a's code", |v| v["pairing"]["stage"] == "confirm");
+        until(b, "b's code", |v| v["pairing"]["stage"] == "confirm");
+        a.execute("sync.confirm", &json!({"accept": true})).unwrap();
+        b.execute("sync.confirm", &json!({"accept": true})).unwrap();
+        until(a, "a paired", |v| v["paired"].as_array().is_some_and(|p| p.iter().any(|d| d["deviceId"] == b_id.as_str())));
+        a.execute("sync.clearPairing", &json!({})).unwrap();
+        b.execute("sync.clearPairing", &json!({})).unwrap();
+    }
+
+    /// Edits travel along a chain: A is paired with B, B with C (never A with C); an edit made
+    /// on A reaches C through B, and one made on C reaches A the same way.
+    #[test]
+    fn edits_travel_across_a_chain_of_devices() {
+        let dir = std::env::temp_dir().join(format!("lcc-engine-chain-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let photo = dir.join("src/p.png");
+        write_png(&photo);
+        let port = 22000 + (std::process::id() % 8000) as u16;
+        let open = |name: &str| {
+            let mut s = session(&dir, name, port).with_fs();
+            s.open_library(dir.join(format!("{name}-lib")), false).unwrap();
+            s.execute("library.import", &json!({"paths": [photo.to_string_lossy()]})).unwrap();
+            s.execute("sync.find", &json!({"on": true})).unwrap();
+            s
+        };
+        let (mut a, mut b, mut c) = (open("a"), open("b"), open("c"));
+        pair_up(&mut a, &mut b);
+        pair_up(&mut b, &mut c);
+        let (a_id, b_id, c_id) = (device_id(&mut a), device_id(&mut b), device_id(&mut c));
+        let tick_all = |a: &mut Session, b: &mut Session, c: &mut Session| {
+            for s in [a, b, c] {
+                s.execute("sync.tick", &json!({})).unwrap();
+            }
+            std::thread::sleep(Duration::from_millis(50));
+        };
+        let wait = |what: &str, t: Instant| assert!(t.elapsed() < Duration::from_secs(60), "timed out waiting for {what}");
+        // A shares with B; B takes it up and shares the same catalog with C, who takes it up
+        a.execute("sync.share", &json!({"device": b_id, "on": true})).unwrap();
+        let t = Instant::now();
+        while b.peers.hub.as_ref().is_none_or(|h| lock(&h.offers).is_empty()) {
+            tick_all(&mut a, &mut b, &mut c);
+            wait("b's offer", t);
+        }
+        b.execute("sync.answerOffer", &json!({"device": a_id, "accept": true})).unwrap();
+        b.execute("sync.share", &json!({"device": c_id, "on": true})).unwrap();
+        let t = Instant::now();
+        while c.peers.hub.as_ref().is_none_or(|h| lock(&h.offers).is_empty()) {
+            tick_all(&mut a, &mut b, &mut c);
+            wait("c's offer", t);
+        }
+        c.execute("sync.answerOffer", &json!({"device": b_id, "accept": true})).unwrap();
+
+        let pa = only_master(&a);
+        a.execute("photo.rate", &json!({"ids": [pa.0], "rating": 5})).unwrap();
+        let t = Instant::now();
+        while c.catalog.photo(only_master(&c)).unwrap().rating != 5 {
+            tick_all(&mut a, &mut b, &mut c);
+            wait("A's rating at C", t);
+        }
+        let pc = only_master(&c);
+        let mut d = (*c.catalog.photo(pc).unwrap().develop).clone();
+        d.light.exposure = 0.7;
+        c.set_develop(pc, d, "test").unwrap();
+        let t = Instant::now();
+        while a.catalog.photo(pa).unwrap().develop.light.exposure != 0.7 {
+            tick_all(&mut a, &mut b, &mut c);
+            wait("C's edit at A", t);
+        }
+        assert_eq!([a.catalog.photos().count(), b.catalog.photos().count(), c.catalog.photos().count()], [1, 1, 1], "no copies for one-sided edits");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
