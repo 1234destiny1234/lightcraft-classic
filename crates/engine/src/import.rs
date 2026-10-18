@@ -822,8 +822,6 @@ pub struct ImportJob {
 pub struct Prepared {
     pub scanned: usize,
     items: Vec<PreparedItem>,
-    /// On-demand content hashes computed for duplicate detection (photo id → hash).
-    pub hashes: HashMap<PhotoId, String>,
 }
 
 #[derive(Debug)]
@@ -1011,7 +1009,7 @@ impl ImportJob {
         self.look_up_library();
         let opts = self.opts.clone();
         let mode = self.mode;
-        let mut out = Prepared { scanned: files.len(), items: Vec::new(), hashes: HashMap::new() };
+        let mut out = Prepared { scanned: files.len(), items: Vec::new() };
         let mut todo = Vec::new();
         for f in files {
             match self.by_path.get(f.as_str()).copied() {
@@ -1501,38 +1499,6 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
             }
         }
     }
-    // On-demand content hashes: photos imported without a hash (e.g. Lightroom catalog)
-    // that were identified as duplicates by content. Migrate their smart previews before
-    // updating their content key so the preview isn't lost.
-    let smart_dir = s.smart_previews_dir.clone().or_else(|| s.media.smart_dir.clone());
-    for (id, hash) in &prepared.hashes {
-        if let Some(p) = s.catalog.photo(*id).filter(|p| p.content_hash.is_none()) {
-            // Migrate smart preview file if it exists with the old (path-based) content key.
-            if let Some(dir) = &smart_dir {
-                let old_path = crate::smart::file_path(dir, p);
-                let mut new_photo = (**p).clone();
-                new_photo.content_hash = Some(hash.clone());
-                let new_path = crate::smart::file_path(dir, &new_photo);
-                if old_path.exists() && !new_path.exists() {
-                    if let Some(parent) = new_path.parent() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                    if let Err(e) = std::fs::rename(&old_path, &new_path) {
-                        log::warn!("import {:?}: failed to migrate smart preview: {e}", id);
-                    }
-                }
-            }
-            ops.push(Op::SetContent {
-                id: *id,
-                width: p.width,
-                height: p.height,
-                file_size: p.file_size,
-                content_hash: Some(hash.clone()),
-                preview_only: p.preview_only.clone(),
-                preview_checked: p.preview_checked.clone(),
-            });
-        }
-    }
     // (built against the catalog as it is: one op list for all of them, ahead of the additions)
     if !purge.is_empty() {
         ops.insert(0, s.catalog.delete_photos_permanently_ops(&purge));
@@ -1692,7 +1658,6 @@ mod prepared_tests {
         let mut prepared = Prepared {
             scanned: 2,
             items: vec![PreparedItem::Ready(Box::new(ready(&existing_path))), PreparedItem::Ready(Box::new(ready(&other_path)))],
-            hashes: HashMap::new(),
         };
         prepared.revalidate_add(&s);
         assert!(matches!(prepared.items.first(), Some(PreparedItem::Duplicate { reason: "path", .. })));
@@ -1724,87 +1689,6 @@ mod prepared_tests {
         assert!(done_in_probe.load(Relaxed) > 0, "progress moves while files are read");
         assert_eq!((job.read_done.load(Relaxed), job.read_total.load(Relaxed)), (40, 40), "every file read is counted");
         assert_eq!((job.done.load(Relaxed), job.total.load(Relaxed)), (40, 40), "handling them is counted on its own");
-    }
-
-    /// A photo imported without a content hash (e.g. Lightroom catalog) gets a smart preview
-    /// using its path-based content key. When a duplicate is later detected and the photo's
-    /// content hash is computed on-demand, the smart preview file must be renamed to the new
-    #[test]
-    fn smart_preview_survives_on_demand_hash_update() {
-        use serde_json::json;
-        fn temp_dir(tag: &str) -> std::path::PathBuf {
-            let d = std::env::temp_dir().join(format!("lc-smart-preview-hash-{tag}-{}", std::process::id()));
-            let _ = std::fs::remove_dir_all(&d);
-            std::fs::create_dir_all(&d).unwrap();
-            d
-        }
-
-        fn write_png(path: &std::path::Path, seed: u8) {
-            let (w, h) = (48usize, 32usize);
-            let data: Vec<[u8; 4]> = (0..w * h).map(|i| [(i % w * 5) as u8, (i / w * 7) as u8, seed, 255]).collect();
-            let img = lcc_raster::Rgba8 { width: w, height: h, data };
-            let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
-            std::fs::create_dir_all(path.parent().unwrap()).unwrap();
-            std::fs::write(path, bytes).unwrap();
-        }
-
-        let src = temp_dir("src");
-        let lib = temp_dir("lib");
-        write_png(&src.join("photo.png"), 42);
-
-        // Import the photo (gets a content hash)
-        let mut s = Session::new().with_fs();
-        s.open_library(&lib, false).unwrap();
-        let r = s.execute("library.import", &json!({"paths": [src.join("photo.png").to_string_lossy()]})).unwrap();
-        let ids = r["imported"].as_array().unwrap();
-        assert_eq!(ids.len(), 1);
-        let id = PhotoId(ids[0].as_u64().unwrap());
-        let photo = s.catalog.photo(id).unwrap();
-        assert!(photo.content_hash.is_some(), "photo should have a content hash after import");
-
-        // Clear the content hash to simulate a headers-only import
-        let mut p = (**photo).clone();
-        p.content_hash = None;
-        s.catalog.apply(lcc_catalog::Op::RemovePhoto { id }).unwrap();
-        s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
-
-        // Build a smart preview for the photo
-        let smart_dir = s.media.smart_dir.clone().expect("smart dir should be set");
-        let photo_no_hash = s.catalog.photo(id).unwrap();
-        let old_sp_path = crate::smart::file_path(&smart_dir, photo_no_hash);
-        if let Some(parent) = old_sp_path.parent() {
-            std::fs::create_dir_all(parent).unwrap();
-        }
-        // Create a dummy smart preview file
-        let header = crate::smart::encode(&lcc_raster::Rgb32f::new(100, 100), None).unwrap();
-        std::fs::write(&old_sp_path, &header).unwrap();
-        assert!(old_sp_path.exists(), "smart preview should exist before hash update");
-
-        // Compute the content hash of the file (as would be done on-demand during duplicate detection)
-        let img_bytes = std::fs::read(src.join("photo.png")).unwrap();
-        let content_hash = lcc_preview::hash_bytes(&img_bytes).to_string();
-
-        // Prepare to commit the on-demand hash
-        let mut prepared = Prepared { scanned: 0, items: vec![], hashes: HashMap::new() };
-        prepared.hashes.insert(id, content_hash.clone());
-
-        // Commit the on-demand hash - this should migrate the smart preview file
-        let report = commit_prepared(&mut s, &ImportOptions::default(), "now", prepared).unwrap();
-        assert_eq!(report.imported.len(), 0); // no new photos, just hash update
-
-        // Verify the photo now has the content hash
-        let updated_photo = s.catalog.photo(id).unwrap();
-        assert_eq!(updated_photo.content_hash.as_deref(), Some(content_hash.as_str()), "photo should have content hash after commit");
-
-        // Verify the smart preview file was migrated to the new content-keyed filename
-        let new_sp_path = crate::smart::file_path(&smart_dir, updated_photo);
-        assert!(new_sp_path.exists(), "smart preview should exist at new content-keyed path after hash update");
-        assert_ne!(old_sp_path, new_sp_path, "smart preview path should have changed after hash update");
-
-        // Clean up
-        s.close_library().unwrap();
-        std::fs::remove_dir_all(&src).unwrap();
-        std::fs::remove_dir_all(&lib).unwrap();
     }
 
     /// Cancel had no effect until every file had been read.
