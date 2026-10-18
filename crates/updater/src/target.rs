@@ -231,6 +231,7 @@ mod tests {
         assert!(!win.matches_name("app-1.2.3-linux-x86_64.tar.gz"));
         let mac = Target { os: Os::Macos, arch: "universal" };
         assert!(mac.matches_name("app-1.2.3-macos-universal.dmg"));
+        assert!(mac.matches_name("app-1.2.3-rc.1-macos-universal.dmg"));
         assert!(mac.matches_name("app-1.2.3-macos-aarch64.dmg"), "a per-arch dmg is still the macOS app");
         assert!(!mac.matches_name("app-1.2.3-windows-x64.msi"));
         let lin = Target { os: Os::Linux, arch: "aarch64" };

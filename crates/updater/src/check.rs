@@ -170,13 +170,22 @@ pub fn from_release(opts: &Options, target: Target, release: Release, _cancel: O
     }))
 }
 
-/// The feed body: the override URL, else the static manifest on the newest release, else the API.
+/// The feed body: the override URL, GitHub's Releases API when prereleases are allowed, else the
+/// static manifest on the newest release, else the API.
 fn fetch_feed(opts: &Options, cancel: Option<Arc<AtomicBool>>) -> Result<String, UpdateError> {
     if let Some(url) = &opts.manifest_url {
         if under_test_origin(opts, url).is_none() {
             require_https(url, "the release feed")?;
         }
         return get_text(url, cancel);
+    }
+    if opts.prerelease {
+        match get_text(&api_url(&opts.repo), cancel.clone()) {
+            Ok(body) => return Ok(body),
+            // GitHub's Releases API may be rate-limited (403/429); fall back to the static manifest.
+            Err(UpdateError::Http { code: 403 | 429, .. }) => {}
+            Err(e) => return Err(e),
+        }
     }
     match get_text(&manifest_url(&opts.repo), cancel.clone()) {
         Ok(body) => Ok(body),
