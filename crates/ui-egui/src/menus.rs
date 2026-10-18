@@ -717,7 +717,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                             .layouts
                             .get(&crate::module::ModuleId::Library)
                             .and_then(|l| l.view)
-                            .filter(|v| *v != ViewMode::Detail && *v != ViewMode::Reference);
+                            // (not the People view: a photo opened from a person returns there by its own route, any other to the grid)
+                            .filter(|v| !matches!(v, ViewMode::Detail | ViewMode::Reference | ViewMode::People));
                         let target_grid = prev_grid.unwrap_or(ViewMode::PhotoGrid);
                         if app.ui.module == crate::module::ModuleId::Develop {
                             let _ = crate::module::switch(app, crate::module::ModuleId::Library);

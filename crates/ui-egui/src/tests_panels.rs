@@ -230,7 +230,8 @@ fn sidebar_sections_collapse_and_remember_it() {
     click(&mut h, "classicPanel:collections");
     assert!(!h.app.ui.sidebar_section_collapsed("panel:collections"));
     // Keywords and Local fold their rows too
-    let rows = |h: &Headless, prefix: &str| h.app.widgets.iter().filter(|(w, _)| w.starts_with(prefix)).count();
+    // (the Keyword List header stays a drop target for the top level while folded: not a row)
+    let rows = |h: &Headless, prefix: &str| h.app.widgets.iter().filter(|(w, _)| w.starts_with(prefix) && w != "keywordList:topLevel").count();
     assert!(rows(&h, "keywordList:") > 0, "the demo library has keywords");
     click(&mut h, "classicPanel:keywordList");
     assert_eq!(rows(&h, "keywordList:"), 0, "keywords folded");
