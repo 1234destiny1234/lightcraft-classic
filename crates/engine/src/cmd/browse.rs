@@ -306,7 +306,15 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             forget_local
         ),
-        cmd!("photo.addToLibrary", "Add to My Photos", ["Photo"], None, "{ids?} — browsed (Local) photos join the library", always, add_to_library),
+        cmd!(
+            "photo.addToLibrary",
+            "Add to My Photos",
+            ["Photo", "File"],
+            None,
+            "{ids?} — browsed (Local) photos join the library",
+            always,
+            add_to_library
+        ),
     ]
 }
 

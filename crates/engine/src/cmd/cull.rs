@@ -122,7 +122,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "library.findSimilar",
             "Find Similar Photos",
-            ["Photo"],
+            ["Library"],
             None,
             "{id?, similarity?: 0..1 (0.8), filter?: bool (true)} — photos that look like the active one (composition and tones), most similar first; filters the view to them (Clear Filters to go back) → {photos: [{id, similarity}]}",
             always,

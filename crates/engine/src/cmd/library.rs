@@ -581,7 +581,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"path": path, "label": label}))
             }
         ),
-        cmd!("library.clearFilter", "Clear Filters", ["View"], None, "{}", always, |s, _| {
+        cmd!("library.clearFilter", "Clear Filters", ["Library", "Filters"], None, "{}", always, |s, _| {
             s.filter = Default::default();
             Ok(json!({"count": s.visible().len()}))
         }),
@@ -626,7 +626,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "library.refresh",
             "Refresh View",
-            ["View"],
+            ["Library", "Filters"],
             None,
             "{} — show what matches now: a view that holds its photos (`library.holdView`) lets go of the ones that stopped matching a smart album's rules, Picks or the filter bar since it was opened, sorted or last refreshed",
             always,
@@ -638,7 +638,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "library.holdView",
             "Hold View Until Refreshed",
-            ["View"],
+            ["Library", "Filters"],
             None,
             "{on?: bool (toggles when omitted)} → {hold} — when on, an edit that makes a photo stop matching the view (a keyword given in a smart album of photos without keywords, a flag taken off in Picks, a rating under the filter bar's) keeps it in the view until `library.refresh`, Reshuffle, or another source, filter or sort; photos that start matching still appear at once, and deleting a photo or taking it out of the album or folder shown still takes it out of the view. Changing a smart album's rules is another view too. Off (the default): the view follows every edit. Kept with the library's preferences; asking for the state it already has changes nothing",
             always,
@@ -748,7 +748,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "library.devices", "Cameras and Cards", [], None, "{} → [{name, path (its DCIM folder), root}] — mounted volumes with a DCIM folder", always, |_, _| {
             Ok(serde_json::to_value(crate::devices::devices_now()).unwrap_or_default())
         }),
-        cmd!(query "photo.copyMetadata", "Copy Metadata", ["Photo"], None, "{} — title, caption, copyright (notice, status, usage terms, info URL), creator, location and keywords of the active photo", has_active, |s, _| {
+        cmd!(query "photo.copyMetadata", "Copy Metadata", ["Metadata"], None, "{} — title, caption, copyright (notice, status, usage terms, info URL), creator, location and keywords of the active photo", has_active, |s, _| {
             let v = active_meta(s, "photo.copyMetadata")?;
             s.meta_clipboard = Some(v.clone());
             Ok(v)
@@ -756,7 +756,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.syncMetadata",
             "Sync Metadata",
-            ["Photo"],
+            ["Metadata"],
             None,
             "{fields?: [title|caption|copyright|copyrightStatus|usageTerms|copyrightUrl|creator|location|keywords|…] (default: all)} — copy the active photo's metadata (as photo.copyMetadata) to the other selected photos, one undo step → as photo.setMeta",
             has_selection,
@@ -783,7 +783,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.pasteMetadata",
             "Paste Metadata",
-            ["Photo"],
+            ["Metadata"],
             None,
             "{ids?, fields?: [title|caption|copyright|copyrightStatus|usageTerms|copyrightUrl|creator|location|keywords] (default: all copied)}",
             has_selection,
@@ -919,10 +919,10 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         // ---- orientation
-        cmd!("photo.rotateLeft", "Rotate Left", ["Photo"], Some("Cmd+["), "{ids?}", has_selection, |s, p| rotate(s, p, false)),
-        cmd!("photo.rotateRight", "Rotate Right", ["Photo"], Some("Cmd+]"), "{ids?}", has_selection, |s, p| rotate(s, p, true)),
-        cmd!("photo.flipHorizontal", "Flip Horizontal", ["Photo"], None, "{ids?}", has_selection, |s, p| flip(s, p, true)),
-        cmd!("photo.flipVertical", "Flip Vertical", ["Photo"], None, "{ids?}", has_selection, |s, p| flip(s, p, false)),
+        cmd!("photo.rotateLeft", "Rotate Left", ["Photo", "Rotate & Flip"], Some("Cmd+["), "{ids?}", has_selection, |s, p| rotate(s, p, false)),
+        cmd!("photo.rotateRight", "Rotate Right", ["Photo", "Rotate & Flip"], Some("Cmd+]"), "{ids?}", has_selection, |s, p| rotate(s, p, true)),
+        cmd!("photo.flipHorizontal", "Flip Horizontal", ["Photo", "Rotate & Flip"], None, "{ids?}", has_selection, |s, p| flip(s, p, true)),
+        cmd!("photo.flipVertical", "Flip Vertical", ["Photo", "Rotate & Flip"], None, "{ids?}", has_selection, |s, p| flip(s, p, false)),
         // ---- face / pet regions
         cmd!(
             "photo.removeRegion",
@@ -1024,7 +1024,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.deleteFromDisk",
             "Delete from Disk",
-            ["Photo"],
+            ["Photo", "File"],
             None,
             "{ids?} — moves the photos' files to the system trash and removes them from the library",
             has_selection,
@@ -1866,7 +1866,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 },
             }))
         }),
-        cmd!("library.compact", "Optimize Library", ["File"], None, "{}", has_library, |s, _| {
+        cmd!("library.compact", "Optimize Library", ["File", "Libraries"], None, "{}", has_library, |s, _| {
             s.compact_library()?;
             ok()
         }),

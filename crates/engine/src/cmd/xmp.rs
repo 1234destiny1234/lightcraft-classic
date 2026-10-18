@@ -115,7 +115,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.saveMetadataToFile",
             "Save Metadata to File",
-            ["Photo"],
+            ["Metadata"],
             Some("Cmd+S"),
             "{ids?} — writes each photo's XMP sidecar (metadata + develop settings) next to the original, merged into an existing one (other apps' data kept; an unreadable one is backed up first) → {written: [path], merged: [path], backups: [{path, backup}], failed}",
             has_selection,
@@ -124,7 +124,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "photo.readMetadataFromFile",
             "Read Metadata from File",
-            ["Photo"],
+            ["Metadata"],
             None,
             "{ids?} — reads each photo's XMP sidecar, or embedded XMP in raw/DNG and JPEG files when no sidecar exists: metadata and develop settings, one undo step; never writes the sidecar, even with auto-write on; JPEG uses the first complete standard XMP APP1 before SOS/EOI, within 16 MiB of headers and 4096 marker/fill steps; an unreadable sidecar fails without embedded fallback → {read, failed, warnings?: [{path, code, profile?, mode?, fields?}]}",
             has_selection,
@@ -160,7 +160,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 Ok(json!({"written": written, "waiting": s.unsaved_sidecars()}))
             }
         ),
-        cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["File"], None, "{} → {autoWrite}", always, |s, _| {
+        cmd!("library.toggleAutoWriteXmp", "Automatically Write Changes into XMP", ["Metadata"], None, "{} → {autoWrite}", always, |s, _| {
             let on = !s.xmp.auto_write;
             prefs(s, &json!({"autoWrite": on}))
         }),

@@ -1,4 +1,10 @@
 {
+  "File Settings": "Dateieinstellungen",
+  "Image Sizing": "Bildgröße",
+  "Output Sharpening": "Ausgabeschärfung",
+  "Watermarking": "Wasserzeichen",
+  "File Naming": "Dateibenennung",
+  "Export Location": "Exportziel",
   "Color Values": "Farbwerte",
   "Color Readout": "Farbanzeige",
   "Show RGB Color Values": "RGB-Farbwerte anzeigen",
@@ -1268,5 +1274,17 @@
   "Last synced {} h ago": "Zuletzt synchronisiert vor {} Std.",
   "Last synced on {}": "Zuletzt synchronisiert am {}",
   "{} wants to sync its library “{}” with this library.": "{} möchte seine Bibliothek „{}“ mit dieser Bibliothek synchronisieren.",
-  "{} photos updated, {} copies": "{} Fotos aktualisiert, {} Kopien"
+  "{} photos updated, {} copies": "{} Fotos aktualisiert, {} Kopien",
+  "More Imports": "Weitere Importe",
+  "More Exports": "Weitere Exporte",
+  "Libraries": "Bibliotheken",
+  "Plug-ins": "Zusatzmodule",
+  "Filters": "Filter",
+  "Rotate & Flip": "Drehen und Spiegeln",
+  "Loupe Info": "Lupeninformationen",
+  "Before/After": "Vorher/Nachher",
+  "Edit Panels": "Bearbeitungsbereiche",
+  "Screen Mode": "Bildschirmmodus",
+  "Metadata Filter Columns": "Metadaten-Filterspalten",
+  "Metadata columns: click a value to narrow the view": "Metadatenspalten: Klicken Sie auf einen Wert, um die Ansicht einzugrenzen"
 }

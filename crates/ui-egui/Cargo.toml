@@ -19,6 +19,7 @@ lcc-raster = { workspace = true }
 lcc-develop = { workspace = true }
 lcc-pipeline = { workspace = true }
 lcc-catalog = { workspace = true }
+lcc-raw = { workspace = true }
 lcc-geo = { workspace = true }
 web-time = { workspace = true }
 lcc-engine = { workspace = true }

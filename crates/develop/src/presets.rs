@@ -142,6 +142,11 @@ pub fn extract_groups(s: &DevelopSettings, groups: &[SettingsGroup]) -> Value {
             }
         }
     }
+    // the Camera colour is left out of the settings while it is Auto; a preset or a sync of the Profile group still
+    // carries it, so that applying it turns a Colorimetric photo back to Auto
+    if let Some(Value::Object(profile)) = out.get_mut("profile") {
+        profile.entry("camera_colour").or_insert_with(|| serde_json::to_value(s.profile.camera_colour).unwrap_or(Value::Null));
+    }
     Value::Object(out)
 }
 

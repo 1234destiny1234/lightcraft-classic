@@ -169,7 +169,7 @@ pub fn setup_banner(app: &mut LccApp, ui: &mut egui::Ui) {
 fn gpu_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, gpu: &Value) {
     heading(ui, t, "Processor");
     let mut cpu = gpu["cpuOnly"].as_bool().unwrap_or(false);
-    let r = ui.checkbox(&mut cpu, crate::i18n::tr("Run face models on the CPU only"));
+    let r = crate::dialog_frame::in_control_column(ui, |ui| ui.checkbox(&mut cpu, crate::i18n::tr("Run face models on the CPU only")));
     register(ui.ctx(), "check:settings.facesCpuOnly", r.rect);
     if r.changed() {
         match app.run("faces.gpu", json!({"cpuOnly": cpu})) {
@@ -188,8 +188,7 @@ fn gpu_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, gpu: &Value) {
         } else {
             (crate::i18n::tr("CPU").to_string(), st["why"].as_str())
         };
-        ui.horizontal(|ui| {
-            ui.label(RichText::new(crate::i18n::tr(label)).color(t.text_dim));
+        super::settings::row(ui, t, label, |ui| {
             let r = ui.label(text);
             register(ui.ctx(), format!("faces:device:{what}"), r.rect);
             if let Some(why) = why {
@@ -251,9 +250,10 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     // (issue #678), so it can only be switched off, with the hint below saying what to do first
     let usable =
         list["embedder"].as_str().is_some_and(|id| list["models"].as_array().into_iter().flatten().any(|m| m["id"] == id && m["installed"] == true));
-    let r = ui
-        .add_enabled(on || (runtime && usable), egui::Checkbox::new(&mut on, crate::i18n::tr("Recognise faces (experimental)")))
-        .on_disabled_hover_text(crate::i18n::tr("Choose a model below (Use) to start."));
+    let r = crate::dialog_frame::in_control_column(ui, |ui| {
+        ui.add_enabled(on || (runtime && usable), egui::Checkbox::new(&mut on, crate::i18n::tr("Recognise faces (experimental)")))
+            .on_disabled_hover_text(crate::i18n::tr("Choose a model below (Use) to start."))
+    });
     register(ui.ctx(), "check:settings.facesEnabled", r.rect);
     if r.changed() {
         match app.run("faces.enable", json!({"enabled": on})) {

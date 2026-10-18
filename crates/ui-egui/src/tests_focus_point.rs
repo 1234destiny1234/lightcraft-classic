@@ -181,7 +181,7 @@ fn the_frame_loop_reads_focus_points_for_photos_imported_earlier() {
     // a photo added later is read when asked (the menu item runs the command)
     add(&mut h.app, 9002, "later.ARW");
     let spec = h.app.session.commands().into_iter().find(|c| c.id == "photo.readFocusPoints").expect("the command");
-    assert_eq!(spec.menu, vec!["Photo"]);
+    assert_eq!(spec.menu, vec!["Metadata"]);
     let r = run(&mut h, "photo.readFocusPoints", json!({}));
     assert_eq!(r["queued"], 1, "{r}");
     assert!(h.step_until(SETTLE, |h| has_point(h, 9002)));

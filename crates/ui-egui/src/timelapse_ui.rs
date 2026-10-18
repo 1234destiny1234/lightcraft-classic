@@ -17,7 +17,7 @@ use crate::state::Dialog;
 /// UI commands: (id, label, shortcut, menu).
 #[cfg(not(target_arch = "wasm32"))]
 pub const COMMANDS: &[crate::menus::UiCommand] = &[
-    ("dialog.timelapse", "Timelapse Video…", None, "File>Export"),
+    ("dialog.timelapse", "Timelapse Video…", None, "File>More Exports"),
     // {path?, …export.timelapse options}: asks for the file when `path` is missing
     ("app.timelapse", "Export Timelapse Video", None, ""),
 ];
@@ -122,7 +122,7 @@ mod tests {
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.mp4");
         let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services::default());
-        assert!(crate::menus::menu_entries(&app).iter().any(|e| e.id == "dialog.timelapse" && e.menu == ["File", "Export"]));
+        assert!(crate::menus::menu_entries(&app).iter().any(|e| e.id == "dialog.timelapse" && e.menu == ["File", "More Exports"]));
         let ids: Vec<u64> = app.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
         app.run("dialog.timelapse", json!({})).unwrap();
         let Some(Dialog::Timelapse { size, hold, .. }) = app.ui.dialog.as_mut() else { panic!("no timelapse dialog") };

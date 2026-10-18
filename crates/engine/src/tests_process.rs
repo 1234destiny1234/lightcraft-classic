@@ -81,8 +81,8 @@ fn update_to_current_process_is_one_undo_step_and_only_when_needed() {
     let info = update_info(&s);
     assert!(!info.enabled && info.disabled_reason.as_deref().is_some_and(|r| r.contains("already on the current process")), "{info:?}");
     assert!(matches!(s.execute("develop.updateProcess", &json!({})), Err(EngineError::Disabled(..))));
-    // in the Photo menu
-    assert_eq!(info.menu, vec!["Photo"]);
+    // in Photo ▸ Develop Settings
+    assert_eq!(info.menu, vec!["Photo", "Develop Settings"]);
 
     put(&mut s, ids[0], OLDER, 0.5);
     put(&mut s, ids[1], OLDER, -0.5);
