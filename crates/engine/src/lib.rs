@@ -104,6 +104,7 @@ pub mod update;
 pub mod video;
 mod view;
 pub mod walk;
+pub mod xmp_look;
 
 use std::sync::Arc;
 

@@ -534,11 +534,12 @@ fn sidecar_contents(path: &Path, p: &Photo, cat: &lcc_catalog::Catalog, stamp: &
     if bytes.iter().all(u8::is_ascii_whitespace) {
         return Ok((sidecar_packet(p, cat), false, None));
     }
-    let rules = lcc_meta::MergeRules { owned: OWNED, owned_if_present: OWNED_IF_STATED };
-    match std::str::from_utf8(&bytes)
-        .map_err(|e| e.to_string())
-        .and_then(|old| lcc_meta::merge_xmp(old, &packet(p, cat, false, !states_gps(old, p.meta.gps)), rules).map_err(|e| e.to_string()))
-    {
+    match std::str::from_utf8(&bytes).map_err(|e| e.to_string()).and_then(|old| {
+        let gps = GpsOnSave::of(p, old);
+        let owned: Vec<&str> = OWNED.iter().chain(gps.owned_tags()).copied().collect();
+        let rules = lcc_meta::MergeRules { owned: &owned, owned_if_present: OWNED_IF_STATED };
+        lcc_meta::merge_xmp(old, &packet(p, cat, false, gps.write()), rules).map_err(|e| e.to_string())
+    }) {
         Ok(merged) => Ok((merged, true, None)),
         Err(why) => {
             let b = backup(path, stamp)?;
@@ -548,12 +549,42 @@ fn sidecar_contents(path: &Path, p: &Photo, cat: &lcc_catalog::Catalog, stamp: &
     }
 }
 
-/// Whether packet `old` already states position `gps` (to about a centimetre). Saving leaves such a
-/// position as the file writes it, in its own precision and form, rather than rewriting it from the
-/// library's copy: GPS read from a sidecar goes back unchanged unless it was changed here.
-fn states_gps(old: &str, gps: Option<(f64, f64)>) -> bool {
-    let (Some((lat, lon)), Some(g)) = (gps, lcc_meta::parse_xmp(old).ok().and_then(|d| d.metadata.gps)) else { return false };
-    (g.latitude - lat).abs() < 1e-7 && (g.longitude - lon).abs() < 1e-7
+/// The GPS tags a sidecar can state, all removed together when a cleared position is saved.
+const GPS_TAGS: &[&str] = &["exif:GPSLatitude", "exif:GPSLongitude", "exif:GPSAltitude", "exif:GPSAltitudeRef"];
+
+/// What saving does with the position of a photo whose existing sidecar is `old`.
+enum GpsOnSave {
+    /// The library's position is written, or none is stated by either.
+    Write,
+    /// The sidecar already states the library's position (to about a centimetre): it stays as the file writes it, in its
+    /// own precision and form, rather than being rewritten from the library's copy, so GPS read from a sidecar goes
+    /// back unchanged unless it was changed here.
+    Keep,
+    /// The position was cleared here and the sidecar still states exactly that one: its GPS tags go. A different position
+    /// there was written by another application after the clear, and stays (so does one the library never had).
+    Remove,
+}
+
+impl GpsOnSave {
+    fn of(p: &Photo, old: &str) -> GpsOnSave {
+        let stated = lcc_meta::parse_xmp(old).ok().and_then(|d| d.metadata.gps).map(|g| (g.latitude, g.longitude));
+        let same = |a: (f64, f64), b: (f64, f64)| (a.0 - b.0).abs() < 1e-7 && (a.1 - b.1).abs() < 1e-7;
+        match (p.meta.gps, p.meta.gps_removed, stated) {
+            (Some(own), _, Some(theirs)) if same(own, theirs) => GpsOnSave::Keep,
+            (None, Some(removed), Some(theirs)) if same(removed, theirs) => GpsOnSave::Remove,
+            _ => GpsOnSave::Write,
+        }
+    }
+
+    /// Whether the fresh packet states the library's position.
+    fn write(&self) -> bool {
+        matches!(self, GpsOnSave::Write)
+    }
+
+    /// The tags the merge replaces from the fresh packet (which states none) on top of the always-owned ones.
+    fn owned_tags(&self) -> &'static [&'static str] {
+        if matches!(self, GpsOnSave::Remove) { GPS_TAGS } else { &[] }
+    }
 }
 
 /// Key of the stem sidecar a file maps to (case-insensitive).

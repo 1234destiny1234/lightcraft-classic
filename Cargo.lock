@@ -5290,6 +5290,7 @@ dependencies = [
  "lcc-print",
  "lcc-publish",
  "lcc-raster",
+ "lcc-raw",
  "lcc-slide",
  "lcc-slideshow",
  "lcc-testkit",

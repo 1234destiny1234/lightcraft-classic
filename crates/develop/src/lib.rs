@@ -176,6 +176,46 @@ mod tests {
         assert_ne!(read.hash64(), DevelopSettings::for_raw(5500.0, 10.0).hash64(), "cached renders are told apart");
     }
 
+    /// The Camera colour option is left out of the JSON while it is Auto (settings from before it keep their hash, and
+    /// every cached preview stays valid); Colorimetric is stored, read back, and changes the hash.
+    #[test]
+    fn camera_colour_is_stored_only_when_it_is_not_auto() {
+        let auto = DevelopSettings::default();
+        assert!(!auto.to_json().to_string().contains("camera_colour"));
+        let mut colorimetric = auto.clone();
+        colorimetric.profile.camera_colour = CameraColour::Colorimetric;
+        let v = colorimetric.to_json();
+        assert_eq!(v["profile"]["camera_colour"], json!("colorimetric"));
+        assert_eq!(DevelopSettings::from_json(&v).unwrap().profile.camera_colour, CameraColour::Colorimetric);
+        assert_ne!(colorimetric.hash64(), auto.hash64());
+        // a merge can set it back by name
+        let back: Profile = serde_json::from_value(json!({"camera_colour": "auto"})).unwrap();
+        assert!(back.camera_colour.is_auto());
+    }
+
+    /// A preset or sync of the Profile group carries the Camera colour both ways: Colorimetric onto an Auto photo,
+    /// and Auto back onto a Colorimetric one.
+    #[test]
+    fn the_profile_group_carries_the_camera_colour_both_ways() {
+        let auto = DevelopSettings::default();
+        let mut colorimetric = auto.clone();
+        colorimetric.profile.camera_colour = CameraColour::Colorimetric;
+        let on = extract_groups(&colorimetric, &[SettingsGroup::Profile]);
+        let off = extract_groups(&auto, &[SettingsGroup::Profile]);
+        assert_eq!(apply_partial(&auto, &on, 1.0).profile.camera_colour, CameraColour::Colorimetric);
+        assert_eq!(apply_partial(&colorimetric, &off, 1.0).profile.camera_colour, CameraColour::Auto);
+        // and a preset of the group still applies at a low amount (where discrete fields already take the preset's)
+        let mut lighter = colorimetric.clone();
+        lighter.light.exposure = 1.0;
+        let both = extract_groups(&lighter, &[SettingsGroup::Light, SettingsGroup::Profile]);
+        let weak = apply_partial(&auto, &both, 0.3);
+        assert!((weak.light.exposure - 0.3).abs() < 1e-9, "the preset applied: exposure {}", weak.light.exposure);
+        assert_eq!(weak.profile.camera_colour, CameraColour::Colorimetric, "a discrete field takes the preset's at any amount above 0");
+        // other groups leave it alone
+        let light = extract_groups(&auto, &[SettingsGroup::Light]);
+        assert_eq!(apply_partial(&colorimetric, &light, 1.0).profile.camera_colour, CameraColour::Colorimetric);
+    }
+
     #[test]
     fn serde_roundtrip_default_and_edited() {
         let mut s = DevelopSettings::default();

@@ -354,7 +354,7 @@ pub fn load(path: &Path) -> Result<crate::media::DecodedSource, String> {
         info: None,
         camera_tone,
         denoised: None,
-        outliers: false,
+        options: Default::default(),
     })
 }
 

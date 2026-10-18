@@ -1835,7 +1835,7 @@ mod extended_linear_tests {
                 loader: None,
                 fallback: None,
                 denoise: None,
-                outliers: false,
+                options: Default::default(),
             },
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
