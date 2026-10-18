@@ -692,6 +692,12 @@ mod tests {
     /// other as paired, and a third party's attempt is refused while they aren't looking.
     #[test]
     fn two_devices_find_each_other_and_pair() {
+        // macOS LAN pairing check: discovery times out on the macOS CI runner; checked in person on
+        // real Macs instead (see "Checked in person, not on CI" in docs/ci.md)
+        if cfg!(target_os = "macos") && std::env::var_os("CI").is_some() {
+            lcc_testkit::skip!(System, "LAN discovery on the macOS CI runner (macOS LAN pairing check, tested in person)");
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("lcc-peer-svc-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         // a port of its own, so parallel test runs don't hear each other
@@ -728,6 +734,12 @@ mod tests {
 
     #[test]
     fn a_refused_code_pairs_nobody() {
+        // macOS LAN pairing check: discovery times out on the macOS CI runner; checked in person on
+        // real Macs instead (see "Checked in person, not on CI" in docs/ci.md)
+        if cfg!(target_os = "macos") && std::env::var_os("CI").is_some() {
+            lcc_testkit::skip!(System, "LAN discovery on the macOS CI runner (macOS LAN pairing check, tested in person)");
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("lcc-peer-no-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let port = 40000 + ((std::process::id() + 7) % 20000) as u16;
