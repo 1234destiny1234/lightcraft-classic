@@ -1410,5 +1410,7 @@
   "Last synced {} h ago": "最終同期：{} 時間前",
   "Last synced on {}": "最終同期：{}",
   "{} wants to sync its library “{}” with this library.": "{} がライブラリ「{}」をこのライブラリと同期しようとしています。",
-  "{} photos updated, {} copies": "{} 枚の写真を更新、{} 件のコピー"
+  "{} photos updated, {} copies": "{} 枚の写真を更新、{} 件のコピー",
+  "Metadata Filter Columns": "メタデータフィルター列",
+  "Metadata columns: click a value to narrow the view": "メタデータ列：値をクリックすると表示が絞り込まれます"
 }

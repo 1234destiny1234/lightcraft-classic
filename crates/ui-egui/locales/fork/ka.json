@@ -16,5 +16,7 @@
   "is today": "დღესაა",
   "is yesterday": "გუშინაა",
   "Also the contributors to": "ასევე მონაწილეები:",
-  "Join the Discord": "Discord-ს შეუერთდით"
+  "Join the Discord": "Discord-ს შეუერთდით",
+  "Metadata Filter Columns": "მეტამონაცემების ფილტრის სვეტები",
+  "Metadata columns: click a value to narrow the view": "მეტამონაცემების სვეტები: დააწკაპუნეთ მნიშვნელობაზე ხედის შესავიწროებლად"
 }

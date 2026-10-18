@@ -1618,5 +1618,7 @@
   "Last synced {} h ago": "Последняя синхронизация: {} ч назад",
   "Last synced on {}": "Последняя синхронизация: {}",
   "{} wants to sync its library “{}” with this library.": "{} предлагает синхронизировать свою библиотеку «{}» с этой библиотекой.",
-  "{} photos updated, {} copies": "Обновлено фото: {}, копий: {}"
+  "{} photos updated, {} copies": "Обновлено фото: {}, копий: {}",
+  "Metadata Filter Columns": "Столбцы фильтра метаданных",
+  "Metadata columns: click a value to narrow the view": "Столбцы метаданных: щёлкните значение, чтобы сузить просмотр"
 }

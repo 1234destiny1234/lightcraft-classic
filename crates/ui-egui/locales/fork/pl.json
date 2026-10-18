@@ -16,5 +16,7 @@
   "is today": "jest dzisiaj",
   "is yesterday": "jest wczoraj",
   "Also the contributors to": "Także współtwórcy projektu",
-  "Join the Discord": "Dołącz do Discorda"
+  "Join the Discord": "Dołącz do Discorda",
+  "Metadata Filter Columns": "Kolumny filtra metadanych",
+  "Metadata columns: click a value to narrow the view": "Kolumny metadanych: kliknij wartość, aby zawęzić widok"
 }

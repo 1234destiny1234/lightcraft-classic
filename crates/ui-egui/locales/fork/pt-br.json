@@ -1410,5 +1410,7 @@
   "Last synced {} h ago": "Última sincronização há {} h",
   "Last synced on {}": "Última sincronização em {}",
   "{} wants to sync its library “{}” with this library.": "{} quer sincronizar a biblioteca “{}” com esta biblioteca.",
-  "{} photos updated, {} copies": "{} fotos atualizadas, {} cópias"
+  "{} photos updated, {} copies": "{} fotos atualizadas, {} cópias",
+  "Metadata Filter Columns": "Colunas de filtro de metadados",
+  "Metadata columns: click a value to narrow the view": "Colunas de metadados: clique em um valor para restringir a exibição"
 }

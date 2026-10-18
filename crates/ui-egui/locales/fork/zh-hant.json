@@ -1409,5 +1409,7 @@
   "Last synced {} h ago": "上次同步：{} 小時前",
   "Last synced on {}": "上次同步：{}",
   "{} wants to sync its library “{}” with this library.": "{} 想將其圖庫「{}」與此圖庫同步。",
-  "{} photos updated, {} copies": "已更新 {} 張照片，{} 個副本"
+  "{} photos updated, {} copies": "已更新 {} 張照片，{} 個副本",
+  "Metadata Filter Columns": "中繼資料篩選欄",
+  "Metadata columns: click a value to narrow the view": "中繼資料欄：按一下某個值以縮小檢視範圍"
 }
