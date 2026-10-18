@@ -17,6 +17,7 @@ logo_svg       = "brand/logo.svg"
 
 [identity]
 app_id          = "org.example.ZzyzxTest"
+android_package = "org.example.zzyzxtest"
 settings_dir    = "ZzyzxTest"
 library_default = "Zzyzx Library"
 catalog_ext     = "zzcat"
