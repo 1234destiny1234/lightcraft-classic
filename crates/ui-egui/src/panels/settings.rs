@@ -864,6 +864,7 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     );
     heading(ui, t, crate::i18n::tr("Detail"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
+    check(ui, "settings.hideFilterInDevelop", &mut app.ui.settings.hide_filter_in_develop, "Hide filter text in Develop mode");
     row(ui, t, crate::i18n::tr("Info overlay"), |ui| {
         use crate::state::InfoOverlay as I;
         choices(ui, "settingsInfo", &[(I::Off, "Off"), (I::Basic, "File & date"), (I::Exposure, "Exposure")], &mut app.ui.info_overlay);

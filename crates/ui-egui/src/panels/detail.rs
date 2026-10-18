@@ -1103,7 +1103,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     super::layout_overlay::draw(app, &p, img_rect);
     register(ui.ctx(), "canvas:image", img_rect);
     let map = crop_view.map_or_else(|| CanvasMap::new(&frame, img_rect), |v| v.map);
-    let pill = if !fullscreen { filter_pill(app, ui, canvas) } else { None };
+    let hide_filter = app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop;
+    let pill = if !fullscreen && !hide_filter { filter_pill(app, ui, canvas) } else { None };
     info_overlay(app, &p, canvas, &photo, pill);
     if app.ui.face_boxes {
         // a name box left open on another photo is dropped
@@ -3574,5 +3575,29 @@ mod info_overlay_tests {
         let info_rect = widgets.iter().find(|(w, _)| w == "canvas:infoOverlay").map(|(_, r)| *r).expect("canvas:infoOverlay registered");
         assert!(info_rect.top() >= pill_rect.bottom(), "info overlay {info_rect:?} is below filter pill {pill_rect:?}");
         assert!(!info_rect.intersects(pill_rect), "info overlay does not overlap filter pill");
+    }
+
+    /// When `hide_filter_in_develop` is enabled in Settings ▸ Interface, the filter pill is
+    /// hidden in Develop mode, but remains visible in Library mode.
+    #[test]
+    fn hide_filter_in_develop_setting_hides_pill_in_develop_only() {
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+        app.session.filter.text = "demo".into();
+        app.ui.settings.hide_filter_in_develop = true;
+
+        // In Develop mode with the setting enabled, the filter pill is suppressed
+        app.ui.module = crate::module::ModuleId::Develop;
+        let hide_in_develop = app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop;
+        assert!(hide_in_develop);
+
+        // In Library mode, the filter pill is not suppressed
+        app.ui.module = crate::module::ModuleId::Library;
+        let hide_in_library = app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop;
+        assert!(!hide_in_library);
+
+        // When the setting is disabled, the filter pill is shown in both modes
+        app.ui.settings.hide_filter_in_develop = false;
+        app.ui.module = crate::module::ModuleId::Develop;
+        assert!(!(app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop));
     }
 }
