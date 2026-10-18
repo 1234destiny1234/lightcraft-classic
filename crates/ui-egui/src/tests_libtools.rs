@@ -154,6 +154,24 @@ fn select_all_in_a_metadata_field_selects_the_text_not_the_photos() {
     assert_eq!((title(&h, ids[1]), title(&h, ids[2])), ("Two".into(), "Three".into()), "other photos keep their titles");
 }
 
+/// Issue #266: with filters on, the loupe's filter pill and the info overlay share the top-left
+/// corner without overlapping.
+#[test]
+fn the_filter_pill_and_the_info_overlay_do_not_overlap() {
+    let mut h = app("detail");
+    let first = h.app.session.visible_cloned()[0];
+    exec(&mut h, "photo.rate", json!({"ids": [first.0], "rating": 5}));
+    exec(&mut h, "library.select", json!({"ids": [first.0], "active": first.0}));
+    exec(&mut h, "library.filter", json!({"rating": 4}));
+    for overlay in [crate::state::InfoOverlay::Basic, crate::state::InfoOverlay::Exposure] {
+        h.app.ui.info_overlay = overlay;
+        h.settle(SETTLE);
+        let rect = |h: &Headless, w: &str| h.app.widgets.iter().find(|(id, _)| id == w).map(|(_, r)| *r).unwrap_or_else(|| panic!("{w} drawn"));
+        let (pill, info) = (rect(&h, "loupe:filters"), rect(&h, "canvas:infoOverlay"));
+        assert!(!pill.intersects(info), "{overlay:?}: pill {pill:?} over the info overlay {info:?}");
+    }
+}
+
 /// Feature: grid cell styles and index numbers are commands; the expanded square cell shows the
 /// index; unknown styles are refused.
 #[test]
