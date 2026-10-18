@@ -6,6 +6,7 @@ tagline        = "Photo library and raw development"
 vendor         = "LightCraft Classic contributors"
 homepage       = "https://github.com/emmertex/lightcraft-classic"
 repository     = "https://github.com/emmertex/lightcraft-classic"
+discord        = "https://discord.gg/c3dfYATzsQ"  # community chat (Help menu, About); leave out for none
 developer_id   = "com.emmertex.lightcraftclassic" # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
 binary         = "lightcraft-classic"            # desktop executable name in packages
 cli_binary     = "lightcraft-classic-cli"

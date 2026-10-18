@@ -6,6 +6,8 @@ pub const APP_PAGE: &str = lcc_brand::HOMEPAGE;
 pub const GITHUB: &str = lcc_brand::REPOSITORY;
 /// The user documentation (docs/ in the repository).
 pub const HELP: &str = lcc_brand::REPOSITORY;
+/// The community chat (empty when the brand has none: no link is shown).
+pub const DISCORD: &str = lcc_brand::DISCORD;
 /// Where feedback and bug reports go.
 pub const FEEDBACK: &str = lcc_brand::REPOSITORY;
 
@@ -16,6 +18,7 @@ pub const LINKS: &[(&str, &str, &str)] = &[
     ("app.website", "{app} Website", APP_PAGE),
     ("app.github", "{app} Source Code", GITHUB),
     ("app.feedback", "Send Feedback…", FEEDBACK),
+    ("app.discord", "Join the Discord", DISCORD),
 ];
 /// The URL behind a link command id.
 pub fn url_of(cmd: &str) -> Option<&'static str> {
@@ -35,7 +38,7 @@ mod tests {
 
     #[test]
     fn links_are_https_and_come_from_the_brand() {
-        for (id, label, url) in LINKS {
+        for (id, label, url) in LINKS.iter().filter(|(_, _, u)| !u.is_empty()) {
             assert!(url.starts_with("https://"), "{id}");
             assert!(!label.is_empty());
             assert_eq!(url_of(id), Some(*url));
