@@ -658,8 +658,11 @@ mod tests {
         assert!(a.catalog.stack_of(pa).is_some(), "the copy is stacked with its original");
         // and it settles: more rounds make no more copies
         for _ in 0..3 {
-            a.peers.hub.as_ref().map(|h| lock(&h.tried).clear());
-            b.peers.hub.as_ref().map(|h| lock(&h.tried).clear());
+            for s in [&a, &b] {
+                if let Some(h) = &s.peers.hub {
+                    lock(&h.tried).clear();
+                }
+            }
             std::thread::sleep(Duration::from_millis(300));
             a.execute("sync.tick", &json!({})).unwrap();
             b.execute("sync.tick", &json!({})).unwrap();
