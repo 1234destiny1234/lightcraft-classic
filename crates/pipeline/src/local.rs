@@ -637,7 +637,7 @@ pub const SHARPEN_SIGMA_MAX: f32 = 4.0;
 
 /// The sharpening blur's sigma for a raw value of [`sharpen_sigma_raw`].
 pub fn sharpen_sigma(raw: f32) -> f32 {
-    raw.clamp(SHARPEN_SIGMA_MIN, SHARPEN_SIGMA_MAX)
+    raw.max(SHARPEN_SIGMA_MIN)
 }
 
 /// How much of the sharpening survives at a raw sigma: none at or below 0.3 px, all from 0.5 px

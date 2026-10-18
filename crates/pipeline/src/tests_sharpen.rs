@@ -196,3 +196,17 @@ fn photos_on_older_processes_keep_their_sharpening() {
     v4.process = ProcessVersion::LATEST;
     assert!(rms(&render_at(&src, &v4, 256), &render_at(&src, &sharp(60.0, 3.0, 100.0, 0.0), 256)) > 0.1);
 }
+
+#[test]
+fn different_radii_differ_at_upscale() {
+    // Regression for PR762: at 2x export scale, Radius 2 and 3 must produce different
+    // output. Before the fix, the ceiling clamp in sharpen_sigma made them identical.
+    let src = scene(512);
+    let s2 = sharp(60.0, 2.0, 25.0, 0.0);
+    let s3 = sharp(60.0, 3.0, 25.0, 0.0);
+    let r2 = render_at(&src, &s2, 1024);
+    let r3 = render_at(&src, &s3, 1024);
+    let diff = rms(&r2, &r3);
+    eprintln!("PR762 upscale test: RMS diff between radius 2 and 3 at 2x = {}", diff);
+    assert!(diff > 0.1, "Radius 2 and 3 should differ at 2x scale (got {})", diff);
+}
