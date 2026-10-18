@@ -1,19 +1,46 @@
-//! The UDP broadcast each running copy of the app sends every couple of seconds while it looks
-//! for devices (Settings ▸ Sync open) or has paired devices: who it is and where to connect.
+//! What each running copy of the app advertises over multicast DNS service discovery (RFC 6762 /
+//! RFC 6763) while it looks for devices (Settings ▸ Sync open) or has paired devices: who it is
+//! and where to connect.
+//!
+//! The service type is `_<svc>._tcp.local` ([`service_type`]); the instance name is the device
+//! id; the SRV record names the TCP port; the TXT record carries `v`, `app`, `id`, `name`, `key`
+//! and `pairing`. This works with Bonjour (iOS allows nothing else) and Android's NSD.
 
-use serde::{Deserialize, Serialize};
-
-/// The UDP port beacons go to and are heard on.
-pub const PORT: u16 = 47821;
-/// The largest beacon read or sent.
-pub const MAX_LEN: usize = 1024;
-/// The beacon format; others are ignored.
+/// The UDP port of multicast DNS (tests pass their own to [`crate::Service::start`]).
+pub const PORT: u16 = 5353;
+/// The mDNS multicast group (IPv4).
+pub const GROUP: std::net::Ipv4Addr = std::net::Ipv4Addr::new(224, 0, 0, 251);
+/// The largest datagram read.
+pub const MAX_LEN: usize = 9000;
+/// The TXT format version; others are ignored.
 pub const VERSION: u32 = 1;
 
-#[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
+/// The DNS-SD service name (RFC 6335 §5.1: 1–15 of `a-z`, `0-9`, `-`, at least one letter, no
+/// leading, trailing or doubled hyphen) made from `env_prefix`.
+pub fn service_name(prefix: &str) -> String {
+    let mut s = String::new();
+    for c in prefix.chars() {
+        if c.is_ascii_alphanumeric() {
+            s.push(c.to_ascii_lowercase());
+        } else if !s.is_empty() && !s.ends_with('-') {
+            s.push('-');
+        }
+        if s.len() >= 15 {
+            break;
+        }
+    }
+    let s = s.trim_matches('-').to_string();
+    if s.chars().any(|c| c.is_ascii_lowercase()) { s } else { "app-peer".to_string() }
+}
+
+/// `_<svc>._tcp.local` for this app.
+pub fn service_type() -> String {
+    format!("_{}._tcp.local", service_name(lcc_brand::ENV_PREFIX))
+}
+
+#[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Beacon {
-    /// Which app sent it (`env_prefix` from brand.toml): other apps' beacons are ignored.
+    /// Which app sent it (`env_prefix` from brand.toml): other apps' adverts are ignored.
     pub app: String,
     pub v: u32,
     pub device_id: String,
@@ -27,24 +54,52 @@ pub struct Beacon {
 }
 
 impl Beacon {
-    pub fn encode(&self) -> Vec<u8> {
-        serde_json::to_vec(self).unwrap_or_default()
+    /// The TXT record strings.
+    pub fn txt(&self) -> Vec<Vec<u8>> {
+        [
+            format!("v={}", self.v),
+            format!("app={}", self.app),
+            format!("id={}", self.device_id),
+            format!("name={}", self.name),
+            format!("key={}", self.key),
+            format!("pairing={}", u8::from(self.pairing)),
+        ]
+        .into_iter()
+        .map(String::into_bytes)
+        .filter(|s| s.len() <= 255)
+        .collect()
     }
 
-    /// A beacon of this app and version, from a datagram; anything else is `None`.
-    pub fn decode(bytes: &[u8]) -> Option<Beacon> {
-        if bytes.len() > MAX_LEN {
-            return None;
-        }
-        let b: Beacon = serde_json::from_slice(bytes).ok()?;
-        let sane = b.app == lcc_brand::ENV_PREFIX
-            && b.v == VERSION
-            && b.port != 0
-            && (1..=64).contains(&b.device_id.len())
-            && b.device_id.chars().all(|c| c.is_ascii_hexdigit())
-            && b.name.chars().count() <= crate::identity::MAX_NAME
-            && b.key.len() <= 64;
-        sane.then_some(b)
+    /// An advert of this app and version from a TXT record and the SRV port; anything else is `None`.
+    pub fn from_txt(txt: &[Vec<u8>], port: u16) -> Option<Beacon> {
+        let get = |key: &str| {
+            txt.iter().find_map(|s| {
+                let s = std::str::from_utf8(s).ok()?;
+                let (k, v) = s.split_once('=')?;
+                k.eq_ignore_ascii_case(key).then(|| v.to_string())
+            })
+        };
+        let b = Beacon {
+            app: get("app")?,
+            v: get("v")?.parse().ok()?,
+            device_id: get("id")?.to_ascii_lowercase(),
+            name: get("name").unwrap_or_default(),
+            key: get("key")?,
+            port,
+            pairing: get("pairing").as_deref() == Some("1"),
+        };
+        b.sane().then_some(b)
+    }
+
+    fn sane(&self) -> bool {
+        self.app == lcc_brand::ENV_PREFIX
+            && self.v == VERSION
+            && self.port != 0
+            && (1..=64).contains(&self.device_id.len())
+            && self.device_id.chars().all(|c| c.is_ascii_hexdigit())
+            && self.name.chars().count() <= crate::identity::MAX_NAME
+            && !self.name.chars().any(char::is_control)
+            && (1..=64).contains(&self.key.len())
     }
 }
 
@@ -57,7 +112,7 @@ mod tests {
             app: lcc_brand::ENV_PREFIX.into(),
             v: VERSION,
             device_id: "ab12".into(),
-            name: "Tablet".into(),
+            name: "Tablet = mine".into(),
             key: "k".into(),
             port: 4000,
             pairing: true,
@@ -66,22 +121,40 @@ mod tests {
 
     #[test]
     fn round_trips() {
-        assert_eq!(Beacon::decode(&sample().encode()), Some(sample()));
+        assert_eq!(Beacon::from_txt(&sample().txt(), 4000), Some(sample()));
     }
 
     #[test]
-    fn hostile_datagrams_are_ignored() {
+    fn service_names_follow_rfc_6335() {
+        for (prefix, want) in
+            [("ALPHA_BETA_GAMMA_DELTA", "alpha-beta-gamm"), ("APP", "app"), ("__A__B__", "a-b"), ("123", "app-peer"), ("", "app-peer")]
+        {
+            assert_eq!(service_name(prefix), want, "{prefix}");
+        }
+        for prefix in [lcc_brand::ENV_PREFIX, "X_Y_Z_LONG_LONG_LONG_NAME", "A-_-B", "ÄÖÜ_é", "ABCDEFGHIJKLMN_O"] {
+            let s = service_name(prefix);
+            assert!((1..=15).contains(&s.len()), "{s}");
+            assert!(s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'), "{s}");
+            assert!(!s.starts_with('-') && !s.ends_with('-') && !s.contains("--"), "{s}");
+        }
+    }
+
+    #[test]
+    fn hostile_adverts_are_ignored() {
         let mut other = sample();
         other.app = "SOMEONE_ELSE".into();
         let mut bad_id = sample();
         bad_id.device_id = "../../etc".into();
-        let mut no_port = sample();
-        no_port.port = 0;
-        for b in [other, bad_id, no_port] {
-            assert_eq!(Beacon::decode(&b.encode()), None);
+        let mut no_key = sample();
+        no_key.key = String::new();
+        let mut ctrl = sample();
+        ctrl.name = "a\u{7}".into();
+        for b in [other, bad_id, no_key, ctrl] {
+            assert_eq!(Beacon::from_txt(&b.txt(), 4000), None);
         }
-        for raw in [&b""[..], b"{", b"null", b"\xff\x00", &[b'a'; MAX_LEN + 1]] {
-            assert_eq!(Beacon::decode(raw), None);
+        assert_eq!(Beacon::from_txt(&sample().txt(), 0), None);
+        for txt in [vec![], vec![b"\xff\xfe".to_vec()], vec![b"v=x".to_vec()], vec![b"=".to_vec(); 300]] {
+            assert_eq!(Beacon::from_txt(&txt, 4000), None);
         }
     }
 }

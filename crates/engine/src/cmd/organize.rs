@@ -90,7 +90,7 @@ fn copy_number(name: Option<&str>) -> u32 {
 /// Create one virtual copy of `src`: a new photo sharing its file, with the same settings and
 /// metadata, added to the same albums and stacked right after it (the stack is expanded so the
 /// copy is visible). `name` replaces the default "Copy N".
-fn virtual_copy(s: &mut Session, src: PhotoId, name: Option<&str>) -> Result<Option<PhotoId>> {
+pub(crate) fn virtual_copy(s: &mut Session, src: PhotoId, name: Option<&str>) -> Result<Option<PhotoId>> {
     let Some(orig) = s.catalog.photo(src).cloned() else { return Ok(None) };
     let master = orig.copy_of.unwrap_or(src);
     let n = 1 + s.catalog.photos().filter(|p| p.copy_of == Some(master)).map(|p| copy_number(p.copy_name.as_deref())).max().unwrap_or(0);

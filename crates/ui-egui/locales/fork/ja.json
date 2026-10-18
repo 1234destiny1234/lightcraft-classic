@@ -1399,5 +1399,16 @@
   "Paired.": "ペアリングしました。",
   "Pairing failed.": "ペアリングできませんでした。",
   "Looking for devices": "デバイスを探しています",
-  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "もう一方のデバイスでも設定の「同期」タブを開いてください。両方が同じネットワークにある必要があります。"
+  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "もう一方のデバイスでも設定の「同期」タブを開いてください。両方が同じネットワークにある必要があります。",
+  "Offers": "共有の提案",
+  "Sync With This Library": "このライブラリと同期",
+  "Decline": "辞退",
+  "Sync this library": "このライブラリを同期",
+  "A shared library exchanges the edits, ratings, flags and colour labels of the photos both devices have. A photo edited on both devices gets a copy in the same stack.": "共有ライブラリでは、両方のデバイスにある写真の編集、レーティング、フラグ、カラーラベルが交換されます。両方のデバイスで編集された写真は、同じスタックにコピーとして追加されます。",
+  "Last synced just now": "最終同期：たった今",
+  "Last synced {} min ago": "最終同期：{} 分前",
+  "Last synced {} h ago": "最終同期：{} 時間前",
+  "Last synced on {}": "最終同期：{}",
+  "{} wants to sync its library “{}” with this library.": "{} がライブラリ「{}」をこのライブラリと同期しようとしています。",
+  "{} photos updated, {} copies": "{} 枚の写真を更新、{} 件のコピー"
 }

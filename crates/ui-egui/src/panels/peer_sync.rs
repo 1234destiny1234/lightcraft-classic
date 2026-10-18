@@ -18,6 +18,10 @@ use crate::widgets::{register, text_button};
 const STOP_AFTER: f64 = 1.0;
 /// How often the tab asks for the status (seconds).
 const POLL_EVERY: f64 = 0.4;
+/// How often the status is asked for while the tab is closed, so `running` is known (seconds).
+const POLL_CLOSED: f64 = 2.0;
+/// How often `sync.tick` runs while sync is running (seconds).
+const TICK_EVERY: f64 = 1.0;
 
 /// What the tab keeps between frames.
 #[derive(Default)]
@@ -33,6 +37,40 @@ pub struct PeerSyncUi {
     name: String,
     name_loaded: bool,
     error: Option<String>,
+    /// When `sync.tick` last ran.
+    ticked: f64,
+}
+
+/// `tr(template)` with each `{}` filled in turn.
+macro_rules! trf {
+    ($t:literal $(, $a:expr)* $(,)?) => {
+        fill(tr($t), &[$(&$a as &dyn std::fmt::Display),*])
+    };
+}
+
+fn fill(template: &str, args: &[&dyn std::fmt::Display]) -> String {
+    let mut out = String::new();
+    let mut it = args.iter();
+    let mut rest = template;
+    while let Some(i) = rest.find("{}") {
+        out.push_str(rest.get(..i).unwrap_or_default());
+        if let Some(a) = it.next() {
+            out.push_str(&a.to_string());
+        }
+        rest = rest.get(i + 2..).unwrap_or_default();
+    }
+    out.push_str(rest);
+    out
+}
+
+impl PeerSyncUi {
+    /// Show `status` and don't poll for a while (headless tests).
+    #[cfg(test)]
+    pub(crate) fn set_status_for_test(&mut self, status: Value) {
+        self.status = status;
+        self.polled = f64::INFINITY;
+        self.finding = true;
+    }
 }
 
 fn run(app: &mut LccApp, cmd: &str, params: Value) -> Option<Value> {
@@ -57,9 +95,52 @@ pub fn pump(app: &mut LccApp, ctx: &egui::Context) {
     }
     if !app.peer_sync.started {
         app.peer_sync.started = true;
-        if let Err(e) = app.session.execute("sync.start", &json!({})) {
-            log::info!("sync: {e}");
+        match app.session.execute("sync.start", &json!({})) {
+            Ok(v) => {
+                if running(&v) {
+                    app.peer_sync.status["running"] = json!(true);
+                    app.peer_sync.ticked = f64::NEG_INFINITY;
+                }
+            }
+            Err(e) => log::info!("sync: {e}"),
         }
+    }
+    // the tab polls often while open; closed, a slow poll keeps `running` known
+    if now - app.peer_sync.seen > STOP_AFTER && now - app.peer_sync.polled >= POLL_CLOSED {
+        app.peer_sync.polled = now;
+        if let Ok(v) = app.session.execute("sync.status", &json!({})) {
+            app.peer_sync.status = v;
+        }
+    }
+    if running(&app.peer_sync.status) && now - app.peer_sync.ticked >= TICK_EVERY {
+        app.peer_sync.ticked = now;
+        if let Err(e) = app.session.execute("sync.tick", &json!({})) {
+            log::info!("sync tick: {e}");
+        }
+    }
+    if running(&app.peer_sync.status) {
+        ctx.request_repaint_after(std::time::Duration::from_secs_f64(TICK_EVERY));
+    }
+}
+
+fn running(v: &Value) -> bool {
+    v.get("running").and_then(Value::as_bool).unwrap_or(false)
+}
+
+/// "Last synced …" for a unix time, relative to now.
+fn last_synced(last: i64) -> String {
+    let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs() as i64).unwrap_or(0);
+    let ago = now.saturating_sub(last).max(0);
+    if ago < 60 {
+        tr("Last synced just now").to_string()
+    } else if ago < 3600 {
+        trf!("Last synced {} min ago", ago / 60)
+    } else if ago < 86_400 {
+        trf!("Last synced {} h ago", ago / 3600)
+    } else {
+        let (y, m, d) = lcc_catalog::dates::civil_from_days(last.div_euclid(86_400));
+        let date = format!("{y:04}-{m:02}-{d:02}");
+        trf!("Last synced on {}", date)
     }
 }
 
@@ -122,6 +203,12 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let paired = st.get("paired").and_then(Value::as_array).cloned().unwrap_or_default();
     if paired.is_empty() {
         super::settings::hint(ui, t, "No paired devices yet.");
+    } else {
+        super::settings::hint(
+            ui,
+            t,
+            "A shared library exchanges the edits, ratings, flags and colour labels of the photos both devices have. A photo edited on both devices gets a copy in the same stack.",
+        );
     }
     for d in &paired {
         let id = s(d, "deviceId").to_string();
@@ -136,7 +223,63 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
                 app.peer_sync.status = v;
             }
         });
+        device_library(app, ui, t, &st, &id);
     }
+
+    let offers = st.get("offers").and_then(Value::as_array).cloned().unwrap_or_default();
+    if !offers.is_empty() {
+        ui.add_space(8.0);
+        super::settings::heading(ui, t, "Offers");
+        for o in &offers {
+            let id = s(o, "deviceId").to_string();
+            ui.label(RichText::new(trf!("{} wants to sync its library “{}” with this library.", s(o, "name"), s(o, "library"))).color(t.text));
+            ui.horizontal(|ui| {
+                for (key, label, accept, primary) in
+                    [("syncOfferAccept", "Sync With This Library", true, true), ("syncOfferDecline", "Decline", false, false)]
+                {
+                    if text_button(ui, &format!("{key}-{id}"), tr(label), primary).clicked()
+                        && let Some(v) = run(app, "sync.answerOffer", json!({"device": id, "accept": accept}))
+                    {
+                        app.peer_sync.status = v;
+                    }
+                }
+            });
+        }
+    }
+}
+
+/// Under a paired device: whether the open library is shared with it, and its last exchange.
+fn device_library(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, st: &Value, id: &str) {
+    let Some(lib) = st.get("library").filter(|l| !l.is_null()) else { return };
+    let shared = lib.get("sharedWith").and_then(Value::as_array).is_some_and(|a| a.iter().any(|d| d.as_str() == Some(id)));
+    ui.indent(format!("syncDev-{id}"), |ui| {
+        let mut on = shared;
+        let r = ui.checkbox(&mut on, tr("Sync this library"));
+        register(ui.ctx(), format!("check:syncShare-{id}"), r.rect);
+        if r.changed()
+            && let Some(v) = run(app, "sync.share", json!({"device": id, "on": on}))
+        {
+            app.peer_sync.status = v;
+        }
+        let Some(x) = st.get("exchanges").and_then(|e| e.get(id)) else { return };
+        if x.get("running").and_then(Value::as_bool).unwrap_or(false) {
+            ui.horizontal(|ui| {
+                ui.add(egui::Spinner::new().size(10.0));
+                ui.label(RichText::new(tr("Syncing…")).size(11.0).color(t.text_dim));
+            });
+        } else if let Some(last) = x.get("last").and_then(Value::as_i64).filter(|l| *l > 0) {
+            ui.label(RichText::new(last_synced(last)).size(11.0).color(t.text_dim));
+        }
+        let err = s(x, "error");
+        if !err.is_empty() {
+            ui.label(RichText::new(err).size(11.0).color(t.reject));
+        }
+        let taken = x.get("taken").and_then(Value::as_u64).unwrap_or(0);
+        let copies = x.get("copies").and_then(Value::as_u64).unwrap_or(0);
+        if taken > 0 || copies > 0 {
+            ui.label(RichText::new(trf!("{} photos updated, {} copies", taken, copies)).size(11.0).color(t.text_dim));
+        }
+    });
 }
 
 fn found_list(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, st: &Value) {

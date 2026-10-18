@@ -11,7 +11,7 @@ covers what exists today.
 | App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker, Develop, library kept across restarts; status-bar insets not handled yet |
 | APK / AAB packaging (`cargo xtask android package`), release job (`RELEASE_ANDROID`) | ✅ (arm64 APK 75 MB, AAB 35 MB) |
 | Play Store upload | not started (needs the Play developer account) |
-| Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`); catalog exchange next |
+| Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`; discovery over mDNS / DNS-SD); catalog exchange next |
 | Touch / phone-sized layout | not started |
 
 ## Design
@@ -27,6 +27,9 @@ covers what exists today.
   activity copies picked documents into the app's folders and answers with paths through a native callback that it
   registers at start-up, so no symbol depends on the package name. For a save, it watches the path it handed out
   and copies the written file to the chosen document.
+- **Peer discovery** is multicast DNS service discovery (RFC 6762 / 6763, `crates/peer`), the same as Bonjour, so
+  a future iOS build can join. Android's Wi-Fi drops multicast unless an app holds a `WifiManager.MulticastLock`:
+  the activity acquires one in `onCreate` (permission `CHANGE_WIFI_MULTICAST_STATE`) and releases it in `onDestroy`.
 - **Settings** are written within seconds of a change (`apps/android/src/prefs.rs`), because Android can stop a
   background app without calling `on_exit`.
 
