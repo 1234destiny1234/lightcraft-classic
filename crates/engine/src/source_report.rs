@@ -33,6 +33,7 @@ pub fn report(bytes: &[u8]) -> Result<Value, String> {
         lens_geometry.as_ref(),
         lens.as_ref().map(|(l, _)| l),
         lcc_develop::CameraColour::Auto,
+        false,
         &mut trace,
     );
     // a look's tone curve wins over the file's own `ProfileToneCurve` (`files::load_bytes_now`)

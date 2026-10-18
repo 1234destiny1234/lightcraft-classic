@@ -185,7 +185,7 @@ impl WorkerCore {
                 let src = match (&job.origin, original) {
                     (Source::File { .. }, Some(bytes)) => {
                         let options = LoadOptions::of(&job.settings);
-                        let (image, info) = lcc_engine::files::load_bytes_with(bytes, job.max_edge, options)?;
+                        let (image, info) = lcc_engine::files::load_bytes_with(bytes, job.max_edge, options.clone())?;
                         DecodedSource { options, ..DecodedSource::new(Arc::new(image), Some(info)) }
                     }
                     (Source::File { path }, None) => return Err(format!("{path}: original not found in browser storage")),

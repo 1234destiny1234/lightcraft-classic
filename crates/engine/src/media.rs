@@ -142,17 +142,20 @@ pub type FileLoader = Arc<dyn Fn(&str, usize, LoadOptions) -> Result<(Rgb32f, So
 
 /// The photo's settings a decode depends on: decoded sources are cached with them ([`DecodedSource::options`]) and
 /// decoded again when they change.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
 pub struct LoadOptions {
     /// Where a raw without colour matrices takes its starting colour from (`Profile::camera_colour`).
     pub colour: lcc_develop::CameraColour,
     /// Replace a raw's single outlier photosites before developing it (`detail.nr_outliers`).
     pub outliers: bool,
+    /// How a raw's colour model is chosen (`Profile::camera`): empty for its camera's default, `lc` for the app's own
+    /// colour, `dcp:<id>` for an imported camera profile (`.dcp`).
+    pub camera: String,
 }
 
 impl LoadOptions {
     pub fn of(s: &DevelopSettings) -> LoadOptions {
-        LoadOptions { colour: s.profile.camera_colour, outliers: s.detail.nr_outliers }
+        LoadOptions { colour: s.profile.camera_colour, outliers: s.detail.nr_outliers, camera: s.profile.camera.clone() }
     }
 }
 
@@ -217,12 +220,13 @@ impl DecodedSource {
     }
 
     /// Whether these pixels are what decoding with `options` gives: decoded with them, or from a source the options
-    /// don't change (a rendered file, a smart preview or a demo scene has no mosaic for the outlier filter, and a
-    /// raw without measured colour to start from has nothing for the Camera colour option).
-    pub fn serves(&self, options: LoadOptions) -> bool {
+    /// don't change (a rendered file, a smart preview or a demo scene has no mosaic for the outlier filter or a camera
+    /// profile, and a raw without measured colour to start from has nothing for the Camera colour option).
+    pub fn serves(&self, options: &LoadOptions) -> bool {
         let info = self.info.as_ref();
         (self.options.outliers == options.outliers || !info.is_some_and(|i| i.raw))
             && (self.options.colour == options.colour || !info.is_some_and(|i| i.colorimetric))
+            && (self.options.camera == options.camera || !info.is_some_and(|i| i.raw))
     }
 
     /// The picture to develop for a Denoise `amount` (0 to 1, see [`DevelopSettings::denoise_amount`]): the plain one,
@@ -327,8 +331,8 @@ impl SourceRef {
             SourceRef::Demo { scene, max_edge } => crate::demo::scene_pixels(scene, *max_edge)?,
             SourceRef::File { path, max_edge, loader, fallback, denoise, options } => {
                 let plain = || match loader {
-                    Some(l) => l(path, *max_edge, *options)
-                        .map(|(image, info)| DecodedSource { options: *options, ..DecodedSource::new(Arc::new(image), Some(info)) }),
+                    Some(l) => l(path, *max_edge, options.clone())
+                        .map(|(image, info)| DecodedSource { options: options.clone(), ..DecodedSource::new(Arc::new(image), Some(info)) }),
                     None => Err(format!("no decoder available for {path}")),
                 };
                 // the denoised picture comes with the plain one from a single decode; when it cannot be read the
@@ -342,7 +346,7 @@ impl SourceRef {
                             None => true,
                         };
                         if made {
-                            pair(path, *max_edge, spec, *options).and_then(|(image, twin, info)| {
+                            pair(path, *max_edge, spec, options.clone()).and_then(|(image, twin, info)| {
                                 if spec.make.is_some() && twin.is_none() {
                                     return Err("the cached AI Denoise picture could not be read; clear the denoise cache and retry".into());
                                 }
@@ -351,7 +355,7 @@ impl SourceRef {
                                     info: Some(info),
                                     camera_tone: None,
                                     denoised: twin.map(|t| Arc::new(Twin::new(Arc::new(t)))),
-                                    options: *options,
+                                    options: options.clone(),
                                 })
                             })
                         } else {
@@ -777,7 +781,7 @@ impl MediaCache {
 
     fn source_ref_with(&mut self, p: &Photo, level: SourceLevel, cached: bool) -> SourceRef {
         let wanted = LoadOptions::of(&p.develop);
-        let mut r = self.source_ref_plain(p, level, cached, wanted);
+        let mut r = self.source_ref_plain(p, level, cached, &wanted);
         if let SourceRef::File { options, .. } = &mut r {
             *options = wanted;
         }
@@ -787,7 +791,7 @@ impl MediaCache {
         r
     }
 
-    fn source_ref_plain(&mut self, p: &Photo, level: SourceLevel, cached: bool, wanted: LoadOptions) -> SourceRef {
+    fn source_ref_plain(&mut self, p: &Photo, level: SourceLevel, cached: bool, wanted: &LoadOptions) -> SourceRef {
         // (a source decoded with other settings is decoded again, and the new one replaces it in the cache)
         if cached
             && let Some(a) = self.get_source(p.id, level)
@@ -1734,7 +1738,7 @@ impl crate::Session {
         if let Some(src) = &r.loaded
             && r.source_key.is_none_or(|key| self.catalog.photo(r.photo).is_some_and(|p| Hasher128::new().str(&pixels_key(p)).finish() == key))
             // (not a source decoded with settings the photo no longer has: one decoded for them replaces it)
-            && self.catalog.photo(r.photo).is_none_or(|p| src.serves(LoadOptions::of(&p.develop)))
+            && self.catalog.photo(r.photo).is_none_or(|p| src.serves(&LoadOptions::of(&p.develop)))
         {
             if let Some(info) = &src.info {
                 self.learn_as_shot_wb(r.photo, info);
@@ -2034,6 +2038,43 @@ mod thumbnail_hash_tests {
         s.accept(&old);
         assert_eq!(s.media.source_usage().0, 0);
     }
+    /// The photo's camera-profile choice (a camera's default, the app's own colour, an imported `.dcp`) is part of the
+    /// decode of a raw: the loader is told, and a source decoded with another choice is decoded again. A file with no
+    /// mosaic has nothing the choice would change, so its source is kept.
+    #[test]
+    fn camera_profile_choice_decodes_a_raw_again() {
+        let set = |s: &mut crate::Session, id: &str| {
+            let mut d = (*s.catalog.photo(PhotoId(1)).unwrap().develop).clone();
+            d.profile.camera = id.into();
+            s.catalog.apply(Op::SetDevelop { id: PhotoId(1), settings: Arc::new(d), label: "edit".into(), edited: None }).unwrap();
+        };
+        let render = |s: &mut crate::Session| {
+            let r = s.render_job(PhotoId(1), 64, 64, false, true).unwrap().run();
+            s.accept(&r);
+        };
+        for raw in [true, false] {
+            let seen = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+            let log = seen.clone();
+            let mut s = session();
+            s.media.file_loader = Some(Arc::new(move |_, _, options: LoadOptions| {
+                log.lock().unwrap().push(options.camera);
+                Ok((Rgb32f::new(8, 8), SourceInfo { raw, ..SourceInfo::default() }))
+            }));
+            render(&mut s);
+            render(&mut s);
+            assert_eq!(*seen.lock().unwrap(), [""], "decoded once, then cached");
+            set(&mut s, "dcp:neutral");
+            render(&mut s);
+            render(&mut s);
+            let decodes = seen.lock().unwrap().clone();
+            if raw {
+                assert_eq!(decodes, ["", "dcp:neutral"], "the choice reaches the loader and the new source is cached");
+            } else {
+                assert_eq!(decodes, [""], "no mosaic: the cached source is kept");
+            }
+        }
+    }
+
     /// The photo's Camera colour option is part of the decode: a source decoded with another option is decoded again
     /// (and a late render of the old one is not taken back into the cache); one the option doesn't change is reused.
     #[test]

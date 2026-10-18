@@ -27,6 +27,7 @@
 
 mod binned;
 pub mod color;
+pub mod dcp;
 pub mod dctjpeg;
 pub mod demosaic;
 mod dng;

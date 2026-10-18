@@ -32,7 +32,7 @@ cited here still exists. Formerly docs/parity.md.
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
 | E. Metadata (META) | 5 | 1 | 0 | 0 | 2/2 (100%) | 2/2 (100%) |
 | F. Edit panel — global adjustments (EDIT) | 45 | 2 | 3 | 1 | 28/28 (100%) | 14/15 (93%) |
-| G. Profiles (PROF) | 7 | 1 | 3 | 0 | 3/4 (75%) | 3/3 (100%) |
+| G. Profiles (PROF) | 7 | 3 | 3 | 0 | 3/4 (75%) | 3/4 (75%) |
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 8 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
 | J. Red eye (EYE) | 2 | 0 | 0 | 0 | — | 1/1 (100%) |
@@ -54,9 +54,9 @@ cited here still exists. Formerly docs/parity.md.
 | Z. Keyboard shortcuts (desktop) | 77 | 5 | 2 | 1 | 48/52 (92%) | 24/26 (92%) |
 | Lightroom Classic extras | 103 | 19 | 4 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 497 | 64 | 35 | 27 | 193/201 (96%) | 167/182 (92%) |
+| **Total** | 497 | 66 | 35 | 27 | 193/201 (96%) | 167/183 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.8%** of 596 in-scope rows — P0 98.0% of 201 · P1 95.6% of 182 · P2 74.2% of 211.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.6%** of 598 in-scope rows — P0 98.0% of 201 · P1 95.4% of 183 · P2 74.1% of 212.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -317,8 +317,9 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-PROF-LEGACY | Legacy profiles | P2 | ⬜ | | |
 | LR-PROF-NONRAW | Profiles for non-raw files | P0 | ✅ | `cmd:develop.profile` | same looks apply to JPEG/TIFF |
 | LR-PROF-AMOUNT | Profile amount | P1 | ✅ | `ctl:profile.amount` | |
-| LR-PROF-IMPORT | Import profiles | P1 | ✅ | `cmd:profile.import`, `cmd:profile.deleteImported`, `crates/pipeline/src/lut.rs`, `crates/engine/src/cmd/lut_profiles.rs`, `crates/ui-egui/src/panels/edit.rs`, `crates/ui-egui/src/panels/profiles.rs` | `.cube` 3D LUTs (files, folders, zips) become creative profiles with Amount, grouped in the profile browser, kept with the library; rendered on the CPU; Adobe profile formats deliberately unsupported |
+| LR-PROF-IMPORT | Import profiles | P1 | ✅ | `cmd:profile.import`, `cmd:profile.deleteImported`, `crates/pipeline/src/lut.rs`, `crates/engine/src/cmd/lut_profiles.rs`, `crates/ui-egui/src/panels/edit.rs`, `crates/ui-egui/src/panels/profiles.rs` | `.cube` 3D LUTs (files, folders, zips) become creative profiles with Amount, grouped in the profile browser, kept with the library; rendered on the CPU; Adobe profile formats deliberately unsupported; an XMP look (`crs:PresetType="Look"` with a colour table) imports like a `.cube` (`crates/engine/src/xmp_look.rs`) |
 | LR-PROF-CAMERACOLOR-CHOICE | Choose a raw's starting colour (camera look / calibrated) | P1 | 🟡 | `crates/develop/src/settings.rs` (`CameraColour`), `crates/engine/src/camera_preview.rs` (`colorimetric_camera`, `starting_colour`), `crates/engine/src/media.rs` (`LoadOptions`, `DecodedSource::serves`), `crates/ui-egui/src/panels/edit.rs`, `crates/ui-egui/src/tests_camera_colour.rs` | Profile ▸ Calibrated camera colour, for a raw without matrices whose model has spectral matrices in the camera database: Auto (the camera-JPEG fit first) or Colorimetric (the spectral matrices with the default tone curve, never the JPEG); part of the decode and of the Profile group (sync, presets, Raw Defaults); missing: a look of its own and exposure matching between the modes (upstream issue #1207) |
+| LR-PROF-DCP | Import camera profiles (.dcp) | P2 | 🟡 | `cmd:camera.importDcp`, `cmd:camera.listDcp`, `cmd:camera.useDcp`, `cmd:camera.removeDcp`, `cmd:develop.cameraProfile`, `crates/raw/src/dcp.rs`, `crates/engine/src/cmd/dcp_profiles.rs`, `crates/engine/src/camera_profiles.rs`, `crates/ui-egui/src/panels/profiles.rs` | a person's own DNG camera profiles (files, folders or zips): the first for a camera model becomes its default from the next start, and Profiles ▸ Camera Profile picks one per photo (part of the decode; a raw developed through a profile edits white balance in Kelvin and gets its tone fitted when the profile has none); colour matrices, HueSatMap, LookTable and tone curve are used; none is shipped; missing: profile embedding and per-profile previews |
 
 ## H. Crop & rotate (CROP)
 
@@ -1090,3 +1091,4 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | 2026-10-18 | minor | LR-EXP-DIALOG: built-in export presets for the delivery targets of upstream issue #2104 (PR #2209) — Instagram Feed (1080 px, screen sharpening), Instagram Story / Reel (1920 px), Web / Portfolio (2048 px, copyright-only metadata), Full Resolution Master (full size, Display P3, quality 95); LR-EXP-PREVIOUS drops its stale "no named export presets yet" note; status unchanged (✅) |
 | 2026-10-18 | minor | LR-PROF-CAMERACOLOR-CHOICE (new, 🟡): Calibrated camera colour, a per-photo choice between the camera-JPEG fit and the spectral matrices (upstream PR #2222) |
 | 2026-10-18 | patch | LR-META-XMP: a GPS position cleared in the app is removed from the sidecar on save (the catalog remembers the cleared position, `Meta.gps_removed`, format 13), so it is not read back; upstream PR #2088, completing the earlier port; status unchanged (✅) |
+| 2026-10-18 | minor | LR-PROF-DCP (new, 🟡), LR-PROF-IMPORT: import of a person's own `.dcp` camera profiles (per camera, chosen per photo) and XMP looks (upstream PR #2074, without its offline web app) |

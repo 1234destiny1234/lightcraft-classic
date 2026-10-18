@@ -237,7 +237,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
     let label = m.label.as_deref().and_then(|l| lcc_catalog::ColorLabel::parse(l.trim()));
     let label_text = m.label.clone();
     if lcc_raw::probe(bytes).is_some() {
-        let raw = match lcc_raw::probe_info(bytes).map_err(|e| preview_reason(bytes, e)) {
+        let mut raw = match lcc_raw::probe_info(bytes).map_err(|e| preview_reason(bytes, e)) {
             Ok(r) => r,
             Err(Ok(why)) => {
                 // a raw variant we can't decode yet: describe it from its embedded preview
@@ -269,6 +269,7 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
         if raw.orientation.swaps_axes() {
             std::mem::swap(&mut w, &mut h);
         }
+        crate::camera_profiles::apply_dcp(&mut raw.color, &raw.metadata);
         let scale = WbScaleOf::new(raw.format, &raw.color, raw.wb_multipliers, &raw.metadata);
         let as_shot_wb = Some(scale.as_shot(lcc_raw::color::as_shot_white_xy_of(&raw)));
         let resolved = crate::lens_profiles::resolve_raw(&raw, || m.clone(), None);
@@ -579,6 +580,8 @@ fn load_bytes_now(
                 eprintln!("[profile] raw outliers: {n} photosites replaced in {:.1} ms", t.elapsed().as_secs_f64() * 1e3);
             }
         }
+        // the photo's camera profile (`.dcp`), or its camera's default one, replaces the file's colour model
+        let dcp = crate::camera_profiles::apply_choice(&mut raw.color, &raw.metadata, &options.camera).is_some();
         // Embedded lens corrections are applied by the pipeline ("Enable Profile Corrections"), not baked in
         // (removed before the camera look's binned sensor proxy too, which needs an empty `OpcodeList3`).
         let info = raw.info();
@@ -593,7 +596,7 @@ fn load_bytes_now(
         let colorimetric = crate::camera_preview::colorimetric_camera(&raw).is_some();
         // the source's segmentation mattes (DNG semantic masks), read while the starting colour is fitted
         let ((xy, t, camera_look), mattes) = rayon::join(
-            || crate::camera_preview::starting_colour(&mut raw, &bytes, lens_geometry.as_ref(), lens.as_ref(), options.colour),
+            || crate::camera_preview::starting_colour(&mut raw, &bytes, lens_geometry.as_ref(), lens.as_ref(), options.colour, dcp),
             || dng_mattes(&bytes, &info),
         );
         drop(bytes);
@@ -665,8 +668,8 @@ fn load_bytes_now(
         // on top of it). A model's measured matrices never do: they only give the Kelvin scale its numbers, and the
         // picture is adapted from the as-shot white as every fitted look is (so settings from before that scale
         // existed render exactly as they did, `lcc_pipeline::local::legacy_white`).
-        let camera_color =
-            (scale.own_matrix && !t.matrix_is_fallback && (camera_look.is_none() || raw.format == lcc_raw::RawFormat::Dng)).then(|| {
+        let camera_color = (scale.own_matrix && !t.matrix_is_fallback && (camera_look.is_none() || raw.format == lcc_raw::RawFormat::Dng || dcp))
+            .then(|| {
                 let tags = lcc_raw::ColorData { profile: Default::default(), ..raw.color.clone() };
                 Arc::new(lcc_pipeline::CameraColor { tags, developed_for: xy })
             });
@@ -1253,6 +1256,8 @@ impl crate::Session {
     /// Install the filesystem file hooks (desktop, CLI, MCP headless), and on macOS the Apple Photos
     /// runner ([`crate::apple_photos::osascript`]; installed, not run).
     pub fn with_fs(mut self) -> Self {
+        // installed `.dcp` camera profiles, before anything asks which camera has a colour model
+        crate::camera_profiles::install_dcps();
         let (l, p) = fs_hooks();
         self.media.file_loader = Some(l);
         self.media.file_probe = Some(p);
