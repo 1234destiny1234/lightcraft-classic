@@ -63,11 +63,29 @@ public class MainActivity extends NativeActivity {
     private final Map<Integer, Pending> pending = new HashMap<>();
     private final List<FileObserver> saves = new ArrayList<>();
     private int nextRequest = 1000;
+    /** Peer sync discovers devices over mDNS: Wi-Fi drops multicast packets without this lock. */
+    private WifiManager.MulticastLock multicast;
 
     @Override
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         hideSystemBars();
+        try {
+            WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
+            if (wifi != null) {
+                multicast = wifi.createMulticastLock(TAG + "-mdns");
+                multicast.setReferenceCounted(false);
+                multicast.acquire();
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no multicast lock: " + e);
+        }
+    }
+
+    @Override
+    protected void onDestroy() {
+        if (multicast != null && multicast.isHeld()) multicast.release();
+        super.onDestroy();
     }
 
     @Override

@@ -1,7 +1,8 @@
 //! Finding, pairing with and talking to the app on other devices on the local network.
 //!
-//! - [`beacon`]: the UDP broadcast that says "the app runs here" (and whether it is looking for a
-//!   device to pair with).
+//! - [`beacon`]: the multicast DNS service discovery advert (RFC 6762 / RFC 6763, Bonjour) that
+//!   says "the app runs here" (and whether it is looking for a device to pair with).
+//! - [`dns`]: the bounds-checked DNS message encoder / decoder it uses.
 //! - [`identity`]: this device (id, name, Ed25519 key) and the devices it is paired with.
 //! - [`secure`]: the encrypted, mutually authenticated channel, and the pairing code.
 //! - [`service`]: the threads that tie these together, and what Settings ▸ Sync shows.
@@ -12,6 +13,8 @@
 
 #[cfg(not(target_arch = "wasm32"))]
 pub mod beacon;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod dns;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod identity;
 #[cfg(not(target_arch = "wasm32"))]
