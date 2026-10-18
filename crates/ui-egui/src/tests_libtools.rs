@@ -119,6 +119,41 @@ fn metadata_panel_edits_many_with_mixed_values() {
     }
 }
 
+/// Issue #281: Cmd/Ctrl+A in a Metadata field selects the field's text, not every photo, and the
+/// edit is saved to the photo it started on — even when the selection changes before it ends.
+#[test]
+fn select_all_in_a_metadata_field_selects_the_text_not_the_photos() {
+    let mut h = app("photoGrid");
+    let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(3).map(|p| p.0).collect();
+    exec(&mut h, "photo.setMeta", json!({"ids": [ids[0]], "title": "One"}));
+    exec(&mut h, "photo.setMeta", json!({"ids": [ids[1]], "title": "Two"}));
+    exec(&mut h, "photo.setMeta", json!({"ids": [ids[2]], "title": "Three"}));
+    exec(&mut h, "library.select", json!({"ids": [ids[0]], "active": ids[0]}));
+    exec(&mut h, "panel.info", json!({}));
+    exec(&mut h, "metadata.panelPreset", json!({"preset": "default"}));
+    h.settle(SETTLE);
+    let title = |h: &Headless, i: u64| h.app.session.catalog.photo(PhotoId(i)).unwrap().meta.title.clone();
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "field:title"}), T)["ok"], true);
+    // the shortcut (egui's Cmd modifier: ⌘ on macOS, Ctrl elsewhere)
+    assert_eq!(h.request("ui.key", json!({"key": "a", "cmd": true}), T)["ok"], true);
+    assert_eq!(h.app.session.selected(), vec![PhotoId(ids[0])], "the photo selection stays");
+    // the macOS menu bar's Select All item reached by ⌘A goes to the field, not the command
+    let ctx = h.view.ctx.clone();
+    assert!(crate::menubar::forward_to_text_field(&mut h.app, &ctx, Some("Cmd+A")));
+    assert!(!crate::menubar::forward_to_text_field(&mut h.app, &ctx, Some("Cmd+Shift+E")), "other shortcuts run their command");
+    h.settle(SETTLE);
+    assert_eq!(h.app.session.selected(), vec![PhotoId(ids[0])], "the photo selection stays");
+    // the whole text is selected: typing replaces it
+    h.request("ui.text", json!({"text": "Edited"}), T);
+    // the selection changes while the field is still being edited (e.g. the native menu's Select
+    // All): the edit still saves to the photo it began on only
+    exec(&mut h, "library.selectAll", json!({}));
+    h.request("ui.key", json!({"key": "enter"}), T);
+    h.settle(SETTLE);
+    assert_eq!(title(&h, ids[0]), "Edited");
+    assert_eq!((title(&h, ids[1]), title(&h, ids[2])), ("Two".into(), "Three".into()), "other photos keep their titles");
+}
+
 /// Feature: grid cell styles and index numbers are commands; the expanded square cell shows the
 /// index; unknown styles are refused.
 #[test]
