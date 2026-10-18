@@ -133,6 +133,14 @@ temporary step scripts (`shell: powershell`) may run. After changing `.env`, res
 
 If the runner is offline, jobs for our own branches wait in the queue; post a local result instead (below).
 
+## Checked in person, not on CI
+
+- **macOS LAN pairing check** (peer sync): finding and pairing devices over the LAN times out on the macOS CI runner,
+  so the five tests that need it (`crates/peer` service pairing and refusal; engine `peers` pairing, exchange and
+  chain) skip on macOS when `CI` is set. They still run on Linux and Windows CI and locally on a Mac. Before calling
+  peer sync done on macOS, pair two real Macs (and a Mac with another OS) on one network, exchange edits, and remove
+  this skip once the runner's discovery problem is understood.
+
 ## Retries, flaky tests and the quarantine
 
 The full pre-release run (`cargo xtask ci` without `--fast`, on a push to `release` or a manual dispatch) runs the tests with [cargo-nextest](https://nexte.st) (installed by `taiki-e/install-action`, into the

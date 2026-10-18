@@ -536,6 +536,12 @@ mod tests {
     /// code, both list the other as paired; looking shows in the activity stack until stopped.
     #[test]
     fn two_sessions_pair_through_the_commands() {
+        // macOS LAN pairing check: discovery times out on the macOS CI runner; checked in person on
+        // real Macs instead (see "Checked in person, not on CI" in docs/ci.md)
+        if cfg!(target_os = "macos") && std::env::var_os("CI").is_some() {
+            lcc_testkit::skip!(System, "LAN discovery on the macOS CI runner (macOS LAN pairing check, tested in person)");
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("lcc-engine-peers-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         let port = 30000 + (std::process::id() % 9000) as u16;
@@ -597,6 +603,12 @@ mod tests {
     /// on one side arrives on the other, and edits on both sides end as a copy in a stack.
     #[test]
     fn shared_libraries_exchange_edits_and_keep_both_sides_of_a_collision() {
+        // macOS LAN pairing check: discovery times out on the macOS CI runner; checked in person on
+        // real Macs instead (see "Checked in person, not on CI" in docs/ci.md)
+        if cfg!(target_os = "macos") && std::env::var_os("CI").is_some() {
+            lcc_testkit::skip!(System, "LAN discovery on the macOS CI runner (macOS LAN pairing check, tested in person)");
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("lcc-engine-exchange-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
@@ -696,6 +708,12 @@ mod tests {
     /// on A reaches C through B, and one made on C reaches A the same way.
     #[test]
     fn edits_travel_across_a_chain_of_devices() {
+        // macOS LAN pairing check: discovery times out on the macOS CI runner; checked in person on
+        // real Macs instead (see "Checked in person, not on CI" in docs/ci.md)
+        if cfg!(target_os = "macos") && std::env::var_os("CI").is_some() {
+            lcc_testkit::skip!(System, "LAN discovery on the macOS CI runner (macOS LAN pairing check, tested in person)");
+            return;
+        }
         let dir = std::env::temp_dir().join(format!("lcc-engine-chain-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         std::fs::create_dir_all(dir.join("src")).unwrap();
