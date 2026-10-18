@@ -71,7 +71,12 @@ struct Inner {
     store: Mutex<Store>,
     store_path: PathBuf,
     tcp_port: u16,
+    /// Takes a paired device's connection once it has said hello (the catalog exchange).
+    on_hello: Mutex<Option<HelloHandler>>,
 }
+
+/// What runs a paired device's connection after the hello: the paired device and the channel.
+pub type HelloHandler = Arc<dyn Fn(Peer, Channel) + Send + Sync>;
 
 fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(PoisonError::into_inner)
@@ -181,6 +186,7 @@ impl Service {
             store: Mutex::new(store),
             store_path,
             tcp_port,
+            on_hello: Mutex::new(None),
         });
         let mut threads = Vec::new();
         let spawn =
@@ -277,6 +283,51 @@ impl Service {
             })
             .map_err(|e| Error::Io(e.to_string()))?;
         Ok(())
+    }
+
+    /// Sets what runs a paired device's incoming connection after its hello.
+    pub fn set_hello_handler(&self, handler: HelloHandler) {
+        *lock(&self.inner.on_hello) = Some(handler);
+    }
+
+    /// The paired devices heard on the network in the last few seconds.
+    pub fn online_peers(&self) -> Vec<Peer> {
+        let store = lock(&self.inner.store).clone();
+        let st = lock(&self.inner.state);
+        store.peers.into_iter().filter(|p| st.found.get(&p.device_id).is_some_and(|f| f.seen.elapsed() < GONE_AFTER)).collect()
+    }
+
+    /// This device's id.
+    pub fn device_id(&self) -> String {
+        lock(&self.inner.store).identity.device_id.clone()
+    }
+
+    /// Connects to a paired device that is online, proves both sides and says hello; the channel is
+    /// then ready for the catalog exchange. Blocks (seconds at most): call it off the UI thread.
+    pub fn connect(&self, device_id: &str) -> Result<Channel> {
+        let peer = lock(&self.inner.store).peer(device_id).cloned().ok_or_else(|| Error::Protocol("not paired with that device".into()))?;
+        let addr = {
+            let st = lock(&self.inner.state);
+            let f = st
+                .found
+                .get(device_id)
+                .filter(|f| f.seen.elapsed() < GONE_AFTER)
+                .ok_or_else(|| Error::Protocol(format!("{} isn't on the network", peer.name)))?;
+            SocketAddr::new(f.ip, f.beacon.port)
+        };
+        let me = lock(&self.inner.store).identity.clone();
+        let s = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT)?;
+        let mut ch = Channel::handshake(s, &me, true)?;
+        if ch.peer_device != peer.device_id || ch.peer_key != peer.public_key {
+            return Err(Error::Protocol("the device on the network isn't the paired one".into()));
+        }
+        ch.set_timeout(Some(Duration::from_secs(30)))?;
+        ch.send_json(&Opening::Hello)?;
+        match ch.recv_json::<Reply>()? {
+            Reply::Ready { .. } => Ok(ch),
+            Reply::No { why } => Err(Error::Protocol(why)),
+            Reply::Decision { .. } => Err(Error::Protocol("unexpected answer".into())),
+        }
     }
 
     /// The person's answer to "do both screens show this code?".
@@ -426,8 +477,15 @@ fn serve(inner: &Arc<Inner>, stream: TcpStream) -> Result<()> {
             if !known {
                 return ch.send_json(&Reply::No { why: "not paired".into() });
             }
-            // the catalog exchange comes here
-            ch.send_json(&Reply::Ready { name: me.name })
+            let Some(peer) = lock(&inner.store).peer(&ch.peer_device).cloned() else {
+                return ch.send_json(&Reply::No { why: "not paired".into() });
+            };
+            let handler = lock(&inner.on_hello).clone();
+            ch.send_json(&Reply::Ready { name: me.name })?;
+            if let Some(h) = handler {
+                h(peer, ch);
+            }
+            Ok(())
         }
     }
 }

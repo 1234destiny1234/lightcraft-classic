@@ -6,14 +6,94 @@
 //! sockets. Looking for devices shows in the activity stack; cancelling that row stops looking.
 //! The paired devices and this device's identity live in `<settings>/sync/peers.json`.
 
+use std::collections::{HashMap, HashSet};
 use std::path::PathBuf;
-use std::sync::Arc;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex, PoisonError};
+use std::time::{Duration, Instant};
 
+use serde::Serialize;
 use serde_json::{Value, json};
 
-use crate::activity::{Cancel, TaskGuard};
+use crate::activity::{Activity, Cancel, TaskGuard};
+use crate::peer_exchange::{self as px, Action, Base, CatalogInfo, LibrarySync, Record};
 use crate::{EngineError, Result, Session};
+
+/// How often the device with the lower id starts an exchange with each paired device online.
+const EXCHANGE_EVERY: Duration = Duration::from_secs(15);
+/// How often the shared records are refreshed for incoming exchanges.
+const PUBLISH_EVERY: Duration = Duration::from_secs(3);
+
+fn lock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(PoisonError::into_inner)
+}
+
+fn now_secs() -> u64 {
+    std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).map(|d| d.as_secs()).unwrap_or(0)
+}
+
+/// This library as the exchange threads see it (refreshed by `sync.tick`).
+#[derive(Clone)]
+struct Published {
+    library: PathBuf,
+    name: String,
+    sync: LibrarySync,
+    records: Arc<px::Records>,
+}
+
+/// How the last exchange with a device went.
+#[derive(Clone, Debug, Default, Serialize)]
+#[serde(rename_all = "camelCase")]
+struct Exchange {
+    running: bool,
+    /// When it last finished (Unix seconds).
+    last: u64,
+    error: Option<String>,
+    /// Photos that took the other device's edit, and copies made for edits on both sides.
+    taken: usize,
+    copies: usize,
+}
+
+/// Shared between the session and the exchange threads.
+struct Hub {
+    activity: Activity,
+    published: Mutex<Option<Published>>,
+    outcomes: Mutex<Vec<(lcc_peer::Peer, PathBuf, std::result::Result<px::Outcome, String>)>>,
+    running: Mutex<HashSet<String>>,
+    tried: Mutex<HashMap<String, Instant>>,
+    offers: Mutex<Vec<(lcc_peer::Peer, CatalogInfo)>>,
+    exchanges: Mutex<HashMap<String, Exchange>>,
+}
+
+impl Hub {
+    /// Runs one exchange with `peer` on this thread and queues what came back.
+    fn run(&self, peer: &lcc_peer::Peer, ch: &mut lcc_peer::Channel, initiator: bool) {
+        let published = lock(&self.published).clone();
+        let library = published.as_ref().map(|p| p.library.clone()).unwrap_or_default();
+        let result = {
+            let catalog = published
+                .as_ref()
+                .filter(|p| p.sync.shared_with(&peer.device_id))
+                .and_then(|p| p.sync.sync_id.clone().map(|id| CatalogInfo { sync_id: id, name: p.name.clone() }));
+            let base_remote = match (&published, &catalog) {
+                (Some(p), Some(c)) => Base::load(&p.library, &peer.device_id, &c.sync_id).remote,
+                _ => HashMap::new(),
+            };
+            let records = published.as_ref().map(|p| p.records.clone()).unwrap_or_default();
+            let local = px::Local { catalog, records, base_remote };
+            // the activity row only while records actually travel
+            let mut task: Option<TaskGuard> = None;
+            let activity = self.activity.clone();
+            px::exchange(ch, initiator, &local, &mut |n| {
+                if n > 0 && task.is_none() {
+                    task = Some(activity.start("sync", "Syncing library", Cancel::No));
+                }
+            })
+        };
+        lock(&self.running).remove(&peer.device_id);
+        lock(&self.outcomes).push((peer.clone(), library, result));
+    }
+}
 
 /// The session's peer-sync state.
 #[derive(Default)]
@@ -22,9 +102,11 @@ pub struct State {
     pub store_path: Option<PathBuf>,
     /// The discovery port; `None` = [`lcc_peer::beacon::PORT`] (tests use their own).
     pub port: Option<u16>,
-    service: Option<lcc_peer::Service>,
+    service: Option<Arc<lcc_peer::Service>>,
     /// The activity row while looking for devices, and its cancel flag.
     finding: Option<(TaskGuard, Arc<AtomicBool>)>,
+    hub: Option<Arc<Hub>>,
+    published_at: Option<Instant>,
 }
 
 impl std::fmt::Debug for State {
@@ -59,11 +141,26 @@ fn other(e: lcc_peer::Error) -> EngineError {
 }
 
 impl State {
-    /// The service, started if needed.
-    fn ensure(&mut self) -> Result<&lcc_peer::Service> {
+    /// The service, started if needed (with the exchange hub answering paired devices).
+    fn ensure(&mut self, activity: &Activity) -> Result<&Arc<lcc_peer::Service>> {
         if self.service.is_none() {
             let path = self.store_path.clone().ok_or_else(|| EngineError::Other("sync needs a settings folder".into()))?;
-            let svc = lcc_peer::Service::start(path, &default_device_name(), self.port.unwrap_or(lcc_peer::beacon::PORT)).map_err(other)?;
+            let svc = Arc::new(lcc_peer::Service::start(path, &default_device_name(), self.port.unwrap_or(lcc_peer::beacon::PORT)).map_err(other)?);
+            let hub = Arc::new(Hub {
+                activity: activity.clone(),
+                published: Mutex::new(None),
+                outcomes: Mutex::new(Vec::new()),
+                running: Mutex::new(HashSet::new()),
+                tried: Mutex::new(HashMap::new()),
+                offers: Mutex::new(Vec::new()),
+                exchanges: Mutex::new(HashMap::new()),
+            });
+            let h = hub.clone();
+            svc.set_hello_handler(Arc::new(move |peer, mut ch| {
+                lock(&h.running).insert(peer.device_id.clone());
+                h.run(&peer, &mut ch, false);
+            }));
+            self.hub = Some(hub);
             self.service = Some(svc);
         }
         self.service.as_ref().ok_or_else(|| EngineError::Other("sync isn't running".into()))
@@ -88,6 +185,23 @@ impl State {
 }
 
 pub(crate) fn status(s: &mut Session) -> Result<Value> {
+    let mut v = base_status(s)?;
+    if let Some(o) = v.as_object_mut() {
+        o.insert("library".into(), library_status(s));
+        let (offers, exchanges) = match &s.peers.hub {
+            Some(h) => (
+                lock(&h.offers).iter().map(|(p, c)| json!({"deviceId": p.device_id, "name": p.name, "library": c.name})).collect::<Vec<_>>(),
+                serde_json::to_value(&*lock(&h.exchanges)).unwrap_or(Value::Null),
+            ),
+            None => (Vec::new(), json!({})),
+        };
+        o.insert("offers".into(), json!(offers));
+        o.insert("exchanges".into(), exchanges);
+    }
+    Ok(v)
+}
+
+fn base_status(s: &mut Session) -> Result<Value> {
     let st = &mut s.peers;
     st.reconcile();
     if let Some(svc) = &st.service {
@@ -115,7 +229,7 @@ pub(crate) fn find(s: &mut Session, on: bool) -> Result<Value> {
     let activity = s.activity.clone();
     let st = &mut s.peers;
     if on {
-        st.ensure()?.set_finding(true);
+        st.ensure(&activity)?.set_finding(true);
         if st.finding.is_none() {
             let flag = Arc::new(AtomicBool::new(false));
             let guard = activity.start("sync", "Looking for devices", Cancel::Flag(flag.clone()));
@@ -132,20 +246,23 @@ pub(crate) fn find(s: &mut Session, on: bool) -> Result<Value> {
 
 /// Starts the service when paired devices exist (at launch), so they can find each other.
 pub(crate) fn start(s: &mut Session) -> Result<Value> {
+    let activity = s.activity.clone();
     let st = &mut s.peers;
     if st.service.is_none() && st.stored().is_some_and(|store| !store.peers.is_empty()) {
-        st.ensure()?;
+        st.ensure(&activity)?;
     }
     Ok(json!({"running": st.service.is_some()}))
 }
 
 pub(crate) fn pair(s: &mut Session, device: &str) -> Result<Value> {
-    s.peers.ensure()?.pair(device).map_err(other)?;
+    let a = s.activity.clone();
+    s.peers.ensure(&a)?.pair(device).map_err(other)?;
     status(s)
 }
 
 pub(crate) fn confirm(s: &mut Session, accept: bool) -> Result<Value> {
-    s.peers.ensure()?.confirm(accept).map_err(other)?;
+    let a = s.activity.clone();
+    s.peers.ensure(&a)?.confirm(accept).map_err(other)?;
     status(s)
 }
 
@@ -176,7 +293,8 @@ pub(crate) fn unpair(s: &mut Session, device: &str) -> Result<Value> {
 }
 
 pub(crate) fn rename(s: &mut Session, name: &str) -> Result<Value> {
-    s.peers.ensure()?.rename(name).map_err(other)?;
+    let a = s.activity.clone();
+    s.peers.ensure(&a)?.rename(name).map_err(other)?;
     status(s)
 }
 
@@ -186,6 +304,190 @@ impl Session {
         self.peers.store_path = crate::config::config_dir().map(|d| d.join("sync").join("peers.json"));
         self
     }
+}
+
+/// The open library, if it is a folder on disk.
+fn library_dir(s: &Session) -> Option<PathBuf> {
+    s.library.as_ref().filter(|l| l.on_disk).map(|l| l.dir.clone())
+}
+
+fn library_name(dir: &std::path::Path) -> String {
+    dir.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_else(|| "Library".into())
+}
+
+fn library_status(s: &Session) -> Value {
+    let Some(dir) = library_dir(s) else { return Value::Null };
+    let sync = LibrarySync::load(&dir);
+    json!({"name": library_name(&dir), "syncId": sync.sync_id, "sharedWith": sync.shared_with})
+}
+
+/// Shares (or stops sharing) the open library with a paired device.
+pub(crate) fn share(s: &mut Session, device: &str, on: bool) -> Result<Value> {
+    let dir = library_dir(s).ok_or_else(|| EngineError::Other("only a library on disk can be shared".into()))?;
+    if on && !s.peers.stored().is_some_and(|st| st.peer(device).is_some()) {
+        return Err(EngineError::Other(format!("not paired with `{device}`")));
+    }
+    let mut sync = LibrarySync::load(&dir);
+    if on {
+        if sync.sync_id.is_none() {
+            sync.sync_id = Some(lcc_peer::identity::random_id().map_err(other)?);
+        }
+        if !sync.shared_with.iter().any(|d| d == device) {
+            sync.shared_with.push(device.to_string());
+        }
+    } else {
+        sync.shared_with.retain(|d| d != device);
+    }
+    sync.save(&dir).map_err(EngineError::Other)?;
+    s.peers.published_at = None;
+    status(s)
+}
+
+/// Takes up (or turns down) a library another device offered: this library becomes the same catalog.
+pub(crate) fn answer_offer(s: &mut Session, device: &str, accept: bool) -> Result<Value> {
+    let dir = library_dir(s).ok_or_else(|| EngineError::Other("only a library on disk can be shared".into()))?;
+    let hub = s.peers.hub.clone().ok_or_else(|| EngineError::Other("no library was offered".into()))?;
+    let offer = {
+        let mut offers = lock(&hub.offers);
+        let i = offers.iter().position(|(p, _)| p.device_id == device).ok_or_else(|| EngineError::Other("that device offered no library".into()))?;
+        offers.remove(i).1
+    };
+    let mut sync = LibrarySync::load(&dir);
+    if accept {
+        sync.sync_id = Some(offer.sync_id);
+        if !sync.shared_with.iter().any(|d| d == device) {
+            sync.shared_with.push(device.to_string());
+        }
+    } else {
+        sync.declined.push((device.to_string(), offer.sync_id));
+    }
+    sync.save(&dir).map_err(EngineError::Other)?;
+    s.peers.published_at = None;
+    status(s)
+}
+
+/// Writes one record onto a photo (only what differs), as one undoable step.
+fn apply_record(s: &mut Session, id: lcc_catalog::PhotoId, r: &Record, label: &str) -> Result<()> {
+    let Some(p) = s.catalog.photo(id).cloned() else { return Ok(()) };
+    if p.develop != r.develop {
+        s.set_develop(id, (*r.develop).clone(), label)?;
+    }
+    if p.rating != r.rating {
+        s.commit(label, lcc_catalog::Op::SetRating { id, rating: r.rating.min(5) })?;
+    }
+    if p.flag != r.flag {
+        s.commit(label, lcc_catalog::Op::SetFlag { id, flag: r.flag })?;
+    }
+    if p.label != r.label {
+        s.commit(label, lcc_catalog::Op::SetLabel { id, label: r.label })?;
+    }
+    Ok(())
+}
+
+/// Merges what an exchange brought back into the open library (it must still be the same one).
+fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: px::Outcome) -> Result<(usize, usize)> {
+    let Some(sync_id) = o.sync_id else { return Ok((0, 0)) };
+    if library_dir(s).as_deref() != Some(library) || LibrarySync::load(library).sync_id.as_deref() != Some(&sync_id) {
+        return Ok((0, 0));
+    }
+    let mut base = Base::load(library, &peer.device_id, &sync_id);
+    let current = px::records(&s.catalog);
+    let label = format!("Sync from {}", peer.name);
+    let (mut taken, mut copies) = (0, 0);
+    for (key, remote_digest) in &o.remote {
+        let Some((id, local)) = current.get(key) else { continue };
+        match px::decide(local, remote_digest, o.records.get(key), &base, key) {
+            Action::Take(r) => {
+                apply_record(s, *id, &r, &label)?;
+                taken += 1;
+            }
+            Action::Copy(r) => {
+                let name = format!("{} edit", peer.name);
+                if let Some(copy) = crate::cmd::organize::virtual_copy(s, *id, Some(&name))? {
+                    apply_record(s, copy, &r, &label)?;
+                    copies += 1;
+                }
+            }
+            Action::Keep => {}
+        }
+        if let Some(p) = s.catalog.photo(*id) {
+            base.local.insert(key.clone(), Record::of(p).digest());
+        }
+        base.remote.insert(key.clone(), remote_digest.clone());
+    }
+    base.last = now_secs();
+    base.save(library, &peer.device_id).map_err(EngineError::Other)?;
+    Ok((taken, copies))
+}
+
+/// `sync.tick`, every second or so while sync runs: refreshes what incoming exchanges see,
+/// starts exchanges with paired devices online (the device with the lower id starts), and
+/// merges what finished exchanges brought back.
+pub(crate) fn tick(s: &mut Session) -> Result<Value> {
+    let (Some(svc), Some(hub)) = (s.peers.service.clone(), s.peers.hub.clone()) else { return Ok(json!({"running": false})) };
+    if s.peers.published_at.is_none_or(|t| t.elapsed() >= PUBLISH_EVERY) {
+        s.peers.published_at = Some(Instant::now());
+        let published = library_dir(s).map(|dir| {
+            let sync = LibrarySync::load(&dir);
+            let records = if sync.sync_id.is_some() { px::records(&s.catalog) } else { px::Records::new() };
+            Published { name: library_name(&dir), library: dir, sync, records: Arc::new(records) }
+        });
+        *lock(&hub.published) = published;
+    }
+    let me = svc.device_id();
+    for peer in svc.online_peers() {
+        if me >= peer.device_id || lock(&hub.running).contains(&peer.device_id) {
+            continue;
+        }
+        let due = lock(&hub.tried).get(&peer.device_id).is_none_or(|t| t.elapsed() >= EXCHANGE_EVERY);
+        if !due {
+            continue;
+        }
+        lock(&hub.tried).insert(peer.device_id.clone(), Instant::now());
+        lock(&hub.running).insert(peer.device_id.clone());
+        lock(&hub.exchanges).entry(peer.device_id.clone()).or_default().running = true;
+        let (svc, hub) = (svc.clone(), hub.clone());
+        let spawned = std::thread::Builder::new().name("peer-exchange".into()).spawn(move || match svc.connect(&peer.device_id) {
+            Ok(mut ch) => hub.run(&peer, &mut ch, true),
+            Err(e) => {
+                lock(&hub.running).remove(&peer.device_id);
+                lock(&hub.outcomes).push((peer, PathBuf::new(), Err(e.to_string())));
+            }
+        });
+        if let Err(e) = spawned {
+            log::warn!("sync: no thread for an exchange: {e}");
+        }
+    }
+    let outcomes = std::mem::take(&mut *lock(&hub.outcomes));
+    let (mut taken, mut copies) = (0, 0);
+    for (peer, library, result) in outcomes {
+        let mut record = Exchange { last: now_secs(), ..Default::default() };
+        match result {
+            Err(e) => record.error = Some(e),
+            Ok(mut o) => {
+                if let Some(offer) = o.offer.take() {
+                    let declined = library_dir(s)
+                        .is_some_and(|d| LibrarySync::load(&d).declined.iter().any(|(dev, id)| *dev == peer.device_id && *id == offer.sync_id));
+                    let mut offers = lock(&hub.offers);
+                    if !declined && !offers.iter().any(|(p, _)| p.device_id == peer.device_id) {
+                        offers.push((peer.clone(), offer));
+                    }
+                }
+                match merge(s, &peer, &library, o) {
+                    Ok((t, c)) => {
+                        record.taken = t;
+                        record.copies = c;
+                        taken += t;
+                        copies += c;
+                    }
+                    Err(e) => record.error = Some(e.to_string()),
+                }
+            }
+        }
+        record.running = lock(&hub.running).contains(&peer.device_id);
+        lock(&hub.exchanges).insert(peer.device_id.clone(), record);
+    }
+    Ok(json!({"running": true, "taken": taken, "copies": copies}))
 }
 
 #[cfg(test)]

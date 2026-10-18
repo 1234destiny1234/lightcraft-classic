@@ -40,6 +40,11 @@ pub(crate) fn random<const N: usize>() -> Result<[u8; N]> {
     Ok(b)
 }
 
+/// A random id: 32 hex digits.
+pub fn random_id() -> Result<String> {
+    Ok(hex(&random::<16>()?))
+}
+
 fn hex(bytes: &[u8]) -> String {
     bytes.iter().map(|b| format!("{b:02x}")).collect()
 }

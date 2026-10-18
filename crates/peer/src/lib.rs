@@ -22,7 +22,9 @@ pub mod service;
 #[cfg(not(target_arch = "wasm32"))]
 pub use identity::{Identity, Peer, Store};
 #[cfg(not(target_arch = "wasm32"))]
-pub use service::{Service, Stage, Status};
+pub use secure::Channel;
+#[cfg(not(target_arch = "wasm32"))]
+pub use service::{HelloHandler, Service, Stage, Status};
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Error {

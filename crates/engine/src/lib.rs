@@ -71,6 +71,8 @@ pub mod open_path;
 pub mod originals;
 mod pdf;
 #[cfg(not(target_arch = "wasm32"))]
+pub mod peer_exchange;
+#[cfg(not(target_arch = "wasm32"))]
 pub mod peers;
 pub mod preset_import;
 pub mod preset_luminar;

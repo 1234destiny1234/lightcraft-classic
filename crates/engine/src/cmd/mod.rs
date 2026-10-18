@@ -45,7 +45,7 @@ mod masks;
 mod merge;
 pub mod metadata;
 pub mod missing;
-mod organize;
+pub(crate) mod organize;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod peers;
 #[cfg(test)]

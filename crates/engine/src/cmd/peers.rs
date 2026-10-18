@@ -35,6 +35,25 @@ pub fn specs() -> Vec<CommandSpec> {
             let d = device(p, "sync.unpair")?;
             peers::unpair(s, &d)
         }),
+        cmd!(
+            "sync.tick",
+            "Sync With Paired Devices",
+            [],
+            None,
+            "{}: refresh what paired devices see, start due exchanges and merge finished ones (the app calls it every second while sync runs) → {running, taken, copies}",
+            always,
+            |s, _p| peers::tick(s)
+        ),
+        cmd!(query "sync.share", "Share Library", [], None, "{device, on: bool}: share the open library with a paired device (it is offered there) → sync.status", always, |s, p| {
+            let d = device(p, "sync.share")?;
+            let on = bool_req(p, "on", "sync.share")?;
+            peers::share(s, &d, on)
+        }),
+        cmd!(query "sync.answerOffer", "Answer Library Offer", [], None, "{device, accept: bool}: take up a library a paired device offered (the open library becomes the same catalog) or turn it down → sync.status", always, |s, p| {
+            let d = device(p, "sync.answerOffer")?;
+            let accept = bool_req(p, "accept", "sync.answerOffer")?;
+            peers::answer_offer(s, &d, accept)
+        }),
         cmd!(query "sync.rename", "Rename This Device", [], None, "{name}: what other devices call this one → sync.status", always, |s, p| {
             let name = str_param(p, "name").filter(|n| !n.trim().is_empty()).ok_or_else(|| bad("sync.rename", "missing `name`"))?;
             peers::rename(s, name)
