@@ -93,8 +93,10 @@ impl Hub {
                 }
             })
         };
-        lock(&self.running).remove(&peer.device_id);
+        // queued before it stops counting as running, so no new exchange with this peer starts
+        // until its outcome is there to merge
         lock(&self.outcomes).push((peer.clone(), library, result));
+        lock(&self.running).remove(&peer.device_id);
     }
 }
 
@@ -400,11 +402,15 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
     let label = format!("Sync from {}", peer.name);
     let (mut taken, mut copies) = (0, 0);
     let mut new_conflicts = Vec::new();
+    // the other side kept both versions of these: remembered until its version arrives, as the
+    // telling can come in an exchange that doesn't carry the record yet
+    base.remote_conflicts.extend(o.remote_conflicts.iter().cloned());
     for (key, remote_digest) in &o.remote {
         let Some((id, local)) = current.get(key) else { continue };
-        match px::decide(local, remote_digest, o.records.get(key), &base, key, o.remote_conflicts.contains(key)) {
+        match px::decide(local, remote_digest, o.records.get(key), &base, key, base.remote_conflicts.contains(key)) {
             Action::Take(r) => {
                 apply_record(s, *id, &r, &label)?;
+                base.remote_conflicts.remove(key);
                 taken += 1;
             }
             Action::Copy(r) => {
@@ -414,9 +420,12 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
                     copies += 1;
                 }
                 // tell the other side next time, unless it kept both already
-                if !o.remote_conflicts.contains(key) {
+                if !base.remote_conflicts.remove(key) {
                     new_conflicts.push(key.clone());
                 }
+            }
+            Action::Keep if local.digest() == *remote_digest => {
+                base.remote_conflicts.remove(key);
             }
             Action::Keep => {}
         }
@@ -437,8 +446,8 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
 }
 
 /// `sync.tick`, every second or so while sync runs: refreshes what incoming exchanges see,
-/// starts exchanges with paired devices online (the device with the lower id starts), and
-/// merges what finished exchanges brought back.
+/// merges what finished exchanges brought back, and starts exchanges with paired devices online
+/// (the device with the lower id starts).
 pub(crate) fn tick(s: &mut Session) -> Result<Value> {
     let (Some(svc), Some(hub)) = (s.peers.service.clone(), s.peers.hub.clone()) else { return Ok(json!({"running": false})) };
     if s.peers.published_at.is_none_or(|t| t.elapsed() >= PUBLISH_EVERY) {
@@ -450,31 +459,8 @@ pub(crate) fn tick(s: &mut Session) -> Result<Value> {
         });
         *lock(&hub.published) = published;
     }
-    let me = svc.device_id();
-    for peer in svc.online_peers() {
-        if me >= peer.device_id || lock(&hub.running).contains(&peer.device_id) {
-            continue;
-        }
-        let every = s.peers.exchange_every.unwrap_or(EXCHANGE_EVERY);
-        let due = lock(&hub.tried).get(&peer.device_id).is_none_or(|t| t.elapsed() >= every);
-        if !due {
-            continue;
-        }
-        lock(&hub.tried).insert(peer.device_id.clone(), Instant::now());
-        lock(&hub.running).insert(peer.device_id.clone());
-        lock(&hub.exchanges).entry(peer.device_id.clone()).or_default().running = true;
-        let (svc, hub) = (svc.clone(), hub.clone());
-        let spawned = std::thread::Builder::new().name("peer-exchange".into()).spawn(move || match svc.connect(&peer.device_id) {
-            Ok(mut ch) => hub.run(&peer, &mut ch, true),
-            Err(e) => {
-                lock(&hub.running).remove(&peer.device_id);
-                lock(&hub.outcomes).push((peer, PathBuf::new(), Err(e.to_string())));
-            }
-        });
-        if let Err(e) = spawned {
-            log::warn!("sync: no thread for an exchange: {e}");
-        }
-    }
+    // merge first: a new exchange loads this library's sync base, which must already hold what
+    // the last one learnt (above all the collisions to tell the other side about)
     let outcomes = std::mem::take(&mut *lock(&hub.outcomes));
     let (mut taken, mut copies) = (0, 0);
     for (peer, library, result) in outcomes {
@@ -503,6 +489,32 @@ pub(crate) fn tick(s: &mut Session) -> Result<Value> {
         }
         record.running = lock(&hub.running).contains(&peer.device_id);
         lock(&hub.exchanges).insert(peer.device_id.clone(), record);
+    }
+    let me = svc.device_id();
+    for peer in svc.online_peers() {
+        if me >= peer.device_id || lock(&hub.running).contains(&peer.device_id) {
+            continue;
+        }
+        let every = s.peers.exchange_every.unwrap_or(EXCHANGE_EVERY);
+        let due = lock(&hub.tried).get(&peer.device_id).is_none_or(|t| t.elapsed() >= every);
+        if !due {
+            continue;
+        }
+        lock(&hub.tried).insert(peer.device_id.clone(), Instant::now());
+        lock(&hub.running).insert(peer.device_id.clone());
+        lock(&hub.exchanges).entry(peer.device_id.clone()).or_default().running = true;
+        let (svc, hub) = (svc.clone(), hub.clone());
+        let spawned = std::thread::Builder::new().name("peer-exchange".into()).spawn(move || match svc.connect(&peer.device_id) {
+            Ok(mut ch) => hub.run(&peer, &mut ch, true),
+            Err(e) => {
+                let id = peer.device_id.clone();
+                lock(&hub.outcomes).push((peer, PathBuf::new(), Err(e.to_string())));
+                lock(&hub.running).remove(&id);
+            }
+        });
+        if let Err(e) = spawned {
+            log::warn!("sync: no thread for an exchange: {e}");
+        }
     }
     Ok(json!({"running": true, "taken": taken, "copies": copies}))
 }
