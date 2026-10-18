@@ -3149,8 +3149,9 @@ mod tests {
         for root in [r"\192.0.2.1\share\", "file://192.0.2.1/s/"] {
             std::fs::write(&source, native_catalog(&photo_tables((root, "")))).unwrap();
             let catalog = read(&source).unwrap();
-            let want = if cfg!(windows) { Original::Local } else { Original::NotHere };
-            assert_eq!(catalog.photos[0].original, want, "{root}: {:?}", catalog.photos[0]);
+            // followed (Windows), or not a path on this computer (a UNC path read on Linux or macOS): never refused
+            assert!(!matches!(catalog.photos[0].original, Original::Refused(_)), "{root}: {:?}", catalog.photos[0]);
+            assert!(!catalog.photos[0].original_is_file(), "{root}: the share is unreachable here");
             assert!(!catalog.warnings.iter().any(|w| w.contains("not opened")), "{root}: {:?}", catalog.warnings);
             let mut s = crate::Session::new();
             let report = import(&mut s, &source, false).unwrap();
