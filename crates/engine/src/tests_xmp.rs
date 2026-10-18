@@ -1209,6 +1209,43 @@ fn sidecar_gps_wins_over_the_cameras_and_survives_a_save() {
     let _ = std::fs::remove_dir_all(&src);
 }
 
+/// A position cleared here stays cleared: saving removes the GPS the sidecar still states for it, so it is not read
+/// back the next time. A different position there (another app wrote it after the clear) is not ours to remove.
+#[test]
+fn a_cleared_gps_position_leaves_the_sidecar() {
+    let src = temp_dir("sidecar-gps-clear");
+    write_png_at(&src.join("walk.png"), 10.5, 20.25);
+    let sidecar = |lat: &str, lon: &str| {
+        format!(
+            r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+  <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:xmp="http://ns.adobe.com/xap/1.0/" xmp:Rating="2">
+   <exif:GPSLatitude>{lat}</exif:GPSLatitude>
+   <exif:GPSLongitude>{lon}</exif:GPSLongitude>
+  </rdf:Description>
+</rdf:RDF></x:xmpmeta>"#
+        )
+    };
+    let stated = || lcc_meta::parse_xmp(&std::fs::read_to_string(src.join("walk.xmp")).unwrap()).unwrap().metadata.gps;
+    std::fs::write(src.join("walk.xmp"), sidecar("12,30N", "45,15W")).unwrap();
+    let mut s = Session::new().with_fs();
+    s.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+    let id = only(&s);
+    assert!(s.catalog.photo(id).unwrap().meta.gps.is_some());
+    s.execute("photo.setMeta", &json!({"ids": [id.0], "gps": null})).unwrap();
+    s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+    assert!(stated().is_none(), "the cleared position is gone from the sidecar");
+    s.execute("photo.readMetadataFromFile", &json!({"ids": [id.0]})).unwrap();
+    assert!(s.catalog.photo(id).unwrap().meta.gps.is_none(), "and does not come back");
+    assert_eq!(s.catalog.photo(id).unwrap().rating, 2, "the rest of the sidecar is read as before");
+
+    // another application geotags the photo after the clear: a save keeps its position
+    std::fs::write(src.join("walk.xmp"), sidecar("5,6S", "100,30E")).unwrap();
+    s.execute("photo.rate", &json!({"ids": [id.0], "rating": 4})).unwrap();
+    s.execute("photo.saveMetadataToFile", &json!({"ids": [id.0]})).unwrap();
+    assert!(stated().is_some(), "a position this app did not clear stays");
+    let _ = std::fs::remove_dir_all(&src);
+}
+
 /// Lightroom Classic writes a sidecar's GPS as attributes on `rdf:Description`, with GPSVersionID and
 /// GPSAltitude beside it; a file with no position of its own (a raw without GPS) takes it (fork issue #247).
 #[test]
@@ -1329,7 +1366,7 @@ fn dngs_of_raws_without_colour_matrices_carry_the_colour_they_open_with() {
         std::fs::write(&path, &bytes).unwrap();
         let mut opened = lcc_raw::decode(&bytes).unwrap();
         assert!(!has_matrix(&opened.color));
-        let (_, want, look) = crate::camera_preview::starting_colour(&mut opened, &bytes, None, None);
+        let (_, want, look) = crate::camera_preview::starting_colour(&mut opened, &bytes, None, None, lcc_develop::CameraColour::Auto, false);
         assert_eq!((want.matrix_is_fallback, look.is_none()), (!measured, true), "{model}");
 
         let mut s = Session::new().with_fs();

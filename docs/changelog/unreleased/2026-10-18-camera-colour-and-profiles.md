@@ -1,0 +1,4 @@
+## Develop
+
+- **Calibrated camera colour:** a per-photo choice (Profile ▸ Calibrated camera colour) to start a raw without matrices of its own from the camera database's spectral matrices instead of a look fitted to its JPEG. The decode options (this, Remove Hot Pixels and the camera profile) travel together in `media::LoadOptions`, so a source is decoded again only when an option that changes it changes. Thanks @good-news-everyone. Upstream PR #2222. Fork (no issue)
+- **Import your own camera profiles (.dcp):** a person's own DNG camera profiles, one default per camera and one chosen per photo, with the tone fitted to the camera JPEG when a profile has none; XMP looks import like `.cube` profiles. Nothing is shipped or used as a test fixture. Thanks @metelkinn. Upstream PR #2074 (without its offline web app). Fork (no issue)

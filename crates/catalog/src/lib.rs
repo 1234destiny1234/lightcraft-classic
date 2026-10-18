@@ -882,8 +882,13 @@ impl Catalog {
                 let old_edit = std::mem::replace(&mut p.edited, edited);
                 Op::SetDevelop { id, settings: old, label, edited: old_edit }
             }
-            Op::SetMeta { id, meta } => {
+            Op::SetMeta { id, mut meta } => {
                 let p = self.photo_mut(id)?;
+                meta.gps_removed = match (p.meta.gps, meta.gps) {
+                    (_, Some(_)) => None,
+                    (Some(was), None) => Some(was),
+                    (None, None) => p.meta.gps_removed,
+                };
                 Op::SetMeta { id, meta: Box::new(std::mem::replace(&mut p.meta, *meta)) }
             }
             Op::SetDeleted { id, deleted } => {

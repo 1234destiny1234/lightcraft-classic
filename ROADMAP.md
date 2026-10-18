@@ -185,7 +185,7 @@ The milestone estimates in the table above were made before work started and are
 
 - **AI features** (subject/sky/people masks, generative remove) need model weights with licences we can ship; classical
   fallbacks first. No permissively licensed sky-segmentation or raw-denoise model was found — we may need to train our own.
-- **Camera colour and lens data** is a data problem: we never use Adobe's matrices, DCPs or LCPs. DNG-embedded data first,
+- **Camera colour and lens data** is a data problem: we never ship Adobe's matrices, DCPs or LCPs (a person's own `.dcp` files can be imported at run time, `camera.importDcp`; none is bundled). DNG-embedded data first,
   then our own calibration; long-tail camera/lens coverage grows over time.
 - **Raw-format sources:** decided 2026-10-05: decoders are written from *prose* format descriptions (even ones
   published alongside GPL code); decoder source is never read. Still open: freedom-to-operate review for local

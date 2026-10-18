@@ -85,7 +85,9 @@ the only copy of those edits outside that application's catalog. Saving never dr
 - The **capture time** (`exif:DateTimeOriginal`, `photoshop:DateCreated`) and **GPS** (`exif:GPSLatitude`,
   `exif:GPSLongitude`) are replaced only when the app has a value; otherwise the file's stay. A position the sidecar
   already states (to within about a centimetre) is kept as written there, in its own precision: GPS is rewritten only
-  when it was changed in the app.
+  when it was changed in the app. A position cleared in the app is removed from the sidecar (latitude, longitude and
+  altitude) while the sidecar still states that same position; a different one, written by another application since,
+  stays.
 - **Everything else is kept byte for byte**: other namespaces (`crs:`, `xmpMM:`, `lr:hierarchicalSubject`, unknown
   ones), `xmp:CreatorTool`, comments, the packet wrapper and padding. The app's properties go into one
   `rdf:Description` of their own; owned properties written by another application (in attribute or element form) are

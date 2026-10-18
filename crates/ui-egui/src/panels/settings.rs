@@ -1,4 +1,4 @@
-//! The Settings dialog (⌘,): General, Import, Performance, Display, Interface, Slideshow, Faces,
+//! The Settings dialog (⌘,): General, Import, Folders, Performance, Display, Interface, Slideshow, Faces,
 //! AI Denoise.
 //!
 //! Changes apply immediately (no OK/Cancel). Where they are stored:
@@ -26,6 +26,7 @@ pub const SECTIONS: &[(&str, &str)] = &[("lensProfiles", "import")];
 pub const TABS: &[(&str, &str)] = &[
     ("general", "General"),
     ("import", "Import"),
+    ("folders", "Folders"),
     ("performance", "Performance"),
     ("display", "Display"),
     ("interface", "Interface"),
@@ -40,7 +41,7 @@ pub const TABS: &[(&str, &str)] = &[
 /// Thumbnail cache sizes offered (MB).
 const CACHE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
 
-const LABEL_W: f32 = 160.0;
+pub(super) const LABEL_W: f32 = 160.0;
 /// The label column of the same rows outside the dialog (the slideshow panels).
 const PANEL_LABEL_W: f32 = 150.0;
 /// The category list's width.
@@ -87,6 +88,7 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &mut String, max_height: f
 fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
     match tab {
         "import" => import_tab(app, ui, t),
+        "folders" => super::settings_folders::settings_tab(app, ui, t),
         "performance" => performance_tab(app, ui, t),
         "display" => display_tab(app, ui, t),
         "interface" => interface_tab(app, ui, t),
@@ -934,6 +936,7 @@ fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     );
     heading(ui, t, crate::i18n::tr("Detail"));
     check(ui, "settings.navigator", &mut app.ui.navigator, "Show the Navigator while zoomed in");
+    check(ui, "settings.hideFilterInDevelop", &mut app.ui.settings.hide_filter_in_develop, "Hide filter text in Develop mode");
     row(ui, t, crate::i18n::tr("Info overlay"), |ui| {
         use crate::state::InfoOverlay as I;
         choices(ui, "settingsInfo", &[(I::Off, "Off"), (I::Basic, "File & date"), (I::Exposure, "Exposure")], &mut app.ui.info_overlay);
