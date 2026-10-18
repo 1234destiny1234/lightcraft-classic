@@ -330,13 +330,12 @@ impl WindowHdr {
     pub fn set_upload_headroom(&mut self, headroom: f32) {
         self.upload_headroom = Some(headroom);
     }
-    /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB).
-    pub fn extended(&self) -> bool {
-        self.extended
-    }
 }
 
 impl lcc_ui_egui::HdrOutput for WindowHdr {
+    fn extended(&self) -> bool {
+        self.extended
+    }
     fn headroom(&mut self) -> Option<f32> {
         let info = self.state.display_hdr_info.read().clone();
         let l = levels(Platform::current(), info.as_ref(), self.headroom_override, self.paper_white_override);

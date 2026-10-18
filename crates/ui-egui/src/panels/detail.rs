@@ -156,14 +156,13 @@ impl CropView {
 }
 
 /// Lay the crop tool's view out in `area`: held as `layout` says while the crop is being changed,
-/// otherwise the turned photo fitted into `area`. `frame` is the uncropped frame the loupe renders.
+/// otherwise the turned photo at `zoom` (fitted into `area` unless a percentage) and `pan`. `frame` is the uncropped frame the loupe renders.
 pub(crate) fn crop_view(
     frame: &Frame,
     crop: lcc_geom::CropGeometry,
     area: Rect,
     layout: Option<CropLayout>,
     zoom: Zoom,
-    _img_px: [usize; 2],
     ppp: f32,
     pan: (f32, f32),
 ) -> CropView {
@@ -179,26 +178,19 @@ pub(crate) fn crop_view(
             let (centre, k) = match layout {
                 Some(CropLayout::Pinned { centre, k }) if centre.is_finite() && finite(k) => (centre, k),
                 _ => {
-                    let (w, h) = match zoom {
-                        Zoom::Percent(p) if p > 0.0 => {
-                            let scale = p / 100.0 / ppp;
-                            (nw * scale, nh * scale)
-                        }
-                        _ => {
-                            let unit = CanvasMap::new(&cf, Rect::from_center_size(Pos2::ZERO, vec2(nw, nh)));
-                            let b = Rect::from_points(&corners.map(|c| unit.screen(c)));
-                            let k = (area.width() / b.width()).min(area.height() / b.height());
-                            let k = if finite(k) { k } else { 1.0 };
-                            (b.width() * k, b.height() * k)
-                        }
+                    // the turned photo at one point per pixel around a box centred on the origin,
+                    // scaled to the zoom asked for (or to fit the area) and placed as `pan` says
+                    let unit = CanvasMap::new(&cf, Rect::from_center_size(Pos2::ZERO, vec2(nw, nh)));
+                    let b = Rect::from_points(&corners.map(|c| unit.screen(c)));
+                    let k = match zoom {
+                        Zoom::Percent(p) if finite(p) && finite(ppp) => p / 100.0 / ppp,
+                        _ => (area.width() / b.width()).min(area.height() / b.height()),
                     };
-                    let pan_offset = vec2(
-                        (pan.0 - 0.5) * (nw - w),
-                        (pan.1 - 0.5) * (nh - h),
-                    );
-                    let centre = area.center() + pan_offset;
-                    let k = w / nw;
-                    (centre, if finite(k) { k } else { 1.0 })
+                    let k = if finite(k) { k } else { 1.0 };
+                    let size = b.size() * k;
+                    let pan = bounded_pan(area, size, pan);
+                    let shift = vec2((pan.0 - 0.5) * size.x, (pan.1 - 0.5) * size.y);
+                    (area.center() - shift - b.center().to_vec2() * k, k)
                 }
             };
             CanvasMap::new(&cf, Rect::from_center_size(centre, vec2(nw * k, nh * k)))
@@ -747,7 +739,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if !crop_tool || app.session.interaction.is_none() {
         app.crop_layout = None;
     }
-    let crop_view = crop_tool.then(|| crop_view(&frame, d.crop.geometry, main_area, app.crop_layout, app.ui.zoom, native, ppp, app.ui.pan));
+    let crop_view = crop_tool.then(|| crop_view(&frame, d.crop.geometry, main_area, app.crop_layout, app.ui.zoom, ppp, app.ui.pan));
     if let Some(v) = &crop_view {
         if app.session.interaction.is_some() && app.crop_layout.is_none() {
             app.crop_layout = Some(CropLayout::Pinned { centre: v.centre, k: v.k });
@@ -976,12 +968,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let draw = |slot: Slot, r: Rect, clip: Rect| -> &'static str {
         // For headless (CPU) screenshots, the HDR texture is GPU-only and not available in the
         // CPU texture map, so fall back to the SDR texture (P2-2).
-        let use_hdr = hdr_view.is_some()
-            && !app.headless_screenshotting
-            && slot == Slot::Main;
-        if use_hdr
-            && let Some(v) = hdr_view
-        {
+        let use_hdr = hdr_view.is_some() && !app.headless_screenshotting && slot == Slot::Main;
+        if use_hdr && let Some(v) = hdr_view {
             let image_rect = fit_texture_rect(r, v.size);
             p.with_clip_rect(clip).image(v.tex, image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             return "hdr";
@@ -3416,7 +3404,14 @@ mod tests {
             source_key: None,
             photo: lcc_catalog::PhotoId(42),
             level: lcc_engine::media::SourceLevel::Full,
-            source: lcc_engine::media::SourceRef::File { path: "/tmp/test.jpg".to_string(), max_edge: 100, loader: None, fallback: None, denoise: None, outliers: false },
+            source: lcc_engine::media::SourceRef::File {
+                path: "/tmp/test.jpg".to_string(),
+                max_edge: 100,
+                loader: None,
+                fallback: None,
+                denoise: None,
+                outliers: false,
+            },
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
             settings: Default::default(),

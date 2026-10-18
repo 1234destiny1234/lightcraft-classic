@@ -304,7 +304,9 @@ pub trait HdrOutput {
     fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
     /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
     /// true, the renderer should skip monitor profile conversion (P2-3).
-    fn extended(&self) -> bool { false }
+    fn extended(&self) -> bool {
+        false
+    }
 }
 
 /// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through

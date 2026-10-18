@@ -236,7 +236,7 @@ mod tests {
         let dir = std::env::temp_dir().join(format!("lcc-seq-noframes-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.mp4");
-        let mut w = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
+        let w = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
         // Don't push any frames
         let result = w.finish();
         assert!(result.is_err(), "expected error on no frames");

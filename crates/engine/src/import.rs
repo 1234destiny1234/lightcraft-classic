@@ -1781,15 +1781,11 @@ mod prepared_tests {
         assert!(old_sp_path.exists(), "smart preview should exist before hash update");
 
         // Compute the content hash of the file (as would be done on-demand during duplicate detection)
-        let img_bytes = std::fs::read(&src.join("photo.png")).unwrap();
+        let img_bytes = std::fs::read(src.join("photo.png")).unwrap();
         let content_hash = lcc_preview::hash_bytes(&img_bytes).to_string();
 
         // Prepare to commit the on-demand hash
-        let mut prepared = Prepared {
-            scanned: 0,
-            items: vec![],
-            hashes: HashMap::new(),
-        };
+        let mut prepared = Prepared { scanned: 0, items: vec![], hashes: HashMap::new() };
         prepared.hashes.insert(id, content_hash.clone());
 
         // Commit the on-demand hash - this should migrate the smart preview file

@@ -449,11 +449,7 @@ impl Renderer {
     pub fn job_for(&self, slot: Slot, job: RenderJob) -> RenderJob {
         // When the surface is extended linear sRGB (macOS EDR / Windows scRGB), skip monitor
         // profile conversion: the compositor owns it (P2-3).
-        if Self::renders_for_display(slot) && !self.surface_is_extended_linear {
-            job.with_display(self.display.clone())
-        } else {
-            job
-        }
+        if Self::renders_for_display(slot) && !self.surface_is_extended_linear { job.with_display(self.display.clone()) } else { job }
     }
 
     /// The display profile in use (id).
@@ -1825,7 +1821,7 @@ mod extended_linear_tests {
     #[test]
     fn job_for_skips_display_profile_for_extended_linear_surface() {
         let mut r = Renderer::default();
-        r.surface_is_extended_linear = true;
+        r.set_surface_extended_linear(true);
 
         let job = RenderJob {
             cache_generation: 0,
@@ -1833,7 +1829,14 @@ mod extended_linear_tests {
             source_key: None,
             photo: lcc_catalog::PhotoId(1),
             level: lcc_engine::media::SourceLevel::Full,
-            source: lcc_engine::media::SourceRef::File { path: "/tmp/test.jpg".to_string(), max_edge: 100, loader: None, fallback: None, denoise: None, outliers: false },
+            source: lcc_engine::media::SourceRef::File {
+                path: "/tmp/test.jpg".to_string(),
+                max_edge: 100,
+                loader: None,
+                fallback: None,
+                denoise: None,
+                outliers: false,
+            },
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
             settings: Default::default(),

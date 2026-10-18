@@ -207,6 +207,5 @@ fn different_radii_differ_at_upscale() {
     let r2 = render_at(&src, &s2, 1024);
     let r3 = render_at(&src, &s3, 1024);
     let diff = rms(&r2, &r3);
-    eprintln!("PR762 upscale test: RMS diff between radius 2 and 3 at 2x = {}", diff);
     assert!(diff > 0.1, "Radius 2 and 3 should differ at 2x scale (got {})", diff);
 }

@@ -71,9 +71,9 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     let Some(task) = &app.render_dng else { return };
     match task.rx.try_recv() {
         Ok((done, cancelled)) => {
-            let total = task.total;
-            if app.session.library_generation() != task.library_generation {
-                app.render_dng = None;
+            let (total, generation) = (task.total, task.library_generation);
+            app.render_dng = None;
+            if app.session.library_generation() != generation {
                 app.toast(ctx, crate::i18n::tr("Render to DNG finished in a different library; DNGs were not imported"));
                 return;
             }

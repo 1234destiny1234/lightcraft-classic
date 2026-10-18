@@ -100,17 +100,7 @@ pub fn covers_camera(camera: &str) -> bool {
     if words.is_empty() {
         return false;
     }
-    (1..words.len())
-        .find_map(|i| {
-            let make = words[..i].join(" ");
-            let model = words[i..].join(" ");
-            if covers(Some(&make), &model) {
-                Some(true)
-            } else {
-                None
-            }
-        })
-        .unwrap_or_else(|| covers(None, camera))
+    (1..words.len()).any(|i| covers(Some(&words[..i].join(" ")), &words[i..].join(" "))) || covers(None, camera)
 }
 
 /// Most points a curve keeps (Canon writes about seven at a stated temperature, Sony five).

@@ -387,13 +387,9 @@ mod tests {
         let parent_bytes = lcc_codecs::encode_tiff(
             &lcc_codecs::EncodeImage::rgba8(&lcc_raster::Rgba8 { width: 10, height: 10, data: vec![[200, 50, 50, 255]; 100] }),
             lcc_codecs::TiffCompression::Deflate,
-            &lcc_codecs::EncodeMeta {
-                icc: None,
-                exif: None,
-                xmp: Some(&add_link(PACKET, "xmp.did:parent-embedded", "", "")),
-                ppi: None,
-            },
-        ).unwrap();
+            &lcc_codecs::EncodeMeta { icc: None, exif: None, xmp: Some(&add_link(PACKET, "xmp.did:parent-embedded", "", "")), ppi: None },
+        )
+        .unwrap();
         std::fs::write(&parent, &parent_bytes).unwrap();
         // Create child TIFF with DerivedFrom pointing to parent's embedded ID
         let child = dir.join("child.tif");
@@ -401,22 +397,20 @@ mod tests {
         let child_bytes = lcc_codecs::encode_tiff(
             &lcc_codecs::EncodeImage::rgba8(&lcc_raster::Rgba8 { width: 10, height: 10, data: vec![[50, 200, 50, 255]; 100] }),
             lcc_codecs::TiffCompression::Deflate,
-            &lcc_codecs::EncodeMeta {
-                icc: None,
-                exif: None,
-                xmp: Some(&child_xmp),
-                ppi: None,
-            },
-        ).unwrap();
+            &lcc_codecs::EncodeMeta { icc: None, exif: None, xmp: Some(&child_xmp), ppi: None },
+        )
+        .unwrap();
         std::fs::write(&child, &child_bytes).unwrap();
         // Import into fresh catalog
         let mut s = Session::new().with_fs();
         let r = s.execute("library.import", &json!({"paths": [parent.to_string_lossy(), child.to_string_lossy()]})).unwrap();
         let ids: Vec<u64> = r["imported"].as_array().unwrap().iter().filter_map(|v| v.as_u64()).collect();
         assert_eq!(ids.len(), 2);
-        let child_id = ids.iter().find(|&&id| {
-            s.catalog.photo(PhotoId(id)).map(|p| p.file_name.contains("child")).unwrap_or(false)
-        }).copied().expect("child imported");
+        let child_id = ids
+            .iter()
+            .find(|&&id| s.catalog.photo(PhotoId(id)).map(|p| p.file_name.contains("child")).unwrap_or(false))
+            .copied()
+            .expect("child imported");
         let parent_id = ids.iter().find(|&&id| id != child_id).copied().expect("parent imported");
         // Import calls stack_derived automatically; the child should be stacked on the parent
         // via the embedded document ID index

@@ -821,20 +821,14 @@ mod tests {
         let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let f = failed.clone();
         let services = crate::Services {
-            open_with: Some(Box::new(move |_path: &str, _app: &str| {
-                if f.load(std::sync::atomic::Ordering::SeqCst) {
-                    Err("no such editor".into())
-                } else {
-                    Ok(())
-                }
-            })),
+            open_with: Some(Box::new(
+                move |_path: &str, _app: &str| {
+                    if f.load(std::sync::atomic::Ordering::SeqCst) { Err("no such editor".into()) } else { Ok(()) }
+                },
+            )),
             ..Default::default()
         };
-        let mut h = crate::headless::Headless::new(
-            LccApp::new(lcc_engine::Session::with_demo().with_fs(), services),
-            [900.0, 600.0],
-            1.0,
-        );
+        let mut h = crate::headless::Headless::new(LccApp::new(lcc_engine::Session::with_demo().with_fs(), services), [900.0, 600.0], 1.0);
         // Simulate after_command being called with a successful editIn result
         let result = json!({
             "path": "/tmp/fake-edit.tif",
