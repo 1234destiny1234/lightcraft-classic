@@ -175,6 +175,13 @@ mod tests {
         let only_pre = serde_json::json!([api_release("v0.8.0-rc.1", true, &[("app.msi", "https://x/a", 1)])]).to_string();
         assert!(newest(&only_pre, false).is_err());
         assert_eq!(newest(&only_pre, true).expect("rc").version.to_text(), "0.8.0-rc.1");
+        let mixed = serde_json::json!([
+            api_release("v0.8.0-rc.1", true, &[("app.msi", "https://x/a", 1)]),
+            api_release("v0.7.1", false, &[("app.msi", "https://x/b", 1)]),
+        ])
+        .to_string();
+        assert_eq!(newest(&mixed, false).expect("stable").version.to_text(), "0.7.1");
+        assert_eq!(newest(&mixed, true).expect("prerelease").version.to_text(), "0.8.0-rc.1");
     }
 
     #[test]

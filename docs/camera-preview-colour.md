@@ -253,6 +253,27 @@ a camera wrote itself and refuses DNGs whose `Software` tag names Adobe software
 Photoshop), the app's own DNG export, or is missing. `<cli> camdb show MAKE MODEL` prints the entry a camera resolves
 to. A native DNG's matrices help that model's other raw format (a Pentax body's PEF files, say), whose files carry
 none. The database has no TOML entries yet.
+### Calibrated camera colour (the photo's choice)
+
+The order above is the photo's **Auto** Camera colour. For a raw without matrices of its own whose model has spectral
+matrices, the Profile section offers **Calibrated camera colour** (`profile.camera_colour`: `auto` | `colorimetric`,
+left out of the settings while `auto`, so existing edits keep their JSON and hash). **Colorimetric** starts from the
+spectral matrices with the app's default tone curve and never reads the embedded JPEG: no per-photo fit, no
+camera profile's tone, no black-and-white tone (step 4 above, taken first). The same file then starts the same way
+whatever its JPEG shows (Picture Control, Active D-Lighting, DRO), and it renders exactly as a copy of it without its
+embedded JPEGs does. A model without spectral matrices, or a file with matrices of its own, starts as Auto does, and the
+option is not offered.
+
+The option is part of the decode (`media::LoadOptions`): a decoded source records the options it was made with, and one
+made with others is decoded again (and a late render of the old one is not taken back into the cache), unless the
+option can't change it (no measured colour for the model, a smart preview, a demo scene). Copy / Paste and Sync of the
+Profile group and presets of it carry the option both ways (`presets::extract_groups` writes it even while `auto`), so
+a per-camera Raw Default preset can give every new photo of a camera the calibrated colour.
+
+Not done yet, and open in upstream issue 1207: a look of its own for
+Colorimetric (it renders about 0.75–1.75 stop darker and 10–20 % less saturated than the fit on the Nikon Z f frames
+measured there, since it has no camera tone curve), matching the exposure between the two modes, and the option in DNG
+export / Convert to DNG and Photo Merge, which keep the Auto colour.
 
 ## Smart previews and the look version
 

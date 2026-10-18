@@ -1070,6 +1070,9 @@ pub struct UiState {
     /// A newer release was found at start-up and the user has not been told yet.
     #[serde(skip)]
     pub update_pending: Option<String>,
+    /// The start-up update check is currently in flight.
+    #[serde(skip)]
+    pub startup_update_checking: bool,
     /// The Print dialog's page, selection and drag.
     #[serde(skip)]
     pub print: crate::print_view::PrintUi,
@@ -1623,6 +1626,7 @@ impl Default for UiState {
             update_checked_at_startup: false,
             update_checked_at: 0.0,
             update_pending: None,
+            startup_update_checking: false,
             print: Default::default(),
         }
     }

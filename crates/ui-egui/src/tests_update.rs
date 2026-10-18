@@ -159,13 +159,27 @@ fn a_startup_check_that_found_a_release_waits_until_the_dialog_is_opened() {
     let dir = Scratch::new("startup");
     let mut h = app();
     // as the start-up path does: the worker's answer is pending, and no window opened by itself
-    h.app.ui.update_pending = Some("9.9.9".into());
+    h.app.ui.startup_update_checking = true;
     let _ = offer(&mut h, &dir, "9.9.9", lcc_engine::update::Kind::Archive);
     h.step();
     h.step();
     assert_eq!(h.app.ui.dialog, None, "a start-up check never opens a window");
     assert!(h.app.ui.update_pending.is_none(), "the announcement is made once");
     assert!(h.app.ui.toast.is_some(), "it says so instead");
+}
+
+#[test]
+fn a_startup_check_respects_skipped_version() {
+    let dir = Scratch::new("startup-skip");
+    let mut h = app();
+    h.app.session.updater.mark_seen("9.9.9", true);
+    h.app.ui.startup_update_checking = true;
+    let _ = offer(&mut h, &dir, "9.9.9", lcc_engine::update::Kind::Archive);
+    h.step();
+    h.step();
+    assert_eq!(h.app.ui.dialog, None);
+    assert!(h.app.ui.update_pending.is_none());
+    assert!(h.app.ui.toast.is_none(), "skipped version is not toasted");
 }
 
 #[test]
@@ -219,6 +233,7 @@ fn the_settings_in_the_dialog_are_saved() {
     ask(&mut h, "ui.clickWidget", json!({"id": "check:updatePrerelease"}));
     h.step();
     assert!(h.app.session.updater.prefs().prerelease);
+    assert!(h.app.session.updater.options().prerelease);
     // the dialog is still usable after a settings change
     assert_eq!(h.app.ui.dialog, Some(Dialog::Update));
     h.request("ui.key", json!({"key": "Escape"}), T);

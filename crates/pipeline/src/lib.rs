@@ -105,6 +105,10 @@ pub struct SourceInfo {
     /// pixel-scale plug-in filters run at that scale ([`source_stage`]), so a preview looks like
     /// the full-size render scaled down (issue #960).
     pub native_long: Option<usize>,
+    /// The raw has no colour matrices of its own, but its camera model has matrices from measured
+    /// spectral sensitivities, so the photo's Profile option can start from them instead of the
+    /// look fitted to its JPEG (`lcc_develop::CameraColour`).
+    pub colorimetric: bool,
 }
 
 impl Default for SourceInfo {
@@ -122,6 +126,7 @@ impl Default for SourceInfo {
             local_tone: None,
             filters: None,
             native_long: None,
+            colorimetric: false,
         }
     }
 }
