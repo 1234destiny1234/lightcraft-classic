@@ -830,7 +830,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         .then(|| app.session.render_job(id, rw.max(8), rh.max(8), false, !crop_tool))
         .flatten()
         .map(|job| {
-            let job = hdr_view_job(job.with_hidden_grading(app.ui.grading_hidden_for(id)));
+            let headroom = app.services.hdr_output.as_mut().and_then(|o| o.headroom());
+            // Tell the renderer whether to skip monitor profile conversion (P2-3).
+            if let Some(o) = app.services.hdr_output.as_ref() {
+                app.renderer.set_surface_extended_linear(o.extended());
+            }
+            let job = hdr_view_job(job.with_hidden_grading(app.ui.grading_hidden_for(id)), headroom);
             let key = job.key;
             if app.renderer.hdr_view.is_none_or(|v| v.key != key) {
                 app.renderer.request(Slot::HdrView, job, 98);
@@ -969,7 +974,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // between photos, and the full render replaces them in place)
     let hdr_view = app.renderer.hdr_view.filter(|v| v.photo == id && Some(v.key) == hdr_key);
     let draw = |slot: Slot, r: Rect, clip: Rect| -> &'static str {
-        if slot == Slot::Main
+        // For headless (CPU) screenshots, the HDR texture is GPU-only and not available in the
+        // CPU texture map, so fall back to the SDR texture (P2-2).
+        let use_hdr = hdr_view.is_some()
+            && !app.headless_screenshotting
+            && slot == Slot::Main;
+        if use_hdr
             && let Some(v) = hdr_view
         {
             let image_rect = fit_texture_rect(r, v.size);
@@ -1674,8 +1684,9 @@ fn targeted_drag(app: &mut LccApp, resp: &egui::Response, map: &CanvasMap, targe
 }
 
 /// The loupe's HDR render for an HDR display: `job` (a whole-frame render of the open photo, no
-/// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key.
-pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine::media::RenderJob {
+/// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key, including the
+/// headroom used for encoding so a headroom change re-uploads.
+pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob, headroom: Option<f32>) -> lcc_engine::media::RenderJob {
     job.request.depth = lcc_pipeline::OutputDepth::F32Hdr;
     job.request.space = lcc_pipeline::OutputSpace::Srgb;
     job.cache = None;
@@ -1684,6 +1695,10 @@ pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine:
     job.display = None;
     job.request.display = None;
     job.key ^= 0x4844_525f_5649_4557;
+    // Include headroom in the key so a headroom change re-uploads the texture (P2-4).
+    if let Some(h) = headroom {
+        job.key ^= h.to_bits() as u64;
+    }
     job
 }
 
@@ -3390,6 +3405,46 @@ mod tests {
         assert_eq!(flipped_corners(&h, true, false), screen);
         assert_eq!(flipped_corners(&v, false, true), screen);
         assert_eq!(flipped_corners(&hv, true, true), screen);
+    }
+
+    #[test]
+    fn hdr_view_job_key_includes_headroom() {
+        // A headroom change must produce a different render key so the texture is re-uploaded (P2-4).
+        let base = lcc_engine::media::RenderJob {
+            cache_generation: 0,
+            request_id: 1,
+            source_key: None,
+            photo: lcc_catalog::PhotoId(42),
+            level: lcc_engine::media::SourceLevel::Full,
+            source: lcc_engine::media::SourceRef::File { path: "/tmp/test.jpg".to_string(), max_edge: 100, loader: None, fallback: None, denoise: None, outliers: false },
+            origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
+            info: Default::default(),
+            settings: Default::default(),
+            request: lcc_pipeline::RenderRequest {
+                max_w: 100,
+                max_h: 100,
+                quality: Default::default(),
+                apply_crop: false,
+                overlay: Default::default(),
+                space: Default::default(),
+                depth: Default::default(),
+                proof: None,
+                window: None,
+                display: None,
+            },
+            key: 0,
+            cache: None,
+            view_cache: None,
+            stages: None,
+            display: None,
+            slide: None,
+            preview_cut: None,
+        };
+        let k1 = super::hdr_view_job(base.clone(), Some(2.0)).key;
+        let k2 = super::hdr_view_job(base.clone(), Some(4.0)).key;
+        let k3 = super::hdr_view_job(base.clone(), None).key;
+        assert_ne!(k1, k2, "different headroom values must produce different keys");
+        assert_ne!(k1, k3, "Some(headroom) must differ from None");
     }
 }
 
