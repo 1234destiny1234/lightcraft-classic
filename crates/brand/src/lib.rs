@@ -56,9 +56,35 @@ fn warn_legacy_env(legacy: &str, current: &str) {
     }
 }
 
-/// The platform config root: `~/Library/Application Support`, `%APPDATA%`, or `$XDG_CONFIG_HOME` / `~/.config`.
+/// Where the app keeps its settings and library on a platform with no home folder to derive them
+/// from (Android, whose app-private folders only the activity knows). Set once by the host at start-up,
+/// before anything asks for a folder; it then wins over the environment-based defaults.
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct PlatformDirs {
+    /// Replaces the platform config root: the settings folder is `<config_root>/<settings_dir>`.
+    pub config_root: PathBuf,
+    /// Replaces `~/Pictures`: the default library is `<pictures>/<library_default>`.
+    pub pictures: PathBuf,
+}
+
+static PLATFORM_DIRS: std::sync::OnceLock<PlatformDirs> = std::sync::OnceLock::new();
+
+/// Sets the [`PlatformDirs`] for this process. Only the first call counts; returns whether this one did.
+pub fn set_platform_dirs(dirs: PlatformDirs) -> bool {
+    PLATFORM_DIRS.set(dirs).is_ok()
+}
+
+/// The folders the host set with [`set_platform_dirs`], if any.
+pub fn platform_dirs() -> Option<&'static PlatformDirs> {
+    PLATFORM_DIRS.get()
+}
+
+/// The platform config root: the host's [`PlatformDirs`], else `~/Library/Application Support`,
+/// `%APPDATA%`, or `$XDG_CONFIG_HOME` / `~/.config`.
 fn config_root() -> Option<PathBuf> {
-    if cfg!(target_os = "macos") {
+    if let Some(d) = platform_dirs() {
+        Some(d.config_root.clone())
+    } else if cfg!(target_os = "macos") {
         std::env::var_os("HOME").map(|h| PathBuf::from(h).join("Library/Application Support"))
     } else if cfg!(windows) {
         std::env::var_os("APPDATA").map(PathBuf::from)

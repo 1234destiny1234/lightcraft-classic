@@ -40,6 +40,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("tiff", Class::Layer(0)),
     ("sysmem", Class::Layer(0)),
     ("hdrmeta", Class::Layer(0)),
+    ("android-host", Class::Layer(0)),
     ("audio-out", Class::Layer(0)),
     ("fetch", Class::Layer(0)),
     ("net", Class::Layer(0)),
@@ -96,6 +97,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("app", Class::Exempt),
     ("cli", Class::Exempt),
     ("web", Class::Exempt),
+    ("android", Class::Exempt),
     ("xtask", Class::Exempt),
 ];
 

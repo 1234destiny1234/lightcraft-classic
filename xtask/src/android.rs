@@ -24,7 +24,7 @@ pub fn run(args: &[&str]) -> Result<(), String> {
 }
 
 /// Workspace packages that must build for Android: every L0–L5 and standalone crate except the
-/// web app.
+/// web app, plus the Android app itself.
 fn android_set() -> Result<Vec<String>, String> {
     let crates = layers::from_metadata(&metadata()?)?;
     Ok(crates
@@ -36,6 +36,7 @@ fn android_set() -> Result<Vec<String>, String> {
             _ => false,
         })
         .map(|c| c.name)
+        .chain(std::iter::once("lcc-android".to_string()))
         .collect())
 }
 

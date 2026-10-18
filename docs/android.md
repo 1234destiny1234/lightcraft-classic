@@ -8,10 +8,26 @@ covers what exists today.
 | Stage | State |
 |---|---|
 | Shared crates build for `aarch64-linux-android` (`cargo xtask android check`, in `ci --fast`) | ✅ |
-| App host (`apps/android`, GameActivity, Storage Access Framework pickers) | not started |
+| App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 builds; Java activity and pickers next |
 | APK / AAB packaging (`cargo xtask android package`), release job, Play Store upload | not started |
 | Peer-to-peer catalog sync between desktop and Android | not started |
 | Touch / phone-sized layout | not started |
+
+## Design
+
+- **NativeActivity, not GameActivity.** android-activity's GameActivity backend compiles C++ from the Android Games
+  SDK; NativeActivity is pure Rust on our side. The Java side is one small `NativeActivity` subclass
+  (`packaging/android`) that runs the system pickers and opens links.
+- **Folders.** The host calls `lcc_brand::set_platform_dirs` before anything else. Settings go in the app's internal
+  data folder, and the library in its external data folder (`Android/data/<app_id>/files/<library name>`), which
+  the Files app can reach and which is removed with the app. No environment variables are set (`set_var` is unsafe
+  and racy once the activity's threads run).
+- **Pickers.** The shared UI's asynchronous `Services::picker` is answered by the Storage Access Framework. The
+  activity copies picked documents into the app's folders and answers with paths through a native callback that it
+  registers at start-up, so no symbol depends on the package name. For a save, it watches the path it handed out
+  and copies the written file to the chosen document.
+- **Settings** are written within seconds of a change (`apps/android/src/prefs.rs`), because Android can stop a
+  background app without calling `on_exit`.
 
 ## Toolchain
 
