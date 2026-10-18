@@ -1323,5 +1323,15 @@
   "Last synced {} h ago": "上次同步：{} 小时前",
   "Last synced on {}": "上次同步：{}",
   "{} wants to sync its library “{}” with this library.": "{} 想将其图库“{}”与此图库同步。",
-  "{} photos updated, {} copies": "已更新 {} 张照片，{} 个副本"
+  "{} photos updated, {} copies": "已更新 {} 张照片，{} 个副本",
+  "More Imports": "更多导入",
+  "More Exports": "更多导出",
+  "Libraries": "图库",
+  "Plug-ins": "插件",
+  "Filters": "筛选",
+  "Rotate & Flip": "旋转与翻转",
+  "Loupe Info": "放大视图信息",
+  "Before/After": "修改前/修改后",
+  "Edit Panels": "编辑面板",
+  "Screen Mode": "屏幕模式"
 }

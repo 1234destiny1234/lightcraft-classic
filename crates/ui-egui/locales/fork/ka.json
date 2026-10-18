@@ -16,5 +16,18 @@
   "is today": "დღესაა",
   "is yesterday": "გუშინაა",
   "Also the contributors to": "ასევე მონაწილეები:",
-  "Join the Discord": "Discord-ს შეუერთდით"
+  "Join the Discord": "Discord-ს შეუერთდით",
+  "More Imports": "სხვა იმპორტი",
+  "More Exports": "სხვა ექსპორტი",
+  "Catalog": "კატალოგი",
+  "Libraries": "ბიბლიოთეკები",
+  "Plug-ins": "დანამატები",
+  "Keymap": "კლავიშების რუკა",
+  "Filters": "ფილტრები",
+  "Rotate & Flip": "შემობრუნება და არეკვლა",
+  "Loupe Info": "ლუპის ინფორმაცია",
+  "Before/After": "მანამდე/შემდეგ",
+  "Edit Panels": "რედაქტირების პანელები",
+  "Screen Mode": "ეკრანის რეჟიმი",
+  "Grid View Style": "ბადის ხედის სტილი"
 }

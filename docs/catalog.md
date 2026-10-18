@@ -174,7 +174,7 @@ both). Photos match by file path and virtual-copy name, so a photo whose origina
 
 ## In the app
 
-- **File ▸ New Catalog… / Open Catalog… / Open Recent Catalog ▸** (UI commands `catalog.new`, `catalog.open`,
+- **File ▸ Catalog ▸ New Catalog… / Open Catalog… / Open Recent Catalog ▸** (UI commands `catalog.new`, `catalog.open`,
   `catalog.openRecent`; `crates/ui-egui/src/catalog_ui.rs`). Open validates the folder or entry point
   (`library::resolve`), so a folder that is no catalog is refused instead of becoming an empty library. The recent
   list is `recent-catalogs.json` in the config folder (`<PREFIX>_CONFIG_DIR`, portable data folder or `<settings_dir>`) (`RecentCatalogs`); its `default` is opened at startup when no
@@ -199,7 +199,7 @@ both). Photos match by file path and virtual-copy name, so a photo whose origina
   test, optimise after backup; standard preview size, 1:1 discard, previews at import. The preview settings live in
   `catalog-settings.json` (`previews`), no longer in the library's `prefs.json` (read from there once, moved on the next
   save). Browser and in-memory libraries keep them in `prefs.json`.
-- **File ▸ Export as Catalog…** (`catalog.export {parent, name, ids? | scope, originals, previews}`) and **Import from
+- **File ▸ Catalog ▸ Export as Catalog…** (`catalog.export {parent, name, ids? | scope, originals, previews}`) and **Import from
   Another Catalog…** (`catalog.import {path, rule, preview}`): the dialog shows the change preview and the rule for
   changed photos; the import is one undo step.
 - **Metadata vs XMP**: every XMP write (Save Metadata to File, auto-write) and read (Read Metadata from File, import

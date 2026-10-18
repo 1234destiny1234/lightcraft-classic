@@ -16,5 +16,18 @@
   "is today": "jest dzisiaj",
   "is yesterday": "jest wczoraj",
   "Also the contributors to": "Także współtwórcy projektu",
-  "Join the Discord": "Dołącz do Discorda"
+  "Join the Discord": "Dołącz do Discorda",
+  "More Imports": "Więcej importów",
+  "More Exports": "Więcej eksportów",
+  "Catalog": "Katalog",
+  "Libraries": "Biblioteki",
+  "Plug-ins": "Wtyczki",
+  "Keymap": "Mapa klawiszy",
+  "Filters": "Filtry",
+  "Rotate & Flip": "Obróć i odbij",
+  "Loupe Info": "Informacje w lupie",
+  "Before/After": "Przed/po",
+  "Edit Panels": "Panele edycji",
+  "Screen Mode": "Tryb ekranu",
+  "Grid View Style": "Styl siatki"
 }

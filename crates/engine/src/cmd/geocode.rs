@@ -269,7 +269,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "metadata.reverseGeocode",
             "Fill Location from GPS",
-            ["Photo"],
+            ["Metadata"],
             None,
             "{ids?, overwrite?: bool (also replace place fields that already have text; default false: only empty ones are filled), dryRun?, dataset?: folder} → {looked, found, changed, photos: [{id, place: {sublocation, city, state, country, iso, distance}}], attribution} — fills City / State / Country (and Sublocation when known) from GPS with the offline GeoNames place names (download them first); one undo step",
             has_selection,
@@ -281,7 +281,7 @@ pub fn specs() -> Vec<CommandSpec> {
     v.push(cmd!(
         "metadata.downloadPlaceNames",
         "Download Place Names (GeoNames)",
-        ["Photo"],
+        ["Metadata"],
         None,
         "{dataset?: folder} → {started, path, attribution} — downloads the GeoNames cities list (CC-BY 4.0, ~3 MB, from download.geonames.org) in the background for Fill Location from GPS; no photo data is sent",
         always,

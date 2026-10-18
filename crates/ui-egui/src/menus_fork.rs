@@ -23,7 +23,7 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
 /// P4.3: the Plug-in Manager (`crate::panels::plugins`); native only, so the web build lists none.
 #[cfg(not(target_arch = "wasm32"))]
 const PLUGIN_COMMANDS: &[UiCommand] = &[
-    ("plugins.manager", "Plug-in Manager…", None, "File"),
+    ("plugins.manager", "Plug-in Manager…", None, "File>Plug-ins"),
     ("plugins.install", "Install Plug-in…", None, ""),
     ("plugins.runItem", "Run Plug-in Command", None, ""),
 ];
