@@ -272,8 +272,43 @@ fn op_variants_are_versioned() {
             Op::SetHistoryCursor { .. } => 11,
         }
     }
-    /// v12: `Photo.preview_checked`, `Op::SetContent.preview_checked` and `Meta.focus`.
-    const NEWEST_FIELDS: u32 = 12;
+    /// v13: `Meta.gps_removed`.
+    const NEWEST_FIELDS: u32 = 13;
     let newest = since(&Op::SetHistoryCursor { id: crate::PhotoId(1), cursor: None });
     assert_eq!(newest.max(NEWEST_FIELDS), VERSION, "the newest op's or fields' version must be the current format version");
+}
+
+/// A cleared position is remembered by the catalog itself, whoever sets the metadata, and comes back with the position
+/// on undo; setting any position forgets it. A library from before the field opens with nothing remembered.
+#[test]
+fn a_cleared_gps_position_is_remembered_and_undone_with_it() {
+    let mut c = Catalog::new();
+    let op = photo(&mut c);
+    c.apply(op).unwrap();
+    let id = c.photos().next().unwrap().id;
+    let set = |c: &mut Catalog, gps: Option<(f64, f64)>| {
+        let meta = Meta { gps, ..c.photo(id).unwrap().meta.clone() };
+        c.apply(Op::SetMeta { id, meta: Box::new(meta) }).unwrap()
+    };
+    let state = |c: &Catalog| (c.photo(id).unwrap().meta.gps, c.photo(id).unwrap().meta.gps_removed);
+    set(&mut c, Some((10.5, 20.25)));
+    assert_eq!(state(&c), (Some((10.5, 20.25)), None));
+    let undo_clear = set(&mut c, None);
+    assert_eq!(state(&c), (None, Some((10.5, 20.25))), "the position that was cleared");
+    set(&mut c, None);
+    assert_eq!(state(&c), (None, Some((10.5, 20.25))), "other edits keep it");
+    c.apply(undo_clear).unwrap();
+    assert_eq!(state(&c), (Some((10.5, 20.25)), None), "undo brings the position back and forgets the removal");
+    set(&mut c, None);
+    set(&mut c, Some((1.0, 2.0)));
+    assert_eq!(state(&c), (Some((1.0, 2.0)), None), "a new position forgets it");
+
+    // a library saved by the previous format has no such field and no removal
+    let snap = c.to_snapshot();
+    assert!(!snap.contains("gps_removed"), "unset, it is not written");
+    let m = MemStore::new();
+    m.set(SNAPSHOT, format!("{{\"format\":\"lcc-catalog\",\"version\":12,\"seq\":2,\"catalog\":{snap}}}\n").into_bytes());
+    let (_, loaded, r) = Journal::open(Box::new(m.clone())).unwrap();
+    assert_eq!(loaded.photo(id).unwrap().meta.gps_removed, None);
+    assert_eq!((r.upgraded_from, snapshot_version(&m)), (Some(12), u64::from(VERSION)));
 }

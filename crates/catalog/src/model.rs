@@ -180,6 +180,12 @@ pub struct Meta {
     pub state: String,
     pub country: String,
     pub gps: Option<(f64, f64)>,
+    /// The position (latitude, longitude) that was cleared from [`Meta::gps`], while it stays cleared: saving the
+    /// sidecar removes the GPS tags it still states for that very position (a different one was written by another
+    /// application later, and stays). The catalog keeps it in step on [`crate::Op::SetMeta`]: clearing a position
+    /// remembers it, setting any position forgets it, so undo and redo bring it back with the position.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub gps_removed: Option<(f64, f64)>,
     pub title: String,
     pub caption: String,
     /// Accessibility text and long description.
