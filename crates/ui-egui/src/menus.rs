@@ -64,10 +64,10 @@ pub fn language_from_command(id: &str) -> Option<crate::i18n::Locale> {
 
 pub const UI_COMMANDS: &[UiCommand] = &[
     ("ui.dock", "Arrange Panel", None, ""),
-    ("ui.dock.reset", "Reset Panel Layout", None, "Window"),
+    ("ui.dock.reset", "Reset Panel Layout", None, "Window>Panels"),
     ("modelSetup.cancel", "Cancel Pending Photo Action", None, ""),
     ("view.photoGrid", "Photo Grid", None, "View"),
-    ("view.squareGrid", "Square Grid", None, "View"),
+    ("view.squareGrid", "Square Grid", None, "View>Grid View Style"),
     // G: Photo Grid ↔ Square Grid (from other views: the photo grid)
     ("view.gridToggle", "Grid", Some("G"), ""),
     ("library.selectOnlyActive", "Select Only Active Photo", Some("Cmd+Shift+D"), "Edit"),
@@ -77,88 +77,88 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.survey", "Survey", Some("N"), "View"),
     ("view.people", "People", None, "View"),
     ("view.person", "Show Person", None, ""),
-    ("view.faceBoxes", "Face Boxes", None, "View"),
-    ("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View"),
-    ("view.zoomToFocus", "Zoom to Focus Point", None, "View"),
-    ("view.reference", "Reference View", Some("Shift+R"), "View"),
+    ("view.faceBoxes", "Face Boxes", None, "View>Loupe Info"),
+    ("view.focusPoint", "Show Focus Point", Some("Alt+F"), "View>Loupe Info"),
+    ("view.zoomToFocus", "Zoom to Focus Point", None, "View>Loupe Info"),
+    ("view.reference", "Reference View", Some("Shift+R"), "View>Before/After"),
     ("photo.setReference", "Set as Reference Photo", None, ""),
     ("compare.swap", "Swap Compare Photos", None, "View"),
     ("compare.set", "Show in Compare", None, ""),
     ("compare.makeSelect", "Make Candidate the Select", None, "View"),
     ("view.autoAdvance", "Auto Advance", None, "Photo"),
-    ("view.filmstrip", "Filmstrip", Some("/"), "View"),
-    ("view.leftPanel", "My Photos Panel", Some("Cmd+Shift+L"), "View"),
-    ("view.beforeAfter", "Compare Before and After", Some("Y"), "View"),
-    ("view.beforeAfterSplit", "Before/After Split", Some("Shift+Y"), "View"),
-    ("view.beforeAfterTopBottom", "Before/After Top/Bottom", Some("Alt+Y"), "View"),
-    ("view.beforeAfterSplitTopBottom", "Before/After Split Top/Bottom", Some("Alt+Shift+Y"), "View"),
-    ("view.showOriginal", "Show Original", Some("\\"), "View"),
-    ("view.zoomFit", "Zoom to Fit", Some("Cmd+0"), "View"),
-    ("view.zoom100", "Zoom 100%", Some("Cmd+Alt+0"), "View"),
-    ("view.zoomToggle", "Toggle Zoom", Some("Z"), "View"),
+    ("view.filmstrip", "Filmstrip", Some("/"), "Window>Panels"),
+    ("view.leftPanel", "My Photos Panel", Some("Cmd+Shift+L"), "Window>Panels"),
+    ("view.beforeAfter", "Compare Before and After", Some("Y"), "View>Before/After"),
+    ("view.beforeAfterSplit", "Before/After Split", Some("Shift+Y"), "View>Before/After"),
+    ("view.beforeAfterTopBottom", "Before/After Top/Bottom", Some("Alt+Y"), "View>Before/After"),
+    ("view.beforeAfterSplitTopBottom", "Before/After Split Top/Bottom", Some("Alt+Shift+Y"), "View>Before/After"),
+    ("view.showOriginal", "Show Original", Some("\\"), "View>Before/After"),
+    ("view.zoomFit", "Zoom to Fit", Some("Cmd+0"), "View>Zoom"),
+    ("view.zoom100", "Zoom 100%", Some("Cmd+Alt+0"), "View>Zoom"),
+    ("view.zoomToggle", "Toggle Zoom", Some("Z"), "View>Zoom"),
     // the ratio a click (and Z / Space) zooms to
     ("view.clickZoom", "Click Zoom Ratio", None, ""),
     ("view.navigate", "Set Image Zoom and Pan", None, ""),
     ("view.zoomLevel", "Zoom Level", None, ""),
-    ("view.zoomIn", "Zoom In", Some("Cmd+="), "View"),
-    ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View"),
+    ("view.zoomIn", "Zoom In", Some("Cmd+="), "View>Zoom"),
+    ("view.zoomOut", "Zoom Out", Some("Cmd+-"), "View>Zoom"),
     // Library grids only (Photo Grid, Square Grid, People): the bottom-bar slider's step by key
-    ("view.thumbSizeUp", "Increase Grid Thumbnail Size", Some("="), "View"),
-    ("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View"),
+    ("view.thumbSizeUp", "Increase Grid Thumbnail Size", Some("="), "View>Grid View Style"),
+    ("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View>Grid View Style"),
     ("view.clipping", "Show Clipping", Some("J"), "View"),
-    ("view.visualizeHdr", "Visualize HDR", None, "View"),
+    ("view.visualizeHdr", "Visualize HDR", None, "View>Loupe Info"),
     ("view.colorReadout", "Color Readout", None, ""),
-    ("view.colorReadoutRgb", "Show RGB Color Values", None, "View>Color Values"),
-    ("view.colorReadoutHsl", "Show HSL Color Values", None, "View>Color Values"),
-    ("view.colorReadoutLab", "Show Lab Color Values", None, "View>Color Values"),
+    ("view.colorReadoutRgb", "Show RGB Color Values", None, "View>Loupe Info"),
+    ("view.colorReadoutHsl", "Show HSL Color Values", None, "View>Loupe Info"),
+    ("view.colorReadoutLab", "Show Lab Color Values", None, "View>Loupe Info"),
     // in grids S expands/collapses stacks (the engine command it shadows)
     ("view.softProof", "Soft Proofing", Some("S"), "View"),
-    ("view.histogram", "Histogram", Some("Cmd+Shift+H"), "View"),
+    ("view.histogram", "Histogram", Some("Cmd+Shift+H"), "Window>Panels"),
     // histograms & scopes (issue #206): which distribution the panel draws, and how tall its bins
     // are. Both take the value to select, or step to the next one with no parameter, so the menu,
     // a shortcut, the control channel and MCP all reach them by id.
-    ("view.histogram.mode", "Histogram Mode", None, "View"),
-    ("view.histogram.scale", "Histogram Scale", None, "View"),
-    ("view.maskOverlay", "Show Mask Overlay", Some("O"), "View"),
+    ("view.histogram.mode", "Histogram Mode", None, "Window>Panels"),
+    ("view.histogram.scale", "Histogram Scale", None, "Window>Panels"),
+    ("view.maskOverlay", "Show Mask Overlay", Some("O"), "View>Tool Overlay"),
     // Ctrl+Shift+O / Cmd+Shift+O: every mask's region at once, not just the selected one
-    ("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View"),
+    ("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View>Tool Overlay"),
     // Shift+O in the Masking panel (elsewhere it cycles the crop overlay)
-    ("view.maskOverlayMode", "Cycle Mask Overlay Mode", None, "View"),
-    ("view.maskOverlayColor", "Cycle Mask Overlay Color", None, "View"),
-    ("view.maskPins", "Show Mask Pins", None, "View"),
+    ("view.maskOverlayMode", "Cycle Mask Overlay Mode", None, "View>Tool Overlay"),
+    ("view.maskOverlayColor", "Cycle Mask Overlay Color", None, "View>Tool Overlay"),
+    ("view.maskPins", "Show Mask Pins", None, "View>Tool Overlay"),
     // {mode?: auto | always | selected | never}: when spot and mask pins show (steps to the next
     // mode when omitted; Shift+H, like Classic's H for pins, since H opens Remove). View ▸ Tool
     // Overlay and the Remove panel list the modes.
     ("view.toolOverlay", "Cycle Tool Overlay", Some("Shift+H"), ""),
-    ("view.visualizeSpots", "Visualize Spots", Some("A"), "View"),
-    ("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View"),
-    ("view.cropOverlayOrientation", "Cycle Crop Overlay Orientation", None, "View"),
+    ("view.visualizeSpots", "Visualize Spots", Some("A"), "View>Tool Overlay"),
+    ("view.cropOverlay", "Cycle Crop Overlay", Some("Shift+O"), "View>Tool Overlay"),
+    ("view.cropOverlayOrientation", "Cycle Crop Overlay Orientation", None, "View>Tool Overlay"),
     ("view.back", "Back to Grid", Some("Escape"), ""),
     ("tool.done", "Done", Some("Enter"), ""),
-    ("view.filterBar", "Filter Bar", Some("Shift+F"), "View"),
+    ("view.filterBar", "Filter Bar", Some("Shift+F"), "Library>Filters"),
     ("local.addRoot", "Add Folder to Local", None, ""),
     ("local.hide", "Remove from Local", None, ""),
     ("local.restoreHidden", "Show Hidden Local Locations", None, ""),
-    ("view.fullScreenPreview", "Full Screen Preview", Some("F"), "View"),
-    ("view.enterFullScreen", "Enter Full Screen", Some("Cmd+Shift+F"), "View"),
-    ("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View"),
+    ("view.fullScreenPreview", "Full Screen Preview", Some("F"), "Window>Screen Mode"),
+    ("view.enterFullScreen", "Enter Full Screen", Some("Cmd+Shift+F"), "Window>Screen Mode"),
+    ("view.infoOverlay", "Cycle Info Overlay", Some("Cmd+I"), "View>Loupe Info"),
     ("view.chooseLayoutImage", "Choose Layout Image…", None, "View"),
     ("view.layoutImage", "Show Layout Image", Some("Cmd+Alt+O"), "View"),
     ("view.layoutImageOpacity", "Layout Image Opacity", None, ""),
     ("view.layoutImageMatte", "Layout Image Matte", None, ""),
-    ("view.navigator", "Navigator", None, "View"),
-    ("panel.edit", "Edit", Some("E"), "Window"),
-    ("panel.profiles", "Profile Browser", None, "Window"),
-    ("panel.crop", "Crop & Rotate", Some("C"), "Window"),
-    ("panel.remove", "Remove", Some("H"), "Window"),
-    ("panel.masking", "Masking", Some("M"), "Window"),
-    ("panel.redeye", "Red Eye", None, "Window"),
+    ("view.navigator", "Navigator", None, "Window>Panels"),
+    ("panel.edit", "Edit", Some("E"), "Window>Edit Panels"),
+    ("panel.profiles", "Profile Browser", None, "Window>Edit Panels"),
+    ("panel.crop", "Crop & Rotate", Some("C"), "Window>Edit Panels"),
+    ("panel.remove", "Remove", Some("H"), "Window>Edit Panels"),
+    ("panel.masking", "Masking", Some("M"), "Window>Edit Panels"),
+    ("panel.redeye", "Red Eye", None, "Window>Edit Panels"),
     // no default key: Shift+P is Lightroom Classic's pick-and-advance (a `shortcuts::ALIASES` entry)
-    ("panel.presets", "Presets", None, "Window"),
-    ("panel.info", "Info", Some("I"), "Window"),
-    ("panel.keywords", "Keywords", Some("K"), "Window"),
-    ("panel.versions", "Versions", Some("Shift+V"), "Window"),
-    ("panel.activity", "History", None, "Window"),
+    ("panel.presets", "Presets", None, "Window>Panels"),
+    ("panel.info", "Info", Some("I"), "Window>Panels"),
+    ("panel.keywords", "Keywords", Some("K"), "Window>Panels"),
+    ("panel.versions", "Versions", Some("Shift+V"), "Window>Panels"),
+    ("panel.activity", "History", None, "Window>Panels"),
     ("panel.close", "Close Panel", None, ""),
     // {solo?}: true opens just that section (⌥-click on its header); otherwise opens or closes it
     ("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections"),
@@ -184,13 +184,13 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.newAlbum", "New Collection…", Some("Cmd+N"), "Library"),
     ("dialog.newFolder", "New Collection Set…", Some("Cmd+Shift+N"), "Library"),
     ("dialog.smartAlbum", "New Smart Collection…", None, "Library"),
-    ("view.photoCounts", "Show Photo Counts", None, "View"),
+    ("view.photoCounts", "Show Photo Counts", None, "Window>Panels"),
     ("view.sidebarSection", "Show Sidebar Section", None, ""),
     ("view.sidebarMoveSection", "Move Sidebar Section", None, ""),
     ("view.sidebarReset", "Reset Sidebar Sections", None, ""),
-    ("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "View"),
-    ("view.slideshowOptions", "Slideshow Options…", None, "View"),
-    ("dialog.slideshowExport", "Export Slideshow…", None, "View"),
+    ("view.slideshow", "Slideshow", Some("Cmd+Alt+Enter"), "Window>Slideshow"),
+    ("view.slideshowOptions", "Slideshow Options…", None, "Window>Slideshow"),
+    ("dialog.slideshowExport", "Export Slideshow…", None, "Window>Slideshow"),
     ("app.slideshowExport", "Export Slideshow", None, ""),
     // the slideshow's playback controls (Space, ←/→ and Esc while it plays)
     ("slideshow.togglePause", "Pause / Resume Slideshow", None, ""),
@@ -199,16 +199,16 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("slideshow.end", "End Slideshow", None, ""),
     ("view.secondWindow", "Second Window", Some("Cmd+F11"), "Window"),
     ("tool.keywordPainter", "Keyword Painter", None, ""),
-    ("tool.painter", "Painter", Some("Cmd+Alt+K"), "Photo"),
+    ("tool.painter", "Painter", Some("Cmd+Alt+K"), "Library"),
     ("view.gridCellStyle", "Grid Cell Style", None, ""),
-    ("dialog.viewOptions", "View Options…", Some("Cmd+J"), "View"),
+    ("dialog.viewOptions", "View Options…", Some("Cmd+J"), "View>Grid View Style"),
     ("view.cellCompact", "Compact Cells", None, "View>Grid View Style"),
     ("view.cellExpanded", "Expanded Cells", None, "View>Grid View Style"),
     ("view.cellIndex", "Show Index Numbers", None, "View>Grid View Style"),
     ("view.cellBadges", "Show Thumbnail Badges", None, "View>Grid View Style"),
     // Library's `=` / `-`, Home / End (module keys, see `crate::module::LIBRARY_KEYS`)
-    ("view.thumbLarger", "Increase Thumbnail Size", None, "View"),
-    ("view.thumbSmaller", "Decrease Thumbnail Size", None, "View"),
+    ("view.thumbLarger", "Increase Thumbnail Size", None, "View>Grid View Style"),
+    ("view.thumbSmaller", "Decrease Thumbnail Size", None, "View>Grid View Style"),
     ("library.first", "First Photo", None, ""),
     ("library.last", "Last Photo", None, ""),
     // Develop's ⇧Q: the selected spot's mode Remove → Heal → Clone
@@ -220,24 +220,24 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.appearance", "Next Appearance Mode", None, ""),
     // {theme: charcoal | midnight | silver | paper}: pick a theme and fix the mode to its family.
     ("view.theme", "Theme", None, ""),
-    ("dialog.allMetadata", "All Metadata…", None, "Photo"),
+    ("dialog.allMetadata", "All Metadata…", None, "Metadata"),
     ("dialog.faceModel", "Add Face Model…", None, ""),
     ("dialog.newSmartAlbum", "New Smart Collection from Filter…", Some("Cmd+Alt+N"), "Library"),
-    ("dialog.createPreset", "Create Preset…", Some("Cmd+Shift+P"), "Photo"),
+    ("dialog.createPreset", "Create Preset…", Some("Cmd+Shift+P"), "Photo>Develop Settings"),
     ("dialog.autoStack", "Auto-Stack by Capture Time…", None, "Photo>Stack"),
-    ("dialog.copySettings", "Choose Edit Settings to Copy…", Some("Cmd+Shift+C"), "Edit"),
-    ("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Edit"),
+    ("dialog.copySettings", "Choose Edit Settings to Copy…", Some("Cmd+Shift+C"), "Photo>Develop Settings"),
+    ("dialog.pasteSettings", "Paste Selected Settings…", Some("Cmd+Shift+V"), "Photo>Develop Settings"),
     ("dialog.syncSettings", "Sync Settings…", Some("Cmd+Shift+S"), "Photo>Develop Settings"),
     ("view.focusSearch", "Find…", Some("Cmd+F"), "Library"),
     ("dialog.export", "Export…", None, "File"),
     ("dialog.print", "Print…", Some("Cmd+P"), "File"),
     ("app.print", "Print to PDF", None, ""),
-    ("dialog.contactSheet", "Contact Sheet PDF…", None, "File"),
+    ("dialog.contactSheet", "Contact Sheet PDF…", None, "File>More Exports"),
     ("app.contactSheet", "Export Contact Sheet PDF", None, ""),
     ("photo.editInPhotoCraft", "Edit in PhotoCraft", Some("Cmd+Shift+E"), "Photo>Edit In"),
     ("photo.editInExternal", "Edit in Other Editor", Some("Cmd+Alt+E"), "Photo>Edit In"),
     ("dialog.editInPresets", "Edit In Presets…", None, "Photo>Edit In"),
-    ("panel.actions", "Actions", None, "Window"),
+    ("panel.actions", "Actions", None, "Window>Panels"),
     // {ids?, app?}: the original files themselves (a raw stays a raw: no render, no copy), opened
     // in the other editor, e.g. a raw developer
     ("photo.openOriginalInExternal", "Open Original in Other Editor (RAW, no copy)", None, "Photo>Edit In"),
@@ -251,46 +251,48 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("merge.focusStackLast", "Focus Stack with Last Settings", None, "Photo>Photo Merge"),
     ("file.addPhotos", "Import Photos…", Some("Cmd+Shift+I"), "File"),
     ("file.addFolder", "Import from Folder…", None, "File"),
-    ("file.importLightroom", "Import Lightroom Catalog…", None, "File"),
-    ("file.importImmich", "Import from Immich…", None, "File"),
+    ("file.importLightroom", "Import Lightroom Catalog…", None, "File>More Imports"),
+    ("file.importImmich", "Import from Immich…", None, "File>More Imports"),
     ("immich.connections", "Immich Settings…", None, "Library>Immich"),
     ("file.addFromDevice", "Import from Device", None, ""),
     ("file.findMissing", "Find Missing Photos…", None, "Library"),
-    ("file.backupLibrary", "Back Up Library…", None, "File"),
-    ("file.restoreLibrary", "Restore Library from Backup…", None, "File"),
+    ("file.backupLibrary", "Back Up Library…", None, "File>Libraries"),
+    ("file.restoreLibrary", "Restore Library from Backup…", None, "File>Libraries"),
     ("photo.locate", "Locate Missing File…", None, ""),
     ("dialog.saveMetadataPreset", "Save Metadata Preset…", None, ""),
     ("app.quit", "Quit {app}", Some("Cmd+Q"), "File"),
-    ("file.importPresets", "Import Profiles & Presets…", None, "File"),
-    ("file.exportPresets", "Export Presets…", None, "File"),
+    ("file.importPresets", "Import Profiles & Presets…", None, "File>More Imports"),
+    ("file.exportPresets", "Export Presets…", None, "File>More Exports"),
     // Masking panel ▸ Effect menu
     ("dialog.saveMaskEffect", "Save Current Settings as New Effect Preset…", None, ""),
     ("dialog.manageMaskEffects", "Manage Effect Presets…", None, ""),
     ("file.exportMaskEffects", "Export Effect Presets…", None, ""),
-    ("file.importKeywords", "Import Keywords…", None, "File"),
-    ("file.exportKeywords", "Export Keywords…", None, "File"),
+    ("file.importKeywords", "Import Keywords…", None, "File>More Imports"),
+    ("file.exportKeywords", "Export Keywords…", None, "File>More Exports"),
     // Edit panel ▸ Curve ▸ Point Curve dropdown
     ("file.importCurvePresets", "Import Point Curve Presets…", None, ""),
     ("file.exportCurvePresets", "Export Point Curve Presets…", None, ""),
     ("dialog.watermark", "Edit Watermarks…", None, "Edit"),
     ("app.settings", "Settings…", Some("Cmd+,"), "Edit"),
-    ("app.newLibrary", "New Library…", None, "File"),
-    ("app.openLibrary", "Open Library…", Some("Cmd+O"), "File"),
+    ("app.newLibrary", "New Library…", None, "File>Libraries"),
+    ("app.openLibrary", "Open Library…", Some("Cmd+O"), "File>Libraries"),
     // catalogs (crate::catalog_ui)
-    ("catalog.new", "New Catalog…", None, "File"),
-    ("catalog.open", "Open Catalog…", None, "File"),
+    ("catalog.new", "New Catalog…", None, "File>Catalog"),
+    ("catalog.open", "Open Catalog…", None, "File>Catalog"),
     ("catalog.openRecent", "Open Recent Catalog", None, ""),
     ("catalog.chooser", "Choose Catalog…", None, ""),
     ("catalog.welcome", "Welcome…", None, ""),
     ("catalog.promptAtStartup", "Show the Catalog Chooser at Startup", None, ""),
     ("dialog.catalogSettings", "Catalog Settings…", None, "Edit"),
-    ("dialog.exportCatalog", "Export as Catalog…", None, "File"),
-    ("dialog.importCatalog", "Import from Another Catalog…", None, "File"),
+    ("dialog.exportCatalog", "Export as Catalog…", None, "File>Catalog"),
+    ("dialog.importCatalog", "Import from Another Catalog…", None, "File>More Imports"),
     ("app.recentLibraries", "Recent Libraries", None, ""),
     ("app.clearRecentLibraries", "Clear Recent Libraries", None, ""),
     // Settings ▸ Display
     ("app.displayProfile", "Display Profile", None, ""),
     ("app.lensDbFolder", "Choose Lens Database Folder…", None, ""),
+    ("app.folders", "Folders", None, ""),
+    ("app.exportFolder", "Choose Export Folder…", None, ""),
     ("app.about", "About {app}", None, "Help"),
     ("app.checkForUpdates", "Check for Updates…", None, "Help"),
     ("app.installUpdate", "Install Update and Relaunch", None, "Help"),
@@ -298,7 +300,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
     ("app.whatsNew", "What's New", None, "Help"),
-    ("dialog.cull", "Assisted Culling…", None, "Photo"),
+    ("dialog.cull", "Assisted Culling…", None, "Library"),
     ("app.help", "{app} Help", Some("F1"), "Help"),
     ("app.feedback", "Send Feedback…", None, "Help"),
     ("app.website", "{app} Website", None, "Help"),
@@ -308,15 +310,15 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.setShortcut", "Set Keyboard Shortcut", None, ""),
     ("app.resetShortcuts", "Reset All Keyboard Shortcuts", None, ""),
     ("app.keymapSet", "Keymap Set", None, ""),
-    ("app.keymapExport", "Export Keymap…", None, "Help"),
-    ("app.keymapImport", "Import Keymap…", None, "Help"),
+    ("app.keymapExport", "Export Keymap…", None, "Edit>Keymap"),
+    ("app.keymapImport", "Import Keymap…", None, "Edit>Keymap"),
     ("app.export", "Export Now", None, ""),
-    ("app.showInFinder", "Show in Finder", Some("Cmd+R"), "Photo"),
+    ("app.showInFinder", "Show in Finder", Some("Cmd+R"), "Photo>File"),
     ("app.openSamModelFolder", "Show in File Manager", None, ""),
     ("dialog.rename", "Rename Photos…", Some("F2"), "Library"),
     ("dialog.labelNames", "Edit Color Label Names…", None, ""),
-    ("dialog.captureTime", "Edit Capture Time…", None, "Photo"),
-    ("photo.tagFromTracklog", "Auto-Tag from Tracklog…", None, "Photo"),
+    ("dialog.captureTime", "Edit Capture Time…", None, "Metadata"),
+    ("photo.tagFromTracklog", "Auto-Tag from Tracklog…", None, "Metadata"),
     ("app.exportPrevious", "Export with Previous", Some("Cmd+Alt+Shift+E"), "File"),
 ];
 
@@ -867,6 +869,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "app.clearRecentLibraries" => crate::panels::settings::recent_libraries(app, &json!({"clear": true})),
         "app.displayProfile" => crate::panels::settings::display_profile(app, p),
         "app.lensDbFolder" => crate::panels::settings::lens_db_folder(app, p),
+        "app.folders" => Ok(crate::panels::settings_folders::folders(app)),
+        "app.exportFolder" => crate::panels::settings_folders::export_folder(app, p),
         "file.backupLibrary" | "file.restoreLibrary" => {
             let action = if id == "file.backupLibrary" { app.services.backup_library.as_mut() } else { app.services.restore_library.as_mut() };
             match action {
@@ -1993,7 +1997,18 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 .iter()
                 .filter(|p| {
                     let l = p.to_ascii_lowercase();
-                    l.ends_with(".cube") || l.ends_with(".zip") || std::path::Path::new(p.as_str()).is_dir()
+                    l.ends_with(".cube")
+                        || l.ends_with(".zip")
+                        || std::path::Path::new(p.as_str()).is_dir()
+                        || lcc_engine::xmp_look::is_look_file(std::path::Path::new(p.as_str()))
+                })
+                .collect();
+            // .dcp camera profiles (and those inside zips / folders): active for their camera from the next start
+            let dcp_paths: Vec<&String> = paths
+                .iter()
+                .filter(|p| {
+                    let l = p.to_ascii_lowercase();
+                    l.ends_with(".dcp") || l.ends_with(".zip") || std::path::Path::new(p.as_str()).is_dir()
                 })
                 .collect();
             // one toast for both halves (a second toast would replace the first)
@@ -2025,7 +2040,35 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                     }
                 }
             }
-            let preset_paths: Vec<&String> = paths.iter().filter(|p| !p.to_ascii_lowercase().ends_with(".cube")).collect();
+            if !dcp_paths.is_empty() {
+                match app.session.execute("camera.importDcp", &json!({"paths": dcp_paths})) {
+                    Ok(v) => {
+                        let n = v["imported"].as_array().map_or(0, Vec::len);
+                        if n > 0 {
+                            parts.push(format!(
+                                "Imported {n} camera profile{} (.dcp): pick one per photo in Profiles ▸ Camera Profile",
+                                if n == 1 { "" } else { "s" }
+                            ));
+                        }
+                        if v["restart"].as_bool() == Some(true) {
+                            parts.push(crate::i18n::tr("A new camera default applies after a restart").to_string());
+                        }
+                        problems.extend(v["failed"].as_array().into_iter().flatten().map(|f| {
+                            let name = f.get(0).and_then(Value::as_str).unwrap_or_default();
+                            let reason = f.get(1).and_then(Value::as_str).unwrap_or_default();
+                            format!("{name}: {reason}")
+                        }));
+                    }
+                    Err(e) => problems.push(e.to_string()),
+                }
+            }
+            let preset_paths: Vec<&String> = paths
+                .iter()
+                .filter(|p| {
+                    let l = p.to_ascii_lowercase();
+                    !l.ends_with(".cube") && !l.ends_with(".dcp") && !lcc_engine::xmp_look::is_look_file(std::path::Path::new(p.as_str()))
+                })
+                .collect();
             let r = if preset_paths.is_empty() {
                 Ok(json!({"imported": [], "failed": [], "skipped": 0}))
             } else {

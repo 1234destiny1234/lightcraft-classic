@@ -1103,10 +1103,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     super::layout_overlay::draw(app, &p, img_rect);
     register(ui.ctx(), "canvas:image", img_rect);
     let map = crop_view.map_or_else(|| CanvasMap::new(&frame, img_rect), |v| v.map);
-    info_overlay(app, &p, canvas, &photo);
-    if !fullscreen {
-        filter_pill(app, ui, canvas);
-    }
+    let hide_filter = app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop;
+    let pill = if !fullscreen && !hide_filter { filter_pill(app, ui, canvas) } else { None };
+    info_overlay(app, &p, canvas, &photo, pill);
     if app.ui.face_boxes {
         // a name box left open on another photo is dropped
         if app.ui.name_edit.as_ref().is_some_and(|e| e.photo != id.0) {
@@ -1233,8 +1232,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
 }
 
 /// The info overlay at the canvas' top left (`view.infoOverlay`): file name with the capture date
-/// and size, or with the camera and exposure.
-fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catalog::Photo) {
+/// and size, or with the camera and exposure. If an active filter pill sits in the top-left
+/// corner, the info overlay begins cleanly below it to avoid collision (issue #266).
+fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catalog::Photo, pill: Option<Rect>) {
     use crate::state::InfoOverlay;
     let lines: Vec<String> = match app.ui.info_overlay {
         InfoOverlay::Off => return,
@@ -1268,7 +1268,8 @@ fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catal
         }
     };
     let t = Tokens::get(p.ctx());
-    let mut y = canvas.top() + 12.0;
+    let mut y = pill.map_or(canvas.top() + 12.0, |r| r.bottom() + 6.0);
+    let start_y = pill.map_or(canvas.top(), |r| r.bottom() + 2.0);
     for (i, l) in lines.iter().enumerate() {
         let font = if i == 0 { t.semibold(15.0) } else { t.font(12.5) };
         // laid out uncoloured: `galley` only fills placeholder text with its colour, so a white
@@ -1280,7 +1281,7 @@ fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catal
         p.galley(at, g.clone(), Color32::WHITE);
         y += g.size().y + 3.0;
     }
-    register(p.ctx(), "canvas:infoOverlay", Rect::from_min_max(canvas.min, pos2(canvas.left() + 320.0, y)));
+    register(p.ctx(), "canvas:infoOverlay", Rect::from_min_max(pos2(canvas.left(), start_y), pos2(canvas.left() + 320.0, y)));
 }
 
 /// What the user did to a face box this frame.
@@ -1456,13 +1457,17 @@ fn region_overlay(
     edit
 }
 
+/// The filter pill's inset from the canvas corner and its height (the info overlay goes below it).
+const FILTER_PILL_INSET: f32 = 3.0;
+const FILTER_PILL_HEIGHT: f32 = 20.0;
+
 /// A small pill at the loupe's top left naming the active filters: the filmstrip and Next / Previous
 /// follow them, so a filter must never be invisible here. A click clears them all. It sits in the
 /// canvas margin, so the photo does not move.
-fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
+fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) -> Option<Rect> {
     let chips = lcc_engine::filter_chips(&app.session.filter, &app.session.catalog);
     if chips.is_empty() {
-        return;
+        return None;
     }
     let t = Tokens::get(ui.ctx());
     let p = ui.painter_at(canvas);
@@ -1470,9 +1475,9 @@ fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
         chips.iter().map(|c| crate::panels::chips::display_label(c, &app.session.filter, &app.session.catalog)).collect::<Vec<_>>().join("  ·  ");
     let g = p.layout_no_wrap(crate::i18n::tr_format!("Filtered: {label}", label = label), t.font(12.0), Color32::from_gray(225));
     // the same inset from the left as from the top, so the pill sits in the corner (#1645)
-    let inset = 3.0;
+    let inset = FILTER_PILL_INSET;
     let w = (g.size().x + 40.0).min((canvas.width() - 2.0 * inset).max(60.0));
-    let r = Rect::from_min_size(canvas.min + vec2(inset, inset), vec2(w, 20.0));
+    let r = Rect::from_min_size(canvas.min + vec2(inset, inset), vec2(w, FILTER_PILL_HEIGHT));
     let resp = ui.interact(r, egui::Id::new("loupe-filter-pill"), Sense::click());
     crate::widgets::announce(&resp, crate::i18n::tr("Filters"));
     register(ui.ctx(), "loupe:filters", r);
@@ -1486,6 +1491,7 @@ fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
     if resp.on_hover_text(crate::i18n::tr("Click to clear these filters")).clicked() {
         let _ = app.run("library.clearFilter", json!({}));
     }
+    Some(r)
 }
 
 /// A raw shown from its embedded JPEG (issue #10): a pill at the canvas' top centre saying so;
@@ -3410,7 +3416,7 @@ mod tests {
                 loader: None,
                 fallback: None,
                 denoise: None,
-                outliers: false,
+                options: Default::default(),
             },
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
@@ -3528,7 +3534,7 @@ mod info_overlay_tests {
         crate::theme::install_fonts(&ctx);
         let canvas = Rect::from_min_size(pos2(52.0, 82.0), vec2(800.0, 500.0));
         let raw = crate::headless::HeadlessView::raw_input(vec2(1000.0, 700.0), 1.0, 0.0, vec![]);
-        let mut out = ctx.run_ui(raw, |ui| info_overlay(&app, ui.painter(), canvas, &photo));
+        let mut out = ctx.run_ui(raw, |ui| info_overlay(&app, ui.painter(), canvas, &photo, None));
         out.textures_delta.clear();
         // the colour a text shape paints its glyphs in, as epaint resolves it
         let ink = |s: &egui::epaint::TextShape| {
@@ -3548,5 +3554,54 @@ mod info_overlay_tests {
         assert_eq!(copies.len(), 2, "the file name and its shadow: {copies:?}");
         assert_eq!(copies[1], Color32::WHITE, "the text on top");
         assert!(copies[0].r() < 64 && copies[0].a() > 0, "the shadow under it is dark: {:?}", copies[0]);
+    }
+
+    /// Issue #266: when filters are active in the loupe, the filter pill and the info overlay
+    /// box do not collide/superimpose; the info overlay renders cleanly below the filter pill.
+    #[test]
+    fn info_overlay_renders_below_filter_pill_when_filters_active() {
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+        app.ui.info_overlay = crate::state::InfoOverlay::Basic;
+        app.session.filter.text = "demo".into();
+        let photo = app.session.catalog.photos().next().map(|p| (**p).clone()).expect("the demo catalog has photos");
+        let ctx = egui::Context::default();
+        crate::theme::install_fonts(&ctx);
+        let canvas = Rect::from_min_size(pos2(52.0, 82.0), vec2(800.0, 500.0));
+        let raw = crate::headless::HeadlessView::raw_input(vec2(1000.0, 700.0), 1.0, 0.0, vec![]);
+        let mut out = ctx.run_ui(raw, |ui| {
+            let pill = filter_pill(&mut app, ui, canvas);
+            assert!(pill.is_some(), "filter pill is shown when filters are active");
+            info_overlay(&app, ui.painter(), canvas, &photo, pill);
+        });
+        out.textures_delta.clear();
+        let widgets = crate::widgets::take_registry(&ctx);
+        let pill_rect = widgets.iter().find(|(w, _)| w == "loupe:filters").map(|(_, r)| *r).expect("loupe:filters registered");
+        let info_rect = widgets.iter().find(|(w, _)| w == "canvas:infoOverlay").map(|(_, r)| *r).expect("canvas:infoOverlay registered");
+        assert!(info_rect.top() >= pill_rect.bottom(), "info overlay {info_rect:?} is below filter pill {pill_rect:?}");
+        assert!(!info_rect.intersects(pill_rect), "info overlay does not overlap filter pill");
+    }
+
+    /// When `hide_filter_in_develop` is enabled in Settings ▸ Interface, the filter pill is
+    /// hidden in Develop mode, but remains visible in Library mode.
+    #[test]
+    fn hide_filter_in_develop_setting_hides_pill_in_develop_only() {
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+        app.session.filter.text = "demo".into();
+        app.ui.settings.hide_filter_in_develop = true;
+
+        // In Develop mode with the setting enabled, the filter pill is suppressed
+        app.ui.module = crate::module::ModuleId::Develop;
+        let hide_in_develop = app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop;
+        assert!(hide_in_develop);
+
+        // In Library mode, the filter pill is not suppressed
+        app.ui.module = crate::module::ModuleId::Library;
+        let hide_in_library = app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop;
+        assert!(!hide_in_library);
+
+        // When the setting is disabled, the filter pill is shown in both modes
+        app.ui.settings.hide_filter_in_develop = false;
+        app.ui.module = crate::module::ModuleId::Develop;
+        assert!(!(app.ui.settings.hide_filter_in_develop && app.ui.module == crate::module::ModuleId::Develop));
     }
 }

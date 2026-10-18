@@ -128,7 +128,7 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 | 2026-10-13 | minor | Gap 19: plug-in data (namespaces, custom field values) kept per library, so two libraries' same photo id no longer share values (old files migrate to the first library opened); number fields compare as numbers in smart-album and filter rules |
 | 2026-10-13 | minor | Gap 19: plug-in custom metadata fields are read back from XMP sidecars (import, Synchronize Folder, Read Metadata from File) into the plug-in's data |
 | 2026-10-13 | minor | Gap 10 shrinks: ARW version 1 (A100, A200…A390) and the Z 6II's packed NEF decode; 31 popular bodies verified with pinned CC0 files; 278 models verified, use-weighted 89% |
-| 2026-10-13 | minor | Gap 25 closed: lossy DNG export, Photo ▸ Render to DNG / Rendered DNG export, AVIF import on `filmcraft-av1` |
+| 2026-10-13 | minor | Gap 25 closed: lossy DNG export, Photo ▸ File ▸ Render to DNG / Rendered DNG export, AVIF import on `filmcraft-av1` |
 | 2026-10-13 | minor | Gap 13: Lightroom develop history imports as History (named steps, oldest first); smart-collection collection-name and capture / edit date rules map to album and date rules |
 | 2026-10-13 | minor | Gap 24 shrinks: brush A / B presets (`brush.preset`, each with its own size, feather, flow, density) and a Density slider; only pen pressure remains, 4–8 h → 3–6 h. Mask Feather checked: it keeps a radial mask's half-selected contour (regression test); a small ellipse's soft fringe is the same width all round, so it reads rounder |
 | 2026-10-13 | minor | Gap 20: Minolta MRW decodes (16-bit and 12-bit packed), 6 bodies checked against the camera JPEG |

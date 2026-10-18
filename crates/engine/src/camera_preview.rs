@@ -5,6 +5,7 @@
 //! lime shirt olive that the camera kept lime): a hue/saturation table fitted to the residuals
 //! (applied like a DNG `ProfileHueSatMap`) corrects that when it also improves the held-out pixels.
 use lcc_color::{D50, D65, Mat3, PROPHOTO, REC2020, Xy, bradford, luminance_2020};
+use lcc_develop::CameraColour;
 use lcc_pipeline::tone::{CameraTone, ToneMap};
 use lcc_raster::{
     Rgb32f,
@@ -95,13 +96,19 @@ pub(crate) fn file_local_look(format: RawFormat) -> bool {
 /// `lens` is the file's own lens-correction warp ([`lens_geometry`], read before the caller removes it from
 /// `OpcodeList3`): the camera applied it to its JPEG, so the sensor proxy is warped the same way before pairing.
 /// `embedded` is the file's embedded lens vignetting, for the DNG tone fit.
+/// `colour` is the photo's Profile option: [`CameraColour::Colorimetric`] skips the JPEG (fit and black-and-white tone)
+/// for a model with spectral matrices, which then give the colour with the app's default tone curve. `dcp`: an imported
+/// camera profile (`.dcp`) replaced the raw's colour model; like a DNG, one without a tone curve of its own gets its
+/// tone fitted to the camera's JPEG, whatever the raw format.
 pub(crate) fn starting_colour(
     raw: &mut RawImage,
     bytes: &[u8],
     lens: Option<&LensGeometry>,
     embedded: Option<&lcc_develop::EmbeddedLens>,
+    colour: CameraColour,
+    dcp: bool,
 ) -> (Xy, CameraTransform, Option<CameraLook>) {
-    starting_colour_traced(raw, bytes, lens, embedded, &mut StartTrace::default())
+    starting_colour_traced(raw, bytes, lens, embedded, colour, dcp, &mut StartTrace::default())
 }
 
 /// [`starting_colour`], saying in `trace` which of its steps gave the colour and the tone (`photo.sourceReport`).
@@ -110,6 +117,8 @@ pub(crate) fn starting_colour_traced(
     bytes: &[u8],
     lens: Option<&LensGeometry>,
     embedded: Option<&lcc_develop::EmbeddedLens>,
+    colour: CameraColour,
+    dcp: bool,
     trace: &mut StartTrace,
 ) -> (Xy, CameraTransform, Option<CameraLook>) {
     let entry = raw.metadata.model.as_deref().and_then(|model| lcc_camdb::find(raw.metadata.make.as_deref(), model));
@@ -119,7 +128,7 @@ pub(crate) fn starting_colour_traced(
         from.set(f);
         (look, black_and_white)
     };
-    let (xy, t, look) = starting_colour_traced_from(raw, entry, fit, |raw, t| monochrome_look(raw, bytes, t, lens), trace);
+    let (xy, t, look) = starting_colour_traced_from(raw, entry, colour, fit, |raw, t| monochrome_look(raw, bytes, t, lens), trace);
     // a look that is the camera profile's colour, the photo's own fit having failed
     if matches!(trace.colour, ColourSource::CameraJpeg { .. }) {
         let tone = match from.get() {
@@ -132,7 +141,7 @@ pub(crate) fn starting_colour_traced(
             *trace = StartTrace { colour: ColourSource::CameraProfile, tone };
         }
     }
-    if look.is_none() && dng_tone_eligible(raw, &t) {
+    if look.is_none() && (dng_tone_eligible(raw, &t) || (dcp && dcp_tone_eligible(raw, &t))) {
         let look = fit_dng_tone(raw, bytes, &t, embedded);
         if look.is_some() {
             trace.tone = ToneSource::DngToneFit;
@@ -214,16 +223,39 @@ pub(crate) fn dng_tone_eligible(raw: &RawImage, t: &CameraTransform) -> bool {
     raw.format == RawFormat::Dng && !t.matrix_is_fallback && identity_tone_curve(p.tone_curve.as_ref()) && p.gain_table_map.is_none()
 }
 
+/// Whether a camera database entry gives matrices from the model's measured spectral sensitivities.
+fn is_spectral(e: &lcc_camdb::Entry) -> bool {
+    e.provenance.source == lcc_camdb::Source::SpectralSensitivities
+}
+
+/// The camera database entry for the raw's model, when it has no colour matrices of its own, its starting look is
+/// otherwise fitted to its JPEG ([`file_local_look`]) and the entry comes from measured spectral sensitivities: what
+/// [`CameraColour::Colorimetric`] starts from.
+pub(crate) fn colorimetric_camera(raw: &RawImage) -> Option<lcc_camdb::Entry> {
+    if lcc_raw::color::has_matrix(&raw.color) || !file_local_look(raw.format) {
+        return None;
+    }
+    lcc_camdb::find(raw.metadata.make.as_deref(), raw.metadata.model.as_deref()?).filter(is_spectral)
+}
+
+/// A raw developed through a `.dcp` whose tone is not defined by the profile ([`dng_tone_eligible`]
+/// without the DNG requirement).
+fn dcp_tone_eligible(raw: &RawImage, t: &CameraTransform) -> bool {
+    let p = &raw.color.profile;
+    !t.matrix_is_fallback && identity_tone_curve(p.tone_curve.as_ref()) && p.look_table.is_none() && p.gain_table_map.is_none()
+}
+
 /// [`starting_colour`] with the JPEG fit (the look, and whether the JPEG is black and white) and the black-and-white
 /// JPEG's tone fit passed in (tests pin the order with them).
 #[cfg(test)]
 fn starting_colour_with(
     raw: &mut RawImage,
+    colour: CameraColour,
     fit: impl FnOnce(&RawImage, &CameraTransform) -> (Option<CameraLook>, bool),
     monochrome: impl FnOnce(&RawImage, &CameraTransform) -> Option<CameraLook>,
 ) -> (Xy, CameraTransform, Option<CameraLook>) {
     let entry = raw.metadata.model.as_deref().and_then(|model| lcc_camdb::find(raw.metadata.make.as_deref(), model));
-    starting_colour_from(raw, entry, fit, monochrome)
+    starting_colour_traced_from(raw, entry, colour, fit, monochrome, &mut StartTrace::default())
 }
 
 /// [`starting_colour_with`] with the camera database entry passed in.
@@ -234,13 +266,14 @@ fn starting_colour_from(
     fit: impl FnOnce(&RawImage, &CameraTransform) -> (Option<CameraLook>, bool),
     monochrome: impl FnOnce(&RawImage, &CameraTransform) -> Option<CameraLook>,
 ) -> (Xy, CameraTransform, Option<CameraLook>) {
-    starting_colour_traced_from(raw, entry, fit, monochrome, &mut StartTrace::default())
+    starting_colour_traced_from(raw, entry, CameraColour::Auto, fit, monochrome, &mut StartTrace::default())
 }
 
 /// [`starting_colour_from`], saying which step gave the colour and the tone in `trace`.
 fn starting_colour_traced_from(
     raw: &mut RawImage,
     entry: Option<lcc_camdb::Entry>,
+    colour: CameraColour,
     fit: impl FnOnce(&RawImage, &CameraTransform) -> (Option<CameraLook>, bool),
     monochrome: impl FnOnce(&RawImage, &CameraTransform) -> Option<CameraLook>,
     trace: &mut StartTrace,
@@ -266,6 +299,21 @@ fn starting_colour_traced_from(
             Some((make, model, provenance)) => ColourSource::MeasuredDatabase { make, model, provenance },
             None => ColourSource::File,
         };
+        return (xy, t, None);
+    }
+    // Colorimetric: the spectral matrices, never the JPEG (a model without them starts as Auto does)
+    if colour == CameraColour::Colorimetric
+        && file_local_look(raw.format)
+        && let Some(e) = entry.as_ref().filter(|e| is_spectral(e))
+        && e.apply(raw).matrix
+    {
+        if lcc_pipeline::profiling() {
+            eprintln!("[profile] {:?} camera colour from spectral sensitivities (Colorimetric): {} {}", raw.format, e.make, e.model);
+        }
+        let (make, model, provenance) = named(e);
+        trace.colour = ColourSource::Database { make, model, provenance };
+        trace.tone = ToneSource::Default;
+        let (xy, t) = start(raw);
         return (xy, t, None);
     }
     let (look, black_and_white) = fit(raw, &t);
@@ -319,7 +367,7 @@ pub(crate) fn starting_colour_tags(raw: &mut RawImage, bytes: &[u8]) -> Option<C
     let scale = crate::files::WbScaleOf::new(raw.format, &raw.color, raw.wb_multipliers, &raw.metadata);
     let white = scale.dng_white(&raw.color, lcc_raw::color::as_shot_white_xy(raw));
     // (a merge frame arrives without its lens warp: `lcc_merge` removes it before calling)
-    let (_, t, look) = starting_colour(raw, bytes, None, None);
+    let (_, t, look) = starting_colour(raw, bytes, None, None, CameraColour::Auto, false);
     dng_colour(&raw.color, &white, &t, look.as_ref())
 }
 
@@ -2851,6 +2899,7 @@ mod tests {
         let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 600D", color.clone());
         let (_, t, look) = starting_colour_with(
             &mut raw,
+            CameraColour::Auto,
             |_, _| panic!("no JPEG fit for a raw with its own matrices"),
             |_, _| panic!("no black-and-white JPEG fit for a raw with its own matrices"),
         );
@@ -2869,6 +2918,7 @@ mod tests {
             let fitted = dro_test_look(&std::array::from_fn(|i| 0.006 * 1.13f32.powi(i as i32)), &|x| x.sqrt());
             let (xy, t, look) = starting_colour_with(
                 &mut raw,
+                CameraColour::Auto,
                 |raw, t| {
                     assert!(t.matrix_is_fallback && !lcc_raw::color::has_matrix(&raw.color), "the fit sees the raw without spectral matrices");
                     (Some(fitted.clone()), false)
@@ -2889,14 +2939,19 @@ mod tests {
         assert!(crate::camera_profiles::get("ILCE-7M4").is_some());
         let camera = lcc_raw::spectral::find(Some("SONY"), "ILCE-7M4").unwrap();
         let mut raw = raw_of(RawFormat::Arw, "SONY", "ILCE-7M4", Default::default());
-        let (_, t, look) = starting_colour(&mut raw, &[], None, None);
+        let (_, t, look) = starting_colour(&mut raw, &[], None, None, CameraColour::Auto, false);
         assert!(look.is_none());
         assert_eq!(raw.color.color_matrix, camera.color_matrix.map(Some));
         assert!(!t.matrix_is_fallback);
 
         let camera = lcc_raw::spectral::find(Some("Canon"), "Canon EOS 600D").unwrap();
         let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 600D", Default::default());
-        let (xy, t, look) = starting_colour_with(&mut raw, |_, _| (None, false), |_, _| panic!("a colour JPEG never takes the black-and-white step"));
+        let (xy, t, look) = starting_colour_with(
+            &mut raw,
+            CameraColour::Auto,
+            |_, _| (None, false),
+            |_, _| panic!("a colour JPEG never takes the black-and-white step"),
+        );
         assert!(look.is_none());
         assert_eq!(raw.color.illuminant, [17, 21]);
         assert_eq!(raw.color.forward_matrix, camera.forward_matrix.map(Some));
@@ -2938,6 +2993,60 @@ mod tests {
         assert!(!t.matrix_is_fallback);
     }
 
+    /// The Colorimetric Camera colour: a model with spectral matrices starts from them and its JPEG is never asked
+    /// (neither the fit nor the black-and-white tone); a model without them, or a file with matrices of its own,
+    /// starts as Auto does.
+    #[test]
+    fn colorimetric_starts_from_spectral_colour_without_the_jpeg() {
+        let entry = lcc_camdb::find(Some("NIKON CORPORATION"), "NIKON Z f").unwrap();
+        assert!(is_spectral(&entry));
+        let mut raw = raw_of(RawFormat::Nef, "NIKON CORPORATION", "NIKON Z f", Default::default());
+        assert!(colorimetric_camera(&raw).is_some());
+        let (xy, t, look) = starting_colour_with(
+            &mut raw,
+            CameraColour::Colorimetric,
+            |_, _| panic!("Colorimetric never fits the JPEG"),
+            |_, _| panic!("nor reads its black-and-white tone"),
+        );
+        assert!(look.is_none(), "the app's default tone curve");
+        assert!(!t.matrix_is_fallback);
+        assert_eq!(raw.color.forward_matrix, entry.forward_matrix);
+        assert_eq!(xy, lcc_raw::color::as_shot_white_xy(&raw));
+        // the same file on Auto asks its JPEG first
+        let mut raw = raw_of(RawFormat::Nef, "NIKON CORPORATION", "NIKON Z f", Default::default());
+        let mut asked = false;
+        starting_colour_with(
+            &mut raw,
+            CameraColour::Auto,
+            |_, _| {
+                asked = true;
+                (None, false)
+            },
+            |_, _| None,
+        );
+        assert!(asked, "Auto fits the JPEG before the spectral colour");
+
+        // no spectral colour for the model: Colorimetric is Auto
+        let mut raw = raw_of(RawFormat::Nef, "NIKON CORPORATION", "NIKON D3", Default::default());
+        assert!(colorimetric_camera(&raw).is_none());
+        let mut asked = false;
+        let (_, t, _) = starting_colour_with(
+            &mut raw,
+            CameraColour::Colorimetric,
+            |_, _| {
+                asked = true;
+                (None, false)
+            },
+            |_, _| None,
+        );
+        assert!(asked && t.matrix_is_fallback, "the fit, then the neutral fallback");
+
+        // a file with colour matrices of its own keeps them, whatever the option
+        let own = lcc_raw::ColorData { color_matrix: entry.color_matrix, illuminant: [17, 21], ..Default::default() };
+        let raw = raw_of(RawFormat::Dng, "NIKON CORPORATION", "NIKON Z f", own);
+        assert!(colorimetric_camera(&raw).is_none());
+    }
+
     /// After step 4 or 5: a photo whose JPEG gave no fit and is black and white gets its tone curve on top of the
     /// colour it has by then, the spectral matrices for a model in the table, the neutral fallback's otherwise
     /// (issue #577). The black-and-white fit sees that transform.
@@ -2952,6 +3061,7 @@ mod tests {
         let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 600D", Default::default());
         let (xy, t, look) = starting_colour_with(
             &mut raw,
+            CameraColour::Auto,
             |_, _| (None, true),
             |raw, t| {
                 assert!(!t.matrix_is_fallback && raw.color.forward_matrix == camera.forward_matrix.map(Some), "the spectral matrices are in");
@@ -2965,6 +3075,7 @@ mod tests {
         let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 7D", Default::default());
         let (_, t, look) = starting_colour_with(
             &mut raw,
+            CameraColour::Auto,
             |_, _| (None, true),
             |_, t| {
                 assert!(t.matrix_is_fallback, "outside the table: the neutral fallback's colour");
@@ -2981,7 +3092,7 @@ mod tests {
         let lookup = |raw: &RawImage| raw.metadata.model.as_deref().and_then(|m| lcc_camdb::find(raw.metadata.make.as_deref(), m));
         let traced = |raw: &mut RawImage, entry, fit: Option<CameraLook>, black_and_white: bool, mono: Option<CameraLook>| {
             let mut trace = StartTrace::default();
-            starting_colour_traced_from(raw, entry, |_, _| (fit, black_and_white), |_, _| mono, &mut trace);
+            starting_colour_traced_from(raw, entry, CameraColour::Auto, |_, _| (fit, black_and_white), |_, _| mono, &mut trace);
             trace
         };
         let fitted = dro_test_look(&std::array::from_fn(|i| 0.006 * 1.13f32.powi(i as i32)), &|x| x.sqrt());
@@ -3021,13 +3132,13 @@ mod tests {
     #[test]
     fn a_camera_outside_the_table_keeps_the_fallback() {
         let mut raw = raw_of(RawFormat::Cr2, "Canon", "Canon EOS 7D", Default::default());
-        let (_, t, look) = starting_colour(&mut raw, &[], None, None);
+        let (_, t, look) = starting_colour(&mut raw, &[], None, None, CameraColour::Auto, false);
         assert!(look.is_none() && t.matrix_is_fallback);
         assert_eq!(raw.color, lcc_raw::ColorData::default());
         // without a model there is no table row
         let mut raw = raw_of(RawFormat::Cr2, "Canon", "", Default::default());
         raw.metadata.model = None;
-        assert!(starting_colour(&mut raw, &[], None, None).1.matrix_is_fallback);
+        assert!(starting_colour(&mut raw, &[], None, None, CameraColour::Auto, false).1.matrix_is_fallback);
     }
 
     /// Step 5 for an ARW: a Sony body outside the table whose fit fails (here: no camera JPEG; on a night sky, too few
@@ -3044,6 +3155,7 @@ mod tests {
             }
             let (xy, t, look) = starting_colour_with(
                 &mut raw,
+                CameraColour::Auto,
                 |_, t| {
                     assert!(t.matrix_is_fallback, "the fit sees the raw without the stand-in");
                     (None, false)
@@ -3059,13 +3171,13 @@ mod tests {
         }
         let mut raw = raw_of(RawFormat::Arw, "SONY", "ILCE-1M2", Default::default());
         let mut trace = StartTrace::default();
-        starting_colour_traced_from(&mut raw, None, |_, _| (None, false), |_, _| None, &mut trace);
+        starting_colour_traced_from(&mut raw, None, CameraColour::Auto, |_, _| (None, false), |_, _| None, &mut trace);
         assert!(matches!(&trace.colour, ColourSource::SpectralStandIn { model, .. } if model == stand_in.model), "{trace:?}");
         assert_eq!(lcc_raw::spectral::find(Some("SONY"), "ILCE-1M2"), None);
         assert_eq!(lcc_catalog::relative_wb_camera("ARW", "SONY ILCE-1M2"), !lcc_raw::kelvin_presets::covers(Some("SONY"), "ILCE-1M2"));
         // the same failure outside ARW keeps the neutral fallback
         let mut raw = raw_of(RawFormat::Nef, "NIKON CORPORATION", "NIKON D3", Default::default());
-        let (_, t, _) = starting_colour_with(&mut raw, |_, _| (None, false), |_, _| None);
+        let (_, t, _) = starting_colour_with(&mut raw, CameraColour::Auto, |_, _| (None, false), |_, _| None);
         assert!(t.matrix_is_fallback);
         assert_eq!(raw.color, lcc_raw::ColorData::default());
     }
@@ -3093,7 +3205,7 @@ mod tests {
             let measured = lcc_raw::spectral::find(make, model).is_some();
             let covered = measured || lcc_raw::kelvin_presets::covers(make, model);
             let before = raw.color.clone();
-            let (_, t, fitted) = starting_colour(&mut raw, &bytes, lens.as_ref(), None);
+            let (_, t, fitted) = starting_colour(&mut raw, &bytes, lens.as_ref(), None, CameraColour::Auto, false);
             let spectral = !own && fitted.is_none() && measured;
             eprintln!("{name}: own matrices {own}, JPEG fit {}, spectral {spectral}", fitted.is_some());
             assert_eq!(raw.color != before, spectral, "{name}");
@@ -4064,6 +4176,7 @@ mod tests {
         let mut raw = raw_of(RawFormat::Arw, "SONY", "ILCE-7M4", Default::default());
         let (_, t, look) = starting_colour_with(
             &mut raw,
+            CameraColour::Auto,
             |_, _| (None, true),
             |_, t| {
                 assert!(!t.matrix_is_fallback, "on the spectral matrices");

@@ -80,3 +80,60 @@ fn the_keyword_picker_takes_several_keywords() {
     assert_eq!(h.app.session.visible_cloned().len(), all);
     assert!(rows(&h, "keyword").is_empty(), "Any keyword closes the list");
 }
+
+/// Issue #218: the filter bar's Metadata columns list each field's values with counts; a click narrows the grid,
+/// the next column counts only what is left, and "All" clears the column again.
+#[test]
+fn metadata_columns_narrow_the_grid_and_cascade() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1600.0, 1000.0], 1.0);
+    h.app.ui.view = crate::state::ViewMode::PhotoGrid;
+    h.app.ui.filter_bar = true;
+    h.settle(SETTLE);
+    let all = h.app.session.visible_cloned().len();
+    ok(&mut h, "ui.clickWidget", json!({"id": "button:filterColumns"}));
+    assert!(!h.app.ui.filter_columns.is_empty(), "the columns show");
+    // column 1 lists cameras, column 2 lenses
+    ok(&mut h, "engine.execute", json!({"command": "view.filterColumns", "params": {"column": 1, "field": "camera"}}));
+    ok(&mut h, "engine.execute", json!({"command": "view.filterColumns", "params": {"column": 2, "field": "keyword"}}));
+    let column_rows = |h: &Headless, c: usize| {
+        let prefix = format!("filterValue:{c}:");
+        h.app.widgets.iter().filter(|(w, _)| w.starts_with(&prefix)).count()
+    };
+    let keywords_before = column_rows(&h, 2);
+    assert!(column_rows(&h, 1) > 2, "All and at least two cameras");
+    // the first camera: the grid narrows to its photos
+    ok(&mut h, "ui.clickWidget", json!({"id": "filterValue:1:1"}));
+    let cameras = h.app.session.filter.cameras.clone();
+    assert_eq!(cameras.len(), 1, "{:?}", h.app.session.filter);
+    let narrowed = h.app.session.visible_cloned();
+    assert!(!narrowed.is_empty() && narrowed.len() < all, "{} of {all}", narrowed.len());
+    assert!(narrowed.iter().all(|id| h.app.session.catalog.photo(*id).unwrap().meta.camera.eq_ignore_ascii_case(&cameras[0])));
+    // the keyword column counts only those photos' keywords
+    assert!(column_rows(&h, 2) <= keywords_before, "the keyword column cascades");
+    // the camera column still offers the other cameras
+    assert!(column_rows(&h, 1) > 2);
+    // All clears the camera column
+    ok(&mut h, "ui.clickWidget", json!({"id": "filterValue:1:0"}));
+    assert!(h.app.session.filter.cameras.is_empty());
+    assert_eq!(h.app.session.visible_cloned().len(), all);
+    // the field picker in a column header
+    ok(&mut h, "ui.clickWidget", json!({"id": "dropdown:filterColumn0"}));
+    ok(&mut h, "ui.clickWidget", json!({"id": "filterColumnField:0:flag"}));
+    assert_eq!(h.app.ui.filter_columns[0], "flag");
+    // bad arguments are errors
+    for p in [
+        json!({"column": 9, "field": "camera"}),
+        json!({"column": 0, "field": "shoe"}),
+        json!({"column": 0}),
+        json!({"count": 0}),
+        json!({"show": "yes"}),
+    ] {
+        let r = h.request("engine.execute", json!({"command": "view.filterColumns", "params": p}), T);
+        assert_eq!(r["ok"], false, "{p}: {r}");
+    }
+    // hidden again
+    ok(&mut h, "ui.clickWidget", json!({"id": "button:filterColumns"}));
+    assert!(h.app.ui.filter_columns.is_empty());
+    assert!(!h.app.widgets.iter().any(|(w, _)| w == "filterColumns"));
+}

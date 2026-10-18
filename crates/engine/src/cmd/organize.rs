@@ -218,11 +218,11 @@ pub fn specs() -> Vec<CommandSpec> {
             let collapsed = bool_or(p, "collapsed", !first);
             set_collapsed(s, stacks, collapsed, if collapsed { "Collapse Stack" } else { "Expand Stack" })
         }),
-        cmd!("stack.expandAll", "Expand All Stacks", ["View", "Stacks"], None, "{}", has_stacks, |s, _| {
+        cmd!("stack.expandAll", "Expand All Stacks", ["Photo", "Stack"], None, "{}", has_stacks, |s, _| {
             let all: Vec<StackId> = s.catalog.stacks().map(|st| st.id).collect();
             set_collapsed(s, all, false, "Expand All Stacks")
         }),
-        cmd!("stack.collapseAll", "Collapse All Stacks", ["View", "Stacks"], None, "{}", has_stacks, |s, _| {
+        cmd!("stack.collapseAll", "Collapse All Stacks", ["Photo", "Stack"], None, "{}", has_stacks, |s, _| {
             let all: Vec<StackId> = s.catalog.stacks().map(|st| st.id).collect();
             set_collapsed(s, all, true, "Collapse All Stacks")
         }),

@@ -1,4 +1,10 @@
 {
+  "File Settings": "Nastavení souboru",
+  "Image Sizing": "Velikost obrázku",
+  "Output Sharpening": "Doostření výstupu",
+  "Watermarking": "Vodoznak",
+  "File Naming": "Pojmenování souborů",
+  "Export Location": "Umístění exportu",
   "Copy recipe": "Kopírovat recept",
   "Face Count": "Počet tváří",
   "Film recipe": "Filmový recept",
@@ -16,5 +22,20 @@
   "is today": "je dnes",
   "is yesterday": "je včera",
   "Also the contributors to": "Také přispěvatelé projektu",
-  "Join the Discord": "Připojit se k Discordu"
+  "Join the Discord": "Připojit se k Discordu",
+  "More Imports": "Další importy",
+  "More Exports": "Další exporty",
+  "Catalog": "Katalog",
+  "Libraries": "Knihovny",
+  "Plug-ins": "Zásuvné moduly",
+  "Keymap": "Klávesová mapa",
+  "Filters": "Filtry",
+  "Rotate & Flip": "Otočit a převrátit",
+  "Loupe Info": "Informace v lupě",
+  "Before/After": "Před/po",
+  "Edit Panels": "Panely úprav",
+  "Screen Mode": "Režim obrazovky",
+  "Grid View Style": "Styl mřížky",
+  "Metadata Filter Columns": "Sloupce filtru metadat",
+  "Metadata columns: click a value to narrow the view": "Sloupce metadat: kliknutím na hodnotu zúžíte zobrazení"
 }

@@ -196,6 +196,20 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         });
     }
+    // a raw without colour matrices whose camera model has measured ones: off starts from the look fitted to the
+    // camera's JPEG (Auto), on from the measured colour with the app's own tone curve (Colorimetric)
+    if app.session.source_info(id).colorimetric {
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 10 }).show(ui, |ui| {
+            let mut on = d.profile.camera_colour == lcc_develop::CameraColour::Colorimetric;
+            let r = ui.checkbox(&mut on, crate::i18n::tr("Calibrated camera colour"));
+            crate::widgets::register(ui.ctx(), "check:profile.cameraColour", r.rect);
+            let tip = "Start from the colour measured for this camera model instead of the look fitted to the camera's JPEG";
+            if r.on_hover_text(crate::i18n::tr(tip)).changed() {
+                let mode = if on { "colorimetric" } else { "auto" };
+                let _ = app.run("develop.merge", json!({"settings": {"profile": {"camera_colour": mode}}, "label": "Calibrated Camera Colour"}));
+            }
+        });
+    }
     divider(ui);
 
     let video = crate::video_ui::photo_is_video(app, id);
@@ -515,8 +529,8 @@ fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 /// still hold what Auto set (any change to them makes it available again).
 pub fn sub_title(ui: &mut egui::Ui, title: &str) {
     let t = Tokens::get(ui.ctx());
-    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 30.0), Sense::hover());
-    ui.painter().text(pos2(r.left() + 24.0, r.center().y + 4.0), Align2::LEFT_CENTER, crate::i18n::tr(title), t.semibold(13.0), t.text_label);
+    let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
+    ui.painter().text(pos2(r.left() + 24.0, r.center().y + 2.0), Align2::LEFT_CENTER, crate::i18n::tr(title), t.semibold(13.0), t.text_label);
 }
 
 pub(crate) fn section(

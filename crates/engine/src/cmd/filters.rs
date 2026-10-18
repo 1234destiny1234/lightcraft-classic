@@ -79,7 +79,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "filter.toggleEnabled",
             "Enable Filters",
-            ["Library"],
+            ["Library", "Filters"],
             Some("Cmd+L"),
             "{} — switches the current filter off (kept) or back on → {enabled, photos}",
             always,

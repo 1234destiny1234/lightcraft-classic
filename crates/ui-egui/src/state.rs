@@ -374,6 +374,8 @@ pub struct AppSettings {
     /// Double-clicking a grid photo opens it in Develop instead of the Library loupe (issue #144;
     /// off by default, as in Lightroom Classic).
     pub double_click_develop: bool,
+    /// Hide active filter text / indicator in Develop mode (Settings ▸ Interface ▸ Detail).
+    pub hide_filter_in_develop: bool,
     /// Windows only (inert elsewhere; the field stays on every platform so settings files remain portable).
     /// Keep repainting continuously at display refresh rate to eliminate VRR / G-SYNC brightness flicker on OLED/VA panels.
     pub vrr_flicker_workaround: bool,
@@ -412,6 +414,7 @@ impl Default for AppSettings {
             focus_point: false,
             zoom_to_focus: true,
             double_click_develop: false,
+            hide_filter_in_develop: false,
             vrr_flicker_workaround: false,
         }
     }
@@ -934,6 +937,8 @@ pub struct UiState {
     pub spots_threshold: f32,
     /// The library filter bar above the grid.
     pub filter_bar: bool,
+    /// The filter bar's Metadata columns (issue #218): the field each column lists; empty = hidden.
+    pub filter_columns: Vec<String>,
     /// Folders kept in Local (Browse Folder…, Keep in Local / Add to Local; `local.addRoot`):
     /// listed after the built-in locations, across restarts, whatever is browsed.
     pub local_roots: Vec<String>,
@@ -1067,6 +1072,9 @@ pub struct UiState {
     /// A newer release was found at start-up and the user has not been told yet.
     #[serde(skip)]
     pub update_pending: Option<String>,
+    /// The start-up update check is currently in flight.
+    #[serde(skip)]
+    pub startup_update_checking: bool,
     /// The Print dialog's page, selection and drag.
     #[serde(skip)]
     pub print: crate::print_view::PrintUi,
@@ -1604,6 +1612,7 @@ impl Default for UiState {
             settings: AppSettings::default(),
             window_fullscreen: None,
             filter_bar: false,
+            filter_columns: Vec::new(),
             local_roots: Vec::new(),
             local_browse_root: None,
             compare: None,
@@ -1620,6 +1629,7 @@ impl Default for UiState {
             update_checked_at_startup: false,
             update_checked_at: 0.0,
             update_pending: None,
+            startup_update_checking: false,
             print: Default::default(),
         }
     }

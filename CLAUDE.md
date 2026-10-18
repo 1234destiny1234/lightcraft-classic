@@ -108,6 +108,9 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   `colormatrices.c`, basecurves.
 - Camera matrices are **never harvested from Adobe-converted DNGs**: check the DNG's `Software` tag (Adobe DNG
   Converter, Lightroom, Camera Raw) and reject those. Camera-native DNGs (written by the camera itself) are fine.
+- A person's **own** `.dcp` camera profiles and XMP looks may be imported at run time (`camera.importDcp`,
+  `profile.import`; maintainer decision 2026-10-18). None is ever committed, bundled or used as a test fixture: tests
+  build their bytes in code.
 - Every PR that adds an algorithm has a **"Sources:"** line naming what it was built from: a paper, a prose spec, or
   "own design".
 - No GPL/LGPL/AGPL/MPL dependency may enter the build; `cargo deny` enforces the licence allow-list.

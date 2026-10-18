@@ -173,7 +173,7 @@ unchanged. Under the 16-zero rule, 174 of those 306 files (57%) failed and opene
 with out-of-range values (none at QP 168). The two CC0 C-RAW files are low-ISO shots whose maps need no
 long prefix: they decoded under the old rule too, so the escape is covered by synthetic unit tests in
 `crx.rs` rather than by a public file. Render cache version 43 redraws thumbnails of files whose decode
-changed; photos imported as preview-only switch over with Photo ▸ Reload from Disk.
+changed; photos imported as preview-only switch over with Photo ▸ File ▸ Reload from Disk.
 
 The R5 Mark II sensor has 5650 rows (3574 in crop mode), so its Bayer planes have odd heights (2825,
 1787). Lossless planes decode as before. In C-RAW every wavelet level has an odd height (2825 → 1413 →
