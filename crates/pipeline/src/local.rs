@@ -622,7 +622,7 @@ pub struct PlaneSigmas {
     pub chroma: Option<f32>,
 }
 
-/// Sharpening blur radius in output pixels before clamping: Radius (source pixels) times the
+/// Sharpening blur radius in output pixels before the floor of [`sharpen_sigma`]: Radius (source pixels) times the
 /// output pixels per source pixel (`src_long` = the oriented source's long edge), so a preview and
 /// an export show the same detail at the same displayed scale.
 pub fn sharpen_sigma_raw(s: &DevelopSettings, px_per_long: f64, src_long: f64) -> f32 {
@@ -631,13 +631,13 @@ pub fn sharpen_sigma_raw(s: &DevelopSettings, px_per_long: f64, src_long: f64) -
     (radius * px_per_long / src_long.max(1.0)) as f32
 }
 
-/// Smallest and largest sigma (px) of the sharpening blur.
+/// Smallest sigma (px) of the sharpening blur. There is no ceiling: an enlarged export scales
+/// the radius with it, so distinct radii stay distinct at every scale.
 pub const SHARPEN_SIGMA_MIN: f32 = 0.3;
-pub const SHARPEN_SIGMA_MAX: f32 = 4.0;
 
 /// The sharpening blur's sigma for a raw value of [`sharpen_sigma_raw`].
 pub fn sharpen_sigma(raw: f32) -> f32 {
-    raw.clamp(SHARPEN_SIGMA_MIN, SHARPEN_SIGMA_MAX)
+    raw.max(SHARPEN_SIGMA_MIN)
 }
 
 /// How much of the sharpening survives at a raw sigma: none at or below 0.3 px, all from 0.5 px

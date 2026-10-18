@@ -145,12 +145,11 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
                 _ => Err(unsupported()),
             }
         }
-        "rating" | "isoSpeedRating" | "focalLength" | "aperture" => {
+        "rating" | "isoSpeedRating" | "focalLength" => {
             let target = match name {
                 "rating" => "rating",
                 "isoSpeedRating" => "iso",
-                "focalLength" => "focalLength",
-                _ => "aperture",
+                _ => "focalLength",
             };
             let n = num(value).ok_or_else(unsupported)?;
             if op == "in" {
@@ -159,6 +158,18 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
             }
             let op = number_op(op).ok_or_else(unsupported)?;
             Ok(field(target, op, json!(n)))
+        }
+        "aperture" => {
+            // Lightroom stores aperture in APEX; convert to f-number for our native rules
+            let apex = num(value).ok_or_else(unsupported)?;
+            let f_number = 2.0_f64.powf(apex / 2.0);
+            if op == "in" {
+                let apex_hi = num(c.get("value2")).ok_or_else(unsupported)?;
+                let f_number_hi = 2.0_f64.powf(apex_hi / 2.0);
+                return Ok(field("aperture", "between", json!([f_number, f_number_hi])));
+            }
+            let op = number_op(op).ok_or_else(unsupported)?;
+            Ok(field("aperture", op, json!(f_number)))
         }
         "pick" => {
             let flag = match num(value).map(|n| n as i64) {
@@ -197,6 +208,20 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
                 _ => Err(unsupported()),
             }
         }
+        "fileFormat" => {
+            let raw = value.and_then(Lua::str).unwrap_or_default();
+            let raw_upper = raw.to_ascii_uppercase();
+            if raw_upper == "RAW" {
+                // Lightroom's generic "RAW" matches our raw originals (ARW, NEF, CR2, …)
+                match op {
+                    "==" | "" => Ok(field("kind", "is", json!("raw"))),
+                    "!=" => Ok(field("kind", "isNot", json!("raw"))),
+                    _ => Err(unsupported()),
+                }
+            } else {
+                text_rule("format", op, raw).ok_or_else(unsupported)
+            }
+        }
         _ => {
             let target = match name {
                 "keywords" => "keywords",
@@ -212,7 +237,6 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
                 "country" => "country",
                 "location" => "location",
                 "state" => "state",
-                "fileFormat" => "format",
                 _ => return Err(unsupported()),
             };
             text_rule(target, op, value.and_then(Lua::str).unwrap_or_default()).ok_or_else(unsupported)
@@ -228,7 +252,10 @@ fn text_rule(target: &str, op: &str, value: &str) -> Option<Rule> {
         "notEmpty" => field(target, "isNotEmpty", Value::Null),
         _ if words.is_empty() => return None,
         // Every word must appear: what "contains" already means here.
-        "all" | "words" => field(target, "contains", json!(value)),
+        // "all": each word must appear (as a separate keyword); "words": one keyword contains all
+        "all" if words.len() == 1 => field(target, "contains", json!(value)),
+        "all" => Rule::Group { group: RuleSet { mode: Match::All, rules: words.iter().map(|w| field(target, "contains", json!(w))).collect() } },
+        "words" => field(target, "contains", json!(value)),
         "any" if words.len() == 1 => field(target, "contains", json!(value)),
         "any" => Rule::Group { group: RuleSet { mode: Match::Any, rules: words.iter().map(|w| field(target, "contains", json!(w))).collect() } },
         "noneOf" => {
@@ -326,5 +353,56 @@ mod tests {
             s = format!("{{ {s} }}");
         }
         assert!(smart_rules(&s, &[]).is_err());
+    }
+
+    #[test]
+    fn keywords_contains_all_splitted() {
+        // "all" must create separate keyword rules joined by All, not one rule
+        // matching a single keyword containing the whole string.
+        let set = smart_rules(r#"s = { { criteria = "keywords", operation = "all", value = "beach sunset" } }"#, &[]).unwrap();
+        let Rule::Group { group } = &set.rules[0] else { panic!("expected All group") };
+        assert_eq!(group.mode, Match::All);
+        assert_eq!(group.rules.len(), 2);
+        assert_eq!(group.rules[0], field("keywords", "contains", json!("beach")));
+        assert_eq!(group.rules[1], field("keywords", "contains", json!("sunset")));
+    }
+
+    #[test]
+    fn fileformat_raw_maps_to_kind_raw() {
+        // Lightroom's generic "RAW" must map to kind=raw, not format=RAW.
+        let set = smart_rules(r#"s = { { criteria = "fileFormat", operation = "==", value = "RAW" } }"#, &[]).unwrap();
+        assert_eq!(set.rules[0], field("kind", "is", json!("raw")));
+    }
+
+    #[test]
+    fn fileformat_jpeg_stays_as_format() {
+        // Specific formats (JPEG, TIFF, …) still map to the format field.
+        let set = smart_rules(r#"s = { { criteria = "fileFormat", operation = "==", value = "JPEG" } }"#, &[]).unwrap();
+        assert_eq!(set.rules[0], field("format", "is", json!("JPEG")));
+    }
+
+    #[test]
+    fn aperture_apex_converted_to_fnumber() {
+        // APEX 6 = f/8 (f-number = 2^(APEX/2)).
+        let set = smart_rules(r#"s = { { criteria = "aperture", operation = "==", value = 6 } }"#, &[]).unwrap();
+        if let Rule::Field { value, .. } = &set.rules[0] {
+            let fnum = value.as_f64().unwrap();
+            assert!((fnum - 8.0).abs() < 1e-6, "expected f/8, got {fnum}");
+        } else {
+            panic!("expected Field rule");
+        }
+    }
+
+    #[test]
+    fn aperture_range_apex_converted() {
+        // Range endpoints must also be converted.
+        let set = smart_rules(r#"s = { { criteria = "aperture", operation = "in", value = 6, value2 = 8 } }"#, &[]).unwrap();
+        if let Rule::Field { value, .. } = &set.rules[0] {
+            let arr = value.as_array().unwrap();
+            assert!((arr[0].as_f64().unwrap() - 8.0).abs() < 1e-6); // APEX 6 → f/8
+            assert!((arr[1].as_f64().unwrap() - 16.0).abs() < 1e-6); // APEX 8 → f/16
+        } else {
+            panic!("expected Field rule");
+        }
     }
 }

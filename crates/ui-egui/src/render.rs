@@ -300,6 +300,9 @@ pub struct Renderer {
     /// Since when nothing has been pending, and whether the GPU pool was trimmed since.
     #[cfg(not(target_arch = "wasm32"))]
     idle: Option<(std::time::Instant, bool)>,
+    /// Surface is extended linear sRGB (macOS EDR / Windows scRGB): skip monitor profile
+    /// conversion, let the compositor do it (P2-3).
+    surface_is_extended_linear: bool,
 }
 
 /// After this long without renders the GPU renderer's pool of recycled buffers is freed.
@@ -366,6 +369,17 @@ impl Renderer {
             display: None,
             #[cfg(not(target_arch = "wasm32"))]
             idle: None,
+            surface_is_extended_linear: false,
+        }
+    }
+
+    /// Set whether the surface is extended linear sRGB (macOS EDR / Windows scRGB). When true,
+    /// skip monitor profile conversion and let the compositor do it (P2-3).
+    pub fn set_surface_extended_linear(&mut self, extended: bool) {
+        if self.surface_is_extended_linear != extended {
+            self.surface_is_extended_linear = extended;
+            // Forget all textures so they are re-rendered without the display profile.
+            self.forget_all();
         }
     }
 }
@@ -433,7 +447,9 @@ impl Renderer {
     /// `job` as [`Self::request`] would run it for `slot` (its key included): views render for
     /// the display profile in use.
     pub fn job_for(&self, slot: Slot, job: RenderJob) -> RenderJob {
-        if Self::renders_for_display(slot) { job.with_display(self.display.clone()) } else { job }
+        // When the surface is extended linear sRGB (macOS EDR / Windows scRGB), skip monitor
+        // profile conversion: the compositor owns it (P2-3).
+        if Self::renders_for_display(slot) && !self.surface_is_extended_linear { job.with_display(self.display.clone()) } else { job }
     }
 
     /// The display profile in use (id).
@@ -1795,5 +1811,57 @@ mod color_image_tests {
     fn an_empty_image_is_an_empty_texture() {
         let img = lcc_raster::Rgba8::new(0, 0);
         assert!(color_image(&img).pixels.is_empty());
+    }
+}
+
+#[cfg(test)]
+mod extended_linear_tests {
+    use super::*;
+
+    #[test]
+    fn job_for_skips_display_profile_for_extended_linear_surface() {
+        let mut r = Renderer::default();
+        r.set_surface_extended_linear(true);
+
+        let job = RenderJob {
+            cache_generation: 0,
+            request_id: 1,
+            source_key: None,
+            photo: lcc_catalog::PhotoId(1),
+            level: lcc_engine::media::SourceLevel::Full,
+            source: lcc_engine::media::SourceRef::File {
+                path: "/tmp/test.jpg".to_string(),
+                max_edge: 100,
+                loader: None,
+                fallback: None,
+                denoise: None,
+                outliers: false,
+            },
+            origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
+            info: Default::default(),
+            settings: Default::default(),
+            request: lcc_pipeline::RenderRequest {
+                max_w: 100,
+                max_h: 100,
+                quality: Default::default(),
+                apply_crop: false,
+                overlay: Default::default(),
+                space: Default::default(),
+                depth: Default::default(),
+                proof: None,
+                window: None,
+                display: None,
+            },
+            key: 0,
+            cache: None,
+            view_cache: None,
+            stages: None,
+            display: None,
+            slide: None,
+            preview_cut: None,
+        };
+
+        let result = r.job_for(Slot::Main, job.clone());
+        assert!(result.display.is_none(), "display profile should be None for extended linear surface");
     }
 }

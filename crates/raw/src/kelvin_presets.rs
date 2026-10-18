@@ -92,12 +92,15 @@ pub fn covers(make: Option<&str>, model: &str) -> bool {
     sony && !model.is_empty() && !WITHOUT_PRESETS.iter().any(|m| m.eq_ignore_ascii_case(model))
 }
 
-/// [`covers`] for make and model joined by a space, as the catalog keeps them (`"SONY ILCA-99M2"`).
+/// [`covers`] for make and model joined by a space, as the catalog keeps them (`"SONY ILCA-99M2"`). Every split
+/// into make and model is tried, then the whole string as a model alone; this matches [`crate::spectral::find_camera`]
+/// and the catalog's own lookup.
 pub fn covers_camera(camera: &str) -> bool {
-    match camera.split_once(char::is_whitespace) {
-        Some((make, model)) => covers(Some(make), model),
-        None => covers(None, camera),
+    let words: Vec<&str> = camera.split_whitespace().collect();
+    if words.is_empty() {
+        return false;
     }
+    (1..words.len()).any(|i| covers(Some(&words[..i].join(" ")), &words[i..].join(" "))) || covers(None, camera)
 }
 
 /// Most points a curve keeps (Canon writes about seven at a stated temperature, Sony five).
@@ -338,5 +341,17 @@ mod tests {
         }
         assert!(covers(Some("SONY"), "ILCA-99M2") && covers(None, "ILCA-99M2") && !covers(Some("NIKON CORPORATION"), "ILCA-99M2"));
         assert!(!covers(Some("SONY"), "  ") && !covers(Some("HASSELBLAD"), "Lunar") && !covers(None, "ILC"));
+    }
+
+    /// The catalog keeps joined camera names; Nikon Z5II's make-model split is not at the first word,
+    /// so covers_camera must try every split, not just the first.
+    #[test]
+    fn joined_nikon_z5ii_covers_camera() {
+        // Direct lookup works
+        assert!(covers(Some("NIKON CORPORATION"), "NIKON Z5_2"));
+        // Joined catalog string must also work (regression for PR #2006)
+        assert!(covers_camera("NIKON CORPORATION NIKON Z5_2"));
+        // D850 has no Kelvin presets; still not covered through the joined path
+        assert!(!covers_camera("NIKON CORPORATION NIKON D850"));
     }
 }

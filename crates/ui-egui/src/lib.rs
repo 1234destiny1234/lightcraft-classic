@@ -302,6 +302,11 @@ pub trait HdrOutput {
     /// Upload a linear-light render (3 floats per pixel, row-major, SDR white = 1, sRGB
     /// primaries) as the loupe's HDR texture, replacing the previous one.
     fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+    /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
+    /// true, the renderer should skip monitor profile conversion (P2-3).
+    fn extended(&self) -> bool {
+        false
+    }
 }
 
 /// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through
@@ -465,6 +470,8 @@ pub struct LccApp {
     screenshot_token: u64,
     /// Offscreen context for headless screenshots of the windowed app.
     shadow: Option<headless::HeadlessView>,
+    /// True while rendering a headless (CPU) screenshot: don't use GPU-only textures.
+    headless_screenshotting: bool,
     /// Synthetic input events (from the control channel) injected one step per frame.
     pub synthetic: Vec<egui::Event>,
     /// The text the UI last put on the clipboard (`ui.inspect` → `copied`).
@@ -646,6 +653,7 @@ impl LccApp {
             pending_screenshots: vec![],
             screenshot_token: 0,
             shadow: None,
+            headless_screenshotting: false,
             synthetic: vec![],
             copied: None,
             pending_picks: vec![],
@@ -1161,6 +1169,7 @@ impl LccApp {
         // same scroll offsets, open sections, style… as the window
         let memory = main.memory(|m| m.clone());
         view.ctx.memory_mut(|m| *m = memory);
+        self.headless_screenshotting = true;
         view.run(headless::HeadlessView::raw_input(size, ppp, time, vec![]), |ui| self.ui(ui));
         let img = capture.then(|| {
             let mut tex = self.renderer.cpu_textures();
@@ -1169,6 +1178,7 @@ impl LccApp {
             }
             view.paint(&tex)
         });
+        self.headless_screenshotting = false;
         self.shadow = Some(view);
         img
     }

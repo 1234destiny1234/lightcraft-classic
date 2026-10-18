@@ -82,7 +82,7 @@ impl CaptureState {
             view_formats: &[],
         });
 
-        let padding = BufferPadding::new(surface_texture.width());
+        let padding = BufferPadding::new(surface_texture.width(), surface_texture.format());
 
         let view = texture.create_view(&Default::default());
 
@@ -194,12 +194,13 @@ impl CaptureState {
         let format = self.texture.format();
         let tex_extent = self.texture.size();
         let padding = self.padding;
+        let is_float = matches!(format, wgpu::TextureFormat::Rgba16Float);
         let to_rgba = match format {
-            wgpu::TextureFormat::Rgba8Unorm => [0, 1, 2, 3],
+            wgpu::TextureFormat::Rgba8Unorm | wgpu::TextureFormat::Rgba16Float => [0, 1, 2, 3],
             wgpu::TextureFormat::Bgra8Unorm => [2, 1, 0, 3],
             _ => {
                 log::error!(
-                    "Screen can't be captured unless the surface format is Rgba8Unorm or Bgra8Unorm. Current surface format is {format:?}"
+                    "Screen can't be captured unless the surface format is Rgba8Unorm, Bgra8Unorm, or Rgba16Float. Current surface format is {format:?}"
                 );
                 return;
             }
@@ -221,13 +222,24 @@ impl CaptureState {
             };
             for padded_row in mapped_range.chunks(padding.padded_bytes_per_row as usize) {
                 let row = &padded_row[..padding.unpadded_bytes_per_row as usize];
-                for color in row.chunks(4) {
-                    pixels.push(epaint::Color32::from_rgba_premultiplied(
-                        color[to_rgba[0]],
-                        color[to_rgba[1]],
-                        color[to_rgba[2]],
-                        color[to_rgba[3]],
-                    ));
+                if is_float {
+                    // Rgba16Float holds extended linear sRGB: encode to gamma sRGB bytes (HDR
+                    // highlights above SDR white clip)
+                    for color in row.chunks(8) {
+                        let c = |i: usize| f16_to_f32(u16::from_le_bytes([color[i], color[i + 1]]));
+                        let [r, g, b] = [c(0), c(2), c(4)].map(epaint::ecolor::gamma_u8_from_linear_f32);
+                        let a = epaint::ecolor::linear_u8_from_linear_f32(c(6));
+                        pixels.push(epaint::Color32::from_rgba_premultiplied(r, g, b, a));
+                    }
+                } else {
+                    for color in row.chunks(4) {
+                        pixels.push(epaint::Color32::from_rgba_premultiplied(
+                            color[to_rgba[0]],
+                            color[to_rgba[1]],
+                            color[to_rgba[2]],
+                            color[to_rgba[3]],
+                        ));
+                    }
                 }
             }
             drop(mapped_range);
@@ -247,6 +259,20 @@ impl CaptureState {
     }
 }
 
+/// Decode a half float (f16) bit pattern. Subnormals flush to zero and NaN to zero; infinities keep
+/// their sign (the byte encoders clamp them).
+fn f16_to_f32(bits: u16) -> f32 {
+    let sign = if bits >> 15 == 1 { -1.0 } else { 1.0 };
+    let exp = i32::from((bits >> 10) & 31);
+    let mantissa = f32::from(bits & 0x3FF);
+    match exp {
+        0 => 0.0,
+        31 if mantissa == 0.0 => sign * f32::INFINITY,
+        31 => 0.0,
+        _ => sign * (1.0 + mantissa / 1024.0) * 2f32.powi(exp - 15),
+    }
+}
+
 #[derive(Copy, Clone)]
 struct BufferPadding {
     unpadded_bytes_per_row: u32,
@@ -254,8 +280,8 @@ struct BufferPadding {
 }
 
 impl BufferPadding {
-    fn new(width: u32) -> Self {
-        let bytes_per_pixel = core::mem::size_of::<u32>() as u32;
+    fn new(width: u32, format: wgpu::TextureFormat) -> Self {
+        let bytes_per_pixel = format.block_copy_size(None).unwrap_or(4);
         let unpadded_bytes_per_row = width * bytes_per_pixel;
         let padded_bytes_per_row =
             wgpu::util::align_to(unpadded_bytes_per_row, wgpu::COPY_BYTES_PER_ROW_ALIGNMENT);
@@ -263,5 +289,35 @@ impl BufferPadding {
             unpadded_bytes_per_row,
             padded_bytes_per_row,
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn buffer_padding_uses_format_bytes_per_pixel() {
+        // u32 (Rgba8Unorm) = 4 bytes per pixel
+        let p8 = BufferPadding::new(1280, wgpu::TextureFormat::Rgba8Unorm);
+        assert_eq!(p8.unpadded_bytes_per_row, 5120);
+
+        // Rgba16Float = 8 bytes per pixel
+        let p16 = BufferPadding::new(1280, wgpu::TextureFormat::Rgba16Float);
+        assert_eq!(p16.unpadded_bytes_per_row, 10240);
+    }
+
+    #[test]
+    fn f16_decodes_sign_range_and_specials() {
+        assert_eq!(f16_to_f32(0x0000), 0.0);
+        assert_eq!(f16_to_f32(0x3C00), 1.0);
+        assert_eq!(f16_to_f32(0x3800), 0.5);
+        assert_eq!(f16_to_f32(0x4000), 2.0);
+        assert_eq!(f16_to_f32(0xB800), -0.5);
+        assert_eq!(f16_to_f32(0x7C00), f32::INFINITY);
+        assert_eq!(f16_to_f32(0x7E00), 0.0);
+        // negative (out-of-gamut scRGB) and above-white values clamp when encoded
+        assert_eq!(epaint::ecolor::gamma_u8_from_linear_f32(f16_to_f32(0xB800)), 0);
+        assert_eq!(epaint::ecolor::gamma_u8_from_linear_f32(f16_to_f32(0x4000)), 255);
     }
 }

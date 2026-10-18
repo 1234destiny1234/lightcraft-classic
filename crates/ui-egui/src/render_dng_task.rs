@@ -23,6 +23,7 @@ pub struct RenderDngTask {
     done: Arc<AtomicUsize>,
     rx: Receiver<(Vec<Rendered>, bool)>,
     guard: TaskGuard,
+    library_generation: u64,
 }
 
 /// Start Render to DNG for `p` on a worker → `{background: true, total}`; `None` when this app
@@ -32,6 +33,7 @@ pub fn start(app: &mut LccApp, p: &Value) -> Option<Result<Value, String>> {
     if app.render_dng.is_some() {
         return Some(Err("Render to DNG is already running".into()));
     }
+    let library_generation = app.session.library_generation();
     let job = match render_dng::prepare(&mut app.session, p) {
         Ok(j) => j,
         Err(e) => return Some(Err(e.to_string())),
@@ -60,7 +62,7 @@ pub fn start(app: &mut LccApp, p: &Value) -> Option<Result<Value, String>> {
     }
     #[cfg(target_arch = "wasm32")]
     work();
-    app.render_dng = Some(RenderDngTask { total, done, rx, guard });
+    app.render_dng = Some(RenderDngTask { total, done, rx, guard, library_generation });
     Some(Ok(json!({"background": true, "total": total})))
 }
 
@@ -69,8 +71,12 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     let Some(task) = &app.render_dng else { return };
     match task.rx.try_recv() {
         Ok((done, cancelled)) => {
-            let total = task.total;
+            let (total, generation) = (task.total, task.library_generation);
             app.render_dng = None;
+            if app.session.library_generation() != generation {
+                app.toast(ctx, crate::i18n::tr("Render to DNG finished in a different library; DNGs were not imported"));
+                return;
+            }
             let msg = match render_dng::finish(&mut app.session, done, cancelled) {
                 Ok(r) => {
                     let ok = r["copies"].as_array().map_or(0, Vec::len);

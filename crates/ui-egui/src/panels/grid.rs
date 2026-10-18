@@ -914,15 +914,14 @@ pub(crate) fn reorder_drop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: 
     let Some(pos) = pos.filter(|p| r.contains(*p) && ui.clip_rect().contains(*p)) else { return };
     let t = Tokens::get(ui.ctx());
     let left = pos.x < r.center().x;
-    // inside the cell: the strip's cells touch
+    let ascending = app.session.sort.ascending;
     let x = if left { r.left() + 1.5 } else { r.right() - 1.5 };
-    // above the thumbnails (the filmstrip paints a cell after deciding its drop)
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("reorder-drop"))).with_clip_rect(ui.clip_rect());
     painter.line_segment([egui::pos2(x, r.top()), egui::pos2(x, r.bottom())], Stroke::new(3.0, t.accent));
     if !released {
         return;
     }
-    let before = if left {
+    let before = if left == ascending {
         Some(id)
     } else {
         let vis = app.session.visible_cloned();

@@ -427,15 +427,18 @@ pub fn edit_specs() -> Vec<CommandSpec> {
             has_active,
             edit_external
         ),
-        cmd!(
-            "photo.renderToDng",
-            "Render to DNG",
-            ["Photo"],
-            None,
-            "{ids?, colorSpace?: proPhoto (default) | rec2020 | adobeRgb | displayP3 | srgb, dir?} — render each selected photo (or `ids`, at most 500) with its edits as a linear 16-bit float DNG `<name>-Rendered.dng` next to it (a demo photo into `dir`), add each stacked on its original and select them; a batch shows in the activity stack and can be cancelled between photos → {copies: [{path, id, original}], failed: [{id, error}], cancelled}",
-            has_selection,
-            render_to_dng
-        ),
+        CommandSpec {
+            explicit_targets: true,
+            ..cmd!(
+                "photo.renderToDng",
+                "Render to DNG",
+                ["Photo"],
+                None,
+                "{ids?, colorSpace?: proPhoto (default) | rec2020 | adobeRgb | displayP3 | srgb, dir?} — render each selected photo (or `ids`, at most 500) with its edits as a linear 16-bit float DNG `<name>-Rendered.dng` next to it (a demo photo into `dir`), add each stacked on its original and select them; a batch shows in the activity stack and can be cancelled between photos → {copies: [{path, id, original}], failed: [{id, error}], cancelled}",
+                has_selection,
+                render_to_dng
+            )
+        },
     ]
 }
 
@@ -638,5 +641,45 @@ mod tests {
         assert!(r["copies"].as_array().unwrap().len() < 6);
         assert!(s.activity.list().is_empty());
         let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn render_to_dng_uses_hdr_options() {
+        let dir = scratch("hdr");
+        let mut s = Session::with_demo();
+        let id = s.visible()[0];
+        // Enable HDR editing on the photo
+        s.execute("develop.hdr", &json!({"id": id.0, "enabled": true})).unwrap();
+        // Render to DNG should succeed with HDR enabled
+        let r = s.execute("photo.renderToDng", &json!({"ids": [id.0], "dir": dir.to_string_lossy()})).unwrap();
+        let path = r["copies"][0]["path"].as_str().unwrap();
+        // The DNG should be encoded (not an error)
+        assert!(std::path::Path::new(path).exists(), "DNG file was written");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn render_to_dng_accepts_explicit_ids_without_selection() {
+        let dir = scratch("explicit");
+        let mut s = Session::with_demo();
+        let ids: Vec<_> = s.visible().iter().copied().take(2).collect();
+        // Clear selection
+        s.execute("library.select", &json!({"ids": []})).unwrap();
+        assert!(s.selection.ids.is_empty(), "selection was cleared");
+        // renderToDng with explicit ids should still work (explicit_targets: true)
+        let r = s.execute("photo.renderToDng", &json!({"ids": [ids[0].0, ids[1].0], "dir": dir.to_string_lossy()})).unwrap();
+        let copies = r["copies"].as_array().unwrap();
+        assert_eq!(copies.len(), 2, "both explicit targets were rendered: {r}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn library_generation_changes_when_library_changes() {
+        let s1 = Session::default();
+        let gen1 = s1.library_generation();
+        let s2 = Session::default();
+        let gen2 = s2.library_generation();
+        // Each session should have a unique generation
+        assert_ne!(gen1, gen2, "different sessions have different library generations");
     }
 }

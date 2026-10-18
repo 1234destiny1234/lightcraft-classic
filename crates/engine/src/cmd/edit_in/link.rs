@@ -236,6 +236,11 @@ pub fn file_xmp(path: &Path) -> Option<String> {
     }
 }
 
+/// A file an external editor writes (TIFF, PSD): only these carry an edit's link back to its source.
+fn is_editable(p: &Path) -> bool {
+    matches!(p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref(), Some("tif" | "tiff" | "psd" | "psb"))
+}
+
 /// After an import: stack each new TIFF/PSD whose XMP says it was derived from a photo in the
 /// library on that photo (found by file name in the same folder, else by document id), as Edit In
 /// would have. Photos already stacked with their source are left alone. → the photos stacked
@@ -245,7 +250,7 @@ pub fn stack_derived(s: &mut Session, imported: &[PhotoId]) -> Vec<PhotoId> {
         let Some(ph) = s.catalog.photo(*id) else { continue };
         let Source::File { path } = &ph.source else { continue };
         let p = Path::new(path);
-        if !matches!(p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref(), Some("tif" | "tiff" | "psd" | "psb")) {
+        if !is_editable(p) {
             continue;
         }
         let Some(link) = file_xmp(p).map(|x| read_link(&x)) else { continue };
@@ -261,14 +266,36 @@ pub fn stack_derived(s: &mut Session, imported: &[PhotoId]) -> Vec<PhotoId> {
     // (folder, file name) and document id → photo, built once
     let mut by_name: HashMap<(String, String), PhotoId> = HashMap::new();
     let mut by_doc: HashMap<String, PhotoId> = HashMap::new();
+    let mut editable: Vec<(PhotoId, std::path::PathBuf)> = Vec::new();
     for ph in s.catalog.photos().filter(|p| !p.deleted && p.copy_of.is_none()) {
         if let Source::File { path } = &ph.source {
             let p = Path::new(path);
             let dir = p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
             by_name.entry((dir, ph.file_name.clone())).or_insert(ph.id);
+            if is_editable(p) {
+                editable.push((ph.id, p.to_path_buf()));
+            }
         }
         if let Some(d) = hash_document_id(ph) {
             by_doc.entry(d).or_insert(ph.id);
+        }
+    }
+    // An edit of an edit names its source by the document ID embedded in that file, which the
+    // catalog doesn't keep: read it only when a link is left unresolved, and only from the files
+    // an editor writes (an edit's source is itself one).
+    let unresolved = wanted.iter().any(|(_, dir, link)| {
+        let by_path = link
+            .derived_path
+            .as_ref()
+            .and_then(|n| Path::new(n).file_name())
+            .is_some_and(|n| by_name.contains_key(&(dir.clone(), n.to_string_lossy().to_string())));
+        !by_path && link.derived_document.as_ref().is_some_and(|d| !by_doc.contains_key(d))
+    });
+    if unresolved {
+        for (id, p) in editable {
+            if let Some(d) = file_xmp(&p).and_then(|x| read_link(&x).document_id) {
+                by_doc.entry(d).or_insert(id);
+            }
         }
     }
     let mut pairs: Vec<(PhotoId, PhotoId)> = Vec::new();
@@ -367,5 +394,49 @@ mod tests {
             std::fs::write(&p, bytes).unwrap();
             assert!(file_xmp(&p).is_none(), "{name}");
         }
+    }
+    #[test]
+    fn renamed_parent_restacks_via_embedded_id() {
+        use serde_json::json;
+        // Scenario: parent file is renamed/moved, child's DerivedFrom names the parent's embedded
+        // xmpMM:DocumentID (not the hash). stack_derived must find the parent via the embedded ID.
+        let dir = std::env::temp_dir().join(format!("edit-link-embedded-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // Create parent TIFF with embedded document ID
+        let parent = dir.join("parent.tif");
+        let parent_bytes = lcc_codecs::encode_tiff(
+            &lcc_codecs::EncodeImage::rgba8(&lcc_raster::Rgba8 { width: 10, height: 10, data: vec![[200, 50, 50, 255]; 100] }),
+            lcc_codecs::TiffCompression::Deflate,
+            &lcc_codecs::EncodeMeta { icc: None, exif: None, xmp: Some(&add_link(PACKET, "xmp.did:parent-embedded", "", "")), ppi: None },
+        )
+        .unwrap();
+        std::fs::write(&parent, &parent_bytes).unwrap();
+        // Create child TIFF with DerivedFrom pointing to parent's embedded ID
+        let child = dir.join("child.tif");
+        let child_xmp = add_link(PACKET, "xmp.did:child-embedded", "xmp.did:parent-embedded", "original.tif");
+        let child_bytes = lcc_codecs::encode_tiff(
+            &lcc_codecs::EncodeImage::rgba8(&lcc_raster::Rgba8 { width: 10, height: 10, data: vec![[50, 200, 50, 255]; 100] }),
+            lcc_codecs::TiffCompression::Deflate,
+            &lcc_codecs::EncodeMeta { icc: None, exif: None, xmp: Some(&child_xmp), ppi: None },
+        )
+        .unwrap();
+        std::fs::write(&child, &child_bytes).unwrap();
+        // Import into fresh catalog
+        let mut s = Session::new().with_fs();
+        let r = s.execute("library.import", &json!({"paths": [parent.to_string_lossy(), child.to_string_lossy()]})).unwrap();
+        let ids: Vec<u64> = r["imported"].as_array().unwrap().iter().filter_map(|v| v.as_u64()).collect();
+        assert_eq!(ids.len(), 2);
+        let child_id = ids
+            .iter()
+            .find(|&&id| s.catalog.photo(PhotoId(id)).map(|p| p.file_name.contains("child")).unwrap_or(false))
+            .copied()
+            .expect("child imported");
+        let parent_id = ids.iter().find(|&&id| id != child_id).copied().expect("parent imported");
+        // Import calls stack_derived automatically; the child should be stacked on the parent
+        // via the embedded document ID index
+        let st = s.catalog.stack_of(PhotoId(child_id)).expect("child stacked after import");
+        assert!(st.photos.contains(&PhotoId(parent_id)), "parent in same stack as child");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

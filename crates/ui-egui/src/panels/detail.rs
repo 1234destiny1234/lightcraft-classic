@@ -156,12 +156,19 @@ impl CropView {
 }
 
 /// Lay the crop tool's view out in `area`: held as `layout` says while the crop is being changed,
-/// otherwise the turned photo fitted into `area`. `frame` is the uncropped frame the loupe renders.
-pub(crate) fn crop_view(frame: &Frame, crop: lcc_geom::CropGeometry, area: Rect, layout: Option<CropLayout>) -> CropView {
+/// otherwise the turned photo at `zoom` (fitted into `area` unless a percentage) and `pan`. `frame` is the uncropped frame the loupe renders.
+pub(crate) fn crop_view(
+    frame: &Frame,
+    crop: lcc_geom::CropGeometry,
+    area: Rect,
+    layout: Option<CropLayout>,
+    zoom: Zoom,
+    ppp: f32,
+    pan: (f32, f32),
+) -> CropView {
     let cf = Frame { crop, ..frame.clone() };
     let (nw, nh) = cf.native_size();
     let (nw, nh) = ((nw as f32).max(1e-3), (nh as f32).max(1e-3));
-    // the uncropped render's corners, as normalized photo points (its flips included)
     let uv_to_norm = frame.out_to_norm(1, 1);
     let corners = [(0.0, 0.0), (1.0, 0.0), (1.0, 1.0), (0.0, 1.0)].map(|(u, v)| uv_to_norm.apply(Point::new(u, v)));
     let finite = |k: f32| k.is_finite() && k > 0.0;
@@ -172,12 +179,18 @@ pub(crate) fn crop_view(frame: &Frame, crop: lcc_geom::CropGeometry, area: Rect,
                 Some(CropLayout::Pinned { centre, k }) if centre.is_finite() && finite(k) => (centre, k),
                 _ => {
                     // the turned photo at one point per pixel around a box centred on the origin,
-                    // scaled and placed to fit the area
+                    // scaled to the zoom asked for (or to fit the area) and placed as `pan` says
                     let unit = CanvasMap::new(&cf, Rect::from_center_size(Pos2::ZERO, vec2(nw, nh)));
                     let b = Rect::from_points(&corners.map(|c| unit.screen(c)));
-                    let k = (area.width() / b.width()).min(area.height() / b.height());
+                    let k = match zoom {
+                        Zoom::Percent(p) if finite(p) && finite(ppp) => p / 100.0 / ppp,
+                        _ => (area.width() / b.width()).min(area.height() / b.height()),
+                    };
                     let k = if finite(k) { k } else { 1.0 };
-                    (area.center() - b.center().to_vec2() * k, k)
+                    let size = b.size() * k;
+                    let pan = bounded_pan(area, size, pan);
+                    let shift = vec2((pan.0 - 0.5) * size.x, (pan.1 - 0.5) * size.y);
+                    (area.center() - shift - b.center().to_vec2() * k, k)
                 }
             };
             CanvasMap::new(&cf, Rect::from_center_size(centre, vec2(nw * k, nh * k)))
@@ -726,7 +739,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if !crop_tool || app.session.interaction.is_none() {
         app.crop_layout = None;
     }
-    let crop_view = crop_tool.then(|| crop_view(&frame, d.crop.geometry, main_area, app.crop_layout));
+    let crop_view = crop_tool.then(|| crop_view(&frame, d.crop.geometry, main_area, app.crop_layout, app.ui.zoom, ppp, app.ui.pan));
     if let Some(v) = &crop_view {
         if app.session.interaction.is_some() && app.crop_layout.is_none() {
             app.crop_layout = Some(CropLayout::Pinned { centre: v.centre, k: v.k });
@@ -809,7 +822,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         .then(|| app.session.render_job(id, rw.max(8), rh.max(8), false, !crop_tool))
         .flatten()
         .map(|job| {
-            let job = hdr_view_job(job.with_hidden_grading(app.ui.grading_hidden_for(id)));
+            let headroom = app.services.hdr_output.as_mut().and_then(|o| o.headroom());
+            // Tell the renderer whether to skip monitor profile conversion (P2-3).
+            if let Some(o) = app.services.hdr_output.as_ref() {
+                app.renderer.set_surface_extended_linear(o.extended());
+            }
+            let job = hdr_view_job(job.with_hidden_grading(app.ui.grading_hidden_for(id)), headroom);
             let key = job.key;
             if app.renderer.hdr_view.is_none_or(|v| v.key != key) {
                 app.renderer.request(Slot::HdrView, job, 98);
@@ -948,9 +966,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // between photos, and the full render replaces them in place)
     let hdr_view = app.renderer.hdr_view.filter(|v| v.photo == id && Some(v.key) == hdr_key);
     let draw = |slot: Slot, r: Rect, clip: Rect| -> &'static str {
-        if slot == Slot::Main
-            && let Some(v) = hdr_view
-        {
+        // For headless (CPU) screenshots, the HDR texture is GPU-only and not available in the
+        // CPU texture map, so fall back to the SDR texture (P2-2).
+        let use_hdr = hdr_view.is_some() && !app.headless_screenshotting && slot == Slot::Main;
+        if use_hdr && let Some(v) = hdr_view {
             let image_rect = fit_texture_rect(r, v.size);
             p.with_clip_rect(clip).image(v.tex, image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             return "hdr";
@@ -1653,8 +1672,9 @@ fn targeted_drag(app: &mut LccApp, resp: &egui::Response, map: &CanvasMap, targe
 }
 
 /// The loupe's HDR render for an HDR display: `job` (a whole-frame render of the open photo, no
-/// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key.
-pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine::media::RenderJob {
+/// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key, including the
+/// headroom used for encoding so a headroom change re-uploads.
+pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob, headroom: Option<f32>) -> lcc_engine::media::RenderJob {
     job.request.depth = lcc_pipeline::OutputDepth::F32Hdr;
     job.request.space = lcc_pipeline::OutputSpace::Srgb;
     job.cache = None;
@@ -1663,6 +1683,10 @@ pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob) -> lcc_engine:
     job.display = None;
     job.request.display = None;
     job.key ^= 0x4844_525f_5649_4557;
+    // Include headroom in the key so a headroom change re-uploads the texture (P2-4).
+    if let Some(h) = headroom {
+        job.key ^= h.to_bits() as u64;
+    }
     job
 }
 
@@ -3369,6 +3393,53 @@ mod tests {
         assert_eq!(flipped_corners(&h, true, false), screen);
         assert_eq!(flipped_corners(&v, false, true), screen);
         assert_eq!(flipped_corners(&hv, true, true), screen);
+    }
+
+    #[test]
+    fn hdr_view_job_key_includes_headroom() {
+        // A headroom change must produce a different render key so the texture is re-uploaded (P2-4).
+        let base = lcc_engine::media::RenderJob {
+            cache_generation: 0,
+            request_id: 1,
+            source_key: None,
+            photo: lcc_catalog::PhotoId(42),
+            level: lcc_engine::media::SourceLevel::Full,
+            source: lcc_engine::media::SourceRef::File {
+                path: "/tmp/test.jpg".to_string(),
+                max_edge: 100,
+                loader: None,
+                fallback: None,
+                denoise: None,
+                outliers: false,
+            },
+            origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
+            info: Default::default(),
+            settings: Default::default(),
+            request: lcc_pipeline::RenderRequest {
+                max_w: 100,
+                max_h: 100,
+                quality: Default::default(),
+                apply_crop: false,
+                overlay: Default::default(),
+                space: Default::default(),
+                depth: Default::default(),
+                proof: None,
+                window: None,
+                display: None,
+            },
+            key: 0,
+            cache: None,
+            view_cache: None,
+            stages: None,
+            display: None,
+            slide: None,
+            preview_cut: None,
+        };
+        let k1 = super::hdr_view_job(base.clone(), Some(2.0)).key;
+        let k2 = super::hdr_view_job(base.clone(), Some(4.0)).key;
+        let k3 = super::hdr_view_job(base.clone(), None).key;
+        assert_ne!(k1, k2, "different headroom values must produce different keys");
+        assert_ne!(k1, k3, "Some(headroom) must differ from None");
     }
 }
 

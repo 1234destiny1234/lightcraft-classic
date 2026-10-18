@@ -333,6 +333,9 @@ impl WindowHdr {
 }
 
 impl lcc_ui_egui::HdrOutput for WindowHdr {
+    fn extended(&self) -> bool {
+        self.extended
+    }
     fn headroom(&mut self) -> Option<f32> {
         let info = self.state.display_hdr_info.read().clone();
         let l = levels(Platform::current(), info.as_ref(), self.headroom_override, self.paper_white_override);

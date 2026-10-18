@@ -131,3 +131,25 @@ fn dragging_inside_the_box_moves_the_photo() {
     assert!(start.iter().zip(&now).all(|(a, b)| near(*a, *b)), "the box stays put: {start:?} → {now:?}");
     release(&mut h, at + egui::vec2(40.0, 0.0));
 }
+
+/// Zooming in the crop tool respects the requested zoom level (PR #1699).
+#[test]
+fn crop_respects_zoom_level() {
+    let mut h = cropped();
+    let fit_rect = h.app.image_rect.unwrap();
+    let r = h.request("engine.execute", json!({"command": "view.zoomLevel", "params": {"level": "2:1"}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(T);
+    let zoomed_rect = h.app.image_rect.unwrap();
+    assert!(
+        zoomed_rect.width() > fit_rect.width() * 1.5 || zoomed_rect.height() > fit_rect.height() * 1.5,
+        "photo should be larger at 200% zoom: fit={fit_rect:?} zoomed={zoomed_rect:?}"
+    );
+    h.app.ui.pan = (0.75, 0.5);
+    h.settle(T);
+    let panned_rect = h.app.image_rect.unwrap();
+    assert!(
+        panned_rect.center().x < zoomed_rect.center().x - 5.0,
+        "photo should move left when panning right: zoomed={zoomed_rect:?} panned={panned_rect:?}"
+    );
+}
