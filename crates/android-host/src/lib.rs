@@ -201,15 +201,6 @@ mod imp {
             })
         }
 
-        /// Offers files to other apps (the system share sheet).
-        pub fn share(&self, paths: &[String]) -> Result<(), Error> {
-            self.call("share", |env, activity| {
-                let list = string_array(env, paths)?;
-                env.call_method(activity, "share", "([Ljava/lang/String;)V", &[JValue::Object(&list)])?;
-                Ok(())
-            })
-        }
-
         /// Runs `f` on this thread's JNI environment; a Java exception becomes an [`Error`].
         fn call(&self, what: &str, f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<()>) -> Result<(), Error> {
             let mut env = self.vm.attach_current_thread_permanently().map_err(|e| jni_error("attach to the JVM", e))?;

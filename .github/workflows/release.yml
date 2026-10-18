@@ -667,6 +667,91 @@ jobs:
           TAG: ${{ needs.version.outputs.tag }}
         run: gh release upload "$TAG" --clobber -- dist/release/*.tar.gz
 
+  android:
+    timeout-minutes: 90
+    name: Android
+    needs: version
+    # uploads its files to the draft release (only when version says publish)
+    permissions:
+      contents: write
+    # Off until the maintainer turns it on (repository variable RELEASE_ANDROID=true), like riscv64.
+    if: vars.RELEASE_ANDROID == 'true'
+    runs-on: [self-hosted, Linux, X64, lcc]
+    # signs the APK and the Play Store bundle (ANDROID_KEYSTORE_BASE64 etc. are optional: without
+    # them the build is debug-signed and a warning says so)
+    environment: release
+    defaults:
+      run:
+        shell: nice -n 19 bash -e {0}
+    env:
+      PACKAGE_VERSION: ${{ needs.version.outputs.version }}
+      BUILD_DATE: ${{ needs.version.outputs.date }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+      # Fonts (optional build input; required for releases): see craftrules standards/fonts.md.
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: storytold/craft-fonts
+          ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
+          path: craft-fonts
+      - name: Keep the build cache between runs
+        run: echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/.cache/lcc-release-android-$RUNNER_NAME}" >> "$GITHUB_ENV"
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          targets: aarch64-linux-android
+      - name: Android NDK
+        run: .github/scripts/install-android-ndk.sh
+      - name: Android SDK and JDK
+        run: .github/scripts/install-android-sdk.sh
+      - name: Apply version override
+        if: inputs.version != ''
+        run: cargo xtask version set "$PACKAGE_VERSION"
+      - name: Signing key
+        env:
+          ANDROID_KEYSTORE_BASE64: ${{ secrets.ANDROID_KEYSTORE_BASE64 }}
+        run: |
+          if [ -n "$ANDROID_KEYSTORE_BASE64" ]; then
+            printf '%s' "$ANDROID_KEYSTORE_BASE64" | base64 -d > "$RUNNER_TEMP/release.keystore"
+            echo "ANDROID_KEYSTORE=$RUNNER_TEMP/release.keystore" >> "$GITHUB_ENV"
+          else
+            echo "::warning::no ANDROID_KEYSTORE_BASE64 secret: the Android build is debug-signed (not for the Play Store)"
+          fi
+      - name: Build and package (APK + AAB)
+        env:
+          CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
+          CRAFT_FONTS_REQUIRED: "1"
+          ANDROID_KEYSTORE_PASSWORD: ${{ secrets.ANDROID_KEYSTORE_PASSWORD }}
+          ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
+          ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
+        run: |
+          cargo xtask android package --aab
+          mkdir -p dist/release
+          /bin/cp -f "$CARGO_TARGET_DIR"/android/*.apk "$CARGO_TARGET_DIR"/android/*.aab dist/release/
+          rm -f "$RUNNER_TEMP/release.keystore"
+      # SHA-256 of what this job built: a few bytes the release job turns into SHA256SUMS.txt and latest.json.
+      - name: Checksums
+        run: |
+          mkdir -p sums
+          (cd dist/release && sha256sum -- *.apk *.aab) >"sums/sums-android.txt"
+          cat "sums/sums-android.txt"
+      - uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: sums-android
+          path: sums/sums-android.txt
+          if-no-files-found: error
+      - name: GitHub CLI
+        if: needs.version.outputs.publish == 'true'
+        run: bash .github/scripts/install-gh.sh
+      - name: Upload to the draft release
+        if: needs.version.outputs.publish == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ needs.version.outputs.tag }}
+        run: gh release upload "$TAG" --clobber -- dist/release/*.apk dist/release/*.aab
+
   freebsd:
     name: FreeBSD x86_64
     needs: version
@@ -818,7 +903,7 @@ jobs:
     # room for the cold build of the signing tool (fresh CARGO_HOME, no cache, nice 19) before the upload
     timeout-minutes: 30
     name: Draft GitHub Release
-    needs: [version, macos, windows, linux, flatpak, linux-riscv64, freebsd, web]
+    needs: [version, macos, windows, linux, flatpak, linux-riscv64, android, freebsd, web]
     # Finishes whatever built: a platform that failed is named in the run summary and the draft's notes,
     # so testers get the rest. Cancelling the run, or the version job failing, still stops it.
     # Never on a dry run (a manual dispatch defaults to one): there is no draft then.

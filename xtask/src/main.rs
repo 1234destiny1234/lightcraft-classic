@@ -4,6 +4,7 @@
 //! invoked through `std::process::Command`.
 
 mod android;
+mod apk;
 mod assets;
 mod bench;
 mod brand;
@@ -79,6 +80,9 @@ commands:
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
   android check   cargo check --target aarch64-linux-android for the crates the Android app uses
                   (needs the Android NDK; skipped without it outside CI)
+  android package [--abi arm64|x86_64]… [--aab] [--skip-build]
+                  the Android app as a signed APK (and with --aab a Play Store bundle) in
+                  <target>/android/ (NDK + SDK; docs/android.md)
   web [--serve [port]] [--dev]
                   build the browser app (apps/web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)

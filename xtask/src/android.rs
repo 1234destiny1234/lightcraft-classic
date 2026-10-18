@@ -1,5 +1,6 @@
 //! `cargo xtask android check`: the crates the Android app is built from must keep building for
-//! Android (`aarch64-linux-android`). Run by `ci` next to the wasm check.
+//! Android (`aarch64-linux-android`). Run by `ci` next to the wasm check. `cargo xtask android
+//! package` builds the APK / AAB (`apk.rs`).
 //!
 //! Android counts as `unix`, so a cfg written as "unix but not macOS" to mean Linux silently
 //! takes it in; this check catches that the day it happens. The C parts of the graph (`ring`, via
@@ -13,13 +14,47 @@ use crate::{cargo, layers, metadata, run as step};
 
 /// The Rust target the Android app ships for.
 pub const TARGET: &str = "aarch64-linux-android";
+
+/// A processor the app is built for: phones (arm64) and the x86_64 emulator.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum Abi {
+    Arm64,
+    X86_64,
+}
+
+impl Abi {
+    pub fn parse(s: &str) -> Option<Abi> {
+        match s {
+            "arm64" | "arm64-v8a" | "aarch64" => Some(Abi::Arm64),
+            "x86_64" | "x86-64" => Some(Abi::X86_64),
+            _ => None,
+        }
+    }
+
+    /// The Rust target triple.
+    pub fn triple(self) -> &'static str {
+        match self {
+            Abi::Arm64 => TARGET,
+            Abi::X86_64 => "x86_64-linux-android",
+        }
+    }
+
+    /// The APK's `lib/<abi>/` folder name.
+    pub fn dir(self) -> &'static str {
+        match self {
+            Abi::Arm64 => "arm64-v8a",
+            Abi::X86_64 => "x86_64",
+        }
+    }
+}
 /// The oldest Android API level the app supports (Android 9); picks the NDK's clang wrapper.
 pub const MIN_API: u32 = 28;
 
 pub fn run(args: &[&str]) -> Result<(), String> {
     match args.first().copied() {
         Some("check") | None => check(),
-        Some(other) => Err(format!("android: unknown subcommand `{other}` (expected `check`)")),
+        Some("package") => crate::apk::package(args.get(1..).unwrap_or_default()),
+        Some(other) => Err(format!("android: unknown subcommand `{other}` (expected `check` or `package`)")),
     }
 }
 
@@ -41,7 +76,7 @@ fn android_set() -> Result<Vec<String>, String> {
 }
 
 /// The NDK root: `ANDROID_NDK_HOME`, `ANDROID_NDK_ROOT`, else the newest `~/Android/android-ndk-*`.
-fn ndk_root() -> Option<PathBuf> {
+pub fn ndk_root() -> Option<PathBuf> {
     for var in ["ANDROID_NDK_HOME", "ANDROID_NDK_ROOT"] {
         if let Some(p) = std::env::var_os(var).map(PathBuf::from).filter(|p| p.is_dir()) {
             return Some(p);
@@ -58,25 +93,25 @@ fn ndk_root() -> Option<PathBuf> {
 }
 
 /// The NDK's prebuilt LLVM `bin` directory for this host.
-fn ndk_bin(ndk: &Path) -> Option<PathBuf> {
+pub fn ndk_bin(ndk: &Path) -> Option<PathBuf> {
     let prebuilt = ndk.join("toolchains/llvm/prebuilt");
     std::fs::read_dir(prebuilt).ok()?.filter_map(|e| e.ok().map(|e| e.path().join("bin"))).find(|p| p.is_dir())
 }
 
-/// Points cargo and the `cc` crate at the NDK's clang for [`TARGET`].
-pub fn configure(c: &mut Command, bin: &Path) {
-    let clang = bin.join(format!("aarch64-linux-android{MIN_API}-clang"));
-    let triple = TARGET.replace('-', "_");
+/// Points cargo and the `cc` crate at the NDK's clang for `abi`.
+pub fn configure(c: &mut Command, bin: &Path, abi: Abi) {
+    let clang = bin.join(format!("{}{MIN_API}-clang", abi.triple()));
+    let triple = abi.triple().replace('-', "_");
     c.env(format!("CC_{triple}"), &clang)
         .env(format!("AR_{triple}"), bin.join("llvm-ar"))
         .env(format!("CARGO_TARGET_{}_LINKER", triple.to_uppercase()), &clang);
 }
 
-fn target_installed() -> bool {
+pub fn target_installed(triple: &str) -> bool {
     Command::new("rustup")
         .args(["target", "list", "--installed"])
         .output()
-        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.trim() == TARGET))
+        .is_ok_and(|o| String::from_utf8_lossy(&o.stdout).lines().any(|l| l.trim() == triple))
 }
 
 /// A missing toolchain is a skip on a developer machine and a failure in CI (`CI` is set there).
@@ -90,7 +125,7 @@ fn missing(what: &str) -> Result<(), String> {
 }
 
 fn check() -> Result<(), String> {
-    if !target_installed() {
+    if !target_installed(TARGET) {
         return missing(&format!("the Rust target is not installed (`rustup target add {TARGET}`)"));
     }
     let Some(bin) = ndk_root().as_deref().and_then(ndk_bin) else {
@@ -101,7 +136,7 @@ fn check() -> Result<(), String> {
     for pkg in &set {
         let mut c = cargo();
         c.args(["check", "--target", TARGET, "-p", pkg]);
-        configure(&mut c, &bin);
+        configure(&mut c, &bin, Abi::Arm64);
         let ok = step(c, &format!("cargo check --target {TARGET} -p {pkg}")).is_ok();
         results.push((pkg.clone(), ok));
     }

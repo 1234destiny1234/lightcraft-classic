@@ -1,0 +1,302 @@
+// The Android app's activity: a NativeActivity running the app's native library (libapp.so,
+// apps/android), plus what only Java can do for it (crates/android-host calls these methods):
+// the system pickers (Storage Access Framework) and opening links.
+//
+// Picked documents are copied into the app's own folders, so the native side only ever sees file
+// paths. For a save, the native side gets a path in the cache to write; a FileObserver copies the
+// file to the document the user chose once it has been written (the app writes atomically: a
+// temporary file renamed into place, so both "closed after writing" and "moved in" count).
+//
+// Every answer goes back through nativePicked (registered by the native side at start-up). Errors
+// never escape: a failed copy is logged and left out of the answer.
+package {{app_id}};
+
+import android.app.NativeActivity;
+import android.content.ClipData;
+import android.content.ContentResolver;
+import android.content.Intent;
+import android.database.Cursor;
+import android.net.Uri;
+import android.os.Bundle;
+import android.os.FileObserver;
+import android.provider.DocumentsContract;
+import android.provider.OpenableColumns;
+import android.util.Log;
+
+import java.io.File;
+import java.io.FileInputStream;
+import java.io.FileOutputStream;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+
+public class MainActivity extends NativeActivity {
+    private static final String TAG = "{{binary}}";
+    private static final int FILES = 0, FILE = 1, FOLDER = 2, SAVE = 3;
+    /** Folders deeper than this inside a picked folder are not copied. */
+    private static final int MAX_DEPTH = 8;
+
+    /** Answers a picker (registered by crates/android-host). */
+    private native void nativePicked(long id, String[] paths);
+
+    private static final class Pending {
+        final long id;
+        final int kind;
+        final String fileName;
+
+        Pending(long id, int kind, String fileName) {
+            this.id = id;
+            this.kind = kind;
+            this.fileName = fileName;
+        }
+    }
+
+    private final Map<Integer, Pending> pending = new HashMap<>();
+    private final List<FileObserver> saves = new ArrayList<>();
+    private int nextRequest = 1000;
+
+    @Override
+    protected void onCreate(Bundle savedInstanceState) {
+        super.onCreate(savedInstanceState);
+    }
+
+    /** Shows a picker; the answer comes through nativePicked(id, …). */
+    public void startPick(final long id, final int kind, final String[] mimes, final String fileName) {
+        runOnUiThread(() -> {
+            Intent intent;
+            switch (kind) {
+                case FOLDER:
+                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT_TREE);
+                    break;
+                case SAVE:
+                    intent = new Intent(Intent.ACTION_CREATE_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType(mimes != null && mimes.length > 0 ? mimes[0] : "application/octet-stream");
+                    if (fileName != null) intent.putExtra(Intent.EXTRA_TITLE, fileName);
+                    break;
+                default:
+                    intent = new Intent(Intent.ACTION_OPEN_DOCUMENT);
+                    intent.addCategory(Intent.CATEGORY_OPENABLE);
+                    intent.setType("*/*");
+                    if (mimes != null && mimes.length > 0) intent.putExtra(Intent.EXTRA_MIME_TYPES, mimes);
+                    intent.putExtra(Intent.EXTRA_ALLOW_MULTIPLE, kind == FILES);
+                    break;
+            }
+            int request = nextRequest++;
+            pending.put(request, new Pending(id, kind, fileName));
+            try {
+                startActivityForResult(intent, request);
+            } catch (Exception e) {
+                Log.w(TAG, "no picker: " + e);
+                pending.remove(request);
+                answer(id, new String[0]);
+            }
+        });
+    }
+
+    @Override
+    protected void onActivityResult(int request, int result, Intent data) {
+        super.onActivityResult(request, result, data);
+        final Pending p = pending.remove(request);
+        if (p == null) return;
+        if (result != RESULT_OK || data == null) {
+            answer(p.id, new String[0]);
+            return;
+        }
+        // copies can take a while (a folder of raws): off the UI thread
+        new Thread(() -> {
+            String[] paths;
+            try {
+                paths = collect(p, data);
+            } catch (Exception e) {
+                Log.w(TAG, "picker: " + e);
+                paths = new String[0];
+            }
+            answer(p.id, paths);
+        }, "picker").start();
+    }
+
+    private String[] collect(Pending p, Intent data) throws IOException {
+        List<String> out = new ArrayList<>();
+        switch (p.kind) {
+            case FOLDER: {
+                Uri tree = data.getData();
+                if (tree == null) break;
+                String docId = DocumentsContract.getTreeDocumentId(tree);
+                File dest = unique(incoming(), safeName(displayName(DocumentsContract.buildDocumentUriUsingTree(tree, docId)), "Folder"));
+                if (!dest.mkdirs() && !dest.isDirectory()) throw new IOException("can't create " + dest);
+                copyTree(tree, docId, dest, 0);
+                out.add(dest.getAbsolutePath());
+                break;
+            }
+            case SAVE: {
+                Uri target = data.getData();
+                if (target == null) break;
+                out.add(watchSave(target, safeName(p.fileName, "export")).getAbsolutePath());
+                break;
+            }
+            default: {
+                List<Uri> uris = new ArrayList<>();
+                ClipData clip = data.getClipData();
+                if (clip != null) {
+                    for (int i = 0; i < clip.getItemCount(); i++) uris.add(clip.getItemAt(i).getUri());
+                } else if (data.getData() != null) {
+                    uris.add(data.getData());
+                }
+                File dir = unique(incoming(), "Import");
+                if (!dir.mkdirs() && !dir.isDirectory()) throw new IOException("can't create " + dir);
+                for (Uri uri : uris) {
+                    try {
+                        File dest = unique(dir, safeName(displayName(uri), "photo"));
+                        copy(uri, dest);
+                        out.add(dest.getAbsolutePath());
+                    } catch (IOException e) {
+                        Log.w(TAG, "copy " + uri + ": " + e);
+                    }
+                }
+            }
+        }
+        return out.toArray(new String[0]);
+    }
+
+    private void answer(long id, String[] paths) {
+        try {
+            nativePicked(id, paths);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativePicked: " + t);
+        }
+    }
+
+    /** Where picked documents are copied: the external files folder, beside the library. */
+    private File incoming() {
+        File base = getExternalFilesDir(null);
+        if (base == null) base = getFilesDir();
+        return new File(base, "Incoming");
+    }
+
+    private void copyTree(Uri tree, String parentId, File dest, int depth) throws IOException {
+        if (depth > MAX_DEPTH) return;
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId);
+        String[] cols = {DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME, DocumentsContract.Document.COLUMN_MIME_TYPE};
+        try (Cursor c = getContentResolver().query(children, cols, null, null, null)) {
+            if (c == null) return;
+            while (c.moveToNext()) {
+                String id = c.getString(0);
+                String name = safeName(c.getString(1), "item");
+                String mime = c.getString(2);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(mime)) {
+                    File sub = unique(dest, name);
+                    if (sub.mkdirs()) copyTree(tree, id, sub, depth + 1);
+                } else {
+                    try {
+                        copy(DocumentsContract.buildDocumentUriUsingTree(tree, id), unique(dest, name));
+                    } catch (IOException e) {
+                        Log.w(TAG, "copy " + name + ": " + e);
+                    }
+                }
+            }
+        }
+    }
+
+    /** A path in the cache to write; copied to `target` once the file has been written. */
+    private File watchSave(final Uri target, String name) throws IOException {
+        final File dir = unique(new File(getCacheDir(), "outgoing"), "save");
+        if (!dir.mkdirs() && !dir.isDirectory()) throw new IOException("can't create " + dir);
+        final File file = new File(dir, name);
+        final String fileName = file.getName();
+        final FileObserver[] holder = new FileObserver[1];
+        holder[0] = new FileObserver(dir, FileObserver.CLOSE_WRITE | FileObserver.MOVED_TO) {
+            @Override
+            public void onEvent(int event, String path) {
+                if (!fileName.equals(path)) return;
+                try (InputStream in = new FileInputStream(file); OutputStream out = getContentResolver().openOutputStream(target, "wt")) {
+                    if (out == null) throw new IOException("the document can't be written");
+                    pipe(in, out);
+                } catch (IOException e) {
+                    Log.w(TAG, "save to " + target + ": " + e);
+                } finally {
+                    stopWatching();
+                    synchronized (saves) {
+                        saves.remove(holder[0]);
+                    }
+                    file.delete();
+                    dir.delete();
+                }
+            }
+        };
+        synchronized (saves) {
+            saves.add(holder[0]);
+        }
+        holder[0].startWatching();
+        return file;
+    }
+
+    private void copy(Uri uri, File dest) throws IOException {
+        ContentResolver r = getContentResolver();
+        try (InputStream in = r.openInputStream(uri); OutputStream out = new FileOutputStream(dest)) {
+            if (in == null) throw new IOException("the document can't be read");
+            pipe(in, out);
+        } catch (IOException e) {
+            dest.delete();
+            throw e;
+        }
+    }
+
+    private static void pipe(InputStream in, OutputStream out) throws IOException {
+        byte[] buf = new byte[1 << 16];
+        int n;
+        while ((n = in.read(buf)) > 0) out.write(buf, 0, n);
+    }
+
+    private String displayName(Uri uri) {
+        try (Cursor c = getContentResolver().query(uri, new String[]{OpenableColumns.DISPLAY_NAME}, null, null, null)) {
+            if (c != null && c.moveToFirst()) return c.getString(0);
+        } catch (Exception e) {
+            Log.w(TAG, "name of " + uri + ": " + e);
+        }
+        return uri.getLastPathSegment();
+    }
+
+    /** A file name without path separators or control characters, never empty. */
+    private static String safeName(String name, String fallback) {
+        if (name == null) return fallback;
+        String s = name.replaceAll("[/\\\\\\u0000-\\u001f]", "_").trim();
+        if (s.isEmpty() || s.equals(".") || s.equals("..")) return fallback;
+        return s.length() > 200 ? s.substring(0, 200) : s;
+    }
+
+    /** `dir/name`, or `dir/name (2)` … when that exists. */
+    private static File unique(File dir, String name) {
+        File f = new File(dir, name);
+        if (!f.exists()) return f;
+        int dot = name.lastIndexOf('.');
+        String stem = dot > 0 ? name.substring(0, dot) : name;
+        String ext = dot > 0 ? name.substring(dot) : "";
+        for (int i = 2; i < 10000; i++) {
+            f = new File(dir, stem + " (" + i + ")" + ext);
+            if (!f.exists()) return f;
+        }
+        return new File(dir, stem + " " + System.nanoTime() + ext);
+    }
+
+    /** Opens a web link in the browser. */
+    public void openUrl(final String url) {
+        runOnUiThread(() -> {
+            try {
+                Uri uri = Uri.parse(url);
+                String scheme = uri.getScheme();
+                if (!"https".equals(scheme) && !"http".equals(scheme) && !"mailto".equals(scheme)) {
+                    Log.w(TAG, "not opening " + scheme + " link");
+                    return;
+                }
+                startActivity(new Intent(Intent.ACTION_VIEW, uri));
+            } catch (Exception e) {
+                Log.w(TAG, "open " + url + ": " + e);
+            }
+        });
+    }
+}
