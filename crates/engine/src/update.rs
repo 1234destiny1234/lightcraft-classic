@@ -338,6 +338,9 @@ impl Updater {
             self.prefs = before;
             return Err(e);
         }
+        if before.prerelease != self.prefs.prerelease && !self.checking() {
+            self.check = Check::Never;
+        }
         Ok(true)
     }
 

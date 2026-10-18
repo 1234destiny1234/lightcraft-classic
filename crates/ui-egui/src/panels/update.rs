@@ -45,7 +45,21 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     }
     if app.ui.update_checked_at > 0.0 && now >= app.ui.update_checked_at {
         app.ui.update_checked_at = 0.0;
-        let _ = app.session.execute("update.check", &json!({}));
+        if app.startup_update_check
+            && app.session.updater.prefs().check_at_startup
+            && !app.session.updater.checking()
+            && app.session.execute("update.check", &json!({})).is_ok()
+        {
+            app.ui.startup_update_checking = true;
+        }
+    }
+    if app.ui.startup_update_checking && !app.session.updater.checking() {
+        app.ui.startup_update_checking = false;
+        if let Some(available) = app.session.updater.available()
+            && !app.session.updater.already_seen(&available.version)
+        {
+            app.ui.update_pending = Some(available.version.clone());
+        }
     }
     // a start-up check that found something says so once, without opening a window
     if let Some(version) = app.ui.update_pending.clone()
@@ -53,7 +67,9 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
         && available.version == version
     {
         app.ui.update_pending = None;
-        app.toast(ctx, tr_format!("{app} {version} is available (Help ▸ Check for Updates…)", version = version));
+        if !matches!(app.ui.dialog, Some(Dialog::Update)) {
+            app.toast(ctx, tr_format!("{app} {version} is available (Help ▸ Check for Updates…)", version = version));
+        }
     }
     // a staged file whose release is no longer on offer (a newer check replaced it) leaves nothing behind
     if app.session.updater.available().is_none()
@@ -268,10 +284,13 @@ fn settings(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let r = ui.checkbox(&mut prerelease, tr("Include prereleases (release candidates)"));
     register(ui.ctx(), "check:updatePrerelease", r.rect);
     // not saved: the boxes show the stored values again next frame
-    if (check_at_startup != app.session.updater.prefs().check_at_startup || prerelease != app.session.updater.prefs().prerelease)
-        && let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup, "prerelease": prerelease}))
-    {
-        app.toast_error(ui.ctx(), format!("{}: {e}", tr("Update settings not saved")));
+    if check_at_startup != app.session.updater.prefs().check_at_startup || prerelease != app.session.updater.prefs().prerelease {
+        let prerelease_changed = prerelease != app.session.updater.prefs().prerelease;
+        if let Err(e) = app.session.execute("update.prefs", &json!({"checkAtStartup": check_at_startup, "prerelease": prerelease})) {
+            app.toast_error(ui.ctx(), format!("{}: {e}", tr("Update settings not saved")));
+        } else if prerelease_changed {
+            let _ = app.session.execute("update.check", &json!({}));
+        }
     }
     if !app.session.updater.persistent() {
         ui.label(egui::RichText::new(tr("These settings are saved in the app's settings folder.")).font(t.font(11.0)).color(t.text_dim));
