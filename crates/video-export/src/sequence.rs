@@ -64,7 +64,7 @@ impl SequenceWriter {
             ClipFormat::ProResMov => Brand::Mov,
         };
         let video = VideoOut::new(format, quality.clamp(1, 100), width, height, fps_num, fps_den)?;
-        let file = File::create(&partial).map_err(io)?;
+        let file = File::options().write(true).create_new(true).open(&partial).map_err(io)?;
         let made = (|| {
             let mut mux = Mp4Writer::new(BufWriter::new(file), WriterOptions::new(brand)).map_err(enc)?;
             let track = mux.add_track(video.track_config()).map_err(enc)?;
@@ -121,17 +121,22 @@ impl SequenceWriter {
         if self.frames == 0 {
             return Err(ExportClipError::BadOptions("no frames".into()));
         }
-        let mut mux = self.mux.take().ok_or(ExportClipError::Internal)?;
+        // Don't take mux yet; keep it in self.mux so Drop removes the partial
+        // file if any write fails.
         for p in self.video.flush() {
+            let mux = self.mux.as_mut().ok_or(ExportClipError::Internal)?;
             mux.write_sample(self.track, WriteSample { data: &p.data, duration: self.fps_den, composition_offset: p.cto, is_sync: p.key })
                 .map_err(enc)?;
         }
         let has_audio = self.audio.is_some();
         if let Some((tr, a)) = self.audio.take() {
             for p in &a.packets {
+                let mux = self.mux.as_mut().ok_or(ExportClipError::Internal)?;
                 mux.write_sample(tr, WriteSample { data: &p.data, duration: p.duration, composition_offset: 0, is_sync: true }).map_err(enc)?;
             }
         }
+        // All writes succeeded; now finalize and take the mux.
+        let mux = self.mux.take().ok_or(ExportClipError::Internal)?;
         let mut out = mux.finish().map_err(enc)?;
         out.flush().map_err(io)?;
         let file = out.into_inner().map_err(|e| io(e.error()))?;
@@ -207,6 +212,38 @@ mod tests {
             let a = lcc_video::AudioReader::open(&out).unwrap();
             assert_eq!(a.info().channels, 2, "{name}");
         }
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn existing_partial_file_errors_on_create() {
+        let dir = std::env::temp_dir().join(format!("lcc-seq-partial-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t.mp4");
+        // Create a leftover partial file (e.g. from a crashed writer)
+        let partial = dir.join("t.mp4.partial");
+        std::fs::write(&partial, b"leftover").unwrap();
+        // create() should error instead of truncating the existing partial file
+        let result = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1);
+        assert!(result.is_err(), "expected error on existing partial file");
+        // The leftover partial file should still exist (not truncated)
+        assert!(partial.exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn finish_with_no_frames_removes_partial_file() {
+        let dir = std::env::temp_dir().join(format!("lcc-seq-noframes-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t.mp4");
+        let mut w = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
+        // Don't push any frames
+        let result = w.finish();
+        assert!(result.is_err(), "expected error on no frames");
+        // The partial file should be removed (not left behind)
+        let partial = dir.join("t.mp4.partial");
+        assert!(!partial.exists(), "partial file should be removed on finish() error");
+        assert!(!out.exists(), "output file should not exist on error");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
