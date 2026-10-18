@@ -19,6 +19,7 @@ logo_svg       = "brand/logo.svg"       # identity plate default, About box
 # values MUST be appended to [legacy] in the same commit, so existing installs keep working.
 [identity]
 app_id          = "com.emmertex.LightCraftClassic"   # reverse-DNS: bundle id, Flatpak id, MIME/desktop ids
+android_package = "com.emmertex.ChromaForge"        # Android / Play Store package: permanent once on the Play Store
 settings_dir    = "LightCraft Classic"               # ~/.config/<x>, ~/Library/Application Support/<x>, %APPDATA%\<x>
 library_default = "LightCraft Classic Library"       # default catalog folder name under Pictures
 catalog_ext     = "lccat"

@@ -20,7 +20,7 @@ covers what exists today.
   SDK; NativeActivity is pure Rust on our side. The Java side is one small `NativeActivity` subclass
   (`packaging/android`) that runs the system pickers and opens links.
 - **Folders.** The host calls `lcc_brand::set_platform_dirs` before anything else. Settings go in the app's internal
-  data folder, and the library in its external data folder (`Android/data/<app_id>/files/<library name>`), which
+  data folder, and the library in its external data folder (`Android/data/<android_package>/files/<library name>`), which
   the Files app can reach and which is removed with the app. No environment variables are set (`set_var` is unsafe
   and racy once the activity's threads run).
 - **Pickers.** The shared UI's asynchronous `Services::picker` is answered by the Storage Access Framework. The
@@ -67,7 +67,7 @@ adb install -r target/android/<binary>-<version>-android-arm64-v8a.apk
 There is no Gradle. The activity is one Java file on the platform's `NativeActivity` (no AndroidX), so xtask
 drives the SDK tools itself (`xtask/src/apk.rs`):
 1. `javac` and `d8` for the activity, rendered from `packaging/android/*.in` with the `brand.toml` values (the
-   package is `app_id`).
+   package is `android_package` from `brand.toml`: provisional, and permanent once the app is on the Play Store).
 2. `aapt2` for the manifest and launcher icon.
 3. The native library from `cargo build --release`.
 4. `zipalign -P 16` (16 KB pages, which Play requires) and `apksigner`.
