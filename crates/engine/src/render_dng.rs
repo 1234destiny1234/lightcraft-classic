@@ -60,6 +60,7 @@ pub fn prepare(s: &mut Session, p: &Value) -> Result<RenderDngJob> {
         color_space: space,
         naming: "{name}-Rendered".into(),
         conflict: Conflict::Unique,
+        hdr: true,
         ..Default::default()
     };
     let mut items = Vec::with_capacity(ids.len());
