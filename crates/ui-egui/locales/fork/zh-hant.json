@@ -1425,5 +1425,7 @@
   "Loupe Info": "放大檢視資訊",
   "Before/After": "修改前/修改後",
   "Edit Panels": "編輯面板",
-  "Screen Mode": "螢幕模式"
+  "Screen Mode": "螢幕模式",
+  "Metadata Filter Columns": "中繼資料篩選欄",
+  "Metadata columns: click a value to narrow the view": "中繼資料欄：按一下某個值以縮小檢視範圍"
 }

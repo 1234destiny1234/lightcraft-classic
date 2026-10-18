@@ -1020,6 +1020,33 @@ pub fn menu_bar(app: &LccApp) -> Vec<(String, Vec<MenuNode>)> {
 
 /// Run a menu item. Rating, flag and label items behave like their keys (the active photo only in
 /// Compare/Survey; Auto Advance moves on).
+/// The text-editing shortcuts a focused text field owns (⌘A / ⌘C / ⌘X / ⌘V / ⌘Z / ⇧⌘Z).
+pub const TEXT_EDIT_SHORTCUTS: &[&str] = &["Cmd+A", "Cmd+C", "Cmd+V", "Cmd+X", "Cmd+Z", "Cmd+Shift+Z"];
+
+/// A menu item reached by a text-editing shortcut while a text field has the keyboard focus
+/// (issue #281: the macOS menu bar can still deliver ⌘A to Library ▸ Select All): the field gets
+/// the edit (select its text, copy, paste…) instead of the command. Returns whether it did.
+pub fn forward_to_text_field(app: &mut LccApp, ctx: &egui::Context, shortcut: Option<&str>) -> bool {
+    let Some(sc) = shortcut.filter(|sc| TEXT_EDIT_SHORTCUTS.contains(sc)) else { return false };
+    if !ctx.egui_wants_keyboard_input() {
+        return false;
+    }
+    let command = egui::Modifiers::COMMAND;
+    let key = |key: egui::Key, modifiers: egui::Modifiers| {
+        [true, false].map(|pressed| egui::Event::Key { key, physical_key: Some(key), pressed, repeat: false, modifiers })
+    };
+    match sc {
+        "Cmd+C" => app.synthetic.push(egui::Event::Copy),
+        "Cmd+X" => app.synthetic.push(egui::Event::Cut),
+        "Cmd+V" => ctx.send_viewport_cmd(egui::ViewportCommand::RequestPaste),
+        "Cmd+A" => app.synthetic.extend(key(egui::Key::A, command)),
+        "Cmd+Z" => app.synthetic.extend(key(egui::Key::Z, command)),
+        _ => app.synthetic.extend(key(egui::Key::Z, command | egui::Modifiers::SHIFT)),
+    }
+    ctx.request_repaint();
+    true
+}
+
 pub fn run_item(app: &mut LccApp, id: &str, params: Value) -> Result<Value, String> {
     let mut params = if params.is_null() { json!({}) } else { params };
     let culling_cmd = matches!(

@@ -1339,5 +1339,7 @@
   "Loupe Info": "放大视图信息",
   "Before/After": "修改前/修改后",
   "Edit Panels": "编辑面板",
-  "Screen Mode": "屏幕模式"
+  "Screen Mode": "屏幕模式",
+  "Metadata Filter Columns": "元数据筛选列",
+  "Metadata columns: click a value to narrow the view": "元数据列：点击某个值以缩小视图范围"
 }

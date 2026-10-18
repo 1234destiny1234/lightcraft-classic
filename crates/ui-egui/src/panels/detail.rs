@@ -1103,7 +1103,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     super::layout_overlay::draw(app, &p, img_rect);
     register(ui.ctx(), "canvas:image", img_rect);
     let map = crop_view.map_or_else(|| CanvasMap::new(&frame, img_rect), |v| v.map);
-    info_overlay(app, &p, canvas, &photo);
+    info_overlay(app, &p, canvas, &photo, !fullscreen);
     if !fullscreen {
         filter_pill(app, ui, canvas);
     }
@@ -1234,7 +1234,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
 
 /// The info overlay at the canvas' top left (`view.infoOverlay`): file name with the capture date
 /// and size, or with the camera and exposure.
-fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catalog::Photo) {
+fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catalog::Photo, pill: bool) {
     use crate::state::InfoOverlay;
     let lines: Vec<String> = match app.ui.info_overlay {
         InfoOverlay::Off => return,
@@ -1268,7 +1268,11 @@ fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catal
         }
     };
     let t = Tokens::get(p.ctx());
-    let mut y = canvas.top() + 12.0;
+    // the filter pill (`filter_pill`) holds the corner while filters are on: the overlay goes
+    // under it instead of being drawn over it (issue #266)
+    let filtered = pill && !lcc_engine::filter_chips(&app.session.filter, &app.session.catalog).is_empty();
+    let mut y = canvas.top() + if filtered { FILTER_PILL_INSET + FILTER_PILL_HEIGHT + 8.0 } else { 12.0 };
+    let top = y;
     for (i, l) in lines.iter().enumerate() {
         let font = if i == 0 { t.semibold(15.0) } else { t.font(12.5) };
         // laid out uncoloured: `galley` only fills placeholder text with its colour, so a white
@@ -1280,7 +1284,7 @@ fn info_overlay(app: &LccApp, p: &egui::Painter, canvas: Rect, photo: &lcc_catal
         p.galley(at, g.clone(), Color32::WHITE);
         y += g.size().y + 3.0;
     }
-    register(p.ctx(), "canvas:infoOverlay", Rect::from_min_max(canvas.min, pos2(canvas.left() + 320.0, y)));
+    register(p.ctx(), "canvas:infoOverlay", Rect::from_min_max(pos2(canvas.left(), top), pos2(canvas.left() + 320.0, y)));
 }
 
 /// What the user did to a face box this frame.
@@ -1456,6 +1460,10 @@ fn region_overlay(
     edit
 }
 
+/// The filter pill's inset from the canvas corner and its height (the info overlay goes below it).
+const FILTER_PILL_INSET: f32 = 3.0;
+const FILTER_PILL_HEIGHT: f32 = 20.0;
+
 /// A small pill at the loupe's top left naming the active filters: the filmstrip and Next / Previous
 /// follow them, so a filter must never be invisible here. A click clears them all. It sits in the
 /// canvas margin, so the photo does not move.
@@ -1470,9 +1478,9 @@ fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
         chips.iter().map(|c| crate::panels::chips::display_label(c, &app.session.filter, &app.session.catalog)).collect::<Vec<_>>().join("  ·  ");
     let g = p.layout_no_wrap(crate::i18n::tr_format!("Filtered: {label}", label = label), t.font(12.0), Color32::from_gray(225));
     // the same inset from the left as from the top, so the pill sits in the corner (#1645)
-    let inset = 3.0;
+    let inset = FILTER_PILL_INSET;
     let w = (g.size().x + 40.0).min((canvas.width() - 2.0 * inset).max(60.0));
-    let r = Rect::from_min_size(canvas.min + vec2(inset, inset), vec2(w, 20.0));
+    let r = Rect::from_min_size(canvas.min + vec2(inset, inset), vec2(w, FILTER_PILL_HEIGHT));
     let resp = ui.interact(r, egui::Id::new("loupe-filter-pill"), Sense::click());
     crate::widgets::announce(&resp, crate::i18n::tr("Filters"));
     register(ui.ctx(), "loupe:filters", r);
@@ -3528,7 +3536,7 @@ mod info_overlay_tests {
         crate::theme::install_fonts(&ctx);
         let canvas = Rect::from_min_size(pos2(52.0, 82.0), vec2(800.0, 500.0));
         let raw = crate::headless::HeadlessView::raw_input(vec2(1000.0, 700.0), 1.0, 0.0, vec![]);
-        let mut out = ctx.run_ui(raw, |ui| info_overlay(&app, ui.painter(), canvas, &photo));
+        let mut out = ctx.run_ui(raw, |ui| info_overlay(&app, ui.painter(), canvas, &photo, true));
         out.textures_delta.clear();
         // the colour a text shape paints its glyphs in, as epaint resolves it
         let ink = |s: &egui::epaint::TextShape| {

@@ -1426,5 +1426,7 @@
   "Loupe Info": "ルーペ情報",
   "Before/After": "補正前/補正後",
   "Edit Panels": "編集パネル",
-  "Screen Mode": "画面モード"
+  "Screen Mode": "画面モード",
+  "Metadata Filter Columns": "メタデータフィルター列",
+  "Metadata columns: click a value to narrow the view": "メタデータ列：値をクリックすると表示が絞り込まれます"
 }

@@ -1284,5 +1284,7 @@
   "Loupe Info": "Lupeninformationen",
   "Before/After": "Vorher/Nachher",
   "Edit Panels": "Bearbeitungsbereiche",
-  "Screen Mode": "Bildschirmmodus"
+  "Screen Mode": "Bildschirmmodus",
+  "Metadata Filter Columns": "Metadaten-Filterspalten",
+  "Metadata columns: click a value to narrow the view": "Metadatenspalten: Klicken Sie auf einen Wert, um die Ansicht einzugrenzen"
 }

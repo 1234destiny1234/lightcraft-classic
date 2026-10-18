@@ -35,5 +35,7 @@
   "Before/After": "მანამდე/შემდეგ",
   "Edit Panels": "რედაქტირების პანელები",
   "Screen Mode": "ეკრანის რეჟიმი",
-  "Grid View Style": "ბადის ხედის სტილი"
+  "Grid View Style": "ბადის ხედის სტილი",
+  "Metadata Filter Columns": "მეტამონაცემების ფილტრის სვეტები",
+  "Metadata columns: click a value to narrow the view": "მეტამონაცემების სვეტები: დააწკაპუნეთ მნიშვნელობაზე ხედის შესავიწროებლად"
 }

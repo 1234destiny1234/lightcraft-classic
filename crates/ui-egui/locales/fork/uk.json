@@ -1167,5 +1167,7 @@
   "Loupe Info": "Відомості в лупі",
   "Before/After": "До/після",
   "Edit Panels": "Панелі редагування",
-  "Screen Mode": "Режим екрана"
+  "Screen Mode": "Режим екрана",
+  "Metadata Filter Columns": "Стовпці фільтра метаданих",
+  "Metadata columns: click a value to narrow the view": "Стовпці метаданих: клацніть значення, щоб звузити перегляд"
 }

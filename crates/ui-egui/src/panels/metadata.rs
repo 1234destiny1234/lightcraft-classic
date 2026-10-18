@@ -428,13 +428,23 @@ fn text_field(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &
     let field = if shared.is_none() { field.hint(MIXED) } else { field };
     let r = field.width(f32::INFINITY).show(ui);
     crate::access::label(&r.response, label);
+    // the photos an edit saves to are the ones shown when it began (issue #281): a selection that
+    // changes while the field is still being edited (Select All from the menu bar) gains nothing
+    let targets_id = id.with("targets");
+    let targets: Vec<u64> = ui.data(|d| d.get_temp(targets_id)).unwrap_or_else(|| ids.to_vec());
     if r.editing {
-        ui.data_mut(|d| d.insert_temp(id, text.clone()));
+        ui.data_mut(|d| {
+            d.insert_temp(id, text.clone());
+            d.insert_temp(targets_id, targets.clone());
+        });
     } else {
-        ui.data_mut(|d| d.remove::<String>(id));
+        ui.data_mut(|d| {
+            d.remove::<String>(id);
+            d.remove::<Vec<u64>>(targets_id);
+        });
     }
     if r.committed() && text != shown && !(shared.is_none() && text.is_empty()) {
-        let _ = app.run("photo.setMeta", json!({"ids": ids, key: text}));
+        let _ = app.run("photo.setMeta", json!({"ids": targets, key: text}));
     }
     ui.add_space(6.0);
 }

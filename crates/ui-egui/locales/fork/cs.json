@@ -35,5 +35,7 @@
   "Before/After": "Před/po",
   "Edit Panels": "Panely úprav",
   "Screen Mode": "Režim obrazovky",
-  "Grid View Style": "Styl mřížky"
+  "Grid View Style": "Styl mřížky",
+  "Metadata Filter Columns": "Sloupce filtru metadat",
+  "Metadata columns: click a value to narrow the view": "Sloupce metadat: kliknutím na hodnotu zúžíte zobrazení"
 }

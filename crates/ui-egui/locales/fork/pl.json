@@ -35,5 +35,7 @@
   "Before/After": "Przed/po",
   "Edit Panels": "Panele edycji",
   "Screen Mode": "Tryb ekranu",
-  "Grid View Style": "Styl siatki"
+  "Grid View Style": "Styl siatki",
+  "Metadata Filter Columns": "Kolumny filtra metadanych",
+  "Metadata columns: click a value to narrow the view": "Kolumny metadanych: kliknij wartość, aby zawęzić widok"
 }

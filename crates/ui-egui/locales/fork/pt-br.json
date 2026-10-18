@@ -1426,5 +1426,7 @@
   "Loupe Info": "Informações da lupa",
   "Before/After": "Antes/Depois",
   "Edit Panels": "Painéis de edição",
-  "Screen Mode": "Modo de tela"
+  "Screen Mode": "Modo de tela",
+  "Metadata Filter Columns": "Colunas de filtro de metadados",
+  "Metadata columns: click a value to narrow the view": "Colunas de metadados: clique em um valor para restringir a exibição"
 }

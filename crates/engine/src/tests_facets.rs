@@ -69,3 +69,80 @@ fn rejects_unknown_fields_and_bounds_the_values() {
     let all = s.execute("library.facets", &json!({})).unwrap();
     assert_eq!(all.as_object().unwrap().len(), crate::cmd::facets::FIELDS.len());
 }
+
+/// Issue #218: a Metadata column's click (`library.facetPick`) narrows the view; the next column counts only what
+/// is left (the columns cascade), a field with several values chosen shows any of them, and the field picked keeps
+/// listing its other values.
+#[test]
+fn picking_a_value_narrows_and_cascades() {
+    let (mut s, ids) = library();
+    let r = s.execute("library.facetPick", &json!({"field": "camera", "value": "Facet Cam A"})).unwrap();
+    assert_eq!(r["count"], 2, "{r}");
+    assert_eq!(r["chosen"], json!(["Facet Cam A"]));
+    let f = s.execute("library.facets", &json!({"fields": ["camera", "keyword"]})).unwrap();
+    assert_eq!(f["camera"]["chosen"], json!(["Facet Cam A"]));
+    assert!(values(&f, "camera").iter().any(|c| c.0 == "Facet Cam B"), "the camera column keeps its other values");
+    assert_eq!(values(&f, "keyword"), vec![("qq-one".to_string(), 2), ("qq-two".to_string(), 1)], "the keyword column cascades");
+    // a second camera: either matches
+    let r = s.execute("library.facetPick", &json!({"field": "camera", "value": "Facet Cam B"})).unwrap();
+    assert_eq!(r["count"], 3);
+    // the next column narrows further
+    let r = s.execute("library.facetPick", &json!({"field": "keyword", "value": "qq-two"})).unwrap();
+    assert_eq!(r["count"], 2);
+    let mut shown = s.visible().to_vec();
+    shown.sort();
+    let mut want = vec![ids[1], ids[2]];
+    want.sort();
+    assert_eq!(shown, want);
+    // a click on a chosen value takes it off (any case); no value clears the field
+    let r = s.execute("library.facetPick", &json!({"field": "camera", "value": "facet cam b"})).unwrap();
+    assert_eq!(r["chosen"], json!(["Facet Cam A"]));
+    s.execute("library.facetPick", &json!({"field": "camera"})).unwrap();
+    s.execute("library.facetPick", &json!({"field": "keyword", "value": null})).unwrap();
+    assert_eq!(s.filter, lcc_catalog::Filter::default(), "nothing left of the picks");
+}
+
+/// Single-valued fields (flag, rating, kind, year) hold the last value clicked; a second click clears it.
+#[test]
+fn single_valued_fields_hold_one_value() {
+    let (mut s, ids) = library();
+    s.execute("photo.rate", &json!({"ids": [ids[0].0], "rating": 4})).unwrap();
+    s.execute("library.facetPick", &json!({"field": "rating", "value": "4"})).unwrap();
+    assert!(!s.visible().is_empty());
+    let shown = s.visible().to_vec();
+    assert!(shown.iter().all(|id| s.catalog.photo(*id).unwrap().rating == 4));
+    assert_eq!(s.execute("library.facets", &json!({"fields": ["rating"]})).unwrap()["rating"]["chosen"], json!(["4"]));
+    s.execute("library.facetPick", &json!({"field": "rating", "value": "4"})).unwrap();
+    assert_eq!(s.filter, lcc_catalog::Filter::default(), "cleared");
+    for (field, value) in [("flag", "pick"), ("kind", "image"), ("year", "2026")] {
+        s.execute("library.facetPick", &json!({"field": field, "value": value})).unwrap();
+        let f = s.execute("library.facets", &json!({"fields": [field]})).unwrap();
+        assert_eq!(f[field]["chosen"], json!([value]), "{field}");
+        s.execute("library.facetPick", &json!({"field": field, "value": value})).unwrap();
+    }
+    assert_eq!(s.filter, lcc_catalog::Filter::default());
+}
+
+/// Hostile arguments are errors that leave the filter alone, never a panic.
+#[test]
+fn bad_picks_are_refused() {
+    let (mut s, _) = library();
+    for p in [
+        json!({}),
+        json!({"field": "iso", "value": "100"}),
+        json!({"field": "shoe size", "value": "9"}),
+        json!({"field": "camera", "value": 3}),
+        json!({"field": "camera", "value": "  "}),
+        json!({"field": "rating", "value": "9"}),
+        json!({"field": "rating", "value": "0"}),
+        json!({"field": "rating", "value": "-1"}),
+        json!({"field": "flag", "value": "maybe"}),
+        json!({"field": "kind", "value": "hologram"}),
+        json!({"field": "year", "value": "20x6"}),
+        json!({"field": "year", "value": "é202"}),
+        json!({"field": "label", "value": "Ultraviolet"}),
+    ] {
+        assert!(s.execute("library.facetPick", &p).is_err(), "{p}");
+        assert_eq!(s.filter, lcc_catalog::Filter::default(), "{p} left the filter alone");
+    }
+}
