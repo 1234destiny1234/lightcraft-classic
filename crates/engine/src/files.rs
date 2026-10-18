@@ -1249,7 +1249,7 @@ impl crate::Session {
         {
             self.apple_photos = Some(crate::apple_photos::osascript());
         }
-        #[cfg(not(target_arch = "wasm32"))]
+        #[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
         {
             self.trash = Some(crate::disk_delete::system_trash());
         }

@@ -67,7 +67,10 @@ lcc-webgallery = { workspace = true, features = ["sftp"] }
 lcc-plugins = { workspace = true }
 # M14.8: video clips in an export batch
 lcc-video-export = { workspace = true }
-# Delete from Disk (`photo.deleteFromDisk`): the system trash; the web build has none (`Session::trash` stays None)
+
+# Delete from Disk (`photo.deleteFromDisk`): the system trash; the web and Android builds have none
+# (`Session::trash` stays None)
+[target.'cfg(not(any(target_arch = "wasm32", target_os = "android")))'.dependencies]
 trash = { workspace = true }
 
 # free disk space of a volume (Folders panel)

@@ -3,6 +3,7 @@
 //! Pure Rust (std + serde_json; flate2/brotli for the web bundle). External tools (`cargo`, `curl`, `tar`) are
 //! invoked through `std::process::Command`.
 
+mod android;
 mod assets;
 mod bench;
 mod brand;
@@ -76,6 +77,8 @@ commands:
   quarantine check|filter|test [--platform linux|macos|windows]
                   known-flaky tests (ci/quarantine.toml): validate, print the nextest filter, run the CI tests
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
+  android check   cargo check --target aarch64-linux-android for the crates the Android app uses
+                  (needs the Android NDK; skipped without it outside CI)
   web [--serve [port]] [--dev]
                   build the browser app (apps/web) into <target>/web-site/;
                   --serve serves it on http://127.0.0.1:<port> (default 8080)
@@ -131,6 +134,7 @@ fn main() -> ExitCode {
         Some("bench-catalog") => cmd_bench_catalog(&rest),
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
+        Some("android") => android::run(&rest),
         Some("web") => web::run(&rest),
         Some("ci") => cmd_ci_cli(&rest),
         Some("quarantine") => quarantine::run(&root(), &rest),
@@ -506,6 +510,7 @@ fn run_ci(fast: bool, hardware: bool, print_md: bool, args: &[&str]) -> Result<(
     steps.push(("assets", Box::new(|| assets::run(&root))));
     steps.push(("deny", Box::new(cmd_deny)));
     steps.push(("wasm", Box::new(cmd_wasm)));
+    steps.push(("android", Box::new(|| android::run(&["check"]))));
 
     let mut results = Vec::new();
     let mut failure = None;

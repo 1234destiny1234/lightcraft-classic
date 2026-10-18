@@ -36,11 +36,11 @@ fn usb_err(e: impl std::fmt::Display) -> PtpError {
 }
 
 fn bus_of(d: &nusb::DeviceInfo) -> String {
-    #[cfg(any(target_os = "linux", target_os = "android"))]
+    #[cfg(target_os = "linux")]
     {
         d.busnum().to_string()
     }
-    #[cfg(not(any(target_os = "linux", target_os = "android")))]
+    #[cfg(not(target_os = "linux"))]
     {
         d.bus_id().to_string()
     }
