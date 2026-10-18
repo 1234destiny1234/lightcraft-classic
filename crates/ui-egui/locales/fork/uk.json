@@ -1140,5 +1140,16 @@
   "Paired.": "Сполучено.",
   "Pairing failed.": "Не вдалося сполучити.",
   "Looking for devices": "Пошук пристроїв",
-  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "Відкрийте вкладку «Синхронізація» в налаштуваннях і на іншому пристрої. Обидва мають бути в одній мережі."
+  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "Відкрийте вкладку «Синхронізація» в налаштуваннях і на іншому пристрої. Обидва мають бути в одній мережі.",
+  "Offers": "Пропозиції",
+  "Sync With This Library": "Синхронізувати з цією бібліотекою",
+  "Decline": "Відхилити",
+  "Sync this library": "Синхронізувати цю бібліотеку",
+  "A shared library exchanges the edits, ratings, flags and colour labels of the photos both devices have. A photo edited on both devices gets a copy in the same stack.": "Спільна бібліотека обмінюється правками, рейтингами, прапорцями та кольоровими мітками фотографій, які є на обох пристроях. Фото, змінене на обох пристроях, отримує копію в тому самому стосі.",
+  "Last synced just now": "Остання синхронізація: щойно",
+  "Last synced {} min ago": "Остання синхронізація: {} хв тому",
+  "Last synced {} h ago": "Остання синхронізація: {} год тому",
+  "Last synced on {}": "Остання синхронізація: {}",
+  "{} wants to sync its library “{}” with this library.": "{} пропонує синхронізувати свою бібліотеку «{}» з цією бібліотекою.",
+  "{} photos updated, {} copies": "Оновлено фото: {}, копій: {}"
 }

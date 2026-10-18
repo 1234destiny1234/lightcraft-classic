@@ -1402,5 +1402,16 @@
   "Paired.": "Emparejado.",
   "Pairing failed.": "No se pudo emparejar.",
   "Looking for devices": "Buscando dispositivos",
-  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "Abre también la pestaña Sincronización de Ajustes en el otro dispositivo. Ambos deben estar en la misma red."
+  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "Abre también la pestaña Sincronización de Ajustes en el otro dispositivo. Ambos deben estar en la misma red.",
+  "Offers": "Ofertas",
+  "Sync With This Library": "Sincronizar con esta biblioteca",
+  "Decline": "Rechazar",
+  "Sync this library": "Sincronizar esta biblioteca",
+  "A shared library exchanges the edits, ratings, flags and colour labels of the photos both devices have. A photo edited on both devices gets a copy in the same stack.": "Una biblioteca compartida intercambia los ajustes, valoraciones, marcas y etiquetas de color de las fotos que tienen ambos dispositivos. Una foto editada en ambos dispositivos obtiene una copia en la misma pila.",
+  "Last synced just now": "Última sincronización: ahora mismo",
+  "Last synced {} min ago": "Última sincronización hace {} min",
+  "Last synced {} h ago": "Última sincronización hace {} h",
+  "Last synced on {}": "Última sincronización el {}",
+  "{} wants to sync its library “{}” with this library.": "{} quiere sincronizar su biblioteca “{}” con esta biblioteca.",
+  "{} photos updated, {} copies": "{} fotos actualizadas, {} copias"
 }
