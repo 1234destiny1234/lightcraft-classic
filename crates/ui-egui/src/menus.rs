@@ -2357,12 +2357,13 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "dialog.pasteSettings" => app.session.active().is_some() && app.session.clipboard.is_some(),
         "dialog.syncSettings" => app.session.active().is_some() && app.session.selection.ids.len() > 1,
         "photo.openOriginalInExternal" => {
+            // only a file type the app reads can be handed over (#2135); the extension alone
+            // decides, so no disk or share is touched while a menu is drawn
             app.services.open_with.is_some()
-                && app
-                    .session
-                    .active()
-                    .and_then(|id| app.session.catalog.photo(id))
-                    .is_some_and(|p| matches!(p.source, lcc_engine::catalog::Source::File { .. }))
+                && app.session.active().and_then(|id| app.session.catalog.photo(id)).is_some_and(|p| match &p.source {
+                    lcc_engine::catalog::Source::File { path } => lcc_engine::open_path::is_media(std::path::Path::new(path)),
+                    _ => false,
+                })
         }
         "app.showInFinder" => {
             app.services.reveal.is_some()
@@ -2564,8 +2565,15 @@ fn edit_in_inner(app: &mut LccApp, ctx: &egui::Context, p: &Value, photocraft: b
         if let Some(id) = id {
             crate::edit_in::watch(app, std::path::Path::new(path), &[*id]);
         }
-        if let Some(Err(e)) = app.services.open_with.as_mut().map(|f| f(path, &editor)) {
-            failed = Some(e);
+        // the copy is the app's own render, but it goes through the same gate as any other
+        // path handed to the system opener (#2135)
+        match lcc_engine::open_path::openable(path, "") {
+            Err(e) => failed = Some(e),
+            Ok(absolute) => {
+                if let Some(Err(e)) = app.services.open_with.as_mut().map(|f| f(&absolute, &editor)) {
+                    failed = Some(e);
+                }
+            }
         }
     }
     if let Some(e) = failed {
@@ -2619,11 +2627,13 @@ fn open_originals(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let mut files = Vec::new();
     let mut skipped = Vec::new();
     for id in ids {
-        match app.session.catalog.photo(id).map(|ph| &ph.source) {
-            Some(lcc_engine::catalog::Source::File { path }) if std::path::Path::new(path).is_file() => files.push((id, path.clone())),
-            Some(lcc_engine::catalog::Source::File { path }) => {
-                skipped.push(json!({"id": id.0, "reason": format!("the original is missing: {path}")}))
-            }
+        // the path may come from an imported catalog: only a photo file the app reads is
+        // handed to the opener, never a program (#2135)
+        match app.session.catalog.photo(id).map(|ph| (ph.file_name.clone(), ph.source.clone())) {
+            Some((name, lcc_engine::catalog::Source::File { path })) => match lcc_engine::open_path::openable(&path, &name) {
+                Ok(absolute) => files.push((id, absolute)),
+                Err(reason) => skipped.push(json!({"id": id.0, "reason": reason})),
+            },
             Some(_) => skipped.push(json!({"id": id.0, "reason": "a demo photo has no original file"})),
             None => skipped.push(json!({"id": id.0, "reason": "no such photo"})),
         }

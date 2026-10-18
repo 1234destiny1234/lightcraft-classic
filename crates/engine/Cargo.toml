@@ -9,6 +9,8 @@ description = "Engine: session, command registry, history, render jobs, view-mod
 workspace = true
 
 [dependencies]
+# Paths stored in a Lightroom catalog: local files or the catalog's share (the fork also follows other shares).
+craft-docpath = { workspace = true }
 lcc-filters = { workspace = true }
 lcc-brand = { workspace = true }
 lcc-geom = { workspace = true }
