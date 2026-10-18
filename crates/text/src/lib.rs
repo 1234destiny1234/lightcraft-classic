@@ -1,5 +1,6 @@
 //! The app's type engine, ported from PhotoCraft's `text` crate (MIT; see
 //! `assets/ATTRIBUTION.md`).
+//! Synced with PhotoCraft 8d2e615 (2026-10-18): layout fixes only, see the crate's git history.
 //!
 //! * [`fonts::FontDb`]: bundled Inter (always available, including on the web), optional system
 //!   fonts from a directory scan (no fontconfig), user font data, TrueType collections,

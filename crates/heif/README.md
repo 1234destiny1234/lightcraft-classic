@@ -29,6 +29,8 @@ Errors are `Error::Unsupported` (image sequences, overlays, 4:2:2/4:4:4, …), `
 `Error::Malformed`. It never panics: every call into heic-rs runs under `catch_unwind`, and a panic
 inside it (PhotoCraft's fuzzing found two in 0.1.1) becomes `Error::Malformed`.
 
+Synced with PhotoCraft 8d2e615 (2026-10-18).
+
 Feature `testdata` exposes `lcc_heif::testdata`: lossless synthetic HEIF files (PCM-coded
 32 × 32 HEVC pictures, grids, every property above) for the tests of the crates above.
 

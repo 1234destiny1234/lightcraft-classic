@@ -14,6 +14,7 @@
 //!
 //! Ported from PhotoCraft (`crates/algo/src/inpaint.rs`, `poisson.rs`, MIT OR Apache-2.0, same
 //! organisation; see `NOTICE`).
+//! Synced with PhotoCraft 8d2e615 (2026-10-18): reviewed, nothing ported (upstream rewrote the solver).
 
 #![forbid(unsafe_code)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
