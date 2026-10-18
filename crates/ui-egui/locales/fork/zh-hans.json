@@ -1312,5 +1312,16 @@
   "Paired.": "已配对。",
   "Pairing failed.": "配对失败。",
   "Looking for devices": "正在查找设备",
-  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "也在另一台设备上打开设置中的“同步”标签页。两台设备需要在同一网络中。"
+  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "也在另一台设备上打开设置中的“同步”标签页。两台设备需要在同一网络中。",
+  "Offers": "同步邀请",
+  "Sync With This Library": "与此图库同步",
+  "Decline": "拒绝",
+  "Sync this library": "同步此图库",
+  "A shared library exchanges the edits, ratings, flags and colour labels of the photos both devices have. A photo edited on both devices gets a copy in the same stack.": "共享的图库会交换两台设备都有的照片的编辑、星级、旗标和颜色标签。在两台设备上都编辑过的照片会在同一堆叠中生成一个副本。",
+  "Last synced just now": "上次同步：刚刚",
+  "Last synced {} min ago": "上次同步：{} 分钟前",
+  "Last synced {} h ago": "上次同步：{} 小时前",
+  "Last synced on {}": "上次同步：{}",
+  "{} wants to sync its library “{}” with this library.": "{} 想将其图库“{}”与此图库同步。",
+  "{} photos updated, {} copies": "已更新 {} 张照片，{} 个副本"
 }

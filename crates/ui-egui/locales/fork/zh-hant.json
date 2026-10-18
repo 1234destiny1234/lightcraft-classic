@@ -1398,5 +1398,16 @@
   "Paired.": "已配對。",
   "Pairing failed.": "配對失敗。",
   "Looking for devices": "正在尋找裝置",
-  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "也在另一台裝置上開啟設定中的「同步」分頁。兩台裝置需要在同一網路中。"
+  "Open the Sync tab of Settings on the other device too. Both need to be on the same network.": "也在另一台裝置上開啟設定中的「同步」分頁。兩台裝置需要在同一網路中。",
+  "Offers": "同步邀請",
+  "Sync With This Library": "與此圖庫同步",
+  "Decline": "拒絕",
+  "Sync this library": "同步此圖庫",
+  "A shared library exchanges the edits, ratings, flags and colour labels of the photos both devices have. A photo edited on both devices gets a copy in the same stack.": "共享的圖庫會交換兩台裝置都有的照片的編輯、星級、旗標和顏色標籤。在兩台裝置上都編輯過的照片會在同一堆疊中產生一個副本。",
+  "Last synced just now": "上次同步：剛剛",
+  "Last synced {} min ago": "上次同步：{} 分鐘前",
+  "Last synced {} h ago": "上次同步：{} 小時前",
+  "Last synced on {}": "上次同步：{}",
+  "{} wants to sync its library “{}” with this library.": "{} 想將其圖庫「{}」與此圖庫同步。",
+  "{} photos updated, {} copies": "已更新 {} 張照片，{} 個副本"
 }

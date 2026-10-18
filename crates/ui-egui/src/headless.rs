@@ -3411,6 +3411,31 @@ mod tests {
         assert!(heights.iter().any(|h| (h - first.height()).abs() > 20.0), "the tabs differ in height: {heights:?}");
     }
 
+    /// Settings ▸ Sync draws a shared library, an offer and exchange states without panicking, and
+    /// the offer's buttons and the share checkbox are on screen.
+    #[test]
+    fn sync_tab_shows_offers_and_exchanges() {
+        let mut h = demo([1300.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let r = h.request("engine.execute", json!({"command": "app.settings", "params": {"tab": "sync"}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        let now = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH).unwrap().as_secs() as i64;
+        h.app.peer_sync.set_status_for_test(json!({
+            "running": false, "name": "Here",
+            "paired": [{"deviceId": "a", "name": "Laptop", "online": true}, {"deviceId": "b", "name": "Desk", "online": false},
+                       {"deviceId": "c", "name": "Old", "online": false}],
+            "library": {"name": "Main", "syncId": "x", "sharedWith": ["a", "b"]},
+            "offers": [{"deviceId": "b", "name": "Desk", "library": "Trips"}],
+            "exchanges": {"a": {"running": true}, "b": {"running": false, "last": now - 7200, "error": "connection lost", "taken": 3, "copies": 1},
+                          "c": {"running": false, "last": 1, "error": null, "taken": 0, "copies": 0}}
+        }));
+        h.settle(SETTLE);
+        for id in ["check:syncShare-a", "check:syncShare-b", "button:syncOfferAccept-b", "button:syncOfferDecline-b"] {
+            assert!(h.app.widgets.iter().any(|(w, _)| w == id), "{id} on screen");
+        }
+    }
+
     /// Settings → Import → "Show the import review when a camera or card is connected": a card that
     /// was already in doesn't ask, a new one opens Import from Device (copying), and a busy window
     /// asks once it's free.
