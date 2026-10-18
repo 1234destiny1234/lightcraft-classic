@@ -236,6 +236,11 @@ pub fn file_xmp(path: &Path) -> Option<String> {
     }
 }
 
+/// A file an external editor writes (TIFF, PSD): only these carry an edit's link back to its source.
+fn is_editable(p: &Path) -> bool {
+    matches!(p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref(), Some("tif" | "tiff" | "psd" | "psb"))
+}
+
 /// After an import: stack each new TIFF/PSD whose XMP says it was derived from a photo in the
 /// library on that photo (found by file name in the same folder, else by document id), as Edit In
 /// would have. Photos already stacked with their source are left alone. → the photos stacked
@@ -245,7 +250,7 @@ pub fn stack_derived(s: &mut Session, imported: &[PhotoId]) -> Vec<PhotoId> {
         let Some(ph) = s.catalog.photo(*id) else { continue };
         let Source::File { path } = &ph.source else { continue };
         let p = Path::new(path);
-        if !matches!(p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).as_deref(), Some("tif" | "tiff" | "psd" | "psb")) {
+        if !is_editable(p) {
             continue;
         }
         let Some(link) = file_xmp(p).map(|x| read_link(&x)) else { continue };
@@ -261,19 +266,35 @@ pub fn stack_derived(s: &mut Session, imported: &[PhotoId]) -> Vec<PhotoId> {
     // (folder, file name) and document id → photo, built once
     let mut by_name: HashMap<(String, String), PhotoId> = HashMap::new();
     let mut by_doc: HashMap<String, PhotoId> = HashMap::new();
+    let mut editable: Vec<(PhotoId, std::path::PathBuf)> = Vec::new();
     for ph in s.catalog.photos().filter(|p| !p.deleted && p.copy_of.is_none()) {
         if let Source::File { path } = &ph.source {
             let p = Path::new(path);
             let dir = p.parent().map(|d| d.to_string_lossy().to_string()).unwrap_or_default();
             by_name.entry((dir, ph.file_name.clone())).or_insert(ph.id);
-            // Index both the hash-derived ID and any embedded xmpMM:DocumentID, so an edit-of-an-edit
-            // re-stacks after its source is renamed or moved (the child's DerivedFrom names the parent's
-            // embedded ID, not the hash).
-            if let Some(d) = hash_document_id(ph) {
-                by_doc.entry(d).or_insert(ph.id);
+            if is_editable(p) {
+                editable.push((ph.id, p.to_path_buf()));
             }
-            if let Some(id) = file_xmp(p).and_then(|x| read_link(&x).document_id) {
-                by_doc.entry(id).or_insert(ph.id);
+        }
+        if let Some(d) = hash_document_id(ph) {
+            by_doc.entry(d).or_insert(ph.id);
+        }
+    }
+    // An edit of an edit names its source by the document ID embedded in that file, which the
+    // catalog doesn't keep: read it only when a link is left unresolved, and only from the files
+    // an editor writes (an edit's source is itself one).
+    let unresolved = wanted.iter().any(|(_, dir, link)| {
+        let by_path = link
+            .derived_path
+            .as_ref()
+            .and_then(|n| Path::new(n).file_name())
+            .is_some_and(|n| by_name.contains_key(&(dir.clone(), n.to_string_lossy().to_string())));
+        !by_path && link.derived_document.as_ref().is_some_and(|d| !by_doc.contains_key(d))
+    });
+    if unresolved {
+        for (id, p) in editable {
+            if let Some(d) = file_xmp(&p).and_then(|x| read_link(&x).document_id) {
+                by_doc.entry(d).or_insert(id);
             }
         }
     }

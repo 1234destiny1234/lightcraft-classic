@@ -2,7 +2,8 @@
 //!
 //! Same encoders and muxer as [`crate::export_clip`]; the frames come from the caller instead of
 //! a decoded clip. The file is written to `<out>.partial` and renamed by [`SequenceWriter::finish`];
-//! dropping the writer unfinished (an error, a cancel) removes the partial file.
+//! dropping the writer unfinished (an error, a cancel) removes the partial file. The writer holds a
+//! lock on its partial file: one left by a crash is reused, one another export is writing is not.
 //!
 //! Sources: own design over FilmCraft's public crate APIs.
 
@@ -14,6 +15,37 @@ use filmcraft_isobmff::{Brand, Mp4Writer, WriteSample, WriterOptions};
 use lcc_raster::Rgb32f;
 
 use crate::native::{ClipFormat, ClipReport, ExportClipError, MAX_FRAMES, MAX_SIDE, Result, VideoOut, enc, io, partial_path, ycbcr_with};
+
+/// Most partial files tried for one output (`<out>.partial`, `<out>.2.partial`, …).
+const PARTIAL_SLOTS: u32 = 16;
+
+/// Open and lock a partial file for `out`: `<out>.partial` unless another writer holds it (then
+/// `<out>.2.partial` and on), truncating a stale one a crashed export left. The lock lasts as long
+/// as the file is open.
+fn open_partial(out: &Path) -> Result<(PathBuf, File)> {
+    let first = partial_path(out)?;
+    for n in 1..=PARTIAL_SLOTS {
+        let path = if n == 1 {
+            first.clone()
+        } else {
+            let mut name = out.file_name().unwrap_or_default().to_os_string();
+            name.push(format!(".{n}.partial"));
+            out.with_file_name(name)
+        };
+        // (no truncate on open: the file may be another writer's until the lock says otherwise)
+        let file = File::options().read(true).write(true).create(true).truncate(false).open(&path).map_err(io)?;
+        match file.try_lock() {
+            Ok(()) => {}
+            Err(std::fs::TryLockError::WouldBlock) => continue,
+            // a file system without locks: take the file as before
+            Err(std::fs::TryLockError::Error(e)) if e.kind() == std::io::ErrorKind::Unsupported => {}
+            Err(std::fs::TryLockError::Error(e)) => return Err(io(e)),
+        }
+        file.set_len(0).map_err(io)?;
+        return Ok((path, file));
+    }
+    Err(ExportClipError::BadOptions(format!("{} is being written by {PARTIAL_SLOTS} other exports", out.display())))
+}
 
 /// Writes frames of one fixed size at a fixed rate to an H.264 MP4 or ProRes MOV (no audio).
 pub struct SequenceWriter {
@@ -58,13 +90,12 @@ impl SequenceWriter {
         if fps_num == 0 || fps_den == 0 || f64::from(fps_num) / f64::from(fps_den) > 240.0 || f64::from(fps_num) / f64::from(fps_den) < 0.1 {
             return bad(format!("frame rate {fps_num}/{fps_den} is out of range"));
         }
-        let partial = partial_path(out)?;
         let brand = match format {
             ClipFormat::H264Mp4 => Brand::Mp4,
             ClipFormat::ProResMov => Brand::Mov,
         };
         let video = VideoOut::new(format, quality.clamp(1, 100), width, height, fps_num, fps_den)?;
-        let file = File::options().write(true).create_new(true).open(&partial).map_err(io)?;
+        let (partial, file) = open_partial(out)?;
         let made = (|| {
             let mut mux = Mp4Writer::new(BufWriter::new(file), WriterOptions::new(brand)).map_err(enc)?;
             let track = mux.add_track(video.track_config()).map_err(enc)?;
@@ -215,19 +246,35 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
+    /// A partial file a crashed export left behind is reused, not an error.
     #[test]
-    fn existing_partial_file_errors_on_create() {
-        let dir = std::env::temp_dir().join(format!("lcc-seq-partial-{}", std::process::id()));
+    fn a_stale_partial_file_is_reused() {
+        let dir = std::env::temp_dir().join(format!("lcc-seq-stale-{}", std::process::id()));
         std::fs::create_dir_all(&dir).unwrap();
         let out = dir.join("t.mp4");
-        // Create a leftover partial file (e.g. from a crashed writer)
-        let partial = dir.join("t.mp4.partial");
-        std::fs::write(&partial, b"leftover").unwrap();
-        // create() should error instead of truncating the existing partial file
-        let result = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1);
-        assert!(result.is_err(), "expected error on existing partial file");
-        // The leftover partial file should still exist (not truncated)
-        assert!(partial.exists());
+        std::fs::write(dir.join("t.mp4.partial"), b"leftover").unwrap();
+        let w = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
+        assert_eq!(w.partial, dir.join("t.mp4.partial"));
+        drop(w);
+        assert!(!dir.join("t.mp4.partial").exists());
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// Two exports to one output write separate partial files; neither truncates the other's.
+    #[test]
+    fn a_partial_file_in_use_gets_a_second_name() {
+        let dir = std::env::temp_dir().join(format!("lcc-seq-busy-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t.mp4");
+        let mut a = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
+        let b = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
+        assert_eq!(a.partial, dir.join("t.mp4.partial"));
+        assert_eq!(b.partial, dir.join("t.mp4.2.partial"));
+        drop(b);
+        let img = Rgb32f::new(32, 16);
+        a.push_encoded(&img).unwrap();
+        a.finish().unwrap();
+        assert!(out.exists() && !dir.join("t.mp4.partial").exists() && !dir.join("t.mp4.2.partial").exists());
         let _ = std::fs::remove_dir_all(&dir);
     }
 
