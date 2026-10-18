@@ -520,11 +520,12 @@ mod tests {
         for (_, v) in menu_bar(&app) {
             all(&v, &mut installed);
         }
-        for sc in ["E", "C", "Shift+P", "Cmd+Shift+H", "F2"] {
+        // (Shift+P left the menu bar with upstream #1822: it picks and advances in every view, a grid key)
+        for sc in ["E", "C", "Cmd+Shift+H", "F2"] {
             assert!(installed.iter().any(|s| s == sc), "{sc} is in the menu bar");
         }
         let owned = owned_by_menu(installed.iter().map(String::as_str), false);
-        for sc in ["E", "C", "Shift+P", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "P", "U"] {
+        for sc in ["E", "C", "0", "1", "2", "3", "4", "5", "6", "7", "8", "9", "P", "U"] {
             assert!(installed.iter().any(|s| s == sc), "{sc} is displayed in the menu");
             assert!(!owned.contains(sc), "{sc} must be left to egui");
         }
