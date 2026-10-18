@@ -134,6 +134,9 @@ pub struct Base {
     /// Photos this side kept both versions of (a copy) that the other side hasn't been told about
     /// yet: told, it keeps both too instead of taking this side's version.
     pub conflicts: std::collections::BTreeSet<String>,
+    /// Photos the other side told us it kept both versions of, whose version hasn't arrived
+    /// yet: when it does, this side keeps both too rather than taking it over its own.
+    pub remote_conflicts: std::collections::BTreeSet<String>,
 }
 
 impl Base {
@@ -359,6 +362,7 @@ mod tests {
             remote: [("k".to_string(), remote.digest())].into(),
             last: 0,
             conflicts: Default::default(),
+            remote_conflicts: Default::default(),
         }
     }
 
