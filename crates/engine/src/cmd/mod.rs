@@ -46,6 +46,8 @@ mod merge;
 pub mod metadata;
 pub mod missing;
 mod organize;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod peers;
 #[cfg(test)]
 pub(crate) use organize::STACK_WORK;
 pub(crate) mod plugin_filters;
@@ -237,6 +239,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(xmp::specs());
         #[cfg(not(target_arch = "wasm32"))]
         v.extend(catalog::specs());
+        #[cfg(not(target_arch = "wasm32"))]
+        v.extend(peers::specs());
         v.extend(preset_files::specs());
         v.extend(prefs::specs());
         v.extend(slideshow::specs());

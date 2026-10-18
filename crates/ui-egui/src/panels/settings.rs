@@ -33,6 +33,7 @@ pub const TABS: &[(&str, &str)] = &[
     ("faces", "Faces"),
     ("denoise", "AI Denoise"),
     ("connections", "Connections"),
+    ("sync", "Sync"),
     ("shortcuts", "Shortcuts"),
 ];
 
@@ -72,6 +73,8 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &str) {
         "shortcuts" => shortcuts_tab(app, ui, &t),
         #[cfg(not(target_arch = "wasm32"))]
         "connections" => super::connections::settings_tab(app, ui, &t),
+        #[cfg(not(target_arch = "wasm32"))]
+        "sync" => super::peer_sync::settings_tab(app, ui, &t),
         _ => general_tab(app, ui, &t),
     }
 }

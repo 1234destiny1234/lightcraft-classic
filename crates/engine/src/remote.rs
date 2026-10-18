@@ -251,7 +251,8 @@ impl crate::Session {
         self.remote.cache_dir = crate::config::config_dir().map(|d| d.join("immich"));
         self.remote.secrets_file = crate::config::config_dir().map(|d| d.join("credentials.enc"));
         self.remote.credentials_prefs = crate::config::config_dir().map(|d| d.join("credentials.json"));
-        self
+        // the paired devices of peer sync live beside the connected accounts
+        self.with_default_peers()
     }
 
     /// Use `store` for account secrets instead of the OS keychain.

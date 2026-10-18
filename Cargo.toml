@@ -24,6 +24,7 @@ lcc-faces = { path = "crates/faces" }
 lcc-sysmem = { path = "crates/sysmem" }
 lcc-hdrmeta = { path = "crates/hdrmeta" }
 lcc-android-host = { path = "crates/android-host" }
+lcc-peer = { path = "crates/peer" }
 lcc-audio-out = { path = "crates/audio-out" }
 lcc-color = { path = "crates/color" }
 lcc-raster = { path = "crates/raster" }

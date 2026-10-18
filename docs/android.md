@@ -11,7 +11,7 @@ covers what exists today.
 | App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker, Develop, library kept across restarts; status-bar insets not handled yet |
 | APK / AAB packaging (`cargo xtask android package`), release job (`RELEASE_ANDROID`) | ✅ (arm64 APK 75 MB, AAB 35 MB) |
 | Play Store upload | not started (needs the Play developer account) |
-| Peer-to-peer catalog sync between desktop and Android | not started |
+| Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`); catalog exchange next |
 | Touch / phone-sized layout | not started |
 
 ## Design

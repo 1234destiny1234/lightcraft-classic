@@ -31,6 +31,8 @@ pub mod masking;
 pub mod metadata;
 pub mod navigator;
 pub mod notices;
+#[cfg(not(target_arch = "wasm32"))]
+pub mod peer_sync;
 pub mod people;
 pub mod person;
 pub mod plugin_filters;

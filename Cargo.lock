@@ -4717,6 +4717,7 @@ dependencies = [
  "lcc-lensdb",
  "lcc-merge",
  "lcc-meta",
+ "lcc-peer",
  "lcc-pipeline",
  "lcc-plugins",
  "lcc-preview",
@@ -5001,6 +5002,24 @@ dependencies = [
  "pdf-writer",
  "skrifa 0.44.0",
  "subsetter",
+]
+
+[[package]]
+name = "lcc-peer"
+version = "0.9.3"
+dependencies = [
+ "base64",
+ "chacha20poly1305",
+ "ed25519-dalek 2.2.0",
+ "getrandom 0.3.4",
+ "hkdf 0.12.4",
+ "lcc-brand",
+ "log",
+ "serde",
+ "serde_json",
+ "sha2 0.10.9",
+ "socket2",
+ "x25519-dalek",
 ]
 
 [[package]]

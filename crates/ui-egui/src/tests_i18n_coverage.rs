@@ -98,6 +98,7 @@ const OWNED: &[(&str, &str)] = &[
     ("panels/publish.rs", include_str!("panels/publish.rs")),
     ("panels/tether_bar.rs", include_str!("panels/tether_bar.rs")),
     ("panels/connections.rs", include_str!("panels/connections.rs")),
+    ("panels/peer_sync.rs", include_str!("panels/peer_sync.rs")),
     ("panels/plugins.rs", include_str!("panels/plugins.rs")),
     ("panels/classic.rs", include_str!("panels/classic.rs")),
     ("panels/navigator.rs", include_str!("panels/navigator.rs")),
