@@ -82,12 +82,16 @@ pub fn is_library(dir: &Path) -> bool {
 pub const DEFAULT_NAME: &str = lcc_brand::LIBRARY_DEFAULT;
 
 /// The default library location: `{ENV_PREFIX}_LIBRARY` if set, else `~/Pictures/<`[`DEFAULT_NAME`]`>`
-/// (`%USERPROFILE%\Pictures\…` on Windows). When that folder doesn't exist but a library under a
+/// (`%USERPROFILE%\Pictures\…` on Windows; the host's [`lcc_brand::PlatformDirs::pictures`] on Android). When that folder doesn't exist but a library under a
 /// previous default name does ([`lcc_brand::library_default_names`]), that one is used, so an
 /// existing library keeps opening after a rename.
 pub fn default_dir() -> Option<PathBuf> {
     if let Some(p) = lcc_brand::env_os("LIBRARY").filter(|p| !p.is_empty()) {
         return Some(PathBuf::from(p));
+    }
+    // a host without a home folder (Android) says where pictures go
+    if let Some(d) = lcc_brand::platform_dirs() {
+        return Some(default_in(&d.pictures));
     }
     let home = if cfg!(windows) { std::env::var_os("USERPROFILE") } else { std::env::var_os("HOME") }?;
     Some(default_in(&PathBuf::from(home).join("Pictures")))

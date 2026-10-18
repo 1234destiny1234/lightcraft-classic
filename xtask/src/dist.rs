@@ -22,7 +22,7 @@ fn exe(name: &str) -> String {
     format!("{name}{}", std::env::consts::EXE_SUFFIX)
 }
 
-fn target_dir(root: &Path) -> PathBuf {
+pub(crate) fn target_dir(root: &Path) -> PathBuf {
     std::env::var_os("CARGO_TARGET_DIR").map(PathBuf::from).map_or_else(|| root.join("target"), |d| if d.is_absolute() { d } else { root.join(d) })
 }
 
