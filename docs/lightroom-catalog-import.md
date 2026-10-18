@@ -144,3 +144,12 @@ the path relative to the catalog that Lightroom records for root folders on the 
 (`relativePathFromCatalog`), when that is a folder, and reports the remapping as a warning. Copying
 a project folder with its catalog inside it therefore keeps its originals linked. Other moved
 originals stay missing; use the app's missing-photo relinking tools to update their paths.
+
+Original and root folder paths are resolved with the catalog as the document
+(`crates/engine/src/doc_path.rs`). Originals on this computer and on network drives and shares are looked at
+wherever the catalog is: a mapped drive or mounted share is an ordinary path, and a UNC path (`\server\share\…`,
+`file://server/…`) is followed on Windows even when the catalog is on another drive or share. (Upstream follows a
+share only when the catalog itself is on it; the fork does not, see the README.) A device path, or an original whose
+folder or file name in the catalog is an absolute path, is not looked at: the import lists it as missing with a
+warning and leaves the photo and its virtual copies out of the library. A path that is not a path on this computer
+(a Windows drive or UNC path read on macOS or Linux) is not looked at either and stays catalogued as missing.

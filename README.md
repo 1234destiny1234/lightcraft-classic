@@ -53,8 +53,8 @@ reshapes the app around the Lightroom Classic workflow: one catalog shared by se
 Book, Slideshow, Print, Web) with the Classic panels (Navigator, Catalog, Folders, Collections, Quick Develop,
 Keywording, Metadata), filmstrip and keyboard map. On top it adds what a Classic user expects and upstream does not
 have: a redb-backed catalog for large libraries with backups and integrity checks, two-way Immich sync, tethered
-capture, publish services, colour-managed printing, WebAssembly plug-ins, Edit In and Actions. Shared crates track upstream and fixes go
-back to it as pull requests first.
+capture, publish services, colour-managed printing, WebAssembly plug-ins, Edit In and Actions. Shared crates track upstream; fixes may be
+offered back to it as pull requests.
 
 | | LightCraft (upstream) | LightCraft Classic (this fork) |
 |---|---|---|
@@ -69,11 +69,12 @@ back to it as pull requests first.
 | **Plug-ins** | None | WebAssembly plug-ins in a `wasmi` sandbox: menu commands, export post-processing and export destinations, custom metadata fields (edited across the selection, searchable, written to XMP), metadata suggestions, publish services; hooks run off the UI thread (Lightroom Lua plug-ins do not run) |
 | **Export & output extras** | Export presets, watermarks, HDR export, contact sheets | Everything upstream has, plus publish services (Hard Drive, Immich, plug-ins), Edit In (copy with adjustments, TIFF / layered PSD) and saved Actions |
 | **Lightroom migration** | Reads a Lightroom Classic `.lrcat` | The same importer, landing in a Classic catalog: collections, smart collections (incl. collection and date rules), folder stacks, History and snapshots (as Versions) |
+| **Network drives and shares** | Follows the original paths a Lightroom catalog lists only to this computer or to the share the catalog itself is on; originals on any other NAS or share (`\server\share\…`) are left out of the import as missing | Catalogs and photos on network drives and shares (mapped drives, `\server\share` UNC paths, SMB/NFS mounts) load and import on every OS, wherever the catalog is; only devices and URLs are refused |
 | **Keyboard map** | Its own shortcuts (the commands' declared keys) | Classic keymap by default (E loupe, D Develop, C Compare, N Survey, R crop, Shift+W masking, Tab panels, ⌘⌥1–7 modules, ⌘L Enable Filters, F full-screen preview, F11 full screen); upstream's set is kept as the *Alternative* keymap |
 | **Licence** | MIT OR Apache-2.0 (`crates/segment`, `crates/fetch`: Apache-2.0) | MIT (`crates/segment`, `crates/fetch`: Apache-2.0); upstream's copyright notices kept in `LICENSE` and `NOTICE` |
 | **Name and identity** | Upstream's own name, icon and app id | Everything from [`brand.toml`](brand.toml): name, binaries, app id, settings folder, env-var prefix, file extensions; reads upstream's settings, env vars and presets on first start |
 | **Release channel** | Upstream's GitHub Releases | Built-in auto-updater (checks this fork's release feed, downloads and installs); this repository's own `release` workflow: signed installers and archives for Windows, macOS, Linux and the web, created as draft GitHub Releases of this fork and published after review ([docs/releasing.md](docs/releasing.md)) |
-| **Relationship** | The source | Forked at the `fork-base` tag; upstream is merged in regularly with `cargo xtask upstream-merge`; fork-only paths are listed in `upstream-owned.txt`; changes to shared crates go upstream as pull requests first ([docs/upstream-merge.md](docs/upstream-merge.md)) |
+| **Relationship** | The source | Forked at the `fork-base` tag; upstream is merged in regularly with `cargo xtask upstream-merge`; fork-only paths are listed in `upstream-owned.txt`; changes to shared crates may be offered upstream as pull requests ([docs/upstream-merge.md](docs/upstream-merge.md)) |
 
 ## Seven modules, one catalog
 
