@@ -1,4 +1,10 @@
 {
+  "File Settings": "Configuración de archivo",
+  "Image Sizing": "Tamaño de imagen",
+  "Output Sharpening": "Enfoque de salida",
+  "Watermarking": "Marca de agua",
+  "File Naming": "Nombre de archivo",
+  "Export Location": "Ubicación de exportación",
   "Color Values": "Valores de color",
   "Color Readout": "Lectura de color",
   "Show RGB Color Values": "Mostrar valores de color RGB",

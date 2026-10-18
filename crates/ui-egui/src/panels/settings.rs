@@ -40,54 +40,86 @@ pub const TABS: &[(&str, &str)] = &[
 /// Thumbnail cache sizes offered (MB).
 const CACHE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
 
-const LABEL_W: f32 = 150.0;
+const LABEL_W: f32 = 160.0;
+/// The label column of the same rows outside the dialog (the slideshow panels).
+const PANEL_LABEL_W: f32 = 150.0;
+/// The category list's width.
+const SIDEBAR_W: f32 = 150.0;
+/// The content column's width (the dialog keeps one size whatever the category).
+const CONTENT_W: f32 = 600.0;
+/// The dialog's body height, at most (it shrinks to fit a short window).
+const BODY_H: f32 = 560.0;
 
-/// The tab row: the dialog's fixed header, above the scrolling [`body`].
-pub fn tabs(ui: &mut egui::Ui, tab: &mut String) {
-    ui.set_width((ui.ctx().content_rect().width() - 64.0).clamp(240.0, 560.0));
-    ui.horizontal_wrapped(|ui| {
-        ui.spacing_mut().item_spacing.x = 4.0;
-        for (id, label) in TABS {
-            if crate::widgets::text_button(ui, &format!("settingsTab-{id}"), label, tab == id).clicked() {
-                *tab = id.to_string();
-            }
-        }
+/// The dialog: the category list on the left, the selected category's settings on the right in
+/// titled groups, scrolling on their own (the list stays put). `max_height` is the room the dialog
+/// has for its body.
+pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &mut String, max_height: f32) {
+    let t = Tokens::get(ui.ctx());
+    let room = ui.ctx().content_rect().width() - 96.0;
+    // the slideshow category is an editor with its preview beside it: wider
+    let wanted = if tab == "slideshow" { SLIDESHOW_COLUMN_W + 12.0 + super::slide_layout::PREVIEW_W + 40.0 } else { CONTENT_W };
+    // (and once the window was that wide, every category fills it)
+    let window = ui.available_width() - SIDEBAR_W - 9.0 - 2.0 * ui.spacing().item_spacing.x;
+    let content_w = (room - SIDEBAR_W - 24.0).min(wanted.max(window)).max(240.0);
+    let height = max_height.clamp(120.0, BODY_H);
+    ui.horizontal_top(|ui| {
+        ui.vertical(|ui| {
+            ui.set_height(height);
+            ui.add_space(2.0);
+            crate::dialog_frame::sidebar(ui, "settingsTab", TABS, tab, SIDEBAR_W);
+        });
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(9.0, height), egui::Sense::hover());
+        ui.painter().vline(rect.center().x, rect.y_range(), egui::Stroke::new(1.0, t.divider));
+        ui.vertical(|ui| {
+            ui.set_width(content_w);
+            ui.set_height(height);
+            egui::ScrollArea::vertical().id_salt(("settings-content", tab.as_str())).max_height(height).auto_shrink([false, false]).show(ui, |ui| {
+                ui.set_width(content_w - 14.0);
+                crate::dialog_frame::form(ui, LABEL_W, |ui| {
+                    crate::dialog_frame::group_begin(ui, None);
+                    tab_body(app, ui, &t, tab);
+                });
+            });
+        });
     });
-    ui.separator();
 }
 
-/// The selected tab's settings (the tabs themselves are [`tabs`]).
-pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &str) {
-    let t = Tokens::get(ui.ctx());
-    ui.set_width((ui.ctx().content_rect().width() - 64.0).clamp(240.0, 560.0));
-    ui.set_min_height(330.0);
-    ui.add_space(2.0);
+fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
     match tab {
-        "import" => import_tab(app, ui, &t),
-        "performance" => performance_tab(app, ui, &t),
-        "display" => display_tab(app, ui, &t),
-        "interface" => interface_tab(app, ui, &t),
-        "slideshow" => slideshow_tab(app, ui, &t),
-        "faces" => super::faces::settings_tab(app, ui, &t),
-        "denoise" => super::denoise::settings_tab(app, ui, &t),
-        "shortcuts" => shortcuts_tab(app, ui, &t),
+        "import" => import_tab(app, ui, t),
+        "performance" => performance_tab(app, ui, t),
+        "display" => display_tab(app, ui, t),
+        "interface" => interface_tab(app, ui, t),
+        "slideshow" => slideshow_tab(app, ui, t),
+        "faces" => super::faces::settings_tab(app, ui, t),
+        "denoise" => super::denoise::settings_tab(app, ui, t),
+        "shortcuts" => shortcuts_tab(app, ui, t),
         #[cfg(not(target_arch = "wasm32"))]
-        "connections" => super::connections::settings_tab(app, ui, &t),
+        "connections" => super::connections::settings_tab(app, ui, t),
         #[cfg(not(target_arch = "wasm32"))]
-        "sync" => super::peer_sync::settings_tab(app, ui, &t),
-        _ => general_tab(app, ui, &t),
+        "sync" => super::peer_sync::settings_tab(app, ui, t),
+        _ => general_tab(app, ui, t),
     }
 }
 
+/// A section heading; in a dialog form it starts a titled group (an inset panel).
 pub(super) fn heading(ui: &mut egui::Ui, t: &Tokens, text: &str) {
+    if crate::dialog_frame::in_form(ui) {
+        crate::dialog_frame::group_begin(ui, Some(text));
+        return;
+    }
     ui.add_space(4.0);
     ui.label(RichText::new(crate::i18n::tr(text)).font(t.semibold(12.5)).color(t.text));
 }
 
+/// A labelled row: in a dialog form the label is right-aligned in the label column.
 pub(super) fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnce(&mut egui::Ui) -> R) -> R {
+    if crate::dialog_frame::in_form(ui) {
+        return crate::dialog_frame::form_row(ui, label, add);
+    }
     ui.horizontal(|ui| {
-        ui.allocate_ui_with_layout(egui::vec2(LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
-            ui.set_min_width(LABEL_W);
+        ui.allocate_ui_with_layout(egui::vec2(PANEL_LABEL_W, 24.0), egui::Layout::left_to_right(egui::Align::Center), |ui| {
+            ui.set_min_width(PANEL_LABEL_W);
             ui.label(RichText::new(crate::i18n::tr(label)).color(t.text_label));
         });
         add(ui)
@@ -95,15 +127,19 @@ pub(super) fn row<R>(ui: &mut egui::Ui, t: &Tokens, label: &str, add: impl FnOnc
     .inner
 }
 
+/// Help text: small and muted; in a dialog form, under the control column.
 pub(super) fn hint(ui: &mut egui::Ui, t: &Tokens, text: &str) {
+    if crate::dialog_frame::in_form(ui) {
+        crate::dialog_frame::help(ui, text);
+        return;
+    }
     ui.label(RichText::new(crate::i18n::tr(text)).size(11.0).color(t.text_dim));
 }
 
-/// A checkbox addressable as `check:{id}`; true when toggled.
+/// A checkbox addressable as `check:{id}`; true when toggled. In a dialog form it sits in the
+/// control column.
 pub(super) fn check(ui: &mut egui::Ui, id: &str, value: &mut bool, label: &str) -> bool {
-    let r = ui.checkbox(value, crate::i18n::tr(label));
-    register(ui.ctx(), format!("check:{id}"), r.rect);
-    r.changed()
+    crate::dialog_frame::form_check(ui, id, value, label)
 }
 
 /// Mutually exclusive buttons (`button:{id}-{index}`).
@@ -147,11 +183,15 @@ fn shortcuts_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 
 fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     row(ui, t, crate::i18n::tr("Language"), |ui| {
-        let languages: Vec<_> = crate::i18n::Locale::ALL.iter().map(|language| (*language, language.name())).collect();
-        // Thirteen language names do not fit one line in a narrow window: wrap them.
-        ui.horizontal_wrapped(|ui| {
-            choices(ui, "settingsLanguage", &languages, &mut app.ui.language);
+        // a list, not a row of buttons: there are too many languages for one line
+        let current = language_label(ui.ctx(), app.ui.language);
+        let combo = egui::ComboBox::from_id_salt("settingsLanguage").selected_text(current).width(220.0).height(420.0).show_ui(ui, |ui| {
+            for (i, language) in crate::i18n::Locale::ALL.iter().enumerate() {
+                let r = ui.selectable_value(&mut app.ui.language, *language, language_label(ui.ctx(), *language));
+                register(ui.ctx(), format!("button:settingsLanguage-{i}"), r.rect);
+            }
         });
+        register(ui.ctx(), "combo:settingsLanguage", combo.response.rect);
         crate::i18n::set_language(app.ui.language);
     });
     heading(ui, t, crate::i18n::tr("Library"));
@@ -233,6 +273,34 @@ fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             "To hand this editor the original file itself instead (the raw, without a copy: DxO PhotoLab, for example), right-click a photo → Edit In → Open Original in Other Editor (RAW, no copy).",
         ),
     );
+}
+
+/// A language's name as the picker shows it: its own name (`Deutsch`), or, when no loaded font
+/// has that script's glyphs (Georgian has no face in this build's fonts; Chinese and Japanese in a
+/// build without craft-fonts), its English name, so it never draws as empty boxes.
+fn language_label(ctx: &egui::Context, language: crate::i18n::Locale) -> String {
+    let own = language.name();
+    let font = egui::FontId::proportional(13.0);
+    if ctx.fonts_mut(|f| f.has_glyphs(&font, own)) {
+        return own.to_string();
+    }
+    let english = match language.code() {
+        "zh-hans" => "Chinese (Simplified)",
+        "zh-hant" => "Chinese (Traditional, Taiwan)",
+        "ja" => "Japanese",
+        "ru" => "Russian",
+        "uk" => "Ukrainian",
+        "ka" => "Georgian",
+        "pt-br" => "Portuguese (Brazil)",
+        "es" => "Spanish",
+        "de" => "German",
+        "fr" => "French",
+        "pl" => "Polish",
+        "cs" => "Czech",
+        "it" => "Italian",
+        _ => language.code(),
+    };
+    english.to_string()
 }
 
 /// The file Edit In hands an editor: format, colour space and bit depth (`button:{id}Format-…`).
@@ -592,7 +660,9 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     // One line, the whole text on hover: the reason can be a long driver message (no adapter
     // among the backends …), and the GPU state is process-wide, so it may change between frames;
     // a hint that wrapped would move every control below it under the pointer.
-    ui.add(egui::Label::new(RichText::new(crate::i18n::tr(&status)).size(11.0).color(t.text_dim)).truncate()).on_hover_text(&status);
+    crate::dialog_frame::in_control_column(ui, |ui| {
+        ui.add(egui::Label::new(RichText::new(crate::i18n::tr(&status)).size(11.0).color(t.text_dim)).truncate()).on_hover_text(&status);
+    });
     row(ui, t, crate::i18n::tr("Preview size"), |ui| {
         let opts: Vec<(u32, String)> =
             PREVIEW_LIMITS.iter().map(|e| (*e, if *e == 0 { crate::i18n::tr("Automatic").to_string() } else { format!("{e} px") })).collect();
@@ -711,7 +781,7 @@ fn smart_previews(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let existing = ["move", "leave", "discard"][mode.min(2) as usize];
     let mut result = None;
     ui.horizontal(|ui| {
-        ui.add_space(LABEL_W);
+        ui.add_space(crate::dialog_frame::control_indent(ui));
         if app.services.pick_folder.is_some() {
             let r = ui.button(crate::i18n::tr("Choose Folder…"));
             register(ui.ctx(), "button:settingsSmartChoose", r.rect);
@@ -895,28 +965,41 @@ fn slideshow_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     // the settings scroll on the left, the composed slide stays in view on the right
     let top_down = egui::Layout::top_down(egui::Align::Min);
     // as tall as the window allows (the dialog's title, tabs and Close button take ~260 pt)
-    let tall = (ui.ctx().content_rect().height() - 260.0).clamp(300.0, 760.0);
+    // (in the dialog: as tall as its content area, which scrolls no further)
+    let tall = if crate::dialog_frame::in_form(ui) {
+        (ui.clip_rect().height() - 8.0).clamp(200.0, 760.0)
+    } else {
+        (ui.ctx().content_rect().height() - 260.0).clamp(300.0, 760.0)
+    };
+    let pad = crate::dialog_frame::GROUP_PAD as i8;
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(SLIDESHOW_COLUMN_W, tall), top_down, |ui| {
             ui.set_width(SLIDESHOW_COLUMN_W);
+            // (room inside the scroll area for the group panels' edges)
+            let framed = egui::Frame::NONE.inner_margin(egui::Margin { left: pad, right: pad, top: 0, bottom: 0 });
             egui::ScrollArea::vertical().id_salt("settingsSlideshowScroll").max_height(tall).auto_shrink([false, true]).show(ui, |ui| {
-                super::slide_templates::section(app, ui, t);
-                ui.add_space(6.0);
-                playback_section(app, ui, t);
-                ui.add_space(6.0);
-                super::slide_layout::sections(app, ui, t);
-                ui.add_space(6.0);
-                super::slide_overlays::sections(app, ui, t);
-                ui.add_space(6.0);
-                super::slide_titles::sections(app, ui, t);
-                ui.add_space(6.0);
-                export_section(app, ui, t);
+                framed.show(ui, |ui| {
+                    super::slide_templates::section(app, ui, t);
+                    ui.add_space(6.0);
+                    playback_section(app, ui, t);
+                    ui.add_space(6.0);
+                    super::slide_layout::sections(app, ui, t);
+                    ui.add_space(6.0);
+                    super::slide_overlays::sections(app, ui, t);
+                    ui.add_space(6.0);
+                    super::slide_titles::sections(app, ui, t);
+                    ui.add_space(6.0);
+                    export_section(app, ui, t);
+                    // (each column closes its own groups)
+                    crate::dialog_frame::group_end(ui);
+                })
             });
         });
         ui.add_space(12.0);
         ui.allocate_ui_with_layout(egui::vec2(super::slide_layout::PREVIEW_W, tall), top_down, |ui| {
             ui.set_width(super::slide_layout::PREVIEW_W);
-            super::slide_layout::preview(app, ui, t)
+            super::slide_layout::preview(app, ui, t);
+            crate::dialog_frame::group_end(ui);
         });
     });
 }
@@ -1018,8 +1101,7 @@ fn playback_section(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 fn appearance(ui: &mut egui::Ui, t: &Tokens, s: &mut crate::state::AppSettings, system: Option<egui::Theme>) {
     use crate::state::{AppearanceMode as M, DarkTheme, LightTheme};
     heading(ui, t, crate::i18n::tr("Appearance"));
-    ui.label(RichText::new(crate::i18n::tr("Appearance Mode")).color(t.text_label));
-    ui.horizontal_wrapped(|ui| {
+    row(ui, t, crate::i18n::tr("Appearance Mode"), |ui| {
         choices(ui, "settingsAppearance", &[(M::Auto, "Sync with System"), (M::Dark, "Dark Mode"), (M::Light, "Light Mode")], &mut s.appearance_mode);
     });
     ui.add_space(4.0);

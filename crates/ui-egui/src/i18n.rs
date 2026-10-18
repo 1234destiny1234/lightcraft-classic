@@ -1314,11 +1314,13 @@ mod tests {
                         collect(&shape.shape, &mut bounds);
                     }
                 }
-                let rect = |id: &str| app.widgets.iter().find(|entry| entry.0 == id).unwrap().1;
+                let rect = |id: &str| app.widgets.iter().find(|entry| entry.0 == id).unwrap_or_else(|| panic!("no widget {id}")).1;
                 if export {
                     let dialog = rect("dialog:window");
                     for id in ["button:exportNamingTags", "button:exportChooseFolder", "button:exportSavePreset"] {
-                        assert!(dialog.contains_rect(rect(id)), "{id} spills outside {dialog:?}: {:?}", rect(id));
+                        // (sideways: the options below the fold scroll into view)
+                        let r = rect(id);
+                        assert!(dialog.left() <= r.left() && r.right() <= dialog.right(), "{id} spills outside {dialog:?}: {r:?}");
                     }
                 } else {
                     let button = rect("button:copySettings");

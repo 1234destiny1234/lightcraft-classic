@@ -1,4 +1,10 @@
 {
+  "File Settings": "ファイル設定",
+  "Image Sizing": "画像のサイズ調整",
+  "Output Sharpening": "出力シャープ",
+  "Watermarking": "透かし",
+  "File Naming": "ファイル名",
+  "Export Location": "書き出し先",
   "Color Values": "カラー値",
   "Color Readout": "カラー表示",
   "Show RGB Color Values": "RGB カラー値を表示",

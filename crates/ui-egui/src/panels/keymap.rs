@@ -26,7 +26,7 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     let module_id = egui::Id::new(MODULE_ONLY);
     let mut module_only: bool = ui.data(|d| d.get_temp(module_id)).unwrap_or(true);
     let module = app.ui.module;
-    ui.horizontal(|ui| {
+    ui.horizontal_wrapped(|ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut search).hint_text(crate::i18n::tr("Search commands or keys")).desired_width(220.0));
         register(ui.ctx(), "field:shortcutsSearch", r.rect);
         let r = ui.checkbox(&mut show_all, crate::i18n::tr("Show commands without a shortcut"));

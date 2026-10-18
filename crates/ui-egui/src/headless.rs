@@ -3408,7 +3408,8 @@ mod tests {
             assert!(now.width() >= first.width() - 1.0, "{tab}: width {} → {}", first.width(), now.width());
             heights.push(now.height());
         }
-        assert!(heights.iter().any(|h| (h - first.height()).abs() > 20.0), "the tabs differ in height: {heights:?}");
+        // the categories scroll inside one fixed-height content area: the window keeps its size
+        assert!(heights.iter().all(|h| (h - first.height()).abs() < 1.0), "the window changed height: {heights:?}");
     }
 
     /// Settings ▸ Sync draws a shared library, an offer and exchange states without panicking, and
