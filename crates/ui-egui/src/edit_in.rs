@@ -202,7 +202,8 @@ pub(crate) fn after_command(app: &mut LccApp, id: &str, r: &Value) {
     if let Some(f) = app.services.open_with.as_mut()
         && let Err(e) = f(path, &editor)
     {
-        app.ui.status = format!("{}: {e}", tr("Couldn't open the editor"));
+        let now = app.last_time;
+        app.ui.toast = Some((crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e), now + 1.4, None));
     }
 }
 
@@ -343,10 +344,18 @@ pub(crate) fn pump(app: &mut LccApp, ctx: &egui::Context) {
     });
     for m in msgs {
         match m {
-            Msg::Event(EditorEvent::Saved(p)) | Msg::Exited(p) => {
+            Msg::Event(EditorEvent::Saved(p)) => {
                 let ids = ROUND_TRIP.with_borrow_mut(|rt| {
                     let ids = rt.watched.ids(&p);
                     rt.watched.mark_seen(&p);
+                    ids
+                });
+                reload(app, ctx, ids);
+            }
+            Msg::Exited(p) => {
+                let ids = ROUND_TRIP.with_borrow_mut(|rt| {
+                    let ids = rt.watched.ids(&p);
+                    rt.watched.remove(&p);
                     ids
                 });
                 reload(app, ctx, ids);
@@ -800,6 +809,79 @@ mod tests {
             std::thread::sleep(std::time::Duration::from_millis(5));
         }
         assert_eq!(h.app.session.catalog.photo(id).unwrap().width, 32, "reloaded on document.saved");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// RT.B3 (P2 #1): when the host's open_with fails, an error toast is shown instead of
+    /// silently succeeding (the toast appears in app.ui.toast, not just app.ui.status).
+    #[test]
+    fn open_failure_shows_an_error_toast() {
+        let dir = temp("fail");
+        let src = dir.join("fail.png");
+        png(&src, 20, 12, 1);
+        let failed = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let f = failed.clone();
+        let services = crate::Services {
+            open_with: Some(Box::new(move |_path: &str, _app: &str| {
+                if f.load(std::sync::atomic::Ordering::SeqCst) {
+                    Err("no such editor".into())
+                } else {
+                    Ok(())
+                }
+            })),
+            ..Default::default()
+        };
+        let mut h = crate::headless::Headless::new(
+            LccApp::new(lcc_engine::Session::with_demo().with_fs(), services),
+            [900.0, 600.0],
+            1.0,
+        );
+        // Simulate after_command being called with a successful editIn result
+        let result = json!({
+            "path": "/tmp/fake-edit.tif",
+            "id": 1,
+            "original": 1,
+            "opened": null,
+            "openWith": {
+                "path": "/tmp/fake-edit.tif",
+                "app": "nonexistent-editor",
+                "args": [],
+                "reload": [1],
+                "preset": "",
+                "control": null
+            }
+        });
+        // First try succeeds (no error toast)
+        after_command(&mut h.app, "photo.editIn", &result);
+        assert!(h.app.ui.toast.is_none(), "no error toast on success: {:?}", h.app.ui.toast);
+        // Second try fails
+        failed.store(true, std::sync::atomic::Ordering::SeqCst);
+        after_command(&mut h.app, "photo.editIn", &result);
+        let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+        assert!(toast.contains("Couldn't open the editor") && toast.contains("no such editor"), "{toast:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// RT.B4 (P2 #3): when an editor process exits, the watched entry is removed from the table
+    /// so the 256-entry limit isn't reached by completed edits.
+    #[test]
+    fn editor_exit_removes_the_watched_entry() {
+        let dir = temp("exit-clean");
+        let src = dir.join("clean.png");
+        png(&src, 20, 12, 1);
+        let mut h = headless(&dir);
+        h.app.session.execute("library.import", &json!({"paths": [src.to_string_lossy()]})).unwrap();
+        let id = h.app.session.active().unwrap();
+        watch(&mut h.app, &src, &[id.0]);
+        assert_eq!(watched_files(), 1, "the file is out for editing");
+        // Simulate the editor exiting
+        ROUND_TRIP.with_borrow(|rt| {
+            assert_eq!(rt.watched.len(), 1);
+        });
+        // Send an Exited message via the channel
+        let tx = ROUND_TRIP.with_borrow(|rt| rt.tx.clone());
+        tx.send(Msg::Exited(src.clone())).unwrap();
+        // Pump to process the message
+        h.step();
+        assert_eq!(watched_files(), 0, "the exited file is removed from the watch table");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
