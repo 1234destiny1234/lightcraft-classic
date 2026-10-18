@@ -44,7 +44,7 @@ use crate::{EngineError, Result, Session};
 pub type TrashFn = Arc<dyn Fn(&Path) -> std::result::Result<(), String> + Send + Sync>;
 
 /// The system trash (the `trash` crate: Trash, Recycle Bin, freedesktop trash).
-#[cfg(not(target_arch = "wasm32"))]
+#[cfg(not(any(target_arch = "wasm32", target_os = "android")))]
 pub fn system_trash() -> TrashFn {
     Arc::new(|path: &Path| trash::delete(path).map_err(|e| e.to_string()))
 }
