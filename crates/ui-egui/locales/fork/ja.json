@@ -1428,5 +1428,8 @@
   "Edit Panels": "編集パネル",
   "Screen Mode": "画面モード",
   "Metadata Filter Columns": "メタデータフィルター列",
-  "Metadata columns: click a value to narrow the view": "メタデータ列：値をクリックすると表示が絞り込まれます"
+  "Metadata columns: click a value to narrow the view": "メタデータ列：値をクリックすると表示が絞り込まれます",
+  "Show/hide top panel": "上部パネルの表示/非表示",
+  "Show/hide right panel": "右パネルの表示/非表示",
+  "Show/Hide Right Panel": "右パネルの表示/非表示"
 }

@@ -1575,14 +1575,17 @@ mod tests {
         app.session.presets.push(lcc_develop::Preset { id: "user.test".into(), builtin: false, ..builtin });
         let groups: Vec<String> = app.session.presets.iter().map(|p| format!("preset:{}", p.group)).collect();
         app.ui.group_open.extend(groups.into_iter().map(|g| (g, true)));
+        // Presets is a right panel of its own (one at a time with History, Versions, …)
+        let text = painted_text(&ctx, &mut app, Locale::ZhHant);
+        assert!(text.contains("暖光"), "stock preset: {text}");
+        assert!(text.contains("Warm Glow"), "user preset: {text}");
+        assert!(text.contains("色彩"), "stock group: {text}");
+        app.ui.presets = false;
         for (panel, title) in [(crate::state::RightPanel::Activity, "歷史紀錄"), (crate::state::RightPanel::Versions, "版本")] {
             app.ui.right = panel;
             let text = painted_text(&ctx, &mut app, Locale::ZhHant);
             assert!(text.contains(title), "{text}");
             assert!(!text.contains("History") && !text.contains("Versions"), "{text}");
-            assert!(text.contains("暖光"), "stock preset: {text}");
-            assert!(text.contains("Warm Glow"), "user preset: {text}");
-            assert!(text.contains("色彩"), "stock group: {text}");
         }
         assert_eq!(history_label("Exposure", &app.session.presets), "曝光");
         assert_eq!(history_label("Preset: Warm Film", &app.session.presets), "預設集：暖調底片");

@@ -1427,5 +1427,8 @@
   "Edit Panels": "編輯面板",
   "Screen Mode": "螢幕模式",
   "Metadata Filter Columns": "中繼資料篩選欄",
-  "Metadata columns: click a value to narrow the view": "中繼資料欄：按一下某個值以縮小檢視範圍"
+  "Metadata columns: click a value to narrow the view": "中繼資料欄：按一下某個值以縮小檢視範圍",
+  "Show/hide top panel": "顯示/隱藏頂部面板",
+  "Show/hide right panel": "顯示/隱藏右側面板",
+  "Show/Hide Right Panel": "顯示/隱藏右側面板"
 }

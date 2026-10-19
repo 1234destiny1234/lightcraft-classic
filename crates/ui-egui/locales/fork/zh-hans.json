@@ -1341,5 +1341,8 @@
   "Edit Panels": "编辑面板",
   "Screen Mode": "屏幕模式",
   "Metadata Filter Columns": "元数据筛选列",
-  "Metadata columns: click a value to narrow the view": "元数据列：点击某个值以缩小视图范围"
+  "Metadata columns: click a value to narrow the view": "元数据列：点击某个值以缩小视图范围",
+  "Show/hide top panel": "显示/隐藏顶部面板",
+  "Show/hide right panel": "显示/隐藏右侧面板",
+  "Show/Hide Right Panel": "显示/隐藏右侧面板"
 }

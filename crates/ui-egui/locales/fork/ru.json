@@ -1636,5 +1636,8 @@
   "Edit Panels": "Панели правки",
   "Screen Mode": "Режим экрана",
   "Metadata Filter Columns": "Столбцы фильтра метаданных",
-  "Metadata columns: click a value to narrow the view": "Столбцы метаданных: щёлкните значение, чтобы сузить просмотр"
+  "Metadata columns: click a value to narrow the view": "Столбцы метаданных: щёлкните значение, чтобы сузить просмотр",
+  "Show/hide top panel": "Показать/скрыть верхнюю панель",
+  "Show/hide right panel": "Показать/скрыть правую панель",
+  "Show/Hide Right Panel": "Показать/скрыть правую панель"
 }

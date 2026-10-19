@@ -155,8 +155,16 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             if fresp.clicked() {
                 let _ = app.run("view.filterBar", json!({}));
             }
-            // right icons
+            // right icons; rightmost, mirroring the sidebar button: show/hide the module bar
             let mut x = full.right() - 18.0;
+            let r = Rect::from_center_size(pos2(x, full.center().y), vec2(30.0, 30.0));
+            let mut top = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+            if icon_button(&mut top, "moduleBar", Icon::SidebarTop, vec2(30.0, 30.0), app.ui.module_bar, true, crate::i18n::tr("Show/hide top panel"))
+                .clicked()
+            {
+                let _ = app.run("panel.top", json!({}));
+            }
+            x -= 42.0;
             // saving is failing: the cloud icon turns into a warning until a save succeeds
             let unsaved = app.session.unsaved().map(|(n, e)| {
                 crate::i18n::tr_format!(

@@ -25,19 +25,15 @@ pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
             panels::strip::show(app, ui);
         }
         // Library's right column is its Classic panels, unless one of the strip's panels (Versions,
-        // History & Activity) is open in its place
-        if app.ui.module == module::ModuleId::Library && app.ui.right == state::RightPanel::None {
+        // History & Activity) is open in its place. Presets is a right panel like Edit or Crop, one
+        // at a time. The strip's top button folds the side away (`right_collapsed`).
+        if app.ui.right_collapsed {
+        } else if app.ui.presets && app.ui.module == module::ModuleId::Develop {
+            right(app, ui);
+        } else if app.ui.module == module::ModuleId::Library && app.ui.right == state::RightPanel::None {
             panels::classic::right_column(app, ui);
         } else if app.ui.right != state::RightPanel::None {
             right(app, ui);
-        }
-        if app.ui.presets {
-            let t = crate::theme::Tokens::get(ui.ctx());
-            egui::Panel::right("presets_panel")
-                .exact_size(t.panel_w)
-                .resizable(false)
-                .frame(egui::Frame::NONE)
-                .show(ui, |ui| panels::presets::show(app, ui, module::DEVELOP_LEFT, false));
         }
     }
     if module::edge_visible(app, module::Edge::Left) && !m.own_sides() {
@@ -52,12 +48,17 @@ pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
 /// The shared panels draw only their contents (upstream's docking hosts them); the Classic edges give
 /// them their resizable sides.
 fn right(app: &mut LccApp, ui: &mut egui::Ui) {
-    let t = crate::theme::Tokens::get(ui.ctx());
-    // the presets column and the left sidebar are laid out after this panel: leave them their room
-    let reserve = if app.ui.presets { t.panel_w } else { 0.0 } + if app.ui.left_panel { state::LEFT_WIDTH.min } else { 0.0 };
+    // the left sidebar is laid out after this panel: leave it its room
+    let reserve = if app.ui.left_panel { state::LEFT_WIDTH.min } else { 0.0 };
     let width = app.ui.right_width;
-    let resized =
-        panels::resizable_side(ui, false, "right_panel", egui::Frame::NONE, width, state::RIGHT_WIDTH, reserve, |ui| panels::right::show(app, ui));
+    let presets = app.ui.presets && app.ui.module == module::ModuleId::Develop;
+    let resized = panels::resizable_side(ui, false, "right_panel", egui::Frame::NONE, width, state::RIGHT_WIDTH, reserve, |ui| {
+        if presets {
+            panels::presets::show(app, ui, module::DEVELOP_LEFT, false);
+        } else {
+            panels::right::show(app, ui);
+        }
+    });
     if let Some(w) = resized {
         app.ui.right_width = w;
     }

@@ -1286,5 +1286,8 @@
   "Edit Panels": "Bearbeitungsbereiche",
   "Screen Mode": "Bildschirmmodus",
   "Metadata Filter Columns": "Metadaten-Filterspalten",
-  "Metadata columns: click a value to narrow the view": "Metadatenspalten: Klicken Sie auf einen Wert, um die Ansicht einzugrenzen"
+  "Metadata columns: click a value to narrow the view": "Metadatenspalten: Klicken Sie auf einen Wert, um die Ansicht einzugrenzen",
+  "Show/hide top panel": "Oberen Bereich ein-/ausblenden",
+  "Show/hide right panel": "Rechten Bereich ein-/ausblenden",
+  "Show/Hide Right Panel": "Rechten Bereich ein-/ausblenden"
 }

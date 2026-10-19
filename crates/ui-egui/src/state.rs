@@ -706,11 +706,15 @@ pub struct UiState {
     pub view: ViewMode,
     pub left_panel: bool,
     pub right: RightPanel,
+    /// The right panel (and Library's right column) is folded away by the tool strip's top button;
+    /// the strip stays, and choosing any of its tools unfolds it.
+    pub right_collapsed: bool,
     /// Widths of the left sidebar and of the right panel in points (dragging their inner edge
     /// resizes them; within [`LEFT_WIDTH`] / [`RIGHT_WIDTH`]).
     pub left_width: f32,
     pub right_width: f32,
-    /// Presets column open (opens to the left of the Edit panel).
+    /// Presets is the open panel on the right (in place of Edit, Crop, …; `right` keeps the tool
+    /// to go back to).
     pub presets: bool,
     /// Presets column: show a live thumbnail of the photo with each preset.
     pub preset_thumbs: bool,
@@ -1473,6 +1477,7 @@ impl Default for UiState {
             left_width: LEFT_WIDTH.default,
             right_width: RIGHT_WIDTH.default,
             right: RightPanel::Edit,
+            right_collapsed: false,
             presets: false,
             preset_thumbs: false,
             filmstrip: true,

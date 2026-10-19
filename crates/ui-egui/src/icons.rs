@@ -23,6 +23,8 @@ macro_rules! icons {
 
 icons! {
     Sidebar,
+    SidebarTop,
+    SidebarRight,
     Back,
     Forward,
     Search,
@@ -338,6 +340,14 @@ fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, turn: Option<
         Sidebar => {
             pen.rect(3.0, 4.0, 17.0, 16.0, 1.5);
             pen.line(&[(8.0, 4.0), (8.0, 16.0)]);
+        }
+        SidebarTop => {
+            pen.rect(3.0, 4.0, 17.0, 16.0, 1.5);
+            pen.line(&[(3.0, 8.5), (17.0, 8.5)]);
+        }
+        SidebarRight => {
+            pen.rect(3.0, 4.0, 17.0, 16.0, 1.5);
+            pen.line(&[(12.0, 4.0), (12.0, 16.0)]);
         }
         Monitor => {
             pen.rect(2.5, 3.5, 17.5, 13.5, 1.5);
