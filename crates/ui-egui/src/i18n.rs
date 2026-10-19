@@ -1264,6 +1264,10 @@ mod tests {
             for export in [false, true] {
                 if export {
                     app.run("dialog.export", serde_json::json!({})).unwrap();
+                    // (a specific folder: the Folder row with its Choose… button)
+                    if let Some(crate::state::Dialog::Export { opts, .. }) = &mut app.ui.dialog {
+                        opts.destination_mode = lcc_engine::export::DestinationMode::SpecificFolder;
+                    }
                 }
                 for frame in 0..4 {
                     let input = crate::headless::HeadlessView::raw_input(egui::vec2(1600.0, 1000.0), 1.0, frame as f64 / 60.0, vec![]);

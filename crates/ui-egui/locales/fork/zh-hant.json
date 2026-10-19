@@ -1430,5 +1430,12 @@
   "Metadata columns: click a value to narrow the view": "中繼資料欄：按一下某個值以縮小檢視範圍",
   "Show/hide top panel": "顯示/隱藏頂部面板",
   "Show/hide right panel": "顯示/隱藏右側面板",
-  "Show/Hide Right Panel": "顯示/隱藏右側面板"
+  "Show/Hide Right Panel": "顯示/隱藏右側面板",
+  "Choose folder later": "稍後選擇資料夾",
+  "No folder chosen": "未選擇資料夾",
+  "The folder is asked for when the export starts.": "匯出開始時會詢問資料夾。",
+  "Choose Export Folder": "選擇匯出資料夾",
+  "Post-Processing": "後續處理",
+  "Do nothing": "不執行任何動作",
+  "No watermark": "無浮水印"
 }

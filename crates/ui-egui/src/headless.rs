@@ -2279,6 +2279,133 @@ mod tests {
 
     /// The Export dialog hands its batch to a worker thread: the UI keeps drawing frames, shows
     /// progress, and reports the result when the files are written.
+    /// Lightroom Classic's "Choose folder later": a first export picks no folder for the person;
+    /// the folder dialog comes up when the export starts and the files go where it says.
+    /// Cancelling it exports nothing; a host without a folder dialog asks for `dir`.
+    #[test]
+    fn export_choose_folder_later_asks_when_the_export_starts() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        let out = std::env::temp_dir().join(format!("lc-choose-later-{}", std::process::id()));
+        let asked = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let (a, folder) = (asked.clone(), out.to_string_lossy().into_owned());
+        h.app.services.pick_folder = Some(Box::new(move || {
+            a.fetch_add(1, std::sync::atomic::Ordering::SeqCst);
+            Some(folder.clone())
+        }));
+        let written = Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
+        let w = written.clone();
+        h.app.services.write_shared = Some(Arc::new(move |p: &str, _: &[u8]| {
+            w.lock().unwrap().push(p.to_string());
+            Ok(())
+        }));
+        let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
+        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": ids}}), t);
+        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
+        h.settle(SETTLE);
+        let Some(crate::state::Dialog::Export { opts, full_size, resize, .. }) = &mut h.app.ui.dialog else { panic!("no Export dialog") };
+        assert_eq!(opts.destination_mode, lcc_engine::export::DestinationMode::ChooseLater, "no folder picked for a first export");
+        *full_size = false;
+        *resize = lcc_engine::export::Resize::long_edge(48);
+        assert!(h.request("ui.widgets", json!({"filter": "exportChooseFolder"}), t)["result"].as_array().is_some_and(Vec::is_empty));
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 0, "not asked before the export starts");
+        let r = h.request("ui.dialog.confirm", json!({}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(asked.load(std::sync::atomic::Ordering::SeqCst), 1, "asked once the export starts");
+        assert!(h.step_until(Duration::from_secs(60), |h| h.app.export.is_none()));
+        let w = written.lock().unwrap().clone();
+        assert_eq!(w.len(), 2, "{w:?}");
+        assert!(w.iter().all(|p| std::path::Path::new(p).starts_with(&out)), "{w:?}");
+        // the next export asks again (the setting is kept, not the folder)
+        let last = h.app.session.last_export.clone().unwrap_or_default();
+        assert_eq!(last["destinationMode"], "chooseLater", "{last}");
+
+        // cancelled: nothing is exported, and that is not an error
+        h.app.services.pick_folder = Some(Box::new(|| None));
+        let r = h.request("engine.execute", json!({"command": "app.export", "params": {"destinationMode": "chooseLater", "longEdge": 48}}), t);
+        assert_eq!(r["ok"], true, "{r}");
+        assert!(h.app.export.is_none());
+        assert_eq!(written.lock().unwrap().len(), 2);
+
+        // no folder dialog here: an error that says what to pass
+        h.app.services.pick_folder = None;
+        let r = h.request("engine.execute", json!({"command": "app.export", "params": {"destinationMode": "chooseLater"}}), t);
+        assert_eq!(r["ok"], false, "{r}");
+        assert!(r["error"].as_str().is_some_and(|e| e.contains("`dir`")), "{r}");
+    }
+
+    /// The Export dialog's sections fold from their headers (Lightroom Classic's order), keep a
+    /// one-line summary on the header, start open (where, name, format) or folded (size,
+    /// sharpening, metadata, watermark), and keep the person's choice the next time.
+    #[test]
+    fn export_dialog_sections_fold_and_stay_folded() {
+        let mut h = demo([1400.0, 900.0]);
+        let t = Duration::from_secs(10);
+        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
+        h.settle(SETTLE);
+        let shown =
+            |h: &mut Headless, id: &str| h.request("ui.widgets", json!({"filter": id}), t)["result"].as_array().is_some_and(|a| !a.is_empty());
+        let top = |h: &mut Headless, id: &str| {
+            let r = h.request("ui.widgets", json!({"filter": id}), t);
+            r["result"][0]["rect"][1].as_f64().unwrap_or(f64::NAN)
+        };
+        // Export Location comes first, File Settings after File Naming
+        assert!(top(&mut h, "section:exportLocation") < top(&mut h, "section:exportNaming"));
+        assert!(top(&mut h, "section:exportNaming") < top(&mut h, "section:exportFileSettings"));
+        assert!(shown(&mut h, "combo:exportDestinationMode"));
+        // where, what name and which format start open; size, sharpening, metadata and watermark folded
+        assert!(shown(&mut h, "button:exportNamingTags") && shown(&mut h, "button:exportFormat-0"));
+        assert!(!shown(&mut h, "check:exportFullSize"), "Image Sizing starts folded");
+        assert!(!shown(&mut h, "button:exportSharpen-0") && !shown(&mut h, "button:exportMetadata-0"));
+        assert!(shown(&mut h, "section:exportWatermark"), "a folded section keeps its header");
+        h.request("ui.clickWidget", json!({"id": "section:exportSizing"}), t);
+        h.settle(SETTLE);
+        assert!(shown(&mut h, "check:exportFullSize"), "opened");
+        assert_eq!(h.app.ui.group_open.get("export:Sizing"), Some(&true), "kept in the settings");
+        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
+        h.settle(SETTLE);
+        assert!(!shown(&mut h, "combo:exportDestinationMode"), "folded");
+        assert!(shown(&mut h, "button:exportFormat-0"), "the other sections stay open");
+        h.request("ui.dialog.cancel", json!({}), t);
+        h.settle(SETTLE);
+        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
+        h.settle(SETTLE);
+        assert!(!shown(&mut h, "combo:exportDestinationMode"), "still folded when the dialog opens again");
+        assert!(shown(&mut h, "check:exportFullSize"), "still open when the dialog opens again");
+        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
+        h.settle(SETTLE);
+        assert!(shown(&mut h, "combo:exportDestinationMode"), "unfolded");
+    }
+
+    /// Wide enough, the Export dialog lists its presets in a column (a click loads one, keeping
+    /// where to export); in a narrow window it falls back to the Preset menu, and stays on screen.
+    #[test]
+    fn export_dialog_preset_column_and_narrow_fallback() {
+        let t = Duration::from_secs(10);
+        let mut h = demo([1400.0, 900.0]);
+        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
+        h.settle(SETTLE);
+        let has = |h: &mut Headless, id: &str| h.request("ui.widgets", json!({"filter": id}), t)["result"].as_array().is_some_and(|a| !a.is_empty());
+        assert!(has(&mut h, "button:exportPreset-builtin-0"), "the preset column");
+        assert!(!has(&mut h, "combo:exportPreset"));
+        // JPEG (Small): 2048 px long edge; where to export is left as it was
+        h.request("ui.clickWidget", json!({"id": "button:exportPreset-builtin-0"}), t);
+        h.settle(SETTLE);
+        let Some(crate::state::Dialog::Export { opts, full_size, resize, .. }) = &h.app.ui.dialog else { panic!("no Export dialog") };
+        assert!(!*full_size && resize.value == 2048.0, "{resize:?}");
+        assert_eq!(opts.destination_mode, lcc_engine::export::DestinationMode::ChooseLater);
+        h.request("ui.dialog.cancel", json!({}), t);
+
+        let mut h = demo([560.0, 700.0]);
+        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
+        h.settle(SETTLE);
+        assert!(has(&mut h, "combo:exportPreset"), "the Preset menu in a narrow window");
+        assert!(!has(&mut h, "button:exportPreset-builtin-0"));
+        let r = h.request("ui.widgets", json!({"filter": "dialog:window"}), t);
+        let w = &r["result"][0]["rect"];
+        assert!(w[0].as_f64().unwrap() >= 0.0 && w[0].as_f64().unwrap() + w[2].as_f64().unwrap() <= 560.0, "{w}");
+    }
+
     #[test]
     fn export_dialog_keeps_its_width() {
         // A dialog row sized as "available width − a guessed button width" made the auto-sized
@@ -2287,6 +2414,10 @@ mod tests {
         let t = Duration::from_secs(10);
         h.app.services.pick_folder = Some(Box::new(|| None));
         h.app.services.pick_files = Some(Box::new(Vec::new));
+        // (every section open: Image Sizing and Watermarking start folded)
+        for k in ["Sizing", "Sharpening", "Metadata", "Watermark"] {
+            h.app.ui.group_open.insert(format!("export:{k}"), true);
+        }
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
         // the widest variant: watermark graphic and every optional row
         if let Some(crate::state::Dialog::Export { opts, .. }) = &mut h.app.ui.dialog {
@@ -2311,7 +2442,7 @@ mod tests {
         }
         let w1 = width(&mut h);
         assert!((w1 - w0).abs() < 0.5, "the export dialog grew from {w0} to {w1}");
-        assert!(w1 < 700.0, "{w1}");
+        assert!(w1 <= 900.0, "{w1}");
     }
 
     /// With a watermark on, the Export dialog shows the first photo with the watermark on it.
@@ -2319,6 +2450,8 @@ mod tests {
     fn export_dialog_previews_the_watermark() {
         let mut h = demo([1400.0, 900.0]);
         let t = Duration::from_secs(10);
+        // (Watermarking starts folded)
+        h.app.ui.group_open.insert("export:Watermark".into(), true);
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
         let preview = |h: &mut Headless| {
             let r = h.request("ui.widgets", json!({}), t);
@@ -2354,7 +2487,8 @@ mod tests {
         h.request("engine.execute", json!({"command": "library.select", "params": {"ids": ids}}), t);
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
         h.settle(SETTLE);
-        if let Some(crate::state::Dialog::Export { full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
+        if let Some(crate::state::Dialog::Export { opts, full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
+            opts.destination_mode = lcc_engine::export::DestinationMode::SpecificFolder;
             *full_size = false;
             *resize = lcc_engine::export::Resize::long_edge(64);
             *dir = "/lc-test-out".into();
@@ -2410,6 +2544,7 @@ mod tests {
         h.settle(SETTLE);
         if let Some(crate::state::Dialog::Export { opts, full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
             assert!(opts.add_to_photos, "the checkbox turns it on");
+            opts.destination_mode = lcc_engine::export::DestinationMode::SpecificFolder;
             opts.photos_album = "Trip “2026”".into();
             *full_size = false;
             *resize = lcc_engine::export::Resize::long_edge(48);

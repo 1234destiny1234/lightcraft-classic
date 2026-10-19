@@ -273,7 +273,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                 if let (Some(o), serde_json::Value::Object(v)) = (
                     props.as_object_mut(),
                     json!({
-                        "destinationMode": {"type": "string", "enum": ["specificFolder", "sameAsOriginal"], "description": "specificFolder (default) = everything into `dir`; sameAsOriginal = each photo into the folder of its original (+ `subfolder`); a photo with no folder on disk or whose folder is gone gets an error"},
+                        "destinationMode": {"type": "string", "enum": ["specificFolder", "sameAsOriginal", "chooseLater"], "description": "specificFolder (default) = everything into `dir`; sameAsOriginal = each photo into the folder of its original (+ `subfolder`); a photo with no folder on disk or whose folder is gone gets an error; chooseLater = the desktop app asks for the folder when the export starts (here, as specificFolder: pass `dir`)"},
                         "customText": {"type": "string", "description": "Text of the `{custom}` naming token, e.g. naming `{custom}-{seq:1}`"},
                         "videoFormat": {"type": "string", "enum": ["h264", "prores"], "description": "Video clips in the batch (rendered formats) export as movies with their trim and video edits: h264 = H.264 + AAC MP4 (default), prores = ProRes 422 + AAC MOV"},
                         "videoQuality": {"type": "integer", "description": "Video quality 1..100 (default 80): H.264 CRF 40..14, ProRes HQ >= 80, Standard >= 50, else LT"},

@@ -1289,5 +1289,12 @@
   "Metadata columns: click a value to narrow the view": "Metadatenspalten: Klicken Sie auf einen Wert, um die Ansicht einzugrenzen",
   "Show/hide top panel": "Oberen Bereich ein-/ausblenden",
   "Show/hide right panel": "Rechten Bereich ein-/ausblenden",
-  "Show/Hide Right Panel": "Rechten Bereich ein-/ausblenden"
+  "Show/Hide Right Panel": "Rechten Bereich ein-/ausblenden",
+  "Choose folder later": "Ordner später auswählen",
+  "No folder chosen": "Kein Ordner ausgewählt",
+  "The folder is asked for when the export starts.": "Der Ordner wird beim Start des Exports abgefragt.",
+  "Choose Export Folder": "Exportordner auswählen",
+  "Post-Processing": "Nachbearbeitung",
+  "Do nothing": "Nichts tun",
+  "No watermark": "Kein Wasserzeichen"
 }

@@ -258,14 +258,30 @@ const THUMB_RING: f32 = 5.5;
 /// Esc keeps the old one. Drag the value sideways to scrub it, as if dragging the thumb (Shift: a tenth
 /// as far).
 pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>) -> SliderOut {
+    slider_laid_out(ui, spec, value, enabled, label_override, None)
+}
+
+/// [`slider`] as a row of a dialog form: the name right-aligned in the form's label column
+/// ([`crate::dialog_frame::label_width`]), the track and value in its control column, so the name
+/// has the room every other row's label has.
+pub fn form_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool) -> SliderOut {
+    let label_w = crate::dialog_frame::label_width(ui);
+    slider_laid_out(ui, spec, value, enabled, None, Some(label_w))
+}
+
+fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, form_label: Option<f32>) -> SliderOut {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (row, _) = ui.allocate_exact_size(vec2(w, t.slider_row_h), Sense::hover());
     // one row: name (left-aligned flush with section header) | wide track | compact value
     let label_str = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
-    let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(12.5), t.text_label).size().x;
-    let label_col = label_column(ui, w, label_w);
-    let geo = SliderGeometry::new(row, label_col);
+    let geo = match form_label {
+        Some(label_w) => SliderGeometry::form(row, label_w),
+        None => {
+            let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(12.5), t.text_label).size().x;
+            SliderGeometry::new(row, label_column(ui, w, label_w))
+        }
+    };
     let (label_rect, track_rect, value_rect) = (geo.label, geo.track, geo.value);
     let id = ui.id().with(spec.id);
     let resp = ui.interact(track_rect.expand2(vec2(THUMB_RING - 1.0, 0.0)), id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
@@ -549,10 +565,14 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let text_c = if enabled { t.text_label } else { t.text_disabled };
     let p = ui.painter();
     // the name, left-aligned flush with section headers; ellipsized when the column is too narrow for it
-    let mut job = egui::text::LayoutJob::simple_singleline(label_str, t.font(12.5), text_c);
+    // (in a form, the font of the other rows' labels)
+    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(12.5) };
+    let mut job = egui::text::LayoutJob::simple_singleline(label_str, label_font, text_c);
     job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = ui.painter().layout_job(job);
-    let gpos = pos2(label_rect.left(), label_rect.center().y - galley.size().y / 2.0);
+    // (in a form: right-aligned against the controls, as the other rows' labels)
+    let gx = if form_label.is_some() { label_rect.right() - galley.size().x } else { label_rect.left() };
+    let gpos = pos2(gx, label_rect.center().y - galley.size().y / 2.0);
     p.galley(gpos, galley, text_c);
     if typing.is_none() {
         p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(12.5), text_c);
@@ -601,6 +621,18 @@ impl SliderGeometry {
         let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
         let track_l = label.right() + gap;
         let track_r = (value.left() - gap).max(track_l + 1.0);
+        let track = Rect::from_min_max(pos2(track_l, row.top()), pos2(track_r, row.bottom()));
+        Self { label, track, value }
+    }
+
+    /// A form row: the name in the label column (`label_w`), the track from the control column
+    /// (the thumb at its minimum just inside it), the value at the right.
+    fn form(row: Rect, label_w: f32) -> Self {
+        let pad_r = 8.0;
+        let label = Rect::from_min_size(row.left_top(), vec2(label_w.min(row.width()), row.height()));
+        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
+        let track_l = label.right() + crate::dialog_frame::LABEL_GAP + THUMB_RING;
+        let track_r = (value.left() - 12.0).max(track_l + 1.0);
         let track = Rect::from_min_max(pos2(track_l, row.top()), pos2(track_r, row.bottom()));
         Self { label, track, value }
     }

@@ -1431,5 +1431,12 @@
   "Metadata columns: click a value to narrow the view": "メタデータ列：値をクリックすると表示が絞り込まれます",
   "Show/hide top panel": "上部パネルの表示/非表示",
   "Show/hide right panel": "右パネルの表示/非表示",
-  "Show/Hide Right Panel": "右パネルの表示/非表示"
+  "Show/Hide Right Panel": "右パネルの表示/非表示",
+  "Choose folder later": "後でフォルダーを選択",
+  "No folder chosen": "フォルダー未選択",
+  "The folder is asked for when the export starts.": "書き出しの開始時にフォルダーを尋ねます。",
+  "Choose Export Folder": "書き出し先フォルダーを選択",
+  "Post-Processing": "後処理",
+  "Do nothing": "何もしない",
+  "No watermark": "透かしなし"
 }

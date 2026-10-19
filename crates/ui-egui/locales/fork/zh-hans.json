@@ -1344,5 +1344,12 @@
   "Metadata columns: click a value to narrow the view": "元数据列：点击某个值以缩小视图范围",
   "Show/hide top panel": "显示/隐藏顶部面板",
   "Show/hide right panel": "显示/隐藏右侧面板",
-  "Show/Hide Right Panel": "显示/隐藏右侧面板"
+  "Show/Hide Right Panel": "显示/隐藏右侧面板",
+  "Choose folder later": "稍后选择文件夹",
+  "No folder chosen": "未选择文件夹",
+  "The folder is asked for when the export starts.": "导出开始时会询问文件夹。",
+  "Choose Export Folder": "选择导出文件夹",
+  "Post-Processing": "后期处理",
+  "Do nothing": "不执行任何操作",
+  "No watermark": "无水印"
 }

@@ -123,6 +123,48 @@ impl ModalLayout {
     }
 }
 
+/// A dialog body in two columns side by side (Export: its presets beside its settings), as tall as
+/// the right column's content (measured on the previous frame) but at least `min_h` and at most
+/// `max_h`; the right column scrolls when it is taller. Draw the left column into [`left`]
+/// (`ui.scope_builder(UiBuilder::new().max_rect(cols.left), …)`) and the right one with
+/// [`TwoColumns::right`]. Laid out in rectangles rather than a horizontal row, whose children get
+/// one row's height.
+///
+/// [`left`]: TwoColumns::left
+pub struct TwoColumns {
+    /// The left column (empty when `left_w` is 0).
+    pub left: Rect,
+    right: Rect,
+    id: Id,
+}
+
+impl TwoColumns {
+    /// Allocates the body below the cursor across `ui`'s width: a `left_w` column, a `gap`, the rest.
+    pub fn begin(ui: &mut Ui, id: Id, left_w: f32, gap: f32, min_h: f32, max_h: f32) -> Self {
+        let content = ui.ctx().data(|d| d.get_temp::<f32>(id.with("two-columns-content"))).unwrap_or(max_h);
+        let h = content.max(min_h).min(max_h).max(MIN_BODY);
+        let (rect, _) = ui.allocate_exact_size(vec2(ui.available_width(), h), egui::Sense::hover());
+        let left_w = left_w.clamp(0.0, rect.width());
+        let left = Rect::from_min_size(rect.min, vec2(left_w, h));
+        let right = Rect::from_min_max(egui::pos2((left.right() + if left_w > 0.0 { gap } else { 0.0 }).min(rect.right()), rect.top()), rect.max);
+        Self { left, right, id }
+    }
+
+    /// Draws the right column, scrolling vertically when its content is taller than the body.
+    pub fn right<R>(&self, ui: &mut Ui, add: impl FnOnce(&mut Ui) -> R) -> R {
+        let out = ui.scope_builder(egui::UiBuilder::new().max_rect(self.right).layout(Layout::top_down(Align::Min)), |ui| {
+            egui::ScrollArea::vertical()
+                .id_salt(self.id.with("two-columns-scroll"))
+                .max_height(self.right.height())
+                .auto_shrink([false, false])
+                .show(ui, add)
+        });
+        let out = out.inner;
+        remember(ui.ctx(), self.id.with("two-columns-content"), out.content_size.y.ceil());
+        out.inner
+    }
+}
+
 /// Stores a measured height; a change lays the frame out again (no window jumping a frame later).
 fn remember(ctx: &egui::Context, key: Id, value: f32) {
     let value = (value * 2.0).round() / 2.0;
@@ -287,6 +329,58 @@ pub fn group_end(ui: &mut Ui) {
     let panel = egui::epaint::RectShape::new(rect, 4.0, t.inset, egui::Stroke::new(1.0, t.divider), StrokeKind::Inside);
     ui.painter().set(open.shape, panel);
     ui.add_space(6.0);
+}
+
+/// A group that folds (Lightroom Classic's Export sections): a header bar across the form with a
+/// triangle, `title`, and on the right a one-line `summary` of the settings inside (shown folded or
+/// not), then, while `open`, an inset panel behind everything drawn until the next group. Clicking
+/// the bar flips `open`; true when it did. Addressable as `section:{widget}`.
+pub fn fold_group(ui: &mut Ui, widget: &str, title: &str, summary: &str, open: &mut bool) -> bool {
+    group_end(ui);
+    let t = Tokens::get(ui.ctx());
+    let title = crate::i18n::tr(title).to_string();
+    let rect = ui.max_rect();
+    let (row, _) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H + 2.0), egui::Sense::hover());
+    let bar = Rect::from_min_max(egui::pos2(rect.left() - GROUP_PAD, row.top()), egui::pos2(rect.right() + GROUP_PAD, row.bottom()));
+    let resp = ui.interact(bar, ui.id().with(("fold-group", widget)), egui::Sense::click());
+    resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::CollapsingHeader, true, *open, &title));
+    crate::widgets::register(ui.ctx(), format!("section:{widget}"), bar);
+    let toggled = resp.clicked();
+    if toggled {
+        *open = !*open;
+    }
+    let p = ui.painter();
+    let fill = if resp.hovered() { t.hover } else { t.inset };
+    p.rect(bar, 4.0, fill, egui::Stroke::new(1.0, t.divider), StrokeKind::Inside);
+    // ▶ folded, ▼ open
+    let c = egui::pos2(bar.left() + 14.0, bar.center().y);
+    let pts = if *open {
+        vec![c + vec2(-4.0, -2.5), c + vec2(4.0, -2.5), c + vec2(0.0, 3.0)]
+    } else {
+        vec![c + vec2(-2.5, -4.0), c + vec2(3.0, 0.0), c + vec2(-2.5, 4.0)]
+    };
+    p.add(Shape::convex_polygon(pts, t.text_label, egui::Stroke::NONE));
+    let title_g = p.layout_no_wrap(title, t.semibold(12.0), t.text);
+    let title_x = bar.left() + 26.0;
+    let title_w = title_g.size().x;
+    p.galley(egui::pos2(title_x, bar.center().y - title_g.size().y / 2.0), title_g, t.text);
+    // the summary takes the room left on the right, cut short with … rather than over the title
+    let room = (bar.right() - 10.0 - (title_x + title_w + 16.0)).max(0.0);
+    if !summary.is_empty() && room > 24.0 {
+        let mut job = egui::text::LayoutJob::simple_singleline(summary.to_string(), egui::FontId::proportional(11.5), t.text_dim);
+        job.wrap = egui::text::TextWrapping::truncate_at_width(room);
+        let g = p.layout_job(job);
+        p.galley(egui::pos2(bar.right() - 10.0 - g.size().x, bar.center().y - g.size().y / 2.0), g, t.text_dim);
+    }
+    if *open {
+        let shape = ui.painter().add(Shape::Noop);
+        let open_group = OpenGroup { shape, top: ui.cursor().top(), left: rect.left() - GROUP_PAD, right: rect.right() + GROUP_PAD };
+        ui.ctx().data_mut(|d| d.insert_temp(group_key(ui), open_group));
+        ui.add_space(4.0);
+    } else {
+        ui.add_space(2.0);
+    }
+    toggled
 }
 
 /// A titled group around `add` (see [`group_begin`]).

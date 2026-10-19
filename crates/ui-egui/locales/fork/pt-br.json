@@ -1431,5 +1431,12 @@
   "Metadata columns: click a value to narrow the view": "Colunas de metadados: clique em um valor para restringir a exibição",
   "Show/hide top panel": "Mostrar/ocultar o painel superior",
   "Show/hide right panel": "Mostrar/ocultar o painel direito",
-  "Show/Hide Right Panel": "Mostrar/ocultar painel direito"
+  "Show/Hide Right Panel": "Mostrar/ocultar painel direito",
+  "Choose folder later": "Escolher pasta depois",
+  "No folder chosen": "Nenhuma pasta escolhida",
+  "The folder is asked for when the export starts.": "A pasta é pedida quando a exportação começa.",
+  "Choose Export Folder": "Escolher pasta de exportação",
+  "Post-Processing": "Pós-processamento",
+  "Do nothing": "Não fazer nada",
+  "No watermark": "Sem marca d’água"
 }

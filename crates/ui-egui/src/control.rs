@@ -550,6 +550,7 @@ pub fn default_export_dir() -> String {
 /// (exact output file, single photo), `ids` (default: the selection, else the active photo).
 pub fn export_active(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     use lcc_engine::export::{Destination, ExportOptions, export_batch};
+    let asked = p;
     let p = &app.session.export_params(p)?;
     let mut opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
     if let (Some(path), None) = (p.get("path").and_then(Value::as_str), p.get("format")) {
@@ -580,6 +581,28 @@ pub fn export_active(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     // Preset): the last export's, else the default. "Same folder as original photo" needs none:
     // each photo goes to its own folder.
     let exact = p.get("path").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(str::to_string);
+    // "Choose folder later": ask for the folder now, then run again with it (and these photos,
+    // whatever is selected by the time the folder dialog closes)
+    if opts.destination_mode == lcc_engine::export::DestinationMode::ChooseLater && exact.is_none() && p.get("dir").is_none() {
+        let mut again = asked.clone();
+        if let Some(o) = again.as_object_mut() {
+            o.insert("ids".into(), json!(ids));
+        }
+        let req = crate::pick::PickRequest::folder(crate::i18n::tr("Choose Export Folder"));
+        let picked = crate::pick::ask(app, "app.export", &again, "dir", req, |s| s.pick_folder.as_mut().map(|pick| pick().into_iter().collect()));
+        return match picked {
+            crate::pick::Picked::Now(paths) => match paths.into_iter().next() {
+                Some(d) => {
+                    again["dir"] = json!(d);
+                    export_active(app, &again)
+                }
+                // cancelled: nothing exported
+                None => Ok(Value::Null),
+            },
+            crate::pick::Picked::Later => Ok(Value::Null),
+            crate::pick::Picked::Unavailable => Err("no folder dialog here: pass `dir` for a chooseLater export".into()),
+        };
+    }
     let dir = match p.get("dir").and_then(Value::as_str) {
         Some(d) => d.trim().to_string(),
         None => {
