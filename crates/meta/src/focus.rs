@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Where the camera focused: the autofocus point a camera records in its maker notes, as a box on the
 //! upright photo ([`FocusPoint`]). Sony only for now.
 //!
@@ -284,7 +285,7 @@ fn decipher(b: u8) -> u8 {
     if b >= 249 {
         return b;
     }
-    (0..249u32).find(|p| (p * p * p) % 249 == u32::from(b)).and_then(|p| u8::try_from(p).ok()).unwrap_or(b)
+    (0..249u32).find(|&p| p.pow(3).checked_rem(249) == Some(u32::from(b))).and_then(|p| u8::try_from(p).ok()).unwrap_or(b)
 }
 
 fn focus_mode_name(v: u8) -> Option<&'static str> {
@@ -338,6 +339,7 @@ fn area_used_name(v: u8) -> Option<&'static str> {
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
     use lcc_tiff::{Entry, IfdBuilder, TiffWriter, Value};

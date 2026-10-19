@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Fujifilm in-camera film recipe, read from the MakerNote.
 //!
 //! Tag numbers and value names follow the public FujiFilm table (ExifTool tag names,
@@ -370,6 +371,7 @@ fn signed(v: i64) -> String {
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
     use lcc_tiff::tags;

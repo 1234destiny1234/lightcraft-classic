@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Merging a freshly written XMP packet into an existing one (a sidecar another application
 //! wrote, e.g. with its develop settings and edit history), keeping everything the writer does not
 //! own byte for byte.
@@ -107,7 +108,7 @@ fn scan(s: &str) -> Result<Scan, XmpError> {
         let after = pos(&reader);
         match ev {
             Event::Start(ref e) | Event::Empty(ref e) => {
-                count += 1;
+                count = count.saturating_add(1);
                 if count > 200_000 || stack.len() > 64 {
                     return Err(XmpError::TooComplex);
                 }
@@ -137,7 +138,7 @@ fn scan(s: &str) -> Result<Scan, XmpError> {
                     Some(Kind::Rdf) if name == "rdf:Description" => {
                         let attrs = raw_attrs.into_iter().map(|(raw, value)| Attr { name: canonical_name(&raw, &scopes), raw, value }).collect();
                         out.descs.push(Desc { tag_start: before, tag_end: after, raw_name, empty, attrs, props: Vec::new(), end: after });
-                        Kind::Desc(out.descs.len() - 1)
+                        Kind::Desc(out.descs.len().saturating_sub(1))
                     }
                     Some(Kind::Desc(i)) => Kind::Prop { desc: *i, start: before, name },
                     _ if name == "rdf:RDF" && out.rdf_close.is_none() => Kind::Rdf,
@@ -186,14 +187,15 @@ fn scan(s: &str) -> Result<Scan, XmpError> {
 /// takes its line with it).
 fn line_start(s: &str, start: usize) -> usize {
     let b = s.as_bytes();
+    let before = |i: usize| i.checked_sub(1).and_then(|p| b.get(p).map(|c| (p, *c)));
     let mut i = start;
-    while i > 0 && matches!(b.get(i - 1), Some(b' ' | b'\t')) {
-        i -= 1;
+    while let Some((p, b' ' | b'\t')) = before(i) {
+        i = p;
     }
-    if i > 0 && b.get(i - 1) == Some(&b'\n') {
-        i -= 1;
-        if i > 0 && b.get(i - 1) == Some(&b'\r') {
-            i -= 1;
+    if let Some((p, b'\n')) = before(i) {
+        i = p;
+        if let Some((p, b'\r')) = before(i) {
+            i = p;
         }
     }
     i
@@ -248,12 +250,12 @@ pub fn merge_xmp(existing: &str, fresh: &str, rules: MergeRules) -> Result<Strin
         block.push_str(&format!("\n    {}=\"{}\"", a.raw, a.value));
     }
     block.push('>');
-    let mut written = 0;
+    let mut written = 0usize;
     for p in fresh_desc.props.iter().filter(|p| write(&p.name)) {
         let text = fresh.get(p.start..p.end).ok_or_else(|| XmpError::Xml("bad property span".into()))?;
         block.push_str("\n   ");
         block.push_str(text);
-        written += 1;
+        written = written.saturating_add(1);
     }
     block.push_str("\n  </rdf:Description>");
     if written > 0 {
@@ -263,7 +265,7 @@ pub fn merge_xmp(existing: &str, fresh: &str, rules: MergeRules) -> Result<Strin
     edits.sort_by_key(|e| (e.0, e.1));
     // overlapping edits can't happen (properties sit inside their description, which is either
     // dropped whole or edited piecewise), but never splice blindly
-    let mut out = String::with_capacity(old.len() + 4096);
+    let mut out = String::with_capacity(old.len().saturating_add(4096));
     out.push_str(bom);
     let mut at = 0;
     for (s, e, r) in &edits {

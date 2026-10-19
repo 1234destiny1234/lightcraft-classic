@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Reading a file's focus point without reading the file: [`read_header`] asks for the few byte
 //! ranges [`crate::focus::read`] looks at (a TIFF raw's IFD0, its Exif IFD, the maker-note IFD and
 //! the values of the focus tags; a JPEG's Exif segment) and decodes them exactly as a whole-file
@@ -132,11 +133,11 @@ fn jpeg_inner(r: &mut Reader, head: &[u8]) -> io::Result<Option<FocusPoint>> {
             break;
         }
         if marker == 0xff {
-            i += 1;
+            i = i.saturating_add(1);
             continue;
         }
         if marker == 0xd8 || (0xd0..=0xd7).contains(&marker) || marker == 0x01 {
-            i += 2;
+            i = i.saturating_add(2);
             continue;
         }
         if marker == 0xd9 || marker == 0xda {
@@ -148,7 +149,7 @@ fn jpeg_inner(r: &mut Reader, head: &[u8]) -> io::Result<Option<FocusPoint>> {
         }
         let end = i.saturating_add(2).saturating_add(seg).min(len);
         if marker == 0xe1 {
-            let payload = at(r, i + 4, end.saturating_sub(i + 4))?;
+            let payload = at(r, i.saturating_add(4), end.saturating_sub(i.saturating_add(4)))?;
             if payload.starts_with(b"Exif\0") {
                 return Ok(crate::read_exif(payload.get(6..).unwrap_or(&[])).focus);
             }
@@ -176,7 +177,7 @@ fn tiff(r: &mut Reader, head: Vec<u8>) -> io::Result<Option<FocusPoint>> {
             Step::Need(ranges) => {
                 for (a, b) in ranges {
                     // widen to the read granularity, but never re-read what is loaded
-                    let (wa, wb) = ((a / ALIGN) * ALIGN, b.div_ceil(ALIGN).saturating_mul(ALIGN).min(r.len));
+                    let (wa, wb) = (a.saturating_sub(a.checked_rem(ALIGN).unwrap_or(0)), b.div_ceil(ALIGN).saturating_mul(ALIGN).min(r.len));
                     for (s, e) in loaded.gaps(wa, wb) {
                         let bytes = match r.fetch(s, e) {
                             Err(e) if over_budget(&e) => return Ok(None),
@@ -204,7 +205,7 @@ impl Loaded {
             return;
         }
         let (mut s, mut e) = (start, end);
-        let mut out = Vec::with_capacity(self.0.len() + 1);
+        let mut out = Vec::with_capacity(self.0.len().saturating_add(1));
         for &(a, b) in &self.0 {
             if b < s || a > e {
                 out.push((a, b));
@@ -296,28 +297,28 @@ impl Want<'_> {
         }
         let pos = usize::try_from(off).ok()?;
         let n = u64::from(self.order.read_u16(self.buf, pos)?);
-        let table = off + 2;
-        let n_read = n.min(len.saturating_sub(table) / 12).min(MAX_ENTRIES);
-        let end = table + n_read * 12 + if n_read == n { 4 } else { 0 };
+        let table = off.saturating_add(2);
+        let n_read = n.min(len.saturating_sub(table).checked_div(12).unwrap_or(0)).min(MAX_ENTRIES);
+        let end = table.saturating_add(n_read.saturating_mul(12)).saturating_add(if n_read == n { 4 } else { 0 });
         if !self.want(off, end) {
             return None;
         }
         let mut out = Vec::new();
         for i in 0..n_read {
-            let Ok(p) = usize::try_from(table + i * 12) else { continue };
+            let Ok(p) = usize::try_from(table.saturating_add(i.saturating_mul(12))) else { continue };
             let (Some(tag), Some(typ), Some(count)) = (
                 self.order.read_u16(self.buf, p),
-                self.order.read_u16(self.buf, p + 2).and_then(FieldType::from_u16),
-                self.order.read_u32(self.buf, p + 4),
+                self.order.read_u16(self.buf, p.saturating_add(2)).and_then(FieldType::from_u16),
+                self.order.read_u32(self.buf, p.saturating_add(4)),
             ) else {
                 continue;
             };
             let Some(total) = u64::from(count).checked_mul(typ.size() as u64) else { continue };
-            let field = p as u64 + 8;
+            let field = (p as u64).saturating_add(8);
             let start = if total <= 4 {
                 field
             } else {
-                match self.order.read_u32(self.buf, p + 8) {
+                match self.order.read_u32(self.buf, p.saturating_add(8)) {
                     Some(v) => u64::from(v),
                     None => continue,
                 }
@@ -414,6 +415,7 @@ fn plan(buf: &[u8], loaded: &Loaded) -> Step {
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
 

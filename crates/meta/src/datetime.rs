@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Capture date/time with optional UTC offset (Exif `DateTimeOriginal` + `OffsetTimeOriginal`, ISO 8601 in XMP).
 
 use serde::{Deserialize, Serialize};
@@ -51,15 +52,13 @@ impl DateTime {
         let s = s.trim().trim_end_matches('\0');
         let (d, t) = s.split_once([' ', 'T']).unwrap_or((s, ""));
         let dp: Vec<&str> = d.split([':', '-']).collect();
-        if dp.len() != 3 {
-            return None;
-        }
+        let &[year, month, day] = dp.as_slice() else { return None };
         let tp: Vec<&str> = if t.is_empty() { vec![] } else { t.split(':').collect() };
         let g = |v: &Vec<&str>, i: usize| v.get(i).map(|x| num(x.trim())).unwrap_or(Some(0));
         DateTime {
-            year: num(dp[0])?.try_into().ok()?,
-            month: num(dp[1])?.try_into().ok()?,
-            day: num(dp[2])?.try_into().ok()?,
+            year: num(year)?.try_into().ok()?,
+            month: num(month)?.try_into().ok()?,
+            day: num(day)?.try_into().ok()?,
             hour: g(&tp, 0)?.try_into().ok()?,
             minute: g(&tp, 1)?.try_into().ok()?,
             second: g(&tp, 2)?.try_into().ok()?,
@@ -88,7 +87,8 @@ impl DateTime {
         if h > 18 || m > 59 {
             return None;
         }
-        Some(sign * (h * 60 + m) as i16)
+        let minutes = i16::try_from(h.checked_mul(60)?.checked_add(m)?).ok()?;
+        minutes.checked_mul(sign)
     }
 
     /// Set the sub-second part from an Exif `SubSecTime*` string (digits are a decimal fraction).
@@ -96,7 +96,7 @@ impl DateTime {
         let digits: String = s.trim().chars().take_while(|c| c.is_ascii_digit()).take(3).collect();
         if !digits.is_empty() {
             let v: u16 = digits.parse().unwrap_or(0);
-            self.millis = v * 10u16.pow(3 - digits.len() as u32);
+            self.millis = v.saturating_mul(10u16.pow(3u32.saturating_sub(digits.len() as u32)));
         }
         self
     }
@@ -152,6 +152,8 @@ impl DateTime {
     }
 
     /// Seconds since 1970-01-01T00:00:00 of the civil time (UTC when the offset is known, else "local" seconds).
+    // every operand is a calendar field (u16/u8/i16): no step comes near i64's range
+    #[allow(clippy::arithmetic_side_effects)]
     pub fn unix_seconds(&self) -> i64 {
         // days from civil (proleptic Gregorian), Howard Hinnant's public-domain algorithm
         let (y, m, d) = (self.year as i64 - if self.month <= 2 { 1 } else { 0 }, self.month as i64, self.day as i64);

@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! XMP packets (ISO 16684-1 / Adobe XMP Specification Part 1–2): read and write.
 //!
 //! Reading builds a small namespace-resolved tree with `quick-xml`, then collects every property of every
@@ -222,7 +223,7 @@ fn unescape_attr(s: &str) -> String {
         match rest.find(';').and_then(|j| entity(&rest[1..j]).map(|c| (c, j))) {
             Some((c, j)) => {
                 out.push(c);
-                rest = &rest[j + 1..];
+                rest = rest.get(j.saturating_add(1)..).unwrap_or_default();
             }
             None => {
                 out.push('&');
@@ -244,7 +245,7 @@ fn parse_tree(s: &str) -> Result<Node, XmpError> {
         let ev = reader.read_event().map_err(|e| XmpError::Xml(e.to_string()))?;
         match ev {
             Event::Start(ref e) | Event::Empty(ref e) => {
-                count += 1;
+                count = count.saturating_add(1);
                 if count > MAX_NODES || stack.len() > MAX_DEPTH {
                     return Err(XmpError::TooComplex);
                 }
@@ -384,7 +385,7 @@ fn find_descriptions<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
 fn parse_gps_coord(s: &str) -> Option<f64> {
     let s = s.trim();
     let dir = s.chars().last()?;
-    let body = &s[..s.len() - dir.len_utf8()];
+    let body = s.get(..s.len().saturating_sub(dir.len_utf8()))?;
     let parts: Vec<f64> = body.split(',').map(|p| p.trim().parse::<f64>().ok()).collect::<Option<_>>()?;
     let v = match parts.as_slice() {
         [d] => *d,
@@ -534,8 +535,8 @@ pub fn parse_xmp(s: &str) -> Result<XmpData, XmpError> {
     }
     if let Some(spec) = props.get("exifEX:LensSpecification").filter(|v| v.len() == 4) {
         let v: Vec<f64> = spec.iter().filter_map(|s| parse_number(s)).collect();
-        if v.len() == 4 {
-            m.lens_spec = Some([v[0], v[1], v[2], v[3]]);
+        if let &[a, b, c, d] = v.as_slice() {
+            m.lens_spec = Some([a, b, c, d]);
         }
     }
     if let Some(creators) = props.get("dc:creator").filter(|c| !c.is_empty()) {
