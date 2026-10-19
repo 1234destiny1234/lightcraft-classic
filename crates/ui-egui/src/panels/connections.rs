@@ -56,7 +56,7 @@ enum Thumb {
 /// UI state of the Immich surfaces.
 #[derive(Default)]
 pub struct ImmichUi {
-    url: String,
+    pub(crate) url: String,
     key: String,
     pinned: Option<String>,
     pending: Option<(bool, Slot<Value>)>,
@@ -390,6 +390,12 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         crate::access::label(&r, "Server URL");
         register(ui.ctx(), "field:immichUrl", r.rect);
     });
+    if let Some(w) = lcc_immich::client::plain_http_warning(&app.immich.url) {
+        ui.horizontal_wrapped(|ui| {
+            control_indent(ui);
+            ui.label(RichText::new(crate::i18n::tr(w)).size(11.0).color(t.caution));
+        });
+    }
     row(ui, t, "API key", |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut app.immich.key).password(true).desired_width(300.0));
         crate::access::label(&r, "API key");
@@ -680,6 +686,10 @@ fn account_card(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &V
                     .color(t.text_label),
             );
         });
+        if let Some(w) = a["warning"].as_str() {
+            let l = ui.label(RichText::new(crate::i18n::tr(w)).size(11.0).color(t.caution));
+            register(ui.ctx(), format!("label:immichInsecure-{i}"), l.rect);
+        }
         missing_permissions(ui, t, i, a);
         // the server check, the link count and the key's permissions on one line
         let link = &a["link"];
