@@ -404,7 +404,8 @@ mod tests {
         let mut app = Command::new("sleep").arg("30").spawn().expect("stand-in app");
         let (mut script, folder) = run_swap(&s, app.id(), Duration::from_millis(300));
         assert!(finished(&mut script, Duration::from_secs(10)), "the script gives up after its wait");
-        std::thread::sleep(Duration::from_millis(200));
+        // the script's last step is deleting itself and its folder
+        assert!(wait_until(Duration::from_secs(10), || !folder.exists()), "the script cleans up after itself");
         assert!(content(&s.running).contains("'old'"), "the original file is untouched");
         assert!(!s.old.exists(), "the original was not moved aside");
         assert!(!s.staged.exists(), "the staged file is deleted");
@@ -424,7 +425,8 @@ mod tests {
         fs::remove_file(&s.staged).expect("remove staged");
         let (mut script, folder) = run_swap(&s, gone.id(), Duration::from_secs(5));
         assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
-        std::thread::sleep(Duration::from_millis(200));
+        // the script's last step is deleting itself and its folder
+        assert!(wait_until(Duration::from_secs(10), || !folder.exists()), "the script cleans up after itself");
         assert!(content(&s.running).contains("'old'"), "the original file is in place");
         assert!(!s.old.exists() && !s.staged.exists(), "no .old or .new file is left behind");
         assert!(!s.marker.exists(), "nothing is started");
@@ -438,7 +440,8 @@ mod tests {
         let shims = mv_shim(&s.dir, "exit 1");
         let (mut script, folder) = run_swap_with(&s, gone_app(), Duration::from_secs(5), Some(&shims));
         assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
-        std::thread::sleep(Duration::from_millis(200));
+        // the script's last step is deleting itself and its folder
+        assert!(wait_until(Duration::from_secs(10), || !folder.exists()), "the script cleans up after itself");
         assert!(content(&s.running).contains("'old'"), "the original file is untouched at its path");
         assert!(!s.staged.exists(), "no .new file is left behind");
         assert!(!s.marker.exists(), "nothing is started");
@@ -468,7 +471,8 @@ mod tests {
         let shims = no_links.then(|| ln_fails(&s.dir));
         let (mut script, folder) = run_swap_with(s, gone_app(), Duration::from_secs(5), shims.as_deref());
         assert!(finished(&mut script, Duration::from_secs(10)), "the script finishes");
-        std::thread::sleep(Duration::from_millis(200));
+        // the script's last step is deleting itself and its folder
+        assert!(wait_until(Duration::from_secs(10), || !folder.exists()), "the script cleans up after itself");
         assert!(!folder.exists(), "the script deletes itself and its folder");
     }
 

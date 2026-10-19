@@ -4494,6 +4494,7 @@ dependencies = [
  "cpal",
  "futures",
  "lcc-brand",
+ "lcc-testkit",
  "log",
  "pulseaudio",
 ]
@@ -5083,6 +5084,7 @@ dependencies = [
  "lcc-net",
  "lcc-pdf",
  "lcc-raster",
+ "lcc-testkit",
  "lcc-text",
  "lopdf",
  "rustls",

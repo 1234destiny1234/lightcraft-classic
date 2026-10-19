@@ -24,3 +24,6 @@ cpal = { version = "0.15", optional = true } # Apache-2.0; links ALSA on Linux
 pulseaudio = "0.3" # MIT
 futures = { version = "0.3", default-features = false, features = ["executor"] } # MIT OR Apache-2.0
 lcc-brand = { workspace = true }
+
+[dev-dependencies]
+lcc-testkit = { workspace = true }
