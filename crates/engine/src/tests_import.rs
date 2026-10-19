@@ -2019,7 +2019,7 @@ fn import_preserves_embedded_rating_and_label() {
     let _ = std::fs::remove_dir_all(&src);
 }
 
-/// A raw container LightCraft shows by its embedded JPEG: a TIFF whose IFD0 points at one.
+/// A raw container the app shows by its embedded JPEG: a TIFF whose IFD0 points at one.
 fn write_raw(path: &Path) {
     use lcc_codecs::{ChromaSubsampling, EncodeImage, EncodeMeta, Samples, encode_jpeg};
     let px: Vec<u8> = (0..48 * 32).flat_map(|i| [(i % 251) as u8, 91, 201]).collect();
@@ -2037,7 +2037,7 @@ fn write_raw(path: &Path) {
     std::fs::write(path, f).unwrap();
 }
 
-/// An edited TIFF of a raw: the same name, a TIFF (not a raw) to LightCraft.
+/// An edited TIFF of a raw: the same name, a TIFF (not a raw) to the app.
 fn write_tiff(path: &Path, seed: u8) {
     use lcc_codecs::{EncodeImage, EncodeMeta, Samples, TiffCompression, encode_tiff};
     let (w, h) = (48usize, 32usize);
