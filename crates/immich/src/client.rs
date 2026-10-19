@@ -340,6 +340,14 @@ impl Client {
     }
 
     /// `DELETE /assets` (not forced): the assets go to Immich's trash, never a hard delete.
+    /// `POST /trash/restore/assets`: bring trashed assets back.
+    pub fn restore_assets(&self, ids: &[String]) -> Result<(), ImmichError> {
+        for id in ids {
+            path_id(id)?;
+        }
+        self.send(Method::Post, "/trash/restore/assets", Some(&serde_json::json!({ "ids": ids })), true).map(|_| ())
+    }
+
     pub fn trash_assets(&self, ids: &[String]) -> Result<(), ImmichError> {
         for chunk in ids.chunks(500) {
             for id in chunk {
