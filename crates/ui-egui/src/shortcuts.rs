@@ -500,6 +500,8 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
         }
     }
     classic::keep_focus_on_panel_toggle(ctx, &fire);
+    // X is both reject and swap crop aspect: when both fire in one press the swap runs once (issue #293)
+    let rotate_fired = fire.iter().any(|f| f == "crop.rotateAspect");
     for f in fire {
         // a slideshow: ←/→ step (a cut)
         if app.ui.slideshow.is_some() && matches!(f.as_str(), "library.next" | "library.previous") {
@@ -622,7 +624,9 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
             }
             // X is both reject (library) and swap crop aspect (crop tool)
             if f == "photo.reject" && app.ui.right == crate::state::RightPanel::Crop {
-                let _ = app.run("crop.rotateAspect", json!({}));
+                if !rotate_fired {
+                    let _ = app.run("crop.rotateAspect", json!({}));
+                }
                 continue;
             }
             if f == "crop.rotateAspect" && app.ui.right != crate::state::RightPanel::Crop {
