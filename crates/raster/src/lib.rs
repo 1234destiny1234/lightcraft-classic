@@ -146,18 +146,31 @@ impl<T: Copy + Default> Image<T> {
         });
         out
     }
-    /// Per-pixel combination of two images of the same size (row-parallel).
+    /// Per-pixel combination of two images of the same size (row-parallel). The output has `self`'s size;
+    /// if `other` is smaller (a caller bug), its missing pixels read as `U::default()` instead of panicking.
     pub fn zip_map<U: Copy + Default + Sync, V: Copy + Default + Send>(&self, other: &Image<U>, f: impl Fn(T, U) -> V + Sync + Send) -> Image<V>
     where
         T: Sync,
     {
-        assert_eq!((self.width, self.height), (other.width, other.height), "zip_map: size mismatch");
         let mut out = Image::<V>::new(self.width, self.height);
         let w = self.width;
+        let same = (self.width, self.height) == (other.width, other.height) && other.data.len() >= w * self.height;
         par_rows(&mut out.data, w, |y, row| {
-            let (a, b) = (&self.data[y * w..(y + 1) * w], &other.data[y * w..(y + 1) * w]);
-            for ((o, s), t) in row.iter_mut().zip(a).zip(b) {
-                *o = f(*s, *t);
+            let a = self.data.get(y * w..(y + 1) * w).unwrap_or(&[]);
+            if same {
+                let b = other.data.get(y * w..(y + 1) * w).unwrap_or(&[]);
+                for ((o, s), t) in row.iter_mut().zip(a).zip(b) {
+                    *o = f(*s, *t);
+                }
+            } else {
+                for (x, (o, s)) in row.iter_mut().zip(a).enumerate() {
+                    let t = if x < other.width && y < other.height {
+                        other.data.get(y * other.width + x).copied().unwrap_or_default()
+                    } else {
+                        U::default()
+                    };
+                    *o = f(*s, t);
+                }
             }
         });
         out
@@ -281,6 +294,18 @@ impl Rgba8 {
 mod tests {
     use super::*;
     use lcc_geom::Orientation;
+
+    #[test]
+    fn zip_map_with_mismatched_sizes_does_not_panic() {
+        let a = Plane::filled(4, 3, 1.0);
+        let b = Plane::filled(2, 2, 2.0);
+        let c = a.zip_map(&b, |x, y| x + y);
+        assert_eq!((c.width, c.height), (4, 3));
+        assert_eq!(c.get(1, 1), 3.0);
+        assert_eq!(c.get(3, 2), 1.0);
+        let same = a.zip_map(&a, |x, y| x + y);
+        assert!(same.data.iter().all(|&v| v == 2.0));
+    }
 
     /// A sample at an infinite coordinate (the inverse mapping of a crop of no size) cast to
     /// isize::MAX, and its right / lower neighbour overflowed (a panic where overflow is checked):
