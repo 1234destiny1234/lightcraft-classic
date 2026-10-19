@@ -2,7 +2,7 @@
 //! RFC 6763) while it looks for devices (Settings ▸ Sync open) or has paired devices: who it is
 //! and where to connect.
 //!
-//! The service type is `_<svc>._tcp.local` ([`service_type`]); the instance name is the device
+//! The service type is `_<svc>._tcp.local` ([`service_type`], from the Android package name); the instance name is the device
 //! id; the SRV record names the TCP port; the TXT record carries `v`, `app`, `id`, `name`, `key`
 //! and `pairing`. This works with Bonjour (iOS allows nothing else) and Android's NSD.
 
@@ -33,9 +33,17 @@ pub fn service_name(prefix: &str) -> String {
     if s.chars().any(|c| c.is_ascii_lowercase()) { s } else { "app-peer".to_string() }
 }
 
-/// `_<svc>._tcp.local` for this app.
+/// `_<svc>._tcp.local` for this app: `<svc>` follows the Android package's last segment
+/// (`android_package` in brand.toml, e.g. `com.example.ChromaForge` → `chromaforge`), so the
+/// app has one network identity on every platform. Devices only find each other when they
+/// advertise the same type, so a renamed package needs every device on the new version.
 pub fn service_type() -> String {
-    format!("_{}._tcp.local", service_name(lcc_brand::ENV_PREFIX))
+    format!("_{}._tcp.local", service_name(package_segment(lcc_brand::ANDROID_PACKAGE)))
+}
+
+/// The last dot-separated segment of a package name.
+fn package_segment(package: &str) -> &str {
+    package.rsplit('.').next().unwrap_or(package)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq)]
@@ -137,6 +145,14 @@ mod tests {
             assert!(s.chars().all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == '-'), "{s}");
             assert!(!s.starts_with('-') && !s.ends_with('-') && !s.contains("--"), "{s}");
         }
+    }
+
+    #[test]
+    fn the_service_follows_the_android_package() {
+        assert_eq!(service_name(package_segment("com.example.ChromaForge")), "chromaforge");
+        assert_eq!(service_name(package_segment("Plain")), "plain");
+        let t = service_type();
+        assert!(t.starts_with('_') && t.ends_with("._tcp.local"), "{t}");
     }
 
     #[test]

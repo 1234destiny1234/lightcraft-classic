@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-17 · **Change:** minor (gap 30 closed: Waveform and RGB Parade scopes) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-19 · **Change:** minor (gaps 31–33 added: Android / peer sync) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -47,6 +47,9 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 28 | **Small Classic shortcuts and keys**: rating `[` `]`, \` flag toggle, `\` filter bar, F1 help, panel keys (Tab, ⇧Tab, F5–F8) and ⌘L Enable Filters are bound (G28); Web module ⌘R / ⌘⌥P bound too; left: Develop ⇧J (meaning unverified) | [ui-parity](ui-parity.md#shortcuts) | Classic muscle memory | 4–8 | [ui-parity](ui-parity.md) |
 | 29 | **HDR merge leftovers** (LR-MERGE-HDR): AI Denoise doesn't run on merged (linear) DNGs; JPEG brackets are treated as linear (no camera response curve); every frame is held as 32-bit float, ~0.86 GB per 67 MP frame (half-float frames would halve it) | tested on Sony A7R VI brackets 2026-10-14 ([merge.md](merge.md)); Lightroom's Denoise supports HDR DNGs | HDR shooters who denoise their merges, merge JPEGs, or merge 7+ frames of high-resolution raws on 16 GB machines | 10–20 (+ denoise linear-RGB contract, gap 11) | [merge](merge.md) |
 | 30 | ~~**No waveform or RGB parade scopes**~~ (issue #206's remaining spatial scopes) — **closed 2026-10-17**: `view.histogram.mode` `waveform` draws the photo's luminance column by column (left to right as in the photo, black at the bottom, 0–100 % graticule) and `parade` its red, green and blue the same way in three tracks side by side, from a 128 × 64 grid per plane the render fills with the histogram (only the loupe's is kept); HDR edits read display-encoded levels, SDR white and above at the top | [parity-checklist](parity-checklist.md) (LR-VIEW-HISTOGRAM-MODES), `crates/raster/src/histogram.rs`, `crates/ui-egui/src/panels/histogram.rs` | colour graders who judge exposure spatially across the frame | 0 | [ui-parity](ui-parity.md) |
+| 31 | **Android and peer sync not tested on real devices**: the Android app is checked on an x86_64 emulator only (start, import through the system picker, Develop, settings kept); pairing and the catalog exchange are proved by tests on one machine (two and three devices over loopback mDNS), never between a real tablet and desktop, or across macOS / Windows / Linux / Android | [android](android.md), [peer-sync](peer-sync.md) | sync and the tablet app may fail on real networks and hardware in ways the tests can't show | 3–8 + devices | [peer-sync](peer-sync.md#known-limits) |
+| 32 | **Peer discovery (mDNS) limits**: IPv4 only (no `ff02::fb`), joins the multicast group on the default interface only (a host on several networks may be found on one of them), no RFC 6762 probing / conflict resolution, known-answer suppression or per-query rate limits; interop with Apple Bonjour and Android NSD untested | `crates/peer/src/service.rs`, `crates/peer/src/dns.rs` | devices on VPNs, multi-homed hosts or IPv6-only networks may not find each other | 6–12 | [peer-sync](peer-sync.md#known-limits) |
+| 33 | **Translation coverage check misses formatted strings**: `tests_i18n_coverage.rs` scans literals passed to `tr(` and the heading helpers, not `trf!(` / `tr_format!(` templates or the `hint(` / `row(` helpers; the Sync tab's formatted strings are translated into the nine complete catalogs but nothing in CI keeps them so | `crates/ui-egui/src/tests_i18n_coverage.rs` | new formatted strings can ship untranslated without a failing test | 1–3 | [localization-parity](localization-parity.md) |
 
 Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform work they need around them,
 **~330–585 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).
@@ -60,6 +63,7 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 - **Localization:** 21
 - **Quality / fidelity:** 1, 3
 - **Stability and platforms:** 9, 26, 27
+- **Android and sync:** 31, 32, 33
 
 ## Closed recently (kept for calibration)
 
@@ -85,6 +89,7 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-19 | minor | Gaps 31–33 added: Android app and peer sync untested on real devices, mDNS discovery limits, formatted strings outside the translation coverage check |
 | 2026-10-17 | minor | Gap 30 closed: Waveform and RGB Parade join the histogram's modes (`view.histogram.mode` `waveform` / `parade`), from per-column level grids the render fills with the histogram |
 | 2026-10-17 | minor | Gap 30 added: the histogram has its four 1D display modes, two scales and a 2D Vectorscope (`view.histogram.mode` / `view.histogram.scale`, issue #206), leaving only the spatial Waveform and RGB Parade scopes (4–8 h) |
 | 2026-10-15 | minor | Upstream batch 40 merged: gap 2 is now the CR3 variants no public file uses (all 110 CC0 CR3s decode; 26 bodies verified; Canon fully working 98% by the fork's re-measure), 10–25 h; gap 4's closure (already closed here 2026-10-13) added to Closed recently; the fork's gaps 23 and 28 kept |
