@@ -1504,6 +1504,8 @@ mod tests_history_groups;
 #[cfg(test)]
 mod tests_hold_view;
 #[cfg(test)]
+mod tests_hostile_args;
+#[cfg(test)]
 mod tests_immich;
 #[cfg(test)]
 mod tests_import;

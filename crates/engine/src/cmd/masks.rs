@@ -199,8 +199,21 @@ fn connected_strokes(from: Point, last: &BrushStroke, to: BrushStroke) -> Vec<Br
     out
 }
 
+/// `p.id` as a mask id: absent / null is `None`; anything but an integer that fits a mask id is an error (a
+/// `u64` cast with `as u32` made 2^32 + k alias mask k, and a non-number silently meant the active mask).
+fn mask_id_param(p: &Value, c: &str) -> Result<Option<u32>> {
+    match p.get("id") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v
+            .as_u64()
+            .and_then(|n| u32::try_from(n).ok())
+            .map(Some)
+            .ok_or_else(|| bad(c, format!("`id` must be a mask id (a non-negative integer), got {v}"))),
+    }
+}
+
 fn mask_id(p: &Value, active: Option<u32>, c: &str) -> Result<u32> {
-    p.get("id").and_then(Value::as_u64).map(|v| v as u32).or(active).ok_or_else(|| bad(c, "no mask selected (give `id`)"))
+    mask_id_param(p, c)?.or(active).ok_or_else(|| bad(c, "no mask selected (give `id`)"))
 }
 
 fn find(masks: &mut [Mask], id: u32, c: &str) -> Result<usize> {
@@ -307,7 +320,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let connect = bool_or(p, "connect", false);
                 let mut connected = false;
                 let next = s.active().and_then(|id| s.develop_of(id)).map(|d| d.next_mask_id()).unwrap_or(1);
-                let want = p.get("id").and_then(Value::as_u64).map(|v| v as u32).or(s.active_mask);
+                let want = mask_id_param(p, "mask.brushStroke")?.or(s.active_mask);
                 let adjust = super::mask_effects::new_mask_adjust(s, "brush");
                 let mut out = masks_edit(s, "mask.brushStroke", "Brush", |masks, active| {
                     let i = match want.and_then(|m| masks.iter().position(|x| x.id == m)) {
@@ -668,7 +681,7 @@ pub fn specs() -> Vec<CommandSpec> {
             }
         ),
         cmd!("mask.select", "Select Mask", [], None, "{id|null}", has_active, |s, p| {
-            s.active_mask = p.get("id").and_then(Value::as_u64).map(|v| v as u32);
+            s.active_mask = mask_id_param(p, "mask.select")?;
             ok()
         }),
         cmd!("mask.delete", "Delete Mask", [], None, "{id?}", has_active, |s, p| {

@@ -241,7 +241,7 @@ mod tests {
         install_from_env();
         let fams = japanese_families();
         if fams.len() < 2 {
-            eprintln!("skipping: built without craft-fonts (or with only one Japanese family)");
+            lcc_testkit::skip!(Fonts, "built without craft-fonts (or with only one Japanese family)");
             return;
         }
         let fallback: Vec<String> =
@@ -281,7 +281,7 @@ mod tests {
         install_from_env();
         let v = japanese_for_ui();
         let Some(first) = v.first() else {
-            eprintln!("skipping: built without craft-fonts (CRAFT_FONTS is empty)");
+            lcc_testkit::skip!(Fonts, "built without craft-fonts (CRAFT_FONTS is empty)");
             return;
         };
         assert_eq!((first.family.as_str(), first.style.as_str()), (UI_JAPANESE_FAMILY, "Regular"));
@@ -292,7 +292,7 @@ mod tests {
     fn installing_from_env_again_keeps_the_same_font_data() {
         // a parallel test re-installing must not swap the data under a FontDb built earlier
         if install_from_env() == 0 {
-            eprintln!("skipping: CRAFT_FONTS_DIR not set");
+            lcc_testkit::skip!(Fonts, "CRAFT_FONTS_DIR not set");
             return;
         }
         let before: Vec<usize> = installed().iter().map(|f| f.bytes.as_ref().as_ptr() as usize).collect();

@@ -57,15 +57,18 @@ impl MonotoneCurve {
 
     pub fn eval(&self, x: f64) -> f64 {
         let n = self.xs.len();
+        if x.is_nan() {
+            return self.ys[0];
+        }
         if x <= self.xs[0] {
-            return self.ys[0] + self.ms[0] * (x - self.xs[0]).min(0.0) * 0.0;
+            return self.ys[0];
         }
         if x >= self.xs[n - 1] {
             return self.ys[n - 1];
         }
         let i = match self.xs.binary_search_by(|v| v.total_cmp(&x)) {
             Ok(i) => return self.ys[i],
-            Err(i) => i - 1,
+            Err(i) => i.saturating_sub(1).min(n - 2),
         };
         let h = self.xs[i + 1] - self.xs[i];
         let t = (x - self.xs[i]) / h;
@@ -76,8 +79,9 @@ impl MonotoneCurve {
             + (t3 - t2) * h * self.ms[i + 1]
     }
 
-    /// Sample into a LUT of `n` entries over `0..1`.
+    /// Sample into a LUT of `n` entries over `0..1` (at least 2).
     pub fn to_lut(&self, n: usize) -> Lut1 {
+        let n = n.max(2);
         Lut1 { v: (0..n).map(|i| self.eval(i as f64 / (n - 1) as f64) as f32).collect() }
     }
 
@@ -94,14 +98,20 @@ pub struct Lut1 {
 
 impl Lut1 {
     pub fn identity(n: usize) -> Lut1 {
+        let n = n.max(2);
         Lut1 { v: (0..n).map(|i| i as f32 / (n - 1) as f32).collect() }
     }
     pub fn from_fn(n: usize, f: impl Fn(f32) -> f32) -> Lut1 {
+        let n = n.max(2);
         Lut1 { v: (0..n).map(|i| f(i as f32 / (n - 1) as f32)).collect() }
     }
     #[inline]
     pub fn eval(&self, x: f32) -> f32 {
         let n = self.v.len();
+        if n < 2 {
+            // Only reachable by building `v` by hand; a constant table.
+            return self.v.first().copied().unwrap_or(x);
+        }
         let f = x.clamp(0.0, 1.0) * (n - 1) as f32;
         let i = (f as usize).min(n - 2);
         let t = f - i as f32;
@@ -113,7 +123,7 @@ impl Lut1 {
     }
     pub fn is_identity(&self) -> bool {
         let n = self.v.len();
-        self.v.iter().enumerate().all(|(i, &y)| (y - i as f32 / (n - 1) as f32).abs() < 1e-6)
+        n >= 2 && self.v.iter().enumerate().all(|(i, &y)| (y - i as f32 / (n - 1) as f32).abs() < 1e-6)
     }
 }
 
@@ -153,6 +163,24 @@ mod tests {
             let y = c.eval(i as f64 / 1000.0);
             assert!((y - 0.5).abs() < 1e-9, "{y}");
         }
+    }
+
+    #[test]
+    fn hostile_inputs_do_not_panic() {
+        let c = MonotoneCurve::new(&[(0.0, 0.0), (0.5, 0.7), (1.0, 1.0)]);
+        for x in [f64::NAN, -f64::NAN, f64::INFINITY, f64::NEG_INFINITY, -1e300, 1e300] {
+            assert!(c.eval(x).is_finite(), "{x}");
+        }
+        // Non-finite control points are dropped; too few left means identity.
+        let bad = MonotoneCurve::new(&[(f64::NAN, 0.0), (0.5, f64::INFINITY)]);
+        assert!((bad.eval(0.3) - 0.3).abs() < 1e-12);
+        for n in [0, 1] {
+            let l = MonotoneCurve::identity().to_lut(n);
+            assert!(l.eval(0.5).is_finite());
+            assert!(Lut1::identity(n).eval(0.5).is_finite());
+        }
+        assert!(Lut1 { v: vec![] }.eval(0.5).is_finite());
+        assert!(Lut1 { v: vec![0.25] }.eval(0.5).is_finite());
     }
 
     #[test]

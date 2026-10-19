@@ -18,9 +18,6 @@ fn dock(h: &mut Headless, p: serde_json::Value) {
         h.step();
     }
 }
-fn rect(h: &Headless, id: &str) -> egui::Rect {
-    h.app.widgets.iter().find(|(key, _)| key == id).unwrap().1
-}
 
 fn release(h: &mut Headless, pos: egui::Pos2) {
     h.app.synthetic.push(Event::PointerButton { pos, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
@@ -88,31 +85,6 @@ fn crop_canvas_double_click_reveals_edit_in_actual_custom_workspace() {
 }
 
 #[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn floating_panel_blocks_photo_album_drop_then_uncovered_target_adds_exact_selection() {
-    let mut h = app();
-    let album = h.app.run("album.create", json!({"name":"A Dock Target", "addSelected":false})).unwrap()["id"].as_u64().unwrap();
-    h.step();
-    h.step();
-    let row = rect(&h, &format!("source:album:{album}"));
-    let ids: Vec<_> = h.app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
-    dock(&mut h, json!({"operation":"float","panel":"tools","rect":[row.left()-10.0,row.top()-30.0,330,500]}));
-    let undo = h.app.session.undo.len();
-    h.app.ui.dragging_photos = Some(ids.clone());
-    release(&mut h, row.center());
-    assert!(h.app.session.catalog.album(lcc_catalog::AlbumId(album)).unwrap().photos.is_empty());
-    assert_eq!(h.app.session.undo.len(), undo);
-    dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
-    h.app.ui.dragging_photos = Some(ids.clone());
-    release(&mut h, row.center());
-    assert_eq!(
-        h.app.session.catalog.album(lcc_catalog::AlbumId(album)).unwrap().photos,
-        ids.into_iter().map(lcc_catalog::PhotoId).collect::<Vec<_>>()
-    );
-    assert_eq!(h.app.session.undo.len(), undo + 1);
-}
-
-#[test]
 fn preset_hover_survives_float_movement_without_mutating_photo() {
     let mut h = app();
     // (preset groups start folded)
@@ -146,24 +118,6 @@ fn key(h: &mut Headless, key: egui::Key) {
 }
 
 #[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn dock_tab_keeps_activation_keys_and_global_command_remains_reachable() {
-    let mut h = app();
-    h.app.run("app.setShortcut", json!({"id":"panel.crop","shortcut":"K"})).unwrap();
-    dock(&mut h, json!({"operation":"move","panel":"tools","target":"library","zone":"center"}));
-    h.app.run("panel.crop", json!({})).unwrap();
-    h.step();
-    // The test chooses the renderer's actual registered tab, rather than an arbitrary focus owner.
-    let id = egui::Id::new("app-docking").with(("tab", Panel::Tools));
-    h.view.ctx.memory_mut(|memory| memory.request_focus(id));
-    h.step();
-    key(&mut h, egui::Key::Enter);
-    assert_eq!(h.app.ui.right, RightPanel::Crop, "Enter activates the tab without tool.done");
-    key(&mut h, egui::Key::K);
-    assert_eq!(h.app.ui.right, RightPanel::None, "the global crop toggle is reachable from tab focus");
-}
-
-#[test]
 fn content_text_edit_retains_command_keys_and_typed_text() {
     let mut h = app();
     h.app.run("app.setShortcut", json!({"id":"panel.crop","shortcut":"K"})).unwrap();
@@ -177,171 +131,4 @@ fn content_text_edit_retains_command_keys_and_typed_text() {
     h.step();
     assert_eq!(h.app.ui.right, RightPanel::Keywords);
     assert_eq!(h.view.ctx.data(|data| data.get_temp::<String>(egui::Id::new("keyword-list-filter"))).as_deref(), Some("dock search"));
-}
-
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn floating_presets_block_keyword_photo_drop_then_uncovered_target_changes_exact_metadata() {
-    let mut h = app();
-    h.app.run("panel.keywords", json!({})).unwrap();
-    h.app.run("keyword.create", json!({"name":"A Dock Keyword"})).unwrap();
-    h.step();
-    h.step();
-    let row = rect(&h, "keywordRow:A Dock Keyword");
-    h.app.ui.presets = true;
-    h.step();
-    let ids: Vec<_> = h.app.session.visible_cloned().iter().take(2).map(|id| id.0).collect();
-    dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
-    let undo = h.app.session.undo.len();
-    let before: Vec<_> = ids.iter().map(|id| h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords.clone()).collect();
-    h.app.ui.dragging_photos = Some(ids.clone());
-    release(&mut h, row.center());
-    for (id, expected) in ids.iter().zip(&before) {
-        assert_eq!(&h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords, expected);
-    }
-    assert_eq!(h.app.session.undo.len(), undo);
-    dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
-    h.app.ui.dragging_photos = Some(ids.clone());
-    release(&mut h, row.center());
-    for (id, mut expected) in ids.iter().zip(before) {
-        expected.push("A Dock Keyword".into());
-        let mut actual = h.app.session.catalog.photo(lcc_catalog::PhotoId(*id)).unwrap().meta.keywords.clone();
-        expected.sort();
-        actual.sort();
-        assert_eq!(actual, expected);
-    }
-    assert_eq!(h.app.session.undo.len(), undo + 1);
-}
-
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn covered_folder_rejects_album_move_and_uncovered_folder_nests_exact_album() {
-    let mut h = app();
-    let folder = h.app.run("album.create", json!({"name":"A Dock Folder","folder":true})).unwrap()["id"].as_u64().unwrap();
-    let child = h.app.run("album.create", json!({"name":"B Dock Album","addSelected":false})).unwrap()["id"].as_u64().unwrap();
-    h.step();
-    h.step();
-    let row = rect(&h, &format!("source:folder:{folder}"));
-    dock(&mut h, json!({"operation":"float","panel":"tools","rect":[row.left()-10.0,row.top()-30.0,330,500]}));
-    let undo = h.app.session.undo.len();
-    h.app.ui.dragging_album = Some(child);
-    release(&mut h, row.center());
-    assert_eq!(h.app.session.catalog.album(lcc_catalog::AlbumId(child)).unwrap().parent, None);
-    assert_eq!(h.app.session.undo.len(), undo);
-    dock(&mut h, json!({"operation":"moveFloating","panel":"tools","rect":[800,100,330,500]}));
-    h.app.ui.dragging_album = Some(child);
-    release(&mut h, row.center());
-    assert_eq!(h.app.session.catalog.album(lcc_catalog::AlbumId(child)).unwrap().parent, Some(lcc_catalog::AlbumId(folder)));
-    assert_eq!(h.app.session.undo.len(), undo + 1);
-}
-
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn covered_keyword_rejects_hierarchy_move_and_uncovered_target_moves_exact_keyword() {
-    let mut h = app();
-    h.app.run("panel.keywords", json!({})).unwrap();
-    h.app.run("keyword.create", json!({"name":"A Dock Parent"})).unwrap();
-    h.app.run("keyword.create", json!({"name":"B Dock Child"})).unwrap();
-    h.app.ui.presets = true;
-    h.step();
-    h.step();
-    let row = rect(&h, "keywordRow:A Dock Parent");
-    dock(&mut h, json!({"operation":"float","panel":"presets","rect":[row.left()-10.0,row.top()-30.0,300,500]}));
-    let undo = h.app.session.undo.len();
-    h.app.ui.dragging_keyword = Some("B Dock Child".into());
-    release(&mut h, row.center());
-    assert!(h.app.session.catalog.has_keyword("B Dock Child"));
-    assert!(!h.app.session.catalog.has_keyword("A Dock Parent|B Dock Child"));
-    assert_eq!(h.app.session.undo.len(), undo);
-    dock(&mut h, json!({"operation":"moveFloating","panel":"presets","rect":[400,100,300,500]}));
-    h.app.ui.dragging_keyword = Some("B Dock Child".into());
-    release(&mut h, row.center());
-    assert!(!h.app.session.catalog.has_keyword("B Dock Child"));
-    assert!(h.app.session.catalog.has_keyword("A Dock Parent|B Dock Child"));
-    assert_eq!(h.app.session.undo.len(), undo + 1);
-}
-
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn reset_during_held_divider_drag_keeps_replacement_layout_on_later_movement() {
-    let mut h = app();
-    let divider = egui::Id::new("app-docking").with(("split", Vec::<bool>::new()));
-    let from = h.view.ctx.read_response(divider).expect("the custom workspace root divider is rendered").rect.center();
-    let before = h.app.ui.docking.as_ref().unwrap().layout.clone();
-    h.app.synthetic.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
-    h.step();
-    h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(40.0, 0.0)));
-    h.step();
-    assert_ne!(h.app.ui.docking.as_ref().unwrap().layout, before, "fixture performs a real divider resize");
-    assert_eq!(h.view.ctx.dragged_id(), Some(divider));
-    let resized = h.app.ui.docking.as_ref().unwrap().layout.clone();
-    h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(55.0, 0.0)));
-    h.step();
-    assert_ne!(h.app.ui.docking.as_ref().unwrap().layout, resized, "renderer-generated actions preserve continuous dragging");
-    let undo = h.app.session.undo.len();
-    h.app.run("ui.dock.reset", json!({})).unwrap();
-    let reset = serde_json::to_value(&h.app.ui.docking).unwrap();
-    h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(90.0, 0.0)));
-    h.step();
-    assert_eq!(serde_json::to_value(&h.app.ui.docking).unwrap(), reset, "a held old divider cannot resize the replacement tree");
-    h.app.synthetic.push(Event::PointerButton {
-        pos: from + egui::vec2(90.0, 0.0),
-        button: PointerButton::Primary,
-        pressed: false,
-        modifiers: Modifiers::NONE,
-    });
-    h.step();
-    assert_eq!(serde_json::to_value(&h.app.ui.docking).unwrap(), reset);
-    assert_eq!(h.app.session.undo.len(), undo);
-}
-
-fn held_divider_replacement_route(route: &str) {
-    let mut h = app();
-    let divider = egui::Id::new("app-docking").with(("split", Vec::<bool>::new()));
-    let from = h.view.ctx.read_response(divider).unwrap().rect.center();
-    let photos = serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap();
-    h.app.synthetic.push(Event::PointerButton { pos: from, button: PointerButton::Primary, pressed: true, modifiers: Modifiers::NONE });
-    h.step();
-    h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(40.0, 0.0)));
-    h.step();
-    assert_eq!(h.view.ctx.dragged_id(), Some(divider));
-    let undo = h.app.session.undo.len();
-    match route {
-        "ui.set" => {
-            let response = h.request("ui.set", json!({"rightWidth":410.0}), std::time::Duration::from_secs(20));
-            assert_eq!(response["ok"], true, "{response}");
-            assert_eq!(h.app.ui.right_width, 410.0);
-        }
-        "panel.close" => {
-            h.app.run("panel.close", json!({})).unwrap();
-            h.step();
-        }
-        "public-action" => {
-            let action = craft_ui::docking::Action::Float { panel: Panel::Tools, rect: [800.0, 100.0, 330.0, 500.0] };
-            h.app.run("ui.dock", json!({"action":action})).unwrap();
-            h.step();
-        }
-        _ => panic!("unknown test route"),
-    }
-    let replacement = serde_json::to_value(&h.app.ui.docking).unwrap();
-    h.app.synthetic.push(Event::PointerMoved(from + egui::vec2(90.0, 0.0)));
-    h.step();
-    assert_eq!(serde_json::to_value(&h.app.ui.docking).unwrap(), replacement, "{route} cancels the previous divider gesture");
-    assert_eq!(h.app.session.undo.len(), undo);
-    assert_eq!(serde_json::to_value(h.app.session.catalog.photos().map(|photo| photo.as_ref()).collect::<Vec<_>>()).unwrap(), photos);
-}
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn actual_ui_set_width_replacement_cancels_held_divider() {
-    held_divider_replacement_route("ui.set");
-}
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn panel_close_sync_replacement_cancels_held_divider() {
-    held_divider_replacement_route("panel.close");
-}
-#[test]
-#[ignore = "the Classic layout does not host upstream's docking yet"]
-fn externally_serialized_action_replacement_cancels_held_divider() {
-    held_divider_replacement_route("public-action");
 }

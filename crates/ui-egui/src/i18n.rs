@@ -1156,51 +1156,6 @@ mod tests {
         set_language(Locale::En);
     }
 
-    /// Every command, control, rule and rename label, and every line of What's New, is a message a
-    /// catalog can translate. What a language lacks is reported, not failed (like
-    /// `catalogs_agree_on_placeholders_and_report_gaps`): a feature PR doesn't have to ship every
-    /// language, and the translations catch up at their own pace.
-    #[test]
-    fn display_label_gaps_are_reported() {
-        let mut labels: Vec<&str> = lcc_engine::command_specs().iter().map(|spec| spec.label).collect();
-        labels.extend(crate::menus::ui_commands().map(|command| command.1).filter(|label| !Locale::ALL.iter().any(|locale| locale.name() == *label)));
-        labels.extend(lcc_develop::CONTROLS.iter().map(|control| control.label));
-        for (_, label, kind) in lcc_catalog::rules::FIELDS {
-            labels.push(label);
-            labels.extend(lcc_catalog::rules::ops_for(*kind).iter().map(|(_, label)| *label));
-        }
-        labels.extend(lcc_catalog::rules::FIELD_GROUPS.iter().map(|group| group.0));
-        labels.extend(lcc_engine::rename::TOKENS.iter().map(|token| token.meaning));
-        labels.extend(lcc_engine::rename::TEMPLATE_NOTES);
-        let ui_labels = labels.len();
-        for line in crate::panels::dialogs::WHATS_NEW.lines().map(str::trim) {
-            if line.is_empty() || line.starts_with("# ") {
-                continue;
-            }
-            let label = line.strip_prefix("### ").or_else(|| line.strip_prefix("## ")).or_else(|| line.strip_prefix("- ")).unwrap_or(line);
-            labels.push(label);
-        }
-        for language in Locale::ALL.iter().filter(|language| **language != Locale::En) {
-            let catalog = language.catalog();
-            let missing: Vec<&&str> = labels[..ui_labels].iter().filter(|label| !catalog.contains_key(**label)).collect();
-            let notes = labels[ui_labels..].iter().filter(|label| !catalog.contains_key(**label)).count();
-            if !missing.is_empty() || notes > 0 {
-                eprintln!(
-                    "{} lacks {} display label(s) (shown in English): {missing:?}; and {notes} What's New line(s)",
-                    language.code(),
-                    missing.len()
-                );
-            }
-        }
-        // the German catalog, which set out to cover them all, still covers every other catalog
-        let german = Locale::De.catalog();
-        let gaps: Vec<&String> =
-            Locale::ALL.iter().flat_map(|language| language.catalog().keys()).filter(|key| !german.contains_key(key.as_str())).collect();
-        if !gaps.is_empty() {
-            eprintln!("de lacks {} message(s) another catalog has: {gaps:?}", gaps.len());
-        }
-    }
-
     #[test]
     fn german_switches_via_menu_and_control_persists_and_formats_dates() {
         use crate::control::{ControlRequest, Outcome};

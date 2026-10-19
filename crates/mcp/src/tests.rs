@@ -362,6 +362,38 @@ fn select_photos_rejects_unknown_ids_and_keeps_the_active_photo() {
     assert_eq!(b.session.active(), Some(first));
 }
 
+/// A photo `id` (or `ids` entry) that is not a non-negative integer is an error and leaves the session alone;
+/// it used to be ignored, so the tool edited / rendered / exported the active photo instead.
+#[test]
+fn hostile_photo_ids_and_formats_error_without_side_effects() {
+    let mut b = Headless::demo();
+    let first = b.session.visible_cloned()[0];
+    call_tool(&mut b, "select_photos", &json!({"ids": [first.0]}));
+    let develop = |b: &Headless| serde_json::to_value(&*b.session.develop_of(first).unwrap()).unwrap();
+    let before = develop(&b);
+    let out = "/nonexistent-lc-test/x.jpg";
+    let mut table: Vec<(&str, Value)> = Vec::new();
+    for bad in [json!(-1), json!(2.0), json!(1.5), json!("1"), json!([1]), json!(true), json!(u64::MAX as f64)] {
+        table.push(("set_develop", json!({"id": bad, "values": {"light.exposure": 1.0}})));
+        table.push(("crop", json!({"id": bad, "rect": [0.1, 0.0, 0.9, 1.0]})));
+        table.push(("render_photo", json!({"id": bad})));
+        table.push(("render_preview", json!({"id": bad})));
+        table.push(("export", json!({"id": bad, "path": out})));
+    }
+    for bad in [json!([-1]), json!([first.0, "x"]), json!([first.0, null]), json!([1.5])] {
+        table.push(("export", json!({"ids": bad, "path": out})));
+    }
+    table.push(("render_photo", json!({"format": "bogus"})));
+    table.push(("render_photo", json!({"format": 3})));
+    for (tool, args) in &table {
+        let r = call_tool(&mut b, tool, args);
+        assert!(r.is_error, "{tool} {args} must be refused: {r:?}");
+        assert!(!r.content[0]["text"].as_str().unwrap_or_default().is_empty(), "{tool} {args}: empty error");
+        assert_eq!(b.session.active(), Some(first), "{tool} {args} moved the active photo");
+        assert_eq!(develop(&b), before, "{tool} {args} edited the photo");
+    }
+}
+
 #[test]
 fn core_tools_have_hints_and_reject_unknown_keys() {
     for compact in [false, true] {

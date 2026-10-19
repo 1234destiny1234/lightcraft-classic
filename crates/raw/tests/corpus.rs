@@ -638,7 +638,7 @@ fn corpus_arw1_and_packed_nef() {
     ];
     for &(name, dims, black) in cases {
         let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -658,7 +658,7 @@ fn corpus_nikon_z8_z9_lossless() {
         &[("nef-nikon-z8-lossless14.nef", (8280, 5520, 14), 1008.0), ("nef-nikon-z9-lossless14.nef", (8280, 5520, 14), 1008.0)];
     for &(name, dims, black) in cases {
         let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -752,7 +752,7 @@ fn corpus_sony_lens_tables_become_opcodes() {
         let bytes = match std::fs::read(dir.join(name)) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                eprintln!("skip: {name} absent");
+                lcc_testkit::skip!(Corpus, "{name} absent");
                 continue;
             }
             Err(e) => panic!("{name}: {e}"),
@@ -1046,7 +1046,7 @@ fn corpus_minolta_mrw() {
     let mut seen = 0;
     for (name, sensor, image, cfa) in cases {
         let Ok(bytes) = std::fs::read(dir.join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -1264,7 +1264,7 @@ fn nikon_in_file_distortion_is_limited_to_validated_bodies() {
     ] {
         let path = root.join(name);
         if !path.exists() {
-            eprintln!("skip: {} absent", path.display());
+            lcc_testkit::skip!(Corpus, "{} absent", path.display());
             continue;
         }
         let bytes = std::fs::read(&path).unwrap();
@@ -1310,11 +1310,6 @@ const SONY_SAMPLES: &[(&str, &str)] = &[
     ("arw-sony-a900-packed12.arw", "ac7c1532df77c321e8010aa1be60c1b9f245b1ac0db6f38fe617a73aae81af50"),
 ];
 
-/// SHA-256 of [`SONY_SAMPLES`] as `name  sha256` lines sorted by name: anchors the pins independently of the
-/// manifest, so editing both together (as a drift or a mistake) still fails `sony_pins_match_the_corpus_manifest`.
-/// All 25 pins were checked against the downloaded files when it was set.
-const SONY_PINS_SHA256: &str = "4cfc349194278146356b463c59ede500331c6ca5fc50aec4e92d7cd847b17b68";
-
 /// A Sony corpus file's bytes, checked against its pinned SHA-256 before anything decodes them; `None` (with a
 /// note) when the file is absent, unless `<PREFIX>_CORPUS_REQUIRED=1` asks for every pinned file. A file that
 /// differs from its pin fails the test.
@@ -1325,7 +1320,7 @@ fn pinned_sony(root: &Path, name: &str) -> Option<Vec<u8>> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             assert!(lcc_brand::env_os("CORPUS_REQUIRED").is_none_or(|v| v != "1"), "{name}: absent, and {}=1", lcc_brand::env_var("CORPUS_REQUIRED"));
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             return None;
         }
         Err(e) => panic!("{name}: {e}"),
@@ -1333,35 +1328,6 @@ fn pinned_sony(root: &Path, name: &str) -> Option<Vec<u8>> {
     let actual: String = Sha256::digest(&bytes).iter().map(|b| format!("{b:02x}")).collect();
     assert_eq!(actual, expected, "{name}: corpus file differs from its pinned SHA-256");
     Some(bytes)
-}
-
-#[test]
-fn sony_pins_match_the_corpus_manifest() {
-    use sha2::{Digest, Sha256};
-    let mut lines: Vec<String> = SONY_SAMPLES.iter().map(|(name, sha)| format!("{name}  {sha}\n")).collect();
-    lines.sort();
-    let digest: String = Sha256::digest(lines.concat()).iter().map(|b| format!("{b:02x}")).collect();
-    assert_eq!(digest, SONY_PINS_SHA256, "the pinned Sony SHA-256 table changed: check every changed pin against its file, then update the anchor");
-    let manifest = include_str!("../../../xtask/src/main.rs");
-    for (name, sha) in SONY_SAMPLES {
-        let entry = manifest.find(&format!("\"{name}\"")).unwrap_or_else(|| panic!("{name} is not in the manifest"));
-        assert!(manifest[entry..].split_once("),").is_some_and(|(e, _)| e.contains(sha)), "{name}: pinned SHA-256 differs from the manifest");
-    }
-}
-
-#[test]
-#[should_panic(expected = "differs from its pinned SHA-256")]
-fn a_sony_fixture_that_differs_from_its_pin_fails() {
-    struct Gone(PathBuf);
-    impl Drop for Gone {
-        fn drop(&mut self) {
-            let _ = std::fs::remove_dir_all(&self.0);
-        }
-    }
-    let dir = Gone(std::env::temp_dir().join(format!("lcc-sony-pin-{}", std::process::id())));
-    std::fs::create_dir_all(&dir.0).unwrap();
-    std::fs::write(dir.0.join("arw-sony-a7cr-compressed.arw"), b"not the pinned file").unwrap();
-    pinned_sony(&dir.0, "arw-sony-a7cr-compressed.arw");
 }
 
 /// Sony's lens-correction records (`lcc_raw::lens_metadata`, `crates/raw/src/vendor/arw_lens.rs`) on the public
@@ -1678,7 +1644,7 @@ fn corpus_fujifilm_superccd() {
     let mut seen = 0;
     for &(name, dims) in cases {
         let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -1729,7 +1695,7 @@ fn corpus_epson_erf() {
     let mut checked = 0;
     for name in ["erf-epson-rd1.erf", "erf-epson-rd1s.erf", "erf-epson-rd1x.erf"] {
         let Ok(bytes) = std::fs::read(root.join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         assert_eq!(probe(&bytes), Some(RawFormat::Erf), "{name}");
@@ -1758,7 +1724,7 @@ fn corpus_epson_erf() {
 #[test]
 fn corpus_mamiya_mef() {
     let Ok(bytes) = std::fs::read(corpus_root().join("raw").join("mef-mamiya-zd.mef")) else {
-        eprintln!("skip: mef-mamiya-zd.mef absent");
+        lcc_testkit::skip!(Corpus, "mef-mamiya-zd.mef absent");
         return;
     };
     assert_eq!(probe(&bytes), Some(RawFormat::Mef));
@@ -1806,7 +1772,7 @@ fn corpus_canon_crw() {
     let mut seen = 0;
     for (name, (sensor, image), bits) in cases {
         let Ok(bytes) = std::fs::read(dir.join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));

@@ -185,3 +185,54 @@ fn truncated_and_corrupted_files_are_errors_not_panics() {
         let _ = decode_thumbnail(&b, 1, &Options::default());
     }
 }
+
+/// Offsets of every box header (the fourcc's position) of `kind` in `bytes`: the synthetic files
+/// carry no other bytes that spell one of these.
+fn boxes(bytes: &[u8], kind: &[u8; 4]) -> Vec<usize> {
+    bytes.windows(4).enumerate().filter(|(i, w)| *w == kind && *i >= 4).map(|(i, _)| i).collect()
+}
+
+/// Header-declared sizes and dimensions are hostile: a box size that is zero, too small, past the
+/// end of the file or enormous, and an `ispe` that claims a gigantic or empty picture, must each
+/// give an error (or, for a box nothing reads, the photo) without decoding or allocating by the
+/// declared number. The pixel limit is checked from the header, before any decode.
+#[test]
+fn declared_sizes_and_dimensions_are_checked_not_trusted() {
+    let bytes = build(&Spec { props: vec![FULL_601, Prop::Irot(1)], thumbnail: Some(&grey), ..Spec::new(70, 40, &grey) });
+    let kinds: [&[u8; 4]; 12] = [b"meta", b"iprp", b"ipco", b"ipma", b"iloc", b"iinf", b"infe", b"iref", b"pitm", b"hvcC", b"mdat", b"ispe"];
+    let mut patched = 0;
+    for kind in kinds {
+        for at in boxes(&bytes, kind) {
+            let len = bytes.len() as u32;
+            for size in [0, 1, 7, 8, 9, len + 1, 0x7FFF_FFFF, u32::MAX] {
+                let mut b = bytes.clone();
+                b[at - 4..at].copy_from_slice(&size.to_be_bytes());
+                patched += 1;
+                // Any outcome but a panic; an image that still decodes is self-consistent (a size of
+                // 0 means "to the end of the file", so it may legitimately drop later properties).
+                if let Ok(d) = decode(&b, &Options::default()) {
+                    let ch = if d.has_alpha { 4 } else { 3 };
+                    assert_eq!(d.data.len(), d.width as usize * d.height as usize * ch, "{kind:?} at {at} size {size}");
+                }
+                let _ = probe(&b);
+                let _ = decode_thumbnail(&b, 1, &Options::default());
+            }
+        }
+    }
+    assert!(patched > 50, "the mutation found the boxes ({patched})");
+
+    // `ispe` is a full box: 4 bytes of version and flags, then width and height.
+    let ispes = boxes(&bytes, b"ispe");
+    assert!(!ispes.is_empty());
+    for (w, h) in [(0, 0), (0, 40), (70, 0), (u32::MAX, u32::MAX), (1 << 30, 1 << 30), (65_535, 65_535)] {
+        let mut b = bytes.clone();
+        for &at in &ispes {
+            b[at + 8..at + 12].copy_from_slice(&u32::to_be_bytes(w));
+            b[at + 12..at + 16].copy_from_slice(&u32::to_be_bytes(h));
+        }
+        let r = decode(&b, &Options::default());
+        assert!(r.is_err(), "ispe {w} x {h} decoded to {:?}", r.map(|d| (d.width, d.height)));
+        // probe only reports the declaration (callers check their limits against it).
+        let _ = probe(&b);
+    }
+}

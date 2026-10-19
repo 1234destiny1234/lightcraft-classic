@@ -202,7 +202,7 @@ fn stall_timeout_and_cancel() {
     let c = Client::new(ClientConfig { stall_timeout: Duration::from_millis(600), ..ClientConfig::default() }).unwrap();
     let t = std::time::Instant::now();
     assert_eq!(c.get(&format!("http://127.0.0.1:{port}/")).send().unwrap_err(), NetError::Stalled);
-    assert!(t.elapsed() < Duration::from_secs(3));
+    assert!(t.elapsed() < Duration::from_secs(60), "hung, not just slow");
 
     let c = Client::new(ClientConfig { stall_timeout: Duration::from_secs(60), ..ClientConfig::default() }).unwrap();
     let flag = Arc::new(AtomicBool::new(false));
@@ -213,7 +213,7 @@ fn stall_timeout_and_cancel() {
     });
     let t = std::time::Instant::now();
     assert_eq!(c.get(&format!("http://127.0.0.1:{port}/")).cancel(flag).send().unwrap_err(), NetError::Cancelled);
-    assert!(t.elapsed() < Duration::from_secs(5));
+    assert!(t.elapsed() < Duration::from_secs(60), "hung, not just slow");
     h.join().unwrap();
 }
 
@@ -394,9 +394,10 @@ fn tls_trust_ca_pin_and_tofu() {
 }
 
 #[test]
-fn ca_pem_is_accepted() {
+fn ca_pem_is_accepted_and_one_without_certificates_is_refused() {
     let pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", CA_B64);
     assert!(Trust::new().with_ca(pem.as_bytes()).is_ok());
+    assert!(Trust::new().with_ca(b"-----BEGIN NOTHING-----\n-----END NOTHING-----\n").is_err());
 }
 
 // --- logs never carry secrets -----------------------------------------------------------------

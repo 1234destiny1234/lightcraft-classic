@@ -52,7 +52,11 @@ mod tests {
         let b = from_bytes(&p3, ProofIntent::Perceptual, true, "x").unwrap();
         assert_ne!(a.id, b.id);
         assert_eq!(a, from_bytes(&p3, ProofIntent::Perceptual, false, "x").unwrap());
-        assert!(lcc_pipeline::proof_profile(a.id).is_some());
+        // the registered table proofs an in-gamut neutral to a neutral, inside the proof gamut
+        let lut = lcc_pipeline::proof_profile(a.id).expect("registered");
+        let (c, dist) = lut.sample([0.2, 0.2, 0.2]);
+        assert!(dist < 0.02, "gamut distance {dist}");
+        assert!((c[0] - c[1]).abs() < 0.02 && (c[1] - c[2]).abs() < 0.02, "{c:?}");
         assert!(!a.name.is_empty());
         assert!(from_bytes(b"nope", ProofIntent::Relative, false, "x").is_err());
         assert!(load("/nonexistent/printer.icc", ProofIntent::Relative, false).is_err());

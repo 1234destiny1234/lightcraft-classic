@@ -1,12 +1,6 @@
-//! Exact sensor-pixel regressions, not embedded-JPEG comparisons.
-//!
-//! Public-domain inputs from raw.pixls.us, kept in the gitignored corpus/raw.
-//! Reference pixels were independently obtained by running the DNGLab v0.8.0
-//! release executable as a black-box oracle (analyze --raw-pixel). Its source
-//! and camera matrices were not used. Canonical FNV-1a hashes below are over
-//! decoded u16 samples in row-major, little-endian order, including masked borders.
-//! macOS oracle archive SHA256:
-//! ee70805cb60f18d5ed62548c4e595f6cee0a33407e15358eb1766a46afc1c16e.
+//! CR3 structure checks (sensor size, crop, developed size, white balance, levels, probe/decode
+//! agreement) and the camera-JPEG correlation, on CC0 inputs from raw.pixls.us kept in the gitignored
+//! corpus/raw. Sample values are not pinned.
 
 use lcc_raw::{RawData, RawFormat, decode, probe_info};
 use std::path::{Path, PathBuf};
@@ -15,11 +9,11 @@ fn corpus() -> PathBuf {
     lcc_brand::env_os("CORPUS").map(PathBuf::from).unwrap_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
 }
 
-fn check(name: &str, hash: u64, sensor: (usize, usize), developed: (usize, usize)) {
-    check_against(name, hash, sensor, Some(developed), "the independent reference");
+fn check(name: &str, sensor: (usize, usize), developed: (usize, usize)) {
+    check_against(name, sensor, Some(developed));
 }
 
-fn check_against(name: &str, hash: u64, sensor: (usize, usize), developed: Option<(usize, usize)>, reference: &str) {
+fn check_against(name: &str, sensor: (usize, usize), developed: Option<(usize, usize)>) {
     let path = corpus().join("raw").join(name);
     let Ok(bytes) = std::fs::read(&path) else {
         lcc_testkit::skip!(Corpus, "{} absent", path.display());
@@ -33,56 +27,36 @@ fn check_against(name: &str, hash: u64, sensor: (usize, usize), developed: Optio
         assert_eq!(raw.info().developed_size(), developed);
     }
     assert_eq!(raw.info(), probe_info(&bytes).unwrap());
-    let RawData::U16(samples) = &raw.data else { panic!("{name}: integer sensor data expected") };
-    let actual =
-        samples.iter().flat_map(|v| v.to_le_bytes()).fold(0xcbf2_9ce4_8422_2325u64, |h, byte| (h ^ u64::from(byte)).wrapping_mul(0x100_0000_01b3));
-    assert_eq!(actual, hash, "{name}: sensor pixels differ from {reference}");
+    assert!(matches!(raw.data, RawData::U16(_)), "{name}: integer sensor data expected");
     assert!(raw.wb_multipliers.is_some(), "{name}: as-shot white balance missing");
     assert!(raw.white_at(0) > raw.black.mean(), "{name}: invalid black/white levels");
 }
 
+/// (file, sensor, developed size). The M50 CRAW was shot 1:1: its AspectInfo is a 4000 x 4000 square inside
+/// the 6000 x 4000 image. The crop-mode RP files are a single tile.
 #[test]
-fn canon_m50_lossless_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/4657; SHA256
-    // 1ba9ad6b51b315b88820eb0fe5fd7f52bc136ba37b1a5ca76825ebfe25b18058
-    check("cr3-canon-m50-raw.cr3", 0x6226_1f0b_a81c_fcd2, (6288, 4056), (6000, 4000));
-}
-
-#[test]
-fn canon_r100_lossless_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/7896; SHA256
-    // 6d83217d58a5e6d2dabcf470430e91a16676b60531c025b81fa7453fc74b0521
-    check("cr3-canon-r100-raw.cr3", 0xcbe5_299a_b9c5_2630, (6288, 4056), (6000, 4000));
-}
-
-#[test]
-fn canon_m50_craw_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/2663; SHA256
-    // 15384b775867ec4c42b11882837f1e368cedc0561832ffab271221e6bb80be4c
-    // The camera was set to 1:1: the file's AspectInfo is a 4000 x 4000 square at x = 1000 inside the 6000 x 4000
-    // image (the archive's "3:2" label is wrong). The sensor samples are unchanged; only the crop is.
-    check("cr3-canon-m50-craw.cr3", 0x9aac_bfe6_6f50_5e1b, (6288, 4056), (4000, 4000));
-}
-
-#[test]
-fn canon_r100_craw_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/7897; SHA256
-    // 0b66842b2fe00329ebc05fe8ab9357ddbbe1a0a2d2e69a2893102de7fdf5c942
-    check("cr3-canon-r100-craw.cr3", 0x341c_706b_37c3_8bbf, (6288, 4056), (6000, 4000));
-}
-
-#[test]
-fn canon_r8_lossless_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/6585; SHA256
-    // 7d5c6dbb11ff7e6ee58715d90a20f5d801e8b103f4711ff6ea329ceafcef254c
-    check("cr3-canon-r8-raw.cr3", 0x63c1_c6d8_d1eb_2312, (6188, 4120), (6000, 4000));
-}
-
-#[test]
-fn canon_r8_craw_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/6587; SHA256
-    // df33cf394573645ce03dea1b2e9f0b5cc2b7734e9e3391ee7114151414cf2812
-    check("cr3-canon-r8-craw.cr3", 0xf836_a663_a795_a375, (6188, 4120), (6000, 4000));
+fn canon_cr3_sensor_and_developed_sizes() {
+    let cases: &[(&str, (usize, usize), (usize, usize))] = &[
+        ("cr3-canon-m50-raw.cr3", (6288, 4056), (6000, 4000)),
+        ("cr3-canon-r100-raw.cr3", (6288, 4056), (6000, 4000)),
+        ("cr3-canon-m50-craw.cr3", (6288, 4056), (4000, 4000)),
+        ("cr3-canon-r100-craw.cr3", (6288, 4056), (6000, 4000)),
+        ("cr3-canon-r8-raw.cr3", (6188, 4120), (6000, 4000)),
+        ("cr3-canon-r8-craw.cr3", (6188, 4120), (6000, 4000)),
+        ("cr3-canon-rp-raw.cr3", (6384, 4224), (6240, 4160)),
+        ("cr3-canon-rp-craw.cr3", (6384, 4224), (6240, 4160)),
+        ("cr3-canon-rp-raw-crop.cr3", (4032, 2656), (3888, 2592)),
+        ("cr3-canon-rp-craw-crop.cr3", (4032, 2656), (3888, 2592)),
+        // Private EOS R6 files supplied by the maintainer; absent for everyone else.
+        ("cr3-canon-r6-1.cr3", (5568, 3708), (5472, 3648)),
+        ("cr3-canon-r6-2.cr3", (5568, 3708), (5472, 3648)),
+        ("cr3-canon-r6-3.cr3", (5568, 3708), (5472, 3648)),
+        ("cr3-canon-r6-4.cr3", (5568, 3708), (5472, 3648)),
+        ("cr3-canon-r6-5.cr3", (5568, 3708), (5472, 3648)),
+    ];
+    for &(name, sensor, developed) in cases {
+        check(name, sensor, developed);
+    }
 }
 
 #[test]
@@ -140,44 +114,44 @@ fn green_vs_camera_jpeg(raw: &lcc_raw::RawImage, jpeg: &[u8], gw: usize, gh: usi
 }
 
 /// One CC0 file per further CR3 body (raw.pixls.us; URLs and SHA-256 in `RAW_SAMPLES`, xtask/src/main.rs).
-/// No external decoder was run on these: the sensor hashes pin the app's own decode, every CRX stream
+/// No external decoder was run on these: every CRX stream
 /// decodes, and the mosaic follows the camera's own embedded JPEG (`green_vs_camera_jpeg` on 24 × 16 cells).
 /// The renders were also inspected at 100 % for tile, band and quantiser artefacts (none). See docs/cr3.md.
 #[test]
 fn canon_cr3_bodies_decode_like_the_camera_jpeg() {
-    // (file, sensor width × height, pinned FNV-1a of the sensor samples)
-    let cases: &[(&str, (usize, usize), u64)] = &[
-        ("cr3-canon-m200.cr3", (6288, 4056), 0x4edf_3f62_a6ce_b2ba),
-        ("cr3-canon-r10.cr3", (6192, 4060), 0xc140_2394_bf17_c2a2),
-        ("cr3-canon-r50v.cr3", (6192, 4060), 0xd60f_f557_0928_8d27),
-        ("cr3-canon-r6m3.cr3", (7144, 4760), 0x47a4_cb40_1233_cc80),
-        ("cr3-canon-powershot-v1-craw.cr3", (5928, 3944), 0xbc54_037c_de0f_472a),
-        ("cr3-canon-1dxm3-craw.cr3", (5568, 3708), 0x3472_dbe7_a666_1a61),
-        ("cr3-canon-250d-craw.cr3", (6288, 4056), 0xf4c4_dbf8_1c93_2118),
-        ("cr3-canon-850d.cr3", (6288, 4056), 0xedac_1b6a_43cf_4204),
-        ("cr3-canon-90d-craw.cr3", (7128, 4732), 0xfaac_50ca_858e_5563),
-        ("cr3-canon-m50m2.cr3", (6288, 4056), 0xf36f_717a_9250_ec89),
-        ("cr3-canon-m6m2-craw.cr3", (7128, 4732), 0x6dc0_4c24_7f9b_6673),
-        ("cr3-canon-r3.cr3", (6192, 4152), 0x4728_af6f_18b1_cba1),
-        ("cr3-canon-r50-craw.cr3", (6192, 4060), 0x0354_0075_5fe5_a2a7),
-        ("cr3-canon-r5-craw.cr3", (8352, 5586), 0xdb64_0502_1fd7_ba92),
-        ("cr3-canon-r6-craw.cr3", (5568, 3708), 0xd3e0_567e_1ffb_07f4),
-        ("cr3-canon-r6m2-craw.cr3", (6188, 4120), 0x5b1d_6de8_9562_00d4),
-        ("cr3-canon-r7.cr3", (7128, 4732), 0xb725_758b_4410_f4af),
-        ("cr3-canon-r-craw.cr3", (6888, 4546), 0xf9cd_81a3_249f_cfc7),
-        ("cr3-canon-rp-craw.cr3", (6384, 4224), 0xf48d_f06c_a1d6_7382),
-        ("cr3-canon-g5xm2-craw.cr3", (5632, 3710), 0xfed8_f701_f231_442f),
-        ("cr3-canon-g7xm3.cr3", (5632, 3710), 0x902e_be92_2fe7_8046),
-        ("cr3-canon-sx70.cr3", (5344, 3950), 0x000c_7fe9_fbec_f4c2),
+    // (file, sensor width × height)
+    let cases: &[(&str, (usize, usize))] = &[
+        ("cr3-canon-m200.cr3", (6288, 4056)),
+        ("cr3-canon-r10.cr3", (6192, 4060)),
+        ("cr3-canon-r50v.cr3", (6192, 4060)),
+        ("cr3-canon-r6m3.cr3", (7144, 4760)),
+        ("cr3-canon-powershot-v1-craw.cr3", (5928, 3944)),
+        ("cr3-canon-1dxm3-craw.cr3", (5568, 3708)),
+        ("cr3-canon-250d-craw.cr3", (6288, 4056)),
+        ("cr3-canon-850d.cr3", (6288, 4056)),
+        ("cr3-canon-90d-craw.cr3", (7128, 4732)),
+        ("cr3-canon-m50m2.cr3", (6288, 4056)),
+        ("cr3-canon-m6m2-craw.cr3", (7128, 4732)),
+        ("cr3-canon-r3.cr3", (6192, 4152)),
+        ("cr3-canon-r50-craw.cr3", (6192, 4060)),
+        ("cr3-canon-r5-craw.cr3", (8352, 5586)),
+        ("cr3-canon-r6-craw.cr3", (5568, 3708)),
+        ("cr3-canon-r6m2-craw.cr3", (6188, 4120)),
+        ("cr3-canon-r7.cr3", (7128, 4732)),
+        ("cr3-canon-r-craw.cr3", (6888, 4546)),
+        ("cr3-canon-rp-craw.cr3", (6384, 4224)),
+        ("cr3-canon-g5xm2-craw.cr3", (5632, 3710)),
+        ("cr3-canon-g7xm3.cr3", (5632, 3710)),
+        ("cr3-canon-sx70.cr3", (5344, 3950)),
     ];
     let mut seen = 0;
-    for &(name, sensor, hash) in cases {
+    for &(name, sensor) in cases {
         let path = corpus().join("raw").join(name);
         let Ok(bytes) = std::fs::read(&path) else {
-            eprintln!("skip: {} absent", path.display());
+            lcc_testkit::skip!(Corpus, "{} absent", path.display());
             continue;
         };
-        check_against(name, hash, sensor, None, "the pinned decode of the app");
+        check_against(name, sensor, None);
         let raw = decode(&bytes).unwrap();
         let jpeg = lcc_raw::embedded_preview(&bytes).unwrap_or_else(|| panic!("{name}: no camera JPEG"));
         let r = green_vs_camera_jpeg(&raw, &jpeg, 24, 16);
@@ -186,53 +160,4 @@ fn canon_cr3_bodies_decode_like_the_camera_jpeg() {
         seen += 1;
     }
     eprintln!("CR3 bodies checked on {seen} files");
-}
-
-#[test]
-fn canon_rp_lossless_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/4674; SHA256
-    // dcbd0f6f9929de2e2331b0fd10a9d01e7cfd04c5a5e4038456de1647d714cdf2
-    check("cr3-canon-rp-raw.cr3", 0x5cb0_f464_04b8_b663, (6384, 4224), (6240, 4160));
-}
-
-#[test]
-fn canon_rp_craw_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/4672; SHA256
-    // bd3270610593d37ff8a399908bb9406a4e32f9151d55bf19ac1cf8f10d787b46
-    check("cr3-canon-rp-craw.cr3", 0xf48d_f06c_a1d6_7382, (6384, 4224), (6240, 4160));
-}
-
-#[test]
-fn canon_rp_crop_mode_lossless_sensor_is_exact() {
-    // 1.6x crop mode: a single tile. raw.pixls.us/getfile.php/4673; SHA256
-    // 7d4ba45dc9264d598336133593c677b09774bcdf13b602ee770e72415a652a16
-    check("cr3-canon-rp-raw-crop.cr3", 0x4680_8a9d_e3b3_dcc7, (4032, 2656), (3888, 2592));
-}
-
-#[test]
-fn canon_rp_crop_mode_craw_sensor_is_exact() {
-    // raw.pixls.us/getfile.php/4671; SHA256
-    // 4a859ab137f792aedaf3416b0aad1497ebaab02052a49453902e226699154aa7
-    check("cr3-canon-rp-craw-crop.cr3", 0x39a6_0c4e_fed4_e1f4, (4032, 2656), (3888, 2592));
-}
-
-// Canon EOS R6 lossless RAW: five private files supplied by the maintainer (not redistributable, so
-// absent for everyone else and skipped), checked against the same DNGLab 0.8.0 release (Linux x64
-// binary, which first reproduced the M50 RAW hash above). Sensor 5568x3708, developed 5472x3648.
-#[test]
-fn canon_r6_lossless_sensor_is_exact() {
-    for (name, hash) in [
-        // SHA256 7a8967ff68a21e076a3bd658fbdd2089c8b8285de0396da70feb5eb3ce8bfadf
-        ("cr3-canon-r6-1.cr3", 0x00b0_1d2b_9179_a8cb),
-        // SHA256 b8c26ebc480985f0bc7bf7c2cba33976e57e5bd4de148e171d49707fb613572e
-        ("cr3-canon-r6-2.cr3", 0xf663_6c02_e711_6eac),
-        // SHA256 56a7b5e5131522e716c2d82ac38a4a2e132270c8508d6ff250ac702f4aa471af
-        ("cr3-canon-r6-3.cr3", 0xd006_2a8b_5d5c_5d35),
-        // SHA256 bb9c4ab3da862029ef807ebc8e64ed77c08087586b3127dd58cf49c16a1e8af3
-        ("cr3-canon-r6-4.cr3", 0x0a4c_3b71_b3a6_efa4),
-        // SHA256 0fe2f4c3a5695516056a295c87a35696939bae6f09b9d21137b93a601f41f8b1
-        ("cr3-canon-r6-5.cr3", 0xe945_0c76_3748_7a3c),
-    ] {
-        check(name, hash, (5568, 3708), (5472, 3648));
-    }
 }

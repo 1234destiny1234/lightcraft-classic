@@ -14,8 +14,6 @@
 //! Sources: own design.
 
 pub mod adapter;
-#[cfg(test)]
-mod bench_playback;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod native;
 pub mod playback;

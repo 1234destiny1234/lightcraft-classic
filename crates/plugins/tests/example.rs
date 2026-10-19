@@ -37,7 +37,7 @@ fn build_example() -> Option<Vec<u8>> {
 /// Builds `sdk/examples/<name>` to wasm32; `None` (test skipped) without the wasm32 target.
 fn build_sdk_example(name: &str) -> Option<Vec<u8>> {
     if !wasm32_installed() {
-        eprintln!("skipped: the wasm32-unknown-unknown target is not installed (rustup target add wasm32-unknown-unknown)");
+        lcc_testkit::skip!(System, "the wasm32-unknown-unknown target is not installed (rustup target add wasm32-unknown-unknown)");
         return None;
     }
     let root = Path::new(env!("CARGO_MANIFEST_DIR")).join("../../sdk/examples").join(name);

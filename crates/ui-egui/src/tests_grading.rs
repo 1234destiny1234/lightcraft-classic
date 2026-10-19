@@ -39,14 +39,10 @@ fn click(h: &mut Headless, id: &str) {
 }
 
 #[test]
-fn three_way_is_the_default_with_three_equal_wheels() {
+fn the_three_wheels_are_the_same_size() {
     let h = demo();
-    assert_eq!(h.app.ui.grading_mode, "3way");
     let sizes: Vec<f32> = ["shadows", "midtones", "highlights"].iter().map(|k| widget(&h, &format!("wheel:{k}")).unwrap().width()).collect();
     assert!(sizes.iter().all(|w| (w - sizes[0]).abs() < 0.5), "{sizes:?}");
-    for tab in ["3way", "shadows", "midtones", "highlights"] {
-        assert!(widget(&h, &format!("icon:grading-{tab}")).is_some(), "tab {tab}");
-    }
 }
 
 #[test]

@@ -25,7 +25,7 @@ fn rel_err(name: &str, a: &[f32], b: &[f32]) -> f32 {
 #[test]
 fn birefnet_matches_reference() {
     let (Some(dir), Some(reference)) = (lcc_brand::env_os("BIREFNET_DIR"), lcc_brand::env_os("BIREFNET_REF")) else {
-        eprintln!("skipped: set {} and {}", lcc_brand::env_var("BIREFNET_DIR"), lcc_brand::env_var("BIREFNET_REF"));
+        lcc_testkit::skip!(Model, "set {} and {}", lcc_brand::env_var("BIREFNET_DIR"), lcc_brand::env_var("BIREFNET_REF"));
         return;
     };
     let r = candle_core::safetensors::load(PathBuf::from(reference), &Device::Cpu).unwrap();

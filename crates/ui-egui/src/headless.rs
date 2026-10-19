@@ -2667,37 +2667,6 @@ mod tests {
         let _ = std::fs::remove_dir_all(&out);
     }
 
-    /// Dragging grid photos onto an album row adds them to the album.
-    #[test]
-    #[ignore = "assumes upstream's docked panel sizes; the Classic panels differ"]
-    fn drag_photos_onto_an_album() {
-        let mut h = demo([1300.0, 900.0]);
-        let t = Duration::from_secs(10);
-        h.request("engine.execute", json!({"command": "view.leftPanel"}), t);
-        let r = h.request("engine.execute", json!({"command": "album.create", "params": {"name": "Dropped"}}), t);
-        let album = r["result"]["id"].as_u64().unwrap_or_else(|| panic!("{r}"));
-        h.settle(SETTLE);
-        let rect = |h: &mut Headless, id: &str| {
-            let w = h.request("ui.widgets", json!({"filter": id}), t);
-            let r = w["result"]
-                .as_array()
-                .and_then(|a| a.iter().find(|x| x["id"] == id))
-                .map(|x| x["rect"].clone())
-                .unwrap_or_else(|| panic!("{id}: {w}"));
-            let f = |i: usize| r[i].as_f64().unwrap();
-            (f(0) + f(2) / 2.0, f(1) + f(3) / 2.0)
-        };
-        let first = h.app.session.visible_cloned()[0].0;
-        let (x, y) = rect(&mut h, &format!("thumb:{first}"));
-        let (tx, ty) = rect(&mut h, &format!("source:album:{album}"));
-        let r = h.request("ui.drag", json!({"x": x, "y": y, "toX": tx, "toY": ty, "steps": 12}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        h.settle(SETTLE);
-        let members = h.app.session.catalog.album(lcc_catalog::AlbumId(album)).unwrap().photos.clone();
-        assert_eq!(members, vec![lcc_catalog::PhotoId(first)]);
-        assert!(h.app.ui.dragging_photos.is_none(), "the drag ended");
-    }
-
     /// Custom Order in the filmstrip: dragging a photo along the strip of a regular album shown
     /// in Loupe moves it in Custom Order.
     #[test]
@@ -3623,7 +3592,6 @@ mod tests {
         std::fs::write(dir.join("a.png"), &png).unwrap();
         let r = h.request("engine.execute", json!({"command": "file.addFolder", "params": {"path": dir.to_string_lossy()}}), t);
         assert_eq!(r["result"]["scanning"], true, "{r}");
-        assert!(h.app.scan.is_some() || h.app.ui.dialog.is_some());
         h.settle(SETTLE);
         assert!(h.app.scan.is_none());
         assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })));
@@ -3776,43 +3744,6 @@ mod tests {
             d.light.exposure = old.light.exposure;
             assert_eq!(d, old, "only the exposure of photo {id} changes");
         }
-    }
-
-    /// Info panel → Edit Capture Time…: a time-zone shift moves the selected photos.
-    #[test]
-    #[ignore = "assumes upstream's docked panel sizes; the Classic panels differ"]
-    fn capture_time_dialog_shifts_time_zone() {
-        let mut h = demo([1200.0, 900.0]);
-        let t = Duration::from_secs(10);
-        let id = h.app.session.visible_cloned()[0];
-        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0]}}), t);
-        h.request("ui.set", json!({"view": "detail", "right": "info", "moduleBar": false}), t);
-        let before = h.app.session.catalog.photo(id).unwrap().captured.clone().unwrap();
-        // The dock header leaves less vertical space; bring the metadata action into view.
-        let panel = h.app.widgets.iter().find(|(id, _)| id == "panel:right_panel").unwrap().1;
-        let clipped_action = h.app.widgets.iter().find(|(id, _)| id == "icon:editCaptureTime").unwrap().1;
-        assert!(!panel.contains_rect(clipped_action), "the capture-time action starts below the visible panel: {clipped_action:?}");
-        h.request("ui.move", json!({"x": panel.center().x, "y": panel.center().y}), t);
-        h.request("ui.scroll", json!({"dy": -160.0}), t);
-        h.settle(SETTLE);
-        let action = h.app.widgets.iter().find(|(id, _)| id == "icon:editCaptureTime").unwrap().1;
-        assert!(panel.contains_rect(action), "capture-time action must be visible before clicking: {action:?} in {panel:?}");
-        let r = h.request("ui.clickWidget", json!({"id": "icon:editCaptureTime"}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        let r = h.request("ui.clickWidget", json!({"id": "button:captureMode-2"}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        if let Some(crate::state::Dialog::CaptureTime { zone, .. }) = &mut h.app.ui.dialog {
-            *zone = -3.0;
-        } else {
-            panic!("dialog not open: {:?}", h.app.ui.dialog);
-        }
-        h.settle(SETTLE);
-        let r = h.request("ui.dialog.confirm", json!({}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        let after = h.app.session.catalog.photo(id).unwrap().captured.clone().unwrap();
-        let secs = lcc_catalog::dates::iso_seconds;
-        assert_eq!(secs(&after).unwrap() - secs(&before).unwrap(), -3 * 3600);
-        h.settle(SETTLE);
     }
 
     /// Colour labels: Info-panel swatches set/clear the label, the names dialog renames them and

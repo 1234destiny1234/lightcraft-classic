@@ -4494,6 +4494,7 @@ dependencies = [
  "cpal",
  "futures",
  "lcc-brand",
+ "lcc-testkit",
  "log",
  "pulseaudio",
 ]
@@ -4567,6 +4568,7 @@ dependencies = [
  "lcc-raster",
  "lcc-scenes",
  "lcc-sysmem",
+ "lcc-testkit",
  "lcc-ui-egui",
  "lcc-video",
  "log",
@@ -4997,6 +4999,7 @@ version = "0.9.4"
 dependencies = [
  "hayro",
  "lcc-fuzzkit",
+ "lcc-testkit",
  "lcc-text",
  "lopdf",
  "miniz_oxide 0.8.9",
@@ -5051,6 +5054,7 @@ version = "0.9.4"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-net",
+ "lcc-testkit",
  "log",
  "serde",
  "serde_json",
@@ -5083,6 +5087,7 @@ dependencies = [
  "lcc-net",
  "lcc-pdf",
  "lcc-raster",
+ "lcc-testkit",
  "lcc-text",
  "lopdf",
  "rustls",
@@ -5243,6 +5248,7 @@ name = "lcc-text"
 version = "0.9.4"
 dependencies = [
  "lcc-fuzzkit",
+ "lcc-testkit",
  "parley",
  "serde",
  "serde_json",
@@ -5346,6 +5352,7 @@ dependencies = [
  "filmcraft-vp9",
  "image",
  "lcc-raster",
+ "lcc-testkit",
  "puremp3",
  "thiserror 2.0.21",
 ]

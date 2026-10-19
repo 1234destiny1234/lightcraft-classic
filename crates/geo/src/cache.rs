@@ -150,7 +150,11 @@ mod tests {
         c.put("osm", k, b"png").unwrap();
         assert_eq!(c.get("osm", k).unwrap(), Cached { bytes: b"png".to_vec(), stale: false });
         c.max_age = Duration::ZERO;
-        std::thread::sleep(Duration::from_millis(5));
+        // file times are coarse on some systems: wait until the tile is measurably older than zero
+        let deadline = std::time::Instant::now() + Duration::from_secs(10);
+        while !c.get("osm", k).unwrap().stale && std::time::Instant::now() < deadline {
+            std::thread::sleep(Duration::from_millis(5));
+        }
         assert!(c.get("osm", k).unwrap().stale);
         for y in 0..2 {
             c.put("osm", TileKey { z: 1, x: 1, y }, &[0u8; 100]).unwrap();

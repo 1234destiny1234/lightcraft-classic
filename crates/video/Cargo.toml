@@ -49,4 +49,5 @@ test-util = ["dep:filmcraft-h264enc"]
 filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "48088e3a8e50bd4a7a71d1ebdfde0835b01a3051" }
 
 [dev-dependencies]
+lcc-testkit = { workspace = true }
 image = { workspace = true }

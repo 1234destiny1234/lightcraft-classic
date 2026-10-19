@@ -133,7 +133,7 @@ enum Transform {
     Clap { w: f64, h: f64, dx: f64, dy: f64 },
     /// Anticlockwise rotation by `n` × 90°.
     Rot(u8),
-    /// Mirror: 0 = about a vertical axis (left ↔ right), 1 = about a horizontal axis (top ↔ bottom).
+    /// Mirror, as HEIF amendment 2, libheif and libavif read it: 0 = top and bottom exchanged, 1 = left and right exchanged.
     Mir(u8),
 }
 
@@ -587,7 +587,7 @@ fn apply_transforms(mut v: Vec<f32>, mut w: usize, mut h: usize, ts: &[Transform
             Transform::Mir(axis) => {
                 for y in 0..h {
                     for x in 0..w {
-                        let (sx, sy) = if axis == 0 { (w - 1 - x, y) } else { (x, h - 1 - y) };
+                        let (sx, sy) = if axis == 0 { (x, h - 1 - y) } else { (w - 1 - x, y) };
                         if (sy * w + sx) > (y * w + x) {
                             for c in 0..3 {
                                 v.swap((y * w + x) * 3 + c, (sy * w + sx) * 3 + c);
@@ -780,9 +780,10 @@ mod tests {
         // anticlockwise: the right column becomes the top row
         assert_eq!((w, h, g(&r)), (2, 3, vec![2, 5, 1, 4, 0, 3]));
         let (m, ..) = apply_transforms(v.clone(), 3, 2, &[Transform::Mir(0)]);
-        assert_eq!(g(&m), vec![2, 1, 0, 5, 4, 3]);
-        let (m, ..) = apply_transforms(v.clone(), 3, 2, &[Transform::Mir(1)]);
+        // axis 0 exchanges top and bottom, axis 1 left and right (libheif's and libavif's reading)
         assert_eq!(g(&m), vec![3, 4, 5, 0, 1, 2]);
+        let (m, ..) = apply_transforms(v.clone(), 3, 2, &[Transform::Mir(1)]);
+        assert_eq!(g(&m), vec![2, 1, 0, 5, 4, 3]);
         let (c, w, h) = apply_transforms(v, 3, 2, &[Transform::Clap { w: 1.0, h: 1.0, dx: 1.0, dy: 0.0 }]);
         assert_eq!((w, h), (1, 1));
         assert!(g(&c)[0] == 2 || g(&c)[0] == 5);

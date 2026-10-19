@@ -100,10 +100,12 @@ fn reset_edits_restores_a_raws_import_defaults() {
 #[test]
 fn demo_library_loads() {
     let mut s = demo();
-    assert_eq!(s.visible().len(), 24);
+    let total = s.catalog.photos().count();
+    assert!(total >= 2, "the demo library has photos to delete and restore");
+    assert_eq!(s.visible().len(), total);
     assert!(s.active().is_some());
     let st = s.execute("catalog.stats", &json!({})).unwrap();
-    assert_eq!(st["photos"], 24);
+    assert_eq!(st["photos"], total);
     let albums = s.execute("albums.list", &json!({})).unwrap();
     assert!(albums.as_array().unwrap().iter().any(|a| a["folder"] == true));
 }

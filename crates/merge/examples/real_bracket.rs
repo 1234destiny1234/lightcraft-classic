@@ -1,8 +1,8 @@
-//! Diagnostics on a real bracket (not run by default): how far apart the frames still are after the
+//! Diagnostics on a real bracket (an example, not a test): how far apart the frames still are after the
 //! HDR merge's alignment, tile by tile.
 //!
-//! `MERGE_BRACKET=a.ARW,b.ARW,c.ARW [MERGE_REGION=x0,y0,x1,y1] cargo test --release -p lcc-merge
-//! --test real_bracket -- --ignored --nocapture`
+//! `MERGE_BRACKET=a.ARW,b.ARW,c.ARW [MERGE_REGION=x0,y0,x1,y1] cargo run --release -p lcc-merge
+//! --example real_bracket`
 
 use lcc_geom::Homography;
 use lcc_merge::hdr::{Deghost, HdrOptions, merge_hdr};
@@ -14,10 +14,11 @@ fn crop(p: &Plane, r: [usize; 4]) -> Plane {
     Plane::from_fn(x1 - x0, y1 - y0, |x, y| p.get(x + x0, y + y0))
 }
 
-#[test]
-#[ignore]
-fn residual_after_alignment() {
-    let Ok(paths) = std::env::var("MERGE_BRACKET") else { return };
+fn main() {
+    let Ok(paths) = std::env::var("MERGE_BRACKET") else {
+        eprintln!("set MERGE_BRACKET=a.ARW,b.ARW,c.ARW (optionally MERGE_REGION=x0,y0,x1,y1, MERGE_TILES=1)");
+        return;
+    };
     let frames: Vec<_> = paths.split(',').map(|p| load_frame(&std::fs::read(p).unwrap(), None, true).unwrap()).collect();
     let r = merge_hdr(frames.clone(), &HdrOptions { align: true, deghost: Deghost::None }, &no_progress).unwrap();
     let (w, h) = (frames[0].width(), frames[0].height());

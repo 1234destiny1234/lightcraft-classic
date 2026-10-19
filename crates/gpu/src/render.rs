@@ -1199,47 +1199,6 @@ mod tests {
         }
     }
 
-    /// Kernel timings on a 24 MP plane: `cargo test --release -p lcc-gpu -- --ignored --nocapture`.
-    #[test]
-    #[ignore]
-    fn bench_kernels() {
-        let Some(gpu) = crate::device() else { return };
-        let _scope = crate::ctx::RenderScope::new(gpu);
-        let (w, h) = (6000, 4000);
-        eprintln!("{} ({:?})", gpu.info.name, gpu.info.backend);
-        let src = gpu.upload(&vec![0.5f32; w * h * 3]);
-        let time = |name: &str, f: &mut dyn FnMut(&mut Cx<'_>)| {
-            let mut best = f64::MAX;
-            for _ in 0..5 {
-                let mut cx = Cx::new(gpu);
-                cx.sync();
-                let t = std::time::Instant::now();
-                f(&mut cx);
-                cx.sync();
-                best = best.min(t.elapsed().as_secs_f64() * 1e3);
-            }
-            eprintln!("{name:<40} {best:.1} ms");
-        };
-        for nc in [1, 2, 3] {
-            let out = gpu.buffer(w * h * nc);
-            // noise reduction's radii, Texture's and Dehaze's at 6000 px
-            for r in [2, 11, 120] {
-                for (k, horizontal) in [("box_h", true), ("box_v", false)] {
-                    time(&format!("{k} nc={nc} r={r}"), &mut |cx| box_pass(cx, horizontal, &src, &out, (w, h), nc, r));
-                }
-            }
-        }
-        for nc in [1, 2, 3] {
-            time(&format!("gaussian nc={nc} sigma=2"), &mut |cx| drop(gaussian(cx, &src, w, h, nc, 2.0)));
-        }
-        time("gaussian nc=3 sigma=4.5 (colour NR)", &mut |cx| drop(gaussian(cx, &src, w, h, 3, 4.5)));
-        time("map log_lum", &mut |cx| {
-            let o = cx.gpu.buffer(w * h);
-            map(cx, "log_lum_k", w * h, &[], [Some(&src), None, None], &o);
-        });
-        time("guided sigma=1.75", &mut |cx| drop(guided(cx, &src, w, h, 1.75, 0.01)));
-    }
-
     #[test]
     fn orient_map_matches_image_oriented() {
         use Orientation::*;

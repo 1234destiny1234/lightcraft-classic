@@ -382,6 +382,8 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
                     }
                     // the sections' folds now live in `sidebar`; the Classic panels' `panel:*` folds stay
                     u.collapsed_sidebar.retain(|id| crate::sidebar::SidebarSection::from_id(id).is_none());
+                    // a script's values get the same range checks as a settings file's
+                    u.clamp_ranges();
                     u.toast = app.ui.toast.clone();
                     u.dialog = app.ui.dialog.clone();
                     u.status = app.ui.status.clone();
@@ -520,7 +522,10 @@ pub fn export_active(app: &mut LccApp, p: &Value) -> Result<Value, String> {
         opts.format = lcc_engine::export::ExportFormat::parse(ext).unwrap_or(opts.format);
     }
     let ids: Vec<_> = match p.get("ids").and_then(Value::as_array) {
-        Some(a) => a.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect(),
+        Some(a) => a
+            .iter()
+            .map(|v| serde_json::from_value(v.clone()).map_err(|_| format!("`ids` must be non-negative integer photo ids, got {v}")))
+            .collect::<Result<_, _>>()?,
         None if !app.session.selection.ids.is_empty() => {
             // Batch order (and `{seq}`) follows the grid order.
             let sel: std::collections::HashSet<_> = app.session.selection.ids.iter().copied().collect();

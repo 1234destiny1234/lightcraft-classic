@@ -261,15 +261,21 @@ mod tests {
 
     #[test]
     fn slow_scans_never_block_and_hot_plug_still_arrives() {
-        // a scanner that takes 1.5 s (a sleeping network drive) and counts its runs
-        const SLOW: Duration = Duration::from_millis(1500);
+        // a scanner that stays blocked until the test opens `gate` (a sleeping network drive) and
+        // counts its runs; `get()` blocking on it would leave `refreshing()` true only because of us,
+        // so the checks below read the scan state while the gate is still shut
+        let gate = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let g = gate.clone();
         let mounted = Arc::new(Mutex::new(Vec::<Device>::new()));
         let runs = Arc::new(AtomicUsize::new(0));
         let (m, r) = (mounted.clone(), runs.clone());
         let watch = DeviceWatch::new(
             move || {
                 r.fetch_add(1, Ordering::SeqCst);
-                std::thread::sleep(SLOW);
+                let t = std::time::Instant::now();
+                while !g.load(Ordering::SeqCst) && t.elapsed() < Duration::from_secs(30) {
+                    std::thread::sleep(Duration::from_millis(2));
+                }
                 m.lock().unwrap().clone()
             },
             Duration::from_millis(20),
@@ -280,21 +286,27 @@ mod tests {
             c.fetch_add(1, Ordering::SeqCst);
         });
         // cold: served at once (empty) while one scan runs in the background
-        let t = std::time::Instant::now();
         for _ in 0..50 {
             assert!(watch.get().is_empty());
         }
-        assert!(t.elapsed() < SLOW / 2, "get() waited for the scan: {:?}", t.elapsed());
-        assert!(watch.refreshing());
+        assert!(watch.refreshing(), "get() returned while the scan was still blocked");
+        gate.store(true, Ordering::SeqCst);
         assert!(until(|| !watch.refreshing()));
         assert_eq!(runs.load(Ordering::SeqCst), 1, "requests while scanning are coalesced");
         assert_eq!(changes.load(Ordering::SeqCst), 0, "nothing changed");
         // a card is plugged in: the next stale request starts a rescan, still without waiting
         mounted.lock().unwrap().push(card("EOS_DIGITAL"));
-        std::thread::sleep(Duration::from_millis(40));
-        let t = std::time::Instant::now();
-        assert!(watch.get().is_empty(), "the old list is served while rescanning");
-        assert!(t.elapsed() < SLOW / 2, "warm get() waited: {:?}", t.elapsed());
+        gate.store(false, Ordering::SeqCst);
+        // the list goes stale after the interval; the first request after that starts the rescan
+        assert!(
+            until(|| {
+                assert!(watch.get().is_empty(), "the old list is served while rescanning");
+                watch.refreshing()
+            }),
+            "a stale request starts a rescan"
+        );
+        assert_eq!(changes.load(Ordering::SeqCst), 0, "get() returned before the rescan finished");
+        gate.store(true, Ordering::SeqCst);
         assert!(until(|| changes.load(Ordering::SeqCst) == 1), "a changed scan notifies");
         assert_eq!(watch.get(), [card("EOS_DIGITAL")]);
         // explicit requests scan synchronously
