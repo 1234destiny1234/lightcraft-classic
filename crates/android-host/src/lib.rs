@@ -204,7 +204,10 @@ mod imp {
         /// Runs `f` on this thread's JNI environment; a Java exception becomes an [`Error`].
         fn call(&self, what: &str, f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<()>) -> Result<(), Error> {
             let mut env = self.vm.attach_current_thread_permanently().map_err(|e| jni_error("attach to the JVM", e))?;
-            let result = f(&mut env, self.activity.as_obj());
+            // this thread stays attached for the life of the app, so local references would never
+            // be freed on their own: give each call its own frame, dropped when it returns
+            let activity = self.activity.as_obj();
+            let result = env.with_local_frame(16, |env| f(env, activity));
             if env.exception_check().unwrap_or(false) {
                 let _ = env.exception_describe();
                 let _ = env.exception_clear();
@@ -224,7 +227,8 @@ mod imp {
         let array = env.new_object_array(len, "java/lang/String", JObject::null())?;
         for (i, s) in items.iter().take(len as usize).enumerate() {
             let js = env.new_string(s)?;
-            env.set_object_array_element(&array, i as i32, js)?;
+            env.set_object_array_element(&array, i as i32, &js)?;
+            env.delete_local_ref(js)?;
         }
         Ok(array)
     }
@@ -237,10 +241,11 @@ mod imp {
         let mut out = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
         for i in 0..len {
             let item = env.get_object_array_element(array, i)?;
+            let item = env.auto_local(item);
             if item.is_null() {
                 continue;
             }
-            let s: String = env.get_string(&JString::from(item))?.into();
+            let s: String = env.get_string(<&JString>::from(&*item))?.into();
             out.push(s);
         }
         Ok(out)
