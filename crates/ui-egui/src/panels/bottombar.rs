@@ -43,8 +43,23 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                         let (sep, _) = ui.allocate_exact_size(vec2(1.0, 22.0), Sense::hover());
                         ui.painter().rect_filled(sep, 0.0, t.button_border);
                         ui.add_space(10.0);
-                        let sort = icon_button(ui, "sort", Icon::Sort, vec2(30.0, 30.0), false, true, "Sort");
-                        egui::Popup::menu(&sort).show(|ui| sort_menu(app, ui));
+                        // Lightroom Classic's Grid toolbar: Painter, then Sort by name (the fork's)
+                        let library_grid = library_grid(app);
+                        if library_grid
+                            && icon_button(ui, "painter", Icon::Brush, vec2(30.0, 30.0), app.ui.lib.painter.is_some(), true, "Painter (⌥⌘K)")
+                                .clicked()
+                        {
+                            let _ = app.run("tool.painter", json!({}));
+                        }
+                        if library_grid && left_rect.width() >= 520.0 {
+                            ui.add_space(6.0);
+                            let label = format!("{}: {}", crate::i18n::tr("Sort"), crate::i18n::tr(sort_key_label(app.session.sort.key)));
+                            let sort = crate::widgets::dropdown(ui, "sortLabel", &label, t.font(12.5), t.text_label);
+                            egui::Popup::menu(&sort).show(|ui| sort_menu(app, ui));
+                        } else {
+                            let sort = icon_button(ui, "sort", Icon::Sort, vec2(30.0, 30.0), false, true, "Sort");
+                            egui::Popup::menu(&sort).show(|ui| sort_menu(app, ui));
+                        }
                     } else {
                         let current_icon = VIEW_MODES.iter().find(|(_, _, mode, _)| *mode == app.ui.view).map_or(Icon::More, |(_, icon, _, _)| *icon);
                         let more = icon_button(ui, "viewOptions", current_icon, vec2(40.0, 32.0), true, true, "View");
@@ -81,6 +96,29 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
 /// Five 19-point stars, three 22-point flags, seven 3-point gaps, a 6-point group gap
 /// and 10-point padding at both ends.
 const PILL_W: f32 = 208.0;
+/// The colour labels after the flags in the Library's Grid, as in Lightroom Classic: a 6-point gap and five
+/// 12-point swatches 3 points apart.
+const LABELS_W: f32 = 6.0 + 5.0 * 12.0 + 5.0 * 3.0;
+
+/// The Library's Grid, where the toolbar carries Lightroom Classic's Grid items (the fork's).
+fn library_grid(app: &LccApp) -> bool {
+    app.ui.module == crate::module::ModuleId::Library && matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid)
+}
+
+/// The name of a sort key, as the Sort menu lists it.
+fn sort_key_label(key: lcc_catalog::SortKey) -> &'static str {
+    use lcc_catalog::SortKey::*;
+    match key {
+        CaptureDate => "Capture Date",
+        ImportDate => "Import Date",
+        EditDate => "Modified Date",
+        FileName => "File Name",
+        Rating => "Rating",
+        FileSize => "File Size",
+        Random => "Random",
+        Custom => "Custom Order",
+    }
+}
 
 /// The rating/flag pill and copy/paste settings, between `from` and `to` (the side groups): the
 /// copy buttons go first when there is no room (they are in the Edit menu too), then the pill.
@@ -89,17 +127,19 @@ fn centre(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
     let has_clip = app.session.clipboard.is_some();
     let label = crate::i18n::tr(if has_clip { "Paste Edit Settings" } else { "Copy Edit Settings" });
     let copy_width = (ui.painter().layout_no_wrap(label.to_string(), t.font(13.0), t.text_label).size().x + 24.0).max(136.0);
-    let centre_width = PILL_W + 10.0 + copy_width + 4.0 + 30.0;
+    let labels = library_grid(app);
+    let pill_w = if labels { PILL_W + LABELS_W } else { PILL_W };
+    let centre_width = pill_w + 10.0 + copy_width + 4.0 + 30.0;
     let room = to - from;
-    if room < PILL_W {
+    if room < pill_w {
         return;
     }
     let with_copy = room >= centre_width;
-    let w = if with_copy { centre_width } else { PILL_W };
+    let w = if with_copy { centre_width } else { pill_w };
     // where it sits with room to spare (slightly left of centre), kept between the side groups
-    let left = (full.center().x - 60.0 - PILL_W / 2.0).clamp(from, to - w);
+    let left = (full.center().x - 60.0 - pill_w / 2.0).clamp(from, to - w);
     let active = app.session.active().and_then(|id| app.session.catalog.photo(id).cloned());
-    let pill = Rect::from_min_size(pos2(left, full.center().y - 15.0), vec2(PILL_W, 30.0));
+    let pill = Rect::from_min_size(pos2(left, full.center().y - 15.0), vec2(pill_w, 30.0));
     ui.painter().rect_filled(pill, 15.0, t.canvas);
     let mut pill_ui =
         ui.new_child(egui::UiBuilder::new().max_rect(pill.shrink2(vec2(10.0, 4.0))).layout(egui::Layout::left_to_right(egui::Align::Center)));
@@ -137,6 +177,34 @@ fn centre(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
             let mut params = json!({"flag": match f { Flag::Pick => "pick", Flag::Reject => "reject", Flag::None => "none" }});
             crate::panels::compare::target_active(app, &mut params);
             let _ = app.run("photo.flag", params);
+        }
+    }
+    // the colour labels, after the flags (Lightroom Classic's Grid toolbar)
+    if labels {
+        use lcc_catalog::ColorLabel as L;
+        pill_ui.add_space(6.0);
+        let current = active.as_ref().and_then(|p| p.label);
+        for (l, key, name) in [
+            (L::Red, "red", "Red"),
+            (L::Yellow, "yellow", "Yellow"),
+            (L::Green, "green", "Green"),
+            (L::Blue, "blue", "Blue"),
+            (L::Purple, "purple", "Purple"),
+        ] {
+            let (r, resp) = pill_ui.allocate_exact_size(vec2(12.0, 12.0), Sense::click());
+            crate::widgets::announce_selected(&resp, crate::i18n::tr(name), current == Some(l));
+            register(pill_ui.ctx(), format!("toolbarLabel:{key}"), r);
+            let c = crate::theme::label_color(l);
+            pill_ui.painter().rect_filled(r.shrink(1.0), 2.0, if current == Some(l) || resp.hovered() { c } else { c.gamma_multiply(0.75) });
+            if current == Some(l) {
+                pill_ui.painter().rect_stroke(r, 3.0, egui::Stroke::new(1.5, t.text), egui::StrokeKind::Outside);
+            }
+            if resp.clicked() {
+                // a click on the photo's own label takes it off, as the label shortcuts do
+                let mut params = json!({"label": if current == Some(l) { "none" } else { key }});
+                crate::panels::compare::target_active(app, &mut params);
+                let _ = app.run("photo.label", params);
+            }
         }
     }
     // copy / paste settings
@@ -238,6 +306,30 @@ fn right_side(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, compact_zoom: boo
             egui::Popup::menu(&cz).show(|ui| click_zoom_menu(app, ui));
         }
     } else {
+        // Lightroom Classic's Grid toolbar, right to left: thumbnail size, slideshow, previous / next, rotate (the fork's)
+        thumb_slider(app, &mut child, &t);
+        // (only with room for them: a narrow window keeps the slider and the centre)
+        if library_grid(app) && full.width() >= 760.0 {
+            child.add_space(8.0);
+            for (id, icon, tip, command) in [
+                ("slideshowPlay", Icon::Play, "Impromptu Slideshow", "view.slideshow"),
+                ("navNext", Icon::ChevronRight, "Next Photo", "library.next"),
+                ("navPrevious", Icon::ChevronLeft, "Previous Photo", "library.previous"),
+                ("rotateRight", Icon::RotateRight, "Rotate Right", "photo.rotateRight"),
+                ("rotateLeft", Icon::RotateLeft, "Rotate Left", "photo.rotateLeft"),
+            ] {
+                if icon_button(&mut child, id, icon, vec2(26.0, 26.0), false, true, tip).clicked() {
+                    let _ = app.run(command, json!({}));
+                }
+            }
+        }
+    }
+    if child.min_rect().width() > 0.0 { child.min_rect().left() } else { full.right() }
+}
+
+/// The thumbnail size slider at the right end of a grid's toolbar.
+fn thumb_slider(app: &mut LccApp, child: &mut egui::Ui, t: &Tokens) {
+    {
         // thumbnail size slider
         let (r, resp) = child.allocate_exact_size(vec2(110.0, 20.0), Sense::click_and_drag());
         crate::widgets::announce(&resp, crate::i18n::tr("Thumbnail size"));
@@ -255,7 +347,6 @@ fn right_side(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, compact_zoom: boo
             app.ui.thumb_size = min + ((pp.x - r.left()) / r.width()).clamp(0.0, 1.0) * (max - min);
         }
     }
-    if child.min_rect().width() > 0.0 { child.min_rect().left() } else { full.right() }
 }
 
 fn click_zoom_menu(app: &mut LccApp, ui: &mut egui::Ui) {

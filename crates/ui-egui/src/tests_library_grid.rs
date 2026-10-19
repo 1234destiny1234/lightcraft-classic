@@ -81,3 +81,54 @@ fn the_filmstrip_runs_under_the_grid() {
     h.settle(SETTLE);
     assert!(bottom(&h, "filmstrip").is_none());
 }
+
+/// The Grid's toolbar has Lightroom Classic's items: Painter, Sort by name, colour labels next to the rating and
+/// flags, rotate, previous / next and the impromptu slideshow, each doing what its command does.
+#[test]
+fn the_grid_toolbar_has_lightroom_classics_items() {
+    let mut h = library();
+    for id in [
+        "icon:painter",
+        "dropdown:sortLabel",
+        "toolbarLabel:red",
+        "toolbarLabel:yellow",
+        "toolbarLabel:green",
+        "toolbarLabel:blue",
+        "toolbarLabel:purple",
+        "icon:rotateLeft",
+        "icon:rotateRight",
+        "icon:navPrevious",
+        "icon:navNext",
+        "icon:slideshowPlay",
+    ] {
+        assert!(h.app.widgets.iter().any(|(w, _)| w == id), "{id} in the toolbar");
+    }
+    let active = |h: &Headless| h.app.session.active().expect("a photo");
+    let first = active(&h);
+    // (the toolbar acts on the selection, as in Lightroom Classic: the photo clicked)
+    let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [first.0]}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    // a label the photo doesn't have (a click on its own label takes it off)
+    let had = h.app.session.catalog.photo(first).and_then(|p| p.label);
+    let (key, want) =
+        if had == Some(lcc_catalog::ColorLabel::Green) { ("blue", lcc_catalog::ColorLabel::Blue) } else { ("green", lcc_catalog::ColorLabel::Green) };
+    let r = h.request("ui.clickWidget", json!({"id": format!("toolbarLabel:{key}")}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(h.app.session.catalog.photo(first).and_then(|p| p.label), Some(want));
+    let r = h.request("ui.clickWidget", json!({"id": format!("toolbarLabel:{key}")}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(h.app.session.catalog.photo(first).and_then(|p| p.label), None, "a second click takes it off");
+    let turned = |h: &Headless| h.app.session.develop_of(first).map(|d| d.orientation);
+    let before = turned(&h);
+    let r = h.request("ui.clickWidget", json!({"id": "icon:rotateRight"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_ne!(turned(&h), before, "rotated");
+    let r = h.request("ui.clickWidget", json!({"id": "icon:navNext"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_ne!(active(&h), first, "the next photo");
+}
