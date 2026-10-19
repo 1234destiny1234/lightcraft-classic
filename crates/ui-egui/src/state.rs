@@ -1730,21 +1730,7 @@ impl UiState {
     }
     /// Clamp values restored from disk.
     pub fn sanitized(mut self) -> Self {
-        self.thumb_size = self.thumb_size.clamp(THUMB_SIZE_MIN, THUMB_SIZE_MAX);
-        self.left_width = LEFT_WIDTH.clamp(self.left_width);
-        self.right_width = RIGHT_WIDTH.clamp(self.right_width);
-        self.brush_size = self.brush_size.clamp(0.002, 0.5);
-        // a histogram mode or scale another build wrote (or a hand-edited file) is the default
-        if lcc_raster::HistogramMode::parse(&self.histogram_mode).is_none() {
-            self.histogram_mode = lcc_raster::HistogramMode::default().name().into();
-        }
-        if lcc_raster::HistogramScale::parse(&self.histogram_scale).is_none() {
-            self.histogram_scale = lcc_raster::HistogramScale::default().name().into();
-        }
-        self.brush_slot = self.brush_slot.min(1);
-        self.brush_presets = self.brush_presets.map(BrushPreset::sanitized);
-        let cur = BrushPreset { size: self.brush_size, feather: self.brush_feather, flow: self.brush_flow, density: self.brush_density }.sanitized();
-        (self.brush_size, self.brush_feather, self.brush_flow, self.brush_density) = (cur.size, cur.feather, cur.flow, cur.density);
+        self.clamp_ranges();
         self.sidebar.adopt_collapsed(&self.collapsed_sidebar);
         self.collapsed_sidebar.retain(|id| id.starts_with("panel:"));
         // A settings file written before Develop had its Classic column knows nothing of the
@@ -1764,15 +1750,35 @@ impl UiState {
         }
         self.dialog = None;
         self.fullscreen = false;
-        if !crate::state::PREVIEW_LIMITS.contains(&self.settings.preview_limit) {
-            self.settings.preview_limit = AppSettings::default().preview_limit;
-        }
         match self.settings.startup_view {
             StartupView::Last => {}
             StartupView::Grid => self.view = ViewMode::PhotoGrid,
             StartupView::Detail => self.view = ViewMode::Detail,
         }
         self
+    }
+
+    /// Put the numeric and enumerated settings back in their valid ranges. Shared by loading a
+    /// settings file ([`Self::sanitized`]) and `ui.set`, which merges values from a script.
+    pub fn clamp_ranges(&mut self) {
+        self.thumb_size = self.thumb_size.clamp(THUMB_SIZE_MIN, THUMB_SIZE_MAX);
+        self.left_width = LEFT_WIDTH.clamp(self.left_width);
+        self.right_width = RIGHT_WIDTH.clamp(self.right_width);
+        self.brush_size = self.brush_size.clamp(0.002, 0.5);
+        // a histogram mode or scale another build wrote (or a hand-edited file) is the default
+        if lcc_raster::HistogramMode::parse(&self.histogram_mode).is_none() {
+            self.histogram_mode = lcc_raster::HistogramMode::default().name().into();
+        }
+        if lcc_raster::HistogramScale::parse(&self.histogram_scale).is_none() {
+            self.histogram_scale = lcc_raster::HistogramScale::default().name().into();
+        }
+        self.brush_slot = self.brush_slot.min(1);
+        self.brush_presets = self.brush_presets.map(BrushPreset::sanitized);
+        let cur = BrushPreset { size: self.brush_size, feather: self.brush_feather, flow: self.brush_flow, density: self.brush_density }.sanitized();
+        (self.brush_size, self.brush_feather, self.brush_flow, self.brush_density) = (cur.size, cur.feather, cur.flow, cur.density);
+        if !crate::state::PREVIEW_LIMITS.contains(&self.settings.preview_limit) {
+            self.settings.preview_limit = AppSettings::default().preview_limit;
+        }
     }
 }
 
