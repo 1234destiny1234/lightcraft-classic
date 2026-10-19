@@ -590,8 +590,8 @@ fn load_bytes_now(
         let lens_geometry = crate::camera_preview::lens_geometry(&raw.opcodes.list3);
         // A DNG's preview already has its lens opcodes applied. Keep them for its single tone fit,
         // then remove them again: the rendered source leaves those corrections to the pipeline.
-        let dng_lens_ops = (raw.format == lcc_raw::RawFormat::Dng && raw.opcodes.list3.iter().any(|op| op.is_lens_correction()))
-            .then(|| raw.opcodes.list3.clone());
+        let dng_lens_ops =
+            (raw.format == lcc_raw::RawFormat::Dng && raw.opcodes.list3.iter().any(|op| op.is_lens_correction())).then(|| raw.opcodes.list3.clone());
         raw.opcodes.list3.retain(|op| !op.is_lens_correction());
         // Which scale white balance is edited on, and the as-shot white on it, from the file's own colour tags or
         // the camera's measured matrices (`Photo::relative_wb` decides the same from the catalog's camera)

@@ -585,8 +585,7 @@ pub(crate) fn refresh_stale_smart_previews(s: &mut Session) -> Option<std::threa
         return None;
     }
     let max_edge = crate::media::SourceLevel::Preview.max_edge();
-    let photos: Vec<_> =
-        s.catalog.photos().filter(|p| matches!(p.source, lcc_catalog::Source::File { .. }) && preview_fitted_look(p)).collect();
+    let photos: Vec<_> = s.catalog.photos().filter(|p| matches!(p.source, lcc_catalog::Source::File { .. }) && preview_fitted_look(p)).collect();
     let jobs: Vec<SmartJob> =
         photos.iter().map(|p| (p.id, crate::smart::sharded_file_path(&dir, p), Some(s.media.origin_ref(&p.source, max_edge)), true)).collect();
     std::thread::Builder::new()
