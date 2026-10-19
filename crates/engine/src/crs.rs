@@ -93,7 +93,6 @@ const NON_ADJUSTMENT: &[&str] = &[
     "crs:CameraProfileDigest",
     "crs:LensProfileDigest",
     "crs:CompatibleVersion",
-    "crs:AutoWhiteVersion",
     "crs:OverrideLookVignette",
     // the file's as-shot white, recorded next to the edit (ours comes from the file itself)
     "crs:AsShotTemperature",
@@ -944,7 +943,7 @@ mod tests {
     fn a_full_frame_crop_and_version_stamps_are_not_reported() {
         let stamps = r#"crs:CropTop="0" crs:CropLeft="0" crs:CropBottom="1" crs:CropRight="1" crs:CropAngle="0"
             crs:CropConstrainToUnitSquare="1" crs:CameraProfileDigest="0F1E2D3C" crs:LensProfileDigest="4B5A"
-            crs:CompatibleVersion="251658240" crs:AutoWhiteVersion="134348800""#;
+            crs:CompatibleVersion="251658240""#;
         assert_eq!(unmapped(&preset_packet(stamps, "")), Vec::<String>::new());
         let cropped = stamps.replace(r#"crs:CropTop="0""#, r#"crs:CropTop="0.2""#);
         assert!(unmapped(&preset_packet(&cropped, "")).contains(&"CropTop".to_string()));
