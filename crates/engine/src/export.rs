@@ -172,14 +172,19 @@ pub enum DestinationMode {
     /// Each photo's own folder: the folder its original is in. A photo without one on disk (a
     /// demo photo, a photo in the browser's storage) or whose folder is gone gets an error.
     SameAsOriginal,
+    /// Lightroom Classic's "Choose folder later": the app asks for the folder when the export
+    /// starts (handy for presets). Once a folder is given it is one folder for the batch, as
+    /// [`SpecificFolder`](Self::SpecificFolder); a host with no folder dialog needs `dir`.
+    ChooseLater,
 }
 
 impl DestinationMode {
-    /// `specificFolder` / `sameAsOriginal` (any case).
+    /// `specificFolder` / `sameAsOriginal` / `chooseLater` (any case).
     pub fn parse(s: &str) -> Option<Self> {
         match s.trim().to_ascii_lowercase().as_str() {
             "specificfolder" => Some(Self::SpecificFolder),
             "sameasoriginal" => Some(Self::SameAsOriginal),
+            "chooselater" => Some(Self::ChooseLater),
             _ => None,
         }
     }
@@ -976,7 +981,7 @@ impl ExportOptions {
                 "sharpenAmount" => parses(k, v, |s| SharpenAmount::parse(s).is_some(), &["low", "standard", "high"])?,
                 "hdrTransfer" => one_of(k, v, &["pq", "hlg"])?,
                 "conflict" => parses(k, v, |s| Conflict::parse(s).is_some(), &["unique", "overwrite", "skip"])?,
-                "destinationMode" => one_of(k, v, &["specificFolder", "sameAsOriginal"])?,
+                "destinationMode" => one_of(k, v, &["specificFolder", "sameAsOriginal", "chooseLater"])?,
                 "tiffCompression" => one_of(k, v, &["none", "lzw", "zip", "deflate"])?,
                 "jxlEffort" => one_of(k, v, &["fast", "normal"])?,
                 "dngCompression" => {
@@ -2343,7 +2348,7 @@ impl<'a> Placer<'a> {
             return Err(format!("{name}: {why}"));
         }
         let base = match self.o.destination_mode {
-            DestinationMode::SpecificFolder => self.to.dir.clone(),
+            DestinationMode::SpecificFolder | DestinationMode::ChooseLater => self.to.dir.clone(),
             DestinationMode::SameAsOriginal => {
                 let Some(d) = source_dir else {
                     return Err(format!(
@@ -3431,11 +3436,12 @@ mod tests {
             ("sameAsOriginal", DestinationMode::SameAsOriginal),
             ("SameAsOriginal", DestinationMode::SameAsOriginal),
             ("specificFolder", DestinationMode::SpecificFolder),
+            ("chooseLater", DestinationMode::ChooseLater),
         ] {
             assert_eq!(ExportOptions::from_params(&json!({"destinationMode": v})).unwrap().destination_mode, want, "{v}");
         }
         let e = ExportOptions::from_params(&json!({"destinationMode": "nextToIt"})).unwrap_err().to_string();
-        assert!(e.contains("`destinationMode` must be one of specificFolder|sameAsOriginal"), "{e}");
+        assert!(e.contains("`destinationMode` must be one of specificFolder|sameAsOriginal|chooseLater"), "{e}");
         assert!(ExportOptions::from_params(&json!({"destinationMode": 1})).is_err());
         assert!(
             ExportOptions::from_params(&json!({"destinationMod": "sameAsOriginal"}))

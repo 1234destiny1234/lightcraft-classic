@@ -1172,5 +1172,12 @@
   "Metadata columns: click a value to narrow the view": "Стовпці метаданих: клацніть значення, щоб звузити перегляд",
   "Show/hide top panel": "Показати/сховати верхню панель",
   "Show/hide right panel": "Показати/сховати праву панель",
-  "Show/Hide Right Panel": "Показати/сховати праву панель"
+  "Show/Hide Right Panel": "Показати/сховати праву панель",
+  "Choose folder later": "Вибрати теку пізніше",
+  "No folder chosen": "Теку не вибрано",
+  "The folder is asked for when the export starts.": "Теку буде запитано на початку експорту.",
+  "Choose Export Folder": "Вибрати теку для експорту",
+  "Post-Processing": "Постобробка",
+  "Do nothing": "Нічого не робити",
+  "No watermark": "Без водяного знака"
 }

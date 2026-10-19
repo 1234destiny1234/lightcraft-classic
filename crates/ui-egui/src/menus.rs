@@ -1580,7 +1580,12 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             let prev = app.session.last_export.clone().unwrap_or_default();
             let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
             let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(crate::control::default_export_dir);
-            let opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            let mut opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            // never exported: no folder picked for the person, it is asked for when the export
+            // starts (Lightroom Classic's "Choose folder later"); not on the web, which has no folders
+            if prev.get("destinationMode").is_none() && prev.get("dir").is_none() && !cfg!(target_arch = "wasm32") {
+                opts.destination_mode = lcc_engine::export::DestinationMode::ChooseLater;
+            }
             // no previous export: 2048 px long edge; a previous full-size export: full size
             let full_size = opts.resize.is_none() && lcc_engine::export::ExportOptions::has_size_param(&prev);
             let resize = opts.resize.unwrap_or_default();
