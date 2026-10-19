@@ -10,7 +10,26 @@
 
 use crate::{DateTime, Flash, Gps, Metadata, Orientation, Region, RegionKind, parse_number};
 use lcc_geom::{Point, Rect};
-use quick_xml::escape::{escape, partial_escape};
+use quick_xml::escape::{escape as xml_escape, partial_escape as xml_partial_escape};
+
+/// Whether `c` may appear in an XML 1.0 document (`Char` production): tab, LF, CR, U+0020..U+D7FF,
+/// U+E000..U+FFFD and the supplementary planes. Other control characters make the packet unparsable.
+fn xml_char(c: char) -> bool {
+    matches!(c, '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
+}
+
+/// Drops characters XML 1.0 forbids (they cannot even be written as references).
+fn xml_legal(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.chars().all(xml_char) { std::borrow::Cow::Borrowed(s) } else { std::borrow::Cow::Owned(s.chars().filter(|c| xml_char(*c)).collect()) }
+}
+
+fn escape(s: &str) -> String {
+    xml_escape(xml_legal(s)).into_owned()
+}
+
+fn partial_escape(s: &str) -> String {
+    xml_partial_escape(xml_legal(s)).into_owned()
+}
 use quick_xml::events::Event;
 use std::collections::BTreeMap;
 
@@ -895,6 +914,18 @@ mod tests {
             rating: Some(-1),
             label: Some("Green".into()),
         }
+    }
+
+    /// Control characters XML 1.0 forbids (from a camera's maker note, a pasted caption) used to be written
+    /// verbatim, leaving a sidecar no XML reader accepts. They are dropped; the rest of the text survives.
+    #[test]
+    fn xml_illegal_control_characters_are_not_written() {
+        let m = Metadata { title: Some("a\u{1}b\u{0}c\u{1b}d\u{FFFE}e\tf".into()), make: Some("Can\u{7}on".into()), ..Default::default() };
+        let x = write_xmp_lc(&m, &[("note", "x\u{2}y")]);
+        assert!(!x.chars().any(|c| matches!(c, '\u{0}'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{FFFE}')));
+        let d = parse_xmp(&x).unwrap();
+        assert_eq!(d.metadata.title.as_deref(), Some("abcde\tf"));
+        assert_eq!(d.metadata.make.as_deref(), Some("Canon"));
     }
 
     #[test]

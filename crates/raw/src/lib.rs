@@ -819,12 +819,9 @@ impl RawImage {
             Some(v) => v[i],
             None => self.data.get(i),
         };
-        let scale: Vec<f32> = (0..cpp)
-            .map(|s| {
-                let range = self.white_at(s) - self.black.mean();
-                if range > 0.0 { 1.0 / range } else { 1.0 }
-            })
-            .collect();
+        // white level per sample; the range is taken against each site's own black (not the mean), so a
+        // clipped site reads exactly 1.0 even when black differs per colour site
+        let whites: Vec<f32> = (0..cpp).map(|s| self.white_at(s)).collect();
         let mut out = vec![0f32; a.width * a.height * cpp];
         let row_len = a.width * cpp;
         use rayon::prelude::*;
@@ -836,7 +833,9 @@ impl RawImage {
                     let b = self.black.at(x, y, s, cpp);
                     // a NaN or infinite sample (a float DNG's, or a black level a file got wrong)
                     // reads as black, so the demosaic and every stage after it see numbers
-                    let n = (v - b) * scale[s];
+                    let range = whites.get(s).copied().unwrap_or(65535.0) - b;
+                    let scale = if range > 0.0 { 1.0 / range } else { 1.0 };
+                    let n = (v - b) * scale;
                     row[x * cpp + s] = if n.is_finite() { n } else { 0.0 };
                 }
             }
@@ -972,6 +971,38 @@ mod tests {
         assert_eq!(b.at(3, 2, 0, 1), 2.0);
         assert_eq!(b.mean(), 2.5);
         assert_eq!(BlackLevel::uniform(7.0).at(9, 9, 0, 3), 7.0);
+    }
+
+    /// Per-site black (R/G/G/B = 100/200/300/400): a sample at the white level must normalise to exactly
+    /// 1.0 at every site; subtracting the mean black's range used to tint clipped highlights.
+    #[test]
+    fn clipped_highlights_are_white_with_per_site_black() {
+        let (w, h) = (4usize, 4usize);
+        let raw = RawImage {
+            format: RawFormat::Dng,
+            width: w,
+            height: h,
+            cpp: 1,
+            data: RawData::U16(vec![4000; w * h]),
+            cfa: Cfa::bayer("RGGB"),
+            bits: 12,
+            black: BlackLevel { repeat_rows: 2, repeat_cols: 2, values: vec![100.0, 200.0, 300.0, 400.0], delta_h: vec![], delta_v: vec![] },
+            white: vec![4000.0],
+            active_area: Rect::new(0, 0, w, h),
+            crop: Rect::default(),
+            orientation: Orientation::Normal,
+            color: ColorData::default(),
+            wb_multipliers: None,
+            linearized: false,
+            opcodes: OpcodeLists::default(),
+            metadata: Metadata::default(),
+            lens_metadata: Default::default(),
+            pixel_aspect: 1.0,
+        };
+        let n = raw.normalized().unwrap();
+        for v in &n.data {
+            assert!((v - 1.0).abs() < 1e-6, "clipped site normalised to {v}");
+        }
     }
 
     // --- TIFF shells around a private raw block (thumbnail-only IFD0) ---
