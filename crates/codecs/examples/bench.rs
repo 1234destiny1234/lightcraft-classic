@@ -1,5 +1,5 @@
-//! Benchmark-ish, ignored by default. Run with:
-//! `cargo test --release -p lcc-codecs --test bench -- --ignored --nocapture`
+//! Codec throughput benchmark (24 MP JPEG decode / thumbnail / encode paths). Run with:
+//! `cargo run --release -p lcc-codecs --example bench` (add `--features jxl` for JPEG XL).
 
 use lcc_codecs::*;
 use std::time::Instant;
@@ -38,9 +38,7 @@ fn time<T>(label: &str, mp: f64, reps: usize, mut f: impl FnMut() -> T) -> T {
     out
 }
 
-#[test]
-#[ignore]
-fn bench_24mp_jpeg() {
+fn main() {
     let (w, h) = (6000usize, 4000usize);
     let mp = (w * h) as f64 / 1e6;
     let px = synthetic(w, h);

@@ -100,7 +100,7 @@ jpegxl-rs / imagequant (GPL / C), dav1d / libheif (C).
 
 ## Performance (Apple M-series, release, synthetic 24 MP JPEG q90 4:2:0)
 
-Run `cargo test --release -p lcc-codecs --test bench -- --ignored --nocapture`.
+Run `cargo run --release -p lcc-codecs --example bench`.
 
 | Operation | Time |
 |---|---|

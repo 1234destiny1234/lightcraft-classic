@@ -275,8 +275,8 @@ On Windows (Radeon 780M iGPU, DX12), a full-size JPEG export of the same raw wit
 1.9–2.0 s on the CPU: the horizontal box pass had each thread slide a running sum over 16 pixels, so
 the threads of a workgroup read pixels 16 apart, and it took 9–15× as long as the vertical pass.
 Summing each pixel's window instead (adjacent threads, adjacent pixels): 1.9–2.0 s, with the GPU's
-NR stage 1.5 → 0.4 s and spatial planes 0.89 → 0.29 s (`<PREFIX>_PROFILE`). The ignored test
-`bench_kernels` (`crates/gpu/src/render.rs`) times the passes on a 24 MP plane.
+NR stage 1.5 → 0.4 s and spatial planes 0.89 → 0.29 s (`<PREFIX>_PROFILE`). Per-pass timings come from `<PREFIX>_PROFILE` on
+`cargo xtask bench` (24 MP source).
 
 GPU timings include the readback of the 8-bit result and the histogram. Device creation + kernel
 compilation: ~0.4 s once per process — the desktop app starts it on a background thread at launch
