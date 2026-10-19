@@ -160,6 +160,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.versions", "Versions", Some("Shift+V"), "Window>Panels"),
     ("panel.activity", "History", None, "Window>Panels"),
     ("panel.close", "Close Panel", None, ""),
+    ("panel.collapseRight", "Show/Hide Right Panel", None, "Window>Panels"),
     // {solo?}: true opens just that section (⌥-click on its header); otherwise opens or closes it
     ("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections"),
     ("section.color", "Color", Some("Cmd+2"), "Window>Edit Sections"),
@@ -328,6 +329,9 @@ fn panel(app: &mut LccApp, ctx: &egui::Context, p: RightPanel, name: &str) {
         app.toast(ctx, crate::i18n::tr_format!("{name} Off", name = crate::i18n::tr(name)));
     } else {
         app.ui.right = p;
+        // one panel at a time on the right: a tool takes Presets' place, and unfolds the side
+        app.ui.presets = false;
+        app.ui.right_collapsed = false;
         // opening a panel brings its edge back (F8 / Tab hid it)
         app.ui.right_edge = true;
         app.ui.hidden_panels.retain(|h| h.right_panel() != Some(p));
@@ -1299,7 +1303,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "panel.presets" => {
-            app.ui.presets = !app.ui.presets || !crate::docking::exposed(app, crate::docking::Panel::Presets);
+            app.ui.presets = !app.ui.presets || !crate::docking::exposed(app, crate::docking::Panel::Presets) || app.ui.right_collapsed;
+            if app.ui.presets {
+                app.ui.right_collapsed = false;
+                app.ui.right_edge = true;
+            }
             if app.ui.presets && app.ui.view != ViewMode::Detail {
                 app.ui.view = ViewMode::Detail;
             }
@@ -1318,6 +1326,10 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "panel.close" => {
             app.ui.right = RightPanel::None;
             app.ui.presets = false;
+            Ok(Value::Null)
+        }
+        "panel.collapseRight" => {
+            app.ui.right_collapsed = !app.ui.right_collapsed;
             Ok(Value::Null)
         }
         s if s.starts_with("section.") => bool_param(s, p, "solo").and_then(|solo| {

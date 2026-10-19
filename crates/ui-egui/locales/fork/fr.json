@@ -1339,5 +1339,8 @@
   "Edit Panels": "Panneaux de retouche",
   "Screen Mode": "Mode d’écran",
   "Metadata Filter Columns": "Colonnes de filtre de métadonnées",
-  "Metadata columns: click a value to narrow the view": "Colonnes de métadonnées : cliquez sur une valeur pour restreindre l’affichage"
+  "Metadata columns: click a value to narrow the view": "Colonnes de métadonnées : cliquez sur une valeur pour restreindre l’affichage",
+  "Show/hide top panel": "Afficher/masquer le panneau supérieur",
+  "Show/hide right panel": "Afficher/masquer le panneau de droite",
+  "Show/Hide Right Panel": "Afficher/masquer le panneau de droite"
 }

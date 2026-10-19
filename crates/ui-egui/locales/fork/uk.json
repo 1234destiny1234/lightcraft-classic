@@ -1169,5 +1169,8 @@
   "Edit Panels": "Панелі редагування",
   "Screen Mode": "Режим екрана",
   "Metadata Filter Columns": "Стовпці фільтра метаданих",
-  "Metadata columns: click a value to narrow the view": "Стовпці метаданих: клацніть значення, щоб звузити перегляд"
+  "Metadata columns: click a value to narrow the view": "Стовпці метаданих: клацніть значення, щоб звузити перегляд",
+  "Show/hide top panel": "Показати/сховати верхню панель",
+  "Show/hide right panel": "Показати/сховати праву панель",
+  "Show/Hide Right Panel": "Показати/сховати праву панель"
 }

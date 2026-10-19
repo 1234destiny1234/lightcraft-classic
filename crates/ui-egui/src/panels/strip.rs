@@ -1,5 +1,6 @@
-//! The vertical tool strip at the far right: Develop's editing tools (Presets, Edit, Crop, Remove,
-//! Masking, Red Eye) and Library's own panels (Versions, History & Activity), each with More below.
+//! The vertical tool strip at the far right: a button that folds the right panel away, then
+//! Develop's editing tools (Presets, Edit, Crop, Remove, Masking, Red Eye) or Library's own panels
+//! (Versions, History & Activity), each with More below.
 
 use egui::vec2;
 use serde_json::json;
@@ -32,8 +33,17 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             ui.vertical_centered(|ui| {
                 ui.spacing_mut().item_spacing.y = GAP;
                 let sz = vec2(t.strip_w, BUTTON_H);
-                // the Presets column: Develop's, as in Lightroom Classic
-                if app.ui.module == ModuleId::Develop && icon_button(ui, "presets", Icon::Presets, sz, app.ui.presets, has_photo, "Presets").clicked()
+                // folds the right panel away (the strip stays); any tool below unfolds it
+                let open = !app.ui.right_collapsed;
+                if icon_button(ui, "collapseRight", Icon::SidebarRight, sz, open, true, "Show/hide right panel").clicked() {
+                    let _ = app.run("panel.collapseRight", json!({}));
+                }
+                separator(ui, &t);
+                // Presets: Develop's, a right panel like Edit or Crop
+                let presets_on = app.ui.presets && open;
+                if app.ui.module == ModuleId::Develop
+                    && icon_button(ui, "presets", Icon::Presets, sz, presets_on, has_photo, "Presets").clicked()
+                    && !presets_on
                 {
                     let _ = app.run("panel.presets", json!({}));
                 }
@@ -43,7 +53,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 let side = strip_panels(app);
                 for p in &side {
                     let Some((id, icon, panel, tip, needs_photo)) = entry(*p) else { continue };
-                    let on = app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles);
+                    let on = !app.ui.right_collapsed
+                        && !(app.ui.presets && app.ui.module == ModuleId::Develop)
+                        && (app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles));
                     let video = crate::video_ui::blocked(app, &format!("panel.{id}"));
                     let tip = if video { crate::video_ui::NOT_FOR_VIDEO } else { tip };
                     let resp = icon_button(ui, id, icon, sz, on, (has_photo || !needs_photo) && !video, tip);
@@ -52,8 +64,14 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     // panel is Library's, so the click threw the user back into the grid. Library's
                     // strip is the tab strip over its Classic column, where a click on the tab that
                     // is open closes it and the column comes back (as `panel.<id>` does).
-                    if resp.clicked() && (app.ui.module == ModuleId::Library || app.ui.right != panel) {
-                        let _ = app.run(&format!("panel.{id}"), json!({}));
+                    if resp.clicked() && (app.ui.module == ModuleId::Library || !on) {
+                        if app.ui.right == panel && app.ui.module != ModuleId::Library {
+                            // the panel is behind Presets or folded away: bring it forward
+                            app.ui.presets = false;
+                            app.ui.right_collapsed = false;
+                        } else {
+                            let _ = app.run(&format!("panel.{id}"), json!({}));
+                        }
                     }
                     // the same header menu as the Classic columns: show/hide, solo, hiding mode
                     crate::panels::classic::side_menu(app, &resp, strip_declared(app.ui.module));
