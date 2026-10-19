@@ -607,6 +607,11 @@ fn publish_photos() -> std::collections::HashMap<PhotoId, crate::publish::PhotoI
 /// answer 503, and with `arrived` an upload that failed still reached the server (the checksum
 /// check finds it afterwards).
 fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<Req>>>) {
+    publish_server_with(fail_uploads, arrived, false)
+}
+
+/// `trashed`: the checksum match is in the trash (and was found before any upload).
+fn publish_server_with(fail_uploads: usize, arrived: bool, trashed: bool) -> (String, Arc<Mutex<Vec<Req>>>) {
     let uploads = Arc::new(AtomicUsize::new(0));
     let name = Arc::new(Mutex::new("Old".to_string()));
     serve(move |req| {
@@ -623,7 +628,7 @@ fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<
             }
             ("POST", "/api/albums") => response("201 Created", br#"{"id":"al-new","albumName":"x","assetCount":0}"#),
             ("POST", "/api/assets/bulk-upload-check") => {
-                if arrived && uploads.load(Ordering::SeqCst) > 0 {
+                if trashed || (arrived && uploads.load(Ordering::SeqCst) > 0) {
                     response("200 OK", br#"{"results":[{"id":"x","action":"reject","reason":"duplicate","assetId":"as-1"}]}"#)
                 } else {
                     response("200 OK", br#"{"results":[{"id":"x","action":"accept"}]}"#)
@@ -637,6 +642,8 @@ fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<
                     response("201 Created", br#"{"id":"as-1","status":"created"}"#)
                 }
             }
+            ("GET", "/api/assets/as-1") => response("200 OK", format!(r#"{{"id":"as-1","isTrashed":{trashed},"deviceId":"dev"}}"#).as_bytes()),
+            ("POST", "/api/trash/restore/assets") => response("204 No Content", b""),
             ("PUT", "/api/albums/al-1/assets") | ("PUT", "/api/albums/al-new/assets") => response("200 OK", br#"[{"id":"as-1","success":true}]"#),
             _ => response("404 Not Found", br#"{"message":"Not found"}"#),
         }
@@ -691,4 +698,14 @@ fn failed_uploads_are_retried_without_duplicates() {
     // gives up after the retries, with an error
     let (url, _) = publish_server(100, false);
     assert!(publish_once(&url, "Old", None).is_err());
+}
+
+#[test]
+fn a_trashed_checksum_match_is_restored_not_reused_as_is() {
+    let (url, seen) = publish_server_with(0, false, true);
+    assert_eq!(publish_once(&url, "Old", None).unwrap(), "r:as-1");
+    let seen = seen.lock().unwrap();
+    let restore = seen.iter().find(|r| r.method == "POST" && r.target == "/api/trash/restore/assets").expect("restored");
+    assert!(String::from_utf8_lossy(&restore.body).contains("as-1"));
+    assert!(!seen.iter().any(|r| r.method == "POST" && r.target == "/api/assets"), "no upload");
 }

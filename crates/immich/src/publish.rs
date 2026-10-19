@@ -206,6 +206,12 @@ impl ImmichPublish {
         Ok(id)
     }
 
+    /// Whether the app uploaded `id` (as its own device): only those renders may be trashed; a
+    /// render that matched a pre-existing asset by checksum is the user's and is left alone.
+    fn is_ours(&self, id: &str) -> bool {
+        self.client.asset(id).is_ok_and(|a| a.device_id.as_deref() == Some(self.device_id.as_str()))
+    }
+
     fn send(
         &self,
         data: UploadData<'_>,
@@ -242,7 +248,13 @@ impl ImmichPublish {
     ) -> Result<String, ImmichError> {
         let r = self.client.upload_check(&[UploadCheck { id: "x".into(), checksum: sha1.into() }])?;
         if let Some(id) = r.into_iter().find(|x| x.action == "reject").and_then(|x| x.asset_id) {
-            return Ok(id);
+            // the server keeps one asset per checksum (trash included), so the match is reused;
+            // a trashed one is restored first instead of linking the album to a trashed asset
+            let a = self.client.asset(&id)?;
+            if a.is_trashed {
+                self.client.restore_assets(std::slice::from_ref(&a.id))?;
+            }
+            return Ok(a.id);
         }
         let up = NewAsset {
             data,
@@ -307,7 +319,9 @@ impl PublishService for ImmichPublish {
             let mut out_of_album = Vec::new();
             if let Some(pr) = pr.filter(|x| Some(*x) != render.as_deref() && Some(*x) != original.as_deref()) {
                 out_of_album.push(pr.to_string());
-                if let Err(e) = self.client.trash_assets(&[pr.to_string()]) {
+                if !self.is_ours(pr) {
+                    log::info!("Immich: the old render {pr} was not uploaded by the app; not trashed");
+                } else if let Err(e) = self.client.trash_assets(&[pr.to_string()]) {
                     log::info!("Immich: trashing the old render: {e}");
                 }
             }
@@ -334,6 +348,7 @@ impl PublishService for ImmichPublish {
         }
         if self.settings.delete_removed
             && let Some(r) = r
+            && self.is_ours(r)
         {
             // only renders: an original may be the one in the user's own library
             let mine = vec![r.to_string()];
