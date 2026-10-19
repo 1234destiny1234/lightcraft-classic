@@ -1774,13 +1774,18 @@ fn sidebar_section_header(app: &mut LccApp, ui: &mut egui::Ui, id: &str, title: 
     (r, open)
 }
 
-/// Local under a plain header (Classic's Folders panel).
-fn local_section(app: &mut LccApp, ui: &mut egui::Ui) {
+/// Classic's Local panel: the folders on disk, shown in place without being imported, under a line saying so.
+fn local_body(app: &mut LccApp, ui: &mut egui::Ui) {
     let Some(now) = local_now(app, ui) else { return };
-    if sidebar_section_header(app, ui, "local", "Local").1 {
-        local_rows(app, ui, &now);
-    }
-    ui.add_space(10.0);
+    let t = Tokens::get(ui.ctx());
+    ui.horizontal(|ui| {
+        ui.add_space(18.0);
+        let note = crate::i18n::tr("Shown in place, not in the catalog.");
+        ui.add(egui::Label::new(egui::RichText::new(note).color(t.text_dim).size(11.5)).wrap());
+    });
+    ui.add_space(4.0);
+    local_rows(app, ui, &now);
+    ui.add_space(6.0);
 }
 
 /// Whenever the shown folder changes (a click, an agent, a rename or its undo), open the rows

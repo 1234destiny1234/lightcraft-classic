@@ -145,9 +145,14 @@ fn columns(app: &mut LccApp, ui: &mut egui::Ui, viewport: Rect, side: &[PanelId]
                 let (r, open) = crate::panels::classic::header(app, ui, p, side);
                 crate::panels::folders::header_buttons(app, ui, r, viewport);
                 if open {
-                    crate::panels::folders::volumes(app, ui);
-                    super::local_section(app, ui);
                     folders_body(app, ui);
+                }
+            }
+            // the fork's own: folders on disk shown in place, not in the catalog (Lightroom Classic has no such panel,
+            // so it comes last, under its own header)
+            PanelId::Local => {
+                if crate::panels::classic::header(app, ui, p, side).1 {
+                    super::local_body(app, ui);
                 }
             }
             PanelId::Collections => {
@@ -349,13 +354,37 @@ fn albums_body(app: &mut LccApp, ui: &mut egui::Ui) {
     }
 }
 
-/// The Classic Folders panel's tree (no section header of its own).
+/// The Classic Folders panel, as Lightroom Classic lays it out: a bar per disk the library's photos are on, with
+/// that disk's folders below it (a click on the bar folds them; it doesn't choose the disk, as in Lightroom). Folders
+/// not on a disk of their own are listed as they are.
 fn folders_body(app: &mut LccApp, ui: &mut egui::Ui) {
     #[cfg(not(target_arch = "wasm32"))]
     disk::set_ctx(ui.ctx());
     let tree = app.caches.folder_tree(&app.session.catalog);
     super::reveal_chosen(app, ui, &tree);
-    super::folder_rows(app, ui, &tree, 0.0);
+    for n in tree.iter().take(64) {
+        if !n.volume {
+            super::folder_rows(app, ui, std::slice::from_ref(n), 0.0);
+            continue;
+        }
+        let open_id = egui::Id::new(("libfolder-open", lcc_catalog::query::folder_key(&n.path)));
+        let mut open = super::tree_open(ui, open_id, true);
+        let bar = crate::panels::folders::volume_bar(ui, n, open);
+        super::row_menu(app, &bar, n);
+        if bar.clicked() {
+            open = !open;
+            super::set_tree_open(ui, open_id, open);
+        }
+        if !open {
+            continue;
+        }
+        if n.own > 0 && n.selectable {
+            // photos right at the disk's top: the disk is a folder of its own too, holding them and the rest
+            super::folder_rows(app, ui, std::slice::from_ref(n), 0.0);
+        } else {
+            super::folder_rows(app, ui, &n.children, 0.0);
+        }
+    }
 }
 
 /// Add the folders on disk that hold no library photo yet (empty ones, a folder just made with

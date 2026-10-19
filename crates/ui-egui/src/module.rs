@@ -185,6 +185,8 @@ pub enum PanelId {
     Collections,
     /// Library left: publish services and their published collections.
     Publish,
+    /// Library left (the fork's own, last): folders on disk shown in place, not in the catalog.
+    Local,
     /// Library right: relative develop adjustments for the selection.
     QuickDevelop,
     /// Library right: the selected photos' keywords, suggestions and keyword sets.
@@ -222,6 +224,7 @@ impl PanelId {
             | PanelId::Navigator
             | PanelId::Catalog
             | PanelId::Folders
+            | PanelId::Local
             | PanelId::Collections
             | PanelId::Publish
             | PanelId::QuickDevelop
@@ -451,7 +454,8 @@ struct Library;
 struct Develop;
 
 /// Library's Classic columns.
-pub const LIBRARY_LEFT: &[PanelId] = &[PanelId::Navigator, PanelId::Catalog, PanelId::Folders, PanelId::Collections, PanelId::Publish];
+pub const LIBRARY_LEFT: &[PanelId] =
+    &[PanelId::Navigator, PanelId::Catalog, PanelId::Folders, PanelId::Collections, PanelId::Publish, PanelId::Local];
 pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata];
 
 /// Develop's Classic left column: the Navigator, the Presets, the photo's Versions (Classic's
