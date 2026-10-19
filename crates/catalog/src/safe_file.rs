@@ -171,6 +171,8 @@ pub fn write_atomic_nosync(path: &Path, data: &[u8]) -> io::Result<()> {
 
 /// Temp file (synced when `sync`) renamed over `path`, then the folder synced when `sync`.
 fn replace_with(path: &Path, sync: bool, fill: &mut dyn FnMut(&mut dyn Write) -> io::Result<()>) -> io::Result<u64> {
+    let real = replace_target(path)?;
+    let path = real.as_path();
     let (tmp, n) = write_temp(path, sync, fill)?;
     if let Err(e) = fs::rename(&tmp, path) {
         let _ = fs::remove_file(&tmp);
@@ -180,6 +182,29 @@ fn replace_with(path: &Path, sync: bool, fill: &mut dyn FnMut(&mut dyn Write) ->
         sync_dir(parent_of(path));
     }
     Ok(n)
+}
+
+/// The file a replacement of `path` must land on. A symbolic link is written **through**: the
+/// file it points to is replaced (next to it, so the rename stays on one volume) and the link
+/// itself is kept, never clobbered with a regular file. A link that leads nowhere, or to
+/// something that isn't a regular file, is refused.
+fn replace_target(path: &Path) -> io::Result<PathBuf> {
+    match fs::symlink_metadata(path) {
+        Ok(m) if m.file_type().is_symlink() => {
+            let real = fs::canonicalize(path).map_err(|e| {
+                io::Error::new(e.kind(), format!("{} is a symbolic link that leads nowhere usable ({e}); not replacing it", path.display()))
+            })?;
+            if !fs::metadata(&real).is_ok_and(|m| m.is_file()) {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidInput,
+                    format!("{} is a symbolic link to {}, which is not a regular file; not replacing it", path.display(), real.display()),
+                ));
+            }
+            Ok(real)
+        }
+        Ok(m) if m.is_dir() => Err(io::Error::new(io::ErrorKind::InvalidInput, format!("{} is a folder, not a file", path.display()))),
+        _ => Ok(path.to_path_buf()),
+    }
 }
 
 /// Write `data` as the new file `path`: never replaces an existing file (`AlreadyExists`), and
@@ -317,6 +342,36 @@ mod tests {
         publish_new_by_rename(&tmp, &dest, &|| {}).unwrap();
         assert_eq!(fs::read(&dest).unwrap(), b"new");
         assert!(!tmp.exists());
+        let _ = fs::remove_dir_all(&d);
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn atomic_write_goes_through_a_symlink_and_keeps_it() {
+        let d = temp("symlink");
+        let real_dir = d.join("real");
+        fs::create_dir_all(&real_dir).unwrap();
+        let real = real_dir.join("settings.json");
+        fs::write(&real, b"old").unwrap();
+        let link = d.join("settings.json");
+        std::os::unix::fs::symlink(&real, &link).unwrap();
+        write_atomic(&link, b"new").unwrap();
+        write_atomic_nosync(&link, b"newer").unwrap();
+        assert!(fs::symlink_metadata(&link).unwrap().file_type().is_symlink(), "the link was replaced by a file");
+        assert_eq!(fs::read(&real).unwrap(), b"newer");
+        // no temp files left beside either name
+        assert_eq!(names(&d), vec!["real", "settings.json"]);
+        assert_eq!(names(&real_dir), vec!["settings.json"]);
+        // a dangling link and a link to a folder are refused, and left as they were
+        let dangling = d.join("dangling");
+        std::os::unix::fs::symlink(d.join("missing"), &dangling).unwrap();
+        assert!(write_atomic(&dangling, b"x").is_err());
+        assert!(fs::symlink_metadata(&dangling).unwrap().file_type().is_symlink());
+        assert!(!d.join("missing").exists());
+        let to_dir = d.join("to-dir");
+        std::os::unix::fs::symlink(&real_dir, &to_dir).unwrap();
+        assert!(write_atomic(&to_dir, b"x").is_err());
+        assert!(fs::symlink_metadata(&to_dir).unwrap().file_type().is_symlink());
         let _ = fs::remove_dir_all(&d);
     }
 
