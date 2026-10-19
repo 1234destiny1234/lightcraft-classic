@@ -2174,6 +2174,11 @@ fn guided_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, ma
         draw(sa, sb);
     }
     ui.ctx().set_cursor_icon(egui::CursorIcon::Crosshair);
+    // double-click on the photo finishes the tool, as in the crop tool (same as Return / Done); issue #297
+    if resp.double_clicked() && !matches!(app.gesture, Some(Gesture::Guide { .. })) {
+        let _ = app.run("tool.done", json!({}));
+        return;
+    }
     if resp.drag_started()
         && let Some(q) = resp.interact_pointer_pos()
     {

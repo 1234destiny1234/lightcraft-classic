@@ -26,6 +26,23 @@ fn crop_tool() -> Headless {
     h
 }
 
+/// Issue #297: a double-click on the photo finishes Guided Upright, as it finishes the crop tool.
+#[test]
+fn double_click_finishes_guided_upright() {
+    let mut h = crop_tool();
+    let r = h.request("engine.execute", json!({"command": "tool.guidedUpright"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.tool, "guidedUpright");
+    let click = json!({"kind": "down", "x": 0.5, "y": 0.5});
+    let up = json!({"kind": "up", "x": 0.5, "y": 0.5});
+    let r = h.request("ui.pointer", json!({"events": [click, up, click, up]}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(h.app.ui.tool.is_empty(), "the tool finished");
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit);
+}
+
 fn has(h: &Headless, id: &str) -> bool {
     h.app.widgets.iter().any(|(w, _)| w == id)
 }
