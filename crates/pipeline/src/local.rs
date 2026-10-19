@@ -469,6 +469,10 @@ pub fn apply_nr(img: &mut Rgb32f, lum: Option<NrLum>, col: Option<NrColor>, draf
 
 /// Colour noise reduction: the chromaticity (rgb / Y) blurred, mixed in by `nr.t`, under the
 /// original luminance; with `half_res` the blur runs at half resolution ([`HALF_RES_NR_SIGMA`]).
+///
+/// The blurred chromaticity is luminance weighted (blurred rgb over its blurred Y), not a blur of
+/// per-pixel rgb / Y: in deep shadows Y is near zero and noise, so per-pixel ratios explode and
+/// spread coloured specks into their neighbours.
 fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
     let w = img.width;
     {
@@ -487,7 +491,7 @@ fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
                     let (sx, sy) = (2 * x as isize, 2 * y as isize);
                     let mut acc = [0.0f32; 3];
                     for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                        let c = chroma_of(src.get_clamped(sx + dx, sy + dy));
+                        let c = src.get_clamped(sx + dx, sy + dy).map(|v| v.max(0.0));
                         acc = [0, 1, 2].map(|k| acc[k] + 0.25 * c[k]);
                     }
                     *o = acc;
@@ -506,24 +510,25 @@ fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
                     let x1 = (x0 + 1).min(hw - 1);
                     let g = |r: &[[f32; 3]], i: usize| r.get(i).copied().unwrap_or_default();
                     let (a, bb, c, d) = (g(r0, x0), g(r0, x1), g(r1, x0), g(r1, x1));
-                    let cb = [0, 1, 2].map(|k| {
+                    let cb = chroma_of([0, 1, 2].map(|k| {
                         let top = a[k] + (bb[k] - a[k]) * tx;
                         let bot = c[k] + (d[k] - c[k]) * tx;
                         top + (bot - top) * ty
-                    });
+                    }));
                     let yl = luminance_2020(*p);
                     let c0 = chroma_of(*p);
                     *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
                 }
             });
         } else {
-            let chroma = img.map(chroma_of);
-            let b = gaussian(&chroma, nr.sigma);
+            let b = gaussian(&img.map(|c| c.map(|v| v.max(0.0))), nr.sigma);
             for_rows(&mut img.data, w, |y, row| {
                 for (x, p) in row.iter_mut().enumerate() {
                     let i = y * w + x;
                     let yl = luminance_2020(*p);
-                    let (Some(&c0), Some(&cb)) = (chroma.data.get(i), b.data.get(i)) else { continue };
+                    let c0 = chroma_of(*p);
+                    let Some(&bl) = b.data.get(i) else { continue };
+                    let cb = chroma_of(bl);
                     *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
                 }
             });
@@ -647,6 +652,22 @@ pub fn sharpen_fade(raw: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Texture band radius as a fraction of the long edge.
+pub const TEXTURE_SIGMA: f32 = 0.0018;
+/// Smallest texture band radius (px) a render filters with; smaller previews fade the effect instead.
+pub const TEXTURE_SIGMA_MIN: f32 = 0.6;
+
+/// How much of global Texture a render at `px_per_long` shows: 1 when the texture band is at least
+/// [`TEXTURE_SIGMA_MIN`], else the ratio of variances of the wanted and the floored band, so a small
+/// preview (whose band is floored, i.e. relatively wider) doesn't show a stronger effect than the export.
+pub fn texture_fade(px_per_long: f64) -> f32 {
+    let want = TEXTURE_SIGMA * px_per_long as f32;
+    if !want.is_finite() || want <= 0.0 {
+        return 0.0;
+    }
+    (want / TEXTURE_SIGMA_MIN).powi(2).min(1.0)
+}
+
 pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, src_long: f64, q: Quality) -> PlaneSigmas {
     let ppl = px_per_long as f32;
     let local_any = |f: fn(&lcc_develop::LocalAdjustments) -> f64| s.masks.iter().any(|m| f(&m.adjust) != 0.0);
@@ -669,7 +690,7 @@ pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, src_long: f64, q: Qua
         || local_any(|a| a.texture)
         || local_any(|a| a.noise)
         || s.masks.iter().any(|m| m.adjust.defringe > 0.0))
-    .then(|| (0.0018 * ppl).max(0.6));
+    .then(|| (TEXTURE_SIGMA * ppl).max(TEXTURE_SIGMA_MIN));
     let dark = (s.effects.dehaze != 0.0 || local_any(|a| a.dehaze)).then(|| (0.02 * ppl).max(1.0));
     let chroma = (local_any(|a| a.moire) || s.masks.iter().any(|m| m.adjust.noise > 0.0)).then(|| (CHROMA_SIGMA * ppl).max(1.0));
     let base_detail = if base.is_some() { tone_base_detail(s, px_per_long) } else { 0 };

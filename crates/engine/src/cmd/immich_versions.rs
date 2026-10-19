@@ -145,7 +145,7 @@ struct Job {
 
 fn upload_version(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "immich.uploadVersion";
-    let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or_else(|| s.active()).ok_or_else(|| bad(C, "no photo"))?;
+    let id = s.photo_or_active(p, C)?;
     let ph = s.catalog.photo(id).cloned().ok_or_else(|| bad(C, format!("no photo {}", id.0)))?;
     let Source::File { path } = &ph.source else { return Ok(json!({"skipped": "a generated photo has no file to upload"})) };
     let own = link_of(s, id);

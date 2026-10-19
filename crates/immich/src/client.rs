@@ -37,7 +37,7 @@ impl ServerOptions {
 }
 
 /// Normalize what the user typed: trim, add `https://` when there is no scheme, drop a trailing
-/// `/` and a trailing `/api`.
+/// `/` and a trailing `/api`. Plain `http://` is refused except for localhost / loopback addresses.
 pub fn normalize_url(input: &str) -> Result<String, ImmichError> {
     let mut s = input.trim().to_string();
     if s.is_empty() {
@@ -52,8 +52,21 @@ pub fn normalize_url(input: &str) -> Result<String, ImmichError> {
     if let Some(stripped) = s.strip_suffix("/api") {
         s = stripped.to_string();
     }
-    lcc_net::Url::parse(&s).map_err(ImmichError::from)?;
+    let url = lcc_net::Url::parse(&s).map_err(ImmichError::from)?;
+    // the API key travels in every request: plain http only to this machine itself
+    if !url.tls && !is_loopback_host(&url.host) {
+        return Err(ImmichError::BadUrl(format!(
+            "{} uses plain http://, which would send the API key unencrypted; use https:// (plain http is allowed only for localhost)",
+            url.host
+        )));
+    }
     Ok(s)
+}
+
+/// `localhost`, `*.localhost` or a loopback address (`127.0.0.0/8`, `::1`).
+fn is_loopback_host(host: &str) -> bool {
+    let h = host.trim_start_matches('[').trim_end_matches(']').to_ascii_lowercase();
+    h == "localhost" || h.ends_with(".localhost") || h.parse::<std::net::IpAddr>().is_ok_and(|ip| ip.is_loopback())
 }
 
 /// A connection to one server with one API key.

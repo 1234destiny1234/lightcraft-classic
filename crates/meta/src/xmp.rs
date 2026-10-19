@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! XMP packets (ISO 16684-1 / Adobe XMP Specification Part 1–2): read and write.
 //!
 //! Reading builds a small namespace-resolved tree with `quick-xml`, then collects every property of every
@@ -10,7 +11,26 @@
 
 use crate::{DateTime, Flash, Gps, Metadata, Orientation, Region, RegionKind, parse_number};
 use lcc_geom::{Point, Rect};
-use quick_xml::escape::{escape, partial_escape};
+use quick_xml::escape::{escape as xml_escape, partial_escape as xml_partial_escape};
+
+/// Whether `c` may appear in an XML 1.0 document (`Char` production): tab, LF, CR, U+0020..U+D7FF,
+/// U+E000..U+FFFD and the supplementary planes. Other control characters make the packet unparsable.
+fn xml_char(c: char) -> bool {
+    matches!(c, '\u{9}' | '\u{A}' | '\u{D}' | '\u{20}'..='\u{D7FF}' | '\u{E000}'..='\u{FFFD}' | '\u{10000}'..)
+}
+
+/// Drops characters XML 1.0 forbids (they cannot even be written as references).
+fn xml_legal(s: &str) -> std::borrow::Cow<'_, str> {
+    if s.chars().all(xml_char) { std::borrow::Cow::Borrowed(s) } else { std::borrow::Cow::Owned(s.chars().filter(|c| xml_char(*c)).collect()) }
+}
+
+fn escape(s: &str) -> String {
+    xml_escape(xml_legal(s)).into_owned()
+}
+
+fn partial_escape(s: &str) -> String {
+    xml_partial_escape(xml_legal(s)).into_owned()
+}
 use quick_xml::events::Event;
 use std::collections::BTreeMap;
 
@@ -198,12 +218,6 @@ fn is_xml_char(c: char) -> bool {
     matches!(c, '\t' | '\n' | '\r') || (c >= '\u{20}' && c != '\u{FFFE}' && c != '\u{FFFF}')
 }
 
-/// Drop the characters XML 1.0 forbids, which strict parsers (Adobe XMP Toolkit, expat, libxml2) reject the
-/// whole document for.
-fn xml_safe(s: &str) -> String {
-    s.chars().filter(|&c| is_xml_char(c)).collect()
-}
-
 /// Unescape attribute values (predefined + numeric references; unknown references kept verbatim).
 fn unescape_attr(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -216,7 +230,7 @@ fn unescape_attr(s: &str) -> String {
         match end.and_then(|j| entity(&rest[1..j]).map(|c| (c, j))) {
             Some((c, j)) => {
                 out.push(c);
-                rest = &rest[j + 1..];
+                rest = rest.get(j.saturating_add(1)..).unwrap_or_default();
             }
             None => {
                 out.push('&');
@@ -238,7 +252,7 @@ fn parse_tree(s: &str) -> Result<Node, XmpError> {
         let ev = reader.read_event().map_err(|e| XmpError::Xml(e.to_string()))?;
         match ev {
             Event::Start(ref e) | Event::Empty(ref e) => {
-                count += 1;
+                count = count.saturating_add(1);
                 if count > MAX_NODES || stack.len() > MAX_DEPTH {
                     return Err(XmpError::TooComplex);
                 }
@@ -378,7 +392,7 @@ fn find_descriptions<'a>(n: &'a Node, out: &mut Vec<&'a Node>) {
 fn parse_gps_coord(s: &str) -> Option<f64> {
     let s = s.trim();
     let dir = s.chars().last()?;
-    let body = &s[..s.len() - dir.len_utf8()];
+    let body = s.get(..s.len().saturating_sub(dir.len_utf8()))?;
     let parts: Vec<f64> = body.split(',').map(|p| p.trim().parse::<f64>().ok()).collect::<Option<_>>()?;
     let v = match parts.as_slice() {
         [d] => *d,
@@ -525,8 +539,8 @@ pub fn parse_xmp(s: &str) -> Result<XmpData, XmpError> {
     m.iso = [num("exif:ISOSpeedRatings"), num("exifEX:PhotographicSensitivity")].into_iter().flatten().find(|v| *v > 0.0).map(|v| v as u32);
     if let Some(spec) = props.get("exifEX:LensSpecification").filter(|v| v.len() == 4) {
         let v: Vec<f64> = spec.iter().filter_map(|s| parse_number(s)).collect();
-        if v.len() == 4 {
-            m.lens_spec = Some([v[0], v[1], v[2], v[3]]);
+        if let &[a, b, c, d] = v.as_slice() {
+            m.lens_spec = Some([a, b, c, d]);
         }
     }
     if let Some(creators) = props.get("dc:creator").filter(|c| !c.is_empty()) {
@@ -762,17 +776,17 @@ pub fn write_xmp_filters(
     }
     x.push_str(">\n");
     for (k, v) in &simple {
-        x.push_str(&format!("   <{k}>{}</{k}>\n", escape(xml_safe(v))));
+        x.push_str(&format!("   <{k}>{}</{k}>\n", escape(v)));
     }
     for (k, v) in lc {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             // element content: quotes needn't be escaped, which keeps the JSON readable
-            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(xml_safe(v))));
+            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(v)));
         }
     }
     for (k, v) in video {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric()) {
-            x.push_str(&format!("   <{VIDEO_PREFIX}:{k}>{}</{VIDEO_PREFIX}:{k}>\n", escape(*v)));
+            x.push_str(&format!("   <{VIDEO_PREFIX}:{k}>{}</{VIDEO_PREFIX}:{k}>\n", escape(v)));
         }
     }
     let array = |x: &mut String, k: &str, kind: &str, items: &[String], lang: bool| {
@@ -782,9 +796,9 @@ pub fn write_xmp_filters(
         x.push_str(&format!("   <{k}>\n    <rdf:{kind}>\n"));
         for it in items {
             if lang {
-                x.push_str(&format!("     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n", escape(xml_safe(it))));
+                x.push_str(&format!("     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n", escape(it)));
             } else {
-                x.push_str(&format!("     <rdf:li>{}</rdf:li>\n", escape(xml_safe(it))));
+                x.push_str(&format!("     <rdf:li>{}</rdf:li>\n", escape(it)));
             }
         }
         x.push_str(&format!("    </rdf:{kind}>\n   </{k}>\n"));
@@ -820,9 +834,9 @@ pub fn write_xmp_filters(
         for (plugin, key, value) in plugin_fields {
             x.push_str(&format!(
                 "     <rdf:li rdf:parseType=\"Resource\">\n      <lcpf:plugin>{}</lcpf:plugin>\n      <lcpf:key>{}</lcpf:key>\n      <lcpf:value>{}</lcpf:value>\n     </rdf:li>\n",
-                escape(*plugin),
-                escape(*key),
-                escape(*value)
+                escape(plugin),
+                escape(key),
+                escape(value)
             ));
         }
         x.push_str("    </rdf:Bag>\n   </lcpf:fields>\n");
@@ -919,6 +933,18 @@ mod tests {
             rating: Some(-1),
             label: Some("Green".into()),
         }
+    }
+
+    /// Control characters XML 1.0 forbids (from a camera's maker note, a pasted caption) used to be written
+    /// verbatim, leaving a sidecar no XML reader accepts. They are dropped; the rest of the text survives.
+    #[test]
+    fn xml_illegal_control_characters_are_not_written() {
+        let m = Metadata { title: Some("a\u{1}b\u{0}c\u{1b}d\u{FFFE}e\tf".into()), make: Some("Can\u{7}on".into()), ..Default::default() };
+        let x = write_xmp_lc(&m, &[("note", "x\u{2}y")]);
+        assert!(!x.chars().any(|c| matches!(c, '\u{0}'..='\u{8}' | '\u{B}' | '\u{C}' | '\u{E}'..='\u{1F}' | '\u{FFFE}')));
+        let d = parse_xmp(&x).unwrap();
+        assert_eq!(d.metadata.title.as_deref(), Some("abcde\tf"));
+        assert_eq!(d.metadata.make.as_deref(), Some("Canon"));
     }
 
     #[test]

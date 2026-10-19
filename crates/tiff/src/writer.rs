@@ -105,7 +105,8 @@ impl TiffWriter {
         } else {
             self.order.put_u32(&mut tmp, u32::try_from(v).map_err(|_| TiffError::Limit("classic TIFF larger than 4 GiB"))?);
         }
-        buf[pos..pos + tmp.len()].copy_from_slice(&tmp);
+        let end = pos.checked_add(tmp.len()).ok_or(TiffError::Limit("offset past the buffer"))?;
+        buf.get_mut(pos..end).ok_or(TiffError::Limit("offset past the buffer"))?.copy_from_slice(&tmp);
         Ok(())
     }
 
@@ -156,12 +157,12 @@ impl TiffWriter {
         if !ifd.sub_ifds.is_empty() {
             let mut offs = Vec::new();
             for s in &ifd.sub_ifds {
-                offs.push(self.write_ifd(buf, s, depth + 1)?.0);
+                offs.push(self.write_ifd(buf, s, depth.saturating_add(1))?.0);
             }
             entries.insert(tags::SUB_IFDS, self.offset_value(offs)?);
         }
         for (&tag, child) in &ifd.children {
-            let off = self.write_ifd(buf, child, depth + 1)?.0;
+            let off = self.write_ifd(buf, child, depth.saturating_add(1))?.0;
             entries.insert(tag, self.offset_value(vec![off])?);
         }
         let inline = if self.bigtiff { 8 } else { 4 };
@@ -207,7 +208,7 @@ impl TiffWriter {
                 }
                 None => {
                     buf.extend_from_slice(bytes);
-                    buf.extend(std::iter::repeat_n(0u8, inline - bytes.len()));
+                    buf.extend(std::iter::repeat_n(0u8, inline.saturating_sub(bytes.len())));
                 }
             }
         }

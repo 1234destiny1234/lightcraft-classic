@@ -137,7 +137,7 @@ fn tmp(name: &str) -> PathBuf {
 }
 
 fn quick() -> Options {
-    Options { connect_timeout: Duration::from_secs(2), stall_timeout: Duration::from_millis(600), attempts: 2, token_env: None }
+    Options { connect_timeout: Duration::from_secs(2), stall_timeout: Duration::from_millis(600), attempts: 2, token_env: None, deadline: None }
 }
 
 fn run(files: &[FileSpec<'_>], mirrors: &[String], dir: &Path, cancel: &AtomicBool) -> (Result<(), DownloadError>, Vec<Progress>) {
@@ -442,4 +442,31 @@ fn copies_from_a_local_folder_mirror_and_checks_the_hash() {
     let dir_spec = FileSpec { name: "dir.bin", size: None, sha256: None, max: 10 };
     let (r, _) = run(&[dir_spec], &[format!("file://{}", src.display())], &dst2, &AtomicBool::new(false));
     assert!(r.is_err());
+}
+
+#[test]
+fn a_short_body_never_becomes_an_unpinned_file() {
+    let srv = server();
+    let dir = tmp("short-unpinned");
+    // unpinned (no size, no hash): the announced Content-Length is all there is to check against
+    let spec = FileSpec { name: "model.bin", size: None, sha256: None, max: 1_000_000 };
+    let r = download(&[spec], &[format!("{}/flaky", srv.base)], &dir, &Options { attempts: 1, ..quick() }, &AtomicBool::new(false), &mut |_| {});
+    assert!(matches!(r, Err(DownloadError::AllMirrorsFailed { .. })), "{r:?}");
+    assert!(!dir.join("model.bin").exists());
+    assert!(!part_path(&dir, "model.bin").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
+#[test]
+fn the_overall_deadline_stops_a_trickling_server() {
+    let srv = server();
+    let dir = tmp("deadline");
+    // "slow" sends 1 kB every 20 ms (6 s for the file): never stalls, but far past the deadline
+    let opts = Options { deadline: Some(Duration::from_millis(500)), ..quick() };
+    let start = Instant::now();
+    let r = download(&[pinned()], &[format!("{}/slow", srv.base)], &dir, &opts, &AtomicBool::new(false), &mut |_| {});
+    assert_eq!(r, Err(DownloadError::TimedOut));
+    assert!(start.elapsed() < Duration::from_secs(4));
+    assert!(!dir.join("model.bin").exists());
+    let _ = std::fs::remove_dir_all(&dir);
 }

@@ -70,6 +70,12 @@ pub enum Error {
     Encode(String),
 }
 
+/// `w × h × c` samples, or [`Error::TooLarge`] when that overflows `usize` (a 32-bit `usize` on wasm32 wraps on
+/// ordinary 16-bit dimensions).
+pub(crate) fn checked_samples(w: usize, h: usize, c: usize) -> Result<usize> {
+    w.checked_mul(h).and_then(|n| n.checked_mul(c)).ok_or(Error::TooLarge(w as u64, h as u64))
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 /// Decode options.
@@ -346,4 +352,15 @@ pub fn decode_thumbnail_with(bytes: &[u8], opts: &ThumbnailOptions) -> Result<Th
         source_width: d.source_width,
         source_height: d.source_height,
     })
+}
+
+#[cfg(test)]
+mod checked_samples_tests {
+    /// Sizes whose sample count overflows `usize` (on wasm32, any 65535×65535×3 picture) are an error, not a wrap.
+    #[test]
+    fn overflowing_sample_counts_are_errors() {
+        assert_eq!(super::checked_samples(4, 3, 3).ok(), Some(36));
+        assert!(super::checked_samples(usize::MAX, 2, 1).is_err());
+        assert!(super::checked_samples(usize::MAX / 2, 1, 3).is_err());
+    }
 }

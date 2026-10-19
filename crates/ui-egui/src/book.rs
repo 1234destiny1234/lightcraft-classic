@@ -201,6 +201,13 @@ pub struct ExportStatus {
     pub result: Option<Result<Vec<String>, String>>,
 }
 
+/// Tests hold this to keep a started export's worker (and its activity row) from finishing.
+#[cfg(all(test, not(target_arch = "wasm32")))]
+fn test_gate() -> &'static std::sync::Mutex<()> {
+    static GATE: std::sync::Mutex<()> = std::sync::Mutex::new(());
+    &GATE
+}
+
 fn with_status<T>(f: impl FnOnce(&mut ExportStatus) -> T) -> T {
     let mut g = current_status().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
     f(&mut g)
@@ -496,8 +503,16 @@ fn export(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
         let layout = lcc_book::layoutdoc::to_layout(&book);
         let (jobs, infos) = lcc_engine::creations::prepare_jobs(&mut app.session, &layout, book.settings.resolution as f32)?;
         let total = book.all_pages().len();
+        let wait = p.get("wait").and_then(Value::as_bool).unwrap_or(false);
         with_status(|s| *s = ExportStatus { running: true, done: 0, total, result: None });
+        // The export always runs on a worker thread and holds its row in the activity stack for
+        // its whole run (docs/background-tasks.md); its ✕ stops it between pages.
+        let cancel = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let row = app.session.activity.start("export", "Exporting book", lcc_engine::activity::Cancel::Flag(cancel.clone()));
+        let task_id = row.id();
         let work = move || -> Result<Vec<String>, String> {
+            #[cfg(test)]
+            drop(test_gate().lock().unwrap_or_else(std::sync::PoisonError::into_inner));
             let src = lcc_engine::creations::run_jobs(jobs, infos)?;
             let mut engine = lcc_text::TextEngine::with_system_fonts();
             let mut progress = |done: usize, total: usize| {
@@ -505,30 +520,33 @@ fn export(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
                     s.done = done;
                     s.total = total;
                 });
-                true
+                row.progress(done as u64, total as u64);
+                !row.is_cancelled()
             };
-            write_export(&book, kind, &path, &src, &mut engine, &mut progress)
+            let r = write_export(&book, kind, &path, &src, &mut engine, &mut progress);
+            if cancel.load(std::sync::atomic::Ordering::Relaxed) { Err("the book export was cancelled".into()) } else { r }
         };
-        let wait = p.get("wait").and_then(Value::as_bool).unwrap_or(false);
-        if wait {
-            let r = work();
-            with_status(|s| {
-                s.running = false;
-                s.done = total;
-                s.result = Some(r.clone());
-            });
-            return r.map(|files| json!({"files": files}));
-        }
-        std::thread::spawn(move || {
+        let (tx, rx) = std::sync::mpsc::channel();
+        let spawned = std::thread::Builder::new().name("book-export".into()).spawn(move || {
             let r =
                 std::panic::catch_unwind(std::panic::AssertUnwindSafe(work)).unwrap_or_else(|_| Err("the book export failed unexpectedly".into()));
             with_status(|s| {
                 s.running = false;
                 s.done = s.total;
-                s.result = Some(r);
+                s.result = Some(r.clone());
             });
+            let _ = tx.send(r);
         });
-        Ok(json!({"started": true, "pages": total}))
+        if let Err(e) = spawned {
+            with_status(|s| s.running = false);
+            return Err(format!("can't start the book export: {e}"));
+        }
+        if wait {
+            // `wait` is for scripts: the caller gets the result, the work itself stays off this thread.
+            let r = rx.recv().unwrap_or_else(|_| Err("the book export stopped unexpectedly".into()));
+            return r.map(|files| json!({"files": files, "taskId": task_id}));
+        }
+        Ok(json!({"started": true, "pages": total, "taskId": task_id}))
     }
 }
 
@@ -1836,6 +1854,19 @@ mod tests {
         assert!(bytes.starts_with(b"%PDF-"));
         let r = run(&mut h, "book.export", json!({"path": dir.join("pages").to_string_lossy(), "kind": "jpeg", "wait": true}));
         assert!(r["files"].as_array().unwrap().len() >= 3, "{r}");
+        // A background export runs on a worker that holds its row in the activity stack.
+        {
+            let _gate = test_gate().lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+            let r = run(&mut h, "book.export", json!({"path": dir.join("c.pdf").to_string_lossy()}));
+            let id = r["taskId"].as_u64().unwrap();
+            let rows = h.app.session.activity.list();
+            assert!(rows.iter().any(|t| t.id == id && t.kind == "export" && t.label == "Exporting book"), "{rows:?}");
+        }
+        let t0 = std::time::Instant::now();
+        while with_status(|s| s.running) && t0.elapsed() < Duration::from_secs(60) {
+            std::thread::sleep(Duration::from_millis(20));
+        }
+        assert!(h.app.session.activity.list().iter().all(|t| t.label != "Exporting book"));
         let _ = std::fs::remove_dir_all(&dir);
     }
 

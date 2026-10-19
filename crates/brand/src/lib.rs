@@ -10,6 +10,7 @@
 //!   (`lcc-updater`), and a key that does not parse is treated like none: nothing is installed.
 
 #![forbid(unsafe_code)]
+#![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 use std::path::PathBuf;
 use std::sync::Mutex;

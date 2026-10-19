@@ -144,7 +144,7 @@ fn nr_lum(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) 
     put_rgb(i, rgb_a(i) * exp2(d));
 }
 
-// Chromaticity rgb / Y.
+// Chromaticity rgb / Y (local Moire / Noise plane).
 @compute @workgroup_size(256)
 fn chroma_k(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
     let i = lin_index(g, nw);
@@ -156,18 +156,30 @@ fn chroma_k(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups
     put_rgb(i, vec3<f32>(c0.x / y, c0.y / y, c0.z / y));
 }
 
-// Colour NR: blend chromaticity towards its blur and re-apply luminance (a: image, b: chroma,
-// c: blurred chroma). P[1] = t.
+// The image clamped at 0 (blurred for colour NR's luminance-weighted chromaticity).
+@compute @workgroup_size(256)
+fn clamp0_k(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
+    let i = lin_index(g, nw);
+    if (i >= pu(0u)) {
+        return;
+    }
+    put_rgb(i, max(rgb_a(i), vec3<f32>(0.0)));
+}
+
+// Colour NR: blend chromaticity towards the luminance-weighted blurred one and re-apply luminance
+// (a: image, b: unused, c: blurred max(rgb, 0)). P[1] = t.
 @compute @workgroup_size(256)
 fn nr_col(@builtin(global_invocation_id) g: vec3<u32>, @builtin(num_workgroups) nw: vec3<u32>) {
     let i = lin_index(g, nw);
     if (i >= pu(0u)) {
         return;
     }
-    let yl = lum2020(rgb_a(i));
+    let p = rgb_a(i);
+    let yl = lum2020(p);
     let t = pf(1u);
-    let c0 = vec3<f32>(b[3u * i], b[3u * i + 1u], b[3u * i + 2u]);
-    let cb = vec3<f32>(c[3u * i], c[3u * i + 1u], c[3u * i + 2u]);
+    let c0 = p / max(yl, 1e-6);
+    let bl = vec3<f32>(c[3u * i], c[3u * i + 1u], c[3u * i + 2u]);
+    let cb = bl / max(lum2020(bl), 1e-6);
     put_rgb(i, max((c0 + (cb - c0) * t) * yl, vec3<f32>(0.0)));
 }
 

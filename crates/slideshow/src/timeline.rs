@@ -81,9 +81,11 @@ impl Plan {
             && let Some(total) = music_secs.filter(|t| t.is_finite() && *t > 0.0)
             && !segments.is_empty()
         {
-            // segments * hold + (segments - 1) * fade = total
+            // One pass: segments * hold + (segments - 1) * fade = total; a repeating show also
+            // fades from the last slide into the first, so segments * (hold + fade) = total.
             let k = segments.len() as f64;
-            hold = ((total - (k - 1.0) * fade) / k).max(0.1);
+            let fades = if s.playback.repeat { k } else { k - 1.0 };
+            hold = ((total - fades * fade) / k).max(0.1);
         }
         Plan { segments, hold, fade, repeat: s.playback.repeat }
     }
@@ -211,6 +213,15 @@ mod tests {
         let p = Plan::new(4, &s, 1, Some(63.0));
         assert!((p.duration() - 63.0).abs() < 1e-9);
         assert!((p.hold - 15.0).abs() < 1e-9);
+    }
+
+    #[test]
+    fn fits_repeating_slides_to_music() {
+        let mut s = settings(false, false, true);
+        s.music.enabled = true;
+        s.music.fit_to_music = true;
+        let p = Plan::new(4, &s, 1, Some(63.0));
+        assert!((p.duration() - 63.0).abs() < 1e-9, "one pass lasts as long as the music");
     }
 
     #[test]
