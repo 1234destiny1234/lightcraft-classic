@@ -184,6 +184,33 @@ fn select_frames(times: &[f64], duration: f64, trim: (f64, Option<f64>)) -> Resu
     Ok((k0, k1))
 }
 
+/// Source frame times to write, one per output frame on the constant-rate grid `fden / fnum`.
+/// The span runs from the first selected frame to the next frame's start (or `duration`), so a
+/// variable-frame-rate source keeps its real timing (frames are held or dropped to fill the grid)
+/// and the audio, cut by time, stays in sync. A constant-rate source maps one-to-one.
+fn cfr_schedule(times: &[f64], (k0, k1): (usize, usize), duration: f64, fnum: u32, fden: u32) -> Result<Vec<f64>> {
+    const EPS: f64 = 1e-6;
+    let t0 = times.get(k0).copied().unwrap_or(0.0);
+    let step = f64::from(fden) / f64::from(fnum);
+    let end = times.get(k1).copied().unwrap_or(duration);
+    let span = if end.is_finite() && end > t0 { end - t0 } else { (k1 - k0) as f64 * step };
+    let n = ((span / step).round() as i64).max(1);
+    if n > MAX_FRAMES {
+        return Err(ExportClipError::BadTrim("the range is too long".into()));
+    }
+    let sel = &times[k0.min(times.len())..k1.min(times.len())];
+    let mut j = 0usize;
+    Ok((0..n)
+        .map(|i| {
+            let target = t0 + i as f64 * step;
+            while j + 1 < sel.len() && sel[j + 1] <= target + EPS {
+                j += 1;
+            }
+            sel.get(j).copied().unwrap_or(t0)
+        })
+        .collect())
+}
+
 /// Output size: fit the longest side in `max_side`, keep the aspect, round down to even.
 fn output_size(w: u32, h: u32, max_side: Option<u32>) -> Result<(u32, u32)> {
     if w < 2 || h < 2 {
@@ -226,8 +253,10 @@ fn run(
     }
     let times = reader.frame_times();
     let (k0, k1) = select_frames(&times, info.duration, trim)?;
-    let total = k1 - k0;
     let t0 = times.get(k0).copied().unwrap_or(0.0);
+    // resample onto the output's constant rate by real time, so the video spans what the audio does
+    let schedule = cfr_schedule(&times, (k0, k1), info.duration, fnum, fden)?;
+    let total = schedule.len();
     let (w, h) = match reframe {
         // a crop's own size, never above the source's pixels
         Some(r) if r.size.0.is_finite() && r.size.1.is_finite() && r.size.0 >= 2.0 && r.size.1 >= 2.0 => {
@@ -270,11 +299,10 @@ fn run(
         let (halted, drx, stages, prep) = (&halted, &drx, &stages, &prep);
         let mut handles = Vec::with_capacity(threads + 1);
         handles.push(sc.spawn(move || {
-            for (i, k) in (k0..k1).enumerate() {
+            for (i, &t) in schedule.iter().enumerate() {
                 if halted() {
                     return;
                 }
-                let t = times.get(k).copied().unwrap_or(t0);
                 let at = Instant::now();
                 let r = reader.frame_at(t, Some(decode_long)).map_err(video_err).map(|d| {
                     let f = match reframe {
@@ -654,6 +682,16 @@ fn h264_packets(ps: Vec<filmcraft_h264enc::Packet>) -> Vec<Packet> {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn cfr_schedule_follows_real_time_for_vfr() {
+        // constant rate: one-to-one
+        let cfr: Vec<f64> = (0..10).map(|i| f64::from(i) * 0.1).collect();
+        assert_eq!(super::cfr_schedule(&cfr, (0, 10), 1.0, 10, 1).unwrap(), cfr);
+        // variable rate: a frame shown for 0.3 s fills three slots, keeping the real 0.6 s span
+        let vfr = [0.0, 0.1, 0.4, 0.5];
+        assert_eq!(super::cfr_schedule(&vfr, (0, 4), 0.6, 10, 1).unwrap(), vec![0.0, 0.1, 0.1, 0.1, 0.4, 0.5]);
+    }
+
     use super::*;
 
     #[test]
