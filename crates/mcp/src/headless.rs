@@ -64,7 +64,11 @@ impl Headless {
     }
 
     fn photo_or_active(&self, p: &Value) -> Result<PhotoId, String> {
-        p.get("id").and_then(Value::as_u64).map(PhotoId).or(self.session.active()).ok_or_else(|| "no photo (import one or pass `id`)".to_string())
+        let given = match p.get("id") {
+            None | Some(Value::Null) => None,
+            Some(v) => Some(PhotoId(v.as_u64().ok_or_else(|| format!("`id` must be a non-negative integer photo id, got {v}"))?)),
+        };
+        given.or(self.session.active()).ok_or_else(|| "no photo (import one or pass `id`)".to_string())
     }
 
     /// Render `id` (or the active photo) so its long edge is at most `size` pixels.
@@ -94,7 +98,10 @@ impl Headless {
             }
         }
         let ids: Vec<_> = match p.get("ids").and_then(Value::as_array) {
-            Some(a) => a.iter().filter_map(|v| serde_json::from_value(v.clone()).ok()).collect(),
+            Some(a) => a
+                .iter()
+                .map(|v| serde_json::from_value(v.clone()).map_err(|_| format!("`ids` must be non-negative integer photo ids, got {v}")))
+                .collect::<Result<_, _>>()?,
             // like the desktop app: the selection (in grid order), else the given / active photo
             None if p.get("id").is_none() && self.session.selection.ids.len() > 1 => {
                 let sel: std::collections::HashSet<_> = self.session.selection.ids.iter().copied().collect();
