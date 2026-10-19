@@ -70,23 +70,34 @@ impl PublishService for HardDrive {
         std::fs::create_dir_all(&self.folder).map_err(|e| PublishError::Io(format!("{}: {e}", self.folder.display())))?;
         let path = self.folder.join(&name);
         lcc_catalog::safe_file::write_atomic(&path, up.bytes).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))?;
+        let mut written = vec![name.clone()];
         for (ext, bytes) in up.sidecars {
-            let p = self.folder.join(with_ext(&name, ext));
+            let sidecar = with_ext(&name, ext);
+            let p = self.folder.join(&sidecar);
             lcc_catalog::safe_file::write_atomic(&p, bytes).map_err(|e| PublishError::Io(format!("{}: {e}", p.display())))?;
+            written.push(sidecar);
         }
         // a re-publish under another name (the naming template changed): the old file goes
         if let Some(prev) = up.previous.filter(|p| *p != name) {
-            self.remove(prev)?;
+            self.remove_keeping(prev, &written)?;
         }
         Ok(Published { remote_id: name })
     }
 
     fn remove(&mut self, remote_id: &str) -> Result<(), PublishError> {
+        self.remove_keeping(remote_id, &[])
+    }
+}
+
+impl HardDrive {
+    /// Delete `remote_id` and its XMP sidecar, except files named in `keep` (just written by the
+    /// publish that replaces it: `a.jpg` -> `a.png` shares the sidecar `a.xmp`).
+    fn remove_keeping(&mut self, remote_id: &str, keep: &[String]) -> Result<(), PublishError> {
         let path = self.path_of(remote_id)?;
         remove_file(&path)?;
-        // its XMP sidecar, if one was written
-        let xmp = self.folder.join(with_ext(remote_id, "xmp"));
-        if xmp != path {
+        let xmp_name = with_ext(remote_id, "xmp");
+        let xmp = self.folder.join(&xmp_name);
+        if xmp != path && !keep.contains(&xmp_name) {
             remove_file(&xmp)?;
         }
         Ok(())

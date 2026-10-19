@@ -158,3 +158,19 @@ fn hard_drive_never_leaves_its_folder() {
     other.kind = "flickr".into();
     assert!(matches!(open_service(&other, &coll), Err(PublishError::Unsupported(_))));
 }
+
+#[test]
+fn republish_with_a_new_extension_keeps_the_new_sidecar() {
+    let d = tmp("ext");
+    let (s, coll) = svc(&d);
+    let mut hd = open_service(&s, &coll).unwrap();
+    let old = [("xmp", b"<old/>".to_vec())];
+    let up = Upload { photo: PhotoId(1), file_name: "a.jpg", bytes: b"one", sidecars: &old, previous: None };
+    hd.publish(&up).unwrap();
+    let new = [("xmp", b"<new/>".to_vec())];
+    let up = Upload { photo: PhotoId(1), file_name: "a.png", bytes: b"two", sidecars: &new, previous: Some("a.jpg") };
+    hd.publish(&up).unwrap();
+    assert!(!d.join("Web/a.jpg").exists());
+    assert_eq!(std::fs::read(d.join("Web/a.png")).unwrap(), b"two");
+    assert_eq!(std::fs::read(d.join("Web/a.xmp")).unwrap(), b"<new/>", "the new sidecar must survive removing the old file");
+}
