@@ -310,8 +310,12 @@ pub fn parse(bytes: &[u8]) -> Result<Vec<Action>> {
     if f.version > VERSION {
         return Err(format!("written by a newer version (format {})", f.version));
     }
+    if f.actions.len() > MAX_ACTIONS {
+        // truncating would silently drop actions, and the next save would make that permanent
+        return Err(format!("more than {MAX_ACTIONS} actions"));
+    }
     let mut out: Vec<Action> = Vec::new();
-    for a in f.actions.into_iter().take(MAX_ACTIONS) {
+    for a in f.actions {
         a.validate().map_err(|e| format!("action `{}`: {e}", a.name))?;
         if out.iter().any(|b| b.name == a.name) {
             return Err(format!("action `{}` appears twice", a.name));
@@ -516,6 +520,9 @@ mod tests {
         let mut broken = State::with_file(Some(f.clone()));
         assert!(broken.ensure_loaded().is_err());
         assert!(!broken.loaded);
+        let many: Vec<Value> = (0..=MAX_ACTIONS).map(|i| json!({"name": format!("a{i}")})).collect();
+        let over = serde_json::to_vec(&json!({"version": 1, "actions": many})).unwrap();
+        assert!(parse(&over).is_err(), "an over-limit file must not be silently truncated");
         assert!(parse(br#"{"version": 99, "actions": []}"#).is_err());
         assert!(parse(br#"{"version": 1, "actions": [{"name": "a"}, {"name": "a"}]}"#).is_err());
         let _ = std::fs::remove_dir_all(&dir);

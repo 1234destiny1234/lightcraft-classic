@@ -80,6 +80,8 @@ pub struct FileStore {
     path: PathBuf,
     key: Zeroizing<[u8; 32]>,
     salt: Vec<u8>,
+    /// Argon2 cost (m_kib, t, p) the key was derived with; written back unchanged on save.
+    kdf: (u32, u32, u32),
     lock: Mutex<()>,
 }
 
@@ -97,14 +99,14 @@ impl FileStore {
             Some(env) => {
                 let salt = unhex(&env.salt).ok_or_else(|| CredError::Corrupt("bad salt".into()))?;
                 let key = derive(passphrase, &salt, env.m_kib, env.t, env.p)?;
-                let store = FileStore { path: path.to_path_buf(), key, salt, lock: Mutex::new(()) };
+                let store = FileStore { path: path.to_path_buf(), key, salt, kdf: (env.m_kib, env.t, env.p), lock: Mutex::new(()) };
                 store.decrypt(&env)?; // proves the passphrase
                 Ok(store)
             }
             None => {
                 let salt = random::<16>()?.to_vec();
                 let key = derive(passphrase, &salt, M_KIB, T, P)?;
-                Ok(FileStore { path: path.to_path_buf(), key, salt, lock: Mutex::new(()) })
+                Ok(FileStore { path: path.to_path_buf(), key, salt, kdf: (M_KIB, T, P), lock: Mutex::new(()) })
             }
         }
     }
@@ -149,9 +151,9 @@ impl FileStore {
         let env = Envelope {
             format: FORMAT,
             kdf: "argon2id".into(),
-            m_kib: M_KIB,
-            t: T,
-            p: P,
+            m_kib: self.kdf.0,
+            t: self.kdf.1,
+            p: self.kdf.2,
             salt: hex(&self.salt),
             nonce: hex(&nonce),
             data: hex(&data),

@@ -120,6 +120,55 @@ fn secrets_never_reach_debug_output_or_logs() {
     let _ = std::fs::remove_dir_all(dir);
 }
 
+#[test]
+fn file_written_with_other_kdf_cost_survives_updates() {
+    use chacha20poly1305::aead::{Aead, KeyInit, Payload};
+    let dir = tempdir("kdf");
+    let path = dir.join("c.json");
+    let pass = Secret::new("p");
+    FileStore::open(&path, &pass).unwrap().set(&Key::new("a", "b"), &Secret::new("v")).unwrap();
+    // re-encrypt the store under a cheaper cost, as another build or version might have written it
+    let mut env: serde_json::Value = serde_json::from_str(&std::fs::read_to_string(&path).unwrap()).unwrap();
+    let salt_hex = env["salt"].as_str().unwrap().to_string();
+    let salt: Vec<u8> = (0..salt_hex.len() / 2).map(|i| u8::from_str_radix(&salt_hex[i * 2..i * 2 + 2], 16).unwrap()).collect();
+    let params = argon2::Params::new(64, 1, 1, Some(32)).unwrap();
+    let mut key = [0u8; 32];
+    argon2::Argon2::new(argon2::Algorithm::Argon2id, argon2::Version::V0x13, params).hash_password_into(b"p", &salt, &mut key).unwrap();
+    let nonce = [7u8; 24];
+    let plain = serde_json::to_vec(&std::collections::BTreeMap::from([("a\nb", "v")])).unwrap();
+    let ct = chacha20poly1305::XChaCha20Poly1305::new_from_slice(&key)
+        .unwrap()
+        .encrypt(&chacha20poly1305::XNonce::from(nonce), Payload { msg: &plain, aad: b"credentials-file-v1" })
+        .unwrap();
+    let hex = |b: &[u8]| b.iter().map(|b| format!("{b:02x}")).collect::<String>();
+    env["m_kib"] = 64.into();
+    env["t"] = 1.into();
+    env["p"] = 1.into();
+    env["nonce"] = hex(&nonce).into();
+    env["data"] = hex(&ct).into();
+    std::fs::write(&path, env.to_string()).unwrap();
+
+    let s = FileStore::open(&path, &pass).unwrap();
+    assert_eq!(s.get(&Key::new("a", "b")).unwrap().unwrap().expose(), "v");
+    s.set(&Key::new("c", "d"), &Secret::new("w")).unwrap();
+    // reopening must still work: the saved header has to describe the key actually used
+    let again = FileStore::open(&path, &pass).unwrap();
+    assert_eq!(again.get(&Key::new("a", "b")).unwrap().unwrap().expose(), "v");
+    assert_eq!(again.get(&Key::new("c", "d")).unwrap().unwrap().expose(), "w");
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn wrong_passphrase_leaves_the_file_untouched() {
+    let dir = tempdir("wrongpw");
+    let path = dir.join("c.json");
+    FileStore::open(&path, &Secret::new("right")).unwrap().set(&Key::new("a", "b"), &Secret::new("v")).unwrap();
+    let before = std::fs::read(&path).unwrap();
+    assert!(FileStore::open(&path, &Secret::new("wrong")).is_err());
+    assert_eq!(std::fs::read(&path).unwrap(), before);
+    let _ = std::fs::remove_dir_all(dir);
+}
+
 /// Exercises the real keychain only when asked (it may prompt or touch the user's keyring).
 #[test]
 fn os_store_round_trip_when_enabled() {
