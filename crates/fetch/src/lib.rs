@@ -25,7 +25,7 @@ use std::fs::{File, OpenOptions};
 use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
@@ -87,11 +87,21 @@ pub struct Options {
     /// The environment variable (name after the app prefix, read with `lcc_brand::env`) holding a bearer token, sent to each configured mirror's own host (only over https,
     /// never to a host a redirect leads to), so list only mirrors that may see it. `None`: nothing is ever sent, so one model's token cannot leak to another's server.
     pub token_env: Option<&'static str>,
+    /// Longest time the whole download (every file, mirror and retry) may take; past it the download stops with
+    /// [`DownloadError::TimedOut`], so a server trickling bytes just fast enough to dodge the stall timeout can't
+    /// hold the download forever. `None`: no overall limit.
+    pub deadline: Option<Duration>,
 }
 
 impl Default for Options {
     fn default() -> Self {
-        Options { connect_timeout: Duration::from_secs(15), stall_timeout: Duration::from_secs(30), attempts: 3, token_env: None }
+        Options {
+            connect_timeout: Duration::from_secs(15),
+            stall_timeout: Duration::from_secs(30),
+            attempts: 3,
+            token_env: None,
+            deadline: Some(Duration::from_secs(6 * 3600)),
+        }
     }
 }
 
@@ -114,6 +124,8 @@ pub enum DownloadError {
     /// Invalid filename, size, hash or aggregate bound supplied by the caller.
     Invalid(String),
     Cancelled,
+    /// The download took longer than [`Options::deadline`].
+    TimedOut,
     /// A local file problem (folder not writable, disk full…).
     Disk(String),
     /// Every mirror failed for `file`; the reason for each.
@@ -129,6 +141,7 @@ impl std::fmt::Display for DownloadError {
             DownloadError::Invalid(e) => write!(f, "invalid download: {e}"),
             DownloadError::NoMirrors => write!(f, "no download location is configured for this model in this build"),
             DownloadError::Cancelled => write!(f, "the download was cancelled"),
+            DownloadError::TimedOut => write!(f, "the download took too long and was stopped; check the internet connection and try again"),
             DownloadError::Disk(e) => write!(f, "{e}"),
             DownloadError::AllMirrorsFailed { file, errors } => write!(f, "could not download {file}: {}", errors.join("; ")),
         }
@@ -140,6 +153,7 @@ enum Fail {
     Retry(String),
     NextMirror(String),
     Cancelled,
+    TimedOut,
     Disk(String),
 }
 
@@ -179,6 +193,7 @@ fn download_source(
     exact_urls: bool,
 ) -> Result<(), DownloadError> {
     let total = validate_files(files)?;
+    let deadline = opts.deadline.and_then(|d| Instant::now().checked_add(d));
     if mirrors.len() > MAX_MIRRORS {
         return Err(DownloadError::Invalid("too many mirrors".into()));
     }
@@ -206,6 +221,9 @@ fn download_source(
                 if cancel.load(Ordering::Relaxed) {
                     return Err(DownloadError::Cancelled);
                 }
+                if deadline.is_some_and(|d| Instant::now() >= d) {
+                    return Err(DownloadError::TimedOut);
+                }
                 let mut report = |n: u64, announced: u64| {
                     let mirror = short(m);
                     progress(&Progress {
@@ -215,12 +233,13 @@ fn download_source(
                         mirror,
                     })
                 };
-                match fetch_file(f, &url, dir, opts, cancel, &mut report) {
+                match fetch_file(f, &url, dir, opts, deadline, cancel, &mut report) {
                     Ok(()) => {
                         ok = true;
                         break 'mirrors;
                     }
                     Err(Fail::Cancelled) => return Err(DownloadError::Cancelled),
+                    Err(Fail::TimedOut) => return Err(DownloadError::TimedOut),
                     Err(Fail::Disk(e)) => return Err(DownloadError::Disk(e)),
                     Err(Fail::Retry(e)) => {
                         log::warn!("download of {}: {e} (retrying)", short(&url));
@@ -337,7 +356,16 @@ fn part_path(dir: &Path, name: &str) -> PathBuf {
 
 /// Fetch one file from one mirror into `<name>.part` (resuming it when its size is pinned),
 /// check it and move it into place.
-fn fetch_file(f: &FileSpec<'_>, url: &str, dir: &Path, opts: &Options, cancel: &AtomicBool, report: &mut dyn FnMut(u64, u64)) -> Result<(), Fail> {
+#[allow(clippy::too_many_arguments)]
+fn fetch_file(
+    f: &FileSpec<'_>,
+    url: &str,
+    dir: &Path,
+    opts: &Options,
+    deadline: Option<Instant>,
+    cancel: &AtomicBool,
+    report: &mut dyn FnMut(u64, u64),
+) -> Result<(), Fail> {
     let part = part_path(dir, f.name);
     let limit = f.size.unwrap_or(f.max);
     let disk = |e: std::io::Error| Fail::Disk(format!("{}: {e}", part.display()));
@@ -414,6 +442,9 @@ fn fetch_file(f: &FileSpec<'_>, url: &str, dir: &Path, opts: &Options, cancel: &
             s => return Err(Fail::NextMirror(format!("HTTP {s}"))),
         };
         let announced = f.size.unwrap_or_else(|| resp.content_length().unwrap_or(0));
+        // where the body must end: the pinned size, else what the server announced (a short body is an error, never
+        // a silently truncated file)
+        let expected_end = f.size.or_else(|| resp.content_length().map(|n| have.saturating_add(n)));
         report(have, announced);
         let mut buf = vec![0u8; 256 * 1024];
         loop {
@@ -431,6 +462,10 @@ fn fetch_file(f: &FileSpec<'_>, url: &str, dir: &Path, opts: &Options, cancel: &
             if n == 0 {
                 break;
             }
+            if deadline.is_some_and(|d| Instant::now() >= d) {
+                let _ = file.flush();
+                return Err(Fail::TimedOut);
+            }
             if have.saturating_add(n as u64) > limit {
                 drop(file);
                 let _ = std::fs::remove_file(&part);
@@ -441,6 +476,15 @@ fn fetch_file(f: &FileSpec<'_>, url: &str, dir: &Path, opts: &Options, cancel: &
             report(have, announced);
         }
         file.sync_all().map_err(disk)?;
+        if let Some(end) = expected_end
+            && have != end
+        {
+            if f.size.is_none() {
+                drop(file);
+                let _ = std::fs::remove_file(&part);
+            }
+            return Err(Fail::Retry(format!("the download was cut short ({have} of {end} bytes)")));
+        }
     }
     // checks: exact size, hash
     let len = std::fs::metadata(&part).map_err(disk)?.len();

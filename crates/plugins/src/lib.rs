@@ -31,6 +31,7 @@ pub mod manifest;
 pub mod permissions;
 pub mod publish;
 mod runtime;
+mod safe_io;
 mod store;
 
 pub use context::{HostApi, NoHost};

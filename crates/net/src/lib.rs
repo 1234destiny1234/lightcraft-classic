@@ -33,7 +33,7 @@ mod tls;
 mod url;
 
 pub use client::{Client, ClientConfig, Method, Progress, Request, Response};
-pub use download::{DownloadOptions, Downloaded};
+pub use download::{DEFAULT_DEADLINE, DownloadOptions, Downloaded};
 pub use error::NetError;
 pub use multipart::Multipart;
 pub use tls::{CertInfo, Fingerprint, TofuHook, Trust};
