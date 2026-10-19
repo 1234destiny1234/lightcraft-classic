@@ -246,18 +246,26 @@ fn canvas(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     }
 
     // ---- context menu
-    let click_geo = resp.interact_pointer_pos().or(hover).map(|p| screen_to_geo(&app.map, r, p));
+    // the place right-clicked, kept while the menu is open: the pointer leaves the map for the menu
+    if resp.secondary_clicked() {
+        app.map.menu_at = resp.interact_pointer_pos().or(hover).map(|p| screen_to_geo(&app.map, r, p));
+    }
     resp.context_menu(|ui| {
-        let Some(at) = click_geo else { return };
+        let Some(at) = app.map.menu_at else { return };
+        ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
         ui.label(egui::RichText::new(format!("{:.5}, {:.5}", at.lat, at.lon)).weak());
         let has_sel = !app.session.selection.ids.is_empty();
-        if ui.add_enabled(has_sel, egui::Button::new(crate::i18n::tr("Geotag Selected Photos Here"))).clicked() {
+        let b = ui.add_enabled(has_sel, egui::Button::new(crate::i18n::tr("Geotag Selected Photos Here")));
+        register(ui.ctx(), "map:menu:geotag", b.rect);
+        if b.clicked() {
             if let Err(e) = app.run("map.geotag", json!({"lat": at.lat, "lon": at.lon})) {
                 app.toast_error(ui.ctx(), e);
             }
             ui.close();
         }
-        if ui.button(crate::i18n::tr("Save Location Here")).clicked() {
+        let b = ui.button(crate::i18n::tr("Save Location Here"));
+        register(ui.ctx(), "map:menu:saveLocation", b.rect);
+        if b.clicked() {
             let name = if app.map.new_name.trim().is_empty() {
                 crate::i18n::tr_format!("Location {n}", n = app.session.catalog.saved_locations().count() + 1)
             } else {
@@ -272,7 +280,9 @@ fn canvas(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
             }
             ui.close();
         }
-        if ui.button(crate::i18n::tr("Copy Coordinates")).clicked() {
+        let b = ui.button(crate::i18n::tr("Copy Coordinates"));
+        register(ui.ctx(), "map:menu:copy", b.rect);
+        if b.clicked() {
             ui.ctx().copy_text(format!("{:.6}, {:.6}", at.lat, at.lon));
             ui.close();
         }

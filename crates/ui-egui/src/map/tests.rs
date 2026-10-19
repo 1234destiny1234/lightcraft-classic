@@ -301,3 +301,31 @@ fn map_keys_zoom_by_one_level() {
     assert_eq!(run(&mut h, "map.view", json!({"zoomBy": -2}))["zoom"].as_f64(), Some(11.0));
     assert_eq!(run(&mut h, "map.view", json!({"zoomBy": -100}))["zoom"].as_f64(), Some(1.0), "clamped");
 }
+
+#[test]
+fn context_menu_geotags_where_it_was_opened() {
+    // #323: the menu read its position from the hover each frame, so it emptied (and dropped the
+    // click) once the pointer left the map for the menu
+    let mut h = map_on_fake_tiles();
+    let id = h.app.session.visible_cloned()[0].0;
+    h.app.session.selection = lcc_engine::Selection::single(lcc_catalog::PhotoId(id));
+    let canvas = widget(&h, "map:canvas").unwrap();
+    let at = canvas.center() + egui::vec2(-120.0, -80.0);
+    let r = h.request("ui.click", json!({"x": at.x, "y": at.y, "button": "right"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let item = widget(&h, "map:menu:geotag").expect("the context menu is open");
+    // the pointer travels from the map onto the menu, then clicks
+    for i in 1..=6 {
+        let p = at + (item.center() - at) * (i as f32 / 6.0);
+        h.request("ui.move", json!({"x": p.x, "y": p.y}), T);
+        h.step();
+    }
+    assert!(widget(&h, "map:menu:geotag").is_some(), "the menu keeps its items under the pointer");
+    let r = h.request("ui.clickWidget", json!({"id": "map:menu:geotag"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let gps = h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.gps.expect("geotagged from the menu");
+    let want = super::view::screen_to_geo(&h.app.map, canvas, at);
+    assert!((gps.0 - want.lat).abs() < 1e-4 && (gps.1 - want.lon).abs() < 1e-4, "{gps:?} vs {want:?}");
+}
