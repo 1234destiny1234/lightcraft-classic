@@ -57,6 +57,10 @@ impl MonotoneCurve {
 
     pub fn eval(&self, x: f64) -> f64 {
         let n = self.xs.len();
+        if x.is_nan() {
+            // NaN compares after every knot in `total_cmp`, which would index past the end.
+            return self.ys[0];
+        }
         if x <= self.xs[0] {
             return self.ys[0] + self.ms[0] * (x - self.xs[0]).min(0.0) * 0.0;
         }
@@ -120,6 +124,13 @@ impl Lut1 {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn nan_input_does_not_panic() {
+        let c = MonotoneCurve::new(&[(0.0, 0.0), (0.5, 0.7), (1.0, 1.0)]);
+        assert!(c.eval(f64::NAN).is_finite());
+        assert!(c.eval(-f64::NAN).is_finite());
+    }
 
     #[test]
     fn identity_curve() {
