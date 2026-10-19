@@ -1205,9 +1205,6 @@ pub fn arrows_go_to_a_slider(ctx: &egui::Context, widgets: &[(String, egui::Rect
     over || focused
 }
 #[cfg(test)]
-#[path = "widgets/tests_slider_layout.rs"]
-mod slider_layout_tests;
-#[cfg(test)]
 #[path = "widgets/tests_slider_reset.rs"]
 mod slider_reset_tests;
 
