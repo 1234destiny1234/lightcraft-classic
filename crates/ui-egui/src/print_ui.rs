@@ -108,6 +108,7 @@ impl Default for PrintUi {
             untrusted: None,
             trusted_certs: Vec::new(),
             trust_on_first_use: false,
+            save_failed: None,
         }
     }
 }

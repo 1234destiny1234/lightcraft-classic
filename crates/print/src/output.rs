@@ -281,9 +281,8 @@ fn add_photo(
 /// The size key for a 16-bit photo: the source is never upscaled, so every request at or above
 /// its native size maps to one key (and one embedded image).
 fn deep_long(photos: &dyn PhotoSource, id: &str, long: usize, cache: &mut HashMap<String, Option<usize>>) -> usize {
-    let native = *cache
-        .entry(id.to_string())
-        .or_insert_with(|| photos.image16(id).filter(lcc_layout::render::Rgb16::is_valid).map(|d| d.width.max(d.height)));
+    let native =
+        *cache.entry(id.to_string()).or_insert_with(|| photos.image16(id).filter(lcc_layout::render::Rgb16::is_valid).map(|d| d.width.max(d.height)));
     native.map_or(long, |n| long.min(n))
 }
 
