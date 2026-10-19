@@ -470,7 +470,15 @@ mod tests {
         assert!(!download::base_allowed("http://127.0.0.1.example.com/"));
         assert!(!download::base_allowed("http://127.0.0.1@example.com/"));
         assert!(!download::base_allowed("http://download.geonames.org/"));
-        for bad in ["http://127.0.0.1:80@evil.example/", "https://127.0.0.1@evil.example/", "http://127.0.0.1:x@evil.example", "http://evil.example#@127.0.0.1", "http://evil.example?http://127.0.0.1", "http://127.0.0.1:0/", "ftp://127.0.0.1/"] {
+        for bad in [
+            "http://127.0.0.1:80@evil.example/",
+            "https://127.0.0.1@evil.example/",
+            "http://127.0.0.1:x@evil.example",
+            "http://evil.example#@127.0.0.1",
+            "http://evil.example?http://127.0.0.1",
+            "http://127.0.0.1:0/",
+            "ftp://127.0.0.1/",
+        ] {
             assert!(!download::base_allowed(bad), "{bad}");
         }
     }

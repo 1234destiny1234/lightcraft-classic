@@ -847,8 +847,7 @@ fn resolve_deletion(s: &mut Session, p: &Value) -> Result<Value> {
         Some(_) => return Err(bad(C, "`assets` must be a list of asset ids (omit it for all queued)")),
     };
     let st = state_of(s, &id).clone();
-    let picked: Vec<Deletion> =
-        st.deletions.iter().filter(|d| assets.as_ref().is_none_or(|a| a.contains(&d.asset))).cloned().collect();
+    let picked: Vec<Deletion> = st.deletions.iter().filter(|d| assets.as_ref().is_none_or(|a| a.contains(&d.asset))).cloned().collect();
     let mut done = Vec::new();
     let mut failed = Vec::new();
     if apply {

@@ -305,15 +305,22 @@ fn assert_export_grade_matches_cpu(s: &lcc_develop::DevelopSettings) {
 #[test]
 fn export_grade_applies_lut_profile() {
     let n = 5;
-    let mut cube = format!("LUT_3D_SIZE {n}
-");
+    let mut cube = format!(
+        "LUT_3D_SIZE {n}
+"
+    );
     for b in 0..n {
         for g in 0..n {
             for r in 0..n {
                 let f = |i: usize| i as f32 / (n - 1) as f32;
                 // channel swap: far from the identity, so a skipped LUT shows
-                cube.push_str(&format!("{} {} {}
-", f(b), f(g), 1.0 - f(r)));
+                cube.push_str(&format!(
+                    "{} {} {}
+",
+                    f(b),
+                    f(g),
+                    1.0 - f(r)
+                ));
             }
         }
     }

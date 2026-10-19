@@ -132,10 +132,7 @@ impl<T: Copy + Default> Image<T> {
         }
         let x = x.clamp(0, (self.width - 1).min(isize::MAX as usize) as isize) as usize;
         let y = y.clamp(0, (self.height - 1).min(isize::MAX as usize) as isize) as usize;
-        y.checked_mul(self.width)
-            .and_then(|i| i.checked_add(x))
-            .and_then(|i| self.data.get(i).copied())
-            .unwrap_or_default()
+        y.checked_mul(self.width).and_then(|i| i.checked_add(x)).and_then(|i| self.data.get(i).copied()).unwrap_or_default()
     }
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, v: T) {

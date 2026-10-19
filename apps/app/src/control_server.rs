@@ -489,15 +489,24 @@ mod tests {
 
     #[test]
     fn auth_beyond_the_authenticated_cap_is_refused() {
-        let input = format!("{}
+        let input = format!(
+            "{}
 {{\"id\":2,\"method\":\"x\"}}
-", control_auth::auth_request(json!(1), TOKEN));
+",
+            control_auth::auth_request(json!(1), TOKEN)
+        );
         let mut out = Vec::new();
         let mut ran = false;
-        serve_lines(input.as_bytes(), &mut out, TOKEN, || false, |_, _| {
-            ran = true;
-            None
-        });
+        serve_lines(
+            input.as_bytes(),
+            &mut out,
+            TOKEN,
+            || false,
+            |_, _| {
+                ran = true;
+                None
+            },
+        );
         assert!(!ran);
         let text = String::from_utf8(out).unwrap();
         assert_eq!(text.lines().count(), 1, "{text}");
@@ -510,10 +519,16 @@ mod tests {
     fn run_raw(input: &[u8]) -> (Vec<Value>, Vec<String>) {
         let mut out = Vec::new();
         let mut calls = Vec::new();
-        serve_lines(input, &mut out, TOKEN, || true, |m, _p| {
-            calls.push(m);
-            Some(json!({"ok": true, "result": null}))
-        });
+        serve_lines(
+            input,
+            &mut out,
+            TOKEN,
+            || true,
+            |m, _p| {
+                calls.push(m);
+                Some(json!({"ok": true, "result": null}))
+            },
+        );
         let replies = String::from_utf8(out).unwrap().lines().map(|l| serde_json::from_str::<Value>(l).unwrap()).collect();
         (replies, calls)
     }
@@ -618,10 +633,16 @@ mod tests {
         let endless = std::io::repeat(b'x');
         let mut out = Vec::new();
         let mut ran = false;
-        serve_lines(endless, &mut out, TOKEN, || true, |_, _| {
-            ran = true;
-            None
-        });
+        serve_lines(
+            endless,
+            &mut out,
+            TOKEN,
+            || true,
+            |_, _| {
+                ran = true;
+                None
+            },
+        );
         assert!(!ran);
         let reply: Value = serde_json::from_slice(out.strip_suffix(b"\n").unwrap()).unwrap();
         assert!(reply["error"].as_str().unwrap().contains("longer than"));

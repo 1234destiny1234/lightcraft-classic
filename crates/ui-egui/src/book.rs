@@ -1889,7 +1889,8 @@ mod tests {
         std::fs::write(&orig, b"original").unwrap();
         std::fs::write(dir.join("scan.xmp"), b"<x/>").unwrap();
         let id = h.app.session.catalog.alloc_photo_id();
-        let p = lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: orig.to_string_lossy().into() }, "scan.pdf", "PDF", 60, 40, "2026-01-01");
+        let p =
+            lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: orig.to_string_lossy().into() }, "scan.pdf", "PDF", 60, 40, "2026-01-01");
         h.app.session.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
         let r = h.app.run("book.export", json!({"path": orig.to_string_lossy(), "wait": true}));
         assert!(r.is_err(), "{r:?}");
