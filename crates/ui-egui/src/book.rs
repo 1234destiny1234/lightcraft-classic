@@ -1808,6 +1808,12 @@ mod tests {
         h
     }
 
+    /// The book export's status is the process's: tests that export take turns.
+    fn exporting() -> std::sync::MutexGuard<'static, ()> {
+        static EXPORTS: std::sync::Mutex<()> = std::sync::Mutex::new(());
+        EXPORTS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+    }
+
     fn run(h: &mut Headless, id: &str, params: Value) -> Value {
         let r = h.request("engine.execute", json!({"command": id, "params": params}), T);
         assert_eq!(r["ok"], true, "{id}: {r}");
@@ -1817,6 +1823,7 @@ mod tests {
 
     #[test]
     fn book_module_lays_out_edits_and_exports() {
+        let _turn = exporting();
         let mut h = demo();
         run(&mut h, "module.book", json!({}));
         let r = run(&mut h, "book.autoLayout", json!({"preset": "Two Per Page"}));
@@ -1880,6 +1887,7 @@ mod tests {
     /// from MCP or the control channel); the files are left as they were.
     #[test]
     fn book_export_refuses_to_overwrite_an_original() {
+        let _turn = exporting();
         let mut h = demo();
         run(&mut h, "module.book", json!({}));
         run(&mut h, "book.autoLayout", json!({"preset": "Two Per Page"}));

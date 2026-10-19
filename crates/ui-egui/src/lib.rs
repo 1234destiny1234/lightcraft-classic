@@ -233,6 +233,8 @@ mod tests_tallies;
 #[cfg(test)]
 mod tests_temp_slider;
 #[cfg(test)]
+mod tests_thumb_churn;
+#[cfg(test)]
 mod tests_titlebar;
 #[cfg(test)]
 mod tests_tool_overlay;
