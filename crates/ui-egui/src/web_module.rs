@@ -459,7 +459,7 @@ pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String
 /// `webui.previewInBrowser`: the gallery as shown (or `settings`) exported to a temporary folder in
 /// the background, then opened in the system browser.
 fn preview_in_browser(app: &mut LccApp, p: &Value) -> Result<Value, String> {
-    let dir = std::env::temp_dir().join(format!("{}-web-preview-{}", lcc_brand::BINARY, std::process::id()));
+    let dir = crate::links::web_preview_dir();
     // a previous preview's files go first, so the browser shows only this one
     let _ = std::fs::remove_dir_all(&dir);
     let mut q = p.clone();
@@ -644,7 +644,9 @@ mod tests {
         // G28: Preview in Browser exports the gallery shown to a temporary folder and opens its index
         let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let o = opened.clone();
+        // the same allow-policy the desktop host's open_url applies
         h.app.services.open_url = Some(Box::new(move |u: &str| {
+            crate::links::check_browser_url(u)?;
             o.lock().unwrap().push(u.to_string());
             Ok(())
         }));
