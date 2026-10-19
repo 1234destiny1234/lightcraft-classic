@@ -748,6 +748,27 @@ mod tests {
     }
 
     #[test]
+    fn ui_set_thumb_size_zero_is_clamped_and_grid_draws_finite_tiles() {
+        let mut app = LccApp::new(lcc_engine::Session::new(), crate::Services::default());
+        app.ui.settings.gpu = false;
+        let mut h = Headless::new(app, [480.0, 320.0], 1.0);
+        let t = Duration::from_secs(5);
+        for size in [0.0, -5.0, 1e9] {
+            let r = h.request("ui.set", json!({"thumbSize": size, "view": "photoGrid"}), t);
+            assert_eq!(r["ok"], true, "{r}");
+            let got = h.app.ui.thumb_size;
+            assert!(got.is_finite() && (crate::state::THUMB_SIZE_MIN..=crate::state::THUMB_SIZE_MAX).contains(&got), "thumbSize {size} -> {got}");
+            assert_eq!(r["result"]["thumbSize"].as_f64().map(|v| v as f32), Some(got));
+            h.step();
+            for w in h.request("ui.widgets", json!({}), t)["result"].as_array().into_iter().flatten() {
+                // `rect_json` is `[x, y, width, height]`; a NaN serialises as null
+                let rect = w["rect"].as_array().expect("widget rect is an array");
+                assert!(rect.len() == 4 && rect.iter().all(|v| v.as_f64().is_some_and(f64::is_finite)), "non-finite widget rect {w}");
+            }
+        }
+    }
+
+    #[test]
     fn control_resize_uses_effective_points_after_ui_zoom() {
         for scale in [0.9, 1.0, 2.0] {
             let mut app = LccApp::new(lcc_engine::Session::new(), crate::Services::default());
