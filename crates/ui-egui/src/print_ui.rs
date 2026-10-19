@@ -66,6 +66,8 @@ pub struct PrintUi {
     pub loaded: bool,
     /// What was last written to (or read from) `print.json`, to save only on change.
     pub stored: Option<Value>,
+    /// The contents whose write to `print.json` failed, and how many attempts were made.
+    pub save_failed: Option<(Value, u32)>,
     /// The printer profile's description (Color Management ▸ Profile).
     pub profile_name: Option<String>,
     /// The options the chosen printer offers (paper type, tray, quality, two-sided).
@@ -106,6 +108,7 @@ impl Default for PrintUi {
             untrusted: None,
             trusted_certs: Vec::new(),
             trust_on_first_use: false,
+            save_failed: None,
         }
     }
 }
@@ -207,10 +210,8 @@ pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String
     }
     ensure_loaded(app);
     let r = run_inner(app, id, p);
-    if r.is_ok()
-        && let Err(e) = persist(app)
-    {
-        log::warn!("print settings not saved: {e}");
+    if r.is_ok() {
+        persist_reported(app, None);
     }
     Some(r)
 }
@@ -296,16 +297,52 @@ pub fn ensure_loaded(app: &mut LccApp) {
     app.print.stored = Some(stored_json(&app.print));
 }
 
-/// Write `print.json` when the settings, templates or printer changed since the last write.
+/// Attempts to write the same `print.json` contents before waiting for the next change.
+const SAVE_ATTEMPTS: u32 = 3;
+
+/// Write `print.json` when the settings, templates or printer changed since the last successful
+/// write. A failed write is retried (up to [`SAVE_ATTEMPTS`] times for the same contents, then
+/// again on the next change); every failure is returned so the caller can report it.
 pub fn persist(app: &mut LccApp) -> Result<(), String> {
     let now = stored_json(&app.print);
     if app.print.stored.as_ref() == Some(&now) {
         return Ok(());
     }
+    if let Some((v, n)) = &app.print.save_failed
+        && *v == now
+        && *n >= SAVE_ATTEMPTS
+    {
+        return Ok(());
+    }
     let Some(path) = store_path(app) else { return Ok(()) };
-    let bytes = serde_json::to_vec_pretty(&now).map_err(|e| e.to_string())?;
-    app.print.stored = Some(now);
-    lcc_engine::export::write_file_durable(&path.to_string_lossy(), &bytes)
+    let r = serde_json::to_vec_pretty(&now)
+        .map_err(|e| e.to_string())
+        .and_then(|bytes| lcc_engine::export::write_file_durable(&path.to_string_lossy(), &bytes));
+    match r {
+        Ok(()) => {
+            app.print.stored = Some(now);
+            app.print.save_failed = None;
+            Ok(())
+        }
+        Err(e) => {
+            let n = match &app.print.save_failed {
+                Some((v, n)) if *v == now => n + 1,
+                _ => 1,
+            };
+            app.print.save_failed = Some((now, n));
+            Err(format!("{}: {e}", path.display()))
+        }
+    }
+}
+
+/// [`persist`], logging a failure and telling the user once the retries for it are used up.
+fn persist_reported(app: &mut LccApp, ctx: Option<&egui::Context>) {
+    if let Err(e) = persist(app) {
+        log::warn!("print settings not saved: {e}");
+        if let (Some(ctx), Some((_, SAVE_ATTEMPTS))) = (ctx, &app.print.save_failed) {
+            app.toast(ctx, format!("Print settings not saved: {e}"));
+        }
+    }
 }
 
 fn state_json(app: &mut LccApp) -> Value {
@@ -864,10 +901,8 @@ fn center(ui: &mut egui::Ui, app: &mut LccApp) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     ensure_loaded(app);
-    if !ctx.input(|i| i.pointer.any_down())
-        && let Err(e) = persist(app)
-    {
-        log::warn!("print settings not saved: {e}");
+    if !ctx.input(|i| i.pointer.any_down()) {
+        persist_reported(app, Some(&ctx));
     }
     let mut area = ui.available_rect_before_wrap();
     if crate::module::edge_visible(app, Edge::Bottom) {
@@ -1726,6 +1761,36 @@ mod tests {
         std::fs::write(dir.join("print.json"), b"{not json").unwrap();
         let mut broken = open();
         assert!(broken.run("printui.state", json!({})).unwrap()["userTemplates"].as_array().unwrap().is_empty());
+        let _ = std::fs::remove_dir_all(dir);
+    }
+
+    #[test]
+    fn a_failed_print_json_write_is_reported_and_retried() {
+        let dir = std::env::temp_dir().join(format!("lcc-print-retry-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        // the config "directory" is a file, so print.json cannot be written
+        let cfg = dir.join("cfg");
+        std::fs::write(&cfg, b"").unwrap();
+        let mut s = lcc_engine::Session::with_demo();
+        s.remote.connections_path = Some(cfg.join("connections.json"));
+        let mut app = LccApp::new(s, crate::Services::default());
+        ensure_loaded(&mut app);
+        app.print.settings.job.dpi = 200.0;
+        for n in 1..=SAVE_ATTEMPTS {
+            assert!(persist(&mut app).is_err());
+            assert_eq!(app.print.save_failed.as_ref().map(|f| f.1), Some(n));
+        }
+        // bounded: the same contents are not retried forever
+        assert!(persist(&mut app).is_ok());
+        assert_eq!(app.print.save_failed.as_ref().map(|f| f.1), Some(SAVE_ATTEMPTS));
+        // once the directory is usable, the next change is saved
+        std::fs::remove_file(&cfg).unwrap();
+        std::fs::create_dir_all(&cfg).unwrap();
+        app.print.settings.job.dpi = 300.0;
+        assert!(persist(&mut app).is_ok());
+        assert!(app.print.save_failed.is_none());
+        assert!(cfg.join("print.json").is_file());
         let _ = std::fs::remove_dir_all(dir);
     }
 

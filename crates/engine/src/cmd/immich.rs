@@ -73,6 +73,7 @@ fn account_json(s: &Session, a: &Account) -> Value {
         "linkedUntil": a.linked_until,
         "link": s.remote.links.get(&a.id),
         "apiKeyPage": lcc_immich::client::api_key_page(&a.url),
+        "warning": lcc_immich::client::plain_http_warning(&a.url),
     })
 }
 
@@ -106,6 +107,7 @@ fn status_json(base: &str, st: &lcc_immich::ServerStatus) -> Value {
         "permissions": st.permissions,
         "missingPermissions": st.permissions.as_deref().map(lcc_immich::client::missing_permissions).unwrap_or_default()
             .iter().map(|(f, p)| json!({"feature": f, "permissions": p})).collect::<Vec<_>>(),
+        "warning": lcc_immich::client::plain_http_warning(base),
     })
 }
 

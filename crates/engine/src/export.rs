@@ -2396,20 +2396,24 @@ impl<'a> Placer<'a> {
                 let path = join_path(dir, &e.file_name);
                 let taken = &self.taken;
                 let busy = |main: &str| group(main).iter().any(|p| taken.contains(p) || exists(p));
+                let unique = || {
+                    let (stem, ext) = e.file_name.rsplit_once('.').map_or((e.file_name.as_str(), None), |(a, b)| (a, Some(b)));
+                    let name = |n: usize| join_path(dir, &ext.map_or(format!("{stem}-{n}"), |x| format!("{stem}-{n}.{x}")));
+                    (2..1_000_000).map(name).find(|p| !busy(p)).ok_or_else(|| format!("{path}: no free file name"))
+                };
                 if !busy(&path) {
                     Ok(path)
                 } else {
                     match o.conflict {
+                        // Overwrite replaces files from earlier runs, never another photo of this
+                        // same batch: a name already written by this batch gets the next free one
+                        Conflict::Overwrite if group(&path).iter().any(|p| taken.contains(p)) => unique(),
                         Conflict::Overwrite => Ok(path),
                         Conflict::Skip => {
                             self.out.push(json!({"skipped": path}));
                             return Ok(());
                         }
-                        Conflict::Unique => {
-                            let (stem, ext) = e.file_name.rsplit_once('.').map_or((e.file_name.as_str(), None), |(a, b)| (a, Some(b)));
-                            let name = |n: usize| join_path(dir, &ext.map_or(format!("{stem}-{n}"), |x| format!("{stem}-{n}.{x}")));
-                            (2..1_000_000).map(name).find(|p| !busy(p)).ok_or_else(|| format!("{path}: no free file name"))
-                        }
+                        Conflict::Unique => unique(),
                     }
                 }
             }

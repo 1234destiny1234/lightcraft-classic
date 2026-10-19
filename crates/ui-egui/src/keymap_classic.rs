@@ -135,6 +135,7 @@ pub fn keymap_file(app: &LccApp) -> Value {
 
 /// `app.keymapExport {path}`.
 pub fn export_file(app: &mut LccApp, path: &str) -> Result<Value, String> {
+    app.session.check_write_target(path)?;
     let bytes = serde_json::to_vec_pretty(&keymap_file(app)).map_err(|e| e.to_string())?;
     std::fs::write(path, bytes).map_err(|e| format!("can't write {path}: {e}"))?;
     Ok(json!({"path": path, "count": app.ui.settings.keymap.len()}))

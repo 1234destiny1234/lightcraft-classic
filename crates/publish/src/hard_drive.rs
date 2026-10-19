@@ -44,6 +44,29 @@ impl HardDrive {
             _ => Err(PublishError::Config(format!("`{remote_id}` is not a file name in the collection's folder"))),
         }
     }
+
+    /// `wanted`, or the first of `a-2.jpg`, `a-3.jpg`, ... (the app's naming for clashes) whose file
+    /// and sidecars don't belong to another photo. Files of this photo's previous publication
+    /// don't count: a re-publish replaces them.
+    fn free_name(&self, wanted: &str, up: &Upload<'_>) -> String {
+        let own = |n: &str| up.previous.is_some_and(|p| n == p || up.sidecars.iter().any(|(ext, _)| with_ext(p, ext) == n));
+        let taken = |n: &str| !own(n) && self.folder.join(n).exists();
+        let free = |n: &str| !taken(n) && !up.sidecars.iter().any(|(ext, _)| taken(&with_ext(n, ext)));
+        if free(wanted) {
+            return wanted.to_string();
+        }
+        let (stem, ext) = match wanted.rsplit_once('.') {
+            Some((s, e)) if !s.is_empty() => (s, Some(e)),
+            _ => (wanted, None),
+        };
+        (2u32..)
+            .map(|i| match ext {
+                Some(e) => format!("{stem}-{i}.{e}"),
+                None => format!("{stem}-{i}"),
+            })
+            .find(|n| free(n))
+            .unwrap_or_else(|| wanted.to_string())
+    }
 }
 
 fn remove_file(path: &Path) -> Result<(), PublishError> {
@@ -66,8 +89,9 @@ impl PublishService for HardDrive {
     }
 
     fn publish(&mut self, up: &Upload<'_>) -> Result<Published, PublishError> {
-        let name = safe_name(up.file_name).ok_or_else(|| PublishError::Config(format!("`{}` can't be a file name", up.file_name)))?;
+        let wanted = safe_name(up.file_name).ok_or_else(|| PublishError::Config(format!("`{}` can't be a file name", up.file_name)))?;
         std::fs::create_dir_all(&self.folder).map_err(|e| PublishError::Io(format!("{}: {e}", self.folder.display())))?;
+        let name = self.free_name(&wanted, up);
         let path = self.folder.join(&name);
         lcc_catalog::safe_file::write_atomic(&path, up.bytes).map_err(|e| PublishError::Io(format!("{}: {e}", path.display())))?;
         let mut written = vec![name.clone()];

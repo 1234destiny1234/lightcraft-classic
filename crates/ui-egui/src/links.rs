@@ -32,6 +32,31 @@ pub fn open(app: &mut crate::LccApp, url: &str) -> Result<serde_json::Value, Str
     Ok(serde_json::json!({ "url": url }))
 }
 
+/// The temporary folder Preview in Browser exports to (one per process).
+pub fn web_preview_dir() -> std::path::PathBuf {
+    std::env::temp_dir().join(format!("{}-web-preview-{}", lcc_brand::BINARY, std::process::id()))
+}
+
+/// A `file://` URL for a local path (`file:///tmp/…` on Unix, `file:///C:/…` on Windows).
+pub fn file_url(path: &std::path::Path) -> String {
+    let path = path.display().to_string().replace('\\', "/");
+    if path.starts_with('/') { format!("file://{path}") } else { format!("file:///{path}") }
+}
+
+/// The URLs a host's `open_url` may hand to the system browser: any `https://` link, and the one
+/// local page Preview in Browser generates (`<web_preview_dir>/index.html`, once it exists).
+/// Every other scheme and every other local file is refused.
+pub fn check_browser_url(url: &str) -> Result<(), String> {
+    if url.starts_with("https://") {
+        return Ok(());
+    }
+    let index = web_preview_dir().join("index.html");
+    if url.starts_with("file://") && url == file_url(&index) && index.is_file() {
+        return Ok(());
+    }
+    Err("only https links are opened".into())
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -44,5 +69,24 @@ mod tests {
             assert_eq!(url_of(id), Some(*url));
         }
         assert_eq!((APP_PAGE, GITHUB), (lcc_brand::HOMEPAGE, lcc_brand::REPOSITORY));
+    }
+
+    #[test]
+    fn browser_policy_allows_https_and_only_the_generated_preview() {
+        assert!(check_browser_url("https://example.com/a?b#c").is_ok());
+        for bad in ["http://example.com", "javascript:alert(1)", "ftp://x", "file:///etc/passwd", "file:///C:/Windows/win.ini", "", "file://"] {
+            assert!(check_browser_url(bad).is_err(), "{bad}");
+        }
+        let dir = web_preview_dir();
+        let index = dir.join("index.html");
+        let _ = std::fs::remove_dir_all(&dir);
+        assert!(check_browser_url(&file_url(&index)).is_err(), "not generated yet");
+        std::fs::create_dir_all(&dir).unwrap();
+        std::fs::write(&index, "<html></html>").unwrap();
+        std::fs::write(dir.join("other.html"), "x").unwrap();
+        assert!(check_browser_url(&file_url(&index)).is_ok());
+        assert!(check_browser_url(&file_url(&dir.join("other.html"))).is_err());
+        assert!(check_browser_url(&format!("{}/../index.html", file_url(&dir))).is_err());
+        let _ = std::fs::remove_dir_all(&dir);
     }
 }

@@ -181,3 +181,24 @@ fn immich_card_is_compact() {
     assert!(has(&h, "label:immichMissing-0") && !has(&h, "label:immichPermsOk-0"));
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+// Feature: a plain http:// server on the network is allowed, with a warning under the Server URL field
+// that the connection is not encrypted; https and this machine's own address show none.
+#[test]
+fn plain_http_server_url_shows_an_unencrypted_warning() {
+    let dir = std::env::temp_dir().join(format!("lcc-immich-ui-http-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(&dir).unwrap();
+    let mut h = app(&dir);
+    h.request("engine.execute", json!({"command": "app.settings", "params": {"tab": "connections"}}), T);
+    let warned = |h: &mut Headless, url: &str| {
+        h.app.immich.url = url.to_string();
+        h.step();
+        h.step();
+        h.painted_text().join("\n").contains("not encrypted")
+    };
+    assert!(warned(&mut h, "http://nas:2283"));
+    assert!(!warned(&mut h, "https://nas:2283"));
+    assert!(!warned(&mut h, "http://localhost:2283"));
+    let _ = std::fs::remove_dir_all(&dir);
+}
