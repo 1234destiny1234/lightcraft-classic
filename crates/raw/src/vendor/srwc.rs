@@ -76,8 +76,8 @@ pub(crate) fn decode_v0(bytes: &[u8], strip: usize, table: usize, width: usize, 
         return Err(RawError::Corrupt(format!("Samsung compressed raw {width}x{h}")));
     }
     // rows are whole 16-sample blocks: decode into rows padded to that, keep the stored width
-    let w = width.next_multiple_of(16);
-    let mut d = vec![0u16; w * h];
+    let w = width.checked_next_multiple_of(16).ok_or(RawError::Limit("image too large"))?;
+    let mut d = vec![0u16; crate::checked_samples(&[w, h])?];
     for row in 0..h {
         let off = table
             .checked_add(row.saturating_mul(4))
@@ -144,7 +144,7 @@ pub(crate) fn decode_v1(src: &[u8], w: usize, h: usize, bits_per_sample: u32) ->
             n += 1;
         }
     }
-    let mut d = vec![0u16; w * h];
+    let mut d = vec![0u16; crate::checked_samples(&[w, h])?];
     let (mut pos, mut buf, mut have) = (0usize, 0u64, 0u32);
     let mut vpred = [[0i32; 2]; 2];
     let limit = 1i64 << bits_per_sample.clamp(8, 16);
@@ -195,7 +195,7 @@ pub(crate) fn decode_v2(src: &[u8], w: usize, h: usize) -> Result<(Vec<u16>, u32
         return Err(RawError::Unsupported(format!("Samsung compressed raw with {depth}-bit samples")));
     }
     let max = (1i32 << depth) - 1;
-    let mut d = vec![0u16; w * h];
+    let mut d = vec![0u16; crate::checked_samples(&[w, h])?];
     let mut pos = 16usize;
     for row in 0..h {
         pos = pos.next_multiple_of(16);
@@ -534,6 +534,12 @@ mod tests {
             let _ = decode_v0(&noise, usize::MAX - 2, usize::MAX - 2, ww, hh);
             let _ = decode_v1(&noise, ww, hh, 12);
             let _ = decode_v2(&noise, ww, hh);
+        }
+        // dimensions whose product (or padded width) overflows `usize` are a limit error, not a wrap or a panic
+        for (ww, hh) in [(usize::MAX - 3, 2), (usize::MAX / 2, 3), (1 << 20, 1 << 20)] {
+            assert!(decode_v0(&noise, 7, 3, ww, hh).is_err(), "{ww}x{hh}");
+            assert!(decode_v1(&noise, ww, hh, 12).is_err(), "{ww}x{hh}");
+            assert!(decode_v2(&noise, ww, hh).is_err(), "{ww}x{hh}");
         }
         // a stream that asks for predictions from above in the first rows
         let mut up = vec![0u8; 8];

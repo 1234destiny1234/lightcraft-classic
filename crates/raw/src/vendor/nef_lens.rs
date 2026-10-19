@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Nikon's in-file distortion correction (raw SubIFD tag `0xc7d5`, NikonNEFInfo), expressed as a DNG warp for
 //! the shared optics pipeline.
 //!
@@ -30,8 +31,9 @@ struct Distortion {
 
 /// A signed rational at `at` (`i32 / i32`), when it is one.
 fn rational(b: &[u8], at: usize, order: ByteOrder) -> Option<f64> {
-    let n = order.u32(b.get(at..at + 4)?.try_into().ok()?) as i32;
-    let d = order.u32(b.get(at + 4..at + 8)?.try_into().ok()?) as i32;
+    let v = b.get(at..at.checked_add(8)?)?;
+    let n = order.u32(v.get(..4)?.try_into().ok()?) as i32;
+    let d = order.u32(v.get(4..)?.try_into().ok()?) as i32;
     (d > 0).then(|| f64::from(n) / f64::from(d)).filter(|v| v.is_finite())
 }
 
@@ -119,6 +121,7 @@ pub(super) fn distortion(model: &str, raw: &Ifd, active: Rect, crop: Rect) -> Op
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 pub(in crate::vendor) mod tests {
     use super::*;
     use lcc_tiff::{Entry, IfdBuilder, TiffWriter, Value};

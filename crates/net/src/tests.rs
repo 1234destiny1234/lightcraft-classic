@@ -468,3 +468,44 @@ fn secrets_never_reach_the_log_or_debug_output() {
         }
     }
 }
+
+#[test]
+fn a_truncated_download_is_never_renamed_into_place() {
+    let dir = tempdir("dl-short");
+    let dest = dir.join("short.bin");
+    // promises 100 bytes, sends 5, closes
+    let (port, _, h) = serve(1, |_| b"HTTP/1.1 200 OK\r\nContent-Length: 100\r\n\r\nshort".to_vec());
+    let r = client().download(&format!("http://127.0.0.1:{port}/m"), &dest, DownloadOptions::default());
+    h.join().unwrap();
+    assert!(r.is_err(), "{r:?}");
+    assert!(!dest.exists());
+    let _ = std::fs::remove_dir_all(dir);
+}
+
+#[test]
+fn a_download_stops_at_its_deadline() {
+    let listener = TcpListener::bind("127.0.0.1:0").unwrap();
+    let port = listener.local_addr().unwrap().port();
+    let h = std::thread::spawn(move || {
+        let Ok((mut s, _)) = listener.accept() else { return };
+        let _ = read_req(&mut s);
+        let _ = s.write_all(b"HTTP/1.1 200 OK\r\nContent-Length: 100000\r\n\r\n");
+        // one byte every 20 ms: never stalls, takes far longer than the deadline
+        for _ in 0..100_000 {
+            if s.write_all(b"x").is_err() {
+                return;
+            }
+            std::thread::sleep(Duration::from_millis(20));
+        }
+    });
+    let dir = tempdir("dl-deadline");
+    let dest = dir.join("slow.bin");
+    let start = std::time::Instant::now();
+    let opts = DownloadOptions { deadline: Some(Duration::from_millis(400)), ..Default::default() };
+    let r = client().download(&format!("http://127.0.0.1:{port}/m"), &dest, opts);
+    assert!(matches!(r, Err(NetError::Io(_))), "{r:?}");
+    assert!(start.elapsed() < Duration::from_secs(4));
+    assert!(!dest.exists());
+    drop(h);
+    let _ = std::fs::remove_dir_all(dir);
+}

@@ -49,6 +49,39 @@ pub fn par_join<A: Send, B: Send>(a: impl FnOnce() -> A + Send, b: impl FnOnce()
     }
 }
 
+/// An image buffer that could not be allocated (its size overflows, passes [`MAX_IMAGE_BYTES`], or the
+/// allocator refused it): returned by [`Image::try_new`] instead of aborting the process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AllocError {
+    pub width: usize,
+    pub height: usize,
+}
+
+impl std::fmt::Display for AllocError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not enough memory for a {}×{} image", self.width, self.height)
+    }
+}
+
+impl std::error::Error for AllocError {}
+
+/// The largest single image buffer [`Image::try_new`] allocates (64 GiB).
+pub const MAX_IMAGE_BYTES: usize = 64 << 30;
+
+/// A vector of `n` copies of `v`, or an error when it can't be had (overflow, past [`MAX_IMAGE_BYTES`],
+/// allocator failure) instead of an abort. `width`/`height` only label the error.
+pub fn try_vec<T: Clone>(n: usize, v: T, width: usize, height: usize) -> Result<Vec<T>, AllocError> {
+    let err = AllocError { width, height };
+    let bytes = n.checked_mul(std::mem::size_of::<T>().max(1)).ok_or(err)?;
+    if bytes > MAX_IMAGE_BYTES {
+        return Err(err);
+    }
+    let mut data = Vec::new();
+    data.try_reserve_exact(n).map_err(|_| err)?;
+    data.resize(n, v);
+    Ok(data)
+}
+
 /// Interleaved row-major image.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Image<T> {
@@ -64,6 +97,15 @@ pub type Plane = Image<f32>;
 impl<T: Copy + Default> Image<T> {
     pub fn new(width: usize, height: usize) -> Self {
         Self { width, height, data: vec![T::default(); width * height] }
+    }
+    /// [`Self::new`] that returns an error instead of aborting when the buffer can't be allocated.
+    pub fn try_new(width: usize, height: usize) -> Result<Self, AllocError> {
+        Self::try_filled(width, height, T::default())
+    }
+    /// [`Self::filled`] that returns an error instead of aborting when the buffer can't be allocated.
+    pub fn try_filled(width: usize, height: usize, v: T) -> Result<Self, AllocError> {
+        let n = width.checked_mul(height).ok_or(AllocError { width, height })?;
+        Ok(Self { width, height, data: try_vec(n, v, width, height)? })
     }
     pub fn filled(width: usize, height: usize, v: T) -> Self {
         Self { width, height, data: vec![v; width * height] }
@@ -153,18 +195,31 @@ impl<T: Copy + Default> Image<T> {
         });
         out
     }
-    /// Per-pixel combination of two images of the same size (row-parallel).
+    /// Per-pixel combination of two images of the same size (row-parallel). The output has `self`'s size;
+    /// if `other` is smaller (a caller bug), its missing pixels read as `U::default()` instead of panicking.
     pub fn zip_map<U: Copy + Default + Sync, V: Copy + Default + Send>(&self, other: &Image<U>, f: impl Fn(T, U) -> V + Sync + Send) -> Image<V>
     where
         T: Sync,
     {
-        assert_eq!((self.width, self.height), (other.width, other.height), "zip_map: size mismatch");
         let mut out = Image::<V>::new(self.width, self.height);
         let w = self.width;
+        let same = (self.width, self.height) == (other.width, other.height) && other.data.len() >= w * self.height;
         par_rows(&mut out.data, w, |y, row| {
-            let (a, b) = (&self.data[y * w..(y + 1) * w], &other.data[y * w..(y + 1) * w]);
-            for ((o, s), t) in row.iter_mut().zip(a).zip(b) {
-                *o = f(*s, *t);
+            let a = self.data.get(y * w..(y + 1) * w).unwrap_or(&[]);
+            if same {
+                let b = other.data.get(y * w..(y + 1) * w).unwrap_or(&[]);
+                for ((o, s), t) in row.iter_mut().zip(a).zip(b) {
+                    *o = f(*s, *t);
+                }
+            } else {
+                for (x, (o, s)) in row.iter_mut().zip(a).enumerate() {
+                    let t = if x < other.width && y < other.height {
+                        other.data.get(y * other.width + x).copied().unwrap_or_default()
+                    } else {
+                        U::default()
+                    };
+                    *o = f(*s, t);
+                }
             }
         });
         out
@@ -315,6 +370,26 @@ mod tests {
 
     use super::*;
     use lcc_geom::Orientation;
+
+    #[test]
+    fn huge_images_are_an_error_not_an_abort() {
+        assert!(Rgb32f::try_new(usize::MAX / 2, 4).is_err());
+        assert!(Rgb32f::try_new(1 << 20, 1 << 20).is_err());
+        let ok = Plane::try_filled(3, 2, 0.5).unwrap();
+        assert_eq!(ok, Plane::filled(3, 2, 0.5));
+    }
+
+    #[test]
+    fn zip_map_with_mismatched_sizes_does_not_panic() {
+        let a = Plane::filled(4, 3, 1.0);
+        let b = Plane::filled(2, 2, 2.0);
+        let c = a.zip_map(&b, |x, y| x + y);
+        assert_eq!((c.width, c.height), (4, 3));
+        assert_eq!(c.get(1, 1), 3.0);
+        assert_eq!(c.get(3, 2), 1.0);
+        let same = a.zip_map(&a, |x, y| x + y);
+        assert!(same.data.iter().all(|&v| v == 2.0));
+    }
 
     /// A sample at an infinite coordinate (the inverse mapping of a crop of no size) cast to
     /// isize::MAX, and its right / lower neighbour overflowed (a panic where overflow is checked):

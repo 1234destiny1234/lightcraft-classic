@@ -108,7 +108,7 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
     }
     let keep = n_color + has_alpha as usize;
     let src = fb.buf();
-    let mut v = Vec::with_capacity(fw * fh * keep);
+    let mut v = Vec::with_capacity(crate::checked_samples(fw, fh, keep)?);
     let to_2020 = lcc_color::SRGB.to_space(&lcc_color::REC2020).to_f32();
     for px in src.chunks_exact(ch) {
         let start = v.len();

@@ -252,10 +252,20 @@ fn the_alternative_set_restores_the_previous_keys_and_keymaps_round_trip() {
     let r = h.app.run("app.keymapImport", json!({"path": path.to_str().unwrap()})).unwrap();
     assert_eq!(r["set"], "classic");
     assert_eq!(crate::shortcuts::shortcut_of(&h.app.ui.settings.keymap, "view.survey"), Some("Cmd+Shift+K"));
-    // hostile files are errors or skipped entries, never panics
-    std::fs::write(&path, b"{\"keymap\": {\"no.such\": \"K\", \"view.survey\": 7, \"view.people\": \"Hyper+X\"}}").unwrap();
-    let r = h.app.run("app.keymapImport", json!({"path": path.to_str().unwrap()})).unwrap();
-    assert_eq!(r["skipped"].as_array().unwrap().len(), 3);
+    // hostile files are errors that change nothing (no half-applied set or keymap), never panics
+    let before = (h.app.ui.settings.keymap_set, h.app.ui.settings.keymap.clone(), crate::shortcuts::active_set());
+    let unchanged = |h: &Headless| (h.app.ui.settings.keymap_set, h.app.ui.settings.keymap.clone(), crate::shortcuts::active_set()) == before;
+    std::fs::write(
+        &path,
+        b"{\"set\": \"alternative\", \"keymap\": {\"view.detail\": \"K\", \"no.such\": \"K\", \"view.survey\": 7, \"view.people\": \"Hyper+X\"}}",
+    )
+    .unwrap();
+    let e = h.app.run("app.keymapImport", json!({"path": path.to_str().unwrap()})).unwrap_err();
+    assert!(e.contains("no.such") && e.contains("view.survey") && e.contains("view.people"), "{e}");
+    assert!(unchanged(&h));
+    std::fs::write(&path, b"{\"set\": \"alternative\"}").unwrap();
+    assert!(h.app.run("app.keymapImport", json!({"path": path.to_str().unwrap()})).is_err());
+    assert!(unchanged(&h));
     std::fs::write(&path, b"not json").unwrap();
     assert!(h.app.run("app.keymapImport", json!({"path": path.to_str().unwrap()})).is_err());
     std::fs::write(&path, b"[1,2]").unwrap();

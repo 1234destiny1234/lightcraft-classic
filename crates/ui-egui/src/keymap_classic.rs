@@ -142,18 +142,28 @@ pub fn export_file(app: &mut LccApp, path: &str) -> Result<Value, String> {
 }
 
 /// Apply a keymap file's contents: the set, then each entry through [`assign`] (so conflicts
-/// move keys as in the editor). Bad entries are reported, the rest applied.
+/// move keys as in the editor). Everything is checked first; a file with any bad part is an
+/// error naming it and changes nothing (no half-applied set or keymap).
 pub fn import_value(app: &mut LccApp, v: &Value) -> Result<Value, String> {
     let o = v.as_object().ok_or("a keymap file is a JSON object")?;
-    if let Some(name) = o.get("set").and_then(Value::as_str) {
-        let set = KeymapSet::parse(name).ok_or_else(|| format!("unknown keymap set: {name}"))?;
-        app.ui.settings.keymap_set = set;
+    let set = match o.get("set") {
+        None | Some(Value::Null) => None,
+        Some(Value::String(name)) => Some(KeymapSet::parse(name).ok_or_else(|| format!("unknown keymap set: {name}"))?),
+        Some(other) => return Err(format!("`set` must be a keymap set name, got {other}")),
+    };
+    let entries = o.get("keymap").and_then(Value::as_object).ok_or("missing `keymap` object")?;
+    if entries.len() > 10_000 {
+        return Err(format!("too many keymap entries ({})", entries.len()));
+    }
+    // Build against the file's set (assign resolves conflicts with that set's defaults), then
+    // restore the active set unless everything checked out.
+    let previous = active_set();
+    if let Some(set) = set {
         set_active(set);
     }
-    let entries = o.get("keymap").and_then(Value::as_object).ok_or("missing `keymap` object")?;
     let mut keymap = Keymap::new();
-    let mut skipped = Vec::new();
-    for (id, sc) in entries.iter().take(10_000) {
+    let mut bad = Vec::new();
+    for (id, sc) in entries {
         let r = match sc {
             Value::String(s) if s.is_empty() => assign(&mut keymap, id, None),
             Value::String(s) => assign(&mut keymap, id, Some(s)),
@@ -161,11 +171,18 @@ pub fn import_value(app: &mut LccApp, v: &Value) -> Result<Value, String> {
             _ => Err("not a string".into()),
         };
         if let Err(e) = r {
-            skipped.push(format!("{id}: {e}"));
+            bad.push(format!("{id}: {e}"));
         }
     }
+    if !bad.is_empty() {
+        set_active(previous);
+        return Err(format!("keymap not imported: {}", bad.join("; ")));
+    }
+    if let Some(set) = set {
+        app.ui.settings.keymap_set = set;
+    }
     app.ui.settings.keymap = keymap;
-    Ok(json!({"set": app.ui.settings.keymap_set, "count": app.ui.settings.keymap.len(), "skipped": skipped}))
+    Ok(json!({"set": app.ui.settings.keymap_set, "count": app.ui.settings.keymap.len()}))
 }
 
 /// `app.keymapImport {path}`.

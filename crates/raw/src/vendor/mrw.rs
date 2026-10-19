@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Minolta / Konica Minolta MRW: a big-endian block container (`\0MRM`) followed by the uncompressed mosaic.
 //!
 //! Sources: the publicly documented MRW block layout (Dalibor Jelinek's "MRW format" notes and the ExifTool tag
@@ -39,11 +40,11 @@ pub(crate) struct Header {
 }
 
 fn be16(b: &[u8], at: usize) -> Option<u16> {
-    Some(u16::from_be_bytes([*b.get(at)?, *b.get(at + 1)?]))
+    Some(u16::from_be_bytes(*b.get(at..at.checked_add(2)?)?.as_array::<2>()?))
 }
 
 fn be32(b: &[u8], at: usize) -> Option<u32> {
-    Some(u32::from_be_bytes([*b.get(at)?, *b.get(at + 1)?, *b.get(at + 2)?, *b.get(at + 3)?]))
+    Some(u32::from_be_bytes(*b.get(at..at.checked_add(4)?)?.as_array::<4>()?))
 }
 
 /// Walk the blocks after the `\0MRM` header.
@@ -62,9 +63,10 @@ pub(crate) fn header(bytes: &[u8]) -> Result<Header> {
         if p.saturating_add(8) > data {
             break;
         }
-        let tag = bytes.get(p..p + 4).ok_or_else(|| corrupt("truncated block"))?;
-        let blen = be32(bytes, p + 4).ok_or_else(|| corrupt("truncated block"))? as usize;
-        let start = p + 8;
+        // p + 8 <= data <= bytes.len(): none of these overflow
+        let tag = bytes.get(p..p.saturating_add(4)).ok_or_else(|| corrupt("truncated block"))?;
+        let blen = be32(bytes, p.saturating_add(4)).ok_or_else(|| corrupt("truncated block"))? as usize;
+        let start = p.saturating_add(8);
         let end = start.checked_add(blen).filter(|&e| e <= data).ok_or_else(|| corrupt("block past the block area"))?;
         let body = bytes.get(start..end).ok_or_else(|| corrupt("truncated block"))?;
         match tag {
@@ -103,7 +105,8 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let h = header(bytes)?;
     let (w, ht) = (h.sensor_w, h.sensor_h);
     let n = w.checked_mul(ht).filter(|n| *n <= crate::MAX_SAMPLES).ok_or(RawError::Limit("image too large"))?;
-    let need = if h.packed { n / 2 * 3 } else { n * 2 };
+    // n <= MAX_SAMPLES (2^30): neither product overflows a 64-bit usize, and on 32-bit they are checked
+    let need = if h.packed { (n / 2).checked_mul(3) } else { n.checked_mul(2) }.ok_or(RawError::Limit("image too large"))?;
     let src = bytes.get(h.data..).and_then(|s| s.get(..need)).ok_or_else(|| RawError::Corrupt("MRW mosaic truncated".into()))?;
     let data = if mode == Mode::Full {
         let mut out = vec![0u16; n];
@@ -129,8 +132,10 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         let (mut sum, mut n) = ([0f32; 3], [0f32; 3]);
         for (&v, &col) in c.iter().zip(&cfa.pattern) {
             let k = usize::from(col.min(2));
-            sum[k] += f32::from(v);
-            n[k] += 1.0;
+            if let (Some(s), Some(c)) = (sum.get_mut(k), n.get_mut(k)) {
+                *s += f32::from(v);
+                *c += 1.0;
+            }
         }
         let g = sum[1] / n[1].max(1.0);
         [sum[0] / n[0].max(1.0) / g, 1.0, sum[2] / n[2].max(1.0) / g]

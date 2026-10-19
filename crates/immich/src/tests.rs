@@ -225,7 +225,15 @@ fn hostile_ids_are_not_put_into_paths() {
 #[test]
 fn urls_are_normalized() {
     assert_eq!(client::normalize_url(" photos.example.org/ ").unwrap(), "https://photos.example.org");
-    assert_eq!(client::normalize_url("http://nas:2283/api/").unwrap(), "http://nas:2283");
+    assert_eq!(client::normalize_url("https://nas:2283/api/").unwrap(), "https://nas:2283");
+    // plain http would send the API key in the clear: only to this machine
+    for bad in ["http://nas:2283", "http://192.168.1.5:2283", "http://photos.example.org", "http://localhost.example.org"] {
+        assert!(matches!(client::normalize_url(bad), Err(ImmichError::BadUrl(_))), "{bad}");
+        assert!(Client::new(bad, Secret::new("k"), &ServerOptions::default()).is_err(), "{bad}");
+    }
+    for ok in ["http://localhost:2283", "http://127.0.0.1:2283", "http://[::1]:2283", "http://immich.localhost"] {
+        assert!(client::normalize_url(ok).is_ok(), "{ok}");
+    }
     assert!(client::normalize_url("").is_err());
     assert_eq!(client::asset_web_url("http://nas:2283", "abc"), "http://nas:2283/photos/abc");
     assert!(client::api_key_page("http://nas:2283").starts_with("http://nas:2283/user-settings"));

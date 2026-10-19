@@ -32,7 +32,7 @@ const MODULES: &[Module] = &[
     Module {
         src: include_str!("wgsl/blur.wgsl"),
         bindings: &[("src", false, "f32"), ("dst", true, "f32")],
-        entries: &["box_h", "box_v", "median_h", "median_v", "min_h", "min_v"],
+        entries: &["box_h", "box_h_slide", "box_v", "median_h", "median_v", "min_h", "min_v"],
     },
     Module {
         src: include_str!("wgsl/gauss.wgsl"),
@@ -56,6 +56,7 @@ const MODULES: &[Module] = &[
             "wb_k",
             "nr_lum",
             "chroma_k",
+            "clamp0_k",
             "nr_col",
             "subsample",
             "redeye_k",

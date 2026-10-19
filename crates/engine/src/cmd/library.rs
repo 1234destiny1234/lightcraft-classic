@@ -932,8 +932,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "{id?, index} — remove one face / pet region (by its position in the photo's regions) from the photo in the catalog; undoable. The XMP sidecar is never rewritten for this, even with auto-write on, so reading the metadata from the file brings the region back",
             always,
             |s, p| {
-                let id =
-                    p.get("id").and_then(Value::as_u64).map(PhotoId).or_else(|| s.active()).ok_or_else(|| bad("photo.removeRegion", "no photo"))?;
+                let id = s.photo_or_active(p, "photo.removeRegion")?;
                 let index = p
                     .get("index")
                     .and_then(Value::as_u64)
@@ -959,7 +958,7 @@ pub fn specs() -> Vec<CommandSpec> {
             |s, p| {
                 const C: &str = "photo.setRegion";
                 // a drag is one undo step however many frames it took: the caller commits once, on release
-                let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or_else(|| s.active()).ok_or_else(|| bad(C, "no photo"))?;
+                let id = s.photo_or_active(p, C)?;
                 let index = p
                     .get("index")
                     .and_then(Value::as_u64)
@@ -1745,7 +1744,7 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("album.setCover", "Set as Album Cover", [], None, "{id: albumId, photo?: photoId}", has_active, |s, p| {
             let id = album_param(p, "id", "album.setCover")?;
-            let photo = p.get("photo").and_then(Value::as_u64).map(PhotoId).or(s.active());
+            let photo = crate::Session::photo_param(p, "photo", "album.setCover")?.or(s.active());
             s.commit("Set Album Cover", Op::SetAlbumCover { id, cover: photo })?;
             ok()
         }),

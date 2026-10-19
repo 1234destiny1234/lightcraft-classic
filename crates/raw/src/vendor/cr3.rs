@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Canon CR3 container, camera metadata and sensor geometry.
 //!
 //! Sources: Laurent Clévy's public CR3 format description (`CMP1`, `CDI1/IAD1`, `CMT3`),
@@ -36,7 +37,7 @@ pub(crate) fn main_track(tracks: &[Cr3Track]) -> Option<&Cr3Track> {
     let mut best_area = 0u64;
     for track in tracks {
         if let Cr3TrackKind::Raw { width, height, .. } = track.kind {
-            let area = u64::from(width) * u64::from(height);
+            let area = u64::from(width).saturating_mul(u64::from(height));
             if area > best_area {
                 best = Some(track);
                 best_area = area;
@@ -146,9 +147,9 @@ fn camera_levels(maker: Option<&Ifd>, bits: u8) -> CameraLevels {
         Some(66) => (105, 383, None),
         _ => return CameraLevels::default(),
     };
-    let full = ((1u32 << u32::from(bits.clamp(1, 16))) - 1) as f32;
+    let full = ((1u32 << u32::from(bits.clamp(1, 16))).saturating_sub(1)) as f32;
     let quadruple = |at: usize| -> Option<[f32; 4]> {
-        let v = values.get(at..at + 4)?;
+        let v = values.get(at..at.checked_add(4)?)?;
         Some([*v.first()? as f32, *v.get(1)? as f32, *v.get(2)? as f32, *v.get(3)? as f32])
     };
     let wb = quadruple(offsets.0).and_then(|[r, g1, g2, b]| {
@@ -176,9 +177,10 @@ fn black_at_active(levels: [f32; 4], pattern: u8, active: Rect) -> BlackLevel {
     };
     let values = (0..4)
         .map(|i| {
-            let x = (active.x + i % 2) % 2;
-            let y = (active.y + i / 2) % 2;
-            levels.get(*sites.get(y * 2 + x).unwrap_or(&0)).copied().unwrap_or(0.0)
+            // the CFA site of active-area pixel (i % 2, i / 2): parities only, so nothing can overflow
+            let x = (active.x % 2) ^ (i % 2);
+            let y = (active.y % 2) ^ (i / 2);
+            levels.get(*sites.get((y << 1) | x).unwrap_or(&0)).copied().unwrap_or(0.0)
         })
         .collect();
     BlackLevel { repeat_rows: 2, repeat_cols: 2, values, delta_h: vec![], delta_v: vec![] }
@@ -227,7 +229,9 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let levels = camera_levels(color_maker, coding.bit_depth);
     let black = match levels.black {
         Some(levels) => black_at_active(levels, coding.cfa_pattern, active),
-        None if active.x >= 8 => black_from_columns(&data, width, 2..active.x - 2, active.y..active.y + active.height, active),
+        None if active.x >= 8 => {
+            black_from_columns(&data, width, 2..active.x.saturating_sub(2), active.y..active.y.saturating_add(active.height), active)
+        }
         None => BlackLevel::uniform(0.0),
     };
     let white = levels.white.unwrap_or_else(|| white_from_data(&data, u32::from(coding.bit_depth)));
@@ -263,6 +267,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
     use lcc_tiff::{IfdBuilder, Value};

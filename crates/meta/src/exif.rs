@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Exif / TIFF tags → [`Metadata`] (CIPA DC-008 Exif 2.32, TIFF 6.0, DNG 1.7 tag semantics).
 
 use crate::{DateTime, Flash, Gps, Metadata, Orientation};
@@ -5,7 +6,10 @@ use lcc_tiff::{Ifd, Tiff, TiffError, tags as t};
 
 /// Strip an `Exif\0\0` (or `Exif\0\xff`) prefix as found in JPEG APP1 and some WebP `EXIF` chunks.
 pub fn strip_exif_header(b: &[u8]) -> &[u8] {
-    if b.len() >= 6 && &b[..4] == b"Exif" && b[4] == 0 { &b[6..] } else { b }
+    match b {
+        [b'E', b'x', b'i', b'f', 0, _, rest @ ..] => rest,
+        _ => b,
+    }
 }
 
 /// Read metadata from a TIFF-structured Exif block (a whole TIFF/DNG/raw file, or the payload of a JPEG APP1
@@ -59,8 +63,10 @@ pub fn from_tiff(tiff: &Tiff) -> Metadata {
     };
     // Exif requires LensSpecification/LensInfo as 4 rationals.
     let spec = exif.and_then(|e| e.f64s(t::LENS_SPECIFICATION)).or_else(|| ifd0.and_then(|i| i.f64s(t::LENS_INFO)));
-    if let Some(s) = spec.filter(|s| s.len() == 4 && s[0] > 0.0) {
-        m.lens_spec = Some([s[0], s[1], s[2], s[3]]);
+    if let Some(&[a, b, c, d]) = spec.as_deref()
+        && a > 0.0
+    {
+        m.lens_spec = Some([a, b, c, d]);
     }
     // Nikon DSLRs write neither LensModel nor LensSpecification, only the same four values in their maker note
     if m.lens_spec.is_none() {
@@ -213,6 +219,7 @@ fn nikon_lens_spec(exif: Option<&Ifd>, make: Option<&str>, order: lcc_tiff::Byte
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 pub(crate) mod tests {
     use super::*;
     use lcc_tiff::{ByteOrder, IfdBuilder, TiffWriter, Value};
@@ -520,6 +527,7 @@ pub fn write_exif(meta: &Metadata) -> Vec<u8> {
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod write_tests {
     use super::*;
 

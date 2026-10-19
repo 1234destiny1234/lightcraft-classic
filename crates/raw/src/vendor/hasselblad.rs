@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Hasselblad 3FR and FFF raws ([`crate::RawFormat::CfaTiff`]).
 //!
 //! Sources: TIFF 6.0 (container), the DNG Specification (the tags these files borrow) and our own black-box
@@ -82,7 +83,7 @@ pub(crate) fn rgb_preview(tiff: &Tiff, bytes: &[u8]) -> Option<Vec<u8>> {
                 && i.width > 0
                 && i.height > 0
         })
-        .max_by_key(|i| u64::from(i.width) * u64::from(i.height))?;
+        .max_by_key(|i| u64::from(i.width).saturating_mul(u64::from(i.height)))?;
     let (w, h) = (info.width as usize, info.height as usize);
     let size = w.checked_mul(h)?.checked_mul(3)?;
     if size > MAX_PREVIEW_BYTES {

@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! IPTC-IIM (Information Interchange Model 4.2) — the record-2 datasets people still carry in JPEGs.
 //!
 //! Stream of `0x1C record dataset size(u16 BE, or extended) data` tags. Text is UTF-8 when the record-1
@@ -21,21 +22,18 @@ pub fn parse_iptc(b: &[u8]) -> Metadata {
     let mut date: Option<String> = None;
     let mut time: Option<String> = None;
     let mut i = 0usize;
-    while i + 5 <= b.len() {
-        if b[i] != 0x1c {
+    while let Some(&[marker, rec, ds, s0, s1]) = i.checked_add(5).and_then(|e| b.get(i..e)) {
+        if marker != 0x1c {
             break;
         }
-        let (rec, ds) = (b[i + 1], b[i + 2]);
-        let mut size = u16::from_be_bytes([b[i + 3], b[i + 4]]) as usize;
-        let mut at = i + 5;
+        let mut size = u16::from_be_bytes([s0, s1]) as usize;
+        let Some(mut at) = i.checked_add(5) else { break };
         if size & 0x8000 != 0 {
             // extended dataset: next (size & 0x7fff) bytes hold the length
             let n = size & 0x7fff;
-            if n == 0 || n > 4 || at + n > b.len() {
-                break;
-            }
-            size = b[at..at + n].iter().fold(0usize, |a, &c| (a << 8) | c as usize);
-            at += n;
+            let Some(len) = at.checked_add(n).and_then(|e| b.get(at..e)).filter(|l| (1..=4).contains(&l.len())) else { break };
+            size = len.iter().fold(0usize, |a, &c| (a << 8) | c as usize);
+            at = at.saturating_add(n);
         }
         let Some(data) = b.get(at..at.saturating_add(size)) else { break };
         match (rec, ds) {
@@ -54,7 +52,7 @@ pub fn parse_iptc(b: &[u8]) -> Metadata {
             (2, 60) => time = Some(decode(data, utf8)),
             _ => {}
         }
-        i = at + size;
+        i = at.saturating_add(size);
     }
     if let Some(d) = date.filter(|d| d.len() == 8 && d.bytes().all(|c| c.is_ascii_digit())) {
         let mut s = format!("{}-{}-{}", &d[..4], &d[4..6], &d[6..8]);

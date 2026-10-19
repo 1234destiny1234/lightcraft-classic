@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Sony ARW lens corrections from the tables in the raw IFD, as the equivalent DNG `OpcodeList3` opcodes, so they
 //! reach the same "profile corrections" (`optics.lens_profile`) as a DNG's embedded warp.
 //!
@@ -118,7 +119,7 @@ fn interpolate(knots: &[f64], spacing: f64, r: f64) -> f64 {
     let t = r / spacing;
     // `as` saturates, so a huge `t` lands on the last segment; NaN fails `t > 0`
     let i = if t > 0.0 { (t as usize).min(knots.len().saturating_sub(2)) } else { 0 };
-    match (knots.get(i), knots.get(i + 1)) {
+    match (knots.get(i), knots.get(i.saturating_add(1))) {
         (Some(a), Some(b)) => a + (b - a) * (t - i as f64),
         _ => f64::NAN,
     }

@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Built-in white-balance presets for cameras whose raws carry neither colour matrices nor a preset table, feeding
 //! the Kelvin scale of [`crate::kelvin_presets`].
 //!

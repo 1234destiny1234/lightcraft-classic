@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Mamiya MEF (ZD): a big-endian TIFF whose first `SubIFDs` child is an uncompressed 12-bit packed CFA image.
 //!
 //! Sources: TIFF 6.0 (container, MSB-first bit packing, `CFAPattern`) and our own black-box analysis of the one CC0
@@ -41,7 +42,7 @@ pub(crate) fn raw_ifd(tiff: &Tiff, len: usize) -> Option<&Ifd> {
             && i.u16(t::BITS_PER_SAMPLE) == Some(12)
             && w > 0
             && w % 2 == 0
-            && matches!(info.chunks(len as u64).as_slice(), [c] if Some(c.len) == (w * 3 / 2).checked_mul(h))
+            && matches!(info.chunks(len as u64).as_slice(), [c] if Some(c.len) == w.checked_mul(3).map(|v| v / 2).and_then(|v| v.checked_mul(h)))
     })
 }
 
@@ -61,7 +62,7 @@ fn rgb_preview<'a>(tiff: &Tiff, bytes: &'a [u8]) -> Option<(&'a [u8], usize, usi
             let px = chunk_bytes(bytes, c)?;
             (ok && px.len() >= w.checked_mul(h)?.checked_mul(3)?).then_some((px, w, h))
         })
-        .max_by_key(|(_, w, h)| w * h)
+        .max_by_key(|(_, w, h)| w.saturating_mul(*h))
 }
 
 pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
@@ -78,7 +79,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let crop = match preview {
         Some((_, pw, ph)) => {
             let (cw, ch) = (pw.saturating_mul(PREVIEW_SCALE), ph.saturating_mul(PREVIEW_SCALE));
-            if cw > 0 && ch > 0 && CROP_ORIGIN.0 + cw <= w && CROP_ORIGIN.1 + ch <= h {
+            if cw > 0 && ch > 0 && CROP_ORIGIN.0.saturating_add(cw) <= w && CROP_ORIGIN.1.saturating_add(ch) <= h {
                 Rect::new(CROP_ORIGIN.0, CROP_ORIGIN.1, cw, ch)
             } else {
                 Rect::new(0, 0, w, h)

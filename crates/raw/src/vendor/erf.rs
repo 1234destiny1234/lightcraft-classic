@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Epson ERF (R-D1, R-D1s, R-D1x): a big-endian TIFF whose `SubIFDs` child is a 12-bit CFA image in 16-byte blocks.
 //!
 //! Sources: TIFF 6.0 (container, `CFARepeatPatternDim` / `CFAPattern`) and our own black-box analysis of the three
@@ -47,7 +48,7 @@ pub(crate) fn raw_ifd(tiff: &Tiff, len: usize) -> Option<&Ifd> {
             && i.u16(t::BITS_PER_SAMPLE) == Some(12)
             && w > 0
             && w % 10 == 0
-            && matches!(info.chunks(len as u64).as_slice(), [c] if Some(c.len) == (w * 8 / 5).checked_mul(h))
+            && matches!(info.chunks(len as u64).as_slice(), [c] if Some(c.len) == w.checked_mul(8).map(|v| v / 5).and_then(|v| v.checked_mul(h)))
     })
 }
 
@@ -91,7 +92,9 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     };
     let size = mn.as_ref().and_then(|m| Some((m.u32(MN_WIDTH)? as usize, m.u32(MN_HEIGHT)? as usize)));
     let crop = match size {
-        Some((cw, ch)) if cw > 0 && ch > 0 && CROP_ORIGIN.0 + cw <= w && CROP_ORIGIN.1 + ch <= h => Rect::new(CROP_ORIGIN.0, CROP_ORIGIN.1, cw, ch),
+        Some((cw, ch)) if cw > 0 && ch > 0 && CROP_ORIGIN.0.saturating_add(cw) <= w && CROP_ORIGIN.1.saturating_add(ch) <= h => {
+            Rect::new(CROP_ORIGIN.0, CROP_ORIGIN.1, cw, ch)
+        }
         _ => Rect::new(0, 0, w, h),
     };
     // the white balance is measured from the samples, so the header probe reads them too
