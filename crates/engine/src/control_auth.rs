@@ -74,12 +74,17 @@ fn token_file_in(config_dir: Option<&Path>, port: u16) -> Option<PathBuf> {
     config_dir.map(|dir| dir.join(format!("control-token-{port}")))
 }
 
-/// Store `token` for clients, replacing an older run's. On Unix only the owner may read it.
+/// Store `token` for clients, replacing an older run's. The file is written beside its final
+/// name and renamed into place, so a client never reads a half-written token. On Unix only the
+/// owner may read it.
 pub fn write_token_file(path: &Path, token: &str) -> Result<(), String> {
     use std::io::Write;
     if let Some(parent) = path.parent().filter(|p| !p.as_os_str().is_empty()) {
         std::fs::create_dir_all(parent).map_err(|e| format!("{}: {e}", parent.display()))?;
     }
+    let mut tmp_name = path.file_name().unwrap_or_default().to_os_string();
+    tmp_name.push(format!(".{}.tmp", std::process::id()));
+    let tmp = path.with_file_name(tmp_name);
     let mut options = std::fs::OpenOptions::new();
     options.write(true).create(true).truncate(true);
     #[cfg(unix)]
@@ -87,8 +92,15 @@ pub fn write_token_file(path: &Path, token: &str) -> Result<(), String> {
         use std::os::unix::fs::OpenOptionsExt;
         options.mode(0o600);
     }
-    let mut file = options.open(path).map_err(|e| format!("{}: {e}", path.display()))?;
-    writeln!(file, "{token}").map_err(|e| format!("{}: {e}", path.display()))
+    let written = options.open(&tmp).and_then(|mut file| {
+        writeln!(file, "{token}")?;
+        file.sync_all()
+    });
+    let result = written.and_then(|()| std::fs::rename(&tmp, path));
+    if result.is_err() {
+        let _ = std::fs::remove_file(&tmp);
+    }
+    result.map_err(|e| format!("{}: {e}", path.display()))
 }
 
 /// Read and check a token file.

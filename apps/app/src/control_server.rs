@@ -28,18 +28,22 @@ pub const MAX_LINE: usize = 4 * 1024 * 1024;
 pub const MAX_CONNECTIONS: usize = 16;
 
 /// Serve the control channel on `127.0.0.1:port`; every connection must authenticate with `token`.
-pub fn start(port: u16, token: String, ctx: egui::Context) -> Receiver<ControlRequest> {
-    let (tx, rx) = channel::<ControlRequest>();
+/// `publish` (which stores the token for clients) runs only once the port is ours: a second
+/// instance started with the same port must not replace the running instance's token and then
+/// fail to bind, which would lock every client out of the first one. `None` when the bind fails.
+pub fn start(port: u16, token: String, ctx: egui::Context, publish: impl FnOnce(&str)) -> Option<Receiver<ControlRequest>> {
     let listener = match TcpListener::bind(("127.0.0.1", port)) {
         Ok(l) => l,
         Err(e) => {
             log::error!("control server failed to bind 127.0.0.1:{port}: {e}");
-            return rx;
+            return None;
         }
     };
+    publish(&token);
     log::info!("control server listening on 127.0.0.1:{port}");
+    let (tx, rx) = channel::<ControlRequest>();
     std::thread::spawn(move || accept_loop(listener, tx, ctx, token));
-    rx
+    Some(rx)
 }
 
 fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context, token: String) {
@@ -436,6 +440,31 @@ mod tests {
         assert_eq!(read_bounded_line(&mut &input[..], &mut buf, 10), Ok(true));
         assert_eq!(buf, line);
         assert!(read_bounded_line(&mut &[b'a'; 11][..], &mut buf, 10).is_err());
+    }
+
+    /// A second instance on a port that is already served neither publishes its token (which
+    /// would lock clients out of the running instance) nor starts.
+    #[test]
+    fn a_taken_port_publishes_no_token() {
+        let taken = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let port = taken.local_addr().unwrap().port();
+        let mut published = None;
+        let rx = start(port, TOKEN.into(), egui::Context::default(), |t| published = Some(t.to_string()));
+        assert!(rx.is_none());
+        assert_eq!(published, None, "the token must not be published when the bind failed");
+    }
+
+    #[test]
+    fn a_free_port_publishes_the_token_once_bound() {
+        let port = TcpListener::bind(("127.0.0.1", 0)).unwrap().local_addr().unwrap().port();
+        let mut published = None;
+        let rx = start(port, TOKEN.into(), egui::Context::default(), |t| {
+            // the port is already ours when the token is stored
+            assert!(TcpListener::bind(("127.0.0.1", port)).is_err());
+            published = Some(t.to_string());
+        });
+        assert!(rx.is_some());
+        assert_eq!(published.as_deref(), Some(TOKEN));
     }
 
     /// A program the app starts while a client is connected doesn't keep the connection open:

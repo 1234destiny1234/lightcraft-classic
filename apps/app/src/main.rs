@@ -1179,9 +1179,11 @@ fn main() -> eframe::Result {
                     let supplied = control_token_arg.is_some();
                     match control_token(control_token_arg) {
                         Ok(token) => {
-                            publish_control_token(port, &token, supplied);
-                            let rx = control_server::start(port, token, cc.egui_ctx.clone());
-                            app = app.with_control(rx);
+                            // bind first: the token file is written only once the port is ours
+                            let publish = |token: &str| publish_control_token(port, token, supplied);
+                            if let Some(rx) = control_server::start(port, token, cc.egui_ctx.clone(), publish) {
+                                app = app.with_control(rx);
+                            }
                         }
                         Err(e) => log::error!("no control server: {e}"),
                     }
