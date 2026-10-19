@@ -94,7 +94,7 @@ changed, the field's policy decides (`catalog`, `immich`, `newest` — the defau
 `immich.setSync {config}` (per-field `direction` and `policy`, `favorite`, `description`, `intervalMinutes`).
 Unresolved conflicts: `immich.syncConflicts`, decided with `immich.resolveConflict {keep}`. Deletions are never
 synced on their own: they wait in a queue (`immich.syncStatus` → `deletions`, `immich.resolveDeletion
-{action: apply|keep}`; Immich assets go to its trash, never a hard delete). The state between runs and the activity
+{action: apply|keep, assets?}` — `assets` omitted resolves every queued deletion, `[]` resolves none; Immich assets go to its trash, never a hard delete). The state between runs and the activity
 log live in `<library>/Immich/sync/<account>.json`; offline / bad-key failures change nothing and a scheduled sync
 retries with backoff.
 

@@ -400,6 +400,16 @@ fn two_way_sync_dry_run_conflicts_and_deletions() {
     let r = s.execute("immich.sync", &json!({})).unwrap();
     assert_eq!(r["deletionsQueued"], 2, "{r}");
     assert_eq!(remote(&state, "aaaa-1")["isTrashed"], Value::Null);
+    // an explicit empty list means none, never "all queued"
+    let r = s.execute("immich.resolveDeletion", &json!({"action": "apply", "assets": []})).unwrap();
+    assert_eq!(r["resolved"], 0, "{r}");
+    assert!(!s.catalog.photo(two).unwrap().deleted, "empty list must not delete anything");
+    assert_eq!(remote(&state, "aaaa-1")["isTrashed"], Value::Null, "empty list must not trash anything");
+    assert_eq!(s.execute("immich.syncStatus", &json!({})).unwrap()["deletions"].as_array().map(Vec::len), Some(2));
+    // a non-list `assets` is refused, not read as "all"
+    assert!(s.execute("immich.resolveDeletion", &json!({"action": "apply", "assets": "bbbb-2"})).is_err());
+    assert!(s.execute("immich.resolveDeletion", &json!({"action": "apply", "assets": {}})).is_err());
+    assert!(!s.catalog.photo(two).unwrap().deleted);
     let r = s.execute("immich.resolveDeletion", &json!({"action": "apply", "assets": ["bbbb-2"]})).unwrap();
     assert_eq!(r["resolved"], 1);
     assert!(s.catalog.photo(two).unwrap().deleted);
