@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! DNG `ProfileGainTableMap` (tag 52525, DNG 1.6) and `ProfileGainTableMap2` (tag 52544, DNG 1.7):
 //! a coarse grid of 1D gain tables carrying the maker's local tone mapping. Apple ProRAW has one.
 //!
@@ -88,7 +89,7 @@ impl GainTableMap {
         let points_n = u32_at(40)? as usize;
         let mut weights = [0f32; 5];
         for (i, w) in weights.iter_mut().enumerate() {
-            *w = f32_at(44 + 4 * i)?;
+            *w = f32_at(i.saturating_mul(4).saturating_add(44))?;
         }
         let tables = points_v.checked_mul(points_h).filter(|&t| t > 0 && t <= MAX_TABLES)?;
         let count = tables.checked_mul(points_n).filter(|&c| c > 0 && c <= MAX_GAINS)?;
@@ -133,7 +134,7 @@ impl GainTableMap {
     /// version 2 with f32 gains. Returns `(version2, bytes)`.
     pub fn to_bytes(&self, order: ByteOrder) -> (bool, Vec<u8>) {
         let version2 = self.gamma != 1.0;
-        let mut out = Vec::with_capacity(80 + 4 * self.gains.len());
+        let mut out = Vec::with_capacity(self.gains.len().saturating_mul(4).saturating_add(80));
         let u32b = |v: u32| match order {
             ByteOrder::Big => v.to_be_bytes(),
             ByteOrder::Little => v.to_le_bytes(),
@@ -242,7 +243,7 @@ impl GainEval<'_> {
         let (h0, h1, fh) = self.h.cell(x);
         // one fractional index for the four tables (≥ 0, so `as` truncates)
         let n = m.points_n;
-        let last = n - 1;
+        let last = n.saturating_sub(1);
         let idx = (input(m, p) * n as f32).min(last as f32);
         let i0 = (idx as usize).min(last);
         let i1 = i0.saturating_add(1).min(last);
@@ -250,7 +251,7 @@ impl GainEval<'_> {
         // (v ≤ points_v − 1, h ≤ points_h − 1 and i ≤ n − 1, with points_v·points_h·n = gains.len()
         // checked by `evaluator`: none of this overflows, and `get` still guards each read)
         let at = |v: usize, h: usize| {
-            let table = m.gains.get((v * m.points_h + h) * n..).unwrap_or(&[]);
+            let table = m.gains.get(v.saturating_mul(m.points_h).saturating_add(h).saturating_mul(n)..).unwrap_or(&[]);
             let g0 = table.get(i0).copied().unwrap_or(1.0);
             let g1 = table.get(i1).copied().unwrap_or(1.0);
             g0 + (g1 - g0) * t
@@ -295,6 +296,7 @@ impl SourcePlacement {
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
 
@@ -547,4 +549,5 @@ mod tests {
 /// `GTM_FILE=photo.dng cargo test --release -p lcc-raw gain_throughput -- --ignored --nocapture`:
 /// the cost of [`GainEval::gain`] per pixel on a real file's map.
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod bench {}

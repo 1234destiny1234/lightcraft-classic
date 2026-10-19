@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Lens-correction data a raw file records, kept with where it came from and separately from what the app
 //! applies.
 //!
