@@ -248,6 +248,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
                     profile: Some(name),
                     mode: None,
                     fields: Vec::new(),
+                    photo: None,
                 });
             }
             let upright = crate::crs::has_saved_upright_transform(&d.properties);
@@ -276,6 +277,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
                         profile: None,
                         mode: Some(mode),
                         fields: Vec::new(),
+                        photo: None,
                     });
                 }
             }
@@ -295,6 +297,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
                     profile: None,
                     mode: None,
                     fields: other.into_iter().map(str::to_string).collect(),
+                    photo: None,
                 });
             }
             Some(DevelopPatch::Partial(partial))

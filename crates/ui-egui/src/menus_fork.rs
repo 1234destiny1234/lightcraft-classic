@@ -19,6 +19,7 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
         .chain(PLUGIN_COMMANDS)
         .chain(crate::timelapse_ui::COMMANDS)
         .chain(crate::panels::filterbar::COMMANDS)
+        .chain(crate::import_report::COMMANDS)
 }
 
 /// P4.3: the Plug-in Manager (`crate::panels::plugins`); native only, so the web build lists none.
@@ -51,6 +52,9 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         return Some(r);
     }
     if let Some(r) = crate::panels::filterbar::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::import_report::run(app, id, p) {
         return Some(r);
     }
     if let Some(r) = crate::libtools::run(app, id, p) {
@@ -183,5 +187,8 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
 
 /// Enabled state of the fork's modules' commands.
 pub(super) fn enabled(app: &LccApp, id: &str) -> Option<bool> {
-    crate::module::enabled(app, id).or_else(|| crate::catalog_ui::enabled(app, id)).or_else(|| crate::timelapse_ui::enabled(app, id))
+    crate::module::enabled(app, id)
+        .or_else(|| crate::catalog_ui::enabled(app, id))
+        .or_else(|| crate::timelapse_ui::enabled(app, id))
+        .or_else(|| crate::import_report::enabled(app, id))
 }

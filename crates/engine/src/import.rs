@@ -266,6 +266,9 @@ pub struct ImportWarning {
     pub mode: Option<ImportUprightMode>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
+    /// The photo it was imported as, filled with `path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo: Option<u64>,
 }
 
 /// A file moved by an import.
@@ -1483,6 +1486,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     report.sidecars += 1;
                     report.warnings.extend(sc.warnings.iter().cloned().map(|mut warning| {
                         warning.path = path.clone();
+                        warning.photo = Some(id.0);
                         warning
                     }));
                 }

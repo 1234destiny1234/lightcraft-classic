@@ -350,6 +350,7 @@ fn foreign_profile_and_upright_import_diagnostics_are_actionable() {
     assert_eq!(import_upright.mode, Some(crate::import::ImportUprightMode::Auto));
     assert!(import_upright.fields.is_empty());
     let p = s.catalog.photos().next().unwrap().clone();
+    assert_eq!(import_profile.photo, Some(p.id.0), "a warning names the photo it was imported as");
     assert_eq!(p.develop.profile.id, "lc.color");
     assert_eq!(p.develop.light.exposure, 1.68);
     assert_eq!(std::fs::read(&sidecar).unwrap(), before, "import never rewrites foreign XMP");
@@ -408,6 +409,7 @@ fn foreign_profile_and_upright_import_diagnostics_are_actionable() {
         profile: None,
         mode: None,
         fields: vec!["Tint".into()],
+        photo: Some(7),
     };
     let unmapped_wire = serde_json::to_value(&unmapped).unwrap();
     assert_eq!(serde_json::from_value::<crate::import::ImportWarning>(unmapped_wire).unwrap(), unmapped);

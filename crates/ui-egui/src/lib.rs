@@ -34,6 +34,7 @@ pub mod i18n;
 mod i18n_fork;
 pub mod icons;
 pub mod import;
+pub mod import_report;
 pub mod libtools;
 pub mod lightroom_import;
 pub mod links;
@@ -152,6 +153,8 @@ mod tests_histogram_modes;
 mod tests_i18n_coverage;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_immich_ui;
+#[cfg(test)]
+mod tests_import_report;
 #[cfg(test)]
 mod tests_info_dialogs;
 #[cfg(test)]
@@ -534,6 +537,8 @@ pub struct LccApp {
     pub merge: merge::MergeState,
     /// An import in progress (the import review dialog's batches).
     pub import: Option<import::ImportTask>,
+    /// The last import's XMP warnings (File ▸ More Imports ▸ Import Warnings…).
+    pub import_report: Option<import_report::Report>,
     /// A folder scan in progress (feeds the import review).
     pub scan: Option<import::ScanTask>,
     /// A Synchronize Folder scan in progress (feeds its dialog).
@@ -685,6 +690,7 @@ impl LccApp {
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
             import: None,
+            import_report: None,
             scan: None,
             sync: None,
             sync_owns_changes: false,
@@ -1682,6 +1688,7 @@ impl LccApp {
         help_overlay::show(self, &ctx);
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
+        import_report::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         catalog_ui::show(self, &ctx);
         plate::show_setup(self, &ctx);

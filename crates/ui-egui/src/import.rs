@@ -9,7 +9,7 @@
 //! one undo step.
 
 use egui::{Align2, Color32, Rect, Sense, Stroke, StrokeKind, Vec2, pos2, vec2};
-use lcc_engine::import::{ImportCandidate, ImportUprightMode, ImportWarning, ImportWarningCode, ScanInput, ScanOutput, ScanProgress, scan_with};
+use lcc_engine::import::{ImportCandidate, ImportWarning, ScanInput, ScanOutput, ScanProgress, scan_with};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 use std::sync::atomic::Ordering;
@@ -819,61 +819,6 @@ fn commit_batch(app: &mut LccApp, task: &mut ImportTask, prepared: lcc_engine::i
     }
 }
 
-fn xmp_warning_text(warning: &ImportWarning) -> String {
-    let path = &warning.path;
-    match warning.code {
-        ImportWarningCode::CameraProfile => crate::i18n::tr_format!(
-            "XMP profile \"{profile}\" was not applied for {path}; colors may differ from Lightroom.",
-            profile = warning.profile.as_deref().unwrap_or_default(),
-            path = path,
-        ),
-        ImportWarningCode::UprightGeometry => match warning.mode.unwrap_or(ImportUprightMode::Unknown) {
-            ImportUprightMode::Off => crate::i18n::tr_format!(
-                "Lightroom geometry for {path} was not preserved; saved transform is ignored because Upright is Off.",
-                path = path,
-            ),
-            ImportUprightMode::Guided => crate::i18n::tr_format!(
-                "Lightroom geometry for {path} was not preserved; Guided Upright saved transform is unsupported.",
-                path = path,
-            ),
-            ImportUprightMode::Auto => crate::i18n::tr_format!(
-                "Lightroom geometry was not preserved for {path}; {mode} will be recalculated.",
-                path = path,
-                mode = crate::i18n::tr("Auto")
-            ),
-            ImportUprightMode::Level => crate::i18n::tr_format!(
-                "Lightroom geometry was not preserved for {path}; {mode} will be recalculated.",
-                path = path,
-                mode = crate::i18n::tr("Level")
-            ),
-            ImportUprightMode::Vertical => crate::i18n::tr_format!(
-                "Lightroom geometry was not preserved for {path}; {mode} will be recalculated.",
-                path = path,
-                mode = crate::i18n::tr("Vertical")
-            ),
-            ImportUprightMode::Full => crate::i18n::tr_format!(
-                "Lightroom geometry was not preserved for {path}; {mode} will be recalculated.",
-                path = path,
-                mode = crate::i18n::tr("Full")
-            ),
-            ImportUprightMode::Unknown => {
-                crate::i18n::tr_format!("Lightroom geometry for {path} was not preserved; saved Upright transform is unsupported.", path = path,)
-            }
-        },
-        ImportWarningCode::UnmappedXmp => {
-            crate::i18n::tr_format!("XMP adjustments were not imported for {path}: {fields}.", path = path, fields = warning.fields.join(", "),)
-        }
-    }
-}
-
-fn xmp_warnings_text(warnings: &[ImportWarning]) -> String {
-    crate::i18n::tr_format!(
-        "Import warnings ({n}):\n{warnings}",
-        n = warnings.len(),
-        warnings = warnings.iter().map(xmp_warning_text).collect::<Vec<_>>().join("\n"),
-    )
-}
-
 /// The import is done (or cancelled): one undo step, show and select the first photo (unless the
 /// user chose another meanwhile), say what happened.
 fn finish(app: &mut LccApp, ctx: &egui::Context, task: ImportTask) {
@@ -889,7 +834,12 @@ fn finish(app: &mut LccApp, ctx: &egui::Context, task: ImportTask) {
     app.session.merge_undo(steps, &label);
     if task.auto {
         if !task.warnings.is_empty() {
-            app.toast_for(ctx, xmp_warnings_text(&task.warnings), 8.0);
+            let line = crate::import_report::record(app, task.imported + task.restored, &task.warnings, false);
+            app.toast_for(
+                ctx,
+                format!("{} {line} · {}", crate::i18n::tr("Auto Import:"), crate::i18n::tr("File ▸ More Imports ▸ Import Warnings…")),
+                8.0,
+            );
         } else if task.imported > 0 {
             app.toast(ctx, crate::i18n::tr_format!("Auto Import: added {} photo{}", task.imported, if task.imported == 1 { "" } else { "s" }));
         }
@@ -897,7 +847,8 @@ fn finish(app: &mut LccApp, ctx: &egui::Context, task: ImportTask) {
     }
     if task.browse {
         if !task.warnings.is_empty() {
-            app.toast_for(ctx, xmp_warnings_text(&task.warnings), 8.0);
+            let line = crate::import_report::record(app, task.imported + task.restored, &task.warnings, false);
+            app.toast_for(ctx, format!("{line} · {}", crate::i18n::tr("File ▸ More Imports ▸ Import Warnings…")), 8.0);
         } else if task.failed > 0 {
             app.toast(ctx, crate::i18n::tr_format!("{} photo{} not readable", task.failed, if task.failed == 1 { "" } else { "s" }));
         }
@@ -949,13 +900,13 @@ fn finish(app: &mut LccApp, ctx: &egui::Context, task: ImportTask) {
     if task.failed > 0 {
         msg.push_str(&crate::i18n::tr_format!(" · {} not readable", task.failed));
     }
-    if task.warnings.is_empty() {
-        app.toast(ctx, msg);
-    } else {
-        msg.push_str("\n\n");
-        msg.push_str(&xmp_warnings_text(&task.warnings));
-        app.toast_for(ctx, msg, 8.0);
+    if !task.warnings.is_empty() {
+        // the details open in their own window; the toast stays one line
+        let line = crate::import_report::record(app, task.imported + task.restored, &task.warnings, true);
+        msg.push_str(" · ");
+        msg.push_str(&line);
     }
+    app.toast(ctx, msg);
 }
 
 /// The photos among `ids` that are in Recently Deleted (each once).
