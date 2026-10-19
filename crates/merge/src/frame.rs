@@ -152,6 +152,13 @@ pub fn detect_clip(img: &Rgb32f) -> f32 {
     if maxv >= 1.0 || piled { level * 0.995 } else { 1.0 }
 }
 
+/// A clip level for a source that never saturates (floating point): far enough above its brightest
+/// value that the merge's highlight roll-off (from 0.80 × clip) leaves every pixel at full weight.
+pub fn unclipped_level(img: &Rgb32f) -> f32 {
+    let maxv = img.data.par_iter().map(|p| p[0].max(p[1]).max(p[2])).filter(|v| v.is_finite()).reduce(|| 0.0f32, f32::max);
+    (maxv / 0.79).max(1.0)
+}
+
 /// The colour tags a raw source starts from when the caller knows better than the file (`None`: the
 /// file's own tags). Called with the decoded raw, its samples still there, and the file's bytes.
 pub type RawColour<'a> = dyn Fn(&mut lcc_raw::RawImage, &[u8]) -> Option<ColorData> + Sync + 'a;
@@ -183,7 +190,8 @@ pub fn load_frame_with(bytes: &[u8], max_edge: Option<usize>, orient: bool, colo
         image = fit(&image, m, m, Filter::Box);
     }
     sanitize(&mut image);
-    let clip = detect_clip(&image);
+    // A floating-point file (EXR, Radiance, float TIFF) stores radiance past 1.0 and has no saturation level.
+    let clip = if d.float { unclipped_level(&image) } else { detect_clip(&image) };
     let mut f = Frame {
         image,
         clip,
@@ -294,6 +302,21 @@ mod tests {
         let m2 = Metadata { exposure_time: Some(4.0 / 125.0), ..m.clone() };
         assert!((exif_exposure(&m2).unwrap() - e - 2.0).abs() < 1e-9);
         assert!(exif_exposure(&Metadata::default()).is_none());
+    }
+
+    /// A float source well past 1.0 isn't clipped: its brightest pixels keep full merge weight.
+    #[test]
+    fn float_sources_are_not_clipped_at_one() {
+        let img = Rgb32f::from_fn(32, 32, |x, _| [x as f32 * 0.25; 3]);
+        let c = unclipped_level(&img);
+        assert!(0.80 * c > 31.0 * 0.25, "{c}");
+        let flat: Vec<f32> = img.data.iter().flatten().copied().collect();
+        let enc = lcc_codecs::encode::EncodeImage::new(32, 32, 3, lcc_codecs::encode::Samples::F32(&flat));
+        let bytes = lcc_codecs::encode::encode_tiff(&enc, lcc_codecs::encode::TiffCompression::None, &Default::default()).unwrap();
+        let f = load_frame(&bytes, None, false).unwrap();
+        let brightest = f.image.data.iter().map(|p| p[0].max(p[1]).max(p[2])).fold(0.0f32, f32::max);
+        assert!(brightest > 7.0, "{brightest}");
+        assert!(0.80 * f.clip > brightest, "clip {} vs brightest {brightest}", f.clip);
     }
 
     #[test]
