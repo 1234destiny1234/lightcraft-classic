@@ -49,6 +49,39 @@ pub fn par_join<A: Send, B: Send>(a: impl FnOnce() -> A + Send, b: impl FnOnce()
     }
 }
 
+/// An image buffer that could not be allocated (its size overflows, passes [`MAX_IMAGE_BYTES`], or the
+/// allocator refused it): returned by [`Image::try_new`] instead of aborting the process.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct AllocError {
+    pub width: usize,
+    pub height: usize,
+}
+
+impl std::fmt::Display for AllocError {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        write!(f, "not enough memory for a {}×{} image", self.width, self.height)
+    }
+}
+
+impl std::error::Error for AllocError {}
+
+/// The largest single image buffer [`Image::try_new`] allocates (64 GiB).
+pub const MAX_IMAGE_BYTES: usize = 64 << 30;
+
+/// A vector of `n` copies of `v`, or an error when it can't be had (overflow, past [`MAX_IMAGE_BYTES`],
+/// allocator failure) instead of an abort. `width`/`height` only label the error.
+pub fn try_vec<T: Clone>(n: usize, v: T, width: usize, height: usize) -> Result<Vec<T>, AllocError> {
+    let err = AllocError { width, height };
+    let bytes = n.checked_mul(std::mem::size_of::<T>().max(1)).ok_or(err)?;
+    if bytes > MAX_IMAGE_BYTES {
+        return Err(err);
+    }
+    let mut data = Vec::new();
+    data.try_reserve_exact(n).map_err(|_| err)?;
+    data.resize(n, v);
+    Ok(data)
+}
+
 /// Interleaved row-major image.
 #[derive(Clone, Debug, PartialEq)]
 pub struct Image<T> {
@@ -64,6 +97,15 @@ pub type Plane = Image<f32>;
 impl<T: Copy + Default> Image<T> {
     pub fn new(width: usize, height: usize) -> Self {
         Self { width, height, data: vec![T::default(); width * height] }
+    }
+    /// [`Self::new`] that returns an error instead of aborting when the buffer can't be allocated.
+    pub fn try_new(width: usize, height: usize) -> Result<Self, AllocError> {
+        Self::try_filled(width, height, T::default())
+    }
+    /// [`Self::filled`] that returns an error instead of aborting when the buffer can't be allocated.
+    pub fn try_filled(width: usize, height: usize, v: T) -> Result<Self, AllocError> {
+        let n = width.checked_mul(height).ok_or(AllocError { width, height })?;
+        Ok(Self { width, height, data: try_vec(n, v, width, height)? })
     }
     pub fn filled(width: usize, height: usize, v: T) -> Self {
         Self { width, height, data: vec![v; width * height] }
@@ -294,6 +336,14 @@ impl Rgba8 {
 mod tests {
     use super::*;
     use lcc_geom::Orientation;
+
+    #[test]
+    fn huge_images_are_an_error_not_an_abort() {
+        assert!(Rgb32f::try_new(usize::MAX / 2, 4).is_err());
+        assert!(Rgb32f::try_new(1 << 20, 1 << 20).is_err());
+        let ok = Plane::try_filled(3, 2, 0.5).unwrap();
+        assert_eq!(ok, Plane::filled(3, 2, 0.5));
+    }
 
     #[test]
     fn zip_map_with_mismatched_sizes_does_not_panic() {
