@@ -188,9 +188,20 @@ fn entity(name: &str) -> Option<char> {
                 Some(h) => u32::from_str_radix(h, 16).ok()?,
                 None => n.parse().ok()?,
             };
-            char::from_u32(v)?
+            char::from_u32(v).filter(|&c| is_xml_char(c))?
         }
     })
+}
+
+/// The XML 1.0 `Char` production (the surrogate range can't occur in a `char`).
+fn is_xml_char(c: char) -> bool {
+    matches!(c, '\t' | '\n' | '\r') || (c >= '\u{20}' && c != '\u{FFFE}' && c != '\u{FFFF}')
+}
+
+/// Drop the characters XML 1.0 forbids, which strict parsers (Adobe XMP Toolkit, expat, libxml2) reject the
+/// whole document for.
+fn xml_safe(s: &str) -> String {
+    s.chars().filter(|&c| is_xml_char(c)).collect()
 }
 
 /// Unescape attribute values (predefined + numeric references; unknown references kept verbatim).
@@ -509,10 +520,7 @@ pub fn parse_xmp(s: &str) -> Result<XmpData, XmpError> {
         label: first("xmp:Label"),
         ..Default::default()
     };
-    m.iso = num("exif:ISOSpeedRatings").or_else(|| num("exifEX:PhotographicSensitivity")).filter(|v| *v > 0.0).map(|v| v as u32);
-    if let Some(v) = props.get("exif:ISOSpeedRatings").and_then(|v| v.first()).and_then(|s| parse_number(s)) {
-        m.iso = Some(v as u32);
-    }
+    m.iso = [num("exif:ISOSpeedRatings"), num("exifEX:PhotographicSensitivity")].into_iter().flatten().find(|v| *v > 0.0).map(|v| v as u32);
     if let Some(spec) = props.get("exifEX:LensSpecification").filter(|v| v.len() == 4) {
         let v: Vec<f64> = spec.iter().filter_map(|s| parse_number(s)).collect();
         if v.len() == 4 {
@@ -752,12 +760,12 @@ pub fn write_xmp_filters(
     }
     x.push_str(">\n");
     for (k, v) in &simple {
-        x.push_str(&format!("   <{k}>{}</{k}>\n", escape(v.as_str())));
+        x.push_str(&format!("   <{k}>{}</{k}>\n", escape(xml_safe(v))));
     }
     for (k, v) in lc {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             // element content: quotes needn't be escaped, which keeps the JSON readable
-            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(*v)));
+            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(xml_safe(v))));
         }
     }
     for (k, v) in video {
@@ -772,9 +780,9 @@ pub fn write_xmp_filters(
         x.push_str(&format!("   <{k}>\n    <rdf:{kind}>\n"));
         for it in items {
             if lang {
-                x.push_str(&format!("     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n", escape(it.as_str())));
+                x.push_str(&format!("     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n", escape(xml_safe(it))));
             } else {
-                x.push_str(&format!("     <rdf:li>{}</rdf:li>\n", escape(it.as_str())));
+                x.push_str(&format!("     <rdf:li>{}</rdf:li>\n", escape(xml_safe(it))));
             }
         }
         x.push_str(&format!("    </rdf:{kind}>\n   </{k}>\n"));
@@ -969,6 +977,24 @@ mod tests {
         assert_eq!(read("").copyright_marked, None);
         assert_eq!(read("maybe").copyright_marked, None);
         assert_eq!(read("True").copyright_url.as_deref(), Some("https://example.org/c"));
+    }
+
+    /// A zero or negative `exif:ISOSpeedRatings` is "no ISO" (as in the EXIF reader), not `Some(0)`, and
+    /// must not hide a valid `exifEX:PhotographicSensitivity`.
+    #[test]
+    fn non_positive_iso_is_ignored() {
+        let read = |attrs: &str| {
+            let x = format!(
+                r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+                <rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:exifEX="http://cipa.jp/exif/1.0/" {attrs}/>
+                </rdf:RDF></x:xmpmeta>"#
+            );
+            parse_xmp(&x).unwrap().metadata.iso
+        };
+        assert_eq!(read(r#"exif:ISOSpeedRatings="0" exifEX:PhotographicSensitivity="400""#), Some(400));
+        assert_eq!(read(r#"exif:ISOSpeedRatings="-100""#), None);
+        assert_eq!(read(r#"exif:ISOSpeedRatings="0""#), None);
+        assert_eq!(read(r#"exif:ISOSpeedRatings="200""#), Some(200));
     }
 
     #[test]
@@ -1242,5 +1268,25 @@ mod tests {
         );
         assert_eq!(plugin_fields(&parse_xmp(&y).unwrap()), vec![("a".into(), "k".into(), "v".into())]);
         assert!(plugin_fields(&parse_xmp(&write_xmp_ext(&Metadata::default(), &[], &[])).unwrap()).is_empty());
+    }
+
+    #[test]
+    fn writer_drops_characters_xml_1_0_forbids() {
+        let bad = "a\u{1}b\u{0}c\u{FFFE}d\u{FFFF}e\u{1F}\tf\ng\rh";
+        let m = Metadata { make: Some(bad.into()), caption: Some(bad.into()), keywords: vec![bad.into()], ..Default::default() };
+        let x = write_xmp_lc(&m, &[("settings", bad)]);
+        let illegal: Vec<char> =
+            x.chars().filter(|&c| (c < '\u{20}' && !matches!(c, '\t' | '\n' | '\r')) || c == '\u{FFFE}' || c == '\u{FFFF}').collect();
+        assert!(illegal.is_empty(), "illegal XML chars in output: {illegal:?}");
+        assert!(x.contains(">abcde\tf\ng\rh<"), "allowed characters must survive: {x}");
+    }
+
+    #[test]
+    fn numeric_references_to_forbidden_characters_are_not_decoded() {
+        assert_eq!(entity("#1"), None);
+        assert_eq!(entity("#0"), None);
+        assert_eq!(entity("#xFFFE"), None);
+        assert_eq!(entity("#x41"), Some('A'));
+        assert_eq!(entity("#9"), Some('\t'));
     }
 }

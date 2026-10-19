@@ -4579,6 +4579,7 @@ version = "0.9.3"
 dependencies = [
  "avif-serialize",
  "bytemuck",
+ "dhat",
  "filmcraft-av1",
  "image",
  "image-webp",

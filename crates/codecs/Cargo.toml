@@ -61,3 +61,6 @@ jxl-oxide = { workspace = true }
 proptest = { workspace = true }
 # Lossless synthetic HEIC files for the `heif` feature's tests.
 lcc-heif = { workspace = true, features = ["testdata"] }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dev-dependencies]
+dhat = { workspace = true }

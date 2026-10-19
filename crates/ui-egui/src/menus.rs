@@ -779,7 +779,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 crate::state::InfoOverlay::Basic => "Info Overlay: File",
                 crate::state::InfoOverlay::Exposure => "Info Overlay: Exposure",
             };
-            app.toast(&ctx, label);
+            app.toast(&ctx, crate::i18n::tr(label));
             Ok(json!({"infoOverlay": app.ui.info_overlay}))
         }
         "view.chooseLayoutImage" => {

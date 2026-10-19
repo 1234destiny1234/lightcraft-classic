@@ -2214,5 +2214,11 @@
   "Checking the GPU for faces": "Verificando a GPU para rostos",
   "Return to Latest": "Voltar ao mais recente",
   "Enhance": "Aprimorar",
-  "Plug-in Filters": "Filtros de plug-in"
+  "Plug-in Filters": "Filtros de plug-in",
+  "Include selected photos": "Incluir fotos selecionadas",
+  "Color Overlay": "Sobreposição de cor",
+  "Color Overlay on B&W": "Sobreposição de cor em P&B",
+  "Image on Black": "Imagem sobre preto",
+  "Image on White": "Imagem sobre branco",
+  "White on Black": "Branco sobre preto"
 }

@@ -314,3 +314,23 @@ fn a_hostile_template_in_the_preferences_does_not_break_the_library() {
     fails(&mut s, "print.template.apply", json!({"name": "Huge"}));
     run(&mut s, "print.template.apply", json!({"name": "Fine"}));
 }
+
+#[test]
+fn page_options_are_print_settings_and_template_fields() {
+    let mut s = Session::with_demo();
+    let g = run(&mut s, "print.get", json!({}));
+    assert_eq!(g["settings"]["page"], json!({"background": [255, 255, 255], "pageNumbers": false, "pageInfo": false, "cropMarks": false}));
+    let g = run(&mut s, "print.set", json!({"page": {"pageNumbers": true, "cropMarks": true}}));
+    assert_eq!((g["settings"]["page"]["pageNumbers"].as_bool(), g["settings"]["page"]["pageInfo"].as_bool()), (Some(true), Some(false)));
+    assert_eq!(g["settings"]["page"]["background"], json!([255, 255, 255]), "a patch merges");
+    fails(&mut s, "print.set", json!({"page": {"pageInfo": "yes"}}));
+    fails(&mut s, "print.set", json!({"page": {"pageNumber": true}}));
+    // a template keeps them
+    run(&mut s, "print.template.save", json!({"name": "Marked"}));
+    run(&mut s, "print.reset", json!({}));
+    assert!(!s.print.page.crop_marks);
+    run(&mut s, "print.template.apply", json!({"name": "Marked"}));
+    assert!(s.print.page.page_numbers && s.print.page.crop_marks && !s.print.page.page_info);
+    let set = crate::find_command("print.set").unwrap();
+    assert!(set.params.contains("pageNumbers") && set.params.contains("pageInfo") && set.params.contains("cropMarks"), "{}", set.params);
+}
