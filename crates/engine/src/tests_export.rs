@@ -1217,3 +1217,30 @@ fn hostile_subfolders_are_refused() {
         assert!(files[0]["error"].as_str().unwrap().contains("subfolder"), "{files:?}");
     }
 }
+
+/// "Overwrite" replaces a file from an earlier run, but two photos of one batch that render to
+/// the same name no longer replace each other: the second gets the next free name.
+#[test]
+fn overwrite_never_clobbers_a_file_of_the_same_batch() {
+    use crate::export::{Conflict, Destination};
+    let (mut s, _, dir, _src, _) = library_with_jpeg("export-collide");
+    let other = dir.join("b").join("IMG_1.jpg");
+    std::fs::create_dir_all(other.parent().unwrap()).unwrap();
+    let img = lcc_raster::Rgba8::from_fn(48, 32, |x, _| [200, (x * 3) as u8, 10, 255]);
+    std::fs::write(&other, crate::export::encode_image(&img, &ExportOptions::default()).unwrap()).unwrap();
+    s.execute("library.import", &json!({"paths": [other.to_string_lossy()]})).unwrap();
+    let ids: Vec<_> = s.catalog.photos().map(|p| p.id).collect();
+    assert_eq!(ids.len(), 2);
+    let out = dir.join("out");
+    std::fs::create_dir_all(&out).unwrap();
+    std::fs::write(out.join("IMG_1.jpg"), b"an earlier run").unwrap();
+    let to = Destination { dir: out.to_string_lossy().to_string(), exact: None };
+    let o = ExportOptions { naming: "{name}".into(), conflict: Conflict::Overwrite, ..Default::default() };
+    let files = crate::export::export_batch(&mut s, &ids, &o, &to, &mut crate::export::write_file, &|p| std::path::Path::new(p).exists()).unwrap();
+    let paths: Vec<_> = files.iter().map(|f| f["path"].as_str().unwrap_or_default().to_string()).collect();
+    assert!(paths[0].ends_with("IMG_1.jpg"), "{files:?}");
+    assert!(paths[1].ends_with("IMG_1-2.jpg"), "{files:?}");
+    assert_ne!(std::fs::read(out.join("IMG_1.jpg")).unwrap(), b"an earlier run", "the earlier run's file is replaced");
+    assert!(out.join("IMG_1-2.jpg").exists());
+    let _ = std::fs::remove_dir_all(&dir);
+}

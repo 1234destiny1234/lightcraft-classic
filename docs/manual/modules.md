@@ -71,7 +71,7 @@ CLI. Printer colour management beyond the output profile is not done yet.
 A live preview of a static HTML gallery (grid, square, track or single-image layouts) with Site Info, Colour
 Palette, Appearance, Image Info, Output Settings and Upload Settings. Export writes `index.html`, its assets and
 the rendered images to a folder (`web.export`); Upload sends them to an SFTP server, with the password kept in the
-system keychain and the server's key fingerprint pinned (`web.upload`, `web.saveServer`). Galleries can be saved
+system keychain and the server's key fingerprint pinned once you confirm it (`web.hostKey`, `web.trustServer`, `web.upload`, `web.saveServer`). Galleries can be saved
 and reopened.
 
 ## Saved creations

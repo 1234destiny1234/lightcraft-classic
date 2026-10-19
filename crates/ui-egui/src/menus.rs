@@ -1482,8 +1482,20 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "dialog.rename" => {
-            let template = p.get("template").and_then(Value::as_str).unwrap_or("{name}").to_string();
-            app.ui.dialog = Some(Dialog::Rename { template, start: p.get("start").and_then(Value::as_u64).unwrap_or(1) as u32 });
+            let targets = app.session.targets(p).unwrap_or_else(|_| app.session.selected());
+            if targets.len() == 1 {
+                let id = targets[0];
+                let name = p
+                    .get("name")
+                    .or_else(|| p.get("template"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| app.session.catalog.photo(id).map(|ph| ph.file_name.clone()).unwrap_or_default());
+                app.ui.dialog = Some(Dialog::RenamePhoto { id: id.0, name });
+            } else if !targets.is_empty() {
+                let template = p.get("template").and_then(Value::as_str).unwrap_or("{name}").to_string();
+                app.ui.dialog = Some(Dialog::Rename { template, start: p.get("start").and_then(Value::as_u64).unwrap_or(1) as u32 });
+            }
             Ok(Value::Null)
         }
         "dialog.createPreset" => {

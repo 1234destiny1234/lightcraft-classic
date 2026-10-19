@@ -19,9 +19,10 @@ use crate::{Catalog, CatalogError, Meta, Op, Result};
 /// Separator of hierarchical keyword levels.
 pub const SEP: char = '|';
 
-/// Normalize a keyword: trim every level, drop empty levels.
+/// Normalize a keyword: trim every level, drop empty levels, keep at most [`MAX_TREE_LEVELS`] levels
+/// (a file's keyword is input: thousands of levels would overflow the tree walks' stack).
 pub fn clean(k: &str) -> String {
-    k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).collect::<Vec<_>>().join("|")
+    k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(MAX_TREE_LEVELS).collect::<Vec<_>>().join("|")
 }
 
 /// The same name, whatever the case of any of its letters (not only ASCII ones).
@@ -55,6 +56,10 @@ pub fn from_file(flat: &[String], hierarchical: &[String]) -> Vec<String> {
 
 /// The deepest a keyword list file may nest keywords: a file is input, so its nesting is bounded.
 pub const MAX_LEVELS: usize = 64;
+
+/// The deepest a photo's keyword, and so the keyword tree, goes: the tree is walked recursively
+/// (here and in the panels), so an `a|a|a|…` keyword thousands of levels deep overflowed the stack.
+pub const MAX_TREE_LEVELS: usize = 128;
 
 /// A keyword list as written by [`Catalog::keyword_list_text`]: the file's text, the keywords in
 /// it (paths), and what the format can't hold and so is left out (a keyword, with those inside it,
@@ -257,7 +262,8 @@ impl Catalog {
                 let mut path = String::new();
                 let mut lower = String::new();
                 let mut parent: Option<String> = None;
-                for part in k.split(SEP).map(str::trim).filter(|s| !s.is_empty()) {
+                // bounded: a catalog may hold deeper keywords from before files' keywords were capped
+                for part in k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(MAX_TREE_LEVELS) {
                     if !path.is_empty() {
                         path.push(SEP);
                         lower.push(SEP);
@@ -788,6 +794,46 @@ mod tests {
     }
     fn kws(c: &Catalog, id: PhotoId) -> Vec<String> {
         c.photo(id).unwrap().meta.keywords.clone()
+    }
+
+    fn depth(nodes: &[KeywordNode]) -> usize {
+        let (mut d, mut at) = (0, nodes);
+        while let Some(n) = at.first() {
+            d += 1;
+            at = &n.children;
+        }
+        d
+    }
+
+    #[test]
+    fn a_keyword_thousands_of_levels_deep_does_not_overflow_the_tree() {
+        // run on a 1 MiB stack, as Windows gives the main thread: once a level a frame, this overflowed
+        let deep = vec!["a"; 100_000].join("|");
+        std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || {
+                let (c, _) = lib(&[&[deep.as_str()]]);
+                let t = c.keyword_tree();
+                assert_eq!(depth(&t), MAX_TREE_LEVELS);
+                let file = c.keyword_list_text();
+                assert_eq!(parse_keyword_list(&file.text).unwrap().len(), MAX_LEVELS);
+                let (_, added, _) = c.import_keywords_ops(&[(deep.clone(), KeywordInfo::default())]);
+                // the same keyword, as deep as the tree keeps it: the library has it
+                assert_eq!(added, 0);
+                drop(t);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn a_files_keyword_keeps_its_first_levels_only() {
+        let deep = (0..1000).map(|i| i.to_string()).collect::<Vec<_>>().join("|");
+        let kept = from_file(&[], &[deep]);
+        assert_eq!(kept[0].split(SEP).count(), MAX_TREE_LEVELS);
+        assert!(kept[0].starts_with("0|1|2|"));
+        assert_eq!(clean(" a | | b "), "a|b");
     }
 
     #[test]

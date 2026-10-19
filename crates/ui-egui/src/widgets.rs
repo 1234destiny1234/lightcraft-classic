@@ -252,8 +252,8 @@ const SCRUB_START: f32 = 3.0;
 /// The radius of a slider's hollow ring thumb.
 const THUMB_RING: f32 = 5.5;
 
-/// A Lightroom Classic slider row: the name (right-aligned in a column the panel's sliders share),
-/// a track with a hollow ring thumb, and the value, all on one line.
+/// A slider row: the name (left-aligned, flush with section headers),
+/// a track with a hollow ring thumb occupying most of the panel width, and a compact value readout.
 /// Double-click the label or thumb to reset (hovering either says so). Shift-drag = fine adjustment.
 /// Scroll sideways over it to nudge it. Click the value to type one: Return or clicking away applies it,
 /// Esc keeps the old one. Drag the value sideways to scrub it, as if dragging the thumb (Shift: a tenth
@@ -262,7 +262,7 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let (row, _) = ui.allocate_exact_size(vec2(w, t.slider_row_h), Sense::hover());
-    // one row, as Lightroom Classic: name (right-aligned in a shared column) | track | value
+    // one row: name (left-aligned flush with section header) | wide track | compact value
     let label_str = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
     let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(12.5), t.text_label).size().x;
     let label_col = label_column(ui, w, label_w);
@@ -549,11 +549,11 @@ pub fn slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_
     let hovered = resp.hovered() || resp.dragged();
     let text_c = if enabled { t.text_label } else { t.text_disabled };
     let p = ui.painter();
-    // the name, right-aligned against the track; ellipsized when the column is too narrow for it
+    // the name, left-aligned flush with section headers; ellipsized when the column is too narrow for it
     let mut job = egui::text::LayoutJob::simple_singleline(label_str, t.font(12.5), text_c);
     job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = ui.painter().layout_job(job);
-    let gpos = pos2(label_rect.right() - galley.size().x, label_rect.center().y - galley.size().y / 2.0);
+    let gpos = pos2(label_rect.left(), label_rect.center().y - galley.size().y / 2.0);
     p.galley(gpos, galley, text_c);
     if typing.is_none() {
         p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(12.5), text_c);
@@ -588,12 +588,16 @@ struct SliderGeometry {
     value: Rect,
 }
 
-/// Width of a slider's value column (fits "+100", "5600", "-4.00").
-const VALUE_W: f32 = 40.0;
+/// Width of a slider's value column (tightened to fit numbers like "+100", "8978", "+0.80", "-5.00").
+const VALUE_W: f32 = 34.0;
+
+/// Maximum width of the slider label column, sized strictly to fit the longest Tone/Basic label string
+/// (e.g. "Highlights" ~58 px) plus a small spacing gap, keeping the track as wide as possible.
+const MAX_LABEL_COL: f32 = 64.0;
 
 impl SliderGeometry {
     fn new(row: Rect, label_col: f32) -> Self {
-        let (pad_l, pad_r, gap) = (16.0, 18.0, 10.0);
+        let (pad_l, pad_r, gap) = (24.0, 16.0, 8.0);
         let label = Rect::from_min_size(pos2(row.left() + pad_l, row.top()), vec2(label_col, row.height()));
         let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
         let track_l = label.right() + gap;
@@ -604,8 +608,8 @@ impl SliderGeometry {
 }
 
 /// The name column's width for a slider in `ui`: the widest name drawn in the same container
-/// (this frame or the last), so a section's tracks line up, limited to a share of the row so the
-/// track always keeps room (names past it are ellipsized).
+/// (this frame or the last), so a section's tracks line up, strictly capped so the interactive
+/// track occupies most of the panel width (names past it are ellipsized).
 fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
     let key = ui.id().with("slider-label-column");
     let frame = ui.ctx().cumulative_pass_nr();
@@ -615,7 +619,7 @@ fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
     let cur = cur.max(label_w);
     ui.data_mut(|d| d.insert_temp(key, (frame, prev, cur)));
     let widest = prev.max(cur).ceil();
-    let max_col = ((row_w - 32.0) * 0.42).max(24.0);
+    let max_col = ((row_w - 48.0) * 0.35).clamp(24.0, MAX_LABEL_COL);
     widest.clamp(24.0_f32.min(max_col), max_col)
 }
 

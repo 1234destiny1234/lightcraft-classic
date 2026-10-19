@@ -146,6 +146,9 @@ pub struct Asset {
     pub is_favorite: bool,
     #[serde(default)]
     pub is_trashed: bool,
+    /// The device that uploaded it (the app publishes as its own device id).
+    #[serde(default)]
+    pub device_id: Option<String>,
     #[serde(default)]
     pub is_offline: bool,
     #[serde(default)]

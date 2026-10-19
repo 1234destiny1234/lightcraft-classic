@@ -44,7 +44,7 @@ pub struct RenamePlan {
     pub to_path: Option<String>,
 }
 
-fn split_ext(name: &str) -> (&str, &str) {
+pub fn split_ext(name: &str) -> (&str, &str) {
     match name.rsplit_once('.') {
         Some((stem, ext)) if !stem.is_empty() => (stem, ext),
         _ => (name, ""),
@@ -233,6 +233,12 @@ pub fn expand(template: &str, p: &Photo, seq: usize) -> String {
     let (stem, ext) = split_ext(&p.file_name);
     let out = expand_tokens(template, p, seq, 1);
     let mut stem_out = sanitize(&out);
+    if !ext.is_empty() {
+        let (s_stem, s_ext) = split_ext(&stem_out);
+        if s_ext.eq_ignore_ascii_case(ext) && !s_stem.is_empty() {
+            stem_out = s_stem.to_string();
+        }
+    }
     if stem_out.is_empty() {
         stem_out = sanitize(stem);
     }

@@ -679,3 +679,25 @@ fn x_in_the_crop_tool_swaps_the_crop_orientation() {
     assert_eq!(h.app.session.develop_of(id).unwrap().crop.aspect, Some((ht, w)), "X swaps the locked aspect once");
     assert_eq!(h.app.session.catalog.photo(id).map(|p| p.flag), flag, "X does not reject while cropping");
 }
+
+/// `app.keymapExport` never replaces a catalogued original or its sidecar (the path can come from
+/// MCP or the control channel); a free path still exports.
+#[test]
+fn keymap_export_refuses_to_overwrite_an_original_or_its_sidecar() {
+    let mut h = demo();
+    let dir = std::env::temp_dir().join(format!("keymap-guard-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let orig = dir.join("IMG_1.jpg");
+    std::fs::write(&orig, b"original").unwrap();
+    std::fs::write(dir.join("IMG_1.xmp"), b"<x/>").unwrap();
+    let id = h.app.session.catalog.alloc_photo_id();
+    let p = lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: orig.to_string_lossy().into() }, "IMG_1.jpg", "JPEG", 60, 40, "2026-01-01");
+    h.app.session.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    for target in [orig.clone(), dir.join("IMG_1.xmp")] {
+        let before = std::fs::read(&target).unwrap();
+        assert!(h.app.run("app.keymapExport", json!({"path": target.to_str().unwrap()})).is_err(), "{}", target.display());
+        assert_eq!(std::fs::read(&target).unwrap(), before);
+    }
+    assert!(h.app.run("app.keymapExport", json!({"path": dir.join("keys.json").to_str().unwrap()})).is_ok());
+    let _ = std::fs::remove_dir_all(&dir);
+}

@@ -57,29 +57,6 @@ fn store_path(s: &Session) -> Option<PathBuf> {
     s.remote.connections_path.as_ref().and_then(|p| p.parent()).map(|d| d.join("web.json"))
 }
 
-/// Trust on first use: store `fp` as the host key of the saved server `name` when it has none yet
-/// (`store`: the web settings file, [`store_path`]). Needs no session, so a publish worker can call it.
-pub(crate) fn remember_fingerprint(store: Option<&std::path::Path>, name: &str, fp: &str) {
-    let Some(path) = store else { return };
-    if fp.is_empty() || name.trim().is_empty() {
-        return;
-    }
-    let Ok(bytes) = std::fs::read(path) else { return };
-    let Ok(mut st) = serde_json::from_slice::<WebStore>(&bytes) else { return };
-    if let Some(x) = st.servers.iter_mut().find(|x| x.name.eq_ignore_ascii_case(name.trim()))
-        && x.known_fingerprint.is_empty()
-    {
-        x.known_fingerprint = fp.to_string();
-        if let Ok(b) = serde_json::to_vec_pretty(&st) {
-            let _ = crate::export::write_file_durable(&path.to_string_lossy(), &b);
-        }
-    }
-}
-
-pub(crate) fn store_path_of(s: &Session) -> Option<PathBuf> {
-    store_path(s)
-}
-
 fn load(s: &Session) -> std::result::Result<WebStore, String> {
     let Some(path) = store_path(s) else { return Ok(WebStore::default()) };
     match std::fs::read(&path) {
@@ -269,20 +246,9 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// Where a prepared web job goes.
 enum Target {
-    Folder {
-        dir: String,
-    },
-    /// `store`: the web settings file, where a saved server's host key is remembered on first use.
-    Sftp {
-        server: Server,
-        auth: Auth,
-        store: Option<PathBuf>,
-    },
-    Immich {
-        client: Box<lcc_immich::Client>,
-        album: String,
-        options: lcc_immich::share::ShareOptions,
-    },
+    Folder { dir: String },
+    Sftp { server: Server, auth: Auth },
+    Immich { client: Box<lcc_immich::Client>, album: String, options: lcc_immich::share::ShareOptions },
 }
 
 /// One image of the site to render: its path, whether it is a large image, the photo's capture time.
@@ -358,7 +324,7 @@ pub fn prepare(s: &mut Session, c: &str, p: &Value) -> Result<WebJob> {
         "web.upload" => {
             let server = server_param(s, p, c)?;
             let auth = server_auth(s, &server, str_param(p, "password"), c)?;
-            Target::Sftp { server, auth, store: store_path(s) }
+            Target::Sftp { server, auth }
         }
         "web.shareImmich" => {
             let account = immich_account(s, p, c)?;
@@ -437,13 +403,10 @@ impl WebJob {
                 let index = std::path::Path::new(&dir).join("index.html").to_string_lossy().to_string();
                 json!({"dir": dir, "index": index, "files": files, "photos": photos, "bytes": bytes})
             }
-            Target::Sftp { server, auth, store } => {
+            Target::Sftp { server, auth } => {
                 let files: Vec<(String, Vec<u8>)> = pages.into_iter().chain(rendered.into_iter().map(|(a, b, _)| (a, b))).collect();
+                // the host key must already be pinned (web.hostKey / web.trustServer): never trusted on first use
                 let done = sftp::upload(&server, auth, &files, &mut |_, _| true)?;
-                // trust on first use: a saved server keeps the host key it showed
-                if server.known_fingerprint.is_empty() {
-                    remember_fingerprint(store.as_deref(), &server.name, &done.fingerprint);
-                }
                 json!({"server": server.name, "host": server.host, "path": server.path, "files": done.files, "bytes": done.bytes,
                     "photos": photos, "fingerprint": done.fingerprint})
             }
@@ -526,9 +489,38 @@ fn save_server(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let mut st = load(s).map_err(|e| bad(ID, e))?;
     match st.servers.iter_mut().find(|x| x.name.eq_ignore_ascii_case(server.name.trim())) {
-        Some(x) => *x = server,
+        Some(x) => {
+            // re-saving the same host keeps its confirmed host key
+            let mut server = server;
+            if server.known_fingerprint.trim().is_empty() && server.host.trim() == x.host.trim() && server.port == x.port {
+                server.known_fingerprint = std::mem::take(&mut x.known_fingerprint);
+            }
+            *x = server
+        }
         None => st.servers.push(server),
     }
+    save(s, &st).map_err(|e| bad(ID, e))?;
+    Ok(servers_json(&st))
+}
+
+fn host_key(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "web.hostKey";
+    let server = server_param(s, p, ID)?;
+    let fp = sftp::host_key(&server).map_err(|e| bad(ID, e))?;
+    let pinned = server.known_fingerprint.trim();
+    Ok(json!({"host": server.host, "port": server.port, "fingerprint": fp, "pinned": pinned, "matches": !pinned.is_empty() && pinned == fp}))
+}
+
+fn trust_server(s: &mut Session, p: &Value) -> Result<Value> {
+    const ID: &str = "web.trustServer";
+    let name = str_param(p, "name").ok_or_else(|| bad(ID, "missing `name`"))?;
+    let fp = str_param(p, "fingerprint").map(|f| f.trim().to_string()).unwrap_or_default();
+    if !fp.starts_with("SHA256:") {
+        return Err(bad(ID, "`fingerprint` must be the SHA256:… fingerprint web.hostKey showed"));
+    }
+    let mut st = load(s).map_err(|e| bad(ID, e))?;
+    let x = st.servers.iter_mut().find(|x| x.name.eq_ignore_ascii_case(name.trim())).ok_or_else(|| bad(ID, format!("no upload server `{name}`")))?;
+    x.known_fingerprint = fp;
     save(s, &st).map_err(|e| bad(ID, e))?;
     Ok(servers_json(&st))
 }
@@ -557,7 +549,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "{dir, settings?, gallery?, ids?} — writes index.html, content/, assets/ and the rendered images/ into dir → {dir, index, files, photos, bytes}",
             always, |s, p| run_now(s, "web.export", p)),
         cmd!(query "web.upload", "Upload Web Gallery", [], None,
-            "{server: saved server name | {host, port?, user, path, keyFile?, knownFingerprint?}, password?, settings?, gallery?, ids?} — renders the gallery and uploads it over SFTP (host key trusted on first use and remembered for saved servers) → {host, path, files, bytes, photos, fingerprint}",
+            "{server: saved server name | {host, port?, user, path, keyFile?, knownFingerprint?}, password?, settings?, gallery?, ids?} — renders the gallery and uploads it over SFTP (the host key must be pinned first: web.hostKey shows it, web.trustServer or knownFingerprint pins it; an unpinned or changed key refuses before logging in) → {host, path, files, bytes, photos, fingerprint}",
             always, |s, p| run_now(s, "web.upload", p)),
         cmd!(query "web.shareImmich", "Share via Immich", [], None,
             "{account?: connected Immich account (default: the only one), album?: album name (default: the collection or site title), expiresDays?: 1…3650, password?, allowDownload?: true, showMetadata?: true, settings?, gallery?, ids?} — renders the gallery's large images, uploads them to a new Immich album and creates a shared link (IMM-SHARELINK) → {album, albumId, url, uploaded, photos, expiresAt}",
@@ -577,6 +569,10 @@ pub fn specs() -> Vec<CommandSpec> {
             |s, _| Ok(servers_json(&load(s).map_err(|e| bad("web.servers", e))?))),
         cmd!(query "web.saveServer", "Save Web Upload Server", [], None,
             "{server: {name, host, port?, user, path, keyFile?}, password?: kept in the keychain} → servers", always, save_server),
+        cmd!(query "web.hostKey", "Show Upload Server Host Key", [], None,
+            "{server: saved server name | {host, port?}} — connects without logging in → {host, port, fingerprint, pinned, matches}", always, host_key),
+        cmd!(query "web.trustServer", "Trust Upload Server Host Key", [], None,
+            "{name, fingerprint: SHA256:… as web.hostKey showed, confirmed by the user} — pins the saved server's host key → servers", always, trust_server),
         cmd!(query "web.deleteServer", "Delete Web Upload Server", [], None, "{name} — also forgets its keychain secret → servers", always, delete_server),
     ]
 }

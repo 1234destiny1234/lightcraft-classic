@@ -643,6 +643,9 @@ pub fn request_thumb(app: &mut LccApp, id: PhotoId, size: usize, priority: u32) 
     if app.session.interaction.as_ref().is_some_and(|i| i.photo == id) && app.renderer.thumb(id).is_some() {
         return;
     }
+    // never less than the photo has or is getting: a smaller ask (the filmstrip beside a larger view) moving the
+    // job up would otherwise swap it for a smaller one, and the larger view swap it back
+    let size = app.session.catalog.photo(id).and_then(|p| app.renderer.thumb_bucket_kept(p)).map_or(size, |kept| kept.max(size));
     let bucket = lcc_engine::media::thumb_bucket(size);
     if let Some(photo) = app.session.catalog.photo(id)
         && app.renderer.thumb_current(photo, bucket, priority)
