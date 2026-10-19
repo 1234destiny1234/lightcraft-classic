@@ -241,7 +241,7 @@ pub fn decode_unguarded(bytes: &[u8], format: Format, opts: &DecodeOptions) -> R
     let opts = *opts;
     // The reason a format can't be decoded lives in one place, `Format::not_decodable`.
     let unsupported = || Err(Error::Unsupported(format, format.not_decodable().unwrap_or("not decodable in this build")));
-    match format {
+    let d = match format {
         Format::Jpeg => jpeg::decode(bytes, &opts),
         Format::Png => png_codec::decode(bytes, &opts),
         Format::Tiff => tiff_codec::decode(bytes, &opts),
@@ -258,7 +258,14 @@ pub fn decode_unguarded(bytes: &[u8], format: Format, opts: &DecodeOptions) -> R
         #[cfg(target_arch = "wasm32")]
         Format::Avif => unsupported(),
         Format::RawTiffLike | Format::RawOther => unsupported(),
+    }?;
+    // an image with no pixels (a malformed header claiming zero width or height, or a buffer
+    // shorter than its size) is refused here, so nothing downstream sees an empty image
+    let (w, h) = (d.image.width, d.image.height);
+    if w == 0 || h == 0 || w.checked_mul(h).is_none_or(|n| d.image.data.len() < n) {
+        return Err(Error::Malformed(format, "image has no pixels".into()));
     }
+    Ok(d)
 }
 
 /// Convert a decode result to linear Rec.2020 D65 (Bradford-adapted), the develop working space.

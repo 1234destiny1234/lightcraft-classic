@@ -503,6 +503,7 @@ fn export(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
         let layout = lcc_book::layoutdoc::to_layout(&book);
         let (jobs, infos) = lcc_engine::creations::prepare_jobs(&mut app.session, &layout, book.settings.resolution as f32)?;
         let total = book.all_pages().len();
+        let guard = app.session.original_guard();
         let wait = p.get("wait").and_then(Value::as_bool).unwrap_or(false);
         with_status(|s| *s = ExportStatus { running: true, done: 0, total, result: None });
         // The export always runs on a worker thread and holds its row in the activity stack for
@@ -523,7 +524,7 @@ fn export(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
                 row.progress(done as u64, total as u64);
                 !row.is_cancelled()
             };
-            let r = write_export(&book, kind, &path, &src, &mut engine, &mut progress);
+            let r = write_export(&book, kind, &path, &guard, &src, &mut engine, &mut progress);
             if cancel.load(std::sync::atomic::Ordering::Relaxed) { Err("the book export was cancelled".into()) } else { r }
         };
         let (tx, rx) = std::sync::mpsc::channel();
@@ -555,11 +556,16 @@ fn write_export(
     book: &Book,
     kind: lcc_book::BookKind,
     path: &str,
+    guard: &lcc_engine::originals::OriginalGuard,
     src: &dyn lcc_layout::render::PhotoSource,
     engine: &mut lcc_text::TextEngine,
     progress: lcc_book::export::Progress,
 ) -> Result<Vec<String>, String> {
+    // Never replace a catalogued original or its sidecar (the export path can come from MCP).
     let write = |p: &std::path::Path, bytes: &[u8]| -> Result<(), String> {
+        if std::fs::symlink_metadata(p).is_ok() {
+            guard.check(p)?;
+        }
         let tmp = p.with_extension("part");
         std::fs::write(&tmp, bytes).and_then(|_| std::fs::rename(&tmp, p)).map_err(|e| format!("{}: {e}", p.display()))
     };
@@ -1867,6 +1873,33 @@ mod tests {
             std::thread::sleep(Duration::from_millis(20));
         }
         assert!(h.app.session.activity.list().iter().all(|t| t.label != "Exporting book"));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A book export never replaces a catalogued original or its sidecar (the path can come
+    /// from MCP or the control channel); the files are left as they were.
+    #[test]
+    fn book_export_refuses_to_overwrite_an_original() {
+        let mut h = demo();
+        run(&mut h, "module.book", json!({}));
+        run(&mut h, "book.autoLayout", json!({"preset": "Two Per Page"}));
+        let dir = std::env::temp_dir().join(format!("book-guard-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let orig = dir.join("scan.pdf");
+        std::fs::write(&orig, b"original").unwrap();
+        std::fs::write(dir.join("scan.xmp"), b"<x/>").unwrap();
+        let id = h.app.session.catalog.alloc_photo_id();
+        let p =
+            lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: orig.to_string_lossy().into() }, "scan.pdf", "PDF", 60, 40, "2026-01-01");
+        h.app.session.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        let r = h.app.run("book.export", json!({"path": orig.to_string_lossy(), "wait": true}));
+        assert!(r.is_err(), "{r:?}");
+        assert_eq!(std::fs::read(&orig).unwrap(), b"original");
+        // another spelling of the original's name still lands on it once .pdf is forced
+        let r = h.app.run("book.export", json!({"path": dir.join("scan.xmp").to_string_lossy(), "wait": true}));
+        assert!(r.is_err(), "{r:?}");
+        assert_eq!(std::fs::read(&orig).unwrap(), b"original");
+        assert_eq!(std::fs::read(dir.join("scan.xmp")).unwrap(), b"<x/>");
         let _ = std::fs::remove_dir_all(&dir);
     }
 

@@ -150,12 +150,17 @@ pub fn grade_linear(frame: &mut lcc_raster::Rgb32f, settings: &lcc_develop::Deve
 }
 
 /// Grade one linear frame on the GPU (8-bit sRGB output decoded back to linear). `None` when the
-/// GPU did not render it (unavailable, switched off or failed): grade on the CPU then. Used for
+/// GPU did not render it (unavailable, switched off, failed, or settings it cannot render like
+/// the CPU, [`crate::media::gpu_renders_faithfully`]): grade on the CPU then. Used for
 /// 8-bit H.264 only, where the encoder quantises to 8 bits anyway (within one code value of the
 /// CPU float grade); 10-bit ProRes always takes the float CPU path.
 pub fn grade_gpu(frame: &mut lcc_raster::Rgb32f, video_settings: &lcc_develop::DevelopSettings) -> Option<()> {
     use lcc_pipeline::grade;
     let req = grade::grade_request(frame.width, frame.height, lcc_pipeline::Quality::Full);
+    // LUT profiles and refined / feathered masks have no GPU stage: the CPU grades those
+    if !crate::media::gpu_renders_faithfully(video_settings, &req) {
+        return None;
+    }
     let src = Arc::new(std::mem::replace(frame, lcc_raster::Rgb32f::new(0, 0)));
     let r = lcc_gpu::try_render(&src, &grade::video_source_info(), video_settings, &req, None);
     *frame = Arc::try_unwrap(src).unwrap_or_else(|a| (*a).clone());
@@ -168,6 +173,15 @@ pub fn grade_gpu(frame: &mut lcc_raster::Rgb32f, video_settings: &lcc_develop::D
         *d = [lut[usize::from(p[0])], lut[usize::from(p[1])], lut[usize::from(p[2])]];
     }
     Some(())
+}
+
+/// Grade one exported frame: on the GPU when `gpu` is set and it renders these settings
+/// faithfully ([`grade_gpu`]), otherwise with the CPU float grade ([`grade_linear`]).
+pub fn grade_export(frame: &mut lcc_raster::Rgb32f, video_settings: &lcc_develop::DevelopSettings, gpu: bool) -> Result<(), String> {
+    if gpu && grade_gpu(frame, video_settings).is_some() {
+        return Ok(());
+    }
+    grade_linear(frame, video_settings)
 }
 
 fn srgb8_lut() -> &'static [f32; 256] {
@@ -194,10 +208,7 @@ pub(crate) fn run(w: VideoWork) -> Result<VideoOut, String> {
         if neutral {
             return;
         }
-        if gpu && grade_gpu(f, &video_settings).is_some() {
-            return;
-        }
-        if let Err(e) = grade_linear(f, &video_settings) {
+        if let Err(e) = grade_export(f, &video_settings, gpu) {
             let mut g = failed.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
             g.get_or_insert(e);
         }

@@ -207,11 +207,13 @@ mod download {
     }
 
     /// A download base: https, or plain http to this machine's loopback address only (a test
-    /// server), with nothing but a port or path after the host, so `http://127.0.0.1.example.com/`
-    /// is refused.
+    /// server). The URL is parsed and its real host checked (a prefix match let
+    /// `http://127.0.0.1:80@evil.example/` through); user info is refused outright.
     pub(super) fn base_allowed(base: &str) -> bool {
-        base.starts_with("https://")
-            || base.strip_prefix("http://127.0.0.1").is_some_and(|rest| rest.is_empty() || rest.starts_with(':') || rest.starts_with('/'))
+        match lcc_fetch::http::Url::parse(base) {
+            Ok(u) => u.tls || u.host == "127.0.0.1",
+            Err(_) => false,
+        }
     }
 
     /// `metadata.downloadPlaceNames`: starts a background download (shown in the activity stack, cancellable).
@@ -468,5 +470,16 @@ mod tests {
         assert!(!download::base_allowed("http://127.0.0.1.example.com/"));
         assert!(!download::base_allowed("http://127.0.0.1@example.com/"));
         assert!(!download::base_allowed("http://download.geonames.org/"));
+        for bad in [
+            "http://127.0.0.1:80@evil.example/",
+            "https://127.0.0.1@evil.example/",
+            "http://127.0.0.1:x@evil.example",
+            "http://evil.example#@127.0.0.1",
+            "http://evil.example?http://127.0.0.1",
+            "http://127.0.0.1:0/",
+            "ftp://127.0.0.1/",
+        ] {
+            assert!(!download::base_allowed(bad), "{bad}");
+        }
     }
 }

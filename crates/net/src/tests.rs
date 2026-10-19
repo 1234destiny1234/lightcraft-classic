@@ -129,6 +129,34 @@ fn error_status_and_bad_headers() {
 }
 
 #[test]
+fn hostile_body_content_type_is_rejected_before_sending() {
+    for ct in ["text/plain\r\nX-Injected: 1", "text/plain\nX: 1", "a\0b", "a\x0bb", "a\x7fb", "a\u{85}b"] {
+        let e = client().post("http://127.0.0.1:1/").body(ct, b"x".to_vec()).send().unwrap_err();
+        assert!(matches!(e, NetError::BadHeader(_)), "{ct:?}: {e:?}");
+    }
+}
+
+#[test]
+fn header_values_with_other_control_chars_are_rejected() {
+    for v in ["a\x01b", "a\x1bb", "a\x7fb"] {
+        let e = client().get("http://127.0.0.1:1/").header("X", v).send().unwrap_err();
+        assert!(matches!(e, NetError::BadHeader(_)), "{v:?}");
+    }
+    let e = client().get("http://127.0.0.1:1/").bearer("tok\r\nX: 1").send().unwrap_err();
+    assert!(matches!(e, NetError::BadHeader(_)));
+}
+
+#[test]
+fn ordinary_content_type_with_params_and_tab_is_sent() {
+    let (port, seen, h) = serve(1, |r| response("200 OK", &[], &r.body));
+    let ct = "text/plain;\tcharset=utf-8";
+    let r = client().post(&format!("http://127.0.0.1:{port}/")).body(ct, b"ok".to_vec()).send().unwrap();
+    assert_eq!(r.bytes().unwrap(), b"ok");
+    h.join().unwrap();
+    assert_eq!(seen.lock().unwrap()[0].header("content-type"), Some(ct));
+}
+
+#[test]
 fn multipart_upload_streams_with_progress() {
     let dir = tempdir("mp");
     let file = dir.join("photo.jpg");
