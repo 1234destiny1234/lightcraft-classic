@@ -4,4 +4,4 @@
   at the same strength as the export.
 - Book export runs in the background and shows in the activity stack, with a cancel button.
 - Importing a keymap that has a bad entry now changes nothing, and the error names every bad entry.
-- Immich servers must use https (plain http is accepted only for this computer).
+- Immich servers reached over plain http:// show a warning that the connection is not encrypted; https is recommended.
