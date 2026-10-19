@@ -1188,6 +1188,15 @@ pub fn develop_reporting(
     (rendered, fallback)
 }
 
+/// Whether the GPU pipeline renders `s` for `req` like the CPU does. LUT profiles, masks with
+/// Refine Edges or Feather and soft-proofing have no GPU stage: those render on the CPU. Every
+/// GPU caller (previews, exports, video frames) checks this first.
+pub fn gpu_renders_faithfully(s: &DevelopSettings, req: &RenderRequest) -> bool {
+    !lcc_pipeline::lut::is_lut_profile(&s.profile.id)
+        && !s.masks.iter().any(|m| m.visible && (m.refine > 0.0 || m.feather > 0.0))
+        && req.proof.is_none()
+}
+
 fn develop_image(
     src: &Arc<Rgb32f>,
     info: &SourceInfo,
@@ -1196,12 +1205,7 @@ fn develop_image(
     stages: Option<&StageCache>,
     gpu: bool,
 ) -> (Rendered, Option<String>) {
-    // LUT profiles have no GPU stage: they render on the CPU
-    let fallback = if gpu
-        && !lcc_pipeline::lut::is_lut_profile(&s.profile.id)
-        && !s.masks.iter().any(|m| m.visible && (m.refine > 0.0 || m.feather > 0.0))
-        && req.proof.is_none()
-    {
+    let fallback = if gpu && gpu_renders_faithfully(s, req) {
         match lcc_gpu::try_render(src, info, s, req, stages) {
             Ok(r) => return (r, None),
             Err(lcc_gpu::Fallback::Failed(why)) => Some(why),
