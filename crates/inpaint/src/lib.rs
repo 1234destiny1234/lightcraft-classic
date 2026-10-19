@@ -53,6 +53,44 @@ mod tests {
         let _ = complete(2, 2, 1, &[0.5; 4], &[true, false, false, false], &CompleteParams::default());
     }
 
+    /// Hole shapes at the image edge, 1-pixel-wide images, near-full holes: the output keeps its size, is finite,
+    /// leaves known pixels alone and (maximum principle) fills the hole within the known value range.
+    #[test]
+    fn edge_and_degenerate_holes_stay_bounded() {
+        let cases: &[(usize, usize)] = &[(0, 0), (1, 1), (1, 40), (40, 1), (3, 3), (17, 9), (64, 48)];
+        for &(w, h) in cases {
+            let n = w * h;
+            let img: Vec<f32> = (0..n).map(|i| 0.2 + 0.6 * ((i * 7919) % 101) as f32 / 100.0).collect();
+            let holes: Vec<Vec<bool>> = vec![
+                vec![false; n],
+                (0..n).map(|i| i == 0).collect(),
+                (0..n).map(|i| i + 1 == n).collect(),
+                (0..n).map(|i| i % w.max(1) < 2).collect(),
+                (0..n).map(|i| i != n / 2).collect(),
+                vec![true; n],
+            ];
+            for hole in &holes {
+                let known: Vec<f32> = img.iter().zip(hole).filter(|(_, h)| !**h).map(|(v, _)| *v).collect();
+                let (lo, hi) = known.iter().fold((f32::MAX, f32::MIN), |(l, h), v| (l.min(*v), h.max(*v)));
+                let mut outs = vec![membrane_fill(w, h, 1, &img, hole)];
+                if let Some(o) = complete(w, h, 1, &img, hole, &CompleteParams::default()) {
+                    outs.push(o);
+                }
+                for out in outs {
+                    assert_eq!(out.len(), n, "{w}x{h}");
+                    for (i, v) in out.iter().enumerate() {
+                        assert!(v.is_finite(), "{w}x{h} px {i}");
+                        if !hole[i] {
+                            assert_eq!(*v, img[i], "known pixel changed at {i} in {w}x{h}");
+                        } else if !known.is_empty() {
+                            assert!(*v >= lo - 1e-3 && *v <= hi + 1e-3, "{w}x{h} px {i}: {v} outside {lo}..{hi}");
+                        }
+                    }
+                }
+            }
+        }
+    }
+
     #[test]
     fn cancellation_stops() {
         let img = vec![0.5f32; 64 * 64];
