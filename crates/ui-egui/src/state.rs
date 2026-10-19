@@ -1181,6 +1181,11 @@ pub enum Dialog {
         /// Also save the names as a label set of this name (empty = don't).
         save_as: String,
     },
+    /// Rename a single photo.
+    RenamePhoto {
+        id: u64,
+        name: String,
+    },
     /// Batch rename the selected photos with a file-name template.
     Rename {
         template: String,

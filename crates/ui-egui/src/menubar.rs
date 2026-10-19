@@ -528,6 +528,7 @@ fn live_label(app: &LccApp, id: &str, label: &str) -> String {
         "photo.delete" if n > 1 => crate::i18n::tr_format!("Delete {n} Photos", n = n),
         "photo.virtualCopy" if n > 1 => crate::i18n::tr_format!("Create {n} Virtual Copies", n = n),
         "dialog.rename" if n > 1 => crate::i18n::tr_format!("Rename {n} Photos…", n = n),
+        "dialog.rename" => crate::i18n::tr("Rename Photo…").to_string(),
         "app.showInFinder" => crate::i18n::tr(crate::menus::reveal_label()).to_string(),
         _ => label.to_string(),
     }
