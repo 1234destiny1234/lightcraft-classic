@@ -161,7 +161,7 @@ impl NamespaceStore {
         }
     }
 
-    /// Writes the store if it changed (atomically: a temporary file renamed over the old one).
+    /// Writes the store if it changed (atomically and durably: a synced temporary file renamed over the old one).
     pub fn save(&mut self) -> Result<()> {
         let (Some(path), true) = (&self.path, self.dirty) else { return Ok(()) };
         let bytes = self.serialized().map_err(|e| Error::Io(e.to_string()))?;
@@ -176,9 +176,8 @@ pub(crate) fn write_atomic(path: &std::path::Path, bytes: &[u8]) -> Result<()> {
     if let Some(dir) = path.parent() {
         std::fs::create_dir_all(dir).map_err(io)?;
     }
-    let tmp = path.with_extension("tmp");
-    std::fs::write(&tmp, bytes).map_err(io)?;
-    std::fs::rename(&tmp, path).map_err(io)
+    // a unique temp file, synced, renamed over the old one, then the folder synced
+    crate::safe_io::write_atomic(path, bytes).map_err(io)
 }
 
 #[cfg(test)]

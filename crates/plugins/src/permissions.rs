@@ -98,22 +98,27 @@ impl Permissions {
     /// Resolves `path` for reading (or writing) under a granted root, or `extra` (exact files the
     /// host lends for one call, like the file an export hook post-processes). Rejects relative
     /// paths and `..`, and resolves symbolic links of the existing part so a link cannot lead
-    /// out of a root.
+    /// out of a root. Returns the resolved path, which is the one to open.
     pub fn check_path(&self, path: &str, write: bool, extra: &[PathBuf]) -> std::result::Result<PathBuf, String> {
         let p = Path::new(path);
         if !p.is_absolute() || has_parent_refs(p) {
             return Err(format!("{path}: must be an absolute path without `..`"));
         }
+        // the resolved path is what the caller opens: a link swapped into the original path after this check
+        // can't redirect it (and `safe_io` checks again at open time)
         let real = resolve(p);
+        if has_parent_refs(&real) {
+            return Err(format!("{path}: must be an absolute path without `..`"));
+        }
         if extra.iter().any(|e| resolve(e) == real) {
-            return Ok(p.to_path_buf());
+            return Ok(real);
         }
         for root in &self.fs {
             if write && !root.write {
                 continue;
             }
             if real.starts_with(resolve(Path::new(&root.path))) {
-                return Ok(p.to_path_buf());
+                return Ok(real);
             }
         }
         Err(format!("{path}: not inside a folder this plug-in may {}", if write { "write" } else { "read" }))

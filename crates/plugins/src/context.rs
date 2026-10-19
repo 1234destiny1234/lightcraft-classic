@@ -80,11 +80,8 @@ impl CallContext<'_> {
             "ns.photos" => Ok(json!(self.store.photos())),
             "fs.readText" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
-                let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                if meta.len() > MAX_IO_BYTES as u64 {
-                    return Err(format!("{}: larger than {MAX_IO_BYTES} bytes", path.display()));
-                }
-                std::fs::read_to_string(&path).map(Value::from).map_err(|e| format!("{}: {e}", path.display()))
+                let bytes = crate::safe_io::read_checked(&path, MAX_IO_BYTES as u64).map_err(|e| format!("{}: {e}", path.display()))?;
+                String::from_utf8(bytes).map(Value::from).map_err(|_| format!("{}: not UTF-8 text", path.display()))
             }
             "fs.writeText" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, true, self.lent)?;
@@ -92,15 +89,13 @@ impl CallContext<'_> {
                 if text.len() > MAX_IO_BYTES {
                     return Err(format!("larger than {MAX_IO_BYTES} bytes"));
                 }
-                std::fs::write(&path, text).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
+                crate::safe_io::write_checked(&path, text.as_bytes()).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
             }
             "fs.readBytes" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, false, self.lent)?;
-                let meta = std::fs::metadata(&path).map_err(|e| format!("{}: {e}", path.display()))?;
-                if meta.len() > MAX_IO_BYTES as u64 {
-                    return Err(format!("{}: larger than {MAX_IO_BYTES} bytes", path.display()));
-                }
-                std::fs::read(&path).map(|b| Value::from(crate::b64::encode(&b))).map_err(|e| format!("{}: {e}", path.display()))
+                crate::safe_io::read_checked(&path, MAX_IO_BYTES as u64)
+                    .map(|b| Value::from(crate::b64::encode(&b)))
+                    .map_err(|e| format!("{}: {e}", path.display()))
             }
             "fs.writeBytes" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, true, self.lent)?;
@@ -109,7 +104,7 @@ impl CallContext<'_> {
                     return Err(format!("larger than {MAX_IO_BYTES} bytes"));
                 }
                 let bytes = crate::b64::decode(text)?;
-                std::fs::write(&path, bytes).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
+                crate::safe_io::write_checked(&path, &bytes).map(|_| Value::Null).map_err(|e| format!("{}: {e}", path.display()))
             }
             "fs.remove" => {
                 let path = self.perms.check_path(str_arg(p, "path")?, true, &[])?;
