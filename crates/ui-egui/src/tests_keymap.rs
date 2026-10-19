@@ -648,3 +648,22 @@ fn shortcuts_header_controls_do_not_overlap() {
         }
     }
 }
+
+/// X in the crop tool swaps the crop's orientation once: it fired both Reject's crop alias and
+/// Rotate Crop Aspect, so the frame turned twice and looked unchanged (issue #293).
+#[test]
+fn x_in_the_crop_tool_swaps_the_crop_orientation() {
+    let mut h = demo();
+    key(&mut h, "D", false);
+    key(&mut h, "R", false);
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Crop);
+    let id = h.app.session.active().unwrap();
+    let r = h.request("engine.execute", json!({"command": "crop.aspect", "params": {"aspect": "3x2"}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let (w, ht) = h.app.session.develop_of(id).unwrap().crop.aspect.unwrap();
+    assert_ne!(w, ht);
+    let flag = h.app.session.catalog.photo(id).map(|p| p.flag);
+    key(&mut h, "X", false);
+    assert_eq!(h.app.session.develop_of(id).unwrap().crop.aspect, Some((ht, w)), "X swaps the locked aspect once");
+    assert_eq!(h.app.session.catalog.photo(id).map(|p| p.flag), flag, "X does not reject while cropping");
+}
