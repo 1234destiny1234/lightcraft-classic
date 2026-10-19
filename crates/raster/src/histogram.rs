@@ -1024,23 +1024,4 @@ mod tests {
             }
         }
     }
-
-    /// Measuring a real preview, to keep the chroma and vectorscope channels honest: run
-    /// `cargo test -p lcc-raster --release -- --ignored --nocapture histogram_cost`.
-    /// A 1.7 MP image samples 0.43 MP (step 2): ~1.6 ms for the four older channels, ~2.7 ms with
-    /// chroma and the vectorscope, so a 2.5 MP preview stays well inside the 16 ms slider-draft
-    /// budget.
-    #[test]
-    #[ignore = "timing probe"]
-    fn histogram_cost() {
-        let img = Rgba8::from_fn(1600, 1067, |x, y| [((x * 7) % 256) as u8, ((y * 11) % 256) as u8, ((x + y) % 256) as u8, 255]);
-        for _ in 0..3 {
-            let t = std::time::Instant::now();
-            let n = 20;
-            for _ in 0..n {
-                std::hint::black_box(Histogram::of_srgb8(&img));
-            }
-            println!("Histogram::of_srgb8 1.7 MP: {:.2} ms", t.elapsed().as_secs_f64() * 1e3 / f64::from(n));
-        }
-    }
 }

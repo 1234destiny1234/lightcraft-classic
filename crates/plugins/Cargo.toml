@@ -21,3 +21,4 @@ lcc-net = { workspace = true }
 # WebAssembly text -> binary for the hostile-module fixtures (Apache-2.0 WITH LLVM-exception).
 wat = "1.228"
 lcc-fuzzkit = { workspace = true }
+lcc-testkit = { workspace = true }

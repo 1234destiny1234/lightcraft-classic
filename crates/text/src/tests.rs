@@ -542,7 +542,7 @@ fn craft_family_of(l: &crate::TextLayout) -> Vec<String> {
 fn craft_fonts_cover_japanese_without_system_fonts() {
     crate::craft_fonts::install_from_env();
     if !crate::craft_fonts::installed().iter().any(|f| f.is_japanese()) {
-        eprintln!("skipping: built without craft-fonts (set CRAFT_FONTS_DIR to a craft-fonts checkout)");
+        lcc_testkit::skip!(Fonts, "built without craft-fonts (set CRAFT_FONTS_DIR to a craft-fonts checkout)");
         return;
     }
     let mut e = TextEngine::new();
@@ -656,7 +656,7 @@ fn thai_in_latin_font_falls_back_to_installed_thai_font() {
     // the original Thai face) must fall back to an installed Thai-capable font, not .notdef.
     let mut e = TextEngine::with_system_fonts();
     let Some(thai) = fonts::THAI_FAMILIES.iter().find(|f| e.fonts.has_family(f)) else {
-        eprintln!("skipped: no Thai-capable font installed");
+        lcc_testkit::skip!(System, "no Thai-capable font installed");
         return;
     };
     let l = e.layout(&point(THAI_SAMPLE, 24.0), 72.0);

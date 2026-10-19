@@ -120,7 +120,7 @@ fn vector_images_and_text_rasterise_as_laid_out() {
 #[test]
 fn cjk_text_rasterises_with_craft_fonts() {
     if lcc_text::craft_fonts::install_from_env() == 0 {
-        eprintln!("CRAFT_FONTS_DIR unset: skipping CJK raster test");
+        lcc_testkit::skip!(Fonts, "CRAFT_FONTS_DIR unset");
         return;
     }
     let mut e = lcc_text::TextEngine::new();

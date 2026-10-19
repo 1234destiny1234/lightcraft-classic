@@ -42,6 +42,7 @@ dhat-heap = ["dep:dhat"]
 heif = ["lcc-codecs/heif"]
 
 [dev-dependencies]
+lcc-testkit = { workspace = true }
 # the SIL harness (tests/sil.rs) generates its test photos
 lcc-scenes = { workspace = true }
 

@@ -15,7 +15,7 @@ fn clip(name: &str) -> Option<PathBuf> {
     if p.exists() {
         Some(p)
     } else {
-        eprintln!("skip: {} not present (cargo xtask corpus --download)", p.display());
+        lcc_testkit::skip!(Corpus, "{} not present (cargo xtask corpus --download)", p.display());
         None
     }
 }

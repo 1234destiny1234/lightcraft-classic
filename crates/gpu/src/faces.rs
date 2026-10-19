@@ -821,7 +821,7 @@ mod tests {
         match accelerator() {
             Ok(a) => Some(a),
             Err(e) => {
-                eprintln!("no GPU for the face kernels, skipping: {e}");
+                lcc_testkit::skip!(Gpu, "no GPU for the face kernels: {e}");
                 None
             }
         }
@@ -927,7 +927,7 @@ mod tests {
     #[test]
     fn real_face_models_on_the_gpu_agree_with_the_cpu() {
         let Some(dir) = std::env::var_os("LC_FACE_MODELS").map(std::path::PathBuf::from) else {
-            eprintln!("LC_FACE_MODELS is not set: skipping");
+            lcc_testkit::skip!(Model, "LC_FACE_MODELS is not set");
             return;
         };
         if gpu().is_none() {
