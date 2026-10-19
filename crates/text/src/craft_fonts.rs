@@ -202,8 +202,9 @@ pub fn mincho_first(fallback: &[String]) -> Vec<String> {
 /// A family name that reads as serif (Mincho, Song/Ming, Myeongjo, Times …): its Japanese
 /// fallback should be a Mincho face rather than a Gothic one.
 pub fn is_serif_family(name: &str) -> bool {
-    let n = name.to_ascii_lowercase();
-    if n.contains("sans") || n.contains("gothic") {
+    let tokens = family_tokens(name);
+    let has = |w: &str| tokens.iter().any(|t| t == w);
+    if has("sans") || has("gothic") {
         return false;
     }
     const SERIF: &[&str] = &[
@@ -225,16 +226,52 @@ pub fn is_serif_family(name: &str) -> bool {
         "didot",
         "palatino",
         "cambria",
-        "book antiqua",
         "century",
         "hoefler",
     ];
-    SERIF.iter().any(|s| n.contains(s))
+    SERIF.iter().any(|s| has(s)) || tokens.windows(2).any(|w| matches!(w, [a, b] if a == "book" && b == "antiqua"))
+}
+
+/// The words of a family name, lower-cased: split at anything that is not a letter or digit and
+/// at lower-to-upper case changes, so "Noto Serif JP", "Noto-Serif" and "NotoSerifJP" all hold
+/// "serif" while "Sometimes" or "Flaming" hold no serif word.
+fn family_tokens(name: &str) -> Vec<String> {
+    let mut out = Vec::new();
+    let mut cur = String::new();
+    let mut prev_lower = false;
+    for c in name.chars() {
+        if !c.is_alphanumeric() {
+            if !cur.is_empty() {
+                out.push(std::mem::take(&mut cur));
+            }
+            prev_lower = false;
+            continue;
+        }
+        if c.is_uppercase() && prev_lower && !cur.is_empty() {
+            out.push(std::mem::take(&mut cur));
+        }
+        prev_lower = c.is_lowercase() || c.is_numeric();
+        cur.extend(c.to_lowercase());
+    }
+    if !cur.is_empty() {
+        out.push(cur);
+    }
+    out
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn serif_family_matches_whole_words_only() {
+        for yes in ["Noto Serif JP", "NotoSerifJP", "Times New Roman", "Hiragino Mincho ProN", "Book Antiqua", "PT Serif"] {
+            assert!(is_serif_family(yes), "{yes}");
+        }
+        for no in ["Flaming", "Sometimes", "Sans Serif", "Microsoft Sans Serif", "Noto Sans", "MS Gothic", "Inter", "SansSerif"] {
+            assert!(!is_serif_family(no), "{no}");
+        }
+    }
 
     #[test]
     fn mincho_first_reorders_only_craft_families() {
