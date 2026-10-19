@@ -447,10 +447,19 @@ fn exec(b: &mut dyn Backend, command: &str, params: Value) -> Result<Value, Stri
 
 /// Make `args.id` (if any) the active photo.
 fn activate(b: &mut dyn Backend, args: &Value) -> Result<(), String> {
-    if let Some(id) = args.get("id").and_then(Value::as_u64) {
+    if let Some(id) = photo_id_arg(args)? {
         exec(b, "library.select", json!({"ids": [id], "active": id}))?;
     }
     Ok(())
+}
+
+/// `args.id` as a photo id: absent / null is `None`; anything but a non-negative integer is an error (it used
+/// to be ignored, so the tool silently acted on the active photo instead).
+fn photo_id_arg(args: &Value) -> Result<Option<u64>, String> {
+    match args.get("id") {
+        None | Some(Value::Null) => Ok(None),
+        Some(v) => v.as_u64().map(Some).ok_or_else(|| format!("`id` must be a non-negative integer photo id, got {v}")),
+    }
 }
 
 fn temp_path(tag: &str) -> std::path::PathBuf {
@@ -520,7 +529,16 @@ fn render_photo(b: &mut dyn Backend, args: &Value) -> ToolResult {
         return ToolResult::error(e);
     }
     let size = args.get("size").and_then(Value::as_u64).unwrap_or(1024).clamp(16, 4096);
-    let id = match args.get("id").and_then(Value::as_u64) {
+    let given = match photo_id_arg(args) {
+        Ok(g) => g,
+        Err(e) => return ToolResult::error(e),
+    };
+    if let Some(f) = args.get("format").filter(|f| !f.is_null())
+        && !matches!(f.as_str(), Some("png" | "jpeg" | "jpg"))
+    {
+        return ToolResult::error(format!("`format` must be \"png\" or \"jpeg\", got {f}"));
+    }
+    let id = match given {
         Some(id) => Some(id),
         None => match exec(b, "library.state", json!({})) {
             Ok(s) => s["selection"]["active"].as_u64().or(s["selection"]["ids"][0].as_u64()),
