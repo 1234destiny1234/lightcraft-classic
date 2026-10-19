@@ -14,7 +14,10 @@ pub fn to_run_args(args: &[String]) -> Result<Vec<String>, String> {
         if a.starts_with("--") {
             opts.push(a.clone());
             let takes = matches!(a.as_str(), "--library" | "--import" | "--script")
-                || (a == "--connect" && args.get(i + 1).is_some_and(|n| n.contains(':') && !n.contains('=')));
+                || (a == "--connect"
+                    && args
+                        .get(i + 1)
+                        .is_some_and(|n| !n.is_empty() && !n.contains('=') && (n.contains(':') || n.chars().all(|c| c.is_ascii_digit()))));
             if takes {
                 i += 1;
                 opts.push(args.get(i).cloned().ok_or_else(|| format!("{a} needs a value"))?);
@@ -60,5 +63,16 @@ mod tests {
         assert!(to_run_args(&s(&["--library"])).is_err());
         assert!(to_run_args(&s(&[])).is_err());
         assert!(to_run_args(&s(&["a", "b"])).is_err());
+    }
+
+    #[test]
+    fn connect_takes_a_bare_port() {
+        let r = to_run_args(&s(&["--connect", "7980", "Warm"])).unwrap();
+        assert_eq!(&r[..3], &s(&["--connect", "7980", "actions.play"])[..]);
+        let p: Value = serde_json::from_str(&r[3]).unwrap();
+        assert_eq!(p["name"], "Warm");
+        // Without an address the next token is still the action name.
+        let r = to_run_args(&s(&["--connect", "Warm"])).unwrap();
+        assert_eq!(&r[..2], &s(&["--connect", "actions.play"])[..]);
     }
 }

@@ -1003,9 +1003,11 @@ impl ExportOptions {
                     int(k, v, 0, i64::MAX)?;
                 }
                 "ids" => {
-                    let ok = v.as_array().is_some_and(|a| a.iter().all(|x| x.is_u64()));
-                    if !ok {
+                    let Some(a) = v.as_array() else {
                         return Err(bad(format!("`{k}` must be an array of photo ids")));
+                    };
+                    if let Some(e) = crate::bad_ids_entry(a) {
+                        return Err(bad(e));
                     }
                 }
                 _ => return Err(bad(unknown_key("parameter", k, &known))),
@@ -3367,7 +3369,7 @@ mod tests {
         assert!(err(json!({"dontEnlarge": "no"})).contains("`dontEnlarge` must be true or false"));
         assert!(err(json!({"resize": {"mode": "longEdge", "valeu": 10}})).contains("did you mean `value`"));
         assert!(err(json!({"resize": {"mode": "diagonal", "value": 10}})).contains("`resize`:"));
-        assert!(err(json!({"ids": [1, "x"]})).contains("`ids` must be an array of photo ids"));
+        assert!(err(json!({"ids": [1, "x"]})).contains("`ids[1]` is \"x\""));
         assert!(err(json!("jpeg")).contains("params must be an object"));
         assert!(
             ExportOptions::validate("export.savePreset", &json!({"qualty": 5}))

@@ -544,7 +544,7 @@ fn comments(s: &mut Session, p: &Value) -> Result<Value> {
     const C: &str = "publish.comments";
     let (_, cfg) = load(s, C)?;
     let (svc, coll) = collection(&cfg, p, C)?;
-    let id = p.get("id").and_then(Value::as_u64).map(PhotoId).or(s.active()).ok_or_else(|| bad(C, "missing `id`"))?;
+    let id = s.photo_or_active(p, C)?;
     let acct = lcc_publish::account_id(&svc.id, coll.album);
     let Some(link) = s.catalog.remote_links().get(&(id, lcc_publish::SERVICE.to_string(), acct)).cloned() else {
         return Ok(json!({"comments": [], "supported": true, "published": false}));

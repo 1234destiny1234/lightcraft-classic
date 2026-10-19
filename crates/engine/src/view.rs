@@ -141,8 +141,10 @@ impl Selection {
             return;
         };
         let (lo, hi) = (a.min(b), a.max(b));
-        for x in &order[lo..=hi] {
-            if !self.ids.contains(x) {
+        // A set keeps this linear: `Vec::contains` per photo was quadratic on big ranges.
+        let mut seen: std::collections::HashSet<PhotoId> = self.ids.iter().copied().collect();
+        for x in order.get(lo..=hi).unwrap_or_default() {
+            if seen.insert(*x) {
                 self.ids.push(*x);
             }
         }
@@ -267,6 +269,22 @@ fn date_label(d: &str) -> String {
 mod selection_state_tests {
     use super::*;
     use lcc_catalog::PhotoId;
+
+    #[test]
+    fn extend_to_selects_a_large_range_once_and_keeps_the_anchor() {
+        let order: Vec<PhotoId> = (0..200_000).map(PhotoId).collect();
+        let mut s = Selection::single(PhotoId(10));
+        s.toggle(PhotoId(150_000)); // already selected, inside the range
+        let t = std::time::Instant::now();
+        s.extend_to(PhotoId(199_999), &order);
+        // Quadratic took minutes here; linear takes milliseconds. Generous bound for slow CI.
+        assert!(t.elapsed() < std::time::Duration::from_secs(10));
+        assert_eq!(s.ids.len(), 199_990);
+        let uniq: std::collections::HashSet<_> = s.ids.iter().collect();
+        assert_eq!(uniq.len(), s.ids.len());
+        assert_eq!(s.active, Some(PhotoId(10)));
+        assert!(s.contains(PhotoId(199_999)) && !s.contains(PhotoId(9)));
+    }
 
     #[test]
     fn select_all_marks_the_others_selected_and_one_active() {
