@@ -110,7 +110,7 @@ fn jpeg_pages_at_print_resolution() {
 #[test]
 fn cups_test_printer_receives_a_job() {
     let Some(uri) = lcc_brand::env("CUPS_TEST_PRINTER").filter(|u| !u.trim().is_empty()) else {
-        eprintln!("skipped: set {} to an IPP printer URI to run", lcc_brand::env_var("CUPS_TEST_PRINTER"));
+        lcc_testkit::skip!(Input, "set {} to an IPP printer URI to run", lcc_brand::env_var("CUPS_TEST_PRINTER"));
         return;
     };
     let info = crate::ipp::printer_info(&uri).unwrap();

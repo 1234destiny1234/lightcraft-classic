@@ -361,7 +361,7 @@ fn damaged_clips_never_panic() {
 fn corpus_clip_audio() {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/video/h264-aac-720p-nps-elk.mp4");
     if !p.exists() {
-        eprintln!("skip: {} not present (cargo xtask corpus --download)", p.display());
+        lcc_testkit::skip!(Corpus, "{} not present (cargo xtask corpus --download)", p.display());
         return;
     }
     let mut r = AudioReader::open(&p).unwrap();

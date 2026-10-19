@@ -38,7 +38,7 @@ fn cjk_engine() -> Option<(TextEngine, String)> {
             }
         }
     }
-    eprintln!("no CJK system font found: skipping");
+    lcc_testkit::skip!(System, "no CJK system font found");
     None
 }
 

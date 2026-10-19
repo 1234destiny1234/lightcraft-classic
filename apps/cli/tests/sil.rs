@@ -642,7 +642,7 @@ fn sil_workflow() {
 #[test]
 fn sil_raw_workflow() {
     if corpus_raws(1).is_empty() {
-        eprintln!("SIL raw: no corpus raws (cargo xtask corpus --download, or SIL_CORPUS) — skipped");
+        lcc_testkit::skip!(Corpus, "no corpus raws (cargo xtask corpus --download, or SIL_CORPUS)");
         return;
     }
     let mut s = Sil::new("raw");

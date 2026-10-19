@@ -362,7 +362,7 @@ impl Bounds {
 #[test]
 fn cjk_multi_page_document_with_craft_fonts() {
     if lcc_text::craft_fonts::install_from_env() == 0 {
-        eprintln!("skipping: CRAFT_FONTS_DIR is not set to a craft-fonts checkout");
+        lcc_testkit::skip!(Fonts, "CRAFT_FONTS_DIR is not set to a craft-fonts checkout");
         return;
     }
     let installed = lcc_text::craft_fonts::installed();

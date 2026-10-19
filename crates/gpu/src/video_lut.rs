@@ -285,7 +285,7 @@ mod tests {
     #[test]
     fn gpu_lut_matches_cpu_lut() {
         let Some((device, queue)) = device() else {
-            eprintln!("no GPU adapter with view formats: skipped");
+            lcc_testkit::skip!(Gpu, "no GPU adapter with view formats");
             return;
         };
         let mut s = lcc_develop::DevelopSettings::default();

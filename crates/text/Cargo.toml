@@ -22,4 +22,5 @@ parley = { version = "0.11", default-features = false, features = ["std", "compl
 
 [dev-dependencies]
 lcc-fuzzkit = { workspace = true }
+lcc-testkit = { workspace = true }
 serde_json = { workspace = true }
