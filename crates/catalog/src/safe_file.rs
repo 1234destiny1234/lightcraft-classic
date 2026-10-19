@@ -57,6 +57,14 @@ pub fn fail_writes_after(bytes: u64) -> FaultGuard {
     FaultGuard(())
 }
 
+/// Whether a write of `len` bytes made outside this module (the catalog store's own file, which
+/// redb writes) fails under an injected [`fail_writes_after`] limit on the calling thread: when
+/// `len` alone exceeds the limit (nothing is counted across such writes).
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn injected_fault(len: u64) -> bool {
+    FAIL_AFTER.with(Cell::get).is_some_and(|limit| len > limit)
+}
+
 /// Ends a [`fail_writes_after`] when dropped.
 #[doc(hidden)]
 pub struct FaultGuard(());

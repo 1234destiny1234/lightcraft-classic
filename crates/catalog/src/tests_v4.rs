@@ -683,3 +683,176 @@ fn another_apps_catalog_is_foreign_and_left_untouched() {
     assert_eq!(library::foreign_format(own.path()), None);
     assert_eq!(library::foreign_format(&s.path().join("nothing-here")), None);
 }
+
+/// A `meta` value of the store, as written.
+fn stored_meta(dir: &Path, key: &str) -> Option<String> {
+    use redb::ReadableDatabase;
+    let db = redb::Database::open(dir.join(DB_FILE)).unwrap();
+    let r = db.begin_read().unwrap();
+    let t = r.open_table(redb::TableDefinition::<&str, &[u8]>::new("meta")).unwrap();
+    t.get(key).unwrap().map(|v| String::from_utf8(v.value().to_vec()).unwrap())
+}
+
+/// A library with photos in its store, then marked as an older build left it: `version` set to
+/// `version`, or removed when `None`.
+fn older_store(tag: &str, version: Option<&str>) -> Scratch {
+    let s = Scratch::new(tag);
+    {
+        let (mut j, mut c, _) = open(s.path());
+        fill(&mut j, &mut c, 3);
+        j.snapshot(&c).unwrap();
+    }
+    let db = redb::Database::open(s.path().join(DB_FILE)).unwrap();
+    let w = db.begin_write().unwrap();
+    {
+        let mut meta = w.open_table(redb::TableDefinition::<&str, &[u8]>::new("meta")).unwrap();
+        match version {
+            Some(v) => meta.insert("version", v.as_bytes()).unwrap(),
+            None => meta.remove("version").unwrap(),
+        };
+    }
+    w.commit().unwrap();
+    s
+}
+
+/// A format-12 field (`SetContent.preview_checked`), the kind a format-11 build drops.
+fn newer_field_op(c: &Catalog) -> Op {
+    Op::SetContent {
+        id: c.photos().next().unwrap().id,
+        width: 40,
+        height: 30,
+        file_size: 1,
+        content_hash: None,
+        preview_only: Some("no decoder for this raw".into()),
+        preview_checked: "0.9.0".into(),
+    }
+}
+
+/// A store an older build wrote is marked with this build's format before anything of this format is appended to
+/// its log, as the JSON snapshot is: otherwise the older build still opens it and drops what it doesn't know.
+#[test]
+fn an_older_store_is_marked_with_this_format_before_the_log_grows() {
+    let s = older_store("older", Some("11"));
+    let (mut j, mut c, r) = open(s.path());
+    assert_eq!(r.upgraded_from, Some(11), "the open reports the upgrade");
+    let op = newer_field_op(&c);
+    c.apply(op.clone()).unwrap();
+    j.append(&[op]).unwrap();
+    drop(j); // quit before the next checkpoint
+    let log = String::from_utf8(std::fs::read(s.path().join(LOG)).unwrap()).unwrap();
+    assert!(log.contains("preview_checked"), "the log holds a format-12 field");
+    assert_eq!(
+        stored_meta(s.path(), "version"),
+        Some(crate::journal::VERSION.to_string()),
+        "a format-11 build must refuse this library now (open reported upgraded_from = {:?})",
+        r.upgraded_from
+    );
+    // and nothing was lost on the way
+    let (_j, c2, r2) = open(s.path());
+    assert_eq!(r2.upgraded_from, None, "upgraded once");
+    assert_eq!(c2.len(), c.len());
+    assert_eq!(c2.photos().map(|p| p.preview_checked.clone()).filter(|v| v == "0.9.0").count(), 1);
+}
+
+/// A store with no `version` in its `meta` table counts as format 0 and is upgraded the same way.
+#[test]
+fn a_store_without_a_version_is_format_0_and_upgraded() {
+    let s = older_store("no-version", None);
+    let (j, _c, r) = open(s.path());
+    assert_eq!(r.upgraded_from, Some(0));
+    drop(j);
+    assert_eq!(stored_meta(s.path(), "version"), Some(crate::journal::VERSION.to_string()));
+}
+
+/// Marking is a one-time write: once the store says this build's format, opening and closing it
+/// with no edits writes nothing.
+#[test]
+fn a_store_in_this_format_opens_without_a_write() {
+    let s = older_store("current", Some("11"));
+    drop(open(s.path()));
+    let generation = stored_meta(s.path(), "generation");
+    assert!(generation.is_some());
+    assert_eq!(stored_meta(s.path(), "version"), Some(crate::journal::VERSION.to_string()), "the first open marked it");
+    let (j, _c, r) = open(s.path());
+    assert_eq!(r.upgraded_from, None);
+    drop(j);
+    assert_eq!(stored_meta(s.path(), "generation"), generation, "the second open and close wrote nothing to the store");
+}
+
+/// A log a newer build has written to is refused untouched, as the replay refuses it: the older
+/// store isn't marked first.
+#[test]
+fn an_older_store_with_a_newer_record_in_its_log_is_refused_unmarked() {
+    let s = older_store("older-newer-log", Some("11"));
+    let body = "{\"op\":\"fromTheFuture\"}";
+    let record = format!("{{\"seq\":999,\"crc\":{},\"op\":{body}}}\n", crc32fast::hash(body.as_bytes()));
+    let mut before = std::fs::read(s.path().join(LOG)).unwrap_or_default();
+    before.extend_from_slice(record.as_bytes());
+    std::fs::write(s.path().join(LOG), &before).unwrap();
+    let r = Journal::open(Box::new(FsStore::open(s.path()).unwrap()));
+    assert!(matches!(r, Err(CatalogError::Newer(_))), "{:?}", r.err());
+    assert_eq!(stored_meta(s.path(), "version").as_deref(), Some("11"), "the store isn't marked");
+    assert_eq!(std::fs::read(s.path().join(LOG)).unwrap(), before);
+}
+
+/// If the store can't be marked (a full disk), the open is refused with an error the user can act
+/// on, and the store and log are left as they were: opening it anyway would let the log gain
+/// records an older build then drops.
+#[test]
+fn an_older_store_that_cant_be_marked_is_refused_untouched() {
+    let s = older_store("unmarkable", Some("11"));
+    {
+        // a record from the older build's session, still in the log
+        let (mut j, mut c, _) = open(s.path());
+        let op = Op::SetRating { id: c.photos().next().unwrap().id, rating: 4 };
+        c.apply(op.clone()).unwrap();
+        j.append(&[op]).unwrap();
+    }
+    let set = |v: &str| {
+        let db = redb::Database::open(s.path().join(DB_FILE)).unwrap();
+        let w = db.begin_write().unwrap();
+        w.open_table(redb::TableDefinition::<&str, &[u8]>::new("meta")).unwrap().insert("version", v.as_bytes()).unwrap();
+        w.commit().unwrap();
+    };
+    set("11");
+    // every file byte for byte, but the store: redb rewrites its own header on any open, so the
+    // store is compared by what it says
+    let files = |dir: &Path| {
+        let mut v: Vec<(String, Vec<u8>)> = std::fs::read_dir(dir)
+            .unwrap()
+            .map(|e| e.unwrap().path())
+            .filter(|p| p.is_file() && !p.ends_with(DB_FILE))
+            .map(|p| (p.file_name().unwrap().to_string_lossy().into_owned(), std::fs::read(&p).unwrap()))
+            .collect();
+        v.sort();
+        let meta = ["version", "seq", "generation", "head"].map(|k| stored_meta(dir, k));
+        (v, meta)
+    };
+    let before = files(s.path());
+    let r = {
+        let _full = safe_file::fail_writes_after(0);
+        Journal::open(Box::new(FsStore::open(s.path()).unwrap()))
+    };
+    let Err(e) = r else { panic!("an older store that can't be marked was opened") };
+    assert!(matches!(e, CatalogError::Io(_)), "{e}");
+    let msg = e.to_string();
+    assert!(msg.contains("v11") && msg.contains("unchanged"), "says what failed and that nothing changed: {msg}");
+    assert_eq!(files(s.path()), before, "the store and the log are as they were");
+    assert_eq!(stored_meta(s.path(), "version").as_deref(), Some("11"));
+    // a store file the user may not write: refused (by redb, before the mark), never a panic
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let store = s.path().join(DB_FILE);
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o444)).unwrap();
+        let r = Journal::open(Box::new(FsStore::open(s.path()).unwrap()));
+        std::fs::set_permissions(&store, std::fs::Permissions::from_mode(0o644)).unwrap();
+        let Err(e) = r else { panic!("an older store that can't be written was opened") };
+        assert!(e.to_string().to_lowercase().contains("permission denied"), "{e}");
+        assert_eq!(files(s.path()), before);
+    }
+    // and it opens once the write succeeds
+    let (_j, c, r) = open(s.path());
+    assert_eq!(r.upgraded_from, Some(11));
+    assert!(c.photos().any(|p| p.rating == 4), "the log's record was replayed");
+}

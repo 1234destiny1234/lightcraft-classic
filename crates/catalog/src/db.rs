@@ -172,6 +172,9 @@ pub struct CatalogDb {
     path: PathBuf,
     /// The store's generation as of the last load or checkpoint.
     generation: u64,
+    /// The catalog format the store says it holds (`meta.version`; 0 when missing), as of the
+    /// last open, load, checkpoint or [`CatalogDb::mark_version`].
+    version: u32,
     /// Settings hashes already in `develop_settings`.
     known: Arc<RwLock<HashSet<u128>>>,
     base: Baseline,
@@ -214,13 +217,20 @@ impl CatalogDb {
     }
 
     fn at(path: &Path) -> CatalogDb {
-        CatalogDb { path: path.to_path_buf(), generation: 0, known: Arc::default(), base: Baseline::default(), last: CheckpointStats::default() }
+        CatalogDb {
+            path: path.to_path_buf(),
+            generation: 0,
+            version: 0,
+            known: Arc::default(),
+            base: Baseline::default(),
+            last: CheckpointStats::default(),
+        }
     }
 
     /// Open an existing store (without loading the catalog: see [`CatalogDb::load`]).
     fn open_inner(path: &Path) -> Result<CatalogDb> {
         let mut me = CatalogDb::at(path);
-        me.generation = me.check_format()?.1;
+        (_, me.generation, me.version) = me.check_format()?;
         Ok(me)
     }
 
@@ -233,8 +243,9 @@ impl CatalogDb {
         &self.path
     }
 
-    /// Check the store is a catalog this version reads; its `seq` and generation.
-    fn check_format(&self) -> Result<(u64, u64)> {
+    /// Check the store is a catalog this version reads; its `seq`, generation and format version
+    /// (0 when the store has none).
+    fn check_format(&self) -> Result<(u64, u64, u32)> {
         let db = self.handle()?;
         let r = db.begin_read().map_err(dberr)?;
         let t = r.open_table(META).map_err(dberr)?;
@@ -250,19 +261,52 @@ impl CatalogDb {
         let seq = t.get("seq").map_err(dberr)?.and_then(|v| std::str::from_utf8(v.value()).ok().and_then(|s| s.parse().ok())).unwrap_or(0);
         let generation =
             t.get("generation").map_err(dberr)?.and_then(|v| std::str::from_utf8(v.value()).ok().and_then(|s| s.parse().ok())).unwrap_or(0);
-        Ok((seq, generation))
+        Ok((seq, generation, version))
     }
 
     /// The `seq` of the last op the store holds.
     pub fn seq(&self) -> Result<u64> {
-        self.check_format().map(|(seq, _)| seq)
+        self.check_format().map(|(seq, ..)| seq)
+    }
+
+    /// The catalog format the store says it holds, as of the last open or load: below
+    /// [`crate::journal::VERSION`] when an older build wrote it.
+    pub fn version(&self) -> u32 {
+        self.version
+    }
+
+    /// Mark the store as holding this build's format (`meta.version`), in one small transaction
+    /// that changes nothing else but the generation: its records were written by an older build,
+    /// which this one reads as they are. Done on opening an older store, before anything is
+    /// appended to the log, so the older build refuses the library from then on.
+    fn mark_version_inner(&mut self) -> Result<()> {
+        let version = crate::journal::VERSION.to_string();
+        if crate::safe_file::injected_fault(version.len() as u64) {
+            return Err(CatalogError::Io(format!("{DB_FILE}: write failed (injected fault)")));
+        }
+        let (_, current, _) = self.check_format()?;
+        let generation = current.wrapping_add(1);
+        let db = self.handle()?;
+        let txn = db.begin_write().map_err(dberr)?;
+        {
+            let mut meta = txn.open_table(META).map_err(dberr)?;
+            meta.insert("version", version.as_bytes()).map_err(dberr)?;
+            meta.insert("generation", generation.to_string().as_bytes()).map_err(dberr)?;
+        }
+        txn.commit().map_err(dberr)?;
+        // a store someone else changed since the load stays "changed": the next checkpoint rewrites it whole
+        if current == self.generation {
+            self.generation = generation;
+        }
+        self.version = crate::journal::VERSION;
+        Ok(())
     }
 
     /// Load the whole catalog (and remember it as the checkpoint baseline). Returns it, its `seq`
     /// and how many records could not be read (skipped, logged).
     fn load_inner(&mut self) -> Result<(Catalog, u64, usize)> {
-        let (seq, generation) = self.check_format()?;
-        self.generation = generation;
+        let (seq, generation, version) = self.check_format()?;
+        (self.generation, self.version) = (generation, version);
         let db = self.handle()?;
         let r = db.begin_read().map_err(dberr)?;
         let mut bad = 0usize;
@@ -426,7 +470,7 @@ impl CatalogDb {
         let t0 = web_time::Instant::now();
         let mut stats = CheckpointStats::default();
         let current = match self.check_format() {
-            Ok((_, g)) => g,
+            Ok((_, g, _)) => g,
             Err(e) if !full => return Err(e),
             Err(_) => 0,
         };
@@ -549,6 +593,7 @@ impl CatalogDb {
         txn.commit().map_err(dberr)?;
         drop(db);
         self.generation = generation;
+        self.version = crate::journal::VERSION;
         stats.bytes = std::fs::metadata(&self.path).map_or(0, |m| m.len());
         stats.commit_ms = t1.elapsed().as_secs_f64() * 1e3;
 
@@ -587,8 +632,8 @@ impl CatalogDb {
                 return Err(e);
             }
         };
-        let CatalogDb { generation, known, base, last, .. } = fresh;
-        (self.generation, self.known, self.base, self.last) = (generation, known, base, last);
+        let CatalogDb { generation, version, known, base, last, .. } = fresh;
+        (self.generation, self.version, self.known, self.base, self.last) = (generation, version, known, base, last);
         Ok(())
     }
 
@@ -732,6 +777,10 @@ impl CatalogDb {
     /// and how many records could not be read (skipped, logged).
     pub fn load(&mut self) -> Result<(Catalog, u64, usize)> {
         guarded("load", || self.load_inner())
+    }
+    /// Mark the store as holding this build's format (see [`CatalogDb::version`]).
+    pub fn mark_version(&mut self) -> Result<()> {
+        guarded("mark version", || self.mark_version_inner())
     }
     /// Write everything that changed since the last checkpoint (or load) in one transaction,
     /// as the state after op `seq`.
