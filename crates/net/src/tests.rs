@@ -394,9 +394,10 @@ fn tls_trust_ca_pin_and_tofu() {
 }
 
 #[test]
-fn ca_pem_is_accepted() {
+fn ca_pem_is_accepted_and_one_without_certificates_is_refused() {
     let pem = format!("-----BEGIN CERTIFICATE-----\n{}\n-----END CERTIFICATE-----\n", CA_B64);
     assert!(Trust::new().with_ca(pem.as_bytes()).is_ok());
+    assert!(Trust::new().with_ca(b"-----BEGIN NOTHING-----\n-----END NOTHING-----\n").is_err());
 }
 
 // --- logs never carry secrets -----------------------------------------------------------------

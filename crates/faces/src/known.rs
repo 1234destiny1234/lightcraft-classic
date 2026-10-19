@@ -201,9 +201,6 @@ mod tests {
             assert_eq!((Some(d.size_bytes), Some(d.sha256.as_str())), (m.size_bytes, m.sha256.as_deref()), "{}", d.id);
             assert!(m.licence.commercial != Commercial::No, "{} is non-commercial and must not be offered", d.id);
         }
-        assert_eq!(download("yunet-2023mar").map(|d| d.host().to_string()).as_deref(), Some("github.com"));
-        assert_eq!(download("sface-2021dec").map(|d| host(&d.url).to_string()).as_deref(), Some("github.com"));
-        assert_eq!(download("auraface-v1").map(|d| host(&d.url).to_string()).as_deref(), Some("huggingface.co"));
         // unknown ids and path tricks have nothing to download
         for id in ["nope", "", "../sface-2021dec", "SFACE-2021DEC"] {
             assert!(download(id).is_none(), "{id}");

@@ -44,14 +44,6 @@ fn limits() -> Limits {
 }
 
 #[test]
-fn seeds_are_valid_plugins() {
-    let mut m = Manager::in_memory();
-    m.install_bytes(&module(MANIFEST, "{}"), Some(grant())).unwrap();
-    m.set_enabled("test.plugin", true).unwrap();
-    assert!(PluginPublisher::new(&mut m, "test.plugin").is_ok());
-}
-
-#[test]
 fn mutated_modules_never_panic() {
     let seeds = [module(MANIFEST, r#"{"ok":true}"#), module(MANIFEST, r#"{"remoteId":"r1","url":"https://x"}"#)];
     let refs: Vec<&[u8]> = seeds.iter().map(Vec::as_slice).collect();

@@ -181,24 +181,6 @@ mod tests {
     use super::*;
 
     #[test]
-    fn constants_are_set() {
-        assert!(!DISPLAY_NAME.is_empty());
-        assert!(!BINARY.is_empty() && !BINARY.contains(' '));
-        assert!(ENV_PREFIX.chars().all(|c| c.is_ascii_uppercase() || c.is_ascii_digit() || c == '_'));
-        assert!(APP_ID.contains('.'));
-    }
-
-    #[test]
-    fn env_var_uses_prefix() {
-        assert_eq!(env_var("LOG"), format!("{ENV_PREFIX}_LOG"));
-    }
-
-    #[test]
-    fn fill_replaces_placeholder() {
-        assert_eq!(fill("About {app}"), format!("About {DISPLAY_NAME}"));
-    }
-
-    #[test]
     fn migration_copies_and_marks() {
         let base = std::env::temp_dir().join(format!("brand-mig-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&base);

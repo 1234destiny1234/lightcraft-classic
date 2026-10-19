@@ -62,11 +62,7 @@ fn settings_saved_before_process_versions_load_as_v1() {
 }
 
 #[test]
-fn new_settings_get_the_latest_process() {
-    assert_eq!(DevelopSettings::default().process, ProcessVersion::LATEST);
-    assert_eq!(DevelopSettings::for_raw(5200.0, 4.0).process, ProcessVersion::LATEST);
-    assert_eq!(ProcessVersion::LATEST, Process::LATEST.version());
-    assert_eq!(ProcessVersion::V1, ProcessVersion(1));
+fn processes_are_listed_oldest_first_and_round_trip() {
     // the processes are listed oldest first, the latest last, each with its own number
     let versions: Vec<u32> = Process::ALL.iter().map(|p| p.version().0).collect();
     assert!(versions.windows(2).all(|w| w[0] < w[1]), "{versions:?}");

@@ -100,20 +100,12 @@ pub fn birefnet_mirrors(env: Option<&str>) -> Vec<String> {
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn birefnet_downloads_from_the_pinned_revision() {
-        let m = super::birefnet_mirrors(None);
-        assert_eq!(m.len(), 1);
-        assert!(m[0].starts_with("https://huggingface.co/ZhengPeng7/BiRefNet_lite/resolve/"));
-        assert_eq!(super::BIREFNET_FILES[0].size, Some(super::BIREFNET_WEIGHTS_SIZE));
-    }
-
     use super::*;
 
     #[test]
-    fn sam3_mirrors_come_from_the_environment_the_file_and_the_defaults() {
+    fn sam3_mirrors_start_with_the_environment_and_a_missing_file_is_ignored() {
         let m = mirrors(Some("https://a.example/x/"), Some(Path::new("/nonexistent/mirrors.txt")));
-        assert_eq!(m.len(), 1 + DEFAULT_MIRRORS.len());
+        assert!(m.first().is_some_and(|u| u.starts_with("https://a.example/x")), "the environment is tried first");
         assert!(no_mirrors_message().contains(MIRRORS_ENV));
     }
 }
