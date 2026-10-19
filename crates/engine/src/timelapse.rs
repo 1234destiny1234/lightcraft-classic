@@ -172,8 +172,8 @@ impl Report {
 pub fn ordered_targets(s: &mut Session, p: &Value) -> Result<Vec<PhotoId>, String> {
     if let Some(ids) = p.get("ids") {
         let a = ids.as_array().ok_or("ids must be an array of photo ids")?;
-        if a.iter().any(|v| v.as_u64().is_none()) {
-            return Err("ids must contain only photo ids".into());
+        if let Some(e) = crate::bad_ids_entry(a) {
+            return Err(e);
         }
     }
     if p.get("id").is_some_and(|v| v.as_u64().is_none()) {

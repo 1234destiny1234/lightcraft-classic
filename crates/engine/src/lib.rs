@@ -1418,7 +1418,18 @@ impl Session {
         let invalid = |what: &str| EngineError::BadParams { cmd: String::new(), msg: format!("`{what}` must be photo ids (whole numbers)") };
         match p.get("ids") {
             None | Some(Value::Null) => {}
-            Some(Value::Array(a)) => return a.iter().map(|v| v.as_u64().map(PhotoId).ok_or_else(|| invalid("ids"))).collect(),
+            Some(Value::Array(a)) => {
+                return a
+                    .iter()
+                    .enumerate()
+                    .map(|(i, v)| {
+                        v.as_u64().map(PhotoId).ok_or_else(|| EngineError::BadParams {
+                            cmd: String::new(),
+                            msg: format!("`ids[{i}]` is {v}, not a photo id (whole number)"),
+                        })
+                    })
+                    .collect();
+            }
             Some(_) => return Err(invalid("ids")),
         }
         match p.get("id") {
@@ -1427,10 +1438,35 @@ impl Session {
         }
     }
 
+    /// The photo id in param `key`: `None` when absent or null, an error when it is there but is not
+    /// a photo id (a mistyped id must never fall back to the active photo).
+    pub fn photo_param(p: &Value, key: &str, cmd: &str) -> Result<Option<PhotoId>> {
+        match p.get(key) {
+            None | Some(Value::Null) => Ok(None),
+            Some(v) => v
+                .as_u64()
+                .map(|id| Some(PhotoId(id)))
+                .ok_or_else(|| EngineError::BadParams { cmd: cmd.to_string(), msg: format!("`{key}` is {v}, not a photo id (whole number)") }),
+        }
+    }
+
+    /// The photo in `id`, else the active photo; a malformed `id` is an error, not the active photo.
+    pub fn photo_or_active(&self, p: &Value, cmd: &str) -> Result<PhotoId> {
+        Self::photo_param(p, "id", cmd)?
+            .or(self.active())
+            .ok_or_else(|| EngineError::BadParams { cmd: cmd.to_string(), msg: "no photo (select one or give `id`)".into() })
+    }
+
     /// The photos commands act on when a call names none: the selection, else the active photo.
     pub fn selected(&self) -> Vec<PhotoId> {
         if self.selection.ids.is_empty() { self.selection.active.into_iter().collect() } else { self.selection.ids.clone() }
     }
+}
+
+/// The first entry of an `ids` array that is not a photo id, described for an error message
+/// (`ids[1] is "x", not a photo id`), or `None` when every entry is one.
+pub fn bad_ids_entry(a: &[Value]) -> Option<String> {
+    a.iter().enumerate().find(|(_, v)| v.as_u64().is_none()).map(|(i, v)| format!("`ids[{i}]` is {v}, not a photo id (whole number)"))
 }
 
 /// Automatic versions kept per photo.
@@ -1567,3 +1603,41 @@ mod tests_video_posters;
 mod tests_view_follow;
 #[cfg(test)]
 mod tests_xmp;
+
+#[cfg(test)]
+mod photo_param_tests {
+    use super::*;
+    use serde_json::json;
+
+    fn session_with_active() -> (Session, PhotoId) {
+        let mut s = Session::new();
+        let id = s.catalog.alloc_photo_id();
+        let photo =
+            lcc_catalog::Photo::new(id, lcc_catalog::Source::File { path: "/nonexistent/a.jpg".into() }, "a.jpg", "JPEG", 100, 100, "2026-01-01");
+        s.commit("Add test photo", lcc_catalog::Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+        s.selection = Selection::single(id);
+        (s, id)
+    }
+
+    /// A mistyped `id` is an error naming it, never the active photo.
+    #[test]
+    fn bad_id_types_error_instead_of_using_the_active_photo() {
+        let (mut s, id) = session_with_active();
+        assert_eq!(s.photo_or_active(&json!({}), "t").unwrap(), id);
+        for bad in [json!("1"), json!(-1), json!(1.5), json!([1]), json!({"id": 1})] {
+            let e = s.photo_or_active(&json!({ "id": bad }), "t").unwrap_err().to_string();
+            assert!(e.contains("`id`"), "{e}");
+            assert!(s.execute("stack.setTop", &json!({ "id": bad })).is_err());
+            assert!(s.execute("album.setCover", &json!({ "id": 1, "photo": bad })).is_err());
+        }
+    }
+
+    /// A bad entry in `ids` is an error naming that entry, not silently dropped.
+    #[test]
+    fn bad_ids_entries_error_naming_the_entry() {
+        let (s, id) = session_with_active();
+        let e = s.targets(&json!({"ids": [id.0, "x", 3]})).unwrap_err().to_string();
+        assert!(e.contains("ids[1]") && e.contains("\"x\""), "{e}");
+        assert_eq!(s.targets(&json!({"ids": [id.0]})).unwrap(), vec![id]);
+    }
+}
