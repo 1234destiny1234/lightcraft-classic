@@ -761,12 +761,9 @@ mod tests {
             assert_eq!(r["result"]["thumbSize"].as_f64().map(|v| v as f32), Some(got));
             h.step();
             for w in h.request("ui.widgets", json!({}), t)["result"].as_array().into_iter().flatten() {
-                let rect = &w["rect"];
-                for k in ["x", "y", "w", "h", "x0", "y0", "x1", "y1"] {
-                    if let Some(v) = rect.get(k) {
-                        assert!(v.as_f64().is_some_and(f64::is_finite), "non-finite widget rect {w}");
-                    }
-                }
+                // `rect_json` is `[x, y, width, height]`; a NaN serialises as null
+                let rect = w["rect"].as_array().expect("widget rect is an array");
+                assert!(rect.len() == 4 && rect.iter().all(|v| v.as_f64().is_some_and(f64::is_finite)), "non-finite widget rect {w}");
             }
         }
     }
