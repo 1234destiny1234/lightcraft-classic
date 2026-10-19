@@ -10,6 +10,10 @@ use std::path::Path;
 /// Longest track decoded (in seconds), so a hostile or huge file can't exhaust memory.
 pub const MAX_SECONDS: f64 = 30.0 * 60.0;
 
+/// Longest total of all a show's tracks together (in seconds): 3 hours of 48 kHz stereo `f32` is
+/// about 4 GB, so longer music is refused up front rather than failing late.
+pub const MAX_TOTAL_SECONDS: f64 = 3.0 * 60.0 * 60.0;
+
 /// Decoded audio: interleaved stereo samples in −1..1.
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Audio {
@@ -168,6 +172,23 @@ pub fn total_duration(tracks: &[String]) -> (f64, Vec<String>) {
     (total, problems)
 }
 
+/// Refuse a track list whose total length is over [`MAX_TOTAL_SECONDS`], measured from file headers
+/// where the format allows, before the tracks are decoded for playback or export.
+pub fn check_total(tracks: &[String]) -> Result<(), String> {
+    let mut total = 0.0;
+    for t in tracks {
+        total += duration(Path::new(t))?.clamp(0.0, MAX_SECONDS);
+        if total > MAX_TOTAL_SECONDS {
+            return Err(format!(
+                "the music is too long: over {} minutes in all (the limit is {} minutes); remove some tracks",
+                (total / 60.0).floor(),
+                MAX_TOTAL_SECONDS / 60.0
+            ));
+        }
+    }
+    Ok(())
+}
+
 /// Apply volume (0..1) and balance (−1 left … 1 right) to stereo samples in place.
 pub fn mix(samples: &mut [f32], volume: f32, balance: f32) {
     let v = if volume.is_finite() { volume.clamp(0.0, 1.0) } else { 0.0 };
@@ -252,6 +273,19 @@ mod tests {
             assert!(decode(&p).is_err(), "{name}");
             assert!(duration(&p).is_err(), "{name}");
         }
+        let _ = std::fs::remove_dir_all(d);
+    }
+
+    #[test]
+    fn total_length_is_capped_before_decoding() {
+        let d = tmp("total");
+        let p = d.join("a.wav");
+        write_wav(&p, 1.0, 1);
+        let one = p.display().to_string();
+        assert!(check_total(&[one.clone(), one.clone()]).is_ok());
+        let n = MAX_TOTAL_SECONDS as usize + 1;
+        let err = check_total(&vec![one; n]).unwrap_err();
+        assert!(err.contains("too long"), "{err}");
         let _ = std::fs::remove_dir_all(d);
     }
 
