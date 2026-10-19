@@ -145,6 +145,9 @@ fn vignette(s: &DevelopSettings) -> Option<Vig> {
     })
 }
 
+/// Smallest grain cell (px) a render draws.
+const GRAIN_CELL_MIN: f32 = 0.6;
+
 /// Hash constants of [`grain_noise`] (shared with the GPU kernel).
 pub const GRAIN_HASH: [u32; 4] = [0x8da6_b343, 0xd816_3841, 0xcb1a_b31f, 0x5bd1_e995];
 
@@ -302,7 +305,11 @@ impl FinishParams {
     ) -> FinishParams {
         let effects = s.section_enabled("effects");
         let (clar, tex, dehaze) = if effects {
-            ((s.effects.clarity / 100.0) as f32, (s.effects.texture / 100.0) as f32, (s.effects.dehaze / 100.0) as f32)
+            (
+                (s.effects.clarity / 100.0) as f32,
+                (s.effects.texture / 100.0) as f32 * crate::local::texture_fade(px_per_long),
+                (s.effects.dehaze / 100.0) as f32,
+            )
         } else {
             (0.0, 0.0, 0.0)
         };
@@ -318,7 +325,11 @@ impl FinishParams {
             && out_to_norm.0.iter().all(|v| v.is_finite());
         let grain = (s.grain.amount > 0.0 && effects && finite_frame).then(|| {
             let cell = (0.0006 + (s.grain.size / 100.0) as f32 * 0.0024) * px_per_long as f32;
-            ((s.grain.amount / 100.0) as f32 * 0.13, cell.max(0.6), (s.grain.roughness / 100.0) as f32, s.grain.seed)
+            // Grain finer than GRAIN_CELL_MIN px is drawn at that size, its amplitude scaled by the ratio of cell
+            // sizes: averaging the export's grain down to this preview size reduces it by about as much, so a
+            // small preview doesn't show coarser, relatively stronger grain than the export.
+            let fade = (cell / GRAIN_CELL_MIN).min(1.0);
+            ((s.grain.amount / 100.0) as f32 * 0.13 * fade, cell.max(GRAIN_CELL_MIN), (s.grain.roughness / 100.0) as f32, s.grain.seed)
         });
         let calibration = s.section_enabled("calibration");
         let peak = s.hdr.peak();

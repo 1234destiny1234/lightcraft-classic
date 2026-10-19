@@ -652,6 +652,22 @@ pub fn sharpen_fade(raw: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// Texture band radius as a fraction of the long edge.
+pub const TEXTURE_SIGMA: f32 = 0.0018;
+/// Smallest texture band radius (px) a render filters with; smaller previews fade the effect instead.
+pub const TEXTURE_SIGMA_MIN: f32 = 0.6;
+
+/// How much of global Texture a render at `px_per_long` shows: 1 when the texture band is at least
+/// [`TEXTURE_SIGMA_MIN`], else the ratio of variances of the wanted and the floored band, so a small
+/// preview (whose band is floored, i.e. relatively wider) doesn't show a stronger effect than the export.
+pub fn texture_fade(px_per_long: f64) -> f32 {
+    let want = TEXTURE_SIGMA * px_per_long as f32;
+    if !want.is_finite() || want <= 0.0 {
+        return 0.0;
+    }
+    (want / TEXTURE_SIGMA_MIN).powi(2).min(1.0)
+}
+
 pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, src_long: f64, q: Quality) -> PlaneSigmas {
     let ppl = px_per_long as f32;
     let local_any = |f: fn(&lcc_develop::LocalAdjustments) -> f64| s.masks.iter().any(|m| f(&m.adjust) != 0.0);
@@ -674,7 +690,7 @@ pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, src_long: f64, q: Qua
         || local_any(|a| a.texture)
         || local_any(|a| a.noise)
         || s.masks.iter().any(|m| m.adjust.defringe > 0.0))
-    .then(|| (0.0018 * ppl).max(0.6));
+    .then(|| (TEXTURE_SIGMA * ppl).max(TEXTURE_SIGMA_MIN));
     let dark = (s.effects.dehaze != 0.0 || local_any(|a| a.dehaze)).then(|| (0.02 * ppl).max(1.0));
     let chroma = (local_any(|a| a.moire) || s.masks.iter().any(|m| m.adjust.noise > 0.0)).then(|| (CHROMA_SIGMA * ppl).max(1.0));
     let base_detail = if base.is_some() { tone_base_detail(s, px_per_long) } else { 0 };

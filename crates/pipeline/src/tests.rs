@@ -667,3 +667,32 @@ fn zero_width_crop_with_grain_renders_finite_pixels() {
         assert!(v.iter().all(|x| x.is_finite()), "non-finite sample in a zero-width crop with grain");
     }
 }
+
+/// Grain and Texture below their pixel floors fade instead of drawing relatively coarser on a small
+/// preview: a preview's grain is about as strong as the export's scaled down to the preview's size.
+#[test]
+fn small_preview_grain_is_not_stronger_than_the_export_scaled_down() {
+    let src = lcc_scenes::demo_library()[0].render(1200, 800);
+    let energy = |size: usize| {
+        let mut s = DevelopSettings::default();
+        let plain = render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(size, size)).image;
+        s.grain.amount = 100.0;
+        s.grain.size = 0.0;
+        let grain = render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(size, size)).image;
+        let to_f = |img: &lcc_raster::Rgba8| {
+            Rgb32f::from_fn(img.width, img.height, |x, y| {
+                img.get(x, y)[..3].iter().map(|&v| v as f32).collect::<Vec<_>>().try_into().unwrap_or([0.0; 3])
+            })
+        };
+        (to_f(&plain), to_f(&grain))
+    };
+    let (pp, pg) = energy(96);
+    let (ep, eg) = energy(1200);
+    let small = |i: &Rgb32f| lcc_raster::resample::resize(i, pp.width, pp.height, lcc_raster::resample::Filter::Box);
+    let (ep, eg) = (small(&ep), small(&eg));
+    let diff = |a: &Rgb32f, b: &Rgb32f| a.data.iter().zip(&b.data).map(|(p, q)| (p[1] - q[1]).abs()).sum::<f32>() / a.len() as f32;
+    let (preview, export) = (diff(&pp, &pg), diff(&ep, &eg));
+    assert!(preview <= 3.0 * export + 0.5, "preview grain {preview} vs export scaled down {export}");
+    assert!(crate::local::texture_fade(50.0) < crate::local::texture_fade(500.0));
+    assert_eq!(crate::local::texture_fade(4000.0), 1.0);
+}
