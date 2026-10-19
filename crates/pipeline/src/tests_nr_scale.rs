@@ -191,3 +191,32 @@ fn crop_does_not_change_the_noise_reduction_scale() {
     assert_eq!((p.w, p.h), (200, 100));
     assert!((p.detail_scale - 1.0).abs() < 1e-6, "{}", p.detail_scale);
 }
+
+/// Colour noise in near-black shadows (luminance around zero) must not spread coloured specks into
+/// a neutral area next to it: per-pixel rgb / Y explodes there.
+#[test]
+fn colour_nr_keeps_neutral_pixels_next_to_noisy_black_neutral() {
+    let mut rng = Rng(0x1234_5678);
+    let (w, h) = (96, 64);
+    for half_res in [false, true] {
+        let mut img = Rgb32f::from_fn(w, h, |_, _| [0.0; 3]);
+        for y in 0..h {
+            for x in 0..w {
+                let v = if x < w / 2 { [0, 1, 2].map(|_| 0.0005 + 0.002 * rng.normal()) } else { [0.3; 3] };
+                img.set(x, y, v);
+            }
+        }
+        let mut s = DevelopSettings::default();
+        s.detail.nr_color = 100.0;
+        s.detail.nr_luminance = 0.0;
+        crate::local::denoise_with(&mut img, &s, 1.0, half_res);
+        for y in 0..h {
+            for x in w / 2..w {
+                let p = img.get(x, y);
+                let (lo, hi) = (p.iter().copied().fold(f32::MAX, f32::min), p.iter().copied().fold(f32::MIN, f32::max));
+                assert!(p.iter().all(|v| v.is_finite()), "{p:?}");
+                assert!(hi - lo < 0.05, "coloured speck at {x},{y} (half_res {half_res}): {p:?}");
+            }
+        }
+    }
+}
