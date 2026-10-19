@@ -218,12 +218,6 @@ fn is_xml_char(c: char) -> bool {
     matches!(c, '\t' | '\n' | '\r') || (c >= '\u{20}' && c != '\u{FFFE}' && c != '\u{FFFF}')
 }
 
-/// Drop the characters XML 1.0 forbids, which strict parsers (Adobe XMP Toolkit, expat, libxml2) reject the
-/// whole document for.
-fn xml_safe(s: &str) -> String {
-    s.chars().filter(|&c| is_xml_char(c)).collect()
-}
-
 /// Unescape attribute values (predefined + numeric references; unknown references kept verbatim).
 fn unescape_attr(s: &str) -> String {
     let mut out = String::with_capacity(s.len());
@@ -782,12 +776,12 @@ pub fn write_xmp_filters(
     }
     x.push_str(">\n");
     for (k, v) in &simple {
-        x.push_str(&format!("   <{k}>{}</{k}>\n", escape(xml_safe(v))));
+        x.push_str(&format!("   <{k}>{}</{k}>\n", escape(v)));
     }
     for (k, v) in lc {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             // element content: quotes needn't be escaped, which keeps the JSON readable
-            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(xml_safe(v))));
+            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(v)));
         }
     }
     for (k, v) in video {
@@ -802,9 +796,9 @@ pub fn write_xmp_filters(
         x.push_str(&format!("   <{k}>\n    <rdf:{kind}>\n"));
         for it in items {
             if lang {
-                x.push_str(&format!("     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n", escape(xml_safe(it))));
+                x.push_str(&format!("     <rdf:li xml:lang=\"x-default\">{}</rdf:li>\n", escape(it)));
             } else {
-                x.push_str(&format!("     <rdf:li>{}</rdf:li>\n", escape(xml_safe(it))));
+                x.push_str(&format!("     <rdf:li>{}</rdf:li>\n", escape(it)));
             }
         }
         x.push_str(&format!("    </rdf:{kind}>\n   </{k}>\n"));
