@@ -2927,7 +2927,7 @@ mod tests {
             .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
             .join("raw");
         let Ok(entries) = std::fs::read_dir(&dir) else {
-            eprintln!("skip: no corpus at {}", dir.display());
+            lcc_testkit::skip!(Corpus, "no corpus at {}", dir.display());
             return;
         };
         let mut paths: Vec<_> = entries.flatten().map(|e| e.path()).collect();
@@ -3823,7 +3823,7 @@ mod tests {
             .join("raw");
         for (name, kelvin) in [("arw-sony-a3500-5600k.arw", 5600.0), ("arw-sony-a7s-shade.arw", 7500.0), ("arw-sony-a33.arw", 5311.0)] {
             let Ok(bytes) = std::fs::read(dir.join(name)) else {
-                eprintln!("skip: {name} absent");
+                lcc_testkit::skip!(Corpus, "{name} absent");
                 continue;
             };
             let header = crate::files::probe_bytes(name, &bytes).unwrap();
@@ -4347,7 +4347,7 @@ mod tests {
             .unwrap_or_else(|| std::path::Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus"))
             .join("raw/arw6-sony-ilce7rm6-ff-land-c.arw");
         let Ok(bytes) = std::fs::read(&path) else {
-            eprintln!("skip: {} absent", path.display());
+            lcc_testkit::skip!(Corpus, "{} absent", path.display());
             return;
         };
         let (_, info) = crate::files::load_bytes(&bytes, 400).unwrap();
