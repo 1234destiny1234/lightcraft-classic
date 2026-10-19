@@ -89,6 +89,9 @@ const AC: [([u8; 16], &[u8]); 3] = [
 /// Nesting limit for sub-heaps, and the record count a table may claim.
 const MAX_DEPTH: usize = 8;
 const MAX_RECORDS: usize = 1024;
+/// Records read over the whole file, sub-heaps included: heaps may point at each other (or themselves), so
+/// the depth and per-heap caps alone still allow `MAX_RECORDS ^ MAX_DEPTH` steps.
+const MAX_TOTAL_RECORDS: usize = 1 << 16;
 /// Models with a CMYG colour filter (four colours), which the pipeline doesn't develop.
 const CMYG: &[&str] = &["PowerShot G1", "PowerShot Pro90 IS", "PowerShot Pro70", "PowerShot A5", "PowerShot A50", "PowerShot 600"];
 
@@ -120,6 +123,8 @@ pub(crate) struct Ciff {
     pub focal_mm: Option<f64>,
     /// As-shot levels R, G, G, B (or their reciprocals for the D30) where the file states them readably.
     pub levels: Option<[f32; 4]>,
+    /// Records walked so far, against [`MAX_TOTAL_RECORDS`].
+    walked: usize,
 }
 
 fn ascii(b: &[u8]) -> Option<String> {
@@ -138,6 +143,10 @@ fn walk(b: &[u8], start: usize, end: usize, depth: usize, out: &mut Ciff, wbi: &
     let count = usize::from(le16(b, table).ok_or_else(|| corrupt("record table past the heap"))?);
     if count > MAX_RECORDS {
         return Err(corrupt("too many records"));
+    }
+    out.walked = out.walked.saturating_add(count);
+    if out.walked > MAX_TOTAL_RECORDS {
+        return Err(corrupt("too many records in all"));
     }
     for i in 0..count {
         let rec = table + 2 + i * 10;
@@ -773,6 +782,15 @@ mod tests {
         f.extend_from_slice(&0u32.to_le_bytes());
         assert!(crate::decode(&f).is_err());
         // a stream of nothing but ones, and one that ends early
+        let mut f = b"II\x1a\0\0\0HEAPCCDR\x02\0\x01\0\0\0\0\0\0\0\0\0".to_vec();
+        f.extend_from_slice(&1024u16.to_le_bytes());
+        for _ in 0..1024 {
+            f.extend_from_slice(&0x300au16.to_le_bytes());
+            f.extend_from_slice(&(2 + 1024 * 10 + 4u32).to_le_bytes());
+            f.extend_from_slice(&0u32.to_le_bytes());
+        }
+        f.extend_from_slice(&0u32.to_le_bytes());
+        assert!(crate::decode(&f).is_err());
         let ones = synth(16, 8, 1, None, &[0xff, 0x00].repeat(64));
         assert!(crate::decode(&ones).is_err());
         let short = synth(16, 8, 1, None, &stream[..stream.len() / 2]);

@@ -223,3 +223,20 @@ fn thumbnail_size_commands_run_from_the_control_channel_and_persist() {
     wild["thumbSize"] = json!(9000.0);
     assert_eq!(serde_json::from_value::<crate::state::UiState>(wild).unwrap().sanitized().thumb_size, crate::state::THUMB_SIZE_MAX);
 }
+
+// `ui.set` merges a script's values into the interface state; out-of-range ones get the same
+// checks as a settings file's, so a zero thumbnail size can't reach the grid's layout maths and
+// an unknown preview limit can't be kept.
+#[test]
+fn ui_set_clamps_out_of_range_values_like_a_settings_file() {
+    let mut h = grid_view(crate::state::ViewMode::SquareGrid);
+    for (wild, expect) in [(0.0, crate::state::THUMB_SIZE_MIN), (-5.0, crate::state::THUMB_SIZE_MIN), (1.0e9, crate::state::THUMB_SIZE_MAX)] {
+        let r = h.request("ui.set", json!({"thumbSize": wild}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        assert_eq!(h.app.ui.thumb_size, expect);
+        assert!(h.app.ui.thumb_size.is_finite() && h.app.ui.thumb_size > 0.0);
+    }
+    let r = h.request("ui.set", json!({"settings": {"preview_limit": 123}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.ui.settings.preview_limit, 0);
+}
