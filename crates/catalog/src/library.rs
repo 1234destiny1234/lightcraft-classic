@@ -223,11 +223,31 @@ impl Journal {
         let (catalog, seq, bad) = db.load()?;
         log::info!("catalog: loaded {} photos from {} in {:.0} ms", catalog.len(), db_path.display(), t.elapsed().as_secs_f64() * 1e3);
         report.failed += bad;
+        let log = store.read(LOG).map_err(ioe)?;
+        // An older build wrote the store: mark it with this build's format before anything is
+        // appended to the log, as the JSON snapshot is upgraded, so the older build refuses the
+        // library from then on instead of dropping what it doesn't know. Refused when that fails:
+        // opened anyway, the log could gain records the older build then drops. A log a newer
+        // build wrote to is refused first, untouched, as the replay would refuse it.
+        let stored = db.version();
+        if stored < crate::journal::VERSION {
+            crate::journal::refuse_newer_records(log.as_deref().unwrap_or_default())?;
+            db.mark_version().map_err(|e| match e {
+                CatalogError::Io(e) => CatalogError::Io(format!(
+                    "can't upgrade {} from catalog format v{stored} to v{} ({e}). The library was left unchanged: free some disk space (or make the catalog writable), then try again",
+                    db_path.display(),
+                    crate::journal::VERSION
+                )),
+                // a damaged store keeps its kind (and gets the backup hint)
+                e => e,
+            })?;
+            log::info!("catalog: upgraded {} from format v{stored} to v{}", db_path.display(), crate::journal::VERSION);
+            report.upgraded_from.get_or_insert(stored);
+        }
         if store.read(SNAPSHOT).map_err(ioe)?.as_deref() != Some(STUB.as_bytes()) {
             store.write_atomic(SNAPSHOT, STUB.as_bytes()).map_err(ioe)?;
         }
         write_entry_if_missing(dir);
-        let log = store.read(LOG).map_err(ioe)?;
         Self::open_from_db(store, log, catalog, seq, report, db)
     }
 }

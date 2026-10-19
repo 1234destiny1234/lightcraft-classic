@@ -65,6 +65,9 @@
 //! - **Opening an older format upgrades it**: right after loading, [`Journal::open`] writes a
 //!   snapshot in this build's format (also for a new library), before anything is appended — so a
 //!   library is never a mix, and older builds refuse it from then on instead of reading part of it.
+//!   The v4 store (`db`) is upgraded the same way: its `meta.version` is set to this build's
+//!   format (one small write; the records stay as the older build wrote them, which this build
+//!   reads), and if that write fails the open is refused with the library unchanged.
 //!   [`LoadReport::upgraded_from`] says when that happened.
 //! - **A newer format is refused, untouched**: a snapshot whose `version` is above [`VERSION`],
 //!   or a log record whose CRC matches (so it is exactly what was written) but whose op doesn't
@@ -279,6 +282,19 @@ fn decode_line(line: &str) -> Line {
 /// The error for a library written by a newer version of the app.
 fn newer(what: String) -> CatalogError {
     CatalogError::Newer(format!("{what}; this version reads catalog format v{VERSION} and older"))
+}
+
+/// Refuse a log that holds a record a newer build wrote ([`Line::Newer`]), as [`Journal::open`]
+/// does while replaying it: checked before an older v4 store is marked with this format, so a
+/// library a newer build has written to is refused untouched.
+#[cfg(not(target_arch = "wasm32"))]
+pub(crate) fn refuse_newer_records(log: &[u8]) -> Result<()> {
+    for l in log.split(|b| *b == b'\n') {
+        if let Ok(Line::Newer(seq)) = std::str::from_utf8(l).map(|l| decode_line(l.trim_end_matches('\r'))) {
+            return Err(newer(format!("{LOG} record {seq} holds a change this version doesn't know")));
+        }
+    }
+    Ok(())
 }
 
 /// A line that doesn't decode but ends with a whole record: a fragment of a failed append followed
@@ -544,7 +560,7 @@ impl Journal {
         // anything is appended: a snapshot in this format makes older builds refuse the library
         // instead of misreading ops or dropping fields they don't know.
         if j.has_db() {
-            // the v4 store is in this version's format already
+            // the v4 store was marked with this version's format on loading (`Journal::open_v4`)
         } else if report.created {
             // tiny: written directly, not counted as a compaction
             let empty = format!("{{\"format\":\"{FORMAT}\",\"version\":{VERSION},\"seq\":0,\"catalog\":{}}}\n", catalog.to_snapshot());

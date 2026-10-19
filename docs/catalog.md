@@ -109,7 +109,14 @@ fast (below), not about leaving photos on disk.
   truncates bytes).
 
 The web build (OPFS) and in-memory libraries keep the JSON snapshot (`Store::dir` is `None` for them); both formats
-carry the same catalog (format version 7; 5 adds the keyword list and folder records, kept in the `meta` table's head record; 6 adds saved map locations; 7 adds saved creations, a layout document on an album).
+carry the same catalog (format version 13, listed in `crates/catalog/src/journal.rs`; 5 adds the keyword list and folder records, kept in the `meta` table's head record; 6 adds saved map locations; 7 adds saved creations, a layout document on an album).
+
+Opening a library an older build wrote upgrades it in both formats, before anything is appended to the log: the JSON
+snapshot is rewritten in this build's format, and the store's `meta.version` is set to it (one small transaction; the
+records stay as the older build wrote them, since newer builds read every older format). From then on the older build
+refuses the library instead of opening it and dropping fields it doesn't know. If the store can't be marked (a full
+disk, a store file that can't be written), the open is refused and the library left unchanged, as it is when the log
+holds a record of a newer build; `LoadReport::upgraded_from` names the format it was upgraded from.
 
 ### Tables
 
