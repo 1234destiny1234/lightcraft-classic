@@ -117,7 +117,7 @@ pub fn download(
         Some(bytes) => bytes.max(1),
         None => MAX_DOWNLOAD_BYTES,
     };
-    let opts = DownloadOptions { size, sha256: Some(hash_we_want), max_size: cap, headers: Vec::new(), cancel, progress };
+    let opts = DownloadOptions { size, sha256: Some(hash_we_want), max_size: cap, headers: Vec::new(), cancel, progress, deadline: None };
     let got = client.download(&update.asset.url, &dest, opts).map_err(|e| match e {
         lcc_net::NetError::Cancelled => UpdateError::Cancelled,
         lcc_net::NetError::Verify(why) => UpdateError::Verify(why),
