@@ -511,4 +511,32 @@ provenance = { source = "native-dng", detail = "Software: X1 1.0" }
             assert!(e.validate().is_ok(), "{} {}", e.make, e.model);
         }
     }
+
+    /// Every listed camera is found again by its own Exif strings (and its aliases), under the right make, and
+    /// case and padding in the Exif strings don't matter: a model a lookup can't reach is dead data.
+    #[test]
+    fn every_entry_is_reachable_by_its_own_names() {
+        use std::collections::HashMap;
+        let all = entries();
+        assert!(!all.is_empty());
+        let mut claimed: HashMap<(String, String, u8), String> = HashMap::new();
+        for e in &all {
+            for name in std::iter::once(&e.model).chain(&e.aliases) {
+                let found = find(Some(&e.make), name).unwrap_or_else(|| panic!("{} / {name} is not findable", e.make));
+                assert_eq!(brand(&found.make), brand(&e.make), "{} / {name} resolved to another make", e.make);
+                let sloppy = format!("  {}\t ", name.to_lowercase());
+                let again = find(Some(&format!(" {} ", e.make.to_uppercase())), &sloppy).map(|f| f.model);
+                assert_eq!(again, Some(found.model.clone()), "{} / {name}: lookup depends on case or padding", e.make);
+                // Rows of different provenance may name one camera (`find` ranks them); two of the same
+                // provenance would make the answer depend on file order.
+                let k = (brand(&e.make), key(&brand(&e.make), name), e.provenance.source.rank());
+                if let Some(first) = claimed.insert(k, e.model.clone()) {
+                    assert!(first == e.model && e.aliases.iter().any(|a| a == name), "{} / {name} is claimed by {first} too", e.make);
+                }
+            }
+        }
+        assert_eq!(find(Some("Nobody"), "Nothing"), None);
+        assert_eq!(find(None, ""), None);
+        assert_eq!(find(Some(""), "   "), None);
+    }
 }
