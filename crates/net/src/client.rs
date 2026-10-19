@@ -163,7 +163,8 @@ pub struct Request<'a> {
 
 fn check_header(name: &str, value: &str) -> Result<(), NetError> {
     let bad_name = name.is_empty() || name.chars().any(|c| !c.is_ascii_graphic() || c == ':');
-    if bad_name || value.chars().any(|c| c == '\r' || c == '\n' || c == '\0') {
+    // RFC 9110 field-value: visible chars, SP, HTAB and obs-text; no other control chars
+    if bad_name || value.chars().any(|c| c.is_control() && c != '\t') {
         // the value is never put in the message: it may be a secret
         return Err(NetError::BadHeader(format!("{:?}", name.chars().take(64).collect::<String>())));
     }
@@ -193,6 +194,10 @@ impl<'a> Request<'a> {
 
     /// A raw body.
     pub fn body(mut self, content_type: &str, data: Vec<u8>) -> Self {
+        if let Err(e) = check_header("Content-Type", content_type) {
+            self.error = self.error.or(Some(e));
+            return self;
+        }
         self.body = Body::Bytes { data, content_type: content_type.to_string() };
         self
     }
