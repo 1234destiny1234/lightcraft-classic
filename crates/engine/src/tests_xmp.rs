@@ -377,12 +377,18 @@ fn foreign_profile_and_upright_import_diagnostics_are_actionable() {
         "{reread}"
     );
     assert!(reread["warnings"].as_array().unwrap().iter().any(|w| w["code"] == "uprightGeometry" && w["mode"] == "auto"), "{reread}");
-    for (source, mode) in [("0", "off"), ("2", "level"), ("3", "vertical"), ("4", "full"), ("5", "guided"), ("9", "unknown")] {
+    for (source, mode) in [("2", "level"), ("3", "vertical"), ("4", "full"), ("5", "guided"), ("9", "unknown")] {
         let mode_xmp = xmp.replace("crs:PerspectiveUpright=\"1\"", &format!("crs:PerspectiveUpright=\"{source}\""));
         std::fs::write(&sidecar, mode_xmp).unwrap();
         let reread = s.execute("photo.readMetadataFromFile", &json!({"ids": [p.id.0]})).unwrap();
         assert!(reread["warnings"].as_array().unwrap().iter().any(|w| w["code"] == "uprightGeometry" && w["mode"] == mode), "{source}: {reread}");
     }
+    // Upright Off: Lightroom keeps its analysis but doesn't apply it, so nothing is lost
+    std::fs::write(&sidecar, xmp.replace("crs:PerspectiveUpright=\"1\"", "crs:PerspectiveUpright=\"0\"")).unwrap();
+    let reread = s.execute("photo.readMetadataFromFile", &json!({"ids": [p.id.0]})).unwrap();
+    let none = vec![];
+    assert!(!reread["warnings"].as_array().unwrap_or(&none).iter().any(|w| w["code"] == "uprightGeometry"), "{reread}");
+    std::fs::write(&sidecar, xmp).unwrap();
 
     // A foreign name colliding with a built-in profile label remains warning metadata only.
     let collision = src.join("collision.png");

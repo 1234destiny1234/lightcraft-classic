@@ -89,6 +89,11 @@ const NON_ADJUSTMENT: &[&str] = &[
     "crs:SortName",
     "crs:Description",
     "crs:CropConstrainToWarp",
+    "crs:CropConstrainToUnitSquare",
+    "crs:CameraProfileDigest",
+    "crs:LensProfileDigest",
+    "crs:CompatibleVersion",
+    "crs:AutoWhiteVersion",
     "crs:OverrideLookVignette",
     // the file's as-shot white, recorded next to the edit (ours comes from the file itself)
     "crs:AsShotTemperature",
@@ -475,7 +480,20 @@ pub fn to_partial(props: &Props, target: Target) -> Value {
             }
         }
         Some(false) => put(o, "crop.geometry", json!({"rect": {"x0": 0.0, "y0": 0.0, "x1": 1.0, "y1": 1.0}, "angle": 0.0})),
-        None => {}
+        None => {
+            // Lightroom writes full-frame edges into sidecars that have no crop: nothing to carry
+            // over then (other edges without HasCrop stay in the report)
+            let edges = [("crs:CropLeft", 0.0), ("crs:CropTop", 0.0), ("crs:CropRight", 1.0), ("crs:CropBottom", 1.0), ("crs:CropAngle", 0.0)];
+            let full = |(k, d): &(&str, f64)| {
+                props
+                    .get(*k)
+                    .and_then(|v| v.first())
+                    .is_none_or(|s| s.trim().is_empty() || s.trim().parse::<f64>().is_ok_and(|v| (v - d).abs() < 1e-9))
+            };
+            if edges.iter().all(full) {
+                edges.iter().for_each(|(k, _)| note(k));
+            }
+        }
     }
     out
 }
@@ -520,6 +538,8 @@ pub fn to_partial_report(props: &Props, values: Option<&crate::crs_masks::Values
             || k == "AutoTone"
             || k == "AutoGrayscaleMix"
             || (k == "PointColors" && value_is(k, &empty_points))
+            // Point Color's variance means nothing without a used slot
+            || (k == "ColorVariance" && (!props.contains_key("crs:PointColors") || value_is("PointColors", &empty_points)))
     };
     let mut unmapped: Vec<String> = props
         .keys()
@@ -907,10 +927,27 @@ mod tests {
     fn preset_bookkeeping_is_not_reported_but_real_gaps_are() {
         let empty_points = "<crs:PointColors><rdf:Seq><rdf:li>-1.000000, -1.000000, -1.000000, -1.000000</rdf:li></rdf:Seq></crs:PointColors>";
         assert_eq!(unmapped(&preset_packet(r#"crs:HDREditMode="0""#, empty_points)), Vec::<String>::new());
+        let variance = "<crs:ColorVariance><rdf:Seq><rdf:li>-50.000000</rdf:li></rdf:Seq></crs:ColorVariance>";
+        assert_eq!(unmapped(&preset_packet("", &format!("{empty_points}{variance}"))), Vec::<String>::new());
         // a used Point Color slot and an unknown adjustment still are (an HDR edit is carried over)
         let used_points = "<crs:PointColors><rdf:Seq><rdf:li>0.5, 0.2, 0.1, 10, 0, 0, 0, 0</rdf:li></rdf:Seq></crs:PointColors>";
         let got = unmapped(&preset_packet(r#"crs:HDREditMode="1" crs:FutureSlider="12""#, used_points));
         assert_eq!(got, ["FutureSlider", "PointColors"]);
+        let got =
+            unmapped(&preset_packet("", &format!("{used_points}<crs:ColorVariance><rdf:Seq><rdf:li>-50</rdf:li></rdf:Seq></crs:ColorVariance>")));
+        assert_eq!(got, ["ColorVariance", "PointColors"]);
+    }
+
+    /// Lightroom sidecars without a crop still carry full-frame crop edges, the profile's digest and
+    /// version stamps: none of that is a setting left out. Edges that do crop are still reported.
+    #[test]
+    fn a_full_frame_crop_and_version_stamps_are_not_reported() {
+        let stamps = r#"crs:CropTop="0" crs:CropLeft="0" crs:CropBottom="1" crs:CropRight="1" crs:CropAngle="0"
+            crs:CropConstrainToUnitSquare="1" crs:CameraProfileDigest="0F1E2D3C" crs:LensProfileDigest="4B5A"
+            crs:CompatibleVersion="251658240" crs:AutoWhiteVersion="134348800""#;
+        assert_eq!(unmapped(&preset_packet(stamps, "")), Vec::<String>::new());
+        let cropped = stamps.replace(r#"crs:CropTop="0""#, r#"crs:CropTop="0.2""#);
+        assert!(unmapped(&preset_packet(&cropped, "")).contains(&"CropTop".to_string()));
     }
 
     #[test]
