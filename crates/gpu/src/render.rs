@@ -876,11 +876,12 @@ fn denoise(cx: &mut Cx<'_>, img: Buf, plan: &Plan<'_>) -> Buf {
         img = out;
     }
     if let Some(nr) = col {
-        let chroma = cx.gpu.buffer(n * 3);
-        map(cx, "chroma_k", n, &[], [Some(&img), None, None], &chroma);
-        let b = gaussian(cx, &chroma, w, h, 3, nr.sigma);
+        // luminance-weighted chromaticity: blur max(rgb, 0), take rgb / Y of the blur (`local::colour_nr`)
+        let clamped = cx.gpu.buffer(n * 3);
+        map(cx, "clamp0_k", n, &[], [Some(&img), None, None], &clamped);
+        let b = gaussian(cx, &clamped, w, h, 3, nr.sigma);
         let out = cx.gpu.buffer(n * 3);
-        map(cx, "nr_col", n, &[nr.t.to_bits()], [Some(&img), Some(&chroma), Some(&b)], &out);
+        map(cx, "nr_col", n, &[nr.t.to_bits()], [Some(&img), None, Some(&b)], &out);
         img = out;
     }
     img
@@ -1222,7 +1223,10 @@ mod tests {
     #[test]
     fn gaussian_matches_cpu() {
         use lcc_raster::blur;
-        let Some(gpu) = crate::device() else { return };
+        let Some(gpu) = crate::device() else {
+            lcc_testkit::skip!(Gpu, "no GPU adapter");
+            return;
+        };
         let _scope = crate::ctx::RenderScope::new(gpu);
         let v = |x: usize, y: usize, c: usize| ((x * 7 + y * 13 + c * 5) % 17) as f32 / 16.0 + if x % 61 < 3 { 2.0 } else { 0.0 };
         for (w, h) in [(1000, 5), (257, 3), (5, 4), (1, 9)] {
