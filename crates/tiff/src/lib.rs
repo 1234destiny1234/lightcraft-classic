@@ -17,6 +17,7 @@
 //! Sources: TIFF 6.0 specification (Adobe, 1992), TIFF Technical Note / supplements, the BigTIFF
 //! design notes (AWare Systems), Adobe DNG specification 1.7 (tag numbers), CIPA DC-008 (Exif 2.32).
 #![forbid(unsafe_code)]
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic, clippy::unimplemented, clippy::todo, clippy::unreachable)]
 
 pub mod image;
@@ -82,15 +83,15 @@ impl ByteOrder {
     /// Read a `u16` at `off`, or `None` if out of bounds.
     #[inline]
     pub fn read_u16(self, data: &[u8], off: usize) -> Option<u16> {
-        data.get(off..off.checked_add(2)?).map(|s| self.u16([s[0], s[1]]))
+        Some(self.u16(*data.get(off..off.checked_add(2)?)?.as_array::<2>()?))
     }
     #[inline]
     pub fn read_u32(self, data: &[u8], off: usize) -> Option<u32> {
-        data.get(off..off.checked_add(4)?).map(|s| self.u32([s[0], s[1], s[2], s[3]]))
+        Some(self.u32(*data.get(off..off.checked_add(4)?)?.as_array::<4>()?))
     }
     #[inline]
     pub fn read_u64(self, data: &[u8], off: usize) -> Option<u64> {
-        data.get(off..off.checked_add(8)?).map(|s| self.u64([s[0], s[1], s[2], s[3], s[4], s[5], s[6], s[7]]))
+        Some(self.u64(*data.get(off..off.checked_add(8)?)?.as_array::<8>()?))
     }
     pub fn put_u16(self, out: &mut Vec<u8>, v: u16) {
         out.extend_from_slice(&match self {
@@ -173,7 +174,8 @@ impl FieldType {
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 pub enum Value {
     Byte(Vec<u8>),
-    /// ASCII text (bytes up to the first NUL, decoded lossily as UTF-8).
+    /// ASCII text decoded lossily as UTF-8, without the terminating NULs. A field holding several strings keeps
+    /// them NUL-separated ([`Value::as_strings`]).
     Ascii(String),
     Short(Vec<u16>),
     Long(Vec<u32>),
@@ -217,7 +219,7 @@ impl Value {
     pub fn count(&self) -> usize {
         match self {
             Value::Byte(v) | Value::Undefined(v) => v.len(),
-            Value::Ascii(s) => s.len() + 1,
+            Value::Ascii(s) => s.len().saturating_add(1),
             Value::Short(v) => v.len(),
             Value::Long(v) | Value::Ifd(v) => v.len(),
             Value::Rational(v) => v.len(),
@@ -306,24 +308,33 @@ impl Value {
         }
     }
 
-    /// Text for ASCII values (trimmed of trailing NULs / spaces); `Byte`/`Undefined` are decoded as UTF-8 (lossy)
-    /// up to the first NUL, which covers XMP packets and UCS-less Exif strings.
+    /// Text for ASCII values (the first string, trimmed of trailing spaces); `Byte`/`Undefined` are decoded as
+    /// UTF-8 (lossy) up to the first NUL, which covers XMP packets and UCS-less Exif strings.
     pub fn as_str(&self) -> Option<String> {
         match self {
-            Value::Ascii(s) => Some(s.trim_end_matches([' ', '\0']).to_string()),
+            Value::Ascii(s) => Some(s.split('\0').next().unwrap_or_default().trim_end().to_string()),
             Value::Byte(b) | Value::Undefined(b) => {
                 let end = b.iter().position(|&c| c == 0).unwrap_or(b.len());
-                Some(String::from_utf8_lossy(&b[..end]).trim_end().to_string())
+                Some(String::from_utf8_lossy(b.get(..end).unwrap_or(b)).trim_end().to_string())
             }
             _ => None,
         }
     }
 
-    /// Raw bytes for `Byte` / `Undefined` / `SByte` / `Ascii`.
+    /// Every NUL-separated string of an ASCII value, each trimmed of trailing spaces (empty ones dropped); other
+    /// types give what [`Self::as_str`] gives.
+    pub fn as_strings(&self) -> Vec<String> {
+        match self {
+            Value::Ascii(s) => s.split('\0').map(|p| p.trim_end().to_string()).filter(|p| !p.is_empty()).collect(),
+            _ => self.as_str().into_iter().filter(|p| !p.is_empty()).collect(),
+        }
+    }
+
+    /// Raw bytes for `Byte` / `Undefined` / `SByte`; for `Ascii` the bytes of its first string (see [`Self::as_strings`]).
     pub fn as_bytes(&self) -> Option<&[u8]> {
         match self {
             Value::Byte(b) | Value::Undefined(b) => Some(b),
-            Value::Ascii(s) => Some(s.as_bytes()),
+            Value::Ascii(s) => Some(s.split('\0').next().unwrap_or_default().as_bytes()),
             _ => None,
         }
     }
@@ -366,7 +377,7 @@ pub struct Ifd {
 
 impl Ifd {
     pub fn get(&self, tag: u16) -> Option<&Entry> {
-        self.entries.binary_search_by_key(&tag, |e| e.tag).ok().map(|i| &self.entries[i])
+        self.entries.binary_search_by_key(&tag, |e| e.tag).ok().and_then(|i| self.entries.get(i))
     }
     pub fn contains(&self, tag: u16) -> bool {
         self.get(tag).is_some()

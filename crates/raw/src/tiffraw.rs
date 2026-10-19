@@ -198,8 +198,12 @@ fn decode_chunk(data: &[u8], info: &ImageInfo, c: &Chunk, order: ByteOrder, pack
         }
         comp::ADOBE_DEFLATE | comp::DEFLATE => {
             let bytes_per = if float { bits.div_ceil(8) as usize } else { 0 };
-            let row_bytes = if float { cw * cpp * bytes_per } else { (cw * cpp * bits as usize).div_ceil(8) };
-            let raw = inflate(src, row_bytes * ch)?;
+            let row_bytes = if float {
+                crate::checked_samples(&[cw, cpp, bytes_per])?
+            } else {
+                crate::checked_samples(&[cw, cpp])?.checked_mul(bits as usize).ok_or(RawError::Limit("image too large"))?.div_ceil(8)
+            };
+            let raw = inflate(src, row_bytes.checked_mul(ch).ok_or(RawError::Limit("image too large"))?)?;
             unpack_chunk(&raw, order, packing, cw, ch, cpp, bits, float, info.predictor)
         }
         comp::JPEG_XL => jxl_chunk(src, cw, ch, vw, vh, cpp, bits, float),
@@ -255,7 +259,7 @@ pub(crate) fn lossy_jpeg_limited(src: &[u8], cpp: usize, max_edge: usize, max_sa
     let info = d.info().ok_or_else(|| RawError::Corrupt("lossy JPEG tile without a header".into()))?;
     let (w, h) = (info.width as usize, info.height as usize);
     let c = if cpp == 1 { 1 } else { 3 };
-    if w == 0 || h == 0 || px.len() < w * h * c {
+    if w == 0 || h == 0 || crate::checked_samples(&[w, h, c]).is_ok_and(|n| px.len() < n) {
         return Err(RawError::Corrupt("lossy JPEG tile: short output".into()));
     }
     Ok((px, w, h, c))

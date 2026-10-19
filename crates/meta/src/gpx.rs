@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! GPS track logs in GPX 1.0 / 1.1 (the open GPS Exchange Format, <https://www.topografix.com/gpx.asp>):
 //! the timed track points of every `<trk>`, and the position at any moment for geotagging photos.
 //!
@@ -113,8 +114,10 @@ pub fn parse_gpx(s: &str) -> Result<Tracklog, GpxError> {
                 let parent = path.last().map(Vec::as_slice);
                 match name.as_slice() {
                     b"gpx" if path.is_empty() => seen_gpx = true,
-                    b"trk" if parent == Some(b"gpx") => log.tracks += 1,
-                    b"trkseg" if parent == Some(b"trk") && log.points.last().is_some_and(|p| p.segment == segment) => segment += 1,
+                    b"trk" if parent == Some(b"gpx") => log.tracks = log.tracks.saturating_add(1),
+                    b"trkseg" if parent == Some(b"trk") && log.points.last().is_some_and(|p| p.segment == segment) => {
+                        segment = segment.saturating_add(1)
+                    }
                     b"trkpt" if parent == Some(b"trkseg") => {
                         let mut p = Pending::default();
                         for a in e.attributes().with_checks(false).flatten() {
@@ -182,7 +185,7 @@ fn finish_point(log: &mut Tracklog, p: Option<Pending>, segment: u32) -> Result<
         return Ok(());
     }
     let Some(time) = p.time else {
-        log.untimed += 1;
+        log.untimed = log.untimed.saturating_add(1);
         return Ok(());
     };
     if log.points.len() >= MAX_POINTS {

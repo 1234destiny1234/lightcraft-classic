@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! External camera profiles in the DNG Camera Profile format (`.dcp`): the colour tags of DNG
 //! chapter 6 (`ColorMatrix1/2`, `ForwardMatrix1/2`, `CalibrationIlluminant1/2`,
 //! `ProfileHueSatMap*`, `ProfileLookTable*`, `ProfileToneCurve`) in a TIFF-style file whose
@@ -40,8 +41,8 @@ pub fn parse(bytes: &[u8]) -> Result<Dcp, String> {
         _ => return Err("not a DNG camera profile (no byte-order mark)".into()),
     };
     let magic = match bytes.get(2..4) {
-        Some(m) => order.u16([m[0], m[1]]),
-        None => return Err("not a DNG camera profile (file too short)".into()),
+        Some(&[a, b]) => order.u16([a, b]),
+        _ => return Err("not a DNG camera profile (file too short)".into()),
     };
     // a DCP says `CR`; a TIFF/DNG holding only profile tags (42) is accepted as well
     if magic != 0x4352 && magic != 42 {
@@ -165,7 +166,8 @@ pub fn covers_model(profile_model: &str, camera: &str) -> bool {
     if words.is_empty() {
         return false;
     }
-    (1..words.len()).any(|i| matches(profile_model, Some(&words[..i].join(" ")), &words[i..].join(" "))) || matches(profile_model, None, camera)
+    (1..words.len()).filter_map(|i| words.split_at_checked(i)).any(|(make, model)| matches(profile_model, Some(&make.join(" ")), &model.join(" ")))
+        || matches(profile_model, None, camera)
 }
 
 fn library_registry() -> &'static RwLock<Vec<(String, Arc<Dcp>)>> {
@@ -206,10 +208,14 @@ pub fn resolve_camera(choice: &str, camera: &str) -> Option<Arc<Dcp>> {
     if words.is_empty() {
         return None;
     }
-    (1..words.len()).find_map(|i| resolve(choice, Some(&words[..i].join(" ")), &words[i..].join(" "))).or_else(|| resolve(choice, None, camera))
+    (1..words.len())
+        .filter_map(|i| words.split_at_checked(i))
+        .find_map(|(make, model)| resolve(choice, Some(&make.join(" ")), &model.join(" ")))
+        .or_else(|| resolve(choice, None, camera))
 }
 
 #[cfg(test)]
+#[allow(clippy::arithmetic_side_effects)]
 mod tests {
     use super::*;
 

@@ -709,9 +709,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     };
     let info = raw.image()?;
     let (w, h) = (info.width as usize, info.height as usize);
-    if w * h > crate::MAX_SAMPLES {
-        return Err(RawError::Limit("image too large"));
-    }
+    let samples = crate::checked_samples(&[w, h])?;
     let bits = info.bits() as u32;
     let linear_rgb = info.compression == 7 && info.photometric == photometric::YCBCR;
     let chunks = info.chunks(bytes.len() as u64);
@@ -719,7 +717,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     // The row-per-w-bytes (ARW2) layout stores exactly one byte per pixel in a single strip; all 108 such files in the test
     // archive measure exactly width x height. A200/A230/A350 files carry a strip 4-23 % larger than that (and A290/A390 one
     // smaller), which is a different packing, so they are refused rather than read with the wrong layout.
-    let one_byte_per_sample = chunks.len() == 1 && strip_len == (w * h) as u64;
+    let one_byte_per_sample = chunks.len() == 1 && strip_len == samples as u64;
     let packed12 = info.compression == 32767 && is_packed12(&info, chunks.len(), strip_len);
     let (data, out_bits) = match info.compression {
         7 if linear_rgb => (RawData::U16(read_ycbcr_tiles(bytes, &info, raw, mode)?), 14),

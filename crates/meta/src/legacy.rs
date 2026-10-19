@@ -1,3 +1,4 @@
+#![deny(clippy::indexing_slicing, clippy::arithmetic_side_effects)]
 //! Format identifiers inherited from the project's previous name. They are written into users'
 //! XMP sidecars, so they never change: renaming them would orphan every existing develop setting.
 
