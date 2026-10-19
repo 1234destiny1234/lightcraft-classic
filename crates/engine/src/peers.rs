@@ -393,6 +393,16 @@ fn apply_record(s: &mut Session, id: lcc_catalog::PhotoId, r: &Record, label: &s
 
 /// Merges what an exchange brought back into the open library (it must still be the same one).
 fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: px::Outcome) -> Result<(usize, usize)> {
+    merge_with(s, peer, library, o, &mut apply_record)
+}
+
+type ApplyFn<'a> = dyn FnMut(&mut Session, lcc_catalog::PhotoId, &Record, &str) -> Result<()> + 'a;
+
+/// [`merge`] with the record writer passed in (tests make it fail). A photo whose merge fails
+/// leaves its base untouched; every other photo's merge still lands and the base is saved, so
+/// a failure never leaves the base behind edits that were applied (which would show up as
+/// spurious collisions, and copies, on the next exchange). The first error is returned.
+fn merge_with(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: px::Outcome, apply: &mut ApplyFn) -> Result<(usize, usize)> {
     let Some(sync_id) = o.sync_id else { return Ok((0, 0)) };
     if library_dir(s).as_deref() != Some(library) || LibrarySync::load(library).sync_id.as_deref() != Some(&sync_id) {
         return Ok((0, 0));
@@ -402,32 +412,41 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
     let label = format!("Sync from {}", peer.name);
     let (mut taken, mut copies) = (0, 0);
     let mut new_conflicts = Vec::new();
+    let mut failed = None;
     // the other side kept both versions of these: remembered until its version arrives, as the
     // telling can come in an exchange that doesn't carry the record yet
     base.remote_conflicts.extend(o.remote_conflicts.iter().cloned());
     for (key, remote_digest) in &o.remote {
         let Some((id, local)) = current.get(key) else { continue };
-        match px::decide(local, remote_digest, o.records.get(key), &base, key, base.remote_conflicts.contains(key)) {
-            Action::Take(r) => {
-                apply_record(s, *id, &r, &label)?;
+        let step: Result<()> = match px::decide(local, remote_digest, o.records.get(key), &base, key, base.remote_conflicts.contains(key)) {
+            Action::Take(r) => apply(s, *id, &r, &label).map(|()| {
                 base.remote_conflicts.remove(key);
                 taken += 1;
-            }
+            }),
             Action::Copy(r) => {
                 let name = format!("{} edit", peer.name);
-                if let Some(copy) = crate::cmd::organize::virtual_copy(s, *id, Some(&name))? {
-                    apply_record(s, copy, &r, &label)?;
-                    copies += 1;
-                }
-                // tell the other side next time, unless it kept both already
-                if !base.remote_conflicts.remove(key) {
-                    new_conflicts.push(key.clone());
-                }
+                crate::cmd::organize::virtual_copy(s, *id, Some(&name))
+                    .and_then(|copy| match copy {
+                        Some(copy) => apply(s, copy, &r, &label).map(|()| copies += 1),
+                        None => Ok(()),
+                    })
+                    .map(|()| {
+                        // tell the other side next time, unless it kept both already
+                        if !base.remote_conflicts.remove(key) {
+                            new_conflicts.push(key.clone());
+                        }
+                    })
             }
             Action::Keep if local.digest() == *remote_digest => {
                 base.remote_conflicts.remove(key);
+                Ok(())
             }
-            Action::Keep => {}
+            Action::Keep => Ok(()),
+        };
+        if let Err(e) = step {
+            // this photo's base stays as it was: the next exchange tries it again
+            failed.get_or_insert(e);
+            continue;
         }
         // what the other side now believes about this photo here: the digest it was sent (the
         // record may have changed since; that change counts next time)
@@ -442,7 +461,10 @@ fn merge(s: &mut Session, peer: &lcc_peer::Peer, library: &std::path::Path, o: p
     base.conflicts.extend(new_conflicts);
     base.last = now_secs();
     base.save(library, &peer.device_id).map_err(EngineError::Other)?;
-    Ok((taken, copies))
+    match failed {
+        Some(e) => Err(e),
+        None => Ok((taken, copies)),
+    }
 }
 
 /// `sync.tick`, every second or so while sync runs: refreshes what incoming exchanges see,
@@ -783,6 +805,59 @@ mod tests {
             wait("C's edit at A", t);
         }
         assert_eq!([a.catalog.photos().count(), b.catalog.photos().count(), c.catalog.photos().count()], [1, 1, 1], "no copies for one-sided edits");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A merge that fails part-way still saves the base for the photos it did merge, so the next
+    /// exchange doesn't see their applied edits as fresh collisions (a second, spurious copy).
+    #[test]
+    fn a_failed_merge_keeps_the_base_of_what_it_merged() {
+        let dir = std::env::temp_dir().join(format!("lcc-engine-merge-fail-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(dir.join("src")).unwrap();
+        let (p1, p2) = (dir.join("src/a.png"), dir.join("src/b.png"));
+        write_png(&p1);
+        // a second original with other bytes (keys are content hashes)
+        let mut bytes = std::fs::read(&p1).unwrap();
+        bytes.extend_from_slice(b"different");
+        std::fs::write(&p2, bytes).unwrap();
+        let lib = dir.join("lib");
+        let mut s = Session::new().with_fs();
+        s.open_library(lib.clone(), false).unwrap();
+        s.execute("library.import", &json!({"paths": [p1.to_string_lossy(), p2.to_string_lossy()]})).unwrap();
+        let recs = px::records(&s.catalog);
+        assert_eq!(recs.len(), 2);
+        let mut keys: Vec<String> = recs.keys().cloned().collect();
+        keys.sort();
+        let (k1, k2) = (keys[0].clone(), keys[1].clone());
+        let (id1, id2) = (recs[&k1].0, recs[&k2].0);
+        // k1 edited here too (both sides changed: a copy); k2 untouched here (taken)
+        s.execute("photo.rate", &json!({"ids": [id1.0], "rating": 2})).unwrap();
+        LibrarySync { sync_id: Some("cat".into()), ..Default::default() }.save(&lib).unwrap();
+        let peer = lcc_peer::Peer { device_id: "ab12".into(), name: "Other".into(), public_key: String::new(), paired_at: 0 };
+        let theirs = Record { rating: 3, ..recs[&k2].1.clone() };
+        let outcome = |s: &Session| px::Outcome {
+            sync_id: Some("cat".into()),
+            remote: [(k1.clone(), theirs.digest()), (k2.clone(), theirs.digest())].into(),
+            records: [(k1.clone(), theirs.clone()), (k2.clone(), theirs.clone())].into(),
+            sent: px::records(&s.catalog).iter().map(|(k, (_, r))| (k.clone(), r.digest())).collect(),
+            ..Default::default()
+        };
+        let o = outcome(&s);
+        let r = merge_with(&mut s, &peer, &lib, o, &mut |s, id, r, l| {
+            if id == id2 { Err(EngineError::Other("disk full".into())) } else { apply_record(s, id, r, l) }
+        });
+        assert!(r.is_err(), "the failure is reported");
+        assert_eq!(s.catalog.photos().count(), 3, "k1 got its copy");
+        let base = Base::load(&lib, &peer.device_id, "cat");
+        assert_eq!(base.remote.get(&k1), Some(&theirs.digest()), "k1's merge is in the base");
+        assert!(!base.remote.contains_key(&k2), "k2's failed merge is not");
+        assert!(base.conflicts.contains(&k1), "the collision will be told");
+        // the same exchange again: k1 settles (no second copy), k2 is taken now
+        let o = outcome(&s);
+        assert_eq!(merge(&mut s, &peer, &lib, o).unwrap(), (1, 0));
+        assert_eq!(s.catalog.photos().count(), 3, "no spurious second copy");
+        assert_eq!(s.catalog.photo(id2).unwrap().rating, 3);
         let _ = std::fs::remove_dir_all(&dir);
     }
 }
