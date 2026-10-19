@@ -61,3 +61,23 @@ fn the_library_right_column_starts_with_the_histogram() {
     assert!(histogram < quick, "Histogram first");
     assert!(top("histogram").is_some(), "its plot is drawn");
 }
+
+/// The filmstrip runs under the Grid too, as in Lightroom Classic, and / hides it there as elsewhere.
+#[test]
+fn the_filmstrip_runs_under_the_grid() {
+    let mut h = library();
+    let bottom = |h: &Headless, id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r);
+    let film = bottom(&h, "filmstrip").expect("the filmstrip under the Grid");
+    let grid = bottom(&h, "gridArea").expect("the grid");
+    assert!(grid.bottom() <= film.top() + 0.5, "the grid ends above it: {grid:?} {film:?}");
+    // the Grid and the strip ask for different sizes of the same thumbnails: once settled, no frame builds new jobs
+    let jobs = h.app.renderer.thumb_jobs_built;
+    for _ in 0..10 {
+        h.step();
+    }
+    assert_eq!(h.app.renderer.thumb_jobs_built, jobs, "no thumbnail rendered again on every frame");
+    let r = h.request("engine.execute", json!({"command": "view.filmstrip"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(bottom(&h, "filmstrip").is_none());
+}

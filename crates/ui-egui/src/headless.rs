@@ -938,7 +938,8 @@ mod tests {
     /// #1171: Up / Down in the grid go to the cell above / below; in the filmstrip, one photo.
     #[test]
     fn up_and_down_move_through_the_grid_rows() {
-        let mut h = demo([1200.0, 760.0]);
+        // (tall enough that the second row is on screen with the filmstrip under the grid: no scroll between them)
+        let mut h = demo([1200.0, 960.0]);
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "grid"}), t);
         h.settle(SETTLE);

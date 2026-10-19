@@ -388,7 +388,9 @@ impl Renderer {
     /// Would asking for this thumbnail again (at `priority`) change nothing?
     pub fn thumb_current(&self, photo: &Arc<lcc_catalog::Photo>, bucket: usize, priority: u32) -> bool {
         let Some(&(ref old, size, key, quick)) = self.thumb_inputs.get(&photo.id) else { return false };
-        if old.as_ptr() != Arc::as_ptr(photo) || size != bucket {
+        // a larger thumbnail serves a smaller request: the Grid and the filmstrip under it ask for different sizes
+        // of the same photo, and each replacing the other's would render it again on every frame
+        if old.as_ptr() != Arc::as_ptr(photo) || size < bucket {
             return false;
         }
         let slot = Slot::Thumb(photo.id);
@@ -408,7 +410,7 @@ impl Renderer {
     /// embedded JPEG already covers — see `grid::skips_the_real_render`.
     pub fn thumb_quick_is_final(&self, photo: &Arc<lcc_catalog::Photo>, bucket: usize, priority: u32) -> bool {
         let Some((old, size, key)) = self.embedded_thumbs.get(&photo.id) else { return false };
-        old.as_ptr() == Arc::as_ptr(photo) && *size == bucket && !self.request_needed(Slot::ThumbQuick(photo.id), *key, priority)
+        old.as_ptr() == Arc::as_ptr(photo) && *size >= bucket && !self.request_needed(Slot::ThumbQuick(photo.id), *key, priority)
     }
 
     /// Whether this photo's embedded-preview thumbnail is being fetched right now: the grid has
