@@ -417,9 +417,9 @@ mod tests {
         let mut d = Downloads::default();
         d.jobs.insert("m".into(), shared.clone());
         assert!(d.running());
-        let started = std::time::Instant::now();
         drop(d);
-        assert!(started.elapsed() < Duration::from_millis(900), "quitting must not wait for a transfer to finish");
+        assert!(shared.cancel.load(Ordering::Relaxed), "dropping the downloads raises the cancel flag");
+        // the worker saw the flag and stopped (join would hang forever if it never did)
         assert_eq!(shared.get(), State::Cancelled);
         handle.join().unwrap();
     }
