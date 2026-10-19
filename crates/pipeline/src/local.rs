@@ -469,6 +469,10 @@ pub fn apply_nr(img: &mut Rgb32f, lum: Option<NrLum>, col: Option<NrColor>, draf
 
 /// Colour noise reduction: the chromaticity (rgb / Y) blurred, mixed in by `nr.t`, under the
 /// original luminance; with `half_res` the blur runs at half resolution ([`HALF_RES_NR_SIGMA`]).
+///
+/// The blurred chromaticity is luminance weighted (blurred rgb over its blurred Y), not a blur of
+/// per-pixel rgb / Y: in deep shadows Y is near zero and noise, so per-pixel ratios explode and
+/// spread coloured specks into their neighbours.
 fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
     let w = img.width;
     {
@@ -487,7 +491,7 @@ fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
                     let (sx, sy) = (2 * x as isize, 2 * y as isize);
                     let mut acc = [0.0f32; 3];
                     for (dx, dy) in [(0, 0), (1, 0), (0, 1), (1, 1)] {
-                        let c = chroma_of(src.get_clamped(sx + dx, sy + dy));
+                        let c = src.get_clamped(sx + dx, sy + dy).map(|v| v.max(0.0));
                         acc = [0, 1, 2].map(|k| acc[k] + 0.25 * c[k]);
                     }
                     *o = acc;
@@ -506,24 +510,25 @@ fn colour_nr(img: &mut Rgb32f, nr: NrColor, half_res: bool) {
                     let x1 = (x0 + 1).min(hw - 1);
                     let g = |r: &[[f32; 3]], i: usize| r.get(i).copied().unwrap_or_default();
                     let (a, bb, c, d) = (g(r0, x0), g(r0, x1), g(r1, x0), g(r1, x1));
-                    let cb = [0, 1, 2].map(|k| {
+                    let cb = chroma_of([0, 1, 2].map(|k| {
                         let top = a[k] + (bb[k] - a[k]) * tx;
                         let bot = c[k] + (d[k] - c[k]) * tx;
                         top + (bot - top) * ty
-                    });
+                    }));
                     let yl = luminance_2020(*p);
                     let c0 = chroma_of(*p);
                     *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
                 }
             });
         } else {
-            let chroma = img.map(chroma_of);
-            let b = gaussian(&chroma, nr.sigma);
+            let b = gaussian(&img.map(|c| c.map(|v| v.max(0.0))), nr.sigma);
             for_rows(&mut img.data, w, |y, row| {
                 for (x, p) in row.iter_mut().enumerate() {
                     let i = y * w + x;
                     let yl = luminance_2020(*p);
-                    let (Some(&c0), Some(&cb)) = (chroma.data.get(i), b.data.get(i)) else { continue };
+                    let c0 = chroma_of(*p);
+                    let Some(&bl) = b.data.get(i) else { continue };
+                    let cb = chroma_of(bl);
                     *p = [0, 1, 2].map(|k| ((c0[k] + (cb[k] - c0[k]) * nr.t) * yl).max(0.0));
                 }
             });
