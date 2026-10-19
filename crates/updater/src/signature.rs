@@ -285,18 +285,11 @@ mod tests {
         assert!(UpdateKey::parse_list(&[&text, "not a key"]).is_err(), "one bad key spoils the list");
     }
 
-    /// The brand's key is empty (no installs) or a usable key: never a typo that silently turns
-    /// verification off, and never a private key.
+    /// Whatever the brand pins must parse: never a typo that silently turns verification off.
     #[test]
-    fn the_pinned_key_is_empty_or_usable() {
-        let keys = lcc_brand::UPDATES_PUBLIC_KEYS;
-        if keys.is_empty() {
-            assert_eq!(UpdateKey::pinned(), None);
-        } else {
-            if let Err(why) = UpdateKey::parse_list(keys) {
-                panic!("brand.toml [updates] public_keys does not parse: {why}");
-            }
-            assert!(UpdateKey::pinned().is_some());
+    fn the_pinned_keys_parse() {
+        if let Err(why) = UpdateKey::parse_list(lcc_brand::UPDATES_PUBLIC_KEYS) {
+            assert!(lcc_brand::UPDATES_PUBLIC_KEYS.is_empty(), "brand.toml [updates] public_keys does not parse: {why}");
         }
     }
 

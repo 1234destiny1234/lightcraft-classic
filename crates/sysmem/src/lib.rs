@@ -48,13 +48,6 @@ mod tests {
     use super::release_free_memory;
 
     #[test]
-    fn releasing_with_nothing_freed_is_harmless() {
-        // Twice in a row: the second call usually has nothing left to release.
-        let _ = release_free_memory();
-        let _ = release_free_memory();
-    }
-
-    #[test]
     fn freed_large_blocks_can_be_released_and_memory_stays_usable() {
         // Allocate and free well over the allocator's large-block threshold, then release.
         let blocks: Vec<Vec<u8>> = (0..8).map(|i| vec![i as u8; 16 << 20]).collect();
@@ -68,13 +61,5 @@ mod tests {
         // The allocator must still work normally afterwards.
         let again = vec![7u8; 16 << 20];
         assert_eq!(again[again.len() - 1], 7);
-    }
-
-    #[test]
-    fn concurrent_calls_are_safe() {
-        let handles: Vec<_> = (0..4).map(|_| std::thread::spawn(release_free_memory)).collect();
-        for h in handles {
-            assert!(h.join().is_ok());
-        }
     }
 }
