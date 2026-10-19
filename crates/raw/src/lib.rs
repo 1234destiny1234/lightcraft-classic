@@ -75,6 +75,12 @@ use serde::{Deserialize, Serialize};
 /// Upper bound on decoded samples (guards allocations driven by header values).
 pub const MAX_SAMPLES: usize = 1 << 30;
 
+/// `dims` multiplied together (width × height × samples …), or a `Limit` error when the product overflows `usize`
+/// (a 32-bit `usize` on wasm32 wraps on ordinary 16-bit header dimensions) or passes [`MAX_SAMPLES`].
+pub(crate) fn checked_samples(dims: &[usize]) -> Result<usize> {
+    dims.iter().try_fold(1usize, |a, &d| a.checked_mul(d)).filter(|&n| n <= MAX_SAMPLES).ok_or(RawError::Limit("image too large"))
+}
+
 /// Errors from raw decoding.
 #[derive(Debug, Clone, PartialEq, Eq, thiserror::Error)]
 pub enum RawError {

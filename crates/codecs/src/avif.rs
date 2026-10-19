@@ -627,7 +627,7 @@ pub(crate) fn decode(bytes: &[u8], opts: &DecodeOptions) -> Result<Decoded> {
         if gw == 0 || gh == 0 || (gw as u64).saturating_mul(gh as u64) > opts.max_pixels {
             return Err(Error::TooLarge(gw as u64, gh as u64));
         }
-        let mut out = vec![0f32; gw * gh * 3];
+        let mut out = vec![0f32; crate::checked_samples(gw, gh, 3)?];
         let (mut tw, mut th, mut bits, mut nclx) = (0usize, 0usize, 8u8, None);
         for (i, &t) in tiles.iter().enumerate() {
             let p = decode_av1(&c, t)?;

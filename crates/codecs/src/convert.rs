@@ -99,9 +99,9 @@ pub(crate) fn check_size(format: Format, w: u64, h: u64, opts: &DecodeOptions) -
 }
 
 pub(crate) fn finish(format: Format, raw: Raw, meta: Meta, source_dims: (u32, u32), opts: &DecodeOptions) -> Result<Decoded> {
-    let n = raw.width * raw.height;
     let ch = raw.model.channels() + raw.alpha as usize;
-    if n == 0 || raw.buf.len() < n * ch {
+    let n = crate::checked_samples(raw.width, raw.height, 1)?;
+    if n == 0 || raw.buf.len() < crate::checked_samples(raw.width, raw.height, ch)? {
         return Err(Error::Malformed(format, "sample buffer too short".into()));
     }
     let float = matches!(raw.buf, Buf::F32(_));
