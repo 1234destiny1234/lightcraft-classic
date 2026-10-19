@@ -701,6 +701,14 @@ fn tether_cull_develop_publish_sync_print() {
     let svc = mcp.cmd("publish.createService", json!({"kind": "sftp", "name": "SFTP", "settings": {"server": "Gate SFTP"}, "export": export}));
     let coll = mcp.cmd("publish.createCollection", json!({"service": svc["id"], "name": "Gate Picks", "addSelected": true}));
     let sftp_coll = coll["collection"].as_u64().unwrap();
+    // the host key is not trusted on first use: nothing is sent until the user confirms it
+    let refused = mcp.try_cmd("publish.run", json!({"collection": sftp_coll}));
+    assert!(refused.as_ref().map_or(true, |r| r["runs"][0]["published"].as_array().is_none_or(Vec::is_empty)), "{refused:?}");
+    assert!(fs.lock().unwrap().files.is_empty());
+    let key = mcp.cmd("web.hostKey", json!({"server": "Gate SFTP"}));
+    let shown = key["fingerprint"].as_str().unwrap().to_string();
+    assert!(shown.starts_with("SHA256:") && key["matches"] == json!(false), "{key}");
+    mcp.cmd("web.trustServer", json!({"name": "Gate SFTP", "fingerprint": shown}));
     let run = mcp.cmd("publish.run", json!({"collection": sftp_coll}));
     let sent = published(&run);
     assert_eq!(sent.len(), 2, "{run}");
@@ -711,14 +719,14 @@ fn tether_cull_develop_publish_sync_print() {
             assert!(f.starts_with(&[0xff, 0xd8]) && f.len() > 1000, "{rel}: {} bytes", f.len());
         }
     }
-    // trust on first use: the saved server now pins the host key
+    // the saved server pins the confirmed host key
     let servers = mcp.cmd("web.servers", json!({}));
     let fp = servers
         .as_array()
         .and_then(|a| a.first())
         .map(|x| x["knownFingerprint"].clone())
         .unwrap_or(servers["servers"][0]["knownFingerprint"].clone());
-    assert!(fp.as_str().is_some_and(|f| f.starts_with("SHA256:")), "{servers}");
+    assert_eq!(fp.as_str(), Some(shown.as_str()), "{servers}");
     // taken out of the collection: deleted on the server at the next publish
     let (gone_photo, gone_rel) = sent.iter().find(|(p, _)| *p == c).cloned().unwrap();
     mcp.cmd("album.removePhotos", json!({"id": sftp_coll, "ids": [gone_photo]}));
