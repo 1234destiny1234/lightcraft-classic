@@ -4,18 +4,22 @@
 //! The server only ever reads requests: a line that is not a JSON object with a string `method`
 //! (an HTTP request line from a browser's cross-origin `fetch`, a stray `nc`, binary junk) gets
 //! one error reply and the connection is closed, so nothing after it is executed. Lines are
-//! bounded ([`MAX_LINE`]) and so is the number of open connections ([`MAX_CONNECTIONS`]); junk
+//! bounded ([`MAX_LINE`]) and so are connections: at most [`MAX_PENDING`] not yet authenticated,
+//! each of which must authenticate within [`AUTH_DEADLINE`], and at most [`MAX_CONNECTIONS`]
+//! authenticated, each closed after [`IDLE_TIMEOUT`] without a request (clients reconnect). Silent or
+//! unauthenticated connections therefore can't take the slots MCP and the CLI need; junk
 //! never reaches the UI thread. The first request on a connection must be `auth` with the run's
 //! token ([`lcc_engine::control_auth`]); anything else gets one error reply and the
 //! connection is closed, so a process or web page that only knows the port can't run commands.
 //! See `docs/control-protocol.md`.
 
+use std::cell::Cell;
 use std::io::{BufRead, BufReader, Read, Write};
 use std::net::{TcpListener, TcpStream};
 use std::sync::Arc;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, Sender, channel};
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use lcc_engine::control_auth;
 use lcc_ui_egui::ControlRequest;
@@ -24,8 +28,54 @@ use serde_json::{Value, json};
 /// Longest accepted request line (bytes, without the newline). Requests are small JSON objects;
 /// anything longer is refused and the connection closed.
 pub const MAX_LINE: usize = 4 * 1024 * 1024;
-/// Connections served at once; further ones get an error line and are closed.
+/// Authenticated connections served at once; a further one is refused after its `auth`.
 pub const MAX_CONNECTIONS: usize = 16;
+/// Connections not yet authenticated at once; further ones get an error line and are closed.
+pub const MAX_PENDING: usize = 16;
+/// A connection must have authenticated this long after it was accepted, or it is closed.
+pub const AUTH_DEADLINE: Duration = Duration::from_secs(10);
+/// An authenticated connection that sends no request for this long is closed.
+pub const IDLE_TIMEOUT: Duration = Duration::from_secs(15 * 60);
+
+/// Open-connection counts, kept apart so unauthenticated peers can't use up authenticated slots.
+#[derive(Default)]
+struct Slots {
+    pending: AtomicUsize,
+    authed: AtomicUsize,
+}
+
+impl Slots {
+    /// Take one slot of `counter` if fewer than `max` are taken.
+    fn take(counter: &AtomicUsize, max: usize) -> bool {
+        counter.try_update(Ordering::SeqCst, Ordering::SeqCst, |n| (n < max).then_some(n + 1)).is_ok()
+    }
+}
+
+/// Reads from a socket with the connection's current deadline: until `auth_by` before it
+/// authenticates (an absolute deadline, so dribbling bytes doesn't extend it), then `idle` per read.
+struct TimedReader<'a> {
+    stream: &'a TcpStream,
+    auth_by: Instant,
+    idle: Duration,
+    authed: &'a Cell<bool>,
+}
+
+impl Read for TimedReader<'_> {
+    fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
+        let (wait, why) = if self.authed.get() {
+            (self.idle, "control connection idle too long; closing the connection")
+        } else {
+            (self.auth_by.saturating_duration_since(Instant::now()), "no `auth` request in time; closing the connection")
+        };
+        let timed_out = || std::io::Error::new(std::io::ErrorKind::TimedOut, why);
+        if wait.is_zero() {
+            return Err(timed_out());
+        }
+        self.stream.set_read_timeout(Some(wait))?;
+        let mut s = self.stream;
+        s.read(buf).map_err(|e| if matches!(e.kind(), std::io::ErrorKind::TimedOut | std::io::ErrorKind::WouldBlock) { timed_out() } else { e })
+    }
+}
 
 /// Serve the control channel on `127.0.0.1:port`; every connection must authenticate with `token`.
 /// `publish` (which stores the token for clients) runs only once the port is ours: a second
@@ -47,23 +97,39 @@ pub fn start(port: u16, token: String, ctx: egui::Context, publish: impl FnOnce(
 }
 
 fn accept_loop(listener: TcpListener, tx: Sender<ControlRequest>, ctx: egui::Context, token: String) {
-    let open = Arc::new(AtomicUsize::new(0));
+    let slots = Arc::new(Slots::default());
     let token = Arc::new(token);
-    for mut stream in listener.incoming().flatten() {
-        if open.fetch_add(1, Ordering::SeqCst) >= MAX_CONNECTIONS {
-            open.fetch_sub(1, Ordering::SeqCst);
-            let _ = writeln!(stream, "{}", json!({"ok": false, "error": "too many control connections"}));
-            continue;
-        }
+    for stream in listener.incoming().flatten() {
         let tx = tx.clone();
         let ctx = ctx.clone();
-        let open = Arc::clone(&open);
         let token = Arc::clone(&token);
-        std::thread::spawn(move || {
-            serve(stream, &tx, &ctx, &token);
-            open.fetch_sub(1, Ordering::SeqCst);
-        });
+        accept_one(stream, &slots, AUTH_DEADLINE, IDLE_TIMEOUT, move |stream, timeouts| serve(stream, &tx, &ctx, &token, timeouts));
     }
+}
+
+/// Deadlines and slots one connection is served with.
+struct Timeouts {
+    slots: Arc<Slots>,
+    auth_by: Instant,
+    idle: Duration,
+}
+
+/// Admit `stream` as a pending connection (or refuse it when [`MAX_PENDING`] are pending) and
+/// serve it on its own thread.
+fn accept_one(
+    mut stream: TcpStream,
+    slots: &Arc<Slots>,
+    auth_deadline: Duration,
+    idle: Duration,
+    serve: impl FnOnce(TcpStream, &Timeouts) + Send + 'static,
+) {
+    if !Slots::take(&slots.pending, MAX_PENDING) {
+        let _ = writeln!(stream, "{}", json!({"ok": false, "error": "too many unauthenticated control connections"}));
+        close_gracefully(&stream);
+        return;
+    }
+    let t = Timeouts { slots: Arc::clone(slots), auth_by: Instant::now() + auth_deadline, idle };
+    std::thread::spawn(move || serve(stream, &t));
 }
 
 /// How long a request waits for its reply.
@@ -82,8 +148,8 @@ pub const HIDDEN_WINDOW_ERROR: &str = "the app drew no frame for 5 s, so the req
 /// connected (a link in the browser, Show in Explorer, an external editor) kept a copy of the
 /// connection: closing it then reached the client only when that program exited, as a reset
 /// instead of a clean close.
-fn serve(stream: TcpStream, tx: &Sender<ControlRequest>, ctx: &egui::Context, token: &str) {
-    serve_stream(stream, token, |method, params| {
+fn serve(stream: TcpStream, tx: &Sender<ControlRequest>, ctx: &egui::Context, token: &str, t: &Timeouts) {
+    serve_stream(stream, token, t, |method, params| {
         let (req, rrx) = ControlRequest::new(method, params);
         let state = Arc::clone(&req.state);
         tx.send(req).ok()?;
@@ -169,9 +235,20 @@ fn parse_line(bytes: &[u8]) -> Line {
 /// [`serve_lines`] on a socket, then close it so the peer reads every reply. Reads and writes go
 /// through the one stream, not a `try_clone`: on Windows a cloned socket handle is inheritable, and
 /// a program the app starts (browser, Explorer, an editor) would keep the connection open (#1991).
-fn serve_stream(stream: TcpStream, token: &str, handle: impl FnMut(String, Value) -> Option<Value>) {
-    serve_lines(&stream, &stream, token, handle);
+fn serve_stream(stream: TcpStream, token: &str, t: &Timeouts, handle: impl FnMut(String, Value) -> Option<Value>) {
+    let authed = Cell::new(false);
+    let reader = TimedReader { stream: &stream, auth_by: t.auth_by, idle: t.idle, authed: &authed };
+    // The pending slot is given back on authenticating; an authenticated one is taken then.
+    let admit = || {
+        let ok = Slots::take(&t.slots.authed, MAX_CONNECTIONS);
+        t.slots.pending.fetch_sub(1, Ordering::SeqCst);
+        authed.set(true);
+        ok
+    };
+    serve_lines(reader, &stream, token, admit, handle);
     close_gracefully(&stream);
+    let counter = if authed.get() { &t.slots.authed } else { &t.slots.pending };
+    counter.fetch_sub(1, Ordering::SeqCst);
 }
 
 /// Close a connection the server is done with without destroying its last reply. A socket closed
@@ -220,7 +297,14 @@ fn read_bounded_line(reader: &mut impl BufRead, buf: &mut Vec<u8>, max: usize) -
 /// not a request, fails to authenticate, or `handle` returns `None` (app gone). The first request
 /// must be `auth` with `token` and is answered here; `handle` gets the later ones as
 /// `(method, params)` and returns the reply object (the request's `id` is added here).
-fn serve_lines<R: Read, W: Write>(read: R, mut out: W, token: &str, mut handle: impl FnMut(String, Value) -> Option<Value>) {
+/// After a correct `auth`, `admit` is asked for an authenticated slot; `false` refuses the connection.
+fn serve_lines<R: Read, W: Write>(
+    read: R,
+    mut out: W,
+    token: &str,
+    mut admit: impl FnMut() -> bool,
+    mut handle: impl FnMut(String, Value) -> Option<Value>,
+) {
     let mut reader = BufReader::new(read);
     let mut buf = Vec::new();
     let mut authenticated = false;
@@ -232,7 +316,11 @@ fn serve_lines<R: Read, W: Write>(read: R, mut out: W, token: &str, mut handle: 
                 Line::Blank => continue,
                 Line::Reject(e) => e,
                 Line::Request { id, method, params } if !authenticated => {
-                    let (mut r, ok) = control_auth::check_auth_request(&method, &params, token);
+                    let (mut r, mut ok) = control_auth::check_auth_request(&method, &params, token);
+                    if ok && !admit() {
+                        r = json!({"ok": false, "error": "too many control connections"});
+                        ok = false;
+                    }
                     if let Some(o) = r.as_object_mut() {
                         o.insert("id".into(), id);
                     }
@@ -308,13 +396,121 @@ mod tests {
         worker.join().unwrap();
     }
 
+    fn timeouts() -> Timeouts {
+        Timeouts { slots: Arc::new(Slots::default()), auth_by: Instant::now() + AUTH_DEADLINE, idle: IDLE_TIMEOUT }
+    }
+
+    /// Accept connections on a loopback port with the given deadlines; returns the address and slots.
+    fn server(auth_deadline: Duration, idle: Duration) -> (std::net::SocketAddr, Arc<Slots>) {
+        let listener = TcpListener::bind(("127.0.0.1", 0)).unwrap();
+        let addr = listener.local_addr().unwrap();
+        let slots = Arc::new(Slots::default());
+        let s2 = Arc::clone(&slots);
+        std::thread::spawn(move || {
+            for stream in listener.incoming().flatten() {
+                accept_one(stream, &s2, auth_deadline, idle, |s, t| serve_stream(s, TOKEN, t, |_, _| Some(json!({"ok": true}))));
+            }
+        });
+        (addr, slots)
+    }
+
+    fn authed_request(addr: std::net::SocketAddr) -> String {
+        let mut c = TcpStream::connect(addr).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        writeln!(c, "{}", control_auth::auth_request(json!(1), TOKEN)).unwrap();
+        writeln!(c, "{{\"id\":2,\"method\":\"x\"}}").unwrap();
+        let mut r = BufReader::new(c);
+        let (mut a, mut b) = (String::new(), String::new());
+        r.read_line(&mut a).unwrap();
+        r.read_line(&mut b).unwrap();
+        a + &b
+    }
+
+    /// Silent connections filling every unauthenticated slot don't lock a real client out for
+    /// long: they are closed at the auth deadline, and the client then gets in.
+    #[test]
+    fn silent_connections_are_closed_at_the_auth_deadline() {
+        let (addr, slots) = server(Duration::from_millis(300), IDLE_TIMEOUT);
+        let mut silent: Vec<TcpStream> = (0..MAX_PENDING).map(|_| TcpStream::connect(addr).unwrap()).collect();
+        let t0 = Instant::now();
+        while slots.pending.load(Ordering::SeqCst) < MAX_PENDING && t0.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let mut text = String::new();
+        silent[0].set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        silent[0].read_to_string(&mut text).unwrap();
+        assert!(text.contains("no `auth` request in time"), "{text}");
+        let t1 = Instant::now();
+        while slots.pending.load(Ordering::SeqCst) >= MAX_PENDING && t1.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        let r = authed_request(addr);
+        assert!(r.contains("\"authenticated\":true") && r.contains("\"id\":2"), "{r}");
+    }
+
+    /// Unauthenticated connections never use authenticated slots: with every pending slot taken
+    /// by silent peers, an authenticated client already connected keeps working, and the
+    /// authenticated count is unaffected.
+    #[test]
+    fn unauthenticated_connections_do_not_take_authenticated_slots() {
+        let (addr, slots) = server(Duration::from_secs(30), IDLE_TIMEOUT);
+        let mut c = TcpStream::connect(addr).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        writeln!(c, "{}", control_auth::auth_request(json!(1), TOKEN)).unwrap();
+        let mut r = BufReader::new(c.try_clone().unwrap());
+        let mut line = String::new();
+        r.read_line(&mut line).unwrap();
+        let _silent: Vec<TcpStream> = (0..MAX_PENDING + 4).map(|_| TcpStream::connect(addr).unwrap()).collect();
+        std::thread::sleep(Duration::from_millis(200));
+        assert_eq!(slots.authed.load(Ordering::SeqCst), 1);
+        assert!(slots.pending.load(Ordering::SeqCst) <= MAX_PENDING);
+        writeln!(c, "{{\"id\":9,\"method\":\"x\"}}").unwrap();
+        line.clear();
+        r.read_line(&mut line).unwrap();
+        assert!(line.contains("\"id\":9"), "{line}");
+    }
+
+    /// An authenticated connection that goes quiet is closed and its slot given back.
+    #[test]
+    fn idle_authenticated_connection_is_closed() {
+        let (addr, slots) = server(Duration::from_secs(30), Duration::from_millis(300));
+        let mut c = TcpStream::connect(addr).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
+        writeln!(c, "{}", control_auth::auth_request(json!(1), TOKEN)).unwrap();
+        let mut text = String::new();
+        c.read_to_string(&mut text).unwrap();
+        assert!(text.contains("idle too long"), "{text}");
+        let t0 = Instant::now();
+        while slots.authed.load(Ordering::SeqCst) != 0 && t0.elapsed() < Duration::from_secs(5) {
+            std::thread::sleep(Duration::from_millis(10));
+        }
+        assert_eq!(slots.authed.load(Ordering::SeqCst), 0);
+    }
+
+    #[test]
+    fn auth_beyond_the_authenticated_cap_is_refused() {
+        let input = format!("{}
+{{\"id\":2,\"method\":\"x\"}}
+", control_auth::auth_request(json!(1), TOKEN));
+        let mut out = Vec::new();
+        let mut ran = false;
+        serve_lines(input.as_bytes(), &mut out, TOKEN, || false, |_, _| {
+            ran = true;
+            None
+        });
+        assert!(!ran);
+        let text = String::from_utf8(out).unwrap();
+        assert_eq!(text.lines().count(), 1, "{text}");
+        assert!(text.contains("too many control connections"), "{text}");
+    }
+
     const TOKEN: &str = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef";
 
     /// Serve `input` as it arrives, without authenticating first: replies and the methods run.
     fn run_raw(input: &[u8]) -> (Vec<Value>, Vec<String>) {
         let mut out = Vec::new();
         let mut calls = Vec::new();
-        serve_lines(input, &mut out, TOKEN, |m, _p| {
+        serve_lines(input, &mut out, TOKEN, || true, |m, _p| {
             calls.push(m);
             Some(json!({"ok": true, "result": null}))
         });
@@ -422,7 +618,7 @@ mod tests {
         let endless = std::io::repeat(b'x');
         let mut out = Vec::new();
         let mut ran = false;
-        serve_lines(endless, &mut out, TOKEN, |_, _| {
+        serve_lines(endless, &mut out, TOKEN, || true, |_, _| {
             ran = true;
             None
         });
@@ -477,7 +673,7 @@ mod tests {
         let (tx, _rx) = channel::<ControlRequest>();
         let server = std::thread::spawn(move || {
             let (s, _) = listener.accept().unwrap();
-            serve(s, &tx, &egui::Context::default(), TOKEN);
+            serve(s, &tx, &egui::Context::default(), TOKEN, &timeouts());
         });
         let mut c = TcpStream::connect(addr).unwrap();
         c.set_read_timeout(Some(Duration::from_secs(20))).unwrap();
@@ -505,7 +701,7 @@ mod tests {
         let addr = listener.local_addr().unwrap();
         let server = std::thread::spawn(move || {
             let (s, _) = listener.accept().unwrap();
-            serve_stream(s, TOKEN, |_, _| Some(json!({"ok": true})));
+            serve_stream(s, TOKEN, &timeouts(), |_, _| Some(json!({"ok": true})));
         });
         let mut c = TcpStream::connect(addr).unwrap();
         c.set_read_timeout(Some(Duration::from_secs(10))).unwrap();
