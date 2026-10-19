@@ -638,7 +638,7 @@ fn corpus_arw1_and_packed_nef() {
     ];
     for &(name, dims, black) in cases {
         let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -658,7 +658,7 @@ fn corpus_nikon_z8_z9_lossless() {
         &[("nef-nikon-z8-lossless14.nef", (8280, 5520, 14), 1008.0), ("nef-nikon-z9-lossless14.nef", (8280, 5520, 14), 1008.0)];
     for &(name, dims, black) in cases {
         let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -752,7 +752,7 @@ fn corpus_sony_lens_tables_become_opcodes() {
         let bytes = match std::fs::read(dir.join(name)) {
             Ok(bytes) => bytes,
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
-                eprintln!("skip: {name} absent");
+                lcc_testkit::skip!(Corpus, "{name} absent");
                 continue;
             }
             Err(e) => panic!("{name}: {e}"),
@@ -1046,7 +1046,7 @@ fn corpus_minolta_mrw() {
     let mut seen = 0;
     for (name, sensor, image, cfa) in cases {
         let Ok(bytes) = std::fs::read(dir.join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -1264,7 +1264,7 @@ fn nikon_in_file_distortion_is_limited_to_validated_bodies() {
     ] {
         let path = root.join(name);
         if !path.exists() {
-            eprintln!("skip: {} absent", path.display());
+            lcc_testkit::skip!(Corpus, "{} absent", path.display());
             continue;
         }
         let bytes = std::fs::read(&path).unwrap();
@@ -1325,7 +1325,7 @@ fn pinned_sony(root: &Path, name: &str) -> Option<Vec<u8>> {
         Ok(bytes) => bytes,
         Err(e) if e.kind() == std::io::ErrorKind::NotFound => {
             assert!(lcc_brand::env_os("CORPUS_REQUIRED").is_none_or(|v| v != "1"), "{name}: absent, and {}=1", lcc_brand::env_var("CORPUS_REQUIRED"));
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             return None;
         }
         Err(e) => panic!("{name}: {e}"),
@@ -1678,7 +1678,7 @@ fn corpus_fujifilm_superccd() {
     let mut seen = 0;
     for &(name, dims) in cases {
         let Ok(bytes) = std::fs::read(corpus_root().join("raw").join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
@@ -1729,7 +1729,7 @@ fn corpus_epson_erf() {
     let mut checked = 0;
     for name in ["erf-epson-rd1.erf", "erf-epson-rd1s.erf", "erf-epson-rd1x.erf"] {
         let Ok(bytes) = std::fs::read(root.join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         assert_eq!(probe(&bytes), Some(RawFormat::Erf), "{name}");
@@ -1758,7 +1758,7 @@ fn corpus_epson_erf() {
 #[test]
 fn corpus_mamiya_mef() {
     let Ok(bytes) = std::fs::read(corpus_root().join("raw").join("mef-mamiya-zd.mef")) else {
-        eprintln!("skip: mef-mamiya-zd.mef absent");
+        lcc_testkit::skip!(Corpus, "mef-mamiya-zd.mef absent");
         return;
     };
     assert_eq!(probe(&bytes), Some(RawFormat::Mef));
@@ -1806,7 +1806,7 @@ fn corpus_canon_crw() {
     let mut seen = 0;
     for (name, (sensor, image), bits) in cases {
         let Ok(bytes) = std::fs::read(dir.join(name)) else {
-            eprintln!("skip: {name} absent");
+            lcc_testkit::skip!(Corpus, "{name} absent");
             continue;
         };
         let img = decode(&bytes).unwrap_or_else(|e| panic!("{name}: {e}"));
