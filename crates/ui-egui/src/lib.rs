@@ -121,6 +121,8 @@ mod tests_curve;
 #[cfg(test)]
 mod tests_date_picker;
 #[cfg(test)]
+mod tests_develop_panels;
+#[cfg(test)]
 mod tests_dialog_fit;
 #[cfg(test)]
 mod tests_dialog_frame;

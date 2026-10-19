@@ -115,11 +115,20 @@ impl DevelopSettings {
 
     /// The settings as rendered: an Edit-panel section whose eye is off contributes nothing (issue
     /// #316). Light (with its tone curve), Color (white balance, presence, the mixers, colour grading
-    /// and point colour) and Detail are reset to their defaults here; Effects, Optics, Geometry and
-    /// Calibration the pipeline switches off where it applies them. Borrowed when every section is on.
+    /// and point colour) and Detail are reset to their defaults here, and so are the fork's
+    /// Lightroom Classic panels: Tone Curve (`curve`), Color Mixer (`mixer`: the mixers and point
+    /// colour) and Color Grading (`grading`). Effects, Optics, Geometry and Calibration the pipeline
+    /// switches off where it applies them. Borrowed when every section is on.
     pub fn effective(&self) -> std::borrow::Cow<'_, DevelopSettings> {
         let off = |section: &str| !self.section_enabled(section);
-        if !(off("light") || off("color") || off("detail") || (off(PLUGIN_FILTERS_SECTION) && !self.plugin_filters.is_empty())) {
+        if !(off("light")
+            || off("color")
+            || off("curve")
+            || off("mixer")
+            || off("grading")
+            || off("detail")
+            || (off(PLUGIN_FILTERS_SECTION) && !self.plugin_filters.is_empty()))
+        {
             return std::borrow::Cow::Borrowed(self);
         }
         let mut d = self.clone();
@@ -132,6 +141,18 @@ impl DevelopSettings {
                 d.reset_section(section);
             }
             d.point_colors.clear();
+        }
+        if off("curve") {
+            d.reset_section(Section::Curve);
+        }
+        if off("mixer") {
+            for section in [Section::Mixer, Section::BwMix, Section::PointColor] {
+                d.reset_section(section);
+            }
+            d.point_colors.clear();
+        }
+        if off("grading") {
+            d.reset_section(Section::Grading);
         }
         if off("detail") {
             d.reset_section(Section::Detail);

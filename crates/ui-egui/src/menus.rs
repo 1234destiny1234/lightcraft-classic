@@ -162,12 +162,14 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("panel.close", "Close Panel", None, ""),
     ("panel.collapseRight", "Show/Hide Right Panel", None, "Window>Panels"),
     // {solo?}: true opens just that section (⌥-click on its header); otherwise opens or closes it
-    ("section.light", "Light", Some("Cmd+1"), "Window>Edit Sections"),
-    ("section.color", "Color", Some("Cmd+2"), "Window>Edit Sections"),
-    ("section.effects", "Effects", Some("Cmd+3"), "Window>Edit Sections"),
-    ("section.detail", "Detail", Some("Cmd+4"), "Window>Edit Sections"),
-    ("section.optics", "Optics", Some("Cmd+5"), "Window>Edit Sections"),
-    ("section.calibration", "Calibration", None, ""),
+    // Lightroom Classic's ⌘1–⌘9, top to bottom (the fork's Tone Curve, Color Mixer, Color Grading and Transform are
+    // in `menus_fork`; Color, split into those, stays a command for older scripts)
+    ("section.light", "Basic", Some("Cmd+1"), "Window>Edit Sections"),
+    ("section.color", "Color", None, ""),
+    ("section.effects", "Effects", Some("Cmd+8"), "Window>Edit Sections"),
+    ("section.detail", "Detail", Some("Cmd+5"), "Window>Edit Sections"),
+    ("section.optics", "Lens Corrections", Some("Cmd+6"), "Window>Edit Sections"),
+    ("section.calibration", "Calibration", Some("Cmd+9"), "Window>Edit Sections"),
     // {on?}; no params toggles. Opening one Edit section closes the others.
     ("view.soloSections", "Solo Mode", None, "Window>Edit Sections"),
     ("tool.brush", "Brush", Some("B"), "Window>Tools"),

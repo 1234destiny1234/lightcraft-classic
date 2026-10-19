@@ -3321,14 +3321,15 @@ mod tests {
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail", "right": "edit"}), t);
         h.settle(SETTLE);
-        let light_on = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().section_enabled("light");
+        // (Tone Curve: Basic has no switch, as in Lightroom Classic)
+        let light_on = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().section_enabled("curve");
         for expected in [false, true] {
             // the eye shows while the pointer is on the header
-            assert_eq!(h.request("ui.hoverWidget", json!({"id": "section:light"}), t)["ok"], true);
-            assert_eq!(h.request("ui.clickWidget", json!({"id": "sectionEye:light"}), t)["ok"], true);
+            assert_eq!(h.request("ui.hoverWidget", json!({"id": "section:curve"}), t)["ok"], true);
+            assert_eq!(h.request("ui.clickWidget", json!({"id": "sectionEye:curve"}), t)["ok"], true);
             assert_eq!(light_on(&h), expected);
         }
-        assert!(h.app.ui.section_open("light"), "the click didn't fold the section");
+        assert!(!h.app.ui.section_open("curve"), "the click didn't open the section");
     }
 
     /// Return commits a tool panel back to Edit; elsewhere it does nothing.

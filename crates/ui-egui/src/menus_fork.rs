@@ -24,7 +24,12 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
 
 /// The Edit panel's sections the fork adds: Transform (Upright and the transform sliders, upstream's Geometry in the
 /// Crop tool), as Lightroom Classic's Transform panel. Opened and closed like the others (`section.*`).
-const EDIT_SECTIONS: &[UiCommand] = &[("section.geometry", "Transform", None, "Window>Edit Sections")];
+const EDIT_SECTIONS: &[UiCommand] = &[
+    ("section.curve", "Tone Curve", Some("Cmd+2"), "Window>Edit Sections"),
+    ("section.mixer", "Color Mixer", Some("Cmd+3"), "Window>Edit Sections"),
+    ("section.grading", "Color Grading", Some("Cmd+4"), "Window>Edit Sections"),
+    ("section.geometry", "Transform", Some("Cmd+7"), "Window>Edit Sections"),
+];
 
 /// P4.3: the Plug-in Manager (`crate::panels::plugins`); native only, so the web build lists none.
 #[cfg(not(target_arch = "wasm32"))]
@@ -67,7 +72,7 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
     }
     Some(match id {
         // the fork's Edit sections, opened and closed as upstream's are (⌥-click: just this one)
-        "section.geometry" => {
+        "section.curve" | "section.mixer" | "section.grading" | "section.geometry" => {
             let sec = &id["section.".len()..];
             app.ui.right = crate::state::RightPanel::Edit;
             if p.get("solo").and_then(Value::as_bool) == Some(true) {

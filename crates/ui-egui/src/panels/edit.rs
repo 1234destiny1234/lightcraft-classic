@@ -214,7 +214,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 
     let video = crate::video_ui::photo_is_video(app, id);
     // Lightroom Classic's Basic panel: white balance, then Tone (with Auto), then Presence
-    section(app, ui, &d, "light", "Basic", |app, ui, d| {
+    // (Lightroom Classic's Basic has no on/off switch: it shows only while an older edit has Basic or Color switched off,
+    // so that edit can be switched back on)
+    let basic_switch = !d.section_enabled("light") || !d.section_enabled("color");
+    section_with(app, ui, &d, "light", "Basic", basic_switch, |app, ui, d| {
         wb_rows(app, ui, d, raw);
         sub_title(ui, "Tone");
         crate::video_ui::video_gate(ui, video, |ui| hdr_row(app, ui, d));
@@ -246,71 +249,36 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 ui.add_space(6.0);
             }
         }
-        let open = app.ui.flyout_open("curve");
-        if flyout_row(ui, "curve", crate::i18n::tr("Curve"), Icon::Curve, open).clicked() {
-            app.ui.toggle_flyout("curve");
-        }
-        if open {
-            curve_editor(app, ui, id, d, CurveTarget::Photo);
-        }
         ui.add_space(8.0);
     });
-    section(app, ui, &d, "color", "Color", |app, ui, d| {
-        let open = app.ui.flyout_open("mixer");
-        if flyout_row(ui, "mixer", if crate::is_bw(d) { "B&W Mixer" } else { "Color Mixer" }, Icon::Palette, open).clicked() {
-            app.ui.toggle_flyout("mixer");
-        }
-        if open {
-            mixer(app, ui, d);
-        }
+    // Lightroom Classic's Develop panels, in its order: Basic, Tone Curve, Color Mixer, Color Grading, Detail, Lens
+    // Corrections, Transform, Effects, Calibration (the fork's: upstream groups them as the cloud app does)
+    section(app, ui, &d, "curve", "Tone Curve", |app, ui, d| {
+        curve_editor(app, ui, id, d, CurveTarget::Photo);
+        ui.add_space(8.0);
+    });
+    // Mixer and Point Color, as the panel's two tabs (Point Color is for colour photos)
+    section(app, ui, &d, "mixer", "Color Mixer", |app, ui, d| {
+        let point = !crate::is_bw(d) && app.ui.flyout_open("pointColor");
         if !crate::is_bw(d) {
-            let open = app.ui.flyout_open("pointColor");
-            if flyout_row(ui, "pointColor", crate::i18n::tr("Point Color"), Icon::Picker, open).clicked() {
+            let items = [("Mixer", "mixer"), ("Point Color", "pointColor")];
+            let mut chosen = None;
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 6 }).show(ui, |ui| {
+                chosen = crate::widgets::segmented(ui, "colorMixerTab", &items, Some(usize::from(point)), 2);
+            });
+            if chosen.is_some_and(|i| (i == 1) != point) {
                 app.ui.toggle_flyout("pointColor");
             }
-            if open {
-                crate::video_ui::video_gate(ui, video, |ui| point_color(app, ui, d));
-            }
         }
-        let open = app.ui.flyout_open("grading");
-        if flyout_row(ui, "grading", crate::i18n::tr("Color Grading"), Icon::GradeAll, open).clicked() {
-            app.ui.toggle_flyout("grading");
-        }
-        if open {
-            grading(app, ui, d, id);
+        if point {
+            crate::video_ui::video_gate(ui, video, |ui| point_color(app, ui, d));
+        } else {
+            mixer(app, ui, d);
         }
         ui.add_space(8.0);
     });
-    section(app, ui, &d, "effects", "Effects", |app, ui, d| {
-        sub_title(ui, crate::i18n::tr("Vignette"));
-        {
-            use lcc_develop::VignetteStyle as V;
-            let styles = [
-                (V::HighlightPriority, "Highlight", "highlightPriority"),
-                (V::ColorPriority, "Color", "colorPriority"),
-                (V::PaintOverlay, "Paint", "paintOverlay"),
-            ];
-            let items: Vec<(&str, &str)> = styles.iter().map(|(_, l, k)| (*l, *k)).collect();
-            let active = styles.iter().position(|(v, _, _)| *v == d.vignette.style);
-            let mut chosen = None;
-            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 4 }).show(ui, |ui| {
-                chosen = crate::widgets::segmented(ui, "vignetteStyle", &items, active, 3);
-            });
-            if let Some(i) = chosen {
-                let _ = app.run(
-                    "develop.merge",
-                    serde_json::json!({"settings": {"vignette": {"style": serde_json::to_value(styles[i].0).unwrap_or_default()}}}),
-                );
-            }
-        }
-        for c in ["vignette.amount", "vignette.midpoint", "vignette.feather", "vignette.roundness", "vignette.highlights"] {
-            let enabled = c == "vignette.amount" || d.vignette.amount != 0.0;
-            control(app, ui, d, c, enabled);
-        }
-        sub_title(ui, crate::i18n::tr("Grain"));
-        for c in ["grain.amount", "grain.size", "grain.roughness"] {
-            control(app, ui, d, c, c == "grain.amount" || d.grain.amount != 0.0);
-        }
+    section(app, ui, &d, "grading", "Color Grading", |app, ui, d| {
+        grading(app, ui, d, id);
         ui.add_space(8.0);
     });
     section(app, ui, &d, "detail", "Detail", |app, ui, d| {
@@ -341,7 +309,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
-    section(app, ui, &d, "optics", "Optics", |app, ui, d| {
+    section(app, ui, &d, "optics", "Lens Corrections", |app, ui, d| {
         // the lens database changed since this photo was looked up: look again (its correction and preview follow)
         if d.optics.lens_profile && app.session.lens_profiles_stale(id) {
             let _ = app.session.refresh_lens_profiles(&[id]);
@@ -421,6 +389,38 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     });
     // Lightroom Classic's Transform panel (the fork's: upstream keeps it in the Crop tool), after the lens corrections
     section(app, ui, &d, "geometry", "Transform", |app, ui, _| super::right::transform_body(app, ui, id));
+    section(app, ui, &d, "effects", "Effects", |app, ui, d| {
+        sub_title(ui, crate::i18n::tr("Vignette"));
+        {
+            use lcc_develop::VignetteStyle as V;
+            let styles = [
+                (V::HighlightPriority, "Highlight", "highlightPriority"),
+                (V::ColorPriority, "Color", "colorPriority"),
+                (V::PaintOverlay, "Paint", "paintOverlay"),
+            ];
+            let items: Vec<(&str, &str)> = styles.iter().map(|(_, l, k)| (*l, *k)).collect();
+            let active = styles.iter().position(|(v, _, _)| *v == d.vignette.style);
+            let mut chosen = None;
+            egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 4 }).show(ui, |ui| {
+                chosen = crate::widgets::segmented(ui, "vignetteStyle", &items, active, 3);
+            });
+            if let Some(i) = chosen {
+                let _ = app.run(
+                    "develop.merge",
+                    serde_json::json!({"settings": {"vignette": {"style": serde_json::to_value(styles[i].0).unwrap_or_default()}}}),
+                );
+            }
+        }
+        for c in ["vignette.amount", "vignette.midpoint", "vignette.feather", "vignette.roundness", "vignette.highlights"] {
+            let enabled = c == "vignette.amount" || d.vignette.amount != 0.0;
+            control(app, ui, d, c, enabled);
+        }
+        sub_title(ui, crate::i18n::tr("Grain"));
+        for c in ["grain.amount", "grain.size", "grain.roughness"] {
+            control(app, ui, d, c, c == "grain.amount" || d.grain.amount != 0.0);
+        }
+        ui.add_space(8.0);
+    });
     // Lightroom Classic's Calibration panel (the cloud app hides it): last, like there.
     section(app, ui, &d, "calibration", "Calibration", |app, ui, d| {
         sub_title(ui, crate::i18n::tr("Shadows"));
@@ -543,8 +543,21 @@ pub(crate) fn section(
     title: &str,
     body: impl FnOnce(&mut LccApp, &mut egui::Ui, &DevelopSettings),
 ) {
+    section_with(app, ui, d, id, title, true, body);
+}
+
+/// [`section`], with its on/off switch (`switch`) or without.
+pub(crate) fn section_with(
+    app: &mut LccApp,
+    ui: &mut egui::Ui,
+    d: &DevelopSettings,
+    id: &str,
+    title: &str,
+    switch: bool,
+    body: impl FnOnce(&mut LccApp, &mut egui::Ui, &DevelopSettings),
+) {
     let open = app.ui.section_open(id);
-    let (resp, toggled) = section_header(ui, id, title, open, Some(d.section_enabled(id)));
+    let (resp, toggled) = section_header(ui, id, title, open, switch.then(|| d.section_enabled(id)));
     // video takes the global Light and Color controls only: the rest show greyed out
     let blocked = !crate::video_ui::section_allowed(id) && app.session.active().is_some_and(|p| crate::video_ui::photo_is_video(app, p));
     let resp = if blocked { resp.on_hover_text(crate::i18n::tr(crate::video_ui::NOT_FOR_VIDEO)) } else { resp };
