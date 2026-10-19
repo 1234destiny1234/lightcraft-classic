@@ -220,6 +220,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::NewAlbum { folder: true, .. } => "Create Collection Set",
         Dialog::NewAlbum { .. } => "Create Collection",
         Dialog::RenameAlbum { .. } => "Rename Collection",
+        Dialog::RenamePhoto { .. } => "Rename Photo",
         Dialog::Rename { .. } => "Rename Photos",
         Dialog::Import { .. } => "Import Photos",
         Dialog::LightroomResult { .. } => "Lightroom Catalog Import",
@@ -599,6 +600,11 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                         egui::RichText::new(crate::i18n::tr("Names appear in the label menu, the filter bar and the Info panel, and are written to XMP. Empty = the colour's name."))
                             .color(t.text_dim),
                     );
+                }
+                Dialog::RenamePhoto { name, .. } => {
+                    if dialog_field(ui, "field:photoName", name, "File name") {
+                        confirm = true;
+                    }
                 }
                 Dialog::Rename { template, start } => {
                     let n = app.session.selected().len();
@@ -1675,6 +1681,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                 // installing waits for the licence to be accepted
                 // (and Synchronize waits for the scan)
                 let rename_blocked = match &dlg {
+                    Dialog::RenamePhoto { name, .. } => name.trim().is_empty(),
                     Dialog::RenamePerson { from, to, merge } => {
                         let plan = person_rename_plan(&app.session.catalog, from, to);
                         plan.block.is_some() || (plan.needs_merge && !*merge)
@@ -2060,6 +2067,28 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
                 return app.run("label.saveSet", json!({"name": save_as.trim()}));
             }
             r
+        }
+        Dialog::RenamePhoto { id, name } => {
+            let name_trim = name.trim();
+            if name_trim.is_empty() {
+                return Err("Type a name".into());
+            }
+            let photo = app.session.catalog.photo(lcc_catalog::PhotoId(*id));
+            let template = if let Some(p) = photo {
+                let (_, ext) = lcc_engine::rename::split_ext(&p.file_name);
+                let (s, e) = lcc_engine::rename::split_ext(name_trim);
+                if !ext.is_empty()
+                    && (e.eq_ignore_ascii_case(ext) || lcc_engine::open_path::is_media(std::path::Path::new(name_trim)))
+                    && !s.is_empty()
+                {
+                    s.to_string()
+                } else {
+                    name_trim.to_string()
+                }
+            } else {
+                name_trim.to_string()
+            };
+            app.run("photo.rename", json!({"ids": [*id], "template": template}))
         }
         Dialog::Rename { template, start } => app.run("photo.rename", json!({"template": template, "start": start})),
         Dialog::RenameKeyword { from, to } => app.run("keyword.rename", json!({"from": from, "to": to})),
