@@ -258,6 +258,7 @@ const BOX_H_SLIDE_FROM: usize = 32;
 struct BoxPlan {
     kernel: &'static str,
     chunk: usize,
+    #[cfg_attr(not(test), allow(dead_code))]
     reads_per_px: f32,
 }
 
