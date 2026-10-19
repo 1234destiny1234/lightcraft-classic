@@ -7,6 +7,7 @@ use std::io::{Read, Write};
 use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::sync::atomic::AtomicBool;
+use std::time::{Duration, Instant};
 
 use sha2::{Digest, Sha256};
 
@@ -26,7 +27,13 @@ pub struct DownloadOptions<'a> {
     pub cancel: Option<Arc<AtomicBool>>,
     /// `(bytes so far, total when known)`.
     pub progress: Option<&'a mut dyn FnMut(u64, Option<u64>)>,
+    /// Longest time the whole transfer may take (`None`: [`DEFAULT_DEADLINE`]); a server trickling bytes just fast
+    /// enough to dodge the stall timeout can't hold the download forever.
+    pub deadline: Option<Duration>,
 }
+
+/// The overall limit of a download when [`DownloadOptions::deadline`] is unset.
+pub const DEFAULT_DEADLINE: Duration = Duration::from_secs(6 * 3600);
 
 /// A finished download.
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -58,6 +65,8 @@ impl Client {
     /// Download `url` to `dest`, resuming a previous `<dest>.part`.
     pub fn download(&self, url: &str, dest: &Path, mut opts: DownloadOptions<'_>) -> Result<Downloaded, NetError> {
         let part = part_path(dest);
+        let started = Instant::now();
+        let deadline = opts.deadline.unwrap_or(DEFAULT_DEADLINE);
         let cap = match (opts.size, opts.max_size) {
             (Some(s), _) => s,
             (None, 0) => u64::MAX,
@@ -124,6 +133,9 @@ impl Client {
             (Some(resp), Some(file))
         };
 
+        // the length the server promised for this response (the framing already rejects a short body; checked
+        // again below so a truncated transfer can never be renamed into place)
+        let promised_end = resp.as_ref().and_then(|r| r.header("content-length")?.trim().parse::<u64>().ok()).map(|n| n.saturating_add(have));
         let total = opts.size.or_else(|| {
             let r = resp.as_ref()?;
             let len: u64 = r.header("content-length")?.trim().parse().ok()?;
@@ -135,11 +147,16 @@ impl Client {
             return Err(NetError::TooLarge(cap));
         }
         let mut too_large = false;
+        let mut timed_out = false;
         if let (Some(resp), Some(file)) = (resp.as_mut(), file.as_mut()) {
             let mut buf = vec![0u8; 256 * 1024];
             loop {
                 let n = resp.read(&mut buf)?;
                 if n == 0 {
+                    break;
+                }
+                if started.elapsed() > deadline {
+                    timed_out = true;
                     break;
                 }
                 let chunk = buf.get(..n).unwrap_or_default();
@@ -154,7 +171,7 @@ impl Client {
                     p(have, total);
                 }
             }
-            if !too_large {
+            if !too_large && !timed_out {
                 file.sync_all().map_err(|e| io(&part, e))?;
             }
         }
@@ -163,12 +180,21 @@ impl Client {
             let _ = std::fs::remove_file(&part);
             return Err(NetError::TooLarge(cap));
         }
+        if timed_out {
+            // the part file is kept: a later try resumes it
+            return Err(NetError::Io(format!("the download took longer than {} s and was stopped", deadline.as_secs())));
+        }
 
         let sha = hasher.finalize().iter().map(|b| format!("{b:02x}")).collect::<String>();
         let fail = |why: String| {
             let _ = std::fs::remove_file(&part);
             Err(NetError::Verify(why))
         };
+        if let Some(end) = promised_end
+            && end != have
+        {
+            return fail(format!("the transfer was cut short ({have} of {end} bytes)"));
+        }
         if let Some(size) = opts.size
             && size != have
         {
