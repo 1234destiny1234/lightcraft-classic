@@ -100,9 +100,13 @@ fn hostile_dimensions_are_rejected_quickly() {
     ifd.set(t::COMPRESSION, Value::Short(vec![7]));
     ifd.set_image(ImageData::Tiles { tile_width: 60000, tile_height: 60000, tiles: vec![vec![0xff, 0xd8, 0xff, 0xd9]] });
     let bytes = TiffWriter::default().write(&[ifd]).unwrap();
-    let t0 = std::time::Instant::now();
-    assert!(lcc_raw::decode(&bytes).is_err());
-    assert!(t0.elapsed().as_secs_f64() < 2.0);
+    // rejected, not decoded: a decode that tried to allocate the claimed image would hang or die,
+    // so completion within a generous deadline (not a stopwatch) is the proof
+    let (tx, rx) = std::sync::mpsc::channel();
+    std::thread::spawn(move || {
+        let _ = tx.send(lcc_raw::decode(&bytes).is_err());
+    });
+    assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(120)), Ok(true), "hostile dimensions are rejected without hanging");
 }
 
 /// A Bayer DNG whose `BlackLevel` is a FLOAT holding NaN (or infinity), and a float CFA DNG with

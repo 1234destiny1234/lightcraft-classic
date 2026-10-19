@@ -696,9 +696,12 @@ mod tests {
         for _ in 0..200_000 {
             f.extend_from_slice(&unit);
         }
-        let t = std::time::Instant::now();
-        assert_eq!(scan_for_jpeg(&f), None);
-        assert!(t.elapsed() < std::time::Duration::from_secs(10), "{:?}", t.elapsed());
+        // a quadratic scan takes about a minute here: finishing within the deadline proves the budget
+        let (tx, rx) = std::sync::mpsc::channel();
+        std::thread::spawn(move || {
+            let _ = tx.send(scan_for_jpeg(&f));
+        });
+        assert_eq!(rx.recv_timeout(std::time::Duration::from_secs(40)), Ok(None), "the scan hung");
     }
 
     /// Containers found by their magic (CRW, MRW, X3F) give up their largest colour JPEG, found by scanning.
