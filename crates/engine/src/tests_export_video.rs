@@ -243,38 +243,6 @@ fn hostile_video_options() {
     let _ = std::fs::remove_dir_all(&dir);
 }
 
-/// Timing of a graded 10 s 1080p export of the corpus clip (`cargo xtask corpus --download`):
-/// `VIDEO_BENCH_CLIP=<clip> cargo test --release -p lcc-engine export_speed_1080p -- --ignored --nocapture`.
-#[test]
-#[ignore = "needs corpus/video/h264-1080p-bbb.mp4; a benchmark"]
-fn export_speed_1080p() {
-    let src = std::env::var_os("VIDEO_BENCH_CLIP")
-        .map_or_else(|| Path::new(env!("CARGO_MANIFEST_DIR")).join("../../corpus/video/h264-1080p-bbb.mp4"), PathBuf::from);
-    if !src.exists() {
-        eprintln!("skipped: {} missing", src.display());
-        return;
-    }
-    let mut settings = lcc_develop::DevelopSettings::default();
-    settings.light.exposure = 0.5;
-    settings.light.contrast = 20.0;
-    settings.color.vibrance = 15.0;
-    for format in [crate::export_video::VideoFormat::H264, crate::export_video::VideoFormat::ProRes] {
-        let w = crate::export_video::VideoWork {
-            src: src.clone(),
-            trim: (0.0, Some(10.0)),
-            settings: settings.clone(),
-            format,
-            quality: 80,
-            max_side: None,
-            file_name: "bench".into(),
-            hooks: VideoHooks::default(),
-        };
-        let t = std::time::Instant::now();
-        let out = crate::export_video::run(w).unwrap();
-        eprintln!("{format:?}: {}×{} in {:.1} s ({} bytes)", out.width, out.height, t.elapsed().as_secs_f64(), out.file.len());
-    }
-}
-
 /// The GPU grade of an exported (H.264) frame matches the CPU float grade within 8-bit rounding.
 #[test]
 fn gpu_grade_matches_cpu_grade() {
