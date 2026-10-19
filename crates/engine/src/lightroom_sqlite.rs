@@ -1686,7 +1686,8 @@ mod tests {
         let mut payload = varint(3);
         payload.extend(varint(13 + 2 * text.len() as u64));
         payload.extend(text.as_bytes());
-        assert_eq!(payload.len(), 603);
+        // header (size byte + 2-byte serial type) followed by the text body
+        assert_eq!(payload.len(), 1 + 2 + text.len());
         assert_eq!(payload.len() - LOCAL_PAYLOAD, PAGE_SIZE - 4);
 
         let mut main = vec![0u8; 3 * PAGE_SIZE];
@@ -1762,7 +1763,7 @@ mod tests {
         let mut payload = varint(3);
         payload.extend(varint(13 + 2 * text.len() as u64));
         payload.extend(text.as_bytes());
-        assert_eq!(payload.len(), 1497);
+        assert_eq!(payload.len(), 1 + 2 + text.len());
 
         let mut cell = varint(payload.len() as u64);
         cell.extend(varint(1));
@@ -2233,8 +2234,9 @@ mod tests {
         overflow_page[..4].copy_from_slice(&0u32.to_be_bytes());
         let mut db = db;
         db.wal = Some(WalPages::Bytes(HashMap::from([(2, overflow_page)])));
-        let bytes = db.payload(&cell_page, 0, 600, &never_cancel).unwrap();
-        assert_eq!(bytes.len(), 600);
+        let total = 600;
+        let bytes = db.payload(&cell_page, 0, total, &never_cancel).unwrap();
+        assert_eq!(bytes.len(), total);
         assert_eq!(&bytes[..92], &[b'x'; 92]);
         assert_eq!(&bytes[92..], &[b'y'; 508]);
     }

@@ -2630,7 +2630,8 @@ mod tests {
         assert_eq!((old.inset_x, old.inset_y), (0.1, 0.1));
         let mixed = wm(json!({"text": "LC", "inset": 0.1, "insetY": 0.3}));
         assert_eq!((mixed.inset_x, mixed.inset_y), (0.1, 0.3));
-        assert!(ExportOptions::from_params(&json!({"watermark": {"text": "LC", "inset": 0.1}})).is_ok());
+        let strict = ExportOptions::from_params(&json!({"watermark": {"text": "LC", "inset": 0.1}})).unwrap();
+        assert_eq!(strict.watermark.map(|w| (w.inset_x, w.inset_y)), Some((0.1, 0.1)));
         // saved and read back as the two margins
         let o = ExportOptions { watermark: Some(Watermark { inset_x: 0.05, inset_y: 0.15, ..base }), ..Default::default() };
         let saved = o.to_json();
@@ -3524,7 +3525,8 @@ mod tests {
             let e = err(json!({"text": "x", "rotation": rotation}));
             assert!(e.contains("`watermark.rotation` must be 0, 90, 180 or 270 (degrees clockwise)"), "{rotation}: {e}");
         }
-        assert!(ExportOptions::from_params(&json!({"watermark": {"text": "x", "rotation": 270}})).is_ok());
+        let rotated = ExportOptions::from_params(&json!({"watermark": {"text": "x", "rotation": 270}})).unwrap();
+        assert_eq!(rotated.watermark.map(|w| w.rotation), Some(270));
         assert!(err(json!({"image": "logo.png", "imageWidth": 2})).contains("`watermark.imageWidth` must be a number 0.01..1"));
         assert!(err(json!({"text": "x", "anchor": "middle"})).contains("`watermark.anchor` must be one of"));
         assert!(err(json!({"text": "x", "color": [255, 255]})).contains("`watermark.color` must be [r, g, b]"));

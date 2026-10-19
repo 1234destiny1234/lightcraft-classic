@@ -385,58 +385,6 @@ fn move_into_the_library_is_saved_before_sources_go() {
     let _ = std::fs::remove_dir_all(&base);
 }
 
-/// Timing for issue #134 (not a pass/fail test): `cargo test -p lcc-engine --release
-/// write_policy_timing -- --ignored --nocapture`. Writes N export-sized files durably (temp +
-/// sync + rename) and atomically only, and copies N files verified byte for byte and against the
-/// probe hash, alternating so a loaded machine affects both alike. `{ENV_PREFIX}_BENCH_DIR` puts
-/// the files on another volume (a USB drive or a NAS is where the difference shows).
-#[test]
-#[ignore]
-fn write_policy_timing() {
-    use crate::import_move::copy_verified;
-    use lcc_catalog::safe_file::{write_atomic, write_atomic_nosync};
-    use std::time::{Duration, Instant};
-    let root = lcc_brand::env_os("BENCH_DIR").map(PathBuf::from).unwrap_or_else(std::env::temp_dir);
-    let base = root.join(format!("lc-write-policy-{}", std::process::id()));
-    let _ = std::fs::remove_dir_all(&base);
-    std::fs::create_dir_all(&base).unwrap();
-    let data = |n: usize, seed: u32| -> Vec<u8> { (0..n as u32).map(|i| (i.wrapping_add(seed).wrapping_mul(2_654_435_761) >> 11) as u8).collect() };
-    let (n, size) = (200usize, 300 << 10);
-    let (mut synced, mut unsynced) = (Duration::ZERO, Duration::ZERO);
-    for i in 0..n {
-        let b = data(size, i as u32);
-        let t = Instant::now();
-        write_atomic(&base.join(format!("sync-{i}.jpg")), &b).unwrap();
-        synced += t.elapsed();
-        let t = Instant::now();
-        write_atomic_nosync(&base.join(format!("nosync-{i}.jpg")), &b).unwrap();
-        unsynced += t.elapsed();
-    }
-    println!("export {n} × {} KB: write_atomic (synced) {synced:?}, write_atomic_nosync {unsynced:?}", size >> 10);
-    let (n, size) = (40usize, 8 << 20);
-    let card = base.join("card");
-    std::fs::create_dir_all(&card).unwrap();
-    let hashes: Vec<_> = (0..n)
-        .map(|i| {
-            let b = data(size, 7 * i as u32);
-            std::fs::write(card.join(format!("{i}.raw")), &b).unwrap();
-            lcc_preview::hash_bytes(&b)
-        })
-        .collect();
-    let (mut bytewise, mut hashed) = (Duration::ZERO, Duration::ZERO);
-    for (i, h) in hashes.iter().enumerate() {
-        let src = card.join(format!("{i}.raw"));
-        let t = Instant::now();
-        copy_verified(&src, &base.join(format!("bytes-{i}.raw")), None).unwrap();
-        bytewise += t.elapsed();
-        let t = Instant::now();
-        copy_verified(&src, &base.join(format!("hash-{i}.raw")), Some(*h)).unwrap();
-        hashed += t.elapsed();
-    }
-    println!("copy {n} × {} MB: byte compare with the source {bytewise:?}, probe hash {hashed:?}", size >> 20);
-    let _ = std::fs::remove_dir_all(&base);
-}
-
 /// Issue #367: Import → Copy wrote and verified one file after another on one thread. The copies
 /// now run side by side, with the names, order, duplicates and reports a one-by-one copy gives:
 /// like-named files take -1, -2… in file order (also against a file already there and a literal

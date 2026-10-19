@@ -185,11 +185,19 @@ mod tests {
         let caller = std::thread::current().id();
         let on_caller = Arc::new(AtomicUsize::new(0));
         let c = on_caller.clone();
+        // a sleeping NAS: every probe blocks until the test opens the gate
+        let gate = Arc::new(std::sync::atomic::AtomicBool::new(false));
+        let finished = Arc::new(AtomicUsize::new(0));
+        let (g, f) = (gate.clone(), finished.clone());
         a.set_probe(Arc::new(move |p| {
             if std::thread::current().id() == caller {
                 c.fetch_add(1, Ordering::SeqCst);
             }
-            std::thread::sleep(Duration::from_millis(200)); // a sleeping NAS
+            let t = std::time::Instant::now();
+            while !g.load(Ordering::SeqCst) && t.elapsed() < Duration::from_secs(30) {
+                std::thread::sleep(Duration::from_millis(2));
+            }
+            f.fetch_add(1, Ordering::SeqCst);
             p == "here"
         }));
         let woke = Arc::new(AtomicUsize::new(0));
@@ -197,10 +205,10 @@ mod tests {
         a.run_in_background(Arc::new(move || {
             w.fetch_add(1, Ordering::SeqCst);
         }));
-        let t0 = std::time::Instant::now();
         assert_eq!(a.exists("here"), None, "unknown at first");
         assert_eq!(a.exists("gone"), None);
-        assert!(t0.elapsed() < Duration::from_millis(150), "the caller never waits for the probe");
+        assert_eq!(finished.load(Ordering::SeqCst), 0, "the caller got its answer while the probe was still blocked");
+        gate.store(true, Ordering::SeqCst);
         let deadline = std::time::Instant::now() + Duration::from_secs(20);
         while (a.exists("here").is_none() || a.exists("gone").is_none()) && std::time::Instant::now() < deadline {
             std::thread::sleep(Duration::from_millis(10));

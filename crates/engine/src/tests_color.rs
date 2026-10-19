@@ -70,7 +70,9 @@ fn red_eye_commands_and_controls() {
     assert_eq!(ctl.as_array().unwrap().len(), 4, "{ctl}");
     // the render runs with eyes (detection falls back gracefully on a photo without red pupils)
     let id = s.active().unwrap();
-    assert!(s.render_now(id, 200, 200).is_ok());
+    let r = s.render_now(id, 200, 200).unwrap();
+    assert!(r.image.width > 0 && r.image.height > 0 && r.image.width <= 200 && r.image.height <= 200);
+    assert_eq!(r.image.data.len(), r.image.width * r.image.height);
     s.execute("redeye.delete", &json!({"index": 0})).unwrap();
     assert_eq!(active_dev(&s).red_eye.len(), 1);
     assert!(s.execute("redeye.delete", &json!({"index": 5})).is_err());

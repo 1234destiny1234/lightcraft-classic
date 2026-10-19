@@ -132,7 +132,7 @@ RGBA conversion or egui texture copy. Any GPU error falls back to the CPU LUT fo
 once). Paused stills keep the full CPU pipeline (`spawn_still`). Equivalence: GPU vs CPU LUT ≤ 2 codes
 (`lcc-gpu` `video_lut::tests::gpu_lut_matches_cpu_lut`, includes NaN / out-of-range / lattice edges).
 
-Per playing frame (`cargo test -p lcc-engine --release --lib video::bench_playback -- --ignored --nocapture`,
+Per playing frame (measured with a throwaway bench since removed from the test suite,
 2026-10-12, Radeon / Vulkan, **load average ≈ 150–170 from other jobs**, so upper bounds; 47 frames each):
 
 | Clip (decoded at ≤ 960 px) | decode | CPU LUT | RGBA conv. | GPU LUT (upload + shader, waited) |
@@ -195,8 +195,7 @@ on cancel or error the stages are halted and drained, the partial file removed. 
 one is available (`export_video::grade_gpu`: the 8-bit sRGB GPU render decoded back to linear; within a few 8-bit
 codes of the CPU float grade, test `gpu_grade_matches_cpu_grade`; CPU fallback per frame); ProRes keeps the float
 CPU grade (10-bit). The settings are reduced to `video_settings` once per clip; a default grade skips the pipeline.
-Bench (`VIDEO_BENCH_CLIP=corpus/video/h264-1080p-bbb.mp4 cargo test --release -p lcc-engine --lib export_speed_1080p
--- --ignored --nocapture`; 10 s 1080p24 = 240 frames, exposure/contrast/vibrance grade, 32-core Linux shared with
+Bench (a throwaway timing test since removed from the suite; 10 s 1080p24 = 240 frames, exposure/contrast/vibrance grade, 32-core Linux shared with
 other builds, load 30–110, so numbers are noisy):
 
 | | H.264 | ProRes |
