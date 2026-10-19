@@ -132,4 +132,3 @@ fn content_text_edit_retains_command_keys_and_typed_text() {
     assert_eq!(h.app.ui.right, RightPanel::Keywords);
     assert_eq!(h.view.ctx.data(|data| data.get_temp::<String>(egui::Id::new("keyword-list-filter"))).as_deref(), Some("dock search"));
 }
-

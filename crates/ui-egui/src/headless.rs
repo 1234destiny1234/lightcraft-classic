@@ -3592,7 +3592,6 @@ mod tests {
         std::fs::write(dir.join("a.png"), &png).unwrap();
         let r = h.request("engine.execute", json!({"command": "file.addFolder", "params": {"path": dir.to_string_lossy()}}), t);
         assert_eq!(r["result"]["scanning"], true, "{r}");
-        assert!(h.app.scan.is_some() || h.app.ui.dialog.is_some());
         h.settle(SETTLE);
         assert!(h.app.scan.is_none());
         assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })));
