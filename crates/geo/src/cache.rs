@@ -1,7 +1,9 @@
 //! The on-disk tile cache: `<dir>/<server id>/<z>/<x>/<y>.tile`, a size limit (oldest files go
 //! first) and an expiry (older tiles are refetched, but still shown while offline).
 
+use std::io::Write;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::time::{Duration, SystemTime};
 
 use crate::GeoError;
@@ -13,6 +15,18 @@ pub const DEFAULT_MAX_BYTES: u64 = 512 * 1024 * 1024;
 pub const DEFAULT_MAX_AGE: Duration = Duration::from_secs(30 * 24 * 3600);
 /// A tile larger than this is not a tile.
 pub const MAX_TILE_BYTES: u64 = 4 * 1024 * 1024;
+
+/// This process's id, for unique temp names (none on wasm, where there is no file system anyway).
+fn pid() -> u32 {
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        std::process::id()
+    }
+    #[cfg(target_arch = "wasm32")]
+    {
+        0
+    }
+}
 
 /// A cached tile.
 #[derive(Debug, Clone, PartialEq)]
@@ -66,10 +80,27 @@ impl TileCache {
         if let Some(parent) = p.parent() {
             std::fs::create_dir_all(parent)?;
         }
-        let tmp = p.with_extension("part");
-        std::fs::write(&tmp, bytes)?;
-        std::fs::rename(&tmp, &p)?;
-        Ok(())
+        // a temp name unique to this write (process, counter, exclusive create): two threads or app instances
+        // fetching the same tile never write into one temp file, and the rename publishes a whole tile atomically
+        static N: AtomicU64 = AtomicU64::new(0);
+        let parent = p.parent().unwrap_or(&self.dir);
+        let stem = format!("{}.tile", k.y);
+        for _ in 0..100 {
+            let tmp = parent.join(format!(".{stem}.{}.{}.part", pid(), N.fetch_add(1, Ordering::Relaxed)));
+            let mut f = match std::fs::OpenOptions::new().write(true).create_new(true).open(&tmp) {
+                Ok(f) => f,
+                Err(e) if e.kind() == std::io::ErrorKind::AlreadyExists => continue,
+                Err(e) => return Err(e.into()),
+            };
+            let written = f.write_all(bytes).and_then(|()| f.flush());
+            drop(f);
+            if let Err(e) = written.and_then(|()| std::fs::rename(&tmp, &p)) {
+                let _ = std::fs::remove_file(&tmp);
+                return Err(e.into());
+            }
+            return Ok(());
+        }
+        Err(GeoError::Invalid("no free temporary tile name".into()))
     }
 
     /// Total bytes and files held.
@@ -166,5 +197,29 @@ mod tests {
         c.clear().unwrap();
         assert_eq!(c.usage(), (0, 0));
         c.clear().unwrap();
+    }
+
+    #[test]
+    fn concurrent_puts_of_one_tile_never_mix() {
+        let d = tmp("concurrent");
+        let c = TileCache::new(&d);
+        let k = TileKey { z: 3, x: 2, y: 1 };
+        // each writer's tile is one repeated byte, large enough that interleaved writes would show
+        let tiles: Vec<Vec<u8>> = (0..8u8).map(|i| vec![i; 256 * 1024]).collect();
+        std::thread::scope(|s| {
+            for t in &tiles {
+                let c = &c;
+                s.spawn(move || {
+                    for _ in 0..10 {
+                        c.put("osm", k, t).unwrap();
+                    }
+                });
+            }
+        });
+        let got = c.get("osm", k).unwrap().bytes;
+        assert!(tiles.contains(&got), "the cached tile is a mix of writes");
+        // only the tile is left: no temp files
+        assert_eq!(c.usage().1, 1);
+        let _ = std::fs::remove_dir_all(&d);
     }
 }
