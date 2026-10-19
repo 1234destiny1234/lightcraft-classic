@@ -776,12 +776,12 @@ pub fn write_xmp_filters(
     for (k, v) in lc {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric() || c == '_') {
             // element content: quotes needn't be escaped, which keeps the JSON readable
-            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(*v)));
+            x.push_str(&format!("   <lc:{k}>{}</lc:{k}>\n", partial_escape(v)));
         }
     }
     for (k, v) in video {
         if !k.is_empty() && k.chars().all(|c| c.is_ascii_alphanumeric()) {
-            x.push_str(&format!("   <{VIDEO_PREFIX}:{k}>{}</{VIDEO_PREFIX}:{k}>\n", escape(*v)));
+            x.push_str(&format!("   <{VIDEO_PREFIX}:{k}>{}</{VIDEO_PREFIX}:{k}>\n", escape(v)));
         }
     }
     let array = |x: &mut String, k: &str, kind: &str, items: &[String], lang: bool| {
@@ -829,9 +829,9 @@ pub fn write_xmp_filters(
         for (plugin, key, value) in plugin_fields {
             x.push_str(&format!(
                 "     <rdf:li rdf:parseType=\"Resource\">\n      <lcpf:plugin>{}</lcpf:plugin>\n      <lcpf:key>{}</lcpf:key>\n      <lcpf:value>{}</lcpf:value>\n     </rdf:li>\n",
-                escape(*plugin),
-                escape(*key),
-                escape(*value)
+                escape(plugin),
+                escape(key),
+                escape(value)
             ));
         }
         x.push_str("    </rdf:Bag>\n   </lcpf:fields>\n");
