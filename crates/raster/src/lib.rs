@@ -81,12 +81,19 @@ impl<T: Copy + Default> Image<T> {
     pub fn get(&self, x: usize, y: usize) -> T {
         self.data[y * self.width + x]
     }
-    /// Clamped access (edge extension).
+    /// Clamped access (edge extension). An image with no pixels (zero width or height, or a
+    /// buffer shorter than its size) reads as `T::default()` instead of panicking.
     #[inline]
     pub fn get_clamped(&self, x: isize, y: isize) -> T {
-        let x = x.clamp(0, self.width as isize - 1) as usize;
-        let y = y.clamp(0, self.height as isize - 1) as usize;
-        self.data[y * self.width + x]
+        if self.width == 0 || self.height == 0 {
+            return T::default();
+        }
+        let x = x.clamp(0, (self.width - 1).min(isize::MAX as usize) as isize) as usize;
+        let y = y.clamp(0, (self.height - 1).min(isize::MAX as usize) as isize) as usize;
+        y.checked_mul(self.width)
+            .and_then(|i| i.checked_add(x))
+            .and_then(|i| self.data.get(i).copied())
+            .unwrap_or_default()
     }
     #[inline]
     pub fn set(&mut self, x: usize, y: usize, v: T) {
@@ -279,6 +286,33 @@ impl Rgba8 {
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn get_clamped_on_empty_image_does_not_panic() {
+        for (w, h) in [(0, 0), (0, 5), (5, 0)] {
+            let img = Plane::new(w, h);
+            for (x, y) in [(0, 0), (-3, 2), (7, -1), (isize::MIN, isize::MAX)] {
+                assert_eq!(img.get_clamped(x, y), 0.0);
+            }
+            let rgb = Rgb32f::new(w, h);
+            assert_eq!(rgb.sample_bilinear(1.5, 0.5), [0.0; 3]);
+        }
+    }
+
+    #[test]
+    fn get_clamped_short_buffer_reads_default() {
+        let img = Plane { width: 4, height: 4, data: vec![1.0; 3] };
+        assert_eq!(img.get_clamped(1, 0), 1.0);
+        assert_eq!(img.get_clamped(3, 3), 0.0);
+    }
+
+    #[test]
+    fn get_clamped_still_extends_edges() {
+        let img = Plane::from_fn(3, 2, |x, y| (x + 10 * y) as f32);
+        assert_eq!(img.get_clamped(-5, -5), 0.0);
+        assert_eq!(img.get_clamped(9, 9), 12.0);
+        assert_eq!(img.get_clamped(1, 1), 11.0);
+    }
+
     use super::*;
     use lcc_geom::Orientation;
 
