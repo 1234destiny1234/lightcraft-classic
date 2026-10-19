@@ -49,7 +49,7 @@ fn escape_in_the_angle_field_only_leaves_the_field() {
     h.app.ui.view = ViewMode::Detail;
     h.request("engine.execute", json!({"command": "panel.crop"}), T);
     h.settle(SETTLE);
-    let r = h.request("ui.clickWidget", json!({"id": "cropAngleField"}), T);
+    let r = h.request("ui.clickWidget", json!({"id": "sliderValue:crop.angle"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     h.request("ui.text", json!({"text": "7"}), T);

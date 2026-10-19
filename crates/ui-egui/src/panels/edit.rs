@@ -419,6 +419,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
+    // Lightroom Classic's Transform panel (the fork's: upstream keeps it in the Crop tool), after the lens corrections
+    section(app, ui, &d, "geometry", "Transform", |app, ui, _| super::right::transform_body(app, ui, id));
     // Lightroom Classic's Calibration panel (the cloud app hides it): last, like there.
     section(app, ui, &d, "calibration", "Calibration", |app, ui, d| {
         sub_title(ui, crate::i18n::tr("Shadows"));

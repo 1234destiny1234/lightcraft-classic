@@ -13,6 +13,11 @@ use crate::theme::Tokens;
 use crate::widgets::{divider, register, slider, text_button};
 use lcc_engine::cmd::crop_aspects::{BUILTIN_ASPECTS, CustomAspect};
 
+/// The fork's crop tool, laid out as Lightroom Classic's Crop & Straighten drawer (fork-owned).
+#[path = "classic_crop.rs"]
+mod classic_crop;
+pub(crate) use classic_crop::transform_body;
+
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let frame = egui::Frame::NONE.fill(t.chrome).stroke(egui::Stroke::new(1.0, t.divider));
@@ -66,7 +71,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 match app.ui.right {
                     RightPanel::Edit => super::edit::show(app, ui, id),
                     RightPanel::Profiles => super::profiles::show(app, ui, id),
-                    RightPanel::Crop => crop(app, ui, id),
+                    RightPanel::Crop => classic_crop::show(app, ui, id),
                     RightPanel::Remove => remove(app, ui, id),
                     RightPanel::Masking => super::masking::show(app, ui, id),
                     RightPanel::RedEye => red_eye(app, ui, id),
@@ -360,6 +365,8 @@ fn aspect_menu(app: &mut LccApp, ui: &mut egui::Ui) {
     }
 }
 
+// upstream's Crop panel, kept as it is for merges: the fork draws `classic_crop` instead
+#[allow(dead_code)]
 fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Crop");
