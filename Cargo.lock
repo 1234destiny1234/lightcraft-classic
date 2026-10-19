@@ -4494,6 +4494,7 @@ dependencies = [
  "cpal",
  "futures",
  "lcc-brand",
+ "lcc-testkit",
  "log",
  "pulseaudio",
 ]

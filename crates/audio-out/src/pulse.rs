@@ -118,10 +118,16 @@ mod tests {
     /// samples and the clock moves. Skips without a server (CI).
     #[test]
     fn plays_silence_on_a_running_server() {
-        let Some(rate) = default_rate() else { return };
+        let Some(rate) = default_rate() else {
+            lcc_testkit::skip!(System, "no PulseAudio/PipeWire server");
+            return;
+        };
         let clock = AudioClock::new(rate);
         let out = start(rate, 2, Box::new(|o: &mut [f32]| o.fill(0.0)), clock.clone()).unwrap();
-        std::thread::sleep(std::time::Duration::from_millis(400));
+        let deadline = std::time::Instant::now() + std::time::Duration::from_secs(10);
+        while clock.frames() == 0 && std::time::Instant::now() < deadline {
+            std::thread::sleep(std::time::Duration::from_millis(10));
+        }
         assert!(clock.frames() > 0, "the server pulled samples");
         drop(out);
     }
