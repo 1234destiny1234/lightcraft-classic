@@ -47,6 +47,8 @@ fn library_of(n: u64) -> Session {
 fn grid(view: ViewMode) -> Headless {
     let app = LccApp::new(library(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    // grouped by date (a new library starts ungrouped, as Lightroom Classic's Grid): these tests cover the headers
+    h.app.session.execute("library.sort", &json!({"group": "auto"})).unwrap();
     h.app.ui.view = view;
     h.app.ui.thumb_size = 160.0;
     h.settle(SETTLE);

@@ -9,6 +9,8 @@ use crate::Session;
 #[test]
 fn date_groups_follow_sort_and_grouping() {
     let mut s = Session::with_demo();
+    // (a new library starts ungrouped, as Lightroom Classic's Grid: group by day here)
+    s.execute("library.sort", &json!({"group": "auto"})).unwrap();
     let vis = s.visible_cloned();
     let g = s.execute("library.groups", &json!({})).unwrap();
     let groups = g.as_array().unwrap();

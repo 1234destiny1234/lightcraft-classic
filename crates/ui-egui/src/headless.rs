@@ -2016,8 +2016,9 @@ mod tests {
         let mut h = demo([1400.0, 800.0]);
         let t = Duration::from_secs(10);
         let all = h.app.session.visible_cloned().len();
-        h.request("engine.execute", json!({"command": "view.filterBar"}), t);
+        // shown from the start, as Lightroom Classic's Library Filter bar
         assert!(h.app.ui.filter_bar);
+        h.settle(SETTLE);
         for w in ["filter:star3", "filter:pick", "filter:label-red", "filter:label-red"] {
             let r = h.request("ui.clickWidget", json!({"id": w}), t);
             assert_eq!(r["ok"], true, "{w}: {r}");
@@ -2050,6 +2051,8 @@ mod tests {
     fn grid_groups_by_capture_date() {
         let mut h = demo([1300.0, 800.0]);
         let t = Duration::from_secs(10);
+        // (a new library starts ungrouped, as Lightroom Classic's Grid)
+        h.app.session.execute("library.sort", &json!({"group": "auto"})).unwrap();
         h.settle(SETTLE);
         let groups = h.app.session.execute("library.groups", &json!({})).unwrap();
         let first = groups[0].clone();

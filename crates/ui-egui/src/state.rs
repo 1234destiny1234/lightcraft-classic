@@ -1616,7 +1616,8 @@ impl Default for UiState {
             navigator: true,
             settings: AppSettings::default(),
             window_fullscreen: None,
-            filter_bar: false,
+            // Lightroom Classic shows the Library Filter bar over the Grid (the fork's default)
+            filter_bar: true,
             filter_columns: Vec::new(),
             local_roots: Vec::new(),
             local_browse_root: None,
