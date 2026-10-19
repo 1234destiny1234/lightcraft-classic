@@ -94,7 +94,7 @@ impl ImageInfo {
 
     /// Bits of the first sample.
     pub fn bits(&self) -> u16 {
-        self.bits_per_sample[0]
+        self.bits_per_sample.first().copied().unwrap_or(1)
     }
 
     /// Whether this IFD is a reduced-resolution image (NewSubfileType bit 0).
@@ -122,22 +122,22 @@ impl ImageInfo {
     /// using `data_len`.
     pub fn chunks(&self, data_len: u64) -> Vec<Chunk> {
         let (across, down) = self.grid();
-        let per_plane = across as usize * down as usize;
+        let per_plane = (across as usize).saturating_mul(down as usize);
         let planes = if self.planar == 2 { self.samples_per_pixel as usize } else { 1 };
         let (cw, ch) = self.chunk_size();
         let n = self.offsets.len().min(per_plane.saturating_mul(planes));
         let mut out = Vec::with_capacity(n);
-        for i in 0..n {
-            let plane = i / per_plane.max(1);
-            let j = i % per_plane.max(1);
-            let (cx, cy) = (j as u32 % across, j as u32 / across);
-            let x = cx * cw;
-            let y = cy * ch;
+        let across = across.max(1);
+        for (i, &offset) in self.offsets.iter().enumerate().take(n) {
+            let plane = i.checked_div(per_plane).unwrap_or(0);
+            let j = i.checked_rem(per_plane).unwrap_or(i) as u32;
+            let (cx, cy) = (j.checked_rem(across).unwrap_or(0), j.checked_div(across).unwrap_or(0));
+            let x = cx.saturating_mul(cw);
+            let y = cy.saturating_mul(ch);
             let height = match self.layout {
-                Layout::Strips { .. } => ch.min(self.height - y),
+                Layout::Strips { .. } => ch.min(self.height.saturating_sub(y)),
                 Layout::Tiles { .. } => ch,
             };
-            let offset = self.offsets[i];
             let len = match self.byte_counts.get(i) {
                 Some(&l) if l > 0 => l,
                 _ => {
@@ -160,5 +160,5 @@ pub fn chunk_bytes<'a>(data: &'a [u8], c: &Chunk) -> Option<&'a [u8]> {
         return None;
     }
     let end = (c.offset.saturating_add(c.len)).min(data.len() as u64) as usize;
-    Some(&data[start..end])
+    data.get(start..end)
 }

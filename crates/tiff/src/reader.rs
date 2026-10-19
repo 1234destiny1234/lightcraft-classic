@@ -74,8 +74,8 @@ pub fn directory_entries(data: &[u8], offset: u64, order: ByteOrder, bigtiff: bo
     } else {
         (order.read_u16(data, pos).ok_or(TiffError::Truncated(offset))? as u64, 2, 12)
     };
-    let table = pos + head;
-    let fit = (data.len().saturating_sub(table) / entry_size) as u64;
+    let table = pos.checked_add(head).ok_or(TiffError::Truncated(offset))?;
+    let fit = data.len().saturating_sub(table).checked_div(entry_size).unwrap_or(0) as u64;
     let read = n.min(fit).min(max_entries as u64) as usize;
     if n == 0 {
         return Err(TiffError::Invalid(format!("empty IFD at {offset}")));
@@ -282,7 +282,7 @@ impl<'a> Ctx<'a> {
             let offs = v.to_u64_vec();
             for o in offs {
                 if let Some(abs) = base.checked_add(o)
-                    && let Ok((sub, _)) = self.ifd(abs, base, depth + 1)
+                    && let Ok((sub, _)) = self.ifd(abs, base, depth.saturating_add(1))
                 {
                     ifd.sub_ifds.push(sub);
                 }
@@ -291,7 +291,7 @@ impl<'a> Ctx<'a> {
         let child = |tag: u16, ctx: &mut Self| -> Option<Box<Ifd>> {
             let o = ifd.value(tag)?.get_u64(0)?;
             let abs = base.checked_add(o)?;
-            ctx.ifd(abs, base, depth + 1).ok().map(|(i, _)| Box::new(i))
+            ctx.ifd(abs, base, depth.saturating_add(1)).ok().map(|(i, _)| Box::new(i))
         };
         let exif = child(tags::EXIF_IFD, self);
         let gps = child(tags::GPS_IFD, self);
@@ -306,8 +306,8 @@ impl<'a> Ctx<'a> {
         if span.len > self.budget {
             return None;
         }
-        self.budget -= span.len;
-        let bytes = self.data.get(usize::try_from(span.start).ok()?..usize::try_from(span.start + span.len).ok()?)?;
+        self.budget = self.budget.saturating_sub(span.len);
+        let bytes = self.data.get(usize::try_from(span.start).ok()?..usize::try_from(span.start.checked_add(span.len)?).ok()?)?;
         Some(Entry { tag: span.tag, value: decode(self.order, span.field_type, bytes), offset: span.start })
     }
 }

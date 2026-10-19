@@ -50,7 +50,7 @@ pub fn parse_makernote(data: &[u8], offset: u64, len: u64, order: ByteOrder, mak
     let start = usize::try_from(offset).ok()?;
     let end = start.checked_add(usize::try_from(len).ok()?)?.min(data.len());
     let note = data.get(start..end)?;
-    let order_at = |i: usize| match note.get(i..i + 2) {
+    let order_at = |i: usize| match note.get(i..i.checked_add(2)?) {
         Some(b"II") => Some(ByteOrder::Little),
         Some(b"MM") => Some(ByteOrder::Big),
         _ => None,
@@ -62,40 +62,40 @@ pub fn parse_makernote(data: &[u8], offset: u64, len: u64, order: ByteOrder, mak
     };
     if note.starts_with(b"Nikon\0") {
         if note.get(6) == Some(&1) {
-            return try_parse(MakerNoteKind::NikonV1, offset + 8, 0, order);
+            return try_parse(MakerNoteKind::NikonV1, offset.checked_add(8)?, 0, order);
         }
         let ord = order_at(10)?;
         let ifd_rel = ord.read_u32(note, 14)? as u64;
-        let base = offset + 10;
-        return try_parse(MakerNoteKind::NikonV3, base + ifd_rel, base, ord);
+        let base = offset.checked_add(10)?;
+        return try_parse(MakerNoteKind::NikonV3, base.checked_add(ifd_rel)?, base, ord);
     }
     if note.starts_with(b"FUJIFILM") || note.starts_with(b"GENERALE") {
         let rel = ByteOrder::Little.read_u32(note, 8)? as u64;
-        return try_parse(MakerNoteKind::Fujifilm, offset + rel, offset, ByteOrder::Little);
+        return try_parse(MakerNoteKind::Fujifilm, offset.checked_add(rel)?, offset, ByteOrder::Little);
     }
     if note.starts_with(b"OLYMPUS\0") || note.starts_with(b"OM SYSTEM\0") {
         let (ord_at, ifd_at) = if note.starts_with(b"OM SYSTEM\0") { (12, 16) } else { (8, 12) };
         let ord = order_at(ord_at).unwrap_or(order);
-        return try_parse(MakerNoteKind::OlympusNew, offset + ifd_at, offset, ord);
+        return try_parse(MakerNoteKind::OlympusNew, offset.checked_add(ifd_at)?, offset, ord);
     }
     for p in [b"OLYMP\0", b"EPSON\0", b"MINOL\0", b"CAMER\0", b"SANYO\0"] {
         if note.starts_with(p) {
-            return try_parse(MakerNoteKind::OlympusOld, offset + 8, 0, order);
+            return try_parse(MakerNoteKind::OlympusOld, offset.checked_add(8)?, 0, order);
         }
     }
     if note.starts_with(b"Panasonic\0") {
-        return try_parse(MakerNoteKind::Panasonic, offset + 12, 0, order);
+        return try_parse(MakerNoteKind::Panasonic, offset.checked_add(12)?, 0, order);
     }
     if note.starts_with(b"AOC\0") {
         let ord = order_at(4).unwrap_or(order);
-        return try_parse(MakerNoteKind::PentaxAoc, offset + 6, 0, ord);
+        return try_parse(MakerNoteKind::PentaxAoc, offset.checked_add(6)?, 0, ord);
     }
     if note.starts_with(b"PENTAX \0") {
         let ord = order_at(8).unwrap_or(order);
-        return try_parse(MakerNoteKind::Pentax, offset + 10, offset, ord);
+        return try_parse(MakerNoteKind::Pentax, offset.checked_add(10)?, offset, ord);
     }
     if (note.starts_with(b"SONY") || note.starts_with(b"VHAB     \0"))
-        && let Some(m) = try_parse(MakerNoteKind::Sony, offset + 12, 0, order)
+        && let Some(m) = try_parse(MakerNoteKind::Sony, offset.checked_add(12)?, 0, order)
     {
         return Some(m);
     }
