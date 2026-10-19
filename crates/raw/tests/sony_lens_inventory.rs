@@ -146,7 +146,7 @@ fn read_csv(path: &Path) -> (Vec<String>, BTreeMap<String, Vec<String>>) {
 #[test]
 fn sony_lens_records_reproduce_a_local_inventory() {
     let Some(dir) = lcc_brand::env_os("SONY_LENS_DIR").map(PathBuf::from) else {
-        eprintln!("skip: {} unset", lcc_brand::env_var("SONY_LENS_DIR"));
+        lcc_testkit::skip!(Input, "{} unset", lcc_brand::env_var("SONY_LENS_DIR"));
         return;
     };
     let full = lcc_brand::env_os("SONY_LENS_FULL").is_some_and(|v| v == "1");
