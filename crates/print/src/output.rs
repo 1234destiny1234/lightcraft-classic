@@ -116,8 +116,9 @@ pub fn to_pdf(
     doc.validate()?;
     let dpi = f64::from(settings.job.dpi.clamp(36.0, 1200.0));
     let page = &doc.page;
-    let pad = if settings.options.crop_marks { MARK_OFFSET + MARK_LENGTH + 4.0 } else { 0.0 };
     let bleed = f64::from(page.bleed.max(0.0));
+    // marks start outside the bleed, so the page grows with it to keep them on the paper
+    let pad = if settings.options.crop_marks { MARK_OFFSET.max(bleed) + MARK_LENGTH + 4.0 } else { 0.0 };
     let margin = pad.max(bleed);
     let (pw, ph) = (f64::from(page.size.w) + 2.0 * margin, f64::from(page.size.h) + 2.0 * margin);
     let mut pdf = lcc_pdf::Document::new();
@@ -125,6 +126,7 @@ pub fn to_pdf(
     pdf.output_intent = opt.output_intent.clone();
     let mut warnings = Vec::new();
     let mut images: HashMap<(String, usize, u8), (lcc_pdf::ImageId, usize, usize)> = HashMap::new();
+    let mut deep_sizes: HashMap<String, Option<usize>> = HashMap::new();
     // photos already converted into the printer profile are tagged with it
     let cs = opt.photo_profile.clone().map_or(ColorSpace::Rgb, |profile| ColorSpace::Icc { profile, components: 3 });
     let n = doc.pages.len();
@@ -154,6 +156,7 @@ pub fn to_pdf(
                     let zoom = if p.zoom.is_finite() { f64::from(p.zoom.clamp(1.0, 20.0)) } else { 1.0 };
                     let long = ((r.w.max(r.h) * zoom * dpi / 72.0).ceil().max(1.0) as usize).min(MAX_PHOTO_PX);
                     let mut turns = p.rotate % 4;
+                    let long = if settings.job.color.bit16 { deep_long(photos, id, long, &mut deep_sizes) } else { long };
                     let key = (id.to_string(), long, turns);
                     let found = match images.get(&key) {
                         Some(v) => Some(*v),
@@ -254,7 +257,7 @@ fn add_photo(
     if settings.job.color.bit16
         && let Some(deep) = photos.image16(id).filter(lcc_layout::render::Rgb16::is_valid)
     {
-        let d = deep.rotated(turns);
+        let d = downscale16(&deep, long).rotated(turns);
         let (w, h) = (u32::try_from(d.width).unwrap_or(u32::MAX), u32::try_from(d.height).unwrap_or(u32::MAX));
         let iid = pdf.add_image(Image::samples16(w, h, cs.clone(), &d.data)).map_err(|e| PrintError::Output(e.to_string()))?;
         return Ok(Ok((iid, d.width, d.height)));
@@ -273,6 +276,49 @@ fn add_photo(
     let bytes = jpeg(&img, settings.job.jpeg_quality.max(80), None)?;
     let iid = pdf.add_image(Image::jpeg(Arc::new(bytes), cs.clone())).map_err(|e| PrintError::Output(e.to_string()))?;
     Ok(Ok((iid, img.width, img.height)))
+}
+
+/// The size key for a 16-bit photo: the source is never upscaled, so every request at or above
+/// its native size maps to one key (and one embedded image).
+fn deep_long(photos: &dyn PhotoSource, id: &str, long: usize, cache: &mut HashMap<String, Option<usize>>) -> usize {
+    let native = *cache
+        .entry(id.to_string())
+        .or_insert_with(|| photos.image16(id).filter(lcc_layout::render::Rgb16::is_valid).map(|d| d.width.max(d.height)));
+    native.map_or(long, |n| long.min(n))
+}
+
+/// `d` box-filtered down so its longest side is at most `long` (capped at [`MAX_PHOTO_PX`]);
+/// unchanged when already small enough.
+pub(crate) fn downscale16(d: &lcc_layout::render::Rgb16, long: usize) -> lcc_layout::render::Rgb16 {
+    let long = long.clamp(1, MAX_PHOTO_PX);
+    let side = d.width.max(d.height);
+    if side <= long {
+        return d.clone();
+    }
+    let k = long as f64 / side as f64;
+    let w = ((d.width as f64 * k).round() as usize).max(1);
+    let h = ((d.height as f64 * k).round() as usize).max(1);
+    let mut data = Vec::with_capacity(w * h * 3);
+    for y in 0..h {
+        let y0 = y * d.height / h;
+        let y1 = ((y + 1) * d.height / h).max(y0 + 1);
+        for x in 0..w {
+            let x0 = x * d.width / w;
+            let x1 = ((x + 1) * d.width / w).max(x0 + 1);
+            let mut sum = [0u64; 3];
+            for sy in y0..y1 {
+                for sx in x0..x1 {
+                    let i = (sy * d.width + sx) * 3;
+                    for (c, s) in sum.iter_mut().enumerate() {
+                        *s += u64::from(d.data[i + c]);
+                    }
+                }
+            }
+            let n = ((y1 - y0) * (x1 - x0)) as u64;
+            data.extend(sum.iter().map(|s| ((s + n / 2) / n) as u16));
+        }
+    }
+    lcc_layout::render::Rgb16 { width: w, height: h, data }
 }
 
 /// Renders every page of `doc` to a JPEG at `settings.job.dpi`.
