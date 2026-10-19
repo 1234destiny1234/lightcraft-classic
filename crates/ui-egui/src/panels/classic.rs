@@ -58,10 +58,15 @@ pub fn toggle(app: &mut LccApp, p: PanelId) {
 /// The panels of one side, in the user's order, without hidden ones.
 pub fn ordered(app: &LccApp, declared: &[PanelId]) -> Vec<PanelId> {
     let mut out: Vec<PanelId> = app.ui.panel_order.iter().copied().filter(|p| declared.contains(p)).collect();
-    for p in declared {
-        if !out.contains(p) {
-            out.push(*p);
-        }
+    // one panel the saved order doesn't know is a panel added since it was saved: it goes where it is declared,
+    // before the declared panel after it (the Library's Histogram above Quick Develop). A shorter saved order (an
+    // agent's "this one first") keeps the rest after it, as declared.
+    let missing: Vec<(usize, PanelId)> = declared.iter().copied().enumerate().filter(|(_, p)| !out.contains(p)).collect();
+    if let [(i, p)] = missing[..] {
+        let at = declared.get(i + 1..).unwrap_or_default().iter().find_map(|q| out.iter().position(|o| o == q)).unwrap_or(out.len());
+        out.insert(at, p);
+    } else {
+        out.extend(missing.into_iter().map(|(_, p)| p));
     }
     out.retain(|p| !app.ui.hidden_panels.contains(p));
     out
@@ -76,6 +81,7 @@ pub fn title(p: PanelId) -> &'static str {
         PanelId::Collections => "Collections",
         PanelId::Publish => "Publish Services",
         PanelId::Local => "Local Folders",
+        PanelId::Histogram => "Histogram",
         PanelId::QuickDevelop => "Quick Develop",
         PanelId::Keywording => "Keywording",
         PanelId::KeywordList => "Keyword List",
@@ -307,10 +313,35 @@ fn library_sync_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
 /// A right-column panel's contents.
 fn body(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId) {
     match p {
+        // the active photo's, as Develop draws it (Lightroom Classic's Library Histogram)
+        PanelId::Histogram => {
+            if let Some(id) = app.session.active() {
+                super::edit::histogram(app, ui, id);
+            }
+        }
         PanelId::QuickDevelop => super::quick_develop::show(app, ui),
         PanelId::Keywording => super::right::keywording(app, ui),
         PanelId::KeywordList => super::keyword_list::show_body(app, ui),
         PanelId::Metadata => super::right::metadata_panel(app, ui),
         _ => {}
+    }
+}
+
+#[cfg(test)]
+mod tests_ordered {
+    use super::*;
+
+    /// A saved panel order from before a panel existed keeps its own order, and the new panel goes where it is
+    /// declared, not last.
+    #[test]
+    fn a_new_panel_takes_its_declared_place_in_a_saved_order() {
+        let mut app = LccApp::new(lcc_engine::Session::new(), crate::Services { png: None, ..Default::default() });
+        app.ui.panel_order = vec![PanelId::Metadata, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList];
+        assert_eq!(
+            ordered(&app, crate::module::LIBRARY_RIGHT),
+            [PanelId::Metadata, PanelId::Histogram, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList]
+        );
+        app.ui.panel_order.clear();
+        assert_eq!(ordered(&app, crate::module::LIBRARY_RIGHT), crate::module::LIBRARY_RIGHT);
     }
 }

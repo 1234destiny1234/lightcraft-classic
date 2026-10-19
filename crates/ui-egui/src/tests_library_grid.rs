@@ -49,3 +49,15 @@ fn backslash_toggles_the_filter_bar_in_the_grid_and_show_original_elsewhere() {
     assert_eq!(h.app.ui.before_after, BeforeAfter::Original, "in Develop \\ shows the original");
     assert!(!h.app.ui.filter_bar, "the filter bar stays as it was");
 }
+
+/// The Library's right column starts with the Histogram, as Lightroom Classic's: the active photo's, above Quick
+/// Develop.
+#[test]
+fn the_library_right_column_starts_with_the_histogram() {
+    let h = library();
+    let top = |id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| r.top());
+    let (histogram, quick) = (top("classicPanel:histogram"), top("classicPanel:quickDevelop"));
+    assert!(histogram.is_some() && quick.is_some(), "{histogram:?} {quick:?}");
+    assert!(histogram < quick, "Histogram first");
+    assert!(top("histogram").is_some(), "its plot is drawn");
+}

@@ -226,13 +226,14 @@ fn reorder_moves_a_panel_to_a_slot() {
 fn dragging_a_header_reorders_the_side() {
     let mut h = demo();
     run(&mut h, "panel.right", json!({"show": true}));
-    for p in [PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata] {
+    for p in [PanelId::Histogram, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata] {
         classic::set_open(&mut h.app, p, false);
     }
     h.step();
     h.step();
+    // to the top of the side (the Histogram heads it, as in Lightroom Classic)
     let from = widget_center(&mut h, "classicPanel:metadata");
-    let to = widget_center(&mut h, "classicPanel:quickDevelop");
+    let to = widget_center(&mut h, "classicPanel:histogram");
     let r = h.request("ui.drag", json!({"x": from.0, "y": from.1, "toX": to.0, "toY": to.1 - 6.0, "steps": 8}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();

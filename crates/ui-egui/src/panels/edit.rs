@@ -633,7 +633,7 @@ fn steady_hdr_histogram(ctx: &egui::Context, id: PhotoId, hdr_edit: bool, hist: 
     }
 }
 
-fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
@@ -856,7 +856,10 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 
         if !parts.is_empty() {
             let text = parts.join(" · ");
-            p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+            // a smaller size where the strip is narrow (the Library's Histogram panel), so it stays inside the panel
+            let fits = |size: f32| p.layout_no_wrap(text.clone(), t.font(size), t.text_label).size().x <= footer.width() - 6.0;
+            let size = [12.5, 11.5, 10.5].into_iter().find(|s| fits(*s)).unwrap_or(10.5);
+            p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(size), t.text_label);
         }
     }
 }
