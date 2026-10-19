@@ -599,9 +599,8 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         open_all_with: Some(Box::new(editors::open_all_with)),
         check_editor: Some(Box::new(editors::check)),
         open_url: Some(Box::new(|url: &str| {
-            if !url.starts_with("https://") {
-                return Err("only https links are opened".into());
-            }
+            // https links, plus the local page Preview in Browser generates (nothing else)
+            lcc_ui_egui::links::check_browser_url(url)?;
             let status = if cfg!(target_os = "macos") {
                 std::process::Command::new("open").arg(url).status()
             } else if cfg!(target_os = "windows") {
