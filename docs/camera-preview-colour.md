@@ -114,6 +114,21 @@ On a local set of 54 ARW6 and lossless ARW photos (the maintainer's own shots pl
 
 A pooled profile was tried and is not bundled. Pooling the 46 photos (158,549 colour pairs) and validating on withheld photos (every third photo, N = 15, trained on the other 31) took mean ΔE from 5.71 with per-file fitting to 6.40 with the profile: 11 of 15 photos regressed, 3 improved and 1 was unchanged, the largest by +4.68, and 2 of the 8 rejected files were newly accepted. Per-file fitting therefore ships for this body. The 42 private photos are one photographer's scenes, 38 of them in the Standard creative style (the 12 RawDB files were not inventoried); revisit when a varied multi-photographer set exists.
 
+## DNG previews with embedded lens corrections
+
+A DNG with its own colour model and no non-identity profile tone curve uses the existing
+`camera_preview::fit_dng_tone` path, including its eligibility and acceptance checks. There is
+one preview fit. Files with a look table, a gain table map or an unusable preview keep their
+existing behaviour.
+
+When the file carries lens opcodes, that fit develops its sensor proxy through those opcodes
+before reducing it: its camera preview already contains their distortion and vignetting
+corrections. This uses the raw decoder's existing opcode implementation, including chained
+warps. The separate proxy vignetting multiplier is skipped in this case. The editable source
+still has lens corrections removed, so the pipeline applies them once through Enable Profile
+Corrections. Developing this proxy requires a full-resolution demosaic; files without such
+opcodes keep their binned proxy.
+
 ## Camera profiles (pooled per model)
 
 One photo can show too little of a colour for its own fit to learn it: in a second shot of the lime shirt only a few dozen proxy pixels show it, next to a hillside of foliage at the same hue that the camera renders differently, and the shirt stayed yellow (hue 68° against the JPEG's 82°; a 192-pixel proxy only reached 74°). `<cli> calibrate [--max N] [--out DIR] FOLDERS…` therefore pools the colour pairs of many ARWs, NEFs or RAFs per camera model — each against its own embedded JPEG, at a 192-pixel proxy, at most 4000 pairs per photo, files spread evenly over the folders — and fits one matrix (from white-balanced camera RGB, so no single photo's white point is baked in) and one hue/saturation/value table. Models need at least 5 usable photos.
@@ -208,7 +223,7 @@ A raw starts from the first of these that is available (`camera_preview::startin
 2. measured matrices for its model in the camera database (below), with the app's default tone curve;
 3. a camera profile for its model (bundled or local), with tone and chroma fitted to the file's JPEG;
 4. the file-local fit to its own JPEG described above;
-5. the model's spectral matrices, with the app's default tone curve and no JPEG fit;
+5. the model's spectral matrices, with the app's default tone curve and no JPEG fit (a Canon CR3 with no embedded JPEG takes the median Canon camera tone instead, below);
 6. the neutral fallback.
 
 When no look fits a photo of a profiled model (steps 3 and 4 both fail: a black-and-white JPEG has no colour, a dark one too few colour pairs), it keeps the profile's colour, with the tone curve fitted alone to its JPEG when that passes the checks of the black-and-white JPEG paragraph above, else the app's default tone curve (`with_profile_colour`). Without a profile, a black-and-white JPEG gives 5 and 6 the tone curve fitted to it.
@@ -362,3 +377,9 @@ the neutral fallback): E-1 0.126 → 0.014, E-400 0.087 → 0.022, XZ-2 0.061 �
 still open from their embedded JPEG. Against Lightroom Classic's render of a CC0 E-1 photo (2000 px, ΔE00 of the
 unedited render) the starting look moved from 11.25 to 8.30. Lightroom frames that E-1 file about 4 × 11 sensor pixels
 differently from the crop the file records (`CropLeft`/`CropTop` 36, 34); the file's own crop is kept.
+
+## Canon CR3 without an embedded JPEG (HDR-PQ shots)
+
+A Canon HDR-PQ shot (the R5 Mark II and R8 samples on raw.pixls.us) keeps only an HEVC preview in its CRAW sample entry: a 4:2:2, 10-bit Rec.2020 / PQ picture (`colr` `nclx` 9/16/9, full range) that the app's preview decoder currently refuses (4:2:2 HEVC is unsupported). With no JPEG there is no look to fit, so the raw took the spectral matrices (the R8 through its R6 Mark II row) and the app's default tone curve, which renders a Canon raw about 13 L\* (about 1.2 EV at the median) darker than the camera's own look: on the R5 Mark II normal samples 7883/7884, forcing that path gave mean L\* 33.4 and 32.5 against 47.6 and 46.2 in the camera JPEG.
+
+Such a file now starts from the median camera tone and chroma curve of the 50 JPEG-fitted looks of Canon RF-mount CR3s in the corpus (`CANON_TONE_KNOTS` in `camera_preview.rs`; the PQ files and the two held-out R5 Mark II files 7883/7884 are not in it). In the original branch measurement on the held-out pair, spectral matrices with this tone gave mean L\* 47.6 and 46.4 against 47.6 and 46.2 in the JPEG. Across the other spectral-matrix Canon bodies the mean absolute difference from the JPEG-fitted render is about 2 L\* (up to 7). It applies only to a CR3 without an embedded JPEG, without matrices of its own and whose model has a spectral row; every other file renders as before. It is an average Canon look, not a measurement of the PQ picture.
