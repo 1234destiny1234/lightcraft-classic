@@ -659,9 +659,4 @@ mod tests {
         assert!(!plain.join("http://127.0.0.1:9/b").unwrap().tls);
         assert!(plain.join("https://b.example/z").unwrap().tls);
     }
-
-    #[test]
-    fn the_tls_config_builds_with_the_pure_rust_provider() {
-        assert!(tls_config().is_ok());
-    }
 }

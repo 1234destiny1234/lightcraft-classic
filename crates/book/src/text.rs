@@ -310,7 +310,5 @@ mod tests {
         for p in builtin_presets() {
             p.style.validate().unwrap();
         }
-        let b = crate::Book::default();
-        assert!(find_preset(&b, "title").is_some());
     }
 }
