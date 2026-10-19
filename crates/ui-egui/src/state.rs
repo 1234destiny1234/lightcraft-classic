@@ -796,7 +796,8 @@ pub struct UiState {
     pub collapsed_sidebar: Vec<String>,
     /// Preset and profile groups the user folded or unfolded (`preset:<group>`, `profile:<group>`,
     /// `lut:<group>` → open). A group not listed is folded, unless it holds the current preset or
-    /// profile ([`UiState::group_is_open`]).
+    /// profile ([`UiState::group_is_open`]). The Export dialog's sections too (`export:<section>`;
+    /// one not listed shows its default).
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub group_open: std::collections::BTreeMap<String, bool>,
     /// The folded or unfolded sections of the Book, Slideshow and Map side panels (`<module>:<title>` → open),

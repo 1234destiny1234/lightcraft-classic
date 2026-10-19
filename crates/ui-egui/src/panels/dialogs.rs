@@ -2045,12 +2045,18 @@ fn export_presets(
     ui.data_mut(|d| d.insert_temp(picked_id, picked));
 }
 
-/// Opens or folds an Export dialog section (kept with the other folded panels in the settings).
+/// Export dialog sections shown folded until the person opens them: the ones usually set once
+/// (where the files go, their names and format stay open).
+const EXPORT_FOLDED_AT_FIRST: &[&str] = &["Sizing", "Sharpening", "Metadata", "Watermark"];
+
+/// Opens or folds an Export dialog section. Each starts open or folded
+/// ([`EXPORT_FOLDED_AT_FIRST`]); once the person flips it, that is kept in the settings
+/// (`groupOpen`, `export:<key>`).
 fn export_section(app: &mut LccApp, ui: &mut egui::Ui, key: &str, title: &str, summary: &str) -> bool {
-    let id = format!("panel:export{key}");
-    let mut open = !app.ui.sidebar_section_collapsed(&id);
+    let id = format!("export:{key}");
+    let mut open = app.ui.group_is_open(&id, !EXPORT_FOLDED_AT_FIRST.contains(&key));
     if crate::dialog_frame::fold_group(ui, &format!("export{key}"), title, summary, &mut open) {
-        app.ui.toggle_sidebar_section(&id);
+        app.ui.group_open.insert(id, open);
     }
     open
 }

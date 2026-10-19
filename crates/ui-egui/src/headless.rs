@@ -2335,7 +2335,8 @@ mod tests {
     }
 
     /// The Export dialog's sections fold from their headers (Lightroom Classic's order), keep a
-    /// one-line summary on the header, and stay folded the next time the dialog opens.
+    /// one-line summary on the header, start open (where, name, format) or folded (size,
+    /// sharpening, metadata, watermark), and keep the person's choice the next time.
     #[test]
     fn export_dialog_sections_fold_and_stay_folded() {
         let mut h = demo([1400.0, 900.0]);
@@ -2352,6 +2353,15 @@ mod tests {
         assert!(top(&mut h, "section:exportLocation") < top(&mut h, "section:exportNaming"));
         assert!(top(&mut h, "section:exportNaming") < top(&mut h, "section:exportFileSettings"));
         assert!(shown(&mut h, "combo:exportDestinationMode"));
+        // where, what name and which format start open; size, sharpening, metadata and watermark folded
+        assert!(shown(&mut h, "button:exportNamingTags") && shown(&mut h, "button:exportFormat-0"));
+        assert!(!shown(&mut h, "check:exportFullSize"), "Image Sizing starts folded");
+        assert!(!shown(&mut h, "button:exportSharpen-0") && !shown(&mut h, "button:exportMetadata-0"));
+        assert!(shown(&mut h, "section:exportWatermark"), "a folded section keeps its header");
+        h.request("ui.clickWidget", json!({"id": "section:exportSizing"}), t);
+        h.settle(SETTLE);
+        assert!(shown(&mut h, "check:exportFullSize"), "opened");
+        assert_eq!(h.app.ui.group_open.get("export:Sizing"), Some(&true), "kept in the settings");
         h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
         h.settle(SETTLE);
         assert!(!shown(&mut h, "combo:exportDestinationMode"), "folded");
@@ -2361,6 +2371,7 @@ mod tests {
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
         h.settle(SETTLE);
         assert!(!shown(&mut h, "combo:exportDestinationMode"), "still folded when the dialog opens again");
+        assert!(shown(&mut h, "check:exportFullSize"), "still open when the dialog opens again");
         h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
         h.settle(SETTLE);
         assert!(shown(&mut h, "combo:exportDestinationMode"), "unfolded");
@@ -2403,6 +2414,10 @@ mod tests {
         let t = Duration::from_secs(10);
         h.app.services.pick_folder = Some(Box::new(|| None));
         h.app.services.pick_files = Some(Box::new(Vec::new));
+        // (every section open: Image Sizing and Watermarking start folded)
+        for k in ["Sizing", "Sharpening", "Metadata", "Watermark"] {
+            h.app.ui.group_open.insert(format!("export:{k}"), true);
+        }
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
         // the widest variant: watermark graphic and every optional row
         if let Some(crate::state::Dialog::Export { opts, .. }) = &mut h.app.ui.dialog {
@@ -2435,6 +2450,8 @@ mod tests {
     fn export_dialog_previews_the_watermark() {
         let mut h = demo([1400.0, 900.0]);
         let t = Duration::from_secs(10);
+        // (Watermarking starts folded)
+        h.app.ui.group_open.insert("export:Watermark".into(), true);
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
         let preview = |h: &mut Headless| {
             let r = h.request("ui.widgets", json!({}), t);
