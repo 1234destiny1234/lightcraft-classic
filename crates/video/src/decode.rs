@@ -55,13 +55,9 @@ pub enum Decoder {
     Mpeg2(Box<filmcraft_mpeg2v::Decoder>),
 }
 
-/// An H.264 "unsupported" error; interlaced coding gets a message of its own (AVCHD 1080i).
+/// An H.264 "unsupported" error.
 pub fn h264_unsupported(what: &str) -> VideoError {
-    if what.contains("interlaced") || what.contains("field") {
-        VideoError::Unsupported(format!("interlaced H.264 ({what}) is not decoded yet"))
-    } else {
-        VideoError::Unsupported(format!("H.264: {what}"))
-    }
+    VideoError::Unsupported(format!("H.264: {what}"))
 }
 
 fn h264_error(e: filmcraft_h264::Error) -> VideoError {
@@ -82,7 +78,7 @@ fn decode_error(codec: &str, e: impl std::fmt::Display) -> VideoError {
     VideoError::Decode(format!("{codec}: {e}"))
 }
 
-/// Why an `avcC` stream can't be decoded (interlaced, 4:2:2, 10-bit…), from its first SPS.
+/// Why an `avcC` stream can't be decoded (4:2:2, 10-bit…), from its first SPS.
 pub fn h264_avcc_unsupported(avcc: &filmcraft_isobmff::AvcConfig) -> Option<VideoError> {
     let sps = avcc.sps.first()?;
     h264_sps_unsupported(sps)
@@ -92,7 +88,9 @@ pub fn h264_avcc_unsupported(avcc: &filmcraft_isobmff::AvcConfig) -> Option<Vide
 pub fn h264_sps_unsupported(nal: &[u8]) -> Option<VideoError> {
     let body = nal.get(1..)?;
     let sps = filmcraft_h264::params::Sps::parse(&filmcraft_bitstream::unescape_rbsp(body)).ok()?;
-    match sps.check_supported() {
+    // `check_decodable`, not `check_supported`: the latter also rejects interlaced coding (PAFF /
+    // MBAFF), which the software decoder handles; only hardware paths need the stricter check.
+    match sps.check_decodable() {
         Err(filmcraft_h264::Error::Unsupported(w)) => Some(h264_unsupported(&w)),
         _ => None,
     }
@@ -224,7 +222,10 @@ fn h264_pic(p: filmcraft_h264::Picture) -> Pic {
     let c = p.color;
     let color = coded_colour(p.width, p.height, vui(c.primaries, c.transfer, c.matrix, c.full_range));
     let planes = [tight(&p.y, p.y_stride, w, h), tight(&p.u, p.uv_stride, cw, ch), tight(&p.v, p.uv_stride, cw, ch)].map(Arc::new);
-    Pic { field: None, pts: p.pts, frame: frame(p.width, p.height, PixelData::Yuv8 { planes, chroma: Chroma::C420, alpha: None }, color) }
+    // interlaced pictures come out woven, top field on even lines; field order isn't exposed,
+    // so the top field is the one kept by the deinterlacer
+    let field = p.interlaced.then_some(true);
+    Pic { field, pts: p.pts, frame: frame(p.width, p.height, PixelData::Yuv8 { planes, chroma: Chroma::C420, alpha: None }, color) }
 }
 
 fn hevc_pic(p: filmcraft_hevc::Picture) -> Pic {
