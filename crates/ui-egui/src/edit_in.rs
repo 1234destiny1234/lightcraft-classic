@@ -308,7 +308,8 @@ fn start_editor(app: &mut LccApp, tool: String, args: Vec<String>, label: String
         }
     });
     if let Err(e) = spawned {
-        app.ui.status = format!("{}: {e}", tr("Couldn't open the editor"));
+        let now = app.last_time;
+        app.ui.toast = Some((crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e), now + 1.4, None));
     }
 }
 
@@ -365,7 +366,8 @@ pub(crate) fn pump(app: &mut LccApp, ctx: &egui::Context) {
                 log::info!("edit in: no editor events on port {port} ({why}); polling for saves instead");
                 ROUND_TRIP.with_borrow_mut(|rt| rt.subscribed.remove(&port));
             }
-            Msg::Error(e) => app.ui.status = format!("{}: {e}", tr("Couldn't open the editor")),
+            // a launch that failed on the worker (no such program, ...) is a toast, as a failed hand-off is
+            Msg::Error(e) => app.toast(ctx, crate::i18n::tr_format!("Couldn't open the editor: {e}", e = e)),
         }
     }
     reload(app, ctx, changed);
@@ -850,6 +852,18 @@ mod tests {
         // Second try fails
         failed.store(true, std::sync::atomic::Ordering::SeqCst);
         after_command(&mut h.app, "photo.editIn", &result);
+        let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
+        assert!(toast.contains("Couldn't open the editor") && toast.contains("no such editor"), "{toast:?}");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+    /// A launch that fails on the editor's worker thread is reported as a toast, not only in the status line.
+    #[test]
+    fn worker_launch_failure_shows_an_error_toast() {
+        let dir = temp("worker-fail");
+        let mut h = headless(&dir);
+        let tx = ROUND_TRIP.with_borrow(|rt| rt.tx.clone());
+        tx.send(Msg::Error("no such editor".into())).unwrap();
+        h.step();
         let toast = h.app.ui.toast.as_ref().map(|t| t.0.clone()).unwrap_or_default();
         assert!(toast.contains("Couldn't open the editor") && toast.contains("no such editor"), "{toast:?}");
         let _ = std::fs::remove_dir_all(&dir);

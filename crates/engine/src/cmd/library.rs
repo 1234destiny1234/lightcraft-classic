@@ -1474,7 +1474,13 @@ pub fn specs() -> Vec<CommandSpec> {
                 if !s.catalog.has_custom_order(a) {
                     return Err(bad(C, "only regular albums have a custom order"));
                 }
-                let base = shown_order(s, a);
+                // `before` means "left of it in the grid": a descending Custom Order shows the saved order
+                // reversed, so the drop is worked out on the shown list and saved back in forward order
+                let reversed = custom_album(s) == Some(a) && s.sort.key == SortKey::Custom && !s.sort.ascending;
+                let mut base = shown_order(s, a);
+                if reversed {
+                    base.reverse();
+                }
                 let moved = order_ids(s, a, p, C)?;
                 if moved.is_empty() {
                     return Err(bad(C, "missing `ids`"));
@@ -1497,6 +1503,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mut order: Vec<PhotoId> = base.iter().copied().filter(|x| !moving.contains(x)).collect();
                 let at = anchor.and_then(|b| order.iter().position(|x| *x == b)).unwrap_or(order.len());
                 order.splice(at..at, in_order);
+                if reversed {
+                    order.reverse();
+                }
                 set_custom_order(s, a, order, "Move in Custom Order")
             }
         ),
