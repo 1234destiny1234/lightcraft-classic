@@ -787,6 +787,9 @@ pub struct UiState {
     pub show_counts: bool,
     /// Face / pet boxes (read from XMP) over the photo in the loupe.
     pub face_boxes: bool,
+    /// HDR edits are shown in HDR on an HDR display (View ▸ HDR Preview, `view.hdrPreview`);
+    /// off, every view shows their SDR rendition, as on an SDR display.
+    pub hdr_preview: bool,
     /// The left sidebar's sections: their order, which are hidden and which are folded shut.
     pub sidebar: crate::sidebar::SidebarLayout,
     /// The ids of other folded panels (the Classic modules' `panel:<key>` panels), saved here. Settings files
@@ -1523,6 +1526,7 @@ impl Default for UiState {
             grid_info: "filename".into(),
             show_counts: true,
             face_boxes: true,
+            hdr_preview: true,
             sidebar: Default::default(),
             collapsed_sidebar: Vec::new(),
             group_open: Default::default(),
