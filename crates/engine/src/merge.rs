@@ -198,11 +198,24 @@ impl MergeJob {
         progress: &ProgressFn,
         span: (f32, f32),
     ) -> std::result::Result<Vec<Frame>, String> {
+        self.load_sources_as(sources, orient, progress, span, |f| f)
+    }
+
+    /// [`Self::load_sources`], each frame passed through `hold` as soon as it is decoded (an HDR bracket keeps its
+    /// frames as half floats, so only one is ever at full precision).
+    fn load_sources_as<T: Send>(
+        &self,
+        sources: &[(PhotoId, String)],
+        orient: bool,
+        progress: &ProgressFn,
+        span: (f32, f32),
+        hold: impl Fn(Frame) -> T + Sync,
+    ) -> std::result::Result<Vec<T>, String> {
         use rayon::prelude::*;
         let done = std::sync::atomic::AtomicUsize::new(0);
         let n = sources.len();
         let one = |(_, path): &(PhotoId, String)| {
-            let f = self.load_one(path, orient);
+            let f = self.load_one(path, orient).map(&hold);
             let k = done.fetch_add(1, std::sync::atomic::Ordering::Relaxed) + 1;
             progress(span.0 + (span.1 - span.0) * k as f32 / n.max(1) as f32, "Reading photos");
             f
@@ -234,9 +247,9 @@ impl MergeJob {
         let mut lens = Vec::new();
         let (image, color, orientation, metadata, baseline, samples, crop, mut info, ghost) = match &self.kind {
             MergeKind::Hdr { hdr } => {
-                let frames = self.load(false, progress, (0.0, 0.3))?;
+                let frames = self.load_sources_as(&self.sources, false, progress, (0.0, 0.3), lcc_merge::HdrFrame::new)?;
                 let p = sub(0.3, 0.9);
-                let mut r = lcc_merge::merge_hdr(frames, hdr, &p).map_err(err)?;
+                let mut r = lcc_merge::merge_hdr_frames(frames, hdr, &p).map_err(err)?;
                 lens = std::mem::take(&mut r.lens);
                 let info = json!({
                     "reference": self.sources[r.reference].0.0,
@@ -275,9 +288,9 @@ impl MergeJob {
                 // one bracket at a time: only its photos are held at full size, never all of them
                 for (g, set) in self.sources.chunks(b).enumerate() {
                     let at = |t: f32| 0.6 * (g as f32 + t) / groups as f32;
-                    let set = self.load_sources(set, false, progress, (at(0.0), at(0.5)))?;
+                    let set = self.load_sources_as(set, false, progress, (at(0.0), at(0.5)), lcc_merge::HdrFrame::new)?;
                     let p = sub(at(0.5), at(1.0));
-                    let r = lcc_merge::merge_hdr(set, hdr, &p).map_err(err)?;
+                    let r = lcc_merge::merge_hdr_frames(set, hdr, &p).map_err(err)?;
                     let mut f = Frame {
                         image: r.radiance,
                         clip: f32::INFINITY,
@@ -289,6 +302,7 @@ impl MergeJob {
                         baseline_exposure: r.baseline_exposure,
                         lens: Vec::new(),
                         wb_multipliers: r.wb_multipliers,
+                        display_referred: false,
                     };
                     f.orient();
                     merged.push(f);

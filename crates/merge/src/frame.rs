@@ -60,6 +60,9 @@ pub struct Frame {
     /// Raw files: the as-shot white-balance multipliers from the vendor's maker notes (green = 1), for formats such
     /// as CR2 and NEF that have no `AsShotNeutral` of their own. `None` when the file doesn't say.
     pub wb_multipliers: Option<[f32; 3]>,
+    /// The pixels were decoded from integer samples of a display-referred file (JPEG, PNG, 8/16-bit TIFF) through its
+    /// transfer curve: the camera's own response curve is still in them ([`crate::response`]).
+    pub display_referred: bool,
 }
 
 impl Frame {
@@ -79,6 +82,7 @@ impl Frame {
             baseline_exposure: 0.0,
             lens: Vec::new(),
             wb_multipliers: None,
+            display_referred: false,
         }
     }
 
@@ -203,6 +207,7 @@ pub fn load_frame_with(bytes: &[u8], max_edge: Option<usize>, orient: bool, colo
         baseline_exposure: 0.0,
         lens: Vec::new(),
         wb_multipliers: None,
+        display_referred: !d.float,
     };
     if orient {
         f.orient();
@@ -275,6 +280,7 @@ fn raw_frame(
         baseline_exposure: raw.color.baseline_exposure,
         lens,
         wb_multipliers: raw.wb_multipliers,
+        display_referred: false,
     };
     if f.exposure.is_none() {
         f.exposure = exif_exposure(&f.metadata);
