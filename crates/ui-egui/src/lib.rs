@@ -304,8 +304,9 @@ pub trait HdrOutput {
     /// `None` (an SDR display, HDR switched off in the OS, or unknown). Asked every frame.
     fn headroom(&mut self) -> Option<f32>;
     /// Upload a linear-light render (3 floats per pixel, row-major, SDR white = 1, sRGB
-    /// primaries) as the loupe's HDR texture, replacing the previous one.
-    fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+    /// primaries) as view `view`'s HDR texture ([`render::HDR_LOUPE`]…), replacing that view's
+    /// previous one (each view keeps its own).
+    fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
     /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
     /// true, the renderer should skip monitor profile conversion (P2-3).
     fn extended(&self) -> bool {

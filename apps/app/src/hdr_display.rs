@@ -290,7 +290,7 @@ pub fn report(state: Option<&RenderState>) -> DisplayOutput {
 
 /// The loupe's HDR output in the desktop window ([`lcc_ui_egui::HdrOutput`]): the display's
 /// headroom (re-read every frame, as the window moves or the OS switches HDR / brightness),
-/// egui's paper-white scale, and the loupe's float texture.
+/// egui's paper-white scale, and the float textures of the views that show HDR edits (one per view).
 pub struct WindowHdr {
     state: RenderState,
     extended: bool,
@@ -298,7 +298,7 @@ pub struct WindowHdr {
     paper_white_override: Option<f32>,
     levels: Option<Levels>,
     upload_headroom: Option<f32>,
-    texture: Option<(wgpu::Texture, egui::TextureId, [usize; 2])>,
+    textures: std::collections::HashMap<u8, (wgpu::Texture, egui::TextureId, [usize; 2])>,
 }
 
 impl WindowHdr {
@@ -317,7 +317,7 @@ impl WindowHdr {
             paper_white_override: env_f32("HDR_PAPER_WHITE"),
             levels: None,
             upload_headroom: None,
-            texture: None,
+            textures: std::collections::HashMap::new(),
         }
     }
 
@@ -349,13 +349,13 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
         if out.is_hdr() { l.headroom } else { None }
     }
 
-    fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
+    fn upload(&mut self, slot: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
         let headroom = self.upload_headroom.or_else(|| self.levels.and_then(|l| l.headroom)).unwrap_or(1.0);
         let texels = encode_rgba16f(rgb, width, height, headroom)?;
         let (device, queue) = (&self.state.device, &self.state.queue);
         let size = [width, height];
         let (w, h) = (u32::try_from(width).map_err(|e| e.to_string())?, u32::try_from(height).map_err(|e| e.to_string())?);
-        if self.texture.as_ref().is_none_or(|(_, _, s)| *s != size) {
+        if self.textures.get(&slot).is_none_or(|(_, _, s)| *s != size) {
             let tex = device.create_texture(&wgpu::TextureDescriptor {
                 label: Some("loupe HDR"),
                 size: wgpu::Extent3d { width: w, height: h, depth_or_array_layers: 1 },
@@ -368,16 +368,16 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
             });
             let view = tex.create_view(&wgpu::TextureViewDescriptor::default());
             let mut r = self.state.renderer.write();
-            let id = match self.texture.take() {
+            let id = match self.textures.remove(&slot) {
                 Some((_, id, _)) => {
                     r.update_egui_texture_from_wgpu_texture(device, &view, wgpu::FilterMode::Linear, id);
                     id
                 }
                 None => r.register_native_texture(device, &view, wgpu::FilterMode::Linear),
             };
-            self.texture = Some((tex, id, size));
+            self.textures.insert(slot, (tex, id, size));
         }
-        let Some((tex, id, _)) = self.texture.as_ref() else { return Err("no HDR texture".into()) };
+        let Some((tex, id, _)) = self.textures.get(&slot) else { return Err("no HDR texture".into()) };
         queue.write_texture(
             wgpu::TexelCopyTextureInfo { texture: tex, mip_level: 0, origin: wgpu::Origin3d::ZERO, aspect: wgpu::TextureAspect::All },
             bytemuck::cast_slice(&texels),
@@ -390,8 +390,9 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
 
 impl Drop for WindowHdr {
     fn drop(&mut self) {
-        if let Some((_, id, _)) = self.texture.take() {
-            self.state.renderer.write().free_texture(&id);
+        let mut r = self.state.renderer.write();
+        for (_, (_, id, _)) in self.textures.drain() {
+            r.free_texture(&id);
         }
     }
 }
