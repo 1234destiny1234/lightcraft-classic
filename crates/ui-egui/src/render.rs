@@ -75,13 +75,23 @@ pub enum Slot {
     /// A slider drag's live HDR histogram: a small full-quality render of an HDR edit, beside the
     /// drafts (which have no HDR histogram), with no texture ([`Renderer::live_hdr_histogram`]).
     HdrHistogram,
-    /// The loupe's HDR render (linear float, highlights above SDR white) of an HDR edit, for an
-    /// HDR display ([`crate::HdrOutput`]): its result waits in [`Renderer::hdr_view_result`] for
-    /// the upload.
-    HdrView,
+    /// An HDR render (linear float, highlights above SDR white) of an HDR edit, for an HDR display
+    /// ([`crate::HdrOutput`]), for one view ([`HDR_LOUPE`]…): its result waits in
+    /// [`Renderer::hdr_view_result`] for the upload.
+    HdrView(u8),
 }
 
-/// The loupe's HDR texture ([`Slot::HdrView`]), drawn in place of [`Slot::Main`]'s 8-bit one.
+/// The views an HDR edit is shown in HDR in ([`Slot::HdrView`], [`crate::HdrOutput::upload`]):
+/// the loupe's whole frame, its Before side, the second window, the zoomed window of a pane
+/// (`HDR_ZOOMED + pane`, see [`PANE_AFTER`]…) and the Compare / Reference photos
+/// (`HDR_COMPARE + i`).
+pub const HDR_LOUPE: u8 = 0;
+pub const HDR_BEFORE: u8 = 1;
+pub const HDR_SECOND: u8 = 2;
+pub const HDR_COMPARE: u8 = 8;
+pub const HDR_ZOOMED: u8 = 32;
+
+/// A view's HDR texture ([`Slot::HdrView`]), drawn in place of (or over) its 8-bit render.
 #[derive(Clone, Copy, Debug)]
 pub struct HdrView {
     pub photo: PhotoId,
@@ -250,10 +260,10 @@ pub struct Renderer {
     pub textures: HashMap<Slot, Tex>,
     /// The last [`Slot::HdrHistogram`] result: (photo, job key, histogram).
     pub live_hdr_histogram: Option<(PhotoId, u64, Histogram)>,
-    /// The last [`Slot::HdrView`] render, not yet uploaded: (photo, job key, linear float image).
-    pub hdr_view_result: Option<(PhotoId, u64, lcc_pipeline::DeepImage)>,
+    /// The [`Slot::HdrView`] renders not yet uploaded: view → (photo, job key, linear float image).
+    pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
     /// The loupe's uploaded HDR texture.
-    pub hdr_view: Option<HdrView>,
+    pub hdr_view: HashMap<u8, HdrView>,
     pub last_main_ms: f64,
     /// Jobs finished since start (for inspect/perf).
     pub completed: u64,
@@ -345,8 +355,8 @@ impl Renderer {
             pending: HashMap::new(),
             textures: HashMap::new(),
             live_hdr_histogram: None,
-            hdr_view_result: None,
-            hdr_view: None,
+            hdr_view_result: HashMap::new(),
+            hdr_view: HashMap::new(),
             last_main_ms: 0.0,
             completed: 0,
             keep_pixels: false,
@@ -1011,9 +1021,9 @@ impl Renderer {
                 }
                 continue;
             }
-            if slot == Slot::HdrView {
+            if let Slot::HdrView(view) = slot {
                 if let Some(deep) = rendered.deep {
-                    self.hdr_view_result = Some((r.photo, r.key, deep));
+                    self.hdr_view_result.insert(view, (r.photo, r.key, deep));
                     changed = true;
                 }
                 continue;

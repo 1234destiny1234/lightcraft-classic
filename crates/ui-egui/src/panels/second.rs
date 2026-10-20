@@ -280,6 +280,22 @@ fn loupe(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, id: PhotoId) {
     {
         app.renderer.request(Slot::Second, job, 95);
     }
+    // an HDR edit on an HDR display: its HDR render, as in the loupe (not while a slider drags)
+    let hdr_key = app
+        .session
+        .interaction
+        .is_none()
+        .then(|| app.session.render_job(id, w, h, false, true))
+        .flatten()
+        .and_then(|job| super::detail::request_hdr(app, crate::render::HDR_SECOND, job, 94));
+    super::detail::upload_hdr_views(app);
+    if let Some(v) = super::detail::hdr_texture(app, crate::render::HDR_SECOND, id, hdr_key) {
+        let [tw, th] = v.size;
+        let s = (area.width() / tw.max(1) as f32).min(area.height() / th.max(1) as f32);
+        let r = Rect::from_center_size(area.center(), vec2(tw as f32 * s, th as f32 * s));
+        ui.painter().image(v.tex, r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+        return;
+    }
     let mine = |s: Slot| app.renderer.textures.get(&s).filter(|t| t.photo == id);
     if let Some(t) = mine(Slot::Second).or_else(|| mine(Slot::Main)).or_else(|| app.renderer.thumb(id)) {
         fit(ui, area, t);
