@@ -71,6 +71,20 @@ fn rel_to_k(r: f64) -> f64 {
 }
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    pinned_histogram(app, ui, id);
+    show_controls(app, ui, id);
+}
+
+/// The histogram at the head of the Edit panel (when shown). The right panel draws it above its
+/// scroll area, so it stays in view while the controls under it scroll.
+pub fn pinned_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    if app.ui.histogram {
+        histogram(app, ui, id);
+    }
+}
+
+/// The Edit panel under its histogram: soft proofing, the header and every section.
+pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let d = app.session.develop_of(id).unwrap_or_default();
     // a raw shown from its embedded JPEG (preview only) gets the rendered-file white balance scale
@@ -92,9 +106,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     let preview_only = app.session.catalog.photo(id).and_then(|p| p.preview_only.clone());
 
-    if app.ui.histogram {
-        histogram(app, ui, id);
-    }
     if app.ui.soft_proof {
         soft_proofing(app, ui, id);
     }
