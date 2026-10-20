@@ -202,29 +202,24 @@ fn container_par(clip: &Clip, coded: (u32, u32)) -> Option<(u32, u32)> {
 }
 
 /// The bitstream's sample aspect ratio (H.264 / HEVC VUI, MPEG-2 sequence header) and whether the
-/// sequence is interlaced (MPEG-2, H.264).
+/// sequence is interlaced (MPEG-2 only).
 fn bitstream_par(clip: &Clip) -> (Option<(u32, u32)>, bool) {
     let first = || clip.table.order.first().and_then(|&i| clip.read(i).ok()).or_else(|| clip.read(0).ok());
     let vui_sar = |sar: (u16, u16)| reduce_par(sar.0.into(), sar.1.into());
-    // (SAR, interlaced: frame_mbs_only_flag 0)
-    let h264 = |nal: &[u8]| -> (Option<(u32, u32)>, bool) {
-        let Some(sps) = nal.get(1..).and_then(|b| filmcraft_h264::params::Sps::parse(&filmcraft_bitstream::unescape_rbsp(b)).ok()) else {
-            return (None, false);
-        };
-        (sps.vui.and_then(|v| vui_sar(v.sar)), !sps.frame_mbs_only)
+    let h264 = |nal: &[u8]| -> Option<(u32, u32)> {
+        let sps = filmcraft_h264::params::Sps::parse(&filmcraft_bitstream::unescape_rbsp(nal.get(1..)?)).ok()?;
+        vui_sar(sps.vui?.sar)
     };
     let hevc = |nal: &[u8]| -> Option<(u32, u32)> {
         let sps = filmcraft_hevc::params::Sps::parse(&filmcraft_bitstream::unescape_rbsp(nal.get(2..)?)).ok()?;
         vui_sar(sps.vui?.sar)
     };
     match &clip.codec {
-        Some(Codec::H264 { avcc: Some(a) }) => {
-            filmcraft_isobmff::AvcConfig::parse(a).ok().and_then(|c| c.sps.first().map(|n| h264(n))).unwrap_or((None, false))
-        }
+        Some(Codec::H264 { avcc: Some(a) }) => (filmcraft_isobmff::AvcConfig::parse(a).ok().and_then(|c| c.sps.first().and_then(|n| h264(n))), false),
         Some(Codec::H264 { avcc: None }) => {
             let sample = first().unwrap_or_default();
             let nal = filmcraft_bitstream::annexb_nals(&sample).into_iter().find(|n| n.first().is_some_and(|h| h & 0x1f == 7)).map(<[u8]>::to_vec);
-            nal.map_or((None, false), |n| h264(&n))
+            (nal.and_then(|n| h264(&n)), false)
         }
         Some(Codec::Hevc { hvcc: Some(c) }) => {
             let cfg = filmcraft_isobmff::HevcConfig::parse(c).ok();

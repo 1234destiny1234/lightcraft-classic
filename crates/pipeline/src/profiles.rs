@@ -52,6 +52,23 @@ pub fn effective(s: &DevelopSettings) -> Cow<'_, DevelopSettings> {
     let add = |v: &mut f64, d: f64| *v = (*v + d * k).clamp(-100.0, 100.0);
     match id {
         // ---- Basic
+        // Eboda Colour: a camera profile's colour (`.dcp`) with the default tone rendered the way the other app's
+        // default colour profile renders it, fitted to that app's export of one photo (observed output only; no
+        // curve or table of its is copied). Brighter by most of a stop, more contrast and colour, rolled-off whites.
+        "lc.eboda" => {
+            e.light.exposure = (e.light.exposure + 0.9 * k).clamp(-5.0, 5.0);
+            add(&mut e.light.contrast, 62.0);
+            add(&mut e.light.highlights, 2.0);
+            add(&mut e.light.shadows, 15.0);
+            add(&mut e.light.whites, -22.0);
+            add(&mut e.light.blacks, -4.0);
+            add(&mut e.color.saturation, 53.0);
+            add(&mut e.color.vibrance, -24.0);
+            add(&mut e.curve.highlights, -5.0);
+            add(&mut e.curve.lights, 10.0);
+            add(&mut e.curve.darks, -1.0);
+            add(&mut e.curve.shadows, -39.0);
+        }
         "lc.neutral" => {
             add(&mut e.light.contrast, -18.0);
             add(&mut e.color.saturation, -10.0);
@@ -219,6 +236,7 @@ pub fn effective(s: &DevelopSettings) -> Cow<'_, DevelopSettings> {
 
 /// Ids of the looks [`effective`] implements (besides the identity `lc.color`).
 pub const LOOK_IDS: &[&str] = &[
+    "lc.eboda",
     "lc.neutral",
     "lc.vivid",
     "lc.landscape",
@@ -261,7 +279,10 @@ mod tests {
             // slider deltas are linear in the amount
             let d = |e: &DevelopSettings| e.light.contrast - s.light.contrast;
             assert!((d(&full) - 2.0 * d(&half)).abs() < 1e-9, "{id}");
-            assert!((d(&double) - 2.0 * d(&full)).abs() < 1e-9, "{id}");
+            // (until the slider's range clamps it)
+            if double.light.contrast.abs() < 100.0 {
+                assert!((d(&double) - 2.0 * d(&full)).abs() < 1e-9, "{id}");
+            }
             // wheels and point-curve fades grow with the amount
             let lift = |e: &DevelopSettings| e.curve.master.first().map_or(0.0, |p| p.y);
             for (a, b) in [(&half, &full), (&full, &double)] {

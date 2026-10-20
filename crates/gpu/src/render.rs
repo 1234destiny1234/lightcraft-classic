@@ -629,9 +629,7 @@ pub fn render(
         _ => None,
     };
     let _oom = (fault == Some(crate::Fault::OutOfMemory)).then(crate::ctx::SimulatedOom::new);
-    // an HDR render: linear float samples after the 8-bit image and its histogram (`finish.wgsl`, `DEEP`)
-    let deep = req.depth == lcc_pipeline::OutputDepth::F32Hdr;
-    if !gpu.fits(n * if deep { 4 } else { 3 } + if deep { HIST_WORDS } else { 0 }) {
+    if !gpu.fits(n * 3) {
         fail(
             FailKind::Limit,
             format!("{w}×{h} needs {} MiB buffers, over the device's {} MiB storage-buffer limit", (n * 12).div_ceil(1 << 20), gpu.limit() >> 20),
@@ -696,8 +694,7 @@ pub fn render(
 
     // 5. per-pixel stage
     let mut fp = FinishParams::new(s, &plan.frame, info, w, h, plan.px_per_long, prep.air, req.space);
-    // (a deep render is in the output space, as on the CPU: `finish::finish_deep`)
-    if let Some(d) = req.display.as_ref().filter(|_| !deep) {
+    if let Some(d) = &req.display {
         fp.for_display(d, None);
     }
     let present = Present {
@@ -722,8 +719,7 @@ pub fn render(
     let (p, aux) = finish_block(&fp, &terms, &curves, &present);
     let aux = gpu.upload(&aux);
     // cleared, so that work which never ran cannot pass for an image (see the check below)
-    // the histogram's words follow the image (one readback for both)
-    let out = cx.zeroed(n + HIST_WORDS + if deep { 3 * n } else { 0 });
+    let out = cx.zeroed(n);
     if fault == Some(crate::Fault::Validation) {
         // a dispatch the device rejects (too many workgroups)
         cx.run("box_h", &[0; 5], &[Some(&aux), Some(&out)], [gpu.device.limits().max_compute_workgroups_per_dimension + 1, 1, 1]);
@@ -732,13 +728,6 @@ pub fn render(
     let rows = (BAND_PIXELS / w.max(1) / 16 * 16).max(16); // whole workgroups: bands never overlap
     let y0_at = crate::params::index("Y0").unwrap_or(0);
     let mut p = p;
-    if deep {
-        for (name, v) in [("DEEP", 1), ("DEEP_OFF", (n + HIST_WORDS) as u32)] {
-            if let Some(slot) = crate::params::index(name).and_then(|i| p.get_mut(i)) {
-                *slot = v;
-            }
-        }
-    }
     for y0 in (0..h).step_by(rows).filter(|_| fault != Some(crate::Fault::DropWork)) {
         p[y0_at] = y0 as u32;
         cx.run(
@@ -787,22 +776,7 @@ pub fn render(
     } else {
         None
     };
-    // the blank border past the photo's edge is shown but isn't part of the photo (issue #211)
-    let coverage = plan.frame.coverage(src.width, src.height, w, h).map(|c| match plan.keep {
-        Some(k) => Arc::new(c.crop(k.x, k.y, k.w, k.h)),
-        None => Arc::new(c),
-    });
-    // the histogram of the kept window, binned on the GPU beside the image it reads
-    let window = plan.keep.map_or((0, 0, w, h), |k| {
-        let (x0, y0) = (k.x.min(w), k.y.min(h));
-        (x0, y0, k.w.min(w - x0), k.h.min(h - y0))
-    });
-    let hist = histogram_on_gpu(&mut cx, &out, w, window, coverage.as_deref());
-    cx.copy_into(&hist, &out, n);
-    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS + if deep { 3 * n } else { 0 });
-    let samples: Vec<f32> =
-        if deep { data.split_off((n + HIST_WORDS).min(data.len())).into_iter().map(f32::from_le_bytes).collect() } else { Vec::new() };
-    let hist_words: Vec<u32> = data.split_off(n.min(data.len())).into_iter().map(u32::from_le_bytes).collect();
+    let data: Vec<[u8; 4]> = cx.read(&out, n);
     let image = Rgba8 { width: w, height: h, data };
     lap("finish + readback", &mut t, &mut cx);
     if crate::ctx::failed() {
@@ -816,7 +790,15 @@ pub fn render(
         fail(FailKind::Fatal, format!("the GPU returned an incomplete image ({unwritten} of {n} pixels unwritten)"));
         return None;
     }
-    let histogram = histogram_words(&hist_words);
+    // the blank border past the photo's edge is shown but isn't part of the photo (issue #211)
+    let coverage = plan.frame.coverage(src.width, src.height, w, h).map(|c| match plan.keep {
+        Some(k) => Arc::new(c.crop(k.x, k.y, k.w, k.h)),
+        None => Arc::new(c),
+    });
+    let histogram = match plan.keep {
+        Some(k) => Histogram::of_srgb8_covered(&image.crop(k.x, k.y, k.w, k.h), coverage.as_deref()),
+        None => Histogram::of_srgb8_covered(&image, coverage.as_deref()),
+    };
     lap("histogram", &mut t, &mut cx);
     // An entirely black result (upstream work that did not run would give that too): redo it on
     // the CPU, which costs time only for the rare photo that really is black.
@@ -834,60 +816,12 @@ pub fn render(
             lcc_pipeline::masks::evaluate_one(m, &plan.frame, w, h, &img, &l, s.light.exposure as f32, plan.mattes.as_deref())
         }
     });
-    if deep {
-        if samples.len() != 3 * n {
-            fail(FailKind::Fatal, format!("the GPU returned an incomplete HDR image ({} of {} samples)", samples.len(), 3 * n));
-            return None;
-        }
-        // as on the CPU (`finish_deep`): the whole frame in the output space, no overlays
-        let deep = lcc_pipeline::DeepImage { width: w, height: h, space: req.space, samples: lcc_pipeline::DeepSamples::F32(samples) };
-        return Some(Rendered { image, histogram, deep: Some(deep), warnings: Vec::new(), coverage });
-    }
     lcc_pipeline::visualize::apply(&mut image, req.overlay, &plan, overlay_mask.as_ref(), all_overlay_alphas.as_deref());
     // spots grew the window the render worked on: cut it back to the request
     if let Some(k) = plan.keep {
         image = image.crop(k.x, k.y, k.w, k.h);
     }
     Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage })
-}
-
-/// Words of the `hist_k` kernel's output: five 256-bin channels, the total, the vectorscope grid and
-/// the waveform planes.
-const HIST_WORDS: usize = 5 * Histogram::BINS + 1 + Histogram::SCOPE_CELLS + Histogram::WAVE_PLANES * Histogram::WAVE_CELLS;
-
-/// Record the `hist_k` kernel over the `(x0, y0, w, h)` window of the packed image `out` (`stride` pixels
-/// wide): the samples, bins, scope and waveform [`Histogram::of_srgb8_covered`] gives the window.
-fn histogram_on_gpu(cx: &mut Cx<'_>, out: &Buf, stride: usize, window: (usize, usize, usize, usize), coverage: Option<&lcc_raster::Coverage>) -> Buf {
-    let (x0, y0, w, h) = window;
-    // the same sampling as the CPU oracle: at most ~1 MP, on a regular grid
-    let step = (((w * h) as f64 / 1_000_000.0).sqrt().ceil() as usize).max(1);
-    let (across, rows) = (w.div_ceil(step), h.div_ceil(step));
-    let coverage = coverage.filter(|c| c.width() == w && c.height() == h);
-    let cov = coverage.map(|c| cx.gpu.upload(c.words()));
-    let row_words = lcc_raster::Coverage::row_words(w);
-    let p = [stride, x0, y0, w, h, step, across, rows, usize::from(cov.is_some()), row_words].map(|v| v as u32);
-    let hist = cx.zeroed(HIST_WORDS);
-    cx.run("hist_k", &p, &[Some(out), cov.as_ref(), Some(&hist)], groups1(across * rows));
-    hist
-}
-
-/// The [`Histogram`] from the `hist_k` kernel's words (waveform counts saturate as the CPU's do).
-fn histogram_words(words: &[u32]) -> Histogram {
-    let n = Histogram::BINS;
-    let part = |a: usize, len: usize| words.get(a..a + len).map_or_else(|| vec![0; len], <[u32]>::to_vec);
-    let wave_at = 5 * n + 1 + Histogram::SCOPE_CELLS;
-    let wave = part(wave_at, Histogram::WAVE_PLANES * Histogram::WAVE_CELLS).into_iter().map(|c| c.min(u16::MAX as u32) as u16).collect();
-    Histogram {
-        r: part(0, n),
-        g: part(n, n),
-        b: part(2 * n, n),
-        luma: part(3 * n, n),
-        chroma: part(4 * n, n),
-        total: words.get(5 * n).copied().unwrap_or(0),
-        scope: part(5 * n + 1, Histogram::SCOPE_CELLS),
-        wave,
-        hdr: None,
-    }
 }
 
 /// Pixels whose alpha is not 255 (cheap: no early exit, so it vectorizes).

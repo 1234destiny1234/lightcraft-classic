@@ -3,10 +3,9 @@
 //! clock so pictures stay in step with the sound.
 //!
 //! On Linux and the BSDs sound goes to a PulseAudio server (PulseAudio, or PipeWire through
-//! `pipewire-pulse`) over its native protocol in pure Rust ([`pulse`]), in every build. On macOS
-//! and Windows every build plays through cpal (CoreAudio, WASAPI). Elsewhere the opt-in `audio-out`
-//! cargo feature adds cpal (on Linux it links the C library libasound, so there it is only a
-//! fallback when no PulseAudio server answers). With
+//! `pipewire-pulse`) over its native protocol in pure Rust ([`pulse`]), in every build. Elsewhere
+//! the `audio-out` cargo feature plays through cpal (CoreAudio, WASAPI; on Linux it would link the
+//! C library libasound, so there it is only a fallback when no PulseAudio server answers). With
 //! neither, [`CAN_PLAY`] is false and [`Output::start`] returns an error: callers play silently.
 //!
 //! Sources: own design (a sample counter advanced by the device callback).
@@ -20,12 +19,10 @@ use std::sync::atomic::{AtomicU64, Ordering};
 #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
 pub mod pulse;
 
-/// Whether this build has a sound path (PulseAudio / PipeWire on Linux and the BSDs, cpal on macOS /
-/// Windows or with the `audio-out` feature). Playing still needs a running server or device.
+/// Whether this build has a sound path (PulseAudio / PipeWire on Linux and the BSDs, cpal with
+/// the `audio-out` feature). Playing still needs a running server or device.
 pub const CAN_PLAY: bool = cfg!(any(
     feature = "audio-out",
-    target_os = "macos",
-    target_os = "windows",
     target_os = "linux",
     target_os = "freebsd",
     target_os = "dragonfly",
@@ -75,13 +72,13 @@ pub fn default_rate() -> Option<u32> {
     if let Some(r) = pulse::default_rate() {
         return Some(r);
     }
-    #[cfg(any(feature = "audio-out", target_os = "macos", target_os = "windows"))]
+    #[cfg(feature = "audio-out")]
     {
         use cpal::traits::{DeviceTrait, HostTrait};
         let d = cpal::default_host().default_output_device()?;
         d.default_output_config().ok().map(|c| c.sample_rate().0)
     }
-    #[cfg(not(any(feature = "audio-out", target_os = "macos", target_os = "windows")))]
+    #[cfg(not(feature = "audio-out"))]
     {
         None
     }
@@ -89,7 +86,7 @@ pub fn default_rate() -> Option<u32> {
 
 /// A stream playing on the default output device; dropping it stops the sound.
 pub struct Output {
-    #[cfg(any(feature = "audio-out", target_os = "macos", target_os = "windows"))]
+    #[cfg(feature = "audio-out")]
     _stream: Option<cpal::Stream>,
     #[cfg(any(target_os = "linux", target_os = "freebsd", target_os = "dragonfly", target_os = "netbsd", target_os = "openbsd"))]
     _pulse: Option<pulse::PulseOut>,
@@ -117,7 +114,7 @@ impl Output {
             match pulse::start(rate, channels, relay, clock.clone()) {
                 Ok(p) => {
                     return Ok(Output {
-                        #[cfg(any(feature = "audio-out", target_os = "macos", target_os = "windows"))]
+                        #[cfg(feature = "audio-out")]
                         _stream: None,
                         _pulse: Some(p),
                         clock,
@@ -133,7 +130,7 @@ impl Output {
                 }
             }
         };
-        #[cfg(any(feature = "audio-out", target_os = "macos", target_os = "windows"))]
+        #[cfg(feature = "audio-out")]
         {
             use cpal::traits::{DeviceTrait, HostTrait, StreamTrait};
             let mut fill = fill;
@@ -161,13 +158,13 @@ impl Output {
                 clock,
             })
         }
-        #[cfg(not(any(feature = "audio-out", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(feature = "audio-out"))]
         {
             let _ = (fill, clock);
             if CAN_PLAY {
                 Err("audio output: no PulseAudio or PipeWire server to play through".into())
             } else {
-                Err("this build plays without sound (no sound backend for this platform; build with the audio-out feature)".into())
+                Err("this build plays without sound (built without the audio-out feature)".into())
             }
         }
     }

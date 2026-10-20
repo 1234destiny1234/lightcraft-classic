@@ -83,10 +83,6 @@ const FIELDS: &[(&str, usize)] = &[
     ("OUT_Y", 3),
     ("OUT_TRC", 1),
     ("OUT_GAMMA", 1),
-    // the HDR render's peak (SDR white = 1) and whether the kernel writes linear floats (`DEEP`)
-    ("PEAK", 1),
-    ("DEEP", 1),
-    ("DEEP_OFF", 1),
     // first row of a band dispatch (the kernel runs over rows Y0.., see `render`)
     ("Y0", 1),
 ];
@@ -272,7 +268,6 @@ pub fn finish_block(fp: &FinishParams, masks: &[[f32; MASK_TERMS]], curves: &[Op
     p.fs("OUT_Y", &fp.out_luma);
     let (trc, gamma) = fp.out_trc.code();
     p.u("OUT_TRC", trc);
-    p.f("PEAK", if fp.peak.is_finite() { fp.peak.max(1.0) } else { 1.0 });
     p.f("OUT_GAMMA", gamma);
     if let Some((amt, cell, rough, seed)) = fp.grain {
         p.b("GRAIN", true);

@@ -28,13 +28,6 @@ covers what exists today.
   folders; see [Storage](#storage)) through a native callback that it
   registers at start-up, so no symbol depends on the package name. For a save, it watches the path it handed out
   and copies the written file to the chosen document.
-- **Picked folders stay linked.** A folder read in place sees new files by itself. For one that has to be copied,
-  the activity keeps the read grant (`takePersistableUriPermission`, up to 16 folders) and rescans it every 4 s
-  while the app is in front, copying files that appeared since into its copy (shown in the activity stack): never overwriting or deleting, skipping hidden files (the camera's
-  `.pending-…` shots), and only once a file's size held between two scans, under a hidden name renamed into place.
-  So a studio capture session watching the copy of `DCIM/Camera` imports each new shot, with no photo permission.
-  Deleting the copy, or revoking the grant, unlinks the folder. Not built: a `MediaStore` observer behind
-  `READ_MEDIA_IMAGES`, and scanning while the app is in the background (gap 34).
 - **Opening, sharing and dropping photos from other apps.** The activity takes `VIEW` intents for `content://`
   images and `SEND` / `SEND_MULTIPLE` for `image/*` (raw files arrive as `image/x-…` types, so `image/*` covers
   them; `application/octet-stream` would offer the app for every file). It is `singleTask`, so a share while the
