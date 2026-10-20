@@ -95,7 +95,8 @@ jobs:
       - uses: ./.github/actions/sccache
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
-          targets: wasm32-unknown-unknown, aarch64-linux-android
+          # x86_64-linux-android: the full run checks both ABIs the release ships (docs/android.md)
+          targets: wasm32-unknown-unknown, aarch64-linux-android, x86_64-linux-android
           components: rustfmt, clippy
       - name: Android NDK (for `cargo xtask android check`)
         run: .github/scripts/install-android-ndk.sh

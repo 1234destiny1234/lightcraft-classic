@@ -1,6 +1,6 @@
 # CI and landing changes
 
-> **Last updated:** 2026-10-20 · **Change:** major (no repeated runs: a push to main skips a tree its PR run tested, no CI on pushes to `release`, Brand only on PRs and built in the runner cache, Windows ARM64 only when packaging inputs change, sccache, one cargo run per target for the fast gate's wasm/Android checks); minor (release jobs upload straight to the draft release, not via Actions artifacts); major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
+> **Last updated:** 2026-10-20 · **Change:** minor (the full run also checks the x86_64 Android target); major (no repeated runs: a push to main skips a tree its PR run tested, no CI on pushes to `release`, Brand only on PRs and built in the runner cache, Windows ARM64 only when packaging inputs change, sccache, one cargo run per target for the fast gate's wasm/Android checks); minor (release jobs upload straight to the draft release, not via Actions artifacts); major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
 
 ## How changes reach `main`
 
@@ -31,7 +31,8 @@ exists and is skipped until then. Locally, `cargo xtask ci` stays the full run; 
 The fast gate checks the wasm and Android crates in one `cargo check` per target, so a crate shared by several
 of them is checked once; when that fails it checks each crate on its own to name the broken ones. The full run,
 `cargo xtask wasm` and `cargo xtask android check` always check crate by crate, which also catches a crate
-that builds only because another member turns on a feature it relies on. `cargo xtask parity` reads the command
+that builds only because another member turns on a feature it relies on. The Android check covers arm64 in the fast gate and
+both ABIs a release ships, arm64 and x86_64, in the full run. `cargo xtask parity` reads the command
 and control registries from the CLI as `cargo test -p lcc-cli --test sil` builds it, so the SIL step that follows
 compiles nothing new.
 

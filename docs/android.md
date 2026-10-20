@@ -7,9 +7,9 @@ covers what exists today.
 
 | Stage | State |
 |---|---|
-| Shared crates build for `aarch64-linux-android` (`cargo xtask android check`, in `ci --fast`) | ✅ |
+| Shared crates build for `aarch64-linux-android` (`cargo xtask android check`, in `ci --fast`) and `x86_64-linux-android` (the full pre-release run) | ✅ |
 | App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker, Develop, library kept across restarts; status-bar insets not handled yet |
-| APK / AAB packaging (`cargo xtask android package`), release job (`RELEASE_ANDROID`) | ✅ (arm64 APK 75 MB, AAB 35 MB) |
+| APK / AAB packaging (`cargo xtask android package`), release job (on by default; `RELEASE_ANDROID=false` turns it off) | ✅ arm64-v8a and x86_64 APKs, one AAB with both (arm64 APK 75 MB) |
 | Play Store upload | not started (needs the Play developer account) |
 | Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`; discovery over mDNS / DNS-SD); catalog exchange next |
 | Touch / phone-sized layout | not started |
@@ -35,7 +35,8 @@ covers what exists today.
 
 ## Toolchain
 
-- Rust target: `rustup target add aarch64-linux-android`.
+- Rust targets: `rustup target add aarch64-linux-android x86_64-linux-android` (x86_64 for the emulator and
+  Chromebooks; releases ship both).
 - Android NDK r28c (minimum API 28, Android 9). `cargo xtask android check` finds it through `ANDROID_NDK_HOME`,
   `ANDROID_NDK_ROOT`, or the newest `~/Android/android-ndk-*`. CI installs the pinned, sha256-verified NDK with
   `.github/scripts/install-android-ndk.sh` (run it locally as well; it prints the `ANDROID_NDK_HOME` to export).
@@ -63,7 +64,7 @@ Android is `unix`. Code meant for Linux and the BSDs names them (`target_os = "l
 .github/scripts/install-android-ndk.sh   # prints ANDROID_NDK_HOME to export
 .github/scripts/install-android-sdk.sh   # JDK 17+ and SDK platform 36 / build-tools 36 (prints JAVA_HOME, ANDROID_HOME)
 rustup target add aarch64-linux-android  # and x86_64-linux-android for the emulator
-cargo xtask android package [--abi arm64] [--abi x86_64] [--aab]
+cargo xtask android package [--abi arm64] [--abi x86_64] [--split] [--aab]
 adb install -r target/android/<binary>-<version>-android-arm64-v8a.apk
 ```
 
@@ -72,7 +73,9 @@ drives the SDK tools itself (`xtask/src/apk.rs`):
 1. `javac` and `d8` for the activity, rendered from `packaging/android/*.in` with the `brand.toml` values (the
    package is `android_package` from `brand.toml`: provisional, and permanent once the app is on the Play Store).
 2. `aapt2` for the manifest and launcher icon.
-3. The native library from `cargo build --release`.
+3. The native library from `cargo build --profile dist`, every `--abi` in one cargo run (one `--target` each), so
+   the host-side build is shared and all cores stay busy. One APK holds every ABI, or with `--split` one APK per
+   ABI. The bundle always holds them all, and the Play Store gives each device only its own.
 4. `zipalign -P 16` (16 KB pages, which Play requires) and `apksigner`.
 5. With `--aab`, the same parts go into a Play Store bundle through `bundletool` (downloaded once, pinned by sha256)
    and are signed with `jarsigner`.
@@ -87,9 +90,18 @@ but the Play Store refuses it.
 
 ## Releases
 
-`release.yml` has an `android` job. It is off until the repository variable `RELEASE_ANDROID` is `true`. It
-installs the pinned NDK, SDK and JDK, builds the APK and AAB, and uploads both to the draft release. Its secrets,
+`release.yml` has an `android` job, on unless the repository variable `RELEASE_ANDROID` is `false`. On gpu0 it
+installs the pinned NDK, SDK and JDK (cached between runs), cross-compiles arm64-v8a and x86_64 in one cargo run,
+and uploads an APK per ABI and one AAB to the draft release. Its build cache (`~/.cache/lcc-release-android`) is
+shared by both gpu0 runner instances and backed by sccache. To try it without releasing, dispatch the Release
+workflow as a dry run with `only: android`. Its secrets,
 in the `release` environment, are all optional: `ANDROID_KEYSTORE_BASE64` (the upload keystore, base64),
 `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS` and `ANDROID_KEY_PASSWORD`. The in-app updater ignores `.apk` and
 `.aab` files.
+
+Without those secrets the release is signed with the debug key kept in that build cache, so successive releases
+share it and update each other. Android refuses an update signed with a different key: when the release key is
+added, or if the cache is wiped, people uninstall the old build first. Set up the upload key before Android
+builds are announced. Create it with `keytool -genkeypair -v -keystore upload.jks -alias upload -keyalg RSA
+-keysize 4096 -validity 10000`, keep it safe, and add it base64-encoded as `ANDROID_KEYSTORE_BASE64`.
 
