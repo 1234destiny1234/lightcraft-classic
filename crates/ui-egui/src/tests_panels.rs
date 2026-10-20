@@ -12,6 +12,34 @@ use crate::{LccApp, Services};
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
+/// The compositor preference changes native presentation, never idle frame scheduling.
+#[cfg(target_os = "windows")]
+#[test]
+fn compositor_workaround_does_not_request_continuous_repaints() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let mut app = LccApp::new(lcc_engine::Session::new(), Services::default());
+    app.ui.settings.compose_window = true;
+    app.headless_host = false;
+    let ctx = egui::Context::default();
+    let mut input = egui::RawInput { focused: true, ..Default::default() };
+    input.viewports.entry(egui::ViewportId::ROOT).or_default().minimized = Some(false);
+    for _ in 0..3 {
+        ctx.run_ui(input.clone(), |_| {}).textures_delta.clear();
+    }
+    let requested = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&requested);
+    ctx.set_request_repaint_callback(move |_| {
+        seen.store(true, Ordering::SeqCst);
+    });
+    app.end_frame(&ctx, 0.0);
+    assert!(!requested.load(Ordering::SeqCst));
+    ctx.request_repaint();
+    assert!(requested.load(Ordering::SeqCst), "the observer must detect an actual repaint request");
+}
+
 fn demo(size: [f32; 2], ui: serde_json::Value) -> Headless {
     let services = Services { png: None, ..Default::default() };
     let app = LccApp::new(lcc_engine::Session::with_demo(), services);

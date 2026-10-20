@@ -2367,5 +2367,6 @@
   "Checking the GPU for faces": "Проверка ГП для лиц",
   "Return to Latest": "Вернуться к последнему",
   "Enhance": "Улучшение",
-  "Plug-in Filters": "Фильтры плагинов"
+  "Plug-in Filters": "Фильтры плагинов",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Предотвращать мерцание G-SYNC/FreeSync (после перезапуска)"
 }

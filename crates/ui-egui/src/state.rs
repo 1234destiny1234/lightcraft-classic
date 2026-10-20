@@ -317,6 +317,8 @@ pub struct AppSettings {
     pub ask_before_move: bool,
     /// GPU rendering allowed (`app.gpu`).
     pub gpu: bool,
+    /// Windows DirectComposition to prevent VRR flicker; opt-in, applies at next launch.
+    pub compose_window: bool,
     /// Largest long edge (pixels) the user lets the loupe render at; 0 = Automatic (the size it is
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
@@ -387,6 +389,7 @@ impl Default for AppSettings {
             confirm_delete: true,
             ask_before_move: true,
             gpu: true,
+            compose_window: false,
             preview_limit: 0,
             external_editor: String::new(),
             external_file: EditFile::default(),

@@ -643,6 +643,8 @@ pub fn lens_db_folder(app: &mut LccApp, p: &Value) -> Result<Value, String> {
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
+    #[cfg(target_os = "windows")]
+    check(ui, "settings.composeWindow", &mut app.ui.settings.compose_window, "Prevent G-SYNC/FreeSync flicker (applies at next launch)");
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
     let status = if !gpu::available() {
         match gpu::unavailable_reason() {
