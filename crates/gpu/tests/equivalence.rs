@@ -57,7 +57,7 @@ fn diff(a: &Rgba8, b: &Rgba8) -> (f64, u8, f64) {
     assert_eq!((a.width, a.height), (b.width, b.height));
     let (mut sum, mut max, mut over) = (0u64, 0u8, 0u64);
     for (p, q) in a.data.iter().zip(&b.data) {
-        for c in 0..3 {
+        for c in 0..6 {
             let d = p[c].abs_diff(q[c]);
             sum += d as u64;
             max = max.max(d);
@@ -989,4 +989,27 @@ fn windows_of_a_big_photo_share_one_uploaded_source() {
     assert_eq!(lcc_gpu::shared_source_bytes(), 0, "an idle app gives it back");
     lcc_gpu::render(&src, &info, &s, &at(1000), Some(&after)).expect("gpu render");
     assert_eq!(lcc_gpu::source_uploads() - start, 2);
+}
+
+/// The histogram binned on the GPU is exactly the CPU oracle's histogram of the image the GPU
+/// returned: channels, chroma, vectorscope and waveform, sampled (> 1 MP) or not, with and without
+/// a blank border.
+#[test]
+fn gpu_histogram_matches_the_cpu_oracle() {
+    if !gpu() {
+        return;
+    }
+    let mut bordered = DevelopSettings::default();
+    bordered.geometry.vertical = -40.0;
+    bordered.geometry.rotate = 3.0;
+    let mut edited = DevelopSettings::default();
+    edited.light.exposure = 0.7;
+    edited.color.saturation = 40.0;
+    for (name, s, w, h) in [("plain", DevelopSettings::default(), 320, 240), ("bordered", bordered, 900, 600), ("sampled", edited, 1600, 1200)] {
+        let src = scene(2, w, h);
+        let r = lcc_gpu::render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(w, h), None).expect("gpu render");
+        let oracle = lcc_raster::Histogram::of_srgb8_covered(&r.image, r.coverage.as_deref());
+        assert!(r.histogram.total > 0 && r.histogram.has_waveform(), "{name}: empty histogram");
+        assert_eq!(r.histogram, oracle, "{name}: GPU histogram differs from the CPU oracle");
+    }
 }
