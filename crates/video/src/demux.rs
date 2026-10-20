@@ -218,7 +218,9 @@ fn bitstream_par(clip: &Clip) -> (Option<(u32, u32)>, bool) {
         vui_sar(sps.vui?.sar)
     };
     match &clip.codec {
-        Some(Codec::H264 { avcc: Some(a) }) => filmcraft_isobmff::AvcConfig::parse(a).ok().and_then(|c| c.sps.first().map(|n| h264(n))).unwrap_or((None, false)),
+        Some(Codec::H264 { avcc: Some(a) }) => {
+            filmcraft_isobmff::AvcConfig::parse(a).ok().and_then(|c| c.sps.first().map(|n| h264(n))).unwrap_or((None, false))
+        }
         Some(Codec::H264 { avcc: None }) => {
             let sample = first().unwrap_or_default();
             let nal = filmcraft_bitstream::annexb_nals(&sample).into_iter().find(|n| n.first().is_some_and(|h| h & 0x1f == 7)).map(<[u8]>::to_vec);
