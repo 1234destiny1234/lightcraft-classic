@@ -1444,5 +1444,7 @@
   "Device storage": "Armazenamento do dispositivo",
   "All files": "Todos os arquivos",
   "Only the files and folders you pick": "Somente os arquivos e pastas que você escolher",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Com acesso a todos os arquivos, as pastas do dispositivo são lidas onde estão em vez de copiadas."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Com acesso a todos os arquivos, as pastas do dispositivo são lidas onde estão em vez de copiadas.",
+  "Raw Details": "Detalhes RAW",
+  "Super Resolution": "Super-resolução"
 }

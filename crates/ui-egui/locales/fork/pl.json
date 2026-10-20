@@ -43,5 +43,7 @@
   "Device storage": "Pamięć urządzenia",
   "All files": "Wszystkie pliki",
   "Only the files and folders you pick": "Tylko wybrane pliki i foldery",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Z dostępem do wszystkich plików foldery na urządzeniu są odczytywane na miejscu zamiast kopiowania."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Z dostępem do wszystkich plików foldery na urządzeniu są odczytywane na miejscu zamiast kopiowania.",
+  "Raw Details": "Szczegóły RAW",
+  "Super Resolution": "Super rozdzielczość"
 }
