@@ -220,17 +220,20 @@ mod imp {
                 let local = super::jvm::activity(app)?;
                 let global = env.new_global_ref(&local).map_err(|e| jni_error("reference the activity", e))?;
                 let class = env.get_object_class(&global).map_err(|e| jni_error("the activity's class", e))?;
-                let methods = [NativeMethod {
-                    name: "nativePicked".into(),
-                    sig: "(J[Ljava/lang/String;)V".into(),
-                    fn_ptr: native_picked as *mut std::ffi::c_void,
-                }];
+                let methods = [
+                    NativeMethod {
+                        name: "nativePicked".into(),
+                        sig: "(J[Ljava/lang/String;)V".into(),
+                        fn_ptr: native_picked as *mut std::ffi::c_void,
+                    },
+                    crate::opened::native_method(),
+                ];
                 env.register_native_methods(&class, &methods).map_err(|e| jni_error("register nativePicked", e))?;
                 global
             };
             let host = Host { vm, activity };
-            // answers that came before this (the app was restarted for a picker's result) are
-            // delivered now; an activity without the method is only older and loses nothing new
+            // picker answers that came before this (the app was restarted for a picker's result) and
+            // photos shared before the app was up waited in the activity: ask for them now
             if let Err(e) = host.call("hostReady", |env, activity| env.call_method(activity, "hostReady", "()V", &[]).map(|_| ())) {
                 log::warn!("{e}");
             }
@@ -240,6 +243,12 @@ mod imp {
         /// Picker answers no request was waiting for (see [`Unclaimed`]).
         pub fn take_unclaimed(&self) -> Vec<Unclaimed> {
             pending(Answers::take_unclaimed)
+        }
+
+        /// Photos opened, shared or dropped from other apps since the last call (paths of the
+        /// activity's copies, oldest first). The app drains this every frame.
+        pub fn take_opened(&self) -> Vec<String> {
+            crate::opened::take()
         }
 
         /// Sets what asks the UI for a frame when an answer arrives. Only the first call counts.
@@ -298,6 +307,13 @@ mod imp {
         }
     }
 
+    /// Asks the UI for a frame, when the app has set a waker.
+    pub(crate) fn wake() {
+        if let Some(wake) = WAKER.get() {
+            wake();
+        }
+    }
+
     fn pending<R>(f: impl FnOnce(&mut Answers) -> R) -> R {
         let mut guard = PENDING.lock().unwrap_or_else(PoisonError::into_inner);
         f(guard.get_or_insert_with(Answers::default))
@@ -315,7 +331,7 @@ mod imp {
     }
 
     /// `None` for a null array (the activity's "the pick failed").
-    fn read_strings(env: &mut JNIEnv, array: &JObjectArray) -> jni::errors::Result<Option<Vec<String>>> {
+    pub(crate) fn read_strings(env: &mut JNIEnv, array: &JObjectArray) -> jni::errors::Result<Option<Vec<String>>> {
         if array.is_null() {
             return Ok(None);
         }
@@ -348,6 +364,55 @@ mod imp {
         }));
         if answered.is_err() {
             log::error!("picker answer: a panic was caught");
+        }
+    }
+}
+
+/// Photos opened, shared or dropped from other apps (AND.6): the activity copies them and calls
+/// `nativeOpened(String[] paths)`; they wait here until the app's next frame takes them.
+#[cfg(target_os = "android")]
+mod opened {
+    use std::sync::{Mutex, PoisonError};
+
+    use jni::objects::{JObject, JObjectArray};
+    use jni::{JNIEnv, NativeMethod};
+
+    /// Most paths that can wait: a runaway sender can't grow this without bound.
+    const MAX_WAITING: usize = 10_000;
+
+    static QUEUE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    pub fn native_method() -> NativeMethod {
+        NativeMethod { name: "nativeOpened".into(), sig: "([Ljava/lang/String;)V".into(), fn_ptr: native_opened as *mut std::ffi::c_void }
+    }
+
+    pub fn take() -> Vec<String> {
+        std::mem::take(&mut *QUEUE.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// `void nativeOpened(String[] paths)`.
+    extern "system" fn native_opened<'l>(mut env: JNIEnv<'l>, _this: JObject<'l>, paths: JObjectArray<'l>) {
+        // a panic must never unwind into the JVM
+        let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let list = match super::imp::read_strings(&mut env, &paths) {
+                Ok(l) => l.unwrap_or_default(),
+                Err(e) => {
+                    log::warn!("shared photos unreadable: {e}");
+                    return;
+                }
+            };
+            {
+                let mut q = QUEUE.lock().unwrap_or_else(PoisonError::into_inner);
+                let room = MAX_WAITING.saturating_sub(q.len());
+                if list.len() > room {
+                    log::warn!("{} shared photos dropped: too many waiting", list.len() - room);
+                }
+                q.extend(list.into_iter().take(room));
+            }
+            super::imp::wake();
+        }));
+        if done.is_err() {
+            log::error!("shared photos: a panic was caught");
         }
     }
 }

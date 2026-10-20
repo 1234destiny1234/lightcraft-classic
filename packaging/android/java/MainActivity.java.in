@@ -13,6 +13,7 @@ package {{android_package}};
 
 import android.app.NativeActivity;
 import android.content.ClipData;
+import android.content.ClipDescription;
 import android.content.ContentResolver;
 import android.content.Intent;
 import android.database.Cursor;
@@ -23,6 +24,9 @@ import android.os.FileObserver;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.util.Log;
+import android.widget.Toast;
+import android.view.DragAndDropPermissions;
+import android.view.DragEvent;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -88,6 +92,7 @@ public class MainActivity extends NativeActivity {
         } catch (RuntimeException e) {
             Log.w(TAG, "no multicast lock: " + e);
         }
+        startReceiving(getIntent());
     }
 
     @Override
@@ -243,7 +248,7 @@ public class MainActivity extends NativeActivity {
         }
     }
 
-    /** Called by the native side once nativePicked is registered: delivers the answers held. */
+    /** Called by the native side once nativePicked and nativeOpened are registered: delivers what waited. */
     public void hostReady() {
         List<Object[]> waiting;
         synchronized (held) {
@@ -252,6 +257,7 @@ public class MainActivity extends NativeActivity {
             held.clear();
         }
         for (Object[] a : waiting) answer((Long) a[0], (String[]) a[1]);
+        openedReady();
     }
 
     /** Where picked documents are copied: the external files folder, beside the library. */
@@ -379,6 +385,176 @@ public class MainActivity extends NativeActivity {
                 startActivity(new Intent(Intent.ACTION_VIEW, uri));
             } catch (Exception e) {
                 Log.w(TAG, "open " + url + ": " + e);
+            }
+        });
+    }
+
+    // ---- Photos opened or shared from other apps, and dropped from them (AND.6) ----
+    //
+    // VIEW / SEND / SEND_MULTIPLE intents and drag and drop hand over content:// documents. They are
+    // copied into Incoming/Shared… off the UI thread and the paths go to nativeOpened, which opens the
+    // import review. The intent can arrive before the native side has registered nativeOpened, so
+    // paths wait in `opened` until hostReady() says it is there.
+
+    /** Paths opened from other apps (registered by crates/android-host). */
+    private native void nativeOpened(String[] paths);
+
+    private final List<String> opened = new ArrayList<>();
+    private boolean hostReady;
+
+    @Override
+    protected void onNewIntent(Intent intent) {
+        super.onNewIntent(intent);
+        setIntent(intent);
+        receive(intent);
+    }
+
+    /** onCreate: the launching intent, and drops from other apps from now on. */
+    private void startReceiving(Intent intent) {
+        // a recreated activity (after a configuration change) must not import the launching intent twice
+        if (intent != null && (intent.getFlags() & Intent.FLAG_ACTIVITY_LAUNCHED_FROM_HISTORY) == 0) receive(intent);
+        try {
+            getWindow().getDecorView().setOnDragListener((v, event) -> onDrag(event));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no drag and drop: " + e);
+        }
+    }
+
+    /** Part of hostReady(): nativeOpened is registered, hand over what waited. */
+    private void openedReady() {
+        String[] waiting;
+        synchronized (opened) {
+            hostReady = true;
+            waiting = opened.toArray(new String[0]);
+            opened.clear();
+        }
+        if (waiting.length > 0) deliverOpened(waiting);
+    }
+
+    private void receive(Intent intent) {
+        final List<Uri> uris = new ArrayList<>();
+        try {
+            String action = intent.getAction();
+            if (Intent.ACTION_VIEW.equals(action)) {
+                if (intent.getData() != null) uris.add(intent.getData());
+            } else if (Intent.ACTION_SEND.equals(action) || Intent.ACTION_SEND_MULTIPLE.equals(action)) {
+                ClipData clip = intent.getClipData();
+                if (clip != null) {
+                    for (int i = 0; i < clip.getItemCount(); i++) {
+                        Uri u = clip.getItemAt(i).getUri();
+                        if (u != null) uris.add(u);
+                    }
+                }
+                if (uris.isEmpty()) {
+                    if (Intent.ACTION_SEND.equals(action)) {
+                        Uri u = intent.getParcelableExtra(Intent.EXTRA_STREAM);
+                        if (u != null) uris.add(u);
+                    } else {
+                        ArrayList<Uri> list = intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM);
+                        if (list != null) for (Uri u : list) if (u != null) uris.add(u);
+                    }
+                }
+            } else {
+                return;
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "shared photos unreadable: " + e);
+            toast("Couldn't read the shared photos");
+            return;
+        }
+        // handled once: a later recreation of the activity sees a plain launch
+        intent.setAction(Intent.ACTION_MAIN);
+        receiveUris(uris, null);
+    }
+
+    private boolean onDrag(DragEvent event) {
+        switch (event.getAction()) {
+            case DragEvent.ACTION_DRAG_STARTED: {
+                ClipDescription d = event.getClipDescription();
+                return d != null && (d.hasMimeType("image/*") || d.hasMimeType("application/octet-stream"));
+            }
+            case DragEvent.ACTION_DROP: {
+                ClipData clip = event.getClipData();
+                if (clip == null) return false;
+                DragAndDropPermissions perms = null;
+                try {
+                    perms = requestDragAndDropPermissions(event);
+                } catch (RuntimeException e) {
+                    Log.w(TAG, "drop permissions: " + e);
+                }
+                List<Uri> uris = new ArrayList<>();
+                for (int i = 0; i < clip.getItemCount(); i++) {
+                    Uri u = clip.getItemAt(i).getUri();
+                    if (u != null && ContentResolver.SCHEME_CONTENT.equals(u.getScheme())) uris.add(u);
+                }
+                receiveUris(uris, perms);
+                return !uris.isEmpty();
+            }
+            default:
+                return true;
+        }
+    }
+
+    /** Copies `uris` into a new Incoming/Shared folder off the UI thread, then hands the paths over. */
+    private void receiveUris(final List<Uri> uris, final DragAndDropPermissions perms) {
+        if (uris.isEmpty()) {
+            if (perms != null) perms.release();
+            return;
+        }
+        new Thread(() -> {
+            List<String> out = new ArrayList<>();
+            int failed = 0;
+            try {
+                File dir = unique(incoming(), "Shared");
+                if (!dir.mkdirs() && !dir.isDirectory()) throw new IOException("can't create " + dir);
+                for (Uri uri : uris) {
+                    try {
+                        File dest = unique(dir, safeName(displayName(uri), "photo"));
+                        copy(uri, dest);
+                        out.add(dest.getAbsolutePath());
+                    } catch (Exception e) {
+                        failed++;
+                        Log.w(TAG, "copy " + uri + ": " + e);
+                    }
+                }
+            } catch (Exception e) {
+                failed = uris.size();
+                Log.w(TAG, "shared photos: " + e);
+            } finally {
+                if (perms != null) {
+                    try {
+                        perms.release();
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "release drop permissions: " + e);
+                    }
+                }
+            }
+            if (failed > 0) toast(failed == 1 ? "Couldn't copy 1 shared photo" : "Couldn't copy " + failed + " shared photos");
+            if (!out.isEmpty()) deliverOpened(out.toArray(new String[0]));
+        }, "shared").start();
+    }
+
+    private void deliverOpened(String[] paths) {
+        synchronized (opened) {
+            if (!hostReady) {
+                for (String p : paths) opened.add(p);
+                return;
+            }
+        }
+        try {
+            nativeOpened(paths);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeOpened: " + t);
+            toast("Couldn't open the shared photos");
+        }
+    }
+
+    private void toast(final String text) {
+        runOnUiThread(() -> {
+            try {
+                Toast.makeText(this, text, Toast.LENGTH_LONG).show();
+            } catch (RuntimeException e) {
+                Log.w(TAG, "toast: " + e);
             }
         });
     }
