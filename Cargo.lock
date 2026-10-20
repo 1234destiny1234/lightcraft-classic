@@ -4440,6 +4440,7 @@ dependencies = [
  "lcc-ui-egui",
  "log",
  "serde_json",
+ "skrifa 0.44.0",
 ]
 
 [[package]]

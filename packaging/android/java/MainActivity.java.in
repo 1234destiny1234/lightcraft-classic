@@ -1,6 +1,6 @@
 // The Android app's activity: a NativeActivity running the app's native library (libapp.so,
 // apps/android), plus what only Java can do for it (crates/android-host calls these methods):
-// the system pickers (Storage Access Framework) and opening links.
+// the system pickers (Storage Access Framework), opening links, and the on-screen keyboard.
 //
 // Picked documents are copied into the app's own folders, so the native side only ever sees file
 // paths. For a save, the native side gets a path in the cache to write; a FileObserver copies the
@@ -22,7 +22,15 @@ import android.os.Bundle;
 import android.os.FileObserver;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
+import android.text.InputType;
 import android.util.Log;
+import android.view.KeyEvent;
+import android.view.View;
+import android.view.inputmethod.BaseInputConnection;
+import android.view.inputmethod.EditorInfo;
+import android.view.inputmethod.InputConnection;
+import android.view.inputmethod.InputMethodManager;
+import android.widget.FrameLayout;
 import android.view.Window;
 import android.view.WindowInsets;
 import android.view.WindowInsetsController;
@@ -70,6 +78,7 @@ public class MainActivity extends NativeActivity {
     protected void onCreate(Bundle savedInstanceState) {
         super.onCreate(savedInstanceState);
         hideSystemBars();
+        addKeyboardView();
         try {
             WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wifi != null) {
@@ -343,5 +352,144 @@ public class MainActivity extends NativeActivity {
                 Log.w(TAG, "open " + url + ": " + e);
             }
         });
+    }
+
+    // ---- On-screen keyboard ----
+    //
+    // NativeActivity's own soft-input handling is unreliable (no input connection, so no
+    // composing, predictions or non-Latin text). A 1×1 transparent view over the native content
+    // takes focus while the app wants text; its input connection forwards what the keyboard sends
+    // to nativeIme, and the app turns it into text and editing keys. It is a plain View, not an
+    // EditText: no text of its own, so no system selection handles or cursor.
+
+    /** Keyboard input (registered by crates/android-host; codes decoded by ImeEvent::from_wire). */
+    private native void nativeIme(int kind, String text, int a, int b);
+
+    private static final int IME_COMMIT = 0, IME_PREEDIT = 1, IME_FINISH = 2, IME_DELETE = 3, IME_KEY = 4;
+    private static final int KEY_BACKSPACE = 0, KEY_ENTER = 1, KEY_DELETE = 2;
+
+    private KeyboardView keyboardView;
+
+    private void addKeyboardView() {
+        try {
+            keyboardView = new KeyboardView();
+            addContentView(keyboardView, new FrameLayout.LayoutParams(1, 1));
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no keyboard view: " + e);
+            keyboardView = null;
+        }
+    }
+
+    /** Shows the on-screen keyboard (the input view takes focus) or hides it. */
+    public void setKeyboard(final boolean show) {
+        runOnUiThread(() -> {
+            try {
+                KeyboardView v = keyboardView;
+                InputMethodManager imm = (InputMethodManager) getSystemService(INPUT_METHOD_SERVICE);
+                if (v == null || imm == null) return;
+                if (show) {
+                    v.setFocusable(true);
+                    v.setFocusableInTouchMode(true);
+                    v.requestFocus();
+                    imm.restartInput(v);
+                    imm.showSoftInput(v, 0);
+                } else {
+                    imm.hideSoftInputFromWindow(v.getWindowToken(), 0);
+                    v.clearFocus();
+                    v.setFocusable(false);
+                }
+            } catch (RuntimeException e) {
+                Log.w(TAG, "keyboard: " + e);
+            }
+        });
+    }
+
+    private void ime(int kind, CharSequence text, int a, int b) {
+        try {
+            nativeIme(kind, text == null ? null : text.toString(), a, b);
+        } catch (Throwable t) {
+            Log.e(TAG, "nativeIme: " + t);
+        }
+    }
+
+    private final class KeyboardView extends View {
+        KeyboardView() {
+            super(MainActivity.this);
+            setBackgroundColor(0);
+            setFocusable(false);
+        }
+
+        @Override
+        public boolean onCheckIsTextEditor() {
+            return true;
+        }
+
+        @Override
+        public InputConnection onCreateInputConnection(EditorInfo info) {
+            info.inputType = InputType.TYPE_CLASS_TEXT;
+            info.imeOptions = EditorInfo.IME_FLAG_NO_FULLSCREEN | EditorInfo.IME_FLAG_NO_EXTRACT_UI | EditorInfo.IME_ACTION_DONE;
+            info.initialSelStart = 0;
+            info.initialSelEnd = 0;
+            return new KeyboardConnection(this);
+        }
+    }
+
+    /** Forwards everything to the app and keeps no text: the app's field holds it. */
+    private final class KeyboardConnection extends BaseInputConnection {
+        KeyboardConnection(View view) {
+            super(view, false);
+        }
+
+        @Override
+        public boolean commitText(CharSequence text, int newCursorPosition) {
+            ime(IME_COMMIT, text, 0, 0);
+            return true;
+        }
+
+        @Override
+        public boolean setComposingText(CharSequence text, int newCursorPosition) {
+            ime(IME_PREEDIT, text, 0, 0);
+            return true;
+        }
+
+        @Override
+        public boolean finishComposingText() {
+            ime(IME_FINISH, null, 0, 0);
+            return true;
+        }
+
+        @Override
+        public boolean deleteSurroundingText(int before, int after) {
+            ime(IME_DELETE, null, before, after);
+            return true;
+        }
+
+        @Override
+        public boolean performEditorAction(int action) {
+            ime(IME_KEY, null, KEY_ENTER, 0);
+            return true;
+        }
+
+        @Override
+        public boolean sendKeyEvent(KeyEvent event) {
+            if (event.getAction() != KeyEvent.ACTION_DOWN) return true;
+            switch (event.getKeyCode()) {
+                case KeyEvent.KEYCODE_DEL:
+                    ime(IME_KEY, null, KEY_BACKSPACE, 0);
+                    break;
+                case KeyEvent.KEYCODE_FORWARD_DEL:
+                    ime(IME_KEY, null, KEY_DELETE, 0);
+                    break;
+                case KeyEvent.KEYCODE_ENTER:
+                case KeyEvent.KEYCODE_NUMPAD_ENTER:
+                    ime(IME_KEY, null, KEY_ENTER, 0);
+                    break;
+                default: {
+                    int c = event.getUnicodeChar();
+                    if (c > 0) ime(IME_COMMIT, new String(Character.toChars(c)), 0, 0);
+                }
+            }
+            return true;
+        }
     }
 }

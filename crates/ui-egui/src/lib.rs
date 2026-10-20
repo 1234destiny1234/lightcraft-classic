@@ -59,6 +59,7 @@ pub mod shortcuts;
 pub mod sidebar;
 pub mod slideshow_export;
 pub mod slideshow_ui;
+pub mod soft_keyboard;
 pub mod softpaint;
 pub mod space_hand;
 pub mod state;

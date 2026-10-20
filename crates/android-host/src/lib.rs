@@ -3,7 +3,7 @@
 //! The app runs as a native library inside a small Java activity (`packaging/android`, a
 //! `NativeActivity` subclass). What only Java can do goes through it: the system pickers (the
 //! Storage Access Framework, which hands out `content://` documents rather than paths) and opening
-//! links. The activity copies picked documents into the app's own folders, so the app only ever
+//! links, and the on-screen keyboard (`nativeIme`, queued for the next frame: [`take_ime`]). The activity copies picked documents into the app's own folders, so the app only ever
 //! sees file paths, and watches a saved file to copy it to the document the user chose.
 //!
 //! A picker answers asynchronously: [`Host::pick`] returns a channel at once, and the activity
@@ -87,6 +87,67 @@ fn mime_for(ext: &str) -> Option<&'static str> {
     })
 }
 
+/// What the on-screen keyboard sent (the activity's input connection, `nativeIme`).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum ImeEvent {
+    /// Final text at the cursor.
+    Commit(String),
+    /// The composition so far (empty clears it).
+    Preedit(String),
+    /// Keep the composition as final text.
+    FinishComposing,
+    /// Delete characters before and after the cursor.
+    DeleteSurrounding {
+        before: usize,
+        after: usize,
+    },
+    Backspace,
+    /// Forward delete.
+    Delete,
+    Enter,
+}
+
+impl ImeEvent {
+    /// Decodes `nativeIme(kind, text, a, b)` (the codes in `MainActivity.java.in`); `None` for an
+    /// unknown kind. Negative counts are zero.
+    pub fn from_wire(kind: i32, text: Option<String>, a: i32, b: i32) -> Option<ImeEvent> {
+        let count = |n: i32| usize::try_from(n).unwrap_or(0);
+        Some(match kind {
+            0 => ImeEvent::Commit(text.unwrap_or_default()),
+            1 => ImeEvent::Preedit(text.unwrap_or_default()),
+            2 => ImeEvent::FinishComposing,
+            3 => ImeEvent::DeleteSurrounding { before: count(a), after: count(b) },
+            4 => match a {
+                0 => ImeEvent::Backspace,
+                1 => ImeEvent::Enter,
+                2 => ImeEvent::Delete,
+                _ => return None,
+            },
+            _ => return None,
+        })
+    }
+}
+
+/// Keyboard input waiting for the next frame, oldest first (the activity's UI thread adds, the
+/// app's frame takes). Bounded: a flood is dropped rather than held.
+static IME_QUEUE: std::sync::Mutex<Vec<ImeEvent>> = std::sync::Mutex::new(Vec::new());
+const IME_QUEUE_MAX: usize = 4096;
+
+/// Queues keyboard input; `false` when the queue is full and it was dropped.
+pub fn push_ime(event: ImeEvent) -> bool {
+    let mut q = IME_QUEUE.lock().unwrap_or_else(std::sync::PoisonError::into_inner);
+    if q.len() >= IME_QUEUE_MAX {
+        return false;
+    }
+    q.push(event);
+    true
+}
+
+/// Takes the keyboard input that arrived since the last call.
+pub fn take_ime() -> Vec<ImeEvent> {
+    std::mem::take(&mut *IME_QUEUE.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
+}
+
 /// A failed call into the activity.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error(pub String);
@@ -151,6 +212,7 @@ mod imp {
                     fn_ptr: native_picked as *mut std::ffi::c_void,
                 }];
                 env.register_native_methods(&class, &methods).map_err(|e| jni_error("register nativePicked", e))?;
+                super::ime::register(&mut env, &class);
                 global
             };
             Ok(Host { vm, activity })
@@ -201,6 +263,14 @@ mod imp {
             })
         }
 
+        /// Shows or hides the on-screen keyboard (the activity's input view takes focus to show it).
+        pub fn set_keyboard(&self, show: bool) -> Result<(), Error> {
+            self.call("setKeyboard", |env, activity| {
+                env.call_method(activity, "setKeyboard", "(Z)V", &[JValue::Bool(u8::from(show))])?;
+                Ok(())
+            })
+        }
+
         /// Runs `f` on this thread's JNI environment; a Java exception becomes an [`Error`].
         fn call(&self, what: &str, f: impl FnOnce(&mut JNIEnv, &JObject) -> jni::errors::Result<()>) -> Result<(), Error> {
             let mut env = self.vm.attach_current_thread_permanently().map_err(|e| jni_error("attach to the JVM", e))?;
@@ -214,6 +284,13 @@ mod imp {
                 return Err(Error(format!("{what}: the activity threw an exception (see logcat)")));
             }
             result.map_err(|e| jni_error(what, e))
+        }
+    }
+
+    /// Asks the UI for a frame, when the app has set a waker.
+    pub(super) fn wake() {
+        if let Some(wake) = WAKER.get() {
+            wake();
         }
     }
 
@@ -272,6 +349,58 @@ mod imp {
     }
 }
 
+/// The on-screen keyboard's callback: the activity's input connection calls `nativeIme`.
+#[cfg(target_os = "android")]
+mod ime {
+    use jni::JNIEnv;
+    use jni::NativeMethod;
+    use jni::objects::{JClass, JObject, JString};
+    use jni::sys::jint;
+
+    use super::ImeEvent;
+
+    /// Registers `nativeIme` on the activity's class. A failure is logged: the app runs without
+    /// typing from the on-screen keyboard rather than not at all.
+    pub fn register(env: &mut JNIEnv, class: &JClass) {
+        let methods =
+            [NativeMethod { name: "nativeIme".into(), sig: "(ILjava/lang/String;II)V".into(), fn_ptr: native_ime as *mut std::ffi::c_void }];
+        if let Err(e) = env.register_native_methods(class, &methods) {
+            let _ = env.exception_clear();
+            log::error!("no on-screen keyboard input (register nativeIme): {e}");
+        }
+    }
+
+    /// `void nativeIme(int kind, String text, int a, int b)`: queued for the next frame, which the
+    /// waker asks for.
+    extern "system" fn native_ime<'l>(mut env: JNIEnv<'l>, _this: JObject<'l>, kind: jint, text: JString<'l>, a: jint, b: jint) {
+        // a panic must never unwind into the JVM
+        let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let text = if text.is_null() {
+                None
+            } else {
+                match env.get_string(&text) {
+                    Ok(s) => Some(String::from(s)),
+                    Err(e) => {
+                        log::warn!("keyboard text unreadable: {e}");
+                        return;
+                    }
+                }
+            };
+            let Some(event) = ImeEvent::from_wire(kind, text, a, b) else {
+                log::warn!("unknown keyboard event {kind}");
+                return;
+            };
+            if !super::push_ime(event) {
+                log::warn!("keyboard input dropped: the app is not reading it");
+            }
+            super::imp::wake();
+        }));
+        if done.is_err() {
+            log::error!("keyboard input: a panic was caught");
+        }
+    }
+}
+
 /// The JVM handles android-activity gives the app, adopted for the `jni` crate.
 #[cfg(target_os = "android")]
 #[allow(unsafe_code)]
@@ -320,6 +449,31 @@ mod tests {
         // a raw or preset file must never be greyed out
         assert!(PickRequest::mime_types_for(&["jpg", "cr3"]).is_empty());
         assert!(PickRequest::mime_types_for(&["lcpreset"]).is_empty());
+    }
+
+    #[test]
+    fn keyboard_events_decode_and_hostile_ones_are_refused() {
+        assert_eq!(ImeEvent::from_wire(0, Some("é".into()), 0, 0), Some(ImeEvent::Commit("é".into())));
+        assert_eq!(ImeEvent::from_wire(1, None, 0, 0), Some(ImeEvent::Preedit(String::new())));
+        assert_eq!(ImeEvent::from_wire(3, None, -5, i32::MAX), Some(ImeEvent::DeleteSurrounding { before: 0, after: i32::MAX as usize }));
+        assert_eq!(ImeEvent::from_wire(4, None, 0, 0), Some(ImeEvent::Backspace));
+        assert_eq!(ImeEvent::from_wire(4, None, 99, 0), None);
+        assert_eq!(ImeEvent::from_wire(-1, None, 0, 0), None);
+        assert_eq!(ImeEvent::from_wire(i32::MAX, None, 0, 0), None);
+    }
+
+    #[test]
+    fn the_keyboard_queue_is_bounded_and_drains() {
+        let _ = take_ime();
+        let mut accepted = 0;
+        for _ in 0..IME_QUEUE_MAX + 10 {
+            if push_ime(ImeEvent::Enter) {
+                accepted += 1;
+            }
+        }
+        assert_eq!(accepted, IME_QUEUE_MAX);
+        assert_eq!(take_ime().len(), IME_QUEUE_MAX);
+        assert!(take_ime().is_empty());
     }
 
     #[test]

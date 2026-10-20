@@ -8,7 +8,7 @@ covers what exists today.
 | Stage | State |
 |---|---|
 | Shared crates build for `aarch64-linux-android` (`cargo xtask android check`, in `ci --fast`) | ✅ |
-| App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker, Develop, library kept across restarts; status-bar insets not handled yet |
+| App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker, Develop, library kept across restarts; status-bar insets not handled yet; on-screen keyboard and system font fallback |
 | APK / AAB packaging (`cargo xtask android package`), release job (`RELEASE_ANDROID`) | ✅ (arm64 APK 75 MB, AAB 35 MB) |
 | Play Store upload | not started (needs the Play developer account) |
 | Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`; discovery over mDNS / DNS-SD); catalog exchange next |
@@ -30,6 +30,18 @@ covers what exists today.
 - **Peer discovery** is multicast DNS service discovery (RFC 6762 / 6763, `crates/peer`), the same as Bonjour, so
   a future iOS build can join. Android's Wi-Fi drops multicast unless an app holds a `WifiManager.MulticastLock`:
   the activity acquires one in `onCreate` (permission `CHANGE_WIFI_MULTICAST_STATE`) and releases it in `onDestroy`.
+- **On-screen keyboard.** NativeActivity's own soft-input support has no input connection, so predictions, composed
+  text and most non-Latin input never arrive. The activity adds a 1×1 transparent `View` over the native content
+  (a plain view, not an `EditText`, so no system cursor or selection handles). It takes focus while the app wants
+  text; its `InputConnection` keeps no text and forwards `commitText`, `setComposingText`, `finishComposingText`,
+  `deleteSurroundingText`, Enter and Backspace to `nativeIme` (registered at start-up beside `nativePicked`). The
+  native side queues them (bounded) and wakes the UI; the next frame's `raw_input_hook` turns them into egui text,
+  IME pre-edit/commit and key events (`lcc_ui_egui::soft_keyboard`). After each frame the app checks whether a text
+  field wants input (egui's IME output) and calls the activity's `setKeyboard(show)` only when that changes.
+- **System font fallback.** At start-up the app reads a few faces from `/system/fonts` (Noto Sans CJK or
+  DroidSansFallback, `NotoSans<Script>`) for scripts craft-fonts didn't supply, and lists them after every other
+  face (`theme::set_system_fallbacks`). At most 12 faces, 32 MB each and 64 MB together; each is parsed before
+  egui sees it, and a face that can't be read is logged and skipped. Nothing is bundled.
 - **Settings** are written within seconds of a change (`apps/android/src/prefs.rs`), because Android can stop a
   background app without calling `on_exit`.
 

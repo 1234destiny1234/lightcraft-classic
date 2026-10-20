@@ -31,5 +31,7 @@ eframe = { workspace = true, features = ["default_fonts", "wgpu", "android-nativ
 egui = { workspace = true }
 log = { workspace = true }
 serde_json = { workspace = true }
+# checks a device font parses before egui sees it (egui panics on a bad face); the version egui uses
+skrifa = { version = "0.44", default-features = false, features = ["std"] }
 # logcat (pure Rust, MIT/Apache-2.0; writes through the system's liblog)
 android_logger = { version = "0.15", default-features = false }

@@ -3,9 +3,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use lcc_android_host::{AndroidApp, Host, PickKind, PickRequest};
+use lcc_android_host::{AndroidApp, Host, ImeEvent, PickKind, PickRequest};
 use lcc_engine::Session;
 use lcc_ui_egui::panels::library_problem::LibraryProblem;
+use lcc_ui_egui::soft_keyboard::{SoftInput, SoftKeyboard};
 use lcc_ui_egui::{LccApp, Services};
 
 use crate::prefs;
@@ -41,6 +42,9 @@ pub fn main(activity: AndroidApp) {
         lcc_ui_egui::i18n::set_language(ui.language);
     }
     let library = lcc_engine::library::default_dir();
+    // before the UI makes its fonts
+    crate::system_fonts::install();
+    let keyboard_host = host.clone();
 
     let options = eframe::NativeOptions { android_app: Some(activity), renderer: eframe::Renderer::Wgpu, ..Default::default() };
     let result = eframe::run_native(
@@ -60,7 +64,7 @@ pub fn main(activity: AndroidApp) {
                 lcc_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
             }
             let writer = prefs::Writer::new(prefs_path, &app, loaded.keep_file);
-            Ok(Box::new(App { app, writer }))
+            Ok(Box::new(App { app, writer, keyboard: Keyboard { host: keyboard_host, ..Default::default() } }))
         }),
     );
     if let Err(e) = result {
@@ -132,6 +136,50 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
 struct App {
     app: LccApp,
     writer: prefs::Writer,
+    keyboard: Keyboard,
+}
+
+/// The on-screen keyboard: what it typed goes into the frame's input; it shows while a text field
+/// has focus.
+#[derive(Default)]
+struct Keyboard {
+    host: Option<Arc<Host>>,
+    state: SoftKeyboard,
+    shown: bool,
+}
+
+impl Keyboard {
+    fn input(&mut self, raw: &mut egui::RawInput) {
+        for event in lcc_android_host::take_ime() {
+            let input = match event {
+                ImeEvent::Commit(s) => SoftInput::Commit(s),
+                ImeEvent::Preedit(s) => SoftInput::Preedit(s),
+                ImeEvent::FinishComposing => SoftInput::FinishComposing,
+                ImeEvent::DeleteSurrounding { before, after } => SoftInput::DeleteSurrounding { before, after },
+                ImeEvent::Backspace => SoftInput::Backspace,
+                ImeEvent::Delete => SoftInput::Delete,
+                ImeEvent::Enter => SoftInput::Enter,
+            };
+            self.state.events(input, &mut raw.events);
+        }
+    }
+
+    /// Shows or hides the keyboard when whether a text field wants it changed (after the frame).
+    fn follow(&mut self, ctx: &egui::Context) {
+        let wanted = SoftKeyboard::wanted(ctx);
+        if wanted == self.shown {
+            return;
+        }
+        self.shown = wanted;
+        if !wanted {
+            self.state.reset();
+        }
+        if let Some(h) = &self.host
+            && let Err(e) = h.set_keyboard(wanted)
+        {
+            log::warn!("keyboard: {e}");
+        }
+    }
 }
 
 impl eframe::App for App {
@@ -141,11 +189,13 @@ impl eframe::App for App {
         self.writer.tick(&mut self.app, now);
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.keyboard.input(raw);
         self.app.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
         self.app.ui(ui);
+        self.keyboard.follow(ui.ctx());
     }
     fn on_exit(&mut self) {
         if let Err(e) = self.writer.save(&self.app) {
