@@ -1754,6 +1754,9 @@ fn importing_suspected_duplicates_adds_copies_when_asked() {
     let r = s.execute("library.import", &json!({"paths": [copy], "importDuplicates": true})).unwrap();
     assert_eq!((ids(&r, "imported"), ids(&r, "duplicates")), (1, 0), "{r}");
     assert_eq!(s.catalog.len(), 2);
+    // the copy has its own content key, so caches keyed by content never mix the two photos
+    let keys: std::collections::HashSet<String> = s.catalog.photos().map(|p| crate::media::content_key(p)).collect();
+    assert_eq!(keys.len(), 2, "{keys:?}");
     let _ = std::fs::remove_dir_all(&src);
 
     let (mut s, src, id) = trashed_photo("dup-copies-trash");
