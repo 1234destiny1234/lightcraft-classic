@@ -20,7 +20,6 @@ pub mod features;
 pub mod flow;
 pub mod focus;
 pub mod frame;
-pub mod half;
 pub mod hdr;
 pub mod linalg;
 pub mod metrics;
@@ -28,16 +27,13 @@ pub mod output;
 pub mod pano;
 pub mod ransac;
 pub mod refine;
-pub mod response;
-pub mod superres;
 pub mod synth;
 
 pub use focus::{FocusOptions, FocusResult, stack_focus};
-pub use frame::{Frame, FrameColor, RawColour, load_frame, load_frame_full, load_frame_with};
-pub use hdr::{Deghost, HdrFrame, HdrOptions, HdrResult, merge_hdr, merge_hdr_frames};
+pub use frame::{Frame, FrameColor, RawColour, load_frame, load_frame_with};
+pub use hdr::{Deghost, HdrOptions, HdrResult, merge_hdr};
 pub use output::{DngSamples, write_linear_dng};
 pub use pano::{PanoOptions, PanoResult, Projection, stitch};
-pub use superres::super_resolve;
 
 #[derive(Debug, Clone, PartialEq, thiserror::Error)]
 pub enum MergeError {

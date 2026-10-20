@@ -84,8 +84,8 @@ trash = { workspace = true }
 rustix = { workspace = true }
 
 [features]
-# Opt-in cpal sound for targets without a default path (macOS / Windows always use cpal, Linux and
-# the BSDs PulseAudio; on Linux this adds cpal's libasound fallback, see docs/video.md).
+# Clip sound and slideshow music through the sound card (lcc-audio-out with cpal, which links the C
+# library libasound on Linux: off by default, see docs/video.md). Without it playback is muted.
 audio-out = ["lcc-audio-out/audio-out"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lcc-segment"]
@@ -116,8 +116,8 @@ lcc-video = { workspace = true, features = ["test-util"] }
 # M14.4: the GPU playback LUT benchmark (bench_playback)
 wgpu = { workspace = true }
 pollster = { workspace = true }
-filmcraft-h264enc = { git = "https://github.com/emmertex/filmcraft", rev = "10715b2465ed63d54a875cd583a95c77675c6470" }
-filmcraft-isobmff = { git = "https://github.com/emmertex/filmcraft", rev = "10715b2465ed63d54a875cd583a95c77675c6470" }
+filmcraft-h264enc = { git = "https://github.com/storytold/filmcraft", rev = "48088e3a8e50bd4a7a71d1ebdfde0835b01a3051" }
+filmcraft-isobmff = { git = "https://github.com/storytold/filmcraft", rev = "48088e3a8e50bd4a7a71d1ebdfde0835b01a3051" }
 
 [target.'cfg(windows)'.dependencies]
 # free space on Windows (the Folders panel); its own unsafe FFI stays inside the crate

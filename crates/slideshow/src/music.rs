@@ -202,8 +202,7 @@ pub fn mix(samples: &mut [f32], volume: f32, balance: f32) {
     }
 }
 
-/// Whether this build can play sound (always on macOS, Windows, Linux and the BSDs; elsewhere
-/// `lcc-audio-out` built with its `audio-out` feature).
+/// Whether this build can play sound (`lcc-audio-out` built with its `audio-out` feature).
 pub const CAN_PLAY: bool = lcc_audio_out::CAN_PLAY;
 
 /// Music playing on the default output device; dropping it stops the sound.

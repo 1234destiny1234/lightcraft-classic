@@ -71,11 +71,6 @@ const MODULES: &[Module] = &[
         entries: &["shape", "combine", "finalize"],
     },
     Module {
-        src: include_str!("wgsl/hist.wgsl"),
-        bindings: &[("img", false, "u32"), ("cov", false, "u32"), ("hist", true, "atomic<u32>")],
-        entries: &["hist_k"],
-    },
-    Module {
         src: include_str!("wgsl/geom.wgsl"),
         bindings: &[("src", false, "f32"), ("dst", true, "f32"), ("coverage", false, "u32")],
         entries: &["orient", "sample_affine", "sample_warp"],

@@ -26,8 +26,6 @@ pub mod date_picker;
 pub mod dialog_frame;
 pub mod docking;
 mod edit_in;
-mod enhance_pump;
-pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
 pub mod headless;
@@ -133,8 +131,6 @@ mod tests_dialogs;
 mod tests_edit_layout;
 #[cfg(test)]
 mod tests_empty_library;
-#[cfg(test)]
-mod tests_enhance_dialog;
 #[cfg(test)]
 mod tests_error_kinds;
 #[cfg(test)]
@@ -307,9 +303,8 @@ pub trait HdrOutput {
     /// `None` (an SDR display, HDR switched off in the OS, or unknown). Asked every frame.
     fn headroom(&mut self) -> Option<f32>;
     /// Upload a linear-light render (3 floats per pixel, row-major, SDR white = 1, sRGB
-    /// primaries) as view `view`'s HDR texture ([`render::HDR_LOUPE`]…), replacing that view's
-    /// previous one (each view keeps its own).
-    fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+    /// primaries) as the loupe's HDR texture, replacing the previous one.
+    fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
     /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
     /// true, the renderer should skip monitor profile conversion (P2-3).
     fn extended(&self) -> bool {
@@ -547,8 +542,6 @@ pub struct LccApp {
     pub(crate) full_preview_loaded: Option<(lcc_catalog::PhotoId, u64)>,
     /// Photo Merge dialog previews and background merges.
     pub merge: merge::MergeState,
-    /// The Enhance dialog's preview and photos.
-    pub enhance: enhance_ui::EnhanceUi,
     /// An import in progress (the import review dialog's batches).
     pub import: Option<import::ImportTask>,
     /// A folder scan in progress (feeds the import review).
@@ -701,7 +694,6 @@ impl LccApp {
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
-            enhance: enhance_ui::EnhanceUi::default(),
             import: None,
             scan: None,
             sync: None,
@@ -1415,7 +1407,6 @@ impl LccApp {
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
         focus_scan::pump(self, ctx);
-        enhance_pump::pump(self, ctx);
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         edit_in::show(self, ctx);

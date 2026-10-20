@@ -61,8 +61,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   allocator pages to macOS after raw decodes) **and `crates/hdrmeta`** (wgpu-hal calls on Linux / BSD: open the
   window's Vulkan device with `VK_EXT_hdr_metadata`, and `vkSetHdrMetadataEXT` on its swapchain, so the Wayland
   compositor shows HDR; no-op elsewhere). **`crates/android-host`** (JNI: adopt the Java VM and activity handles
-  android-activity gives the Android app, for its pickers and links) **`crates/winspool`** (Win32 GDI / winspool calls on Windows: list the system's printers and draw rendered pages on
-  one, for printing through the Windows print spooler; reports unsupported elsewhere) **and `apps/android`'s `android_main`** (the
+  android-activity gives the Android app, for its pickers and links) **and `apps/android`'s `android_main`** (the
   `#[unsafe(no_mangle)]` entry point android-activity looks up; nothing else). Every other production crate root has `#![forbid(unsafe_code)]`. A new
   unsafe need goes in an isolated, well-tested helper crate like it: `// SAFETY:` on every block, a safe API, a safe
   fallback where possible, and a line here naming it.

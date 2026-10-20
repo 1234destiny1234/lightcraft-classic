@@ -256,7 +256,6 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::SlideshowExport { .. } => "Export Slideshow",
         Dialog::Print => "Print",
         Dialog::Merge { opts } => opts.title(),
-        Dialog::Enhance { .. } => "Enhance Preview",
         Dialog::Settings { .. } => "Settings",
         Dialog::ConfirmDelete { .. } => "Delete Photos",
         Dialog::ConfirmPurge { all: true, .. } => "Empty Recently Deleted",
@@ -832,7 +831,6 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     export_body(app, ui, ExportForm { opts, full_size, resize, preset_name, limit_kb, dir }, window_id, settings_height)
                 }
                 Dialog::Merge { opts } => crate::merge::body(app, ui, opts),
-                Dialog::Enhance { opts } => crate::enhance_ui::body(app, ui, opts),
                 Dialog::Import { opts } => crate::import::body(app, ui, opts),
                 Dialog::Settings { tab } => crate::panels::settings::body(app, ui, tab, settings_height),
                 Dialog::SamModel { error, .. } => sam_model_body(app, ui, error.as_deref()),
@@ -1269,7 +1267,6 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::SlideshowExport { .. } => "Export…",
                     Dialog::Print => "Print to PDF…",
                     Dialog::Merge { .. } => "Merge",
-                    Dialog::Enhance { .. } => "Enhance",
                     Dialog::DenoiseModel { info, .. } if info["download"].is_string() => "Accept & Download",
                     Dialog::DenoiseModel { .. } => "Install",
                     Dialog::FaceModel { info, .. } if !informational && info["download"].is_string() => "Download",
@@ -1847,7 +1844,6 @@ pub fn confirm_dialog(app: &mut LccApp, dlg: &Dialog) -> Result<serde_json::Valu
             app.run("app.export", p)
         }
         Dialog::Merge { opts } => crate::merge::start_final(app, opts),
-        Dialog::Enhance { opts } => crate::enhance_ui::confirm(app, opts),
         Dialog::Import { opts } => crate::import::start(app, opts),
         Dialog::ConfirmDelete { .. } => app.run("photo.delete", json!({})),
         Dialog::ConfirmPurge { all: true, .. } => app.run("library.emptyRecentlyDeleted", json!({})),

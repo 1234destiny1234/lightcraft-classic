@@ -585,7 +585,7 @@ fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
                     app,
                     "Finding printers",
                     None,
-                    move || lcc_print::send::find_printers(&server),
+                    move || lcc_print::ipp::cups_printers(&server),
                     |app, ctx, r| match r {
                         Ok(list) => {
                             if app.print.printer_uri.is_empty()
@@ -675,9 +675,9 @@ fn start(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
     let path = match settings.destination {
         Destination::Printer => {
             if printer.trim().is_empty() {
-                return Err("choose a printer (Find Printers, or enter an ipp:// URI or, on Windows, the printer's name)".into());
+                return Err("choose a printer (Find Printers, or enter an ipp:// URI)".into());
             }
-            lcc_print::send::check_printer(&printer).map_err(|e| e.to_string())?;
+            lcc_print::ipp::IppUri::parse(&printer).map_err(|e| e.to_string())?;
             String::new()
         }
         Destination::Pdf | Destination::Jpeg => {

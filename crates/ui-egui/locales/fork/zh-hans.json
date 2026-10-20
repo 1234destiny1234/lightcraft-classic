@@ -1357,15 +1357,5 @@
   "Device storage": "设备存储",
   "All files": "所有文件",
   "Only the files and folders you pick": "仅限您选择的文件和文件夹",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有文件的访问权限，设备上的文件夹会就地读取，而不是复制。",
-  "Raw Details": "RAW 细节",
-  "Super Resolution": "超分辨率",
-  "Enhance…": "增强…",
-  "Enhance Preview": "增强预览",
-  "Making the preview…": "正在生成预览…",
-  "Click to zoom": "单击以缩放",
-  "Enhancements": "增强",
-  "Finer detail and edges, less false colour, at the same size.": "相同尺寸下更精细的细节和边缘，更少的伪色。",
-  "Raw Details, then twice the width and height (four times the pixels).": "先进行 Raw 细节，再将宽度和高度加倍（像素为四倍）。",
-  "Estimating time…": "正在估算时间…"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有文件的访问权限，设备上的文件夹会就地读取，而不是复制。"
 }

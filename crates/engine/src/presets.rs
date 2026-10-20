@@ -475,7 +475,8 @@ pub struct ProfileInfo {
 
 /// Our base profiles (rendering looks). Implemented in the pipeline.
 pub const PROFILES: &[ProfileInfo] = &[
-    ProfileInfo { id: "lc.color", name: "Color", group: "Basic" },
+    ProfileInfo { id: "lc.color", name: "Craft Colour", group: "Basic" },
+    ProfileInfo { id: "lc.eboda", name: "Eboda Colour", group: "Basic" },
     ProfileInfo { id: "lc.neutral", name: "Neutral", group: "Basic" },
     ProfileInfo { id: "lc.vivid", name: "Vivid", group: "Basic" },
     ProfileInfo { id: "lc.landscape", name: "Landscape", group: "Basic" },

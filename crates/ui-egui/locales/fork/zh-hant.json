@@ -1443,15 +1443,5 @@
   "Device storage": "裝置儲存空間",
   "All files": "所有檔案",
   "Only the files and folders you pick": "僅限您選擇的檔案和資料夾",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有檔案的存取權限，裝置上的資料夾會就地讀取，而不是複製。",
-  "Raw Details": "RAW 細節",
-  "Super Resolution": "超解析度",
-  "Enhance…": "增強…",
-  "Enhance Preview": "增強預覽",
-  "Making the preview…": "正在產生預覽…",
-  "Click to zoom": "按一下以縮放",
-  "Enhancements": "增強",
-  "Finer detail and edges, less false colour, at the same size.": "相同尺寸下更精細的細節和邊緣，更少的偽色。",
-  "Raw Details, then twice the width and height (four times the pixels).": "先進行 Raw 細節，再將寬度和高度加倍（像素為四倍）。",
-  "Estimating time…": "正在估算時間…"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有檔案的存取權限，裝置上的資料夾會就地讀取，而不是複製。"
 }

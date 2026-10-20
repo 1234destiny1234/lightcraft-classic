@@ -52,10 +52,5 @@
   "{path} · {count} photos": "{path} · {count} foto",
   "{photos} photo(s) selected for print": "{photos} foto selezionate per la stampa",
   "{p} photos, {f} files": "{p} foto, {f} file",
-  "{} keys": "Tasti per {}",
-  "about {} seconds": "circa {} secondi",
-  "about {} minutes": "circa {} minuti",
-  "about {} hours": "circa {} ore",
-  "Output: {} × {} px": "Uscita: {} × {} px",
-  "Estimated time: {est}": "Tempo stimato: {est}"
+  "{} keys": "Tasti per {}"
 }

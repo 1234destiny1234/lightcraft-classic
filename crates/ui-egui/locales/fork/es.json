@@ -1447,15 +1447,5 @@
   "Device storage": "Almacenamiento del dispositivo",
   "All files": "Todos los archivos",
   "Only the files and folders you pick": "Solo los archivos y carpetas que elijas",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Con acceso a todos los archivos, las carpetas del dispositivo se leen donde están en lugar de copiarse.",
-  "Raw Details": "Detalles RAW",
-  "Super Resolution": "Superresolución",
-  "Enhance…": "Mejorar…",
-  "Enhance Preview": "Vista previa de Mejorar",
-  "Making the preview…": "Creando la vista previa…",
-  "Click to zoom": "Haga clic para ampliar",
-  "Enhancements": "Mejoras",
-  "Finer detail and edges, less false colour, at the same size.": "Detalle y bordes más finos, menos color falso, al mismo tamaño.",
-  "Raw Details, then twice the width and height (four times the pixels).": "Detalles RAW y luego el doble de ancho y alto (cuatro veces los píxeles).",
-  "Estimating time…": "Calculando el tiempo…"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Con acceso a todos los archivos, las carpetas del dispositivo se leen donde están en lugar de copiarse."
 }
