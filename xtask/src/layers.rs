@@ -40,6 +40,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("tiff", Class::Layer(0)),
     ("sysmem", Class::Layer(0)),
     ("hdrmeta", Class::Layer(0)),
+    ("winspool", Class::Layer(0)),
     ("android-host", Class::Layer(0)),
     ("peer", Class::Layer(0)),
     ("audio-out", Class::Layer(0)),

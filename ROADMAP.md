@@ -232,6 +232,8 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 ## Log
 - 2026-10-20: gap 14: HDR edits show in HDR zoomed in, in Before/After, Compare and the second window; View ▸ HDR Preview
   toggle (MENU-VIEW-HDR); HDR display work left: GPU HDR renders, X11.
+- 2026-10-20: gap 29 (HDR merge) narrows to AI Denoise on merged DNGs: JPEG brackets are linearised through a
+  recovered camera response, frames are held as half floats (5 × 48 MP merge 5.1 → 3.6 GB peak); numbers unchanged.
 - 2026-10-20: gaps audit: lens profile database and CR3 variants no longer beta blockers; beta estimate ~330–585 → ~280–480 h
   (target-app-parity.md).
 - 2026-10-15 (upstream batch 40): raw-parity action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies)
