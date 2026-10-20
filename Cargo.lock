@@ -5091,6 +5091,7 @@ dependencies = [
  "lcc-raster",
  "lcc-testkit",
  "lcc-text",
+ "lcc-winspool",
  "lopdf",
  "rustls",
  "rustls-rustcrypto",
@@ -5407,6 +5408,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "lcc-winspool"
+version = "0.9.5"
+dependencies = [
+ "lcc-testkit",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
