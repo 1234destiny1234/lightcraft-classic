@@ -193,21 +193,23 @@ fn for_each_pos(frame: &Frame, w: usize, h: usize, out: &mut Plane, f: impl Fn(P
 /// The alpha plane of one component shape. AI shapes use the source's matching `mattes`, if any.
 #[allow(clippy::too_many_arguments)]
 pub fn shape_alpha(shape: &MaskShape, frame: &Frame, w: usize, h: usize, img: &Rgb32f, log_l: &Plane, ev: f32, mattes: Option<&Mattes>) -> Plane {
+    // Background is the complement of Subject, whichever source (embedded matte or automatic grid) Subject uses
+    if matches!(shape, MaskShape::Background) {
+        let mut s = shape_alpha(&MaskShape::Subject, frame, w, h, img, log_l, ev, mattes);
+        s.data.iter_mut().for_each(|v| *v = 1.0 - *v);
+        return s;
+    }
     let fitting = mattes.map(|m| m.for_shape(shape)).unwrap_or_default();
     if !fitting.is_empty() {
         return matte_alpha(&fitting, frame, w, h);
     }
     if let Some(auto) = mattes.and_then(|m| m.auto.as_deref()) {
-        let grid = if matches!(shape, MaskShape::Background) { Some(&auto.subject) } else { auto.for_shape(shape) };
+        let grid = auto.for_shape(shape);
         if let Some(grid) = grid.filter(|_| crate::auto_mask::wants(shape)) {
             let coarse = crate::auto_mask::sample(grid, frame, w, h);
             // snap the coarse grid's edges to the photo's (radius: a grid cell)
             let cell = (frame_px(frame, w) / grid.width.max(grid.height).max(1) as f32).max(1.0);
-            let mut a = guided_cross(log_l, &coarse, 1.5 * cell, 0.01);
-            if matches!(shape, MaskShape::Background) {
-                a.data.iter_mut().for_each(|v| *v = 1.0 - *v);
-            }
-            return a;
+            return guided_cross(log_l, &coarse, 1.5 * cell, 0.01);
         }
     }
     let mut out = Plane::new(w, h);
@@ -724,6 +726,28 @@ mod tests {
 
     fn frame(w: usize, h: usize) -> Frame {
         Frame::new(w, h, &DevelopSettings::default(), true)
+    }
+
+    /// With an embedded Subject matte and an automatic grid beside it, Background is the inverse of the
+    /// matte (not of the grid, which Subject does not use).
+    #[test]
+    fn background_inverts_the_embedded_subject_matte() {
+        let (w, h) = (16, 16);
+        let f = frame(w, h);
+        let img = Rgb32f::new(w, h);
+        let log_l = Plane::new(w, h);
+        let mut m = Mattes::default();
+        m.push(MatteKind::Person, Image::from_fn(w, h, |x, _| if x < 8 { 255u8 } else { 0 }));
+        // a grid that would select the opposite half
+        let mut auto = crate::auto_mask::analyze(&Rgb32f::new(0, 0));
+        auto.subject = Plane::from_fn(8, 8, |x, _| if x < 4 { 0.0 } else { 1.0 });
+        m.auto = Some(std::sync::Arc::new(auto));
+        let sub = shape_alpha(&MaskShape::Subject, &f, w, h, &img, &log_l, 0.0, Some(&m));
+        let bg = shape_alpha(&MaskShape::Background, &f, w, h, &img, &log_l, 0.0, Some(&m));
+        for (s, b) in sub.data.iter().zip(&bg.data) {
+            assert!((s + b - 1.0).abs() < 1e-4, "subject {s} + background {b}");
+        }
+        assert!(sub.get(1, 8) > 0.9 && bg.get(14, 8) > 0.9);
     }
 
     #[test]
