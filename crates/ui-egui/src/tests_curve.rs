@@ -711,3 +711,29 @@ fn a_masks_curve_takes_the_point_curve_presets_and_resets() {
     click_widget(&mut h, "button:maskCurveReset", 1);
     assert!(mask_curve(&h, mask).is_empty());
 }
+
+#[test]
+fn clicking_to_add_a_point_puts_it_on_the_curve() {
+    let mut h = curve_open("master");
+    exec(&mut h, "develop.curve", json!({"channel": "master", "points": [[0.0, 0.0], [1.0, 1.0]]}));
+    h.step();
+    // a click a few points below the straight line adds a point on it: the curve doesn't move
+    let r = h.request("ui.clickWidget", json!({"id": "curve", "fx": 0.3, "fy": 0.72}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    let c = pts(&develop(&h).curve.master);
+    assert_eq!(c.len(), 3, "{c:?}");
+    assert!((c[1].0 - 0.3).abs() < 0.01, "x follows the click: {c:?}");
+    assert!((c[1].1 - c[1].0).abs() < 1e-9, "the new point sits on the line: {c:?}");
+
+    // on a bent curve the new point takes the curve's value at the clicked x
+    exec(&mut h, "develop.curve", json!({"channel": "master", "points": S_CURVE}));
+    h.step();
+    let before = lcc_color::spline::MonotoneCurve::new(&S_CURVE.map(|[x, y]| (x, y)));
+    let r = h.request("ui.clickWidget", json!({"id": "curve", "fx": 0.5, "fy": 0.4}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    let c = pts(&develop(&h).curve.master);
+    assert_eq!(c.len(), 5, "{c:?}");
+    assert!((c[2].1 - before.eval(c[2].0)).abs() < 1e-9, "the new point sits on the curve: {c:?}");
+}
