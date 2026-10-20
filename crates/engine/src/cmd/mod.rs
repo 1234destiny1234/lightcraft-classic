@@ -305,11 +305,29 @@ pub(crate) fn f64_req(p: &Value, key: &str, cmd: &str) -> Result<f64> {
 /// A non-negative integer parameter: `index: -1` must be an error, not element 0 (`-1.0 as usize`
 /// saturates to 0), just as `history.restore` already refuses a negative step index.
 pub(crate) fn index_req(p: &Value, key: &str, cmd: &str) -> Result<usize> {
-    let i = f64_req(p, key, cmd)?;
-    if !(i.is_finite() && i >= 0.0) {
-        return Err(bad(cmd, format!("`{key}` must be a non-negative integer")));
+    if p.get(key).is_none_or(Value::is_null) {
+        return Err(bad(cmd, format!("missing number `{key}`")));
     }
-    Ok(i as usize)
+    index_opt(p, key, cmd).map(|i| i.unwrap_or_default())
+}
+/// Like [`index_req`], but absent / null is `None`; a supplied value that is not a whole, non-negative number
+/// that fits `usize` (`0.9`, `-1`, `"3"`, `1e30`) is an error, never a default or a truncation. `2.0` is valid.
+pub(crate) fn index_opt(p: &Value, key: &str, cmd: &str) -> Result<Option<usize>> {
+    let v = match p.get(key) {
+        None | Some(Value::Null) => return Ok(None),
+        Some(v) => v,
+    };
+    let err = || bad(cmd, format!("`{key}` must be a non-negative integer, got {v}"));
+    if let Some(n) = v.as_u64() {
+        return usize::try_from(n).map(Some).map_err(|_| err());
+    }
+    match v.as_f64() {
+        // 2^53 is the largest range where every integer is exactly representable
+        Some(f) if v.is_f64() && f.is_finite() && f >= 0.0 && f.fract() == 0.0 && f <= 9_007_199_254_740_992.0 => {
+            usize::try_from(f as u64).map(Some).map_err(|_| err())
+        }
+        _ => Err(err()),
+    }
 }
 pub(crate) fn f64_or(p: &Value, key: &str, d: f64) -> f64 {
     p.get(key).and_then(Value::as_f64).unwrap_or(d)
