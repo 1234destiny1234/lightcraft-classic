@@ -27,6 +27,13 @@ covers what exists today.
   activity copies picked documents into the app's folders and answers with paths through a native callback that it
   registers at start-up, so no symbol depends on the package name. For a save, it watches the path it handed out
   and copies the written file to the chosen document.
+- **Picked folders stay linked.** The activity keeps a picked folder's read grant
+  (`takePersistableUriPermission`, up to 16 folders) and rescans it every 4 s while the app is in front, copying
+  files that appeared since into its copy: never overwriting or deleting, skipping hidden files (the camera's
+  `.pending-…` shots), and only once a file's size held between two scans, under a hidden name renamed into place.
+  So a studio capture session watching the copy of `DCIM/Camera` imports each new shot, with no photo permission.
+  Deleting the copy, or revoking the grant, unlinks the folder. Not built: a `MediaStore` observer behind
+  `READ_MEDIA_IMAGES`, and scanning while the app is in the background (gap 34).
 - **Peer discovery** is multicast DNS service discovery (RFC 6762 / 6763, `crates/peer`), the same as Bonjour, so
   a future iOS build can join. Android's Wi-Fi drops multicast unless an app holds a `WifiManager.MulticastLock`:
   the activity acquires one in `onCreate` (permission `CHANGE_WIFI_MULTICAST_STATE`) and releases it in `onDestroy`.
