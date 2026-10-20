@@ -1,6 +1,6 @@
 # Target-app parity: the app vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-20 · **Change:** minor (gaps audit 2026-10-20: lens database and CR3 variants no longer beta blockers, beta ~330–585 → ~280–480 h); minor (upstream batch 40 merged; full / mainstream readiness re-derived from the re-measured RAW share: ~62% / ~52% / ~65%); minor (upstream: RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327); minor (Canon CRW, Epson ERF, Mamiya MEF decoded: models that decode 90% → 91%, use-weighted 89% → 90%, RAW decoding 80% → 81%); minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-20 · **Change:** minor (gap 29 narrows to AI Denoise on merged DNGs: JPEG response curves and half-float frames done; numbers unchanged); minor (gaps audit 2026-10-20: lens database and CR3 variants no longer beta blockers, beta ~330–585 → ~280–480 h); minor (upstream batch 40 merged; full / mainstream readiness re-derived from the re-measured RAW share: ~62% / ~52% / ~65%); minor (upstream: RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327); minor (Canon CRW, Epson ERF, Mamiya MEF decoded: models that decode 90% → 91%, use-weighted 89% → 90%, RAW decoding 80% → 81%); minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close the app is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -75,7 +75,7 @@ from the checklist sections and the deep-dive documents.
 | Remove, heal, Enhance (denoise, Raw Details, Super Resolution, Lens Blur) | 7% | 45% | 30% | 70–130 h | checklist I 75%, P 0% |
 | Presets, profiles, versions, history, sync | 5% | 95% | 85% | 8–15 h | |
 | Export | 6% | 89% | 75% | 15–30 h | checklist S 88.9% |
-| Merge and HDR | 3% | 85% | 60% | 20–35 h | merge 88% (HDR merge 🟡: AI Denoise on merged DNGs, JPEG response, memory; gap 29), HDR 70% (no HDR display) |
+| Merge and HDR | 3% | 85% | 60% | 20–35 h | merge 88% (HDR merge 🟡: AI Denoise on merged DNGs; gap 29), HDR 70% (no HDR display) |
 | Views, compare, zoom, culling | 5% | 90% | 70% | 10–25 h | zoom detail done (LR-VIEW-ZOOM) |
 | Classic output modules (Map, Book, Slideshow, Print, Web, publish, tethering) | 4% | 15% | 10% | 90–150 h | Classic extras 48% counts many small keys; the modules themselves are mostly ⬜ |
 | Video | 1% | 0% | 0% | 25–45 h | catalogued only |
@@ -300,6 +300,7 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-20 | minor | Merge and HDR: gap 29 narrows to AI Denoise on merged DNGs (JPEG brackets get a recovered response curve, frames held as half floats); merge stays 88% |
 | 2026-10-20 | minor | Gaps audit: gaps 8 (lens database) and 2 (CR3 variants) no longer beta blockers; five `B` gaps ~170–310 h, beta ~330–585 → ~280–480 h |
 | 2026-10-15 | minor | Upstream batch 40 merged; the full / mainstream / essentials RAW rows now use the re-measured use-weighted 98% (was 92%) like the Features table: full 61.2% → 61.7% (~61% → ~62%), mainstream depth 74.0% → 75.6% (~51% → ~52%), essentials depth 78.0% → 78.5% (~65% unchanged); beta ~14 → ~13 points; Stage text: CR3 gap is the variants no public file uses |
 | 2026-10-14 | minor | Localization ~52% → ~55% (mean of the 12 key languages): de, es, fr, ja and uk catalogs filled |
