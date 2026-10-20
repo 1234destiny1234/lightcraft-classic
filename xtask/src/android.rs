@@ -10,7 +10,7 @@
 use std::path::{Path, PathBuf};
 use std::process::Command;
 
-use crate::{cargo, layers, metadata, run as step};
+use crate::{layers, metadata};
 
 /// The Rust target the Android app ships for.
 pub const TARGET: &str = "aarch64-linux-android";
@@ -52,7 +52,7 @@ pub const MIN_API: u32 = 28;
 
 pub fn run(args: &[&str]) -> Result<(), String> {
     match args.first().copied() {
-        Some("check") | None => check(),
+        Some("check") | None => check(false),
         Some("package") => crate::apk::package(args.get(1..).unwrap_or_default()),
         Some(other) => Err(format!("android: unknown subcommand `{other}` (expected `check` or `package`)")),
     }
@@ -124,7 +124,8 @@ fn missing(what: &str) -> Result<(), String> {
     }
 }
 
-fn check() -> Result<(), String> {
+/// `together`: one cargo run for the whole set (the fast gate), see [`crate::check_for_target`].
+pub fn check(together: bool) -> Result<(), String> {
     if !target_installed(TARGET) {
         return missing(&format!("the Rust target is not installed (`rustup target add {TARGET}`)"));
     }
@@ -132,14 +133,7 @@ fn check() -> Result<(), String> {
         return missing("the Android NDK was not found (set ANDROID_NDK_HOME)");
     };
     let set = android_set()?;
-    let mut results = Vec::new();
-    for pkg in &set {
-        let mut c = cargo();
-        c.args(["check", "--target", TARGET, "-p", pkg]);
-        configure(&mut c, &bin, Abi::Arm64);
-        let ok = step(c, &format!("cargo check --target {TARGET} -p {pkg}")).is_ok();
-        results.push((pkg.clone(), ok));
-    }
+    let results = crate::check_for_target(TARGET, &set, together, |c| configure(c, &bin, Abi::Arm64));
     println!("\n{TARGET} check:");
     for (p, ok) in &results {
         println!("  {:<6} {p}", if *ok { "ok" } else { "FAIL" });

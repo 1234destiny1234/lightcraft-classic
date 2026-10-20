@@ -35,7 +35,9 @@ How a real run flows:
    For a manual workflow run, the version input can override the workspace version for that run.
    Use a semantic version such as `1.2.0` or `1.2.0-rc.1`; versions containing a hyphen are
    marked as prereleases.
-3. Push to `release`, or dispatch the workflow on `release` (a dispatch on another branch is a dry run; see below).
+3. Dispatch CI on the commit (Actions → CI → Run workflow: the full test run on all three OSes) and wait for it to
+   pass; a push to `release` doesn't run CI again. Then push that commit to `release`, or dispatch the workflow on
+   `release` (a dispatch on another branch is a dry run; see below).
 4. Check the workflow run. On success, the workflow creates or updates a **draft**
    GitHub Release named `<app> v<version>`, targeted at the commit that triggered the run.
    Review the draft and its `SHA256SUMS.txt`, then publish it in GitHub Releases when ready. The job log's
