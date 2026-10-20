@@ -60,7 +60,7 @@ pub fn main(activity: AndroidApp) {
                 lcc_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
             }
             let writer = prefs::Writer::new(prefs_path, &app, loaded.keep_file);
-            Ok(Box::new(App { app, writer }))
+            Ok(Box::new(App { app, writer, host }))
         }),
     );
     if let Err(e) = result {
@@ -132,6 +132,7 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
 struct App {
     app: LccApp,
     writer: prefs::Writer,
+    host: Option<Arc<Host>>,
 }
 
 impl eframe::App for App {
@@ -141,6 +142,11 @@ impl eframe::App for App {
         self.writer.tick(&mut self.app, now);
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        // photos opened, shared or dropped from other apps take the desktop's drop path: presets
+        // import as presets, photos open the import review
+        if let Some(h) = &self.host {
+            raw.dropped_files.extend(h.take_opened().into_iter().map(|p| -> egui::DroppedFileHandle { Arc::new(SharedFile(p.into())) }));
+        }
         self.app.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
@@ -157,5 +163,18 @@ impl eframe::App for App {
         if !self.app.shutdown(EXIT_WAIT) {
             log::warn!("close: background work was still running after {EXIT_WAIT:?}");
         }
+    }
+}
+
+/// A photo another app opened, shared or dropped in, as the activity copied it.
+#[derive(Debug)]
+struct SharedFile(PathBuf);
+
+impl egui::DroppedFile for SharedFile {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| format!("{}: {e}", self.0.display()))
     }
 }
