@@ -104,6 +104,24 @@ fn jdk(name: &str) -> Command {
     }
 }
 
+/// An SDK build tool. `d8` and `apksigner` are shell scripts that run `java` from `PATH`, so `JAVA_HOME`'s
+/// `bin` goes first on it: on a machine with no system Java (the CI runners, where
+/// `install-android-sdk.sh` sets only `JAVA_HOME`) `d8` otherwise failed with exit status 127.
+fn sdk_tool(tool: PathBuf) -> Command {
+    let mut c = Command::new(tool);
+    if let Some(path) = path_with_java(std::env::var_os("JAVA_HOME"), std::env::var_os("PATH")) {
+        c.env("PATH", path);
+    }
+    c
+}
+
+/// `PATH` with `$JAVA_HOME/bin` in front, or `None` without a `JAVA_HOME`.
+fn path_with_java(java_home: Option<std::ffi::OsString>, path: Option<std::ffi::OsString>) -> Option<std::ffi::OsString> {
+    let bin = PathBuf::from(java_home.filter(|h| !h.is_empty())?).join("bin");
+    let rest = path.map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default();
+    std::env::join_paths(std::iter::once(bin).chain(rest)).ok()
+}
+
 /// `versionCode`: grows with every release, a prerelease below its release
 /// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_99).
 pub fn version_code(version: &str) -> Result<u32, String> {
@@ -321,7 +339,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     step(c, "javac MainActivity.java")?;
     let dex = work.join("dex");
     mkdir(&dex)?;
-    let mut c = Command::new(tools.join("d8"));
+    let mut c = sdk_tool(tools.join("d8"));
     c.args(["--release", "--min-api", &MIN_API.to_string(), "--lib"]).arg(&jar).arg("--output").arg(&dex).args(files_below(&classes));
     step(c, "d8")?;
 
@@ -331,11 +349,11 @@ pub fn package(args: &[&str]) -> Result<(), String> {
         copy(&root.join(format!("assets/app-icon/hicolor/{size}x{size}/apps/app.png")), &res.join(format!("mipmap-{density}/ic_launcher.png")))?;
     }
     let compiled = work.join("res.zip");
-    let mut c = Command::new(tools.join("aapt2"));
+    let mut c = sdk_tool(tools.join("aapt2"));
     c.args(["compile", "--dir"]).arg(&res).arg("-o").arg(&compiled);
     step(c, "aapt2 compile")?;
     let link = |proto: bool, dest: &Path| -> Result<(), String> {
-        let mut c = Command::new(tools.join("aapt2"));
+        let mut c = sdk_tool(tools.join("aapt2"));
         c.args(["link", "-o"]).arg(dest).arg("-I").arg(&jar).arg("--manifest").arg(&manifest).args([
             "--min-sdk-version",
             &MIN_API.to_string(),
@@ -366,11 +384,11 @@ pub fn package(args: &[&str]) -> Result<(), String> {
         let unaligned = work.join("unaligned.apk");
         rezip(&linked, &unaligned, |n| Some(n.to_string()), &extra)?;
         let aligned = work.join("aligned.apk");
-        let mut c = Command::new(tools.join("zipalign"));
+        let mut c = sdk_tool(tools.join("zipalign"));
         c.args(["-P", "16", "-f", "4"]).arg(&unaligned).arg(&aligned);
         step(c, "zipalign")?;
         let apk = out.join(&name);
-        let mut c = Command::new(tools.join("apksigner"));
+        let mut c = sdk_tool(tools.join("apksigner"));
         c.args(["sign", "--ks"])
             .arg(&key.keystore)
             .args(["--ks-key-alias", &key.alias, "--ks-pass", "env:LCC_APK_STORE_PASS", "--key-pass", "env:LCC_APK_KEY_PASS", "--out"])
@@ -379,7 +397,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
             .env("LCC_APK_STORE_PASS", &key.store_pass)
             .env("LCC_APK_KEY_PASS", &key.key_pass);
         step(c, "apksigner sign")?;
-        let mut c = Command::new(tools.join("apksigner"));
+        let mut c = sdk_tool(tools.join("apksigner"));
         c.args(["verify"]).arg(&apk);
         step(c, "apksigner verify")?;
         println!("android: {}{}", apk.display(), if key.debug { " (debug key)" } else { "" });
@@ -448,6 +466,16 @@ mod tests {
         );
         let opts = parse(&["--abi", "arm64", "--abi", "x86_64", "--split", "--aab"]).unwrap();
         assert!(opts.split && opts.aab && opts.abis == both);
+    }
+
+    #[test]
+    fn sdk_tools_find_the_jdk_first_on_path() {
+        let home = std::env::temp_dir().join("jdk");
+        let path = path_with_java(Some(home.clone().into()), Some(std::env::join_paths([std::env::temp_dir().join("usr-bin")]).unwrap())).unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(dirs, vec![home.join("bin"), std::env::temp_dir().join("usr-bin")]);
+        assert_eq!(path_with_java(None, Some("x".into())), None);
+        assert_eq!(path_with_java(Some("".into()), Some("x".into())), None);
     }
 
     #[test]
