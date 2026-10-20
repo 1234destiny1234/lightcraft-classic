@@ -629,7 +629,9 @@ pub fn render(
         _ => None,
     };
     let _oom = (fault == Some(crate::Fault::OutOfMemory)).then(crate::ctx::SimulatedOom::new);
-    if !gpu.fits(n * 3) {
+    // an HDR render: linear float samples after the 8-bit image and its histogram (`finish.wgsl`, `DEEP`)
+    let deep = req.depth == lcc_pipeline::OutputDepth::F32Hdr;
+    if !gpu.fits(n * if deep { 4 } else { 3 } + if deep { HIST_WORDS } else { 0 }) {
         fail(
             FailKind::Limit,
             format!("{w}×{h} needs {} MiB buffers, over the device's {} MiB storage-buffer limit", (n * 12).div_ceil(1 << 20), gpu.limit() >> 20),
@@ -694,7 +696,8 @@ pub fn render(
 
     // 5. per-pixel stage
     let mut fp = FinishParams::new(s, &plan.frame, info, w, h, plan.px_per_long, prep.air, req.space);
-    if let Some(d) = &req.display {
+    // (a deep render is in the output space, as on the CPU: `finish::finish_deep`)
+    if let Some(d) = req.display.as_ref().filter(|_| !deep) {
         fp.for_display(d, None);
     }
     let present = Present {
@@ -720,7 +723,7 @@ pub fn render(
     let aux = gpu.upload(&aux);
     // cleared, so that work which never ran cannot pass for an image (see the check below)
     // the histogram's words follow the image (one readback for both)
-    let out = cx.zeroed(n + HIST_WORDS);
+    let out = cx.zeroed(n + HIST_WORDS + if deep { 3 * n } else { 0 });
     if fault == Some(crate::Fault::Validation) {
         // a dispatch the device rejects (too many workgroups)
         cx.run("box_h", &[0; 5], &[Some(&aux), Some(&out)], [gpu.device.limits().max_compute_workgroups_per_dimension + 1, 1, 1]);
@@ -729,6 +732,13 @@ pub fn render(
     let rows = (BAND_PIXELS / w.max(1) / 16 * 16).max(16); // whole workgroups: bands never overlap
     let y0_at = crate::params::index("Y0").unwrap_or(0);
     let mut p = p;
+    if deep {
+        for (name, v) in [("DEEP", 1), ("DEEP_OFF", (n + HIST_WORDS) as u32)] {
+            if let Some(slot) = crate::params::index(name).and_then(|i| p.get_mut(i)) {
+                *slot = v;
+            }
+        }
+    }
     for y0 in (0..h).step_by(rows).filter(|_| fault != Some(crate::Fault::DropWork)) {
         p[y0_at] = y0 as u32;
         cx.run(
@@ -789,7 +799,9 @@ pub fn render(
     });
     let hist = histogram_on_gpu(&mut cx, &out, w, window, coverage.as_deref());
     cx.copy_into(&hist, &out, n);
-    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS);
+    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS + if deep { 3 * n } else { 0 });
+    let samples: Vec<f32> =
+        if deep { data.split_off((n + HIST_WORDS).min(data.len())).into_iter().map(f32::from_le_bytes).collect() } else { Vec::new() };
     let hist_words: Vec<u32> = data.split_off(n.min(data.len())).into_iter().map(u32::from_le_bytes).collect();
     let image = Rgba8 { width: w, height: h, data };
     lap("finish + readback", &mut t, &mut cx);
@@ -822,6 +834,15 @@ pub fn render(
             lcc_pipeline::masks::evaluate_one(m, &plan.frame, w, h, &img, &l, s.light.exposure as f32, plan.mattes.as_deref())
         }
     });
+    if deep {
+        if samples.len() != 3 * n {
+            fail(FailKind::Fatal, format!("the GPU returned an incomplete HDR image ({} of {} samples)", samples.len(), 3 * n));
+            return None;
+        }
+        // as on the CPU (`finish_deep`): the whole frame in the output space, no overlays
+        let deep = lcc_pipeline::DeepImage { width: w, height: h, space: req.space, samples: lcc_pipeline::DeepSamples::F32(samples) };
+        return Some(Rendered { image, histogram, deep: Some(deep), warnings: Vec::new(), coverage });
+    }
     lcc_pipeline::visualize::apply(&mut image, req.overlay, &plan, overlay_mask.as_ref(), all_overlay_alphas.as_deref());
     // spots grew the window the render worked on: cut it back to the request
     if let Some(k) = plan.keep {
