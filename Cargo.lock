@@ -4434,6 +4434,7 @@ dependencies = [
  "egui",
  "lcc-android-host",
  "lcc-brand",
+ "lcc-catalog",
  "lcc-codecs",
  "lcc-engine",
  "lcc-raster",

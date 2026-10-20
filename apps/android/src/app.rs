@@ -41,6 +41,7 @@ pub fn main(activity: AndroidApp) {
         lcc_ui_egui::i18n::set_language(ui.language);
     }
     let library = lcc_engine::library::default_dir();
+    let staging_dir = activity.external_data_path().map(|d| d.join(crate::staging::DIR_NAME));
 
     let options = eframe::NativeOptions { android_app: Some(activity), renderer: eframe::Renderer::Wgpu, ..Default::default() };
     let result = eframe::run_native(
@@ -48,6 +49,10 @@ pub fn main(activity: AndroidApp) {
         options,
         Box::new(move |cc| {
             let (session, problem) = open_session(library);
+            if let Some(h) = &host {
+                h.set_copy_progress(Arc::new(crate::copies::CopyRows::new(session.activity.clone())));
+            }
+            clean_staging(&session, staging_dir.clone());
             let mut app = LccApp::new(session.with_default_sam3_model(), services(cc, host.clone()));
             if let Some(ui) = loaded.ui {
                 app.ui = ui;
@@ -94,6 +99,35 @@ fn open_session(dir: Option<PathBuf>) -> (Session, Option<LibraryProblem>) {
     }
 }
 
+/// Deletes the staged copies of picked documents no library photo refers to, off the UI thread
+/// (only inside the staging folder; see `staging`).
+fn clean_staging(session: &Session, dir: Option<PathBuf>) {
+    let Some(dir) = dir else { return };
+    let keep: std::collections::HashSet<PathBuf> = session
+        .catalog
+        .photos()
+        .filter_map(|p| match &p.source {
+            lcc_catalog::Source::File { path } => Some(PathBuf::from(path)),
+            _ => None,
+        })
+        .filter(|p| p.starts_with(&dir))
+        .collect();
+    // a library kept inside the staging folder would hold files the catalog doesn't list
+    if session.library.as_ref().is_some_and(|l| l.dir.starts_with(&dir) || dir.starts_with(&l.dir)) {
+        log::warn!("staging: the library shares {}; not cleaned", dir.display());
+        return;
+    }
+    let spawned = std::thread::Builder::new().name("staging-clean".into()).spawn(move || {
+        let done = crate::staging::clean(&dir, &keep, crate::staging::MIN_AGE, std::time::SystemTime::now());
+        if done.files > 0 {
+            log::info!("staging: deleted {} unused copies ({} bytes)", done.files, done.bytes);
+        }
+    });
+    if let Err(e) = spawned {
+        log::warn!("staging: no cleanup thread: {e}");
+    }
+}
+
 /// What the activity does for the shared UI.
 fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Services {
     if let Some(h) = &host {
@@ -101,6 +135,7 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
         h.set_waker(Box::new(move || ctx.request_repaint()));
     }
     let picker_host = host.clone();
+    let storage_host = host.clone();
     let url_host = host;
     Services {
         // the system picker (Storage Access Framework); the activity copies what is picked into
@@ -117,6 +152,14 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
                 let mime_types = req.filter.as_ref().map(|(_, exts)| PickRequest::mime_types_for(exts)).unwrap_or_default();
                 h.pick(&PickRequest { kind, mime_types, file_name: req.file_name.clone() }).map_err(|e| e.to_string())
             })
+        }),
+        // "All files access", so folders on the device are read in place (Settings ▸ Folders)
+        storage_access: storage_host.map(|h| {
+            let ask = h.clone();
+            lcc_ui_egui::StorageAccess {
+                granted: Box::new(move || h.has_all_files_access().unwrap_or(false)),
+                ask: Box::new(move || ask.ask_all_files_access().map_err(|e| e.to_string())),
+            }
         }),
         open_url: url_host.map(|h| -> lcc_ui_egui::OpenUrlFn { Box::new(move |url: &str| h.open_url(url).map_err(|e| e.to_string())) }),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file

@@ -598,6 +598,7 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         open_with: Some(Box::new(editors::open_with)),
         open_all_with: Some(Box::new(editors::open_all_with)),
         check_editor: Some(Box::new(editors::check)),
+        storage_access: None,
         open_url: Some(Box::new(|url: &str| {
             // https links, plus the local page Preview in Browser generates (nothing else)
             lcc_ui_egui::links::check_browser_url(url)?;

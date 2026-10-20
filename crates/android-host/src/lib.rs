@@ -4,7 +4,10 @@
 //! `NativeActivity` subclass). What only Java can do goes through it: the system pickers (the
 //! Storage Access Framework, which hands out `content://` documents rather than paths) and opening
 //! links. The activity copies picked documents into the app's own folders, so the app only ever
-//! sees file paths, and watches a saved file to copy it to the document the user chose.
+//! sees file paths, and watches a saved file to copy it to the document the user chose. A folder
+//! or file on the device's own storage that the app may read (with "All files access") is answered
+//! with its real path instead, so nothing is copied. Copies that remain report through
+//! [`CopyProgress`], so the app can show them in its activity stack and stop them.
 //!
 //! A picker answers asynchronously: [`Host::pick`] returns a channel at once, and the activity
 //! calls back into native code (`nativePicked`, registered at start-up, so no symbol depends on
@@ -87,6 +90,20 @@ fn mime_for(ext: &str) -> Option<&'static str> {
     })
 }
 
+/// Where the activity's copies of picked documents report to (the app's activity stack).
+///
+/// A copy that takes a while (a folder on an SD card, files from a cloud provider) calls
+/// [`CopyProgress::progress`] every so often with its own task number, starting with the first
+/// file it really copies, and [`CopyProgress::ended`] once when it is done. The copy loop stops
+/// at its next check once `progress` answers `true`.
+pub trait CopyProgress: Send + Sync {
+    /// `done` of `total` files (`total` 0 = not known yet), `detail` the file being copied.
+    /// Returns whether the copy should stop.
+    fn progress(&self, task: i64, done: u64, total: u64, detail: &str) -> bool;
+    /// The copy `task` is over (finished, failed or stopped).
+    fn ended(&self, task: i64);
+}
+
 /// A failed call into the activity.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error(pub String);
@@ -117,13 +134,15 @@ mod imp {
     use jni::sys::jlong;
     use jni::{JNIEnv, JavaVM, NativeMethod};
 
-    use super::{Error, PickRequest};
+    use super::{CopyProgress, Error, PickRequest};
 
     /// Pickers that are up, by the id the activity answers with.
     static PENDING: Mutex<Option<HashMap<i64, Sender<Vec<String>>>>> = Mutex::new(None);
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     /// Asks the UI for a frame (set by the app: an answer must not wait for the next touch).
     static WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+    /// Where copies report (set by the app once its session exists).
+    static COPIES: Mutex<Option<std::sync::Arc<dyn CopyProgress>>> = Mutex::new(None);
 
     fn jni_error(what: &str, e: jni::errors::Error) -> Error {
         Error(format!("{what}: {e}"))
@@ -145,12 +164,20 @@ mod imp {
                 let local = super::jvm::activity(app)?;
                 let global = env.new_global_ref(&local).map_err(|e| jni_error("reference the activity", e))?;
                 let class = env.get_object_class(&global).map_err(|e| jni_error("the activity's class", e))?;
-                let methods = [NativeMethod {
-                    name: "nativePicked".into(),
-                    sig: "(J[Ljava/lang/String;)V".into(),
-                    fn_ptr: native_picked as *mut std::ffi::c_void,
-                }];
-                env.register_native_methods(&class, &methods).map_err(|e| jni_error("register nativePicked", e))?;
+                let methods = [
+                    NativeMethod {
+                        name: "nativePicked".into(),
+                        sig: "(J[Ljava/lang/String;)V".into(),
+                        fn_ptr: native_picked as *mut std::ffi::c_void,
+                    },
+                    NativeMethod {
+                        name: "nativeCopyProgress".into(),
+                        sig: "(JJJLjava/lang/String;)Z".into(),
+                        fn_ptr: native_copy_progress as *mut std::ffi::c_void,
+                    },
+                    NativeMethod { name: "nativeCopyEnded".into(), sig: "(J)V".into(), fn_ptr: native_copy_ended as *mut std::ffi::c_void },
+                ];
+                env.register_native_methods(&class, &methods).map_err(|e| jni_error("register the native callbacks", e))?;
                 global
             };
             Ok(Host { vm, activity })
@@ -190,6 +217,31 @@ mod imp {
                 return Err(e);
             }
             Ok(rx)
+        }
+
+        /// Sets where the activity's copies of picked documents report their progress.
+        pub fn set_copy_progress(&self, sink: std::sync::Arc<dyn CopyProgress>) {
+            *COPIES.lock().unwrap_or_else(PoisonError::into_inner) = Some(sink);
+        }
+
+        /// Whether the app may read every file on shared storage ("All files access" on Android
+        /// 11+, the storage permission before), so folders can be read in place.
+        pub fn has_all_files_access(&self) -> Result<bool, Error> {
+            let mut granted = false;
+            self.call("hasAllFilesAccess", |env, activity| {
+                granted = env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?.z()?;
+                Ok(())
+            })?;
+            Ok(granted)
+        }
+
+        /// Asks for "All files access" (the system's settings page on Android 11+, the storage
+        /// permission before). The answer is read later with [`Host::has_all_files_access`].
+        pub fn ask_all_files_access(&self) -> Result<(), Error> {
+            self.call("askAllFilesAccess", |env, activity| {
+                env.call_method(activity, "askAllFilesAccess", "()V", &[])?;
+                Ok(())
+            })
         }
 
         /// Opens a web link in the browser.
@@ -268,6 +320,48 @@ mod imp {
         }));
         if answered.is_err() {
             log::error!("picker answer: a panic was caught");
+        }
+    }
+
+    fn copies() -> Option<std::sync::Arc<dyn CopyProgress>> {
+        COPIES.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// `boolean nativeCopyProgress(long task, long done, long total, String detail)`: a copy's
+    /// progress; answers whether it should stop.
+    extern "system" fn native_copy_progress<'l>(
+        mut env: JNIEnv<'l>,
+        _this: JObject<'l>,
+        task: jlong,
+        done: jlong,
+        total: jlong,
+        detail: JString<'l>,
+    ) -> jni::sys::jboolean {
+        let stop = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let detail: String = if detail.is_null() { String::new() } else { env.get_string(&detail).map(Into::into).unwrap_or_default() };
+            let done = u64::try_from(done).unwrap_or(0);
+            let total = u64::try_from(total).unwrap_or(0);
+            copies().is_some_and(|c| c.progress(task, done, total, &detail))
+        }));
+        match stop {
+            Ok(true) => jni::sys::JNI_TRUE,
+            Ok(false) => jni::sys::JNI_FALSE,
+            Err(_) => {
+                log::error!("copy progress: a panic was caught");
+                jni::sys::JNI_FALSE
+            }
+        }
+    }
+
+    /// `void nativeCopyEnded(long task)`.
+    extern "system" fn native_copy_ended<'l>(_env: JNIEnv<'l>, _this: JObject<'l>, task: jlong) {
+        let ended = std::panic::catch_unwind(|| {
+            if let Some(c) = copies() {
+                c.ended(task);
+            }
+        });
+        if ended.is_err() {
+            log::error!("copy ended: a panic was caught");
         }
     }
 }

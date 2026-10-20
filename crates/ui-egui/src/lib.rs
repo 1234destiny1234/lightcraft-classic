@@ -319,6 +319,13 @@ pub trait VideoGpu {
     fn grade(&mut self, img: &lcc_raster::Rgb32f, key: u64, lut: &lcc_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String>;
 }
 
+/// Reading the device's shared storage in place (Android's "All files access"): whether the app
+/// may, and a way to ask (the answer arrives later, so `granted` is read again).
+pub struct StorageAccess {
+    pub granted: Box<dyn Fn() -> bool>,
+    pub ask: Box<dyn FnMut() -> Result<(), String>>,
+}
+
 /// Platform services injected by the host app (desktop or web).
 #[derive(Default)]
 pub struct Services {
@@ -375,6 +382,8 @@ pub struct Services {
     pub pick_lightroom_catalog: Option<PickFolder>,
     /// Open a web link in the browser (Help menu, About, Discord button).
     pub open_url: Option<OpenUrlFn>,
+    /// Android: "All files access" (`app.allFilesAccess`, Settings ▸ Folders).
+    pub storage_access: Option<StorageAccess>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
     /// Open several files with one start of the editor (Open Original; desktop only): an editor

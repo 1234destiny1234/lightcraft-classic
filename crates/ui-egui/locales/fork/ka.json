@@ -37,5 +37,11 @@
   "Screen Mode": "ეკრანის რეჟიმი",
   "Grid View Style": "ბადის ხედის სტილი",
   "Metadata Filter Columns": "მეტამონაცემების ფილტრის სვეტები",
-  "Metadata columns: click a value to narrow the view": "მეტამონაცემების სვეტები: დააწკაპუნეთ მნიშვნელობაზე ხედის შესავიწროებლად"
+  "Metadata columns: click a value to narrow the view": "მეტამონაცემების სვეტები: დააწკაპუნეთ მნიშვნელობაზე ხედის შესავიწროებლად",
+  "Copying picked files": "არჩეული ფაილების კოპირება",
+  "Allow Access to All Files…": "ყველა ფაილზე წვდომის დაშვება…",
+  "Device storage": "მოწყობილობის მეხსიერება",
+  "All files": "ყველა ფაილი",
+  "Only the files and folders you pick": "მხოლოდ თქვენ მიერ არჩეული ფაილები და საქაღალდეები",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "ყველა ფაილზე წვდომით მოწყობილობის საქაღალდეები ადგილზე იკითხება, კოპირების ნაცვლად."
 }
