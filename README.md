@@ -531,6 +531,17 @@ option to start it. For unattended installs: `msiexec /i <binary>-<ver>-windows-
 
 Linux ARM64 (aarch64) builds are paused; `packaging/linux/package.sh aarch64` still builds one locally.
 
+### Android (early: see [docs/android.md](docs/android.md))
+
+| Build | File | Notes |
+|---|---|---|
+| Phones and tablets (arm64) | `<binary>-<ver>-android-arm64-v8a.apk` | Sideload: allow installs from your browser or file manager, then open the file |
+| Emulator and Chromebooks (x86_64) | `<binary>-<ver>-android-x86_64.apk` | |
+| Play Store bundle | `<binary>-<ver>-android-arm64-v8a-x86_64.aab` | For Play Console uploads, not for installing |
+
+Android 9 or newer. Until a release signing key is set up, the APKs carry a test signature: they install, but a
+build signed with the release key later will need the test build uninstalled first.
+
 ### Web (WebAssembly)
 
 | Build | File | Notes |
