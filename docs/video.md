@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-21 · **Change:** minor (FilmCraft pinned to the emmertex fork: interlaced H.264 decoded and deinterlaced, AV1 ~20–30 % faster)
 > **Last updated:** 2026-10-20 · **Change:** minor (clip and slideshow sound on macOS/Windows by default through cpal)
 > **Last updated:** 2026-10-13 · **Change:** minor (clip sound on Linux/BSD through PulseAudio / PipeWire in every build)
 
@@ -16,7 +17,8 @@
 
 Video support is milestone M14 (`plan/video-filmcraft.md`, gaps.md row 18, parity rows LR-VID-*). Containers and
 codecs come from [FilmCraft](https://github.com/storytold/filmcraft) (pure Rust, clean-room, `MIT OR Apache-2.0`),
-used as git dependencies pinned to one full revision. The app writes no codecs or containers of its own.
+used as git dependencies pinned to one full revision of our fork [emmertex/filmcraft](https://github.com/emmertex/filmcraft)
+(see Licences). The app writes no codecs or containers of its own.
 
 ## Using video
 
@@ -39,7 +41,7 @@ used as git dependencies pinned to one full revision. The app writes no codecs o
 
 | API | What it does |
 |---|---|
-| `probe(path) -> Result<VideoInfo, VideoError>` | Container and stream headers, no decoding: `duration` (s), `fps_num`/`fps_den`, display `width`/`height` (after rotation), `codec` (`h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`, or the container's name for codecs we don't decode), `has_audio`, `created` (QuickTime `creationdate`/`©day` as written; Matroska `DateUTC` as RFC 3339), `gps` (ISO 6709), `rotation`, `hdr`, `decodable`, `coded_width`/`coded_height`, `par_num`/`par_den` (pixel aspect), `interlaced` (MPEG-2). `width`/`height` are the display size after the pixel aspect. |
+| `probe(path) -> Result<VideoInfo, VideoError>` | Container and stream headers, no decoding: `duration` (s), `fps_num`/`fps_den`, display `width`/`height` (after rotation), `codec` (`h264`, `hevc`, `vp9`, `av1`, `prores`, `dnxhd`, `apv`, `mpeg2`, or the container's name for codecs we don't decode), `has_audio`, `created` (QuickTime `creationdate`/`©day` as written; Matroska `DateUTC` as RFC 3339), `gps` (ISO 6709), `rotation`, `hdr`, `decodable`, `coded_width`/`coded_height`, `par_num`/`par_den` (pixel aspect), `interlaced` (MPEG-2; H.264 from the SPS `frame_mbs_only_flag`). `width`/`height` are the display size after the pixel aspect. |
 | `FrameReader::open(path)` | Opens a clip with a decodable video track ([supported formats](#supported-formats)); a recognised but undecodable stream is `Unsupported` with the reason. |
 | `FrameReader::frame_at(t, max_side) -> Result<Frame, VideoError>` | The frame displayed at `t` seconds (clamped to the clip; NaN = 0), box-decimated so the longer side is at most `max_side`. `Frame { image: lcc_raster::Rgb32f, time }`: linear Rec.709 RGB, the pipeline's JPEG/TIFF input type; `time` is the frame's presentation time. |
 | `FrameReader::seek(t)` / `next_frame(max_side) -> Result<Option<Frame>>` / `frames_from(t, max_side)` | Sequential playback for a decode-ahead worker: frames in presentation order from the cursor (`seek`, or just after the last `frame_at`/`next_frame`), decoding forward across GOPs without re-seeking; `None` at the end. `frames_from` is `seek` + an iterator that stops after the first error. |
@@ -160,10 +162,10 @@ Probe works for every container below; frames decode when the codec cell says so
 | MPEG program / elementary stream | `.mpg` `.vob` `.m2v` | MPEG-1/2 |
 | MXF (OP1a, OP-Atom) | `.mxf` | H.264, DNxHD/DNxHR (VC-3), ProRes, MPEG-2 (D-10/IMX, XDCAM) |
 | Codec | FilmCraft crate | Notes |
-| H.264 | `filmcraft-h264` | progressive 8-bit 4:2:0 only. **Interlaced** (field / MBAFF: AVCHD 1080i, broadcast) is detected from the SPS and reported as `Unsupported("interlaced H.264 …")`; High 4:2:2 / 10-bit likewise unsupported |
+| H.264 | `filmcraft-h264` | 8-bit 4:2:0, progressive and **interlaced** (PAFF field pictures and MBAFF: AVCHD 1080i, broadcast). Interlaced pictures come out woven (top field on even lines) and are deinterlaced like MPEG-2 (top field kept); `probe` reports `interlaced`. High 4:2:2 / 10-bit unsupported |
 | HEVC | `filmcraft-hevc` | Main, Main 10 |
 | VP9 | `filmcraft-vp9` | profiles 0–3, 8/10/12-bit; transfer/primaries from `vpcC` / Matroska `Colour` |
-| AV1 | `filmcraft-av1` | slowest decoder: ~50 ms per 1080p frame on the reference machine |
+| AV1 | `filmcraft-av1` | slowest decoder: ~24 ms per 1080p frame on one thread for GOP content, ~30 ms all-intra (fork rev 10715b24, ~20–30 % faster than 0.9, bit-exact); 50–150 fps multi-threaded |
 | ProRes | `filmcraft-prores` | all 422/4444 profiles (alpha ignored) |
 | DNxHD / DNxHR | `filmcraft-dnx` | incl. RGB 4:4:4 |
 | APV | `filmcraft-apv` | |
@@ -299,6 +301,11 @@ has `cpal` in its tree (`cargo tree -p <pkg> -i cpal` finds none); `cargo deny c
 features and with `--features lcc-app/audio-out`.
 
 ## Licences: why not `filmcraft-codecs`
+
+Since 2026-10-21 every FilmCraft dependency is pinned to [emmertex/filmcraft](https://github.com/emmertex/filmcraft)
+rev `10715b24` (0.10.0) rather than storytold/filmcraft: the fork carries interlaced H.264 decode (PAFF + MBAFF;
+`Sps::check_decodable`, while `check_supported` keeps rejecting interlaced for VA-API) and the faster AV1 decoder ahead
+of upstream. Same licence and code base; changes go upstream when it takes them.
 
 The plan named `filmcraft-codecs` (the container/codec hub with GOP caching). At rev 156086dc it depends
 unconditionally on `symphonia` (MPL-2.0, audio decoding), which `deny.toml` rejects (`cargo deny check licenses`

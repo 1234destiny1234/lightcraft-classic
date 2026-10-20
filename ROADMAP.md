@@ -117,7 +117,7 @@ photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and 
 | M11 | RAW II | CR3, RAF (X-Trans), ORF, RW2, PEF, SRW, 3FR, IIQ + long tail; camera calibration DB; HEIC/AVIF/JXL import | 20–35 | 🚧 (CR3 lossless CRX and C-RAW, RAF uncompressed and lossless/lossy compressed, RW2 (every raw format), PEF, ORF uncompressed and compressed ✅; **camera colour calibration** 🚧 (guarded ARW, NEF, RW2 and RAF preview fitting; measured database still missing), CR3 ⬜) |
 | M12 | AI & smart features | subject/sky/background/people/object masks, semantic search, faces/People (permissively licensed models, pure-Rust inference) | 20–40 | ⬜ |
 | M13 | Merge | HDR merge (deghost), panorama (projections, boundary warp, fill edges), HDR panorama | 10–15 | ✅ |
-| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 12–20 left | 🟡 landed: decode (8 codecs, 6 containers), loupe playback, trim, poster, Capture Frame, global grading, H.264/ProRes export (pipelined, GPU grade for H.264; audio from AAC/Opus/AC-3/PCM/MP3), CLI/MCP; sound output decided (2026-10-20: cpal on macOS/Windows by default, pure-Rust PulseAudio on Linux/BSD); left: interlaced H.264, AV1 speed |
+| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | done | ✅ decode (8 codecs, 6 containers; interlaced H.264 PAFF/MBAFF deinterlaced, AV1 ~20–30 % faster via the emmertex/filmcraft fork, 2026-10-21), loupe playback, trim, poster, Capture Frame, global grading, H.264/ProRes export (pipelined, GPU grade for H.264; audio from AAC/Opus/AC-3/PCM/MP3), CLI/MCP; sound on macOS/Windows by default through cpal (PR #350), pure-Rust PulseAudio on Linux/BSD. Non-goals: hardware decode; local adjustments, lens corrections and Upright on video |
 | M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey, Classic shell, Map, Book, Slideshow, Web, Print, publish ✅; print colour management, slideshow music/export, tethering, catalog settings 🟡/⬜) |
 | M16 | 1.0 polish | preferences, shortcut editor, accessibility, localization, packaging (dmg/msi/AppImage/web), hardening | 10–20 | 🚧 (settings, keyboard shortcuts sheet, packaging basics ✅; English/Chinese (Simplified, Traditional)/Japanese/Brazilian Portuguese/Spanish/German/Russian/Ukrainian localisation 🟡; accessibility and further locales ⬜) |
 
@@ -230,6 +230,9 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-21: M14 Video ✅: FilmCraft pinned to emmertex/filmcraft 10715b24 (0.10.0): interlaced H.264 (PAFF + MBAFF) decoded
+  and deinterlaced, AV1 decode ~20–30 % faster; with sound on macOS/Windows by default (PR #350). Hardware decode and local
+  adjustments / lens / Upright on video stay non-goals.
 - 2026-10-20: gap 29 (HDR merge) narrows to AI Denoise on merged DNGs: JPEG brackets are linearised through a
   recovered camera response, frames are held as half floats (5 × 48 MP merge 5.1 → 3.6 GB peak); numbers unchanged.
 - 2026-10-20: gaps audit: lens profile database and CR3 variants no longer beta blockers; beta estimate ~330–585 → ~280–480 h
