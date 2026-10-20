@@ -41,7 +41,7 @@ cited here still exists. Formerly docs/parity.md.
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
 | N. Copy / paste / sync (SYNC) | 6 | 0 | 0 | 0 | 3/3 (100%) | 2/2 (100%) |
 | O. Merge (MERGE) | 3 | 2 | 0 | 0 | — | — |
-| P. Enhance (ENH) | 0 | 1 | 1 | 0 | — | — |
+| P. Enhance (ENH) | 1 | 0 | 1 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
 | R. Video (VID) | 0 | 4 | 2 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 16 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
@@ -50,13 +50,13 @@ cited here still exists. Formerly docs/parity.md.
 | V. Preferences (PREF) | 6 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
-| Y. Menus | 86 | 1 | 2 | 8 | 47/47 (100%) | 23/23 (100%) |
+| Y. Menus | 87 | 0 | 2 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 77 | 5 | 2 | 1 | 48/52 (92%) | 24/26 (92%) |
 | Lightroom Classic extras | 103 | 19 | 4 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 499 | 69 | 30 | 27 | 193/201 (96%) | 167/183 (91%) |
+| **Total** | 501 | 67 | 30 | 27 | 193/201 (96%) | 167/183 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.2%** of 598 in-scope rows — P0 98.0% of 201 · P1 95.4% of 183 · P2 75.7% of 212.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.4%** of 598 in-scope rows — P0 98.0% of 201 · P1 95.4% of 183 · P2 76.2% of 212.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes

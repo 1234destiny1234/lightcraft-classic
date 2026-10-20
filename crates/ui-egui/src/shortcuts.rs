@@ -371,6 +371,9 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
     // a video in the loupe: Space plays / pauses, ←/→ step frames while paused
     crate::video_ui::handle_keys(app, ctx);
     canvas_nudge(app, ctx);
+    if app.ui.right == crate::state::RightPanel::Remove && app.session.active_spot.is_some() && ctx.input(|i| i.key_pressed(Key::Escape)) {
+        let _ = app.run("spot.select", json!({"index": null}));
+    }
     let mut fire: Vec<String> = Vec::new();
     // shortcuts the native menu bar handles (it consumes those key presses itself)
     let native = |sc: &str| app.native_shortcuts.contains(sc);

@@ -45,6 +45,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         };
         // Edit: Lightroom Classic's Previous / Sync… bar under the panels, outside the scrolling
         let full = ui.available_rect_before_wrap();
+        app.right_panel_rect = Some(full);
         let footer = (app.ui.right == RightPanel::Edit).then(|| Rect::from_min_max(pos2(full.left(), full.bottom() - SYNC_BAR_H), full.max));
         let mut body = footer.map_or(full, |f| Rect::from_min_max(full.min, pos2(full.right(), f.top())));
         // Edit: the histogram pinned above the scrolling controls, so it stays in view
@@ -578,15 +579,18 @@ fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Remove");
+
+    // --- Tool Defaults (New Spots) Section ---
     padded(ui, |ui| {
+        super::edit::sub_title(ui, crate::i18n::tr("Tool Defaults"));
         ui.horizontal_wrapped(|ui| {
             for (label, tool) in [("Remove", "remove"), ("Content-Aware", "fill"), ("Heal", "heal"), ("Clone", "clone")] {
-                if text_button(ui, &format!("removeMode-{tool}"), label, app.ui.tool == tool).clicked() {
+                if text_button(ui, &format!("removeMode-{tool}"), crate::i18n::tr(label), app.ui.tool == tool).clicked() {
                     app.ui.tool = tool.into();
                 }
             }
         });
-        ui.add_space(8.0);
+        ui.add_space(6.0);
         ui.label(crate::i18n::tr_format!("{} spot(s) on this photo", d.spots.len()));
         ui.add_space(4.0);
         if text_button(ui, "findDust", crate::i18n::tr("Find Dust Spots"), false)
@@ -611,19 +615,7 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         ui.add_space(4.0);
         ui.label(egui::RichText::new(crate::i18n::tr("Paint over a distraction on the photo to remove it.")).color(Tokens::get(ui.ctx()).text_dim));
     });
-    // brush settings; with a spot selected they edit that spot too
-    let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
-    if let Some((i, sp)) = &sel {
-        (app.ui.remove_size, app.ui.remove_feather, app.ui.remove_opacity) = (sp.size as f32, sp.feather as f32, sp.opacity as f32);
-        divider(ui);
-        let mode = match sp.mode {
-            lcc_develop::SpotMode::Heal => "Heal",
-            lcc_develop::SpotMode::Clone => "Clone",
-            lcc_develop::SpotMode::Remove => "Remove",
-            lcc_develop::SpotMode::Fill => "Content-Aware",
-        };
-        super::edit::sub_title(ui, &crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = crate::i18n::tr(mode)));
-    }
+
     let plain = |id: &'static str, label: &'static str, min: f64, max: f64, default: f64| lcc_develop::ControlSpec {
         id,
         label,
@@ -635,12 +627,12 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         decimals: 0,
         track: lcc_develop::Track::Plain,
     };
-    let sliders = [
+    let default_sliders = [
         (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", (app.ui.remove_size * 1000.0) as f64),
         (plain("ui.removeFeather", "Feather", 0.0, 100.0, 50.0), "feather", app.ui.remove_feather as f64),
         (plain("ui.removeOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", app.ui.remove_opacity as f64),
     ];
-    for (spec, key, v) in sliders {
+    for (spec, key, v) in default_sliders {
         let out = slider(ui, &spec, v, true, None);
         let scale = if key == "size" { 1000.0 } else { 1.0 };
         if let Some(v) = out.value {
@@ -650,18 +642,80 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 _ => app.ui.remove_opacity = v as f32,
             }
         }
-        if sel.is_some() {
-            super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("spot.update", json!({key: v / scale})));
-        }
     }
-    if sel.is_some() {
+
+    // --- Dedicated Selected Spot Section ---
+    let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
+    if let Some((i, sp)) = sel {
+        divider(ui);
+        let mode = match sp.mode {
+            lcc_develop::SpotMode::Heal => "Heal",
+            lcc_develop::SpotMode::Clone => "Clone",
+            lcc_develop::SpotMode::Remove => "Remove",
+            lcc_develop::SpotMode::Fill => "Content-Aware",
+        };
+        padded(ui, |ui| {
+            super::edit::sub_title(
+                ui,
+                &format!(
+                    "{}: {}",
+                    crate::i18n::tr("Selected"),
+                    crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = crate::i18n::tr(mode))
+                ),
+            );
+            ui.add_space(4.0);
+            ui.label(crate::i18n::tr("Mode:"));
+            ui.horizontal_wrapped(|ui| {
+                for (label, mode, mode_str) in [
+                    ("Remove", lcc_develop::SpotMode::Remove, "remove"),
+                    ("Content-Aware", lcc_develop::SpotMode::Fill, "fill"),
+                    ("Heal", lcc_develop::SpotMode::Heal, "heal"),
+                    ("Clone", lcc_develop::SpotMode::Clone, "clone"),
+                ] {
+                    let active = sp.mode == mode;
+                    if text_button(ui, &format!("selSpotMode-{mode_str}"), crate::i18n::tr(label), active).clicked() {
+                        let _ = app.run("spot.update", json!({"index": i, "mode": mode_str}));
+                    }
+                }
+            });
+        });
+
+        let sel_sliders = [
+            (plain("ui.selectedSpotSize", "Size", 1.0, 250.0, 20.0), "size", sp.size * 1000.0),
+            (plain("ui.selectedSpotFeather", "Feather", 0.0, 100.0, 50.0), "feather", sp.feather),
+            (plain("ui.selectedSpotOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", sp.opacity),
+        ];
+        for (spec, key, v) in sel_sliders {
+            let out = slider(ui, &spec, v, true, None);
+            let scale = if key == "size" { 1000.0 } else { 1.0 };
+            super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("spot.update", json!({"index": i, key: v / scale})));
+        }
+
         padded(ui, |ui| {
             ui.horizontal(|ui| {
-                if text_button(ui, "spotRefresh", crate::i18n::tr("Refresh Source (/)"), false).clicked() {
-                    let _ = app.run("spot.refreshSource", json!({}));
+                if text_button(ui, "spotRefresh", crate::i18n::tr("Refresh (/)"), false)
+                    .on_hover_text(crate::i18n::tr("Pick a new source or fill variation"))
+                    .clicked()
+                {
+                    let _ = app.run("spot.refreshSource", json!({"index": i}));
                 }
-                if text_button(ui, "spotDelete", crate::i18n::tr("Delete (⌫)"), false).clicked() {
-                    let _ = app.run("spot.delete", json!({}));
+                if text_button(ui, "spotDelete", &format!("🗑 {}", crate::i18n::tr("Delete (⌫)")), false)
+                    .on_hover_text(crate::i18n::tr("Delete this spot"))
+                    .clicked()
+                {
+                    let _ = app.run("spot.delete", json!({"index": i}));
+                }
+                if text_button(ui, "spotReset", crate::i18n::tr("Reset"), false).on_hover_text(crate::i18n::tr("Reset spot properties")).clicked() {
+                    let d = lcc_develop::Spot::default();
+                    let _ = app.run(
+                        "spot.update",
+                        json!({
+                            "index": i,
+                            "size": d.size,
+                            "feather": d.feather,
+                            "opacity": d.opacity,
+                        }),
+                    );
                 }
             });
         });
