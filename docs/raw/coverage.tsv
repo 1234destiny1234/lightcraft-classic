@@ -683,7 +683,7 @@ Nikon	1 J3	NEF	2012	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sen
 Nikon	1 J4	NEF	2013	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sensor hash, camera-JPEG check)
 Nikon	1 J5	NEF	2015	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sensor hash, camera-JPEG check)
 Nikon	1 S1	NEF	2012	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sensor hash, camera-JPEG check)
-Nikon	1 S2	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE / HE* setting preview-only
+Nikon	1 S2	NEF	2013	unverified	NEF decoder (uncompressed, lossless, lossy, lossy after split, table-less packed 12 / 14-bit); HE* decodes (four-component profile verified), HE unchecked
 Nikon	1 V1	NEF	2010	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sensor hash, camera-JPEG check)
 Nikon	1 V2	NEF	2012	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sensor hash, camera-JPEG check)
 Nikon	1 V3	NEF	2013	verified	corpus: crates/raw/tests/body_corpus.rs (pinned sensor hash, camera-JPEG check)

@@ -1,6 +1,6 @@
 # Target-app parity: the app vs Adobe Lightroom
 
-> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-15 · **Change:** minor (upstream batch 40 merged; full / mainstream readiness re-derived from the re-measured RAW share: ~62% / ~52% / ~65%); minor (upstream: RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327); minor (Canon CRW, Epson ERF, Mamiya MEF decoded: models that decode 90% → 91%, use-weighted 89% → 90%, RAW decoding 80% → 81%); minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
+> **Last reviewed:** 2026-10-10 · **Last updated:** 2026-10-20 · **Change:** minor (gaps audit 2026-10-20: lens database and CR3 variants no longer beta blockers, beta ~330–585 → ~280–480 h); minor (upstream batch 40 merged; full / mainstream readiness re-derived from the re-measured RAW share: ~62% / ~52% / ~65%); minor (upstream: RAW: 83% of Adobe's models decode, 38% verified after the camera-coverage sweep #1327); minor (Canon CRW, Epson ERF, Mamiya MEF decoded: models that decode 90% → 91%, use-weighted 89% → 90%, RAW decoding 80% → 81%); minor (views row: LR-VIEW-ZOOM closed, zoom windows with overlays and soft proofing; compressed ORF decoded: RAW decoding 77% → 78%; headline numbers unchanged); minor (ARW version 1, Z 6II packed NEF, 31 bodies verified: RAW decoding 78% → 80%); minor (pre-X FinePix SuperCCD RAF decodes, 295 models verified: 88% → 90% of models decode) · **Target:** Adobe Lightroom Classic 15.5 (August 2026) and Lightroom 9.6 (desktop)
 
 The authoritative assessment of how close the app is to Lightroom. The row-by-row checklist is
 [parity-checklist.md](parity-checklist.md); the ranked work list is [gaps.md](gaps.md); deep areas
@@ -17,7 +17,7 @@ have their own documents: [raw-parity.md](raw-parity.md), [file-format-parity.md
 | **Ready for real work** (full target) | **~62%** (range 57–67%) | estimated: weighted sum over the dimensions with written weights, see [below](#ready-for-real-work-mainstream-practitioner-and-essentials-user) |
 | **Mainstream practitioner** | **~52%** (range 47–57%) | estimated: weekly areas of a working photographer, depth 75.6% × 0.804 × colour 0.85 |
 | **Essentials user** | **~65%** (range 60–70%) | estimated: core features at default settings, depth 78.5% × 0.830 |
-| Remaining to **beta** | **~330–585 h** | estimated; ~60% parallelizes |
+| Remaining to **beta** | **~280–480 h** | estimated; ~60% parallelizes |
 | Remaining to **full parity** | **~1,000–1,800 h** | estimated; ~70% parallelizes |
 | **Stage** | **alpha** | see [Stage](#stage) |
 
@@ -237,12 +237,11 @@ open as previews, and colour on every non-DNG raw is estimated rather than measu
 work end to end on macOS; see the table in [roadmap.md](roadmap.md#alpha-gate). The partial rows (CR3
 variants, HE NEF as previews) degrade but don't block a workflow.
 
-**To beta:** ~13 points of readiness, **~330–585 h**: the eight `B` gaps in [gaps.md](gaps.md)
-(~230–430 h), plus burning down the ~92 open core-path user issues (40–80 h) and stability work
+**To beta:** ~13 points of readiness, **~280–480 h**: the five `B` gaps in [gaps.md](gaps.md)
+(~170–310 h), plus burning down the ~92 open core-path user issues (40–80 h) and stability work
 around them. Beta needs: CR3 and
 HE NEF decoding from sensor data; measured colour for the popular models and a fidelity suite with
-scores; Subject / Sky / People masks; a lens profile database for the
-popular lenses; tests in CI on macOS, Windows and Linux.
+scores; Subject / Sky / People masks; tests in CI on macOS, Windows and Linux.
 
 ## How hours are calibrated
 
@@ -301,6 +300,7 @@ P2 items 12–25 h; look tuning, performance, packaging, hardening 25–45 h.
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-20 | minor | Gaps audit: gaps 8 (lens database) and 2 (CR3 variants) no longer beta blockers; five `B` gaps ~170–310 h, beta ~330–585 → ~280–480 h |
 | 2026-10-15 | minor | Upstream batch 40 merged; the full / mainstream / essentials RAW rows now use the re-measured use-weighted 98% (was 92%) like the Features table: full 61.2% → 61.7% (~61% → ~62%), mainstream depth 74.0% → 75.6% (~51% → ~52%), essentials depth 78.0% → 78.5% (~65% unchanged); beta ~14 → ~13 points; Stage text: CR3 gap is the variants no public file uses |
 | 2026-10-14 | minor | Localization ~52% → ~55% (mean of the 12 key languages): de, es, fr, ja and uk catalogs filled |
 | 2026-10-12 | minor | UI/UX remaining 34–58 h → 32–54 h (canvas tools by keyboard); headline numbers unchanged |
