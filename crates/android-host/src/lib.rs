@@ -42,6 +42,82 @@ impl PickKind {
             PickKind::Save => 3,
         }
     }
+
+    /// The kind for a code from the activity.
+    pub fn from_code(code: i64) -> Option<PickKind> {
+        Some(match code {
+            0 => PickKind::Files,
+            1 => PickKind::File,
+            2 => PickKind::Folder,
+            3 => PickKind::Save,
+            _ => return None,
+        })
+    }
+}
+
+/// A picker answer no request was waiting for: the system killed the app while the picker was up
+/// (it reclaims memory from apps in the background) and started it again for the answer, so the
+/// request that showed the picker is gone. The app decides what to do with it ([`Host::take_unclaimed`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unclaimed {
+    pub kind: PickKind,
+    /// The paths of the copies, or why there are none.
+    pub paths: Result<Vec<String>, String>,
+}
+
+/// Where the activity's answers go: the channel of the request that is waiting for one, or the
+/// [`Unclaimed`] queue.
+#[derive(Default)]
+pub struct Answers {
+    waiting: std::collections::HashMap<i64, std::sync::mpsc::Sender<Vec<String>>>,
+    unclaimed: Vec<Unclaimed>,
+}
+
+/// Why the activity's answer has no paths when it reports a failure.
+pub const PICK_FAILED: &str = "the chosen files could not be copied into the app (see the log)";
+
+impl Answers {
+    /// A new request with `id`: its answer comes through the returned channel.
+    pub fn wait(&mut self, id: i64) -> std::sync::mpsc::Receiver<Vec<String>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.waiting.insert(id, tx);
+        rx
+    }
+
+    /// Forgets a request whose picker never opened.
+    pub fn forget(&mut self, id: i64) {
+        self.waiting.remove(&id);
+    }
+
+    /// The activity's answer for `id`: `None` = the pick failed. A failed request's channel is
+    /// dropped (the app reports a dialog that ended without an answer); an id ≤ 0 (or one nothing
+    /// waits for) is an [`Unclaimed`] answer of kind `-id - 1`.
+    pub fn answer(&mut self, id: i64, paths: Option<Vec<String>>) {
+        if let Some(tx) = self.waiting.remove(&id) {
+            match paths {
+                Some(p) => {
+                    log::info!("picker {id}: {} path(s)", p.len());
+                    if tx.send(p).is_err() {
+                        log::warn!("picker {id}: answered, but nothing is waiting any more");
+                    }
+                }
+                None => log::error!("picker {id}: {PICK_FAILED}"),
+            }
+            return;
+        }
+        let kind = id.checked_neg().and_then(|n| n.checked_sub(1)).and_then(PickKind::from_code);
+        let Some(kind) = kind else {
+            log::warn!("picker {id}: an answer for a request that is gone; dropped");
+            return;
+        };
+        log::warn!("picker: an answer ({kind:?}) for a request made before the app was restarted");
+        self.unclaimed.push(Unclaimed { kind, paths: paths.ok_or_else(|| PICK_FAILED.to_string()) });
+    }
+
+    /// The unclaimed answers so far, oldest first.
+    pub fn take_unclaimed(&mut self) -> Vec<Unclaimed> {
+        std::mem::take(&mut self.unclaimed)
+    }
 }
 
 /// A picker to show.
@@ -107,9 +183,8 @@ pub use imp::Host;
 
 #[cfg(target_os = "android")]
 mod imp {
-    use std::collections::HashMap;
     use std::sync::atomic::{AtomicI64, Ordering};
-    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::mpsc::Receiver;
     use std::sync::{Mutex, OnceLock, PoisonError};
 
     use android_activity::AndroidApp;
@@ -117,10 +192,10 @@ mod imp {
     use jni::sys::jlong;
     use jni::{JNIEnv, JavaVM, NativeMethod};
 
-    use super::{Error, PickRequest};
+    use super::{Answers, Error, PickRequest, Unclaimed};
 
-    /// Pickers that are up, by the id the activity answers with.
-    static PENDING: Mutex<Option<HashMap<i64, Sender<Vec<String>>>>> = Mutex::new(None);
+    /// Pickers that are up, by the id the activity answers with, and answers nothing waits for.
+    static PENDING: Mutex<Option<Answers>> = Mutex::new(None);
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     /// Asks the UI for a frame (set by the app: an answer must not wait for the next touch).
     static WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
@@ -153,7 +228,18 @@ mod imp {
                 env.register_native_methods(&class, &methods).map_err(|e| jni_error("register nativePicked", e))?;
                 global
             };
-            Ok(Host { vm, activity })
+            let host = Host { vm, activity };
+            // answers that came before this (the app was restarted for a picker's result) are
+            // delivered now; an activity without the method is only older and loses nothing new
+            if let Err(e) = host.call("hostReady", |env, activity| env.call_method(activity, "hostReady", "()V", &[]).map(|_| ())) {
+                log::warn!("{e}");
+            }
+            Ok(host)
+        }
+
+        /// Picker answers no request was waiting for (see [`Unclaimed`]).
+        pub fn take_unclaimed(&self) -> Vec<Unclaimed> {
+            pending(Answers::take_unclaimed)
         }
 
         /// Sets what asks the UI for a frame when an answer arrives. Only the first call counts.
@@ -164,10 +250,7 @@ mod imp {
         /// Shows a picker; the channel answers with the chosen paths (none = cancelled).
         pub fn pick(&self, req: &PickRequest) -> Result<Receiver<Vec<String>>, Error> {
             let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let (tx, rx) = channel();
-            pending(|p| {
-                p.insert(id, tx);
-            });
+            let rx = pending(|p| p.wait(id));
             let kind = req.kind.code();
             let result = self.call("startPick", |env, activity| {
                 let mimes = string_array(env, &req.mime_types)?;
@@ -184,9 +267,7 @@ mod imp {
                 Ok(())
             });
             if let Err(e) = result {
-                pending(|p| {
-                    p.remove(&id);
-                });
+                pending(|p| p.forget(id));
                 return Err(e);
             }
             Ok(rx)
@@ -217,9 +298,9 @@ mod imp {
         }
     }
 
-    fn pending<R>(f: impl FnOnce(&mut HashMap<i64, Sender<Vec<String>>>) -> R) -> R {
+    fn pending<R>(f: impl FnOnce(&mut Answers) -> R) -> R {
         let mut guard = PENDING.lock().unwrap_or_else(PoisonError::into_inner);
-        f(guard.get_or_insert_with(HashMap::new))
+        f(guard.get_or_insert_with(Answers::default))
     }
 
     fn string_array<'l>(env: &mut JNIEnv<'l>, items: &[String]) -> jni::errors::Result<JObjectArray<'l>> {
@@ -233,9 +314,10 @@ mod imp {
         Ok(array)
     }
 
-    fn read_strings(env: &mut JNIEnv, array: &JObjectArray) -> jni::errors::Result<Vec<String>> {
+    /// `None` for a null array (the activity's "the pick failed").
+    fn read_strings(env: &mut JNIEnv, array: &JObjectArray) -> jni::errors::Result<Option<Vec<String>>> {
         if array.is_null() {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         let len = env.get_array_length(array)?;
         let mut out = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
@@ -248,7 +330,7 @@ mod imp {
             let s: String = env.get_string(<&JString>::from(&*item))?.into();
             out.push(s);
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     /// `void nativePicked(long id, String[] paths)`: the activity's answer to [`Host::pick`].
@@ -256,12 +338,10 @@ mod imp {
         // a panic must never unwind into the JVM
         let answered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let list = read_strings(&mut env, &paths).unwrap_or_else(|e| {
-                log::warn!("picker answer unreadable: {e}");
-                Vec::new()
+                log::error!("picker answer unreadable: {e}");
+                None
             });
-            if let Some(tx) = pending(|p| p.remove(&id)) {
-                let _ = tx.send(list);
-            }
+            pending(|p| p.answer(id, list));
             if let Some(wake) = WAKER.get() {
                 wake();
             }
@@ -320,6 +400,40 @@ mod tests {
         // a raw or preset file must never be greyed out
         assert!(PickRequest::mime_types_for(&["jpg", "cr3"]).is_empty());
         assert!(PickRequest::mime_types_for(&["lcpreset"]).is_empty());
+    }
+
+    #[test]
+    fn answers_reach_their_request() {
+        let mut a = Answers::default();
+        let rx = a.wait(7);
+        a.answer(7, Some(vec!["/x/a.jpg".into()]));
+        assert_eq!(rx.try_recv().unwrap(), vec!["/x/a.jpg".to_string()]);
+        assert!(a.take_unclaimed().is_empty());
+    }
+
+    #[test]
+    fn a_failed_pick_ends_the_request_without_an_answer() {
+        let mut a = Answers::default();
+        let rx = a.wait(3);
+        a.answer(3, None);
+        assert!(matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)));
+    }
+
+    #[test]
+    fn an_answer_after_a_restart_is_kept_for_the_app() {
+        // the activity answers a request it didn't make with -(kind + 1)
+        let mut a = Answers::default();
+        a.answer(-(PickKind::Files.code() as i64) - 1, Some(vec!["/x/a.jpg".into()]));
+        a.answer(-(PickKind::Folder.code() as i64) - 1, None);
+        a.answer(i64::MIN, Some(vec![]));
+        a.answer(-99, Some(vec![]));
+        a.answer(42, Some(vec![]));
+        let u = a.take_unclaimed();
+        assert_eq!(u.len(), 2);
+        assert_eq!(u[0], Unclaimed { kind: PickKind::Files, paths: Ok(vec!["/x/a.jpg".into()]) });
+        assert_eq!(u[1].kind, PickKind::Folder);
+        assert!(u[1].paths.is_err());
+        assert!(a.take_unclaimed().is_empty());
     }
 
     #[test]

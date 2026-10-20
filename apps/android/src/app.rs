@@ -60,7 +60,7 @@ pub fn main(activity: AndroidApp) {
                 lcc_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
             }
             let writer = prefs::Writer::new(prefs_path, &app, loaded.keep_file);
-            Ok(Box::new(App { app, writer }))
+            Ok(Box::new(App { app, writer, host }))
         }),
     );
     if let Err(e) = result {
@@ -132,11 +132,23 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
 struct App {
     app: LccApp,
     writer: prefs::Writer,
+    host: Option<Arc<Host>>,
 }
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.app.logic(ctx);
+        // a picker's answer that came after the system restarted the app (see `Unclaimed`)
+        for u in self.host.as_ref().map(|h| h.take_unclaimed()).unwrap_or_default() {
+            use lcc_ui_egui::pick::PickKind as Ui;
+            let kind = match u.kind {
+                PickKind::Files => Ui::Files,
+                PickKind::File => Ui::File,
+                PickKind::Folder => Ui::Folder,
+                PickKind::Save => Ui::Save,
+            };
+            lcc_ui_egui::pick::answer_after_restart(&mut self.app, ctx, kind, u.paths);
+        }
         let now = ctx.input(|i| i.time);
         self.writer.tick(&mut self.app, now);
     }
