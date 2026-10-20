@@ -8,7 +8,7 @@
 use std::path::PathBuf;
 
 use lcc_raster::Rgb32f;
-use lcc_video::{FrameReader, VideoError, poster, probe};
+use lcc_video::{FrameReader, poster, probe};
 
 fn clip(name: &str) -> Option<PathBuf> {
     let p = PathBuf::from(env!("CARGO_MANIFEST_DIR")).join("../../corpus/video").join(name);
@@ -117,19 +117,17 @@ fn bbb_decoders_agree() {
 }
 
 #[test]
-fn avchd_interlaced_is_reported_unsupported() {
+fn avchd_interlaced_decodes() {
     let Some(path) = clip("avchd-interlaced-1080i-jvc.mts") else { return };
     let info = probe(&path).expect("probe");
     assert_eq!(info.codec, "h264");
     assert_eq!((info.width, info.height), (1920, 1080));
     assert!(info.has_audio);
-    assert!(!info.decodable);
-    match FrameReader::open(&path) {
-        Err(VideoError::Unsupported(why)) => assert!(why.starts_with("interlaced"), "{why}"),
-        Err(e) => panic!("wrong error: {e}"),
-        Ok(_) => panic!("interlaced H.264 opened"),
-    }
-    assert!(matches!(poster(&path, None, 64), Err(VideoError::Unsupported(_))));
+    assert!(info.decodable && info.interlaced);
+    let mut rd = FrameReader::open(&path).expect("open");
+    let f = rd.frame_at(0.5, Some(640)).expect("frame");
+    assert!(f.image.width <= 640 && f.image.width > 0);
+    assert!(poster(&path, None, 64).is_ok());
 }
 
 /// Prefixes of every corpus clip: probe and decode return errors or frames, never panic.
