@@ -389,7 +389,7 @@ fn last_failed_matches(app: &LccApp, opts: &MergeDialog) -> bool {
 /// Where a preview of `size` pixels is drawn in `area`: fitted, or zoomed in on the point `zoom`
 /// to one preview pixel per screen pixel (at least twice the fitted size), kept over the box
 /// where it covers it. Returns the rectangle and the point actually at the middle.
-pub(crate) fn preview_rect(area: egui::Rect, size: [usize; 2], ppp: f32, zoom: Option<(f32, f32)>) -> (egui::Rect, Option<(f32, f32)>) {
+fn preview_rect(area: egui::Rect, size: [usize; 2], ppp: f32, zoom: Option<(f32, f32)>) -> (egui::Rect, Option<(f32, f32)>) {
     let (w, h) = (size[0].max(1) as f32, size[1].max(1) as f32);
     let fit = (area.width() / w).min(area.height() / h);
     let Some((u, v)) = zoom else {

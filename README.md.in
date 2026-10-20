@@ -240,7 +240,7 @@ ProRes, DNxHR, APV or MPEG-2 decode in pure Rust. Play a clip in the loupe (<kbd
 <kbd>→</kbd> for single frames), drag the trim handles, pick the poster frame the grid shows, and capture any frame as
 a photo. The Light and Color controls (and presets that use only them) grade every frame. Export writes H.264 MP4 or
 ProRes MOV with the trim, the grade and the sound (graded on the GPU for H.264); `<cli> render clip.mov -o out.mp4 --trim 2,8` does the same from
-the command line. Interlaced H.264 (AVCHD 1080i) is deinterlaced. Masks, spot removal, lens corrections and crop don't apply to video.
+the command line. Playback is silent for now, and masks, spot removal, lens corrections and crop don't apply to video.
 See [docs/video.md](docs/video.md).
 
 <br>
@@ -373,7 +373,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · lensfun-format lens database set up or downloaded from Settings ▸ Lens profiles 🟡 · lens profiles of our own ⬜ |
 | Photo Merge: HDR (auto-align, deghost), Panorama (spherical/cylindrical/perspective, boundary warp, auto crop), HDR Panorama → DNG | ✅ |
 | GPU pipeline (wgpu compute, CPU-exact within 1/255), CPU fallback on device limits / errors | ✅ · WebGPU in the browser 🚧 |
-| Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · local adjustments and hardware decode on video ⬜ |
+| Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · interlaced H.264, local adjustments on video ⬜ |
 | AI: segmentation masks (BiRefNet, SAM 3), Bayer AI denoise, faces (whole networks on the GPU when faster, batched) | 🟡 · super resolution ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
 | Web build (same UI in the browser via WASM): persistent library in OPFS/IndexedDB, Web Worker rendering, export downloads | ✅ · WebGPU, Safari/Firefox testing 🚧 |
 

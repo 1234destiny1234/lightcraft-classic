@@ -598,6 +598,35 @@ fn the_navigator_stays_at_the_top_while_the_panels_scroll_under_it() {
     assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0), "the pinned Navigator takes clicks");
 }
 
+/// Library's right column has the histogram pinned at its top, as Develop's Edit panel does: the
+/// panels under it scroll and it stays where it is.
+#[test]
+fn the_histogram_stays_at_the_top_of_librarys_right_column() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 600.0], 1.0);
+    h.settle(SETTLE);
+    run(&mut h, "module.library", json!({}));
+    h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true, "right": "none"}), T);
+    h.app.ui.histogram = true;
+    h.settle(SETTLE);
+    assert!(h.app.session.active().is_some(), "the demo has an active photo");
+    let rect = |h: &Headless, id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r);
+    let hist = rect(&h, "histogram").expect("Library draws the histogram");
+    let panel = rect(&h, "panel:right_panel").expect("the right panel is drawn");
+    assert!(hist.top() <= panel.top() + 40.0 && hist.left() >= panel.left() - 1.0, "at the top of the right column: {hist:?} {panel:?}");
+    let first = rect(&h, "classicPanel:quickDevelop").expect("Quick Develop").top();
+    assert!(first >= hist.bottom() - 1.0, "the panels start under it");
+    h.request("ui.move", json!({"x": panel.center().x, "y": 500.0}), T);
+    assert_eq!(h.request("ui.scroll", json!({"dy": -220.0}), T)["ok"], true);
+    for _ in 0..40 {
+        h.step();
+    }
+    let moved = rect(&h, "classicPanel:quickDevelop").map_or(f32::MIN, |r| r.top());
+    assert!(moved < first - 40.0, "the panels scrolled: {first} -> {moved}");
+    let after = rect(&h, "histogram").expect("the histogram is still drawn");
+    assert!((after.top() - hist.top()).abs() < 1.0, "the histogram stayed put: {hist:?} -> {after:?}");
+}
+
 /// #155: Settings ▸ Shortcuts hosts the same editor as Help ▸ Keyboard Shortcuts, but a click on a
 /// shortcut there stopped recording on the next frame, so no key could be set.
 #[test]

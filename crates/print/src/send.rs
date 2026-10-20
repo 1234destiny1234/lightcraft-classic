@@ -1,15 +1,12 @@
 //! Sending a print to an IPP printer: pick the format the printer takes (PDF, else one JPEG job
 //! per page), submit with the copy count, then follow the job until it finishes or `wait` runs out.
-//! On Windows a printer named by its system name (what the Windows Print dialog shows, e.g.
-//! `HP OfficeJet` or `\\server\printer`) goes through the print spooler instead
-//! ([`lcc_winspool`]): each page is rendered at the job's resolution and drawn on the printer.
 //!
 //! Sources: RFC 8011 (Print-Job, Get-Job-Attributes, job states). Own design.
 
 use std::time::{Duration, Instant};
 
-use lcc_layout::render::{PhotoSource, RenderOptions, render_page};
-use lcc_layout::{Document, PT_PER_INCH};
+use lcc_layout::Document;
+use lcc_layout::render::PhotoSource;
 
 use crate::ipp::{self, JobState};
 use crate::output::{PdfOptions, to_jpeg_icc, to_pdf};
@@ -41,49 +38,10 @@ pub struct SendOptions {
     pub poll: Duration,
 }
 
-/// Whether `printer` is a system printer name (the Windows print spooler) rather than a URI.
-pub fn is_system_printer(printer: &str) -> bool {
-    let p = printer.trim();
-    !p.is_empty() && !p.contains("://")
-}
-
-/// Checks `printer` before anything is rendered: an `ipp://` / `ipps://` URI, or on Windows a
-/// system printer name.
-pub fn check_printer(printer: &str) -> Result<()> {
-    if is_system_printer(printer) && lcc_winspool::AVAILABLE {
-        return Ok(());
-    }
-    ipp::IppUri::parse(printer).map(|_| ())
-}
-
-/// The printers to offer: on Windows the system's printers first (by name, the default first),
-/// then those the CUPS / IPP `server` shares. A CUPS server that doesn't answer is an error only
-/// when there are no system printers either.
-pub fn find_printers(server: &str) -> Result<Vec<ipp::PrinterEntry>> {
-    let mut out: Vec<ipp::PrinterEntry> = match lcc_winspool::printers() {
-        Ok(list) => list
-            .into_iter()
-            .map(|p| ipp::PrinterEntry {
-                info: if p.default { "(Windows, default)".into() } else { "(Windows)".into() },
-                uri: p.name.clone(),
-                name: p.name,
-            })
-            .collect(),
-        Err(_) => Vec::new(),
-    };
-    match ipp::cups_printers(server) {
-        Ok(more) => out.extend(more),
-        Err(e) if out.is_empty() => return Err(e),
-        Err(_) => {}
-    }
-    Ok(out)
-}
-
 /// Renders `doc` and prints it on `uri`.
 ///
 /// The printer is asked which formats it takes; when it can't be asked, PDF is sent. A job the
-/// printer aborts or cancels is an error. On Windows a system printer name prints through the
-/// spooler ([`send_to_system_printer`]).
+/// printer aborts or cancels is an error.
 pub fn send_to_printer(
     uri: &str,
     doc: &Document,
@@ -93,9 +51,6 @@ pub fn send_to_printer(
     opt: &SendOptions,
     progress: &mut dyn FnMut(usize, usize) -> bool,
 ) -> Result<Sent> {
-    if is_system_printer(uri) && lcc_winspool::AVAILABLE {
-        return send_to_system_printer(uri, doc, settings, photos, text, opt, None, progress);
-    }
     ipp::IppUri::parse(uri)?;
     let copies = settings.job.copies.clamp(1, 999);
     let mut warnings = Vec::new();
@@ -146,66 +101,6 @@ pub fn send_to_printer(
         return Err(PrintError::Ipp(format!("the printer {} the job: {why}", s.label())));
     }
     Ok(Sent { format: format.to_string(), jobs, pages, copies, state, warnings })
-}
-
-/// Prints `doc` on the Windows printer `name` through the spooler: every page rendered at the
-/// job's resolution (8 bits; the photos already in the printer profile's space when one is set)
-/// and handed to the driver with the paper size, orientation and copy count. `output` prints to
-/// a file instead of the printer's port (drivers such as Microsoft Print to PDF). The spooler
-/// reports no job state, and the IPP-only printer options (paper type, tray, quality, sides) are
-/// set in the printer's own preferences instead.
-#[allow(clippy::too_many_arguments)]
-pub fn send_to_system_printer(
-    name: &str,
-    doc: &Document,
-    settings: &PrintSettings,
-    photos: &dyn PhotoSource,
-    text: &ShapedText,
-    opt: &SendOptions,
-    output: Option<std::path::PathBuf>,
-    progress: &mut dyn FnMut(usize, usize) -> bool,
-) -> Result<Sent> {
-    doc.validate()?;
-    let copies = settings.job.copies.clamp(1, 999);
-    let pages = doc.pages.len();
-    let mm = 25.4 / PT_PER_INCH;
-    let job = lcc_winspool::Job {
-        printer: name.trim().to_string(),
-        title: opt.title.clone(),
-        copies,
-        pages,
-        paper_mm: [doc.page.size.w * mm, doc.page.size.h * mm],
-        output,
-    };
-    let mut warnings = Vec::new();
-    if settings.job.color.bit16 {
-        warnings.push("the Windows print spooler takes 8-bit pages; 16-bit output needs PDF".into());
-    }
-    if !settings.job.driver.is_empty() {
-        warnings.push("paper type, tray, quality and two-sided printing are set in the printer's own preferences for a Windows printer".into());
-    }
-    let dpi = settings.job.dpi;
-    let mut page_warnings = Vec::new();
-    let r = lcc_winspool::print(
-        &job,
-        &mut |i| {
-            let p = doc.pages.get(i).ok_or("no such page")?;
-            let ro = RenderOptions { dpi, include_bleed: false, show_guides: false, page: i + 1, pages };
-            let r = render_page(&doc.page, p, photos, text, &ro).map_err(|e| e.to_string())?;
-            page_warnings.extend(r.warnings.into_iter().map(|w| format!("page {}: {w}", i + 1)));
-            let (width, height) = (r.image.width, r.image.height);
-            Ok(lcc_winspool::PageImage { rgba: r.image.data.into_flattened(), width, height })
-        },
-        progress,
-    );
-    let printed = match r {
-        Ok(p) => p,
-        Err(lcc_winspool::Error::Cancelled) => return Err(PrintError::Cancelled),
-        Err(e) => return Err(PrintError::Ipp(format!("{}: {e}", name.trim()))),
-    };
-    warnings.extend(page_warnings);
-    warnings.extend(printed.warnings);
-    Ok(Sent { format: "windows-spooler".into(), jobs: Vec::new(), pages: printed.pages, copies, state: None, warnings })
 }
 
 /// Polls the job state until it is final or `wait` passes; `None` when the printer won't say.
