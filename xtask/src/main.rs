@@ -47,6 +47,9 @@ commands:
   bench-catalog [--photos N,N…] [--backend v3|v4] [--dir DIR]
                   catalog scale benchmark: import throughput, snapshot time, then (in a fresh process)
                   open time, peak RSS and filter latency (default 250000,1000000 photos, backend v4)
+  bench-keywords [--listed N] [--photos N]
+                  Keywording panel latency with a big nested keyword list: suggestions per selection
+                  change, offers per keystroke, the first ask after an edit (default 2000 listed, 20000 photos)
   notes --check | --upstream | --release <version> [--dry-run]
                   release notes, one file per change: --check (in ci) checks docs/whats-new/ and
                   docs/changelog/unreleased/ entries and that docs/whats-new.md is upstream's as last recorded;
@@ -136,6 +139,7 @@ fn main() -> ExitCode {
         Some("bench") => bench::run(&root(), &rest),
         Some("sil") => cmd_sil(&rest),
         Some("bench-catalog") => cmd_bench_catalog(&rest),
+        Some("bench-keywords") => cmd_bench_keywords(&rest),
         Some("parity") => parity::run(&root(), rest.contains(&"--write")),
         Some("wasm") => cmd_wasm(),
         Some("android") => android::run(&rest),
@@ -389,6 +393,14 @@ fn cmd_bench_catalog(rest: &[&str]) -> Result<(), String> {
     }
     c.args(rest);
     run(c, "bench_catalog")
+}
+
+/// `bench-keywords`: the catalog crate's `bench_keywords` example, release build (see its docs).
+fn cmd_bench_keywords(rest: &[&str]) -> Result<(), String> {
+    let mut c = cargo();
+    c.args(["run", "--release", "-q", "-p", "lcc-catalog", "--example", "bench_keywords", "--"]);
+    c.args(rest);
+    run(c, "bench_keywords")
 }
 
 /// `cargo deny check licenses` with deny.toml; a clear skip when cargo-deny isn't installed (CI installs it).

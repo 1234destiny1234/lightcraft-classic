@@ -771,6 +771,7 @@ impl Catalog {
     }
 
     fn apply_inner(&mut self, op: Op) -> Result<Op> {
+        self.index.op_applied(&op);
         // An op that changes one photo says which (`photo_mut`, and adding or removing it below). Every other kind
         // can change what any photo matches or where it sorts: an album's photos or rules, a stack, a keyword's
         // name. Listed kind by kind, so a new one has to be put on one side.

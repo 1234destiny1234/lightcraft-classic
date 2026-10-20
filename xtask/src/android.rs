@@ -124,20 +124,44 @@ fn missing(what: &str) -> Result<(), String> {
     }
 }
 
-/// `together`: one cargo run for the whole set (the fast gate), see [`crate::check_for_target`].
+/// The processors a check covers: the fast gate (`together`) only the phones' arm64; the full run and
+/// `cargo xtask android check` the emulator's and Chromebooks' x86_64 as well, which releases ship too.
+fn abis_to_check(together: bool) -> &'static [Abi] {
+    if together { &[Abi::Arm64] } else { &[Abi::Arm64, Abi::X86_64] }
+}
+
+/// `together`: one cargo run per target for the whole set and arm64 only (the fast gate), see
+/// [`crate::check_for_target`] and [`abis_to_check`].
 pub fn check(together: bool) -> Result<(), String> {
-    if !target_installed(TARGET) {
-        return missing(&format!("the Rust target is not installed (`rustup target add {TARGET}`)"));
+    let abis = abis_to_check(together);
+    if let Some(abi) = abis.iter().find(|a| !target_installed(a.triple())) {
+        let t = abi.triple();
+        return missing(&format!("the Rust target is not installed (`rustup target add {t}`)"));
     }
     let Some(bin) = ndk_root().as_deref().and_then(ndk_bin) else {
         return missing("the Android NDK was not found (set ANDROID_NDK_HOME)");
     };
     let set = android_set()?;
-    let results = crate::check_for_target(TARGET, &set, together, |c| configure(c, &bin, Abi::Arm64));
-    println!("\n{TARGET} check:");
-    for (p, ok) in &results {
-        println!("  {:<6} {p}", if *ok { "ok" } else { "FAIL" });
+    let mut failed = 0;
+    for abi in abis {
+        let target = abi.triple();
+        let results = crate::check_for_target(target, &set, together, |c| configure(c, &bin, *abi));
+        println!("\n{target} check:");
+        for (p, ok) in &results {
+            println!("  {:<6} {p}", if *ok { "ok" } else { "FAIL" });
+        }
+        failed += results.iter().filter(|r| !r.1).count();
     }
-    let failed = results.iter().filter(|r| !r.1).count();
-    if failed == 0 { Ok(()) } else { Err(format!("{failed} crate(s) failed the Android check")) }
+    if failed == 0 { Ok(()) } else { Err(format!("{failed} crate check(s) failed the Android check")) }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn the_fast_gate_checks_arm64_and_the_full_run_every_shipped_abi() {
+        assert_eq!(abis_to_check(true), &[Abi::Arm64]);
+        assert_eq!(abis_to_check(false), &[Abi::Arm64, Abi::X86_64]);
+    }
 }
