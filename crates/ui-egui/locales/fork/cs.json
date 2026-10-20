@@ -45,5 +45,13 @@
   "Only the files and folders you pick": "Jen soubory a složky, které vyberete",
   "With access to all files, folders on the device are read where they are instead of being copied.": "S přístupem ke všem souborům se složky v zařízení čtou na místě, místo aby se kopírovaly.",
   "Raw Details": "Detaily RAW",
-  "Super Resolution": "Superrozlišení"
+  "Super Resolution": "Superrozlišení",
+  "Enhance…": "Vylepšit…",
+  "Enhance Preview": "Náhled vylepšení",
+  "Making the preview…": "Vytváří se náhled…",
+  "Click to zoom": "Kliknutím přiblížíte",
+  "Enhancements": "Vylepšení",
+  "Finer detail and edges, less false colour, at the same size.": "Jemnější detaily a hrany, méně falešných barev, ve stejné velikosti.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Detaily RAW, pak dvojnásobná šířka a výška (čtyřikrát více pixelů).",
+  "Estimating time…": "Odhaduje se čas…"
 }

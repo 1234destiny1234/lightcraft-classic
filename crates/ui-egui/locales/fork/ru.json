@@ -1654,5 +1654,13 @@
   "Only the files and folders you pick": "Только выбранные файлы и папки",
   "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются.",
   "Raw Details": "Детали RAW",
-  "Super Resolution": "Сверхразрешение"
+  "Super Resolution": "Сверхразрешение",
+  "Enhance…": "Улучшить…",
+  "Enhance Preview": "Предпросмотр улучшения",
+  "Making the preview…": "Создание предпросмотра…",
+  "Click to zoom": "Щёлкните для увеличения",
+  "Enhancements": "Улучшения",
+  "Finer detail and edges, less false colour, at the same size.": "Более тонкие детали и края, меньше ложных цветов, при том же размере.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Детали RAW, затем вдвое больше ширина и высота (в четыре раза больше пикселей).",
+  "Estimating time…": "Оценка времени…"
 }

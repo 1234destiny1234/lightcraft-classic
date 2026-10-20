@@ -68,5 +68,10 @@
   "Remove {what} from the library for good?": "Remover {what} da biblioteca definitivamente?",
   "Faces: {spec}": "Rostos: {spec}",
   "Delete these {count} photos from disk, or only remove them from the library?": "Excluir estas {count} fotos do disco ou apenas removê-las da biblioteca?",
-  "Delete from Disk moves {n} files to the system trash.": "Excluir do disco move {n} arquivos para a lixeira do sistema."
+  "Delete from Disk moves {n} files to the system trash.": "Excluir do disco move {n} arquivos para a lixeira do sistema.",
+  "about {} seconds": "cerca de {} segundos",
+  "about {} minutes": "cerca de {} minutos",
+  "about {} hours": "cerca de {} horas",
+  "Output: {} × {} px": "Saída: {} × {} px",
+  "Estimated time: {est}": "Tempo estimado: {est}"
 }

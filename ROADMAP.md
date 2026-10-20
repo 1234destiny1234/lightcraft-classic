@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-20 (version 0.8.2). Revision history: [Log](#log).*
+*Last updated 2026-10-21 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
@@ -110,7 +110,7 @@ photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and 
 | M4 | Crop, geometry, optics | crop tool + overlays, straighten, Upright (auto/level/vertical/full/guided), manual transforms, CA, defringe, manual lens corrections | 6–10 | ✅ |
 | M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | ✅ (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget, colour NR at half resolution, GPU histogram) |
 | M6 | Masking | brush, linear/radial gradients, colour/luminance/depth range, add/subtract/intersect/invert, all local adjustments, masks panel | 8–12 | 🚧 (brush/linear/radial/colour/luminance range, add/subtract/intersect, masks panel ✅; depth range, AI masks ⬜) |
-| M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution 🟡 (classical: edge-aware residual demosaic and 2× back-projection as new DNGs, Photo ▸ Enhance; no learned model)) |
+| M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution 🟡 (classical: edge-aware residual demosaic and 2× back-projection as new DNGs, Photo ▸ Enhance…, an Enhance Preview dialog with before/after and estimated time; no learned model)) |
 | M8 | Heal / Remove | content-aware remove (PatchMatch), heal, clone, brush spots, visualize spots, red/pet eye | 6–10 | 🚧 (heal, clone, auto source, visualize spots, red/pet eye, PatchMatch content-aware remove ✅; generative remove ⬜) |
 | M9 | Presets, profiles, versions, sync | preset browser + amount, create/import presets, profile browser, versions, history, copy/paste/sync settings | 5–8 | ✅ |
 | M10 | Export & share | export dialog (JPEG/PNG/TIFF/DNG/AVIF/JXL/original), sizing, sharpening, metadata, watermark, naming, batch jobs, XMP sidecars, HDR export | 6–10 | 🚧 (all formats incl. DNG/original, sizing, presets, background jobs, HDR gain map JPEG / PQ AVIF ✅; JXL encode ⬜) |
@@ -157,7 +157,7 @@ trip, slideshow, auto import…) in ≈ 12 h on 2026-10-02; four to six parallel
 | AI: subject / sky / background / people / object masks, object-aware remove, AI denoise, super resolution, lens blur, people & faces, natural-language search, culling | ≈ 30 | 80–150 | **high** — permissively licensed weights, pure-Rust inference, maybe training |
 | HDR editing, display, visualisation and export | Q. HDR, LR-EXP-HDR | 15–25 | medium |
 | Classic modules: Map, Book, Slideshow module, Print, publish services, tethering, soft proofing | ≈ 50 | 60–100 | medium (large, well-understood) |
-| Smaller P2 items: Enhance dialog, export to Photos, help / what's new, accessibility, localisation, sidecar variants | ≈ 15 | 12–25 | low |
+| Smaller P2 items: export to Photos, help / what's new, accessibility, localisation, sidecar variants | ≈ 15 | 12–25 | low |
 | Look tuning, performance budgets (colour NR at half resolution on CPU + GPU, 100k-photo library), packaging, hardening | — | 25–45 | medium |
 | **Total remaining** | | **≈ 270–505** | |
 
@@ -230,6 +230,8 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-21: M7: the Enhance Preview dialog (Photo ▸ Enhance…, Ctrl+Alt+I): Raw Details / Super Resolution with a
+  before/after preview, output size, estimated time and Create Stack (LR-ENH-DIALOG ✅).
 - 2026-10-21: M14 Video ✅: FilmCraft pinned to emmertex/filmcraft 10715b24 (0.10.0): interlaced H.264 (PAFF + MBAFF) decoded
   and deinterlaced, AV1 decode ~20–30 % faster; with sound on macOS/Windows by default (PR #350). Hardware decode and local
   adjustments / lens / Upright on video stay non-goals.

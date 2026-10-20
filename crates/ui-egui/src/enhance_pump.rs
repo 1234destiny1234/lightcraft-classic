@@ -10,6 +10,7 @@ const BUSY_SECS: f64 = 0.25;
 
 /// Called every frame; idle, it costs one cheap command.
 pub fn pump(app: &mut LccApp, ctx: &egui::Context) {
+    crate::enhance_ui::poll(app, ctx);
     let Ok(v) = app.session.execute("enhance.pump", &json!({})) else { return };
     if v["active"] == true {
         ctx.request_repaint_after(std::time::Duration::from_secs_f64(BUSY_SECS));

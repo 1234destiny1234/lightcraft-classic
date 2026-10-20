@@ -99,6 +99,94 @@ impl EnhanceWork {
     }
 }
 
+/// Side, in source pixels, of the square the dialog's preview enhances.
+pub const PREVIEW_CROP: usize = 256;
+
+/// What the Enhance dialog shows: the middle of the photo before and after, and an estimate of the full run.
+pub struct EnhancePreview {
+    /// The crop as the library shows the photo now (standard demosaic, source size).
+    pub before: lcc_raster::Rgba8,
+    /// The same crop enhanced (twice the size for Super Resolution).
+    pub after: lcc_raster::Rgba8,
+    /// The source's size and the enhanced photo's.
+    pub source_size: (usize, usize),
+    pub out_size: (usize, usize),
+    /// Estimated seconds to enhance the whole photo (measured on this photo and the crop, scaled up).
+    pub estimate_secs: f64,
+}
+
+fn render_linear(
+    image: &lcc_raster::Rgb32f,
+    frame: &lcc_merge::Frame,
+    color: &lcc_merge::FrameColor,
+) -> std::result::Result<lcc_raster::Rgba8, String> {
+    let edge = image.width.max(image.height).max(1);
+    let dng = lcc_merge::write_linear_dng(
+        image,
+        color,
+        frame.orientation,
+        &frame.metadata,
+        frame.baseline_exposure,
+        lcc_merge::DngSamples::Half,
+        &frame.lens,
+    )
+    .map_err(|e| e.to_string())?;
+    let (src, info) = crate::files::load_bytes(&dng, edge)?;
+    let s = lcc_develop::DevelopSettings::for_raw(info.as_shot_temp, info.as_shot_tint);
+    let req = lcc_pipeline::RenderRequest { quality: lcc_pipeline::Quality::Full, apply_crop: false, ..lcc_pipeline::RenderRequest::fit(edge, edge) };
+    Ok(lcc_pipeline::render(&src, &info, &s, &req).image)
+}
+
+/// The middle `side` × `side` pixels (or less of a smaller image).
+fn middle(img: &lcc_raster::Rgb32f, side: usize) -> lcc_raster::Rgb32f {
+    let (w, h) = (side.min(img.width), side.min(img.height));
+    img.crop(img.width.saturating_sub(w) / 2, img.height.saturating_sub(h) / 2, w, h)
+}
+
+impl EnhanceWork {
+    /// The dialog's preview: the middle [`PREVIEW_CROP`] pixels before and after, and an estimate of the full run.
+    pub fn preview(&self, cancelled: &(dyn Fn() -> bool + Sync)) -> std::result::Result<EnhancePreview, String> {
+        let bytes = (self.read)(&self.path)?;
+        let is_raw = lcc_raw::probe(&bytes).is_some();
+        if self.kind == EnhanceKind::RawDetails && !is_raw {
+            return Err(format!("{}: Raw Details needs a raw photo", self.path));
+        }
+        let colour = &crate::camera_preview::starting_colour_tags;
+        let load = |m| lcc_merge::load_frame_full(&bytes, colour, m).map_err(|e| format!("{}: {e}", self.path));
+        let base = load(lcc_raw::Method::Ahd)?;
+        if cancelled() {
+            return Err("cancelled".into());
+        }
+        let t0 = std::time::Instant::now();
+        let detail = if is_raw { Some(load(lcc_raw::Method::Detail)?) } else { None };
+        let decode = t0.elapsed().as_secs_f64();
+        drop(bytes);
+        if cancelled() {
+            return Err("cancelled".into());
+        }
+        let frame = detail.as_ref().unwrap_or(&base);
+        let mut color = frame.color.clone();
+        if let Some(m) = frame.wb_multipliers {
+            color.set_as_shot_multipliers(m);
+        }
+        let source_size = (frame.image.width, frame.image.height);
+        let crop = middle(&frame.image, PREVIEW_CROP);
+        let t1 = std::time::Instant::now();
+        let (after, out_size, estimate_secs) = match self.kind {
+            EnhanceKind::RawDetails => (crop, source_size, decode),
+            EnhanceKind::SuperResolution => {
+                let up = lcc_merge::super_resolve(&crop, &|_| !cancelled()).map_err(|e| e.to_string())?;
+                let area = |s: (usize, usize)| (s.0 as f64 * s.1 as f64).max(1.0);
+                let scale = area(source_size) / area((crop.width, crop.height));
+                (up, (source_size.0.saturating_mul(2), source_size.1.saturating_mul(2)), decode + t1.elapsed().as_secs_f64() * scale)
+            }
+        };
+        let before = render_linear(&middle(&base.image, PREVIEW_CROP), &base, &color)?;
+        let after = render_linear(&after, frame, &color)?;
+        Ok(EnhancePreview { before, after, source_size, out_size, estimate_secs })
+    }
+}
+
 struct Job {
     kind: EnhanceKind,
     rx: mpsc::Receiver<std::result::Result<Enhanced, String>>,
