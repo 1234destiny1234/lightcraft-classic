@@ -298,6 +298,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.checkForUpdates", "Check for Updates…", None, "Help"),
     ("app.installUpdate", "Install Update and Relaunch", None, "Help"),
     ("app.openReleasePage", "Open the Release Page", None, ""),
+    ("app.allFilesAccess", "Allow Access to All Files…", None, ""),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
     ("app.whatsNew", "What's New", None, "Help"),
@@ -1664,6 +1665,14 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             };
             crate::links::open(app, &url)
         }
+        // Android: ask for "All files access", so folders on the device are read in place
+        "app.allFilesAccess" => match app.services.storage_access.as_mut() {
+            None => Err("this platform reads files without asking".into()),
+            Some(access) => {
+                let asked = if (access.granted)() { Ok(()) } else { (access.ask)() };
+                asked.map(|()| json!({"granted": (access.granted)()}))
+            }
+        },
         "photo.editInPhotoCraft" => edit_in(app, &ctx, p, true),
         "photo.editInExternal" => {
             // a PSD or TIFF: ask Edit Original / a Copy / a Copy with Adjustments first, as Lightroom does
@@ -2458,6 +2467,7 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "app.openReleasePage" => app.services.open_url.is_some(),
+        "app.allFilesAccess" => app.services.storage_access.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "app.clearRecentLibraries" => !app.ui.settings.recent_libraries.is_empty(),
         "compare.swap" | "compare.makeSelect" | "compare.set" => app.ui.view == ViewMode::Compare,

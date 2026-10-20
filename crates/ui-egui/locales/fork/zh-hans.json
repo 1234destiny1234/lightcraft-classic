@@ -1351,5 +1351,11 @@
   "Choose Export Folder": "选择导出文件夹",
   "Post-Processing": "后期处理",
   "Do nothing": "不执行任何操作",
-  "No watermark": "无水印"
+  "No watermark": "无水印",
+  "Copying picked files": "正在复制所选文件",
+  "Allow Access to All Files…": "允许访问所有文件…",
+  "Device storage": "设备存储",
+  "All files": "所有文件",
+  "Only the files and folders you pick": "仅限您选择的文件和文件夹",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有文件的访问权限，设备上的文件夹会就地读取，而不是复制。"
 }
