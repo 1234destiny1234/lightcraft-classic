@@ -1,5 +1,6 @@
 # Video
 
+> **Last updated:** 2026-10-20 · **Change:** minor (clip and slideshow sound on macOS/Windows by default through cpal)
 > **Last updated:** 2026-10-13 · **Change:** minor (clip sound on Linux/BSD through PulseAudio / PipeWire in every build)
 
 > **Last updated:** 2026-10-12 · **Change:** minor (timelapse video from photos, upstream #497)
@@ -241,7 +242,7 @@ sRGB render values as BT.709 video), written to `<path>.partial` and renamed whe
 row ✕, checked once per frame) leaves no file. The desktop app runs it on a worker; CLI/MCP run it in the call with its
 own activity row. Limits: no audio/music, no deflicker or pan/zoom, integer frame rates only, native only.
 
-## Audio (decode always; sound on Linux/BSD, elsewhere with `audio-out`)
+## Audio (decode always; sound on Linux/BSD, macOS and Windows by default)
 
 **Decode** (`lcc-video`, every native build): `AudioReader::open(path)` takes the first decodable audio track and
 returns interleaved f32 PCM at the source rate: `info()` → `AudioInfo {codec, sample_rate, channels}`; `seek(t)` +
@@ -281,12 +282,17 @@ by PipeWire's `pipewire-pulse`) through the pure-Rust `pulseaudio` crate (MIT): 
 systems has sound (`CAN_PLAY` true, `canPlayAudio` true for clips with decodable sound). With no server running,
 `Output::start` errors and playback stays silent on the system clock.
 
-**macOS / Windows: the `audio-out` feature.** There sound needs the cargo feature `audio-out`
-(`cargo build -p lcc-app --features audio-out`; it forwards `lcc-engine/audio-out` → `lcc-audio-out/audio-out`, and
-`lcc-slideshow/audio-out` is the same switch). It brings in `cpal` (Apache-2.0), which on Linux links the system C
-library **libasound** (ALSA, through `alsa-sys` and pkg-config): a C dependency at build and run time, which the
-pure-Rust rule forbids by default. macOS (CoreAudio) and Windows (WASAPI) need no extra library. Linux doesn't need it (the PulseAudio path above). Without
-it, macOS and Windows builds report `canPlayAudio: false`, follow the system clock and play slideshows silently.
+**macOS / Windows: always on (cpal).** Decided 2026-10-20: default builds play clip sound and slideshow music
+through `cpal` (Apache-2.0) over CoreAudio / WASAPI, which need no extra C library; `cpal` is a target-specific
+dependency of `lcc-audio-out` there, so `CAN_PLAY` and `canPlayAudio` are true and playback follows the device clock.
+With no output device, `Output::start` errors and playback stays silent on the system clock.
+
+**Other targets: the opt-in `audio-out` feature.** `cargo build -p lcc-app --features audio-out` (it forwards
+`lcc-engine/audio-out` → `lcc-audio-out/audio-out`; `lcc-slideshow/audio-out` is the same switch) adds cpal elsewhere.
+On Linux cpal links the system C library **libasound** (ALSA, through `alsa-sys` and pkg-config), a C dependency the
+pure-Rust rule forbids by default, so Linux and BSD builds never link cpal or libasound unless asked; with the feature
+cpal is only a fallback when no PulseAudio server answers (`cargo tree -p lcc-app -i cpal --target
+x86_64-unknown-linux-gnu` prints nothing in a default build).
 
 Checked 2026-10-12: with default features no package (`lcc-app`, `lcc-cli`, `lcc-web`, `lcc-engine`, `lcc-slideshow`)
 has `cpal` in its tree (`cargo tree -p <pkg> -i cpal` finds none); `cargo deny check licenses` passes with default
