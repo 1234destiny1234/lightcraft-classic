@@ -2,7 +2,7 @@
 
 - 2026-10-12: Print colour management (G15): printer ICC profile, Perceptual / Relative with black point
   compensation, Print Adjustment, 16-bit PDF output.
-> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-19 · **Change:** minor (gaps 31–33 added: Android / peer sync) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
+> **Last reviewed:** 2026-10-12 · **Last updated:** 2026-10-20 · **Change:** minor (gaps 34–35 added: Android camera roll and built-in camera) · **Target:** Adobe Lightroom Classic 15.5 / Lightroom 9.6
 
 Every known shortfall, one entry each, ranked by user impact (how many Lightroom users hit it, and
 how hard it blocks them), then by effort. **Agents pick work from the top** (the first entry nobody is
@@ -50,6 +50,8 @@ Hours are Opus 5.5 agent wall-clock hours (see [target-app-parity.md](target-app
 | 31 | **Android and peer sync not tested on real devices**: the Android app is checked on an x86_64 emulator only (start, import through the system picker, Develop, settings kept); pairing and the catalog exchange are proved by tests on one machine (two and three devices over loopback mDNS), never between a real tablet and desktop, or across macOS / Windows / Linux / Android | [android](android.md), [peer-sync](peer-sync.md) | sync and the tablet app may fail on real networks and hardware in ways the tests can't show | 3–8 + devices | [peer-sync](peer-sync.md#known-limits) |
 | 32 | **Peer discovery (mDNS) limits**: IPv4 only (no `ff02::fb`), joins the multicast group on the default interface only (a host on several networks may be found on one of them), no RFC 6762 probing / conflict resolution, known-answer suppression or per-query rate limits; interop with Apple Bonjour and Android NSD untested | `crates/peer/src/service.rs`, `crates/peer/src/dns.rs` | devices on VPNs, multi-homed hosts or IPv6-only networks may not find each other | 6–12 | [peer-sync](peer-sync.md#known-limits) |
 | 33 | **Translation coverage check misses formatted strings**: `tests_i18n_coverage.rs` scans literals passed to `tr(` and the heading helpers, not `trf!(` / `tr_format!(` templates or the `hint(` / `row(` helpers; the Sync tab's formatted strings are translated into the nine complete catalogs but nothing in CI keeps them so | `crates/ui-egui/src/tests_i18n_coverage.rs` | new formatted strings can ship untranslated without a failing test | 1–3 | [localization-parity](localization-parity.md) |
+| 34 | **Android: no automatic import from the camera roll**. On Android a picked folder is copied once into the app's own storage (`MainActivity.java.in`, `collect`), and the app holds no photo permission, so a studio capture session ([`crates/tether/src/lib.rs`](../crates/tether/src/lib.rs)) watching it never sees new shots. Ways in, none built: keep the folder picker's grant (`takePersistableUriPermission`) and scan the picked tree, `DCIM/Camera` included, through `DocumentsContract`, with no new permission; or a `MediaStore` observer behind `READ_MEDIA_IMAGES` that copies each new photo into the session folder | `packaging/android/java/MainActivity.java.in`; [android](android.md) | phone and tablet users import shots from the device's own camera by hand, through the picker, each time | 4–8 | [android](android.md) |
+| 35 | **Android: capture with the built-in camera** (Tethered Capture on a phone or tablet; tethering reports unsupported on Android, since USB needs a handle from Java). Two options, neither built: (a) the system camera app through `ACTION_IMAGE_CAPTURE`, saving into the session folder: small, JPEG only, no remote settings; (b) Camera2 in the activity: DNG through `DngCreator` where the device offers RAW, manual ISO / shutter / WB / focus, firing from the tether bar or a command, live view later (frames into the renderer is the hard part). Both reuse the picker's JNI bridge in `crates/android-host`; the emulator's virtual camera can test them on the x86_64 build. Value unclear next to gap 34 (maintainer, 2026-10-20) | `crates/android-host/src/lib.rs`; [android](android.md) | phone shooters who want RAW straight into a session; most are served by gap 34 | (a) 2–4, (b) 15–30 | [android](android.md) |
 
 Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform work they need around them,
 **~330–585 h** to beta (incl. 40–80 h for the ~92 open core-path user issues) (see [target-app-parity.md](target-app-parity.md#stage)).
@@ -63,7 +65,7 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 - **Localization:** 21
 - **Quality / fidelity:** 1, 3
 - **Stability and platforms:** 9, 26, 27
-- **Android and sync:** 31, 32, 33
+- **Android and sync:** 31, 32, 33, 34, 35
 
 ## Closed recently (kept for calibration)
 
@@ -89,6 +91,7 @@ Beta-blocking gaps (B) total **~220–415 h**; with the stability and platform w
 
 | Date | Change | Summary |
 |---|---|---|
+| 2026-10-20 | minor | Gaps 34–35 added: no automatic import from the Android camera roll (a picked folder is a one-time copy), capture with the built-in camera (system camera app or Camera2), recorded, not planned |
 | 2026-10-19 | minor | Gaps 31–33 added: Android app and peer sync untested on real devices, mDNS discovery limits, formatted strings outside the translation coverage check |
 | 2026-10-17 | minor | Gap 30 closed: Waveform and RGB Parade join the histogram's modes (`view.histogram.mode` `waveform` / `parade`), from per-column level grids the render fills with the histogram |
 | 2026-10-17 | minor | Gap 30 added: the histogram has its four 1D display modes, two scales and a 2D Vectorscope (`view.histogram.mode` / `view.histogram.scale`, issue #206), leaving only the spatial Waveform and RGB Parade scopes (4–8 h) |
