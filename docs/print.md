@@ -92,9 +92,18 @@ Print Job ▸ Color Management (`settings.job.color`, `lcc_print::color`):
   images in PDF output and in printer jobs sent as PDF. JPEG holds 8 bits: a 16-bit job to JPEG files
   or a JPEG-only printer prints 8-bit pages and says so in the warnings.
 
-Windows: the app prints over IPP only. A printer named the Windows way (`\\server\printer`, or a
-plain printer name) is refused with an error that explains this and asks for the printer's `ipp://`
-address, because the Windows print spooler can only be reached through the native print API.
+Windows: besides IPP, the app prints through the Windows print spooler, so every printer with a
+Windows driver works. Find Printers lists the system's printers first (the default marked), then the
+CUPS / IPP ones; a printer named the Windows way (`\\server\printer`, or a plain printer name such as
+`HP OfficeJet`) prints through the spooler (`lcc-winspool`, GDI): each page is rendered at the print
+resolution as 8-bit sRGB (or the printer profile's RGB when one is set, so leave the driver's own
+colour management off), scaled to the driver's physical page and centred, with the paper size,
+orientation and copy count asked of the driver. A driver that refuses the layout's paper prints on
+its own, the page scaled to fit, with a warning. The IPP-only options (paper type, tray, quality,
+two-sided) are set in the printer's preferences instead, and the spooler reports no job state.
+Off Windows a printer name is refused with an error that asks for the printer's `ipp://` address.
+Tested on Windows against Microsoft Print to PDF, printing into a file
+(`a_contact_sheet_prints_through_the_windows_spooler`, `crates/winspool/src/tests.rs`).
 
 ## Virtual IPP printer (every CI run)
 

@@ -719,7 +719,8 @@ pub fn render(
     let (p, aux) = finish_block(&fp, &terms, &curves, &present);
     let aux = gpu.upload(&aux);
     // cleared, so that work which never ran cannot pass for an image (see the check below)
-    let out = cx.zeroed(n);
+    // the histogram's words follow the image (one readback for both)
+    let out = cx.zeroed(n + HIST_WORDS);
     if fault == Some(crate::Fault::Validation) {
         // a dispatch the device rejects (too many workgroups)
         cx.run("box_h", &[0; 5], &[Some(&aux), Some(&out)], [gpu.device.limits().max_compute_workgroups_per_dimension + 1, 1, 1]);
@@ -776,7 +777,20 @@ pub fn render(
     } else {
         None
     };
-    let data: Vec<[u8; 4]> = cx.read(&out, n);
+    // the blank border past the photo's edge is shown but isn't part of the photo (issue #211)
+    let coverage = plan.frame.coverage(src.width, src.height, w, h).map(|c| match plan.keep {
+        Some(k) => Arc::new(c.crop(k.x, k.y, k.w, k.h)),
+        None => Arc::new(c),
+    });
+    // the histogram of the kept window, binned on the GPU beside the image it reads
+    let window = plan.keep.map_or((0, 0, w, h), |k| {
+        let (x0, y0) = (k.x.min(w), k.y.min(h));
+        (x0, y0, k.w.min(w - x0), k.h.min(h - y0))
+    });
+    let hist = histogram_on_gpu(&mut cx, &out, w, window, coverage.as_deref());
+    cx.copy_into(&hist, &out, n);
+    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS);
+    let hist_words: Vec<u32> = data.split_off(n.min(data.len())).into_iter().map(u32::from_le_bytes).collect();
     let image = Rgba8 { width: w, height: h, data };
     lap("finish + readback", &mut t, &mut cx);
     if crate::ctx::failed() {
@@ -790,15 +804,7 @@ pub fn render(
         fail(FailKind::Fatal, format!("the GPU returned an incomplete image ({unwritten} of {n} pixels unwritten)"));
         return None;
     }
-    // the blank border past the photo's edge is shown but isn't part of the photo (issue #211)
-    let coverage = plan.frame.coverage(src.width, src.height, w, h).map(|c| match plan.keep {
-        Some(k) => Arc::new(c.crop(k.x, k.y, k.w, k.h)),
-        None => Arc::new(c),
-    });
-    let histogram = match plan.keep {
-        Some(k) => Histogram::of_srgb8_covered(&image.crop(k.x, k.y, k.w, k.h), coverage.as_deref()),
-        None => Histogram::of_srgb8_covered(&image, coverage.as_deref()),
-    };
+    let histogram = histogram_words(&hist_words);
     lap("histogram", &mut t, &mut cx);
     // An entirely black result (upstream work that did not run would give that too): redo it on
     // the CPU, which costs time only for the rare photo that really is black.
@@ -822,6 +828,45 @@ pub fn render(
         image = image.crop(k.x, k.y, k.w, k.h);
     }
     Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage })
+}
+
+/// Words of the `hist_k` kernel's output: five 256-bin channels, the total, the vectorscope grid and
+/// the waveform planes.
+const HIST_WORDS: usize = 5 * Histogram::BINS + 1 + Histogram::SCOPE_CELLS + Histogram::WAVE_PLANES * Histogram::WAVE_CELLS;
+
+/// Record the `hist_k` kernel over the `(x0, y0, w, h)` window of the packed image `out` (`stride` pixels
+/// wide): the samples, bins, scope and waveform [`Histogram::of_srgb8_covered`] gives the window.
+fn histogram_on_gpu(cx: &mut Cx<'_>, out: &Buf, stride: usize, window: (usize, usize, usize, usize), coverage: Option<&lcc_raster::Coverage>) -> Buf {
+    let (x0, y0, w, h) = window;
+    // the same sampling as the CPU oracle: at most ~1 MP, on a regular grid
+    let step = (((w * h) as f64 / 1_000_000.0).sqrt().ceil() as usize).max(1);
+    let (across, rows) = (w.div_ceil(step), h.div_ceil(step));
+    let coverage = coverage.filter(|c| c.width() == w && c.height() == h);
+    let cov = coverage.map(|c| cx.gpu.upload(c.words()));
+    let row_words = lcc_raster::Coverage::row_words(w);
+    let p = [stride, x0, y0, w, h, step, across, rows, usize::from(cov.is_some()), row_words].map(|v| v as u32);
+    let hist = cx.zeroed(HIST_WORDS);
+    cx.run("hist_k", &p, &[Some(out), cov.as_ref(), Some(&hist)], groups1(across * rows));
+    hist
+}
+
+/// The [`Histogram`] from the `hist_k` kernel's words (waveform counts saturate as the CPU's do).
+fn histogram_words(words: &[u32]) -> Histogram {
+    let n = Histogram::BINS;
+    let part = |a: usize, len: usize| words.get(a..a + len).map_or_else(|| vec![0; len], <[u32]>::to_vec);
+    let wave_at = 5 * n + 1 + Histogram::SCOPE_CELLS;
+    let wave = part(wave_at, Histogram::WAVE_PLANES * Histogram::WAVE_CELLS).into_iter().map(|c| c.min(u16::MAX as u32) as u16).collect();
+    Histogram {
+        r: part(0, n),
+        g: part(n, n),
+        b: part(2 * n, n),
+        luma: part(3 * n, n),
+        chroma: part(4 * n, n),
+        total: words.get(5 * n).copied().unwrap_or(0),
+        scope: part(5 * n + 1, Histogram::SCOPE_CELLS),
+        wave,
+        hdr: None,
+    }
 }
 
 /// Pixels whose alpha is not 255 (cheap: no early exit, so it vectorizes).
