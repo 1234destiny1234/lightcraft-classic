@@ -1438,5 +1438,11 @@
   "Choose Export Folder": "書き出し先フォルダーを選択",
   "Post-Processing": "後処理",
   "Do nothing": "何もしない",
-  "No watermark": "透かしなし"
+  "No watermark": "透かしなし",
+  "Copying picked files": "選んだファイルをコピー中",
+  "Allow Access to All Files…": "すべてのファイルへのアクセスを許可…",
+  "Device storage": "デバイスのストレージ",
+  "All files": "すべてのファイル",
+  "Only the files and folders you pick": "選んだファイルとフォルダーのみ",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "すべてのファイルへのアクセスがあると、デバイス上のフォルダーはコピーせずにその場で読み込まれます。"
 }

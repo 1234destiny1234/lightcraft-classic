@@ -11,8 +11,12 @@
 
 #[cfg(target_os = "android")]
 mod app;
+#[cfg(any(target_os = "android", test))]
+mod copies;
 #[cfg(target_os = "android")]
 mod prefs;
+#[cfg(any(target_os = "android", test))]
+mod staging;
 #[cfg(target_os = "android")]
 mod system_fonts;
 

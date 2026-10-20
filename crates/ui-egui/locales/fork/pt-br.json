@@ -1438,5 +1438,11 @@
   "Choose Export Folder": "Escolher pasta de exportação",
   "Post-Processing": "Pós-processamento",
   "Do nothing": "Não fazer nada",
-  "No watermark": "Sem marca d’água"
+  "No watermark": "Sem marca d’água",
+  "Copying picked files": "Copiando os arquivos escolhidos",
+  "Allow Access to All Files…": "Permitir acesso a todos os arquivos…",
+  "Device storage": "Armazenamento do dispositivo",
+  "All files": "Todos os arquivos",
+  "Only the files and folders you pick": "Somente os arquivos e pastas que você escolher",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Com acesso a todos os arquivos, as pastas do dispositivo são lidas onde estão em vez de copiadas."
 }

@@ -4,7 +4,10 @@
 //! `NativeActivity` subclass). What only Java can do goes through it: the system pickers (the
 //! Storage Access Framework, which hands out `content://` documents rather than paths) and opening
 //! links, and the on-screen keyboard (`nativeIme`, queued for the next frame: [`take_ime`]). The activity copies picked documents into the app's own folders, so the app only ever
-//! sees file paths, and watches a saved file to copy it to the document the user chose.
+//! sees file paths, and watches a saved file to copy it to the document the user chose. A folder
+//! or file on the device's own storage that the app may read (with "All files access") is answered
+//! with its real path instead, so nothing is copied. Copies that remain report through
+//! [`CopyProgress`], so the app can show them in its activity stack and stop them.
 //!
 //! A picker answers asynchronously: [`Host::pick`] returns a channel at once, and the activity
 //! calls back into native code (`nativePicked`, registered at start-up, so no symbol depends on
@@ -41,6 +44,82 @@ impl PickKind {
             PickKind::Folder => 2,
             PickKind::Save => 3,
         }
+    }
+
+    /// The kind for a code from the activity.
+    pub fn from_code(code: i64) -> Option<PickKind> {
+        Some(match code {
+            0 => PickKind::Files,
+            1 => PickKind::File,
+            2 => PickKind::Folder,
+            3 => PickKind::Save,
+            _ => return None,
+        })
+    }
+}
+
+/// A picker answer no request was waiting for: the system killed the app while the picker was up
+/// (it reclaims memory from apps in the background) and started it again for the answer, so the
+/// request that showed the picker is gone. The app decides what to do with it ([`Host::take_unclaimed`]).
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Unclaimed {
+    pub kind: PickKind,
+    /// The paths of the copies, or why there are none.
+    pub paths: Result<Vec<String>, String>,
+}
+
+/// Where the activity's answers go: the channel of the request that is waiting for one, or the
+/// [`Unclaimed`] queue.
+#[derive(Default)]
+pub struct Answers {
+    waiting: std::collections::HashMap<i64, std::sync::mpsc::Sender<Vec<String>>>,
+    unclaimed: Vec<Unclaimed>,
+}
+
+/// Why the activity's answer has no paths when it reports a failure.
+pub const PICK_FAILED: &str = "the chosen files could not be copied into the app (see the log)";
+
+impl Answers {
+    /// A new request with `id`: its answer comes through the returned channel.
+    pub fn wait(&mut self, id: i64) -> std::sync::mpsc::Receiver<Vec<String>> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.waiting.insert(id, tx);
+        rx
+    }
+
+    /// Forgets a request whose picker never opened.
+    pub fn forget(&mut self, id: i64) {
+        self.waiting.remove(&id);
+    }
+
+    /// The activity's answer for `id`: `None` = the pick failed. A failed request's channel is
+    /// dropped (the app reports a dialog that ended without an answer); an id ≤ 0 (or one nothing
+    /// waits for) is an [`Unclaimed`] answer of kind `-id - 1`.
+    pub fn answer(&mut self, id: i64, paths: Option<Vec<String>>) {
+        if let Some(tx) = self.waiting.remove(&id) {
+            match paths {
+                Some(p) => {
+                    log::info!("picker {id}: {} path(s)", p.len());
+                    if tx.send(p).is_err() {
+                        log::warn!("picker {id}: answered, but nothing is waiting any more");
+                    }
+                }
+                None => log::error!("picker {id}: {PICK_FAILED}"),
+            }
+            return;
+        }
+        let kind = id.checked_neg().and_then(|n| n.checked_sub(1)).and_then(PickKind::from_code);
+        let Some(kind) = kind else {
+            log::warn!("picker {id}: an answer for a request that is gone; dropped");
+            return;
+        };
+        log::warn!("picker: an answer ({kind:?}) for a request made before the app was restarted");
+        self.unclaimed.push(Unclaimed { kind, paths: paths.ok_or_else(|| PICK_FAILED.to_string()) });
+    }
+
+    /// The unclaimed answers so far, oldest first.
+    pub fn take_unclaimed(&mut self) -> Vec<Unclaimed> {
+        std::mem::take(&mut self.unclaimed)
     }
 }
 
@@ -148,6 +227,20 @@ pub fn take_ime() -> Vec<ImeEvent> {
     std::mem::take(&mut *IME_QUEUE.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
 }
 
+/// Where the activity's copies of picked documents report to (the app's activity stack).
+///
+/// A copy that takes a while (a folder on an SD card, files from a cloud provider) calls
+/// [`CopyProgress::progress`] every so often with its own task number, starting with the first
+/// file it really copies, and [`CopyProgress::ended`] once when it is done. The copy loop stops
+/// at its next check once `progress` answers `true`.
+pub trait CopyProgress: Send + Sync {
+    /// `done` of `total` files (`total` 0 = not known yet), `detail` the file being copied.
+    /// Returns whether the copy should stop.
+    fn progress(&self, task: i64, done: u64, total: u64, detail: &str) -> bool;
+    /// The copy `task` is over (finished, failed or stopped).
+    fn ended(&self, task: i64);
+}
+
 /// A failed call into the activity.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct Error(pub String);
@@ -168,9 +261,8 @@ pub use imp::Host;
 
 #[cfg(target_os = "android")]
 mod imp {
-    use std::collections::HashMap;
     use std::sync::atomic::{AtomicI64, Ordering};
-    use std::sync::mpsc::{Receiver, Sender, channel};
+    use std::sync::mpsc::Receiver;
     use std::sync::{Mutex, OnceLock, PoisonError};
 
     use android_activity::AndroidApp;
@@ -178,13 +270,15 @@ mod imp {
     use jni::sys::jlong;
     use jni::{JNIEnv, JavaVM, NativeMethod};
 
-    use super::{Error, PickRequest};
+    use super::{Answers, CopyProgress, Error, PickRequest, Unclaimed};
 
-    /// Pickers that are up, by the id the activity answers with.
-    static PENDING: Mutex<Option<HashMap<i64, Sender<Vec<String>>>>> = Mutex::new(None);
+    /// Pickers that are up, by the id the activity answers with, and answers nothing waits for.
+    static PENDING: Mutex<Option<Answers>> = Mutex::new(None);
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     /// Asks the UI for a frame (set by the app: an answer must not wait for the next touch).
     static WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
+    /// Where copies report (set by the app once its session exists).
+    static COPIES: Mutex<Option<std::sync::Arc<dyn CopyProgress>>> = Mutex::new(None);
 
     fn jni_error(what: &str, e: jni::errors::Error) -> Error {
         Error(format!("{what}: {e}"))
@@ -206,16 +300,42 @@ mod imp {
                 let local = super::jvm::activity(app)?;
                 let global = env.new_global_ref(&local).map_err(|e| jni_error("reference the activity", e))?;
                 let class = env.get_object_class(&global).map_err(|e| jni_error("the activity's class", e))?;
-                let methods = [NativeMethod {
-                    name: "nativePicked".into(),
-                    sig: "(J[Ljava/lang/String;)V".into(),
-                    fn_ptr: native_picked as *mut std::ffi::c_void,
-                }];
-                env.register_native_methods(&class, &methods).map_err(|e| jni_error("register nativePicked", e))?;
+                let methods = [
+                    NativeMethod {
+                        name: "nativePicked".into(),
+                        sig: "(J[Ljava/lang/String;)V".into(),
+                        fn_ptr: native_picked as *mut std::ffi::c_void,
+                    },
+                    NativeMethod {
+                        name: "nativeCopyProgress".into(),
+                        sig: "(JJJLjava/lang/String;)Z".into(),
+                        fn_ptr: native_copy_progress as *mut std::ffi::c_void,
+                    },
+                    NativeMethod { name: "nativeCopyEnded".into(), sig: "(J)V".into(), fn_ptr: native_copy_ended as *mut std::ffi::c_void },
+                    crate::opened::native_method(),
+                ];
+                env.register_native_methods(&class, &methods).map_err(|e| jni_error("register the native callbacks", e))?;
                 super::ime::register(&mut env, &class);
                 global
             };
-            Ok(Host { vm, activity })
+            let host = Host { vm, activity };
+            // picker answers that came before this (the app was restarted for a picker's result) and
+            // photos shared before the app was up waited in the activity: ask for them now
+            if let Err(e) = host.call("hostReady", |env, activity| env.call_method(activity, "hostReady", "()V", &[]).map(|_| ())) {
+                log::warn!("{e}");
+            }
+            Ok(host)
+        }
+
+        /// Picker answers no request was waiting for (see [`Unclaimed`]).
+        pub fn take_unclaimed(&self) -> Vec<Unclaimed> {
+            pending(Answers::take_unclaimed)
+        }
+
+        /// Photos opened, shared or dropped from other apps since the last call (paths of the
+        /// activity's copies, oldest first). The app drains this every frame.
+        pub fn take_opened(&self) -> Vec<String> {
+            crate::opened::take()
         }
 
         /// Sets what asks the UI for a frame when an answer arrives. Only the first call counts.
@@ -226,10 +346,7 @@ mod imp {
         /// Shows a picker; the channel answers with the chosen paths (none = cancelled).
         pub fn pick(&self, req: &PickRequest) -> Result<Receiver<Vec<String>>, Error> {
             let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
-            let (tx, rx) = channel();
-            pending(|p| {
-                p.insert(id, tx);
-            });
+            let rx = pending(|p| p.wait(id));
             let kind = req.kind.code();
             let result = self.call("startPick", |env, activity| {
                 let mimes = string_array(env, &req.mime_types)?;
@@ -246,12 +363,35 @@ mod imp {
                 Ok(())
             });
             if let Err(e) = result {
-                pending(|p| {
-                    p.remove(&id);
-                });
+                pending(|p| p.forget(id));
                 return Err(e);
             }
             Ok(rx)
+        }
+
+        /// Sets where the activity's copies of picked documents report their progress.
+        pub fn set_copy_progress(&self, sink: std::sync::Arc<dyn CopyProgress>) {
+            *COPIES.lock().unwrap_or_else(PoisonError::into_inner) = Some(sink);
+        }
+
+        /// Whether the app may read every file on shared storage ("All files access" on Android
+        /// 11+, the storage permission before), so folders can be read in place.
+        pub fn has_all_files_access(&self) -> Result<bool, Error> {
+            let mut granted = false;
+            self.call("hasAllFilesAccess", |env, activity| {
+                granted = env.call_method(activity, "hasAllFilesAccess", "()Z", &[])?.z()?;
+                Ok(())
+            })?;
+            Ok(granted)
+        }
+
+        /// Asks for "All files access" (the system's settings page on Android 11+, the storage
+        /// permission before). The answer is read later with [`Host::has_all_files_access`].
+        pub fn ask_all_files_access(&self) -> Result<(), Error> {
+            self.call("askAllFilesAccess", |env, activity| {
+                env.call_method(activity, "askAllFilesAccess", "()V", &[])?;
+                Ok(())
+            })
         }
 
         /// Opens a web link in the browser.
@@ -288,15 +428,15 @@ mod imp {
     }
 
     /// Asks the UI for a frame, when the app has set a waker.
-    pub(super) fn wake() {
+    pub(crate) fn wake() {
         if let Some(wake) = WAKER.get() {
             wake();
         }
     }
 
-    fn pending<R>(f: impl FnOnce(&mut HashMap<i64, Sender<Vec<String>>>) -> R) -> R {
+    fn pending<R>(f: impl FnOnce(&mut Answers) -> R) -> R {
         let mut guard = PENDING.lock().unwrap_or_else(PoisonError::into_inner);
-        f(guard.get_or_insert_with(HashMap::new))
+        f(guard.get_or_insert_with(Answers::default))
     }
 
     fn string_array<'l>(env: &mut JNIEnv<'l>, items: &[String]) -> jni::errors::Result<JObjectArray<'l>> {
@@ -310,9 +450,10 @@ mod imp {
         Ok(array)
     }
 
-    fn read_strings(env: &mut JNIEnv, array: &JObjectArray) -> jni::errors::Result<Vec<String>> {
+    /// `None` for a null array (the activity's "the pick failed").
+    pub(crate) fn read_strings(env: &mut JNIEnv, array: &JObjectArray) -> jni::errors::Result<Option<Vec<String>>> {
         if array.is_null() {
-            return Ok(Vec::new());
+            return Ok(None);
         }
         let len = env.get_array_length(array)?;
         let mut out = Vec::with_capacity(usize::try_from(len).unwrap_or(0));
@@ -325,7 +466,7 @@ mod imp {
             let s: String = env.get_string(<&JString>::from(&*item))?.into();
             out.push(s);
         }
-        Ok(out)
+        Ok(Some(out))
     }
 
     /// `void nativePicked(long id, String[] paths)`: the activity's answer to [`Host::pick`].
@@ -333,18 +474,107 @@ mod imp {
         // a panic must never unwind into the JVM
         let answered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
             let list = read_strings(&mut env, &paths).unwrap_or_else(|e| {
-                log::warn!("picker answer unreadable: {e}");
-                Vec::new()
+                log::error!("picker answer unreadable: {e}");
+                None
             });
-            if let Some(tx) = pending(|p| p.remove(&id)) {
-                let _ = tx.send(list);
-            }
+            pending(|p| p.answer(id, list));
             if let Some(wake) = WAKER.get() {
                 wake();
             }
         }));
         if answered.is_err() {
             log::error!("picker answer: a panic was caught");
+        }
+    }
+
+    fn copies() -> Option<std::sync::Arc<dyn CopyProgress>> {
+        COPIES.lock().unwrap_or_else(PoisonError::into_inner).clone()
+    }
+
+    /// `boolean nativeCopyProgress(long task, long done, long total, String detail)`: a copy's
+    /// progress; answers whether it should stop.
+    extern "system" fn native_copy_progress<'l>(
+        mut env: JNIEnv<'l>,
+        _this: JObject<'l>,
+        task: jlong,
+        done: jlong,
+        total: jlong,
+        detail: JString<'l>,
+    ) -> jni::sys::jboolean {
+        let stop = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let detail: String = if detail.is_null() { String::new() } else { env.get_string(&detail).map(Into::into).unwrap_or_default() };
+            let done = u64::try_from(done).unwrap_or(0);
+            let total = u64::try_from(total).unwrap_or(0);
+            copies().is_some_and(|c| c.progress(task, done, total, &detail))
+        }));
+        match stop {
+            Ok(true) => jni::sys::JNI_TRUE,
+            Ok(false) => jni::sys::JNI_FALSE,
+            Err(_) => {
+                log::error!("copy progress: a panic was caught");
+                jni::sys::JNI_FALSE
+            }
+        }
+    }
+
+    /// `void nativeCopyEnded(long task)`.
+    extern "system" fn native_copy_ended<'l>(_env: JNIEnv<'l>, _this: JObject<'l>, task: jlong) {
+        let ended = std::panic::catch_unwind(|| {
+            if let Some(c) = copies() {
+                c.ended(task);
+            }
+        });
+        if ended.is_err() {
+            log::error!("copy ended: a panic was caught");
+        }
+    }
+}
+
+/// Photos opened, shared or dropped from other apps (AND.6): the activity copies them and calls
+/// `nativeOpened(String[] paths)`; they wait here until the app's next frame takes them.
+#[cfg(target_os = "android")]
+mod opened {
+    use std::sync::{Mutex, PoisonError};
+
+    use jni::objects::{JObject, JObjectArray};
+    use jni::{JNIEnv, NativeMethod};
+
+    /// Most paths that can wait: a runaway sender can't grow this without bound.
+    const MAX_WAITING: usize = 10_000;
+
+    static QUEUE: Mutex<Vec<String>> = Mutex::new(Vec::new());
+
+    pub fn native_method() -> NativeMethod {
+        NativeMethod { name: "nativeOpened".into(), sig: "([Ljava/lang/String;)V".into(), fn_ptr: native_opened as *mut std::ffi::c_void }
+    }
+
+    pub fn take() -> Vec<String> {
+        std::mem::take(&mut *QUEUE.lock().unwrap_or_else(PoisonError::into_inner))
+    }
+
+    /// `void nativeOpened(String[] paths)`.
+    extern "system" fn native_opened<'l>(mut env: JNIEnv<'l>, _this: JObject<'l>, paths: JObjectArray<'l>) {
+        // a panic must never unwind into the JVM
+        let done = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let list = match super::imp::read_strings(&mut env, &paths) {
+                Ok(l) => l.unwrap_or_default(),
+                Err(e) => {
+                    log::warn!("shared photos unreadable: {e}");
+                    return;
+                }
+            };
+            {
+                let mut q = QUEUE.lock().unwrap_or_else(PoisonError::into_inner);
+                let room = MAX_WAITING.saturating_sub(q.len());
+                if list.len() > room {
+                    log::warn!("{} shared photos dropped: too many waiting", list.len() - room);
+                }
+                q.extend(list.into_iter().take(room));
+            }
+            super::imp::wake();
+        }));
+        if done.is_err() {
+            log::error!("shared photos: a panic was caught");
         }
     }
 }
@@ -474,6 +704,40 @@ mod tests {
         assert_eq!(accepted, IME_QUEUE_MAX);
         assert_eq!(take_ime().len(), IME_QUEUE_MAX);
         assert!(take_ime().is_empty());
+    }
+
+    #[test]
+    fn answers_reach_their_request() {
+        let mut a = Answers::default();
+        let rx = a.wait(7);
+        a.answer(7, Some(vec!["/x/a.jpg".into()]));
+        assert_eq!(rx.try_recv().unwrap(), vec!["/x/a.jpg".to_string()]);
+        assert!(a.take_unclaimed().is_empty());
+    }
+
+    #[test]
+    fn a_failed_pick_ends_the_request_without_an_answer() {
+        let mut a = Answers::default();
+        let rx = a.wait(3);
+        a.answer(3, None);
+        assert!(matches!(rx.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)));
+    }
+
+    #[test]
+    fn an_answer_after_a_restart_is_kept_for_the_app() {
+        // the activity answers a request it didn't make with -(kind + 1)
+        let mut a = Answers::default();
+        a.answer(-(PickKind::Files.code() as i64) - 1, Some(vec!["/x/a.jpg".into()]));
+        a.answer(-(PickKind::Folder.code() as i64) - 1, None);
+        a.answer(i64::MIN, Some(vec![]));
+        a.answer(-99, Some(vec![]));
+        a.answer(42, Some(vec![]));
+        let u = a.take_unclaimed();
+        assert_eq!(u.len(), 2);
+        assert_eq!(u[0], Unclaimed { kind: PickKind::Files, paths: Ok(vec!["/x/a.jpg".into()]) });
+        assert_eq!(u[1].kind, PickKind::Folder);
+        assert!(u[1].paths.is_err());
+        assert!(a.take_unclaimed().is_empty());
     }
 
     #[test]

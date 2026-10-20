@@ -1646,5 +1646,11 @@
   "Choose Export Folder": "Выбрать папку для экспорта",
   "Post-Processing": "Постобработка",
   "Do nothing": "Ничего не делать",
-  "No watermark": "Без водяного знака"
+  "No watermark": "Без водяного знака",
+  "Copying picked files": "Копирование выбранных файлов",
+  "Allow Access to All Files…": "Разрешить доступ ко всем файлам…",
+  "Device storage": "Память устройства",
+  "All files": "Все файлы",
+  "Only the files and folders you pick": "Только выбранные файлы и папки",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются."
 }

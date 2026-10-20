@@ -37,5 +37,11 @@
   "Screen Mode": "Modalità schermo",
   "Grid View Style": "Stile vista griglia",
   "Metadata Filter Columns": "Colonne filtro metadati",
-  "Metadata columns: click a value to narrow the view": "Colonne metadati: fai clic su un valore per restringere la vista"
+  "Metadata columns: click a value to narrow the view": "Colonne metadati: fai clic su un valore per restringere la vista",
+  "Copying picked files": "Copia dei file scelti",
+  "Allow Access to All Files…": "Consenti l’accesso a tutti i file…",
+  "Device storage": "Memoria del dispositivo",
+  "All files": "Tutti i file",
+  "Only the files and folders you pick": "Solo i file e le cartelle che scegli",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Con l’accesso a tutti i file, le cartelle del dispositivo vengono lette dove si trovano invece di essere copiate."
 }
