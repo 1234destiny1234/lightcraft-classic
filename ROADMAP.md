@@ -108,7 +108,7 @@ photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and 
 | M2 | Pipeline v1 (quality) | WB temp/tint, profiles, local tone mapping (highlights/shadows), curves, HSL, point colour, colour grading, texture/clarity/dehaze, vignette, grain, B&W, auto tone/WB, histogram, before/after | 10–15 | ✅ (look tuning vs our references ongoing) |
 | M3 | RAW I | TIFF/DNG (LJ92, deflate, tiles, opcodes), demosaic (AHD/PPG/bilinear), highlight recovery, DNG colour model, CR2, NEF, ARW, embedded previews | 10–15 | 🚧 (DNG, CR2, ARW, NEF uncompressed + Huffman lossless/lossy, embedded previews ✅; NEF lossy-after-split ⬜) |
 | M4 | Crop, geometry, optics | crop tool + overlays, straighten, Upright (auto/level/vertical/full/guided), manual transforms, CA, defringe, manual lens corrections | 6–10 | ✅ |
-| M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | 🚧 (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget ✅; colour NR at half resolution, GPU histogram ⬜) |
+| M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | ✅ (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget, colour NR at half resolution, GPU histogram) |
 | M6 | Masking | brush, linear/radial gradients, colour/luminance/depth range, add/subtract/intersect/invert, all local adjustments, masks panel | 8–12 | 🚧 (brush/linear/radial/colour/luminance range, add/subtract/intersect, masks panel ✅; depth range, AI masks ⬜) |
 | M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution ⬜) |
 | M8 | Heal / Remove | content-aware remove (PatchMatch), heal, clone, brush spots, visualize spots, red/pet eye | 6–10 | 🚧 (heal, clone, auto source, visualize spots, red/pet eye, PatchMatch content-aware remove ✅; generative remove ⬜) |
@@ -287,6 +287,7 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 - 2026-10-11 (upstream): Canon EOS R5 Mark II C-RAW decodes from sensor data (CRX QP map first-symbol literal and limited-length escape; four CC0 files pinned, docs/cr3.md); CR3 on four verified bodies.
 - 2026-10-12: roadmap refreshed for the fork at 0.6.1: 87.3% of 570 rows, Classic modules ~30% → ~65%, Classic power user ~45% → ~60%, Classic completion and platform CI added to the priorities.
 - 2026-10-12: 0.6.3 numbers: 87.9% of 581 rows after the upstream merge (381 commits) and the fork gap batches.
+- 2026-10-20: M5 Performance ✅: colour NR blurs at half resolution (already landed: 24 MP 670 → 336 ms) and GPU renders bin the histogram, vectorscope and waveform grids on the GPU (CPU oracle, exact agreement test).
 
 ## Chinese and Japanese interfaces, and text watermarks
 
