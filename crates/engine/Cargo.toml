@@ -84,8 +84,8 @@ trash = { workspace = true }
 rustix = { workspace = true }
 
 [features]
-# Clip sound and slideshow music through the sound card (lcc-audio-out with cpal, which links the C
-# library libasound on Linux: off by default, see docs/video.md). Without it playback is muted.
+# Opt-in cpal sound for targets without a default path (macOS / Windows always use cpal, Linux and
+# the BSDs PulseAudio; on Linux this adds cpal's libasound fallback, see docs/video.md).
 audio-out = ["lcc-audio-out/audio-out"]
 # AI masks with SAM 3 (Object / Describe). Off for the web and CLI builds.
 sam = ["dep:lcc-segment"]
