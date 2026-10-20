@@ -251,6 +251,18 @@ bit-identical, and one (the point colour range overlay) has max 2 LSB on 0.0002%
 mean 0.0003 LSB. That is the same picture as on Metal, inside the bounds
 (`cargo test -p lcc-gpu --release --test equivalence -- --nocapture`).
 
+**HDR renders** (`OutputDepth::F32Hdr`: the HDR views of an HDR display, HDR exports, gain maps) run on
+the GPU too: the per-pixel kernel takes the HDR edit's peak (`PEAK`; the tone LUT is `ToneMap::hdr` /
+`camera_hdr` / `display_hdr` from `finish::base_tone`, shared with the CPU) and, with `DEEP`, encodes with
+the exact sRGB curve unbounded above 1, continues the curves past SDR white with slope 1, gamut-maps into
+`0..peak` and writes linear float RGB (`f32`, output primaries) after the 8-bit image, which is its
+reduction (`DeepImage::to_rgba8`), so the histogram is still binned on the GPU. `hdr_renders_match`
+compares the float samples (sRGB-encoded past 1, ×255) with the CPU's: max < 0.01, mean ≤ 0.0001 steps
+on the AMD Radeon 8060S across tone-map arms, light edits, vignette, curves, grain and an HDR request of
+an SDR edit. 16-bit and SDR float exports, soft proofs and Visualize HDR stay on the CPU (`handles`).
+3000 × 2000 HDR render (release, shared machine): CPU ~200–575 ms, GPU ~50–70 ms
+(`cargo test -p lcc-gpu --release --test equivalence hdr_render_time -- --ignored --nocapture`).
+
 Remaining differences come from f32 vs f64 coordinate math, fast-math transcendental functions on
 Metal and summation order in the box filters — all far below one 8-bit step.
 
