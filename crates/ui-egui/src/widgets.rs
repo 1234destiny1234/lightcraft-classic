@@ -564,14 +564,13 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let hovered = resp.hovered() || resp.dragged();
     let text_c = if enabled { t.text_label } else { t.text_disabled };
     let p = ui.painter();
-    // the name, left-aligned flush with section headers; ellipsized when the column is too narrow for it
+    // the name, right-aligned against its track; ellipsized when the column is too narrow for it
     // (in a form, the font of the other rows' labels)
-    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(12.5) };
+    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(11.5) };
     let mut job = egui::text::LayoutJob::simple_singleline(label_str, label_font, text_c);
     job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = ui.painter().layout_job(job);
-    // (in a form: right-aligned against the controls, as the other rows' labels)
-    let gx = if form_label.is_some() { label_rect.right() - galley.size().x } else { label_rect.left() };
+    let gx = label_rect.right() - galley.size().x;
     let gpos = pos2(gx, label_rect.center().y - galley.size().y / 2.0);
     p.galley(gpos, galley, text_c);
     if typing.is_none() {
