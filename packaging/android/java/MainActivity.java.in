@@ -9,6 +9,12 @@
 // file to the document the user chose once it has been written (the app writes atomically: a
 // temporary file renamed into place, so both "closed after writing" and "moved in" count).
 //
+// A picked folder stays linked to its copy: the activity keeps the picker's read grant
+// (takePersistableUriPermission) and, while the app is in front, rescans the folder every few seconds,
+// copying files that appeared since into the copy (never overwriting, never deleting). So a capture
+// session watching the copy of DCIM/Camera sees each new shot, with no photo permission. A file is
+// copied once its size held still between two scans, under a hidden name renamed into place.
+//
 // Every answer goes back through nativePicked (registered by the native side at start-up). Errors
 // never escape: a failed copy is logged and left out of the answer.
 package {{android_package}};
@@ -26,6 +32,8 @@ import android.net.wifi.WifiManager;
 import android.os.Bundle;
 import android.os.Environment;
 import android.os.FileObserver;
+import android.os.Handler;
+import android.os.Looper;
 import android.provider.DocumentsContract;
 import android.provider.OpenableColumns;
 import android.provider.Settings;
@@ -55,9 +63,12 @@ import java.io.InputStream;
 import java.io.OutputStream;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicLong;
 
 public class MainActivity extends NativeActivity {
@@ -65,6 +76,11 @@ public class MainActivity extends NativeActivity {
     private static final int FILES = 0, FILE = 1, FOLDER = 2, SAVE = 3;
     /** Folders deeper than this inside a picked folder are not copied. */
     private static final int MAX_DEPTH = 8;
+    /** How often linked folders are rescanned while the app is in front. */
+    private static final long RESCAN_MS = 4000;
+    /** Linked folders kept; picking another drops the oldest. */
+    private static final int MAX_LINKS = 16;
+    private static final String PREFS = "picked-folders", LINKS = "links";
 
     /** First picker request code; a request code is FIRST_REQUEST + 4·n + kind, so a result that
      *  reaches a new activity (the process was killed while the picker was up) still says its kind. */
@@ -92,6 +108,29 @@ public class MainActivity extends NativeActivity {
     /** Set once the native side has registered nativePicked; answers before that wait here. */
     private boolean nativeReady;
     private final List<Object[]> held = new ArrayList<>();
+    private final Handler ui = new Handler(Looper.getMainLooper());
+    private final AtomicBoolean scanning = new AtomicBoolean();
+    /** Source document → size at the previous scan (a file is copied once its size holds). */
+    private final Map<String, Long> lastSize = new HashMap<>();
+    private boolean resumed;
+    private final Runnable rescan = new Runnable() {
+        @Override
+        public void run() {
+            if (!resumed) return;
+            if (scanning.compareAndSet(false, true)) {
+                new Thread(() -> {
+                    try {
+                        syncLinks();
+                    } catch (Exception e) {
+                        Log.w(TAG, "rescan: " + e);
+                    } finally {
+                        scanning.set(false);
+                    }
+                }, "rescan").start();
+            }
+            ui.postDelayed(this, RESCAN_MS);
+        }
+    };
     /** Peer sync discovers devices over mDNS: Wi-Fi drops multicast packets without this lock. */
     private WifiManager.MulticastLock multicast;
 
@@ -112,6 +151,21 @@ public class MainActivity extends NativeActivity {
         }
         startReceiving(getIntent());
         askAllFilesAccessOnce();
+    }
+
+    @Override
+    protected void onResume() {
+        super.onResume();
+        resumed = true;
+        ui.removeCallbacks(rescan);
+        ui.post(rescan);
+    }
+
+    @Override
+    protected void onPause() {
+        resumed = false;
+        ui.removeCallbacks(rescan);
+        super.onPause();
     }
 
     @Override
@@ -223,6 +277,8 @@ public class MainActivity extends NativeActivity {
                 try (CopyJob job = new CopyJob()) {
                     copyTree(tree, docId, dest, 0, job);
                 }
+                // read in place, the folder sees new files itself; a copy is kept up to date
+                link(tree, dest);
                 out.add(dest.getAbsolutePath());
                 break;
             }
@@ -317,6 +373,133 @@ public class MainActivity extends NativeActivity {
                     } catch (IOException e) {
                         Log.w(TAG, "copy " + name + ": " + e);
                     }
+                }
+            }
+        }
+    }
+
+    /** Keeps the read grant on `tree` and links it to its copy `dest`, for the rescans. */
+    private void link(Uri tree, File dest) {
+        try {
+            getContentResolver().takePersistableUriPermission(tree, Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no lasting grant on " + tree + ": " + e);
+            return;
+        }
+        synchronized (this) {
+            List<String[]> links = links();
+            String key = tree.toString();
+            links.removeIf(l -> l[0].equals(key));
+            while (links.size() >= MAX_LINKS) release(links.remove(0)[0]);
+            links.add(new String[]{key, dest.getAbsolutePath(), Long.toString(System.currentTimeMillis())});
+            saveLinks(links);
+        }
+    }
+
+    /** The linked folders, oldest first: {tree uri, copy path, linked at}. */
+    private List<String[]> links() {
+        List<String[]> out = new ArrayList<>();
+        for (String s : getSharedPreferences(PREFS, MODE_PRIVATE).getStringSet(LINKS, new HashSet<>())) {
+            String[] l = s.split("\t");
+            if (l.length == 3) out.add(l);
+        }
+        out.sort((a, b) -> {
+            try {
+                return Long.compare(Long.parseLong(a[2]), Long.parseLong(b[2]));
+            } catch (NumberFormatException e) {
+                return 0;
+            }
+        });
+        return out;
+    }
+
+    private void saveLinks(List<String[]> links) {
+        Set<String> set = new HashSet<>();
+        for (String[] l : links) set.add(l[0] + "\t" + l[1] + "\t" + l[2]);
+        getSharedPreferences(PREFS, MODE_PRIVATE).edit().putStringSet(LINKS, set).apply();
+    }
+
+    private void release(String tree) {
+        try {
+            getContentResolver().releasePersistableUriPermission(Uri.parse(tree), Intent.FLAG_GRANT_READ_URI_PERMISSION);
+        } catch (RuntimeException e) {
+            Log.w(TAG, "release " + tree + ": " + e);
+        }
+    }
+
+    /** Copies what appeared in each linked folder since the last scan. A link whose copy was
+     *  deleted, or whose grant is gone, is dropped. */
+    private void syncLinks() {
+        List<String[]> links;
+        synchronized (this) {
+            links = links();
+        }
+        Map<String, Long> seen = new HashMap<>();
+        List<String> dropped = new ArrayList<>();
+        try (CopyJob job = new CopyJob()) {
+            for (String[] l : links) {
+                File dest = new File(l[1]);
+                if (!dest.isDirectory()) {
+                    dropped.add(l[0]);
+                    continue;
+                }
+                try {
+                    Uri tree = Uri.parse(l[0]);
+                    syncTree(tree, DocumentsContract.getTreeDocumentId(tree), dest, 0, seen, job);
+                } catch (SecurityException e) {
+                    Log.w(TAG, "lost access to " + l[0] + ": " + e);
+                    dropped.add(l[0]);
+                } catch (Exception e) {
+                    Log.w(TAG, "rescan " + l[0] + ": " + e);
+                }
+            }
+        }
+        lastSize.clear();
+        lastSize.putAll(seen);
+        if (dropped.isEmpty()) return;
+        synchronized (this) {
+            List<String[]> now = links();
+            now.removeIf(l -> dropped.contains(l[0]));
+            saveLinks(now);
+        }
+        for (String t : dropped) release(t);
+    }
+
+    private void syncTree(Uri tree, String parentId, File dest, int depth, Map<String, Long> seen, CopyJob job) throws IOException {
+        if (depth > MAX_DEPTH) return;
+        Uri children = DocumentsContract.buildChildDocumentsUriUsingTree(tree, parentId);
+        String[] cols = {DocumentsContract.Document.COLUMN_DOCUMENT_ID, DocumentsContract.Document.COLUMN_DISPLAY_NAME,
+                DocumentsContract.Document.COLUMN_MIME_TYPE, DocumentsContract.Document.COLUMN_SIZE};
+        try (Cursor c = getContentResolver().query(children, cols, null, null, null)) {
+            if (c == null) return;
+            while (c.moveToNext()) {
+                String id = c.getString(0);
+                String raw = c.getString(1);
+                // hidden files, the camera's half-written ".pending-…" shots among them
+                if (raw == null || raw.startsWith(".")) continue;
+                String name = safeName(raw, "item");
+                File target = new File(dest, name);
+                if (DocumentsContract.Document.MIME_TYPE_DIR.equals(c.getString(2))) {
+                    if (target.isDirectory() || target.mkdirs()) syncTree(tree, id, target, depth + 1, seen, job);
+                    continue;
+                }
+                if (target.exists()) continue;
+                long size = c.isNull(3) ? -1 : c.getLong(3);
+                String key = tree + "|" + id;
+                seen.put(key, size);
+                Long before = lastSize.get(key);
+                if (size <= 0 || before == null || before != size) continue;
+                File part = new File(dest, "." + name + ".part");
+                job.total++;
+                job.step(name);
+                try {
+                    copy(DocumentsContract.buildDocumentUriUsingTree(tree, id), part, job);
+                    if (!part.renameTo(target)) {
+                        part.delete();
+                        Log.w(TAG, "can't move " + part + " to " + target);
+                    }
+                } catch (IOException e) {
+                    Log.w(TAG, "copy " + name + ": " + e);
                 }
             }
         }
