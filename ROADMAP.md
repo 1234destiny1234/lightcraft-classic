@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-15 (version 0.8.2). Revision history: [Log](#log).*
+*Last updated 2026-10-20 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
@@ -121,7 +121,7 @@ photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and 
 | M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey, Classic shell, Map, Book, Slideshow, Web, Print, publish ✅; print colour management, slideshow music/export, tethering, catalog settings 🟡/⬜) |
 | M16 | 1.0 polish | preferences, shortcut editor, accessibility, localization, packaging (dmg/msi/AppImage/web), hardening | 10–20 | 🚧 (settings, keyboard shortcuts sheet, packaging basics ✅; English/Chinese (Simplified, Traditional)/Japanese/Brazilian Portuguese/Spanish/German/Russian/Ukrainian localisation 🟡; accessibility and further locales ⬜) |
 
-## Parity estimate (feature count updated 2026-10-12; effort estimate from 2026-10-02, superseded by [`docs/target-app-parity.md`](docs/target-app-parity.md): ~330–585 h to beta, ~1,000–1,800 h to full parity)
+## Parity estimate (feature count updated 2026-10-12; effort estimate from 2026-10-02, superseded by [`docs/target-app-parity.md`](docs/target-app-parity.md): ~280–480 h to beta, ~1,000–1,800 h to full parity)
 
 **By feature count** — from `docs/parity-checklist.md` (one row per Lightroom feature, menu item and shortcut; `cargo xtask
 parity` prints this line on every run, so it stays current):
@@ -230,6 +230,8 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-20: gaps audit: lens profile database and CR3 variants no longer beta blockers; beta estimate ~330–585 → ~280–480 h
+  (target-app-parity.md).
 - 2026-10-15 (upstream batch 40): raw-parity action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies)
   marked done upstream; already done here. `docs/raw/coverage.py --check` passes: 596 of 1,446 models verified, 98% of
   photographers' cameras fully work (87% on a verified body); target-app-parity's readiness rows re-derived from it
