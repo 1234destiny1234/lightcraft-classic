@@ -72,5 +72,10 @@
   "Remove {what} from the library for good?": "Окончательно удалить {what} из библиотеки?",
   "Faces: {spec}": "Лица: {spec}",
   "Delete these {count} photos from disk, or only remove them from the library?": "Удалить эти фото ({count}) с диска или только убрать их из библиотеки?",
-  "Delete from Disk moves {n} files to the system trash.": "«Удалить с диска» перемещает файлы ({n}) в системную корзину."
+  "Delete from Disk moves {n} files to the system trash.": "«Удалить с диска» перемещает файлы ({n}) в системную корзину.",
+  "about {} seconds": "около {} с",
+  "about {} minutes": "около {} мин",
+  "about {} hours": "около {} ч",
+  "Output: {} × {} px": "Результат: {} × {} пикс.",
+  "Estimated time: {est}": "Примерное время: {est}"
 }

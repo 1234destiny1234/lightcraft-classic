@@ -1,4 +1,4 @@
-//! Photo ▸ Enhance: `enhance.rawDetails`, `enhance.superResolution` and the per-frame `enhance.pump`. The work is
+//! Photo ▸ Enhance… (the dialog runs these): `enhance.rawDetails`, `enhance.superResolution` and the per-frame `enhance.pump`. The work is
 //! `crate::enhance`.
 
 use serde_json::Value;
@@ -24,7 +24,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "enhance.rawDetails",
             "Raw Details",
-            ["Photo", "Enhance"],
+            [],
             None,
             "{ids?, stack?: true, wait?: false} → {queued} or with `wait` {made: [{id, source, path, size, bytes}], failed: [{id, error}]} — demosaic each raw again with the slower edge-aware method (finer detail, less false colour and zipper) into a new linear DNG `<name>-Enhanced-RD.dng` next to it, imported with the source's develop settings and stacked with it. Runs in the background with a row in the activity stack; `wait: true` returns when done (scripts)",
             can_enhance,
@@ -33,7 +33,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(
             "enhance.superResolution",
             "Super Resolution",
-            ["Photo", "Enhance"],
+            [],
             None,
             "{ids?, stack?: true, wait?: false} → as `enhance.rawDetails` — Raw Details, then twice the width and height (four times the pixels) by iterative back-projection, into `<name>-Enhanced-SR.dng`. Also takes JPEG, TIFF and other photos. At most 400 MP out",
             can_enhance,

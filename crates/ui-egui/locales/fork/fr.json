@@ -1357,5 +1357,13 @@
   "Only the files and folders you pick": "Seulement les fichiers et dossiers choisis",
   "With access to all files, folders on the device are read where they are instead of being copied.": "Avec l’accès à tous les fichiers, les dossiers de l’appareil sont lus sur place au lieu d’être copiés.",
   "Raw Details": "Détails RAW",
-  "Super Resolution": "Super résolution"
+  "Super Resolution": "Super résolution",
+  "Enhance…": "Améliorer…",
+  "Enhance Preview": "Aperçu de l’amélioration",
+  "Making the preview…": "Création de l’aperçu…",
+  "Click to zoom": "Cliquez pour zoomer",
+  "Enhancements": "Améliorations",
+  "Finer detail and edges, less false colour, at the same size.": "Détails et contours plus fins, moins de fausses couleurs, à taille égale.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Détails Raw, puis largeur et hauteur doublées (quatre fois plus de pixels).",
+  "Estimating time…": "Estimation du temps…"
 }

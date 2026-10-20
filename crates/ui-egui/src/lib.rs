@@ -27,6 +27,7 @@ pub mod dialog_frame;
 pub mod docking;
 mod edit_in;
 mod enhance_pump;
+pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
 pub mod headless;
@@ -132,6 +133,8 @@ mod tests_dialogs;
 mod tests_edit_layout;
 #[cfg(test)]
 mod tests_empty_library;
+#[cfg(test)]
+mod tests_enhance_dialog;
 #[cfg(test)]
 mod tests_error_kinds;
 #[cfg(test)]
@@ -544,6 +547,8 @@ pub struct LccApp {
     pub(crate) full_preview_loaded: Option<(lcc_catalog::PhotoId, u64)>,
     /// Photo Merge dialog previews and background merges.
     pub merge: merge::MergeState,
+    /// The Enhance dialog's preview and photos.
+    pub enhance: enhance_ui::EnhanceUi,
     /// An import in progress (the import review dialog's batches).
     pub import: Option<import::ImportTask>,
     /// A folder scan in progress (feeds the import review).
@@ -696,6 +701,7 @@ impl LccApp {
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
+            enhance: enhance_ui::EnhanceUi::default(),
             import: None,
             scan: None,
             sync: None,

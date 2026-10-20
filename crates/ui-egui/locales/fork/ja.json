@@ -1446,5 +1446,13 @@
   "Only the files and folders you pick": "選んだファイルとフォルダーのみ",
   "With access to all files, folders on the device are read where they are instead of being copied.": "すべてのファイルへのアクセスがあると、デバイス上のフォルダーはコピーせずにその場で読み込まれます。",
   "Raw Details": "RAW 詳細",
-  "Super Resolution": "スーパー解像度"
+  "Super Resolution": "スーパー解像度",
+  "Enhance…": "強化…",
+  "Enhance Preview": "強化プレビュー",
+  "Making the preview…": "プレビューを作成中…",
+  "Click to zoom": "クリックしてズーム",
+  "Enhancements": "強化",
+  "Finer detail and edges, less false colour, at the same size.": "同じサイズのまま、より細かなディテールとエッジ、偽色の低減。",
+  "Raw Details, then twice the width and height (four times the pixels).": "Raw の詳細の後、幅と高さを 2 倍に (ピクセル数は 4 倍)。",
+  "Estimating time…": "時間を見積もり中…"
 }

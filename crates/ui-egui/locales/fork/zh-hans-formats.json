@@ -68,5 +68,10 @@
   "Remove {what} from the library for good?": "要将{what}从图库中永久移除吗？",
   "Faces: {spec}": "人脸：{spec}",
   "Delete these {count} photos from disk, or only remove them from the library?": "要从磁盘删除这 {count} 张照片，还是只从图库中移除？",
-  "Delete from Disk moves {n} files to the system trash.": "“从磁盘删除”会将 {n} 个文件移到系统废纸篓。"
+  "Delete from Disk moves {n} files to the system trash.": "“从磁盘删除”会将 {n} 个文件移到系统废纸篓。",
+  "about {} seconds": "约 {} 秒",
+  "about {} minutes": "约 {} 分钟",
+  "about {} hours": "约 {} 小时",
+  "Output: {} × {} px": "输出：{} × {} 像素",
+  "Estimated time: {est}": "预计时间：{est}"
 }

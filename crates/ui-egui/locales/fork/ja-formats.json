@@ -68,5 +68,10 @@
   "Remove {what} from the library for good?": "{what}をライブラリから完全に削除しますか？",
   "Faces: {spec}": "顔：{spec}",
   "Delete these {count} photos from disk, or only remove them from the library?": "これらの {count} 枚の写真をディスクから削除しますか？それともライブラリから取り除くだけにしますか？",
-  "Delete from Disk moves {n} files to the system trash.": "「ディスクから削除」は {n} 個のファイルをシステムのゴミ箱に移動します。"
+  "Delete from Disk moves {n} files to the system trash.": "「ディスクから削除」は {n} 個のファイルをシステムのゴミ箱に移動します。",
+  "about {} seconds": "約 {} 秒",
+  "about {} minutes": "約 {} 分",
+  "about {} hours": "約 {} 時間",
+  "Output: {} × {} px": "出力: {} × {} px",
+  "Estimated time: {est}": "予想時間: {est}"
 }

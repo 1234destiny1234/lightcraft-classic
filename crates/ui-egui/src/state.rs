@@ -1338,6 +1338,10 @@ pub enum Dialog {
         limit_kb: u32,
         dir: String,
     },
+    /// Photo ▸ Enhance… options; the preview lives in the app (`crate::enhance_ui`).
+    Enhance {
+        opts: crate::enhance_ui::EnhanceDialog,
+    },
     /// Photo Merge (HDR / Panorama / HDR Panorama) options; the preview lives in the app.
     Merge {
         opts: crate::merge::MergeDialog,
