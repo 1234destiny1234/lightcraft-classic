@@ -31,7 +31,7 @@ cited here still exists. Formerly docs/parity.md.
 | C. Views & navigation (VIEW) | 17 | 2 | 0 | 0 | 9/9 (100%) | 4/4 (100%) |
 | D. Search & filter (FILT) | 11 | 1 | 1 | 0 | 4/4 (100%) | 4/4 (100%) |
 | E. Metadata (META) | 5 | 1 | 0 | 0 | 2/2 (100%) | 2/2 (100%) |
-| F. Edit panel — global adjustments (EDIT) | 45 | 2 | 3 | 1 | 28/28 (100%) | 14/15 (93%) |
+| F. Edit panel — global adjustments (EDIT) | 45 | 4 | 1 | 1 | 28/28 (100%) | 14/15 (93%) |
 | G. Profiles (PROF) | 7 | 3 | 3 | 0 | 3/4 (75%) | 3/4 (75%) |
 | H. Crop & rotate (CROP) | 9 | 0 | 0 | 1 | 6/6 (100%) | 3/3 (100%) |
 | I. Remove / healing (REM) | 8 | 1 | 2 | 2 | 4/4 (100%) | 2/3 (67%) |
@@ -41,7 +41,7 @@ cited here still exists. Formerly docs/parity.md.
 | M. Versions & history (VER) | 5 | 0 | 0 | 0 | 1/1 (100%) | 3/3 (100%) |
 | N. Copy / paste / sync (SYNC) | 6 | 0 | 0 | 0 | 3/3 (100%) | 2/2 (100%) |
 | O. Merge (MERGE) | 3 | 2 | 0 | 0 | — | — |
-| P. Enhance (ENH) | 0 | 0 | 2 | 0 | — | — |
+| P. Enhance (ENH) | 0 | 1 | 1 | 0 | — | — |
 | Q. HDR (HDR) | 2 | 2 | 0 | 0 | — | — |
 | R. Video (VID) | 0 | 4 | 2 | 1 | — | 0/2 (0%) |
 | S. Export (EXP) | 16 | 3 | 0 | 0 | 7/7 (100%) | 7/7 (100%) |
@@ -50,13 +50,13 @@ cited here still exists. Formerly docs/parity.md.
 | V. Preferences (PREF) | 6 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
-| Y. Menus | 86 | 0 | 3 | 8 | 47/47 (100%) | 23/23 (100%) |
+| Y. Menus | 86 | 1 | 2 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 77 | 5 | 2 | 1 | 48/52 (92%) | 24/26 (92%) |
 | Lightroom Classic extras | 103 | 19 | 4 | 0 | — | 34/38 (89%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 498 | 66 | 34 | 27 | 193/201 (96%) | 167/183 (91%) |
+| **Total** | 498 | 70 | 30 | 27 | 193/201 (96%) | 167/183 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **88.8%** of 598 in-scope rows — P0 98.0% of 201 · P1 95.4% of 183 · P2 74.5% of 212.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.1%** of 598 in-scope rows — P0 98.0% of 201 · P1 95.4% of 183 · P2 75.5% of 212.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -285,8 +285,8 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 | LR-EDIT-DETAIL-CNR | Colour noise reduction | P0 | ✅ | `ctl:detail.nrColor`, `ctl:detail.nrColorDetail`, `ctl:detail.nrColorSmoothness` | preview-size independent like luminance NR (#960) |
 | LR-EDIT-DETAIL-HOTPIXELS | Hot pixel removal | P1 | ✅ | `check:detail.nrOutliers`, `crates/raw/src/hotpixel.rs`, `crates/engine/src/files.rs` (`load_bytes_now`) | Lightroom has no control for this. A box under Noise Reduction (raws only), on for newly imported raws and off for edits saved before it existed (upstream #1345): isolated photosites far above their same-colour neighbours are replaced in the mosaic before demosaicing; stars and sparks spread over neighbours are kept |
 | LR-EDIT-DETAIL-DENOISE | AI denoise | P2 | 🟡 | cmd:denoise.toggle, cmd:denoise.models.install, cmd:denoise.queue, ctl:enhance.denoise, `crates/denoise/`, `docs/denoise.md` | non-destructive Bayer RAW, opt-in weights, pure-Rust CPU/GPU; GPU convolution uses independently written shared scalars (Metal equivalence regression, issue #479); tiles can also run on another computer's graphics card (`lcc-cli denoise-serve`, `crates/denoise/src/remote.rs`); X-Trans/linear RGB, model policy and Lightroom fidelity remain; closing the model setup without installing turns the switch back off (#922) |
-| LR-EDIT-DETAIL-RAWDETAILS | Improved demosaic toggle | P2 | ⬜ | | |
-| LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | ⬜ | | |
+| LR-EDIT-DETAIL-RAWDETAILS | Improved demosaic toggle | P2 | 🟡 | `cmd:enhance.rawDetails`, `crates/raw/src/demosaic/detail.rs` | Photo ▸ Enhance ▸ Raw Details: a new linear DNG (`<name>-Enhanced-RD.dng`) demosaiced by gradient-weighted Hamilton–Adams green and edge-aware residual red/blue (own design after GBTF 2010 and residual interpolation 2013); +13 dB over bilinear, +1.5 dB over AHD, ¼ of bilinear's false colour on the procedural edge scene; Bayer only (X-Trans keeps the directional method); not a learned model, no fidelity check against Lightroom; no dialog |
+| LR-EDIT-DETAIL-SUPERRES | Super resolution | P2 | 🟡 | `cmd:enhance.superResolution`, `crates/merge/src/superres.rs` | Photo ▸ Enhance ▸ Super Resolution: Raw Details, then 2× per side by iterative back-projection (Irani & Peleg 1991) with a 3×3 range guard against ringing, into `<name>-Enhanced-SR.dng`; raws and other photos; +3 dB over bicubic on a downsampled procedural scene; no learned model, so less than Lightroom's AI on textures; ≤ 400 MP out |
 | LR-EDIT-DETAIL-AISHARPEN | AI sharpen | OOS | 🚫 | | |
 | LR-EDIT-OPTICS-CA | Remove chromatic aberration | P1 | ✅ | `crates/ui-egui/src/panels/edit.rs` (checkbox), `ctl:optics.caRed`, `ctl:optics.caBlue` | |
 | LR-EDIT-OPTICS-PROFILE | Lens profile corrections | P1 | 🟡 | `ctl:optics.profileDistortion`, `ctl:optics.profileVignetting`, `crates/pipeline/src/optics.rs`, `crates/raw/src/vendor/rw2.rs`, `crates/raw/src/vendor/raf_lens.rs`, `crates/engine/src/crs.rs` | uses corrections embedded in the file: DNG `WarpRectilinear` / `WarpRectilinear2` (opcode 14, DNG 1.6: degree-14 radial polynomial, valid-radius clamp, reciprocal option, applied in list order with the spec's skip rule for a `WarpRectilinear` after an optional one, so Pixel DNGs' two-stage warp is corrected; up to 3 chained stages, sampled on the CPU because the polynomials need `f64`; issue #635) / `FixVignetteRadial`, and the camera's own distortion correction in Panasonic / Leica RW2 / RWL files (tag `0x0119`, read as the equivalent `WarpRectilinear`; on 79 photos from 13 bodies and 11 lenses the corrected render lines up with the camera JPEG within 0.75 px at 1440 px at the corners, from up to 13 % of the half diagonal uncorrected; issue #256); an imported preset's `LensProfileEnable=0` leaves them on, as Lightroom applies built-in corrections regardless (inferred); Sony ILCE-7RM4A Bayer ARW raw-IFD distortion tables (`0x7037`, 16-sample layout, native 3:2 framing) use the same warp path, enabled only for the independently validated ILCE-7RM4A with FE 24–105 and FE 200–600 lenses; ILCE-7RM6 verified against the camera JPEG on 54 photos with three lenses (`docs/sony-ilce7rm6-lens-corrections.md`); other Sony models remain uncorrected (see `docs/sony-lens-corrections.md`); Nikon NEF distortion from NikonNEFInfo (`0xc7d5`: polynomial, frame-filling zoom and the optical-centre offset left by in-body stabilisation; `crates/raw/src/vendor/nef_lens.rs`, `docs/nikon-lens-corrections.md`) for the Z 6II, Z 8 and Z f, full-frame image area only: F-mount lenses on the FTZ match the camera JPEG within 0.2 px median, Z lenses within 0.5–1.5 px except the 24-70 f/4's wide end, where the camera applies a further correction that is not in the readable data (7 px median at 24 mm, from 16 px / 106 px p95 uncorrected); Fujifilm RAF raw-IFD tables (`0xf00b` distortion, `0xf010` vignetting; `crates/raw/src/vendor/raf_lens.rs`, `docs/fuji-lens-corrections.md`) become a `WarpRectilinear` with the camera's frame-filling zoom and a `FixVignetteRadial` gain for 59 body models with sample files checked against the camera JPEG (the table indexed by the source radius with last knot at the corner; on 67 body/lens combinations the corrected render's radial shape error against the camera JPEG falls from a median of 0.72 % to 0.05 % of the half diagonal, largest 0.42 %, and the vignetting gain of the JPEG tracks the table at a median correlation of 0.987); files whose table scale is not the recorded image's half diagonal (X-S20, X-T30 III, X-M5, X-T5 crops) and six unmatched bodies stay uncorrected; Fujifilm's lateral CA table (`0xf00f`) is real but is not applied, because our demosaic already registers the planes and the stored shift over-corrects; vignetting and lateral CA data of Olympus raws not read yet; Sony ARW shading, lateral CA and distortion tables (raw IFD `0x7031`–`0x7037`, with the encrypted `SR2SubIFD` copies as a checked fallback) are decoded with their camera settings, provenance and framing evidence for every body that records them (`crates/raw/src/lens_metadata.rs`), but only the ILCE-7RM4A and ILCE-7RM6 distortion above is applied: on the ILCE-7CR the unchanged distortion interpretation misses the camera JPEG at 24 mm (median 1.6 px, p95 6.2 px at 2376 px), and Sony shading and CA semantics are not validated beyond the ILCE-7RM6's (lateral CA off) (`docs/sony-lens-corrections.md`); Reload from Disk reads the file's lens data for photos catalogued without it and turns the correction on for those still at import settings (issue #314); a lensfun-format lens database fills in for raws without their own correction (`crates/lensdb`, `crates/engine/src/lens_profiles.rs`): Settings ▸ Import ▸ Lens profiles sets its folder or downloads the lensfun project's database on request (CC-BY-SA 3.0, never bundled; `cmd:lens.db.status`, `cmd:lens.db.setDir`, `cmd:lens.db.download`, `cmd:lens.db.remove`, `cmd:lens.db.refresh`, `cmd:lens.db.photo`, `cmd:app.lensDbFolder`), swapped at run time without a restart; Optics says why nothing applies (no database, with a link to that section: `cmd:app.settings` `section`; no lens named; no profile for the lens); corrections apply in a fixed order (the file's own, a lens given by the caller, the match by lens name), `cmd:lens.db.photo` `lens` reports `chosen` beside `embedded` / `found`, and `cmd:lens.db.list` lists the database's lenses by mount, crop factor and words: the hooks a lens picker needs (no picker or per-photo choice yet). lensfun profiles are not verified against Lightroom renders |
@@ -441,8 +441,8 @@ under the UI command that wraps it (a no-op error); the UI command now wins.
 
 | Id | Feature | Tier | Status | Evidence | Missing / notes |
 |---|---|---|---|---|---|
-| LR-ENH-DIALOG | Enhance dialog | P2 | ⬜ | | |
-| LR-ENH-INPLACE | In-place enhance | P2 | ⬜ | | |
+| LR-ENH-DIALOG | Enhance dialog | P2 | 🟡 | `cmd:enhance.rawDetails`, `cmd:enhance.superResolution`, `crates/engine/src/enhance.rs` | Raw Details and Super Resolution are menu commands (Photo ▸ Enhance) that run in the background with a row in the activity stack; no dialog with a preview; AI Denoise stays in the Detail panel |
+| LR-ENH-INPLACE | In-place enhance | P2 | ⬜ | | Enhance writes a new DNG stacked with the source (as Lightroom Classic does); applying it in place is not built |
 
 ## Q. HDR (HDR)
 
@@ -642,7 +642,7 @@ visible menu bar yet: the menu model is only exposed through the control channel
 | MENU-PHOTO-CREATEVERSION | Create Version… | P1 | ✅ | `cmd:version.create` | no name prompt |
 | MENU-PHOTO-STACK | Stack submenu | P1 | ✅ | `cmd:stack.group`, `cmd:stack.ungroup`, `cmd:dialog.autoStack` | |
 | MENU-PHOTO-MERGE | Photo merge submenu | P2 | ✅ | `cmd:dialog.mergeHdr`, `cmd:dialog.mergePanorama`, `cmd:dialog.mergeHdrPanorama`, `cmd:merge.hdrLast`, `cmd:dialog.mergeFocusStack`, `cmd:merge.focusStackLast` | also Focus Stack… and Focus Stack with Last Settings (beyond Lightroom) |
-| MENU-PHOTO-ENHANCE | Enhance… | P2 | ⬜ | | |
+| MENU-PHOTO-ENHANCE | Enhance… | P2 | 🟡 | `cmd:enhance.rawDetails`, `cmd:enhance.superResolution` | an Enhance submenu (Raw Details, Super Resolution) rather than one dialog |
 | MENU-PHOTO-AUTO | Auto settings | P0 | ✅ | `cmd:develop.auto` | |
 | MENU-PHOTO-BW | Convert to B&W | P0 | ✅ | `cmd:develop.treatment` | |
 | MENU-PHOTO-RESET | Reset edits / crop | P0 | ✅ | `cmd:develop.reset`, `cmd:crop.reset` | |

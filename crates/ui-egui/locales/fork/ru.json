@@ -1652,5 +1652,7 @@
   "Device storage": "Память устройства",
   "All files": "Все файлы",
   "Only the files and folders you pick": "Только выбранные файлы и папки",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются.",
+  "Raw Details": "Детали RAW",
+  "Super Resolution": "Сверхразрешение"
 }

@@ -26,6 +26,7 @@ pub mod date_picker;
 pub mod dialog_frame;
 pub mod docking;
 mod edit_in;
+mod enhance_pump;
 pub mod export_task;
 mod focus_scan;
 pub mod headless;
@@ -1408,6 +1409,7 @@ impl LccApp {
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
         focus_scan::pump(self, ctx);
+        enhance_pump::pump(self, ctx);
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         edit_in::show(self, ctx);

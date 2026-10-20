@@ -1302,5 +1302,7 @@
   "Device storage": "Gerätespeicher",
   "All files": "Alle Dateien",
   "Only the files and folders you pick": "Nur ausgewählte Dateien und Ordner",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Mit Zugriff auf alle Dateien werden Ordner auf dem Gerät an Ort und Stelle gelesen statt kopiert."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Mit Zugriff auf alle Dateien werden Ordner auf dem Gerät an Ort und Stelle gelesen statt kopiert.",
+  "Raw Details": "Raw-Details",
+  "Super Resolution": "Super-Auflösung"
 }

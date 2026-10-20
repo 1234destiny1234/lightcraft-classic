@@ -1443,5 +1443,7 @@
   "Device storage": "裝置儲存空間",
   "All files": "所有檔案",
   "Only the files and folders you pick": "僅限您選擇的檔案和資料夾",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有檔案的存取權限，裝置上的資料夾會就地讀取，而不是複製。"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有檔案的存取權限，裝置上的資料夾會就地讀取，而不是複製。",
+  "Raw Details": "RAW 細節",
+  "Super Resolution": "超解析度"
 }
