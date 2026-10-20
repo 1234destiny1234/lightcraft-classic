@@ -660,6 +660,8 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     p.rect_filled(r, 0.0, t.button);
     let plot = Rect::from_min_max(r.min + vec2(0.0, 6.0), pos2(r.right(), r.bottom() - 26.0 - legend));
     register(ui.ctx(), "histogram:plot", plot);
+    // the plot's near-black well, under the zone band and the distribution
+    p.rect_filled(plot, 0.0, super::histogram::SCOPE_BG);
     // Lightroom Classic's tonal zones (Blacks / Shadows / Exposure / Highlights / Whites across the
     // plot): a drag over one moves its control (the band and the readout show which and how far), a
     // double-click puts it back to its default, and Shift drags a tenth as far
