@@ -4434,12 +4434,14 @@ dependencies = [
  "egui",
  "lcc-android-host",
  "lcc-brand",
+ "lcc-catalog",
  "lcc-codecs",
  "lcc-engine",
  "lcc-raster",
  "lcc-ui-egui",
  "log",
  "serde_json",
+ "skrifa 0.44.0",
 ]
 
 [[package]]

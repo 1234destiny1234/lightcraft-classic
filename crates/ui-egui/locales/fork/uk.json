@@ -1179,5 +1179,11 @@
   "Choose Export Folder": "Вибрати теку для експорту",
   "Post-Processing": "Постобробка",
   "Do nothing": "Нічого не робити",
-  "No watermark": "Без водяного знака"
+  "No watermark": "Без водяного знака",
+  "Copying picked files": "Копіювання вибраних файлів",
+  "Allow Access to All Files…": "Дозволити доступ до всіх файлів…",
+  "Device storage": "Пам’ять пристрою",
+  "All files": "Усі файли",
+  "Only the files and folders you pick": "Лише вибрані файли й теки",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "З доступом до всіх файлів теки на пристрої читаються на місці, а не копіюються."
 }
