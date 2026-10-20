@@ -635,7 +635,7 @@ pub fn request_thumb(app: &mut LccApp, id: PhotoId, size: usize, priority: u32) 
     }
     let bucket = lcc_engine::media::thumb_bucket(size);
     if let Some(photo) = app.session.catalog.photo(id)
-        && app.renderer.thumb_current(photo, bucket, priority)
+        && (app.renderer.thumb_current(photo, bucket, priority) || app.renderer.thumb_covers(photo, bucket))
     {
         return;
     }
