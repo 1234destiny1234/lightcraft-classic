@@ -8,7 +8,7 @@ covers what exists today.
 | Stage | State |
 |---|---|
 | Shared crates build for `aarch64-linux-android` (`cargo xtask android check`, in `ci --fast`) | ✅ |
-| App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker, Develop, library kept across restarts; status-bar insets not handled yet |
+| App host (`apps/android`, NativeActivity; JNI in `crates/android-host`) | 🟡 runs on the emulator: import via the system picker or by sharing / dropping from other apps, Develop, library kept across restarts; status-bar insets not handled yet |
 | Storage: folders read in place with All files access, copies in the activity stack, stable staging and cleanup | 🟡 built and unit-tested; not yet tried on a device |
 | APK / AAB packaging (`cargo xtask android package`), release job (`RELEASE_ANDROID`) | ✅ (arm64 APK 75 MB, AAB 35 MB) |
 | Play Store upload | not started (needs the Play developer account) |
@@ -29,6 +29,16 @@ covers what exists today.
   folders; see [Storage](#storage)) through a native callback that it
   registers at start-up, so no symbol depends on the package name. For a save, it watches the path it handed out
   and copies the written file to the chosen document.
+- **Opening, sharing and dropping photos from other apps.** The activity takes `VIEW` intents for `content://`
+  images and `SEND` / `SEND_MULTIPLE` for `image/*` (raw files arrive as `image/x-…` types, so `image/*` covers
+  them; `application/octet-stream` would offer the app for every file). It is `singleTask`, so a share while the
+  app runs arrives in `onNewIntent`. Drag and drop from another app (split screen) goes through a drag listener on
+  the window, with `requestDragAndDropPermissions` held until the copy is done. In every case the documents are
+  staged like picked files ([Storage](#storage): real path or a reused copy in `Incoming/Picked`) off the UI thread and the paths go to `nativeOpened` (registered with
+  `nativePicked`). The native side queues them and the next frame hands them to the shared UI as dropped files, so
+  they take the desktop's drop path: photos open the import review, presets import as presets. A share that arrives
+  before the native side is up waits in the activity until `Host::new` calls `hostReady()`. Copy failures are logged
+  and shown as a toast.
 - **Peer discovery** is multicast DNS service discovery (RFC 6762 / 6763, `crates/peer`), the same as Bonjour, so
   a future iOS build can join. Android's Wi-Fi drops multicast unless an app holds a `WifiManager.MulticastLock`:
   the activity acquires one in `onCreate` (permission `CHANGE_WIFI_MULTICAST_STATE`) and releases it in `onDestroy`.
