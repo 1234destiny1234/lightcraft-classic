@@ -23,6 +23,7 @@ pub(crate) mod denoise;
 mod develop;
 mod edit;
 pub mod edit_in;
+mod enhance;
 mod export;
 pub(crate) mod face_detect;
 mod face_models;
@@ -235,6 +236,7 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(convert::specs());
         v.extend(convert::edit_specs());
         v.extend(merge::specs());
+        v.extend(enhance::specs());
         v.extend(query::specs());
         v.extend(facets::specs());
         v.extend(quick::specs());

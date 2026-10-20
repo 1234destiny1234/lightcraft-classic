@@ -43,5 +43,7 @@
   "Device storage": "Úložiště zařízení",
   "All files": "Všechny soubory",
   "Only the files and folders you pick": "Jen soubory a složky, které vyberete",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "S přístupem ke všem souborům se složky v zařízení čtou na místě, místo aby se kopírovaly."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "S přístupem ke všem souborům se složky v zařízení čtou na místě, místo aby se kopírovaly.",
+  "Raw Details": "Detaily RAW",
+  "Super Resolution": "Superrozlišení"
 }

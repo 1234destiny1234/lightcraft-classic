@@ -1444,5 +1444,7 @@
   "Device storage": "デバイスのストレージ",
   "All files": "すべてのファイル",
   "Only the files and folders you pick": "選んだファイルとフォルダーのみ",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "すべてのファイルへのアクセスがあると、デバイス上のフォルダーはコピーせずにその場で読み込まれます。"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "すべてのファイルへのアクセスがあると、デバイス上のフォルダーはコピーせずにその場で読み込まれます。",
+  "Raw Details": "RAW 詳細",
+  "Super Resolution": "スーパー解像度"
 }

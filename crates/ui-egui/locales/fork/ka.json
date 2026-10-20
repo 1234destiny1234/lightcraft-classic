@@ -43,5 +43,7 @@
   "Device storage": "მოწყობილობის მეხსიერება",
   "All files": "ყველა ფაილი",
   "Only the files and folders you pick": "მხოლოდ თქვენ მიერ არჩეული ფაილები და საქაღალდეები",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "ყველა ფაილზე წვდომით მოწყობილობის საქაღალდეები ადგილზე იკითხება, კოპირების ნაცვლად."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "ყველა ფაილზე წვდომით მოწყობილობის საქაღალდეები ადგილზე იკითხება, კოპირების ნაცვლად.",
+  "Raw Details": "RAW დეტალები",
+  "Super Resolution": "სუპერ გარჩევადობა"
 }

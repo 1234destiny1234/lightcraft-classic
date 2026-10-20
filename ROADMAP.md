@@ -69,7 +69,7 @@ Priorities, in order. Each points at tracker rows in [`docs/parity-checklist.md`
 6. **AI model strategy** (maintainer decision): which permissively licensed models (or our own training) for
    segmentation masks and denoise. Bayer denoise inference is implemented in pure Rust with an opt-in GPL model; release policy and independently licensed weights remain open. Unblocks M12 and Enhance. Face detection and recognition run on our own checked Rust engine. Object / Describe masks now
    run Meta's SAM 3 in pure Rust (optional, user-consented download under the non-OSI SAM License; CDN mirrors still
-   to be set up, docs/ai-masks.md); Subject / Sky / People, Raw Details and Super Resolution are still open.
+   to be set up, docs/ai-masks.md); Subject / Sky / People are still open; Raw Details and Super Resolution run classical (non-AI) methods (Photo ▸ Enhance).
 7. **Classic completion** (fork): print colour management (LRC-PRINT-JOB / PAGESETUP), catalog settings
    (LRC-CAT-SETTINGS), catalog sets (LRC-LIB-CATALOG-PANEL), `.lrcat` import depth (LRC-LIB-CATALOG-IMPORT), people
    view, slideshow music / backdrop / export, tethering; the open Classic rows in `docs/parity-checklist.md`, P1 first.
@@ -110,7 +110,7 @@ photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and 
 | M4 | Crop, geometry, optics | crop tool + overlays, straighten, Upright (auto/level/vertical/full/guided), manual transforms, CA, defringe, manual lens corrections | 6–10 | ✅ |
 | M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | 🚧 (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget ✅; colour NR at half resolution, GPU histogram ⬜) |
 | M6 | Masking | brush, linear/radial gradients, colour/luminance/depth range, add/subtract/intersect/invert, all local adjustments, masks panel | 8–12 | 🚧 (brush/linear/radial/colour/luminance range, add/subtract/intersect, masks panel ✅; depth range, AI masks ⬜) |
-| M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution ⬜) |
+| M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution 🟡 (classical: edge-aware residual demosaic and 2× back-projection as new DNGs, Photo ▸ Enhance; no learned model)) |
 | M8 | Heal / Remove | content-aware remove (PatchMatch), heal, clone, brush spots, visualize spots, red/pet eye | 6–10 | 🚧 (heal, clone, auto source, visualize spots, red/pet eye, PatchMatch content-aware remove ✅; generative remove ⬜) |
 | M9 | Presets, profiles, versions, sync | preset browser + amount, create/import presets, profile browser, versions, history, copy/paste/sync settings | 5–8 | ✅ |
 | M10 | Export & share | export dialog (JPEG/PNG/TIFF/DNG/AVIF/JXL/original), sizing, sharpening, metadata, watermark, naming, batch jobs, XMP sidecars, HDR export | 6–10 | 🚧 (all formats incl. DNG/original, sizing, presets, background jobs, HDR gain map JPEG / PQ AVIF ✅; JXL encode ⬜) |
@@ -230,6 +230,8 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-20: M7: Raw Details and Super Resolution land as classical Photo ▸ Enhance commands (gap 11 narrows); AI
+  Denoise weights and X-Trans stay a model decision.
 - 2026-10-20: gaps audit: lens profile database and CR3 variants no longer beta blockers; beta estimate ~330–585 → ~280–480 h
   (target-app-parity.md).
 - 2026-10-15 (upstream batch 40): raw-parity action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies)
