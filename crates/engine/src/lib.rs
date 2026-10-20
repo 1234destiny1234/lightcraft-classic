@@ -1595,6 +1595,8 @@ mod tests_source_report;
 mod tests_spots;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(test)]
+mod tests_target_params;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_timelapse;
 #[cfg(all(test, not(target_arch = "wasm32")))]
