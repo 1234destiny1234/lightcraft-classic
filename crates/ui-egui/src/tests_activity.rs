@@ -172,7 +172,8 @@ fn start_export(h: &mut Headless, n: usize) {
     h.request("engine.execute", json!({"command": "library.select", "params": {"ids": ids}}), T);
     h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), T);
     h.step();
-    if let Some(crate::state::Dialog::Export { full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
+    if let Some(crate::state::Dialog::Export { opts, full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
+        opts.destination_mode = lcc_engine::export::DestinationMode::SpecificFolder;
         *full_size = false;
         *resize = lcc_engine::export::Resize::long_edge(64);
         *dir = "/lc-test-out".into();

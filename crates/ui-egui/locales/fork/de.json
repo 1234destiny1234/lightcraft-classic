@@ -1289,5 +1289,18 @@
   "Metadata columns: click a value to narrow the view": "Metadatenspalten: Klicken Sie auf einen Wert, um die Ansicht einzugrenzen",
   "Show/hide top panel": "Oberen Bereich ein-/ausblenden",
   "Show/hide right panel": "Rechten Bereich ein-/ausblenden",
-  "Show/Hide Right Panel": "Rechten Bereich ein-/ausblenden"
+  "Show/Hide Right Panel": "Rechten Bereich ein-/ausblenden",
+  "Choose folder later": "Ordner später auswählen",
+  "No folder chosen": "Kein Ordner ausgewählt",
+  "The folder is asked for when the export starts.": "Der Ordner wird beim Start des Exports abgefragt.",
+  "Choose Export Folder": "Exportordner auswählen",
+  "Post-Processing": "Nachbearbeitung",
+  "Do nothing": "Nichts tun",
+  "No watermark": "Kein Wasserzeichen",
+  "Copying picked files": "Ausgewählte Dateien werden kopiert",
+  "Allow Access to All Files…": "Zugriff auf alle Dateien erlauben…",
+  "Device storage": "Gerätespeicher",
+  "All files": "Alle Dateien",
+  "Only the files and folders you pick": "Nur ausgewählte Dateien und Ordner",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Mit Zugriff auf alle Dateien werden Ordner auf dem Gerät an Ort und Stelle gelesen statt kopiert."
 }

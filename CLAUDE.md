@@ -91,8 +91,8 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Resolution independence:** settings use normalized image coordinates and relative radii; previews and exports must match.
 - **Quality gates:** every commit/PR passes the fast checks, `cargo xtask ci --fast` (fmt, clippy -D warnings, build
   incl. the wasm check, brand, layers, assets, parity, deny; the required PR check) plus the SIL suite and the targeted
-  tests of what you touched. The full `cargo xtask ci` (every test, all three OSes) runs before a release (pushes to
-  `release`, or a manual CI dispatch). See [`docs/ci.md`](docs/ci.md).
+  tests of what you touched. The full `cargo xtask ci` (every test, all three OSes) runs before a release (a manual CI
+  dispatch on the commit that then goes to `release`). See [`docs/ci.md`](docs/ci.md).
 - **Commits:** one task id per commit (`M2.3: local Laplacian highlights/shadows`). Only green states. End messages with the attribution line required by the environment.
 - **Release notes, one file per change:** a user-visible change adds `docs/whats-new/<YYYY-MM-DD>-<slug>.md` (one
   `### Title` and its bullets, for Help ▸ What's New) and, when the release's changelog should mention it,

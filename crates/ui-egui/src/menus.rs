@@ -298,6 +298,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.checkForUpdates", "Check for Updates…", None, "Help"),
     ("app.installUpdate", "Install Update and Relaunch", None, "Help"),
     ("app.openReleasePage", "Open the Release Page", None, ""),
+    ("app.allFilesAccess", "Allow Access to All Files…", None, ""),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
     ("app.whatsNew", "What's New", None, "Help"),
@@ -1580,7 +1581,12 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             let prev = app.session.last_export.clone().unwrap_or_default();
             let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
             let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(crate::control::default_export_dir);
-            let opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            let mut opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            // never exported: no folder picked for the person, it is asked for when the export
+            // starts (Lightroom Classic's "Choose folder later"); not on the web, which has no folders
+            if prev.get("destinationMode").is_none() && prev.get("dir").is_none() && !cfg!(target_arch = "wasm32") {
+                opts.destination_mode = lcc_engine::export::DestinationMode::ChooseLater;
+            }
             // no previous export: 2048 px long edge; a previous full-size export: full size
             let full_size = opts.resize.is_none() && lcc_engine::export::ExportOptions::has_size_param(&prev);
             let resize = opts.resize.unwrap_or_default();
@@ -1659,6 +1665,14 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             };
             crate::links::open(app, &url)
         }
+        // Android: ask for "All files access", so folders on the device are read in place
+        "app.allFilesAccess" => match app.services.storage_access.as_mut() {
+            None => Err("this platform reads files without asking".into()),
+            Some(access) => {
+                let asked = if (access.granted)() { Ok(()) } else { (access.ask)() };
+                asked.map(|()| json!({"granted": (access.granted)()}))
+            }
+        },
         "photo.editInPhotoCraft" => edit_in(app, &ctx, p, true),
         "photo.editInExternal" => {
             // a PSD or TIFF: ask Edit Original / a Copy / a Copy with Adjustments first, as Lightroom does
@@ -2453,6 +2467,7 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "app.openReleasePage" => app.services.open_url.is_some(),
+        "app.allFilesAccess" => app.services.storage_access.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "app.clearRecentLibraries" => !app.ui.settings.recent_libraries.is_empty(),
         "compare.swap" | "compare.makeSelect" | "compare.set" => app.ui.view == ViewMode::Compare,

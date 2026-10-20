@@ -71,6 +71,20 @@ fn rel_to_k(r: f64) -> f64 {
 }
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    pinned_histogram(app, ui, id);
+    show_controls(app, ui, id);
+}
+
+/// The histogram at the head of the Edit panel (when shown). The right panel draws it above its
+/// scroll area, so it stays in view while the controls under it scroll.
+pub fn pinned_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    if app.ui.histogram {
+        histogram(app, ui, id);
+    }
+}
+
+/// The Edit panel under its histogram: soft proofing, the header and every section.
+pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let d = app.session.develop_of(id).unwrap_or_default();
     // a raw shown from its embedded JPEG (preview only) gets the rendered-file white balance scale
@@ -92,9 +106,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     let preview_only = app.session.catalog.photo(id).and_then(|p| p.preview_only.clone());
 
-    if app.ui.histogram {
-        histogram(app, ui, id);
-    }
     if app.ui.soft_proof {
         soft_proofing(app, ui, id);
     }
@@ -341,11 +352,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
+    // the lens database changed since this photo was looked up: look again (its correction and preview follow),
+    // also while the Optics section is folded
+    if d.optics.lens_profile && app.session.lens_profiles_stale(id) {
+        let _ = app.session.refresh_lens_profiles(&[id]);
+    }
     section(app, ui, &d, "optics", "Optics", |app, ui, d| {
-        // the lens database changed since this photo was looked up: look again (its correction and preview follow)
-        if d.optics.lens_profile && app.session.lens_profiles_stale(id) {
-            let _ = app.session.refresh_lens_profiles(&[id]);
-        }
         let has_lens = app.session.catalog.photo(id).is_some_and(|p| p.embedded_lens.is_some());
         egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 4, bottom: 4 }).show(ui, |ui| {
             let mut ca = d.optics.remove_ca;
@@ -659,6 +671,8 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     p.rect_filled(r, 0.0, t.button);
     let plot = Rect::from_min_max(r.min + vec2(0.0, 6.0), pos2(r.right(), r.bottom() - 26.0 - legend));
     register(ui.ctx(), "histogram:plot", plot);
+    // the plot's near-black well, under the zone band and the distribution
+    p.rect_filled(plot, 0.0, super::histogram::SCOPE_BG);
     // Lightroom Classic's tonal zones (Blacks / Shadows / Exposure / Highlights / Whites across the
     // plot): a drag over one moves its control (the band and the readout show which and how far), a
     // double-click puts it back to its default, and Shift drags a tenth as far
@@ -2315,6 +2329,7 @@ fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
         Match::NoLensName => tr("No lens named in this photo's metadata.").to_string(),
         Match::NotFound(lens) => tr("No profile for {lens} in the lens database.").replace("{lens}", &lens),
         // found: the photo picks it up when it is looked up again
+        Match::NoFocal(lens) => tr("No focal length for {lens}: the photo has none and none was given.").replace("{lens}", &lens),
         Match::Found(_) | Match::Chosen(_) => return,
     };
     let r = ui.label(egui::RichText::new(text).size(11.0).color(t.text_dim));

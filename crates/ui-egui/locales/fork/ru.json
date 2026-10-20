@@ -1639,5 +1639,18 @@
   "Metadata columns: click a value to narrow the view": "Столбцы метаданных: щёлкните значение, чтобы сузить просмотр",
   "Show/hide top panel": "Показать/скрыть верхнюю панель",
   "Show/hide right panel": "Показать/скрыть правую панель",
-  "Show/Hide Right Panel": "Показать/скрыть правую панель"
+  "Show/Hide Right Panel": "Показать/скрыть правую панель",
+  "Choose folder later": "Выбрать папку позже",
+  "No folder chosen": "Папка не выбрана",
+  "The folder is asked for when the export starts.": "Папка запрашивается при начале экспорта.",
+  "Choose Export Folder": "Выбрать папку для экспорта",
+  "Post-Processing": "Постобработка",
+  "Do nothing": "Ничего не делать",
+  "No watermark": "Без водяного знака",
+  "Copying picked files": "Копирование выбранных файлов",
+  "Allow Access to All Files…": "Разрешить доступ ко всем файлам…",
+  "Device storage": "Память устройства",
+  "All files": "Все файлы",
+  "Only the files and folders you pick": "Только выбранные файлы и папки",
+  "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются."
 }

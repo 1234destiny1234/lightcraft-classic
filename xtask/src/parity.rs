@@ -298,8 +298,31 @@ pub fn check_gaps(md: &str) -> Vec<String> {
     problems
 }
 
-fn registry(what: &str) -> Result<BTreeSet<String>, String> {
-    let out = crate::cargo().args(["run", "-q", "-p", "lcc-cli", "--", what, "--json"]).output().map_err(|e| format!("app-cli {what}: {e}"))?;
+/// The CLI binary as the SIL test (`apps/cli/tests/sil.rs`) builds it: cargo builds a package's binaries for its
+/// integration tests with the test build's features, which differ from `cargo run`'s, so `cargo run` here meant a
+/// second build of the engine, UI and CLI crates right before `cargo xtask sil` built them again. `None` when
+/// that build doesn't report the binary (then `cargo run` it is).
+fn cli_as_tests_build_it() -> Option<std::path::PathBuf> {
+    let out = crate::cargo()
+        .args(["test", "-q", "-p", "lcc-cli", "--test", "sil", "--no-run", "--message-format=json-render-diagnostics"])
+        .stderr(std::process::Stdio::inherit())
+        .output()
+        .ok()
+        .filter(|o| o.status.success())?;
+    String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str::<serde_json::Value>(l).ok()).find_map(|m| {
+        let bin = m["reason"] == "compiler-artifact"
+            && m["target"]["kind"].as_array().is_some_and(|k| k.iter().any(|k| k == "bin"))
+            && m["target"]["name"] == "app-cli";
+        bin.then(|| m["executable"].as_str().map(std::path::PathBuf::from)).flatten()
+    })
+}
+
+fn registry(cli: Option<&Path>, what: &str) -> Result<BTreeSet<String>, String> {
+    let out = match cli {
+        Some(exe) => std::process::Command::new(exe).args([what, "--json"]).output(),
+        None => crate::cargo().args(["run", "-q", "-p", "lcc-cli", "--", what, "--json"]).output(),
+    }
+    .map_err(|e| format!("app-cli {what}: {e}"))?;
     if !out.status.success() {
         return Err(format!("app-cli {what} --json failed:\n{}", String::from_utf8_lossy(&out.stderr)));
     }
@@ -312,7 +335,8 @@ pub fn run(root: &Path, write: bool) -> Result<(), String> {
     let md = std::fs::read_to_string(&path).map_err(|e| format!("{}: {e}", path.display()))?;
     let doc = parse(&md);
     let menus = std::fs::read_to_string(root.join("crates/ui-egui/src/menus.rs")).map_err(|e| format!("menus.rs: {e}"))?;
-    let mut commands = registry("commands")?;
+    let cli = cli_as_tests_build_it();
+    let mut commands = registry(cli.as_deref(), "commands")?;
     commands.extend(ui_command_ids(&menus));
     // the module shell's commands (crates/ui-egui/src/module.rs)
     let shell = std::fs::read_to_string(root.join("crates/ui-egui/src/module.rs")).map_err(|e| format!("module.rs: {e}"))?;
@@ -324,7 +348,7 @@ pub fn run(root: &Path, write: bool) -> Result<(), String> {
     for f in ["crates/ui-egui/src/print_ui.rs", "crates/ui-egui/src/creations_ui.rs"] {
         commands.extend(ui_command_ids(&std::fs::read_to_string(root.join(f)).map_err(|e| format!("{f}: {e}"))?));
     }
-    let controls = registry("controls")?;
+    let controls = registry(cli.as_deref(), "controls")?;
     let mut problems = check(&doc, &commands, &controls, |p| {
         let full = root.join(p);
         if full.is_dir() { Some(0) } else { std::fs::read_to_string(full).ok().map(|s| s.lines().count()) }

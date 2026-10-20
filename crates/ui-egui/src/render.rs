@@ -401,6 +401,16 @@ impl Renderer {
         !self.request_needed(slot, key, priority)
     }
 
+    /// Does a larger thumbnail of this photo, as it is now, already serve a request for `bucket`? It
+    /// is shown, or rendering, at the larger size. Two views asking for one photo at different sizes
+    /// (the slideshow or print preview and the navigator, say) otherwise replaced each other's request
+    /// for the one thumbnail slot every frame: neither render was ever kept, and the photo rendered
+    /// non-stop while the module was open. The larger size wins and the smaller view scales it down.
+    pub fn thumb_covers(&self, photo: &Arc<lcc_catalog::Photo>, bucket: usize) -> bool {
+        let Some(&(ref old, size, key, _)) = self.thumb_inputs.get(&photo.id) else { return false };
+        old.as_ptr() == Arc::as_ptr(photo) && size > bucket && self.wanted(Slot::Thumb(photo.id)) == Some(key)
+    }
+
     /// Remember the inputs of the thumbnail just requested (`quick`: through a stand-in).
     /// Whether the camera's embedded preview *is* this photo's thumbnail: its quick render arrived
     /// (so `Slot::ThumbQuick` holds the picture) and no edit has moved the photo on to a settings
@@ -1344,6 +1354,27 @@ mod thumbnail_tests {
         finish(&mut app, &work, &ctx, slot, job.run());
         for _ in 0..180 {
             request(&mut app);
+        }
+        assert_eq!(app.renderer.thumb_jobs_built, 1);
+        assert!(work.borrow().jobs.is_empty());
+    }
+
+    /// Two views showing one photo at different sizes in the same frames (the slideshow preview and
+    /// the navigator) share the larger thumbnail instead of replacing each other's render forever.
+    #[test]
+    fn views_asking_for_two_sizes_of_one_photo_share_the_larger_thumbnail() {
+        let (mut app, work, ctx) = fixture();
+        for _ in 0..60 {
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 512, 9);
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 256, 8);
+        }
+        assert_eq!(app.renderer.thumb_jobs_built, 1, "one render, not one per frame");
+        let (slot, job) = take_job(&work);
+        finish(&mut app, &work, &ctx, slot, job.run());
+        assert!(!app.renderer.is_pending(Slot::Thumb(PhotoId(1))), "the render was kept");
+        for _ in 0..60 {
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 256, 8);
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 512, 9);
         }
         assert_eq!(app.renderer.thumb_jobs_built, 1);
         assert!(work.borrow().jobs.is_empty());

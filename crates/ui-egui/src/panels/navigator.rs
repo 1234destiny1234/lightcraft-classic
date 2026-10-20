@@ -133,6 +133,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         (inner.width(), inner.width() / aspect)
     };
     let img = Rect::from_center_size(inner.center(), vec2(iw, ih));
+    // Ask for the thumbnail ourselves: launched straight into Develop, no grid or filmstrip has
+    // requested it yet. Only when missing, so we don't fight the grid over its size.
+    if app.renderer.thumb(id).is_none() {
+        super::grid::request_thumb(app, id, 256, 8);
+    }
     match app.renderer.thumb(id) {
         Some(tex) => p.image(tex.tex.id(), img, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE),
         None => p.rect_filled(img, 0.0, Color32::from_gray(40)),
