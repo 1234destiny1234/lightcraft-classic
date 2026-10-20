@@ -2011,7 +2011,10 @@ fn crop_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, map:
             }
             Some(Gesture::CropRotate { start_angle, a0 }) => {
                 let a = (q - box_centre).angle();
-                let ang = (start_angle + (a - a0).to_degrees() as f64).clamp(-45.0, 45.0);
+                // (the turn since the press, taken the short way round: the pointer crossing the box's
+                // left side flips the angle between -180 and 180 degrees)
+                let turn = (a - a0 + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+                let ang = (start_angle + turn.to_degrees() as f64).clamp(-45.0, 45.0);
                 shown_angle = (ang * 100.0).round() / 100.0;
                 let _ = app.run("crop.straighten", json!({"angle": shown_angle}));
             }
