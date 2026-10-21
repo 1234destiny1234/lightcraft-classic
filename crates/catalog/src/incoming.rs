@@ -11,7 +11,9 @@
 //!   check (locks there are advisory and copiers take none);
 //! - the backstop, from the header the import reads anyway ([`declared_end_past`]): a TIFF-based
 //!   raw says where its image data ends (strip / tile offsets plus byte counts); a file shorter
-//!   than that is still being written.
+//!   than that is still being written. Only while the file changed in the last [`SETTLE`]: an
+//!   older file that is still short is corrupt and reported as unreadable, not skipped forever
+//!   ([`recently_modified`]).
 //!
 //! Sources: own design, from the tested approach in issue #123 (shared-lock open on SMB) and the
 //! TIFF 6.0 specification (IFD layout, StripOffsets / TileOffsets, SubIFDs).
@@ -85,6 +87,17 @@ pub fn writer_active(path: &Path) -> bool {
 )))]
 pub fn writer_active(_path: &Path) -> bool {
     false
+}
+
+/// How long after its last change a short file is still taken for one being copied in. Copies stall
+/// on slow links for a while; ten minutes of no change means the copy is over.
+pub const SETTLE: std::time::Duration = std::time::Duration::from_secs(10 * 60);
+
+/// Whether `path` changed within [`SETTLE`] (or claims a time in the future, as a NAS with a
+/// skewed clock can). `false` when the filesystem gives no time, so a short file is reported.
+pub fn recently_modified(path: &Path) -> bool {
+    let Ok(t) = std::fs::metadata(path).and_then(|m| m.modified()) else { return false };
+    std::time::SystemTime::now().duration_since(t).map_or(true, |age| age < SETTLE)
 }
 
 /// IFDs followed at most (IFD chains plus SubIFDs): raws carry a handful.

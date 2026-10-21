@@ -1262,7 +1262,10 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let _permit = crate::memory::work_gate().acquire(len);
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-        if lcc_catalog::incoming::declared_end_past(&bytes, bytes.len() as u64) {
+        // (a short file that hasn't changed for a while is corrupt: the decode below reports it)
+        if lcc_catalog::incoming::declared_end_past(&bytes, bytes.len() as u64)
+            && lcc_catalog::incoming::recently_modified(std::path::Path::new(path))
+        {
             return Err(format!("{path}: {}", lcc_catalog::incoming::STILL_BEING_WRITTEN));
         }
         let mut info = probe_bytes(path, &bytes)?;
@@ -1331,6 +1334,12 @@ pub(crate) mod tests {
         for f in [&raw, &part] {
             let e = probe(&f.to_string_lossy()).unwrap_err();
             assert!(lcc_catalog::incoming::is_still_being_written(&e), "{e}");
+        }
+        // the same short file, unchanged for an hour, is corrupt: reported, not skipped forever
+        let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&raw).unwrap().set_modified(hour_ago).unwrap();
+        if let Err(e) = probe(&raw.to_string_lossy()) {
+            assert!(!lcc_catalog::incoming::is_still_being_written(&e), "{e}");
         }
         std::fs::remove_dir_all(&dir).unwrap();
     }
