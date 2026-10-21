@@ -329,3 +329,27 @@ fn context_menu_geotags_where_it_was_opened() {
     let want = super::view::screen_to_geo(&h.app.map, canvas, at);
     assert!((gps.0 - want.lat).abs() < 1e-4 && (gps.1 - want.lon).abs() < 1e-4, "{gps:?} vs {want:?}");
 }
+
+#[test]
+fn a_long_press_opens_the_context_menu_where_it_was_pressed() {
+    // a touch long-press opens the menu too; egui counts it as a secondary click (`Response::secondary_clicked`),
+    // so the place is kept then as well, not only on a right-click
+    let mut h = map_on_fake_tiles();
+    let canvas = widget(&h, "map:canvas").unwrap();
+    let at = canvas.center() + egui::vec2(90.0, 60.0);
+    let touch = |phase| egui::Event::Touch { device_id: egui::TouchDeviceId(1), id: egui::TouchId(1), phase, pos: at, force: None };
+    h.events.push(touch(egui::TouchPhase::Start));
+    h.events.push(egui::Event::PointerMoved(at));
+    h.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    // held still past egui's long-press time
+    for _ in 0..90 {
+        h.step();
+    }
+    h.events.push(touch(egui::TouchPhase::End));
+    h.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.settle(SETTLE);
+    let want = super::view::screen_to_geo(&h.app.map, canvas, at);
+    let got = h.app.map.menu_at.expect("the long-press place is kept for the menu");
+    assert!((got.lat - want.lat).abs() < 1e-6 && (got.lon - want.lon).abs() < 1e-6, "{got:?} vs {want:?}");
+    assert!(widget(&h, "map:menu:geotag").is_some(), "the menu has its items");
+}

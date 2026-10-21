@@ -246,7 +246,8 @@ fn canvas(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     }
 
     // ---- context menu
-    // the place right-clicked, kept while the menu is open: the pointer leaves the map for the menu
+    // the place right-clicked (or long-pressed on a touch screen: egui counts that as a secondary click), kept while
+    // the menu is open: the pointer leaves the map for the menu
     if resp.secondary_clicked() {
         app.map.menu_at = resp.interact_pointer_pos().or(hover).map(|p| screen_to_geo(&app.map, r, p));
     }
