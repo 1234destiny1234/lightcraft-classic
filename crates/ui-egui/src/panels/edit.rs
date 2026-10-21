@@ -2085,8 +2085,9 @@ fn grading(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: Phot
         for (i, c) in at.into_iter().enumerate() {
             grading_wheel(app, ui, d, photo, i, c, rad, true);
         }
-        for c in ["grading.shadows.lum", "grading.midtones.lum", "grading.highlights.lum"] {
-            control(app, ui, d, c, true);
+        // under the wheels they name, the luminance sliders need only the wheel's name (issue #346)
+        for (c, label) in [("grading.shadows.lum", "Shadows"), ("grading.midtones.lum", "Midtones"), ("grading.highlights.lum", "Highlights")] {
+            control_as(app, ui, d, c, true, Some(label));
         }
     } else {
         let i = GRADING_WHEELS.iter().position(|(k, _)| *k == mode).unwrap_or(1);
