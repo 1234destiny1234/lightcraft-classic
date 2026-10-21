@@ -1044,6 +1044,24 @@ impl Session {
         self.sidecar_stat_named(id, self.sidecar_naming(id))
     }
 
+    /// Whether the photo's sidecar holds a whole XMP packet (its closing `rdf:RDF` or
+    /// `x:xmpmeta` tag is there). An empty or cut-off file, such as one another app is still
+    /// writing, is not: automatic reads leave it for a later check rather than take it as "no
+    /// metadata".
+    pub(crate) fn sidecar_complete(&self, id: PhotoId) -> bool {
+        const MAX: u64 = 16 << 20;
+        let Some(f) = self.catalog.photo(id).and_then(|p| file_path(p)).and_then(|o| find_sidecar(o, self.sidecar_naming(id))) else {
+            return false;
+        };
+        let Ok(m) = std::fs::metadata(&f) else { return false };
+        if m.len() == 0 || m.len() > MAX {
+            return false;
+        }
+        let Ok(bytes) = std::fs::read(&f) else { return false };
+        let text = String::from_utf8_lossy(&bytes);
+        text.contains("</rdf:RDF>") || text.contains("</x:xmpmeta>")
+    }
+
     /// [`Session::sidecar_stat`] with the photo's sidecar naming already worked out (working it
     /// out is a pass over the whole catalog: per photo of a large import it is quadratic).
     fn sidecar_stat_named(&self, id: PhotoId, naming: SidecarNaming) -> Option<SidecarStat> {

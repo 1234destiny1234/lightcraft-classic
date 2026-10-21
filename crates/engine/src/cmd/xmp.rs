@@ -85,8 +85,12 @@ fn auto_read(s: &mut Session, p: &Value) -> Result<Value> {
     let ids = s.targets(p)?;
     let mut changed = Vec::new();
     let mut conflicts = Vec::new();
+    let mut incomplete = Vec::new();
     for id in ids {
         match s.xmp_status(id) {
+            XmpStatus::ChangedOnDisk if !s.sidecar_complete(id) => {
+                incomplete.push(json!({"id": id.0, "error": "the sidecar is empty or incomplete (still being written?)"}))
+            }
             XmpStatus::ChangedOnDisk => changed.push(id.0),
             XmpStatus::Conflict => conflicts.push(id.0),
             _ => {}
@@ -94,6 +98,9 @@ fn auto_read(s: &mut Session, p: &Value) -> Result<Value> {
     }
     let mut out =
         if changed.is_empty() { json!({"read": [], "failed": []}) } else { s.execute("photo.readMetadataFromFile", &json!({"ids": changed}))? };
+    if let Some(f) = out.get_mut("failed").and_then(Value::as_array_mut) {
+        f.extend(incomplete);
+    }
     out["conflicts"] = json!(conflicts);
     Ok(out)
 }
