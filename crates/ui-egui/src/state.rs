@@ -317,6 +317,8 @@ pub struct AppSettings {
     pub ask_before_move: bool,
     /// GPU rendering allowed (`app.gpu`).
     pub gpu: bool,
+    /// Windows DirectComposition to prevent VRR flicker; opt-in, applies at next launch.
+    pub compose_window: bool,
     /// Largest long edge (pixels) the user lets the loupe render at; 0 = Automatic (the size it is
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
@@ -378,9 +380,6 @@ pub struct AppSettings {
     pub double_click_develop: bool,
     /// Hide active filter text / indicator in Develop mode (Settings ▸ Interface ▸ Detail).
     pub hide_filter_in_develop: bool,
-    /// Windows only (inert elsewhere; the field stays on every platform so settings files remain portable).
-    /// Keep repainting continuously at display refresh rate to eliminate VRR / G-SYNC brightness flicker on OLED/VA panels.
-    pub vrr_flicker_workaround: bool,
 }
 
 impl Default for AppSettings {
@@ -392,6 +391,7 @@ impl Default for AppSettings {
             confirm_delete: true,
             ask_before_move: true,
             gpu: true,
+            compose_window: false,
             preview_limit: 0,
             external_editor: String::new(),
             external_file: EditFile::default(),
@@ -418,7 +418,6 @@ impl Default for AppSettings {
             zoom_to_focus: true,
             double_click_develop: false,
             hide_filter_in_develop: false,
-            vrr_flicker_workaround: false,
         }
     }
 }

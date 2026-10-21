@@ -2731,5 +2731,6 @@
   "繁體中文（台灣）": "繁體中文（台灣）",
   "Return to Latest": "უახლესზე დაბრუნება",
   "Enhance": "გაუმჯობესება",
-  "Plug-in Filters": "დანამატის ფილტრები"
+  "Plug-in Filters": "დანამატის ფილტრები",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "G-SYNC/FreeSync-ის ციმციმის თავიდან აცილება (ამოქმედდება შემდეგი გაშვებისას)"
 }
