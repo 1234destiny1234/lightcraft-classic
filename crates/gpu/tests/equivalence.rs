@@ -77,6 +77,15 @@ fn check(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, 
     (mean, max)
 }
 
+/// [`check`] for a healed spot: a few pixels may differ by up to 8 LSB, the mean must stay tiny.
+fn check_spot(name: &str, src: &Arc<Rgb32f>, info: &SourceInfo, s: &DevelopSettings, req: &RenderRequest) {
+    let cpu = render(src, info, s, req).image;
+    let gpu = lcc_gpu::render(src, info, s, req, None).expect("gpu render");
+    let (mean, max, over) = diff(&cpu, &gpu.image);
+    eprintln!("{name:<28} {}x{}  mean {mean:.4}  max {max}  >1: {:.4}%", cpu.width, cpu.height, over * 100.0);
+    assert!(mean < MEAN_LSB / 10.0 && max <= 8, "{name}: mean {mean:.4} LSB, max {max} LSB");
+}
+
 type Edit = fn(&mut DevelopSettings);
 
 fn typical(s: &mut DevelopSettings) {
@@ -923,7 +932,14 @@ fn windows_match() {
         let mut s = DevelopSettings::default();
         edit(&mut s);
         let name = format!("window: {name}");
-        check(&name, &src, &info, &s, &req);
+        if name.contains("spot") {
+            // Heal divides by its blurred source, so float rounding (Metal) moves a few pixels by
+            // more than MAX_LSB; a window missing part of the spot's ring moves many: hold the mean
+            // ten times tighter instead
+            check_spot(&name, &src, &info, &s, &req);
+        } else {
+            check(&name, &src, &info, &s, &req);
+        }
     }
     // the corner window (where the vignette is strong)
     let mut s = DevelopSettings::default();
