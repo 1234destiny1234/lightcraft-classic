@@ -838,10 +838,11 @@ impl Catalog {
             | Op::SetSavedLocation { .. } => self.changes.broad = self.revision.saturating_add(1),
         }
         match &op {
-            Op::AddPhoto { .. } | Op::RemovePhoto { .. } | Op::SetCaptured { .. } => self.sort_cache.bump(true),
-            Op::SetRating { .. } | Op::SetDevelop { .. } | Op::SetFile { .. } | Op::Relink { .. } | Op::SetContent { .. } => {
-                self.sort_cache.bump(false)
+            // (a file name breaks every key's ties)
+            Op::AddPhoto { .. } | Op::RemovePhoto { .. } | Op::SetCaptured { .. } | Op::SetFile { .. } | Op::Relink { .. } => {
+                self.sort_cache.bump(true)
             }
+            Op::SetRating { .. } | Op::SetDevelop { .. } | Op::SetContent { .. } => self.sort_cache.bump(false),
             _ => {}
         }
         Ok(match op {
