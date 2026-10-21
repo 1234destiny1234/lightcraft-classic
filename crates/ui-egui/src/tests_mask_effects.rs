@@ -14,7 +14,7 @@ const T: Duration = Duration::from_secs(20);
 fn detail() -> Headless {
     let services = Services { png: None, ..Default::default() };
     let app = LccApp::new(lcc_engine::Session::with_demo(), services);
-    let mut h = Headless::new(app, [1200.0, 900.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 1100.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail"}), T);
     assert_eq!(r["ok"], true, "{r}");
     exec(&mut h, "panel.masking", json!({}));

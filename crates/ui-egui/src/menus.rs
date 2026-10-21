@@ -334,7 +334,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
 
 fn panel(app: &mut LccApp, ctx: &egui::Context, p: RightPanel, name: &str) {
     if app.ui.right == p && crate::docking::exposed(app, crate::docking::Panel::Tools) {
-        app.ui.right = RightPanel::None;
+        // Classic Develop: a tool's drawer closes back to the panels under it, as in Lightroom Classic
+        let drawer = app.ui.module == crate::module::ModuleId::Develop && p != RightPanel::Edit && p.is_edit_tool();
+        app.ui.right = if drawer { RightPanel::Edit } else { RightPanel::None };
         app.toast(ctx, crate::i18n::tr_format!("{name} Off", name = crate::i18n::tr(name)));
     } else {
         app.ui.right = p;

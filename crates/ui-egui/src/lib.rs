@@ -246,6 +246,8 @@ mod tests_titlebar;
 #[cfg(test)]
 mod tests_tool_overlay;
 #[cfg(test)]
+mod tests_tool_row;
+#[cfg(test)]
 mod tests_unsaved;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_update;

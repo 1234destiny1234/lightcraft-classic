@@ -17,6 +17,9 @@ use lcc_engine::cmd::crop_aspects::{BUILTIN_ASPECTS, CustomAspect};
 #[path = "classic_crop.rs"]
 mod classic_crop;
 pub(crate) use classic_crop::transform_body;
+/// Develop's tool row under the histogram, each tool's drawer over the panels (fork-owned).
+#[path = "classic_tools.rs"]
+mod classic_tools;
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
@@ -50,13 +53,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         };
         // Edit: Lightroom Classic's Previous / Sync… bar under the panels, outside the scrolling
         let full = ui.available_rect_before_wrap();
-        let footer = (app.ui.right == RightPanel::Edit).then(|| Rect::from_min_max(pos2(full.left(), full.bottom() - SYNC_BAR_H), full.max));
+        // (Develop: under its tools' drawers too, and with the tool row under the histogram)
+        let tools = classic_tools::develop_tools(app);
+        let footer = (app.ui.right == RightPanel::Edit || tools).then(|| Rect::from_min_max(pos2(full.left(), full.bottom() - SYNC_BAR_H), full.max));
         let mut body = footer.map_or(full, |f| Rect::from_min_max(full.min, pos2(full.right(), f.top())));
         // Edit: the histogram pinned above the scrolling controls, so it stays in view
-        if app.ui.right == RightPanel::Edit && app.ui.histogram {
+        if (app.ui.right == RightPanel::Edit || tools) && (app.ui.histogram || tools) {
             let pinned = ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 super::edit::pinned_histogram(app, ui, id);
+                if tools {
+                    classic_tools::row(app, ui);
+                }
             });
             let bottom = pinned.response.rect.bottom().clamp(body.top(), body.bottom());
             body = Rect::from_min_max(pos2(body.left(), bottom), body.max);
@@ -89,6 +97,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     RightPanel::Versions => versions(app, ui, id),
                     RightPanel::Activity => activity(app, ui, id),
                     RightPanel::None => {}
+                }
+                if classic_tools::drawer_open(app) {
+                    classic_tools::panels_under_drawer(app, ui, id);
                 }
                 crate::widgets::follow_focus(ui);
             });

@@ -1909,7 +1909,8 @@ mod tests {
     /// unfolding one is kept in the UI state (ui.json), so it survives a restart.
     #[test]
     fn profile_groups_start_folded_and_remember_their_state() {
-        let mut h = demo([1400.0, 900.0]);
+        // (tall enough for the last group under Develop's histogram and tool row)
+        let mut h = demo([1400.0, 1200.0]);
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail"}), t);
         h.request("engine.execute", json!({"command": "panel.profiles"}), t);

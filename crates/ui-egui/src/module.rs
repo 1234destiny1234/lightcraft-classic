@@ -471,7 +471,7 @@ pub const DEVELOP_LEFT: &[PanelId] =
 /// the Library panels (Versions, Activity, Keywords, Info) are not among them — they have their own
 /// tab strip in Library, sit in Develop's left column where Classic puts them, and open from the
 /// Window menu and their shortcuts (#45, #108).
-const DEVELOP_RIGHT: &[PanelId] = &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::Masking, PanelId::RedEye];
+const DEVELOP_RIGHT: &[PanelId] = &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::RedEye, PanelId::Masking];
 
 /// Library: (`[` / `]` rate in the grids, see `shortcuts::grid_bracket_command`); `\` the filter bar (in a loupe
 /// it stays Show Original, see `shortcuts::handle`); Home / End the first and last photo. `=` / `-`

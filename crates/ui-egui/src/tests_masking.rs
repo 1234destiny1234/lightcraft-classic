@@ -16,7 +16,7 @@ const SETTLE: Duration = Duration::from_secs(120);
 fn detail(panel: &str) -> Headless {
     let services = Services { png: None, ..Default::default() };
     let app = LccApp::new(lcc_engine::Session::with_demo(), services);
-    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 1000.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail", "moduleBar": false}), T);
     assert_eq!(r["ok"], true, "{r}");
     let r = h.request("engine.execute", json!({"command": panel}), T);
@@ -1008,7 +1008,7 @@ fn edit_in_external_editor_opens_the_copy() {
         ..Default::default()
     };
     let app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
-    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 1000.0], 1.0);
     h.app.ui.settings.external_editor = "PhotoCraft".into();
     let r = h.request("engine.execute", json!({"command": "photo.editInExternal", "params": {"dir": dir.to_string_lossy()}}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -1046,7 +1046,7 @@ fn edit_in_photocraft_opens_a_psd_copy() {
         ..Default::default()
     };
     let app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
-    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 1000.0], 1.0);
     let n = h.app.session.catalog.len();
     let params = json!({"command": "photo.editInPhotoCraft", "params": {"dir": dir.to_string_lossy()}});
     let r = h.request("engine.execute", params.clone(), T);
@@ -1115,7 +1115,7 @@ fn open_original_in_external_editor_hands_over_the_raw_itself() {
     let (b, b_path) = file("DSC_0002.NEF", true);
     let (gone, _) = file("DSC_0003.NEF", false);
     let app = LccApp::new(session, services);
-    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 1000.0], 1.0);
     h.app.ui.settings.external_editor = "DxO PhotoLab".into();
     let n = h.app.session.catalog.len();
 
@@ -1202,7 +1202,7 @@ fn open_original_refuses_anything_that_is_not_a_photo_file() {
     let bad: Vec<_> = programs.iter().map(|n| record(n)).collect();
     let good = record("DSC_0001.NEF");
     let app = LccApp::new(session, services);
-    let mut h = Headless::new(app, [1200.0, 800.0], 1.0);
+    let mut h = Headless::new(app, [1200.0, 1000.0], 1.0);
     h.app.ui.settings.external_editor = "DxO PhotoLab".into();
 
     for (id, name) in bad.iter().zip(programs) {

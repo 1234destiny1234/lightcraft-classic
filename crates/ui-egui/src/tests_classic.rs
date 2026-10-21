@@ -400,7 +400,8 @@ fn the_tool_strip_is_develops_alone() {
     assert!(has(&lib, "classicPanel:metadata"), "Library's right column is still there");
     assert!(has(&lib, "icon:versions") && has(&lib, "icon:activity"), "Library's strip has its own panels");
     let mut h = develop_demo();
-    assert!(has(&h, "icon:edit") && has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
+    // (its tools are the row under the histogram, with Presets in the strip)
+    assert!(has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
     for id in ["versions", "activity", "keywords", "info"] {
         assert!(!has(&h, &format!("icon:{id}")), "Develop's strip is its tools, not {id}");
     }
