@@ -58,7 +58,8 @@ impl PickRequest {
 }
 
 /// What File ▸ Import Profiles & Presets… opens.
-pub const PRESET_EXTENSIONS: &[&str] = &["lcpreset", "xmp", "lrtemplate", "zip", "dng", "lmp", "mplumpack", "cube", "dcp", "lceffect"];
+pub const PRESET_EXTENSIONS: &[&str] =
+    &["lcpreset", "xmp", "lrtemplate", "zip", "dng", "lmp", "mplumpack", "cube", "dcp", "lceffect", "lcmeta", "lcexport"];
 /// What Import Point Curve Presets… opens.
 pub const CURVE_PRESET_EXTENSIONS: &[&str] = &["lccurve", "json"];
 
@@ -130,19 +131,24 @@ pub fn with_answer(params: &Value, key: &str, kind: PickKind, paths: &[String]) 
 }
 
 /// Each frame: run the commands whose dialogs have closed with something chosen; forget the
-/// cancelled ones and those whose dialog went away without an answer.
+/// cancelled ones, and say so when a dialog went away without an answer (the host failed to get
+/// the chosen files: the user chose something and must not be left wondering).
 pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
     if app.pending_picks.is_empty() {
         return;
     }
     let mut answered = Vec::new();
     let mut waiting = Vec::new();
+    let mut failed = Vec::new();
     for p in std::mem::take(&mut app.pending_picks) {
         match p.rx.try_recv() {
             Ok(paths) if paths.is_empty() => {}
             Ok(paths) => answered.push((p, paths)),
             Err(TryRecvError::Empty) => waiting.push(p),
-            Err(TryRecvError::Disconnected) => log::warn!("{}: the file dialog ended without an answer", p.command),
+            Err(TryRecvError::Disconnected) => {
+                log::error!("{}: the file dialog ended without an answer", p.command);
+                failed.push(p.command);
+            }
         }
     }
     if !waiting.is_empty() {
@@ -150,11 +156,42 @@ pub fn poll(app: &mut LccApp, ctx: &egui::Context) {
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
     app.pending_picks = waiting;
+    if !failed.is_empty() {
+        app.toast_error(ctx, crate::i18n::tr("Couldn't get the chosen files: the file dialog ended without an answer"));
+    }
     for (p, paths) in answered {
         let params = with_answer(&p.params, p.key, p.kind, &paths);
         if let Err(e) = app.run(&p.command, params) {
             app.toast_error(ctx, e);
         }
+    }
+}
+
+/// A dialog's answer that arrived after the app was restarted (a phone or tablet stops apps in
+/// the background to free memory, and the system picker puts the app in the background): the
+/// command that asked is gone. Photos are imported as Add Photos would have; anything else can't
+/// be finished, and the user is told to choose again. `paths` is `Err` when the host could not get
+/// the chosen files.
+pub fn answer_after_restart(app: &mut LccApp, ctx: &egui::Context, kind: PickKind, paths: Result<Vec<String>, String>) {
+    let paths = match paths {
+        Ok(p) => p,
+        Err(e) => {
+            app.toast_error(ctx, format!("{}: {e}", crate::i18n::tr("Couldn't get the chosen files")));
+            return;
+        }
+    };
+    if paths.is_empty() {
+        return;
+    }
+    let photos = matches!(kind, PickKind::Files | PickKind::File) && paths.iter().all(|p| lcc_engine::import::is_supported(std::path::Path::new(p)));
+    if !photos {
+        log::warn!("a {kind:?} dialog answered after a restart: {} path(s) not used", paths.len());
+        app.toast_error(ctx, crate::i18n::tr("The app was restarted while the file dialog was open: please choose again"));
+        return;
+    }
+    log::info!("importing {} photo(s) chosen before the app was restarted", paths.len());
+    if let Err(e) = app.run("file.addPhotos", json!({ "paths": paths })) {
+        app.toast_error(ctx, e);
     }
 }
 
@@ -235,6 +272,30 @@ mod tests {
     }
 
     #[test]
+    fn photos_chosen_before_a_restart_still_open_the_import_review() {
+        let dir = std::env::temp_dir().join(format!("lc-pick-restart-{}", std::process::id()));
+        let photo = photo_in(&dir);
+        let (mut h, _) = app_with_picker();
+        let ctx = h.view.ctx.clone();
+        answer_after_restart(&mut h.app, &ctx, PickKind::Files, Ok(vec![photo.clone()]));
+        assert_eq!(import_sources(&mut h), Some(vec![photo]));
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    #[test]
+    fn a_failed_or_unusable_answer_after_a_restart_is_reported() {
+        let (mut h, _) = app_with_picker();
+        let ctx = h.view.ctx.clone();
+        answer_after_restart(&mut h.app, &ctx, PickKind::Files, Err("disk full".into()));
+        assert!(h.app.ui.toast.take().is_some_and(|t| t.0.contains("disk full")), "a failure is shown");
+        answer_after_restart(&mut h.app, &ctx, PickKind::Folder, Ok(vec!["/nowhere".into()]));
+        assert!(h.app.ui.toast.take().is_some(), "a folder's command is gone: the user is told");
+        answer_after_restart(&mut h.app, &ctx, PickKind::Files, Ok(vec![]));
+        assert!(h.app.ui.toast.is_none(), "cancelled: nothing to say");
+        assert!(import_sources(&mut h).is_none());
+    }
+
+    #[test]
     fn a_cancelled_or_vanished_dialog_runs_nothing() {
         let (mut h, asked) = app_with_picker();
         h.app.run("file.addPhotos", json!({})).unwrap();
@@ -242,11 +303,14 @@ mod tests {
         assert!(import_sources(&mut h).is_none(), "cancelled: no import review");
         assert!(h.app.pending_picks.is_empty());
         // the dialog thread ends without answering (the host dropped the sender)
+        assert!(h.app.ui.toast.is_none(), "cancelled: nothing to say");
         h.app.run("file.addFolder", json!({})).unwrap();
         assert_eq!(h.app.pending_picks.len(), 1);
         asked.lock().unwrap().pop();
         assert!(import_sources(&mut h).is_none());
         assert!(h.app.pending_picks.is_empty());
+        // the user chose something that never arrived: they are told
+        assert!(h.app.ui.toast.is_some(), "a dialog that ended without an answer is reported");
     }
 
     #[test]

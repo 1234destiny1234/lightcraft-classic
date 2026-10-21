@@ -131,6 +131,8 @@ pub struct SidecarData {
     pub usage_terms: Option<String>,
     pub copyright_url: Option<String>,
     pub creator: Option<String>,
+    /// The creator's contact details, when the sidecar states any.
+    pub contact: Option<lcc_meta::CreatorContact>,
     pub location: Option<String>,
     pub city: Option<String>,
     pub state: Option<String>,
@@ -187,6 +189,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
         usage_terms: m.usage_terms.clone(),
         copyright_url: m.copyright_url.clone(),
         creator: m.artist.clone(),
+        contact: (!m.contact.is_empty()).then(|| m.contact.clone()),
         location: lc("location").or_else(|| m.sublocation.clone()),
         city: m.city.clone(),
         state: m.state.clone(),
@@ -317,6 +320,9 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
         p.label = l;
     }
     let m = &mut p.meta;
+    if let Some(c) = &sc.contact {
+        m.contact.clone_from(c);
+    }
     for (src, dst) in [
         (&sc.title, &mut m.title),
         (&sc.caption, &mut m.caption),
@@ -424,6 +430,7 @@ fn packet(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool, gps: boo
         usage_terms: nz(&p.meta.usage_terms),
         copyright_url: nz(&p.meta.copyright_url),
         artist: nz(&p.meta.creator),
+        contact: p.meta.contact.clone(),
         keywords: p.meta.keywords.clone(),
         rating: Some(p.rating.min(5) as i8),
         label: p.label.map(|l| cat.label_name(l)),
@@ -496,6 +503,8 @@ pub const OWNED: &[&str] = &[
     "xmpRights:Marked",
     "xmpRights:UsageTerms",
     "xmpRights:WebStatement",
+    "photoshop:AuthorsPosition",
+    "Iptc4xmpCore:CreatorContactInfo",
     "lc:*",
     "lcvid:*",
     "lcpx:*",

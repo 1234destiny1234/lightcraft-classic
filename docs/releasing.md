@@ -11,6 +11,9 @@ platform builds unsigned, no draft is created and nothing is uploaded, so nothin
 its tags changes. With `dry_run=false` only the `release` branch may run it: the version job refuses any other
 branch, and the release environment's branch restrictions still apply to the signing jobs.
 
+`only` limits a dry run to some platforms, comma-separated: `macos`, `windows`, `linux`, `flatpak`, `android`,
+`web`, `riscv64`, `freebsd` (`-f only=android`). A real run refuses it, since a release builds every platform.
+
 How a real run flows:
 
 1. **version** resolves the version and creates the draft release `v<version>` (or reuses an existing draft
@@ -35,7 +38,9 @@ How a real run flows:
    For a manual workflow run, the version input can override the workspace version for that run.
    Use a semantic version such as `1.2.0` or `1.2.0-rc.1`; versions containing a hyphen are
    marked as prereleases.
-3. Push to `release`, or dispatch the workflow on `release` (a dispatch on another branch is a dry run; see below).
+3. Dispatch CI on the commit (Actions → CI → Run workflow: the full test run on all three OSes) and wait for it to
+   pass; a push to `release` doesn't run CI again. Then push that commit to `release`, or dispatch the workflow on
+   `release` (a dispatch on another branch is a dry run; see below).
 4. Check the workflow run. On success, the workflow creates or updates a **draft**
    GitHub Release named `<app> v<version>`, targeted at the commit that triggered the run.
    Review the draft and its `SHA256SUMS.txt`, then publish it in GitHub Releases when ready. The job log's
@@ -94,6 +99,9 @@ and the WASM web app. The platform scripts in [`packaging/`](../packaging/) writ
   FreeBSD 14.3 VM (`packaging/freebsd/package.sh`, the same packages as `freebsd.yml`). Install
   with `tar -xzf <file> --strip-components 1 -C /usr/local`.
 - Web: `<binary>-web-<version>.zip`.
+- Android (on unless the repository variable `RELEASE_ANDROID` is `false`): an APK per ABI
+  (`<binary>-<version>-android-arm64-v8a.apk`, `…-android-x86_64.apk`) and one Play Store bundle
+  (`…-android-arm64-v8a-x86_64.aab`), cross-compiled on gpu0 (see [android.md](android.md)).
 
 Only the macOS, Windows and draft-release jobs use the `release` environment (not on a dry run). The
 others sign nothing.
@@ -110,6 +118,7 @@ All on the maintainer's self-hosted runners (docs/ci.md, *Where the jobs run*):
 | macOS universal | mac0 | `nice -n 19`; signing certificate in a temporary keychain in `$RUNNER_TEMP`, deleted (and taken off the search list) at the end of the job, stale ones removed at the start; the login keychain is never modified |
 | Windows x64 | win0 | BelowNormal priority; .NET SDK and WiX in the runner tool cache |
 | Windows ARM64 | SNAPDRAGON | native ARM64 build (win0 has no ARM64 MSVC tools) |
+| Android | gpu0 / gpu0-b | both ABIs in one cargo run; one shared build cache (`~/.cache/lcc-release-android`) and sccache |
 
 The Linux builds run in an Ubuntu 22.04 container and target glibc 2.35 or newer. AppImages and binaries may
 also require system libraries for the windowing stack; the `.deb` and `.rpm` packages declare

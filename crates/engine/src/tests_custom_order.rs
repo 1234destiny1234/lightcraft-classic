@@ -163,21 +163,19 @@ fn new_album_from_selection_keeps_the_shown_order() {
     assert_eq!(got, rev);
 }
 
-/// Custom order drag-drop with descending sort: dropping on the left side of a photo means
-/// "after" in the saved order (PR #1155).
 #[test]
-fn descending_sort_inverts_drop_position() {
+fn dropping_in_a_descending_custom_order_lands_where_the_grid_shows_it() {
     let mut s = Session::with_demo();
-    let (a, ids) = album(&mut s);
-    s.execute("album.setPhotoOrder", &json!({"album": a, "ids": ids[0..4].to_vec()})).unwrap();
+    album(&mut s);
+    s.execute("library.sort", &json!({"key": "custom"})).unwrap();
+    let saved = shown(&mut s);
     s.execute("library.sort", &json!({"key": "custom", "ascending": false})).unwrap();
-    let o = shown(&mut s);
-    // o is [ids[3], ids[2], ids[1], ids[0]] (descending)
-    // In descending sort, left side visually = after in saved order.
-    // "After ids[2]" in saved order means before ids[1].
-    let r = s.execute("album.orderPhotos", &json!({"album": a, "ids": [o[3]], "before": o[2]})).unwrap();
-    let new_order = order(&r);
-    let pos_moved = new_order.iter().position(|p| *p == o[3]).unwrap();
-    let pos_target = new_order.iter().position(|p| *p == o[2]).unwrap();
-    assert!(pos_moved < pos_target, "photo should be before target in saved order: {new_order:?}");
+    let grid = shown(&mut s);
+    assert_eq!(grid, saved.iter().rev().copied().collect::<Vec<_>>(), "descending shows the saved order reversed");
+    // drag the last photo of the grid onto the left side of the third: it lands just before it on screen
+    let r = s.execute("album.orderPhotos", &json!({"ids": [grid[4]], "before": grid[2]})).unwrap();
+    let want = vec![grid[0], grid[1], grid[4], grid[2], grid[3]];
+    assert_eq!(shown(&mut s), want, "the grid shows the photo before the one it was dropped on");
+    assert_eq!(order(&r), want.iter().rev().copied().collect::<Vec<_>>(), "saved in forward order");
+    assert!(!s.sort.ascending, "the view stays descending");
 }

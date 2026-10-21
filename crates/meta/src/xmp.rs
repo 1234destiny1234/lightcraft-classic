@@ -546,6 +546,18 @@ pub fn parse_xmp(s: &str) -> Result<XmpData, XmpError> {
     if let Some(creators) = props.get("dc:creator").filter(|c| !c.is_empty()) {
         m.artist = Some(creators.join("; "));
     }
+    let ci = |k: &str| first(&format!("Iptc4xmpCore:CreatorContactInfo/Iptc4xmpCore:{k}")).unwrap_or_default();
+    m.contact = crate::CreatorContact {
+        job_title: first("photoshop:AuthorsPosition").unwrap_or_default(),
+        address: ci("CiAdrExtadr"),
+        city: ci("CiAdrCity"),
+        state: ci("CiAdrRegion"),
+        postal_code: ci("CiAdrPcode"),
+        country: ci("CiAdrCtry"),
+        phone: ci("CiTelWork"),
+        email: ci("CiEmailWork"),
+        website: ci("CiUrlWork"),
+    };
     m.keywords = props.get("dc:subject").cloned().unwrap_or_default().into_iter().filter(|k| !k.is_empty()).collect();
     m.hierarchical_keywords = props.get("lr:hierarchicalSubject").cloned().unwrap_or_default().into_iter().filter(|k| !k.is_empty()).collect();
     m.capture_time =
@@ -746,6 +758,7 @@ pub fn write_xmp_filters(
     push("photoshop:Country", meta.country.clone());
     push("xmpRights:Marked", meta.copyright_marked.map(|m| if m { "True" } else { "False" }.to_string()));
     push("xmpRights:WebStatement", meta.copyright_url.clone());
+    push("photoshop:AuthorsPosition", Some(meta.contact.job_title.trim().to_string()).filter(|v| !v.is_empty()));
     if let Some(g) = meta.gps {
         push("exif:GPSLatitude", Some(fmt_gps_coord(g.latitude, 'N', 'S')));
         push("exif:GPSLongitude", Some(fmt_gps_coord(g.longitude, 'E', 'W')));
@@ -816,6 +829,38 @@ pub fn write_xmp_filters(
     array(&mut x, "exif:ISOSpeedRatings", "Seq", &meta.iso.map(|v| vec![v.to_string()]).unwrap_or_default(), false);
     if let Some(s) = meta.lens_spec {
         array(&mut x, "exifEX:LensSpecification", "Seq", &s.iter().map(|&v| frac(v)).collect::<Vec<_>>(), false);
+    }
+    let c = &meta.contact;
+    let ci: Vec<(&str, &str)> = [
+        ("CiAdrExtadr", &c.address),
+        ("CiAdrCity", &c.city),
+        ("CiAdrRegion", &c.state),
+        ("CiAdrPcode", &c.postal_code),
+        ("CiAdrCtry", &c.country),
+        ("CiTelWork", &c.phone),
+        ("CiEmailWork", &c.email),
+        ("CiUrlWork", &c.website),
+    ]
+    .into_iter()
+    .map(|(k, v)| (k, v.trim()))
+    .filter(|(_, v)| !v.is_empty())
+    .collect();
+    if !ci.is_empty() {
+        x.push_str(
+            "   <Iptc4xmpCore:CreatorContactInfo rdf:parseType=\"Resource\">
+",
+        );
+        for (k, v) in ci {
+            x.push_str(&format!(
+                "    <Iptc4xmpCore:{k}>{}</Iptc4xmpCore:{k}>
+",
+                escape(v)
+            ));
+        }
+        x.push_str(
+            "   </Iptc4xmpCore:CreatorContactInfo>
+",
+        );
     }
     if let Some(f) = meta.flash {
         let r = f.raw;
@@ -928,6 +973,7 @@ mod tests {
             city: Some("Paris".into()),
             state: Some("Île-de-France".into()),
             country: Some("France".into()),
+            contact: crate::CreatorContact { job_title: "Lead".into(), email: "a@b.c".into(), city: "Lyon & co".into(), ..Default::default() },
             keywords: vec!["tree".into(), "sky & sea".into()],
             hierarchical_keywords: vec!["Places|France|Paris".into()],
             rating: Some(-1),
@@ -993,6 +1039,35 @@ mod tests {
         assert!((g.latitude - 10.5).abs() < 1e-9);
         assert!((g.longitude + 20.26).abs() < 1e-9);
         assert_eq!(d.properties["dc:title"], vec!["Title & more é".to_string(), "Titel".to_string()]);
+    }
+
+    /// The creator's contact details travel as IPTC Core `CreatorContactInfo` (a struct) and the
+    /// job title as `photoshop:AuthorsPosition`, and read back, also from a nested-Description form.
+    #[test]
+    fn creator_contact_round_trips() {
+        let m = Metadata {
+            contact: crate::CreatorContact {
+                job_title: "Photographer".into(),
+                address: "1 Harbour <Road>".into(),
+                city: "Hobart".into(),
+                postal_code: "7000".into(),
+                email: "ann@example.org".into(),
+                website: "https://example.org".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        let x = write_xmp(&m, None);
+        assert!(x.contains("Iptc4xmpCore:CreatorContactInfo"), "{x}");
+        assert!(!x.contains("CiTelWork"), "unset fields are left out: {x}");
+        assert_eq!(parse_xmp(&x).unwrap().metadata, m);
+        let x = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#">
+            <rdf:Description rdf:about="" xmlns:I="http://iptc.org/std/Iptc4xmpCore/1.0/xmlns/">
+            <I:CreatorContactInfo><rdf:Description I:CiEmailWork="a@b.c" I:CiTelWork="+61 3"/></I:CreatorContactInfo>
+            </rdf:Description></rdf:RDF></x:xmpmeta>"#;
+        let c = parse_xmp(x).unwrap().metadata.contact;
+        assert_eq!((c.email.as_str(), c.phone.as_str()), ("a@b.c", "+61 3"));
+        assert!(Metadata::default().contact.is_empty());
     }
 
     /// Copyright status, usage terms and info URL (XMP Rights Management schema): written as

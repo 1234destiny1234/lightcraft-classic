@@ -338,7 +338,30 @@ pub fn font_definitions_with_chinese(craft: &'static [lcc_engine::CraftFont], ch
         mono_fallback.push(WEB_CHINESE_FONT.into());
     }
     mono.extend(mono_fallback);
+    add_system_fallbacks(&mut fonts);
     fonts
+}
+
+/// Faces the platform supplies at run time (Android's `/system/fonts`), last in every family.
+static SYSTEM_FALLBACKS: std::sync::OnceLock<Vec<(String, Arc<FontData>)>> = std::sync::OnceLock::new();
+
+/// Sets the platform's fallback faces (name, data), which every font definition made afterwards
+/// lists after all of its own faces: they only draw characters nothing else has. Only the first
+/// call counts. The host reads them (Android: from the device); none is bundled.
+pub fn set_system_fallbacks(faces: Vec<(String, Arc<FontData>)>) {
+    let _ = SYSTEM_FALLBACKS.set(faces);
+}
+
+fn add_system_fallbacks(fonts: &mut FontDefinitions) {
+    let Some(faces) = SYSTEM_FALLBACKS.get() else { return };
+    for (name, data) in faces {
+        fonts.font_data.insert(name.clone(), data.clone());
+        for family in fonts.families.values_mut() {
+            if !family.contains(name) {
+                family.push(name.clone());
+            }
+        }
+    }
 }
 
 /// The font families used by this app instance, including the browser's separately loaded face.

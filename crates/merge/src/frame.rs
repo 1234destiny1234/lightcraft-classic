@@ -60,6 +60,9 @@ pub struct Frame {
     /// Raw files: the as-shot white-balance multipliers from the vendor's maker notes (green = 1), for formats such
     /// as CR2 and NEF that have no `AsShotNeutral` of their own. `None` when the file doesn't say.
     pub wb_multipliers: Option<[f32; 3]>,
+    /// The pixels were decoded from integer samples of a display-referred file (JPEG, PNG, 8/16-bit TIFF) through its
+    /// transfer curve: the camera's own response curve is still in them ([`crate::response`]).
+    pub display_referred: bool,
 }
 
 impl Frame {
@@ -79,6 +82,7 @@ impl Frame {
             baseline_exposure: 0.0,
             lens: Vec::new(),
             wb_multipliers: None,
+            display_referred: false,
         }
     }
 
@@ -172,11 +176,21 @@ pub fn load_frame(bytes: &[u8], max_edge: Option<usize>, orient: bool) -> Result
 /// [`load_frame`] with a raw's colour tags from `colour`: a raw without colour matrices of its own
 /// (CR2, NEF, ARW…) starts from a colour the app works out (issue #965).
 pub fn load_frame_with(bytes: &[u8], max_edge: Option<usize>, orient: bool, colour: &RawColour) -> Result<Frame> {
+    load_frame_method(bytes, max_edge, orient, colour, lcc_raw::Method::Ahd)
+}
+
+/// [`load_frame_with`] at full size, unturned, with a raw demosaiced by `method` (Enhance ▸ Raw Details uses
+/// [`lcc_raw::Method::Detail`]). Other files load as [`load_frame_with`] loads them.
+pub fn load_frame_full(bytes: &[u8], colour: &RawColour, method: lcc_raw::Method) -> Result<Frame> {
+    load_frame_method(bytes, None, false, colour, method)
+}
+
+fn load_frame_method(bytes: &[u8], max_edge: Option<usize>, orient: bool, colour: &RawColour, method: lcc_raw::Method) -> Result<Frame> {
     let metadata = lcc_meta::extract(bytes);
     let exposure = exif_exposure(&metadata);
     if lcc_raw::probe(bytes).is_some() {
         let raw = lcc_raw::decode(bytes).map_err(|e| MergeError::Decode(e.to_string()))?;
-        return raw_frame(raw, bytes, metadata, exposure, max_edge, orient, colour);
+        return raw_frame(raw, bytes, metadata, exposure, (max_edge, method), orient, colour);
     }
     let opts = match max_edge {
         Some(m) => lcc_codecs::DecodeOptions::fit(m as u32, m as u32),
@@ -203,6 +217,7 @@ pub fn load_frame_with(bytes: &[u8], max_edge: Option<usize>, orient: bool, colo
         baseline_exposure: 0.0,
         lens: Vec::new(),
         wb_multipliers: None,
+        display_referred: !d.float,
     };
     if orient {
         f.orient();
@@ -214,9 +229,9 @@ pub fn load_frame_with(bytes: &[u8], max_edge: Option<usize>, orient: bool, colo
 /// of the mosaic binned ([`lcc_raw::RawImage::develop_binned`]) to no less than the limit, else a bilinear
 /// demosaic. A preview of a 48 MP raw demosaiced at full size first took 1.7 GB and 2 s, and a panorama preview
 /// read a dozen at once.
-fn develop(raw: &RawImage, max_edge: Option<usize>) -> Result<Rgb32f> {
+fn develop(raw: &RawImage, max_edge: Option<usize>, method: lcc_raw::Method) -> Result<Rgb32f> {
     let err = |e: lcc_raw::RawError| MergeError::Decode(e.to_string());
-    let Some(m) = max_edge.filter(|m| (1..=1200).contains(m)) else { return raw.develop(lcc_raw::Method::Ahd).map_err(err) };
+    let Some(m) = max_edge.filter(|m| (1..=1200).contains(m)) else { return raw.develop(method).map_err(err) };
     let crop = raw.develop_crop(raw.active_area.width, raw.active_area.height);
     for k in (2..=crop.width.max(crop.height) / m).rev() {
         if raw.can_bin(k)
@@ -235,7 +250,7 @@ fn raw_frame(
     bytes: &[u8],
     metadata: Metadata,
     exposure: Option<f64>,
-    max_edge: Option<usize>,
+    (max_edge, method): (Option<usize>, lcc_raw::Method),
     orient: bool,
     colour: &RawColour,
 ) -> Result<Frame> {
@@ -256,7 +271,7 @@ fn raw_frame(
     if let Some(color) = colour(&mut raw, bytes) {
         raw.color = color;
     }
-    let mut image = develop(&raw, max_edge)?;
+    let mut image = develop(&raw, max_edge, method)?;
     sanitize(&mut image);
     let clip = detect_clip(&image);
     if let Some(m) = max_edge
@@ -275,6 +290,7 @@ fn raw_frame(
         baseline_exposure: raw.color.baseline_exposure,
         lens,
         wb_multipliers: raw.wb_multipliers,
+        display_referred: false,
     };
     if f.exposure.is_none() {
         f.exposure = exif_exposure(&f.metadata);
@@ -360,7 +376,7 @@ mod tests {
     }
 
     fn frame_of(raw: RawImage, colour: &RawColour) -> Frame {
-        raw_frame(raw, &[], Metadata::default(), None, None, true, colour).unwrap()
+        raw_frame(raw, &[], Metadata::default(), None, (None, lcc_raw::Method::Ahd), true, colour).unwrap()
     }
 
     /// Issue #1144: the as-shot multipliers of a CR2, NEF… (its only white balance) were dropped on loading, so

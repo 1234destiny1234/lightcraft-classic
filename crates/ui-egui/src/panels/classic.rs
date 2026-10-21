@@ -258,7 +258,18 @@ pub fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
         let full = ui.available_rect_before_wrap();
         let bar = egui::Rect::from_min_max(pos2(full.left(), full.bottom() - 44.0), full.max);
         ui.scope_builder(egui::UiBuilder::new().max_rect(bar), |ui| library_sync_bar(app, ui, bar));
-        let rest = egui::Rect::from_min_max(full.min, pos2(full.right(), bar.top()));
+        let mut rest = egui::Rect::from_min_max(full.min, pos2(full.right(), bar.top()));
+        // the histogram pinned above the scrolling panels, as in Develop's Edit panel
+        if app.ui.histogram
+            && let Some(id) = app.session.active()
+        {
+            let pinned = ui.scope_builder(egui::UiBuilder::new().max_rect(rest), |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                super::edit::pinned_histogram(app, ui, id);
+            });
+            let bottom = pinned.response.rect.bottom().clamp(rest.top(), rest.bottom());
+            rest = egui::Rect::from_min_max(pos2(rest.left(), bottom), rest.max);
+        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(rest), |ui| {
             egui::ScrollArea::vertical().id_salt("classic-right-scroll").auto_shrink([false, false]).show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;

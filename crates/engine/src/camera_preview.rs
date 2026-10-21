@@ -100,8 +100,8 @@ pub(crate) fn file_local_look(format: RawFormat) -> bool {
 /// `embedded` is the file's embedded lens vignetting, for the DNG tone fit.
 /// `colour` is the photo's Profile option: [`CameraColour::Colorimetric`] skips the JPEG (fit and black-and-white tone)
 /// for a model with spectral matrices, which then give the colour with the app's default tone curve. `dcp`: an imported
-/// camera profile (`.dcp`) replaced the raw's colour model; like a DNG, one without a tone curve of its own gets its
-/// tone fitted to the camera's JPEG, whatever the raw format.
+/// camera profile (`.dcp`) replaced the raw's colour model; its tone is its own tone curve, else the default tone,
+/// never one fitted to the camera's JPEG.
 pub(crate) fn starting_colour(
     raw: &mut RawImage,
     bytes: &[u8],
@@ -149,7 +149,7 @@ pub(crate) fn starting_colour_traced(
         trace.tone = ToneSource::CanonMedian;
         Some(CameraLook { matrix: Mat3::IDENTITY, tone, hue_sat: None })
     });
-    if look.is_none() && (dng_tone_eligible(raw, &t) || (dcp && dcp_tone_eligible(raw, &t))) {
+    if look.is_none() && jpeg_tone_fit_allowed(raw, &t, dcp) {
         let look = fit_dng_tone(raw, bytes, &t, embedded);
         if look.is_some() {
             trace.tone = ToneSource::DngToneFit;
@@ -233,6 +233,13 @@ pub(crate) fn dng_tone_eligible(raw: &RawImage, t: &CameraTransform) -> bool {
     raw.format == RawFormat::Dng && !t.matrix_is_fallback && identity_tone_curve(p.tone_curve.as_ref()) && p.gain_table_map.is_none()
 }
 
+/// Whether a raw's tone is fitted to its camera JPEG ([`dng_tone_eligible`]). Never under a `.dcp`: the profile
+/// is rendered as its converter renders it, with its own tone curve, else the default tone (and a creative profile
+/// such as Eboda Colour on top); the camera JPEG's tone is the camera's look, not the profile's.
+fn jpeg_tone_fit_allowed(raw: &RawImage, t: &CameraTransform, dcp: bool) -> bool {
+    !dcp && dng_tone_eligible(raw, t)
+}
+
 /// Whether a camera database entry gives matrices from the model's measured spectral sensitivities.
 fn is_spectral(e: &lcc_camdb::Entry) -> bool {
     e.provenance.source == lcc_camdb::Source::SpectralSensitivities
@@ -246,13 +253,6 @@ pub(crate) fn colorimetric_camera(raw: &RawImage) -> Option<lcc_camdb::Entry> {
         return None;
     }
     lcc_camdb::find(raw.metadata.make.as_deref(), raw.metadata.model.as_deref()?).filter(is_spectral)
-}
-
-/// A raw developed through a `.dcp` whose tone is not defined by the profile ([`dng_tone_eligible`]
-/// without the DNG requirement).
-fn dcp_tone_eligible(raw: &RawImage, t: &CameraTransform) -> bool {
-    let p = &raw.color.profile;
-    !t.matrix_is_fallback && identity_tone_curve(p.tone_curve.as_ref()) && p.look_table.is_none() && p.gain_table_map.is_none()
 }
 
 /// [`starting_colour`] with the JPEG fit (the look, and whether the JPEG is black and white) and the black-and-white
@@ -4505,9 +4505,18 @@ mod tests {
         let mut curved = color.clone();
         curved.profile.tone_curve = ToneCurve::from_tag(&[0.0, 0.0, 0.18, 0.4, 1.0, 1.0]);
         assert!(curved.profile.tone_curve.is_some() && !eligible(RawFormat::Dng, curved), "the file's own tone curve is kept");
-        let mut looked = color;
+        let mut looked = color.clone();
         looked.profile.look_table = HsvTable::from_tags(&[1, 2, 1], &[0.0, 1.0, 1.0, 0.0, 1.0, 1.0], 0);
-        assert!(looked.profile.look_table.is_some() && eligible(RawFormat::Dng, looked), "a look table defines colour, not tone");
+        assert!(looked.profile.look_table.is_some() && eligible(RawFormat::Dng, looked.clone()), "a look table defines colour, not tone");
+        // a `.dcp` (an Adobe Standard-style one: a look table, no tone curve) never takes the camera JPEG's tone
+        for format in [RawFormat::Dng, RawFormat::Nef] {
+            for c in [color.clone(), looked.clone()] {
+                let raw = raw_of(format, "Make", "Model", c);
+                let t = lcc_raw::color::camera_transform(&raw, lcc_raw::color::as_shot_white_xy(&raw));
+                assert!(!jpeg_tone_fit_allowed(&raw, &t, true), "{format:?}");
+                assert_eq!(jpeg_tone_fit_allowed(&raw, &t, false), format == RawFormat::Dng, "{format:?}");
+            }
+        }
     }
 
     /// The 1024 px preview Lightroom Classic writes into a 7008 px DNG is fitted; a 256 px thumbnail is not.

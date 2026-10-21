@@ -535,8 +535,14 @@ fn large_sorts_match_the_plain_sort() {
     let mut c = Catalog::new();
     for i in 0..25_000u64 {
         let id = c.alloc_photo_id();
-        let mut p =
-            Photo::new(id, Source::Demo { scene: 0 }, &format!("N{}.jpg", query::mix64(i) % 997), "JPEG", 1, 1, &format!("2026-0{}-01", 1 + i % 9));
+        // short names, and two families of long ones whose names share their first 23 bytes in lower
+        // case within each family (mixed case, accents)
+        let name = match i % 4 {
+            0 => format!("Äußere Tage in Lisbon, Tag {}.jpg", query::mix64(i) % 97),
+            1 => format!("äUSSERE tage in lisbon, tag {}.JPG", query::mix64(i) % 97),
+            _ => format!("N{}.jpg", query::mix64(i) % 997),
+        };
+        let mut p = Photo::new(id, Source::Demo { scene: 0 }, &name, "JPEG", 1, 1, &format!("2026-0{}-01", 1 + i % 9));
         p.captured = (i % 7 != 0).then(|| format!("2020-01-{:02}T10:00:00 and a long tail {}", 1 + i % 28, query::mix64(i) % 5));
         p.rating = (i % 6) as u8;
         p.file_size = query::mix64(i) % 1000;
@@ -568,6 +574,11 @@ fn large_sorts_match_the_plain_sort() {
                     SortKey::FileSize => a.file_size.cmp(&b.file_size),
                     SortKey::Random => query::mix64(query::mix64(7) ^ a.id.0).cmp(&query::mix64(query::mix64(7) ^ b.id.0)),
                 }
+                // ties: by file name (not the name sort, nor the shuffle), then id
+                .then_with(|| match key {
+                    SortKey::FileName | SortKey::Random => std::cmp::Ordering::Equal,
+                    _ => a.file_name.to_lowercase().cmp(&b.file_name.to_lowercase()),
+                })
                 .then(a.id.cmp(&b.id));
                 if ascending { o } else { o.reverse() }
             });

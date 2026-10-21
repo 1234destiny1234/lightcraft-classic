@@ -1,14 +1,15 @@
 # CI and landing changes
 
-> **Last updated:** 2026-10-15 · **Change:** minor (release jobs upload straight to the draft release, not via Actions artifacts); major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
+> **Last updated:** 2026-10-20 · **Change:** minor (the full run also checks the x86_64 Android target); major (no repeated runs: a push to main skips a tree its PR run tested, no CI on pushes to `release`, Brand only on PRs and built in the runner cache, Windows ARM64 only when packaging inputs change, sccache, one cargo run per target for the fast gate's wasm/Android checks); minor (release jobs upload straight to the draft release, not via Actions artifacts); major (every workflow on self-hosted runners, containers on gpu0, fork PRs approved after review); minor (test retries, flaky reports and the test quarantine for the full run); major (fast PR gate; full test runs only before a release); major (created: PR-only main, self-hosted runner, local status)
 
 ## How changes reach `main`
 
 `main` on the fork is protected by two rulesets:
 
 - **No force-push, no deletion** — nobody bypasses this.
-- **Pull request required** (0 approvals, merge commits only), the **"Linux (cargo xtask ci)"** check must be
-  green and the branch up to date with `main`. Repository admins can bypass it for emergencies only.
+- **Pull request required** (0 approvals, merge commits only) and the **"Linux (cargo xtask ci)"** check must be
+  green. The branch need not be up to date with `main`: the run on the push to `main` tests any merge whose tree
+  the PR run didn't (below). Repository admins can bypass it for emergencies only.
 
 Every change goes on a branch, opens a PR and is set to auto-merge
 (`gh pr merge <n> --repo <owner>/<repo> --auto --merge`); it lands when the check passes.
@@ -17,8 +18,9 @@ Every change goes on a branch, opens a PR and is set to auto-merge
 
 | Trigger | Linux ("Linux (cargo xtask ci)") | macOS / Windows |
 |---|---|---|
-| Pull request to `main`, push to `main` | `cargo xtask ci --fast` + SIL suite | build + clippy |
-| Push to `release`, manual dispatch (Actions → CI → Run workflow) | full `cargo xtask ci` + SIL suite | build + clippy + `cargo test --workspace` |
+| Pull request to `main`, push to `main` | `cargo xtask ci --fast` + SIL suite | clippy |
+| Manual dispatch (Actions → CI → Run workflow) | full `cargo xtask ci` + SIL suite | build + clippy + `cargo test --workspace` |
+| Push to `release` | none: the dispatched run tested that commit | none |
 
 `cargo xtask ci --fast` runs fmt, brand, docs, notes (release-note entries, `docs/whats-new/README.md`), clippy
 `-D warnings` (incl. the HEIF feature), parity refs, shared-check, layers, assets, deny, the wasm check and the Android check (`cargo xtask android check`, see
@@ -26,8 +28,29 @@ Every change goes on a branch, opens a PR and is set to auto-merge
 the workspace and HEIF test runs. The SIL step runs `cargo xtask sil` (docs/testing-sil.md) once that command
 exists and is skipped until then. Locally, `cargo xtask ci` stays the full run; use `--fast` per commit and run the targeted tests of what you touched.
 
-Before cutting a release, dispatch CI on the commit (or push it to `release`, which also starts
-`release.yml`) and make sure all three OSes are green.
+The fast gate checks the wasm and Android crates in one `cargo check` per target, so a crate shared by several
+of them is checked once; when that fails it checks each crate on its own to name the broken ones. The full run,
+`cargo xtask wasm` and `cargo xtask android check` always check crate by crate, which also catches a crate
+that builds only because another member turns on a feature it relies on. The Android check covers arm64 in the fast gate and
+both ABIs a release ships, arm64 and x86_64, in the full run. `cargo xtask parity` reads the command
+and control registries from the CLI as `cargo test -p lcc-cli --test sil` builds it, so the SIL step that follows
+compiles nothing new.
+
+Before cutting a release, dispatch CI on the commit and make sure all three OSes are green, then push that commit
+to `release` (`release.yml` builds it; CI does not run again there).
+
+### No run twice for the same tree
+
+GitHub's PR run checks out the merge of the PR into `main`. When the PR then merges and `main` hasn't moved, the
+merge commit has exactly that tree, so testing it again finds nothing new. Each green PR run of the Linux job
+uploads a marker artifact `ci-tree-<tree hash>` (kept 14 days); the `tested` job of a push to `main` looks for the
+pushed commit's tree and, when a marker exists, skips the Linux, macOS and Windows jobs. If `main` moved in between,
+the tree is new and everything runs. (GitHub's merge queue, which would test each merge exactly once, is only
+offered to repositories owned by an organization.)
+
+The other workflows avoid repeats the same way: Brand (the throw-away brand build, `cargo xtask brand test`) runs
+on PRs only, and Windows ARM64 (a full ARM64 package, install and run on SNAPDRAGON) runs on pushes to `main`
+only when dependencies, build scripts or the Windows packaging change, plus weekly.
 
 ## Where the jobs run
 
@@ -56,6 +79,14 @@ Jobs run at low priority, since the machines are also used interactively: Linux 
 jobs set the runner worker's priority class to BelowNormal in their first step (later steps inherit it).
 The Windows ARM64 builds on SNAPDRAGON (12 cores) set `CARGO_BUILD_JOBS: 10` in the job, overriding the runner's own
 limit of 4 and leaving two cores for the desktop; the x64 Windows release job keeps cargo's default.
+
+### Build caches
+
+The Linux CI and Brand jobs use sccache (`.github/actions/sccache`): installed by `taiki-e/install-action`,
+with its cache in `~/.cache/sccache` (`C:\lcc-ci\sccache` on Windows) and `RUSTC_WRAPPER=sccache`. gpu0 and
+gpu0-b run as one user, so they share it: each registry crate compiles once per machine, not once per target dir,
+and the throw-away brand build reuses what CI compiled. The step is best effort; without sccache jobs build as
+before. `sccache --show-stats` on the runner shows the hit rate; `rm -rf ~/.cache/sccache` starts it clean.
 
 Each runner instance has its own build cache (`CARGO_TARGET_DIR` from the runner's `.env`, else
 `~/.cache/lcc-ci-target-<runner name>`), so several instances on one machine (`gpu0` and `gpu0-b`) can run
@@ -143,7 +174,7 @@ If the runner is offline, jobs for our own branches wait in the queue; post a lo
 
 ## Retries, flaky tests and the quarantine
 
-The full pre-release run (`cargo xtask ci` without `--fast`, on a push to `release` or a manual dispatch) runs the tests with [cargo-nextest](https://nexte.st) (installed by `taiki-e/install-action`, into the
+The full pre-release run (`cargo xtask ci` without `--fast`, on a manual dispatch) runs the tests with [cargo-nextest](https://nexte.st) (installed by `taiki-e/install-action`, into the
 runner's cargo home), profile `ci` in `.config/nextest.toml`:
 
 - **Retries:** a failing test is retried up to 2 times. One that then passes is reported as **FLAKY** in the

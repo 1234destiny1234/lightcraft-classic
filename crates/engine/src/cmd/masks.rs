@@ -201,7 +201,7 @@ fn connected_strokes(from: Point, last: &BrushStroke, to: BrushStroke) -> Vec<Br
 
 /// `p.id` as a mask id: absent / null is `None`; anything but an integer that fits a mask id is an error (a
 /// `u64` cast with `as u32` made 2^32 + k alias mask k, and a non-number silently meant the active mask).
-fn mask_id_param(p: &Value, c: &str) -> Result<Option<u32>> {
+pub(crate) fn mask_id_param(p: &Value, c: &str) -> Result<Option<u32>> {
     match p.get("id") {
         None | Some(Value::Null) => Ok(None),
         Some(v) => v
@@ -376,7 +376,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!("mask.update", "Update Mask Shape", [], None, "{id?, component?: index (0), shape: MaskShape JSON}", has_active, |s, p| {
             let shape: MaskShape =
                 serde_json::from_value(p.get("shape").cloned().unwrap_or_default()).map_err(|e| bad("mask.update", e.to_string()))?;
-            let comp = p.get("component").and_then(Value::as_u64).unwrap_or(0) as usize;
+            let comp = super::index_opt(p, "component", "mask.update")?.unwrap_or(0);
             let mid = mask_id(p, s.active_mask, "mask.update")?;
             masks_edit(s, "mask.update", "Edit Mask", |masks, _| {
                 let i = find(masks, mid, "mask.update")?;
@@ -404,7 +404,7 @@ pub fn specs() -> Vec<CommandSpec> {
                 let lab = lcc_pipeline::color_range_sample(&src, &info, &d, &req, lcc_geom::Point::new(x, y))
                     .ok_or_else(|| bad(c, "the point is outside the photo"))?;
                 let mid = mask_id(p, s.active_mask, c)?;
-                let comp = p.get("component").and_then(Value::as_u64).map(|v| v as usize);
+                let comp = super::index_opt(p, "component", c)?;
                 let mut out = Vec::new();
                 masks_edit(s, c, "Color Range", |masks, _| {
                     let i = find(masks, mid, c)?;
@@ -495,8 +495,8 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mid = mask_id(p, s.active_mask, c)?;
                 let d = s.develop_of(id).unwrap_or_default();
                 let m = d.masks.iter().find(|m| m.id == mid).ok_or_else(|| bad(c, format!("no mask {mid}")))?;
-                let k = match p.get("component").and_then(Value::as_u64) {
-                    Some(k) => k as usize,
+                let k = match super::index_opt(p, "component", c)? {
+                    Some(k) => k,
                     None => m
                         .components
                         .iter()
@@ -761,7 +761,7 @@ pub fn specs() -> Vec<CommandSpec> {
             |s, p| {
                 let c = "mask.component";
                 let mid = mask_id(p, s.active_mask, c)?;
-                let k = p.get("component").and_then(Value::as_u64).ok_or_else(|| bad(c, "missing component"))? as usize;
+                let k = super::index_req(p, "component", c)?;
                 let action = str_param(p, "action").ok_or_else(|| bad(c, "missing action"))?.to_string();
                 let op: Option<MaskOp> = match p.get("op") {
                     Some(v) => Some(serde_json::from_value(v.clone()).map_err(|e| bad(c, e.to_string()))?),
@@ -955,8 +955,8 @@ pub fn specs() -> Vec<CommandSpec> {
         ),
         cmd!("spot.select", "Select Spot", [], None, "{index|null}", has_active, |s, p| {
             let n = spots_len(s);
-            s.active_spot = match p.get("index").and_then(Value::as_u64) {
-                Some(i) if (i as usize) < n => Some(i as usize),
+            s.active_spot = match super::index_opt(p, "index", "spot.select")? {
+                Some(i) if i < n => Some(i),
                 Some(_) => return Err(bad("spot.select", "no such spot")),
                 None => None,
             };
@@ -1116,7 +1116,7 @@ fn spots_len(s: &Session) -> usize {
 
 /// `index` from the params, else the selected spot.
 fn spot_index(s: &Session, p: &Value, c: &str) -> Result<usize> {
-    let i = p.get("index").and_then(Value::as_u64).map(|v| v as usize).or(s.active_spot).ok_or_else(|| bad(c, "no spot selected (give `index`)"))?;
+    let i = super::index_opt(p, "index", c)?.or(s.active_spot).ok_or_else(|| bad(c, "no spot selected (give `index`)"))?;
     if i >= spots_len(s) {
         return Err(bad(c, "no such spot"));
     }

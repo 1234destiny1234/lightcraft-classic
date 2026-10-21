@@ -1,7 +1,10 @@
 // The per-pixel stage: a straight port of `lcc_pipeline::finish` (keep in step with it).
 // Bindings: img (rgb, pre-exposure), log_l, base, clar, tex, dark, masks (NMASK planes, then the
 // blurred chromaticity when HAS_CHROMA), aux
-// (tone LUT | chroma curve | sRGB LUT | curve LUTs | mask terms), out (packed RGBA8).
+// (tone LUT | chroma curve | sRGB LUT | curve LUTs | mask terms), out (packed RGBA8; for a deep
+// render, `DEEP`, also linear float R, G, B in the output primaries from word `DEEP_OFF`, and the
+// packed pixel is their 8-bit reduction, `DeepImage::to_rgba8`). `PEAK` is the HDR render's peak
+// (SDR white = 1; 1 for SDR renders).
 
 fn tone_apply(y: f32) -> f32 {
     if (y <= 0.0) {
@@ -47,8 +50,32 @@ fn lut_at(o: u32, x: f32) -> f32 {
     return aux[o + i] + (aux[o + i + 1u] - aux[o + i]) * t;
 }
 
-fn curve(ch: u32, x: f32) -> f32 {
-    return lut_at(pu(F_CURVE_OFF) + ch * CURVE_N, x);
+// `finish::eval_curves` on one channel: for HDR renders (`hdr`) a value above SDR white continues
+// with slope 1 from the curve's end point.
+fn lut_hdr(o: u32, x: f32, hdr: bool) -> f32 {
+    if (hdr && x > 1.0) {
+        return lut_at(o, 1.0) + (x - 1.0);
+    }
+    return lut_at(o, x);
+}
+
+fn curve(ch: u32, x: f32, hdr: bool) -> f32 {
+    return lut_hdr(pu(F_CURVE_OFF) + ch * CURVE_N, x, hdr);
+}
+
+// The exact sRGB curve (`lcc_color::transfer`), unbounded above 1 as HDR renders encode.
+fn lin_to_srgb(v: f32) -> f32 {
+    if (v <= 0.0031308) {
+        return v * 12.92;
+    }
+    return 1.055 * pow(v, 1.0 / 2.4) - 0.055;
+}
+
+fn srgb_to_lin(v: f32) -> f32 {
+    if (v <= 0.04045) {
+        return v / 12.92;
+    }
+    return pow((v + 0.055) / 1.055, 2.4);
 }
 
 fn band_weights(h: f32) -> array<f32, 8> {
@@ -334,7 +361,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
             // process V3 (`finish::dehaze_v3_pixel`)
             let k0 = clamp(dz, 0.0, 1.0);
             let k = k0 * (0.4 + 0.6 * k0);
-            let t = max(1.0 - 0.95 * k * d, 0.15);
+            let t = max(1.0 - 0.95 * k * d, 0.3);
             let veil = min(air * (1.0 - t), 0.9 * max(min(c.x, min(c.y, c.z)), 0.0));
             c = max((c - veil) / t, vec3<f32>(0.0));
         } else if (dz > 0.0) {
@@ -447,9 +474,12 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     if (k != 1.0) {
         d = vec3<f32>(o) + (d - vec3<f32>(o)) * k;
     }
+    let peak = pf(F_PEAK);
+    let hdr = peak > 1.0;
+    let deep = pu(F_DEEP) != 0u;
     let mx = max(d.x, max(d.y, d.z));
-    if (mx > 1.0) {
-        let t = clamp((mx - 1.0) / max(mx - o, 1e-6), 0.0, 1.0);
+    if (mx > peak) {
+        let t = clamp((mx - peak) / max(mx - o, 1e-6), 0.0, 1.0);
         d = d + (o - d) * t;
     }
 
@@ -491,6 +521,9 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 } else {
                     d = d * f;
                 }
+            } else if (hdr) {
+                // lighten towards SDR white; never pull HDR highlights down to it
+                d = d + max(vec3<f32>(1.0) - d, vec3<f32>(0.0)) * amount * t * 0.85;
             } else {
                 d = d + (1.0 - d) * amount * t * 0.85;
             }
@@ -504,14 +537,14 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         vec3<f32>(pf(F_OUT_M + 6u), pf(F_OUT_M + 7u), pf(F_OUT_M + 8u)),
     );
     var r = mul3(om, d);
-    let yy = clamp(pf(F_OUT_Y) * r.x + pf(F_OUT_Y + 1u) * r.y + pf(F_OUT_Y + 2u) * r.z, 0.0, 1.0);
+    let yy = clamp(pf(F_OUT_Y) * r.x + pf(F_OUT_Y + 1u) * r.y + pf(F_OUT_Y + 2u) * r.z, 0.0, peak);
     var tg = 1.0;
     for (var k = 0u; k < 3u; k++) {
         let cc = r[k];
         if (cc < 0.0) {
             tg = min(tg, yy / max(yy - cc, 1e-9));
-        } else if (cc > 1.0) {
-            tg = min(tg, (1.0 - yy) / max(cc - yy, 1e-9));
+        } else if (cc > peak) {
+            tg = min(tg, (peak - yy) / max(cc - yy, 1e-9));
         }
     }
     if (tg < 1.0) {
@@ -519,10 +552,20 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
     }
 
     // --- encode, curves, grain
-    var e = vec3<f32>(encode_srgb(r.x), encode_srgb(r.y), encode_srgb(r.z));
+    var e: vec3<f32>;
+    if (hdr) {
+        // HDR: the (unbounded) sRGB curve, so values above SDR white encode above 1
+        let q = max(r, vec3<f32>(0.0));
+        e = vec3<f32>(lin_to_srgb(q.x), lin_to_srgb(q.y), lin_to_srgb(q.z));
+    } else if (deep) {
+        let q = clamp(r, vec3<f32>(0.0), vec3<f32>(1.0));
+        e = vec3<f32>(lin_to_srgb(q.x), lin_to_srgb(q.y), lin_to_srgb(q.z));
+    } else {
+        e = vec3<f32>(encode_srgb(r.x), encode_srgb(r.y), encode_srgb(r.z));
+    }
     if (pu(F_CURVES) != 0u) {
         let e0 = e;
-        e = vec3<f32>(curve(0u, e.x), curve(1u, e.y), curve(2u, e.z));
+        e = vec3<f32>(curve(0u, e.x, hdr), curve(1u, e.y, hdr), curve(2u, e.z, hdr));
         let rs = pf(F_REFINE_SAT);
         if (rs < 1.0) {
             e = refine_saturation(e0, e, rs);
@@ -538,7 +581,7 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
                 continue;
             }
             let o = so + nm + u32(slot) * 3u * CURVE_N;
-            let c = vec3<f32>(lut_at(o, e.x), lut_at(o + CURVE_N, e.y), lut_at(o + 2u * CURVE_N, e.z));
+            let c = vec3<f32>(lut_hdr(o, e.x, hdr), lut_hdr(o + CURVE_N, e.y, hdr), lut_hdr(o + 2u * CURVE_N, e.z, hdr));
             e = e + (c - e) * a;
         }
     }
@@ -552,9 +595,23 @@ fn main(@builtin(global_invocation_id) gid: vec3<u32>) {
         let seed = pu(F_GRAIN_SEED);
         var g = grain_noise(gx * sc, gy * sc, seed);
         g = g * (1.0 - rough * 0.5) + grain_noise(gx * sc * 2.3, gy * sc * 2.3, seed ^ 0x55u) * rough * 0.7;
-        let lum = 0.2126 * e.x + 0.7152 * e.y + 0.0722 * e.z;
+        var lum = 0.2126 * e.x + 0.7152 * e.y + 0.0722 * e.z;
+        if (hdr) {
+            lum = clamp(lum, 0.0, 1.0);
+        }
         let k = pf(F_GRAIN_AMT) * g * (0.35 + 2.6 * lum * (1.0 - lum));
         e = e + k;
+    }
+    if (deep) {
+        // linear in the output primaries (`finish::finish_deep`): up to `peak` (HDR) or 1
+        let q = max(e, vec3<f32>(0.0));
+        let lin = clamp(vec3<f32>(srgb_to_lin(q.x), srgb_to_lin(q.y), srgb_to_lin(q.z)), vec3<f32>(0.0), vec3<f32>(peak));
+        let o = pu(F_DEEP_OFF) + 3u * i;
+        out[o] = bitcast<u32>(lin.x);
+        out[o + 1u] = bitcast<u32>(lin.y);
+        out[o + 2u] = bitcast<u32>(lin.z);
+        let sdr = clamp(lin, vec3<f32>(0.0), vec3<f32>(1.0));
+        e = vec3<f32>(lin_to_srgb(sdr.x), lin_to_srgb(sdr.y), lin_to_srgb(sdr.z));
     }
     e = vec3<f32>(out_encode(e.x), out_encode(e.y), out_encode(e.z));
     out[i] = enc8(e.x) | (enc8(e.y) << 8u) | (enc8(e.z) << 16u) | (255u << 24u);

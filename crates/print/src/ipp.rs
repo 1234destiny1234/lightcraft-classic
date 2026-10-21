@@ -351,7 +351,7 @@ impl Reader<'_> {
 }
 
 /// Why a spooler printer name (`\\server\printer`, `HP OfficeJet`) is refused.
-pub const WINDOWS_SPOOLER_UNSUPPORTED: &str = "printing to a printer by its system name (the Windows print spooler) is not supported: it needs the native print API, which the app doesn't use. Enter the printer's ipp:// address (most network printers and Windows print servers with IPP printing on answer at ipp://<host>/ipp/print or ipp://<host>/printers/<name>), or print to a PDF file and print that";
+pub const WINDOWS_SPOOLER_UNSUPPORTED: &str = "printing to a printer by its system name (the Windows print spooler) works on Windows only. Enter the printer's ipp:// address (most network printers and Windows print servers with IPP printing on answer at ipp://<host>/ipp/print or ipp://<host>/printers/<name>), or print to a PDF file and print that";
 
 /// A parsed `ipp://host:port/path` (or `ipps://`) URI.
 #[derive(Clone, Debug, PartialEq, Eq)]

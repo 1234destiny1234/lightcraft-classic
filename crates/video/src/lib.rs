@@ -13,8 +13,8 @@
 //! one sample table and each codec one decoder (`demux`, `decode`), so seeking is shared. Y'CbCr
 //! is converted honouring the stream's colour description (the container first, then the
 //! bitstream, then size-based defaults); HLG and PQ are tone-mapped to SDR (BT.2390 EETF) and
-//! wide-gamut primaries are converted to Rec.709 for v1. Interlaced H.264 is reported as
-//! [`VideoError::Unsupported`] rather than decoded wrongly.
+//! wide-gamut primaries are converted to Rec.709 for v1. Interlaced MPEG-2 and H.264 (PAFF /
+//! MBAFF) are decoded woven and deinterlaced.
 //!
 //! Never-crash: every input-derived number is checked, and every call into FilmCraft runs under
 //! `catch_unwind`, so a malformed file is a [`VideoError`], never a panic.
@@ -105,7 +105,7 @@ pub struct VideoInfo {
     /// (H.264 / HEVC VUI, MPEG-2 sequence header).
     pub par_num: u32,
     pub par_den: u32,
-    /// Interlaced MPEG-2 sequence: frames are deinterlaced (linear, first field kept) instead of
+    /// Interlaced MPEG-2 or H.264 sequence: frames are deinterlaced (linear, first field kept) instead of
     /// showing woven combing.
     pub interlaced: bool,
 }

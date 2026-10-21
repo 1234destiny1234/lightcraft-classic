@@ -71,6 +71,20 @@ fn rel_to_k(r: f64) -> f64 {
 }
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    pinned_histogram(app, ui, id);
+    show_controls(app, ui, id);
+}
+
+/// The histogram at the head of the Edit panel (when shown). The right panel draws it above its
+/// scroll area, so it stays in view while the controls under it scroll.
+pub fn pinned_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    if app.ui.histogram {
+        histogram(app, ui, id);
+    }
+}
+
+/// The Edit panel under its histogram: soft proofing, the header and every section.
+pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let d = app.session.develop_of(id).unwrap_or_default();
     // a raw shown from its embedded JPEG (preview only) gets the rendered-file white balance scale
@@ -92,9 +106,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     let preview_only = app.session.catalog.photo(id).and_then(|p| p.preview_only.clone());
 
-    if app.ui.histogram {
-        histogram(app, ui, id);
-    }
     if app.ui.soft_proof {
         soft_proofing(app, ui, id);
     }
@@ -309,11 +320,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
         ui.add_space(8.0);
     });
+    // the lens database changed since this photo was looked up: look again (its correction and preview follow),
+    // also while the Lens Corrections section is folded
+    if d.optics.lens_profile && app.session.lens_profiles_stale(id) {
+        let _ = app.session.refresh_lens_profiles(&[id]);
+    }
     section(app, ui, &d, "optics", "Lens Corrections", |app, ui, d| {
-        // the lens database changed since this photo was looked up: look again (its correction and preview follow)
-        if d.optics.lens_profile && app.session.lens_profiles_stale(id) {
-            let _ = app.session.refresh_lens_profiles(&[id]);
-        }
         let has_lens = app.session.catalog.photo(id).is_some_and(|p| p.embedded_lens.is_some());
         egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 4, bottom: 4 }).show(ui, |ui| {
             let mut ca = d.optics.remove_ca;
@@ -674,6 +686,8 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     p.rect_filled(r, 0.0, t.button);
     let plot = Rect::from_min_max(r.min + vec2(0.0, 6.0), pos2(r.right(), r.bottom() - 26.0 - legend));
     register(ui.ctx(), "histogram:plot", plot);
+    // the plot's near-black well, under the zone band and the distribution
+    p.rect_filled(plot, 0.0, super::histogram::SCOPE_BG);
     // Lightroom Classic's tonal zones (Blacks / Shadows / Exposure / Highlights / Whites across the
     // plot): a drag over one moves its control (the band and the readout show which and how far), a
     // double-click puts it back to its default, and Shift drags a tenth as far
@@ -1487,6 +1501,9 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
     let drag_id = egui::Id::new(("curve-drag", target.widget(""), &ch));
     // the point being dragged (stored as `Option<usize>` so a stale value can be cleared)
     let mut dragging: Option<usize> = ui.data(|dd| dd.get_temp::<Option<usize>>(drag_id)).flatten();
+    // the point the Input / Output fields edit: the last one clicked, added or dragged
+    let sel_id = egui::Id::new(("curve-selected", target.widget(""), &ch));
+    let mut selected: Option<usize> = ui.data(|dd| dd.get_temp::<Option<usize>>(sel_id)).flatten().filter(|i| *i < pts.len());
     let nearest = |q: Pos2| pts.iter().enumerate().map(|(i, p)| (i, to_screen(p.x, p.y).distance(q))).min_by(|a, b| a.1.total_cmp(&b.1));
     let hovered = resp.hover_pos().and_then(nearest).filter(|(_, dist)| *dist < 10.0).map(|(i, _)| i);
     if dragging.is_some() {
@@ -1530,13 +1547,17 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
         // pick the point under the press, not where the pointer is once the drag threshold passed
         let _ = app.run("develop.beginInteraction", json!({"label": target.label()}));
         match nearest(q) {
-            Some((i, dist)) if dist < 10.0 => dragging = Some(i),
+            Some((i, dist)) if dist < 10.0 => {
+                dragging = Some(i);
+                selected = Some(i);
+            }
             _ => {
                 let (x, y) = from_screen(q);
                 let mut v = pts.clone();
                 let i = v.iter().position(|p| p.x > x).unwrap_or(v.len());
                 v.insert(i, Point::new(x, y));
                 dragging = Some(i);
+                selected = Some(i);
                 new_pts = Some(v);
             }
         }
@@ -1575,11 +1596,33 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
         && let Some(q) = resp.interact_pointer_pos()
         && nearest(q).is_none_or(|(_, dist)| dist >= 10.0)
     {
-        let (x, y) = from_screen(q);
+        // the new point goes on the curve at the clicked x, as in Lightroom Classic: adding a
+        // point doesn't change the curve until it is dragged
+        let (x, _) = from_screen(q);
+        let y = curve.eval(x).clamp(0.0, 1.0);
         let mut v = pts.clone();
         let i = v.iter().position(|p| p.x > x).unwrap_or(v.len());
         v.insert(i, Point::new(x, y));
+        selected = Some(i);
         new_pts = Some(v);
+    } else if resp.clicked()
+        && let Some(q) = resp.interact_pointer_pos()
+        && let Some((i, _)) = nearest(q)
+    {
+        selected = Some(i);
+    }
+    if resp.double_clicked() && new_pts.is_some() {
+        selected = None;
+    }
+    if new_pts.is_none()
+        && let Some(i) = selected
+        && let Some(q) = curve_point_fields(ui, target, i, &pts)
+    {
+        let mut v = pts.clone();
+        if let Some(slot) = v.get_mut(i) {
+            *slot = q;
+            new_pts = Some(v);
+        }
     }
     if let Some(v) = new_pts {
         let arr: Vec<[f64; 2]> = v.iter().map(|p| [p.x, p.y]).collect();
@@ -1591,12 +1634,68 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
     if commit_interaction(app, ui, dragging.is_some(), resp.drag_stopped()) {
         dragging = None;
     }
-    ui.data_mut(|dd| dd.insert_temp(drag_id, dragging));
+    ui.data_mut(|dd| {
+        dd.insert_temp(drag_id, dragging);
+        dd.insert_temp(sel_id, selected);
+    });
     curve_footer(app, ui, d, target);
     if photo {
         control(app, ui, d, "curve.refineSaturation", true);
     }
     let _ = id;
+}
+
+/// Input and Output fields (0–255, like the histogram) for point `i` of a point curve, as in
+/// Lightroom Classic: typing a value places the point exactly. Returns the moved point when an edit
+/// is committed; the input stays between the neighbouring points.
+fn curve_point_fields(ui: &mut egui::Ui, target: CurveTarget, i: usize, pts: &[Point]) -> Option<Point> {
+    use crate::text_field::TextField;
+    let t = Tokens::get(ui.ctx());
+    let cur = *pts.get(i)?;
+    let mut out = None;
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 0, bottom: 2 }).show(ui, |ui| {
+        ui.horizontal(|ui| {
+            for (axis, name) in [(0, "Input"), (1, "Output")] {
+                let widget = target.widget(&format!("Point{name}"));
+                let value = if axis == 0 { cur.x } else { cur.y };
+                let shown = format!("{}", (value * 255.0).round());
+                // the text being typed lives with the field until the edit ends; otherwise it shows the point
+                let buf_id = egui::Id::new(("curve-field", &widget));
+                let focused = ui.memory(|m| m.has_focus(crate::text_field::id(&widget)));
+                let mut text = if focused { ui.data(|d| d.get_temp::<String>(buf_id)).unwrap_or_else(|| shown.clone()) } else { shown.clone() };
+                ui.label(RichText::new(crate::i18n::tr(name)).font(t.font(12.0)).color(t.text_label));
+                let r = TextField::singleline(&widget, &mut text)
+                    .width(36.0)
+                    .font(t.font(12.0))
+                    .select_on_focus(true)
+                    .label(crate::i18n::tr(name))
+                    .show(ui);
+                if r.committed() {
+                    if let Ok(n) = text.trim().parse::<f64>()
+                        && n.is_finite()
+                    {
+                        let v = (n / 255.0).clamp(0.0, 1.0);
+                        let mut q = cur;
+                        if axis == 0 {
+                            let lo = if i == 0 { 0.0 } else { pts.get(i - 1).map_or(0.0, |p| p.x + 0.01) };
+                            let hi = pts.get(i + 1).map_or(1.0, |p| p.x - 0.01);
+                            q.x = if lo <= hi { v.clamp(lo, hi) } else { cur.x };
+                        } else {
+                            q.y = v;
+                        }
+                        out = Some(q);
+                    }
+                    ui.data_mut(|d| d.remove::<String>(buf_id));
+                } else if r.cancelled() {
+                    ui.data_mut(|d| d.remove::<String>(buf_id));
+                } else if focused || r.response.has_focus() {
+                    ui.data_mut(|d| d.insert_temp(buf_id, text));
+                }
+                ui.add_space(8.0);
+            }
+        });
+    });
+    out
 }
 
 /// The row under the curve graph: point-curve presets and reset every curve.
@@ -2333,6 +2432,7 @@ fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
         Match::NoLensName => tr("No lens named in this photo's metadata.").to_string(),
         Match::NotFound(lens) => tr("No profile for {lens} in the lens database.").replace("{lens}", &lens),
         // found: the photo picks it up when it is looked up again
+        Match::NoFocal(lens) => tr("No focal length for {lens}: the photo has none and none was given.").replace("{lens}", &lens),
         Match::Found(_) | Match::Chosen(_) => return,
     };
     let r = ui.label(egui::RichText::new(text).size(11.0).color(t.text_dim));

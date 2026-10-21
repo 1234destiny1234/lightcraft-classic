@@ -390,3 +390,61 @@ fn video_clip_over_mcp() {
     assert!(g["trimIn"].as_f64().unwrap_or(-1.0).abs() < 1e-9, "trim undone: {g}");
     let _ = std::fs::remove_dir_all(&dir);
 }
+
+/// Reusable presets end to end over MCP: a Lightroom Classic metadata preset and export preset
+/// (written here, in code) imported through `preset.import`, the metadata preset applied to both
+/// photos, then `app.export {preset}`: the files are named, sized and placed as the export preset
+/// says and carry the creator, copyright, usage terms and contact details.
+#[test]
+fn imported_metadata_and_export_presets_reach_the_exported_files() {
+    let dir = std::env::temp_dir().join(format!("lcc-mcp-presets-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&dir);
+    std::fs::create_dir_all(dir.join("src")).unwrap();
+    for (i, name) in ["a.png", "b.png"].iter().enumerate() {
+        let img = lcc_raster::Rgba8::from_fn(96, 64, |x, y| [(x * 2) as u8, (y * 3) as u8, (40 * i) as u8, 255]);
+        lcc_mcp::write_image(&dir.join("src").join(name), &img, 90).unwrap();
+    }
+    let out = dir.join("out");
+    let meta = r#"s = { title = "Rights", type = "Metadata", value = {
+        ["com.adobe.creator"] = "Ann Lee", ["com.adobe.copyright"] = "(c) 2026 Ann Lee",
+        ["com.adobe.rightsUsageTerms"] = "Editorial use only", ["com.adobe.creatorWorkEmail"] = "ann@example.org",
+        ["com.adobe.creatorWorkPhone"] = "+61 3 0000 0000" }, version = 0 }"#;
+    let export = format!(
+        r#"s = {{ title = "Client", type = "export", value = {{ LR_format = "JPEG", LR_jpeg_quality = 0.7,
+        LR_size_doConstrain = true, LR_size_resizeType = "longEdge", LR_size_maxWidth = 48, LR_size_maxHeight = 48, LR_size_units = "pixels",
+        LR_embeddedMetadataOption = "copyrightAndContactOnly", LR_renamingTokensOn = true, LR_tokens = "{{{{custom_token}}}}-{{{{naming_sequenceNumber_2Digits}}}}",
+        LR_tokenCustomString = "Client", export_destinationType = "specificFolder", export_destinationPathPrefix = "{}" }}, version = 0 }}"#,
+        out.to_string_lossy().replace('\\', "\\\\")
+    );
+    let (mf, ef) = (dir.join("Rights.lrtemplate"), dir.join("Client.lrtemplate"));
+    std::fs::write(&mf, meta).unwrap();
+    std::fs::write(&ef, export).unwrap();
+    let mut server = Server::new(Box::new(Headless::default()));
+    let replies = session(
+        &mut server,
+        &[
+            call(1, "import", json!({"paths": [dir.join("src").to_string_lossy()]})),
+            call(2, "command_run", json!({"id": "preset.import", "params": {"paths": [mf.to_string_lossy(), ef.to_string_lossy()]}})),
+            call(3, "command_run", json!({"id": "library.selectAll", "params": {}})),
+            call(4, "command_run", json!({"id": "metadata.applyPreset", "params": {"name": "Rights"}})),
+            call(5, "command_run", json!({"id": "app.export", "params": {"preset": "Client"}})),
+        ],
+    );
+    for r in &replies {
+        assert!(r["result"]["isError"] == false, "{r}");
+    }
+    let mut names: Vec<String> = std::fs::read_dir(&out).unwrap().map(|e| e.unwrap().file_name().to_string_lossy().to_string()).collect();
+    names.sort();
+    assert_eq!(names, ["Client-01.jpg", "Client-02.jpg"], "{replies:?}");
+    for n in &names {
+        let bytes = std::fs::read(out.join(n)).unwrap();
+        let d = lcc_codecs::decode(&bytes, Default::default()).unwrap();
+        assert_eq!(d.width.max(d.height), 48, "{n}");
+        let m = lcc_meta::extract(&bytes);
+        assert_eq!(m.artist.as_deref(), Some("Ann Lee"), "{n}: {m:?}");
+        assert_eq!(m.copyright.as_deref(), Some("(c) 2026 Ann Lee"));
+        assert_eq!(m.usage_terms.as_deref(), Some("Editorial use only"));
+        assert_eq!((m.contact.email.as_str(), m.contact.phone.as_str()), ("ann@example.org", "+61 3 0000 0000"));
+    }
+    let _ = std::fs::remove_dir_all(&dir);
+}

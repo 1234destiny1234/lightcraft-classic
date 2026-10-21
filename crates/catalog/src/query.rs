@@ -104,6 +104,14 @@ pub enum SortKey {
     Custom,
 }
 
+impl SortKey {
+    /// Whether photos that tie on this key go by file name before id: every key but the name itself and the
+    /// shuffle (whose ranks come from ids and never tie).
+    fn ties_by_name(self) -> bool {
+        !matches!(self, SortKey::FileName | SortKey::Random)
+    }
+}
+
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default)]
 pub struct Sort {
@@ -117,8 +125,10 @@ pub struct Sort {
 
 impl Sort {
     /// Which of two photos comes first in this order: the order [`Catalog::query`] gives (never `Equal` for two
-    /// photos: the id decides last). [`SortKey::Custom`] orders as the capture date here, as it does where there
-    /// is no album's own order; an album's Custom Order is the album's, not the photos'.
+    /// photos: the id decides last). Photos that tie on the key (one import batch, a burst within a second,
+    /// equal ratings) go by file name, the order cameras number frames, so the order doesn't depend on how ids
+    /// were given out. [`SortKey::Custom`] orders as the capture date here, as it does where there is no album's
+    /// own order; an album's Custom Order is the album's, not the photos'.
     pub fn order(&self, a: &Photo, b: &Photo) -> std::cmp::Ordering {
         let o = match self.key {
             SortKey::CaptureDate | SortKey::Custom => a.captured.as_deref().cmp(&b.captured.as_deref()).then_with(|| a.imported.cmp(&b.imported)),
@@ -130,6 +140,7 @@ impl Sort {
             SortKey::FileSize => a.file_size.cmp(&b.file_size),
             SortKey::Random => shuffle_rank(self.seed, a.id).cmp(&shuffle_rank(self.seed, b.id)),
         }
+        .then_with(|| if self.key.ties_by_name() { cmp_name(&a.file_name, &b.file_name) } else { std::cmp::Ordering::Equal })
         .then(a.id.cmp(&b.id));
         if self.ascending { o } else { o.reverse() }
     }
@@ -209,8 +220,8 @@ impl RankMarks {
     }
 }
 
-/// The whole catalog in one sort order, ascending (descending is its exact reverse: ids break
-/// every tie).
+/// The whole catalog in one sort order, ascending (descending is its exact reverse: file names,
+/// then ids, break every tie).
 pub(crate) struct Sorted {
     key: SortKey,
     seed: u64,
@@ -226,14 +237,14 @@ pub(crate) struct Sorted {
 /// Sort orders of the whole catalog kept between queries, so a query only filters: the grid's
 /// default (all photos by capture date) no longer sorts 500 000 photos on every refresh. Ops that
 /// change a sort key bump an epoch ([`Catalog::apply`]), which retires the orders built before.
-/// Capture date, import date and random orders survive everything but added or removed photos and
-/// capture-time changes, so editing never re-sorts them. At most two orders are kept (about 12
-/// bytes a photo each).
+/// Capture date, import date and random orders survive everything but added or removed photos,
+/// capture-time changes and renames (file names break their ties), so editing never re-sorts
+/// them. At most two orders are kept (about 12 bytes a photo each).
 #[derive(Default)]
 pub(crate) struct SortCache {
-    /// Photos added or removed, or a capture time changed.
+    /// Photos added or removed, a capture time changed, or a file renamed.
     structural: u64,
-    /// Any other sort key changed (rating, edit time, file name, file size).
+    /// Any other sort key changed (rating, edit time, file size).
     other: u64,
     entries: std::sync::Mutex<Vec<std::sync::Arc<Sorted>>>,
 }
@@ -260,7 +271,7 @@ impl std::fmt::Debug for SortCache {
 const CACHE_SORT_FROM: usize = 2_000;
 
 impl SortCache {
-    /// An op is about to change sort keys: `structural` = which photos exist or a capture time.
+    /// An op is about to change sort keys: `structural` = which photos exist, a capture time or a file name.
     pub(crate) fn bump(&mut self, structural: bool) {
         if structural {
             self.structural = self.structural.wrapping_add(1);
@@ -337,6 +348,31 @@ impl SKey {
         };
         SKey(w(0), w(8), w(16))
     }
+    /// [`SKey::of`] the string in lower case ([`cmp_name`]'s order: UTF-8 bytes order as the characters do),
+    /// without making the lower-case string.
+    fn of_lower(s: &str) -> SKey {
+        let mut b = [0u8; 24];
+        let mut len = 0usize;
+        for c in s.chars().flat_map(char::to_lowercase) {
+            let mut buf = [0u8; 4];
+            for byte in c.encode_utf8(&mut buf).bytes() {
+                if let Some(d) = b.get_mut(len).filter(|_| len < 23) {
+                    *d = byte;
+                }
+                len += 1;
+            }
+            if len >= 24 {
+                break;
+            }
+        }
+        b[23] = 1 + len.min(24) as u8;
+        let w = |i: usize| {
+            let mut x = [0u8; 8];
+            x.copy_from_slice(b.get(i..i + 8).unwrap_or(&[0; 8]));
+            u64::from_be_bytes(x)
+        };
+        SKey(w(0), w(8), w(16))
+    }
     /// Compare, falling back to the strings only when the keys can't tell.
     fn cmp_or(&self, other: &SKey, a: Option<&str>, b: Option<&str>) -> std::cmp::Ordering {
         let o = self.cmp(other);
@@ -344,15 +380,17 @@ impl SKey {
     }
 }
 
-/// Order photos by `sort` (ties broken by id, as always). Keys are computed once per photo and
-/// held inline, so comparisons rarely follow a pointer (one `to_lowercase` per file name, not one
-/// per comparison).
+/// Order photos by `sort`: [`Sort::order`] (ties broken by file name, then id). Keys are computed
+/// once per photo and held inline, so comparisons rarely follow a pointer (one `to_lowercase` per
+/// file name, not one per comparison).
 fn sort_photos<'a>(v: Vec<&'a Photo>, sort: &Sort) -> Vec<PhotoId> {
     type Get = fn(&Photo) -> Option<&str>;
     struct E<'a> {
         k1: SKey,
         k2: SKey,
         num: u64,
+        /// The file name in lower case, for ties (empty when the key doesn't tie by name).
+        name: SKey,
         id: u64,
         p: &'a Photo,
     }
@@ -378,10 +416,26 @@ fn sort_photos<'a>(v: Vec<&'a Photo>, sort: &Sort) -> Vec<PhotoId> {
         }
     };
     // reading every photo's strings is mostly waiting for memory: done on several threads
-    let make = |p: &&'a Photo| E { k1: SKey::of(s1(p)), k2: SKey::of(s2(p)), num: num(p, seed), id: p.id.0, p };
+    let by_name = sort.key.ties_by_name();
+    let make = |p: &&'a Photo| E {
+        k1: SKey::of(s1(p)),
+        k2: SKey::of(s2(p)),
+        num: num(p, seed),
+        name: if by_name { SKey::of_lower(&p.file_name) } else { SKey::default() },
+        id: p.id.0,
+        p,
+    };
     let keyed: Vec<E> = par_map_photos(&v, &make);
     let cmp = |a: &E, b: &E| {
-        let o = a.k1.cmp_or(&b.k1, s1(a.p), s1(b.p)).then_with(|| a.k2.cmp_or(&b.k2, s2(a.p), s2(b.p))).then(a.num.cmp(&b.num)).then(a.id.cmp(&b.id));
+        let o =
+            a.k1.cmp_or(&b.k1, s1(a.p), s1(b.p))
+                .then_with(|| a.k2.cmp_or(&b.k2, s2(a.p), s2(b.p)))
+                .then(a.num.cmp(&b.num))
+                .then_with(|| {
+                    let o = a.name.cmp(&b.name);
+                    if o.is_eq() && a.name.2 & 0xff == 25 { cmp_name(&a.p.file_name, &b.p.file_name) } else { o }
+                })
+                .then(a.id.cmp(&b.id));
         if asc { o } else { o.reverse() }
     };
     let keyed = par_sort(keyed, &cmp);
@@ -589,16 +643,17 @@ pub fn matches_face_spec(count: usize, spec: &str) -> bool {
 fn token_matches(p: &Photo, tok: &str) -> bool {
     let t = tok.to_lowercase();
     if let Some((field, val)) = t.split_once(':') {
-        let num = |s: &str| -> Option<(char, f64)> {
-            let (op, rest) = match s.chars().next()? {
-                c @ ('>' | '<' | '=') => (c, &s[1..]),
-                _ => ('=', s),
-            };
+        let num = |s: &str| -> Option<(&str, f64)> {
+            // `>=` / `<=` before `>` / `<`: `rating:>=1` is at least one star
+            let op = [">=", "<=", ">", "<", "="].into_iter().find(|op| s.starts_with(op)).unwrap_or("=");
+            let rest = s.strip_prefix(op).unwrap_or(s);
             rest.parse().ok().map(|v| (op, v))
         };
         let cmp = |x: f64, s: &str| match num(s) {
-            Some(('>', v)) => x > v,
-            Some(('<', v)) => x < v,
+            Some((">=", v)) => x >= v - 1e-9,
+            Some(("<=", v)) => x <= v + 1e-9,
+            Some((">", v)) => x > v,
+            Some(("<", v)) => x < v,
             Some((_, v)) => (x - v).abs() < 1e-9,
             None => false,
         };
@@ -885,7 +940,7 @@ pub fn cmp_name(a: &str, b: &str) -> std::cmp::Ordering {
 }
 
 impl Catalog {
-    /// Photos matching `filter`, in `sort` order (ties broken by id for stability).
+    /// Photos matching `filter`, in `sort` order (ties broken by file name, then id).
     pub fn query(&self, filter: &Filter, sort: &Sort) -> Vec<PhotoId> {
         self.query_with(filter, sort, true)
     }

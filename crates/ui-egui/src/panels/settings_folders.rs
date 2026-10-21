@@ -54,6 +54,18 @@ pub fn folders(app: &mut LccApp) -> Value {
             out.push(entry("smartPreviews", "Smart previews", path, custom, can_pick, custom, "Moving it moves the smart previews already built."));
         }
     }
+    if let Some(access) = &app.services.storage_access {
+        let state = if (access.granted)() { "All files" } else { "Only the files and folders you pick" };
+        out.push(entry(
+            "deviceStorage",
+            "Device storage",
+            Some(state.to_string()),
+            true,
+            true,
+            false,
+            "With access to all files, folders on the device are read where they are instead of being copied.",
+        ));
+    }
     let st = app.session.lens_db.status();
     let lens = st["dir"].as_str().map(str::to_string);
     let env = st["origin"] == "env";
@@ -147,6 +159,7 @@ fn act(app: &mut LccApp, id: &str, reset: bool) -> Result<Value, String> {
         },
         ("smartPreviews", true) => app.run("library.smartPreviewsLocation", json!({"reset": true, "existing": "move"})),
         ("lensProfiles", false) => app.run("app.lensDbFolder", json!({})),
+        ("deviceStorage", false) => app.run("app.allFilesAccess", json!({})),
         _ => Ok(Value::Null),
     }
 }
@@ -174,6 +187,7 @@ pub fn settings_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         ui.add_space(4.0);
         row(ui, t, f["label"].as_str().unwrap_or_default(), |ui| {
             let text = match &path {
+                Some(p) if id == "deviceStorage" => tr(p).to_string(),
                 Some(p) if custom || id == "library" => p.clone(),
                 Some(p) => format!("{p}  ({})", tr("default")),
                 None if id == "library" => tr("In memory — nothing is saved").to_string(),
@@ -245,6 +259,36 @@ mod tests {
         app.run("app.exportFolder", json!({"reset": true})).unwrap();
         let list = app.run("app.folders", json!({})).unwrap();
         assert_eq!(find(&list, "export")["custom"], json!(false));
+    }
+
+    #[test]
+    fn device_storage_access_is_shown_and_asked_for_where_the_host_has_it() {
+        use std::sync::Arc;
+        use std::sync::atomic::{AtomicBool, Ordering};
+        // the desktop has no such question
+        let mut app = app();
+        let list = app.run("app.folders", json!({})).unwrap();
+        assert!(!list.as_array().unwrap().iter().any(|f| f["id"] == "deviceStorage"));
+        assert!(app.run("app.allFilesAccess", json!({})).is_err());
+        // a host that asks (Android): the system's answer arrives later
+        let granted = Arc::new(AtomicBool::new(false));
+        let (read, set) = (granted.clone(), granted.clone());
+        let services = crate::Services {
+            storage_access: Some(crate::StorageAccess {
+                granted: Box::new(move || read.load(Ordering::Relaxed)),
+                ask: Box::new(move || {
+                    set.store(true, Ordering::Relaxed);
+                    Ok(())
+                }),
+            }),
+            ..Default::default()
+        };
+        let mut app = LccApp::new(lcc_engine::Session::new(), services);
+        let list = app.run("app.folders", json!({})).unwrap();
+        assert_eq!(find(&list, "deviceStorage")["change"], json!(true));
+        let r = app.run("app.allFilesAccess", json!({})).unwrap();
+        assert_eq!(r["granted"], json!(true));
+        assert!(granted.load(Ordering::Relaxed));
     }
 
     #[test]

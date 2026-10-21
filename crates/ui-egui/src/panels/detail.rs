@@ -818,23 +818,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // an HDR display: an HDR edit's whole frame also as linear float with its highlights above
     // SDR white, drawn in place of the 8-bit render once it is there (not while dragging: the
     // drafts show; nor with an overlay or soft proof, which are 8-bit views)
-    let hdr_key = (app.hdr_headroom.is_some() && d.hdr.enabled && !interacting && overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
+    let hdr_key = (!interacting && overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
         .then(|| app.session.render_job(id, rw.max(8), rh.max(8), false, !crop_tool))
         .flatten()
-        .map(|job| {
-            let headroom = app.services.hdr_output.as_mut().and_then(|o| o.headroom());
-            // Tell the renderer whether to skip monitor profile conversion (P2-3).
-            if let Some(o) = app.services.hdr_output.as_ref() {
-                app.renderer.set_surface_extended_linear(o.extended());
-            }
-            let job = hdr_view_job(job.with_hidden_grading(app.ui.grading_hidden_for(id)), headroom);
-            let key = job.key;
-            if app.renderer.hdr_view.is_none_or(|v| v.key != key) {
-                app.renderer.request(Slot::HdrView, job, 98);
-            }
-            key
-        });
-    upload_hdr_view(app);
+        .and_then(|job| request_hdr(app, crate::render::HDR_LOUPE, job.with_hidden_grading(app.ui.grading_hidden_for(id)), 98));
     // hovering a preset or profile: the photo with that look, shown instead of the loupe render
     // once it is ready (nothing is committed)
     let hover_key = match app.hover_preview.clone() {
@@ -874,11 +861,17 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         app.renderer.request_quick(Slot::Preview, q, 110);
     }
     let show_before = app.ui.before_after == BeforeAfter::Original || ui.input(|i| i.key_down(egui::Key::Backslash));
+    let mut hdr_before_key = None;
     if (split || show_before || split_view)
         && let Some(job) = app.session.render_job(id, sw.max(8), sh.max(8), true, !crop_tool)
     {
+        // (the Before is the photo without its edits: HDR only when those settings are HDR)
+        if !interacting {
+            hdr_before_key = request_hdr(app, crate::render::HDR_BEFORE, job.clone(), 88);
+        }
         app.renderer.request(Slot::Before, job, 90);
     }
+    upload_hdr_views(app);
     // zoomed past what the whole-frame render holds: also render the tiles on screen, at no more
     // than 100 % (the GPU magnifies beyond that), for each side that is shown, with the overlay
     // or soft proof the whole frame has. Not while hovering a look (that draws another image),
@@ -964,12 +957,16 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let p = ui.painter_at(canvas);
     // what a view slot shows: its own render of this photo, else the stand-ins (no blank frame
     // between photos, and the full render replaces them in place)
-    let hdr_view = app.renderer.hdr_view.filter(|v| v.photo == id && Some(v.key) == hdr_key);
+    let hdr_view = hdr_texture(app, crate::render::HDR_LOUPE, id, hdr_key);
+    let hdr_before = hdr_texture(app, crate::render::HDR_BEFORE, id, hdr_before_key);
     let draw = |slot: Slot, r: Rect, clip: Rect| -> &'static str {
-        // For headless (CPU) screenshots, the HDR texture is GPU-only and not available in the
-        // CPU texture map, so fall back to the SDR texture (P2-2).
-        let use_hdr = hdr_view.is_some() && !app.headless_screenshotting && slot == Slot::Main;
-        if use_hdr && let Some(v) = hdr_view {
+        // (headless screenshots: the HDR texture is GPU-only, so they show the 8-bit render)
+        let hdr = match slot {
+            Slot::Main => hdr_view,
+            Slot::Before => hdr_before,
+            _ => None,
+        };
+        if let Some(v) = hdr {
             let image_rect = fit_texture_rect(r, v.size);
             p.with_clip_rect(clip).image(v.tex, image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             return "hdr";
@@ -1068,21 +1065,25 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     }
     // a wipe shows the Before whole-frame render on its side of the line…
     let line = crate::region::wipe_line(img_rect, canvas);
+    // (the Before's HDR render when it is an HDR edit, else its 8-bit one)
+    let before_tex = hdr_before
+        .map(|v| (v.tex, v.size))
+        .or_else(|| app.renderer.textures.get(&Slot::Before).filter(|t| t.photo == id).map(|t| (t.tex.id(), t.size)));
     if app.ui.before_after == BeforeAfter::Split
-        && let Some(tex) = app.renderer.textures.get(&Slot::Before).filter(|t| t.photo == id)
+        && let Some((tex, size)) = before_tex
     {
-        let before_rect = fit_texture_rect(img_rect, tex.size);
+        let before_rect = fit_texture_rect(img_rect, size);
         let u = ((line.x - before_rect.left()) / before_rect.width().max(1.0)).clamp(0.0, 1.0);
         let left = Rect::from_min_max(before_rect.min, pos2(before_rect.left() + u * before_rect.width(), before_rect.bottom()));
-        p.image(tex.tex.id(), left, Rect::from_min_max(pos2(0.0, 0.0), pos2(u, 1.0)), Color32::WHITE);
+        p.image(tex, left, Rect::from_min_max(pos2(0.0, 0.0), pos2(u, 1.0)), Color32::WHITE);
     }
     if app.ui.before_after == BeforeAfter::SplitTopBottom
-        && let Some(tex) = app.renderer.textures.get(&Slot::Before).filter(|t| t.photo == id)
+        && let Some((tex, size)) = before_tex
     {
-        let before_rect = fit_texture_rect(img_rect, tex.size);
+        let before_rect = fit_texture_rect(img_rect, size);
         let v = ((line.y - before_rect.top()) / before_rect.height().max(1.0)).clamp(0.0, 1.0);
         let top = Rect::from_min_max(before_rect.min, pos2(before_rect.right(), before_rect.top() + v * before_rect.height()));
-        p.image(tex.tex.id(), top, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, v)), Color32::WHITE);
+        p.image(tex, top, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, v)), Color32::WHITE);
     }
     // …and the window renders go over the whole-frame ones, all of them, where they belong in the
     // frame (clipped to their pane, or their side of the line)
@@ -1091,6 +1092,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         let mode = if show_before { BeforeAfter::Original } else { app.ui.before_after };
         let clip = crate::region::window_clip(mode, v.before, v.visible, canvas, img_rect);
         draw_window(&p.with_clip_rect(clip), app, &window_ctx, v, view);
+        draw_hdr_window(&p.with_clip_rect(clip), app, &window_ctx, v, view);
     }
     // the line of a wipe over both
     if app.ui.before_after == BeforeAfter::Split {
@@ -1696,15 +1698,88 @@ pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob, headroom: Opti
     job
 }
 
-/// Hand a finished [`Slot::HdrView`] render to the window's HDR output as the loupe's texture.
-fn upload_hdr_view(app: &mut LccApp) {
-    let Some((photo, key, deep)) = app.renderer.hdr_view_result.take() else { return };
-    let Some(out) = app.services.hdr_output.as_mut() else { return };
-    let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { return };
-    match out.upload(deep.width, deep.height, rgb) {
-        Ok(tex) => app.renderer.hdr_view = Some(crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height] }),
-        Err(e) => log::warn!("HDR loupe texture: {e}"),
+/// Whether HDR edits show in HDR now: an HDR display and View ▸ HDR Preview on.
+pub(crate) fn hdr_shown(app: &LccApp) -> bool {
+    app.hdr_headroom.is_some() && app.ui.hdr_preview
+}
+
+/// Ask for view `view`'s HDR render of `job` ([`hdr_view_job`]) when HDR edits show in HDR and
+/// `job` is one. Returns the HDR job's key, which [`hdr_texture`] matches.
+pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::RenderJob, priority: u32) -> Option<u64> {
+    if !hdr_shown(app) || !job.settings.hdr.enabled {
+        return None;
     }
+    let headroom = app.services.hdr_output.as_mut().and_then(|o| o.headroom());
+    // (an extended-linear surface takes sRGB: no monitor profile conversion)
+    if let Some(o) = app.services.hdr_output.as_ref() {
+        app.renderer.set_surface_extended_linear(o.extended());
+    }
+    let job = hdr_view_job(job, headroom);
+    let key = job.key;
+    if app.renderer.hdr_view.get(&view).is_none_or(|v| v.key != key) {
+        app.renderer.request(Slot::HdrView(view), job, priority);
+    }
+    Some(key)
+}
+
+/// View `view`'s HDR texture of photo `photo` when it is the render `key` asked for (none in
+/// headless screenshots: the texture lives on the GPU only, so they show the 8-bit render).
+pub(crate) fn hdr_texture(app: &LccApp, view: u8, photo: PhotoId, key: Option<u64>) -> Option<crate::render::HdrView> {
+    let key = key?;
+    if app.headless_screenshotting {
+        return None;
+    }
+    app.renderer.hdr_view.get(&view).copied().filter(|v| v.photo == photo && v.key == key)
+}
+
+/// Hand the finished [`Slot::HdrView`] renders to the window's HDR output, each as its view's texture.
+pub(crate) fn upload_hdr_views(app: &mut LccApp) {
+    if app.renderer.hdr_view_result.is_empty() {
+        return;
+    }
+    let results = std::mem::take(&mut app.renderer.hdr_view_result);
+    let Some(out) = app.services.hdr_output.as_mut() else { return };
+    for (view, (photo, key, deep)) in results {
+        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { continue };
+        match out.upload(view, deep.width, deep.height, rgb) {
+            Ok(tex) => {
+                app.renderer.hdr_view.insert(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height] });
+            }
+            Err(e) => log::warn!("HDR view texture: {e}"),
+        }
+    }
+}
+
+/// A zoomed view of an HDR edit on an HDR display: the part of the frame on screen
+/// (`view.window`, at the zoomed scale) rendered once more as linear float and drawn over its
+/// 8-bit tiles, so highlights go above SDR white zoomed in too. Not while a slider drags (the
+/// drafts show) nor with an overlay or soft proof (8-bit views).
+pub(crate) fn draw_hdr_window(p: &egui::Painter, app: &mut LccApp, c: &WindowCtx, v: &WindowView, view: &crate::region::RegionView) {
+    if !hdr_shown(app) || c.interacting || c.holding || view.photo != c.id {
+        return;
+    }
+    if !v.before && (c.overlay != lcc_pipeline::Overlay::None || c.proof.is_some()) {
+        return;
+    }
+    let win = view.window;
+    // (one texture: no bigger than the GPU takes)
+    if win.w == 0 || win.h == 0 || win.w.max(win.h) > c.texture_side {
+        return;
+    }
+    let job = if v.before {
+        app.session.region_job_before(c.id, view.full.0, view.full.1, win, !c.crop_tool)
+    } else {
+        app.session.region_job(c.id, view.full.0, view.full.1, win, !c.crop_tool).map(|j| j.with_hidden_grading(app.ui.grading_hidden_for(c.id)))
+    };
+    let Some(job) = job else { return };
+    let hdr_view = crate::render::HDR_ZOOMED.saturating_add(v.pane);
+    let key = request_hdr(app, hdr_view, job, TILE_PRIORITY.saturating_sub(1));
+    upload_hdr_views(app);
+    let Some(tex) = hdr_texture(app, hdr_view, c.id, key) else { return };
+    let (fw, fh) = (view.full.0.max(1) as f32, view.full.1.max(1) as f32);
+    let at = v.img.min + vec2(win.x as f32 / fw * v.img.width(), win.y as f32 / fh * v.img.height());
+    let r = Rect::from_min_size(at, vec2(win.w as f32 / fw * v.img.width(), win.h as f32 / fh * v.img.height()));
+    p.image(tex.tex, r, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
 }
 
 /// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
@@ -2011,7 +2086,10 @@ fn crop_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, map:
             }
             Some(Gesture::CropRotate { start_angle, a0 }) => {
                 let a = (q - box_centre).angle();
-                let ang = (start_angle + (a - a0).to_degrees() as f64).clamp(-45.0, 45.0);
+                // (the turn since the press, taken the short way round: the pointer crossing the box's
+                // left side flips the angle between -180 and 180 degrees)
+                let turn = (a - a0 + std::f32::consts::PI).rem_euclid(std::f32::consts::TAU) - std::f32::consts::PI;
+                let ang = (start_angle + turn.to_degrees() as f64).clamp(-45.0, 45.0);
                 shown_angle = (ang * 100.0).round() / 100.0;
                 let _ = app.run("crop.straighten", json!({"angle": shown_angle}));
             }

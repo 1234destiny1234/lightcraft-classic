@@ -2464,8 +2464,8 @@ checksum = "64cd1e32ddd350061ae6edb1b082d7c54915b5c672c389143b9a63403a109f24"
 
 [[package]]
 name = "filmcraft-aac"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "thiserror 2.0.21",
@@ -2473,16 +2473,16 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-ac3"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "filmcraft-apv"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2491,8 +2491,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-av1"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2501,21 +2501,21 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-bitstream"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 
 [[package]]
 name = "filmcraft-color"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "filmcraft-dnx"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2524,8 +2524,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-frame"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-color",
  "filmcraft-time",
@@ -2535,8 +2535,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-h264"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2545,8 +2545,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-h264enc"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2555,8 +2555,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-hevc"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2565,8 +2565,8 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-isobmff"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "thiserror 2.0.21",
@@ -2574,13 +2574,13 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-matroska"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 
 [[package]]
 name = "filmcraft-mpeg2v"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "rayon",
  "thiserror 2.0.21",
@@ -2588,26 +2588,26 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-mpegts"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "thiserror 2.0.21",
 ]
 
 [[package]]
 name = "filmcraft-mxf"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 
 [[package]]
 name = "filmcraft-opus"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 
 [[package]]
 name = "filmcraft-prores"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -2616,16 +2616,16 @@ dependencies = [
 
 [[package]]
 name = "filmcraft-time"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "serde",
 ]
 
 [[package]]
 name = "filmcraft-vp9"
-version = "0.9.0"
-source = "git+https://github.com/storytold/filmcraft?rev=48088e3a8e50bd4a7a71d1ebdfde0835b01a3051#48088e3a8e50bd4a7a71d1ebdfde0835b01a3051"
+version = "0.10.0"
+source = "git+https://github.com/emmertex/filmcraft?rev=10715b2465ed63d54a875cd583a95c77675c6470#10715b2465ed63d54a875cd583a95c77675c6470"
 dependencies = [
  "filmcraft-bitstream",
  "rayon",
@@ -4419,7 +4419,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-actions"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "serde",
  "serde_json",
@@ -4427,24 +4427,26 @@ dependencies = [
 
 [[package]]
 name = "lcc-android"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "android_logger",
  "eframe",
  "egui",
  "lcc-android-host",
  "lcc-brand",
+ "lcc-catalog",
  "lcc-codecs",
  "lcc-engine",
  "lcc-raster",
  "lcc-ui-egui",
  "log",
  "serde_json",
+ "skrifa 0.44.0",
 ]
 
 [[package]]
 name = "lcc-android-host"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "android-activity",
  "jni 0.21.1",
@@ -4453,7 +4455,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-app"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "bytemuck",
  "eframe",
@@ -4489,7 +4491,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-audio-out"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "cpal",
  "futures",
@@ -4501,7 +4503,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-book"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "hayro",
  "lcc-codecs",
@@ -4518,11 +4520,11 @@ dependencies = [
 
 [[package]]
 name = "lcc-brand"
-version = "0.9.4"
+version = "0.9.5"
 
 [[package]]
 name = "lcc-camdb"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -4533,7 +4535,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-catalog"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "crc32fast",
  "lcc-brand",
@@ -4555,7 +4557,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-cli"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "dhat",
  "lcc-brand",
@@ -4577,7 +4579,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-codecs"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "avif-serialize",
  "bytemuck",
@@ -4611,7 +4613,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-color"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-geom",
@@ -4621,7 +4623,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-credentials"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "argon2 0.5.3",
  "chacha20poly1305",
@@ -4637,7 +4639,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-denoise"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "faer-core",
  "lcc-brand",
@@ -4655,7 +4657,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-denoise-core"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-raster",
@@ -4671,7 +4673,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-develop"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -4684,7 +4686,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-engine"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "ab_glyph",
  "base64",
@@ -4759,7 +4761,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-faces"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-testkit",
@@ -4775,7 +4777,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-fetch"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "log",
@@ -4787,7 +4789,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-filters"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "rayon",
  "serde",
@@ -4800,14 +4802,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-fuzzkit"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "serde_json",
 ]
 
 [[package]]
 name = "lcc-geo"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "flate2",
  "image",
@@ -4821,7 +4823,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-geocode"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "miniz_oxide 0.8.9",
  "serde",
@@ -4829,7 +4831,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-geom"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "proptest",
@@ -4838,7 +4840,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-gpu"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "bytemuck",
  "lcc-brand",
@@ -4859,14 +4861,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-hash"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "sha1 0.10.7",
 ]
 
 [[package]]
 name = "lcc-hdrmeta"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "ash",
  "wgpu",
@@ -4875,7 +4877,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-heif"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "heic-rs",
  "lcc-brand",
@@ -4884,7 +4886,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-immich"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-catalog",
  "lcc-credentials",
@@ -4901,14 +4903,14 @@ dependencies = [
 
 [[package]]
 name = "lcc-inpaint"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "rayon",
 ]
 
 [[package]]
 name = "lcc-layout"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-raster",
@@ -4919,7 +4921,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-lensdb"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-develop",
  "lcc-geom",
@@ -4928,12 +4930,13 @@ dependencies = [
 
 [[package]]
 name = "lcc-mcp"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
  "lcc-engine",
  "lcc-hash",
+ "lcc-meta",
  "lcc-raster",
  "lcc-video",
  "log",
@@ -4945,8 +4948,9 @@ dependencies = [
 
 [[package]]
 name = "lcc-merge"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
+ "half",
  "lcc-brand",
  "lcc-codecs",
  "lcc-color",
@@ -4962,7 +4966,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-meta"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-geom",
@@ -4975,7 +4979,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-net"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "flate2",
  "lcc-brand",
@@ -4991,11 +4995,11 @@ dependencies = [
 
 [[package]]
 name = "lcc-notes"
-version = "0.9.4"
+version = "0.9.5"
 
 [[package]]
 name = "lcc-pdf"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "hayro",
  "lcc-fuzzkit",
@@ -5010,7 +5014,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-peer"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "base64",
  "chacha20poly1305",
@@ -5029,7 +5033,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-pipeline"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "image",
  "lcc-brand",
@@ -5050,7 +5054,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-plugins"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-net",
@@ -5065,7 +5069,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-preview"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "jpeg-encoder",
  "lcc-brand",
@@ -5078,7 +5082,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-print"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-codecs",
@@ -5089,6 +5093,7 @@ dependencies = [
  "lcc-raster",
  "lcc-testkit",
  "lcc-text",
+ "lcc-winspool",
  "lopdf",
  "rustls",
  "rustls-rustcrypto",
@@ -5099,7 +5104,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-psd"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "flate2",
  "lcc-psd",
@@ -5110,7 +5115,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-publish"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-catalog",
  "lcc-fuzzkit",
@@ -5121,7 +5126,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-raster"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "lcc-color",
@@ -5134,7 +5139,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-raw"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "dhat",
  "jpeg-encoder",
@@ -5160,7 +5165,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-scenes"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "image",
  "lcc-brand",
@@ -5172,7 +5177,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-segment"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "candle-core",
  "candle-nn",
@@ -5188,7 +5193,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-slide"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-raster",
  "serde",
@@ -5197,7 +5202,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-slideshow"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "claxon",
  "hayro",
@@ -5221,21 +5226,21 @@ dependencies = [
 
 [[package]]
 name = "lcc-sysmem"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
 ]
 
 [[package]]
 name = "lcc-testkit"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
 ]
 
 [[package]]
 name = "lcc-tether"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-fuzzkit",
  "nusb",
@@ -5245,7 +5250,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-text"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-fuzzkit",
  "lcc-testkit",
@@ -5257,7 +5262,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-tiff"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-brand",
  "proptest",
@@ -5267,7 +5272,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-ui-egui"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "craft-ui",
  "egui",
@@ -5315,7 +5320,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-updater"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "base64",
  "ed25519-dalek 2.2.0",
@@ -5328,7 +5333,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-video"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "filmcraft-aac",
  "filmcraft-ac3",
@@ -5359,7 +5364,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-video-export"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "filmcraft-aac",
  "filmcraft-color",
@@ -5375,7 +5380,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-web"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "crc32fast",
  "eframe",
@@ -5397,7 +5402,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-webgallery"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "lcc-fuzzkit",
  "russh",
@@ -5405,6 +5410,14 @@ dependencies = [
  "serde",
  "serde_json",
  "tokio",
+]
+
+[[package]]
+name = "lcc-winspool"
+version = "0.9.5"
+dependencies = [
+ "lcc-testkit",
+ "windows-sys 0.61.2",
 ]
 
 [[package]]
@@ -10393,7 +10406,7 @@ checksum = "ec7a2a501ed189703dba8b08142f057e887dfc4b2cc4db2d343ac6376ba3e0b9"
 
 [[package]]
 name = "xtask"
-version = "0.9.4"
+version = "0.9.5"
 dependencies = [
  "base64",
  "brotli",
