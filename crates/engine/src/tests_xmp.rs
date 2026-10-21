@@ -134,8 +134,8 @@ fn auto_write_and_naming_preference() {
     s.execute("photo.rate", &json!({"rating": 2})).unwrap();
     assert!(!src.join("a.xmp").exists(), "auto-write is off by default");
 
-    let v = s.execute("library.xmpPreferences", &json!({"autoWrite": true, "naming": "full"})).unwrap();
-    assert_eq!(v, json!({"autoWrite": true, "naming": "full"}));
+    let v = s.execute("library.xmpPreferences", &json!({"autoWrite": true, "naming": "full", "autoRead": true})).unwrap();
+    assert_eq!(v, json!({"autoWrite": true, "naming": "full", "autoRead": true}));
     s.execute("photo.rate", &json!({"rating": 5})).unwrap();
     let sidecar = src.join("a.png.xmp");
     assert!(sidecar.is_file());

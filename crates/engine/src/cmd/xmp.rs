@@ -77,6 +77,27 @@ fn read(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(result)
 }
 
+/// `photo.autoReadMetadata`: read the sidecars that changed on disk (another app edited them)
+/// while the photo is unchanged in the catalog since the last sync, through Read Metadata from
+/// File (one undo step, journaled). Photos changed on both sides keep their conflict.
+fn auto_read(s: &mut Session, p: &Value) -> Result<Value> {
+    use lcc_catalog::XmpStatus;
+    let ids = s.targets(p)?;
+    let mut changed = Vec::new();
+    let mut conflicts = Vec::new();
+    for id in ids {
+        match s.xmp_status(id) {
+            XmpStatus::ChangedOnDisk => changed.push(id.0),
+            XmpStatus::Conflict => conflicts.push(id.0),
+            _ => {}
+        }
+    }
+    let mut out =
+        if changed.is_empty() { json!({"read": [], "failed": []}) } else { s.execute("photo.readMetadataFromFile", &json!({"ids": changed}))? };
+    out["conflicts"] = json!(conflicts);
+    Ok(out)
+}
+
 fn status(s: &mut Session, p: &Value) -> Result<Value> {
     let mut counts = serde_json::Map::new();
     let photos: Vec<Value> = s
@@ -96,6 +117,9 @@ fn status(s: &mut Session, p: &Value) -> Result<Value> {
 fn prefs(s: &mut Session, p: &Value) -> Result<Value> {
     if let Some(a) = p.get("autoWrite").and_then(Value::as_bool) {
         s.xmp.auto_write = a;
+    }
+    if let Some(a) = p.get("autoRead").and_then(Value::as_bool) {
+        s.xmp.auto_read = a;
     }
     if let Some(n) = str_param(p, "naming") {
         s.xmp.naming = match n {
@@ -131,6 +155,15 @@ pub fn specs() -> Vec<CommandSpec> {
             read
         ),
         cmd!(
+            "photo.autoReadMetadata",
+            "Read Changed Metadata Files",
+            [],
+            None,
+            "{ids?} — reads the XMP sidecars that changed on disk (another app edited them) of photos unchanged in the catalog since the last sync, through Read Metadata from File (one undo step); photos changed on both sides are left as conflicts. The app runs it when a sidecar check finds such a change and library.xmpPreferences autoRead is on → {read, failed, conflicts: [id], warnings?}",
+            always,
+            auto_read
+        ),
+        cmd!(
             query "photo.xmpStatus",
             "Metadata File Status",
             [],
@@ -144,7 +177,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "XMP Sidecar Preferences",
             [],
             None,
-            "{autoWrite?: bool, naming?: stem (IMG_1.xmp, default) | full (IMG_1.CR3.xmp)} → current preferences (saved with the library)",
+            "{autoWrite?: bool, autoRead?: bool (default on: read sidecars other apps changed when the photo is unchanged in the catalog), naming?: stem (IMG_1.xmp, default) | full (IMG_1.CR3.xmp)} → current preferences (saved with the library)",
             always,
             prefs
         ),
