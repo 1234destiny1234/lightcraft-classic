@@ -476,7 +476,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
                 from_x(p.x)
             } else {
                 // then the thumb follows the pointer with pointer acceleration (issue #346): slow
-                // movement moves it at half speed, for fine changes; a quick one at full speed
+                // movement moves it at 30 % speed, for fine changes; a quick one at full speed
                 let accel_id = id.with("accel-pos");
                 let dx = ui.input(|i| i.pointer.delta().x);
                 let pos = (ui.data(|m| m.get_temp::<f64>(accel_id)).unwrap_or_else(|| spec.position(value))
@@ -699,13 +699,15 @@ fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
     widest.clamp(24.0_f32.min(max_col), max_col)
 }
 
-/// How far a slider's thumb moves per point of pointer travel in a frame that moved it `dx`: half
+/// How far a slider's thumb moves per point of pointer travel in a frame that moved it `dx`: 30 %
 /// for slow movement (up to 2 points a frame), rising to one for quick movement (8 points or more).
 fn drag_gain(dx: f32) -> f32 {
     const SLOW: f32 = 2.0;
     const FAST: f32 = 8.0;
+    // the slowest speed: 30 % of the pointer's (issue #346)
+    const MIN_GAIN: f32 = 0.3;
     let t = ((dx.abs() - SLOW) / (FAST - SLOW)).clamp(0.0, 1.0);
-    0.5 + 0.5 * t
+    MIN_GAIN + (1.0 - MIN_GAIN) * t
 }
 
 /// Convert vertical wheel movement to bounded slider steps, keeping sub-notch
