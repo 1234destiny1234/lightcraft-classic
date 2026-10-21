@@ -50,7 +50,16 @@ pub struct GridStats {
 
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let t0 = web_time::Instant::now();
-    show_inner(app, ui);
+    // the filmstrip runs under the Grid too, as in Lightroom Classic (the fork's)
+    let full = ui.max_rect();
+    let film_h = Tokens::get(ui.ctx()).film_h;
+    if crate::module::edge_visible(app, crate::module::Edge::Bottom) && !app.ui.fullscreen && full.height() > film_h * 2.0 {
+        let grid = Rect::from_min_max(full.min, pos2(full.right(), full.bottom() - film_h));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(grid), |ui| show_inner(app, ui));
+        super::detail::filmstrip(app, ui, Rect::from_min_max(pos2(full.left(), grid.bottom()), full.max));
+    } else {
+        show_inner(app, ui);
+    }
     app.caches.grid_stats.frames += 1;
     app.caches.grid_stats.last_show = t0.elapsed();
 }
@@ -321,6 +330,7 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     let mut visited = 0u64;
     // a wheel notch scrolls a third of the grid's height
     let scroll_rect = ui.available_rect_before_wrap();
+    register(ui.ctx(), "gridArea", scroll_rect);
     crate::widgets::register(ui.ctx(), "grid:scroll", scroll_rect);
     let wheel = wheel_step(ui, egui::Id::new("grid-wheel"), scroll_rect, scroll_rect.height(), false, app.ui.settings.wheel_scroll_speed);
     egui::ScrollArea::vertical().id_salt("grid-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
@@ -633,6 +643,9 @@ pub fn request_thumb(app: &mut LccApp, id: PhotoId, size: usize, priority: u32) 
     if app.session.interaction.as_ref().is_some_and(|i| i.photo == id) && app.renderer.thumb(id).is_some() {
         return;
     }
+    // never less than the photo has or is getting: a smaller ask (the filmstrip beside a larger view) moving the
+    // job up would otherwise swap it for a smaller one, and the larger view swap it back
+    let size = app.session.catalog.photo(id).and_then(|p| app.renderer.thumb_bucket_kept(p)).map_or(size, |kept| kept.max(size));
     let bucket = lcc_engine::media::thumb_bucket(size);
     if let Some(photo) = app.session.catalog.photo(id)
         && (app.renderer.thumb_current(photo, bucket, priority) || app.renderer.thumb_covers(photo, bucket))

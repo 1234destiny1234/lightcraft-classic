@@ -209,6 +209,13 @@ pub fn confirm(app: &mut LccApp, dlg: &Dialog) -> Result<Value, String> {
             return Err(e);
         }
     };
+    start_run(app, name.clone(), work, commit);
+    Ok(json!({"started": true}))
+}
+
+/// Run a readied synchronize in the background ([`SyncRun`]): Synchronize Folder's, or a
+/// poll's adding of a folder's new files (`crate::folder_poll`).
+pub(crate) fn start_run(app: &mut LccApp, name: String, work: lcc_engine::sync::SyncWork, commit: SyncCommit) {
     let progress = Arc::new(SyncProgress::default());
     let crashed = Arc::new(std::sync::atomic::AtomicBool::new(false));
     let (tx, rx) = std::sync::mpsc::channel();
@@ -225,9 +232,8 @@ pub fn confirm(app: &mut LccApp, dlg: &Dialog) -> Result<Value, String> {
     #[cfg(target_arch = "wasm32")]
     job();
     let guard = app.session.activity.start("sync", "Synchronizing folder", Cancel::Flag(progress.files.cancel.clone()));
-    guard.detail(name);
-    app.sync_run = Some(SyncRun { name: name.clone(), progress, crashed, rx, commit: Some(commit), stopping: false, not_saved: Vec::new(), guard });
-    Ok(json!({"started": true}))
+    guard.detail(&name);
+    app.sync_run = Some(SyncRun { name, progress, crashed, rx, commit: Some(commit), stopping: false, not_saved: Vec::new(), guard });
 }
 
 /// A synchronize at work: the file-system half on a worker thread, its steps committed here

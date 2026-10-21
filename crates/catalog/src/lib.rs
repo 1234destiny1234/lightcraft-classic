@@ -17,6 +17,7 @@ pub mod dates;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod db;
 pub mod folders;
+pub mod incoming;
 mod index;
 pub mod journal;
 pub mod keywords;

@@ -71,6 +71,24 @@ truncated APP1 without an XMP signature. Separate reader cases in `sidecar::jpeg
 counted readers and injected limits for span/step boundaries, complete versus truncated APP1, early stopping,
 short reads and I/O errors.
 
+## Reading other apps' changes
+
+When another app (DxO PhotoLab, ON1, darktable, Capture One…) rewrites a photo's sidecar, the app reads it
+by itself, like DxO's "always synchronize", as long as the photo is unchanged in the catalog since the last
+read or write of that sidecar (`changedOnDisk`). The read goes through Read Metadata from File
+(`photo.autoReadMetadata`), so it is one undo step and is journaled. When both sides changed (`conflict`),
+nothing is read: the grid keeps the conflict badge and Read / Save Metadata ask which side wins, as before.
+
+Detection costs no extra I/O: it uses the sidecar looks the grid's badges already make on a worker thread,
+and Synchronize Folder's scan (`folder.sync` without `readMetadata`). A sidecar that can't be read is
+reported (and logged), not retried until the file changes again.
+
+The preference is Settings ▸ XMP sidecars ▸ "Automatically read XMP sidecars other apps changed"
+(`library.xmpPreferences {autoRead}`). **It is on by default**: it only replaces values the catalog still
+holds as they were at the last sync, so no work done in the app is lost, the change can be undone, and
+leaving a sidecar edited elsewhere unread is the surprise users of those apps reported. Turn it off to
+review each change through the badge instead.
+
 ## Saving into an existing sidecar
 
 A sidecar may already hold another application's data — e.g. its `crs:` develop settings and `xmpMM:History` — often

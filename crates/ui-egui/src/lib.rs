@@ -30,12 +30,14 @@ mod enhance_pump;
 pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
+pub mod folder_poll;
 pub mod headless;
 pub mod help_overlay;
 pub mod i18n;
 mod i18n_fork;
 pub mod icons;
 pub mod import;
+pub mod import_report;
 pub mod libtools;
 pub mod lightroom_import;
 pub mod links;
@@ -150,6 +152,8 @@ mod tests_focus_point;
 #[cfg(test)]
 mod tests_folder_drop;
 #[cfg(test)]
+mod tests_folder_poll;
+#[cfg(test)]
 mod tests_grading;
 #[cfg(test)]
 mod tests_grid;
@@ -161,6 +165,8 @@ mod tests_histogram_modes;
 mod tests_i18n_coverage;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_immich_ui;
+#[cfg(test)]
+mod tests_import_report;
 #[cfg(test)]
 mod tests_info_dialogs;
 #[cfg(test)]
@@ -181,6 +187,8 @@ mod tests_labels;
 mod tests_layout_image;
 #[cfg(test)]
 mod tests_lens_db;
+#[cfg(test)]
+mod tests_library_grid;
 #[cfg(test)]
 mod tests_library_problem;
 #[cfg(test)]
@@ -241,6 +249,8 @@ mod tests_sync;
 mod tests_tallies;
 #[cfg(test)]
 mod tests_temp_slider;
+#[cfg(test)]
+mod tests_thumb_churn;
 #[cfg(test)]
 mod tests_titlebar;
 #[cfg(test)]
@@ -516,6 +526,7 @@ pub struct LccApp {
     /// Rect of the photo canvas and the displayed image (screen points) from the last frame.
     pub canvas_rect: Option<egui::Rect>,
     pub image_rect: Option<egui::Rect>,
+    pub right_panel_rect: Option<egui::Rect>,
     /// Scroll offsets (points) of the photo grid (vertical) and the filmstrip (horizontal) as
     /// drawn last (`ui.inspect` → `scroll`).
     pub grid_scroll: Option<f32>,
@@ -557,6 +568,8 @@ pub struct LccApp {
     pub enhance: enhance_ui::EnhanceUi,
     /// An import in progress (the import review dialog's batches).
     pub import: Option<import::ImportTask>,
+    /// The last import's XMP warnings (File ▸ More Imports ▸ Import Warnings…).
+    pub import_report: Option<import_report::Report>,
     /// A folder scan in progress (feeds the import review).
     pub scan: Option<import::ScanTask>,
     /// A Synchronize Folder scan in progress (feeds its dialog).
@@ -565,6 +578,10 @@ pub struct LccApp {
     pub sync_owns_changes: bool,
     /// A Synchronize Folder at work in the background.
     pub sync_run: Option<sync::SyncRun>,
+    /// Folder polling (issue #123): the poll at work, when the last one ran.
+    pub folder_poll: folder_poll::FolderPoll,
+    /// A link (`<scheme>://sync?path=…`) the app was started with, followed once a frame runs.
+    pub pending_link: Option<String>,
     /// A Lightroom catalog inspect/import in progress.
     pub lightroom: Option<lightroom_import::LightroomTask>,
     /// Last terminal Lightroom result, exposed by the command's status/wait response.
@@ -691,6 +708,7 @@ impl LccApp {
             last_time: 0.0,
             canvas_rect: None,
             image_rect: None,
+            right_panel_rect: None,
             grid_scroll: None,
             film_scroll: None,
             widgets: vec![],
@@ -709,10 +727,13 @@ impl LccApp {
             merge: merge::MergeState::default(),
             enhance: enhance_ui::EnhanceUi::default(),
             import: None,
+            import_report: None,
             scan: None,
             sync: None,
             sync_owns_changes: false,
             sync_run: None,
+            folder_poll: Default::default(),
+            pending_link: None,
             lightroom: None,
             lightroom_last: None,
             catalog_ui: Default::default(),
@@ -1170,6 +1191,7 @@ impl LccApp {
     /// themes, the system's appearance in Auto) is not the one it shows. A no-op otherwise.
     pub fn sync_theme(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
+        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
         let wanted = self.ui.settings.theme(self.system_theme(ctx));
         if theme::current(ctx) != Some(wanted) {
             theme::apply_kind(ctx, wanted);
@@ -1268,6 +1290,7 @@ impl LccApp {
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
+        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
         if !self.styled {
             theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
             theme::apply(ctx);
@@ -1290,6 +1313,7 @@ impl LccApp {
         }
         self.sync_theme(ctx);
         panels::notices::logic(self);
+        panels::cells::auto_read(self);
         // closing the window (or Quit) with changes only in memory: retry, else ask first
         if ctx.input(|i| i.viewport().close_requested()) && !panels::notices::may_close(self) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
@@ -1337,6 +1361,10 @@ impl LccApp {
             {
                 self.toast(ctx, crate::i18n::tr("Updated the edits saved in the external editor"));
             }
+        }
+        folder_poll::tick(self, ctx, focused && !self.ui.was_focused);
+        if let Some(url) = self.pending_link.take() {
+            folder_poll::follow_link(self, ctx, &url);
         }
         self.ui.was_focused = focused;
         // auto import: list the watched folder every few seconds (on a worker thread: it may be on
@@ -1455,6 +1483,7 @@ impl LccApp {
     /// Apply settings that act outside the UI state: GPU rendering and window full screen.
     fn apply_settings(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
+        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
         if self.gpu_applied != Some(self.ui.settings.gpu) {
             self.gpu_applied = Some(self.ui.settings.gpu);
             let _ = self.session.execute("app.gpu", &serde_json::json!({"enabled": self.ui.settings.gpu}));
@@ -1603,6 +1632,7 @@ impl LccApp {
     /// Frame timings once layout is done (`t0`: when layout started).
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
+        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
         self.text_focus = self.tasks.repaint.as_ref().is_some_and(|c| c.egui_wants_keyboard_input());
         ctx.output(|o| {
             for c in &o.commands {
@@ -1614,19 +1644,6 @@ impl LccApp {
         self.perf.frame_ms = now_ms() - t0;
         self.perf.update_ms = self.perf.logic_ms + self.perf.frame_ms;
         self.perf.max_update_ms = self.perf.max_update_ms.max(self.perf.update_ms);
-        // Windows only: G-SYNC / FreeSync brightness flicker workaround.
-        #[cfg(target_os = "windows")]
-        if self.ui.settings.vrr_flicker_workaround && !self.headless_host {
-            let active = ctx.input(|i| {
-                let focused = i.focused;
-                let minimized =
-                    i.viewport().minimized.unwrap_or(false) || i.raw.viewports.get(&i.raw.viewport_id).and_then(|v| v.minimized).unwrap_or(false);
-                focused && !minimized
-            });
-            if active {
-                ctx.request_repaint();
-            }
-        }
     }
 
     /// Once per library opened (at launch too): name it in the window title, so nobody edits in
@@ -1704,6 +1721,7 @@ impl LccApp {
         help_overlay::show(self, &ctx);
         panels::second::show(self, &ctx);
         panels::notices::show(self, &ctx);
+        import_report::show(self, &ctx);
         panels::dialogs::show(self, &ctx);
         catalog_ui::show(self, &ctx);
         plate::show_setup(self, &ctx);

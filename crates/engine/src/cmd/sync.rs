@@ -3,6 +3,7 @@
 use serde_json::{Value, json};
 
 use super::{CommandSpec, always, bad, bool_or, cmd, str_param};
+use crate::folder_watch::{self, NewFilePolicy};
 use crate::sync::{SyncChoice, scan, synchronize};
 use crate::{Result, Session};
 
@@ -37,7 +38,64 @@ pub fn specs() -> Vec<CommandSpec> {
             always,
             sync
         ),
+        cmd!(
+            "folder.watchPreferences",
+            "Folder Polling Preferences",
+            [],
+            None,
+            "{poll?: bool (off by default: costly on a VPN or slow link), intervalMinutes?: 1..1440 (default 5), newFiles?: ask (default: an \"N new\" badge on the folder) | add (added at once)} → current preferences (saved with the library)",
+            always,
+            watch_prefs
+        ),
+        cmd!(
+            "folder.poll",
+            "Check Folders for New Photos",
+            [],
+            None,
+            "{} — list each of the library's folders once and scan again, as folder.scanChanges, only those whose listing (modification time or entries) changed since the last poll (the first poll only records the listings); new files are added (newFiles: add, imported in place) or counted for the folder's badge (ask; see folder.newFiles). Runs whether or not polling is on → {listed, offline, changed: [path], new: [{path, count}], imported, failed: [[path, error]]}",
+            always,
+            poll
+        ),
+        cmd!(
+            query "folder.newFiles",
+            "New Files in Folders",
+            [],
+            None,
+            "{} — the folders in which a poll found files the library doesn't have yet (newFiles: ask), until they are added (folder.synchronize) → {folders: [{path, count}], total}",
+            always,
+            |s, _| {
+                let folders: Vec<Value> = s.folder_new.iter().map(|(p, n)| json!({"path": p, "count": n})).collect();
+                Ok(json!({"folders": folders, "total": s.folder_new.values().sum::<usize>()}))
+            }
+        ),
     ]
+}
+
+fn watch_prefs(s: &mut Session, p: &Value) -> Result<Value> {
+    const C: &str = "folder.watchPreferences";
+    let mut w = s.folder_watch;
+    if let Some(on) = p.get("poll").and_then(Value::as_bool) {
+        w.poll = on;
+    }
+    if let Some(m) = p.get("intervalMinutes") {
+        let m = m.as_u64().ok_or_else(|| bad(C, "`intervalMinutes` is a whole number of minutes"))?;
+        w.interval_minutes = u32::try_from(m).unwrap_or(u32::MAX);
+    }
+    if let Some(n) = str_param(p, "newFiles") {
+        w.new_files = NewFilePolicy::parse(n).ok_or_else(|| bad(C, format!("unknown newFiles `{n}` (ask|add)")))?;
+    }
+    let w = w.sanitized();
+    if w != s.folder_watch {
+        s.folder_watch = w;
+        s.save_prefs()?;
+    }
+    Ok(serde_json::to_value(s.folder_watch).unwrap_or_default())
+}
+
+fn poll(s: &mut Session, _: &Value) -> Result<Value> {
+    let dirs = folder_watch::watched_dirs(&s.catalog);
+    let polled = folder_watch::poll_dirs(&dirs, &s.folder_stamps, &std::sync::atomic::AtomicBool::new(false));
+    Ok(folder_watch::apply(s, polled, |s, path| scan(s, path, false).map_err(|e| e.to_string())))
 }
 
 fn sync(s: &mut Session, p: &Value) -> Result<Value> {

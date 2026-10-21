@@ -216,11 +216,43 @@ fn xmp_badge(app: &mut LccApp, ui: &egui::Ui, p: &Photo) -> Option<&'static str>
         app.ui.lib.sidecar_stats.insert(p.id, (now, stat_of(path, naming)));
     }
     let (_, stat) = cached?;
-    match p.xmp_status(stat) {
+    let status = p.xmp_status(stat);
+    // another app changed the sidecar of a photo unchanged here: read it (once per file version)
+    if status == XmpStatus::ChangedOnDisk && app.session.xmp.auto_read && app.ui.lib.auto_read_tried.get(&p.id) != Some(&stat) {
+        if app.ui.lib.auto_read_tried.len() > 4096 {
+            app.ui.lib.auto_read_tried.clear();
+        }
+        app.ui.lib.auto_read_tried.insert(p.id, stat);
+        app.ui.lib.auto_read.push(p.id);
+        ui.ctx().request_repaint();
+    }
+    match status {
         XmpStatus::ChangedInCatalog => Some("Metadata changed in the catalog: not yet saved to the file"),
         XmpStatus::ChangedOnDisk => Some("Metadata file changed on disk: read it from the file"),
         XmpStatus::Conflict => Some("Metadata conflict: changed both in the catalog and on disk"),
         XmpStatus::InSync | XmpStatus::Unknown => None,
+    }
+}
+
+/// Once a frame: read the sidecars the grid's (background) sidecar looks found changed by another
+/// app on photos unchanged here, through `photo.autoReadMetadata` (Read Metadata from File: one
+/// undo step, journaled). Conflicts are left to the badge; a broken file is logged, tried again
+/// only when it changes.
+pub fn auto_read(app: &mut LccApp) {
+    if app.ui.lib.auto_read.is_empty() {
+        return;
+    }
+    let ids: Vec<u64> = std::mem::take(&mut app.ui.lib.auto_read).into_iter().map(|id| id.0).collect();
+    if !app.session.xmp.auto_read {
+        return;
+    }
+    match app.run("photo.autoReadMetadata", serde_json::json!({"ids": ids})) {
+        Ok(r) => {
+            if let Some(f) = r.get("failed").and_then(serde_json::Value::as_array).filter(|f| !f.is_empty()) {
+                log::warn!("reading changed metadata files: {}", serde_json::Value::Array(f.clone()));
+            }
+        }
+        Err(e) => log::warn!("reading changed metadata files: {e}"),
     }
 }
 

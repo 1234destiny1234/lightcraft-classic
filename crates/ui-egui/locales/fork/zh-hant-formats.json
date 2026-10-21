@@ -77,5 +77,8 @@
   "about {} minutes": "約 {} 分鐘",
   "about {} hours": "約 {} 小時",
   "Output: {} × {} px": "輸出：{} × {} 像素",
-  "Estimated time: {est}": "預計時間：{est}"
+  "Estimated time: {est}": "預計時間：{est}",
+  "Add {n} New Photos…": "加入 {n} 張新照片…",
+  "{n} new photos in “{folder}”: right-click the folder ▸ Add New Photos": "「{folder}」中有 {n} 張新照片：在資料夾上按右鍵 ▸ 加入新照片",
+  "{n} new photos in {folders} folders: see the badges in Folders": "{folders} 個資料夾中有 {n} 張新照片：請查看「資料夾」中的標記"
 }

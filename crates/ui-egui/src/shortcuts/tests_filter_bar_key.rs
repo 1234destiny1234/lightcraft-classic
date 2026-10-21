@@ -23,7 +23,10 @@ fn app() -> lcc_engine::Result<LccApp> {
     }
     s.execute("library.sort", &json!({"key": "fileName", "ascending": true}))?;
     s.execute("library.select", &json!({"ids": [1]}))?;
-    Ok(LccApp::new(s, crate::Services { png: None, ..Default::default() }))
+    let mut app = LccApp::new(s, crate::Services { png: None, ..Default::default() });
+    // these tests start with the bar hidden (it starts shown, as Lightroom Classic's Library Filter bar)
+    app.ui.filter_bar = false;
+    Ok(app)
 }
 
 fn frame(app: &mut LccApp, ctx: &egui::Context, key: Option<Key>, text: Option<&mut String>) {

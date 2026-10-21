@@ -14,6 +14,7 @@ lcc-develop = { workspace = true }
 lcc-raw = { workspace = true }
 lcc-meta = { workspace = true }
 lcc-geo = { workspace = true }
+lcc-sysmem = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

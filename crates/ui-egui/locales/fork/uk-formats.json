@@ -67,5 +67,8 @@
   "about {} minutes": "близько {} хв",
   "about {} hours": "близько {} год",
   "Output: {} × {} px": "Результат: {} × {} пікс.",
-  "Estimated time: {est}": "Орієнтовний час: {est}"
+  "Estimated time: {est}": "Орієнтовний час: {est}",
+  "Add {n} New Photos…": "Додати нові фото ({n})…",
+  "{n} new photos in “{folder}”: right-click the folder ▸ Add New Photos": "Нових фото в «{folder}»: {n}. Клацніть папку правою кнопкою ▸ Додати нові фото",
+  "{n} new photos in {folders} folders: see the badges in Folders": "Нових фото: {n} у папках ({folders}). Див. позначки в розділі «Папки»"
 }

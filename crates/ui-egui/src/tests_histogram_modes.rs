@@ -380,20 +380,21 @@ fn the_waveform_views_draw_the_photo_by_column() {
     }
     set(&mut h, "view.histogram.mode", "mode", "waveform");
     h.settle(SETTLE);
-    let colors = plot_colors(&h);
-    assert!(!colors.is_empty(), "the waveform is drawn");
     let plot = rect(&h, "histogram:plot");
     let overlay = crate::panels::histogram::waveform_tracks(plot, lcc_raster::HistogramMode::Waveform);
     assert_eq!(overlay.len(), 3, "red, green and blue");
     assert!(overlay.iter().all(|t| t.0 == plot), "overlaid in one track");
+    assert_eq!(scope_pictures(&h), vec![plot], "one picture fills the track");
+    // the picture holds a trace of each channel
+    let planes: Vec<_> = overlay.iter().map(|(_, c, rgb)| (*c, *rgb)).collect();
+    let picture = crate::panels::histogram::waveform_image(&main, &planes, lcc_raster::HistogramScale::Linear);
     for (k, dominant) in [(0usize, "red"), (1, "green"), (2, "blue")] {
-        let ch = |c: &Color32| [c.r(), c.g(), c.b()];
         assert!(
-            colors.iter().any(|c| {
-                let v = ch(c);
+            picture.pixels.iter().any(|c| {
+                let v = [c.r(), c.g(), c.b()];
                 (0..3).all(|j| j == k || v[k] > v[j])
             }),
-            "the waveform draws a {dominant} trace: {colors:?}",
+            "the waveform draws a {dominant} trace",
         );
     }
 
@@ -403,22 +404,72 @@ fn the_waveform_views_draw_the_photo_by_column() {
     let tracks = crate::panels::histogram::waveform_tracks(plot, lcc_raster::HistogramMode::Parade);
     assert_eq!(tracks.len(), 3);
     assert!(tracks.windows(2).all(|w| w[0].0.right() < w[1].0.left()), "side by side");
-    let mut seen = [false; 3];
-    for shape in h.view.painted_shapes() {
-        let egui::Shape::Mesh(mesh) = shape else { continue };
-        for v in &mesh.vertices {
-            for (k, (track, _, color)) in tracks.iter().enumerate() {
-                // a cell's colour is its channel's, faded by how few pixels it holds
-                let hue = |c: Color32| [c.r() as f32, c.g() as f32, c.b() as f32];
-                let same = |a: [f32; 3], b: [f32; 3]| {
-                    let (ma, mb) = (a.iter().cloned().fold(0.0, f32::max).max(1.0), b.iter().cloned().fold(0.0, f32::max).max(1.0));
-                    a.iter().zip(&b).all(|(x, y)| (x / ma - y / mb).abs() < 0.05)
-                };
-                if track.contains(v.pos) && hue(v.color).iter().any(|c| *c > 0.0) && same(hue(v.color), color.map(|c| c * 255.0)) {
-                    seen[k] = true;
-                }
+    assert_eq!(scope_pictures(&h), tracks.iter().map(|t| t.0).collect::<Vec<_>>(), "a picture per track");
+    // each track's picture is its channel's alone
+    for (k, (_, plane, rgb)) in tracks.iter().enumerate() {
+        let picture = crate::panels::histogram::waveform_image(&main, &[(*plane, *rgb)], lcc_raster::HistogramScale::Linear);
+        let lit: Vec<_> = picture.pixels.iter().filter(|c| c.r() > 0 || c.g() > 0 || c.b() > 0).collect();
+        assert!(!lit.is_empty(), "track {k} has a trace");
+        assert!(
+            lit.iter().all(|c| {
+                let v = [c.r(), c.g(), c.b()];
+                (0..3).all(|j| v[k] >= v[j])
+            }),
+            "track {k} is its own channel"
+        );
+    }
+}
+
+/// Where the scope pictures (textured meshes) were drawn last frame, left to right.
+fn scope_pictures(h: &Headless) -> Vec<egui::Rect> {
+    let plot = rect(h, "histogram:plot");
+    let mut out: Vec<egui::Rect> = h
+        .view
+        .painted_shapes()
+        .iter()
+        .filter_map(|s| match s {
+            egui::Shape::Mesh(m) if m.texture_id != egui::TextureId::default() && m.vertices.iter().all(|v| plot.expand(0.5).contains(v.pos)) => {
+                Some(egui::Rect::from_points(&m.vertices.iter().map(|v| v.pos).collect::<Vec<_>>()))
             }
+            _ => None,
+        })
+        .collect();
+    out.sort_by(|a, b| a.left().total_cmp(&b.left()));
+    out
+}
+
+/// In the Library grid the histogram and the scopes show the selected photo, not only the one last opened in the
+/// loupe: a grid thumbnail keeps no waveform (and a cached one may carry no histogram), so the panel renders its
+/// own small picture of the photo when what it has can't draw the mode.
+#[test]
+fn the_grid_shows_the_scopes_of_the_selected_photo() {
+    let mut h = edit_panel();
+    let loupe = h.app.session.active().expect("a photo");
+    // back to the grid and on to a photo the loupe never showed
+    let other = h.app.session.visible_cloned().iter().map(|p| p.0).find(|&p| p != loupe.0).expect("a second photo");
+    let r = h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [other]}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let r = h.request("ui.set", json!({"view": "squareGrid", "histogram": true}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    assert_eq!(h.app.session.active().map(|p| p.0), Some(other), "the selected photo is the active one");
+    for mode in ["rgb", "waveform", "parade"] {
+        set(&mut h, "view.histogram.mode", "mode", mode);
+        // the grid as it is with real photos: only thumbnails, no loupe render of the selected photo
+        h.app.renderer.textures.remove(&Slot::Main);
+        h.app.renderer.panel_histogram = None;
+        h.step();
+        h.app.renderer.textures.remove(&Slot::Main);
+        h.settle(SETTLE);
+        assert!(widget(&h, "histogram:plot").is_some(), "{mode}: the histogram is on screen in the grid");
+        if mode == "rgb" {
+            assert!(!plot_colors(&h).is_empty(), "the histogram draws the selected photo");
+        } else {
+            assert!(!scope_pictures(&h).is_empty(), "{mode}: the scope draws the selected photo");
+            // the loupe's render of the photo if the grid made one again, else the panel's own
+            let main = h.app.renderer.textures.get(&Slot::Main).filter(|t| t.photo.0 == other).and_then(|t| t.histogram.clone());
+            let own = h.app.renderer.panel_histogram.as_ref().filter(|k| k.0.0 == other).map(|k| k.2.clone());
+            let shown = main.or(own).unwrap_or_else(|| panic!("{mode}: no waveform of the selected photo"));
+            assert!(shown.has_waveform(), "{mode}: with its waveform");
         }
     }
-    assert_eq!(seen, [true; 3], "each track draws its channel");
 }

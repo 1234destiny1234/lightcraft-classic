@@ -68,6 +68,13 @@ fn app_icon() -> egui::IconData {
 struct App(LccApp, PrefsWriter, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
 
 impl eframe::App for App {
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
+        // The transparency-capable window selects compositor presentation; the UI itself
+        // stays opaque, including disabled panels beneath modal dimming. The theme's panel
+        // colour, so a light theme doesn't flash black where nothing is drawn yet.
+        let [r, g, b, _] = visuals.panel_fill.to_srgba_unmultiplied();
+        egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32()
+    }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]
         if let Some(m) = self.2.as_mut()
@@ -571,6 +578,10 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                     };
                     // the app may have quit meanwhile: nobody to tell
                     let _ = tx.send(paths);
+                    // on macOS the panel is a window of its own: once it closes, the app's window isn't key again,
+                    // so the first click on it (Import in the review that follows) only brought it back to the front
+                    #[cfg(target_os = "macos")]
+                    repaint.send_viewport_cmd(egui::ViewportCommand::Focus);
                     repaint.request_repaint();
                 })
                 .map_err(|e| format!("could not start the file dialog: {e}"))?;
@@ -849,6 +860,7 @@ const HELP: &str = "\
 {bin} — photo library + raw developer
 
 USAGE: {bin} [OPTIONS] [FILES/FOLDERS…]   (files and folders are imported)
+       {bin} [OPTIONS] {scheme}://sync?path=FOLDER   (open Synchronize Folder for a library folder)
 
 OPTIONS:
   --library DIR    open (or create) this library (default: ~/Pictures/{lib}; env {P}_LIBRARY)
@@ -879,6 +891,7 @@ ENVIRONMENT:
 
 fn help() -> String {
     HELP.replace("{bin}", lcc_brand::BINARY)
+        .replace("{scheme}", lcc_brand::URL_SCHEME)
         .replace("{lib}", lcc_brand::LIBRARY_DEFAULT)
         .replace("{P}", lcc_brand::ENV_PREFIX)
         .replace("{app}", lcc_brand::DISPLAY_NAME)
@@ -977,6 +990,7 @@ fn main() -> eframe::Result {
     let mut seed_demo = true;
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
+    let mut launch_link: Option<String> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -1002,6 +1016,8 @@ fn main() -> eframe::Result {
                 eprintln!("{}: unknown option `{o}`\n\n{}", lcc_brand::BINARY, help());
                 std::process::exit(2);
             }
+            // one of the app's links (`<scheme>://sync?path=…`): followed once the window is up
+            l if lcc_engine::link::is_link(l) => launch_link = Some(a.clone()),
             _ => files.push(a),
         }
     }
@@ -1075,8 +1091,10 @@ fn main() -> eframe::Result {
     lcc_engine::gpu::set_enabled(gpu_on);
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't
     // build egui's pipeline never kills the start-up
+    let compose_window = prefs.as_ref().is_some_and(|ui| ui.settings.compose_window) && std::env::var_os("WGPU_BACKEND").is_none();
     let win_files = std::sync::Arc::new(window_files(in_memory));
-    let window_gpu::Chosen { renderer, mut wgpu_options, which: window_renderer, notice: window_notice } = window_gpu::choose(&win_files);
+    let window_gpu::Chosen { renderer, mut wgpu_options, which: window_renderer, notice: window_notice } =
+        window_gpu::choose(&win_files, compose_window);
     // HDR display output: an extended-range float surface where the platform and display offer it
     hdr_display::configure(&mut wgpu_options);
     win_files.arm(window_renderer);
@@ -1091,6 +1109,7 @@ fn main() -> eframe::Result {
         viewport: as_remembered(egui::ViewportBuilder::default().with_title(lcc_brand::DISPLAY_NAME), opens_as)
             .with_min_inner_size(lcc_ui_egui::window_place::MIN_SIZE)
             .with_drag_and_drop(true)
+            .with_transparent(window_gpu::composes_window(compose_window, window_renderer))
             .with_fullsize_content_view(true)
             .with_titlebar_shown(false)
             .with_title_shown(false)
@@ -1154,6 +1173,7 @@ fn main() -> eframe::Result {
                 app.notices.extend(prefs_warning);
                 app.notices.extend(launch_notices);
                 app.notices.extend(window_notice);
+                app.pending_link = launch_link;
                 app.gpu_notice = true;
                 // the start-up update check, when the user turned it on (off by default)
                 app.startup_update_check = keeps_settings;
@@ -1309,6 +1329,22 @@ fn startup_failed(error: &str, log_file: Option<&std::path::Path>) {
 #[allow(clippy::unwrap_used)]
 mod tests {
     use super::*;
+
+    /// Modal dimming must not expose the desktop through the compositor-capable window.
+    #[test]
+    fn desktop_clear_color_stays_opaque_with_a_modal_open() {
+        let mut app = App(
+            LccApp::new(Session::new(), Services::default()),
+            PrefsWriter::default(),
+            #[cfg(target_os = "macos")]
+            None,
+        );
+        app.0.run("app.settings", serde_json::json!({})).unwrap();
+        assert!(app.0.ui.dialog.is_some());
+        for visuals in [egui::Visuals::dark(), egui::Visuals::light()] {
+            assert_eq!(eframe::App::clear_color(&app, &visuals)[3], 1.0);
+        }
+    }
 
     fn dir(tag: &str) -> std::path::PathBuf {
         let d = std::env::temp_dir().join(format!("lc-app-prefs-{tag}-{}", std::process::id()));

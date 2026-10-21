@@ -2,6 +2,8 @@
 //!
 //! ```text
 //! <cli> run [--demo | --library DIR | --connect [ADDR]] [--import PATH]… CMD [key=value…]…
+//! <cli> sync-folder [--library DIR | --connect [ADDR]] FOLDER
+//! <cli> open-url [--library DIR | --connect [ADDR]] URL
 //! <cli> mcp [--connect [ADDR]] [--demo] [--compact] [FILES/FOLDERS…]
 //! <cli> render <in> -o <out> [--set control=value]… [--settings FILE.json|PRESET-FILE] [--preset ID] [--size N] [--quality Q] [--trim IN,OUT]
 //! <cli> snapshot [--library DIR | --demo] [--script FILE.jsonl|-] [-o OUT.png] [--size WxH] [--scale S] [FILES…]
@@ -20,6 +22,7 @@
 mod alloc_release;
 mod catalog_migrate;
 mod run_action;
+mod sync_folder;
 
 use std::io::Write;
 use std::path::Path;
@@ -51,6 +54,12 @@ USAGE:
         --keep-going      continue after a failed command
   {cli} run-action NAME [OPTIONS] [param=value…] [ids=[…]]
       Play a saved action (actions.list) on the selection, or on `ids`; OPTIONS as for `run`.
+  {cli} sync-folder [OPTIONS] FOLDER
+      Synchronize a folder of the library now (folder.synchronize: import its new files, relink
+      moved ones): in the running app with --connect, else headless with --library DIR.
+  {cli} open-url [OPTIONS] URL
+      Follow one of {app}'s links, e.g. {scheme}://sync?path=/Photos/Trip (synchronize that
+      folder); OPTIONS as for `run`.
   {cli} mcp [OPTIONS] [FILES/FOLDERS…]
       MCP server (JSON-RPC 2.0 over stdio). Headless by default: an in-process session with the
       given files imported. Options:
@@ -130,7 +139,12 @@ USAGE:
 ";
 
 fn usage() -> String {
-    USAGE.replace("{cli}", CLI).replace("{bin}", lcc_brand::BINARY).replace("{P}", lcc_brand::ENV_PREFIX).replace("{app}", APP)
+    USAGE
+        .replace("{cli}", CLI)
+        .replace("{bin}", lcc_brand::BINARY)
+        .replace("{P}", lcc_brand::ENV_PREFIX)
+        .replace("{app}", APP)
+        .replace("{scheme}", lcc_brand::URL_SCHEME)
 }
 
 /// The command name shown in messages and `--help`.
@@ -192,6 +206,8 @@ fn main() -> ExitCode {
     let r = match args.first().map(String::as_str) {
         Some("run") => run(&args[1..]),
         Some("run-action") => run_action::to_run_args(&args[1..]).and_then(|a| run(&a)),
+        Some("sync-folder") => sync_folder::sync_folder_args(&args[1..]).and_then(|a| run(&a)),
+        Some("open-url") => sync_folder::open_url_args(&args[1..]).and_then(|a| run(&a)),
         Some("mcp") => mcp(&args[1..]),
         Some("render") => render(&args[1..]),
         Some("snapshot") => snapshot(&args[1..]),

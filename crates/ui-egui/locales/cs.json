@@ -87,6 +87,7 @@
   "All Metadata": "Všechna metadata",
   "All Metadata…": "Všechna metadata…",
   "All Photos": "Všechny fotografie",
+  "All Photographs": "Všechny fotografie",
   "All rights reserved": "Všechna práva vyhrazena",
   "All the photos imported from this disk are included.": "Zahrnou se všechny fotografie importované z tohoto disku.",
   "All types": "Všechny typy",
@@ -2079,5 +2080,6 @@
   "Visualize HDR": "Zobrazit rozsah HDR",
   "Return to Latest": "Zpět na nejnovější",
   "Enhance": "Vylepšit",
-  "Plug-in Filters": "Filtry zásuvných modulů"
+  "Plug-in Filters": "Filtry zásuvných modulů",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Zabránit blikání G-SYNC/FreeSync (platí po dalším spuštění)"
 }

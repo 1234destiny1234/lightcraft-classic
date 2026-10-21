@@ -266,6 +266,9 @@ pub struct ImportWarning {
     pub mode: Option<ImportUprightMode>,
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
     pub fields: Vec<String>,
+    /// The photo it was imported as, filled with `path`.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub photo: Option<u64>,
 }
 
 /// A file moved by an import.
@@ -616,8 +619,9 @@ fn library_files(library: &lcc_catalog::Catalog, files: &[String]) -> HashMap<Pa
                 height: p.height,
                 file_size: p.file_size,
                 captured: p.captured.clone(),
-                duplicate: Some("path".into()),
-                existing: Some(p.id.0),
+                // a Local (browsed) photo isn't in the library yet: importing it adds it
+                duplicate: (!p.local).then(|| "path".into()),
+                existing: (!p.local).then_some(p.id.0),
                 ..Default::default()
             };
             by_path.insert(PathBuf::from(path), (p.id, c));
@@ -636,6 +640,7 @@ fn library_hashes<'a>(library: &lcc_catalog::Catalog, hashes: impl Iterator<Item
     }
     for p in library.photos() {
         if let Some(h) = &p.content_hash
+            && !p.local
             && wanted.contains(h.as_str())
         {
             by_hash.insert(h.clone(), p.id);
@@ -755,6 +760,8 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
                 }
                 kept.insert(f, info);
             }
+            // still being copied in: not listed now, found by a later scan (issue #123)
+            Some(Err(e)) if lcc_catalog::incoming::is_still_being_written(&e) => continue,
             Some(Err(e)) => c.error = Some(e),
             None => c.error = Some("not probed".into()),
         }
@@ -1067,6 +1074,12 @@ impl ImportJob {
             }
             let mut info = match info {
                 Ok(i) => i,
+                // still being copied in: skipped, and picked up by a later scan (issue #123)
+                Err(e) if lcc_catalog::incoming::is_still_being_written(&e) => {
+                    log::info!("import: skipped {e}");
+                    self.done.fetch_add(1, Relaxed);
+                    continue;
+                }
                 Err(e) => {
                     log::warn!("import {path}: {e}");
                     self.done.fetch_add(1, Relaxed);
@@ -1494,6 +1507,7 @@ pub fn commit_prepared(s: &mut Session, opts: &ImportOptions, now: &str, prepare
                     report.sidecars += 1;
                     report.warnings.extend(sc.warnings.iter().cloned().map(|mut warning| {
                         warning.path = path.clone();
+                        warning.photo = Some(id.0);
                         warning
                     }));
                 }

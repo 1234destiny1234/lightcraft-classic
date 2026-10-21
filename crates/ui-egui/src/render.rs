@@ -75,6 +75,10 @@ pub enum Slot {
     /// A slider drag's live HDR histogram: a small full-quality render of an HDR edit, beside the
     /// drafts (which have no HDR histogram), with no texture ([`Renderer::live_hdr_histogram`]).
     HdrHistogram,
+    /// The Histogram panel's own small render of its photo, when no view of it carries what the
+    /// panel's mode draws (a grid thumbnail has no waveform, a cached one no histogram), with no
+    /// texture ([`Renderer::panel_histogram`]).
+    PanelHistogram,
     /// An HDR render (linear float, highlights above SDR white) of an HDR edit, for an HDR display
     /// ([`crate::HdrOutput`]), for one view ([`HDR_LOUPE`]…): its result waits in
     /// [`Renderer::hdr_view_result`] for the upload.
@@ -260,6 +264,8 @@ pub struct Renderer {
     pub textures: HashMap<Slot, Tex>,
     /// The last [`Slot::HdrHistogram`] result: (photo, job key, histogram).
     pub live_hdr_histogram: Option<(PhotoId, u64, Histogram)>,
+    /// The last [`Slot::PanelHistogram`] result: (photo, job key, histogram with its waveform).
+    pub panel_histogram: Option<(PhotoId, u64, Histogram)>,
     /// The [`Slot::HdrView`] renders not yet uploaded: view → (photo, job key, linear float image).
     pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
     /// The loupe's uploaded HDR texture.
@@ -355,6 +361,7 @@ impl Renderer {
             pending: HashMap::new(),
             textures: HashMap::new(),
             live_hdr_histogram: None,
+            panel_histogram: None,
             hdr_view_result: HashMap::new(),
             hdr_view: HashMap::new(),
             last_main_ms: 0.0,
@@ -396,9 +403,17 @@ impl Renderer {
 
 impl Renderer {
     /// Would asking for this thumbnail again (at `priority`) change nothing?
+    /// The size bucket of the thumbnail this photo has or is getting, while the photo is unchanged.
+    pub fn thumb_bucket_kept(&self, photo: &Arc<lcc_catalog::Photo>) -> Option<usize> {
+        self.thumb_inputs.get(&photo.id).filter(|(old, ..)| old.as_ptr() == Arc::as_ptr(photo)).map(|(_, size, ..)| *size)
+    }
+
     pub fn thumb_current(&self, photo: &Arc<lcc_catalog::Photo>, bucket: usize, priority: u32) -> bool {
         let Some(&(ref old, size, key, quick)) = self.thumb_inputs.get(&photo.id) else { return false };
-        if old.as_ptr() != Arc::as_ptr(photo) || size != bucket {
+        // a larger thumbnail serves a smaller request: two views of the same photo asking for different sizes (the
+        // Slideshow and Print modules' filmstrip and their own pictures) would otherwise each replace the other's
+        // and render it again on every frame
+        if old.as_ptr() != Arc::as_ptr(photo) || size < bucket {
             return false;
         }
         let slot = Slot::Thumb(photo.id);
@@ -428,7 +443,7 @@ impl Renderer {
     /// embedded JPEG already covers — see `grid::skips_the_real_render`.
     pub fn thumb_quick_is_final(&self, photo: &Arc<lcc_catalog::Photo>, bucket: usize, priority: u32) -> bool {
         let Some((old, size, key)) = self.embedded_thumbs.get(&photo.id) else { return false };
-        old.as_ptr() == Arc::as_ptr(photo) && *size == bucket && !self.request_needed(Slot::ThumbQuick(photo.id), *key, priority)
+        old.as_ptr() == Arc::as_ptr(photo) && *size >= bucket && !self.request_needed(Slot::ThumbQuick(photo.id), *key, priority)
     }
 
     /// Whether this photo's embedded-preview thumbnail is being fetched right now: the grid has
@@ -504,7 +519,9 @@ impl Renderer {
     fn request_needed(&self, slot: Slot, key: u64, priority: u32) -> bool {
         // A matching old texture must not mask a different newer request (e.g. undo).
         if let Some(&(k, p)) = self.pending.get(&slot) {
-            return k != key || (p != priority && self.is_queued(slot));
+            // a queued job moves up for a more urgent ask, never down: two views asking for the same thumbnail at
+            // different priorities (the Slideshow and Print modules and their filmstrip) took it in turns every frame
+            return k != key || (p < priority && self.is_queued(slot));
         }
         if self.textures.get(&slot).is_some_and(|t| t.key == key) || self.failed.get(&slot).is_some_and(|f| f.0 == key && f.2 == self.catalog_rev) {
             return false;
@@ -1026,6 +1043,11 @@ impl Renderer {
                     self.hdr_view_result.insert(view, (r.photo, r.key, deep));
                     changed = true;
                 }
+                continue;
+            }
+            if slot == Slot::PanelHistogram {
+                self.panel_histogram = Some((r.photo, r.key, rendered.histogram));
+                changed = true;
                 continue;
             }
             if slot == Slot::HdrHistogram {

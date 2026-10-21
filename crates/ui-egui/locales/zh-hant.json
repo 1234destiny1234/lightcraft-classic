@@ -58,6 +58,7 @@
   "All Metadata": "所有中繼資料",
   "All Metadata…": "所有中繼資料…",
   "All Photos": "所有照片",
+  "All Photographs": "所有照片",
   "All rights reserved": "保留所有權利",
   "All types": "所有類型",
   "Alt Text": "替代文字",
@@ -2177,5 +2178,6 @@
   "Checking the GPU for faces": "正在檢查用於臉孔的 GPU",
   "Return to Latest": "返回最新",
   "Enhance": "增強",
-  "Plug-in Filters": "外掛濾鏡"
+  "Plug-in Filters": "外掛濾鏡",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "防止 G-SYNC/FreeSync 閃爍（下次啟動時生效）"
 }

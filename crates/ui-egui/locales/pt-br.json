@@ -58,6 +58,7 @@
   "All Metadata": "Todos os metadados",
   "All Metadata…": "Todos os metadados…",
   "All Photos": "Todas as fotos",
+  "All Photographs": "Todas as fotografias",
   "All rights reserved": "Todos os direitos reservados",
   "All the photos imported from this disk are included.": "Todas as fotos importadas deste disco estão incluídas.",
   "All types": "Todos os tipos",
@@ -2220,5 +2221,6 @@
   "Color Overlay on B&W": "Sobreposição de cor em P&B",
   "Image on Black": "Imagem sobre preto",
   "Image on White": "Imagem sobre branco",
-  "White on Black": "Branco sobre preto"
+  "White on Black": "Branco sobre preto",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Evitar cintilação de G-SYNC/FreeSync (no próximo início)"
 }

@@ -451,6 +451,51 @@ impl UiFontSize {
     }
 }
 
+/// How a panel slider is laid out (Settings ▸ Interface, issue #346).
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SliderLayout {
+    /// Name, track and value on one line, as in Lightroom Classic.
+    OneRow,
+    /// Name and value on a line, the track across the panel under them, as in Camera Raw.
+    TwoRows,
+}
+
+impl Default for SliderLayout {
+    /// Two rows on Android's tablets, where a finger wants the longer track; one row elsewhere.
+    fn default() -> Self {
+        if cfg!(target_os = "android") { SliderLayout::TwoRows } else { SliderLayout::OneRow }
+    }
+}
+
+impl SliderLayout {
+    pub const ALL: [SliderLayout; 2] = [SliderLayout::OneRow, SliderLayout::TwoRows];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SliderLayout::OneRow => "One Row",
+            SliderLayout::TwoRows => "Two Rows",
+        }
+    }
+}
+
+fn slider_layout_id() -> egui::Id {
+    egui::Id::new("app-slider-layout")
+}
+
+/// The slider layout `ctx` uses.
+pub fn slider_layout(ctx: &egui::Context) -> SliderLayout {
+    ctx.data(|d| d.get_temp::<SliderLayout>(slider_layout_id())).unwrap_or_default()
+}
+
+/// Lay panel sliders out as `layout` from the next frame on.
+pub fn set_slider_layout(ctx: &egui::Context, layout: SliderLayout) {
+    if slider_layout(ctx) != layout {
+        ctx.data_mut(|d| d.insert_temp(slider_layout_id(), layout));
+        ctx.request_repaint();
+    }
+}
+
 #[cfg(test)]
 fn ui_fonts_active(ctx: &egui::Context) -> bool {
     ctx.fonts(|f| f.definitions().families.contains_key(&FontFamily::Name(FONT_SEMIBOLD.into())))

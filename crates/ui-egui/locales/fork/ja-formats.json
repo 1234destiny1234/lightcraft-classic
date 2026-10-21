@@ -77,5 +77,8 @@
   "about {} minutes": "約 {} 分",
   "about {} hours": "約 {} 時間",
   "Output: {} × {} px": "出力: {} × {} px",
-  "Estimated time: {est}": "予想時間: {est}"
+  "Estimated time: {est}": "予想時間: {est}",
+  "Add {n} New Photos…": "新しい写真 {n} 枚を追加…",
+  "{n} new photos in “{folder}”: right-click the folder ▸ Add New Photos": "「{folder}」に新しい写真が {n} 枚あります: フォルダーを右クリック ▸ 新しい写真を追加",
+  "{n} new photos in {folders} folders: see the badges in Folders": "{folders} 個のフォルダーに新しい写真が {n} 枚あります: フォルダーのバッジを参照"
 }

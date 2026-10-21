@@ -32,10 +32,16 @@ pub fn apply_slider_out(app: &mut LccApp, spec: &ControlSpec, out: SliderOut, mu
 }
 
 pub(crate) fn control(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, id: &str, enabled: bool) {
+    control_as(app, ui, d, id, enabled, None);
+}
+
+/// [`control`] under a shorter name, for a slider whose section already says what it belongs to
+/// (issue #346: "Hue" under "Red Primary", not "Red Hue").
+pub(crate) fn control_as(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, id: &str, enabled: bool, label: Option<&str>) {
     let Some(spec) = controls::find(id) else { return };
     let v = controls::get(d, id).unwrap_or(spec.default);
     // greyed out inside a disabled scope (a control video can't take)
-    let out = slider(ui, spec, v, enabled && ui.is_enabled(), None);
+    let out = slider(ui, spec, v, enabled && ui.is_enabled(), label);
     apply_slider_out(app, spec, out, |app, v| app.run("develop.set", json!({"control": id, "value": v})));
 }
 
@@ -305,9 +311,16 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         control(app, ui, d, "enhance.denoise", applicable && on);
         super::denoise::detail_status(app, ui, id, if on { d.enhance.denoise } else { 0.0 });
         sub_title(ui, crate::i18n::tr("Noise Reduction"));
-        for c in ["detail.nrLuminance", "detail.nrDetail", "detail.nrContrast", "detail.nrColor", "detail.nrColorDetail", "detail.nrColorSmoothness"]
-        {
-            control(app, ui, d, c, true);
+        // under "Noise Reduction", as in Lightroom Classic: Luminance, Detail, Contrast, Color, …
+        for (c, label) in [
+            ("detail.nrLuminance", Some("Luminance")),
+            ("detail.nrDetail", None),
+            ("detail.nrContrast", None),
+            ("detail.nrColor", Some("Color")),
+            ("detail.nrColorDetail", None),
+            ("detail.nrColorSmoothness", None),
+        ] {
+            control_as(app, ui, d, c, true, label);
         }
         // single outlier photosites, replaced in the raw mosaic (#1345): raws only
         if app.session.catalog.photo(id).is_some_and(|p| p.develops_raw()) {
@@ -339,10 +352,16 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if lp && !has_lens {
                 lens_note(app, ui, id);
             }
-            // What photos imported from now on start from, and one action that makes these settings
-            // it (issue #148: the two checkboxes above reset on every photo, so a batch wants a
-            // default).
-            ui.add_space(6.0);
+        });
+        if d.optics.lens_profile {
+            for c in ["optics.profileDistortion", "optics.profileVignetting"] {
+                control(app, ui, d, c, has_lens);
+            }
+        }
+        // What photos imported from now on start from, and one action that makes these settings it
+        // (issue #148: the two checkboxes above reset on every photo, so a batch wants a default).
+        // One quiet line under the lens controls (issue #346: it used to split them from the sliders).
+        egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 2, bottom: 4 }).show(ui, |ui| {
             let photo_camera = app.session.catalog.photo(id).map(|p| p.meta.camera.trim().to_string()).unwrap_or_default();
             let current = {
                 let defaults = &app.session.import_defaults;
@@ -358,22 +377,18 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 Some(p) => (crate::i18n::builtin_label(&p.name, p.builtin).to_string(), if p.builtin { String::new() } else { p.name.clone() }),
                 None => (crate::i18n::tr("{app} Default").to_string(), String::new()),
             };
+            // which photos it reaches, said on hover rather than as a line of its own
+            let reach = crate::i18n::tr("Photos imported from now on; photos already in the library keep theirs.");
             ui.horizontal_wrapped(|ui| {
-                ui.label(crate::i18n::tr("New photos start from"));
-                ui.label(RichText::new(starts_from).strong());
+                ui.label(RichText::new(crate::i18n::tr("New photos start from")).small().weak()).on_hover_text(reach);
+                ui.label(RichText::new(starts_from).small()).on_hover_text(reach);
                 // "Save as…": the name is the user's, so several named optics defaults can live side
                 // by side (one per camera, say) instead of one fixed entry
-                if text_button(ui, "opticsNewPhotoDefault", "Save as…", false).clicked() {
+                if text_button(ui, "opticsNewPhotoDefault", "Save as…", false).on_hover_text(reach).clicked() {
                     app.ui.dialog = Some(crate::state::Dialog::NewPhotoDefault { name: suggested });
                 }
             });
-            ui.label(RichText::new(crate::i18n::tr("Photos imported from now on; photos already in the library keep theirs.")).small().weak());
         });
-        if d.optics.lens_profile {
-            for c in ["optics.profileDistortion", "optics.profileVignetting"] {
-                control(app, ui, d, c, has_lens);
-            }
-        }
         sub_title(ui, crate::i18n::tr("Manual"));
         for c in ["optics.distortion", "optics.vignetting"] {
             control(app, ui, d, c, true);
@@ -436,11 +451,11 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // Lightroom Classic's Calibration panel (the cloud app hides it): last, like there.
     section(app, ui, &d, "calibration", "Calibration", |app, ui, d| {
         sub_title(ui, crate::i18n::tr("Shadows"));
-        control(app, ui, d, "calibration.shadowsTint", true);
+        control_as(app, ui, d, "calibration.shadowsTint", true, Some("Tint"));
         for (title, k) in [("Red Primary", "red"), ("Green Primary", "green"), ("Blue Primary", "blue")] {
             sub_title(ui, title);
-            control(app, ui, d, &format!("calibration.{k}Hue"), true);
-            control(app, ui, d, &format!("calibration.{k}Sat"), true);
+            control_as(app, ui, d, &format!("calibration.{k}Hue"), true, Some("Hue"));
+            control_as(app, ui, d, &format!("calibration.{k}Sat"), true, Some("Saturation"));
         }
         ui.add_space(8.0);
     });
@@ -541,10 +556,12 @@ fn profile_menu(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
 
 /// Basic ▸ Tone's title row with Classic's Auto button at its right, greyed out while the tone sliders
 /// still hold what Auto set (any change to them makes it available again).
+/// A heading inside a section ("Tone", "AI Denoise"): between the section title and the slider
+/// names in size (issue #346).
 pub fn sub_title(ui: &mut egui::Ui, title: &str) {
     let t = Tokens::get(ui.ctx());
     let (r, _) = ui.allocate_exact_size(vec2(ui.available_width(), 24.0), Sense::hover());
-    ui.painter().text(pos2(r.left() + 24.0, r.center().y + 2.0), Align2::LEFT_CENTER, crate::i18n::tr(title), t.semibold(13.0), t.text_label);
+    ui.painter().text(pos2(r.left() + 24.0, r.center().y + 2.0), Align2::LEFT_CENTER, crate::i18n::tr(title), t.semibold(11.75), t.text_label);
 }
 
 pub(crate) fn section(
@@ -629,6 +646,33 @@ fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram>
         .or_else(|| app.renderer.textures.get(&Slot::Thumb(id)).and_then(|t| t.histogram.clone()))
 }
 
+/// Long edge of the Histogram panel's own render of its photo ([`Slot::PanelHistogram`]): enough
+/// for the waveform's 128 columns, small enough to be quick.
+const PANEL_HISTOGRAM_EDGE: usize = 512;
+
+/// `hist`, or — when it can't draw `mode` (none at all, or no waveform for the Waveform / Parade)
+/// — the panel's own small render of the photo as it is now, asked for when missing. In the Library
+/// grid the selected photo has only its thumbnail's histogram, which keeps no waveform, so the
+/// scopes stayed empty there except for the photo last opened in the loupe.
+fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::HistogramMode, hist: Option<Histogram>) -> Option<Histogram> {
+    if hist.as_ref().is_some_and(|h| !mode.is_waveform() || h.has_waveform()) {
+        return hist;
+    }
+    let edge = PANEL_HISTOGRAM_EDGE;
+    let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop) else { return hist };
+    // (the key the result comes back with)
+    let job = app.renderer.job_for(Slot::PanelHistogram, job);
+    match &app.renderer.panel_histogram {
+        Some((photo, key, h)) if *photo == id && *key == job.key => Some(h.clone()),
+        kept => {
+            // until it lands, the last one of this photo (an edit moved on), else what there is
+            let stale = kept.as_ref().filter(|(photo, _, _)| *photo == id).map(|(_, _, h)| h.clone());
+            app.renderer.request(Slot::PanelHistogram, job, 40);
+            stale.or(hist)
+        }
+    }
+}
+
 /// An HDR edit's histogram stays an HDR histogram: some renders carry only their 8-bit image's
 /// (a drag's drafts, a cached thumbnail or stand-in), and showing those would swap the panel to
 /// the SDR layout and back while a slider moves. Every render with HDR bins replaces the one kept for the photo, so
@@ -645,7 +689,7 @@ fn steady_hdr_histogram(ctx: &egui::Context, id: PhotoId, hdr_edit: bool, hist: 
     }
 }
 
-fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
@@ -663,9 +707,10 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && l.0 == id).map(|l| l.2.clone());
     // else the loupe render of this photo, else its thumbnail (grid view before the loupe has
     // rendered it)
-    let hist = live.or_else(|| preview_histogram(app, id));
-    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
     let mode = super::histogram::mode_of(app);
+    let hist = live.or_else(|| preview_histogram(app, id));
+    let hist = panel_render_histogram(app, id, mode, hist);
+    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
     let scale = super::histogram::scale_of(app);
     // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
     // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
@@ -870,7 +915,10 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 
         if !parts.is_empty() {
             let text = parts.join(" · ");
-            p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(12.5), t.text_label);
+            // a smaller size where the strip is narrow (the Library's Histogram panel), so it stays inside the panel
+            let fits = |size: f32| p.layout_no_wrap(text.clone(), t.font(size), t.text_label).size().x <= footer.width() - 6.0;
+            let size = [12.5, 11.5, 10.5].into_iter().find(|s| fits(*s)).unwrap_or(10.5);
+            p.text(pos2(footer_x, r.bottom() - 13.0), Align2::CENTER_CENTER, text, t.font(size), t.text_label);
         }
     }
 }
@@ -1883,8 +1931,8 @@ fn mixer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
         });
         control(app, ui, d, &format!("bw.{b}"), true);
     } else {
-        for k in ["hue", "sat", "lum"] {
-            control(app, ui, d, &format!("mixer.{b}.{k}"), true);
+        for (k, label) in [("hue", "Hue"), ("sat", "Saturation"), ("lum", "Luminance")] {
+            control_as(app, ui, d, &format!("mixer.{b}.{k}"), true, Some(label));
         }
     }
 }
@@ -2083,16 +2131,17 @@ fn grading(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, photo: Phot
         for (i, c) in at.into_iter().enumerate() {
             grading_wheel(app, ui, d, photo, i, c, rad, true);
         }
-        for c in ["grading.shadows.lum", "grading.midtones.lum", "grading.highlights.lum"] {
-            control(app, ui, d, c, true);
+        // under the wheels they name, the luminance sliders need only the wheel's name (issue #346)
+        for (c, label) in [("grading.shadows.lum", "Shadows"), ("grading.midtones.lum", "Midtones"), ("grading.highlights.lum", "Highlights")] {
+            control_as(app, ui, d, c, true, Some(label));
         }
     } else {
         let i = GRADING_WHEELS.iter().position(|(k, _)| *k == mode).unwrap_or(1);
         let rad = (w * 0.3).clamp(40.0, 80.0);
         let (area, _) = ui.allocate_exact_size(vec2(w, rad * 2.0 + 40.0), Sense::hover());
         grading_wheel(app, ui, d, photo, i, pos2(area.center().x, area.top() + rad + 10.0), rad, false);
-        for part in ["hue", "sat", "lum"] {
-            control(app, ui, d, &format!("grading.{mode}.{part}"), true);
+        for (part, label) in [("hue", "Hue"), ("sat", "Saturation"), ("lum", "Luminance")] {
+            control_as(app, ui, d, &format!("grading.{mode}.{part}"), true, Some(label));
         }
     }
     for c in ["grading.blending", "grading.balance"] {

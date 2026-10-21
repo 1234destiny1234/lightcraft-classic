@@ -1019,7 +1019,12 @@ pub fn specs() -> Vec<CommandSpec> {
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
                 let dd = (*s.develop_of(id).unwrap_or_default()).clone();
                 let spot = dd.spots[i].clone();
-                let next = pick_source(s, id, &dd, &spot, spot.source_offset).ok_or_else(|| bad(c, "no other source fits in the photo"))?;
+                let next = if spot.mode == SpotMode::Remove || spot.mode == SpotMode::Fill {
+                    let cur = spot.source_offset.unwrap_or(lcc_geom::Point::new(0.0, 0.0));
+                    lcc_geom::Point::new((cur.x + 0.03) % 0.5, (cur.y + 0.03) % 0.5)
+                } else {
+                    pick_source(s, id, &dd, &spot, spot.source_offset).ok_or_else(|| bad(c, "no other source fits in the photo"))?
+                };
                 spots_edit(s, c, "Refresh Source", |spots| {
                     spots[i].source_offset = Some(next);
                     Ok(())

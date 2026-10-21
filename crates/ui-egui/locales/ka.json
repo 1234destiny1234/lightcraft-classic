@@ -153,6 +153,7 @@
   "All Metadata": "ყველა მეტამონაცემი",
   "All Metadata…": "ყველა მეტამონაცემი…",
   "All Photos": "ყველა ფოტო",
+  "All Photographs": "ყველა ფოტო",
   "All rights reserved": "ყველა უფლება დაცულია",
   "All the photos imported from this disk are included.": "ამ დისკიდან იმპორტირებული ყველა ფოტო შედის.",
   "All types": "ყველა ტიპი",
@@ -2731,5 +2732,6 @@
   "繁體中文（台灣）": "繁體中文（台灣）",
   "Return to Latest": "უახლესზე დაბრუნება",
   "Enhance": "გაუმჯობესება",
-  "Plug-in Filters": "დანამატის ფილტრები"
+  "Plug-in Filters": "დანამატის ფილტრები",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "G-SYNC/FreeSync-ის ციმციმის თავიდან აცილება (ამოქმედდება შემდეგი გაშვებისას)"
 }

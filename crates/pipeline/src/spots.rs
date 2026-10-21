@@ -253,11 +253,11 @@ pub fn window_for_reads_checked(
 /// Content-aware fill of the box: `src` becomes `tgt` with every pixel under the stroke (`alpha > 0`)
 /// rebuilt from the rest of the box. Falls back to a smooth membrane fill when the box holds no whole
 /// patch to copy from.
-fn fill_box(src: &mut [[f32; 3]], tgt: &[[f32; 3]], alpha: &[f32], bw: usize, bh: usize) {
+fn fill_box(src: &mut [[f32; 3]], tgt: &[[f32; 3]], alpha: &[f32], bw: usize, bh: usize, seed: u64) {
     let hole: Vec<bool> = alpha.iter().map(|a| *a > 0.0).collect();
     let flat: Vec<f32> = tgt.iter().flatten().copied().collect();
-    let out = lcc_inpaint::complete(bw, bh, 3, &flat, &hole, &lcc_inpaint::CompleteParams::default())
-        .unwrap_or_else(|| lcc_inpaint::membrane_fill(bw, bh, 3, &flat, &hole));
+    let params = lcc_inpaint::CompleteParams { seed, ..Default::default() };
+    let out = lcc_inpaint::complete(bw, bh, 3, &flat, &hole, &params).unwrap_or_else(|| lcc_inpaint::membrane_fill(bw, bh, 3, &flat, &hole));
     let (pixels, _) = out.as_chunks::<3>();
     for (d, v) in src.iter_mut().zip(pixels) {
         *d = *v;
@@ -282,9 +282,9 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
             })
             .collect();
         let Some(&first) = pts.first() else { continue };
-        let fill = spot.mode == SpotMode::Fill;
+        let is_content_aware = matches!(spot.mode, SpotMode::Remove | SpotMode::Fill);
         let offset = match spot.source_offset {
-            _ if fill => (0.0, 0.0),
+            _ if is_content_aware => (0.0, 0.0),
             Some(o) => {
                 let a = to_out.apply(Point::new(0.0, 0.0));
                 let b = to_out.apply(o);
@@ -301,7 +301,7 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
             y1 = y1.max(p.1 + r);
         }
         // content-aware fill reads the spot's surroundings (the window holds 2 radii around it)
-        let pad = if fill { 2.0 * r } else { r };
+        let pad = if is_content_aware { 2.0 * r } else { 1.5 * r };
         let (bx0, by0) = (((x0 - pad).floor().max(0.0)) as usize, ((y0 - pad).floor().max(0.0)) as usize);
         let (bx1, by1) = (((x1 + pad).ceil() as usize).min(w), ((y1 + pad).ceil() as usize).min(h));
         if bx1 <= bx0 || by1 <= by0 {
@@ -324,9 +324,14 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
                 tgt[y * bw + x] = img.get(bx0 + x, by0 + y);
             }
         }
-        if fill {
-            fill_box(&mut src, &tgt, &alpha, bw, bh);
+        if is_content_aware {
+            let seed = spot.source_offset.map(|o| (o.x.to_bits() ^ o.y.to_bits().rotate_left(32)).wrapping_add(1)).unwrap_or(1);
+            fill_box(&mut src, &tgt, &alpha, bw, bh, seed);
         }
+        // Clone: Direct 1:1 copy of source patch, feathered and opacity-blended.
+        // Heal: Texture transfer from source patch with tone/gradient separation matching target surroundings.
+        // Remove: Content-aware patch synthesis with surrounding tone harmonization.
+        // Fill: Direct content-aware patch-match completion.
         let heal = matches!(spot.mode, SpotMode::Remove | SpotMode::Heal);
         let low = if heal {
             // Tone correction from the spot's *surroundings* only: normalized convolution of

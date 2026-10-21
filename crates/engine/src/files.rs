@@ -1250,6 +1250,11 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         r
     });
     let probe: FileProbe = Arc::new(|path: &str| {
+        // a file still being copied in is left for a later scan (issue #123): its name or an open
+        // writer says so before anything is read, its own header (below) after
+        if lcc_catalog::incoming::still_being_written(std::path::Path::new(path)) {
+            return Err(format!("{path}: {}", lcc_catalog::incoming::STILL_BEING_WRITTEN));
+        }
         // a clip is streamed (hash) and its headers read in place: never all of it in memory
         if crate::import::is_video_name(path) {
             return probe_video_file(std::path::Path::new(path));
@@ -1257,6 +1262,12 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
         let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
         let _permit = crate::memory::work_gate().acquire(len);
         let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+        // (a short file that hasn't changed for a while is corrupt: the decode below reports it)
+        if lcc_catalog::incoming::declared_end_past(&bytes, bytes.len() as u64)
+            && lcc_catalog::incoming::recently_modified(std::path::Path::new(path))
+        {
+            return Err(format!("{path}: {}", lcc_catalog::incoming::STILL_BEING_WRITTEN));
+        }
         let mut info = probe_bytes(path, &bytes)?;
         info.file_modified = file_modified(path);
         Ok(info)
@@ -1297,6 +1308,42 @@ impl crate::Session {
 
 #[cfg(test)]
 pub(crate) mod tests {
+    /// A raw cut short (still being copied) and a temporary name are refused by the file probe as
+    /// still being written (issue #123), which the scans and imports skip.
+    #[test]
+    fn files_still_being_copied_are_left_for_a_later_scan() {
+        let dir = std::env::temp_dir().join(format!("copy-skip-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        // a TIFF header declaring one strip of 4000 bytes at offset 64, with only 100 of them there
+        let mut b = vec![0u8; 64];
+        b[0..4].copy_from_slice(b"II*\0");
+        b[4..8].copy_from_slice(&8u32.to_le_bytes());
+        b[8..10].copy_from_slice(&2u16.to_le_bytes());
+        for (at, tag, v) in [(10usize, 0x0111u16, 64u32), (22, 0x0117, 4000)] {
+            b[at..at + 2].copy_from_slice(&tag.to_le_bytes());
+            b[at + 2..at + 4].copy_from_slice(&4u16.to_le_bytes());
+            b[at + 4..at + 8].copy_from_slice(&1u32.to_le_bytes());
+            b[at + 8..at + 12].copy_from_slice(&v.to_le_bytes());
+        }
+        b.extend([0u8; 100]);
+        let raw = dir.join("IMG_0001.NEF");
+        std::fs::write(&raw, &b).unwrap();
+        let part = dir.join("IMG_0002.NEF.part");
+        std::fs::write(&part, &b).unwrap();
+        let (_, probe) = super::fs_hooks();
+        for f in [&raw, &part] {
+            let e = probe(&f.to_string_lossy()).unwrap_err();
+            assert!(lcc_catalog::incoming::is_still_being_written(&e), "{e}");
+        }
+        // the same short file, unchanged for an hour, is corrupt: reported, not skipped forever
+        let hour_ago = std::time::SystemTime::now() - std::time::Duration::from_secs(3600);
+        std::fs::File::options().write(true).open(&raw).unwrap().set_modified(hour_ago).unwrap();
+        if let Err(e) = probe(&raw.to_string_lossy()) {
+            assert!(!lcc_catalog::incoming::is_still_being_written(&e), "{e}");
+        }
+        std::fs::remove_dir_all(&dir).unwrap();
+    }
+
     /// Keywords from a file keep their hierarchy: the paths of `lr:hierarchicalSubject`, not the
     /// flat names of `dc:subject` that the app's exports (and Lightroom Classic) write besides
     /// them; an exported `travel|Italy|Rome` comes back as itself.

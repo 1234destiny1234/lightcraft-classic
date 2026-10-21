@@ -282,6 +282,8 @@ fn the_alternative_set_restores_the_previous_keys_and_keymaps_round_trip() {
 #[test]
 fn module_keys_are_scoped_by_module_and_view() {
     let mut h = demo();
+    // (the Filter bar starts shown, as Lightroom Classic's: hidden here to see \ show it)
+    h.app.ui.filter_bar = false;
     let press = |h: &mut Headless, k: &str, cmd: bool, shift: bool| {
         let r = h.request("ui.key", json!({"key": k, "cmd": cmd, "shift": shift}), T);
         assert_eq!(r["ok"], true, "{r}");

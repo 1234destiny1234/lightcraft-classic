@@ -61,5 +61,8 @@
   "about {} minutes": "circa {} minuti",
   "about {} hours": "circa {} ore",
   "Output: {} × {} px": "Uscita: {} × {} px",
-  "Estimated time: {est}": "Tempo stimato: {est}"
+  "Estimated time: {est}": "Tempo stimato: {est}",
+  "Add {n} New Photos…": "Aggiungi {n} nuove foto…",
+  "{n} new photos in “{folder}”: right-click the folder ▸ Add New Photos": "{n} nuove foto in “{folder}”: clic destro sulla cartella ▸ Aggiungi nuove foto",
+  "{n} new photos in {folders} folders: see the badges in Folders": "{n} nuove foto in {folders} cartelle: vedi i badge in Cartelle"
 }

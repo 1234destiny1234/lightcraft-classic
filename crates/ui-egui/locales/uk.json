@@ -405,6 +405,7 @@
   "All Metadata": "Усі метадані",
   "All Metadata…": "Усі метадані…",
   "All Photos": "Усі фото",
+  "All Photographs": "Усі фотографії",
   "All rights reserved": "Усі права захищено",
   "All types": "Усі типи",
   "Alt Text": "Альтернативний текст",
@@ -2333,5 +2334,6 @@
   "Checking the GPU for faces": "Перевірка ГП для облич",
   "Return to Latest": "Повернутися до останнього",
   "Enhance": "Покращення",
-  "Plug-in Filters": "Фільтри плагінів"
+  "Plug-in Filters": "Фільтри плагінів",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Запобігати мерехтінню G-SYNC/FreeSync (після перезапуску)"
 }

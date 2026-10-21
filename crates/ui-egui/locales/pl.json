@@ -56,6 +56,7 @@
   "All Metadata": "Wszystkie metadane",
   "All Metadata…": "Wszystkie metadane…",
   "All Photos": "Wszystkie zdjęcia",
+  "All Photographs": "Wszystkie fotografie",
   "All rights reserved": "Wszelkie prawa zastrzeżone",
   "All the photos imported from this disk are included.": "Uwzględniono wszystkie zdjęcia zaimportowane z tego dysku.",
   "All types": "Wszystkie typy",
@@ -2173,5 +2174,6 @@
   "not added to Apple Photos (cancelled)": "nie dodano do aplikacji Zdjęcia (anulowano)",
   "Return to Latest": "Wróć do najnowszego",
   "Enhance": "Ulepsz",
-  "Plug-in Filters": "Filtry wtyczek"
+  "Plug-in Filters": "Filtry wtyczek",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Zapobiegaj migotaniu G-SYNC/FreeSync (po ponownym uruchomieniu)"
 }

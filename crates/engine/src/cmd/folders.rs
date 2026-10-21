@@ -208,6 +208,11 @@ fn sync(s: &mut Session, p: &Value) -> Result<Value> {
     if bool_or(p, "readMetadata", false) && !changed.is_empty() {
         let r = s.execute("photo.readMetadataFromFile", &json!({"ids": changed}))?;
         out["read"] = r.get("read").cloned().unwrap_or(json!(0));
+    } else if p.get("readMetadata").is_none() && s.xmp.auto_read && !changed.is_empty() {
+        // other apps' edits to photos unchanged here are read; conflicts stay for the user
+        let r = s.execute("photo.autoReadMetadata", &json!({"ids": changed}))?;
+        out["read"] = r.get("read").cloned().unwrap_or(json!(0));
+        out["conflicts"] = r.get("conflicts").cloned().unwrap_or(json!([]));
     }
     Ok(out)
 }
@@ -283,7 +288,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Synchronize Folder",
             [],
             None,
-            "{path, subfolders?: true, dryRun?: false, import?: true, removeMissing?: false, readMetadata?: false} — compare a folder with the library: files not in it are added (in place), photos whose file is gone are listed (moved to Recently Deleted with removeMissing), sidecars changed by another program are listed (read with readMetadata) → {new, newFiles, missing, metadataChanged, imported?, removed?, read?}",
+            "{path, subfolders?: true, dryRun?: false, import?: true, removeMissing?: false, readMetadata?} — compare a folder with the library: files not in it are added (in place), photos whose file is gone are listed (moved to Recently Deleted with removeMissing), sidecars changed by another program are listed (read with readMetadata: true; left unset, the ones of photos unchanged here are read when library.xmpPreferences autoRead is on, conflicts listed) → {new, newFiles, missing, metadataChanged, imported?, removed?, read?, conflicts?}",
             always,
             sync
         ),

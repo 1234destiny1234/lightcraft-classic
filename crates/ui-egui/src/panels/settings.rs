@@ -480,6 +480,9 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if check(ui, "settings.autoWriteXmp", &mut xmp.auto_write, "Automatically write changes into XMP sidecars") {
         let _ = app.run("library.xmpPreferences", json!({"autoWrite": xmp.auto_write}));
     }
+    if check(ui, "settings.autoReadXmp", &mut xmp.auto_read, "Automatically read XMP sidecars other apps changed (photos unchanged here)") {
+        let _ = app.run("library.xmpPreferences", json!({"autoRead": xmp.auto_read}));
+    }
     row(ui, t, crate::i18n::tr("Sidecar names"), |ui| {
         use lcc_engine::sidecar::SidecarNaming as N;
         let mut n = xmp.naming;
@@ -489,6 +492,37 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         }
     });
     if !cfg!(target_arch = "wasm32") {
+        // issue #123: off by default, as listing folders costs something on a VPN or a slow link
+        heading(ui, t, crate::i18n::tr("Folder Polling"));
+        hint(
+            ui,
+            t,
+            crate::i18n::tr(
+                "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.",
+            ),
+        );
+        let mut w = app.session.folder_watch;
+        if check(ui, "settings.folderPoll", &mut w.poll, "Check folders for new photos") {
+            let _ = app.run("folder.watchPreferences", json!({"poll": w.poll}));
+        }
+        row(ui, t, crate::i18n::tr("Every"), |ui| {
+            let mut m = w.interval_minutes;
+            if choices(ui, "settingsFolderPollInterval", &[(1, "1 min"), (5, "5 min"), (15, "15 min"), (60, "1 hour")], &mut m) {
+                let _ = app.run("folder.watchPreferences", json!({"intervalMinutes": m}));
+            }
+        });
+        row(ui, t, crate::i18n::tr("New photos"), |ui| {
+            use lcc_engine::folder_watch::NewFilePolicy as P;
+            let mut p = w.new_files;
+            if choices(
+                ui,
+                "settingsFolderNewFiles",
+                &[(P::Ask, crate::i18n::tr("Ask (show “N new”)")), (P::Add, crate::i18n::tr("Add automatically"))],
+                &mut p,
+            ) {
+                let _ = app.run("folder.watchPreferences", json!({"newFiles": p.as_str()}));
+            }
+        });
         heading(ui, t, crate::i18n::tr("Cameras and Cards"));
         let mut on_card = d.show_on_card;
         if check(ui, "settings.importOnCard", &mut on_card, "Show the import review when a camera or card is connected") {
@@ -643,6 +677,8 @@ pub fn lens_db_folder(app: &mut LccApp, p: &Value) -> Result<Value, String> {
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
+    #[cfg(target_os = "windows")]
+    check(ui, "settings.composeWindow", &mut app.ui.settings.compose_window, "Prevent G-SYNC/FreeSync flicker (applies at next launch)");
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
     let status = if !gpu::available() {
         match gpu::unavailable_reason() {
@@ -882,18 +918,6 @@ fn display_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     );
     #[cfg(target_os = "linux")]
     hint(ui, t, crate::i18n::tr("Profiles assigned in your desktop's colour settings are usually in ~/.local/share/icc."));
-    #[cfg(target_os = "windows")]
-    {
-        heading(ui, t, crate::i18n::tr("Refresh rate"));
-        check(ui, "settings.vrrFlickerWorkaround", &mut app.ui.settings.vrr_flicker_workaround, "Prevent VRR flicker on OLED and VA monitors");
-        hint(
-            ui,
-            t,
-            crate::i18n::tr(
-                "Renders continuously at the monitor's refresh rate to avoid brightness and gamma shifts caused by G-SYNC / FreeSync variable refresh rate changes. Increases GPU and battery usage.",
-            ),
-        );
-    }
 }
 
 fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
@@ -1119,6 +1143,10 @@ fn appearance(ui: &mut egui::Ui, t: &Tokens, s: &mut crate::state::AppSettings, 
     row(ui, t, crate::i18n::tr("Font Size"), |ui| {
         let options = crate::theme::UiFontSize::ALL.map(|size| (size, size.label()));
         choices(ui, "settingsFontSize", &options, &mut s.ui_font_size);
+    });
+    row(ui, t, crate::i18n::tr("Sliders"), |ui| {
+        let options = crate::theme::SliderLayout::ALL.map(|layout| (layout, layout.label()));
+        choices(ui, "settingsSliderLayout", &options, &mut s.slider_layout);
     });
     ui.add_space(2.0);
 }

@@ -185,6 +185,12 @@ icons! {
     StepForward,
     /// Video: one frame back.
     StepBack,
+    /// Heal spot: a band-aid.
+    Bandage,
+    /// Clone spot: a rubber stamp.
+    Stamp,
+    /// Content-aware fill / remove: a sparkle.
+    Sparkle,
 }
 
 struct Pen<'a> {
@@ -948,6 +954,33 @@ fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, turn: Option<
         StepBack => {
             // Lucide `skip-back`
             lucide!(pen, ["M19 20L9 12L19 4Z", "M5 19V5"]);
+        }
+        Bandage => {
+            // A band-aid tilted at 45°
+            pen.line(&[(4.0, 12.0), (12.0, 4.0)]);
+            pen.arc(14.0, 6.0, 2.83, 225.0, 405.0);
+            pen.line(&[(16.0, 8.0), (8.0, 16.0)]);
+            pen.arc(6.0, 14.0, 2.83, 45.0, 225.0);
+            // Center pad lines
+            pen.line(&[(7.0, 9.0), (11.0, 13.0)]);
+            pen.line(&[(9.0, 7.0), (13.0, 11.0)]);
+            // Center pad dots
+            pen.dot(10.0, 10.0, 0.7);
+        }
+        Stamp => {
+            // Top knob
+            pen.circle(10.0, 4.5, 2.2);
+            // Shaft / neck
+            pen.line(&[(9.2, 6.7), (9.2, 9.5), (5.5, 13.5)]);
+            pen.line(&[(10.8, 6.7), (10.8, 9.5), (14.5, 13.5)]);
+            // Base plate
+            pen.closed(&[(4.5, 13.5), (15.5, 13.5), (15.5, 15.5), (4.5, 15.5)]);
+            // Ink cushion line
+            pen.line(&[(3.0, 17.5), (17.0, 17.5)]);
+        }
+        Sparkle => {
+            pen.closed(&[(10.0, 2.5), (11.5, 8.5), (17.5, 10.0), (11.5, 11.5), (10.0, 17.5), (8.5, 11.5), (2.5, 10.0), (8.5, 8.5)]);
+            pen.closed(&[(15.5, 3.0), (16.0, 4.5), (17.5, 5.0), (16.0, 5.5), (15.5, 7.0), (15.0, 5.5), (13.5, 5.0), (15.0, 4.5)]);
         }
         OverlayThirds | OverlayGrid | OverlayGolden | OverlayDiagonal | OverlayTriangle | OverlaySpiral | OverlayNone => {
             overlay_icon(&pen, icon);

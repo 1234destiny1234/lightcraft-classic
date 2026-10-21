@@ -204,6 +204,12 @@ pub struct LibTools {
     /// Sidecar stats for the metadata-conflict badge: (egui time read, stat).
     #[serde(skip)]
     pub sidecar_stats: std::collections::HashMap<PhotoId, (f64, Option<lcc_catalog::SidecarStat>)>,
+    /// Photos whose sidecar another app changed (unchanged here), to read this frame.
+    #[serde(skip)]
+    pub auto_read: Vec<PhotoId>,
+    /// The sidecar version each auto-read was tried with (a broken file isn't retried every look).
+    #[serde(skip)]
+    pub auto_read_tried: std::collections::HashMap<PhotoId, Option<lcc_catalog::SidecarStat>>,
 }
 
 impl Default for LibTools {
@@ -217,6 +223,8 @@ impl Default for LibTools {
             last_painter: None,
             stroke: None,
             sidecar_stats: Default::default(),
+            auto_read: Vec::new(),
+            auto_read_tried: Default::default(),
         }
     }
 }
