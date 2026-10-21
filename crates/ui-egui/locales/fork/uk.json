@@ -1227,5 +1227,6 @@
   "Host key:": "Ключ хоста:",
   "Host key: not confirmed yet (uploads are refused until it is)": "Ключ хоста: ще не підтверджено (вивантаження заборонено до підтвердження)",
   "Trust This Host Key": "Довіряти цьому ключу хоста",
-  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Довіряйте цьому серверу, лише якщо цей відбиток SHA-256 збігається з тим, що надав його адміністратор:"
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Довіряйте цьому серверу, лише якщо цей відбиток SHA-256 збігається з тим, що надав його адміністратор:",
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "Список назв місць містить населені пункти від 15 000 мешканців: для меншого в полі «Місто» буде найближчий більший."
 }

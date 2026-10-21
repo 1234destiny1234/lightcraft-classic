@@ -79,12 +79,8 @@ fn record_fallback(reason: String) {
 /// E.g. "disabled by {ENV_PREFIX}_GPU=0", "software adapter (llvmpipe …) skipped", "device lost …".
 /// Never blocks.
 pub fn unavailable_reason() -> Option<String> {
-    if env_disabled() {
-        #[cfg(not(target_arch = "wasm32"))]
-        if backend::env_off() {
-            return Some(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND")));
-        }
-        return Some(format!("disabled by {}=0", lcc_brand::env_var("GPU")));
+    if let Some(why) = env_off_reason() {
+        return Some(why);
     }
     if !ENABLED.load(Ordering::Relaxed) {
         return Some("disabled by the GPU rendering preference (app.gpu)".into());
@@ -252,14 +248,24 @@ pub fn wait_idle(timeout: std::time::Duration) -> bool {
 /// environment switches and the rendering preference, but not a render-device failure (the devices are separate).
 #[cfg(not(target_arch = "wasm32"))]
 pub(crate) fn switched_off() -> Option<String> {
-    if env_disabled() {
-        return Some(if backend::env_off() {
-            format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND"))
-        } else {
-            format!("disabled by {}=0", lcc_brand::env_var("GPU"))
-        });
+    if let Some(why) = env_off_reason() {
+        return Some(why);
     }
     (!ENABLED.load(Ordering::Relaxed)).then(|| "disabled by the GPU rendering preference (app.gpu)".into())
+}
+
+/// Why the environment switches the GPU off for the whole process (`{ENV_PREFIX}_GPU=0` or
+/// `{ENV_PREFIX}_GPU_BACKEND=off`), or `None`. Code with a GPU path of its own (the SAM 3 model on
+/// Metal) follows it too.
+pub fn env_off_reason() -> Option<String> {
+    if !env_disabled() {
+        return None;
+    }
+    #[cfg(not(target_arch = "wasm32"))]
+    if backend::env_off() {
+        return Some(format!("disabled by {}=off", lcc_brand::env_var("GPU_BACKEND")));
+    }
+    Some(format!("disabled by {}=0", lcc_brand::env_var("GPU")))
 }
 
 /// `{ENV_PREFIX}_GPU=0` (or `{ENV_PREFIX}_GPU_BACKEND=off`): no GPU for the whole process.
