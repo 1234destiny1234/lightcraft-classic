@@ -1476,5 +1476,8 @@
   "Add automatically": "自動加入",
   "Checking folders for new photos": "正在檢查資料夾中的新照片",
   "Automatically write changes into XMP sidecars": "自動將變更寫入 XMP 附屬檔案",
-  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "自動讀取其他應用程式變更的 XMP 附屬檔案（僅限此處未變更的照片）"
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "自動讀取其他應用程式變更的 XMP 附屬檔案（僅限此處未變更的照片）",
+  "Sliders": "滑桿",
+  "One Row": "單行",
+  "Two Rows": "雙行"
 }

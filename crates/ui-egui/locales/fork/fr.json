@@ -1388,5 +1388,8 @@
   "Add automatically": "Ajouter automatiquement",
   "Checking folders for new photos": "Recherche de nouvelles photos dans les dossiers",
   "Automatically write changes into XMP sidecars": "Écrire automatiquement les modifications dans les fichiers annexes XMP",
-  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Lire automatiquement les fichiers annexes XMP modifiés par d’autres apps (photos non modifiées ici)"
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Lire automatiquement les fichiers annexes XMP modifiés par d’autres apps (photos non modifiées ici)",
+  "Sliders": "Curseurs",
+  "One Row": "Une ligne",
+  "Two Rows": "Deux lignes"
 }

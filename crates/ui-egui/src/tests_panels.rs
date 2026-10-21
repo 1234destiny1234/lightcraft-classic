@@ -12,6 +12,34 @@ use crate::{LccApp, Services};
 const T: Duration = Duration::from_secs(20);
 const SETTLE: Duration = Duration::from_secs(120);
 
+/// The compositor preference changes native presentation, never idle frame scheduling.
+#[cfg(target_os = "windows")]
+#[test]
+fn compositor_workaround_does_not_request_continuous_repaints() {
+    use std::sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    };
+    let mut app = LccApp::new(lcc_engine::Session::new(), Services::default());
+    app.ui.settings.compose_window = true;
+    app.headless_host = false;
+    let ctx = egui::Context::default();
+    let mut input = egui::RawInput { focused: true, ..Default::default() };
+    input.viewports.entry(egui::ViewportId::ROOT).or_default().minimized = Some(false);
+    for _ in 0..3 {
+        ctx.run_ui(input.clone(), |_| {}).textures_delta.clear();
+    }
+    let requested = Arc::new(AtomicBool::new(false));
+    let seen = Arc::clone(&requested);
+    ctx.set_request_repaint_callback(move |_| {
+        seen.store(true, Ordering::SeqCst);
+    });
+    app.end_frame(&ctx, 0.0);
+    assert!(!requested.load(Ordering::SeqCst));
+    ctx.request_repaint();
+    assert!(requested.load(Ordering::SeqCst), "the observer must detect an actual repaint request");
+}
+
 fn demo(size: [f32; 2], ui: serde_json::Value) -> Headless {
     let services = Services { png: None, ..Default::default() };
     let app = LccApp::new(lcc_engine::Session::with_demo(), services);
@@ -2618,24 +2646,6 @@ fn the_histogram_clipping_buttons_stay_clear_of_the_hovered_scroll_bar() {
     assert!(high.right() <= bar_left, "the highlight clipping button {high:?} is under the scroll bar (from x = {bar_left})");
     // and the shadow one keeps the same inset from its edge
     assert!(((low.left() - hist.left()) - (hist.right() - high.right())).abs() < 0.5, "{low:?} {high:?} in {hist:?}");
-}
-
-#[test]
-fn vrr_flicker_workaround_setting_toggles_and_persists() {
-    let mut h = demo([1400.0, 1000.0], json!({"view": "photoGrid"}));
-    assert!(!h.app.ui.settings.vrr_flicker_workaround);
-
-    // Opening settings dialog and switching to Display tab
-    h.request("ui.set", json!({"settingsTab": "display"}), T);
-    h.step();
-
-    // Verify toggle can be changed via settings
-    h.app.ui.settings.vrr_flicker_workaround = true;
-    let serialized = serde_json::to_string(&h.app.ui.settings).unwrap();
-    assert!(serialized.contains("\"vrrFlickerWorkaround\":true"));
-
-    let deserialized: crate::state::AppSettings = serde_json::from_str(&serialized).unwrap();
-    assert!(deserialized.vrr_flicker_workaround);
 }
 
 /// An imported folder is listed under its own name, not under every folder from the disk down to

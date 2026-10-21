@@ -45,7 +45,8 @@ pub fn syncs_on_this_thread() -> u64 {
 
 fn sync_file(f: &File) -> io::Result<()> {
     SYNCS.with(|c| c.set(c.get() + 1));
-    f.sync_all()
+    // a plain fsync where the volume refuses the full flush (macOS on an SMB share)
+    crate::store::sync_file(f, false)
 }
 
 /// Fault injection for tests (in any crate): while the returned guard lives, every write made by
@@ -322,6 +323,23 @@ pub fn same_file(a: &Path, b: &Path) -> bool {
 
 #[cfg(test)]
 mod tests {
+    /// On an SMB share macOS refuses the full flush: sidecars and other durable writes still land.
+    #[test]
+    fn durable_write_on_a_volume_without_a_full_flush() {
+        let dir = std::env::temp_dir().join(format!("lcc-safe-nofullsync-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&dir);
+        std::fs::create_dir_all(&dir).unwrap();
+        let p = dir.join("a.xmp");
+        let before = crate::store::plain_fsyncs();
+        {
+            let _smb = crate::store::full_sync_unsupported();
+            super::write_atomic(&p, b"<x/>").unwrap();
+        }
+        assert_eq!(std::fs::read(&p).unwrap(), b"<x/>");
+        assert!(crate::store::plain_fsyncs() > before, "fell back to a plain fsync");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
     use super::*;
 
     fn temp(tag: &str) -> PathBuf {

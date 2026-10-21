@@ -1218,5 +1218,8 @@
   "Add automatically": "Додавати автоматично",
   "Checking folders for new photos": "Перевірка папок на нові фото",
   "Automatically write changes into XMP sidecars": "Автоматично записувати зміни у супровідні файли XMP",
-  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Автоматично читати супровідні файли XMP, змінені іншими застосунками (для фото без змін тут)"
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Автоматично читати супровідні файли XMP, змінені іншими застосунками (для фото без змін тут)",
+  "Sliders": "Повзунки",
+  "One Row": "В один рядок",
+  "Two Rows": "У два рядки"
 }

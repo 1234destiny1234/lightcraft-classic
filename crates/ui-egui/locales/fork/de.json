@@ -1335,5 +1335,8 @@
   "Add automatically": "Automatisch hinzufügen",
   "Checking folders for new photos": "Ordner werden auf neue Fotos geprüft",
   "Automatically write changes into XMP sidecars": "Änderungen automatisch in XMP-Begleitdateien schreiben",
-  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Von anderen Apps geänderte XMP-Begleitdateien automatisch einlesen (bei hier unveränderten Fotos)"
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Von anderen Apps geänderte XMP-Begleitdateien automatisch einlesen (bei hier unveränderten Fotos)",
+  "Sliders": "Regler",
+  "One Row": "Einzeilig",
+  "Two Rows": "Zweizeilig"
 }
