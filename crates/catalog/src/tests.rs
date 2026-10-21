@@ -137,6 +137,82 @@ fn filter_search_sort() {
     assert_eq!(c.keywords(), vec![("ocean".to_string(), 1), ("summer".to_string(), 1)]);
 }
 
+/// A search word with a colon whose left part is not a known field ("10:30", "Re:") is plain
+/// text, not a fielded token that matches nothing.
+#[test]
+fn free_text_with_a_colon_searches_the_text_fields() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "meeting.jpg", "2026-05-01T10:00:00");
+    let b = photo(&mut c, "reply.jpg", "2026-04-01T10:00:00");
+    let _other = photo(&mut c, "other.jpg", "2026-03-01T10:00:00");
+    let mut m = c.photo(a).unwrap().meta.clone();
+    m.caption = "Meeting at 10:30".into();
+    m.iso = Some(1600);
+    c.apply(Op::SetMeta { id: a, meta: Box::new(m) }).unwrap();
+    let mut m = c.photo(b).unwrap().meta.clone();
+    m.title = "Re: the brief".into();
+    c.apply(Op::SetMeta { id: b, meta: Box::new(m) }).unwrap();
+    let q = |text: &str| c.query(&Filter { text: text.into(), ..Default::default() }, &Sort::default());
+    assert_eq!(q("10:30"), vec![a], "a word with a colon is searched in the caption");
+    assert_eq!(q("Re:"), vec![b], "a word ending in a colon is searched in the title");
+    assert_eq!(q("RE: brief"), vec![b], "case-insensitive, one token per word");
+    assert_eq!(q("iso:>800"), vec![a], "known fields stay fielded");
+    assert_eq!(q("11:45"), Vec::<PhotoId>::new(), "an unknown field matching no text finds nothing");
+}
+
+/// A plug-in field search still finds photos by that field, and a known field is never also
+/// searched as text.
+#[test]
+fn plugin_and_known_fields_are_not_searched_as_text() {
+    let mut c = Catalog::new();
+    let a = photo(&mut c, "a.jpg", "2026-05-01T10:00:00");
+    let b = photo(&mut c, "b.jpg", "2026-04-01T10:00:00");
+    let mut fields = std::collections::BTreeMap::new();
+    fields.insert("com.ex.jobs/job".to_string(), serde_json::json!("J-77"));
+    c.set_plugin_fields(a, fields).unwrap();
+    let mut m = c.photo(b).unwrap().meta.clone();
+    m.caption = "rating:3 stars".into();
+    c.apply(Op::SetMeta { id: b, meta: Box::new(m) }).unwrap();
+    c.apply(Op::SetRating { id: a, rating: 3 }).unwrap();
+    let q = |text: &str| c.query(&Filter { text: text.into(), ..Default::default() }, &Sort::default());
+    assert_eq!(q("job:j-77"), vec![a], "a plug-in field by its key");
+    assert_eq!(q("job:j-78"), Vec::<PhotoId>::new(), "a plug-in field value that doesn't match");
+    assert_eq!(q("rating:3"), vec![a], "rating:3 tests the rating only, not a caption that says rating:3");
+}
+
+/// `f:` / `aperture:` and `focal:` are stored as `f32`; a typed value that isn't exact in binary
+/// (2.8, 5.6) must still match, and the comparisons must count the photo's own value right.
+#[test]
+fn search_tokens_match_f32_aperture_and_focal() {
+    let mut c = Catalog::new();
+    let mut at = |name: &str, f: f32, focal: f32| {
+        let id = photo(&mut c, name, "2026-05-01T10:00:00");
+        let mut m = c.photo(id).unwrap().meta.clone();
+        m.aperture = Some(f);
+        m.focal_mm = Some(focal);
+        c.apply(Op::SetMeta { id, meta: Box::new(m) }).unwrap();
+        id
+    };
+    let (f28, f56, f4) = (at("f28.jpg", 2.8, 5.6), at("f56.jpg", 5.6, 50.0), at("f4.jpg", 4.0, 35.0));
+    let q = |t: &str| {
+        let mut v = c.query(&Filter { text: t.into(), ..Default::default() }, &Sort::default());
+        v.sort();
+        v
+    };
+    assert_eq!(q("f:2.8"), vec![f28], "f:2.8");
+    assert_eq!(q("aperture:5.6"), vec![f56], "aperture:5.6");
+    assert_eq!(q("aperture:=2.8"), vec![f28], "aperture:=2.8");
+    assert_eq!(q("f:4"), vec![f4], "f:4");
+    assert_eq!(q("focal:5.6"), vec![f28], "focal:5.6");
+    assert!(q("f:2.9").is_empty(), "f:2.9");
+    assert!(q("f:<2.8").is_empty(), "f:<2.8 leaves out f/2.8");
+    assert_eq!(q("f:<=2.8"), vec![f28], "f:<=2.8 includes f/2.8");
+    assert_eq!(q("f:>=2.8"), vec![f28, f56, f4], "f:>=2.8 includes f/2.8");
+    assert_eq!(q("f:>2.8"), vec![f56, f4], "f:>2.8 leaves out f/2.8");
+    assert_eq!(q("f:<=5.6"), vec![f28, f56, f4], "f:<=5.6 includes f/5.6");
+    assert!(q("focal:<5.6").is_empty(), "focal:<5.6");
+}
+
 /// Issue #213: several values of one facet match any of them; facets still all have to match.
 #[test]
 fn multi_choice_facets_match_any_value_and_every_facet() {

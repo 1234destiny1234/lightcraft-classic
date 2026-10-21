@@ -608,3 +608,15 @@ fn capture_time_invalid_calendar_anchor_keeps_other_targets_and_redo() {
         assert_eq!(s.pending_log, log);
     }
 }
+
+/// XMP allows a capture time with minutes but no seconds; shifting it keeps its zone, and the
+/// stored time reads back.
+#[test]
+fn shifting_a_capture_time_without_seconds_keeps_its_zone() {
+    let mut s = capture_time_raw_metadata_session(Some("2026-01-01T10:00+02:00"));
+    s.execute("photo.setCaptureTime", &json!({"hours": 1})).unwrap();
+    let got = s.catalog.photo(lcc_catalog::PhotoId(1)).and_then(|p| p.captured.clone());
+    assert_eq!(got.as_deref(), Some("2026-01-01T11:00:00+02:00"), "an hour later, same zone");
+    let got = got.unwrap();
+    assert_eq!(lcc_catalog::dates::shift_iso(&got, 0).as_deref(), Some(got.as_str()), "the stored time reads back");
+}
