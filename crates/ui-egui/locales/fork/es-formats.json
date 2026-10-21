@@ -77,5 +77,8 @@
   "about {} minutes": "unos {} minutos",
   "about {} hours": "unas {} horas",
   "Output: {} × {} px": "Salida: {} × {} px",
-  "Estimated time: {est}": "Tiempo estimado: {est}"
+  "Estimated time: {est}": "Tiempo estimado: {est}",
+  "Add {n} New Photos…": "Añadir {n} fotos nuevas…",
+  "{n} new photos in “{folder}”: right-click the folder ▸ Add New Photos": "{n} fotos nuevas en «{folder}»: clic derecho en la carpeta ▸ Añadir fotos nuevas",
+  "{n} new photos in {folders} folders: see the badges in Folders": "{n} fotos nuevas en {folders} carpetas: mira las marcas en Carpetas"
 }

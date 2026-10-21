@@ -489,6 +489,37 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         }
     });
     if !cfg!(target_arch = "wasm32") {
+        // issue #123: off by default, as listing folders costs something on a VPN or a slow link
+        heading(ui, t, crate::i18n::tr("Folder Polling"));
+        hint(
+            ui,
+            t,
+            crate::i18n::tr(
+                "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.",
+            ),
+        );
+        let mut w = app.session.folder_watch;
+        if check(ui, "settings.folderPoll", &mut w.poll, "Check folders for new photos") {
+            let _ = app.run("folder.watchPreferences", json!({"poll": w.poll}));
+        }
+        row(ui, t, crate::i18n::tr("Every"), |ui| {
+            let mut m = w.interval_minutes;
+            if choices(ui, "settingsFolderPollInterval", &[(1, "1 min"), (5, "5 min"), (15, "15 min"), (60, "1 hour")], &mut m) {
+                let _ = app.run("folder.watchPreferences", json!({"intervalMinutes": m}));
+            }
+        });
+        row(ui, t, crate::i18n::tr("New photos"), |ui| {
+            use lcc_engine::folder_watch::NewFilePolicy as P;
+            let mut p = w.new_files;
+            if choices(
+                ui,
+                "settingsFolderNewFiles",
+                &[(P::Ask, crate::i18n::tr("Ask (show “N new”)")), (P::Add, crate::i18n::tr("Add automatically"))],
+                &mut p,
+            ) {
+                let _ = app.run("folder.watchPreferences", json!({"newFiles": p.as_str()}));
+            }
+        });
         heading(ui, t, crate::i18n::tr("Cameras and Cards"));
         let mut on_card = d.show_on_card;
         if check(ui, "settings.importOnCard", &mut on_card, "Show the import review when a camera or card is connected") {

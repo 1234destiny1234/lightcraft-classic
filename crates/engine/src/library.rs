@@ -270,6 +270,9 @@ pub(crate) fn library_id(dir: &Path) -> String {
     }
 }
 
+/// The folder stamps of the last poll ([`crate::folder_watch`]).
+const FOLDER_STAMPS: &str = "folder-stamps.json";
+
 #[derive(Default, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 struct PrefsFile {
@@ -325,6 +328,8 @@ struct PrefsFile {
     slide_titles: crate::slide_title::TitleSettings,
     /// A view holds the photos it shows until it is refreshed (`library.holdView`).
     hold_view: bool,
+    /// Folder polling (issue #123).
+    folder_watch: crate::folder_watch::WatchPrefs,
 }
 
 fn presets_json(s: &Session) -> String {
@@ -613,6 +618,16 @@ impl Session {
         self.slide_titles = prefs.slide_titles.sanitized();
         self.forget_local_days = prefs.forget_local_days.unwrap_or(lcc_catalog::DEFAULT_FORGET_DAYS);
         self.hold_view = prefs.hold_view;
+        self.folder_watch = prefs.folder_watch.sanitized();
+        // (a damaged file only costs a fresh start: the next poll records the listings again)
+        let watch: crate::folder_watch::WatchState = files
+            .read(FOLDER_STAMPS)
+            .ok()
+            .flatten()
+            .and_then(|b| serde_json::from_slice(&b).map_err(|e| log::warn!("library: {FOLDER_STAMPS}: {e}")).ok())
+            .unwrap_or_default();
+        self.folder_stamps = watch.stamps;
+        self.folder_new = watch.new;
         self.refresh_view();
         self.smart_previews_dir = prefs.smart_previews_dir.filter(|_| on_disk).map(PathBuf::from);
         if let Some(d) = &self.smart_previews_dir {
@@ -843,6 +858,14 @@ impl Session {
         }
     }
 
+    /// Save the folder stamps of the last poll ([`crate::folder_watch`]; no-op for in-memory
+    /// sessions).
+    pub fn save_folder_stamps(&mut self) -> Result<()> {
+        let v = serde_json::to_vec(&crate::folder_watch::WatchStateRef { stamps: &self.folder_stamps, new: &self.folder_new }).unwrap_or_default();
+        let Some(lib) = self.library.as_mut() else { return Ok(()) };
+        lib.files.write_atomic(FOLDER_STAMPS, &v).map_err(|e| EngineError::Other(format!("{FOLDER_STAMPS}: {e}")))
+    }
+
     /// Save the library preferences (no-op for in-memory sessions).
     pub fn save_prefs(&mut self) -> Result<()> {
         let v = serde_json::to_vec_pretty(&PrefsFile {
@@ -874,6 +897,7 @@ impl Session {
             slide_overlays: self.slide_overlays.clone(),
             slide_titles: self.slide_titles.clone(),
             hold_view: self.hold_view,
+            folder_watch: self.folder_watch,
         })
         .unwrap_or_default();
         let Some(lib) = self.library.as_mut() else { return Ok(()) };

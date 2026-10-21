@@ -849,6 +849,7 @@ const HELP: &str = "\
 {bin} — photo library + raw developer
 
 USAGE: {bin} [OPTIONS] [FILES/FOLDERS…]   (files and folders are imported)
+       {bin} [OPTIONS] {scheme}://sync?path=FOLDER   (open Synchronize Folder for a library folder)
 
 OPTIONS:
   --library DIR    open (or create) this library (default: ~/Pictures/{lib}; env {P}_LIBRARY)
@@ -879,6 +880,7 @@ ENVIRONMENT:
 
 fn help() -> String {
     HELP.replace("{bin}", lcc_brand::BINARY)
+        .replace("{scheme}", lcc_brand::URL_SCHEME)
         .replace("{lib}", lcc_brand::LIBRARY_DEFAULT)
         .replace("{P}", lcc_brand::ENV_PREFIX)
         .replace("{app}", lcc_brand::DISPLAY_NAME)
@@ -977,6 +979,7 @@ fn main() -> eframe::Result {
     let mut seed_demo = true;
     let mut in_memory = false;
     let mut library_dir: Option<std::path::PathBuf> = None;
+    let mut launch_link: Option<String> = None;
     let mut args = std::env::args().skip(1).peekable();
     while let Some(a) = args.next() {
         match a.as_str() {
@@ -1002,6 +1005,8 @@ fn main() -> eframe::Result {
                 eprintln!("{}: unknown option `{o}`\n\n{}", lcc_brand::BINARY, help());
                 std::process::exit(2);
             }
+            // one of the app's links (`<scheme>://sync?path=…`): followed once the window is up
+            l if lcc_engine::link::is_link(l) => launch_link = Some(a.clone()),
             _ => files.push(a),
         }
     }
@@ -1154,6 +1159,7 @@ fn main() -> eframe::Result {
                 app.notices.extend(prefs_warning);
                 app.notices.extend(launch_notices);
                 app.notices.extend(window_notice);
+                app.pending_link = launch_link;
                 app.gpu_notice = true;
                 // the start-up update check, when the user turned it on (off by default)
                 app.startup_update_check = keeps_settings;

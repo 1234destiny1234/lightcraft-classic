@@ -660,6 +660,10 @@ impl SyncJob {
         if changes.offline {
             return Err(not_there(&changes.path));
         }
+        if choice.import_new {
+            // (the person adds the folder's new files: its "N new" badge is answered)
+            crate::folder_watch::answered(s, &changes.path);
+        }
         let FolderChanges { new, missing, metadata, moved, probes, .. } = changes;
         let opts = ImportOptions { mode: ImportMode::Add, ..Default::default() };
         let import = if choice.import_new && !new.is_empty() {

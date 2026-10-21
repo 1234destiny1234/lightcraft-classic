@@ -1468,5 +1468,12 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Raw の詳細の後、幅と高さを 2 倍に (ピクセル数は 4 倍)。",
   "Estimating time…": "時間を見積もり中…",
   "Input": "入力",
-  "Output": "出力"
+  "Output": "出力",
+  "Folder Polling": "フォルダーの監視",
+  "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.": "ライブラリを開いたとき、アプリが前面に来たとき、および数分ごとに、他のアプリがライブラリのフォルダーに追加した写真を探します。内容が変わったフォルダーだけを調べます。",
+  "Check folders for new photos": "フォルダーの新しい写真を確認",
+  "Every": "間隔",
+  "Ask (show “N new”)": "確認する（「N 件の新規」を表示）",
+  "Add automatically": "自動的に追加",
+  "Checking folders for new photos": "フォルダーの新しい写真を確認中"
 }

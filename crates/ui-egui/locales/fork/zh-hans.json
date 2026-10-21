@@ -1381,5 +1381,12 @@
   "Raw Details, then twice the width and height (four times the pixels).": "先进行 Raw 细节，再将宽度和高度加倍（像素为四倍）。",
   "Estimating time…": "正在估算时间…",
   "Input": "输入",
-  "Output": "输出"
+  "Output": "输出",
+  "Folder Polling": "文件夹轮询",
+  "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.": "在打开图库时、应用回到前台时以及每隔几分钟，查找其他应用添加到图库文件夹中的照片。只扫描内容有变化的文件夹。",
+  "Check folders for new photos": "检查文件夹中的新照片",
+  "Every": "间隔",
+  "Ask (show “N new”)": "询问（显示“N 张新照片”）",
+  "Add automatically": "自动添加",
+  "Checking folders for new photos": "正在检查文件夹中的新照片"
 }

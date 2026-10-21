@@ -1471,5 +1471,12 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Detalles RAW y luego el doble de ancho y alto (cuatro veces los píxeles).",
   "Estimating time…": "Calculando el tiempo…",
   "Input": "Entrada",
-  "Output": "Salida"
+  "Output": "Salida",
+  "Folder Polling": "Vigilancia de carpetas",
+  "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.": "Buscar fotos que otras apps hayan añadido a las carpetas de la biblioteca al abrirla, al volver a la app y cada pocos minutos. Solo se examinan las carpetas cuyo contenido ha cambiado.",
+  "Check folders for new photos": "Buscar fotos nuevas en las carpetas",
+  "Every": "Cada",
+  "Ask (show “N new”)": "Preguntar (mostrar «N nuevas»)",
+  "Add automatically": "Añadir automáticamente",
+  "Checking folders for new photos": "Buscando fotos nuevas en las carpetas"
 }
