@@ -513,6 +513,10 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         let ctx = app.tasks.repaint.clone().unwrap_or_default();
         return Some(crate::lightroom_import::command(app, id, p, &ctx));
     }
+    if id == "photo.reload" {
+        // the files are read in the background (a raw's decode takes a second or more)
+        return crate::reload::command(app, p);
+    }
     if let Some(language) = language_from_command(id) {
         app.ui.language = language;
         // Immediately, not on the next frame: the reply and anything else run this frame
@@ -1603,7 +1607,8 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             let prev = app.session.last_export.clone().unwrap_or_default();
             let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
             let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(crate::control::default_export_dir);
-            let mut opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            // stored settings: a depth the format lacks (saved before #1952) opens at the format's own
+            let mut opts = lcc_engine::export::ExportOptions::from_json(&lcc_engine::export::ExportOptions::known_keys_only(&prev));
             // never exported: no folder picked for the person, it is asked for when the export
             // starts (Lightroom Classic's "Choose folder later"); not on the web, which has no folders
             if prev.get("destinationMode").is_none() && prev.get("dir").is_none() && !cfg!(target_arch = "wasm32") {

@@ -77,6 +77,7 @@ pub mod publish;
 mod query;
 mod quick;
 pub mod recheck;
+pub mod reload;
 mod slideshow;
 pub(crate) mod source;
 mod sync;
@@ -308,8 +309,8 @@ pub(crate) fn bad(cmd: &str, msg: impl Into<String>) -> EngineError {
 pub(crate) fn f64_req(p: &Value, key: &str, cmd: &str) -> Result<f64> {
     p.get(key).and_then(Value::as_f64).ok_or_else(|| bad(cmd, format!("missing number `{key}`")))
 }
-/// A non-negative integer parameter: `index: -1` must be an error, not element 0 (`-1.0 as usize`
-/// saturates to 0), just as `history.restore` already refuses a negative step index.
+/// A non-negative whole number that fits `usize`. Keep integer JSON exact; accept integral
+/// floating-point values for compatibility, without truncating or saturating their conversion.
 pub(crate) fn index_req(p: &Value, key: &str, cmd: &str) -> Result<usize> {
     if p.get(key).is_none_or(Value::is_null) {
         return Err(bad(cmd, format!("missing number `{key}`")));
@@ -350,4 +351,30 @@ pub(crate) fn ok() -> Result<Value> {
 pub(crate) fn point(p: &Value, key: &str) -> Option<lcc_geom::Point> {
     let a = p.get(key)?.as_array()?;
     Some(lcc_geom::Point::new(a.first()?.as_f64()?, a.get(1)?.as_f64()?))
+}
+
+#[cfg(test)]
+mod tests {
+    use serde_json::json;
+
+    use super::index_req;
+
+    #[test]
+    fn command_indices_preserve_integer_precision_and_check_usize_bounds() {
+        for i in [0, 1, usize::MAX] {
+            assert_eq!(index_req(&json!({"index": i}), "index", "test").unwrap(), i);
+        }
+        #[cfg(target_pointer_width = "64")]
+        {
+            let i = 9_007_199_254_740_993usize;
+            assert_eq!(index_req(&json!({"index": i}), "index", "test").unwrap(), i, "integer JSON must not round through f64");
+        }
+        let upper_bound = 2.0_f64.powi(usize::BITS as i32);
+        assert!(index_req(&json!({"index": upper_bound}), "index", "test").is_err(), "2^usize::BITS must not saturate");
+        #[cfg(target_pointer_width = "32")]
+        {
+            assert!(index_req(&json!({"index": u64::from(u32::MAX) + 1}), "index", "test").is_err());
+            assert_eq!(index_req(&json!({"index": f64::from(u32::MAX)}), "index", "test").unwrap(), usize::MAX);
+        }
+    }
 }

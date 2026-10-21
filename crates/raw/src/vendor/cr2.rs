@@ -200,7 +200,14 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
     let src = chunk_bytes(bytes, &chunk).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
     let (fw, fh, nc, prec) = ljpeg::frame_info(src)?;
     let frame = match mode {
-        Mode::Full => Some(ljpeg::decode(src, (fw * fh * nc).min(crate::MAX_SAMPLES))?),
+        Mode::Full => {
+            let total = (fw as u64)
+                .checked_mul(fh as u64)
+                .and_then(|v| v.checked_mul(nc as u64))
+                .filter(|t| *t > 0 && *t <= crate::MAX_SAMPLES as u64)
+                .ok_or_else(|| RawError::Corrupt("bad CR2 frame size".into()))?;
+            Some(ljpeg::decode(src, total as usize)?)
+        }
         Mode::Header => None,
     };
     let total = match &frame {
@@ -225,7 +232,10 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
             v.push(s[2] as usize);
             v
         }
-        None => vec![fw * nc],
+        None => {
+            let w = (fw as u64).checked_mul(nc as u64).ok_or_else(|| RawError::Corrupt("bad CR2 frame size".into()))?;
+            vec![w as usize]
+        }
     };
     // slice widths come from the file: a sum that overflows is a corrupt file, not a wrapped width
     let width = widths.iter().try_fold(0usize, |acc, &w| acc.checked_add(w)).ok_or_else(|| RawError::Corrupt("CR2 slice widths overflow".into()))?;

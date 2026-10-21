@@ -245,7 +245,9 @@ fn tag2010_wb(model: &str, block: &[u8], order: lcc_tiff::ByteOrder) -> Option<[
 /// DSLR-A900 sample this is the whole strip (36 917 760 = 6080 × 4048 × 1.5) and it ends at the end of the file.
 fn is_packed12(info: &ImageInfo, strip_count: usize, strip_len: u64) -> bool {
     let (w, h) = (info.width as u64, info.height as u64);
-    info.bits() == 12 && strip_count == 1 && w % 2 == 0 && w > 0 && h > 0 && strip_len == w * h * 3 / 2
+    // checked_mul chain: a wrapping `w · h · 3` must refuse the strip, not compare against a wrapped length
+    let packed_len = w.checked_mul(h).and_then(|n| n.checked_mul(3)).map(|n| n / 2);
+    info.bits() == 12 && strip_count == 1 && w % 2 == 0 && w > 0 && h > 0 && packed_len == Some(strip_len)
 }
 
 /// Unpack plain 12-bit samples stored least-significant-bit first: two pixels per three bytes, the first being
@@ -728,7 +730,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         32767 if one_byte_per_sample => {
             let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
             let curve = code_curve(&raw.u64s(TONE_CURVE).unwrap_or_else(|| vec![8000, 10400, 12900, 14100]));
-            let mut data = vec![0u16; w * h];
+            let mut data = vec![0u16; samples as usize];
             data.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
                 let row = src.get(y * w..((y + 1) * w).min(src.len())).unwrap_or(&[]);
                 if row.len() == w {
@@ -745,7 +747,7 @@ pub(crate) fn decode(bytes: &[u8], mode: Mode) -> Result<RawImage> {
         32767 if packed12 => {
             let src = chunk_bytes(bytes, &chunks[0]).ok_or_else(|| RawError::Corrupt("raw strip outside file".into()))?;
             let row_bytes = w / 2 * 3;
-            let mut data = vec![0u16; w * h];
+            let mut data = vec![0u16; samples as usize];
             data.par_chunks_mut(w).enumerate().for_each(|(y, out)| {
                 if let Some(row) = src.get(y * row_bytes..(y + 1) * row_bytes) {
                     unpack_row12(row, out);
