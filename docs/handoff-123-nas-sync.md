@@ -66,8 +66,8 @@ catalog store and `safe_file.rs`. It's separate from this branch and has its own
 - **Merged branch, `cargo xtask ci --fast`:** fmt, brand, quarantine, docs, notes, clippy, heif, parity,
   shared-check, layers, assets and deny all pass. **The wasm check fails for all 58 crates**, almost certainly
   because the wasm32 target isn't installed on this machine. Re-run it where the target is installed.
-- **Merged branch, `cargo test -p lcc-engine -p lcc-catalog`:** these were still running when this was written,
-  so treat them as **not verified**.
+- **Merged branch, `cargo test -p lcc-engine -p lcc-catalog`:** catalog 285 passed. Engine 1536 passed and 1
+  failed, `publish_to_immich_albums_renders_and_stacks`, which already failed before this work (see below).
 - **Already failing before this work:** `tests_immich::sync_tests::publish_to_immich_albums_renders_and_stacks`
   and the two `tests_i18n_coverage` tests (missing zh-hans strings in other files).
 
