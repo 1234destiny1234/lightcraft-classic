@@ -183,8 +183,9 @@ pub fn window_for_reads_checked(
             for p in &pts {
                 (x0, y0, x1, y1) = (x0.min(p.x), y0.min(p.y), x1.max(p.x), y1.max(p.y));
             }
-            // the box `apply` works in: the stroke plus a radius, plus a radius of padding
-            let t = [x0 - 2.0 * r, y0 - 2.0 * r, x1 + 2.0 * r, y1 + 2.0 * r];
+            // the box `apply` works in: the stroke plus a radius, plus its padding
+            let e = (1.0 + f64::from(box_pad(spot.mode))) * r;
+            let t = [x0 - e, y0 - e, x1 + e, y1 + e];
             let s = match spot.source_offset {
                 Some(o) => {
                     let b = to_out.apply(o);
@@ -250,6 +251,13 @@ pub fn window_for_reads_checked(
     )
 }
 
+/// The padding around a spot's stroke box that [`apply`] works in, in spot radii. Content-aware
+/// fill reads the spot's surroundings (2 radii); clone and heal read their tone ring (1.5 radii).
+/// [`window_for_reads_checked`] grows a render window by the same amount.
+fn box_pad(mode: SpotMode) -> f32 {
+    if matches!(mode, SpotMode::Remove | SpotMode::Fill) { 2.0 } else { 1.5 }
+}
+
 /// Content-aware fill of the box: `src` becomes `tgt` with every pixel under the stroke (`alpha > 0`)
 /// rebuilt from the rest of the box. Falls back to a smooth membrane fill when the box holds no whole
 /// patch to copy from.
@@ -300,8 +308,7 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
             x1 = x1.max(p.0 + r);
             y1 = y1.max(p.1 + r);
         }
-        // content-aware fill reads the spot's surroundings (the window holds 2 radii around it)
-        let pad = if is_content_aware { 2.0 * r } else { 1.5 * r };
+        let pad = box_pad(spot.mode) * r;
         let (bx0, by0) = (((x0 - pad).floor().max(0.0)) as usize, ((y0 - pad).floor().max(0.0)) as usize);
         let (bx1, by1) = (((x1 + pad).ceil() as usize).min(w), ((y1 + pad).ceil() as usize).min(h));
         if bx1 <= bx0 || by1 <= by0 {

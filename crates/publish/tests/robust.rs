@@ -66,12 +66,12 @@ fn publishing_to_a_full_disk_is_an_error_and_keeps_the_old_file() {
     let cfg = sample(&dir);
     let (svc, coll) = (&cfg.services[0], &cfg.services[0].collections[0]);
     let mut s = open_service(svc, coll).unwrap();
-    let up = |bytes: &'static [u8]| Upload { photo: PhotoId(1), file_name: "a.jpg", bytes, sidecars: &[], previous: None };
-    let first = s.publish(&up(b"first version")).unwrap();
+    let up = |bytes: &'static [u8], previous| Upload { photo: PhotoId(1), file_name: "a.jpg", bytes, sidecars: &[], previous };
+    let first = s.publish(&up(b"first version", None)).unwrap();
     let path = dir.join("Best of").join(&first.remote_id);
     {
         let _full = lcc_catalog::safe_file::fail_writes_after(4);
-        let e = s.publish(&up(b"second, longer version")).unwrap_err();
+        let e = s.publish(&up(b"second, longer version", Some(&first.remote_id))).unwrap_err();
         assert!(e.to_string().contains("a.jpg"), "{e}");
     }
     assert_eq!(std::fs::read(&path).unwrap(), b"first version");

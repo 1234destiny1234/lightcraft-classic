@@ -95,7 +95,9 @@ fn handle(state: &Shared, down: &AtomicBool, m: &str, t: &str, key: Option<&str>
             // the checksum of the uploaded part is not parsed: the test server keys duplicates by name
             let text = String::from_utf8_lossy(body);
             let name = text.split("filename=\"").nth(2).and_then(|x| x.split('"').next()).unwrap_or("x").to_string();
-            st.assets.push(json!({"id": id, "type": "IMAGE", "originalFileName": name, "updatedAt": now, "checksum": format!("name:{name}"), "exifInfo": {}, "tags": []}));
+            // like the real server, the asset remembers the uploading device (`deviceId` form field)
+            let device = text.split("name=\"deviceId\"").nth(1).and_then(|x| x.trim_start().lines().next()).unwrap_or("").trim().to_string();
+            st.assets.push(json!({"id": id, "type": "IMAGE", "deviceId": device, "originalFileName": name, "updatedAt": now, "checksum": format!("name:{name}"), "exifInfo": {}, "tags": []}));
             resp("201 Created", "application/json", json!({"id": id, "status": "created"}).to_string().as_bytes())
         }
         ("POST", "/api/assets/bulk-upload-check") => {
