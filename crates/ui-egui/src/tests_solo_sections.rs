@@ -40,11 +40,11 @@ fn click(h: &mut Headless, params: serde_json::Value) {
 #[test]
 fn solo_mode_closes_the_other_sections_when_one_opens() {
     let mut h = edit_open();
-    click(&mut h, json!({"id": "section:color"}));
-    assert_eq!(h.app.ui.open_sections, ["light", "color"], "off: sections open side by side");
+    click(&mut h, json!({"id": "section:mixer"}));
+    assert_eq!(h.app.ui.open_sections, ["light", "mixer"], "off: sections open side by side");
 
     assert_eq!(exec(&mut h, "view.soloSections", json!({})), json!({"soloSections": true}));
-    assert_eq!(h.app.ui.open_sections, ["color"], "turning it on keeps the section opened last");
+    assert_eq!(h.app.ui.open_sections, ["mixer"], "turning it on keeps the section opened last");
     assert_eq!(crate::menubar::checked(&h.app, "view.soloSections"), Some(true));
     h.step();
 
@@ -59,30 +59,30 @@ fn solo_mode_closes_the_other_sections_when_one_opens() {
 
     assert_eq!(exec(&mut h, "view.soloSections", json!({"on": false})), json!({"soloSections": false}));
     exec(&mut h, "section.light", json!({}));
-    exec(&mut h, "section.color", json!({}));
-    assert_eq!(h.app.ui.open_sections, ["light", "color"]);
+    exec(&mut h, "section.mixer", json!({}));
+    assert_eq!(h.app.ui.open_sections, ["light", "mixer"]);
 }
 
 #[test]
 fn the_section_header_menu_turns_solo_mode_on() {
     let mut h = edit_open();
-    click(&mut h, json!({"id": "section:color"}));
+    click(&mut h, json!({"id": "section:mixer"}));
     click(&mut h, json!({"id": "section:effects", "button": "right"}));
     click(&mut h, json!({"id": "sectionMenu:solo"}));
     assert!(h.app.ui.single_panel, "the header's Solo Mode item turns it on");
-    assert_eq!(h.app.ui.open_sections, ["color"]);
+    assert_eq!(h.app.ui.open_sections, ["mixer"]);
 }
 
 #[test]
 fn option_click_opens_just_that_section() {
     let mut h = edit_open();
-    click(&mut h, json!({"id": "section:color"}));
+    click(&mut h, json!({"id": "section:mixer"}));
     // (headers on screen: with Light and Color open, the ones below sit under the panel's
     // Previous / Reset bar)
     click(&mut h, json!({"id": "section:light", "alt": true}));
     assert_eq!(h.app.ui.open_sections, ["light"], "⌥-click closes the others");
-    click(&mut h, json!({"id": "section:color", "alt": true}));
-    assert_eq!(h.app.ui.open_sections, ["color"], "⌥-click opens a closed section alone");
+    click(&mut h, json!({"id": "section:mixer", "alt": true}));
+    assert_eq!(h.app.ui.open_sections, ["mixer"], "⌥-click opens a closed section alone");
     assert!(!h.app.ui.single_panel, "⌥-click doesn't turn Solo Mode on");
     // agents do the same with the section's command (Calibration has one, though not in the menu)
     exec(&mut h, "section.calibration", json!({"solo": true}));

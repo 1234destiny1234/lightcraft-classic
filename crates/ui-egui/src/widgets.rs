@@ -232,7 +232,8 @@ pub struct SliderOut {
 /// isn't a finite number, so the slider keeps its value.
 pub fn typed_value(spec: &ControlSpec, text: &str) -> Option<f64> {
     let t = text.trim().replace(',', ".");
-    let t = t.trim_end_matches(|c: char| c == '%' || c == 'K' || c == 'k' || c.is_whitespace());
+    // a unit typed after the number: "%", "K", "°" (an angle)
+    let t = t.trim_end_matches(|c: char| c == '%' || c == 'K' || c == 'k' || c == '°' || c.is_whitespace());
     let v: f64 = t.parse().ok().filter(|v: &f64| v.is_finite())?;
     let step = spec.step.max(1e-9);
     Some(((v / step).round() * step).clamp(spec.min, spec.max))

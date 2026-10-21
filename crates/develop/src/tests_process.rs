@@ -180,3 +180,20 @@ fn plugin_filters_absent_from_old_json_and_not_written_when_empty() {
     let empty = extract_groups(&DevelopSettings::default(), &[SettingsGroup::PluginFilters]);
     assert_eq!(s.merged(&empty).unwrap().plugin_filters.len(), 0);
 }
+
+/// The fork's Lightroom Classic panels each switch off their own settings: Tone Curve the curve, Color Mixer the
+/// mixer (and point colour), Color Grading the grading; the others stay.
+#[test]
+fn lightroom_classic_panels_switch_off_their_own_settings() {
+    let mut s = DevelopSettings::default();
+    s.curve.highlights = 20.0;
+    s.mixer.red.hue = 30.0;
+    controls::set(&mut s, "grading.shadows.sat", 40.0);
+    let graded = controls::get(&s, "grading.shadows.sat");
+    for (section, curve, hue, grading) in [("curve", 0.0, 30.0, graded), ("mixer", 20.0, 0.0, graded), ("grading", 20.0, 30.0, Some(0.0))] {
+        let mut d = s.clone();
+        d.set_section_enabled(section, false);
+        let e = d.effective();
+        assert_eq!((e.curve.highlights, e.mixer.red.hue, controls::get(&e, "grading.shadows.sat")), (curve, hue, grading), "{section} off");
+    }
+}

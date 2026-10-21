@@ -17,12 +17,8 @@ fn demo() -> Headless {
     let mut h = Headless::new(app, [1400.0, 2400.0], 1.0);
     let r = h.request("ui.set", json!({"view": "detail", "right": "edit"}), T);
     assert_eq!(r["ok"], true, "{r}");
-    if !h.app.ui.section_open("color") {
-        h.app.ui.toggle_section("color");
-    }
-    if !h.app.ui.flyout_open("grading") {
-        h.app.ui.toggle_flyout("grading");
-    }
+    // the Color Grading panel, on its own (the fork's Lightroom Classic panels)
+    h.app.ui.solo_section("grading");
     h.settle(SETTLE);
     h
 }

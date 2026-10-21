@@ -3214,6 +3214,8 @@ mod tests {
         let ids = |h: &mut Headless| -> Vec<String> { rects(h).into_iter().map(|(id, _)| id).collect() };
         h.request("ui.set", json!({"leftPanel": true}), t);
         h.app.ui.toggle_sidebar_section("panel:navigator");
+        // the Local Folders panel at the top of the column (it comes last by default)
+        h.app.ui.panel_order = vec![crate::module::PanelId::Local];
         h.hide_home_above(&dir);
         // Browse Folder… browses the picked folder and keeps it in Local within one frame; a
         // request runs frames, so keep it first (no frame sees it browsed but not yet kept)
@@ -3501,14 +3503,15 @@ mod tests {
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail", "right": "edit"}), t);
         h.settle(SETTLE);
-        let light_on = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().section_enabled("light");
+        // (Tone Curve: Basic has no switch, as in Lightroom Classic)
+        let light_on = |h: &Headless| h.app.session.develop_of(h.app.session.active().unwrap()).unwrap().section_enabled("curve");
         for expected in [false, true] {
             // the eye shows while the pointer is on the header
-            assert_eq!(h.request("ui.hoverWidget", json!({"id": "section:light"}), t)["ok"], true);
-            assert_eq!(h.request("ui.clickWidget", json!({"id": "sectionEye:light"}), t)["ok"], true);
+            assert_eq!(h.request("ui.hoverWidget", json!({"id": "section:curve"}), t)["ok"], true);
+            assert_eq!(h.request("ui.clickWidget", json!({"id": "sectionEye:curve"}), t)["ok"], true);
             assert_eq!(light_on(&h), expected);
         }
-        assert!(h.app.ui.section_open("light"), "the click didn't fold the section");
+        assert!(!h.app.ui.section_open("curve"), "the click didn't open the section");
     }
 
     /// Return commits a tool panel back to Edit; elsewhere it does nothing.

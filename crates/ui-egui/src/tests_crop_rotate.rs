@@ -165,7 +165,7 @@ fn command_held_shows_the_straighten_crosshair() {
 #[test]
 fn the_crop_panel_has_an_angle_field() {
     let mut h = crop_tool();
-    let r = h.request("ui.clickWidget", json!({"id": "cropAngleField"}), T);
+    let r = h.request("ui.clickWidget", json!({"id": "sliderValue:crop.angle"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     for key in ["a", "Backspace"] {
@@ -206,7 +206,7 @@ fn the_readout_stays_on_the_canvas() {
 fn dragging_the_angle_field_is_one_undo_step() {
     let mut h = crop_tool();
     let undo = h.app.session.undo.len();
-    let r = h.request("ui.dragWidget", json!({"id": "cropAngleField", "dx": 40.0, "dy": 0.0, "steps": 6}), T);
+    let r = h.request("ui.dragWidget", json!({"id": "sliderValue:crop.angle", "dx": 40.0, "dy": 0.0, "steps": 6}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     assert!(angle(&h) > 0.0, "dragged right: {}", angle(&h));
@@ -218,7 +218,7 @@ fn dragging_the_angle_field_is_one_undo_step() {
 #[test]
 fn typing_in_the_angle_field_applies_on_return() {
     let mut h = crop_tool();
-    let r = h.request("ui.clickWidget", json!({"id": "cropAngleField"}), T);
+    let r = h.request("ui.clickWidget", json!({"id": "sliderValue:crop.angle"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     for key in ["a", "Backspace"] {
@@ -278,7 +278,7 @@ fn placing_the_readout_never_panics() {
 #[test]
 fn escape_in_the_angle_field_keeps_the_angle() {
     let mut h = crop_tool();
-    let r = h.request("ui.clickWidget", json!({"id": "cropAngleField"}), T);
+    let r = h.request("ui.clickWidget", json!({"id": "sliderValue:crop.angle"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     for key in ["a", "Backspace"] {
@@ -300,7 +300,7 @@ fn escape_in_the_angle_field_keeps_the_angle() {
 #[test]
 fn leaving_the_angle_field_applies_the_angle() {
     let mut h = crop_tool();
-    let r = h.request("ui.clickWidget", json!({"id": "cropAngleField"}), T);
+    let r = h.request("ui.clickWidget", json!({"id": "sliderValue:crop.angle"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     for key in ["a", "Backspace"] {
@@ -364,13 +364,13 @@ fn a_rotation_cut_short_leaves_nothing_behind() {
     assert!(!has(&h, "cropRotateCursor"), "no rotation glyph");
 }
 
-/// The Angle field reads a typed angle as the Straighten value does: a decimal comma, a degree
-/// sign, and an angle past ±45° held at the limit.
+/// The Angle value reads a typed angle as people type it: a decimal comma, a degree sign, and an
+/// angle past ±45° held at the limit.
 #[test]
 fn the_angle_field_reads_angles_as_people_type_them() {
     let mut h = crop_tool();
     for (typed, want) in [("-3,25", -3.25), ("1.5°", 1.5), ("60", 45.0)] {
-        let r = h.request("ui.clickWidget", json!({"id": "cropAngleField"}), T);
+        let r = h.request("ui.clickWidget", json!({"id": "sliderValue:crop.angle"}), T);
         assert_eq!(r["ok"], true, "{r}");
         h.settle(SETTLE);
         for key in ["a", "Backspace"] {
@@ -399,40 +399,31 @@ fn the_angle_field_writes_the_angle_like_the_readout() {
     assert_eq!(field.map(String::as_str), Some("+2.50"), "{texts:?}");
 }
 
-/// The Crop and Geometry rows are icon buttons (issue #972): each keeps its `button:` id and its
-/// command, and hovering it shows its name and shortcut.
+/// The crop tool is Lightroom Classic's Crop & Straighten drawer: Aspect and its lock, Angle with
+/// the straighten tool and Auto, Constrain to Image, Reset and Close. Rotate, flip, Rotate Crop
+/// Aspect and the guide overlays stay reachable by their commands and shortcuts (the Photo and
+/// View menus), as in Lightroom Classic.
 #[test]
-fn crop_icon_buttons_show_name_and_shortcut_on_hover_and_keep_their_commands() {
+fn the_crop_tool_is_lightroom_classics_drawer() {
     let mut h = crop_tool();
-    let mac = h.view.ctx.os() == egui::os::OperatingSystem::Mac;
-    let lock = if h.app.crop_tool_aspect().is_some() { "Aspect Locked" } else { "Lock Aspect" };
-    let with_key = |name: &str, sc: &str| format!("{name} ({})", crate::menubar::shortcut_text(sc, mac));
-    for (id, tip) in [
-        ("cropRotateLeft", with_key("Rotate Left", "Cmd+[")),
-        ("cropSwapAspect", with_key("Rotate Crop Aspect", "X")),
-        ("cropReset", with_key("Reset Crop", "Cmd+Alt+R")),
-        ("cropLock", lock.to_string()),
-        ("cropFlipH", "Flip Horizontal".to_string()),
-        ("cropOverlay-spiral", "Spiral".to_string()),
-    ] {
-        assert!(has(&h, &format!("button:{id}")), "{id} is still addressable");
-        let r = h.request("ui.hoverWidget", json!({"id": format!("button:{id}")}), T);
-        assert_eq!(r["ok"], true, "{r}");
-        let shown = h.step_until(Duration::from_secs(5), |h| h.painted_text().contains(&tip));
-        assert!(shown, "{id}: {tip:?} on hover; painted {:?}", h.painted_text());
+    for id in ["cropLock", "straightenTool", "straightenAuto", "cropReset", "cropClose"] {
+        assert!(has(&h, &format!("button:{id}")), "{id} is in the drawer");
     }
-    // a click still runs the command
+    assert!(!has(&h, "button:cropFlipH") && !has(&h, "button:cropOverlay-grid"), "no icon rows of the cloud app's panel");
     let id = h.app.session.active().expect("a photo");
     let flipped = |h: &Headless| h.app.session.catalog.photo(id).map(|p| p.develop.crop.flip_h);
     let before = flipped(&h);
-    let r = h.request("ui.clickWidget", json!({"id": "button:cropFlipH"}), T);
+    let r = h.request("engine.execute", json!({"command": "photo.flipHorizontal"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    assert_ne!(flipped(&h), before, "Flip Horizontal flips");
-    let r = h.request("ui.clickWidget", json!({"id": "button:cropOverlay-grid"}), T);
+    assert_ne!(flipped(&h), before, "Flip Horizontal is still a command");
+    let r = h.request("engine.execute", json!({"command": "view.cropOverlay"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    // Close leaves the crop tool for the Edit panel
+    let r = h.request("ui.clickWidget", json!({"id": "button:cropClose"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
-    assert_eq!(h.app.ui.crop_overlay, crate::state::CropOverlay::Grid);
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit);
 }
 
 fn crop_rect(h: &Headless) -> lcc_geom::Rect {
@@ -472,4 +463,24 @@ fn a_drag_from_just_inside_a_handle_resizes_not_moves() {
     let r = crop_rect(&h);
     assert!(r.x0 > 0.0, "the left edge moved in: {r:?}");
     assert!((r.x1 - 1.0).abs() < 1e-6, "the right edge stays: {r:?}");
+}
+
+/// Upright and the transform sliders are the Edit panel's Transform section, as Lightroom Classic's
+/// Transform panel, after the lens corrections: `section.geometry` opens it, and an Upright mode
+/// set there applies.
+#[test]
+fn transform_is_a_section_of_the_edit_panel() {
+    let mut h = crop_tool();
+    assert!(!has(&h, "button:upright-auto"), "not in the crop tool");
+    // (⌥-click's solo: only Transform open, so its rows are on screen)
+    let r = h.request("engine.execute", json!({"command": "section.geometry", "params": {"solo": true}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit);
+    // (Guided: the other modes analyse the photo's pixels, which this harness doesn't decode)
+    let r = h.request("ui.clickWidget", json!({"id": "button:upright-guided"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let id = h.app.session.active().expect("a photo");
+    assert_eq!(h.app.session.develop_of(id).map(|d| d.geometry.upright), Some(lcc_develop::Upright::Guided));
 }

@@ -910,6 +910,8 @@ fn local_folder_tree_expands_and_browses() {
     let mut h = library_loupe();
     exec(&mut h, "view.leftPanel", json!({"show": true}));
     h.app.ui.toggle_sidebar_section("panel:navigator");
+    // the Local Folders panel at the top of the column (it comes last by default)
+    h.app.ui.panel_order = vec![crate::module::PanelId::Local];
     h.hide_home_above(&base);
     exec(&mut h, "local.addRoot", json!({"path": base.to_string_lossy()}));
     exec(&mut h, "library.browse", json!({"path": base.to_string_lossy()}));

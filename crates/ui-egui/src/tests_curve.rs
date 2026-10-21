@@ -18,12 +18,8 @@ fn curve_open(channel: &str) -> Headless {
     let r = h.request("ui.set", json!({"view": "detail"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.app.ui.right = crate::state::RightPanel::Edit;
-    if !h.app.ui.section_open("light") {
-        h.app.ui.toggle_section("light");
-    }
-    if !h.app.ui.flyout_open("curve") {
-        h.app.ui.toggle_flyout("curve");
-    }
+    // the Tone Curve panel, on its own (the fork's Lightroom Classic panels)
+    h.app.ui.solo_section("curve");
     h.app.ui.curve_channel = channel.into();
     h.step();
     h.step();

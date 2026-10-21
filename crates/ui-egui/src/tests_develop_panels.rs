@@ -1,0 +1,96 @@
+//! The Edit panel's sections are Lightroom Classic's Develop panels, in its order and with its names, and ⌘1–⌘9
+//! open them top to bottom as there (fork-owned).
+
+use std::time::Duration;
+
+use serde_json::json;
+
+use crate::headless::Headless;
+use crate::{LccApp, Services};
+
+const T: Duration = Duration::from_secs(20);
+const SETTLE: Duration = Duration::from_secs(120);
+
+fn develop() -> Headless {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1300.0, 1400.0], 1.0);
+    let r = h.request("ui.set", json!({"module": "develop", "view": "detail", "right": "edit"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    h
+}
+
+fn sections(h: &Headless) -> Vec<String> {
+    let mut rows: Vec<(f32, String)> =
+        h.app.widgets.iter().filter_map(|(w, r)| w.strip_prefix("section:").map(|id| (r.top(), id.to_string()))).collect();
+    rows.sort_by(|a, b| a.0.total_cmp(&b.0));
+    rows.into_iter().map(|(_, id)| id).collect()
+}
+
+#[test]
+fn the_edit_panel_is_lightroom_classics_develop_panels() {
+    let mut h = develop();
+    // every section folded, so all the headers are on screen
+    for id in h.app.ui.open_sections.clone() {
+        h.app.ui.toggle_section(&id);
+    }
+    h.settle(SETTLE);
+    assert_eq!(
+        sections(&h),
+        ["light", "curve", "mixer", "grading", "detail", "optics", "geometry", "effects", "calibration", "pluginFilters"],
+        "then the fork's Plug-in Filters"
+    );
+    let text = h.painted_text();
+    for title in ["Basic", "Tone Curve", "Color Mixer", "Color Grading", "Detail", "Lens Corrections", "Transform", "Effects", "Calibration"] {
+        assert!(text.iter().any(|t| t == title), "{title}: {text:?}");
+    }
+    // a section's on/off switch shows while the pointer is on its header; Basic has none, as in Lightroom Classic
+    let eye = |h: &mut Headless, id: &str| {
+        let r = h.request("ui.hoverWidget", json!({"id": format!("section:{id}")}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.step();
+        h.step();
+        h.app.widgets.iter().any(|(w, _)| *w == format!("sectionEye:{id}"))
+    };
+    assert!(!eye(&mut h, "light"), "Basic has no on/off switch");
+    for id in ["curve", "mixer", "grading"] {
+        assert!(eye(&mut h, id), "{id} has one");
+    }
+    // ⌘1–⌘9 open them top to bottom
+    let key = |id: &str| crate::menus::ui_commands().find(|c| c.0 == id).and_then(|c| c.2);
+    let order = [
+        "section.light",
+        "section.curve",
+        "section.mixer",
+        "section.grading",
+        "section.detail",
+        "section.optics",
+        "section.geometry",
+        "section.effects",
+        "section.calibration",
+    ];
+    for (i, id) in order.iter().enumerate() {
+        assert_eq!(key(id), Some(format!("Cmd+{}", i + 1).as_str()), "{id}");
+    }
+    let r = h.request("engine.execute", json!({"command": "section.mixer"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(h.app.ui.section_open("mixer"));
+}
+
+/// The Color Mixer's two tabs: Mixer, then Point Color.
+#[test]
+fn the_color_mixer_has_mixer_and_point_color_tabs() {
+    let mut h = develop();
+    let r = h.request("engine.execute", json!({"command": "section.mixer", "params": {"solo": true}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let r = h.request("ui.clickWidget", json!({"id": "button:colorMixerTab-pointColor"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(h.app.ui.flyout_open("pointColor"), "Point Color tab");
+    let r = h.request("ui.clickWidget", json!({"id": "button:colorMixerTab-mixer"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(!h.app.ui.flyout_open("pointColor"), "Mixer tab");
+}

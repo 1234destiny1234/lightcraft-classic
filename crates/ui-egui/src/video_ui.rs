@@ -330,7 +330,8 @@ pub fn spoken_suffix(p: &Photo) -> String {
 
 /// Edit panel sections video can take (global grading only; plan §7). The others are greyed out.
 pub fn section_allowed(section: &str) -> bool {
-    matches!(section, "light" | "color")
+    // (the fork's Lightroom Classic panels split Color into Tone Curve, Color Mixer and Color Grading)
+    matches!(section, "light" | "color" | "curve" | "mixer" | "grading")
 }
 
 /// Develop controls (by spec id, or a panel row key) that video can't take: everything outside
