@@ -2706,19 +2706,21 @@ mod tests {
         let wait = std::sync::Mutex::new(wait);
         h.app.session.apple_photos_background = true; // as the desktop app sets it
         h.app.session.apple_photos = Some(Arc::new(move |args: &[String], _| {
-            // a regression (Photos on the UI thread) fails the timing below instead of hanging
-            let _ = wait.lock().unwrap().recv_timeout(Duration::from_secs(20));
+            // a regression (Photos on the UI thread) fails the timing below instead of hanging; Photos
+            // is held far longer than the answer may take, so a slow runner can't pass for a block
+            let _ = wait.lock().unwrap().recv_timeout(Duration::from_secs(120));
             let n = args.len() - args.iter().position(|a| a == lcc_engine::apple_photos::MARKER).unwrap() - 2;
             Ok(lcc_engine::apple_photos::Output { status: Some(0), stdout: "ID\n".repeat(n), stderr: String::new() })
         }));
         let t0 = Instant::now();
         let r =
             h.request("engine.execute", json!({"command": "export.addToPhotos", "params": {"paths": [file.to_string_lossy()], "album": "Slow"}}), t);
-        assert!(t0.elapsed() < Duration::from_secs(5), "answered at once: {r}");
+        // (the first frames of a fresh window take seconds on a slow CI runner, e.g. Windows')
+        assert!(t0.elapsed() < Duration::from_secs(25), "answered at once: {r}");
         assert_eq!(r["result"]["running"], true, "{r}");
         go.send(()).unwrap();
         while !h.app.ui.toast.as_ref().is_some_and(|t| t.0.contains("Apple Photos")) {
-            assert!(t0.elapsed() < Duration::from_secs(20), "the outcome is announced");
+            assert!(t0.elapsed() < Duration::from_secs(90), "the outcome is announced");
             h.step();
         }
         assert_eq!(h.app.ui.toast.as_ref().unwrap().0, "1 added to Apple Photos album “Slow”");
