@@ -1067,7 +1067,10 @@ fn folder_tree(
     }
     // at the tree's own indent, as in Albums and Folders: the triangle sits in the gutter and the
     // icon lines up with the rows above
-    let resp = row(app, ui, &format!("local:{path}"), Icon::Folder, name, None, sel, indent).on_hover_text(path);
+    // a poll's "N new" (issue #123), as on the Folders rows
+    let badged = lcc_engine::folder_watch::new_in(&app.session, path).map(|k| format!("{name} · {k} {}", crate::i18n::tr("new")));
+    let shown = badged.as_deref().unwrap_or(name);
+    let resp = row(app, ui, &format!("local:{path}"), Icon::Folder, shown, None, sel, indent).on_hover_text(path);
     let tr = tree_toggle(ui, &resp, indent, open_id, &mut open, format!("folderToggle:{path}"));
     if !tr.clicked()
         && resp.clicked()
@@ -1880,6 +1883,12 @@ fn folder_row(app: &mut LccApp, ui: &mut egui::Ui, n: &FolderNode, id: &str, nam
         None => name.to_string(),
     };
     let mark = n.label.map(crate::theme::label_color);
+    // a poll found files the library doesn't have yet (new files: ask): "N new" beside the name
+    let badged = lcc_engine::folder_watch::new_in(&app.session, &n.path).map(|k| format!("{name} · {k} {}", crate::i18n::tr("new")));
+    let (name, spoken) = match &badged {
+        Some(b) => (b.as_str(), format!("{spoken}, {b}")),
+        None => (name, spoken),
+    };
     let resp = row_sensed(app, ui, id, Icon::Folder, name, Some(&spoken), Some(n.count), sel, indent, Sense::click(), mark);
     folder_drop_target(app, ui, &resp, n, open_id, open);
     let mut toggled = false;
@@ -2102,6 +2111,17 @@ fn library_node_for(tree: &[FolderNode], path: &str) -> Option<(FolderNode, Stri
 /// Synchronize Folder… of a Folders row (widget `folderSynchronize`): opens its dialog, which
 /// scans the folder in the background.
 fn synchronize_item(app: &mut LccApp, ui: &mut egui::Ui, n: &FolderNode, name: &str) {
+    // a poll's "N new" (issue #123): add them with Synchronize Folder, which shows them first
+    if let Some(k) = lcc_engine::folder_watch::new_in(&app.session, &n.path) {
+        let r = ui.button(crate::i18n::tr_format!("Add {n} New Photos…", n = k));
+        crate::widgets::register(ui.ctx(), "folderAddNew", r.rect);
+        if r.clicked() {
+            if let Err(e) = crate::sync::open(app, &n.path, name, n.volume || !n.selectable) {
+                app.toast(ui.ctx(), e);
+            }
+            ui.close();
+        }
+    }
     let r = ui
         .button(crate::i18n::tr("Synchronize Folder…"))
         .on_hover_text(crate::i18n::tr("Find photos added to or missing from this folder on disk, and XMP sidecars changed by other apps"));

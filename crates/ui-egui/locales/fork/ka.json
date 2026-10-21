@@ -68,6 +68,8 @@
   "Estimating time…": "დრო ფასდება…",
   "Input": "შემავალი",
   "Output": "გამომავალი",
+  "Automatically write changes into XMP sidecars": "ცვლილებების ავტომატური ჩაწერა XMP თანმხლებ ფაილებში",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "სხვა აპების მიერ შეცვლილი XMP თანმხლები ფაილების ავტომატური წაკითხვა (აქ შეუცვლელი ფოტოებისთვის)",
   "Sliders": "სლაიდერები",
   "One Row": "ერთ მწკრივად",
   "Two Rows": "ორ მწკრივად"

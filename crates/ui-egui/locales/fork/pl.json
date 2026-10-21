@@ -68,6 +68,8 @@
   "Estimating time…": "Szacowanie czasu…",
   "Input": "Wejście",
   "Output": "Wyjście",
+  "Automatically write changes into XMP sidecars": "Automatycznie zapisuj zmiany w plikach pomocniczych XMP",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automatycznie wczytuj pliki pomocnicze XMP zmienione przez inne aplikacje (zdjęcia niezmienione tutaj)",
   "Sliders": "Suwaki",
   "One Row": "Jeden wiersz",
   "Two Rows": "Dwa wiersze"

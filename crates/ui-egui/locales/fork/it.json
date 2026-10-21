@@ -68,6 +68,8 @@
   "Estimating time…": "Stima del tempo…",
   "Input": "Input",
   "Output": "Output",
+  "Automatically write changes into XMP sidecars": "Scrivi automaticamente le modifiche nei file XMP collaterali",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Leggi automaticamente i file XMP collaterali modificati da altre app (foto non modificate qui)",
   "Sliders": "Cursori",
   "One Row": "Una riga",
   "Two Rows": "Due righe"

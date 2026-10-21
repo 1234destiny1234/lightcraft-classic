@@ -54,12 +54,23 @@ pub enum SidecarNaming {
 }
 
 /// Library preferences for XMP sidecars.
-#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
 pub struct XmpPrefs {
     /// Write the sidecar after every change to a photo's metadata or develop settings.
     pub auto_write: bool,
     pub naming: SidecarNaming,
+    /// Read a sidecar another app changed on disk when the photo is unchanged in the catalog
+    /// since the last sync (`photo.autoReadMetadata`); both changed stays a conflict. On by
+    /// default: it only replaces values the catalog still holds as last synced, as one undo step,
+    /// so no work done here is lost (`docs/xmp-interop.md` → Reading other apps' changes).
+    pub auto_read: bool,
+}
+
+impl Default for XmpPrefs {
+    fn default() -> Self {
+        XmpPrefs { auto_write: false, naming: SidecarNaming::default(), auto_read: true }
+    }
 }
 
 /// The sidecar path for an original, by naming convention.
@@ -1038,6 +1049,24 @@ impl Session {
     /// What the file system says about photo `id`'s sidecar now (`None`: it has none, or isn't a file).
     pub fn sidecar_stat(&self, id: PhotoId) -> Option<SidecarStat> {
         self.sidecar_stat_named(id, self.sidecar_naming(id))
+    }
+
+    /// Whether the photo's sidecar holds a whole XMP packet (its closing `rdf:RDF` or
+    /// `x:xmpmeta` tag is there). An empty or cut-off file, such as one another app is still
+    /// writing, is not: automatic reads leave it for a later check rather than take it as "no
+    /// metadata".
+    pub(crate) fn sidecar_complete(&self, id: PhotoId) -> bool {
+        const MAX: u64 = 16 << 20;
+        let Some(f) = self.catalog.photo(id).and_then(|p| file_path(p)).and_then(|o| find_sidecar(o, self.sidecar_naming(id))) else {
+            return false;
+        };
+        let Ok(m) = std::fs::metadata(&f) else { return false };
+        if m.len() == 0 || m.len() > MAX {
+            return false;
+        }
+        let Ok(bytes) = std::fs::read(&f) else { return false };
+        let text = String::from_utf8_lossy(&bytes);
+        text.contains("</rdf:RDF>") || text.contains("</x:xmpmeta>")
     }
 
     /// [`Session::sidecar_stat`] with the photo's sidecar naming already worked out (working it

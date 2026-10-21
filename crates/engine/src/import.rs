@@ -760,6 +760,8 @@ pub(crate) fn scan_files(mut input: ScanInput, files: Vec<String>, progress: &Sc
                 }
                 kept.insert(f, info);
             }
+            // still being copied in: not listed now, found by a later scan (issue #123)
+            Some(Err(e)) if lcc_catalog::incoming::is_still_being_written(&e) => continue,
             Some(Err(e)) => c.error = Some(e),
             None => c.error = Some("not probed".into()),
         }
@@ -1072,6 +1074,12 @@ impl ImportJob {
             }
             let mut info = match info {
                 Ok(i) => i,
+                // still being copied in: skipped, and picked up by a later scan (issue #123)
+                Err(e) if lcc_catalog::incoming::is_still_being_written(&e) => {
+                    log::info!("import: skipped {e}");
+                    self.done.fetch_add(1, Relaxed);
+                    continue;
+                }
                 Err(e) => {
                     log::warn!("import {path}: {e}");
                     self.done.fetch_add(1, Relaxed);

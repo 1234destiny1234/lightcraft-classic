@@ -255,6 +255,8 @@ pub fn scan_with(input: SyncInput, progress: &SyncProgress) -> FolderChanges {
             (Some("path"), _) if browsed => changes.new.push(ImportCandidate { duplicate: None, existing: None, ..c }),
             (Some("path"), _) => {}
             (Some(_), _) => changes.duplicates += 1,
+            // still being copied in: left for a later scan (issue #123)
+            (None, Some(e)) if lcc_catalog::incoming::is_still_being_written(e) => {}
             (None, Some(_)) => changes.unreadable.push(c),
             (None, None) => changes.new.push(c),
         }
@@ -659,6 +661,10 @@ impl SyncJob {
     pub fn start(s: &mut Session, changes: FolderChanges, choice: SyncChoice) -> Result<(SyncWork, SyncCommit)> {
         if changes.offline {
             return Err(not_there(&changes.path));
+        }
+        if choice.import_new {
+            // (the person adds the folder's new files: its "N new" badge is answered)
+            crate::folder_watch::answered(s, &changes.path);
         }
         let FolderChanges { new, missing, metadata, moved, probes, .. } = changes;
         let opts = ImportOptions { mode: ImportMode::Add, ..Default::default() };
