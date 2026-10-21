@@ -1465,5 +1465,7 @@
   "Enhancements": "增強",
   "Finer detail and edges, less false colour, at the same size.": "相同尺寸下更精細的細節和邊緣，更少的偽色。",
   "Raw Details, then twice the width and height (four times the pixels).": "先進行 Raw 細節，再將寬度和高度加倍（像素為四倍）。",
-  "Estimating time…": "正在估算時間…"
+  "Estimating time…": "正在估算時間…",
+  "Input": "輸入",
+  "Output": "輸出"
 }

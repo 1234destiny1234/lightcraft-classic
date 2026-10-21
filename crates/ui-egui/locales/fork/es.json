@@ -1469,5 +1469,7 @@
   "Enhancements": "Mejoras",
   "Finer detail and edges, less false colour, at the same size.": "Detalle y bordes más finos, menos color falso, al mismo tamaño.",
   "Raw Details, then twice the width and height (four times the pixels).": "Detalles RAW y luego el doble de ancho y alto (cuatro veces los píxeles).",
-  "Estimating time…": "Calculando el tiempo…"
+  "Estimating time…": "Calculando el tiempo…",
+  "Input": "Entrada",
+  "Output": "Salida"
 }

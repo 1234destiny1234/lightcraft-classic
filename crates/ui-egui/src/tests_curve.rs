@@ -737,3 +737,42 @@ fn clicking_to_add_a_point_puts_it_on_the_curve() {
     assert_eq!(c.len(), 5, "{c:?}");
     assert!((c[2].1 - before.eval(c[2].0)).abs() < 1e-9, "the new point sits on the curve: {c:?}");
 }
+
+/// Replace the text of the curve field `field` with `text` and press Return.
+fn type_into(h: &mut Headless, field: &str, text: &str) {
+    click_widget(h, field, 1);
+    for key in ["a", "Backspace"] {
+        let r = h.request("ui.key", json!({"key": key, "cmd": key == "a"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+    }
+    let r = h.request("ui.text", json!({"text": text}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    let r = h.request("ui.key", json!({"key": "Enter"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+}
+
+#[test]
+fn input_and_output_fields_place_the_selected_point_exactly() {
+    let mut h = curve_open("master");
+    exec(&mut h, "develop.curve", json!({"channel": "master", "points": [[0.0, 0.0], [1.0, 1.0]]}));
+    h.step();
+    let r = h.request("ui.clickWidget", json!({"id": "curve", "fx": 0.5, "fy": 0.5}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.step();
+    h.step();
+    type_into(&mut h, "curvePointOutput", "160");
+    let c = pts(&develop(&h).curve.master);
+    assert_eq!(c.len(), 3, "{c:?}");
+    assert!((c[1].1 - 160.0 / 255.0).abs() < 1e-9, "output typed: {c:?}");
+    type_into(&mut h, "curvePointInput", "100");
+    let c = pts(&develop(&h).curve.master);
+    assert!((c[1].0 - 100.0 / 255.0).abs() < 1e-9, "input typed: {c:?}");
+    // an input past a neighbour stays short of it; junk changes nothing
+    type_into(&mut h, "curvePointInput", "400");
+    let c = pts(&develop(&h).curve.master);
+    assert!(c[1].0 < c[2].0, "kept before its neighbour: {c:?}");
+    type_into(&mut h, "curvePointOutput", "abc");
+    assert_eq!(pts(&develop(&h).curve.master), c);
+}

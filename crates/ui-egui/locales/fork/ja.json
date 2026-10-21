@@ -1466,5 +1466,7 @@
   "Enhancements": "強化",
   "Finer detail and edges, less false colour, at the same size.": "同じサイズのまま、より細かなディテールとエッジ、偽色の低減。",
   "Raw Details, then twice the width and height (four times the pixels).": "Raw の詳細の後、幅と高さを 2 倍に (ピクセル数は 4 倍)。",
-  "Estimating time…": "時間を見積もり中…"
+  "Estimating time…": "時間を見積もり中…",
+  "Input": "入力",
+  "Output": "出力"
 }
