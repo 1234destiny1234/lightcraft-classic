@@ -83,8 +83,9 @@ impl Headless {
     /// With `path` and no `format`, the format follows the path's extension.
     fn export(&mut self, p: &Value) -> Result<Value, String> {
         use lcc_engine::export::{Destination, ExportFormat, ExportOptions, Resize, prepare_batch, run_batch};
-        let p = &self.session.export_params(p)?;
-        let mut opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
+        let p = &self.session.export_params_or(p, ExportFormat::Png)?;
+        // PNG for a `path` that names no format; `bitDepth` is checked against the format written
+        let mut opts = ExportOptions::from_params_or(p, ExportFormat::Png).map_err(|e| e.to_string())?;
         if !ExportOptions::has_size_param(p) {
             opts.resize = Some(Resize::long_edge(3000));
         }
