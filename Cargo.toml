@@ -72,7 +72,7 @@ lcc-actions = { path = "crates/actions" }
 lcc-book = { path = "crates/book" }
 lcc-geocode = { path = "crates/geocode" }
 lcc-slide = { path = "crates/slide" }
-lcc-slideshow = { path = "crates/slideshow" }
+lcc-classic-slideshow = { path = "crates/classic-slideshow" }
 lcc-testkit = { path = "crates/testkit" }
 
 # foundation

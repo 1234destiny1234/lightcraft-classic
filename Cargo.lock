@@ -4557,6 +4557,30 @@ dependencies = [
 ]
 
 [[package]]
+name = "lcc-classic-slideshow"
+version = "0.9.6"
+dependencies = [
+ "claxon",
+ "hayro",
+ "hound",
+ "lcc-audio-out",
+ "lcc-brand",
+ "lcc-catalog",
+ "lcc-codecs",
+ "lcc-engine",
+ "lcc-fuzzkit",
+ "lcc-pdf",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lcc-video",
+ "lcc-video-export",
+ "lewton",
+ "lopdf",
+ "serde",
+ "serde_json",
+]
+
+[[package]]
 name = "lcc-cli"
 version = "0.9.6"
 dependencies = [
@@ -5202,30 +5226,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "lcc-slideshow"
-version = "0.9.6"
-dependencies = [
- "claxon",
- "hayro",
- "hound",
- "lcc-audio-out",
- "lcc-brand",
- "lcc-catalog",
- "lcc-codecs",
- "lcc-engine",
- "lcc-fuzzkit",
- "lcc-pdf",
- "lcc-pipeline",
- "lcc-raster",
- "lcc-video",
- "lcc-video-export",
- "lewton",
- "lopdf",
- "serde",
- "serde_json",
-]
-
-[[package]]
 name = "lcc-sysmem"
 version = "0.9.6"
 dependencies = [
@@ -5284,6 +5284,7 @@ dependencies = [
  "lcc-book",
  "lcc-brand",
  "lcc-catalog",
+ "lcc-classic-slideshow",
  "lcc-codecs",
  "lcc-color",
  "lcc-denoise",
@@ -5305,7 +5306,6 @@ dependencies = [
  "lcc-raster",
  "lcc-raw",
  "lcc-slide",
- "lcc-slideshow",
  "lcc-testkit",
  "lcc-text",
  "lcc-updater",

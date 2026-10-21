@@ -88,7 +88,7 @@ pub const TABLE: &[(&str, Class)] = &[
     ("segment", Class::Layer(3)),
     ("video", Class::Layer(3)),
     ("engine", Class::Layer(4)),
-    ("slideshow", Class::Layer(4)),
+    ("classic-slideshow", Class::Layer(4)),
     // slide layout and the CPU slide composer (upstream's `slideshow` crate; ours is the Classic module)
     ("slide", Class::Layer(1)),
     ("ui-egui", Class::Layer(5)),
@@ -139,7 +139,7 @@ pub const INTRA_LAYER_ORDER: &[&[&str]] = &[
     // L3: the print back end lays out pages with `layout`
     &["layout", "print"],
     // L4: the Slideshow module renders and encodes through the engine
-    &["engine", "slideshow"],
+    &["engine", "classic-slideshow"],
     // L3: books are laid out with the shared page model
     &["layout", "book"],
     // IMM-PUBLISH: the Immich publish service implements the publish trait

@@ -1,5 +1,5 @@
 [package]
-name = "lcc-slideshow"
+name = "lcc-classic-slideshow"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
