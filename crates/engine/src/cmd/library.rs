@@ -358,7 +358,10 @@ fn active_meta(s: &Session, c: &str) -> Result<Value> {
     Ok(json!({"title": m.title, "caption": m.caption, "altText": m.alt_text, "extendedDescription": m.extended_description,
         "copyright": m.copyright, "copyrightStatus": m.copyright_status.id(), "usageTerms": m.usage_terms, "copyrightUrl": m.copyright_url,
         "creator": m.creator, "location": m.location, "city": m.city, "state": m.state, "country": m.country,
-        "keywords": m.keywords}))
+        "keywords": m.keywords, "creatorJobTitle": m.contact.job_title, "creatorAddress": m.contact.address,
+        "creatorCity": m.contact.city, "creatorState": m.contact.state, "creatorPostalCode": m.contact.postal_code,
+        "creatorCountry": m.contact.country, "creatorPhone": m.contact.phone, "creatorEmail": m.contact.email,
+        "creatorWebsite": m.contact.website}))
 }
 
 /// `library.selectBy`: select the photos in view that match every given criterion.
@@ -1040,7 +1043,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Edit Info",
             [],
             None,
-            "{ids?, title?, caption?, altText?, extendedDescription?, copyright?, copyrightStatus?: unknown|copyrighted|publicDomain, usageTerms?, copyrightUrl?, creator?, location?, city?, state?, country?, gps?: \"lat, lon\" | [lat, lon] | null, keywords?: [..], addKeywords?: [..], removeKeywords?: [..]}",
+            "{ids?, title?, caption?, altText?, extendedDescription?, copyright?, copyrightStatus?: unknown|copyrighted|publicDomain, usageTerms?, copyrightUrl?, creator?, creatorJobTitle?, creatorAddress?, creatorCity?, creatorState?, creatorPostalCode?, creatorCountry?, creatorPhone?, creatorEmail?, creatorWebsite?, location?, city?, state?, country?, gps?: \"lat, lon\" | [lat, lon] | null, keywords?: [..], addKeywords?: [..], removeKeywords?: [..]}",
             has_selection,
             |s, p| {
                 let strs =
@@ -1092,6 +1095,11 @@ pub fn specs() -> Vec<CommandSpec> {
                         ("extendedDescription", &mut m.extended_description),
                     ] {
                         if let Some(v) = str_param(p, k) {
+                            *field = v.to_string();
+                        }
+                    }
+                    for k in lcc_meta::CreatorContact::KEYS {
+                        if let (Some(v), Some(field)) = (str_param(p, k), m.contact.get_mut(k)) {
                             *field = v.to_string();
                         }
                     }
