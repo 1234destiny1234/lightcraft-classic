@@ -65,5 +65,7 @@
   "Enhancements": "გაუმჯობესებები",
   "Finer detail and edges, less false colour, at the same size.": "უფრო წვრილი დეტალები და კიდეები, ნაკლები ცრუ ფერი, იმავე ზომაში.",
   "Raw Details, then twice the width and height (four times the pixels).": "Raw დეტალები, შემდეგ ორჯერ მეტი სიგანე და სიმაღლე (ოთხჯერ მეტი პიქსელი).",
-  "Estimating time…": "დრო ფასდება…"
+  "Estimating time…": "დრო ფასდება…",
+  "Input": "შემავალი",
+  "Output": "გამომავალი"
 }

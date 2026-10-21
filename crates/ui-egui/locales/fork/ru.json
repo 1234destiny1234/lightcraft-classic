@@ -1674,5 +1674,7 @@
   "Enhancements": "Улучшения",
   "Finer detail and edges, less false colour, at the same size.": "Более тонкие детали и края, меньше ложных цветов, при том же размере.",
   "Raw Details, then twice the width and height (four times the pixels).": "Детали RAW, затем вдвое больше ширина и высота (в четыре раза больше пикселей).",
-  "Estimating time…": "Оценка времени…"
+  "Estimating time…": "Оценка времени…",
+  "Input": "Вход",
+  "Output": "Выход"
 }

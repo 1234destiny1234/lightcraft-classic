@@ -1379,5 +1379,7 @@
   "Enhancements": "增强",
   "Finer detail and edges, less false colour, at the same size.": "相同尺寸下更精细的细节和边缘，更少的伪色。",
   "Raw Details, then twice the width and height (four times the pixels).": "先进行 Raw 细节，再将宽度和高度加倍（像素为四倍）。",
-  "Estimating time…": "正在估算时间…"
+  "Estimating time…": "正在估算时间…",
+  "Input": "输入",
+  "Output": "输出"
 }

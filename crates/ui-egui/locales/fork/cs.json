@@ -65,5 +65,7 @@
   "Enhancements": "Vylepšení",
   "Finer detail and edges, less false colour, at the same size.": "Jemnější detaily a hrany, méně falešných barev, ve stejné velikosti.",
   "Raw Details, then twice the width and height (four times the pixels).": "Detaily RAW, pak dvojnásobná šířka a výška (čtyřikrát více pixelů).",
-  "Estimating time…": "Odhaduje se čas…"
+  "Estimating time…": "Odhaduje se čas…",
+  "Input": "Vstup",
+  "Output": "Výstup"
 }
