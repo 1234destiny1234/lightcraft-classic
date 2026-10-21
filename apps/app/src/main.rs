@@ -578,6 +578,10 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
                     };
                     // the app may have quit meanwhile: nobody to tell
                     let _ = tx.send(paths);
+                    // on macOS the panel is a window of its own: once it closes, the app's window isn't key again,
+                    // so the first click on it (Import in the review that follows) only brought it back to the front
+                    #[cfg(target_os = "macos")]
+                    repaint.send_viewport_cmd(egui::ViewportCommand::Focus);
                     repaint.request_repaint();
                 })
                 .map_err(|e| format!("could not start the file dialog: {e}"))?;

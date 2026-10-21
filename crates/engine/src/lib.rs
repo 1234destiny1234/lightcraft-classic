@@ -1552,6 +1552,8 @@ mod tests_immich;
 #[cfg(test)]
 mod tests_import;
 #[cfg(test)]
+mod tests_import_local;
+#[cfg(test)]
 mod tests_import_move;
 #[cfg(test)]
 mod tests_keyword_list;

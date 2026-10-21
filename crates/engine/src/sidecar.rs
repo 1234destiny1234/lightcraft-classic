@@ -251,6 +251,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
                     profile: Some(name),
                     mode: None,
                     fields: Vec::new(),
+                    photo: None,
                 });
             }
             let upright = crate::crs::has_saved_upright_transform(&d.properties);
@@ -270,13 +271,18 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
                         _ => crate::import::ImportUprightMode::Unknown,
                     })
                     .unwrap_or(crate::import::ImportUprightMode::Unknown);
-                out.warnings.push(crate::import::ImportWarning {
-                    path: String::new(),
-                    code: crate::import::ImportWarningCode::UprightGeometry,
-                    profile: None,
-                    mode: Some(mode),
-                    fields: Vec::new(),
-                });
+                // Lightroom keeps its Upright analysis when Upright is Off but doesn't apply it:
+                // nothing is lost then
+                if mode != crate::import::ImportUprightMode::Off {
+                    out.warnings.push(crate::import::ImportWarning {
+                        path: String::new(),
+                        code: crate::import::ImportWarningCode::UprightGeometry,
+                        profile: None,
+                        mode: Some(mode),
+                        fields: Vec::new(),
+                        photo: None,
+                    });
+                }
             }
             let other: Vec<&str> = unmapped
                 .iter()
@@ -294,6 +300,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
                     profile: None,
                     mode: None,
                     fields: other.into_iter().map(str::to_string).collect(),
+                    photo: None,
                 });
             }
             Some(DevelopPatch::Partial(partial))
