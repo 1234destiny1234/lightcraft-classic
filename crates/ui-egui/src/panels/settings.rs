@@ -480,6 +480,9 @@ fn import_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if check(ui, "settings.autoWriteXmp", &mut xmp.auto_write, "Automatically write changes into XMP sidecars") {
         let _ = app.run("library.xmpPreferences", json!({"autoWrite": xmp.auto_write}));
     }
+    if check(ui, "settings.autoReadXmp", &mut xmp.auto_read, "Automatically read XMP sidecars other apps changed (photos unchanged here)") {
+        let _ = app.run("library.xmpPreferences", json!({"autoRead": xmp.auto_read}));
+    }
     row(ui, t, crate::i18n::tr("Sidecar names"), |ui| {
         use lcc_engine::sidecar::SidecarNaming as N;
         let mut n = xmp.naming;

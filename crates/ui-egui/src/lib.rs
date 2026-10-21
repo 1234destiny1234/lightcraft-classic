@@ -1286,6 +1286,7 @@ impl LccApp {
         }
         self.sync_theme(ctx);
         panels::notices::logic(self);
+        panels::cells::auto_read(self);
         // closing the window (or Quit) with changes only in memory: retry, else ask first
         if ctx.input(|i| i.viewport().close_requested()) && !panels::notices::may_close(self) {
             ctx.send_viewport_cmd(egui::ViewportCommand::CancelClose);
