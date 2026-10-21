@@ -153,6 +153,34 @@ fn free_name(dir: &Path, name: &str) -> PathBuf {
     (1..10_000).map(|i| dir.join(format!("{stem}-{i}{ext}"))).find(|p| !p.exists()).unwrap_or_else(|| dir.join(format!("{stem}-x{ext}")))
 }
 
+/// Write `bytes` to `tmp`, flush it to disk, rename it to `path` and flush the folder entry.
+fn write_durable(tmp: &Path, path: &Path, bytes: &[u8]) -> Result<(), PtpError> {
+    use std::io::Write;
+    let io = |p: &Path, e: std::io::Error| PtpError::Io(format!("{}: {e}", p.display()));
+    {
+        let mut f = std::fs::File::create(tmp).map_err(|e| io(tmp, e))?;
+        f.write_all(bytes).map_err(|e| io(tmp, e))?;
+        f.sync_all().map_err(|e| io(tmp, e))?;
+    }
+    std::fs::rename(tmp, path).map_err(|e| io(path, e))?;
+    #[cfg(unix)]
+    if let Some(dir) = path.parent() {
+        // the rename itself is only durable once the directory is synced
+        std::fs::File::open(dir).and_then(|d| d.sync_all()).map_err(|e| io(dir, e))?;
+    }
+    Ok(())
+}
+
+/// Whether the file at `path` is a complete, identical copy of what the camera sent: the
+/// download matches the size the camera announced (when it announced one that fits) and the
+/// file reads back byte-for-byte equal.
+fn copy_verified(path: &Path, announced: u32, bytes: &[u8]) -> bool {
+    if announced != u32::MAX && u64::from(announced) != bytes.len() as u64 {
+        return false;
+    }
+    matches!(std::fs::read(path), Ok(on_disk) if on_disk == bytes)
+}
+
 fn download_into(l: &mut Link, handles: &[u32], dir: &Path) -> Result<Vec<String>, PtpError> {
     let mut out = Vec::new();
     for h in handles {
@@ -164,9 +192,10 @@ fn download_into(l: &mut Link, handles: &[u32], dir: &Path) -> Result<Vec<String
         let path = free_name(dir, &info.filename);
         // written under a hidden name, then renamed: the folder scan never sees half a file
         let tmp = dir.join(format!(".{}.part", path.file_name().map(|n| n.to_string_lossy().to_string()).unwrap_or_default()));
-        std::fs::write(&tmp, &bytes).map_err(|e| PtpError::Io(format!("{}: {e}", tmp.display())))?;
-        std::fs::rename(&tmp, &path).map_err(|e| PtpError::Io(format!("{}: {e}", path.display())))?;
-        if l.delete_from_card {
+        write_durable(&tmp, &path, &bytes)?;
+        // the card may hold the only copy: delete it only once the local copy is on disk and
+        // reads back complete and identical
+        if l.delete_from_card && copy_verified(&path, info.size, &bytes) {
             l.camera.delete(*h)?;
         }
         l.downloaded = l.downloaded.saturating_add(1);
@@ -224,5 +253,53 @@ pub fn live_view_frame() -> Result<Vec<u8>, PtpError> {
 pub fn stop_live_view() {
     if let Some(l) = link().as_mut() {
         l.camera.stop_live_view();
+    }
+}
+
+#[cfg(test)]
+mod safe_delete_tests {
+    use super::*;
+
+    fn dir(name: &str) -> PathBuf {
+        let d = std::env::temp_dir().join(format!("lcc-tether-safe-delete-{name}-{}", std::process::id()));
+        let _ = std::fs::remove_dir_all(&d);
+        std::fs::create_dir_all(&d).unwrap();
+        d
+    }
+
+    #[test]
+    fn complete_copy_allows_delete() {
+        let d = dir("ok");
+        let bytes = vec![7u8; 4096];
+        let path = d.join("IMG_1.CR3");
+        write_durable(&d.join(".IMG_1.CR3.part"), &path, &bytes).unwrap();
+        assert!(copy_verified(&path, 4096, &bytes));
+        assert!(!d.join(".IMG_1.CR3.part").exists());
+    }
+
+    #[test]
+    fn truncated_or_different_file_blocks_delete() {
+        let d = dir("bad");
+        let bytes = vec![7u8; 4096];
+        let path = d.join("IMG_2.CR3");
+        std::fs::write(&path, &bytes[..100]).unwrap();
+        assert!(!copy_verified(&path, 4096, &bytes));
+        let mut other = bytes.clone();
+        other[10] = 0;
+        std::fs::write(&path, &other).unwrap();
+        assert!(!copy_verified(&path, 4096, &bytes));
+        assert!(!copy_verified(&d.join("missing.CR3"), 4096, &bytes));
+    }
+
+    #[test]
+    fn short_download_blocks_delete() {
+        let d = dir("short");
+        let bytes = vec![1u8; 1000];
+        let path = d.join("IMG_3.CR3");
+        std::fs::write(&path, &bytes).unwrap();
+        // camera announced more than it sent: the transfer was cut short
+        assert!(!copy_verified(&path, 5000, &bytes));
+        // a size too big for the 32-bit field is reported as u32::MAX: rely on read-back
+        assert!(copy_verified(&path, u32::MAX, &bytes));
     }
 }

@@ -181,6 +181,7 @@ pub fn mixed_music(s: &Settings) -> Result<Option<crate::music::Audio>, String> 
     if !m.enabled || m.tracks.is_empty() {
         return Ok(None);
     }
+    crate::music::check_total(&m.tracks)?;
     let mut all = crate::music::Audio::default();
     for t in &m.tracks {
         let a = crate::music::decode(Path::new(t))?;

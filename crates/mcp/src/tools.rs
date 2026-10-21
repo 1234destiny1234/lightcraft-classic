@@ -259,7 +259,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                     "sharpenAmount": {"type": "string", "enum": ["low", "standard", "high"]},
                     "naming": {"type": "string", "description": "File-name template, e.g. {name}-{seq} or {date:%Y-%m-%d}_{title}_{seq:2} (tokens: {name} {num} {seq} {seq:N} {date} {date:%…} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext})"},
                     "startNumber": {"type": "integer", "description": "First {seq} value (default 1)"},
-                    "metadata": {"type": "string", "enum": ["all", "allExceptCamera", "copyright", "none"]},
+                    "metadata": {"type": "string", "enum": ["all", "allExceptCamera", "copyright", "copyrightContact", "none"]},
                     "removeLocation": {"type": "boolean"},
                     "colorSpace": {"type": "string", "enum": ["srgb", "displayP3", "adobeRgb", "proPhoto", "rec2020"], "description": "Output colour space (default sRGB; AVIF is always sRGB; lossy JPEG XL writes adobeRgb/proPhoto as rec2020). adobeRgb = Adobe RGB (1998) compatible; the embedded ICC profile is generated from the published primaries"},
                     "bitDepth": {"type": "integer", "enum": [8, 10, 16, 32], "description": "Bits per channel: PNG 8|16 (default 8), TIFF 8|16|32 (default 16; 32 = linear float with a linear profile), PSD 8|16 (default 16), AVIF 8|10, JPEG XL 8|16; JPEG/WebP are 8-bit"},
@@ -273,7 +273,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                 if let (Some(o), serde_json::Value::Object(v)) = (
                     props.as_object_mut(),
                     json!({
-                        "destinationMode": {"type": "string", "enum": ["specificFolder", "sameAsOriginal"], "description": "specificFolder (default) = everything into `dir`; sameAsOriginal = each photo into the folder of its original (+ `subfolder`); a photo with no folder on disk or whose folder is gone gets an error"},
+                        "destinationMode": {"type": "string", "enum": ["specificFolder", "sameAsOriginal", "chooseLater"], "description": "specificFolder (default) = everything into `dir`; sameAsOriginal = each photo into the folder of its original (+ `subfolder`); a photo with no folder on disk or whose folder is gone gets an error; chooseLater = the desktop app asks for the folder when the export starts (here, as specificFolder: pass `dir`)"},
                         "customText": {"type": "string", "description": "Text of the `{custom}` naming token, e.g. naming `{custom}-{seq:1}`"},
                         "videoFormat": {"type": "string", "enum": ["h264", "prores"], "description": "Video clips in the batch (rendered formats) export as movies with their trim and video edits: h264 = H.264 + AAC MP4 (default), prores = ProRes 422 + AAC MOV"},
                         "videoQuality": {"type": "integer", "description": "Video quality 1..100 (default 80): H.264 CRF 40..14, ProRes HQ >= 80, Standard >= 50, else LT"},

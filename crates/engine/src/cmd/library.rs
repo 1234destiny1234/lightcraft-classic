@@ -358,7 +358,10 @@ fn active_meta(s: &Session, c: &str) -> Result<Value> {
     Ok(json!({"title": m.title, "caption": m.caption, "altText": m.alt_text, "extendedDescription": m.extended_description,
         "copyright": m.copyright, "copyrightStatus": m.copyright_status.id(), "usageTerms": m.usage_terms, "copyrightUrl": m.copyright_url,
         "creator": m.creator, "location": m.location, "city": m.city, "state": m.state, "country": m.country,
-        "keywords": m.keywords}))
+        "keywords": m.keywords, "creatorJobTitle": m.contact.job_title, "creatorAddress": m.contact.address,
+        "creatorCity": m.contact.city, "creatorState": m.contact.state, "creatorPostalCode": m.contact.postal_code,
+        "creatorCountry": m.contact.country, "creatorPhone": m.contact.phone, "creatorEmail": m.contact.email,
+        "creatorWebsite": m.contact.website}))
 }
 
 /// `library.selectBy`: select the photos in view that match every given criterion.
@@ -1040,7 +1043,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Edit Info",
             [],
             None,
-            "{ids?, title?, caption?, altText?, extendedDescription?, copyright?, copyrightStatus?: unknown|copyrighted|publicDomain, usageTerms?, copyrightUrl?, creator?, location?, city?, state?, country?, gps?: \"lat, lon\" | [lat, lon] | null, keywords?: [..], addKeywords?: [..], removeKeywords?: [..]}",
+            "{ids?, title?, caption?, altText?, extendedDescription?, copyright?, copyrightStatus?: unknown|copyrighted|publicDomain, usageTerms?, copyrightUrl?, creator?, creatorJobTitle?, creatorAddress?, creatorCity?, creatorState?, creatorPostalCode?, creatorCountry?, creatorPhone?, creatorEmail?, creatorWebsite?, location?, city?, state?, country?, gps?: \"lat, lon\" | [lat, lon] | null, keywords?: [..], addKeywords?: [..], removeKeywords?: [..]}",
             has_selection,
             |s, p| {
                 let strs =
@@ -1092,6 +1095,11 @@ pub fn specs() -> Vec<CommandSpec> {
                         ("extendedDescription", &mut m.extended_description),
                     ] {
                         if let Some(v) = str_param(p, k) {
+                            *field = v.to_string();
+                        }
+                    }
+                    for k in lcc_meta::CreatorContact::KEYS {
+                        if let (Some(v), Some(field)) = (str_param(p, k), m.contact.get_mut(k)) {
                             *field = v.to_string();
                         }
                     }
@@ -1474,7 +1482,13 @@ pub fn specs() -> Vec<CommandSpec> {
                 if !s.catalog.has_custom_order(a) {
                     return Err(bad(C, "only regular albums have a custom order"));
                 }
-                let base = shown_order(s, a);
+                // `before` means "left of it in the grid": a descending Custom Order shows the saved order
+                // reversed, so the drop is worked out on the shown list and saved back in forward order
+                let reversed = custom_album(s) == Some(a) && s.sort.key == SortKey::Custom && !s.sort.ascending;
+                let mut base = shown_order(s, a);
+                if reversed {
+                    base.reverse();
+                }
                 let moved = order_ids(s, a, p, C)?;
                 if moved.is_empty() {
                     return Err(bad(C, "missing `ids`"));
@@ -1497,6 +1511,9 @@ pub fn specs() -> Vec<CommandSpec> {
                 let mut order: Vec<PhotoId> = base.iter().copied().filter(|x| !moving.contains(x)).collect();
                 let at = anchor.and_then(|b| order.iter().position(|x| *x == b)).unwrap_or(order.len());
                 order.splice(at..at, in_order);
+                if reversed {
+                    order.reverse();
+                }
                 set_custom_order(s, a, order, "Move in Custom Order")
             }
         ),

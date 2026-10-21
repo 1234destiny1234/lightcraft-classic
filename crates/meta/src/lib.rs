@@ -85,6 +85,74 @@ pub enum RegionKind {
     Other(String),
 }
 
+/// The creator's contact details (IPTC Core `Iptc4xmpCore:CreatorContactInfo`) and job title
+/// (`photoshop:AuthorsPosition`). Empty strings are "not set".
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(default, rename_all = "camelCase")]
+pub struct CreatorContact {
+    pub job_title: String,
+    pub address: String,
+    pub city: String,
+    pub state: String,
+    pub postal_code: String,
+    pub country: String,
+    pub phone: String,
+    pub email: String,
+    pub website: String,
+}
+
+impl CreatorContact {
+    /// The `photo.setMeta` / metadata-preset keys of the fields, in display order.
+    pub const KEYS: &'static [&'static str] = &[
+        "creatorJobTitle",
+        "creatorAddress",
+        "creatorCity",
+        "creatorState",
+        "creatorPostalCode",
+        "creatorCountry",
+        "creatorPhone",
+        "creatorEmail",
+        "creatorWebsite",
+    ];
+
+    /// Every field empty (after trimming).
+    pub fn is_empty(&self) -> bool {
+        Self::KEYS.iter().all(|k| self.get(k).is_none_or(|v| v.trim().is_empty()))
+    }
+
+    /// The field a [`CreatorContact::KEYS`] key names.
+    pub fn get(&self, key: &str) -> Option<&String> {
+        Some(match key {
+            "creatorJobTitle" => &self.job_title,
+            "creatorAddress" => &self.address,
+            "creatorCity" => &self.city,
+            "creatorState" => &self.state,
+            "creatorPostalCode" => &self.postal_code,
+            "creatorCountry" => &self.country,
+            "creatorPhone" => &self.phone,
+            "creatorEmail" => &self.email,
+            "creatorWebsite" => &self.website,
+            _ => return None,
+        })
+    }
+
+    /// The field a [`CreatorContact::KEYS`] key names, to change.
+    pub fn get_mut(&mut self, key: &str) -> Option<&mut String> {
+        Some(match key {
+            "creatorJobTitle" => &mut self.job_title,
+            "creatorAddress" => &mut self.address,
+            "creatorCity" => &mut self.city,
+            "creatorState" => &mut self.state,
+            "creatorPostalCode" => &mut self.postal_code,
+            "creatorCountry" => &mut self.country,
+            "creatorPhone" => &mut self.phone,
+            "creatorEmail" => &mut self.email,
+            "creatorWebsite" => &mut self.website,
+            _ => return None,
+        })
+    }
+}
+
 /// Everything the app shows or searches about a photo. All fields are optional; unknown = `None`/empty.
 #[derive(Clone, Debug, Default, PartialEq, Serialize, Deserialize)]
 pub struct Metadata {
@@ -143,6 +211,9 @@ pub struct Metadata {
     pub city: Option<String>,
     pub state: Option<String>,
     pub country: Option<String>,
+    /// The creator's contact details and job title (IPTC Core).
+    #[serde(default, skip_serializing_if = "CreatorContact::is_empty")]
+    pub contact: CreatorContact,
     pub keywords: Vec<String>,
     /// Hierarchical keywords, `|`-separated paths (`lr:hierarchicalSubject` convention).
     pub hierarchical_keywords: Vec<String>,
@@ -215,6 +286,9 @@ impl Metadata {
         if self.keywords.is_empty() {
             self.keywords = other.keywords.clone();
         }
+        if self.contact.is_empty() {
+            self.contact.clone_from(&other.contact);
+        }
         if self.hierarchical_keywords.is_empty() {
             self.hierarchical_keywords = other.hierarchical_keywords.clone();
         }
@@ -235,6 +309,9 @@ impl Metadata {
         overlay!(self, other, rating, label, title, caption, artist, copyright, copyright_marked, usage_terms, copyright_url, gps);
         if !other.keywords.is_empty() {
             self.keywords = other.keywords.clone();
+        }
+        if !other.contact.is_empty() {
+            self.contact.clone_from(&other.contact);
         }
         if !other.hierarchical_keywords.is_empty() {
             self.hierarchical_keywords = other.hierarchical_keywords.clone();

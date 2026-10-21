@@ -1,6 +1,6 @@
 # Roadmap
 
-*Last updated 2026-10-15 (version 0.8.2). Revision history: [Log](#log).*
+*Last updated 2026-10-21 (version 0.8.2). Revision history: [Log](#log).*
 
 Milestones toward full Adobe Lightroom Classic parity, with the Classic shell and output modules (Map, Book, Slideshow,
 Print, Web, publish) and Immich integration as this fork's own focus on top of the upstream engine. Estimates are for
@@ -33,7 +33,7 @@ duplicate Local entries #22, black GPU exports on an Intel iGPU #78).
 | **AI & computational** | ~15–20% | Assisted culling (focus, bursts), auto tone, HDR/panorama merge; subject/sky/background masks as classical heuristics, or the photo's own segmentation mattes when it ships them (DNG semantic masks, e.g. iPhone ProRAW's sky matte); non-destructive Bayer RAW denoise with opt-in weights on pure-Rust CPU/GPU; **faces (MVP, [docs/faces.md](docs/faces.md))**: a pure-Rust detector (a 232 KB opt-in download), opt-in recognition models (one-click download or add a file; they run on the shared pure-Rust CPU interpreter; pinned SFace/AuraFace embeddings agree with an independent reference runtime on 40 public crops; one-thread medians 34–36 / 233–252 ms (AuraFace remains expensive)), a background scan that finds and embeds faces, name suggestions, a person's page with look-alike faces to confirm, an Unnamed faces section (look-alikes together, select a group and name it at once) | Real segmentation masks (subject, sky, people, objects, landscape, depth), denoise model policy / linear RGB / quality verification, super resolution, lens blur, generative remove, natural-language search; for faces: clusters with separators between groups, small faces in large photos (the detector looks at 640 px), thresholds calibrated on live faces, writing face regions back to XMP. **Blocked on a model strategy** (licensable weights or our own training; pure-Rust inference is feasible) |
 | **Workflow & library** | ~85% (single machine) | Robust catalog (journal + redb store with incremental background checkpoints, crash-tested), 500k-photo libraries open in under a second and filter in under 25 ms, 1M photos under 2 GB (docs/catalog.md), several catalogs with backups and export / import as catalog, first-start welcome dialog (another app's library is never opened or written), Local browsing with automatic cleanup, XMP interop, keywords, smart albums, Move import; **Immich** (docs/immich.md): connect, link, import, external libraries, two-way sync, people, smart search, publish, album sync rule | photo records all stay in memory (fine to 1M photos); Classic catalog settings and catalog sets; no tablet companion (#74); tethering; Immich keychains on macOS/Windows and sync at scale |
 | **Classic modules** | ~65% | Classic shell (module picker, panels, keymap); **Map** (geotagging, GPX, private saved locations honoured on export), **Book** and **Slideshow** (templates, layout, overlays, titles, playback, PDF output), **Web** (layout, site info, colours, output), **Print** (layouts, packages, IPP printing with copies, printer margins and job state, CUPS, print sharpening), soft proofing against printer ICC profiles; golden PDF tests | Print: Windows spooler, `ipps://`, driver options, CMYK profiles (printer ICC, intent, Print Adjustment and 16-bit landed in G15); slideshow music, backdrop and video export; publish grid sections; tethering; people view |
-| **HDR & video** | ~50% | HDR editing (headroom limit, SDR rendition, Visualize HDR); gain map JPEG, PQ AVIF and float TIFF export; video decode, playback, trim, poster, frame capture, global grading, H.264/ProRes export | On-screen HDR display, HLG, HDR settings from crs XMP; video sound output, interlaced H.264, local edits on video |
+| **HDR & video** | ~50% | HDR editing (headroom limit, SDR rendition, Visualize HDR); gain map JPEG, PQ AVIF and float TIFF export; video decode, playback, trim, poster, frame capture, global grading, H.264/ProRes export | HDR on X11 / XWayland (a platform limit: X11 has no HDR surface); video sound output, interlaced H.264, local edits on video |
 | **Platform & robustness** | ~70% | macOS native; release builds for Windows x64/x86/arm64, Linux x86_64/aarch64/riscv64, Flatpak, FreeBSD and web; no-panic lints workspace-wide, `unsafe` confined to `crates/sysmem`; failed saves are reported; GPU errors fall back to CPU; the window renderer falls back DX12 → Vulkan → GL → glow and remembers what works; dialogs fit the screen | macOS CI and the 0.6.1 macOS build blocked on GitHub billing; tests run in CI only on FreeBSD (gap 9); start-up crash on OCLP Macs under investigation; GPU path proven only on Apple + user reports; English, Simplified/Traditional Chinese, Japanese, Brazilian Portuguese, Spanish, German, Russian and Ukrainian UI (see docs/localization.md); remaining technical errors; Traditional Chinese uses the Simplified Chinese font until craft-fonts has a TC face; accessibility partial; headless UI tests time out under machine load |
 
 ### By kind of user
@@ -69,7 +69,7 @@ Priorities, in order. Each points at tracker rows in [`docs/parity-checklist.md`
 6. **AI model strategy** (maintainer decision): which permissively licensed models (or our own training) for
    segmentation masks and denoise. Bayer denoise inference is implemented in pure Rust with an opt-in GPL model; release policy and independently licensed weights remain open. Unblocks M12 and Enhance. Face detection and recognition run on our own checked Rust engine. Object / Describe masks now
    run Meta's SAM 3 in pure Rust (optional, user-consented download under the non-OSI SAM License; CDN mirrors still
-   to be set up, docs/ai-masks.md); Subject / Sky / People, Raw Details and Super Resolution are still open.
+   to be set up, docs/ai-masks.md); Subject / Sky / People are still open; Raw Details and Super Resolution run classical (non-AI) methods (Photo ▸ Enhance).
 7. **Classic completion** (fork): print colour management (LRC-PRINT-JOB / PAGESETUP), catalog settings
    (LRC-CAT-SETTINGS), catalog sets (LRC-LIB-CATALOG-PANEL), `.lrcat` import depth (LRC-LIB-CATALOG-IMPORT), people
    view, slideshow music / backdrop / export, tethering; the open Classic rows in `docs/parity-checklist.md`, P1 first.
@@ -108,20 +108,20 @@ photo's own pixels, so 1:1–8:1 is sharp in every view, with mask overlays and 
 | M2 | Pipeline v1 (quality) | WB temp/tint, profiles, local tone mapping (highlights/shadows), curves, HSL, point colour, colour grading, texture/clarity/dehaze, vignette, grain, B&W, auto tone/WB, histogram, before/after | 10–15 | ✅ (look tuning vs our references ongoing) |
 | M3 | RAW I | TIFF/DNG (LJ92, deflate, tiles, opcodes), demosaic (AHD/PPG/bilinear), highlight recovery, DNG colour model, CR2, NEF, ARW, embedded previews | 10–15 | 🚧 (DNG, CR2, ARW, NEF uncompressed + Huffman lossless/lossy, embedded previews ✅; NEF lossy-after-split ⬜) |
 | M4 | Crop, geometry, optics | crop tool + overlays, straighten, Upright (auto/level/vertical/full/guided), manual transforms, CA, defringe, manual lens corrections | 6–10 | ✅ |
-| M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | 🚧 (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget ✅; colour NR at half resolution, GPU histogram ⬜) |
+| M5 | Performance | source pyramids, wgpu compute pipeline (CPU oracle), draft/full renders, prefetch, budgets (16 ms slider updates on 24 MP) | 10–15 | ✅ (stage cache, source pyramid, wgpu pipeline, prefetch, memory budget, colour NR at half resolution, GPU histogram) |
 | M6 | Masking | brush, linear/radial gradients, colour/luminance/depth range, add/subtract/intersect/invert, all local adjustments, masks panel | 8–12 | 🚧 (brush/linear/radial/colour/luminance range, add/subtract/intersect, masks panel ✅; depth range, AI masks ⬜) |
-| M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution ⬜) |
+| M7 | Detail | sharpening + masking preview, luminance/colour NR, Denoise, Raw Details, Super Resolution | 6–10 | 🚧 (sharpening, luminance/colour NR ✅; AI Denoise 🟡 (Bayer, optional weights; policy/fidelity open); Raw Details, Super Resolution 🟡 (classical: edge-aware residual demosaic and 2× back-projection as new DNGs, Photo ▸ Enhance…, an Enhance Preview dialog with before/after and estimated time; no learned model)) |
 | M8 | Heal / Remove | content-aware remove (PatchMatch), heal, clone, brush spots, visualize spots, red/pet eye | 6–10 | 🚧 (heal, clone, auto source, visualize spots, red/pet eye, PatchMatch content-aware remove ✅; generative remove ⬜) |
 | M9 | Presets, profiles, versions, sync | preset browser + amount, create/import presets, profile browser, versions, history, copy/paste/sync settings | 5–8 | ✅ |
 | M10 | Export & share | export dialog (JPEG/PNG/TIFF/DNG/AVIF/JXL/original), sizing, sharpening, metadata, watermark, naming, batch jobs, XMP sidecars, HDR export | 6–10 | 🚧 (all formats incl. DNG/original, sizing, presets, background jobs, HDR gain map JPEG / PQ AVIF ✅; JXL encode ⬜) |
 | M11 | RAW II | CR3, RAF (X-Trans), ORF, RW2, PEF, SRW, 3FR, IIQ + long tail; camera calibration DB; HEIC/AVIF/JXL import | 20–35 | 🚧 (CR3 lossless CRX and C-RAW, RAF uncompressed and lossless/lossy compressed, RW2 (every raw format), PEF, ORF uncompressed and compressed ✅; **camera colour calibration** 🚧 (guarded ARW, NEF, RW2 and RAF preview fitting; measured database still missing), CR3 ⬜) |
 | M12 | AI & smart features | subject/sky/background/people/object masks, semantic search, faces/People (permissively licensed models, pure-Rust inference) | 20–40 | ⬜ |
 | M13 | Merge | HDR merge (deghost), panorama (projections, boundary warp, fill edges), HDR panorama | 10–15 | ✅ |
-| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | 12–20 left | 🟡 landed: decode (8 codecs, 6 containers), loupe playback, trim, poster, Capture Frame, global grading, H.264/ProRes export (pipelined, GPU grade for H.264; audio from AAC/Opus/AC-3/PCM/MP3), CLI/MCP; left: sound output decision, interlaced H.264, AV1 speed |
+| M14 | Video | import/playback/trim via FilmCraft crates, global edits + presets on video, video export | done | ✅ decode (8 codecs, 6 containers; interlaced H.264 PAFF/MBAFF deinterlaced, AV1 ~20–30 % faster via the emmertex/filmcraft fork, 2026-10-21), loupe playback, trim, poster, Capture Frame, global grading, H.264/ProRes export (pipelined, GPU grade for H.264; audio from AAC/Opus/AC-3/PCM/MP3), CLI/MCP; sound on macOS/Windows by default through cpal (PR #350), pure-Rust PulseAudio on Linux/BSD. Non-goals: hardware decode; local adjustments, lens corrections and Upright on video |
 | M15 | Classic modules | Map, Book, Slideshow, Print, Web; smart collections, stacks, virtual copies, publish services, tethering | 25–40 | 🚧 (smart albums, stacks, virtual copies, compare/survey, Classic shell, Map, Book, Slideshow, Web, Print, publish ✅; print colour management, slideshow music/export, tethering, catalog settings 🟡/⬜) |
 | M16 | 1.0 polish | preferences, shortcut editor, accessibility, localization, packaging (dmg/msi/AppImage/web), hardening | 10–20 | 🚧 (settings, keyboard shortcuts sheet, packaging basics ✅; English/Chinese (Simplified, Traditional)/Japanese/Brazilian Portuguese/Spanish/German/Russian/Ukrainian localisation 🟡; accessibility and further locales ⬜) |
 
-## Parity estimate (feature count updated 2026-10-12; effort estimate from 2026-10-02, superseded by [`docs/target-app-parity.md`](docs/target-app-parity.md): ~330–585 h to beta, ~1,000–1,800 h to full parity)
+## Parity estimate (feature count updated 2026-10-12; effort estimate from 2026-10-02, superseded by [`docs/target-app-parity.md`](docs/target-app-parity.md): ~280–480 h to beta, ~1,000–1,800 h to full parity)
 
 **By feature count** — from `docs/parity-checklist.md` (one row per Lightroom feature, menu item and shortcut; `cargo xtask
 parity` prints this line on every run, so it stays current):
@@ -157,7 +157,7 @@ trip, slideshow, auto import…) in ≈ 12 h on 2026-10-02; four to six parallel
 | AI: subject / sky / background / people / object masks, object-aware remove, AI denoise, super resolution, lens blur, people & faces, natural-language search, culling | ≈ 30 | 80–150 | **high** — permissively licensed weights, pure-Rust inference, maybe training |
 | HDR editing, display, visualisation and export | Q. HDR, LR-EXP-HDR | 15–25 | medium |
 | Classic modules: Map, Book, Slideshow module, Print, publish services, tethering, soft proofing | ≈ 50 | 60–100 | medium (large, well-understood) |
-| Smaller P2 items: Enhance dialog, export to Photos, help / what's new, accessibility, localisation, sidecar variants | ≈ 15 | 12–25 | low |
+| Smaller P2 items: export to Photos, help / what's new, accessibility, localisation, sidecar variants | ≈ 15 | 12–25 | low |
 | Look tuning, performance budgets (colour NR at half resolution on CPU + GPU, 100k-photo library), packaging, hardening | — | 25–45 | medium |
 | **Total remaining** | | **≈ 270–505** | |
 
@@ -230,6 +230,21 @@ history/snapshots remain source data, and smart collections import current membe
 database is read-only; the app owns subsequent edits. See `docs/lightroom-catalog-import.md`.
 
 ## Log
+- 2026-10-21: M7: the Enhance Preview dialog (Photo ▸ Enhance…, Ctrl+Alt+I): Raw Details / Super Resolution with a
+  before/after preview, output size, estimated time and Create Stack (LR-ENH-DIALOG ✅).
+- 2026-10-21: gap 14 closed: HDR renders (HDR views, HDR exports, gain maps) run on the GPU with the CPU as oracle
+  (6 MP: CPU ~200 ms → GPU ~50–70 ms); X11 / XWayland staying SDR is documented as a platform limit.
+- 2026-10-21: M14 Video ✅: FilmCraft pinned to emmertex/filmcraft 10715b24 (0.10.0): interlaced H.264 (PAFF + MBAFF) decoded
+  and deinterlaced, AV1 decode ~20–30 % faster; with sound on macOS/Windows by default (PR #350). Hardware decode and local
+  adjustments / lens / Upright on video stay non-goals.
+- 2026-10-20: M7: Raw Details and Super Resolution land as classical Photo ▸ Enhance commands (gap 11 narrows); AI
+  Denoise weights and X-Trans stay a model decision.
+- 2026-10-20: gap 14: HDR edits show in HDR zoomed in, in Before/After, Compare and the second window; View ▸ HDR Preview
+  toggle (MENU-VIEW-HDR); HDR display work left: GPU HDR renders, X11.
+- 2026-10-20: gap 29 (HDR merge) narrows to AI Denoise on merged DNGs: JPEG brackets are linearised through a
+  recovered camera response, frames are held as half floats (5 × 48 MP merge 5.1 → 3.6 GB peak); numbers unchanged.
+- 2026-10-20: gaps audit: lens profile database and CR3 variants no longer beta blockers; beta estimate ~330–585 → ~280–480 h
+  (target-app-parity.md).
 - 2026-10-15 (upstream batch 40): raw-parity action 3 (verify popular Nikon, Fujifilm, Canon CR2 and Pentax bodies)
   marked done upstream; already done here. `docs/raw/coverage.py --check` passes: 596 of 1,446 models verified, 98% of
   photographers' cameras fully work (87% on a verified body); target-app-parity's readiness rows re-derived from it
@@ -285,6 +300,7 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
 - 2026-10-11 (upstream): Canon EOS R5 Mark II C-RAW decodes from sensor data (CRX QP map first-symbol literal and limited-length escape; four CC0 files pinned, docs/cr3.md); CR3 on four verified bodies.
 - 2026-10-12: roadmap refreshed for the fork at 0.6.1: 87.3% of 570 rows, Classic modules ~30% → ~65%, Classic power user ~45% → ~60%, Classic completion and platform CI added to the priorities.
 - 2026-10-12: 0.6.3 numbers: 87.9% of 581 rows after the upstream merge (381 commits) and the fork gap batches.
+- 2026-10-20: M5 Performance ✅: colour NR blurs at half resolution (already landed: 24 MP 670 → 336 ms) and GPU renders bin the histogram, vectorscope and waveform grids on the GPU (CPU oracle, exact agreement test).
 
 ## Chinese and Japanese interfaces, and text watermarks
 

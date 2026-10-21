@@ -3,7 +3,7 @@ name = "lcc-print"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
-description = "Print module back end (L3): print jobs (single image / contact sheet, picture package, custom package) on lcc-layout, shaped text over lcc-text, PDF and JPEG output, and IPP printing to CUPS"
+description = "Print module back end (L3): print jobs (single image / contact sheet, picture package, custom package) on lcc-layout, shaped text over lcc-text, PDF and JPEG output, IPP printing to CUPS, and the Windows print spooler"
 
 [lints]
 workspace = true
@@ -15,6 +15,7 @@ lcc-net = { workspace = true }
 lcc-pdf = { workspace = true }
 lcc-raster = { workspace = true }
 lcc-text = { workspace = true }
+lcc-winspool = { workspace = true }
 serde = { workspace = true }
 serde_json = { workspace = true }
 thiserror = { workspace = true }

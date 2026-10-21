@@ -1031,3 +1031,90 @@ fn the_catalog_remembers_which_photos_its_latest_ops_changed_and_what_of_them() 
     assert_eq!(c.touched_since(long_ago), None);
     assert_eq!(c.touched_since(c.revision - 10), Some(vec![a]));
 }
+
+/// A rating filter never lets an unrated photo through "at least one star", and the text search's
+/// `rating:>=N` / `rating:<=N` ask what the filter bar's ≥ / ≤ ask.
+#[test]
+fn rating_filter_ops_and_unrated_photos() {
+    let mut c = Catalog::new();
+    let unrated = photo(&mut c, "a.jpg", "2026-01-01T10:00:00");
+    let one = photo(&mut c, "b.jpg", "2026-01-02T10:00:00");
+    let three = photo(&mut c, "c.jpg", "2026-01-03T10:00:00");
+    c.apply(Op::SetRating { id: one, rating: 1 }).unwrap();
+    c.apply(Op::SetRating { id: three, rating: 3 }).unwrap();
+    let q = |f: Filter| c.query(&f, &Sort::default());
+    let r = |rating, rating_op| Filter { rating, rating_op, ..Default::default() };
+    assert_eq!(q(r(1, RatingOp::AtLeast)), vec![one, three]);
+    assert_eq!(q(r(1, RatingOp::Exactly)), vec![one]);
+    assert_eq!(q(r(1, RatingOp::AtMost)), vec![unrated, one], "Lightroom's ≤ counts unrated photos as below one star");
+    assert_eq!(q(r(3, RatingOp::Exactly)), vec![three]);
+    let text = |t: &str| q(Filter { text: t.into(), ..Default::default() });
+    assert_eq!(text("rating:>=1"), vec![one, three]);
+    assert_eq!(text("rating:>0"), vec![one, three]);
+    assert_eq!(text("rating:<=1"), vec![unrated, one]);
+    assert_eq!(text("rating:1"), vec![one]);
+    assert!(text("rating:>=x").is_empty(), "not a number: nothing matches, no panic");
+}
+
+/// Photos with one import time and capture time, as one import batch or a burst gives them, added
+/// with ids that run opposite to their names.
+fn batch_with_reversed_ids(c: &mut Catalog) -> Vec<PhotoId> {
+    let names = ["DSC_0001.ARW", "dsc_0002.ARW", "DSC_0003.ARW", "DSC_0004.ARW"];
+    let mut ids = Vec::new();
+    for (n, name) in names.iter().enumerate() {
+        let id = PhotoId(1000 - n as u64);
+        let mut p = Photo::new(id, Source::Demo { scene: 1 }, name, "ARW", 10, 10, "2026-10-10T09:00:00");
+        p.captured = Some("2026-10-01T12:00:00".into());
+        p.rating = 3;
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        ids.push(id);
+    }
+    ids // in name order
+}
+
+#[test]
+fn one_import_batch_sorts_by_file_name_not_id() {
+    let mut c = Catalog::new();
+    let by_name = batch_with_reversed_ids(&mut c);
+    let sort = Sort { key: SortKey::ImportDate, ascending: true, ..Default::default() };
+    assert_eq!(c.query(&Filter::default(), &sort), by_name);
+}
+
+#[test]
+fn burst_in_one_second_sorts_by_file_name_not_id() {
+    let mut c = Catalog::new();
+    let by_name = batch_with_reversed_ids(&mut c);
+    let sort = Sort { key: SortKey::CaptureDate, ascending: true, ..Default::default() };
+    assert_eq!(c.query(&Filter::default(), &sort), by_name);
+}
+
+/// Equal ratings, edit times and sizes sort by file name too; descending is the exact reverse.
+#[test]
+fn photos_that_tie_on_any_key_sort_by_file_name_not_id() {
+    let mut c = Catalog::new();
+    let by_name = batch_with_reversed_ids(&mut c);
+    for key in [SortKey::Rating, SortKey::EditDate, SortKey::FileSize, SortKey::Custom] {
+        let up = c.query(&Filter::default(), &Sort { key, ascending: true, ..Default::default() });
+        assert_eq!(up, by_name, "{key:?}");
+        let down = c.query(&Filter::default(), &Sort { key, ascending: false, ..Default::default() });
+        assert_eq!(down, by_name.iter().rev().copied().collect::<Vec<_>>(), "{key:?} descending");
+    }
+}
+
+/// A photo whose name changes moves among the photos it ties with, in a library large enough that
+/// its sort orders are kept between queries.
+#[test]
+fn a_renamed_photo_moves_among_the_photos_it_ties_with() {
+    let mut c = Catalog::new();
+    for i in 0..3000u64 {
+        let id = c.alloc_photo_id();
+        let p =
+            Photo::new(id, Source::File { path: format!("/pics/IMG_{i:05}.jpg") }, &format!("IMG_{i:05}.jpg"), "JPEG", 10, 10, "2026-01-01T00:00:00");
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    }
+    let sort = Sort { key: SortKey::ImportDate, ascending: true, ..Default::default() };
+    let before = c.query(&Filter::default(), &sort);
+    let last = *before.last().unwrap();
+    c.apply(Op::SetFile { id: last, file_name: "AAA.jpg".into(), source: Source::File { path: "/pics/AAA.jpg".into() } }).unwrap();
+    assert_eq!(c.query(&Filter::default(), &sort).first(), Some(&last), "first by name now");
+}

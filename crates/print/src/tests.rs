@@ -254,6 +254,34 @@ fn sixteen_bit_output_embeds_16_bit_photos_tagged_with_the_printer_profile() {
 }
 
 #[test]
+fn sixteen_bit_photos_honour_the_size_cap_and_embed_once() {
+    let d = lcc_layout::render::Rgb16 { width: 6, height: 4, data: (0..72).map(|i| i * 900).collect() };
+    let small = crate::output::downscale16(&d, 3);
+    assert_eq!((small.width, small.height, small.data.len()), (3, 2, 18));
+    // two cells of different sizes, both above the 6 px source: one embedded image
+    let mut s = template("Custom Centered");
+    s.job.color.bit16 = true;
+    let doc = s.build(&ids(3)).unwrap();
+    let out = to_pdf(&doc, &s, &Deep, &ShapedText::new(), &PdfOptions::default(), &mut |_, _| true).unwrap();
+    let pdf = lopdf::Document::load_mem(&out.files[0]).unwrap();
+    assert_eq!(image_streams(&pdf).len(), 3, "one per distinct photo, not per size");
+}
+
+#[test]
+fn crop_marks_stay_on_the_page_with_large_bleed() {
+    let mut s = template("2×2 Cells");
+    s.options.crop_marks = true;
+    s.page.bleed = 40.0;
+    let doc = s.build(&ids(1)).unwrap();
+    let w = f64::from(doc.page.size.w);
+    let (pdf, _, _) = pdf_of(&s, &ids(1));
+    let first = pdf.get_object(*pdf.get_pages().get(&1).unwrap()).unwrap().as_dict().unwrap();
+    let media = first.get(b"MediaBox").unwrap().as_array().unwrap();
+    let mw = media[2].as_float().map(f64::from).unwrap_or_else(|_| media[2].as_i64().unwrap() as f64);
+    assert!(mw >= w + 2.0 * (40.0 + crate::output::MARK_LENGTH), "{mw} vs {w}");
+}
+
+#[test]
 fn rgb16_rotation_matches_rgba8() {
     let d = lcc_layout::render::Rgb16 { width: 3, height: 2, data: (0..18).collect() };
     let img = Rgba8::from_fn(3, 2, |x, y| {
@@ -293,4 +321,49 @@ fn spooler_printer_names_get_a_clear_unsupported_error() {
         let e = crate::ipp::IppUri::parse(name).unwrap_err().to_string();
         assert!(e.contains("spooler") && e.contains("ipp://"), "{e}");
     }
+}
+
+#[test]
+fn system_printer_names_are_checked_by_platform() {
+    use crate::send::{check_printer, is_system_printer};
+    for name in [r"\\server\Photo Printer", "HP OfficeJet"] {
+        assert!(is_system_printer(name));
+        assert_eq!(check_printer(name).is_ok(), lcc_winspool::AVAILABLE, "{name}");
+    }
+    assert!(!is_system_printer("ipp://host/printers/p") && !is_system_printer("  "));
+    assert!(check_printer("ipp://host/printers/p").is_ok());
+    assert!(check_printer("ftp://host/p").is_err());
+    assert!(check_printer("").is_err());
+}
+
+/// Windows: a two-page contact sheet through the spooler into Microsoft Print to PDF's file.
+#[test]
+fn a_contact_sheet_prints_through_the_windows_spooler() {
+    const NAME: &str = "Microsoft Print to PDF";
+    if !lcc_winspool::printers().is_ok_and(|l| l.iter().any(|p| p.name == NAME)) {
+        lcc_testkit::skip!(System, "no {NAME} printer (Windows only)");
+        return;
+    }
+    let mut s = template("4×5 Contact Sheet");
+    s.job.dpi = 60.0;
+    s.job.copies = 2;
+    let doc = s.build(&ids(21)).unwrap();
+    let dir = std::env::temp_dir().join(format!("print-spool-{}", std::process::id()));
+    std::fs::create_dir_all(&dir).unwrap();
+    let path = dir.join("sheet.pdf");
+    let text = ShapedText::new();
+    let mut calls = 0;
+    let sent = crate::send::send_to_system_printer(NAME, &doc, &s, &Gradient, &text, &send_opts(), Some(path.clone()), &mut |_, _| {
+        calls += 1;
+        true
+    })
+    .unwrap();
+    assert_eq!((sent.pages, sent.copies, calls), (2, 2, 2));
+    assert!(std::fs::read(&path).unwrap().starts_with(b"%PDF"));
+    let e = crate::send::send_to_system_printer(NAME, &doc, &s, &Gradient, &text, &send_opts(), Some(path), &mut |_, _| false);
+    assert_eq!(e.unwrap_err(), crate::PrintError::Cancelled);
+    // an unknown printer is a clear printer error
+    let e = crate::send::send_to_printer("No Such Printer 9c1", &doc, &s, &Gradient, &text, &send_opts(), &mut |_, _| true);
+    assert!(matches!(e, Err(crate::PrintError::Ipp(_))), "{e:?}");
+    let _ = std::fs::remove_dir_all(&dir);
 }

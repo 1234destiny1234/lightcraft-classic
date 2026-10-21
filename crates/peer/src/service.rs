@@ -10,7 +10,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
 use std::path::PathBuf;
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError, Sender, channel};
 use std::sync::{Arc, Mutex, PoisonError};
 use std::thread::JoinHandle;
@@ -37,6 +37,11 @@ const GONE_AFTER: Duration = Duration::from_secs(8);
 /// How long a pairing waits for the people to compare codes.
 const DECIDE_WITHIN: Duration = Duration::from_secs(120);
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(5);
+/// The most incoming connections served at once; more are closed straight away, so a busy or
+/// hostile network can't make this device start a thread per connection without bound.
+const MAX_CONNECTIONS: usize = 16;
+/// How long a pairing connection may take to say what it wants after the handshake.
+const OPENING_WITHIN: Duration = Duration::from_secs(10);
 
 /// Where a pairing is.
 #[derive(Clone, Debug, PartialEq, Eq, Serialize)]
@@ -82,6 +87,25 @@ struct Inner {
     tcp_port: u16,
     /// Takes a paired device's connection once it has said hello (the catalog exchange).
     on_hello: Mutex<Option<HelloHandler>>,
+    /// Incoming connections being served now.
+    connections: AtomicUsize,
+}
+
+/// Holds one of the [`MAX_CONNECTIONS`] slots; gives it back when dropped.
+struct ConnSlot(Arc<Inner>);
+
+impl ConnSlot {
+    fn take(inner: &Arc<Inner>) -> Option<ConnSlot> {
+        let slot = ConnSlot(inner.clone());
+        // counted first, so the drop gives it back whether or not it fits
+        (inner.connections.fetch_add(1, Ordering::AcqRel) < MAX_CONNECTIONS).then_some(slot)
+    }
+}
+
+impl Drop for ConnSlot {
+    fn drop(&mut self) {
+        self.0.connections.fetch_sub(1, Ordering::AcqRel);
+    }
 }
 
 /// What runs a paired device's connection after the hello: the paired device and the channel.
@@ -204,6 +228,7 @@ impl Service {
             store_path,
             tcp_port,
             on_hello: Mutex::new(None),
+            connections: AtomicUsize::new(0),
         });
         let mut threads = Vec::new();
         let spawn =
@@ -281,24 +306,26 @@ impl Service {
             (addr, name)
         };
         let inner = self.inner.clone();
-        std::thread::Builder::new()
-            .name("peer-pair".into())
-            .spawn(move || {
-                let r = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(Error::from).and_then(|s| {
-                    let me = lock(&inner.store).identity.clone();
-                    let mut ch = Channel::handshake(s, &me, true)?;
-                    ch.set_timeout(Some(Duration::from_secs(10)))?;
-                    ch.send_json(&Opening::Pair { name: me.name.clone() })?;
-                    match ch.recv_json::<Reply>()? {
-                        Reply::Ready { .. } => {}
-                        Reply::No { why } => return Err(Error::Protocol(why)),
-                        Reply::Decision { .. } => return Err(Error::Protocol("unexpected answer".into())),
-                    }
-                    decide(&inner, ch, &name)
-                });
-                finish(&inner, r);
-            })
-            .map_err(|e| Error::Io(e.to_string()))?;
+        let spawned = std::thread::Builder::new().name("peer-pair".into()).spawn(move || {
+            let r = TcpStream::connect_timeout(&addr, CONNECT_TIMEOUT).map_err(Error::from).and_then(|s| {
+                let me = lock(&inner.store).identity.clone();
+                let mut ch = Channel::handshake(s, &me, true)?;
+                ch.set_deadline(OPENING_WITHIN);
+                ch.send_json(&Opening::Pair { name: me.name.clone() })?;
+                match ch.recv_json::<Reply>()? {
+                    Reply::Ready { .. } => {}
+                    Reply::No { why } => return Err(Error::Protocol(why)),
+                    Reply::Decision { .. } => return Err(Error::Protocol("unexpected answer".into())),
+                }
+                decide(&inner, ch, &name)
+            });
+            finish(&inner, r);
+        });
+        if let Err(e) = spawned {
+            let e = Error::Io(e.to_string());
+            finish(&self.inner, Err(e.clone()));
+            return Err(e);
+        }
         Ok(())
     }
 
@@ -338,10 +365,15 @@ impl Service {
         if ch.peer_device != peer.device_id || ch.peer_key != peer.public_key {
             return Err(Error::Protocol("the device on the network isn't the paired one".into()));
         }
-        ch.set_timeout(Some(Duration::from_secs(30)))?;
+        ch.set_deadline(Duration::from_secs(30));
         ch.send_json(&Opening::Hello)?;
         match ch.recv_json::<Reply>()? {
-            Reply::Ready { .. } => Ok(ch),
+            Reply::Ready { .. } => {
+                // the other side proved it is the paired device: large frames and per-read waits
+                ch.allow_large_frames();
+                ch.set_timeout(Some(Duration::from_secs(30)))?;
+                Ok(ch)
+            }
             Reply::No { why } => Err(Error::Protocol(why)),
             Reply::Decision { .. } => Err(Error::Protocol("unexpected answer".into())),
         }
@@ -544,8 +576,14 @@ fn accept_loop(inner: &Arc<Inner>, tcp: &TcpListener) {
     while !inner.stop.load(Ordering::Relaxed) {
         match tcp.accept() {
             Ok((stream, from)) => {
-                let i = inner.clone();
+                let Some(slot) = ConnSlot::take(inner) else {
+                    log::info!("peer: too many connections; closed the one from {from}");
+                    drop(stream);
+                    continue;
+                };
                 let spawned = std::thread::Builder::new().name("peer-conn".into()).spawn(move || {
+                    let i = slot.0.clone();
+                    let _slot = slot;
                     if let Err(e) = serve(&i, stream) {
                         log::info!("peer: connection from {from}: {e}");
                     }
@@ -566,7 +604,6 @@ fn accept_loop(inner: &Arc<Inner>, tcp: &TcpListener) {
 /// An incoming connection.
 fn serve(inner: &Arc<Inner>, stream: TcpStream) -> Result<()> {
     stream.set_nonblocking(false)?;
-    stream.set_read_timeout(Some(Duration::from_secs(10)))?;
     let me = lock(&inner.store).identity.clone();
     let mut ch = Channel::handshake(stream, &me, false)?;
     match ch.recv_json::<Opening>()? {
@@ -584,7 +621,11 @@ fn serve(inner: &Arc<Inner>, stream: TcpStream) -> Result<()> {
                 st.pairing =
                     Some(Pairing { device_id: ch.peer_device.clone(), name: name.clone(), code: None, stage: Stage::Connecting, decide: None });
             }
-            ch.send_json(&Reply::Ready { name: me.name.clone() })?;
+            if let Err(e) = ch.send_json(&Reply::Ready { name: me.name.clone() }) {
+                // the slot was taken above: free it, or no other pairing could ever start
+                finish(inner, Err(e.clone()));
+                return Err(e);
+            }
             let r = decide(inner, ch, &name);
             finish(inner, r);
             Ok(())
@@ -598,6 +639,9 @@ fn serve(inner: &Arc<Inner>, stream: TcpStream) -> Result<()> {
                 return ch.send_json(&Reply::No { why: "not paired".into() });
             };
             let handler = lock(&inner.on_hello).clone();
+            // proved paired: from here the catalog exchange may send large frames, at its own pace
+            ch.allow_large_frames();
+            ch.set_timeout(Some(Duration::from_secs(10)))?;
             ch.send_json(&Reply::Ready { name: me.name })?;
             if let Some(h) = handler {
                 h(peer, ch);
@@ -638,7 +682,7 @@ fn decide(inner: &Inner, mut ch: Channel, name: &str) -> Result<Peer> {
         return Err(Error::Protocol("pairing cancelled".into()));
     }
     let remaining = DECIDE_WITHIN.saturating_sub(started.elapsed()).max(Duration::from_secs(5));
-    ch.set_timeout(Some(remaining))?;
+    ch.set_deadline(remaining);
     match ch.recv_json::<Reply>()? {
         Reply::Decision { ok: true } => {}
         Reply::Decision { ok: false } => return Err(Error::Protocol("the other device cancelled the pairing".into())),
@@ -823,5 +867,58 @@ mod tests {
             take_answers(&mut found, &msg, src, &stype, "ff", Instant::now());
         }
         assert!(found.is_empty());
+    }
+
+    fn bare_inner(tag: &str) -> Arc<Inner> {
+        let path = std::env::temp_dir().join(format!("lcc-peer-{tag}-{}.json", std::process::id()));
+        let _ = std::fs::remove_file(&path);
+        let store = Store::load_or_create(&path, "Test").unwrap();
+        Arc::new(Inner {
+            stop: AtomicBool::new(false),
+            finding: AtomicBool::new(false),
+            nudge: AtomicBool::new(false),
+            state: Mutex::new(State::default()),
+            store: Mutex::new(store),
+            store_path: path,
+            tcp_port: 0,
+            on_hello: Mutex::new(None),
+            connections: AtomicUsize::new(0),
+        })
+    }
+
+    /// Past the cap, a new connection is closed at once instead of getting a thread.
+    #[test]
+    fn connections_past_the_cap_are_closed() {
+        use std::io::Read;
+        let inner = bare_inner("cap");
+        let tcp = TcpListener::bind("127.0.0.1:0").unwrap();
+        tcp.set_nonblocking(true).unwrap();
+        let addr = tcp.local_addr().unwrap();
+        let held: Vec<ConnSlot> = (0..MAX_CONNECTIONS).map(|_| ConnSlot::take(&inner).unwrap()).collect();
+        assert!(ConnSlot::take(&inner).is_none());
+        let i = inner.clone();
+        let t = std::thread::spawn(move || accept_loop(&i, &tcp));
+
+        let mut c = TcpStream::connect(addr).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let mut b = [0u8; 1];
+        // closed by the service: EOF (or a reset), not a timeout
+        match c.read(&mut b) {
+            Ok(n) => assert_eq!(n, 0),
+            Err(e) => assert!(!matches!(e.kind(), std::io::ErrorKind::WouldBlock | std::io::ErrorKind::TimedOut), "{e}"),
+        }
+
+        drop(held);
+        assert_eq!(inner.connections.load(Ordering::Acquire), 0);
+        // with room again, a connection is served: a garbage handshake gets dropped, and the slot comes back
+        let mut c = TcpStream::connect(addr).unwrap();
+        use std::io::Write;
+        c.write_all(&[0xff; 4]).unwrap();
+        c.set_read_timeout(Some(Duration::from_secs(5))).unwrap();
+        let _ = c.read(&mut b);
+        wait("slot returned", || inner.connections.load(Ordering::Acquire) == 0);
+        inner.stop.store(true, Ordering::Relaxed);
+        t.join().unwrap();
+        let _ = std::fs::remove_file(&inner.store_path);
     }
 }

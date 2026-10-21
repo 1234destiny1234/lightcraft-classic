@@ -717,6 +717,36 @@ pub fn start_paths(app: &mut LccApp, paths: Vec<String>) -> Result<Value, String
     Ok(json!({"importing": total}))
 }
 
+/// Photos or folders dropped on the window. A drop with a folder in it is scanned and reviewed
+/// exactly as File ▸ Import from Folder… does (one walk with progress, then the review); plain
+/// photo files are added at once. Errors are shown, and a frame is asked for so the scan or
+/// import starts even if the window then sits idle (no input follows a drop).
+pub fn drop_paths(app: &mut LccApp, ctx: &egui::Context, paths: Vec<String>) {
+    ctx.request_repaint();
+    if app.lightroom.is_some() {
+        app.toast(ctx, crate::i18n::tr("Finish Lightroom catalog import before adding photos"));
+        return;
+    }
+    let r = if paths.iter().any(|p| std::path::Path::new(p).is_dir()) {
+        busy_synchronizing(app).and_then(|_| {
+            if app.import.is_some() || app.scan.as_ref().is_some_and(|t| !t.browse) {
+                return Err("an import is running".to_string());
+            }
+            // a Local folder being read gives way, as Import from Folder… does
+            if let Some(t) = app.scan.take() {
+                t.progress.cancel.store(true, Ordering::Relaxed);
+            }
+            open(app, paths)
+        })
+    } else {
+        start_paths(app, paths)
+    };
+    if let Err(e) = r {
+        log::warn!("drop: {e}");
+        app.toast(ctx, crate::i18n::tr_format!("Import failed: {e}", e = e));
+    }
+}
+
 /// Advance the import in progress (called every frame): start its worker, then add the batches it
 /// has readied to the catalog.
 pub fn tick(app: &mut LccApp, ctx: &egui::Context) {

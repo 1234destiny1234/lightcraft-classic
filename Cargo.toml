@@ -5,7 +5,7 @@ members = ["crates/*", "apps/*", "xtask"]
 exclude = ["vendor"]
 
 [workspace.package]
-version = "0.9.4"
+version = "0.9.5"
 edition = "2024"
 license = "MIT"
 rust-version = "1.90"
@@ -23,6 +23,7 @@ lcc-geom = { path = "crates/geom" }
 lcc-faces = { path = "crates/faces" }
 lcc-sysmem = { path = "crates/sysmem" }
 lcc-hdrmeta = { path = "crates/hdrmeta" }
+lcc-winspool = { path = "crates/winspool" }
 lcc-android-host = { path = "crates/android-host" }
 lcc-peer = { path = "crates/peer" }
 lcc-audio-out = { path = "crates/audio-out" }

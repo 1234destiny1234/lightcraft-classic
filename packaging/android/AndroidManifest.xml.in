@@ -6,6 +6,11 @@
     <!-- peer sync: find other devices over mDNS / DNS-SD on Wi-Fi (multicast lock) (Settings ▸ Sync) -->
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
+    <!-- reading folders on the device in place instead of copying them (docs/android.md, Storage):
+         "All files access" on Android 11+, the storage permission before; photos on Android 13+ -->
+    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
+    <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
     <uses-feature android:glEsVersion="0x00030000" android:required="true" />
     <uses-feature android:name="android.hardware.vulkan.version" android:required="false" />
     <application
@@ -14,7 +19,8 @@
         android:hasCode="true"
         android:largeHeap="true"
         android:extractNativeLibs="false"
-        android:allowBackup="false">
+        android:allowBackup="false"
+        android:requestLegacyExternalStorage="true">
         <activity
             android:name=".MainActivity"
             android:exported="true"
@@ -27,6 +33,20 @@
             <intent-filter>
                 <action android:name="android.intent.action.MAIN" />
                 <category android:name="android.intent.category.LAUNCHER" />
+            </intent-filter>
+            <!-- photos opened or shared from other apps go to the import review (MainActivity.onIntent).
+                 Raw files arrive as image/x-… (image/x-canon-cr2, image/x-adobe-dng, …), so image/* covers
+                 them; application/octet-stream would offer the app for every file on the phone. -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:scheme="content" android:mimeType="image/*" />
+            </intent-filter>
+            <intent-filter>
+                <action android:name="android.intent.action.SEND" />
+                <action android:name="android.intent.action.SEND_MULTIPLE" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <data android:mimeType="image/*" />
             </intent-filter>
         </activity>
     </application>

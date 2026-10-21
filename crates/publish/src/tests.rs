@@ -174,3 +174,28 @@ fn republish_with_a_new_extension_keeps_the_new_sidecar() {
     assert_eq!(std::fs::read(d.join("Web/a.png")).unwrap(), b"two");
     assert_eq!(std::fs::read(d.join("Web/a.xmp")).unwrap(), b"<new/>", "the new sidecar must survive removing the old file");
 }
+
+#[test]
+fn hard_drive_same_name_photos_dont_overwrite_each_other() {
+    let d = tmp("hd-clash");
+    let (s, coll) = svc(&d);
+    let mut hd = open_service(&s, &coll).unwrap();
+    let side = [("xmp", b"<x/>".to_vec())];
+    let a = hd.publish(&Upload { photo: PhotoId(1), file_name: "a.jpg", bytes: b"one", sidecars: &side, previous: None }).unwrap();
+    let b = hd.publish(&Upload { photo: PhotoId(2), file_name: "a.jpg", bytes: b"two", sidecars: &side, previous: None }).unwrap();
+    assert_eq!(a.remote_id, "a.jpg");
+    assert_eq!(b.remote_id, "a-2.jpg");
+    assert_eq!(std::fs::read(d.join("Web/a.jpg")).unwrap(), b"one");
+    assert_eq!(std::fs::read(d.join("Web/a-2.jpg")).unwrap(), b"two");
+    assert!(d.join("Web/a-2.xmp").exists());
+    // re-publishing each photo keeps its own name and replaces only its own file
+    let b2 = hd.publish(&Upload { photo: PhotoId(2), file_name: "a.jpg", bytes: b"two!", sidecars: &side, previous: Some("a-2.jpg") }).unwrap();
+    assert_eq!(b2.remote_id, "a-2.jpg");
+    let a2 = hd.publish(&Upload { photo: PhotoId(1), file_name: "a.jpg", bytes: b"one!", sidecars: &side, previous: Some("a.jpg") }).unwrap();
+    assert_eq!(a2.remote_id, "a.jpg");
+    assert_eq!(std::fs::read(d.join("Web/a.jpg")).unwrap(), b"one!");
+    assert_eq!(std::fs::read(d.join("Web/a-2.jpg")).unwrap(), b"two!");
+    // a different extension whose sidecar would clobber another photo's sidecar also moves aside
+    let c = hd.publish(&Upload { photo: PhotoId(3), file_name: "a.tif", bytes: b"three", sidecars: &side, previous: None }).unwrap();
+    assert_eq!(c.remote_id, "a-3.tif");
+}

@@ -75,13 +75,23 @@ pub enum Slot {
     /// A slider drag's live HDR histogram: a small full-quality render of an HDR edit, beside the
     /// drafts (which have no HDR histogram), with no texture ([`Renderer::live_hdr_histogram`]).
     HdrHistogram,
-    /// The loupe's HDR render (linear float, highlights above SDR white) of an HDR edit, for an
-    /// HDR display ([`crate::HdrOutput`]): its result waits in [`Renderer::hdr_view_result`] for
-    /// the upload.
-    HdrView,
+    /// An HDR render (linear float, highlights above SDR white) of an HDR edit, for an HDR display
+    /// ([`crate::HdrOutput`]), for one view ([`HDR_LOUPE`]…): its result waits in
+    /// [`Renderer::hdr_view_result`] for the upload.
+    HdrView(u8),
 }
 
-/// The loupe's HDR texture ([`Slot::HdrView`]), drawn in place of [`Slot::Main`]'s 8-bit one.
+/// The views an HDR edit is shown in HDR in ([`Slot::HdrView`], [`crate::HdrOutput::upload`]):
+/// the loupe's whole frame, its Before side, the second window, the zoomed window of a pane
+/// (`HDR_ZOOMED + pane`, see [`PANE_AFTER`]…) and the Compare / Reference photos
+/// (`HDR_COMPARE + i`).
+pub const HDR_LOUPE: u8 = 0;
+pub const HDR_BEFORE: u8 = 1;
+pub const HDR_SECOND: u8 = 2;
+pub const HDR_COMPARE: u8 = 8;
+pub const HDR_ZOOMED: u8 = 32;
+
+/// A view's HDR texture ([`Slot::HdrView`]), drawn in place of (or over) its 8-bit render.
 #[derive(Clone, Copy, Debug)]
 pub struct HdrView {
     pub photo: PhotoId,
@@ -250,10 +260,10 @@ pub struct Renderer {
     pub textures: HashMap<Slot, Tex>,
     /// The last [`Slot::HdrHistogram`] result: (photo, job key, histogram).
     pub live_hdr_histogram: Option<(PhotoId, u64, Histogram)>,
-    /// The last [`Slot::HdrView`] render, not yet uploaded: (photo, job key, linear float image).
-    pub hdr_view_result: Option<(PhotoId, u64, lcc_pipeline::DeepImage)>,
+    /// The [`Slot::HdrView`] renders not yet uploaded: view → (photo, job key, linear float image).
+    pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
     /// The loupe's uploaded HDR texture.
-    pub hdr_view: Option<HdrView>,
+    pub hdr_view: HashMap<u8, HdrView>,
     pub last_main_ms: f64,
     /// Jobs finished since start (for inspect/perf).
     pub completed: u64,
@@ -345,8 +355,8 @@ impl Renderer {
             pending: HashMap::new(),
             textures: HashMap::new(),
             live_hdr_histogram: None,
-            hdr_view_result: None,
-            hdr_view: None,
+            hdr_view_result: HashMap::new(),
+            hdr_view: HashMap::new(),
             last_main_ms: 0.0,
             completed: 0,
             keep_pixels: false,
@@ -399,6 +409,16 @@ impl Renderer {
                 || !self.request_needed(slot, key, crate::panels::grid::BACKGROUND_THUMB_PRIORITY);
         }
         !self.request_needed(slot, key, priority)
+    }
+
+    /// Does a larger thumbnail of this photo, as it is now, already serve a request for `bucket`? It
+    /// is shown, or rendering, at the larger size. Two views asking for one photo at different sizes
+    /// (the slideshow or print preview and the navigator, say) otherwise replaced each other's request
+    /// for the one thumbnail slot every frame: neither render was ever kept, and the photo rendered
+    /// non-stop while the module was open. The larger size wins and the smaller view scales it down.
+    pub fn thumb_covers(&self, photo: &Arc<lcc_catalog::Photo>, bucket: usize) -> bool {
+        let Some(&(ref old, size, key, _)) = self.thumb_inputs.get(&photo.id) else { return false };
+        old.as_ptr() == Arc::as_ptr(photo) && size > bucket && self.wanted(Slot::Thumb(photo.id)) == Some(key)
     }
 
     /// Remember the inputs of the thumbnail just requested (`quick`: through a stand-in).
@@ -1001,9 +1021,9 @@ impl Renderer {
                 }
                 continue;
             }
-            if slot == Slot::HdrView {
+            if let Slot::HdrView(view) = slot {
                 if let Some(deep) = rendered.deep {
-                    self.hdr_view_result = Some((r.photo, r.key, deep));
+                    self.hdr_view_result.insert(view, (r.photo, r.key, deep));
                     changed = true;
                 }
                 continue;
@@ -1344,6 +1364,27 @@ mod thumbnail_tests {
         finish(&mut app, &work, &ctx, slot, job.run());
         for _ in 0..180 {
             request(&mut app);
+        }
+        assert_eq!(app.renderer.thumb_jobs_built, 1);
+        assert!(work.borrow().jobs.is_empty());
+    }
+
+    /// Two views showing one photo at different sizes in the same frames (the slideshow preview and
+    /// the navigator) share the larger thumbnail instead of replacing each other's render forever.
+    #[test]
+    fn views_asking_for_two_sizes_of_one_photo_share_the_larger_thumbnail() {
+        let (mut app, work, ctx) = fixture();
+        for _ in 0..60 {
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 512, 9);
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 256, 8);
+        }
+        assert_eq!(app.renderer.thumb_jobs_built, 1, "one render, not one per frame");
+        let (slot, job) = take_job(&work);
+        finish(&mut app, &work, &ctx, slot, job.run());
+        assert!(!app.renderer.is_pending(Slot::Thumb(PhotoId(1))), "the render was kept");
+        for _ in 0..60 {
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 256, 8);
+            crate::panels::grid::request_thumb(&mut app, PhotoId(1), 512, 9);
         }
         assert_eq!(app.renderer.thumb_jobs_built, 1);
         assert!(work.borrow().jobs.is_empty());

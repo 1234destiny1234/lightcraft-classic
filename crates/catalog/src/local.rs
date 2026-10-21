@@ -120,6 +120,7 @@ impl Photo {
             && m.extended_description.is_empty()
             && m.keywords.is_empty()
             && m.creator.is_empty()
+            && m.contact.is_empty()
             && m.copyright.is_empty()
             && m.copyright_status.is_unknown()
             && m.usage_terms.is_empty()

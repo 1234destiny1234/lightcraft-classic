@@ -3,9 +3,10 @@
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use lcc_android_host::{AndroidApp, Host, PickKind, PickRequest};
+use lcc_android_host::{AndroidApp, Host, ImeEvent, PickKind, PickRequest};
 use lcc_engine::Session;
 use lcc_ui_egui::panels::library_problem::LibraryProblem;
+use lcc_ui_egui::soft_keyboard::{SoftInput, SoftKeyboard};
 use lcc_ui_egui::{LccApp, Services};
 
 use crate::prefs;
@@ -41,6 +42,10 @@ pub fn main(activity: AndroidApp) {
         lcc_ui_egui::i18n::set_language(ui.language);
     }
     let library = lcc_engine::library::default_dir();
+    // before the UI makes its fonts
+    crate::system_fonts::install();
+    let keyboard_host = host.clone();
+    let staging_dir = activity.external_data_path().map(|d| d.join(crate::staging::DIR_NAME));
 
     let options = eframe::NativeOptions { android_app: Some(activity), renderer: eframe::Renderer::Wgpu, ..Default::default() };
     let result = eframe::run_native(
@@ -48,6 +53,10 @@ pub fn main(activity: AndroidApp) {
         options,
         Box::new(move |cc| {
             let (session, problem) = open_session(library);
+            if let Some(h) = &host {
+                h.set_copy_progress(Arc::new(crate::copies::CopyRows::new(session.activity.clone())));
+            }
+            clean_staging(&session, staging_dir.clone());
             let mut app = LccApp::new(session.with_default_sam3_model(), services(cc, host.clone()));
             if let Some(ui) = loaded.ui {
                 app.ui = ui;
@@ -60,7 +69,7 @@ pub fn main(activity: AndroidApp) {
                 lcc_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
             }
             let writer = prefs::Writer::new(prefs_path, &app, loaded.keep_file);
-            Ok(Box::new(App { app, writer }))
+            Ok(Box::new(App { app, writer, keyboard: Keyboard { host: keyboard_host, ..Default::default() }, host }))
         }),
     );
     if let Err(e) = result {
@@ -94,6 +103,35 @@ fn open_session(dir: Option<PathBuf>) -> (Session, Option<LibraryProblem>) {
     }
 }
 
+/// Deletes the staged copies of picked documents no library photo refers to, off the UI thread
+/// (only inside the staging folder; see `staging`).
+fn clean_staging(session: &Session, dir: Option<PathBuf>) {
+    let Some(dir) = dir else { return };
+    let keep: std::collections::HashSet<PathBuf> = session
+        .catalog
+        .photos()
+        .filter_map(|p| match &p.source {
+            lcc_catalog::Source::File { path } => Some(PathBuf::from(path)),
+            _ => None,
+        })
+        .filter(|p| p.starts_with(&dir))
+        .collect();
+    // a library kept inside the staging folder would hold files the catalog doesn't list
+    if session.library.as_ref().is_some_and(|l| l.dir.starts_with(&dir) || dir.starts_with(&l.dir)) {
+        log::warn!("staging: the library shares {}; not cleaned", dir.display());
+        return;
+    }
+    let spawned = std::thread::Builder::new().name("staging-clean".into()).spawn(move || {
+        let done = crate::staging::clean(&dir, &keep, crate::staging::MIN_AGE, std::time::SystemTime::now());
+        if done.files > 0 {
+            log::info!("staging: deleted {} unused copies ({} bytes)", done.files, done.bytes);
+        }
+    });
+    if let Err(e) = spawned {
+        log::warn!("staging: no cleanup thread: {e}");
+    }
+}
+
 /// What the activity does for the shared UI.
 fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Services {
     if let Some(h) = &host {
@@ -101,6 +139,7 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
         h.set_waker(Box::new(move || ctx.request_repaint()));
     }
     let picker_host = host.clone();
+    let storage_host = host.clone();
     let url_host = host;
     Services {
         // the system picker (Storage Access Framework); the activity copies what is picked into
@@ -118,6 +157,14 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
                 h.pick(&PickRequest { kind, mime_types, file_name: req.file_name.clone() }).map_err(|e| e.to_string())
             })
         }),
+        // "All files access", so folders on the device are read in place (Settings ▸ Folders)
+        storage_access: storage_host.map(|h| {
+            let ask = h.clone();
+            lcc_ui_egui::StorageAccess {
+                granted: Box::new(move || h.has_all_files_access().unwrap_or(false)),
+                ask: Box::new(move || ask.ask_all_files_access().map_err(|e| e.to_string())),
+            }
+        }),
         open_url: url_host.map(|h| -> lcc_ui_egui::OpenUrlFn { Box::new(move |url: &str| h.open_url(url).map_err(|e| e.to_string())) }),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
         write_shared: Some(Arc::new(lcc_engine::export::write_file)),
@@ -132,20 +179,83 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
 struct App {
     app: LccApp,
     writer: prefs::Writer,
+    host: Option<Arc<Host>>,
+    keyboard: Keyboard,
+}
+
+/// The on-screen keyboard: what it typed goes into the frame's input; it shows while a text field
+/// has focus.
+#[derive(Default)]
+struct Keyboard {
+    host: Option<Arc<Host>>,
+    state: SoftKeyboard,
+    shown: bool,
+}
+
+impl Keyboard {
+    fn input(&mut self, raw: &mut egui::RawInput) {
+        for event in lcc_android_host::take_ime() {
+            let input = match event {
+                ImeEvent::Commit(s) => SoftInput::Commit(s),
+                ImeEvent::Preedit(s) => SoftInput::Preedit(s),
+                ImeEvent::FinishComposing => SoftInput::FinishComposing,
+                ImeEvent::DeleteSurrounding { before, after } => SoftInput::DeleteSurrounding { before, after },
+                ImeEvent::Backspace => SoftInput::Backspace,
+                ImeEvent::Delete => SoftInput::Delete,
+                ImeEvent::Enter => SoftInput::Enter,
+            };
+            self.state.events(input, &mut raw.events);
+        }
+    }
+
+    /// Shows or hides the keyboard when whether a text field wants it changed (after the frame).
+    fn follow(&mut self, ctx: &egui::Context) {
+        let wanted = SoftKeyboard::wanted(ctx);
+        if wanted == self.shown {
+            return;
+        }
+        self.shown = wanted;
+        if !wanted {
+            self.state.reset();
+        }
+        if let Some(h) = &self.host
+            && let Err(e) = h.set_keyboard(wanted)
+        {
+            log::warn!("keyboard: {e}");
+        }
+    }
 }
 
 impl eframe::App for App {
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         self.app.logic(ctx);
+        // a picker's answer that came after the system restarted the app (see `Unclaimed`)
+        for u in self.host.as_ref().map(|h| h.take_unclaimed()).unwrap_or_default() {
+            use lcc_ui_egui::pick::PickKind as Ui;
+            let kind = match u.kind {
+                PickKind::Files => Ui::Files,
+                PickKind::File => Ui::File,
+                PickKind::Folder => Ui::Folder,
+                PickKind::Save => Ui::Save,
+            };
+            lcc_ui_egui::pick::answer_after_restart(&mut self.app, ctx, kind, u.paths);
+        }
         let now = ctx.input(|i| i.time);
         self.writer.tick(&mut self.app, now);
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+        self.keyboard.input(raw);
+        // photos opened, shared or dropped from other apps take the desktop's drop path: presets
+        // import as presets, photos open the import review
+        if let Some(h) = &self.host {
+            raw.dropped_files.extend(h.take_opened().into_iter().map(|p| -> egui::DroppedFileHandle { Arc::new(SharedFile(p.into())) }));
+        }
         self.app.raw_input_hook(raw);
     }
     fn ui(&mut self, ui: &mut egui::Ui, frame: &mut eframe::Frame) {
         self.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
         self.app.ui(ui);
+        self.keyboard.follow(ui.ctx());
     }
     fn on_exit(&mut self) {
         if let Err(e) = self.writer.save(&self.app) {
@@ -157,5 +267,18 @@ impl eframe::App for App {
         if !self.app.shutdown(EXIT_WAIT) {
             log::warn!("close: background work was still running after {EXIT_WAIT:?}");
         }
+    }
+}
+
+/// A photo another app opened, shared or dropped in, as the activity copied it.
+#[derive(Debug)]
+struct SharedFile(PathBuf);
+
+impl egui::DroppedFile for SharedFile {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| format!("{}: {e}", self.0.display()))
     }
 }

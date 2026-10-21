@@ -29,6 +29,8 @@ pub struct WebUi {
     pub status: String,
     pub galleries: Vec<String>,
     pub servers: Vec<Server>,
+    /// A host key fingerprint the server showed (`web.hostKey`), waiting for the user to confirm it.
+    pub host_key_seen: String,
     pub loaded: bool,
     /// Share via Immich (IMM-SHARELINK).
     pub share_account: String,
@@ -388,6 +390,7 @@ fn settings_column(ui: &mut egui::Ui, app: &mut LccApp, st: &mut WebUi) {
             upload(app, st);
         }
     });
+    host_key_row(ui, app, st);
     if !st.servers.is_empty() {
         ui.horizontal_wrapped(|ui| {
             for x in st.servers.clone() {
@@ -459,7 +462,7 @@ pub fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String
 /// `webui.previewInBrowser`: the gallery as shown (or `settings`) exported to a temporary folder in
 /// the background, then opened in the system browser.
 fn preview_in_browser(app: &mut LccApp, p: &Value) -> Result<Value, String> {
-    let dir = std::env::temp_dir().join(format!("{}-web-preview-{}", lcc_brand::BINARY, std::process::id()));
+    let dir = crate::links::web_preview_dir();
     // a previous preview's files go first, so the browser shows only this one
     let _ = std::fs::remove_dir_all(&dir);
     let mut q = p.clone();
@@ -510,7 +513,6 @@ fn start(app: &mut LccApp, id: &str, engine_id: &'static str, p: &Value) -> Resu
         Some("export"),
         move || job.run(&mut |_, _| true),
         move |app, ctx, r: Result<Value, String>| {
-            // (an upload's host key is remembered on first use by the job itself)
             let mut st = state(ctx);
             if let Ok(v) = &r
                 && let Some(url) = v.get("url").and_then(Value::as_str)
@@ -531,11 +533,41 @@ fn start(app: &mut LccApp, id: &str, engine_id: &'static str, p: &Value) -> Resu
                     app.toast_error(ctx, e);
                 }
             }
-            st.loaded = false; // a first upload may have remembered a host key
             store(ctx, st);
         },
     )?;
     Ok(json!({"background": true, "steps": steps}))
+}
+
+/// The server's host key: uploads refuse until the user has checked and confirmed its fingerprint.
+fn host_key_row(ui: &mut egui::Ui, app: &mut LccApp, st: &mut WebUi) {
+    let pinned = st.server.known_fingerprint.trim().to_string();
+    if pinned.is_empty() {
+        ui.label(egui::RichText::new(crate::i18n::tr("Host key: not confirmed yet (uploads are refused until it is)")).small());
+    } else {
+        ui.label(egui::RichText::new(format!("{} {pinned}", crate::i18n::tr("Host key:"))).small());
+    }
+    if ui.small_button(crate::i18n::tr("Check Host Key")).clicked() {
+        match app.session.execute("web.hostKey", &json!({"server": st.server})) {
+            Ok(v) => st.host_key_seen = v["fingerprint"].as_str().unwrap_or_default().to_string(),
+            Err(e) => st.status = e.to_string(),
+        }
+    }
+    if !st.host_key_seen.is_empty() && st.host_key_seen != pinned {
+        ui.label(crate::i18n::tr("Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:"));
+        ui.label(egui::RichText::new(&st.host_key_seen).monospace());
+        if ui.button(crate::i18n::tr("Trust This Host Key")).clicked() {
+            let fp = std::mem::take(&mut st.host_key_seen);
+            st.server.known_fingerprint = fp.clone();
+            if st.servers.iter().any(|x| x.name == st.server.name) {
+                st.status = match app.session.execute("web.trustServer", &json!({"name": st.server.name, "fingerprint": fp})) {
+                    Ok(_) => crate::i18n::tr("Host key trusted").to_string(),
+                    Err(e) => e.to_string(),
+                };
+                refresh_lists(app, st);
+            }
+        }
+    }
 }
 
 fn export(app: &mut LccApp, st: &mut WebUi) {
@@ -644,7 +676,9 @@ mod tests {
         // G28: Preview in Browser exports the gallery shown to a temporary folder and opens its index
         let opened = std::sync::Arc::new(std::sync::Mutex::new(Vec::<String>::new()));
         let o = opened.clone();
+        // the same allow-policy the desktop host's open_url applies
         h.app.services.open_url = Some(Box::new(move |u: &str| {
+            crate::links::check_browser_url(u)?;
             o.lock().unwrap().push(u.to_string());
             Ok(())
         }));

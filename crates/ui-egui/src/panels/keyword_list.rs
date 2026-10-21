@@ -101,7 +101,9 @@ pub fn show_body(app: &mut LccApp, ui: &mut egui::Ui) {
     let selection = app.session.selected();
     let ticks = app.caches.keyword_ticks(&app.session.catalog, &selection);
     for r in &rows {
-        row(app, ui, r, &selection, &ticks, filter.trim().is_empty());
+        if !out_of_sight(ui, r) {
+            row(app, ui, r, &selection, &ticks, filter.trim().is_empty());
+        }
     }
     ui.add_space(12.0);
 }
@@ -180,6 +182,22 @@ fn drop_keyword(app: &mut LccApp, ctx: &egui::Context, keyword: &str, parent: Op
         Ok(_) => follow(app, keyword, &to),
         Err(e) => app.toast(ctx, e),
     }
+}
+
+/// Whether the row `r` about to be drawn is out of sight: then it only takes its room and is listed
+/// for the control channel, and the caller skips it. A library can have thousands of keywords, and
+/// drawing them all every frame slows the whole app down. (A row out of sight can't take a click
+/// or a drop: [`drop_target`] only takes what is shown.) Such a row isn't announced to screen
+/// readers until it scrolls into sight, and a keyword dragged from a row that scrolls away stays
+/// dragged through `dragging_keyword` (egui's own drag on the row ends).
+fn out_of_sight(ui: &mut egui::Ui, r: &Row) -> bool {
+    let rect = Rect::from_min_size(ui.cursor().min, vec2(ui.available_width(), ROW_H));
+    if ui.is_rect_visible(rect) {
+        return false;
+    }
+    ui.allocate_space(rect.size());
+    register(ui.ctx(), format!("keywordRow:{}", r.path), rect);
+    true
 }
 
 /// One keyword's row: the triangle, the tick box, the name, the count, and on hover the arrow.

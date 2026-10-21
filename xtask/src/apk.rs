@@ -1,6 +1,11 @@
 //! `cargo xtask android package`: the Android app as an APK (GitHub releases, sideloading) and,
 //! with `--aab`, an Android App Bundle (the Play Store), in `<target>/android/`.
 //!
+//! `--abi` (repeatable: `arm64`, `x86_64`) picks the processors; every one is built in a single cargo run
+//! (`--target` once per ABI), which shares the host-side build and keeps all cores busy. One APK holds every
+//! ABI, or, with `--split`, one APK per ABI (what a release ships: phones take arm64, the emulator and
+//! Chromebooks x86_64); the bundle always holds them all and the Play Store hands each device its own.
+//!
 //! No Gradle: the activity is one Java file on the platform's `NativeActivity` (no AndroidX), so
 //! the SDK's own tools do it directly: `javac` + `d8` for the activity, `aapt2` for the manifest
 //! and launcher icon, the native library from `cargo build`, `zipalign -P 16` (16 KB pages, as
@@ -27,11 +32,13 @@ const BUNDLETOOL_SHA256: &str = "675786493983787ffa11550bdb7c0715679a44e1643f3ff
 struct Options {
     abis: Vec<Abi>,
     aab: bool,
+    /// one APK per ABI instead of one holding them all
+    split: bool,
     skip_build: bool,
 }
 
 fn parse(args: &[&str]) -> Result<Options, String> {
-    let mut o = Options { abis: Vec::new(), aab: false, skip_build: false };
+    let mut o = Options { abis: Vec::new(), aab: false, split: false, skip_build: false };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match *a {
@@ -43,6 +50,7 @@ fn parse(args: &[&str]) -> Result<Options, String> {
                 }
             }
             "--aab" => o.aab = true,
+            "--split" => o.split = true,
             "--skip-build" => o.skip_build = true,
             other => return Err(format!("android package: unknown option `{other}`")),
         }
@@ -94,6 +102,24 @@ fn jdk(name: &str) -> Command {
         Some(p) => Command::new(p),
         None => Command::new(name),
     }
+}
+
+/// An SDK build tool. `d8` and `apksigner` are shell scripts that run `java` from `PATH`, so `JAVA_HOME`'s
+/// `bin` goes first on it: on a machine with no system Java (the CI runners, where
+/// `install-android-sdk.sh` sets only `JAVA_HOME`) `d8` otherwise failed with exit status 127.
+fn sdk_tool(tool: PathBuf) -> Command {
+    let mut c = Command::new(tool);
+    if let Some(path) = path_with_java(std::env::var_os("JAVA_HOME"), std::env::var_os("PATH")) {
+        c.env("PATH", path);
+    }
+    c
+}
+
+/// `PATH` with `$JAVA_HOME/bin` in front, or `None` without a `JAVA_HOME`.
+fn path_with_java(java_home: Option<std::ffi::OsString>, path: Option<std::ffi::OsString>) -> Option<std::ffi::OsString> {
+    let bin = PathBuf::from(java_home.filter(|h| !h.is_empty())?).join("bin");
+    let rest = path.map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).unwrap_or_default();
+    std::env::join_paths(std::iter::once(bin).chain(rest)).ok()
 }
 
 /// `versionCode`: grows with every release, a prerelease below its release
@@ -232,6 +258,18 @@ fn bundletool(out: &Path) -> Result<PathBuf, String> {
     Ok(jar)
 }
 
+/// The APKs to write: file name and the ABI folders (`lib/<dir>/`) each one holds. One APK with every
+/// ABI, or with `split` one per ABI, named after the ABIs it carries.
+fn apk_outputs(binary: &str, version: &str, abis: &[Abi], split: bool) -> Vec<(String, Vec<&'static str>)> {
+    let name = |dirs: &[&str]| format!("{binary}-{version}-android-{}.apk", dirs.join("-"));
+    if split {
+        abis.iter().map(|a| (name(&[a.dir()]), vec![a.dir()])).collect()
+    } else {
+        let dirs: Vec<&'static str> = abis.iter().map(|a| a.dir()).collect();
+        vec![(name(&dirs), dirs)]
+    }
+}
+
 pub fn package(args: &[&str]) -> Result<(), String> {
     let opts = parse(args)?;
     let root = root();
@@ -251,18 +289,22 @@ pub fn package(args: &[&str]) -> Result<(), String> {
 
     // 1. the native library, per processor: the `dist` profile (thin LTO, no debug info), stripped
     let ndk = ndk_root().as_deref().and_then(ndk_bin).ok_or("android: the Android NDK was not found (set ANDROID_NDK_HOME)")?;
+    if !opts.skip_build {
+        if let Some(abi) = opts.abis.iter().find(|a| !target_installed(a.triple())) {
+            return Err(format!("android: `rustup target add {}` first", abi.triple()));
+        }
+        let mut c = cargo();
+        c.args(["build", "--profile", "dist", "-p", "lcc-android"]);
+        for abi in &opts.abis {
+            c.args(["--target", abi.triple()]);
+            configure(&mut c, &ndk, *abi);
+        }
+        let targets = opts.abis.iter().map(|a| format!("--target {}", a.triple())).collect::<Vec<_>>().join(" ");
+        step(c, &format!("cargo build --profile dist {targets} -p lcc-android"))?;
+    }
     let mut libs = Vec::new();
     for abi in &opts.abis {
         let so = target.join(abi.triple()).join("dist/libapp.so");
-        if !opts.skip_build {
-            if !target_installed(abi.triple()) {
-                return Err(format!("android: `rustup target add {}` first", abi.triple()));
-            }
-            let mut c = cargo();
-            c.args(["build", "--profile", "dist", "--target", abi.triple(), "-p", "lcc-android"]);
-            configure(&mut c, &ndk, *abi);
-            step(c, &format!("cargo build --profile dist --target {} -p lcc-android", abi.triple()))?;
-        }
         if !so.is_file() {
             return Err(format!("android: {} is missing (build without --skip-build)", so.display()));
         }
@@ -297,7 +339,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     step(c, "javac MainActivity.java")?;
     let dex = work.join("dex");
     mkdir(&dex)?;
-    let mut c = Command::new(tools.join("d8"));
+    let mut c = sdk_tool(tools.join("d8"));
     c.args(["--release", "--min-api", &MIN_API.to_string(), "--lib"]).arg(&jar).arg("--output").arg(&dex).args(files_below(&classes));
     step(c, "d8")?;
 
@@ -307,11 +349,11 @@ pub fn package(args: &[&str]) -> Result<(), String> {
         copy(&root.join(format!("assets/app-icon/hicolor/{size}x{size}/apps/app.png")), &res.join(format!("mipmap-{density}/ic_launcher.png")))?;
     }
     let compiled = work.join("res.zip");
-    let mut c = Command::new(tools.join("aapt2"));
+    let mut c = sdk_tool(tools.join("aapt2"));
     c.args(["compile", "--dir"]).arg(&res).arg("-o").arg(&compiled);
     step(c, "aapt2 compile")?;
     let link = |proto: bool, dest: &Path| -> Result<(), String> {
-        let mut c = Command::new(tools.join("aapt2"));
+        let mut c = sdk_tool(tools.join("aapt2"));
         c.args(["link", "-o"]).arg(dest).arg("-I").arg(&jar).arg("--manifest").arg(&manifest).args([
             "--min-sdk-version",
             &MIN_API.to_string(),
@@ -333,31 +375,33 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     let abis = opts.abis.iter().map(|a| a.dir()).collect::<Vec<_>>().join("-");
     let stem = format!("{binary}-{version}-android-{abis}");
 
-    // 5. the APK: linked resources + dex + native libraries, aligned and signed
+    // 5. the APK(s): linked resources + dex + native libraries, aligned and signed
     let linked = work.join("linked.apk");
     link(false, &linked)?;
-    let mut extra = vec![("classes.dex".to_string(), dex.join("classes.dex"))];
-    extra.extend(libs.iter().map(|(dir, so)| (format!("lib/{dir}/libapp.so"), so.clone())));
-    let unaligned = work.join("unaligned.apk");
-    rezip(&linked, &unaligned, |n| Some(n.to_string()), &extra)?;
-    let aligned = work.join("aligned.apk");
-    let mut c = Command::new(tools.join("zipalign"));
-    c.args(["-P", "16", "-f", "4"]).arg(&unaligned).arg(&aligned);
-    step(c, "zipalign")?;
-    let apk = out.join(format!("{stem}.apk"));
-    let mut c = Command::new(tools.join("apksigner"));
-    c.args(["sign", "--ks"])
-        .arg(&key.keystore)
-        .args(["--ks-key-alias", &key.alias, "--ks-pass", "env:LCC_APK_STORE_PASS", "--key-pass", "env:LCC_APK_KEY_PASS", "--out"])
-        .arg(&apk)
-        .arg(&aligned)
-        .env("LCC_APK_STORE_PASS", &key.store_pass)
-        .env("LCC_APK_KEY_PASS", &key.key_pass);
-    step(c, "apksigner sign")?;
-    let mut c = Command::new(tools.join("apksigner"));
-    c.args(["verify"]).arg(&apk);
-    step(c, "apksigner verify")?;
-    println!("android: {}{}", apk.display(), if key.debug { " (debug key)" } else { "" });
+    for (name, dirs) in apk_outputs(&binary, &version, &opts.abis, opts.split) {
+        let mut extra = vec![("classes.dex".to_string(), dex.join("classes.dex"))];
+        extra.extend(libs.iter().filter(|(dir, _)| dirs.contains(dir)).map(|(dir, so)| (format!("lib/{dir}/libapp.so"), so.clone())));
+        let unaligned = work.join("unaligned.apk");
+        rezip(&linked, &unaligned, |n| Some(n.to_string()), &extra)?;
+        let aligned = work.join("aligned.apk");
+        let mut c = sdk_tool(tools.join("zipalign"));
+        c.args(["-P", "16", "-f", "4"]).arg(&unaligned).arg(&aligned);
+        step(c, "zipalign")?;
+        let apk = out.join(&name);
+        let mut c = sdk_tool(tools.join("apksigner"));
+        c.args(["sign", "--ks"])
+            .arg(&key.keystore)
+            .args(["--ks-key-alias", &key.alias, "--ks-pass", "env:LCC_APK_STORE_PASS", "--key-pass", "env:LCC_APK_KEY_PASS", "--out"])
+            .arg(&apk)
+            .arg(&aligned)
+            .env("LCC_APK_STORE_PASS", &key.store_pass)
+            .env("LCC_APK_KEY_PASS", &key.key_pass);
+        step(c, "apksigner sign")?;
+        let mut c = sdk_tool(tools.join("apksigner"));
+        c.args(["verify"]).arg(&apk);
+        step(c, "apksigner verify")?;
+        println!("android: {}{}", apk.display(), if key.debug { " (debug key)" } else { "" });
+    }
 
     // 6. the bundle (Play Store): the same parts in bundletool's module layout
     if opts.aab {
@@ -406,6 +450,32 @@ mod tests {
         let order = ["0.9.0-rc1", "0.9.0-rc2", "0.9.0", "0.9.1", "0.10.0", "1.0.0-rc1", "1.0.0"];
         let codes: Vec<u32> = order.iter().map(|v| version_code(v).unwrap()).collect();
         assert!(codes.windows(2).all(|w| w[0] < w[1]), "{codes:?}");
+    }
+
+    #[test]
+    fn split_writes_one_apk_per_abi_and_the_default_one_for_all() {
+        let both = [Abi::Arm64, Abi::X86_64];
+        let split = apk_outputs("app", "1.2.3", &both, true);
+        assert_eq!(
+            split,
+            vec![("app-1.2.3-android-arm64-v8a.apk".to_string(), vec!["arm64-v8a"]), ("app-1.2.3-android-x86_64.apk".to_string(), vec!["x86_64"]),]
+        );
+        assert_eq!(
+            apk_outputs("app", "1.2.3", &both, false),
+            vec![("app-1.2.3-android-arm64-v8a-x86_64.apk".to_string(), vec!["arm64-v8a", "x86_64"])]
+        );
+        let opts = parse(&["--abi", "arm64", "--abi", "x86_64", "--split", "--aab"]).unwrap();
+        assert!(opts.split && opts.aab && opts.abis == both);
+    }
+
+    #[test]
+    fn sdk_tools_find_the_jdk_first_on_path() {
+        let home = std::env::temp_dir().join("jdk");
+        let path = path_with_java(Some(home.clone().into()), Some(std::env::join_paths([std::env::temp_dir().join("usr-bin")]).unwrap())).unwrap();
+        let dirs: Vec<PathBuf> = std::env::split_paths(&path).collect();
+        assert_eq!(dirs, vec![home.join("bin"), std::env::temp_dir().join("usr-bin")]);
+        assert_eq!(path_with_java(None, Some("x".into())), None);
+        assert_eq!(path_with_java(Some("".into()), Some("x".into())), None);
     }
 
     #[test]

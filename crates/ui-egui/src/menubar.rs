@@ -118,6 +118,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "view.focusSearch",
             "library.findSimilar",
             "@Filters",
+            "@Filter by Rating",
             "---",
             "dialog.cull",
             "tool.painter",
@@ -144,6 +145,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "photo.virtualCopy",
             "@Stack",
             "@Photo Merge",
+            "dialog.enhance",
             "@Edit In",
             "@Video",
             "---",
@@ -326,6 +328,7 @@ const SUB_LAYOUT: &[(&str, &str, &[&str])] = &[
             "view.zoomToFocus",
             "view.faceBoxes",
             "view.visualizeHdr",
+            "view.hdrPreview",
             "---",
             "view.colorReadoutRgb",
             "view.colorReadoutHsl",
@@ -474,6 +477,7 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "view.reference" => Some(u.view == ViewMode::Reference),
         "view.leftPanel" => Some(u.left_panel),
         "view.faceBoxes" => Some(u.face_boxes),
+        "view.hdrPreview" => Some(u.hdr_preview),
         "view.focusPoint" => Some(u.settings.focus_point),
         "view.zoomToFocus" => Some(u.settings.zoom_to_focus),
         "view.filmstrip" => Some(u.filmstrip),
@@ -528,6 +532,7 @@ fn live_label(app: &LccApp, id: &str, label: &str) -> String {
         "photo.delete" if n > 1 => crate::i18n::tr_format!("Delete {n} Photos", n = n),
         "photo.virtualCopy" if n > 1 => crate::i18n::tr_format!("Create {n} Virtual Copies", n = n),
         "dialog.rename" if n > 1 => crate::i18n::tr_format!("Rename {n} Photos…", n = n),
+        "dialog.rename" => crate::i18n::tr("Rename Photo…").to_string(),
         "app.showInFinder" => crate::i18n::tr(crate::menus::reveal_label()).to_string(),
         _ => label.to_string(),
     }
@@ -588,6 +593,26 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
                 MenuNode::Separator,
                 item("library.clearPreviews", Value::Null, "Discard Preview Cache", None, true, None),
             ]
+        }
+        // Classic's Library ▸ Filter by Rating: the filter bar's rating; picking the stars it has again clears it
+        "Filter by Rating" => {
+            use lcc_catalog::RatingOp;
+            let f = &app.session.filter;
+            let mut v: Vec<MenuNode> = [
+                ("≥  at least", "atLeast", RatingOp::AtLeast),
+                ("=  exactly", "exactly", RatingOp::Exactly),
+                ("≤  at most", "atMost", RatingOp::AtMost),
+            ]
+            .into_iter()
+            .map(|(label, k, op)| item("library.filter", json!({"ratingOp": k}), label, None, true, Some(f.rating_op == op)))
+            .collect();
+            v.push(MenuNode::Separator);
+            v.extend((1..=5u8).map(|r| {
+                item("library.filter", json!({"rating": if f.rating == r { 0 } else { r }}), "★".repeat(r as usize), None, true, Some(f.rating == r))
+            }));
+            v.push(MenuNode::Separator);
+            v.push(item("library.filter", json!({"rating": 0}), "None", None, f.rating > 0, None));
+            v
         }
         "Set Rating" => (0..=5u8)
             .map(|r| {

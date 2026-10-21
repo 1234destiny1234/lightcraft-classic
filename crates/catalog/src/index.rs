@@ -6,12 +6,13 @@
 //! without them and builds them when asked. Once built, [`crate::Catalog::apply`] keeps them up to
 //! date: the ops that change stacks or album photos (`AddStack`, `RemoveStack`, `SetStack`,
 //! `AddAlbum`, `RemoveAlbum`, `SetAlbumPhotos`) update them as they apply, inverses and the
-//! rollback of a failed batch included, as those are ops too.
+//! rollback of a failed batch included, as those are ops too. The keyword index is dropped by
+//! every op that can change a keyword and rebuilt when next asked.
 
 use std::collections::{HashMap, HashSet};
 use std::sync::OnceLock;
 
-use crate::{AlbumId, Catalog, PhotoId, StackId};
+use crate::{AlbumId, Catalog, Op, PhotoId, StackId};
 
 #[derive(Default)]
 pub(crate) struct Indexes {
@@ -20,6 +21,8 @@ pub(crate) struct Indexes {
     stacks: OnceLock<Option<HashMap<PhotoId, StackId>>>,
     /// Album → its photos (regular albums; a smart album's list is empty).
     albums: OnceLock<HashMap<AlbumId, HashSet<PhotoId>>>,
+    /// The library's keywords (dropped by any op that can change them, see [`Indexes::op_applied`]).
+    keywords: OnceLock<crate::keywords::KeywordIndex>,
 }
 
 /// A copy builds its own when asked (copies are made to be saved, not queried).
@@ -40,11 +43,42 @@ impl PartialEq for Indexes {
 impl std::fmt::Debug for Indexes {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         let stacks = self.stacks.get().map(|m| m.as_ref().map(HashMap::len));
-        f.debug_struct("Indexes").field("stacks", &stacks).field("albums", &self.albums.get().map(HashMap::len)).finish()
+        f.debug_struct("Indexes")
+            .field("stacks", &stacks)
+            .field("albums", &self.albums.get().map(HashMap::len))
+            .field("keywords", &self.keywords.get().is_some())
+            .finish()
     }
 }
 
 impl Indexes {
+    /// `op` was applied (on its own or in a batch): forget what it may have changed.
+    pub(crate) fn op_applied(&mut self, op: &Op) {
+        // (only the kinds that leave every photo's keywords, its presence and the keyword list as
+        // they were keep the keyword index; a new kind drops it)
+        let keeps_keywords = matches!(
+            op,
+            Op::SetRating { .. }
+                | Op::SetFlag { .. }
+                | Op::SetLabel { .. }
+                | Op::SetDevelop { .. }
+                | Op::SetVersions { .. }
+                | Op::SetHistory { .. }
+                | Op::PushHistory { .. }
+                | Op::SetHistoryCursor { .. }
+                | Op::SetPreview { .. }
+                | Op::SetCaptured { .. }
+                | Op::SetFile { .. }
+                | Op::Relink { .. }
+                | Op::SetSha1 { .. }
+                | Op::SetAnalysis { .. }
+                | Op::Batch { .. }
+        );
+        if !keeps_keywords {
+            self.keywords = OnceLock::new();
+        }
+    }
+
     /// Stack `id` held `old` and holds `new` now (empty: it was added, or is gone).
     pub(crate) fn stack_changed(&mut self, id: StackId, old: &[PhotoId], new: &[PhotoId]) {
         let Some(Some(m)) = self.stacks.get_mut() else { return };
@@ -97,5 +131,10 @@ impl Catalog {
     pub(crate) fn album_lists(&self, album: AlbumId, photo: PhotoId) -> bool {
         let m = self.index.albums.get_or_init(|| self.albums.values().map(|a| (a.id, a.photos.iter().copied().collect())).collect());
         m.get(&album).is_some_and(|s| s.contains(&photo))
+    }
+
+    /// The library's keywords, by the index (built on first use).
+    pub(crate) fn keyword_index(&self) -> &crate::keywords::KeywordIndex {
+        self.index.keywords.get_or_init(|| crate::keywords::KeywordIndex::build(self))
     }
 }

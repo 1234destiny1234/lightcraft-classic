@@ -219,6 +219,9 @@ fn start_music(app: &mut LccApp, repeat: bool) -> Option<String> {
     if !lcc_slideshow::music::CAN_PLAY {
         return Some("this build plays slideshows without sound".into());
     }
+    if let Err(e) = lcc_slideshow::music::check_total(&m.tracks) {
+        return Some(e);
+    }
     let mut all = lcc_slideshow::music::Audio::default();
     for t in &m.tracks {
         match lcc_slideshow::music::decode(std::path::Path::new(t)) {

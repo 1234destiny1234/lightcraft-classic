@@ -226,14 +226,17 @@ fn hostile_ids_are_not_put_into_paths() {
 fn urls_are_normalized() {
     assert_eq!(client::normalize_url(" photos.example.org/ ").unwrap(), "https://photos.example.org");
     assert_eq!(client::normalize_url("https://nas:2283/api/").unwrap(), "https://nas:2283");
-    // plain http would send the API key in the clear: only to this machine
-    for bad in ["http://nas:2283", "http://192.168.1.5:2283", "http://photos.example.org", "http://localhost.example.org"] {
-        assert!(matches!(client::normalize_url(bad), Err(ImmichError::BadUrl(_))), "{bad}");
-        assert!(Client::new(bad, Secret::new("k"), &ServerOptions::default()).is_err(), "{bad}");
+    // plain http is accepted (home servers often have no certificate) but warned about, except for this machine
+    for lan in ["http://nas:2283", "http://192.168.1.5:2283", "http://photos.example.org", "http://localhost.example.org"] {
+        assert_eq!(client::normalize_url(lan).unwrap(), lan);
+        assert!(Client::new(lan, Secret::new("k"), &ServerOptions::default()).is_ok(), "{lan}");
+        assert!(client::plain_http_warning(lan).is_some_and(|w| w.contains("not encrypted")), "{lan}");
     }
-    for ok in ["http://localhost:2283", "http://127.0.0.1:2283", "http://[::1]:2283", "http://immich.localhost"] {
-        assert!(client::normalize_url(ok).is_ok(), "{ok}");
+    for quiet in ["http://localhost:2283", "http://127.0.0.1:2283", "http://[::1]:2283", "http://immich.localhost", "https://nas:2283", "nas"] {
+        assert!(client::normalize_url(quiet).is_ok(), "{quiet}");
+        assert_eq!(client::plain_http_warning(quiet), None, "{quiet}");
     }
+    assert_eq!(client::plain_http_warning(""), None);
     assert!(client::normalize_url("").is_err());
     assert_eq!(client::asset_web_url("http://nas:2283", "abc"), "http://nas:2283/photos/abc");
     assert!(client::api_key_page("http://nas:2283").starts_with("http://nas:2283/user-settings"));
@@ -615,6 +618,11 @@ fn publish_photos() -> std::collections::HashMap<PhotoId, crate::publish::PhotoI
 /// answer 503, and with `arrived` an upload that failed still reached the server (the checksum
 /// check finds it afterwards).
 fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<Req>>>) {
+    publish_server_with(fail_uploads, arrived, false)
+}
+
+/// `trashed`: the checksum match is in the trash (and was found before any upload).
+fn publish_server_with(fail_uploads: usize, arrived: bool, trashed: bool) -> (String, Arc<Mutex<Vec<Req>>>) {
     let uploads = Arc::new(AtomicUsize::new(0));
     let name = Arc::new(Mutex::new("Old".to_string()));
     serve(move |req| {
@@ -631,7 +639,7 @@ fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<
             }
             ("POST", "/api/albums") => response("201 Created", br#"{"id":"al-new","albumName":"x","assetCount":0}"#),
             ("POST", "/api/assets/bulk-upload-check") => {
-                if arrived && uploads.load(Ordering::SeqCst) > 0 {
+                if trashed || (arrived && uploads.load(Ordering::SeqCst) > 0) {
                     response("200 OK", br#"{"results":[{"id":"x","action":"reject","reason":"duplicate","assetId":"as-1"}]}"#)
                 } else {
                     response("200 OK", br#"{"results":[{"id":"x","action":"accept"}]}"#)
@@ -645,6 +653,8 @@ fn publish_server(fail_uploads: usize, arrived: bool) -> (String, Arc<Mutex<Vec<
                     response("201 Created", br#"{"id":"as-1","status":"created"}"#)
                 }
             }
+            ("GET", "/api/assets/as-1") => response("200 OK", format!(r#"{{"id":"as-1","isTrashed":{trashed},"deviceId":"dev"}}"#).as_bytes()),
+            ("POST", "/api/trash/restore/assets") => response("204 No Content", b""),
             ("PUT", "/api/albums/al-1/assets") | ("PUT", "/api/albums/al-new/assets") => response("200 OK", br#"[{"id":"as-1","success":true}]"#),
             _ => response("404 Not Found", br#"{"message":"Not found"}"#),
         }
@@ -699,4 +709,14 @@ fn failed_uploads_are_retried_without_duplicates() {
     // gives up after the retries, with an error
     let (url, _) = publish_server(100, false);
     assert!(publish_once(&url, "Old", None).is_err());
+}
+
+#[test]
+fn a_trashed_checksum_match_is_restored_not_reused_as_is() {
+    let (url, seen) = publish_server_with(0, false, true);
+    assert_eq!(publish_once(&url, "Old", None).unwrap(), "r:as-1");
+    let seen = seen.lock().unwrap();
+    let restore = seen.iter().find(|r| r.method == "POST" && r.target == "/api/trash/restore/assets").expect("restored");
+    assert!(String::from_utf8_lossy(&restore.body).contains("as-1"));
+    assert!(!seen.iter().any(|r| r.method == "POST" && r.target == "/api/assets"), "no upload");
 }
