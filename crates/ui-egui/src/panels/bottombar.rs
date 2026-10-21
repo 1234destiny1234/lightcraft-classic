@@ -134,7 +134,8 @@ fn centre(app: &mut LccApp, ui: &mut egui::Ui, full: Rect, from: f32, to: f32) {
     if room < pill_w {
         return;
     }
-    let with_copy = room >= centre_width;
+    // Lightroom Classic's Grid toolbar has no copy buttons: they stay in Develop's (and the Photo menu)
+    let with_copy = room >= centre_width && app.ui.module != crate::module::ModuleId::Library;
     let w = if with_copy { centre_width } else { pill_w };
     // where it sits with room to spare (slightly left of centre), kept between the side groups
     let left = (full.center().x - 60.0 - pill_w / 2.0).clamp(from, to - w);

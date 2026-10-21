@@ -1644,7 +1644,7 @@ fn the_grid_is_titled_after_the_folder() {
     h.app.session.library_folder = Some("/Volumes/tokyo/photos/travel".into());
     assert_eq!(crate::i18n::source_title(&h.app.session), "photos/travel");
     h.app.session.source = lcc_engine::LibrarySource::All;
-    assert_eq!(crate::i18n::source_title(&h.app.session), "All Photos");
+    assert_eq!(crate::i18n::source_title(&h.app.session), "All Photographs");
 }
 
 /// A folder that holds nothing itself and leads to one folder starts open: the tree opens down to

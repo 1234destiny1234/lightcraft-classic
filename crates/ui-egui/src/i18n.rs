@@ -300,7 +300,8 @@ pub fn history_label(source: &str, presets: &[lcc_develop::Preset]) -> String {
 /// A library source's heading (All Photos, Recently Deleted…) in the UI language; an album's
 /// name is the user's and stays verbatim.
 pub fn source_label(source: lcc_engine::LibrarySource, catalog: &lcc_catalog::Catalog) -> String {
-    let label = source.label(catalog);
+    // (Classic: the Catalog panel's name for it, as Lightroom Classic's)
+    let label = if source == lcc_engine::LibrarySource::All { "All Photographs".into() } else { source.label(catalog) };
     if matches!(source, lcc_engine::LibrarySource::Album(id) if catalog.album(id).is_some()) { label } else { tr(&label).to_string() }
 }
 
@@ -1366,7 +1367,8 @@ mod tests {
         let english_ids = ids(&app);
         for language in Locale::ALL {
             let text = painted_text(&ctx, &mut app, *language);
-            for label in ["My Photos", "All Photos"] {
+            // (Classic names the catalog's row All Photographs, as Lightroom Classic)
+            for label in ["My Photos", "All Photographs"] {
                 assert!(text.contains(language.tr(label)), "{language:?}: {label} -> {:?} not in\n{text}", language.tr(label));
             }
             assert_eq!(app.font_language, *language, "the fonts follow the language");
@@ -1377,7 +1379,7 @@ mod tests {
         let text = painted_text(&ctx, &mut app, Locale::ZhHans);
         assert!(text.contains("我的照片") && text.contains("所有照片"), "{text}");
         let text = painted_text(&ctx, &mut app, Locale::PtBr);
-        assert!(text.contains("Minhas fotos") && text.contains("Todas as fotos"), "{text}");
+        assert!(text.contains("Minhas fotos") && text.contains("Todas as fotografias"), "{text}");
         set_language(Locale::En);
     }
 

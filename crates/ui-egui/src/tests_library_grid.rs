@@ -132,3 +132,27 @@ fn the_grid_toolbar_has_lightroom_classics_items() {
     h.settle(SETTLE);
     assert_ne!(active(&h), first, "the next photo");
 }
+
+/// Copy Edit Settings is Develop's toolbar button, not the Grid's (Lightroom Classic); Library copies from the Photo
+/// menu.
+#[test]
+fn copy_edit_settings_is_in_develops_toolbar_not_librarys() {
+    let mut h = library();
+    assert!(!has(&h, "button:copySettings") && !has(&h, "icon:copyGear"), "not in the Grid");
+    let r = h.request("ui.set", json!({"view": "detail"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(!has(&h, "button:copySettings"), "nor in Library's Loupe");
+    let r = h.request("ui.set", json!({"module": "develop", "view": "detail", "right": "edit"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    assert!(has(&h, "button:copySettings"), "Develop keeps it");
+}
+
+/// The Catalog panel's first row is Lightroom Classic's All Photographs, and the grid says so too.
+#[test]
+fn the_catalog_panel_lists_all_photographs() {
+    let h = library();
+    assert!(h.painted_text().iter().any(|t| t == "All Photographs"), "{:?}", h.painted_text());
+    assert_eq!(crate::i18n::source_label(lcc_engine::LibrarySource::All, &h.app.session.catalog), "All Photographs");
+}

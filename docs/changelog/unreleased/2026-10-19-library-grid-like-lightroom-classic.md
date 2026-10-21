@@ -1,3 +1,3 @@
 ## Library
 
-- **Grid as in Lightroom Classic:** new libraries start without date sections, and the Library Filter bar shows above the Grid. (no PR)
+- **Grid as in Lightroom Classic:** new libraries start without date sections, the Library Filter bar shows above the Grid, and the Catalog panel lists All Photographs. (no PR)
