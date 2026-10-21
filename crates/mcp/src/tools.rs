@@ -259,7 +259,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                     "sharpenAmount": {"type": "string", "enum": ["low", "standard", "high"]},
                     "naming": {"type": "string", "description": "File-name template, e.g. {name}-{seq} or {date:%Y-%m-%d}_{title}_{seq:2} (tokens: {name} {num} {seq} {seq:N} {date} {date:%…} {folder} {camera} {lens} {iso} {rating} {title} {creator} {ext})"},
                     "startNumber": {"type": "integer", "description": "First {seq} value (default 1)"},
-                    "metadata": {"type": "string", "enum": ["all", "allExceptCamera", "copyright", "none"]},
+                    "metadata": {"type": "string", "enum": ["all", "allExceptCamera", "copyright", "copyrightContact", "none"]},
                     "removeLocation": {"type": "boolean"},
                     "colorSpace": {"type": "string", "enum": ["srgb", "displayP3", "adobeRgb", "proPhoto", "rec2020"], "description": "Output colour space (default sRGB; AVIF is always sRGB; lossy JPEG XL writes adobeRgb/proPhoto as rec2020). adobeRgb = Adobe RGB (1998) compatible; the embedded ICC profile is generated from the published primaries"},
                     "bitDepth": {"type": "integer", "enum": [8, 10, 16, 32], "description": "Bits per channel: PNG 8|16 (default 8), TIFF 8|16|32 (default 16; 32 = linear float with a linear profile), PSD 8|16 (default 16), AVIF 8|10, JPEG XL 8|16; JPEG/WebP are 8-bit"},

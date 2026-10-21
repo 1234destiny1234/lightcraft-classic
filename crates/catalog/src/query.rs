@@ -588,16 +588,17 @@ pub fn matches_face_spec(count: usize, spec: &str) -> bool {
 fn token_matches(p: &Photo, tok: &str) -> bool {
     let t = tok.to_lowercase();
     if let Some((field, val)) = t.split_once(':') {
-        let num = |s: &str| -> Option<(char, f64)> {
-            let (op, rest) = match s.chars().next()? {
-                c @ ('>' | '<' | '=') => (c, &s[1..]),
-                _ => ('=', s),
-            };
+        let num = |s: &str| -> Option<(&str, f64)> {
+            // `>=` / `<=` before `>` / `<`: `rating:>=1` is at least one star
+            let op = [">=", "<=", ">", "<", "="].into_iter().find(|op| s.starts_with(op)).unwrap_or("=");
+            let rest = s.strip_prefix(op).unwrap_or(s);
             rest.parse().ok().map(|v| (op, v))
         };
         let cmp = |x: f64, s: &str| match num(s) {
-            Some(('>', v)) => x > v,
-            Some(('<', v)) => x < v,
+            Some((">=", v)) => x >= v - 1e-9,
+            Some(("<=", v)) => x <= v + 1e-9,
+            Some((">", v)) => x > v,
+            Some(("<", v)) => x < v,
             Some((_, v)) => (x - v).abs() < 1e-9,
             None => false,
         };

@@ -1936,7 +1936,15 @@ fn export_body(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, id: egui:
     let cols = crate::dialog_frame::TwoColumns::begin(ui, id.with("export"), left_w, 12.0, if two_columns { 320.0 } else { 0.0 }, max_h);
     if two_columns {
         ui.scope_builder(egui::UiBuilder::new().max_rect(cols.left).layout(egui::Layout::top_down(egui::Align::Min)), |ui| {
-            export_presets(app, ui, opts, full_size, resize, limit_kb, preset_name, cols.left.height());
+            let f = ExportForm {
+                opts: &mut *opts,
+                full_size: &mut *full_size,
+                resize: &mut *resize,
+                preset_name: &mut *preset_name,
+                limit_kb: &mut *limit_kb,
+                dir: &mut *dir,
+            };
+            export_presets(app, ui, f, cols.left.height());
         });
     }
     cols.right(ui, |ui| {
@@ -1946,8 +1954,9 @@ fn export_body(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, id: egui:
     });
 }
 
-/// Loads the export preset `name` into the dialog. Where to export (the destination mode) stays as
-/// set unless the preset says.
+/// Loads the export preset `name` into the dialog. Where to export (the destination mode and the
+/// folder) stays as set unless the preset says.
+#[allow(clippy::too_many_arguments)]
 fn load_export_preset(
     app: &LccApp,
     name: &str,
@@ -1955,11 +1964,15 @@ fn load_export_preset(
     full_size: &mut bool,
     resize: &mut lcc_engine::export::Resize,
     limit_kb: &mut u32,
+    dir: &mut String,
 ) {
     let Ok(params) = app.session.export_params(&json!({"preset": name})) else { return };
     let mut o = lcc_engine::export::ExportOptions::from_json(&params);
     if params.get("destinationMode").is_none() {
         o.destination_mode = opts.destination_mode;
+    }
+    if let Some(d) = params.get("dir").and_then(serde_json::Value::as_str).filter(|d| !d.trim().is_empty()) {
+        *dir = d.to_string();
     }
     *full_size = o.resize.is_none();
     *resize = o.resize.unwrap_or_default();
@@ -1967,20 +1980,28 @@ fn load_export_preset(
     *opts = o;
 }
 
+/// The dialog's settings as preset params, with the folder when the export goes to a specific
+/// one (as Lightroom's presets keep it).
+fn preset_params(
+    opts: &lcc_engine::export::ExportOptions,
+    full_size: bool,
+    resize: &lcc_engine::export::Resize,
+    limit_kb: u32,
+    dir: &str,
+) -> serde_json::Value {
+    let mut params = export_dialog_params(opts, full_size, resize, limit_kb);
+    if opts.destination_mode == lcc_engine::export::DestinationMode::SpecificFolder && !dir.trim().is_empty() {
+        params["dir"] = json!(dir.trim());
+    }
+    params
+}
+
 /// The Export dialog's preset column: the built-in presets, then the user's, each loaded with a
-/// click; below, a name with Add (save the dialog's settings as a preset) and Remove (the user
-/// preset picked).
-#[allow(clippy::too_many_arguments)]
-fn export_presets(
-    app: &mut LccApp,
-    ui: &mut egui::Ui,
-    opts: &mut lcc_engine::export::ExportOptions,
-    full_size: &mut bool,
-    resize: &mut lcc_engine::export::Resize,
-    limit_kb: &mut u32,
-    preset_name: &mut String,
-    max_h: f32,
-) {
+/// click; below, a name with Add (save the dialog's settings as a preset), Rename (the user preset
+/// picked, to the name typed) and Remove, then Import… (Lightroom Classic export presets,
+/// `.lcexport`) and Export… (the user presets as `.lcexport`).
+fn export_presets(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, max_h: f32) {
+    let ExportForm { opts, full_size, resize, preset_name, limit_kb, dir } = f;
     let t = Tokens::get(ui.ctx());
     let picked_id = egui::Id::new("export-preset-picked");
     let mut picked = ui.data(|d| d.get_temp::<String>(picked_id)).unwrap_or_default();
@@ -2016,7 +2037,7 @@ fn export_presets(
         });
     });
     if let Some(name) = chosen {
-        load_export_preset(app, &name, opts, full_size, resize, limit_kb);
+        load_export_preset(app, &name, opts, full_size, resize, limit_kb, dir);
         picked = name;
     }
     ui.add_space(4.0);
@@ -2027,7 +2048,7 @@ fn export_presets(
     ui.horizontal(|ui| {
         let named = !preset_name.trim().is_empty();
         if crate::widgets::text_button(ui, "exportSavePreset", crate::i18n::tr("Add"), false).clicked() && named {
-            let params = export_dialog_params(opts, *full_size, resize, *limit_kb);
+            let params = preset_params(opts, *full_size, resize, *limit_kb, dir);
             match app.run("export.savePreset", json!({"name": preset_name.trim(), "params": params})) {
                 Ok(_) => {
                     app.toast(ui.ctx(), crate::i18n::tr_format!("Saved export preset “{}”", preset_name.trim()));
@@ -2044,6 +2065,27 @@ fn export_presets(
                 Ok(_) => picked.clear(),
                 Err(e) => app.toast(ui.ctx(), e),
             }
+        }
+        let can_rename = user && named;
+        let r = ui.add_enabled_ui(can_rename, |ui| crate::widgets::text_button(ui, "exportRenamePreset", crate::i18n::tr("Rename"), false)).inner;
+        if r.clicked() && can_rename {
+            match app.run("export.renamePreset", json!({"name": picked, "newName": preset_name.trim()})) {
+                Ok(_) => {
+                    picked = preset_name.trim().to_string();
+                    preset_name.clear();
+                }
+                Err(e) => app.toast(ui.ctx(), e),
+            }
+        }
+    });
+    ui.horizontal(|ui| {
+        if crate::widgets::text_button(ui, "exportImportPresets", crate::i18n::tr("Import…"), false).clicked() {
+            let _ = app.run("file.importPresets", json!({}));
+        }
+        let any = presets.iter().any(|(_, b)| !*b);
+        let r = ui.add_enabled_ui(any, |ui| crate::widgets::text_button(ui, "exportExportPresets", crate::i18n::tr("Export…"), false)).inner;
+        if r.clicked() && any {
+            let _ = app.run("file.exportExportPresets", json!({}));
         }
     });
     ui.data_mut(|d| d.insert_temp(picked_id, picked));
@@ -2103,7 +2145,7 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
             });
             crate::widgets::register(ui.ctx(), "combo:exportPreset", c.response.rect);
             if let Some(name) = chosen {
-                load_export_preset(app, &name, opts, full_size, resize, limit_kb);
+                load_export_preset(app, &name, opts, full_size, resize, limit_kb, dir);
             }
         });
     }
@@ -2452,20 +2494,20 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
             }
         }
 
-        const METADATA: [(M, &str); 4] = [(M::All, "All"), (M::AllExceptCamera, "No camera"), (M::Copyright, "Copyright"), (M::None, "None")];
+        const METADATA: [(M, &str); 5] = [
+            (M::All, "All"),
+            (M::AllExceptCamera, "No camera"),
+            (M::Copyright, "Copyright"),
+            (M::CopyrightContact, "Copyright & Contact"),
+            (M::None, "None"),
+        ];
         let mut summary = label_of(&METADATA, opts.metadata);
-        if opts.remove_location && !matches!(opts.metadata, M::None | M::Copyright) {
+        if opts.remove_location && !matches!(opts.metadata, M::None | M::Copyright | M::CopyrightContact) {
             summary = format!("{summary}, {}", crate::i18n::tr("Remove location info"));
         }
         if export_section(app, ui, "Metadata", "Metadata", &summary) {
-            choices(
-                ui,
-                "Metadata",
-                "exportMetadata",
-                &[(M::All, "All"), (M::AllExceptCamera, "No camera"), (M::Copyright, "Copyright"), (M::None, "None")],
-                &mut opts.metadata,
-            );
-            if !matches!(opts.metadata, M::None | M::Copyright) {
+            choices(ui, "Metadata", "exportMetadata", &METADATA, &mut opts.metadata);
+            if !matches!(opts.metadata, M::None | M::Copyright | M::CopyrightContact) {
                 crate::dialog_frame::checkbox(ui, &mut opts.remove_location, crate::i18n::tr("Remove location info"));
             }
         }
@@ -2621,7 +2663,7 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
             trailing_button_row(ui, |ui| {
                 let named = !preset_name.trim().is_empty();
                 if crate::widgets::text_button(ui, "exportSavePreset", crate::i18n::tr("Save"), false).clicked() && named {
-                    let params = export_dialog_params(opts, *full_size, resize, *limit_kb);
+                    let params = preset_params(opts, *full_size, resize, *limit_kb, dir);
                     match app.run("export.savePreset", json!({"name": preset_name.trim(), "params": params})) {
                         Ok(_) => {
                             app.toast(ui.ctx(), crate::i18n::tr_format!("Saved export preset “{}”", preset_name.trim()));

@@ -1031,3 +1031,27 @@ fn the_catalog_remembers_which_photos_its_latest_ops_changed_and_what_of_them() 
     assert_eq!(c.touched_since(long_ago), None);
     assert_eq!(c.touched_since(c.revision - 10), Some(vec![a]));
 }
+
+/// A rating filter never lets an unrated photo through "at least one star", and the text search's
+/// `rating:>=N` / `rating:<=N` ask what the filter bar's ≥ / ≤ ask.
+#[test]
+fn rating_filter_ops_and_unrated_photos() {
+    let mut c = Catalog::new();
+    let unrated = photo(&mut c, "a.jpg", "2026-01-01T10:00:00");
+    let one = photo(&mut c, "b.jpg", "2026-01-02T10:00:00");
+    let three = photo(&mut c, "c.jpg", "2026-01-03T10:00:00");
+    c.apply(Op::SetRating { id: one, rating: 1 }).unwrap();
+    c.apply(Op::SetRating { id: three, rating: 3 }).unwrap();
+    let q = |f: Filter| c.query(&f, &Sort::default());
+    let r = |rating, rating_op| Filter { rating, rating_op, ..Default::default() };
+    assert_eq!(q(r(1, RatingOp::AtLeast)), vec![one, three]);
+    assert_eq!(q(r(1, RatingOp::Exactly)), vec![one]);
+    assert_eq!(q(r(1, RatingOp::AtMost)), vec![unrated, one], "Lightroom's ≤ counts unrated photos as below one star");
+    assert_eq!(q(r(3, RatingOp::Exactly)), vec![three]);
+    let text = |t: &str| q(Filter { text: t.into(), ..Default::default() });
+    assert_eq!(text("rating:>=1"), vec![one, three]);
+    assert_eq!(text("rating:>0"), vec![one, three]);
+    assert_eq!(text("rating:<=1"), vec![unrated, one]);
+    assert_eq!(text("rating:1"), vec![one]);
+    assert!(text("rating:>=x").is_empty(), "not a number: nothing matches, no panic");
+}

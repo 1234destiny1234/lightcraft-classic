@@ -598,6 +598,35 @@ fn the_navigator_stays_at_the_top_while_the_panels_scroll_under_it() {
     assert_eq!(h.app.ui.zoom, crate::state::Zoom::Percent(100.0), "the pinned Navigator takes clicks");
 }
 
+/// Library's right column has the histogram pinned at its top, as Develop's Edit panel does: the
+/// panels under it scroll and it stays where it is.
+#[test]
+fn the_histogram_stays_at_the_top_of_librarys_right_column() {
+    let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 600.0], 1.0);
+    h.settle(SETTLE);
+    run(&mut h, "module.library", json!({}));
+    h.request("ui.set", json!({"view": "photoGrid", "leftPanel": true, "right": "none"}), T);
+    h.app.ui.histogram = true;
+    h.settle(SETTLE);
+    assert!(h.app.session.active().is_some(), "the demo has an active photo");
+    let rect = |h: &Headless, id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r);
+    let hist = rect(&h, "histogram").expect("Library draws the histogram");
+    let panel = rect(&h, "panel:right_panel").expect("the right panel is drawn");
+    assert!(hist.top() <= panel.top() + 40.0 && hist.left() >= panel.left() - 1.0, "at the top of the right column: {hist:?} {panel:?}");
+    let first = rect(&h, "classicPanel:quickDevelop").expect("Quick Develop").top();
+    assert!(first >= hist.bottom() - 1.0, "the panels start under it");
+    h.request("ui.move", json!({"x": panel.center().x, "y": 500.0}), T);
+    assert_eq!(h.request("ui.scroll", json!({"dy": -220.0}), T)["ok"], true);
+    for _ in 0..40 {
+        h.step();
+    }
+    let moved = rect(&h, "classicPanel:quickDevelop").map_or(f32::MIN, |r| r.top());
+    assert!(moved < first - 40.0, "the panels scrolled: {first} -> {moved}");
+    let after = rect(&h, "histogram").expect("the histogram is still drawn");
+    assert!((after.top() - hist.top()).abs() < 1.0, "the histogram stayed put: {hist:?} -> {after:?}");
+}
+
 /// #155: Settings ▸ Shortcuts hosts the same editor as Help ▸ Keyboard Shortcuts, but a click on a
 /// shortcut there stopped recording on the next frame, so no key could be set.
 #[test]
@@ -637,4 +666,78 @@ fn keyword_list_has_no_nested_collapsible_header_in_classic() {
     assert!(has(&h, "field:keywordFilter"), "Filter field is shown in body");
     assert!(has(&h, "keywordList:create"), "+ button is shown in body");
     assert!(!has(&h, "section:keywordList"), "No nested collapsible fold title in Classic view");
+}
+
+/// Rate some photos one star and leave the rest unrated: the filter bar's first star shows only the rated
+/// photos in the grid, and Select All takes only those.
+#[test]
+fn rating_filter_bar_shows_only_rated_photos() {
+    use lcc_catalog::PhotoId;
+    let mut h = demo();
+    let all = h.app.session.visible_cloned();
+    run(&mut h, "photo.rate", json!({"rating": 0, "ids": all}));
+    let rated: Vec<PhotoId> = all.iter().copied().step_by(4).collect();
+    run(&mut h, "photo.rate", json!({"rating": 1, "ids": rated}));
+    if !h.app.ui.filter_bar {
+        run(&mut h, "view.filterBar", json!({}));
+    }
+    click(&mut h, "filter:star1");
+    assert_eq!(h.app.session.filter.rating, 1);
+    let cells: Vec<u64> = h.app.widgets.iter().filter_map(|(w, _)| w.strip_prefix("thumb:")?.parse().ok()).collect();
+    assert!(!cells.is_empty());
+    assert!(cells.iter().all(|c| rated.contains(&PhotoId(*c))), "grid shows only rated photos: {cells:?} of {rated:?}");
+    run(&mut h, "library.selectAll", json!({}));
+    let mut sel = h.app.session.selection.ids.clone();
+    sel.sort();
+    let mut want = rated.clone();
+    want.sort();
+    assert_eq!(sel, want);
+}
+
+/// Library ▸ Filter by Rating: one star shows the rated photos only, "= exactly" narrows to one-star photos,
+/// and picking the same stars again clears the rating filter.
+#[test]
+fn library_menu_filters_by_rating() {
+    use crate::menubar::{MenuNode, menu_bar, run_item};
+    use lcc_catalog::PhotoId;
+    fn items(h: &Headless) -> Vec<(serde_json::Value, String)> {
+        menu_bar(&h.app)
+            .into_iter()
+            .flat_map(|(_, v)| v)
+            .filter_map(|n| match n {
+                MenuNode::Submenu { label, children } if label == "Filter by Rating" => Some(children),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|n| match n {
+                MenuNode::Item { id, params, label, .. } if id == "library.filter" => Some((params, label)),
+                _ => None,
+            })
+            .collect()
+    }
+    let pick = |h: &mut Headless, label: &str| {
+        let (params, _) = items(h).into_iter().find(|(_, l)| l == label).expect("menu item");
+        run_item(&mut h.app, "library.filter", params).unwrap();
+        h.step();
+    };
+    let mut h = demo();
+    let all = h.app.session.visible_cloned();
+    run(&mut h, "photo.rate", json!({"rating": 0, "ids": all}));
+    run(&mut h, "photo.rate", json!({"rating": 1, "ids": [all[0], all[2]]}));
+    run(&mut h, "photo.rate", json!({"rating": 4, "ids": [all[3]]}));
+    pick(&mut h, "★");
+    let mut shown = h.app.session.visible_cloned();
+    shown.sort();
+    let mut want: Vec<PhotoId> = vec![all[0], all[2], all[3]];
+    want.sort();
+    assert_eq!(shown, want, "≥ one star: the rated photos only");
+    pick(&mut h, "=  exactly");
+    let mut shown = h.app.session.visible_cloned();
+    shown.sort();
+    let mut want = vec![all[0], all[2]];
+    want.sort();
+    assert_eq!(shown, want);
+    pick(&mut h, "★");
+    assert_eq!(h.app.session.filter.rating, 0, "the same stars again clear the rating filter");
+    assert_eq!(h.app.session.visible_cloned().len(), all.len());
 }

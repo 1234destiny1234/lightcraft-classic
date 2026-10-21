@@ -25,6 +25,7 @@ mod edit;
 pub mod edit_in;
 mod enhance;
 mod export;
+pub mod export_preset_files;
 pub(crate) mod face_detect;
 mod face_models;
 mod face_recognize;
@@ -46,6 +47,7 @@ pub mod mask_effects;
 mod masks;
 mod merge;
 pub mod metadata;
+pub mod metadata_files;
 pub mod missing;
 pub(crate) mod organize;
 #[cfg(not(target_arch = "wasm32"))]
@@ -258,6 +260,8 @@ pub fn command_specs() -> &'static [CommandSpec] {
         v.extend(recheck::specs());
         v.extend(sync::specs());
         v.extend(metadata::specs());
+        v.extend(metadata_files::specs());
+        v.extend(export_preset_files::specs());
         v.extend(geocode::specs());
         v.extend(filters::specs());
         v.extend(denoise::specs());
