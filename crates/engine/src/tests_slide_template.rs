@@ -271,7 +271,7 @@ fn bad_files_are_reported_and_skipped() {
     // listing above (same clock tick), so the cached listing is dropped as a write would drop it
     s.slide_templates_cache = None;
     let t = s.slide_template("user:wild").unwrap();
-    assert_eq!(t.look.layout.margin_left, lcc_slide::MARGIN_MAX);
+    assert_eq!(t.look.layout.margin_left, lcc_slideshow::MARGIN_MAX);
     assert_eq!(t.look.playback.slide_duration, crate::slideshow::SLIDE_MAX);
     let _ = std::fs::remove_dir_all(dir);
 }

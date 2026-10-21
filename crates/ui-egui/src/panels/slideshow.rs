@@ -214,7 +214,7 @@ fn slide_job(app: &mut LccApp, id: PhotoId, area: Rect, ppp: f32, texture_side: 
 pub fn slide_px(area: Rect, ppp: f32, texture_side: usize) -> (usize, usize) {
     let px = |v: f32| if v.is_finite() { (v * ppp).round().max(16.0) as usize } else { 16 };
     let (w, h) = (px(area.width()), px(area.height()));
-    let cap = texture_side.clamp(16, lcc_slide::MAX_SIDE);
+    let cap = texture_side.clamp(16, lcc_slideshow::MAX_SIDE);
     let long = w.max(h);
     if long <= cap {
         return (w, h);

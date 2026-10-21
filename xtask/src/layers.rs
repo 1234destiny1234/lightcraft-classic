@@ -89,8 +89,8 @@ pub const TABLE: &[(&str, Class)] = &[
     ("video", Class::Layer(3)),
     ("engine", Class::Layer(4)),
     ("classic-slideshow", Class::Layer(4)),
-    // slide layout and the CPU slide composer (upstream's `slideshow` crate; ours is the Classic module)
-    ("slide", Class::Layer(1)),
+    // slide layout and the CPU slide composer (upstream's crate; the Classic module is `classic-slideshow`)
+    ("slideshow", Class::Layer(1)),
     ("ui-egui", Class::Layer(5)),
     ("mcp", Class::Layer(5)),
     ("testkit", Class::Testkit),

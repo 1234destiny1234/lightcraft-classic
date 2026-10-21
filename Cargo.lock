@@ -4758,7 +4758,7 @@ dependencies = [
  "lcc-raw",
  "lcc-scenes",
  "lcc-segment",
- "lcc-slide",
+ "lcc-slideshow",
  "lcc-testkit",
  "lcc-tether",
  "lcc-tiff",
@@ -5217,7 +5217,7 @@ dependencies = [
 ]
 
 [[package]]
-name = "lcc-slide"
+name = "lcc-slideshow"
 version = "0.9.6"
 dependencies = [
  "lcc-raster",
@@ -5305,7 +5305,7 @@ dependencies = [
  "lcc-publish",
  "lcc-raster",
  "lcc-raw",
- "lcc-slide",
+ "lcc-slideshow",
  "lcc-testkit",
  "lcc-text",
  "lcc-updater",

@@ -27,7 +27,7 @@ lcc-layout = { workspace = true }
 lcc-pdf = { workspace = true }
 lcc-print = { workspace = true }
 lcc-preview = { workspace = true }
-lcc-slide = { workspace = true }
+lcc-slideshow = { workspace = true }
 lcc-classic-slideshow = { workspace = true }
 # the Book module (owned, Phase 3)
 lcc-book = { workspace = true }
