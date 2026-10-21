@@ -540,44 +540,70 @@ pub fn waveform_tracks(plot: Rect, mode: HistogramMode) -> Vec<(Rect, Channel, [
         .collect()
 }
 
-/// Draw the Waveform or RGB Parade of `h` in `plot` at `scale`: each column of the photo, left to right, its
-/// tones from black at the bottom to white at the top, brighter where more of the column sits.
-fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, scale: HistogramScale) {
+/// The picture of one waveform track: [`Histogram::WAVE_COLS`] × [`Histogram::WAVE_LEVELS`] cells
+/// (white at the top row), each of `planes` adding its trace colour at its cell's density
+/// (premultiplied with no alpha, so the picture adds onto the well as phosphor does).
+pub fn waveform_image(h: &Histogram, planes: &[(Channel, [f32; 3])], scale: HistogramScale) -> egui::ColorImage {
     let (cols, levels) = (Histogram::WAVE_COLS, Histogram::WAVE_LEVELS);
-    let tracks = waveform_tracks(plot, mode);
-    // each track's well and graticule (0, 25, 50, 75 and 100 %) once, under every trace
-    let mut wells: Vec<Rect> = Vec::new();
-    for (track, _, _) in &tracks {
-        if !wells.contains(track) {
-            wells.push(*track);
-            p.rect_filled(*track, 0.0, SCOPE_BG);
-            graticule_rows(p, *track, 4);
-        }
-    }
-    for (track, plane, color) in tracks {
-        // columns narrower than about a pixel and a half are drawn together, so a narrow track (the parade's)
-        // doesn't stripe
-        let group = ((1.5 * cols as f32 / track.width().max(1.0)).ceil() as usize).clamp(1, cols);
-        let drawn = cols.div_ceil(group);
-        let count = |g: usize, l: usize| (g * group..((g + 1) * group).min(cols)).map(|c| h.wave_at(plane, c, l) as f32).sum::<f32>();
+    let mut px = vec![Color32::TRANSPARENT; cols * levels];
+    for &(plane, color) in planes {
         // against the 98th percentile of the occupied cells, as the vectorscope: a flat sky doesn't hide the rest
-        let cells: Vec<f32> = (0..drawn).flat_map(|g| (0..levels).map(move |l| (g, l))).map(|(g, l)| count(g, l)).filter(|&n| n > 0.0).collect();
+        let cells: Vec<f32> =
+            (0..cols).flat_map(|c| (0..levels).map(move |l| (c, l))).map(|(c, l)| h.wave_at(plane, c, l) as f32).filter(|&n| n > 0.0).collect();
         let peak = robust_peak(&cells, 0.98);
-        let (cw, lh) = (track.width() / drawn as f32, track.height() / levels as f32);
-        let mut mesh = Mesh::default();
-        for g in 0..drawn {
+        for c in 0..cols {
             for l in 0..levels {
-                let n = count(g, l);
+                let n = h.wave_at(plane, c, l) as f32;
                 if n <= 0.0 {
                     continue;
                 }
-                let d = scale.height(n, peak);
-                let x = track.left() + g as f32 * cw;
-                let y = track.bottom() - (l + 1) as f32 * lh;
-                push_quad(&mut mesh, Rect::from_min_size(pos2(x, y), vec2(cw, lh)), additive(color, glow(d)));
+                let add = additive(color, glow(scale.height(n, peak)));
+                if let Some(p) = px.get_mut((levels - 1 - l) * cols + c) {
+                    *p = Color32::from_rgba_premultiplied(
+                        p.r().saturating_add(add.r()),
+                        p.g().saturating_add(add.g()),
+                        p.b().saturating_add(add.b()),
+                        0,
+                    );
+                }
             }
         }
-        p.add(mesh);
+    }
+    egui::ColorImage::new([cols, levels], px)
+}
+
+/// Draw the Waveform or RGB Parade of `h` in `plot` at `scale`: each column of the photo, left to right, its
+/// tones from black at the bottom to white at the top, brighter where more of the column sits. Each track
+/// is one picture of the scope's cells, scaled smoothly to the track: drawn as a quad per cell, the cells
+/// fell on fractions of a pixel and striped the plot, differently at every panel size.
+fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, scale: HistogramScale) {
+    let tracks = waveform_tracks(plot, mode);
+    // each track's well and graticule (0, 25, 50, 75 and 100 %) once, with the planes drawn in it
+    let mut wells: Vec<(Rect, Vec<(Channel, [f32; 3])>)> = Vec::new();
+    for (track, plane, color) in tracks {
+        match wells.iter_mut().find(|(r, _)| *r == track) {
+            Some((_, planes)) => planes.push((plane, color)),
+            None => wells.push((track, vec![(plane, color)])),
+        }
+    }
+    for (k, (track, planes)) in wells.into_iter().enumerate() {
+        p.rect_filled(track, 0.0, SCOPE_BG);
+        graticule_rows(p, track, 4);
+        let image = waveform_image(h, &planes, scale);
+        let id = egui::Id::new(("scope-waveform", k));
+        let tex = p.ctx().data_mut(|d| d.get_temp::<egui::TextureHandle>(id));
+        let tex = match tex {
+            Some(mut t) => {
+                t.set(image, egui::TextureOptions::LINEAR);
+                t
+            }
+            None => {
+                let t = p.ctx().load_texture(format!("scope-waveform-{k}"), image, egui::TextureOptions::LINEAR);
+                p.ctx().data_mut(|d| d.insert_temp(id, t.clone()));
+                t
+            }
+        };
+        p.image(tex.id(), track, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
     }
 }
 

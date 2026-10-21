@@ -614,6 +614,33 @@ fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram>
         .or_else(|| app.renderer.textures.get(&Slot::Thumb(id)).and_then(|t| t.histogram.clone()))
 }
 
+/// Long edge of the Histogram panel's own render of its photo ([`Slot::PanelHistogram`]): enough
+/// for the waveform's 128 columns, small enough to be quick.
+const PANEL_HISTOGRAM_EDGE: usize = 512;
+
+/// `hist`, or — when it can't draw `mode` (none at all, or no waveform for the Waveform / Parade)
+/// — the panel's own small render of the photo as it is now, asked for when missing. In the Library
+/// grid the selected photo has only its thumbnail's histogram, which keeps no waveform, so the
+/// scopes stayed empty there except for the photo last opened in the loupe.
+fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::HistogramMode, hist: Option<Histogram>) -> Option<Histogram> {
+    if hist.as_ref().is_some_and(|h| !mode.is_waveform() || h.has_waveform()) {
+        return hist;
+    }
+    let edge = PANEL_HISTOGRAM_EDGE;
+    let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop) else { return hist };
+    // (the key the result comes back with)
+    let job = app.renderer.job_for(Slot::PanelHistogram, job);
+    match &app.renderer.panel_histogram {
+        Some((photo, key, h)) if *photo == id && *key == job.key => Some(h.clone()),
+        kept => {
+            // until it lands, the last one of this photo (an edit moved on), else what there is
+            let stale = kept.as_ref().filter(|(photo, _, _)| *photo == id).map(|(_, _, h)| h.clone());
+            app.renderer.request(Slot::PanelHistogram, job, 40);
+            stale.or(hist)
+        }
+    }
+}
+
 /// An HDR edit's histogram stays an HDR histogram: some renders carry only their 8-bit image's
 /// (a drag's drafts, a cached thumbnail or stand-in), and showing those would swap the panel to
 /// the SDR layout and back while a slider moves. Every render with HDR bins replaces the one kept for the photo, so
@@ -648,9 +675,10 @@ fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && l.0 == id).map(|l| l.2.clone());
     // else the loupe render of this photo, else its thumbnail (grid view before the loupe has
     // rendered it)
-    let hist = live.or_else(|| preview_histogram(app, id));
-    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
     let mode = super::histogram::mode_of(app);
+    let hist = live.or_else(|| preview_histogram(app, id));
+    let hist = panel_render_histogram(app, id, mode, hist);
+    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
     let scale = super::histogram::scale_of(app);
     // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
     // label row under the plot; a 2D scope gets a taller plot instead so its disc has room

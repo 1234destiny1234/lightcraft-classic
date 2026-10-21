@@ -75,6 +75,10 @@ pub enum Slot {
     /// A slider drag's live HDR histogram: a small full-quality render of an HDR edit, beside the
     /// drafts (which have no HDR histogram), with no texture ([`Renderer::live_hdr_histogram`]).
     HdrHistogram,
+    /// The Histogram panel's own small render of its photo, when no view of it carries what the
+    /// panel's mode draws (a grid thumbnail has no waveform, a cached one no histogram), with no
+    /// texture ([`Renderer::panel_histogram`]).
+    PanelHistogram,
     /// An HDR render (linear float, highlights above SDR white) of an HDR edit, for an HDR display
     /// ([`crate::HdrOutput`]), for one view ([`HDR_LOUPE`]…): its result waits in
     /// [`Renderer::hdr_view_result`] for the upload.
@@ -260,6 +264,8 @@ pub struct Renderer {
     pub textures: HashMap<Slot, Tex>,
     /// The last [`Slot::HdrHistogram`] result: (photo, job key, histogram).
     pub live_hdr_histogram: Option<(PhotoId, u64, Histogram)>,
+    /// The last [`Slot::PanelHistogram`] result: (photo, job key, histogram with its waveform).
+    pub panel_histogram: Option<(PhotoId, u64, Histogram)>,
     /// The [`Slot::HdrView`] renders not yet uploaded: view → (photo, job key, linear float image).
     pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
     /// The loupe's uploaded HDR texture.
@@ -355,6 +361,7 @@ impl Renderer {
             pending: HashMap::new(),
             textures: HashMap::new(),
             live_hdr_histogram: None,
+            panel_histogram: None,
             hdr_view_result: HashMap::new(),
             hdr_view: HashMap::new(),
             last_main_ms: 0.0,
@@ -1026,6 +1033,11 @@ impl Renderer {
                     self.hdr_view_result.insert(view, (r.photo, r.key, deep));
                     changed = true;
                 }
+                continue;
+            }
+            if slot == Slot::PanelHistogram {
+                self.panel_histogram = Some((r.photo, r.key, rendered.histogram));
+                changed = true;
                 continue;
             }
             if slot == Slot::HdrHistogram {
