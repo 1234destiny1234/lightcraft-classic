@@ -632,7 +632,7 @@ struct SliderGeometry {
 }
 
 /// How much taller a two-row slider is than a one-row one.
-const TWO_ROW_EXTRA: f32 = 12.0;
+const TWO_ROW_EXTRA: f32 = 14.0;
 
 /// Width of a slider's value column: fits numbers like "+100", "8978", "+0.80", "-5.00" at
 /// [`LABEL_FONT`].
@@ -658,9 +658,12 @@ impl SliderGeometry {
     /// width of both under them (its thumb at either end just inside the row's padding).
     fn two_rows(row: Rect) -> Self {
         let (pad_l, pad_r) = (24.0, 16.0);
-        let split = row.top() + row.height() * 0.5;
-        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(row.left() + pad_l), row.top()), pos2(row.right() - pad_r, split));
-        let label = Rect::from_min_max(pos2(row.left() + pad_l, row.top()), pos2((value.left() - 8.0).max(row.left() + pad_l), split));
+        // the name and value sit close over their own track, with the gap above them, so each
+        // slider reads as one unit and the rows stand apart (issue #346)
+        let split = (row.bottom() - 14.0).max(row.top());
+        let text_top = (split - 12.0).max(row.top());
+        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(row.left() + pad_l), text_top), pos2(row.right() - pad_r, split));
+        let label = Rect::from_min_max(pos2(row.left() + pad_l, text_top), pos2((value.left() - 8.0).max(row.left() + pad_l), split));
         let track_l = row.left() + pad_l + THUMB_RING;
         let track_r = (row.right() - pad_r - THUMB_RING).max(track_l + 1.0);
         let track = Rect::from_min_max(pos2(track_l, split), pos2(track_r, row.bottom()));
