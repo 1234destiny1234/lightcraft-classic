@@ -1110,6 +1110,10 @@ fn appearance(ui: &mut egui::Ui, t: &Tokens, s: &mut crate::state::AppSettings, 
         let options = crate::theme::UiFontSize::ALL.map(|size| (size, size.label()));
         choices(ui, "settingsFontSize", &options, &mut s.ui_font_size);
     });
+    row(ui, t, crate::i18n::tr("Sliders"), |ui| {
+        let options = crate::theme::SliderLayout::ALL.map(|layout| (layout, layout.label()));
+        choices(ui, "settingsSliderLayout", &options, &mut s.slider_layout);
+    });
     ui.add_space(2.0);
 }
 

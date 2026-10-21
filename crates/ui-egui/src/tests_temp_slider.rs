@@ -88,11 +88,19 @@ fn the_kelvin_temp_slider_has_lightrooms_scale() {
     set(&mut h, "wb.temp", 4850.0);
     let track = widget(&h, "slider:wb.temp");
     let from = track.left() + thumb(&h, "wb.temp") * track.width();
-    let r = h.request("ui.drag", json!({"x": from, "y": track.center().y, "toX": track.center().x, "toY": track.center().y, "steps": 12}), T);
+    // a quick drag: the thumb keeps up with the pointer
+    let r = h.request("ui.drag", json!({"x": from, "y": track.center().y, "toX": track.center().x, "toY": track.center().y, "steps": 2}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     let k = develop(&h).wb.temp;
     assert!((k - 7000.0).abs() <= 50.0, "dragged to the middle: {k} K");
+    // a slow one (issue #346): the thumb moves less than the pointer, for fine changes
+    set(&mut h, "wb.temp", 4850.0);
+    let r = h.request("ui.drag", json!({"x": from, "y": track.center().y, "toX": track.center().x, "toY": track.center().y, "steps": 60}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let k = develop(&h).wb.temp;
+    assert!(k > 4850.0 && k < 6500.0, "a slow drag to the middle stops short of it: {k} K");
     assert_eq!(h.request("ui.clickWidget", json!({"id": "slider:wb.temp", "fx": 1.0}), T)["ok"], true);
     h.settle(SETTLE);
     assert_eq!(develop(&h).wb.temp, 50000.0);
@@ -111,4 +119,27 @@ fn the_relative_temp_slider_stays_linear() {
     let k = develop(&h).wb.temp;
     let rel = (1e6 / 6500.0 - 1e6 / k) / 0.8;
     assert!((rel - 50.0).abs() < 0.6, "{k} K is {rel} on the relative scale");
+}
+
+/// Two-row sliders (Settings ▸ Interface, issue #346): the track runs under the name and value, longer than
+/// on one row, and clicking, the name's double-click and the value readout work as on one row.
+#[test]
+fn two_row_sliders_have_a_longer_track_and_work_the_same() {
+    let mut h = edit_panel(false);
+    let one = widget(&h, "slider:light.exposure");
+    h.app.ui.settings.slider_layout = crate::theme::SliderLayout::TwoRows;
+    h.settle(SETTLE);
+    let track = widget(&h, "slider:light.exposure");
+    let (name, value) = (widget(&h, "sliderLabel:light.exposure"), widget(&h, "sliderValue:light.exposure"));
+    assert!(track.width() > one.width() + 40.0, "the track got longer: {one:?} → {track:?}");
+    assert!(name.bottom() <= track.top() + 0.5 && value.bottom() <= track.top() + 0.5, "name and value above the track");
+    assert!(name.right() <= value.left(), "the name beside the value");
+    assert_eq!(h.request("ui.clickWidget", json!({"id": "slider:light.exposure", "fx": 0.75}), T)["ok"], true);
+    h.settle(SETTLE);
+    assert!((develop(&h).light.exposure - 2.5).abs() < 0.06, "a click three quarters along: {}", develop(&h).light.exposure);
+    assert!((thumb(&h, "light.exposure") - 0.75).abs() < 0.01, "the thumb where it was clicked");
+    // back to one row: the track as before
+    h.app.ui.settings.slider_layout = crate::theme::SliderLayout::OneRow;
+    h.settle(SETTLE);
+    assert_eq!(widget(&h, "slider:light.exposure").width(), one.width());
 }
