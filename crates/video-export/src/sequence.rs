@@ -166,14 +166,21 @@ impl SequenceWriter {
                 mux.write_sample(tr, WriteSample { data: &p.data, duration: p.duration, composition_offset: 0, is_sync: true }).map_err(enc)?;
             }
         }
-        // All writes succeeded; now finalize and take the mux.
-        let mux = self.mux.take().ok_or(ExportClipError::Internal)?;
-        let mut out = mux.finish().map_err(enc)?;
-        out.flush().map_err(io)?;
-        let file = out.into_inner().map_err(|e| io(e.error()))?;
-        file.sync_all().map_err(io)?;
-        drop(file);
-        std::fs::rename(&self.partial, &self.out).map_err(io)?;
+        // All writes succeeded; now finalize and take the mux. Past this point Drop no longer sees the
+        // mux, so a failure here (finish, flush, sync, rename) removes the partial file itself.
+        let finished = (|| {
+            let mux = self.mux.take().ok_or(ExportClipError::Internal)?;
+            let mut out = mux.finish().map_err(enc)?;
+            out.flush().map_err(io)?;
+            let file = out.into_inner().map_err(|e| io(e.error()))?;
+            file.sync_all().map_err(io)?;
+            drop(file);
+            std::fs::rename(&self.partial, &self.out).map_err(io)
+        })();
+        if let Err(e) = finished {
+            let _ = std::fs::remove_file(&self.partial);
+            return Err(e);
+        }
         let frames = self.frames as u64;
         Ok(ClipReport {
             frames,
@@ -291,6 +298,20 @@ mod tests {
         let partial = dir.join("t.mp4.partial");
         assert!(!partial.exists(), "partial file should be removed on finish() error");
         assert!(!out.exists(), "output file should not exist on error");
+        let _ = std::fs::remove_dir_all(&dir);
+    }
+
+    /// A failure after the last frame (here the rename onto a folder) leaves no partial file behind.
+    #[test]
+    fn finish_failing_late_removes_partial_file() {
+        let dir = std::env::temp_dir().join(format!("lcc-seq-late-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let out = dir.join("t.mp4");
+        std::fs::create_dir_all(&out).unwrap();
+        let mut w = SequenceWriter::create(&out, ClipFormat::H264Mp4, 80, 32, 16, 24, 1).unwrap();
+        w.push_encoded(&Rgb32f::new(32, 16)).unwrap();
+        assert!(w.finish().is_err());
+        assert!(!dir.join("t.mp4.partial").exists(), "partial file should be removed on a late finish() error");
         let _ = std::fs::remove_dir_all(&dir);
     }
 }

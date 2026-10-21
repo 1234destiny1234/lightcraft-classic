@@ -144,12 +144,7 @@ fn find_photocraft() -> Option<Launcher> {
     // registers one on first run; its Exec a path or a name on the PATH), an AppImage where people
     // keep them, else the Flatpak
     let path_dirs: Vec<PathBuf> = env("PATH").into_iter().flat_map(|p| std::env::split_paths(&p).collect::<Vec<_>>()).collect();
-    let on_path = |name: &Path| -> Option<PathBuf> {
-        if name.is_absolute() || name.starts_with("/") {
-            return Some(name.to_path_buf()).filter(|p| p.is_file());
-        }
-        path_dirs.iter().map(|d| d.join(name)).find(|p| p.is_file())
-    };
+    let on_path = |name: &Path| resolve_program(name, &path_dirs);
     let from_entry = || {
         desktop_entry_dirs(env).into_iter().find_map(|d| {
             let text = std::fs::read_to_string(d.join(format!("{PHOTOCRAFT_ID}.desktop"))).ok()?;
@@ -162,8 +157,8 @@ fn find_photocraft() -> Option<Launcher> {
         dirs.iter().find_map(|d| {
             let mut found: Vec<PathBuf> =
                 std::fs::read_dir(d).ok()?.flatten().map(|e| e.path()).filter(|p| is_photocraft_appimage(p) && p.is_file()).collect();
-            // the newest version by name
-            found.sort();
+            // the newest version by name (1.10 after 1.9)
+            found.sort_by_key(|p| version_key(&p.file_name().map(|n| n.to_string_lossy().to_lowercase()).unwrap_or_default()));
             found.pop()
         })
     };
@@ -172,6 +167,31 @@ fn find_photocraft() -> Option<Launcher> {
     }
     let flatpak = Command::new("flatpak").args(["info", PHOTOCRAFT_ID]).output().is_ok_and(|o| o.status.success());
     flatpak.then_some(Launcher::Flatpak)
+}
+
+/// A program from a desktop entry or the PATH: a path as it is (if it is a file), a bare name
+/// looked for in `dirs`. A leading `/` counts as absolute on every platform (desktop entries are
+/// a POSIX format; `Path::is_absolute` wants a drive letter on Windows, where the tests run too).
+fn resolve_program(name: &Path, dirs: &[PathBuf]) -> Option<PathBuf> {
+    if name.is_absolute() || name.starts_with("/") {
+        return Some(name.to_path_buf()).filter(|p| p.is_file());
+    }
+    dirs.iter().map(|d| d.join(name)).find(|p| p.is_file())
+}
+
+/// A sort key that orders the digit runs in a name by value (`1.9` before `1.10`).
+fn version_key(name: &str) -> Vec<(u64, String)> {
+    let mut out = Vec::new();
+    let mut rest = name;
+    while !rest.is_empty() {
+        let digits = rest.len() - rest.trim_start_matches(|c: char| c.is_ascii_digit()).len();
+        let (num, tail) = rest.split_at(digits);
+        let text_len = tail.find(|c: char| c.is_ascii_digit()).unwrap_or(tail.len());
+        let (text, next) = tail.split_at(text_len);
+        out.push((num.parse().unwrap_or(u64::MAX), text.to_string()));
+        rest = next;
+    }
+    out
 }
 
 /// Where the Windows installers put `photocraft.exe`, most specific first: the folder the MSI
@@ -317,6 +337,31 @@ mod tests {
         let dirs = desktop_entry_dirs(|k| (k == "HOME").then(|| "/home/simon".to_string()));
         assert_eq!(dirs[0], PathBuf::from("/home/simon/.local/share/applications"));
         assert!(dirs.contains(&PathBuf::from("/usr/share/applications")));
+    }
+
+    #[test]
+    fn a_bare_exec_name_is_found_on_the_path() {
+        let a = std::env::temp_dir().join(format!("lc-editors-a-{}", std::process::id()));
+        let b = std::env::temp_dir().join(format!("lc-editors-b-{}", std::process::id()));
+        std::fs::create_dir_all(&a).unwrap();
+        std::fs::create_dir_all(&b).unwrap();
+        std::fs::write(b.join("photocraft"), b"").unwrap();
+        let dirs = vec![a.clone(), b.clone()];
+        assert_eq!(resolve_program(Path::new("photocraft"), &dirs), Some(b.join("photocraft")));
+        assert_eq!(resolve_program(Path::new("nothere"), &dirs), None);
+        let abs = b.join("photocraft");
+        assert_eq!(resolve_program(&abs, &[]), Some(abs.clone()), "a path needs no PATH");
+        assert_eq!(resolve_program(&b.join("missing"), &dirs), None);
+        let _ = std::fs::remove_dir_all(&a);
+        let _ = std::fs::remove_dir_all(&b);
+    }
+
+    #[test]
+    fn appimage_versions_sort_numerically() {
+        let mut names = ["photocraft-1.10-x86_64.appimage", "photocraft-1.9-x86_64.appimage", "photocraft-1.2-x86_64.appimage"];
+        names.sort_by_key(|n| version_key(n));
+        assert_eq!(names[2], "photocraft-1.10-x86_64.appimage");
+        assert_eq!(names[0], "photocraft-1.2-x86_64.appimage");
     }
 
     #[test]

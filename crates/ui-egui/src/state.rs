@@ -787,6 +787,9 @@ pub struct UiState {
     pub show_counts: bool,
     /// Face / pet boxes (read from XMP) over the photo in the loupe.
     pub face_boxes: bool,
+    /// HDR edits are shown in HDR on an HDR display (View ▸ HDR Preview, `view.hdrPreview`);
+    /// off, every view shows their SDR rendition, as on an SDR display.
+    pub hdr_preview: bool,
     /// The left sidebar's sections: their order, which are hidden and which are folded shut.
     pub sidebar: crate::sidebar::SidebarLayout,
     /// The ids of other folded panels (the Classic modules' `panel:<key>` panels), saved here. Settings files
@@ -796,7 +799,8 @@ pub struct UiState {
     pub collapsed_sidebar: Vec<String>,
     /// Preset and profile groups the user folded or unfolded (`preset:<group>`, `profile:<group>`,
     /// `lut:<group>` → open). A group not listed is folded, unless it holds the current preset or
-    /// profile ([`UiState::group_is_open`]).
+    /// profile ([`UiState::group_is_open`]). The Export dialog's sections too (`export:<section>`;
+    /// one not listed shows its default).
     #[serde(skip_serializing_if = "std::collections::BTreeMap::is_empty")]
     pub group_open: std::collections::BTreeMap<String, bool>,
     /// The folded or unfolded sections of the Book, Slideshow and Map side panels (`<module>:<title>` → open),
@@ -1334,6 +1338,10 @@ pub enum Dialog {
         limit_kb: u32,
         dir: String,
     },
+    /// Photo ▸ Enhance… options; the preview lives in the app (`crate::enhance_ui`).
+    Enhance {
+        opts: crate::enhance_ui::EnhanceDialog,
+    },
     /// Photo Merge (HDR / Panorama / HDR Panorama) options; the preview lives in the app.
     Merge {
         opts: crate::merge::MergeDialog,
@@ -1518,6 +1526,7 @@ impl Default for UiState {
             grid_info: "filename".into(),
             show_counts: true,
             face_boxes: true,
+            hdr_preview: true,
             sidebar: Default::default(),
             collapsed_sidebar: Vec::new(),
             group_open: Default::default(),

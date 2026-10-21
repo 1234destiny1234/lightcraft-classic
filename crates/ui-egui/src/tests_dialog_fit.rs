@@ -49,7 +49,8 @@ fn assert_fits(h: &Headless, what: &str) {
 fn export_dialog(size: [f32; 2]) -> Headless {
     let mut h = demo(size);
     open(&mut h, "dialog.export");
-    if let Some(crate::state::Dialog::Export { full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
+    if let Some(crate::state::Dialog::Export { opts, full_size, resize, dir, .. }) = &mut h.app.ui.dialog {
+        opts.destination_mode = lcc_engine::export::DestinationMode::SpecificFolder;
         *full_size = false;
         *resize = lcc_engine::export::Resize::long_edge(64);
         *dir = "/lc-test-out".into();

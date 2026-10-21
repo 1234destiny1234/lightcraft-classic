@@ -638,7 +638,7 @@ pub fn request_thumb(app: &mut LccApp, id: PhotoId, size: usize, priority: u32) 
     let size = app.session.catalog.photo(id).and_then(|p| app.renderer.thumb_bucket_kept(p)).map_or(size, |kept| kept.max(size));
     let bucket = lcc_engine::media::thumb_bucket(size);
     if let Some(photo) = app.session.catalog.photo(id)
-        && app.renderer.thumb_current(photo, bucket, priority)
+        && (app.renderer.thumb_current(photo, bucket, priority) || app.renderer.thumb_covers(photo, bucket))
     {
         return;
     }
@@ -917,14 +917,13 @@ pub(crate) fn reorder_drop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, r: 
     let Some(pos) = pos.filter(|p| r.contains(*p) && ui.clip_rect().contains(*p)) else { return };
     let t = Tokens::get(ui.ctx());
     let left = pos.x < r.center().x;
-    let ascending = app.session.sort.ascending;
     let x = if left { r.left() + 1.5 } else { r.right() - 1.5 };
     let painter = ui.ctx().layer_painter(egui::LayerId::new(egui::Order::Foreground, egui::Id::new("reorder-drop"))).with_clip_rect(ui.clip_rect());
     painter.line_segment([egui::pos2(x, r.top()), egui::pos2(x, r.bottom())], Stroke::new(3.0, t.accent));
     if !released {
         return;
     }
-    let before = if left == ascending {
+    let before = if left {
         Some(id)
     } else {
         let vis = app.session.visible_cloned();

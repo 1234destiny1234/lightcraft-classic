@@ -26,6 +26,8 @@ pub mod date_picker;
 pub mod dialog_frame;
 pub mod docking;
 mod edit_in;
+mod enhance_pump;
+pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
 pub mod headless;
@@ -59,6 +61,7 @@ pub mod shortcuts;
 pub mod sidebar;
 pub mod slideshow_export;
 pub mod slideshow_ui;
+pub mod soft_keyboard;
 pub mod softpaint;
 pub mod space_hand;
 pub mod state;
@@ -127,9 +130,13 @@ mod tests_dialog_frame;
 #[cfg(test)]
 mod tests_dialogs;
 #[cfg(test)]
+mod tests_drop_import;
+#[cfg(test)]
 mod tests_edit_layout;
 #[cfg(test)]
 mod tests_empty_library;
+#[cfg(test)]
+mod tests_enhance_dialog;
 #[cfg(test)]
 mod tests_error_kinds;
 #[cfg(test)]
@@ -304,8 +311,9 @@ pub trait HdrOutput {
     /// `None` (an SDR display, HDR switched off in the OS, or unknown). Asked every frame.
     fn headroom(&mut self) -> Option<f32>;
     /// Upload a linear-light render (3 floats per pixel, row-major, SDR white = 1, sRGB
-    /// primaries) as the loupe's HDR texture, replacing the previous one.
-    fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
+    /// primaries) as view `view`'s HDR texture ([`render::HDR_LOUPE`]…), replacing that view's
+    /// previous one (each view keeps its own).
+    fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String>;
     /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
     /// true, the renderer should skip monitor profile conversion (P2-3).
     fn extended(&self) -> bool {
@@ -319,6 +327,13 @@ pub trait VideoGpu {
     /// Grade linear frame `img` with `lut` (identified by `key`) into a texture to draw (valid
     /// until the next call). An error makes the loupe fall back to the CPU LUT.
     fn grade(&mut self, img: &lcc_raster::Rgb32f, key: u64, lut: &lcc_pipeline::grade::GradeLut) -> Result<(egui::TextureId, [usize; 2]), String>;
+}
+
+/// Reading the device's shared storage in place (Android's "All files access"): whether the app
+/// may, and a way to ask (the answer arrives later, so `granted` is read again).
+pub struct StorageAccess {
+    pub granted: Box<dyn Fn() -> bool>,
+    pub ask: Box<dyn FnMut() -> Result<(), String>>,
 }
 
 /// Platform services injected by the host app (desktop or web).
@@ -377,6 +392,8 @@ pub struct Services {
     pub pick_lightroom_catalog: Option<PickFolder>,
     /// Open a web link in the browser (Help menu, About, Discord button).
     pub open_url: Option<OpenUrlFn>,
+    /// Android: "All files access" (`app.allFilesAccess`, Settings ▸ Folders).
+    pub storage_access: Option<StorageAccess>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
     /// Open several files with one start of the editor (Open Original; desktop only): an editor
@@ -534,6 +551,8 @@ pub struct LccApp {
     pub(crate) full_preview_loaded: Option<(lcc_catalog::PhotoId, u64)>,
     /// Photo Merge dialog previews and background merges.
     pub merge: merge::MergeState,
+    /// The Enhance dialog's preview and photos.
+    pub enhance: enhance_ui::EnhanceUi,
     /// An import in progress (the import review dialog's batches).
     pub import: Option<import::ImportTask>,
     /// A folder scan in progress (feeds the import review).
@@ -686,6 +705,7 @@ impl LccApp {
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
+            enhance: enhance_ui::EnhanceUi::default(),
             import: None,
             scan: None,
             sync: None,
@@ -1399,6 +1419,7 @@ impl LccApp {
         model_setup::pump(self, ctx);
         panels::faces::pump(self, ctx);
         focus_scan::pump(self, ctx);
+        enhance_pump::pump(self, ctx);
         self.collect_screenshots(ctx);
         self.issue_screenshots(ctx);
         edit_in::show(self, ctx);
@@ -1421,13 +1442,10 @@ impl LccApp {
             if !presets.is_empty() {
                 let _ = self.run("file.importPresets", serde_json::json!({"paths": presets}));
             }
-            // read and added on a worker thread (dropped folders can be large, or on a slow drive)
+            // a folder goes through File ▸ Import from Folder…'s scan and review; photo files are
+            // added on a worker thread
             if !photos.is_empty() {
-                if self.lightroom.is_some() {
-                    self.toast(ctx, "Finish Lightroom catalog import before adding photos");
-                } else if let Err(e) = import::start_paths(self, photos) {
-                    self.toast(ctx, e);
-                }
+                import::drop_paths(self, ctx, photos);
             }
         }
     }
@@ -1989,7 +2007,7 @@ impl Caches {
         }
         // the catalog's part is made again only when a photo's file or presence changed
         let base = self.folder_base.take().filter(|(r, _)| still_right(cat, *r, READS_FILE)).map(|(_, b)| b);
-        let base = base.unwrap_or_else(|| std::sync::Arc::new(cat.folder_tree()));
+        let base = base.unwrap_or_else(|| std::sync::Arc::new(crate::panels::left::sidebar_folders(cat.folder_tree())));
         self.folder_base = Some((cat.revision, base.clone()));
         let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(base.as_ref().clone()));
         self.folder_tree = Some((key, t.clone()));

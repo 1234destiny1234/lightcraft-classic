@@ -156,7 +156,17 @@ pub fn expand_preset_paths(paths: &[String]) -> Vec<String> {
     let preset_file = |p: &Path| {
         let ext = p.extension().map(|e| e.to_string_lossy().to_ascii_lowercase()).unwrap_or_default();
         lcc_brand::preset_exts().any(|e| e == ext)
-            || ["xmp", "lrtemplate", "zip", "lmp", "mplumpack", crate::cmd::mask_effect_files::EFFECT_EXT].contains(&ext.as_str())
+            || [
+                "xmp",
+                "lrtemplate",
+                "zip",
+                "lmp",
+                "mplumpack",
+                crate::cmd::mask_effect_files::EFFECT_EXT,
+                crate::cmd::metadata_files::META_EXT,
+                crate::cmd::export_preset_files::EXPORT_PRESET_EXT,
+            ]
+            .contains(&ext.as_str())
     };
     let mut out = Vec::new();
     for p in paths {
@@ -475,7 +485,8 @@ pub struct ProfileInfo {
 
 /// Our base profiles (rendering looks). Implemented in the pipeline.
 pub const PROFILES: &[ProfileInfo] = &[
-    ProfileInfo { id: "lc.color", name: "Color", group: "Basic" },
+    ProfileInfo { id: "lc.color", name: "Craft Colour", group: "Basic" },
+    ProfileInfo { id: "lc.eboda", name: "Eboda Colour", group: "Basic" },
     ProfileInfo { id: "lc.neutral", name: "Neutral", group: "Basic" },
     ProfileInfo { id: "lc.vivid", name: "Vivid", group: "Basic" },
     ProfileInfo { id: "lc.landscape", name: "Landscape", group: "Basic" },

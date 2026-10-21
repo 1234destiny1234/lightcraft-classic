@@ -234,7 +234,50 @@ pub fn scale_of(app: &LccApp) -> HistogramScale {
 }
 
 /// The red, green and blue a channel is drawn in.
-pub const CHANNEL_COLORS: [Color32; 3] = [Color32::from_rgb(223, 57, 57), Color32::from_rgb(68, 176, 114), Color32::from_rgb(59, 111, 224)];
+pub const CHANNEL_COLORS: [Color32; 3] = [Color32::from_rgb(232, 70, 70), Color32::from_rgb(70, 214, 70), Color32::from_rgb(56, 156, 236)];
+
+/// The plot's well: near-black, as a broadcast scope's, so the traces read at full contrast.
+pub const SCOPE_BG: Color32 = Color32::from_gray(8);
+
+/// The graticule's amber, as a hardware scope's.
+pub const GRATICULE: Color32 = Color32::from_rgb(168, 130, 42);
+
+/// The waveform traces' red, green and blue (0..1): saturated, so where the three add up they
+/// glow white.
+const TRACE: [[f32; 3]; 3] = [[1.0, 0.24, 0.24], [0.26, 1.0, 0.3], [0.3, 0.4, 1.0]];
+
+/// `rgb` (0..1) at intensity `k`, blended additively (premultiplied with no alpha): overlapping
+/// traces add up and brighten, as phosphor does.
+fn additive(rgb: [f32; 3], k: f32) -> Color32 {
+    let k = if k.is_finite() { k.clamp(0.0, 1.0) } else { 0.0 };
+    let c = |v: f32| (v * k * 255.0).clamp(0.0, 255.0) as u8;
+    Color32::from_rgba_premultiplied(c(rgb[0]), c(rgb[1]), c(rgb[2]), 0)
+}
+
+/// A trace's brightness for a cell at `d` (0..1 of the robust peak): sparse cells dim, dense ones
+/// bright, with a lift so a thin trace still shows.
+fn glow(d: f32) -> f32 {
+    if d > 0.0 { (0.05 + 0.85 * d.powf(0.8)).min(1.0) } else { 0.0 }
+}
+
+/// Amber horizontal graticule lines at each `1/n` of `r`'s height.
+fn graticule_rows(p: &Painter, r: Rect, n: usize) {
+    for k in 0..=n {
+        let y = r.bottom() - r.height() * k as f32 / n.max(1) as f32;
+        p.line_segment(
+            [pos2(r.left(), y), pos2(r.right(), y)],
+            Stroke::new(1.0, GRATICULE.gamma_multiply(if k == 0 || k == n { 0.8 } else { 0.45 })),
+        );
+    }
+}
+
+/// Amber vertical graticule lines at each `1/n` of `r`'s width.
+fn graticule_cols(p: &Painter, r: Rect, n: usize) {
+    for k in 1..n {
+        let x = r.left() + r.width() * k as f32 / n.max(1) as f32;
+        p.line_segment([pos2(x, r.top()), pos2(x, r.bottom())], Stroke::new(1.0, GRATICULE.gamma_multiply(0.35)));
+    }
+}
 
 /// The five-bin box smoothing the panel draws its curves with: raw 256-bin histograms of a photo
 /// are spiky, and a single-bin spike would draw as a one-pixel needle.
@@ -405,17 +448,27 @@ pub fn scope_pos(center: Pos2, radius: f32, u: f32, v: f32) -> Pos2 {
 /// Draw the polar chrominance vectorscope of `h` inside `plot` at `scale`.
 fn paint_vectorscope(p: &Painter, plot: Rect, h: &Histogram, scale: HistogramScale) {
     let (center, radius) = scope_disc(plot);
-    // 1. Graticule backing, concentric saturation rings (25%, 50%, 75%), crosshairs and skin-tone line
-    p.circle_filled(center, radius, Color32::from_black_alpha(65));
-    let ring_stroke = Stroke::new(1.0, Color32::from_gray(84).gamma_multiply(0.55));
+    // 1. Graticule: the well, faint saturation rings (25%, 50%, 75%), amber crosshairs, the outer
+    // ring's degree ticks and the skin-tone line
+    p.circle_filled(center, radius, SCOPE_BG);
+    let ring_stroke = Stroke::new(1.0, GRATICULE.gamma_multiply(0.18));
     for r in [0.25, 0.50, 0.75] {
         p.circle_stroke(center, radius * r, ring_stroke);
     }
-    let axis_stroke = Stroke::new(1.0, Color32::from_gray(92).gamma_multiply(0.65));
+    let axis_stroke = Stroke::new(1.0, GRATICULE.gamma_multiply(0.7));
     p.line_segment([pos2(center.x - radius, center.y), pos2(center.x + radius, center.y)], axis_stroke);
     p.line_segment([pos2(center.x, center.y - radius), pos2(center.x, center.y + radius)], axis_stroke);
+    for k in 0..36 {
+        let a = k as f32 * std::f32::consts::TAU / 36.0;
+        let len = if k % 3 == 0 { 6.0 } else { 3.5 };
+        let (c, s) = (a.cos(), a.sin());
+        p.line_segment(
+            [pos2(center.x + c * radius, center.y - s * radius), pos2(center.x + c * (radius - len), center.y - s * (radius - len))],
+            Stroke::new(1.0, GRATICULE),
+        );
+    }
     let (su, sv) = (SKIN_TONE_ANGLE_RAD.cos(), SKIN_TONE_ANGLE_RAD.sin());
-    p.line_segment([center, scope_pos(center, radius, su, sv)], Stroke::new(1.0, Color32::from_rgb(218, 162, 106).gamma_multiply(0.75)));
+    p.line_segment([center, scope_pos(center, radius, su, sv)], Stroke::new(1.0, Color32::from_rgb(218, 162, 106).gamma_multiply(0.35)));
 
     // 2. 2D chrominance cloud: one quad per occupied cell, normalized against the 98th percentile
     // of non-empty cells so a neutral background spike does not hide subtle colour casts
@@ -436,45 +489,53 @@ fn paint_vectorscope(p: &Painter, plot: Rect, h: &Histogram, scale: HistogramSca
                 continue;
             }
             let d = scale.height(count as f32, peak);
+            // the cell's hue, washed toward white so the dense core glows (additive, as phosphor)
             let [cr, cg, cb] = scope_rgb(u, v);
-            let color = Color32::from_rgb(cr, cg, cb).gamma_multiply(0.28 + 0.72 * d);
+            let tint = |c: u8| 0.55 * f32::from(c) / 255.0 + 0.45;
+            let color = additive([tint(cr), tint(cg), tint(cb)], glow(d));
             let pt = scope_pos(center, radius, u, v);
             push_quad(&mut mesh, Rect::from_center_size(pt, vec2(half * 2.0, half * 2.0)), color);
         }
     }
     p.add(mesh);
 
-    // 3. Outer 100% ring and the six 75%-saturation primary/secondary target boxes and labels
-    p.circle_stroke(center, radius, Stroke::new(1.0, Color32::from_gray(124)));
-    for (label, rgb, color) in SCOPE_TARGETS {
+    // 3. Outer 100% ring and the six 75%-saturation primary/secondary targets: amber corner
+    // brackets with their labels beside them
+    p.circle_stroke(center, radius, Stroke::new(1.0, GRATICULE));
+    let s = (radius * 0.07).clamp(3.0, 7.0);
+    let arm = s * 0.55;
+    let stroke = Stroke::new(1.0, GRATICULE);
+    for (label, rgb, _) in SCOPE_TARGETS {
         let (u, v) = scope_uv(rgb[0], rgb[1], rgb[2]);
-        let target = scope_pos(center, radius, u * 0.75, v * 0.75);
-        p.circle_stroke(target, 2.8, Stroke::new(1.0, color.gamma_multiply(0.85)));
+        let t = scope_pos(center, radius, u * 0.75, v * 0.75);
+        for (dx, dy) in [(-1.0, -1.0), (1.0, -1.0), (1.0, 1.0), (-1.0, 1.0)] {
+            let corner = pos2(t.x + dx * s, t.y + dy * s);
+            p.line_segment([corner, pos2(corner.x - dx * arm, corner.y)], stroke);
+            p.line_segment([corner, pos2(corner.x, corner.y - dy * arm)], stroke);
+        }
         if radius >= 36.0 {
-            let label_pos = scope_pos(center, radius, u * 0.91, v * 0.91);
-            p.text(label_pos, Align2::CENTER_CENTER, label, FontId::proportional(9.5), color.gamma_multiply(0.9));
+            p.text(pos2(t.x + s + 2.0, t.y + s), Align2::LEFT_CENTER, label, FontId::proportional(9.5), GRATICULE);
         }
     }
 }
 
-/// The tracks of a waveform view in `plot`: one for the Waveform, three side by side for the RGB Parade, with
-/// the plane each draws and its colour.
-pub fn waveform_tracks(plot: Rect, mode: HistogramMode) -> Vec<(Rect, Channel, Color32)> {
+/// The traces of a waveform view in `plot`: the Waveform overlays the red, green and blue planes
+/// in one track (they add up to white where they agree); the RGB Parade puts them side by side.
+/// Each comes with its track, its plane and its trace colour.
+pub fn waveform_tracks(plot: Rect, mode: HistogramMode) -> Vec<(Rect, Channel, [f32; 3])> {
+    let planes = [Channel::Red, Channel::Green, Channel::Blue];
     if mode != HistogramMode::Parade {
-        return vec![(plot, Channel::Luminance, Color32::from_gray(232))];
+        return planes.into_iter().zip(TRACE).map(|(c, rgb)| (plot, c, rgb)).collect();
     }
     let gap = 4.0;
     let w = ((plot.width() - 2.0 * gap) / 3.0).max(1.0);
-    [Channel::Red, Channel::Green, Channel::Blue]
+    planes
         .into_iter()
+        .zip(TRACE)
         .enumerate()
-        .map(|(k, c)| {
+        .map(|(k, (c, rgb))| {
             let left = plot.left() + k as f32 * (w + gap);
-            (
-                Rect::from_min_max(pos2(left, plot.top()), pos2((left + w).min(plot.right()), plot.bottom())),
-                c,
-                CHANNEL_COLORS.get(k).copied().unwrap_or(Color32::GRAY),
-            )
+            (Rect::from_min_max(pos2(left, plot.top()), pos2((left + w).min(plot.right()), plot.bottom())), c, rgb)
         })
         .collect()
 }
@@ -483,13 +544,17 @@ pub fn waveform_tracks(plot: Rect, mode: HistogramMode) -> Vec<(Rect, Channel, C
 /// tones from black at the bottom to white at the top, brighter where more of the column sits.
 fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, scale: HistogramScale) {
     let (cols, levels) = (Histogram::WAVE_COLS, Histogram::WAVE_LEVELS);
-    for (track, plane, color) in waveform_tracks(plot, mode) {
-        p.rect_filled(track, 2.0, Color32::from_black_alpha(65));
-        // graticule: 0, 25, 50, 75 and 100 %
-        for k in 0..=4 {
-            let y = track.bottom() - track.height() * k as f32 / 4.0;
-            p.line_segment([pos2(track.left(), y), pos2(track.right(), y)], Stroke::new(1.0, Color32::from_gray(92).gamma_multiply(0.5)));
+    let tracks = waveform_tracks(plot, mode);
+    // each track's well and graticule (0, 25, 50, 75 and 100 %) once, under every trace
+    let mut wells: Vec<Rect> = Vec::new();
+    for (track, _, _) in &tracks {
+        if !wells.contains(track) {
+            wells.push(*track);
+            p.rect_filled(*track, 0.0, SCOPE_BG);
+            graticule_rows(p, *track, 4);
         }
+    }
+    for (track, plane, color) in tracks {
         // columns narrower than about a pixel and a half are drawn together, so a narrow track (the parade's)
         // doesn't stripe
         let group = ((1.5 * cols as f32 / track.width().max(1.0)).ceil() as usize).clamp(1, cols);
@@ -509,7 +574,7 @@ fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
                 let d = scale.height(n, peak);
                 let x = track.left() + g as f32 * cw;
                 let y = track.bottom() - (l + 1) as f32 * lh;
-                push_quad(&mut mesh, Rect::from_min_size(pos2(x, y), vec2(cw, lh)), color.gamma_multiply(0.2 + 0.8 * d));
+                push_quad(&mut mesh, Rect::from_min_size(pos2(x, y), vec2(cw, lh)), additive(color, glow(d)));
             }
         }
         p.add(mesh);
@@ -531,6 +596,7 @@ pub fn paint_plot(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
     }
     let (r, g, b) = (smooth(&h.r), smooth(&h.g), smooth(&h.b));
     let (luma, chroma) = (smooth(&h.luma), smooth(&h.chroma));
+    graticule_cols(p, plot, 8);
     match mode {
         HistogramMode::RgbOverlap => {
             let peak = peak(&[&r, &g, &b]);
@@ -567,7 +633,7 @@ pub fn paint_plot(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
                 let top = plot.top() + (track_h + gap) * k as f32;
                 let track = Rect::from_min_max(pos2(plot.left(), top), pos2(plot.right(), (top + track_h).min(plot.bottom())));
                 let color = CHANNEL_COLORS.get(k).copied().unwrap_or(Color32::GRAY);
-                fill_curve(p, track, bins, scale, peak, color.gamma_multiply(0.45));
+                fill_curve(p, track, bins, scale, peak, color.gamma_multiply(0.38));
                 stroke_curve(p, track, bins, scale, peak, Stroke::new(1.5, color));
             }
         }

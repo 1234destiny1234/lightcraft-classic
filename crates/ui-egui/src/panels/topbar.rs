@@ -175,7 +175,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     n = n
                 )
             });
-            let cloud_tip = unsaved.as_deref().unwrap_or("Local library — no cloud account needed");
+            let cloud_tip = unsaved.as_deref().unwrap_or("Sync: Peer-to-Peer or Immich");
             // Import Photos… beside Export, always one click away, with the key it is bound to now
             let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
             let import_tip = match crate::shortcuts::shortcut_of(&app.ui.settings.keymap, "file.addPhotos") {
@@ -214,6 +214,20 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                     && let Err(e) = app.run(cmd, json!({}))
                 {
                     app.toast_error(ui.ctx(), e);
+                }
+                // the cloud opens a menu of the sync services, each to its Settings page
+                #[cfg(not(target_arch = "wasm32"))]
+                if id == "cloud" {
+                    egui::Popup::menu(&resp).show(|ui| {
+                        for (key, label, tab) in [("peerSync", "Peer-to-Peer Sync…", "sync"), ("immich", "Immich…", "connections")] {
+                            let b = ui.button(crate::i18n::tr(label));
+                            register(ui.ctx(), format!("menu:cloud-{key}"), b.rect);
+                            if b.clicked() {
+                                let _ = app.run("app.settings", json!({"tab": tab}));
+                                ui.close();
+                            }
+                        }
+                    });
                 }
                 x -= 40.0;
             }

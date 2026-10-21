@@ -97,6 +97,27 @@ fn name_matches(name: &str, op: &str, value: &str) -> Option<bool> {
     })
 }
 
+/// Lightroom keeps apertures as APEX values (`f = 2^(av / 2)`), native rules compare the f-number.
+/// The catalog's APEX values are rounded, so each bound is widened by 1% (an exact `==` / `!=`
+/// can't be expressed and stays static).
+fn aperture(op: &str, av: f64, av2: Option<f64>) -> Option<Rule> {
+    const TOL: f64 = 0.01;
+    let f = |a: f64| (a / 2.0).exp2();
+    let (lo, hi) = (f(av), av2.map(f));
+    if !lo.is_finite() || hi.is_some_and(|h| !h.is_finite()) {
+        return None;
+    }
+    Some(match op {
+        "==" => field("aperture", "between", json!([lo * (1.0 - TOL), lo * (1.0 + TOL)])),
+        ">=" => field("aperture", "gte", json!(lo * (1.0 - TOL))),
+        ">" => field("aperture", "gt", json!(lo * (1.0 + TOL))),
+        "<=" => field("aperture", "lte", json!(lo * (1.0 + TOL))),
+        "<" => field("aperture", "lt", json!(lo * (1.0 - TOL))),
+        "in" => field("aperture", "between", json!([lo * (1.0 - TOL), hi? * (1.0 + TOL)])),
+        _ => return None,
+    })
+}
+
 fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
     let name = c.get("criteria").and_then(Lua::str).unwrap_or_default();
     let op = c.get("operation").and_then(Lua::str).unwrap_or_default();
@@ -159,18 +180,7 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
             let op = number_op(op).ok_or_else(unsupported)?;
             Ok(field(target, op, json!(n)))
         }
-        "aperture" => {
-            // Lightroom stores aperture in APEX; convert to f-number for our native rules
-            let apex = num(value).ok_or_else(unsupported)?;
-            let f_number = 2.0_f64.powf(apex / 2.0);
-            if op == "in" {
-                let apex_hi = num(c.get("value2")).ok_or_else(unsupported)?;
-                let f_number_hi = 2.0_f64.powf(apex_hi / 2.0);
-                return Ok(field("aperture", "between", json!([f_number, f_number_hi])));
-            }
-            let op = number_op(op).ok_or_else(unsupported)?;
-            Ok(field("aperture", op, json!(f_number)))
-        }
+        "aperture" => aperture(op, num(value).ok_or_else(unsupported)?, num(c.get("value2"))).ok_or_else(unsupported),
         "pick" => {
             let flag = match num(value).map(|n| n as i64) {
                 Some(1) => "pick",
@@ -212,10 +222,13 @@ fn criterion(c: &Lua, collections: &[(&str, AlbumId)]) -> Result<Rule, String> {
             let raw = value.and_then(Lua::str).unwrap_or_default();
             let raw_upper = raw.to_ascii_uppercase();
             if raw_upper == "RAW" {
-                // Lightroom's generic "RAW" matches our raw originals (ARW, NEF, CR2, …)
+                // Lightroom's generic "RAW" is every proprietary raw (ARW, NEF, CR2, …), apart from DNG
+                let positive = Rule::Group {
+                    group: RuleSet { mode: Match::All, rules: vec![field("kind", "is", json!("raw")), field("format", "isNot", json!("dng"))] },
+                };
                 match op {
-                    "==" | "" => Ok(field("kind", "is", json!("raw"))),
-                    "!=" => Ok(field("kind", "isNot", json!("raw"))),
+                    "==" | "" => Ok(positive),
+                    "!=" => Ok(Rule::Group { group: RuleSet { mode: Match::None, rules: vec![positive] } }),
                     _ => Err(unsupported()),
                 }
             } else {
@@ -368,10 +381,11 @@ mod tests {
     }
 
     #[test]
-    fn fileformat_raw_maps_to_kind_raw() {
-        // Lightroom's generic "RAW" must map to kind=raw, not format=RAW.
+    fn fileformat_raw_maps_to_kind_raw_without_dng() {
+        // Lightroom's generic "RAW" must map to kind=raw, not format=RAW, and leaves DNG out.
         let set = smart_rules(r#"s = { { criteria = "fileFormat", operation = "==", value = "RAW" } }"#, &[]).unwrap();
-        assert_eq!(set.rules[0], field("kind", "is", json!("raw")));
+        let Rule::Group { group } = &set.rules[0] else { panic!("expected a group") };
+        assert_eq!(group.rules, vec![field("kind", "is", json!("raw")), field("format", "isNot", json!("dng"))]);
     }
 
     #[test]
@@ -382,27 +396,21 @@ mod tests {
     }
 
     #[test]
-    fn aperture_apex_converted_to_fnumber() {
-        // APEX 6 = f/8 (f-number = 2^(APEX/2)).
+    fn aperture_apex_converted_to_fnumber_with_rounding_tolerance() {
+        // APEX 6 = f/8 (f-number = 2^(APEX/2)); the catalog's rounded APEX values need a band, not an exact match.
         let set = smart_rules(r#"s = { { criteria = "aperture", operation = "==", value = 6 } }"#, &[]).unwrap();
-        if let Rule::Field { value, .. } = &set.rules[0] {
-            let fnum = value.as_f64().unwrap();
-            assert!((fnum - 8.0).abs() < 1e-6, "expected f/8, got {fnum}");
-        } else {
-            panic!("expected Field rule");
-        }
+        let Rule::Field { op, value, .. } = &set.rules[0] else { panic!("expected Field rule") };
+        let (lo, hi) = (value[0].as_f64().unwrap(), value[1].as_f64().unwrap());
+        assert_eq!(op, "between");
+        assert!(lo < 8.0 && 8.0 < hi && hi < 8.2, "{lo} {hi}");
     }
 
     #[test]
     fn aperture_range_apex_converted() {
         // Range endpoints must also be converted.
         let set = smart_rules(r#"s = { { criteria = "aperture", operation = "in", value = 6, value2 = 8 } }"#, &[]).unwrap();
-        if let Rule::Field { value, .. } = &set.rules[0] {
-            let arr = value.as_array().unwrap();
-            assert!((arr[0].as_f64().unwrap() - 8.0).abs() < 1e-6); // APEX 6 → f/8
-            assert!((arr[1].as_f64().unwrap() - 16.0).abs() < 1e-6); // APEX 8 → f/16
-        } else {
-            panic!("expected Field rule");
-        }
+        let Rule::Field { value, .. } = &set.rules[0] else { panic!("expected Field rule") };
+        assert!((value[0].as_f64().unwrap() - 8.0).abs() < 0.1); // APEX 6 -> f/8
+        assert!((value[1].as_f64().unwrap() - 16.0).abs() < 0.2); // APEX 8 -> f/16
     }
 }

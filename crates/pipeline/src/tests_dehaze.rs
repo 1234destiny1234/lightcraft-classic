@@ -21,6 +21,15 @@ fn v3_pixel_never_goes_black_and_eases_in() {
 }
 
 #[test]
+fn v3_full_strength_keeps_channel_differences_bounded() {
+    // +100 on a dense haze plane: the transmission floor limits how far colour differences are stretched
+    let c = [0.30, 0.20, 0.12];
+    let out = dehaze_v3_pixel(c, 1.0, 1.0, 0.8);
+    let spread = |p: [f32; 3]| p[0].max(p[1]).max(p[2]) - p[0].min(p[1]).min(p[2]);
+    assert!(spread(out) <= 3.4 * spread(c), "{c:?} -> {out:?}");
+}
+
+#[test]
 fn patch_radius_only_from_v3_and_min_filter_erodes() {
     let s = |p: Process| DevelopSettings { process: p.version(), ..DevelopSettings::default() };
     assert_eq!(local::dehaze_patch_radius(&s(Process::V1), 3000.0), 0);

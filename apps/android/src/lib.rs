@@ -11,8 +11,14 @@
 
 #[cfg(target_os = "android")]
 mod app;
+#[cfg(any(target_os = "android", test))]
+mod copies;
 #[cfg(target_os = "android")]
 mod prefs;
+#[cfg(any(target_os = "android", test))]
+mod staging;
+#[cfg(target_os = "android")]
+mod system_fonts;
 
 /// The entry point android-activity calls on its own thread once the activity has started.
 #[cfg(target_os = "android")]
