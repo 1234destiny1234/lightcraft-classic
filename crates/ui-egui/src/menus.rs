@@ -371,18 +371,25 @@ pub(crate) fn switch_brush_preset(app: &mut LccApp, slot: u8) -> Value {
 /// (and its selected spot's) or the Masking brush's.
 pub(crate) fn adjust_brush(app: &mut LccApp, k: f32, df: f32) -> Value {
     if app.ui.right == RightPanel::Remove {
-        app.ui.remove_size = (app.ui.remove_size * k).clamp(0.001, 0.25);
-        app.ui.remove_feather = (app.ui.remove_feather + df).clamp(0.0, 100.0);
-        if app.session.active_spot.is_some() {
-            let mut p = json!({});
+        if let Some(i) = app.session.active_spot
+            && let Some(id) = app.session.active()
+            && let Some(d) = app.session.develop_of(id)
+            && let Some(sp) = d.spots.get(i)
+        {
+            let new_size = (sp.size as f32 * k).clamp(0.001, 0.25);
+            let new_feather = (sp.feather as f32 + df).clamp(0.0, 100.0);
+            let mut p = json!({"index": i});
             if k != 1.0 {
-                p["size"] = json!(app.ui.remove_size);
+                p["size"] = json!(new_size);
             }
             if df != 0.0 {
-                p["feather"] = json!(app.ui.remove_feather);
+                p["feather"] = json!(new_feather);
             }
             let _ = app.run("spot.update", p);
+            return json!({"size": new_size, "feather": new_feather});
         }
+        app.ui.remove_size = (app.ui.remove_size * k).clamp(0.001, 0.25);
+        app.ui.remove_feather = (app.ui.remove_feather + df).clamp(0.0, 100.0);
         json!({"size": app.ui.remove_size, "feather": app.ui.remove_feather})
     } else {
         app.ui.brush_size = (app.ui.brush_size * k).clamp(0.002, 0.5);

@@ -512,6 +512,7 @@ pub struct LccApp {
     /// Rect of the photo canvas and the displayed image (screen points) from the last frame.
     pub canvas_rect: Option<egui::Rect>,
     pub image_rect: Option<egui::Rect>,
+    pub right_panel_rect: Option<egui::Rect>,
     /// Scroll offsets (points) of the photo grid (vertical) and the filmstrip (horizontal) as
     /// drawn last (`ui.inspect` → `scroll`).
     pub grid_scroll: Option<f32>,
@@ -687,6 +688,7 @@ impl LccApp {
             last_time: 0.0,
             canvas_rect: None,
             image_rect: None,
+            right_panel_rect: None,
             grid_scroll: None,
             film_scroll: None,
             widgets: vec![],

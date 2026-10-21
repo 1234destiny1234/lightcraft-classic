@@ -45,6 +45,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         };
         // Edit: Lightroom Classic's Previous / Sync… bar under the panels, outside the scrolling
         let full = ui.available_rect_before_wrap();
+        app.right_panel_rect = Some(full);
         let footer = (app.ui.right == RightPanel::Edit).then(|| Rect::from_min_max(pos2(full.left(), full.bottom() - SYNC_BAR_H), full.max));
         let mut body = footer.map_or(full, |f| Rect::from_min_max(full.min, pos2(full.right(), f.top())));
         // Edit: the histogram pinned above the scrolling controls, so it stays in view
@@ -575,55 +576,111 @@ fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     });
 }
 
+const REMOVE_MODES: [(Icon, &str, &str, &str); 4] = [
+    (Icon::Eraser, "Remove", "remove", "Remove: Inpaint from nearby match"),
+    (Icon::Sparkle, "Content-Aware", "fill", "Content-Aware: Multi-scale synthesized fill"),
+    (Icon::Bandage, "Heal", "heal", "Heal: Blend source texture with target tone"),
+    (Icon::Stamp, "Clone", "clone", "Clone: Exact 1:1 pixel copy"),
+];
+
+fn mode_segmented_bar(ui: &mut egui::Ui, id: &str, active_key: &str) -> Option<&'static str> {
+    let t = Tokens::get(ui.ctx());
+    let gap = 4.0;
+    let n = REMOVE_MODES.len() as f32;
+    let seg_w = ((ui.available_width() - gap * (n - 1.0)) / n).max(24.0);
+    let mut chosen = None;
+
+    ui.horizontal(|ui| {
+        ui.spacing_mut().item_spacing.x = gap;
+        for (icon, label, key, tip) in REMOVE_MODES {
+            let on = active_key == key;
+            let (r, resp) = ui.allocate_exact_size(vec2(seg_w, 28.0), egui::Sense::click());
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, crate::i18n::tr(label)));
+            register(ui.ctx(), format!("button:{id}-{key}"), r);
+
+            let fill = if on {
+                t.pressed
+            } else if resp.hovered() {
+                t.hover
+            } else {
+                t.button
+            };
+            let stroke = if on {
+                egui::Stroke::new(1.5, t.pick)
+            } else if resp.hovered() {
+                egui::Stroke::new(1.0, t.text_dim)
+            } else {
+                egui::Stroke::new(1.0, t.button_border)
+            };
+            let p = ui.painter();
+            p.rect(r, egui::CornerRadius::same(4), fill, stroke, egui::StrokeKind::Inside);
+
+            let icon_col = if on {
+                t.pick
+            } else if resp.hovered() {
+                t.text
+            } else {
+                t.icon
+            };
+            let icon_rect = egui::Rect::from_center_size(r.center(), vec2(16.0, 16.0));
+            crate::icons::paint(p, icon_rect, icon, icon_col);
+
+            let resp = resp.on_hover_text(format!("{} — {}", crate::i18n::tr(label), crate::i18n::tr(tip)));
+            if resp.clicked() {
+                chosen = Some(key);
+            }
+        }
+    });
+
+    chosen
+}
+
 fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     let d = app.session.develop_of(id).unwrap_or_default();
     header(ui, "Remove");
+    let t = Tokens::get(ui.ctx());
+
     padded(ui, |ui| {
-        ui.horizontal_wrapped(|ui| {
-            for (label, tool) in [("Remove", "remove"), ("Content-Aware", "fill"), ("Heal", "heal"), ("Clone", "clone")] {
-                if text_button(ui, &format!("removeMode-{tool}"), label, app.ui.tool == tool).clicked() {
-                    app.ui.tool = tool.into();
-                }
-            }
-        });
-        ui.add_space(8.0);
-        ui.label(crate::i18n::tr_format!("{} spot(s) on this photo", d.spots.len()));
-        ui.add_space(4.0);
-        if text_button(ui, "findDust", crate::i18n::tr("Find Dust Spots"), false)
-            .on_hover_text(crate::i18n::tr("Heal the small, soft dark spots sensor dust leaves on smooth areas"))
-            .clicked()
-        {
-            match app.run("spot.findDust", json!({})) {
-                Ok(r) => {
-                    let n = r["added"].as_u64().unwrap_or(0);
-                    app.toast(
-                        ui.ctx(),
-                        if n == 0 {
-                            crate::i18n::tr("No dust spots found").to_string()
-                        } else {
-                            crate::i18n::tr_format!("Healed {n} dust spot{}", if n == 1 { "" } else { "s" }, n = n)
-                        },
-                    );
-                }
-                Err(e) => app.toast(ui.ctx(), e),
-            }
+        // Mode icon segmented bar
+        if let Some(tool) = mode_segmented_bar(ui, "removeMode", &app.ui.tool) {
+            app.ui.tool = tool.into();
         }
-        ui.add_space(4.0);
-        ui.label(egui::RichText::new(crate::i18n::tr("Paint over a distraction on the photo to remove it.")).color(Tokens::get(ui.ctx()).text_dim));
+        ui.add_space(6.0);
+
+        // Status row: spot count on left, Find Dust on right
+        ui.horizontal(|ui| {
+            let count_str = crate::i18n::tr_format!("{} spot(s) on this photo", d.spots.len());
+            ui.label(egui::RichText::new(count_str).size(12.0).color(t.text_dim));
+
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                if text_button(ui, "findDust", crate::i18n::tr("Find Dust"), false)
+                    .on_hover_text(crate::i18n::tr("Automatically find and heal dust spots on smooth areas"))
+                    .clicked()
+                {
+                    match app.run("spot.findDust", json!({})) {
+                        Ok(r) => {
+                            let n = r["added"].as_u64().unwrap_or(0);
+                            app.toast(
+                                ui.ctx(),
+                                if n == 0 {
+                                    crate::i18n::tr("No dust spots found").to_string()
+                                } else {
+                                    crate::i18n::tr_format!("Healed {n} dust spot{}", if n == 1 { "" } else { "s" }, n = n)
+                                },
+                            );
+                        }
+                        Err(e) => app.toast(ui.ctx(), e),
+                    }
+                }
+            });
+        });
+
+        if d.spots.is_empty() {
+            ui.add_space(2.0);
+            ui.label(egui::RichText::new(crate::i18n::tr("Paint over a distraction on the photo to remove it.")).size(11.0).color(t.text_dim));
+        }
     });
-    // brush settings; with a spot selected they edit that spot too
-    let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
-    if let Some((i, sp)) = &sel {
-        (app.ui.remove_size, app.ui.remove_feather, app.ui.remove_opacity) = (sp.size as f32, sp.feather as f32, sp.opacity as f32);
-        divider(ui);
-        let mode = match sp.mode {
-            lcc_develop::SpotMode::Heal => "Heal",
-            lcc_develop::SpotMode::Clone => "Clone",
-            lcc_develop::SpotMode::Remove => "Remove",
-            lcc_develop::SpotMode::Fill => "Content-Aware",
-        };
-        super::edit::sub_title(ui, &crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = crate::i18n::tr(mode)));
-    }
+
     let plain = |id: &'static str, label: &'static str, min: f64, max: f64, default: f64| lcc_develop::ControlSpec {
         id,
         label,
@@ -635,12 +692,12 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         decimals: 0,
         track: lcc_develop::Track::Plain,
     };
-    let sliders = [
+    let default_sliders = [
         (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", (app.ui.remove_size * 1000.0) as f64),
         (plain("ui.removeFeather", "Feather", 0.0, 100.0, 50.0), "feather", app.ui.remove_feather as f64),
         (plain("ui.removeOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", app.ui.remove_opacity as f64),
     ];
-    for (spec, key, v) in sliders {
+    for (spec, key, v) in default_sliders {
         let out = slider(ui, &spec, v, true, None);
         let scale = if key == "size" { 1000.0 } else { 1.0 };
         if let Some(v) = out.value {
@@ -650,18 +707,118 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 _ => app.ui.remove_opacity = v as f32,
             }
         }
-        if sel.is_some() {
-            super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("spot.update", json!({key: v / scale})));
-        }
     }
-    if sel.is_some() {
+
+    // --- Dedicated Selected Spot Section ---
+    let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
+    if let Some((i, sp)) = sel {
+        divider(ui);
         padded(ui, |ui| {
             ui.horizontal(|ui| {
-                if text_button(ui, "spotRefresh", crate::i18n::tr("Refresh Source (/)"), false).clicked() {
-                    let _ = app.run("spot.refreshSource", json!({}));
+                let mode_lbl = match sp.mode {
+                    lcc_develop::SpotMode::Heal => "Heal",
+                    lcc_develop::SpotMode::Clone => "Clone",
+                    lcc_develop::SpotMode::Remove => "Remove",
+                    lcc_develop::SpotMode::Fill => "Content-Aware",
+                };
+                super::edit::sub_title(
+                    ui,
+                    &format!(
+                        "{}: {}",
+                        crate::i18n::tr("Selected"),
+                        crate::i18n::tr_format!("{mode} spot {} of {}", i + 1, d.spots.len(), mode = crate::i18n::tr(mode_lbl)),
+                    ),
+                );
+                ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    if crate::widgets::icon_button(
+                        ui,
+                        "spotDeselect",
+                        Icon::Close,
+                        vec2(18.0, 18.0),
+                        false,
+                        true,
+                        crate::i18n::tr("Deselect spot (Esc)"),
+                    )
+                    .clicked()
+                    {
+                        let _ = app.run("spot.select", json!({"index": null}));
+                    }
+                });
+            });
+            ui.add_space(4.0);
+            let cur_mode = match sp.mode {
+                lcc_develop::SpotMode::Remove => "remove",
+                lcc_develop::SpotMode::Fill => "fill",
+                lcc_develop::SpotMode::Heal => "heal",
+                lcc_develop::SpotMode::Clone => "clone",
+            };
+            if let Some(new_mode) = mode_segmented_bar(ui, "selSpotMode", cur_mode) {
+                let _ = app.run("spot.update", json!({"index": i, "mode": new_mode}));
+            }
+        });
+
+        let sel_sliders = [
+            (plain("ui.selectedSpotSize", "Size", 1.0, 250.0, 20.0), "size", sp.size * 1000.0),
+            (plain("ui.selectedSpotFeather", "Feather", 0.0, 100.0, 50.0), "feather", sp.feather),
+            (plain("ui.selectedSpotOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", sp.opacity),
+        ];
+        for (spec, key, v) in sel_sliders {
+            let out = slider(ui, &spec, v, true, None);
+            let scale = if key == "size" { 1000.0 } else { 1.0 };
+            super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("spot.update", json!({"index": i, key: v / scale})));
+        }
+
+        padded(ui, |ui| {
+            ui.horizontal(|ui| {
+                ui.spacing_mut().item_spacing.x = 8.0;
+
+                let tip_ref = crate::widgets::command_tooltip(ui, "Refresh (/)", Some("/"));
+                let r_ref = crate::widgets::icon_button_named(
+                    ui,
+                    "spotRefresh",
+                    Icon::RotateRight,
+                    vec2(32.0, 26.0),
+                    false,
+                    true,
+                    crate::i18n::tr("Refresh"),
+                    &tip_ref,
+                );
+                register(ui.ctx(), "button:spotRefresh", r_ref.rect);
+                if r_ref.on_hover_text(crate::i18n::tr("Pick a new donor source or fill variation")).clicked() {
+                    let _ = app.run("spot.refreshSource", json!({"index": i}));
                 }
-                if text_button(ui, "spotDelete", crate::i18n::tr("Delete (⌫)"), false).clicked() {
-                    let _ = app.run("spot.delete", json!({}));
+
+                let tip_res = crate::i18n::tr("Reset spot properties to defaults");
+                let r_res =
+                    crate::widgets::icon_button_named(ui, "spotReset", Icon::Reset, vec2(32.0, 26.0), false, true, crate::i18n::tr("Reset"), tip_res);
+                register(ui.ctx(), "button:spotReset", r_res.rect);
+                if r_res.clicked() {
+                    let d = lcc_develop::Spot::default();
+                    let _ = app.run(
+                        "spot.update",
+                        json!({
+                            "index": i,
+                            "size": d.size,
+                            "feather": d.feather,
+                            "opacity": d.opacity,
+                        }),
+                    );
+                }
+
+                let tip_del = crate::widgets::command_tooltip(ui, "Delete (⌫)", Some("delete"));
+                let r_del = crate::widgets::icon_button_named(
+                    ui,
+                    "spotDelete",
+                    Icon::Trash,
+                    vec2(32.0, 26.0),
+                    false,
+                    true,
+                    crate::i18n::tr("Delete"),
+                    &tip_del,
+                );
+                register(ui.ctx(), "button:spotDelete", r_del.rect);
+                if r_del.on_hover_text(crate::i18n::tr("Delete this spot")).clicked() {
+                    let _ = app.run("spot.delete", json!({"index": i}));
                 }
             });
         });
