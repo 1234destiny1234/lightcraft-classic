@@ -547,13 +547,22 @@ pub fn waveform_image(h: &Histogram, planes: &[(Channel, [f32; 3])], scale: Hist
     let (cols, levels) = (Histogram::WAVE_COLS, Histogram::WAVE_LEVELS);
     let mut px = vec![Color32::TRANSPARENT; cols * levels];
     for &(plane, color) in planes {
+        // Each column as a share of its own samples, times the mean column's: the image's width rarely splits
+        // evenly into the columns, so some got a sample more than their neighbours and drew as brighter stripes
+        // that moved with the render size.
+        let totals: Vec<f32> = (0..cols).map(|c| (0..levels).map(|l| h.wave_at(plane, c, l) as f32).sum()).collect();
+        let filled: Vec<f32> = totals.iter().copied().filter(|&t| t > 0.0).collect();
+        let mean = if filled.is_empty() { 0.0 } else { filled.iter().sum::<f32>() / filled.len() as f32 };
+        let cell = |c: usize, l: usize| {
+            let t = totals.get(c).copied().unwrap_or(0.0);
+            if t > 0.0 { h.wave_at(plane, c, l) as f32 * mean / t } else { 0.0 }
+        };
         // against the 98th percentile of the occupied cells, as the vectorscope: a flat sky doesn't hide the rest
-        let cells: Vec<f32> =
-            (0..cols).flat_map(|c| (0..levels).map(move |l| (c, l))).map(|(c, l)| h.wave_at(plane, c, l) as f32).filter(|&n| n > 0.0).collect();
+        let cells: Vec<f32> = (0..cols).flat_map(|c| (0..levels).map(move |l| (c, l))).map(|(c, l)| cell(c, l)).filter(|&n| n > 0.0).collect();
         let peak = robust_peak(&cells, 0.98);
         for c in 0..cols {
             for l in 0..levels {
-                let n = h.wave_at(plane, c, l) as f32;
+                let n = cell(c, l);
                 if n <= 0.0 {
                     continue;
                 }
@@ -870,6 +879,21 @@ mod tests {
 
     /// The vectorscope fits inside the plot, puts neutral at its centre, and places the six 75 %
     /// primary and secondary targets inside the disc in opposite pairs.
+    #[test]
+    fn a_flat_photo_draws_an_even_waveform_whatever_its_width() {
+        // widths that split unevenly into the columns gave some a sample more: those drew as stripes
+        for width in [300usize, 517, 1000] {
+            let img = lcc_raster::Rgba8::from_bytes(width, 40, &[128u8, 128, 128, 255].repeat(width * 40)).unwrap();
+            let h = Histogram::of_srgb8(&img);
+            for (plane, rgb) in [(Channel::Red, TRACE[0]), (Channel::Green, TRACE[1])] {
+                let picture = waveform_image(&h, &[(plane, rgb)], HistogramScale::Linear);
+                let lit: Vec<Color32> = picture.pixels.iter().copied().filter(|c| c.r() > 0 || c.g() > 0 || c.b() > 0).collect();
+                assert_eq!(lit.len(), Histogram::WAVE_COLS, "{width}: one level lit in every column");
+                assert!(lit.iter().all(|c| *c == lit[0]), "{width}: every column as bright");
+            }
+        }
+    }
+
     #[test]
     fn the_vectorscope_fits_the_plot_and_places_its_six_targets_around_the_disc() {
         let plot = Rect::from_min_max(pos2(20.0, 10.0), pos2(280.0, 166.0));
