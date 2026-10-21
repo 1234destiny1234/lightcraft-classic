@@ -715,7 +715,9 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(json!({"autoAdvance": app.ui.auto_advance}))
         }
         "view.back" => {
-            if app.ui.dialog.is_some() {
+            if app.session.active_spot.is_some() {
+                let _ = app.run("spot.select", json!({"index": null}));
+            } else if app.ui.dialog.is_some() {
                 app.ui.dialog = None;
             } else if app.ui.lights_out != crate::module::LightsOut::Off {
                 app.ui.lights_out = crate::module::LightsOut::Off;

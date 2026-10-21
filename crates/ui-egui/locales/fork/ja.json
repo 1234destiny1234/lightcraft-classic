@@ -1486,5 +1486,9 @@
   "Host key:": "ホストキー:",
   "Host key: not confirmed yet (uploads are refused until it is)": "ホストキー: 未確認（確認されるまでアップロードは拒否されます）",
   "Trust This Host Key": "このホストキーを信頼",
-  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "この SHA-256 フィンガープリントがサーバー管理者から提示されたものと一致する場合のみ、このサーバーを信頼してください:"
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "この SHA-256 フィンガープリントがサーバー管理者から提示されたものと一致する場合のみ、このサーバーを信頼してください:",
+  "Heal with automatically chosen source": "自動選択されたコピー元で修復",
+  "Multi-scale synthesized fill": "マルチスケール合成塗りつぶし",
+  "Blend source texture with target tone": "コピー元のテクスチャをターゲットの色調とブレンド",
+  "Exact 1:1 pixel copy": "正確な1:1ピクセルコピー"
 }

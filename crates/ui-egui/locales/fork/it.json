@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Leggi automaticamente i file XMP collaterali modificati da altre app (foto non modificate qui)",
   "Sliders": "Cursori",
   "One Row": "Una riga",
-  "Two Rows": "Due righe"
+  "Two Rows": "Due righe",
+  "Heal with automatically chosen source": "Correggi con origine scelta automaticamente",
+  "Multi-scale synthesized fill": "Riempimento sintetizzato multiscala",
+  "Blend source texture with target tone": "Fondi la texture di origine con il tono di destinazione",
+  "Exact 1:1 pixel copy": "Copia esatta di pixel 1:1"
 }

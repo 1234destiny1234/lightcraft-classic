@@ -1485,5 +1485,9 @@
   "Host key:": "主機金鑰：",
   "Host key: not confirmed yet (uploads are refused until it is)": "主機金鑰：尚未確認（確認前將拒絕上傳）",
   "Trust This Host Key": "信任此主機金鑰",
-  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "僅當此 SHA-256 指紋與伺服器管理員提供的指紋一致時，才信任此伺服器："
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "僅當此 SHA-256 指紋與伺服器管理員提供的指紋一致時，才信任此伺服器：",
+  "Heal with automatically chosen source": "使用自動選擇的來源進行修復",
+  "Multi-scale synthesized fill": "多尺度合成填滿",
+  "Blend source texture with target tone": "將來源紋理與目標色調混合",
+  "Exact 1:1 pixel copy": "精確 1:1 像素複製"
 }

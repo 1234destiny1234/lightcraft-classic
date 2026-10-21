@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automatycznie wczytuj pliki pomocnicze XMP zmienione przez inne aplikacje (zdjęcia niezmienione tutaj)",
   "Sliders": "Suwaki",
   "One Row": "Jeden wiersz",
-  "Two Rows": "Dwa wiersze"
+  "Two Rows": "Dwa wiersze",
+  "Heal with automatically chosen source": "Koryguj z automatycznie wybranym źródłem",
+  "Multi-scale synthesized fill": "Wieloskalowe syntetyzowane wypełnienie",
+  "Blend source texture with target tone": "Połącz teksturę źródłową z tonem docelowym",
+  "Exact 1:1 pixel copy": "Dokładna kopia pikseli 1:1"
 }

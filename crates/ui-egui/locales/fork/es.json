@@ -1489,5 +1489,9 @@
   "Host key:": "Clave del host:",
   "Host key: not confirmed yet (uploads are refused until it is)": "Clave del host: aún sin confirmar (las subidas se rechazan hasta que lo esté)",
   "Trust This Host Key": "Confiar en esta clave del host",
-  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Confíe en este servidor solo si esta huella SHA-256 coincide con la que le da su administrador:"
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Confíe en este servidor solo si esta huella SHA-256 coincide con la que le da su administrador:",
+  "Heal with automatically chosen source": "Corregir con origen elegido automáticamente",
+  "Multi-scale synthesized fill": "Relleno sintetizado a varias escalas",
+  "Blend source texture with target tone": "Combinar textura de origen con tono de destino",
+  "Exact 1:1 pixel copy": "Copia exacta de píxeles 1:1"
 }

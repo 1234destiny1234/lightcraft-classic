@@ -257,3 +257,39 @@ fn tool_overlay_is_saved_and_old_settings_open_in_auto() {
     }
     assert_eq!(ToolOverlay::parse("nope"), None);
 }
+
+#[test]
+fn esc_deselects_spot_without_leaving_remove_tool() {
+    let mut h = three_spots();
+    assert_eq!(h.app.session.active_spot, Some(2));
+    assert_eq!(h.app.ui.right, RightPanel::Remove);
+    assert_eq!(h.app.ui.tool, "remove");
+
+    // First Esc deselects the spot (active_spot becomes None), but keeps the Remove tool active
+    exec(&mut h, "view.back", json!({}));
+    assert_eq!(h.app.session.active_spot, None, "Esc deselects the spot");
+    assert_eq!(h.app.ui.tool, "remove", "Esc does not drop active Remove tool while a spot is selected");
+
+    // Second Esc drops the active tool mode
+    exec(&mut h, "view.back", json!({}));
+    assert!(h.app.ui.tool.is_empty(), "Second Esc drops the active tool mode");
+}
+
+#[test]
+fn spot_context_menu_switches_mode() {
+    let mut h = three_spots();
+    let id = h.app.session.active().unwrap();
+    let get_mode = |h: &Headless, idx: usize| h.app.session.develop_of(id).unwrap().spots[idx].mode;
+
+    assert_eq!(get_mode(&h, 0), lcc_develop::SpotMode::Heal);
+
+    // Switch mode via spot.update (as the context menu does)
+    exec(&mut h, "spot.update", json!({"index": 0, "mode": "clone"}));
+    assert_eq!(get_mode(&h, 0), lcc_develop::SpotMode::Clone);
+
+    exec(&mut h, "spot.update", json!({"index": 0, "mode": "fill"}));
+    assert_eq!(get_mode(&h, 0), lcc_develop::SpotMode::Fill);
+
+    exec(&mut h, "spot.update", json!({"index": 0, "mode": "remove"}));
+    assert_eq!(get_mode(&h, 0), lcc_develop::SpotMode::Remove);
+}

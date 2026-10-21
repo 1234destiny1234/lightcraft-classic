@@ -282,9 +282,9 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
             })
             .collect();
         let Some(&first) = pts.first() else { continue };
-        let is_content_aware = matches!(spot.mode, SpotMode::Remove | SpotMode::Fill);
+        let fill = spot.mode == SpotMode::Fill;
         let offset = match spot.source_offset {
-            _ if is_content_aware => (0.0, 0.0),
+            _ if fill => (0.0, 0.0),
             Some(o) => {
                 let a = to_out.apply(Point::new(0.0, 0.0));
                 let b = to_out.apply(o);
@@ -301,7 +301,7 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
             y1 = y1.max(p.1 + r);
         }
         // content-aware fill reads the spot's surroundings (the window holds 2 radii around it)
-        let pad = if is_content_aware { 2.0 * r } else { 1.5 * r };
+        let pad = if fill { 2.0 * r } else { r };
         let (bx0, by0) = (((x0 - pad).floor().max(0.0)) as usize, ((y0 - pad).floor().max(0.0)) as usize);
         let (bx1, by1) = (((x1 + pad).ceil() as usize).min(w), ((y1 + pad).ceil() as usize).min(h));
         if bx1 <= bx0 || by1 <= by0 {
@@ -324,13 +324,13 @@ pub fn apply(img: &mut Rgb32f, spots: &[Spot], frame: &Frame, ppl: f64) {
                 tgt[y * bw + x] = img.get(bx0 + x, by0 + y);
             }
         }
-        if is_content_aware {
+        if fill {
             let seed = spot.source_offset.map(|o| (o.x.to_bits() ^ o.y.to_bits().rotate_left(32)).wrapping_add(1)).unwrap_or(1);
             fill_box(&mut src, &tgt, &alpha, bw, bh, seed);
         }
         // Clone: Direct 1:1 copy of source patch, feathered and opacity-blended.
         // Heal: Texture transfer from source patch with tone/gradient separation matching target surroundings.
-        // Remove: Content-aware patch synthesis with surrounding tone harmonization.
+        // Remove: Heal with an automatically chosen source matching target surroundings.
         // Fill: Direct content-aware patch-match completion.
         let heal = matches!(spot.mode, SpotMode::Remove | SpotMode::Heal);
         let low = if heal {
@@ -501,6 +501,62 @@ mod tests {
             apply(&mut img, &[spot], &frame, frame.px_per_long(40));
             assert!(img.data.iter().flatten().all(|v| v.is_finite()));
         }
+    }
+
+    #[test]
+    fn heal_and_remove_render_with_tone_matching_and_respect_source_offset() {
+        // Image with smooth gradient: dark on left (0.2), bright on right (0.8)
+        let (w, h) = (100, 100);
+        let orig = Rgb32f::from_fn(w, h, |x, _| [0.2 + 0.6 * (x as f32 / w as f32); 3]);
+        let frame = Frame::new(w, h, &DevelopSettings::default(), true);
+
+        // Put a bright blot in the dark area (target at x=25, y=50)
+        let mut with_blot = orig.clone();
+        for dy in 47..=53 {
+            for dx in 22..=28 {
+                with_blot.set(dx, dy, [1.0; 3]);
+            }
+        }
+
+        // 1. Remove spot reading from source offset (+0.3, 0.0) -> donor at x=55
+        let remove_spot = Spot {
+            mode: SpotMode::Remove,
+            points: vec![Point::new(0.25, 0.50)],
+            size: 0.05,
+            feather: 0.0,
+            source_offset: Some(Point::new(0.30, 0.0)),
+            ..Default::default()
+        };
+        let mut img_remove = with_blot.clone();
+        apply(&mut img_remove, &[remove_spot], &frame, frame.px_per_long(w));
+
+        // Blot has been healed: target tone matched with surroundings, not 1.0 blot anymore
+        let target_val = img_remove.get(25, 50)[0];
+        assert!(target_val < 0.5, "Remove healed blot with tone matching: {target_val}");
+
+        // Pixels outside radius + pad (pad is r = 5px, radius is 5px) are completely unchanged
+        for y in 0..h {
+            for x in 0..w {
+                let dx = (x as isize - 25).abs();
+                let dy = (y as isize - 50).abs();
+                if dx * dx + dy * dy > 12 * 12 {
+                    assert_eq!(img_remove.get(x, y), with_blot.get(x, y), "outside pixels untouched at ({x}, {y})");
+                }
+            }
+        }
+
+        // 2. Heal spot with same settings matches Remove spot with same source_offset
+        let heal_spot = Spot {
+            mode: SpotMode::Heal,
+            points: vec![Point::new(0.25, 0.50)],
+            size: 0.05,
+            feather: 0.0,
+            source_offset: Some(Point::new(0.30, 0.0)),
+            ..Default::default()
+        };
+        let mut img_heal = with_blot.clone();
+        apply(&mut img_heal, &[heal_spot], &frame, frame.px_per_long(w));
+        assert_eq!(img_remove.data, img_heal.data, "Heal and Remove render identically given the same source_offset");
     }
 
     #[test]
