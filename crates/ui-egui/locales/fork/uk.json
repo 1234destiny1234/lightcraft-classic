@@ -1197,5 +1197,15 @@
   "Export Metadata Presets…": "Експорт наборів метаданих…",
   "Export User Presets…": "Експорт користувацьких наборів…",
   "{app} Metadata Presets": "Набори метаданих {app}",
-  "{app} Export Presets": "Набори експорту {app}"
+  "{app} Export Presets": "Набори експорту {app}",
+  "Raw Details": "Деталі RAW",
+  "Super Resolution": "Надроздільність",
+  "Enhance…": "Покращити…",
+  "Enhance Preview": "Попередній перегляд покращення",
+  "Making the preview…": "Створення попереднього перегляду…",
+  "Click to zoom": "Клацніть, щоб збільшити",
+  "Enhancements": "Покращення",
+  "Finer detail and edges, less false colour, at the same size.": "Тонші деталі й краї, менше хибних кольорів, у тому самому розмірі.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Деталі RAW, потім удвічі більші ширина й висота (вчетверо більше пікселів).",
+  "Estimating time…": "Оцінювання часу…"
 }

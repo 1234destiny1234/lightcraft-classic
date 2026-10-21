@@ -251,6 +251,18 @@ bit-identical, and one (the point colour range overlay) has max 2 LSB on 0.0002%
 mean 0.0003 LSB. That is the same picture as on Metal, inside the bounds
 (`cargo test -p lcc-gpu --release --test equivalence -- --nocapture`).
 
+**HDR renders** (`OutputDepth::F32Hdr`: the HDR views of an HDR display, HDR exports, gain maps) run on
+the GPU too: the per-pixel kernel takes the HDR edit's peak (`PEAK`; the tone LUT is `ToneMap::hdr` /
+`camera_hdr` / `display_hdr` from `finish::base_tone`, shared with the CPU) and, with `DEEP`, encodes with
+the exact sRGB curve unbounded above 1, continues the curves past SDR white with slope 1, gamut-maps into
+`0..peak` and writes linear float RGB (`f32`, output primaries) after the 8-bit image, which is its
+reduction (`DeepImage::to_rgba8`), so the histogram is still binned on the GPU. `hdr_renders_match`
+compares the float samples (sRGB-encoded past 1, ×255) with the CPU's: max < 0.01, mean ≤ 0.0001 steps
+on the AMD Radeon 8060S across tone-map arms, light edits, vignette, curves, grain and an HDR request of
+an SDR edit. 16-bit and SDR float exports, soft proofs and Visualize HDR stay on the CPU (`handles`).
+3000 × 2000 HDR render (release, shared machine): CPU ~200–575 ms, GPU ~50–70 ms
+(`cargo test -p lcc-gpu --release --test equivalence hdr_render_time -- --ignored --nocapture`).
+
 Remaining differences come from f32 vs f64 coordinate math, fast-math transcendental functions on
 Metal and summation order in the box filters — all far below one 8-bit step.
 
@@ -278,7 +290,7 @@ Summing each pixel's window instead (adjacent threads, adjacent pixels): 1.9–2
 NR stage 1.5 → 0.4 s and spatial planes 0.89 → 0.29 s (`<PREFIX>_PROFILE`). Per-pass timings come from `<PREFIX>_PROFILE` on
 `cargo xtask bench` (24 MP source).
 
-GPU timings include the readback of the 8-bit result and the histogram. Device creation + kernel
+GPU timings include the readback of the 8-bit result and the histogram. The histogram (channels, chroma, vectorscope and waveform grids) is binned on the GPU by `hist_k` (`wgsl/hist.wgsl`: workgroup-local atomics for the 1D bins, global atomics for the grids) over the same ~1 MP sample grid as `Histogram::of_srgb8_covered`, the CPU oracle, and read back with the image in one transfer; `gpu_histogram_matches_the_cpu_oracle` checks they agree exactly. At 24 MP it takes the ~7 ms CPU pass off each render (75 → 68 ms on this machine's GPU). Device creation + kernel
 compilation: ~0.4 s once per process — the desktop app starts it on a background thread at launch
 (`lcc_gpu::warm_up`), so the first loupe render doesn't wait for it; other processes create
 the device on their first GPU render. `lcc_gpu::ready()` asks without blocking.
@@ -347,4 +359,3 @@ A view's stages keep an uploaded source only up to 96 MB (a Preview-level source
   faster path for exports.
 - Large-radius blurs at full size (dehaze dark channel at 24 MP) dominate the export: a summed-area
   table or a downsampled dark channel would cut them further.
-- GPU histogram (atomics) to skip the CPU pass over the readback.

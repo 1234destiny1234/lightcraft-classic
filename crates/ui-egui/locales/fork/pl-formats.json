@@ -56,5 +56,10 @@
   "Imported {n} metadata preset{}": "Zaimportowane ustawienia metadanych: {n}{:.0}",
   "Imported {n} export preset{}": "Zaimportowane ustawienia eksportu: {n}{:.0}",
   "Exported {n} metadata preset{}": "Wyeksportowane ustawienia metadanych: {n}{:.0}",
-  "Exported {n} export preset{}": "Wyeksportowane ustawienia eksportu: {n}{:.0}"
+  "Exported {n} export preset{}": "Wyeksportowane ustawienia eksportu: {n}{:.0}",
+  "about {} seconds": "około {} s",
+  "about {} minutes": "około {} min",
+  "about {} hours": "około {} godz.",
+  "Output: {} × {} px": "Wynik: {} × {} px",
+  "Estimated time: {est}": "Szacowany czas: {est}"
 }

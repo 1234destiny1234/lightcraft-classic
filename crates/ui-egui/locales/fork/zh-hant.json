@@ -1455,5 +1455,15 @@
   "Export Metadata Presets…": "轉存中繼資料預設集…",
   "Export User Presets…": "轉存使用者預設集…",
   "{app} Metadata Presets": "{app} 中繼資料預設集",
-  "{app} Export Presets": "{app} 轉存預設集"
+  "{app} Export Presets": "{app} 轉存預設集",
+  "Raw Details": "RAW 細節",
+  "Super Resolution": "超解析度",
+  "Enhance…": "增強…",
+  "Enhance Preview": "增強預覽",
+  "Making the preview…": "正在產生預覽…",
+  "Click to zoom": "按一下以縮放",
+  "Enhancements": "增強",
+  "Finer detail and edges, less false colour, at the same size.": "相同尺寸下更精細的細節和邊緣，更少的偽色。",
+  "Raw Details, then twice the width and height (four times the pixels).": "先進行 Raw 細節，再將寬度和高度加倍（像素為四倍）。",
+  "Estimating time…": "正在估算時間…"
 }

@@ -1459,5 +1459,15 @@
   "Export Metadata Presets…": "Exportar ajustes de metadatos…",
   "Export User Presets…": "Exportar ajustes de usuario…",
   "{app} Metadata Presets": "Ajustes de metadatos de {app}",
-  "{app} Export Presets": "Ajustes de exportación de {app}"
+  "{app} Export Presets": "Ajustes de exportación de {app}",
+  "Raw Details": "Detalles RAW",
+  "Super Resolution": "Superresolución",
+  "Enhance…": "Mejorar…",
+  "Enhance Preview": "Vista previa de Mejorar",
+  "Making the preview…": "Creando la vista previa…",
+  "Click to zoom": "Haga clic para ampliar",
+  "Enhancements": "Mejoras",
+  "Finer detail and edges, less false colour, at the same size.": "Detalle y bordes más finos, menos color falso, al mismo tamaño.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Detalles RAW y luego el doble de ancho y alto (cuatro veces los píxeles).",
+  "Estimating time…": "Calculando el tiempo…"
 }

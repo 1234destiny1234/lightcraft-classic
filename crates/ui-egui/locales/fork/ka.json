@@ -55,5 +55,15 @@
   "Export Metadata Presets…": "მეტამონაცემების პრესეტების ექსპორტი…",
   "Export User Presets…": "მომხმარებლის პრესეტების ექსპორტი…",
   "{app} Metadata Presets": "{app}-ის მეტამონაცემების პრესეტები",
-  "{app} Export Presets": "{app}-ის ექსპორტის პრესეტები"
+  "{app} Export Presets": "{app}-ის ექსპორტის პრესეტები",
+  "Raw Details": "RAW დეტალები",
+  "Super Resolution": "სუპერ გარჩევადობა",
+  "Enhance…": "გაუმჯობესება…",
+  "Enhance Preview": "გაუმჯობესების გადახედვა",
+  "Making the preview…": "გადახედვა იქმნება…",
+  "Click to zoom": "დააწკაპეთ გასადიდებლად",
+  "Enhancements": "გაუმჯობესებები",
+  "Finer detail and edges, less false colour, at the same size.": "უფრო წვრილი დეტალები და კიდეები, ნაკლები ცრუ ფერი, იმავე ზომაში.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Raw დეტალები, შემდეგ ორჯერ მეტი სიგანე და სიმაღლე (ოთხჯერ მეტი პიქსელი).",
+  "Estimating time…": "დრო ფასდება…"
 }

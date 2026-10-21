@@ -36,6 +36,7 @@ fn raw_frame(image: Rgb32f, color: &ColorData, wb_multipliers: Multipliers) -> F
         baseline_exposure: 0.0,
         lens: Vec::new(),
         wb_multipliers,
+        display_referred: false,
     }
 }
 

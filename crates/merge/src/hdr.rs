@@ -36,6 +36,7 @@ use serde::{Deserialize, Serialize};
 
 use crate::align::{self, Alignment};
 use crate::frame::{Frame, FrameColor, consensus_multipliers};
+use crate::half::{HalfImage, HalfPlane};
 use crate::{MergeError, Progress, Result, check};
 use crate::{flow, refine};
 
@@ -118,8 +119,53 @@ fn maxc(p: [f32; 3]) -> f32 {
     p[0].max(p[1]).max(p[2])
 }
 
-/// Merge exposure brackets. Frames must share their pixel size (and orientation).
-pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress) -> Result<HdrResult> {
+/// A frame as the HDR merge holds it: its pixels as half floats ([`crate::half`]), everything else as loaded. The
+/// [`Frame::image`] of `frame` is emptied.
+#[derive(Clone, Debug)]
+pub struct HdrFrame {
+    pub frame: Frame,
+    pub pixels: HalfImage,
+}
+
+impl HdrFrame {
+    /// Hold `f` at half the memory. A caller loading a bracket turns each frame into one as soon as it is decoded, so
+    /// only one frame is ever at full precision.
+    pub fn new(mut f: Frame) -> HdrFrame {
+        let pixels = HalfImage::from_rgb32f(&f.image);
+        f.image = Rgb32f::new(0, 0);
+        HdrFrame { frame: f, pixels }
+    }
+
+    pub fn width(&self) -> usize {
+        self.pixels.width
+    }
+    pub fn height(&self) -> usize {
+        self.pixels.height
+    }
+
+    /// Run `op` on the frame with its pixels at full precision, then store them as half floats again.
+    pub(crate) fn with_full(&mut self, op: impl FnOnce(&mut Frame)) {
+        self.frame.image = self.pixels.to_rgb32f();
+        op(&mut self.frame);
+        self.pixels = HalfImage::from_rgb32f(&self.frame.image);
+        self.frame.image = Rgb32f::new(0, 0);
+    }
+}
+
+impl From<Frame> for HdrFrame {
+    fn from(f: Frame) -> Self {
+        HdrFrame::new(f)
+    }
+}
+
+/// Merge exposure brackets. Frames must share their pixel size (and orientation). Each is held as half floats from
+/// the start ([`HdrFrame`]); a caller that can should pass [`merge_hdr_frames`] frames converted as they load.
+pub fn merge_hdr(frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress) -> Result<HdrResult> {
+    merge_hdr_frames(frames.into_iter().map(HdrFrame::new).collect(), opts, progress)
+}
+
+/// [`merge_hdr`] of frames already held as half floats.
+pub fn merge_hdr_frames(mut frames: Vec<HdrFrame>, opts: &HdrOptions, progress: &Progress) -> Result<HdrResult> {
     let n = frames.len();
     if n < 2 {
         return Err(MergeError::TooFew(n, 2));
@@ -128,9 +174,11 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
     if frames.iter().any(|f| f.width() != w || f.height() != h) {
         return Err(MergeError::Mismatch("HDR merge needs photos of the same size".into()));
     }
-    if frames.iter().any(|f| f.orientation != frames[0].orientation) {
+    if frames.iter().any(|f| f.frame.orientation != frames[0].frame.orientation) {
         for f in frames.iter_mut() {
-            f.orient();
+            if f.frame.orientation != lcc_geom::Orientation::Normal {
+                f.with_full(Frame::orient);
+            }
         }
         let (w0, h0) = (frames[0].width(), frames[0].height());
         if frames.iter().any(|f| f.width() != w0 || f.height() != h0) {
@@ -139,25 +187,37 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
     }
     let (w, h) = (frames[0].width(), frames[0].height());
     check(progress, 0.02, "Analysing exposures")?;
+    // JPEG / TIFF brackets: the camera's response curve undone, so every frame is linear in scene radiance
+    crate::response::linearise(&mut frames);
 
     // 1. brightness order and reference
-    let exif: Option<Vec<f64>> = frames.iter().map(|f| f.exposure).collect();
-    let medians: Vec<f32> = frames.par_iter().map(|f| align::median_luma(&f.image, f.clip)).collect();
+    let exif: Option<Vec<f64>> = frames.iter().map(|f| f.frame.exposure).collect();
+    let medians: Vec<f32> = frames.par_iter().map(|f| median_luma(&f.pixels, f.frame.clip)).collect();
     let brightness: Vec<f64> = match &exif {
         Some(e) if e.iter().any(|v| (v - e[0]).abs() > 0.1) => e.clone(),
         _ => medians.iter().map(|m| (*m as f64).log2()).collect(),
     };
     // ties (equal brightness) by content, never by position
-    let fingerprint: Vec<f64> =
-        frames.par_iter().map(|f| f.image.data.iter().step_by(997).map(|p| p[0] as f64 + 2.0 * p[1] as f64 + 3.0 * p[2] as f64).sum()).collect();
+    let fingerprint: Vec<f64> = frames
+        .par_iter()
+        .map(|f| {
+            (0..f.pixels.len())
+                .step_by(997)
+                .map(|i| {
+                    let p = f.pixels.get(i);
+                    p[0] as f64 + 2.0 * p[1] as f64 + 3.0 * p[2] as f64
+                })
+                .sum()
+        })
+        .collect();
     let mut input: Vec<usize> = (0..n).collect();
     input.sort_by(|&a, &b| {
         brightness[a].total_cmp(&brightness[b]).then(medians[a].total_cmp(&medians[b])).then(fingerprint[a].total_cmp(&fingerprint[b]))
     });
     // From here on frames are in brightness order (`input[p]` is the caller's index of position `p`): alignment seeds,
     // sums and deghost masks no longer depend on the order the caller passed. Per-frame results go back at the end.
-    let mut slots: Vec<Option<Frame>> = frames.into_iter().map(Some).collect();
-    let mut frames: Vec<Frame> = input.iter().filter_map(|&i| slots.get_mut(i).and_then(Option::take)).collect();
+    let mut slots: Vec<Option<HdrFrame>> = frames.into_iter().map(Some).collect();
+    let mut frames: Vec<HdrFrame> = input.iter().filter_map(|&i| slots.get_mut(i).and_then(Option::take)).collect();
     if frames.len() != n {
         return Err(MergeError::Mismatch("HDR merge lost a frame while ordering them".into()));
     }
@@ -180,14 +240,10 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         } else {
             (0..n).map(|i| medians[reference] / medians[i].max(1e-6)).collect()
         };
-        let feats: Vec<(crate::features::Features, f64)> = frames
-            .par_iter()
-            .enumerate()
-            .map(|(i, f)| {
-                let (p, s) = align::work_image(&f.image, g0 * rel[i], align::WORK_EDGE);
-                (crate::features::detect(&p, 1500), s)
-            })
-            .collect();
+        // the small versions one frame at a time (only one is at full precision), the features in parallel
+        let work: Vec<(Plane, f64)> =
+            frames.iter().enumerate().map(|(i, f)| align::work_image(&f.pixels.to_rgb32f(), g0 * rel[i], align::WORK_EDGE)).collect();
+        let feats: Vec<(crate::features::Features, f64)> = work.into_par_iter().map(|(p, s)| (crate::features::detect(&p, 1500), s)).collect();
         check(progress, 0.25, "Aligning")?;
         let al: Vec<(usize, Alignment)> = (0..n)
             .into_par_iter()
@@ -201,10 +257,11 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         // the fit on small versions refined at full size (a tenth of a work pixel is most of a full one), then the
         // frame resampled; one frame at a time (both are parallel inside): each warped copy replaces its frame
         // before the next is made
-        let ref_luma = refine::luma(&frames[reference].image, g0 * rel[reference], frames[reference].clip);
+        let ref_luma = refine::luma(&frames[reference].pixels.to_rgb32f(), g0 * rel[reference], frames[reference].frame.clip);
         for i in (0..n).filter(|&i| i != reference) {
             check(progress, 0.3 + 0.15 * i as f32 / n as f32, "Refining the alignment")?;
-            let luma = refine::luma(&frames[i].image, g0 * rel[i], frames[i].clip);
+            let full = frames[i].pixels.to_rgb32f();
+            let luma = refine::luma(&full, g0 * rel[i], frames[i].frame.clip);
             // the small versions' fit refined at full size; where they found nothing (a bright frame mostly clipped),
             // patches at full size still may, searching wider
             let (start, radius) = if alignments[i].model == "identity" {
@@ -223,8 +280,9 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
             let fl = flow::estimate(&ref_luma, &luma, &alignments[i].h, flow::RADIUS);
             drop(luma);
             local_shift[i] = fl.max();
-            let (img, v) = flow::warp(&frames[i].image, &alignments[i].h, &fl);
-            frames[i].image = img;
+            let (img, v) = flow::warp(&full, &alignments[i].h, &fl);
+            drop(full);
+            frames[i].pixels = HalfImage::from_rgb32f(&img);
             valid[i] = Some(v);
         }
     }
@@ -259,9 +317,10 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
     check(progress, 0.7, "Merging")?;
 
     let darkest = order[0];
-    let clips: Vec<f32> = frames.iter().map(|f| f.clip).collect();
-    // how close each pixel of each frame is to saturation: its brightest channel within 1 px (see `saturation`)
-    let sat: Vec<Vec<f32>> = frames.par_iter().map(|f| saturation(&f.image)).collect();
+    let clips: Vec<f32> = frames.iter().map(|f| f.frame.clip).collect();
+    // how close each pixel of each frame is to saturation: its brightest channel within 1 px (see `saturation`), as
+    // half floats too
+    let sat: Vec<HalfPlane> = frames.iter().map(|f| HalfPlane::from_f32(&saturation(&f.pixels))).collect();
     let mut out = Rgb32f::new(w, h);
     let fr = &frames;
     let vd = &valid;
@@ -272,14 +331,14 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
             let mut acc = [0f64; 3];
             let mut ws = 0f64;
             // the reference at or near its clip: the radiance is at least this
-            let mr = maxc(fr[reference].image.data[i_px]);
+            let mr = maxc(fr[reference].pixels.get(i_px));
             let bound = if mr >= 0.80 * clips[reference] { mr / k[reference] } else { 0.0 };
             for i in 0..n {
                 if vd[i].as_ref().is_some_and(|v| !v[i_px]) {
                     continue;
                 }
-                let v = fr[i].image.data[i_px];
-                let m = sat[i][i_px];
+                let v = fr[i].pixels.get(i_px);
+                let m = sat[i].get(i_px);
                 let mut wt = k[i] * (1.0 - smoothstep(0.80 * clips[i], 0.96 * clips[i], m));
                 if i == darkest {
                     wt += 1e-6;
@@ -308,13 +367,15 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
             if ws > 0.0 {
                 row[x] = acc.map(|a| (a / ws) as f32);
             } else {
-                row[x] = fr[reference].image.data[i_px];
+                row[x] = fr[reference].pixels.get(i_px);
             }
         }
     });
     check(progress, 0.9, "Merging")?;
     // 6. the reference's own fine detail where it is well exposed
-    reference_detail(&mut out, &frames[reference], &sat[reference]);
+    let sat_ref = sat.get(reference).map(HalfPlane::to_f32).unwrap_or_default();
+    drop(sat);
+    reference_detail(&mut out, &frames[reference], &sat_ref);
     check(progress, 0.92, "Merging")?;
 
     let ghost = match &ghost_small {
@@ -347,9 +408,9 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
         }
         v
     });
-    let rf = &frames[reference];
+    let rf = &frames[reference].frame;
     // the merge's white balance is the median of its inputs', as a panorama's: a CR2's or NEF's colour tags have none
-    let wb_multipliers = consensus_multipliers(&frames);
+    let wb_multipliers = consensus_multipliers(frames.iter().map(|f| &f.frame));
     let mut color = rf.color.clone();
     if let Some(multipliers) = wb_multipliers {
         color.set_as_shot_multipliers(multipliers);
@@ -372,6 +433,17 @@ pub fn merge_hdr(mut frames: Vec<Frame>, opts: &HdrOptions, progress: &Progress)
     })
 }
 
+/// [`align::median_luma`] of half-float pixels.
+fn median_luma(img: &HalfImage, clip: f32) -> f32 {
+    let step = (img.len() / 100_000).max(1);
+    let mut v: Vec<f32> = (0..img.len()).step_by(step).map(|i| img.get(i)).filter(|p| maxc(*p) < clip * 0.98).map(align::luma).collect();
+    if v.is_empty() {
+        return clip;
+    }
+    v.sort_by(|a, b| a.total_cmp(b));
+    v.get(v.len() / 2).copied().unwrap_or(clip).max(1e-6)
+}
+
 /// Below this scale (Gaussian σ, pixels) the merge's detail comes from the reference where it is well exposed.
 const DETAIL_SIGMA: f32 = 2.0;
 
@@ -383,11 +455,12 @@ const DETAIL_SIGMA: f32 = 2.0;
 /// reference's, and every channel scaled by `Y'/Y` so colour stays the merge's. `α` fades out where the reference nears
 /// its clip (its highlights come from darker frames) and where it is dark (there its detail is mostly noise, and the
 /// brighter frames' is cleaner).
-fn reference_detail(out: &mut Rgb32f, rf: &Frame, sat: &[f32]) {
+fn reference_detail(out: &mut Rgb32f, hf: &HdrFrame, sat: &[f32]) {
     let (w, h) = (out.width, out.height);
-    if rf.image.width != w || rf.image.height != h || sat.len() != w * h || w == 0 {
+    if hf.width() != w || hf.height() != h || sat.len() != w * h || w == 0 {
         return;
     }
+    let rf = &Frame { image: hf.pixels.to_rgb32f(), ..hf.frame.clone() };
     let y = |p: [f32; 3]| align::luma(p).max(0.0);
     let c = rf.clip;
     let (lo, hi) = if rf.raw { (0.01, 0.05) } else { (0.04, 0.12) };
@@ -442,11 +515,11 @@ pub(crate) fn sample_plane(p: &Plane, x: f32, y: f32) -> f32 {
 }
 
 /// Median of ln(b / a) on the green channel over pixels well exposed in both (≥ 500 samples).
-fn log_ratio(a: &Frame, va: Option<&[bool]>, b: &Frame, vb: Option<&[bool]>) -> Option<f64> {
-    let len = a.image.data.len();
+fn log_ratio(a: &HdrFrame, va: Option<&[bool]>, b: &HdrFrame, vb: Option<&[bool]>) -> Option<f64> {
+    let len = a.pixels.len().min(b.pixels.len());
     let step = (len / 400_000).max(1);
-    let (ca, cb) = (a.clip, b.clip);
-    let lo = |f: &Frame| if f.raw { 0.01 } else { 0.04 };
+    let (ca, cb) = (a.frame.clip, b.frame.clip);
+    let lo = |f: &HdrFrame| if f.frame.raw { 0.01 } else { 0.04 };
     let (la, lb) = (lo(a) * ca, lo(b) * cb);
     let mut v: Vec<f32> = (0..len)
         .into_par_iter()
@@ -455,7 +528,7 @@ fn log_ratio(a: &Frame, va: Option<&[bool]>, b: &Frame, vb: Option<&[bool]>) -> 
             if va.is_some_and(|v| !v[i]) || vb.is_some_and(|v| !v[i]) {
                 return None;
             }
-            let (pa, pb) = (a.image.data[i], b.image.data[i]);
+            let (pa, pb) = (a.pixels.get(i), b.pixels.get(i));
             if maxc(pa) >= 0.8 * ca || maxc(pb) >= 0.8 * cb || pa[1] <= la || pb[1] <= lb {
                 return None;
             }
@@ -470,7 +543,7 @@ fn log_ratio(a: &Frame, va: Option<&[bool]>, b: &Frame, vb: Option<&[bool]>) -> 
 }
 
 /// Box-downsample by `fac` (with the fraction of valid source pixels).
-fn shrink(img: &Rgb32f, valid: Option<&[bool]>, fac: usize) -> (Rgb32f, Vec<f32>) {
+fn shrink(img: &HalfImage, valid: Option<&[bool]>, fac: usize) -> (Rgb32f, Vec<f32>) {
     let (w, h) = (img.width.div_ceil(fac), img.height.div_ceil(fac));
     let mut out = Rgb32f::new(w, h);
     let mut vf = vec![0f32; w * h];
@@ -483,7 +556,7 @@ fn shrink(img: &Rgb32f, valid: Option<&[bool]>, fac: usize) -> (Rgb32f, Vec<f32>
                     let i = sy * img.width + sx;
                     nt += 1;
                     if valid.is_none_or(|v| v[i]) {
-                        let p = img.data[i];
+                        let p = img.get(i);
                         for c in 0..3 {
                             s[c] += p[c];
                         }
@@ -502,7 +575,7 @@ fn shrink(img: &Rgb32f, valid: Option<&[bool]>, fac: usize) -> (Rgb32f, Vec<f32>
 
 /// Per-frame ghost masks (0..1) at 1/`fac` scale; the reference's is all zero.
 fn deghost_maps(
-    frames: &[Frame],
+    frames: &[HdrFrame],
     valid: &[Option<Vec<bool>>],
     k: &[f32],
     order: &[usize],
@@ -515,16 +588,16 @@ fn deghost_maps(
     let fac = w.max(h).div_ceil(DEGHOST_EDGE).max(1);
     // the dilation/feather radius was chosen for a 1024 px map: keep it the same share of the picture
     let r = (r as f32 * (w.max(h) as f32 / fac as f32 / 1024.0).max(1.0)).round() as usize;
-    let small: Vec<(Rgb32f, Vec<f32>)> = (0..n).into_par_iter().map(|i| shrink(&frames[i].image, valid[i].as_deref(), fac)).collect();
+    let small: Vec<(Rgb32f, Vec<f32>)> = (0..n).into_par_iter().map(|i| shrink(&frames[i].pixels, valid[i].as_deref(), fac)).collect();
     let (sw, sh) = (small[0].0.width, small[0].0.height);
     let rpos = order.iter().position(|&i| i == reference).unwrap_or(0);
     // `dark`: the share of the clip below which a frame's (averaged) pixel is too noisy to predict from
     let good = |i: usize, p: usize, dark: f32| -> bool {
-        let f = &frames[i];
+        let f = &frames[i].frame;
         let m = maxc(small[i].0.data[p]);
         small[i].1[p] > 0.99 && m < 0.8 * f.clip && m > dark * f.clip
     };
-    let dark = |i: usize| if frames[i].raw { 0.01 } else { 0.04 };
+    let dark = |i: usize| if frames[i].frame.raw { 0.01 } else { 0.04 };
     // predicted reference radiance per pixel
     let pred: Vec<[f32; 3]> = (0..sw * sh)
         .into_par_iter()
@@ -535,7 +608,7 @@ fn deghost_maps(
             if good(reference, p, dark(reference) * 0.1) {
                 return rad(reference);
             }
-            let bright = maxc(small[reference].0.data[p]) >= 0.8 * frames[reference].clip;
+            let bright = maxc(small[reference].0.data[p]) >= 0.8 * frames[reference].frame.clip;
             if bright {
                 for q in (0..rpos).rev() {
                     if good(order[q], p, dark(order[q])) {
@@ -559,7 +632,7 @@ fn deghost_maps(
             if i == reference {
                 return Plane::new(sw, sh);
             }
-            let f = &frames[i];
+            let f = &frames[i].frame;
             let e = if f.raw { 0.01 } else { 0.03 } * f.clip;
             let mut m = Plane::new(sw, sh);
             for p in 0..sw * sh {
@@ -610,9 +683,9 @@ fn dilate(p: &Plane, r: usize) -> Plane {
 /// photosites is interpolated from them and reads low in the channel that clipped (green, in camera RGB), so it loses
 /// its weight with them. On real ARW brackets the brightest frame's green was 3–5 % low within 2 px of clipped pixels
 /// (and linear to 1 % elsewhere), and as that frame carries the most weight, bright windows got magenta fringes.
-fn saturation(img: &Rgb32f) -> Vec<f32> {
+fn saturation(img: &HalfImage) -> Vec<f32> {
     let (w, h) = (img.width, img.height);
-    let m: Vec<f32> = img.data.iter().map(|p| maxc(*p)).collect();
+    let m: Vec<f32> = (0..img.len()).into_par_iter().map(|i| maxc(img.get(i))).collect();
     if w == 0 || h == 0 {
         return m;
     }
