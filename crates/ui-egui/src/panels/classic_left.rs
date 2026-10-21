@@ -227,13 +227,13 @@ fn versions_or_history(app: &mut LccApp, ui: &mut egui::Ui, rows: fn(&mut LccApp
     }
 }
 
-/// All Photos, Quick Collection, Previous Import, Recently Added, Picks, Missing (and, in the
-/// Classic Catalog panel, Recently Deleted).
+/// All Photographs (Lightroom Classic's name), Quick Collection, Previous Import, Recently Added,
+/// Picks, Missing (and, in the Classic Catalog panel, Recently Deleted).
 pub(super) fn catalog_section(app: &mut LccApp, ui: &mut egui::Ui, total: usize, picks: usize, deleted: usize, with_deleted: bool) {
     let src = app.session.source;
     let quick = app.session.catalog.quick_collection().map(|q| app.session.catalog.album_count(q)).unwrap_or(0);
     for (id, icon, label, count, s) in [
-        ("all", Icon::Photos, "All Photos", Some(total), LibrarySource::All),
+        ("all", Icon::Photos, "All Photographs", Some(total), LibrarySource::All),
         ("quickCollection", Icon::Album, "Quick Collection", Some(quick), LibrarySource::QuickCollection),
         ("previousImport", Icon::Clock, "Previous Import", None, LibrarySource::PreviousImport),
         ("recentlyAdded", Icon::Clock, "Recently Added", None, LibrarySource::RecentlyAdded),
