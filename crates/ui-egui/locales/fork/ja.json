@@ -1444,5 +1444,17 @@
   "Device storage": "デバイスのストレージ",
   "All files": "すべてのファイル",
   "Only the files and folders you pick": "選んだファイルとフォルダーのみ",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "すべてのファイルへのアクセスがあると、デバイス上のフォルダーはコピーせずにその場で読み込まれます。"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "すべてのファイルへのアクセスがあると、デバイス上のフォルダーはコピーせずにその場で読み込まれます。",
+  "Job Title": "役職",
+  "Address": "住所",
+  "Postal Code": "郵便番号",
+  "Phone": "電話",
+  "Email": "メール",
+  "Website": "Web サイト",
+  "Copyright & Contact": "著作権と連絡先",
+  "Rename Metadata Preset": "メタデータプリセットの名前を変更",
+  "Export Metadata Presets…": "メタデータプリセットを書き出し…",
+  "Export User Presets…": "ユーザープリセットを書き出し…",
+  "{app} Metadata Presets": "{app} メタデータプリセット",
+  "{app} Export Presets": "{app} 書き出しプリセット"
 }

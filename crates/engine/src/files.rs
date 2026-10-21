@@ -41,6 +41,7 @@ fn meta_of(m: &lcc_meta::Metadata) -> (Meta, Option<String>) {
         usage_terms: m.usage_terms.clone().unwrap_or_default(),
         copyright_url: m.copyright_url.clone().unwrap_or_default(),
         creator: m.artist.clone().unwrap_or_default(),
+        contact: m.contact.clone(),
         // paths from `lr:hierarchicalSubject`, names from `dc:subject` that aren't their levels
         keywords: lcc_catalog::keywords::from_file(&m.keywords, &m.hierarchical_keywords),
         regions: m.regions.clone(),

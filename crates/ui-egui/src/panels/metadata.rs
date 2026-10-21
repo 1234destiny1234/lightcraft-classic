@@ -80,6 +80,15 @@ pub fn rows(preset: &str) -> Vec<Row> {
         "iptc" => vec![
             Section("Contact"),
             Text("creator", "Creator", 1),
+            Text("creatorJobTitle", "Job Title", 1),
+            Text("creatorAddress", "Address", 2),
+            Text("creatorCity", "City", 1),
+            Text("creatorState", "State / Province", 1),
+            Text("creatorPostalCode", "Postal Code", 1),
+            Text("creatorCountry", "Country", 1),
+            Text("creatorPhone", "Phone", 1),
+            Text("creatorEmail", "Email", 1),
+            Text("creatorWebsite", "Website", 1),
             Section("Content"),
             Text("title", "Title", 1),
             Text("caption", "Caption", 3),
@@ -185,7 +194,7 @@ pub fn value(p: &Photo, key: &str) -> String {
         "fileSize" => human_size(p.file_size),
         "videoDuration" | "frameRate" | "codec" | "resolution" | "audio" | "trim" => video_value(p, key),
         "keywords" => m.keywords.iter().map(|k| k.rsplit('|').next().unwrap_or(k)).collect::<Vec<_>>().join(", "),
-        _ => String::new(),
+        k => m.contact.get(k).cloned().unwrap_or_default(),
     }
 }
 
@@ -358,14 +367,35 @@ fn toolbar(app: &mut LccApp, ui: &mut egui::Ui, ids: &[u64]) {
                     hint: "Preset name".into(),
                     value: String::new(),
                     command: "metadata.savePreset".into(),
-                    params: json!({"only": ["title", "caption", "copyright", "copyrightStatus", "usageTerms", "copyrightUrl", "creator", "location", "city", "state", "country", "keywords"]}),
+                    params: json!({"only": ["title", "caption", "copyright", "copyrightStatus", "usageTerms", "copyrightUrl", "creator", "creatorJobTitle", "creatorAddress", "creatorCity", "creatorState", "creatorPostalCode", "creatorCountry", "creatorPhone", "creatorEmail", "creatorWebsite", "location", "city", "state", "country", "keywords"]}),
                     key: "name".into(),
                 });
+            }
+            for n in &names {
+                if ui.button(format!("{} “{n}”…", crate::i18n::tr("Rename"))).clicked() {
+                    app.ui.dialog = Some(crate::state::Dialog::TextPrompt {
+                        title: "Rename Metadata Preset".into(),
+                        hint: "Preset name".into(),
+                        value: n.clone(),
+                        command: "metadata.renamePreset".into(),
+                        params: json!({"name": n}),
+                        key: "newName".into(),
+                    });
+                }
             }
             for n in &names {
                 if ui.button(format!("{} “{n}”", crate::i18n::tr("Delete"))).clicked() {
                     let _ = app.run("metadata.deletePreset", json!({"name": n}));
                 }
+            }
+            ui.separator();
+            // Lightroom Classic metadata presets, XMP metadata templates, .lcmeta (and anything else
+            // Import Profiles & Presets… takes)
+            if ui.button(crate::i18n::tr("Import Presets…")).clicked() {
+                let _ = app.run("file.importPresets", json!({}));
+            }
+            if !names.is_empty() && ui.button(crate::i18n::tr("Export Metadata Presets…")).clicked() {
+                let _ = app.run("file.exportMetadataPresets", json!({}));
             }
         });
         register(ui.ctx(), "metadata:preset", r.response.rect);

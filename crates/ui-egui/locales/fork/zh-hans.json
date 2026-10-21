@@ -1357,5 +1357,17 @@
   "Device storage": "设备存储",
   "All files": "所有文件",
   "Only the files and folders you pick": "仅限您选择的文件和文件夹",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有文件的访问权限，设备上的文件夹会就地读取，而不是复制。"
+  "With access to all files, folders on the device are read where they are instead of being copied.": "有了所有文件的访问权限，设备上的文件夹会就地读取，而不是复制。",
+  "Job Title": "职务",
+  "Address": "地址",
+  "Postal Code": "邮政编码",
+  "Phone": "电话",
+  "Email": "电子邮件",
+  "Website": "网站",
+  "Copyright & Contact": "版权和联系信息",
+  "Rename Metadata Preset": "重命名元数据预设",
+  "Export Metadata Presets…": "导出元数据预设…",
+  "Export User Presets…": "导出用户预设…",
+  "{app} Metadata Presets": "{app} 元数据预设",
+  "{app} Export Presets": "{app} 导出预设"
 }

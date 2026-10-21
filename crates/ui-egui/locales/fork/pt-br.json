@@ -1444,5 +1444,17 @@
   "Device storage": "Armazenamento do dispositivo",
   "All files": "Todos os arquivos",
   "Only the files and folders you pick": "Somente os arquivos e pastas que você escolher",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Com acesso a todos os arquivos, as pastas do dispositivo são lidas onde estão em vez de copiadas."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Com acesso a todos os arquivos, as pastas do dispositivo são lidas onde estão em vez de copiadas.",
+  "Job Title": "Cargo",
+  "Address": "Endereço",
+  "Postal Code": "CEP",
+  "Phone": "Telefone",
+  "Email": "E-mail",
+  "Website": "Site",
+  "Copyright & Contact": "Direitos autorais e contato",
+  "Rename Metadata Preset": "Renomear predefinição de metadados",
+  "Export Metadata Presets…": "Exportar predefinições de metadados…",
+  "Export User Presets…": "Exportar predefinições do usuário…",
+  "{app} Metadata Presets": "Predefinições de metadados do {app}",
+  "{app} Export Presets": "Predefinições de exportação do {app}"
 }
