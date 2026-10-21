@@ -324,12 +324,6 @@ fn library_sync_bar(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
 /// A right-column panel's contents.
 fn body(app: &mut LccApp, ui: &mut egui::Ui, p: PanelId) {
     match p {
-        // the active photo's, as Develop draws it (Lightroom Classic's Library Histogram)
-        PanelId::Histogram => {
-            if let Some(id) = app.session.active() {
-                super::edit::histogram(app, ui, id);
-            }
-        }
         PanelId::QuickDevelop => super::quick_develop::show(app, ui),
         PanelId::Keywording => super::right::keywording(app, ui),
         PanelId::KeywordList => super::keyword_list::show_body(app, ui),
@@ -347,10 +341,10 @@ mod tests_ordered {
     #[test]
     fn a_new_panel_takes_its_declared_place_in_a_saved_order() {
         let mut app = LccApp::new(lcc_engine::Session::new(), crate::Services { png: None, ..Default::default() });
-        app.ui.panel_order = vec![PanelId::Metadata, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList];
+        app.ui.panel_order = vec![PanelId::Metadata, PanelId::Keywording, PanelId::KeywordList];
         assert_eq!(
             ordered(&app, crate::module::LIBRARY_RIGHT),
-            [PanelId::Metadata, PanelId::Histogram, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList]
+            [PanelId::Metadata, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList]
         );
         app.ui.panel_order.clear();
         assert_eq!(ordered(&app, crate::module::LIBRARY_RIGHT), crate::module::LIBRARY_RIGHT);

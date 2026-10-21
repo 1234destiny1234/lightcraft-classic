@@ -2335,5 +2335,10 @@
   "Return to Latest": "Повернутися до останнього",
   "Enhance": "Покращення",
   "Plug-in Filters": "Фільтри плагінів",
-  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Запобігати мерехтінню G-SYNC/FreeSync (після перезапуску)"
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Запобігати мерехтінню G-SYNC/FreeSync (після перезапуску)",
+  "Color Overlay": "Кольорове накладання",
+  "Color Overlay on B&W": "Кольорове накладання на ч/б",
+  "Image on Black": "Зображення на чорному",
+  "Image on White": "Зображення на білому",
+  "White on Black": "Біле на чорному"
 }

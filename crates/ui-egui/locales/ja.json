@@ -2375,5 +2375,10 @@
   "Return to Latest": "最新に戻る",
   "Enhance": "強化",
   "Plug-in Filters": "プラグインフィルター",
-  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "G-SYNC/FreeSyncのちらつきを防ぐ（次回起動時に適用）"
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "G-SYNC/FreeSyncのちらつきを防ぐ（次回起動時に適用）",
+  "Color Overlay": "カラーオーバーレイ",
+  "Color Overlay on B&W": "白黒にカラーオーバーレイ",
+  "Image on Black": "黒地に画像",
+  "Image on White": "白地に画像",
+  "White on Black": "黒地に白"
 }
