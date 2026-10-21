@@ -67,5 +67,7 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Detaily RAW, pak dvojnásobná šířka a výška (čtyřikrát více pixelů).",
   "Estimating time…": "Odhaduje se čas…",
   "Input": "Vstup",
-  "Output": "Výstup"
+  "Output": "Výstup",
+  "Automatically write changes into XMP sidecars": "Automaticky zapisovat změny do souborů XMP",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automaticky načítat soubory XMP změněné jinými aplikacemi (u fotek zde nezměněných)"
 }

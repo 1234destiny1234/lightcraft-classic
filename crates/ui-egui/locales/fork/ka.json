@@ -67,5 +67,7 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Raw დეტალები, შემდეგ ორჯერ მეტი სიგანე და სიმაღლე (ოთხჯერ მეტი პიქსელი).",
   "Estimating time…": "დრო ფასდება…",
   "Input": "შემავალი",
-  "Output": "გამომავალი"
+  "Output": "გამომავალი",
+  "Automatically write changes into XMP sidecars": "ცვლილებების ავტომატური ჩაწერა XMP ფაილებში",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "სხვა აპების მიერ შეცვლილი XMP ფაილების ავტომატური წაკითხვა (აქ შეუცვლელი ფოტოებისთვის)"
 }

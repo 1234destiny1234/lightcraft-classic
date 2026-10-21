@@ -67,5 +67,7 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Szczegóły RAW, potem dwukrotna szerokość i wysokość (cztery razy więcej pikseli).",
   "Estimating time…": "Szacowanie czasu…",
   "Input": "Wejście",
-  "Output": "Wyjście"
+  "Output": "Wyjście",
+  "Automatically write changes into XMP sidecars": "Automatycznie zapisuj zmiany w plikach XMP",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automatycznie wczytuj pliki XMP zmienione przez inne aplikacje (zdjęcia niezmienione tutaj)"
 }

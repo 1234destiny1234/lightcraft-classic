@@ -1683,5 +1683,7 @@
   "Every": "Каждые",
   "Ask (show “N new”)": "Спрашивать (показывать «N новых»)",
   "Add automatically": "Добавлять автоматически",
-  "Checking folders for new photos": "Проверка папок на новые фото"
+  "Checking folders for new photos": "Проверка папок на новые фото",
+  "Automatically write changes into XMP sidecars": "Автоматически записывать изменения в файлы XMP",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Автоматически читать файлы XMP, изменённые другими приложениями (для фото без изменений здесь)"
 }

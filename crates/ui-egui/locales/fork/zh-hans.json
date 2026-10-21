@@ -1388,5 +1388,7 @@
   "Every": "间隔",
   "Ask (show “N new”)": "询问（显示“N 张新照片”）",
   "Add automatically": "自动添加",
-  "Checking folders for new photos": "正在检查文件夹中的新照片"
+  "Checking folders for new photos": "正在检查文件夹中的新照片",
+  "Automatically write changes into XMP sidecars": "自动将更改写入 XMP 附属文件",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "自动读取其他应用更改的 XMP 附属文件（仅限此处未更改的照片）"
 }

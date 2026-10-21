@@ -1478,5 +1478,7 @@
   "Every": "Cada",
   "Ask (show “N new”)": "Preguntar (mostrar «N nuevas»)",
   "Add automatically": "Añadir automáticamente",
-  "Checking folders for new photos": "Buscando fotos nuevas en las carpetas"
+  "Checking folders for new photos": "Buscando fotos nuevas en las carpetas",
+  "Automatically write changes into XMP sidecars": "Escribir automáticamente los cambios en archivos XMP",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Leer automáticamente los archivos XMP que otras apps cambiaron (fotos sin cambios aquí)"
 }

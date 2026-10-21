@@ -1475,5 +1475,7 @@
   "Every": "間隔",
   "Ask (show “N new”)": "確認する（「N 件の新規」を表示）",
   "Add automatically": "自動的に追加",
-  "Checking folders for new photos": "フォルダーの新しい写真を確認中"
+  "Checking folders for new photos": "フォルダーの新しい写真を確認中",
+  "Automatically write changes into XMP sidecars": "変更を XMP サイドカーに自動で書き込む",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "他のアプリが変更した XMP サイドカーを自動で読み込む（ここで変更していない写真）"
 }
