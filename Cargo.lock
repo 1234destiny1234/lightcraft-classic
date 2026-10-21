@@ -4545,6 +4545,7 @@ dependencies = [
  "lcc-geom",
  "lcc-meta",
  "lcc-raw",
+ "lcc-sysmem",
  "log",
  "proptest",
  "redb",
