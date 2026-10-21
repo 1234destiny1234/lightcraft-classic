@@ -643,6 +643,8 @@ pub fn lens_db_folder(app: &mut LccApp, p: &Value) -> Result<Value, String> {
 fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     use lcc_engine::gpu;
     heading(ui, t, crate::i18n::tr("Rendering"));
+    #[cfg(target_os = "windows")]
+    check(ui, "settings.composeWindow", &mut app.ui.settings.compose_window, "Prevent G-SYNC/FreeSync flicker (applies at next launch)");
     check(ui, "settings.gpu", &mut app.ui.settings.gpu, "Use the GPU for rendering");
     let status = if !gpu::available() {
         match gpu::unavailable_reason() {
@@ -882,18 +884,6 @@ fn display_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     );
     #[cfg(target_os = "linux")]
     hint(ui, t, crate::i18n::tr("Profiles assigned in your desktop's colour settings are usually in ~/.local/share/icc."));
-    #[cfg(target_os = "windows")]
-    {
-        heading(ui, t, crate::i18n::tr("Refresh rate"));
-        check(ui, "settings.vrrFlickerWorkaround", &mut app.ui.settings.vrr_flicker_workaround, "Prevent VRR flicker on OLED and VA monitors");
-        hint(
-            ui,
-            t,
-            crate::i18n::tr(
-                "Renders continuously at the monitor's refresh rate to avoid brightness and gamma shifts caused by G-SYNC / FreeSync variable refresh rate changes. Increases GPU and battery usage.",
-            ),
-        );
-    }
 }
 
 fn interface_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {

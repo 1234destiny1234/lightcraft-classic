@@ -2079,5 +2079,6 @@
   "Visualize HDR": "Zobrazit rozsah HDR",
   "Return to Latest": "Zpět na nejnovější",
   "Enhance": "Vylepšit",
-  "Plug-in Filters": "Filtry zásuvných modulů"
+  "Plug-in Filters": "Filtry zásuvných modulů",
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Zabránit blikání G-SYNC/FreeSync (platí po dalším spuštění)"
 }
