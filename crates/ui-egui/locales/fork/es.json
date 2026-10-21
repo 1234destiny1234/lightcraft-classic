@@ -1483,5 +1483,11 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Leer automáticamente los archivos XMP complementarios que otras apps cambiaron (fotos sin cambios aquí)",
   "Sliders": "Controles deslizantes",
   "One Row": "Una fila",
-  "Two Rows": "Dos filas"
+  "Two Rows": "Dos filas",
+  "Check Host Key": "Comprobar clave del host",
+  "Host key trusted": "Clave del host de confianza",
+  "Host key:": "Clave del host:",
+  "Host key: not confirmed yet (uploads are refused until it is)": "Clave del host: aún sin confirmar (las subidas se rechazan hasta que lo esté)",
+  "Trust This Host Key": "Confiar en esta clave del host",
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Confíe en este servidor solo si esta huella SHA-256 coincide con la que le da su administrador:"
 }

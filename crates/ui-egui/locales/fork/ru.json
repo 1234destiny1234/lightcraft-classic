@@ -1688,5 +1688,11 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Автоматически читать файлы XMP, изменённые другими приложениями (для фото без изменений здесь)",
   "Sliders": "Ползунки",
   "One Row": "В одну строку",
-  "Two Rows": "В две строки"
+  "Two Rows": "В две строки",
+  "Check Host Key": "Проверить ключ хоста",
+  "Host key trusted": "Ключ хоста доверенный",
+  "Host key:": "Ключ хоста:",
+  "Host key: not confirmed yet (uploads are refused until it is)": "Ключ хоста: ещё не подтверждён (загрузка запрещена до подтверждения)",
+  "Trust This Host Key": "Доверять этому ключу хоста",
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Доверяйте этому серверу, только если этот отпечаток SHA-256 совпадает с тем, что сообщил его администратор:"
 }

@@ -1393,5 +1393,11 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "自动读取其他应用更改的 XMP 附属文件（仅限此处未更改的照片）",
   "Sliders": "滑块",
   "One Row": "单行",
-  "Two Rows": "双行"
+  "Two Rows": "双行",
+  "Check Host Key": "检查主机密钥",
+  "Host key trusted": "主机密钥已信任",
+  "Host key:": "主机密钥：",
+  "Host key: not confirmed yet (uploads are refused until it is)": "主机密钥：尚未确认（确认前将拒绝上传）",
+  "Trust This Host Key": "信任此主机密钥",
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "仅当此 SHA-256 指纹与服务器管理员提供的指纹一致时，才信任此服务器："
 }

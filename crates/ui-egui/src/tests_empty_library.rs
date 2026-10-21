@@ -160,7 +160,9 @@ fn the_import_button_leaves_the_filter_and_appearance_icons_apart() {
         h.step();
         let rect = |id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r).unwrap_or_else(|| panic!("{id} at {width}"));
         let (filter, appearance, import) = (rect("icon:filter"), rect("icon:appearance"), rect("icon:import"));
-        assert!(!filter.intersects(appearance), "{width} (native menu {native_menu}): filter {filter:?} meets appearance {appearance:?}");
-        assert!(!filter.intersects(import), "{width} (native menu {native_menu}): filter {filter:?} meets import {import:?}");
+        // (side by side is fine: a shared edge isn't an overlap)
+        let overlaps = |a: egui::Rect, b: egui::Rect| a.intersect(b).area() > 0.0;
+        assert!(!overlaps(filter, appearance), "{width} (native menu {native_menu}): filter {filter:?} meets appearance {appearance:?}");
+        assert!(!overlaps(filter, import), "{width} (native menu {native_menu}): filter {filter:?} meets import {import:?}");
     }
 }

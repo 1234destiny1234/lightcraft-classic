@@ -184,6 +184,11 @@ fn local_photos_are_refused_with_the_reason() {
     let from = widget(&h, &format!("thumb:{beach}")).unwrap().center();
     press(&mut h, from);
     glide(&mut h, from, target.center());
+    // (the sidebar can settle while the drag runs: end on the row where it is now)
+    let target = folder_row(&h, &home).expect("the imported folder");
+    h.app.synthetic.push(egui::Event::PointerMoved(target.center()));
+    h.step();
+    h.step();
     // Then the row says it can't take them, and a release says why
     assert_eq!(hint(&h).as_deref(), Some("Can't be moved here"));
     release(&mut h, target.center());

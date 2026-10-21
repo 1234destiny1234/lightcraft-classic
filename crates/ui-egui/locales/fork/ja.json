@@ -1480,5 +1480,11 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "他のアプリが変更した XMP サイドカーファイルを自動で読み込む（ここで変更していない写真）",
   "Sliders": "スライダー",
   "One Row": "1行",
-  "Two Rows": "2行"
+  "Two Rows": "2行",
+  "Check Host Key": "ホストキーを確認",
+  "Host key trusted": "ホストキーは信頼済み",
+  "Host key:": "ホストキー:",
+  "Host key: not confirmed yet (uploads are refused until it is)": "ホストキー: 未確認（確認されるまでアップロードは拒否されます）",
+  "Trust This Host Key": "このホストキーを信頼",
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "この SHA-256 フィンガープリントがサーバー管理者から提示されたものと一致する場合のみ、このサーバーを信頼してください:"
 }

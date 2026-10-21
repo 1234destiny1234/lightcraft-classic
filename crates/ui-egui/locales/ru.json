@@ -2369,5 +2369,10 @@
   "Return to Latest": "Вернуться к последнему",
   "Enhance": "Улучшение",
   "Plug-in Filters": "Фильтры плагинов",
-  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Предотвращать мерцание G-SYNC/FreeSync (после перезапуска)"
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Предотвращать мерцание G-SYNC/FreeSync (после перезапуска)",
+  "Color Overlay": "Цветное наложение",
+  "Color Overlay on B&W": "Цветное наложение на ч/б",
+  "Image on Black": "Изображение на чёрном",
+  "Image on White": "Изображение на белом",
+  "White on Black": "Белое на чёрном"
 }

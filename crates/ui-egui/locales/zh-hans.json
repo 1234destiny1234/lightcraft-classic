@@ -2217,5 +2217,10 @@
   "Return to Latest": "返回最新",
   "Enhance": "增强",
   "Plug-in Filters": "插件滤镜",
-  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "防止 G-SYNC/FreeSync 闪烁（下次启动时生效）"
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "防止 G-SYNC/FreeSync 闪烁（下次启动时生效）",
+  "Color Overlay": "颜色叠加",
+  "Color Overlay on B&W": "黑白上的颜色叠加",
+  "Image on Black": "图像置于黑色上",
+  "Image on White": "图像置于白色上",
+  "White on Black": "白色置于黑色上"
 }

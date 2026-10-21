@@ -2351,5 +2351,10 @@
   "Return to Latest": "Revenir au plus récent",
   "Enhance": "Améliorer",
   "Plug-in Filters": "Filtres de modules externes",
-  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Empêcher le scintillement G-SYNC/FreeSync (au prochain démarrage)"
+  "Prevent G-SYNC/FreeSync flicker (applies at next launch)": "Empêcher le scintillement G-SYNC/FreeSync (au prochain démarrage)",
+  "Color Overlay": "Superposition de couleur",
+  "Color Overlay on B&W": "Superposition de couleur sur N&B",
+  "Image on Black": "Image sur noir",
+  "Image on White": "Image sur blanc",
+  "White on Black": "Blanc sur noir"
 }
