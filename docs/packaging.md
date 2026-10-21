@@ -21,6 +21,9 @@
 | FreeBSD `.tar.gz` | `packaging/freebsd/package.sh` | release.yml / freebsd.yml | `--dry-run` works on any OS (packaging-lint) |
 | Web (static) | `packaging/web/package.sh` | release.yml | hosting notes in `packaging/web/HOSTING.md` |
 
+Versions are `vYY.WW.B`: ISO week-year, ISO week, and the release's number within that week (`v26.43.7`), the
+same string in tags, file names and package metadata, see [Release versions](versioning.md).
+
 Desktop integration (Linux, FreeBSD): `<app_id>.desktop`, MIME types for the catalog and preset extensions, and
 AppStream metadata (`<app_id>.metainfo.xml.in`), the PTP udev rule, which describes the seven modules and the publish, Immich,
 tethering, Edit In, actions and plug-in features. `packaging-lint.yml` validates the templates
