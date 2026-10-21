@@ -447,7 +447,22 @@ mod tests {
 
     #[test]
     fn version_codes_grow_and_prereleases_sort_first() {
-        let order = ["0.9.0-rc1", "0.9.0-rc2", "0.9.0", "0.9.1", "0.10.0", "1.0.0-rc1", "1.0.0"];
+        let order = [
+            "0.9.0-rc1",
+            "0.9.0-rc2",
+            "0.9.0",
+            "0.9.1",
+            "0.9.6",
+            "0.10.0",
+            "1.0.0-rc1",
+            "1.0.0",
+            "26.43.4-rc1",
+            "26.43.4",
+            "26.43.5",
+            "26.53.1",
+            "27.1.1",
+            "99.53.99",
+        ];
         let codes: Vec<u32> = order.iter().map(|v| version_code(v).unwrap()).collect();
         assert!(codes.windows(2).all(|w| w[0] < w[1]), "{codes:?}");
     }

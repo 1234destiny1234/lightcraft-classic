@@ -194,6 +194,8 @@ mod tests {
     fn orders_like_semver() {
         assert!(v("1.2.3") > v("1.2.2"));
         assert!(v("2.0.0") > v("1.99.99"));
+        assert!(v("26.43.4") > v("0.9.6"), "week-numbered versions outrank 0.x");
+        assert!(v("27.1.1") > v("26.53.9"), "a new ISO week-year outranks week 53");
         assert!(v("1.2.3") > v("1.2.3-rc.1"), "a release outranks its prerelease");
         assert!(v("1.2.3-rc.2") > v("1.2.3-rc.1"));
         assert!(v("1.2.3-rc.1") > v("1.2.3-beta"));
