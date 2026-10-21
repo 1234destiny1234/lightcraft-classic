@@ -228,8 +228,8 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             ..Default::default()
         });
     }
-    let m = lcc_meta::extract(bytes);
-    let (meta, captured) = meta_of(&m);
+    let mut m = lcc_meta::extract(bytes);
+    let (mut meta, captured) = meta_of(&m);
     let (rating, flag) = match m.rating {
         Some(r) if r < 0 => (0, lcc_catalog::Flag::Reject),
         Some(r) => (r.clamp(0, 5) as u8, lcc_catalog::Flag::None),
@@ -271,6 +271,12 @@ pub fn probe_bytes(name: &str, bytes: &[u8]) -> Result<ProbeInfo, String> {
             std::mem::swap(&mut w, &mut h);
         }
         crate::camera_profiles::apply_dcp(&mut raw.color, &raw.metadata);
+        m.fill_missing(&raw.metadata);
+        if meta.lens.is_empty()
+            && let Some(lens) = m.lens_model.clone().or_else(|| m.lens_spec.and_then(lcc_meta::lens_spec_name))
+        {
+            meta.lens = lens;
+        }
         let scale = WbScaleOf::new(raw.format, &raw.color, raw.wb_multipliers, &raw.metadata);
         let as_shot_wb = Some(scale.as_shot(lcc_raw::color::as_shot_white_xy_of(&raw)));
         let resolved = crate::lens_profiles::resolve_raw(&raw, || m.clone(), None);

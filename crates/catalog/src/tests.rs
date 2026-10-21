@@ -1055,3 +1055,66 @@ fn rating_filter_ops_and_unrated_photos() {
     assert_eq!(text("rating:1"), vec![one]);
     assert!(text("rating:>=x").is_empty(), "not a number: nothing matches, no panic");
 }
+
+/// Photos with one import time and capture time, as one import batch or a burst gives them, added
+/// with ids that run opposite to their names.
+fn batch_with_reversed_ids(c: &mut Catalog) -> Vec<PhotoId> {
+    let names = ["DSC_0001.ARW", "dsc_0002.ARW", "DSC_0003.ARW", "DSC_0004.ARW"];
+    let mut ids = Vec::new();
+    for (n, name) in names.iter().enumerate() {
+        let id = PhotoId(1000 - n as u64);
+        let mut p = Photo::new(id, Source::Demo { scene: 1 }, name, "ARW", 10, 10, "2026-10-10T09:00:00");
+        p.captured = Some("2026-10-01T12:00:00".into());
+        p.rating = 3;
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        ids.push(id);
+    }
+    ids // in name order
+}
+
+#[test]
+fn one_import_batch_sorts_by_file_name_not_id() {
+    let mut c = Catalog::new();
+    let by_name = batch_with_reversed_ids(&mut c);
+    let sort = Sort { key: SortKey::ImportDate, ascending: true, ..Default::default() };
+    assert_eq!(c.query(&Filter::default(), &sort), by_name);
+}
+
+#[test]
+fn burst_in_one_second_sorts_by_file_name_not_id() {
+    let mut c = Catalog::new();
+    let by_name = batch_with_reversed_ids(&mut c);
+    let sort = Sort { key: SortKey::CaptureDate, ascending: true, ..Default::default() };
+    assert_eq!(c.query(&Filter::default(), &sort), by_name);
+}
+
+/// Equal ratings, edit times and sizes sort by file name too; descending is the exact reverse.
+#[test]
+fn photos_that_tie_on_any_key_sort_by_file_name_not_id() {
+    let mut c = Catalog::new();
+    let by_name = batch_with_reversed_ids(&mut c);
+    for key in [SortKey::Rating, SortKey::EditDate, SortKey::FileSize, SortKey::Custom] {
+        let up = c.query(&Filter::default(), &Sort { key, ascending: true, ..Default::default() });
+        assert_eq!(up, by_name, "{key:?}");
+        let down = c.query(&Filter::default(), &Sort { key, ascending: false, ..Default::default() });
+        assert_eq!(down, by_name.iter().rev().copied().collect::<Vec<_>>(), "{key:?} descending");
+    }
+}
+
+/// A photo whose name changes moves among the photos it ties with, in a library large enough that
+/// its sort orders are kept between queries.
+#[test]
+fn a_renamed_photo_moves_among_the_photos_it_ties_with() {
+    let mut c = Catalog::new();
+    for i in 0..3000u64 {
+        let id = c.alloc_photo_id();
+        let p =
+            Photo::new(id, Source::File { path: format!("/pics/IMG_{i:05}.jpg") }, &format!("IMG_{i:05}.jpg"), "JPEG", 10, 10, "2026-01-01T00:00:00");
+        c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+    }
+    let sort = Sort { key: SortKey::ImportDate, ascending: true, ..Default::default() };
+    let before = c.query(&Filter::default(), &sort);
+    let last = *before.last().unwrap();
+    c.apply(Op::SetFile { id: last, file_name: "AAA.jpg".into(), source: Source::File { path: "/pics/AAA.jpg".into() } }).unwrap();
+    assert_eq!(c.query(&Filter::default(), &sort).first(), Some(&last), "first by name now");
+}

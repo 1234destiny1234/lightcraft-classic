@@ -16,7 +16,7 @@ fn keywords_panel() -> (Headless, Vec<u64>) {
     keywords_panel_at([1400.0, 1000.0])
 }
 
-/// [`keywords_panel`] in a window of `size` (tall enough, every keyword row is on screen).
+/// [`keywords_panel`] in a window of `size` (rows below the window are listed, not drawn).
 fn keywords_panel_at(size: [f32; 2]) -> (Headless, Vec<u64>) {
     let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, size, 1.0);
@@ -63,7 +63,7 @@ fn the_keyword_list_shows_every_keyword() {
     assert!(!has(&h, "keywordRow:Events|Weddings"), "inside a closed level");
     ask(&mut h, "ui.clickWidget", json!({"id": "keywordRowToggle:Events"}));
     assert!(has(&h, "keywordRow:Events|Weddings"));
-    assert!(has(&h, "keywordCount:mountains"), "photo counts are shown");
+    assert!(has(&h, "keywordCount:aurora"), "photo counts are shown");
 }
 
 /// The tick box gives the keyword to every selected photo, then takes it away; with only some of
@@ -460,8 +460,14 @@ fn ticking_a_keyword_keeps_the_list_in_place() {
 /// as before.
 #[test]
 fn at_the_top_the_box_grows_in_sight() {
-    let (mut h, ids) = keywords_panel_at([1400.0, 640.0]);
+    // (tall enough for the six rows ticked to stay on screen as the chips push them down: at 640
+    // px the fifth was at y 666–690, below the window, and its tick box only took the click while
+    // rows out of sight were drawn; the keywords below make the panel longer than the window)
+    let (mut h, ids) = keywords_panel_at([1400.0, 1000.0]);
     run(&mut h, "photo.setMeta", json!({"ids": ids, "keywords": []}));
+    for i in 0..40 {
+        run(&mut h, "keyword.create", json!({"name": format!("zz{i:02}")}));
+    }
     let (title, box_top) = (rect(&h, "keywordList:topLevel"), rect(&h, "field:keyword"));
     for k in ["aaa1", "aaa2", "aaa3", "aaa4", "aaa5", "aaa6"] {
         run(&mut h, "keyword.create", json!({"name": k}));
@@ -493,4 +499,54 @@ fn ticks_in_quick_succession_land_on_their_rows() {
     let mut have = keywords_of(&h, ids[0]);
     have.sort();
     assert_eq!(have, picked);
+}
+
+/// Scroll the panel under the pointer by `dy` and let the scroll run its course (it is animated).
+fn scroll(h: &mut Headless, dy: f32) {
+    ask(h, "ui.scroll", json!({"dx": 0, "dy": dy}));
+    for _ in 0..60 {
+        h.step();
+    }
+}
+
+/// The keyword rows drawn this frame: every row is listed as `keywordRow:…` for the control
+/// channel, only a drawn one has its tick box.
+fn drawn_rows(h: &Headless) -> Vec<String> {
+    h.app.widgets.iter().filter_map(|(w, _)| w.strip_prefix("keywordCheck:")).map(str::to_string).collect()
+}
+
+/// Given a library with 2,000 keywords, the Keyword List draws only the rows that fit on screen
+/// (not all 2,000) while every row still takes its room: scrolled to the end, the last keyword is
+/// drawn, and it takes a click on its tick box and photos dropped on it.
+#[test]
+fn the_keyword_list_draws_only_the_rows_on_screen() {
+    const KEYWORDS: usize = 2000;
+    let mut s = lcc_engine::Session::with_demo();
+    for i in 0..KEYWORDS {
+        let info = lcc_catalog::keywords::KeywordInfo::default();
+        s.catalog.apply(lcc_catalog::Op::SetKeyword { path: format!("kw {i:04}"), info: Some(info) }).unwrap();
+    }
+    let app = LccApp::new(s, Services { png: None, ..Default::default() });
+    let mut h = Headless::new(app, [1400.0, 640.0], 1.0);
+    let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
+    ask(&mut h, "ui.set", json!({"view": "photoGrid", "right": "keywords"}));
+    run(&mut h, "library.select", json!({"ids": ids}));
+    run(&mut h, "photo.setMeta", json!({"ids": ids, "keywords": []}));
+    let rows = drawn_rows(&h);
+    assert!(!rows.is_empty() && rows.len() < 100, "{} of {KEYWORDS} keyword rows drawn", rows.len());
+    assert!(has(&h, "keywordRow:kw 1999"), "a row out of sight is still listed");
+    // far down the list: the rows there are drawn and take clicks and drops
+    ask(&mut h, "ui.hoverWidget", json!({"id": "keywordList:topLevel"}));
+    let row = rect(&h, "keywordRow:kw 1990");
+    scroll(&mut h, -(row.top() - 300.0));
+    let rows = drawn_rows(&h);
+    assert!(!rows.is_empty() && rows.len() < 100, "{} of {KEYWORDS} keyword rows drawn", rows.len());
+    assert!(rows.contains(&"kw 1990".to_string()) && !rows.contains(&"kw 0000".to_string()), "{rows:?}");
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordCheck:kw 1990"}));
+    assert!(ids.iter().all(|id| keywords_of(&h, *id) == ["kw 1990"]), "the tick box gave it to the selection");
+    drag(&mut h, &format!("thumb:{}", ids[0]), "keywordRow:kw 1991");
+    assert!(ids.iter().all(|id| keywords_of(&h, *id).contains(&"kw 1991".to_string())), "the drop gave it to the selection");
+    // all the way down: the rows out of sight kept their room
+    scroll(&mut h, -(KEYWORDS as f32) * 30.0);
+    assert!(drawn_rows(&h).contains(&"kw 1999".to_string()), "the last keyword is reached: {:?}", drawn_rows(&h));
 }
