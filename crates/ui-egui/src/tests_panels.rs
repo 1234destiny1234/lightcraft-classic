@@ -1607,14 +1607,15 @@ fn folders_section_lists_where_photos_were_imported_from_and_fills_the_grid() {
 fn disks_are_bars_over_their_folders() {
     let mut h = folders_app(&["/Users/me/a.jpg", "/Volumes/nas/p/b.jpg", "/Volumes/nas/c.jpg"]);
     assert!(has(&h, "volume:/") && has(&h, "volume:/Volumes/nas"), "both disks have a bar");
-    assert!(has(&h, "source:libfolder:/Users"), "the startup disk's folders are under its bar");
+    // (`Users`, holding only `me`, gives its row to it)
+    assert!(has(&h, "source:libfolder:/Users/me"), "the startup disk's folders are under its bar");
     assert!(has(&h, "source:libfolder:/Volumes/nas"), "the disk's own photos have a row");
     assert!(has(&h, "source:libfolder:/Volumes/nas/p"), "and its folders below it");
     click(&mut h, "volume:/");
     assert_eq!(h.app.session.library_folder, None, "a bar chooses nothing");
-    assert!(!has(&h, "source:libfolder:/Users"), "a click on it folds it");
+    assert!(!has(&h, "source:libfolder:/Users/me"), "a click on it folds it");
     click(&mut h, "volume:/");
-    assert!(has(&h, "source:libfolder:/Users"));
+    assert!(has(&h, "source:libfolder:/Users/me"));
 }
 
 /// A folder loads into the grid the way an album, a Local folder or Picks does: whatever was
