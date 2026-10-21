@@ -128,6 +128,8 @@ mod tests_dialog_frame;
 #[cfg(test)]
 mod tests_dialogs;
 #[cfg(test)]
+mod tests_drop_import;
+#[cfg(test)]
 mod tests_edit_layout;
 #[cfg(test)]
 mod tests_empty_library;
@@ -1429,13 +1431,10 @@ impl LccApp {
             if !presets.is_empty() {
                 let _ = self.run("file.importPresets", serde_json::json!({"paths": presets}));
             }
-            // read and added on a worker thread (dropped folders can be large, or on a slow drive)
+            // a folder goes through File ▸ Import from Folder…'s scan and review; photo files are
+            // added on a worker thread
             if !photos.is_empty() {
-                if self.lightroom.is_some() {
-                    self.toast(ctx, "Finish Lightroom catalog import before adding photos");
-                } else if let Err(e) = import::start_paths(self, photos) {
-                    self.toast(ctx, e);
-                }
+                import::drop_paths(self, ctx, photos);
             }
         }
     }
@@ -1997,7 +1996,7 @@ impl Caches {
         }
         // the catalog's part is made again only when a photo's file or presence changed
         let base = self.folder_base.take().filter(|(r, _)| still_right(cat, *r, READS_FILE)).map(|(_, b)| b);
-        let base = base.unwrap_or_else(|| std::sync::Arc::new(cat.folder_tree()));
+        let base = base.unwrap_or_else(|| std::sync::Arc::new(crate::panels::left::sidebar_folders(cat.folder_tree())));
         self.folder_base = Some((cat.revision, base.clone()));
         let t = std::sync::Arc::new(crate::panels::left::classic::with_disk_folders(base.as_ref().clone()));
         self.folder_tree = Some((key, t.clone()));
