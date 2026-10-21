@@ -26,6 +26,10 @@ impl Session {
         // a preset saved by another version may hold keys this one doesn't know: not the caller's typo
         let mut out = crate::export::ExportOptions::known_keys_only(&preset.params);
         if let (Some(o), Some(own)) = (out.as_object_mut(), p.as_object()) {
+            // a single-file export (`path`) says where itself
+            if own.contains_key("path") {
+                o.remove("dir");
+            }
             for (k, v) in own.iter().filter(|(k, _)| *k != "preset") {
                 o.insert(k.clone(), v.clone());
             }
@@ -38,8 +42,10 @@ fn list(s: &Session) -> Value {
     Value::Array(s.all_export_presets().into_iter().map(|(p, builtin)| json!({"name": p.name, "builtin": builtin, "params": p.params})).collect())
 }
 
-/// Params that describe a destination or a selection, not the export settings.
-const NOT_SETTINGS: &[&str] = &["ids", "path", "dir", "preset"];
+/// Params that describe a selection or a single file, not the export settings. The destination
+/// folder (`dir`) is a setting, as in Lightroom's presets: a preset that names one exports there
+/// unless the call says otherwise.
+const NOT_SETTINGS: &[&str] = &["id", "ids", "path", "preset", "background", "pluginDestination"];
 
 fn save(s: &mut Session, p: &Value) -> Result<Value> {
     const ID: &str = "export.savePreset";
@@ -173,7 +179,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Save Export Preset",
             [],
             None,
-            "{name, params?: app.export params (default: the last export's)} — adds or replaces a user preset, saved with the library → presets",
+            "{name, params?: app.export params (default: the last export's): format, quality, limitKb, sizing, sharpening, naming, metadata, watermark, destinationMode, dir (the folder), subfolder… — ids and path are dropped} — adds or replaces a user preset, saved with the library → presets",
             always,
             save
         ),

@@ -23,6 +23,9 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     // .lceffect, also inside zips — become mask effects
     let mut effects = Vec::new();
     let mut effect_failed = Vec::new();
+    // metadata and export presets (Lightroom Classic .lrtemplate, XMP metadata templates, ours)
+    let mut meta_found = Vec::new();
+    let mut export_found = Vec::new();
     for top in &paths {
         let from_dir = std::path::Path::new(top).is_dir();
         for f in expand_preset_paths(std::slice::from_ref(top)) {
@@ -41,6 +44,34 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
             let lower = f.to_ascii_lowercase();
             // an XMP look with a colour table is a profile (`profile.import`), not a preset
             if lower.ends_with(".xmp") && crate::xmp_look::is_look(&String::from_utf8_lossy(&bytes)) {
+                continue;
+            }
+            let is_zip = lower.ends_with(".zip");
+            let mut other_kind = false;
+            match super::metadata_files::parse_bytes(&f, &bytes) {
+                Some(Ok(list)) => {
+                    meta_found.extend(list);
+                    other_kind = true;
+                }
+                Some(Err(e)) => {
+                    failed.push(json!([f, e]));
+                    other_kind = true;
+                }
+                None => {}
+            }
+            match super::export_preset_files::parse_bytes(&f, &bytes) {
+                Some(Ok(list)) => {
+                    export_found.extend(list);
+                    other_kind = true;
+                }
+                Some(Err(e)) => {
+                    failed.push(json!([f, e]));
+                    other_kind = true;
+                }
+                None => {}
+            }
+            // a zip may hold develop presets as well
+            if other_kind && !is_zip {
                 continue;
             }
             let maybe_local = [".lrtemplate", ".xmp", ".zip", ".lceffect"].iter().any(|x| lower.ends_with(x));
@@ -85,7 +116,10 @@ fn import(s: &mut Session, p: &Value) -> Result<Value> {
     }
     failed.extend(effect_failed.into_iter().map(|(f, e)| json!([f, e])));
     let (effects, dividers) = mef::add_found(s, effects, group.as_deref(), dry)?;
-    Ok(json!({"imported": imported, "skipped": skipped, "failed": failed, "effects": effects, "effectDividers": dividers}))
+    let metadata_presets = super::metadata_files::add_found(s, meta_found, dry)?;
+    let export_presets = super::export_preset_files::add_found(s, export_found, dry)?;
+    Ok(json!({"imported": imported, "skipped": skipped, "failed": failed, "effects": effects, "effectDividers": dividers,
+        "metadataPresets": metadata_presets, "exportPresets": export_presets}))
 }
 
 fn export(s: &mut Session, p: &Value) -> Result<Value> {
@@ -122,7 +156,7 @@ pub fn specs() -> Vec<CommandSpec> {
             "Import Presets",
             [],
             None,
-            "{paths: [file or folder], group?, dryRun?} — .lcpreset, XMP presets, .lrtemplate, photos carrying edits (DNG/JPEG/TIFF \"DNG presets\"), Luminar looks (.lmp, .mplumpack collections) and .zip bundles of these; folders give their name as group; crs: fields mapped per docs/xmp-interop.md; local adjustment presets (Lightroom .lrtemplate, Camera Raw local .xmp, .lceffect) become mask effects (`mask.effects`; divider presets become their groups); a profile the preset names applies when it was imported with profile.import (before or after) → {imported: [{id,name,group,file,unmapped,profile: {name, id}|null}], skipped, failed, effects: [{name,group,file,unmapped}], effectDividers: [{name,group,file}]}",
+            "{paths: [file or folder], group?, dryRun?} — .lcpreset, XMP presets, .lrtemplate, photos carrying edits (DNG/JPEG/TIFF \"DNG presets\"), Luminar looks (.lmp, .mplumpack collections) and .zip bundles of these; folders give their name as group; crs: fields mapped per docs/xmp-interop.md; local adjustment presets (Lightroom .lrtemplate, Camera Raw local .xmp, .lceffect) become mask effects (`mask.effects`; divider presets become their groups); a profile the preset names applies when it was imported with profile.import (before or after) → {imported: [{id,name,group,file,unmapped,profile: {name, id}|null}], skipped, failed, effects: [{name,group,file,unmapped}], effectDividers: [{name,group,file}], metadataPresets: [as metadata.importPresets rows], exportPresets: [as export.importPresets rows]}; Lightroom Classic metadata and export presets, XMP metadata templates, .lcmeta and .lcexport files become metadata / export presets",
             always,
             import
         ),

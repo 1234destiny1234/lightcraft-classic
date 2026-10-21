@@ -1572,6 +1572,8 @@ mod tests_plugin_filters;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]
+mod tests_preset_interop;
+#[cfg(test)]
 mod tests_presets_scale;
 #[cfg(test)]
 mod tests_previews;
