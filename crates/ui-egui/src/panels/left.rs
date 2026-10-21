@@ -1807,6 +1807,47 @@ fn reveal_chosen(app: &LccApp, ui: &egui::Ui, tree: &[FolderNode]) {
     open_above(ui, tree, &chosen);
 }
 
+/// The Folders tree as the sidebar shows it: a folder that holds no photo itself, has no colour
+/// label and leads to one folder only (`Users` → `me` → `Pictures` on the way to an imported
+/// folder) gives its row to that folder, so an imported folder is listed under its own name
+/// instead of under every folder from the disk down to it (the full path is the row's hover
+/// text). Folders listed side by side with the same name say which folder each is in:
+/// `trip (2024)`, `trip (2025)`. Disk rows stay as they are.
+pub(crate) fn sidebar_folders(mut nodes: Vec<FolderNode>) -> Vec<FolderNode> {
+    fn lift(mut n: FolderNode) -> FolderNode {
+        while !n.volume && n.own == 0 && n.label.is_none() && n.children.len() == 1 {
+            let Some(child) = n.children.pop() else { break };
+            n = child;
+        }
+        n.children = sidebar_folders(std::mem::take(&mut n.children));
+        n
+    }
+    nodes = nodes.into_iter().map(lift).collect();
+    disambiguate(&mut nodes);
+    nodes.sort_by(|a, b| a.name.to_lowercase().cmp(&b.name.to_lowercase()).then_with(|| a.name.cmp(&b.name)));
+    nodes
+}
+
+/// Rows side by side with the same name (ignoring case) add the name of the folder each is in;
+/// if that is the same too, the whole path.
+fn disambiguate(nodes: &mut [FolderNode]) {
+    let clash = |nodes: &[FolderNode], i: usize| {
+        let n = &nodes[i];
+        !n.volume && nodes.iter().enumerate().any(|(j, m)| j != i && !m.volume && m.name.to_lowercase() == n.name.to_lowercase())
+    };
+    let clashing: Vec<usize> = (0..nodes.len()).filter(|&i| clash(nodes, i)).collect();
+    for &i in &clashing {
+        let parent = std::path::Path::new(&nodes[i].path).parent().and_then(|p| p.file_name()).map(|f| f.to_string_lossy().to_string());
+        if let Some(parent) = parent {
+            nodes[i].name = format!("{} ({parent})", nodes[i].name);
+        }
+    }
+    let still: Vec<usize> = clashing.into_iter().filter(|&i| clash(nodes, i)).collect();
+    for i in still {
+        nodes[i].name = nodes[i].path.clone();
+    }
+}
+
 fn folder_rows(app: &mut LccApp, ui: &mut egui::Ui, nodes: &[FolderNode], indent: f32) {
     for n in nodes {
         let key = lcc_catalog::query::folder_key(&n.path);

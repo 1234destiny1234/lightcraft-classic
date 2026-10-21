@@ -200,6 +200,9 @@ pub struct Meta {
     #[serde(skip_serializing_if = "String::is_empty")]
     pub copyright_url: String,
     pub creator: String,
+    /// The creator's contact details and job title (IPTC Core creator contact info).
+    #[serde(default, skip_serializing_if = "lcc_meta::CreatorContact::is_empty")]
+    pub contact: lcc_meta::CreatorContact,
     pub keywords: Vec<String>,
     /// Face/pet/focus regions read from XMP (MWG-RS), on the upright (EXIF-oriented) photo.
     /// Removing or resizing one edits the catalog only; the app never writes regions to XMP.

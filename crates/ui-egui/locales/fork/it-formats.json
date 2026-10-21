@@ -52,5 +52,9 @@
   "{path} · {count} photos": "{path} · {count} foto",
   "{photos} photo(s) selected for print": "{photos} foto selezionate per la stampa",
   "{p} photos, {f} files": "{p} foto, {f} file",
-  "{} keys": "Tasti per {}"
+  "{} keys": "Tasti per {}",
+  "Imported {n} metadata preset{}": "Predefiniti metadati importati: {n}{:.0}",
+  "Imported {n} export preset{}": "Predefiniti di esportazione importati: {n}{:.0}",
+  "Exported {n} metadata preset{}": "Predefiniti metadati esportati: {n}{:.0}",
+  "Exported {n} export preset{}": "Predefiniti di esportazione esportati: {n}{:.0}"
 }

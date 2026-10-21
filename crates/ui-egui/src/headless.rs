@@ -251,6 +251,28 @@ pub struct Headless {
     pub window_commands: Vec<ViewportCommand>,
     /// The pointer cursor the last frame asked for (what a real host would show).
     pub last_cursor: egui::CursorIcon,
+    /// Files the pretend host drops on the window in the next frame (as a desktop host reports a drag-and-drop).
+    pub dropped: Vec<std::path::PathBuf>,
+}
+
+/// A file the pretend host drops on the window ([`Headless::dropped`]).
+#[derive(Debug)]
+struct HostFile(std::path::PathBuf);
+
+impl egui::DroppedFile for HostFile {
+    fn path(&self) -> &std::path::Path {
+        &self.0
+    }
+
+    #[cfg(not(target_arch = "wasm32"))]
+    fn bytes(&self) -> Result<Vec<u8>, String> {
+        std::fs::read(&self.0).map_err(|e| e.to_string())
+    }
+
+    #[cfg(target_arch = "wasm32")]
+    fn bytes_async(&self) -> std::pin::Pin<Box<dyn std::future::Future<Output = Result<Vec<u8>, String>> + '_>> {
+        Box::pin(async { Err("no file system on the web".to_owned()) })
+    }
 }
 
 /// A headless run (`lcc-cli snapshot`, tests) is a one-shot process: however it ends, it
@@ -288,6 +310,7 @@ impl Headless {
             time: 0.0,
             frames: 0,
             events: vec![],
+            dropped: Vec::new(),
             control: tx,
             quit: false,
             window_maximized: false,
@@ -322,6 +345,8 @@ impl Headless {
         raw.viewports.entry(ViewportId::ROOT).or_default().maximized = Some(self.window_maximized);
         raw.max_texture_side = (self.reported_texture_side != Some(self.max_texture_side)).then_some(self.max_texture_side);
         self.reported_texture_side = Some(self.max_texture_side);
+        raw.dropped_files =
+            self.dropped.drain(..).map(|path| std::sync::Arc::new(HostFile(path)) as std::sync::Arc<dyn egui::DroppedFile + Send + Sync>).collect();
         self.app.raw_input_hook(&mut raw);
         let app = &mut self.app;
         let mut cursor = egui::CursorIcon::Default;

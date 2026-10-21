@@ -596,6 +596,8 @@ pub enum MetadataPolicy {
     AllExceptCamera,
     /// Copyright and creator only.
     Copyright,
+    /// Copyright, creator and the creator's contact details and job title.
+    CopyrightContact,
     /// Nothing (the sRGB profile is still embedded).
     None,
 }
@@ -606,6 +608,7 @@ impl MetadataPolicy {
             "all" => Some(Self::All),
             "allexceptcamera" => Some(Self::AllExceptCamera),
             "copyright" => Some(Self::Copyright),
+            "copyrightcontact" => Some(Self::CopyrightContact),
             "none" => Some(Self::None),
             _ => None,
         }
@@ -988,7 +991,9 @@ impl ExportOptions {
                     serde_json::from_value::<DngCompression>(v.clone())
                         .map_err(|_| bad(format!("`{k}` must be one of lossless|deflate|uncompressed|lossy")))?;
                 }
-                "metadata" => parses(k, v, |s| MetadataPolicy::parse(s).is_some(), &["all", "allExceptCamera", "copyright", "none"])?,
+                "metadata" => {
+                    parses(k, v, |s| MetadataPolicy::parse(s).is_some(), &["all", "allExceptCamera", "copyright", "copyrightContact", "none"])?
+                }
                 "colorSpace" => {
                     if OutputSpace::parse(string(cmd, k, v)?).is_none() {
                         return Err(bad(format!("`{k}` must be one of srgb|displayP3|adobeRgb|proPhoto|rec2020")));
@@ -1583,8 +1588,13 @@ pub fn export_metadata(photo: &lcc_catalog::Photo, catalog: &lcc_catalog::Catalo
     match o.metadata {
         MetadataPolicy::None => return None,
         MetadataPolicy::Copyright => return Some(out),
+        MetadataPolicy::CopyrightContact => {
+            out.contact = m.contact.clone();
+            return Some(out);
+        }
         MetadataPolicy::All | MetadataPolicy::AllExceptCamera => {}
     }
+    out.contact = m.contact.clone();
     out.title = text(&m.title);
     out.caption = text(&m.caption);
     out.alt_text = text(&m.alt_text);
@@ -3472,6 +3482,7 @@ mod tests {
             ("all", MetadataPolicy::All),
             ("allExceptCamera", MetadataPolicy::AllExceptCamera),
             ("copyright", MetadataPolicy::Copyright),
+            ("copyrightContact", MetadataPolicy::CopyrightContact),
             ("none", MetadataPolicy::None),
         ];
         for (name, want) in metadata {
@@ -3492,7 +3503,7 @@ mod tests {
         // an explicit value nothing reads as is an error, never the permissive default
         for v in ["", " none", "nothing", "all-except-camera"] {
             let e = read("metadata", v).unwrap_err();
-            assert!(e.contains("`metadata` must be one of all|allExceptCamera|copyright|none"), "{v:?}: {e}");
+            assert!(e.contains("`metadata` must be one of all|allExceptCamera|copyright|copyrightContact|none"), "{v:?}: {e}");
         }
         assert!(read("sharpenAmount", "max").unwrap_err().contains("`sharpenAmount` must be one of low|standard|high"));
         assert!(read("conflict", "replace").unwrap_err().contains("`conflict` must be one of unique|overwrite|skip"));

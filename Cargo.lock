@@ -4936,6 +4936,7 @@ dependencies = [
  "lcc-codecs",
  "lcc-engine",
  "lcc-hash",
+ "lcc-meta",
  "lcc-raster",
  "lcc-video",
  "log",

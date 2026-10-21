@@ -43,5 +43,17 @@
   "Device storage": "Memoria del dispositivo",
   "All files": "Tutti i file",
   "Only the files and folders you pick": "Solo i file e le cartelle che scegli",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Con l’accesso a tutti i file, le cartelle del dispositivo vengono lette dove si trovano invece di essere copiate."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Con l’accesso a tutti i file, le cartelle del dispositivo vengono lette dove si trovano invece di essere copiate.",
+  "Job Title": "Qualifica",
+  "Address": "Indirizzo",
+  "Postal Code": "CAP",
+  "Phone": "Telefono",
+  "Email": "E-mail",
+  "Website": "Sito web",
+  "Copyright & Contact": "Copyright e contatti",
+  "Rename Metadata Preset": "Rinomina predefinito metadati",
+  "Export Metadata Presets…": "Esporta predefiniti metadati…",
+  "Export User Presets…": "Esporta predefiniti utente…",
+  "{app} Metadata Presets": "Predefiniti metadati di {app}",
+  "{app} Export Presets": "Predefiniti di esportazione di {app}"
 }

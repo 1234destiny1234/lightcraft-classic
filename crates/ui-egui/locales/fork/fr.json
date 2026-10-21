@@ -1355,5 +1355,17 @@
   "Device storage": "Stockage de l’appareil",
   "All files": "Tous les fichiers",
   "Only the files and folders you pick": "Seulement les fichiers et dossiers choisis",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Avec l’accès à tous les fichiers, les dossiers de l’appareil sont lus sur place au lieu d’être copiés."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Avec l’accès à tous les fichiers, les dossiers de l’appareil sont lus sur place au lieu d’être copiés.",
+  "Job Title": "Fonction",
+  "Address": "Adresse",
+  "Postal Code": "Code postal",
+  "Phone": "Téléphone",
+  "Email": "E-mail",
+  "Website": "Site web",
+  "Copyright & Contact": "Copyright et contact",
+  "Rename Metadata Preset": "Renommer le paramètre de métadonnées",
+  "Export Metadata Presets…": "Exporter les paramètres de métadonnées…",
+  "Export User Presets…": "Exporter les paramètres utilisateur…",
+  "{app} Metadata Presets": "Paramètres de métadonnées {app}",
+  "{app} Export Presets": "Paramètres d’exportation {app}"
 }
