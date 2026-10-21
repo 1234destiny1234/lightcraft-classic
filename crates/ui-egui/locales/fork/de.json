@@ -1302,5 +1302,17 @@
   "Device storage": "Gerätespeicher",
   "All files": "Alle Dateien",
   "Only the files and folders you pick": "Nur ausgewählte Dateien und Ordner",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "Mit Zugriff auf alle Dateien werden Ordner auf dem Gerät an Ort und Stelle gelesen statt kopiert."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "Mit Zugriff auf alle Dateien werden Ordner auf dem Gerät an Ort und Stelle gelesen statt kopiert.",
+  "Job Title": "Berufsbezeichnung",
+  "Address": "Adresse",
+  "Postal Code": "Postleitzahl",
+  "Phone": "Telefon",
+  "Email": "E-Mail",
+  "Website": "Website",
+  "Copyright & Contact": "Copyright und Kontakt",
+  "Rename Metadata Preset": "Metadatenvorgabe umbenennen",
+  "Export Metadata Presets…": "Metadatenvorgaben exportieren…",
+  "Export User Presets…": "Benutzervorgaben exportieren…",
+  "{app} Metadata Presets": "{app}-Metadatenvorgaben",
+  "{app} Export Presets": "{app}-Exportvorgaben"
 }

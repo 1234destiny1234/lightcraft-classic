@@ -268,6 +268,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.saveMaskEffect", "Save Current Settings as New Effect Preset…", None, ""),
     ("dialog.manageMaskEffects", "Manage Effect Presets…", None, ""),
     ("file.exportMaskEffects", "Export Effect Presets…", None, ""),
+    // Metadata panel ▸ Preset menu, Export dialog ▸ preset column
+    ("file.exportMetadataPresets", "Export Metadata Presets…", None, ""),
+    ("file.exportExportPresets", "Export User Presets…", None, ""),
     ("file.importKeywords", "Import Keywords…", None, "File>More Imports"),
     ("file.exportKeywords", "Export Keywords…", None, "File>More Exports"),
     // Edit panel ▸ Curve ▸ Point Curve dropdown
@@ -2120,6 +2123,34 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 if effects > 0 {
                     parts.push(crate::panels::mask_effects::import_toast(v));
                 }
+                // Lightroom Classic metadata / export presets, XMP metadata templates, ours
+                let added = |k: &str| v[k].as_array().map_or(0, |a| a.iter().filter(|r| r["skipped"] != true).count());
+                let (metas, exports) = (added("metadataPresets"), added("exportPresets"));
+                // what they couldn't carry over, named
+                let not_carried = |k: &str| {
+                    let mut names: Vec<&str> = v[k]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|r| r["unmapped"].as_array().into_iter().flatten())
+                        .filter_map(Value::as_str)
+                        .collect();
+                    names.sort_unstable();
+                    names.dedup();
+                    if names.is_empty() {
+                        return String::new();
+                    }
+                    let shown: Vec<&str> = names.iter().take(3).copied().collect();
+                    crate::i18n::tr_format!(" — not carried over: {}{}", shown.join(", "), if names.len() > 3 { "…" } else { "" })
+                };
+                if metas > 0 {
+                    let msg = crate::i18n::tr_format!("Imported {n} metadata preset{}", if metas == 1 { "" } else { "s" }, n = metas);
+                    parts.push(msg + &not_carried("metadataPresets"));
+                }
+                if exports > 0 {
+                    let msg = crate::i18n::tr_format!("Imported {n} export preset{}", if exports == 1 { "" } else { "s" }, n = exports);
+                    parts.push(msg + &not_carried("exportPresets"));
+                }
                 let profile_news = !parts.is_empty() || !problems.is_empty();
                 let msg = match (n, failed) {
                     // a zip of LUTs (or only local presets): the other half already says what happened
@@ -2262,6 +2293,60 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "dialog.manageMaskEffects" => {
             crate::panels::mask_effects::open_manage(app);
             Ok(Value::Null)
+        }
+        "file.exportMetadataPresets" | "file.exportExportPresets" => {
+            let meta = id == "file.exportMetadataPresets";
+            let (ext, command) = if meta {
+                (lcc_engine::cmd::metadata_files::META_EXT, "metadata.exportPresets")
+            } else {
+                (lcc_engine::cmd::export_preset_files::EXPORT_PRESET_EXT, "export.exportPresets")
+            };
+            let path = match p.get("path").and_then(Value::as_str) {
+                Some(x) => Some(x.to_string()),
+                None => {
+                    let name = format!("{}.{ext}", if meta { "Metadata Presets" } else { "Export Presets" });
+                    let req = if meta {
+                        PickRequest::save(
+                            crate::i18n::tr("Export Metadata Presets…"),
+                            crate::i18n::tr("{app} Metadata Presets"),
+                            &["lcmeta"],
+                            name.clone(),
+                        )
+                    } else {
+                        PickRequest::save(
+                            crate::i18n::tr("Export User Presets…"),
+                            crate::i18n::tr("{app} Export Presets"),
+                            &["lcexport"],
+                            name.clone(),
+                        )
+                    };
+                    match crate::pick::ask(app, id, p, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
+                        Picked::Now(v) => v.into_iter().next(),
+                        Picked::Later => return Some(Ok(Value::Null)),
+                        Picked::Unavailable => return Some(Err("no file dialog on this platform".into())),
+                    }
+                }
+            };
+            let Some(path) = path else { return Some(Ok(Value::Null)) };
+            let mut params = json!({"path": path});
+            if let Some(v) = p.get("names") {
+                params["names"] = v.clone();
+            }
+            let r = app.session.execute(command, &params).map_err(|e| e.to_string());
+            match &r {
+                Ok(v) => {
+                    let n = v["count"].as_u64().unwrap_or(0);
+                    let s = if n == 1 { "" } else { "s" };
+                    let msg = if meta {
+                        crate::i18n::tr_format!("Exported {n} metadata preset{}", s, n = n)
+                    } else {
+                        crate::i18n::tr_format!("Exported {n} export preset{}", s, n = n)
+                    };
+                    app.toast(&ctx, msg);
+                }
+                Err(e) => app.toast_error(&ctx, e.clone()),
+            }
+            return Some(r);
         }
         "file.exportMaskEffects" => {
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2458,6 +2543,8 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "app.openSamModelFolder" => app.session.segmenter.dir.is_some() && app.services.open_with.is_some(),
         "file.exportPresets" => app.session.presets.iter().any(|p| !p.builtin),
         "file.exportMaskEffects" => !app.session.mask_effects.is_empty(),
+        "file.exportMetadataPresets" => !app.session.metadata_presets.is_empty(),
+        "file.exportExportPresets" => !app.session.export_presets.is_empty(),
         "dialog.saveMaskEffect" => app.session.active().is_some() && app.session.active_mask.is_some(),
         "file.exportCurvePresets" => !app.session.curve_presets.is_empty(),
         "view.compare" => app.session.catalog.len() > 1,

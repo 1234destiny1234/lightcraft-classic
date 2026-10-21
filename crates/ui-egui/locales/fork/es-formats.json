@@ -68,5 +68,9 @@
   "Remove {what} from the library for good?": "¿Quitar {what} de la biblioteca definitivamente?",
   "Faces: {spec}": "Caras: {spec}",
   "Delete these {count} photos from disk, or only remove them from the library?": "¿Eliminar estas {count} fotos del disco o solo quitarlas de la biblioteca?",
-  "Delete from Disk moves {n} files to the system trash.": "Eliminar del disco mueve {n} archivos a la papelera del sistema."
+  "Delete from Disk moves {n} files to the system trash.": "Eliminar del disco mueve {n} archivos a la papelera del sistema.",
+  "Imported {n} metadata preset{}": "Ajustes de metadatos importados: {n}{:.0}",
+  "Imported {n} export preset{}": "Ajustes de exportación importados: {n}{:.0}",
+  "Exported {n} metadata preset{}": "Ajustes de metadatos exportados: {n}{:.0}",
+  "Exported {n} export preset{}": "Ajustes de exportación exportados: {n}{:.0}"
 }

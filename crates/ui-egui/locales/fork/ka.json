@@ -43,5 +43,17 @@
   "Device storage": "მოწყობილობის მეხსიერება",
   "All files": "ყველა ფაილი",
   "Only the files and folders you pick": "მხოლოდ თქვენ მიერ არჩეული ფაილები და საქაღალდეები",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "ყველა ფაილზე წვდომით მოწყობილობის საქაღალდეები ადგილზე იკითხება, კოპირების ნაცვლად."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "ყველა ფაილზე წვდომით მოწყობილობის საქაღალდეები ადგილზე იკითხება, კოპირების ნაცვლად.",
+  "Job Title": "თანამდებობა",
+  "Address": "მისამართი",
+  "Postal Code": "საფოსტო ინდექსი",
+  "Phone": "ტელეფონი",
+  "Email": "ელფოსტა",
+  "Website": "ვებსაიტი",
+  "Copyright & Contact": "საავტორო უფლება და კონტაქტი",
+  "Rename Metadata Preset": "მეტამონაცემების პრესეტის გადარქმევა",
+  "Export Metadata Presets…": "მეტამონაცემების პრესეტების ექსპორტი…",
+  "Export User Presets…": "მომხმარებლის პრესეტების ექსპორტი…",
+  "{app} Metadata Presets": "{app}-ის მეტამონაცემების პრესეტები",
+  "{app} Export Presets": "{app}-ის ექსპორტის პრესეტები"
 }

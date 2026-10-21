@@ -1652,5 +1652,17 @@
   "Device storage": "Память устройства",
   "All files": "Все файлы",
   "Only the files and folders you pick": "Только выбранные файлы и папки",
-  "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются."
+  "With access to all files, folders on the device are read where they are instead of being copied.": "С доступом ко всем файлам папки на устройстве читаются на месте, а не копируются.",
+  "Job Title": "Должность",
+  "Address": "Адрес",
+  "Postal Code": "Почтовый индекс",
+  "Phone": "Телефон",
+  "Email": "Эл. почта",
+  "Website": "Веб-сайт",
+  "Copyright & Contact": "Авторские права и контакты",
+  "Rename Metadata Preset": "Переименовать набор метаданных",
+  "Export Metadata Presets…": "Экспорт наборов метаданных…",
+  "Export User Presets…": "Экспорт пользовательских наборов…",
+  "{app} Metadata Presets": "Наборы метаданных {app}",
+  "{app} Export Presets": "Наборы экспорта {app}"
 }
