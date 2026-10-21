@@ -2648,7 +2648,6 @@ fn the_histogram_clipping_buttons_stay_clear_of_the_hovered_scroll_bar() {
     assert!(((low.left() - hist.left()) - (hist.right() - high.right())).abs() < 0.5, "{low:?} {high:?} in {hist:?}");
 }
 
-
 /// An imported folder is listed under its own name, not under every folder from the disk down to
 /// it (the full path is on hover); two folders with the same name say which folder each is in.
 #[test]
