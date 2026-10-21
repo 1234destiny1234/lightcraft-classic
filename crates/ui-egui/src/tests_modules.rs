@@ -331,36 +331,34 @@ fn secondary_window_has_its_own_switcher_filter_and_filmstrip() {
     assert_eq!(h.app.ui.second_filter, crate::panels::second::SecondFilter::default());
 }
 
-/// The tool in use is radio-style (Lightroom Classic): clicking its strip button leaves the
-/// module as it is. It used to close the tool panel, and Develop with no editing panel is
-/// Library's, so the click threw the user back into the grid.
+/// Develop's tools are the row under its histogram (Lightroom Classic): a click on the tool in use
+/// closes its drawer and leaves the Develop panels on screen. Closing the tool panel used to leave
+/// Develop with no editing panel, which is Library's, so the click threw the user back into the grid.
 #[test]
-fn clicking_the_tool_in_use_keeps_develop() {
+fn clicking_the_tool_in_use_closes_its_drawer() {
     let mut h = demo();
     run(&mut h, "module.develop", json!({}));
     h.step();
-    for (cmd, icon, panel) in [
-        ("panel.edit", "edit", RightPanel::Edit),
-        ("panel.crop", "crop", RightPanel::Crop),
-        ("panel.masking", "masking", RightPanel::Masking),
-        ("panel.remove", "remove", RightPanel::Remove),
-    ] {
+    for (cmd, icon, panel) in
+        [("panel.crop", "crop", RightPanel::Crop), ("panel.masking", "masking", RightPanel::Masking), ("panel.remove", "remove", RightPanel::Remove)]
+    {
         if h.app.ui.right != panel {
             run(&mut h, cmd, json!({}));
         }
         assert_eq!(h.app.ui.right, panel, "{cmd} is the tool in use");
+        h.step();
         let r = h.request("ui.clickWidget", json!({"id": format!("icon:{icon}")}), T);
         assert_eq!(r["ok"], true, "{r}");
         h.step();
         h.step();
-        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, panel), "clicking the {icon} tool in use leaves it on screen");
+        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::Edit), "clicking the {icon} tool in use closes its drawer");
     }
-    // another tool's button still switches
-    let r = h.request("ui.clickWidget", json!({"id": "icon:edit"}), T);
+    // another tool's button still opens it
+    let r = h.request("ui.clickWidget", json!({"id": "icon:crop"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
     h.step();
-    assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::Edit));
+    assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::Crop));
 }
 
 /// The tool strip's shortcuts and menu items keep toggling the tool off (Classic's `R`, `Q`…),
@@ -383,7 +381,9 @@ fn closing_develops_tool_panel_stays_in_develop() {
         }
         assert_eq!(h.app.ui.right, panel, "{cmd} is the tool in use");
         run(&mut h, cmd, json!({}));
-        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, RightPanel::None), "{cmd} closes {panel:?} without leaving Develop");
+        // a tool's drawer closes back to the Edit panel under it (Lightroom Classic); Edit itself closes
+        let closed = if panel == RightPanel::Edit { RightPanel::None } else { RightPanel::Edit };
+        assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, closed), "{cmd} closes {panel:?} without leaving Develop");
         run(&mut h, cmd, json!({}));
         assert_eq!((h.app.ui.module, h.app.ui.right), (ModuleId::Develop, panel), "{cmd} opens {panel:?} again");
     }
@@ -405,7 +405,8 @@ fn tool_strip_shows_only_the_active_modules_tools() {
     let mut h = demo();
     run(&mut h, "module.develop", json!({}));
     h.step();
-    for id in ["presets", "edit", "crop", "remove", "masking", "redeye", "more"] {
+    // (the tools in the row under the histogram, Presets and More in the strip)
+    for id in ["presets", "crop", "remove", "masking", "redeye", "more"] {
         assert!(has_widget(&h, &format!("icon:{id}")), "Develop strip has {id}");
     }
     for id in ["versions", "activity", "keywords", "info"] {

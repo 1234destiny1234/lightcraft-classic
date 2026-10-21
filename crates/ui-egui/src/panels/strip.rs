@@ -1,6 +1,6 @@
 //! The vertical tool strip at the far right: a button that folds the right panel away, then
-//! Develop's editing tools (Presets, Edit, Crop, Remove, Masking, Red Eye) or Library's own panels
-//! (Versions, History & Activity), each with More below.
+//! Develop's Presets (its editing tools are the row under the histogram, `right::classic_tools`) or
+//! Library's own panels (Versions, History & Activity), each with More below.
 
 use egui::vec2;
 use serde_json::json;
@@ -34,23 +34,25 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 ui.spacing_mut().item_spacing.y = GAP;
                 let sz = vec2(t.strip_w, BUTTON_H);
                 // folds the right panel away (the strip stays); any tool below unfolds it
-                let open = !app.ui.right_collapsed;
+                // (Develop's tools are in the row under its histogram: with the panels closed, E,
+                // this brings them back)
+                let develop = app.ui.module == ModuleId::Develop;
+                let closed = develop && app.ui.right == RightPanel::None && !app.ui.presets;
+                let open = !app.ui.right_collapsed && !closed;
                 if icon_button(ui, "collapseRight", Icon::SidebarRight, sz, open, true, "Show/hide right panel").clicked() {
-                    let _ = app.run("panel.collapseRight", json!({}));
+                    let _ = app.run(if closed { "panel.edit" } else { "panel.collapseRight" }, json!({}));
                 }
                 separator(ui, &t);
                 // Presets: Develop's, a right panel like Edit or Crop
                 let presets_on = app.ui.presets && open;
-                if app.ui.module == ModuleId::Develop
-                    && icon_button(ui, "presets", Icon::Presets, sz, presets_on, has_photo, "Presets").clicked()
-                    && !presets_on
-                {
+                // (a second click goes back to the tools: the strip has no Edit button of its own)
+                if develop && icon_button(ui, "presets", Icon::Presets, sz, presets_on, has_photo, "Presets").clicked() {
                     let _ = app.run("panel.presets", json!({}));
                 }
                 // Only the active module's tools: Develop's editing tools, Library's own panels
                 // (`Library`'s Versions and History & Activity). The Library panels sat in Develop's
                 // strip as if they were Develop's tools (#108), so each module declares its own.
-                let side = strip_panels(app);
+                let side = if develop { Vec::new() } else { strip_panels(app) };
                 for p in &side {
                     let Some((id, icon, panel, tip, needs_photo)) = entry(*p) else { continue };
                     let on = !app.ui.right_collapsed
@@ -88,7 +90,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
 /// panels, which open over its Classic right column. The other modules have no strip.
 pub fn strip_declared(module: ModuleId) -> &'static [PanelId] {
     match module {
-        ModuleId::Develop => &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::Masking, PanelId::RedEye],
+        ModuleId::Develop => &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::RedEye, PanelId::Masking],
         ModuleId::Library => &[PanelId::Versions, PanelId::Activity],
         _ => &[],
     }
@@ -108,7 +110,7 @@ pub fn strip_panels(app: &LccApp) -> Vec<PanelId> {
 }
 
 /// The strip button of a strip panel: (widget id, icon, panel, tooltip, needs a photo).
-fn entry(p: PanelId) -> Option<(&'static str, Icon, RightPanel, &'static str, bool)> {
+pub(crate) fn entry(p: PanelId) -> Option<(&'static str, Icon, RightPanel, &'static str, bool)> {
     use crate::module::PanelId as P;
     Some(match p {
         P::Edit => ("edit", Icon::Sliders, RightPanel::Edit, "Edit", true),
