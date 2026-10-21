@@ -30,6 +30,7 @@ mod enhance_pump;
 pub mod enhance_ui;
 pub mod export_task;
 mod focus_scan;
+pub mod folder_poll;
 pub mod headless;
 pub mod help_overlay;
 pub mod i18n;
@@ -147,6 +148,8 @@ mod tests_filter_search;
 mod tests_focus_point;
 #[cfg(test)]
 mod tests_folder_drop;
+#[cfg(test)]
+mod tests_folder_poll;
 #[cfg(test)]
 mod tests_grading;
 #[cfg(test)]
@@ -561,6 +564,10 @@ pub struct LccApp {
     pub sync_owns_changes: bool,
     /// A Synchronize Folder at work in the background.
     pub sync_run: Option<sync::SyncRun>,
+    /// Folder polling (issue #123): the poll at work, when the last one ran.
+    pub folder_poll: folder_poll::FolderPoll,
+    /// A link (`<scheme>://sync?path=…`) the app was started with, followed once a frame runs.
+    pub pending_link: Option<String>,
     /// A Lightroom catalog inspect/import in progress.
     pub lightroom: Option<lightroom_import::LightroomTask>,
     /// Last terminal Lightroom result, exposed by the command's status/wait response.
@@ -709,6 +716,8 @@ impl LccApp {
             sync: None,
             sync_owns_changes: false,
             sync_run: None,
+            folder_poll: Default::default(),
+            pending_link: None,
             lightroom: None,
             lightroom_last: None,
             catalog_ui: Default::default(),
@@ -1334,6 +1343,10 @@ impl LccApp {
             {
                 self.toast(ctx, crate::i18n::tr("Updated the edits saved in the external editor"));
             }
+        }
+        folder_poll::tick(self, ctx, focused && !self.ui.was_focused);
+        if let Some(url) = self.pending_link.take() {
+            folder_poll::follow_link(self, ctx, &url);
         }
         self.ui.was_focused = focused;
         // auto import: list the watched folder every few seconds (on a worker thread: it may be on

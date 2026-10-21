@@ -1676,5 +1676,12 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Детали RAW, затем вдвое больше ширина и высота (в четыре раза больше пикселей).",
   "Estimating time…": "Оценка времени…",
   "Input": "Вход",
-  "Output": "Выход"
+  "Output": "Выход",
+  "Folder Polling": "Отслеживание папок",
+  "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.": "Искать фото, добавленные другими приложениями в папки библиотеки, при её открытии, при возврате в приложение и каждые несколько минут. Проверяются только папки, содержимое которых изменилось.",
+  "Check folders for new photos": "Проверять папки на новые фото",
+  "Every": "Каждые",
+  "Ask (show “N new”)": "Спрашивать (показывать «N новых»)",
+  "Add automatically": "Добавлять автоматически",
+  "Checking folders for new photos": "Проверка папок на новые фото"
 }

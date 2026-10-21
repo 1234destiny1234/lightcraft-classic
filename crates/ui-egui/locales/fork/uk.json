@@ -1209,5 +1209,12 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Деталі RAW, потім удвічі більші ширина й висота (вчетверо більше пікселів).",
   "Estimating time…": "Оцінювання часу…",
   "Input": "Вхід",
-  "Output": "Вихід"
+  "Output": "Вихід",
+  "Folder Polling": "Відстеження папок",
+  "Look for photos other apps added to the library's folders when the library opens, when the app comes to the front and every few minutes. Only folders whose listing changed are scanned.": "Шукати фото, які інші застосунки додали до папок бібліотеки, під час її відкриття, коли застосунок повертається на передній план, і кожні кілька хвилин. Перевіряються лише папки, вміст яких змінився.",
+  "Check folders for new photos": "Перевіряти папки на нові фото",
+  "Every": "Кожні",
+  "Ask (show “N new”)": "Питати (показувати «N нових»)",
+  "Add automatically": "Додавати автоматично",
+  "Checking folders for new photos": "Перевірка папок на нові фото"
 }

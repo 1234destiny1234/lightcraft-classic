@@ -48,6 +48,7 @@ pub mod files;
 pub mod filter_plugins;
 #[cfg(not(target_arch = "wasm32"))]
 mod focus_scan;
+pub mod folder_watch;
 pub mod fonts;
 pub mod guard;
 pub mod history_groups;
@@ -63,6 +64,7 @@ pub mod lightroom_folder;
 pub mod lightroom_job;
 mod lightroom_smart;
 mod lightroom_sqlite;
+pub mod link;
 pub mod logging;
 pub mod media;
 pub mod memory;
@@ -411,6 +413,12 @@ pub struct Session {
     /// The last Synchronize Folder scan, which `folder.synchronize` acts on while it is current
     /// (see [`Session::take_folder_changes`]).
     pub folder_changes: Option<sync::FolderChanges>,
+    /// Folder polling preferences (persisted with the library; see [`folder_watch`]).
+    pub folder_watch: folder_watch::WatchPrefs,
+    /// What the library's folders' listings looked like at the last poll (`folder-stamps.json`).
+    pub folder_stamps: folder_watch::Stamps,
+    /// New files a poll found and the person hasn't added yet, by folder (the "N new" badge).
+    pub folder_new: std::collections::BTreeMap<String, usize>,
     /// Background tasks in flight (imports, exports, preview builds…), for the activity stack and
     /// `activity.list` / `activity.cancel`.
     pub activity: activity::Activity,
@@ -589,6 +597,9 @@ impl Session {
             before: Default::default(),
             import_probes: Default::default(),
             folder_changes: None,
+            folder_watch: Default::default(),
+            folder_stamps: Default::default(),
+            folder_new: Default::default(),
             activity: Default::default(),
             video: Default::default(),
             preview_build: None,
@@ -1533,6 +1544,8 @@ mod tests_facets;
 mod tests_filesystem_history;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_focus_scan;
+#[cfg(test)]
+mod tests_folder_watch;
 #[cfg(test)]
 mod tests_folders;
 #[cfg(test)]

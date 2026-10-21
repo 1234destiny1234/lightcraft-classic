@@ -1328,3 +1328,51 @@ fn denoise_serve_runs_tiles_for_another_computer() {
     let _ = child.wait();
     let _ = std::fs::remove_dir_all(&models);
 }
+
+/// Issue #123: `sync-folder` and `open-url` synchronize a library folder headlessly, polling
+/// finds files added since the last poll, and a hostile link is an error, never a panic.
+#[test]
+fn sync_folder_and_open_url_hand_offs() {
+    let root = test_scratch_root().join(format!("app-cli-sync-{}", std::process::id()));
+    let _ = std::fs::remove_dir_all(&root);
+    let _cleanup = LightroomScratch(root.clone());
+    let trip = root.join("trip");
+    std::fs::create_dir_all(&trip).unwrap();
+    let png = |name: &str, seed: u8| {
+        let data: Vec<[u8; 4]> = (0..24 * 16).map(|i| [(i % 24 * 9) as u8, (i / 24 * 13) as u8, seed, 255]).collect();
+        let img = lcc_raster::Rgba8 { width: 24, height: 16, data };
+        let bytes = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
+        std::fs::write(trip.join(name), bytes).unwrap();
+    };
+    png("a.png", 1);
+    let library = root.join("library");
+    let lib = library.to_str().unwrap();
+    let run = |args: &[&str]| {
+        let out = Command::new(BIN).args(args).env(lcc_brand::env_var("NO_PREFS"), "1").env(lcc_brand::env_var("GPU"), "0").output().unwrap();
+        let lines: Vec<Value> = String::from_utf8_lossy(&out.stdout).lines().filter_map(|l| serde_json::from_str(l).ok()).collect();
+        (out.status.success(), lines, String::from_utf8_lossy(&out.stderr).to_string())
+    };
+    let folder = trip.to_str().unwrap();
+    let (ok, _, err) = run(&["run", "--library", lib, "--import", folder, "folder.poll"]);
+    assert!(ok, "{err}");
+    png("b.png", 2);
+    // the next poll finds b.png and, asking by default, counts it without adding it
+    let (ok, lines, err) = run(&["run", "--library", lib, "folder.poll"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["changed"].as_array().map(Vec::len), Some(1), "{lines:?}");
+    // the count is kept with the library (a restart would otherwise forget it)
+    let (ok, lines, err) = run(&["run", "--library", lib, "folder.newFiles"]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["total"], 1, "{lines:?}");
+    // sync this folder now
+    let (ok, lines, err) = run(&["sync-folder", "--library", lib, folder]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["imported"], 1, "{lines:?}");
+    png("c.png", 3);
+    let link = lcc_engine::link::sync_link(folder);
+    let (ok, lines, err) = run(&["open-url", "--library", lib, &link]);
+    assert!(ok, "{err}");
+    assert_eq!(lines[0]["result"]["imported"], 1, "{lines:?}");
+    let (ok, _, err) = run(&["open-url", "--library", lib, &format!("{}://sync?path=%zz", lcc_brand::URL_SCHEME)]);
+    assert!(!ok && !err.contains("panicked"), "{err}");
+}

@@ -61,5 +61,8 @@
   "about {} minutes": "დაახლ. {} წთ",
   "about {} hours": "დაახლ. {} სთ",
   "Output: {} × {} px": "შედეგი: {} × {} პქს",
-  "Estimated time: {est}": "სავარაუდო დრო: {est}"
+  "Estimated time: {est}": "სავარაუდო დრო: {est}",
+  "Add {n} New Photos…": "{n} ახალი ფოტოს დამატება…",
+  "{n} new photos in “{folder}”: right-click the folder ▸ Add New Photos": "„{folder}“-ში {n} ახალი ფოტოა: დააწკაპუნეთ საქაღალდეზე მარჯვენა ღილაკით ▸ ახალი ფოტოების დამატება",
+  "{n} new photos in {folders} folders: see the badges in Folders": "{folders} საქაღალდეში {n} ახალი ფოტოა: იხილეთ ნიშნები საქაღალდეებში"
 }
