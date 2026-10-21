@@ -458,6 +458,9 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
         {
             let fine = ui.input(|i| i.modifiers.shift);
             let step = spec.step.max(1e-9);
+            // the thumb's track position under pointer x, less where on the thumb it was grabbed
+            let grab_id = id.with("grab");
+            let at = |x: f32, grab: f32| f64::from((x - grab - track_rect.left()) / track_rect.width()).clamp(0.0, 1.0);
             let nv = if fine {
                 // a tenth of the pointer's movement along the track; the unrounded position is kept, so a
                 // slow drag adds up instead of rounding back to the same step every frame
@@ -467,24 +470,22 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
                 let pos = (kept.unwrap_or_else(|| spec.position(value)) + f64::from(dx / track_rect.width()) * 0.1).clamp(0.0, 1.0);
                 ui.data_mut(|m| {
                     m.insert_temp(fine_id, pos);
-                    // letting go of Shift carries on from here
-                    m.insert_temp(id.with("accel-pos"), pos);
+                    // letting go of Shift carries on from here: the thumb stays where it is
+                    m.insert_temp(grab_id, p.x - (track_rect.left() + pos as f32 * track_rect.width()));
                 });
                 spec.value_at(pos)
             } else if resp.drag_started() {
-                // the press puts the thumb under the pointer
-                ui.data_mut(|m| m.insert_temp(id.with("accel-pos"), spec.position(from_x(p.x))));
-                from_x(p.x)
+                // pressed on the thumb, it keeps the spot it was grabbed by; elsewhere on the track it
+                // comes under the pointer
+                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
+                let grab = if on_thumb(origin) { origin.x - to_x(value) } else { 0.0 };
+                ui.data_mut(|m| m.insert_temp(grab_id, grab));
+                spec.value_at(at(p.x, grab))
             } else {
-                // then the thumb follows the pointer with pointer acceleration (issue #346): slow
-                // movement moves it at 30 % speed, for fine changes; a quick one at full speed
-                let accel_id = id.with("accel-pos");
-                let dx = ui.input(|i| i.pointer.delta().x);
-                let pos = (ui.data(|m| m.get_temp::<f64>(accel_id)).unwrap_or_else(|| spec.position(value))
-                    + f64::from(dx * drag_gain(dx) / track_rect.width()))
-                .clamp(0.0, 1.0);
-                ui.data_mut(|m| m.insert_temp(accel_id, pos));
-                spec.value_at(pos)
+                // then it stays under the pointer, as in Lightroom Classic: past an end it waits there
+                // until the pointer comes back over it
+                let grab = ui.data(|m| m.get_temp::<f32>(grab_id)).unwrap_or(0.0);
+                spec.value_at(at(p.x, grab))
             };
             let nv = ((nv / step).round() * step).clamp(spec.min, spec.max);
             if (nv - value).abs() > 1e-12 {
@@ -698,17 +699,6 @@ fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
     let widest = prev.max(cur).ceil();
     let max_col = ((row_w - 48.0) * 0.4).clamp(24.0, MAX_LABEL_COL);
     widest.clamp(24.0_f32.min(max_col), max_col)
-}
-
-/// How far a slider's thumb moves per point of pointer travel in a frame that moved it `dx`: 30 %
-/// for slow movement (up to 2 points a frame), rising to one for quick movement (8 points or more).
-fn drag_gain(dx: f32) -> f32 {
-    const SLOW: f32 = 2.0;
-    const FAST: f32 = 8.0;
-    // the slowest speed: 30 % of the pointer's (issue #346)
-    const MIN_GAIN: f32 = 0.3;
-    let t = ((dx.abs() - SLOW) / (FAST - SLOW)).clamp(0.0, 1.0);
-    MIN_GAIN + (1.0 - MIN_GAIN) * t
 }
 
 /// Convert vertical wheel movement to bounded slider steps, keeping sub-notch
@@ -1064,13 +1054,6 @@ pub fn dropdown_within(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, co
 
 #[cfg(test)]
 mod tests {
-    #[test]
-    fn slow_slider_drags_move_the_thumb_less_than_the_pointer_and_quick_ones_keep_up() {
-        assert!(drag_gain(0.5) < 1.0 && drag_gain(0.5) > 0.0);
-        assert!(drag_gain(-1.0) <= drag_gain(5.0));
-        assert!((drag_gain(40.0) - 1.0).abs() < 1e-6);
-    }
-
     use super::*;
 
     /// Issue #647: hovering a star previews the rating a click would set.

@@ -94,13 +94,13 @@ fn the_kelvin_temp_slider_has_lightrooms_scale() {
     h.settle(SETTLE);
     let k = develop(&h).wb.temp;
     assert!((k - 7000.0).abs() <= 50.0, "dragged to the middle: {k} K");
-    // a slow one (issue #346): the thumb moves less than the pointer, for fine changes
+    // a slow one too: the thumb stays under the pointer, as in Lightroom Classic (Shift is the fine drag)
     set(&mut h, "wb.temp", 4850.0);
     let r = h.request("ui.drag", json!({"x": from, "y": track.center().y, "toX": track.center().x, "toY": track.center().y, "steps": 60}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);
     let k = develop(&h).wb.temp;
-    assert!(k > 4850.0 && k < 6500.0, "a slow drag to the middle stops short of it: {k} K");
+    assert!((k - 7000.0).abs() <= 50.0, "a slow drag to the middle reaches it: {k} K");
     assert_eq!(h.request("ui.clickWidget", json!({"id": "slider:wb.temp", "fx": 1.0}), T)["ok"], true);
     h.settle(SETTLE);
     assert_eq!(develop(&h).wb.temp, 50000.0);
