@@ -68,10 +68,12 @@ fn app_icon() -> egui::IconData {
 struct App(LccApp, PrefsWriter, #[cfg(target_os = "macos")] Option<native_menu::NativeMenu>);
 
 impl eframe::App for App {
-    fn clear_color(&self, _visuals: &egui::Visuals) -> [f32; 4] {
+    fn clear_color(&self, visuals: &egui::Visuals) -> [f32; 4] {
         // The transparency-capable window selects compositor presentation; the UI itself
-        // stays opaque, including disabled panels beneath modal dimming.
-        egui::Color32::from_rgb(12, 12, 12).to_normalized_gamma_f32()
+        // stays opaque, including disabled panels beneath modal dimming. The theme's panel
+        // colour, so a light theme doesn't flash black where nothing is drawn yet.
+        let [r, g, b, _] = visuals.panel_fill.to_srgba_unmultiplied();
+        egui::Color32::from_rgb(r, g, b).to_normalized_gamma_f32()
     }
     fn logic(&mut self, ctx: &egui::Context, _frame: &mut eframe::Frame) {
         #[cfg(target_os = "macos")]

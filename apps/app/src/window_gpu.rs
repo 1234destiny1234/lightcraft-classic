@@ -235,7 +235,7 @@ pub fn relaunch_after_failure(files: &Files) -> bool {
 }
 
 /// Only DX12 windows use the compositor; fallback renderers retain their normal presentation.
-/// Adapted from kmnkv1's PhotoCraft PR: https://github.com/storytold/photocraft/pull/7035.
+/// Adapted from kmnkv1's PhotoCraft PR #7035.
 pub fn composes_window(enabled: bool, renderer: WindowRenderer) -> bool {
     cfg!(target_os = "windows") && enabled && renderer == WindowRenderer::Wgpu(Backends::DX12)
 }
