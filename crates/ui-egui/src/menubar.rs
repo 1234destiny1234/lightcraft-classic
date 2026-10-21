@@ -118,6 +118,7 @@ const LAYOUT: &[(&str, &[&str])] = &[
             "view.focusSearch",
             "library.findSimilar",
             "@Filters",
+            "@Filter by Rating",
             "---",
             "dialog.cull",
             "tool.painter",
@@ -589,6 +590,26 @@ pub(crate) fn expanded(app: &LccApp, name: &str) -> Option<Vec<MenuNode>> {
                 MenuNode::Separator,
                 item("library.clearPreviews", Value::Null, "Discard Preview Cache", None, true, None),
             ]
+        }
+        // Classic's Library ▸ Filter by Rating: the filter bar's rating; picking the stars it has again clears it
+        "Filter by Rating" => {
+            use lcc_catalog::RatingOp;
+            let f = &app.session.filter;
+            let mut v: Vec<MenuNode> = [
+                ("≥  at least", "atLeast", RatingOp::AtLeast),
+                ("=  exactly", "exactly", RatingOp::Exactly),
+                ("≤  at most", "atMost", RatingOp::AtMost),
+            ]
+            .into_iter()
+            .map(|(label, k, op)| item("library.filter", json!({"ratingOp": k}), label, None, true, Some(f.rating_op == op)))
+            .collect();
+            v.push(MenuNode::Separator);
+            v.extend((1..=5u8).map(|r| {
+                item("library.filter", json!({"rating": if f.rating == r { 0 } else { r }}), "★".repeat(r as usize), None, true, Some(f.rating == r))
+            }));
+            v.push(MenuNode::Separator);
+            v.push(item("library.filter", json!({"rating": 0}), "None", None, f.rating > 0, None));
+            v
         }
         "Set Rating" => (0..=5u8)
             .map(|r| {

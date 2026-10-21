@@ -1878,3 +1878,51 @@ fn stack_command_enabled_work_grows_linearly_with_the_library() {
         assert!(large < small.max(1) * 8, "last_only={last_only}: work {small} -> {large} for 4x the photos");
     }
 }
+
+/// Rate a few photos 1 star, leave the rest unrated: a rating filter shows only what it asks for, in the view
+/// and in Select All (what an export of the selection takes), with the view held or not, set before or after rating.
+#[test]
+fn rating_filter_shows_only_rated_photos() {
+    use lcc_catalog::PhotoId;
+    for hold in [false, true] {
+        for filter_first in [false, true] {
+            let mut s = demo();
+            if hold {
+                s.hold_view = true;
+            }
+            let all = s.visible_cloned();
+            s.execute("photo.rate", &json!({"rating": 0, "ids": all})).unwrap();
+            let rated: Vec<PhotoId> = all.iter().copied().step_by(5).collect();
+            if filter_first {
+                s.execute("library.filter", &json!({"rating": 1})).unwrap();
+                assert!(s.visible().is_empty(), "nothing rated yet");
+            }
+            s.execute("photo.rate", &json!({"rating": 1, "ids": rated})).unwrap();
+            s.execute("photo.rate", &json!({"rating": 3, "ids": [all[1]]})).unwrap();
+            let ctx = format!("hold {hold}, filter first {filter_first}");
+            let shown = |s: &mut Session, f: Value| {
+                s.execute("library.clearFilter", &json!({})).unwrap();
+                s.execute("library.filter", &f).unwrap();
+                let mut v = s.visible_cloned();
+                v.sort();
+                v
+            };
+            let mut at_least_1: Vec<PhotoId> = rated.iter().copied().chain([all[1]]).collect();
+            at_least_1.sort();
+            assert_eq!(shown(&mut s, json!({"rating": 1})), at_least_1, "≥1 ({ctx})");
+            s.execute("library.selectAll", &json!({})).unwrap();
+            let mut sel = s.selection.ids.clone();
+            sel.sort();
+            assert_eq!(sel, at_least_1, "Select All under ≥1 ({ctx})");
+            let mut exactly_1 = rated.clone();
+            exactly_1.sort();
+            assert_eq!(shown(&mut s, json!({"rating": 1, "ratingOp": "exactly"})), exactly_1, "=1 ({ctx})");
+            assert_eq!(shown(&mut s, json!({"rating": 3, "ratingOp": "exactly"})), vec![all[1]], "=3 ({ctx})");
+            assert_eq!(shown(&mut s, json!({"rating": 2})), vec![all[1]], "≥2 ({ctx})");
+            // Lightroom's "≤ 1": unrated photos are at most one star too
+            let at_most_1 = shown(&mut s, json!({"rating": 1, "ratingOp": "atMost"}));
+            assert_eq!(at_most_1.len(), all.len() - 1, "≤1 ({ctx})");
+            assert!(!at_most_1.contains(&all[1]));
+        }
+    }
+}

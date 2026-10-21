@@ -667,3 +667,77 @@ fn keyword_list_has_no_nested_collapsible_header_in_classic() {
     assert!(has(&h, "keywordList:create"), "+ button is shown in body");
     assert!(!has(&h, "section:keywordList"), "No nested collapsible fold title in Classic view");
 }
+
+/// Rate some photos one star and leave the rest unrated: the filter bar's first star shows only the rated
+/// photos in the grid, and Select All takes only those.
+#[test]
+fn rating_filter_bar_shows_only_rated_photos() {
+    use lcc_catalog::PhotoId;
+    let mut h = demo();
+    let all = h.app.session.visible_cloned();
+    run(&mut h, "photo.rate", json!({"rating": 0, "ids": all}));
+    let rated: Vec<PhotoId> = all.iter().copied().step_by(4).collect();
+    run(&mut h, "photo.rate", json!({"rating": 1, "ids": rated}));
+    if !h.app.ui.filter_bar {
+        run(&mut h, "view.filterBar", json!({}));
+    }
+    click(&mut h, "filter:star1");
+    assert_eq!(h.app.session.filter.rating, 1);
+    let cells: Vec<u64> = h.app.widgets.iter().filter_map(|(w, _)| w.strip_prefix("thumb:")?.parse().ok()).collect();
+    assert!(!cells.is_empty());
+    assert!(cells.iter().all(|c| rated.contains(&PhotoId(*c))), "grid shows only rated photos: {cells:?} of {rated:?}");
+    run(&mut h, "library.selectAll", json!({}));
+    let mut sel = h.app.session.selection.ids.clone();
+    sel.sort();
+    let mut want = rated.clone();
+    want.sort();
+    assert_eq!(sel, want);
+}
+
+/// Library ▸ Filter by Rating: one star shows the rated photos only, "= exactly" narrows to one-star photos,
+/// and picking the same stars again clears the rating filter.
+#[test]
+fn library_menu_filters_by_rating() {
+    use crate::menubar::{MenuNode, menu_bar, run_item};
+    use lcc_catalog::PhotoId;
+    fn items(h: &Headless) -> Vec<(serde_json::Value, String)> {
+        menu_bar(&h.app)
+            .into_iter()
+            .flat_map(|(_, v)| v)
+            .filter_map(|n| match n {
+                MenuNode::Submenu { label, children } if label == "Filter by Rating" => Some(children),
+                _ => None,
+            })
+            .flatten()
+            .filter_map(|n| match n {
+                MenuNode::Item { id, params, label, .. } if id == "library.filter" => Some((params, label)),
+                _ => None,
+            })
+            .collect()
+    }
+    let pick = |h: &mut Headless, label: &str| {
+        let (params, _) = items(h).into_iter().find(|(_, l)| l == label).expect("menu item");
+        run_item(&mut h.app, "library.filter", params).unwrap();
+        h.step();
+    };
+    let mut h = demo();
+    let all = h.app.session.visible_cloned();
+    run(&mut h, "photo.rate", json!({"rating": 0, "ids": all}));
+    run(&mut h, "photo.rate", json!({"rating": 1, "ids": [all[0], all[2]]}));
+    run(&mut h, "photo.rate", json!({"rating": 4, "ids": [all[3]]}));
+    pick(&mut h, "★");
+    let mut shown = h.app.session.visible_cloned();
+    shown.sort();
+    let mut want: Vec<PhotoId> = vec![all[0], all[2], all[3]];
+    want.sort();
+    assert_eq!(shown, want, "≥ one star: the rated photos only");
+    pick(&mut h, "=  exactly");
+    let mut shown = h.app.session.visible_cloned();
+    shown.sort();
+    let mut want = vec![all[0], all[2]];
+    want.sort();
+    assert_eq!(shown, want);
+    pick(&mut h, "★");
+    assert_eq!(h.app.session.filter.rating, 0, "the same stars again clear the rating filter");
+    assert_eq!(h.app.session.visible_cloned().len(), all.len());
+}
