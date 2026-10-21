@@ -255,6 +255,8 @@ pub fn scan_with(input: SyncInput, progress: &SyncProgress) -> FolderChanges {
             (Some("path"), _) if browsed => changes.new.push(ImportCandidate { duplicate: None, existing: None, ..c }),
             (Some("path"), _) => {}
             (Some(_), _) => changes.duplicates += 1,
+            // still being copied in: left for a later scan (issue #123)
+            (None, Some(e)) if lcc_catalog::incoming::is_still_being_written(e) => {}
             (None, Some(_)) => changes.unreadable.push(c),
             (None, None) => changes.new.push(c),
         }
