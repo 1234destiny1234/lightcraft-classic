@@ -67,5 +67,8 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Raw დეტალები, შემდეგ ორჯერ მეტი სიგანე და სიმაღლე (ოთხჯერ მეტი პიქსელი).",
   "Estimating time…": "დრო ფასდება…",
   "Input": "შემავალი",
-  "Output": "გამომავალი"
+  "Output": "გამომავალი",
+  "Sliders": "სლაიდერები",
+  "One Row": "ერთ მწკრივად",
+  "Two Rows": "ორ მწკრივად"
 }

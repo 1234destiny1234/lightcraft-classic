@@ -1676,5 +1676,8 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Детали RAW, затем вдвое больше ширина и высота (в четыре раза больше пикселей).",
   "Estimating time…": "Оценка времени…",
   "Input": "Вход",
-  "Output": "Выход"
+  "Output": "Выход",
+  "Sliders": "Ползунки",
+  "One Row": "В одну строку",
+  "Two Rows": "В две строки"
 }

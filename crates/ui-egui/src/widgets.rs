@@ -248,8 +248,12 @@ pub(crate) fn shown_value(spec: &ControlSpec, v: f64) -> String {
 /// scrub rather than a click that types a value.
 const SCRUB_START: f32 = 3.0;
 
-/// The radius of a slider's hollow ring thumb.
-const THUMB_RING: f32 = 5.5;
+/// The radius of a slider's thumb: a small solid dot, as in DaVinci Resolve (issue #346: the
+/// larger ring crowded the panel).
+const THUMB_RING: f32 = 4.0;
+
+/// Size of a slider's name and value in a panel (issue #346: small enough that names fit).
+const LABEL_FONT: f32 = 10.5;
 
 /// A slider row: the name (left-aligned, flush with section headers),
 /// a track with a hollow ring thumb occupying most of the panel width, and a compact value readout.
@@ -272,13 +276,17 @@ pub fn form_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool) -
 fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, form_label: Option<f32>) -> SliderOut {
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
-    let (row, _) = ui.allocate_exact_size(vec2(w, t.slider_row_h), Sense::hover());
+    // a panel slider on two rows (Settings ▸ Interface): name and value, then the track under them
+    let two_rows = form_label.is_none() && crate::theme::slider_layout(ui.ctx()) == crate::theme::SliderLayout::TwoRows;
+    let row_h = if two_rows { t.slider_row_h + TWO_ROW_EXTRA } else { t.slider_row_h };
+    let (row, _) = ui.allocate_exact_size(vec2(w, row_h), Sense::hover());
     // one row: name (left-aligned flush with section header) | wide track | compact value
     let label_str = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
     let geo = match form_label {
         Some(label_w) => SliderGeometry::form(row, label_w),
+        None if two_rows => SliderGeometry::two_rows(row),
         None => {
-            let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(12.5), t.text_label).size().x;
+            let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(LABEL_FONT), t.text_label).size().x;
             SliderGeometry::new(row, label_column(ui, w, label_w))
         }
     };
@@ -410,7 +418,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         // the old value is selected when the field takes the focus, so typing replaces it
         let field = crate::text_field::TextField::singleline(&format!("sliderField:{}", spec.id), &mut text)
-            .font(t.font(12.5))
+            .font(t.font(LABEL_FONT))
             .horizontal_align(egui::Align::RIGHT)
             .width(value_rect.width())
             .margin(egui::Margin::ZERO)
@@ -456,10 +464,26 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
                 let dx = ui.input(|i| i.pointer.delta().x);
                 let kept = ui.data(|m| m.get_temp::<f64>(fine_id)).filter(|&p| ((spec.value_at(p) / step).round() * step - value).abs() < step / 2.0);
                 let pos = (kept.unwrap_or_else(|| spec.position(value)) + f64::from(dx / track_rect.width()) * 0.1).clamp(0.0, 1.0);
-                ui.data_mut(|m| m.insert_temp(fine_id, pos));
+                ui.data_mut(|m| {
+                    m.insert_temp(fine_id, pos);
+                    // letting go of Shift carries on from here
+                    m.insert_temp(id.with("accel-pos"), pos);
+                });
                 spec.value_at(pos)
-            } else {
+            } else if resp.drag_started() {
+                // the press puts the thumb under the pointer
+                ui.data_mut(|m| m.insert_temp(id.with("accel-pos"), spec.position(from_x(p.x))));
                 from_x(p.x)
+            } else {
+                // then the thumb follows the pointer with pointer acceleration (issue #346): slow
+                // movement moves it at half speed, for fine changes; a quick one at full speed
+                let accel_id = id.with("accel-pos");
+                let dx = ui.input(|i| i.pointer.delta().x);
+                let pos = (ui.data(|m| m.get_temp::<f64>(accel_id)).unwrap_or_else(|| spec.position(value))
+                    + f64::from(dx * drag_gain(dx) / track_rect.width()))
+                .clamp(0.0, 1.0);
+                ui.data_mut(|m| m.insert_temp(accel_id, pos));
+                spec.value_at(pos)
             };
             let nv = ((nv / step).round() * step).clamp(spec.min, spec.max);
             if (nv - value).abs() > 1e-12 {
@@ -566,15 +590,16 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let p = ui.painter();
     // the name, right-aligned against its track; ellipsized when the column is too narrow for it
     // (in a form, the font of the other rows' labels)
-    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(11.5) };
+    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(LABEL_FONT) };
     let mut job = egui::text::LayoutJob::simple_singleline(label_str, label_font, text_c);
     job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = ui.painter().layout_job(job);
-    let gx = label_rect.right() - galley.size().x;
+    // (on two rows, left-aligned over the start of the track)
+    let gx = if two_rows { label_rect.left() } else { label_rect.right() - galley.size().x };
     let gpos = pos2(gx, label_rect.center().y - galley.size().y / 2.0);
     p.galley(gpos, galley, text_c);
     if typing.is_none() {
-        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(12.5), text_c);
+        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(LABEL_FONT), text_c);
         // the scrub pointer, as over Lightroom's values: a drag here changes the value
         if enabled && (value_resp.hovered() || scrub.is_some()) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -591,8 +616,8 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     } else {
         t.thumb
     };
-    p.circle_filled(pos2(tx, track_rect.center().y), ring, t.chrome);
-    p.circle_stroke(pos2(tx, track_rect.center().y), ring, Stroke::new(2.0, ring_c));
+    p.circle_filled(pos2(tx, track_rect.center().y), ring, ring_c);
+    p.circle_stroke(pos2(tx, track_rect.center().y), ring, Stroke::new(1.0, t.chrome));
     if hovered {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
@@ -606,12 +631,17 @@ struct SliderGeometry {
     value: Rect,
 }
 
-/// Width of a slider's value column (tightened to fit numbers like "+100", "8978", "+0.80", "-5.00").
-const VALUE_W: f32 = 34.0;
+/// How much taller a two-row slider is than a one-row one.
+const TWO_ROW_EXTRA: f32 = 12.0;
 
-/// Maximum width of the slider label column, sized strictly to fit the longest Tone/Basic label string
-/// (e.g. "Highlights" ~58 px) plus a small spacing gap, keeping the track as wide as possible.
-const MAX_LABEL_COL: f32 = 64.0;
+/// Width of a slider's value column: fits numbers like "+100", "8978", "+0.80", "-5.00" at
+/// [`LABEL_FONT`].
+const VALUE_W: f32 = 28.0;
+
+/// Maximum width of the slider label column: room for names such as "Refine Saturation" or
+/// "Shadows Luminance" at [`LABEL_FONT`] (issue #346: names were cut off), while the track keeps
+/// more than half the panel.
+const MAX_LABEL_COL: f32 = 92.0;
 
 impl SliderGeometry {
     fn new(row: Rect, label_col: f32) -> Self {
@@ -621,6 +651,19 @@ impl SliderGeometry {
         let track_l = label.right() + gap;
         let track_r = (value.left() - gap).max(track_l + 1.0);
         let track = Rect::from_min_max(pos2(track_l, row.top()), pos2(track_r, row.bottom()));
+        Self { label, track, value }
+    }
+
+    /// Two rows: the name at the left and the value at the right of the top line, the track the
+    /// width of both under them (its thumb at either end just inside the row's padding).
+    fn two_rows(row: Rect) -> Self {
+        let (pad_l, pad_r) = (24.0, 16.0);
+        let split = row.top() + row.height() * 0.5;
+        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(row.left() + pad_l), row.top()), pos2(row.right() - pad_r, split));
+        let label = Rect::from_min_max(pos2(row.left() + pad_l, row.top()), pos2((value.left() - 8.0).max(row.left() + pad_l), split));
+        let track_l = row.left() + pad_l + THUMB_RING;
+        let track_r = (row.right() - pad_r - THUMB_RING).max(track_l + 1.0);
+        let track = Rect::from_min_max(pos2(track_l, split), pos2(track_r, row.bottom()));
         Self { label, track, value }
     }
 
@@ -649,8 +692,17 @@ fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
     let cur = cur.max(label_w);
     ui.data_mut(|d| d.insert_temp(key, (frame, prev, cur)));
     let widest = prev.max(cur).ceil();
-    let max_col = ((row_w - 48.0) * 0.35).clamp(24.0, MAX_LABEL_COL);
+    let max_col = ((row_w - 48.0) * 0.4).clamp(24.0, MAX_LABEL_COL);
     widest.clamp(24.0_f32.min(max_col), max_col)
+}
+
+/// How far a slider's thumb moves per point of pointer travel in a frame that moved it `dx`: half
+/// for slow movement (up to 2 points a frame), rising to one for quick movement (8 points or more).
+fn drag_gain(dx: f32) -> f32 {
+    const SLOW: f32 = 2.0;
+    const FAST: f32 = 8.0;
+    let t = ((dx.abs() - SLOW) / (FAST - SLOW)).clamp(0.0, 1.0);
+    0.5 + 0.5 * t
 }
 
 /// Convert vertical wheel movement to bounded slider steps, keeping sub-notch
@@ -1006,6 +1058,13 @@ pub fn dropdown_within(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, co
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn slow_slider_drags_move_the_thumb_less_than_the_pointer_and_quick_ones_keep_up() {
+        assert!(drag_gain(0.5) < 1.0 && drag_gain(0.5) > 0.0);
+        assert!(drag_gain(-1.0) <= drag_gain(5.0));
+        assert!((drag_gain(40.0) - 1.0).abs() < 1e-6);
+    }
+
     use super::*;
 
     /// Issue #647: hovering a star previews the rating a click would set.

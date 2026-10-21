@@ -67,5 +67,8 @@
   "Raw Details, then twice the width and height (four times the pixels).": "Szczegóły RAW, potem dwukrotna szerokość i wysokość (cztery razy więcej pikseli).",
   "Estimating time…": "Szacowanie czasu…",
   "Input": "Wejście",
-  "Output": "Wyjście"
+  "Output": "Wyjście",
+  "Sliders": "Suwaki",
+  "One Row": "Jeden wiersz",
+  "Two Rows": "Dwa wiersze"
 }

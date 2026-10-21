@@ -1381,5 +1381,8 @@
   "Raw Details, then twice the width and height (four times the pixels).": "先进行 Raw 细节，再将宽度和高度加倍（像素为四倍）。",
   "Estimating time…": "正在估算时间…",
   "Input": "输入",
-  "Output": "输出"
+  "Output": "输出",
+  "Sliders": "滑块",
+  "One Row": "单行",
+  "Two Rows": "双行"
 }
