@@ -459,7 +459,7 @@ struct Develop;
 /// Library's Classic columns.
 pub const LIBRARY_LEFT: &[PanelId] =
     &[PanelId::Navigator, PanelId::Catalog, PanelId::Folders, PanelId::Collections, PanelId::Publish, PanelId::Local];
-pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::Histogram, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata];
+pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata];
 
 /// Develop's Classic left column: the Navigator, the Presets, the photo's Versions (Classic's
 /// Snapshots) and its History, and the Collections — Lightroom Classic's Develop column, not the

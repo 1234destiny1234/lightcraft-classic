@@ -226,14 +226,14 @@ fn reorder_moves_a_panel_to_a_slot() {
 fn dragging_a_header_reorders_the_side() {
     let mut h = demo();
     run(&mut h, "panel.right", json!({"show": true}));
-    for p in [PanelId::Histogram, PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata] {
+    for p in [PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata] {
         classic::set_open(&mut h.app, p, false);
     }
     h.step();
     h.step();
-    // to the top of the side (the Histogram heads it, as in Lightroom Classic)
+    // to the top of the side's panels (under the pinned histogram)
     let from = widget_center(&mut h, "classicPanel:metadata");
-    let to = widget_center(&mut h, "classicPanel:histogram");
+    let to = widget_center(&mut h, "classicPanel:quickDevelop");
     let r = h.request("ui.drag", json!({"x": from.0, "y": from.1, "toX": to.0, "toY": to.1 - 6.0, "steps": 8}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
@@ -614,6 +614,7 @@ fn the_histogram_stays_at_the_top_of_librarys_right_column() {
     assert!(h.app.session.active().is_some(), "the demo has an active photo");
     let rect = |h: &Headless, id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r);
     let hist = rect(&h, "histogram").expect("Library draws the histogram");
+    assert_eq!(h.app.widgets.iter().filter(|(w, _)| w == "histogram").count(), 1, "one histogram, not a second in the panels");
     let panel = rect(&h, "panel:right_panel").expect("the right panel is drawn");
     assert!(hist.top() <= panel.top() + 40.0 && hist.left() >= panel.left() - 1.0, "at the top of the right column: {hist:?} {panel:?}");
     let first = rect(&h, "classicPanel:quickDevelop").expect("Quick Develop").top();

@@ -56,10 +56,9 @@ fn backslash_toggles_the_filter_bar_in_the_grid_and_show_original_elsewhere() {
 fn the_library_right_column_starts_with_the_histogram() {
     let h = library();
     let top = |id: &str| h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| r.top());
-    let (histogram, quick) = (top("classicPanel:histogram"), top("classicPanel:quickDevelop"));
+    let (histogram, quick) = (top("histogram"), top("classicPanel:quickDevelop"));
     assert!(histogram.is_some() && quick.is_some(), "{histogram:?} {quick:?}");
     assert!(histogram < quick, "Histogram first");
-    assert!(top("histogram").is_some(), "its plot is drawn");
 }
 
 /// The filmstrip runs under the Grid too, as in Lightroom Classic, and / hides it there as elsewhere.
