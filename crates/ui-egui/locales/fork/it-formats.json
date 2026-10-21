@@ -56,5 +56,10 @@
   "Imported {n} metadata preset{}": "Predefiniti metadati importati: {n}{:.0}",
   "Imported {n} export preset{}": "Predefiniti di esportazione importati: {n}{:.0}",
   "Exported {n} metadata preset{}": "Predefiniti metadati esportati: {n}{:.0}",
-  "Exported {n} export preset{}": "Predefiniti di esportazione esportati: {n}{:.0}"
+  "Exported {n} export preset{}": "Predefiniti di esportazione esportati: {n}{:.0}",
+  "about {} seconds": "circa {} secondi",
+  "about {} minutes": "circa {} minuti",
+  "about {} hours": "circa {} ore",
+  "Output: {} × {} px": "Uscita: {} × {} px",
+  "Estimated time: {est}": "Tempo stimato: {est}"
 }

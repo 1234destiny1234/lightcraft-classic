@@ -56,5 +56,10 @@
   "Imported {n} metadata preset{}": "იმპორტირებული მეტამონაცემების პრესეტები: {n}{:.0}",
   "Imported {n} export preset{}": "იმპორტირებული ექსპორტის პრესეტები: {n}{:.0}",
   "Exported {n} metadata preset{}": "ექსპორტირებული მეტამონაცემების პრესეტები: {n}{:.0}",
-  "Exported {n} export preset{}": "ექსპორტირებული ექსპორტის პრესეტები: {n}{:.0}"
+  "Exported {n} export preset{}": "ექსპორტირებული ექსპორტის პრესეტები: {n}{:.0}",
+  "about {} seconds": "დაახლ. {} წმ",
+  "about {} minutes": "დაახლ. {} წთ",
+  "about {} hours": "დაახლ. {} სთ",
+  "Output: {} × {} px": "შედეგი: {} × {} პქს",
+  "Estimated time: {est}": "სავარაუდო დრო: {est}"
 }

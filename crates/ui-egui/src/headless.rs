@@ -4574,7 +4574,7 @@ mod tests {
             fn headroom(&mut self) -> Option<f32> {
                 self.0
             }
-            fn upload(&mut self, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
+            fn upload(&mut self, _view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
                 assert_eq!(rgb.len(), width * height * 3);
                 self.1.borrow_mut().push(rgb.iter().copied().fold(0.0, f32::max));
                 Ok(egui::TextureId::User(7))
@@ -4605,6 +4605,57 @@ mod tests {
         }
     }
 
+    /// Gap 14: zoomed in (1:1 tiles) an HDR edit is still drawn above SDR white, from an HDR
+    /// render of the part on screen; the Before side (the photo without its edits) stays SDR;
+    /// View ▸ HDR Preview off shows the SDR rendition everywhere, and back on the HDR again.
+    #[test]
+    fn hdr_edits_stay_hdr_zoomed_in_and_hdr_preview_switches_them_off() {
+        use crate::render::{HDR_BEFORE, HDR_LOUPE, HDR_ZOOMED, PANE_AFTER};
+        use std::cell::RefCell;
+        use std::rc::Rc;
+        struct Fake(Rc<RefCell<Vec<(u8, f32)>>>);
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, view: u8, width: usize, height: usize, rgb: &[f32]) -> Result<egui::TextureId, String> {
+                assert_eq!(rgb.len(), width * height * 3);
+                self.0.borrow_mut().push((view, rgb.iter().copied().fold(0.0, f32::max)));
+                Ok(egui::TextureId::User(7 + u64::from(view)))
+            }
+        }
+        let t = Duration::from_secs(10);
+        let uploads = Rc::new(RefCell::new(Vec::new()));
+        let services = crate::Services { png: None, hdr_output: Some(Box::new(Fake(uploads.clone()))), ..Default::default() };
+        let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+        app.ui.view = crate::state::ViewMode::PhotoGrid;
+        let mut h = Headless::new(app, [1000.0, 700.0], 1.0);
+        h.request("ui.set", json!({"view": "detail"}), t);
+        h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+        h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
+        let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+        assert!(h.step_until(SETTLE, hdr_shown), "the fit loupe shows the HDR texture");
+        // HDR Preview off: the 8-bit SDR rendition, on: HDR again
+        let r = h.request("ui.menu.invoke", json!({"id": "view.hdrPreview"}), t);
+        assert!(!h.app.ui.hdr_preview, "{r:?}");
+        h.settle(SETTLE);
+        assert!(!hdr_shown(&h), "HDR Preview off draws the SDR rendition");
+        h.request("ui.menu.invoke", json!({"id": "view.hdrPreview"}), t);
+        assert!(h.app.ui.hdr_preview);
+        assert!(h.step_until(SETTLE, hdr_shown), "HDR Preview on again");
+        // zoomed in: the part on screen gets its own HDR render, highlights above SDR white
+        h.request("ui.menu.invoke", json!({"id": "view.zoom100"}), t);
+        let zoomed = |h: &Headless| h.app.region_view.is_some() && uploads.borrow().iter().any(|(v, m)| *v == HDR_ZOOMED + PANE_AFTER && *m > 1.0);
+        assert!(h.step_until(SETTLE, zoomed), "zoomed HDR window: {:?}", uploads.borrow());
+        // Before / After side by side, fit: the After stays HDR, the original is SDR
+        h.request("ui.menu.invoke", json!({"id": "view.zoomFit"}), t);
+        h.request("ui.menu.invoke", json!({"id": "view.beforeAfter"}), t);
+        h.settle(SETTLE);
+        assert!(uploads.borrow().iter().all(|(v, _)| *v != HDR_BEFORE), "the Before (no edits) is not an HDR edit");
+        assert!(uploads.borrow().iter().any(|(v, _)| *v == HDR_LOUPE));
+        assert!(h.app.renderer.hdr_view.contains_key(&HDR_LOUPE));
+    }
+
     /// HDR display output touches the loupe only: the navigator / filmstrip thumbnail and the
     /// loupe's 8-bit render of an HDR edit are the same pixels with and without an HDR display
     /// (8-bit SDR rendition, drawn at SDR white), so nothing but the loupe's HDR image can go
@@ -4617,7 +4668,7 @@ mod tests {
             fn headroom(&mut self) -> Option<f32> {
                 Some(4.0)
             }
-            fn upload(&mut self, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+            fn upload(&mut self, _: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
                 Ok(egui::TextureId::User(7))
             }
         }

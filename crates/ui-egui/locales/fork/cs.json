@@ -55,5 +55,15 @@
   "Export Metadata Presets…": "Exportovat předvolby metadat…",
   "Export User Presets…": "Exportovat uživatelské předvolby…",
   "{app} Metadata Presets": "Předvolby metadat {app}",
-  "{app} Export Presets": "Předvolby exportu {app}"
+  "{app} Export Presets": "Předvolby exportu {app}",
+  "Raw Details": "Detaily RAW",
+  "Super Resolution": "Superrozlišení",
+  "Enhance…": "Vylepšit…",
+  "Enhance Preview": "Náhled vylepšení",
+  "Making the preview…": "Vytváří se náhled…",
+  "Click to zoom": "Kliknutím přiblížíte",
+  "Enhancements": "Vylepšení",
+  "Finer detail and edges, less false colour, at the same size.": "Jemnější detaily a hrany, méně falešných barev, ve stejné velikosti.",
+  "Raw Details, then twice the width and height (four times the pixels).": "Detaily RAW, pak dvojnásobná šířka a výška (čtyřikrát více pixelů).",
+  "Estimating time…": "Odhaduje se čas…"
 }

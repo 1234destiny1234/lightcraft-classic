@@ -107,6 +107,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View>Grid View Style"),
     ("view.clipping", "Show Clipping", Some("J"), "View"),
     ("view.visualizeHdr", "Visualize HDR", None, "View>Loupe Info"),
+    // {on?}: HDR edits shown in HDR on an HDR display (off: their SDR rendition everywhere)
+    ("view.hdrPreview", "HDR Preview", None, "View>Loupe Info"),
     ("view.colorReadout", "Color Readout", None, ""),
     ("view.colorReadoutRgb", "Show RGB Color Values", None, "View>Loupe Info"),
     ("view.colorReadoutHsl", "Show HSL Color Values", None, "View>Loupe Info"),
@@ -242,6 +244,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // {ids?, app?}: the original files themselves (a raw stays a raw: no render, no copy), opened
     // in the other editor, e.g. a raw developer
     ("photo.openOriginalInExternal", "Open Original in Other Editor (RAW, no copy)", None, "Photo>Edit In"),
+    ("dialog.enhance", "Enhance…", Some("Cmd+Alt+I"), "Photo"),
     ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
     ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
     ("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
@@ -632,6 +635,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             // {on?}; no params toggles. Toggle Zoom (Z) centres on the focus point when there is one.
             app.ui.settings.zoom_to_focus = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.settings.zoom_to_focus);
             Ok(json!({"on": app.ui.settings.zoom_to_focus}))
+        }
+        "view.hdrPreview" => {
+            // {on?}; no params toggles. Off, an HDR display shows HDR edits as an SDR one does.
+            app.ui.hdr_preview = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.hdr_preview);
+            Ok(json!({"on": app.ui.hdr_preview, "hdrDisplay": app.hdr_headroom.is_some()}))
         }
         "view.faceBoxes" => {
             app.ui.face_boxes = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.face_boxes);
@@ -1601,6 +1609,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "merge.panoramaLast" => crate::merge::start_last(app, "merge.panorama"),
         "merge.hdrPanoramaLast" => crate::merge::start_last(app, "merge.hdrPanorama"),
         "merge.focusStackLast" => crate::merge::start_last(app, "merge.focusStack"),
+        "dialog.enhance" => crate::enhance_ui::open(app),
         "dialog.mergeHdr" => crate::merge::open(app, "merge.hdr"),
         "dialog.faceModel" => {
             let path = match p.get("path").and_then(Value::as_str) {

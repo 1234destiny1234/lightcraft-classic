@@ -72,5 +72,10 @@
   "Imported {n} metadata preset{}": "已匯入 {n} 個中繼資料預設集{:.0}",
   "Imported {n} export preset{}": "已匯入 {n} 個轉存預設集{:.0}",
   "Exported {n} metadata preset{}": "已轉存 {n} 個中繼資料預設集{:.0}",
-  "Exported {n} export preset{}": "已轉存 {n} 個轉存預設集{:.0}"
+  "Exported {n} export preset{}": "已轉存 {n} 個轉存預設集{:.0}",
+  "about {} seconds": "約 {} 秒",
+  "about {} minutes": "約 {} 分鐘",
+  "about {} hours": "約 {} 小時",
+  "Output: {} × {} px": "輸出：{} × {} 像素",
+  "Estimated time: {est}": "預計時間：{est}"
 }

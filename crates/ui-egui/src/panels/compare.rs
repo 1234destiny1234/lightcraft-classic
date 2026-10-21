@@ -225,9 +225,19 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
     let want = (img.width().max(img.height()).min(img_area.width().max(img_area.height()) * 4.0) * ppp)
         .min(2560.0_f32.min(super::detail::texture_side(ui.ctx()) as f32)) as usize;
     let (rw, rh) = if aspect >= 1.0 { (want, (want as f32 / aspect) as usize) } else { ((want as f32 * aspect) as usize, want) };
+    let hdr_view = match slot {
+        Slot::Compare(i) => crate::render::HDR_COMPARE.saturating_add(i),
+        _ => crate::render::HDR_COMPARE,
+    };
+    let mut hdr_key = None;
     if let Some(job) = app.session.render_job(id, rw.max(8), rh.max(8), false, true) {
+        // an HDR edit on an HDR display: also its HDR render, drawn over the 8-bit one (not in a drag)
+        if !gesturing && app.session.interaction.is_none() {
+            hdr_key = super::detail::request_hdr(app, hdr_view, job.clone(), 58);
+        }
         app.renderer.request(slot, job, 60);
     }
+    super::detail::upload_hdr_views(app);
     if let Some(job) = app.session.thumb_job(id, 256) {
         app.renderer.request(Slot::Thumb(id), job, 30);
     }
@@ -240,6 +250,9 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
         display = super::detail::fit_rect(img_area, texture_aspect, zoom, native, ppp, app.ui.pan);
         p.image(tex.tex.id(), display, uv, Color32::WHITE);
         own_aspect = Some(texture_aspect);
+        if let Some(h) = super::detail::hdr_texture(app, hdr_view, id, hdr_key) {
+            p.image(h.tex, display, uv, Color32::WHITE);
+        }
     } else if let Some(tex) = app.renderer.textures.get(&Slot::Thumb(id)) {
         let texture_aspect = tex.size[0].max(1) as f32 / tex.size[1].max(1) as f32;
         display = super::detail::fit_rect(img_area, texture_aspect, zoom, native, ppp, app.ui.pan);
@@ -539,6 +552,7 @@ fn zoomed_tiles(
         Some(view) => {
             ctx.data_mut(|d| d.insert_temp(memory_id, view));
             super::detail::draw_window(p, app, &c, &v, &view);
+            super::detail::draw_hdr_window(p, app, &c, &v, &view);
         }
         None => {
             ctx.data_mut(|d| d.remove::<crate::region::RegionView>(memory_id));

@@ -76,5 +76,10 @@
   "Imported {n} metadata preset{}": "Импортировано наборов метаданных: {n}{:.0}",
   "Imported {n} export preset{}": "Импортировано наборов экспорта: {n}{:.0}",
   "Exported {n} metadata preset{}": "Экспортировано наборов метаданных: {n}{:.0}",
-  "Exported {n} export preset{}": "Экспортировано наборов экспорта: {n}{:.0}"
+  "Exported {n} export preset{}": "Экспортировано наборов экспорта: {n}{:.0}",
+  "about {} seconds": "около {} с",
+  "about {} minutes": "около {} мин",
+  "about {} hours": "около {} ч",
+  "Output: {} × {} px": "Результат: {} × {} пикс.",
+  "Estimated time: {est}": "Примерное время: {est}"
 }

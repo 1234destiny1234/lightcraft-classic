@@ -56,5 +56,10 @@
   "Imported {n} metadata preset{}": "Importované předvolby metadat: {n}{:.0}",
   "Imported {n} export preset{}": "Importované předvolby exportu: {n}{:.0}",
   "Exported {n} metadata preset{}": "Exportované předvolby metadat: {n}{:.0}",
-  "Exported {n} export preset{}": "Exportované předvolby exportu: {n}{:.0}"
+  "Exported {n} export preset{}": "Exportované předvolby exportu: {n}{:.0}",
+  "about {} seconds": "asi {} s",
+  "about {} minutes": "asi {} min",
+  "about {} hours": "asi {} h",
+  "Output: {} × {} px": "Výstup: {} × {} px",
+  "Estimated time: {est}": "Odhadovaný čas: {est}"
 }

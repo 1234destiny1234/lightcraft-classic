@@ -72,5 +72,10 @@
   "Imported {n} metadata preset{}": "メタデータプリセットを {n} 件読み込みました{:.0}",
   "Imported {n} export preset{}": "書き出しプリセットを {n} 件読み込みました{:.0}",
   "Exported {n} metadata preset{}": "メタデータプリセットを {n} 件書き出しました{:.0}",
-  "Exported {n} export preset{}": "書き出しプリセットを {n} 件書き出しました{:.0}"
+  "Exported {n} export preset{}": "書き出しプリセットを {n} 件書き出しました{:.0}",
+  "about {} seconds": "約 {} 秒",
+  "about {} minutes": "約 {} 分",
+  "about {} hours": "約 {} 時間",
+  "Output: {} × {} px": "出力: {} × {} px",
+  "Estimated time: {est}": "予想時間: {est}"
 }
