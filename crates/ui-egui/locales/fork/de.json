@@ -1334,6 +1334,6 @@
   "Ask (show “N new”)": "Fragen („N neu“ anzeigen)",
   "Add automatically": "Automatisch hinzufügen",
   "Checking folders for new photos": "Ordner werden auf neue Fotos geprüft",
-  "Automatically write changes into XMP sidecars": "Änderungen automatisch in XMP-Filialdateien schreiben",
-  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Von anderen Apps geänderte XMP-Filialdateien automatisch einlesen (bei hier unveränderten Fotos)"
+  "Automatically write changes into XMP sidecars": "Änderungen automatisch in XMP-Begleitdateien schreiben",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Von anderen Apps geänderte XMP-Begleitdateien automatisch einlesen (bei hier unveränderten Fotos)"
 }

@@ -68,6 +68,6 @@
   "Estimating time…": "Odhaduje se čas…",
   "Input": "Vstup",
   "Output": "Výstup",
-  "Automatically write changes into XMP sidecars": "Automaticky zapisovat změny do souborů XMP",
-  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automaticky načítat soubory XMP změněné jinými aplikacemi (u fotek zde nezměněných)"
+  "Automatically write changes into XMP sidecars": "Automaticky zapisovat změny do přidružených souborů XMP",
+  "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automaticky načítat přidružené soubory XMP změněné jinými aplikacemi (u fotek zde nezměněných)"
 }
