@@ -3,7 +3,13 @@ use std::fmt::Write as _;
 
 fn main() {
     let dir = std::path::Path::new("data/cameras");
-    println!("cargo:rerun-if-changed=data/cameras");
+    // Never watch a path that doesn't exist: cargo then counts the script as stale on every build, and this
+    // crate and everything above it (engine, UI, MCP, CLI) recompiled on every cargo run.
+    if dir.is_dir() {
+        println!("cargo:rerun-if-changed=data/cameras");
+    } else {
+        println!("cargo:rerun-if-changed=build.rs");
+    }
     let mut files: Vec<_> = std::fs::read_dir(dir)
         .map(|rd| rd.filter_map(|e| e.ok()).map(|e| e.path()).filter(|p| p.extension().is_some_and(|x| x == "toml")).collect())
         .unwrap_or_default();

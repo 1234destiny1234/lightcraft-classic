@@ -290,3 +290,20 @@ fn favorites_validate_roundtrip_and_stars_toggle_without_selecting() {
     assert_eq!(h.app.ui.settings.light_theme, LightTheme::Paper);
     assert_eq!(h.app.ui.settings.dark_theme, DarkTheme::Charcoal);
 }
+
+#[test]
+fn the_cloud_icon_menu_opens_each_sync_settings_page() {
+    let mut h = Headless::new(app(), [1400.0, 900.0], 1.0);
+    h.settle(Duration::from_secs(60));
+    for (item, tab) in [("menu:cloud-peerSync", "sync"), ("menu:cloud-immich", "connections")] {
+        h.app.ui.dialog = None;
+        h.step();
+        assert_eq!(h.request("ui.clickWidget", json!({"id": "icon:cloud"}), T)["ok"], true);
+        h.step();
+        h.step();
+        assert_eq!(h.request("ui.clickWidget", json!({"id": item}), T)["ok"], true);
+        h.step();
+        h.step();
+        assert!(matches!(&h.app.ui.dialog, Some(crate::state::Dialog::Settings { tab: t }) if t == tab), "{item} opens Settings ▸ {tab}");
+    }
+}

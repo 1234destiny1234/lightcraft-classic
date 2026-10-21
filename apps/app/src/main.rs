@@ -598,10 +598,10 @@ fn services(cc: &eframe::CreationContext<'_>, log_file: Option<&std::path::Path>
         open_with: Some(Box::new(editors::open_with)),
         open_all_with: Some(Box::new(editors::open_all_with)),
         check_editor: Some(Box::new(editors::check)),
+        storage_access: None,
         open_url: Some(Box::new(|url: &str| {
-            if !url.starts_with("https://") {
-                return Err("only https links are opened".into());
-            }
+            // https links, plus the local page Preview in Browser generates (nothing else)
+            lcc_ui_egui::links::check_browser_url(url)?;
             let status = if cfg!(target_os = "macos") {
                 std::process::Command::new("open").arg(url).status()
             } else if cfg!(target_os = "windows") {
@@ -1179,9 +1179,11 @@ fn main() -> eframe::Result {
                     let supplied = control_token_arg.is_some();
                     match control_token(control_token_arg) {
                         Ok(token) => {
-                            publish_control_token(port, &token, supplied);
-                            let rx = control_server::start(port, token, cc.egui_ctx.clone());
-                            app = app.with_control(rx);
+                            // bind first: the token file is written only once the port is ours
+                            let publish = |token: &str| publish_control_token(port, token, supplied);
+                            if let Some(rx) = control_server::start(port, token, cc.egui_ctx.clone(), publish) {
+                                app = app.with_control(rx);
+                            }
                         }
                         Err(e) => log::error!("no control server: {e}"),
                     }

@@ -72,7 +72,7 @@ fn decode(bytes: &[u8]) -> Result<UiState, String> {
     if bad_docking {
         fields.remove("docking");
     }
-    serde_json::from_value(saved).map_err(|e| e.to_string())
+    serde_json::from_value::<UiState>(saved).map(UiState::sanitized).map_err(|e| e.to_string())
 }
 
 /// Writes the settings when they change.
@@ -128,5 +128,17 @@ impl Writer {
                 self.failing = true;
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn decode_sanitizes_like_other_load_paths() {
+        let raw = UiState { develop_classic: false, ..UiState::default() };
+        let ui = decode(&serde_json::to_vec(&raw).unwrap()).unwrap();
+        assert!(ui.develop_classic, "a loaded state goes through UiState::sanitized");
     }
 }

@@ -37,7 +37,7 @@ impl ServerOptions {
 }
 
 /// Normalize what the user typed: trim, add `https://` when there is no scheme, drop a trailing
-/// `/` and a trailing `/api`. Plain `http://` is refused except for localhost / loopback addresses.
+/// `/` and a trailing `/api`. Plain `http://` is accepted; [`plain_http_warning`] says why it is not recommended.
 pub fn normalize_url(input: &str) -> Result<String, ImmichError> {
     let mut s = input.trim().to_string();
     if s.is_empty() {
@@ -52,15 +52,16 @@ pub fn normalize_url(input: &str) -> Result<String, ImmichError> {
     if let Some(stripped) = s.strip_suffix("/api") {
         s = stripped.to_string();
     }
-    let url = lcc_net::Url::parse(&s).map_err(ImmichError::from)?;
-    // the API key travels in every request: plain http only to this machine itself
-    if !url.tls && !is_loopback_host(&url.host) {
-        return Err(ImmichError::BadUrl(format!(
-            "{} uses plain http://, which would send the API key unencrypted; use https:// (plain http is allowed only for localhost)",
-            url.host
-        )));
-    }
+    lcc_net::Url::parse(&s).map_err(ImmichError::from)?;
     Ok(s)
+}
+
+/// The warning to show for a server reached over plain `http://` (the API key and the photos travel unencrypted),
+/// or `None` for https and for this machine itself (localhost / loopback).
+pub fn plain_http_warning(input: &str) -> Option<&'static str> {
+    let url = lcc_net::Url::parse(&normalize_url(input).ok()?).ok()?;
+    (!url.tls && !is_loopback_host(&url.host))
+        .then_some("This server uses plain http://: the connection is not encrypted, so the API key and your photos can be read on the network. Not recommended: use https:// if the server supports it.")
 }
 
 /// `localhost`, `*.localhost` or a loopback address (`127.0.0.0/8`, `::1`).
@@ -340,6 +341,14 @@ impl Client {
     }
 
     /// `DELETE /assets` (not forced): the assets go to Immich's trash, never a hard delete.
+    /// `POST /trash/restore/assets`: bring trashed assets back.
+    pub fn restore_assets(&self, ids: &[String]) -> Result<(), ImmichError> {
+        for id in ids {
+            path_id(id)?;
+        }
+        self.send(Method::Post, "/trash/restore/assets", Some(&serde_json::json!({ "ids": ids })), true).map(|_| ())
+    }
+
     pub fn trash_assets(&self, ids: &[String]) -> Result<(), ImmichError> {
         for chunk in ids.chunks(500) {
             for id in chunk {

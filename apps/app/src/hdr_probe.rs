@@ -81,7 +81,7 @@ impl eframe::App for Probe {
             && let Some(h) = self.hdr.as_mut()
         {
             h.set_upload_headroom(RAMP_MAX);
-            match h.upload(RAMP_W, RAMP_H, &ramp()) {
+            match h.upload(lcc_ui_egui::render::HDR_LOUPE, RAMP_W, RAMP_H, &ramp()) {
                 Ok(id) => self.ramp = Some(id),
                 Err(e) => self.log.line(format!("ramp texture: {e}")),
             }

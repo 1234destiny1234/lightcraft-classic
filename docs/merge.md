@@ -162,13 +162,22 @@ scale in `BaselineExposure`; raw sources keep their DNG colour tags (camera RGB)
   1.9 s and 1.9 GB peak (40 GB and minutes before); the full 97 MP merge 27 s, peak 18.5 GB, set by the stitch
   (the projected frames and the multi-band blend at full size), which `maxMegapixels` and the memory fit bound.
 
+- HDR frames are held as half floats ([`crates/merge/src/half.rs`](../crates/merge/src/half.rs)) from the moment each
+  is decoded, and so is each frame's saturation map: 8 bytes a pixel instead of 16. A 5-frame 48 MP merge peaks at
+  3.6 GB (5.1 GB before); its radiance agrees with the 32-bit result to 2·10⁻⁵ (the half step is 2⁻¹¹ relative,
+  below any photosite's shot noise). The merged radiance itself stays 32-bit.
+- JPEG, PNG and integer TIFF brackets carry the camera's tone curve, not the sRGB curve the decoder undoes. With EXIF
+  exposures spanning half a stop or more, the response is recovered from the bracket (Debevec & Malik, SIGGRAPH 1997:
+  `g(Z) = ln E + ln Δt`, hat-weighted least squares with a smoothness term, one curve per channel, white kept at 1.0)
+  and every frame mapped through it before merging ([`crates/merge/src/response.rs`](../crates/merge/src/response.rs)).
+  Without EXIF exposures the decoded values are used as they are.
+
 ## Limits (known gaps)
 
 - No lens-distortion model in the panorama bundle adjustment (rectilinear lenses assumed); no
   360° wrap-around; flat (translating-camera) scans are fitted with the rotation model. Panoramas and HDR
   panoramas carry no lens corrections, nor does an HDR whose frames don't share an orientation (they are turned
   before merging).
-- No camera response calibration for JPEG brackets (sRGB decoding is taken as linear light).
 - AI Denoise doesn't run on merged DNGs (they are linear RGB; the denoiser takes Bayer raws), unlike Lightroom's.
 - Boundary Warp is a separable stretch, not a content-preserving mesh warp; Fill Edges is diffusion,
   not patch synthesis.

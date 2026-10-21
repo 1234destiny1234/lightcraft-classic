@@ -839,10 +839,15 @@ fn resolve_deletion(s: &mut Session, p: &Value) -> Result<Value> {
         Some("keep") => false,
         _ => return Err(bad(C, "`action` must be apply or keep")),
     };
-    let assets: BTreeSet<String> =
-        p.get("assets").and_then(Value::as_array).map(|a| a.iter().filter_map(Value::as_str).map(str::to_string).collect()).unwrap_or_default();
+    // `assets` omitted (or null) = every queued deletion; a list = exactly those, so `[]` resolves
+    // nothing. Anything else is refused rather than guessed at: `apply` is destructive.
+    let assets: Option<BTreeSet<String>> = match p.get("assets") {
+        None | Some(Value::Null) => None,
+        Some(Value::Array(a)) => Some(a.iter().filter_map(Value::as_str).map(str::to_string).collect()),
+        Some(_) => return Err(bad(C, "`assets` must be a list of asset ids (omit it for all queued)")),
+    };
     let st = state_of(s, &id).clone();
-    let picked: Vec<Deletion> = st.deletions.iter().filter(|d| assets.is_empty() || assets.contains(&d.asset)).cloned().collect();
+    let picked: Vec<Deletion> = st.deletions.iter().filter(|d| assets.as_ref().is_none_or(|a| a.contains(&d.asset))).cloned().collect();
     let mut done = Vec::new();
     let mut failed = Vec::new();
     if apply {
@@ -1066,7 +1071,7 @@ pub fn specs() -> Vec<CommandSpec> {
         cmd!(query "immich.syncConflicts", "Immich Sync Conflicts", [], None, "{account?} → {conflicts: [{photo, assetId, fileName, field, catalog, immich, detected, decided?}]}", always, conflicts),
         cmd!(query "immich.resolveConflict", "Resolve Immich Sync Conflict", [], None, "{account?, keep: catalog|immich, ids?: photos, assetId?, field?, sync?: bool, background?: bool} — decide conflicts (default: all); the next sync applies them (sync: run it now) → {decided, sync?}", always, resolve),
         cmd!(query "immich.setSync", "Immich Sync Settings", [], None, "{account?, config: {rules?: {rating|favorite|archived|description|keywords|location|captured: {direction: twoWay|toImmich|fromImmich|off, policy: catalog|immich|newest|ask}}, favorite?: pick|fiveStars, description?: caption|title, intervalMinutes?, onPublish?, pushPeople?, albums?: {direction, policy} (collections ↔ albums, immich.syncAlbums; default off = only albums linked by hand, policy ask)}} → {config}", always, set_config),
-        cmd!(query "immich.resolveDeletion", "Resolve Immich Deletion", [], None, "{account?, assets?: [asset ids] (default all queued), action: apply|keep} — apply: a photo whose asset is in Immich's trash goes to Recently Deleted, an asset whose photo was deleted goes to Immich's trash (never a hard delete); keep: dismiss → {resolved, failed}", always, resolve_deletion),
+        cmd!(query "immich.resolveDeletion", "Resolve Immich Deletion", [], None, "{account?, assets?: [asset ids] (omitted = all queued; [] = none), action: apply|keep} — apply: a photo whose asset is in Immich's trash goes to Recently Deleted, an asset whose photo was deleted goes to Immich's trash (never a hard delete); keep: dismiss → {resolved, failed}", always, resolve_deletion),
         cmd!(query "immich.importPeople", "Import People from Immich", [], None, "{account?, ids?: photos (default all linked), includeHidden?: bool} — read Immich's faces and people into the photos' face regions, marked from Immich (unconfirmed ones are replaced on the next import; regions the photo had are kept) → {photos, added, removed, skipped, more, people: [{id, name, birthDate, hidden}]}", always, import_people),
         cmd!(
             "immich.confirmFaces",

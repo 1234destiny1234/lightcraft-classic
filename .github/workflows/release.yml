@@ -13,10 +13,11 @@
 # it is a dry run.
 #
 # Every job runs on the maintainer's self-hosted runners (docs/ci.md, docs/releasing.md): Linux and
-# Flatpak in containers on gpu0, macOS on mac0, Windows x64 on win0, Windows ARM64 natively on
-# SNAPDRAGON. A manual dispatch is a dry run by default (`dry_run`): the signing jobs then run
-# without the `release` environment (unsigned), no draft is created and nothing is uploaded, so it
-# can't create or change a GitHub Release or tag.
+# Flatpak in containers on gpu0, Android (arm64 + x86_64, cross-compiled) on gpu0, macOS on mac0,
+# Windows x64 on win0, Windows ARM64 natively on SNAPDRAGON. A manual dispatch is a dry run by default
+# (`dry_run`): the signing jobs then run without the `release` environment (unsigned), no draft is
+# created and nothing is uploaded, so it can't create or change a GitHub Release or tag. `only` limits
+# a dispatch to some platforms (e.g. `only: android` to try the Android build alone).
 name: Release
 
 on:
@@ -32,6 +33,10 @@ on:
         description: "Dry run: build every platform unsigned, never draft or change a GitHub Release"
         type: boolean
         default: true
+      only:
+        description: "Only these platforms, comma-separated (macos, windows, linux, flatpak, android, web, riscv64, freebsd); empty: all"
+        type: string
+        default: ""
 
 permissions:
   contents: read
@@ -47,6 +52,7 @@ env:
   RUST_BACKTRACE: 1
   BUILD_SHA: ${{ github.sha }}
   INPUT_VERSION: ${{ inputs.version }}
+  INPUT_ONLY: ${{ inputs.only }}
   # a manual dispatch with dry_run (the default): no `release` environment, no draft release
   DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && '1' || '' }}
 
@@ -106,6 +112,11 @@ jobs:
           TITLE: ${{ steps.v.outputs.display_name }} v${{ steps.v.outputs.version }}
           PRERELEASE: ${{ steps.v.outputs.prerelease }}
         run: |
+          if [ -n "$INPUT_ONLY" ] && [ -z "$DRY_RUN" ]; then
+            # a real run would clear the draft's assets and upload only some platforms
+            echo "::error::'only' is for dry runs: a release builds every platform"
+            exit 1
+          fi
           if [ -n "$DRY_RUN" ]; then
             echo "Dry run: no draft release, nothing uploaded"
             echo "publish=false" >>"$GITHUB_OUTPUT"
@@ -140,6 +151,7 @@ jobs:
     timeout-minutes: 90
     name: macOS universal
     needs: version
+    if: ${{ (!inputs.only || contains(inputs.only, 'macos')) }}
     # uploads its files to the draft release (only when version says publish)
     permissions:
       contents: write
@@ -227,6 +239,7 @@ jobs:
     timeout-minutes: 90
     name: Windows ${{ matrix.arch }}
     needs: version
+    if: ${{ (!inputs.only || contains(inputs.only, 'windows')) }}
     # uploads its files to the draft release (only when version says publish)
     permissions:
       contents: write
@@ -357,6 +370,7 @@ jobs:
     timeout-minutes: 90
     name: Linux ${{ matrix.arch }}
     needs: version
+    if: ${{ (!inputs.only || contains(inputs.only, 'linux')) }}
     # uploads its files to the draft release (only when version says publish)
     permissions:
       contents: write
@@ -484,7 +498,7 @@ jobs:
       contents: write
     # Off while the repo variable RELEASE_FLATPAK is 'false' (the container smoke test can't reach a D-Bus
     # session yet); on otherwise.
-    if: vars.RELEASE_FLATPAK != 'false'
+    if: ${{ vars.RELEASE_FLATPAK != 'false' && (!inputs.only || contains(inputs.only, 'flatpak')) }}
     # Repackages the Linux job's tarball (the same binaries as the AppImage/deb/rpm); no Rust
     # build here. Self-hosted gpu0, in an Ubuntu 24.04 container (flatpak-builder 1.4); privileged,
     # because flatpak-builder and `flatpak run` sandbox with bubblewrap. The Flathub runtime and SDK
@@ -578,7 +592,7 @@ jobs:
       contents: write
     # Disabled 2026-10-13 (maintainer): not built for releases. Set the repository variable
     # RELEASE_RISCV64=true to re-enable; it then needs an Ubuntu 24.04 container on gpu0 (it uses sudo/apt).
-    if: vars.RELEASE_RISCV64 == 'true'
+    if: ${{ vars.RELEASE_RISCV64 == 'true' && (!inputs.only || contains(inputs.only, 'riscv64')) }}
     # Cross-compiled on x86_64 (no hosted RISC-V runners) against the runner's own Ubuntu release
     # from ports.ubuntu.com, so the binaries need that release's glibc (24.04: 2.39). 22.04's
     # riscv64 ports lag its amd64 updates, which breaks the multiarch install. tar.gz only; the
@@ -674,12 +688,13 @@ jobs:
     # uploads its files to the draft release (only when version says publish)
     permissions:
       contents: write
-    # Off until the maintainer turns it on (repository variable RELEASE_ANDROID=true), like riscv64.
-    if: vars.RELEASE_ANDROID == 'true'
+    # On unless the repository variable RELEASE_ANDROID is 'false' (like Flatpak). Cross-compiles both
+    # ABIs on gpu0: arm64-v8a (phones) and x86_64 (the emulator, Chromebooks), in one cargo run.
+    if: ${{ vars.RELEASE_ANDROID != 'false' && (!inputs.only || contains(inputs.only, 'android')) }}
     runs-on: [self-hosted, Linux, X64, lcc]
-    # signs the APK and the Play Store bundle (ANDROID_KEYSTORE_BASE64 etc. are optional: without
-    # them the build is debug-signed and a warning says so)
-    environment: release
+    # signs the APKs and the Play Store bundle (ANDROID_KEYSTORE_BASE64 etc. are optional: without
+    # them the build is debug-signed and a warning says so); a dry run signs nothing
+    environment: ${{ (github.event_name == 'workflow_dispatch' && inputs.dry_run) && '' || 'release' }}
     defaults:
       run:
         shell: nice -n 19 bash -e {0}
@@ -697,10 +712,14 @@ jobs:
           ref: 3d9ab3a132ed0eff457e424226a435a901da30d3 # bump deliberately
           path: craft-fonts
       - name: Keep the build cache between runs
-        run: echo "CARGO_TARGET_DIR=${CARGO_TARGET_DIR:-$HOME/.cache/lcc-release-android-$RUNNER_NAME}" >> "$GITHUB_ENV"
+        # One cache for both gpu0 runner instances (only one Android build runs at a time: the release
+        # concurrency group), so whichever picks the job up builds incrementally. It also keeps the
+        # debug keystore that signs builds when no release key is configured (docs/android.md).
+        run: echo "CARGO_TARGET_DIR=$HOME/.cache/lcc-release-android" >> "$GITHUB_ENV"
+      - uses: ./.github/actions/sccache
       - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
         with:
-          targets: aarch64-linux-android
+          targets: aarch64-linux-android, x86_64-linux-android
       - name: Android NDK
         run: .github/scripts/install-android-ndk.sh
       - name: Android SDK and JDK
@@ -718,7 +737,7 @@ jobs:
           else
             echo "::warning::no ANDROID_KEYSTORE_BASE64 secret: the Android build is debug-signed (not for the Play Store)"
           fi
-      - name: Build and package (APK + AAB)
+      - name: Build and package (an APK per ABI + one AAB)
         env:
           CRAFT_FONTS_DIR: ${{ github.workspace }}/craft-fonts
           CRAFT_FONTS_REQUIRED: "1"
@@ -726,7 +745,9 @@ jobs:
           ANDROID_KEY_ALIAS: ${{ secrets.ANDROID_KEY_ALIAS }}
           ANDROID_KEY_PASSWORD: ${{ secrets.ANDROID_KEY_PASSWORD }}
         run: |
-          cargo xtask android package --aab
+          # earlier versions' files stay in the persistent target dir: start from none
+          rm -f "$CARGO_TARGET_DIR"/android/*.apk "$CARGO_TARGET_DIR"/android/*.aab
+          cargo xtask android package --abi arm64 --abi x86_64 --split --aab
           mkdir -p dist/release
           /bin/cp -f "$CARGO_TARGET_DIR"/android/*.apk "$CARGO_TARGET_DIR"/android/*.aab dist/release/
           rm -f "$RUNNER_TEMP/release.keystore"
@@ -760,7 +781,7 @@ jobs:
       contents: write
     # Disabled 2026-10-13 (maintainer): not built for releases. Set the repository variable
     # RELEASE_FREEBSD=true to re-enable (the VM needs KVM on gpu0).
-    if: vars.RELEASE_FREEBSD == 'true'
+    if: ${{ vars.RELEASE_FREEBSD == 'true' && (!inputs.only || contains(inputs.only, 'freebsd')) }}
     # Build in a FreeBSD 14.3 VM, the same image and packages as .github/workflows/freebsd.yml.
     runs-on: [self-hosted, Linux, X64, lcc]
     timeout-minutes: 180
@@ -833,6 +854,7 @@ jobs:
     timeout-minutes: 90
     name: Web (wasm)
     needs: version
+    if: ${{ (!inputs.only || contains(inputs.only, 'web')) }}
     # uploads its files to the draft release (only when version says publish)
     permissions:
       contents: write

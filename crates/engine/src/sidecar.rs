@@ -131,6 +131,8 @@ pub struct SidecarData {
     pub usage_terms: Option<String>,
     pub copyright_url: Option<String>,
     pub creator: Option<String>,
+    /// The creator's contact details, when the sidecar states any.
+    pub contact: Option<lcc_meta::CreatorContact>,
     pub location: Option<String>,
     pub city: Option<String>,
     pub state: Option<String>,
@@ -187,6 +189,7 @@ pub fn parse_sidecar(xmp: &str, target: crate::crs::Target) -> std::result::Resu
         usage_terms: m.usage_terms.clone(),
         copyright_url: m.copyright_url.clone(),
         creator: m.artist.clone(),
+        contact: (!m.contact.is_empty()).then(|| m.contact.clone()),
         location: lc("location").or_else(|| m.sublocation.clone()),
         city: m.city.clone(),
         state: m.state.clone(),
@@ -317,6 +320,9 @@ pub fn merge_into(p: &mut Photo, sc: &SidecarData, now: &str) -> bool {
         p.label = l;
     }
     let m = &mut p.meta;
+    if let Some(c) = &sc.contact {
+        m.contact.clone_from(c);
+    }
     for (src, dst) in [
         (&sc.title, &mut m.title),
         (&sc.caption, &mut m.caption),
@@ -424,6 +430,7 @@ fn packet(p: &Photo, cat: &lcc_catalog::Catalog, remove_location: bool, gps: boo
         usage_terms: nz(&p.meta.usage_terms),
         copyright_url: nz(&p.meta.copyright_url),
         artist: nz(&p.meta.creator),
+        contact: p.meta.contact.clone(),
         keywords: p.meta.keywords.clone(),
         rating: Some(p.rating.min(5) as i8),
         label: p.label.map(|l| cat.label_name(l)),
@@ -496,6 +503,8 @@ pub const OWNED: &[&str] = &[
     "xmpRights:Marked",
     "xmpRights:UsageTerms",
     "xmpRights:WebStatement",
+    "photoshop:AuthorsPosition",
+    "Iptc4xmpCore:CreatorContactInfo",
     "lc:*",
     "lcvid:*",
     "lcpx:*",
@@ -733,7 +742,16 @@ fn read_jpeg_xmp(reader: &mut (impl Read + Seek), header_span: u64, marker_steps
 /// Photo ids touched by an op (for auto-write).
 pub(crate) fn op_photos(op: &Op, out: &mut Vec<PhotoId>) {
     match op {
-        Op::SetRating { id, .. } | Op::SetFlag { id, .. } | Op::SetLabel { id, .. } | Op::SetDevelop { id, .. } | Op::SetMeta { id, .. }
+        // every edit the sidecar carries: a kind left out here keeps its old value in the sidecar,
+        // and a later folder sync would read that back over the edit
+        Op::SetRating { id, .. }
+        | Op::SetFlag { id, .. }
+        | Op::SetLabel { id, .. }
+        | Op::SetDevelop { id, .. }
+        | Op::SetMeta { id, .. }
+        | Op::SetCaptured { id, .. }
+        | Op::SetVideoTrim { id, .. }
+        | Op::SetVideoPoster { id, .. }
             if !out.contains(id) =>
         {
             out.push(*id);
@@ -1702,5 +1720,21 @@ mod jpeg_header_tests {
             assert_eq!(reader.bytes_read, read);
             assert!(reader.cursor.position() <= span as u64);
         }
+    }
+
+    /// Capture-time, trim and poster edits reach the auto-write, alone and inside a batch, so the
+    /// sidecar doesn't keep the old value for a later folder sync to read back over the edit.
+    #[test]
+    fn capture_time_trim_and_poster_edits_are_auto_written() {
+        use super::{Op, PhotoId, op_photos};
+        let (a, b, c) = (PhotoId(1), PhotoId(2), PhotoId(3));
+        let ops = [
+            Op::SetCaptured { id: a, captured: Some("2024-05-01T10:00:00".into()) },
+            Op::Batch { ops: vec![Op::SetVideoTrim { id: b, trim_in: 1.0, trim_out: Some(2.0) }, Op::SetVideoPoster { id: c, time: Some(1.5) }] },
+            Op::SetCaptured { id: a, captured: None },
+        ];
+        let mut ids = Vec::new();
+        ops.iter().for_each(|o| op_photos(o, &mut ids));
+        assert_eq!(ids, vec![a, b, c]);
     }
 }

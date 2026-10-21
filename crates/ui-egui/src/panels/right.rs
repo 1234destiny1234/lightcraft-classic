@@ -51,7 +51,16 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         // Edit: Lightroom Classic's Previous / Sync… bar under the panels, outside the scrolling
         let full = ui.available_rect_before_wrap();
         let footer = (app.ui.right == RightPanel::Edit).then(|| Rect::from_min_max(pos2(full.left(), full.bottom() - SYNC_BAR_H), full.max));
-        let body = footer.map_or(full, |f| Rect::from_min_max(full.min, pos2(full.right(), f.top())));
+        let mut body = footer.map_or(full, |f| Rect::from_min_max(full.min, pos2(full.right(), f.top())));
+        // Edit: the histogram pinned above the scrolling controls, so it stays in view
+        if app.ui.right == RightPanel::Edit && app.ui.histogram {
+            let pinned = ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
+                ui.spacing_mut().item_spacing.y = 0.0;
+                super::edit::pinned_histogram(app, ui, id);
+            });
+            let bottom = pinned.response.rect.bottom().clamp(body.top(), body.bottom());
+            body = Rect::from_min_max(pos2(body.left(), bottom), body.max);
+        }
         ui.scope_builder(egui::UiBuilder::new().max_rect(body), |ui| {
             let mut area = egui::ScrollArea::vertical().id_salt("right-scroll").auto_shrink([false, false]);
             if let Some(offset) = held {
@@ -69,7 +78,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             let scrolled = area.show(ui, |ui| {
                 ui.spacing_mut().item_spacing.y = 0.0;
                 match app.ui.right {
-                    RightPanel::Edit => super::edit::show(app, ui, id),
+                    RightPanel::Edit => super::edit::show_controls(app, ui, id),
                     RightPanel::Profiles => super::profiles::show(app, ui, id),
                     RightPanel::Crop => classic_crop::show(app, ui, id),
                     RightPanel::Remove => remove(app, ui, id),

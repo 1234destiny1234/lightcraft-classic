@@ -137,10 +137,24 @@ construction, so you never get an accidental tone inversion.
 </tr>
 </table>
 
+### 📊 Histogram & scopes
+The histogram stays pinned at the top of the Edit panel while the controls scroll under it. Drag across it to move
+Blacks, Shadows, Exposure, Highlights or Whites, as in Lightroom Classic. Beside the RGB, Luminance, R/G/B and Chroma
+histograms it has a grading suite's scopes: **Waveform** (red, green and blue overlaid), **RGB Parade** and
+**Vectorscope** with skin-tone line, all on linear or logarithmic scales.
+
+<p align="center">
+  <img src="docs/images/classic/scopes.jpg" alt="The Edit panel's histogram in four modes: RGB histogram, RGB Parade, Waveform with red, green and blue overlaid, and Vectorscope with amber graticule and colour targets" width="70%">
+</p>
+
 ## Color grading, the cinematic way
 
-Split-tone shadows, midtones and highlights independently with drag-anywhere colour wheels. Below, Dorothea Lange's
-*Migrant Mother* gets a warm, print-like tone (highlights at 42°, shadows at 28°) in two drags.
+Split-tone shadows, midtones and highlights independently with drag-anywhere colour wheels, then set how they blend and
+balance. Below, warm highlights (42°) and cool shadows (215°) on a lake at sunset.
+
+<p align="center">
+  <img src="docs/images/classic/grading.jpg" alt="Develop module with the Color Grading panel open: Midtones, Shadows and Highlights wheels with warm highlights and cool shadows on a lake scene" width="100%">
+</p>
 
 <br>
 
@@ -149,6 +163,10 @@ Split-tone shadows, midtones and highlights independently with drag-anywhere col
 Hold <kbd>\\</kbd> to peek at the original, press <kbd>Y</kbd> for side by side, or <kbd>Shift</kbd>+<kbd>Y</kbd> for a
 split view. Every screenshot in this README is the real app, rendered headless from the procedural demo library by
 [`docs/showcase/classic.jsonl`](docs/showcase/classic.jsonl) through the [control channel](#built-for-agents).
+
+<p align="center">
+  <img src="docs/images/classic/before-after.jpg" alt="Develop module in Before/After side by side: the original lake photo on the left, the edited one with Highlights -55, Shadows +35, a sky mask and colour grading on the right" width="100%">
+</p>
 
 <br>
 
@@ -198,8 +216,9 @@ Then tone it with Color Grading for selenium, sepia or split-tone prints.
 
 ## Organize everything
 
-A library that stays out of your way: **All Photos**, **Recently Added**, **Picks**, **By Date**, **Albums** nested in
-**Folders**, and **Recently Deleted**. Rate with <kbd>0</kbd>–<kbd>5</kbd>, flag with <kbd>P</kbd> / <kbd>X</kbd> /
+A library that stays out of your way: the **Catalog** (All Photos, Quick Collection, Previous Import, Recently Added,
+Picks, Recently Deleted), **By Date**, **Folders** and **Collections** in sets, with smart collections. The filter bar
+takes several keywords, cameras or lenses at once. Rate with <kbd>0</kbd>–<kbd>5</kbd>, flag with <kbd>P</kbd> / <kbd>X</kbd> /
 <kbd>U</kbd>, colour-label with <kbd>6</kbd>–<kbd>9</kbd>. Search understands fields:
 `rating:>3 flag:pick iso:>800 camera:x2 date:2026-04 keyword:mountains`. Every view sorts by capture date,
 import date, edit date, name, rating, size or at random (a stable shuffle; View → Sort → Reshuffle for a new one). Albums also have a **Custom Order**: drag photos in the grid or filmstrip to set the sequence of a story, and slideshows, books, prints, exports and Rename `{seq}` follow it. The justified **Photo Grid** and **Square Grid** views are virtualized,
@@ -221,7 +240,7 @@ ProRes, DNxHR, APV or MPEG-2 decode in pure Rust. Play a clip in the loupe (<kbd
 <kbd>→</kbd> for single frames), drag the trim handles, pick the poster frame the grid shows, and capture any frame as
 a photo. The Light and Color controls (and presets that use only them) grade every frame. Export writes H.264 MP4 or
 ProRes MOV with the trim, the grade and the sound (graded on the GPU for H.264); `<cli> render clip.mov -o out.mp4 --trim 2,8` does the same from
-the command line. Playback is silent for now, and masks, spot removal, lens corrections and crop don't apply to video.
+the command line. Interlaced H.264 (AVCHD 1080i) is deinterlaced. Masks, spot removal, lens corrections and crop don't apply to video.
 See [docs/video.md](docs/video.md).
 
 <br>
@@ -316,12 +335,13 @@ through the same entry point. An agent can cull a shoot, develop it, mask a sky 
 
 The app is young and moving fast. **Where we honestly stand** (details in the [roadmap](ROADMAP.md#where-we-stand)):
 
-- **By feature count we're at ~89%** of Lightroom (core features 98%), tracked row by row in
+- **By feature count we're at ~89%** of Lightroom (core features 96%, important ones 91%; 497 of 598 rows done and 66
+  partial), tracked row by row in
   [docs/parity-checklist.md](docs/parity-checklist.md).
 - **As a day-to-day Lightroom replacement we're nearer 60–70%.** It's great for JPEG/DNG and most Nikon / Sony /
   older-Canon raws on one machine.
 - **The biggest gaps:**
-  - **camera colour calibration:** Sony, Nikon, Panasonic, Fujifilm and Canon CR3 raws have guarded estimates from their camera JPEGs, with built-in profiles for eleven bodies (ILCA-99M2, ILCE-7CR, ILCE-7M4, X-H2S, X-T4, Nikon Z 6II, Z 8, D5300, D750, D780, D90); measured calibration is missing, and other raws or rejected fits retain a neutral matrix;
+  - **camera colour calibration:** Sony, Nikon, Panasonic, Fujifilm and Canon CR3 raws have guarded estimates from their camera JPEGs, with built-in profiles for eleven bodies (ILCA-99M2, ILCE-7CR, ILCE-7M4, X-H2S, X-T4, Nikon Z 6II, Z 8, D5300, D750, D780, D90), matrices fitted to measured spectral sensitivities for 52 more (Profile ▸ Calibrated camera colour), and your own `.dcp` camera profiles import; a measured calibration database of our own is missing, and other raws retain a neutral matrix;
   - **per-model raw verification:** 596 of 1,446 models (41%) are verified on real files, so about 7 in 8 photographers shoot a verified body; other bodies are unverified, see [docs/raw-parity.md](docs/raw-parity.md);
   - **AI quality:** Subject / Background (BiRefNet) and Object (SAM 3) masks are optional downloads; sky is still heuristic, denoise quality is unverified;
   - **network libraries:** a preview reads the raw's header and its embedded JPEG only (56.5 MB → 5.9 MB, 10 s → 1 s on the test share), but the *developed* picture still needs the sensor data over the wire; see [docs/raw-preview-reads.md](docs/raw-preview-reads.md);
@@ -333,10 +353,11 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Library: albums, folders, smart albums, stacks (incl. auto-stack), virtual copies, ratings, flags, labels, filter bar, search, sort, grids, filmstrip | ✅ |
 | Culling: Compare (synced zoom) and Survey views, auto-advance, instant previews | ✅ |
 | Light, Color, Effects (vignette styles), Tone Curve (+ refine saturation, targeted adjustment), Color Mixer (+ targeted), Point Color, Color Grading, Calibration, B&W | ✅ |
-| Masking: brush (A/B presets, density), linear, radial, luminance/colour range, per-mask feather, add/subtract/intersect; AI Subject / Background (BiRefNet) and Object (SAM 3), optional downloads | ✅ |
+| Histogram (RGB, luminance, R/G/B, chroma; linear or log; drag a tonal zone) and scopes (Waveform, RGB Parade, Vectorscope), pinned above the Edit panel | ✅ |
+| Masking: brush (A/B presets, density), linear, radial, luminance/colour range, per-mask feather and Curve, add/subtract/intersect; AI Subject / Background (BiRefNet) and Object (SAM 3), optional downloads | ✅ |
 | Crop, straighten tool + auto straighten, flip, rotate, aspect ratios, overlays | ✅ |
 | Profiles (Color, Neutral, Vivid, Landscape, Portrait, Monochrome: our own looks), presets, versions, history, copy/paste/sync settings and metadata, Auto Sync, per-photo Auto | ✅ |
-| Camera colour: DNG files use their own matrices | ✅ DNG · 🟡 own Sony/Fujifilm profiles; measured calibration database missing |
+| Camera colour: DNG files use their own matrices; import your own `.dcp` profiles | ✅ DNG, `.dcp` import · 🟡 built-in profiles for eleven bodies, spectral matrices for 52 more; measured calibration database missing |
 | Native macOS menu bar (generated from the command registry), control channel + every widget addressable, headless UI snapshots | ✅ |
 | RAW: DNG, CR2, CR3 (lossless CRX Bayer and version 0x100/0x200 C-RAW), ARW, NEF (uncompressed + lossless/lossy compressed), Fujifilm RAF (uncompressed + lossless/lossy compressed, Bayer + X-Trans), Panasonic RW2 / Leica RWL / Panasonic RAW (every raw format, DMC-LX1 to DC-S1RM2), Pentax PEF, Olympus ORF (uncompressed + compressed), Samsung SRW (uncompressed + compressed), CR3 tiled C-RAW, Minolta MRW, Sony ARW v1, packed NEF, SuperCCD RAF, Canon CRW, Epson ERF, Mamiya MEF; AVIF import; embedded previews for every format incl. CR3; 596 models verified | 🟡 · per-model verification continues |
 | Detail: sharpening, luminance + colour noise reduction | ✅ · AI Denoise, Super Resolution ⬜ |
@@ -352,7 +373,7 @@ The app is young and moving fast. **Where we honestly stand** (details in the [r
 | Optics (distortion, vignetting, auto + manual CA, defringe, lens corrections embedded in DNG files and Panasonic / Leica RW2 / RWL distortion data), Geometry (transforms, Constrain Crop), Upright (Auto/Level/Vertical/Full/Guided) | ✅ · lensfun-format lens database set up or downloaded from Settings ▸ Lens profiles 🟡 · lens profiles of our own ⬜ |
 | Photo Merge: HDR (auto-align, deghost), Panorama (spherical/cylindrical/perspective, boundary warp, auto crop), HDR Panorama → DNG | ✅ |
 | GPU pipeline (wgpu compute, CPU-exact within 1/255), CPU fallback on device limits / errors | ✅ · WebGPU in the browser 🚧 |
-| Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · interlaced H.264, local adjustments on video ⬜ |
+| Video: MP4/MOV/MKV/WebM/TS/MXF decode (H.264, HEVC, VP9, AV1, ProRes, DNxHR, APV, MPEG-2), playback, trim, poster frame, Capture Frame, global grading, H.264 / ProRes export with audio | 🟡 · local adjustments and hardware decode on video ⬜ |
 | AI: segmentation masks (BiRefNet, SAM 3), Bayer AI denoise, faces (whole networks on the GPU when faster, batched) | 🟡 · super resolution ⬜ (see [roadmap](ROADMAP.md#where-were-going)) |
 | Web build (same UI in the browser via WASM): persistent library in OPFS/IndexedDB, Web Worker rendering, export downloads | ✅ · WebGPU, Safari/Firefox testing 🚧 |
 
@@ -509,6 +530,17 @@ option to start it. For unattended installs: `msiexec /i <binary>-<ver>-windows-
 | Tarball | `<binary>-<ver>-linux-x86_64.tar.gz` | Unpack anywhere |
 
 Linux ARM64 (aarch64) builds are paused; `packaging/linux/package.sh aarch64` still builds one locally.
+
+### Android (early: see [docs/android.md](docs/android.md))
+
+| Build | File | Notes |
+|---|---|---|
+| Phones and tablets (arm64) | `<binary>-<ver>-android-arm64-v8a.apk` | Sideload: allow installs from your browser or file manager, then open the file |
+| Emulator and Chromebooks (x86_64) | `<binary>-<ver>-android-x86_64.apk` | |
+| Play Store bundle | `<binary>-<ver>-android-arm64-v8a-x86_64.aab` | For Play Console uploads, not for installing |
+
+Android 9 or newer. Until a release signing key is set up, the APKs carry a test signature: they install, but a
+build signed with the release key later will need the test build uninstalled first.
 
 ### Web (WebAssembly)
 

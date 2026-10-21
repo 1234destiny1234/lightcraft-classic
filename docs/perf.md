@@ -39,6 +39,7 @@ cargo xtask bench                                # render: slider / loupe / expo
 ONLY=source N=3 cargo run --release -p lcc-engine --example render_bench -- corpus/raw/arw-sony-a7m3-compressed.arw
 cargo run --release -p lcc-engine --example perf_tile -- $PWD/corpus/raw/arw-sony-a7m3-compressed.arw   # 1:1 tile
 cargo xtask bench-catalog --photos 100000,1000000 [--backend v4]
+cargo xtask bench-keywords [--listed 2000] [--photos 20000]                                             # Keywording panel
 cargo test --release -p lcc-ui-egui map_50k -- --ignored --nocapture                                   # Map, 50k pins
 ```
 
@@ -117,6 +118,21 @@ Idle, 2026-10-11 (median of 3):
 
 v4 (owned) uses a quarter of v3's memory and checkpoints after edits 6× faster, but its first full snapshot (44 s)
 and worst filter (339 ms, vs 98 ms) are follow-ups for the catalog owner; not changed in P6.1.
+
+## Keywords (`cargo xtask bench-keywords`)
+
+A library with a big nested keyword list (2,000 listed, three levels; 20,000 photos with three each), what the
+Keywording panel asks of the catalog. Suggestions and the Add keyword box's offers scanned the keyword list against
+every used keyword (lower-casing both for each pair) and every photo, on each selection change and keystroke, which
+lagged the grid and typing once a Lightroom Classic keyword file was imported. They now use a keyword index the
+catalog builds on first use and drops when an op can change a keyword (`crates/catalog/src/keywords.rs`,
+`KeywordIndex`). 2026-10-20, release build:
+
+| | before | after |
+|---|---|---|
+| selection change (Suggestions) | 116 ms | 0.07 ms |
+| keystroke (offers + new name) | 198 ms | 0.06 ms |
+| first ask after a keyword edit (rebuilds the index) | 214 ms | 23 ms |
 
 ## Map (50k geotagged photos, headless frame loop, 1400×900)
 

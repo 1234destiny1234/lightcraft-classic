@@ -108,6 +108,26 @@ fn constrain_crop_removes_blank_areas() {
     assert!(blank_fraction(&c) < 0.002, "constrained: {}", blank_fraction(&c));
 }
 
+/// Issue #245: lens corrections never show the blank past the photo's edge, with or without
+/// Constrain Crop, in every colour plane; perspective alone still needs Constrain Crop.
+#[test]
+fn lens_corrections_leave_no_blank_corners() {
+    let src = Rgb32f::from_fn(300, 200, |x, y| [0.05 + 0.002 * x as f32, 0.1 + 0.002 * y as f32, 0.3]);
+    for (distortion, ca) in [(-80.0, 0.0), (80.0, 0.0), (-40.0, 100.0), (0.0, -100.0)] {
+        let mut s = DevelopSettings::default();
+        s.optics.distortion = distortion;
+        s.optics.ca_red = ca;
+        s.optics.ca_blue = -ca;
+        let r = render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(300, 300)).image;
+        assert!(blank_fraction(&r) < 0.002, "distortion {distortion}, CA {ca}: {}", blank_fraction(&r));
+    }
+    let mut s = DevelopSettings::default();
+    s.optics.distortion = -60.0;
+    s.geometry.vertical = -60.0;
+    let r = render(&src, &SourceInfo::default(), &s, &RenderRequest::fit(300, 300)).image;
+    assert!(blank_fraction(&r) > 0.03, "the keystone keeps its corners: {}", blank_fraction(&r));
+}
+
 /// Issue #211: the blank border a transform leaves is shown, but the histogram counts only the photo,
 /// at every output size. A white photo stays white data.
 #[test]

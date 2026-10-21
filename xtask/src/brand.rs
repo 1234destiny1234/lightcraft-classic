@@ -388,15 +388,25 @@ pub fn check(root: &Path) -> Result<(), String> {
 
 // ---- brand test ---------------------------------------------------------------------------------
 
-/// Builds `lcc-cli` with `xtask/test-brand.toml` into `target/brand-test` and checks the brand reaches its help,
-/// UI snapshot, MCP `serverInfo` and config/log folders, with no other product name anywhere.
+/// Where the throw-away brand builds: `brand-test` under `CARGO_TARGET_DIR` when that is set (CI keeps it between
+/// runs; `target/` inside a fresh checkout is wiped, which made every CI run rebuild from scratch), else
+/// `target/brand-test`. A relative `CARGO_TARGET_DIR` is taken from the workspace root, as cargo does here.
+fn brand_test_dir(root: &Path, target_dir: Option<std::ffi::OsString>) -> PathBuf {
+    match target_dir.filter(|d| !d.is_empty()) {
+        Some(d) => root.join(d).join("brand-test"),
+        None => root.join("target/brand-test"),
+    }
+}
+
+/// Builds `lcc-cli` with `xtask/test-brand.toml` into `brand-test` under the target dir and checks the brand reaches
+/// its help, UI snapshot, MCP `serverInfo` and config/log folders, with no other product name anywhere.
 pub fn test(root: &Path) -> Result<(), String> {
     let test_brand = Brand::load(&root.join(TEST_BRAND))?;
     let real = Brand::load(&root.join("brand.toml"))?;
-    let target = root.join("target/brand-test");
+    let target = brand_test_dir(root, std::env::var_os("CARGO_TARGET_DIR"));
     let mut c = crate::cargo();
     c.env("BRAND_FILE", TEST_BRAND).env("CARGO_TARGET_DIR", &target).args(["build", "-p", "lcc-cli"]);
-    crate::run(c, &format!("BRAND_FILE={TEST_BRAND} CARGO_TARGET_DIR=target/brand-test cargo build -p lcc-cli"))?;
+    crate::run(c, &format!("BRAND_FILE={TEST_BRAND} CARGO_TARGET_DIR={} cargo build -p lcc-cli", target.display()))?;
     let cli = target.join("debug").join(format!("app-cli{}", std::env::consts::EXE_SUFFIX));
 
     let display = test_brand.req("display_name")?;
@@ -590,6 +600,16 @@ settings_dirs = ["A", "B"]
         assert_eq!(b.list("legacy", "settings_dirs"), vec!["A", "B"]);
         assert!(Brand::parse("key = \"outside\"").is_err());
         assert!(Brand::parse("[p]\nkey = bare").is_err());
+    }
+
+    #[test]
+    fn the_brand_test_builds_under_the_configured_target_dir() {
+        let root = Path::new("/ws");
+        let cache = if cfg!(windows) { r"C:\cache\t" } else { "/cache/t" };
+        assert_eq!(brand_test_dir(root, Some(cache.into())), Path::new(cache).join("brand-test"));
+        assert_eq!(brand_test_dir(root, Some("tgt".into())), root.join("tgt/brand-test"));
+        assert_eq!(brand_test_dir(root, Some("".into())), root.join("target/brand-test"));
+        assert_eq!(brand_test_dir(root, None), root.join("target/brand-test"));
     }
 
     #[test]

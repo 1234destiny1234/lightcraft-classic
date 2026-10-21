@@ -1856,7 +1856,20 @@ fn removing_a_disk_from_the_library_asks_first() {
 fn a_deep_chain_keeps_its_nesting_and_the_sidebar_scrolls_sideways() {
     let deep = "/a/b/c/d/e/f/g/h/i/j/k/l/m";
     // (tall enough for the whole chain: Recently Deleted is above it now)
-    let mut h = folders_app_sized(&[&format!("{deep}/x/1.jpg"), &format!("{deep}/y/2.jpg")], [1400.0, 1000.0]);
+    // a photo at every level: a level holding none would give its row to the one folder inside it
+    let mut photos: Vec<String> = vec![format!("{deep}/x/1.jpg"), format!("{deep}/y/2.jpg")];
+    let mut level = String::new();
+    for name in deep.split('/').filter(|n| !n.is_empty()) {
+        level.push('/');
+        level.push_str(name);
+        photos.push(format!("{level}/p.jpg"));
+    }
+    let photos: Vec<&str> = photos.iter().map(String::as_str).collect();
+    let mut h = folders_app_sized(&photos, [1400.0, 1000.0]);
+    // choosing the deepest folder opens every level above it
+    h.app.session.source = lcc_engine::LibrarySource::LibraryFolder;
+    h.app.session.library_folder = Some(format!("{deep}/x"));
+    h.settle(SETTLE);
     let mut xs: Vec<f32> = Vec::new();
     let mut path = String::new();
     for name in deep.split('/').filter(|n| !n.is_empty()) {
@@ -1952,7 +1965,20 @@ fn a_long_name_alone_does_not_make_the_sidebar_scroll() {
 fn the_selection_bar_stays_inside_the_panel() {
     let deep = "/a/b/c/d/e/f/g/h/i/j/k/l/m";
     // (tall enough for the whole chain: Recently Deleted is above it now)
-    let mut h = folders_app_sized(&[&format!("{deep}/x/1.jpg"), &format!("{deep}/y/2.jpg")], [1400.0, 1000.0]);
+    // a photo at every level: a level holding none would give its row to the one folder inside it
+    let mut photos: Vec<String> = vec![format!("{deep}/x/1.jpg"), format!("{deep}/y/2.jpg")];
+    let mut level = String::new();
+    for name in deep.split('/').filter(|n| !n.is_empty()) {
+        level.push('/');
+        level.push_str(name);
+        photos.push(format!("{level}/p.jpg"));
+    }
+    let photos: Vec<&str> = photos.iter().map(String::as_str).collect();
+    let mut h = folders_app_sized(&photos, [1400.0, 1000.0]);
+    // choosing the deepest folder opens every level above it
+    h.app.session.source = lcc_engine::LibrarySource::LibraryFolder;
+    h.app.session.library_folder = Some(format!("{deep}/x"));
+    h.settle(SETTLE);
     click(&mut h, "source:libfolder:/a/b/c/d/e/f/g/h/i/j/k/l");
     let panel = widget(&h, "panel:left_panel");
     let bar = widget(&h, "highlight:libfolder:/a/b/c/d/e/f/g/h/i/j/k/l");
@@ -2610,4 +2636,19 @@ fn vrr_flicker_workaround_setting_toggles_and_persists() {
 
     let deserialized: crate::state::AppSettings = serde_json::from_str(&serialized).unwrap();
     assert!(deserialized.vrr_flicker_workaround);
+}
+
+/// An imported folder is listed under its own name, not under every folder from the disk down to
+/// it (the full path is on hover); two folders with the same name say which folder each is in.
+#[test]
+fn an_imported_folder_is_listed_by_its_own_name() {
+    let h = folders_app(&["/Users/me/Desktop/shoot/c.jpg"]);
+    assert!(has(&h, "source:libfolder:/Users/me/Desktop/shoot"), "the imported folder is a row straight under its disk");
+    assert!(!has(&h, "source:libfolder:/Users") && !has(&h, "source:libfolder:/Users/me"), "no rows for the folders on the way");
+    let h = folders_app(&["/Users/me/Pictures/2024/trip/a.jpg", "/Users/me/Pictures/2025/trip/b.jpg"]);
+    let tree = crate::panels::left::sidebar_folders(h.app.session.catalog.folder_tree());
+    let pictures = &tree[0].children[0];
+    assert_eq!((pictures.name.as_str(), pictures.path.as_str()), ("Pictures", "/Users/me/Pictures"), "where the two branch");
+    let names: Vec<(&str, &str)> = pictures.children.iter().map(|n| (n.name.as_str(), n.path.as_str())).collect();
+    assert_eq!(names, [("trip (2024)", "/Users/me/Pictures/2024/trip"), ("trip (2025)", "/Users/me/Pictures/2025/trip")]);
 }

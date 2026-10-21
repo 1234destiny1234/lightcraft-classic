@@ -107,6 +107,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("view.thumbSizeDown", "Decrease Grid Thumbnail Size", Some("-"), "View>Grid View Style"),
     ("view.clipping", "Show Clipping", Some("J"), "View"),
     ("view.visualizeHdr", "Visualize HDR", None, "View>Loupe Info"),
+    // {on?}: HDR edits shown in HDR on an HDR display (off: their SDR rendition everywhere)
+    ("view.hdrPreview", "HDR Preview", None, "View>Loupe Info"),
     ("view.colorReadout", "Color Readout", None, ""),
     ("view.colorReadoutRgb", "Show RGB Color Values", None, "View>Loupe Info"),
     ("view.colorReadoutHsl", "Show HSL Color Values", None, "View>Loupe Info"),
@@ -244,6 +246,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // {ids?, app?}: the original files themselves (a raw stays a raw: no render, no copy), opened
     // in the other editor, e.g. a raw developer
     ("photo.openOriginalInExternal", "Open Original in Other Editor (RAW, no copy)", None, "Photo>Edit In"),
+    ("dialog.enhance", "Enhance…", Some("Cmd+Alt+I"), "Photo"),
     ("dialog.mergeHdr", "HDR…", Some("Ctrl+H"), "Photo>Photo Merge"),
     ("dialog.mergePanorama", "Panorama…", Some("Ctrl+M"), "Photo>Photo Merge"),
     ("dialog.mergeHdrPanorama", "HDR Panorama…", None, "Photo>Photo Merge"),
@@ -270,6 +273,9 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("dialog.saveMaskEffect", "Save Current Settings as New Effect Preset…", None, ""),
     ("dialog.manageMaskEffects", "Manage Effect Presets…", None, ""),
     ("file.exportMaskEffects", "Export Effect Presets…", None, ""),
+    // Metadata panel ▸ Preset menu, Export dialog ▸ preset column
+    ("file.exportMetadataPresets", "Export Metadata Presets…", None, ""),
+    ("file.exportExportPresets", "Export User Presets…", None, ""),
     ("file.importKeywords", "Import Keywords…", None, "File>More Imports"),
     ("file.exportKeywords", "Export Keywords…", None, "File>More Exports"),
     // Edit panel ▸ Curve ▸ Point Curve dropdown
@@ -300,6 +306,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("app.checkForUpdates", "Check for Updates…", None, "Help"),
     ("app.installUpdate", "Install Update and Relaunch", None, "Help"),
     ("app.openReleasePage", "Open the Release Page", None, ""),
+    ("app.allFilesAccess", "Allow Access to All Files…", None, ""),
     ("app.systemInfo", "System Info…", None, "Help"),
     ("app.openLogFolder", "Open Log Folder", None, "Help"),
     ("app.whatsNew", "What's New", None, "Help"),
@@ -630,6 +637,11 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             // {on?}; no params toggles. Toggle Zoom (Z) centres on the focus point when there is one.
             app.ui.settings.zoom_to_focus = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.settings.zoom_to_focus);
             Ok(json!({"on": app.ui.settings.zoom_to_focus}))
+        }
+        "view.hdrPreview" => {
+            // {on?}; no params toggles. Off, an HDR display shows HDR edits as an SDR one does.
+            app.ui.hdr_preview = p.get("on").and_then(Value::as_bool).unwrap_or(!app.ui.hdr_preview);
+            Ok(json!({"on": app.ui.hdr_preview, "hdrDisplay": app.hdr_headroom.is_some()}))
         }
         "view.faceBoxes" => {
             app.ui.face_boxes = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.face_boxes);
@@ -1482,8 +1494,20 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "dialog.rename" => {
-            let template = p.get("template").and_then(Value::as_str).unwrap_or("{name}").to_string();
-            app.ui.dialog = Some(Dialog::Rename { template, start: p.get("start").and_then(Value::as_u64).unwrap_or(1) as u32 });
+            let targets = app.session.targets(p).unwrap_or_else(|_| app.session.selected());
+            if targets.len() == 1 {
+                let id = targets[0];
+                let name = p
+                    .get("name")
+                    .or_else(|| p.get("template"))
+                    .and_then(Value::as_str)
+                    .map(str::to_string)
+                    .unwrap_or_else(|| app.session.catalog.photo(id).map(|ph| ph.file_name.clone()).unwrap_or_default());
+                app.ui.dialog = Some(Dialog::RenamePhoto { id: id.0, name });
+            } else if !targets.is_empty() {
+                let template = p.get("template").and_then(Value::as_str).unwrap_or("{name}").to_string();
+                app.ui.dialog = Some(Dialog::Rename { template, start: p.get("start").and_then(Value::as_u64).unwrap_or(1) as u32 });
+            }
             Ok(Value::Null)
         }
         "dialog.createPreset" => {
@@ -1570,7 +1594,12 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             let prev = app.session.last_export.clone().unwrap_or_default();
             let u = |k: &str, d: u64| prev.get(k).and_then(Value::as_u64).unwrap_or(d);
             let dir = prev.get("dir").and_then(Value::as_str).map(str::to_string).unwrap_or_else(crate::control::default_export_dir);
-            let opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            let mut opts = lcc_engine::export::ExportOptions::from_json(&prev);
+            // never exported: no folder picked for the person, it is asked for when the export
+            // starts (Lightroom Classic's "Choose folder later"); not on the web, which has no folders
+            if prev.get("destinationMode").is_none() && prev.get("dir").is_none() && !cfg!(target_arch = "wasm32") {
+                opts.destination_mode = lcc_engine::export::DestinationMode::ChooseLater;
+            }
             // no previous export: 2048 px long edge; a previous full-size export: full size
             let full_size = opts.resize.is_none() && lcc_engine::export::ExportOptions::has_size_param(&prev);
             let resize = opts.resize.unwrap_or_default();
@@ -1582,6 +1611,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "merge.panoramaLast" => crate::merge::start_last(app, "merge.panorama"),
         "merge.hdrPanoramaLast" => crate::merge::start_last(app, "merge.hdrPanorama"),
         "merge.focusStackLast" => crate::merge::start_last(app, "merge.focusStack"),
+        "dialog.enhance" => crate::enhance_ui::open(app),
         "dialog.mergeHdr" => crate::merge::open(app, "merge.hdr"),
         "dialog.faceModel" => {
             let path = match p.get("path").and_then(Value::as_str) {
@@ -1649,6 +1679,14 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             };
             crate::links::open(app, &url)
         }
+        // Android: ask for "All files access", so folders on the device are read in place
+        "app.allFilesAccess" => match app.services.storage_access.as_mut() {
+            None => Err("this platform reads files without asking".into()),
+            Some(access) => {
+                let asked = if (access.granted)() { Ok(()) } else { (access.ask)() };
+                asked.map(|()| json!({"granted": (access.granted)()}))
+            }
+        },
         "photo.editInPhotoCraft" => edit_in(app, &ctx, p, true),
         "photo.editInExternal" => {
             // a PSD or TIFF: ask Edit Original / a Copy / a Copy with Adjustments first, as Lightroom does
@@ -2096,6 +2134,34 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 if effects > 0 {
                     parts.push(crate::panels::mask_effects::import_toast(v));
                 }
+                // Lightroom Classic metadata / export presets, XMP metadata templates, ours
+                let added = |k: &str| v[k].as_array().map_or(0, |a| a.iter().filter(|r| r["skipped"] != true).count());
+                let (metas, exports) = (added("metadataPresets"), added("exportPresets"));
+                // what they couldn't carry over, named
+                let not_carried = |k: &str| {
+                    let mut names: Vec<&str> = v[k]
+                        .as_array()
+                        .into_iter()
+                        .flatten()
+                        .flat_map(|r| r["unmapped"].as_array().into_iter().flatten())
+                        .filter_map(Value::as_str)
+                        .collect();
+                    names.sort_unstable();
+                    names.dedup();
+                    if names.is_empty() {
+                        return String::new();
+                    }
+                    let shown: Vec<&str> = names.iter().take(3).copied().collect();
+                    crate::i18n::tr_format!(" — not carried over: {}{}", shown.join(", "), if names.len() > 3 { "…" } else { "" })
+                };
+                if metas > 0 {
+                    let msg = crate::i18n::tr_format!("Imported {n} metadata preset{}", if metas == 1 { "" } else { "s" }, n = metas);
+                    parts.push(msg + &not_carried("metadataPresets"));
+                }
+                if exports > 0 {
+                    let msg = crate::i18n::tr_format!("Imported {n} export preset{}", if exports == 1 { "" } else { "s" }, n = exports);
+                    parts.push(msg + &not_carried("exportPresets"));
+                }
                 let profile_news = !parts.is_empty() || !problems.is_empty();
                 let msg = match (n, failed) {
                     // a zip of LUTs (or only local presets): the other half already says what happened
@@ -2238,6 +2304,60 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         "dialog.manageMaskEffects" => {
             crate::panels::mask_effects::open_manage(app);
             Ok(Value::Null)
+        }
+        "file.exportMetadataPresets" | "file.exportExportPresets" => {
+            let meta = id == "file.exportMetadataPresets";
+            let (ext, command) = if meta {
+                (lcc_engine::cmd::metadata_files::META_EXT, "metadata.exportPresets")
+            } else {
+                (lcc_engine::cmd::export_preset_files::EXPORT_PRESET_EXT, "export.exportPresets")
+            };
+            let path = match p.get("path").and_then(Value::as_str) {
+                Some(x) => Some(x.to_string()),
+                None => {
+                    let name = format!("{}.{ext}", if meta { "Metadata Presets" } else { "Export Presets" });
+                    let req = if meta {
+                        PickRequest::save(
+                            crate::i18n::tr("Export Metadata Presets…"),
+                            crate::i18n::tr("{app} Metadata Presets"),
+                            &["lcmeta"],
+                            name.clone(),
+                        )
+                    } else {
+                        PickRequest::save(
+                            crate::i18n::tr("Export User Presets…"),
+                            crate::i18n::tr("{app} Export Presets"),
+                            &["lcexport"],
+                            name.clone(),
+                        )
+                    };
+                    match crate::pick::ask(app, id, p, "path", req, |s| s.save_preset_file.as_mut().map(|f| f(&name).into_iter().collect())) {
+                        Picked::Now(v) => v.into_iter().next(),
+                        Picked::Later => return Some(Ok(Value::Null)),
+                        Picked::Unavailable => return Some(Err("no file dialog on this platform".into())),
+                    }
+                }
+            };
+            let Some(path) = path else { return Some(Ok(Value::Null)) };
+            let mut params = json!({"path": path});
+            if let Some(v) = p.get("names") {
+                params["names"] = v.clone();
+            }
+            let r = app.session.execute(command, &params).map_err(|e| e.to_string());
+            match &r {
+                Ok(v) => {
+                    let n = v["count"].as_u64().unwrap_or(0);
+                    let s = if n == 1 { "" } else { "s" };
+                    let msg = if meta {
+                        crate::i18n::tr_format!("Exported {n} metadata preset{}", s, n = n)
+                    } else {
+                        crate::i18n::tr_format!("Exported {n} export preset{}", s, n = n)
+                    };
+                    app.toast(&ctx, msg);
+                }
+                Err(e) => app.toast_error(&ctx, e.clone()),
+            }
+            return Some(r);
         }
         "file.exportMaskEffects" => {
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2434,6 +2554,8 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "app.openSamModelFolder" => app.session.segmenter.dir.is_some() && app.services.open_with.is_some(),
         "file.exportPresets" => app.session.presets.iter().any(|p| !p.builtin),
         "file.exportMaskEffects" => !app.session.mask_effects.is_empty(),
+        "file.exportMetadataPresets" => !app.session.metadata_presets.is_empty(),
+        "file.exportExportPresets" => !app.session.export_presets.is_empty(),
         "dialog.saveMaskEffect" => app.session.active().is_some() && app.session.active_mask.is_some(),
         "file.exportCurvePresets" => !app.session.curve_presets.is_empty(),
         "view.compare" => app.session.catalog.len() > 1,
@@ -2443,6 +2565,7 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "app.openReleasePage" => app.services.open_url.is_some(),
+        "app.allFilesAccess" => app.services.storage_access.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "app.clearRecentLibraries" => !app.ui.settings.recent_libraries.is_empty(),
         "compare.swap" | "compare.makeSelect" | "compare.set" => app.ui.view == ViewMode::Compare,

@@ -141,7 +141,7 @@ fn the_mode_and_scale_commands_select_step_and_reject_junk() {
 /// Each mode paints its own distribution: the RGB overlay only ever uses the seven additive
 /// colours, the luminance is neutral, the separated channels are the three channel colours in
 /// three tracks, the chroma is its own colour — with the luminance hairline staying neutral — and
-/// the vectorscope draws its circular graticule, six target boxes (`R`, `Mg`, `B`, `Cy`, `G`, `Yl`)
+/// the vectorscope draws its circular graticule, six bracketed targets (`R`, `Mg`, `B`, `Cy`, `G`, `Yl`)
 /// and 2D chrominance cloud inside the disc.
 #[test]
 fn every_mode_paints_its_own_distribution() {
@@ -201,7 +201,7 @@ fn every_mode_paints_its_own_distribution() {
     }
     for c in &colors {
         assert!(
-            CHANNEL_COLORS.iter().flat_map(|cc| [*cc, cc.gamma_multiply(0.45)]).any(|e| e.r() == c.r() && e.g() == c.g() && e.b() == c.b()),
+            CHANNEL_COLORS.iter().flat_map(|cc| [*cc, cc.gamma_multiply(0.38)]).any(|e| e.r() == c.r() && e.g() == c.g() && e.b() == c.b()),
             "a track is drawn in a channel's own colour, not {c:?}",
         );
     }
@@ -228,7 +228,7 @@ fn every_mode_paints_its_own_distribution() {
             _ => {}
         }
     }
-    assert!(circles >= 11, "the disc fill, four saturation rings and six hue target rings are drawn: {circles}");
+    assert!(circles >= 5, "the disc's well and its four saturation rings are drawn: {circles}");
     assert!(cloud_vertices >= 4, "the photo's 2D chrominance cloud is drawn inside the disc: {cloud_vertices}");
     let r = h.request("ui.hoverWidget", json!({"id": "histogram:plot", "fx": 0.5, "fy": 0.5}), T);
     assert_eq!(r["ok"], true, "{r}");
@@ -366,8 +366,8 @@ fn a_clipping_indicator_previews_the_overlay_it_stands_for() {
     assert_eq!(crate::panels::detail::view_overlay(&h.app, &d, false), lcc_pipeline::Overlay::Clipping(None));
 }
 
-/// The Waveform draws the loupe photo's columns left to right in neutral grey over a graticule, the RGB Parade
-/// the three channels in three side-by-side tracks of their own colours; only the loupe's histogram keeps the
+/// The Waveform overlays the loupe photo's red, green and blue columns left to right in one track, the RGB
+/// Parade puts the three channels in three side-by-side tracks of their own colours; only the loupe's histogram keeps the
 /// waveform planes, thumbnails' don't.
 #[test]
 fn the_waveform_views_draw_the_photo_by_column() {
@@ -382,7 +382,20 @@ fn the_waveform_views_draw_the_photo_by_column() {
     h.settle(SETTLE);
     let colors = plot_colors(&h);
     assert!(!colors.is_empty(), "the waveform is drawn");
-    assert!(colors.iter().all(|c| c.r() == c.g() && c.g() == c.b()), "the waveform is neutral: {colors:?}");
+    let plot = rect(&h, "histogram:plot");
+    let overlay = crate::panels::histogram::waveform_tracks(plot, lcc_raster::HistogramMode::Waveform);
+    assert_eq!(overlay.len(), 3, "red, green and blue");
+    assert!(overlay.iter().all(|t| t.0 == plot), "overlaid in one track");
+    for (k, dominant) in [(0usize, "red"), (1, "green"), (2, "blue")] {
+        let ch = |c: &Color32| [c.r(), c.g(), c.b()];
+        assert!(
+            colors.iter().any(|c| {
+                let v = ch(c);
+                (0..3).all(|j| j == k || v[k] > v[j])
+            }),
+            "the waveform draws a {dominant} trace: {colors:?}",
+        );
+    }
 
     set(&mut h, "view.histogram.mode", "mode", "parade");
     h.settle(SETTLE);
@@ -401,7 +414,7 @@ fn the_waveform_views_draw_the_photo_by_column() {
                     let (ma, mb) = (a.iter().cloned().fold(0.0, f32::max).max(1.0), b.iter().cloned().fold(0.0, f32::max).max(1.0));
                     a.iter().zip(&b).all(|(x, y)| (x / ma - y / mb).abs() < 0.05)
                 };
-                if track.contains(v.pos) && v.color.a() > 0 && same(hue(v.color), hue(*color)) {
+                if track.contains(v.pos) && hue(v.color).iter().any(|c| *c > 0.0) && same(hue(v.color), color.map(|c| c * 255.0)) {
                     seen[k] = true;
                 }
             }

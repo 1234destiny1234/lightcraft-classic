@@ -34,6 +34,7 @@ pub mod devices;
 pub mod disk_delete;
 pub mod display;
 pub mod doc_path;
+pub mod enhance;
 mod errors;
 pub mod export;
 pub mod export_video;
@@ -307,6 +308,8 @@ pub struct Session {
     /// Reading focus points for photos imported before they were read (`photo.readFocusPoints`, `focus.pump`).
     #[cfg(not(target_arch = "wasm32"))]
     pub(crate) focus_scan: focus_scan::FocusScan,
+    /// Photo ▸ Enhance jobs on worker threads (`enhance.rawDetails`, `enhance.superResolution`, `enhance.pump`).
+    pub(crate) enhance: enhance::EnhanceJobs,
     /// Copied develop settings (partial JSON) for Paste.
     pub clipboard: Option<Value>,
     /// The folder on disk the [`LibrarySource::Folder`] view browses.
@@ -539,6 +542,7 @@ impl Session {
             desktop: desktop::default_desktop(),
             #[cfg(not(target_arch = "wasm32"))]
             focus_scan: Default::default(),
+            enhance: Default::default(),
             clipboard: None,
             meta_clipboard: None,
             browse: None,
@@ -1509,6 +1513,8 @@ mod tests_denoise;
 mod tests_edit_in;
 #[cfg(test)]
 mod tests_edit_roundtrip;
+#[cfg(all(test, not(target_arch = "wasm32")))]
+mod tests_enhance;
 #[cfg(test)]
 mod tests_export;
 #[cfg(all(test, not(target_arch = "wasm32")))]
@@ -1572,6 +1578,8 @@ mod tests_plugin_filters;
 #[cfg(test)]
 mod tests_prefs;
 #[cfg(test)]
+mod tests_preset_interop;
+#[cfg(test)]
 mod tests_presets_scale;
 #[cfg(test)]
 mod tests_previews;
@@ -1595,6 +1603,8 @@ mod tests_source_report;
 mod tests_spots;
 #[cfg(test)]
 mod tests_sync;
+#[cfg(test)]
+mod tests_target_params;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_timelapse;
 #[cfg(all(test, not(target_arch = "wasm32")))]

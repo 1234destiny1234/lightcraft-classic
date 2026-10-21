@@ -10,7 +10,7 @@
 //! photo has them, or given attributes ([`KeywordInfo`]: synonyms, export options, person). The
 //! tree is the keyword list together with the keywords photos carry.
 
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
@@ -19,9 +19,10 @@ use crate::{Catalog, CatalogError, Meta, Op, Result};
 /// Separator of hierarchical keyword levels.
 pub const SEP: char = '|';
 
-/// Normalize a keyword: trim every level, drop empty levels.
+/// Normalize a keyword: trim every level, drop empty levels, keep at most [`MAX_TREE_LEVELS`] levels
+/// (a file's keyword is input: thousands of levels would overflow the tree walks' stack).
 pub fn clean(k: &str) -> String {
-    k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).collect::<Vec<_>>().join("|")
+    k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(MAX_TREE_LEVELS).collect::<Vec<_>>().join("|")
 }
 
 /// The same name, whatever the case of any of its letters (not only ASCII ones).
@@ -55,6 +56,10 @@ pub fn from_file(flat: &[String], hierarchical: &[String]) -> Vec<String> {
 
 /// The deepest a keyword list file may nest keywords: a file is input, so its nesting is bounded.
 pub const MAX_LEVELS: usize = 64;
+
+/// The deepest a photo's keyword, and so the keyword tree, goes: the tree is walked recursively
+/// (here and in the panels), so an `a|a|a|…` keyword thousands of levels deep overflowed the stack.
+pub const MAX_TREE_LEVELS: usize = 128;
 
 /// A keyword list as written by [`Catalog::keyword_list_text`]: the file's text, the keywords in
 /// it (paths), and what the format can't hold and so is left out (a keyword, with those inside it,
@@ -236,63 +241,86 @@ pub struct KeywordNode {
 impl Catalog {
     /// The keyword tree: every keyword level with photo counts, sorted by name (case-insensitive).
     pub fn keyword_tree(&self) -> Vec<KeywordNode> {
-        use std::collections::{HashMap, HashSet};
-        // every keyword level (`travel`, `travel|italy`…) by its lower-case path: the name and
+        use std::collections::HashMap;
+        // every keyword level (`travel`, `travel|italy`…), one per lower-case path: the name and
         // path as first written, and the photos counted (once per photo, even when two of its
-        // keywords share a parent)
+        // keywords share a parent: `seen` is the last photo counted); `sort` is the name in lower case
         struct Level {
             name: String,
+            sort: String,
             path: String,
             count: usize,
-            parent: Option<String>,
+            seen: usize,
         }
-        let mut levels: HashMap<String, Level> = HashMap::new();
-        let mut this_photo: HashSet<String> = HashSet::new();
+        let mut levels: Vec<Level> = Vec::new();
+        let mut by_lower: HashMap<String, usize> = HashMap::new();
+        // each level's children (by index), and the top level
+        let mut kids: Vec<Vec<usize>> = Vec::new();
+        let mut roots: Vec<usize> = Vec::new();
         // the keyword list first (no photos counted): a listed keyword is there without photos
         let listed: Vec<String> = self.listed_keywords().map(|k| k.path.clone()).collect();
+        // each keyword as written → its levels (its own and those above it), worked out once: a
+        // large library repeats a few thousand keywords tens of thousands of times
+        let mut chains: HashMap<&str, Vec<usize>> = HashMap::new();
         let photos = self.photos().filter(|p| p.in_library()).map(|p| (true, p.meta.keywords.as_slice()));
-        for (counts, keywords) in std::iter::once((false, listed.as_slice())).chain(photos) {
-            this_photo.clear();
+        for (photo, (counts, keywords)) in std::iter::once((false, listed.as_slice())).chain(photos).enumerate() {
             for k in keywords {
-                let mut path = String::new();
-                let mut lower = String::new();
-                let mut parent: Option<String> = None;
-                for part in k.split(SEP).map(str::trim).filter(|s| !s.is_empty()) {
-                    if !path.is_empty() {
-                        path.push(SEP);
-                        lower.push(SEP);
+                let chain = chains.entry(k.as_str()).or_insert_with(|| {
+                    let mut chain: Vec<usize> = Vec::new();
+                    let mut path = String::new();
+                    let mut lower = String::new();
+                    // bounded: a catalog may hold deeper keywords from before files' keywords were capped
+                    for part in k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(MAX_TREE_LEVELS) {
+                        if !path.is_empty() {
+                            path.push(SEP);
+                            lower.push(SEP);
+                        }
+                        path.push_str(part);
+                        let sort = part.to_lowercase();
+                        lower.push_str(&sort);
+                        let i = match by_lower.get(&lower) {
+                            Some(&i) => i,
+                            None => {
+                                let i = levels.len();
+                                match chain.last().and_then(|&p| kids.get_mut(p)) {
+                                    Some(k) => k.push(i),
+                                    None => roots.push(i),
+                                }
+                                levels.push(Level { name: part.to_string(), sort, path: path.clone(), count: 0, seen: 0 });
+                                kids.push(Vec::new());
+                                by_lower.insert(lower.clone(), i);
+                                i
+                            }
+                        };
+                        chain.push(i);
                     }
-                    path.push_str(part);
-                    lower.push_str(&part.to_lowercase());
-                    let l = levels.entry(lower.clone()).or_insert_with(|| Level {
-                        name: part.to_string(),
-                        path: path.clone(),
-                        count: 0,
-                        parent: parent.clone(),
-                    });
-                    if counts && this_photo.insert(lower.clone()) {
-                        l.count += 1;
+                    chain
+                });
+                if counts {
+                    for &i in chain.iter() {
+                        let Some(l) = levels.get_mut(i) else { continue };
+                        // photo 0 is the keyword list, which counts nothing
+                        if l.seen != photo {
+                            l.seen = photo;
+                            l.count += 1;
+                        }
                     }
-                    parent = Some(lower.clone());
                 }
             }
         }
-        let mut kids: HashMap<Option<String>, Vec<String>> = HashMap::new();
-        for (lower, l) in &levels {
-            kids.entry(l.parent.clone()).or_default().push(lower.clone());
-        }
-        fn build(at: Option<String>, levels: &HashMap<String, Level>, kids: &mut HashMap<Option<String>, Vec<String>>) -> Vec<KeywordNode> {
-            let Some(mut list) = kids.remove(&at) else { return Vec::new() };
-            list.sort_by_key(|l| levels[l].name.to_lowercase());
+        // (recursion as deep as MAX_TREE_LEVELS)
+        fn build(mut list: Vec<usize>, levels: &[Level], kids: &mut [Vec<usize>]) -> Vec<KeywordNode> {
+            list.sort_by(|&a, &b| levels.get(a).map(|l| &l.sort).cmp(&levels.get(b).map(|l| &l.sort)));
             list.into_iter()
-                .map(|l| {
-                    let lv = &levels[&l];
-                    let children = build(Some(l.clone()), levels, kids);
-                    KeywordNode { name: lv.name.clone(), path: lv.path.clone(), count: lv.count, children }
+                .filter_map(|i| {
+                    let lv = levels.get(i)?;
+                    let below = kids.get_mut(i).map(std::mem::take).unwrap_or_default();
+                    let children = build(below, levels, kids);
+                    Some(KeywordNode { name: lv.name.clone(), path: lv.path.clone(), count: lv.count, children })
                 })
                 .collect()
         }
-        build(None, &levels, &mut kids)
+        build(roots, &levels, &mut kids)
     }
 
     /// `SetMeta` ops for every photo whose keywords `f` changes.
@@ -591,7 +619,7 @@ impl Catalog {
 
     /// The keyword new keywords go inside (Put New Keywords Inside This Keyword), if any.
     pub fn default_keyword_parent(&self) -> Option<String> {
-        self.keyword_list.values().find(|l| l.info.new_keywords_inside).map(|l| l.path.clone())
+        self.keyword_index().default_parent.clone()
     }
 
     /// Make `keyword` the one new keywords go inside (`None`: none) — one batch. It is listed if it
@@ -626,11 +654,8 @@ impl Catalog {
         }
         // the levels of a listed keyword below it, or of a photo's
         let levels = k.split(SEP).count();
-        let listed = self.keyword_list.values().map(|l| &l.path);
-        listed
-            .chain(self.photos().filter(|p| p.in_library()).flat_map(|p| p.meta.keywords.iter()))
-            .find(|x| is_under(x, &k))
-            .map(|x| x.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(levels).collect::<Vec<_>>().join("|"))
+        let x = self.keyword_index().containing(&k.to_lowercase())?;
+        Some(x.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(levels).collect::<Vec<_>>().join("|"))
     }
 
     /// Create a keyword with these attributes, and give it to `photos` — one batch. A keyword that
@@ -726,46 +751,47 @@ impl Catalog {
     /// appear together with `current` on other photos, then the most used ones. Most frequent
     /// first, at most `n`, never one of `current`.
     pub fn keyword_suggestions(&self, current: &[String], prefix: &str, n: usize) -> Vec<String> {
-        // the photos' keywords with their counts, and those only the list has (none)
-        let mut all = self.keywords();
-        for l in self.keyword_list.values() {
-            if !all.iter().any(|(k, _)| same(k, &l.path)) {
-                all.push((l.path.clone(), 0));
-            }
-        }
-        let has = |k: &str| current.iter().any(|c| same(c, k));
+        let ix = self.keyword_index();
+        let current: std::collections::HashSet<String> = current.iter().map(|c| c.to_lowercase()).collect();
         let q = prefix.trim().to_lowercase();
-        let mut scored: Vec<(i64, String)> = if !q.is_empty() {
-            all.into_iter()
-                .filter(|(k, _)| !has(k))
-                .filter_map(|(k, c)| {
-                    let l = k.to_lowercase();
-                    let leaf = l.rsplit(SEP).next().unwrap_or(&l).to_string();
-                    let rank = if l.starts_with(&q) || leaf.starts_with(&q) {
+        let mut scored: Vec<(i64, &KeywordEntry)> = if !q.is_empty() {
+            ix.entries
+                .iter()
+                .filter(|e| !current.contains(&e.lower))
+                .filter_map(|e| {
+                    let rank = if e.lower.starts_with(&q) || e.leaf().starts_with(&q) {
                         2
-                    } else if l.contains(&q) {
+                    } else if e.lower.contains(&q) {
                         1
                     } else {
                         return None;
                     };
-                    Some((rank * 1_000_000 + c as i64, k))
+                    Some((rank * 1_000_000 + e.count as i64, e))
                 })
                 .collect()
         } else {
-            let mut co: std::collections::HashMap<String, i64> = Default::default();
-            if !current.is_empty() {
-                for p in self.photos().filter(|p| p.in_library()) {
-                    if p.meta.keywords.iter().any(|k| has(k)) {
-                        for k in p.meta.keywords.iter().filter(|k| !has(k)) {
-                            *co.entry(k.clone()).or_default() += 1;
+            // how many of the photos with one of `current` have each other keyword
+            let mut co = vec![0i64; ix.entries.len()];
+            let mut seen = std::collections::HashSet::new();
+            for c in &current {
+                for &p in ix.photos_with.get(c).into_iter().flatten() {
+                    if !seen.insert(p) {
+                        continue;
+                    }
+                    for &e in ix.photo_keywords.get(p).into_iter().flatten() {
+                        if let (Some(n), Some(entry)) = (co.get_mut(e), ix.entries.get(e))
+                            && !current.contains(&entry.lower)
+                        {
+                            *n += 1;
                         }
                     }
                 }
             }
-            all.into_iter().filter(|(k, _)| !has(k)).map(|(k, c)| (co.get(&k).copied().unwrap_or(0) * 1_000_000 + c as i64, k)).collect()
+            ix.entries.iter().zip(co).filter(|(e, _)| !current.contains(&e.lower)).map(|(e, co)| (co * 1_000_000 + e.count as i64, e)).collect()
         };
-        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.to_lowercase().cmp(&b.1.to_lowercase())));
-        scored.into_iter().take(n).map(|(_, k)| k).collect()
+        // (stable: of two spellings with the same score, the first listed)
+        scored.sort_by(|a, b| b.0.cmp(&a.0).then_with(|| a.1.lower.cmp(&b.1.lower)));
+        scored.into_iter().take(n).map(|(_, e)| e.path.clone()).collect()
     }
 }
 
@@ -788,6 +814,82 @@ mod tests {
     }
     fn kws(c: &Catalog, id: PhotoId) -> Vec<String> {
         c.photo(id).unwrap().meta.keywords.clone()
+    }
+
+    /// Suggestions, offers and lookups answer from a keyword index: after any edit that changes a
+    /// keyword (a photo's, the list's, a photo leaving the library) they answer for what is there
+    /// now, and undoing it brings the old answers back.
+    #[test]
+    fn keyword_answers_follow_edits() {
+        let (mut c, ids) = lib(&[&["travel|italy", "sea"], &["travel|italy"]]);
+        let ask = |c: &Catalog| {
+            (c.keyword_suggestions(&["sea".into()], "", 9), c.keyword_suggestions(&[], "ro", 9), c.keyword_path("TRAVEL"), c.default_keyword_parent())
+        };
+        let before = ask(&c);
+        assert_eq!(before.0, ["travel|italy"]);
+        assert!(before.1.is_empty() && before.2.as_deref() == Some("travel") && before.3.is_none());
+
+        let mut meta = c.photo(ids[0]).unwrap().meta.clone();
+        meta.keywords.push("Places|Rome".into());
+        let undo_meta = c.apply(Op::SetMeta { id: ids[0], meta: Box::new(meta) }).unwrap();
+        assert_eq!(c.keyword_suggestions(&["sea".into()], "", 9), ["travel|italy", "Places|Rome"]);
+        assert_eq!(c.keyword_suggestions(&[], "ro", 9), ["Places|Rome"]);
+        assert_eq!(c.keyword_path("places").as_deref(), Some("Places"));
+
+        let info = KeywordInfo { new_keywords_inside: true, ..KeywordInfo::default() };
+        let undo_list = c.apply(Op::SetKeyword { path: "Inbox|Rover".into(), info: Some(info) }).unwrap();
+        assert_eq!(c.default_keyword_parent().as_deref(), Some("Inbox|Rover"));
+        assert!(c.has_keyword("inbox"));
+        assert_eq!(c.keyword_suggestions(&[], "ro", 9), ["Places|Rome", "Inbox|Rover"]);
+
+        let undo_gone = c.apply(Op::SetDeleted { id: ids[0], deleted: true }).unwrap();
+        assert!(!c.has_keyword("places"), "only a photo out of the library had it");
+        assert!(c.keyword_suggestions(&["sea".into()], "", 9).iter().all(|k| k != "Places|Rome"));
+
+        for undo in [undo_gone, undo_list, undo_meta] {
+            c.apply(undo).unwrap();
+        }
+        assert_eq!(ask(&c), before);
+    }
+
+    fn depth(nodes: &[KeywordNode]) -> usize {
+        let (mut d, mut at) = (0, nodes);
+        while let Some(n) = at.first() {
+            d += 1;
+            at = &n.children;
+        }
+        d
+    }
+
+    #[test]
+    fn a_keyword_thousands_of_levels_deep_does_not_overflow_the_tree() {
+        // run on a 1 MiB stack, as Windows gives the main thread: once a level a frame, this overflowed
+        let deep = vec!["a"; 100_000].join("|");
+        std::thread::Builder::new()
+            .stack_size(1024 * 1024)
+            .spawn(move || {
+                let (c, _) = lib(&[&[deep.as_str()]]);
+                let t = c.keyword_tree();
+                assert_eq!(depth(&t), MAX_TREE_LEVELS);
+                let file = c.keyword_list_text();
+                assert_eq!(parse_keyword_list(&file.text).unwrap().len(), MAX_LEVELS);
+                let (_, added, _) = c.import_keywords_ops(&[(deep.clone(), KeywordInfo::default())]);
+                // the same keyword, as deep as the tree keeps it: the library has it
+                assert_eq!(added, 0);
+                drop(t);
+            })
+            .unwrap()
+            .join()
+            .unwrap();
+    }
+
+    #[test]
+    fn a_files_keyword_keeps_its_first_levels_only() {
+        let deep = (0..1000).map(|i| i.to_string()).collect::<Vec<_>>().join("|");
+        let kept = from_file(&[], &[deep]);
+        assert_eq!(kept[0].split(SEP).count(), MAX_TREE_LEVELS);
+        assert!(kept[0].starts_with("0|1|2|"));
+        assert_eq!(clean(" a | | b "), "a|b");
     }
 
     #[test]
@@ -840,6 +942,122 @@ mod tests {
             out.extend(tree_paths(&n.children));
         }
         out
+    }
+
+    #[test]
+    fn tree_counts_a_repeated_keyword_once_per_photo() {
+        let (c, _) = lib(&[&["sea|Baltic", "sea|Baltic", "Sea|baltic"], &["sea|baltic"], &[]]);
+        let t = c.keyword_tree();
+        assert_eq!(tree_paths(&t), [("sea".to_string(), 2), ("sea|Baltic".to_string(), 2)]);
+    }
+
+    /// The tree as it was built before keywords' levels were worked out once per keyword: the
+    /// reference the faster build must agree with.
+    fn reference_tree(c: &Catalog) -> Vec<KeywordNode> {
+        use std::collections::{HashMap, HashSet};
+        struct Level {
+            name: String,
+            path: String,
+            count: usize,
+            parent: Option<String>,
+        }
+        let mut levels: HashMap<String, Level> = HashMap::new();
+        let mut this_photo: HashSet<String> = HashSet::new();
+        let listed: Vec<String> = c.listed_keywords().map(|k| k.path.clone()).collect();
+        let photos = c.photos().filter(|p| p.in_library()).map(|p| (true, p.meta.keywords.as_slice()));
+        for (counts, keywords) in std::iter::once((false, listed.as_slice())).chain(photos) {
+            this_photo.clear();
+            for k in keywords {
+                let (mut path, mut lower, mut parent) = (String::new(), String::new(), None::<String>);
+                for part in k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(MAX_TREE_LEVELS) {
+                    if !path.is_empty() {
+                        path.push(SEP);
+                        lower.push(SEP);
+                    }
+                    path.push_str(part);
+                    lower.push_str(&part.to_lowercase());
+                    let l = levels.entry(lower.clone()).or_insert_with(|| Level {
+                        name: part.to_string(),
+                        path: path.clone(),
+                        count: 0,
+                        parent: parent.clone(),
+                    });
+                    if counts && this_photo.insert(lower.clone()) {
+                        l.count += 1;
+                    }
+                    parent = Some(lower.clone());
+                }
+            }
+        }
+        let mut kids: HashMap<Option<String>, Vec<String>> = HashMap::new();
+        for (lower, l) in &levels {
+            kids.entry(l.parent.clone()).or_default().push(lower.clone());
+        }
+        fn build(at: Option<String>, levels: &HashMap<String, Level>, kids: &mut HashMap<Option<String>, Vec<String>>) -> Vec<KeywordNode> {
+            let Some(mut list) = kids.remove(&at) else { return Vec::new() };
+            list.sort_by_key(|l| levels[l].name.to_lowercase());
+            list.into_iter()
+                .map(|l| {
+                    let lv = &levels[&l];
+                    let children = build(Some(l.clone()), levels, kids);
+                    KeywordNode { name: lv.name.clone(), path: lv.path.clone(), count: lv.count, children }
+                })
+                .collect()
+        }
+        build(None, &levels, &mut kids)
+    }
+
+    /// Any library's keywords (nested, repeated, in other cases, with empty levels and spaces, some
+    /// only in the keyword list, some on photos out of the library) give the tree the old build gave.
+    #[test]
+    fn the_tree_matches_the_reference_build() {
+        use proptest::prelude::*;
+        let keyword = "( ?(Sea|sea|SEA|Ä|ä|Baltic|baltic|travel|Italy|rome| )? ?\\|?){1,5}";
+        let photo = (proptest::collection::vec(keyword, 0..5), any::<bool>());
+        let mut runner = proptest::test_runner::TestRunner::default();
+        runner
+            .run(&(proptest::collection::vec(photo, 0..12), proptest::collection::vec(keyword, 0..4)), |(photos, listed)| {
+                let mut c = Catalog::new();
+                for (kws, deleted) in &photos {
+                    let id = c.alloc_photo_id();
+                    let mut p = Photo::new(id, Source::Demo { scene: 1 }, "a.jpg", "JPEG", 3, 2, "2026-01-01");
+                    p.meta.keywords = kws.clone();
+                    p.deleted = *deleted;
+                    c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+                }
+                for k in listed.iter().map(|k| clean(k)).filter(|k| !k.is_empty()) {
+                    let _ = c.apply(Op::SetKeyword { path: k, info: Some(KeywordInfo::default()) });
+                }
+                prop_assert_eq!(c.keyword_tree(), reference_tree(&c));
+                Ok(())
+            })
+            .unwrap();
+    }
+
+    /// Timings on a library the size of upstream's report (58,000 photos, 4,000 keyword levels: 2,000
+    /// keywords with a child each):
+    /// `cargo test --release -p lcc-catalog --lib probe_keyword_tree_cost -- --ignored --nocapture`.
+    #[test]
+    #[ignore = "timing probe"]
+    fn probe_keyword_tree_cost() {
+        let mut c = Catalog::new();
+        for i in 0..58_000u64 {
+            let id = c.alloc_photo_id();
+            let mut p = Photo::new(id, Source::Demo { scene: 1 }, "a.jpg", "JPEG", 3, 2, "2026-01-01");
+            p.meta.keywords = (0..6).map(|k| format!("Keyword {:05}|Child", (i * 6 + k) % 2000)).collect();
+            c.apply(Op::AddPhoto { photo: Box::new(p) }).unwrap();
+        }
+        let time = |f: &dyn Fn() -> Vec<KeywordNode>| {
+            let _ = f();
+            let t = std::time::Instant::now();
+            for _ in 0..5 {
+                std::hint::black_box(f());
+            }
+            t.elapsed() / 5
+        };
+        let new = time(&|| c.keyword_tree());
+        let old = time(&|| reference_tree(&c));
+        eprintln!("keyword_tree: {new:?}; the old build: {old:?} ({:.1}x)", old.as_secs_f64() / new.as_secs_f64());
     }
 
     /// A keyword can be listed before any photo has it (Lightroom Classic's Create Keyword Tag):
@@ -1439,5 +1657,105 @@ mod tests {
         assert_eq!(s, ["parade"]);
         let s = c.keyword_suggestions(&[], "E", 5);
         assert_eq!(s, ["eagle", "beach", "parade"], "prefix matches before substring matches");
+    }
+}
+
+/// A keyword of the library as [`KeywordIndex`] keeps it.
+#[derive(Debug)]
+pub(crate) struct KeywordEntry {
+    /// As written.
+    path: String,
+    lower: String,
+    /// How many library photos have it (as written).
+    count: usize,
+}
+
+impl KeywordEntry {
+    /// Its own name, lower-case (the last level).
+    fn leaf(&self) -> &str {
+        self.lower.rsplit(SEP).next().unwrap_or(&self.lower)
+    }
+}
+
+/// The library's keywords, worked out once for what the Keywording panel asks on every selection
+/// change and keystroke (with a keyword list of thousands, scanning it each time lagged the UI).
+/// Built on first use; any op that can change keywords drops it (see [`crate::index`]).
+#[derive(Debug, Default)]
+pub(crate) struct KeywordIndex {
+    /// The keywords library photos have (each spelling once), then the listed ones no photo has.
+    entries: Vec<KeywordEntry>,
+    /// For each library photo, its keywords (indexes into `entries`).
+    photo_keywords: Vec<Vec<usize>>,
+    /// Lower-case keyword → the library photos having it (indexes into `photo_keywords`).
+    photos_with: HashMap<String, Vec<usize>>,
+    /// Lower-case keyword or level path above one → the first keyword (listed ones first, then
+    /// the photos') that is it or is below it, as written.
+    containing: HashMap<String, String>,
+    pub(crate) default_parent: Option<String>,
+}
+
+impl KeywordIndex {
+    pub(crate) fn build(cat: &Catalog) -> KeywordIndex {
+        let mut ix = KeywordIndex::default();
+        let mut by_path: BTreeMap<&str, usize> = BTreeMap::new();
+        let library: Vec<&Vec<String>> = cat.photos().filter(|p| p.in_library()).map(|p| &p.meta.keywords).collect();
+        for kws in &library {
+            for k in kws.iter() {
+                *by_path.entry(k.as_str()).or_default() += 1;
+            }
+        }
+        let mut id_of: HashMap<&str, usize> = HashMap::new();
+        for (i, (k, count)) in by_path.into_iter().enumerate() {
+            id_of.insert(k, i);
+            ix.entries.push(KeywordEntry { path: k.to_string(), lower: k.to_lowercase(), count });
+        }
+        let used: std::collections::HashSet<String> = ix.entries.iter().map(|e| e.lower.clone()).collect();
+        for l in cat.keyword_list.values() {
+            let lower = l.path.to_lowercase();
+            if !used.contains(&lower) {
+                ix.entries.push(KeywordEntry { path: l.path.clone(), lower, count: 0 });
+            }
+        }
+        let mut with: Vec<Vec<usize>> = vec![Vec::new(); ix.entries.len()];
+        for (p, kws) in library.iter().enumerate() {
+            let ids: Vec<usize> = kws.iter().filter_map(|k| id_of.get(k.as_str()).copied()).collect();
+            for &e in &ids {
+                if let Some(list) = with.get_mut(e)
+                    && list.last() != Some(&p)
+                {
+                    list.push(p);
+                }
+            }
+            ix.photo_keywords.push(ids);
+        }
+        for (e, photos) in ix.entries.iter().zip(with) {
+            if !photos.is_empty() {
+                let list = ix.photos_with.entry(e.lower.clone()).or_default();
+                list.extend(photos);
+                // (two spellings of one keyword on one photo: the photo once)
+                list.sort_unstable();
+                list.dedup();
+            }
+        }
+        // (what `is_under` matches: the keyword itself, and each level path above it; each spelling
+        // once, the first found winning)
+        let listed = cat.keyword_list.values().map(|l| &l.path);
+        let mut done = std::collections::HashSet::new();
+        for x in listed.chain(library.iter().flat_map(|kws| kws.iter())).filter(|x| done.insert(x.as_str())) {
+            let lower = x.to_lowercase();
+            let ends = lower.match_indices(SEP).map(|(i, _)| i).chain(std::iter::once(lower.len()));
+            for end in ends {
+                if let Some(above) = lower.get(..end) {
+                    ix.containing.entry(above.to_string()).or_insert_with(|| x.clone());
+                }
+            }
+        }
+        ix.default_parent = cat.keyword_list.values().find(|l| l.info.new_keywords_inside).map(|l| l.path.clone());
+        ix
+    }
+
+    /// The first keyword that is `lower` or is below it, as written.
+    pub(crate) fn containing(&self, lower: &str) -> Option<&str> {
+        self.containing.get(lower).map(String::as_str)
     }
 }

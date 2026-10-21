@@ -179,6 +179,27 @@ fn key_from(name: &str) -> Option<egui::Key> {
     })
 }
 
+/// Bounds for the numeric control-channel arguments: unbounded values let one request queue
+/// billions of synthetic events or allocate a gigantic render and run the app out of memory.
+pub const CLICK_COUNT: (u64, u64) = (1, 100);
+pub const DRAG_STEPS: (u64, u64) = (1, 1000);
+pub const RENDER_SIZE: (u64, u64) = (16, 16384);
+
+/// Reads the non-negative integer `key` from `p` (`default` when absent or null), rejecting
+/// non-integers and values outside `min..=max` with a clear error instead of clamping silently.
+pub fn bounded_arg(p: &Value, key: &str, default: u64, (min, max): (u64, u64)) -> Result<u64, String> {
+    let bad = || format!("`{key}` must be an integer between {min} and {max}");
+    let n = match p.get(key) {
+        None | Some(Value::Null) => return Ok(default),
+        Some(v) => match (v.as_u64(), v.as_f64()) {
+            (Some(n), _) => n,
+            (None, Some(x)) if x.fract() == 0.0 && x >= 0.0 && x <= u64::MAX as f64 => x as u64,
+            _ => return Err(bad()),
+        },
+    };
+    if (min..=max).contains(&n) { Ok(n) } else { Err(bad()) }
+}
+
 fn push_drag(app: &mut LccApp, a: egui::Pos2, b: egui::Pos2, steps: u64, m: egui::Modifiers) {
     app.synthetic.push(egui::Event::PointerMoved(a));
     app.synthetic.push(egui::Event::PointerButton { pos: a, button: egui::PointerButton::Primary, pressed: true, modifiers: m });
@@ -229,7 +250,10 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
             if req.method == "ui.hoverWidget" {
                 app.synthetic.push(egui::Event::PointerMoved(at));
             } else if req.method == "ui.clickWidget" {
-                let n = p.get("count").and_then(Value::as_u64).unwrap_or(1);
+                let n = match bounded_arg(p, "count", 1, CLICK_COUNT) {
+                    Ok(n) => n,
+                    Err(e) => return err(e),
+                };
                 let button = if s("button") == Some("right") { egui::PointerButton::Secondary } else { egui::PointerButton::Primary };
                 app.synthetic.push(egui::Event::PointerMoved(at));
                 for _ in 0..n {
@@ -241,7 +265,11 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
                     f("toX").map(|v| v as f32).unwrap_or(at.x + f("dx").unwrap_or(0.0) as f32),
                     f("toY").map(|v| v as f32).unwrap_or(at.y + f("dy").unwrap_or(0.0) as f32),
                 );
-                push_drag(app, at, to, p.get("steps").and_then(Value::as_u64).unwrap_or(10), m);
+                let steps = match bounded_arg(p, "steps", 10, DRAG_STEPS) {
+                    Ok(n) => n,
+                    Err(e) => return err(e),
+                };
+                push_drag(app, at, to, steps, m);
             }
             ctx.request_repaint();
             ok(json!({"rect": rect_json(r)}))
@@ -252,15 +280,19 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
             ok(Value::Null)
         }
         "ui.click" | "ui.drag" => {
+            let (count, steps) = match (bounded_arg(p, "count", 1, CLICK_COUNT), bounded_arg(p, "steps", 10, DRAG_STEPS)) {
+                (Ok(c), Ok(s)) => (c, s),
+                (Err(e), _) | (_, Err(e)) => return err(e),
+            };
             let a = egui::pos2(f("x").unwrap_or(0.0) as f32, f("y").unwrap_or(0.0) as f32);
             let m = modifiers(p);
             let button = if s("button") == Some("right") { egui::PointerButton::Secondary } else { egui::PointerButton::Primary };
             if req.method == "ui.drag" {
                 let b = egui::pos2(f("toX").unwrap_or(0.0) as f32, f("toY").unwrap_or(0.0) as f32);
-                push_drag(app, a, b, p.get("steps").and_then(Value::as_u64).unwrap_or(10), m);
+                push_drag(app, a, b, steps, m);
             } else {
                 app.synthetic.push(egui::Event::PointerMoved(a));
-                for _ in 0..p.get("count").and_then(Value::as_u64).unwrap_or(1) {
+                for _ in 0..count {
                     app.synthetic.push(egui::Event::PointerButton { pos: a, button, pressed: true, modifiers: m });
                     app.synthetic.push(egui::Event::PointerButton { pos: a, button, pressed: false, modifiers: m });
                 }
@@ -475,7 +507,10 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
             if let Some(Err(e)) = s("path").map(|path| app.session.check_write_target(path)) {
                 return err(e);
             }
-            let size = p.get("size").and_then(Value::as_u64).unwrap_or(1600) as usize;
+            let size = match bounded_arg(p, "size", 1600, RENDER_SIZE) {
+                Ok(n) => n as usize,
+                Err(e) => return err(e),
+            };
             match app.session.render_now(id, size, size) {
                 Ok(r) => match (s("path"), app.services.png.as_ref()) {
                     (Some(path), Some(png)) => {
@@ -515,6 +550,7 @@ pub fn default_export_dir() -> String {
 /// (exact output file, single photo), `ids` (default: the selection, else the active photo).
 pub fn export_active(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     use lcc_engine::export::{Destination, ExportOptions, export_batch};
+    let asked = p;
     let p = &app.session.export_params(p)?;
     let mut opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
     if let (Some(path), None) = (p.get("path").and_then(Value::as_str), p.get("format")) {
@@ -545,6 +581,28 @@ pub fn export_active(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     // Preset): the last export's, else the default. "Same folder as original photo" needs none:
     // each photo goes to its own folder.
     let exact = p.get("path").and_then(Value::as_str).filter(|s| !s.trim().is_empty()).map(str::to_string);
+    // "Choose folder later": ask for the folder now, then run again with it (and these photos,
+    // whatever is selected by the time the folder dialog closes)
+    if opts.destination_mode == lcc_engine::export::DestinationMode::ChooseLater && exact.is_none() && p.get("dir").is_none() {
+        let mut again = asked.clone();
+        if let Some(o) = again.as_object_mut() {
+            o.insert("ids".into(), json!(ids));
+        }
+        let req = crate::pick::PickRequest::folder(crate::i18n::tr("Choose Export Folder"));
+        let picked = crate::pick::ask(app, "app.export", &again, "dir", req, |s| s.pick_folder.as_mut().map(|pick| pick().into_iter().collect()));
+        return match picked {
+            crate::pick::Picked::Now(paths) => match paths.into_iter().next() {
+                Some(d) => {
+                    again["dir"] = json!(d);
+                    export_active(app, &again)
+                }
+                // cancelled: nothing exported
+                None => Ok(Value::Null),
+            },
+            crate::pick::Picked::Later => Ok(Value::Null),
+            crate::pick::Picked::Unavailable => Err("no folder dialog here: pass `dir` for a chooseLater export".into()),
+        };
+    }
     let dir = match p.get("dir").and_then(Value::as_str) {
         Some(d) => d.trim().to_string(),
         None => {
@@ -619,5 +677,30 @@ pub fn save_screenshot(app: &mut LccApp, image: &egui::ColorImage, path: Option<
             Err(e) => json!({"ok": false, "error": e}),
         },
         None => json!({"ok": false, "error": "no writer configured"}),
+    }
+}
+
+#[cfg(test)]
+mod arg_bounds_tests {
+    use super::*;
+
+    #[test]
+    fn huge_counts_steps_and_sizes_are_rejected() {
+        for (key, b) in [("count", CLICK_COUNT), ("steps", DRAG_STEPS), ("size", RENDER_SIZE)] {
+            for v in [json!(1e10), json!(10_000_000_000u64), json!(u64::MAX), json!(-1), json!(2.5), json!("5")] {
+                let e = bounded_arg(&json!({ key: v }), key, b.0, b).unwrap_err();
+                assert!(e.contains(key), "{e}");
+            }
+        }
+    }
+
+    #[test]
+    fn defaults_and_in_range_values_pass() {
+        assert_eq!(bounded_arg(&json!({}), "count", 1, CLICK_COUNT), Ok(1));
+        assert_eq!(bounded_arg(&json!({"count": null}), "count", 1, CLICK_COUNT), Ok(1));
+        assert_eq!(bounded_arg(&json!({"count": 2}), "count", 1, CLICK_COUNT), Ok(2));
+        assert_eq!(bounded_arg(&json!({"steps": 20.0}), "steps", 10, DRAG_STEPS), Ok(20));
+        assert_eq!(bounded_arg(&json!({"size": 16384}), "size", 1600, RENDER_SIZE), Ok(16384));
+        assert!(bounded_arg(&json!({"count": 0}), "count", 1, CLICK_COUNT).is_err());
     }
 }

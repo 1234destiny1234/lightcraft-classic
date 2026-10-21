@@ -371,7 +371,7 @@ pub fn parse_lua(text: &str) -> Result<Lua, String> {
 }
 
 /// A localisable string `"$$$/Key/Path=Default text"` → its default text.
-fn delocalize(s: &str) -> String {
+pub(crate) fn delocalize(s: &str) -> String {
     match s.strip_prefix("$$$/") {
         Some(rest) => rest.split_once('=').map_or(rest, |(_, t)| t).to_string(),
         None => s.to_string(),
