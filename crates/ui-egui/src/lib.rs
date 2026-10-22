@@ -74,6 +74,7 @@ pub mod text_field;
 pub mod theme;
 pub mod timelapse_ui;
 pub mod titlebar;
+pub mod touch;
 pub mod video_ui;
 pub mod video_view;
 pub mod web_module;
@@ -1733,7 +1734,8 @@ impl LccApp {
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        let m = shell::edges(self, ui, &ctx);
+        let touch = touch::on(self);
+        let m = if touch { touch::edges(self, ui, &ctx) } else { shell::edges(self, ui, &ctx) };
         let t = theme::Tokens::get(&ctx);
         let bg = if matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare | state::ViewMode::Survey | state::ViewMode::Reference)
         {
@@ -1741,7 +1743,9 @@ impl LccApp {
         } else {
             t.grid_bg
         };
-        egui::CentralPanel::default().frame(egui::Frame::NONE.fill(bg)).show(ui, |ui| m.center(ui, self));
+        egui::CentralPanel::default()
+            .frame(egui::Frame::NONE.fill(bg))
+            .show(ui, |ui| if touch { touch::center(self, ui, m) } else { m.center(ui, self) });
         module::lights_out(self, &ctx);
         help_overlay::show(self, &ctx);
         panels::second::show(self, &ctx);
@@ -2464,3 +2468,5 @@ mod tests_model_setup;
 
 #[cfg(test)]
 mod tests_docking_acceptance;
+#[cfg(test)]
+mod tests_touch;
