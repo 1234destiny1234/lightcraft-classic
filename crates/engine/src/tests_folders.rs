@@ -567,6 +567,84 @@ fn labels_follow_a_moved_folder() {
     assert_eq!(listed_label(&mut s, &dir.path("archive/trip")).as_deref(), Some("yellow"));
 }
 
+/// The path of the folder-list row whose name is `name`, as the sidebar hands it to a command.
+fn listed_path(s: &mut Session, name: &str) -> String {
+    fn find(rows: &serde_json::Value, name: &str) -> Option<String> {
+        rows.as_array()?.iter().find_map(|r| if r["name"] == name { r["path"].as_str().map(str::to_string) } else { find(&r["children"], name) })
+    }
+    let rows = s.execute("library.folders", &json!({})).unwrap();
+    find(&rows, name).unwrap_or_else(|| panic!("no row {name}: {rows}"))
+}
+
+/// Every library photo's path, sorted.
+fn file_paths(s: &Session) -> Vec<String> {
+    let mut paths: Vec<String> = s
+        .catalog
+        .photos()
+        .filter_map(|p| match &p.source {
+            Source::File { path } => Some(path.clone()),
+            _ => None,
+        })
+        .collect();
+    paths.sort();
+    paths
+}
+
+#[test]
+fn a_folder_of_a_catalog_made_on_windows_can_be_found_again_here() {
+    let dir = Scratch::new("relocate-windows");
+    std::fs::create_dir_all(dir.0.join("Photos/day1")).unwrap();
+    let mut s = Session::new();
+    // the catalog came from a Windows computer: its paths are that system's
+    let (a, b, beside) = (r"C:\Users\me\Photos\a.jpg", r"C:\Users\me\Photos\day1\b.jpg", r"C:\Users\me\Photos2\c.jpg");
+    for p in [a, b, beside] {
+        add(&mut s, p);
+    }
+    s.execute("folder.label", &json!({"path": r"C:\Users\me\Photos\day1", "label": "red"})).unwrap();
+    let before = file_paths(&s);
+    let row = listed_path(&mut s, "Photos");
+    for (from, why) in [(row.as_str(), "the folder list's row"), (r"C:\Users\me\Photos", "the path as the catalog spells it")] {
+        let r = s.execute("folder.relocate", &json!({"path": from, "to": dir.path("Photos")}));
+        let r = r.unwrap_or_else(|e| panic!("{why} ({from}): {e}"));
+        assert_eq!(r["relinked"], 2, "{why}: {r}");
+        let mut want = vec![dir.path("Photos/a.jpg"), dir.path("Photos/day1/b.jpg"), beside.to_string()];
+        want.sort();
+        assert_eq!(file_paths(&s), want, "{why}: the folder inside goes along, the one beside it stays");
+        assert_eq!(listed_label(&mut s, &dir.path("Photos/day1")).as_deref(), Some("red"), "{why}: its label goes along");
+        s.execute("edit.undo", &json!({})).unwrap();
+        assert_eq!(file_paths(&s), before, "{why}: undo puts back each path as it was spelled");
+    }
+}
+
+#[test]
+fn a_stored_path_never_relinks_a_photo_outside_the_new_place() {
+    let dir = Scratch::new("relocate-hostile");
+    std::fs::create_dir_all(dir.0.join("to")).unwrap();
+    let to = dir.path("to");
+    let mut s = Session::new();
+    // a hostile or broken catalog: relative paths that climb out of the folder, and a folder name
+    // that Windows reads as a drive
+    let (inside, climbs, drive) = ("../a.jpg", "../../x.jpg", "/mnt/C:/y.jpg");
+    for p in [inside, climbs, drive] {
+        add(&mut s, p);
+    }
+    let r = s.execute("folder.relocate", &json!({"path": "..", "to": to})).unwrap();
+    assert_eq!(r["relinked"], 1, "only the photo inside the folder counts: {r}");
+    let r = s.execute("folder.relocate", &json!({"path": "/mnt", "to": to}));
+    if cfg!(windows) {
+        assert!(r.is_err(), "`C:` would put the photo on another drive, so nothing is relinked: {r:?}");
+    } else {
+        assert_eq!(r.unwrap()["relinked"], 1, "`C:` is a plain folder name here");
+    }
+    for path in file_paths(&s) {
+        let p = std::path::Path::new(&path);
+        let moved = p.starts_with(&to);
+        assert!(!moved || p.components().all(|c| c != std::path::Component::ParentDir), "{path} climbs out of {to}");
+        assert!(moved || [inside, climbs, drive].contains(&path.as_str()), "{path} was relinked outside {to}");
+    }
+    assert!(file_paths(&s).contains(&climbs.to_string()), "the climbing photo stays where it was");
+}
+
 #[test]
 fn labels_follow_a_relocated_folder_and_undo_puts_them_back() {
     let dir = Scratch::new("label-relocate");

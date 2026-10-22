@@ -132,6 +132,13 @@ fn delete(s: &mut Session, p: &Value) -> Result<Value> {
     Ok(json!({"path": path}))
 }
 
+/// Whether `name` is one ordinary file or folder name on this system, which `Path::join` adds
+/// below the path it is joined to.
+fn plain_name(name: &str) -> bool {
+    let mut parts = Path::new(name).components();
+    matches!((parts.next(), parts.next()), (Some(std::path::Component::Normal(_)), None))
+}
+
 fn relocate(s: &mut Session, p: &Value) -> Result<Value> {
     let c = "folder.relocate";
     let from = folder_param(p, c)?;
@@ -139,14 +146,30 @@ fn relocate(s: &mut Session, p: &Value) -> Result<Value> {
     if !Path::new(to).is_dir() {
         return Err(bad(c, format!("{to} is not a folder")));
     }
-    let (src, dst) = (PathBuf::from(&from), PathBuf::from(to));
-    let mut ops: Vec<Op> = photos_in(s, &src)
-        .into_iter()
-        .filter_map(|(id, path)| {
-            let rel = path.strip_prefix(&src).ok()?;
-            let np = dst.join(rel);
-            let file_name = s.catalog.photo(id)?.file_name.clone();
-            Some(Op::Relink { id, file_name, source: Source::File { path: np.to_string_lossy().to_string() }, format: None })
+    // the folder's photos as the folder list finds them, by name with either separator, so a folder
+    // of a catalog made on another system (`C:\…` read on macOS) is found too; each goes to the same
+    // place below `to`, joined by the platform
+    let dst = PathBuf::from(to);
+    let mut ops: Vec<Op> = s
+        .catalog
+        .photos()
+        .filter(|p| !p.local && !p.deleted)
+        .filter_map(|p| {
+            let Source::File { path } = &p.source else { return None };
+            let rest = lcc_catalog::query::folder_rest(path, &from).filter(|r| !r.is_empty())?;
+            // a stored path is hostile: a name that isn't a plain name here (`..` left in a relative
+            // path, a drive like `C:` on Windows, which `join` puts in place of `to`) would land the
+            // photo outside `to`, so that photo stays where it is
+            if !rest.iter().all(|name| plain_name(name)) {
+                return None;
+            }
+            let np = rest.iter().fold(dst.clone(), |d, name| d.join(name));
+            Some(Op::Relink {
+                id: p.id,
+                file_name: p.file_name.clone(),
+                source: Source::File { path: np.to_string_lossy().to_string() },
+                format: None,
+            })
         })
         .collect();
     let n = ops.len();
