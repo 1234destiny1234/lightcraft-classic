@@ -7,8 +7,8 @@ library by [`classic.jsonl`](classic.jsonl), a list of control-protocol requests
 # (<PREFIX>_FACE_MODELS at an empty folder keeps the face scan, and its activity row, out of the shots)
 <PREFIX>_FACE_MODELS=$(mktemp -d) cargo run --release -p lcc-cli -- snapshot --demo --script docs/showcase/classic.jsonl --size 1600x1000
 # the four scope modes, cropped from the Develop panel at 2x into one 2x2 image
-cd docs/images/classic && for mh in rgb:121 parade:153 waveform:153 vectorscope:187; do m=${mh%:*}; h=${mh#*:}
-  magick scope-$m.png -crop 268x${h}+1286+86 +repage -background black -gravity center -extent 268x187 -resize 200% c-$m.png; done
+cd docs/images/classic && for mh in rgb:123 parade:163 waveform:163 vectorscope:209; do m=${mh%:*}; h=${mh#*:}
+  magick scope-$m.png -crop 268x${h}+1332+93 +repage -background black -gravity center -extent 268x209 -resize 200% c-$m.png; done
 magick \( c-rgb.png c-parade.png +append \) \( c-waveform.png c-vectorscope.png +append \) -append scopes.png
 rm c-*.png scope-*.png && cd -
 # compress for the repo (ImageMagick): 1280 px wide JPEGs, well under 300 KB each
