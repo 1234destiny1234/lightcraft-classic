@@ -1213,6 +1213,7 @@ impl LccApp {
     pub fn sync_theme(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
         theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         let wanted = self.ui.settings.theme(self.system_theme(ctx));
         if theme::current(ctx) != Some(wanted) {
@@ -1313,6 +1314,7 @@ impl LccApp {
     fn logic_inner(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
         theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if !self.styled {
             theme::install_fonts_with_chinese(ctx, self.chinese_font.as_ref());
@@ -1507,6 +1509,7 @@ impl LccApp {
     fn apply_settings(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
         theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if self.gpu_applied != Some(self.ui.settings.gpu) {
             self.gpu_applied = Some(self.ui.settings.gpu);
@@ -1657,6 +1660,7 @@ impl LccApp {
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
         theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         self.text_focus = self.tasks.repaint.as_ref().is_some_and(|c| c.egui_wants_keyboard_input());
         ctx.output(|o| {

@@ -280,6 +280,20 @@ const THUMB_RING: f32 = 4.0;
 /// Size of a slider's name and value in a panel (issue #346: small enough that names fit).
 const LABEL_FONT: f32 = 10.5;
 
+/// The font of a panel slider's name and value: [`LABEL_FONT`] when compact, the interface's
+/// regular text (`TextStyle::Body`, as dialog form sliders) at Full Size (Settings ▸ Interface).
+fn slider_font(ui: &Ui) -> egui::FontId {
+    match crate::theme::slider_text(ui.ctx()) {
+        crate::theme::SliderText::Compact => Tokens::get(ui.ctx()).font(LABEL_FONT),
+        crate::theme::SliderText::FullSize => egui::TextStyle::Body.resolve(ui.style()),
+    }
+}
+
+/// How much larger the slider text is than [`LABEL_FONT`], to widen the value and name columns.
+fn text_scale(font: &egui::FontId) -> f32 {
+    if font.size.is_finite() && font.size > 0.0 { (font.size / LABEL_FONT).max(1.0) } else { 1.0 }
+}
+
 /// A slider row: the name (left-aligned, flush with section headers),
 /// a track with a hollow ring thumb occupying most of the panel width, and a compact value readout.
 /// Double-click the label or thumb to reset (hovering either says so). Shift-drag = fine adjustment.
@@ -303,14 +317,16 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let w = ui.available_width();
     // a panel slider on two rows (Settings ▸ Interface): name and value, then the track under them
     let two_rows = form_label.is_none() && crate::theme::slider_layout(ui.ctx()) == crate::theme::SliderLayout::TwoRows;
-    let row_h = if two_rows { t.slider_row_h + TWO_ROW_EXTRA } else { t.slider_row_h };
+    let font = slider_font(ui);
+    let k = text_scale(&font);
+    let row_h = if two_rows { t.slider_row_h + TWO_ROW_EXTRA + TWO_ROW_TEXT_H * (k - 1.0) } else { t.slider_row_h };
     let (row, _) = ui.allocate_exact_size(vec2(w, row_h), Sense::hover());
     // one row: name (left-aligned flush with section header) | wide track | compact value
     let label_str = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
     let geo = match form_label {
         Some(label_w) => SliderGeometry::form(row, label_w),
-        None if two_rows => SliderGeometry::two_rows(row),
-        None => SliderGeometry::new(row, label_column(ui, w)),
+        None if two_rows => SliderGeometry::two_rows(row, k),
+        None => SliderGeometry::new(row, label_column(ui, w, &font, k), k),
     };
     let (label_rect, track_rect, value_rect) = (geo.label, geo.track, geo.value);
     let id = ui.id().with(spec.id);
@@ -471,7 +487,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
         let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
         // the old value is selected when the field takes the focus, so typing replaces it
         let field = crate::text_field::TextField::singleline(&format!("sliderField:{}", spec.id), &mut text)
-            .font(t.font(LABEL_FONT))
+            .font(if form_label.is_some() { t.font(LABEL_FONT) } else { font.clone() })
             .horizontal_align(egui::Align::RIGHT)
             .width(value_rect.width())
             .margin(egui::Margin::ZERO)
@@ -657,7 +673,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let p = ui.painter();
     // the name, right-aligned against its track; ellipsized when the column is too narrow for it
     // (in a form, the font of the other rows' labels)
-    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { t.font(LABEL_FONT) };
+    let label_font = if form_label.is_some() { egui::TextStyle::Body.resolve(ui.style()) } else { font.clone() };
     let mut job = egui::text::LayoutJob::simple_singleline(label_str, label_font, text_c);
     job.wrap = egui::text::TextWrapping { max_width: label_rect.width(), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
     let galley = ui.painter().layout_job(job);
@@ -666,7 +682,13 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let gpos = pos2(gx, label_rect.center().y - galley.size().y / 2.0);
     p.galley(gpos, galley, text_c);
     if typing.is_none() {
-        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), t.font(LABEL_FONT), text_c);
+        p.text(
+            value_rect.right_center(),
+            Align2::RIGHT_CENTER,
+            shown_value(spec, v),
+            if form_label.is_some() { t.font(LABEL_FONT) } else { font.clone() },
+            text_c,
+        );
         // the scrub pointer, as over Lightroom's values: a drag here changes the value
         if enabled && (value_resp.hovered() || scrub.is_some()) {
             ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
@@ -701,6 +723,9 @@ struct SliderGeometry {
 /// How much taller a two-row slider is than a one-row one.
 const TWO_ROW_EXTRA: f32 = 14.0;
 
+/// Height of a two-row slider's name and value line at [`LABEL_FONT`].
+const TWO_ROW_TEXT_H: f32 = 12.0;
+
 /// Width of a slider's value column: fits numbers like "+100", "8978", "+0.80", "-5.00" at
 /// [`LABEL_FONT`].
 const VALUE_W: f32 = 28.0;
@@ -711,10 +736,11 @@ const VALUE_W: f32 = 28.0;
 const MAX_LABEL_COL: f32 = 76.0;
 
 impl SliderGeometry {
-    fn new(row: Rect, label_col: f32) -> Self {
+    fn new(row: Rect, label_col: f32, k: f32) -> Self {
         let (pad_l, pad_r, gap) = (12.0, 12.0, 8.0);
         let label = Rect::from_min_size(pos2(row.left() + pad_l, row.top()), vec2(label_col, row.height()));
-        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
+        let value =
+            Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W * k).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
         let track_l = label.right() + gap;
         let track_r = (value.left() - gap).max(track_l + 1.0);
         let track = Rect::from_min_max(pos2(track_l, row.top()), pos2(track_r, row.bottom()));
@@ -723,13 +749,13 @@ impl SliderGeometry {
 
     /// Two rows: the name at the left and the value at the right of the top line, the track the
     /// width of both under them (its thumb at either end just inside the row's padding).
-    fn two_rows(row: Rect) -> Self {
+    fn two_rows(row: Rect, k: f32) -> Self {
         let (pad_l, pad_r) = (12.0, 12.0);
         // the name and value sit close over their own track, with the gap above them, so each
         // slider reads as one unit and the rows stand apart (issue #346)
         let split = (row.bottom() - 14.0).max(row.top());
-        let text_top = (split - 12.0).max(row.top());
-        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(row.left() + pad_l), text_top), pos2(row.right() - pad_r, split));
+        let text_top = (split - TWO_ROW_TEXT_H * k).max(row.top());
+        let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W * k).max(row.left() + pad_l), text_top), pos2(row.right() - pad_r, split));
         let label = Rect::from_min_max(pos2(row.left() + pad_l, text_top), pos2((value.left() - 8.0).max(row.left() + pad_l), split));
         let track_l = row.left() + pad_l + THUMB_RING;
         let track_r = (row.right() - pad_r - THUMB_RING).max(track_l + 1.0);
@@ -754,9 +780,9 @@ impl SliderGeometry {
 /// [`LABEL_FONT`] in the current language, so the column (and every track) stays the same width as
 /// sections and flyouts open and close (issue #397), strictly capped so the interactive track
 /// occupies most of the panel width (names past it are ellipsized).
-fn label_column(ui: &Ui, row_w: f32) -> f32 {
+fn label_column(ui: &Ui, row_w: f32, font: &egui::FontId, k: f32) -> f32 {
     let key = egui::Id::new("slider-label-column");
-    let lang = format!("{:?}", crate::i18n::language());
+    let lang = format!("{:?}/{}", crate::i18n::language(), font.size);
     let widest = match ui.data(|d| d.get_temp::<(String, f32)>(key)) {
         Some((l, w)) if l == lang => w,
         _ => {
@@ -764,14 +790,14 @@ fn label_column(ui: &Ui, row_w: f32) -> f32 {
             let w = lcc_develop::controls::CONTROLS
                 .iter()
                 .chain(lcc_develop::controls::INDEXED)
-                .map(|c| ui.painter().layout_no_wrap(crate::i18n::tr(c.label).to_string(), t.font(LABEL_FONT), t.text_label).size().x)
+                .map(|c| ui.painter().layout_no_wrap(crate::i18n::tr(c.label).to_string(), font.clone(), t.text_label).size().x)
                 .fold(0.0_f32, f32::max)
                 .ceil();
             ui.data_mut(|d| d.insert_temp(key, (lang, w)));
             w
         }
     };
-    let max_col = ((row_w - 48.0) * 0.34).clamp(24.0, MAX_LABEL_COL);
+    let max_col = ((row_w - 48.0) * (0.34 * k).min(0.42)).clamp(24.0, MAX_LABEL_COL * k);
     widest.clamp(24.0_f32.min(max_col), max_col)
 }
 
