@@ -3691,6 +3691,72 @@ fn eye_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, map: 
 
 /// A filmstrip cell's file-name label: names longer than 14 characters are cut to 13 and an
 /// ellipsis. Counts characters, not bytes, so a CJK name is never cut inside a character (#266).
+/// Height of the filmstrip's source line (Lightroom Classic's "Folder : 2025  69 photos / 1 selected / name").
+const FILM_HEAD_H: f32 = 16.0;
+
+/// The source line's parts: the source, then the count and selection, then the active photo's file
+/// name (shown a shade brighter), or `None` when no photo is active.
+pub(crate) fn film_source_parts(source: &str, count: &str, selected: usize, name: Option<&str>) -> (String, String, Option<String>) {
+    let counts = format!("{count} / {}", crate::i18n::tr_format!("{n} selected", n = selected));
+    (source.to_string(), counts, name.filter(|n| !n.is_empty()).map(|n| format!(" / {n}")))
+}
+
+/// `text` cut at a character boundary (with "…") so `width` of it fits in `max`; empty when not even "…" fits.
+pub(crate) fn elide_end(text: &str, max: f32, width: impl Fn(&str) -> f32) -> String {
+    if width(text) <= max {
+        return text.to_string();
+    }
+    let chars: Vec<char> = text.chars().collect();
+    let cut = |n: usize| chars.iter().take(n).collect::<String>() + "…";
+    // the longest prefix that fits with the ellipsis
+    let (mut lo, mut hi) = (0usize, chars.len());
+    while lo < hi {
+        let mid = (lo + hi).div_ceil(2);
+        if width(&cut(mid)) <= max {
+            lo = mid;
+        } else {
+            hi = mid - 1;
+        }
+    }
+    let out = cut(lo);
+    if width(&out) <= max { out } else { String::new() }
+}
+
+/// Draws the source line in `head`: the source gives way first, then the file name, then the counts.
+fn film_source_line(app: &mut LccApp, ui: &egui::Ui, head: Rect, shown: usize, t: &Tokens) {
+    if head.height() < 8.0 || head.width() < 40.0 {
+        return;
+    }
+    let filtering = app.session.filter != Default::default();
+    let count = super::chips::count_text(shown, app.session.source_total(), filtering);
+    let name = app.session.active().and_then(|id| app.session.catalog.photo(id)).map(|p| p.file_name.clone());
+    let source = crate::i18n::source_title(&app.session);
+    let (source, counts, name) = film_source_parts(&source, &count, app.session.selection.ids.len(), name.as_deref());
+    let font = t.font(11.0);
+    let p = ui.painter();
+    let w = |s: &str| p.layout_no_wrap(s.to_string(), font.clone(), t.text_dim).size().x;
+    let (left, right) = (head.left() + 10.0, head.right() - 10.0);
+    let gap = 24.0;
+    let name_w = name.as_deref().map_or(0.0, w);
+    let source_room = right - left - w(&counts) - name_w - gap;
+    let source = if source_room > 30.0 { crate::widgets::elide_head(&source, source_room, w) } else { String::new() };
+    let y = head.center().y;
+    let mut x = left;
+    if !source.is_empty() {
+        x = p.text(pos2(x, y), Align2::LEFT_CENTER, &source, font.clone(), t.text_dim).right() + gap;
+    }
+    let counts = elide_end(&counts, (right - x).max(0.0), w);
+    let cr = p.text(pos2(x, y), Align2::LEFT_CENTER, &counts, font.clone(), t.text_dim);
+    register(ui.ctx(), "film:count", cr);
+    if let Some(name) = name {
+        let name = elide_end(&name, (right - cr.right()).max(0.0), w);
+        if !name.is_empty() {
+            let nr = p.text(pos2(cr.right(), y), Align2::LEFT_CENTER, &name, font, t.text_label);
+            register(ui.ctx(), "film:fileName", nr);
+        }
+    }
+}
+
 fn film_label(name: &str) -> String {
     if name.chars().nth(14).is_some() { format!("{}…", name.chars().take(13).collect::<String>()) } else { name.to_string() }
 }
@@ -3701,6 +3767,10 @@ pub(crate) fn filmstrip(app: &mut LccApp, ui: &mut egui::Ui, r: Rect) {
     ui.painter().rect_filled(Rect::from_min_size(r.min, vec2(r.width(), 4.0)), 0.0, Color32::from_gray(0x20));
     let ids = app.session.visible_cloned();
     let active = app.session.selection.active;
+    // Lightroom Classic's source line above the strip: source, count, selection, active file name
+    let head = Rect::from_min_max(pos2(r.left(), r.top() + 4.0), pos2(r.right(), (r.top() + 4.0 + FILM_HEAD_H).min(r.bottom())));
+    film_source_line(app, ui, head, ids.len(), &t);
+    let r = Rect::from_min_max(pos2(r.left(), head.bottom()), r.max);
     let cell_w = 120.0;
     let ppp = ui.ctx().pixels_per_point();
     if ids.is_empty() {
@@ -4218,6 +4288,24 @@ mod tests {
             out.textures_delta.clear();
         }
         assert_eq!(seen, [8192, 8192, 8192]);
+    }
+
+    #[test]
+    fn film_source_line_names_the_active_file_and_elides_on_characters() {
+        let (_, counts, name) = super::film_source_parts("Folder : 2025", "69 photos", 1, Some("9J0A0107.CR3"));
+        assert!(counts.contains("69 photos"));
+        assert_eq!(name.as_deref(), Some(" / 9J0A0107.CR3"));
+        assert_eq!(super::film_source_parts("x", "0 photos", 0, None).2, None);
+        assert_eq!(super::film_source_parts("x", "0 photos", 0, Some("")).2, None);
+        // one point per character: cut on characters (multi-byte names too), never wider than asked
+        let w = |s: &str| s.chars().count() as f32;
+        for text in ["写真写真写真.JPG", "IMG_0001.CR3", ""] {
+            for max in [0.0, 0.5, 1.0, 3.0, 5.0, 100.0] {
+                let cut = super::elide_end(text, max, w);
+                assert!(w(&cut) <= max, "{text:?} at {max}: {cut:?}");
+            }
+        }
+        assert_eq!(super::elide_end("写真写真.JPG", 4.0, w), "写真写…");
     }
 
     #[test]

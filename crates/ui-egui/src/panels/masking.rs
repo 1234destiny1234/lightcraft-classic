@@ -189,9 +189,14 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         } else {
             None
         };
+        // one line kept for the status whether or not there is one: the AI masks' background work must not move the
+        // controls under it (one line, cut short when narrow, so it never grows either)
+        ui.add_space(4.0);
+        let line = ui.text_style_height(&egui::TextStyle::Body);
+        let (rect, _) = ui.allocate_exact_size(egui::vec2(ui.available_width(), line), egui::Sense::hover());
         if let Some(status) = status {
-            ui.add_space(4.0);
-            ui.add(egui::Label::new(egui::RichText::new(crate::i18n::tr(status)).color(t.text_dim)).wrap());
+            let label = egui::Label::new(egui::RichText::new(crate::i18n::tr(status)).color(t.text_dim)).truncate();
+            ui.put(rect, label);
             ui.ctx().request_repaint_after(std::time::Duration::from_millis(250));
         }
         // the model download, while its dialog is closed

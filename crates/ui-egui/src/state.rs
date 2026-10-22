@@ -432,6 +432,8 @@ pub struct AppSettings {
     pub ui_font_size: UiFontSize,
     /// Panel sliders on one row or two (Settings ▸ Interface).
     pub slider_layout: crate::theme::SliderLayout,
+    /// Panel slider names and values compact or at the regular text size (Settings ▸ Interface).
+    pub slider_text: crate::theme::SliderText,
     /// How dragging a slider and scrubbing its value follow the pointer (Settings ▸ Interface).
     pub slider_control: crate::theme::SliderControl,
     /// Theme shortcuts in the appearance context menu.
@@ -489,6 +491,7 @@ impl Default for AppSettings {
             light_theme: LightTheme::Silver,
             ui_font_size: UiFontSize::default(),
             slider_layout: Default::default(),
+            slider_text: Default::default(),
             slider_control: Default::default(),
             favorite_themes: Vec::new(),
             display_profile: String::new(),
@@ -779,6 +782,9 @@ pub struct UiState {
     pub docking: Option<crate::docking::Workspace>,
     #[serde(default = "crate::i18n::default_language")]
     pub language: crate::i18n::Locale,
+    /// Android: the first-start question whether to add the camera roll was answered (either
+    /// way); Settings ▸ Folders offers it again.
+    pub camera_roll_asked: bool,
     /// The Build Previews run last announced (its identity, finished?).
     #[serde(skip)]
     pub preview_build_seen: Option<(usize, bool)>,
@@ -1593,6 +1599,7 @@ impl Default for UiState {
             window: None,
             docking: None,
             language: crate::i18n::default_language(),
+            camera_roll_asked: false,
             preview_build_seen: None,
             unsaved_seen: false,
             luminance_map_restore: None,

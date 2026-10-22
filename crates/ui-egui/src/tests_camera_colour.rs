@@ -7,7 +7,7 @@ use std::time::Duration;
 
 use lcc_catalog::{Op, Photo, PhotoId, Source};
 use lcc_develop::CameraColour;
-use lcc_engine::media::{FileLoader, LoadOptions};
+use lcc_engine::media::{FileLoader, LoadOptions, SourceLevel};
 use lcc_pipeline::SourceInfo;
 use serde_json::json;
 
@@ -73,4 +73,25 @@ fn calibrated_camera_colour_switches_the_photo_and_its_decode() {
 fn calibrated_camera_colour_is_not_offered_without_measured_colour() {
     let (h, _) = edit_panel(false);
     assert!(!shown(&h));
+}
+
+fn rect_of(h: &Headless, id: &str) -> Option<egui::Rect> {
+    h.app.widgets.iter().find(|(w, _)| w == id).map(|(_, r)| *r)
+}
+
+#[test]
+fn calibrated_camera_colour_stays_while_the_photo_is_decoded_again() {
+    // the row used to follow the cached decodes: a source decoded again (an edit, crop mode) or one without the
+    // decoder's facts hid it for a frame or more, and every control under it, the slider being dragged among them,
+    // jumped up and back
+    let (mut h, _) = edit_panel(true);
+    assert!(shown(&h));
+    let below = rect_of(&h, "slider:light.exposure").expect("the Exposure slider");
+    let plain = Arc::new(lcc_raster::Rgb32f::new(48, 32));
+    for level in [SourceLevel::Thumb, SourceLevel::Preview, SourceLevel::Full] {
+        h.app.session.media.insert(PhotoId(1), level, plain.clone());
+    }
+    h.step();
+    assert!(shown(&h), "still offered while the decodes carry no facts");
+    assert_eq!(rect_of(&h, "slider:light.exposure"), Some(below), "the controls under it stay put");
 }

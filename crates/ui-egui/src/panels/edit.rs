@@ -202,9 +202,12 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         control(app, ui, &d, "profile.amount", true);
         ui.add_space(6.0);
     }
+    // whether to offer the two file options below: facts of the file that stay put while sources are decoded again
+    // (an edit, crop mode), so the rows under them never move
+    let facts = app.session.media.profile_facts(id);
     // a raw carrying its own local tone mapping (Apple ProRAW's gain table map): off renders it as
     // Lightroom Classic does, on as the camera does
-    if app.session.source_info(id).local_tone.is_some() {
+    if facts.local_tone {
         egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
             let mut on = d.profile.camera_local_tone;
             let r = ui.checkbox(&mut on, crate::i18n::tr("Camera local tone mapping"));
@@ -216,7 +219,7 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     }
     // a raw without colour matrices whose camera model has measured ones: off starts from the look fitted to the
     // camera's JPEG (Auto), on from the measured colour with the app's own tone curve (Colorimetric)
-    if app.session.source_info(id).colorimetric {
+    if facts.colorimetric {
         egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 0, bottom: 10 }).show(ui, |ui| {
             let mut on = d.profile.camera_colour == lcc_develop::CameraColour::Colorimetric;
             let r = ui.checkbox(&mut on, crate::i18n::tr("Calibrated camera colour"));

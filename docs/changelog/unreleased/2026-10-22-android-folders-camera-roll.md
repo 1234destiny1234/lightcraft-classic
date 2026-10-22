@@ -1,0 +1,3 @@
+## Import
+
+- **Android folder import and camera roll:** File ▸ Import from Folder… is enabled on Android. It was greyed out because it asked for the desktop's synchronous folder dialog, and Android only has the background picker. A folder on the device is read in place only with "All files access": without it, scoped storage lists the folder with none of its photos, so the folder is copied instead and stays linked. On the first start the app offers to add the camera roll (DCIM/Camera, through MediaStore and the photo permission: READ_MEDIA_IMAGES on Android 13+, READ_EXTERNAL_STORAGE before). The answer is remembered, Settings ▸ Folders offers it again, and a refused permission shows as an error. (no PR)

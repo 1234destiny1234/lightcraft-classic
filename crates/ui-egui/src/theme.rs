@@ -479,6 +479,45 @@ impl SliderLayout {
     }
 }
 
+/// How large a panel slider's name and value are (Settings ▸ Interface).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SliderText {
+    /// Small text, so long names fit beside the track.
+    #[default]
+    Compact,
+    /// The size of the interface's regular text.
+    FullSize,
+}
+
+impl SliderText {
+    pub const ALL: [SliderText; 2] = [SliderText::Compact, SliderText::FullSize];
+
+    pub fn label(self) -> &'static str {
+        match self {
+            SliderText::Compact => "Compact",
+            SliderText::FullSize => "Full Size",
+        }
+    }
+}
+
+fn slider_text_id() -> egui::Id {
+    egui::Id::new("app-slider-text")
+}
+
+/// The slider text size `ctx` uses.
+pub fn slider_text(ctx: &egui::Context) -> SliderText {
+    ctx.data(|d| d.get_temp::<SliderText>(slider_text_id())).unwrap_or_default()
+}
+
+/// Size panel sliders' names and values as `text` says from the next frame on.
+pub fn set_slider_text(ctx: &egui::Context, text: SliderText) {
+    if slider_text(ctx) != text {
+        ctx.data_mut(|d| d.insert_temp(slider_text_id(), text));
+        ctx.request_repaint();
+    }
+}
+
 /// How dragging a slider's thumb and scrubbing its value follow the pointer (Settings ▸ Interface).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
