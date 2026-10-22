@@ -319,6 +319,10 @@ pub struct AppSettings {
     pub gpu: bool,
     /// Windows DirectComposition to prevent VRR flicker; opt-in, applies at next launch.
     pub compose_window: bool,
+    /// An HDR (extended-range) window where the display offers one; off: always an SDR window.
+    /// Applies at next launch. Off helps where the compositor resamples HDR windows on an SDR
+    /// monitor (KDE with mixed scaling: small text looked stretched).
+    pub hdr_display: bool,
     /// Largest long edge (pixels) the user lets the loupe render at; 0 = Automatic (the size it is
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
@@ -394,6 +398,7 @@ impl Default for AppSettings {
             ask_before_move: true,
             gpu: true,
             compose_window: false,
+            hdr_display: true,
             preview_limit: 0,
             external_editor: String::new(),
             external_file: EditFile::default(),

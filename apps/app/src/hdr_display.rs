@@ -120,7 +120,17 @@ pub fn choose(target: Option<TextureFormat>, platform: Platform, display_headroo
 
 /// The user's opt-out: `<PREFIX>_HDR_DISPLAY=0` (or `off`, `false`, `no`).
 pub fn disabled() -> bool {
-    lcc_brand::env("HDR_DISPLAY").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false" | "no"))
+    SWITCHED_OFF.load(std::sync::atomic::Ordering::Relaxed)
+        || lcc_brand::env("HDR_DISPLAY").is_some_and(|v| matches!(v.trim(), "0" | "off" | "false" | "no"))
+}
+
+/// Settings → Performance → HDR display turned off (read from the saved settings before the
+/// window opens: [`switch_off`]).
+static SWITCHED_OFF: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
+/// The saved settings ask for an SDR window: HDR display stays off for this launch.
+pub fn switch_off() {
+    SWITCHED_OFF.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// Whether to ask the window renderer for an extended-range surface at all.
