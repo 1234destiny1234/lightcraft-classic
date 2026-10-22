@@ -6,6 +6,11 @@ tagline        = "Photo library and raw development"
 vendor         = "Chromaforge contributors"
 homepage       = "https://github.com/emmertex/lightcraft-classic"
 repository     = "https://github.com/emmertex/lightcraft-classic"
+# The repository the release manifest (latest.json) names its files under. Installed builds only
+# download files under their own `repository` or a [legacy] `repositories` entry, and GitHub
+# redirects a renamed repository's old URLs: so after a rename this stays the OLD repository
+# until every install runs a build that knows the new one. Empty: `repository`.
+release_repository = "https://github.com/emmertex/lightcraft-classic"
 discord        = "https://discord.gg/c3dfYATzsQ"  # community chat (Help menu, About); leave out for none
 developer_id   = "com.emmertex.lightcraftclassic" # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
 binary         = "lightcraft-classic"            # desktop executable name in packages
@@ -45,6 +50,9 @@ settings_dirs = ["NoNameYet", "LightCraft"]
 env_prefixes  = ["NONAMEYET", "LIGHTCRAFT"]
 preset_exts   = ["nnypreset", "lcpreset"]
 catalog_exts  = ["nnycat"]
+# Repositories this app was released from before: their release files are still accepted as
+# updates (a renamed repository's URLs keep working through GitHub's redirect).
+repositories  = ["https://github.com/emmertex/lightcraft-classic"]
 app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic", "com.emmertex.LightCraftClassic"]
 
 # The project this one is forked from, for docs that compare the two ({{upstream_name}}, … in `*.md.in`).
