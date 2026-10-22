@@ -105,6 +105,14 @@ pub struct HdrView {
     pub size: [usize; 2],
 }
 
+#[derive(Clone, Copy, PartialEq)]
+struct HdrGeometry {
+    photo: PhotoId,
+    full: Option<(usize, usize)>,
+    window: Option<lcc_pipeline::PixelWindow>,
+    crop: bool,
+}
+
 /// The panes a zoomed view's tiles and drag windows belong to: the loupe (its After and Before
 /// sides) and the Compare / Reference views' two photos.
 pub const PANE_AFTER: u8 = 0;
@@ -278,6 +286,7 @@ pub struct Renderer {
     pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
     /// The loupe's uploaded HDR texture.
     pub hdr_view: HashMap<u8, HdrView>,
+    hdr_geometry: HashMap<u8, HdrGeometry>,
     pub last_main_ms: f64,
     /// Jobs finished since start (for inspect/perf).
     pub completed: u64,
@@ -337,7 +346,7 @@ impl Slot {
     /// An interactive view of the open photo: slider drags redo only the stages they feed, and a
     /// draft that finishes late still replaces older pixels.
     pub fn is_view(self) -> bool {
-        matches!(self, Slot::Main | Slot::Window(_) | Slot::Before | Slot::Hover | Slot::HdrHistogram)
+        matches!(self, Slot::Main | Slot::Window(_) | Slot::Before | Slot::Hover | Slot::HdrHistogram | Slot::HdrView(_))
     }
 }
 
@@ -374,6 +383,7 @@ impl Renderer {
             panel_histogram: None,
             hdr_view_result: HashMap::new(),
             hdr_view: HashMap::new(),
+            hdr_geometry: HashMap::new(),
             last_main_ms: 0.0,
             completed: 0,
             keep_pixels: false,
@@ -547,7 +557,7 @@ impl Renderer {
         if let Some(d) = display {
             lcc_engine::display::present(&mut r, d);
         }
-        let color = r.rendered.as_ref().ok().map(|x| Arc::new(color_image(&x.image)));
+        let color = r.rendered.as_ref().ok().filter(|x| x.deep.is_none()).map(|x| Arc::new(color_image(&x.image)));
         Finished { result: r, color }
     }
 
@@ -587,6 +597,27 @@ impl Renderer {
 
     pub fn is_current(&self, slot: Slot, key: u64) -> bool {
         self.wanted(slot) == Some(key)
+    }
+
+    /// Retained HDR frames must cover the same region. Retire older requests on navigation.
+    pub fn prepare_hdr_view(&mut self, view: u8, job: &RenderJob) {
+        let r = &job.request;
+        let geometry = HdrGeometry {
+            photo: job.photo,
+            // Whole-frame drafts can change resolution without changing their coverage.
+            full: r.window.map(|_| (r.max_w, r.max_h)),
+            window: r.window,
+            crop: r.apply_crop,
+        };
+        if self.hdr_geometry.get(&view) != Some(&geometry) {
+            self.hdr_geometry.insert(view, geometry);
+            self.hdr_view.remove(&view);
+            self.hdr_view_result.remove(&view);
+            let slot = Slot::HdrView(view);
+            self.requests.remove(&slot);
+            self.pending.remove(&slot);
+            self.shown_ids.insert(slot, lcc_preview::next_tick());
+        }
     }
 
     /// Request a render for `slot` (no-op if already current or pending at the same priority).
@@ -728,6 +759,9 @@ impl Renderer {
         self.tile_meta.clear();
         self.window_req.clear();
         self.window_shown.clear();
+        self.hdr_view.clear();
+        self.hdr_view_result.clear();
+        self.hdr_geometry.clear();
     }
 
     /// Ask for the drag window of `pane` ([`Slot::Window`]): `job` renders `geom.window` of the
@@ -1863,6 +1897,95 @@ mod thumbnail_tests {
         finish(&mut app, &work, &ctx, Slot::Main, second.run());
         assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[2]));
         assert!(!app.renderer.is_pending(Slot::Main));
+    }
+
+    #[test]
+    fn returning_to_displayed_hdr_settings_supersedes_pending_changes() {
+        struct Output;
+        impl crate::HdrOutput for Output {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, _: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(1))
+            }
+        }
+        let (mut app, work, _) = fixture();
+        app.hdr_headroom = Some(4.0);
+        app.services.hdr_output = Some(Box::new(Output));
+        let mut job = app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap();
+        Arc::make_mut(&mut job.settings).hdr.enabled = true;
+        let view = HDR_LOUPE;
+        let key = crate::panels::detail::request_hdr(&mut app, view, job.clone(), 100).unwrap();
+        take_job(&work);
+        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key, tex: egui::TextureId::User(1), size: [8, 8] });
+        crate::panels::detail::request_hdr(&mut app, view, job.clone().draft(), 100);
+        take_job(&work);
+        crate::panels::detail::request_hdr(&mut app, view, job, 100);
+        assert_eq!(app.renderer.wanted(Slot::HdrView(view)), Some(key));
+    }
+
+    #[test]
+    fn hdr_retention_tracks_region_and_rejects_obsolete_geometry() {
+        let (mut app, work, ctx) = fixture();
+        let view = HDR_ZOOMED;
+        let slot = Slot::HdrView(view);
+        let job = app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap();
+        let mut job = crate::panels::detail::hdr_view_job(job, Some(4.0));
+        job.request.window = Some(lcc_pipeline::PixelWindow { x: 0, y: 0, w: 4, h: 4 });
+        app.renderer.prepare_hdr_view(view, &job);
+        app.renderer.request(slot, job.clone(), 100);
+        let (_, old) = take_job(&work);
+        app.renderer.hdr_view.insert(view, HdrView { photo: PhotoId(1), key: job.key, tex: egui::TextureId::User(1), size: [4, 4] });
+        app.renderer.prepare_hdr_view(view, &job.clone().draft());
+        assert!(app.renderer.hdr_view.contains_key(&view), "tone changes retain the region");
+        job.request.window.as_mut().unwrap().x = 4;
+        job.key ^= 42;
+        app.renderer.prepare_hdr_view(view, &job);
+        assert!(!app.renderer.hdr_view.contains_key(&view), "panning invalidates coverage");
+        app.renderer.request(slot, job, 100);
+        let (_, new) = take_job(&work);
+        finish(&mut app, &work, &ctx, slot, old.run());
+        assert!(app.renderer.hdr_view_result.is_empty(), "old geometry is rejected even before new pixels arrive");
+        finish(&mut app, &work, &ctx, slot, new.run());
+        assert!(app.renderer.hdr_view_result.contains_key(&view));
+    }
+
+    #[test]
+    fn hdr_drafts_progress_and_reject_out_of_order_results() {
+        let (mut app, work, ctx) = fixture();
+        let slot = Slot::HdrView(HDR_LOUPE);
+        let mut jobs = Vec::new();
+        for exposure in [3.0, 4.0, 5.0] {
+            let mut edit = lcc_develop::DevelopSettings::default();
+            edit.hdr.enabled = true;
+            edit.light.exposure = exposure;
+            app.session.catalog.apply(Op::SetDevelop { id: PhotoId(1), settings: Arc::new(edit), label: "drag".into(), edited: None }).unwrap();
+            let job = app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap().draft();
+            let job = crate::panels::detail::hdr_view_job(job, Some(4.0));
+            app.renderer.prepare_hdr_view(HDR_LOUPE, &job);
+            app.renderer.request(slot, job, 100);
+            jobs.push(take_job(&work).1);
+        }
+        let keys: Vec<_> = jobs.iter().map(|j| j.key).collect();
+        let mut jobs = jobs.into_iter();
+        let (first, second, last) = (jobs.next().unwrap(), jobs.next().unwrap(), jobs.next().unwrap());
+        finish(&mut app, &work, &ctx, slot, first.run());
+        assert_eq!(app.renderer.hdr_view_result[&HDR_LOUPE].1, keys[0]);
+        assert!(app.renderer.is_pending(slot), "updates continue while dragging");
+        finish(&mut app, &work, &ctx, slot, last.run());
+        finish(&mut app, &work, &ctx, slot, second.run());
+        let (_, key, deep) = &app.renderer.hdr_view_result[&HDR_LOUPE];
+        assert_eq!(*key, keys[2], "late older frames never replace newer pixels");
+        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { panic!("float HDR required") };
+        assert!(rgb.iter().any(|v| *v > 1.0), "highlights survive the draft pipeline");
+        let final_job = app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap();
+        let final_render = crate::panels::detail::hdr_view_job(final_job, Some(4.0)).run().rendered.unwrap();
+        let lcc_pipeline::DeepSamples::F32(final_rgb) = &final_render.deep.unwrap().samples else { panic!("float HDR required") };
+        assert_eq!(rgb.len(), final_rgb.len());
+        assert!(rgb.iter().zip(final_rgb).all(|(a, b)| (a - b).abs() < 1e-4), "uniform tonal draft matches the final HDR render");
+        app.renderer.forget_all();
+        assert!(app.renderer.hdr_view_result.is_empty());
     }
 
     #[test]

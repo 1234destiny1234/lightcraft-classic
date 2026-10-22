@@ -4896,6 +4896,32 @@ mod tests {
         h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
         let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
         assert!(h.step_until(SETTLE, hdr_shown), "the fit loupe shows the HDR texture");
+        // Every adjustment must keep HDR visible while new float drafts are in flight.
+        let id = h.app.session.active().unwrap();
+        h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+        for control in ["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks", "color.saturation"] {
+            let before = uploads.borrow().len();
+            let value = if control == "light.exposure" { 3.0 } else { 20.0 };
+            h.app.run("develop.set", json!({"values": {control: value}})).unwrap();
+            assert!(
+                h.step_until(SETTLE, |h| {
+                    assert!(hdr_shown(h), "SDR frame during {control}");
+                    uploads.borrow().len() > before
+                }),
+                "live HDR update: {control}"
+            );
+            assert!(h.app.session.interaction.is_some());
+            let key = h.app.renderer.hdr_view[&HDR_LOUPE].key;
+            assert!(crate::panels::detail::hdr_texture(&h.app, HDR_LOUPE, id, Some(key ^ 1)).is_some(), "retain HDR between updates");
+        }
+        h.app.run("develop.endInteraction", json!({})).unwrap();
+        let before = uploads.borrow().len();
+        h.step();
+        assert!(hdr_shown(&h), "release keeps HDR");
+        assert!(h.step_until(SETTLE, |h| {
+            assert!(hdr_shown(h), "SDR frame while final render completes");
+            uploads.borrow().len() > before
+        }));
         // HDR Preview off: the 8-bit SDR rendition, on: HDR again
         let r = h.request("ui.menu.invoke", json!({"id": "view.hdrPreview"}), t);
         assert!(!h.app.ui.hdr_preview, "{r:?}");
@@ -4908,6 +4934,17 @@ mod tests {
         h.request("ui.menu.invoke", json!({"id": "view.zoom100"}), t);
         let zoomed = |h: &Headless| h.app.region_view.is_some() && uploads.borrow().iter().any(|(v, m)| *v == HDR_ZOOMED + PANE_AFTER && *m > 1.0);
         assert!(h.step_until(SETTLE, zoomed), "zoomed HDR window: {:?}", uploads.borrow());
+        let before = uploads.borrow().iter().filter(|(v, _)| *v == HDR_ZOOMED + PANE_AFTER).count();
+        h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+        h.app.run("develop.set", json!({"values": {"light.exposure": 2.5}})).unwrap();
+        assert!(
+            h.step_until(SETTLE, |h| {
+                assert!(hdr_shown(h), "zoomed interaction keeps the HDR underlay");
+                uploads.borrow().iter().filter(|(v, _)| *v == HDR_ZOOMED + PANE_AFTER).count() > before
+            }),
+            "zoomed drafts upload through HDR too"
+        );
+        h.app.run("develop.endInteraction", json!({})).unwrap();
         // Before / After side by side, fit: the After stays HDR, the original is SDR
         h.request("ui.menu.invoke", json!({"id": "view.zoomFit"}), t);
         h.request("ui.menu.invoke", json!({"id": "view.beforeAfter"}), t);

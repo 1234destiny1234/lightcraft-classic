@@ -235,8 +235,8 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
     };
     let mut hdr_key = None;
     if let Some(job) = app.session.render_job(id, rw.max(8), rh.max(8), false, true) {
-        // an HDR edit on an HDR display: also its HDR render, drawn over the 8-bit one (not in a drag)
-        if !gesturing && app.session.interaction.is_none() {
+        // Keep adjustment drafts on the same HDR output path.
+        if !gesturing {
             hdr_key = super::detail::request_hdr(app, hdr_view, job.clone(), 58);
         }
         app.renderer.request(slot, job, 60);
