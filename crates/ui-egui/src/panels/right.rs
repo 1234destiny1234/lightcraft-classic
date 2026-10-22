@@ -595,10 +595,10 @@ fn crop(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
 }
 
 const REMOVE_MODES: [(Icon, &str, &str, &str); 4] = [
-    (Icon::Eraser, "Remove", "remove", "Remove: Inpaint from nearby match"),
-    (Icon::Sparkle, "Content-Aware", "fill", "Content-Aware: Multi-scale synthesized fill"),
-    (Icon::Bandage, "Heal", "heal", "Heal: Blend source texture with target tone"),
-    (Icon::Stamp, "Clone", "clone", "Clone: Exact 1:1 pixel copy"),
+    (Icon::Eraser, "Remove", "remove", "Heal with automatically chosen source"),
+    (Icon::Sparkle, "Content-Aware", "fill", "Multi-scale synthesized fill"),
+    (Icon::Bandage, "Heal", "heal", "Blend source texture with target tone"),
+    (Icon::Stamp, "Clone", "clone", "Exact 1:1 pixel copy"),
 ];
 
 fn mode_segmented_bar(ui: &mut egui::Ui, id: &str, active_key: &str) -> Option<&'static str> {
@@ -643,7 +643,7 @@ fn mode_segmented_bar(ui: &mut egui::Ui, id: &str, active_key: &str) -> Option<&
             let icon_rect = egui::Rect::from_center_size(r.center(), vec2(16.0, 16.0));
             crate::icons::paint(p, icon_rect, icon, icon_col);
 
-            let resp = resp.on_hover_text(format!("{} — {}", crate::i18n::tr(label), crate::i18n::tr(tip)));
+            let resp = resp.on_hover_text(format!("{}: {}", crate::i18n::tr(label), crate::i18n::tr(tip)));
             if resp.clicked() {
                 chosen = Some(key);
             }
@@ -699,6 +699,8 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
     });
 
+    let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
+
     let plain = |id: &'static str, label: &'static str, min: f64, max: f64, default: f64| lcc_develop::ControlSpec {
         id,
         label,
@@ -710,12 +712,17 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         decimals: 0,
         track: lcc_develop::Track::Plain,
     };
-    let default_sliders = [
-        (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", (app.ui.remove_size * 1000.0) as f64),
-        (plain("ui.removeFeather", "Feather", 0.0, 100.0, 50.0), "feather", app.ui.remove_feather as f64),
-        (plain("ui.removeOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", app.ui.remove_opacity as f64),
+    let (cur_size, cur_feather, cur_opacity) = if let Some((_, sp)) = &sel {
+        (sp.size * 1000.0, sp.feather, sp.opacity)
+    } else {
+        ((app.ui.remove_size * 1000.0) as f64, app.ui.remove_feather as f64, app.ui.remove_opacity as f64)
+    };
+    let sliders = [
+        (plain("ui.removeSize", "Size", 1.0, 250.0, 20.0), "size", cur_size),
+        (plain("ui.removeFeather", "Feather", 0.0, 100.0, 50.0), "feather", cur_feather),
+        (plain("ui.removeOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", cur_opacity),
     ];
-    for (spec, key, v) in default_sliders {
+    for (spec, key, v) in sliders {
         let out = slider(ui, &spec, v, true, None);
         let scale = if key == "size" { 1000.0 } else { 1.0 };
         if let Some(v) = out.value {
@@ -725,10 +732,12 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 _ => app.ui.remove_opacity = v as f32,
             }
         }
+        if let Some((i, _)) = sel {
+            super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("spot.update", json!({"index": i, key: v / scale})));
+        }
     }
 
     // --- Dedicated Selected Spot Section ---
-    let sel = app.session.active_spot.and_then(|i| d.spots.get(i).map(|sp| (i, sp.clone())));
     if let Some((i, sp)) = sel {
         divider(ui);
         padded(ui, |ui| {
@@ -748,17 +757,8 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                     ),
                 );
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
-                    if crate::widgets::icon_button(
-                        ui,
-                        "spotDeselect",
-                        Icon::Close,
-                        vec2(18.0, 18.0),
-                        false,
-                        true,
-                        crate::i18n::tr("Deselect spot (Esc)"),
-                    )
-                    .clicked()
-                    {
+                    let deselect_tip = crate::widgets::command_tooltip(ui, "Deselect", Some("Escape"));
+                    if crate::widgets::icon_button(ui, "spotDeselect", Icon::Close, vec2(18.0, 18.0), false, true, &deselect_tip).clicked() {
                         let _ = app.run("spot.select", json!({"index": null}));
                     }
                 });
@@ -775,22 +775,11 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         });
 
-        let sel_sliders = [
-            (plain("ui.selectedSpotSize", "Size", 1.0, 250.0, 20.0), "size", sp.size * 1000.0),
-            (plain("ui.selectedSpotFeather", "Feather", 0.0, 100.0, 50.0), "feather", sp.feather),
-            (plain("ui.selectedSpotOpacity", "Opacity", 0.0, 100.0, 100.0), "opacity", sp.opacity),
-        ];
-        for (spec, key, v) in sel_sliders {
-            let out = slider(ui, &spec, v, true, None);
-            let scale = if key == "size" { 1000.0 } else { 1.0 };
-            super::edit::apply_slider_out(app, &spec, out, |app, v| app.run("spot.update", json!({"index": i, key: v / scale})));
-        }
-
         padded(ui, |ui| {
             ui.horizontal(|ui| {
                 ui.spacing_mut().item_spacing.x = 8.0;
 
-                let tip_ref = crate::widgets::command_tooltip(ui, "Refresh (/)", Some("/"));
+                let tip_ref = crate::widgets::command_tooltip(ui, "Refresh Source", Some("/"));
                 let r_ref = crate::widgets::icon_button_named(
                     ui,
                     "spotRefresh",
@@ -798,32 +787,35 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                     vec2(32.0, 26.0),
                     false,
                     true,
-                    crate::i18n::tr("Refresh"),
+                    crate::i18n::tr("Refresh Source"),
                     &tip_ref,
                 );
                 register(ui.ctx(), "button:spotRefresh", r_ref.rect);
-                if r_ref.on_hover_text(crate::i18n::tr("Pick a new donor source or fill variation")).clicked() {
+                if r_ref.clicked() {
                     let _ = app.run("spot.refreshSource", json!({"index": i}));
                 }
 
-                let tip_res = crate::i18n::tr("Reset spot properties to defaults");
+                let tip_res = crate::i18n::tr("Reset");
                 let r_res =
                     crate::widgets::icon_button_named(ui, "spotReset", Icon::Reset, vec2(32.0, 26.0), false, true, crate::i18n::tr("Reset"), tip_res);
                 register(ui.ctx(), "button:spotReset", r_res.rect);
                 if r_res.clicked() {
-                    let d = lcc_develop::Spot::default();
+                    let def = lcc_develop::Spot::default();
+                    app.ui.remove_size = def.size as f32;
+                    app.ui.remove_feather = def.feather as f32;
+                    app.ui.remove_opacity = def.opacity as f32;
                     let _ = app.run(
                         "spot.update",
                         json!({
                             "index": i,
-                            "size": d.size,
-                            "feather": d.feather,
-                            "opacity": d.opacity,
+                            "size": def.size,
+                            "feather": def.feather,
+                            "opacity": def.opacity,
                         }),
                     );
                 }
 
-                let tip_del = crate::widgets::command_tooltip(ui, "Delete (⌫)", Some("delete"));
+                let tip_del = crate::widgets::command_tooltip(ui, "Delete Spot", Some("Backspace"));
                 let r_del = crate::widgets::icon_button_named(
                     ui,
                     "spotDelete",
@@ -831,11 +823,11 @@ fn remove(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                     vec2(32.0, 26.0),
                     false,
                     true,
-                    crate::i18n::tr("Delete"),
+                    crate::i18n::tr("Delete Spot"),
                     &tip_del,
                 );
                 register(ui.ctx(), "button:spotDelete", r_del.rect);
-                if r_del.on_hover_text(crate::i18n::tr("Delete this spot")).clicked() {
+                if r_del.clicked() {
                     let _ = app.run("spot.delete", json!({"index": i}));
                 }
             });
