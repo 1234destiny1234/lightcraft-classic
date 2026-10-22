@@ -310,3 +310,21 @@ fn slide_preview_renders_a_title_screen() {
         assert!(s.execute("slideshow.preview", &bad).is_err(), "{bad}");
     }
 }
+
+#[test]
+fn signed_hex_digits_are_refused_in_slide_colours() {
+    let mut s = Session::new();
+    for bad in ["#+f+f+f", "#-0-0-0", "+12345", "##ffffff"] {
+        for (id, p) in [
+            ("slideshow.layout", json!({"strokeColor": bad})),
+            ("slideshow.layout", json!({"backdropColor": bad})),
+            ("slideshow.layout", json!({"washColor": bad})),
+            ("slideshow.overlays", json!({"ratingStars": {"color": bad}})),
+            ("slideshow.titles", json!({"intro": {"color": bad}})),
+            ("slideshow.titles", json!({"ending": {"color": bad}})),
+        ] {
+            assert!(s.execute(id, &p).is_err(), "{id} {p} should be refused");
+        }
+    }
+    assert_eq!(s.execute("slideshow.layout", &json!({})).unwrap()["strokeColor"], "#ffffff", "the refused colours changed nothing");
+}

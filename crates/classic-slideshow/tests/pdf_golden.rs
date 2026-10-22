@@ -7,9 +7,9 @@
 use std::sync::Arc;
 
 use lcc_catalog::PhotoId;
+use lcc_classic_slideshow::export::prepare_pdf;
+use lcc_classic_slideshow::settings::Settings;
 use lcc_engine::Session;
-use lcc_slideshow::export::prepare_pdf;
-use lcc_slideshow::settings::Settings;
 use lopdf::Object;
 
 #[test]

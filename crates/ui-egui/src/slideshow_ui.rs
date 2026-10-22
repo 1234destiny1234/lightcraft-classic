@@ -1,7 +1,7 @@
 //! The Classic Slideshow module: the Template Browser and saved slideshows on the left, the slide
 //! preview in the centre, Options / Layout / Overlays / Backdrop / Titles / Playback / Music on the
 //! right, and the play / preview / export buttons in the toolbar. The look, timing and export come
-//! from `lcc-slideshow`; the preview and the show are painted with egui using the same geometry, the
+//! from `lcc-classic-slideshow`; the preview and the show are painted with egui using the same geometry, the
 //! JPEG-sequence export composes on the CPU.
 //!
 //! Every action is a `slideshow.*` command (listed in `module::SHELL_COMMANDS`). View ▸ Slideshow
@@ -11,11 +11,11 @@ use std::cell::RefCell;
 
 use egui::{Align2, Color32, Pos2, Rect, Sense, Stroke, pos2, vec2};
 use lcc_catalog::{Flag, PhotoId};
-use lcc_slideshow::compose::{Geometry, geometry};
-use lcc_slideshow::settings::{Anchor, Aspect, TextOverlay, TitleScreen};
-use lcc_slideshow::timeline::{Plan, Segment, pan_zoom};
-use lcc_slideshow::tokens::{SlideInfo, TOKENS, expand};
-use lcc_slideshow::{SavedSlideshow, Settings, Template, builtin_templates};
+use lcc_classic_slideshow::compose::{Geometry, geometry};
+use lcc_classic_slideshow::settings::{Anchor, Aspect, TextOverlay, TitleScreen};
+use lcc_classic_slideshow::timeline::{Plan, Segment, pan_zoom};
+use lcc_classic_slideshow::tokens::{SlideInfo, TOKENS, expand};
+use lcc_classic_slideshow::{SavedSlideshow, Settings, Template, builtin_templates};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
 
@@ -45,7 +45,7 @@ fn backdrop_texture(ctx: &egui::Context, path: &str) -> Option<egui::TextureHand
     if let Some(cached) = ctx.data(|d| d.get_temp::<Option<egui::TextureHandle>>(key)) {
         return cached;
     }
-    let tex = lcc_slideshow::export::load_background(path).ok().map(|img| {
+    let tex = lcc_classic_slideshow::export::load_background(path).ok().map(|img| {
         let pixels = img.data.iter().map(|c| Color32::from_rgba_unmultiplied(c[0], c[1], c[2], c[3])).collect();
         let size = [img.width, img.height];
         let color = egui::ColorImage { size, source_size: vec2(size[0] as f32, size[1] as f32), pixels };
@@ -72,7 +72,7 @@ pub struct Playing {
 #[serde(default, rename_all = "camelCase")]
 pub struct SlideshowState {
     pub settings: Settings,
-    /// The user's templates (the built-in ones come from `lcc-slideshow`).
+    /// The user's templates (the built-in ones come from `lcc-classic-slideshow`).
     pub templates: Vec<Template>,
     /// Saved slideshows as older builds kept them here; they move into the catalog as saved
     /// creations (collections of kind `slideshow`) the first time a slideshow command runs.
@@ -100,7 +100,7 @@ pub struct SlideshowState {
 
 thread_local! {
     /// The music player of the running show (UI thread only; dropping it stops the sound).
-    static PLAYER: RefCell<Option<lcc_slideshow::music::Player>> = const { RefCell::new(None) };
+    static PLAYER: RefCell<Option<lcc_classic_slideshow::music::Player>> = const { RefCell::new(None) };
 }
 
 /// The commands of the module (`module::SHELL_COMMANDS` lists them for menus and parity).
@@ -198,7 +198,7 @@ fn state_json(app: &mut LccApp) -> Value {
         "usePhotos": s.use_photos,
         "photos": photos,
         "playing": s.playing.as_ref().map(|p| json!({"full": p.full, "paused": p.paused_at.is_some(), "slides": p.plan.segments.len()})),
-        "canPlayMusic": lcc_slideshow::music::CAN_PLAY,
+        "canPlayMusic": lcc_classic_slideshow::music::CAN_PLAY,
     })
 }
 
@@ -216,15 +216,15 @@ fn start_music(app: &mut LccApp, repeat: bool) -> Option<String> {
     if !m.enabled || m.tracks.is_empty() {
         return None;
     }
-    if !lcc_slideshow::music::CAN_PLAY {
+    if !lcc_classic_slideshow::music::CAN_PLAY {
         return Some("this build plays slideshows without sound".into());
     }
-    if let Err(e) = lcc_slideshow::music::check_total(&m.tracks) {
+    if let Err(e) = lcc_classic_slideshow::music::check_total(&m.tracks) {
         return Some(e);
     }
-    let mut all = lcc_slideshow::music::Audio::default();
+    let mut all = lcc_classic_slideshow::music::Audio::default();
     for t in &m.tracks {
-        match lcc_slideshow::music::decode(std::path::Path::new(t)) {
+        match lcc_classic_slideshow::music::decode(std::path::Path::new(t)) {
             Ok(a) if all.rate == 0 || a.rate == all.rate => {
                 all.rate = a.rate;
                 all.samples.extend(a.samples);
@@ -233,8 +233,8 @@ fn start_music(app: &mut LccApp, repeat: bool) -> Option<String> {
             Err(e) => return Some(e),
         }
     }
-    lcc_slideshow::music::mix(&mut all.samples, m.volume, m.balance);
-    match lcc_slideshow::music::Player::play(all, repeat) {
+    lcc_classic_slideshow::music::mix(&mut all.samples, m.volume, m.balance);
+    match lcc_classic_slideshow::music::Player::play(all, repeat) {
         Ok(p) => {
             PLAYER.with(|slot| *slot.borrow_mut() = Some(p));
             None
@@ -249,7 +249,7 @@ fn play(app: &mut LccApp, full: bool) -> Result<Value, String> {
         return Err("no photos to show".into());
     }
     let s = app.ui.slides.settings.clone();
-    let music = if s.music.enabled && s.music.fit_to_music { Some(lcc_slideshow::music::total_duration(&s.music.tracks).0) } else { None };
+    let music = if s.music.enabled && s.music.fit_to_music { Some(lcc_classic_slideshow::music::total_duration(&s.music.tracks).0) } else { None };
     let seed = (now(app) * 1000.0) as u64 ^ ids.len() as u64;
     let plan = Plan::new(ids.len(), &s, seed, music);
     stop(app);
@@ -397,7 +397,7 @@ fn run_inner(app: &mut LccApp, id: &str, p: &Value) -> Result<Value, String> {
         "slideshow.previous" => step(app, -1),
         "slideshow.addMusic" => {
             let path = p.get("path").and_then(Value::as_str).ok_or("missing path")?;
-            let d = lcc_slideshow::music::duration(std::path::Path::new(path))?;
+            let d = lcc_classic_slideshow::music::duration(std::path::Path::new(path))?;
             let m = &mut app.ui.slides.settings.music;
             if m.tracks.len() >= 64 {
                 return Err("a slideshow takes at most 64 tracks".into());
@@ -459,12 +459,12 @@ fn export(app: &mut LccApp, p: &Value, out: Out) -> Result<Value, String> {
     let plate = plate_text(app);
     let dir_path = std::path::Path::new(dir);
     let job = match out {
-        Out::Jpeg => lcc_slideshow::export::prepare(&mut app.session, &ids, &settings, w, h, quality, dir_path, &name, &plate)?,
-        Out::Pdf => lcc_slideshow::export::prepare_pdf(&mut app.session, &ids, &settings, w, h, quality, dir_path, &name, &plate)?,
+        Out::Jpeg => lcc_classic_slideshow::export::prepare(&mut app.session, &ids, &settings, w, h, quality, dir_path, &name, &plate)?,
+        Out::Pdf => lcc_classic_slideshow::export::prepare_pdf(&mut app.session, &ids, &settings, w, h, quality, dir_path, &name, &plate)?,
         Out::Video => {
             let fps = num("fps", 30).clamp(1, 60) as u32;
-            let format = lcc_slideshow::export::VideoFormat::parse(p.get("format").and_then(Value::as_str).unwrap_or("h264"))?;
-            lcc_slideshow::export::prepare_video(&mut app.session, &ids, &settings, w, h, quality, fps, format, dir_path, &name, &plate)?
+            let format = lcc_classic_slideshow::export::VideoFormat::parse(p.get("format").and_then(Value::as_str).unwrap_or("h264"))?;
+            lcc_classic_slideshow::export::prepare_video(&mut app.session, &ids, &settings, w, h, quality, fps, format, dir_path, &name, &plate)?
         }
     };
     let frames = job.len();
@@ -515,7 +515,7 @@ fn c32(c: [u8; 3], a: f32) -> Color32 {
     Color32::from_rgba_unmultiplied(c[0], c[1], c[2], (a.clamp(0.0, 1.0) * 255.0) as u8)
 }
 
-fn to_rect(r: lcc_slideshow::compose::Rect, at: Pos2) -> Rect {
+fn to_rect(r: lcc_classic_slideshow::compose::Rect, at: Pos2) -> Rect {
     Rect::from_min_max(pos2(at.x + r.x0, at.y + r.y0), pos2(at.x + r.x1, at.y + r.y1))
 }
 
@@ -1220,7 +1220,7 @@ fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
     if heading(ui, "Music") {
         let m = &mut s.music;
         ch |= ui.checkbox(&mut m.enabled, crate::i18n::tr("Soundtrack")).changed();
-        if !lcc_slideshow::music::CAN_PLAY {
+        if !lcc_classic_slideshow::music::CAN_PLAY {
             ui.label(egui::RichText::new(crate::i18n::tr("This build plays without sound")).small());
         }
         for tr in &m.tracks {

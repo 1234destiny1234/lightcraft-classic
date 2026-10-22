@@ -76,7 +76,7 @@ fn titles(s: &mut Session, p: &Value) -> Result<Value> {
 
 /// A slide size from the request: both sides given, one (the other from the aspect preview), or
 /// neither (1280 wide). Each side 16–[`PREVIEW_MAX`].
-fn preview_size(layout: &lcc_slide::SlideSettings, p: &Value) -> Result<(usize, usize)> {
+fn preview_size(layout: &lcc_slideshow::SlideSettings, p: &Value) -> Result<(usize, usize)> {
     const C: &str = "slideshow.preview";
     let side = |k: &str| -> Result<Option<usize>> {
         match p.get(k) {
@@ -132,7 +132,7 @@ fn preview_title(s: &mut Session, p: &Value, title: &Value, look: &SlideLook) ->
     let c = crate::slide_title::TitleCompose::new(&look.titles, &look.overlays, t, w, h);
     let img = c.compose();
     let png = encode_png(&img)?;
-    let rect = |r: lcc_slide::Rect| json!([r.x0, r.y0, r.x1, r.y1]);
+    let rect = |r: lcc_slideshow::Rect| json!([r.x0, r.y0, r.x1, r.y1]);
     let mut out = json!({
         "title": t.id(),
         "enabled": look.titles.screen(t).enabled,
@@ -176,8 +176,8 @@ fn preview(s: &mut Session, p: &Value) -> Result<Value> {
     let img = s.slide_now_look(&settings, &look.overlays, id, w, h).map_err(crate::EngineError::Other)?;
     let png = encode_png(&img)?;
     let aspect = s.slide_photo_aspect(id).unwrap_or(1.5);
-    let l = lcc_slide::layout(&settings, aspect, img.width, img.height);
-    let rect = |r: lcc_slide::Rect| json!([r.x0, r.y0, r.x1, r.y1]);
+    let l = lcc_slideshow::layout(&settings, aspect, img.width, img.height);
+    let rect = |r: lcc_slideshow::Rect| json!([r.x0, r.y0, r.x1, r.y1]);
     let mut out = json!({
         "id": id.0,
         "width": img.width,
