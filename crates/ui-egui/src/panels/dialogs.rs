@@ -1072,7 +1072,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     }
                 }
                 Dialog::Shortcuts => crate::panels::keymap::body(app, ui, &t),
-                Dialog::ViewOptions => crate::panels::cells::view_options(app, ui),
+                // Grid View Style (the fork's Library View Options), then the loupe's Info 1 / Info 2 lines
+                Dialog::ViewOptions => {
+                    crate::panels::cells::view_options(app, ui);
+                    ui.add_space(10.0);
+                    crate::panels::settings::view_options(app, ui, &t);
+                }
                 Dialog::NewPhotoDefault { name } => {
                     crate::dialog_frame::note(ui, egui::RichText::new(crate::i18n::tr("Preset name")).color(t.text_dim));
                     let r = crate::text_field::TextField::singleline("field:newPhotoDefaultName", name)
@@ -1288,6 +1293,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
                     Dialog::KeywordTag { .. } => "Save",
                     Dialog::RemoveFolder { .. } => "Remove",
                     Dialog::LightroomCatalog { .. } => "Import Lightroom Catalog…",
+                    Dialog::SynchronizeFolder { .. } if informational => "Close",
                     Dialog::SynchronizeFolder { .. } | Dialog::SyncSettings { .. } => "Synchronize",
                     Dialog::SamModel { then: Some(_), .. } if sam_installed => "Continue",
                     Dialog::SamModel { .. } if sam_installed || sam_running || sam_nowhere => "",
@@ -2459,7 +2465,7 @@ fn export_settings(app: &mut LccApp, ui: &mut egui::Ui, f: ExportForm<'_>, prese
                 R::ShortEdge => format!("{} {v:.0} px", crate::i18n::tr("Short Edge")),
                 R::Width => format!("{} {v:.0} px", crate::i18n::tr("Width")),
                 R::Height => format!("{} {v:.0} px", crate::i18n::tr("Height")),
-                R::Dimensions => format!("{v:.0} × {} px", resize.height),
+                R::Dimensions | R::WidthHeight => format!("{v:.0} × {} px", resize.height),
                 R::Megapixels => format!("{v} MP"),
                 R::Percent => format!("{v:.0}%"),
             }
@@ -2766,12 +2772,13 @@ const PPI: ControlSpec = spec("export.ppi", "Resolution (ppi)", 1.0, 1200.0, 240
 /// Image Sizing: full size, or a resize mode and its value(s), don't enlarge, ppi.
 fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::Resize, ppi: &mut u16) {
     use lcc_engine::export::ResizeMode as R;
-    const MODES: [(R, &str); 7] = [
+    const MODES: [(R, &str); 8] = [
         (R::LongEdge, "Long Edge"),
         (R::ShortEdge, "Short Edge"),
         (R::Width, "Width"),
         (R::Height, "Height"),
-        (R::Dimensions, "Width × Height"),
+        (R::WidthHeight, "Width & Height"),
+        (R::Dimensions, "Dimensions"),
         (R::Megapixels, "Megapixels"),
         (R::Percent, "Percentage"),
     ];
@@ -2795,7 +2802,7 @@ fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::R
                     _ if matches!(before, R::Megapixels | R::Percent) => 2048.0,
                     _ => r.value,
                 };
-                if r.mode == R::Dimensions && r.height == 0 {
+                if matches!(r.mode, R::Dimensions | R::WidthHeight) && r.height == 0 {
                     r.height = r.value as u32;
                 }
             }
@@ -2804,13 +2811,13 @@ fn export_size(ui: &mut egui::Ui, full: &mut bool, r: &mut lcc_engine::export::R
         let spec = match r.mode {
             R::Megapixels => &SIZE_MP,
             R::Percent => &SIZE_PCT,
-            R::Dimensions => &SIZE_W,
+            R::Dimensions | R::WidthHeight => &SIZE_W,
             _ => &SIZE_PX,
         };
         if num(ui, spec, &mut v) {
             r.value = v as f32;
         }
-        if r.mode == R::Dimensions {
+        if matches!(r.mode, R::Dimensions | R::WidthHeight) {
             let mut h = r.height as f64;
             if num(ui, &SIZE_H, &mut h) {
                 r.height = h as u32;
@@ -3078,7 +3085,8 @@ pub fn confirm_style(dlg: &Dialog) -> ConfirmStyle {
     }
 }
 
-/// A dialog that only shows something: one Close, nothing to confirm or cancel.
+/// A dialog that only shows something: one Close, nothing to confirm or cancel. (Synchronize
+/// Folder is one when its folder turned out up to date.)
 fn only_shows(dlg: &Dialog) -> bool {
     matches!(
         dlg,
@@ -3092,5 +3100,5 @@ fn only_shows(dlg: &Dialog) -> bool {
             | Dialog::ManageEffects { .. }
             // the updater has its own buttons in the body; the footer only closes
             | Dialog::Update
-    )
+    ) || matches!(dlg, Dialog::SynchronizeFolder { counts: Some(c), .. } if c.up_to_date())
 }

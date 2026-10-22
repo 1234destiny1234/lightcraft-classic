@@ -618,7 +618,7 @@ pub(crate) fn section_with(
             app.toast(ui.ctx(), e);
         }
     }
-    resp.context_menu(|ui| {
+    crate::widgets::context_menu(&resp, |ui| {
         let mut solo = app.ui.single_panel;
         let item = ui.checkbox(&mut solo, crate::i18n::tr("Solo Mode"));
         register(ui.ctx(), "sectionMenu:solo", item.rect);
@@ -886,7 +886,7 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     app.clipping_preview = preview;
     // the histogram's context menu: which distribution it draws and how tall its bins are, then the
     // format of the colour readout (Lightroom's "Show Lab Color Values")
-    resp.context_menu(|ui| {
+    crate::widgets::context_menu(&resp, |ui| {
         histogram_display_menu(app, ui, mode, scale);
         ui.separator();
         ui.menu_button(crate::i18n::tr("Second Histogram"), |ui| second_histogram_menu(app, ui));
@@ -983,7 +983,7 @@ fn second_histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, mode: Hist
     p.text(pos2(menu_rect.left() + 3.0, menu_rect.center().y), Align2::LEFT_CENTER, crate::i18n::tr(mode.short()), t.font(11.5), col);
     paint(p, Rect::from_center_size(pos2(menu_rect.right() - 8.0, menu_rect.center().y), vec2(12.0, 12.0)), Icon::ChevronDown, col);
     egui::Popup::menu(&menu).show(|ui| second_histogram_menu(app, ui));
-    resp.context_menu(|ui| second_histogram_menu(app, ui));
+    crate::widgets::context_menu(&resp, |ui| second_histogram_menu(app, ui));
 }
 
 /// The second histogram's mode, or none: in both histograms' menus.
@@ -1564,7 +1564,7 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
     let resp = ui.interact(r, egui::Id::new(("curve", target.widget(""), &ch)), Sense::click_and_drag());
     crate::widgets::announce(&resp, crate::i18n::tr(target.label()));
     register(ui.ctx(), target.widget(""), r);
-    resp.context_menu(|ui| curve_reset_menu(app, ui, &ch, target));
+    crate::widgets::context_menu(&resp, |ui| curve_reset_menu(app, ui, &ch, target));
     let p = ui.painter();
     p.rect_filled(r, 2.0, t.canvas);
     if let Some(hist) = preview_histogram(app, id) {
@@ -1850,7 +1850,7 @@ fn curve_footer(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings, target
                         ui.close();
                     }
                     if !p.builtin {
-                        r.context_menu(|ui| {
+                        crate::widgets::context_menu(&r, |ui| {
                             if ui.button(crate::i18n::tr("Delete Preset")).clicked() {
                                 let _ = app.run("curve.deletePreset", json!({"name": p.name}));
                                 ui.close();

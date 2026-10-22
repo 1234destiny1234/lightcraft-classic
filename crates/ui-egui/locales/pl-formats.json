@@ -302,5 +302,6 @@
   "{app} stopped unexpectedly: {e}": "{app} stopped unexpectedly: {e}",
   "{} photos · not aligned": "{} zdjęć · bez wyrównania",
   "{} photos · {} aligned": "{} zdjęć · wyrównano {}",
-  "{} photos · {} aligned · {} left out": "{} zdjęć · wyrównano {} · pominięto {}"
+  "{} photos · {} aligned · {} left out": "{} zdjęć · wyrównano {} · pominięto {}",
+  "Listing folders — folders: {folders}, files: {files}": "Przeglądanie folderów — foldery: {folders}, pliki: {files}"
 }

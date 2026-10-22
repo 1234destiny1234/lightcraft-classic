@@ -302,5 +302,6 @@
   "{app} stopped unexpectedly: {e}": "{app} stopped unexpectedly: {e}",
   "{} photos · not aligned": "{} fotek · nezarovnáno",
   "{} photos · {} aligned": "{} fotek · zarovnáno {}",
-  "{} photos · {} aligned · {} left out": "{} fotek · zarovnáno {} · vynecháno {}"
+  "{} photos · {} aligned · {} left out": "{} fotek · zarovnáno {} · vynecháno {}",
+  "Listing folders — folders: {folders}, files: {files}": "Procházení složek – složky: {folders}, soubory: {files}"
 }

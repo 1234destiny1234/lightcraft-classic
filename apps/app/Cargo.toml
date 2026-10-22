@@ -38,6 +38,7 @@ eframe = { workspace = true, features = ["default_fonts", "wgpu", "glow", "acces
 pollster = { workspace = true }
 egui = { workspace = true }
 serde_json = { workspace = true }
+chrono = { workspace = true }
 # the control port token
 getrandom = { workspace = true }
 log = { workspace = true }

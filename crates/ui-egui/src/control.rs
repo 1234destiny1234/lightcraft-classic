@@ -502,7 +502,13 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context, req: &ControlRequest) -> Ou
             Outcome::Screenshot { path: s("path").map(str::to_string), headless: p.get("headless").and_then(Value::as_bool).unwrap_or(false) }
         }
         "ui.render" => {
-            let id = p.get("id").and_then(Value::as_u64).map(lcc_catalog::PhotoId).or(app.session.active());
+            let id = match p.get("id").filter(|v| !v.is_null()) {
+                Some(v) => match v.as_u64() {
+                    Some(n) => Some(lcc_catalog::PhotoId(n)),
+                    None => return err("`id` must be a photo id (a whole number)"),
+                },
+                None => app.session.active(),
+            };
             let Some(id) = id else { return err("no photo") };
             if let Some(Err(e)) = s("path").map(|path| app.session.check_write_target(path)) {
                 return err(e);
@@ -554,10 +560,13 @@ pub fn export_active(app: &mut LccApp, p: &Value) -> Result<Value, String> {
     let p = &app.session.export_params(p)?;
     // the format follows `path` (JPEG when it names none), and `bitDepth` is checked against it
     let opts = ExportOptions::from_params(p).map_err(|e| e.to_string())?;
-    let ids: Vec<_> = match p.get("ids").and_then(Value::as_array) {
-        Some(a) => a
+    let ids: Vec<_> = match p.get("ids").filter(|v| !v.is_null()) {
+        // `ids` that aren't photo ids are an error, not "export the selection"
+        Some(v) => v
+            .as_array()
+            .ok_or("app.export: `ids` must be a list of photo ids")?
             .iter()
-            .map(|v| serde_json::from_value(v.clone()).map_err(|_| format!("`ids` must be non-negative integer photo ids, got {v}")))
+            .map(|v| v.as_u64().map(lcc_catalog::PhotoId).ok_or("app.export: `ids` must be photo ids (whole numbers)"))
             .collect::<Result<_, _>>()?,
         None if !app.session.selection.ids.is_empty() => {
             // Batch order (and `{seq}`) follows the grid order.

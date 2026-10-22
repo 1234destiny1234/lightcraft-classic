@@ -171,6 +171,7 @@ fn preview_build_makes_the_thumbnail_from_the_views_source() {
         fallback: None,
         denoise: None,
         options: Default::default(),
+        reduced: None,
     };
     assert!(run_photo(jobs), "the thumbnail rendered from the view's decoded source");
 }

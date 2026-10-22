@@ -670,9 +670,13 @@ pub fn texture_fade(px_per_long: f64) -> f32 {
 
 pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, src_long: f64, q: Quality) -> PlaneSigmas {
     let ppl = px_per_long as f32;
-    let local_any = |f: fn(&lcc_develop::LocalAdjustments) -> f64| s.masks.iter().any(|m| f(&m.adjust) != 0.0);
-    let tone_active =
-        s.light.highlights != 0.0 || s.light.shadows != 0.0 || s.masks.iter().any(|m| m.adjust.highlights != 0.0 || m.adjust.shadows != 0.0);
+    // A hidden mask, or one with no components, does not change the picture. Its sliders must
+    // not pick the tone base Clarity reads (#1214).
+    let live = |m: &&lcc_develop::Mask| m.visible && !m.components.is_empty();
+    let local_any = |f: fn(&lcc_develop::LocalAdjustments) -> f64| s.masks.iter().filter(live).any(|m| f(&m.adjust) != 0.0);
+    let tone_active = s.light.highlights != 0.0
+        || s.light.shadows != 0.0
+        || s.masks.iter().filter(live).any(|m| m.adjust.highlights != 0.0 || m.adjust.shadows != 0.0);
     // Edge-aware base at ~1.5% of the long edge (EV² epsilon: edges of > ~0.6 EV are preserved)
     // From V2 it is taken of the median at 0.15%: lines and texture finer than that are detail,
     // not tone (#632).
@@ -689,10 +693,10 @@ pub fn plane_sigmas(s: &DevelopSettings, px_per_long: f64, src_long: f64, q: Qua
         || (!v4 && sharpening)
         || local_any(|a| a.texture)
         || local_any(|a| a.noise)
-        || s.masks.iter().any(|m| m.adjust.defringe > 0.0))
+        || s.masks.iter().filter(live).any(|m| m.adjust.defringe > 0.0))
     .then(|| (TEXTURE_SIGMA * ppl).max(TEXTURE_SIGMA_MIN));
     let dark = (s.effects.dehaze != 0.0 || local_any(|a| a.dehaze)).then(|| (0.02 * ppl).max(1.0));
-    let chroma = (local_any(|a| a.moire) || s.masks.iter().any(|m| m.adjust.noise > 0.0)).then(|| (CHROMA_SIGMA * ppl).max(1.0));
+    let chroma = (local_any(|a| a.moire) || s.masks.iter().filter(live).any(|m| m.adjust.noise > 0.0)).then(|| (CHROMA_SIGMA * ppl).max(1.0));
     let base_detail = if base.is_some() { tone_base_detail(s, px_per_long) } else { 0 };
     let dark_patch = if dark.is_some() { dehaze_patch_radius(s, px_per_long) } else { 0 };
     // sharpening (Amount, or a mask's Sharpness) has its own pixel-scale band, off when it would fade away
@@ -888,6 +892,32 @@ mod tests {
         cropped.crop.rect.x1 = 0.5;
         assert_ne!(fresh(&hazy, &cropped), fresh(&hazy, &frame));
         assert_eq!(frame_airlight(&hazy, &info, &s, &cropped, 48, 32).to_bits(), fresh(&hazy, &cropped).to_bits());
+    }
+
+    #[test]
+    fn a_hidden_or_empty_mask_does_not_request_the_tone_base() {
+        use lcc_develop::{Mask, MaskComponent, MaskOp, MaskShape};
+        use lcc_geom::Point;
+        let shape = MaskShape::Linear { start: Point::new(0.0, 0.0), end: Point::new(1.0, 0.0) };
+        let component = MaskComponent { name: None, op: MaskOp::Add, invert: false, shape };
+        let mut s = DevelopSettings::default();
+        s.masks.push(Mask {
+            visible: false,
+            components: vec![component],
+            adjust: lcc_develop::LocalAdjustments { highlights: 40.0, ..Default::default() },
+            ..Default::default()
+        });
+        assert!(plane_sigmas(&s, 2000.0, 2000.0, Quality::Full).base.is_none());
+        s.masks[0].visible = true;
+        s.masks[0].components.clear();
+        assert!(plane_sigmas(&s, 2000.0, 2000.0, Quality::Full).base.is_none());
+        s.masks[0].components.push(MaskComponent {
+            name: None,
+            op: MaskOp::Add,
+            invert: false,
+            shape: MaskShape::Linear { start: Point::new(0.0, 0.0), end: Point::new(1.0, 0.0) },
+        });
+        assert!(plane_sigmas(&s, 2000.0, 2000.0, Quality::Full).base.is_some());
     }
 
     #[test]

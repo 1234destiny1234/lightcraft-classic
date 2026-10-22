@@ -615,7 +615,10 @@ fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let current = shared.as_deref().and_then(|r| r.parse::<u8>().ok()).unwrap_or(0);
     ui.horizontal(|ui| {
         if let Some(r) = crate::widgets::stars(ui, "info", current, 18.0) {
-            let _ = app.run("photo.rate", json!({"rating": r}));
+            // in Compare / Survey only the active photo, as the rating keys and the bottom pill do
+            let mut params = json!({"rating": r});
+            crate::panels::compare::target_active(app, &mut params);
+            let _ = app.run("photo.rate", params);
         }
         if shared.is_none() {
             ui.label(egui::RichText::new(MIXED).size(11.5).color(t.text_dim));
@@ -644,7 +647,9 @@ fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
             crate::access::named(&resp, egui::WidgetType::RadioButton, &name);
             let resp = resp.on_hover_text(name);
             if resp.clicked() {
-                let _ = app.run("photo.label", json!({"label": if on { "none".to_string() } else { key }}));
+                let mut params = json!({"label": if on { "none".to_string() } else { key }});
+                crate::panels::compare::target_active(app, &mut params);
+                let _ = app.run("photo.label", params);
             }
         }
         match (current, shared) {

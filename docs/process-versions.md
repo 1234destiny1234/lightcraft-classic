@@ -28,6 +28,11 @@ stronger Light sliders, issue #196) without changing a single photo someone has 
 used to clip the highlights the HDR edit keeps (thumbnails and SDR exports lost them), which is
 output broken where it should be correct. It changes nothing for SDR edits (HDR off), on any process.
 
+**Neutral display tone map** (JPEG, PNG and other display-referred sources with Contrast, Whites and
+Blacks at 0) is the identity up to white: the SDR shoulder no longer pulls 1.0 down to 0.9875 (8-bit
+255 to 254, issue #1945). It landed in place as a bug fix, since the tone map promised identity at
+neutral settings; edited curves keep the shoulder and their V1 look.
+
 ## Adding a process
 
 1. Add a variant to `Process` (`V2`), append it to `Process::ALL` (oldest first), give it its number in

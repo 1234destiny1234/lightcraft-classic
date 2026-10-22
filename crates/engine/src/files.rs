@@ -11,7 +11,7 @@ use lcc_pipeline::SourceInfo;
 use lcc_raster::Rgb32f;
 use lcc_raster::resample::{Filter, fit};
 
-use crate::media::{DenoiseSpec, FileLoader, FileProbe, LoadOptions, PairLoader, PreviewLoader, ProbeInfo};
+use crate::media::{DenoiseSpec, FileLoader, FileProbe, LoadOptions, PairLoader, PreviewLoader, ProbeInfo, ReducedLoader};
 
 fn meta_of(m: &lcc_meta::Metadata) -> (Meta, Option<String>) {
     // the camera's own wording, to the tenth of a second: `1/250`, `0.4`, `1.3″` (issue #1619: rounding
@@ -514,7 +514,7 @@ pub fn load_bytes(bytes: &[u8], max_edge: usize) -> Result<(Rgb32f, SourceInfo),
 
 /// [`load_bytes`] with the photo's settings the decode depends on.
 pub fn load_bytes_with(bytes: &[u8], max_edge: usize, options: LoadOptions) -> Result<(Rgb32f, SourceInfo), String> {
-    rayon::scope(|_| load_bytes_now(std::borrow::Cow::Borrowed(bytes), max_edge, None, options).map(|(img, _, info)| (img, info)))
+    rayon::scope(|_| load_bytes_now(std::borrow::Cow::Borrowed(bytes), max_edge, None, options, false).map(|(img, _, info, _)| (img, info)))
 }
 
 /// [`load_bytes`] taking the file's bytes: a raw file's bytes are freed as soon as it is decoded
@@ -525,7 +525,16 @@ pub fn load_vec(bytes: Vec<u8>, max_edge: usize) -> Result<(Rgb32f, SourceInfo),
 
 /// [`load_vec`] with the photo's settings the decode depends on.
 pub fn load_vec_with(bytes: Vec<u8>, max_edge: usize, options: LoadOptions) -> Result<(Rgb32f, SourceInfo), String> {
-    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, None, options).map(|(img, _, info)| (img, info)))
+    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, None, options, false).map(|(img, _, info, _)| (img, info)))
+}
+
+/// [`load_vec_with`] for a thumbnail: a DNG that keeps reduced-resolution copies of its raw image (Lightroom's HDR and
+/// panorama merges) develops the smallest that covers `max_edge` instead of the whole image. The flag says whether
+/// it did: such a picture is not the full image, and an export never renders from it.
+pub fn load_vec_reduced(bytes: Vec<u8>, max_edge: usize, options: LoadOptions) -> Result<(Rgb32f, SourceInfo, bool), String> {
+    rayon::scope(move |_| {
+        load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, None, options, true).map(|(img, _, info, reduced)| (img, info, reduced))
+    })
 }
 
 /// [`load_vec`] that also develops the photo's cached denoised picture (`spec`) from the same decode: the plain
@@ -537,7 +546,9 @@ pub fn load_vec_pair(
     spec: &DenoiseSpec,
     options: LoadOptions,
 ) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
-    rayon::scope(move |_| load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, Some(spec), options))
+    rayon::scope(move |_| {
+        load_bytes_now(std::borrow::Cow::Owned(bytes), max_edge, Some(spec), options, false).map(|(img, twin, info, _)| (img, twin, info))
+    })
 }
 
 /// The denoised camera RGB of `raw` from its cached product, as the plain development would have it: the default
@@ -567,14 +578,24 @@ fn load_bytes_now(
     max_edge: usize,
     denoise: Option<&DenoiseSpec>,
     options: LoadOptions,
-) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo), String> {
+    allow_reduced: bool,
+) -> Result<(Rgb32f, Option<Rgb32f>, SourceInfo, bool), String> {
     if lcc_raw::probe(&bytes).is_some() {
-        let mut raw = match lcc_raw::decode(&bytes).map_err(|e| preview_reason(&bytes, e)) {
+        // a thumbnail (`allow_reduced`, never an export) of a DNG that keeps smaller copies of its raw image
+        // (Lightroom's merges) develops the smallest that covers it; a denoised photo's twin needs the full mosaic
+        let reduced =
+            (allow_reduced && denoise.is_none() && max_edge < usize::MAX).then(|| lcc_raw::decode_reduced(&bytes, max_edge).ok().flatten()).flatten();
+        let used_reduced = reduced.is_some();
+        let decoded = match reduced {
+            Some(r) => Ok(r),
+            None => lcc_raw::decode(&bytes),
+        };
+        let mut raw = match decoded.map_err(|e| preview_reason(&bytes, e)) {
             Ok(r) => r,
             Err(Ok(why)) => {
                 // show the camera's embedded JPEG (rendered, not raw) until the variant is supported
                 return load_embedded_preview(&bytes, max_edge)
-                    .map(|(img, info)| (img, None, info))
+                    .map(|(img, info)| (img, None, info, false))
                     .ok_or(format!("unsupported raw ({why}) without an embedded preview"));
             }
             Err(Err(e)) => return Err(e),
@@ -715,13 +736,14 @@ fn load_bytes_now(
                 native_long: None,
                 colorimetric,
             },
+            used_reduced,
         ));
     }
     let d = lcc_codecs::decode(&bytes, fit_box(max_edge)).map_err(|e| e.to_string())?;
     drop(bytes);
     let img = d.to_working();
     let img = if img.width.max(img.height) > max_edge { fit(&img, max_edge, max_edge, Filter::Mitchell) } else { img };
-    Ok((img.into_oriented(Orientation::from_exif(d.orientation)), None, SourceInfo::default()))
+    Ok((img.into_oriented(Orientation::from_exif(d.orientation)), None, SourceInfo::default(), false))
 }
 
 /// Which white-balance scale a raw is edited on, decided from the file alone, the way the catalog decides it from
@@ -1238,17 +1260,8 @@ pub fn fs_pair_loader() -> PairLoader {
 /// interactive loads (the loupe, exports) never wait — they are counted, so background work
 /// yields to them.
 pub fn fs_hooks() -> (FileLoader, FileProbe) {
-    let loader: FileLoader = Arc::new(|path: &str, max_edge: usize, options: LoadOptions| {
-        let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
-        let weight = len * if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 3 } else { 6 };
-        let gate = crate::memory::work_gate();
-        let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
-        let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
-        let r = load_vec_with(bytes, max_edge, options);
-        // the file, the samples and the intermediate images are gone: give their pages back
-        crate::memory::release();
-        r
-    });
+    let loader: FileLoader =
+        Arc::new(|path: &str, max_edge: usize, options: LoadOptions| fs_load(path, max_edge, |bytes| load_vec_with(bytes, max_edge, options)));
     let probe: FileProbe = Arc::new(|path: &str| {
         // a file still being copied in is left for a later scan (issue #123): its name or an open
         // writer says so before anything is read, its own header (below) after
@@ -1275,6 +1288,24 @@ pub fn fs_hooks() -> (FileLoader, FileProbe) {
     (loader, probe)
 }
 
+/// The filesystem [`ReducedLoader`]: [`load_vec_reduced`] of the file, gated like [`fs_hooks`]' loader.
+pub fn fs_reduced_loader() -> ReducedLoader {
+    Arc::new(|path: &str, max_edge: usize, options: LoadOptions| fs_load(path, max_edge, |bytes| load_vec_reduced(bytes, max_edge, options)))
+}
+
+/// Read `path` and `load` it, waiting on [`crate::memory::work_gate`] as [`fs_hooks`] explains.
+fn fs_load<T>(path: &str, max_edge: usize, load: impl FnOnce(Vec<u8>) -> Result<T, String>) -> Result<T, String> {
+    let len = std::fs::metadata(path).map(|m| usize::try_from(m.len()).unwrap_or(usize::MAX)).unwrap_or(0);
+    let weight = len.saturating_mul(if max_edge <= crate::media::SourceLevel::Thumb.max_edge() { 3 } else { 6 });
+    let gate = crate::memory::work_gate();
+    let _permit = if crate::memory::is_background() { gate.acquire(weight) } else { gate.acquire_urgent(weight) };
+    let bytes = std::fs::read(path).map_err(|e| format!("{path}: {e}"))?;
+    let r = load(bytes);
+    // the file, the samples and the intermediate images are gone: give their pages back
+    crate::memory::release();
+    r
+}
+
 /// `path`'s modification time as ISO 8601 (see [`ProbeInfo::file_modified`]); `None` when the
 /// filesystem doesn't say or the time is before 1970.
 fn file_modified(path: &str) -> Option<String> {
@@ -1291,6 +1322,7 @@ impl crate::Session {
         crate::camera_profiles::install_dcps();
         let (l, p) = fs_hooks();
         self.media.file_loader = Some(l);
+        self.media.reduced_loader = Some(fs_reduced_loader());
         self.media.file_probe = Some(p);
         self.media.preview_loader = Some(fs_preview_loader());
         self.media.denoise.loader = Some(fs_pair_loader());
@@ -1486,6 +1518,26 @@ pub(crate) mod tests {
         let xy = lcc_color::cct::temp_tint_to_xy(4200.0, 12.0);
         assert_eq!(dng.as_shot(xy), (4200.0, 12.0));
         assert!(!lcc_catalog::relative_wb_camera("DNG", "SONY ILCE-7M3"));
+    }
+
+    /// A Fujifilm X-Trans III body reads Kelvin through the neutral pair its RAF stores (issue #730); without the pair
+    /// in the file, or on a body with matrices (X-T3), nothing changes.
+    #[test]
+    fn a_fujifilm_x_trans_iii_raf_reads_kelvin_through_its_neutral_pair() {
+        use lcc_raw::{ColorData, RawFormat};
+        let meta = |make: &str, model: &str| lcc_meta::Metadata { make: Some(make.into()), model: Some(model.into()), ..Default::default() };
+        let a = [366.0f32 / 302.0, 1.0, 866.0 / 302.0];
+        let d65 = [646.0f32 / 302.0, 1.0, 498.0 / 302.0];
+        let pair = lcc_raw::kelvin_presets::KelvinPresets::from_neutral_pair(a, d65);
+        assert!(pair.is_some());
+        let with = ColorData { kelvin_presets: pair, ..Default::default() };
+        let xt20 = WbScaleOf::new(RawFormat::Raf, &with, Some(d65), &meta("FUJIFILM", "X-T20"));
+        assert!(!xt20.relative && xt20.scale_white.is_some());
+        let (t, tint) = xt20.as_shot(lcc_color::cct::temp_tint_to_xy(6500.0, 0.0));
+        assert!((6000.0..7000.0).contains(&t) && tint.abs() < 25.0, "{t} {tint}");
+        assert!(!lcc_catalog::relative_wb_camera("RAF", "FUJIFILM X-T20"));
+        let bare = WbScaleOf::new(RawFormat::Raf, &ColorData::default(), Some(d65), &meta("FUJIFILM", "X-T20"));
+        assert!(bare.scale_white.is_none());
     }
 
     /// A merged DNG (Photo Merge) of a raw without colour matrices shows the As Shot temperature and tint its source
@@ -2549,6 +2601,84 @@ pub(crate) mod tests {
             let d = (0..2).map(|c| ((near[side][c] - far[side][c]) / rows as f64).abs()).fold(0.0, f64::max);
             assert!(d < 0.004, "{} of the tree the clipped sky's chromaticity is off by {d:.4}", ["left", "right"][side]);
         }
+    }
+
+    /// A Lightroom merge (a LinearRaw DNG keeping a reduced copy of its raw image): its grid thumbnail develops the
+    /// copy, but an export never does, whatever its size, and not from the thumbnail's source in memory either. The
+    /// copy's samples are much brighter than the image's here, so a picture says which one it came from.
+    #[test]
+    fn exports_never_develop_a_dngs_reduced_copy() {
+        use lcc_tiff::tags::{self as t, photometric};
+        use lcc_tiff::{ByteOrder, IfdBuilder, ImageData, TiffWriter, Value};
+        use serde_json::json;
+        let linear = |subfile: u32, w: u32, h: u32, sample: u16| {
+            let mut ifd = IfdBuilder::new();
+            ifd.set(t::NEW_SUBFILE_TYPE, Value::Long(vec![subfile]));
+            ifd.set(t::IMAGE_WIDTH, Value::Long(vec![w]));
+            ifd.set(t::IMAGE_LENGTH, Value::Long(vec![h]));
+            ifd.set(t::BITS_PER_SAMPLE, Value::Short(vec![16, 16, 16]));
+            ifd.set(t::SAMPLES_PER_PIXEL, Value::Short(vec![3]));
+            ifd.set(t::PHOTOMETRIC, Value::Short(vec![photometric::LINEAR_RAW]));
+            ifd.set(t::COMPRESSION, Value::Short(vec![1]));
+            ifd.set(t::WHITE_LEVEL, Value::Long(vec![32768]));
+            ifd.set_image(ImageData::Strips { rows_per_strip: h, strips: vec![sample.to_le_bytes().repeat((w * h * 3) as usize)] });
+            ifd
+        };
+        // (the copy must cover a thumbnail source's 512 px)
+        let (w, h) = (1200u32, 600u32);
+        let mut main = linear(0, w, h, 1500);
+        main.set(t::DEFAULT_CROP_ORIGIN, Value::Long(vec![4, 2]));
+        main.set(t::DEFAULT_CROP_SIZE, Value::Long(vec![w - 8, h - 4]));
+        let mut ifd0 = IfdBuilder::new();
+        ifd0.set(t::NEW_SUBFILE_TYPE, Value::Long(vec![1]));
+        ifd0.set(t::DNG_VERSION, Value::Byte(vec![1, 7, 0, 0]));
+        ifd0.set(t::MAKE, Value::Ascii("DJI".into()));
+        ifd0.set(t::COLOR_MATRIX_1, Value::SRational(vec![(1, 1), (0, 1), (0, 1), (0, 1), (1, 1), (0, 1), (0, 1), (0, 1), (1, 1)]));
+        ifd0.set(t::CALIBRATION_ILLUMINANT_1, Value::Short(vec![21]));
+        ifd0.set(t::PHOTOMETRIC, Value::Short(vec![photometric::RGB]));
+        ifd0.set(t::IMAGE_WIDTH, Value::Long(vec![4]));
+        ifd0.set(t::IMAGE_LENGTH, Value::Long(vec![2]));
+        ifd0.set(t::BITS_PER_SAMPLE, Value::Short(vec![8, 8, 8]));
+        ifd0.set(t::SAMPLES_PER_PIXEL, Value::Short(vec![3]));
+        ifd0.set(t::COMPRESSION, Value::Short(vec![1]));
+        ifd0.set_image(ImageData::Strips { rows_per_strip: 2, strips: vec![vec![128; 24]] });
+        ifd0.add_sub_ifd(main);
+        ifd0.add_sub_ifd(linear(1, w / 2, h / 2, 24000));
+        let bytes = TiffWriter::new(ByteOrder::Little, false).write(&[ifd0]).unwrap();
+        let g = |img: &Rgb32f| img.data.iter().map(|p| p[1] as f64).sum::<f64>() / img.data.len().max(1) as f64;
+        let mean = |img: &lcc_raster::Rgba8| img.data.iter().map(|p| p[1] as f64).sum::<f64>() / img.data.len().max(1) as f64;
+
+        // the loaders: only the thumbnail's develops the copy, and only when it covers the size
+        let (copy, _, used) = load_vec_reduced(bytes.clone(), 512, LoadOptions::default()).unwrap();
+        assert!(used, "a thumbnail develops the copy");
+        assert!(!load_vec_reduced(bytes.clone(), 1024, LoadOptions::default()).unwrap().2, "no copy covers 1024 px");
+        let (full, _) = load_vec(bytes.clone(), 512).unwrap();
+        assert!(g(&copy) > 4.0 * g(&full), "the fixture's copy is much brighter: {} vs {}", g(&copy), g(&full));
+
+        let dir = std::env::temp_dir().join(format!("lc-reduced-export-{}", std::process::id()));
+        std::fs::create_dir_all(&dir).unwrap();
+        let path = dir.join("merge-pano.dng");
+        std::fs::write(&path, &bytes).unwrap();
+        let mut s = crate::Session::new().with_fs();
+        let r = s.execute("library.import", &json!({"paths": [path.to_string_lossy()]})).unwrap();
+        let id = lcc_catalog::PhotoId(r["imported"][0].as_u64().unwrap());
+        let (space, depth) = (lcc_pipeline::OutputSpace::Srgb, lcc_pipeline::OutputDepth::U8);
+        // an export at a thumbnail's size, before any thumbnail
+        assert_eq!(s.export_job(id, 64, 64, space, depth).unwrap().level, crate::media::SourceLevel::Thumb);
+        let export = mean(&s.render_export(id, 64, 64, space, depth).unwrap().image);
+        // the thumbnail develops the copy and its source stays in memory…
+        s.media.clear_sources();
+        let thumb = s.thumb_job(id, 64).unwrap().run();
+        assert!(thumb.loaded.as_ref().is_some_and(|l| l.reduced));
+        let thumb_mean = mean(&thumb.rendered.as_ref().unwrap().image);
+        s.accept(&thumb);
+        assert!(thumb_mean > export + 20.0, "the thumbnail shows the copy: {thumb_mean} vs {export}");
+        // …and an export after it still reads the full image
+        let job = s.export_job(id, 64, 64, space, depth).unwrap();
+        assert!(matches!(&job.source, crate::media::SourceRef::File { reduced: None, .. }), "the file, not the copy");
+        let again = mean(&s.render_export(id, 64, 64, space, depth).unwrap().image);
+        assert!((again - export).abs() < 1.0, "{again} vs {export}");
+        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// iPhone ProRAW-style semantic masks drive the Sky mask: Apple's sky matte (here the right

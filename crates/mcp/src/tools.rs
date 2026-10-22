@@ -244,7 +244,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                     "format": {"type": "string", "enum": ["jpeg", "png", "tiff", "psd", "webp", "avif", "jxl", "original", "dng", "rendereddng"], "description": "psd = a flat PSD (no layers); rendereddng = Render to DNG, a linear 16-bit float DNG of the rendered photo with the edit baked in; original = the file as is + an XMP sidecar with the edits; dng = raw photos as DNG with the edits embedded"},
                     "longEdge": {"type": "integer", "description": "Output long edge in px. When no size param is given: 3000; 0 = full size (cropped, native resolution)"},
                     "shortEdge": {"type": "integer", "description": "Output short edge in px"},
-                    "width": {"type": "integer", "description": "Output width in px (with height: fit inside width × height, either orientation)"},
+                    "width": {"type": "integer", "description": "Output width in px (with height: fit inside width × height, either orientation, unless `fit` says otherwise)"},
                     "height": {"type": "integer", "description": "Output height in px"},
                     "megapixels": {"type": "number", "description": "Output size in megapixels"},
                     "percent": {"type": "number", "description": "Output size as a percentage of full size"},
@@ -275,6 +275,7 @@ pub fn helper_tools(has_ui: bool) -> Vec<Value> {
                     json!({
                         "destinationMode": {"type": "string", "enum": ["specificFolder", "sameAsOriginal", "chooseLater"], "description": "specificFolder (default) = everything into `dir`; sameAsOriginal = each photo into the folder of its original (+ `subfolder`); a photo with no folder on disk or whose folder is gone gets an error; chooseLater = the desktop app asks for the folder when the export starts (here, as specificFolder: pass `dir`)"},
                         "customText": {"type": "string", "description": "Text of the `{custom}` naming token, e.g. naming `{custom}-{seq:1}`"},
+                        "fit": {"type": "string", "enum": ["dimensions", "widthHeight"], "description": "With width + height: dimensions (default) fits either orientation (the larger number goes to the long edge); widthHeight limits the width to `width` and the height to `height` as the photo stands"},
                         "videoFormat": {"type": "string", "enum": ["h264", "prores"], "description": "Video clips in the batch (rendered formats) export as movies with their trim and video edits: h264 = H.264 + AAC MP4 (default), prores = ProRes 422 + AAC MOV"},
                         "videoQuality": {"type": "integer", "description": "Video quality 1..100 (default 80): H.264 CRF 40..14, ProRes HQ >= 80, Standard >= 50, else LT"},
                         "videoMaxSide": {"type": "integer", "description": "Video: longest output side in px, 16..8192 (0 = the clip's size, the default; never upscales)"}
@@ -764,6 +765,7 @@ pub fn call_tool(b: &mut dyn Backend, name: &str, args: &Value) -> ToolResult {
                         "height",
                         "megapixels",
                         "percent",
+                        "fit",
                         "dontEnlarge",
                         "ppi",
                         "quality",

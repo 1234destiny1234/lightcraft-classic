@@ -1637,9 +1637,10 @@ mod tests {
         let mapped = PUBLIC_CRS_FIELDS.len() - dropped.len();
         eprintln!("crs coverage: {mapped} of {} public fields map; dropped: {dropped:?}", PUBLIC_CRS_FIELDS.len());
         // No equivalent in the app: Lightroom's algorithm / tool bookkeeping (auto white version,
-        // lens profile setup, Upright's preview, centre mode and focal length: ours computes its
-        // own) and the pre-2012 single Defringe switch. Reported as unmapped and kept in the archive.
-        let expected = ["AutoWhiteVersion", "Defringe", "LensProfileSetup", "UprightCenterMode", "UprightFocalLength35mm", "UprightPreview"];
+        // Upright's preview, centre mode and focal length: ours computes its own) and the pre-2012
+        // single Defringe switch. Reported as unmapped and kept in the archive. (Lens profile setup
+        // is bookkeeping the import ignores, `crs::IGNORED`: not reported.)
+        let expected = ["AutoWhiteVersion", "Defringe", "UprightCenterMode", "UprightFocalLength35mm", "UprightPreview"];
         assert_eq!(dropped, expected, "{mapped} mapped");
     }
 

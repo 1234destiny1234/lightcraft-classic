@@ -62,7 +62,7 @@ impl SettingsHashes {
 }
 
 /// Bump when the pipeline's output changes, to invalidate cached thumbnails.
-pub const RENDER_CACHE_VERSION: u64 = 68;
+pub const RENDER_CACHE_VERSION: u64 = 70;
 
 /// Thumbnails render at one of these long edges (so window/cell size changes reuse the cache).
 pub const THUMB_SIZES: [usize; 4] = [128, 256, 384, 512];
@@ -159,6 +159,11 @@ impl LoadOptions {
     }
 }
 
+/// [`FileLoader`] for a thumbnail: a raw file that keeps smaller copies of its raw image (Lightroom's merged DNGs)
+/// develops the smallest that covers `max_edge` (set by the app); the flag says it did. Never used for an export,
+/// which must render the full image.
+pub type ReducedLoader = Arc<dyn Fn(&str, usize, LoadOptions) -> Result<(Rgb32f, SourceInfo, bool), String> + Send + Sync>;
+
 /// A raw file's embedded (camera-rendered) preview as display sRGB, oriented, no larger than
 /// `max_edge` (set by the app). `None`: no usable preview.
 pub type PreviewLoader = Arc<dyn Fn(&str, usize) -> Option<Rgba8> + Send + Sync>;
@@ -212,11 +217,17 @@ pub struct DecodedSource {
     pub denoised: Option<Arc<Twin>>,
     /// The settings the file was decoded with.
     pub options: LoadOptions,
+    /// These pixels came from the photo's smart preview (an offline original), not from its file.
+    /// A refresh must never rebuild a proxy from itself: that would stamp its older look as current.
+    pub from_proxy: bool,
+    /// Developed from a smaller copy of the raw image that the file keeps ([`ReducedLoader`]), not from the image
+    /// itself: good for a thumbnail, never for an export.
+    pub reduced: bool,
 }
 
 impl DecodedSource {
     pub fn new(image: Arc<Rgb32f>, info: Option<SourceInfo>) -> Self {
-        DecodedSource { image, info, camera_tone: None, denoised: None, options: LoadOptions::default() }
+        DecodedSource { image, info, camera_tone: None, denoised: None, options: LoadOptions::default(), from_proxy: false, reduced: false }
     }
 
     /// Whether these pixels are what decoding with `options` gives: decoded with them, or from a source the options
@@ -224,9 +235,11 @@ impl DecodedSource {
     /// profile, and a raw without measured colour to start from has nothing for the Camera colour option).
     pub fn serves(&self, options: &LoadOptions) -> bool {
         let info = self.info.as_ref();
-        (self.options.outliers == options.outliers || !info.is_some_and(|i| i.raw))
-            && (self.options.colour == options.colour || !info.is_some_and(|i| i.colorimetric))
-            && (self.options.camera == options.camera || !info.is_some_and(|i| i.raw))
+        // a smart preview's stored facts say raw, but it has no mosaic: no option changes its pixels
+        self.from_proxy
+            || ((self.options.outliers == options.outliers || !info.is_some_and(|i| i.raw))
+                && (self.options.colour == options.colour || !info.is_some_and(|i| i.colorimetric))
+                && (self.options.camera == options.camera || !info.is_some_and(|i| i.raw)))
     }
 
     /// The picture to develop for a Denoise `amount` (0 to 1, see [`DevelopSettings::denoise_amount`]): the plain one,
@@ -299,6 +312,8 @@ pub enum SourceRef {
         denoise: Option<(DenoiseSpec, PairLoader)>,
         /// The photo's settings the decode depends on.
         options: LoadOptions,
+        /// A thumbnail's loader, used instead of `loader` (see [`ReducedLoader`]); `None` for every other job.
+        reduced: Option<ReducedLoader>,
     },
     /// A smart preview standing in for a missing original.
     Smart {
@@ -331,11 +346,16 @@ impl SourceRef {
                 return Ok(DecodedSource { image: Arc::new(image), denoised: None, ..(**from).clone() });
             }
             SourceRef::Demo { scene, max_edge } => crate::demo::scene_pixels(scene, *max_edge)?,
-            SourceRef::File { path, max_edge, loader, fallback, denoise, options } => {
-                let plain = || match loader {
-                    Some(l) => l(path, *max_edge, options.clone())
+            SourceRef::File { path, max_edge, loader, fallback, denoise, options, reduced } => {
+                let plain = || match (reduced, loader) {
+                    (Some(l), _) => l(path, *max_edge, options.clone()).map(|(image, info, reduced)| DecodedSource {
+                        options: options.clone(),
+                        reduced,
+                        ..DecodedSource::new(Arc::new(image), Some(info))
+                    }),
+                    (None, Some(l)) => l(path, *max_edge, options.clone())
                         .map(|(image, info)| DecodedSource { options: options.clone(), ..DecodedSource::new(Arc::new(image), Some(info)) }),
-                    None => Err(format!("no decoder available for {path}")),
+                    (None, None) => Err(format!("no decoder available for {path}")),
                 };
                 // the denoised picture comes with the plain one from a single decode; when it cannot be read the
                 // pair loader gives the plain picture alone (the cached file is never a reason to fail a render)
@@ -358,6 +378,8 @@ impl SourceRef {
                                     camera_tone: None,
                                     denoised: twin.map(|t| Arc::new(Twin::new(Arc::new(t)))),
                                     options: options.clone(),
+                                    from_proxy: false,
+                                    reduced: false,
                                 })
                             })
                         } else {
@@ -471,6 +493,8 @@ pub struct MediaCache {
     /// share of [`crate::memory::budget`]); the least recently used entry of any of them goes first.
     budget: usize,
     pub file_loader: Option<FileLoader>,
+    /// What grid thumbnails load files with (see [`ReducedLoader`]); `None`: [`Self::file_loader`].
+    pub reduced_loader: Option<ReducedLoader>,
     pub file_probe: Option<FileProbe>,
     pub preview_loader: Option<PreviewLoader>,
     /// Reads a photo file's bytes (Photo Merge); `None` = the local file system.
@@ -547,6 +571,7 @@ impl Default for MediaCache {
             preview_capacity: 0,
             budget,
             file_loader: None,
+            reduced_loader: None,
             file_probe: None,
             preview_loader: None,
             file_bytes: None,
@@ -862,6 +887,7 @@ impl MediaCache {
                         fallback: None,
                         denoise: None,
                         options: LoadOptions::default(),
+                        reduced: None,
                     },
                 }
             }
@@ -872,6 +898,7 @@ impl MediaCache {
                 fallback: None,
                 denoise: None,
                 options: LoadOptions::default(),
+                reduced: None,
             },
         }
     }
@@ -1392,7 +1419,12 @@ impl crate::Session {
     /// (≥ `long_edge`) and the result comes from / goes to the thumbnail cache (memory + disk).
     pub fn thumb_job(&mut self, id: PhotoId, long_edge: usize) -> Option<RenderJob> {
         let b = thumb_bucket(long_edge);
-        self.build_job(id, b, b, false, true, Some(b))
+        let mut job = self.build_job(id, b, b, false, true, Some(b))?;
+        // (a thumbnail may develop a smaller copy of the raw image that the file keeps)
+        if let SourceRef::File { reduced, .. } = &mut job.source {
+            reduced.clone_from(&self.media.reduced_loader);
+        }
+        Some(job)
     }
 
     fn build_job(
@@ -1844,6 +1876,17 @@ impl crate::Session {
     ) -> Result<RenderJob, String> {
         lcc_pipeline::check_output_size(max_w, max_h)?;
         let mut job = self.render_job(id, max_w, max_h, false, true).ok_or("no such photo")?;
+        // An export renders the full image: never a thumbnail's source developed from a smaller copy of the raw
+        // image that the file keeps (Lightroom's merged DNGs)
+        let reduced = match &job.source {
+            SourceRef::Loaded(s) => s.reduced,
+            SourceRef::Fit { from, .. } => from.reduced,
+            _ => false,
+        };
+        if reduced {
+            let p = self.catalog.photo(id).ok_or("no such photo")?.clone();
+            job.source = self.media.source_ref_uncached(&p, job.level);
+        }
         // An export is made from the denoised picture its Denoise amount asks for, made when the job runs if the
         // background queue has not got to it. (A source kept in memory may lack the picture, so the job reads the file.)
         if let Some(wanted) = self.denoise_for_export(id, &job.settings)? {
@@ -2299,6 +2342,7 @@ mod tests {
             fallback: None,
             denoise: None,
             options: Default::default(),
+            reduced: None,
         };
         job.info = SourceInfo::default(); // Header facts cannot override decoder facts.
         job.settings = Arc::new(DevelopSettings::default());
@@ -2355,6 +2399,7 @@ mod tests {
             fallback: None,
             denoise: None,
             options: LoadOptions::of(&d),
+            reduced: None,
         };
         let undo_before = s.undo.len();
         let request = job.request;

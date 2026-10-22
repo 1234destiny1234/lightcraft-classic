@@ -20,6 +20,18 @@ use crate::widgets::icon_button;
 /// A module's Classic left column: the panels of `side` in the user's order, each under its
 /// collapsible header, in a scroll area as wide as its widest row.
 pub(super) fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId]) {
+    // Photo ▸ Show in Folders: the Folders panel opens, and so do the folders above the one shown
+    // (`reveal_chosen` unfolds them again once its memory of the last reveal is cleared)
+    // …and the column scrolls to its row (cleared once the panels are drawn)
+    if side.contains(&PanelId::Folders)
+        && let Some(path) = app.ui.reveal_folder.take()
+    {
+        crate::panels::classic::set_open(app, PanelId::Folders, true);
+        ui.data_mut(|d| {
+            d.remove::<Option<String>>(egui::Id::new(super::LIBFOLDER_REVEALED));
+            d.insert_temp(egui::Id::new(super::SCROLL_TO_ROW), format!("libfolder:{path}").to_lowercase());
+        });
+    }
     let counts = app.caches.counts(&app.session.catalog);
     let (total, picks, deleted) = (counts.total, counts.picks, counts.deleted);
     // The Navigator stays at the top of the column and the panels below it scroll under it, as in
@@ -96,12 +108,14 @@ fn scrolled_columns(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], total
         ui.set_max_width(wide);
         ui.data_mut(|d| {
             d.insert_temp(egui::Id::new("left-content-width-next"), 0.0f32);
+            d.insert_temp(egui::Id::new("left-deepest-indent-next"), 0.0f32);
             // where the visible part of the content ends (screen x), for what stays at the edge
             d.insert_temp(egui::Id::new("left-visible-right"), ui.cursor().left() + viewport.max.x);
             // where it starts (screen y): what a section pinned at the top is measured against
             d.insert_temp(egui::Id::new("left-view-top"), ui.cursor().top() + viewport.min.y);
         });
         columns(app, ui, viewport, side, total, picks, deleted);
+        ui.data_mut(|d| d.remove::<String>(egui::Id::new(super::SCROLL_TO_ROW)));
         crate::widgets::follow_focus(ui);
         // what the rows asked for becomes next frame's width
         let next = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-content-width-next"))).unwrap_or(0.0);
@@ -109,7 +123,32 @@ fn scrolled_columns(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], total
             ui.data_mut(|d| d.insert_temp(egui::Id::new("left-content-width"), next));
             ui.ctx().request_repaint();
         }
+        // …and the deepest row drawn (or passed over out of sight) sets next frame's indent step,
+        // so a deep library path narrows the nesting before it cuts the names
+        let deepest = ui.data(|d| d.get_temp::<f32>(egui::Id::new("left-deepest-indent-next"))).unwrap_or(0.0);
+        let step = narrowed_step(viewport.width(), deepest, next, super::indent_step(ui.ctx()));
+        if step != super::indent_step(ui.ctx()) {
+            ui.data_mut(|d| d.insert_temp(egui::Id::new("left-indent-step"), step));
+            ui.ctx().request_repaint();
+        }
     });
+}
+
+/// The indent step for next frame: [`super::step_for`]'s, narrowed by a band at a time while the
+/// widest row (`content`, drawn at step `current`) would still not fit the panel `panel_w` wide —
+/// the Classic column's rows carry longer names than `step_for` leaves room for. A wider step is
+/// taken only when the content would fit at it (as if every level of the deepest row widened), so
+/// the step settles instead of flipping between two bands.
+fn narrowed_step(panel_w: f32, deepest: f32, content: f32, current: f32) -> f32 {
+    let levels = deepest / super::INDENT_STEP;
+    let mut step = super::step_for(panel_w, deepest);
+    if levels < 1.0 || !(panel_w.is_finite() && content.is_finite()) {
+        return step;
+    }
+    while step > super::MIN_INDENT_STEP && content + levels * (step - current) > panel_w + 0.5 {
+        step -= 2.0;
+    }
+    step.max(super::MIN_INDENT_STEP)
 }
 
 /// The Navigator, pinned at the top of the column above the scroll area; the panels below scroll

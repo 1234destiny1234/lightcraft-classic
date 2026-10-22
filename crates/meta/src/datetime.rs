@@ -29,21 +29,10 @@ impl DateTime {
         // A timestamp must represent a real Gregorian calendar day, not just
         // numbers in the range 1..=31. Invalid dates would otherwise be
         // accepted from EXIF/XMP and silently normalized during time arithmetic.
-        let leap = self.year.is_multiple_of(4) && (!self.year.is_multiple_of(100) || self.year.is_multiple_of(400));
-        let max_day = match self.month {
-            1 | 3 | 5 | 7 | 8 | 10 | 12 => 31,
-            4 | 6 | 9 | 11 => 30,
-            2 if leap => 29,
-            2 => 28,
-            _ => 0,
-        };
-        let ok = self.day >= 1
-            && self.day <= max_day
-            && self.hour < 24
-            && self.minute < 60
-            && self.second < 61
-            && self.year > 0
-            && self.offset_minutes.is_none_or(|o| o.abs() <= 18 * 60);
+        // chrono rejects impossible days (leap years and all); the time is checked
+        // by hand so a leap second (`second == 60`) stays acceptable.
+        let day_ok = self.year > 0 && chrono::NaiveDate::from_ymd_opt(i32::from(self.year), u32::from(self.month), u32::from(self.day)).is_some();
+        let ok = day_ok && self.hour < 24 && self.minute < 60 && self.second < 61 && self.offset_minutes.is_none_or(|o| o.abs() <= 18 * 60);
         ok.then_some(self)
     }
 
@@ -155,13 +144,12 @@ impl DateTime {
     // every operand is a calendar field (u16/u8/i16): no step comes near i64's range
     #[allow(clippy::arithmetic_side_effects)]
     pub fn unix_seconds(&self) -> i64 {
-        // days from civil (proleptic Gregorian), Howard Hinnant's public-domain algorithm
-        let (y, m, d) = (self.year as i64 - if self.month <= 2 { 1 } else { 0 }, self.month as i64, self.day as i64);
-        let era = y.div_euclid(400);
-        let yoe = y - era * 400;
-        let doy = (153 * (m + if m > 2 { -3 } else { 9 }) + 2) / 5 + d - 1;
-        let doe = yoe * 365 + yoe / 4 - yoe / 100 + doy;
-        let days = era * 146097 + doe - 719468;
+        // Every `DateTime` reaching here is a real calendar day (`valid()` ran in the parsers);
+        // an out-of-range one (built by hand) reads as the epoch rather than panicking.
+        let days = chrono::NaiveDate::from_ymd_opt(i32::from(self.year), u32::from(self.month), u32::from(self.day))
+            .zip(chrono::NaiveDate::from_ymd_opt(1970, 1, 1))
+            .map(|(d, epoch)| (d - epoch).num_days())
+            .unwrap_or(0);
         days * 86400 + self.hour as i64 * 3600 + self.minute as i64 * 60 + self.second as i64 - self.offset_minutes.unwrap_or(0) as i64 * 60
     }
 }

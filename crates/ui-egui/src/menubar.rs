@@ -282,6 +282,7 @@ const SUB_LAYOUT: &[(&str, &str, &[&str])] = &[
         "File",
         &[
             "app.showInFinder",
+            "app.showInFolders",
             "photo.reload",
             "photo.addToLibrary",
             "---",

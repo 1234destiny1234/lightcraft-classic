@@ -30,7 +30,7 @@ assessment and the notes that don't fit a row. Visual reference for agents: `pla
 | Zoom and navigation | Fit / Fill / 1:1 / 2:1 … 11:1, Navigator, spacebar pan | Fit to 800%, pinch zoom, pan, Navigator-like, Space-held hand over tools | 90% | original-pixel detail at 1:1–8:1 everywhere: loupe, Before/After, mask overlays, soft proofing, Compare and Reference are tiled zoom windows (LR-VIEW-ZOOM); left: diagnostic overlays (Visualize Spots, Point Color range, HDR range) render the whole frame instead of a zoom window |
 | Library culling and metadata | ratings, flags, labels with keys, painter, keywording, metadata panel, filter bar | ratings / flags / labels and advance, keyword list and sets, keywording box, metadata fields, smart albums, filter bar | 85% | painter tool, quick collection, some Classic keys |
 | Shortcuts | Lightroom desktop and Classic keymaps | Lightroom-desktop keymap with Classic additions, editable | 85% | deliberate differences below; no Classic keymap layer |
-| Context menus | everywhere | 26 sites (grid, filmstrip, albums, folders, keywords, masks, presets…) | 70% | unaudited against Lightroom's menus item by item |
+| Context menus | everywhere | 31 sites (grid, filmstrip, albums, folders, keywords, masks, presets, text fields…), all through `widgets::context_menu` (`crates/ui-egui/src/widgets.rs`): a right-click elsewhere while a menu is open closes it and opens the menu there, also on the same widget (issue #1877: that one flashed at the new spot and closed, as egui counts the opening click as a click while open) | 70% | unaudited against Lightroom's menus item by item |
 | Text fields | native editing behaviour | custom text field (LR-BEHAV-TEXTFIELD) | 70% | IME and selection edge cases |
 | Accessibility | VoiceOver / Narrator, keyboard navigation | AccessKit tree audited by a test in every view, Develop tool and the main dialogs: every control named, sliders with value, range and Increment / Decrement, dialogs titled, tool sliders reachable with Tab; crop handles, spots, gradient handles and mask pins by keyboard | 75% | brush strokes and red-eye ellipses need the pointer; not tried with a real screen reader ([audit](#accessibility-audit)) |
 | Feel and responsiveness | GPU-interactive sliders (15.3) | ≤ 16 ms slider budget on GPU; background renders | 75% | colour NR at half resolution, 100k-photo grid test |
@@ -78,8 +78,8 @@ auto-repeat used to flip the zoom back and forth (`crates/ui-egui/src/space_hand
 **Library navigation keys (KEYC-COMPARE):** in Photo Grid and Square Grid, `Home` / `End` make the first / last photo of the view the active, selected one, and `Shift+Left` / `Shift+Right` add the previous / next photo of the view to the selection (the added photo becomes active; the keys never remove a photo from the selection, and do nothing at either end of the view). They wait in the other views, in the full-screen preview, while a text field or a dialog has the keyboard, and when you gave the key to a command; they are listed under Fixed keys in Help → Keyboard Shortcuts. `Cmd+O` (`Ctrl+O` on Windows and Linux) runs File → Open Library… ; View → Visualize HDR has no default key (`Shift+H` cycles the Tool Overlay, issue #224; `Cmd+Shift+H` stays the Histogram). Covered by `crates/ui-egui/src/tests_keymap.rs`; the macOS native menu path for `Cmd+O` is not exercised by the headless tests.
 
 **Still missing / broken:**
-- No command yet: F1 help (verify the rest of the old list: full screen, settings, stacks,
-  visualize spots and merges have commands now).
+- Tab / ⇧Tab (hide the side panels / all panels): Tab moves the keyboard focus here (accessibility), so it is
+  not bound; F5 (hide the top panel) is not bound either.
 - ⌘M / ⌘H / ⌘Q / ⌘W rely on the platform window defaults (unverified).
 
 
@@ -130,6 +130,24 @@ unnamed was in the way.
 
 Not done: brush strokes and red-eye ellipses still need a pointer. Nobody has tried the app with
 a real screen reader on any platform yet.
+
+## Reference view lifecycle
+
+Escape leaves Reference for Detail, preserving the active photo and its edits; a second Escape
+returns to the grid. Existing dialogs, tools and Lights Out retain their higher-priority Escape
+handling. The reference stays pinned when leaving the view, but a successful Open/New Library
+clears it: numeric photo IDs are local to each catalog. A refused switch keeps the current pin,
+including Open/New refused while an import or its folder scan is running.
+
+`photo.setReference` refuses missing or Recently Deleted photos without replacing the current
+pin. Deleting a pinned reference stops drawing it; re-entering Reference falls back to a live
+active photo. Restoring the photo permits pinning it again. An empty catalog cannot supply one.
+
+Verification: four new behavioral regressions failed on upstream `76b5377` before the fix.
+The patched Windows x64 app on RTX 5080 / DX12 passed Escape, edit preservation, delete/restore,
+and New/Open Library checks using isolated catalogs. Saved exposure survived reopening. Native
+1400 × 900 captures did not fall back to headless rendering. Control-channel input does not
+establish OS keyboard delivery or cross-platform acceptance.
 
 ## Revision history
 

@@ -4458,6 +4458,7 @@ name = "lcc-app"
 version = "26.43.4"
 dependencies = [
  "bytemuck",
+ "chrono",
  "eframe",
  "egui",
  "getrandom 0.3.4",
@@ -4537,6 +4538,7 @@ dependencies = [
 name = "lcc-catalog"
 version = "26.43.4"
 dependencies = [
+ "chrono",
  "crc32fast",
  "lcc-brand",
  "lcc-develop",
@@ -4715,6 +4717,7 @@ version = "26.43.4"
 dependencies = [
  "ab_glyph",
  "base64",
+ "chrono",
  "craft-docpath",
  "ed25519-dalek 2.2.0",
  "filmcraft-h264enc",
@@ -4993,6 +4996,7 @@ dependencies = [
 name = "lcc-meta"
 version = "26.43.4"
 dependencies = [
+ "chrono",
  "lcc-brand",
  "lcc-geom",
  "lcc-tiff",

@@ -20,6 +20,10 @@ pub(crate) fn overlay(code: &str) -> Option<&'static str> {
         "cs" => Some(include_str!("../locales/fork/cs.json")),
         "it" => Some(include_str!("../locales/fork/it.json")),
         "ka" => Some(include_str!("../locales/fork/ka.json")),
+        "sv" => Some(include_str!("../locales/fork/sv.json")),
+        "fi" => Some(include_str!("../locales/fork/fi.json")),
+        "id" => Some(include_str!("../locales/fork/id.json")),
+        "vi" => Some(include_str!("../locales/fork/vi.json")),
         _ => None,
     }
 }

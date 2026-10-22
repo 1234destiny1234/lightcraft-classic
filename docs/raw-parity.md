@@ -31,6 +31,13 @@ model from the format rules in the script (which mirror `crates/raw/src`) plus t
 rewrites [raw/coverage.tsv](raw/coverage.tsv) and prints the tables below; `--check` fails when the
 committed table is stale.
 
+Folder discovery, desktop file pickers, CLI and MCP share
+`lcc_engine::import::EXTENSIONS`. The list includes formats that may open only from an
+embedded preview or report a decoder error; an extension is not a promise of sensor decoding.
+The 2026-10-12 release CLI check of the public DSC-R1 SR2 and DSC-F828 SRF samples found the
+same photos and decode status through recursive and direct import. DSC-F828 moves from
+unsupported to preview-only in the counts; sensor-decoding readiness is unchanged.
+
 ## How it was measured
 
 - **Adobe's list**: helpx "Camera Raw supported cameras" (the live page refuses scripted requests, so
@@ -144,9 +151,10 @@ largest gap left.
 | ARW | packed 12-bit (A900, A850) | ✅ | one CC0 file each |
 | ARW | ARW6 Compressed / HQ (compression 32766; ILCE-7RM6) | ✅ | 8 CC0 files; 12-bit mode unsupported; `docs/arw6-compression.md` |
 | ARW | ARW version 1: 12-bit Huffman-coded columns of the DSLR-A100 and A200…A390 | ✅ | `arw1.rs`; one CC0 file per body (9) in the corpus, black 0; the A100's frame and WB from its MRI block |
+| SRF | DSC-F828; DSC-V3 | ⬜ | discovered during folder import; F828 imports as preview-only, V3 has not been checked on a real file |
 | ARW | SRF (DSC-F828, V3) | ⬜ | preview only (#702); encrypted 14-bit RGBE (four-colour) data |
 | ARW | ARQ pixel shift | ⬜ | no code |
-| SR2 | DSC-R1 | ✅ | CC0 3221 sample |
+| SR2 | DSC-R1 | ✅ | CC0 3221 sample; folder and direct import both decode sensor data |
 | RAF | uncompressed, lossless and lossy compressed; Bayer and X-Trans; GFX 14/16-bit | ✅ | 24 files from 13 bodies exact |
 | RAF | pre-X FinePix SuperCCD without a raw IFD (45° lattice; SR Pro S frame; SR S photosites) | ✅ | `raf_superccd.rs`: 15 CC0 files from 14 bodies (E550, E900, F700, S2Pro, S3Pro, S5Pro, S5000, S5200, S5600, S6000fd, S6500fd, S7000, S9500, S9600, S100FS) checked against the camera JPEG; the SR bodies' R photosites (highlight range) are not used yet |
 | RAF | SuperCCD EXR stored upright without a raw IFD (S200 / S205 EXR) | ⬜ | refused (no Bayer phase matches the camera JPEG: the EXR array) |
@@ -216,7 +224,7 @@ sample files. A pointer for contributors, not legal advice.
 | Camera Matching looks | 481 models (plus phone-maker looks) | none (the per-file JPEG fit imitates the camera's own look) |
 | Creative profiles | Adobe Color, Portrait, Landscape, Vivid, Monochrome… | our own looks (Color, Neutral, Vivid, Landscape, Portrait, Monochrome) |
 | DCP / dual-illuminant model | ✅ | dual-illuminant DNG colour (ColorMatrix / ForwardMatrix 1-2, CameraCalibration, AnalogBalance), HueSatMap, LookTable, ProfileToneCurve; a person's own `.dcp` files can be imported per camera or per photo (`camera.importDcp`, `develop.cameraProfile`); none is shipped (clean-room) |
-| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where the camera's white-balance presets in the file give the scale (6 Sony bodies and the Canon PowerShot G1 X Mark III, `kelvin_presets`); other raws keep the relative scale (#296) |
+| White balance in Kelvin | ✅ for every model | absolute Kelvin where the camera has colour matrices (its own, or one of the 52 spectral rows), also for files whose look is a per-file fit (#730), or where the camera's white-balance presets in the file give the scale (6 Sony bodies and the Canon PowerShot G1 X Mark III, `kelvin_presets`), or the neutral pair a Fujifilm X-Trans III RAF stores (6 bodies, #730); other raws keep the relative scale (#296) |
 
 **How far the default rendering is from Adobe's** (CIE ΔE; measured where stated):
 
