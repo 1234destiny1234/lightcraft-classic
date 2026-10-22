@@ -66,7 +66,6 @@ pub fn show_body(app: &mut LccApp, ui: &mut egui::Ui) {
     let fid = egui::Id::new("keyword-list-filter");
     let mut filter: String = ui.data(|d| d.get_temp(fid)).unwrap_or_default();
     ui.horizontal(|ui| {
-        ui.add_space(24.0);
         crate::text_field::TextField::singleline("field:keywordFilter", &mut filter)
             .hint(crate::i18n::tr("Filter Keywords"))
             .width(ui.available_width() - 82.0)

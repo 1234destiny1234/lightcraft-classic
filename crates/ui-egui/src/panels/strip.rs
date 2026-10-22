@@ -1,97 +1,17 @@
-//! The vertical tool strip at the far right: a button that folds the right panel away, then
-//! Develop's Presets (its editing tools are the row under the histogram, `right::classic_tools`) or
-//! Library's own panels (Versions, History & Activity), each with More below.
-
-use egui::vec2;
-use serde_json::json;
+//! The tool panels of a module: Develop's editing tools, drawn as the row under its histogram
+//! (`classic_tools`). The vertical strip that once stood at the far right is gone: its show/hide
+//! button is in the top bar, Library's Versions in its left column.
 
 use crate::LccApp;
 use crate::icons::Icon;
 use crate::module::{ModuleId, PanelId};
 use crate::state::RightPanel;
-use crate::theme::Tokens;
-use crate::widgets::icon_button;
-
-/// Height of one tool button.
-const BUTTON_H: f32 = 40.0;
-/// Space between tool buttons.
-const GAP: f32 = 6.0;
-
-pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
-    let t = Tokens::get(ui.ctx());
-    egui::Panel::right("tool_strip")
-        .exact_size(t.strip_w)
-        .resizable(false)
-        .frame(
-            egui::Frame::NONE
-                .fill(t.chrome)
-                .inner_margin(egui::Margin { left: 0, right: 0, top: 8, bottom: 8 })
-                .stroke(egui::Stroke::new(1.0, t.divider)),
-        )
-        .show(ui, |ui| {
-            let has_photo = app.session.active().is_some();
-            ui.vertical_centered(|ui| {
-                ui.spacing_mut().item_spacing.y = GAP;
-                let sz = vec2(t.strip_w, BUTTON_H);
-                // folds the right panel away (the strip stays); any tool below unfolds it
-                // (Develop's tools are in the row under its histogram: with the panels closed, E,
-                // this brings them back)
-                let develop = app.ui.module == ModuleId::Develop;
-                let closed = develop && app.ui.right == RightPanel::None && !app.ui.presets;
-                let open = !app.ui.right_collapsed && !closed;
-                if icon_button(ui, "collapseRight", Icon::SidebarRight, sz, open, true, "Show/hide right panel").clicked() {
-                    let _ = app.run(if closed { "panel.edit" } else { "panel.collapseRight" }, json!({}));
-                }
-                separator(ui, &t);
-                // Presets: Develop's, a right panel like Edit or Crop
-                let presets_on = app.ui.presets && open;
-                // (a second click goes back to the tools: the strip has no Edit button of its own)
-                if develop && icon_button(ui, "presets", Icon::Presets, sz, presets_on, has_photo, "Presets").clicked() {
-                    let _ = app.run("panel.presets", json!({}));
-                }
-                // Only the active module's tools: Develop's editing tools, Library's own panels
-                // (`Library`'s Versions and History & Activity). The Library panels sat in Develop's
-                // strip as if they were Develop's tools (#108), so each module declares its own.
-                let side = if develop { Vec::new() } else { strip_panels(app) };
-                for p in &side {
-                    let Some((id, icon, panel, tip, needs_photo)) = entry(*p) else { continue };
-                    let on = !app.ui.right_collapsed
-                        && !(app.ui.presets && app.ui.module == ModuleId::Develop)
-                        && (app.ui.right == panel || (panel == RightPanel::Edit && app.ui.right == RightPanel::Profiles));
-                    let video = crate::video_ui::blocked(app, &format!("panel.{id}"));
-                    let tip = if video { crate::video_ui::NOT_FOR_VIDEO } else { tip };
-                    let resp = icon_button(ui, id, icon, sz, on, (has_photo || !needs_photo) && !video, tip);
-                    // The tool in use is radio-style (Lightroom Classic): in Develop, clicking it
-                    // leaves it alone. It used to close the panel, and a Detail view with no editing
-                    // panel is Library's, so the click threw the user back into the grid. Library's
-                    // strip is the tab strip over its Classic column, where a click on the tab that
-                    // is open closes it and the column comes back (as `panel.<id>` does).
-                    if resp.clicked() && (app.ui.module == ModuleId::Library || !on) {
-                        if app.ui.right == panel && app.ui.module != ModuleId::Library {
-                            // the panel is behind Presets or folded away: bring it forward
-                            app.ui.presets = false;
-                            app.ui.right_collapsed = false;
-                        } else {
-                            let _ = app.run(&format!("panel.{id}"), json!({}));
-                        }
-                    }
-                    // the same header menu as the Classic columns: show/hide, solo, hiding mode
-                    crate::panels::classic::side_menu(app, &resp, strip_declared(app.ui.module));
-                }
-                separator(ui, &t);
-                if icon_button(ui, "more", Icon::More, sz, false, true, "More").clicked() {
-                    app.ui.dialog = Some(crate::state::Dialog::About);
-                }
-            });
-        });
-}
 
 /// The panels a module's tool strip lists. Develop's are its editing tools; Library's are its own
 /// panels, which open over its Classic right column. The other modules have no strip.
 pub fn strip_declared(module: ModuleId) -> &'static [PanelId] {
     match module {
         ModuleId::Develop => &[PanelId::Edit, PanelId::Crop, PanelId::Remove, PanelId::RedEye, PanelId::Masking],
-        ModuleId::Library => &[PanelId::Versions, PanelId::Activity],
         _ => &[],
     }
 }
@@ -122,9 +42,4 @@ pub(crate) fn entry(p: PanelId) -> Option<(&'static str, Icon, RightPanel, &'sta
         P::Activity => ("activity", Icon::Activity, RightPanel::Activity, "History & Activity", false),
         _ => return None,
     })
-}
-
-fn separator(ui: &mut egui::Ui, t: &Tokens) {
-    let (r, _) = ui.allocate_exact_size(vec2(t.strip_w - 16.0, 1.0), egui::Sense::hover());
-    ui.painter().rect_filled(r, 0.0, t.button_border.gamma_multiply(0.7));
 }

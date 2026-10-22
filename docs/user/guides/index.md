@@ -1,6 +1,6 @@
 ---
 title: Guides
-description: How to do one thing in LightCraft Classic.
+description: How to do one thing in Chromaforge.
 order: 20
 ---
 

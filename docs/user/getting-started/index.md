@@ -1,7 +1,7 @@
 ---
 title: Getting started
-description: Install LightCraft Classic on your computer and open your first library.
+description: Install Chromaforge on your computer and open your first library.
 order: 10
 ---
 
-- [Install LightCraft Classic](install.md)
+- [Install Chromaforge](install.md)

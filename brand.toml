@@ -1,11 +1,16 @@
 # Changing anything in [product] is safe at any time: rebuild and repackage.
 [product]
-display_name   = "LightCraft Classic"            # window title, menus, About, dialogs, docs
-short_name     = "LightCraft Classic"            # macOS menu bar, taskbar, notifications
+display_name   = "Chromaforge"                    # window title, menus, About, dialogs, docs
+short_name     = "Chromaforge"                    # macOS menu bar, taskbar, notifications
 tagline        = "Photo library and raw development"
-vendor         = "LightCraft Classic contributors"
+vendor         = "Chromaforge contributors"
 homepage       = "https://github.com/emmertex/lightcraft-classic"
 repository     = "https://github.com/emmertex/lightcraft-classic"
+# The repository the release manifest (latest.json) names its files under. Installed builds only
+# download files under their own `repository` or a [legacy] `repositories` entry, and GitHub
+# redirects a renamed repository's old URLs: so after a rename this stays the OLD repository
+# until every install runs a build that knows the new one. Empty: `repository`.
+release_repository = "https://github.com/emmertex/lightcraft-classic"
 discord        = "https://discord.gg/c3dfYATzsQ"  # community chat (Help menu, About); leave out for none
 developer_id   = "com.emmertex.lightcraftclassic" # AppStream <developer id>: lowercase reverse-DNS of whoever ships it
 binary         = "lightcraft-classic"            # desktop executable name in packages
@@ -18,8 +23,8 @@ logo_svg       = "brand/logo.svg"       # identity plate default, About box
 # Identifiers stored in users' files and OS registrations. Changing these is allowed, but the old
 # values MUST be appended to [legacy] in the same commit, so existing installs keep working.
 [identity]
-app_id          = "com.emmertex.LightCraftClassic"   # reverse-DNS: bundle id, Flatpak id, MIME/desktop ids
-android_package = "com.emmertex.ChromaForge"        # Android / Play Store package: permanent once on the Play Store
+app_id          = "com.emmertex.chromaforge"         # reverse-DNS: bundle id, Flatpak id, MIME/desktop ids
+android_package = "com.emmertex.chromaforge"        # Android / Play Store package: permanent once on the Play Store
 settings_dir    = "LightCraft Classic"               # ~/.config/<x>, ~/Library/Application Support/<x>, %APPDATA%\<x>
 library_default = "LightCraft Classic Library"       # default catalog folder name under Pictures
 catalog_ext     = "lccat"
@@ -45,7 +50,10 @@ settings_dirs = ["NoNameYet", "LightCraft"]
 env_prefixes  = ["NONAMEYET", "LIGHTCRAFT"]
 preset_exts   = ["nnypreset", "lcpreset"]
 catalog_exts  = ["nnycat"]
-app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic"]
+# Repositories this app was released from before: their release files are still accepted as
+# updates (a renamed repository's URLs keep working through GitHub's redirect).
+repositories  = ["https://github.com/emmertex/lightcraft-classic"]
+app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic", "com.emmertex.LightCraftClassic"]
 
 # The project this one is forked from, for docs that compare the two ({{upstream_name}}, … in `*.md.in`).
 [upstream]

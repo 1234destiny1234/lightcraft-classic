@@ -254,8 +254,10 @@ fn preview(ui: &mut egui::Ui, app: &mut LccApp, s: &GallerySettings, rect: Rect)
     }
 }
 
-/// The photo's thumbnail fitted into `r` (a placeholder until it is rendered).
-fn draw_photo(p: &egui::Painter, app: &LccApp, id: lcc_catalog::PhotoId, r: Rect, border: f32, border_c: Color32) {
+/// The photo's thumbnail fitted into `r` (a placeholder until it is rendered). A photo whose
+/// thumbnail was never made (not yet seen in the Library grid) has it asked for here.
+fn draw_photo(p: &egui::Painter, app: &mut LccApp, id: lcc_catalog::PhotoId, r: Rect, border: f32, border_c: Color32) {
+    crate::panels::grid::request_thumb(app, id, 256, 8);
     let Some(tex) = app.renderer.thumb(id) else {
         p.rect_filled(r, 0.0, Color32::from_gray(60));
         return;

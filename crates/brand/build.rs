@@ -88,6 +88,10 @@ const OPTIONAL: &[(&str, &str, &str)] = &[
     // no upstream: the About window credits no upstream project
     ("upstream.name", "UPSTREAM_NAME", "&str = \"\""),
     ("upstream.repository", "UPSTREAM_REPOSITORY", "&str = \"\""),
+    // no earlier repositories: updates come only from `product.repository`
+    ("legacy.repositories", "LEGACY_REPOSITORIES", "&[&str] = &[]"),
+    // the manifest names its files under `product.repository`
+    ("product.release_repository", "RELEASE_REPOSITORY", "&str = \"\""),
 ];
 
 enum Value {

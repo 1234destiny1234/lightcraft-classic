@@ -228,7 +228,12 @@ fn release_file(opts: &Options, url: &str) -> Result<bool, UpdateError> {
         return Ok(plain_path(rest));
     }
     require_https(url, "the update's file")?;
-    Ok(strip_prefix_ignore_case(url.trim(), &release_download_prefix(&opts.repo)).is_some_and(plain_path))
+    // this repository's releases, or (the default repository only) one it was renamed from:
+    // a manifest written while the old name is still what older installs accept
+    let legacy: &[&str] = if opts.repo == lcc_brand::REPOSITORY { lcc_brand::LEGACY_REPOSITORIES } else { &[] };
+    Ok(std::iter::once(opts.repo.as_str())
+        .chain(legacy.iter().copied())
+        .any(|repo| strip_prefix_ignore_case(url.trim(), &release_download_prefix(repo)).is_some_and(plain_path)))
 }
 
 /// The rest of `url` after the test origin, when it is under it.
@@ -497,6 +502,25 @@ mod tests {
 
     fn feed_with(assets: serde_json::Value) -> String {
         serde_json::json!([{"tag_name": "v1.2.0", "assets": assets}]).to_string()
+    }
+
+    /// A manifest written after the repository was renamed names its files under the old name
+    /// (brand.toml `release_repository`) or the new one: both are this app's releases.
+    #[test]
+    fn a_file_on_a_repository_this_one_was_renamed_from_is_offered() {
+        let opts = Options::default();
+        for repo in lcc_brand::LEGACY_REPOSITORIES {
+            let url = format!("{}/releases/download/v1.2.0/app-1.2.0-windows-x64.msi", repo.trim_end_matches('/'));
+            assert!(release_file(&opts, &url).unwrap(), "{url}");
+            let evil = format!("{}-evil/releases/download/v1.2.0/app-1.2.0-windows-x64.msi", repo.trim_end_matches('/'));
+            assert!(!release_file(&opts, &evil).unwrap(), "{evil}");
+        }
+        // another repository's own options never inherit this app's old names
+        let other = Options { repo: "https://github.com/someone/else".into(), ..Options::default() };
+        for repo in lcc_brand::LEGACY_REPOSITORIES {
+            let url = format!("{}/releases/download/v1.2.0/a.msi", repo.trim_end_matches('/'));
+            assert!(!release_file(&other, &url).unwrap(), "{url}");
+        }
     }
 
     #[test]

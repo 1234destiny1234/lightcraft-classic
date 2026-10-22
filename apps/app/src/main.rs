@@ -1087,6 +1087,9 @@ fn main() -> eframe::Result {
     // GPU compute: off if the preference says so, or if the last launch died creating the device
     // (issue #136) — before anything can create it
     let gpu_crash = gpu_crash_check(in_memory).or_else(|| gpu_lost_check_at(gpu_lost_marker_path().as_deref(), in_memory));
+    if prefs.as_ref().is_some_and(|u| !u.settings.hdr_display) {
+        hdr_display::switch_off();
+    }
     let gpu_on = prefs.as_ref().is_none_or(|u| u.settings.gpu) && gpu_crash.is_none();
     lcc_engine::gpu::set_enabled(gpu_on);
     // the window's renderer: probed (Windows) and with a fallback chain, so a driver that can't

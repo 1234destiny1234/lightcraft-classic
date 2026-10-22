@@ -319,6 +319,10 @@ pub struct AppSettings {
     pub gpu: bool,
     /// Windows DirectComposition to prevent VRR flicker; opt-in, applies at next launch.
     pub compose_window: bool,
+    /// An HDR (extended-range) window where the display offers one; off: always an SDR window.
+    /// Applies at next launch. Off helps where the compositor resamples HDR windows on an SDR
+    /// monitor (KDE with mixed scaling: small text looked stretched).
+    pub hdr_display: bool,
     /// Largest long edge (pixels) the user lets the loupe render at; 0 = Automatic (the size it is
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
@@ -394,6 +398,7 @@ impl Default for AppSettings {
             ask_before_move: true,
             gpu: true,
             compose_window: false,
+            hdr_display: true,
             preview_limit: 0,
             external_editor: String::new(),
             external_file: EditFile::default(),
@@ -753,6 +758,11 @@ pub struct UiState {
     pub histogram_mode: String,
     #[serde(deserialize_with = "lenient")]
     pub histogram_scale: String,
+    /// A second histogram under the first, drawing another distribution (the name of a
+    /// [`lcc_raster::HistogramMode`]; empty: none), so e.g. RGB Overlay and RGB Parade show
+    /// together (`view.histogram.second`).
+    #[serde(default, deserialize_with = "lenient")]
+    pub histogram_second: String,
     /// Soft proofing (S in the loupe): render as `proof` would hold the photo.
     pub soft_proof: bool,
     pub proof: lcc_engine::pipeline::Proof,
@@ -1513,6 +1523,7 @@ impl Default for UiState {
             histogram: true,
             histogram_mode: lcc_raster::HistogramMode::default().name().into(),
             histogram_scale: lcc_raster::HistogramScale::default().name().into(),
+            histogram_second: String::new(),
             soft_proof: false,
             proof: lcc_engine::pipeline::Proof { dest_warning: false, ..Default::default() },
             proof_profile: None,
@@ -1789,6 +1800,9 @@ impl UiState {
         // a histogram mode or scale another build wrote (or a hand-edited file) is the default
         if lcc_raster::HistogramMode::parse(&self.histogram_mode).is_none() {
             self.histogram_mode = lcc_raster::HistogramMode::default().name().into();
+        }
+        if !self.histogram_second.is_empty() && lcc_raster::HistogramMode::parse(&self.histogram_second).is_none() {
+            self.histogram_second.clear();
         }
         if lcc_raster::HistogramScale::parse(&self.histogram_scale).is_none() {
             self.histogram_scale = lcc_raster::HistogramScale::default().name().into();

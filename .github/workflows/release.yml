@@ -1045,6 +1045,13 @@ jobs:
           DISPLAY_NAME: ${{ needs.version.outputs.display_name }}
           REPO: ${{ github.repository }}
         run: |
+          # the files are named under brand.toml's release_repository when set (the old name,
+          # after a rename: what installed builds accept; GitHub redirects it), else this repository
+          . packaging/env.sh
+          if [ -n "${BRAND_RELEASE_REPOSITORY:-}" ]; then
+            REPO="${BRAND_RELEASE_REPOSITORY#https://github.com/}"
+            REPO="${REPO%/}"
+          fi
           rm -f latest.json latest.json.new
           notes="$(gh release view "$TAG" --json body --jq .body)"
           jq -n --arg version "$VERSION" --arg name "$DISPLAY_NAME v$VERSION" \

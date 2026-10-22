@@ -132,7 +132,7 @@ fn watch_downloads(app: &mut LccApp, ctx: &egui::Context) {
 /// Per-photo AI Denoise switch, including a request waiting for model installation.
 pub fn detail_toggle(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, on: bool, applicable: bool) {
     let mut enabled = on || crate::model_setup::denoise_requested(app, id);
-    egui::Frame::NONE.inner_margin(egui::Margin { left: 24, right: 22, top: 6, bottom: 2 }).show(ui, |ui| {
+    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 6, bottom: 2 }).show(ui, |ui| {
         let mut r = ui.add_enabled(applicable, egui::Checkbox::new(&mut enabled, crate::i18n::tr("AI Denoise")));
         if !applicable && let Some((why, detail)) = not_applicable(app, id) {
             let tip = match detail {
@@ -152,7 +152,7 @@ pub fn detail_toggle(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, on: bool,
 pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f64) {
     let t = Tokens::get(ui.ctx());
     let state = app.session.denoise_photo_state(id);
-    let pad = egui::Margin { left: 24, right: 22, top: 0, bottom: 6 };
+    let pad = egui::Margin { left: 12, right: 16, top: 0, bottom: 6 };
     let note = |ui: &mut egui::Ui, text: &str, color: egui::Color32| {
         ui.add(egui::Label::new(RichText::new(crate::i18n::tr(text)).size(11.0).color(color)).wrap());
     };

@@ -1221,22 +1221,6 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             }
         });
     });
-    if ui.button(crate::i18n::tr("Find Similar Photos")).clicked() {
-        match app.run("library.findSimilar", json!({"id": id.0})) {
-            Ok(r) => {
-                let n = r["photos"].as_array().map_or(0, Vec::len);
-                app.ui.view = crate::state::ViewMode::PhotoGrid;
-                app.toast(
-                    ui.ctx(),
-                    crate::i18n::tr_format!("{n} similar photo{} · View ▸ Clear Filters to see all", if n == 1 { "" } else { "s" }, n = n),
-                );
-            }
-            Err(e) => app.toast(ui.ctx(), e),
-        }
-    }
-    if ui.button(crate::i18n::tr("Set as Reference Photo")).clicked() {
-        let _ = app.run("photo.setReference", json!({"id": id.0}));
-    }
     ui.separator();
     crate::widgets::menu_button(ui, crate::i18n::tr("Set Flag"), |ui| {
         for (l, f) in [("Pick", "pick"), ("Reject", "reject"), ("Unflagged", "none")] {
@@ -1283,26 +1267,28 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if new.clicked() {
                 let _ = app.run("dialog.newAlbum", json!({}));
             }
+            // in a (non-smart) album: take the selection out of it, or make this photo its cover
+            if let lcc_engine::LibrarySource::Album(aid) = app.session.source
+                && app.session.catalog.album(aid).is_some_and(|a| !a.folder && !a.is_smart())
+            {
+                if ui.button(crate::i18n::tr("Remove from Collection")).clicked() {
+                    let _ = app.run("album.removePhotos", json!({"id": aid.0}));
+                }
+                if ui.button(crate::i18n::tr("Set as Album Cover")).clicked() {
+                    let _ = app.run("album.setCover", json!({"id": aid.0, "photo": id.0}));
+                }
+            }
         });
         register(ui.ctx(), "button:contextAddToAlbum", add.response.rect);
     }
-    // in a (non-smart) album: take the selection out of it, or make this photo its cover
-    if let lcc_engine::LibrarySource::Album(aid) = app.session.source
-        && app.session.catalog.album(aid).is_some_and(|a| !a.folder && !a.is_smart())
-    {
-        if ui.button(crate::i18n::tr("Remove from Collection")).clicked() {
-            let _ = app.run("album.removePhotos", json!({"id": aid.0}));
+    crate::widgets::menu_button(ui, crate::i18n::tr("Virtual Copy & Version"), |ui| {
+        if ui.button(crate::i18n::tr("Create Virtual Copy")).clicked() {
+            let _ = app.run("photo.virtualCopy", json!({}));
         }
-        if ui.button(crate::i18n::tr("Set as Album Cover")).clicked() {
-            let _ = app.run("album.setCover", json!({"id": aid.0, "photo": id.0}));
+        if ui.button(crate::i18n::tr("Create Version")).clicked() {
+            let _ = app.run("version.create", json!({}));
         }
-    }
-    if ui.button(crate::i18n::tr("Create Virtual Copy")).clicked() {
-        let _ = app.run("photo.virtualCopy", json!({}));
-    }
-    if ui.button(crate::i18n::tr("Create Version")).clicked() {
-        let _ = app.run("version.create", json!({}));
-    }
+    });
     crate::widgets::menu_button(ui, crate::i18n::tr("Stack"), |ui| {
         let stacked = app.session.catalog.stack_of(id).is_some();
         let several = app.session.selection.ids.len() > 1;
@@ -1332,12 +1318,17 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     if ui.add_enabled(app.session.clipboard.is_some(), egui::Button::new(crate::i18n::tr("Paste Edit Settings"))).clicked() {
         let _ = app.run("develop.paste", json!({}));
     }
-    if ui.add_enabled(app.session.clipboard.is_some(), egui::Button::new(crate::i18n::tr("Paste Selected Settings…"))).clicked() {
-        let _ = app.run("dialog.pasteSettings", json!({}));
-    }
-    if ui.button(crate::i18n::tr("Reset Edits")).clicked() {
-        let _ = app.run("develop.reset", json!({}));
-    }
+    crate::widgets::menu_button(ui, crate::i18n::tr("Develop Settings"), |ui| {
+        if ui.add_enabled(app.session.clipboard.is_some(), egui::Button::new(crate::i18n::tr("Paste Selected Settings…"))).clicked() {
+            let _ = app.run("dialog.pasteSettings", json!({}));
+        }
+        if ui.button(crate::i18n::tr("Reset Edits")).clicked() {
+            let _ = app.run("develop.reset", json!({}));
+        }
+        if ui.button(crate::i18n::tr("Set as Reference Photo")).clicked() {
+            let _ = app.run("photo.setReference", json!({"id": id.0}));
+        }
+    });
     crate::widgets::menu_button(ui, crate::i18n::tr("Photo Merge"), |ui| {
         let n = app.session.selected().len();
         for (id, label) in [
@@ -1352,47 +1343,67 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         }
     });
     ui.separator();
-    if ui.button(crate::i18n::tr("Rotate Left")).clicked() {
-        let _ = app.run("photo.rotateLeft", json!({}));
-    }
-    if ui.button(crate::i18n::tr("Rotate Right")).clicked() {
-        let _ = app.run("photo.rotateRight", json!({}));
-    }
-    ui.separator();
-    if ui.button(crate::i18n::tr("Rename…")).clicked() {
-        let _ = app.run("dialog.rename", json!({}));
-    }
-    let can_pick = app.services.pick_folder.is_some() || app.services.picker.is_some();
-    if can_pick && ui.button(crate::i18n::tr("Move to Folder…")).clicked() {
-        // the folder dialog goes through the shared picker (off the UI thread where the host has
-        // one: then photo.moveToFolder runs when it closes)
-        let req = crate::pick::PickRequest::folder(crate::i18n::tr("Move to Folder…"));
-        let picked =
-            crate::pick::ask(app, "photo.moveToFolder", &json!({}), "folder", req, |s| s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x]));
-        if let crate::pick::Picked::Now(v) = picked
-            && let Some(into) = v.into_iter().next()
-        {
-            match app.run("photo.moveToFolder", json!({"folder": into})) {
-                Ok(r) => app.toast(ui.ctx(), crate::i18n::tr_format!("Moved {} photo(s)", r["moved"])),
-                Err(e) => app.toast(ui.ctx(), e),
+    crate::widgets::menu_button(ui, crate::i18n::tr("Rotate"), |ui| {
+        if ui.button(crate::i18n::tr("Rotate Left")).clicked() {
+            let _ = app.run("photo.rotateLeft", json!({}));
+        }
+        if ui.button(crate::i18n::tr("Rotate Right")).clicked() {
+            let _ = app.run("photo.rotateRight", json!({}));
+        }
+    });
+    crate::widgets::menu_button(ui, crate::i18n::tr("File"), |ui| {
+        if ui.button(crate::i18n::tr("Rename…")).clicked() {
+            let _ = app.run("dialog.rename", json!({}));
+        }
+        let can_pick = app.services.pick_folder.is_some() || app.services.picker.is_some();
+        if can_pick && ui.button(crate::i18n::tr("Move to Folder…")).clicked() {
+            // the folder dialog goes through the shared picker (off the UI thread where the host has
+            // one: then photo.moveToFolder runs when it closes)
+            let req = crate::pick::PickRequest::folder(crate::i18n::tr("Move to Folder…"));
+            let picked =
+                crate::pick::ask(app, "photo.moveToFolder", &json!({}), "folder", req, |s| s.pick_folder.as_mut().and_then(|f| f()).map(|x| vec![x]));
+            if let crate::pick::Picked::Now(v) = picked
+                && let Some(into) = v.into_iter().next()
+            {
+                match app.run("photo.moveToFolder", json!({"folder": into})) {
+                    Ok(r) => app.toast(ui.ctx(), crate::i18n::tr_format!("Moved {} photo(s)", r["moved"])),
+                    Err(e) => app.toast(ui.ctx(), e),
+                }
             }
         }
-    }
-    if ui.button(crate::i18n::tr("Reload from Disk")).clicked() {
-        // the files are read in the background (activity row `reload`)
-        if let Err(e) = app.run("photo.reload", json!({})) {
-            app.toast_error(ui.ctx(), e);
+        if ui.button(crate::i18n::tr("Reload from Disk")).clicked() {
+            // the files are read in the background (activity row `reload`)
+            if let Err(e) = app.run("photo.reload", json!({})) {
+                app.toast_error(ui.ctx(), e);
+            }
+        }
+        // the original moved or its drive is gone: point the photo at the file again
+        // (a cached answer, checked off the UI thread)
+        let missing = matches!(&app.session.catalog.photo(id).map(|p| p.source.clone()), Some(lcc_catalog::Source::File { path }) if app.session.media.availability.is_offline(path));
+        if missing && ui.button(crate::i18n::tr("Locate Missing File…")).clicked() {
+            let _ = app.run("photo.locate", json!({}));
+        }
+        if ui
+            .add_enabled(crate::menus::ui_enabled(app, "app.showInFinder"), egui::Button::new(crate::i18n::tr(crate::menus::reveal_label())))
+            .clicked()
+        {
+            let _ = app.run("app.showInFinder", json!({}));
+        }
+    });
+    if ui.button(crate::i18n::tr("Find Similar Photos")).clicked() {
+        match app.run("library.findSimilar", json!({"id": id.0})) {
+            Ok(r) => {
+                let n = r["photos"].as_array().map_or(0, Vec::len);
+                app.ui.view = crate::state::ViewMode::PhotoGrid;
+                app.toast(
+                    ui.ctx(),
+                    crate::i18n::tr_format!("{n} similar photo{} · View ▸ Clear Filters to see all", if n == 1 { "" } else { "s" }, n = n),
+                );
+            }
+            Err(e) => app.toast(ui.ctx(), e),
         }
     }
-    // the original moved or its drive is gone: point the photo at the file again
-    // (a cached answer, checked off the UI thread)
-    let missing = matches!(&app.session.catalog.photo(id).map(|p| p.source.clone()), Some(lcc_catalog::Source::File { path }) if app.session.media.availability.is_offline(path));
-    if missing && ui.button(crate::i18n::tr("Locate Missing File…")).clicked() {
-        let _ = app.run("photo.locate", json!({}));
-    }
-    if ui.add_enabled(crate::menus::ui_enabled(app, "app.showInFinder"), egui::Button::new(crate::i18n::tr(crate::menus::reveal_label()))).clicked() {
-        let _ = app.run("app.showInFinder", json!({}));
-    }
+    ui.separator();
     if ui.button(crate::i18n::tr("Export…")).clicked() {
         let _ = app.run("dialog.export", json!({}));
     }

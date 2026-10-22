@@ -164,6 +164,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             {
                 let _ = app.run("panel.top", json!({}));
             }
+            x -= 38.0;
+            // show/hide the right panel (it used to head the tool strip at the far right)
+            let r = Rect::from_center_size(pos2(x, full.center().y), vec2(30.0, 30.0));
+            let mut right = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::left_to_right(egui::Align::Center)));
+            let develop = app.ui.module == crate::module::ModuleId::Develop;
+            let closed = develop && app.ui.right == crate::state::RightPanel::None && !app.ui.presets;
+            let open = !app.ui.right_collapsed && !closed;
+            if icon_button(&mut right, "collapseRight", Icon::SidebarRight, vec2(30.0, 30.0), open, true, crate::i18n::tr("Show/hide right panel"))
+                .clicked()
+            {
+                let _ = app.run(if closed { "panel.edit" } else { "panel.collapseRight" }, json!({}));
+            }
             x -= 42.0;
             // saving is failing: the cloud icon turns into a warning until a save succeeds
             let unsaved = app.session.unsaved().map(|(n, e)| {
@@ -187,7 +199,6 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 ("help", Icon::Help, "Keyboard shortcuts", "app.shortcuts"),
                 ("share", Icon::Share, "Export", "dialog.export"),
                 ("import", Icon::Plus, import_tip.as_str(), "file.addPhotos"),
-                ("bell", Icon::Bell, "Activity", "panel.activity"),
             ] {
                 let r = Rect::from_center_size(pos2(x, full.center().y), vec2(28.0, 28.0));
                 let resp = ui.interact(r, egui::Id::new(("top", id)), Sense::click()).on_hover_text(crate::i18n::tr(tip));

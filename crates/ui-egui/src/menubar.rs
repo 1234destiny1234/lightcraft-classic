@@ -387,6 +387,7 @@ const SUB_LAYOUT: &[(&str, &str, &[&str])] = &[
             "view.histogram",
             "view.histogram.mode",
             "view.histogram.scale",
+            "view.histogram.second",
             "---",
         ],
     ),
