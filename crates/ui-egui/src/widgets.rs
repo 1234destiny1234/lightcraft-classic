@@ -657,11 +657,11 @@ const VALUE_W: f32 = 28.0;
 /// Maximum width of the slider label column: room for names such as "Vignetting Midpoint" or
 /// "Shadows Luminance" at [`LABEL_FONT`] (issue #346: names were cut off), while the track keeps
 /// more than half the panel.
-const MAX_LABEL_COL: f32 = 92.0;
+const MAX_LABEL_COL: f32 = 76.0;
 
 impl SliderGeometry {
     fn new(row: Rect, label_col: f32) -> Self {
-        let (pad_l, pad_r, gap) = (24.0, 16.0, 8.0);
+        let (pad_l, pad_r, gap) = (12.0, 12.0, 8.0);
         let label = Rect::from_min_size(pos2(row.left() + pad_l, row.top()), vec2(label_col, row.height()));
         let value = Rect::from_min_max(pos2((row.right() - pad_r - VALUE_W).max(label.right()), row.top()), pos2(row.right() - pad_r, row.bottom()));
         let track_l = label.right() + gap;
@@ -673,7 +673,7 @@ impl SliderGeometry {
     /// Two rows: the name at the left and the value at the right of the top line, the track the
     /// width of both under them (its thumb at either end just inside the row's padding).
     fn two_rows(row: Rect) -> Self {
-        let (pad_l, pad_r) = (24.0, 16.0);
+        let (pad_l, pad_r) = (12.0, 12.0);
         // the name and value sit close over their own track, with the gap above them, so each
         // slider reads as one unit and the rows stand apart (issue #346)
         let split = (row.bottom() - 14.0).max(row.top());
@@ -720,7 +720,7 @@ fn label_column(ui: &Ui, row_w: f32) -> f32 {
             w
         }
     };
-    let max_col = ((row_w - 48.0) * 0.4).clamp(24.0, MAX_LABEL_COL);
+    let max_col = ((row_w - 48.0) * 0.34).clamp(24.0, MAX_LABEL_COL);
     widest.clamp(24.0_f32.min(max_col), max_col)
 }
 
@@ -767,9 +767,9 @@ pub fn section_header(ui: &mut Ui, id: &str, title: &str, open: bool, enabled: O
     if ui.rect_contains_pointer(r) {
         p.rect_filled(r, 0.0, t.chrome.gamma_multiply(1.06));
     }
-    let chev = Rect::from_center_size(pos2(r.left() + 30.0, r.center().y), vec2(16.0, 16.0));
+    let chev = Rect::from_center_size(pos2(r.left() + 18.0, r.center().y), vec2(16.0, 16.0));
     paint(p, chev, if open { Icon::ChevronDown } else { Icon::ChevronRight }, t.text_label);
-    p.text(pos2(r.left() + 44.0, r.center().y), Align2::LEFT_CENTER, title, t.semibold(14.0), t.text);
+    p.text(pos2(r.left() + 32.0, r.center().y), Align2::LEFT_CENTER, title, t.semibold(14.0), t.text);
     let mut toggled = None;
     // shown while the pointer is anywhere on the header: `resp.hovered()` turns false as soon as the
     // pointer is over the eye itself (the eye is on top), which hid the eye before it could be

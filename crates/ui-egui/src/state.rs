@@ -753,6 +753,11 @@ pub struct UiState {
     pub histogram_mode: String,
     #[serde(deserialize_with = "lenient")]
     pub histogram_scale: String,
+    /// A second histogram under the first, drawing another distribution (the name of a
+    /// [`lcc_raster::HistogramMode`]; empty: none), so e.g. RGB Overlay and RGB Parade show
+    /// together (`view.histogram.second`).
+    #[serde(default, deserialize_with = "lenient")]
+    pub histogram_second: String,
     /// Soft proofing (S in the loupe): render as `proof` would hold the photo.
     pub soft_proof: bool,
     pub proof: lcc_engine::pipeline::Proof,
@@ -1513,6 +1518,7 @@ impl Default for UiState {
             histogram: true,
             histogram_mode: lcc_raster::HistogramMode::default().name().into(),
             histogram_scale: lcc_raster::HistogramScale::default().name().into(),
+            histogram_second: String::new(),
             soft_proof: false,
             proof: lcc_engine::pipeline::Proof { dest_warning: false, ..Default::default() },
             proof_profile: None,
@@ -1789,6 +1795,9 @@ impl UiState {
         // a histogram mode or scale another build wrote (or a hand-edited file) is the default
         if lcc_raster::HistogramMode::parse(&self.histogram_mode).is_none() {
             self.histogram_mode = lcc_raster::HistogramMode::default().name().into();
+        }
+        if !self.histogram_second.is_empty() && lcc_raster::HistogramMode::parse(&self.histogram_second).is_none() {
+            self.histogram_second.clear();
         }
         if lcc_raster::HistogramScale::parse(&self.histogram_scale).is_none() {
             self.histogram_scale = lcc_raster::HistogramScale::default().name().into();

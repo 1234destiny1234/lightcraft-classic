@@ -80,5 +80,6 @@
   "Hue Low": "Dolní mez odstínu",
   "Hue High": "Horní mez odstínu",
   "Red/Cyan": "Červená/azurová",
-  "Blue/Yellow": "Modrá/žlutá"
+  "Blue/Yellow": "Modrá/žlutá",
+  "Headroom": "Rezerva HDR"
 }

@@ -75,7 +75,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
     // the applied profile and its amount
     let (cr, _) = ui.allocate_exact_size(vec2(ui.available_width(), 34.0), Sense::hover());
     let name = app.session.profile_info(&d.profile.id).map(|(name, _)| name).unwrap_or("Color");
-    ui.painter().text(pos2(cr.left() + 24.0, cr.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Profile"), t.font(13.0), t.text_dim);
+    ui.painter().text(pos2(cr.left() + 12.0, cr.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Profile"), t.font(13.0), t.text_dim);
     // a long name is cut short (with …) at the panel's edge
     let g = one_line(ui.painter(), crate::i18n::profile_label(&d.profile.id, name), t.font(14.0), t.text_label, cr.width() - 84.0 - 24.0);
     ui.painter().galley(pos2(cr.left() + 84.0, cr.center().y - g.size().y / 2.0), g, t.text_label);

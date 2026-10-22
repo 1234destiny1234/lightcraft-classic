@@ -456,9 +456,9 @@ pub trait Module: Sync {
 struct Library;
 struct Develop;
 
-/// Library's Classic columns.
+/// Library's Classic columns. Versions sits in the left column, as in Develop.
 pub const LIBRARY_LEFT: &[PanelId] =
-    &[PanelId::Navigator, PanelId::Catalog, PanelId::Folders, PanelId::Collections, PanelId::Publish, PanelId::Local];
+    &[PanelId::Navigator, PanelId::Catalog, PanelId::Folders, PanelId::Collections, PanelId::Versions, PanelId::Publish, PanelId::Local];
 pub const LIBRARY_RIGHT: &[PanelId] = &[PanelId::QuickDevelop, PanelId::Keywording, PanelId::KeywordList, PanelId::Metadata];
 
 /// Develop's Classic left column: the Navigator, the Presets, the photo's Versions (Classic's

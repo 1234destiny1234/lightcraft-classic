@@ -279,7 +279,10 @@ pub fn right_column(app: &mut LccApp, ui: &mut egui::Ui) {
                         super::keyword_list::header_drop(app, ui, r);
                     }
                     if open {
-                        egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 12, top: 4, bottom: 10 }).show(ui, |ui| {
+                        // Quick Develop has no margin of its own; the others pad themselves as
+                        // they do in the right panel, so the column adds none to them
+                        let side = if matches!(p, PanelId::QuickDevelop | PanelId::KeywordList) { 12 } else { 0 };
+                        egui::Frame::NONE.inner_margin(egui::Margin { left: side, right: side, top: 4, bottom: 10 }).show(ui, |ui| {
                             ui.spacing_mut().item_spacing.y = 4.0;
                             body(app, ui, p);
                         });

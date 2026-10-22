@@ -121,6 +121,7 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     // a shortcut, the control channel and MCP all reach them by id.
     ("view.histogram.mode", "Histogram Mode", None, "Window>Panels"),
     ("view.histogram.scale", "Histogram Scale", None, "Window>Panels"),
+    ("view.histogram.second", "Second Histogram", None, "Window>Panels"),
     ("view.maskOverlay", "Show Mask Overlay", Some("O"), "View>Tool Overlay"),
     // Ctrl+Shift+O / Cmd+Shift+O: every mask's region at once, not just the selected one
     ("view.maskOverlayAll", "Show All Mask Overlays", Some("Cmd+Shift+O"), "View>Tool Overlay"),
@@ -1111,6 +1112,28 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             app.ui.histogram_mode = next.name().into();
             app.ui.histogram = true;
             Ok(json!({"mode": next.name()}))
+        }
+        "view.histogram.second" => {
+            // {mode?: rgb | … | parade | off}: a second histogram under the first, drawing that
+            // mode; no parameter turns it on (RGB Parade) or off
+            use lcc_raster::HistogramMode;
+            let next = match p.get("mode").and_then(Value::as_str) {
+                Some("off" | "none" | "") => None,
+                Some(m) => match HistogramMode::parse(m) {
+                    Some(v) => Some(v),
+                    None => {
+                        let names: Vec<&str> = HistogramMode::ALL.iter().map(|m| m.name()).collect();
+                        return Some(Err(format!("view.histogram.second: unknown mode `{m}` ({}|off)", names.join("|"))));
+                    }
+                },
+                None if app.ui.histogram_second.is_empty() => Some(HistogramMode::Parade),
+                None => None,
+            };
+            app.ui.histogram_second = next.map(|m| m.name().to_string()).unwrap_or_default();
+            if next.is_some() {
+                app.ui.histogram = true;
+            }
+            Ok(json!({"mode": next.map(|m| m.name())}))
         }
         "view.histogram.scale" => {
             // {scale?: linear | logarithmic}; no parameter steps to the other one
