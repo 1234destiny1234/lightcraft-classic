@@ -78,6 +78,26 @@ fn the_edit_panel_is_lightroom_classics_develop_panels() {
     assert!(h.app.ui.section_open("mixer"));
 }
 
+/// Clicking any section's header opens it and clicking again folds it: each header's `section.*` command exists
+/// (Plug-in Filters' didn't, and its header only showed "no such Edit section").
+#[test]
+fn every_section_header_opens_and_folds_its_section() {
+    let mut h = develop();
+    for id in h.app.ui.open_sections.clone() {
+        h.app.ui.toggle_section(&id);
+    }
+    h.settle(SETTLE);
+    for id in sections(&h) {
+        assert!(crate::menus::ui_commands().any(|c| c.0 == format!("section.{id}")), "section.{id} isn't a command");
+        for open in [true, false] {
+            let r = h.request("ui.clickWidget", json!({"id": format!("section:{id}")}), T);
+            assert_eq!(r["ok"], true, "{r}");
+            h.settle(SETTLE);
+            assert_eq!(h.app.ui.section_open(&id), open, "{id}");
+        }
+    }
+}
+
 /// The Color Mixer's two tabs: Mixer, then Point Color.
 #[test]
 fn the_color_mixer_has_mixer_and_point_color_tabs() {
