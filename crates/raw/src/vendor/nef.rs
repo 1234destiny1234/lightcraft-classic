@@ -596,6 +596,7 @@ fn packed(bytes: &[u8], info: &ImageInfo, rows: usize) -> Result<RawData> {
     if (w as u64).saturating_mul(h as u64) > crate::MAX_SAMPLES as u64 {
         return Err(RawError::Limit("image too large"));
     }
+    check_image(bytes, info)?;
     // a truncated file leaves the missing rows black (as the fork's packed reader always has),
     // rather than refusing the whole photo; a strip that starts outside the file is corrupt
     let start = usize::try_from(c.offset).map_err(|_| RawError::Corrupt("NEF: image data outside the file".into()))?;
