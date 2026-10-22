@@ -25,6 +25,16 @@ pub fn clean(k: &str) -> String {
     k.split(SEP).map(str::trim).filter(|s| !s.is_empty()).take(MAX_TREE_LEVELS).collect::<Vec<_>>().join("|")
 }
 
+/// A keyword path as typed, with `|` between its levels: Lightroom Classic also reads
+/// `parent > child` and `child < parent`. Text mixing `>` and `<` is kept as typed (one name).
+pub fn typed_path(typed: &str) -> String {
+    match (typed.contains('>'), typed.contains('<')) {
+        (true, false) => typed.replace('>', "|"),
+        (false, true) => typed.rsplit('<').collect::<Vec<_>>().join("|"),
+        _ => typed.to_string(),
+    }
+}
+
 /// The same name, whatever the case of any of its letters (not only ASCII ones).
 pub fn same(a: &str, b: &str) -> bool {
     a == b || a.to_lowercase() == b.to_lowercase()
@@ -593,8 +603,9 @@ impl Catalog {
     /// Where a keyword typed for a photo goes: inside the default parent when it is a new name (Put
     /// New Keywords Inside This Keyword); a keyword the library has, or a path typed whole, as
     /// typed (cleaned).
+    /// A path may be typed with `|`, `>` (`animal > dog`) or `<` (`dog < animal`) between levels.
     pub fn typed_keyword(&self, typed: &str) -> String {
-        let k = clean(typed);
+        let k = clean(&typed_path(typed));
         match self.default_keyword_parent() {
             Some(parent) if !k.is_empty() && !k.contains(SEP) && !self.has_keyword(&k) => format!("{parent}{SEP}{k}"),
             _ => k,
@@ -1469,6 +1480,14 @@ mod tests {
         assert_eq!(c.typed_keyword("Weddings"), "Events|Weddings");
         assert_eq!(c.typed_keyword("BEACH"), "BEACH", "the library has it");
         assert_eq!(c.typed_keyword("Places|Lisbon"), "Places|Lisbon");
+        assert_eq!(c.typed_keyword("animal > dog"), "animal|dog", "issue #413");
+        assert_eq!(c.typed_keyword("dog < animal"), "animal|dog");
+        assert_eq!(c.typed_keyword("pet < dog < animal"), "animal|dog|pet");
+        assert_eq!(c.typed_keyword("a > > b"), "a|b");
+        for odd in [">", "<", "<>", "a > b < c", " > < "] {
+            let _ = c.typed_keyword(odd);
+        }
+        assert_eq!(c.typed_keyword(">"), "");
     }
 
     /// The keyword list as a text file, as Lightroom Classic writes one: a keyword a line, the
