@@ -251,6 +251,11 @@ pub(crate) fn fit_rect(area: Rect, aspect: f32, zoom: Zoom, img_px: [usize; 2], 
     let pan = bounded_pan(area, vec2(w, h), pan);
     let c = pos2(area.center().x - (pan.0 - 0.5) * w, area.center().y - (pan.1 - 0.5) * h);
     let rect = Rect::from_center_size(c, vec2(w, h));
+    // Fit has one physical-pixel rectangle for every render quality and output mode.
+    // Snapping only display-sized textures moved the image when a draft replaced them.
+    if matches!(zoom, Zoom::Fit) {
+        return snap_fit_rect(rect, ppp);
+    }
     // At 100 % the texture maps texel for texel to screen pixels, so its corner must sit on a whole
     // physical pixel: half a pixel off and the GPU's bilinear filter blurs the view (an odd-width
     // canvas on a 2x display does this). Other zooms resample anyway, and a pinch must not jump.
@@ -270,19 +275,20 @@ pub(crate) fn fit_texture_rect(area: Rect, size: [usize; 2]) -> Rect {
     Rect::from_center_size(area.center(), vec2(w * scale, h * scale))
 }
 
-/// `rect` moved onto whole physical pixels, at exactly the texture's size, when the texture is
-/// already the size it is drawn at (within half a pixel), as a display-fitted render at Fit is: centred
-/// on a fractional position, the GPU's bilinear filter would average every screen pixel with its
-/// neighbour (the 100 % view does the same in [`fit_rect`]). Textures of other sizes are left to
-/// the sampler.
-pub(crate) fn snap_fit_rect(rect: Rect, size: [usize; 2], ppp: f32) -> Rect {
+/// A develop render uses the photo's bounds, not its texture's rounded aspect ratio.
+/// A genuinely different crop still fits inside those bounds instead of stretching.
+fn render_texture_rect(area: Rect, size: [usize; 2]) -> Rect {
+    let aspect = size[0].max(1) as f32 / size[1].max(1) as f32;
+    if crate::region::same_aspect(aspect, area.width() / area.height().max(f32::MIN_POSITIVE)) { area } else { fit_texture_rect(area, size) }
+}
+
+/// Align the fitted photo, independently of the texture used to display it. Round the
+/// physical dimensions first, then its centred origin, so every quality has identical bounds.
+pub(crate) fn snap_fit_rect(rect: Rect, ppp: f32) -> Rect {
     let ppp = if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 };
-    let (w, h) = (size[0] as f32, size[1] as f32);
-    if (rect.width() * ppp - w).abs() > 0.5 || (rect.height() * ppp - h).abs() > 0.5 {
-        return rect;
-    }
-    let snap = |v: f32| (v * ppp).round() / ppp;
-    Rect::from_min_size(pos2(snap(rect.min.x), snap(rect.min.y)), vec2(w / ppp, h / ppp))
+    let size = vec2((rect.width() * ppp).round().max(1.0), (rect.height() * ppp).round().max(1.0));
+    let origin = rect.center().to_vec2() * ppp - size * 0.5;
+    Rect::from_min_size(pos2(origin.x.round() / ppp, origin.y.round() / ppp), size / ppp)
 }
 
 /// Keep the viewport inside the photo; axes smaller than the viewport stay centred.
@@ -1015,7 +1021,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             _ => None,
         };
         if let Some(v) = hdr {
-            let image_rect = fit_texture_rect(r, v.size);
+            let image_rect = render_texture_rect(r, v.size);
             p.with_clip_rect(clip).image(v.tex, image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             return "hdr";
         }
@@ -1034,7 +1040,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 p.with_clip_rect(clip).add(crop_view_mesh(tex.tex.id(), v));
             }
             _ => {
-                let image_rect = snap_fit_rect(fit_texture_rect(r, tex.size), tex.size, ppp);
+                let image_rect = if tex.quick == Some(lcc_engine::media::QuickSource::Embedded) {
+                    fit_texture_rect(r, tex.size)
+                } else {
+                    render_texture_rect(r, tex.size)
+                };
                 p.with_clip_rect(clip).image(tex.tex.id(), image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
         }
@@ -1121,7 +1131,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         && let Some(tex) = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id)
         && let Some(px) = tex.pixels.as_deref()
     {
-        let r = fit_texture_rect(img_rect, tex.size);
+        let r = render_texture_rect(img_rect, tex.size);
         let (u, v) = ((q.x - r.left()) / r.width().max(1.0), (q.y - r.top()) / r.height().max(1.0));
         if let Some(rgb) = crate::color_readout::srgb_at(px, u, v, app.renderer.display().map(|d| d.as_ref())) {
             app.ui.hover_color = Some((ui.ctx().cumulative_pass_nr(), rgb));
@@ -1136,7 +1146,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if app.ui.before_after == BeforeAfter::Split
         && let Some((tex, size)) = before_tex
     {
-        let before_rect = fit_texture_rect(img_rect, size);
+        let before_rect = render_texture_rect(img_rect, size);
         let u = ((line.x - before_rect.left()) / before_rect.width().max(1.0)).clamp(0.0, 1.0);
         let left = Rect::from_min_max(before_rect.min, pos2(before_rect.left() + u * before_rect.width(), before_rect.bottom()));
         p.image(tex, left, Rect::from_min_max(pos2(0.0, 0.0), pos2(u, 1.0)), Color32::WHITE);
@@ -1144,7 +1154,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if app.ui.before_after == BeforeAfter::SplitTopBottom
         && let Some((tex, size)) = before_tex
     {
-        let before_rect = fit_texture_rect(img_rect, size);
+        let before_rect = render_texture_rect(img_rect, size);
         let v = ((line.y - before_rect.top()) / before_rect.height().max(1.0)).clamp(0.0, 1.0);
         let top = Rect::from_min_max(before_rect.min, pos2(before_rect.right(), before_rect.top() + v * before_rect.height()));
         p.image(tex, top, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, v)), Color32::WHITE);
@@ -4460,20 +4470,46 @@ mod pen_tests {
 mod snap_tests {
     use super::*;
 
-    /// A texture drawn at its own size lands on whole physical pixels at exactly that size (no
-    /// bilinear blur); a texture of another size (zoomed, a stand-in) keeps the rect it was given.
     #[test]
-    fn a_fitted_texture_is_drawn_on_whole_pixels_at_its_own_size() {
-        let r = Rect::from_min_size(pos2(394.3, 130.5), vec2(1088.4, 720.2));
-        let s = snap_fit_rect(r, [1088, 720], 1.0);
-        assert_eq!((s.min.x, s.min.y, s.width(), s.height()), (394.0, 131.0, 1088.0, 720.0));
-        // at 1.5 points per pixel the snap is to physical pixels and the size stays in points
-        let hi = snap_fit_rect(Rect::from_min_size(pos2(100.3, 50.2), vec2(725.4, 480.1)), [1088, 720], 1.5);
-        assert!(((hi.min.x * 1.5).fract()).abs() < 1e-3 && (hi.width() - 1088.0 / 1.5).abs() < 1e-3, "{hi:?}");
-        let other = snap_fit_rect(r, [2560, 1694], 1.0);
-        assert_eq!(other, r);
-        let bad = snap_fit_rect(r, [1088, 720], f32::NAN);
-        assert_eq!((bad.width(), bad.height()), (1088.0, 720.0));
+    fn fit_bounds_do_not_follow_draft_or_final_texture_dimensions() {
+        for ppp in [1.0, 1.25, 1.5, 2.0] {
+            for native in [[3264, 2448], [6000, 4000], [3265, 2449], [2449, 3265]] {
+                let area = Rect::from_min_size(pos2(15.3, 110.0), vec2(1299.4, 676.0));
+                let image = fit_rect(area, native[0] as f32 / native[1] as f32, Zoom::Fit, native, ppp, (0.5, 0.5));
+                for v in [image.min.x, image.min.y, image.width(), image.height()] {
+                    assert!((v * ppp - (v * ppp).round()).abs() < 1e-3, "{image:?} at {ppp}");
+                }
+                for edge in [576, 928, 1024, 1600, 2560] {
+                    let size = if native[0] >= native[1] {
+                        [edge, (edge as f64 * native[1] as f64 / native[0] as f64).round() as usize]
+                    } else {
+                        [(edge as f64 * native[0] as f64 / native[1] as f64).round() as usize, edge]
+                    };
+                    assert_eq!(render_texture_rect(image, size), image, "texture {size:?}, {ppp}x");
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn embedded_previews_keep_even_a_small_difference_in_crop() {
+        let frame = Rect::from_min_size(pos2(215.0, 110.0), vec2(901.0, 676.0));
+        let preview = fit_texture_rect(frame, [1000, 740]);
+        assert_eq!(preview.center(), frame.center());
+        assert!((preview.width() / preview.height() - 1000.0 / 740.0).abs() < 1e-6);
+        assert!(frame.contains_rect(preview));
+        assert_ne!(preview, frame);
+    }
+
+    #[test]
+    fn four_by_three_fit_keeps_the_settled_pixel_origin_for_drafts() {
+        let area = Rect::from_min_max(pos2(15.0, 110.0), pos2(1315.0, 786.0));
+        let image = fit_rect(area, 4.0 / 3.0, Zoom::Fit, [3264, 2448], 1.0, (0.5, 0.5));
+        assert_eq!(image, Rect::from_min_size(pos2(215.0, 110.0), vec2(901.0, 676.0)));
+        for size in [[901, 676], [928, 696], [576, 432], [2560, 1920]] {
+            assert_eq!(render_texture_rect(image, size), image);
+        }
+        assert_eq!(snap_fit_rect(image, f32::NAN), image);
     }
 }
 

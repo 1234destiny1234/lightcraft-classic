@@ -215,7 +215,8 @@ fn check_click_animation(mode: BeforeAfter) {
             assert!(intermediate > 0, "{mode:?}: inspected intermediate animation frames");
             assert!(!h.app.ui.zoom_anim, "animation finished");
             assert_rect(h.app.image_rect.expect("settled image"), target);
-            assert_rect(pane_mesh(&h, Slot::Main, after), crate::panels::detail::fit_texture_rect(target, h.app.renderer.textures[&Slot::Main].size));
+            // Texture resolution must not change the final photo bounds either.
+            assert_rect(pane_mesh(&h, Slot::Main, after), target);
             assert_eq!(keys.len(), 1, "both panes request stable final-size renders throughout the animation: {keys:?}");
         }
     }
