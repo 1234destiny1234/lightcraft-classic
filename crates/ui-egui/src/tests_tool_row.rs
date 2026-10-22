@@ -1,6 +1,6 @@
 //! Develop's tools are Lightroom Classic's tool strip: a row under the histogram, each tool's
-//! drawer above the Develop panels, which stay under it; the right-edge strip keeps the fold
-//! button and Presets (fork-owned).
+//! drawer above the Develop panels, which stay under it; the right panel folds from the top bar
+//! (fork-owned).
 
 use std::time::Duration;
 
@@ -44,10 +44,10 @@ fn the_tools_are_a_row_under_the_histogram() {
     assert!(tools.windows(2).all(|w| w[0].right() <= w[1].left()), "left to right");
     let basic = rect(&h, "section:light").expect("Basic");
     assert!(tools[0].bottom() <= basic.top(), "above the Develop panels");
-    // the strip keeps the fold button and Presets, right of the row; Edit is the panels, not a tool
-    let presets = rect(&h, "icon:presets").expect("Presets");
-    assert!(presets.left() > tools[3].right() && rect(&h, "icon:collapseRight").is_some());
-    assert!(rect(&h, "icon:edit").is_none(), "no Edit button");
+    // the right panel folds from the top bar, above the row; Edit is the panels, not a tool
+    let fold = rect(&h, "icon:collapseRight").expect("the top bar's fold button");
+    assert!(fold.bottom() <= histogram.top(), "in the top bar");
+    assert!(rect(&h, "icon:edit").is_none() && rect(&h, "icon:presets").is_none(), "no Edit or Presets button");
 }
 
 #[test]
@@ -75,13 +75,19 @@ fn a_tools_drawer_opens_over_the_panels_and_closes_from_its_button() {
 #[test]
 fn presets_and_the_fold_button_bring_the_tools_back() {
     let mut h = develop();
-    click(&mut h, "icon:presets");
+    // Window ▸ Presets puts the presets in the panels' place, and back
+    let presets = |h: &mut Headless| {
+        let r = h.request("engine.execute", json!({"command": "panel.presets"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+    };
+    presets(&mut h);
     assert!(h.app.ui.presets, "Presets in the panels' place");
     assert!(rect(&h, "icon:crop").is_none());
-    click(&mut h, "icon:presets");
-    assert!(!h.app.ui.presets, "a second click goes back to the tools");
+    presets(&mut h);
+    assert!(!h.app.ui.presets, "a second time goes back to the tools");
     assert!(rect(&h, "icon:crop").is_some());
-    // E closes the panels; the fold button brings them back
+    // E closes the panels; the top bar's fold button brings them back
     let r = h.request("engine.execute", json!({"command": "panel.edit"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.settle(SETTLE);

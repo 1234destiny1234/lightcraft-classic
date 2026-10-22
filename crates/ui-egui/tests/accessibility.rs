@@ -230,18 +230,10 @@ fn tab_walks_the_right_panels_top_to_bottom() {
         // with the Alternative set, where Tab is focus navigation
         h.state_mut().ui.settings.keymap_set = lcc_ui_egui::shortcuts::KeymapSet::Alternative;
         h.run_steps(2);
-        // the tool strip beside the panel is a column of its own, walked before it
-        let strip = h
-            .root()
-            .children_recursive()
-            .map(|n| n.accesskit_node())
-            // (upstream's strip labels Edit "Edit (E)"; the fork's starts with Presets)
-            .find(|n| matches!(n.label().as_deref(), Some("Edit (E)" | "Presets")))
-            .and_then(|n| n.bounding_box())
-            .map(|b| b.x0 as f32)
-            .unwrap_or(f32::INFINITY);
-        // the panel's left edge as drawn, not derived from the window and strip widths (they differ in the fork)
+        // the panel's edges as drawn, not derived from the window width (it differs in the fork, which
+        // has no tool strip beside the panel: the right panel folds from the top bar)
         let panel = h.state().widgets.iter().find(|(w, _)| w == "panel:right_panel").map(|(_, r)| *r).expect("a right panel");
+        let strip = panel.right() + 1.0;
         let panel_left = panel.left() - 1.0;
         let mut seen: Vec<(String, f32)> = Vec::new();
         for _ in 0..120 {

@@ -396,43 +396,33 @@ fn closing_develops_tool_panel_stays_in_develop() {
     assert_eq!(h.app.ui.module, ModuleId::Library);
 }
 
-/// #45, #108: each module's tool strip shows its own panels. Develop's are its editing tools plus
-/// the Presets column — the Library panels it used to list there (Versions, Activity, Keywords,
-/// Info) looked like Develop's tools. Library's strip is Versions and History & Activity, which open
-/// over its Classic right column; keywords and info are still commands.
+/// #45, #108: Develop's tool row shows its own editing tools only — the Library panels it used to
+/// list (Versions, Activity, Keywords, Info) looked like Develop's tools, and they are still
+/// commands. No module has a strip at the far right any more: Library's Versions panel is in its
+/// left column and History & Activity opens by command.
 #[test]
 fn tool_strip_shows_only_the_active_modules_tools() {
     let mut h = demo();
     run(&mut h, "module.develop", json!({}));
     h.step();
-    // (the tools in the row under the histogram, Presets and More in the strip)
-    for id in ["presets", "crop", "remove", "masking", "redeye", "more"] {
-        assert!(has_widget(&h, &format!("icon:{id}")), "Develop strip has {id}");
+    for id in ["crop", "remove", "masking", "redeye"] {
+        assert!(has_widget(&h, &format!("icon:{id}")), "Develop's tool row has {id}");
     }
-    for id in ["versions", "activity", "keywords", "info"] {
-        assert!(!has_widget(&h, &format!("icon:{id}")), "Develop strip lacks {id}");
+    for id in ["versions", "activity", "keywords", "info", "presets", "more"] {
+        assert!(!has_widget(&h, &format!("icon:{id}")), "Develop shows no {id} button");
     }
     run(&mut h, "panel.info", json!({}));
     assert_eq!(h.app.ui.right, RightPanel::Info, "Info still opens by command");
     run(&mut h, "module.library", json!({}));
     h.step();
-    for id in ["versions", "activity", "more"] {
-        assert!(has_widget(&h, &format!("icon:{id}")), "Library strip has {id}");
+    for id in ["versions", "activity", "more", "presets", "edit", "crop", "remove", "masking", "redeye", "keywords", "info"] {
+        assert!(!has_widget(&h, &format!("icon:{id}")), "Library shows no {id} button");
     }
-    for id in ["presets", "edit", "crop", "remove", "masking", "redeye", "keywords", "info"] {
-        assert!(!has_widget(&h, &format!("icon:{id}")), "Library strip lacks {id}");
-    }
-
-    // Library's strip is the tab strip over its Classic column: clicking the panel in use closes it
-    // and the column comes back.
-    let r = h.request("ui.clickWidget", json!({"id": "icon:activity"}), T);
-    assert_eq!(r["ok"], true, "{r}");
-    h.step();
-    assert_eq!(h.app.ui.right, RightPanel::Activity, "clicking History & Activity opens it over the column");
-    let r = h.request("ui.clickWidget", json!({"id": "icon:activity"}), T);
-    assert_eq!(r["ok"], true, "{r}");
-    h.step();
-    assert_eq!(h.app.ui.right, RightPanel::None, "clicking it again puts Library's Classic column back");
+    // History & Activity opens over Library's column by command, and closing it puts the column back
+    run(&mut h, "panel.activity", json!({}));
+    assert_eq!(h.app.ui.right, RightPanel::Activity, "History & Activity opens over the column");
+    run(&mut h, "panel.activity", json!({}));
+    assert_eq!(h.app.ui.right, RightPanel::None, "again: Library's Classic column comes back");
 }
 
 #[test]

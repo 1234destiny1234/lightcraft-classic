@@ -3597,7 +3597,8 @@ mod tests {
     /// (issue #316).
     #[test]
     fn section_eye_switches_a_section_off() {
-        let mut h = demo([1300.0, 900.0]);
+        // (tall enough for Tone Curve's header under the taller histogram)
+        let mut h = demo([1300.0, 1200.0]);
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail", "right": "edit"}), t);
         h.settle(SETTLE);
