@@ -390,21 +390,23 @@ fn an_older_settings_file_keeps_the_my_photos_panel_hidden() {
     assert!(ui.hidden_panels.is_empty() && ui.layouts[&crate::module::ModuleId::Develop].hidden.is_empty());
 }
 
-/// The tool strip is per module: Develop's editing tools are not offered in Library (a click there
-/// would send the user into another module), and #108: Develop's strip holds Develop's tools only —
-/// the Versions, Activity and Keywords panels are not Develop's, even though they were written with
-/// it. Library's own strip has its panels (Versions, History & Activity), which open over its column.
+/// Develop's editing tools are Develop's alone (a click in Library would send the user into
+/// another module), and #108: Develop's tool row holds its tools only. There is no strip at the
+/// far right any more: the right panel folds from the top bar, and Library's Versions panel is in
+/// its left column, as Develop's is.
 #[test]
 fn the_tool_strip_is_develops_alone() {
     let lib = demo();
     assert!(!has(&lib, "icon:edit") && !has(&lib, "icon:crop") && !has(&lib, "icon:presets"), "no Develop tools in Library");
     assert!(has(&lib, "classicPanel:metadata"), "Library's right column is still there");
-    assert!(has(&lib, "icon:versions") && has(&lib, "icon:activity"), "Library's strip has its own panels");
+    assert!(has(&lib, "classicPanel:versions"), "Library's left column holds the Versions panel");
+    assert!(!has(&lib, "icon:versions") && !has(&lib, "icon:activity"), "no strip at the far right");
+    assert!(has(&lib, "icon:collapseRight"), "the right panel folds from the top bar");
     let mut h = develop_demo();
-    // (its tools are the row under the histogram, with Presets in the strip)
-    assert!(has(&h, "icon:crop") && has(&h, "icon:presets"), "the strip is Develop's");
-    for id in ["versions", "activity", "keywords", "info"] {
-        assert!(!has(&h, &format!("icon:{id}")), "Develop's strip is its tools, not {id}");
+    // its tools are the row under the histogram
+    assert!(has(&h, "icon:crop"), "the tools are Develop's");
+    for id in ["versions", "activity", "keywords", "info", "presets"] {
+        assert!(!has(&h, &format!("icon:{id}")), "Develop's tools are its tools, not {id}");
     }
     // Versions is still reached from Develop's own column and by its shortcut
     assert!(has(&h, "classicPanel:versions"), "Develop's left column holds the Versions panel");
