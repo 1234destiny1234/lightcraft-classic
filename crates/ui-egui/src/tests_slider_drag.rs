@@ -89,3 +89,22 @@ fn a_thumb_grabbed_off_centre_moves_with_the_pointer_without_jumping() {
     let want = s.value_at(s.position(before) + 0.2);
     assert!((blacks(&h) - want).abs() <= s.step.max(1.0), "moved with the pointer: {} (want {want})", blacks(&h));
 }
+
+#[test]
+fn with_acceleration_on_the_slider_a_slow_drag_moves_the_thumb_less_than_the_pointer() {
+    let mut h = develop();
+    h.app.ui.settings.slider_control = crate::theme::SliderControl::AccelSlider;
+    h.step();
+    let r = track(&h);
+    let s = spec();
+    let before = blacks(&h);
+    let thumb = egui::pos2(r.left() + s.position(before) as f32 * r.width(), r.center().y);
+    send(&mut h, egui::Event::PointerMoved(thumb));
+    send(&mut h, button(thumb, true));
+    let to = thumb + egui::vec2(0.2 * r.width(), 0.0);
+    glide(&mut h, thumb, to, 200);
+    send(&mut h, button(to, false));
+    h.settle(SETTLE);
+    let under = s.value_at(s.position(before) + 0.2);
+    assert!(blacks(&h) > before && blacks(&h) < under - s.step.max(1.0), "lags the pointer: {} (pointer at {under})", blacks(&h));
+}

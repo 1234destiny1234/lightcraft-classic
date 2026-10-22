@@ -479,6 +479,62 @@ impl SliderLayout {
     }
 }
 
+/// How dragging a slider's thumb and scrubbing its value follow the pointer (Settings ▸ Interface).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Hash, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum SliderControl {
+    /// The thumb stays under the pointer and the value moves with the pointer's travel.
+    Absolute,
+    /// The thumb follows the pointer with acceleration (slow movement moves it less, issue #346);
+    /// the value moves with the pointer's travel.
+    AccelSlider,
+    /// The thumb stays under the pointer; scrubbing the value accelerates.
+    #[default]
+    AccelNumber,
+    /// Both accelerate.
+    Accel,
+}
+
+impl SliderControl {
+    pub const ALL: [SliderControl; 4] = [SliderControl::Absolute, SliderControl::AccelSlider, SliderControl::AccelNumber, SliderControl::Accel];
+
+    /// Its name in Settings.
+    pub fn label(self) -> &'static str {
+        match self {
+            SliderControl::Absolute => "Absolute",
+            SliderControl::AccelSlider => "Acceleration on Slider",
+            SliderControl::AccelNumber => "Acceleration on Number",
+            SliderControl::Accel => "Acceleration",
+        }
+    }
+
+    /// Dragging the thumb accelerates.
+    pub fn on_slider(self) -> bool {
+        matches!(self, SliderControl::AccelSlider | SliderControl::Accel)
+    }
+
+    /// Scrubbing the value accelerates.
+    pub fn on_number(self) -> bool {
+        matches!(self, SliderControl::AccelNumber | SliderControl::Accel)
+    }
+}
+
+fn slider_control_id() -> egui::Id {
+    egui::Id::new("app-slider-control")
+}
+
+/// How sliders follow the pointer in `ctx`.
+pub fn slider_control(ctx: &egui::Context) -> SliderControl {
+    ctx.data(|d| d.get_temp::<SliderControl>(slider_control_id())).unwrap_or_default()
+}
+
+/// Make sliders follow the pointer as `control` says from the next frame on.
+pub fn set_slider_control(ctx: &egui::Context, control: SliderControl) {
+    if slider_control(ctx) != control {
+        ctx.data_mut(|d| d.insert_temp(slider_control_id(), control));
+    }
+}
+
 fn slider_layout_id() -> egui::Id {
     egui::Id::new("app-slider-layout")
 }

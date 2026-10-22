@@ -359,6 +359,8 @@ pub struct AppSettings {
     pub ui_font_size: UiFontSize,
     /// Panel sliders on one row or two (Settings ▸ Interface).
     pub slider_layout: crate::theme::SliderLayout,
+    /// How dragging a slider and scrubbing its value follow the pointer (Settings ▸ Interface).
+    pub slider_control: crate::theme::SliderControl,
     /// Theme shortcuts in the appearance context menu.
     #[serde(deserialize_with = "deserialize_favorite_themes")]
     pub favorite_themes: Vec<String>,
@@ -410,6 +412,7 @@ impl Default for AppSettings {
             light_theme: LightTheme::Silver,
             ui_font_size: UiFontSize::default(),
             slider_layout: Default::default(),
+            slider_control: Default::default(),
             favorite_themes: Vec::new(),
             display_profile: String::new(),
             color_readout: Default::default(),
