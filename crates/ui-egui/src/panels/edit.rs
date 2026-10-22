@@ -699,11 +699,13 @@ fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::Histo
 fn steady_hdr_histogram(ctx: &egui::Context, id: PhotoId, hdr_edit: bool, hist: Option<Histogram>) -> Option<Histogram> {
     let key = egui::Id::new(("hdrHistogram", id));
     match hist {
-        Some(h) if h.hdr.is_some() => {
+        Some(h) if hdr_edit && h.hdr.is_some() => {
             ctx.data_mut(|d| d.insert_temp(key, h.clone()));
             Some(h)
         }
         h if hdr_edit => ctx.data(|d| d.get_temp::<Histogram>(key)).or(h),
+        // an SDR edit never shows an HDR histogram, even one a stale render still carries
+        Some(h) if h.hdr.is_some() => Some(Histogram { hdr: None, ..h }),
         h => h,
     }
 }
@@ -723,7 +725,9 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             app.renderer.request(Slot::HdrHistogram, job, 95);
         }
     }
-    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && l.0 == id).map(|l| l.2.clone());
+    // (only while the edit is HDR: one left from a drag before HDR was turned off would bring the
+    // HDR layout back for each later drag, #277)
+    let live = app.renderer.live_hdr_histogram.as_ref().filter(|l| interacting && hdr_edit && l.0 == id).map(|l| l.2.clone());
     // else the loupe render of this photo, else its thumbnail (grid view before the loupe has
     // rendered it)
     let mode = super::histogram::mode_of(app);
@@ -2576,6 +2580,16 @@ mod tests {
         // HDR turned off: the SDR histogram at once; other photos keep their own
         assert_eq!(steady_hdr_histogram(&ctx, id, false, Some(sdr.clone())), Some(sdr.clone()));
         assert_eq!(steady_hdr_histogram(&ctx, PhotoId(8), true, Some(sdr.clone())), Some(sdr));
+    }
+
+    /// Issue #277: after HDR is turned off, a stale HDR histogram (a drag's live render from before)
+    /// must not bring back the taller HDR layout while a slider moves.
+    #[test]
+    fn an_sdr_edit_never_shows_an_hdr_histogram() {
+        let ctx = egui::Context::default();
+        let id = PhotoId(7);
+        let stale = Histogram::of_hdr(&[[3.0, 3.0, 3.0]], 5.0);
+        assert!(steady_hdr_histogram(&ctx, id, false, Some(stale)).is_some_and(|h| h.hdr.is_none()));
     }
 
     /// Issue #1751: Windows and Linux read Ctrl where macOS reads Cmd, and a rebound shortcut shows.
