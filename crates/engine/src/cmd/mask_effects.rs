@@ -336,12 +336,15 @@ fn apply_effect(s: &mut Session, p: &Value) -> Result<Value> {
     // the masks: `ids`, `all`, else `id` or the selected one
     let ids: Vec<u32> = if p.get("all").and_then(Value::as_bool).unwrap_or(false) {
         d.masks.iter().map(|m| m.id).collect()
-    } else if let Some(a) = p.get("ids").and_then(Value::as_array) {
-        a.iter()
-            .map(|v| v.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| bad(C, format!("`ids` must hold mask ids, got {v}"))))
-            .collect::<Result<_>>()?
     } else {
-        vec![selected_mask(s, p, C)?.id]
+        match p.get("ids") {
+            None | Some(Value::Null) => vec![selected_mask(s, p, C)?.id],
+            Some(Value::Array(a)) => a
+                .iter()
+                .map(|v| v.as_u64().and_then(|n| u32::try_from(n).ok()).ok_or_else(|| bad(C, format!("`ids` must hold mask ids, got {v}"))))
+                .collect::<Result<_>>()?,
+            Some(_) => return Err(bad(C, "`ids` must be a list of mask IDs")),
+        }
     };
     if ids.is_empty() {
         return Err(bad(C, "no masks to apply the effect to"));

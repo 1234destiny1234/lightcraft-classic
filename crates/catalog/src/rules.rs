@@ -748,6 +748,17 @@ fn number(v: &Value) -> Option<f64> {
     }
 }
 
+/// [`num_op`] for a field stored as `f32` (aperture, focal length): the typed value is compared at
+/// that precision, since 2.8f32 widened to `f64` is 2.7999999523, not 2.8.
+fn num_op32(op: &str, have: Option<f32>, value: &Value) -> bool {
+    let at32 = |v: &Value| number(v).map_or(Value::Null, |n| Value::from(f64::from(n as f32)));
+    let value = match value {
+        Value::Array(v) => Value::Array(v.iter().map(at32).collect()),
+        v => at32(v),
+    };
+    num_op(op, have.map(f64::from), &value)
+}
+
 fn num_op(op: &str, have: Option<f64>, value: &Value) -> bool {
     if op == "between" {
         let (a, b) = match value {
@@ -993,8 +1004,8 @@ impl Rule {
             "editDate" => date_op(op, p.edited.as_deref(), value),
             "shutterSpeed" => num_op(op, crate::parse_shutter_seconds(&m.shutter), &shutter_value(value)),
             "iso" => num_op(op, m.iso.map(|v| v as f64), value),
-            "aperture" => num_op(op, m.aperture.map(|v| v as f64), value),
-            "focalLength" => num_op(op, m.focal_mm.map(|v| v as f64), value),
+            "aperture" => num_op32(op, m.aperture, value),
+            "focalLength" => num_op32(op, m.focal_mm, value),
             "longEdge" | "shortEdge" => {
                 let (w, h) = p.shown_size();
                 num_op(op, Some(if field == "longEdge" { w.max(h) } else { w.min(h) }.round()), value)
@@ -1207,6 +1218,33 @@ mod tests {
             {"field": "city", "op": "is", "value": "rome"},
             {"group": {"match": "any", "rules": [{"field": "person", "op": "contains", "value": "bob"}, {"field": "iso", "op": "gte", "value": 800}]}}
         ]})));
+    }
+
+    /// Aperture and focal length are stored as `f32`: f/2.8 is 2.7999999523 and f/6.3 is
+    /// 6.3000001907 once widened, yet a rule must count each at the value typed.
+    #[test]
+    fn aperture_and_focal_rules_compare_at_the_stored_precision() {
+        let cat = Catalog::new();
+        let mut p = photo(1);
+        p.meta.focal_mm = Some(5.6);
+        let mut p63 = photo(2);
+        p63.meta.aperture = Some(6.3);
+        let m = |p: &Photo, field: &str, op: &str, value: serde_json::Value| {
+            rs(json!({"rules": [{"field": field, "op": op, "value": value}]})).matches(p, &cat)
+        };
+        assert!(m(&p, "aperture", "gte", json!(2.8)), "≥ 2.8 includes f/2.8");
+        assert!(m(&p, "aperture", "lte", json!("f/2.8")), "≤ 2.8 includes f/2.8");
+        assert!(m(&p, "aperture", "is", json!(2.8)), "is 2.8");
+        assert!(m(&p, "aperture", "between", json!([2.8, 4])), "between 2.8 and 4 includes f/2.8");
+        assert!(!m(&p, "aperture", "lt", json!(2.8)), "< 2.8 leaves out f/2.8");
+        assert!(!m(&p, "aperture", "gt", json!(2.8)), "> 2.8 leaves out f/2.8");
+        assert!(!m(&p, "aperture", "isNot", json!(2.8)), "isNot 2.8");
+        assert!(m(&p63, "aperture", "lte", json!(6.3)), "≤ 6.3 includes f/6.3");
+        assert!(m(&p63, "aperture", "between", json!([4, 6.3])), "between 4 and 6.3 includes f/6.3");
+        assert!(!m(&p63, "aperture", "gt", json!(6.3)), "> 6.3 leaves out f/6.3");
+        assert!(m(&p, "focalLength", "gte", json!("5.6mm")), "≥ 5.6 mm includes 5.6 mm");
+        assert!(!m(&p, "focalLength", "lt", json!(5.6)), "< 5.6 mm leaves out 5.6 mm");
+        assert!(!m(&p, "aperture", "gte", json!(1e300)), "a number too large for f32 matches nothing");
     }
 
     #[test]

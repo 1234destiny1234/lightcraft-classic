@@ -141,7 +141,8 @@ drives the SDK tools itself (`xtask/src/apk.rs`):
    and are signed with `jarsigner`.
 
 The version code is derived from the workspace version: `X.Y.Z` → `X·10⁶ + Y·10⁴ + Z·100 + 99`, and a prerelease
-`-rcN` uses `N` in place of `99`.
+`-rcN` uses `N` in place of `99`. Releases are now numbered `YY.WW.B` (ISO year, week, release that week, e.g. `26.43.4` → 26 430 499), which
+the formula already fits; see [Release versions](versioning.md).
 
 **Signing.** Set `ANDROID_KEYSTORE` (a keystore file), `ANDROID_KEYSTORE_PASSWORD`, and optionally
 `ANDROID_KEY_ALIAS` (default `upload`) and `ANDROID_KEY_PASSWORD`. Without them a debug key in
