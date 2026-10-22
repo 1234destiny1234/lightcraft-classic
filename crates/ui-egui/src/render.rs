@@ -201,19 +201,30 @@ const HARD_FACTOR: usize = 4;
 /// Before/After) the before side's and the zoom window's go, the before side first. The
 /// whole-frame view's cache is never named. Empty caches are never named.
 pub(crate) fn stage_trim_order(sizes: &[(Slot, usize)], budget: usize) -> Vec<Slot> {
-    let idle_rank = |s: Slot| match s {
+    // HDR renders have their own caches but the same lifetime as their SDR views.
+    // Treating them as background work evicts the active image's stages every frame
+    // once the soft budget is exceeded, defeating reuse during adjustments.
+    let view_slot = |s: Slot| match s {
+        Slot::HdrView(HDR_LOUPE) => Slot::Main,
+        Slot::HdrView(HDR_BEFORE) => Slot::Before,
+        Slot::HdrView(HDR_SECOND) => Slot::Second,
+        Slot::HdrView(v) if v >= HDR_ZOOMED => Slot::Window(v - HDR_ZOOMED),
+        Slot::HdrView(v) if v >= HDR_COMPARE => Slot::Compare(v - HDR_COMPARE),
+        _ => s,
+    };
+    let idle_rank = |s: Slot| match view_slot(s) {
         Slot::Hover => 0,
         Slot::Compare(_) => 2,
         Slot::Second => 3,
         _ => 5,
     };
-    let view_rank = |s: Slot| match s {
+    let view_rank = |s: Slot| match view_slot(s) {
         Slot::Window(PANE_BEFORE) => Some(0),
         Slot::Before => Some(1),
         Slot::Window(_) => Some(2),
         _ => None,
     };
-    let is_view = |s: Slot| matches!(s, Slot::Main) || view_rank(s).is_some();
+    let is_view = |s: Slot| matches!(view_slot(s), Slot::Main) || view_rank(s).is_some();
     let mut held: usize = sizes.iter().map(|(_, b)| *b).fold(0, usize::saturating_add);
     let mut out = Vec::new();
     let mut idle: Vec<(Slot, usize)> = sizes.iter().copied().filter(|(s, b)| *b > 0 && !is_view(*s)).collect();
@@ -2216,6 +2227,48 @@ mod stage_budget_tests {
     fn nothing_is_trimmed_within_the_budget() {
         let sizes = [(Slot::Main, 300 * MB), (Slot::Window(PANE_AFTER), 100 * MB)];
         assert_eq!(stage_trim_order(&sizes, 512 * MB), vec![]);
+    }
+
+    #[test]
+    fn hdr_views_have_the_same_cache_lifetime_as_their_sdr_views() {
+        let views = [
+            (Slot::HdrView(HDR_LOUPE), 400 * MB),
+            (Slot::HdrView(HDR_ZOOMED + PANE_AFTER), 500 * MB),
+            (Slot::HdrView(HDR_ZOOMED + PANE_BEFORE), 500 * MB),
+            (Slot::HdrView(HDR_BEFORE), 100 * MB),
+        ];
+        assert!(stage_trim_order(&views, 400 * MB).is_empty());
+        assert_eq!(
+            stage_trim_order(&views, 100 * MB),
+            vec![Slot::HdrView(HDR_ZOOMED + PANE_BEFORE), Slot::HdrView(HDR_BEFORE), Slot::HdrView(HDR_ZOOMED + PANE_AFTER)]
+        );
+        let mut with_idle = views.to_vec();
+        with_idle.extend([(Slot::HdrView(HDR_SECOND), 40 * MB), (Slot::HdrView(HDR_COMPARE), 40 * MB)]);
+        assert_eq!(stage_trim_order(&with_idle, 400 * MB), vec![Slot::HdrView(HDR_COMPARE), Slot::HdrView(HDR_SECOND)]);
+    }
+
+    #[test]
+    fn repeated_trimming_retains_real_hdr_adjustment_stages() {
+        use lcc_engine::pipeline::{OutputDepth, RenderRequest, SourceInfo, render_cached};
+        let src = Arc::new(lcc_raster::Rgb32f::from_fn(64, 48, |x, y| [x as f32 / 16.0, y as f32 / 12.0, 2.0]));
+        let cache = Arc::new(StageCache::default());
+        let mut settings = lcc_develop::DevelopSettings::default();
+        settings.hdr.enabled = true;
+        settings.effects.clarity = 20.0;
+        let req = RenderRequest { depth: OutputDepth::F32Hdr, ..RenderRequest::fit(64, 48) };
+        let mut renderer = Renderer::default();
+        renderer.stages.insert(Slot::HdrView(HDR_LOUPE), cache.clone());
+        for exposure in [0.0, 0.5, -0.5, 1.0] {
+            settings.light.exposure = exposure;
+            let rendered = render_cached(&src, &SourceInfo::default(), &settings, &req, &cache);
+            assert!(rendered.deep.is_some());
+            let bytes = cache.bytes();
+            assert!(bytes > 0);
+            renderer.stage_budget_override = Some(bytes / 2);
+            renderer.trim_stages();
+            assert_eq!(cache.bytes(), bytes, "a slider update must retain its reusable stages");
+        }
+        assert_eq!(renderer.stages_trimmed, 0);
     }
 
     // Given too much held, the caches nothing is looking at go first (a hover render's, a compare

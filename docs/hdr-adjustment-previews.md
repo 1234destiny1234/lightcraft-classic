@@ -52,6 +52,34 @@ SDR renditions, export caches, soft proof and diagnostic overlays keep their exi
 - Under concurrent compilation, the native smoke run's median sampled UI update time was
   31.4 ms. There is no before/after performance baseline; no 16 ms guarantee is claimed.
 
+## Adjustment performance
+
+HDR stage caches follow the same memory-trimming policy as their corresponding SDR
+views. The active loupe cache is retained, and Before/After and zoom-window caches are
+evicted only at the existing hard limit. Previously HDR caches were classified as
+background work and could be discarded every frame above the soft budget.
+
+HDR texture encoding uses the existing raster worker pool. The transfer curve,
+headroom handling and half-float samples are unchanged; regression tests compare the
+parallel result bit for bit with the scalar encoder. This reduces serial work during
+upload without changing render resolution or processing quality.
+
+Separate SDR and HDR renders, GPU readback, and synchronous texture upload still have
+costs. Removing the SDR render needs a separate design for diagnostics, screenshots,
+colour readout and fallback display. These changes do not eliminate that work.
+
+Sources: own design, based on the existing cache policy and raster row workers.
+
+Local development-build validation (2026-10-22, RTX 4070 Ti SUPER / DX12): the
+2560 × 1707 encoding microbenchmark measured 82.6 ms scalar versus 9.9 ms parallel
+(median of nine warmed runs). In a temporary combination with the high-quality
+preview PR, the supplied DNG, JPEG and ARW measured 279–300 ms before versus
+117–145 ms after at Fit, and 180–230 ms versus 74–107 ms at 100%. Repository
+checks ran concurrently, so native timings are indicative, not controlled benchmarks.
+All six HDR and six SDR high-quality cases retained identical captured image pixels
+on release; the HDR cases retained the HDR presentation route throughout.
+The high-quality setting is not included in this branch.
+
 ## Physical display checks
 
 Automated tests cannot certify emitted monitor luminance. On an HDR display with OS HDR
