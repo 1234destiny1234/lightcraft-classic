@@ -1706,5 +1706,7 @@
   "Hue Low": "Тон (низ)",
   "Hue High": "Тон (верх)",
   "Red/Cyan": "Красный/голубой",
-  "Blue/Yellow": "Синий/жёлтый"
+  "Blue/Yellow": "Синий/жёлтый",
+  "High quality adjustment previews": "Высококачественный предпросмотр при настройке",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Сохраняет качество изображения во время настройки. Обновление может быть медленнее."
 }

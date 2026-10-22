@@ -1498,5 +1498,7 @@
   "Hue Low": "色相下限",
   "Hue High": "色相上限",
   "Red/Cyan": "赤／シアン",
-  "Blue/Yellow": "青／黄"
+  "Blue/Yellow": "青／黄",
+  "High quality adjustment previews": "調整中の高画質プレビュー",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "調整中も画質を一定に保ちます。プレビューの更新が遅くなる場合があります。"
 }

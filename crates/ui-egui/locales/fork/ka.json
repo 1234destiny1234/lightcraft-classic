@@ -84,5 +84,7 @@
   "Hue High": "ტონის ზედა ზღვარი",
   "Red/Cyan": "წითელი/ცისფერი",
   "Blue/Yellow": "ლურჯი/ყვითელი",
-  "Headroom": "HDR მარაგი"
+  "Headroom": "HDR მარაგი",
+  "High quality adjustment previews": "მაღალი ხარისხის გადახედვა კორექტირებისას",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "კორექტირებისას გამოსახულების ხარისხი უცვლელი რჩება. განახლება შეიძლება შენელდეს."
 }

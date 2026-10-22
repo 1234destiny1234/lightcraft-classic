@@ -709,6 +709,8 @@ fn performance_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
             "Automatic renders the Detail view at the size it is shown, up to the photo's own pixels. Choose a size to cap it: smaller is faster.",
         ),
     );
+    check(ui, "settings.highQualityAdjustmentPreviews", &mut app.ui.settings.high_quality_adjustment_previews, "High quality adjustment previews");
+    hint(ui, t, crate::i18n::tr("Keeps image quality consistent while adjusting. Updates may be slower."));
     row(ui, t, crate::i18n::tr("Memory for caches"), |ui| {
         let auto = crate::i18n::tr_format!("Automatic ({} MB)", lcc_engine::memory::default_budget() >> 20);
         let opts = [(0u32, auto.as_str()), (512, "512 MB"), (1024, "1 GB"), (2048, "2 GB"), (4096, "4 GB")];

@@ -84,5 +84,7 @@
   "Hue High": "Tonalità alta",
   "Red/Cyan": "Rosso/ciano",
   "Blue/Yellow": "Blu/giallo",
-  "Headroom": "Margine HDR"
+  "Headroom": "Margine HDR",
+  "High quality adjustment previews": "Anteprime delle regolazioni di alta qualità",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Mantiene costante la qualità dell’immagine durante le regolazioni. Gli aggiornamenti possono essere più lenti."
 }

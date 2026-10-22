@@ -84,5 +84,7 @@
   "Hue High": "Górny odcień",
   "Red/Cyan": "Czerwony/turkusowy",
   "Blue/Yellow": "Niebieski/żółty",
-  "Headroom": "Zapas jasności HDR"
+  "Headroom": "Zapas jasności HDR",
+  "High quality adjustment previews": "Podgląd korekt w wysokiej jakości",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Zachowuje stałą jakość obrazu podczas regulacji. Odświeżanie może być wolniejsze."
 }

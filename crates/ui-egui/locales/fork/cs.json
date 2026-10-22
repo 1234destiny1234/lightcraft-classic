@@ -84,5 +84,7 @@
   "Hue High": "Horní mez odstínu",
   "Red/Cyan": "Červená/azurová",
   "Blue/Yellow": "Modrá/žlutá",
-  "Headroom": "Rezerva HDR"
+  "Headroom": "Rezerva HDR",
+  "High quality adjustment previews": "Náhledy úprav ve vysoké kvalitě",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Při úpravách zachovává stejnou kvalitu obrazu. Aktualizace mohou být pomalejší."
 }

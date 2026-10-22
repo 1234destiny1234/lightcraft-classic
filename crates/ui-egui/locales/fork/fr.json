@@ -1409,5 +1409,7 @@
   "Hue Low": "Teinte basse",
   "Hue High": "Teinte haute",
   "Red/Cyan": "Rouge/cyan",
-  "Blue/Yellow": "Bleu/jaune"
+  "Blue/Yellow": "Bleu/jaune",
+  "High quality adjustment previews": "Aperçus des réglages en haute qualité",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Maintient une qualité d’image constante pendant les réglages. Les mises à jour peuvent être plus lentes."
 }

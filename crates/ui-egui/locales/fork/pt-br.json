@@ -1498,5 +1498,7 @@
   "Hue Low": "Matiz baixo",
   "Hue High": "Matiz alto",
   "Red/Cyan": "Vermelho/ciano",
-  "Blue/Yellow": "Azul/amarelo"
+  "Blue/Yellow": "Azul/amarelo",
+  "High quality adjustment previews": "Prévias de ajustes em alta qualidade",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Mantém a qualidade da imagem consistente durante os ajustes. As atualizações podem ser mais lentas."
 }

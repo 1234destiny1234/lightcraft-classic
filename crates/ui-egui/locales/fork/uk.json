@@ -1239,5 +1239,7 @@
   "Hue Low": "Нижня межа тону",
   "Hue High": "Верхня межа тону",
   "Red/Cyan": "Червоний/блакитний",
-  "Blue/Yellow": "Синій/жовтий"
+  "Blue/Yellow": "Синій/жовтий",
+  "High quality adjustment previews": "Високоякісний попередній перегляд під час коригування",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Зберігає якість зображення під час коригування. Оновлення може бути повільнішим."
 }

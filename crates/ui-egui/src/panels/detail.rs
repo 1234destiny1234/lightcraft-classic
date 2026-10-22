@@ -560,7 +560,7 @@ pub(crate) fn request_window(
         } else {
             app.session.region_job(c.id, full.0, full.1, win, !c.crop_tool)
         }?;
-        let job = if c.interacting { job.draft() } else { job };
+        let job = if c.interacting && !app.ui.settings.high_quality_adjustment_previews { job.draft() } else { job };
         let job = if v.before { job } else { job.with_hidden_grading(app.ui.grading_hidden_for(c.id)) };
         let (overlay, proof) = if v.before { (lcc_pipeline::Overlay::None, None) } else { (c.overlay, c.proof) };
         Some(job.with_overlay(overlay).with_proof(proof))
@@ -776,15 +776,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     app.image_rect = Some(img_rect);
     // request renders: the loupe at display resolution (drafts during drags)
     let interacting = app.session.interaction.is_some();
+    // Quality and scheduling are separate: high quality still coalesces interactive updates
+    // and renders a single visible window, but uses the settled pixels and display fit.
+    let drafting = interacting && !app.ui.settings.high_quality_adjustment_previews;
     let overlay = view_overlay(app, &d, ui.input(|i| i.modifiers.alt));
     // a drag drafts at full size where the GPU draws the view (by the GPU's own rule, `handles`;
     // `ready` first: `available` would wait for a device still being created)
-    let gpu = interacting
+    let gpu = drafting
         && lcc_engine::gpu::handles(lcc_pipeline::OutputDepth::U8, app.ui.soft_proof, overlay)
         && lcc_engine::gpu::ready()
         && lcc_engine::gpu::available();
     let shown = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id && t.quick.is_none()).map(|t| (t.key, t.ms));
-    let drag = app.session.interaction.as_ref().map(|i| (i.photo, i.label.as_str()));
+    let drag = app.session.interaction.as_ref().filter(|_| drafting).map(|i| (i.photo, i.label.as_str()));
     let now = ui.input(|i| i.time);
     let draft = app.drag_scale.scale(drag, gpu, shown.map(|(key, _)| key), now);
     // render at the final size: a click-zoom animation only changes how the result is drawn
@@ -824,7 +827,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // copied 1:1 (no resample in the pipeline, whose prefilter and bilinear pass soften detail near
     // the output's limit) and shrunk once, by the Lanczos display fit below.
     // (zoomed in under a window render, the whole frame is hidden: it stays canvas-sized)
-    let want = if interacting || plan.window_edge.is_some() {
+    let want = if drafting || plan.window_edge.is_some() {
         plan.main_edge
     } else {
         // (a user's explicit Preview size below the preview level still caps it)
@@ -841,18 +844,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     let se = app.ui.settings.stand_in_edge(want, texture_side);
     let (sw, sh) = if aspect >= 1.0 { (se, short(se, aspect)) } else { (short(se, 1.0 / aspect), se) };
     if let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
-        let job = if interacting { job.draft() } else { job };
+        let job = if drafting { job.draft() } else { job };
         // at rest the render is shrunk to exactly the size it is drawn at with a Lanczos filter on
         // the worker, so the window draws it texel for texel instead of shrinking it with 2-tap
         // sampling (the render is up to a 64 px step larger, or the preview level)
-        let job = if interacting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
+        let job = if drafting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
         let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
         let job = job.with_hidden_grading(app.ui.grading_hidden_for(id));
         app.renderer.request(Slot::Main, job, 100);
         // a drag's draft that renders in a few ms (GPU) is drawn in this frame, not the next (zoomed
         // in, what changes on screen is the window's draft)
         #[cfg(not(target_arch = "wasm32"))]
-        if interacting && plan.window_edge.is_none() {
+        if drafting && plan.window_edge.is_none() {
             let frame = ui.input(|i| i.predicted_dt).clamp(1.0 / 240.0, 1.0 / 30.0);
             // (a frame time that is not a number waits for nothing)
             let budget = std::time::Duration::try_from_secs_f32(frame * 0.4).unwrap_or_default();
@@ -912,7 +915,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         && let Some(job) = app.session.render_job(id, sw.max(8), sh.max(8), true, !crop_tool)
     {
         // (the same display fit as the After view, so both panes are the same texture size)
-        let job = if interacting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
+        let job = if drafting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
         // (the Before is the photo without its edits: HDR only when those settings are HDR)
         if !interacting {
             hdr_before_key = request_hdr(app, crate::render::HDR_BEFORE, job.clone(), 88);
@@ -1846,6 +1849,7 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
     if let Some(o) = app.services.hdr_output.as_ref() {
         app.renderer.set_surface_extended_linear(o.extended());
     }
+    let job = if app.session.interaction.is_some() && !app.ui.settings.high_quality_adjustment_previews { job.draft() } else { job };
     let job = hdr_view_job(job, headroom);
     let key = job.key;
     if app.renderer.hdr_view.get(&view).is_none_or(|v| v.key != key) {

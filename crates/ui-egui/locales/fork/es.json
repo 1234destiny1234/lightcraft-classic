@@ -1501,5 +1501,7 @@
   "Hue Low": "Tono bajo",
   "Hue High": "Tono alto",
   "Red/Cyan": "Rojo/cian",
-  "Blue/Yellow": "Azul/amarillo"
+  "Blue/Yellow": "Azul/amarillo",
+  "High quality adjustment previews": "Vistas previas de ajustes de alta calidad",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Mantiene una calidad de imagen constante al ajustar. Las actualizaciones pueden ser más lentas."
 }
