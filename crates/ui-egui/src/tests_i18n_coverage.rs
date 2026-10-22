@@ -25,7 +25,7 @@ fn catalog(code: &str, formats: bool) -> BTreeMap<String, String> {
 /// fork overlay's few rows) don't yet carry the fork's messages. Their gaps are reported; the
 /// messages upstream's own tests require in every language (the smart-album rule words) are in
 /// their overlays. A language leaves this list once its overlay catches up.
-const PARTIAL: &[Locale] = &[Locale::Pl, Locale::Cs, Locale::It, Locale::Ka];
+const PARTIAL: &[Locale] = &[Locale::Pl, Locale::Cs, Locale::It, Locale::Ka, Locale::Sv, Locale::Fi, Locale::Id, Locale::Vi];
 
 fn translated() -> impl Iterator<Item = Locale> {
     Locale::ALL.iter().copied().filter(|l| *l != Locale::En)

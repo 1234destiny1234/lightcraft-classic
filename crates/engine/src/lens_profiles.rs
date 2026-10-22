@@ -263,9 +263,16 @@ pub fn lookup_with(
         }
         None => {
             let focal = m.focal_length.filter(|f| valid(*f))?;
-            let model = m.lens_model.as_deref()?;
-            let lens = db.find_lens(m.lens_make.as_deref(), model, camera)?;
-            (lens, focal, m.f_number, Applied::Found(profile_name(lens, model)))
+            let (lens, model) = match m.lens_model.as_deref() {
+                Some(model) => (db.find_lens(m.lens_make.as_deref(), model, camera)?, model.to_string()),
+                // Nikon DSLRs record only the lens specification ("24-70mm f/2.8"); a profile must be named exactly that
+                // (a user's alias), since the specification fits other makers' lenses too
+                None => {
+                    let name = lcc_lensdb::spec_name(m.lens_spec?);
+                    (db.find_lens_named(m.lens_make.as_deref(), &name, camera)?, name)
+                }
+            };
+            (lens, focal, m.f_number, Applied::Found(profile_name(lens, &model)))
         }
     };
     let aperture = aperture.filter(|a| valid(*a));
@@ -543,6 +550,27 @@ mod tests {
         let old = &list(&db, &ListFilter { mount: Some("M42".into()), ..Default::default() }, 0, 10).1[0];
         assert_eq!((old.focal, old.vignetting, old.tca), (Some([50.0, 50.0]), true, false));
         assert!(names(ListFilter { crop: Some(f64::NAN), mount: Some(String::new()), query: Some("  ".into()) }).len() == 3);
+    }
+
+    /// A Nikon DSLR raw names no lens, only its specification (maker note `0x0084`): it is looked up by the name
+    /// built from it, and only a profile named exactly that is used, never another maker's lens that merely shares
+    /// the focal range and aperture.
+    #[test]
+    fn lens_specification_needs_a_profile_named_by_it() {
+        let nikon = lcc_meta::Metadata { lens_model: None, lens_spec: Some([18.0, 55.0, 3.5, 5.6]), ..meta() };
+        let at = |db: &LensDb| lookup(db, &nikon, 6000.0, 4000.0, Orientation::Normal);
+        // "Testcam 18-55mm f/3.5-5.6" fits the specification, but so would any maker's 18-55 f/3.5-5.6: refused
+        assert!(at(&LensDb::parse(DB).unwrap()).is_none());
+        let aliased = LensDb::parse(
+            &DB.replace("<model>Testcam 18-55mm f/3.5-5.6</model>", "<model>Testcam 18-55mm f/3.5-5.6</model><model>18-55mm f/3.5-5.6</model>"),
+        )
+        .unwrap();
+        let lens = at(&aliased).unwrap();
+        assert!(lens.warp.is_some() && lens.vignette.is_some());
+        assert_eq!(Some(lens), lookup(&aliased, &meta(), 6000.0, 4000.0, Orientation::Normal), "same profile as by its name");
+        // a lens model, when the file has one, still decides
+        let named_other = lcc_meta::Metadata { lens_model: Some("70-200mm F4".into()), ..nikon.clone() };
+        assert!(lookup(&aliased, &named_other, 6000.0, 4000.0, Orientation::Normal).is_none());
     }
 
     /// A full-frame body in APS-C / Super 35 mode (an ILCE-1M2 at 70 mm records 105 mm equivalent) frames only the

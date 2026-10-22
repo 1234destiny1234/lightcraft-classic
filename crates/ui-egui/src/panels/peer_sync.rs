@@ -138,8 +138,9 @@ fn last_synced(last: i64) -> String {
     } else if ago < 86_400 {
         trf!("Last synced {} h ago", ago / 3600)
     } else {
-        let (y, m, d) = lcc_catalog::dates::civil_from_days(last.div_euclid(86_400));
-        let date = format!("{y:04}-{m:02}-{d:02}");
+        // the calendar day of `YYYY-MM-DDTHH:MM:SS`
+        let stamp = lcc_catalog::dates::civil(last);
+        let date = stamp.get(..10).unwrap_or(&stamp).to_string();
         trf!("Last synced on {}", date)
     }
 }

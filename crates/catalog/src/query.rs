@@ -640,9 +640,40 @@ pub fn matches_face_spec(count: usize, spec: &str) -> bool {
     parse_face_spec(spec).is_ok_and(|f| f.matches(count))
 }
 
+/// The tokens of a search text: split at whitespace, except inside double quotes, so
+/// `person:"Jane Doe"` is one token (issue #1449). An unclosed quote runs to the end of the text; a
+/// backslash is an ordinary character. One pass over the text, nothing allocated.
+fn search_tokens(text: &str) -> impl Iterator<Item = &str> {
+    let mut rest = text;
+    std::iter::from_fn(move || {
+        rest = rest.trim_start();
+        if rest.is_empty() {
+            return None;
+        }
+        let mut quoted = false;
+        let end = rest
+            .char_indices()
+            .find(|&(_, c)| {
+                quoted ^= c == '"';
+                !quoted && c.is_whitespace()
+            })
+            .map_or(rest.len(), |(i, _)| i);
+        let (tok, tail) = rest.split_at(end);
+        rest = tail;
+        Some(tok)
+    })
+}
+
+/// `s` without the double quotes around it (a missing closing quote is allowed).
+fn unquote(s: &str) -> &str {
+    s.strip_prefix('"').map_or(s, |inner| inner.strip_suffix('"').unwrap_or(inner))
+}
+
 fn token_matches(p: &Photo, tok: &str) -> bool {
     let t = tok.to_lowercase();
-    if let Some((field, val)) = t.split_once(':') {
+    // a token that starts with a quote is a phrase, even with a colon in it
+    if let Some((field, val)) = t.split_once(':').filter(|_| !t.starts_with('"')) {
+        let val = unquote(val);
         let num = |s: &str| -> Option<(&str, f64)> {
             // `>=` / `<=` before `>` / `<`: `rating:>=1` is at least one star
             let op = [">=", "<=", ">", "<", "="].into_iter().find(|op| s.starts_with(op)).unwrap_or("=");
@@ -694,15 +725,16 @@ fn token_matches(p: &Photo, tok: &str) -> bool {
             }
         };
     }
-    text_matches(p, &t)
+    text_matches(p, unquote(&t))
 }
 
 /// Whether the lower-cased word `t` is in the file name, title, caption, camera, lens, location,
-/// format, a keyword or a plug-in field value of `p`.
+/// format, a keyword, a person's name or a plug-in field value of `p`.
 fn text_matches(p: &Photo, t: &str) -> bool {
     let hay = [&p.file_name, &p.meta.title, &p.meta.caption, &p.meta.camera, &p.meta.lens, &p.meta.location, &p.format];
     hay.iter().any(|h| h.to_lowercase().contains(t))
         || p.meta.keywords.iter().any(|k| k.to_lowercase().contains(t))
+        || p.people().iter().any(|n| n.to_lowercase().contains(t))
         || p.plugin_fields.values().any(|v| crate::rules::plugin_value_text(v).to_lowercase().contains(t))
 }
 
@@ -948,7 +980,7 @@ impl Filter {
         {
             return false;
         }
-        self.text.split_whitespace().all(|tok| token_matches(p, tok))
+        search_tokens(&self.text).all(|tok| token_matches(p, tok))
     }
 }
 

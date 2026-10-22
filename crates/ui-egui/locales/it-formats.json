@@ -302,5 +302,6 @@
   "{app} stopped unexpectedly: {e}\n\nThe log file has the details: {path}": "{app} stopped unexpectedly: {e}\n\nThe log file has the details: {path}",
   "{} photos · not aligned": "{} foto · non allineate",
   "{} photos · {} aligned": "{} foto · {} allineate",
-  "{} photos · {} aligned · {} left out": "{} foto · {} allineate · {} escluse"
+  "{} photos · {} aligned · {} left out": "{} foto · {} allineate · {} escluse",
+  "Listing folders — folders: {folders}, files: {files}": "Elenco delle cartelle — cartelle: {folders}, file: {files}"
 }

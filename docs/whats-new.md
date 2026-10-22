@@ -1,12 +1,90 @@
 # What's new in {app}
 
+## 2026-10-21
+
+### Sharper resampling in HDR and panorama merges
+- Merged photos (HDR and panorama) are resampled with a sharper filter (Lanczos-3 instead of bilinear). Moving a
+  photo by half a pixel used to lose a third of its finest detail; now it keeps most of it, without halos around
+  hard edges such as clipped highlights.
+
+### Scrolling past editing sliders
+- Leaving a selected slider disarms its vertical mouse-wheel adjustment (issue #1355), even when the pointer leaves
+  and comes back between two screen updates. Scrolling back over it now scrolls the panel instead of unexpectedly
+  changing the photo. Click or drag the slider again to adjust it with the vertical wheel; keyboard arrow
+  adjustments and an ongoing drag still work. A slider reached with Tab takes the arrow keys but not the wheel:
+  click it to scroll-adjust it. Sideways scrolling still adjusts the slider under the pointer without selecting it
+  first.
+
+### A pinch no longer re-renders the photo at every zoom step
+- Pinching the loupe now keeps the size the fit view is rendered at until the gesture is quiet, as it already did for
+  the render sizes and windows. Before, each frame of a pinch asked for a new full-frame render at a new size.
+
+### Fujifilm lens corrections that match the camera
+- X-T4 raws now read the lens's own distortion and vignetting tables the way the camera does. Many photos from zoom
+  lenses got no distortion correction at all (more than half of those checked from the XF16-55 and XF70-300), and
+  corners came out up to 6.5 % brighter than in the camera's JPEG. The corrected photo now lines up with the camera's
+  framing. Other recent Fujifilm bodies whose tables have nine knots are read the same way, but only the X-T4 was
+  measured. Thumbnails are redrawn when the library next shows them.
+
+### Reference view reliability
+- Escape now leaves Reference for Detail without changing the active photo or its edits; the next
+  Escape returns to the grid. A dialog, tool or Lights Out still handles Escape first.
+- Opening or creating a different library clears the pinned reference. Photo IDs belong to one
+  catalog; a pin no longer silently becomes another library's photo with the same numeric ID.
+- Missing or Recently Deleted photos cannot be pinned. Deleting the pinned reference stops drawing
+  it; re-entering Reference chooses a live photo, and restoring the deleted photo makes it pinnable again.
+  In Recently Deleted, Set as Reference Photo is greyed out, and a refusal says to restore the photo.
+- Switching library from Reference view goes to the grid instead of an empty Reference canvas. A refused
+  or failed switch keeps both the reference and the Compare pair.
+- `photo.setReference` refuses an `id` that is not a photo id (a string, a negative or fractional
+  number) instead of pinning the active photo; only an absent or null `id` means the active photo.
+
+## 2026-10-20
+
+### Smart albums check File Path rules faster
+- A smart album rule on File Path (contains, doesn't contain, is, isn't, starts with, ends with, is empty, isn't
+  empty) no longer builds new text for every photo. On a synthetic library of 312,000 photos, a File Path "contains"
+  or "doesn't contain" rule took about 17 ms per pass instead of about 62 ms, around 3.5 times faster, with the same
+  photos matched; about 6 ms of that is only reading the paths. Paths and rule text with letters beyond A–Z are
+  compared as before.
+
 ## 2026-10-19
+
+### AI Denoise on DirectX 12 with NVIDIA GTX 10-series cards
+- AI Denoise on the GPU under DirectX 12 (the Windows default) gives the same result as on the CPU again on an NVIDIA
+  GeForce GTX 1070. The driver ran the denoise network's output stores wrong, so every second pixel's colour
+  channels came out shifted and the denoised photo was wrong without any error. Vulkan was not affected.
+
+### The Before label stays in view when zoomed in
+- Zoomed in, the "Before" label (\ key or the Before view) now sits at the canvas' corner instead of leaving the
+  screen with the photo's corner (issue #2267).
+
+### Synchronize Folder on a folder that is up to date
+- When the scan finds nothing to import, relink, remove or read, the Synchronize Folder dialog says the library is up
+  to date with the folder and has one Close button. It used to show four greyed choices, two of them still ticked,
+  and a Synchronize button that started a job with nothing to do. Files it skipped (already in the library elsewhere,
+  or unreadable) are still listed.
+
 
 ### Hidden Local locations come back one at a time
 - With several locations removed from Local, "Show N hidden locations" now lists them, so each comes back on its own
   (Restore All is there too). The row used to bring every hidden location back at once (issue #2114).
 
 ## 2026-10-18
+
+### Thumbnails of Lightroom HDR and panorama merges in a second
+- Grid and filmstrip thumbnails of DNGs that Lightroom merged (HDR, Panorama, HDR Panorama) now develop from the
+  small copies of the raw image Lightroom keeps inside the file (256 to 2048 px), not from the whole merge. A 23836 ×
+  7078 drone panorama's 512 px thumbnail took 38 s and now takes about a second, with the same look; your edits still
+  apply. Loupe previews larger than the biggest copy, 1:1 views and exports still read the full image.
+
+### Fewer false "not imported" warnings for Lightroom raws
+- Importing raws with Lightroom XMP sidecars no longer lists settings Lightroom writes only for itself as adjustments
+  that weren't imported: `CompatibleVersion`, the camera and lens profile checksums, the lens profile's name, file and
+  setup, the crop's "constrain to image" option, and the lens profile's strength when it is at its default of 100 %.
+  A raw sidecar used to name all of them for every photo. Settings {app} really doesn't apply, such as `Look`,
+  are still reported.
+
 
 ### Fill Location from GPS: no more neighbouring town in City
 - The offline place names list towns of 15,000 people or more, so a photo taken in a smaller one got the nearest larger
@@ -24,7 +102,26 @@
   another ratio (4 × 5, 2 × 3…) keeps it portrait, as in Lightroom, and a Custom ratio taller than wide gives a
   portrait crop.
 
+## 2026-10-16
+
+### Synchronize Folder shows that it is listing the folder
+- A folder with tens of thousands of photos, above all on a network share, can take minutes to list before
+  Synchronize Folder checks a single photo. Its row in the activity stack used to sit at "0 of 64085" with an empty
+  bar all that time, as if it had stopped. It now says how many folders and files it has listed so far, with a bar
+  that moves on its own, and then counts the photos it checks. The dialog says the same.
+- ✕ on the row stops the listing too, not only the checks after it.
+
+### The photo grid keeps up with imports into a large library
+- While photos are imported into a large library, the grid takes in each batch as it arrives instead of reading
+  every photo of the view again: at about 180,000 photos a batch cost the window a tenth of a second, over and over
+  for as long as the import ran. Changing one photo's capture time or crop is quicker too.
+
 ## 2026-10-15
+
+### Photo Merge takes each photo once
+- A merge that names the same photo more than once (through `ids` on the control channel, MCP or the CLI) now merges
+  it once (issue #1947). Naming one photo three times no longer "merges" it with itself, and a long repeated list no
+  longer decodes the photo again for every entry.
 
 ### Constrain Crop tightens the crop you see
 - Geometry ▸ Constrain Crop now changes the crop itself, as in Lightroom (issue #1927). Ticking it, or moving a
@@ -36,12 +133,12 @@
 ### Web: no backup that misses unsaved changes
 - In the browser version, File ▸ Back Up Library… no longer reports success while a save is failing (storage full or
   cleared): the backup copies the stored library, so it left out the changes that couldn't be saved (issue #1508). It
-  now refuses to start and says how many changes are unsaved and why. <app> retries the save with every change;
+  now refuses to start and says how many changes are unsaved and why. {app} retries the save with every change;
   back up once nothing is left unsaved.
 
 ### Web: an unreadable library is not opened
 - In the browser version, a library file that exists but can't be read at start-up is no longer taken for a missing
-  one (issue #1507). <app> used to open the library without it, showing an incomplete catalog that the next save
+  one (issue #1507). {app} used to open the library without it, showing an incomplete catalog that the next save
   would write over the stored copy. It now leaves the library unopened, saves nothing and says which file couldn't be
   read; reload the page to try again.
 
@@ -51,6 +148,11 @@
 - Model downloads (AI denoise, faces, SAM) give up on a server name that doesn't resolve within the connect timeout,
   and Cancel stops a download that is still looking the name up (issue #1532). The lookup used to block with no time
   limit, and each of a server's addresses then got the whole connect timeout of its own.
+
+### Sony A7CR distortion correction
+
+- Full-frame 3:2 Bayer A7CR raws with distortion Auto or forced Auto now use their embedded distortion table. The corrected render is closer to the camera JPEG geometry. Off files keep their original geometry. APS-C, aspect crops and lossless M/S remain excluded.
+- The warp also supplies the geometry needed by the lens-aligned camera-look fit in PR #1586. The pairing code is a separate change. Details and numeric validation are in `docs/sony-lens-corrections.md`.
 
 ### Lightroom radial masks on the right side
 - Radial masks brought over from Lightroom Classic (catalog import, XMP sidecars, edits inside DNGs and presets) now
@@ -86,7 +188,7 @@
   dark sky is now removed too.
 - Photo ▸ Photo Merge ▸ HDR for Each Bracket Set merges every bracket among the selected photos with the last HDR
   settings, one after the other: each stack, and photos taken less than a second apart at different exposures.
-  From the command line: `lcc-cli merge hdr-batch FOLDER`.
+  From the command line: `merge hdr-batch FOLDER`.
 - Merging uses about a quarter less memory: three 67 MP raws need 3.8 GB instead of 4.8 GB.
 
 ### XMP sidecars catch up after a network share comes back
@@ -202,9 +304,20 @@
   ⇧-click and the line tapers from the old values to the new ones. The whole line is one undo step.
   `mask.brushStroke {connect: true}` does the same for agents.
 
+### Local folders you browse are kept
+- Browsing a folder under Local now records it as browsed, so the photos in folders you use aren't forgotten after
+  the number of days set in Settings → Performance. Only the `library.browse` command recorded it before, so a
+  folder browsed every day from the sidebar was forgotten anyway and read again from scratch on the next visit,
+  which is slow on a network share.
+
 ### Hard-edged Heal and Clone spots
 - A spot with Feather at 0 no longer draws black pixels exactly on its radius. This also fixes spots at 0% Opacity
   changing pixels along their edge. The hard edge now leaves pixels on the radius unchanged.
+
+### Search finds people
+- Typing a person's name in Search Photos finds the photos with that named face (issue #1449).
+- Quotes keep several words together: `person:"Jane Doe"` finds exactly that person, `"jane doe"` those words side
+  by side, and `keyword:"new york"` a keyword of two words.
 
 ### Where the camera focused
 - **View ▸ Show Focus Point** (⌥F) draws the autofocus frame the camera recorded over the photo, in Detail, Compare
@@ -281,7 +394,7 @@
 
 ### Portable mode
 - A file named `portable.txt` next to the {app} program makes it keep its settings, logs and downloaded
-  models in a data folder beside it (named after the app, ending in `Data`) instead of the per-user settings folder (issue #1200), as
+  models in a `{app}Data` folder beside it instead of the per-user settings folder (issue #1200), as
   PhotoCraft does. If that folder can't be written, the usual folder is used and the log says why.
 
 ### Reliability
@@ -470,7 +583,7 @@
 - Olympus E-10 raws open with the camera's white balance (White Balance ▸ As Shot) and without the grey haze in
   the shadows: the black level recorded in the file is now subtracted.
 ### Told when there is no GPU
-- When GPU rendering is on but no graphics processor can be found, the app now says so once at start-up instead
+- When GPU rendering is on but no graphics processor can be found, {app} now says so once at start-up instead
   of quietly rendering everything on the CPU, much more slowly. Help ▸ System Info says why. On NixOS this happens
   when a `cargo` build runs outside `nix develop` (no Vulkan loader); start it from there.
 ## 2026-10-12
@@ -517,19 +630,19 @@
   keyword left how many photos, and that Edit ▸ Undo puts it back.
 
 ### HDR and panorama merges of CR2 keep their colour
-- Photo Merge of Canon CR2 (and other raws whose colour the app fits from the camera's own JPEG, such as NEF and
+- Photo Merge of Canon CR2 (and other raws whose colour {app} fits from the camera's own JPEG, such as NEF and
   ARW) gives the merged DNG the colour each photo has when opened alone (issue #965). An HDR merge of CR2s used to come
   out green and dark.
 ### "Rendering…" on the photo
 - The loupe says "Rendering…" at the bottom of the photo when what it shows isn't the finished photo yet: the
   camera's embedded JPEG while a raw decodes, the previous render while an edit renders, or the magnified frame
   while the 1:1 detail is on its way. It appears once that has lasted half a second, so quick renders never show it.
-- If the app can't open a photo (its original is on a drive that isn't connected, or the file is damaged) but has
+- If {app} can't open a photo (its original is on a drive that isn't connected, or the file is damaged) but has
   its embedded JPEG or a thumbnail to show, the loupe now says so at the bottom of the photo ("Original offline · no
   smart preview" or "This photo can't be opened", the reason on hover) instead of showing that preview as if it were
   the photo.
 ### `--import <folder>` takes HEIC
-- `lcc-cli run --import <folder>` (and the MCP tools that take folders) now picks up HEIC, HEIF and Nikon NRW
+- The command line's `run --import <folder>` (and the MCP tools that take folders) now picks up HEIC, HEIF and Nikon NRW
   files, the same files as `library.import` (issue #1080). They used to be skipped without a word.
 - Compare and Reference View panes say "Rendering…" (or that the photo can't be opened) the same way, so a
   magnified preview isn't taken for the photo when checking focus at 1:1.
@@ -591,9 +704,9 @@
 
 ### Open Library knows a Lightroom catalog
 - Choosing a Lightroom Classic catalog folder in File → Open Library… (or one of its `Previews.lrdata` /
-  `.lrcat-data` folders, or the `.lrcat`) no longer makes an empty library of the app inside it (issue #891). The
-  library open now stays, and the app says "This is a Lightroom catalog, not a <app> library" and offers
-  **Import Lightroom Catalog…** with that catalog, or Cancel. `lcc-cli --library` refuses those folders too.
+  `.lrcat-data` folders, or the `.lrcat`) no longer makes an empty {app} library inside it (issue #891). The
+  library open now stays, and {app} says "This is a Lightroom catalog, not a {app} library" and offers
+  **Import Lightroom Catalog…** with that catalog, or Cancel. The command-line tool's `--library` refuses those folders too.
 
 ### Canon EOS R5 Mark II
 - Canon EOS R5 Mark II C-RAW files that opened as "preview only" (more than half of them, depending on the
@@ -605,16 +718,16 @@
 - File ▸ Open Recent Library lists the last 8 libraries; ones that are gone (moved, drive disconnected) are greyed
   out. Clear Recent Libraries empties the list.
 - The open library's name shows under My Photos at the top of the left panel and in the window title.
-- `lcc-cli --library` given a library's own file (`catalog.snap`) opens its folder instead of failing with
+- The command-line tool's `--library` given a library's own file (`catalog.snap`) opens its folder instead of failing with
   "File exists".
 - Agents use `app.newLibrary {path, name}`, `app.recentLibraries` and `app.clearRecentLibraries`.
 
 ### Edit in PhotoCraft
 - Right-click a photo ▸ Edit In ▸ Edit in PhotoCraft (or Photo ▸ Edit In, ⇧⌘E) renders a copy with your edits, stacks it
-  with the original and opens it in PhotoCraft. The app finds PhotoCraft where its installer put it (Windows,
+  with the original and opens it in PhotoCraft. {app} finds PhotoCraft where its installer put it (Windows,
   macOS, Linux packages, AppImage, Flatpak), and says so if it isn't installed, before making a copy.
 - The copy is a 16-bit PSD by default, which PhotoCraft saves straight back to with File ▸ Save; when you come back to
-  the app the copy shows what you saved.
+  {app} the copy shows what you saved.
 - Settings ▸ General ▸ External Editing: the format (PSD or TIFF), colour space and bit depth for PhotoCraft and for
   the other editor (Edit in Other Editor, now ⌥⌘E), and where PhotoCraft is if you use a portable copy.
 - Export can write PSD too (flat, 8- or 16-bit).
@@ -625,13 +738,13 @@
   with those edits went from about 3.7 s to 1.9 s. Photos look the same as before.
 
 ### Reliability
-- Upgrading from a Windows installer older than 0.6 (such as 0.5.0) keeps the app in the folder it was installed
+- Upgrading from a Windows installer older than 0.6 (such as 0.5.0) keeps {app} in the folder it was installed
   in, instead of moving it back to Program Files (issue #399). If that folder has been deleted since, the upgrade
   installs to Program Files.
-- A photo that runs into a bug in the app while it renders (in a raw decoder or the editing pipeline) now fails
+- A photo that runs into a bug in {app} while it renders (in a raw decoder or the editing pipeline) now fails
   like a photo that can't be opened, with the reason, instead of rendering forever; its thumbnail stops waiting too.
   Each such bug used to take one of the render threads with it, so after a few of them no photo rendered until
-  the app was restarted. The bug is still written to the log (Help ▸ Open Log Folder) for a report.
+  {app} was restarted. The bug is still written to the log (Help ▸ Open Log Folder) for a report.
 
 ### Library sorting
 - Photos that tie on the sort key (equal ratings, one import batch, a burst shot within the same second) now sort by
@@ -757,7 +870,7 @@
 - Agents: `view.sidebarSection`, `view.sidebarMoveSection`, `view.sidebarReset`; `ui.set` takes `sidebar`.
 
 ### Kelvin white balance for raws whose camera has colour matrices
-- Raws from the 52 camera models whose colour matrices the app has measured (Sony ILCE-7M3, ILCE-7M4, ILCE-7RM3,
+- Raws from the 52 camera models whose colour matrices {app} has measured (Sony ILCE-7M3, ILCE-7M4, ILCE-7RM3,
   Nikon D850, Canon EOS 5D Mark III and others) now show white balance in Kelvin, as a DNG does and as Lightroom
   does: As Shot reads the file's white (an ILCE-7M3 sample: 4268 K / +7), the Temp slider runs 2000–50000 K and the
   Daylight, Cloudy, Shade, Tungsten, Fluorescent and Flash presets set real temperatures (issue #730). The matrices
@@ -787,7 +900,7 @@
 - The Export dialog has **Add to Apple Photos**, with an optional album. The files are exported to your folder as
   usual and then added to Photos, into a top-level album of that name (made when it's missing). The toast says how
   many Photos added, or why it added none. Export with Previous and export presets repeat it.
-- The first time, macOS asks whether the app may control Photos. Photos may ask about duplicates; files it skips
+- The first time, macOS asks whether {app} may control Photos. Photos may ask about duplicates; files it skips
   show as a partial import.
 - Agents: `app.export {addToPhotos, photosAlbum}`, `export.addToPhotos {paths}` for files already on disk, and
   `export.photosImports`. See [Add to Apple Photos](apple-photos.md).
@@ -821,7 +934,7 @@
 - Closing a library releases its lock explicitly (issue #680). On Linux and macOS the lock used to go with the file
   handle, and a program being started by another thread at that moment held a copy of the handle until it was fully
   launched, so reopening the library straight away could be refused with "This library is already open in another
-  <app> program" although nothing had it open. Nothing in the shipped app is known to hit the window today; it
+  {app} program" although nothing had it open. Nothing in the shipped app is known to hit the window today; it
   made a lock test flaky, and the fix closes the window for good.
 
 ## 2026-10-09
@@ -874,7 +987,7 @@
 - File ▸ Import Keywords… and Export Keywords… read and write keyword list files as Lightroom Classic does (a keyword
   a line, a tab per level, synonyms in braces, keywords left out of export in brackets). Capture One, darktable, Adobe
   Bridge and Photo Supreme (its Formatted Vocabulary File) use the same files, so keyword lists move between them and
-  the app. Importing adds the keywords you don't have, in one undo step; a file it can't read says which line, or
+  {app}. Importing adds the keywords you don't have, in one undo step; a file it can't read says which line, or
   to save it as UTF-8. Exporting warns about keywords Capture One won't import, and names any keyword the format can't
   hold (such as a name in brackets), which it leaves out so the file always reads back.
 
@@ -915,7 +1028,7 @@
   no longer saves it). Return in those dialogs now confirms them, and their name opens selected. More fields will
   follow.
 - On Windows and Linux, Ctrl+C outside a text field copies edit settings and Ctrl+V pastes them (⇧Ctrl+V: Paste
-  Selected Settings). Ctrl+V only reaches the app while the system clipboard holds text; otherwise use Edit ▸ Paste Edit
+  Selected Settings). Ctrl+V only reaches {app} while the system clipboard holds text; otherwise use Edit ▸ Paste Edit
   Settings.
 
 ### Dialogs
@@ -935,7 +1048,7 @@
 - Right-click a folder (or a disk other than the startup disk) in the sidebar's Folders section ▸ Set Color Label ▸ a colour or None. The row
   shows the label's dot before its photo count. Agents use `folder.label` (`path`, `label`); `library.folders`
   reports each row's `label`.
-- A label follows its folder when it is renamed or moved in the app, together with the labels of the folders
+- A label follows its folder when it is renamed or moved in {app}, together with the labels of the folders
   inside it; undo and redo carry them back and forth.
 - The catalog format is now version 4 (`Catalog.folder_records`, `Op::SetFolderRecord`). Once this version has
   opened a library, older versions refuse it, as with every format change.
@@ -1109,16 +1222,16 @@
 ## 2026-10-05
 
 ### Reliability
-- The Windows installer asks where to install the app (Program Files by default; upgrades keep the folder you
-  chose) and ends on a page saying it was installed, with a "Launch <app>" box. It used to finish without a word,
+- The Windows installer asks where to install {app} (Program Files by default; upgrades keep the folder you
+  chose) and ends on a page saying it was installed, with a "Launch {app}" box. It used to finish without a word,
   so a successful install looked like nothing had happened (issues #18, #399). Silent installs (`/qn`, `/passive`)
   show no dialogs and take `INSTALLFOLDER=...`.
 - If the desktop app can't open its window (for example when no graphics device can be used), it now says so in a
   message box that names the log file, instead of quitting without a trace (issue #260).
 - On Linux and FreeBSD, file dialogs (Import Photos…, Open Library, Export, presets, keyword lists…) are children of
-  the app's window. The xdg-desktop-portal picker used to open as a separate top-level window on Wayland
+  the {app} window. The xdg-desktop-portal picker used to open as a separate top-level window on Wayland
   ("Failed to associate portal window with parent window" in the portal's log): tiling compositors put it beside the
-  app, and with the app fullscreen it was hidden altogether, so Import Photos… looked like a hang until the
+  app, and with {app} fullscreen it was hidden altogether, so Import Photos… looked like a hang until the
   dialog was found and closed.
 - On macOS, single-key shortcuts that appear in the menu bar now work: E, C, H, M, ⇧P, I, K, D, ratings 0–5,
   labels 6–9, P / U and the rest did nothing, because macOS only passes ⌘ / ⌃ combinations and function keys
@@ -1127,16 +1240,16 @@
 - `--memory` sessions keep their promise to save nothing (issues #164, #169): UI changes made in one no longer
   land in `ui.json` (where they replaced the saved settings), and the GPU crash sentinel no longer creates the
   settings folder there. The same goes for the temporary session offered when the library can't be opened.
-- The desktop app keeps a log file: a `logs/` folder in its settings folder,
+- The desktop app keeps a log file: a log file in the `logs` folder of its settings folder,
   with the logs of the two previous runs beside it, so warnings and crashes of a run started from a desktop menu or the
-  Dock can be attached to a bug report. `{env}_LOG` works as before; `RUST_LOG` takes env_logger-style
+  Dock can be attached to a bug report. `<PREFIX>_LOG` works as before; `RUST_LOG` takes env_logger-style
   directives. See README → Quick start → Logs.
 - Help → Open Log Folder shows that log file in the file manager (Finder, Explorer, or the folder on Linux), so it
   can be attached to a report without hunting for the settings folder (issue #260).
-- `{cli}` logs warnings on stderr too (issue #168); `{env}_LOG` or `RUST_LOG` picks another level.
+- the command-line tool logs warnings on stderr too (issue #168); `<PREFIX>_LOG` or `RUST_LOG` picks another level.
 - {app} no longer crashes at launch on Windows PCs whose Vulkan driver is broken (issue #136, e.g. some Intel UHD
   630 drivers): on Windows the window and GPU rendering use DirectX 12 only and never load the Vulkan driver unless
-  asked to. `{env}_GPU_BACKEND=dx12 | vulkan | metal | off` (or wgpu's `WGPU_BACKEND`, which GPU rendering
+  asked to. `<PREFIX>_GPU_BACKEND=dx12 | vulkan | metal | off` (or wgpu's `WGPU_BACKEND`, which GPU rendering
   ignored before) chooses the graphics backend; `off` renders on the CPU. The GPU now starts after the window
   is up, and only when Settings ▸ Performance ▸ Use the GPU for rendering is on; if {app} ever dies while
   starting the GPU, the next launch starts with GPU rendering off and says how to turn it back on.
@@ -1145,7 +1258,7 @@
   compiler built into Windows (FXC). `WGPU_DX12_COMPILER=dxc` uses a `dxcompiler.dll` instead.
 - Exports and renders never write over a photo's original (issue #93): exporting into the photo's own folder with
   the same name and "Overwrite" (or Export with Previous repeating it), an exact output path from the control
-  channel or MCP, a merge preview path or `{cli} render IMG.jpg -o IMG.jpg` is refused with a clear
+  channel or MCP, a merge preview path or a command-line render onto its own source (`render IMG.jpg -o IMG.jpg`) is refused with a clear
   message, and the original is left byte for byte. Ordinary earlier exports are still overwritten when asked.
   Exported files are written to a temp file and then renamed into place, so a full disk or an unplugged drive
   never leaves a truncated file; the XMP sidecar of an "Original" export follows the "If file exists" choice too.
@@ -1265,7 +1378,7 @@
 - Smaller, faster catalogs: photos you only looked at in Local (never added, rated or edited) are forgotten once
   their folder has not been browsed for 30 days — your files and sidecars stay, and browsing the folder shows them
   again. Change the period (or turn it off) in Settings → Performance.
-- A library is open in one program at a time (issue #99): opening a library that {app} or `{cli}` already
+- A library is open in one program at a time (issue #99): opening a library that {app} or the command-line tool already
   has open — on this computer or another one sharing the folder — says who has it ("already open in {app} (process
   123 on studio-mac)") instead of letting both write and silently drop each other's edits. A crash never leaves the
   library locked: the lock is the operating system's and goes away with the program.

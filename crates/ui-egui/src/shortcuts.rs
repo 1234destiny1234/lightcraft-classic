@@ -211,6 +211,8 @@ pub const ALIASES: &[(&str, &str, &str)] = &[
     // Keep existing primary shortcuts and honour custom keymap assignments.
     ("F6", "view.filmstrip", "{}"),
     ("F7", "view.leftPanel", "{}"),
+    // and F8 the right panel
+    ("F8", "view.rightPanel", "{}"),
     ("Shift+M", "version.create", "{}"),
     // grid thumbnail size: Classic's key is `=`; `+` (keypad, or Shift+= reported as Plus) agrees
     ("Plus", "view.thumbSizeUp", "{}"),
@@ -307,12 +309,16 @@ fn matches(i: &egui::InputState, m: Modifiers, k: Key) -> bool {
     })
 }
 
-/// Default brackets rate in grids. Remapped brush keys retain their brush action, and a
-/// saved assignment of either bracket to another command takes precedence over this default.
-fn grid_bracket_command(keymap: &Keymap, grid: bool, id: &'static str, shortcut: (Modifiers, Key)) -> Option<&'static str> {
+/// Default brackets rate in grids, and the default backslash shows / hides the Filter Bar there
+/// (Lightroom Classic's Library keys; Detail keeps brush size and Show Original). The full-screen
+/// preview keeps the grid's view but shows the photo alone, so backslash stays Show Original there.
+/// Remapped brush and Show Original keys retain their action, and a saved assignment of the key to
+/// another command takes precedence over this default.
+fn grid_key_command(keymap: &Keymap, grid: bool, fullscreen: bool, id: &'static str, shortcut: (Modifiers, Key)) -> Option<&'static str> {
     let command = match (grid, id, shortcut) {
         (true, "brush.smaller", (m, Key::OpenBracket)) if m == Modifiers::NONE => "photo.decreaseRating",
         (true, "brush.larger", (m, Key::CloseBracket)) if m == Modifiers::NONE => "photo.increaseRating",
+        (true, "view.showOriginal", (m, Key::Backslash)) if m == Modifiers::NONE && !fullscreen => "view.filterBar",
         _ => return Some(id),
     };
     if keymap.iter().any(|(other, sc)| other != id && find_bindable(other).is_some() && parse(sc) == Some(shortcut)) { None } else { Some(command) }
@@ -412,7 +418,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 && !consumed.contains(&(m, k))
                 && !(k == Key::Escape && popup_open)
                 && matches(i, m, k)
-                && let Some(id) = grid_bracket_command(keymap, grid, b.id, (m, k))
+                && let Some(id) = grid_key_command(keymap, grid, app.ui.fullscreen, b.id, (m, k))
             {
                 fire.push(id.to_string());
             }
@@ -482,8 +488,9 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
         }
         // flag/rate aliases (Shift+X…) go through the culling path: active photo in Compare/Survey,
         // `advance` moves to the next candidate there
-        if id == "view.filterBar" && !library_grid(app) {
-            // Library's backslash is the filter bar in the grids; in a loupe it stays Show Original
+        if id == "view.filterBar" && (!library_grid(app) || app.ui.fullscreen) {
+            // Library's backslash is the filter bar in the grids; in a loupe (and the full-screen
+            // preview over a grid, which shows the photo alone) it stays Show Original
             let _ = app.run("view.showOriginal", params);
         } else if matches!(id, "photo.flag" | "photo.rate" | "photo.label") {
             let mut params = params;
@@ -591,6 +598,22 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                         }
                         continue;
                     }
+                    R::Crop if app.ui.tool == "guidedUpright" => {
+                        // Delete removes the selected guide alone; with none selected it removes
+                        // nothing (the photo itself is never deleted while the tool is open)
+                        if let (Some((photo, i)), Some(active)) = (app.ui.selected_guide, app.session.active()) {
+                            if photo == active.0
+                                && let Some(d) = app.session.develop_of(active)
+                                && i < d.geometry.guides.len()
+                            {
+                                let guides: Vec<[f64; 4]> =
+                                    d.geometry.guides.iter().enumerate().filter(|(k, _)| *k != i).map(|(_, (a, b))| [a.x, a.y, b.x, b.y]).collect();
+                                let _ = app.run("geometry.guides", json!({"guides": guides}));
+                            }
+                            app.ui.selected_guide = None;
+                        }
+                        continue;
+                    }
                     R::RedEye => continue,
                     _ => {}
                 }
@@ -622,7 +645,8 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 }
                 continue;
             }
-            // X is both reject (library) and swap crop aspect (crop tool)
+            // X is both reject (library) and swap crop aspect (crop tool). When both bindings fire,
+            // swap once: twice would put the crop straight back (issue #1866).
             if f == "photo.reject" && app.ui.right == crate::state::RightPanel::Crop {
                 if !rotate_fired {
                     let _ = app.run("crop.rotateAspect", json!({}));
@@ -630,6 +654,13 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
                 continue;
             }
             if f == "crop.rotateAspect" && app.ui.right != crate::state::RightPanel::Crop {
+                continue;
+            }
+            // Classic's F8 (`panel.right`) in Library and Develop folds their right panel away and
+            // back, as the top bar's right-panel button does (`view.rightPanel`); the other
+            // modules keep their own right edge
+            if f == "panel.right" && matches!(app.ui.module, crate::module::ModuleId::Library | crate::module::ModuleId::Develop) {
+                let _ = app.run("view.rightPanel", json!({}));
                 continue;
             }
             // / refreshes the selected spot's source in the Remove tool (the filmstrip elsewhere)
@@ -888,6 +919,24 @@ mod tests {
         key(&mut h, "F6", false);
         key(&mut h, "F7", false);
         assert_eq!((h.app.ui.filmstrip, h.app.ui.left_panel), (filmstrip, left));
+    }
+
+    /// Classic's F8 folds the right side away and brings the same panel back; the other panels
+    /// stay (the fork's top-bar button does the same).
+    #[test]
+    fn classic_f8_hides_the_right_panel_and_brings_the_same_one_back() {
+        use crate::state::RightPanel;
+        let mut h = library();
+        h.app.ui.view = crate::state::ViewMode::Detail;
+        h.app.ui.right = RightPanel::Keywords;
+        h.settle(std::time::Duration::from_secs(10));
+        let (filmstrip, left) = (h.app.ui.filmstrip, h.app.ui.left_panel);
+        key(&mut h, "F8", false);
+        assert!(h.app.ui.right_collapsed, "F8 folds the right side away");
+        assert_eq!((h.app.ui.filmstrip, h.app.ui.left_panel), (filmstrip, left));
+        key(&mut h, "F8", false);
+        assert!(!h.app.ui.right_collapsed);
+        assert_eq!(h.app.ui.right, RightPanel::Keywords, "the panel F8 hid comes back");
     }
 
     #[test]

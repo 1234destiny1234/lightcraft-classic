@@ -23,11 +23,15 @@ pub fn culling(app: &LccApp) -> bool {
 
 /// The (select, candidate) pair, repaired or chosen if needed: the active photo against the next
 /// selected photo, else against its neighbour in the view.
+/// A photo that can be shown or pinned: in the catalog and not in Recently Deleted.
+pub fn live(app: &LccApp, id: PhotoId) -> bool {
+    app.session.catalog.photo(id).is_some_and(|p| !p.deleted)
+}
+
 pub fn compare_pair(app: &mut LccApp) -> Option<(PhotoId, PhotoId)> {
-    let exists = |app: &LccApp, id: PhotoId| app.session.catalog.photo(id).is_some_and(|p| !p.deleted);
     if let Some((a, b)) = app.ui.compare {
         let (a, b) = (PhotoId(a), PhotoId(b));
-        if a != b && exists(app, a) && exists(app, b) {
+        if a != b && live(app, a) && live(app, b) {
             return Some((a, b));
         }
     }
@@ -306,7 +310,7 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
             super::detail::loupe_pill(ui, img_area, over, None, &format!("compare:rendering:{i}"), crate::i18n::tr("Rendering…"), false);
         }
     }
-    // caption: label · file name · stars · flag
+    // caption: label · file name · stars · flag · colour label
     // caption right under the image (at the bottom when zoomed in)
     let cap_top = (display.bottom() + 2.0).min(img_area.bottom());
     let cap = Rect::from_min_max(pos2(img.left().max(area.left()), cap_top), pos2(area.right(), cap_top + caption_h));
@@ -338,6 +342,14 @@ fn photo_tile(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, slot: Slot, area
         Flag::Reject if fr.right() < cap.right() => paint(pt, fr, Icon::FlagReject, t.reject),
         _ => {}
     }
+    // the colour label as a dot, so labelling while culling shows on the photo (#2398)
+    let lr = Rect::from_min_size(pos2(fr.right() + 6.0, cap.center().y - 5.0), vec2(10.0, 10.0));
+    if let Some(l) = photo.label
+        && lr.right() < cap.right()
+    {
+        pt.circle_filled(lr.center(), 5.0, super::grid::label_color(l));
+        register(ui.ctx(), format!("cull:{}:label", id.0), lr);
+    }
     register(ui.ctx(), format!("cull:{}", id.0), display);
     (display, resp)
 }
@@ -355,7 +367,14 @@ fn slot_index(s: Slot) -> u8 {
 pub fn prepare(app: &mut LccApp) {
     let shown = if app.ui.view == ViewMode::Detail { app.session.active() } else { None };
     app.session.media.set_on_screen(shown);
-    let n = if matches!(app.ui.view, ViewMode::Compare | ViewMode::Reference) { 2 } else { 1 };
+    // Reference with no live pin draws no panes: release them as other views do.
+    let reference_shown = app.ui.reference.is_some_and(|r| live(app, PhotoId(r)));
+    if app.ui.view == ViewMode::Reference && !reference_shown {
+        // the reference (pane 0) and the active photo beside it (pane 1)
+        app.renderer.release(Slot::Compare(0));
+        app.renderer.release(Slot::Compare(1));
+    }
+    let n = if app.ui.view == ViewMode::Compare || (app.ui.view == ViewMode::Reference && reference_shown) { 2 } else { 1 };
     app.session.media.set_full_capacity(n);
 }
 
@@ -383,7 +402,7 @@ pub fn show_compare(app: &mut LccApp, ui: &mut egui::Ui) {
         if resp.double_clicked() {
             app.ui.zoom = if app.ui.zoom == Zoom::Fit { Zoom::Percent(100.0) } else { Zoom::Fit };
         }
-        resp.context_menu(|ui| {
+        crate::widgets::context_menu(&resp, |ui| {
             if ui.button(crate::i18n::tr("Swap")).clicked() {
                 let _ = swap(app);
             }
@@ -452,7 +471,7 @@ pub fn show_survey(app: &mut LccApp, ui: &mut egui::Ui) {
                 let _ = app.run("library.select", json!({"ids": [id.0], "mode": "toggle"}));
             }
         }
-        resp.context_menu(|ui| super::grid::context_menu(app, ui, *id));
+        crate::widgets::context_menu(&resp, |ui| super::grid::context_menu(app, ui, *id));
     }
     let n = photos.len();
     let msg = if app.session.selection.ids.len() > SURVEY_MAX {
@@ -469,7 +488,7 @@ pub fn show_survey(app: &mut LccApp, ui: &mut egui::Ui) {
 /// the Edit panel works on, so a look can be matched by eye.
 pub fn show_reference(app: &mut LccApp, ui: &mut egui::Ui) {
     let canvas = area_and_filmstrip(app, ui);
-    let reference = app.ui.reference.map(PhotoId).filter(|r| app.session.catalog.photo(*r).is_some());
+    let reference = app.ui.reference.map(PhotoId).filter(|r| live(app, *r));
     let (Some(r), Some(active)) = (reference, app.session.active()) else {
         super::empty_message(ui, canvas, "No reference photo", "Right-click a photo ▸ Set as Reference Photo, then View → Reference View (Shift+R)");
         return;
@@ -482,7 +501,7 @@ pub fn show_reference(app: &mut LccApp, ui: &mut egui::Ui) {
     let (_, lresp) = photo_tile(app, ui, r, Slot::Compare(0), left, "Reference", zoom);
     let (img, _) = photo_tile(app, ui, active, Slot::Compare(1), right, "Active", zoom);
     app.image_rect = Some(img);
-    lresp.context_menu(|ui| {
+    crate::widgets::context_menu(&lresp, |ui| {
         if ui.button(crate::i18n::tr("Clear Reference")).clicked() {
             app.ui.reference = None;
             app.ui.view = ViewMode::Detail;

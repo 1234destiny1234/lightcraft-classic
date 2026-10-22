@@ -299,5 +299,6 @@
   "Moved {n} photo{} to “{}”. Edit → Undo moves them back.": "Moved {n} photo{} to “{}”. Edit → Undo moves them back.",
   "{} photos · not aligned": "{} ფოტო · არ არის გასწორებული",
   "{} photos · {} aligned": "{} ფოტო · {} გასწორებული",
-  "{} photos · {} aligned · {} left out": "{} ფოტო · {} გასწორებული · {} გამოტოვებული"
+  "{} photos · {} aligned · {} left out": "{} ფოტო · {} გასწორებული · {} გამოტოვებული",
+  "Listing folders — folders: {folders}, files: {files}": "საქაღალდეების ჩამოთვლა — საქაღალდეები: {folders}, ფაილები: {files}"
 }

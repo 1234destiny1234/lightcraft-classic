@@ -295,5 +295,6 @@
   "Rendered {ok} of {total} to DNG": "已将 {total} 张中的 {ok} 张渲染为 DNG",
   "The XMP sidecars of {n} photos couldn't be written (is their folder offline?). {app} keeps trying.": "无法写入 {n} 张照片的 XMP 附属文件（其文件夹是否离线？）。{app} 会继续重试。",
   "{app} stopped unexpectedly: {e}\n\nThe log file has the details: {path}": "{app} 意外停止：{e}\n\n详细信息见日志文件：{path}",
-  "{app} stopped unexpectedly: {e}": "{app} 意外停止：{e}"
+  "{app} stopped unexpectedly: {e}": "{app} 意外停止：{e}",
+  "Listing folders — folders: {folders}, files: {files}": "正在列出文件夹 — 文件夹：{folders}，文件：{files}"
 }

@@ -254,6 +254,9 @@ database is read-only; the app owns subsequent edits. See `docs/lightroom-catalo
   hashes pinned (`docs/raw/coverage.py`: 515 → 545 verified). Eleven candidates excluded after rechecking
   identity, provenance and camera-image agreement. Phone and drone DNG tone differences remain tracked in #1277.
 - 2026-10-14 (upstream): 97 Canon CR2, Pentax and Ricoh models verified, one CC0 raw.pixls.us file each pinned and
+- 2026-10-18: Minolta / Konica Minolta MRW decodes from sensor data (12-bit packed and 16-bit words,
+  RGGB and GBRG, as-shot WB from `WBG`); DiMAGE 7, 7Hi, A1, A2, A200 and Dynax / Maxxum 7D verified on
+  CC0 files. 551 models verified, 201 preview-only; headline numbers unchanged.
   checked against the camera JPEG (`crates/raw/tests/canon_pentax_corpus.rs`). 334 models verified, ~50% of
   photographers on a verified body; headline numbers unchanged.
 - 2026-10-12 (upstream): Mamiya MEF (ZD) decodes from sensor data and is imported; verified on a CC0 file. 241 models

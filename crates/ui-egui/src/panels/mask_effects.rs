@@ -249,7 +249,7 @@ fn menu(app: &mut LccApp, ui: &mut egui::Ui, mask: &Mask, current: Option<&str>)
             if resp.clicked() {
                 chosen = Some(name.clone());
             }
-            resp.context_menu(|ui| row_menu(app, ui, mask, name, fav));
+            crate::widgets::context_menu(&resp, |ui| row_menu(app, ui, mask, name, fav));
         }
     });
     // resting on an effect previews it on the photo (no history entry)
