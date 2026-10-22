@@ -123,7 +123,10 @@ fn a_tap_in_the_library_grid_opens_the_photo() {
     let mut h = Headless::new(app, [1280.0, 800.0], 1.0);
     exec(&mut h, "view.touchLayout", json!({"on": true}));
     exec(&mut h, "view.photoGrid", json!({}));
-    assert!(has(&h, "touch:import"), "Library's bar");
+    assert!(has(&h, "touch:import"), "Library bar");
+    ask(&mut h, "ui.clickWidget", json!({"id": "touch:import"}));
+    assert!(has(&h, "touch:import:folder"), "Import offers a folder");
+    ask(&mut h, "ui.clickWidget", json!({"id": "touch:import"}));
     let cell = h.app.widgets.iter().find(|(w, _)| w.starts_with("thumb:")).map(|(w, _)| w.clone());
     let Some(cell) = cell else { panic!("no grid cell on screen: {:?}", h.app.widgets.iter().map(|w| &w.0).take(40).collect::<Vec<_>>()) };
     ask(&mut h, "ui.clickWidget", json!({"id": cell}));

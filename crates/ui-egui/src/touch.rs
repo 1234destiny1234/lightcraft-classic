@@ -324,11 +324,56 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         if button(app, Icon::Filter, "touch:filters", "Filter", true) {
             app.ui.touch.filters = !app.ui.touch.filters;
         }
-        if button(app, Icon::Plus, "touch:import", "Import Photos", true) {
-            let _ = app.run("file.addPhotos", json!({}));
+        let menu_id = Id::new("touch-import-menu");
+        if button(app, Icon::Plus, "touch:import", "Import", true) {
+            let open = ui.ctx().data(|d| d.get_temp::<bool>(menu_id).unwrap_or(false));
+            ui.ctx().data_mut(|d| d.insert_temp(menu_id, !open));
+        } else if ui.ctx().data(|d| d.get_temp::<bool>(menu_id).unwrap_or(false)) {
+            import_menu(app, ui, pos2(r.right() - 8.0, r.bottom() + 4.0), menu_id);
         }
         let _ = form;
     });
+}
+
+/// Import's choices: photos, a folder, and the camera roll where the host has one.
+fn import_menu(app: &mut LccApp, ui: &egui::Ui, right_top: Pos2, menu_id: Id) {
+    let t = Tokens::get(ui.ctx());
+    let mut items: Vec<(&str, &str, &str)> =
+        vec![("touch:import:photos", "Import Photos…", "file.addPhotos"), ("touch:import:folder", "Import Folder…", "file.addFolder")];
+    if app.services.camera_roll.is_some() {
+        items.push(("touch:import:cameraRoll", "Camera Roll", "file.addCameraRoll"));
+    }
+    let size = vec2(220.0, BUTTON * items.len() as f32 + 8.0);
+    let min = pos2(right_top.x - size.x, right_top.y);
+    let mut chosen = None;
+    egui::Area::new(Id::new("touch-import-area")).fixed_pos(min).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
+        let (bg, _) = ui.allocate_exact_size(size, Sense::hover());
+        ui.painter().rect_filled(bg, 10.0, t.chrome);
+        ui.painter().rect_stroke(bg, 10.0, Stroke::new(1.0, t.divider), egui::StrokeKind::Inside);
+        for (i, (id, label, command)) in items.iter().enumerate() {
+            let row = Rect::from_min_size(pos2(bg.left(), bg.top() + 4.0 + BUTTON * i as f32), vec2(size.x, BUTTON));
+            let resp = ui.interact(row, Id::new(*id), Sense::click());
+            register(ui.ctx(), *id, row);
+            if resp.is_pointer_button_down_on() {
+                ui.painter().rect_filled(row.shrink(2.0), 6.0, t.pressed);
+            }
+            ui.painter().text(pos2(row.left() + 16.0, row.center().y), Align2::LEFT_CENTER, crate::i18n::tr(label), t.font(14.0), t.text);
+            if resp.clicked() {
+                chosen = Some(*command);
+            }
+        }
+    });
+    let tapped_away = ui.input(|i| i.pointer.any_click())
+        && chosen.is_none()
+        && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| Rect::from_min_size(min, size).contains(p));
+    if let Some(command) = chosen {
+        ui.ctx().data_mut(|d| d.insert_temp(menu_id, false));
+        if let Err(e) = app.run(command, json!({})) {
+            app.toast_error(ui.ctx(), e);
+        }
+    } else if tapped_away {
+        ui.ctx().data_mut(|d| d.insert_temp(menu_id, false));
+    }
 }
 
 /// A tap on a photo in the grid opens it in Develop (the grid's own click picks it first).
@@ -865,7 +910,7 @@ fn chip(ui: &mut egui::Ui, spec: &ControlSpec, selected: bool, changed: bool) ->
 
 /// The fork's touch commands (`menus_fork` lists them).
 pub const COMMANDS: &[crate::menus::UiCommand] = &[
-    ("view.touchLayout", "Touch Layout", None, "View"),
+    ("view.touchLayout", "Touch Layout", None, "Window>Panels"),
     ("touch.chrome", "Show Touch Tools", None, ""),
     ("touch.panel", "Show All Edits", None, ""),
     ("touch.tool", "Adjust with One Tool", None, ""),
