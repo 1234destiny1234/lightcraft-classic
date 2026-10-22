@@ -51,6 +51,34 @@ pub fn spawn<T: Send + 'static>(
     work: impl FnOnce() -> T + Send + 'static,
     done: impl FnOnce(&mut LccApp, &egui::Context, T) + Send + 'static,
 ) -> Result<(), String> {
+    let guard = kind.map(|k| app.session.activity.start(k, label, lcc_engine::activity::Cancel::No));
+    start(app, label, guard, work, done)
+}
+
+/// [`spawn`] for a task with progress that can stop: its row (`kind`, `label`) adopts `cancel`,
+/// the flag `work` checks, so the row's ✕ and `activity.cancel` stop it; `work` reports progress
+/// through the handle it is given.
+pub fn spawn_tracked<T: Send + 'static>(
+    app: &mut LccApp,
+    label: &str,
+    kind: &'static str,
+    cancel: std::sync::Arc<std::sync::atomic::AtomicBool>,
+    work: impl FnOnce(lcc_engine::activity::TaskHandle) -> T + Send + 'static,
+    done: impl FnOnce(&mut LccApp, &egui::Context, T) + Send + 'static,
+) -> Result<(), String> {
+    let guard = app.session.activity.start(kind, label, lcc_engine::activity::Cancel::Flag(cancel));
+    let handle = guard.handle();
+    start(app, label, Some(guard), move || work(handle), done)
+}
+
+/// Run `work` on a worker thread and list it in `app.tasks` with its activity row (if any).
+fn start<T: Send + 'static>(
+    app: &mut LccApp,
+    label: &str,
+    guard: Option<lcc_engine::activity::TaskGuard>,
+    work: impl FnOnce() -> T + Send + 'static,
+    done: impl FnOnce(&mut LccApp, &egui::Context, T) + Send + 'static,
+) -> Result<(), String> {
     let (tx, rx) = channel::<Finish>();
     let repaint = app.tasks.repaint.clone();
     let job = move || {
@@ -64,7 +92,6 @@ pub fn spawn<T: Send + 'static>(
     std::thread::Builder::new().name(format!("lc-task-{label}")).spawn(job).map_err(|e| format!("{label}: could not start: {e}"))?;
     #[cfg(target_arch = "wasm32")]
     job();
-    let guard = kind.map(|k| app.session.activity.start(k, label, lcc_engine::activity::Cancel::No));
     app.tasks.running.push(Task { label: label.to_string(), rx, _guard: guard });
     Ok(())
 }

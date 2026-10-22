@@ -367,4 +367,23 @@ mod tests {
             assert!(!rel.to_string_lossy().contains('{'), "{}", rel.display());
         }
     }
+
+    #[test]
+    fn the_macos_app_may_ask_before_it_sends_apple_events() {
+        // Under the hardened runtime, the apple-events entitlement alone gets the events refused (-1743)
+        // without a prompt: macOS asks only when Info.plist says why.
+        let root = crate::root();
+        let entitlements = std::fs::read_to_string(root.join("packaging/macos/entitlements.plist")).unwrap();
+        if !entitlements.contains("<key>com.apple.security.automation.apple-events</key>") {
+            return;
+        }
+        let brand = Brand::load(&root.join(crate::brand::TEST_BRAND)).unwrap();
+        let vars = vars(&root, &brand).unwrap();
+        let template = std::fs::read_to_string(root.join("packaging/macos/Info.plist.in")).unwrap();
+        let plist = render(&template, &vars).unwrap();
+        let (_, after) =
+            plist.split_once("<key>NSAppleEventsUsageDescription</key>").expect("Info.plist gives macOS the text of the Apple Events prompt");
+        let text = after.trim_start().strip_prefix("<string>").and_then(|s| s.split_once("</string>")).map_or("", |(s, _)| s);
+        assert!(text.contains(&vars["display_name"]), "the prompt's text names the app: {text:?}");
+    }
 }

@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "სხვა აპების მიერ შეცვლილი XMP თანმხლები ფაილების ავტომატური წაკითხვა (აქ შეუცვლელი ფოტოებისთვის)",
   "Sliders": "სლაიდერები",
   "One Row": "ერთ მწკრივად",
-  "Two Rows": "ორ მწკრივად"
+  "Two Rows": "ორ მწკრივად",
+  "Heal with automatically chosen source": "აღდგენა ავტომატურად შერჩეული წყაროთი",
+  "Multi-scale synthesized fill": "მრავალმასშტაბიანი სინთეზირებული შევსება",
+  "Blend source texture with target tone": "წყაროს ტექსტურის შერწყმა სამიზნე ტონთან",
+  "Exact 1:1 pixel copy": "ზუსტი 1:1 პიქსელების ასლი"
 }

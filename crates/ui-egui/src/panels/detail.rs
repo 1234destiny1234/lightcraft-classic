@@ -263,6 +263,21 @@ pub(crate) fn fit_texture_rect(area: Rect, size: [usize; 2]) -> Rect {
     Rect::from_center_size(area.center(), vec2(w * scale, h * scale))
 }
 
+/// `rect` moved onto whole physical pixels, at exactly the texture's size, when the texture is
+/// already the size it is drawn at (within half a pixel), as a display-fitted render at Fit is: centred
+/// on a fractional position, the GPU's bilinear filter would average every screen pixel with its
+/// neighbour (the 100 % view does the same in [`fit_rect`]). Textures of other sizes are left to
+/// the sampler.
+pub(crate) fn snap_fit_rect(rect: Rect, size: [usize; 2], ppp: f32) -> Rect {
+    let ppp = if ppp.is_finite() && ppp > 0.0 { ppp } else { 1.0 };
+    let (w, h) = (size[0] as f32, size[1] as f32);
+    if (rect.width() * ppp - w).abs() > 0.5 || (rect.height() * ppp - h).abs() > 0.5 {
+        return rect;
+    }
+    let snap = |v: f32| (v * ppp).round() / ppp;
+    Rect::from_min_size(pos2(snap(rect.min.x), snap(rect.min.y)), vec2(w / ppp, h / ppp))
+}
+
 /// Keep the viewport inside the photo; axes smaller than the viewport stay centred.
 fn bounded_pan(area: Rect, size: egui::Vec2, pan: (f32, f32)) -> (f32, f32) {
     let bound = |visible: f32, image: f32, centre: f32| {
@@ -763,7 +778,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         && lcc_engine::gpu::available();
     let shown = app.renderer.textures.get(&Slot::Main).filter(|t| t.photo == id && t.quick.is_none()).map(|t| (t.key, t.ms));
     let drag = app.session.interaction.as_ref().map(|i| (i.photo, i.label.as_str()));
-    let draft = app.drag_scale.scale(drag, gpu, shown.map(|(key, _)| key));
+    let now = ui.input(|i| i.time);
+    let draft = app.drag_scale.scale(drag, gpu, shown.map(|(key, _)| key), now);
     // render at the final size: a click-zoom animation only changes how the result is drawn
     let native_long = native[0].max(native[1]);
     let drawn_long = target_rect.width().max(target_rect.height()) * ppp;
@@ -790,18 +806,40 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         app.drag_scale.observe(key, ms, app.perf.host_frame_ms);
     }
     // a pinch changes the zoom every frame: keep the sizes of before it until it is quiet
-    let now = ui.input(|i| i.time);
     let plan = app.size_hold.apply(id, now, navigating, plan);
     if app.size_hold.holding(now) {
         ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64(crate::region::HOLD_SECS));
     }
-    let want = plan.main_edge;
-    let (rw, rh) = if aspect >= 1.0 { (want, (want as f32 / aspect) as usize) } else { ((want as f32 * aspect) as usize, want) };
+    // At rest the whole frame renders at no less than the preview source level: the source is then
+    // copied 1:1 (no resample in the pipeline, whose prefilter and bilinear pass soften detail near
+    // the output's limit) and shrunk once, by the Lanczos display fit below.
+    // (zoomed in under a window render, the whole frame is hidden: it stays canvas-sized)
+    let want = if interacting || plan.window_edge.is_some() {
+        plan.main_edge
+    } else {
+        // (a user's explicit Preview size below the preview level still caps it)
+        let limit = if app.ui.settings.preview_limit == 0 { usize::MAX } else { app.ui.settings.preview_limit as usize };
+        let floor = lcc_engine::SourceLevel::Preview.max_edge().min(limit).min(native_long);
+        plan.main_edge.max(floor).min(texture_side.max(crate::state::MIN_TEXTURE_SIDE))
+    };
+    // The short side is rounded, not truncated: a truncated box (2560 x 1706 for a 2560 x 1707
+    // source) made the render a slightly anisotropic resample of its source, a 2-tap blur along
+    // one axis only. A box that matches the source to rounding is rendered at exactly its size.
+    let short = |e: usize, a: f32| ((e as f32 / a).round() as usize).max(1);
+    let (rw, rh) = if aspect >= 1.0 { (want, short(want, aspect)) } else { (short(want, 1.0 / aspect), want) };
     // hover and before renders are stand-ins: the preview size is plenty and keeps them cheap
     let se = app.ui.settings.stand_in_edge(want, texture_side);
-    let (sw, sh) = if aspect >= 1.0 { (se, (se as f32 / aspect) as usize) } else { ((se as f32 * aspect) as usize, se) };
+    let (sw, sh) = if aspect >= 1.0 { (se, short(se, aspect)) } else { (short(se, 1.0 / aspect), se) };
     if let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
         let job = if interacting { job.draft() } else { job };
+        // at rest the render is shrunk to exactly the size it is drawn at with a Lanczos filter on
+        // the worker, so the window draws it texel for texel instead of shrinking it with 2-tap
+        // sampling (the render is up to a 64 px step larger, or the preview level)
+        let job = if interacting {
+            job
+        } else {
+            job.with_display_fit((target_rect.width() * ppp).round() as usize, (target_rect.height() * ppp).round() as usize)
+        };
         let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
         let job = job.with_hidden_grading(app.ui.grading_hidden_for(id));
         app.renderer.request(Slot::Main, job, 100);
@@ -826,6 +864,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // once it is ready (nothing is committed)
     let hover_key = match app.hover_preview.clone() {
         Some(h) if !interacting => app.session.preview_job(id, sw.max(8), sh.max(8), !crop_tool, &h.settings).map(|job| {
+            // (the same display fit as the After view, drawn texel for texel like it)
+            let job = job.with_display_fit((target_rect.width() * ppp).round() as usize, (target_rect.height() * ppp).round() as usize);
             let key = job.key;
             app.renderer.request(Slot::Hover, job, 105);
             (key, h.label)
@@ -865,6 +905,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     if (split || show_before || split_view)
         && let Some(job) = app.session.render_job(id, sw.max(8), sh.max(8), true, !crop_tool)
     {
+        // (the same display fit as the After view, so both panes are the same texture size)
+        let job = if interacting {
+            job
+        } else {
+            job.with_display_fit((target_rect.width() * ppp).round() as usize, (target_rect.height() * ppp).round() as usize)
+        };
         // (the Before is the photo without its edits: HDR only when those settings are HDR)
         if !interacting {
             hdr_before_key = request_hdr(app, crate::render::HDR_BEFORE, job.clone(), 88);
@@ -986,7 +1032,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 p.with_clip_rect(clip).add(crop_view_mesh(tex.tex.id(), v));
             }
             _ => {
-                let image_rect = fit_texture_rect(r, tex.size);
+                let image_rect = snap_fit_rect(fit_texture_rect(r, tex.size), tex.size, ppp);
                 p.with_clip_rect(clip).image(tex.tex.id(), image_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
             }
         }
@@ -1011,14 +1057,18 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         p.text(label_at(img_rect, main_area), Align2::LEFT_CENTER, crate::i18n::tr("After"), t.font(12.0), t.text_dim);
     } else if show_before {
         shown = draw(Slot::Before, img_rect, canvas);
-        p.text(pos2(img_rect.left() + 8.0, img_rect.top() + 14.0), Align2::LEFT_CENTER, crate::i18n::tr("Before"), t.font(12.0), t.text);
+        // on the photo itself, so it gets the hover label's dark pill to stay readable over light pictures
+        let g = p.layout_no_wrap(crate::i18n::tr("Before").to_string(), t.font(12.0), Color32::WHITE);
+        let bg = label_badge_rect(img_rect, g.size());
+        p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
+        p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
     } else if let Some((_key, label)) = &hover_key
         && let Some(tex) = app.renderer.textures.get(&Slot::Hover).filter(|t| t.photo == id)
     {
         let hover_rect = fit_texture_rect(img_rect, tex.size);
         p.image(tex.tex.id(), hover_rect, Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
         let g = p.layout_no_wrap(label.clone(), t.font(12.0), Color32::WHITE);
-        let bg = Rect::from_min_size(hover_rect.left_top() + vec2(8.0, 8.0), g.size() + vec2(16.0, 8.0));
+        let bg = label_badge_rect(hover_rect, g.size());
         p.rect_filled(bg, 4.0, Color32::from_black_alpha(160));
         p.galley(bg.min + vec2(8.0, 4.0), g, Color32::WHITE);
         shown = "hover";
@@ -1239,6 +1289,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         ui.separator();
         super::grid::context_menu(app, ui, id);
     });
+}
+
+/// The dark pill behind a label drawn over the photo (`Before`, a hovered preset's name): at the
+/// photo's top left, inset 8 points, with the `text` size plus padding.
+fn label_badge_rect(photo: Rect, text: egui::Vec2) -> Rect {
+    Rect::from_min_size(photo.left_top() + vec2(8.0, 8.0), text + vec2(16.0, 8.0))
 }
 
 /// The info overlay at the canvas' top left (`view.infoOverlay`): file name with the capture date
@@ -2819,7 +2875,7 @@ pub(crate) fn spot_context_menu(app: &mut LccApp, ui: &mut egui::Ui, spot_idx: u
         }
     }
     ui.separator();
-    if ui.button(crate::i18n::tr("Refresh (/)")).clicked() {
+    if ui.button(crate::i18n::tr("Refresh Source (/)")).clicked() {
         let _ = app.run("spot.refreshSource", json!({"index": spot_idx}));
         ui.close();
     }
@@ -2829,6 +2885,9 @@ pub(crate) fn spot_context_menu(app: &mut LccApp, ui: &mut egui::Ui, spot_idx: u
     }
     if ui.button(crate::i18n::tr("Reset")).clicked() {
         let d = lcc_develop::Spot::default();
+        app.ui.remove_size = d.size as f32;
+        app.ui.remove_feather = d.feather as f32;
+        app.ui.remove_opacity = d.opacity as f32;
         let _ = app.run(
             "spot.update",
             json!({
@@ -2870,16 +2929,19 @@ fn smooth_step(e0: f32, e1: f32, x: f32) -> f32 {
 /// Extracts the 0.5 alpha isoline (unified outer perimeter) from an 8-bit alpha buffer
 /// generated by rasterizing a brush stroke with the given radius and feather.
 fn extract_stroke_contour(pts: &[Pos2], r: f32, feather: f64) -> Vec<Vec<Pos2>> {
-    if pts.is_empty() || r <= 0.5 {
+    if pts.is_empty() || r <= 0.5 || !r.is_finite() {
         return Vec::new();
     }
-    let feather = (feather as f32 / 100.0).clamp(0.0, 1.0);
+    let feather = if feather.is_nan() { 0.5 } else { (feather as f32 / 100.0).clamp(0.0, 1.0) };
     let inner = r * (1.0 - feather * 0.8);
     let mid_r = (inner + r) * 0.5;
 
     // Single point: direct circle polygon
     if pts.len() == 1 {
         let Some(&c) = pts.first() else { return Vec::new() };
+        if !c.x.is_finite() || !c.y.is_finite() {
+            return Vec::new();
+        }
         let n = 48;
         let mut loop_pts = Vec::with_capacity(n);
         for i in 0..n {
@@ -2895,12 +2957,15 @@ fn extract_stroke_contour(pts: &[Pos2], r: f32, feather: f64) -> Vec<Vec<Pos2>> 
     let mut min_y = f32::MAX;
     let mut max_y = f32::MIN;
     for p in pts {
+        if !p.x.is_finite() || !p.y.is_finite() {
+            return Vec::new();
+        }
         min_x = min_x.min(p.x);
         max_x = max_x.max(p.x);
         min_y = min_y.min(p.y);
         max_y = max_y.max(p.y);
     }
-    let pad = r + 6.0;
+    let pad = (r + 6.0).min(5000.0);
     min_x -= pad;
     max_x += pad;
     min_y -= pad;
@@ -2908,6 +2973,9 @@ fn extract_stroke_contour(pts: &[Pos2], r: f32, feather: f64) -> Vec<Vec<Pos2>> 
 
     let w = (max_x - min_x).max(1.0);
     let h = (max_y - min_y).max(1.0);
+    if w > 10_000.0 || h > 10_000.0 || !w.is_finite() || !h.is_finite() {
+        return Vec::new();
+    }
     let step = (w.max(h) / 200.0).clamp(1.5, 4.0);
     let cols = (((max_x - min_x) / step).ceil() as usize + 1).min(350);
     let rows = (((max_y - min_y) / step).ceil() as usize + 1).min(350);
@@ -3127,11 +3195,35 @@ fn remove_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, ma
         let tq = map.screen(target_centroid);
 
         let screen_pts: Vec<Pos2> = s.points.iter().map(|q| map.screen(*q)).collect();
-        let loops = extract_stroke_contour(&screen_pts, r, s.feather);
+
+        // Cache contour per spot to avoid per-frame marching squares when geometry has not changed
+        use std::hash::{Hash, Hasher};
+        let mut hasher = std::collections::hash_map::DefaultHasher::new();
+        for pt in &screen_pts {
+            pt.x.to_bits().hash(&mut hasher);
+            pt.y.to_bits().hash(&mut hasher);
+        }
+        r.to_bits().hash(&mut hasher);
+        s.feather.to_bits().hash(&mut hasher);
+        let key_hash = hasher.finish();
+
+        let cache_id = egui::Id::new(("spot-contour-cache", i));
+        let loops: Vec<Vec<Pos2>> = ui.data_mut(|d| {
+            if let Some((cached_hash, cached_loops)) = d.get_temp::<(u64, Vec<Vec<Pos2>>)>(cache_id)
+                && cached_hash == key_hash
+            {
+                return cached_loops;
+            }
+            let fresh = extract_stroke_contour(&screen_pts, r, s.feather);
+            d.insert_temp(cache_id, (key_hash, fresh.clone()));
+            fresh
+        });
 
         draw_unified_outline(p, &loops, egui::Vec2::ZERO, sel);
 
-        if let Some(o) = s.source_offset.filter(|_| sel) {
+        if s.mode != lcc_develop::SpotMode::Fill
+            && let Some(o) = s.source_offset.filter(|_| sel)
+        {
             let sq = map.screen(Point::new(target_centroid.x + o.x, target_centroid.y + o.y));
             let offset = sq - tq;
             draw_unified_outline(p, &loops, offset, true);
@@ -3192,7 +3284,9 @@ fn remove_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response, ma
                 continue;
             }
             let r = (s.size * long) as f32;
-            if let Some(o) = s.source_offset.filter(|_| sel) {
+            if s.mode != lcc_develop::SpotMode::Fill
+                && let Some(o) = s.source_offset.filter(|_| sel)
+            {
                 let hit_src = s.points.iter().any(|pt| {
                     let sp = Point::new(pt.x + o.x, pt.y + o.y);
                     map.screen(sp).distance(q) < r
@@ -3568,7 +3662,7 @@ fn film_badges(p: &egui::Painter, t: &Tokens, fr: Rect, ph: &lcc_catalog::Photo)
     }
     x += ph.rating as f32 * 9.0 + 2.0;
     match ph.flag {
-        Flag::Pick => paint(p, Rect::from_min_size(pos2(x, y - 5.0), vec2(10.0, 10.0)), Icon::FlagPick, t.pick),
+        Flag::Pick => paint(p, Rect::from_min_size(pos2(x, y - 5.0), vec2(10.0, 10.0)), Icon::FlagPickFilled, t.pick),
         Flag::Reject => paint(p, Rect::from_min_size(pos2(x, y - 5.0), vec2(10.0, 10.0)), Icon::FlagReject, t.reject),
         Flag::None => {}
     }
@@ -3579,9 +3673,20 @@ fn film_badges(p: &egui::Painter, t: &Tokens, fr: Rect, ph: &lcc_catalog::Photo)
 
 #[cfg(test)]
 mod preview_geometry_tests {
-    use super::{fit_rect, fit_texture_rect};
+    use super::{fit_rect, fit_texture_rect, label_badge_rect};
     use crate::state::Zoom;
     use egui::{Rect, pos2, vec2};
+
+    /// The "Before" label sits on a dark pill that wraps the text with padding on every side.
+    #[test]
+    fn before_label_badge_wraps_the_text() {
+        let text = vec2(40.0, 14.0);
+        let photo = Rect::from_min_size(pos2(20.0, 30.0), vec2(400.0, 300.0));
+        let bg = label_badge_rect(photo, text);
+        assert_eq!(bg.min, pos2(28.0, 38.0));
+        assert_eq!(bg.size(), vec2(56.0, 22.0));
+        assert!(photo.contains_rect(bg));
+    }
 
     #[test]
     fn portrait_preview_keeps_its_ratio_inside_a_landscape_frame() {
@@ -3672,6 +3777,45 @@ fn straighten_overlay(app: &mut LccApp, ui: &mut egui::Ui, resp: &egui::Response
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn contour_extraction_single_point_stroke_and_degenerate_inputs() {
+        use egui::Pos2;
+        // 1. Single point generates a circle
+        let single = super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], 20.0, 50.0);
+        assert_eq!(single.len(), 1, "single point produces one closed loop");
+        assert_eq!(single[0].len(), 48, "single point circle has 48 vertices");
+        for p in &single[0] {
+            let dist = p.distance(Pos2::new(100.0, 100.0));
+            assert!((dist - 16.0).abs() < 1.0, "radius should match mid_r: dist = {dist}");
+        }
+
+        // 2. Stroke with multiple points produces contour loops
+        let stroke_pts =
+            vec![Pos2::new(100.0, 100.0), Pos2::new(120.0, 100.0), Pos2::new(140.0, 100.0), Pos2::new(160.0, 100.0), Pos2::new(180.0, 100.0)];
+        let stroke = super::extract_stroke_contour(&stroke_pts, 15.0, 50.0);
+        assert!(!stroke.is_empty(), "stroke produces at least one contour loop");
+        assert!(stroke[0].len() >= 4, "contour loop has multiple vertices");
+
+        // 3. Degenerate and hostile inputs do not panic
+        assert!(super::extract_stroke_contour(&[], 20.0, 50.0).is_empty(), "empty points");
+        assert!(super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], 0.0, 50.0).is_empty(), "zero radius");
+        assert!(super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], -5.0, 50.0).is_empty(), "negative radius");
+        assert!(super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], f32::NAN, 50.0).is_empty(), "NaN radius");
+        assert!(super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], f32::INFINITY, 50.0).is_empty(), "inf radius");
+        assert!(super::extract_stroke_contour(&[Pos2::new(f32::NAN, 100.0)], 20.0, 50.0).is_empty(), "NaN coordinate");
+        assert!(super::extract_stroke_contour(&[Pos2::new(100.0, f32::INFINITY)], 20.0, 50.0).is_empty(), "inf coordinate");
+
+        // Huge coordinates / huge radius
+        assert!(super::extract_stroke_contour(&[Pos2::new(1e25, 1e25), Pos2::new(1e25 + 10.0, 1e25)], 20.0, 50.0).is_empty());
+        assert!(super::extract_stroke_contour(&[Pos2::new(100.0, 100.0), Pos2::new(200.0, 100.0)], 1e20, 50.0).is_empty());
+
+        // Extreme feather values
+        let nan_feather = super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], 20.0, f64::NAN);
+        assert_eq!(nan_feather.len(), 1);
+        let huge_feather = super::extract_stroke_contour(&[Pos2::new(100.0, 100.0)], 20.0, 1e9);
+        assert_eq!(huge_feather.len(), 1);
+    }
+
     /// The rotation pointer's arc bulges away from the side of the crop box it is on, and follows
     /// a box that is itself rotated.
     #[test]
@@ -3891,6 +4035,7 @@ mod tests {
             },
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
+            display_fit: None,
             settings: Default::default(),
             request: lcc_pipeline::RenderRequest {
                 max_w: 100,
@@ -3987,6 +4132,27 @@ mod pen_tests {
         assert_eq!(pen_force(&i), Some(0.3), "the latest usable force");
         i.events = vec![touch(Some(4.0))];
         assert_eq!(pen_force(&i), Some(1.0));
+    }
+}
+
+#[cfg(test)]
+mod snap_tests {
+    use super::*;
+
+    /// A texture drawn at its own size lands on whole physical pixels at exactly that size (no
+    /// bilinear blur); a texture of another size (zoomed, a stand-in) keeps the rect it was given.
+    #[test]
+    fn a_fitted_texture_is_drawn_on_whole_pixels_at_its_own_size() {
+        let r = Rect::from_min_size(pos2(394.3, 130.5), vec2(1088.4, 720.2));
+        let s = snap_fit_rect(r, [1088, 720], 1.0);
+        assert_eq!((s.min.x, s.min.y, s.width(), s.height()), (394.0, 131.0, 1088.0, 720.0));
+        // at 1.5 points per pixel the snap is to physical pixels and the size stays in points
+        let hi = snap_fit_rect(Rect::from_min_size(pos2(100.3, 50.2), vec2(725.4, 480.1)), [1088, 720], 1.5);
+        assert!(((hi.min.x * 1.5).fract()).abs() < 1e-3 && (hi.width() - 1088.0 / 1.5).abs() < 1e-3, "{hi:?}");
+        let other = snap_fit_rect(r, [2560, 1694], 1.0);
+        assert_eq!(other, r);
+        let bad = snap_fit_rect(r, [1088, 720], f32::NAN);
+        assert_eq!((bad.width(), bad.height()), (1088.0, 720.0));
     }
 }
 

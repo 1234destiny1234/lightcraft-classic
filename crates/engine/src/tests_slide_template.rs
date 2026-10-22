@@ -250,6 +250,9 @@ fn bad_files_are_reported_and_skipped() {
     }
     std::fs::create_dir_all(folder.join("folder.json")).unwrap();
     std::fs::write(folder.join("notes.txt"), b"ignored").unwrap();
+    // written by hand, not through the app: the folder's time may not have moved since the
+    // save's listing (same clock tick), so the cached listing is dropped as a write would drop it
+    s.slide_templates_cache = None;
     let r = run(&mut s, "slideshow.templates.list", json!({}));
     let user: Vec<_> = r["templates"].as_array().unwrap().iter().filter(|t| t["builtin"] == false).collect();
     assert_eq!(user.len(), 1, "only the good one: {r}");
@@ -271,7 +274,7 @@ fn bad_files_are_reported_and_skipped() {
     // listing above (same clock tick), so the cached listing is dropped as a write would drop it
     s.slide_templates_cache = None;
     let t = s.slide_template("user:wild").unwrap();
-    assert_eq!(t.look.layout.margin_left, lcc_slide::MARGIN_MAX);
+    assert_eq!(t.look.layout.margin_left, lcc_slideshow::MARGIN_MAX);
     assert_eq!(t.look.playback.slide_duration, crate::slideshow::SLIDE_MAX);
     let _ = std::fs::remove_dir_all(dir);
 }

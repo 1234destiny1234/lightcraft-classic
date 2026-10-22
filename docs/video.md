@@ -290,13 +290,13 @@ dependency of `lcc-audio-out` there, so `CAN_PLAY` and `canPlayAudio` are true a
 With no output device, `Output::start` errors and playback stays silent on the system clock.
 
 **Other targets: the opt-in `audio-out` feature.** `cargo build -p lcc-app --features audio-out` (it forwards
-`lcc-engine/audio-out` → `lcc-audio-out/audio-out`; `lcc-slideshow/audio-out` is the same switch) adds cpal elsewhere.
+`lcc-engine/audio-out` → `lcc-audio-out/audio-out`; `lcc-classic-slideshow/audio-out` is the same switch) adds cpal elsewhere.
 On Linux cpal links the system C library **libasound** (ALSA, through `alsa-sys` and pkg-config), a C dependency the
 pure-Rust rule forbids by default, so Linux and BSD builds never link cpal or libasound unless asked; with the feature
 cpal is only a fallback when no PulseAudio server answers (`cargo tree -p lcc-app -i cpal --target
 x86_64-unknown-linux-gnu` prints nothing in a default build).
 
-Checked 2026-10-12: with default features no package (`lcc-app`, `lcc-cli`, `lcc-web`, `lcc-engine`, `lcc-slideshow`)
+Checked 2026-10-12: with default features no package (`lcc-app`, `lcc-cli`, `lcc-web`, `lcc-engine`, `lcc-classic-slideshow`)
 has `cpal` in its tree (`cargo tree -p <pkg> -i cpal` finds none); `cargo deny check licenses` passes with default
 features and with `--features lcc-app/audio-out`.
 

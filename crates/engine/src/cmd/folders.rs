@@ -140,7 +140,7 @@ fn relocate(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(c, format!("{to} is not a folder")));
     }
     let (src, dst) = (PathBuf::from(&from), PathBuf::from(to));
-    let ops: Vec<Op> = photos_in(s, &src)
+    let mut ops: Vec<Op> = photos_in(s, &src)
         .into_iter()
         .filter_map(|(id, path)| {
             let rel = path.strip_prefix(&src).ok()?;
@@ -154,6 +154,9 @@ fn relocate(s: &mut Session, p: &Value) -> Result<Value> {
         return Err(bad(c, format!("no library photo is in {from}")));
     }
     let found = ops.iter().filter(|o| matches!(o, Op::Relink { source: Source::File { path }, .. } if Path::new(path).is_file())).count();
+    // what the library knows about the folder (and those inside it) goes along, in the same step;
+    // what it knows about a folder already at the new place stays
+    ops.extend(s.catalog.folder_records_relocate(&from, to));
     s.commit("Update Folder Location", Op::Batch { ops })?;
     super::browse::follow_folder(s, &from, to);
     Ok(json!({"relinked": n, "found": found, "path": to}))

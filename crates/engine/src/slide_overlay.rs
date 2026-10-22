@@ -7,7 +7,7 @@
 //!
 //! **Where the drawing lives:** text needs the fonts (Inter plus the craft-fonts CJK fallbacks,
 //! [`crate::text`]) and tokens need the catalog's photo, both in the engine, so overlays are a
-//! second pass in the engine over `lcc_slide::compose_with`'s slide (its `behind` hook
+//! second pass in the engine over `lcc_slideshow::compose_with`'s slide (its `behind` hook
 //! draws an identity plate set to "render behind image" before the photo). The composer stays a
 //! layout-and-pixels crate with no fonts and no catalog.
 //!
@@ -25,7 +25,7 @@ use std::sync::Arc;
 
 use lcc_catalog::Photo;
 use lcc_raster::{Image, Plane, Rgba8};
-use lcc_slide::{Layout, Rect, hex, parse_color};
+use lcc_slideshow::{Layout, Rect, hex, parse_color};
 use serde::{Deserialize, Serialize};
 use serde_json::{Map, Value, json};
 
@@ -1030,7 +1030,7 @@ mod tests {
     use super::*;
 
     fn layout(w: usize, h: usize) -> Layout {
-        lcc_slide::layout(&lcc_slide::SlideSettings::default().merged(&json!({"margins": 0.1})).unwrap(), 1.5, w, h)
+        lcc_slideshow::layout(&lcc_slideshow::SlideSettings::default().merged(&json!({"margins": 0.1})).unwrap(), 1.5, w, h)
     }
 
     fn photo() -> Photo {
@@ -1194,7 +1194,8 @@ mod tests {
         let behind = s.merged(&json!({"identityPlate": {"behind": true, "anchor": "center"}})).unwrap();
         let photo_img = Image::filled(30, 20, [0u8, 0, 255, 255]);
         let ob = SlideOverlays::resolve(&behind, None);
-        let (img, l2) = lcc_slide::compose_with(&photo_img, None, &lcc_slide::SlideSettings::default(), 800, 500, &mut |i, l| ob.draw_behind(i, l));
+        let (img, l2) =
+            lcc_slideshow::compose_with(&photo_img, None, &lcc_slideshow::SlideSettings::default(), 800, 500, &mut |i, l| ob.draw_behind(i, l));
         let _ = l2;
         assert_eq!(img.get(400, 250), [0, 0, 255, 255], "the photo is on top");
         // a missing file: reported, nothing drawn, no panic
@@ -1281,7 +1282,7 @@ mod tests {
             let mut bare = photo();
             bare.meta = Default::default();
             for (w, h) in [(1, 1), (17, 9), (320, 200)] {
-                let l = lcc_slide::layout(&lcc_slide::SlideSettings::default(), f64::NAN, w, h);
+                let l = lcc_slideshow::layout(&lcc_slideshow::SlideSettings::default(), f64::NAN, w, h);
                 let o = SlideOverlays::resolve(&s, Some(&bare));
                 let mut img = blank(l.slide.width() as usize, l.slide.height() as usize);
                 o.draw_behind(&mut img, &l);
@@ -1305,7 +1306,7 @@ mod tests {
             .unwrap();
         let mut p = photo();
         p.rating = 5;
-        let l = lcc_slide::layout(&lcc_slide::SlideSettings::default(), 1.5, 4000, 2500);
+        let l = lcc_slideshow::layout(&lcc_slideshow::SlideSettings::default(), 1.5, 4000, 2500);
         let mut img = blank(4000, 2500);
         let t = std::time::Instant::now();
         SlideOverlays::resolve(&s, Some(&p)).draw_front(&mut img, &l);

@@ -4,10 +4,10 @@
 
 use std::path::Path;
 
-use lcc_slideshow::compose::geometry;
-use lcc_slideshow::music;
-use lcc_slideshow::settings::{SavedSlideshow, Settings, Template, builtin_templates};
-use lcc_slideshow::timeline::{Plan, pan_zoom};
+use lcc_classic_slideshow::compose::geometry;
+use lcc_classic_slideshow::music;
+use lcc_classic_slideshow::settings::{SavedSlideshow, Settings, Template, builtin_templates};
+use lcc_classic_slideshow::timeline::{Plan, pan_zoom};
 
 #[test]
 fn hostile_settings_never_panic() {

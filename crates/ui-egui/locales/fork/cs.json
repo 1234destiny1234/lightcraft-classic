@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automaticky načítat přidružené soubory XMP změněné jinými aplikacemi (u fotek zde nezměněných)",
   "Sliders": "Posuvníky",
   "One Row": "Jeden řádek",
-  "Two Rows": "Dva řádky"
+  "Two Rows": "Dva řádky",
+  "Heal with automatically chosen source": "Retušovat s automaticky zvoleným zdrojem",
+  "Multi-scale synthesized fill": "Víceúrovňová syntetizovaná výplň",
+  "Blend source texture with target tone": "Prolnout zdrojovou texturu s tónem cíle",
+  "Exact 1:1 pixel copy": "Přesná kopie pixelů 1:1"
 }

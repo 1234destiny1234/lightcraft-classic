@@ -42,7 +42,7 @@ pub const MAX_SECONDS: f64 = 2.0 * 3600.0;
 pub const MAX_SLIDES: usize = 10_000;
 /// Long side of PDF pages and JPEGs, in pixels.
 pub const SIZE_MIN: usize = 64;
-pub const SIZE_MAX: usize = lcc_slide::MAX_SIDE;
+pub const SIZE_MAX: usize = lcc_slideshow::MAX_SIDE;
 /// Video frame height, in pixels.
 pub const VIDEO_MIN: usize = 64;
 pub const VIDEO_MAX: usize = 2160;
@@ -319,7 +319,7 @@ pub fn prepare(s: &mut Session, p: &Value) -> Result<Prepared, String> {
             continue;
         };
         let aspect = s.slide_photo_aspect(id).unwrap_or(1.5);
-        let (pw, ph) = lcc_slide::photo_size(&layout, aspect, width, height);
+        let (pw, ph) = lcc_slideshow::photo_size(&layout, aspect, width, height);
         let job = match s.export_job(id, pw.max(8), ph.max(8), OutputSpace::Srgb, OutputDepth::U8) {
             Ok(job) => job,
             Err(e) => {

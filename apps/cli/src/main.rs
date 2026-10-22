@@ -851,16 +851,24 @@ fn render(args: &[String]) -> Result<(), String> {
     for (k, v) in opts {
         p[k] = v;
     }
-    let mut o = ExportOptions::from_params(&p).map_err(|e| e.to_string())?;
-    if p.get("format").is_none() {
+    let video = if p.get("format").is_none() {
         let ext = Path::new(&output).extension().map(|e| e.to_string_lossy().to_string()).unwrap_or_default();
+        let mut video = None;
         match (ExportFormat::parse(&ext), lcc_engine::export_video::VideoFormat::parse(&ext)) {
-            (Some(f), _) => o.format = f,
+            // given before validating, so `bitDepth` is checked against the format written (issue #1952)
+            (Some(_), _) => p["format"] = json!(ext),
             // a movie (.mp4 / .mov): a video clip exports as one; the format stays a rendered one
-            (None, Some(v)) if p.get("videoFormat").is_none() => o.video_format = v,
+            (None, Some(v)) if p.get("videoFormat").is_none() => video = Some(v),
             (None, Some(_)) => {}
             (None, None) => return Err(format!("{output}: unknown extension (use .jpg .png .tif .webp .avif .dng .mp4 .mov or --opt format=…)")),
         }
+        video
+    } else {
+        None
+    };
+    let mut o = ExportOptions::from_params(&p).map_err(|e| e.to_string())?;
+    if let Some(v) = video {
+        o.video_format = v;
     }
     // Add to Apple Photos: refused before anything is written when it can't be done
     let after = s.after_export(&o)?;

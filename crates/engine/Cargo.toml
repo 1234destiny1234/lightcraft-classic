@@ -40,7 +40,7 @@ lcc-merge = { workspace = true }
 lcc-geocode = { workspace = true }
 lcc-psd = { workspace = true }
 lcc-actions = { workspace = true }
-lcc-slide = { workspace = true }
+lcc-slideshow = { workspace = true }
 tiff = { workspace = true }
 rayon = { workspace = true }
 serde = { workspace = true }

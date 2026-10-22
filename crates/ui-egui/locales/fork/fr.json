@@ -1397,5 +1397,10 @@
   "Host key:": "Clé d’hôte :",
   "Host key: not confirmed yet (uploads are refused until it is)": "Clé d’hôte : pas encore confirmée (les envois sont refusés tant qu’elle ne l’est pas)",
   "Trust This Host Key": "Faire confiance à cette clé d’hôte",
-  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Ne faites confiance à ce serveur que si cette empreinte SHA-256 correspond à celle fournie par son administrateur :"
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Ne faites confiance à ce serveur que si cette empreinte SHA-256 correspond à celle fournie par son administrateur :",
+  "Heal with automatically chosen source": "Corriger avec une source choisie automatiquement",
+  "Multi-scale synthesized fill": "Remplissage synthétisé multi-échelle",
+  "Blend source texture with target tone": "Fusionner la texture source avec le ton cible",
+  "Exact 1:1 pixel copy": "Copie exacte de pixels 1:1",
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "La liste des noms de lieux comprend les villes de 15 000 habitants ou plus : pour une plus petite, Ville reçoit la ville plus grande la plus proche."
 }

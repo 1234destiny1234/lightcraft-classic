@@ -568,6 +568,55 @@ fn labels_follow_a_moved_folder() {
 }
 
 #[test]
+fn labels_follow_a_relocated_folder_and_undo_puts_them_back() {
+    let dir = Scratch::new("label-relocate");
+    std::fs::create_dir_all(dir.0.join("shoot/day1")).unwrap();
+    let (shoot, day1) = (dir.path("shoot"), dir.path("shoot/day1"));
+    let mut s = Session::new();
+    for f in [format!("{shoot}/a.jpg"), format!("{day1}/b.jpg")] {
+        std::fs::write(&f, b"x").unwrap();
+        add(&mut s, &f);
+    }
+    s.execute("folder.label", &json!({"path": shoot, "label": "red"})).unwrap();
+    s.execute("folder.label", &json!({"path": day1, "label": "blue"})).unwrap();
+    // the folder moved outside the app
+    std::fs::rename(dir.path("shoot"), dir.path("moved")).unwrap();
+    let r = s.execute("folder.relocate", &json!({"path": shoot, "to": dir.path("moved")})).unwrap();
+    assert_eq!((r["relinked"].as_u64(), r["found"].as_u64()), (Some(2), Some(2)), "it counts photos, not labels: {r}");
+    assert_eq!(listed_label(&mut s, &dir.path("moved")).as_deref(), Some("red"));
+    assert_eq!(listed_label(&mut s, &dir.path("moved/day1")).as_deref(), Some("blue"), "the folder inside goes along");
+    assert_eq!(s.catalog.folder_record(&shoot), None, "nothing stays behind");
+    assert_eq!(s.catalog.folder_record(&day1), None, "nor on the folder inside");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(listed_label(&mut s, &shoot).as_deref(), Some("red"), "undo puts the label back on the old path");
+    assert_eq!(listed_label(&mut s, &day1).as_deref(), Some("blue"));
+    assert_eq!(s.catalog.folder_record(&dir.path("moved")), None);
+    s.execute("edit.redo", &json!({})).unwrap();
+    assert_eq!(listed_label(&mut s, &dir.path("moved")).as_deref(), Some("red"), "redo carries them again");
+    assert_eq!(listed_label(&mut s, &dir.path("moved/day1")).as_deref(), Some("blue"));
+}
+
+#[test]
+fn relocating_into_a_known_folder_keeps_the_labels_already_there() {
+    let dir = Scratch::new("label-relocate-known");
+    std::fs::create_dir_all(dir.0.join("p/b")).unwrap();
+    std::fs::create_dir_all(dir.0.join("p/c")).unwrap();
+    let (b, c) = (dir.path("p/b"), dir.path("p/c"));
+    let mut s = Session::new();
+    add(&mut s, &format!("{b}/a.jpg"));
+    add(&mut s, &format!("{c}/c.jpg"));
+    s.execute("folder.label", &json!({"path": b, "label": "red"})).unwrap();
+    s.execute("folder.label", &json!({"path": c, "label": "green"})).unwrap();
+    // b's photos were moved up into p outside the app
+    s.execute("folder.relocate", &json!({"path": b, "to": dir.path("p")})).unwrap();
+    assert_eq!(listed_label(&mut s, &dir.path("p")).as_deref(), Some("red"));
+    assert_eq!(listed_label(&mut s, &c).as_deref(), Some("green"), "the folder beside it keeps its label");
+    s.execute("edit.undo", &json!({})).unwrap();
+    assert_eq!(listed_label(&mut s, &b).as_deref(), Some("red"));
+    assert_eq!(listed_label(&mut s, &c).as_deref(), Some("green"));
+}
+
+#[test]
 fn a_label_comes_off_a_folder_whose_photos_are_gone() {
     let mut s = session();
     s.execute("folder.label", &json!({"path": "/pics/trip", "label": "red"})).unwrap();

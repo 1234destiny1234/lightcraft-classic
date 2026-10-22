@@ -11,7 +11,7 @@
 use egui::{Align2, Color32, Rect, Sense, Stroke, pos2, vec2};
 use lcc_engine::slide::{Aspect, SlideSettings};
 use lcc_engine::slide_template::SlideLook;
-use lcc_slide::{MARGIN_MAX, SHADOW_OFFSET_MAX, SHADOW_RADIUS_MAX, STROKE_MAX};
+use lcc_slideshow::{MARGIN_MAX, SHADOW_OFFSET_MAX, SHADOW_RADIUS_MAX, STROKE_MAX};
 use serde_json::{Value, json};
 
 use super::settings::{check, choices, heading, hint, row};
@@ -233,7 +233,7 @@ pub fn preview(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
     if s.show_guides {
         // the margins, as lines across the slide (where the image cell's edges are)
         let aspect = app.session.slide_photo_aspect(id).unwrap_or(1.5);
-        let l = lcc_slide::layout(&s, aspect, tex.size[0], tex.size[1]);
+        let l = lcc_slideshow::layout(&s, aspect, tex.size[0], tex.size[1]);
         let (kx, ky) = (drawn.width() / tex.size[0].max(1) as f32, drawn.height() / tex.size[1].max(1) as f32);
         let stroke = Stroke::new(1.0, Color32::from_rgba_unmultiplied(120, 170, 255, 200));
         let x = |v: f64| drawn.left() + v as f32 * kx;

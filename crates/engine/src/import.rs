@@ -515,7 +515,7 @@ pub(crate) fn probe_with(probe: &crate::media::FileProbe, paths: &[String]) -> V
 
 /// Probe `paths` (several at once), counting each in `done`. Stops before the next file once
 /// `cancel` is set: the files not reached come back as errors.
-fn probe_all(
+pub(crate) fn probe_all(
     probe: Option<&crate::media::FileProbe>,
     paths: &[String],
     done: &std::sync::atomic::AtomicUsize,
@@ -1656,6 +1656,7 @@ impl Session {
             display: None,
             slide: None,
             preview_cut: None,
+            display_fit: None,
         };
         let embedded = match (&self.media.preview_loader, c.kind) {
             (Some(l), MediaKind::Raw) => Some((c.path.clone(), l.clone(), edge)),

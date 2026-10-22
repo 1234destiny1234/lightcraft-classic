@@ -1399,5 +1399,10 @@
   "Host key:": "主机密钥：",
   "Host key: not confirmed yet (uploads are refused until it is)": "主机密钥：尚未确认（确认前将拒绝上传）",
   "Trust This Host Key": "信任此主机密钥",
-  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "仅当此 SHA-256 指纹与服务器管理员提供的指纹一致时，才信任此服务器："
+  "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "仅当此 SHA-256 指纹与服务器管理员提供的指纹一致时，才信任此服务器：",
+  "Heal with automatically chosen source": "使用自动选择的源进行修复",
+  "Multi-scale synthesized fill": "多尺度合成填充",
+  "Blend source texture with target tone": "将源纹理与目标色调融合",
+  "Exact 1:1 pixel copy": "精确 1:1 像素复制",
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "地名列表包含人口 15,000 及以上的城镇：位于较小城镇时，“城市”将填入最近的较大城镇。"
 }
