@@ -274,6 +274,8 @@ pub const UI_COMMANDS: &[UiCommand] = &[
     ("file.importImmich", "Import from Immich…", None, "File>More Imports"),
     ("immich.connections", "Immich Settings…", None, "Library>Immich"),
     ("file.addFromDevice", "Import from Device", None, ""),
+    // Android: the photos in DCIM/Camera, through the media store (Settings ▸ Folders)
+    ("file.addCameraRoll", "Import Camera Roll…", None, ""),
     ("file.findMissing", "Find Missing Photos…", None, "Library"),
     ("file.backupLibrary", "Back Up Library…", None, "File>Libraries"),
     ("file.restoreLibrary", "Restore Library from Backup…", None, "File>Libraries"),
@@ -2116,6 +2118,7 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             }
             import_into_album(app, p, r)
         }
+        "file.addCameraRoll" => crate::camera_roll::start(app),
         "file.addFolder" => {
             // a folder (searched recursively) into the import review
             let path = match p.get("path").and_then(Value::as_str) {
@@ -2673,11 +2676,12 @@ pub fn ui_enabled(app: &LccApp, id: &str) -> bool {
         "view.compare" => app.session.catalog.len() > 1,
         "view.fullScreenPreview" | "view.infoOverlay" | "view.navigator" => app.session.active().is_some() || app.ui.fullscreen,
         "app.openLibrary" | "app.newLibrary" => app.services.pick_folder.is_some() && crate::panels::settings::can_switch_library(app).is_ok(),
-        "file.addFolder" => app.services.pick_folder.is_some() && !crate::lightroom_import::is_running(app),
+        "file.addFolder" => (app.services.pick_folder.is_some() || app.services.picker.is_some()) && !crate::lightroom_import::is_running(app),
         "file.backupLibrary" => app.services.backup_library.is_some(),
         "app.openLogFolder" => app.services.reveal.is_some() && app.services.log_file.is_some(),
         "app.openReleasePage" => app.services.open_url.is_some(),
         "app.allFilesAccess" => app.services.storage_access.is_some(),
+        "file.addCameraRoll" => app.services.camera_roll.is_some(),
         "file.restoreLibrary" => app.services.restore_library.is_some(),
         "app.clearRecentLibraries" => !app.ui.settings.recent_libraries.is_empty(),
         "compare.swap" | "compare.makeSelect" | "compare.set" => app.ui.view == ViewMode::Compare,

@@ -123,6 +123,46 @@ impl Answers {
     }
 }
 
+/// The camera roll's answer: the photos' paths, or why there are none.
+pub type CameraRoll = Result<Vec<String>, String>;
+
+/// Camera-roll listings waiting for the activity (`nativeCameraRoll`), by request id.
+#[derive(Default)]
+pub struct RollAnswers {
+    waiting: std::collections::HashMap<i64, std::sync::mpsc::Sender<CameraRoll>>,
+}
+
+impl RollAnswers {
+    /// A new listing with `id`: its answer comes through the returned channel.
+    pub fn wait(&mut self, id: i64) -> std::sync::mpsc::Receiver<CameraRoll> {
+        let (tx, rx) = std::sync::mpsc::channel();
+        self.waiting.insert(id, tx);
+        rx
+    }
+
+    /// Forgets a listing that never started.
+    pub fn forget(&mut self, id: i64) {
+        self.waiting.remove(&id);
+    }
+
+    /// The activity's answer for `id`: `paths` (null = failed) and, on failure, `error` (the
+    /// activity's reason, e.g. the permission was refused).
+    pub fn answer(&mut self, id: i64, paths: Option<Vec<String>>, error: Option<String>) {
+        let Some(tx) = self.waiting.remove(&id) else {
+            log::warn!("camera roll {id}: an answer nothing waits for; dropped");
+            return;
+        };
+        let answer = match (paths, error) {
+            (_, Some(e)) if !e.is_empty() => Err(e),
+            (Some(p), _) => Ok(p),
+            (None, _) => Err("the camera roll could not be read (see the log)".into()),
+        };
+        if tx.send(answer).is_err() {
+            log::warn!("camera roll {id}: answered, but nothing is waiting any more");
+        }
+    }
+}
+
 /// A picker to show.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct PickRequest {
@@ -270,11 +310,13 @@ mod imp {
     use jni::sys::jlong;
     use jni::{JNIEnv, JavaVM, NativeMethod};
 
-    use super::{Answers, CopyProgress, Error, PickRequest, Unclaimed};
+    use super::{Answers, CopyProgress, Error, PickRequest, RollAnswers, Unclaimed};
 
     /// Pickers that are up, by the id the activity answers with, and answers nothing waits for.
     static PENDING: Mutex<Option<Answers>> = Mutex::new(None);
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
+    /// Camera-roll listings that are running.
+    static ROLLS: Mutex<Option<RollAnswers>> = Mutex::new(None);
     /// Asks the UI for a frame (set by the app: an answer must not wait for the next touch).
     static WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
     /// Where copies report (set by the app once its session exists).
@@ -312,6 +354,11 @@ mod imp {
                         fn_ptr: native_copy_progress as *mut std::ffi::c_void,
                     },
                     NativeMethod { name: "nativeCopyEnded".into(), sig: "(J)V".into(), fn_ptr: native_copy_ended as *mut std::ffi::c_void },
+                    NativeMethod {
+                        name: "nativeCameraRoll".into(),
+                        sig: "(J[Ljava/lang/String;Ljava/lang/String;)V".into(),
+                        fn_ptr: native_camera_roll as *mut std::ffi::c_void,
+                    },
                     crate::opened::native_method(),
                 ];
                 env.register_native_methods(&class, &methods).map_err(|e| jni_error("register the native callbacks", e))?;
@@ -364,6 +411,23 @@ mod imp {
             });
             if let Err(e) = result {
                 pending(|p| p.forget(id));
+                return Err(e);
+            }
+            Ok(rx)
+        }
+
+        /// Lists the photos in the camera roll (DCIM/Camera, through MediaStore), asking for the
+        /// photo permission first when the app lacks it. Photos the app can read where they are
+        /// come back as their paths; others are copied (in the activity stack) first.
+        pub fn camera_roll(&self) -> Result<Receiver<super::CameraRoll>, Error> {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let rx = rolls(|r| r.wait(id));
+            let result = self.call("startCameraRoll", |env, activity| {
+                env.call_method(activity, "startCameraRoll", "(J)V", &[JValue::Long(id)])?;
+                Ok(())
+            });
+            if let Err(e) = result {
+                rolls(|r| r.forget(id));
                 return Err(e);
             }
             Ok(rx)
@@ -437,6 +501,29 @@ mod imp {
     fn pending<R>(f: impl FnOnce(&mut Answers) -> R) -> R {
         let mut guard = PENDING.lock().unwrap_or_else(PoisonError::into_inner);
         f(guard.get_or_insert_with(Answers::default))
+    }
+
+    fn rolls<R>(f: impl FnOnce(&mut RollAnswers) -> R) -> R {
+        let mut guard = ROLLS.lock().unwrap_or_else(PoisonError::into_inner);
+        f(guard.get_or_insert_with(RollAnswers::default))
+    }
+
+    /// `void nativeCameraRoll(long id, String[] paths, String error)`: the answer to
+    /// [`Host::camera_roll`].
+    extern "system" fn native_camera_roll<'l>(mut env: JNIEnv<'l>, _this: JObject<'l>, id: jlong, paths: JObjectArray<'l>, error: JString<'l>) {
+        // a panic must never unwind into the JVM
+        let answered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let list = read_strings(&mut env, &paths).unwrap_or_else(|e| {
+                log::error!("camera roll answer unreadable: {e}");
+                None
+            });
+            let error: Option<String> = if error.is_null() { None } else { env.get_string(&error).map(Into::into).ok() };
+            rolls(|r| r.answer(id, list, error));
+            wake();
+        }));
+        if answered.is_err() {
+            log::error!("camera roll answer: a panic was caught");
+        }
     }
 
     fn string_array<'l>(env: &mut JNIEnv<'l>, items: &[String]) -> jni::errors::Result<JObjectArray<'l>> {
@@ -738,6 +825,25 @@ mod tests {
         assert_eq!(u[1].kind, PickKind::Folder);
         assert!(u[1].paths.is_err());
         assert!(a.take_unclaimed().is_empty());
+    }
+
+    #[test]
+    fn camera_roll_answers_carry_the_photos_or_the_reason() {
+        let mut r = RollAnswers::default();
+        let ok = r.wait(1);
+        let denied = r.wait(2);
+        let broken = r.wait(3);
+        r.answer(1, Some(vec!["/storage/emulated/0/DCIM/Camera/IMG_1.jpg".into()]), None);
+        r.answer(2, None, Some("access to photos was refused".into()));
+        r.answer(3, None, None);
+        // an answer for a listing that is gone is dropped, not a panic
+        r.answer(99, Some(vec![]), None);
+        assert_eq!(ok.try_recv().unwrap(), Ok(vec!["/storage/emulated/0/DCIM/Camera/IMG_1.jpg".to_string()]));
+        assert_eq!(denied.try_recv().unwrap(), Err("access to photos was refused".to_string()));
+        assert!(broken.try_recv().unwrap().is_err());
+        let forgotten = r.wait(4);
+        r.forget(4);
+        assert!(matches!(forgotten.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)));
     }
 
     #[test]

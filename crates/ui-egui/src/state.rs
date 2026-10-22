@@ -779,6 +779,9 @@ pub struct UiState {
     pub docking: Option<crate::docking::Workspace>,
     #[serde(default = "crate::i18n::default_language")]
     pub language: crate::i18n::Locale,
+    /// Android: the first-start question whether to add the camera roll was answered (either
+    /// way); Settings ▸ Folders offers it again.
+    pub camera_roll_asked: bool,
     /// The Build Previews run last announced (its identity, finished?).
     #[serde(skip)]
     pub preview_build_seen: Option<(usize, bool)>,
@@ -1591,6 +1594,7 @@ impl Default for UiState {
             window: None,
             docking: None,
             language: crate::i18n::default_language(),
+            camera_roll_asked: false,
             preview_build_seen: None,
             unsaved_seen: false,
             luminance_map_restore: None,
