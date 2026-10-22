@@ -180,13 +180,15 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
                 }
             });
         }
+        // Waiting, in line and being made are passing states of background work: they add no line here (it would
+        // push every control under it down and back up while the user drags a slider); the activity stack shows the
+        // progress, with the photo's file name.
         PhotoState::Idle => {
             if amount > 0.0 && app.session.denoise_auto() {
                 // the pump has not met this photo yet: let it come round soon instead of waiting out its pause
                 let now = ui.ctx().input(|i| i.time);
                 app.caches.denoise.next_pump = app.caches.denoise.next_pump.min(now + 0.05);
                 ui.ctx().request_repaint_after(std::time::Duration::from_millis(60));
-                egui::Frame::NONE.inner_margin(pad).show(ui, |ui| note(ui, "Waiting to start…", t.text_dim));
             } else if amount > 0.0 {
                 egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
                     note(ui, "Its denoised picture is not made yet, and pictures are not made on their own (Settings, AI Denoise).", t.text_dim);
@@ -199,28 +201,7 @@ pub fn detail_status(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, amount: f
                 });
             }
         }
-        PhotoState::Queued { ahead } => {
-            egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                let text = if ahead == 0 {
-                    tr("Next up for AI Denoise…").to_string()
-                } else {
-                    tr_format!("In line for AI Denoise ({ahead} ahead)…", ahead = ahead)
-                };
-                note(ui, &text, t.text_dim);
-            });
-        }
-        PhotoState::Running { done, total } => {
-            egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
-                let frac = if total > 0 { (done as f32 / total as f32).clamp(0.0, 1.0) } else { 0.0 };
-                let text = if total > 0 {
-                    tr_format!("Making the denoised picture… {}%", (frac * 100.0).round() as u32)
-                } else {
-                    tr("Starting…").to_string()
-                };
-                let bar = ui.add(egui::ProgressBar::new(frac).desired_width(ui.available_width().min(240.0)).text(RichText::new(text).size(11.0)));
-                register(ui.ctx(), "denoise:progress", bar.rect);
-            });
-        }
+        PhotoState::Queued { .. } | PhotoState::Running { .. } => {}
         PhotoState::Failed { why, unsupported } => {
             egui::Frame::NONE.inner_margin(pad).show(ui, |ui| {
                 let color = if unsupported { t.text_dim } else { t.caution };
