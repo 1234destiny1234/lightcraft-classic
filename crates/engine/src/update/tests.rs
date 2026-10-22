@@ -141,7 +141,7 @@ fn an_in_memory_session_writes_nothing() {
     let mut u = Updater::new(None);
     assert!(!u.persistent());
     assert!(u.set_prefs(Some(true), None).expect("saved"));
-    u.mark_seen("9.9.9", false);
+    u.mark_seen("99.9.9", false);
     // staged in a temporary folder, which is where a download would land
     assert!(u.stage_dir().to_string_lossy().contains("updates"));
 }
@@ -500,13 +500,13 @@ fn serve_feed(release: Published) -> (String, Arc<std::sync::atomic::AtomicUsize
         asset["sha256"] = json!(sha);
     }
     let manifest = serde_json::json!({
-        "version": "9.9.9",
-        "name": "App 9.9.9",
+        "version": "99.9.9",
+        "name": "App 99.9.9",
         "notes": "### Fixed\n- the whole path",
         "pub_date": "2026-10-12T00:00:00Z",
         "releases": [{
-            "tag": "v9.9.9",
-            "name": "App 9.9.9",
+            "tag": "v99.9.9",
+            "name": "App 99.9.9",
             "notes": "### Fixed\n- the whole path",
             "date": "2026-10-12",
             "prerelease": false,
@@ -538,7 +538,7 @@ fn serve_feed(release: Published) -> (String, Arc<std::sync::atomic::AtomicUsize
 /// The file name this platform's update has in the test release.
 fn this_platforms_file() -> String {
     let target = lcc_updater::Target::current().expect("a platform to update");
-    format!("app-9.9.9-{}-{}.msi", target.os.slug(), target.arch)
+    format!("app-99.9.9-{}-{}.msi", target.os.slug(), target.arch)
 }
 
 /// An updater pointed at the local release server, trusting `key` in place of the brand's.
@@ -570,7 +570,7 @@ fn the_whole_path_from_a_feed_to_a_staged_file() {
     // 1. the check reads the feed and picks the file for this platform
     u.check_now();
     let available = u.available().cloned().expect("an update");
-    assert_eq!(available.version, "9.9.9");
+    assert_eq!(available.version, "99.9.9");
     assert_eq!(available.file, file);
     assert_eq!(available.size, installer.len() as u64);
     assert!(available.notes.contains("the whole path"));
@@ -583,7 +583,7 @@ fn the_whole_path_from_a_feed_to_a_staged_file() {
     let staged = u.staged().cloned().expect("a staged file");
     assert_eq!(std::fs::read(&staged.path).expect("read"), installer);
     assert_eq!(staged.sha256, installer_sha);
-    assert_eq!(staged.version, "9.9.9");
+    assert_eq!(staged.version, "99.9.9");
     assert!(activity.list().is_empty(), "the row goes with the transfer");
     // 3. what installing would do here
     let plan = plan(&staged);
@@ -683,15 +683,15 @@ fn without_an_update_key_the_check_works_and_nothing_is_installed() {
     s.updater = updater_for(&dir, &base, None);
     let v = s.execute("update.check", &json!({"wait": true})).expect("check");
     assert_eq!(v["check"], "found", "{v}");
-    assert_eq!(v["available"]["version"], "9.9.9");
-    assert_eq!(v["available"]["page"], format!("{}/releases/tag/v9.9.9", lcc_brand::REPOSITORY.trim_end_matches('/')));
+    assert_eq!(v["available"]["version"], "99.9.9");
+    assert_eq!(v["available"]["page"], format!("{}/releases/tag/v99.9.9", lcc_brand::REPOSITORY.trim_end_matches('/')));
     assert_eq!(v["available"]["verified"], false, "the dialog can tell");
     let err = s.execute("update.download", &json!({"wait": true})).expect_err("no key");
     assert!(err.to_string().contains("this build can't verify updates"), "{err}");
     assert_eq!(s.updater.status()["error"], lcc_updater::NO_KEY, "the dialog shows why");
     // a file in the cache folder (put there by anything) is not installed either
     s.updater.set_progress(Progress::Ready(Box::new(Staged {
-        version: "9.9.9".into(),
+        version: "99.9.9".into(),
         path: dir.join(&file),
         bytes: 1,
         sha256: "ab".repeat(32),
@@ -763,7 +763,7 @@ fn a_local_http_feed_is_refused_without_the_test_origin() {
 #[test]
 fn a_staged_file_swapped_before_install_is_not_installed() {
     let dir = scratch("swapped");
-    let file = dir.join("app-9.9.9-linux-x64.tar.gz");
+    let file = dir.join("app-99.9.9-linux-x64.tar.gz");
     std::fs::write(&file, b"the checked download").expect("write");
     let mut s = crate::Session::new();
     s.updater = Updater::new(Some(dir.clone()));
@@ -771,11 +771,11 @@ fn a_staged_file_swapped_before_install_is_not_installed() {
     let desktop = std::sync::Arc::new(crate::desktop::Recorder::default());
     s.desktop = desktop.clone();
     s.updater.set_progress(Progress::Ready(Box::new(Staged {
-        version: "9.9.9".into(),
+        version: "99.9.9".into(),
         path: file.clone(),
         bytes: 20,
         sha256: sha256_hex(b"the checked download"),
-        file: "app-9.9.9-linux-x64.tar.gz".into(),
+        file: "app-99.9.9-linux-x64.tar.gz".into(),
         kind: Kind::Archive,
         notes: String::new(),
     })));
@@ -793,7 +793,7 @@ fn a_staged_file_swapped_before_install_is_not_installed() {
 #[test]
 fn a_release_page_link_stays_on_the_repositorys_releases() {
     let repo = lcc_brand::REPOSITORY.trim_end_matches('/');
-    assert_eq!(release_page("v9.9.9"), format!("{repo}/releases/tag/v9.9.9"));
+    assert_eq!(release_page("v99.9.9"), format!("{repo}/releases/tag/v99.9.9"));
     assert_eq!(release_page("v1.0.0-rc.1+build"), format!("{repo}/releases/tag/v1.0.0-rc.1+build"));
     // a tag that could steer the link anywhere else gives the list of releases
     for tag in ["", "../../../evil", "v1?x=1", "v1#a", "v1/../../x", "..", "v 1", "v1\u{0}"] {
@@ -807,7 +807,7 @@ fn a_release_page_link_stays_on_the_repositorys_releases() {
 fn an_older_signed_release_offered_as_a_newer_one_is_not_installed() {
     let (signing, key) = test_key(5);
     let target = lcc_updater::Target::current().expect("a platform to update");
-    // signed for 1.0.0, offered by the feed as 9.9.9
+    // signed for 1.0.0, offered by the feed as 99.9.9
     let old = format!("app-1.0.0-{}-{}.msi", target.os.slug(), target.arch);
     let installer = b"the genuine 1.0.0 installer".to_vec();
     let dir = scratch("replayed");
@@ -818,9 +818,9 @@ fn an_older_signed_release_offered_as_a_newer_one_is_not_installed() {
     std::fs::create_dir_all(&stage).expect("stage");
     std::fs::write(stage.join(&old), &installer).expect("left over");
     let v = s.execute("update.check", &json!({"wait": true})).expect("check");
-    assert_eq!(v["available"]["version"], "9.9.9", "the feed offers it as 9.9.9: {v}");
+    assert_eq!(v["available"]["version"], "99.9.9", "the feed offers it as 99.9.9: {v}");
     let err = s.execute("update.download", &json!({"wait": true})).expect_err("an old release");
-    assert!(err.to_string().contains("is not version 9.9.9"), "the error names the cause: {err}");
+    assert!(err.to_string().contains("is not version 99.9.9"), "the error names the cause: {err}");
     assert!(s.updater.staged().is_none(), "nothing is offered for install");
     assert_eq!(s.updater.status()["download"], "failed");
     assert_eq!(std::fs::read_dir(&stage).expect("stage").count(), 0, "the staged file is deleted");
