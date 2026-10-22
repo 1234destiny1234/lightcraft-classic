@@ -1148,6 +1148,10 @@ fn appearance(ui: &mut egui::Ui, t: &Tokens, s: &mut crate::state::AppSettings, 
         let options = crate::theme::SliderLayout::ALL.map(|layout| (layout, layout.label()));
         choices(ui, "settingsSliderLayout", &options, &mut s.slider_layout);
     });
+    row(ui, t, crate::i18n::tr("Slider control"), |ui| {
+        let options = crate::theme::SliderControl::ALL.map(|c| (c, c.label()));
+        choices(ui, "settingsSliderControl", &options, &mut s.slider_control);
+    });
     ui.add_space(2.0);
 }
 

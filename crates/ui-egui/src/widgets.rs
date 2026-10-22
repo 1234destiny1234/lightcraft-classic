@@ -391,7 +391,9 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
         if !scrub_started && value_resp.dragged() {
             let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
             let dx = ui.input(|i| i.pointer.delta().x);
-            pos = (pos + f64::from(dx / track_rect.width()) * fine).clamp(0.0, 1.0);
+            // with acceleration on the number, slow movement moves it less (Settings ▸ Slider control)
+            let gain = if fine == 1.0 && crate::theme::slider_control(ui.ctx()).on_number() { drag_gain(dx) } else { 1.0 };
+            pos = (pos + f64::from(dx * gain / track_rect.width()) * fine).clamp(0.0, 1.0);
         }
         let step = spec.step.max(1e-9);
         let nv = ((spec.value_at(pos) / step).round() * step).clamp(spec.min, spec.max);
@@ -458,6 +460,9 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
         {
             let fine = ui.input(|i| i.modifiers.shift);
             let step = spec.step.max(1e-9);
+            // the thumb's track position under pointer x, less where on the thumb it was grabbed
+            let grab_id = id.with("grab");
+            let at = |x: f32, grab: f32| f64::from((x - grab - track_rect.left()) / track_rect.width()).clamp(0.0, 1.0);
             let nv = if fine {
                 // a tenth of the pointer's movement along the track; the unrounded position is kept, so a
                 // slow drag adds up instead of rounding back to the same step every frame
@@ -467,17 +472,25 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
                 let pos = (kept.unwrap_or_else(|| spec.position(value)) + f64::from(dx / track_rect.width()) * 0.1).clamp(0.0, 1.0);
                 ui.data_mut(|m| {
                     m.insert_temp(fine_id, pos);
-                    // letting go of Shift carries on from here
+                    // letting go of Shift carries on from here: the thumb stays where it is
+                    m.insert_temp(grab_id, p.x - (track_rect.left() + pos as f32 * track_rect.width()));
                     m.insert_temp(id.with("accel-pos"), pos);
                 });
                 spec.value_at(pos)
             } else if resp.drag_started() {
-                // the press puts the thumb under the pointer
-                ui.data_mut(|m| m.insert_temp(id.with("accel-pos"), spec.position(from_x(p.x))));
-                from_x(p.x)
-            } else {
-                // then the thumb follows the pointer with pointer acceleration (issue #346): slow
-                // movement moves it at 30 % speed, for fine changes; a quick one at full speed
+                // pressed on the thumb, it keeps the spot it was grabbed by; elsewhere on the track it
+                // comes under the pointer
+                let origin = ui.input(|i| i.pointer.press_origin()).unwrap_or(p);
+                let grab = if on_thumb(origin) { origin.x - to_x(value) } else { 0.0 };
+                let pos = at(p.x, grab);
+                ui.data_mut(|m| {
+                    m.insert_temp(grab_id, grab);
+                    m.insert_temp(id.with("accel-pos"), pos);
+                });
+                spec.value_at(pos)
+            } else if crate::theme::slider_control(ui.ctx()).on_slider() {
+                // with acceleration on the slider (Settings ▸ Slider control, issue #346): slow movement
+                // moves the thumb at 30 % speed, for fine changes; a quick one at full speed
                 let accel_id = id.with("accel-pos");
                 let dx = ui.input(|i| i.pointer.delta().x);
                 let pos = (ui.data(|m| m.get_temp::<f64>(accel_id)).unwrap_or_else(|| spec.position(value))
@@ -485,6 +498,11 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
                 .clamp(0.0, 1.0);
                 ui.data_mut(|m| m.insert_temp(accel_id, pos));
                 spec.value_at(pos)
+            } else {
+                // then it stays under the pointer, as in Lightroom Classic: past an end it waits there
+                // until the pointer comes back over it
+                let grab = ui.data(|m| m.get_temp::<f32>(grab_id)).unwrap_or(0.0);
+                spec.value_at(at(p.x, grab))
             };
             let nv = ((nv / step).round() * step).clamp(spec.min, spec.max);
             if (nv - value).abs() > 1e-12 {
@@ -700,8 +718,9 @@ fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
     widest.clamp(24.0_f32.min(max_col), max_col)
 }
 
-/// How far a slider's thumb moves per point of pointer travel in a frame that moved it `dx`: 30 %
-/// for slow movement (up to 2 points a frame), rising to one for quick movement (8 points or more).
+/// How far a slider moves per point of pointer travel in a frame that moved it `dx`, with
+/// acceleration: 30 % for slow movement (up to 2 points a frame), rising to one for quick movement
+/// (8 points or more).
 fn drag_gain(dx: f32) -> f32 {
     const SLOW: f32 = 2.0;
     const FAST: f32 = 8.0;
@@ -1065,7 +1084,7 @@ pub fn dropdown_within(ui: &mut Ui, id: &str, text: &str, font: egui::FontId, co
 #[cfg(test)]
 mod tests {
     #[test]
-    fn slow_slider_drags_move_the_thumb_less_than_the_pointer_and_quick_ones_keep_up() {
+    fn slow_slider_drags_move_less_than_the_pointer_and_quick_ones_keep_up() {
         assert!(drag_gain(0.5) < 1.0 && drag_gain(0.5) > 0.0);
         assert!(drag_gain(-1.0) <= drag_gain(5.0));
         assert!((drag_gain(40.0) - 1.0).abs() < 1e-6);
