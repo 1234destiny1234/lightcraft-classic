@@ -935,6 +935,7 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | Date | Change | Summary |
 |---|---|---|
 | 2026-10-22 | minor | LR-VIEW-FILMSTRIP: the source line above the filmstrip (source, count, selected, active file name), as in Lightroom Classic; status unchanged |
+| 2026-10-23 | minor | LR-EDIT-COLOR-TEMP: Kelvin white balance from the presets stored in Canon CR2 / CR3, Panasonic / Leica RW2 and Pentax PEF files for bodies without colour matrices (upstream #2527); status unchanged |
 | 2026-10-21 | patch | LR-IMP-ADD-DIALOG: reconcile #2362 with current main; deleted-album guard and hierarchical picker retained; counts unchanged |
 | 2026-10-20 | minor | LR-IMP-ADD-DIALOG: #2362 gives the import review the shared hierarchy/search album picker while retaining None/New album and existing destination IDs; status and feature counts unchanged |
 | 2026-10-21 | patch | KEY-SLIDER-NUDGE: vertical wheel nudges need a click or drag in the slider's row; leaving it (even between two frames) or Tab focus alone does not arm them (issue #1355); status unchanged |
