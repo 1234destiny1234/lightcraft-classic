@@ -49,7 +49,9 @@ pub fn shift_iso(iso: &str, secs: i64) -> Option<String> {
     if !(first..=last).contains(&t) {
         return None;
     }
-    let tail = iso.trim().get(19..).unwrap_or("");
+    let iso = iso.trim();
+    // the seconds are optional (`10:00+02:00`): without them the tail starts right after the minutes
+    let tail = iso.get(if iso.get(16..17) == Some(":") { 19 } else { 16 }..).unwrap_or("");
     Some(format!("{}{tail}", civil(t)))
 }
 
@@ -220,6 +222,39 @@ mod tests {
         assert_eq!(shift_iso("9999-12-31T23:59:58", 1).as_deref(), Some("9999-12-31T23:59:59"));
         assert_eq!(normalize_iso("2026-04-01 10:05").as_deref(), Some("2026-04-01T10:05:00"));
         assert_eq!(normalize_iso("2026-02-30"), None);
+    }
+
+    #[test]
+    fn shift_keeps_the_zone_of_a_time_without_seconds() {
+        assert_eq!(shift_iso("2026-01-01T10:00+02:00", 3600).as_deref(), Some("2026-01-01T11:00:00+02:00"));
+        assert_eq!(shift_iso("2026-01-01T10:00Z", 60).as_deref(), Some("2026-01-01T10:01:00Z"));
+        assert_eq!(shift_iso("2026-01-01T10:00", 3600).as_deref(), Some("2026-01-01T11:00:00"));
+        assert_eq!(shift_iso("2026-01-01T10:00:30+02:00", 3600).as_deref(), Some("2026-01-01T11:00:30+02:00"));
+        assert_eq!(shift_iso("2026-01-01T10:00:00.5-05:00", 3600).as_deref(), Some("2026-01-01T11:00:00.5-05:00"));
+        assert_eq!(shift_iso("2026-01-01T10:00:00-0500", 60).as_deref(), Some("2026-01-01T10:01:00-0500"));
+        assert_eq!(shift_iso("2026-01-01", 3600).as_deref(), Some("2026-01-01T01:00:00"), "a date gets a time");
+        assert_eq!(iso_seconds("2026-01-01T10:00+02:00"), iso_seconds("2026-01-01T10:00"), "+02 is the zone, not 2 seconds");
+        let shifted = shift_iso("2026-01-01T10:00+02:00", 3600).unwrap();
+        assert_eq!(shift_iso(&shifted, 0).as_deref(), Some(shifted.as_str()), "the result reads back");
+    }
+
+    #[test]
+    fn shifting_a_malformed_time_never_panics() {
+        for bad in [
+            "2026-01-01T10:0",
+            "2026-01-01T10:00+",
+            "2026-01-01T10:00:00+2",
+            "2026-01-01T10:00é",
+            "2026-01-01T10:00:0é",
+            "2026-01-01T10:00:00+0é:00",
+            "2026-01-01T",
+            "2026-01-01Té",
+        ] {
+            for secs in [0, 3600, -86_400, i64::MAX, i64::MIN] {
+                let _ = shift_iso(bad, secs);
+            }
+        }
+        assert_eq!(shift_iso("nope+02:00", 3600), None);
     }
 
     #[test]

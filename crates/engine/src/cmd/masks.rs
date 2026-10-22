@@ -394,6 +394,8 @@ pub fn specs() -> Vec<CommandSpec> {
             has_active,
             |s, p| {
                 let c = "mask.sampleColor";
+                let mid = mask_id(p, s.active_mask, c)?;
+                let comp = super::index_opt(p, "component", c)?;
                 let (x, y) = (super::f64_req(p, "x", c)?, super::f64_req(p, "y", c)?);
                 let add = p.get("add").and_then(Value::as_bool).unwrap_or(false);
                 let id = s.active().ok_or_else(|| bad(c, "no active photo"))?;
@@ -403,8 +405,6 @@ pub fn specs() -> Vec<CommandSpec> {
                 let req = lcc_pipeline::RenderRequest::fit(384, 384);
                 let lab = lcc_pipeline::color_range_sample(&src, &info, &d, &req, lcc_geom::Point::new(x, y))
                     .ok_or_else(|| bad(c, "the point is outside the photo"))?;
-                let mid = mask_id(p, s.active_mask, c)?;
-                let comp = super::index_opt(p, "component", c)?;
                 let mut out = Vec::new();
                 masks_edit(s, c, "Color Range", |masks, _| {
                     let i = find(masks, mid, c)?;

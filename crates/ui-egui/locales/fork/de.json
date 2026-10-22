@@ -1348,5 +1348,6 @@
   "Heal with automatically chosen source": "Reparieren mit automatisch gewählter Quelle",
   "Multi-scale synthesized fill": "Skalenübergreifend synthetisierte Füllung",
   "Blend source texture with target tone": "Quelltextur mit Zielton überblenden",
-  "Exact 1:1 pixel copy": "Exakte 1:1-Pixelkopie"
+  "Exact 1:1 pixel copy": "Exakte 1:1-Pixelkopie",
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "Die Ortsnamenliste umfasst Orte ab 15.000 Einwohnern: Bei einem kleineren Ort erhält „Stadt“ den nächstgelegenen größeren Ort."
 }

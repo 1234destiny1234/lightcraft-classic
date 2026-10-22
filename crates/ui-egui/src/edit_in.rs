@@ -724,8 +724,9 @@ mod tests {
         let r = h.app.run("photo.editIn", json!({})).unwrap();
         assert_eq!(r["asked"], true, "{r}");
         assert_eq!(state().ask.as_ref().map(|(p, m)| (p["id"].as_u64(), m.as_str())), Some((Some(psd.0), "original")));
-        h.settle(std::time::Duration::from_secs(5));
-        assert!(h.painted_text().iter().any(|t| t.contains("Edit Original")), "the question shows");
+        // (settle alone can run out of time on a busy runner before the window's first visible frame)
+        let shown = h.step_until(std::time::Duration::from_secs(60), |h| h.painted_text().iter().any(|t| t.contains("Edit Original")));
+        assert!(shown, "the question shows");
         // the user confirms Edit Original: no new photo
         let (p, _) = state().ask.unwrap();
         let mut p = p;

@@ -26,7 +26,8 @@
 //! A folder is otherwise only where photos are, but the library can also keep a
 //! [`FolderRecord`] about it (its colour label), stored under the folder's identity
 //! ([`crate::query::folder_key`]). A record follows its folder when the folder is renamed or moved
-//! here ([`Catalog::folder_records_follow`]); one about a folder that no longer holds a photo is
+//! here ([`Catalog::folder_records_follow`]), or found again somewhere else on disk
+//! ([`Catalog::folder_records_relocate`]); one about a folder that no longer holds a photo is
 //! kept (undo can bring the photos back) and shows again when the folder does.
 //!
 //! This is the library's own view of its photos; browsing any folder on disk without importing
@@ -36,7 +37,7 @@ use std::collections::{BTreeMap, HashMap};
 
 use serde::{Deserialize, Serialize};
 
-use crate::query::{folder_key, folder_rest, folder_within, key_within, split_path};
+use crate::query::{folder_key, folder_rest, folder_within, key_within, photo_in_root, split_path};
 use crate::{Catalog, ColorLabel, Op, Source};
 
 /// Folder levels kept per photo. No real path comes near it; a deeper one is counted at its
@@ -207,6 +208,35 @@ impl Catalog {
     /// folder that is no longer there and are dropped (undo restores them). Empty when there is
     /// nothing to carry or drop.
     pub fn folder_records_follow(&self, from: &str, to: &str) -> Vec<Op> {
+        self.records_follow(from, to, |_| false)
+    }
+
+    /// [`Catalog::folder_records_follow`] for a folder found again somewhere else on disk
+    /// (Update Folder Location), whose new place may already be a folder of the library: a record
+    /// at or below `to` stays while its folder, or one inside it, still holds a library photo from
+    /// outside `from` (one in Recently Deleted doesn't count), unless one carried over replaces
+    /// it. The others are dropped as for a move.
+    pub fn folder_records_relocate(&self, from: &str, to: &str) -> Vec<Op> {
+        let Some(root) = record_key(from) else { return Vec::new() };
+        // the folders (and those above them) that hold a library photo staying where it is: one
+        // pass over the photos, not one per record
+        let mut held = std::collections::HashSet::new();
+        for p in self.photos().filter(|p| !p.deleted && !p.local && !photo_in_root(p, &root)) {
+            let mut dir = crate::local::folder_of(p);
+            while let Some(d) = dir.take() {
+                dir = d.rsplit_once('/').map(|(up, _)| if up.is_empty() { "/" } else { up }).filter(|up| *up != d).map(str::to_string);
+                if !held.insert(d) {
+                    break;
+                }
+            }
+        }
+        // a disk's key ends in `/` (`d:/`, `//nas/share/`), the folders walked up to it don't
+        self.records_follow(from, to, |key| held.contains(key) || held.contains(key.trim_end_matches('/')))
+    }
+
+    /// The ops of both: `keep(key)` says whether the record at `key`, at or below the
+    /// destination, stays.
+    fn records_follow(&self, from: &str, to: &str, keep: impl Fn(&str) -> bool) -> Vec<Op> {
         let (Some(root), Some(dest)) = (record_key(from), record_key(to)) else { return Vec::new() };
         if root == dest {
             return Vec::new();
@@ -224,7 +254,7 @@ impl Catalog {
             .collect();
         // what was known at the old place goes, and so does what is left at the new one (also
         // when the moved folder carries nothing: the folder now there is not the one it was about)
-        let stale = self.folder_records.keys().filter(|k| key_within(k, &root) || key_within(k, &dest));
+        let stale = self.folder_records.keys().filter(|k| key_within(k, &root) || (key_within(k, &dest) && !keep(k)));
         let mut ops: Vec<Op> = stale.map(|k| Op::SetFolderRecord { folder: k.clone(), record: None }).collect();
         ops.extend(moved.into_iter().map(|(k, r)| Op::SetFolderRecord { folder: k, record: Some(r) }));
         ops
