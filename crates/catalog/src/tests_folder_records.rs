@@ -12,6 +12,8 @@
 //! * When the folder is renamed or moved, its label and those of the folders inside it go along;
 //!   a folder beside it whose name merely starts the same way keeps its own. Undo brings them
 //!   back, also a label that was left at the destination.
+//! * When a folder moved outside the app is found again (Update Folder Location) in a folder the
+//!   library already has, the labels go along and the folders already there keep theirs.
 //! * Labels survive closing and reopening the library.
 
 use crate::*;
@@ -159,6 +161,58 @@ fn an_unlabelled_folder_moved_onto_a_stale_label_does_not_inherit_it() {
     assert_eq!(c.folder_record("/pics/holiday"), None, "the folder now there is another one");
     c.apply(undo).unwrap();
     assert_eq!(c.folder_color_label("/pics/holiday"), Some(ColorLabel::Purple));
+}
+
+#[test]
+fn a_folder_found_again_inside_a_known_one_leaves_that_folders_labels_alone() {
+    let mut c = library();
+    for p in ["/x/own.jpg", "/x/other/e.jpg"] {
+        add(&mut c, p);
+    }
+    label(&mut c, "/pics/trip", Some(ColorLabel::Red));
+    label(&mut c, "/pics/trip/day1", Some(ColorLabel::Yellow));
+    label(&mut c, "/x", Some(ColorLabel::Green));
+    label(&mut c, "/x/other", Some(ColorLabel::Blue));
+    // a folder that was there once (its photos are gone) left its label behind
+    label(&mut c, "/x/gone", Some(ColorLabel::Purple));
+    let before = c.to_snapshot();
+    let ops = c.folder_records_relocate("/pics/trip", "/x");
+    let undo = c.apply(Op::Batch { ops }).unwrap();
+    assert_eq!(c.folder_record("/pics/trip"), None, "nothing stays at the old place");
+    assert_eq!(c.folder_color_label("/x"), Some(ColorLabel::Red), "the label carried over wins");
+    assert_eq!(c.folder_color_label("/x/day1"), Some(ColorLabel::Yellow));
+    assert_eq!(c.folder_color_label("/x/other"), Some(ColorLabel::Blue), "a folder already there keeps its label");
+    assert_eq!(c.folder_record("/x/gone"), None, "a stale one goes, as for a move");
+    c.apply(undo).unwrap();
+    assert_eq!(c.to_snapshot(), before);
+}
+
+#[test]
+fn an_unlabelled_folder_found_again_in_a_labelled_one_keeps_that_label() {
+    let mut c = library();
+    label(&mut c, "/pics/home", Some(ColorLabel::Green));
+    // the trip's photos now sit in the folder above them: the folders beside it keep theirs
+    label(&mut c, "/pics/trip2", Some(ColorLabel::Blue));
+    label(&mut c, "/pics", Some(ColorLabel::Purple));
+    let ops = c.folder_records_relocate("/pics/trip", "/pics");
+    c.apply(Op::Batch { ops }).unwrap();
+    assert_eq!(c.folder_color_label("/pics"), Some(ColorLabel::Purple));
+    assert_eq!(c.folder_color_label("/pics/home"), Some(ColorLabel::Green));
+    assert_eq!(c.folder_color_label("/pics/trip2"), Some(ColorLabel::Blue));
+}
+
+#[test]
+fn a_disk_found_holding_a_folder_again_keeps_its_own_label() {
+    let mut c = library();
+    for p in ["D:/own.jpg", "D:/x/e.jpg", "//nas/photos/f.jpg", "//nas/photos/y/g.jpg"] {
+        add(&mut c, p);
+    }
+    label(&mut c, "D:\\", Some(ColorLabel::Green));
+    label(&mut c, "//nas/photos", Some(ColorLabel::Blue));
+    for disk in ["D:\\", "//nas/photos"] {
+        let ops = c.folder_records_relocate("/pics/home", disk);
+        assert!(ops.is_empty(), "nothing to carry, and {disk} still holds photos: {ops:?}");
+    }
 }
 
 #[test]
