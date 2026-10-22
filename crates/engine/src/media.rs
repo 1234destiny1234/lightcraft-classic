@@ -509,6 +509,19 @@ pub struct MediaCache {
     pub rendered: Arc<PreviewCache>,
     /// Which photos have a cached denoised picture, and how to read it.
     pub denoise: DenoiseIndex,
+    /// What decodes have shown about each photo's file that the Edit panel offers options for (see
+    /// [`ProfileFacts`]): kept when the decoded sources go, so those rows do not vanish while a source is decoded
+    /// again or evicted, which would move every control under them.
+    profile_facts: HashMap<PhotoId, ProfileFacts>,
+}
+
+/// File facts that decide whether the Edit panel's Profile section shows an option: a camera model with measured
+/// colour (Calibrated camera colour) and a raw carrying its own local tone mapping. They belong to the file, not to
+/// a decode, so once any decode has seen one it stays until the photo's sources are forgotten.
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct ProfileFacts {
+    pub colorimetric: bool,
+    pub local_tone: bool,
 }
 
 /// The photos that have a cached denoised picture for the denoise model in use. Only memory: nothing here touches the
@@ -580,6 +593,7 @@ impl Default for MediaCache {
             scenes: Vec::new(),
             rendered: Arc::new(PreviewCache::memory(rendered_budget(budget))),
             denoise: DenoiseIndex::default(),
+            profile_facts: HashMap::new(),
         }
     }
 }
@@ -614,6 +628,7 @@ impl MediaCache {
         self.thumbs = Lru::new(THUMB_SOURCE_BYTES.min(self.budget));
         self.previews.clear();
         self.full.clear();
+        self.profile_facts.clear();
     }
 
     /// How many full-resolution originals to keep at once (at least one). Compare and Reference
@@ -732,6 +747,11 @@ impl MediaCache {
     }
 
     fn insert_source(&mut self, id: PhotoId, level: SourceLevel, img: DecodedSource) {
+        if let Some(info) = &img.info {
+            let f = self.profile_facts.entry(id).or_default();
+            f.colorimetric |= info.colorimetric;
+            f.local_tone |= info.local_tone.is_some();
+        }
         let tick = lcc_preview::next_tick();
         match level {
             SourceLevel::Thumb => {
@@ -761,6 +781,14 @@ impl MediaCache {
         self.thumbs.remove(&id);
         self.previews.retain(|e| e.0 != id);
         self.full.retain(|e| e.0 != id);
+        self.profile_facts.remove(&id);
+    }
+
+    /// What decodes of `id` have shown so far, with what the cached sources say now (see [`ProfileFacts`]).
+    pub fn profile_facts(&self, id: PhotoId) -> ProfileFacts {
+        let now = self.source_facts(id, SourceInfo::default());
+        let seen = self.profile_facts.get(&id).copied().unwrap_or_default();
+        ProfileFacts { colorimetric: seen.colorimetric || now.colorimetric, local_tone: seen.local_tone || now.local_tone.is_some() }
     }
 
     /// (decoded thumbnail sources, bytes).
