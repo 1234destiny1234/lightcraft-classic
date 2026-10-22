@@ -1047,9 +1047,10 @@ jobs:
         run: |
           # the files are named under brand.toml's release_repository when set (the old name,
           # after a rename: what installed builds accept; GitHub redirects it), else this repository
-          . packaging/env.sh
-          if [ -n "${BRAND_RELEASE_REPOSITORY:-}" ]; then
-            REPO="${BRAND_RELEASE_REPOSITORY#https://github.com/}"
+          # (this step runs in out/, beside the checkout: read the key from ../brand.toml directly)
+          release_repo="$(awk -F'"' '/^\[/ { in_product = ($0 == "[product]") } in_product && $1 ~ /^release_repository *= */ { print $2; exit }' ../brand.toml)"
+          if [ -n "$release_repo" ]; then
+            REPO="${release_repo#https://github.com/}"
             REPO="${REPO%/}"
           fi
           rm -f latest.json latest.json.new
