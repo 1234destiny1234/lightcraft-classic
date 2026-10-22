@@ -1865,15 +1865,20 @@ mod tests {
     #[test]
     fn packed_reads_a_truncated_tail_strip_with_the_missing_rows_black() {
         // the fork keeps a truncated file viewable (a card pulled mid-write): the rows the file
-        // still holds decode, the rest stay black, and nothing panics
+        // still holds decode and the rest stay black; a strip with no data left at all is corrupt
+        // (`check_image`'s plausibility bound), and nothing panics
         let bytes = nef(34713, 12, vec![vec![0x55; 360]], 40, 6, 6);
-        for keep in [0, 60, 359] {
+        let empty = truncated_tail_strip(bytes.clone(), 0);
+        for mode in [Mode::Header, Mode::Full] {
+            assert!(matches!(decode(&empty, mode), Err(RawError::Corrupt(_))), "no image data at all");
+        }
+        for keep in [60, 359] {
             let short = truncated_tail_strip(bytes.clone(), keep);
             assert!(decode(&short, Mode::Header).is_ok(), "header, {keep} bytes kept");
             let img = decode(&short, Mode::Full).expect("a truncated strip still decodes");
             let RawData::U16(px) = &img.data else { panic!("16-bit samples") };
-            if keep <= 60 {
-                assert_eq!(px.last(), Some(&0), "the rows past the end of the file are black ({keep} bytes kept)");
+            if keep == 60 {
+                assert_eq!(px.last(), Some(&0), "the rows past the end of the file are black");
             }
         }
     }
