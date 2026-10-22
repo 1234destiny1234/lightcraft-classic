@@ -72,7 +72,16 @@ The Storage Access Framework hands out `content://` documents, but the engine re
   is answered with its real path under `Environment.getExternalStorageDirectory()` when the app can read it. Then
   nothing is copied, and Library ▸ Browse, folder scans and Synchronize work on the real folder. Reading it needs
   **"All files access"** (`MANAGE_EXTERNAL_STORAGE`, Android 11+) or, on Android 9–10, `READ_EXTERNAL_STORAGE`
-  (with `requestLegacyExternalStorage` for 10). `READ_MEDIA_IMAGES` is declared for Android 13+.
+  (with `requestLegacyExternalStorage` for 10). `READ_MEDIA_IMAGES` is declared for Android 13+. A *folder* is
+  read in place only with All files access: under scoped storage a folder lists without it, but shows only the
+  files the app made, so its photos would be missing. Without it the folder is copied (below).
+- **Camera roll.** `file.addCameraRoll` (first-start question in `crates/ui-egui/src/camera_roll.rs`, kept as
+  `cameraRollAsked` in `ui.json`; Settings ▸ Folders ▸ Camera roll ▸ Import… asks again) calls
+  `Host::camera_roll`. The activity asks for the photo permission when it lacks it (`READ_MEDIA_IMAGES` on 13+,
+  `READ_EXTERNAL_STORAGE` before), queries MediaStore for `DCIM/Camera/…`, and answers through
+  `nativeCameraRoll` with real paths where it can read them, else copies in `Incoming/Camera Roll` (reused
+  next time). The paths open the import review. A refused permission or an unreadable roll comes back as an
+  error the UI shows.
 - **Asking.** The activity asks once, at the first start (remembered in its `storage` SharedPreferences): the
   system's All files access page on 11+, the runtime permission before. `app.allFilesAccess` (Settings ▸ Folders ▸
   Device storage ▸ Change…) asks again; `Services::storage_access` gives the shared UI the state and the question.

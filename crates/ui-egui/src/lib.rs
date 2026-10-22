@@ -11,6 +11,7 @@ pub mod album_picker;
 pub mod book;
 pub mod brush_live;
 pub mod button;
+pub mod camera_roll;
 pub mod canvas_keys;
 #[cfg(not(target_arch = "wasm32"))]
 pub mod catalog_ui;
@@ -302,6 +303,9 @@ pub type PickFolder = Box<dyn FnMut() -> Option<String>>;
 /// Reveal a file in the system file manager (Finder / Explorer / the folder on Linux).
 pub type RevealFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 /// Open a URL in the user's browser.
+/// Starts listing (or copying) the device's camera roll; the channel answers with the photos'
+/// paths, or why there are none (permission denied, …). `Err` when it could not start (Android).
+pub type CameraRollFn = Box<dyn FnMut() -> Result<std::sync::mpsc::Receiver<Result<Vec<String>, String>>, String>>;
 pub type OpenUrlFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 /// Open a file in an application (`app` = "" for the system's default one).
 pub type OpenWithFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
@@ -415,6 +419,8 @@ pub struct Services {
     pub open_url: Option<OpenUrlFn>,
     /// Android: "All files access" (`app.allFilesAccess`, Settings ▸ Folders).
     pub storage_access: Option<StorageAccess>,
+    /// Android: the camera roll (DCIM/Camera through MediaStore; `file.addCameraRoll`).
+    pub camera_roll: Option<CameraRollFn>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
     /// Open several files with one start of the editor (Open Original; desktop only): an editor
@@ -520,6 +526,8 @@ pub struct LccApp {
     pub copied: Option<String>,
     /// Native file dialogs up for commands (`pick`): each command runs again when its closes.
     pub(crate) pending_picks: Vec<pick::Pending>,
+    /// The camera roll being listed for `file.addCameraRoll` (`camera_roll::poll`).
+    pub(crate) pending_camera_roll: Option<std::sync::mpsc::Receiver<Result<Vec<String>, String>>>,
     /// Modifiers announced for synthetic input (held from a button down to its release).
     synthetic_mods: egui::Modifiers,
     /// Clear `synthetic_mods` on the next frame.
@@ -708,6 +716,7 @@ impl LccApp {
             synthetic: vec![],
             copied: None,
             pending_picks: vec![],
+            pending_camera_roll: None,
             synthetic_mods: egui::Modifiers::NONE,
             synthetic_mods_release: false,
             styled: false,
@@ -1757,6 +1766,7 @@ impl LccApp {
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::show(self, &ctx);
         panels::library_problem::show(self, &ctx);
+        camera_roll::prompt(self, &ctx);
         export_task::poll(self, &ctx);
         #[cfg(not(target_arch = "wasm32"))]
         panels::plugins::poll(self, &ctx);
@@ -1765,6 +1775,7 @@ impl LccApp {
         panels::activity::show(self, &ctx);
         export_task::poll_photos(self, &ctx);
         pick::poll(self, &ctx);
+        camera_roll::poll(self, &ctx);
         panels::grid::drag_feedback(self, &ctx);
         panels::left::album_drag_feedback(self, &ctx);
         panels::left::section_drag_feedback(self, &ctx);
