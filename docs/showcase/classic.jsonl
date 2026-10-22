@@ -34,11 +34,9 @@
 {"method":"ui.screenshot","params":{"path":"docs/images/classic/masking.png"}}
 {"method":"engine.execute","params":{"command":"panel.edit"}}
 {"method":"engine.execute","params":{"command":"develop.set","params":{"values":{"grading.highlights.hue":42,"grading.highlights.sat":30,"grading.shadows.hue":215,"grading.shadows.sat":25}}}}
-{"method":"engine.execute","params":{"command":"section.color","params":{"solo":true}}}
-{"method":"ui.clickWidget","params":{"id":"flyout:grading"}}
+{"method":"engine.execute","params":{"command":"section.grading","params":{"solo":true}}}
 {"method":"ui.settle","params":{"timeoutMs":30000}}
 {"method":"ui.screenshot","params":{"path":"docs/images/classic/grading.png"}}
-{"method":"ui.clickWidget","params":{"id":"flyout:grading"}}
 {"method":"engine.execute","params":{"command":"section.light","params":{"solo":true}}}
 {"method":"engine.execute","params":{"command":"view.beforeAfter"}}
 {"method":"ui.settle","params":{"timeoutMs":30000}}

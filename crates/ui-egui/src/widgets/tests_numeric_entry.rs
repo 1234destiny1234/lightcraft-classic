@@ -145,6 +145,9 @@ impl Harness {
 #[test]
 fn dragging_the_value_sideways_scrubs_it_like_the_thumb() {
     let mut h = Harness::new();
+    // one to one, as the thumb moves (Settings ▸ Interface ▸ Slider control: Absolute; the default
+    // accelerates scrubbing the value)
+    crate::theme::set_slider_control(&h.view.ctx, crate::theme::SliderControl::Absolute);
     let width = f64::from(h.track_width());
     assert!(width > 100.0, "the slider has a track ({width})");
     // a fifth of the track: a fifth of the range (Exposure −5..+5 → +2 EV)

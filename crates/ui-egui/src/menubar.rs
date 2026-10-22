@@ -1707,7 +1707,8 @@ mod tests {
         let mut h = crate::headless::Headless::new(app, [1400.0, 900.0], 1.0);
         let t = std::time::Duration::from_secs(30);
         h.settle(t);
-        for id in ["menu:File", "menuitem:file.backupLibrary"] {
+        // (the fork keeps Back Up Library in File ▸ Libraries)
+        for id in ["menu:File", "menusub:Libraries", "menuitem:file.backupLibrary"] {
             let r = h.request("ui.clickWidget", json!({"id": id}), t);
             assert_eq!(r["ok"], true, "{id}: {r}");
             h.step();
