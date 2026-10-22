@@ -1116,14 +1116,26 @@ impl Session {
             if o.is_empty() {
                 return Vec::new();
             }
+            // White balance travels whole (mode, temperature, tint and the scale they were written on), as
+            // Sync copies it: a lone `temp` landing on a photo still on the legacy relative scale (6500 K = as
+            // shot) would be read relative to that photo's own as-shot white and show a different Kelvin (#425).
+            if o.contains_key("wb") {
+                o.insert("wb".into(), serde_json::json!(new.wb));
+            }
         }
+        let wb = delta.get("wb").is_some();
         self.selection
             .ids
             .iter()
             .filter(|x| **x != id)
             .filter_map(|x| self.develop_of(*x).map(|d| (*x, d)))
             .filter_map(|(x, d)| {
-                let synced = self.fit_constrained_crop(x, lcc_develop::apply_partial(&d, &delta, 1.0));
+                let mut synced = lcc_develop::apply_partial(&d, &delta, 1.0);
+                if wb {
+                    // each photo on its own scale: Kelvin on a raw with one, relative elsewhere
+                    lcc_pipeline::local::normalize_wb(&mut synced, &self.source_info(x));
+                }
+                let synced = self.fit_constrained_crop(x, synced);
                 (synced != *d).then(|| self.develop_op(x, synced, label)).flatten()
             })
             .collect()
