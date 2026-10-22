@@ -252,10 +252,10 @@ pub fn window_for_reads_checked(
 }
 
 /// The padding around a spot's stroke box that [`apply`] works in, in spot radii. Content-aware
-/// fill reads the spot's surroundings (2 radii); clone and heal read their tone ring (1.5 radii).
+/// fill reads the spot's surroundings (2 radii); clone, heal and remove read their tone ring (1.5 radii).
 /// [`window_for_reads_checked`] grows a render window by the same amount.
 fn box_pad(mode: SpotMode) -> f32 {
-    if matches!(mode, SpotMode::Remove | SpotMode::Fill) { 2.0 } else { 1.5 }
+    if mode == SpotMode::Fill { 2.0 } else { 1.5 }
 }
 
 /// Content-aware fill of the box: `src` becomes `tgt` with every pixel under the stroke (`alpha > 0`)
