@@ -304,7 +304,7 @@ public class MainActivity extends NativeActivity {
                         try {
                             out.add(stagedFile(uri, job).getAbsolutePath());
                         } catch (IOException | RuntimeException e) {
-                            Log.e(TAG, "copy " + uri + ": " + e);
+                            Log.e(TAG, "copy " + uri + ": " + e, e);
                         }
                     }
                 }
@@ -539,9 +539,41 @@ public class MainActivity extends NativeActivity {
         return file;
     }
 
+    /** Opens a picked document. Some media providers fail the plain open with an exception from
+     *  their own side (Waydroid's MediaProvider throws a NullPointerException while deciding
+     *  whether to redact the photo's location); the same photo is then opened under its MediaStore
+     *  URI, which the picker's grant also covers, and through the application's resolver. */
+    private InputStream openDocument(Uri uri) throws IOException {
+        List<String> why = new ArrayList<>();
+        List<Uri> tries = new ArrayList<>();
+        tries.add(uri);
+        if (android.os.Build.VERSION.SDK_INT >= 29) {
+            try {
+                Uri media = MediaStore.getMediaUri(this, uri);
+                if (media != null && !media.equals(uri)) tries.add(media);
+            } catch (RuntimeException e) {
+                why.add("media uri: " + e);
+            }
+        }
+        for (Uri u : tries) {
+            for (ContentResolver r : new ContentResolver[]{getContentResolver(), getApplicationContext().getContentResolver()}) {
+                try {
+                    InputStream in = r.openInputStream(u);
+                    if (in != null) {
+                        if (!why.isEmpty()) Log.i(TAG, "opened " + u + " after: " + why);
+                        return in;
+                    }
+                    why.add(u + ": no stream");
+                } catch (IOException | RuntimeException e) {
+                    why.add(u + ": " + e);
+                }
+            }
+        }
+        throw new IOException("the document can't be read (" + String.join("; ", why) + ")");
+    }
+
     private void copy(Uri uri, File dest, CopyJob job) throws IOException {
-        ContentResolver r = getContentResolver();
-        try (InputStream in = r.openInputStream(uri); OutputStream out = new FileOutputStream(dest)) {
+        try (InputStream in = openDocument(uri); OutputStream out = new FileOutputStream(dest)) {
             if (in == null) throw new IOException("the document can't be read");
             byte[] buf = new byte[1 << 16];
             int n;
