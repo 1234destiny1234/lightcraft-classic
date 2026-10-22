@@ -2,7 +2,7 @@
   <img alt="" src="brand/logo.svg" width="120">
 </p>
 
-<h1 align="center">LightCraft Classic</h1>
+<h1 align="center">Chromaforge</h1>
 
 <h3 align="center">Your photos. Your pixels. Your machine.</h3>
 
@@ -48,7 +48,7 @@ interface follows the modern, cloud-era Lightroom: a single window with All Phot
 Grid and Square Grid, a detail view and an Edit panel with a presets column. Its library is a folder holding a JSON
 snapshot plus an append-only log of operations.
 
-**LightCraft Classic** is this fork. It keeps upstream's engine (raw decoding, develop pipeline, masking, export, MCP) and
+**Chromaforge** is this fork. It keeps upstream's engine (raw decoding, develop pipeline, masking, export, MCP) and
 reshapes the app around the Lightroom Classic workflow: one catalog shared by seven modules (Library, Develop, Map,
 Book, Slideshow, Print, Web) with the Classic panels (Navigator, Catalog, Folders, Collections, Quick Develop,
 Keywording, Metadata), filmstrip and keyboard map. On top it adds what a Classic user expects and upstream does not
@@ -56,7 +56,7 @@ have: a redb-backed catalog for large libraries with backups and integrity check
 capture, publish services, colour-managed printing, WebAssembly plug-ins, Edit In and Actions. Shared crates track upstream; fixes may be
 offered back to it as pull requests.
 
-| | LightCraft (upstream) | LightCraft Classic (this fork) |
+| | LightCraft (upstream) | Chromaforge (this fork) |
 |---|---|---|
 | **UI shell** | Single-window layout modelled on the cloud-era Lightroom: grid, detail and edit views, side panels, presets column | Lightroom Classic layout: module picker (top right, `Window → Modules`), Navigator / Catalog / Folders / Collections on the left, Quick Develop / Keywording / Metadata on the right, filmstrip, identity plate, secondary window; adjustable mouse-wheel scroll speed |
 | **Modules** | Library and editing only | Library, Develop, Map, Book, Slideshow, Print, Web, sharing one catalog |

@@ -1,6 +1,6 @@
 ---
 title: Troubleshooting
-description: Fixes for common LightCraft Classic problems.
+description: Fixes for common Chromaforge problems.
 order: 30
 ---
 

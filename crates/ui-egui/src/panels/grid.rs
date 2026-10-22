@@ -1267,17 +1267,17 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if new.clicked() {
                 let _ = app.run("dialog.newAlbum", json!({}));
             }
-        // in a (non-smart) album: take the selection out of it, or make this photo its cover
-        if let lcc_engine::LibrarySource::Album(aid) = app.session.source
-            && app.session.catalog.album(aid).is_some_and(|a| !a.folder && !a.is_smart())
-        {
-            if ui.button(crate::i18n::tr("Remove from Collection")).clicked() {
-                let _ = app.run("album.removePhotos", json!({"id": aid.0}));
+            // in a (non-smart) album: take the selection out of it, or make this photo its cover
+            if let lcc_engine::LibrarySource::Album(aid) = app.session.source
+                && app.session.catalog.album(aid).is_some_and(|a| !a.folder && !a.is_smart())
+            {
+                if ui.button(crate::i18n::tr("Remove from Collection")).clicked() {
+                    let _ = app.run("album.removePhotos", json!({"id": aid.0}));
+                }
+                if ui.button(crate::i18n::tr("Set as Album Cover")).clicked() {
+                    let _ = app.run("album.setCover", json!({"id": aid.0, "photo": id.0}));
+                }
             }
-            if ui.button(crate::i18n::tr("Set as Album Cover")).clicked() {
-                let _ = app.run("album.setCover", json!({"id": aid.0, "photo": id.0}));
-            }
-        }
         });
         register(ui.ctx(), "button:contextAddToAlbum", add.response.rect);
     }
@@ -1383,7 +1383,10 @@ pub fn context_menu(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
         if missing && ui.button(crate::i18n::tr("Locate Missing File…")).clicked() {
             let _ = app.run("photo.locate", json!({}));
         }
-        if ui.add_enabled(crate::menus::ui_enabled(app, "app.showInFinder"), egui::Button::new(crate::i18n::tr(crate::menus::reveal_label()))).clicked() {
+        if ui
+            .add_enabled(crate::menus::ui_enabled(app, "app.showInFinder"), egui::Button::new(crate::i18n::tr(crate::menus::reveal_label())))
+            .clicked()
+        {
             let _ = app.run("app.showInFinder", json!({}));
         }
     });

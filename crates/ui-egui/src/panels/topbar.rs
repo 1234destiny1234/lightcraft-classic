@@ -171,7 +171,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             let develop = app.ui.module == crate::module::ModuleId::Develop;
             let closed = develop && app.ui.right == crate::state::RightPanel::None && !app.ui.presets;
             let open = !app.ui.right_collapsed && !closed;
-            if icon_button(&mut right, "collapseRight", Icon::SidebarRight, vec2(30.0, 30.0), open, true, crate::i18n::tr("Show/hide right panel")).clicked() {
+            if icon_button(&mut right, "collapseRight", Icon::SidebarRight, vec2(30.0, 30.0), open, true, crate::i18n::tr("Show/hide right panel"))
+                .clicked()
+            {
                 let _ = app.run(if closed { "panel.edit" } else { "panel.collapseRight" }, json!({}));
             }
             x -= 42.0;

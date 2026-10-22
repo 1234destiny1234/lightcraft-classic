@@ -2,7 +2,6 @@
 //! (`classic_tools`). The vertical strip that once stood at the far right is gone: its show/hide
 //! button is in the top bar, Library's Versions in its left column.
 
-
 use crate::LccApp;
 use crate::icons::Icon;
 use crate::module::{ModuleId, PanelId};
