@@ -133,3 +133,18 @@ fn a_tap_in_the_library_grid_opens_the_photo() {
     assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
     assert_eq!(h.app.ui.view, crate::state::ViewMode::Detail);
 }
+
+#[test]
+fn the_empty_library_offers_finger_sized_ways_in_without_desktop_hints() {
+    // a folding phone's cover screen and its inner, near-square screen
+    for size in [[412.0, 960.0], [1092.0, 984.0]] {
+        let app = LccApp::new(lcc_engine::Session::new(), Services { png: None, ..Default::default() });
+        let mut h = Headless::new(app, size, 1.0);
+        assert_eq!(exec(&mut h, "view.touchLayout", json!({"on": true}))["ok"], true);
+        h.settle(SETTLE);
+        assert!(has(&h, "button:emptyImportPhotos") && has(&h, "button:emptyImportFolder"), "{size:?}");
+        assert!(!has(&h, "button:emptyImportLightroom"), "no Lightroom catalog import on touch ({size:?})");
+        let height = h.app.widgets.iter().find(|(w, _)| w == "button:emptyImportPhotos").map(|(_, r)| r.height()).unwrap();
+        assert!(height >= 44.0, "finger-sized buttons ({size:?}: {height})");
+    }
+}

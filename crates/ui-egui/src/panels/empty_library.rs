@@ -53,20 +53,36 @@ const IMPORT_PHOTOS: EmptyAction = EmptyAction { command: "file.addPhotos", labe
 const IMPORT_LIGHTROOM: EmptyAction =
     EmptyAction { command: "file.importLightroom", label: "Import Lightroom Catalog…", widget: "button:emptyImportLightroom" };
 
+const IMPORT_FOLDER: EmptyAction = EmptyAction { command: "file.addFolder", label: "Import Folder…", widget: "button:emptyImportFolder" };
+const CAMERA_ROLL: EmptyAction = EmptyAction { command: "file.addCameraRoll", label: "Camera Roll", widget: "button:emptyCameraRoll" };
+
 /// The empty library's message and buttons, centred in `rect`. A click runs the command as its
 /// menu item does; a refusal shows as a toast.
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, rect: Rect) {
-    // the browser build can't read a Lightroom catalog from disk: only offer what works there
-    let actions: &[EmptyAction] = if cfg!(target_arch = "wasm32") { &[IMPORT_PHOTOS] } else { &[IMPORT_PHOTOS, IMPORT_LIGHTROOM] };
+    let touch = crate::touch::on(app);
+    let actions: Vec<EmptyAction> = if touch {
+        // fingers, not a keyboard or drag and drop: the ways in the touch Library's Import offers
+        let mut a = vec![IMPORT_PHOTOS, IMPORT_FOLDER];
+        if app.services.camera_roll.is_some() {
+            a.push(CAMERA_ROLL);
+        }
+        a
+    } else if cfg!(target_arch = "wasm32") {
+        // the browser build can't read a Lightroom catalog from disk: only offer what works there
+        vec![IMPORT_PHOTOS]
+    } else {
+        vec![IMPORT_PHOTOS, IMPORT_LIGHTROOM]
+    };
     let mac = ui.ctx().os() == egui::os::OperatingSystem::Mac;
-    let hint = hint(&app.ui.settings.keymap, mac);
-    let clicked = super::empty_state(
+    let hint = (!touch).then(|| hint(&app.ui.settings.keymap, mac));
+    let clicked = super::empty_state_sized(
         ui,
         rect,
         "Your library is empty",
         "Photos you import show up here. Nothing is copied or moved unless you choose to.",
-        actions,
-        Some(&hint),
+        &actions,
+        hint.as_deref(),
+        touch,
     );
     if let Some(command) = clicked
         && let Err(e) = app.run(command, json!({}))
