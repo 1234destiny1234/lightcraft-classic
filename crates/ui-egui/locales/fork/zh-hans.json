@@ -1404,5 +1404,9 @@
   "Multi-scale synthesized fill": "多尺度合成填充",
   "Blend source texture with target tone": "将源纹理与目标色调融合",
   "Exact 1:1 pixel copy": "精确 1:1 像素复制",
-  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "地名列表包含人口 15,000 及以上的城镇：位于较小城镇时，“城市”将填入最近的较大城镇。"
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "地名列表包含人口 15,000 及以上的城镇：位于较小城镇时，“城市”将填入最近的较大城镇。",
+  "Hue Low": "色相下限",
+  "Hue High": "色相上限",
+  "Red/Cyan": "红/青",
+  "Blue/Yellow": "蓝/黄"
 }

@@ -76,5 +76,9 @@
   "Heal with automatically chosen source": "Retušovat s automaticky zvoleným zdrojem",
   "Multi-scale synthesized fill": "Víceúrovňová syntetizovaná výplň",
   "Blend source texture with target tone": "Prolnout zdrojovou texturu s tónem cíle",
-  "Exact 1:1 pixel copy": "Přesná kopie pixelů 1:1"
+  "Exact 1:1 pixel copy": "Přesná kopie pixelů 1:1",
+  "Hue Low": "Dolní mez odstínu",
+  "Hue High": "Horní mez odstínu",
+  "Red/Cyan": "Červená/azurová",
+  "Blue/Yellow": "Modrá/žlutá"
 }

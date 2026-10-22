@@ -286,10 +286,7 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     let geo = match form_label {
         Some(label_w) => SliderGeometry::form(row, label_w),
         None if two_rows => SliderGeometry::two_rows(row),
-        None => {
-            let label_w = ui.painter().layout_no_wrap(label_str.clone(), t.font(LABEL_FONT), t.text_label).size().x;
-            SliderGeometry::new(row, label_column(ui, w, label_w))
-        }
+        None => SliderGeometry::new(row, label_column(ui, w)),
     };
     let (label_rect, track_rect, value_rect) = (geo.label, geo.track, geo.value);
     let id = ui.id().with(spec.id);
@@ -657,7 +654,7 @@ const TWO_ROW_EXTRA: f32 = 14.0;
 /// [`LABEL_FONT`].
 const VALUE_W: f32 = 28.0;
 
-/// Maximum width of the slider label column: room for names such as "Refine Saturation" or
+/// Maximum width of the slider label column: room for names such as "Vignetting Midpoint" or
 /// "Shadows Luminance" at [`LABEL_FONT`] (issue #346: names were cut off), while the track keeps
 /// more than half the panel.
 const MAX_LABEL_COL: f32 = 92.0;
@@ -702,18 +699,27 @@ impl SliderGeometry {
     }
 }
 
-/// The name column's width for a slider in `ui`: the widest name drawn in the same container
-/// (this frame or the last), so a section's tracks line up, strictly capped so the interactive
-/// track occupies most of the panel width (names past it are ellipsized).
-fn label_column(ui: &Ui, row_w: f32, label_w: f32) -> f32 {
-    let key = ui.id().with("slider-label-column");
-    let frame = ui.ctx().cumulative_pass_nr();
-    let (seen, prev, cur) = ui.data(|d| d.get_temp::<(u64, f32, f32)>(key)).unwrap_or((frame, 0.0, 0.0));
-    // a new frame: the last one's widest name carries over, so a long name further down counts
-    let (prev, cur) = if seen == frame { (prev, cur) } else { (cur, 0.0) };
-    let cur = cur.max(label_w);
-    ui.data_mut(|d| d.insert_temp(key, (frame, prev, cur)));
-    let widest = prev.max(cur).ceil();
+/// The name column's width for a panel slider: the widest name of any develop control at
+/// [`LABEL_FONT`] in the current language, so the column (and every track) stays the same width as
+/// sections and flyouts open and close (issue #397), strictly capped so the interactive track
+/// occupies most of the panel width (names past it are ellipsized).
+fn label_column(ui: &Ui, row_w: f32) -> f32 {
+    let key = egui::Id::new("slider-label-column");
+    let lang = format!("{:?}", crate::i18n::language());
+    let widest = match ui.data(|d| d.get_temp::<(String, f32)>(key)) {
+        Some((l, w)) if l == lang => w,
+        _ => {
+            let t = Tokens::get(ui.ctx());
+            let w = lcc_develop::controls::CONTROLS
+                .iter()
+                .chain(lcc_develop::controls::INDEXED)
+                .map(|c| ui.painter().layout_no_wrap(crate::i18n::tr(c.label).to_string(), t.font(LABEL_FONT), t.text_label).size().x)
+                .fold(0.0_f32, f32::max)
+                .ceil();
+            ui.data_mut(|d| d.insert_temp(key, (lang, w)));
+            w
+        }
+    };
     let max_col = ((row_w - 48.0) * 0.4).clamp(24.0, MAX_LABEL_COL);
     widest.clamp(24.0_f32.min(max_col), max_col)
 }

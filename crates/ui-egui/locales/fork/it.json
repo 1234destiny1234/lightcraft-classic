@@ -76,5 +76,9 @@
   "Heal with automatically chosen source": "Correggi con origine scelta automaticamente",
   "Multi-scale synthesized fill": "Riempimento sintetizzato multiscala",
   "Blend source texture with target tone": "Fondi la texture di origine con il tono di destinazione",
-  "Exact 1:1 pixel copy": "Copia esatta di pixel 1:1"
+  "Exact 1:1 pixel copy": "Copia esatta di pixel 1:1",
+  "Hue Low": "Tonalità bassa",
+  "Hue High": "Tonalità alta",
+  "Red/Cyan": "Rosso/ciano",
+  "Blue/Yellow": "Blu/giallo"
 }
