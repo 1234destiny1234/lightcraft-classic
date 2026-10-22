@@ -254,7 +254,8 @@ mod tests {
     fn folder_discovery_matches_engine_extensions() {
         let dir = std::env::temp_dir().join(format!("lc-mcp-discovery-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
-        let nested = dir.join("trip/day2");
+        // (one component at a time: `join("trip/day2")` keeps the `/` on Windows, where the scan reports `\`)
+        let nested = dir.join("trip").join("day2");
         std::fs::create_dir_all(&nested).unwrap();
         let mut expected = Vec::new();
         for ext in lcc_engine::import::EXTENSIONS {
