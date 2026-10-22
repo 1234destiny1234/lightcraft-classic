@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automatycznie wczytuj pliki pomocnicze XMP zmienione przez inne aplikacje (zdjęcia niezmienione tutaj)",
   "Sliders": "Suwaki",
   "One Row": "Jeden wiersz",
-  "Two Rows": "Dwa wiersze"
+  "Two Rows": "Dwa wiersze",
+  "Hue Low": "Dolny odcień",
+  "Hue High": "Górny odcień",
+  "Red/Cyan": "Czerwony/turkusowy",
+  "Blue/Yellow": "Niebieski/żółty"
 }

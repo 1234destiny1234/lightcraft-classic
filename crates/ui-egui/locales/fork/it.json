@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Leggi automaticamente i file XMP collaterali modificati da altre app (foto non modificate qui)",
   "Sliders": "Cursori",
   "One Row": "Una riga",
-  "Two Rows": "Due righe"
+  "Two Rows": "Due righe",
+  "Hue Low": "Tonalità bassa",
+  "Hue High": "Tonalità alta",
+  "Red/Cyan": "Rosso/ciano",
+  "Blue/Yellow": "Blu/giallo"
 }

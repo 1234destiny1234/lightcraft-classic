@@ -4558,7 +4558,7 @@ dependencies = [
 
 [[package]]
 name = "lcc-classic-slideshow"
-version = "0.9.6"
+version = "26.43.4"
 dependencies = [
  "claxon",
  "hayro",
@@ -5214,15 +5214,6 @@ dependencies = [
  "serde",
  "serde_json",
  "thiserror 2.0.21",
-]
-
-[[package]]
-name = "lcc-slide"
-version = "26.43.4"
-dependencies = [
- "lcc-raster",
- "serde",
- "serde_json",
 ]
 
 [[package]]

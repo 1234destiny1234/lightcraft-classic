@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "Automaticky načítat přidružené soubory XMP změněné jinými aplikacemi (u fotek zde nezměněných)",
   "Sliders": "Posuvníky",
   "One Row": "Jeden řádek",
-  "Two Rows": "Dva řádky"
+  "Two Rows": "Dva řádky",
+  "Hue Low": "Dolní mez odstínu",
+  "Hue High": "Horní mez odstínu",
+  "Red/Cyan": "Červená/azurová",
+  "Blue/Yellow": "Modrá/žlutá"
 }

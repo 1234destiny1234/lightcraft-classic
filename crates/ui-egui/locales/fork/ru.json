@@ -1695,5 +1695,9 @@
   "Host key: not confirmed yet (uploads are refused until it is)": "Ключ хоста: ещё не подтверждён (загрузка запрещена до подтверждения)",
   "Trust This Host Key": "Доверять этому ключу хоста",
   "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Доверяйте этому серверу, только если этот отпечаток SHA-256 совпадает с тем, что сообщил его администратор:",
-  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "Список названий мест включает населённые пункты от 15 000 жителей: для меньшего в поле «Город» попадает ближайший более крупный."
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "Список названий мест включает населённые пункты от 15 000 жителей: для меньшего в поле «Город» попадает ближайший более крупный.",
+  "Hue Low": "Тон (низ)",
+  "Hue High": "Тон (верх)",
+  "Red/Cyan": "Красный/голубой",
+  "Blue/Yellow": "Синий/жёлтый"
 }

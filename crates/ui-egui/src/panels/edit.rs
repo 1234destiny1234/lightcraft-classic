@@ -401,17 +401,19 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             app.ui.toggle_flyout("defringe");
         }
         if open {
-            control(app, ui, d, "optics.defringePurple", true);
+            sub_title(ui, crate::i18n::tr("Purple"));
+            control_as(app, ui, d, "optics.defringePurple", true, Some("Amount"));
             let on = d.optics.defringe_purple_amount > 0.0;
-            control(app, ui, d, "optics.defringePurpleHueLo", on);
-            control(app, ui, d, "optics.defringePurpleHueHi", on);
-            control(app, ui, d, "optics.defringeGreen", true);
+            control_as(app, ui, d, "optics.defringePurpleHueLo", on, Some("Hue Low"));
+            control_as(app, ui, d, "optics.defringePurpleHueHi", on, Some("Hue High"));
+            sub_title(ui, crate::i18n::tr("Green"));
+            control_as(app, ui, d, "optics.defringeGreen", true, Some("Amount"));
             let on = d.optics.defringe_green_amount > 0.0;
-            control(app, ui, d, "optics.defringeGreenHueLo", on);
-            control(app, ui, d, "optics.defringeGreenHueHi", on);
+            control_as(app, ui, d, "optics.defringeGreenHueLo", on, Some("Hue Low"));
+            control_as(app, ui, d, "optics.defringeGreenHueHi", on, Some("Hue High"));
             sub_title(ui, crate::i18n::tr("Lateral Chromatic Aberration"));
-            control(app, ui, d, "optics.caRed", true);
-            control(app, ui, d, "optics.caBlue", true);
+            control_as(app, ui, d, "optics.caRed", true, Some("Red/Cyan"));
+            control_as(app, ui, d, "optics.caBlue", true, Some("Blue/Yellow"));
         }
         ui.add_space(8.0);
     });
@@ -1536,7 +1538,7 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
         for c in PARAM_AMOUNTS {
             control(app, ui, d, c, true);
         }
-        control(app, ui, d, "curve.refineSaturation", true);
+        control_as(app, ui, d, "curve.refineSaturation", true, Some("Refine"));
         return;
     }
     let curves = target.points(d);
@@ -1702,7 +1704,7 @@ pub(crate) fn curve_editor(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId, d: 
     });
     curve_footer(app, ui, d, target);
     if photo {
-        control(app, ui, d, "curve.refineSaturation", true);
+        control_as(app, ui, d, "curve.refineSaturation", true, Some("Refine"));
     }
     let _ = id;
 }

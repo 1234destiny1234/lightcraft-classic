@@ -1487,5 +1487,9 @@
   "Host key: not confirmed yet (uploads are refused until it is)": "ホストキー: 未確認（確認されるまでアップロードは拒否されます）",
   "Trust This Host Key": "このホストキーを信頼",
   "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "この SHA-256 フィンガープリントがサーバー管理者から提示されたものと一致する場合のみ、このサーバーを信頼してください:",
-  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "地名リストには人口 15,000 人以上の町が含まれます。それより小さい町では、「市区町村」に最寄りの大きな町が入ります。"
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "地名リストには人口 15,000 人以上の町が含まれます。それより小さい町では、「市区町村」に最寄りの大きな町が入ります。",
+  "Hue Low": "色相下限",
+  "Hue High": "色相上限",
+  "Red/Cyan": "赤／シアン",
+  "Blue/Yellow": "青／黄"
 }

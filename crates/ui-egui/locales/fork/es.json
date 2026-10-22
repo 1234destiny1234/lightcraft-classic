@@ -1490,5 +1490,9 @@
   "Host key: not confirmed yet (uploads are refused until it is)": "Clave del host: aún sin confirmar (las subidas se rechazan hasta que lo esté)",
   "Trust This Host Key": "Confiar en esta clave del host",
   "Trust this server only if this SHA-256 fingerprint matches the one its administrator gives you:": "Confíe en este servidor solo si esta huella SHA-256 coincide con la que le da su administrador:",
-  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "La lista de topónimos incluye localidades de 15.000 habitantes o más: en una más pequeña, Ciudad recibe la localidad mayor más cercana."
+  "The place names list towns of 15,000 people or more: in a smaller one, City gets the nearest larger town.": "La lista de topónimos incluye localidades de 15.000 habitantes o más: en una más pequeña, Ciudad recibe la localidad mayor más cercana.",
+  "Hue Low": "Tono bajo",
+  "Hue High": "Tono alto",
+  "Red/Cyan": "Rojo/cian",
+  "Blue/Yellow": "Azul/amarillo"
 }

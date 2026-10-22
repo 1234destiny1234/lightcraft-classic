@@ -72,5 +72,9 @@
   "Automatically read XMP sidecars other apps changed (photos unchanged here)": "სხვა აპების მიერ შეცვლილი XMP თანმხლები ფაილების ავტომატური წაკითხვა (აქ შეუცვლელი ფოტოებისთვის)",
   "Sliders": "სლაიდერები",
   "One Row": "ერთ მწკრივად",
-  "Two Rows": "ორ მწკრივად"
+  "Two Rows": "ორ მწკრივად",
+  "Hue Low": "ტონის ქვედა ზღვარი",
+  "Hue High": "ტონის ზედა ზღვარი",
+  "Red/Cyan": "წითელი/ცისფერი",
+  "Blue/Yellow": "ლურჯი/ყვითელი"
 }
