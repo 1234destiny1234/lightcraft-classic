@@ -7,6 +7,8 @@
 /target
 /target-*/
 /dist
+# Play Store bundles and signing notes, built locally for a manual upload
+/play-store/
 /corpus
 /log
 .DS_Store
