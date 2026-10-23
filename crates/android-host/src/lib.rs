@@ -126,7 +126,8 @@ impl Answers {
 /// The camera roll's answer: the photos' paths, or why there are none.
 pub type CameraRoll = Result<Vec<String>, String>;
 
-/// Camera-roll listings waiting for the activity (`nativeCameraRoll`), by request id.
+/// Answers waiting for the activity by request id: camera-roll listings (`nativeCameraRoll`) and
+/// saves to Pictures (`nativeGallerySaved`).
 #[derive(Default)]
 pub struct RollAnswers {
     waiting: std::collections::HashMap<i64, std::sync::mpsc::Sender<CameraRoll>>,
@@ -149,16 +150,16 @@ impl RollAnswers {
     /// activity's reason, e.g. the permission was refused).
     pub fn answer(&mut self, id: i64, paths: Option<Vec<String>>, error: Option<String>) {
         let Some(tx) = self.waiting.remove(&id) else {
-            log::warn!("camera roll {id}: an answer nothing waits for; dropped");
+            log::warn!("request {id}: an answer nothing waits for; dropped");
             return;
         };
         let answer = match (paths, error) {
             (_, Some(e)) if !e.is_empty() => Err(e),
             (Some(p), _) => Ok(p),
-            (None, _) => Err("the camera roll could not be read (see the log)".into()),
+            (None, _) => Err("the activity could not do it (see the log)".into()),
         };
         if tx.send(answer).is_err() {
-            log::warn!("camera roll {id}: answered, but nothing is waiting any more");
+            log::warn!("request {id}: answered, but nothing is waiting any more");
         }
     }
 }
@@ -317,6 +318,8 @@ mod imp {
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     /// Camera-roll listings that are running.
     static ROLLS: Mutex<Option<RollAnswers>> = Mutex::new(None);
+    /// Saves to Pictures (and shares) that are running; answered like camera-roll listings.
+    static GALLERY: Mutex<Option<RollAnswers>> = Mutex::new(None);
     /// Asks the UI for a frame (set by the app: an answer must not wait for the next touch).
     static WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
     /// Where copies report (set by the app once its session exists).
@@ -358,6 +361,11 @@ mod imp {
                         name: "nativeCameraRoll".into(),
                         sig: "(J[Ljava/lang/String;Ljava/lang/String;)V".into(),
                         fn_ptr: native_camera_roll as *mut std::ffi::c_void,
+                    },
+                    NativeMethod {
+                        name: "nativeGallerySaved".into(),
+                        sig: "(J[Ljava/lang/String;Ljava/lang/String;)V".into(),
+                        fn_ptr: native_gallery_saved as *mut std::ffi::c_void,
                     },
                     crate::opened::native_method(),
                 ];
@@ -428,6 +436,31 @@ mod imp {
             });
             if let Err(e) = result {
                 rolls(|r| r.forget(id));
+                return Err(e);
+            }
+            Ok(rx)
+        }
+
+        /// Copies exported files into the device's Pictures/`album` folder through MediaStore (so
+        /// they show in the gallery), then, with `share`, offers them to other apps (the system
+        /// share sheet, `ACTION_SEND`). The channel answers with the files' `content://` URIs, or
+        /// why they could not be saved.
+        pub fn save_to_gallery(&self, paths: &[String], album: &str, share: bool) -> Result<Receiver<super::CameraRoll>, Error> {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let rx = gallery(|r| r.wait(id));
+            let result = self.call("saveToGallery", |env, activity| {
+                let files = string_array(env, paths)?;
+                let album = env.new_string(album)?;
+                env.call_method(
+                    activity,
+                    "saveToGallery",
+                    "(J[Ljava/lang/String;Ljava/lang/String;Z)V",
+                    &[JValue::Long(id), JValue::Object(&files), JValue::Object(&album), JValue::Bool(u8::from(share))],
+                )?;
+                Ok(())
+            });
+            if let Err(e) = result {
+                gallery(|r| r.forget(id));
                 return Err(e);
             }
             Ok(rx)
@@ -506,6 +539,29 @@ mod imp {
     fn rolls<R>(f: impl FnOnce(&mut RollAnswers) -> R) -> R {
         let mut guard = ROLLS.lock().unwrap_or_else(PoisonError::into_inner);
         f(guard.get_or_insert_with(RollAnswers::default))
+    }
+
+    fn gallery<R>(f: impl FnOnce(&mut RollAnswers) -> R) -> R {
+        let mut guard = GALLERY.lock().unwrap_or_else(PoisonError::into_inner);
+        f(guard.get_or_insert_with(RollAnswers::default))
+    }
+
+    /// `void nativeGallerySaved(long id, String[] uris, String error)`: the answer to
+    /// [`Host::save_to_gallery`].
+    extern "system" fn native_gallery_saved<'l>(mut env: JNIEnv<'l>, _this: JObject<'l>, id: jlong, uris: JObjectArray<'l>, error: JString<'l>) {
+        // a panic must never unwind into the JVM
+        let answered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let list = read_strings(&mut env, &uris).unwrap_or_else(|e| {
+                log::error!("save to Pictures: answer unreadable: {e}");
+                None
+            });
+            let error: Option<String> = if error.is_null() { None } else { env.get_string(&error).map(Into::into).ok() };
+            gallery(|r| r.answer(id, list, error));
+            wake();
+        }));
+        if answered.is_err() {
+            log::error!("save to Pictures answer: a panic was caught");
+        }
     }
 
     /// `void nativeCameraRoll(long id, String[] paths, String error)`: the answer to

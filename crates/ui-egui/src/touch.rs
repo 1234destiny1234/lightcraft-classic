@@ -303,6 +303,7 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         let r = ui.max_rect();
         // (the grid's own header under this bar names the source and counts its photos)
         ui.painter().text(pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Library"), t.semibold(18.0), t.text);
+        let ctx = ui.ctx().clone();
         let mut x = r.right() - 8.0;
         let mut button = |app: &mut LccApp, icon: Icon, id: &str, label: &str, enabled: bool| -> bool {
             x -= BUTTON;
@@ -320,6 +321,10 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         let can_edit = app.session.active().is_some();
         if button(app, Icon::Sliders, "touch:edit", "Edit", can_edit) {
             open_develop(app);
+        }
+        let can_export = !app.session.selection.ids.is_empty() || can_edit;
+        if button(app, Icon::Share, "touch:export", "Export…", can_export) {
+            crate::touch_sheets::open_export(app, &ctx);
         }
         if button(app, Icon::Filter, "touch:filters", "Filter", true) {
             app.ui.touch.filters = !app.ui.touch.filters;
@@ -655,7 +660,7 @@ fn top_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
             at(x)
         };
         if round_button(ui, next(), "touch:share", Icon::Share, "Export…", false, true).clicked() {
-            let _ = app.run("dialog.export", json!({}));
+            crate::touch_sheets::open_export(app, ui.ctx());
         }
         let panel_open = app.ui.touch.panel;
         if round_button(ui, next(), "touch:panel", Icon::SidebarRight, "All Edits", panel_open, true).clicked() {
@@ -840,7 +845,7 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
 // ------------------------------------------------------------------------ widgets
 
 /// A round icon button (44 points), registered as `id` for the control channel.
-fn round_button(ui: &mut egui::Ui, rect: Rect, id: &str, icon: Icon, label: &str, active: bool, enabled: bool) -> egui::Response {
+pub(crate) fn round_button(ui: &mut egui::Ui, rect: Rect, id: &str, icon: Icon, label: &str, active: bool, enabled: bool) -> egui::Response {
     let t = Tokens::get(ui.ctx());
     let name = crate::i18n::tr(label);
     let resp = ui.interact(rect, Id::new(id), if enabled { Sense::click() } else { Sense::hover() });

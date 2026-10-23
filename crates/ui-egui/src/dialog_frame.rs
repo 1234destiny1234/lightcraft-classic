@@ -206,13 +206,59 @@ fn set_label_width(ui: &Ui, width: f32) {
 
 /// The x offset of the control column from the form's left edge.
 pub fn control_indent(ui: &Ui) -> f32 {
+    if stacked(ui) {
+        return 0.0;
+    }
     label_width(ui) + LABEL_GAP
+}
+
+/// The form in `ui` puts each row's label above its controls (a narrow touch screen, see
+/// [`stacked_form`]).
+pub fn stacked(ui: &Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp::<bool>(Id::new("dialog-form-stacked"))).unwrap_or(false)
+}
+
+/// Controls drawn in `ui` are finger-sized (the touch Settings screen; see [`set_finger_sized`]).
+pub fn finger_sized(ui: &Ui) -> bool {
+    ui.ctx().data(|d| d.get_temp::<bool>(Id::new("dialog-finger-sized"))).unwrap_or(false)
+}
+
+/// Sets whether controls drawn from now on are finger-sized; returns the previous setting (put it
+/// back when done).
+pub fn set_finger_sized(ctx: &egui::Context, on: bool) -> bool {
+    let key = Id::new("dialog-finger-sized");
+    let was = ctx.data(|d| d.get_temp::<bool>(key)).unwrap_or(false);
+    ctx.data_mut(|d| d.insert_temp(key, on));
+    was
+}
+
+/// A [`form`] for a narrow screen: each row's label sits above its controls, which take the
+/// whole width, and checkboxes and help text start at the left edge. The same rows as a
+/// two-column form, laid out for a phone (the touch Settings screen).
+pub fn stacked_form<R>(ui: &mut Ui, label_w: f32, add: impl FnOnce(&mut Ui) -> R) -> R {
+    let key = Id::new("dialog-form-stacked");
+    let outer = stacked(ui);
+    ui.ctx().data_mut(|d| d.insert_temp(key, true));
+    let out = form(ui, label_w, add);
+    ui.ctx().data_mut(|d| d.insert_temp(key, outer));
+    out
 }
 
 /// One form row: `label` right-aligned in the label column, then the control(s) `add` draws.
 pub fn form_row<R>(ui: &mut Ui, label: &str, add: impl FnOnce(&mut Ui) -> R) -> R {
     let w = label_width(ui);
     let t = Tokens::get(ui.ctx());
+    if stacked(ui) {
+        return ui
+            .vertical(|ui| {
+                if !label.is_empty() {
+                    ui.add(egui::Label::new(RichText::new(crate::i18n::tr(label)).color(t.text_label)).wrap());
+                }
+                let room = vec2(ui.available_width().max(40.0), ROW_H);
+                ui.allocate_ui_with_layout(room, Layout::left_to_right(Align::Center).with_main_wrap(true), add).inner
+            })
+            .inner;
+    }
     ui.horizontal(|ui| {
         let gap = ui.spacing().item_spacing.x;
         ui.allocate_ui_with_layout(vec2(w, ROW_H), Layout::right_to_left(Align::Center), |ui| {

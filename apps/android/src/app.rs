@@ -141,6 +141,7 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
     let picker_host = host.clone();
     let storage_host = host.clone();
     let roll_host = host.clone();
+    let gallery_host = host.clone();
     let url_host = host;
     Services {
         // the system picker (Storage Access Framework); the activity copies what is picked into
@@ -168,6 +169,10 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
         }),
         // the camera roll through MediaStore (asks for the photo permission; `file.addCameraRoll`)
         camera_roll: roll_host.map(|h| -> lcc_ui_egui::CameraRollFn { Box::new(move || h.camera_roll().map_err(|e| e.to_string())) }),
+        // exports: copied into Pictures/<app> (MediaStore), then offered to the share sheet
+        save_to_gallery: gallery_host.map(|h| -> lcc_ui_egui::SaveToGalleryFn {
+            Box::new(move |paths: &[String], share: bool| h.save_to_gallery(paths, lcc_brand::DISPLAY_NAME, share).map_err(|e| e.to_string()))
+        }),
         open_url: url_host.map(|h| -> lcc_ui_egui::OpenUrlFn { Box::new(move |url: &str| h.open_url(url).map_err(|e| e.to_string())) }),
         // atomic (temp file + sync + rename): a failed write never leaves a truncated file
         write_shared: Some(Arc::new(lcc_engine::export::write_file)),
