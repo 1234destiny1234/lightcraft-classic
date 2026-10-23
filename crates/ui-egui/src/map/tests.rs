@@ -301,3 +301,55 @@ fn map_keys_zoom_by_one_level() {
     assert_eq!(run(&mut h, "map.view", json!({"zoomBy": -2}))["zoom"].as_f64(), Some(11.0));
     assert_eq!(run(&mut h, "map.view", json!({"zoomBy": -100}))["zoom"].as_f64(), Some(1.0), "clamped");
 }
+
+#[test]
+fn context_menu_geotags_where_it_was_opened() {
+    // #323: the menu read its position from the hover each frame, so it emptied (and dropped the
+    // click) once the pointer left the map for the menu
+    let mut h = map_on_fake_tiles();
+    let id = h.app.session.visible_cloned()[0].0;
+    h.app.session.selection = lcc_engine::Selection::single(lcc_catalog::PhotoId(id));
+    let canvas = widget(&h, "map:canvas").unwrap();
+    let at = canvas.center() + egui::vec2(-120.0, -80.0);
+    let r = h.request("ui.click", json!({"x": at.x, "y": at.y, "button": "right"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let item = widget(&h, "map:menu:geotag").expect("the context menu is open");
+    // the pointer travels from the map onto the menu, then clicks
+    for i in 1..=6 {
+        let p = at + (item.center() - at) * (i as f32 / 6.0);
+        h.request("ui.move", json!({"x": p.x, "y": p.y}), T);
+        h.step();
+    }
+    assert!(widget(&h, "map:menu:geotag").is_some(), "the menu keeps its items under the pointer");
+    let r = h.request("ui.clickWidget", json!({"id": "map:menu:geotag"}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let gps = h.app.session.catalog.photo(lcc_catalog::PhotoId(id)).unwrap().meta.gps.expect("geotagged from the menu");
+    let want = super::view::screen_to_geo(&h.app.map, canvas, at);
+    assert!((gps.0 - want.lat).abs() < 1e-4 && (gps.1 - want.lon).abs() < 1e-4, "{gps:?} vs {want:?}");
+}
+
+#[test]
+fn a_long_press_opens_the_context_menu_where_it_was_pressed() {
+    // a touch long-press opens the menu too; egui counts it as a secondary click (`Response::secondary_clicked`),
+    // so the place is kept then as well, not only on a right-click
+    let mut h = map_on_fake_tiles();
+    let canvas = widget(&h, "map:canvas").unwrap();
+    let at = canvas.center() + egui::vec2(90.0, 60.0);
+    let touch = |phase| egui::Event::Touch { device_id: egui::TouchDeviceId(1), id: egui::TouchId(1), phase, pos: at, force: None };
+    h.events.push(touch(egui::TouchPhase::Start));
+    h.events.push(egui::Event::PointerMoved(at));
+    h.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() });
+    // held still past egui's long-press time
+    for _ in 0..90 {
+        h.step();
+    }
+    h.events.push(touch(egui::TouchPhase::End));
+    h.events.push(egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: false, modifiers: Default::default() });
+    h.settle(SETTLE);
+    let want = super::view::screen_to_geo(&h.app.map, canvas, at);
+    let got = h.app.map.menu_at.expect("the long-press place is kept for the menu");
+    assert!((got.lat - want.lat).abs() < 1e-6 && (got.lon - want.lon).abs() < 1e-6, "{got:?} vs {want:?}");
+    assert!(widget(&h, "map:menu:geotag").is_some(), "the menu has its items");
+}

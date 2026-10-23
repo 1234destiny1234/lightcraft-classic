@@ -23,6 +23,8 @@ pub(crate) struct Indexes {
     albums: OnceLock<HashMap<AlbumId, HashSet<PhotoId>>>,
     /// The library's keywords (dropped by any op that can change them, see [`Indexes::op_applied`]).
     keywords: OnceLock<crate::keywords::KeywordIndex>,
+    /// The keyword tree built from it (dropped with it).
+    keyword_tree: OnceLock<std::sync::Arc<Vec<crate::keywords::KeywordNode>>>,
 }
 
 /// A copy builds its own when asked (copies are made to be saved, not queried).
@@ -47,6 +49,7 @@ impl std::fmt::Debug for Indexes {
             .field("stacks", &stacks)
             .field("albums", &self.albums.get().map(HashMap::len))
             .field("keywords", &self.keywords.get().is_some())
+            .field("keyword_tree", &self.keyword_tree.get().is_some())
             .finish()
     }
 }
@@ -76,6 +79,7 @@ impl Indexes {
         );
         if !keeps_keywords {
             self.keywords = OnceLock::new();
+            self.keyword_tree = OnceLock::new();
         }
     }
 
@@ -136,5 +140,13 @@ impl Catalog {
     /// The library's keywords, by the index (built on first use).
     pub(crate) fn keyword_index(&self) -> &crate::keywords::KeywordIndex {
         self.index.keywords.get_or_init(|| crate::keywords::KeywordIndex::build(self))
+    }
+
+    /// The keyword tree, by the index (built by `build` on first use).
+    pub(crate) fn cached_keyword_tree(
+        &self,
+        build: impl FnOnce() -> std::sync::Arc<Vec<crate::keywords::KeywordNode>>,
+    ) -> std::sync::Arc<Vec<crate::keywords::KeywordNode>> {
+        self.index.keyword_tree.get_or_init(build).clone()
     }
 }
