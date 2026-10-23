@@ -2086,7 +2086,7 @@ impl Caches {
     /// The library's keyword tree.
     pub fn keyword_tree(&mut self, cat: &lcc_catalog::Catalog) -> std::sync::Arc<Vec<lcc_catalog::KeywordNode>> {
         let kept = self.keyword_tree.take().filter(|(r, _)| still_right(cat, *r, READS_META)).map(|(_, t)| t);
-        let t = kept.unwrap_or_else(|| std::sync::Arc::new(cat.keyword_tree()));
+        let t = kept.unwrap_or_else(|| cat.keyword_tree_shared());
         self.keyword_tree = Some((cat.revision, t.clone()));
         t
     }
