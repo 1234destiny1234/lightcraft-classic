@@ -429,6 +429,11 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
             });
         }
     };
+    // the first-start camera roll question: Back is Not Now
+    if crate::camera_roll::prompt_due(app) {
+        app.ui.camera_roll_asked = true;
+        return Some("prompt");
+    }
     if crate::touch::on(app)
         && let Some(what) = crate::touch_sheets::back(app)
     {
@@ -498,6 +503,11 @@ pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
     let m = module::get(app.ui.module);
     let form = Form::of(ctx.content_rect().size());
     app.ui.touch.popup_open = egui::Popup::is_any_open(ctx);
+    // a tap's release (and a hold's timing, a glide) comes on a later frame: ask for it here, as
+    // the host draws only on input otherwise (Android)
+    if app.ui.touch.scroller.busy() {
+        ctx.request_repaint();
+    }
     // the cutout and the system bars: every panel below keeps clear of them
     let i = app.ui.touch.insets;
     let fill = egui::Frame::NONE.fill(Tokens::get(ctx).chrome);

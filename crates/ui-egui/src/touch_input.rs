@@ -183,6 +183,13 @@ impl Scroller {
                 // the finger lifted: while scrolling or gliding the hover must stay put
                 Event::PointerGone
                     if matches!(self.state, State::Scrolling { .. } | State::Fling { .. } | State::Pending { .. } | State::Held { .. }) => {}
+                // a tap's release waits for the next frame: the finger's lifting goes after it, or
+                // egui loses the pointer between the press and the release and sees no click
+                Event::PointerGone if !self.later.is_empty() => {
+                    if let Some(last) = self.later.last_mut() {
+                        last.push(Event::PointerGone);
+                    }
+                }
                 other => out.push(other),
             }
         }
@@ -215,8 +222,14 @@ impl Scroller {
             _ => {}
         }
         raw.events = out;
-        outcome.busy = !self.later.is_empty() || matches!(self.state, State::Pending { .. } | State::Fling { .. });
+        outcome.busy = self.busy();
         outcome
+    }
+
+    /// Whether frames are due without new input (a held press timing, a glide, a delayed
+    /// release): the frame asks for the next one, since the host may otherwise wait for input.
+    pub fn busy(&self) -> bool {
+        !self.later.is_empty() || matches!(self.state, State::Pending { .. } | State::Fling { .. })
     }
 
     /// Scrolling with a finger, or gliding on.
@@ -301,6 +314,21 @@ mod tests {
         frame(&mut s, 0.0, vec![press(a, true, Modifiers::NONE)], Some(Region::Strip));
         let (e, o) = frame(&mut s, LONG_PRESS + 0.01, vec![], Some(Region::Strip));
         assert!(o.long_press.is_none() && pressed(&e), "a hold elsewhere is a press and hold");
+    }
+
+    #[test]
+    fn a_quick_tap_keeps_the_pointer_until_its_release() {
+        // Android: the press in one frame; the release and the finger's lifting in the next
+        let mut s = Scroller::default();
+        let a = Pos2::new(80.0, 40.0);
+        frame(&mut s, 0.0, vec![press(a, true, Modifiers::NONE)], Some(Region::Free));
+        let (e, o) = frame(&mut s, 0.01, vec![press(a, false, Modifiers::NONE), Event::PointerGone], Some(Region::Free));
+        assert!(pressed(&e) && o.busy, "the press now, the release later");
+        assert!(!e.iter().any(|e| matches!(e, Event::PointerGone)), "the pointer stays for the release");
+        let (e, _) = frame(&mut s, 0.02, vec![], Some(Region::Free));
+        let release = e.iter().position(|e| matches!(e, Event::PointerButton { pressed: false, .. }));
+        let gone = e.iter().position(|e| matches!(e, Event::PointerGone));
+        assert!(matches!((release, gone), (Some(r), Some(g)) if r < g), "the release, then the lifting: {e:?}");
     }
 
     #[test]
