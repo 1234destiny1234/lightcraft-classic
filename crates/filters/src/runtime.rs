@@ -394,5 +394,6 @@ fn placeholder_manifest() -> Manifest {
         stage: None,
         analyze_area: crate::AnalyzeArea::Frame,
         labels: Vec::new(),
+        groups: Vec::new(),
     }
 }

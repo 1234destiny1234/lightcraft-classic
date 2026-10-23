@@ -277,6 +277,15 @@ inside the user's crop, say). The measurement still doesn't move with later crop
 picks up a new one. Hosts without the field measure the frame. `plugin.list` shows it as
 `analyzeArea`.
 
+**Menu groups (ABI v1.1 proposal).** A choice parameter may carry `"groups"`, one name per option
+(`""` = not in a group): `{"type": "choice", "options": ["Generic", "Portra 400", "Superia 400"],
+"groups": ["", "Kodak", "Fujifilm"]}`. Develop ▸ Plug-in Filters shows each group as a collapsible
+section of the dropdown, in order of first appearance, the one holding the current choice open;
+options without a group stay at the top level, in place. A list of another length, or with a name
+that isn't 1-64 printable characters, is ignored (a flat menu), as hosts without the field do.
+`plugin.list` gives each grouped parameter's `groups`. The dropdown is widget
+`pluginFilterChoice:<uid>:<param>`.
+
 **Pixel scale.** A Source filter that reads neighbours (manifest `overlap` > 0: an unsharp mask,
 grain, a blur) would look different at each render size, its kernel spanning more of the photo in
 a small preview than in a full-size export. Such a stack runs once on the whole frame at the
