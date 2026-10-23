@@ -83,7 +83,7 @@ commands:
   wasm            cargo check --target wasm32-unknown-unknown for the wasm-safe crates (+ the web app)
   android check   cargo check --target aarch64-linux-android for the crates the Android app uses
                   (needs the Android NDK; skipped without it outside CI)
-  android package [--abi arm64|x86_64]… [--aab] [--store github|play] [--skip-build]
+  android package [--abi arm64|x86_64]… [--aab] [--store github|play] [--skip-build] [--version-code N]
                   the Android app as a signed APK (and with --aab a Play Store bundle, always the
                   Play build: no All files access) in
                   <target>/android/ (NDK + SDK; docs/android.md)

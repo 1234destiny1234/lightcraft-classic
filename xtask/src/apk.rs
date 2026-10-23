@@ -77,10 +77,23 @@ struct Options {
     /// one APK per ABI instead of one holding them all
     split: bool,
     skip_build: bool,
+    /// `--version-code`: replaces the code derived from the version (a Play re-upload of the same version)
+    version_code: Option<u32>,
+}
+
+/// The largest version code Google Play accepts.
+const MAX_VERSION_CODE: u32 = 2_100_000_000;
+
+fn parse_version_code(v: &str) -> Result<u32, String> {
+    let n: u32 = v.trim().parse().map_err(|_| format!("--version-code: `{v}` is not a positive whole number"))?;
+    if n == 0 || n > MAX_VERSION_CODE {
+        return Err(format!("--version-code: {n} is out of range (1 to {MAX_VERSION_CODE})"));
+    }
+    Ok(n)
 }
 
 fn parse(args: &[&str]) -> Result<Options, String> {
-    let mut o = Options { abis: Vec::new(), aab: false, store: Store::Github, split: false, skip_build: false };
+    let mut o = Options { abis: Vec::new(), aab: false, store: Store::Github, split: false, skip_build: false, version_code: None };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match *a {
@@ -98,6 +111,10 @@ fn parse(args: &[&str]) -> Result<Options, String> {
             }
             "--split" => o.split = true,
             "--skip-build" => o.skip_build = true,
+            "--version-code" => {
+                let v = it.next().ok_or("--version-code needs a number")?;
+                o.version_code = Some(parse_version_code(v)?);
+            }
             other => return Err(format!("android package: unknown option `{other}`")),
         }
     }
@@ -169,7 +186,8 @@ fn path_with_java(java_home: Option<std::ffi::OsString>, path: Option<std::ffi::
 }
 
 /// `versionCode`: grows with every release, a prerelease below its release
-/// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_99).
+/// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_50). Prereleases use 01–49; 51–99 are left free for
+/// re-uploads of the same release to Google Play (`--version-code`), since every upload consumes its code.
 pub fn version_code(version: &str) -> Result<u32, String> {
     let (main, pre) = version.split_once('-').map_or((version, None), |(m, p)| (m, Some(p)));
     let nums: Vec<u32> =
@@ -179,10 +197,10 @@ pub fn version_code(version: &str) -> Result<u32, String> {
         return Err(format!("version `{version}`: too large for a versionCode"));
     }
     let build = match pre {
-        None => 99,
+        None => 50,
         Some(p) => {
             let n: u32 = p.trim_start_matches(|c: char| !c.is_ascii_digit()).parse().unwrap_or(0);
-            n.clamp(1, 98)
+            n.clamp(1, 49)
         }
     };
     Ok(major * 1_000_000 + minor * 10_000 + patch * 100 + build)
@@ -322,7 +340,10 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     let brand = brand::Brand::current()?;
     let vars = dist::vars(&root, &brand)?;
     let version = vars.get("version").cloned().ok_or("no version")?;
-    let code = version_code(&version)?;
+    let code = match opts.version_code {
+        Some(c) => c,
+        None => version_code(&version)?,
+    };
     let binary = brand.req("binary")?.to_string();
 
     let sdk = sdk_root().ok_or("android: the Android SDK was not found (set ANDROID_HOME)")?;
@@ -518,6 +539,10 @@ mod tests {
         ];
         let codes: Vec<u32> = order.iter().map(|v| version_code(v).unwrap()).collect();
         assert!(codes.windows(2).all(|w| w[0] < w[1]), "{codes:?}");
+        // a release leaves codes free above it, below the next version's first prerelease
+        let (release, next) = (version_code("26.43.5").unwrap(), version_code("26.43.6-rc1").unwrap());
+        assert!(next - release > 10, "{release} {next}");
+        assert!(version_code("26.43.6-rc99").unwrap() < version_code("26.43.6").unwrap());
     }
 
     #[test]
@@ -568,6 +593,17 @@ mod tests {
         assert_eq!(dirs, vec![home.join("bin"), std::env::temp_dir().join("usr-bin")]);
         assert_eq!(path_with_java(None, Some("x".into())), None);
         assert_eq!(path_with_java(Some("".into()), Some("x".into())), None);
+    }
+
+    #[test]
+    fn version_code_override_is_validated() {
+        let code = parse(&["--aab", "--version-code", "26430600"]).unwrap().version_code.unwrap();
+        assert!(code > version_code("26.43.5").unwrap() && code < version_code("26.43.6-rc1").unwrap());
+        assert_eq!(parse(&["--aab"]).unwrap().version_code, None);
+        for bad in ["0", "-5", "abc", "2100000001", "99999999999", ""] {
+            assert!(parse(&["--version-code", bad]).is_err(), "{bad}");
+        }
+        assert!(parse(&["--version-code"]).is_err());
     }
 
     #[test]
