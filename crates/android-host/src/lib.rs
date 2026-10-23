@@ -333,6 +333,13 @@ pub use android_activity::AndroidApp;
 #[cfg(target_os = "android")]
 pub use imp::Host;
 
+/// Whether the app offers "All files access" (Settings ▸ Folders ▸ Device storage, `app.allFilesAccess`), given
+/// whether the manifest declares it. A build without it (the Play build) never asks, and an unreadable answer counts
+/// as not declared: asking for a permission the manifest lacks opens a settings page that can't grant it.
+pub fn offers_all_files_access(declared: Result<bool, Error>) -> bool {
+    matches!(declared, Ok(true))
+}
+
 #[cfg(target_os = "android")]
 mod imp {
     use std::sync::atomic::{AtomicI64, Ordering};
@@ -515,6 +522,17 @@ mod imp {
                 Ok(())
             })?;
             Ok(granted)
+        }
+
+        /// Whether this build's manifest declares "All files access" (`MANAGE_EXTERNAL_STORAGE`): the
+        /// GitHub build does, the Play build doesn't. Read through the package manager.
+        pub fn all_files_access_declared(&self) -> Result<bool, Error> {
+            let mut declared = false;
+            self.call("allFilesAccessDeclared", |env, activity| {
+                declared = env.call_method(activity, "allFilesAccessDeclared", "()Z", &[])?.z()?;
+                Ok(())
+            })?;
+            Ok(declared)
         }
 
         /// Asks for "All files access" (the system's settings page on Android 11+, the storage
@@ -899,6 +917,15 @@ mod tests {
     #[test]
     fn known_extensions_narrow_the_picker() {
         assert_eq!(PickRequest::mime_types_for(&["jpg", "JPEG", "png"]), vec!["image/jpeg", "image/png"]);
+    }
+
+    #[test]
+    fn all_files_access_is_offered_only_when_the_manifest_declares_it() {
+        // the GitHub build
+        assert!(offers_all_files_access(Ok(true)));
+        // the Play build, and an activity that couldn't answer: never ask
+        assert!(!offers_all_files_access(Ok(false)));
+        assert!(!offers_all_files_access(Err(Error("no activity".into()))));
     }
 
     #[test]

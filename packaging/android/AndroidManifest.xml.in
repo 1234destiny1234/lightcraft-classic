@@ -7,10 +7,13 @@
     <uses-permission android:name="android.permission.ACCESS_WIFI_STATE" />
     <uses-permission android:name="android.permission.CHANGE_WIFI_MULTICAST_STATE" />
     <!-- reading folders on the device in place instead of copying them (docs/android.md, Storage):
-         "All files access" on Android 11+, the storage permission before; photos on Android 13+ -->
-    <uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />
+         "All files access" on Android 11+, GitHub build only (empty in the Play build, xtask/src/apk.rs) -->
+    {{all_files_permission}}
+    <!-- the camera roll (MediaStore): the storage permission up to Android 12, photos on 13+, and the
+         "selected photos" answer on 14+ -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES" />
+    <uses-permission android:name="android.permission.READ_MEDIA_VISUAL_USER_SELECTED" />
     <!-- exports saved to Pictures/<app>: through MediaStore (no permission) on Android 10+, as a
          file before (Android 9) -->
     <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="28" />
@@ -23,7 +26,7 @@
         android:largeHeap="true"
         android:extractNativeLibs="false"
         android:allowBackup="false"
-        android:requestLegacyExternalStorage="true">
+        {{legacy_storage}}>
         <activity
             android:name=".MainActivity"
             android:exported="true"

@@ -12,11 +12,18 @@
 //! Play requires) and `apksigner`. The bundle is built from the same parts by `bundletool`
 //! (downloaded once, pinned by sha256) and signed with `jarsigner`.
 //!
+//! Two distributions differ only in the manifest ([`Store`]): the APKs are the GitHub build (`--store github`,
+//! the default), which may ask for "All files access" (`MANAGE_EXTERNAL_STORAGE`) to read picked folders in place;
+//! the bundle is always the Play build, which has neither that permission nor `requestLegacyExternalStorage` (Play
+//! allows All files access only for file managers, backup and similar apps). `--store play` makes the APKs the Play
+//! build too, to try it by sideloading.
+//!
 //! Signing: `ANDROID_KEYSTORE` (a keystore file), `ANDROID_KEYSTORE_PASSWORD`, `ANDROID_KEY_ALIAS`
 //! (default `upload`) and `ANDROID_KEY_PASSWORD` (default: the keystore's). Without them a debug
 //! key in `<target>/android/debug.keystore` signs the build (installable for testing; the Play
 //! Store refuses it), with a warning.
 
+use std::collections::BTreeMap;
 use std::io::{Read as _, Write as _};
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -29,16 +36,51 @@ const TARGET_SDK: u32 = 36;
 const BUNDLETOOL_VERSION: &str = "1.18.1";
 const BUNDLETOOL_SHA256: &str = "675786493983787ffa11550bdb7c0715679a44e1643f3ff980a529e9c822595c";
 
+/// Which distribution a manifest is for.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum Store {
+    /// GitHub releases (sideloaded): may ask for All files access, so picked folders are read in place.
+    Github,
+    /// Google Play: no All files access; folders are copied, the camera roll goes through MediaStore.
+    Play,
+}
+
+impl Store {
+    fn parse(s: &str) -> Option<Store> {
+        match s {
+            "github" => Some(Store::Github),
+            "play" => Some(Store::Play),
+            _ => None,
+        }
+    }
+
+    /// The manifest template's per-distribution placeholders.
+    fn manifest_vars(self, vars: &BTreeMap<String, String>) -> BTreeMap<String, String> {
+        let mut v = vars.clone();
+        let (perm, legacy) = match self {
+            Store::Github => {
+                (r#"<uses-permission android:name="android.permission.MANAGE_EXTERNAL_STORAGE" />"#, r#"android:requestLegacyExternalStorage="true""#)
+            }
+            Store::Play => ("", ""),
+        };
+        v.insert("all_files_permission".into(), perm.into());
+        v.insert("legacy_storage".into(), legacy.into());
+        v
+    }
+}
+
 struct Options {
     abis: Vec<Abi>,
     aab: bool,
+    /// the distribution the APKs are for (the bundle is always [`Store::Play`])
+    store: Store,
     /// one APK per ABI instead of one holding them all
     split: bool,
     skip_build: bool,
 }
 
 fn parse(args: &[&str]) -> Result<Options, String> {
-    let mut o = Options { abis: Vec::new(), aab: false, split: false, skip_build: false };
+    let mut o = Options { abis: Vec::new(), aab: false, store: Store::Github, split: false, skip_build: false };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match *a {
@@ -50,6 +92,10 @@ fn parse(args: &[&str]) -> Result<Options, String> {
                 }
             }
             "--aab" => o.aab = true,
+            "--store" => {
+                let v = it.next().ok_or("--store needs github or play")?;
+                o.store = Store::parse(v).ok_or_else(|| format!("--store: unknown `{v}` (github or play)"))?;
+            }
             "--split" => o.split = true,
             "--skip-build" => o.skip_build = true,
             other => return Err(format!("android package: unknown option `{other}`")),
@@ -317,19 +363,25 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     }
 
     // 2. the manifest and activity, from packaging/android
-    let render = |rel: &str| -> Result<PathBuf, String> {
+    let render = |rel: &str, dest_rel: &str, vars: &BTreeMap<String, String>| -> Result<PathBuf, String> {
         let src = root.join("packaging/android").join(format!("{rel}.in"));
         let text = std::fs::read_to_string(&src).map_err(|e| format!("{}: {e}", src.display()))?;
-        let text = brand::render(&text, &vars).map_err(|e| format!("{}: {e}", src.display()))?;
-        let dest = work.join("gen").join(rel);
+        let text = brand::render(&text, vars).map_err(|e| format!("{}: {e}", src.display()))?;
+        let dest = work.join("gen").join(dest_rel);
         if let Some(d) = dest.parent() {
             mkdir(d)?;
         }
         std::fs::write(&dest, text).map_err(|e| format!("{}: {e}", dest.display()))?;
         Ok(dest)
     };
-    let manifest = render("AndroidManifest.xml")?;
-    let activity = render("java/MainActivity.java")?;
+    let manifest_for = |store: Store| {
+        let dir = match store {
+            Store::Github => "github",
+            Store::Play => "play",
+        };
+        render("AndroidManifest.xml", &format!("{dir}/AndroidManifest.xml"), &store.manifest_vars(&vars))
+    };
+    let activity = render("java/MainActivity.java", "java/MainActivity.java", &vars)?;
 
     // 3. the activity: javac → d8
     let classes = work.join("classes");
@@ -352,7 +404,8 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     let mut c = sdk_tool(tools.join("aapt2"));
     c.args(["compile", "--dir"]).arg(&res).arg("-o").arg(&compiled);
     step(c, "aapt2 compile")?;
-    let link = |proto: bool, dest: &Path| -> Result<(), String> {
+    let link = |store: Store, proto: bool, dest: &Path| -> Result<(), String> {
+        let manifest = manifest_for(store)?;
         let mut c = sdk_tool(tools.join("aapt2"));
         c.args(["link", "-o"]).arg(dest).arg("-I").arg(&jar).arg("--manifest").arg(&manifest).args([
             "--min-sdk-version",
@@ -377,7 +430,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
 
     // 5. the APK(s): linked resources + dex + native libraries, aligned and signed
     let linked = work.join("linked.apk");
-    link(false, &linked)?;
+    link(opts.store, false, &linked)?;
     for (name, dirs) in apk_outputs(&binary, &version, &opts.abis, opts.split) {
         let mut extra = vec![("classes.dex".to_string(), dex.join("classes.dex"))];
         extra.extend(libs.iter().filter(|(dir, _)| dirs.contains(dir)).map(|(dir, so)| (format!("lib/{dir}/libapp.so"), so.clone())));
@@ -406,7 +459,7 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     // 6. the bundle (Play Store): the same parts in bundletool's module layout
     if opts.aab {
         let proto = work.join("proto.apk");
-        link(true, &proto)?;
+        link(Store::Play, true, &proto)?;
         let mut extra = vec![("dex/classes.dex".to_string(), dex.join("classes.dex"))];
         extra.extend(libs.iter().map(|(dir, so)| (format!("lib/{dir}/libapp.so"), so.clone())));
         let module = work.join("base.zip");
@@ -481,6 +534,30 @@ mod tests {
         );
         let opts = parse(&["--abi", "arm64", "--abi", "x86_64", "--split", "--aab"]).unwrap();
         assert!(opts.split && opts.aab && opts.abis == both);
+    }
+
+    #[test]
+    fn the_play_manifest_never_asks_for_all_files_access() {
+        let template = std::fs::read_to_string(root().join("packaging/android/AndroidManifest.xml.in")).unwrap();
+        let mut vars = BTreeMap::new();
+        for k in ["android_package", "display_name"] {
+            vars.insert(k.to_string(), "x".to_string());
+        }
+        let play = brand::render(&template, &Store::Play.manifest_vars(&vars)).unwrap();
+        let github = brand::render(&template, &Store::Github.manifest_vars(&vars)).unwrap();
+        // only comments may name them in the Play build
+        let elements = |m: &str| m.split("<!--").map(|c| c.split_once("-->").map_or(c, |(_, rest)| rest)).collect::<String>();
+        for gone in ["MANAGE_EXTERNAL_STORAGE", "requestLegacyExternalStorage"] {
+            assert!(!elements(&play).contains(gone), "{gone} in the Play manifest");
+            assert!(elements(&github).contains(gone), "{gone} missing from the GitHub manifest");
+        }
+        // the camera roll needs the photo permissions in both
+        for both in ["READ_MEDIA_IMAGES", "READ_MEDIA_VISUAL_USER_SELECTED"] {
+            assert!(elements(&play).contains(both) && elements(&github).contains(both), "{both}");
+        }
+        assert_eq!(parse(&["--aab"]).unwrap().store, Store::Github);
+        assert_eq!(parse(&["--store", "play"]).unwrap().store, Store::Play);
+        assert!(parse(&["--store", "amazon"]).is_err());
     }
 
     #[test]

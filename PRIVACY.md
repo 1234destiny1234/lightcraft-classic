@@ -46,8 +46,8 @@ the share sheet.
 
 | Permission | What it is used for |
 |---|---|
-| Photos and media (READ_MEDIA_IMAGES; READ_EXTERNAL_STORAGE on Android 12 and older) | Reading the camera roll and photos you import |
-| All files access (MANAGE_EXTERNAL_STORAGE), optional | Reading a folder of photos in place instead of copying it; asked only when you choose it in Settings ▸ Folders |
+| Photos and media (READ_MEDIA_IMAGES, READ_MEDIA_VISUAL_USER_SELECTED; READ_EXTERNAL_STORAGE on Android 12 and older) | Reading the camera roll and photos you import (on Android 14 and later you can allow selected photos only) |
+| All files access (MANAGE_EXTERNAL_STORAGE), optional, GitHub APK only | Reading a folder of photos in place instead of copying it. The Google Play build does not request it: picked folders are copied into the app instead |
 | Storage write (WRITE_EXTERNAL_STORAGE, Android 9 and older only) | Save to Pictures from the Export sheet |
 | Internet | The features in the table above |
 | Wi-Fi state and multicast | Finding your paired devices for Sync on the local network |

@@ -167,7 +167,8 @@ fn services(cc: &eframe::CreationContext<'_>, host: Option<Arc<Host>>) -> Servic
             })
         }),
         // "All files access", so folders on the device are read in place (Settings ▸ Folders)
-        storage_access: storage_host.map(|h| {
+        // (only in a build whose manifest declares it: the Play build doesn't, and copies picked folders)
+        storage_access: storage_host.filter(|h| lcc_android_host::offers_all_files_access(h.all_files_access_declared())).map(|h| {
             let ask = h.clone();
             lcc_ui_egui::StorageAccess {
                 granted: Box::new(move || h.has_all_files_access().unwrap_or(false)),
