@@ -520,29 +520,48 @@ pub(crate) struct Ticks {
     photos: usize,
     /// Photos with it, by cleaned lower-case keyword.
     counts: std::collections::HashMap<String, usize>,
+    /// Keywords some photo has a keyword below (but maybe not the keyword itself), cleaned and
+    /// lower-case: their box shows a dash.
+    above: std::collections::HashSet<String>,
 }
+
+/// How many levels up from a photo's keyword the dash reaches: a bound on the walk for hostile
+/// keyword paths.
+const MAX_LEVELS: usize = 64;
 
 impl Ticks {
     pub(crate) fn of(catalog: &Catalog, photos: &[PhotoId]) -> Ticks {
         let photos = super::keywording::distinct(catalog, photos);
         let mut counts: std::collections::HashMap<String, usize> = Default::default();
         let mut seen = std::collections::HashSet::new();
+        let mut above = std::collections::HashSet::new();
         for p in &photos {
             seen.clear();
             for k in &p.meta.keywords {
                 let key = lcc_catalog::keywords::clean(k).to_lowercase();
+                let mut up = key.as_str();
+                for _ in 0..MAX_LEVELS {
+                    let Some(i) = up.rfind('|') else { break };
+                    up = up.get(..i).unwrap_or_default();
+                    if !above.insert(up.to_string()) {
+                        break; // this one and the levels above it are in already
+                    }
+                }
                 if seen.insert(key.clone()) {
                     *counts.entry(key).or_default() += 1;
                 }
             }
         }
-        Ticks { photos: photos.len(), counts }
+        Ticks { photos: photos.len(), counts, above }
     }
 
-    /// The tick box of `path`: a photo counts when it has the keyword itself (any case); one with
-    /// only a keyword below it doesn't.
+    /// The tick box of `path`: ticked when every photo has the keyword itself (any case); a dash
+    /// when some do, or when a photo has only a keyword below it (clicking the dash adds the
+    /// keyword itself, as any dash does).
     pub(crate) fn tick(&self, path: &str) -> Tick {
-        match self.counts.get(&lcc_catalog::keywords::clean(path).to_lowercase()).copied().unwrap_or(0) {
+        let key = lcc_catalog::keywords::clean(path).to_lowercase();
+        match self.counts.get(&key).copied().unwrap_or(0) {
+            0 if self.photos > 0 && self.above.contains(&key) => Tick::Some,
             0 => Tick::No,
             n if n >= self.photos => Tick::All,
             _ => Tick::Some,
@@ -617,7 +636,9 @@ mod tests {
         assert_eq!(Ticks::of(&c, &ids[..2]).tick("travel|Italy"), Tick::All, "whatever the case");
         let all = Ticks::of(&c, &ids);
         assert_eq!(all.tick("travel|Italy"), Tick::Some);
-        assert_eq!(all.tick("travel"), Tick::No, "a keyword below doesn't tick its parent");
+        assert_eq!(all.tick("travel"), Tick::Some, "a keyword below gives its parents a dash");
+        assert_eq!(Ticks::of(&c, &ids[..2]).tick("travel"), Tick::Some, "not a tick: no photo has the parent itself");
+        assert_eq!(all.tick("travel|Italy|Rome"), Tick::No, "nor does it mark the keywords below it");
         assert_eq!(Ticks::of(&c, &[]).tick("beach"), Tick::No);
         assert_eq!(Ticks::of(&c, &ids[2..]).tick("beach"), Tick::No);
         // any letter's case, not only ASCII; a photo with it twice counts once

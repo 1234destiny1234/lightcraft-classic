@@ -69,7 +69,14 @@ pub fn main(activity: AndroidApp) {
                 lcc_ui_egui::panels::empty_library::open_on_empty_library(&mut app);
             }
             let writer = prefs::Writer::new(prefs_path, &app, loaded.keep_file);
-            Ok(Box::new(App { app, writer, keyboard: Keyboard { host: keyboard_host, ..Default::default() }, host }))
+            Ok(Box::new(App {
+                app,
+                writer,
+                keyboard: Keyboard { host: keyboard_host, ..Default::default() },
+                host,
+                first_frame_told: false,
+                last_frame: None,
+            }))
         }),
     );
     if let Err(e) = result {
@@ -184,6 +191,10 @@ struct App {
     writer: prefs::Writer,
     host: Option<Arc<Host>>,
     keyboard: Keyboard,
+    /// Whether the activity was told the first frame is on screen (see `Host::first_frame_shown`).
+    first_frame_told: bool,
+    /// When the previous frame ran (egui time), to log frames resuming after a long gap.
+    last_frame: Option<f64>,
 }
 
 /// The on-screen keyboard: what it typed goes into the frame's input; it shows while a text field
@@ -244,6 +255,14 @@ impl eframe::App for App {
             lcc_ui_egui::pick::answer_after_restart(&mut self.app, ctx, kind, u.paths);
         }
         let now = ctx.input(|i| i.time);
+        // frames stop while the activity is in the background; log when they come back so a
+        // freeze after resuming shows in logcat as "no frame after resume"
+        if let Some(prev) = self.last_frame
+            && now - prev > 2.0
+        {
+            log::info!("lifecycle: frames resumed after {:.1} s", now - prev);
+        }
+        self.last_frame = Some(now);
         self.writer.tick(&mut self.app, now);
     }
     fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
@@ -259,6 +278,14 @@ impl eframe::App for App {
         self.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
         self.app.ui(ui);
         self.keyboard.follow(ui.ctx());
+        if !self.first_frame_told {
+            self.first_frame_told = true;
+            if let Some(h) = &self.host
+                && let Err(e) = h.first_frame_shown()
+            {
+                log::warn!("first frame: {e}");
+            }
+        }
     }
     fn on_exit(&mut self) {
         if let Err(e) = self.writer.save(&self.app) {

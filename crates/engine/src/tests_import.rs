@@ -1797,6 +1797,49 @@ fn a_stale_refresh_never_rebuilds_a_proxy_from_itself() {
     let _ = std::fs::remove_dir_all(&lib);
 }
 
+/// Auto Sync of a Temperature edit gives every selected raw the same Kelvin, even raws whose stored white balance
+/// is still on the legacy relative scale (6500 K = as shot) with different as-shot whites (#425).
+#[test]
+fn auto_sync_white_balance_gives_every_raw_the_same_kelvin() {
+    let src = temp_dir("autosync-wb-src");
+    let lib = temp_dir("autosync-wb-lib");
+    for i in 0..3u8 {
+        write_png(&src.join(format!("{i}.png")), i);
+    }
+    let mut s = Session::new().with_fs();
+    s.open_library(&lib, false).unwrap();
+    let paths: Vec<String> = (0..3).map(|i| src.join(format!("{i}.png")).to_string_lossy().into_owned()).collect();
+    s.execute("library.import", &json!({"paths": paths})).unwrap();
+    let ids: Vec<lcc_catalog::PhotoId> = s.catalog.photos().map(|p| p.id).collect();
+    assert_eq!(ids.len(), 3);
+    // fitted-look raws of a camera with a Kelvin scale, each shot under its own light
+    for (id, as_shot) in ids.iter().zip([5000.0, 6000.0, 5000.0]) {
+        let mut raw = (**s.catalog.photo(*id).unwrap()).clone();
+        raw.format = "NEF".into();
+        raw.kind = lcc_catalog::MediaKind::Raw;
+        raw.meta.camera = "NIKON CORPORATION NIKON Z5_2".into();
+        raw.as_shot_wb = Some((as_shot, 4.0));
+        s.catalog.apply(lcc_catalog::Op::RemovePhoto { id: *id }).unwrap();
+        s.catalog.apply(lcc_catalog::Op::AddPhoto { photo: Box::new(raw) }).unwrap();
+        assert!(s.source_info(*id).legacy_relative_wb, "the stored white balance is on the legacy scale");
+    }
+    // the active photo's white balance was edited before (now on the Kelvin scale); the others never were
+    s.execute("library.select", &json!({"ids": [ids[0].0], "active": ids[0].0})).unwrap();
+    s.execute("develop.set", &json!({"control": "wb.temp", "value": 5000})).unwrap();
+    let raw_ids: Vec<u64> = ids.iter().map(|i| i.0).collect();
+    s.execute("library.select", &json!({"ids": raw_ids, "active": ids[0].0})).unwrap();
+    s.execute("develop.autoSync", &json!({"on": true})).unwrap();
+    s.execute("develop.set", &json!({"control": "wb.temp", "value": 4000})).unwrap();
+    let source = s.develop_of(ids[0]).unwrap().wb;
+    assert_eq!(source.temp, 4000.0);
+    for id in &ids {
+        let wb = s.develop_of(*id).unwrap().wb;
+        assert_eq!((wb.temp, wb.tint, wb.scale), (source.temp, source.tint, lcc_develop::WbScale::Kelvin), "photo {id:?}");
+    }
+    let _ = std::fs::remove_dir_all(&src);
+    let _ = std::fs::remove_dir_all(&lib);
+}
+
 /// The look marker: missing, damaged or older than this build's fit version counts as unchecked.
 #[test]
 fn smart_preview_look_marker_is_read_safely() {

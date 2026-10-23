@@ -4866,6 +4866,82 @@ mod tests {
         }
     }
 
+    /// A final display-sized texture, an oversampled HDR texture and a small drag draft
+    /// all place the same photo in the same physical-pixel rectangle.
+    #[test]
+    fn adjustment_pixel_bounds_stay_fixed_across_texture_sizes_and_output_modes() {
+        use crate::render::Slot;
+        use lcc_catalog::{Op, Photo, PhotoId, Source};
+        use std::sync::Arc;
+        struct Hdr;
+        impl crate::HdrOutput for Hdr {
+            fn headroom(&mut self) -> Option<f32> {
+                Some(4.0)
+            }
+            fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(700 + u64::from(view)))
+            }
+        }
+        for native in [[3264, 2448], [6000, 4000], [3265, 2449]] {
+            for ppp in [1.0, 1.25, 1.5, 2.0] {
+                for hdr in [false, true] {
+                    let mut session = lcc_engine::Session::new();
+                    session.media.file_loader = Some(Arc::new(move |_, _, _| {
+                        let (w, h) = (2560, (2560.0 * native[1] as f64 / native[0] as f64).round() as usize);
+                        let mut image = lcc_raster::Rgb32f::new(w, h);
+                        image.data.fill([0.4, 0.3, 0.2]);
+                        Ok((image, Default::default()))
+                    }));
+                    let photo = Photo::new(
+                        PhotoId(1),
+                        Source::File { path: "pixel-bounds.jpg".into() },
+                        "pixel-bounds.jpg",
+                        "JPEG",
+                        native[0],
+                        native[1],
+                        "2026-10-22",
+                    );
+                    session.catalog.apply(Op::AddPhoto { photo: Box::new(photo) }).unwrap();
+                    session.selection = lcc_engine::Selection::single(PhotoId(1));
+                    session.execute("develop.hdr", &json!({"enabled": hdr})).unwrap();
+                    let services = crate::Services { hdr_output: hdr.then(|| Box::new(Hdr) as Box<dyn crate::HdrOutput>), ..Default::default() };
+                    let mut h = Headless::new(LccApp::new(session, services), [1000.3, 700.5], ppp);
+                    h.app.ui.view = crate::state::ViewMode::Detail;
+                    let bounds = |h: &Headless| {
+                        let tex = if h.app.loupe_shown.is_some_and(|(_, source)| source == "hdr") {
+                            egui::TextureId::User(700)
+                        } else {
+                            h.app.renderer.textures[&Slot::Main].tex.id()
+                        };
+                        h.view
+                            .painted_shapes()
+                            .iter()
+                            .find_map(|shape| match shape {
+                                egui::epaint::Shape::Mesh(mesh) if mesh.texture_id == tex => Some(shape.visual_bounding_rect()),
+                                _ => None,
+                            })
+                            .expect("the photo's actual painted quad")
+                    };
+                    assert!(h.settle(SETTLE));
+                    let still = bounds(&h);
+                    let still_size = h.app.renderer.textures[&Slot::Main].size;
+                    assert_eq!(Some(still), h.app.image_rect);
+                    h.app.run("develop.beginInteraction", json!({"label": "Exposure"})).unwrap();
+                    assert!(h.settle(SETTLE));
+                    let draft_size = h.app.renderer.textures[&Slot::Main].size;
+                    assert_ne!(still_size, draft_size, "the test exercises a real texture-size transition");
+                    assert_eq!(bounds(&h), still, "drag: {native:?}, {ppp}x, HDR {hdr}");
+                    h.app.run("develop.set", json!({"values": {"light.exposure": 0.25}})).unwrap();
+                    assert!(h.settle(SETTLE));
+                    assert_eq!(bounds(&h), still, "update: {native:?}, {ppp}x, HDR {hdr}");
+                    h.app.run("develop.endInteraction", json!({})).unwrap();
+                    assert!(h.settle(SETTLE));
+                    assert_eq!(bounds(&h), still, "release: {native:?}, {ppp}x, HDR {hdr}");
+                }
+            }
+        }
+    }
+
     /// Gap 14: zoomed in (1:1 tiles) an HDR edit is still drawn above SDR white, from an HDR
     /// render of the part on screen; the Before side (the photo without its edits) stays SDR;
     /// View ▸ HDR Preview off shows the SDR rendition everywhere, and back on the HDR again.

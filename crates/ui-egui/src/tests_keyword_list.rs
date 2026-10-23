@@ -84,6 +84,20 @@ fn the_tick_box_gives_a_keyword_to_the_selection() {
     assert!(ids.iter().all(|id| keywords_of(&h, *id).contains(&"Weddings".to_string())), "some had it: now all do");
 }
 
+/// A photo with only a keyword below another gives the parent's box a dash; clicking the dash
+/// adds the parent itself, and only then is it ticked.
+#[test]
+fn a_keyword_below_gives_its_parent_a_dash() {
+    let (mut h, ids) = keywords_panel();
+    run(&mut h, "photo.setMeta", json!({"ids": ids, "addKeywords": ["Events|Weddings"]}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "field:keywordFilter"}));
+    ask(&mut h, "ui.text", json!({"text": "wedd"}));
+    assert!(ids.iter().all(|id| !keywords_of(&h, *id).iter().any(|k| k == "Events")));
+    ask(&mut h, "ui.clickWidget", json!({"id": "keywordCheck:Events"}));
+    assert!(ids.iter().all(|id| keywords_of(&h, *id).iter().any(|k| k == "Events")), "the dash added the parent");
+    assert!(ids.iter().all(|id| keywords_of(&h, *id).iter().any(|k| k == "Events|Weddings")), "the child stays");
+}
+
 /// Typing in the filter box keeps the keywords whose name holds the text, with their parents.
 #[test]
 fn the_filter_box_narrows_the_list() {

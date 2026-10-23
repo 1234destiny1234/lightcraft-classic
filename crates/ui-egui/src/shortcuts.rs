@@ -222,10 +222,10 @@ pub const ALIASES: &[(&str, &str, &str)] = &[
     ("Shift+X", "photo.flag", r#"{"flag": "reject", "advance": true}"#),
     ("Shift+Z", "photo.flag", r#"{"flag": "pick", "advance": true}"#),
     ("Shift+U", "photo.flag", r#"{"flag": "none", "advance": true}"#),
-    ("Shift+6", "photo.label", r#"{"label": "red", "advance": true}"#),
-    ("Shift+7", "photo.label", r#"{"label": "yellow", "advance": true}"#),
-    ("Shift+8", "photo.label", r#"{"label": "green", "advance": true}"#),
-    ("Shift+9", "photo.label", r#"{"label": "blue", "advance": true}"#),
+    ("Shift+6", "photo.label", r#"{"label": "red", "advance": true, "toggle": true}"#),
+    ("Shift+7", "photo.label", r#"{"label": "yellow", "advance": true, "toggle": true}"#),
+    ("Shift+8", "photo.label", r#"{"label": "green", "advance": true, "toggle": true}"#),
+    ("Shift+9", "photo.label", r#"{"label": "blue", "advance": true, "toggle": true}"#),
     // Shift+[ / Shift+] arrive as { / } on most layouts
     ("Shift+{", "brush.featherLess", "{}"),
     ("Shift+}", "brush.featherMore", "{}"),
@@ -527,7 +527,7 @@ pub fn handle(app: &mut LccApp, ctx: &egui::Context) {
         } else if matches!(f.as_str(), "photo.decreaseRating" | "photo.increaseRating") {
             cull(app, &f, json!({}), false);
         } else if let Some(l) = f.strip_prefix("label:") {
-            cull(app, "photo.label", json!({"label": l}), false);
+            cull(app, "photo.label", json!({"label": l, "toggle": true}), false);
         } else if f == "view.softProof" && matches!(app.ui.view, crate::state::ViewMode::PhotoGrid | crate::state::ViewMode::SquareGrid) {
             // S in a grid: expand / collapse the stack (Lightroom's Library binding)
             let _ = app.run("stack.toggle", json!({}));
@@ -1061,6 +1061,47 @@ mod tests {
         h.app.ui.toast = None;
         assert!(h.app.run("photo.label", json!({"label": "invalid"})).is_err());
         assert!(h.app.ui.toast.is_none(), "failed actions must not announce success");
+    }
+
+    #[test]
+    fn color_label_shortcuts_toggle_labels_off() {
+        use lcc_catalog::{ColorLabel, PhotoId};
+        let mut h = library();
+        h.app.session.execute("library.select", &json!({"ids": [1]})).unwrap();
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
+
+        // Press 6 to assign Red
+        key(&mut h, "6", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Red));
+        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Red Label"));
+
+        // Press 6 again to toggle off (issue #412)
+        key(&mut h, "6", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
+        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert!(h.app.ui.toast.as_ref().is_some_and(|t| t.2.is_none()));
+
+        // Press 7 to assign Yellow
+        key(&mut h, "7", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Yellow));
+        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Yellow Label"));
+
+        // Press 7 again to toggle off
+        key(&mut h, "7", false);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
+        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+
+        // Shift+8 (Green) assigns Green and advances to photo 2
+        key(&mut h, "8", true);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, Some(ColorLabel::Green));
+        assert_eq!(h.app.session.active(), Some(PhotoId(2)));
+
+        // Select photo 1 again, Shift+8 toggles off and advances
+        h.app.session.execute("library.select", &json!({"ids": [1]})).unwrap();
+        key(&mut h, "8", true);
+        assert_eq!(h.app.session.catalog.photo(PhotoId(1)).unwrap().label, None);
+        assert_eq!(h.app.ui.toast.as_ref().map(|t| t.0.as_str()), Some("Color label cleared"));
+        assert_eq!(h.app.session.active(), Some(PhotoId(2)));
     }
 
     #[test]

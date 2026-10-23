@@ -458,6 +458,16 @@ mod imp {
             })
         }
 
+        /// Tells the activity the first frame is on screen: it asks its first-start questions
+        /// ("All files access") only then, so they never cover the activity while its window and
+        /// GPU surface are still being made.
+        pub fn first_frame_shown(&self) -> Result<(), Error> {
+            self.call("firstFrameShown", |env, activity| {
+                env.call_method(activity, "firstFrameShown", "()V", &[])?;
+                Ok(())
+            })
+        }
+
         /// Opens a web link in the browser.
         pub fn open_url(&self, url: &str) -> Result<(), Error> {
             self.call("openUrl", |env, activity| {

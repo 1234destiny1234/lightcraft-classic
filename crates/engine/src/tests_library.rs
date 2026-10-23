@@ -336,6 +336,57 @@ fn filter_any_of_several_labels() {
     assert!(s.visible_cloned().len() > want);
 }
 
+#[test]
+fn photo_label_toggle() {
+    use lcc_catalog::ColorLabel;
+    let mut s = crate::Session::with_demo();
+    let id = s.selection.active.unwrap();
+    assert_eq!(s.catalog.photo(id).unwrap().label, None);
+
+    // toggle red -> sets red
+    let r = s.execute("photo.label", &serde_json::json!({"label": "red", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "red");
+    assert_eq!(s.catalog.photo(id).unwrap().label, Some(ColorLabel::Red));
+
+    // toggle red again -> clears red (None)
+    let r = s.execute("photo.label", &serde_json::json!({"label": "red", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "none");
+    assert_eq!(s.catalog.photo(id).unwrap().label, None);
+
+    // toggle yellow -> sets yellow
+    let r = s.execute("photo.label", &serde_json::json!({"label": "yellow", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "yellow");
+    assert_eq!(s.catalog.photo(id).unwrap().label, Some(ColorLabel::Yellow));
+
+    // toggle green while yellow -> sets green (not cleared because yellow != green)
+    let r = s.execute("photo.label", &serde_json::json!({"label": "green", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "green");
+    assert_eq!(s.catalog.photo(id).unwrap().label, Some(ColorLabel::Green));
+
+    // toggle green again -> clears green
+    let r = s.execute("photo.label", &serde_json::json!({"label": "green", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "none");
+    assert_eq!(s.catalog.photo(id).unwrap().label, None);
+
+    // multi-selection:
+    let ids: Vec<u64> = s.catalog.photos().take(2).map(|p| p.id.0).collect();
+    // photo 0: red, photo 1: none
+    s.execute("photo.label", &serde_json::json!({"ids": [ids[0]], "label": "red"})).unwrap();
+    s.execute("photo.label", &serde_json::json!({"ids": [ids[1]], "label": "none"})).unwrap();
+
+    // toggle red on both -> not all have red, so sets red on both
+    let r = s.execute("photo.label", &serde_json::json!({"ids": ids, "label": "red", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "red");
+    assert_eq!(s.catalog.photo(lcc_catalog::PhotoId(ids[0])).unwrap().label, Some(ColorLabel::Red));
+    assert_eq!(s.catalog.photo(lcc_catalog::PhotoId(ids[1])).unwrap().label, Some(ColorLabel::Red));
+
+    // toggle red on both again -> all have red, so clears both
+    let r = s.execute("photo.label", &serde_json::json!({"ids": ids, "label": "red", "toggle": true})).unwrap();
+    assert_eq!(r["label"], "none");
+    assert_eq!(s.catalog.photo(lcc_catalog::PhotoId(ids[0])).unwrap().label, None);
+    assert_eq!(s.catalog.photo(lcc_catalog::PhotoId(ids[1])).unwrap().label, None);
+}
+
 /// Issue #213: the filter bar's keyword (and camera, lens) pickers take several values, any of which
 /// matches; the facets still combine. One chip clears a facet, and the list follows keyword renames.
 #[test]
