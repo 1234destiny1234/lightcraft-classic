@@ -152,6 +152,7 @@ pub fn info(f: &Filter) -> Value {
         "overlap": m.overlap,
         "moduleHash": f.module_hash(),
         "analyze": f.has_analyze(),
+        "analyzeArea": m.analyze_area,
         "enabled": true,
     })
 }

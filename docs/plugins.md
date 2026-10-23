@@ -270,6 +270,12 @@ with the photo (`setAnalysis`). It runs in the background as an activity row (ki
 `pluginAnalyze`, cancellable) and returns at once; `wait: true` runs it to the end and returns the
 result. Every later `pc_filter` call gets it as `_analysis`, so crop and
 zoom don't move the measurement. Modules without the export give an "unsupported" error.
+A manifest may set `"analyzeArea": "crop"` (default `"frame"`; other values mean the frame) to be
+measured on the photo as its develop geometry frames it instead: orientation, crop, straighten,
+flips, lens profile and perspective, what the Source stage sees (a negative converter measuring
+inside the user's crop, say). The measurement still doesn't move with later crops; measuring again
+picks up a new one. Hosts without the field measure the frame. `plugin.list` shows it as
+`analyzeArea`.
 
 **Pixel scale.** A Source filter that reads neighbours (manifest `overlap` > 0: an unsharp mask,
 grain, a blur) would look different at each render size, its kernel spanning more of the photo in

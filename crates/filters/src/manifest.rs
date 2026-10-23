@@ -92,6 +92,10 @@ pub struct Manifest {
     /// ABI v1.1 proposal; hosts without stages ignore it). Unknown values are ignored.
     #[serde(default, deserialize_with = "lenient_stage", skip_serializing_if = "Option::is_none")]
     pub stage: Option<Stage>,
+    /// Which part of the photo `pc_analyze` measures (`"analyzeArea": "frame" | "crop"`, an ABI v1.1
+    /// proposal alongside `pc_analyze`; hosts without it measure the frame). Unknown values mean the frame.
+    #[serde(default, deserialize_with = "lenient_area", skip_serializing_if = "AnalyzeArea::is_frame")]
+    pub analyze_area: AnalyzeArea,
     /// Display labels of parameters that declare one (`{"type": …, "label": "Dynamic range"}`), by
     /// parameter name. Read by [`Manifest::parse`]; labels that aren't 1-64 printable characters are dropped.
     #[serde(skip)]
@@ -106,6 +110,29 @@ pub enum Stage {
     Source,
     /// On the finished image.
     Display,
+}
+
+/// What a filter's `pc_analyze` is given (see [`Manifest::analyze_area`]).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum AnalyzeArea {
+    /// The whole uncropped photo, as the source decodes it: a crop or zoom never moves the measurement.
+    #[default]
+    Frame,
+    /// The photo as the develop geometry frames it (orientation, crop, straighten, flips, lens and
+    /// perspective corrections): what the source stage sees. A new crop needs a new measurement.
+    Crop,
+}
+
+impl AnalyzeArea {
+    pub fn is_frame(&self) -> bool {
+        *self == AnalyzeArea::Frame
+    }
+}
+
+fn lenient_area<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<AnalyzeArea, D::Error> {
+    let v = Value::deserialize(d)?;
+    Ok(if v.as_str() == Some("crop") { AnalyzeArea::Crop } else { AnalyzeArea::Frame })
 }
 
 fn lenient_stage<'de, D: serde::Deserializer<'de>>(d: D) -> std::result::Result<Option<Stage>, D::Error> {
@@ -410,6 +437,15 @@ mod tests {
                   "mode":{"type":"choice","options":["soft","hard"],"default":"hard"},
                   "mono":{"type":"bool"},"seed":{"type":"int","min":0,"max":9}},
         "overlap":2,"area":"canvas"}"#;
+
+    #[test]
+    fn analyze_area_is_the_frame_unless_a_filter_asks_for_the_crop() {
+        let with = |v: &str| format!(r#"{{"id":"a.b","name":"A","kind":"filter"{v}}}"#);
+        assert_eq!(Manifest::parse(with("").as_bytes()).unwrap().analyze_area, AnalyzeArea::Frame);
+        assert_eq!(Manifest::parse(with(r#","analyzeArea":"crop""#).as_bytes()).unwrap().analyze_area, AnalyzeArea::Crop);
+        assert_eq!(Manifest::parse(with(r#","analyzeArea":"somewhere""#).as_bytes()).unwrap().analyze_area, AnalyzeArea::Frame);
+        assert_eq!(Manifest::parse(with(r#","analyzeArea":7"#).as_bytes()).unwrap().analyze_area, AnalyzeArea::Frame);
+    }
 
     #[test]
     fn parses_and_keeps_param_order() {
