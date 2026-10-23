@@ -12,7 +12,7 @@ covers what exists today.
 | APK / AAB packaging (`cargo xtask android package`), release job (on by default; `RELEASE_ANDROID=false` turns it off) | ✅ arm64-v8a and x86_64 APKs, one AAB with both (arm64 APK 75 MB) |
 | Play Store upload | not started (needs the Play developer account) |
 | Peer-to-peer catalog sync between desktop and Android | 🟡 pairing (Settings ▸ Sync, `crates/peer`; discovery over mDNS / DNS-SD); catalog exchange next |
-| Touch / phone-sized layout (`crates/ui-egui/src/touch.rs`, on by default on Android, `view.touchLayout` elsewhere) | 🟡 photo-first Develop (tap for tools, single-tool drag adjust, hold for the original, Edit panel beside / under the photo), slim Library bar; not yet: system insets, Back key, pinch in adjust mode, tool-specific touch UIs for Crop / Masks |
+| Touch / phone-sized layout (`crates/ui-egui/src/touch.rs`, on by default on Android, `view.touchLayout` elsewhere) | 🟡 photo-first Develop (tap for tools, single-tool drag adjust, hold for the original, Edit panel beside / under the photo), slim Library bar, swipe scrolling with momentum and long-press multi-select, Back (`touch.back`, predictive back), cutout and system-bar insets, a pinned or floating histogram (`touch.histogram`); not yet: pinch in adjust mode, tool-specific touch UIs for Crop / Masks |
 
 ## Design
 

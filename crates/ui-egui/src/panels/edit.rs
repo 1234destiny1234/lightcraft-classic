@@ -659,7 +659,7 @@ fn paint_clip_triangle(p: &egui::Painter, rect: Rect, out: f32, color: Color32, 
 }
 
 /// The current photo's existing preview histogram, shared by Histogram and Tone Curve.
-fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
+pub(crate) fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
     app.renderer
         .textures
         .get(&Slot::Main)

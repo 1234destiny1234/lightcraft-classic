@@ -246,8 +246,24 @@ impl eframe::App for App {
         let now = ctx.input(|i| i.time);
         self.writer.tick(&mut self.app, now);
     }
-    fn raw_input_hook(&mut self, _ctx: &egui::Context, raw: &mut egui::RawInput) {
+    fn raw_input_hook(&mut self, ctx: &egui::Context, raw: &mut egui::RawInput) {
         self.keyboard.input(raw);
+        // the camera cutout and the system bars: the UI keeps clear of them
+        if let Some(px) = lcc_android_host::insets() {
+            self.app.ui.touch.insets = lcc_ui_egui::touch::Insets::from_px(px, ctx.pixels_per_point());
+        }
+        // Back (the predictive-back callback): as the Back key, which the UI turns into touch.back
+        for _ in 0..lcc_android_host::take_back() {
+            for pressed in [true, false] {
+                raw.events.push(egui::Event::Key {
+                    key: egui::Key::BrowserBack,
+                    physical_key: None,
+                    pressed,
+                    repeat: false,
+                    modifiers: egui::Modifiers::NONE,
+                });
+            }
+        }
         // photos opened, shared or dropped from other apps take the desktop's drop path: presets
         // import as presets, photos open the import review
         if let Some(h) = &self.host {
@@ -259,6 +275,13 @@ impl eframe::App for App {
         self.app.perf.host_frame_ms = frame.info().cpu_usage.map(|s| f64::from(s) * 1000.0);
         self.app.ui(ui);
         self.keyboard.follow(ui.ctx());
+        // Back with nothing left to close: the system's Back (the app goes to the background)
+        if lcc_ui_egui::touch::take_system_back(&mut self.app)
+            && let Some(h) = &self.host
+            && let Err(e) = h.go_background()
+        {
+            log::warn!("back: {e}");
+        }
     }
     fn on_exit(&mut self) {
         if let Err(e) = self.writer.save(&self.app) {

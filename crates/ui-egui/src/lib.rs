@@ -76,6 +76,7 @@ pub mod theme;
 pub mod timelapse_ui;
 pub mod titlebar;
 pub mod touch;
+mod touch_input;
 pub mod video_ui;
 pub mod video_view;
 pub mod web_module;
@@ -1619,8 +1620,15 @@ impl LccApp {
         self.screen_profile = icc;
     }
 
-    /// Inject synthetic events (pointer events one per frame; key sequences up to the release).
+    /// Inject synthetic events (pointer events one per frame; key sequences up to the release),
+    /// and (touch layout) turn Back into `touch.back` and swipes into scrolling.
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
+        touch::before_input(self, raw);
+        self.synthetic_input(raw);
+        touch::after_input(self, raw);
+    }
+
+    fn synthetic_input(&mut self, raw: &mut egui::RawInput) {
         // the frame after a synthetic release / key: modifiers back up
         if std::mem::take(&mut self.synthetic_mods_release) && self.synthetic_mods != egui::Modifiers::NONE {
             self.synthetic_mods = egui::Modifiers::NONE;
@@ -2485,3 +2493,5 @@ mod tests_model_setup;
 mod tests_docking_acceptance;
 #[cfg(test)]
 mod tests_touch;
+#[cfg(test)]
+mod tests_touch_gestures;
