@@ -2,7 +2,7 @@
 //!
 //! Everything is hidden until it is wanted. The photo fills the screen; a tap on it shows or hides
 //! the chrome (a slim top bar and a bottom tool strip, both floating over the photo). Picking a
-//! slider tool (Light, Color, Effects, Detail, Optics) enters single-tool adjust mode: the photo
+//! slider tool (Basic, Colour, Tone, Detail, Optics, Effects) enters single-tool adjust mode: the photo
 //! stays whole, a row of the tool's parameters runs along the bottom, and a sideways drag anywhere
 //! on the photo changes the chosen one (an up/down drag picks the next or previous). Crop, Masks,
 //! Remove and Presets open their panels. The full Edit panel is one button away: on the right side
@@ -20,6 +20,7 @@ use serde_json::{Value, json};
 use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::module::{self, ModuleId};
+use crate::panels::edit;
 use crate::state::{BeforeAfter, RightPanel, ViewMode};
 use crate::theme::Tokens;
 use crate::widgets::register;
@@ -184,46 +185,62 @@ enum Axis {
 #[derive(Clone, Copy, Debug, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum Tool {
-    Light,
-    Color,
-    Effects,
+    /// White balance, then the Basic panel's tone sliders.
+    Basic,
+    /// The Basic panel's Presence: texture, clarity, dehaze, vibrance, saturation.
+    Colour,
+    /// The Tone Curve panel's parametric curve: its four regions and three split points.
+    Tone,
     Detail,
     Optics,
+    /// Post-crop vignette and grain.
+    Effects,
 }
 
 impl Tool {
-    pub const ALL: [Tool; 5] = [Tool::Light, Tool::Color, Tool::Effects, Tool::Detail, Tool::Optics];
+    pub const ALL: [Tool; 6] = [Tool::Basic, Tool::Colour, Tool::Tone, Tool::Detail, Tool::Optics, Tool::Effects];
 
     pub fn label(self) -> &'static str {
         match self {
-            Tool::Light => "Light",
-            Tool::Color => "Color",
-            Tool::Effects => "Effects",
+            Tool::Basic => "Basic",
+            Tool::Colour => "Colour",
+            Tool::Tone => "Tone",
             Tool::Detail => "Detail",
             Tool::Optics => "Optics",
+            Tool::Effects => "Effects",
         }
     }
 
     fn icon(self) -> Icon {
         match self {
-            Tool::Light => Icon::Sun,
-            Tool::Color => Icon::Palette,
-            Tool::Effects => Icon::Sliders,
+            Tool::Basic => Icon::Sun,
+            Tool::Colour => Icon::Palette,
+            Tool::Tone => Icon::Sliders,
             Tool::Detail => Icon::Target,
             Tool::Optics => Icon::Circle,
+            Tool::Effects => Icon::Sparkle,
         }
     }
 
+    /// A tool by its label, any case; `light` and `color` (the groups' earlier names) still work.
     pub fn parse(s: &str) -> Option<Tool> {
-        Tool::ALL.into_iter().find(|t| t.label().eq_ignore_ascii_case(s))
+        match s.to_ascii_lowercase().as_str() {
+            "light" => Some(Tool::Basic),
+            "color" => Some(Tool::Colour),
+            _ => Tool::ALL.into_iter().find(|t| t.label().eq_ignore_ascii_case(s)),
+        }
     }
 
     /// The controls, in the order the parameter row shows them.
     fn control_ids(self) -> &'static [&'static str] {
         match self {
-            Tool::Light => &["light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks"],
-            Tool::Color => &["wb.temp", "wb.tint", "color.vibrance", "color.saturation"],
-            Tool::Effects => &["effects.texture", "effects.clarity", "effects.dehaze", "vignette.amount", "grain.amount"],
+            Tool::Basic => {
+                &["wb.temp", "wb.tint", "light.exposure", "light.contrast", "light.highlights", "light.shadows", "light.whites", "light.blacks"]
+            }
+            Tool::Colour => &["effects.texture", "effects.clarity", "effects.dehaze", "color.vibrance", "color.saturation"],
+            Tool::Tone => {
+                &["curve.highlights", "curve.lights", "curve.darks", "curve.shadows", "curve.splitShadows", "curve.splitMid", "curve.splitHighlights"]
+            }
             Tool::Detail => &[
                 "detail.sharpenAmount",
                 "detail.sharpenRadius",
@@ -233,6 +250,7 @@ impl Tool {
                 "detail.nrColor",
             ],
             Tool::Optics => &["optics.distortion", "optics.vignetting", "optics.caRed", "optics.caBlue"],
+            Tool::Effects => &["vignette.amount", "grain.amount"],
         }
     }
 }
@@ -248,14 +266,15 @@ enum Strip {
     Remove,
 }
 
-const STRIP: [Strip; 10] = [
+const STRIP: [Strip; 11] = [
     Strip::Auto,
     Strip::Presets,
-    Strip::Slider(Tool::Light),
-    Strip::Slider(Tool::Color),
-    Strip::Slider(Tool::Effects),
+    Strip::Slider(Tool::Basic),
+    Strip::Slider(Tool::Colour),
+    Strip::Slider(Tool::Tone),
     Strip::Slider(Tool::Detail),
     Strip::Slider(Tool::Optics),
+    Strip::Slider(Tool::Effects),
     Strip::Crop,
     Strip::Masks,
     Strip::Remove,
@@ -846,7 +865,7 @@ fn adjust_drag(app: &mut LccApp, ui: &egui::Ui, resp: &egui::Response, canvas: R
                     // the photo's width (at least 300 points) spans the whole track
                     let p = drag.start + f64::from(total.x / canvas.width().max(300.0));
                     let v = snap(spec, spec.value_at(p));
-                    let _ = app.run("develop.set", json!({"control": spec.id, "value": v}));
+                    set_value(app, spec, v);
                 }
             }
             Some(Axis::Along) => {
@@ -874,16 +893,55 @@ fn snap(spec: &ControlSpec, v: f64) -> f64 {
     spec.clamp(v)
 }
 
-/// The tool's controls this photo has (white balance in Kelvin only for raw files).
+/// The tool's controls this photo has. White balance is on the photo's own scale, as the Edit
+/// panel shows it: Kelvin for raw files, relative (−100..100) for rendered ones.
 fn tool_specs(app: &LccApp, tool: Tool) -> Vec<&'static ControlSpec> {
     let kelvin = app.session.active().and_then(|id| app.session.catalog.photo(id)).is_some_and(|p| p.develops_raw() && !p.relative_wb());
-    tool.control_ids().iter().filter(|id| kelvin || !id.starts_with("wb.")).filter_map(|id| controls::find(id)).collect()
+    tool.control_ids()
+        .iter()
+        .filter_map(|id| match *id {
+            "wb.temp" if !kelvin => Some(&edit::REL_TEMP),
+            "wb.tint" if !kelvin => Some(&edit::REL_TINT),
+            id => controls::find(id),
+        })
+        .collect()
+}
+
+/// A control spec by id, the relative white balance of rendered files included.
+fn find_spec(id: &str) -> Option<&'static ControlSpec> {
+    match id {
+        "wb.tempRel" => Some(&edit::REL_TEMP),
+        "wb.tintRel" => Some(&edit::REL_TINT),
+        id => controls::find(id),
+    }
+}
+
+/// The develop control and value a parameter's value sets (relative white balance → Kelvin and tint).
+fn develop_value(spec: &ControlSpec, v: f64) -> (&'static str, f64) {
+    match spec.id {
+        "wb.tempRel" => ("wb.temp", edit::rel_to_k(v)),
+        "wb.tintRel" => ("wb.tint", v),
+        id => (controls::find(id).map_or("", |s| s.id), v),
+    }
+}
+
+/// Sets a parameter on the active photo, as its Edit panel slider does.
+fn set_value(app: &mut LccApp, spec: &ControlSpec, v: f64) {
+    let (control, value) = develop_value(spec, v);
+    if !control.is_empty() {
+        let _ = app.run("develop.set", json!({"control": control, "value": value}));
+    }
 }
 
 /// A control's value on the active photo (the white balance in effect, as the Edit panel shows it).
 fn value_of(app: &LccApp, spec: &ControlSpec) -> Option<f64> {
     let id = app.session.active()?;
     let d = app.session.develop_of(id).unwrap_or_default();
+    match spec.id {
+        "wb.tempRel" => return Some(edit::k_to_rel(d.wb.temp)),
+        "wb.tintRel" => return Some(d.wb.tint.clamp(-100.0, 100.0)),
+        _ => {}
+    }
     if spec.id.starts_with("wb.") {
         let info = app.session.source_info(id);
         let (temp, tint) = lcc_engine::pipeline::local::effective_wb(&info, &d);
@@ -936,8 +994,13 @@ pub(crate) fn close_tool(app: &mut LccApp, keep: bool) {
     if !keep && !snapshot.is_empty() {
         let changed: serde_json::Map<String, Value> = snapshot
             .into_iter()
-            .filter(|(id, v)| controls::find(id).and_then(|s| value_of(app, s)).is_some_and(|now| (now - v).abs() > 1e-9))
-            .map(|(id, v)| (id, json!(v)))
+            .filter_map(|(id, v)| {
+                let spec = find_spec(&id)?;
+                value_of(app, spec).is_some_and(|now| (now - v).abs() > 1e-9).then_some((spec, v))
+            })
+            .map(|(spec, v)| develop_value(spec, v))
+            .filter(|(id, _)| !id.is_empty())
+            .map(|(id, v)| (id.to_string(), json!(v)))
             .collect();
         if !changed.is_empty() {
             let _ = app.run("develop.set", json!({"values": changed}));
@@ -1358,10 +1421,10 @@ pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         }
         "touch.tool" => {
             let Some(name) = p.get("tool").and_then(Value::as_str) else {
-                return Some(Err("touch.tool: give `tool` (light, color, effects, detail or optics)".into()));
+                return Some(Err("touch.tool: give `tool` (basic, colour, tone, detail, optics or effects)".into()));
             };
             let Some(tool) = Tool::parse(name) else {
-                return Some(Err(format!("touch.tool: unknown tool `{name}` (light, color, effects, detail or optics)")));
+                return Some(Err(format!("touch.tool: unknown tool `{name}` (basic, colour, tone, detail, optics or effects)")));
             };
             if app.session.active().is_none() {
                 return Some(Err("touch.tool: no photo is active".into()));
@@ -1369,10 +1432,11 @@ pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
             close_tool(app, true);
             open_tool(app, tool);
             if let Some(c) = p.get("control").and_then(Value::as_str) {
-                if !tool_specs(app, tool).iter().any(|s| s.id == c) {
+                // `wb.temp` / `wb.tint` also name the relative white balance of a rendered file
+                let Some(spec) = tool_specs(app, tool).into_iter().find(|s| s.id == c || develop_value(s, 0.0).0 == c) else {
                     return Some(Err(format!("touch.tool: `{c}` is not one of {}'s controls", tool.label())));
-                }
-                app.ui.touch.control = c.to_string();
+                };
+                app.ui.touch.control = spec.id.to_string();
             }
             Ok(json!({"tool": tool, "control": app.ui.touch.control}))
         }

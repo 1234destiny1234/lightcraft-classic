@@ -134,7 +134,7 @@ fn back_closes_dialog_tool_panel_and_develop_then_leaves_the_root_to_the_system(
     assert_eq!(back(&mut h)["closed"], "dialog");
     assert!(h.app.ui.dialog.is_none(), "Back closes the dialog as Esc does");
 
-    exec(&mut h, "touch.tool", json!({"tool": "light", "control": "light.exposure"}));
+    exec(&mut h, "touch.tool", json!({"tool": "basic", "control": "light.exposure"}));
     ask(&mut h, "ui.dragWidget", json!({"id": "touch:canvas", "fx": 0.4, "dx": 150.0, "steps": 8}));
     let id = h.app.session.active().unwrap();
     let changed = lcc_develop::controls::get(&h.app.session.develop_of(id).unwrap_or_default(), "light.exposure").unwrap();
