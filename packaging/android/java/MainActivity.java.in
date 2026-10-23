@@ -140,6 +140,7 @@ public class MainActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         hideSystemBars();
         addKeyboardView();
+        watchBackAndEdges();
         try {
             WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wifi != null) {
@@ -358,6 +359,7 @@ public class MainActivity extends NativeActivity {
         }
         for (Object[] a : waiting) answer((Long) a[0], (String[]) a[1]);
         openedReady();
+        edgesReady();
     }
 
     /** Where picked documents are copied: the external files folder, beside the library. */
@@ -1343,5 +1345,121 @@ public class MainActivity extends NativeActivity {
                 Log.w(TAG, "toast: " + e);
             }
         });
+    }
+
+    // ---- Back and the window's edges (crates/android-host: nativeBack, nativeInsets) ----------
+    // Back (the key, the gesture, and predictive back from Android 13, which the target SDK makes
+    // the only way the gesture arrives) goes to the native side, which closes what is open there;
+    // when nothing is, it calls goBackground(). The edges hidden by the camera cutout and the system
+    // bars go to the native side in pixels, again whenever they change, so the UI keeps clear of them.
+
+    /** Back was pressed (registered by crates/android-host). */
+    private native void nativeBack();
+
+    /** The window's insets in pixels (registered by crates/android-host). */
+    private native void nativeInsets(int left, int top, int right, int bottom);
+
+    private final Object edgesLock = new Object();
+    /** nativeBack and nativeInsets are registered (hostReady). */
+    private boolean edgesUp;
+    private int[] lastInsets;
+
+    private void watchBackAndEdges() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                        android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "no back callback: " + e);
+            }
+        }
+        try {
+            View decor = getWindow().getDecorView();
+            decor.setOnApplyWindowInsetsListener((v, insets) -> {
+                reportInsets(insets);
+                return v.onApplyWindowInsets(insets);
+            });
+            decor.requestApplyInsets();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no window insets: " + e);
+        }
+    }
+
+    /** Before Android 13 (the Back key, when the native side lets it through). */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        back();
+    }
+
+    private void back() {
+        synchronized (edgesLock) {
+            if (!edgesUp) {
+                goBackground();
+                return;
+            }
+        }
+        try {
+            nativeBack();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeBack: " + t);
+            goBackground();
+        }
+    }
+
+    /** The app had nothing left to close: to the background, as Back does at an app's root. */
+    public void goBackground() {
+        runOnUiThread(() -> {
+            try {
+                moveTaskToBack(true);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "moveTaskToBack: " + e);
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void reportInsets(WindowInsets in) {
+        int[] now = new int[4];
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets i = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                now = new int[]{i.left, i.top, i.right, i.bottom};
+            } else {
+                now = new int[]{in.getSystemWindowInsetLeft(), in.getSystemWindowInsetTop(), in.getSystemWindowInsetRight(), in.getSystemWindowInsetBottom()};
+                if (android.os.Build.VERSION.SDK_INT >= 28 && in.getDisplayCutout() != null) {
+                    android.view.DisplayCutout c = in.getDisplayCutout();
+                    now[0] = Math.max(now[0], c.getSafeInsetLeft());
+                    now[1] = Math.max(now[1], c.getSafeInsetTop());
+                    now[2] = Math.max(now[2], c.getSafeInsetRight());
+                    now[3] = Math.max(now[3], c.getSafeInsetBottom());
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "insets: " + e);
+        }
+        synchronized (edgesLock) {
+            lastInsets = now;
+            if (!edgesUp) return;
+        }
+        sendInsets(now);
+    }
+
+    /** Part of hostReady(): the native side can take Back and the insets now. */
+    private void edgesReady() {
+        int[] waiting;
+        synchronized (edgesLock) {
+            edgesUp = true;
+            waiting = lastInsets;
+        }
+        if (waiting != null) sendInsets(waiting);
+    }
+
+    private void sendInsets(int[] i) {
+        try {
+            nativeInsets(i[0], i[1], i[2], i[3]);
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeInsets: " + t);
+        }
     }
 }

@@ -267,6 +267,39 @@ pub fn take_ime() -> Vec<ImeEvent> {
     std::mem::take(&mut *IME_QUEUE.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
 }
 
+/// Back presses (the key, the gesture, predictive back on Android 13+) the activity reported
+/// (`nativeBack`) that the app's next frame has not taken yet.
+static BACKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Most presses kept waiting: a flood can't build up a queue of Backs.
+const BACKS_MAX: u32 = 16;
+
+/// Counts a Back press for the next frame.
+pub fn push_back() {
+    // (a press past the bound is dropped: the count never wraps)
+    if BACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= BACKS_MAX {
+        BACKS.store(BACKS_MAX, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// The Back presses since the last call.
+pub fn take_back() -> u32 {
+    BACKS.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The window's edges hidden by the display cutout and the system bars, in pixels (left, top,
+/// right, bottom), as the activity last reported them (`nativeInsets`); `None` before the first.
+static INSETS: std::sync::Mutex<Option<[i32; 4]>> = std::sync::Mutex::new(None);
+
+/// Records the window's insets (negative values are zero).
+pub fn set_insets(px: [i32; 4]) {
+    *INSETS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(px.map(|v| v.max(0)));
+}
+
+/// The window's insets in pixels (left, top, right, bottom), once the activity has reported them.
+pub fn insets() -> Option<[i32; 4]> {
+    *INSETS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Where the activity's copies of picked documents report to (the app's activity stack).
 ///
 /// A copy that takes a while (a folder on an SD card, files from a cloud provider) calls
@@ -360,6 +393,8 @@ mod imp {
                         fn_ptr: native_camera_roll as *mut std::ffi::c_void,
                     },
                     crate::opened::native_method(),
+                    NativeMethod { name: "nativeBack".into(), sig: "()V".into(), fn_ptr: native_back as *mut std::ffi::c_void },
+                    NativeMethod { name: "nativeInsets".into(), sig: "(IIII)V".into(), fn_ptr: native_insets as *mut std::ffi::c_void },
                 ];
                 env.register_native_methods(&class, &methods).map_err(|e| jni_error("register the native callbacks", e))?;
                 super::ime::register(&mut env, &class);
@@ -477,6 +512,15 @@ mod imp {
             })
         }
 
+        /// The system's Back, for when the app had nothing left to close: the app goes to the
+        /// background (as Back does at an app's root), keeping its state.
+        pub fn go_background(&self) -> Result<(), Error> {
+            self.call("goBackground", |env, activity| {
+                env.call_method(activity, "goBackground", "()V", &[])?;
+                Ok(())
+            })
+        }
+
         /// Shows or hides the on-screen keyboard (the activity's input view takes focus to show it).
         pub fn set_keyboard(&self, show: bool) -> Result<(), Error> {
             self.call("setKeyboard", |env, activity| {
@@ -581,6 +625,36 @@ mod imp {
         }));
         if answered.is_err() {
             log::error!("picker answer: a panic was caught");
+        }
+    }
+
+    /// `void nativeBack()`: Back was pressed (key, gesture or the predictive-back callback).
+    extern "system" fn native_back<'l>(_env: JNIEnv<'l>, _this: JObject<'l>) {
+        let done = std::panic::catch_unwind(|| {
+            super::push_back();
+            wake();
+        });
+        if done.is_err() {
+            log::error!("back: a panic was caught");
+        }
+    }
+
+    /// `void nativeInsets(int left, int top, int right, int bottom)`: the window's edges hidden by
+    /// the display cutout and the system bars, in pixels, whenever they change.
+    extern "system" fn native_insets<'l>(
+        _env: JNIEnv<'l>,
+        _this: JObject<'l>,
+        left: jni::sys::jint,
+        top: jni::sys::jint,
+        right: jni::sys::jint,
+        bottom: jni::sys::jint,
+    ) {
+        let done = std::panic::catch_unwind(|| {
+            super::set_insets([left, top, right, bottom]);
+            wake();
+        });
+        if done.is_err() {
+            log::error!("insets: a panic was caught");
         }
     }
 
@@ -854,6 +928,22 @@ mod tests {
         let forgotten = r.wait(4);
         r.forget(4);
         assert!(matches!(forgotten.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)));
+    }
+
+    #[test]
+    fn back_presses_are_counted_bounded_and_taken_once() {
+        take_back();
+        for _ in 0..100 {
+            push_back();
+        }
+        assert_eq!(take_back(), BACKS_MAX);
+        assert_eq!(take_back(), 0);
+    }
+
+    #[test]
+    fn insets_refuse_negative_edges() {
+        set_insets([-5, 120, i32::MIN, 48]);
+        assert_eq!(insets(), Some([0, 120, 0, 48]));
     }
 
     #[test]

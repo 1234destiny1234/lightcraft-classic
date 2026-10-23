@@ -50,6 +50,87 @@ pub struct TouchUi {
     /// The original is showing because the photo (or Before) is held.
     #[serde(skip)]
     holding: bool,
+    /// The histogram over the photo in Develop: off, pinned under the top bar, or floating.
+    pub histogram: HistogramPlace,
+    /// Where the floating histogram sits: its top-left corner as a fraction of the room it can
+    /// move in (0…1 each way), so it stays put across rotations and screen sizes.
+    pub histogram_at: [f32; 2],
+    /// The screen's edges hidden by the display cutout and the system bars (points), from the host
+    /// (Android) or `touch.insets`; the whole UI keeps clear of them.
+    #[serde(skip)]
+    pub insets: Insets,
+    /// Library: a long press started picking several photos; taps add or remove.
+    #[serde(skip)]
+    pub selecting: bool,
+    /// Library: Import's menu is open.
+    #[serde(skip)]
+    import_menu: bool,
+    /// A popup (menu, dropdown) was open last frame.
+    #[serde(skip)]
+    popup_open: bool,
+    /// Back had nothing to close: the host hands it to the system (Android puts the app away).
+    #[serde(skip)]
+    system_back: bool,
+    /// When Back was last taken (s, input time): the key and the system's back callback can both
+    /// report one press.
+    #[serde(skip)]
+    last_back: Option<f64>,
+    /// The parameter chip and tool button last brought to the middle of their rows.
+    #[serde(skip)]
+    centred: (String, String),
+    #[serde(skip)]
+    scroller: crate::touch_input::Scroller,
+    /// A long press on photos this frame, where.
+    #[serde(skip)]
+    long_press: Option<Pos2>,
+}
+
+/// Where Develop's histogram shows in the touch layout (`touch.histogram {mode}`).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum HistogramPlace {
+    #[default]
+    Off,
+    /// Across the top, under the top bar (portrait's choice).
+    Pinned,
+    /// A small window the user drags anywhere (landscape's choice).
+    Floating,
+}
+
+impl HistogramPlace {
+    fn parse(s: &str) -> Option<HistogramPlace> {
+        Some(match s.to_ascii_lowercase().as_str() {
+            "off" => HistogramPlace::Off,
+            "pinned" => HistogramPlace::Pinned,
+            "floating" => HistogramPlace::Floating,
+            _ => return None,
+        })
+    }
+}
+
+/// Screen edges to keep clear of (points).
+#[derive(Clone, Copy, Debug, Default, PartialEq, Serialize, Deserialize)]
+pub struct Insets {
+    pub left: f32,
+    pub top: f32,
+    pub right: f32,
+    pub bottom: f32,
+}
+
+impl Insets {
+    /// The most an edge may take (points): a bad report can't hide the whole UI.
+    const MAX: f32 = 400.0;
+
+    /// From the host's pixels (left, top, right, bottom) at `pixels_per_point`.
+    pub fn from_px(px: [i32; 4], pixels_per_point: f32) -> Insets {
+        let ppp = if pixels_per_point.is_finite() && pixels_per_point > 0.0 { pixels_per_point } else { 1.0 };
+        let pt = |v: i32| (v.max(0) as f32 / ppp).min(Insets::MAX);
+        Insets { left: pt(px[0]), top: pt(px[1]), right: pt(px[2]), bottom: pt(px[3]) }
+    }
+
+    fn clean(v: Option<f64>) -> f32 {
+        v.filter(|v| v.is_finite()).map_or(0.0, |v| (v as f32).clamp(0.0, Insets::MAX))
+    }
 }
 
 // (derivable only where `cfg!(target_os = "android")` is false)
@@ -67,6 +148,17 @@ impl Default for TouchUi {
             snapshot: Vec::new(),
             drag: None,
             holding: false,
+            histogram: HistogramPlace::Off,
+            histogram_at: [1.0, 0.0],
+            insets: Insets::default(),
+            selecting: false,
+            import_menu: false,
+            popup_open: false,
+            system_back: false,
+            last_back: None,
+            centred: Default::default(),
+            scroller: Default::default(),
+            long_press: None,
         }
     }
 }
@@ -241,12 +333,179 @@ pub(crate) fn on(app: &LccApp) -> bool {
     app.ui.touch.enabled
 }
 
+// ------------------------------------------------------------------------ input: Back, insets, scrolling
+
+/// Before the frame's input reaches egui: the screen's insets become egui's safe area (so every
+/// panel, dialog and the touch chrome keep clear of the camera cutout and the system bars), and a
+/// Back press (the Android key or gesture, as egui's `BrowserBack`) runs [`back`].
+pub(crate) fn before_input(app: &mut LccApp, raw: &mut egui::RawInput) {
+    let i = app.ui.touch.insets;
+    raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left: i.left, right: i.right, top: i.top, bottom: i.bottom }));
+}
+
+/// Back presses among the frame's input (the host's and the control channel's): [`back`].
+fn back_keys(app: &mut LccApp, raw: &mut egui::RawInput) {
+    let mut backs = 0;
+    raw.events.retain(|e| match e {
+        egui::Event::Key { key: egui::Key::BrowserBack, pressed, .. } => {
+            backs += usize::from(*pressed);
+            false
+        }
+        _ => true,
+    });
+    if backs == 0 {
+        return;
+    }
+    // one press can arrive twice (the key, and the system's back callback): a second within
+    // this long is the same press
+    let now = raw.time.unwrap_or(0.0);
+    if app.ui.touch.last_back.is_some_and(|t| (now - t).abs() < 0.25) {
+        return;
+    }
+    app.ui.touch.last_back = Some(now);
+    if back(app).is_none() {
+        app.ui.touch.system_back = true;
+    }
+}
+
+/// After the synthetic input is in: in the touch layout, swipes scroll (see [`crate::touch_input`]).
+pub(crate) fn after_input(app: &mut LccApp, raw: &mut egui::RawInput) {
+    back_keys(app, raw);
+    if !app.ui.touch.enabled {
+        app.ui.touch.scroller = Default::default();
+        return;
+    }
+    let widgets = std::mem::take(&mut app.widgets);
+    let rect_of = |id: &str| widgets.iter().rev().find(|(w, _)| w == id).map(|(_, r)| *r);
+    let modal = app.ui.dialog.is_some() || app.ui.touch.popup_open;
+    let develop = app.ui.module != ModuleId::Library;
+    let canvas = if develop { rect_of("touch:canvas").or(app.canvas_rect) } else { None };
+    let photos = [rect_of("grid:scroll"), rect_of("filmstrip")];
+    let strips = [rect_of("touch:strip"), rect_of("touch:chips")];
+    let region = |p: Pos2| {
+        use crate::touch_input::Region;
+        if modal {
+            return Some(Region::Free);
+        }
+        // the photo in Develop has gestures of its own (tap, hold, adjust, crop, brush)
+        if canvas.is_some_and(|c| c.contains(p)) && !strips.iter().flatten().any(|r| r.contains(p)) && !photos[1].is_some_and(|r| r.contains(p)) {
+            return None;
+        }
+        if strips.iter().flatten().any(|r| r.contains(p)) {
+            Some(Region::Strip)
+        } else if photos.iter().flatten().any(|r| r.contains(p)) {
+            Some(Region::Photos)
+        } else {
+            Some(Region::Free)
+        }
+    };
+    let toggle = app.ui.touch.selecting;
+    let outcome = app.ui.touch.scroller.process(raw, region, toggle);
+    app.widgets = widgets;
+    if outcome.long_press.is_some() {
+        app.ui.touch.long_press = outcome.long_press;
+    }
+    if outcome.busy
+        && let Some(ctx) = app.tasks.repaint.as_ref()
+    {
+        ctx.request_repaint();
+    }
+}
+
+/// Back: closes the innermost thing that is open and says what (`None`: nothing was, so the
+/// system's Back applies: Android puts the app away). In order: a dialog, menu or popup (as Esc
+/// would); picking several photos; the adjust tool (Done: the changes stay, as a touch editor's
+/// Back keeps them; during a drag Back waits); the side panel or sheet; Develop (back to the
+/// Library); the Library's filter bar.
+pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
+    let esc = |app: &mut LccApp| {
+        for pressed in [true, false] {
+            app.synthetic.push(egui::Event::Key {
+                key: egui::Key::Escape,
+                physical_key: None,
+                pressed,
+                repeat: false,
+                modifiers: egui::Modifiers::NONE,
+            });
+        }
+    };
+    if app.ui.dialog.is_some() {
+        esc(app);
+        return Some("dialog");
+    }
+    if app.ui.touch.import_menu {
+        app.ui.touch.import_menu = false;
+        return Some("menu");
+    }
+    if app.ui.touch.popup_open {
+        esc(app);
+        app.ui.touch.popup_open = false;
+        return Some("menu");
+    }
+    if !app.ui.touch.enabled {
+        return None;
+    }
+    if app.ui.touch.selecting && app.ui.module == ModuleId::Library {
+        app.ui.touch.selecting = false;
+        let keep: Vec<u64> = app.session.active().map(|id| id.0).into_iter().collect();
+        let _ = app.run("library.select", json!({"ids": keep}));
+        return Some("selection");
+    }
+    if app.ui.touch.tool.is_some() {
+        if app.ui.touch.drag.as_ref().is_some_and(|d| d.axis.is_some()) {
+            return Some("busy");
+        }
+        close_tool(app, true);
+        return Some("tool");
+    }
+    if app.ui.touch.panel {
+        app.ui.touch.panel = false;
+        return Some("panel");
+    }
+    if app.ui.module != ModuleId::Library {
+        back_to_library(app);
+        return Some("develop");
+    }
+    if app.ui.touch.filters {
+        app.ui.touch.filters = false;
+        return Some("filters");
+    }
+    None
+}
+
+/// Whether Back had nothing left to close since the last call: the host then does the system's
+/// Back (Android: the app goes to the background).
+pub fn take_system_back(app: &mut LccApp) -> bool {
+    std::mem::take(&mut app.ui.touch.system_back)
+}
+
 /// The touch layout's edges (replacing `shell::edges`): Library's bar, or Develop's side panel or
 /// bottom sheet when it is open. Returns the module, which draws the centre.
 pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) -> &'static dyn module::Module {
     module::sync(app);
     let m = module::get(app.ui.module);
     let form = Form::of(ctx.content_rect().size());
+    app.ui.touch.popup_open = egui::Popup::is_any_open(ctx);
+    // the cutout and the system bars: every panel below keeps clear of them
+    let i = app.ui.touch.insets;
+    let fill = egui::Frame::NONE.fill(Tokens::get(ctx).chrome);
+    if i.top > 0.5 {
+        egui::Panel::top("touch-inset-top").exact_size(i.top).resizable(false).frame(fill).show(ui, |_| {});
+    }
+    if i.bottom > 0.5 {
+        egui::Panel::bottom("touch-inset-bottom").exact_size(i.bottom).resizable(false).frame(fill).show(ui, |_| {});
+    }
+    if i.left > 0.5 {
+        egui::Panel::left("touch-inset-left").exact_size(i.left).resizable(false).frame(fill).show(ui, |_| {});
+    }
+    if i.right > 0.5 {
+        egui::Panel::right("touch-inset-right").exact_size(i.right).resizable(false).frame(fill).show(ui, |_| {});
+    }
+    if app.ui.touch.insets != Insets::default() {
+        // behind the cutout and the system bars: the chrome's colour, not whatever was there
+        let t = Tokens::get(ctx);
+        ctx.layer_painter(egui::LayerId::background()).rect_filled(ctx.viewport_rect(), 0.0, t.chrome);
+    }
     if app.ui.module == ModuleId::Library {
         library_bar(app, ui, form);
     } else if app.ui.touch.panel && app.ui.touch.tool.is_none() {
@@ -270,7 +529,13 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
         if app.ui.filter_bar == app.ui.touch.filters {
             app.ui.filter_bar = filters;
         }
-        open_tapped(app, ui, area, before);
+        long_press(app);
+        if app.ui.touch.selecting && app.session.selection.ids.is_empty() {
+            app.ui.touch.selecting = false;
+        }
+        if !app.ui.touch.selecting {
+            open_tapped(app, ui, area, before);
+        }
         return;
     }
     // the filmstrip shows only with the chrome (and when asked for); the saved setting is kept
@@ -285,8 +550,9 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
         return;
     }
     gestures(app, ui, canvas);
+    let pinned = histogram(app, ui, area, form);
     if app.ui.touch.tool.is_some() {
-        adjust_bar(app, ui, area, form);
+        adjust_bar(app, ui, area, form, pinned);
     } else if app.ui.touch.chrome {
         top_bar(app, ui, area, form);
         tool_strip(app, ui, area, form);
@@ -302,7 +568,23 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
     egui::Panel::top("touch-library-bar").exact_size(BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         // (the grid's own header under this bar names the source and counts its photos)
-        ui.painter().text(pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Library"), t.semibold(18.0), t.text);
+        if app.ui.touch.selecting {
+            // picking several: how many, and the way out (Back does the same)
+            let close = Rect::from_min_size(pos2(r.left() + 6.0, r.center().y - BUTTON / 2.0), Vec2::splat(BUTTON));
+            if round_button(ui, close, "touch:endSelect", Icon::Close, "Done Selecting", false, true).clicked() {
+                back(app);
+            }
+            let n = app.session.selection.ids.len();
+            ui.painter().text(
+                pos2(close.right() + 8.0, r.center().y),
+                Align2::LEFT_CENTER,
+                format!("{n} {}", crate::i18n::tr("Selected")),
+                t.semibold(17.0),
+                t.text,
+            );
+        } else {
+            ui.painter().text(pos2(r.left() + 16.0, r.center().y), Align2::LEFT_CENTER, crate::i18n::tr("Library"), t.semibold(18.0), t.text);
+        }
         let mut x = r.right() - 8.0;
         let mut button = |app: &mut LccApp, icon: Icon, id: &str, label: &str, enabled: bool| -> bool {
             x -= BUTTON;
@@ -324,19 +606,17 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         if button(app, Icon::Filter, "touch:filters", "Filter", true) {
             app.ui.touch.filters = !app.ui.touch.filters;
         }
-        let menu_id = Id::new("touch-import-menu");
         if button(app, Icon::Plus, "touch:import", "Import", true) {
-            let open = ui.ctx().data(|d| d.get_temp::<bool>(menu_id).unwrap_or(false));
-            ui.ctx().data_mut(|d| d.insert_temp(menu_id, !open));
-        } else if ui.ctx().data(|d| d.get_temp::<bool>(menu_id).unwrap_or(false)) {
-            import_menu(app, ui, pos2(r.right() - 8.0, r.bottom() + 4.0), menu_id);
+            app.ui.touch.import_menu = !app.ui.touch.import_menu;
+        } else if app.ui.touch.import_menu {
+            import_menu(app, ui, pos2(r.right() - 8.0, r.bottom() + 4.0));
         }
         let _ = form;
     });
 }
 
 /// Import's choices: photos, a folder, and the camera roll where the host has one.
-fn import_menu(app: &mut LccApp, ui: &egui::Ui, right_top: Pos2, menu_id: Id) {
+fn import_menu(app: &mut LccApp, ui: &egui::Ui, right_top: Pos2) {
     let t = Tokens::get(ui.ctx());
     let mut items: Vec<(&str, &str, &str)> =
         vec![("touch:import:photos", "Import Photos…", "file.addPhotos"), ("touch:import:folder", "Import Folder…", "file.addFolder")];
@@ -367,12 +647,26 @@ fn import_menu(app: &mut LccApp, ui: &egui::Ui, right_top: Pos2, menu_id: Id) {
         && chosen.is_none()
         && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| Rect::from_min_size(min, size).contains(p));
     if let Some(command) = chosen {
-        ui.ctx().data_mut(|d| d.insert_temp(menu_id, false));
+        app.ui.touch.import_menu = false;
         if let Err(e) = app.run(command, json!({})) {
             app.toast_error(ui.ctx(), e);
         }
     } else if tapped_away {
-        ui.ctx().data_mut(|d| d.insert_temp(menu_id, false));
+        app.ui.touch.import_menu = false;
+    }
+}
+
+/// A long press on a grid photo starts picking several, with that photo; later ones add or remove.
+fn long_press(app: &mut LccApp) {
+    let Some(at) = app.ui.touch.long_press.take() else { return };
+    let Some(id) =
+        app.widgets.iter().rev().find(|(w, r)| w.starts_with("thumb:") && r.contains(at)).and_then(|(w, _)| w["thumb:".len()..].parse::<u64>().ok())
+    else {
+        return;
+    };
+    let mode = if app.ui.touch.selecting { "toggle" } else { "replace" };
+    if app.run("library.select", json!({"ids": [id], "mode": mode})).is_ok() {
+        app.ui.touch.selecting = true;
     }
 }
 
@@ -597,6 +891,7 @@ pub(crate) fn open_tool(app: &mut LccApp, tool: Tool) {
     app.ui.touch.snapshot = specs.iter().filter_map(|s| Some((s.id.to_string(), value_of(app, s)?))).collect();
     app.ui.touch.control = specs.first().map(|s| s.id.to_string()).unwrap_or_default();
     app.ui.touch.tool = Some(tool);
+    app.ui.touch.centred.0.clear();
     app.ui.touch.panel = false;
     app.ui.touch.drag = None;
 }
@@ -624,6 +919,68 @@ pub(crate) fn close_tool(app: &mut LccApp, keep: bool) {
 }
 
 // ------------------------------------------------------------------------ Develop: chrome
+
+/// The histogram over the photo (`touch.histogram`): pinned across the top under the top bar, or
+/// a small window the user drags anywhere (its place kept as a fraction of the room it has).
+/// Returns the height the pinned one takes at the top.
+fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
+    let place = app.ui.touch.histogram;
+    if place == HistogramPlace::Off {
+        return 0.0;
+    }
+    let Some(id) = app.session.active() else { return 0.0 };
+    let hist = crate::panels::edit::preview_histogram(app, id);
+    let scale = crate::panels::histogram::scale_of(app);
+    let mode = lcc_raster::HistogramMode::default();
+    let bar = if app.ui.touch.chrome && app.ui.touch.tool.is_none() { BAR_H } else { 0.0 };
+    let ctx = ui.ctx().clone();
+    let paint_in = |ui: &mut egui::Ui, r: Rect| {
+        let p = ui.painter();
+        p.rect_filled(r, 8.0, Color32::from_black_alpha(170));
+        let plot = r.shrink(6.0);
+        p.rect_filled(plot, 4.0, crate::panels::histogram::SCOPE_BG);
+        if let Some(h) = &hist {
+            crate::panels::histogram::paint_plot(p, plot, h, mode, scale);
+        }
+        register(ui.ctx(), "touch:histogram", r);
+    };
+    match place {
+        HistogramPlace::Off => 0.0,
+        HistogramPlace::Pinned => {
+            let h = if form.phone() { 72.0 } else { 96.0 };
+            let r = Rect::from_min_size(pos2(area.left() + 8.0, area.top() + bar + 6.0), vec2((area.width() - 16.0).max(40.0), h));
+            // taps go through to the photo below
+            egui::Area::new(Id::new("touch-histogram")).fixed_pos(r.min).order(egui::Order::Middle).interactable(false).show(&ctx, |ui| {
+                let (r, _) = ui.allocate_exact_size(r.size(), Sense::hover());
+                paint_in(ui, r);
+            });
+            h + 12.0
+        }
+        HistogramPlace::Floating => {
+            let size = if form.phone() { vec2(168.0, 92.0) } else { vec2(220.0, 120.0) };
+            let room = Rect::from_min_max(pos2(area.left() + 8.0, area.top() + bar + 8.0), pos2(area.right() - 8.0, area.bottom() - 8.0));
+            let span = (room.size() - size).max(Vec2::ZERO);
+            let fraction = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
+            let at = app.ui.touch.histogram_at.map(fraction);
+            let min = room.min + vec2(span.x * at[0], span.y * at[1]);
+            let mut moved = None;
+            egui::Area::new(Id::new("touch-histogram")).fixed_pos(min).order(egui::Order::Middle).movable(false).show(&ctx, |ui| {
+                let (r, resp) = ui.allocate_exact_size(size, Sense::drag());
+                resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, crate::i18n::tr("Histogram")));
+                paint_in(ui, r);
+                if resp.dragged() {
+                    moved = Some(resp.drag_delta());
+                }
+            });
+            if let Some(d) = moved {
+                let to = min + d - room.min;
+                let f = |v: f32, s: f32| if s > 0.0 { fraction(v / s) } else { 0.0 };
+                app.ui.touch.histogram_at = [f(to.x, span.x), f(to.y, span.y)];
+            }
+            0.0
+        }
+    }
+}
 
 /// The first look at Develop: a faint pill saying that a tap brings the tools.
 fn hint(ui: &mut egui::Ui, area: Rect) {
@@ -667,6 +1024,16 @@ fn top_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
                 }
             }
         }
+        let hist_on = app.ui.touch.histogram != HistogramPlace::Off;
+        if round_button(ui, next(), "touch:histogramButton", Icon::Activity, "Histogram", hist_on, true).clicked() {
+            app.ui.touch.histogram = if hist_on {
+                HistogramPlace::Off
+            } else if form.side_panel() {
+                HistogramPlace::Floating
+            } else {
+                HistogramPlace::Pinned
+            };
+        }
         if round_button(ui, next(), "touch:filmstrip", Icon::Filmstrip, "Filmstrip", app.ui.touch.filmstrip, true).clicked() {
             app.ui.touch.filmstrip = !app.ui.touch.filmstrip;
         }
@@ -703,7 +1070,9 @@ fn tool_strip(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
     egui::Area::new(Id::new("touch-strip")).fixed_pos(strip.min).order(egui::Order::Middle).show(ui.ctx(), |ui| {
         ui.set_width(w);
         let (bg, _) = ui.allocate_exact_size(strip.size(), Sense::hover());
+        register(ui.ctx(), "touch:strip", bg);
         ui.painter().rect_filled(bg, 14.0, t.chrome.gamma_multiply(0.9));
+        let mut centred = None;
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(bg.shrink2(vec2(8.0, 0.0))));
         egui::ScrollArea::horizontal()
             .id_salt("touch-strip-scroll")
@@ -719,12 +1088,21 @@ fn tool_strip(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
                             Strip::Remove => app.ui.touch.panel && app.ui.right == RightPanel::Remove,
                             _ => false,
                         };
-                        if labelled_button(ui, vec2(cell, STRIP_H), &s.id(), s.icon(), s.label(), active).clicked() {
+                        let resp = labelled_button(ui, vec2(cell, STRIP_H), &s.id(), s.icon(), s.label(), active);
+                        if active {
+                            // the open tool sits in the middle of the strip
+                            if app.ui.touch.centred.1 != s.id() {
+                                resp.scroll_to_me(Some(egui::Align::Center));
+                            }
+                            centred = Some(s.id());
+                        }
+                        if resp.clicked() {
                             strip_tool(app, s, active);
                         }
                     }
                 });
             });
+        app.ui.touch.centred.1 = centred.unwrap_or_default();
     });
 }
 
@@ -756,7 +1134,7 @@ fn strip_tool(app: &mut LccApp, s: Strip, active: bool) {
 }
 
 /// Adjust mode: the value at the top, the tool's parameters and Cancel / Done along the bottom.
-fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
+fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: f32) {
     let Some(tool) = app.ui.touch.tool else { return };
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
@@ -764,7 +1142,7 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
     if let Some((spec, v)) = current(app, tool) {
         let text = format!("{}  {}", crate::i18n::tr(spec.label), spec.format(v));
         let galley = ctx.layer_painter(egui::LayerId::background()).layout_no_wrap(text, t.semibold(15.0), Color32::WHITE);
-        let pill = Rect::from_center_size(pos2(area.center().x, area.top() + 34.0), galley.size() + vec2(32.0, 22.0));
+        let pill = Rect::from_center_size(pos2(area.center().x, area.top() + top + 34.0), galley.size() + vec2(32.0, 22.0));
         let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, Id::new("touch-value")));
         p.rect_filled(pill, pill.height() / 2.0, Color32::from_black_alpha(170));
         p.galley(pill.center() - galley.size() / 2.0 - vec2(0.0, 3.0), galley, Color32::WHITE);
@@ -810,6 +1188,7 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
             return;
         }
         let chips = Rect::from_min_max(pos2(bg.left() + 16.0 + BUTTON, bg.top()), pos2(bg.right() - 16.0 - BUTTON, bg.bottom()));
+        register(ui.ctx(), "touch:chips", chips);
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(chips));
         egui::ScrollArea::horizontal().id_salt("touch-chips").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(
             &mut inner,
@@ -822,6 +1201,12 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
                             spec.id == app.ui.touch.control || (app.ui.touch.control.is_empty() && specs.first().is_some_and(|f| f.id == spec.id));
                         let changed = value_of(app, spec).is_some_and(|v| (v - spec.default).abs() > 1e-9 && !spec.id.starts_with("wb."));
                         let resp = chip(ui, spec, selected, changed);
+                        if selected && app.ui.touch.centred.0 != spec.id {
+                            // the parameter a drag changes sits in the middle of the row (an
+                            // up/down drag on the photo steps through them)
+                            resp.scroll_to_me(Some(egui::Align::Center));
+                            app.ui.touch.centred.0 = spec.id.to_string();
+                        }
                         if resp.double_clicked() {
                             // double tap: back to the default
                             if !spec.id.starts_with("wb.") {
@@ -915,6 +1300,9 @@ pub const COMMANDS: &[crate::menus::UiCommand] = &[
     ("touch.panel", "Show All Edits", None, ""),
     ("touch.tool", "Adjust with One Tool", None, ""),
     ("touch.done", "Finish Adjusting", None, ""),
+    ("touch.back", "Back", None, ""),
+    ("touch.insets", "Screen Edges to Keep Clear", None, ""),
+    ("touch.histogram", "Touch Histogram", None, ""),
 ];
 
 /// Runs a touch command; `None`: not one. `touch.tool {tool, control?}` opens a slider tool,
@@ -965,6 +1353,53 @@ pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
             let cancel = p.get("cancel").and_then(Value::as_bool).unwrap_or(false);
             close_tool(app, !cancel);
             Ok(Value::Null)
+        }
+        "touch.back" => {
+            let closed = back(app);
+            if closed.is_none() {
+                app.ui.touch.system_back = true;
+            }
+            Ok(json!({"handled": closed.is_some(), "closed": closed}))
+        }
+        "touch.insets" => {
+            let mut v = [0.0f32; 4];
+            for (slot, key) in v.iter_mut().zip(["left", "top", "right", "bottom"]) {
+                match p.get(key) {
+                    None | Some(Value::Null) => {}
+                    Some(Value::Number(n)) => *slot = Insets::clean(n.as_f64()),
+                    Some(other) => return Some(Err(format!("touch.insets: `{key}` must be a number of points, not {other}"))),
+                }
+            }
+            app.ui.touch.insets = Insets { left: v[0], top: v[1], right: v[2], bottom: v[3] };
+            Ok(serde_json::to_value(app.ui.touch.insets).unwrap_or(Value::Null))
+        }
+        "touch.histogram" => {
+            let place = match p.get("mode") {
+                None | Some(Value::Null) => {
+                    if app.ui.touch.histogram == HistogramPlace::Off {
+                        HistogramPlace::Pinned
+                    } else {
+                        HistogramPlace::Off
+                    }
+                }
+                Some(Value::String(m)) => match HistogramPlace::parse(m) {
+                    Some(h) => h,
+                    None => return Some(Err(format!("touch.histogram: unknown mode `{m}` (off, pinned or floating)"))),
+                },
+                Some(other) => return Some(Err(format!("touch.histogram: `mode` must be off, pinned or floating, not {other}"))),
+            };
+            if let Some(at) = p.get("at") {
+                let xy: Option<Vec<f32>> = at
+                    .as_array()
+                    .filter(|a| a.len() == 2)
+                    .map(|a| a.iter().filter_map(Value::as_f64).filter(|v| v.is_finite()).map(|v| v.clamp(0.0, 1.0) as f32).collect());
+                match xy.as_deref() {
+                    Some([x, y]) => app.ui.touch.histogram_at = [*x, *y],
+                    _ => return Some(Err("touch.histogram: `at` must be [x, y], each 0…1".into())),
+                }
+            }
+            app.ui.touch.histogram = place;
+            Ok(json!({"mode": place, "at": app.ui.touch.histogram_at}))
         }
         _ => return None,
     })
