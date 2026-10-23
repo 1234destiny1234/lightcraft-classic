@@ -21,6 +21,8 @@ pub(super) fn commands() -> impl Iterator<Item = &'static UiCommand> {
         .chain(crate::timelapse_ui::COMMANDS)
         .chain(crate::panels::filterbar::COMMANDS)
         .chain(crate::import_report::COMMANDS)
+        .chain(crate::touch::COMMANDS)
+        .chain(crate::touch_sheets::COMMANDS)
 }
 
 /// The Edit panel's sections the fork adds: Transform (Upright and the transform sliders, upstream's Geometry in the
@@ -50,6 +52,12 @@ pub(super) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
         return Some(r);
     }
     if let Some(r) = crate::catalog_ui::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::touch::run(app, id, p) {
+        return Some(r);
+    }
+    if let Some(r) = crate::touch_sheets::run(app, id, p) {
         return Some(r);
     }
     #[cfg(not(target_arch = "wasm32"))]

@@ -46,7 +46,7 @@ pub(crate) fn control_as(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSetting
 }
 
 /// Relative temperature scale for rendered (non-raw) files: −100..100 ↔ Kelvin via mired shift.
-const REL_TEMP: ControlSpec = ControlSpec {
+pub(crate) static REL_TEMP: ControlSpec = ControlSpec {
     id: "wb.tempRel",
     label: "Temp",
     section: Section::Color,
@@ -57,7 +57,7 @@ const REL_TEMP: ControlSpec = ControlSpec {
     decimals: 0,
     track: Track::Temp,
 };
-const REL_TINT: ControlSpec = ControlSpec {
+pub(crate) static REL_TINT: ControlSpec = ControlSpec {
     id: "wb.tintRel",
     label: "Tint",
     section: Section::Color,
@@ -69,10 +69,10 @@ const REL_TINT: ControlSpec = ControlSpec {
     track: Track::Tint,
 };
 
-fn k_to_rel(k: f64) -> f64 {
+pub(crate) fn k_to_rel(k: f64) -> f64 {
     ((1e6 / 6500.0 - 1e6 / k) / 0.8).clamp(-100.0, 100.0)
 }
-fn rel_to_k(r: f64) -> f64 {
+pub(crate) fn rel_to_k(r: f64) -> f64 {
     1e6 / (1e6 / 6500.0 - r * 0.8)
 }
 
@@ -659,7 +659,7 @@ fn paint_clip_triangle(p: &egui::Painter, rect: Rect, out: f32, color: Color32, 
 }
 
 /// The current photo's existing preview histogram, shared by Histogram and Tone Curve.
-fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
+pub(crate) fn preview_histogram(app: &LccApp, id: PhotoId) -> Option<lcc_raster::Histogram> {
     app.renderer
         .textures
         .get(&Slot::Main)

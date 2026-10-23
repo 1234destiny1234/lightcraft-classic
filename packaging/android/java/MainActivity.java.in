@@ -140,6 +140,7 @@ public class MainActivity extends NativeActivity {
         super.onCreate(savedInstanceState);
         hideSystemBars();
         addKeyboardView();
+        watchBackAndEdges();
         try {
             WifiManager wifi = (WifiManager) getApplicationContext().getSystemService(WIFI_SERVICE);
             if (wifi != null) {
@@ -358,6 +359,7 @@ public class MainActivity extends NativeActivity {
         }
         for (Object[] a : waiting) answer((Long) a[0], (String[]) a[1]);
         openedReady();
+        edgesReady();
     }
 
     /** Where picked documents are copied: the external files folder, beside the library. */
@@ -1335,6 +1337,120 @@ public class MainActivity extends NativeActivity {
         }
     }
 
+    // ------------------------------------------------------------------ exports: Pictures + share
+
+    /** Answers saveToGallery (registered by crates/android-host): the saved files' content URIs,
+     *  or null and the reason. */
+    private native void nativeGallerySaved(long id, String[] uris, String error);
+
+    private static String exportMime(String name) {
+        String n = name.toLowerCase(Locale.ROOT);
+        if (n.endsWith(".jpg") || n.endsWith(".jpeg")) return "image/jpeg";
+        if (n.endsWith(".png")) return "image/png";
+        if (n.endsWith(".tif") || n.endsWith(".tiff")) return "image/tiff";
+        if (n.endsWith(".dng")) return "image/x-adobe-dng";
+        if (n.endsWith(".webp")) return "image/webp";
+        if (n.endsWith(".avif")) return "image/avif";
+        if (n.endsWith(".jxl")) return "image/jxl";
+        return "application/octet-stream";
+    }
+
+    /** Copies exported files (the app's own folder) into Pictures/<album> through MediaStore, so
+     *  the gallery shows them, then with `share` offers them to other apps (the share sheet). The
+     *  answer comes through nativeGallerySaved(id, …). */
+    public void saveToGallery(final long id, final String[] paths, final String album, final boolean share) {
+        new Thread(() -> {
+            List<Uri> saved = new ArrayList<>();
+            List<String> mimes = new ArrayList<>();
+            String error = null;
+            ContentResolver r = getContentResolver();
+            for (String path : paths == null ? new String[0] : paths) {
+                File src = new File(path);
+                String mime = exportMime(src.getName());
+                Uri uri = null;
+                try {
+                    android.content.ContentValues v = new android.content.ContentValues();
+                    v.put(MediaStore.MediaColumns.DISPLAY_NAME, src.getName());
+                    v.put(MediaStore.MediaColumns.MIME_TYPE, mime);
+                    Uri collection;
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        v.put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_PICTURES + "/" + album);
+                        v.put(MediaStore.MediaColumns.IS_PENDING, 1);
+                        collection = MediaStore.Images.Media.getContentUri(MediaStore.VOLUME_EXTERNAL_PRIMARY);
+                    } else {
+                        File dir = new File(Environment.getExternalStoragePublicDirectory(Environment.DIRECTORY_PICTURES), album);
+                        if (!dir.isDirectory() && !dir.mkdirs()) throw new IOException("can't make " + dir);
+                        File dest = new File(dir, src.getName());
+                        for (int n = 1; dest.exists() && n < 10000; n++) {
+                            String name = src.getName();
+                            int dot = name.lastIndexOf('.');
+                            dest = new File(dir, (dot > 0 ? name.substring(0, dot) : name) + "-" + n + (dot > 0 ? name.substring(dot) : ""));
+                        }
+                        v.put(MediaStore.MediaColumns.DISPLAY_NAME, dest.getName());
+                        v.put(MediaStore.MediaColumns.DATA, dest.getAbsolutePath());
+                        collection = MediaStore.Images.Media.EXTERNAL_CONTENT_URI;
+                    }
+                    uri = r.insert(collection, v);
+                    if (uri == null) throw new IOException("the media store refused " + src.getName());
+                    try (InputStream in = new FileInputStream(src); OutputStream out = r.openOutputStream(uri)) {
+                        if (out == null) throw new IOException("can't write " + uri);
+                        pipe(in, out);
+                    }
+                    if (android.os.Build.VERSION.SDK_INT >= 29) {
+                        android.content.ContentValues done = new android.content.ContentValues();
+                        done.put(MediaStore.MediaColumns.IS_PENDING, 0);
+                        r.update(uri, done, null, null);
+                    }
+                    saved.add(uri);
+                    mimes.add(mime);
+                } catch (Exception e) {
+                    Log.w(TAG, "save " + path + " to Pictures: " + e);
+                    if (uri != null) {
+                        try {
+                            r.delete(uri, null, null);
+                        } catch (RuntimeException ignored) {
+                            // the half-written entry stays pending; the system removes it later
+                        }
+                    }
+                    error = src.getName() + ": " + e.getMessage();
+                    break;
+                }
+            }
+            if (error == null && share && !saved.isEmpty()) {
+                final List<Uri> uris = saved;
+                final String type = new HashSet<>(mimes).size() == 1 ? mimes.get(0) : "image/*";
+                runOnUiThread(() -> {
+                    try {
+                        Intent send;
+                        if (uris.size() == 1) {
+                            send = new Intent(Intent.ACTION_SEND);
+                            send.putExtra(Intent.EXTRA_STREAM, uris.get(0));
+                        } else {
+                            send = new Intent(Intent.ACTION_SEND_MULTIPLE);
+                            send.putParcelableArrayListExtra(Intent.EXTRA_STREAM, new ArrayList<>(uris));
+                        }
+                        send.setType(type);
+                        ClipData clip = ClipData.newRawUri(null, uris.get(0));
+                        for (int i = 1; i < uris.size(); i++) clip.addItem(new ClipData.Item(uris.get(i)));
+                        send.setClipData(clip);
+                        send.addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION);
+                        startActivity(Intent.createChooser(send, null));
+                    } catch (RuntimeException e) {
+                        Log.w(TAG, "share: " + e);
+                        toast("Couldn't open the share sheet");
+                    }
+                });
+            }
+            String[] out = new String[saved.size()];
+            for (int i = 0; i < out.length; i++) out[i] = saved.get(i).toString();
+            try {
+                nativeGallerySaved(id, error == null ? out : null, error);
+            } catch (Throwable t) {
+                Log.e(TAG, "nativeGallerySaved: " + t);
+            }
+        }, "save-to-pictures").start();
+    }
+
     private void toast(final String text) {
         runOnUiThread(() -> {
             try {
@@ -1343,5 +1459,121 @@ public class MainActivity extends NativeActivity {
                 Log.w(TAG, "toast: " + e);
             }
         });
+    }
+
+    // ---- Back and the window's edges (crates/android-host: nativeBack, nativeInsets) ----------
+    // Back (the key, the gesture, and predictive back from Android 13, which the target SDK makes
+    // the only way the gesture arrives) goes to the native side, which closes what is open there;
+    // when nothing is, it calls goBackground(). The edges hidden by the camera cutout and the system
+    // bars go to the native side in pixels, again whenever they change, so the UI keeps clear of them.
+
+    /** Back was pressed (registered by crates/android-host). */
+    private native void nativeBack();
+
+    /** The window's insets in pixels (registered by crates/android-host). */
+    private native void nativeInsets(int left, int top, int right, int bottom);
+
+    private final Object edgesLock = new Object();
+    /** nativeBack and nativeInsets are registered (hostReady). */
+    private boolean edgesUp;
+    private int[] lastInsets;
+
+    private void watchBackAndEdges() {
+        if (android.os.Build.VERSION.SDK_INT >= 33) {
+            try {
+                getOnBackInvokedDispatcher().registerOnBackInvokedCallback(
+                        android.window.OnBackInvokedDispatcher.PRIORITY_DEFAULT, this::back);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "no back callback: " + e);
+            }
+        }
+        try {
+            View decor = getWindow().getDecorView();
+            decor.setOnApplyWindowInsetsListener((v, insets) -> {
+                reportInsets(insets);
+                return v.onApplyWindowInsets(insets);
+            });
+            decor.requestApplyInsets();
+        } catch (RuntimeException e) {
+            Log.w(TAG, "no window insets: " + e);
+        }
+    }
+
+    /** Before Android 13 (the Back key, when the native side lets it through). */
+    @Override
+    @SuppressWarnings("deprecation")
+    public void onBackPressed() {
+        back();
+    }
+
+    private void back() {
+        synchronized (edgesLock) {
+            if (!edgesUp) {
+                goBackground();
+                return;
+            }
+        }
+        try {
+            nativeBack();
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeBack: " + t);
+            goBackground();
+        }
+    }
+
+    /** The app had nothing left to close: to the background, as Back does at an app's root. */
+    public void goBackground() {
+        runOnUiThread(() -> {
+            try {
+                moveTaskToBack(true);
+            } catch (RuntimeException e) {
+                Log.w(TAG, "moveTaskToBack: " + e);
+            }
+        });
+    }
+
+    @SuppressWarnings("deprecation")
+    private void reportInsets(WindowInsets in) {
+        int[] now = new int[4];
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 30) {
+                android.graphics.Insets i = in.getInsets(WindowInsets.Type.systemBars() | WindowInsets.Type.displayCutout());
+                now = new int[]{i.left, i.top, i.right, i.bottom};
+            } else {
+                now = new int[]{in.getSystemWindowInsetLeft(), in.getSystemWindowInsetTop(), in.getSystemWindowInsetRight(), in.getSystemWindowInsetBottom()};
+                if (android.os.Build.VERSION.SDK_INT >= 28 && in.getDisplayCutout() != null) {
+                    android.view.DisplayCutout c = in.getDisplayCutout();
+                    now[0] = Math.max(now[0], c.getSafeInsetLeft());
+                    now[1] = Math.max(now[1], c.getSafeInsetTop());
+                    now[2] = Math.max(now[2], c.getSafeInsetRight());
+                    now[3] = Math.max(now[3], c.getSafeInsetBottom());
+                }
+            }
+        } catch (RuntimeException e) {
+            Log.w(TAG, "insets: " + e);
+        }
+        synchronized (edgesLock) {
+            lastInsets = now;
+            if (!edgesUp) return;
+        }
+        sendInsets(now);
+    }
+
+    /** Part of hostReady(): the native side can take Back and the insets now. */
+    private void edgesReady() {
+        int[] waiting;
+        synchronized (edgesLock) {
+            edgesUp = true;
+            waiting = lastInsets;
+        }
+        if (waiting != null) sendInsets(waiting);
+    }
+
+    private void sendInsets(int[] i) {
+        try {
+            nativeInsets(i[0], i[1], i[2], i[3]);
+        } catch (Throwable t) {
+            Log.w(TAG, "nativeInsets: " + t);
+        }
     }
 }

@@ -190,6 +190,10 @@ pub(crate) fn prepare(app: &LccApp, ui: &mut egui::Ui) {
 }
 
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
+    // the touch layout's Settings screen and Export sheet (fork)
+    if crate::touch_sheets::show(app, ctx) {
+        return;
+    }
     let Some(mut dlg) = app.ui.dialog.clone() else { return };
     let at_start = dlg.clone();
     // Esc with a popup open in the dialog (a dropdown, a date picker's calendar) closes the popup

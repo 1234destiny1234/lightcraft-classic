@@ -147,6 +147,20 @@ pub struct EmptyAction {
 /// one, filled with the accent) and an optional dimmed hint line below them. The block is
 /// centred in `rect` as one. Returns the command of the button clicked this frame.
 pub fn empty_state(ui: &mut egui::Ui, rect: Rect, title: &str, body: &str, actions: &[EmptyAction], hint: Option<&str>) -> Option<&'static str> {
+    empty_state_sized(ui, rect, title, body, actions, hint, false)
+}
+
+/// [`empty_state`]; `touch` makes the buttons finger-sized and stacks them one per row, all of
+/// one width (the touch layout).
+pub fn empty_state_sized(
+    ui: &mut egui::Ui,
+    rect: Rect,
+    title: &str,
+    body: &str,
+    actions: &[EmptyAction],
+    hint: Option<&str>,
+    touch: bool,
+) -> Option<&'static str> {
     let t = Tokens::get(ui.ctx());
     let wrap = (rect.width() - 48.0).max(80.0);
     let centred = |ui: &egui::Ui, text: &str, font: egui::FontId, color: egui::Color32| {
@@ -158,16 +172,17 @@ pub fn empty_state(ui: &mut egui::Ui, rect: Rect, title: &str, body: &str, actio
     let body = centred(ui, crate::i18n::tr(body), t.font(13.0), t.text_dim);
     let hint = hint.map(|h| centred(ui, h, t.font(12.0), t.text_dim));
     // the buttons' widths, and whether they fit side by side (else one above the other)
-    const BUTTON_H: f32 = 30.0;
-    const GAP: f32 = 8.0;
-    let widths: Vec<f32> =
-        actions.iter().map(|a| ui.painter().layout_no_wrap(crate::i18n::tr(a.label).to_string(), t.semibold(13.0), t.text).size().x + 32.0).collect();
-    let row_w = widths.iter().sum::<f32>() + GAP * widths.len().saturating_sub(1) as f32;
-    let side_by_side = row_w <= wrap;
+    let (button_h, gap, label_size, min_w): (f32, f32, f32, f32) = if touch { (52.0, 12.0, 16.0, 260.0) } else { (30.0, 8.0, 13.0, 0.0) };
+    let widths: Vec<f32> = actions
+        .iter()
+        .map(|a| (ui.painter().layout_no_wrap(crate::i18n::tr(a.label).to_string(), t.semibold(label_size), t.text).size().x + 32.0).max(min_w))
+        .collect();
+    let row_w = widths.iter().sum::<f32>() + gap * widths.len().saturating_sub(1) as f32;
+    let side_by_side = !touch && row_w <= wrap;
     let buttons_h = match (actions.len(), side_by_side) {
         (0, _) => 0.0,
-        (_, true) => BUTTON_H,
-        (n, false) => n as f32 * BUTTON_H + (n - 1) as f32 * GAP,
+        (_, true) => button_h,
+        (n, false) => n as f32 * button_h + (n - 1) as f32 * gap,
     };
     let gap_above_buttons = if actions.is_empty() { 0.0 } else { 20.0 };
     let hint_h = hint.as_ref().map_or(0.0, |g| 12.0 + g.size().y);
@@ -182,14 +197,14 @@ pub fn empty_state(ui: &mut egui::Ui, rect: Rect, title: &str, body: &str, actio
     let mut x = rect.center().x - row_w / 2.0;
     for (i, (a, w)) in actions.iter().zip(&widths).enumerate() {
         let r = if side_by_side {
-            let r = Rect::from_min_size(pos2(x, buttons_top), vec2(*w, BUTTON_H));
-            x += w + GAP;
+            let r = Rect::from_min_size(pos2(x, buttons_top), vec2(*w, button_h));
+            x += w + gap;
             r
         } else {
             let w = widths.iter().copied().fold(0.0, f32::max).min(wrap);
-            Rect::from_min_size(pos2(rect.center().x - w / 2.0, buttons_top + i as f32 * (BUTTON_H + GAP)), vec2(w, BUTTON_H))
+            Rect::from_min_size(pos2(rect.center().x - w / 2.0, buttons_top + i as f32 * (button_h + gap)), vec2(w, button_h))
         };
-        let label = egui::RichText::new(crate::i18n::tr(a.label)).font(t.semibold(13.0));
+        let label = egui::RichText::new(crate::i18n::tr(a.label)).font(t.semibold(label_size));
         let button =
             if i == 0 { egui::Button::new(label.color(egui::Color32::WHITE)).fill(t.accent) } else { egui::Button::new(label.color(t.text)) };
         let resp = ui.put(r, button);

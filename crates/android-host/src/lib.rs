@@ -126,7 +126,8 @@ impl Answers {
 /// The camera roll's answer: the photos' paths, or why there are none.
 pub type CameraRoll = Result<Vec<String>, String>;
 
-/// Camera-roll listings waiting for the activity (`nativeCameraRoll`), by request id.
+/// Answers waiting for the activity by request id: camera-roll listings (`nativeCameraRoll`) and
+/// saves to Pictures (`nativeGallerySaved`).
 #[derive(Default)]
 pub struct RollAnswers {
     waiting: std::collections::HashMap<i64, std::sync::mpsc::Sender<CameraRoll>>,
@@ -149,16 +150,16 @@ impl RollAnswers {
     /// activity's reason, e.g. the permission was refused).
     pub fn answer(&mut self, id: i64, paths: Option<Vec<String>>, error: Option<String>) {
         let Some(tx) = self.waiting.remove(&id) else {
-            log::warn!("camera roll {id}: an answer nothing waits for; dropped");
+            log::warn!("request {id}: an answer nothing waits for; dropped");
             return;
         };
         let answer = match (paths, error) {
             (_, Some(e)) if !e.is_empty() => Err(e),
             (Some(p), _) => Ok(p),
-            (None, _) => Err("the camera roll could not be read (see the log)".into()),
+            (None, _) => Err("the activity could not do it (see the log)".into()),
         };
         if tx.send(answer).is_err() {
-            log::warn!("camera roll {id}: answered, but nothing is waiting any more");
+            log::warn!("request {id}: answered, but nothing is waiting any more");
         }
     }
 }
@@ -267,6 +268,39 @@ pub fn take_ime() -> Vec<ImeEvent> {
     std::mem::take(&mut *IME_QUEUE.lock().unwrap_or_else(std::sync::PoisonError::into_inner))
 }
 
+/// Back presses (the key, the gesture, predictive back on Android 13+) the activity reported
+/// (`nativeBack`) that the app's next frame has not taken yet.
+static BACKS: std::sync::atomic::AtomicU32 = std::sync::atomic::AtomicU32::new(0);
+/// Most presses kept waiting: a flood can't build up a queue of Backs.
+const BACKS_MAX: u32 = 16;
+
+/// Counts a Back press for the next frame.
+pub fn push_back() {
+    // (a press past the bound is dropped: the count never wraps)
+    if BACKS.fetch_add(1, std::sync::atomic::Ordering::Relaxed) >= BACKS_MAX {
+        BACKS.store(BACKS_MAX, std::sync::atomic::Ordering::Relaxed);
+    }
+}
+
+/// The Back presses since the last call.
+pub fn take_back() -> u32 {
+    BACKS.swap(0, std::sync::atomic::Ordering::Relaxed)
+}
+
+/// The window's edges hidden by the display cutout and the system bars, in pixels (left, top,
+/// right, bottom), as the activity last reported them (`nativeInsets`); `None` before the first.
+static INSETS: std::sync::Mutex<Option<[i32; 4]>> = std::sync::Mutex::new(None);
+
+/// Records the window's insets (negative values are zero).
+pub fn set_insets(px: [i32; 4]) {
+    *INSETS.lock().unwrap_or_else(std::sync::PoisonError::into_inner) = Some(px.map(|v| v.max(0)));
+}
+
+/// The window's insets in pixels (left, top, right, bottom), once the activity has reported them.
+pub fn insets() -> Option<[i32; 4]> {
+    *INSETS.lock().unwrap_or_else(std::sync::PoisonError::into_inner)
+}
+
 /// Where the activity's copies of picked documents report to (the app's activity stack).
 ///
 /// A copy that takes a while (a folder on an SD card, files from a cloud provider) calls
@@ -317,6 +351,8 @@ mod imp {
     static NEXT_ID: AtomicI64 = AtomicI64::new(1);
     /// Camera-roll listings that are running.
     static ROLLS: Mutex<Option<RollAnswers>> = Mutex::new(None);
+    /// Saves to Pictures (and shares) that are running; answered like camera-roll listings.
+    static GALLERY: Mutex<Option<RollAnswers>> = Mutex::new(None);
     /// Asks the UI for a frame (set by the app: an answer must not wait for the next touch).
     static WAKER: OnceLock<Box<dyn Fn() + Send + Sync>> = OnceLock::new();
     /// Where copies report (set by the app once its session exists).
@@ -359,7 +395,14 @@ mod imp {
                         sig: "(J[Ljava/lang/String;Ljava/lang/String;)V".into(),
                         fn_ptr: native_camera_roll as *mut std::ffi::c_void,
                     },
+                    NativeMethod {
+                        name: "nativeGallerySaved".into(),
+                        sig: "(J[Ljava/lang/String;Ljava/lang/String;)V".into(),
+                        fn_ptr: native_gallery_saved as *mut std::ffi::c_void,
+                    },
                     crate::opened::native_method(),
+                    NativeMethod { name: "nativeBack".into(), sig: "()V".into(), fn_ptr: native_back as *mut std::ffi::c_void },
+                    NativeMethod { name: "nativeInsets".into(), sig: "(IIII)V".into(), fn_ptr: native_insets as *mut std::ffi::c_void },
                 ];
                 env.register_native_methods(&class, &methods).map_err(|e| jni_error("register the native callbacks", e))?;
                 super::ime::register(&mut env, &class);
@@ -433,6 +476,31 @@ mod imp {
             Ok(rx)
         }
 
+        /// Copies exported files into the device's Pictures/`album` folder through MediaStore (so
+        /// they show in the gallery), then, with `share`, offers them to other apps (the system
+        /// share sheet, `ACTION_SEND`). The channel answers with the files' `content://` URIs, or
+        /// why they could not be saved.
+        pub fn save_to_gallery(&self, paths: &[String], album: &str, share: bool) -> Result<Receiver<super::CameraRoll>, Error> {
+            let id = NEXT_ID.fetch_add(1, Ordering::Relaxed);
+            let rx = gallery(|r| r.wait(id));
+            let result = self.call("saveToGallery", |env, activity| {
+                let files = string_array(env, paths)?;
+                let album = env.new_string(album)?;
+                env.call_method(
+                    activity,
+                    "saveToGallery",
+                    "(J[Ljava/lang/String;Ljava/lang/String;Z)V",
+                    &[JValue::Long(id), JValue::Object(&files), JValue::Object(&album), JValue::Bool(u8::from(share))],
+                )?;
+                Ok(())
+            });
+            if let Err(e) = result {
+                gallery(|r| r.forget(id));
+                return Err(e);
+            }
+            Ok(rx)
+        }
+
         /// Sets where the activity's copies of picked documents report their progress.
         pub fn set_copy_progress(&self, sink: std::sync::Arc<dyn CopyProgress>) {
             *COPIES.lock().unwrap_or_else(PoisonError::into_inner) = Some(sink);
@@ -477,6 +545,15 @@ mod imp {
             })
         }
 
+        /// The system's Back, for when the app had nothing left to close: the app goes to the
+        /// background (as Back does at an app's root), keeping its state.
+        pub fn go_background(&self) -> Result<(), Error> {
+            self.call("goBackground", |env, activity| {
+                env.call_method(activity, "goBackground", "()V", &[])?;
+                Ok(())
+            })
+        }
+
         /// Shows or hides the on-screen keyboard (the activity's input view takes focus to show it).
         pub fn set_keyboard(&self, show: bool) -> Result<(), Error> {
             self.call("setKeyboard", |env, activity| {
@@ -516,6 +593,29 @@ mod imp {
     fn rolls<R>(f: impl FnOnce(&mut RollAnswers) -> R) -> R {
         let mut guard = ROLLS.lock().unwrap_or_else(PoisonError::into_inner);
         f(guard.get_or_insert_with(RollAnswers::default))
+    }
+
+    fn gallery<R>(f: impl FnOnce(&mut RollAnswers) -> R) -> R {
+        let mut guard = GALLERY.lock().unwrap_or_else(PoisonError::into_inner);
+        f(guard.get_or_insert_with(RollAnswers::default))
+    }
+
+    /// `void nativeGallerySaved(long id, String[] uris, String error)`: the answer to
+    /// [`Host::save_to_gallery`].
+    extern "system" fn native_gallery_saved<'l>(mut env: JNIEnv<'l>, _this: JObject<'l>, id: jlong, uris: JObjectArray<'l>, error: JString<'l>) {
+        // a panic must never unwind into the JVM
+        let answered = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+            let list = read_strings(&mut env, &uris).unwrap_or_else(|e| {
+                log::error!("save to Pictures: answer unreadable: {e}");
+                None
+            });
+            let error: Option<String> = if error.is_null() { None } else { env.get_string(&error).map(Into::into).ok() };
+            gallery(|r| r.answer(id, list, error));
+            wake();
+        }));
+        if answered.is_err() {
+            log::error!("save to Pictures answer: a panic was caught");
+        }
     }
 
     /// `void nativeCameraRoll(long id, String[] paths, String error)`: the answer to
@@ -581,6 +681,36 @@ mod imp {
         }));
         if answered.is_err() {
             log::error!("picker answer: a panic was caught");
+        }
+    }
+
+    /// `void nativeBack()`: Back was pressed (key, gesture or the predictive-back callback).
+    extern "system" fn native_back<'l>(_env: JNIEnv<'l>, _this: JObject<'l>) {
+        let done = std::panic::catch_unwind(|| {
+            super::push_back();
+            wake();
+        });
+        if done.is_err() {
+            log::error!("back: a panic was caught");
+        }
+    }
+
+    /// `void nativeInsets(int left, int top, int right, int bottom)`: the window's edges hidden by
+    /// the display cutout and the system bars, in pixels, whenever they change.
+    extern "system" fn native_insets<'l>(
+        _env: JNIEnv<'l>,
+        _this: JObject<'l>,
+        left: jni::sys::jint,
+        top: jni::sys::jint,
+        right: jni::sys::jint,
+        bottom: jni::sys::jint,
+    ) {
+        let done = std::panic::catch_unwind(|| {
+            super::set_insets([left, top, right, bottom]);
+            wake();
+        });
+        if done.is_err() {
+            log::error!("insets: a panic was caught");
         }
     }
 
@@ -854,6 +984,22 @@ mod tests {
         let forgotten = r.wait(4);
         r.forget(4);
         assert!(matches!(forgotten.try_recv(), Err(std::sync::mpsc::TryRecvError::Disconnected)));
+    }
+
+    #[test]
+    fn back_presses_are_counted_bounded_and_taken_once() {
+        take_back();
+        for _ in 0..100 {
+            push_back();
+        }
+        assert_eq!(take_back(), BACKS_MAX);
+        assert_eq!(take_back(), 0);
+    }
+
+    #[test]
+    fn insets_refuse_negative_edges() {
+        set_insets([-5, 120, i32::MIN, 48]);
+        assert_eq!(insets(), Some([0, 120, 0, 48]));
     }
 
     #[test]

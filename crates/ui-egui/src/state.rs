@@ -793,6 +793,8 @@ pub struct UiState {
     #[serde(skip)]
     pub unsaved_seen: bool,
     pub view: ViewMode,
+    /// The touch layout (fork-owned; see [`crate::touch`]).
+    pub touch: crate::touch::TouchUi,
     pub left_panel: bool,
     pub right: RightPanel,
     /// The right panel (and Library's right column) is folded away by the tool strip's top button;
@@ -1602,6 +1604,7 @@ impl Default for UiState {
             unsaved_seen: false,
             luminance_map_restore: None,
             view: ViewMode::Detail,
+            touch: crate::touch::TouchUi::default(),
             left_panel: false,
             left_width: LEFT_WIDTH.default,
             right_width: RIGHT_WIDTH.default,
