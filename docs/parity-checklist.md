@@ -50,13 +50,13 @@ cited here still exists. Formerly docs/parity.md.
 | V. Preferences (PREF) | 6 | 2 | 2 | 2 | 1/1 (100%) | 4/5 (80%) |
 | W. Cloud & AI infrastructure (CLOUD / AI) | 1 | 0 | 1 | 2 | — | — |
 | X. Cross-cutting behaviours (BEHAV) | 23 | 6 | 1 | 1 | 8/8 (100%) | 7/10 (70%) |
-| Y. Menus | 87 | 0 | 2 | 8 | 47/47 (100%) | 23/23 (100%) |
+| Y. Menus | 88 | 0 | 2 | 8 | 47/47 (100%) | 23/23 (100%) |
 | Z. Keyboard shortcuts (desktop) | 77 | 5 | 2 | 1 | 48/52 (92%) | 24/26 (92%) |
-| Lightroom Classic extras | 104 | 19 | 4 | 0 | — | 35/39 (90%) |
+| Lightroom Classic extras | 104 | 20 | 3 | 0 | — | 35/39 (90%) |
 | IMM. Immich integration | 10 | 0 | 0 | 0 | — | 6/6 (100%) |
-| **Total** | 502 | 67 | 30 | 27 | 193/201 (96%) | 168/184 (91%) |
+| **Total** | 505 | 68 | 29 | 27 | 195/203 (96%) | 168/184 (91%) |
 
-Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.4%** of 599 in-scope rows — P0 98.0% of 201 · P1 95.4% of 184 · P2 76.2% of 212.
+Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.5%** of 602 in-scope rows — P0 98.0% of 203 · P1 95.4% of 184 · P2 76.5% of 213.
 <!-- /parity:summary -->
 
 ## Top gaps and shortcut notes
@@ -738,7 +738,7 @@ From `06-shortcuts.md` part 1. Evidence is our binding; conflicts are explained 
 | KEY-UNFLAG | Unflag — U | P0 | ✅ | `cmd:photo.unflag` | |
 | KEY-REJECT | Reject — X | P0 | ✅ | `cmd:photo.reject` | swaps crop aspect while cropping |
 | KEY-RATING | Ratings — 0…5 | P0 | ✅ | `crates/ui-egui/src/shortcuts.rs` → `cmd:photo.rate` | 0 clears, 1–5 set; Shift applies and advances; native macOS plain keys stay with egui; grid multi-selection and undo/redo tested |
-| KEY-LABELS | Labels — 6…9 | P1 | ✅ | `crates/ui-egui/src/shortcuts.rs` → `cmd:photo.label` | 6 red, 7 yellow, 8 green, 9 blue; Shift+6–9 labels and advances; purple/none available from menus |
+| KEY-LABELS | Labels — 6…9 | P1 | ✅ | `crates/ui-egui/src/shortcuts.rs` → `cmd:photo.label` | 6 red, 7 yellow, 8 green, 9 blue; pressing the same key again toggles off; Shift+6–9 toggles and advances; purple/none available from menus |
 | KEY-MASKING | Masking — M | P0 | ✅ | `cmd:panel.masking` | |
 | KEY-ERASE | Erase while held — ⌥ | P0 | ✅ | `crates/ui-egui/src/panels/detail.rs`, `crates/ui-egui/src/panels/masking.rs` | ⌥ while painting flips Add ↔ Erase for that stroke; Add/Erase buttons too |
 | KEY-RATEADVANCE | Rate and advance — ⇧0…5 | P1 | ✅ | `crates/ui-egui/src/shortcuts.rs` → `cmd:photo.rate` (`advance`) | |
@@ -1121,3 +1121,4 @@ We only talk to Immich over its HTTP API with our own client; concepts, endpoint
 | 2026-10-20 | minor | LR-EXP-DIALOG: the Export dialog takes Lightroom Classic's layout (preset column with Add / Remove, sections in its order that fold with summaries, wider and resizable sideways); LR-EXP-LOCATION: Export to ▸ Choose folder later (`destinationMode: chooseLater`), the default for a first export; status unchanged (✅) |
 | 2026-10-20 | minor | LR-VIEW-HISTOGRAM: GPU renders bin the histogram, vectorscope and waveform grids on the GPU (M5), checked exactly against the CPU oracle; status unchanged (✅) |
 | 2026-10-21 | patch | LRC-LIB-LIBFOLDERS: files still being copied in are skipped by folder scans, Synchronize Folder and adding in place until complete (#123); status unchanged (✅) |
+| 2026-10-22 | patch | KEY-LABELS: pressing 6–9 toggles the colour label off when assigned, and Shift+6–9 toggles and advances (#412); status unchanged (✅) |

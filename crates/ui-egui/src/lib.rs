@@ -892,7 +892,11 @@ impl LccApp {
             }
         }
         if r.is_ok() && id == "photo.label" {
-            let label = params.get("label").and_then(Value::as_str).and_then(lcc_catalog::ColorLabel::parse);
+            let label = if let Some(applied) = r.as_ref().ok().and_then(|v| v.get("label")).and_then(Value::as_str) {
+                if applied == "none" { None } else { lcc_catalog::ColorLabel::parse(applied) }
+            } else {
+                params.get("label").and_then(Value::as_str).filter(|s| *s != "none").and_then(lcc_catalog::ColorLabel::parse)
+            };
             let text = match label {
                 Some(label) => {
                     let name =

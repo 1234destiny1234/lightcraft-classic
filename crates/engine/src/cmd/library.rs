@@ -907,18 +907,35 @@ pub fn specs() -> Vec<CommandSpec> {
             "Set Color Label",
             ["Photo", "Set Color Label"],
             None,
-            "{label: red|yellow|green|blue|purple|none, ids?}",
+            "{label: red|yellow|green|blue|purple|none, ids?, toggle?: bool, advance?: bool}",
             has_selection,
             |s, p| {
                 // `none` (or null) clears; a missing label or one that isn't text is an error, not a clear
-                let l = match p.get("label") {
+                let mut l = match p.get("label") {
                     Some(Value::Null) => None,
                     Some(Value::String(x)) if x == "none" => None,
                     Some(Value::String(x)) => Some(ColorLabel::parse(x).ok_or_else(|| bad("photo.label", "unknown label"))?),
                     None => return Err(bad("photo.label", "missing `label` (red|yellow|green|blue|purple|none)")),
                     Some(_) => return Err(bad("photo.label", "label must be red|yellow|green|blue|purple|none")),
                 };
-                for_targets(s, p, "Set Color Label", |id| Some(Op::SetLabel { id, label: l }))
+                let targets = s.targets(p)?;
+                if bool_or(p, "toggle", false) && l.is_some() {
+                    let all_have = !targets.is_empty() && targets.iter().all(|id| s.catalog.photo(*id).and_then(|ph| ph.label) == l);
+                    if all_have {
+                        l = None;
+                    }
+                }
+                let ops: Vec<Op> = targets.into_iter().map(|id| Op::SetLabel { id, label: l }).collect();
+                let n = ops.len();
+                if n > 0 {
+                    s.commit("Set Color Label", Op::Batch { ops })?;
+                }
+                advance_if(s, p);
+                let label_str = match l {
+                    Some(label) => format!("{label:?}").to_lowercase(),
+                    None => "none".to_string(),
+                };
+                Ok(json!({"changed": n, "label": label_str}))
             }
         ),
         // ---- orientation
