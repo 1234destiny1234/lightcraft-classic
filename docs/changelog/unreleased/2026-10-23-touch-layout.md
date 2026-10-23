@@ -1,3 +1,0 @@
-## Interface
-
-- **Touch layout:** on by default on Android, and on the desktop through Settings ▸ General ▸ Layout (Touch / Desktop; remembered, and the same row switches back). Develop is photo-first: a tap shows a slim top bar and a tool strip whose slider tools (Basic with white balance and tone, Colour with presence, Tone with the parametric curve, Detail, Optics, Effects) adjust one setting at a time by dragging on the photo, with Done / Cancel; hold for the original; the full Edit panel beside or under the photo. Swipe scrolling with momentum, long-press multi-select, Android Back one step at a time, camera cutout and system-bar insets, a pinned or floating histogram, a touch Settings page and an Export sheet (save to Pictures or share). (no PR)

@@ -206,6 +206,32 @@ Linux ARM64 (aarch64) builds are paused; `packaging/linux/package.sh aarch64` st
 
 ### Android (early: see [docs/android.md](docs/android.md))
 
+The Android app is the same app as the desktop one, with the same catalog, raw developer and edits, in a
+**touch layout** made first for tablets and foldables (it works on phones too). Develop shows the photo alone; tap
+it for a slim top bar and a tool strip, pick a tool (Basic, Colour, Tone, Detail, Optics, Effects) and drag on the
+photo to set one slider at a time, then Done or Cancel; hold the photo to see the original. Swipe to scroll,
+long-press to select several photos, and Back steps out one level at a time. Import photos, a folder or the camera
+roll; export from the Export sheet to Pictures or share to another app.
+
+The touch layout is on by default on Android and available on every platform: **Settings ▸ General ▸ Layout**
+switches between Touch and Desktop (the choice is remembered).
+
+<table>
+<tr>
+<td width="62%"><img src="docs/images/touch/tablet-develop.jpg" alt="Touch layout on a tablet in landscape: a sunset photo filling the screen, a slim top bar with undo, compare, filmstrip, history, panel and share buttons, and a tool strip at the bottom"><br><sub><b>Tablet.</b> Photo first, tools at the bottom.</sub></td>
+<td width="38%" rowspan="2"><img src="docs/images/touch/phone-library.jpg" alt="Touch layout on a phone in portrait: the Library grid with two columns of demo photos"><br><sub><b>Phone.</b> The Library grid.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/touch/tablet-adjust.jpg" alt="Adjust mode: the Basic tool's sliders as chips under the photo, Shadows selected and shown as +35 at the top"><br><sub><b>Adjust.</b> Drag on the photo to set the chosen slider.</sub></td>
+</tr>
+<tr>
+<td><img src="docs/images/touch/tablet-settings.jpg" alt="Touch Settings with the Layout row (Touch / Desktop) at the top of General"><br><sub><b>Settings.</b> Layout switches Touch / Desktop.</sub></td>
+<td><img src="docs/images/touch/tablet-export.jpg" alt="The touch Export sheet: JPEG full size, JPEG 2048 px for sharing or TIFF, long edge and quality buttons, and an Export button"><br><sub><b>Export.</b> Save to Pictures or share.</sub></td>
+</tr>
+</table>
+
+Install from the release's APKs:
+
 | Build | File | Notes |
 |---|---|---|
 | Phones and tablets (arm64) | `<binary>-<ver>-android-arm64-v8a.apk` | Sideload: allow installs from your browser or file manager, then open the file |
