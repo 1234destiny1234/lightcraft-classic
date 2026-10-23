@@ -823,9 +823,33 @@ public class MainActivity extends NativeActivity {
         return (dot == name.length() - 1 ? name.substring(0, dot) : name) + "." + ext;
     }
 
-    /** Whether the app may read every file on shared storage. */
+    private Boolean allFilesDeclared;
+
+    /** Whether this build's manifest asks for "All files access" (`MANAGE_EXTERNAL_STORAGE`): the
+     *  GitHub build does, the Play build doesn't (xtask/src/apk.rs, Store). Without it the app
+     *  never asks, and picked folders are copied. */
+    public boolean allFilesAccessDeclared() {
+        if (allFilesDeclared != null) return allFilesDeclared;
+        boolean declared = false;
+        try {
+            String[] requested = getPackageManager().getPackageInfo(getPackageName(), PackageManager.GET_PERMISSIONS).requestedPermissions;
+            if (requested != null) {
+                for (String p : requested) {
+                    if ("android.permission.MANAGE_EXTERNAL_STORAGE".equals(p)) declared = true;
+                }
+            }
+        } catch (Exception e) {
+            Log.w(TAG, "declared permissions: " + e);
+        }
+        allFilesDeclared = declared;
+        return declared;
+    }
+
+    /** Whether the app may read every file on shared storage (never in a build that doesn't
+     *  declare All files access: there the storage permission of Android 9-10 is only for photos). */
     public boolean hasAllFilesAccess() {
         try {
+            if (!allFilesAccessDeclared()) return false;
             if (android.os.Build.VERSION.SDK_INT >= 30) return Environment.isExternalStorageManager();
             return checkSelfPermission(android.Manifest.permission.READ_EXTERNAL_STORAGE) == PackageManager.PERMISSION_GRANTED;
         } catch (RuntimeException e) {
@@ -837,6 +861,7 @@ public class MainActivity extends NativeActivity {
     /** Asks for "All files access": the system's page for it on Android 11+, the storage
      *  permission before. */
     public void askAllFilesAccess() {
+        if (!allFilesAccessDeclared()) return;
         runOnUiThread(() -> {
             try {
                 if (android.os.Build.VERSION.SDK_INT >= 30) {
@@ -866,7 +891,7 @@ public class MainActivity extends NativeActivity {
     private void askAllFilesAccessOnce() {
         try {
             SharedPreferences prefs = storagePrefs();
-            if (prefs.getBoolean(ASKED_ALL_FILES, false) || hasAllFilesAccess()) return;
+            if (!allFilesAccessDeclared() || prefs.getBoolean(ASKED_ALL_FILES, false) || hasAllFilesAccess()) return;
             prefs.edit().putBoolean(ASKED_ALL_FILES, true).apply();
             askAllFilesAccess();
         } catch (RuntimeException e) {
@@ -888,6 +913,26 @@ public class MainActivity extends NativeActivity {
         return android.os.Build.VERSION.SDK_INT >= 33 ? "android.permission.READ_MEDIA_IMAGES" : android.Manifest.permission.READ_EXTERNAL_STORAGE;
     }
 
+    /** "Selected photos" (Android 14+): the person allowed some photos only; MediaStore then lists
+     *  just those. */
+    private static final String SELECTED_PHOTOS = "android.permission.READ_MEDIA_VISUAL_USER_SELECTED";
+
+    /** The permissions to ask for: on Android 14+ also "selected photos", so the system offers it. */
+    private static String[] photoPermissions() {
+        if (android.os.Build.VERSION.SDK_INT >= 34) return new String[]{photoPermission(), SELECTED_PHOTOS};
+        return new String[]{photoPermission()};
+    }
+
+    /** Access to some photos only (Android 14+ "selected photos"). */
+    private boolean hasSelectedPhotosOnly() {
+        try {
+            return android.os.Build.VERSION.SDK_INT >= 34 && !hasPhotoAccess()
+                    && checkSelfPermission(SELECTED_PHOTOS) == PackageManager.PERMISSION_GRANTED;
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     private boolean hasPhotoAccess() {
         try {
             return hasAllFilesAccess() || checkSelfPermission(photoPermission()) == PackageManager.PERMISSION_GRANTED;
@@ -897,7 +942,9 @@ public class MainActivity extends NativeActivity {
         }
     }
 
-    /** Lists the camera roll for `id`, asking for the photo permission first when needed. */
+    /** Lists the camera roll for `id`, asking for the photo permission first when needed. With
+     *  "selected photos" only, asks again, which lets the person change the selection, then lists
+     *  what is allowed. */
     public void startCameraRoll(final long id) {
         runOnUiThread(() -> {
             if (hasPhotoAccess()) {
@@ -910,7 +957,7 @@ public class MainActivity extends NativeActivity {
                 if (rollWaiting.size() > 1) return;
             }
             try {
-                requestPermissions(new String[]{photoPermission()}, ASK_PHOTOS);
+                requestPermissions(photoPermissions(), ASK_PHOTOS);
             } catch (RuntimeException e) {
                 Log.w(TAG, "can't ask for access to photos: " + e);
                 answerWaitingRolls(false);
@@ -922,7 +969,7 @@ public class MainActivity extends NativeActivity {
     public void onRequestPermissionsResult(int request, String[] permissions, int[] results) {
         super.onRequestPermissionsResult(request, permissions, results);
         if (request != ASK_PHOTOS) return;
-        boolean granted = (results != null && results.length > 0 && results[0] == PackageManager.PERMISSION_GRANTED) || hasPhotoAccess();
+        boolean granted = hasPhotoAccess() || hasSelectedPhotosOnly();
         answerWaitingRolls(granted);
     }
 
@@ -967,6 +1014,7 @@ public class MainActivity extends NativeActivity {
                         rows.add(new Object[]{c.getLong(0), c.getString(1), c.isNull(2) ? -1L : c.getLong(2), c.getString(3), c.getString(4)});
                     }
                 }
+                rows.addAll(rawsNotIndexedAsImages(data, selection, args));
                 job.total = rows.size();
                 File dir = null;
                 for (Object[] r : rows) {
@@ -997,7 +1045,8 @@ public class MainActivity extends NativeActivity {
                     File part = new File(dir, "." + dest.getName() + ".part");
                     try {
                         job.step(dest.getName());
-                        copy(android.content.ContentUris.withAppendedId(collection, mediaId), part, job);
+                        Uri from = r.length > 5 ? (Uri) r[5] : collection;
+                        copy(android.content.ContentUris.withAppendedId(from, mediaId), part, job);
                         if (part.renameTo(dest)) {
                             out.add(dest.getAbsolutePath());
                         } else {
@@ -1020,6 +1069,44 @@ public class MainActivity extends NativeActivity {
             }
             rollAnswer(id, error == null ? out.toArray(new String[0]) : null, error);
         }, "camera-roll").start();
+    }
+
+    /** Raw files the media store doesn't count as images (CR3 on most devices, other raws on some):
+     *  they're in its Files table under DCIM/Camera with another media type. Visible only with All
+     *  files access on Android 11+ (scoped storage hides other apps' non-media files), so in the Play
+     *  build this usually finds nothing; picking the folder (copied) brings them in. */
+    private List<Object[]> rawsNotIndexedAsImages(String data, String selection, String[] args) {
+        List<Object[]> rows = new ArrayList<>();
+        try {
+            Uri files = MediaStore.Files.getContentUri("external");
+            String[] cols = {MediaStore.MediaColumns._ID, MediaStore.MediaColumns.DISPLAY_NAME, MediaStore.MediaColumns.SIZE,
+                    MediaStore.MediaColumns.MIME_TYPE, data};
+            String sel = "(" + selection + ") AND " + MediaStore.Files.FileColumns.MEDIA_TYPE + " != " + MediaStore.Files.FileColumns.MEDIA_TYPE_IMAGE;
+            try (Cursor c = getContentResolver().query(files, cols, sel, args, null)) {
+                if (c == null) return rows;
+                while (c.moveToNext()) {
+                    String name = c.getString(1);
+                    if (name == null || !isRawName(name)) continue;
+                    rows.add(new Object[]{c.getLong(0), name, c.isNull(2) ? -1L : c.getLong(2), c.getString(3), c.getString(4), files});
+                }
+            }
+        } catch (Exception e) {
+            Log.i(TAG, "camera roll: raw files not listed: " + e);
+        }
+        return rows;
+    }
+
+    private static final String[] RAW_EXTENSIONS = {"dng", "cr2", "cr3", "crw", "nef", "nrw", "arw", "srf", "sr2", "raf", "orf",
+            "rw2", "raw", "pef", "srw", "x3f", "3fr", "iiq", "erf", "kdc", "dcr", "mrw", "mos", "rwl", "gpr"};
+
+    static boolean isRawName(String name) {
+        int dot = name.lastIndexOf('.');
+        if (dot < 0) return false;
+        String ext = name.substring(dot + 1).toLowerCase(Locale.ROOT);
+        for (String r : RAW_EXTENSIONS) {
+            if (r.equals(ext)) return true;
+        }
+        return false;
     }
 
     /** Opens a web link in the browser. */
