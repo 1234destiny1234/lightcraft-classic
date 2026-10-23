@@ -239,3 +239,33 @@ fn the_histogram_pins_under_the_top_bar_or_floats_where_it_is_dragged() {
     assert_eq!(exec(&mut h, "touch.histogram", json!({"mode": "off"}))["ok"], true);
     assert!(rect(&h, "touch:histogram").is_none());
 }
+
+#[test]
+fn activity_cards_sit_below_the_touch_top_bar_inside_the_insets() {
+    // a folding phone's cover screen with a status bar and a side cutout
+    let mut h = library([412.0, 960.0]);
+    exec(&mut h, "touch.insets", json!({"top": 28.0, "left": 12.0}));
+    let g = h.app.session.activity.start("faces", "Finding faces", lcc_engine::activity::Cancel::No);
+    std::thread::sleep(Duration::from_millis(600));
+    h.step();
+    h.step();
+    let id = h.app.session.activity.list()[0].id;
+    let card = rect(&h, &format!("activity:row:{id}")).expect("the activity card");
+    assert!(card.left() >= 12.0 && card.top() >= 28.0, "inside the insets: {card:?}");
+    let bar: Vec<(String, egui::Rect)> = h.app.widgets.iter().filter(|(w, _)| w.starts_with("touch:")).cloned().collect();
+    assert!(!bar.is_empty(), "the touch top bar's buttons");
+    for (w, r) in &bar {
+        if r.top() < card.top() {
+            assert!(!r.intersects(card), "the card covers {w}: {r:?} vs {card:?}");
+        }
+    }
+    // Develop's top bar (with Back) too
+    let first = h.app.session.visible_cloned()[0].0;
+    exec(&mut h, "library.select", json!({"ids": [first]}));
+    exec(&mut h, "module.develop", json!({}));
+    exec(&mut h, "touch.chrome", json!({"on": true}));
+    let back = rect(&h, "touch:back").expect("Develop's Back");
+    let card = rect(&h, &format!("activity:row:{id}")).expect("the activity card");
+    assert!(!back.intersects(card) && card.top() >= back.bottom(), "Back stays visible: {back:?} vs {card:?}");
+    drop(g);
+}

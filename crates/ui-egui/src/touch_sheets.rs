@@ -46,6 +46,8 @@ pub struct TouchSheets {
     settings_seen: bool,
     /// Phone: a category's page is open (rather than the list).
     pub settings_detail: bool,
+    /// Settings was last drawn as a phone screen (the list and a category's page one at a time).
+    settings_phone: bool,
     /// The Export sheet, while it is open.
     pub export: Option<ExportSheet>,
     /// The sheet's choices last time (the next opening starts from them).
@@ -160,6 +162,22 @@ pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) -> bool {
     false
 }
 
+/// Back (`touch.back`) on these screens, before the dialogs: the Export sheet closes; on a
+/// phone, Settings goes from a category's page to the category list (the next Back closes it, as
+/// the dialog it is). `None`: neither was open, or Settings is on its list (Back closes it).
+pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
+    // (a dialog over the sheet closes first, as Esc would)
+    if app.ui.dialog.is_none() && app.touch_sheets.export.take().is_some() {
+        return Some("export");
+    }
+    let settings = matches!(app.ui.dialog, Some(Dialog::Settings { .. }));
+    if settings && app.touch_sheets.settings_seen && app.touch_sheets.settings_phone && app.touch_sheets.settings_detail {
+        app.touch_sheets.settings_detail = false;
+        return Some("settingsPage");
+    }
+    None
+}
+
 fn dim(ctx: &egui::Context, screen: Rect) {
     egui::Area::new(Id::new("touch-sheet-dim")).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
         // the backdrop takes the taps under the sheet
@@ -175,6 +193,7 @@ fn settings(app: &mut LccApp, ctx: &egui::Context) {
     let mut tab = tab;
     let screen = ctx.content_rect();
     let phone = screen.width().min(screen.height()) < TABLET;
+    app.touch_sheets.settings_phone = phone;
     if !app.touch_sheets.settings_seen {
         app.touch_sheets.settings_seen = true;
         // a category asked for by name opens straight away; Settings on its own, the list

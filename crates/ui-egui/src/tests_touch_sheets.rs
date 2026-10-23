@@ -199,3 +199,33 @@ fn bad_export_requests_are_errors_not_panics() {
     let r = exec(&mut h, "touch.exportSheet", json!({}));
     assert_eq!(r["ok"], false, "nothing selected: {r}");
 }
+
+#[test]
+fn back_leaves_a_settings_page_for_the_list_then_closes_and_closes_the_export_sheet() {
+    let mut h = touch(COVER);
+    let back = |h: &mut Headless| {
+        let r = exec(h, "touch.back", json!({}));
+        assert_eq!(r["ok"], true, "{r}");
+        r["result"]["closed"].clone()
+    };
+    // Settings on a phone: a category's page, then the list, then closed
+    exec(&mut h, "app.settings", json!({}));
+    click(&mut h, "touch:settings:general");
+    assert!(has(&h, "touch:settings:back"), "a category's page");
+    assert_eq!(back(&mut h), "settingsPage");
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a page keeps Settings open");
+    assert!(has(&h, "touch:settings:general") && !has(&h, "touch:settings:back"), "on the category list");
+    back(&mut h);
+    assert!(h.app.ui.dialog.is_none(), "Back on the list closes Settings");
+
+    // the Export sheet closes, and Back goes no further (still the Library)
+    exec(&mut h, "view.photoGrid", json!({}));
+    let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(1).map(|p| p.0).collect();
+    exec(&mut h, "library.select", json!({"ids": ids}));
+    assert_eq!(click(&mut h, "touch:export")["ok"], true);
+    assert!(h.app.touch_sheets.export.is_some());
+    assert_eq!(back(&mut h), "export");
+    assert!(h.app.touch_sheets.export.is_none(), "Back closes the Export sheet");
+    assert!(!has(&h, "touch:export:go"));
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Library);
+}

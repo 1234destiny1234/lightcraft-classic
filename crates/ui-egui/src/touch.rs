@@ -429,6 +429,11 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
             });
         }
     };
+    if crate::touch::on(app)
+        && let Some(what) = crate::touch_sheets::back(app)
+    {
+        return Some(what);
+    }
     if app.ui.dialog.is_some() {
         esc(app);
         return Some("dialog");
@@ -481,6 +486,13 @@ pub fn take_system_back(app: &mut LccApp) -> bool {
 
 /// The touch layout's edges (replacing `shell::edges`): Library's bar, or Develop's side panel or
 /// bottom sheet when it is open. Returns the module, which draws the centre.
+/// The top-left corner for floating cards (the activity stack) in the touch layout: inside the
+/// screen's insets and below the top bar, so they never cover its buttons (Back, Import, …).
+pub(crate) fn overlay_origin(app: &LccApp) -> Pos2 {
+    let i = app.ui.touch.insets;
+    pos2(i.left + 8.0, i.top + BAR_H + 8.0)
+}
+
 pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) -> &'static dyn module::Module {
     module::sync(app);
     let m = module::get(app.ui.module);
