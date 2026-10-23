@@ -151,12 +151,16 @@ public class MainActivity extends NativeActivity {
             Log.w(TAG, "no multicast lock: " + e);
         }
         startReceiving(getIntent());
-        askAllFilesAccessOnce();
+        // "All files access" is asked once the native side has drawn its first frame
+        // (firstFrameShown): asking here covered the activity while the native thread was still
+        // creating its window and GPU surface, and on some devices the first backgrounding after
+        // that left the app frozen.
     }
 
     @Override
     protected void onResume() {
         super.onResume();
+        Log.i(TAG, "lifecycle: resume");
         resumed = true;
         ui.removeCallbacks(rescan);
         ui.post(rescan);
@@ -164,13 +168,27 @@ public class MainActivity extends NativeActivity {
 
     @Override
     protected void onPause() {
+        Log.i(TAG, "lifecycle: pause");
         resumed = false;
         ui.removeCallbacks(rescan);
         super.onPause();
     }
 
     @Override
+    protected void onStop() {
+        Log.i(TAG, "lifecycle: stop");
+        super.onStop();
+    }
+
+    @Override
+    protected void onStart() {
+        super.onStart();
+        Log.i(TAG, "lifecycle: start");
+    }
+
+    @Override
     protected void onDestroy() {
+        Log.i(TAG, "lifecycle: destroy");
         if (multicast != null && multicast.isHeld()) multicast.release();
         super.onDestroy();
     }
@@ -833,6 +851,13 @@ public class MainActivity extends NativeActivity {
                 Log.w(TAG, "can't ask for storage access: " + e);
             }
         });
+    }
+
+    /** Called by the native side after its first frame: the first-start questions can cover the
+     *  activity now that its window and GPU surface exist. */
+    public void firstFrameShown() {
+        Log.i(TAG, "lifecycle: first frame");
+        runOnUiThread(this::askAllFilesAccessOnce);
     }
 
     /** Asks once, on the first start (remembered; Settings > Folders asks again). */
