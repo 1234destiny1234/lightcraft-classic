@@ -216,6 +216,9 @@ roll; export from the Export sheet to Pictures or share to another app.
 The touch layout is on by default on Android and available on every platform: **Settings ▸ General ▸ Layout**
 switches between Touch and Desktop (the choice is remembered).
 
+The app collects nothing and works offline; see the [privacy policy](PRIVACY.md) for the few features that go
+online and what the Android permissions are for.
+
 <table>
 <tr>
 <td width="62%"><img src="docs/images/touch/tablet-develop.jpg" alt="Touch layout on a tablet in landscape: a sunset photo filling the screen, a slim top bar with undo, compare, filmstrip, history, panel and share buttons, and a tool strip at the bottom"><br><sub><b>Tablet.</b> Photo first, tools at the bottom.</sub></td>
@@ -512,6 +515,8 @@ Humans and agents follow the same rules, so read [AGENTS.md](AGENTS.md) first. T
 The app is licensed under the [MIT License](LICENSE), except `crates/segment` and `crates/fetch`, which are
 Apache-2.0 only. It is a fork of an open-source project; that project's copyright notices and required
 third-party notices are in [LICENSE](LICENSE) and [NOTICE](NOTICE).
+
+Privacy: the app collects no data; see [PRIVACY.md](PRIVACY.md).
 
 Bundled fonts, icons, images and other assets keep their own open licenses; each one is listed
 with its author, source and license in [assets/ATTRIBUTION.md](assets/ATTRIBUTION.md).

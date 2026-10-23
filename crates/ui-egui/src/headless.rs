@@ -930,7 +930,13 @@ mod tests {
         let t = Duration::from_secs(10);
         h.request("ui.set", json!({"view": "detail"}), t);
         h.settle(SETTLE);
-        let cell = h.app.widgets.iter().find(|(w, _)| w.starts_with("film:")).map(|(w, _)| w.clone()).expect("a filmstrip photo");
+        let cell = h
+            .app
+            .widgets
+            .iter()
+            .find(|(w, _)| w.strip_prefix("film:").is_some_and(|n| n.parse::<u64>().is_ok()))
+            .map(|(w, _)| w.clone())
+            .expect("a filmstrip photo");
         assert!(!egui::Popup::is_any_open(&h.view.ctx));
         let r = h.request("ui.clickWidget", json!({"id": cell, "button": "right"}), t);
         assert_eq!(r["ok"], true, "{r}");
