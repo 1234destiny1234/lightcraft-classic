@@ -148,7 +148,7 @@ Android is `unix`. Code meant for Linux and the BSDs names them (`target_os = "l
 .github/scripts/install-android-ndk.sh   # prints ANDROID_NDK_HOME to export
 .github/scripts/install-android-sdk.sh   # JDK 17+ and SDK platform 36 / build-tools 36 (prints JAVA_HOME, ANDROID_HOME)
 rustup target add aarch64-linux-android  # and x86_64-linux-android for the emulator
-cargo xtask android package [--abi arm64] [--abi x86_64] [--split] [--aab] [--store github|play]
+cargo xtask android package [--abi arm64] [--abi x86_64] [--split] [--aab] [--store github|play] [--version-code N]
 adb install -r target/android/<binary>-<version>-android-arm64-v8a.apk
 ```
 
@@ -168,6 +168,11 @@ drives the SDK tools itself (`xtask/src/apk.rs`):
 The version code is derived from the workspace version: `X.Y.Z` → `X·10⁶ + Y·10⁴ + Z·100 + 99`, and a prerelease
 `-rcN` uses `N` in place of `99`. Releases are now numbered `YY.WW.B` (ISO year, week, release that week, e.g. `26.43.4` → 26 430 499), which
 the formula already fits; see [Release versions](versioning.md).
+
+`--version-code N` replaces the derived code (1 to 2 100 000 000, Play's limit). Every upload to Google Play, even
+one it rejects or one later discarded, uses up its version code for good, so a second upload of the same version
+needs a new one: take the unused `00` slot below the release (`26.43.5` → `--version-code 26430600`), which the
+formula never produces and which still sorts below the next version's codes.
 
 **Signing.** Set `ANDROID_KEYSTORE` (a keystore file), `ANDROID_KEYSTORE_PASSWORD`, and optionally
 `ANDROID_KEY_ALIAS` (default `upload`) and `ANDROID_KEY_PASSWORD`. Without them a debug key in

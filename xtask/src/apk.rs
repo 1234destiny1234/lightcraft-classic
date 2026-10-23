@@ -77,10 +77,23 @@ struct Options {
     /// one APK per ABI instead of one holding them all
     split: bool,
     skip_build: bool,
+    /// `--version-code`: replaces the code derived from the version (a Play re-upload of the same version)
+    version_code: Option<u32>,
+}
+
+/// The largest version code Google Play accepts.
+const MAX_VERSION_CODE: u32 = 2_100_000_000;
+
+fn parse_version_code(v: &str) -> Result<u32, String> {
+    let n: u32 = v.trim().parse().map_err(|_| format!("--version-code: `{v}` is not a positive whole number"))?;
+    if n == 0 || n > MAX_VERSION_CODE {
+        return Err(format!("--version-code: {n} is out of range (1 to {MAX_VERSION_CODE})"));
+    }
+    Ok(n)
 }
 
 fn parse(args: &[&str]) -> Result<Options, String> {
-    let mut o = Options { abis: Vec::new(), aab: false, store: Store::Github, split: false, skip_build: false };
+    let mut o = Options { abis: Vec::new(), aab: false, store: Store::Github, split: false, skip_build: false, version_code: None };
     let mut it = args.iter();
     while let Some(a) = it.next() {
         match *a {
@@ -98,6 +111,10 @@ fn parse(args: &[&str]) -> Result<Options, String> {
             }
             "--split" => o.split = true,
             "--skip-build" => o.skip_build = true,
+            "--version-code" => {
+                let v = it.next().ok_or("--version-code needs a number")?;
+                o.version_code = Some(parse_version_code(v)?);
+            }
             other => return Err(format!("android package: unknown option `{other}`")),
         }
     }
@@ -322,7 +339,10 @@ pub fn package(args: &[&str]) -> Result<(), String> {
     let brand = brand::Brand::current()?;
     let vars = dist::vars(&root, &brand)?;
     let version = vars.get("version").cloned().ok_or("no version")?;
-    let code = version_code(&version)?;
+    let code = match opts.version_code {
+        Some(c) => c,
+        None => version_code(&version)?,
+    };
     let binary = brand.req("binary")?.to_string();
 
     let sdk = sdk_root().ok_or("android: the Android SDK was not found (set ANDROID_HOME)")?;
@@ -568,6 +588,17 @@ mod tests {
         assert_eq!(dirs, vec![home.join("bin"), std::env::temp_dir().join("usr-bin")]);
         assert_eq!(path_with_java(None, Some("x".into())), None);
         assert_eq!(path_with_java(Some("".into()), Some("x".into())), None);
+    }
+
+    #[test]
+    fn version_code_override_is_validated() {
+        let code = parse(&["--aab", "--version-code", "26430600"]).unwrap().version_code.unwrap();
+        assert!(code > version_code("26.43.5-rc98").unwrap() && code < version_code("26.43.6-rc1").unwrap());
+        assert_eq!(parse(&["--aab"]).unwrap().version_code, None);
+        for bad in ["0", "-5", "abc", "2100000001", "99999999999", ""] {
+            assert!(parse(&["--version-code", bad]).is_err(), "{bad}");
+        }
+        assert!(parse(&["--version-code"]).is_err());
     }
 
     #[test]
