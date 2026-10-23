@@ -165,14 +165,15 @@ drives the SDK tools itself (`xtask/src/apk.rs`):
    and are signed with `jarsigner`. The bundle always gets the Play manifest (no All files access); the APKs get
    the GitHub one unless `--store play` (Storage ▸ *Two builds*).
 
-The version code is derived from the workspace version: `X.Y.Z` → `X·10⁶ + Y·10⁴ + Z·100 + 99`, and a prerelease
-`-rcN` uses `N` in place of `99`. Releases are now numbered `YY.WW.B` (ISO year, week, release that week, e.g. `26.43.4` → 26 430 499), which
+The version code is derived from the workspace version: `X.Y.Z` → `X·10⁶ + Y·10⁴ + Z·100 + 50`, and a prerelease
+`-rcN` (or `-betaN`) uses `N` (01–49) in place of `50`; 51–99 are reserved for re-uploads of the same release. Releases are now numbered `YY.WW.B` (ISO year, week, release that week, e.g. `26.43.4` → 26 430 450), which
 the formula already fits; see [Release versions](versioning.md).
 
 `--version-code N` replaces the derived code (1 to 2 100 000 000, Play's limit). Every upload to Google Play, even
 one it rejects or one later discarded, uses up its version code for good, so a second upload of the same version
-needs a new one: take the unused `00` slot below the release (`26.43.5` → `--version-code 26430600`), which the
-formula never produces and which still sorts below the next version's codes.
+needs a new one: take the next free code in the release's reserved 51–99 range (`26.43.7` uploaded as 26430750 →
+`--version-code 26430751`). 26.43.5 predates this scheme (its release code was 26430599) and was re-uploaded as
+26430600, the `00` slot the formula never produces.
 
 **Signing.** Set `ANDROID_KEYSTORE` (a keystore file), `ANDROID_KEYSTORE_PASSWORD`, and optionally
 `ANDROID_KEY_ALIAS` (default `upload`) and `ANDROID_KEY_PASSWORD`. Without them a debug key in

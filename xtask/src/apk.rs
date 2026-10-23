@@ -186,7 +186,8 @@ fn path_with_java(java_home: Option<std::ffi::OsString>, path: Option<std::ffi::
 }
 
 /// `versionCode`: grows with every release, a prerelease below its release
-/// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_99).
+/// (`1.2.3-rc4` → 1_02_03_04, `1.2.3` → 1_02_03_50). Prereleases use 01–49; 51–99 are left free for
+/// re-uploads of the same release to Google Play (`--version-code`), since every upload consumes its code.
 pub fn version_code(version: &str) -> Result<u32, String> {
     let (main, pre) = version.split_once('-').map_or((version, None), |(m, p)| (m, Some(p)));
     let nums: Vec<u32> =
@@ -196,10 +197,10 @@ pub fn version_code(version: &str) -> Result<u32, String> {
         return Err(format!("version `{version}`: too large for a versionCode"));
     }
     let build = match pre {
-        None => 99,
+        None => 50,
         Some(p) => {
             let n: u32 = p.trim_start_matches(|c: char| !c.is_ascii_digit()).parse().unwrap_or(0);
-            n.clamp(1, 98)
+            n.clamp(1, 49)
         }
     };
     Ok(major * 1_000_000 + minor * 10_000 + patch * 100 + build)
@@ -538,6 +539,10 @@ mod tests {
         ];
         let codes: Vec<u32> = order.iter().map(|v| version_code(v).unwrap()).collect();
         assert!(codes.windows(2).all(|w| w[0] < w[1]), "{codes:?}");
+        // a release leaves codes free above it, below the next version's first prerelease
+        let (release, next) = (version_code("26.43.5").unwrap(), version_code("26.43.6-rc1").unwrap());
+        assert!(next - release > 10, "{release} {next}");
+        assert!(version_code("26.43.6-rc99").unwrap() < version_code("26.43.6").unwrap());
     }
 
     #[test]
@@ -593,7 +598,7 @@ mod tests {
     #[test]
     fn version_code_override_is_validated() {
         let code = parse(&["--aab", "--version-code", "26430600"]).unwrap().version_code.unwrap();
-        assert!(code > version_code("26.43.5-rc98").unwrap() && code < version_code("26.43.6-rc1").unwrap());
+        assert!(code > version_code("26.43.5").unwrap() && code < version_code("26.43.6-rc1").unwrap());
         assert_eq!(parse(&["--aab"]).unwrap().version_code, None);
         for bad in ["0", "-5", "abc", "2100000001", "99999999999", ""] {
             assert!(parse(&["--version-code", bad]).is_err(), "{bad}");
