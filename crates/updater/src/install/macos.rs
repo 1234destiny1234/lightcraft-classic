@@ -170,19 +170,32 @@ impl Mount {
         Ok(Mount { point })
     }
 
-    /// The app in the image: `<display name>.app`, a real folder, not a link.
+    /// The app in the image: `<display name>.app`, a real folder, not a link; or, from an image
+    /// built while the app had an earlier display name ([`lcc_brand::LEGACY_DISPLAY_NAMES`]), the
+    /// bundle under that name.
     fn app(&self) -> Result<PathBuf, UpdateError> {
-        let name = format!("{}.app", lcc_brand::DISPLAY_NAME);
-        let app = self.point.join(&name);
+        app_in(&self.point)
+    }
+}
+
+/// [`Mount::app`] for the image mounted at `point`.
+fn app_in(point: &Path) -> Result<PathBuf, UpdateError> {
+    let name = format!("{}.app", lcc_brand::DISPLAY_NAME);
+    let names = std::iter::once(lcc_brand::DISPLAY_NAME).chain(lcc_brand::LEGACY_DISPLAY_NAMES.iter().copied());
+    for candidate in names {
+        let app = point.join(format!("{candidate}.app"));
         match std::fs::symlink_metadata(&app) {
-            Err(_) => Err(UpdateError::Install(format!("the disk image has no {name}; it is not a release of this app"))),
+            Err(_) => continue,
             Ok(m) if m.file_type().is_symlink() => {
-                Err(UpdateError::Install(format!("{name} in the disk image is a link, not the app; it is not a release of this app")))
+                return Err(UpdateError::Install(format!(
+                    "{candidate}.app in the disk image is a link, not the app; it is not a release of this app"
+                )));
             }
-            Ok(m) if !m.is_dir() => Err(UpdateError::Install(format!("{name} in the disk image is not an app bundle"))),
-            Ok(_) => Ok(app),
+            Ok(m) if !m.is_dir() => return Err(UpdateError::Install(format!("{candidate}.app in the disk image is not an app bundle"))),
+            Ok(_) => return Ok(app),
         }
     }
+    Err(UpdateError::Install(format!("the disk image has no {name}; it is not a release of this app")))
 }
 
 impl Drop for Mount {
@@ -523,6 +536,29 @@ mod tests {
             Ok(())
         });
         (r, launched)
+    }
+
+    #[test]
+    fn an_image_from_before_a_rename_is_found_under_the_earlier_name() {
+        let s = Scratch::new("legacy name");
+        let Some(old) = lcc_brand::LEGACY_DISPLAY_NAMES.first() else {
+            return; // a brand with no earlier name has nothing to find
+        };
+        std::fs::create_dir_all(s.0.join(format!("{old}.app"))).expect("old bundle");
+        assert_eq!(app_in(&s.0).expect("found"), s.0.join(format!("{old}.app")));
+        // the current name wins when the image holds both
+        std::fs::create_dir_all(s.0.join(app_name())).expect("bundle");
+        assert_eq!(app_in(&s.0).expect("found"), s.0.join(app_name()));
+    }
+
+    #[test]
+    fn an_image_without_the_app_or_with_a_link_in_its_place_is_refused() {
+        let s = Scratch::new("no app");
+        assert!(app_in(&s.0).is_err(), "an empty image holds no release");
+        std::fs::create_dir_all(s.0.join("Other.app")).expect("other bundle");
+        assert!(app_in(&s.0).is_err(), "another app is not ours");
+        std::os::unix::fs::symlink(s.0.join("Other.app"), s.0.join(app_name())).expect("link");
+        assert!(app_in(&s.0).is_err(), "a link in the app's place is refused");
     }
 
     #[test]
