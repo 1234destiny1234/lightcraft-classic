@@ -242,6 +242,18 @@ pub fn filtered_source<'a>(src: &'a Rgb32f, info: &crate::SourceInfo, s: &Develo
     Cow::Owned(img)
 }
 
+/// [`analysis_input`] of the photo as `s`'s geometry frames it (orientation, crop, straighten, flips,
+/// lens profile and perspective: what the source stage sees, without a camera's embedded lens warp),
+/// for a filter whose manifest asks for `"analyzeArea": "crop"`.
+pub fn analysis_input_framed(src: &Rgb32f, s: &DevelopSettings, max_edge: usize) -> (Vec<f32>, usize, usize) {
+    let frame = crate::geometry::Frame::new(src.width, src.height, s, true);
+    // at most the crop's own resolution: a small crop isn't blown up
+    let (nw, nh) = frame.native_size();
+    let edge = (nw.max(nh).round() as usize).clamp(1, max_edge.max(1));
+    let (w, h) = frame.fit(edge, edge);
+    analysis_input(&frame.sample(src, w, h), max_edge)
+}
+
 /// A downsized whole frame (long edge at most `max_edge`) in linear sRGB primaries, interleaved,
 /// for a filter's `pc_analyze`: `(samples, width, height)`.
 pub fn analysis_input(src: &Rgb32f, max_edge: usize) -> (Vec<f32>, usize, usize) {
@@ -249,4 +261,41 @@ pub fn analysis_input(src: &Rgb32f, max_edge: usize) -> (Vec<f32>, usize, usize)
     let (to_srgb, _) = matrices();
     let data = img.data.iter().flat_map(|c| mul(&to_srgb, *c)).collect();
     (data, img.width, img.height)
+}
+
+#[cfg(test)]
+mod tests_analysis_input {
+    use super::*;
+
+    /// A source dark on the left half and bright on the right.
+    fn halves(w: usize, h: usize) -> Rgb32f {
+        let mut img = Rgb32f::new(w, h);
+        for (i, px) in img.data.iter_mut().enumerate() {
+            let v = if i % w < w / 2 { 0.1 } else { 0.8 };
+            *px = [v, v, v];
+        }
+        img
+    }
+
+    fn mean(data: &[f32]) -> f64 {
+        data.iter().map(|v| f64::from(*v)).sum::<f64>() / data.len() as f64
+    }
+
+    #[test]
+    fn the_framed_input_is_the_crop_and_the_plain_one_the_whole_photo() {
+        let src = halves(400, 200);
+        let mut s = DevelopSettings::default();
+        s.crop.geometry.rect = lcc_geom::Rect::new(0.55, 0.1, 0.95, 0.9);
+        let (whole, ww, wh) = analysis_input(&src, 1024);
+        let (framed, fw, fh) = analysis_input_framed(&src, &s, 1024);
+        assert_eq!((ww, wh), (400, 200));
+        assert!((mean(&whole) - 0.45).abs() < 0.05, "the whole photo: both halves");
+        // the crop is 160 × 160 source pixels, all in the bright half
+        assert_eq!((fw, fh), (160, 160), "the crop, at its own resolution");
+        assert!((mean(&framed) - 0.8).abs() < 0.02, "only the bright half: {}", mean(&framed));
+        // no crop: the framed input is the whole photo too
+        let (plain, pw, ph) = analysis_input_framed(&src, &DevelopSettings::default(), 1024);
+        assert_eq!((pw, ph), (400, 200));
+        assert!((mean(&plain) - mean(&whole)).abs() < 0.01);
+    }
 }
