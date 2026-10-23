@@ -357,6 +357,22 @@ pub fn rows_between(rows: &[GridRow], top: f32, bottom: f32) -> &[GridRow] {
     rest.get(..n).unwrap_or(&[])
 }
 
+/// The photo at the top of a grid scrolled to `top`: the first index of the first row reaching
+/// below it, and how far down that row `top` sits (0 = its top edge, 1 = its bottom).
+pub fn top_anchor(lay: &GridLayout, top: f32) -> Option<(usize, f32)> {
+    let row = lay.rows.get(lay.rows.partition_point(|r| r.bottom <= top))?;
+    let h = row.bottom - row.top;
+    let frac = if h > 0.0 { ((top - row.top) / h).clamp(0.0, 1.0) } else { 0.0 };
+    Some((row.start, if frac.is_finite() { frac } else { 0.0 }))
+}
+
+/// The scroll offset that puts photo `idx` back at the top, `frac` of the way down its row
+/// ([`top_anchor`] after a reflow). None for an index outside the layout.
+pub fn anchor_offset(lay: &GridLayout, idx: usize, frac: f32) -> Option<f32> {
+    let row = lay.rows.get(lay.rows.partition_point(|r| r.end <= idx))?;
+    (row.start <= idx).then(|| (row.top + frac.clamp(0.0, 1.0) * (row.bottom - row.top)).max(0.0))
+}
+
 fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     let t = Tokens::get(ui.ctx());
     let (generation, ids) = app.session.visible_shared();
@@ -485,7 +501,23 @@ fn show_inner(app: &mut LccApp, ui: &mut egui::Ui) {
     register(ui.ctx(), "gridArea", scroll_rect);
     crate::widgets::register(ui.ctx(), "grid:scroll", scroll_rect);
     let wheel = wheel_step(ui, egui::Id::new("grid-wheel"), scroll_rect, scroll_rect.height(), false, app.ui.settings.wheel_scroll_speed);
-    egui::ScrollArea::vertical().id_salt("grid-scroll").auto_shrink([false, false]).show_viewport(ui, |ui, viewport| {
+    // keep the photo at the top in place when the layout reflows (a side panel resized, the
+    // window resized, the thumbnail size changed): the pixel offset alone would land elsewhere
+    let anchor_id = egui::Id::new("grid-anchor");
+    let lay_shape = (avail_w.to_bits(), target.to_bits(), square);
+    let last: Option<((u32, u32, bool), usize, f32)> = ui.ctx().data(|d| d.get_temp(anchor_id));
+    let mut area_ui = egui::ScrollArea::vertical().id_salt("grid-scroll").auto_shrink([false, false]);
+    if scroll_to.is_none()
+        && let Some((shape, idx, frac)) = last
+        && shape != lay_shape
+        && let Some(y) = anchor_offset(&lay, idx, frac)
+    {
+        area_ui = area_ui.vertical_scroll_offset(y);
+    }
+    area_ui.show_viewport(ui, |ui, viewport| {
+        if let Some((idx, frac)) = top_anchor(&lay, viewport.top()) {
+            ui.ctx().data_mut(|d| d.insert_temp(anchor_id, (lay_shape, idx, frac)));
+        }
         if wheel != egui::Vec2::ZERO {
             ui.scroll_with_delta_animation(wheel, egui::style::ScrollAnimation::none());
         }
@@ -1645,6 +1677,21 @@ fn quick_collection_item(app: &mut LccApp, ui: &mut egui::Ui) {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn the_top_photo_stays_at_the_top_when_the_grid_narrows() {
+        let aspects = vec![1.5; 500];
+        let wide = layout(&aspects, &[(0, 500)], 1400.0, 160.0, false);
+        let narrow = layout(&aspects, &[(0, 500)], 700.0, 160.0, false);
+        let top = wide.rows.get(20).map(|r| r.top).unwrap_or_default() + 3.0;
+        let (idx, frac) = top_anchor(&wide, top).unwrap();
+        let y = anchor_offset(&narrow, idx, frac).unwrap();
+        let (now, _) = top_anchor(&narrow, y).unwrap();
+        let row = narrow.rows.iter().find(|r| r.start <= idx && idx < r.end).unwrap();
+        assert!(row.start == now, "photo {idx} should still be in the top row");
+        assert!(anchor_offset(&narrow, 10_000, 0.5).is_none());
+        assert!(top_anchor(&narrow, f32::NAN).is_some() || narrow.rows.is_empty());
+    }
 
     #[test]
     fn the_same_photo_in_another_source_scrolls_into_view() {
