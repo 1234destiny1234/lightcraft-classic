@@ -53,6 +53,10 @@ catalog_exts  = ["nnycat"]
 # Repositories this app was released from before: their release files are still accepted as
 # updates (a renamed repository's URLs keep working through GitHub's redirect).
 repositories  = ["https://github.com/emmertex/lightcraft-classic"]
+# Earlier display names: the macOS disk image also carries a hidden `<name>.app` copy under each, because
+# the updater of a build released under that name looks for its own name in the image (fork #411). Remove
+# an entry a few days after the first release that has it, once installs have updated through it.
+display_names = ["LightCraft Classic"]
 app_ids       = ["org.example.NoNameYet", "org.example.LightCraftClassic", "com.emmertex.LightCraftClassic"]
 
 # The project this one is forked from, for docs that compare the two ({{upstream_name}}, … in `*.md.in`).

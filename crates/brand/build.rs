@@ -90,6 +90,8 @@ const OPTIONAL: &[(&str, &str, &str)] = &[
     ("upstream.repository", "UPSTREAM_REPOSITORY", "&str = \"\""),
     // no earlier repositories: updates come only from `product.repository`
     ("legacy.repositories", "LEGACY_REPOSITORIES", "&[&str] = &[]"),
+    // no earlier display names: the macOS updater looks only for `<display_name>.app` in a disk image
+    ("legacy.display_names", "LEGACY_DISPLAY_NAMES", "&[&str] = &[]"),
     // the manifest names its files under `product.repository`
     ("product.release_repository", "RELEASE_REPOSITORY", "&str = \"\""),
 ];
