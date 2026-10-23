@@ -77,6 +77,7 @@ pub mod timelapse_ui;
 pub mod titlebar;
 pub mod touch;
 mod touch_input;
+pub mod touch_sheets;
 pub mod video_ui;
 pub mod video_view;
 pub mod web_module;
@@ -309,6 +310,10 @@ pub type RevealFn = Box<dyn FnMut(&str) -> Result<(), String>>;
 /// paths, or why there are none (permission denied, …). `Err` when it could not start (Android).
 pub type CameraRollFn = Box<dyn FnMut() -> Result<std::sync::mpsc::Receiver<Result<Vec<String>, String>>, String>>;
 pub type OpenUrlFn = Box<dyn FnMut(&str) -> Result<(), String>>;
+/// Hands exported files to the device (Android: copies them into Pictures/<app> through
+/// MediaStore and, with `share`, opens the share sheet). The channel answers with the saved
+/// files' URIs, or why they could not be saved. `Err` when it could not start.
+pub type SaveToGalleryFn = Box<dyn FnMut(&[String], bool) -> Result<std::sync::mpsc::Receiver<Result<Vec<String>, String>>, String>>;
 /// Open a file in an application (`app` = "" for the system's default one).
 pub type OpenWithFn = Box<dyn FnMut(&str, &str) -> Result<(), String>>;
 /// Open several files with one start of an application (`app` as for [`OpenWithFn`]).
@@ -423,6 +428,8 @@ pub struct Services {
     pub storage_access: Option<StorageAccess>,
     /// Android: the camera roll (DCIM/Camera through MediaStore; `file.addCameraRoll`).
     pub camera_roll: Option<CameraRollFn>,
+    /// Android: exported files into Pictures/<app>, optionally shared (the touch Export sheet).
+    pub save_to_gallery: Option<SaveToGalleryFn>,
     /// Open a file in an external editor (Edit in External Editor; desktop only).
     pub open_with: Option<OpenWithFn>,
     /// Open several files with one start of the editor (Open Original; desktop only): an editor
@@ -620,6 +627,8 @@ pub struct LccApp {
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
+    /// The touch layout's Settings and Export screens (`touch_sheets`).
+    pub touch_sheets: touch_sheets::TouchSheets,
     /// The last slideshow export's end has been told (a toast).
     pub slideshow_export_reported: bool,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
@@ -764,6 +773,7 @@ impl LccApp {
             last_render_dng: None,
             tasks: Default::default(),
             last_export_result: None,
+            touch_sheets: Default::default(),
             slideshow_export_reported: true,
             hover_preview: None,
             clipping_preview: false,
@@ -2499,3 +2509,5 @@ mod tests_docking_acceptance;
 mod tests_touch;
 #[cfg(test)]
 mod tests_touch_gestures;
+#[cfg(test)]
+mod tests_touch_sheets;

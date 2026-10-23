@@ -85,7 +85,7 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, tab: &mut String, max_height: f
     });
 }
 
-fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
+pub(crate) fn tab_body(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, tab: &str) {
     match tab {
         "import" => import_tab(app, ui, t),
         "folders" => super::settings_folders::settings_tab(app, ui, t),
@@ -184,6 +184,13 @@ fn shortcuts_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 // ------------------------------------------------------------------------------------- General
 
 fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
+    // the touch layout (Android's) or the desktop's; on either, this row switches back
+    row(ui, t, crate::i18n::tr("Layout"), |ui| {
+        let mut touch = app.ui.touch.enabled;
+        if choices(ui, "settingsLayout", &[(true, "Touch"), (false, "Desktop")], &mut touch) {
+            let _ = app.run("view.touchLayout", json!({"on": touch}));
+        }
+    });
     row(ui, t, crate::i18n::tr("Language"), |ui| {
         // a list, not a row of buttons: there are too many languages for one line
         let current = language_label(ui.ctx(), app.ui.language);
@@ -1035,6 +1042,24 @@ fn slideshow_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
         (ui.ctx().content_rect().height() - 260.0).clamp(300.0, 760.0)
     };
     let pad = crate::dialog_frame::GROUP_PAD as i8;
+    // the touch Settings screen on a narrow screen: the preview above, the settings under it, in
+    // the page's own scrolling
+    if crate::dialog_frame::finger_sized(ui) && ui.available_width() < SLIDESHOW_COLUMN_W + 12.0 + super::slide_layout::PREVIEW_W {
+        super::slide_layout::preview(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_templates::section(app, ui, t);
+        ui.add_space(6.0);
+        playback_section(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_layout::sections(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_overlays::sections(app, ui, t);
+        ui.add_space(6.0);
+        super::slide_titles::sections(app, ui, t);
+        ui.add_space(6.0);
+        export_section(app, ui, t);
+        return;
+    }
     ui.horizontal_top(|ui| {
         ui.allocate_ui_with_layout(egui::vec2(SLIDESHOW_COLUMN_W, tall), top_down, |ui| {
             ui.set_width(SLIDESHOW_COLUMN_W);
