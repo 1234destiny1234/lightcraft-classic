@@ -640,6 +640,27 @@ pub(crate) fn request_window(
 /// or (in a drag) the newest of its place, or its part of the 1:1 preview. The pane's drag window
 /// goes under them while it shows the current settings, and alone while a slider drags.
 pub(crate) fn draw_window(p: &egui::Painter, app: &mut LccApp, c: &WindowCtx, v: &WindowView, view: &crate::region::RegionView) {
+    // Keep the whole-frame HDR underlay visible until the float window is ready.
+    // Painting SDR tiles over it would reintroduce the brightness transition on resize/release.
+    let hdr_view = if v.before {
+        crate::render::HDR_BEFORE
+    } else if v.pane >= crate::render::PANE_COMPARE {
+        crate::render::HDR_COMPARE.saturating_add(v.pane - crate::render::PANE_COMPARE)
+    } else {
+        crate::render::HDR_LOUPE
+    };
+    if hdr_shown(app)
+        && !app.headless_screenshotting
+        && (v.before || (c.overlay == lcc_pipeline::Overlay::None && c.proof.is_none()))
+        && app
+            .session
+            .catalog
+            .photo(c.id)
+            .is_some_and(|photo| if v.before { app.session.before_settings(photo).hdr.enabled } else { photo.develop.hdr.enabled })
+        && app.renderer.hdr_view.get(&hdr_view).is_some_and(|h| h.photo == c.id)
+    {
+        return;
+    }
     let full = view.full;
     let (fw, fh) = (full.0 as f32, full.1 as f32);
     let place = |w: lcc_engine::pipeline::PixelWindow| {
@@ -866,9 +887,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         }
     }
     // an HDR display: an HDR edit's whole frame also as linear float with its highlights above
-    // SDR white, drawn in place of the 8-bit render once it is there (not while dragging: the
-    // drafts show; nor with an overlay or soft proof, which are 8-bit views)
-    let hdr_key = (!interacting && overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
+    // SDR white, including interactive drafts. Overlays and soft proof remain 8-bit views.
+    let hdr_key = (overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
         .then(|| app.session.render_job(id, rw.max(8), rh.max(8), false, !crop_tool))
         .flatten()
         .and_then(|job| request_hdr(app, crate::render::HDR_LOUPE, job.with_hidden_grading(app.ui.grading_hidden_for(id)), 98));
@@ -920,9 +940,7 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         // (the same display fit as the After view, so both panes are the same texture size)
         let job = if interacting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
         // (the Before is the photo without its edits: HDR only when those settings are HDR)
-        if !interacting {
-            hdr_before_key = request_hdr(app, crate::render::HDR_BEFORE, job.clone(), 88);
-        }
+        hdr_before_key = request_hdr(app, crate::render::HDR_BEFORE, job.clone(), 88);
         app.renderer.request(Slot::Before, job, 90);
     }
     upload_hdr_views(app);
@@ -1821,8 +1839,8 @@ fn targeted_drag(app: &mut LccApp, resp: &egui::Response, map: &CanvasMap, targe
     }
 }
 
-/// The loupe's HDR render for an HDR display: `job` (a whole-frame render of the open photo, no
-/// caches) as linear float with the HDR range ([`Slot::HdrView`]). Its own result key, including the
+/// An HDR display render as linear float with the HDR range ([`Slot::HdrView`]), without
+/// the 8-bit preview caches. The renderer supplies a per-view stage cache. Its key includes the
 /// headroom used for encoding so a headroom change re-uploads.
 pub(crate) fn hdr_view_job(mut job: lcc_engine::media::RenderJob, headroom: Option<f32>) -> lcc_engine::media::RenderJob {
     job.request.depth = lcc_pipeline::OutputDepth::F32Hdr;
@@ -1846,7 +1864,7 @@ pub(crate) fn hdr_shown(app: &LccApp) -> bool {
 }
 
 /// Ask for view `view`'s HDR render of `job` ([`hdr_view_job`]) when HDR edits show in HDR and
-/// `job` is one. Returns the HDR job's key, which [`hdr_texture`] matches.
+/// `job` is one. Returns a key enabling [`hdr_texture`] while this view is HDR.
 pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::RenderJob, priority: u32) -> Option<u64> {
     if !hdr_shown(app) || !job.settings.hdr.enabled {
         return None;
@@ -1856,22 +1874,25 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
     if let Some(o) = app.services.hdr_output.as_ref() {
         app.renderer.set_surface_extended_linear(o.extended());
     }
+    let job = if app.session.interaction.is_some() { job.draft() } else { job };
     let job = hdr_view_job(job, headroom);
+    app.renderer.prepare_hdr_view(view, &job);
     let key = job.key;
-    if app.renderer.hdr_view.get(&view).is_none_or(|v| v.key != key) {
+    if app.renderer.hdr_view.get(&view).is_none_or(|v| v.key != key) || app.renderer.wanted(Slot::HdrView(view)).is_some_and(|pending| pending != key)
+    {
         app.renderer.request(Slot::HdrView(view), job, priority);
     }
     Some(key)
 }
 
-/// View `view`'s HDR texture of photo `photo` when it is the render `key` asked for (none in
+/// Keep the last compatible HDR frame while the requested update renders (none in
 /// headless screenshots: the texture lives on the GPU only, so they show the 8-bit render).
 pub(crate) fn hdr_texture(app: &LccApp, view: u8, photo: PhotoId, key: Option<u64>) -> Option<crate::render::HdrView> {
-    let key = key?;
+    key?;
     if app.headless_screenshotting {
         return None;
     }
-    app.renderer.hdr_view.get(&view).copied().filter(|v| v.photo == photo && v.key == key)
+    app.renderer.hdr_view.get(&view).copied().filter(|v| v.photo == photo)
 }
 
 /// Hand the finished [`Slot::HdrView`] renders to the window's HDR output, each as its view's texture.
@@ -1894,10 +1915,9 @@ pub(crate) fn upload_hdr_views(app: &mut LccApp) {
 
 /// A zoomed view of an HDR edit on an HDR display: the part of the frame on screen
 /// (`view.window`, at the zoomed scale) rendered once more as linear float and drawn over its
-/// 8-bit tiles, so highlights go above SDR white zoomed in too. Not while a slider drags (the
-/// drafts show) nor with an overlay or soft proof (8-bit views).
+/// 8-bit tiles, including during slider drags. Overlays and soft proof remain 8-bit views.
 pub(crate) fn draw_hdr_window(p: &egui::Painter, app: &mut LccApp, c: &WindowCtx, v: &WindowView, view: &crate::region::RegionView) {
-    if !hdr_shown(app) || c.interacting || c.holding || view.photo != c.id {
+    if !hdr_shown(app) || c.holding || view.photo != c.id {
         return;
     }
     if !v.before && (c.overlay != lcc_pipeline::Overlay::None || c.proof.is_some()) {

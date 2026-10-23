@@ -263,7 +263,16 @@ pub fn encode_rgba16f(rgb: &[f32], width: usize, height: usize, headroom: f32) -
     let n = width.checked_mul(height).ok_or("HDR texture too large")?;
     let px = rgb.as_chunks::<3>().0;
     let px = px.get(..n).ok_or("HDR render has fewer pixels than its size")?;
-    Ok(px.iter().flat_map(|p| encode_pixel(*p, headroom).map(|v| half::f16::from_f32(v).to_bits())).collect())
+    let mut texels = vec![[0u16; 4]; n];
+    // Full-quality previews contain millions of pixels. Reuse the raster worker pool
+    // instead of evaluating three transfer curves per pixel serially on the UI thread.
+    // Each pixel uses the same encoder, including display headroom and hostile inputs.
+    lcc_raster::par_rows(&mut texels, width, |y, row| {
+        for (out, rgb) in row.iter_mut().zip(px.get(y * width..).unwrap_or_default()) {
+            *out = encode_pixel(*rgb, headroom).map(|v| half::f16::from_f32(v).to_bits());
+        }
+    });
+    Ok(texels.into_flattened())
 }
 
 /// The decision for this start, logged once with the window surface's format, colour space,
@@ -554,5 +563,45 @@ mod tests {
         assert!(encode_rgba16f(&[0.5; 9], 2, 2, 4.0).is_err(), "short buffer");
         assert!(encode_rgba16f(&[], 0, 0, 4.0).is_err());
         assert!(encode_rgba16f(&[], usize::MAX, 2, 4.0).is_err());
+    }
+
+    #[test]
+    fn parallel_texture_encoding_matches_the_scalar_encoder_exactly() {
+        let rgb: Vec<f32> = (0..257 * 129 * 3)
+            .map(|i| match i % 29 {
+                0 => f32::NAN,
+                1 => f32::INFINITY,
+                2 => -1.0,
+                _ => (i % 8192) as f32 / 512.0,
+            })
+            .collect();
+        for headroom in [1.0, 2.5, 8.0, f32::NAN] {
+            let expected: Vec<u16> =
+                rgb.as_chunks::<3>().0.iter().flat_map(|p| encode_pixel(*p, headroom).map(|v| half::f16::from_f32(v).to_bits())).collect();
+            assert_eq!(encode_rgba16f(&rgb, 257, 129, headroom).unwrap(), expected);
+        }
+    }
+
+    #[test]
+    #[ignore = "manual HDR upload encoding benchmark"]
+    fn benchmark_hdr_texture_encoding() {
+        let rgb: Vec<f32> = (0..2560 * 1707 * 3).map(|i| (i % 8192) as f32 / 2048.0).collect();
+        for parallel in [false, true] {
+            let mut times = Vec::new();
+            for i in 0..10 {
+                let start = std::time::Instant::now();
+                let pixels = if parallel {
+                    encode_rgba16f(&rgb, 2560, 1707, 4.0).unwrap()
+                } else {
+                    rgb.as_chunks::<3>().0.iter().flat_map(|p| encode_pixel(*p, 4.0).map(|v| half::f16::from_f32(v).to_bits())).collect()
+                };
+                std::hint::black_box(pixels);
+                if i > 0 {
+                    times.push(start.elapsed().as_secs_f64() * 1000.0);
+                }
+            }
+            times.sort_by(f64::total_cmp);
+            println!("HDR encode 2560x1707 parallel={parallel}: median {:.2} ms", times[4]);
+        }
     }
 }

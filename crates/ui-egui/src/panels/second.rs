@@ -280,14 +280,8 @@ fn loupe(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, id: PhotoId) {
     {
         app.renderer.request(Slot::Second, job, 95);
     }
-    // an HDR edit on an HDR display: its HDR render, as in the loupe (not while a slider drags)
-    let hdr_key = app
-        .session
-        .interaction
-        .is_none()
-        .then(|| app.session.render_job(id, w, h, false, true))
-        .flatten()
-        .and_then(|job| super::detail::request_hdr(app, crate::render::HDR_SECOND, job, 94));
+    // An HDR edit on an HDR display, including interactive adjustments.
+    let hdr_key = app.session.render_job(id, w, h, false, true).and_then(|job| super::detail::request_hdr(app, crate::render::HDR_SECOND, job, 94));
     super::detail::upload_hdr_views(app);
     if let Some(v) = super::detail::hdr_texture(app, crate::render::HDR_SECOND, id, hdr_key) {
         let [tw, th] = v.size;
