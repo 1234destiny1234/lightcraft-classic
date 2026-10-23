@@ -99,6 +99,8 @@ pub struct MapUi {
     pub new_server: (String, String, String),
     /// A pin being dragged: its photos.
     pub dragging_pin: Option<Vec<u64>>,
+    /// Where the open context menu was opened.
+    pub menu_at: Option<LatLon>,
     /// Pins as drawn last frame: (screen centre, photo ids) — for `map.inspect`-style queries and tests.
     pub drawn: Vec<(egui::Pos2, Vec<u64>)>,
     /// The map canvas (screen), last frame.
@@ -124,6 +126,7 @@ impl Default for MapUi {
             new_private: false,
             new_server: Default::default(),
             dragging_pin: None,
+            menu_at: None,
             drawn: Vec::new(),
             canvas: None,
             pins_cache: None,
