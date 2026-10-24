@@ -1412,5 +1412,7 @@
   "Hue High": "色相上限",
   "Red/Cyan": "红/青",
   "Blue/Yellow": "蓝/黄",
-  "No horizon or vertical lines to level by": "没有可用于校平的地平线或垂直线"
+  "No horizon or vertical lines to level by": "没有可用于校平的地平线或垂直线",
+  "High quality adjustment previews": "高质量调整预览",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "在调整时保持一致的图像质量。预览更新可能会变慢。"
 }

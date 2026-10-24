@@ -1499,5 +1499,7 @@
   "Hue High": "色相上限",
   "Red/Cyan": "赤／シアン",
   "Blue/Yellow": "青／黄",
-  "No horizon or vertical lines to level by": "水平の基準になる地平線や垂直線が見つかりません"
+  "No horizon or vertical lines to level by": "水平の基準になる地平線や垂直線が見つかりません",
+  "High quality adjustment previews": "調整中の高画質プレビュー",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "調整中も画質を一定に保ちます。プレビューの更新が遅くなる場合があります。"
 }

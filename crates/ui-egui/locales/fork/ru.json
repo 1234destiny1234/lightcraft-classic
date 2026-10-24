@@ -1707,5 +1707,7 @@
   "Hue High": "Тон (верх)",
   "Red/Cyan": "Красный/голубой",
   "Blue/Yellow": "Синий/жёлтый",
-  "No horizon or vertical lines to level by": "Нет горизонта или вертикальных линий для выравнивания"
+  "No horizon or vertical lines to level by": "Нет горизонта или вертикальных линий для выравнивания",
+  "High quality adjustment previews": "Высококачественный предпросмотр при настройке",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Сохраняет качество изображения во время настройки. Обновление может быть медленнее."
 }

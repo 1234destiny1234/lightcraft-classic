@@ -1356,5 +1356,7 @@
   "Hue Low": "Farbton unten",
   "Hue High": "Farbton oben",
   "Red/Cyan": "Rot/Cyan",
-  "Blue/Yellow": "Blau/Gelb"
+  "Blue/Yellow": "Blau/Gelb",
+  "High quality adjustment previews": "Anpassungsvorschauen in hoher Qualität",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Hält die Bildqualität beim Anpassen konstant. Aktualisierungen können langsamer sein."
 }

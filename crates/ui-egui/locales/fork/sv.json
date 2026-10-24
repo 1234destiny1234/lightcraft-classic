@@ -16,5 +16,7 @@
   "is yesterday": "är igår",
   "Immich": "Immich",
   "All Photographs": "Alla foton",
-  "Tone": "Ton"
+  "Tone": "Ton",
+  "High quality adjustment previews": "Förhandsvisningar med hög kvalitet vid justering",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Behåller samma bildkvalitet under justering. Uppdateringar kan bli långsammare."
 }

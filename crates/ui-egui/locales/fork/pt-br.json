@@ -1499,5 +1499,7 @@
   "Hue High": "Matiz alto",
   "Red/Cyan": "Vermelho/ciano",
   "Blue/Yellow": "Azul/amarelo",
-  "No horizon or vertical lines to level by": "Nenhum horizonte ou linha vertical para nivelar"
+  "No horizon or vertical lines to level by": "Nenhum horizonte ou linha vertical para nivelar",
+  "High quality adjustment previews": "Prévias de ajustes em alta qualidade",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Mantém a qualidade da imagem consistente durante os ajustes. As atualizações podem ser mais lentas."
 }

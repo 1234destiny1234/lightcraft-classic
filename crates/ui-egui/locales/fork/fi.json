@@ -16,5 +16,7 @@
   "is yesterday": "on eilen",
   "Immich": "Immich",
   "All Photographs": "Kaikki kuvat",
-  "Tone": "Sävy"
+  "Tone": "Sävy",
+  "High quality adjustment previews": "Laadukkaat esikatselut säädettäessä",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Säilyttää kuvanlaadun tasaisena säädettäessä. Esikatselu voi päivittyä hitaammin."
 }

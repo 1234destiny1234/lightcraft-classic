@@ -85,5 +85,7 @@
   "Red/Cyan": "Červená/azurová",
   "Blue/Yellow": "Modrá/žlutá",
   "Headroom": "Rezerva HDR",
-  "Tone": "Tón"
+  "Tone": "Tón",
+  "High quality adjustment previews": "Náhledy úprav ve vysoké kvalitě",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Při úpravách zachovává stejnou kvalitu obrazu. Aktualizace mohou být pomalejší."
 }

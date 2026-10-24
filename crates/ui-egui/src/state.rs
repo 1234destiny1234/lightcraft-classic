@@ -396,6 +396,8 @@ pub struct AppSettings {
     /// drawn at, up to the photo's own pixels and [`LOUPE_EDGE_CEILING`]). Not the old
     /// `previewEdge` key: its 2560 px default was the soft-image bug (issue #323).
     pub preview_limit: u32,
+    /// Keep settled rendering quality during adjustments instead of adaptive drafts.
+    pub high_quality_adjustment_previews: bool,
     /// Edit in Other Editor: the application ("" = the system's default for the file type).
     pub external_editor: String,
     /// The file Edit in Other Editor hands over.
@@ -474,6 +476,7 @@ impl Default for AppSettings {
             compose_window: false,
             hdr_display: true,
             preview_limit: 0,
+            high_quality_adjustment_previews: false,
             external_editor: String::new(),
             external_file: EditFile::default(),
             photocraft_path: String::new(),

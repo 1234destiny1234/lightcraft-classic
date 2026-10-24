@@ -17,5 +17,7 @@
   "Filters": "Filter",
   "Immich": "Immich",
   "All Photographs": "Semua foto",
-  "Tone": "Nada"
+  "Tone": "Nada",
+  "High quality adjustment previews": "Pratinjau penyesuaian berkualitas tinggi",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Menjaga kualitas gambar tetap konsisten saat melakukan penyesuaian. Pembaruan mungkin lebih lambat."
 }

@@ -86,5 +86,7 @@
   "Blue/Yellow": "Niebieski/żółty",
   "Headroom": "Zapas jasności HDR",
   "Tone": "Ton",
-  "Colour": "Kolor"
+  "Colour": "Kolor",
+  "High quality adjustment previews": "Podgląd korekt w wysokiej jakości",
+  "Keeps image quality consistent while adjusting. Updates may be slower.": "Zachowuje stałą jakość obrazu podczas regulacji. Odświeżanie może być wolniejsze."
 }
