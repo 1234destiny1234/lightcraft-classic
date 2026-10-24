@@ -355,7 +355,11 @@ mod tests {
     fn every_packaging_template_renders() {
         let root = crate::root();
         let brand = Brand::load(&root.join(crate::brand::TEST_BRAND)).unwrap();
-        let vars = vars(&root, &brand).unwrap();
+        let mut vars = vars(&root, &brand).unwrap();
+        // The Android manifest's per-store placeholders come from `apk`, not the brand.
+        for k in ["all_files_permission", "legacy_storage"] {
+            vars.entry(k.into()).or_default();
+        }
         let list = templates(&root, &vars["app_id"]);
         assert!(!list.is_empty());
         for (src, rel) in list {

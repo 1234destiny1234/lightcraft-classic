@@ -799,8 +799,9 @@ mod tests {
         wait("a to see b", || a.status().found.iter().any(|f| f.device_id == b_id));
         a.pair(&b_id).unwrap();
         wait("b to show the code", || b.status().pairing.as_ref().is_some_and(|p| p.stage == Stage::Confirm));
-        a.confirm(true).unwrap();
+        // b refuses first: once a confirms, b's pairing may already have moved on.
         b.confirm(false).unwrap();
+        let _ = a.confirm(true);
         wait("a to fail", || a.status().pairing.as_ref().is_some_and(|p| matches!(p.stage, Stage::Failed(_))));
         assert!(a.status().paired.is_empty());
         assert!(b.status().paired.is_empty());
