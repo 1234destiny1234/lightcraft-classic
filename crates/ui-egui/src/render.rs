@@ -298,6 +298,9 @@ pub struct Renderer {
     /// The loupe's uploaded HDR texture.
     pub hdr_view: HashMap<u8, HdrView>,
     hdr_geometry: HashMap<u8, HdrGeometry>,
+    /// How long each view's latest HDR render took (ms): what a high quality drag times when the
+    /// HDR texture is what shows it.
+    pub hdr_view_ms: HashMap<u8, f64>,
     pub last_main_ms: f64,
     /// Jobs finished since start (for inspect/perf).
     pub completed: u64,
@@ -395,6 +398,7 @@ impl Renderer {
             hdr_view_result: HashMap::new(),
             hdr_view: HashMap::new(),
             hdr_geometry: HashMap::new(),
+            hdr_view_ms: HashMap::new(),
             last_main_ms: 0.0,
             completed: 0,
             keep_pixels: false,
@@ -773,6 +777,7 @@ impl Renderer {
         self.hdr_view.clear();
         self.hdr_view_result.clear();
         self.hdr_geometry.clear();
+        self.hdr_view_ms.clear();
     }
 
     /// Ask for the drag window of `pane` ([`Slot::Window`]): `job` renders `geom.window` of the
@@ -1147,6 +1152,7 @@ impl Renderer {
             if let Slot::HdrView(view) = slot {
                 if let Some(deep) = rendered.deep {
                     self.hdr_view_result.insert(view, (r.photo, r.key, deep));
+                    self.hdr_view_ms.insert(view, ms);
                     changed = true;
                 }
                 continue;

@@ -858,14 +858,21 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         }
     }
     // a high quality drag times what shows its updates: the zoomed window over the whole frame,
-    // or the whole frame
+    // or the whole frame; on an HDR display, the HDR texture drawn over the 8-bit one (its float
+    // render can be the slower of the two)
     if adjust == crate::region::AdjustQuality::Full {
-        let window = plan
-            .window_edge
-            .and_then(|_| app.renderer.window_texture(crate::render::PANE_AFTER))
-            .filter(|(_, g)| g.photo == id)
-            .map(|(t, _)| (t.key, t.ms));
-        if let Some((key, ms)) = if plan.window_edge.is_some() { window } else { shown } {
+        let hdr = |app: &LccApp, view: u8| {
+            let shows = hdr_shown(app) && d.hdr.enabled && overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof;
+            let v = app.renderer.hdr_view.get(&view).filter(|v| shows && v.photo == id)?;
+            Some((v.key, app.renderer.hdr_view_ms.get(&view).copied().unwrap_or(0.0)))
+        };
+        let timed = if plan.window_edge.is_some() {
+            hdr(app, crate::render::HDR_ZOOMED.saturating_add(crate::render::PANE_AFTER))
+                .or_else(|| app.renderer.window_texture(crate::render::PANE_AFTER).filter(|(_, g)| g.photo == id).map(|(t, _)| (t.key, t.ms)))
+        } else {
+            hdr(app, crate::render::HDR_LOUPE).or(shown)
+        };
+        if let Some((key, ms)) = timed {
             app.hq_drag.observe(key, ms, app.perf.host_frame_ms);
         }
     }

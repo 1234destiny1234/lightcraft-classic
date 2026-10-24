@@ -23,6 +23,8 @@ struct Work {
     running: Vec<(Slot, RenderJob)>,
     /// The run time (ms) every render reports: a slow machine without waiting for one.
     ms: f64,
+    /// …and the HDR view renders, when set.
+    hdr_ms: Option<f64>,
 }
 
 struct Record(Rc<RefCell<Work>>);
@@ -37,8 +39,9 @@ impl RenderOffload for Record {
 
     fn finished(&mut self) -> Vec<(Slot, RenderResult, f64)> {
         let mut work = self.0.borrow_mut();
-        let ms = work.ms;
-        std::mem::take(&mut work.running).into_iter().map(|(slot, job)| (slot, job.run(), ms)).collect()
+        let (ms, hdr_ms) = (work.ms, work.hdr_ms);
+        let took = move |slot: Slot| if matches!(slot, Slot::HdrView(_)) { hdr_ms.unwrap_or(ms) } else { ms };
+        std::mem::take(&mut work.running).into_iter().map(|(slot, job)| (slot, job.run(), took(slot))).collect()
     }
 }
 
@@ -343,4 +346,41 @@ fn slow_high_quality_zoom_windows_fall_back_and_settle() {
     assert!(h.app.session.interaction.is_some());
     h.app.session.end_interaction().unwrap();
     assert!(h.settle(TIMEOUT));
+}
+
+// Given an HDR edit on an HDR display, what shows the drag is the float HDR render: a drag whose
+// 8-bit renders keep up but whose HDR renders don't still falls back, HDR drafts included
+#[test]
+fn slow_hdr_renders_make_a_high_quality_drag_fall_back() {
+    struct Hdr;
+    impl crate::HdrOutput for Hdr {
+        fn headroom(&mut self) -> Option<f32> {
+            Some(4.0)
+        }
+        fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+            Ok(egui::TextureId::User(700 + u64::from(view)))
+        }
+    }
+    let (mut h, work) = detail([1024, 768], 1.0);
+    h.app.services.hdr_output = Some(Box::new(Hdr));
+    h.app.hdr_headroom = Some(4.0);
+    h.app.session.execute("develop.hdr", &json!({"enabled": true})).unwrap();
+    assert!(h.settle(TIMEOUT));
+    assert!(h.app.renderer.hdr_view.contains_key(&crate::render::HDR_LOUPE), "the HDR view shows");
+    {
+        let mut w = work.borrow_mut();
+        w.ms = crate::region::HQ_BUDGET_MS * 0.2;
+        w.hdr_ms = Some(crate::region::HQ_BUDGET_MS * 4.0);
+    }
+    h.app.session.begin_interaction("Exposure").unwrap();
+    for i in 1..=6 {
+        h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.1}})).unwrap();
+        h.step();
+        h.step();
+    }
+    assert_eq!(latest(&work, Slot::Main).request.quality, Quality::Draft);
+    assert_eq!(latest(&work, Slot::HdrView(crate::render::HDR_LOUPE)).request.quality, Quality::Draft);
+    h.app.session.end_interaction().unwrap();
+    assert!(h.settle(TIMEOUT));
+    assert_eq!(latest(&work, Slot::HdrView(crate::render::HDR_LOUPE)).request.quality, Quality::Full);
 }
