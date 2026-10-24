@@ -11,11 +11,16 @@ With the setting on, a drag renders what the view shows at rest:
 
 - **Fit:** the same render size, full-quality processing and Lanczos display fit as the settled
   view, so the picture does not soften while the slider moves and does not change when it is let go.
+  Neither does the histogram: the Histogram panel shows each update's own, HDR bins included for an
+  HDR edit, which is what the released view keeps (`panels::edit::shown_histogram`).
 - **Zoomed in (100 % and above):** the existing zoomed-window renderer, one window of the visible
   part per pane at native resolution with the filter context around it, not the whole original per
   update. The window reuses its stage cache through the drag.
 - **Before/After, the HDR view, Compare / Reference zoomed panes and the second window** follow the
-  same choice. HDR edits stay on the float HDR display path throughout (fork PR #423).
+  same choice. HDR edits stay on the float HDR display path throughout (fork PR #423). A drag
+  shown in HDR renders no 8-bit frames, so the Histogram panel shows a small live render beside it
+  and keeps that until the released view's render lands (it showed the histogram from before the
+  drag for a frame or two, with the setting on or off).
 
 The **Preview size** preference, the GPU's texture limit, source availability and colour management
 still apply. Exports, undo history and the HDR output mode are unchanged. Updates are still
@@ -63,12 +68,21 @@ during a burst, not compositor FPS. Local measurements, not guarantees.
 These stay at full quality: they are inside the 100 ms budget. With high quality on, the pixels of
 the last update and of the release matched exactly for all three files at Fit and 100 %.
 
+2026-10-24, same machine with an HDR display, eight raws one per camera (24–102 MP), an exposure
+drag at 60 Hz, medians: the display fit now reads and writes bytes (`lcc_raster::resample::fit_rgba8`,
+same pixels, ~30 → ~7 ms at 2560 px), so a high quality update renders in 21 ms instead of 35 and a
+drag gets 46.5 updates/s instead of 27.7 (adaptive: 60.4). One update on its own still takes about
+75 ms to show: the loupe draws an update in the frame it was asked for only when it renders within
+40 % of a frame, which a preview-level render and its fit don't. A display fit on the GPU would.
+
 ## Tests
 
 `crates/ui-egui/src/tests_adjustment_quality.rs` (headless, procedural photo): preference round
 trip and default, the settings control, switching during a drag, 4:3 and 3:2 photos at 100–200 %
 display scaling, preview and texture limits, proofed CPU rendering, every Before/After layout,
-native-resolution windows instead of tiles, HDR float output, and the fallback with renders that
+native-resolution windows instead of tiles, HDR float output, the histogram unchanged on release
+(SDR and HDR edits) and an HDR view's release never showing the histogram from before its drag,
+and the fallback with renders that
 report as slow (whole frame and zoomed window: drafts while moving, settled render while held
 still, the next drag starting in the fallback) or fast (never falls back). `region.rs` unit tests
 cover `HqDrag` itself, including hostile clocks and timings.

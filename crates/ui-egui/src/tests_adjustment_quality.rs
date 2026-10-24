@@ -388,3 +388,98 @@ fn slow_hdr_renders_make_a_high_quality_drag_fall_back() {
     assert!(h.settle(TIMEOUT));
     assert_eq!(latest(&work, Slot::HdrView(crate::render::HDR_LOUPE)).request.quality, Quality::Full);
 }
+/// The Histogram panel's luminance shape (a share of the pixels per bin; empty when it shows none).
+fn shape(h: &Option<lcc_raster::Histogram>) -> Vec<f64> {
+    h.as_ref().map(|h| h.luma.iter().map(|v| f64::from(*v) / f64::from(h.total.max(1))).collect()).unwrap_or_default()
+}
+
+fn same_shape(a: &[f64], b: &[f64]) -> bool {
+    a.len() == b.len() && a.iter().zip(b).all(|(x, y)| (x - y).abs() < 1e-9)
+}
+
+/// What the Histogram panel shows over an exposure drag and its release: before the drag, at its
+/// last update, every frame after the release, and once everything has settled.
+struct HistogramTrace {
+    before: Vec<f64>,
+    last: Vec<f64>,
+    released: Vec<Vec<f64>>,
+    settled: Vec<f64>,
+}
+
+fn trace_histogram_over_a_drag(h: &mut Headless) -> HistogramTrace {
+    let ctx = h.view.ctx.clone();
+    let shown = |h: &mut Headless| shape(&crate::panels::edit::shown_histogram(&mut h.app, &ctx, PhotoId(1)));
+    // (the panel draws every frame: each step asks it for what it shows)
+    let frames = |h: &mut Headless, n: usize| {
+        let mut seen = Vec::new();
+        for _ in 0..n {
+            seen.push(shown(h));
+            h.step();
+        }
+        seen
+    };
+    frames(h, 2);
+    assert!(h.settle(TIMEOUT));
+    let before = shown(h);
+    h.app.session.begin_interaction("Exposure").unwrap();
+    for i in 1..=4 {
+        h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.3}})).unwrap();
+        frames(h, 2);
+    }
+    frames(h, 30);
+    let last = shown(h);
+    h.app.session.end_interaction().unwrap();
+    let released = frames(h, 30);
+    for _ in 0..5 {
+        shown(h);
+        assert!(h.settle(TIMEOUT));
+    }
+    HistogramTrace { before, last, released, settled: shown(h) }
+}
+
+struct FakeHdrDisplay;
+
+impl crate::HdrOutput for FakeHdrDisplay {
+    fn headroom(&mut self) -> Option<f32> {
+        Some(4.0)
+    }
+    fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+        Ok(egui::TextureId::User(700 + u64::from(view)))
+    }
+}
+
+// Given high quality adjustment previews, an SDR edit or an HDR edit shown in SDR: the histogram a
+// drag ends on is the one the released view keeps (each update is the render at rest, HDR bins
+// included), so letting go of the slider does not change it
+#[test]
+fn high_quality_drags_keep_their_histogram_when_the_slider_is_let_go() {
+    for hdr_edit in [false, true] {
+        let (mut h, _) = detail([1200, 800], 1.0);
+        h.app.session.execute("develop.hdr", &json!({"enabled": hdr_edit})).unwrap();
+        let t = trace_histogram_over_a_drag(&mut h);
+        assert!(!same_shape(&t.before, &t.last), "the drag changed the histogram (hdr {hdr_edit})");
+        for (i, f) in t.released.iter().enumerate() {
+            assert!(same_shape(f, &t.last), "hdr {hdr_edit}: frame {i} after the release shows another histogram");
+        }
+        assert!(same_shape(&t.settled, &t.last), "hdr {hdr_edit}: the settled view shows another histogram");
+    }
+}
+
+// Given an HDR edit shown in HDR (its drag renders no 8-bit frames), the release goes from the
+// drag's live histogram to the released render's, never back to the one from before the drag
+#[test]
+fn an_hdr_view_drag_never_shows_its_histogram_from_before_on_release() {
+    for hq in [false, true] {
+        let (mut h, _) = detail([1200, 800], 1.0);
+        h.app.ui.settings.high_quality_adjustment_previews = hq;
+        h.app.services.hdr_output = Some(Box::new(FakeHdrDisplay));
+        h.app.hdr_headroom = Some(4.0);
+        h.app.session.execute("develop.hdr", &json!({"enabled": true})).unwrap();
+        let t = trace_histogram_over_a_drag(&mut h);
+        assert!(!same_shape(&t.before, &t.settled), "the drag changed the histogram (hq {hq})");
+        for (i, f) in t.released.iter().enumerate() {
+            assert!(!same_shape(f, &t.before), "hq {hq}: frame {i} after the release shows the histogram from before the drag");
+            assert!(same_shape(f, &t.last) || same_shape(f, &t.settled), "hq {hq}: frame {i} after the release shows a third histogram");
+        }
+    }
+}
