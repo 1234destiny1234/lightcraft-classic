@@ -41,6 +41,8 @@ pub struct ModernUi {
     pub filmstrip: bool,
     /// Library's filter bar shows over the grid.
     pub filters: bool,
+    /// Library's Info card shows at the right of the grid ([`crate::modern_library`]).
+    pub info: bool,
     /// The histogram over the photo in Develop: off, small or large. (Saved under a new name: the
     /// touch layout's `histogram` was off by default, and Modern shows it.)
     #[serde(rename = "histogramSize")]
@@ -160,6 +162,7 @@ impl Default for ModernUi {
             dock_side: false,
             filmstrip: false,
             filters: false,
+            info: false,
             histogram: HistogramPlace::Small,
             histogram_at: [1.0, 0.0],
             menu: None,
@@ -504,6 +507,7 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
         if !app.ui.modern.selecting && app.ui.modern.menu.is_none() {
             open_tapped(app, ui, area, before);
         }
+        crate::modern_library::show(app, ui, area);
         let bar_top = area.top() - BAR_H;
         crate::modern_menu::show(app, ui, area, area.left() + MARGIN + BUTTON + 8.0, bar_top + (BAR_H - 40.0) / 2.0);
         return;
@@ -634,7 +638,9 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
                 crate::modern_menu::toggle(app);
             }
             if app.ui.modern.menu.is_none() {
-                switch(app, ui, r);
+                // on a narrow window beside ☰, clear of the buttons at the right
+                let at = if r.width() < 560.0 { Rect::from_min_size(pos2(menu.right() + 4.0, r.top()), vec2(170.0, r.height())) } else { r };
+                switch(app, ui, at);
             }
         }
         if app.ui.modern.menu.is_some() {
@@ -653,6 +659,9 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
         let square = app.ui.view == ViewMode::SquareGrid;
         if button(if square { Icon::GridPhoto } else { Icon::GridSquare }, "modern:gridStyle", "Grid Style", false) {
             let _ = app.run(if square { "view.photoGrid" } else { "view.squareGrid" }, json!({}));
+        }
+        if button(Icon::Info, "modern:infoButton", "Info", app.ui.modern.info) {
+            app.ui.modern.info = !app.ui.modern.info;
         }
         if button(Icon::Filter, "modern:filters", "Filter", app.ui.modern.filters) {
             app.ui.modern.filters = !app.ui.modern.filters;
@@ -761,9 +770,12 @@ fn open_tapped(app: &mut LccApp, ui: &egui::Ui, area: Rect, before: Option<lcc_c
     if !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) || ui.ctx().any_popup_open() {
         return;
     }
+    // (a tap on a card floating over the grid, the search pill or the Info card, is the card's)
+    let at = ui.input(|i| i.pointer.interact_pos());
+    let on_grid = at.is_some_and(|p| area.contains(p) && ui.ctx().layer_id_at(p).is_none_or(|l| l == ui.layer_id()));
     let tapped = ui.input(|i| {
         i.pointer.primary_released()
-            && i.pointer.interact_pos().is_some_and(|p| area.contains(p))
+            && on_grid
             && !i.pointer.is_decidedly_dragging()
             && i.pointer.button_clicked(egui::PointerButton::Primary)
             && !i.modifiers.any()

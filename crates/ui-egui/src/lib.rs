@@ -52,6 +52,7 @@ mod model_setup;
 pub mod modern;
 mod modern_dock;
 mod modern_input;
+mod modern_library;
 mod modern_menu;
 pub mod modern_sheets;
 pub mod module;
@@ -2543,6 +2544,8 @@ mod tests_docking_acceptance;
 mod tests_modern;
 #[cfg(test)]
 mod tests_modern_gestures;
+#[cfg(test)]
+mod tests_modern_library;
 #[cfg(test)]
 mod tests_modern_sheets;
 #[cfg(test)]

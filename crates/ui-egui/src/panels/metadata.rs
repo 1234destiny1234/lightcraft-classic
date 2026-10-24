@@ -608,7 +608,7 @@ fn gps(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>], ids: &[u64]) 
     ui.add_space(6.0);
 }
 
-fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+pub(crate) fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Rating");
     let shared = common(photos, "rating");
@@ -628,7 +628,7 @@ fn rating(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
 }
 
 /// Colour label: one swatch per label (hover shows its name); clicking the current one clears it.
-fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
+pub(crate) fn label(app: &mut LccApp, ui: &mut egui::Ui, photos: &[Arc<Photo>]) {
     let t = Tokens::get(ui.ctx());
     small(ui, "Label");
     let shared = common(photos, "label");
