@@ -83,6 +83,34 @@ fn a_swipe_scrolls_the_grid_without_picking_or_dragging_a_photo() {
     assert_eq!(h.app.session.active().map(|p| p.0), Some(id));
 }
 
+/// A mouse is not a finger: its drag goes to the widget under it (a scroll bar, a photo), not to
+/// the swipe scroller, so the grid's scroll bar can be dragged on the desktop.
+#[test]
+fn a_mouse_drag_is_not_a_swipe() {
+    let mut h = library([1280.0, 800.0]);
+    h.app.ui.modern.mouse_in_tests = true;
+    let grid = rect(&h, "grid:scroll").expect("the grid");
+    let at = grid.center();
+    let (thumb, _) = first_thumb(&h);
+    let before = rect(&h, &thumb).unwrap();
+    for e in [
+        egui::Event::PointerMoved(at),
+        egui::Event::PointerButton { pos: at, button: egui::PointerButton::Primary, pressed: true, modifiers: Default::default() },
+        egui::Event::PointerMoved(at + egui::vec2(0.0, -40.0)),
+    ] {
+        h.app.synthetic.push(e);
+        h.step();
+    }
+    h.app.synthetic.push(egui::Event::PointerButton {
+        pos: at + egui::vec2(0.0, -40.0),
+        button: egui::PointerButton::Primary,
+        pressed: false,
+        modifiers: Default::default(),
+    });
+    h.settle(SETTLE);
+    assert_eq!(rect(&h, &thumb), Some(before), "the grid didn't scroll as a finger's swipe would");
+}
+
 #[test]
 fn a_long_press_picks_photos_and_taps_then_add_until_back() {
     let mut h = library([600.0, 900.0]);

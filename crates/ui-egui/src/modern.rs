@@ -80,6 +80,14 @@ pub struct ModernUi {
     last_back: Option<f64>,
     #[serde(skip)]
     scroller: crate::modern_input::Scroller,
+    /// The last press came from a mouse (or pen without touch): it goes straight to the widgets, so
+    /// a scroll bar, a text selection or a drag work as on Classic. Android's presses are a finger's.
+    #[serde(skip)]
+    mouse: bool,
+    /// Tests: presses without touch events count as a mouse's (else, in tests, as a finger's).
+    #[cfg(test)]
+    #[serde(skip)]
+    pub(crate) mouse_in_tests: bool,
     /// A long press on photos this frame, where.
     #[serde(skip)]
     long_press: Option<Pos2>,
@@ -160,6 +168,9 @@ impl Default for ModernUi {
             system_back: false,
             last_back: None,
             scroller: Default::default(),
+            mouse: false,
+            #[cfg(test)]
+            mouse_in_tests: false,
             long_press: None,
         }
     }
@@ -289,6 +300,18 @@ pub(crate) fn after_input(app: &mut LccApp, raw: &mut egui::RawInput) {
             Some(Region::Free)
         }
     };
+    // a finger's press or a mouse's? (a touch screen reports touch events with its presses)
+    let pressed = raw.events.iter().any(|e| matches!(e, egui::Event::PointerButton { pressed: true, .. }));
+    if pressed {
+        let touch = raw.events.iter().any(|e| matches!(e, egui::Event::Touch { .. }));
+        #[cfg(test)]
+        let desktop_mouse = app.ui.modern.mouse_in_tests;
+        #[cfg(not(test))]
+        let desktop_mouse = true;
+        app.ui.modern.mouse = !touch && !cfg!(target_os = "android") && desktop_mouse;
+    }
+    let mouse = app.ui.modern.mouse;
+    let region = |p: Pos2| if mouse { None } else { region(p) };
     let toggle = app.ui.modern.selecting;
     let outcome = app.ui.modern.scroller.process(raw, region, toggle);
     app.widgets = widgets;
