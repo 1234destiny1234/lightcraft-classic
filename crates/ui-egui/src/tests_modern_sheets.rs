@@ -147,8 +147,10 @@ fn the_export_sheet_exports_in_the_background_then_saves_to_pictures() {
     exec(&mut h, "module.develop", json!({}));
     exec(&mut h, "view.detail", json!({}));
     exec(&mut h, "modern.chrome", json!({"on": true}));
-    assert_eq!(click(&mut h, "modern:share")["ok"], true);
-    assert!(h.app.modern_sheets.export.is_some(), "Develop's Export opens the sheet");
+    // Shortcuts ▸ Export, with the host's gallery: the sheet
+    exec(&mut h, "modern.menu", json!({"on": true}));
+    assert_eq!(click(&mut h, "modern:shortcut:export")["ok"], true);
+    assert!(h.app.modern_sheets.export.is_some(), "Shortcuts ▸ Export opens the sheet");
     assert!(has(&h, "modern:export:save") && has(&h, "modern:export:share"));
     click(&mut h, "modern:export:preset:share");
     let r = exec(&mut h, "modern.export", json!({"dir": "/touch-test-out", "then": "share"}));
@@ -176,7 +178,7 @@ fn library_exports_its_selection_to_a_folder_without_a_gallery() {
     exec(&mut h, "view.photoGrid", json!({}));
     let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
     exec(&mut h, "library.select", json!({"ids": ids}));
-    assert_eq!(click(&mut h, "modern:export")["ok"], true);
+    assert_eq!(exec(&mut h, "modern.exportSheet", json!({"on": true}))["ok"], true);
     assert_eq!(h.app.modern_sheets.export.as_ref().map(|s| s.ids.len()), Some(2));
     assert!(has(&h, "modern:export:go") && !has(&h, "modern:export:share"), "no share sheet without the host's");
     let r = exec(&mut h, "modern.export", json!({"dir": "/touch-test-lib", "longEdge": 1080, "quality": 80}));
@@ -233,7 +235,7 @@ fn back_leaves_a_settings_page_for_the_list_then_closes_and_closes_the_export_sh
     exec(&mut h, "view.photoGrid", json!({}));
     let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(1).map(|p| p.0).collect();
     exec(&mut h, "library.select", json!({"ids": ids}));
-    assert_eq!(click(&mut h, "modern:export")["ok"], true);
+    assert_eq!(exec(&mut h, "modern.exportSheet", json!({"on": true}))["ok"], true);
     assert!(h.app.modern_sheets.export.is_some());
     assert_eq!(back(&mut h), "export");
     assert!(h.app.modern_sheets.export.is_none(), "Back closes the Export sheet");

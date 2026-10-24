@@ -1276,7 +1276,14 @@ fn submenu(ui: &mut egui::Ui, label: &str, text: String, depth: usize, bar_botto
 }
 
 /// `depth` is 1 for a top-level menu's rows; `bar_bottom` is where the menu bar ends.
-fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Option<(String, Value)>, depth: usize, bar_bottom: Option<f32>) {
+pub(crate) fn nodes_ui(
+    ui: &mut egui::Ui,
+    nodes: &[MenuNode],
+    mac: bool,
+    clicked: &mut Option<(String, Value)>,
+    depth: usize,
+    bar_bottom: Option<f32>,
+) {
     ui.set_min_width(220.0);
     for n in nodes {
         match n {

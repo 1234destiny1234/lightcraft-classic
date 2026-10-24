@@ -85,6 +85,14 @@ icons! {
     Close,
     Check,
     Brush,
+    /// Three lines: the Modern layout's menu.
+    Menu,
+    /// Dodge (lighten with a brush): the darkroom's dodging tool, a disc on a stick.
+    Dodge,
+    /// Burn (darken with a brush): a flame.
+    Burn,
+    /// A frame with a strip along its bottom: the dock at the bottom.
+    PanelBottom,
     Linear,
     Radial,
     Sky,
@@ -661,6 +669,29 @@ fn paint_with(p: &Painter, rect: Rect, icon: Icon, color: Color32, turn: Option<
                     "M7.07 14.94c-1.66 0-3 1.35-3 3.02 0 1.33-2.5 1.52-2 2.02 1.08 1.1 2.49 2.02 4 2.02 2.2 0 4-1.8 4-4.04a3.01 3.01 0 0 0-3-3.02z",
                 ]
             );
+        }
+        Menu => {
+            for y in [5.0, 10.0, 15.0] {
+                pen.line(&[(3.5, y), (16.5, y)]);
+            }
+        }
+        Dodge => {
+            // the darkroom's dodging wand: a disc on a straight wire
+            pen.circle(10.0, 6.5, 4.5);
+            pen.line(&[(10.0, 11.0), (10.0, 18.0)]);
+        }
+        Burn => {
+            // Lucide `flame`
+            lucide!(
+                pen,
+                [
+                    "M8.5 14.5A2.5 2.5 0 0 0 11 12c0-1.38-.5-2-1-3-1.072-2.143-.224-4.054 2-6 .5 2.5 2 4.9 4 6.5 2 1.6 3 3.5 3 5.5a7 7 0 1 1-14 0c0-1.153.433-2.294 1-3a2.5 2.5 0 0 0 2.5 2.5z"
+                ]
+            );
+        }
+        PanelBottom => {
+            pen.rect(3.0, 4.0, 17.0, 16.0, 1.5);
+            pen.line(&[(3.0, 12.0), (17.0, 12.0)]);
         }
         Linear => {
             // the gradient's guides as drawn on the photo: start and end lines, a dashed centre line and its pin

@@ -1,7 +1,7 @@
 //! Headless tests of the Modern layout's gestures and edges: a swipe scrolls the grid (a tap still
 //! opens, a long press picks), Back closes things in order and hands the root to the system, the
-//! UI keeps clear of the screen's insets, the adjusted parameter stays in view, and Develop's
-//! histogram pins or floats.
+//! UI keeps clear of the screen's insets, the dock scrolls to the open group, and Develop's
+//! histogram switches size, moves, snaps and has its menu.
 
 use std::time::Duration;
 
@@ -122,7 +122,7 @@ fn a_long_press_picks_photos_and_taps_then_add_until_back() {
 }
 
 #[test]
-fn back_closes_dialog_tool_panel_and_develop_then_leaves_the_root_to_the_system() {
+fn back_closes_dialog_menu_card_and_develop_then_leaves_the_root_to_the_system() {
     let mut h = develop([800.0, 1280.0]);
     let back = |h: &mut Headless| {
         let r = exec(h, "modern.back", json!({}));
@@ -134,19 +134,19 @@ fn back_closes_dialog_tool_panel_and_develop_then_leaves_the_root_to_the_system(
     assert_eq!(back(&mut h)["closed"], "dialog");
     assert!(h.app.ui.dialog.is_none(), "Back closes the dialog as Esc does");
 
-    exec(&mut h, "modern.tool", json!({"tool": "basic", "control": "light.exposure"}));
-    ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.4, "dx": 150.0, "steps": 8}));
+    exec(&mut h, "modern.menu", json!({"on": true}));
+    assert_eq!(back(&mut h)["closed"], "menuBar");
+    assert!(h.app.ui.modern.menu.is_none());
+
+    exec(&mut h, "modern.group", json!({"group": "light"}));
+    ask(&mut h, "ui.dragWidget", json!({"id": "slider:light.exposure", "fx": 0.2, "dx": 150.0, "steps": 8}));
     let id = h.app.session.active().unwrap();
     let changed = lcc_develop::controls::get(&h.app.session.develop_of(id).unwrap_or_default(), "light.exposure").unwrap();
     assert!(changed > 0.0);
-    assert_eq!(back(&mut h)["closed"], "tool");
-    assert!(h.app.ui.modern.tool.is_none());
+    assert_eq!(back(&mut h)["closed"], "card");
+    assert!(h.app.ui.modern.group.is_none());
     let kept = lcc_develop::controls::get(&h.app.session.develop_of(id).unwrap_or_default(), "light.exposure").unwrap();
-    assert_eq!(kept, changed, "Back leaves the tool as Done does: the change stays");
-
-    exec(&mut h, "modern.panel", json!({"on": true}));
-    assert_eq!(back(&mut h)["closed"], "panel");
-    assert!(!h.app.ui.modern.panel);
+    assert_eq!(kept, changed, "Back puts the card away and keeps the change");
 
     assert_eq!(back(&mut h)["closed"], "develop");
     assert_eq!(h.app.ui.module, ModuleId::Library);
@@ -160,9 +160,9 @@ fn back_closes_dialog_tool_panel_and_develop_then_leaves_the_root_to_the_system(
 #[test]
 fn the_back_key_runs_the_same_steps() {
     let mut h = develop([800.0, 1280.0]);
-    exec(&mut h, "modern.panel", json!({"on": true}));
+    exec(&mut h, "modern.group", json!({"group": "light"}));
     ask(&mut h, "ui.key", json!({"key": "BrowserBack"}));
-    assert!(!h.app.ui.modern.panel, "the Back key closed the sheet");
+    assert!(h.app.ui.modern.group.is_none(), "the Back key put the card away");
     assert_eq!(h.app.ui.module, ModuleId::Develop, "one press, one step");
 }
 
@@ -176,13 +176,13 @@ fn the_ui_keeps_clear_of_the_cutout_and_the_system_bars() {
     assert!(import.top() >= top, "the Library bar is below the cutout ({import:?})");
     let mut h = develop([412.0, 960.0]);
     exec(&mut h, "modern.insets", json!({"top": top, "bottom": bottom}));
-    let b = rect(&h, "modern:back").expect("top bar");
-    assert!(b.top() >= top, "Develop's top bar is below the cutout ({b:?})");
-    let strip = rect(&h, "modern:strip").expect("tool strip");
-    assert!(strip.bottom() <= 960.0 - bottom, "the tool strip is above the gesture bar ({strip:?})");
-    exec(&mut h, "modern.panel", json!({"on": true}));
-    let grab = rect(&h, "modern:sheetGrab").expect("sheet");
-    assert!(grab.bottom() <= 960.0 - bottom);
+    let menu = rect(&h, "modern:menu").expect("the menu button");
+    assert!(menu.top() >= top, "Develop's buttons are below the cutout ({menu:?})");
+    let dock = rect(&h, "modern:dock").expect("the dock");
+    assert!(dock.bottom() <= 960.0 - bottom, "the dock is above the gesture bar ({dock:?})");
+    exec(&mut h, "modern.group", json!({"group": "light"}));
+    let card = rect(&h, "modern:card").expect("the card");
+    assert!(card.bottom() <= dock.top() && card.top() >= top, "the card sits above the dock ({card:?})");
     // nonsense is refused or cleaned, never a panic
     assert_eq!(exec(&mut h, "modern.insets", json!({"top": "lots"}))["ok"], false);
     let r = exec(&mut h, "modern.insets", json!({"top": -5.0, "left": 1e30}));
@@ -192,56 +192,58 @@ fn the_ui_keeps_clear_of_the_cutout_and_the_system_bars() {
 }
 
 #[test]
-fn the_parameter_being_adjusted_stays_in_view() {
+fn on_a_narrow_window_the_dock_scrolls_to_the_open_group() {
     let mut h = develop([412.0, 960.0]);
-    exec(&mut h, "modern.tool", json!({"tool": "detail", "control": "detail.sharpenAmount"}));
-    let chips = rect(&h, "modern:chips").expect("the parameter row");
-    // step down through every parameter with up/down drags on the photo
-    for _ in 0..5 {
-        ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.5, "fy": 0.3, "dy": 70.0, "steps": 8}));
-        let id = format!("modern:param:{}", h.app.ui.modern.control);
-        let chip = rect(&h, &id).expect("the chosen chip");
-        assert!(chip.left() >= chips.left() - 1.0 && chip.right() <= chips.right() + 1.0, "{id} is inside the row ({chip:?} in {chips:?})");
+    let dock = rect(&h, "modern:dock").expect("the dock");
+    assert!(dock.width() <= 412.0, "the dock fits the window ({dock:?})");
+    for group in ["effects", "heal", "presets"] {
+        exec(&mut h, "modern.group", json!({"group": group}));
+        let b = rect(&h, &format!("modern:group:{group}")).expect("its button");
+        assert!(b.left() >= dock.left() - 1.0 && b.right() <= dock.right() + 1.0, "{group} is in view ({b:?} in {dock:?})");
     }
-    assert_eq!(h.app.ui.modern.control, "detail.nrColor", "stepped to the last");
-    // one in the middle sits in the middle
-    exec(&mut h, "modern.tool", json!({"tool": "detail", "control": "detail.sharpenMasking"}));
-    let chip = rect(&h, "modern:param:detail.sharpenMasking").unwrap();
-    assert!((chip.center().x - chips.center().x).abs() < 40.0, "centred ({chip:?} in {chips:?})");
 }
 
 #[test]
-fn the_histogram_pins_under_the_top_bar_or_floats_where_it_is_dragged() {
-    let mut h = develop([412.0, 960.0]);
-    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Off, "off by default");
-    assert!(rect(&h, "modern:histogram").is_none());
-    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogramButton"}));
-    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Pinned, "portrait pins it");
-    let hist = rect(&h, "modern:histogram").unwrap();
-    let bar = rect(&h, "modern:back").unwrap();
-    assert!(hist.top() >= bar.bottom(), "under the top bar");
-
+fn the_histogram_switches_size_moves_snaps_and_has_a_menu() {
     let mut h = develop([1280.0, 800.0]);
-    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogramButton"}));
-    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Floating, "landscape floats it");
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Small, "on, small, by default");
+    let small = rect(&h, "modern:histogram").expect("the histogram");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram"}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Large, "a tap makes it large");
+    let large = rect(&h, "modern:histogram").unwrap();
+    assert!(large.area() > small.area() * 2.0, "{small:?} → {large:?}");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram"}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Small, "and small again");
+    // a drag moves it (a fraction of the room, saved), and near a corner it snaps there
     let before = rect(&h, "modern:histogram").unwrap();
-    ask(&mut h, "ui.dragWidget", json!({"id": "modern:histogram", "dx": -300.0, "dy": 200.0, "steps": 10}));
+    ask(&mut h, "ui.dragWidget", json!({"id": "modern:histogram", "dx": -400.0, "dy": 200.0, "steps": 10}));
     let after = rect(&h, "modern:histogram").unwrap();
-    assert!(after.left() < before.left() - 100.0 && after.top() > before.top() + 100.0, "{before:?} → {after:?}");
+    assert!(after.left() < before.left() - 200.0 && after.top() > before.top() + 100.0, "{before:?} → {after:?}");
     let at = h.app.ui.modern.histogram_at;
     assert!(at.iter().all(|v| (0.0..=1.0).contains(v)), "kept as a fraction ({at:?})");
-    // saved with the UI state
+    ask(&mut h, "ui.dragWidget", json!({"id": "modern:histogram", "dx": -2000.0, "dy": 2000.0, "steps": 10}));
+    assert_eq!(h.app.ui.modern.histogram_at, [0.0, 1.0], "snapped into the bottom-left corner");
     let saved: crate::modern::ModernUi = serde_json::from_value(serde_json::to_value(&h.app.ui.modern).unwrap()).unwrap();
-    assert_eq!((saved.histogram, saved.histogram_at), (HistogramPlace::Floating, at));
+    assert_eq!((saved.histogram, saved.histogram_at), (HistogramPlace::Small, [0.0, 1.0]));
+    // right-click: its menu; Back to the Corner, then Hide
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram", "button": "right"}));
+    assert!(rect(&h, "modern:histogram:corner").is_some(), "its menu");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:corner"}));
+    assert_eq!(h.app.ui.modern.histogram_at, [1.0, 0.0]);
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram", "button": "right"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:hide"}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Off);
+    assert!(rect(&h, "modern:histogram").is_none());
     for bad in [json!({"mode": "sideways"}), json!({"mode": 3}), json!({"mode": "off", "at": [0.5]}), json!({"at": "x"})] {
         assert_eq!(exec(&mut h, "modern.histogram", bad.clone())["ok"], false, "{bad}");
     }
-    assert_eq!(exec(&mut h, "modern.histogram", json!({"mode": "off"}))["ok"], true);
-    assert!(rect(&h, "modern:histogram").is_none());
+    // the touch layout's names still work
+    assert_eq!(exec(&mut h, "modern.histogram", json!({"mode": "floating"}))["ok"], true);
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Small);
 }
 
 #[test]
-fn activity_cards_sit_below_the_touch_top_bar_inside_the_insets() {
+fn activity_cards_sit_below_the_top_buttons_inside_the_insets() {
     // a folding phone's cover screen with a status bar and a side cutout
     let mut h = library([412.0, 960.0]);
     exec(&mut h, "modern.insets", json!({"top": 28.0, "left": 12.0}));
@@ -252,20 +254,23 @@ fn activity_cards_sit_below_the_touch_top_bar_inside_the_insets() {
     let id = h.app.session.activity.list()[0].id;
     let card = rect(&h, &format!("activity:row:{id}")).expect("the activity card");
     assert!(card.left() >= 12.0 && card.top() >= 28.0, "inside the insets: {card:?}");
-    let bar: Vec<(String, egui::Rect)> = h.app.widgets.iter().filter(|(w, _)| w.starts_with("modern:")).cloned().collect();
-    assert!(!bar.is_empty(), "the touch top bar's buttons");
-    for (w, r) in &bar {
-        if r.top() < card.top() {
-            assert!(!r.intersects(card), "the card covers {w}: {r:?} vs {card:?}");
-        }
-    }
-    // Develop's top bar (with Back) too
+    let covered = |h: &Headless, card: egui::Rect| -> Vec<String> {
+        h.app
+            .widgets
+            .iter()
+            .filter(|(w, r)| w.starts_with("modern:") && w != "modern:canvas" && r.top() < card.top() && r.intersects(card))
+            .map(|(w, _)| w.clone())
+            .collect()
+    };
+    assert!(covered(&h, card).is_empty(), "the card covers {:?}", covered(&h, card));
+    // Develop's top buttons too
     let first = h.app.session.visible_cloned()[0].0;
     exec(&mut h, "library.select", json!({"ids": [first]}));
     exec(&mut h, "module.develop", json!({}));
     exec(&mut h, "modern.chrome", json!({"on": true}));
-    let back = rect(&h, "modern:back").expect("Develop's Back");
+    let menu = rect(&h, "modern:menu").expect("Develop's menu button");
     let card = rect(&h, &format!("activity:row:{id}")).expect("the activity card");
-    assert!(!back.intersects(card) && card.top() >= back.bottom(), "Back stays visible: {back:?} vs {card:?}");
+    assert!(!menu.intersects(card), "the menu button stays visible: {menu:?} vs {card:?}");
+    assert!(covered(&h, card).iter().all(|w| w == "modern:histogram"), "the card covers {:?}", covered(&h, card));
     drop(g);
 }

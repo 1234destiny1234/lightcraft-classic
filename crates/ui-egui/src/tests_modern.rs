@@ -1,6 +1,6 @@
-//! Headless tests of the Modern layout (`crate::modern`): the photo alone until a tap, a sideways
-//! drag on the photo adjusts the chosen parameter in one undo step, Cancel puts the tool's values
-//! back, the side panel follows the screen's shape, and bad commands are errors.
+//! Headless tests of the Modern layout (`crate::modern`): the floating chrome, the dock's groups and
+//! their cards of pill sliders, the tools, the dock's two places, the menu bar, the Library /
+//! Develop switch, and bad commands as errors.
 
 use std::time::Duration;
 
@@ -46,119 +46,145 @@ fn value(h: &Headless, control: &str) -> f64 {
 }
 
 #[test]
-fn the_photo_is_alone_until_a_tap_shows_the_tools() {
+fn the_chrome_floats_over_the_photo_and_a_tap_hides_and_shows_it() {
     let mut h = develop([1280.0, 800.0]);
-    assert!(has(&h, "modern:canvas"));
-    assert!(!has(&h, "modern:tool:basic"), "no tool strip before a tap");
-    assert!(!has(&h, "modern:back"), "no top bar before a tap");
-    assert_eq!(ask(&mut h, "ui.clickWidget", json!({"id": "modern:canvas"}))["ok"], true);
-    assert!(h.app.ui.modern.chrome, "a tap shows the chrome");
-    assert!(has(&h, "modern:tool:basic") && has(&h, "modern:back"));
-    ask(&mut h, "ui.clickWidget", json!({"id": "modern:canvas", "fx": 0.3, "fy": 0.4}));
-    assert!(!h.app.ui.modern.chrome, "a second tap hides it");
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    for id in ["modern:canvas", "modern:dock", "modern:group:light", "modern:group:crop", "modern:menu", "modern:mode:library", "modern:histogram"] {
+        assert!(has(&h, id), "{id}");
+    }
+    assert_eq!(ask(&mut h, "ui.clickWidget", json!({"id": "modern:canvas", "fx": 0.4, "fy": 0.4}))["ok"], true);
+    assert!(!h.app.ui.modern.chrome, "a tap hides the chrome");
+    assert!(!has(&h, "modern:dock"));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:canvas", "fx": 0.4, "fy": 0.4}));
+    assert!(h.app.ui.modern.chrome && has(&h, "modern:dock"), "a second tap shows it");
 }
 
 #[test]
-fn a_sideways_drag_adjusts_the_parameter_in_one_undo_step_and_cancel_restores() {
+fn a_group_opens_its_card_of_pills_and_a_drag_is_one_undo_step() {
     let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
     let before = value(&h, "light.exposure");
-    assert_eq!(exec(&mut h, "modern.tool", json!({"tool": "basic", "control": "light.exposure"}))["ok"], true);
-    assert!(has(&h, "modern:param:light.exposure"), "the tool's parameters show");
+    assert_eq!(ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:light"}))["ok"], true);
+    assert_eq!(h.app.ui.modern.group, Some(crate::modern_dock::Group::Light));
+    assert!(has(&h, "modern:card") && has(&h, "slider:light.exposure"), "the card's pills");
     let undo = h.app.session.undo.len();
-    let r = ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.3, "dx": 200.0, "steps": 12}));
+    let r = ask(&mut h, "ui.dragWidget", json!({"id": "slider:light.exposure", "fx": 0.2, "dx": 120.0, "steps": 12}));
     assert_eq!(r["ok"], true, "{r}");
     let after = value(&h, "light.exposure");
     assert!(after > before, "dragging right raises exposure ({before} → {after})");
     assert_eq!(h.app.session.undo.len(), undo + 1, "one drag, one undo step");
-    // an up/down drag picks another parameter and leaves the values alone
-    ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.5, "fy": 0.3, "dy": 70.0, "steps": 8}));
-    assert_eq!(h.app.ui.modern.control, "light.contrast");
-    assert_eq!(value(&h, "light.exposure"), after);
-    // Cancel: back to the values the tool opened with
-    assert_eq!(ask(&mut h, "ui.clickWidget", json!({"id": "modern:cancel"}))["ok"], true);
-    assert!(h.app.ui.modern.tool.is_none());
-    assert_eq!(value(&h, "light.exposure"), before);
+    // a second tap on the open group puts it away; a tap on the photo does too
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:light"}));
+    assert!(h.app.ui.modern.group.is_none() && !has(&h, "modern:card"));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:effects"}));
+    assert!(has(&h, "slider:effects.clarity"));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:canvas", "fx": 0.5, "fy": 0.2}));
+    assert!(h.app.ui.modern.group.is_none(), "a tap on the photo puts the card away");
+    assert!(h.app.ui.modern.chrome, "and leaves the chrome");
 }
 
+/// Light holds the tone sliders, Colour white balance and saturation, Tone the parametric curve,
+/// Effects presence, vignette and grain.
 #[test]
-fn done_keeps_the_values() {
+fn the_groups_hold_their_sliders() {
     let mut h = develop([1280.0, 800.0]);
-    exec(&mut h, "modern.tool", json!({"tool": "colour", "control": "effects.clarity"}));
-    ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.5, "dx": -150.0, "steps": 10}));
-    let v = value(&h, "effects.clarity");
-    assert!(v < 0.0, "dragging left lowers clarity ({v})");
-    ask(&mut h, "ui.clickWidget", json!({"id": "modern:done"}));
-    assert!(h.app.ui.modern.tool.is_none());
-    assert_eq!(value(&h, "effects.clarity"), v);
-}
-
-/// Basic leads with white balance, Colour holds the Edit panel's Presence, Tone the parametric curve.
-#[test]
-fn the_tool_groups_hold_white_balance_presence_and_the_parametric_curve() {
-    let mut h = develop([1280.0, 800.0]);
-    let groups: [(&str, &[&str]); 3] = [
-        ("basic", &["wb.temp", "wb.tint", "light.exposure", "light.blacks"]),
-        ("colour", &["effects.texture", "effects.clarity", "effects.dehaze", "color.vibrance", "color.saturation"]),
-        ("tone", &["curve.highlights", "curve.lights", "curve.darks", "curve.shadows", "curve.splitMid"]),
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    let groups: [(&str, &[&str]); 4] = [
+        ("light", &["light.exposure", "light.blacks"]),
+        ("colour", &["color.vibrance", "color.saturation"]),
+        ("tone", &["curve.highlights", "curve.splitMid"]),
+        ("effects", &["effects.texture", "effects.dehaze", "vignette.amount", "grain.amount"]),
     ];
-    for (tool, controls) in groups {
+    for (group, controls) in groups {
+        assert_eq!(exec(&mut h, "modern.group", json!({"group": group}))["ok"], true, "{group}");
         for control in controls {
-            let r = exec(&mut h, "modern.tool", json!({"tool": tool, "control": control}));
-            assert_eq!(r["ok"], true, "{tool} offers {control}: {r}");
+            assert!(has(&h, &format!("slider:{control}")), "{group} offers {control}");
         }
     }
-    // vignette and grain, once under Effects, are still a tool away
-    for control in ["vignette.amount", "grain.amount"] {
-        assert_eq!(exec(&mut h, "modern.tool", json!({"tool": "effects", "control": control}))["ok"], true, "{control}");
-    }
-    exec(&mut h, "modern.tool", json!({"tool": "basic"}));
-    assert!(h.app.ui.modern.control.starts_with("wb.temp"), "Basic opens on Temp ({})", h.app.ui.modern.control);
-}
-
-/// Temp in adjust mode moves the photo's white balance on the photo's own scale, as the Edit
-/// panel's slider does, and Cancel puts it back.
-#[test]
-fn a_drag_on_temp_warms_the_photo_and_cancel_restores_it() {
-    let mut h = develop([1280.0, 800.0]);
-    let wb = |h: &Headless| {
-        let id = h.app.session.selection.active.unwrap();
-        h.app.session.develop_of(id).unwrap_or_default().wb.temp
-    };
-    let before = wb(&h);
-    assert_eq!(exec(&mut h, "modern.tool", json!({"tool": "basic", "control": "wb.temp"}))["ok"], true);
-    let control = h.app.ui.modern.control.clone();
+    // white balance on the photo's own scale: Kelvin for raws, relative otherwise
+    exec(&mut h, "modern.group", json!({"group": "colour"}));
     let id = h.app.session.selection.active.unwrap();
     let raw = h.app.session.catalog.photo(id).is_some_and(|p| p.develops_raw() && !p.relative_wb());
-    assert_eq!(control, if raw { "wb.temp" } else { "wb.tempRel" }, "Kelvin for raws, relative otherwise");
-    assert!(has(&h, &format!("modern:param:{control}")));
-    ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.3, "dx": 200.0, "steps": 12}));
-    let after = wb(&h);
-    assert!(after > before + 1.0, "dragging right warms the photo ({before} K → {after} K)");
-    ask(&mut h, "ui.clickWidget", json!({"id": "modern:cancel"}));
-    assert!((wb(&h) - before).abs() < 1.0, "Cancel restores {before} K ({} K)", wb(&h));
+    assert!(has(&h, if raw { "slider:wb.temp" } else { "slider:wb.tempRel" }));
 }
 
 #[test]
-fn the_panel_is_beside_the_photo_in_landscape_and_under_it_in_portrait() {
+fn the_tools_open_their_panels_and_dodge_starts_a_lightening_brush() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:crop"}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Crop);
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:crop"}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit, "closing a tool leaves its overlay");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:dodge"}));
+    assert_eq!(h.app.ui.right, crate::state::RightPanel::Masking);
+    let id = h.app.session.selection.active.unwrap();
+    let masks = h.app.session.develop_of(id).unwrap_or_default().masks.clone();
+    let last = masks.last().expect("a new mask");
+    assert!(last.adjust.exposure > 0.0, "Dodge lightens ({})", last.adjust.exposure);
+}
+
+#[test]
+fn the_dock_moves_to_the_side_and_back() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    let dock = |h: &Headless| h.app.widgets.iter().rev().find(|(w, _)| w == "modern:dock").map(|(_, r)| *r).unwrap();
+    assert!(dock(&h).width() > dock(&h).height(), "along the bottom");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:dockSwitch"}));
+    assert!(h.app.ui.modern.dock_side);
+    assert!(dock(&h).height() > dock(&h).width() && dock(&h).left() < 40.0, "down the side");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:dockSwitch"}));
+    assert!(!h.app.ui.modern.dock_side);
+}
+
+#[test]
+fn the_menu_opens_on_shortcuts_and_reaches_every_menu() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:menu"}));
+    assert_eq!(h.app.ui.modern.menu.as_deref(), Some("Shortcuts"));
+    assert!(has(&h, "modern:shortcut:import") && has(&h, "modern:shortcut:export"));
+    for title in ["File", "Edit", "Photo", "View", "Help"] {
+        assert!(has(&h, &format!("modern:menu:{title}")), "{title}");
+    }
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:menu:File"}));
+    assert_eq!(h.app.ui.modern.menu.as_deref(), Some("File"));
+    ask(&mut h, "ui.key", json!({"key": "Escape"}));
+    assert!(h.app.ui.modern.menu.is_none(), "Esc closes it");
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop, "and nothing more");
+}
+
+#[test]
+fn the_switch_goes_between_library_and_develop() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:mode:library"}));
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Library);
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:mode:develop"}));
+    assert_eq!(h.app.ui.module, crate::module::ModuleId::Develop);
+}
+
+#[test]
+fn the_phone_and_tablet_forms() {
     assert!(Form::of(egui::vec2(1280.0, 800.0)).side_panel());
     assert!(!Form::of(egui::vec2(800.0, 1280.0)).side_panel());
     assert!(!Form::of(egui::vec2(400.0, 860.0)).side_panel());
-    let mut h = develop([800.0, 1280.0]);
-    exec(&mut h, "modern.panel", json!({"on": true}));
-    assert!(has(&h, "modern:sheetGrab"), "portrait: a bottom sheet");
-    ask(&mut h, "ui.clickWidget", json!({"id": "modern:sheetGrab"}));
-    assert!(!h.app.ui.modern.panel, "a tap on the grabber closes it");
 }
 
 #[test]
-fn bad_touch_commands_are_errors_not_panics() {
+fn bad_modern_commands_are_errors_not_panics() {
     let mut h = develop([400.0, 860.0]);
-    for params in [json!({}), json!({"tool": 3}), json!({"tool": "nope"}), json!({"tool": "basic", "control": "effects.clarity"})] {
-        let r = exec(&mut h, "modern.tool", params.clone());
-        assert_eq!(r["ok"], false, "modern.tool {params}: {r}");
+    for params in [json!({}), json!({"group": 3}), json!({"group": "nope"})] {
+        let r = exec(&mut h, "modern.group", params.clone());
+        assert_eq!(r["ok"], false, "modern.group {params}: {r}");
     }
-    assert_eq!(exec(&mut h, "modern.done", json!({"cancel": "yes"}))["ok"], true, "no tool open: nothing to do");
-    // the layout turned off leaves the desktop's edges
+    assert_eq!(exec(&mut h, "modern.group", json!({"group": null}))["ok"], true, "nothing open: nothing to close");
+    assert_eq!(exec(&mut h, "modern.menu", json!({"menu": "Nope"}))["ok"], false);
+    assert_eq!(exec(&mut h, "modern.menu", json!({"menu": 7}))["ok"], true, "not a name: the first menu");
+    exec(&mut h, "modern.menu", json!({"on": false}));
+    // the old touch command names are gone
+    assert_eq!(exec(&mut h, "modern.tool", json!({"tool": "basic"}))["ok"], false);
+    // the layout turned off leaves Classic's edges
     exec(&mut h, "view.modernLayout", json!({"on": false}));
     assert!(!has(&h, "modern:canvas"));
 }

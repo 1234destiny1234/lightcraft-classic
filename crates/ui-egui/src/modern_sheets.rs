@@ -373,13 +373,6 @@ fn targets(app: &mut LccApp) -> Vec<u64> {
     app.session.active().into_iter().map(|id| id.0).collect()
 }
 
-/// Opens the Export sheet for [`targets`]; a toast says so when there is nothing to export.
-pub(crate) fn open_export(app: &mut LccApp, ctx: &egui::Context) {
-    if let Err(e) = open_sheet(app) {
-        app.toast_error(ctx, crate::i18n::tr(&e));
-    }
-}
-
 fn open_sheet(app: &mut LccApp) -> Result<Value, String> {
     let ids = targets(app);
     if ids.is_empty() {
