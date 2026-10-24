@@ -984,7 +984,7 @@ fn show_existing(app: &mut LccApp, ctx: &egui::Context, existing: &[u64]) -> boo
 /// Skipped candidates: (already in the library, identical copies within the source, in Recently
 /// Deleted). Files of photos in Recently Deleted are not "already in the library", and a file with
 /// the same bytes as one earlier in the list (no library photo) is a copy in the source.
-fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
+pub(crate) fn dup_counts(d: &ImportDialog) -> (usize, usize, usize) {
     let trashed = d.trashed.iter().filter(|t| **t).count();
     let in_source = d.candidates.iter().filter(|c| c.duplicate.as_deref() == Some("content") && c.existing.is_none()).count();
     let dups = d.candidates.iter().filter(|c| c.duplicate.is_some()).count().saturating_sub(trashed).saturating_sub(in_source);
@@ -1365,7 +1365,7 @@ pub fn body(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
     });
 }
 
-fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: usize, rect: Rect) {
+pub(crate) fn candidate_cell(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, i: usize, rect: Rect) {
     let t = Tokens::get(ui.ctx());
     let c = d.candidates[i].clone();
     let ok = d.importable(i);

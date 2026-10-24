@@ -673,6 +673,7 @@ fn template_browser_previews_on_hover_applies_and_manages_user_templates() {
     assert!(has(&h, "template:user:Holiday _ 2026"));
     // update it from its menu with changed settings
     run(&mut h, "slideshow.layout", json!({"backdropColor": "#123456"}));
+    reveal(&mut h, "template:user:Holiday _ 2026");
     let r = h.request("ui.clickWidget", json!({"id": "template:user:Holiday _ 2026", "button": "right"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
@@ -685,6 +686,7 @@ fn template_browser_previews_on_hover_applies_and_manages_user_templates() {
     h.step();
     assert_eq!(h.app.session.slide_template("user:Holiday _ 2026").unwrap().look.layout.backdrop_color, [0x12, 0x34, 0x56]);
     // rename it in place
+    reveal(&mut h, "template:user:Holiday _ 2026");
     let r = h.request("ui.clickWidget", json!({"id": "template:user:Holiday _ 2026", "button": "right"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();

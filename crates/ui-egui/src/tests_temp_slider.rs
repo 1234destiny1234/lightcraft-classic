@@ -149,7 +149,8 @@ fn two_row_sliders_have_a_longer_track_and_work_the_same() {
 #[test]
 fn full_size_slider_text_widens_name_and_value() {
     let mut h = edit_panel(false);
-    for layout in crate::theme::SliderLayout::ALL {
+    // (a pill is all name and value, and a click on it never sets it: `tests_pill_slider`)
+    for layout in [crate::theme::SliderLayout::OneRow, crate::theme::SliderLayout::TwoRows] {
         h.app.ui.settings.slider_layout = layout;
         h.app.ui.settings.slider_text = crate::theme::SliderText::Compact;
         h.settle(SETTLE);

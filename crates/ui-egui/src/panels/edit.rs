@@ -687,7 +687,7 @@ const PANEL_HISTOGRAM_EDGE: usize = 512;
 /// — the panel's own small render of the photo as it is now, asked for when missing. In the Library
 /// grid the selected photo has only its thumbnail's histogram, which keeps no waveform, so the
 /// scopes stayed empty there except for the photo last opened in the loupe.
-fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::HistogramMode, hist: Option<Histogram>) -> Option<Histogram> {
+pub(crate) fn panel_render_histogram(app: &mut LccApp, id: PhotoId, mode: lcc_raster::HistogramMode, hist: Option<Histogram>) -> Option<Histogram> {
     if hist.as_ref().is_some_and(|h| !mode.is_waveform() || h.has_waveform()) {
         return hist;
     }

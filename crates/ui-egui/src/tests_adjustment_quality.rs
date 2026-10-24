@@ -108,6 +108,8 @@ fn high_quality_adjustment_setting_is_available_in_rendering_preferences() {
     h.app.ui.settings.high_quality_adjustment_previews = false;
     h.app.ui.dialog = Some(crate::state::Dialog::Settings { tab: "performance".into() });
     h.step();
+    // (Display & Speed: on a small window, scrolled to)
+    crate::settings_screen::reveal(&mut h, "check:settings.highQualityAdjustmentPreviews");
     let reply = h.request("ui.clickWidget", json!({"id": "check:settings.highQualityAdjustmentPreviews"}), TIMEOUT);
     assert_eq!(reply["ok"], true, "{reply}");
     assert!(h.app.ui.settings.high_quality_adjustment_previews);

@@ -38,6 +38,9 @@ pub const TABS: &[(&str, &str)] = &[
     ("shortcuts", "Shortcuts"),
 ];
 
+/// The room Settings ▸ Slideshow wants: its settings column, the gap and the live preview.
+pub(crate) const SLIDESHOW_W: f32 = SLIDESHOW_COLUMN_W + 12.0 + super::slide_layout::PREVIEW_W;
+
 /// Thumbnail cache sizes offered (MB).
 const CACHE_SIZES: [u32; 5] = [512, 1024, 2048, 4096, 8192];
 
@@ -146,15 +149,16 @@ pub(super) fn check(ui: &mut egui::Ui, id: &str, value: &mut bool, label: &str) 
 
 /// Mutually exclusive buttons (`button:{id}-{index}`).
 pub(super) fn choices<V: PartialEq + Copy>(ui: &mut egui::Ui, id: &str, options: &[(V, &str)], value: &mut V) -> bool {
-    let mut changed = false;
-    ui.spacing_mut().item_spacing.x = 4.0;
-    for (i, (v, l)) in options.iter().enumerate() {
-        if crate::widgets::text_button(ui, &format!("{id}-{i}"), l, *value == *v).clicked() && *value != *v {
+    // one segmented control (`button:{id}-{i}` each)
+    let labels: Vec<&str> = options.iter().map(|(_, l)| *l).collect();
+    let chosen = options.iter().position(|(v, _)| *v == *value);
+    match crate::widgets::segments(ui, id, &labels, chosen).and_then(|i| options.get(i)) {
+        Some((v, _)) if *v != *value => {
             *value = *v;
-            changed = true;
+            true
         }
+        _ => false,
     }
-    changed
 }
 
 // ----------------------------------------------------------------------------------- Shortcuts
@@ -184,11 +188,11 @@ fn shortcuts_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 // ------------------------------------------------------------------------------------- General
 
 fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
-    // the touch layout (Android's) or the desktop's; on either, this row switches back
+    // Modern (Android's default) or Classic; on either, this row switches back
     row(ui, t, crate::i18n::tr("Layout"), |ui| {
-        let mut touch = app.ui.touch.enabled;
-        if choices(ui, "settingsLayout", &[(true, "Touch"), (false, "Desktop")], &mut touch) {
-            let _ = app.run("view.touchLayout", json!({"on": touch}));
+        let mut modern = app.ui.modern.enabled;
+        if choices(ui, "settingsLayout", &[(false, "Classic – Advanced"), (true, "Modern – Simple")], &mut modern) {
+            let _ = app.run("view.modernLayout", json!({"on": modern}));
         }
     });
     row(ui, t, crate::i18n::tr("Language"), |ui| {
