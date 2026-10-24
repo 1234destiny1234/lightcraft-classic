@@ -467,6 +467,9 @@ pub struct AppSettings {
     pub wheel_scroll_speed: f32,
     /// When a brush tool is active, the mouse wheel changes its size instead of zooming.
     pub wheel_resizes_brush: bool,
+    /// View ▸ View Options ▸ Show message when loading or rendering photos: the loupe says
+    /// "Rendering…" while the photo it shows is not the finished render.
+    pub loupe_messages: bool,
     /// Shortcuts the user changed (Help ▸ Keyboard Shortcuts): command id → shortcut, `""` = none.
     pub keymap: crate::shortcuts::Keymap,
     /// The keymap set the user's changes apply over (Classic by default).
@@ -554,6 +557,7 @@ impl Default for AppSettings {
             grid_badges: GridBadges::Auto,
             wheel_scroll_speed: 1.0,
             wheel_resizes_brush: true,
+            loupe_messages: true,
             keymap: Default::default(),
             keymap_set: Default::default(),
             appearance_mode: AppearanceMode::Dark,
@@ -2117,5 +2121,19 @@ mod loupe_info_tests {
             serde_json::from_value(serde_json::json!({"filmNames": false, "loupeInfo": {"info1": ["rating", "fileName", "none"]}})).unwrap();
         assert_eq!(newer.loupe_info, LoupeInfo::default());
         assert!(!newer.film_names, "the rest of the settings are still read");
+    }
+
+    /// Show message when loading or rendering photos is on until it is turned off, and is saved
+    /// with the app's settings.
+    #[test]
+    fn the_loading_message_choice_is_saved_with_the_settings() {
+        assert!(AppSettings::default().loupe_messages);
+        let old: AppSettings = serde_json::from_value(serde_json::json!({"filmNames": false})).unwrap();
+        assert!(old.loupe_messages, "a settings file from before the choice existed keeps the message");
+        let settings = AppSettings { loupe_messages: false, ..AppSettings::default() };
+        let saved = serde_json::to_value(&settings).unwrap();
+        assert_eq!(saved["loupeMessages"], false);
+        let read: AppSettings = serde_json::from_value(saved).unwrap();
+        assert!(!read.loupe_messages);
     }
 }
