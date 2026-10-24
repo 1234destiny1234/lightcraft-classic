@@ -5023,8 +5023,9 @@ mod tests {
         // zoomed in: the part on screen gets its own HDR render, highlights above SDR white; until
         // it comes the whole frame's HDR shows (softer), never 8-bit tiles of another brightness
         h.request("ui.menu.invoke", json!({"id": "view.zoom100"}), t);
+        let no_tiles = |h: &Headless| h.app.renderer.tiles_pending() == 0 && h.app.renderer.tiles.is_empty();
         let zoomed = |h: &Headless| {
-            assert!(hdr_shown(h), "an SDR frame while zooming in");
+            assert!(hdr_shown(h) && no_tiles(h), "an 8-bit tile while zooming in");
             h.app.region_view.is_some() && uploads.borrow().iter().any(|(v, m)| *v == HDR_ZOOMED + PANE_AFTER && *m > 1.0)
         };
         assert!(h.step_until(SETTLE, zoomed), "zoomed HDR window: {:?}", uploads.borrow());
@@ -5053,6 +5054,7 @@ mod tests {
         assert_ne!(h.app.region_view.expect("zoomed").window, old, "the pan shows another part");
         assert!(
             h.step_until(SETTLE, |h| {
+                assert!(no_tiles(h), "an 8-bit tile after a pan");
                 assert!(shown(h).is_some(), "a pan leaves no HDR window up");
                 zoomed_uploads() > before
             }),

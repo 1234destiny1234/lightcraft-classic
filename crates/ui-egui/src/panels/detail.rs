@@ -600,21 +600,32 @@ pub(crate) fn request_window(
     } else {
         1
     };
-    let placeholder =
-        c.full_preview.as_ref().filter(|p| !v.before && c.overlay == lcc_pipeline::Overlay::None && c.proof.is_none() && (p.width, p.height) == full);
+    // the part of the frame on screen: the tiles that cover it
     let mut cover: Option<(usize, usize, usize, usize)> = None;
+    for rect in tiles.iter().filter(|t| t.1).filter_map(|t| crate::region::tile_rect(full, side, t.0)) {
+        let (x1, y1) = (rect.x + rect.w, rect.y + rect.h);
+        cover = Some(cover.map_or((rect.x, rect.y, x1, y1), |(a, b, cc, d)| (a.min(rect.x), b.min(rect.y), cc.max(x1), d.max(y1))));
+    }
+    let (x0, y0, x1, y1) = cover?;
+    let window = lcc_engine::pipeline::PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
+    // an HDR edit shown in HDR: its HDR window (or the whole frame's HDR until it comes) is what
+    // shows, so no 8-bit tiles are rendered beside it (they would only hold it up)
+    if !matches!(hdr_window(app, c, v, full), HdrPane::Sdr) {
+        budget = 0;
+    }
+    let placeholder = c
+        .full_preview
+        .as_ref()
+        .filter(|p| budget > 0 && !v.before && c.overlay == lcc_pipeline::Overlay::None && c.proof.is_none() && (p.width, p.height) == full);
     for &(tile, on_screen) in &tiles {
         let Some(rect) = crate::region::tile_rect(full, side, tile) else { continue };
         let key = crate::region::TileKey { photo: c.id, pane: v.pane, full, tile, look };
-        if on_screen {
-            let (x1, y1) = (rect.x + rect.w, rect.y + rect.h);
-            cover = Some(cover.map_or((rect.x, rect.y, x1, y1), |(a, b, cc, d)| (a.min(rect.x), b.min(rect.y), cc.max(x1), d.max(y1))));
-            if let Some(p) = placeholder
-                && !c.interacting
-                && let Some(part) = crate::region::crop_tile(p, lcc_engine::pipeline::PixelWindow { x: 0, y: 0, w: p.width, h: p.height }, rect)
-            {
-                app.renderer.tile_placeholder(ctx, key, &part);
-            }
+        if on_screen
+            && let Some(p) = placeholder
+            && !c.interacting
+            && let Some(part) = crate::region::crop_tile(p, lcc_engine::pipeline::PixelWindow { x: 0, y: 0, w: p.width, h: p.height }, rect)
+        {
+            app.renderer.tile_placeholder(ctx, key, &part);
         }
         if app.renderer.tiles.has_render(&key) {
             continue;
@@ -634,8 +645,6 @@ pub(crate) fn request_window(
         wanted.push(slot);
         app.renderer.request_tile(key, job, window, rect, if on_screen { TILE_PRIORITY } else { TILE_RING_PRIORITY });
     }
-    let (x0, y0, x1, y1) = cover?;
-    let window = lcc_engine::pipeline::PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     Some(crate::region::RegionView { photo: c.id, before: v.before, key: look, full, window, settings: look, tile: side })
 }
 
@@ -2019,7 +2028,8 @@ pub(crate) fn hdr_window(app: &mut LccApp, c: &WindowCtx, v: &WindowView, full: 
     };
     let Some(job) = job else { return HdrPane::Sdr };
     let hdr_view = crate::render::HDR_ZOOMED.saturating_add(v.pane);
-    let Some(key) = request_hdr(app, hdr_view, job, !v.before, TILE_PRIORITY.saturating_sub(1)) else { return HdrPane::Sdr };
+    // (above the tiles: it is what shows)
+    let Some(key) = request_hdr(app, hdr_view, job, !v.before, TILE_PRIORITY.saturating_add(1)) else { return HdrPane::Sdr };
     upload_hdr_views(app);
     if let Some(frame) = hdr_texture(app, hdr_view, c.id, Some(key)) {
         return HdrPane::Frame(frame);
