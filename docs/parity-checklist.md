@@ -64,7 +64,7 @@ Weighted completion (✅ = 1, 🟡 = ½, 🚫 left out): **89.5%** of 602 in-sco
 Moved on 2026-10-10: the ranked gaps are in [gaps.md](gaps.md); shortcut conflicts, deliberate
 differences and missing bindings are in [ui-parity.md](ui-parity.md#shortcuts).
 
-**The fork's own gaps** (Classic modules, Immich):
+**Chromaforge's own gaps** (Classic modules, Immich):
 
 Ordered by user impact, then tier, then effort. The checklist above counts features that *exist*; these are the gaps
 that decide whether a photographer can switch (see the honest assessment in [ROADMAP.md](../ROADMAP.md#where-we-stand)).
@@ -94,7 +94,7 @@ Take the first one nobody is working on.
    now scales to 500k–1M photos, LRC-CAT-SCALE). Then **Immich**: connect, link, import and external libraries exist (Phase 1, see
    [immich.md](immich.md)); two-way sync, people, smart search and publish now exist (Phase 4); keychains on macOS/Windows, sync at scale, album renames and the sync stream remain.
 9. **HDR** (Q. HDR, LR-EXP-HDR), **video** (R. Video). The **Classic output modules** (Map view, Book, Slideshow,
-   Print, Web, publish) exist in the fork (LRC-MAP-*, LRC-BOOK-*, LRC-SS-*, LRC-WEB-*, LRC-PRINT-*); what remains there:
+   Print, Web, publish) exist in Chromaforge (LRC-MAP-*, LRC-BOOK-*, LRC-SS-*, LRC-WEB-*, LRC-PRINT-*); what remains there:
    slideshow sound output and video export, the slideshow backdrop image in playback, publish grid sections.
 
 Recognition runtime gap closed (LR-PREF-PEOPLE): the pinned SFace and AuraFace models now run on the shared pure-Rust

@@ -1,15 +1,19 @@
 # Instructions for agents
 
-The app is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`; merge procedure in `docs/upstream-merge.md`).
+Chromaforge (the app) is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`; merge procedure in `docs/upstream-merge.md`).
 
 ## The name lives in `brand.toml` only
 - The product name, binary names, app id, settings folder, env-var prefix, MCP server id, URL scheme and file
   extensions are defined once, in [`brand.toml`](brand.toml), and reach code through the `lcc-brand` crate. Never write
-  the product name (or a legacy upstream name) in code, UI strings, docs or tests: say "the app" in prose, use `{app}`
+  the product name (or a legacy upstream name) in code, UI strings or tests: use `{app}`
   (display name), `{cli}` and `{env}` in i18n catalogs, and `lcc_brand::…` constants in code.
-- `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else. Allowed exceptions:
+- **Docs name the fork: Chromaforge.** Markdown files (docs, READMEs, plans) refer to this fork as "Chromaforge",
+  literally, never "this fork" / "the fork" (maintainer decision 2026-10-25). Only the display name is allowed there;
+  binary names, the env prefix and legacy names still go through templates or placeholders.
+- `cargo xtask brand check` (part of `cargo xtask ci`) fails if the name appears anywhere else (Markdown files and `.md.in` templates may use
+  the display name). Allowed exceptions:
   `brand.toml`, `[legacy]` handling, `NOTICE`, `LICENSE`, `assets/ATTRIBUTION.md`, `docs/upstream-merge.md`.
-- Docs that genuinely need the name are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
+- Docs that need the binary names, env prefix or ids are written as `X.md.in` templates with `{{app}}`, `{{binary}}`, `{{cli_binary}}`,
   `{{env_prefix}}`, `{{app_id}}`, `{{settings_dir}}`, rendered by `cargo xtask docs`; otherwise docs write `<app>`,
   `<binary>`, `<cli>`, `<PREFIX>`, `<settings_dir>` for the `brand.toml` values.
 - Crates are `lcc-*`; the packages with binaries are `lcc-app` (desktop), `lcc-cli` and `lcc-web`. Inside `target/` the
