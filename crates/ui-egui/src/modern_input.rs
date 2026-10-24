@@ -1,4 +1,4 @@
-//! Touch scrolling for the touch layout (fork-owned): a finger that swipes scrolls, a tap still
+//! Touch scrolling for the Modern layout (fork-owned): a finger that swipes scrolls, a tap still
 //! taps, and a press and hold still holds.
 //!
 //! egui gives a press to the widget under it at once, so a swipe that starts on a grid photo or a
@@ -42,7 +42,7 @@ pub enum Region {
     Photos,
 }
 
-/// The scroller's state between frames (kept in `TouchUi`).
+/// The scroller's state between frames (kept in `ModernUi`).
 #[derive(Clone, Debug, Default, PartialEq)]
 pub struct Scroller {
     state: State,

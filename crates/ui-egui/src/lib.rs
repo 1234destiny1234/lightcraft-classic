@@ -39,6 +39,7 @@ mod i18n_fork;
 pub mod icons;
 pub mod import;
 pub mod import_report;
+mod import_screen;
 pub mod libtools;
 pub mod lightroom_import;
 pub mod links;
@@ -48,6 +49,11 @@ pub mod menubar;
 pub mod menus;
 pub mod merge;
 mod model_setup;
+pub mod modern;
+mod modern_dock;
+mod modern_input;
+mod modern_menu;
+pub mod modern_sheets;
 pub mod module;
 pub mod panels;
 pub mod pick;
@@ -59,6 +65,7 @@ pub mod region;
 pub mod reload;
 pub mod render;
 pub mod render_dng_task;
+pub mod settings_screen;
 /// The module shell's frame steps (fork-owned).
 mod shell;
 pub mod shortcuts;
@@ -75,9 +82,6 @@ pub mod text_field;
 pub mod theme;
 pub mod timelapse_ui;
 pub mod titlebar;
-pub mod touch;
-mod touch_input;
-pub mod touch_sheets;
 pub mod video_ui;
 pub mod video_view;
 pub mod web_module;
@@ -177,7 +181,11 @@ mod tests_i18n_coverage;
 #[cfg(all(test, not(target_arch = "wasm32")))]
 mod tests_immich_ui;
 #[cfg(test)]
+mod tests_import_metadata_preset;
+#[cfg(test)]
 mod tests_import_report;
+#[cfg(test)]
+mod tests_import_screen;
 #[cfg(test)]
 mod tests_info_dialogs;
 #[cfg(test)]
@@ -633,8 +641,8 @@ pub struct LccApp {
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
-    /// The touch layout's Settings and Export screens (`touch_sheets`).
-    pub touch_sheets: touch_sheets::TouchSheets,
+    /// The Modern layout's Settings and Export screens (`modern_sheets`).
+    pub modern_sheets: modern_sheets::ModernSheets,
     /// The last slideshow export's end has been told (a toast).
     pub slideshow_export_reported: bool,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
@@ -693,6 +701,11 @@ pub struct LccApp {
 }
 
 impl LccApp {
+    /// How panel sliders are laid out: always pills in the Modern layout, else as Settings say.
+    pub(crate) fn slider_layout(&self) -> theme::SliderLayout {
+        if self.ui.modern.enabled { theme::SliderLayout::Pill } else { self.ui.settings.slider_layout }
+    }
+
     pub fn new(mut session: Session, services: Services) -> Self {
         if cfg!(test) {
             // unit tests never open the file manager or start other programs
@@ -780,7 +793,7 @@ impl LccApp {
             last_render_dng: None,
             tasks: Default::default(),
             last_export_result: None,
-            touch_sheets: Default::default(),
+            modern_sheets: Default::default(),
             slideshow_export_reported: true,
             hover_preview: None,
             clipping_preview: false,
@@ -1260,7 +1273,7 @@ impl LccApp {
     /// themes, the system's appearance in Auto) is not the one it shows. A no-op otherwise.
     pub fn sync_theme(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         let wanted = self.ui.settings.theme(self.system_theme(ctx));
@@ -1361,7 +1374,7 @@ impl LccApp {
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if !self.styled {
@@ -1556,7 +1569,7 @@ impl LccApp {
     /// Apply settings that act outside the UI state: GPU rendering and window full screen.
     fn apply_settings(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if self.gpu_applied != Some(self.ui.settings.gpu) {
@@ -1658,11 +1671,11 @@ impl LccApp {
     }
 
     /// Inject synthetic events (pointer events one per frame; key sequences up to the release),
-    /// and (touch layout) turn Back into `touch.back` and swipes into scrolling.
+    /// and (Modern layout) turn Back into `modern.back` and swipes into scrolling.
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
-        touch::before_input(self, raw);
+        modern::before_input(self, raw);
         self.synthetic_input(raw);
-        touch::after_input(self, raw);
+        modern::after_input(self, raw);
     }
 
     fn synthetic_input(&mut self, raw: &mut egui::RawInput) {
@@ -1714,7 +1727,7 @@ impl LccApp {
     /// Frame timings once layout is done (`t0`: when layout started).
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         self.text_focus = self.tasks.repaint.as_ref().is_some_and(|c| c.egui_wants_keyboard_input());
@@ -1792,8 +1805,8 @@ impl LccApp {
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        let touch = touch::on(self);
-        let m = if touch { touch::edges(self, ui, &ctx) } else { shell::edges(self, ui, &ctx) };
+        let touch = modern::on(self);
+        let m = if touch { modern::edges(self, ui, &ctx) } else { shell::edges(self, ui, &ctx) };
         let t = theme::Tokens::get(&ctx);
         let bg = if matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare | state::ViewMode::Survey | state::ViewMode::Reference)
         {
@@ -1803,7 +1816,7 @@ impl LccApp {
         };
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(bg))
-            .show(ui, |ui| if touch { touch::center(self, ui, m) } else { m.center(ui, self) });
+            .show(ui, |ui| if touch { modern::center(self, ui, m) } else { m.center(ui, self) });
         module::lights_out(self, &ctx);
         help_overlay::show(self, &ctx);
         panels::second::show(self, &ctx);
@@ -2529,8 +2542,10 @@ mod tests_model_setup;
 #[cfg(test)]
 mod tests_docking_acceptance;
 #[cfg(test)]
-mod tests_touch;
+mod tests_modern;
 #[cfg(test)]
-mod tests_touch_gestures;
+mod tests_modern_gestures;
 #[cfg(test)]
-mod tests_touch_sheets;
+mod tests_modern_sheets;
+#[cfg(test)]
+mod tests_pill_slider;

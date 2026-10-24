@@ -1,4 +1,4 @@
-//! The touch layout's full screens (fork-owned): Settings and Export.
+//! The Modern layout's full screens (fork-owned): Settings and Export.
 //!
 //! **Settings** shows the desktop Settings' own categories and rows ([`crate::panels::settings`]),
 //! so both layouts read and write the same settings; only the presentation differs. On a phone it
@@ -24,30 +24,20 @@ use serde_json::{Value, json};
 
 use crate::LccApp;
 use crate::icons::Icon;
+use crate::modern::round_button;
 use crate::module::ModuleId;
 use crate::state::Dialog;
 use crate::theme::Tokens;
-use crate::touch::round_button;
 use crate::widgets::register;
 
-/// The header of a full screen or sheet.
-const HEADER_H: f32 = 56.0;
-/// A row of the category list.
-const ROW_H: f32 = 56.0;
-/// The category list's width beside the open category (tablet).
-const LIST_W: f32 = 240.0;
 /// Short side, in points, from which Settings is a sheet rather than a full screen.
 const TABLET: f32 = 600.0;
 
-/// What the touch screens remember between frames (`LccApp::touch_sheets`).
+/// What the touch screens remember between frames (`LccApp::modern_sheets`).
 #[derive(Default)]
-pub struct TouchSheets {
-    /// Settings was showing last frame (so a fresh opening starts on the category list).
-    settings_seen: bool,
-    /// Phone: a category's page is open (rather than the list).
-    pub settings_detail: bool,
-    /// Settings was last drawn as a phone screen (the list and a category's page one at a time).
-    settings_phone: bool,
+pub struct ModernSheets {
+    /// Settings' rail and search ([`crate::settings_screen`]).
+    pub settings: crate::settings_screen::SettingsScreen,
     /// The Export sheet, while it is open.
     pub export: Option<ExportSheet>,
     /// The sheet's choices last time (the next opening starts from them).
@@ -141,221 +131,51 @@ const PRESETS: [(&str, &str, ExportChoice); 4] = [
 const SIZES: [(u32, &str); 4] = [(0, "Full"), (4096, "4096"), (2048, "2048"), (1080, "1080")];
 const QUALITIES: [(u8, &str); 4] = [(60, "60"), (80, "80"), (90, "90"), (100, "100")];
 
-/// Per frame, before the dialogs: the hand-off of finished exports, the Export sheet, and (touch
-/// layout) Settings as a touch screen. True when Settings was drawn here (the desktop dialog is
-/// then skipped).
+/// Per frame, before the dialogs: the hand-off of finished exports, the Export sheet (Modern
+/// layout), and Settings ([`crate::settings_screen`], every layout). True when Settings was drawn
+/// here (the dialogs then skip it).
 pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) -> bool {
     poll(app, ctx);
-    if !crate::touch::on(app) {
-        app.touch_sheets.settings_seen = false;
-        app.touch_sheets.export = None;
-        return false;
-    }
-    if app.ui.dialog.is_none() && app.touch_sheets.export.is_some() {
+    if !crate::modern::on(app) {
+        app.modern_sheets.export = None;
+    } else if app.ui.dialog.is_none() && app.modern_sheets.export.is_some() {
         export_sheet(app, ctx);
     }
-    if matches!(app.ui.dialog, Some(Dialog::Settings { .. })) {
-        settings(app, ctx);
+    if matches!(app.ui.dialog, Some(Dialog::Import { .. })) {
+        crate::import_screen::show(app, ctx);
         return true;
     }
-    app.touch_sheets.settings_seen = false;
+    if matches!(app.ui.dialog, Some(Dialog::Settings { .. })) {
+        crate::settings_screen::show(app, ctx);
+        return true;
+    }
+    // Export: a full-window screen in every layout
+    if matches!(app.ui.dialog, Some(Dialog::Export { .. })) {
+        crate::panels::dialogs::export_screen(app, ctx);
+        return true;
+    }
+    app.modern_sheets.settings = Default::default();
     false
 }
 
-/// Back (`touch.back`) on these screens, before the dialogs: the Export sheet closes; on a
+/// Back (`modern.back`) on these screens, before the dialogs: the Export sheet closes; on a
 /// phone, Settings goes from a category's page to the category list (the next Back closes it, as
 /// the dialog it is). `None`: neither was open, or Settings is on its list (Back closes it).
 pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
     // (a dialog over the sheet closes first, as Esc would)
-    if app.ui.dialog.is_none() && app.touch_sheets.export.take().is_some() {
+    if app.ui.dialog.is_none() && app.modern_sheets.export.take().is_some() {
         return Some("export");
     }
-    let settings = matches!(app.ui.dialog, Some(Dialog::Settings { .. }));
-    if settings && app.touch_sheets.settings_seen && app.touch_sheets.settings_phone && app.touch_sheets.settings_detail {
-        app.touch_sheets.settings_detail = false;
-        return Some("settingsPage");
-    }
-    None
+    let ctx = app.tasks.repaint.clone()?;
+    crate::settings_screen::back(app, &ctx)
 }
 
 fn dim(ctx: &egui::Context, screen: Rect) {
-    egui::Area::new(Id::new("touch-sheet-dim")).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
+    egui::Area::new(Id::new("modern-sheet-dim")).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
         // the backdrop takes the taps under the sheet
         let (r, _) = ui.allocate_exact_size(screen.size(), Sense::click());
         ui.painter().rect_filled(r, 0.0, egui::Color32::from_black_alpha(140));
     });
-}
-
-// ------------------------------------------------------------------------ Settings
-
-fn settings(app: &mut LccApp, ctx: &egui::Context) {
-    let Some(Dialog::Settings { tab }) = app.ui.dialog.clone() else { return };
-    let mut tab = tab;
-    let screen = ctx.content_rect();
-    let phone = screen.width().min(screen.height()) < TABLET;
-    app.touch_sheets.settings_phone = phone;
-    if !app.touch_sheets.settings_seen {
-        app.touch_sheets.settings_seen = true;
-        // a category asked for by name opens straight away; Settings on its own, the list
-        app.touch_sheets.settings_detail = tab != "general" || app.ui.settings_section.is_some();
-    }
-    let mut close = false;
-    // Back (Esc): from a category to the list on a phone, else closes
-    if !egui::Popup::is_any_open(ctx) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-        if phone && app.touch_sheets.settings_detail {
-            app.touch_sheets.settings_detail = false;
-        } else {
-            close = true;
-        }
-    }
-    let rect = if phone {
-        screen
-    } else {
-        dim(ctx, screen);
-        Rect::from_center_size(screen.center(), vec2((screen.width() - 48.0).min(1000.0), (screen.height() - 48.0).min(860.0)))
-    };
-    let t = Tokens::get(ctx);
-    egui::Area::new(Id::new("touch-settings")).order(egui::Order::Foreground).fixed_pos(rect.min).show(ctx, |ui| {
-        let (bg, _) = ui.allocate_exact_size(rect.size(), Sense::click());
-        ui.painter().rect_filled(bg, if phone { 0.0 } else { 16.0 }, t.chrome);
-        if !phone {
-            ui.painter().rect_stroke(bg, 16.0, Stroke::new(1.0, t.divider), egui::StrokeKind::Inside);
-        }
-        let header = Rect::from_min_size(bg.min, vec2(bg.width(), HEADER_H));
-        let detail_open = phone && app.touch_sheets.settings_detail;
-        let label =
-            |id: &str| crate::panels::settings::TABS.iter().find(|(i, _)| *i == id).map_or(id.to_string(), |(_, l)| crate::i18n::tr(l).to_string());
-        let title = if detail_open { label(&tab) } else { crate::i18n::tr("Settings").to_string() };
-        let mut x = header.left() + 16.0;
-        if detail_open {
-            let back = Rect::from_min_size(pos2(header.left() + 6.0, header.center().y - 22.0), Vec2::splat(44.0));
-            if round_button(ui, back, "touch:settings:back", Icon::ChevronLeft, "Back", false, true).clicked() {
-                app.touch_sheets.settings_detail = false;
-            }
-            x = back.right() + 6.0;
-        }
-        ui.painter().text(pos2(x, header.center().y), Align2::LEFT_CENTER, title, t.semibold(19.0), t.text);
-        let shut = Rect::from_min_size(pos2(header.right() - 50.0, header.center().y - 22.0), Vec2::splat(44.0));
-        if round_button(ui, shut, "touch:settings:close", Icon::Close, "Close", false, true).clicked() {
-            close = true;
-        }
-        ui.painter().hline(bg.x_range(), header.bottom(), Stroke::new(1.0, t.divider));
-        let body = Rect::from_min_max(pos2(bg.left(), header.bottom() + 1.0), bg.max);
-        if phone {
-            if app.touch_sheets.settings_detail {
-                detail(app, ui, body, &tab, true);
-            } else if let Some(picked) = category_list(ui, body, &tab, false) {
-                tab = picked;
-                app.touch_sheets.settings_detail = true;
-            }
-        } else {
-            let list = Rect::from_min_size(body.min, vec2(LIST_W.min(body.width() * 0.4), body.height()));
-            if let Some(picked) = category_list(ui, list, &tab, true) {
-                tab = picked;
-            }
-            ui.painter().vline(list.right(), body.y_range(), Stroke::new(1.0, t.divider));
-            let right = Rect::from_min_max(pos2(list.right() + 1.0, body.top()), body.max);
-            detail(app, ui, right, &tab, right.width() < 520.0);
-        }
-    });
-    if close {
-        app.ui.dialog = None;
-        app.ui.settings_section = None;
-        app.touch_sheets.settings_seen = false;
-        return;
-    }
-    // the rows may have closed Settings or opened another dialog (e.g. a folder picker's)
-    if let Some(Dialog::Settings { tab: now }) = &mut app.ui.dialog {
-        *now = tab;
-    }
-}
-
-/// The categories, one big row each; returns the one tapped. `selected` marks the open one
-/// (tablet, where it shows beside the list).
-fn category_list(ui: &mut egui::Ui, area: Rect, open: &str, selected: bool) -> Option<String> {
-    let t = Tokens::get(ui.ctx());
-    let mut picked = None;
-    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(area));
-    egui::ScrollArea::vertical().id_salt("touch-settings-list").auto_shrink([false, false]).show(&mut inner, |ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        for (id, label) in crate::panels::settings::TABS {
-            #[cfg(target_arch = "wasm32")]
-            if matches!(*id, "connections" | "sync") {
-                continue;
-            }
-            // the shortcut table needs a wide screen (and a keyboard): not on a phone's
-            if !selected && *id == "shortcuts" {
-                continue;
-            }
-            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
-            let name = crate::i18n::tr(label);
-            let on = selected && *id == open;
-            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, name));
-            register(ui.ctx(), format!("touch:settings:{id}"), r);
-            let p = ui.painter();
-            if on {
-                p.rect_filled(r.shrink2(vec2(8.0, 4.0)), 10.0, t.tool_active);
-            } else if resp.is_pointer_button_down_on() {
-                p.rect_filled(r.shrink2(vec2(8.0, 4.0)), 10.0, t.pressed);
-            }
-            p.text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, name, t.font(16.0), if on { t.pick } else { t.text });
-            if !selected {
-                crate::icons::paint(
-                    p,
-                    Rect::from_center_size(pos2(r.right() - 24.0, r.center().y), Vec2::splat(18.0)),
-                    Icon::ChevronRight,
-                    t.text_dim,
-                );
-                p.hline(r.left() + 20.0..=r.right(), r.bottom() - 0.5, Stroke::new(1.0, t.divider));
-            }
-            if resp.clicked() {
-                picked = Some((*id).to_string());
-            }
-        }
-    });
-    picked
-}
-
-/// A category's rows (the desktop Settings' own), finger-sized; `stacked` puts labels above
-/// their controls.
-fn detail(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, tab: &str, stacked: bool) {
-    let t = Tokens::get(ui.ctx());
-    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(vec2(16.0, 0.0))));
-    let was = crate::dialog_frame::set_finger_sized(ui.ctx(), true);
-    egui::ScrollArea::vertical().id_salt(("touch-settings-detail", tab)).auto_shrink([false, false]).show(&mut inner, |ui| {
-        let s = ui.spacing_mut();
-        s.item_spacing = vec2(10.0, 10.0);
-        s.interact_size = vec2(48.0, 40.0);
-        s.button_padding = vec2(14.0, 8.0);
-        s.icon_width = 24.0;
-        s.icon_width_inner = 14.0;
-        s.icon_spacing = 10.0;
-        s.combo_height = 480.0;
-        for (style, size) in [(egui::TextStyle::Body, 15.0), (egui::TextStyle::Button, 15.0)] {
-            if let Some(f) = ui.style_mut().text_styles.get_mut(&style) {
-                f.size = size;
-            }
-        }
-        ui.add_space(12.0);
-        // room on both sides for the group panels
-        ui.set_width((ui.available_width() - 12.0).max(120.0));
-        let body = |ui: &mut egui::Ui| {
-            crate::dialog_frame::group_begin(ui, None);
-            if stacked && tab == "shortcuts" {
-                // (asked for by name on a phone; the list doesn't offer it there)
-                ui.label(egui::RichText::new(crate::i18n::tr("Keyboard shortcuts are edited on a wider screen.")).color(t.text_label));
-                return;
-            }
-            crate::panels::settings::tab_body(app, ui, &t, tab);
-        };
-        if stacked {
-            crate::dialog_frame::stacked_form(ui, 120.0, body);
-        } else {
-            crate::dialog_frame::form(ui, 180.0, body);
-        }
-        ui.add_space(48.0);
-    });
-    crate::dialog_frame::set_finger_sized(ui.ctx(), was);
 }
 
 // ------------------------------------------------------------------------ Export
@@ -373,25 +193,18 @@ fn targets(app: &mut LccApp) -> Vec<u64> {
     app.session.active().into_iter().map(|id| id.0).collect()
 }
 
-/// Opens the Export sheet for [`targets`]; a toast says so when there is nothing to export.
-pub(crate) fn open_export(app: &mut LccApp, ctx: &egui::Context) {
-    if let Err(e) = open_sheet(app) {
-        app.toast_error(ctx, crate::i18n::tr(&e));
-    }
-}
-
 fn open_sheet(app: &mut LccApp) -> Result<Value, String> {
     let ids = targets(app);
     if ids.is_empty() {
         return Err("No photo selected".into());
     }
     let raw = ids.iter().any(|id| app.session.catalog.photo(lcc_catalog::PhotoId(*id)).is_some_and(|p| p.develops_raw()));
-    let mut choice = app.touch_sheets.last.unwrap_or_default();
+    let mut choice = app.modern_sheets.last.unwrap_or_default();
     if choice.format == Format::Dng && !raw {
         choice = ExportChoice::default();
     }
     let n = ids.len();
-    app.touch_sheets.export = Some(ExportSheet { ids, choice, raw });
+    app.modern_sheets.export = Some(ExportSheet { ids, choice, raw });
     Ok(json!({"photos": n}))
 }
 
@@ -448,17 +261,17 @@ fn start_export(app: &mut LccApp, ids: Vec<u64>, choice: ExportChoice, then: The
         p["longEdge"] = json!(choice.long_edge);
         p["dontEnlarge"] = json!(true);
     }
-    app.touch_sheets.last = Some(choice);
+    app.modern_sheets.last = Some(choice);
     app.last_export_result = None;
     let r = app.run("app.export", p)?;
     if app.export.is_some() {
-        app.touch_sheets.handoff = Some(then);
+        app.modern_sheets.handoff = Some(then);
     } else {
         // no background writer (a window-less run): written already
         let files = paths(&r);
         hand_off(app, &files, then)?;
     }
-    app.touch_sheets.export = None;
+    app.modern_sheets.export = None;
     Ok(r)
 }
 
@@ -484,14 +297,14 @@ fn hand_off(app: &mut LccApp, files: &[String], then: Then) -> Result<(), String
     let rx = save(files, share)?;
     let label = if share { "Sharing" } else { "Saving to Pictures" };
     let guard = app.session.activity.start("export", crate::i18n::tr(label), Cancel::No);
-    app.touch_sheets.gallery = Some(Gallery { rx, _guard: guard, share });
+    app.modern_sheets.gallery = Some(Gallery { rx, _guard: guard, share });
     Ok(())
 }
 
 /// A finished background export goes on to Pictures / the share sheet; the host's answer is told.
 fn poll(app: &mut LccApp, ctx: &egui::Context) {
-    if app.touch_sheets.handoff.is_some() && app.export.is_none() {
-        let then = app.touch_sheets.handoff.take().unwrap_or(Then::Folder);
+    if app.modern_sheets.handoff.is_some() && app.export.is_none() {
+        let then = app.modern_sheets.handoff.take().unwrap_or(Then::Folder);
         // (an export that failed outright left no result; its toast said why)
         let files = match &app.last_export_result {
             Some(r) if r.get("cancelled").and_then(Value::as_bool) != Some(true) => paths(r),
@@ -501,11 +314,11 @@ fn poll(app: &mut LccApp, ctx: &egui::Context) {
             app.toast_error(ctx, format!("{}: {e}", crate::i18n::tr("Not saved to Pictures")));
         }
     }
-    let Some(g) = &app.touch_sheets.gallery else { return };
+    let Some(g) = &app.modern_sheets.gallery else { return };
     match g.rx.try_recv() {
         Ok(Ok(uris)) => {
             let share = g.share;
-            app.touch_sheets.gallery = None;
+            app.modern_sheets.gallery = None;
             let n = uris.len();
             let msg = if share {
                 format!("{} · {n}", crate::i18n::tr("Saved to Pictures and shared"))
@@ -515,35 +328,35 @@ fn poll(app: &mut LccApp, ctx: &egui::Context) {
             app.toast(ctx, msg);
         }
         Ok(Err(e)) => {
-            app.touch_sheets.gallery = None;
+            app.modern_sheets.gallery = None;
             app.toast_error(ctx, format!("{}: {e}", crate::i18n::tr("Not saved to Pictures")));
         }
         Err(TryRecvError::Empty) => ctx.request_repaint_after(std::time::Duration::from_millis(250)),
         Err(TryRecvError::Disconnected) => {
-            app.touch_sheets.gallery = None;
+            app.modern_sheets.gallery = None;
             app.toast_error(ctx, crate::i18n::tr("Saving to Pictures stopped unexpectedly"));
         }
     }
 }
 
 fn export_sheet(app: &mut LccApp, ctx: &egui::Context) {
-    let Some(sheet) = app.touch_sheets.export.clone() else { return };
+    let Some(sheet) = app.modern_sheets.export.clone() else { return };
     let screen = ctx.content_rect();
     let phone = screen.width().min(screen.height()) < TABLET;
     let t = Tokens::get(ctx);
     if ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-        app.touch_sheets.export = None;
+        app.modern_sheets.export = None;
         return;
     }
     dim(ctx, screen);
     let w = if phone { screen.width() } else { 560.0f32.min(screen.width() - 32.0) };
-    let h_id = Id::new("touch-export-height");
+    let h_id = Id::new("modern-export-height");
     let h = ctx.data(|d| d.get_temp::<f32>(h_id)).unwrap_or(520.0).min(screen.height() - 24.0);
     let min = if phone { pos2(screen.left(), screen.bottom() - h) } else { pos2(screen.center().x - w / 2.0, screen.center().y - h / 2.0) };
     let mut choice = sheet.choice;
     let mut go: Option<Then> = None;
     let mut close = false;
-    egui::Area::new(Id::new("touch-export")).order(egui::Order::Foreground).fixed_pos(min).show(ctx, |ui| {
+    egui::Area::new(Id::new("modern-export")).order(egui::Order::Foreground).fixed_pos(min).show(ctx, |ui| {
         let bg = Rect::from_min_size(min, vec2(w, h));
         let radius = if phone { egui::CornerRadius { nw: 16, ne: 16, sw: 0, se: 0 } } else { egui::CornerRadius::same(16) };
         ui.painter().rect_filled(bg, radius, t.chrome);
@@ -558,7 +371,7 @@ fn export_sheet(app: &mut LccApp, ctx: &egui::Context) {
             let count = format!("{} · {}", crate::i18n::tr("Photos"), sheet.ids.len());
             ui.painter().text(pos2(head.left(), head.center().y + 12.0), Align2::LEFT_CENTER, count, t.font(13.0), t.text_dim);
             let shut = Rect::from_min_size(pos2(head.right() - 44.0, head.top()), Vec2::splat(44.0));
-            if round_button(ui, shut, "touch:export:close", Icon::Close, "Close", false, true).clicked() {
+            if round_button(ui, shut, "modern:export:close", Icon::Close, "Close", false, true).clicked() {
                 close = true;
             }
             // presets
@@ -570,7 +383,7 @@ fn export_sheet(app: &mut LccApp, ctx: &egui::Context) {
                 let (r, resp) = ui.allocate_exact_size(vec2(w - 32.0, 48.0), Sense::click());
                 let name = crate::i18n::tr(label);
                 resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::RadioButton, true, on, name));
-                register(ctx, format!("touch:export:preset:{id}"), r);
+                register(ctx, format!("modern:export:preset:{id}"), r);
                 let p = ui.painter();
                 p.rect(
                     r,
@@ -616,16 +429,16 @@ fn export_sheet(app: &mut LccApp, ctx: &egui::Context) {
                 let bw = ((w - 32.0 - gap) / 2.0).max(60.0);
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = gap;
-                    if action_button(ui, "touch:export:share", Some(Icon::Share), "Share", false, !busy, bw).clicked() {
+                    if action_button(ui, "modern:export:share", Some(Icon::Share), "Share", false, !busy, bw).clicked() {
                         go = Some(Then::Share);
                     }
-                    if action_button(ui, "touch:export:save", None, "Save to Pictures", true, !busy, bw).clicked() {
+                    if action_button(ui, "modern:export:save", None, "Save to Pictures", true, !busy, bw).clicked() {
                         go = Some(Then::Save);
                     }
                 });
                 ui.label(egui::RichText::new(format!("{} ▸ {}", crate::i18n::tr("Pictures"), lcc_brand::DISPLAY_NAME)).size(12.0).color(t.text_dim));
             } else {
-                if action_button(ui, "touch:export:go", None, "Export", true, !busy, w - 32.0).clicked() {
+                if action_button(ui, "modern:export:go", None, "Export", true, !busy, w - 32.0).clicked() {
                     go = Some(Then::Folder);
                 }
                 ui.label(egui::RichText::new(export_dir()).size(12.0).color(t.text_dim));
@@ -643,15 +456,15 @@ fn export_sheet(app: &mut LccApp, ctx: &egui::Context) {
         }
     });
     if close {
-        app.touch_sheets.export = None;
+        app.modern_sheets.export = None;
         return;
     }
-    if let Some(s) = app.touch_sheets.export.as_mut() {
+    if let Some(s) = app.modern_sheets.export.as_mut() {
         s.choice = choice;
     }
     if let Some(then) = go {
         match start_export(app, sheet.ids.clone(), choice, then, None) {
-            Ok(_) => app.touch_sheets.export = None,
+            Ok(_) => app.modern_sheets.export = None,
             Err(e) => app.toast_error(ctx, e),
         }
     }
@@ -696,60 +509,60 @@ fn action_button(ui: &mut egui::Ui, id: &str, icon: Option<Icon>, label: &str, p
 
 /// The touch screens' commands (`menus_fork` lists them).
 pub const COMMANDS: &[crate::menus::UiCommand] =
-    &[("touch.exportSheet", "Export (Touch Sheet)…", None, ""), ("touch.export", "Export from the Touch Sheet", None, "")];
+    &[("modern.exportSheet", "Export (Touch Sheet)…", None, ""), ("modern.export", "Export from the Touch Sheet", None, "")];
 
 /// `touch.exportSheet {on?}` opens (or closes) the Export sheet; `touch.export {format?, longEdge?,
 /// quality?, then?, dir?, ids?}` exports as the sheet's buttons do (`then`: save | share | folder).
 pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     Some(match id {
-        "touch.exportSheet" => {
+        "modern.exportSheet" => {
             if p.get("on").and_then(Value::as_bool) == Some(false) {
-                app.touch_sheets.export = None;
+                app.modern_sheets.export = None;
                 Ok(json!({"on": false}))
             } else {
                 open_sheet(app)
             }
         }
-        "touch.export" => export_command(app, p),
+        "modern.export" => export_command(app, p),
         _ => return None,
     })
 }
 
 fn export_command(app: &mut LccApp, p: &Value) -> Result<Value, String> {
-    let base = app.touch_sheets.export.as_ref().map_or_else(|| app.touch_sheets.last.unwrap_or_default(), |s| s.choice);
+    let base = app.modern_sheets.export.as_ref().map_or_else(|| app.modern_sheets.last.unwrap_or_default(), |s| s.choice);
     let format = match p.get("format") {
         None | Some(Value::Null) => base.format,
-        Some(v) => v.as_str().and_then(Format::parse).ok_or("touch.export: `format` is jpeg, tiff or dng")?,
+        Some(v) => v.as_str().and_then(Format::parse).ok_or("modern.export: `format` is jpeg, tiff or dng")?,
     };
     let long_edge = match p.get("longEdge") {
         None | Some(Value::Null) => base.long_edge,
         Some(v) => {
-            v.as_u64().filter(|n| *n <= 65_535).ok_or("touch.export: `longEdge` is a whole number of pixels up to 65535 (0 = full size)")? as u32
+            v.as_u64().filter(|n| *n <= 65_535).ok_or("modern.export: `longEdge` is a whole number of pixels up to 65535 (0 = full size)")? as u32
         }
     };
     let quality = match p.get("quality") {
         None | Some(Value::Null) => base.quality,
-        Some(v) => v.as_u64().filter(|q| (1..=100).contains(q)).ok_or("touch.export: `quality` is 1 to 100")? as u8,
+        Some(v) => v.as_u64().filter(|q| (1..=100).contains(q)).ok_or("modern.export: `quality` is 1 to 100")? as u8,
     };
     let default_then = if can_hand_off(app) { Then::Save } else { Then::Folder };
     let then = match p.get("then") {
         None | Some(Value::Null) => default_then,
-        Some(v) => v.as_str().and_then(Then::parse).ok_or("touch.export: `then` is save, share or folder")?,
+        Some(v) => v.as_str().and_then(Then::parse).ok_or("modern.export: `then` is save, share or folder")?,
     };
     let dir = match p.get("dir") {
         None | Some(Value::Null) => None,
-        Some(v) => Some(v.as_str().ok_or("touch.export: `dir` is a folder path")?.to_string()),
+        Some(v) => Some(v.as_str().ok_or("modern.export: `dir` is a folder path")?.to_string()),
     };
     let ids: Vec<u64> = match p.get("ids") {
-        None | Some(Value::Null) => match app.touch_sheets.export.as_ref().map(|s| s.ids.clone()) {
+        None | Some(Value::Null) => match app.modern_sheets.export.as_ref().map(|s| s.ids.clone()) {
             Some(ids) => ids,
             None => targets(app),
         },
         Some(v) => v
             .as_array()
-            .ok_or("touch.export: `ids` is a list of photo ids")?
+            .ok_or("modern.export: `ids` is a list of photo ids")?
             .iter()
-            .map(|x| x.as_u64().ok_or("touch.export: `ids` is a list of photo ids"))
+            .map(|x| x.as_u64().ok_or("modern.export: `ids` is a list of photo ids"))
             .collect::<Result<_, _>>()?,
     };
     start_export(app, ids, ExportChoice { format, long_edge, quality }, then, dir)

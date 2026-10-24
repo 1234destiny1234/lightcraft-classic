@@ -59,7 +59,7 @@ const CAMERA_ROLL: EmptyAction = EmptyAction { command: "file.addCameraRoll", la
 /// The empty library's message and buttons, centred in `rect`. A click runs the command as its
 /// menu item does; a refusal shows as a toast.
 pub fn show(app: &mut LccApp, ui: &mut egui::Ui, rect: Rect) {
-    let touch = crate::touch::on(app);
+    let touch = crate::modern::on(app);
     let actions: Vec<EmptyAction> = if touch {
         // fingers, not a keyboard or drag and drop: the ways in the touch Library's Import offers
         let mut a = vec![IMPORT_PHOTOS, IMPORT_FOLDER];

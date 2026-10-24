@@ -348,15 +348,33 @@ pub fn group_begin(ui: &mut Ui, title: Option<&str>) {
         }
         return;
     }
-    ui.add_space(4.0);
+    ui.add_space(6.0);
     if let Some(title) = title.filter(|s| !s.is_empty()) {
-        ui.label(RichText::new(crate::i18n::tr(title)).font(t.semibold(12.0)).color(t.text));
+        heading(ui, title);
     }
     let shape = ui.painter().add(Shape::Noop);
     let rect = ui.max_rect();
     let open = OpenGroup { shape, top: ui.cursor().top(), left: rect.left() - GROUP_PAD, right: rect.right() + GROUP_PAD };
     ui.ctx().data_mut(|d| d.insert_temp(group_key(ui), open));
     ui.add_space(4.0);
+}
+
+/// Esc for a tool window (Edit In Presets, Actions, Plug-ins): true, and the key taken, when it
+/// should close: no popup is open, no text is being typed and no dialog sits over it.
+pub fn esc_closes(app_dialog_open: bool, ctx: &egui::Context) -> bool {
+    !app_dialog_open
+        && !egui::Popup::is_any_open(ctx)
+        && !ctx.egui_wants_keyboard_input()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape))
+}
+
+/// A group's heading: small spaced capitals in the dim text colour, above its card.
+fn heading(ui: &mut Ui, title: &str) {
+    let t = Tokens::get(ui.ctx());
+    let text = crate::i18n::tr(title).to_uppercase();
+    let mut job = egui::text::LayoutJob::default();
+    job.append(&text, 4.0, egui::TextFormat { font_id: t.semibold(10.5), color: t.text_dim, extra_letter_spacing: 1.0, ..Default::default() });
+    ui.label(job);
 }
 
 /// Closes the open group (if any), painting its panel.
@@ -372,7 +390,8 @@ pub fn group_end(ui: &mut Ui) {
     let t = Tokens::get(ui.ctx());
     let bottom = ui.cursor().top() - ui.spacing().item_spacing.y + 2.0;
     let rect = Rect::from_min_max(egui::pos2(open.left, open.top), egui::pos2(open.right, bottom.max(open.top)));
-    let panel = egui::epaint::RectShape::new(rect, 4.0, t.inset, egui::Stroke::new(1.0, t.divider), StrokeKind::Inside);
+    // a rounded card with a faint edge
+    let panel = egui::epaint::RectShape::new(rect, 12.0, t.inset, egui::Stroke::new(1.0, t.divider.gamma_multiply(0.7)), StrokeKind::Inside);
     ui.painter().set(open.shape, panel);
     ui.add_space(6.0);
 }

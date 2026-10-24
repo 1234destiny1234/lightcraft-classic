@@ -173,7 +173,8 @@ fn window_id(dialog: &Dialog) -> egui::Id {
         Dialog::Import { .. } => "app-import-dialog",
         Dialog::Print => "app-print-dialog",
         Dialog::Export { .. } => "app-export-dialog",
-        Dialog::Settings { .. } => "app-settings-dialog",
+        // (the Settings screen's own layer: `settings_screen::LAYER`)
+        Dialog::Settings { .. } => crate::settings_screen::LAYER,
         _ => "app-dialog",
     })
 }
@@ -190,8 +191,8 @@ pub(crate) fn prepare(app: &LccApp, ui: &mut egui::Ui) {
 }
 
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
-    // the touch layout's Settings screen and Export sheet (fork)
-    if crate::touch_sheets::show(app, ctx) {
+    // the Modern layout's Settings screen and Export sheet (fork)
+    if crate::modern_sheets::show(app, ctx) {
         return;
     }
     let Some(mut dlg) = app.ui.dialog.clone() else { return };
@@ -285,7 +286,12 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         Dialog::Watermark { .. } => "Watermark Editor",
     }
     .to_string();
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(16, 12));
+    // a card: rounded, a faint light edge, a soft shadow; the title inside it (below)
+    let frame = egui::Frame::window(&ctx.global_style())
+        .inner_margin(egui::Margin { left: 18, right: 18, top: 14, bottom: 14 })
+        .corner_radius(16.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) });
     // The import review can be resized (its photo grid takes the room); it keeps a window id of its
     // own so the size it is given doesn't carry over to the other dialogs. Its content scrolls
     // rather than growing the window when the options below the grid get taller (e.g. Copy).
@@ -304,7 +310,9 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let widest_id = window_id.with("widest");
     let widest = if settings { ctx.data(|d| d.get_temp::<f32>(widest_id)).unwrap_or(0.0).min(screen.width() * 0.9) } else { 0.0 };
     let mut content_w = 0.0f32;
-    let shown = egui::Window::new(crate::i18n::tr(&title)).id(window_id)
+    let heading = crate::i18n::tr(&title).to_string();
+    let shown = egui::Window::new(heading.clone()).id(window_id)
+        .title_bar(false)
         .collapsible(false)
         .resizable([import || export, import])
         .vscroll(import)
@@ -330,6 +338,10 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
         })
         .show(ctx, |ui| {
             ui.spacing_mut().item_spacing.y = 8.0;
+            // the title, left-aligned at the card's top (no title bar)
+            let h = ui.label(egui::RichText::new(&heading).font(t.semibold(16.0)).color(t.text));
+            crate::widgets::register(ui.ctx(), "dialog:title", h.rect);
+            ui.add_space(2.0);
             // fixed header (tabs) / scrolling body / fixed footer (buttons), capped to the screen;
             // the import review sizes and scrolls itself (it can be resized)
             let mut layout = if settings {
@@ -2109,12 +2121,231 @@ const EXPORT_FOLDED_AT_FIRST: &[&str] = &["Sizing", "Sharpening", "Metadata", "W
 /// ([`EXPORT_FOLDED_AT_FIRST`]); once the person flips it, that is kept in the settings
 /// (`groupOpen`, `export:<key>`).
 fn export_section(app: &mut LccApp, ui: &mut egui::Ui, key: &str, title: &str, summary: &str) -> bool {
+    // the Export screen: every section open, as a titled card the rail can jump to
+    if ui.ctx().data(|d| d.get_temp::<bool>(egui::Id::new(EXPORT_SCREEN)).unwrap_or(false)) {
+        let heading_top = ui.cursor().top();
+        crate::dialog_frame::group_begin(ui, Some(title));
+        let top = ui.cursor().top();
+        // (the old fold bar's id, on the heading)
+        crate::widgets::register(ui.ctx(), format!("section:export{key}"), egui::Rect::from_x_y_ranges(ui.max_rect().x_range(), heading_top..=top));
+        ui.ctx().data_mut(|d| {
+            let mut tops: Vec<(String, f32, String)> = d.get_temp(egui::Id::new(EXPORT_TOPS)).unwrap_or_default();
+            tops.push((key.to_string(), top, summary.to_string()));
+            d.insert_temp(egui::Id::new(EXPORT_TOPS), tops);
+        });
+        if ui.ctx().data_mut(|d| d.get_temp::<String>(egui::Id::new(EXPORT_JUMP)).is_some_and(|k| k == key)) {
+            ui.scroll_to_rect(egui::Rect::from_min_size(egui::pos2(ui.max_rect().left(), top - 40.0), egui::vec2(1.0, 1.0)), Some(egui::Align::TOP));
+            ui.ctx().data_mut(|d| d.remove::<String>(egui::Id::new(EXPORT_JUMP)));
+        }
+        return true;
+    }
     let id = format!("export:{key}");
     let mut open = app.ui.group_is_open(&id, !EXPORT_FOLDED_AT_FIRST.contains(&key));
     if crate::dialog_frame::fold_group(ui, &format!("export{key}"), title, summary, &mut open) {
         app.ui.group_open.insert(id, open);
     }
     open
+}
+
+/// Context flag: the export rows are drawn on the Export screen (sections are open cards).
+const EXPORT_SCREEN: &str = "export-screen-mode";
+/// This frame's section tops on the Export screen: (key, y, summary).
+const EXPORT_TOPS: &str = "export-screen-tops";
+/// A section the rail asked to scroll to.
+const EXPORT_JUMP: &str = "export-screen-jump";
+
+/// The Export screen's rail: its groups (name, the section keys it covers).
+const EXPORT_GROUPS: [(&str, &[&str]); 7] = [
+    ("Where", &["Location", "Naming"]),
+    ("Video", &["Video"]),
+    ("File", &["FileSettings"]),
+    ("Size & Sharpening", &["Sizing", "Sharpening"]),
+    ("Metadata", &["Metadata"]),
+    ("Watermark", &["Watermark"]),
+    ("After Export", &["PostProcessing"]),
+];
+
+/// Export as a full-window screen, in every layout: the header (Back, how many photos, where they
+/// go), the presets and a rail of the settings' groups on the left (a tap scrolls to one; the one in
+/// view is lit), every setting on one scrolling page, and a bar along the bottom that always says
+/// what will be written, with Export. Back, Esc and Cancel close it. Own design.
+pub(crate) fn export_screen(app: &mut LccApp, ctx: &egui::Context) {
+    use lcc_engine::export::DestinationMode as D;
+    let Some(Dialog::Export { mut opts, mut full_size, mut resize, mut preset_name, mut limit_kb, mut dir }) = app.ui.dialog.clone() else { return };
+    let at_start = app.ui.dialog.clone();
+    let t = Tokens::get(ctx);
+    let screen = ctx.content_rect();
+    let roomy = screen.width() >= crate::settings_screen::ROOMY;
+    let mut cancel = !egui::Popup::is_any_open(ctx)
+        && !ctx.egui_wants_keyboard_input()
+        && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape));
+    let mut go = false;
+    let n = app.session.selection.ids.len().max(1);
+    // last frame's section tops, for the rail's highlight
+    let tops: Vec<(String, f32, String)> = ctx.data_mut(|d| d.remove_temp(egui::Id::new(EXPORT_TOPS))).unwrap_or_default();
+    // the dialog's own id and the modal layer: popups opened in it (dropdowns) stay open
+    let shown = egui::Area::new(egui::Id::new("app-export-dialog")).movable(false).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
+        let (bg, _) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+        ui.painter().rect_filled(bg, 0.0, t.chrome);
+        // (the dialog's id, as the window had)
+        crate::widgets::register(ui.ctx(), "dialog:window", bg);
+        // header
+        let header = egui::Rect::from_min_size(bg.min, egui::vec2(bg.width(), 56.0));
+        let b = egui::Rect::from_min_size(egui::pos2(header.left() + 10.0, header.center().y - 18.0), egui::Vec2::splat(36.0));
+        let back = ui.interact(b, ui.id().with("export-back"), egui::Sense::click());
+        back.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::i18n::tr("Back")));
+        crate::widgets::register(ui.ctx(), "export:back", b);
+        ui.painter().circle_filled(b.center(), 18.0, if back.hovered() { t.pressed } else { t.button });
+        crate::icons::paint(ui.painter(), egui::Rect::from_center_size(b.center(), egui::Vec2::splat(18.0)), crate::icons::Icon::ChevronLeft, t.text);
+        if back.clicked() {
+            cancel = true;
+        }
+        let title = crate::i18n::tr_format!("Export {n} photo{}", if n == 1 { "" } else { "s" }, n = n);
+        ui.painter().text(egui::pos2(b.right() + 12.0, header.center().y), egui::Align2::LEFT_CENTER, title, t.semibold(17.0), t.text);
+        // where: the destination as one segmented choice, top right
+        const WHERE: [(D, &str); 3] = [(D::ChooseLater, "Ask"), (D::SpecificFolder, "Folder"), (D::SameAsOriginal, "Next to Originals")];
+        if roomy && !cfg!(target_arch = "wasm32") {
+            let w = 330.0;
+            let r = egui::Rect::from_min_size(egui::pos2(header.right() - 16.0 - w, header.top() + 8.0), egui::vec2(w, 40.0));
+            let mut child = ui.new_child(egui::UiBuilder::new().max_rect(r).layout(egui::Layout::right_to_left(egui::Align::Center)));
+            let labels: Vec<&str> = WHERE.iter().map(|(_, l)| *l).collect();
+            let chosen = WHERE.iter().position(|(m, _)| *m == opts.destination_mode);
+            if let Some(i) = crate::widgets::segments(&mut child, "exportWhere", &labels, chosen)
+                && let Some((m, _)) = WHERE.get(i)
+            {
+                opts.destination_mode = *m;
+            }
+        }
+        ui.painter().hline(bg.x_range(), header.bottom(), egui::Stroke::new(1.0, t.divider));
+        // the bar along the bottom: what will be written, Cancel, Export
+        let bar = egui::Rect::from_min_max(egui::pos2(bg.left(), bg.bottom() - 60.0), bg.max);
+        ui.painter().hline(bg.x_range(), bar.top(), egui::Stroke::new(1.0, t.divider));
+        let summary_of = |key: &str| tops.iter().find(|(k, _, _)| k == key).map(|(_, _, s)| s.clone()).filter(|s| !s.is_empty());
+        let mut parts = vec![crate::i18n::tr_format!("{n} photo{}", if n == 1 { "" } else { "s" }, n = n)];
+        parts.extend(["FileSettings", "Sizing"].iter().filter_map(|k| summary_of(k)));
+        let summary = parts.join(" · ");
+        let room = bar.width() - 300.0;
+        let mut job = egui::text::LayoutJob::simple_singleline(summary, t.font(13.0), t.text_label);
+        job.wrap = egui::text::TextWrapping { max_width: room.max(60.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+        let g = ui.painter().layout_job(job);
+        let gr = egui::Rect::from_min_size(egui::pos2(bar.left() + 18.0, bar.center().y - g.size().y / 2.0), g.size());
+        crate::widgets::register(ui.ctx(), "export:summary", gr);
+        ui.painter().galley(gr.min, g, t.text_label);
+        let mut buttons = ui
+            .new_child(egui::UiBuilder::new().max_rect(bar.shrink2(egui::vec2(16.0, 10.0))).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        buttons.spacing_mut().item_spacing.x = 8.0;
+        if crate::button::Button::new("Export")
+            .kind(crate::button::Kind::Primary)
+            .size(crate::button::Size::Large)
+            .widget("button:dialogOk")
+            .show(&mut buttons)
+            .clicked()
+        {
+            go = true;
+        }
+        if crate::button::Button::new("Cancel").size(crate::button::Size::Large).widget("button:dialogCancel").show(&mut buttons).clicked() {
+            cancel = true;
+        }
+        let body = egui::Rect::from_min_max(egui::pos2(bg.left(), header.bottom() + 1.0), egui::pos2(bg.right(), bar.top() - 1.0));
+        // the rail: the groups (a tap scrolls there; the one in view is lit), then the presets
+        let rail_w = if roomy { 240.0 } else { 0.0 };
+        let content = egui::Rect::from_min_max(egui::pos2(body.left() + rail_w, body.top()), body.max);
+        if roomy {
+            let rail = egui::Rect::from_min_size(body.min, egui::vec2(rail_w, body.height()));
+            ui.painter().vline(rail.right(), body.y_range(), egui::Stroke::new(1.0, t.divider));
+            let mut r = ui.new_child(egui::UiBuilder::new().max_rect(rail.shrink2(egui::vec2(10.0, 10.0))));
+            r.spacing_mut().item_spacing.y = 2.0;
+            let lit = tops.iter().rev().find(|(_, y, _)| *y <= content.top() + 60.0).or(tops.first()).map(|(k, _, _)| k.clone()).unwrap_or_default();
+            for (label, keys) in EXPORT_GROUPS {
+                if !keys.iter().any(|k| tops.iter().any(|(t, _, _)| t == k)) && !tops.is_empty() {
+                    continue;
+                }
+                let (row, resp) = r.allocate_exact_size(egui::vec2(r.available_width(), 38.0), egui::Sense::click());
+                let on = keys.contains(&lit.as_str());
+                let name = crate::i18n::tr(label);
+                resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, name));
+                crate::widgets::register(r.ctx(), format!("export:group:{}", keys.first().copied().unwrap_or_default()), row);
+                if on {
+                    r.painter().rect_filled(row, 10.0, egui::Color32::from_white_alpha(30));
+                } else if resp.hovered() {
+                    r.painter().rect_filled(row, 10.0, egui::Color32::from_white_alpha(14));
+                }
+                r.painter().text(
+                    egui::pos2(row.left() + 14.0, row.center().y),
+                    egui::Align2::LEFT_CENTER,
+                    name,
+                    t.font(14.0),
+                    if on { t.text } else { t.text_label },
+                );
+                if resp.clicked()
+                    && let Some(k) = keys.first()
+                {
+                    r.ctx().data_mut(|d| d.insert_temp(egui::Id::new(EXPORT_JUMP), k.to_string()));
+                }
+            }
+            r.add_space(10.0);
+            let f = ExportForm {
+                opts: &mut opts,
+                full_size: &mut full_size,
+                resize: &mut resize,
+                preset_name: &mut preset_name,
+                limit_kb: &mut limit_kb,
+                dir: &mut dir,
+            };
+            let h = r.available_height();
+            export_presets(app, &mut r, f, h);
+        }
+        // every setting, one scrolling page
+        let w = content.width().min(860.0);
+        let column = egui::Rect::from_min_size(
+            egui::pos2(content.left() + ((content.width() - w) / 2.0).max(0.0), content.top()),
+            egui::vec2(w, content.height()),
+        );
+        let mut page = ui.new_child(egui::UiBuilder::new().max_rect(column.shrink2(egui::vec2(16.0, 0.0))));
+        page.ctx().data_mut(|d| d.insert_temp(egui::Id::new(EXPORT_SCREEN), true));
+        egui::ScrollArea::vertical().id_salt("export-page").auto_shrink([false, false]).show(&mut page, |ui| {
+            ui.add_space(12.0);
+            ui.set_width((ui.available_width() - 12.0).max(120.0));
+            let stacked = column.width() < 520.0;
+            let f = ExportForm {
+                opts: &mut opts,
+                full_size: &mut full_size,
+                resize: &mut resize,
+                preset_name: &mut preset_name,
+                limit_kb: &mut limit_kb,
+                dir: &mut dir,
+            };
+            let body = |ui: &mut egui::Ui| export_settings(app, ui, f, !roomy);
+            if stacked {
+                crate::dialog_frame::stacked_form(ui, 120.0, body);
+            } else {
+                crate::dialog_frame::form(ui, EXPORT_LABEL_W, body);
+            }
+            ui.add_space(40.0);
+        });
+        page.ctx().data_mut(|d| d.remove::<bool>(egui::Id::new(EXPORT_SCREEN)));
+    });
+    ctx.memory_mut(|m| m.set_modal_layer(shown.response.layer_id));
+    // the rows may have closed Export or opened another dialog (a folder picker, Watermark…)
+    if app.ui.dialog != at_start {
+        return;
+    }
+    let now = Some(Dialog::Export { opts, full_size, resize, preset_name, limit_kb, dir });
+    app.ui.dialog = now.clone();
+    if cancel {
+        app.ui.dialog = None;
+        return;
+    }
+    if go && let Some(dlg) = now {
+        match confirm_dialog(app, &dlg) {
+            Ok(_) => {
+                if app.ui.dialog.as_ref() == Some(&dlg) {
+                    app.ui.dialog = None;
+                }
+            }
+            Err(e) => app.toast_error(ctx, e),
+        }
+    }
 }
 
 /// One line saying what an Export dialog setting is, for its section's header.

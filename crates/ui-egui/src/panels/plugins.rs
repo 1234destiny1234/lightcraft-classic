@@ -441,7 +441,7 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let mut actions: Vec<(&'static str, Value)> = Vec::new();
     let mut inspect: Option<String> = None;
     if s.open {
-        let mut open = true;
+        let mut open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
         egui::Window::new(tr("Plug-in Manager")).id(key()).open(&mut open).default_width(560.0).vscroll(true).show(ctx, |ui| {
             ui.horizontal(|ui| {
                 ui.label(tr("Module (.wasm):"));

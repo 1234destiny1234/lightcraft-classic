@@ -42,7 +42,7 @@ UI, the CLI, a control channel and an MCP server all share.
 - **Local-first:** no account, no cloud, no telemetry, no subscription. The network is used only for things you turn on.
 - **Non-destructive:** originals are never touched; edits live in the catalog and, if you like, in XMP sidecars.
 - **Drivable end to end by AI agents** over MCP, with undo for everything they do.
-- **Open source** (MIT). It is a fork of an open-source project; its copyright notices are kept in [NOTICE](NOTICE)
+- **Open source** (MIT). Chromaforge is a fork of an open-source project; its copyright notices are kept in [NOTICE](NOTICE)
   and [LICENSE](LICENSE).
 
 ## Contents

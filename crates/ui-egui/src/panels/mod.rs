@@ -151,7 +151,7 @@ pub fn empty_state(ui: &mut egui::Ui, rect: Rect, title: &str, body: &str, actio
 }
 
 /// [`empty_state`]; `touch` makes the buttons finger-sized and stacks them one per row, all of
-/// one width (the touch layout).
+/// one width (the Modern layout).
 pub fn empty_state_sized(
     ui: &mut egui::Ui,
     rect: Rect,

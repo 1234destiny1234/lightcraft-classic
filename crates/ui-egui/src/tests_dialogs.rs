@@ -54,7 +54,8 @@ fn modal_dialogs_block_background_clicks_and_preserve_choices() {
     assert_eq!(r["ok"], true, "{r}");
     h.step();
     assert_eq!(h.app.session.catalog.photo(active).unwrap().rating, 5);
-    let r = h.request("ui.clickWidget", json!({"id": "button:dialogOk"}), T);
+    // (Settings fills the window; its ‹ closes it)
+    let r = h.request("ui.clickWidget", json!({"id": "settings:back"}), T);
     assert_eq!(r["ok"], true, "{r}");
     h.step();
     assert!(h.app.ui.dialog.is_none());

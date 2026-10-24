@@ -180,7 +180,7 @@ largest gap left.
 
 ### Compressed ORF: a clean-room starting point
 
-Decoded since 2026-10-13 (`decode_compressed` in `crates/raw/src/vendor/orf.rs`, fork-only under the decoder
+Decoded since 2026-10-13 (`decode_compressed` in `crates/raw/src/vendor/orf.rs`, Chromaforge-only under the decoder
 reference policy); kept for the method's background.
 
 Two Olympus patents by Takashi Ishikawa describe the *method* of lossless RAW compression in prose; neither names ORF

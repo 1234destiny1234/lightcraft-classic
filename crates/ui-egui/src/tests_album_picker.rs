@@ -327,7 +327,11 @@ mod import_review {
                 assert!(h.settle(SETTLE));
                 let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, h.size);
                 let rect = |h: &Headless, name: &str| h.app.widgets.iter().find(|(id, _)| id == name).unwrap().1;
-                assert!(screen.contains_rect(rect(&h, "albumPicker:import-album")), "{theme} {size:?}: selected long path");
+                assert!(
+                    screen.contains_rect(rect(&h, "albumPicker:import-album")),
+                    "{theme} {size:?}: selected long path {:?} in {screen:?}",
+                    rect(&h, "albumPicker:import-album")
+                );
                 click(&mut h, "albumPicker:import-album");
                 text(&mut h, "fête");
                 let row = rect(&h, &format!("albumPickerItem:{album}:import-album"));
