@@ -1501,5 +1501,5 @@
   "Blue/Yellow": "青／黄",
   "No horizon or vertical lines to level by": "水平の基準になる地平線や垂直線が見つかりません",
   "High quality adjustment previews": "調整中の高画質プレビュー",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "調整中も画質を一定に保ちます。プレビューの更新が遅くなる場合があります。"
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "調整中も画質を一定に保ちます。編集が重すぎる場合は、スライダーを動かしている間は高速なプレビューで更新し、止めるとすぐに高画質に戻ります。"
 }

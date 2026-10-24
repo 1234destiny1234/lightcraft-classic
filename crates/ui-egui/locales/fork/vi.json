@@ -20,5 +20,5 @@
   "Tone": "Tông màu",
   "Colour": "Màu",
   "High quality adjustment previews": "Xem trước điều chỉnh chất lượng cao",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "Giữ chất lượng ảnh nhất quán trong khi điều chỉnh. Quá trình cập nhật có thể chậm hơn."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Giữ chất lượng ảnh nhất quán khi điều chỉnh. Nếu một chỉnh sửa quá chậm để làm vậy, ảnh sẽ cập nhật nhanh hơn khi thanh trượt đang di chuyển và sắc nét lại ngay khi dừng."
 }

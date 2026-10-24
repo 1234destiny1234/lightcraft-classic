@@ -1501,5 +1501,5 @@
   "Blue/Yellow": "Azul/amarelo",
   "No horizon or vertical lines to level by": "Nenhum horizonte ou linha vertical para nivelar",
   "High quality adjustment previews": "Prévias de ajustes em alta qualidade",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "Mantém a qualidade da imagem consistente durante os ajustes. As atualizações podem ser mais lentas."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Mantém a mesma qualidade de imagem durante os ajustes. Quando uma edição é lenta demais para isso, a imagem é atualizada mais rápido enquanto um controle deslizante se move e fica nítida assim que ele para."
 }

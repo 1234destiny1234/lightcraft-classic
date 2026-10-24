@@ -88,5 +88,5 @@
   "Tone": "Ton",
   "Colour": "Kolor",
   "High quality adjustment previews": "Podgląd korekt w wysokiej jakości",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "Zachowuje stałą jakość obrazu podczas regulacji. Odświeżanie może być wolniejsze."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Utrzymuje stałą jakość obrazu podczas regulacji. Gdy edycja jest na to zbyt wolna, obraz odświeża się szybciej, gdy suwak się porusza, i wyostrza się, gdy tylko się zatrzyma."
 }

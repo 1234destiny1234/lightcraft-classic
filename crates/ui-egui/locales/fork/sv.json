@@ -18,5 +18,5 @@
   "All Photographs": "Alla foton",
   "Tone": "Ton",
   "High quality adjustment previews": "Förhandsvisningar med hög kvalitet vid justering",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "Behåller samma bildkvalitet under justering. Uppdateringar kan bli långsammare."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Håller bildkvaliteten jämn medan du justerar. Är en redigering för långsam för det uppdateras bilden snabbare medan ett reglage rör sig och blir skarp så snart det stannar."
 }

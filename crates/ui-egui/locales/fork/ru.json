@@ -1709,5 +1709,5 @@
   "Blue/Yellow": "Синий/жёлтый",
   "No horizon or vertical lines to level by": "Нет горизонта или вертикальных линий для выравнивания",
   "High quality adjustment previews": "Высококачественный предпросмотр при настройке",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "Сохраняет качество изображения во время настройки. Обновление может быть медленнее."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Сохраняет одинаковое качество изображения во время настройки. Если правка для этого слишком медленная, изображение обновляется быстрее, пока ползунок движется, и становится резким, как только он останавливается."
 }

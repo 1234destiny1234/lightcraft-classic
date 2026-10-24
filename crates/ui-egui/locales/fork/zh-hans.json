@@ -1414,5 +1414,5 @@
   "Blue/Yellow": "蓝/黄",
   "No horizon or vertical lines to level by": "没有可用于校平的地平线或垂直线",
   "High quality adjustment previews": "高质量调整预览",
-  "Keeps image quality consistent while adjusting. Updates may be slower.": "在调整时保持一致的图像质量。预览更新可能会变慢。"
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "调整时保持一致的图像质量。如果编辑太慢无法做到，拖动滑块时图像会以更快的方式更新，停下后立即恢复清晰。"
 }
