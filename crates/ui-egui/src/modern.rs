@@ -560,6 +560,7 @@ const FADE_LAYERS: [(egui::Order, &str); 8] = [
 const CHROME_ALPHA: &str = "modern-chrome-alpha";
 
 /// How opaque the floating chrome is (1: shown; 0: faded while an adjustment is dragged).
+#[cfg(test)]
 pub(crate) fn chrome_alpha(ctx: &egui::Context) -> f32 {
     ctx.data(|d| d.get_temp::<f32>(Id::new(CHROME_ALPHA))).unwrap_or(1.0)
 }
