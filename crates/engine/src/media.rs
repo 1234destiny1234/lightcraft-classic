@@ -974,15 +974,7 @@ pub struct RenderJob {
 
 /// `img` shrunk to fit `max_w × max_h` with a Lanczos filter (see [`RenderJob::display_fit`]).
 pub fn fit_for_display(img: &Rgba8, max_w: usize, max_h: usize) -> Rgba8 {
-    use lcc_raster::resample::{Filter, fit};
-    let f = lcc_raster::Image {
-        width: img.width,
-        height: img.height,
-        data: img.data.iter().map(|p| [f32::from(p[0]), f32::from(p[1]), f32::from(p[2]), f32::from(p[3])]).collect(),
-    };
-    let small = fit(&f, max_w.max(1), max_h.max(1), Filter::Lanczos3);
-    let c = |v: f32| v.round().clamp(0.0, 255.0) as u8;
-    Rgba8 { width: small.width, height: small.height, data: small.data.iter().map(|p| [c(p[0]), c(p[1]), c(p[2]), c(p[3])]).collect() }
+    lcc_raster::resample::fit_rgba8(img, max_w.max(1), max_h.max(1), lcc_raster::resample::Filter::Lanczos3)
 }
 
 pub struct RenderResult {
