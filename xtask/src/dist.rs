@@ -71,6 +71,10 @@ pub fn vars(root: &Path, brand: &Brand) -> Result<BTreeMap<String, String>, Stri
     let sha = Command::new("git").current_dir(root).args(["rev-parse", "HEAD"]).output().ok().filter(|o| o.status.success());
     let sha = sha.map(|o| String::from_utf8_lossy(&o.stdout).trim().to_string()).unwrap_or_else(|| "unknown".into());
     vars.insert("build_sha".into(), sha);
+    // The Android manifest's per-store placeholders; `apk` fills them for the store it builds.
+    for k in ["all_files_permission", "legacy_storage"] {
+        vars.insert(k.into(), String::new());
+    }
     Ok(vars)
 }
 
@@ -355,11 +359,7 @@ mod tests {
     fn every_packaging_template_renders() {
         let root = crate::root();
         let brand = Brand::load(&root.join(crate::brand::TEST_BRAND)).unwrap();
-        let mut vars = vars(&root, &brand).unwrap();
-        // The Android manifest's per-store placeholders come from `apk`, not the brand.
-        for k in ["all_files_permission", "legacy_storage"] {
-            vars.entry(k.into()).or_default();
-        }
+        let vars = vars(&root, &brand).unwrap();
         let list = templates(&root, &vars["app_id"]);
         assert!(!list.is_empty());
         for (src, rel) in list {
