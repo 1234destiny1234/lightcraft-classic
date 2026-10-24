@@ -483,3 +483,51 @@ fn an_hdr_view_drag_never_shows_its_histogram_from_before_on_release() {
         }
     }
 }
+
+// Given a slider let go at 1:1 (high quality adjustment previews off or on), the part on screen
+// is one full-quality window of the final look, the pixels a full-size render has there, instead
+// of a render per tile on screen; only the ring of tiles around it is prepared
+#[test]
+fn a_release_at_one_to_one_shows_one_full_quality_window_instead_of_the_tiles_on_screen() {
+    for hq in [false, true] {
+        let (mut h, work) = detail([3000, 2000], 1.0);
+        h.app.renderer.keep_pixels = true;
+        h.app.ui.settings.high_quality_adjustment_previews = hq;
+        h.app.ui.zoom = Zoom::Percent(100.0);
+        assert!(h.settle(TIMEOUT));
+        h.app.session.begin_interaction("Exposure").unwrap();
+        for i in 1..=4 {
+            h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.2}})).unwrap();
+            h.step();
+            h.step();
+        }
+        assert!(h.settle(TIMEOUT));
+        let from = work.borrow().asked.len();
+        h.app.session.end_interaction().unwrap();
+        assert!(h.settle(TIMEOUT));
+        let view = h.app.region_view.expect("a zoomed view");
+        let side = view.tile;
+        let on_screen = |slot: &Slot| match slot {
+            Slot::Tile { col, row, .. } => {
+                let (x, y) = (usize::from(*col) * side, usize::from(*row) * side);
+                x < view.window.x + view.window.w && x + side > view.window.x && y < view.window.y + view.window.h && y + side > view.window.y
+            }
+            _ => false,
+        };
+        assert!(!work.borrow().asked.iter().skip(from).any(|(s, _)| on_screen(s)), "hq {hq}: no tile on screen rendered");
+        let (tex, g) = h.app.renderer.window_texture(PANE_AFTER).expect("the window on screen");
+        assert!(g.full_quality && g.look == h.app.session.develop_of(PhotoId(1)).unwrap().hash64(), "hq {hq}: the final look at full quality");
+        // its pixels are the full-size render's there
+        let full = h.app.session.render_job(PhotoId(1), g.full.0, g.full.1, false, true).unwrap().run().rendered.unwrap().image;
+        let px = tex.pixels.as_ref().expect("kept pixels");
+        let mut max = 0u8;
+        for y in 0..g.window.h {
+            for x in 0..g.window.w {
+                let a = px.pixels[y * g.window.w + x].to_array();
+                let b = full.data[(g.window.y + y) * full.width + g.window.x + x];
+                max = max.max((0..3).map(|c| a[c].abs_diff(b[c])).max().unwrap_or(0));
+            }
+        }
+        assert!(max <= 2, "hq {hq}: the window differs from the full-size render by {max} levels");
+    }
+}

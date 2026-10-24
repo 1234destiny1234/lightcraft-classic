@@ -649,7 +649,8 @@ pub(crate) fn request_window(
         };
         // (an HDR window drawn in its place, or on its way, needs no 8-bit draft as well)
         if matches!(hdr_window(app, c, v, full), HdrPane::Sdr) {
-            let geom = crate::render::WindowGeom { photo: c.id, full, window, look: c.look };
+            let full_quality = job.request.quality == lcc_pipeline::Quality::Full;
+            let geom = crate::render::WindowGeom { photo: c.id, full, window, look: c.look, full_quality };
             app.renderer.request_window(v.pane, job, geom, TILE_PRIORITY);
         }
         wanted.push(Slot::Window(v.pane));
@@ -675,8 +676,36 @@ pub(crate) fn request_window(
     let window = lcc_engine::pipeline::PixelWindow { x: x0, y: y0, w: x1 - x0, h: y1 - y0 };
     // an HDR edit shown in HDR: its HDR window (or the whole frame's HDR until it comes) is what
     // shows, so no 8-bit tiles are rendered beside it (they would only hold it up)
-    if !matches!(hdr_window(app, c, v, full), HdrPane::Sdr) {
+    let sdr = matches!(hdr_window(app, c, v, full), HdrPane::Sdr);
+    if !sdr {
         budget = 0;
+    }
+    // After an edit here (a slider let go, a preset): the part on screen once more as one window
+    // at full quality, in the pane's own slot, whose stage cache the drag kept warm, in place of a
+    // render for each tile on screen, each from the original with no stage cache (a release took
+    // 0.2-4.9 s). A high quality drag's last update is that window already. The ring of tiles
+    // around it is still prepared for a pan, and a pan past the window tiles as before.
+    let vis = visible_px(full, v.target, v.visible);
+    let mut window_stands_in = false;
+    if sdr && let Some((_, g)) = app.renderer.window_texture(v.pane).filter(|(_, g)| g.photo == c.id && g.full == full) {
+        let covers = |w: lcc_engine::pipeline::PixelWindow| {
+            w.x as f32 <= vis.0.max(0.0)
+                && w.y as f32 <= vis.1.max(0.0)
+                && (w.x + w.w) as f32 >= vis.2.min(full.0 as f32)
+                && (w.y + w.h) as f32 >= vis.3.min(full.1 as f32)
+        };
+        if g.look == c.look && g.full_quality && covers(g.window) {
+            window_stands_in = true;
+        } else if (g.look != c.look || !g.full_quality)
+            && let Some(window) = crate::region::window_for(full.0, full.1, vis, crate::region::max_span(c.texture_side))
+            && let Some(job) = job_for(app, window)
+        {
+            let geom = crate::render::WindowGeom { photo: c.id, full, window, look: c.look, full_quality: true };
+            app.renderer.request_window(v.pane, job, geom, TILE_PRIORITY + 1);
+            // (the tiles on screen wait for it; if it fails, they render)
+            window_stands_in = app.renderer.failure_of(Slot::Window(v.pane), c.id).is_none();
+        }
+        wanted.push(Slot::Window(v.pane));
     }
     let placeholder = c
         .full_preview
@@ -696,7 +725,7 @@ pub(crate) fn request_window(
             continue;
         }
         let slot = Slot::Tile { pane: v.pane, col: tile.col, row: tile.row };
-        if budget == 0 {
+        if budget == 0 || (on_screen && window_stands_in) {
             continue;
         }
         let window = crate::region::tile_render_window(full, rect);

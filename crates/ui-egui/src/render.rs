@@ -190,6 +190,9 @@ pub struct WindowGeom {
     pub full: (usize, usize),
     pub window: lcc_engine::pipeline::PixelWindow,
     pub look: u64,
+    /// Rendered at full quality (a high quality drag's update, or the window after a drag), not
+    /// a draft: at rest it stands for the tiles it covers.
+    pub full_quality: bool,
 }
 
 pub struct Tex {
