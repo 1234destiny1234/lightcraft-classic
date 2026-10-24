@@ -84,6 +84,11 @@ A full-quality update now gets 60 % of a frame to finish in and be drawn in the 
 for it (`panels::detail::wait_budget`; drafts keep 40 %): one update on its own 48.7 → 41.6 ms
 (median; half of them now take ~35 ms, as drafts do), the slowest UI frame of a drag 1.8 → 6.9 ms.
 
+An HDR edit's full-quality updates render its HDR histogram a second time, at 384 px
+(`pipeline::hdr_histogram`); that render now reuses the view's stage cache
+(`hdr_histogram_cached`, the same histogram): ~15 → ~8.5 ms. With HDR Preview off, a drag gets
+49.5 instead of 30.9 updates/s, one update 76.7 → 66.3 ms.
+
 ## Tests
 
 `crates/ui-egui/src/tests_adjustment_quality.rs` (headless, procedural photo): preference round

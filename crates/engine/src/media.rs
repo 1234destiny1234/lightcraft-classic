@@ -1282,7 +1282,12 @@ fn develop_reporting_fitted(
 ) -> (Rendered, Option<String>) {
     let (mut rendered, fallback) = develop_image(src, info, s, req, stages, gpu, fit);
     // an HDR edit's preview is its SDR rendition: its histogram shows the HDR range instead
-    if let Some(h) = lcc_pipeline::hdr_histogram(src, info, s, req) {
+    // (with the view's stage cache: a drag of an HDR edit redoes only what the slider feeds)
+    let hdr = match stages {
+        Some(c) => lcc_pipeline::hdr_histogram_cached(src, info, s, req, c),
+        None => lcc_pipeline::hdr_histogram(src, info, s, req),
+    };
+    if let Some(h) = hdr {
         rendered.histogram = h;
     }
     for w in &rendered.warnings {
