@@ -156,6 +156,7 @@ pub fn info(f: &Filter) -> Value {
         "moduleHash": f.module_hash(),
         "analyze": f.has_analyze(),
         "analyzeArea": m.analyze_area,
+        "baseTone": m.base_tone,
         "enabled": true,
     })
 }
