@@ -484,3 +484,51 @@ fn a_grid_followed_through_edits_shows_what_a_grid_made_afresh_shows() {
         }
     }
 }
+
+/// Widening a side panel in small steps, or turning the filter off and on, leaves the selected
+/// photo where it is on screen instead of scrolling the grid.
+#[test]
+fn panel_resizes_and_filter_toggles_keep_the_selected_photo_in_place() {
+    let mut h = grid(ViewMode::PhotoGrid);
+    h.request("ui.set", json!({"leftPanel": true, "leftWidth": 220.0}), T);
+    h.settle(SETTLE);
+    let target = PhotoId(1500); // rating 5: kept by the filter below
+    select(&mut h, target);
+    // scroll so the photo sits mid-screen, then let the anchor see the user's position
+    let canvas = h.app.canvas_rect.expect("grid drawn");
+    // measured from the top of the scrolling area (filter chips above it may change its height)
+    let y = |h: &Headless| Some(widget(h, &format!("thumb:{}", target.0))?.top() - widget(h, "grid:scroll")?.top());
+    let start = y(&h).unwrap();
+    let (mut w, mut steps) = (220.0f32, Vec::new());
+    for _ in 0..10 {
+        w *= 1.05;
+        h.request("ui.set", json!({"leftWidth": w}), T);
+        h.settle(SETTLE);
+        steps.push(y(&h));
+    }
+    for (k, now) in steps.iter().enumerate() {
+        let now = now.unwrap_or_else(|| panic!("step {k}: photo scrolled off screen ({canvas:?})"));
+        assert!((now - start).abs() < 2.0, "step {k}: moved from {start} to {now}: {steps:?}");
+    }
+    let before = y(&h).unwrap();
+    for params in [json!({"rating": 4}), json!({})] {
+        let cmd = if params == json!({}) { "library.toggleFilters" } else { "library.filter" };
+        let r = h.request("engine.execute", json!({"command": cmd, "params": params}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        h.settle(SETTLE);
+        let now = y(&h).unwrap_or_else(|| panic!("{cmd}: photo scrolled away, grid at {:?}", h.app.grid_scroll));
+        assert!((now - before).abs() < 2.0, "{cmd}: moved from {before} to {now}");
+    }
+    let r = h.request("engine.execute", json!({"command": "library.toggleFilters", "params": {}}), T);
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(SETTLE);
+    let now = y(&h).unwrap_or_else(|| panic!("filter back on: photo scrolled away, grid at {:?}", h.app.grid_scroll));
+    assert!((now - before).abs() < 2.0, "filter back on: moved from {before} to {now}");
+    // the filter bar shown and hidden again
+    for _ in 0..2 {
+        h.request("ui.key", json!({"key": "backslash"}), T);
+        h.settle(SETTLE);
+        let now = y(&h).unwrap_or_else(|| panic!("filter bar: photo scrolled away, grid at {:?}", h.app.grid_scroll));
+        assert!((now - before).abs() < 2.0, "filter bar: moved from {before} to {now}");
+    }
+}
