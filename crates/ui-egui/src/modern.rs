@@ -41,7 +41,9 @@ pub struct ModernUi {
     pub filmstrip: bool,
     /// Library's filter bar shows over the grid.
     pub filters: bool,
-    /// The histogram over the photo in Develop: off, small or large.
+    /// The histogram over the photo in Develop: off, small or large. (Saved under a new name: the
+    /// touch layout's `histogram` was off by default, and Modern shows it.)
+    #[serde(rename = "histogramSize")]
     pub histogram: HistogramPlace,
     /// Where the histogram sits: its top-left corner as a fraction of the room it can move in
     /// (0…1 each way), so it stays put across rotations and window sizes.
@@ -221,6 +223,15 @@ const SNAP: f32 = 48.0;
 /// notices drawn over the photo.
 pub(crate) fn chrome_top(app: &LccApp) -> f32 {
     app.ui.modern.insets.top + MARGIN + BUTTON + 16.0
+}
+
+/// Shows the histogram (small) or hides it (Window ▸ Panels ▸ Histogram, Shortcuts ▸ Show Histogram).
+pub(crate) fn toggle_histogram(app: &mut LccApp) {
+    app.ui.modern.histogram = if histogram_shown(app) { HistogramPlace::Off } else { HistogramPlace::Small };
+}
+
+pub(crate) fn histogram_shown(app: &LccApp) -> bool {
+    app.ui.modern.histogram != HistogramPlace::Off
 }
 
 /// The Modern layout is on.

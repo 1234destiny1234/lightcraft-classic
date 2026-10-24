@@ -483,7 +483,7 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "view.focusPoint" => Some(u.settings.focus_point),
         "view.zoomToFocus" => Some(u.settings.zoom_to_focus),
         "view.filmstrip" => Some(u.filmstrip),
-        "view.histogram" => Some(u.histogram),
+        "view.histogram" => Some(if crate::modern::on(app) { crate::modern::histogram_shown(app) } else { u.histogram }),
         "view.clipping" => Some(u.show_clipping),
         "view.visualizeHdr" => Some(u.hdr_visualize),
         "view.colorReadoutRgb" => Some(u.settings.color_readout == crate::color_readout::ColorReadout::Rgb),

@@ -111,9 +111,11 @@ fn a_ui_json_saved_with_the_touch_layout_opens_in_modern() {
     let mut v = serde_json::to_value(crate::state::UiState::default()).unwrap();
     let obj = v.as_object_mut().unwrap();
     obj.remove("modern");
-    obj.insert("touch".into(), json!({"enabled": true}));
+    obj.insert("touch".into(), json!({"enabled": true, "histogram": "off"}));
     let back: crate::state::UiState = serde_json::from_value(v).unwrap();
     assert!(back.modern.enabled);
+    // the touch layout's histogram was off by default: Modern's shows
+    assert_eq!(back.modern.histogram, crate::modern::HistogramPlace::Small);
 }
 
 type Written = Arc<Mutex<Vec<(String, usize)>>>;

@@ -262,6 +262,14 @@ fn the_histogram_switches_size_moves_snaps_and_has_a_menu() {
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:hide"}));
     assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Off);
     assert!(rect(&h, "modern:histogram").is_none());
+    // the way back: ☰ ▸ Shortcuts ▸ Show Histogram (and Window ▸ Panels ▸ Histogram)
+    exec(&mut h, "modern.menu", json!({"on": true}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:shortcut:histogram"}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Small);
+    exec(&mut h, "view.histogram", json!({}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Off);
+    exec(&mut h, "view.histogram", json!({}));
+    assert!(rect(&h, "modern:histogram").is_some());
     for bad in [json!({"mode": "sideways"}), json!({"mode": 3}), json!({"mode": "off", "at": [0.5]}), json!({"at": "x"})] {
         assert_eq!(exec(&mut h, "modern.histogram", bad.clone())["ok"], false, "{bad}");
     }

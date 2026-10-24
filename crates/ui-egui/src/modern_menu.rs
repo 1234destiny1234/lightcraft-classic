@@ -25,6 +25,7 @@ fn shortcut_command(app: &LccApp, key: &str) -> (&'static str, Value) {
     match key {
         "export" if app.services.write_shared.is_some() => ("modern.exportSheet", json!({"on": true})),
         "export" => ("dialog.export", json!({})),
+        "histogram" => ("view.histogram", json!({})),
         _ => ("file.addPhotos", json!({})),
     }
 }
@@ -145,7 +146,10 @@ pub(crate) fn menu_titles(app: &LccApp) -> Vec<String> {
 }
 
 fn shortcuts(app: &LccApp, ui: &mut egui::Ui, t: &Tokens, clicked: &mut Option<(String, Value)>) {
-    for (key, label) in SHORTCUT_ITEMS {
+    // while the histogram is hidden in Develop, the way back is here too
+    let hidden = app.ui.module != crate::module::ModuleId::Library && !crate::modern::histogram_shown(app);
+    let extra = hidden.then_some(("histogram", "Show Histogram"));
+    for (key, label) in SHORTCUT_ITEMS.into_iter().chain(extra) {
         let (command, params) = shortcut_command(app, key);
         let enabled = command.starts_with("modern.") || crate::menus::ui_enabled(app, command);
         let (r, resp) = ui.allocate_exact_size(vec2(240.0, 44.0), if enabled { Sense::click() } else { Sense::hover() });
