@@ -136,6 +136,13 @@ fn the_dock_moves_to_the_side_and_back() {
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:dockSwitch"}));
     assert!(h.app.ui.modern.dock_side);
     assert!(dock(&h).height() > dock(&h).width() && dock(&h).left() < 40.0, "down the side");
+    // clear of the top row's ☰ (and of the menu bar it opens), however short the window
+    let menu = h.app.widgets.iter().rev().find(|(w, _)| w == "modern:menu").map(|(_, r)| *r).unwrap();
+    assert!(dock(&h).top() > menu.bottom(), "below ☰: {:?} vs {menu:?}", dock(&h));
+    ask(&mut h, "ui.resize", json!({"width": 900, "height": 420}));
+    let menu = h.app.widgets.iter().rev().find(|(w, _)| w == "modern:menu").map(|(_, r)| *r).unwrap();
+    assert!(dock(&h).top() > menu.bottom() && dock(&h).bottom() <= 420.0, "a short window: {:?}", dock(&h));
+    ask(&mut h, "ui.resize", json!({"width": 1280, "height": 800}));
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:dockSwitch"}));
     assert!(!h.app.ui.modern.dock_side);
 }

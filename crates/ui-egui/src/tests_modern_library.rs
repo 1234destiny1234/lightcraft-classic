@@ -102,3 +102,37 @@ fn bad_info_commands_are_errors_or_toggles_not_panics() {
     assert_eq!(exec(&mut h, "modern.info", json!({"on": false}))["ok"], true);
     assert!(!h.app.ui.modern.info);
 }
+
+/// Window ▸ Panels ▸ Info (I) shows and hides the Modern Info card.
+#[test]
+fn the_info_command_toggles_the_card_in_modern() {
+    let app = crate::LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+    let mut h = crate::headless::Headless::new(app, [1280.0, 800.0], 1.0);
+    h.app.run("view.modernLayout", serde_json::json!({"on": true})).unwrap();
+    h.app.run("panel.info", serde_json::json!({})).unwrap();
+    assert!(h.app.ui.modern.info);
+    assert_eq!(crate::menubar::checked(&h.app, "panel.info"), Some(true));
+    h.app.run("panel.info", serde_json::json!({})).unwrap();
+    assert!(!h.app.ui.modern.info);
+}
+
+/// On a phone the Info card is a sheet along the bottom (full width), and its ✕ closes it.
+#[test]
+fn on_a_phone_the_info_card_is_a_bottom_sheet() {
+    let app = crate::LccApp::new(lcc_engine::Session::with_demo(), crate::Services { png: None, ..Default::default() });
+    let mut h = crate::headless::Headless::new(app, [412.0, 900.0], 1.0);
+    h.app.run("view.modernLayout", serde_json::json!({"on": true})).unwrap();
+    h.app.run("view.photoGrid", serde_json::json!({})).unwrap();
+    let id = h.app.session.visible_cloned()[0].0;
+    h.app.run("library.select", serde_json::json!({"ids": [id]})).unwrap();
+    h.app.run("modern.info", serde_json::json!({"on": true})).unwrap();
+    h.request("ui.widgets", serde_json::json!({}), std::time::Duration::from_secs(20));
+    h.settle(std::time::Duration::from_secs(60));
+    let card = h.app.widgets.iter().rev().find(|(w, _)| w == "modern:info").map(|(_, r)| *r).expect("the card");
+    assert!(card.width() >= 400.0 && card.bottom() >= 880.0, "a bottom sheet: {card:?}");
+    assert!(!h.app.widgets.iter().any(|(w, _)| w == "modernSearch"), "the search pill steps aside");
+    let r = h.request("ui.clickWidget", serde_json::json!({"id": "modern:info:close"}), std::time::Duration::from_secs(20));
+    assert_eq!(r["ok"], true, "{r}");
+    h.settle(std::time::Duration::from_secs(60));
+    assert!(!h.app.ui.modern.info, "✕ closed it");
+}

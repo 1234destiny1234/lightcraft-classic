@@ -15,3 +15,6 @@
 - The "library is open elsewhere" window has the new card look, with its buttons wrapping on a narrow window.
 - While you drag a slider, a colour wheel or the tone curve in Modern, everything over the photo fades away except that control and the histogram, so you see the whole photo as it changes; it fades back when you let go.
 - In Modern's Library, a search pill floats over the grid (with ★ 3+ and Picks), and the Info card (the ⓘ button) shows the selected photos' details and edits their title, caption, keywords, creator, copyright, rating, flag and label at once; values that differ show as < mixed > and are only changed when you edit them.
+- The dock down the side starts below the ☰ button and its menu bar, so it never covers them.
+- Window ▸ Panels ▸ Info (I) shows and hides Modern's Info card; on a phone the card is a sheet along the bottom with a ✕.
+- The activity card ("Finding faces"…) sits centred under the top bar in Classic too, clear of windows that open at the top left; buttons in every window are softly rounded.

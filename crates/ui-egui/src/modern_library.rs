@@ -26,10 +26,19 @@ const MARGIN: f32 = 12.0;
 
 /// The Library's floating extras over `area` (the grid): the search pill, and the Info card when on.
 pub(crate) fn show(app: &mut LccApp, ui: &egui::Ui, area: Rect) {
-    search(app, ui, area);
+    // on a phone the Info card is a sheet along the bottom, where the search pill sits
+    let sheet = phone(area);
+    if !(sheet && app.ui.modern.info) {
+        search(app, ui, area);
+    }
     if app.ui.modern.info {
         info_card(app, ui, area);
     }
+}
+
+/// A phone-sized window (the Info card is a bottom sheet there).
+fn phone(area: Rect) -> bool {
+    area.width() < 600.0
 }
 
 // ------------------------------------------------------------------------ search
@@ -109,27 +118,43 @@ fn search(app: &mut LccApp, ui: &egui::Ui, area: Rect) {
 fn info_card(app: &mut LccApp, ui: &egui::Ui, area: Rect) {
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
-    let w = CARD_W.min(area.width() - 2.0 * MARGIN);
+    let sheet = phone(area);
+    // a card at the right; on a phone a sheet along the bottom (its height last frame places it)
+    let w = if sheet { area.width() } else { CARD_W.min(area.width() - 2.0 * MARGIN) };
     if w < 160.0 {
         return;
     }
-    let top = area.top() + MARGIN;
-    let max_h = (area.bottom() - MARGIN - 48.0 - top).max(120.0);
-    let min = pos2(area.right() - MARGIN - w, top);
+    let (min, max_h) = if sheet {
+        let max_h = (area.height() * 0.6).max(160.0);
+        let last: f32 = ctx.data(|d| d.get_temp(Id::new("modern-info-h"))).unwrap_or(max_h);
+        (pos2(area.left(), area.bottom() - last.min(max_h)), max_h)
+    } else {
+        let top = area.top() + MARGIN;
+        (pos2(area.right() - MARGIN - w, top), (area.bottom() - MARGIN - 48.0 - top).max(120.0))
+    };
     let photos: Vec<Arc<Photo>> = app.session.selected().iter().filter_map(|i| app.session.catalog.photo(*i).cloned()).collect();
     let ids: Vec<u64> = photos.iter().map(|p| p.id.0).collect();
     egui::Area::new(Id::new("modern-info")).fixed_pos(min).order(egui::Order::Middle).show(&ctx, |ui| {
         ui.set_max_height(max_h);
         let frame = egui::Frame::NONE
             .inner_margin(egui::Margin::same(12))
-            .corner_radius(16.0)
-            .fill(t.chrome.gamma_multiply(0.92))
+            .corner_radius(if sheet { egui::CornerRadius { nw: 20, ne: 20, sw: 0, se: 0 } } else { egui::CornerRadius::same(16) })
+            .fill(t.chrome.gamma_multiply(if sheet { 0.97 } else { 0.92 }))
             .stroke(Stroke::new(1.0, Color32::from_white_alpha(28)));
         let shown = frame.show(ui, |ui| {
             ui.set_width(w - 24.0);
             ui.horizontal(|ui| {
                 ui.label(egui::RichText::new(crate::i18n::tr("Info")).font(t.semibold(14.0)).color(t.text));
                 ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                    // ✕: put it away (I, or the ⓘ button, does the same)
+                    if crate::button::Button::icon_only(crate::icons::Icon::Close, "Close")
+                        .kind(crate::button::Kind::Ghost)
+                        .widget("modern:info:close")
+                        .show(ui)
+                        .clicked()
+                    {
+                        app.ui.modern.info = false;
+                    }
                     let what = match photos.len() {
                         0 => String::new(),
                         1 => photos.first().map(|p| p.file_name.clone()).unwrap_or_default(),
@@ -169,6 +194,7 @@ fn info_card(app: &mut LccApp, ui: &egui::Ui, area: Rect) {
             });
         });
         register(&ctx, "modern:info", shown.response.rect);
+        ctx.data_mut(|d| d.insert_temp(Id::new("modern-info-h"), shown.response.rect.height()));
     });
 }
 

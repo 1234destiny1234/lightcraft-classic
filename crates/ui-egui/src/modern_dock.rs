@@ -156,6 +156,9 @@ const RAIL_ITEM: Vec2 = vec2(48.0, 46.0);
 const PAD: f32 = 5.0;
 /// From the window's edge.
 const MARGIN: f32 = 12.0;
+/// The floating top row's height from the window's top (☰, the menu bar, undo, redo), with a gap:
+/// the side dock starts below it.
+const TOP_ROW: f32 = MARGIN + 48.0 + 12.0;
 /// A tool's card (Crop, Masks, Heal…), at the right edge.
 const TOOL_CARD_W: f32 = 340.0;
 
@@ -287,8 +290,12 @@ pub(crate) fn dock(app: &mut LccApp, ui: &egui::Ui, area: Rect) -> Rect {
     };
     let full: f32 = slots.iter().map(along).sum::<f32>() + 2.0 * PAD;
     let rect = if side {
-        let h = full.min(area.height() - 2.0 * MARGIN).max(item.y + 2.0 * PAD);
-        Rect::from_min_size(pos2(area.left() + MARGIN, area.center().y - h / 2.0), vec2(item.x + 2.0 * PAD, h))
+        // below the top row (☰ and the menu bar, undo, redo): centred in the room left under it, and
+        // scrolling when that is too short
+        let top = area.top() + TOP_ROW;
+        let room = (area.bottom() - MARGIN - top).max(item.y + 2.0 * PAD);
+        let h = full.min(room).max(item.y + 2.0 * PAD);
+        Rect::from_min_size(pos2(area.left() + MARGIN, top + (room - h) / 2.0), vec2(item.x + 2.0 * PAD, h))
     } else {
         let w = full.min(area.width() - 2.0 * MARGIN).max(item.x + 2.0 * PAD);
         Rect::from_min_size(pos2(area.center().x - w / 2.0, area.bottom() - MARGIN - item.y - 2.0 * PAD), vec2(w, item.y + 2.0 * PAD))
