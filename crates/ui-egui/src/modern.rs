@@ -206,6 +206,12 @@ const MARGIN: f32 = 12.0;
 /// A histogram let go this close to a corner snaps into it (points).
 const SNAP: f32 = 48.0;
 
+/// How far below the window's top the Modern layout's floating top row ends (with a gap), for
+/// notices drawn over the photo.
+pub(crate) fn chrome_top(app: &LccApp) -> f32 {
+    app.ui.modern.insets.top + MARGIN + BUTTON + 16.0
+}
+
 /// The Modern layout is on.
 pub(crate) fn on(app: &LccApp) -> bool {
     app.ui.modern.enabled
