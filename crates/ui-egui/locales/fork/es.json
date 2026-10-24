@@ -1504,5 +1504,8 @@
   "Blue/Yellow": "Azul/amarillo",
   "No horizon or vertical lines to level by": "No hay horizonte ni líneas verticales con que nivelar",
   "High quality adjustment previews": "Vistas previas de ajustes de alta calidad",
-  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Mantiene la misma calidad de imagen durante los ajustes. Si una edición es demasiado lenta para ello, la imagen se actualiza más rápido mientras se mueve un control y se enfoca en cuanto se detiene."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Mantiene la misma calidad de imagen durante los ajustes. Si una edición es demasiado lenta para ello, la imagen se actualiza más rápido mientras se mueve un control y se enfoca en cuanto se detiene.",
+  "Preview for SDR Display": "Previsualizar para pantalla SDR",
+  "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "Muestra la foto como la muestran las pantallas SDR y las exportaciones SDR, para ajustar su versión SDR",
+  "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "Estos controles definen cómo se ve la foto en pantallas SDR y en exportaciones SDR. Active Previsualizar para pantalla SDR para verlos."
 }

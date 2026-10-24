@@ -87,5 +87,8 @@
   "Headroom": "Margine HDR",
   "Tone": "Tono",
   "High quality adjustment previews": "Anteprime delle regolazioni di alta qualità",
-  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Mantiene la stessa qualità dell’immagine durante le regolazioni. Se una modifica è troppo lenta per farlo, l’immagine si aggiorna più velocemente mentre un cursore si muove e torna nitida appena si ferma."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Mantiene la stessa qualità dell’immagine durante le regolazioni. Se una modifica è troppo lenta per farlo, l’immagine si aggiorna più velocemente mentre un cursore si muove e torna nitida appena si ferma.",
+  "Preview for SDR Display": "Anteprima per display SDR",
+  "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "Mostra la foto come la mostrano i display SDR e le esportazioni SDR, per regolarne la versione SDR",
+  "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "Questi cursori definiscono l’aspetto della foto sui display SDR e nelle esportazioni SDR. Attiva Anteprima per display SDR per vederli."
 }

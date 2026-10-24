@@ -5036,6 +5036,61 @@ mod tests {
         assert!(h.app.renderer.hdr_view.contains_key(&HDR_LOUPE));
     }
 
+    /// LR-HDR-SDRPREVIEW: Preview for SDR Display (under Visualize HDR) shows an HDR edit's SDR
+    /// rendition on an HDR display, as View ▸ HDR Preview off does (one switch, two places); the
+    /// SDR Rendition sliders say how to see them while the screen shows HDR. On a window that
+    /// can't show HDR the box stays on and can't be turned off.
+    #[test]
+    fn preview_for_sdr_display_shows_the_sdr_rendition_of_an_hdr_edit() {
+        struct Fake(Option<f32>);
+        impl crate::HdrOutput for Fake {
+            fn headroom(&mut self) -> Option<f32> {
+                self.0
+            }
+            fn upload(&mut self, view: u8, _: usize, _: usize, _: &[f32]) -> Result<egui::TextureId, String> {
+                Ok(egui::TextureId::User(7 + u64::from(view)))
+            }
+        }
+        let t = Duration::from_secs(10);
+        for headroom in [Some(4.0), None] {
+            let services = crate::Services { png: None, hdr_output: Some(Box::new(Fake(headroom))), ..Default::default() };
+            let mut app = LccApp::new(lcc_engine::Session::with_demo(), services);
+            app.ui.view = crate::state::ViewMode::PhotoGrid;
+            let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
+            h.request("ui.set", json!({"view": "detail"}), t);
+            h.request("engine.execute", json!({"command": "develop.hdr", "params": {"enabled": true}}), t);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"light.exposure": 2.0}}}), t);
+            h.app.ui.toggle_flyout("sdrRendition");
+            let hdr_shown = |h: &Headless| h.app.loupe_shown.is_some_and(|(_, s)| s == "hdr");
+            let note_shown = |h: &Headless| h.app.widgets.iter().any(|(id, _)| id == "note:sdrSlidersHidden");
+            assert!(h.settle(SETTLE));
+            if headroom.is_none() {
+                assert!(!hdr_shown(&h) && !note_shown(&h), "an SDR window shows the SDR rendition, sliders usable");
+                let r = h.request("ui.clickWidget", json!({"id": "check:hdrSdrPreview"}), t);
+                h.settle(SETTLE);
+                assert!(!hdr_shown(&h), "the box can't be turned off on an SDR window: {r}");
+                continue;
+            }
+            assert!(h.step_until(SETTLE, hdr_shown), "an HDR display shows the HDR render");
+            assert!(note_shown(&h), "the SDR sliders say how to see them");
+            let r = h.request("ui.clickWidget", json!({"id": "check:hdrSdrPreview"}), t);
+            assert_eq!(r["ok"], true, "{r}");
+            assert!(h.settle(SETTLE));
+            assert!(!h.app.ui.hdr_preview, "the same switch as View ▸ HDR Preview");
+            assert!(!hdr_shown(&h), "the SDR rendition shows");
+            assert!(!note_shown(&h));
+            // its SDR sliders now change what is on screen
+            let before = h.app.renderer.textures.get(&crate::render::Slot::Main).map(|x| x.key);
+            h.request("engine.execute", json!({"command": "develop.set", "params": {"values": {"hdr.sdrBrightness": 60.0}}}), t);
+            assert!(h.settle(SETTLE));
+            assert_ne!(h.app.renderer.textures.get(&crate::render::Slot::Main).map(|x| x.key), before);
+            assert!(!hdr_shown(&h));
+            h.request("ui.clickWidget", json!({"id": "check:hdrSdrPreview"}), t);
+            assert!(h.step_until(SETTLE, hdr_shown), "off again: HDR");
+            assert!(h.app.ui.hdr_preview);
+        }
+    }
+
     /// HDR display output touches the loupe only: the navigator / filmstrip thumbnail and the
     /// loupe's 8-bit render of an HDR edit are the same pixels with and without an HDR display
     /// (8-bit SDR rendition, drawn at SDR white), so nothing but the loupe's HDR image can go

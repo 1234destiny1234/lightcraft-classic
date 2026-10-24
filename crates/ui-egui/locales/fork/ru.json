@@ -1709,5 +1709,8 @@
   "Blue/Yellow": "Синий/жёлтый",
   "No horizon or vertical lines to level by": "Нет горизонта или вертикальных линий для выравнивания",
   "High quality adjustment previews": "Высококачественный предпросмотр при настройке",
-  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Сохраняет одинаковое качество изображения во время настройки. Если правка для этого слишком медленная, изображение обновляется быстрее, пока ползунок движется, и становится резким, как только он останавливается."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Сохраняет одинаковое качество изображения во время настройки. Если правка для этого слишком медленная, изображение обновляется быстрее, пока ползунок движется, и становится резким, как только он останавливается.",
+  "Preview for SDR Display": "Просмотр для SDR-дисплея",
+  "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "Показывает фото так, как его покажут SDR-дисплеи и SDR-экспорт, чтобы настроить его SDR-версию",
+  "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "Эти ползунки задают вид фото на SDR-дисплеях и в SDR-экспорте. Чтобы увидеть их действие, включите «Просмотр для SDR-дисплея»."
 }

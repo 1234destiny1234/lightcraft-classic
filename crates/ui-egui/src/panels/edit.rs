@@ -262,10 +262,21 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
                 app.ui.toggle_flyout("sdrRendition");
             }
             if open {
+                // as in Lightroom Classic, the SDR sliders take effect where the screen shows the
+                // SDR rendition: while it shows the HDR render they are greyed out (an agent can
+                // still set them), with the way to see them
+                let sdr_shown = !super::detail::hdr_shown(app);
+                if !sdr_shown {
+                    egui::Frame::NONE.inner_margin(egui::Margin { left: 12, right: 16, top: 2, bottom: 4 }).show(ui, |ui| {
+                        let t = Tokens::get(ui.ctx());
+                        let r = ui.label(egui::RichText::new(crate::i18n::tr(SDR_SLIDERS_NOTE)).font(t.font(12.0)).color(t.text_dim));
+                        register(ui.ctx(), "note:sdrSlidersHidden", r.rect);
+                    });
+                }
                 for c in
                     ["hdr.sdrBrightness", "hdr.sdrContrast", "hdr.sdrHighlights", "hdr.sdrShadows", "hdr.sdrWhites", "hdr.sdrClarity", "hdr.sdrBlend"]
                 {
-                    control(app, ui, d, c, true);
+                    control(app, ui, d, c, sdr_shown);
                 }
                 ui.add_space(6.0);
             }
@@ -2157,8 +2168,10 @@ fn hdr_button_tip(sdr_window: bool) -> String {
 
 const HDR_SDR_WINDOW_NOTE: &str = "This display isn't showing HDR (it is SDR, or HDR is off in the system settings), so the window shows the SDR rendition. HDR exports keep the full range.";
 
+const SDR_SLIDERS_NOTE: &str = "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.";
+
 /// The Light panel's HDR settings while HDR editing is on (the switch itself is the HDR button
-/// next to B&W): Visualize HDR range and the headroom limit.
+/// next to B&W): Visualize HDR range, Preview for SDR Display and the headroom limit.
 fn hdr_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
     if !d.hdr.enabled {
         return;
@@ -2169,6 +2182,21 @@ fn hdr_row(app: &mut LccApp, ui: &mut egui::Ui, d: &DevelopSettings) {
         register(ui.ctx(), "check:hdrVisualize", r.rect);
         if r.on_hover_text("Grey below SDR white; yellow, orange, red, magenta up to 1, 2, 3 and over 3 stops above it").changed() {
             app.ui.hdr_visualize = v;
+        }
+        // Lightroom Classic's Preview for SDR Display: the photo as SDR displays and SDR exports
+        // show it (its SDR rendition) instead of in HDR. The same switch as View ▸ HDR Preview,
+        // the other way round; on a window that can't show HDR it is always on.
+        let hdr_window = app.hdr_headroom.is_some();
+        let mut sdr = !hdr_window || !app.ui.hdr_preview;
+        let r = ui.add_enabled(hdr_window, egui::Checkbox::new(&mut sdr, crate::i18n::tr("Preview for SDR Display")));
+        register(ui.ctx(), "check:hdrSdrPreview", r.rect);
+        let r = r
+            .on_hover_text(crate::i18n::tr("Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition"))
+            .on_disabled_hover_text(crate::i18n::tr(HDR_SDR_WINDOW_NOTE));
+        if r.changed()
+            && let Err(e) = app.run("view.hdrPreview", json!({"on": !sdr}))
+        {
+            app.ui.status = e;
         }
     });
     control(app, ui, d, "hdr.maxEv", true);
