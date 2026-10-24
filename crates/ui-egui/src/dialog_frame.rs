@@ -359,6 +359,35 @@ pub fn group_begin(ui: &mut Ui, title: Option<&str>) {
     ui.add_space(4.0);
 }
 
+/// The card every dialog and tool window is drawn on: rounded, a faint light edge, a soft shadow
+/// (the title goes inside it: [`card_header`]; the window has no title bar).
+pub fn card_frame(ctx: &egui::Context) -> egui::Frame {
+    egui::Frame::window(&ctx.global_style())
+        .inner_margin(egui::Margin { left: 18, right: 18, top: 14, bottom: 14 })
+        .corner_radius(16.0)
+        .stroke(egui::Stroke::new(1.0, egui::Color32::from_white_alpha(26)))
+        .shadow(egui::epaint::Shadow { offset: [0, 10], blur: 32, spread: 0, color: egui::Color32::from_black_alpha(110) })
+}
+
+/// A card's title row: the (translated) `title` left-aligned and, with `close` (a widget id), a ✕
+/// on the right. True when the ✕ was clicked.
+pub fn card_header(ui: &mut Ui, title: &str, close: Option<&str>) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let mut closed = false;
+    ui.horizontal(|ui| {
+        let h = ui.label(RichText::new(title).font(t.semibold(16.5)).color(t.text));
+        crate::widgets::register(ui.ctx(), "dialog:title", h.rect);
+        if let Some(id) = close {
+            ui.with_layout(Layout::right_to_left(Align::Center), |ui| {
+                let b = crate::button::Button::icon_only(crate::icons::Icon::Close, "Close").kind(crate::button::Kind::Ghost).widget(id);
+                closed = b.show(ui).clicked();
+            });
+        }
+    });
+    ui.add_space(4.0);
+    closed
+}
+
 /// Esc for a tool window (Edit In Presets, Actions, Plug-ins): true, and the key taken, when it
 /// should close: no popup is open, no text is being typed and no dialog sits over it.
 pub fn esc_closes(app_dialog_open: bool, ctx: &egui::Context) -> bool {

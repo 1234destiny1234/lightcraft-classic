@@ -245,9 +245,10 @@ fn upgrade_window(ctx: &egui::Context, path: &str) {
     let t = Tokens::get(ctx);
     dim(ctx);
     let progress = lcc_engine::library::migration_progress();
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
+    let frame = crate::dialog_frame::card_frame(ctx);
     egui::Window::new(crate::i18n::tr("Upgrading your library"))
         .id(egui::Id::new("library-upgrade"))
+        .title_bar(false)
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
@@ -255,8 +256,9 @@ fn upgrade_window(ctx: &egui::Context, path: &str) {
         .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
         .default_width(460.0)
         .show(ctx, |ui| {
-            ui.set_width(440.0);
+            ui.set_width((ctx.content_rect().width() - 64.0).clamp(240.0, 440.0));
             ui.spacing_mut().item_spacing.y = 8.0;
+            crate::dialog_frame::card_header(ui, crate::i18n::tr("Upgrading your library"), None);
             ui.label(RichText::new(crate::i18n::tr("{app} is moving the library at")).color(t.text_label));
             ui.label(RichText::new(path).font(t.semibold(12.5)).color(t.text));
             ui.label(

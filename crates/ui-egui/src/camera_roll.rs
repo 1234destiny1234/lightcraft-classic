@@ -60,9 +60,10 @@ pub fn prompt(app: &mut LccApp, ctx: &egui::Context) {
     }
     let t = Tokens::get(ctx);
     let mut choice = None;
-    let frame = egui::Frame::window(&ctx.global_style()).inner_margin(egui::Margin::symmetric(18, 14));
+    let frame = crate::dialog_frame::card_frame(ctx);
     egui::Window::new(crate::i18n::tr("Add Your Camera Roll?"))
         .id(egui::Id::new("camera-roll-prompt"))
+        .title_bar(false)
         .order(egui::Order::Foreground)
         .collapsible(false)
         .resizable(false)
@@ -70,8 +71,9 @@ pub fn prompt(app: &mut LccApp, ctx: &egui::Context) {
         .anchor(Align2::CENTER_CENTER, [0.0, 0.0])
         .default_width(420.0)
         .show(ctx, |ui| {
-            ui.set_width(400.0);
+            ui.set_width((ctx.content_rect().width() - 64.0).clamp(240.0, 400.0));
             ui.spacing_mut().item_spacing.y = 8.0;
+            crate::dialog_frame::card_header(ui, crate::i18n::tr("Add Your Camera Roll?"), None);
             ui.add(
                 egui::Label::new(
                     RichText::new(crate::i18n::tr(

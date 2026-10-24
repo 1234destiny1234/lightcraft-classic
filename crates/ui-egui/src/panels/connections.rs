@@ -160,17 +160,23 @@ fn versions_ui(app: &mut LccApp, ctx: &egui::Context) {
     let (mut go, mut open) = (false, true);
     egui::Window::new(crate::i18n::tr("Edited Version Saved Again"))
         .id(egui::Id::new("immich-resave"))
-        .open(&mut open)
+        .title_bar(false)
+        .frame(crate::dialog_frame::card_frame(ctx))
         .collapsible(false)
         .resizable(false)
         .show(ctx, |ui| {
+            if crate::dialog_frame::card_header(ui, crate::i18n::tr("Edited Version Saved Again"), Some("immich-resave:close")) {
+                open = false;
+            }
             ui.label(crate::i18n::tr(
                 "This version is already on Immich. Immich can't replace a file, so the new save is uploaded as a new asset on top of the stack.",
             ));
             ui.radio_value(&mut ask.replace, false, crate::i18n::tr("Keep both"));
             ui.radio_value(&mut ask.replace, true, crate::i18n::tr("Replace (move the previous upload to Immich's trash)"));
             ui.checkbox(&mut ask.remember, crate::i18n::tr("Remember my choice"));
-            go = ui.button(crate::i18n::tr("Upload")).clicked();
+            ui.with_layout(egui::Layout::right_to_left(egui::Align::Center), |ui| {
+                go = crate::button::Button::new("Upload").kind(crate::button::Kind::Primary).widget("button:immichResaveUpload").show(ui).clicked();
+            });
         });
     let choice = if ask.replace { "replace" } else { "keepBoth" };
     if go {
