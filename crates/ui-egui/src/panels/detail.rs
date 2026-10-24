@@ -526,6 +526,21 @@ pub(crate) struct WindowView {
 
 /// Priority of on-screen tiles (just below the whole-frame render) and of the ring around them.
 const TILE_PRIORITY: u32 = 99;
+
+/// Share of a frame the loupe waits for a slider drag's update to finish so it is drawn in that
+/// frame (`Renderer::wait_for_draft`): a draft, and a full-quality update (high quality adjustment
+/// previews), which takes longer but leaves the rest of the frame as cheap.
+const DRAFT_WAIT_SHARE: f32 = 0.4;
+const FULL_WAIT_SHARE: f32 = 0.6;
+
+/// How long a frame of `frame` seconds (egui's predicted frame time) waits for a slider drag's
+/// update: a draft's share, or a full-quality update's.
+pub(crate) fn wait_budget(frame: f32, drafting: bool) -> std::time::Duration {
+    let frame = frame.clamp(1.0 / 240.0, 1.0 / 30.0);
+    let share = if drafting { DRAFT_WAIT_SHARE } else { FULL_WAIT_SHARE };
+    // (a frame time that is not a number waits for nothing)
+    std::time::Duration::try_from_secs_f32(frame * share).unwrap_or_default()
+}
 const TILE_RING_PRIORITY: u32 = 70;
 
 /// What of a `full` frame drawn in `rect` (points) is inside `visible`, in frame pixels.
@@ -949,12 +964,12 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         // a drag's draft that renders in a few ms (GPU) is drawn in this frame, not the next (zoomed
         // in, what changes on screen is the window's draft)
         // (a high quality update the GPU renders as fast is drawn at once too; a slow one returns
-        // at once: `wait_for_draft` waits only when the last render fits in the budget)
+        // at once: `wait_for_draft` waits only when the last render fits in the budget). A full-
+        // quality update (its fit done on the GPU, ~5 ms) gets more of the frame than a draft:
+        // the frame around it is cheap, and missing the frame cost every such update one more.
         #[cfg(not(target_arch = "wasm32"))]
         if interacting && plan.window_edge.is_none() {
-            let frame = ui.input(|i| i.predicted_dt).clamp(1.0 / 240.0, 1.0 / 30.0);
-            // (a frame time that is not a number waits for nothing)
-            let budget = std::time::Duration::try_from_secs_f32(frame * 0.4).unwrap_or_default();
+            let budget = wait_budget(ui.input(|i| i.predicted_dt), drafting);
             app.renderer.wait_for_draft(ui.ctx(), &mut app.session, budget);
         }
     }

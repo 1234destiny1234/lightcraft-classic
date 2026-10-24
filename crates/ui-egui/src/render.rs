@@ -1293,7 +1293,7 @@ impl Renderer {
     /// that would only make the frame late is not waited for).
     #[cfg(not(target_arch = "wasm32"))]
     pub fn wait_for_draft(&mut self, ctx: &egui::Context, session: &mut Session, budget: std::time::Duration) {
-        if self.offload.is_some() || self.last_main_ms * 1.5 >= budget.as_secs_f64() * 1e3 {
+        if !self.waits_for_draft(budget) {
             return;
         }
         let Some(deadline) = std::time::Instant::now().checked_add(budget) else { return };
@@ -1304,6 +1304,13 @@ impl Renderer {
             }
             self.collect(ctx, session, 0.0);
         }
+    }
+
+    /// Whether [`Self::wait_for_draft`] waits at all with `budget`: only when the last loupe render
+    /// took well under it.
+    #[cfg(not(target_arch = "wasm32"))]
+    fn waits_for_draft(&self, budget: std::time::Duration) -> bool {
+        self.offload.is_none() && self.last_main_ms * 1.5 < budget.as_secs_f64() * 1e3
     }
 
     /// Turn finished jobs into textures. Returns true if anything changed.
@@ -1784,6 +1791,22 @@ mod thumbnail_tests {
         r.wait_for_draft(&ctx, &mut s, budget);
         assert!(!r.is_pending(Slot::Main));
         assert_eq!(r.textures.get(&Slot::Main).map(|t| t.key), want);
+    }
+
+    // Given a 60 Hz display, a high quality adjustment update as fast as the GPU display fit makes
+    // it (~5 ms) is waited for, so it is drawn in the frame that asked for it; a draft that slow is
+    // not (its share of the frame is smaller), and neither is the update on a 144 Hz display
+    #[cfg(not(target_arch = "wasm32"))]
+    #[test]
+    fn a_fast_full_quality_update_is_waited_for_at_60_hz() {
+        let mut r = Renderer::with_worker_threads(1);
+        r.last_main_ms = 5.0;
+        let budget = crate::panels::detail::wait_budget;
+        assert!(r.waits_for_draft(budget(1.0 / 60.0, false)), "a full-quality update at 60 Hz");
+        assert!(!r.waits_for_draft(budget(1.0 / 60.0, true)), "a draft as slow");
+        assert!(!r.waits_for_draft(budget(1.0 / 144.0, false)), "at 144 Hz");
+        // (a frame time that is not a number waits for nothing)
+        assert!(!r.waits_for_draft(budget(f32::NAN, false)));
     }
 
     #[derive(Default)]

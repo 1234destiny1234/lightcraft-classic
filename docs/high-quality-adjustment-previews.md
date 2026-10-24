@@ -80,6 +80,10 @@ three of the raws): a high quality update renders in 4.9 ms instead of 21.9 and 
 updates/s (adaptive: 60.7); one update on its own still takes ~63 ms (adaptive: 35). HDR edits
 shown in HDR are unchanged (their HDR view has no display fit).
 
+A full-quality update now gets 60 % of a frame to finish in and be drawn in the frame that asked
+for it (`panels::detail::wait_budget`; drafts keep 40 %): one update on its own 48.7 → 41.6 ms
+(median; half of them now take ~35 ms, as drafts do), the slowest UI frame of a drag 1.8 → 6.9 ms.
+
 ## Tests
 
 `crates/ui-egui/src/tests_adjustment_quality.rs` (headless, procedural photo): preference round
