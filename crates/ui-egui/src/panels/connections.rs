@@ -723,7 +723,8 @@ fn account_card(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &V
         if let Some(e) = link["error"].as_str() {
             ui.label(RichText::new(e).color(t.caution));
         }
-        ui.horizontal(|ui| {
+        // (wraps: on a narrow window the buttons take two rows instead of running off the edge)
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             if text_button(ui, &format!("immichLink-{i}"), crate::i18n::tr("Link Now"), false).clicked() {
                 let _ = app.run("immich.link", json!({"account": id}));
