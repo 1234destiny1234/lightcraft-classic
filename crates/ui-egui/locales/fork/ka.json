@@ -88,5 +88,8 @@
   "Tone": "ტონი",
   "Colour": "ფერი",
   "High quality adjustment previews": "მაღალი ხარისხის გადახედვა კორექტირებისას",
-  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "რეგულირებისას გამოსახულების ხარისხს უცვლელად ინარჩუნებს. თუ ჩასწორება ამისთვის ზედმეტად ნელია, სლაიდერის მოძრაობისას გამოსახულება უფრო სწრაფად განახლდება და გაჩერებისთანავე გამკვეთრდება."
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "რეგულირებისას გამოსახულების ხარისხს უცვლელად ინარჩუნებს. თუ ჩასწორება ამისთვის ზედმეტად ნელია, სლაიდერის მოძრაობისას გამოსახულება უფრო სწრაფად განახლდება და გაჩერებისთანავე გამკვეთრდება.",
+  "Preview for SDR Display": "SDR ეკრანის გადახედვა",
+  "Show the photo as SDR displays and SDR exports show it, to adjust its SDR Rendition": "აჩვენებს ფოტოს ისე, როგორც SDR ეკრანები და SDR ექსპორტი აჩვენებს, მისი SDR ვერსიის მოსარგებად",
+  "These set how the photo looks on SDR displays and in SDR exports. Turn on Preview for SDR Display to see them.": "ესენი განსაზღვრავს, როგორ გამოიყურება ფოტო SDR ეკრანებზე და SDR ექსპორტში. მათ სანახავად ჩართეთ „SDR ეკრანის გადახედვა“."
 }
