@@ -30,24 +30,14 @@ use crate::state::Dialog;
 use crate::theme::Tokens;
 use crate::widgets::register;
 
-/// The header of a full screen or sheet.
-const HEADER_H: f32 = 56.0;
-/// A row of the category list.
-const ROW_H: f32 = 56.0;
-/// The category list's width beside the open category (tablet).
-const LIST_W: f32 = 240.0;
 /// Short side, in points, from which Settings is a sheet rather than a full screen.
 const TABLET: f32 = 600.0;
 
 /// What the touch screens remember between frames (`LccApp::modern_sheets`).
 #[derive(Default)]
 pub struct ModernSheets {
-    /// Settings was showing last frame (so a fresh opening starts on the category list).
-    settings_seen: bool,
-    /// Phone: a category's page is open (rather than the list).
-    pub settings_detail: bool,
-    /// Settings was last drawn as a phone screen (the list and a category's page one at a time).
-    settings_phone: bool,
+    /// Settings' rail and search ([`crate::settings_screen`]).
+    pub settings: crate::settings_screen::SettingsScreen,
     /// The Export sheet, while it is open.
     pub export: Option<ExportSheet>,
     /// The sheet's choices last time (the next opening starts from them).
@@ -141,24 +131,21 @@ const PRESETS: [(&str, &str, ExportChoice); 4] = [
 const SIZES: [(u32, &str); 4] = [(0, "Full"), (4096, "4096"), (2048, "2048"), (1080, "1080")];
 const QUALITIES: [(u8, &str); 4] = [(60, "60"), (80, "80"), (90, "90"), (100, "100")];
 
-/// Per frame, before the dialogs: the hand-off of finished exports, the Export sheet, and (touch
-/// layout) Settings as a touch screen. True when Settings was drawn here (the desktop dialog is
-/// then skipped).
+/// Per frame, before the dialogs: the hand-off of finished exports, the Export sheet (Modern
+/// layout), and Settings ([`crate::settings_screen`], every layout). True when Settings was drawn
+/// here (the dialogs then skip it).
 pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) -> bool {
     poll(app, ctx);
     if !crate::modern::on(app) {
-        app.modern_sheets.settings_seen = false;
         app.modern_sheets.export = None;
-        return false;
-    }
-    if app.ui.dialog.is_none() && app.modern_sheets.export.is_some() {
+    } else if app.ui.dialog.is_none() && app.modern_sheets.export.is_some() {
         export_sheet(app, ctx);
     }
     if matches!(app.ui.dialog, Some(Dialog::Settings { .. })) {
-        settings(app, ctx);
+        crate::settings_screen::show(app, ctx);
         return true;
     }
-    app.modern_sheets.settings_seen = false;
+    app.modern_sheets.settings = Default::default();
     false
 }
 
@@ -170,12 +157,8 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
     if app.ui.dialog.is_none() && app.modern_sheets.export.take().is_some() {
         return Some("export");
     }
-    let settings = matches!(app.ui.dialog, Some(Dialog::Settings { .. }));
-    if settings && app.modern_sheets.settings_seen && app.modern_sheets.settings_phone && app.modern_sheets.settings_detail {
-        app.modern_sheets.settings_detail = false;
-        return Some("settingsPage");
-    }
-    None
+    let ctx = app.tasks.repaint.clone()?;
+    crate::settings_screen::back(app, &ctx)
 }
 
 fn dim(ctx: &egui::Context, screen: Rect) {
@@ -184,178 +167,6 @@ fn dim(ctx: &egui::Context, screen: Rect) {
         let (r, _) = ui.allocate_exact_size(screen.size(), Sense::click());
         ui.painter().rect_filled(r, 0.0, egui::Color32::from_black_alpha(140));
     });
-}
-
-// ------------------------------------------------------------------------ Settings
-
-fn settings(app: &mut LccApp, ctx: &egui::Context) {
-    let Some(Dialog::Settings { tab }) = app.ui.dialog.clone() else { return };
-    let mut tab = tab;
-    let screen = ctx.content_rect();
-    let phone = screen.width().min(screen.height()) < TABLET;
-    app.modern_sheets.settings_phone = phone;
-    if !app.modern_sheets.settings_seen {
-        app.modern_sheets.settings_seen = true;
-        // a category asked for by name opens straight away; Settings on its own, the list
-        app.modern_sheets.settings_detail = tab != "general" || app.ui.settings_section.is_some();
-    }
-    let mut close = false;
-    // Back (Esc): from a category to the list on a phone, else closes
-    if !egui::Popup::is_any_open(ctx) && ctx.input_mut(|i| i.consume_key(egui::Modifiers::NONE, egui::Key::Escape)) {
-        if phone && app.modern_sheets.settings_detail {
-            app.modern_sheets.settings_detail = false;
-        } else {
-            close = true;
-        }
-    }
-    let rect = if phone {
-        screen
-    } else {
-        dim(ctx, screen);
-        Rect::from_center_size(screen.center(), vec2((screen.width() - 48.0).min(1000.0), (screen.height() - 48.0).min(860.0)))
-    };
-    let t = Tokens::get(ctx);
-    egui::Area::new(Id::new("modern-settings")).order(egui::Order::Foreground).fixed_pos(rect.min).show(ctx, |ui| {
-        let (bg, _) = ui.allocate_exact_size(rect.size(), Sense::click());
-        ui.painter().rect_filled(bg, if phone { 0.0 } else { 16.0 }, t.chrome);
-        if !phone {
-            ui.painter().rect_stroke(bg, 16.0, Stroke::new(1.0, t.divider), egui::StrokeKind::Inside);
-        }
-        let header = Rect::from_min_size(bg.min, vec2(bg.width(), HEADER_H));
-        let detail_open = phone && app.modern_sheets.settings_detail;
-        let label =
-            |id: &str| crate::panels::settings::TABS.iter().find(|(i, _)| *i == id).map_or(id.to_string(), |(_, l)| crate::i18n::tr(l).to_string());
-        let title = if detail_open { label(&tab) } else { crate::i18n::tr("Settings").to_string() };
-        let mut x = header.left() + 16.0;
-        if detail_open {
-            let back = Rect::from_min_size(pos2(header.left() + 6.0, header.center().y - 22.0), Vec2::splat(44.0));
-            if round_button(ui, back, "modern:settings:back", Icon::ChevronLeft, "Back", false, true).clicked() {
-                app.modern_sheets.settings_detail = false;
-            }
-            x = back.right() + 6.0;
-        }
-        ui.painter().text(pos2(x, header.center().y), Align2::LEFT_CENTER, title, t.semibold(19.0), t.text);
-        let shut = Rect::from_min_size(pos2(header.right() - 50.0, header.center().y - 22.0), Vec2::splat(44.0));
-        if round_button(ui, shut, "modern:settings:close", Icon::Close, "Close", false, true).clicked() {
-            close = true;
-        }
-        ui.painter().hline(bg.x_range(), header.bottom(), Stroke::new(1.0, t.divider));
-        let body = Rect::from_min_max(pos2(bg.left(), header.bottom() + 1.0), bg.max);
-        if phone {
-            if app.modern_sheets.settings_detail {
-                detail(app, ui, body, &tab, true);
-            } else if let Some(picked) = category_list(ui, body, &tab, false) {
-                tab = picked;
-                app.modern_sheets.settings_detail = true;
-            }
-        } else {
-            let list = Rect::from_min_size(body.min, vec2(LIST_W.min(body.width() * 0.4), body.height()));
-            if let Some(picked) = category_list(ui, list, &tab, true) {
-                tab = picked;
-            }
-            ui.painter().vline(list.right(), body.y_range(), Stroke::new(1.0, t.divider));
-            let right = Rect::from_min_max(pos2(list.right() + 1.0, body.top()), body.max);
-            detail(app, ui, right, &tab, right.width() < 520.0);
-        }
-    });
-    if close {
-        app.ui.dialog = None;
-        app.ui.settings_section = None;
-        app.modern_sheets.settings_seen = false;
-        return;
-    }
-    // the rows may have closed Settings or opened another dialog (e.g. a folder picker's)
-    if let Some(Dialog::Settings { tab: now }) = &mut app.ui.dialog {
-        *now = tab;
-    }
-}
-
-/// The categories, one big row each; returns the one tapped. `selected` marks the open one
-/// (tablet, where it shows beside the list).
-fn category_list(ui: &mut egui::Ui, area: Rect, open: &str, selected: bool) -> Option<String> {
-    let t = Tokens::get(ui.ctx());
-    let mut picked = None;
-    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(area));
-    egui::ScrollArea::vertical().id_salt("modern-settings-list").auto_shrink([false, false]).show(&mut inner, |ui| {
-        ui.spacing_mut().item_spacing.y = 0.0;
-        for (id, label) in crate::panels::settings::TABS {
-            #[cfg(target_arch = "wasm32")]
-            if matches!(*id, "connections" | "sync") {
-                continue;
-            }
-            // the shortcut table needs a wide screen (and a keyboard): not on a phone's
-            if !selected && *id == "shortcuts" {
-                continue;
-            }
-            let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), ROW_H), Sense::click());
-            let name = crate::i18n::tr(label);
-            let on = selected && *id == open;
-            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, name));
-            register(ui.ctx(), format!("modern:settings:{id}"), r);
-            let p = ui.painter();
-            if on {
-                p.rect_filled(r.shrink2(vec2(8.0, 4.0)), 10.0, t.tool_active);
-            } else if resp.is_pointer_button_down_on() {
-                p.rect_filled(r.shrink2(vec2(8.0, 4.0)), 10.0, t.pressed);
-            }
-            p.text(pos2(r.left() + 20.0, r.center().y), Align2::LEFT_CENTER, name, t.font(16.0), if on { t.pick } else { t.text });
-            if !selected {
-                crate::icons::paint(
-                    p,
-                    Rect::from_center_size(pos2(r.right() - 24.0, r.center().y), Vec2::splat(18.0)),
-                    Icon::ChevronRight,
-                    t.text_dim,
-                );
-                p.hline(r.left() + 20.0..=r.right(), r.bottom() - 0.5, Stroke::new(1.0, t.divider));
-            }
-            if resp.clicked() {
-                picked = Some((*id).to_string());
-            }
-        }
-    });
-    picked
-}
-
-/// A category's rows (the desktop Settings' own), finger-sized; `stacked` puts labels above
-/// their controls.
-fn detail(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, tab: &str, stacked: bool) {
-    let t = Tokens::get(ui.ctx());
-    let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(area.shrink2(vec2(16.0, 0.0))));
-    let was = crate::dialog_frame::set_finger_sized(ui.ctx(), true);
-    egui::ScrollArea::vertical().id_salt(("modern-settings-detail", tab)).auto_shrink([false, false]).show(&mut inner, |ui| {
-        let s = ui.spacing_mut();
-        s.item_spacing = vec2(10.0, 10.0);
-        s.interact_size = vec2(48.0, 40.0);
-        s.button_padding = vec2(14.0, 8.0);
-        s.icon_width = 24.0;
-        s.icon_width_inner = 14.0;
-        s.icon_spacing = 10.0;
-        s.combo_height = 480.0;
-        for (style, size) in [(egui::TextStyle::Body, 15.0), (egui::TextStyle::Button, 15.0)] {
-            if let Some(f) = ui.style_mut().text_styles.get_mut(&style) {
-                f.size = size;
-            }
-        }
-        ui.add_space(12.0);
-        // room on both sides for the group panels
-        ui.set_width((ui.available_width() - 12.0).max(120.0));
-        let body = |ui: &mut egui::Ui| {
-            crate::dialog_frame::group_begin(ui, None);
-            if stacked && tab == "shortcuts" {
-                // (asked for by name on a phone; the list doesn't offer it there)
-                ui.label(egui::RichText::new(crate::i18n::tr("Keyboard shortcuts are edited on a wider screen.")).color(t.text_label));
-                return;
-            }
-            crate::panels::settings::tab_body(app, ui, &t, tab);
-        };
-        if stacked {
-            crate::dialog_frame::stacked_form(ui, 120.0, body);
-        } else {
-            crate::dialog_frame::form(ui, 180.0, body);
-        }
-        ui.add_space(48.0);
-    });
-    crate::dialog_frame::set_finger_sized(ui.ctx(), was);
 }
 
 // ------------------------------------------------------------------------ Export

@@ -44,22 +44,32 @@ fn touch(size: [f32; 2]) -> Headless {
     h
 }
 
+/// The width of the Settings rail's General item: icons only (narrow) or with names (the list).
+fn rail_w(h: &Headless) -> f32 {
+    h.app.widgets.iter().rev().find(|(w, _)| w == "settings:section:general").map_or(0.0, |(_, r)| r.width())
+}
+
 #[test]
-fn settings_on_a_phone_is_a_list_then_a_page_with_the_desktop_rows() {
+fn settings_on_a_phone_is_a_section_with_an_icon_rail_and_back_shows_the_list() {
     let mut h = touch(COVER);
     assert_eq!(exec(&mut h, "app.settings", json!({}))["ok"], true);
-    assert!(has(&h, "modern:settings:general") && has(&h, "modern:settings:interface"), "the categories");
-    assert!(!has(&h, "button:settingsTab-general"), "not the desktop dialog");
-    assert_eq!(click(&mut h, "modern:settings:general")["ok"], true);
-    assert!(has(&h, "modern:settings:back"), "a category's own page");
+    // a section open beside the icons of the others
+    assert!(rail_w(&h) > 0.0 && rail_w(&h) < 80.0, "icons only: {}", rail_w(&h));
+    assert!(has(&h, "settings:section:library") && has(&h, "settings:back"));
     assert!(has(&h, "button:settingsLayout-0") && has(&h, "button:settingsLayout-1"), "the Layout row");
-    // the same setting the desktop dialog changes
+    // the same setting Classic changes
+    crate::settings_screen::reveal(&mut h, "button:settingsStartup-1");
     assert_eq!(click(&mut h, "button:settingsStartup-1")["ok"], true);
     assert_eq!(h.app.ui.settings.startup_view, crate::state::StartupView::Grid, "one settings state for both layouts");
-    // Back: the list; Back again: closed
-    click(&mut h, "modern:settings:back");
-    assert!(has(&h, "modern:settings:general") && !has(&h, "modern:settings:back"));
-    click(&mut h, "modern:settings:close");
+    // Back: the list of sections (names); a pick opens one; Back again from the list closes
+    click(&mut h, "settings:back");
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a section keeps Settings open");
+    assert!(rail_w(&h) > 200.0, "the list: {}", rail_w(&h));
+    click(&mut h, "settings:section:library");
+    assert!(rail_w(&h) < 80.0, "a section again");
+    assert!(matches!(&h.app.ui.dialog, Some(Dialog::Settings { tab }) if tab == "library"));
+    click(&mut h, "settings:back");
+    click(&mut h, "settings:back");
     assert!(h.app.ui.dialog.is_none());
 }
 
@@ -79,8 +89,14 @@ fn settings_fits_both_screens_of_a_folding_phone() {
                 .map(|(w, r)| format!("{w} {r:?}"))
                 .collect();
             assert!(off.is_empty(), "{size:?} {tab}: off screen: {off:?}");
-            assert!(has(&h, "modern:settings:close"), "{size:?} {tab}: a way out");
-            click(&mut h, "modern:settings:close");
+            // a way out: ‹ (on a narrow screen twice: the list, then closed)
+            for _ in 0..2 {
+                if h.app.ui.dialog.is_some() {
+                    assert!(has(&h, "settings:back"), "{size:?} {tab}: a way out");
+                    click(&mut h, "settings:back");
+                }
+            }
+            assert!(h.app.ui.dialog.is_none(), "{size:?} {tab}: closed");
         }
     }
 }
@@ -89,16 +105,15 @@ fn settings_fits_both_screens_of_a_folding_phone() {
 fn the_layout_row_switches_both_ways_and_is_saved() {
     let mut h = touch(COVER);
     exec(&mut h, "app.settings", json!({"tab": "general"}));
-    click(&mut h, "modern:settings:general");
     assert_eq!(click(&mut h, "button:settingsLayout-0")["ok"], true);
     assert!(!h.app.ui.modern.enabled, "Classic chosen");
     // saved with the UI state (ui.json), so it holds after a restart
     let saved = serde_json::to_string(&h.app.ui).unwrap();
     let back: crate::state::UiState = serde_json::from_str(&saved).unwrap();
     assert!(!back.modern.enabled);
-    // the desktop dialog has the same row: the way back
+    // Classic shows the same Settings, with the same row: the way back
     h.settle(SETTLE);
-    assert!(has(&h, "button:settingsTab-general"), "the desktop Settings dialog");
+    assert!(has(&h, "settings:section:general"), "Settings in Classic");
     assert_eq!(click(&mut h, "button:settingsLayout-1")["ok"], true);
     assert!(h.app.ui.modern.enabled, "Modern chosen");
     let back: crate::state::UiState = serde_json::from_str(&serde_json::to_string(&h.app.ui).unwrap()).unwrap();
@@ -223,13 +238,12 @@ fn back_leaves_a_settings_page_for_the_list_then_closes_and_closes_the_export_sh
         assert_eq!(r["ok"], true, "{r}");
         r["result"]["closed"].clone()
     };
-    // Settings on a phone: a category's page, then the list, then closed
+    // Settings on a phone: a section, then the list of sections, then closed
     exec(&mut h, "app.settings", json!({}));
-    click(&mut h, "modern:settings:general");
-    assert!(has(&h, "modern:settings:back"), "a category's page");
-    assert_eq!(back(&mut h), "settingsPage");
-    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a page keeps Settings open");
-    assert!(has(&h, "modern:settings:general") && !has(&h, "modern:settings:back"), "on the category list");
+    assert!(rail_w(&h) < 80.0, "a section with the icon rail");
+    assert_eq!(back(&mut h), "settingsList");
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a section keeps Settings open");
+    assert!(rail_w(&h) > 200.0, "on the list of sections");
     back(&mut h);
     assert!(h.app.ui.dialog.is_none(), "Back on the list closes Settings");
 

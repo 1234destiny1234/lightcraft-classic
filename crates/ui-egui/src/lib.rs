@@ -65,6 +65,7 @@ pub mod reload;
 pub mod render;
 pub mod render_dng_task;
 /// The module shell's frame steps (fork-owned).
+pub mod settings_screen;
 mod shell;
 pub mod shortcuts;
 pub mod sidebar;

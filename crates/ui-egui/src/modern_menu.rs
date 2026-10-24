@@ -103,6 +103,12 @@ pub(crate) fn show(app: &mut LccApp, ui: &egui::Ui, area: Rect, left: f32, top: 
         // as a menu: rows without button frames, on one line each
         ui.style_mut().visuals.button_frame = false;
         ui.style_mut().wrap_mode = Some(egui::TextWrapMode::Extend);
+        // its submenus (popups of their own) take the same glass
+        let v = &mut ui.style_mut().visuals;
+        v.window_fill = t.chrome.gamma_multiply(0.94);
+        v.window_stroke = Stroke::new(1.0, Color32::from_white_alpha(28));
+        v.window_corner_radius = egui::CornerRadius::same(12);
+        v.window_shadow = egui::epaint::Shadow::NONE;
         egui::Frame::NONE
             .fill(t.chrome.gamma_multiply(0.94))
             .stroke(Stroke::new(1.0, Color32::from_white_alpha(28)))

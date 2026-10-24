@@ -1193,9 +1193,62 @@ fn text_button_sized(ui: &mut Ui, id: &str, label: &str, active: bool, width: Op
     let p = ui.painter();
     // #122: an "on" choice gets a brighter edge as well as a brighter fill, so it reads as selected.
     let edge = if active { t.text_dim } else { t.button_border };
-    p.rect(r, CornerRadius::same(4), fill, Stroke::new(1.0, edge), StrokeKind::Inside);
+    p.rect(r, CornerRadius::same(if finger { 10 } else { 6 }), fill, Stroke::new(1.0, edge), StrokeKind::Inside);
     p.with_clip_rect(r.intersect(p.clip_rect())).galley(r.center() - galley.size() / 2.0, galley, t.text);
     resp
+}
+
+/// A segmented choice: the options side by side in one rounded track, the chosen one raised on a
+/// soft highlight. Each option is a button registered `button:{id}-{i}`; returns the one clicked.
+/// Wraps onto further rows when the options don't fit. Own design.
+pub fn segments(ui: &mut Ui, id: &str, labels: &[&str], chosen: Option<usize>) -> Option<usize> {
+    let t = Tokens::get(ui.ctx());
+    let finger = crate::dialog_frame::finger_sized(ui);
+    let font = t.semibold(if finger { 13.5 } else { 11.5 });
+    let (h, pad) = if finger { (34.0, 3.0) } else { (24.0, 2.0) };
+    let widths: Vec<f32> = labels
+        .iter()
+        .map(|l| ui.painter().layout_no_wrap(crate::i18n::tr(l).to_string(), font.clone(), t.text).size().x + if finger { 26.0 } else { 16.0 })
+        .collect();
+    let total = widths.iter().sum::<f32>() + 2.0 * pad;
+    let mut clicked = None;
+    let one_row = total <= ui.available_width();
+    let draw = |ui: &mut Ui, range: std::ops::Range<usize>, clicked: &mut Option<usize>| {
+        let w = range.clone().map(|i| widths.get(i).copied().unwrap_or(0.0)).sum::<f32>() + 2.0 * pad;
+        let (track, _) = ui.allocate_exact_size(vec2(w, h + 2.0 * pad), Sense::hover());
+        ui.painter().rect_filled(track, (h + 2.0 * pad) / 2.0, t.button);
+        let mut x = track.left() + pad;
+        for i in range {
+            let cw = widths.get(i).copied().unwrap_or(0.0);
+            let cell = Rect::from_min_size(pos2(x, track.top() + pad), vec2(cw, h));
+            x += cw;
+            let label = crate::i18n::tr(labels.get(i).copied().unwrap_or(""));
+            let resp = ui.interact(cell, ui.id().with((id, i)), Sense::click());
+            let on = chosen == Some(i);
+            resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, on, label));
+            register(ui.ctx(), format!("button:{id}-{i}"), cell);
+            if on {
+                ui.painter().rect(cell, h / 2.0, t.pressed, Stroke::new(1.0, t.text_dim.gamma_multiply(0.5)), StrokeKind::Inside);
+            } else if resp.hovered() {
+                ui.painter().rect_filled(cell, h / 2.0, t.hover);
+            }
+            ui.painter().text(cell.center(), Align2::CENTER_CENTER, label, font.clone(), if on { t.text } else { t.text_label });
+            if resp.clicked() {
+                *clicked = Some(i);
+            }
+        }
+    };
+    if one_row {
+        draw(ui, 0..labels.len(), &mut clicked);
+    } else {
+        // too wide for one track: one per option, wrapping
+        ui.horizontal_wrapped(|ui| {
+            for i in 0..labels.len() {
+                draw(ui, i..i + 1, &mut clicked);
+            }
+        });
+    }
+    clicked
 }
 
 /// The width each of `n` buttons gets when they share `room` points, `gap` apart.

@@ -173,7 +173,8 @@ fn window_id(dialog: &Dialog) -> egui::Id {
         Dialog::Import { .. } => "app-import-dialog",
         Dialog::Print => "app-print-dialog",
         Dialog::Export { .. } => "app-export-dialog",
-        Dialog::Settings { .. } => "app-settings-dialog",
+        // (the Settings screen's own layer: `settings_screen::LAYER`)
+        Dialog::Settings { .. } => crate::settings_screen::LAYER,
         _ => "app-dialog",
     })
 }
