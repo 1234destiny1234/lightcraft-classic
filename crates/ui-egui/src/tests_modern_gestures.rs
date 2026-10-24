@@ -258,6 +258,13 @@ fn the_histogram_switches_size_moves_snaps_and_has_a_menu() {
     assert!(rect(&h, "modern:histogram:corner").is_some(), "its menu");
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:corner"}));
     assert_eq!(h.app.ui.modern.histogram_at, [1.0, 0.0]);
+    // its type and scale: the same setting as Classic's panel
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram", "button": "right"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:mode:parade"}));
+    assert_eq!(h.app.ui.histogram_mode, "parade");
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram", "button": "right"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:scale:logarithmic"}));
+    assert_eq!(h.app.ui.histogram_scale, "logarithmic");
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram", "button": "right"}));
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogram:hide"}));
     assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Off);

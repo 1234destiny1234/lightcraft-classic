@@ -410,7 +410,7 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
                 } else if g == Group::Presets {
                     crate::panels::presets::show(app, ui, crate::module::DEVELOP_LEFT, false);
                 } else {
-                    crate::panels::right::show(app, ui);
+                    crate::panels::right::tool_only(app, ui);
                 }
             });
         });

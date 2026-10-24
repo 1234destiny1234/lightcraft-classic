@@ -114,6 +114,9 @@ fn the_tools_open_their_panels_and_dodge_starts_a_lightening_brush() {
     exec(&mut h, "modern.chrome", json!({"on": true}));
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:crop"}));
     assert_eq!(h.app.ui.right, crate::state::RightPanel::Crop);
+    // the card holds the crop's own controls, not Classic's histogram and Previous / Reset bar
+    let card = h.app.widgets.iter().rev().find(|(w, _)| w == "modern:card").map(|(_, r)| *r).unwrap();
+    assert!(!h.app.widgets.iter().any(|(w, r)| w.starts_with("histogram") && card.intersects(*r)), "no histogram in the crop card");
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:crop"}));
     assert_eq!(h.app.ui.right, crate::state::RightPanel::Edit, "closing a tool leaves its overlay");
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:group:dodge"}));

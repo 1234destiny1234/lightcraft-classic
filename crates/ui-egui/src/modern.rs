@@ -770,9 +770,12 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect) {
         return;
     }
     let Some(id) = app.session.active() else { return };
-    let hist = crate::panels::edit::preview_histogram(app, id);
+    // the same type and scale as Classic's panel (View ▸ Histogram Mode); the waveforms need a
+    // small render of their own, as the panel's do
     let scale = crate::panels::histogram::scale_of(app);
-    let mode = lcc_raster::HistogramMode::default();
+    let mode = crate::panels::histogram::mode_of(app);
+    let preview = crate::panels::edit::preview_histogram(app, id);
+    let hist = crate::panels::edit::panel_render_histogram(app, id, mode, preview);
     let t = Tokens::get(ui.ctx());
     let phone = Form::of(ui.ctx().content_rect().size()).phone();
     let large = place == HistogramPlace::Large;
@@ -865,37 +868,65 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect) {
     histogram_menu(app, &ctx, area, large);
 }
 
-/// The histogram's menu: size, back to the corner, hide.
+/// The histogram's menu: its type (RGB, luminance, … waveform, RGB parade), linear or log scale,
+/// size, back to the corner, hide.
 fn histogram_menu(app: &mut LccApp, ctx: &egui::Context, area: Rect, large: bool) {
     let Some(at) = app.ui.modern.histogram_menu else { return };
     let t = Tokens::get(ctx);
-    let items: [(&str, &str); 3] = [(if large { "Small" } else { "Large" }, "size"), ("Back to the Corner", "corner"), ("Hide Histogram", "hide")];
-    let size = vec2(220.0, 8.0 + 40.0 * items.len() as f32);
+    let mode = crate::panels::histogram::mode_of(app);
+    let scale = crate::panels::histogram::scale_of(app);
+    // (label, key, ticked); "" is a divider
+    let mut items: Vec<(String, String, bool)> =
+        lcc_raster::HistogramMode::ALL.iter().map(|m| (crate::i18n::tr(m.label()).to_string(), format!("mode:{}", m.name()), *m == mode)).collect();
+    items.push((String::new(), String::new(), false));
+    for s in lcc_raster::HistogramScale::ALL {
+        items.push((crate::i18n::tr(s.label()).to_string(), format!("scale:{}", s.name()), s == scale));
+    }
+    items.push((String::new(), String::new(), false));
+    items.push((crate::i18n::tr(if large { "Small" } else { "Large" }).to_string(), "size".into(), false));
+    items.push((crate::i18n::tr("Back to the Corner").to_string(), "corner".into(), false));
+    items.push((crate::i18n::tr("Hide Histogram").to_string(), "hide".into(), false));
+    const ROW: f32 = 34.0;
+    const GAP: f32 = 9.0;
+    let height = 8.0 + items.iter().map(|(l, _, _)| if l.is_empty() { GAP } else { ROW }).sum::<f32>();
+    let size = vec2(230.0, height.min(area.height() - 16.0));
     let min = pos2(at.x.min(area.right() - size.x - 8.0).max(area.left() + 8.0), at.y.min(area.bottom() - size.y - 8.0).max(area.top() + 8.0));
-    let mut chosen = None;
+    let mut chosen: Option<String> = None;
     egui::Area::new(Id::new("modern-histogram-menu")).fixed_pos(min).order(egui::Order::Foreground).show(ctx, |ui| {
         let (bg, _) = ui.allocate_exact_size(size, Sense::hover());
         register(ui.ctx(), "modern:histogramMenu", bg);
         glass(ui.painter(), bg, 12.0, &t);
-        for (i, (label, key)) in items.iter().enumerate() {
-            let row = Rect::from_min_size(pos2(bg.left() + 4.0, bg.top() + 4.0 + 40.0 * i as f32), vec2(size.x - 8.0, 40.0));
+        let mut y = bg.top() + 4.0;
+        for (label, key, ticked) in &items {
+            if label.is_empty() {
+                ui.painter().hline(bg.x_range().shrink(10.0), y + GAP / 2.0, Stroke::new(1.0, Color32::from_white_alpha(30)));
+                y += GAP;
+                continue;
+            }
+            let row = Rect::from_min_size(pos2(bg.left() + 4.0, y), vec2(size.x - 8.0, ROW));
+            y += ROW;
             let id = format!("modern:histogram:{key}");
-            let resp = ui.interact(row, Id::new(&id), Sense::click());
+            let resp = ui.interact(row, ui.id().with(&id), Sense::click());
             register(ui.ctx(), id, row);
             if resp.hovered() || resp.is_pointer_button_down_on() {
                 ui.painter().rect_filled(row, 8.0, Color32::from_white_alpha(22));
             }
-            ui.painter().text(pos2(row.left() + 12.0, row.center().y), Align2::LEFT_CENTER, crate::i18n::tr(label), t.font(14.0), t.text);
+            if *ticked {
+                paint(ui.painter(), Rect::from_center_size(pos2(row.left() + 14.0, row.center().y), Vec2::splat(14.0)), Icon::Check, t.accent);
+            }
+            ui.painter().text(pos2(row.left() + 28.0, row.center().y), Align2::LEFT_CENTER, label, t.font(14.0), t.text);
             if resp.clicked() {
-                chosen = Some(*key);
+                chosen = Some(key.clone());
             }
         }
     });
     let away = ctx.input(|i| i.pointer.any_click() && i.pointer.interact_pos().is_some_and(|p| !Rect::from_min_size(min, size).contains(p)));
-    match chosen {
+    match chosen.as_deref() {
         Some("size") => app.ui.modern.histogram = if large { HistogramPlace::Small } else { HistogramPlace::Large },
         Some("corner") => app.ui.modern.histogram_at = [1.0, 0.0],
         Some("hide") => app.ui.modern.histogram = HistogramPlace::Off,
+        Some(k) if k.starts_with("mode:") => app.ui.histogram_mode = k.trim_start_matches("mode:").to_string(),
+        Some(k) if k.starts_with("scale:") => app.ui.histogram_scale = k.trim_start_matches("scale:").to_string(),
         _ => {}
     }
     if chosen.is_some() || away {
