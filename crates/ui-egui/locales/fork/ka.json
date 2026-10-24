@@ -86,5 +86,7 @@
   "Blue/Yellow": "ლურჯი/ყვითელი",
   "Headroom": "HDR მარაგი",
   "Tone": "ტონი",
-  "Colour": "ფერი"
+  "Colour": "ფერი",
+  "High quality adjustment previews": "მაღალი ხარისხის გადახედვა კორექტირებისას",
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "რეგულირებისას გამოსახულების ხარისხს უცვლელად ინარჩუნებს. თუ ჩასწორება ამისთვის ზედმეტად ნელია, სლაიდერის მოძრაობისას გამოსახულება უფრო სწრაფად განახლდება და გაჩერებისთანავე გამკვეთრდება."
 }

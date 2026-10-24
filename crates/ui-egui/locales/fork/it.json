@@ -85,5 +85,7 @@
   "Red/Cyan": "Rosso/ciano",
   "Blue/Yellow": "Blu/giallo",
   "Headroom": "Margine HDR",
-  "Tone": "Tono"
+  "Tone": "Tono",
+  "High quality adjustment previews": "Anteprime delle regolazioni di alta qualità",
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Mantiene la stessa qualità dell’immagine durante le regolazioni. Se una modifica è troppo lenta per farlo, l’immagine si aggiorna più velocemente mentre un cursore si muove e torna nitida appena si ferma."
 }

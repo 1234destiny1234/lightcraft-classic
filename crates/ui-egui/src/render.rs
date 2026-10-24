@@ -298,6 +298,9 @@ pub struct Renderer {
     /// The loupe's uploaded HDR texture.
     pub hdr_view: HashMap<u8, HdrView>,
     hdr_geometry: HashMap<u8, HdrGeometry>,
+    /// How long each view's latest HDR render took (ms): what a high quality drag times when the
+    /// HDR texture is what shows it.
+    pub hdr_view_ms: HashMap<u8, f64>,
     pub last_main_ms: f64,
     /// Jobs finished since start (for inspect/perf).
     pub completed: u64,
@@ -395,6 +398,7 @@ impl Renderer {
             hdr_view_result: HashMap::new(),
             hdr_view: HashMap::new(),
             hdr_geometry: HashMap::new(),
+            hdr_view_ms: HashMap::new(),
             last_main_ms: 0.0,
             completed: 0,
             keep_pixels: false,
@@ -773,6 +777,7 @@ impl Renderer {
         self.hdr_view.clear();
         self.hdr_view_result.clear();
         self.hdr_geometry.clear();
+        self.hdr_view_ms.clear();
     }
 
     /// Ask for the drag window of `pane` ([`Slot::Window`]): `job` renders `geom.window` of the
@@ -1147,6 +1152,7 @@ impl Renderer {
             if let Slot::HdrView(view) = slot {
                 if let Some(deep) = rendered.deep {
                     self.hdr_view_result.insert(view, (r.photo, r.key, deep));
+                    self.hdr_view_ms.insert(view, ms);
                     changed = true;
                 }
                 continue;
@@ -1885,29 +1891,32 @@ mod thumbnail_tests {
 
     #[test]
     fn loupe_shows_superseded_drafts_newer_than_its_pixels_during_a_drag() {
-        let (mut app, work, ctx) = fixture();
-        let mut jobs = Vec::new();
-        for exposure in [0.0, 1.0, 2.0] {
-            let mut edit = lcc_develop::DevelopSettings::default();
-            edit.light.exposure = exposure;
-            app.session.catalog.apply(Op::SetDevelop { id: PhotoId(1), settings: Arc::new(edit), label: "drag".into(), edited: None }).unwrap();
-            let job = app.session.loupe_job(PhotoId(1), 8, 8, true).unwrap().draft();
-            app.renderer.request(Slot::Main, job, 100);
-            jobs.push(take_job(&work).1);
+        for draft in [true, false] {
+            let (mut app, work, ctx) = fixture();
+            let mut jobs = Vec::new();
+            for exposure in [0.0, 1.0, 2.0] {
+                let mut edit = lcc_develop::DevelopSettings::default();
+                edit.light.exposure = exposure;
+                app.session.catalog.apply(Op::SetDevelop { id: PhotoId(1), settings: Arc::new(edit), label: "drag".into(), edited: None }).unwrap();
+                let job = app.session.loupe_job(PhotoId(1), 8, 8, true).unwrap();
+                let job = if draft { job.draft() } else { job };
+                app.renderer.request(Slot::Main, job, 100);
+                jobs.push(take_job(&work).1);
+            }
+            let keys: Vec<u64> = jobs.iter().map(|j| j.key).collect();
+            let mut jobs = jobs.into_iter();
+            let (first, second, last) = (jobs.next().unwrap(), jobs.next().unwrap(), jobs.next().unwrap());
+            // the first draft lands while the newest is still rendering: the loupe moves on
+            finish(&mut app, &work, &ctx, Slot::Main, first.run());
+            assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[0]));
+            assert!(app.renderer.is_pending(Slot::Main));
+            finish(&mut app, &work, &ctx, Slot::Main, last.run());
+            assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[2]));
+            // a draft older than the pixels shown never replaces them
+            finish(&mut app, &work, &ctx, Slot::Main, second.run());
+            assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[2]));
+            assert!(!app.renderer.is_pending(Slot::Main));
         }
-        let keys: Vec<u64> = jobs.iter().map(|j| j.key).collect();
-        let mut jobs = jobs.into_iter();
-        let (first, second, last) = (jobs.next().unwrap(), jobs.next().unwrap(), jobs.next().unwrap());
-        // the first draft lands while the newest is still rendering: the loupe moves on
-        finish(&mut app, &work, &ctx, Slot::Main, first.run());
-        assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[0]));
-        assert!(app.renderer.is_pending(Slot::Main));
-        finish(&mut app, &work, &ctx, Slot::Main, last.run());
-        assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[2]));
-        // a draft older than the pixels shown never replaces them
-        finish(&mut app, &work, &ctx, Slot::Main, second.run());
-        assert_eq!(app.renderer.textures.get(&Slot::Main).map(|t| t.key), Some(keys[2]));
-        assert!(!app.renderer.is_pending(Slot::Main));
     }
 
     #[test]

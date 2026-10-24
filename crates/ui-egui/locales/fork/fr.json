@@ -1410,5 +1410,7 @@
   "Hue High": "Teinte haute",
   "Red/Cyan": "Rouge/cyan",
   "Blue/Yellow": "Bleu/jaune",
-  "No horizon or vertical lines to level by": "Aucun horizon ni ligne verticale pour redresser"
+  "No horizon or vertical lines to level by": "Aucun horizon ni ligne verticale pour redresser",
+  "High quality adjustment previews": "Aperçus des réglages en haute qualité",
+  "Keeps image quality consistent while adjusting. When an edit is too slow for that, the image updates faster while a slider moves and sharpens as soon as it stops.": "Conserve la même qualité d’image pendant les réglages. Si une retouche est trop lente pour cela, l’image se met à jour plus vite pendant qu’un curseur bouge et redevient nette dès qu’il s’arrête."
 }
