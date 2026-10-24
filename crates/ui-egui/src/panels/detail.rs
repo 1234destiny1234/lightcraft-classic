@@ -653,9 +653,10 @@ pub(crate) fn draw_window(p: &egui::Painter, app: &mut LccApp, c: &WindowCtx, v:
     };
     if view.photo == c.id {
         match hdr_window(app, c, v, full) {
+            // (an older window, while the new one renders, where it belongs: after a pan only the
+            // part newly on screen is soft)
             HdrPane::Frame(tex) => {
-                let win = crate::region::window_for(full.0, full.1, visible_px(full, v.target, v.visible), crate::region::max_span(c.texture_side));
-                p.image(tex.tex, place(win.unwrap_or(view.window)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
+                p.image(tex.tex, place(tex.window.unwrap_or(view.window)), Rect::from_min_max(pos2(0.0, 0.0), pos2(1.0, 1.0)), Color32::WHITE);
                 return;
             }
             HdrPane::Pending => return,
@@ -1935,6 +1936,9 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
     let job = hdr_view_job(job, headroom);
     app.renderer.prepare_hdr_view(view, &job);
     let key = job.key;
+    if app.renderer.hdr_view.get(&view).is_some_and(|v| v.key != key) && app.renderer.reuse_hdr(view, key) {
+        return Some(key);
+    }
     if app.renderer.hdr_view.get(&view).is_none_or(|v| v.key != key) || app.renderer.wanted(Slot::HdrView(view)).is_some_and(|pending| pending != key)
     {
         app.renderer.request(Slot::HdrView(view), job, priority);
@@ -1960,14 +1964,14 @@ pub(crate) fn upload_hdr_views(app: &mut LccApp) {
     }
     let results = std::mem::take(&mut app.renderer.hdr_view_result);
     let Some(out) = app.services.hdr_output.as_mut() else { return };
-    for (view, crate::render::HdrResult { photo, key, deep, texels }) in results {
+    for (view, crate::render::HdrResult { photo, key, deep, window, texels }) in results {
         let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { continue };
-        let slot = view;
+        let slot = app.renderer.hdr_upload_slot(view, window);
         // (texels the worker made, when they are for the headroom the output uploads with)
         let ready = texels.and_then(|(t, h)| out.upload_texels(slot, deep.width, deep.height, &t, h));
         match ready.unwrap_or_else(|| out.upload(slot, deep.width, deep.height, rgb)) {
             Ok(tex) => {
-                app.renderer.hdr_view.insert(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height] });
+                app.renderer.adopt_hdr(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height], window, slot });
             }
             Err(e) => log::warn!("HDR view texture: {e}"),
         }
@@ -1990,7 +1994,10 @@ pub(crate) enum HdrPane {
 /// window a drag renders, [`crate::region::window_for`]: the same at rest and in a drag, and no
 /// bigger, since each update is a texture the UI thread copies to the GPU) rendered once more as
 /// linear float, drawn in place of its 8-bit tiles so highlights go above SDR white zoomed in
-/// too, including during slider drags.
+/// too, including during slider drags. A window it showed before comes back at once
+/// ([`Renderer::reuse_hdr`]).
+///
+/// [`Renderer::reuse_hdr`]: crate::render::Renderer::reuse_hdr
 pub(crate) fn hdr_window(app: &mut LccApp, c: &WindowCtx, v: &WindowView, full: (usize, usize)) -> HdrPane {
     if !hdr_shown(app) || c.holding || app.headless_screenshotting {
         return HdrPane::Sdr;
