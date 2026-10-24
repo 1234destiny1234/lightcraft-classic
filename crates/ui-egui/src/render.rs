@@ -46,7 +46,8 @@ pub enum Slot {
     Before,
     Compare(u8),
     /// Background preparation of a neighbouring photo (no texture: its decoded source and view
-    /// render are cached by the engine). 0 = next, 1 = previous.
+    /// render are cached by the engine). 0 = next, 1 = previous; 2 = the open photo's
+    /// full-resolution source, for a zoom to 1:1.
     Prefetch(u8),
     /// A variant thumbnail (profile / preset browsers), by its job key ([`Session::variant_job`]).
     /// Kept in a bounded LRU ([`VARIANT_TEXTURES`]).

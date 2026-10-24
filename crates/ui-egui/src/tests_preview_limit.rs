@@ -750,7 +750,10 @@ mod in_the_loupe {
     #[test]
     fn a_drag_keeps_the_decoded_original_even_when_every_result_is_superseded() {
         let (mut h, _) = detail();
-        assert_eq!(h.app.session.memory_report().full_source.bytes, 0, "fit needed no original");
+        // (a look at the whole photo prepares its original for a zoom: let it go, so the drag
+        // decodes it)
+        h.app.session.media.clear_sources();
+        assert_eq!(h.app.session.memory_report().full_source.bytes, 0, "no original before the drag");
         h.app.ui.zoom = crate::state::Zoom::Percent(400.0);
         h.app.session.begin_interaction("Exposure").unwrap();
         // Tick every frame until the original is decoded (whether a draft also finishes between two

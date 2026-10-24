@@ -531,3 +531,24 @@ fn a_release_at_one_to_one_shows_one_full_quality_window_instead_of_the_tiles_on
         assert!(max <= 2, "hq {hq}: the window differs from the full-size render by {max} levels");
     }
 }
+
+// Given a photo larger than the preview level shown whole for a moment, its full-resolution
+// source is decoded in the background, so a zoom to 1:1 then renders from it with no decode;
+// a photo just stepped onto is not decoded at once
+#[test]
+fn a_short_look_prepares_the_full_resolution_source_for_a_zoom() {
+    let (mut h, work) = detail([3000, 2000], 1.0);
+    let id = PhotoId(1);
+    // (from when the whole photo was first shown: not at once, after the look)
+    let since = h.app.whole_since.filter(|(p, _)| *p == id).map(|(_, t)| t).expect("the photo is shown whole");
+    assert!(h.step_until(TIMEOUT, |h| h.app.session.media.has_source(id, lcc_engine::SourceLevel::Full)), "decoded after a look");
+    let asked = h.time();
+    assert!(asked - since >= crate::panels::detail::WARM_FULL_AFTER_S - 0.05, "it waited for the look ({:.2} s)", asked - since);
+    let from = work.borrow().asked.len();
+    h.app.ui.zoom = Zoom::Percent(100.0);
+    assert!(h.settle(TIMEOUT));
+    let zoomed: Vec<_> =
+        work.borrow().asked.iter().skip(from).filter(|(s, _)| matches!(s, Slot::Tile { .. } | Slot::Window(_))).map(|(_, j)| j.clone()).collect();
+    assert!(!zoomed.is_empty(), "the zoom rendered");
+    assert!(zoomed.iter().all(|j| matches!(j.source, lcc_engine::media::SourceRef::Loaded(_))), "every 1:1 render starts from the held source");
+}

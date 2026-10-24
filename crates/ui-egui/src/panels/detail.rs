@@ -1075,6 +1075,32 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
             }
         }
     }
+    // After a short look at the whole photo, its full-resolution source, decoded in the background
+    // below the neighbours when nothing else is waiting, so a zoom to 1:1 (to check focus) starts
+    // from it instead of decoding first (0.2-2.7 s). The engine keeps one such source.
+    let whole = !interacting && plan.window_edge.is_none() && app.renderer.textures.get(&Slot::Main).is_some_and(|t| t.photo == id);
+    if !whole {
+        app.whole_since = None;
+    } else {
+        let since = match app.whole_since {
+            Some((p, t)) if p == id => t,
+            _ => {
+                app.whole_since = Some((id, now));
+                now
+            }
+        };
+        if now - since >= WARM_FULL_AFTER_S
+            && native_long > lcc_engine::SourceLevel::Preview.max_edge()
+            && !app.session.media.has_source(id, lcc_engine::SourceLevel::Full)
+            && app.renderer.queued() == 0
+            && let Some(job) =
+                app.session.region_job(id, native[0], native[1], lcc_engine::pipeline::PixelWindow { x: 0, y: 0, w: 1, h: 1 }, !crop_tool)
+        {
+            app.renderer.prefetch(Slot::Prefetch(2), job, PREFETCH_PRIORITY - 1);
+        } else if now - since < WARM_FULL_AFTER_S {
+            ui.ctx().request_repaint_after(std::time::Duration::from_secs_f64((WARM_FULL_AFTER_S - (now - since)).max(0.05)));
+        }
+    }
     // until the loupe has this photo: show its cached render / embedded preview / a thumbnail
     if app.renderer.textures.get(&Slot::Main).is_none_or(|t| t.photo != id)
         && let Some(q) = app.session.quick_view_job(id, want.max(8), !crop_tool)
@@ -1930,6 +1956,10 @@ fn navigator(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect, img: Rect, id: P
 
 /// Neighbour prefetch: below on-screen thumbnails, above background thumbnail refreshes.
 const PREFETCH_PRIORITY: u32 = 4;
+
+/// How long (s) the whole photo is shown before its full-resolution source is decoded in the
+/// background (a photographer stepping through photos doesn't decode each).
+pub(crate) const WARM_FULL_AFTER_S: f64 = 1.5;
 
 /// How long a render may be on its way, with nothing new on screen, before the loupe says
 /// "Rendering…" (s): as long as the activity stack waits before it shows a task.
