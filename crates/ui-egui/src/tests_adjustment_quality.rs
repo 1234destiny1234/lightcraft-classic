@@ -21,6 +21,8 @@ const TIMEOUT: Duration = Duration::from_secs(120);
 struct Work {
     asked: Vec<(Slot, RenderJob)>,
     running: Vec<(Slot, RenderJob)>,
+    /// The run time (ms) every render reports: a slow machine without waiting for one.
+    ms: f64,
 }
 
 struct Record(Rc<RefCell<Work>>);
@@ -34,7 +36,9 @@ impl RenderOffload for Record {
     }
 
     fn finished(&mut self) -> Vec<(Slot, RenderResult, f64)> {
-        std::mem::take(&mut self.0.borrow_mut().running).into_iter().map(|(slot, job)| (slot, job.run(), 0.0)).collect()
+        let mut work = self.0.borrow_mut();
+        let ms = work.ms;
+        std::mem::take(&mut work.running).into_iter().map(|(slot, job)| (slot, job.run(), ms)).collect()
     }
 }
 
@@ -242,4 +246,101 @@ fn high_quality_adjustments_use_one_native_window_per_pane_instead_of_tiles() {
         assert!(window.w * window.h < 1600 * 1200, "not the entire original");
         assert!(job.stages.is_some(), "interactive window reuses its stage cache");
     }
+}
+
+/// The Main jobs asked for since `from` (an index into `asked`).
+fn main_jobs_since(work: &Rc<RefCell<Work>>, from: usize) -> Vec<RenderJob> {
+    work.borrow().asked.iter().skip(from).filter(|(s, _)| *s == Slot::Main).map(|(_, j)| j.clone()).collect()
+}
+
+fn adjust_quality(h: &mut Headless) -> String {
+    let reply = h.request("ui.inspect", json!({}), TIMEOUT);
+    reply["result"]["perf"]["adjustQuality"].as_str().unwrap_or_default().to_string()
+}
+
+// Given high quality adjustment previews on a machine too slow for them (every update takes
+// 400 ms), a drag falls back: drafts while the slider moves, the settled render as soon as it
+// holds still with the mouse still down, and the next drag of that slider starts drafting
+#[test]
+fn slow_high_quality_adjustments_fall_back_to_drafts_while_moving() {
+    let (mut h, work) = detail([1024, 768], 1.0);
+    let still = latest(&work, Slot::Main);
+    work.borrow_mut().ms = crate::region::HQ_BUDGET_MS * 4.0;
+    h.app.session.begin_interaction("Exposure").unwrap();
+    let from = work.borrow().asked.len();
+    for i in 1..=6 {
+        h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.1}})).unwrap();
+        h.step();
+        h.step();
+    }
+    let moving = main_jobs_since(&work, from);
+    assert_eq!(moving.first().map(|j| j.request.quality), Some(Quality::Full), "a drag starts at full quality");
+    let last = moving.last().expect("the drag rendered");
+    assert_eq!(last.request.quality, Quality::Draft, "too slow: the moving slider drafts");
+    assert!(last.display_fit.is_none());
+    assert!(h.app.session.interaction.is_some());
+    // the slider holds still: the settled render, while the drag is still running
+    let from = work.borrow().asked.len();
+    let t0 = h.time();
+    assert!(h.step_until(TIMEOUT, |_| main_jobs_since(&work, from).iter().any(|j| j.request.quality == Quality::Full)));
+    assert!(h.time() - t0 >= crate::region::HQ_SETTLE_S - 0.02, "it waited for the slider to hold still");
+    let settled = latest(&work, Slot::Main);
+    assert_eq!(settled.request.quality, Quality::Full);
+    assert_eq!((settled.request.max_w, settled.request.max_h), (still.request.max_w, still.request.max_h));
+    assert_eq!(settled.display_fit, still.display_fit);
+    assert!(h.app.session.interaction.is_some(), "settling does not end the drag");
+    assert_eq!(adjust_quality(&mut h), "settled");
+    // moving again drafts again
+    h.app.session.execute("develop.set", &json!({"values": {"light.exposure": 1.0}})).unwrap();
+    h.step();
+    assert_eq!(latest(&work, Slot::Main).request.quality, Quality::Draft);
+    assert_eq!(adjust_quality(&mut h), "draft");
+    h.app.session.end_interaction().unwrap();
+    assert!(h.settle(TIMEOUT));
+    assert_eq!(latest(&work, Slot::Main).request.quality, Quality::Full);
+    assert_eq!(adjust_quality(&mut h), "idle");
+    // the next drag of the same slider starts in the fallback: no frozen updates to find out again
+    h.app.session.begin_interaction("Exposure").unwrap();
+    h.app.session.execute("develop.set", &json!({"values": {"light.exposure": 1.2}})).unwrap();
+    h.step();
+    assert_eq!(latest(&work, Slot::Main).request.quality, Quality::Draft);
+    h.app.session.end_interaction().unwrap();
+}
+
+// Given high quality adjustment previews that keep up, a drag never falls back
+#[test]
+fn fast_high_quality_adjustments_never_fall_back() {
+    let (mut h, work) = detail([1024, 768], 1.0);
+    work.borrow_mut().ms = crate::region::HQ_BUDGET_MS * 0.5;
+    h.app.session.begin_interaction("Exposure").unwrap();
+    let from = work.borrow().asked.len();
+    for i in 1..=8 {
+        h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.1}})).unwrap();
+        h.step();
+        h.step();
+    }
+    assert!(main_jobs_since(&work, from).iter().all(|j| j.request.quality == Quality::Full && j.display_fit.is_some()));
+    assert_eq!(adjust_quality(&mut h), "full");
+    h.app.session.end_interaction().unwrap();
+}
+
+// Given a zoomed view (100 %) too slow at full quality, the zoomed window falls back like the
+// whole frame: it is what shows the drag, so it is what is timed, drafted and settled
+#[test]
+fn slow_high_quality_zoom_windows_fall_back_and_settle() {
+    let (mut h, work) = detail([1600, 1200], 1.0);
+    h.app.ui.zoom = Zoom::Percent(100.0);
+    assert!(h.settle(TIMEOUT));
+    work.borrow_mut().ms = crate::region::HQ_BUDGET_MS * 4.0;
+    h.app.session.begin_interaction("Exposure").unwrap();
+    for i in 1..=6 {
+        h.app.session.execute("develop.set", &json!({"values": {"light.exposure": f64::from(i) * 0.1}})).unwrap();
+        h.step();
+        h.step();
+    }
+    assert_eq!(latest(&work, Slot::Window(PANE_AFTER)).request.quality, Quality::Draft);
+    assert!(h.step_until(TIMEOUT, |_| latest(&work, Slot::Window(PANE_AFTER)).request.quality == Quality::Full));
+    assert!(h.app.session.interaction.is_some());
+    h.app.session.end_interaction().unwrap();
+    assert!(h.settle(TIMEOUT));
 }

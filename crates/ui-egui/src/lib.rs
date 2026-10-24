@@ -588,6 +588,8 @@ pub struct LccApp {
     pub(crate) size_hold: region::SizeHold,
     /// The size of a slider drag's whole-frame drafts (full size where they keep up, issue #330).
     pub(crate) drag_scale: region::DragScale,
+    /// High quality adjustment previews: whether a drag keeps full quality or falls back to drafts.
+    pub(crate) hq_drag: region::HqDrag,
     /// (photo, look, window frame size) a window was refused for: it reads more than one render holds.
     pub(crate) window_refused: Option<(lcc_catalog::PhotoId, u64, usize)>,
     /// (photo, look) whose 1:1 preview was last asked to be read from disk (see `detail`).
@@ -755,6 +757,7 @@ impl LccApp {
             region_before_view: None,
             size_hold: Default::default(),
             drag_scale: Default::default(),
+            hq_drag: Default::default(),
             window_refused: None,
             full_preview_loaded: None,
             merge: merge::MergeState::default(),
