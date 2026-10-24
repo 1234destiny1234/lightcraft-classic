@@ -162,22 +162,73 @@ pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) {
     }
 }
 
-/// The source rail: Files & folders, Immich.
+/// A rail entry: key (for its widget id), name, icon, the path picking it scans (none: Files &
+/// folders and Immich, which switch the source instead).
+struct Source {
+    key: String,
+    name: String,
+    icon: Icon,
+    path: Option<String>,
+}
+
+/// Tests: cards to list in place of the mounted ones, as (name, path).
+#[cfg(test)]
+pub(crate) const TEST_DEVICES: &str = "import-test-devices";
+
+/// The cards and cameras mounted now (their names and paths come from the system: untrusted, only
+/// shown and scanned). From the background scan; none until it has run once.
+fn devices(ctx: &egui::Context) -> Vec<(String, String)> {
+    #[cfg(test)]
+    if let Some(v) = ctx.data(|d| d.get_temp::<Vec<(String, String)>>(egui::Id::new(TEST_DEVICES))) {
+        return v;
+    }
+    let _ = ctx;
+    #[cfg(not(target_arch = "wasm32"))]
+    {
+        lcc_engine::devices::devices_scanned().unwrap_or_default().into_iter().map(|d| (d.name, d.path)).collect()
+    }
+    #[cfg(target_arch = "wasm32")]
+    Vec::new()
+}
+
+/// The source rail: Files & folders, Immich, each card or camera mounted, the watched folder.
+/// Picking a card or the watched folder scans it into the review (absent when there is none).
 fn sources(app: &mut LccApp, ui: &mut egui::Ui, rail: Rect, d: &mut ImportDialog, roomy: bool) {
     let t = Tokens::get(ui.ctx());
     let mut child = ui.new_child(egui::UiBuilder::new().max_rect(rail.shrink2(vec2(8.0, 10.0))));
     child.spacing_mut().item_spacing.y = 2.0;
-    let mut items: Vec<(&str, &str, Icon, bool)> = vec![("files", "Files & folders", Icon::Folder, !d.immich)];
-    #[cfg(not(target_arch = "wasm32"))]
-    items.push(("immich", "Immich", Icon::Cloud, d.immich));
-    for (key, label, icon, on) in items {
+    let mut items = vec![Source { key: "files".into(), name: crate::i18n::tr("Files & folders").to_string(), icon: Icon::Folder, path: None }];
+    if cfg!(not(target_arch = "wasm32")) {
+        items.push(Source { key: "immich".into(), name: crate::i18n::tr("Immich").to_string(), icon: Icon::Cloud, path: None });
+    }
+    for (i, (name, path)) in devices(ui.ctx()).into_iter().enumerate() {
+        let name =
+            if name.trim().is_empty() { crate::i18n::tr("Card").to_string() } else { format!("{} · {}", crate::i18n::tr("Card"), name.trim()) };
+        items.push(Source { key: format!("card:{i}"), name, icon: Icon::Photos, path: Some(path) });
+    }
+    if let Some(folder) = app.session.import_defaults.auto_folder.clone().filter(|f| !f.trim().is_empty()) {
+        items.push(Source { key: "watched".into(), name: crate::i18n::tr("Watched folder").to_string(), icon: Icon::Clock, path: Some(folder) });
+    }
+    // the entry the review shows: a card or the watched folder when its path is the one scanned
+    let scanned = |p: &str| d.sources.len() == 1 && d.sources.first().is_some_and(|s| s == p);
+    let lit = items.iter().find(|s| s.path.as_deref().is_some_and(scanned)).map(|s| s.key.clone());
+    let mut pick: Option<Source> = None;
+    for src in items {
+        let on = match (&lit, src.key.as_str()) {
+            (_, "immich") => d.immich,
+            (Some(k), _) => !d.immich && *k == src.key,
+            (None, "files") => !d.immich,
+            _ => false,
+        };
         let (r, resp) = child.allocate_exact_size(vec2(child.available_width(), 44.0), Sense::click());
-        let name = crate::i18n::tr(label);
-        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, name));
-        register(child.ctx(), format!("import:source:{key}"), r);
-        // (the dialog's Files / Immich buttons' ids)
-        register(child.ctx(), format!("button:importSource:{key}"), r);
-        let resp = if roomy { resp } else { resp.on_hover_text(name) };
+        let name = src.name.clone();
+        resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::SelectableLabel, true, on, name.clone()));
+        register(child.ctx(), format!("import:source:{}", src.key), r);
+        if src.path.is_none() {
+            // (the dialog's Files / Immich buttons' ids)
+            register(child.ctx(), format!("button:importSource:{}", src.key), r);
+        }
+        let resp = if roomy { resp } else { resp.on_hover_text(name.clone()) };
         let p = child.painter();
         if on {
             p.rect_filled(r, 12.0, Color32::from_white_alpha(30));
@@ -187,19 +238,37 @@ fn sources(app: &mut LccApp, ui: &mut egui::Ui, rail: Rect, d: &mut ImportDialog
         }
         let c = if on { t.accent } else { t.text_label };
         let at = if roomy { pos2(r.left() + 22.0, r.center().y) } else { r.center() };
-        paint(p, Rect::from_center_size(at, Vec2::splat(20.0)), icon, c);
+        paint(p, Rect::from_center_size(at, Vec2::splat(20.0)), src.icon, c);
         if roomy {
-            p.text(pos2(r.left() + 44.0, r.center().y), Align2::LEFT_CENTER, name, t.font(14.0), if on { t.text } else { t.text_label });
+            let mut job = egui::text::LayoutJob::simple_singleline(name, t.font(14.0), if on { t.text } else { t.text_label });
+            job.wrap = egui::text::TextWrapping {
+                max_width: (r.width() - 52.0).max(10.0),
+                max_rows: 1,
+                break_anywhere: true,
+                overflow_character: Some('…'),
+            };
+            let g = p.layout_job(job);
+            p.galley(pos2(r.left() + 44.0, r.center().y - g.size().y / 2.0), g, t.text_label);
         }
         if resp.clicked() && !on {
-            if key == "immich" {
-                d.immich = true;
-                #[cfg(not(target_arch = "wasm32"))]
-                crate::panels::connections::open_source(app, None);
-            } else {
-                d.immich = false;
+            pick = Some(src);
+        }
+    }
+    let Some(src) = pick else { return };
+    match (src.key.as_str(), src.path) {
+        ("immich", _) => {
+            d.immich = true;
+            #[cfg(not(target_arch = "wasm32"))]
+            crate::panels::connections::open_source(app, None);
+        }
+        (_, Some(path)) => {
+            // scan it; the review shows what it finds when the scan ends
+            d.immich = false;
+            if let Err(e) = crate::import::open(app, vec![path]) {
+                app.toast(ui.ctx(), e);
             }
         }
+        _ => d.immich = false,
     }
 }
 
@@ -216,10 +285,16 @@ fn photos(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog, max_h: Opti
         ui.vertical_centered(|ui| {
             ui.label(egui::RichText::new(crate::i18n::tr("No files chosen yet.")).color(t.text_dim));
             ui.add_space(8.0);
-            if crate::widgets::text_button(ui, "importChooseFiles", crate::i18n::tr("Choose Files…"), false).clicked() {
-                app.ui.dialog = None;
-                let _ = app.run("file.addPhotos", json!({}));
-            }
+            ui.horizontal(|ui| {
+                if crate::widgets::text_button(ui, "importChooseFiles", crate::i18n::tr("Choose Files…"), false).clicked() {
+                    app.ui.dialog = None;
+                    let _ = app.run("file.addPhotos", json!({}));
+                }
+                if crate::widgets::text_button(ui, "importChooseFolder", crate::i18n::tr("Choose Folder…"), false).clicked() {
+                    app.ui.dialog = None;
+                    let _ = app.run("file.addFolder", json!({}));
+                }
+            });
         });
         return;
     }
