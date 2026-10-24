@@ -338,6 +338,10 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
         self.write(slot, width, height, &texels)
     }
 
+    fn texel_headroom(&self) -> Option<f32> {
+        Some(self.encode_headroom())
+    }
+
     fn upload_texels(&mut self, slot: u8, width: usize, height: usize, texels: &[u16], headroom: f32) -> Option<Result<egui::TextureId, String>> {
         let n = width.checked_mul(height).and_then(|n| n.checked_mul(4));
         (headroom.to_bits() == self.encode_headroom().to_bits() && n == Some(texels.len())).then(|| self.write(slot, width, height, texels))

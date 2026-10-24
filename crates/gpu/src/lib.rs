@@ -507,6 +507,38 @@ pub fn try_render_fitted(
     stages: Option<&StageCache>,
     fit: Option<(usize, usize)>,
 ) -> Result<Rendered, Fallback> {
+    try_render_with(src, info, s, req, stages, fit, None)
+}
+
+/// [`try_render`] of an HDR render ([`lcc_pipeline::OutputDepth::F32Hdr`]) for an HDR display:
+/// its floats become the HDR texture's `Rgba16Float` texels for `headroom` on the device, as
+/// `lcc_engine::hdr_texture::encode_rgba16f` makes them, and only those come back with the 8-bit
+/// image and histogram (the result has no `deep` samples). Four halves per pixel.
+pub fn try_render_hdr_texels(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    headroom: f32,
+) -> Result<(Rendered, Vec<u16>), Fallback> {
+    if req.depth != lcc_pipeline::OutputDepth::F32Hdr {
+        return Err(Fallback::NotTried);
+    }
+    let mut texels = Vec::new();
+    let r = try_render_with(src, info, s, req, stages, None, Some((headroom, &mut texels)))?;
+    Ok((r, texels))
+}
+
+fn try_render_with(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    fit: Option<(usize, usize)>,
+    mut texels: Option<(f32, &mut Vec<u16>)>,
+) -> Result<Rendered, Fallback> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         // sections switched off with their eye render as if at their defaults (issue #316)
@@ -541,7 +573,9 @@ pub fn try_render_fitted(
             let (r, scoped) = {
                 let _scope = ctx::RenderScope::new(gpu);
                 let errors = ctx::ErrorScopes::push(gpu);
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render::render(gpu, src, info, s, req, ext.as_deref(), fault, fit)));
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| {
+                    render::render(gpu, src, info, s, req, ext.as_deref(), fault, fit, texels.as_mut().map(|(h, t)| (*h, &mut **t)))
+                }));
                 (r, errors.pop())
             };
             // An error the device raised explains the readback failures that follow it; a buffer
@@ -607,7 +641,7 @@ pub fn try_render_fitted(
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (src, info, s, req, stages, fit);
+        let _ = (src, info, s, req, stages, fit, texels);
         Err(Fallback::NotTried)
     }
 }

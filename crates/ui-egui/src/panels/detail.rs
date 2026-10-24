@@ -2094,7 +2094,9 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
         app.renderer.set_surface_extended_linear(o.extended());
     }
     let job = if edited && editing(app, job.photo) && adjust_drafts(app) { job.draft() } else { job };
-    let job = hdr_view_job(job, headroom);
+    let mut job = hdr_view_job(job, headroom);
+    // (on the GPU its texture's texels are made there, for the headroom the output uploads with)
+    job.hdr_texels = app.services.hdr_output.as_ref().and_then(|o| o.texel_headroom());
     app.renderer.prepare_hdr_view(view, &job);
     let key = job.key;
     if app.renderer.hdr_view.get(&view).is_some_and(|v| v.key != key) && app.renderer.reuse_hdr(view, key) {
@@ -2125,14 +2127,24 @@ pub(crate) fn upload_hdr_views(app: &mut LccApp) {
     }
     let results = std::mem::take(&mut app.renderer.hdr_view_result);
     let Some(out) = app.services.hdr_output.as_mut() else { return };
-    for (view, crate::render::HdrResult { photo, key, deep, window, texels }) in results {
-        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { continue };
+    for (view, crate::render::HdrResult { photo, key, size, deep, window, texels }) in results {
         let slot = app.renderer.hdr_upload_slot(view, window);
-        // (texels the worker made, when they are for the headroom the output uploads with)
-        let ready = texels.and_then(|(t, h)| out.upload_texels(slot, deep.width, deep.height, &t, h));
-        match ready.unwrap_or_else(|| out.upload(slot, deep.width, deep.height, rgb)) {
+        // (texels the worker or the GPU made, when they are for the headroom the output uploads
+        // with; else the floats)
+        let ready = texels.and_then(|(t, h)| out.upload_texels(slot, size[0], size[1], &t, h));
+        let uploaded = match (ready, deep.as_ref().map(|d| &d.samples)) {
+            (Some(r), _) => r,
+            (None, Some(lcc_pipeline::DeepSamples::F32(rgb))) => out.upload(slot, size[0], size[1], rgb),
+            // (the GPU's texels, for a headroom the output no longer uploads with: the view keeps
+            // the frame it has until its next render)
+            _ => {
+                log::debug!("HDR view {view}: texels for another headroom and no floats; kept the frame before");
+                continue;
+            }
+        };
+        match uploaded {
             Ok(tex) => {
-                app.renderer.adopt_hdr(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height], window, slot });
+                app.renderer.adopt_hdr(view, crate::render::HdrView { photo, key, tex, size, window, slot });
             }
             Err(e) => log::warn!("HDR view texture: {e}"),
         }
@@ -4667,6 +4679,7 @@ mod tests {
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
             display_fit: None,
+            hdr_texels: None,
             settings: Default::default(),
             request: lcc_pipeline::RenderRequest {
                 max_w: 100,

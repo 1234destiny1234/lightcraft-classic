@@ -234,7 +234,11 @@ struct Finished {
 pub struct HdrResult {
     pub photo: PhotoId,
     pub key: u64,
-    pub deep: lcc_pipeline::DeepImage,
+    /// Its size in pixels.
+    pub size: [usize; 2],
+    /// Its linear float samples; `None` when the GPU made its texels instead
+    /// ([`lcc_engine::media::RenderJob::hdr_texels`]).
+    pub deep: Option<lcc_pipeline::DeepImage>,
     /// The part of the frame it shows ([`HdrView::window`]).
     pub window: Option<lcc_pipeline::PixelWindow>,
     /// Its texels, made on the render worker ([`crate::HdrOutput::upload_texels`]).
@@ -700,7 +704,10 @@ impl Renderer {
         }
         let hdr = matches!(slot, Slot::HdrView(_));
         let color = r.rendered.as_ref().ok().filter(|_| !hdr).map(|x| Arc::new(color_image(&x.image)));
-        let texels = headroom.filter(|_| hdr).and_then(|h| {
+        // (texels the GPU made, else encoded here from the floats)
+        let gpu_texels = r.hdr_texels.take().filter(|_| hdr);
+        let texels = gpu_texels.or_else(|| {
+            let h = headroom.filter(|_| hdr)?;
             let deep = r.rendered.as_ref().ok()?.deep.as_ref()?;
             let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { return None };
             lcc_engine::hdr_texture::encode_rgba16f(rgb, deep.width, deep.height, h).ok().map(|t| (t, h))
@@ -1442,10 +1449,11 @@ impl Renderer {
                 continue;
             }
             if let Slot::HdrView(view) = slot {
-                if let Some(deep) = rendered.deep {
+                if rendered.deep.is_some() || texels.is_some() {
                     // (a result that gets here is for the geometry asked for now: older ones were retired)
                     let window = self.hdr_geometry.get(&view).and_then(|g| g.window);
-                    self.hdr_view_result.insert(view, HdrResult { photo: r.photo, key: r.key, deep, window, texels });
+                    let size = [rendered.image.width, rendered.image.height];
+                    self.hdr_view_result.insert(view, HdrResult { photo: r.photo, key: r.key, size, deep: rendered.deep, window, texels });
                     self.hdr_view_ms.insert(view, ms);
                     changed = true;
                 }
@@ -2521,7 +2529,7 @@ mod thumbnail_tests {
         finish(&mut app, &work, &ctx, slot, second.run());
         let HdrResult { key, deep, .. } = &app.renderer.hdr_view_result[&HDR_LOUPE];
         assert_eq!(*key, keys[2], "late older frames never replace newer pixels");
-        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { panic!("float HDR required") };
+        let lcc_pipeline::DeepSamples::F32(rgb) = &deep.as_ref().expect("float samples").samples else { panic!("float HDR required") };
         assert!(rgb.iter().any(|v| *v > 1.0), "highlights survive the draft pipeline");
         let final_job = app.session.render_job(PhotoId(1), 8, 8, false, true).unwrap();
         let final_render = crate::panels::detail::hdr_view_job(final_job, Some(4.0)).run().rendered.unwrap();
@@ -2932,6 +2940,7 @@ mod extended_linear_tests {
             origin: lcc_catalog::Source::File { path: "/tmp/test.jpg".to_string() },
             info: Default::default(),
             display_fit: None,
+            hdr_texels: None,
             settings: Default::default(),
             request: lcc_pipeline::RenderRequest {
                 max_w: 100,

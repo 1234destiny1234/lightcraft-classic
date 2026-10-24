@@ -607,6 +607,7 @@ pub fn render(
     stages: Option<&GpuStages>,
     fault: Option<crate::Fault>,
     fit: Option<(usize, usize)>,
+    texels: Option<(f32, &mut Vec<u16>)>,
 ) -> Option<Rendered> {
     let mut t = profiling().then(std::time::Instant::now);
     // Each stage is submitted on its own; under `{ENV_PREFIX}_PROFILE` also waited for, so the
@@ -821,9 +822,28 @@ pub fn render(
         None => (out, w, h, n),
     };
     cx.copy_into(&hist, &out, n);
-    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS + if deep { 3 * n } else { 0 });
-    let samples: Vec<f32> =
-        if deep { data.split_off((n + HIST_WORDS).min(data.len())).into_iter().map(f32::from_le_bytes).collect() } else { Vec::new() };
+    // An HDR view's texture asked for: its floats become `Rgba16Float` texels for that headroom
+    // here (`hdr_texels.wgsl`), and only those come back (8 bytes a pixel instead of 12), with no
+    // unpacking or encoding on the CPU
+    let texels = texels.filter(|_| deep);
+    let extra = match (&texels, deep) {
+        (Some((headroom, _)), true) => {
+            let tex = cx.zeroed(2 * n);
+            cx.run("hdr_texels", &[n as u32, (n + HIST_WORDS) as u32, headroom.to_bits()], &[Some(&out), Some(&tex)], groups1(n));
+            cx.copy_into(&tex, &out, n + HIST_WORDS);
+            2 * n
+        }
+        (None, true) => 3 * n,
+        _ => 0,
+    };
+    let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS + extra);
+    let tail = if deep { data.split_off((n + HIST_WORDS).min(data.len())) } else { Vec::new() };
+    let texel_words = if texels.is_some() { tail.len() } else { 0 };
+    let samples: Vec<f32> = if texels.is_none() { tail.iter().map(|b| f32::from_le_bytes(*b)).collect() } else { Vec::new() };
+    if let Some((_, out_texels)) = texels {
+        out_texels.clear();
+        out_texels.extend(tail.iter().flat_map(|b| [u16::from_le_bytes([b[0], b[1]]), u16::from_le_bytes([b[2], b[3]])]));
+    }
     let hist_words: Vec<u32> = data.split_off(n.min(data.len())).into_iter().map(u32::from_le_bytes).collect();
     let image = Rgba8 { width: w, height: h, data };
     lap("finish + readback", &mut t, &mut cx);
@@ -856,6 +876,14 @@ pub fn render(
             lcc_pipeline::masks::evaluate_one(m, &plan.frame, w, h, &img, &l, s.light.exposure as f32, plan.mattes.as_deref())
         }
     });
+    if deep && texel_words > 0 {
+        if texel_words != 2 * n {
+            fail(FailKind::Fatal, format!("the GPU returned an incomplete HDR texture ({texel_words} of {} words)", 2 * n));
+            return None;
+        }
+        // (the texture's texels went out above; no float samples come back)
+        return Some(Rendered { image, histogram, deep: None, warnings: Vec::new(), coverage });
+    }
     if deep {
         if samples.len() != 3 * n {
             fail(FailKind::Fatal, format!("the GPU returned an incomplete HDR image ({} of {} samples)", samples.len(), 3 * n));

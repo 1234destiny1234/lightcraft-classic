@@ -285,6 +285,11 @@ reduction (`DeepImage::to_rgba8`), so the histogram is still binned on the GPU. 
 compares the float samples (sRGB-encoded past 1, ×255) with the CPU's: max < 0.01, mean ≤ 0.0001 steps
 on the AMD Radeon 8060S across tone-map arms, light edits, vignette, curves, grain and an HDR request of
 an SDR edit. 16-bit and SDR float exports, soft proofs and Visualize HDR stay on the CPU (`handles`).
+An HDR view on an HDR display that takes texels (`HdrOutput::texel_headroom`) has its
+`Rgba16Float` texture made on the device (`lcc_gpu::try_render_hdr_texels`, `hdr_texels.wgsl`, the
+same transform as `lcc_engine::hdr_texture::encode_pixel`): 8 bytes a pixel come back instead of 12,
+and the CPU neither unpacks the floats nor encodes them (`the_gpus_hdr_texels_match_the_cpu_encoder`:
+within 2e-3 relative). HDR exports, gain maps and the CPU path keep the floats.
 3000 × 2000 HDR render (release, shared machine): CPU ~200–575 ms, GPU ~50–70 ms
 (`cargo test -p lcc-gpu --release --test it equivalence::hdr_render_time -- --ignored --nocapture`).
 

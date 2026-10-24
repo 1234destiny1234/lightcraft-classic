@@ -970,6 +970,10 @@ pub struct RenderJob {
     /// to a 64 px step) and the window would otherwise shrink the texture with 2-tap bilinear sampling, which blurs fine detail at
     /// small ratios and aliases it at large ones. The caches keep the full render.
     pub display_fit: Option<(usize, usize)>,
+    /// An HDR view's render for an HDR display that uploads at this headroom: rendered on the
+    /// GPU, it comes back as the texture's texels made there ([`RenderResult::hdr_texels`]) and
+    /// without float samples; on the CPU, as usual. Set by the frontend.
+    pub hdr_texels: Option<f32>,
 }
 
 /// `img` shrunk to fit `max_w × max_h` with a Lanczos filter (see [`RenderJob::display_fit`]).
@@ -994,6 +998,9 @@ pub struct RenderResult {
     /// The display profile (id) the image is encoded for; `None`: sRGB (see
     /// [`crate::display::present`]).
     pub display: Option<u64>,
+    /// An HDR view's texture texels made on the GPU, and the headroom they were made for
+    /// ([`RenderJob::hdr_texels`]); its render then has no float samples.
+    pub hdr_texels: Option<(Vec<u16>, f32)>,
 }
 
 impl RenderJob {
@@ -1109,6 +1116,7 @@ impl RenderJob {
             loaded: None,
             quick: None,
             display: None,
+            hdr_texels: None,
         }
     }
 
@@ -1152,6 +1160,7 @@ impl RenderJob {
                 loaded: None,
                 quick: None,
                 display: None,
+                hdr_texels: None,
             };
         }
         // a face tile of an unedited raw: cut from the camera's embedded preview when it is big enough
@@ -1172,6 +1181,7 @@ impl RenderJob {
                 loaded: None,
                 quick: None,
                 display: None,
+                hdr_texels: None,
             };
         }
         let was_loaded = matches!(self.source, SourceRef::Loaded(_));
@@ -1194,8 +1204,17 @@ impl RenderJob {
                 // full-size image first (a monitor profile's conversion); else below, on the CPU
                 let fit =
                     self.display_fit.filter(|_| self.request.quality == Quality::Full && (self.display.is_none() || self.request.display.is_none()));
+                // an HDR view's texture straight from the GPU, when it renders there
+                let mut hdr_texels = None;
+                let texels = self.hdr_texels.filter(|_| gpu && gpu_renders_faithfully(&self.settings, &self.request));
                 let (mut rendered, gpu_fallback) =
-                    develop_reporting_fitted(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu, fit);
+                    match texels.map(|h| (h, lcc_gpu::try_render_hdr_texels(src, &info, &self.settings, &self.request, self.stages.as_deref(), h))) {
+                        Some((headroom, Ok((r, t)))) => {
+                            hdr_texels = Some((t, headroom));
+                            (r, None)
+                        }
+                        _ => develop_reporting_fitted(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu, fit),
+                    };
                 // for a display profile: the image goes to the display's values, the histogram
                 // and the cached view preview stay sRGB
                 let mut srgb = None;
@@ -1242,6 +1261,7 @@ impl RenderJob {
                     loaded: (!was_loaded).then_some(source),
                     quick: None,
                     display,
+                    hdr_texels,
                 }
             }
             Err(e) => self.failed(e),
@@ -1374,6 +1394,7 @@ impl QuickJob {
             loaded: None,
             quick: None,
             display: None,
+            hdr_texels: None,
         })
     }
 
@@ -1391,6 +1412,7 @@ impl QuickJob {
             loaded: None,
             quick,
             display: None,
+            hdr_texels: None,
         };
         let rendered = |image: Rgba8| {
             let histogram = Histogram::of_srgb8(&image);
@@ -1542,6 +1564,7 @@ impl crate::Session {
             slide: None,
             preview_cut: None,
             display_fit: None,
+            hdr_texels: None,
         })
     }
 
@@ -1596,6 +1619,7 @@ impl crate::Session {
             slide: None,
             preview_cut: None,
             display_fit: None,
+            hdr_texels: None,
         })
     }
 
@@ -1651,6 +1675,7 @@ impl crate::Session {
             slide: None,
             preview_cut,
             display_fit: None,
+            hdr_texels: None,
         })
     }
 

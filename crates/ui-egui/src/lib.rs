@@ -405,6 +405,12 @@ pub trait HdrOutput {
     fn extended(&self) -> bool {
         false
     }
+    /// The headroom [`Self::upload_texels`] takes texels for, when it takes them: an HDR view
+    /// rendered on the GPU then has its texels made there and comes back without float samples.
+    /// `None` (the default): views come back with their floats, for [`Self::upload`].
+    fn texel_headroom(&self) -> Option<f32> {
+        None
+    }
 }
 
 /// Grades a playing clip's frames on the window's GPU (desktop: the egui-wgpu device, through
