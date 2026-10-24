@@ -73,7 +73,12 @@ drag at 60 Hz, medians: the display fit now reads and writes bytes (`lcc_raster:
 same pixels, ~30 → ~7 ms at 2560 px), so a high quality update renders in 21 ms instead of 35 and a
 drag gets 46.5 updates/s instead of 27.7 (adaptive: 60.4). One update on its own still takes about
 75 ms to show: the loupe draws an update in the frame it was asked for only when it renders within
-40 % of a frame, which a preview-level render and its fit don't. A display fit on the GPU would.
+40 % of a frame, which a preview-level render and its fit don't.
+
+With the display fit on the GPU (`lcc_gpu::try_render_fitted`, same session, back-to-back A/B on
+three of the raws): a high quality update renders in 4.9 ms instead of 21.9 and a drag gets 58.1
+updates/s (adaptive: 60.7); one update on its own still takes ~63 ms (adaptive: 35). HDR edits
+shown in HDR are unchanged (their HDR view has no display fit).
 
 ## Tests
 

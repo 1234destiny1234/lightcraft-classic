@@ -606,6 +606,7 @@ pub fn render(
     req: &RenderRequest,
     stages: Option<&GpuStages>,
     fault: Option<crate::Fault>,
+    fit: Option<(usize, usize)>,
 ) -> Option<Rendered> {
     let mut t = profiling().then(std::time::Instant::now);
     // Each stage is submitted on its own; under `{ENV_PREFIX}_PROFILE` also waited for, so the
@@ -800,6 +801,25 @@ pub fn render(
         (x0, y0, k.w.min(w - x0), k.h.min(h - y0))
     });
     let hist = histogram_on_gpu(&mut cx, &out, w, window, coverage.as_deref());
+    // The display fit (`lcc_raster::resample::fit_rgba8`) here instead of on the CPU: only the
+    // fitted image comes back. The histogram is the full frame's, as without it. Not for what the
+    // CPU still changes after the readback (overlays, a grown window cut back) or HDR renders.
+    let fitted = fit
+        .filter(|_| !deep && req.overlay == lcc_pipeline::Overlay::None && plan.keep.is_none())
+        .map(|(fw, fh)| lcc_raster::resample::fit_size(w, h, fw.max(1), fh.max(1)))
+        .filter(|&(dw, dh)| dw < w || dh < h);
+    let (out, w, h, n) = match fitted {
+        Some((dw, dh)) => {
+            let dn = dw * dh;
+            let rgb = cx.gpu.buffer(3 * n);
+            cx.run("unpack_rgb8", &[n as u32], &[Some(&out), Some(&rgb)], groups1(n));
+            let small = resize(&mut cx, &rgb, (w, h), (dw, dh), 3, Filter::Lanczos3);
+            let packed = cx.zeroed(dn + HIST_WORDS);
+            cx.run("pack_rgb8", &[dn as u32], &[Some(&small), Some(&packed)], groups1(dn));
+            (packed, dw, dh, dn)
+        }
+        None => (out, w, h, n),
+    };
     cx.copy_into(&hist, &out, n);
     let mut data: Vec<[u8; 4]> = cx.read(&out, n + HIST_WORDS + if deep { 3 * n } else { 0 });
     let samples: Vec<f32> =

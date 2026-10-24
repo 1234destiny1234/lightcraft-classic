@@ -1190,7 +1190,12 @@ impl RenderJob {
                 // Thumbnails (many small jobs side by side) stay on the CPU; views and exports use
                 // the GPU when there is one.
                 let gpu = self.cache.is_none();
-                let (mut rendered, gpu_fallback) = develop_reporting(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu);
+                // the display fit on the GPU when the render is there and nothing is done to its
+                // full-size image first (a monitor profile's conversion); else below, on the CPU
+                let fit =
+                    self.display_fit.filter(|_| self.request.quality == Quality::Full && (self.display.is_none() || self.request.display.is_none()));
+                let (mut rendered, gpu_fallback) =
+                    develop_reporting_fitted(src, &info, &self.settings, &self.request, self.stages.as_deref(), gpu, fit);
                 // for a display profile: the image goes to the display's values, the histogram
                 // and the cached view preview stay sRGB
                 let mut srgb = None;
@@ -1261,7 +1266,21 @@ pub fn develop_reporting(
     stages: Option<&StageCache>,
     gpu: bool,
 ) -> (Rendered, Option<String>) {
-    let (mut rendered, fallback) = develop_image(src, info, s, req, stages, gpu);
+    develop_reporting_fitted(src, info, s, req, stages, gpu, None)
+}
+
+/// [`develop_reporting`], shrunk to fit `fit` on the GPU when it renders there
+/// ([`lcc_gpu::try_render_fitted`]); a CPU render comes back at its own size.
+fn develop_reporting_fitted(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    gpu: bool,
+    fit: Option<(usize, usize)>,
+) -> (Rendered, Option<String>) {
+    let (mut rendered, fallback) = develop_image(src, info, s, req, stages, gpu, fit);
     // an HDR edit's preview is its SDR rendition: its histogram shows the HDR range instead
     if let Some(h) = lcc_pipeline::hdr_histogram(src, info, s, req) {
         rendered.histogram = h;
@@ -1288,9 +1307,10 @@ fn develop_image(
     req: &RenderRequest,
     stages: Option<&StageCache>,
     gpu: bool,
+    fit: Option<(usize, usize)>,
 ) -> (Rendered, Option<String>) {
     let fallback = if gpu && gpu_renders_faithfully(s, req) {
-        match lcc_gpu::try_render(src, info, s, req, stages) {
+        match lcc_gpu::try_render_fitted(src, info, s, req, stages, fit) {
             Ok(r) => return (r, None),
             Err(lcc_gpu::Fallback::Failed(why)) => Some(why),
             Err(lcc_gpu::Fallback::NotTried) => None,

@@ -44,6 +44,8 @@ const MODULES: &[Module] = &[
         bindings: &[("src", false, "f32"), ("table", false, "u32"), ("dst", true, "f32")],
         entries: &["resize_h", "resize_v"],
     },
+    Module { src: include_str!("wgsl/fit.wgsl"), bindings: &[("src", false, "u32"), ("dst", true, "f32")], entries: &["unpack_rgb8"] },
+    Module { src: include_str!("wgsl/fit_pack.wgsl"), bindings: &[("src", false, "f32"), ("dst", true, "u32")], entries: &["pack_rgb8"] },
     Module {
         src: include_str!("wgsl/map.wgsl"),
         bindings: &[("a", false, "f32"), ("b", false, "f32"), ("c", false, "f32"), ("dst", true, "f32")],

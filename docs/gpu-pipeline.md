@@ -169,9 +169,18 @@ walks the drive.
   threads read adjacent pixels; vertical ones slide running sums down chunks of a column), `map`
   (log luminance, dark channel, guided-filter steps, white balance, luminance / colour NR, airlight
   sampling), `mask` (linear / radial / luminance / colour range / brush shapes, combine, finalize),
-  `finish` (the whole per-pixel stage) — each mirrors a named CPU function.
+  `finish` (the whole per-pixel stage), `fit` / `fit_pack` (the loupe's display fit: the 8-bit
+  output unpacked for `resize`'s Lanczos taps and packed back with the CPU's rounding) — each
+  mirrors a named CPU function.
 - Soft proofing against an output space (`RenderRequest::proof`, with its destination and display gamut
   warnings) runs in `finish`; a proof against an output-device profile (its 3D table) renders on the CPU.
+- Display fit (`lcc_gpu::try_render_fitted`, used by `RenderJob::run` for jobs with a
+  `display_fit`): the render is shrunk to the size it is drawn on the device, after its histogram
+  is binned from the whole frame, and only the fitted image is read back (2560 → 1728 px: 11.4 →
+  3.7 ms with the fit, against the CPU's `fit_rgba8` after a full readback). It matches `fit_rgba8`
+  within 1 LSB (`the_display_fit_on_the_device_matches_the_cpus`). Overlays, a window that spots
+  grew, HDR renders and a monitor profile's conversion keep the CPU fit. The photo's cached view
+  then holds the fitted image.
 - Per-stage hybrid: defringe and spot removal (rare, CPU-only for now) download the resampled image,
   run on the CPU and upload; heuristic mask shapes (Sky, Subject, Background, …) and brushes of more
   than 4096 dabs are evaluated on the CPU and uploaded; sources over the buffer limit are resampled

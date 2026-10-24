@@ -1213,3 +1213,36 @@ fn soft_proofs_match() {
     };
     assert!(lcc_gpu::render(&src, &raw, &DevelopSettings::default(), &req, None).is_none(), "declined: the CPU renders it");
 }
+
+/// The loupe's display fit done on the device (`try_render_fitted`) gives the pixels the CPU's
+/// `fit_rgba8` gives the same render (it rounds alike; only an FMA's last bit may differ), and the
+/// histogram of the whole render, not of the fitted image. A fit that shrinks nothing, an overlay
+/// and an HDR render come back unfitted, for the caller.
+#[test]
+fn the_display_fit_on_the_device_matches_the_cpus() {
+    if !gpu() {
+        return;
+    }
+    let src = scene(1, 1280, 853);
+    let info = SourceInfo::default();
+    let mut s = DevelopSettings::default();
+    typical(&mut s);
+    let req = RenderRequest::fit(1280, 1280);
+    let whole = lcc_gpu::try_render(&src, &info, &s, &req, None).expect("gpu render");
+    for fit in [(853, 853), (640, 480), (1001, 667), (97, 64)] {
+        let on_device = lcc_gpu::try_render_fitted(&src, &info, &s, &req, None, Some(fit)).expect("gpu render");
+        let on_cpu = lcc_raster::resample::fit_rgba8(&whole.image, fit.0, fit.1, lcc_raster::resample::Filter::Lanczos3);
+        let (mean, max, _) = diff(&on_device.image, &on_cpu);
+        eprintln!("display fit {fit:?}: {}x{}  mean {mean:.4}  max {max}", on_cpu.width, on_cpu.height);
+        assert!(max <= 1 && mean < 0.01, "{fit:?}: mean {mean:.4} LSB, max {max} LSB");
+        assert!(on_device.image.data.iter().all(|p| p[3] == 255), "opaque");
+        assert_eq!(on_device.histogram.total, whole.histogram.total, "{fit:?}: the whole render's histogram");
+        assert_eq!(on_device.histogram.luma, whole.histogram.luma, "{fit:?}");
+    }
+    let larger = lcc_gpu::try_render_fitted(&src, &info, &s, &req, None, Some((4000, 4000))).expect("gpu render");
+    assert_eq!((larger.image.width, larger.image.height), (whole.image.width, whole.image.height), "never enlarged");
+    let overlay = RenderRequest { overlay: lcc_pipeline::Overlay::Spots(50), ..req };
+    if let Ok(r) = lcc_gpu::try_render_fitted(&src, &info, &s, &overlay, None, Some((640, 480))) {
+        assert_eq!(r.image.width, whole.image.width, "an overlay is drawn on the CPU, after the fit there");
+    }
+}

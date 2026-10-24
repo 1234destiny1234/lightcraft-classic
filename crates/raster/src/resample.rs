@@ -154,8 +154,8 @@ pub fn fit<T: Pixel>(img: &Image<T>, max_w: usize, max_h: usize, filter: Filter)
     resize(img, w, h, filter)
 }
 
-/// The size [`fit`] shrinks a `width × height` image to.
-fn fit_size(width: usize, height: usize, max_w: usize, max_h: usize) -> (usize, usize) {
+/// The size [`fit`] (and [`fit_rgba8`]) shrinks a `width × height` image to.
+pub fn fit_size(width: usize, height: usize, max_w: usize, max_h: usize) -> (usize, usize) {
     let s = (max_w as f64 / width as f64).min(max_h as f64 / height as f64).min(1.0);
     (((width as f64 * s).round() as usize).max(1), ((height as f64 * s).round() as usize).max(1))
 }

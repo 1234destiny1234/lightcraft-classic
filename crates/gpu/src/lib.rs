@@ -492,6 +492,21 @@ pub fn try_render(
     req: &RenderRequest,
     stages: Option<&StageCache>,
 ) -> Result<Rendered, Fallback> {
+    try_render_fitted(src, info, s, req, stages, None)
+}
+
+/// [`try_render`], with the result shrunk on the device to fit `fit` (physical pixels) with
+/// `lcc_raster::resample::fit_rgba8`'s Lanczos filter, when it is larger (the loupe's display fit):
+/// only the fitted image is read back. The histogram stays the full render's. HDR renders,
+/// overlays and windows whose spots grew them come back unfitted, for the caller to fit.
+pub fn try_render_fitted(
+    src: &Arc<Rgb32f>,
+    info: &SourceInfo,
+    s: &DevelopSettings,
+    req: &RenderRequest,
+    stages: Option<&StageCache>,
+    fit: Option<(usize, usize)>,
+) -> Result<Rendered, Fallback> {
     #[cfg(not(target_arch = "wasm32"))]
     {
         // sections switched off with their eye render as if at their defaults (issue #316)
@@ -526,7 +541,7 @@ pub fn try_render(
             let (r, scoped) = {
                 let _scope = ctx::RenderScope::new(gpu);
                 let errors = ctx::ErrorScopes::push(gpu);
-                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render::render(gpu, src, info, s, req, ext.as_deref(), fault)));
+                let r = std::panic::catch_unwind(std::panic::AssertUnwindSafe(|| render::render(gpu, src, info, s, req, ext.as_deref(), fault, fit)));
                 (r, errors.pop())
             };
             // An error the device raised explains the readback failures that follow it; a buffer
@@ -592,7 +607,7 @@ pub fn try_render(
     }
     #[cfg(target_arch = "wasm32")]
     {
-        let _ = (src, info, s, req, stages);
+        let _ = (src, info, s, req, stages, fit);
         Err(Fallback::NotTried)
     }
 }
