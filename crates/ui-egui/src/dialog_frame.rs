@@ -528,3 +528,29 @@ pub fn footer_rule(ui: &mut Ui) {
     let (rect, _) = ui.allocate_exact_size(vec2(w, 1.0), egui::Sense::hover());
     ui.painter().hline(rect.x_range(), rect.center().y, egui::Stroke::new(1.0, t.divider));
 }
+
+/// Whether `dialog` is shown as a bottom sheet: on a phone (Android with the window's short side
+/// under 600 points, or any window under 600 points wide), every dialog but the full-window screens
+/// (Settings, Import, Export) and Print. A short, wide desktop window keeps centred cards.
+pub fn phone_sheet(ctx: &egui::Context, dialog: &crate::state::Dialog) -> bool {
+    use crate::state::Dialog;
+    let size = ctx.content_rect().size();
+    let phone = size.x < 600.0 || (cfg!(target_os = "android") && size.x.min(size.y) < 600.0);
+    phone && !matches!(dialog, Dialog::Settings { .. } | Dialog::Import { .. } | Dialog::Export { .. } | Dialog::Print)
+}
+
+/// A bottom sheet's grab handle across its top (`dialog:grab`): true when it was tapped or pulled
+/// down, which closes the sheet (as Cancel).
+pub fn grab_handle(ui: &mut Ui) -> bool {
+    let t = Tokens::get(ui.ctx());
+    let (r, resp) = ui.allocate_exact_size(vec2(ui.available_width(), 22.0), egui::Sense::click_and_drag());
+    crate::widgets::register(ui.ctx(), "dialog:grab", r);
+    resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Button, true, crate::i18n::tr("Close")));
+    ui.painter().rect_filled(Rect::from_center_size(r.center(), vec2(40.0, 5.0)), 2.5, t.text_dim.gamma_multiply(0.7));
+    let pulled = resp.drag_stopped()
+        && ui.input(|i| match (i.pointer.press_origin(), i.pointer.interact_pos()) {
+            (Some(a), Some(b)) => b.y - a.y > 40.0,
+            _ => false,
+        });
+    resp.clicked() || pulled
+}
