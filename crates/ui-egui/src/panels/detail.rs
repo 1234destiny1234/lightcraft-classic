@@ -1354,7 +1354,9 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
         }
     }
     if let Some(why) = photo.preview_only.as_deref().filter(|_| !fullscreen) {
-        preview_only_pill(ui, canvas, why);
+        // (the Modern layout's buttons float over the canvas' top: below them)
+        let top = if crate::modern::on(app) { crate::modern::chrome_top(app) } else { 12.0 };
+        preview_only_pill(ui, canvas, why, top);
     }
     crate::widgets::context_menu(&resp, |ui| {
         if app.ui.right == RightPanel::Remove
@@ -1663,13 +1665,13 @@ fn filter_pill(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) -> Option<Rect
 
 /// A raw shown from its embedded JPEG (issue #10): a pill at the canvas' top centre saying so;
 /// hovering it explains (registered as `notice:previewOnly:loupe`).
-fn preview_only_pill(ui: &mut egui::Ui, canvas: Rect, reason: &str) {
+fn preview_only_pill(ui: &mut egui::Ui, canvas: Rect, reason: &str, top: f32) {
     let t = Tokens::get(ui.ctx());
     let p = ui.painter_at(canvas);
     let text = crate::i18n::tr_format!("Preview only — editing the camera's embedded JPEG ({})", crate::widgets::preview_only_variant(reason));
     let g = p.layout_no_wrap(text, t.font(12.0), Color32::WHITE);
     let size = vec2(g.size().x + 40.0, 26.0);
-    let r = Rect::from_min_size(pos2(canvas.center().x - size.x / 2.0, canvas.top() + 12.0), size);
+    let r = Rect::from_min_size(pos2(canvas.center().x - size.x / 2.0, canvas.top().max(ui.ctx().content_rect().top()) + top), size);
     p.rect_filled(r, 13.0, Color32::from_black_alpha(185));
     crate::icons::paint(&p, Rect::from_center_size(pos2(r.left() + 16.0, r.center().y), vec2(15.0, 15.0)), crate::icons::Icon::Info, t.caution);
     p.galley(pos2(r.left() + 29.0, r.center().y - g.size().y / 2.0), g, Color32::WHITE);

@@ -43,12 +43,21 @@ fn assert_fits(h: &Headless, size: [f32; 2], what: &str) {
 fn tall_dialogs_fit_a_small_window_with_their_buttons_on_screen() {
     for size in [[1366.0, 768.0], [1000.0, 520.0]] {
         let mut h = open(size, Dialog::Settings { tab: "general".into() });
-        assert_fits(&h, size, "Settings");
+        // Settings fills the window: its way out (‹) is on screen and closes it
+        let screen = egui::Rect::from_min_size(egui::Pos2::ZERO, egui::vec2(size[0], size[1]));
+        assert!(screen.contains_rect(rect(&h, "settings:back")) && screen.contains_rect(rect(&h, "settings:rows")), "Settings in {screen:?}");
+        let r = h.request("ui.clickWidget", json!({"id": "settings:back"}), T);
+        assert_eq!(r["ok"], true, "{r}");
+        settle(&mut h);
+        assert!(h.app.ui.dialog.is_none(), "‹ closed Settings");
         let r = h.request("command", json!({"command": "dialog.export"}), T);
         assert_eq!(r["ok"], true, "{r}");
         settle(&mut h);
         assert!(matches!(h.app.ui.dialog, Some(Dialog::Export { .. })), "{:?}", h.app.ui.dialog);
-        assert_fits(&h, size, "Export");
+        // Export fills the window too: its way back and its buttons are on screen
+        for id in ["export:back", "button:dialogOk", "button:dialogCancel"] {
+            assert!(screen.contains_rect(rect(&h, id)), "Export: {id} in {screen:?}");
+        }
         // the footer buttons can be pressed
         let r = h.request("ui.clickWidget", json!({"id": "button:dialogCancel"}), T);
         assert_eq!(r["ok"], true, "{r}");

@@ -1164,7 +1164,12 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
                 "paperInk": app.ui.proof_paper_ink, "destWarning": pr.dest_warning, "displayWarning": pr.display_warning}))
         }
         "view.histogram" => {
-            app.ui.histogram = !app.ui.histogram;
+            // the Modern layout's floating histogram (shown small again), else Classic's panel
+            if crate::modern::on(app) {
+                crate::modern::toggle_histogram(app);
+            } else {
+                app.ui.histogram = !app.ui.histogram;
+            }
             Ok(Value::Null)
         }
         "view.histogram.mode" => {

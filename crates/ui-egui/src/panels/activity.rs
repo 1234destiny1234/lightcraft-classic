@@ -69,8 +69,13 @@ pub fn show(app: &mut LccApp, ctx: &egui::Context) {
     let t = Tokens::get(ctx);
     let shown = if app.activity_expanded { tasks.len() } else { tasks.len().min(MAX_ROWS) };
     let hidden = tasks.len().saturating_sub(shown);
-    // touch layout: below its top bar and inside the screen's insets; else below the top bar
-    let origin = if crate::touch::on(app) { crate::touch::overlay_origin(app) } else { pos2(8.0, t.top_bar_h + 8.0) };
+    // Modern layout: centred under its Library / Develop switch, inside the screen's insets (clear
+    // of the buttons in the corners and of the cards); else below the top bar
+    let origin = if crate::modern::on(app) {
+        pos2(ctx.content_rect().center().x - WIDTH / 2.0, crate::modern::overlay_origin(app).y)
+    } else {
+        pos2(8.0, t.top_bar_h + 8.0)
+    };
     let top = origin.y - 8.0;
     let max_height = (ctx.content_rect().height() - top - 60.0).max(80.0);
     let mut cancel = None;

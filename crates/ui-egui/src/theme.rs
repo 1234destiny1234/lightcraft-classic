@@ -459,22 +459,25 @@ pub enum SliderLayout {
     OneRow,
     /// Name and value on a line, the track across the panel under them, as in Camera Raw.
     TwoRows,
+    /// One rounded bar with the name and value inside it, dragged anywhere (the Modern layout's).
+    Pill,
 }
 
 impl Default for SliderLayout {
-    /// Two rows on Android's tablets, where a finger wants the longer track; one row elsewhere.
+    /// Pills on Android, where a finger wants the whole bar; one row elsewhere.
     fn default() -> Self {
-        if cfg!(target_os = "android") { SliderLayout::TwoRows } else { SliderLayout::OneRow }
+        if cfg!(target_os = "android") { SliderLayout::Pill } else { SliderLayout::OneRow }
     }
 }
 
 impl SliderLayout {
-    pub const ALL: [SliderLayout; 2] = [SliderLayout::OneRow, SliderLayout::TwoRows];
+    pub const ALL: [SliderLayout; 3] = [SliderLayout::OneRow, SliderLayout::TwoRows, SliderLayout::Pill];
 
     pub fn label(self) -> &'static str {
         match self {
             SliderLayout::OneRow => "One Row",
             SliderLayout::TwoRows => "Two Rows",
+            SliderLayout::Pill => "Pill",
         }
     }
 }
@@ -688,8 +691,9 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
     v.extreme_bg_color = t.field;
     v.faint_bg_color = t.inset;
     v.window_stroke = Stroke::new(1.0, t.button_border);
-    v.window_corner_radius = CornerRadius::same(6);
-    v.menu_corner_radius = CornerRadius::same(6);
+    // cards: every window and dialog, and its popups and menus, softly rounded
+    v.window_corner_radius = CornerRadius::same(14);
+    v.menu_corner_radius = CornerRadius::same(10);
     v.selection.bg_fill = t.accent.gamma_multiply(0.6);
     v.selection.stroke = Stroke::new(1.0, t.accent);
     v.override_text_color = Some(t.text_label);

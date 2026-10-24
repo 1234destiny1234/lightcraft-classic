@@ -483,7 +483,7 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "view.focusPoint" => Some(u.settings.focus_point),
         "view.zoomToFocus" => Some(u.settings.zoom_to_focus),
         "view.filmstrip" => Some(u.filmstrip),
-        "view.histogram" => Some(u.histogram),
+        "view.histogram" => Some(if crate::modern::on(app) { crate::modern::histogram_shown(app) } else { u.histogram }),
         "view.clipping" => Some(u.show_clipping),
         "view.visualizeHdr" => Some(u.hdr_visualize),
         "view.colorReadoutRgb" => Some(u.settings.color_readout == crate::color_readout::ColorReadout::Rgb),
@@ -1276,7 +1276,14 @@ fn submenu(ui: &mut egui::Ui, label: &str, text: String, depth: usize, bar_botto
 }
 
 /// `depth` is 1 for a top-level menu's rows; `bar_bottom` is where the menu bar ends.
-fn nodes_ui(ui: &mut egui::Ui, nodes: &[MenuNode], mac: bool, clicked: &mut Option<(String, Value)>, depth: usize, bar_bottom: Option<f32>) {
+pub(crate) fn nodes_ui(
+    ui: &mut egui::Ui,
+    nodes: &[MenuNode],
+    mac: bool,
+    clicked: &mut Option<(String, Value)>,
+    depth: usize,
+    bar_bottom: Option<f32>,
+) {
     ui.set_min_width(220.0);
     for n in nodes {
         match n {

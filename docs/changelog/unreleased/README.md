@@ -7,7 +7,7 @@ same changelog file. At release, `cargo xtask notes --release <version>` gathers
 - **Name:** `<YYYY-MM-DD>-<slug>.md`: the day you write it, then a few words in lowercase letters, digits and
   hyphens, e.g. `2026-10-16-faster-grid.md`. Within a section, entries are listed oldest first.
 - **Content:** one `## Section` heading and its bullets, written as in the released changelogs
-  (`docs/changelog/0.9.0.md`): a bold lead, what changed, credits, the fork issue and the matching upstream PR:
+  (`docs/changelog/0.9.0.md`): a bold lead, what changed, credits, the Chromaforge issue and the matching upstream PR:
 
   ```markdown
   ## Library

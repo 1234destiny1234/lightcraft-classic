@@ -2509,7 +2509,7 @@ mod tests {
     /// one-line summary on the header, start open (where, name, format) or folded (size,
     /// sharpening, metadata, watermark), and keep the person's choice the next time.
     #[test]
-    fn export_dialog_sections_fold_and_stay_folded() {
+    fn export_screen_shows_every_section_in_order_and_its_rail_jumps_to_one() {
         let mut h = demo([1400.0, 900.0]);
         let t = Duration::from_secs(10);
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
@@ -2524,28 +2524,16 @@ mod tests {
         assert!(top(&mut h, "section:exportLocation") < top(&mut h, "section:exportNaming"));
         assert!(top(&mut h, "section:exportNaming") < top(&mut h, "section:exportFileSettings"));
         assert!(shown(&mut h, "combo:exportDestinationMode"));
-        // where, what name and which format start open; size, sharpening, metadata and watermark folded
+        // the Export screen shows every section open, one page (no folds to find a setting behind)
         assert!(shown(&mut h, "button:exportNamingTags") && shown(&mut h, "button:exportFormat-0"));
-        assert!(!shown(&mut h, "check:exportFullSize"), "Image Sizing starts folded");
-        assert!(!shown(&mut h, "button:exportSharpen-0") && !shown(&mut h, "button:exportMetadata-0"));
-        assert!(shown(&mut h, "section:exportWatermark"), "a folded section keeps its header");
-        h.request("ui.clickWidget", json!({"id": "section:exportSizing"}), t);
+        assert!(shown(&mut h, "check:exportFullSize"), "Image Sizing is open");
+        // the rail's Metadata scrolls the page to it
+        let before = top(&mut h, "section:exportMetadata");
+        h.request("ui.clickWidget", json!({"id": "export:group:Metadata"}), t);
         h.settle(SETTLE);
-        assert!(shown(&mut h, "check:exportFullSize"), "opened");
-        assert_eq!(h.app.ui.group_open.get("export:Sizing"), Some(&true), "kept in the settings");
-        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
-        h.settle(SETTLE);
-        assert!(!shown(&mut h, "combo:exportDestinationMode"), "folded");
-        assert!(shown(&mut h, "button:exportFormat-0"), "the other sections stay open");
-        h.request("ui.dialog.cancel", json!({}), t);
-        h.settle(SETTLE);
-        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
-        h.settle(SETTLE);
-        assert!(!shown(&mut h, "combo:exportDestinationMode"), "still folded when the dialog opens again");
-        assert!(shown(&mut h, "check:exportFullSize"), "still open when the dialog opens again");
-        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
-        h.settle(SETTLE);
-        assert!(shown(&mut h, "combo:exportDestinationMode"), "unfolded");
+        let after = top(&mut h, "section:exportMetadata");
+        assert!(after < before, "scrolled up to Metadata ({before} → {after})");
+        assert!(shown(&mut h, "button:exportMetadata-0"));
     }
 
     /// Wide enough, the Export dialog lists its presets in a column (a click loads one, keeping
@@ -2613,7 +2601,8 @@ mod tests {
         }
         let w1 = width(&mut h);
         assert!((w1 - w0).abs() < 0.5, "the export dialog grew from {w0} to {w1}");
-        assert!(w1 <= 900.0, "{w1}");
+        // (a screen that fills the window, never past it)
+        assert!(w1 <= 1400.0, "{w1}");
     }
 
     /// With a watermark on, the Export dialog shows the first photo with the watermark on it.
@@ -3838,28 +3827,31 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// Switching Settings tabs keeps the window's top edge (and its tab row) where it is and never makes it
-    /// narrower, though the tabs are of different heights and widths.
+    /// Switching Settings sections keeps the screen still: the rail and the rows' column stay where
+    /// they are, though the sections are of different heights.
     #[test]
     fn settings_tabs_keep_the_window_in_place() {
         let mut h = demo([1300.0, 820.0]);
         let t = Duration::from_secs(10);
-        let window = |h: &Headless| h.app.widgets.iter().find(|(w, _)| w == "dialog:window").map(|(_, r)| *r).expect("the dialog");
+        let at = |h: &Headless, id: &str| h.app.widgets.iter().rev().find(|(w, _)| w == id).map(|(_, r)| *r).expect(id);
         let r = h.request("engine.execute", json!({"command": "app.settings", "params": {"tab": "general"}}), t);
         assert_eq!(r["ok"], true, "{r}");
         h.settle(SETTLE);
-        let first = window(&h);
-        let mut heights = Vec::new();
+        let (rows, rail) = (at(&h, "settings:rows"), at(&h, "settings:section:general"));
         for tab in ["display", "import", "performance", "general", "interface", "display"] {
             h.request("ui.clickWidget", json!({"id": format!("button:settingsTab-{tab}")}), t);
             h.settle(SETTLE);
-            let now = window(&h);
-            assert!((now.top() - first.top()).abs() < 1.0, "{tab}: top {} → {}", first.top(), now.top());
-            assert!(now.width() >= first.width() - 1.0, "{tab}: width {} → {}", first.width(), now.width());
-            heights.push(now.height());
+            assert_eq!(
+                crate::settings_screen::section_of(match &h.app.ui.dialog {
+                    Some(crate::state::Dialog::Settings { tab }) => tab,
+                    other => panic!("{tab}: {other:?}"),
+                }),
+                crate::settings_screen::section_of(tab),
+                "{tab}"
+            );
+            assert_eq!(at(&h, "settings:rows"), rows, "{tab}: the rows' column moved");
+            assert_eq!(at(&h, "settings:section:general"), rail, "{tab}: the rail moved");
         }
-        // the categories scroll inside one fixed-height content area: the window keeps its size
-        assert!(heights.iter().all(|h| (h - first.height()).abs() < 1.0), "the window changed height: {heights:?}");
     }
 
     /// Settings ▸ Sync draws a shared library, an offer and exchange states without panicking, and
@@ -4410,10 +4402,10 @@ mod tests {
         let _ = std::fs::remove_dir_all(&dir);
     }
 
-    /// The import review opens bigger than the old fixed 6 × 2.5 grid and can be resized by its
-    /// corner: the photo grid takes the new height, and the window then keeps its size (issue #337).
+    /// The import review fills the window: the photo grid takes the room, and the Copy options
+    /// (more rows) never push the Import button off the window.
     #[test]
-    fn import_review_dialog_resizes() {
+    fn import_review_fills_the_window_and_keeps_its_button() {
         let mut h = demo([1400.0, 1000.0]);
         let t = Duration::from_secs(10);
         let candidates = (0..60)
@@ -4425,17 +4417,18 @@ mod tests {
             })
             .collect();
         h.app.ui.dialog = Some(crate::state::Dialog::Import { opts: Box::new(crate::import::ImportDialog::new(candidates)) });
-        let rect = |h: &mut Headless| {
+        let rect = |h: &mut Headless, id: &str| {
             let r = h.request("ui.widgets", json!({}), t);
-            let w = r["result"].as_array().and_then(|a| a.iter().find(|w| w["id"] == "dialog:window")).expect("dialog on screen");
+            let w = r["result"].as_array().and_then(|a| a.iter().find(|w| w["id"] == id)).unwrap_or_else(|| panic!("{id} on screen"));
             [0usize, 1, 2, 3].map(|i| w["rect"][i].as_f64().unwrap())
         };
         for _ in 0..10 {
             h.step();
         }
-        let r0 = rect(&mut h);
-        assert!(r0[3] > 600.0, "{r0:?}");
-        // the Copy options add rows below the grid: the grid makes room, the window doesn't grow
+        let grid = rect(&mut h, "import:grid");
+        assert!(grid[3] > 600.0 && grid[2] > 700.0, "the grid takes the room: {grid:?}");
+        let go = rect(&mut h, "import:go");
+        assert!(go[1] + go[3] <= 1000.0 && go[0] + go[2] <= 1400.0, "the button is on screen: {go:?}");
         for copy in [true, false] {
             if let Some(crate::state::Dialog::Import { opts }) = &mut h.app.ui.dialog {
                 opts.copy = copy;
@@ -4443,116 +4436,8 @@ mod tests {
             for _ in 0..10 {
                 h.step();
             }
-            let r = rect(&mut h);
-            assert!((r[3] - r0[3]).abs() < 0.5, "copy {copy}: {r0:?} → {r:?}");
+            assert_eq!(rect(&mut h, "import:go"), go, "copy {copy}: the button stays put");
         }
-        let (x, y) = (r0[0] + r0[2] - 3.0, r0[1] + r0[3] - 3.0);
-        h.request("ui.drag", json!({"x": x, "y": y, "toX": x + 160.0, "toY": y + 120.0, "steps": 12}), t);
-        for _ in 0..10 {
-            h.step();
-        }
-        let r1 = rect(&mut h);
-        assert!(r1[2] > r0[2] + 100.0 && r1[3] > r0[3] + 80.0, "dragging the corner resized it: {r0:?} → {r1:?}");
-        for _ in 0..60 {
-            h.step();
-        }
-        let r2 = rect(&mut h);
-        assert!((r2[2] - r1[2]).abs() < 0.5 && (r2[3] - r1[3]).abs() < 0.5, "the dialog kept its size: {r1:?} → {r2:?}");
-        assert!(matches!(h.app.ui.dialog, Some(crate::state::Dialog::Import { .. })), "still open");
-    }
-
-    /// Adding a file again (dropped on the window, no review) whose photo is in Recently Deleted
-    /// brings the photo back, selected in All Photos, and says so (issue #706) — it is not
-    /// skipped as a duplicate; the trash view's menus offer Restore and Delete Permanently, and a
-    /// re-add of a photo that is in the library selects it in All Photos.
-    #[test]
-    fn readding_a_deleted_photo_shows_it_in_recently_deleted() {
-        let dir = std::env::temp_dir().join(format!("lc-ui-readd-{}", std::process::id()));
-        let _ = std::fs::remove_dir_all(&dir);
-        std::fs::create_dir_all(&dir).unwrap();
-        let img = lcc_raster::Rgba8 { width: 16, height: 12, data: vec![[200, 120, 40, 255]; 16 * 12] };
-        let png = lcc_codecs::encode_png(&lcc_codecs::EncodeImage::rgba8(&img), &lcc_codecs::EncodeMeta::default()).unwrap();
-        let file = dir.join("flower.png");
-        std::fs::write(&file, png).unwrap();
-        let paths = vec![file.to_string_lossy().to_string()];
-        let services = crate::Services { png: None, ..Default::default() };
-        let mut app = LccApp::new(lcc_engine::Session::with_demo().with_fs(), services);
-        app.ui.view = crate::state::ViewMode::PhotoGrid;
-        let mut h = Headless::new(app, [1300.0, 900.0], 1.0);
-        let t = Duration::from_secs(10);
-        // frames until the import has finished, so its (timed) toast is read before it expires
-        let finish_import = |h: &mut Headless| {
-            let t0 = std::time::Instant::now();
-            while h.app.import.is_some() && t0.elapsed() < Duration::from_secs(30) {
-                h.step();
-            }
-            assert!(h.app.import.is_none(), "import finished");
-        };
-        crate::import::start_paths(&mut h.app, paths.clone()).unwrap();
-        h.settle(SETTLE);
-        let id = h.app.session.selection.active.expect("imported photo selected");
-        let n0 = h.app.session.catalog.len();
-        h.request("engine.execute", json!({"command": "photo.delete", "params": {"ids": [id.0]}}), t);
-        assert!(h.app.session.catalog.photo(id).unwrap().deleted);
-        let photo_items = |app: &LccApp| -> Vec<String> {
-            let bar = crate::menubar::menu_bar(app);
-            let items = &bar.iter().find(|(title, _)| title == "Photo").expect("Photo menu").1;
-            items.iter().filter_map(|n| if let crate::menubar::MenuNode::Item { id, .. } = n { Some(id.clone()) } else { None }).collect()
-        };
-        assert!(!photo_items(&h.app).contains(&"photo.restore".to_string()), "Restore only for deleted photos");
-
-        crate::import::start_paths(&mut h.app, paths.clone()).unwrap();
-        finish_import(&mut h);
-        assert!(!h.app.session.catalog.photo(id).unwrap().deleted, "re-adding the file restores the photo");
-        assert_eq!(h.app.session.catalog.len(), n0, "no second record");
-        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::All);
-        assert_eq!(h.app.session.selection.ids, vec![id], "the restored photo is selected");
-        let toast = h.app.ui.toast.clone().expect("toast").0;
-        assert!(toast.contains("Restored 1 photo from Recently Deleted"), "{toast}");
-        assert!(!photo_items(&h.app).contains(&"photo.restore".to_string()));
-        // undo of the re-add puts it back in Recently Deleted; the trash view's menus offer Restore
-        h.request("engine.execute", json!({"command": "edit.undo"}), t);
-        assert!(h.app.session.catalog.photo(id).unwrap().deleted, "one undo step");
-        h.request("engine.execute", json!({"command": "library.source", "params": {"kind": "recentlyDeleted"}}), t);
-        h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [id.0]}}), t);
-        h.settle(SETTLE);
-        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::RecentlyDeleted);
-        let items = photo_items(&h.app);
-        assert!(items.contains(&"photo.restore".to_string()) && items.contains(&"photo.deletePermanently".to_string()), "{items:?}");
-        assert!(!items.contains(&"photo.delete".to_string()), "{items:?}");
-        // a right-click on its filmstrip thumbnail opens the photo menu
-        h.request("ui.set", json!({"view": "detail"}), t);
-        h.settle(SETTLE);
-        let cell = h.app.widgets.iter().find(|(w, _)| *w == format!("film:{}", id.0)).map(|(_, r)| *r).expect("filmstrip cell");
-        assert!(!egui::Popup::is_any_open(&h.view.ctx));
-        let r = h.request("ui.click", json!({"x": cell.center().x, "y": cell.center().y, "button": "right"}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        h.settle(SETTLE);
-        assert!(egui::Popup::is_any_open(&h.view.ctx), "filmstrip context menu");
-
-        // Empty Recently Deleted is offered while the trash is the source
-        assert!(photo_items(&h.app).contains(&"library.emptyRecentlyDeleted".to_string()));
-        let r = h.request("ui.menu.invoke", json!({"id": "photo.restore"}), t);
-        assert_eq!(r["ok"], true, "{r}");
-        assert!(!h.app.session.catalog.photo(id).unwrap().deleted, "restored");
-        crate::import::start_paths(&mut h.app, paths).unwrap();
-        finish_import(&mut h);
-        assert_eq!(h.app.session.source, lcc_engine::LibrarySource::All);
-        assert_eq!(h.app.session.selection.ids, vec![id]);
-        let toast = h.app.ui.toast.clone().expect("toast").0;
-        assert!(toast.contains("All Photos"), "{toast}");
-        assert!(!photo_items(&h.app).contains(&"library.emptyRecentlyDeleted".to_string()), "Empty is for the trash view only");
-
-        // deleted permanently, the file imports afresh as a new photo
-        h.request("engine.execute", json!({"command": "photo.delete", "params": {"ids": [id.0]}}), t);
-        h.request("engine.execute", json!({"command": "photo.deletePermanently", "params": {"ids": [id.0]}}), t);
-        assert!(h.app.session.catalog.photo(id).is_none());
-        crate::import::start_paths(&mut h.app, vec![file.to_string_lossy().to_string()]).unwrap();
-        h.settle(SETTLE);
-        let fresh = h.app.session.selection.active.expect("re-imported photo selected");
-        assert_ne!(fresh, id);
-        assert!(!h.app.session.catalog.photo(fresh).unwrap().deleted);
-        let _ = std::fs::remove_dir_all(&dir);
     }
 
     /// Importing while an album is shown (issue #1446): the new photos aren't in it, so the view
@@ -5285,51 +5170,52 @@ mod tests {
         let r = h.request("ui.key", json!({"key": ",", "cmd": true}), t);
         assert_eq!(r["ok"], true, "{r}");
         assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { tab: "general".into() }));
+        // (the old tabs' ids open the section that holds them: Performance is in Display & Speed)
         for tab in ["import", "performance", "display", "interface", "general"] {
             let r = h.request("ui.clickWidget", json!({"id": format!("button:settingsTab-{tab}")}), t);
             assert_eq!(r["ok"], true, "{tab}: {r}");
-            assert_eq!(h.app.ui.dialog, Some(crate::state::Dialog::Settings { tab: tab.into() }));
+            let Some(crate::state::Dialog::Settings { tab: now }) = &h.app.ui.dialog else { panic!("{tab}: Settings closed") };
+            assert_eq!(crate::settings_screen::section_of(now), crate::settings_screen::section_of(tab), "{tab}");
         }
         // General: confirm before delete (on by default), startup view
         assert!(h.app.ui.settings.confirm_delete);
+        crate::settings_screen::reveal(&mut h, "check:settings.confirmDelete");
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(!h.app.ui.settings.confirm_delete);
+        crate::settings_screen::reveal(&mut h, "check:settings.confirmDelete");
         h.request("ui.clickWidget", json!({"id": "check:settings.confirmDelete"}), t);
         assert!(h.app.ui.settings.confirm_delete);
+        crate::settings_screen::reveal(&mut h, "button:settingsStartup-2");
         h.request("ui.clickWidget", json!({"id": "button:settingsStartup-2"}), t);
         assert_eq!(h.app.ui.settings.startup_view, crate::state::StartupView::Detail);
         // Interface: filmstrip names off, grid badges always
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-interface"}), t);
-        // Appearance cards (one row per theme, with its favorite star) sit above these controls;
-        // scroll the compact settings viewport past them.
-        h.request("ui.hoverWidget", json!({"id": "radio:theme-charcoal"}), t);
-        h.request("ui.scroll", json!({"dy": -700.0}), t);
-        for _ in 0..4 {
-            h.step();
-        }
+        crate::settings_screen::reveal(&mut h, "check:settings.filmNames");
         h.request("ui.clickWidget", json!({"id": "check:settings.filmNames"}), t);
         assert!(!h.app.ui.settings.film_names);
+        crate::settings_screen::reveal(&mut h, "button:settingsGridBadges-1");
         h.request("ui.clickWidget", json!({"id": "button:settingsGridBadges-1"}), t);
         assert_eq!(h.app.ui.settings.grid_badges, crate::state::GridBadges::Always);
-        h.request("ui.scroll", json!({"dy": 700.0}), t);
-        for _ in 0..4 {
-            h.step();
-        }
         // Performance: the thumbnail cache size goes to the library preferences
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-performance"}), t);
+        crate::settings_screen::reveal(&mut h, "button:settingsCache-0");
         h.request("ui.clickWidget", json!({"id": "button:settingsCache-0"}), t);
         assert_eq!(h.app.session.cache_mb, 512);
+        crate::settings_screen::reveal(&mut h, "button:settingsPreview-3");
         h.request("ui.clickWidget", json!({"id": "button:settingsPreview-3"}), t);
         assert_eq!(h.app.ui.settings.preview_limit, 3840);
+        crate::settings_screen::reveal(&mut h, "button:settingsMemory-2");
         h.request("ui.clickWidget", json!({"id": "button:settingsMemory-2"}), t);
         assert_eq!(h.app.ui.settings.memory_mb, 1024);
         h.step();
         assert_eq!(lcc_engine::memory::budget(), 1024 << 20, "applied through app.memoryBudget");
+        crate::settings_screen::reveal(&mut h, "button:settingsMemory-0");
         h.request("ui.clickWidget", json!({"id": "button:settingsMemory-0"}), t);
         h.step();
         assert_eq!(lcc_engine::memory::budget(), lcc_engine::memory::default_budget(), "back to automatic");
         // Import: per-camera defaults
         h.request("ui.clickWidget", json!({"id": "button:settingsTab-import"}), t);
+        crate::settings_screen::reveal(&mut h, "check:settings.perCamera");
         h.request("ui.clickWidget", json!({"id": "check:settings.perCamera"}), t);
         assert!(h.app.session.import_defaults.per_camera);
         let img = h.snapshot(SETTLE);

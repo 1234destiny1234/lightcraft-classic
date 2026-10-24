@@ -30,7 +30,7 @@ no screen-reader bridge).
 `crates/ui-egui/src/tests_access.rs` runs the demo library headless with AccessKit on, visits every
 module, and fails on an interactive node (a button, field, slider, combo box, colour well or
 anything clickable) without a label, value, description or `labelled_by` relation. It covers the
-fork's own UI: the Map, Book, Slideshow, Print and Web modules, and in Library the module picker,
+Chromaforge's own UI: the Map, Book, Slideshow, Print and Web modules, and in Library the module picker,
 Navigator and Metadata panels. Widgets shared with upstream are left out (below).
 
 ## Upstream candidates
@@ -50,5 +50,5 @@ small fix (a `widget_info` / `access::label` call) best made upstream:
 - The text field widget (`crates/ui-egui/src/text_field.rs`): takes no accessible label; callers
   name it with `access::label(&response.response, …)`.
 
-The rating stars (`widgets::stars`) were named in this fork with a one-line call (each star reads
+The rating stars (`widgets::stars`) were named in Chromaforge with a one-line call (each star reads
 "Rating N"); that line is an upstream candidate as well.

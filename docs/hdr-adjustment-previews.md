@@ -95,7 +95,7 @@ rendering paths. Diagnostic overlays and soft proof intentionally remain SDR vie
 ## Branch transfer
 
 The changes were transferred to `fix/hdr-adjustment-previews` in the checkout now using
-Kaan88's fork as origin, based on the Classic fork's main at `dfd29a82c`.
+Kaan88's fork as origin, based on Chromaforge's main at `dfd29a82c`.
 The upstream filmstrip additions and newer parity notes were preserved. Formatting and
 diff checks passed after the transfer. The test results above were collected on the
 original base (`79a0ba0e5`); the runtime suites have not been rerun on this newer base.

@@ -220,7 +220,9 @@ pub fn pump(app: &mut LccApp, ctx: &egui::Context) {
         ctx.request_repaint_after(std::time::Duration::from_millis(250));
     }
     // Develop on a link-only photo: fetch its original (once per photo per session)
-    let developing = app.ui.view == crate::state::ViewMode::Detail && app.ui.right.is_edit_tool();
+    // (the Modern layout's Develop has no Edit panel: being in Develop is enough there)
+    let developing = app.ui.view == crate::state::ViewMode::Detail
+        && (app.ui.right.is_edit_tool() || (crate::modern::on(app) && app.ui.module != crate::module::ModuleId::Library));
     if developing
         && let Some(id) = app.session.active()
         && app.session.catalog.photo(id).is_some_and(|p| p.preview_only.as_deref() == Some(lcc_engine::remote::LINK_ONLY))
@@ -721,7 +723,8 @@ fn account_card(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens, i: usize, a: &V
         if let Some(e) = link["error"].as_str() {
             ui.label(RichText::new(e).color(t.caution));
         }
-        ui.horizontal(|ui| {
+        // (wraps: on a narrow window the buttons take two rows instead of running off the edge)
+        ui.horizontal_wrapped(|ui| {
             ui.spacing_mut().item_spacing.x = 4.0;
             if text_button(ui, &format!("immichLink-{i}"), crate::i18n::tr("Link Now"), false).clicked() {
                 let _ = app.run("immich.link", json!({"account": id}));

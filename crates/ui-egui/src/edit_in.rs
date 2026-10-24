@@ -419,7 +419,7 @@ fn combo(ui: &mut egui::Ui, id: &str, label: &str, value: &mut String, choices: 
 
 fn presets_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let list = app.session.execute("editIn.presets", &json!({})).ok();
-    let mut open = true;
+    let mut open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
     egui::Window::new(tr("Edit In Presets")).id(egui::Id::new("edit-in-presets")).open(&mut open).default_width(420.0).collapsible(false).show(
         ctx,
         |ui| {
@@ -543,7 +543,7 @@ fn ask_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
 
 fn actions_window(app: &mut LccApp, ctx: &egui::Context, st: &mut WorkflowUi) {
     let list = app.session.execute("actions.list", &json!({})).map_err(|e| e.to_string());
-    let mut open = true;
+    let mut open = !crate::dialog_frame::esc_closes(app.ui.dialog.is_some(), ctx);
     egui::Window::new(tr("Actions")).id(egui::Id::new("actions-panel")).open(&mut open).default_width(360.0).show(ctx, |ui| {
         let (actions, recording) = match &list {
             Ok(l) => (l["actions"].as_array().cloned().unwrap_or_default(), l["recording"].as_str().map(str::to_string)),
