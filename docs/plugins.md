@@ -277,6 +277,14 @@ inside the user's crop, say). The measurement still doesn't move with later crop
 picks up a new one. Hosts without the field measure the frame. `plugin.list` shows it as
 `analyzeArea`.
 
+**Menu groups (ABI v1.1 proposal).** A choice parameter may carry `"groups"`, one name per option
+(`""` = not in a group): `{"type": "choice", "options": ["Generic", "Portra 400", "Superia 400"],
+"groups": ["", "Kodak", "Fujifilm"]}`. Develop ▸ Plug-in Filters shows each group as a collapsible
+section of the dropdown, in order of first appearance, the one holding the current choice open;
+options without a group stay at the top level, in place. A list of another length, or with a name
+that isn't 1-64 printable characters, is ignored (a flat menu), as hosts without the field do.
+`plugin.list` gives each grouped parameter's `groups`. The dropdown is widget
+`pluginFilterChoice:<uid>:<param>`.
 **Base tone (ABI v1.1 proposal).** A raw is toned after the Source stage: by its camera's own
 curve when the file has one, else by the default raw curve. A Source filter whose output is
 already a finished picture (a negative conversion with its own tone curve) may set
