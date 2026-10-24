@@ -97,6 +97,20 @@ impl Group {
         }
     }
 
+    /// The Edit panel's sections the group opens in full (its "more" buttons): together they hold
+    /// every develop setting.
+    pub fn sections(self) -> &'static [(&'static str, &'static str)] {
+        match self {
+            Group::Light => &[("light", "Basic"), ("profile", "Profile & Treatment")],
+            Group::Colour => &[("mixer", "Color Mixer"), ("grading", "Color Grading"), ("calibration", "Calibration")],
+            Group::Tone => &[("curve", "Tone Curve")],
+            Group::Detail => &[("detail", "Detail")],
+            Group::Optics => &[("optics", "Lens Corrections"), ("geometry", "Transform")],
+            Group::Effects => &[("effects", "Effects"), ("plugins", "Plug-in Filters")],
+            _ => &[],
+        }
+    }
+
     /// The pill sliders of an adjustment group, in order (none for Presets and the tools).
     fn control_ids(self) -> &'static [&'static str] {
         match self {
@@ -118,6 +132,20 @@ impl Group {
             _ => &[],
         }
     }
+}
+
+/// The section a long press (or right-click) on a slider opens: the one with its other settings.
+fn section_of(control: &str) -> Option<&'static str> {
+    let prefix = control.split('.').next().unwrap_or("");
+    Some(match (prefix, control) {
+        (_, "color.saturation" | "color.vibrance") => "mixer",
+        ("vignette" | "grain", _) => "effects",
+        ("curve", _) => "curve",
+        ("wb", _) => "light",
+        ("detail", _) => "detail",
+        ("optics", _) => "optics",
+        _ => return None,
+    })
 }
 
 /// The tools' colour on the dock: amber, so they stand apart from the adjustment groups.
@@ -214,11 +242,13 @@ pub(crate) fn open(app: &mut LccApp, g: Group) -> Result<(), String> {
         }
     }
     app.ui.modern.group = Some(g);
+    app.ui.modern.more = None;
     Ok(())
 }
 
 /// Puts the open card away; a tool's panel goes back to Edit, so its overlay leaves the photo.
 pub(crate) fn close(app: &mut LccApp) {
+    app.ui.modern.more = None;
     if app.ui.modern.group.take().is_some_and(Group::is_tool) && app.ui.right.is_edit_tool() {
         app.ui.right = RightPanel::Edit;
     }
@@ -369,8 +399,16 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
     let Some(g) = app.ui.modern.group else { return };
     let t = Tokens::get(ui.ctx());
     let side = app.ui.modern.dock_side;
-    let sliders = !g.control_ids().is_empty();
-    let width: f32 = if sliders && !side { 600.0 } else { 340.0 };
+    // a section of the group opened in full (Tone Curve, Color Grading, all of Effects…)
+    let more = app.ui.modern.more.clone().filter(|k| g.sections().iter().any(|(s, _)| s == k));
+    let sliders = !g.control_ids().is_empty() && more.is_none();
+    let width: f32 = if more.is_some() {
+        420.0
+    } else if sliders && !side {
+        600.0
+    } else {
+        340.0
+    };
     let gap = 10.0;
     // a tool's card sits at the right edge, clear of the photo its overlay is on (the photo makes
     // room for it: `tool_room`)
@@ -408,12 +446,24 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
         let shown = frame.show(ui, |ui| {
             ui.set_width(max_w - 24.0);
             ui.horizontal(|ui| {
-                ui.label(egui::RichText::new(crate::i18n::tr(g.label())).font(t.semibold(14.0)).color(t.text));
+                if let Some(key) = &more {
+                    // ‹ back to the group's sliders
+                    let name = g.sections().iter().find(|(k, _)| k == key).map_or("", |(_, l)| *l);
+                    let b = crate::button::Button::new(name).icon(Icon::ChevronLeft).kind(crate::button::Kind::Ghost).widget("modern:moreBack");
+                    if b.show(ui).clicked() {
+                        app.ui.modern.more = None;
+                    }
+                } else {
+                    ui.label(egui::RichText::new(crate::i18n::tr(g.label())).font(t.semibold(14.0)).color(t.text));
+                }
             });
             ui.add_space(6.0);
-            egui::ScrollArea::vertical().id_salt(("modern-card-scroll", g.label(), side)).max_height(max_h - 60.0).show(ui, |ui| {
+            let photo = app.session.active();
+            egui::ScrollArea::vertical().id_salt(("modern-card-scroll", g.label(), side, more.clone())).max_height(max_h - 60.0).show(ui, |ui| {
                 ui.set_width(max_w - 24.0);
-                if sliders {
+                if let (Some(key), Some(photo)) = (&more, photo) {
+                    crate::panels::edit::show_section(app, ui, photo, key);
+                } else if sliders {
                     let all = specs(app, g);
                     if columns {
                         let half = all.len().div_ceil(2);
@@ -434,6 +484,19 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
                 } else {
                     crate::panels::right::tool_only(app, ui);
                 }
+                // the group's full sections: every setting the Edit panel has is a tap away
+                if more.is_none() && !g.sections().is_empty() {
+                    ui.add_space(8.0);
+                    ui.horizontal_wrapped(|ui| {
+                        ui.spacing_mut().item_spacing = egui::vec2(6.0, 6.0);
+                        for (key, label) in g.sections() {
+                            let b = crate::button::Button::new(label).icon(Icon::ChevronRight).widget(format!("modern:more:{key}"));
+                            if b.show(ui).clicked() {
+                                app.ui.modern.more = Some((*key).to_string());
+                            }
+                        }
+                    });
+                }
             });
         });
         let r = shown.response.rect;
@@ -444,7 +507,11 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
 
 fn pill(app: &mut LccApp, ui: &mut egui::Ui, spec: &'static ControlSpec) {
     let Some(v) = value_of(app, spec) else { return };
-    let out = crate::widgets::slider(ui, spec, v, true, None);
+    let section = section_of(spec.id);
+    let out = crate::widgets::pill(ui, spec, v, true, section.is_some());
+    if out.more {
+        app.ui.modern.more = section.map(str::to_string);
+    }
     edit::apply_slider_out(app, spec, out, |app, v| {
         let (control, value) = develop_value(spec, v);
         app.run("develop.set", json!({"control": control, "value": value}))

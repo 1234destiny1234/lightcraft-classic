@@ -223,3 +223,36 @@ fn the_empty_library_offers_finger_sized_ways_in_without_desktop_hints() {
         assert!(height >= 44.0, "finger-sized buttons ({size:?}: {height})");
     }
 }
+
+/// Every develop setting is reachable in Modern: a slider with more behind it carries a mark and a
+/// right-click (or long press) opens its whole section; each group's section buttons open the rest.
+#[test]
+fn every_setting_is_reachable_through_the_groups_sections() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    exec(&mut h, "modern.group", json!({"group": "effects"}));
+    assert!(has(&h, "sliderMore:vignette.amount"), "Vignette says it has more");
+    ask(&mut h, "ui.clickWidget", json!({"id": "slider:vignette.amount", "button": "right"}));
+    assert_eq!(h.app.ui.modern.more.as_deref(), Some("effects"));
+    for id in ["vignette.midpoint", "vignette.feather", "vignette.roundness", "vignette.highlights", "grain.size", "grain.roughness"] {
+        assert!(has(&h, &format!("slider:{id}")), "{id} in Effects");
+    }
+    // Back: to the group's sliders first
+    let r = exec(&mut h, "modern.back", json!({}));
+    assert_eq!(r["result"]["closed"], "section", "{r}");
+    assert!(h.app.ui.modern.group.is_some() && h.app.ui.modern.more.is_none());
+    for group in crate::modern_dock::Group::ADJUST {
+        exec(&mut h, "modern.group", json!({"group": group.label()}));
+        for (key, _) in group.sections() {
+            assert_eq!(ask(&mut h, "ui.clickWidget", json!({"id": format!("modern:more:{key}")}))["ok"], true, "{group:?} offers {key}");
+            assert_eq!(h.app.ui.modern.more.as_deref(), Some(*key));
+            assert!(has(&h, "modern:card"));
+            ask(&mut h, "ui.clickWidget", json!({"id": "modern:moreBack"}));
+            assert!(h.app.ui.modern.more.is_none(), "‹ goes back");
+        }
+    }
+    // the tone curve and colour grading are there
+    exec(&mut h, "modern.group", json!({"group": "colour"}));
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:more:grading"}));
+    assert_eq!(h.app.ui.modern.more.as_deref(), Some("grading"));
+}

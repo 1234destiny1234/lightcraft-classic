@@ -51,6 +51,9 @@ pub struct ModernUi {
     /// The menu bar is open on this menu ([`crate::modern_menu`]).
     #[serde(skip)]
     pub menu: Option<String>,
+    /// The open group's card shows one of its sections in full (`modern_dock::Group::sections`).
+    #[serde(skip)]
+    pub more: Option<String>,
     /// The histogram's own menu is open, at this point.
     #[serde(skip)]
     histogram_menu: Option<Pos2>,
@@ -160,6 +163,7 @@ impl Default for ModernUi {
             histogram: HistogramPlace::Small,
             histogram_at: [1.0, 0.0],
             menu: None,
+            more: None,
             histogram_menu: None,
             histogram_held: false,
             holding: false,
@@ -391,6 +395,9 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
         let _ = app.run("library.select", json!({"ids": keep}));
         return Some("selection");
     }
+    if app.ui.modern.more.take().is_some() {
+        return Some("section");
+    }
     if app.ui.modern.group.is_some() && app.ui.module != ModuleId::Library {
         crate::modern_dock::close(app);
         return Some("card");
@@ -413,6 +420,9 @@ pub(crate) fn escape(app: &mut LccApp) -> bool {
         return false;
     }
     if app.ui.modern.menu.take().is_some() || app.ui.modern.histogram_menu.take().is_some() {
+        return true;
+    }
+    if app.ui.modern.more.take().is_some() {
         return true;
     }
     if app.ui.modern.group.is_some() && app.ui.module != ModuleId::Library {
