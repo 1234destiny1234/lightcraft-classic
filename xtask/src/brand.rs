@@ -2,6 +2,7 @@
 //! template rendering, and the two brand commands:
 //!
 //! - `cargo xtask brand check`: no product name (current or legacy) in any source file outside the allowlist;
+//!   Markdown files may use the display name;
 //! - `cargo xtask brand test`: build the CLI with the throw-away brand `xtask/test-brand.toml` and check that its
 //!   help, UI snapshot, MCP `serverInfo` and config/log folders use that brand only.
 
@@ -241,6 +242,12 @@ fn is_rendered_doc(root: &Path, path: &str) -> bool {
     path.ends_with(".md") && root.join(format!("{path}.in")).is_file()
 }
 
+/// Markdown docs may name the product by its display name (maintainer decision 2026-10-25: docs say the
+/// fork's name literally); binary names, the env prefix and legacy names stay out of them.
+fn doc_may_name(path: &str, what: &str) -> bool {
+    (path.ends_with(".md") || path.ends_with(".md.in")) && what == "display_name"
+}
+
 pub fn is_allowed(path: &str) -> bool {
     ALLOWED.iter().chain(LEGACY_FILES).any(|p| allowed_by(p, path))
 }
@@ -358,6 +365,7 @@ pub fn check(root: &Path) -> Result<(), String> {
         for (_, what) in scan(&path, &needles) {
             problems.push(format!("{path}: file name contains {what}"));
         }
+        let needles: Vec<_> = needles.iter().filter(|(_, _, what)| !doc_may_name(&path, what)).cloned().collect();
         for (line, what) in scan(&text, &needles) {
             problems.push(format!("{path}:{line}: {what}"));
         }
@@ -628,6 +636,17 @@ settings_dirs = ["A", "B"]
         assert!(find("MY_ZZYZX_LOG", "ZZYZX", Match::Prefix).is_empty());
         assert_eq!(find("use lightcraft_engine", "LightCraft", Match::Anywhere), vec![4]);
         assert!(find("Zzyzx test", "Zzyzx Test", Match::Word).is_empty());
+    }
+
+    #[test]
+    fn docs_may_use_the_display_name_only() {
+        assert!(doc_may_name("docs/pipeline.md", "display_name"));
+        assert!(doc_may_name("README.md", "display_name"));
+        assert!(doc_may_name("README.md.in", "display_name"));
+        assert!(!doc_may_name("docs/pipeline.md", "binary"));
+        assert!(!doc_may_name("docs/pipeline.md", "legacy name"));
+        assert!(!doc_may_name("crates/engine/src/lib.rs", "display_name"));
+        assert!(!doc_may_name("crates/ui-egui/i18n/en.ftl", "display_name"));
     }
 
     #[test]

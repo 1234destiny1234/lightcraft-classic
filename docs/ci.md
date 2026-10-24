@@ -4,7 +4,7 @@
 
 ## How changes reach `main`
 
-`main` on the fork is protected by two rulesets:
+`main` on Chromaforge is protected by two rulesets:
 
 - **No force-push, no deletion** — nobody bypasses this.
 - **Pull request required** (0 approvals, merge commits only) and the **"Linux (cargo xtask ci)"** check must be
