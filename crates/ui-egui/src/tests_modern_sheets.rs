@@ -1,4 +1,4 @@
-//! Headless tests of the touch layout's Settings screen and Export sheet (`crate::touch_sheets`):
+//! Headless tests of the Modern layout's Settings screen and Export sheet (`crate::modern_sheets`):
 //! Settings shows the desktop's own rows (one settings state, two presentations) and fits a
 //! folding phone's two screens, the Layout row switches layouts both ways and is saved with the UI
 //! state, and the Export sheet exports in the background, then hands the files to the host.
@@ -40,26 +40,36 @@ fn has(h: &Headless, id: &str) -> bool {
 fn touch(size: [f32; 2]) -> Headless {
     let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, size, 1.0);
-    assert_eq!(exec(&mut h, "view.touchLayout", json!({"on": true}))["ok"], true);
+    assert_eq!(exec(&mut h, "view.modernLayout", json!({"on": true}))["ok"], true);
     h
 }
 
+/// The width of the Settings rail's General item: icons only (narrow) or with names (the list).
+fn rail_w(h: &Headless) -> f32 {
+    h.app.widgets.iter().rev().find(|(w, _)| w == "settings:section:general").map_or(0.0, |(_, r)| r.width())
+}
+
 #[test]
-fn settings_on_a_phone_is_a_list_then_a_page_with_the_desktop_rows() {
+fn settings_on_a_phone_is_a_section_with_an_icon_rail_and_back_shows_the_list() {
     let mut h = touch(COVER);
     assert_eq!(exec(&mut h, "app.settings", json!({}))["ok"], true);
-    assert!(has(&h, "touch:settings:general") && has(&h, "touch:settings:interface"), "the categories");
-    assert!(!has(&h, "button:settingsTab-general"), "not the desktop dialog");
-    assert_eq!(click(&mut h, "touch:settings:general")["ok"], true);
-    assert!(has(&h, "touch:settings:back"), "a category's own page");
+    // a section open beside the icons of the others
+    assert!(rail_w(&h) > 0.0 && rail_w(&h) < 80.0, "icons only: {}", rail_w(&h));
+    assert!(has(&h, "settings:section:library") && has(&h, "settings:back"));
     assert!(has(&h, "button:settingsLayout-0") && has(&h, "button:settingsLayout-1"), "the Layout row");
-    // the same setting the desktop dialog changes
+    // the same setting Classic changes
+    crate::settings_screen::reveal(&mut h, "button:settingsStartup-1");
     assert_eq!(click(&mut h, "button:settingsStartup-1")["ok"], true);
     assert_eq!(h.app.ui.settings.startup_view, crate::state::StartupView::Grid, "one settings state for both layouts");
-    // Back: the list; Back again: closed
-    click(&mut h, "touch:settings:back");
-    assert!(has(&h, "touch:settings:general") && !has(&h, "touch:settings:back"));
-    click(&mut h, "touch:settings:close");
+    // Back: the list of sections (names); a pick opens one; Back again from the list closes
+    click(&mut h, "settings:back");
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a section keeps Settings open");
+    assert!(rail_w(&h) > 200.0, "the list: {}", rail_w(&h));
+    click(&mut h, "settings:section:library");
+    assert!(rail_w(&h) < 80.0, "a section again");
+    assert!(matches!(&h.app.ui.dialog, Some(Dialog::Settings { tab }) if tab == "library"));
+    click(&mut h, "settings:back");
+    click(&mut h, "settings:back");
     assert!(h.app.ui.dialog.is_none());
 }
 
@@ -79,8 +89,14 @@ fn settings_fits_both_screens_of_a_folding_phone() {
                 .map(|(w, r)| format!("{w} {r:?}"))
                 .collect();
             assert!(off.is_empty(), "{size:?} {tab}: off screen: {off:?}");
-            assert!(has(&h, "touch:settings:close"), "{size:?} {tab}: a way out");
-            click(&mut h, "touch:settings:close");
+            // a way out: ‹ (on a narrow screen twice: the list, then closed)
+            for _ in 0..2 {
+                if h.app.ui.dialog.is_some() {
+                    assert!(has(&h, "settings:back"), "{size:?} {tab}: a way out");
+                    click(&mut h, "settings:back");
+                }
+            }
+            assert!(h.app.ui.dialog.is_none(), "{size:?} {tab}: closed");
         }
     }
 }
@@ -89,20 +105,32 @@ fn settings_fits_both_screens_of_a_folding_phone() {
 fn the_layout_row_switches_both_ways_and_is_saved() {
     let mut h = touch(COVER);
     exec(&mut h, "app.settings", json!({"tab": "general"}));
-    click(&mut h, "touch:settings:general");
-    assert_eq!(click(&mut h, "button:settingsLayout-1")["ok"], true);
-    assert!(!h.app.ui.touch.enabled, "Desktop chosen");
+    assert_eq!(click(&mut h, "button:settingsLayout-0")["ok"], true);
+    assert!(!h.app.ui.modern.enabled, "Classic chosen");
     // saved with the UI state (ui.json), so it holds after a restart
     let saved = serde_json::to_string(&h.app.ui).unwrap();
     let back: crate::state::UiState = serde_json::from_str(&saved).unwrap();
-    assert!(!back.touch.enabled);
-    // the desktop dialog has the same row: the way back
+    assert!(!back.modern.enabled);
+    // Classic shows the same Settings, with the same row: the way back
     h.settle(SETTLE);
-    assert!(has(&h, "button:settingsTab-general"), "the desktop Settings dialog");
-    assert_eq!(click(&mut h, "button:settingsLayout-0")["ok"], true);
-    assert!(h.app.ui.touch.enabled);
+    assert!(has(&h, "settings:section:general"), "Settings in Classic");
+    assert_eq!(click(&mut h, "button:settingsLayout-1")["ok"], true);
+    assert!(h.app.ui.modern.enabled, "Modern chosen");
     let back: crate::state::UiState = serde_json::from_str(&serde_json::to_string(&h.app.ui).unwrap()).unwrap();
-    assert!(back.touch.enabled);
+    assert!(back.modern.enabled);
+}
+
+#[test]
+fn a_ui_json_saved_with_the_touch_layout_opens_in_modern() {
+    // ui.json written before the touch layout became Modern keeps it on
+    let mut v = serde_json::to_value(crate::state::UiState::default()).unwrap();
+    let obj = v.as_object_mut().unwrap();
+    obj.remove("modern");
+    obj.insert("touch".into(), json!({"enabled": true, "histogram": "off"}));
+    let back: crate::state::UiState = serde_json::from_value(v).unwrap();
+    assert!(back.modern.enabled);
+    // the touch layout's histogram was off by default: Modern's shows
+    assert_eq!(back.modern.histogram, crate::modern::HistogramPlace::Small);
 }
 
 type Written = Arc<Mutex<Vec<(String, usize)>>>;
@@ -135,12 +163,14 @@ fn the_export_sheet_exports_in_the_background_then_saves_to_pictures() {
     exec(&mut h, "library.select", json!({"ids": [id]}));
     exec(&mut h, "module.develop", json!({}));
     exec(&mut h, "view.detail", json!({}));
-    exec(&mut h, "touch.chrome", json!({"on": true}));
-    assert_eq!(click(&mut h, "touch:share")["ok"], true);
-    assert!(h.app.touch_sheets.export.is_some(), "Develop's Export opens the sheet");
-    assert!(has(&h, "touch:export:save") && has(&h, "touch:export:share"));
-    click(&mut h, "touch:export:preset:share");
-    let r = exec(&mut h, "touch.export", json!({"dir": "/touch-test-out", "then": "share"}));
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    // Shortcuts ▸ Export, with the host's gallery: the sheet
+    exec(&mut h, "modern.menu", json!({"on": true}));
+    assert_eq!(click(&mut h, "modern:shortcut:export")["ok"], true);
+    assert!(h.app.modern_sheets.export.is_some(), "Shortcuts ▸ Export opens the sheet");
+    assert!(has(&h, "modern:export:save") && has(&h, "modern:export:share"));
+    click(&mut h, "modern:export:preset:share");
+    let r = exec(&mut h, "modern.export", json!({"dir": "/touch-test-out", "then": "share"}));
     assert_eq!(r["ok"], true, "{r}");
     assert!(h.step_until(Duration::from_secs(120), |h| h.app.export.is_none()), "the export ends");
     h.settle(SETTLE);
@@ -150,7 +180,7 @@ fn the_export_sheet_exports_in_the_background_then_saves_to_pictures() {
     let handed = handed.lock().unwrap().clone();
     assert_eq!(handed, vec![(vec![files[0].0.clone()], true)], "the file went to Pictures and Share");
     assert!(h.step_until(Duration::from_secs(10), |h| h.app.session.activity.list().is_empty()), "no row left behind");
-    assert!(h.app.touch_sheets.export.is_none(), "the sheet closed");
+    assert!(h.app.modern_sheets.export.is_none(), "the sheet closed");
 }
 
 #[test]
@@ -165,10 +195,10 @@ fn library_exports_its_selection_to_a_folder_without_a_gallery() {
     exec(&mut h, "view.photoGrid", json!({}));
     let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(2).map(|p| p.0).collect();
     exec(&mut h, "library.select", json!({"ids": ids}));
-    assert_eq!(click(&mut h, "touch:export")["ok"], true);
-    assert_eq!(h.app.touch_sheets.export.as_ref().map(|s| s.ids.len()), Some(2));
-    assert!(has(&h, "touch:export:go") && !has(&h, "touch:export:share"), "no share sheet without the host's");
-    let r = exec(&mut h, "touch.export", json!({"dir": "/touch-test-lib", "longEdge": 1080, "quality": 80}));
+    assert_eq!(exec(&mut h, "modern.exportSheet", json!({"on": true}))["ok"], true);
+    assert_eq!(h.app.modern_sheets.export.as_ref().map(|s| s.ids.len()), Some(2));
+    assert!(has(&h, "modern:export:go") && !has(&h, "modern:export:share"), "no share sheet without the host's");
+    let r = exec(&mut h, "modern.export", json!({"dir": "/touch-test-lib", "longEdge": 1080, "quality": 80}));
     assert_eq!(r["ok"], true, "{r}");
     assert!(h.step_until(Duration::from_secs(120), |h| h.app.export.is_none()));
     assert_eq!(written.lock().unwrap().len(), 2);
@@ -193,10 +223,10 @@ fn bad_export_requests_are_errors_not_panics() {
         json!({"dir": 5}),
         json!({"dir": "  ", "then": "folder", "ids": [1]}),
     ] {
-        let r = exec(&mut h, "touch.export", params.clone());
-        assert_eq!(r["ok"], false, "touch.export {params}: {r}");
+        let r = exec(&mut h, "modern.export", params.clone());
+        assert_eq!(r["ok"], false, "modern.export {params}: {r}");
     }
-    let r = exec(&mut h, "touch.exportSheet", json!({}));
+    let r = exec(&mut h, "modern.exportSheet", json!({}));
     assert_eq!(r["ok"], false, "nothing selected: {r}");
 }
 
@@ -204,17 +234,16 @@ fn bad_export_requests_are_errors_not_panics() {
 fn back_leaves_a_settings_page_for_the_list_then_closes_and_closes_the_export_sheet() {
     let mut h = touch(COVER);
     let back = |h: &mut Headless| {
-        let r = exec(h, "touch.back", json!({}));
+        let r = exec(h, "modern.back", json!({}));
         assert_eq!(r["ok"], true, "{r}");
         r["result"]["closed"].clone()
     };
-    // Settings on a phone: a category's page, then the list, then closed
+    // Settings on a phone: a section, then the list of sections, then closed
     exec(&mut h, "app.settings", json!({}));
-    click(&mut h, "touch:settings:general");
-    assert!(has(&h, "touch:settings:back"), "a category's page");
-    assert_eq!(back(&mut h), "settingsPage");
-    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a page keeps Settings open");
-    assert!(has(&h, "touch:settings:general") && !has(&h, "touch:settings:back"), "on the category list");
+    assert!(rail_w(&h) < 80.0, "a section with the icon rail");
+    assert_eq!(back(&mut h), "settingsList");
+    assert!(matches!(h.app.ui.dialog, Some(Dialog::Settings { .. })), "Back from a section keeps Settings open");
+    assert!(rail_w(&h) > 200.0, "on the list of sections");
     back(&mut h);
     assert!(h.app.ui.dialog.is_none(), "Back on the list closes Settings");
 
@@ -222,10 +251,10 @@ fn back_leaves_a_settings_page_for_the_list_then_closes_and_closes_the_export_sh
     exec(&mut h, "view.photoGrid", json!({}));
     let ids: Vec<u64> = h.app.session.visible_cloned().iter().take(1).map(|p| p.0).collect();
     exec(&mut h, "library.select", json!({"ids": ids}));
-    assert_eq!(click(&mut h, "touch:export")["ok"], true);
-    assert!(h.app.touch_sheets.export.is_some());
+    assert_eq!(exec(&mut h, "modern.exportSheet", json!({"on": true}))["ok"], true);
+    assert!(h.app.modern_sheets.export.is_some());
     assert_eq!(back(&mut h), "export");
-    assert!(h.app.touch_sheets.export.is_none(), "Back closes the Export sheet");
-    assert!(!has(&h, "touch:export:go"));
+    assert!(h.app.modern_sheets.export.is_none(), "Back closes the Export sheet");
+    assert!(!has(&h, "modern:export:go"));
     assert_eq!(h.app.ui.module, crate::module::ModuleId::Library);
 }

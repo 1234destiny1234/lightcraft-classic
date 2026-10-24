@@ -198,16 +198,19 @@ fn the_top_bar_button_and_settings_cards_drive_the_mode() {
     h.app.ui.dialog = Some(crate::state::Dialog::Settings { tab: "interface".into() });
     h.step();
     h.step();
+    crate::settings_screen::reveal(&mut h, "radio:theme-paper");
     assert_eq!(h.request("ui.clickWidget", json!({"id": "radio:theme-paper"}), T)["ok"], true);
     h.step();
     h.step();
     assert_eq!(h.app.ui.settings.light_theme, LightTheme::Paper);
     assert_eq!(crate::theme::current(&h.view.ctx), Some(ThemeKind::Paper));
+    crate::settings_screen::reveal(&mut h, "button:settingsAppearance-1");
     assert_eq!(h.request("ui.clickWidget", json!({"id": "button:settingsAppearance-1"}), T)["ok"], true);
     h.step();
     h.step();
     assert_eq!(h.app.ui.settings.appearance_mode, AppearanceMode::Dark);
     assert_eq!(crate::theme::current(&h.view.ctx), Some(ThemeKind::Charcoal));
+    crate::settings_screen::reveal(&mut h, "button:settingsFontSize-3");
     assert_eq!(h.request("ui.clickWidget", json!({"id": "button:settingsFontSize-3"}), T)["ok"], true);
     h.step();
     h.step();
@@ -215,6 +218,7 @@ fn the_top_bar_button_and_settings_cards_drive_the_mode() {
     assert_eq!(crate::theme::ui_font_size(&h.view.ctx), UiFontSize::Large);
     let scale = h.view.ctx.fonts(|f| f.definitions().font_data.get("Inter").unwrap().tweak.scale);
     assert!((scale - UiFontSize::Large.scale()).abs() < 1e-4);
+    crate::settings_screen::reveal(&mut h, "button:settingsFontSize-0");
     assert_eq!(h.request("ui.clickWidget", json!({"id": "button:settingsFontSize-0"}), T)["ok"], true);
     h.step();
     h.step();
@@ -232,9 +236,9 @@ fn interface_settings_fit_small_windows_and_stack_theme_choices() {
         for _ in 0..4 {
             h.step();
         }
-        let window = h.app.widgets.iter().find(|(id, _)| id == "dialog:window").unwrap().1;
-        assert!(window.width() <= size[0], "{size:?}: {window:?}");
-        assert!(window.height() <= size[1], "{size:?}: {window:?}");
+        // Settings fills the window; its rows' column lies inside it
+        let window = h.app.widgets.iter().find(|(id, _)| id == "settings:rows").unwrap().1;
+        assert!(window.right() <= size[0] && window.bottom() <= size[1], "{size:?}: {window:?}");
         let silver = h.app.widgets.iter().find(|(id, _)| id == "radio:theme-silver").unwrap().1;
         let mode = h.app.widgets.iter().find(|(id, _)| id == "button:settingsAppearance-0").unwrap().1;
         assert!(silver.top() > mode.bottom() + 80.0, "theme choices must sit below their preview");
@@ -252,6 +256,7 @@ fn favorites_validate_roundtrip_and_stars_toggle_without_selecting() {
     for _ in 0..4 {
         h.step();
     }
+    crate::settings_screen::reveal(&mut h, "radio:theme-paper");
     assert_eq!(h.request("ui.hoverWidget", json!({"id": "radio:theme-paper"}), T)["ok"], true);
     h.step();
     assert_eq!(h.request("ui.clickWidget", json!({"id": "button:themeFavorite-paper"}), T)["ok"], true);
