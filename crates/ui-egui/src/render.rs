@@ -164,6 +164,17 @@ pub trait RenderOffload {
 struct Finished {
     result: RenderResult,
     color: Option<Arc<egui::ColorImage>>,
+    /// An HDR view's float samples as its texture's texels, and the headroom they were made for.
+    texels: Option<(Vec<u16>, f32)>,
+}
+
+/// A finished [`Slot::HdrView`] render waiting for its upload.
+pub struct HdrResult {
+    pub photo: PhotoId,
+    pub key: u64,
+    pub deep: lcc_pipeline::DeepImage,
+    /// Its texels, made on the render worker ([`crate::HdrOutput::upload_texels`]).
+    pub texels: Option<(Vec<u16>, f32)>,
 }
 
 /// Immutable identity captured when a request is submitted, not when its result is collected.
@@ -316,7 +327,9 @@ pub struct Renderer {
     /// The last [`Slot::PanelHistogram`] result: (photo, job key, histogram with its waveform).
     pub panel_histogram: Option<(PhotoId, u64, Histogram)>,
     /// The [`Slot::HdrView`] renders not yet uploaded: view → (photo, job key, linear float image).
-    pub hdr_view_result: HashMap<u8, (PhotoId, u64, lcc_pipeline::DeepImage)>,
+    pub hdr_view_result: HashMap<u8, HdrResult>,
+    /// The headroom HDR views are encoded for on the worker ([`Self::set_hdr_headroom`]).
+    hdr_headroom: Option<f32>,
     /// Each view's uploaded HDR texture.
     pub hdr_view: HashMap<u8, HdrView>,
     hdr_geometry: HashMap<u8, HdrGeometry>,
@@ -418,6 +431,7 @@ impl Renderer {
             live_hdr_histogram: None,
             panel_histogram: None,
             hdr_view_result: HashMap::new(),
+            hdr_headroom: None,
             hdr_view: HashMap::new(),
             hdr_geometry: HashMap::new(),
             hdr_view_ms: HashMap::new(),
@@ -589,15 +603,31 @@ impl Renderer {
     }
 
     /// Run `job` for `slot` and make its image ready for `display` (on the worker thread). An
-    /// HDR view's result is uploaded from its float samples, so it gets no 8-bit texture pixels.
-    fn run_for(slot: Slot, job: impl FnOnce() -> RenderResult, display: &Option<Arc<lcc_engine::display::Display>>) -> Finished {
+    /// HDR view's result is uploaded from its float samples, so it gets no 8-bit texture pixels,
+    /// but those samples as texels for `headroom` (a few ms a frame the UI thread then doesn't spend).
+    fn run_for(
+        slot: Slot,
+        job: impl FnOnce() -> RenderResult,
+        display: &Option<Arc<lcc_engine::display::Display>>,
+        headroom: Option<f32>,
+    ) -> Finished {
         let mut r = job();
         if let Some(d) = display {
             lcc_engine::display::present(&mut r, d);
         }
-        let texture = !matches!(slot, Slot::HdrView(_));
-        let color = r.rendered.as_ref().ok().filter(|_| texture).map(|x| Arc::new(color_image(&x.image)));
-        Finished { result: r, color }
+        let hdr = matches!(slot, Slot::HdrView(_));
+        let color = r.rendered.as_ref().ok().filter(|_| !hdr).map(|x| Arc::new(color_image(&x.image)));
+        let texels = headroom.filter(|_| hdr).and_then(|h| {
+            let deep = r.rendered.as_ref().ok()?.deep.as_ref()?;
+            let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { return None };
+            lcc_engine::hdr_texture::encode_rgba16f(rgb, deep.width, deep.height, h).ok().map(|t| (t, h))
+        });
+        Finished { result: r, color, texels }
+    }
+
+    /// Encode HDR views for `headroom` on the render worker from now on (`None`: on upload).
+    pub fn set_hdr_headroom(&mut self, headroom: Option<f32>) {
+        self.hdr_headroom = headroom;
     }
 
     fn request_needed(&self, slot: Slot, key: u64, priority: u32) -> bool {
@@ -692,13 +722,14 @@ impl Renderer {
         let key = job.key;
         let background = matches!(slot, Slot::Thumb(_) | Slot::ThumbQuick(_) | Slot::Prefetch(_));
         let display = self.display.clone();
+        let headroom = self.hdr_headroom;
         self.pool.submit(
             slot,
             key,
             priority,
             Box::new(move || {
                 let run = || if background { lcc_engine::memory::in_background(|| job.run()) } else { job.run() };
-                Self::run_for(slot, run, &display)
+                Self::run_for(slot, run, &display, headroom)
             }),
         );
     }
@@ -735,7 +766,7 @@ impl Renderer {
         self.requests.insert(slot, Requested { id: job.request_id, source });
         let key = job.key;
         let display = self.display.clone();
-        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || job.run(), &display)));
+        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || job.run(), &display, None)));
     }
 
     /// Render a slideshow title screen into `slot` (once per screen key, like [`Self::request`]):
@@ -753,7 +784,7 @@ impl Renderer {
         let request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: request_id, source: None });
         let display = self.display.clone();
-        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || compose.result(request_id), &display)));
+        self.pool.submit(slot, key, priority, Box::new(move || Self::run_for(slot, || compose.result(request_id), &display, None)));
     }
 
     /// Prepare a photo in the background (a [`Slot::Prefetch`] job runs once per key; a newer one
@@ -767,7 +798,12 @@ impl Renderer {
         job.request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: job.request_id, source: Some(job.origin.clone()) });
         let key = job.key;
-        self.pool.submit(slot, key, priority, Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None }));
+        self.pool.submit(
+            slot,
+            key,
+            priority,
+            Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None, texels: None }),
+        );
     }
 
     /// Drop the slideshow slides other than `keep`: their textures and their requests that have
@@ -1102,14 +1138,14 @@ impl Renderer {
     fn collect(&mut self, ctx: &egui::Context, session: &mut Session, inline_ms: f64) -> bool {
         let mut finished = Vec::new();
         while let Some(done) = self.pool.try_recv() {
-            finished.push((done.slot, done.result.result, done.result.color, if done.ms > 0.0 { done.ms } else { inline_ms }));
+            finished.push((done.slot, done.result.result, done.result.color, done.result.texels, if done.ms > 0.0 { done.ms } else { inline_ms }));
         }
         if let Some(off) = self.offload.as_mut() {
-            finished.extend(off.finished().into_iter().map(|(slot, r, ms)| (slot, r, None, ms)));
+            finished.extend(off.finished().into_iter().map(|(slot, r, ms)| (slot, r, None, None, ms)));
         }
         self.dispatch();
         let mut changed = false;
-        for (mut slot, mut r, mut color, ms) in finished {
+        for (mut slot, mut r, mut color, texels, ms) in finished {
             self.completed += 1;
             // made for another display profile than the one in use: obsolete
             if r.display.is_some_and(|id| Some(id) != self.display_id()) {
@@ -1194,7 +1230,7 @@ impl Renderer {
             }
             if let Slot::HdrView(view) = slot {
                 if let Some(deep) = rendered.deep {
-                    self.hdr_view_result.insert(view, (r.photo, r.key, deep));
+                    self.hdr_view_result.insert(view, HdrResult { photo: r.photo, key: r.key, deep, texels });
                     self.hdr_view_ms.insert(view, ms);
                     changed = true;
                 }
@@ -2091,9 +2127,16 @@ mod thumbnail_tests {
         let deep = crate::panels::detail::hdr_view_job(job, Some(4.0));
         assert!(deep.clone().run().rendered.unwrap().deep.is_some(), "the job carries float samples");
         for slot in [Slot::Main, Slot::Before, Slot::Second, Slot::HdrHistogram, Slot::Compare(0)] {
-            assert!(Renderer::run_for(slot, || deep.clone().run(), &None).color.is_some(), "{slot:?}");
+            assert!(Renderer::run_for(slot, || deep.clone().run(), &None, None).color.is_some(), "{slot:?}");
         }
-        assert!(Renderer::run_for(Slot::HdrView(HDR_LOUPE), || deep.clone().run(), &None).color.is_none(), "uploaded from its floats");
+        assert!(Renderer::run_for(Slot::HdrView(HDR_LOUPE), || deep.clone().run(), &None, None).color.is_none(), "uploaded from its floats");
+        // its texels are made beside the render, for the headroom asked for, exactly as an upload would
+        let done = Renderer::run_for(Slot::HdrView(HDR_LOUPE), || deep.clone().run(), &None, Some(2.5));
+        let samples = done.result.rendered.as_ref().unwrap().deep.as_ref().unwrap();
+        let lcc_pipeline::DeepSamples::F32(rgb) = &samples.samples else { panic!("float HDR required") };
+        let expected = lcc_engine::hdr_texture::encode_rgba16f(rgb, samples.width, samples.height, 2.5).unwrap();
+        assert_eq!(done.texels, Some((expected, 2.5)));
+        assert!(Renderer::run_for(Slot::Main, || deep.clone().run(), &None, Some(2.5)).texels.is_none(), "only HDR views");
         // and through the renderer: a view's texture still arrives
         app.renderer.request(Slot::Second, deep, 100);
         let (slot, job) = take_job(&work);
@@ -2147,11 +2190,11 @@ mod thumbnail_tests {
         let mut jobs = jobs.into_iter();
         let (first, second, last) = (jobs.next().unwrap(), jobs.next().unwrap(), jobs.next().unwrap());
         finish(&mut app, &work, &ctx, slot, first.run());
-        assert_eq!(app.renderer.hdr_view_result[&HDR_LOUPE].1, keys[0]);
+        assert_eq!(app.renderer.hdr_view_result[&HDR_LOUPE].key, keys[0]);
         assert!(app.renderer.is_pending(slot), "updates continue while dragging");
         finish(&mut app, &work, &ctx, slot, last.run());
         finish(&mut app, &work, &ctx, slot, second.run());
-        let (_, key, deep) = &app.renderer.hdr_view_result[&HDR_LOUPE];
+        let HdrResult { key, deep, .. } = &app.renderer.hdr_view_result[&HDR_LOUPE];
         assert_eq!(*key, keys[2], "late older frames never replace newer pixels");
         let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { panic!("float HDR required") };
         assert!(rgb.iter().any(|v| *v > 1.0), "highlights survive the draft pipeline");

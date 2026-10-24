@@ -1926,6 +1926,7 @@ pub(crate) fn request_hdr(app: &mut LccApp, view: u8, job: lcc_engine::media::Re
         return None;
     }
     let headroom = app.services.hdr_output.as_mut().and_then(|o| o.headroom());
+    app.renderer.set_hdr_headroom(headroom);
     // (an extended-linear surface takes sRGB: no monitor profile conversion)
     if let Some(o) = app.services.hdr_output.as_ref() {
         app.renderer.set_surface_extended_linear(o.extended());
@@ -1959,9 +1960,12 @@ pub(crate) fn upload_hdr_views(app: &mut LccApp) {
     }
     let results = std::mem::take(&mut app.renderer.hdr_view_result);
     let Some(out) = app.services.hdr_output.as_mut() else { return };
-    for (view, (photo, key, deep)) in results {
+    for (view, crate::render::HdrResult { photo, key, deep, texels }) in results {
         let lcc_pipeline::DeepSamples::F32(rgb) = &deep.samples else { continue };
-        match out.upload(view, deep.width, deep.height, rgb) {
+        let slot = view;
+        // (texels the worker made, when they are for the headroom the output uploads with)
+        let ready = texels.and_then(|(t, h)| out.upload_texels(slot, deep.width, deep.height, &t, h));
+        match ready.unwrap_or_else(|| out.upload(slot, deep.width, deep.height, rgb)) {
             Ok(tex) => {
                 app.renderer.hdr_view.insert(view, crate::render::HdrView { photo, key, tex, size: [deep.width, deep.height] });
             }
