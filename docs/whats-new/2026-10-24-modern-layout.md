@@ -13,3 +13,4 @@
 - While Crop, Masks, Heal, Dodge or Burn is open, its card sits at the right and the photo makes room, so a crop frame's handles are never under the dock.
 - Every develop setting is reachable in Modern. Each group's card has buttons for its full sections (Basic and Profile, Color Mixer and Point Color, Color Grading, Calibration, Tone Curve, Detail, Lens Corrections, Transform, Effects, Plug-in Filters). A slider with more settings behind it shows a small mark: long-press or right-click it to open them (for example Vignette's style, midpoint, feather, roundness and highlights). ‹ or Back returns to the sliders.
 - The "library is open elsewhere" window has the new card look, with its buttons wrapping on a narrow window.
+- While you drag a slider, a colour wheel or the tone curve in Modern, everything over the photo fades away except that control and the histogram, so you see the whole photo as it changes; it fades back when you let go.

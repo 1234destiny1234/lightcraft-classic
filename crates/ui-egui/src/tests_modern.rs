@@ -256,3 +256,28 @@ fn every_setting_is_reachable_through_the_groups_sections() {
     ask(&mut h, "ui.clickWidget", json!({"id": "modern:more:grading"}));
     assert_eq!(h.app.ui.modern.more.as_deref(), Some("grading"));
 }
+
+/// While a pill is dragged the chrome fades away (the slider and the histogram stay), and it comes
+/// back when the drag ends.
+#[test]
+fn the_chrome_fades_while_a_slider_is_dragged() {
+    let mut h = develop([1280.0, 800.0]);
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    exec(&mut h, "modern.group", json!({"group": "light"}));
+    let pill = h.app.widgets.iter().rev().find(|(w, _)| w == "slider:light.exposure").map(|(_, r)| *r).unwrap();
+    let at = pill.left_center() + egui::vec2(30.0, 0.0);
+    let button = |pos, pressed| egui::Event::PointerButton { pos, button: egui::PointerButton::Primary, pressed, modifiers: Default::default() };
+    for e in [egui::Event::PointerMoved(at), button(at, true)] {
+        h.app.synthetic.push(e);
+        h.step();
+    }
+    for i in 1..=30 {
+        h.app.synthetic.push(egui::Event::PointerMoved(at + egui::vec2(i as f32 * 3.0, 0.0)));
+        h.step();
+    }
+    assert!(crate::modern::chrome_alpha(&h.view.ctx) < 0.2, "faded while dragging: {}", crate::modern::chrome_alpha(&h.view.ctx));
+    assert!(has(&h, "modern:histogram"), "the histogram stays");
+    h.app.synthetic.push(button(at + egui::vec2(90.0, 0.0), false));
+    h.settle(SETTLE);
+    assert!((crate::modern::chrome_alpha(&h.view.ctx) - 1.0).abs() < 1e-3, "back after the drag");
+}

@@ -543,6 +543,67 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
     crate::modern_dock::card(app, ui, room, dock);
     develop_top(app, ui, area);
     crate::modern_menu::show(app, ui, area, area.left() + MARGIN + BUTTON + 8.0, area.top() + MARGIN + 2.0);
+    focus_fade(app, ui.ctx());
+}
+
+/// Modern's floating layers that fade while an adjustment is dragged (the histogram stays).
+const FADE_LAYERS: [(egui::Order, &str); 8] = [
+    (egui::Order::Middle, "modern-dock"),
+    (egui::Order::Middle, "modern-card"),
+    (egui::Order::Middle, "modern-top"),
+    (egui::Order::Middle, "modern-top-right"),
+    (egui::Order::Middle, "modern-switch"),
+    (egui::Order::Middle, "activity-stack"),
+    (egui::Order::Foreground, "modern-menubar"),
+    (egui::Order::Foreground, "modern-menu-drop"),
+];
+const CHROME_ALPHA: &str = "modern-chrome-alpha";
+
+/// How opaque the floating chrome is (1: shown; 0: faded while an adjustment is dragged).
+pub(crate) fn chrome_alpha(ctx: &egui::Context) -> f32 {
+    ctx.data(|d| d.get_temp::<f32>(Id::new(CHROME_ALPHA))).unwrap_or(1.0)
+}
+
+/// How long the chrome takes to fade out and back (s).
+const FADE_SECS: f32 = 0.2;
+
+/// While a slider, a colour wheel or the tone curve is dragged, everything floating over the photo
+/// fades away (over [`FADE_SECS`]) except that one control and the histogram, so the photo can be
+/// seen whole; it fades back when the finger lifts. Done after drawing: each shape outside the
+/// dragged control's rectangle has its colours faded. Own design.
+fn focus_fade(app: &LccApp, ctx: &egui::Context) {
+    let adjusting = app.ui.dragging_control.is_some() || app.session.interaction.is_some();
+    let t = ctx.animate_bool_with_time(Id::new("modern-focus-fade"), adjusting, FADE_SECS);
+    let alpha = (1.0 - t).clamp(0.0, 1.0);
+    ctx.data_mut(|d| d.insert_temp(Id::new(CHROME_ALPHA), alpha));
+    if t <= 0.0 {
+        return;
+    }
+    // the control being dragged stays as it is (its place kept while the chrome fades back)
+    let key = Id::new("modern-focus-rect");
+    let now = ctx.dragged_id().and_then(|id| ctx.read_response(id)).map(|r| r.rect);
+    if let Some(r) = now {
+        ctx.data_mut(|d| d.insert_temp(key, r));
+    }
+    let keep = now.or_else(|| ctx.data(|d| d.get_temp::<Rect>(key))).map(|r| r.expand(2.0));
+    ctx.graphics_mut(|g| {
+        for (order, name) in FADE_LAYERS {
+            let list = g.entry(egui::LayerId::new(order, Id::new(name)));
+            for i in 0..list.next_idx().0 {
+                list.mutate_shape(egui::layers::ShapeIdx(i), |c| {
+                    let bounds = c.shape.visual_bounding_rect();
+                    if keep.is_some_and(|k| bounds.is_finite() && k.contains_rect(bounds)) {
+                        return;
+                    }
+                    egui::epaint::shape_transform::adjust_colors(&mut c.shape, move |col| {
+                        if *col != Color32::PLACEHOLDER {
+                            *col = col.gamma_multiply(alpha);
+                        }
+                    });
+                });
+            }
+        }
+    });
 }
 
 // ------------------------------------------------------------------------ Library
