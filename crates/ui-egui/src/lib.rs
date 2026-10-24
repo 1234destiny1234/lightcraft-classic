@@ -39,6 +39,7 @@ mod i18n_fork;
 pub mod icons;
 pub mod import;
 pub mod import_report;
+mod import_screen;
 pub mod libtools;
 pub mod lightroom_import;
 pub mod links;
@@ -64,8 +65,8 @@ pub mod region;
 pub mod reload;
 pub mod render;
 pub mod render_dng_task;
-/// The module shell's frame steps (fork-owned).
 pub mod settings_screen;
+/// The module shell's frame steps (fork-owned).
 mod shell;
 pub mod shortcuts;
 pub mod sidebar;
@@ -181,6 +182,8 @@ mod tests_i18n_coverage;
 mod tests_immich_ui;
 #[cfg(test)]
 mod tests_import_report;
+#[cfg(test)]
+mod tests_import_screen;
 #[cfg(test)]
 mod tests_info_dialogs;
 #[cfg(test)]

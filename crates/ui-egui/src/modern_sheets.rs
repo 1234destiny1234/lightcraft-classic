@@ -141,8 +141,17 @@ pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) -> bool {
     } else if app.ui.dialog.is_none() && app.modern_sheets.export.is_some() {
         export_sheet(app, ctx);
     }
+    if matches!(app.ui.dialog, Some(Dialog::Import { .. })) {
+        crate::import_screen::show(app, ctx);
+        return true;
+    }
     if matches!(app.ui.dialog, Some(Dialog::Settings { .. })) {
         crate::settings_screen::show(app, ctx);
+        return true;
+    }
+    // Export: a full-window screen in every layout
+    if matches!(app.ui.dialog, Some(Dialog::Export { .. })) {
+        crate::panels::dialogs::export_screen(app, ctx);
         return true;
     }
     app.modern_sheets.settings = Default::default();

@@ -2509,7 +2509,7 @@ mod tests {
     /// one-line summary on the header, start open (where, name, format) or folded (size,
     /// sharpening, metadata, watermark), and keep the person's choice the next time.
     #[test]
-    fn export_dialog_sections_fold_and_stay_folded() {
+    fn export_screen_shows_every_section_in_order_and_its_rail_jumps_to_one() {
         let mut h = demo([1400.0, 900.0]);
         let t = Duration::from_secs(10);
         h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
@@ -2524,28 +2524,16 @@ mod tests {
         assert!(top(&mut h, "section:exportLocation") < top(&mut h, "section:exportNaming"));
         assert!(top(&mut h, "section:exportNaming") < top(&mut h, "section:exportFileSettings"));
         assert!(shown(&mut h, "combo:exportDestinationMode"));
-        // where, what name and which format start open; size, sharpening, metadata and watermark folded
+        // the Export screen shows every section open, one page (no folds to find a setting behind)
         assert!(shown(&mut h, "button:exportNamingTags") && shown(&mut h, "button:exportFormat-0"));
-        assert!(!shown(&mut h, "check:exportFullSize"), "Image Sizing starts folded");
-        assert!(!shown(&mut h, "button:exportSharpen-0") && !shown(&mut h, "button:exportMetadata-0"));
-        assert!(shown(&mut h, "section:exportWatermark"), "a folded section keeps its header");
-        h.request("ui.clickWidget", json!({"id": "section:exportSizing"}), t);
+        assert!(shown(&mut h, "check:exportFullSize"), "Image Sizing is open");
+        // the rail's Metadata scrolls the page to it
+        let before = top(&mut h, "section:exportMetadata");
+        h.request("ui.clickWidget", json!({"id": "export:group:Metadata"}), t);
         h.settle(SETTLE);
-        assert!(shown(&mut h, "check:exportFullSize"), "opened");
-        assert_eq!(h.app.ui.group_open.get("export:Sizing"), Some(&true), "kept in the settings");
-        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
-        h.settle(SETTLE);
-        assert!(!shown(&mut h, "combo:exportDestinationMode"), "folded");
-        assert!(shown(&mut h, "button:exportFormat-0"), "the other sections stay open");
-        h.request("ui.dialog.cancel", json!({}), t);
-        h.settle(SETTLE);
-        h.request("engine.execute", json!({"command": "dialog.export", "params": {}}), t);
-        h.settle(SETTLE);
-        assert!(!shown(&mut h, "combo:exportDestinationMode"), "still folded when the dialog opens again");
-        assert!(shown(&mut h, "check:exportFullSize"), "still open when the dialog opens again");
-        h.request("ui.clickWidget", json!({"id": "section:exportLocation"}), t);
-        h.settle(SETTLE);
-        assert!(shown(&mut h, "combo:exportDestinationMode"), "unfolded");
+        let after = top(&mut h, "section:exportMetadata");
+        assert!(after < before, "scrolled up to Metadata ({before} → {after})");
+        assert!(shown(&mut h, "button:exportMetadata-0"));
     }
 
     /// Wide enough, the Export dialog lists its presets in a column (a click loads one, keeping
@@ -2613,7 +2601,8 @@ mod tests {
         }
         let w1 = width(&mut h);
         assert!((w1 - w0).abs() < 0.5, "the export dialog grew from {w0} to {w1}");
-        assert!(w1 <= 900.0, "{w1}");
+        // (a screen that fills the window, never past it)
+        assert!(w1 <= 1400.0, "{w1}");
     }
 
     /// With a watermark on, the Export dialog shows the first photo with the watermark on it.

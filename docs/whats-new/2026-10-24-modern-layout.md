@@ -6,3 +6,8 @@
 - The histogram floats over the photo: tap it to switch between small and large (with the camera settings), drag it anywhere (it snaps to the corners), and long-press or right-click it for its menu, which can also hide it.
 - A Library / Develop switch sits at the top centre.
 - New **Pill** sliders: one rounded bar with the name and value inside it. Drag anywhere on it, double-click to reset, click the number to type one. Modern always uses them; Settings ▸ Interface ▸ Sliders offers them in Classic too.
+- **Settings** is one full-window screen in every layout: an icon rail of seven sections (General, Library, Import, Editing, Display & Speed, Sync, Shortcuts), a search field, and Back (‹, Esc or Android's Back) to leave. On a narrow window the rail shows icons while a section is open; Back shows the section names, and Back again closes.
+- **Import** is a full-window screen: sources down the left, the photos with All / New / Duplicates filters in the middle, and the options in one column with a big Import button. Add in place hides the options that only apply to copying.
+- **Export** is a full-window screen: every setting on one page in cards, a rail that jumps to each group, the presets beside it, the destination at the top and a bar that always says what will be written.
+- Every dialog now has the same look: rounded cards with the title inside, segmented choices, and the main action in the accent colour. Menus and submenus are see-through in the Modern layout.
+- While Crop, Masks, Heal, Dodge or Burn is open, its card sits at the right and the photo makes room, so a crop frame's handles are never under the dock.

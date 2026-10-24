@@ -128,6 +128,18 @@ const RAIL_ITEM: Vec2 = vec2(48.0, 46.0);
 const PAD: f32 = 5.0;
 /// From the window's edge.
 const MARGIN: f32 = 12.0;
+/// A tool's card (Crop, Masks, Heal…), at the right edge.
+const TOOL_CARD_W: f32 = 340.0;
+
+/// While a tool is open, the room the photo leaves for the chrome so the tool's overlay (a crop
+/// frame and its handles, a brush) is never under it: (left, right, bottom) in points.
+pub(crate) fn tool_room(app: &LccApp, area: Rect) -> (f32, f32, f32) {
+    if !app.ui.modern.chrome || !app.ui.modern.group.is_some_and(Group::is_tool) {
+        return (0.0, 0.0, 0.0);
+    }
+    let right = (TOOL_CARD_W + 2.0 * MARGIN).min(area.width() * 0.45);
+    if app.ui.modern.dock_side { (RAIL_ITEM.x + 2.0 * PAD + 2.0 * MARGIN, right, MARGIN) } else { (MARGIN, right, ITEM.y + 2.0 * PAD + 2.0 * MARGIN) }
+}
 
 /// The group's controls this photo has. White balance is on the photo's own scale, as the Edit
 /// panel shows it: Kelvin for raw files, relative (−100..100) for rendered ones.
@@ -360,7 +372,17 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
     let sliders = !g.control_ids().is_empty();
     let width: f32 = if sliders && !side { 600.0 } else { 340.0 };
     let gap = 10.0;
-    let (min, max_w, max_h) = if side {
+    // a tool's card sits at the right edge, clear of the photo its overlay is on (the photo makes
+    // room for it: `tool_room`)
+    let tool = g.is_tool();
+    let (min, max_w, max_h) = if tool {
+        let w = TOOL_CARD_W.min(area.width() - 2.0 * MARGIN).max(120.0);
+        // under the histogram when it sits in that corner (last frame's place)
+        let left = area.right() - MARGIN - w;
+        let hist = app.widgets.iter().rev().find(|(id, _)| id == "modern:histogram").map(|(_, r)| *r);
+        let top = hist.filter(|h| h.right() > left && h.top() < area.top() + 200.0).map_or(area.top() + 64.0, |h| h.bottom() + gap);
+        (pos2(left, top), w, (area.bottom() - MARGIN - top).max(80.0))
+    } else if side {
         let left = dock.right() + gap;
         let w = width.min(area.right() - MARGIN - left).max(120.0);
         (pos2(left, area.top() + 64.0), w, (area.bottom() - MARGIN - area.top() - 64.0).max(80.0))
@@ -373,7 +395,7 @@ pub(crate) fn card(app: &mut LccApp, ui: &egui::Ui, area: Rect, dock: Rect) {
     let id = Id::new("modern-card");
     // the card's height last frame places it above the dock (it grows upwards)
     let last_h: f32 = ui.ctx().data(|d| d.get_temp(id)).unwrap_or(200.0);
-    let min = if side { min } else { pos2(min.x, dock.top() - gap - last_h.min(max_h)) };
+    let min = if side || tool { min } else { pos2(min.x, dock.top() - gap - last_h.min(max_h)) };
     egui::Area::new(id).fixed_pos(min).order(egui::Order::Middle).show(ui.ctx(), |ui| {
         // an area lays out in the size it had last frame, and a scroll area would never grow past
         // it: give it all the room it may take (auto-shrink then fits it to the sliders)

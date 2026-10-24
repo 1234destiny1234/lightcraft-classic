@@ -54,7 +54,10 @@ fn tall_dialogs_fit_a_small_window_with_their_buttons_on_screen() {
         assert_eq!(r["ok"], true, "{r}");
         settle(&mut h);
         assert!(matches!(h.app.ui.dialog, Some(Dialog::Export { .. })), "{:?}", h.app.ui.dialog);
-        assert_fits(&h, size, "Export");
+        // Export fills the window too: its way back and its buttons are on screen
+        for id in ["export:back", "button:dialogOk", "button:dialogCancel"] {
+            assert!(screen.contains_rect(rect(&h, id)), "Export: {id} in {screen:?}");
+        }
         // the footer buttons can be pressed
         let r = h.request("ui.clickWidget", json!({"id": "button:dialogCancel"}), T);
         assert_eq!(r["ok"], true, "{r}");

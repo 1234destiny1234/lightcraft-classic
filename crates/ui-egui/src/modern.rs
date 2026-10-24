@@ -21,7 +21,7 @@ use crate::LccApp;
 use crate::icons::{Icon, paint};
 use crate::modern_dock::{Group, glass};
 use crate::module::{self, ModuleId};
-use crate::state::{BeforeAfter, ViewMode};
+use crate::state::{BeforeAfter, Dialog, ViewMode};
 use crate::theme::Tokens;
 use crate::widgets::register;
 
@@ -501,9 +501,20 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
     // the filmstrip shows only with the chrome (and when asked for); the saved setting is kept
     let film = app.ui.filmstrip;
     app.ui.filmstrip = app.ui.modern.filmstrip && app.ui.modern.chrome;
-    m.center(ui, app);
+    // a tool's overlay (crop frame, brush) stays clear of its card and the dock
+    let (l, r, b) = crate::modern_dock::tool_room(app, area);
+    if l + r + b > 0.0 {
+        let photo = Rect::from_min_max(pos2(area.left() + l, area.top() + MARGIN + BUTTON + 12.0), pos2(area.right() - r, area.bottom() - b));
+        ui.scope_builder(egui::UiBuilder::new().max_rect(photo), |ui| m.center(ui, app));
+    } else {
+        m.center(ui, app);
+    }
     app.ui.filmstrip = film;
     let canvas = app.canvas_rect.unwrap_or(area).intersect(area);
+    // a full-window screen (Settings, Import, Export) covers everything: no chrome over it
+    if matches!(app.ui.dialog, Some(Dialog::Settings { .. } | Dialog::Import { .. } | Dialog::Export { .. })) {
+        return;
+    }
     if app.session.active().is_none() {
         // nothing to edit: the empty view keeps its own buttons; only the way back shows
         develop_top(app, ui, area);
