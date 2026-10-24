@@ -1669,6 +1669,7 @@ fn switch_library(app: &mut LccApp, path: &str, demo: bool) -> Result<Value, Str
     // or failed switch reopens the same catalog, so its pins stay).
     app.ui.reference = None;
     app.ui.compare = None;
+    app.ui.brief_info = crate::state::BriefInfo::default();
     if app.ui.view == crate::state::ViewMode::Reference {
         app.ui.view = crate::state::ViewMode::PhotoGrid;
     }
