@@ -424,6 +424,11 @@ pub struct Renderer {
     catalog_rev: u64,
     /// Prefetch slot → key of the last job submitted (each runs once).
     prefetched: HashMap<Slot, u64>,
+    /// A neighbouring photo's finished prefetch, by prefetch slot: the very render the loupe asks
+    /// for once that photo is shown, adopted then instead of rendered again ([`Self::prefetch`]).
+    ready_views: HashMap<Slot, (RenderResult, Option<Arc<egui::ColorImage>>, f64)>,
+    /// Adopted prefetches, collected as finished loupe renders by the next [`Self::collect`].
+    adopted: Vec<(Slot, RenderResult, Option<Arc<egui::ColorImage>>, f64)>,
     /// Variant key → frame it was last asked for (LRU of [`Slot::Variant`] textures).
     variant_used: HashMap<u64, u64>,
     /// How many variants the last frame's views showed at once (see [`Self::want_variants`]).
@@ -520,6 +525,8 @@ impl Renderer {
             failed: HashMap::new(),
             catalog_rev: 0,
             prefetched: HashMap::new(),
+            ready_views: HashMap::new(),
+            adopted: Vec::new(),
             variant_used: HashMap::new(),
             variant_want: 0,
             frame: 0,
@@ -881,6 +888,18 @@ impl Renderer {
         self.pending.insert(slot, (job.key, priority));
         job.request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: job.request_id, source: Some(job.origin.clone()) });
+        // the loupe stepping to a neighbour that was prepared: its render is there already
+        // (its stages are not kept: a neighbour's would hold ~100 MB of device memory for the
+        // first edit after a step only)
+        if slot == Slot::Main
+            && let Some(from) = self.ready_views.iter().find(|(_, (r, _, _))| r.key == job.key && r.photo == job.photo).map(|(s, _)| *s)
+            && let Some((mut r, color, ms)) = self.ready_views.remove(&from)
+        {
+            r.request_id = job.request_id;
+            self.prefetched.remove(&from);
+            self.adopted.push((slot, r, color, ms));
+            return;
+        }
         // (an offload keeps its own per-view stage caches; the flag tells it to)
         let job = if slot.is_view() { job.with_stages(self.stages.entry(slot).or_default().clone()) } else { job };
         if self.offload.is_some() {
@@ -960,20 +979,24 @@ impl Renderer {
 
     /// Prepare a photo in the background (a [`Slot::Prefetch`] job runs once per key; a newer one
     /// replaces it while queued). Memory stays bounded by the engine's source caches.
-    pub fn prefetch(&mut self, slot: Slot, mut job: RenderJob, priority: u32) {
+    pub fn prefetch(&mut self, slot: Slot, job: RenderJob, priority: u32) {
+        // (made for the display as the loupe's would be, so its key is the one the loupe asks for)
+        let mut job = self.job_for(Slot::Main, job);
         if self.prefetched.get(&slot) == Some(&job.key) {
             return;
         }
         self.prefetched.insert(slot, job.key);
+        self.ready_views.remove(&slot);
         self.pending.insert(slot, (job.key, priority));
         job.request_id = lcc_preview::next_tick();
         self.requests.insert(slot, Requested { id: job.request_id, source: Some(job.origin.clone()) });
         let key = job.key;
+        let display = self.display.clone();
         self.pool.submit(
             slot,
             key,
             priority,
-            Box::new(move || Finished { result: lcc_engine::memory::in_background(|| job.run()), color: None, texels: None }),
+            Box::new(move || Self::run_for(slot, || lcc_engine::memory::in_background(|| job.run()), &display, None)),
         );
     }
 
@@ -1008,6 +1031,8 @@ impl Renderer {
         self.quick_tried.clear();
         self.failed.clear();
         self.prefetched.clear();
+        self.ready_views.clear();
+        self.adopted.clear();
         self.pending.clear();
         self.queue.clear();
         self.tiles.clear();
@@ -1315,7 +1340,7 @@ impl Renderer {
 
     /// Turn finished jobs into textures. Returns true if anything changed.
     fn collect(&mut self, ctx: &egui::Context, session: &mut Session, inline_ms: f64) -> bool {
-        let mut finished = Vec::new();
+        let mut finished: Vec<_> = std::mem::take(&mut self.adopted).into_iter().map(|(slot, r, color, ms)| (slot, r, color, None, ms)).collect();
         while let Some(done) = self.pool.try_recv() {
             finished.push((done.slot, done.result.result, done.result.color, done.result.texels, if done.ms > 0.0 { done.ms } else { inline_ms }));
         }
@@ -1388,6 +1413,10 @@ impl Renderer {
                 }
             };
             if matches!(slot, Slot::Prefetch(_)) {
+                // (its source was accepted above)
+                if self.prefetched.get(&slot) == Some(&r.key) {
+                    self.ready_views.insert(slot, (RenderResult { rendered: Ok(rendered), loaded: None, ..r }, color, ms));
+                }
                 continue;
             }
             if let Slot::Window(_) = slot {

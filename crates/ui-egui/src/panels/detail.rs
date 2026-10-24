@@ -527,6 +527,42 @@ pub(crate) struct WindowView {
 /// Priority of on-screen tiles (just below the whole-frame render) and of the ring around them.
 const TILE_PRIORITY: u32 = 99;
 
+/// The long edge of the loupe's render at rest: no less than the preview source level, so the
+/// source is copied 1:1 (no resample in the pipeline, whose prefilter and bilinear pass soften
+/// detail near the output's limit) and shrunk once, by the Lanczos display fit. A user's explicit
+/// Preview size below the preview level still caps it.
+fn rest_edge(settings: &crate::state::AppSettings, main_edge: usize, native_long: usize, texture_side: usize) -> usize {
+    let limit = if settings.preview_limit == 0 { usize::MAX } else { settings.preview_limit as usize };
+    let floor = lcc_engine::SourceLevel::Preview.max_edge().min(limit).min(native_long);
+    main_edge.max(floor).min(texture_side.max(crate::state::MIN_TEXTURE_SIDE))
+}
+
+/// The render box of long edge `edge` for a frame of `aspect`. The short side is rounded, not
+/// truncated: a truncated box (2560 x 1706 for a 2560 x 1707 source) made the render a slightly
+/// anisotropic resample of its source, a 2-tap blur along one axis only. A box that matches the
+/// source to rounding is rendered at exactly its size.
+fn render_box(edge: usize, aspect: f32) -> (usize, usize) {
+    let short = |e: usize, a: f32| ((e as f32 / a).round() as usize).max(1);
+    if aspect >= 1.0 { (edge, short(edge, aspect)) } else { (short(edge, 1.0 / aspect), edge) }
+}
+
+/// Photo `id`'s loupe render at rest: `size` (from [`rest_edge`] and [`render_box`]), shrunk to
+/// exactly the `fit` it is drawn at with a Lanczos filter (on the GPU when it renders there), so
+/// the window draws it texel for texel instead of shrinking it with 2-tap sampling. The loupe and
+/// the prefetch of a neighbour build it alike, so the step to that photo finds it ready.
+fn rest_job(
+    app: &mut LccApp,
+    id: PhotoId,
+    size: (usize, usize),
+    fit: [usize; 2],
+    overlay: lcc_pipeline::Overlay,
+    crop_tool: bool,
+) -> Option<lcc_engine::media::RenderJob> {
+    let job = app.session.loupe_job(id, size.0.max(8), size.1.max(8), !crop_tool)?.with_display_fit(fit[0], fit[1]);
+    let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
+    Some(job.with_hidden_grading(app.ui.grading_hidden_for(id)))
+}
+
 /// Share of a frame the loupe waits for a slider drag's update to finish so it is drawn in that
 /// frame (`Renderer::wait_for_draft`): a draft, and a full-quality update (high quality adjustment
 /// previews), which takes longer but leaves the rest of the frame as cheap.
@@ -926,22 +962,11 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // copied 1:1 (no resample in the pipeline, whose prefilter and bilinear pass soften detail near
     // the output's limit) and shrunk once, by the Lanczos display fit below.
     // (zoomed in under a window render, the whole frame is hidden: it stays canvas-sized)
-    let want = if drafting || plan.window_edge.is_some() {
-        plan.main_edge
-    } else {
-        // (a user's explicit Preview size below the preview level still caps it)
-        let limit = if app.ui.settings.preview_limit == 0 { usize::MAX } else { app.ui.settings.preview_limit as usize };
-        let floor = lcc_engine::SourceLevel::Preview.max_edge().min(limit).min(native_long);
-        plan.main_edge.max(floor).min(texture_side.max(crate::state::MIN_TEXTURE_SIDE))
-    };
-    // The short side is rounded, not truncated: a truncated box (2560 x 1706 for a 2560 x 1707
-    // source) made the render a slightly anisotropic resample of its source, a 2-tap blur along
-    // one axis only. A box that matches the source to rounding is rendered at exactly its size.
-    let short = |e: usize, a: f32| ((e as f32 / a).round() as usize).max(1);
-    let (rw, rh) = if aspect >= 1.0 { (want, short(want, aspect)) } else { (short(want, 1.0 / aspect), want) };
+    let want =
+        if drafting || plan.window_edge.is_some() { plan.main_edge } else { rest_edge(&app.ui.settings, plan.main_edge, native_long, texture_side) };
+    let (rw, rh) = render_box(want, aspect);
     // hover and before renders are stand-ins: the preview size is plenty and keeps them cheap
-    let se = app.ui.settings.stand_in_edge(want, texture_side);
-    let (sw, sh) = if aspect >= 1.0 { (se, short(se, aspect)) } else { (short(se, 1.0 / aspect), se) };
+    let (sw, sh) = render_box(app.ui.settings.stand_in_edge(want, texture_side), aspect);
     // an HDR display: an HDR edit's whole frame also as linear float with its highlights above
     // SDR white, including interactive drafts. Overlays and soft proof remain 8-bit views.
     let hdr_key = (overlay == lcc_pipeline::Overlay::None && !app.ui.soft_proof)
@@ -952,14 +977,15 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // (a drag that shows its HDR frames needs no 8-bit drafts as well: the final render follows
     // the release)
     let hdr_drafts = interacting && hdr_texture(app, crate::render::HDR_LOUPE, id, hdr_key).is_some();
-    if !hdr_drafts && let Some(job) = app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool) {
-        let job = if drafting { job.draft() } else { job };
-        // at rest the render is shrunk to exactly the size it is drawn at with a Lanczos filter on
-        // the worker, so the window draws it texel for texel instead of shrinking it with 2-tap
-        // sampling (the render is up to a 64 px step larger, or the preview level)
-        let job = if drafting { job } else { job.with_display_fit(fit_px[0], fit_px[1]) };
-        let job = job.with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
-        let job = job.with_hidden_grading(app.ui.grading_hidden_for(id));
+    let main_job = if drafting {
+        app.session.loupe_job(id, rw.max(8), rh.max(8), !crop_tool).map(|job| {
+            let job = job.draft().with_overlay(overlay).with_proof(app.ui.soft_proof.then_some(app.ui.proof));
+            job.with_hidden_grading(app.ui.grading_hidden_for(id))
+        })
+    } else {
+        rest_job(app, id, (rw, rh), fit_px, overlay, crop_tool)
+    };
+    if !hdr_drafts && let Some(job) = main_job {
         app.renderer.request(Slot::Main, job, 100);
         // a drag's draft that renders in a few ms (GPU) is drawn in this frame, not the next (zoomed
         // in, what changes on screen is the window's draft)
@@ -997,11 +1023,24 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
                 let Some(np) = app.session.catalog.photo(nid).cloned() else { continue };
                 let nf = Frame::with_lens(np.width.max(1) as usize, np.height.max(1) as usize, &np.develop, !crop_tool, np.embedded_lens.as_deref());
                 let na = nf.aspect() as f32;
-                let nr = fit_rect(main_area, na, app.ui.zoom, output_px(&nf), ppp, app.ui.pan);
-                let nw =
-                    app.ui.settings.prefetch_edge(nr.width().max(nr.height()) * ppp, output_px(&nf).into_iter().max().unwrap_or(1), texture_side);
-                let (w, h) = if na >= 1.0 { (nw, (nw as f32 / na) as usize) } else { ((nw as f32 * na) as usize, nw) };
-                if let Some(job) = app.session.loupe_job(nid, w.max(8), h.max(8), !crop_tool) {
+                let nnative = output_px(&nf);
+                let nlong = nnative[0].max(nnative[1]);
+                let nr = fit_rect(main_area, na, app.ui.zoom, nnative, ppp, app.ui.pan);
+                let nplan = crate::region::plan(
+                    &app.ui.settings,
+                    crate::region::ViewSizes { drawn_long: nr.width().max(nr.height()) * ppp, native_long: nlong, draft: None, ..sizes },
+                );
+                // at the whole-frame view: the very render the loupe asks for once that photo is
+                // shown, which it adopts at the step (`Renderer::prefetch`); zoomed in, its source
+                let job = if nplan.window_edge.is_none() {
+                    let fit = [drawn_px(nr.width()), drawn_px(nr.height())];
+                    let size = render_box(rest_edge(&app.ui.settings, nplan.main_edge, nlong, texture_side), na);
+                    rest_job(app, nid, size, fit, lcc_pipeline::Overlay::None, crop_tool)
+                } else {
+                    let (w, h) = render_box(app.ui.settings.prefetch_edge(nr.width().max(nr.height()) * ppp, nlong, texture_side), na);
+                    app.session.loupe_job(nid, w.max(8), h.max(8), !crop_tool)
+                };
+                if let Some(job) = job {
                     app.renderer.prefetch(Slot::Prefetch(n as u8), job, PREFETCH_PRIORITY);
                 }
             }

@@ -950,6 +950,43 @@ mod in_the_loupe {
         }
     }
 
+    // Given the open photo shown long enough for its neighbours to be prepared, when I step to the
+    // next one, then its finished render is on screen at once, with nothing rendered for it; a
+    // neighbour edited after it was prepared is rendered again (its look changed)
+    #[test]
+    fn stepping_to_a_prepared_neighbour_shows_its_render_without_rendering_again() {
+        let (mut h, _) = detail();
+        let ids = h.app.session.visible_cloned();
+        let (next, after) = (ids[1], ids[2]);
+        assert!(h.settle(SETTLE));
+        let step = |h: &mut Headless| {
+            let r = h.request("ui.key", json!({"key": "ArrowRight"}), T);
+            assert_eq!(r["ok"], true, "{r}");
+            // (the frame of the key asks for the render; the next one collects what it found)
+            h.step();
+            h.step();
+        };
+        let done = h.app.renderer.completed;
+        step(&mut h);
+        assert_eq!(h.app.session.active(), Some(next));
+        let shown = h.app.renderer.textures.get(&Slot::Main).expect("the loupe shows a render");
+        assert_eq!(shown.photo, next, "the neighbour's own render");
+        assert!(shown.quick.is_none(), "not a stand-in");
+        assert!(!h.app.renderer.is_pending(Slot::Main), "nothing is rendering for it");
+        assert!(h.app.renderer.completed > done);
+        // the next neighbour, edited after it was prepared: not the prepared look
+        assert!(h.settle(SETTLE));
+        h.app.session.execute("develop.set", &json!({"ids": [after.0], "values": {"light.exposure": 1.0}})).unwrap();
+        step(&mut h);
+        assert_eq!(h.app.session.active(), Some(after));
+        assert!(h.settle(SETTLE));
+        let job = h.app.session.loupe_job(after, 64, 64, true).expect("a job");
+        assert_eq!(job.settings.light.exposure, 1.0);
+        let shown = h.app.renderer.textures.get(&Slot::Main).expect("the loupe shows a render");
+        assert_eq!(shown.photo, after);
+        assert!(shown.quick.is_none());
+    }
+
     // Given a stage budget below what the open photo's views hold (a 2800 px canvas at 1:1), a
     // slider drag still reuses them: they are not cleared every frame
     #[test]

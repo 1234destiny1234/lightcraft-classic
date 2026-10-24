@@ -5880,7 +5880,8 @@ mod tests {
         // every loupe render fails, as an undecodable raw's would; the rest render
         let open = Rc::new(Cell::new(true));
         h.app.renderer.set_offload(Box::new(super::RenderGate::failing(open.clone(), |s| s == Slot::Main)));
-        let other = h.app.session.visible_cloned().get(1).copied().expect("a second photo").0;
+        // (not a neighbour of the open photo: the loupe would take its prepared render)
+        let other = h.app.session.visible_cloned().get(3).copied().expect("a fourth photo").0;
         h.request("engine.execute", json!({"command": "library.select", "params": {"ids": [other], "active": other}}), t);
         assert!(h.step_until(SETTLE, |h| has(h, "loupe:renderFailed")), "the failure is said");
         let shown = h.app.loupe_shown.map(|l| l.1);
