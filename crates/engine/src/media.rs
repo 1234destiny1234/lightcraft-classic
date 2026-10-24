@@ -1219,7 +1219,8 @@ impl RenderJob {
                     && self.request.quality == Quality::Full
                     && (display.is_none() || srgb.is_some())
                 {
-                    cache.put_deferred_at(self.cache_generation, *key, Arc::new(srgb.unwrap_or_else(|| rendered.image.clone())));
+                    // (one series per photo: a drag's updates replace each other on the way to disk)
+                    cache.put_deferred_series(self.cache_generation, self.photo.0, *key, Arc::new(srgb.unwrap_or_else(|| rendered.image.clone())));
                 }
                 // the display fit, after the caches have the full render
                 if let Some((fw, fh)) = self.display_fit

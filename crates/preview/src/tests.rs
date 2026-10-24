@@ -787,6 +787,36 @@ fn a_panicking_job_frees_its_slot() {
     assert_eq!(got, Some(2));
 }
 
+/// Given a series of deferred writes faster than its quiet time (a photo's view through a slider drag at full
+/// quality), only its last image reaches the disk, and only once the series is quiet; another series and a plain
+/// deferred write are written as before, and every image is in memory at once
+#[test]
+fn a_series_of_deferred_writes_reaches_the_disk_once_with_its_last_image() {
+    let dir = temp_dir("deferred-series");
+    let cache = Arc::new(PreviewCache::with_disk(1 << 30, &dir, 1 << 31));
+    let img = Arc::new(gradient(64, 48, 9));
+    let drag: Vec<Hash128> = (0..12u32).map(|i| hash_bytes(&[b"drag".as_slice(), &i.to_le_bytes()].concat())).collect();
+    let (other, plain) = (hash_bytes(b"other photo"), hash_bytes(b"plain"));
+    let g = cache.generation();
+    for key in &drag {
+        cache.put_deferred_series(g, 1, *key, img.clone());
+        assert!(cache.get_in_memory(*key).is_some(), "in memory at once");
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    cache.put_deferred_series(g, 2, other, img.clone());
+    cache.put_deferred(plain, img.clone());
+    let t = std::time::Instant::now();
+    while cache.queued_bytes() > 0 && t.elapsed() < std::time::Duration::from_secs(30) {
+        std::thread::sleep(std::time::Duration::from_millis(20));
+    }
+    assert_eq!(cache.queued_bytes(), 0, "the queue drains");
+    let disk = cache.disk().unwrap();
+    assert!(disk.get(drag[11]).is_some(), "the series' last image");
+    assert!(drag[..11].iter().all(|k| disk.get(*k).is_none()), "none of the ones it replaced");
+    assert!(disk.get(other).is_some() && disk.get(plain).is_some());
+    let _ = std::fs::remove_dir_all(&dir);
+}
+
 /// Deferred disk writes go through one writer with a byte budget: a burst of big renders can't queue more than the
 /// budget (each used to start a thread of its own, holding its image; issue #1522), and what was queued reaches disk.
 #[test]
