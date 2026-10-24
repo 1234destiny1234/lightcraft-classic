@@ -190,8 +190,8 @@ pub(crate) fn prepare(app: &LccApp, ui: &mut egui::Ui) {
 }
 
 pub fn show(app: &mut LccApp, ctx: &egui::Context) {
-    // the touch layout's Settings screen and Export sheet (fork)
-    if crate::touch_sheets::show(app, ctx) {
+    // the Modern layout's Settings screen and Export sheet (fork)
+    if crate::modern_sheets::show(app, ctx) {
         return;
     }
     let Some(mut dlg) = app.ui.dialog.clone() else { return };

@@ -1,4 +1,4 @@
-//! Headless tests of the touch layout's gestures and edges: a swipe scrolls the grid (a tap still
+//! Headless tests of the Modern layout's gestures and edges: a swipe scrolls the grid (a tap still
 //! opens, a long press picks), Back closes things in order and hands the root to the system, the
 //! UI keeps clear of the screen's insets, the adjusted parameter stays in view, and Develop's
 //! histogram pins or floats.
@@ -8,8 +8,8 @@ use std::time::Duration;
 use serde_json::{Value, json};
 
 use crate::headless::Headless;
+use crate::modern::HistogramPlace;
 use crate::module::ModuleId;
-use crate::touch::HistogramPlace;
 use crate::{LccApp, Services};
 
 const T: Duration = Duration::from_secs(20);
@@ -29,23 +29,23 @@ fn rect(h: &Headless, id: &str) -> Option<egui::Rect> {
     h.app.widgets.iter().rev().find(|(w, _)| w == id).map(|(_, r)| *r)
 }
 
-/// The demo library's grid in the touch layout.
+/// The demo library's grid in the Modern layout.
 fn library(size: [f32; 2]) -> Headless {
     let app = LccApp::new(lcc_engine::Session::with_demo(), Services { png: None, ..Default::default() });
     let mut h = Headless::new(app, size, 1.0);
-    assert_eq!(exec(&mut h, "view.touchLayout", json!({"on": true}))["ok"], true);
+    assert_eq!(exec(&mut h, "view.modernLayout", json!({"on": true}))["ok"], true);
     exec(&mut h, "view.squareGrid", json!({}));
     h
 }
 
-/// The demo library in Develop on its first photo, touch layout on.
+/// The demo library in Develop on its first photo, Modern layout on.
 fn develop(size: [f32; 2]) -> Headless {
     let mut h = library(size);
     let id = h.app.session.visible_cloned()[0].0;
     exec(&mut h, "library.select", json!({"ids": [id]}));
     exec(&mut h, "module.develop", json!({}));
     exec(&mut h, "view.detail", json!({}));
-    exec(&mut h, "touch.chrome", json!({"on": true}));
+    exec(&mut h, "modern.chrome", json!({"on": true}));
     h
 }
 
@@ -106,18 +106,18 @@ fn a_long_press_picks_photos_and_taps_then_add_until_back() {
         modifiers: egui::Modifiers::NONE,
     });
     h.settle(SETTLE);
-    assert!(h.app.ui.touch.selecting, "a long press starts picking");
+    assert!(h.app.ui.modern.selecting, "a long press starts picking");
     assert_eq!(h.app.ui.module, ModuleId::Library, "and opens nothing");
     assert_eq!(h.app.session.selection.ids.len(), 1);
-    assert!(rect(&h, "touch:endSelect").is_some(), "the bar counts the picked photos");
+    assert!(rect(&h, "modern:endSelect").is_some(), "the bar counts the picked photos");
     for (w, _) in &cells[1..] {
         ask(&mut h, "ui.clickWidget", json!({"id": w}));
     }
     assert_eq!(h.app.session.selection.ids.len(), 3, "taps add photos while picking");
     assert_eq!(h.app.ui.module, ModuleId::Library);
-    let r = exec(&mut h, "touch.back", json!({}));
+    let r = exec(&mut h, "modern.back", json!({}));
     assert_eq!(r["result"]["closed"], "selection", "{r}");
-    assert!(!h.app.ui.touch.selecting);
+    assert!(!h.app.ui.modern.selecting);
     assert!(h.app.session.selection.ids.len() <= 1);
 }
 
@@ -125,7 +125,7 @@ fn a_long_press_picks_photos_and_taps_then_add_until_back() {
 fn back_closes_dialog_tool_panel_and_develop_then_leaves_the_root_to_the_system() {
     let mut h = develop([800.0, 1280.0]);
     let back = |h: &mut Headless| {
-        let r = exec(h, "touch.back", json!({}));
+        let r = exec(h, "modern.back", json!({}));
         assert_eq!(r["ok"], true, "{r}");
         r["result"].clone()
     };
@@ -134,35 +134,35 @@ fn back_closes_dialog_tool_panel_and_develop_then_leaves_the_root_to_the_system(
     assert_eq!(back(&mut h)["closed"], "dialog");
     assert!(h.app.ui.dialog.is_none(), "Back closes the dialog as Esc does");
 
-    exec(&mut h, "touch.tool", json!({"tool": "basic", "control": "light.exposure"}));
-    ask(&mut h, "ui.dragWidget", json!({"id": "touch:canvas", "fx": 0.4, "dx": 150.0, "steps": 8}));
+    exec(&mut h, "modern.tool", json!({"tool": "basic", "control": "light.exposure"}));
+    ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.4, "dx": 150.0, "steps": 8}));
     let id = h.app.session.active().unwrap();
     let changed = lcc_develop::controls::get(&h.app.session.develop_of(id).unwrap_or_default(), "light.exposure").unwrap();
     assert!(changed > 0.0);
     assert_eq!(back(&mut h)["closed"], "tool");
-    assert!(h.app.ui.touch.tool.is_none());
+    assert!(h.app.ui.modern.tool.is_none());
     let kept = lcc_develop::controls::get(&h.app.session.develop_of(id).unwrap_or_default(), "light.exposure").unwrap();
     assert_eq!(kept, changed, "Back leaves the tool as Done does: the change stays");
 
-    exec(&mut h, "touch.panel", json!({"on": true}));
+    exec(&mut h, "modern.panel", json!({"on": true}));
     assert_eq!(back(&mut h)["closed"], "panel");
-    assert!(!h.app.ui.touch.panel);
+    assert!(!h.app.ui.modern.panel);
 
     assert_eq!(back(&mut h)["closed"], "develop");
     assert_eq!(h.app.ui.module, ModuleId::Library);
 
-    assert!(!crate::touch::take_system_back(&mut h.app));
+    assert!(!crate::modern::take_system_back(&mut h.app));
     let root = back(&mut h);
     assert_eq!(root["handled"], false, "{root}");
-    assert!(crate::touch::take_system_back(&mut h.app), "the root's Back goes to the system");
+    assert!(crate::modern::take_system_back(&mut h.app), "the root's Back goes to the system");
 }
 
 #[test]
 fn the_back_key_runs_the_same_steps() {
     let mut h = develop([800.0, 1280.0]);
-    exec(&mut h, "touch.panel", json!({"on": true}));
+    exec(&mut h, "modern.panel", json!({"on": true}));
     ask(&mut h, "ui.key", json!({"key": "BrowserBack"}));
-    assert!(!h.app.ui.touch.panel, "the Back key closed the sheet");
+    assert!(!h.app.ui.modern.panel, "the Back key closed the sheet");
     assert_eq!(h.app.ui.module, ModuleId::Develop, "one press, one step");
 }
 
@@ -171,80 +171,80 @@ fn the_ui_keeps_clear_of_the_cutout_and_the_system_bars() {
     // a folding phone's cover screen with the camera cutout at the top, and a gesture bar
     let (top, bottom) = (38.0, 18.0);
     let mut h = library([412.0, 960.0]);
-    assert_eq!(exec(&mut h, "touch.insets", json!({"top": top, "bottom": bottom}))["ok"], true);
-    let import = rect(&h, "touch:import").expect("library bar");
+    assert_eq!(exec(&mut h, "modern.insets", json!({"top": top, "bottom": bottom}))["ok"], true);
+    let import = rect(&h, "modern:import").expect("library bar");
     assert!(import.top() >= top, "the Library bar is below the cutout ({import:?})");
     let mut h = develop([412.0, 960.0]);
-    exec(&mut h, "touch.insets", json!({"top": top, "bottom": bottom}));
-    let b = rect(&h, "touch:back").expect("top bar");
+    exec(&mut h, "modern.insets", json!({"top": top, "bottom": bottom}));
+    let b = rect(&h, "modern:back").expect("top bar");
     assert!(b.top() >= top, "Develop's top bar is below the cutout ({b:?})");
-    let strip = rect(&h, "touch:strip").expect("tool strip");
+    let strip = rect(&h, "modern:strip").expect("tool strip");
     assert!(strip.bottom() <= 960.0 - bottom, "the tool strip is above the gesture bar ({strip:?})");
-    exec(&mut h, "touch.panel", json!({"on": true}));
-    let grab = rect(&h, "touch:sheetGrab").expect("sheet");
+    exec(&mut h, "modern.panel", json!({"on": true}));
+    let grab = rect(&h, "modern:sheetGrab").expect("sheet");
     assert!(grab.bottom() <= 960.0 - bottom);
     // nonsense is refused or cleaned, never a panic
-    assert_eq!(exec(&mut h, "touch.insets", json!({"top": "lots"}))["ok"], false);
-    let r = exec(&mut h, "touch.insets", json!({"top": -5.0, "left": 1e30}));
+    assert_eq!(exec(&mut h, "modern.insets", json!({"top": "lots"}))["ok"], false);
+    let r = exec(&mut h, "modern.insets", json!({"top": -5.0, "left": 1e30}));
     assert_eq!(r["ok"], true, "{r}");
-    assert_eq!(h.app.ui.touch.insets.top, 0.0);
-    assert!(h.app.ui.touch.insets.left <= 400.0);
+    assert_eq!(h.app.ui.modern.insets.top, 0.0);
+    assert!(h.app.ui.modern.insets.left <= 400.0);
 }
 
 #[test]
 fn the_parameter_being_adjusted_stays_in_view() {
     let mut h = develop([412.0, 960.0]);
-    exec(&mut h, "touch.tool", json!({"tool": "detail", "control": "detail.sharpenAmount"}));
-    let chips = rect(&h, "touch:chips").expect("the parameter row");
+    exec(&mut h, "modern.tool", json!({"tool": "detail", "control": "detail.sharpenAmount"}));
+    let chips = rect(&h, "modern:chips").expect("the parameter row");
     // step down through every parameter with up/down drags on the photo
     for _ in 0..5 {
-        ask(&mut h, "ui.dragWidget", json!({"id": "touch:canvas", "fx": 0.5, "fy": 0.3, "dy": 70.0, "steps": 8}));
-        let id = format!("touch:param:{}", h.app.ui.touch.control);
+        ask(&mut h, "ui.dragWidget", json!({"id": "modern:canvas", "fx": 0.5, "fy": 0.3, "dy": 70.0, "steps": 8}));
+        let id = format!("modern:param:{}", h.app.ui.modern.control);
         let chip = rect(&h, &id).expect("the chosen chip");
         assert!(chip.left() >= chips.left() - 1.0 && chip.right() <= chips.right() + 1.0, "{id} is inside the row ({chip:?} in {chips:?})");
     }
-    assert_eq!(h.app.ui.touch.control, "detail.nrColor", "stepped to the last");
+    assert_eq!(h.app.ui.modern.control, "detail.nrColor", "stepped to the last");
     // one in the middle sits in the middle
-    exec(&mut h, "touch.tool", json!({"tool": "detail", "control": "detail.sharpenMasking"}));
-    let chip = rect(&h, "touch:param:detail.sharpenMasking").unwrap();
+    exec(&mut h, "modern.tool", json!({"tool": "detail", "control": "detail.sharpenMasking"}));
+    let chip = rect(&h, "modern:param:detail.sharpenMasking").unwrap();
     assert!((chip.center().x - chips.center().x).abs() < 40.0, "centred ({chip:?} in {chips:?})");
 }
 
 #[test]
 fn the_histogram_pins_under_the_top_bar_or_floats_where_it_is_dragged() {
     let mut h = develop([412.0, 960.0]);
-    assert_eq!(h.app.ui.touch.histogram, HistogramPlace::Off, "off by default");
-    assert!(rect(&h, "touch:histogram").is_none());
-    ask(&mut h, "ui.clickWidget", json!({"id": "touch:histogramButton"}));
-    assert_eq!(h.app.ui.touch.histogram, HistogramPlace::Pinned, "portrait pins it");
-    let hist = rect(&h, "touch:histogram").unwrap();
-    let bar = rect(&h, "touch:back").unwrap();
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Off, "off by default");
+    assert!(rect(&h, "modern:histogram").is_none());
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogramButton"}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Pinned, "portrait pins it");
+    let hist = rect(&h, "modern:histogram").unwrap();
+    let bar = rect(&h, "modern:back").unwrap();
     assert!(hist.top() >= bar.bottom(), "under the top bar");
 
     let mut h = develop([1280.0, 800.0]);
-    ask(&mut h, "ui.clickWidget", json!({"id": "touch:histogramButton"}));
-    assert_eq!(h.app.ui.touch.histogram, HistogramPlace::Floating, "landscape floats it");
-    let before = rect(&h, "touch:histogram").unwrap();
-    ask(&mut h, "ui.dragWidget", json!({"id": "touch:histogram", "dx": -300.0, "dy": 200.0, "steps": 10}));
-    let after = rect(&h, "touch:histogram").unwrap();
+    ask(&mut h, "ui.clickWidget", json!({"id": "modern:histogramButton"}));
+    assert_eq!(h.app.ui.modern.histogram, HistogramPlace::Floating, "landscape floats it");
+    let before = rect(&h, "modern:histogram").unwrap();
+    ask(&mut h, "ui.dragWidget", json!({"id": "modern:histogram", "dx": -300.0, "dy": 200.0, "steps": 10}));
+    let after = rect(&h, "modern:histogram").unwrap();
     assert!(after.left() < before.left() - 100.0 && after.top() > before.top() + 100.0, "{before:?} → {after:?}");
-    let at = h.app.ui.touch.histogram_at;
+    let at = h.app.ui.modern.histogram_at;
     assert!(at.iter().all(|v| (0.0..=1.0).contains(v)), "kept as a fraction ({at:?})");
     // saved with the UI state
-    let saved: crate::touch::TouchUi = serde_json::from_value(serde_json::to_value(&h.app.ui.touch).unwrap()).unwrap();
+    let saved: crate::modern::ModernUi = serde_json::from_value(serde_json::to_value(&h.app.ui.modern).unwrap()).unwrap();
     assert_eq!((saved.histogram, saved.histogram_at), (HistogramPlace::Floating, at));
     for bad in [json!({"mode": "sideways"}), json!({"mode": 3}), json!({"mode": "off", "at": [0.5]}), json!({"at": "x"})] {
-        assert_eq!(exec(&mut h, "touch.histogram", bad.clone())["ok"], false, "{bad}");
+        assert_eq!(exec(&mut h, "modern.histogram", bad.clone())["ok"], false, "{bad}");
     }
-    assert_eq!(exec(&mut h, "touch.histogram", json!({"mode": "off"}))["ok"], true);
-    assert!(rect(&h, "touch:histogram").is_none());
+    assert_eq!(exec(&mut h, "modern.histogram", json!({"mode": "off"}))["ok"], true);
+    assert!(rect(&h, "modern:histogram").is_none());
 }
 
 #[test]
 fn activity_cards_sit_below_the_touch_top_bar_inside_the_insets() {
     // a folding phone's cover screen with a status bar and a side cutout
     let mut h = library([412.0, 960.0]);
-    exec(&mut h, "touch.insets", json!({"top": 28.0, "left": 12.0}));
+    exec(&mut h, "modern.insets", json!({"top": 28.0, "left": 12.0}));
     let g = h.app.session.activity.start("faces", "Finding faces", lcc_engine::activity::Cancel::No);
     std::thread::sleep(Duration::from_millis(600));
     h.step();
@@ -252,7 +252,7 @@ fn activity_cards_sit_below_the_touch_top_bar_inside_the_insets() {
     let id = h.app.session.activity.list()[0].id;
     let card = rect(&h, &format!("activity:row:{id}")).expect("the activity card");
     assert!(card.left() >= 12.0 && card.top() >= 28.0, "inside the insets: {card:?}");
-    let bar: Vec<(String, egui::Rect)> = h.app.widgets.iter().filter(|(w, _)| w.starts_with("touch:")).cloned().collect();
+    let bar: Vec<(String, egui::Rect)> = h.app.widgets.iter().filter(|(w, _)| w.starts_with("modern:")).cloned().collect();
     assert!(!bar.is_empty(), "the touch top bar's buttons");
     for (w, r) in &bar {
         if r.top() < card.top() {
@@ -263,8 +263,8 @@ fn activity_cards_sit_below_the_touch_top_bar_inside_the_insets() {
     let first = h.app.session.visible_cloned()[0].0;
     exec(&mut h, "library.select", json!({"ids": [first]}));
     exec(&mut h, "module.develop", json!({}));
-    exec(&mut h, "touch.chrome", json!({"on": true}));
-    let back = rect(&h, "touch:back").expect("Develop's Back");
+    exec(&mut h, "modern.chrome", json!({"on": true}));
+    let back = rect(&h, "modern:back").expect("Develop's Back");
     let card = rect(&h, &format!("activity:row:{id}")).expect("the activity card");
     assert!(!back.intersects(card) && card.top() >= back.bottom(), "Back stays visible: {back:?} vs {card:?}");
     drop(g);

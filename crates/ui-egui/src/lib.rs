@@ -48,6 +48,9 @@ pub mod menubar;
 pub mod menus;
 pub mod merge;
 mod model_setup;
+pub mod modern;
+mod modern_input;
+pub mod modern_sheets;
 pub mod module;
 pub mod panels;
 pub mod pick;
@@ -75,9 +78,6 @@ pub mod text_field;
 pub mod theme;
 pub mod timelapse_ui;
 pub mod titlebar;
-pub mod touch;
-mod touch_input;
-pub mod touch_sheets;
 pub mod video_ui;
 pub mod video_view;
 pub mod web_module;
@@ -633,8 +633,8 @@ pub struct LccApp {
     pub tasks: tasks::Tasks,
     /// The files of the last finished background export (`ui.inspect` → `export.last`).
     pub last_export_result: Option<Value>,
-    /// The touch layout's Settings and Export screens (`touch_sheets`).
-    pub touch_sheets: touch_sheets::TouchSheets,
+    /// The Modern layout's Settings and Export screens (`modern_sheets`).
+    pub modern_sheets: modern_sheets::ModernSheets,
     /// The last slideshow export's end has been told (a toast).
     pub slideshow_export_reported: bool,
     /// The look the loupe shows while the pointer rests on a preset or profile (set by the
@@ -780,7 +780,7 @@ impl LccApp {
             last_render_dng: None,
             tasks: Default::default(),
             last_export_result: None,
-            touch_sheets: Default::default(),
+            modern_sheets: Default::default(),
             slideshow_export_reported: true,
             hover_preview: None,
             clipping_preview: false,
@@ -1658,11 +1658,11 @@ impl LccApp {
     }
 
     /// Inject synthetic events (pointer events one per frame; key sequences up to the release),
-    /// and (touch layout) turn Back into `touch.back` and swipes into scrolling.
+    /// and (Modern layout) turn Back into `modern.back` and swipes into scrolling.
     pub fn raw_input_hook(&mut self, raw: &mut egui::RawInput) {
-        touch::before_input(self, raw);
+        modern::before_input(self, raw);
         self.synthetic_input(raw);
-        touch::after_input(self, raw);
+        modern::after_input(self, raw);
     }
 
     fn synthetic_input(&mut self, raw: &mut egui::RawInput) {
@@ -1792,8 +1792,8 @@ impl LccApp {
         }
         // Order matters: earlier panels take the full edge (top bar spans the window; the tool strip,
         // right panels and left panel run to the bottom; the bottom bar sits between them).
-        let touch = touch::on(self);
-        let m = if touch { touch::edges(self, ui, &ctx) } else { shell::edges(self, ui, &ctx) };
+        let touch = modern::on(self);
+        let m = if touch { modern::edges(self, ui, &ctx) } else { shell::edges(self, ui, &ctx) };
         let t = theme::Tokens::get(&ctx);
         let bg = if matches!(self.ui.view, state::ViewMode::Detail | state::ViewMode::Compare | state::ViewMode::Survey | state::ViewMode::Reference)
         {
@@ -1803,7 +1803,7 @@ impl LccApp {
         };
         egui::CentralPanel::default()
             .frame(egui::Frame::NONE.fill(bg))
-            .show(ui, |ui| if touch { touch::center(self, ui, m) } else { m.center(ui, self) });
+            .show(ui, |ui| if touch { modern::center(self, ui, m) } else { m.center(ui, self) });
         module::lights_out(self, &ctx);
         help_overlay::show(self, &ctx);
         panels::second::show(self, &ctx);
@@ -2529,8 +2529,8 @@ mod tests_model_setup;
 #[cfg(test)]
 mod tests_docking_acceptance;
 #[cfg(test)]
-mod tests_touch;
+mod tests_modern;
 #[cfg(test)]
-mod tests_touch_gestures;
+mod tests_modern_gestures;
 #[cfg(test)]
-mod tests_touch_sheets;
+mod tests_modern_sheets;

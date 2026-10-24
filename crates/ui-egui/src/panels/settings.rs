@@ -184,11 +184,11 @@ fn shortcuts_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
 // ------------------------------------------------------------------------------------- General
 
 fn general_tab(app: &mut LccApp, ui: &mut egui::Ui, t: &Tokens) {
-    // the touch layout (Android's) or the desktop's; on either, this row switches back
+    // Modern (Android's default) or Classic; on either, this row switches back
     row(ui, t, crate::i18n::tr("Layout"), |ui| {
-        let mut touch = app.ui.touch.enabled;
-        if choices(ui, "settingsLayout", &[(true, "Touch"), (false, "Desktop")], &mut touch) {
-            let _ = app.run("view.touchLayout", json!({"on": touch}));
+        let mut modern = app.ui.modern.enabled;
+        if choices(ui, "settingsLayout", &[(false, "Classic – Advanced"), (true, "Modern – Simple")], &mut modern) {
+            let _ = app.run("view.modernLayout", json!({"on": modern}));
         }
     });
     row(ui, t, crate::i18n::tr("Language"), |ui| {

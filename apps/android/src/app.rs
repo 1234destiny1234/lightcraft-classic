@@ -275,7 +275,7 @@ impl eframe::App for App {
         self.keyboard.input(raw);
         // the camera cutout and the system bars: the UI keeps clear of them
         if let Some(px) = lcc_android_host::insets() {
-            self.app.ui.touch.insets = lcc_ui_egui::touch::Insets::from_px(px, ctx.pixels_per_point());
+            self.app.ui.modern.insets = lcc_ui_egui::modern::Insets::from_px(px, ctx.pixels_per_point());
         }
         // Back (the predictive-back callback): as the Back key, which the UI turns into touch.back
         for _ in 0..lcc_android_host::take_back() {
@@ -309,7 +309,7 @@ impl eframe::App for App {
             }
         }
         // Back with nothing left to close: the system's Back (the app goes to the background)
-        if lcc_ui_egui::touch::take_system_back(&mut self.app)
+        if lcc_ui_egui::modern::take_system_back(&mut self.app)
             && let Some(h) = &self.host
             && let Err(e) = h.go_background()
         {

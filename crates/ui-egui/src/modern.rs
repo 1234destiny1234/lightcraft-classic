@@ -1,4 +1,4 @@
-//! The touch layout (fork-owned): on Android by default, elsewhere through `view.touchLayout`.
+//! The Modern layout (fork-owned): on Android by default, elsewhere through `view.modernLayout`.
 //!
 //! Everything is hidden until it is wanted. The photo fills the screen; a tap on it shows or hides
 //! the chrome (a slim top bar and a bottom tool strip, both floating over the photo). Picking a
@@ -10,7 +10,7 @@
 //! button) shows the original. Library is the grid under a slim bar; a tap opens a photo.
 //!
 //! Own design (interaction patterns of touch photo editors; no assets taken from any). The desktop
-//! layout is untouched: `LccApp::ui` calls in here only while [`TouchUi::enabled`] is set.
+//! layout is untouched: `LccApp::ui` calls in here only while [`ModernUi::enabled`] is set.
 
 use egui::{Align2, Color32, Id, Pos2, Rect, Sense, Stroke, Vec2, pos2, vec2};
 use lcc_develop::{ControlSpec, controls};
@@ -25,11 +25,11 @@ use crate::state::{BeforeAfter, RightPanel, ViewMode};
 use crate::theme::Tokens;
 use crate::widgets::register;
 
-/// The touch layout's state, saved with the UI state (`touch` in `ui.json` and `ui.set`).
+/// The Modern layout's state, saved with the UI state (`modern` in `ui.json`, formerly `touch` and `ui.set`).
 #[derive(Clone, Debug, PartialEq, Serialize, Deserialize)]
 #[serde(default, rename_all = "camelCase")]
-pub struct TouchUi {
-    /// The touch layout is on (Android's default).
+pub struct ModernUi {
+    /// The Modern layout is on (Android's default).
     pub enabled: bool,
     /// Develop's top bar and tool strip are shown (a tap on the photo toggles them).
     pub chrome: bool,
@@ -57,7 +57,7 @@ pub struct TouchUi {
     /// move in (0…1 each way), so it stays put across rotations and screen sizes.
     pub histogram_at: [f32; 2],
     /// The screen's edges hidden by the display cutout and the system bars (points), from the host
-    /// (Android) or `touch.insets`; the whole UI keeps clear of them.
+    /// (Android) or `modern.insets`; the whole UI keeps clear of them.
     #[serde(skip)]
     pub insets: Insets,
     /// Library: a long press started picking several photos; taps add or remove.
@@ -80,13 +80,13 @@ pub struct TouchUi {
     #[serde(skip)]
     centred: (String, String),
     #[serde(skip)]
-    scroller: crate::touch_input::Scroller,
+    scroller: crate::modern_input::Scroller,
     /// A long press on photos this frame, where.
     #[serde(skip)]
     long_press: Option<Pos2>,
 }
 
-/// Where Develop's histogram shows in the touch layout (`touch.histogram {mode}`).
+/// Where Develop's histogram shows in the Modern layout (`modern.histogram {mode}`).
 #[derive(Clone, Copy, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub enum HistogramPlace {
@@ -136,9 +136,9 @@ impl Insets {
 
 // (derivable only where `cfg!(target_os = "android")` is false)
 #[allow(clippy::derivable_impls)]
-impl Default for TouchUi {
+impl Default for ModernUi {
     fn default() -> Self {
-        TouchUi {
+        ModernUi {
             enabled: cfg!(target_os = "android"),
             chrome: false,
             panel: false,
@@ -303,7 +303,7 @@ impl Strip {
         })
     }
     fn id(self) -> String {
-        format!("touch:tool:{}", self.label().to_ascii_lowercase())
+        format!("modern:tool:{}", self.label().to_ascii_lowercase())
     }
 }
 
@@ -347,9 +347,9 @@ const SLOP: f32 = 10.0;
 /// An up/down drag of this many points steps to the next parameter.
 const STEP_PTS: f32 = 56.0;
 
-/// The touch layout is on.
+/// The Modern layout is on.
 pub(crate) fn on(app: &LccApp) -> bool {
-    app.ui.touch.enabled
+    app.ui.modern.enabled
 }
 
 // ------------------------------------------------------------------------ input: Back, insets, scrolling
@@ -358,7 +358,7 @@ pub(crate) fn on(app: &LccApp) -> bool {
 /// panel, dialog and the touch chrome keep clear of the camera cutout and the system bars), and a
 /// Back press (the Android key or gesture, as egui's `BrowserBack`) runs [`back`].
 pub(crate) fn before_input(app: &mut LccApp, raw: &mut egui::RawInput) {
-    let i = app.ui.touch.insets;
+    let i = app.ui.modern.insets;
     raw.safe_area_insets = Some(egui::SafeAreaInsets(egui::epaint::MarginF32 { left: i.left, right: i.right, top: i.top, bottom: i.bottom }));
 }
 
@@ -378,31 +378,31 @@ fn back_keys(app: &mut LccApp, raw: &mut egui::RawInput) {
     // one press can arrive twice (the key, and the system's back callback): a second within
     // this long is the same press
     let now = raw.time.unwrap_or(0.0);
-    if app.ui.touch.last_back.is_some_and(|t| (now - t).abs() < 0.25) {
+    if app.ui.modern.last_back.is_some_and(|t| (now - t).abs() < 0.25) {
         return;
     }
-    app.ui.touch.last_back = Some(now);
+    app.ui.modern.last_back = Some(now);
     if back(app).is_none() {
-        app.ui.touch.system_back = true;
+        app.ui.modern.system_back = true;
     }
 }
 
-/// After the synthetic input is in: in the touch layout, swipes scroll (see [`crate::touch_input`]).
+/// After the synthetic input is in: in the Modern layout, swipes scroll (see [`crate::modern_input`]).
 pub(crate) fn after_input(app: &mut LccApp, raw: &mut egui::RawInput) {
     back_keys(app, raw);
-    if !app.ui.touch.enabled {
-        app.ui.touch.scroller = Default::default();
+    if !app.ui.modern.enabled {
+        app.ui.modern.scroller = Default::default();
         return;
     }
     let widgets = std::mem::take(&mut app.widgets);
     let rect_of = |id: &str| widgets.iter().rev().find(|(w, _)| w == id).map(|(_, r)| *r);
-    let modal = app.ui.dialog.is_some() || app.ui.touch.popup_open;
+    let modal = app.ui.dialog.is_some() || app.ui.modern.popup_open;
     let develop = app.ui.module != ModuleId::Library;
-    let canvas = if develop { rect_of("touch:canvas").or(app.canvas_rect) } else { None };
+    let canvas = if develop { rect_of("modern:canvas").or(app.canvas_rect) } else { None };
     let photos = [rect_of("grid:scroll"), rect_of("filmstrip")];
-    let strips = [rect_of("touch:strip"), rect_of("touch:chips")];
+    let strips = [rect_of("modern:strip"), rect_of("modern:chips")];
     let region = |p: Pos2| {
-        use crate::touch_input::Region;
+        use crate::modern_input::Region;
         if modal {
             return Some(Region::Free);
         }
@@ -418,11 +418,11 @@ pub(crate) fn after_input(app: &mut LccApp, raw: &mut egui::RawInput) {
             Some(Region::Free)
         }
     };
-    let toggle = app.ui.touch.selecting;
-    let outcome = app.ui.touch.scroller.process(raw, region, toggle);
+    let toggle = app.ui.modern.selecting;
+    let outcome = app.ui.modern.scroller.process(raw, region, toggle);
     app.widgets = widgets;
     if outcome.long_press.is_some() {
-        app.ui.touch.long_press = outcome.long_press;
+        app.ui.modern.long_press = outcome.long_press;
     }
     if outcome.busy
         && let Some(ctx) = app.tasks.repaint.as_ref()
@@ -453,8 +453,8 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
         app.ui.camera_roll_asked = true;
         return Some("prompt");
     }
-    if crate::touch::on(app)
-        && let Some(what) = crate::touch_sheets::back(app)
+    if crate::modern::on(app)
+        && let Some(what) = crate::modern_sheets::back(app)
     {
         return Some(what);
     }
@@ -462,41 +462,41 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
         esc(app);
         return Some("dialog");
     }
-    if app.ui.touch.import_menu {
-        app.ui.touch.import_menu = false;
+    if app.ui.modern.import_menu {
+        app.ui.modern.import_menu = false;
         return Some("menu");
     }
-    if app.ui.touch.popup_open {
+    if app.ui.modern.popup_open {
         esc(app);
-        app.ui.touch.popup_open = false;
+        app.ui.modern.popup_open = false;
         return Some("menu");
     }
-    if !app.ui.touch.enabled {
+    if !app.ui.modern.enabled {
         return None;
     }
-    if app.ui.touch.selecting && app.ui.module == ModuleId::Library {
-        app.ui.touch.selecting = false;
+    if app.ui.modern.selecting && app.ui.module == ModuleId::Library {
+        app.ui.modern.selecting = false;
         let keep: Vec<u64> = app.session.active().map(|id| id.0).into_iter().collect();
         let _ = app.run("library.select", json!({"ids": keep}));
         return Some("selection");
     }
-    if app.ui.touch.tool.is_some() {
-        if app.ui.touch.drag.as_ref().is_some_and(|d| d.axis.is_some()) {
+    if app.ui.modern.tool.is_some() {
+        if app.ui.modern.drag.as_ref().is_some_and(|d| d.axis.is_some()) {
             return Some("busy");
         }
         close_tool(app, true);
         return Some("tool");
     }
-    if app.ui.touch.panel {
-        app.ui.touch.panel = false;
+    if app.ui.modern.panel {
+        app.ui.modern.panel = false;
         return Some("panel");
     }
     if app.ui.module != ModuleId::Library {
         back_to_library(app);
         return Some("develop");
     }
-    if app.ui.touch.filters {
-        app.ui.touch.filters = false;
+    if app.ui.modern.filters {
+        app.ui.modern.filters = false;
         return Some("filters");
     }
     None
@@ -505,15 +505,15 @@ pub(crate) fn back(app: &mut LccApp) -> Option<&'static str> {
 /// Whether Back had nothing left to close since the last call: the host then does the system's
 /// Back (Android: the app goes to the background).
 pub fn take_system_back(app: &mut LccApp) -> bool {
-    std::mem::take(&mut app.ui.touch.system_back)
+    std::mem::take(&mut app.ui.modern.system_back)
 }
 
-/// The touch layout's edges (replacing `shell::edges`): Library's bar, or Develop's side panel or
+/// The Modern layout's edges (replacing `shell::edges`): Library's bar, or Develop's side panel or
 /// bottom sheet when it is open. Returns the module, which draws the centre.
-/// The top-left corner for floating cards (the activity stack) in the touch layout: inside the
+/// The top-left corner for floating cards (the activity stack) in the Modern layout: inside the
 /// screen's insets and below the top bar, so they never cover its buttons (Back, Import, …).
 pub(crate) fn overlay_origin(app: &LccApp) -> Pos2 {
-    let i = app.ui.touch.insets;
+    let i = app.ui.modern.insets;
     pos2(i.left + 8.0, i.top + BAR_H + 8.0)
 }
 
@@ -521,35 +521,35 @@ pub(crate) fn edges(app: &mut LccApp, ui: &mut egui::Ui, ctx: &egui::Context) ->
     module::sync(app);
     let m = module::get(app.ui.module);
     let form = Form::of(ctx.content_rect().size());
-    app.ui.touch.popup_open = egui::Popup::is_any_open(ctx);
+    app.ui.modern.popup_open = egui::Popup::is_any_open(ctx);
     // a tap's release (and a hold's timing, a glide) comes on a later frame: ask for it here, as
     // the host draws only on input otherwise (Android)
-    if app.ui.touch.scroller.busy() {
+    if app.ui.modern.scroller.busy() {
         ctx.request_repaint();
     }
     // the cutout and the system bars: every panel below keeps clear of them
-    let i = app.ui.touch.insets;
+    let i = app.ui.modern.insets;
     let fill = egui::Frame::NONE.fill(Tokens::get(ctx).chrome);
     if i.top > 0.5 {
-        egui::Panel::top("touch-inset-top").exact_size(i.top).resizable(false).frame(fill).show(ui, |_| {});
+        egui::Panel::top("modern-inset-top").exact_size(i.top).resizable(false).frame(fill).show(ui, |_| {});
     }
     if i.bottom > 0.5 {
-        egui::Panel::bottom("touch-inset-bottom").exact_size(i.bottom).resizable(false).frame(fill).show(ui, |_| {});
+        egui::Panel::bottom("modern-inset-bottom").exact_size(i.bottom).resizable(false).frame(fill).show(ui, |_| {});
     }
     if i.left > 0.5 {
-        egui::Panel::left("touch-inset-left").exact_size(i.left).resizable(false).frame(fill).show(ui, |_| {});
+        egui::Panel::left("modern-inset-left").exact_size(i.left).resizable(false).frame(fill).show(ui, |_| {});
     }
     if i.right > 0.5 {
-        egui::Panel::right("touch-inset-right").exact_size(i.right).resizable(false).frame(fill).show(ui, |_| {});
+        egui::Panel::right("modern-inset-right").exact_size(i.right).resizable(false).frame(fill).show(ui, |_| {});
     }
-    if app.ui.touch.insets != Insets::default() {
+    if app.ui.modern.insets != Insets::default() {
         // behind the cutout and the system bars: the chrome's colour, not whatever was there
         let t = Tokens::get(ctx);
         ctx.layer_painter(egui::LayerId::background()).rect_filled(ctx.viewport_rect(), 0.0, t.chrome);
     }
     if app.ui.module == ModuleId::Library {
         library_bar(app, ui, form);
-    } else if app.ui.touch.panel && app.ui.touch.tool.is_none() {
+    } else if app.ui.modern.panel && app.ui.modern.tool.is_none() {
         panel(app, ui, form);
     }
     m
@@ -564,24 +564,24 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
         // the grid alone: its filmstrip stays away, its filter bar shows when asked for
         let (film, filters) = (app.ui.filmstrip, app.ui.filter_bar);
         app.ui.filmstrip = false;
-        app.ui.filter_bar = app.ui.touch.filters;
+        app.ui.filter_bar = app.ui.modern.filters;
         m.center(ui, app);
         app.ui.filmstrip = film;
-        if app.ui.filter_bar == app.ui.touch.filters {
+        if app.ui.filter_bar == app.ui.modern.filters {
             app.ui.filter_bar = filters;
         }
         long_press(app);
-        if app.ui.touch.selecting && app.session.selection.ids.is_empty() {
-            app.ui.touch.selecting = false;
+        if app.ui.modern.selecting && app.session.selection.ids.is_empty() {
+            app.ui.modern.selecting = false;
         }
-        if !app.ui.touch.selecting {
+        if !app.ui.modern.selecting {
             open_tapped(app, ui, area, before);
         }
         return;
     }
     // the filmstrip shows only with the chrome (and when asked for); the saved setting is kept
     let film = app.ui.filmstrip;
-    app.ui.filmstrip = app.ui.touch.filmstrip && app.ui.touch.chrome && app.ui.touch.tool.is_none();
+    app.ui.filmstrip = app.ui.modern.filmstrip && app.ui.modern.chrome && app.ui.modern.tool.is_none();
     m.center(ui, app);
     app.ui.filmstrip = film;
     let canvas = app.canvas_rect.unwrap_or(area).intersect(area);
@@ -592,9 +592,9 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
     }
     gestures(app, ui, canvas);
     let pinned = histogram(app, ui, area, form);
-    if app.ui.touch.tool.is_some() {
+    if app.ui.modern.tool.is_some() {
         adjust_bar(app, ui, area, form, pinned);
-    } else if app.ui.touch.chrome {
+    } else if app.ui.modern.chrome {
         top_bar(app, ui, area, form);
         tool_strip(app, ui, area, form);
     } else {
@@ -606,13 +606,13 @@ pub(crate) fn center(app: &mut LccApp, ui: &mut egui::Ui, m: &'static dyn module
 
 fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
     let t = Tokens::get(ui.ctx());
-    egui::Panel::top("touch-library-bar").exact_size(BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
+    egui::Panel::top("modern-library-bar").exact_size(BAR_H).frame(egui::Frame::NONE.fill(t.chrome)).show(ui, |ui| {
         let r = ui.max_rect();
         // (the grid's own header under this bar names the source and counts its photos)
-        if app.ui.touch.selecting {
+        if app.ui.modern.selecting {
             // picking several: how many, and the way out (Back does the same)
             let close = Rect::from_min_size(pos2(r.left() + 6.0, r.center().y - BUTTON / 2.0), Vec2::splat(BUTTON));
-            if round_button(ui, close, "touch:endSelect", Icon::Close, "Done Selecting", false, true).clicked() {
+            if round_button(ui, close, "modern:endSelect", Icon::Close, "Done Selecting", false, true).clicked() {
                 back(app);
             }
             let n = app.session.selection.ids.len();
@@ -634,27 +634,27 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
             let _ = app;
             round_button(ui, rect, id, icon, label, false, enabled).clicked()
         };
-        if button(app, Icon::Gear, "touch:settings", "Settings", true) {
+        if button(app, Icon::Gear, "modern:settings", "Settings", true) {
             let _ = app.run("app.settings", json!({}));
         }
         let square = app.ui.view == ViewMode::SquareGrid;
-        if button(app, if square { Icon::GridPhoto } else { Icon::GridSquare }, "touch:gridStyle", "Grid Style", true) {
+        if button(app, if square { Icon::GridPhoto } else { Icon::GridSquare }, "modern:gridStyle", "Grid Style", true) {
             let _ = app.run(if square { "view.photoGrid" } else { "view.squareGrid" }, json!({}));
         }
         let can_edit = app.session.active().is_some();
-        if button(app, Icon::Sliders, "touch:edit", "Edit", can_edit) {
+        if button(app, Icon::Sliders, "modern:edit", "Edit", can_edit) {
             open_develop(app);
         }
         let can_export = !app.session.selection.ids.is_empty() || can_edit;
-        if button(app, Icon::Share, "touch:export", "Export…", can_export) {
-            crate::touch_sheets::open_export(app, &ctx);
+        if button(app, Icon::Share, "modern:export", "Export…", can_export) {
+            crate::modern_sheets::open_export(app, &ctx);
         }
-        if button(app, Icon::Filter, "touch:filters", "Filter", true) {
-            app.ui.touch.filters = !app.ui.touch.filters;
+        if button(app, Icon::Filter, "modern:filters", "Filter", true) {
+            app.ui.modern.filters = !app.ui.modern.filters;
         }
-        if button(app, Icon::Plus, "touch:import", "Import", true) {
-            app.ui.touch.import_menu = !app.ui.touch.import_menu;
-        } else if app.ui.touch.import_menu {
+        if button(app, Icon::Plus, "modern:import", "Import", true) {
+            app.ui.modern.import_menu = !app.ui.modern.import_menu;
+        } else if app.ui.modern.import_menu {
             import_menu(app, ui, pos2(r.right() - 8.0, r.bottom() + 4.0));
         }
         let _ = form;
@@ -665,14 +665,14 @@ fn library_bar(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
 fn import_menu(app: &mut LccApp, ui: &egui::Ui, right_top: Pos2) {
     let t = Tokens::get(ui.ctx());
     let mut items: Vec<(&str, &str, &str)> =
-        vec![("touch:import:photos", "Import Photos…", "file.addPhotos"), ("touch:import:folder", "Import Folder…", "file.addFolder")];
+        vec![("modern:import:photos", "Import Photos…", "file.addPhotos"), ("modern:import:folder", "Import Folder…", "file.addFolder")];
     if app.services.camera_roll.is_some() {
-        items.push(("touch:import:cameraRoll", "Camera Roll", "file.addCameraRoll"));
+        items.push(("modern:import:cameraRoll", "Camera Roll", "file.addCameraRoll"));
     }
     let size = vec2(220.0, BUTTON * items.len() as f32 + 8.0);
     let min = pos2(right_top.x - size.x, right_top.y);
     let mut chosen = None;
-    egui::Area::new(Id::new("touch-import-area")).fixed_pos(min).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
+    egui::Area::new(Id::new("modern-import-area")).fixed_pos(min).order(egui::Order::Foreground).show(ui.ctx(), |ui| {
         let (bg, _) = ui.allocate_exact_size(size, Sense::hover());
         ui.painter().rect_filled(bg, 10.0, t.chrome);
         ui.painter().rect_stroke(bg, 10.0, Stroke::new(1.0, t.divider), egui::StrokeKind::Inside);
@@ -693,26 +693,26 @@ fn import_menu(app: &mut LccApp, ui: &egui::Ui, right_top: Pos2) {
         && chosen.is_none()
         && !ui.input(|i| i.pointer.interact_pos()).is_some_and(|p| Rect::from_min_size(min, size).contains(p));
     if let Some(command) = chosen {
-        app.ui.touch.import_menu = false;
+        app.ui.modern.import_menu = false;
         if let Err(e) = app.run(command, json!({})) {
             app.toast_error(ui.ctx(), e);
         }
     } else if tapped_away {
-        app.ui.touch.import_menu = false;
+        app.ui.modern.import_menu = false;
     }
 }
 
 /// A long press on a grid photo starts picking several, with that photo; later ones add or remove.
 fn long_press(app: &mut LccApp) {
-    let Some(at) = app.ui.touch.long_press.take() else { return };
+    let Some(at) = app.ui.modern.long_press.take() else { return };
     let Some(id) =
         app.widgets.iter().rev().find(|(w, r)| w.starts_with("thumb:") && r.contains(at)).and_then(|(w, _)| w["thumb:".len()..].parse::<u64>().ok())
     else {
         return;
     };
-    let mode = if app.ui.touch.selecting { "toggle" } else { "replace" };
+    let mode = if app.ui.modern.selecting { "toggle" } else { "replace" };
     if app.run("library.select", json!({"ids": [id], "mode": mode})).is_ok() {
-        app.ui.touch.selecting = true;
+        app.ui.modern.selecting = true;
     }
 }
 
@@ -741,12 +741,12 @@ fn open_develop(app: &mut LccApp) {
     if app.ui.view != ViewMode::Detail {
         app.ui.view = ViewMode::Detail;
     }
-    app.ui.touch.chrome = true;
+    app.ui.modern.chrome = true;
 }
 
 fn back_to_library(app: &mut LccApp) {
     close_tool(app, true);
-    app.ui.touch.panel = false;
+    app.ui.modern.panel = false;
     let _ = app.run("module.library", json!({}));
     if !matches!(app.ui.view, ViewMode::PhotoGrid | ViewMode::SquareGrid) {
         app.ui.view = ViewMode::PhotoGrid;
@@ -772,17 +772,17 @@ fn panel(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
     let screen = ui.ctx().content_rect().size();
     if form.side_panel() {
         let w = if form.phone() { (screen.x * 0.45).clamp(260.0, 360.0) } else { 360.0f32.min(screen.x * 0.4) };
-        egui::Panel::right("touch-panel").exact_size(w).resizable(false).frame(frame).show(ui, |ui| body(app, ui));
+        egui::Panel::right("modern-panel").exact_size(w).resizable(false).frame(frame).show(ui, |ui| body(app, ui));
     } else {
         let h = (screen.y * 0.42).clamp(220.0, 560.0);
-        egui::Panel::bottom("touch-sheet").exact_size(h).resizable(false).frame(frame).show(ui, |ui| {
+        egui::Panel::bottom("modern-sheet").exact_size(h).resizable(false).frame(frame).show(ui, |ui| {
             // the sheet's grabber: a tap on it closes the sheet
             let grab = Rect::from_min_size(ui.max_rect().min, vec2(ui.max_rect().width(), 18.0));
-            let resp = ui.interact(grab, Id::new("touch-sheet-grab"), Sense::click());
-            register(ui.ctx(), "touch:sheetGrab", grab);
+            let resp = ui.interact(grab, Id::new("modern-sheet-grab"), Sense::click());
+            register(ui.ctx(), "modern:sheetGrab", grab);
             ui.painter().rect_filled(Rect::from_center_size(grab.center(), vec2(40.0, 4.0)), 2.0, t.text_dim);
             if resp.clicked() {
-                app.ui.touch.panel = false;
+                app.ui.modern.panel = false;
             }
             ui.add_space(18.0);
             body(app, ui);
@@ -795,10 +795,10 @@ fn panel(app: &mut LccApp, ui: &mut egui::Ui, form: Form) {
 /// Tap: show or hide the chrome. Press and hold: the original while held. In adjust mode a
 /// sideways drag changes the parameter and an up/down drag picks another.
 fn gestures(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
-    let adjusting = app.ui.touch.tool.is_some();
+    let adjusting = app.ui.modern.tool.is_some();
     let sense = if adjusting { Sense::click_and_drag() } else { Sense::click() };
-    let resp = ui.interact(canvas, Id::new("touch-canvas"), sense);
-    register(ui.ctx(), "touch:canvas", canvas);
+    let resp = ui.interact(canvas, Id::new("modern-canvas"), sense);
+    register(ui.ctx(), "modern:canvas", canvas);
     // hold to see the original
     let (held_for, moved) = ui.input(|i| {
         let held = i.pointer.press_start_time().map(|s| i.time - s).unwrap_or(0.0);
@@ -809,16 +809,16 @@ fn gestures(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
         (held, moved)
     });
     let down = resp.is_pointer_button_down_on();
-    if down && !app.ui.touch.holding && held_for >= HOLD_SECS && moved < SLOP && app.ui.touch.drag.is_none() {
-        app.ui.touch.holding = true;
+    if down && !app.ui.modern.holding && held_for >= HOLD_SECS && moved < SLOP && app.ui.modern.drag.is_none() {
+        app.ui.modern.holding = true;
         if app.ui.before_after == BeforeAfter::Off {
             app.ui.before_after = BeforeAfter::Original;
         }
     }
-    if down && !app.ui.touch.holding {
+    if down && !app.ui.modern.holding {
         ui.ctx().request_repaint_after(std::time::Duration::from_millis(100));
     }
-    let was_holding = app.ui.touch.holding;
+    let was_holding = app.ui.modern.holding;
     if !down && was_holding {
         stop_holding(app);
     }
@@ -826,24 +826,24 @@ fn gestures(app: &mut LccApp, ui: &mut egui::Ui, canvas: Rect) {
         adjust_drag(app, ui, &resp, canvas);
     }
     if resp.clicked() && !was_holding && !adjusting {
-        app.ui.touch.chrome = !app.ui.touch.chrome;
+        app.ui.modern.chrome = !app.ui.modern.chrome;
     }
 }
 
 fn stop_holding(app: &mut LccApp) {
-    app.ui.touch.holding = false;
+    app.ui.modern.holding = false;
     if app.ui.before_after == BeforeAfter::Original {
         app.ui.before_after = BeforeAfter::Off;
     }
 }
 
 fn adjust_drag(app: &mut LccApp, ui: &egui::Ui, resp: &egui::Response, canvas: Rect) {
-    let Some(tool) = app.ui.touch.tool else { return };
+    let Some(tool) = app.ui.modern.tool else { return };
     if resp.drag_started() {
-        app.ui.touch.drag = Some(Drag { start: 0.0, axis: None, stepped: 0 });
+        app.ui.modern.drag = Some(Drag { start: 0.0, axis: None, stepped: 0 });
     }
     if resp.dragged()
-        && let Some(drag) = app.ui.touch.drag.clone()
+        && let Some(drag) = app.ui.modern.drag.clone()
     {
         let total = ui.input(|i| match (i.pointer.press_origin(), i.pointer.interact_pos()) {
             (Some(a), Some(b)) => b - a,
@@ -877,14 +877,14 @@ fn adjust_drag(app: &mut LccApp, ui: &egui::Ui, resp: &egui::Response, canvas: R
             }
             None => {}
         }
-        app.ui.touch.drag = Some(drag);
+        app.ui.modern.drag = Some(drag);
     }
     if resp.drag_stopped() {
-        if app.ui.touch.drag.as_ref().is_some_and(|d| d.axis == Some(Axis::Across)) {
+        if app.ui.modern.drag.as_ref().is_some_and(|d| d.axis == Some(Axis::Across)) {
             let _ = app.run("develop.endInteraction", json!({}));
             app.ui.dragging_control = None;
         }
-        app.ui.touch.drag = None;
+        app.ui.modern.drag = None;
     }
 }
 
@@ -953,7 +953,7 @@ fn value_of(app: &LccApp, spec: &ControlSpec) -> Option<f64> {
 /// The parameter a drag changes, and its value.
 fn current(app: &LccApp, tool: Tool) -> Option<(&'static ControlSpec, f64)> {
     let specs = tool_specs(app, tool);
-    let spec = specs.iter().find(|s| s.id == app.ui.touch.control).or(specs.first()).copied()?;
+    let spec = specs.iter().find(|s| s.id == app.ui.modern.control).or(specs.first()).copied()?;
     Some((spec, value_of(app, spec)?))
 }
 
@@ -962,35 +962,35 @@ fn step_control(app: &mut LccApp, tool: Tool, by: i32) {
     if specs.is_empty() {
         return;
     }
-    let at = specs.iter().position(|s| s.id == app.ui.touch.control).unwrap_or(0) as i32;
+    let at = specs.iter().position(|s| s.id == app.ui.modern.control).unwrap_or(0) as i32;
     let n = specs.len() as i32;
     let next = (at + by).rem_euclid(n) as usize;
     if let Some(s) = specs.get(next) {
-        app.ui.touch.control = s.id.to_string();
+        app.ui.modern.control = s.id.to_string();
     }
 }
 
 /// Opens a slider tool: remembers its values for Cancel and picks its first parameter.
 pub(crate) fn open_tool(app: &mut LccApp, tool: Tool) {
     let specs = tool_specs(app, tool);
-    app.ui.touch.snapshot = specs.iter().filter_map(|s| Some((s.id.to_string(), value_of(app, s)?))).collect();
-    app.ui.touch.control = specs.first().map(|s| s.id.to_string()).unwrap_or_default();
-    app.ui.touch.tool = Some(tool);
-    app.ui.touch.centred.0.clear();
-    app.ui.touch.panel = false;
-    app.ui.touch.drag = None;
+    app.ui.modern.snapshot = specs.iter().filter_map(|s| Some((s.id.to_string(), value_of(app, s)?))).collect();
+    app.ui.modern.control = specs.first().map(|s| s.id.to_string()).unwrap_or_default();
+    app.ui.modern.tool = Some(tool);
+    app.ui.modern.centred.0.clear();
+    app.ui.modern.panel = false;
+    app.ui.modern.drag = None;
 }
 
 /// Leaves adjust mode; `cancel` puts the values back as they were when the tool opened.
 pub(crate) fn close_tool(app: &mut LccApp, keep: bool) {
-    if app.ui.touch.tool.take().is_none() {
+    if app.ui.modern.tool.take().is_none() {
         return;
     }
-    if app.ui.touch.drag.take().is_some_and(|d| d.axis == Some(Axis::Across)) {
+    if app.ui.modern.drag.take().is_some_and(|d| d.axis == Some(Axis::Across)) {
         let _ = app.run("develop.endInteraction", json!({}));
         app.ui.dragging_control = None;
     }
-    let snapshot = std::mem::take(&mut app.ui.touch.snapshot);
+    let snapshot = std::mem::take(&mut app.ui.modern.snapshot);
     if !keep && !snapshot.is_empty() {
         let changed: serde_json::Map<String, Value> = snapshot
             .into_iter()
@@ -1010,11 +1010,11 @@ pub(crate) fn close_tool(app: &mut LccApp, keep: bool) {
 
 // ------------------------------------------------------------------------ Develop: chrome
 
-/// The histogram over the photo (`touch.histogram`): pinned across the top under the top bar, or
+/// The histogram over the photo (`modern.histogram`): pinned across the top under the top bar, or
 /// a small window the user drags anywhere (its place kept as a fraction of the room it has).
 /// Returns the height the pinned one takes at the top.
 fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
-    let place = app.ui.touch.histogram;
+    let place = app.ui.modern.histogram;
     if place == HistogramPlace::Off {
         return 0.0;
     }
@@ -1022,7 +1022,7 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
     let hist = crate::panels::edit::preview_histogram(app, id);
     let scale = crate::panels::histogram::scale_of(app);
     let mode = lcc_raster::HistogramMode::default();
-    let bar = if app.ui.touch.chrome && app.ui.touch.tool.is_none() { BAR_H } else { 0.0 };
+    let bar = if app.ui.modern.chrome && app.ui.modern.tool.is_none() { BAR_H } else { 0.0 };
     let ctx = ui.ctx().clone();
     let paint_in = |ui: &mut egui::Ui, r: Rect| {
         let p = ui.painter();
@@ -1032,7 +1032,7 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
         if let Some(h) = &hist {
             crate::panels::histogram::paint_plot(p, plot, h, mode, scale);
         }
-        register(ui.ctx(), "touch:histogram", r);
+        register(ui.ctx(), "modern:histogram", r);
     };
     match place {
         HistogramPlace::Off => 0.0,
@@ -1040,7 +1040,7 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
             let h = if form.phone() { 72.0 } else { 96.0 };
             let r = Rect::from_min_size(pos2(area.left() + 8.0, area.top() + bar + 6.0), vec2((area.width() - 16.0).max(40.0), h));
             // taps go through to the photo below
-            egui::Area::new(Id::new("touch-histogram")).fixed_pos(r.min).order(egui::Order::Middle).interactable(false).show(&ctx, |ui| {
+            egui::Area::new(Id::new("modern-histogram")).fixed_pos(r.min).order(egui::Order::Middle).interactable(false).show(&ctx, |ui| {
                 let (r, _) = ui.allocate_exact_size(r.size(), Sense::hover());
                 paint_in(ui, r);
             });
@@ -1051,10 +1051,10 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
             let room = Rect::from_min_max(pos2(area.left() + 8.0, area.top() + bar + 8.0), pos2(area.right() - 8.0, area.bottom() - 8.0));
             let span = (room.size() - size).max(Vec2::ZERO);
             let fraction = |v: f32| if v.is_finite() { v.clamp(0.0, 1.0) } else { 0.0 };
-            let at = app.ui.touch.histogram_at.map(fraction);
+            let at = app.ui.modern.histogram_at.map(fraction);
             let min = room.min + vec2(span.x * at[0], span.y * at[1]);
             let mut moved = None;
-            egui::Area::new(Id::new("touch-histogram")).fixed_pos(min).order(egui::Order::Middle).movable(false).show(&ctx, |ui| {
+            egui::Area::new(Id::new("modern-histogram")).fixed_pos(min).order(egui::Order::Middle).movable(false).show(&ctx, |ui| {
                 let (r, resp) = ui.allocate_exact_size(size, Sense::drag());
                 resp.widget_info(|| egui::WidgetInfo::labeled(egui::WidgetType::Other, true, crate::i18n::tr("Histogram")));
                 paint_in(ui, r);
@@ -1065,7 +1065,7 @@ fn histogram(app: &mut LccApp, ui: &egui::Ui, area: Rect, form: Form) -> f32 {
             if let Some(d) = moved {
                 let to = min + d - room.min;
                 let f = |v: f32, s: f32| if s > 0.0 { fraction(v / s) } else { 0.0 };
-                app.ui.touch.histogram_at = [f(to.x, span.x), f(to.y, span.y)];
+                app.ui.modern.histogram_at = [f(to.x, span.x), f(to.y, span.y)];
             }
             0.0
         }
@@ -1082,12 +1082,12 @@ fn hint(ui: &mut egui::Ui, area: Rect) {
 fn top_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
     let t = Tokens::get(ui.ctx());
     let bar = Rect::from_min_size(area.min, vec2(area.width(), BAR_H));
-    egui::Area::new(Id::new("touch-top")).fixed_pos(bar.min).order(egui::Order::Middle).show(ui.ctx(), |ui| {
+    egui::Area::new(Id::new("modern-top")).fixed_pos(bar.min).order(egui::Order::Middle).show(ui.ctx(), |ui| {
         let (r, _) = ui.allocate_exact_size(bar.size(), Sense::hover());
         ui.painter().rect_filled(r, 0.0, t.chrome.gamma_multiply(0.88));
         let y = r.center().y - BUTTON / 2.0;
         let at = |x: f32| Rect::from_min_size(pos2(x, y), Vec2::splat(BUTTON));
-        if round_button(ui, at(r.left() + 6.0), "touch:back", Icon::ChevronLeft, "Library", false, true).clicked() {
+        if round_button(ui, at(r.left() + 6.0), "modern:back", Icon::ChevronLeft, "Library", false, true).clicked() {
             back_to_library(app);
             return;
         }
@@ -1101,22 +1101,22 @@ fn top_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
             x -= BUTTON + 2.0;
             at(x)
         };
-        if round_button(ui, next(), "touch:share", Icon::Share, "Export…", false, true).clicked() {
-            crate::touch_sheets::open_export(app, ui.ctx());
+        if round_button(ui, next(), "modern:share", Icon::Share, "Export…", false, true).clicked() {
+            crate::modern_sheets::open_export(app, ui.ctx());
         }
-        let panel_open = app.ui.touch.panel;
-        if round_button(ui, next(), "touch:panel", Icon::SidebarRight, "All Edits", panel_open, true).clicked() {
-            app.ui.touch.panel = !panel_open;
-            if app.ui.touch.panel {
+        let panel_open = app.ui.modern.panel;
+        if round_button(ui, next(), "modern:panel", Icon::SidebarRight, "All Edits", panel_open, true).clicked() {
+            app.ui.modern.panel = !panel_open;
+            if app.ui.modern.panel {
                 app.ui.presets = false;
                 if !app.ui.right.is_edit_tool() {
                     app.ui.right = RightPanel::Edit;
                 }
             }
         }
-        let hist_on = app.ui.touch.histogram != HistogramPlace::Off;
-        if round_button(ui, next(), "touch:histogramButton", Icon::Activity, "Histogram", hist_on, true).clicked() {
-            app.ui.touch.histogram = if hist_on {
+        let hist_on = app.ui.modern.histogram != HistogramPlace::Off;
+        if round_button(ui, next(), "modern:histogramButton", Icon::Activity, "Histogram", hist_on, true).clicked() {
+            app.ui.modern.histogram = if hist_on {
                 HistogramPlace::Off
             } else if form.side_panel() {
                 HistogramPlace::Floating
@@ -1124,27 +1124,27 @@ fn top_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
                 HistogramPlace::Pinned
             };
         }
-        if round_button(ui, next(), "touch:filmstrip", Icon::Filmstrip, "Filmstrip", app.ui.touch.filmstrip, true).clicked() {
-            app.ui.touch.filmstrip = !app.ui.touch.filmstrip;
+        if round_button(ui, next(), "modern:filmstrip", Icon::Filmstrip, "Filmstrip", app.ui.modern.filmstrip, true).clicked() {
+            app.ui.modern.filmstrip = !app.ui.modern.filmstrip;
         }
         // press and hold: the original
-        let before = round_button(ui, next(), "touch:before", Icon::BeforeAfter, "Hold to See the Original", app.ui.touch.holding, true);
+        let before = round_button(ui, next(), "modern:before", Icon::BeforeAfter, "Hold to See the Original", app.ui.modern.holding, true);
         if before.is_pointer_button_down_on() {
-            if !app.ui.touch.holding {
-                app.ui.touch.holding = true;
+            if !app.ui.modern.holding {
+                app.ui.modern.holding = true;
                 if app.ui.before_after == BeforeAfter::Off {
                     app.ui.before_after = BeforeAfter::Original;
                 }
             }
-        } else if app.ui.touch.holding && !ui.input(|i| i.pointer.any_down()) {
+        } else if app.ui.modern.holding && !ui.input(|i| i.pointer.any_down()) {
             stop_holding(app);
         }
         let can_redo = !app.session.redo.is_empty();
-        if round_button(ui, next(), "touch:redo", Icon::RotateRight, "Redo", false, can_redo).clicked() {
+        if round_button(ui, next(), "modern:redo", Icon::RotateRight, "Redo", false, can_redo).clicked() {
             let _ = app.run("edit.redo", json!({}));
         }
         let can_undo = !app.session.undo.is_empty();
-        if round_button(ui, next(), "touch:undo", Icon::RotateLeft, "Undo", false, can_undo).clicked() {
+        if round_button(ui, next(), "modern:undo", Icon::RotateLeft, "Undo", false, can_undo).clicked() {
             let _ = app.run("edit.undo", json!({}));
         }
     });
@@ -1152,36 +1152,36 @@ fn top_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
 
 fn tool_strip(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
     let t = Tokens::get(ui.ctx());
-    let film = if app.ui.touch.filmstrip { t.film_h } else { 0.0 };
+    let film = if app.ui.modern.filmstrip { t.film_h } else { 0.0 };
     let cell = if form.phone() { 64.0 } else { 76.0 };
     let full = cell * STRIP.len() as f32 + 16.0;
     let w = full.min(area.width());
     let strip = Rect::from_min_size(pos2(area.center().x - w / 2.0, area.bottom() - film - STRIP_H - 10.0), vec2(w, STRIP_H));
-    egui::Area::new(Id::new("touch-strip")).fixed_pos(strip.min).order(egui::Order::Middle).show(ui.ctx(), |ui| {
+    egui::Area::new(Id::new("modern-strip")).fixed_pos(strip.min).order(egui::Order::Middle).show(ui.ctx(), |ui| {
         ui.set_width(w);
         let (bg, _) = ui.allocate_exact_size(strip.size(), Sense::hover());
-        register(ui.ctx(), "touch:strip", bg);
+        register(ui.ctx(), "modern:strip", bg);
         ui.painter().rect_filled(bg, 14.0, t.chrome.gamma_multiply(0.9));
         let mut centred = None;
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(bg.shrink2(vec2(8.0, 0.0))));
         egui::ScrollArea::horizontal()
-            .id_salt("touch-strip-scroll")
+            .id_salt("modern-strip-scroll")
             .scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden)
             .show(&mut inner, |ui| {
                 ui.horizontal(|ui| {
                     ui.spacing_mut().item_spacing.x = 0.0;
                     for s in STRIP {
                         let active = match s {
-                            Strip::Presets => app.ui.touch.panel && app.ui.presets,
-                            Strip::Crop => app.ui.touch.panel && app.ui.right == RightPanel::Crop,
-                            Strip::Masks => app.ui.touch.panel && app.ui.right == RightPanel::Masking,
-                            Strip::Remove => app.ui.touch.panel && app.ui.right == RightPanel::Remove,
+                            Strip::Presets => app.ui.modern.panel && app.ui.presets,
+                            Strip::Crop => app.ui.modern.panel && app.ui.right == RightPanel::Crop,
+                            Strip::Masks => app.ui.modern.panel && app.ui.right == RightPanel::Masking,
+                            Strip::Remove => app.ui.modern.panel && app.ui.right == RightPanel::Remove,
                             _ => false,
                         };
                         let resp = labelled_button(ui, vec2(cell, STRIP_H), &s.id(), s.icon(), s.label(), active);
                         if active {
                             // the open tool sits in the middle of the strip
-                            if app.ui.touch.centred.1 != s.id() {
+                            if app.ui.modern.centred.1 != s.id() {
                                 resp.scroll_to_me(Some(egui::Align::Center));
                             }
                             centred = Some(s.id());
@@ -1192,7 +1192,7 @@ fn tool_strip(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form) {
                     }
                 });
             });
-        app.ui.touch.centred.1 = centred.unwrap_or_default();
+        app.ui.modern.centred.1 = centred.unwrap_or_default();
     });
 }
 
@@ -1200,17 +1200,17 @@ fn strip_tool(app: &mut LccApp, s: Strip, active: bool) {
     let open = |app: &mut LccApp, p: RightPanel| {
         app.ui.presets = false;
         app.ui.right = p;
-        app.ui.touch.panel = true;
+        app.ui.modern.panel = true;
     };
     match s {
         Strip::Auto => {
             let _ = app.run("develop.auto", json!({}));
         }
         Strip::Slider(tool) => open_tool(app, tool),
-        _ if active => app.ui.touch.panel = false,
+        _ if active => app.ui.modern.panel = false,
         Strip::Presets => {
             app.ui.presets = true;
-            app.ui.touch.panel = true;
+            app.ui.modern.panel = true;
         }
         Strip::Crop => open(app, RightPanel::Crop),
         Strip::Masks => open(app, RightPanel::Masking),
@@ -1225,7 +1225,7 @@ fn strip_tool(app: &mut LccApp, s: Strip, active: bool) {
 
 /// Adjust mode: the value at the top, the tool's parameters and Cancel / Done along the bottom.
 fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: f32) {
-    let Some(tool) = app.ui.touch.tool else { return };
+    let Some(tool) = app.ui.modern.tool else { return };
     let t = Tokens::get(ui.ctx());
     let ctx = ui.ctx().clone();
     // the value, over the top of the photo
@@ -1233,7 +1233,7 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: 
         let text = format!("{}  {}", crate::i18n::tr(spec.label), spec.format(v));
         let galley = ctx.layer_painter(egui::LayerId::background()).layout_no_wrap(text, t.semibold(15.0), Color32::WHITE);
         let pill = Rect::from_center_size(pos2(area.center().x, area.top() + top + 34.0), galley.size() + vec2(32.0, 22.0));
-        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, Id::new("touch-value")));
+        let p = ctx.layer_painter(egui::LayerId::new(egui::Order::Middle, Id::new("modern-value")));
         p.rect_filled(pill, pill.height() / 2.0, Color32::from_black_alpha(170));
         p.galley(pill.center() - galley.size() / 2.0 - vec2(0.0, 3.0), galley, Color32::WHITE);
         // where the value sits on its track
@@ -1247,17 +1247,17 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: 
         } else {
             p.rect_filled(Rect::from_x_y_ranges(track.left()..=x, track.y_range()), 1.0, t.accent);
         }
-        register(&ctx, "touch:value", pill);
+        register(&ctx, "modern:value", pill);
     }
     let specs = tool_specs(app, tool);
     let h = STRIP_H + 8.0;
     let w = if form.phone() { area.width() } else { area.width().min(760.0) };
     let bar = Rect::from_min_size(pos2(area.center().x - w / 2.0, area.bottom() - h - if form.phone() { 0.0 } else { 10.0 }), vec2(w, h));
-    egui::Area::new(Id::new("touch-adjust")).fixed_pos(bar.min).order(egui::Order::Middle).show(&ctx, |ui| {
+    egui::Area::new(Id::new("modern-adjust")).fixed_pos(bar.min).order(egui::Order::Middle).show(&ctx, |ui| {
         let (bg, _) = ui.allocate_exact_size(bar.size(), Sense::hover());
         ui.painter().rect_filled(bg, if form.phone() { 0.0 } else { 14.0 }, t.chrome.gamma_multiply(0.92));
         let y = bg.center().y - BUTTON / 2.0;
-        if round_button(ui, Rect::from_min_size(pos2(bg.left() + 8.0, y), Vec2::splat(BUTTON)), "touch:cancel", Icon::Close, "Cancel", false, true)
+        if round_button(ui, Rect::from_min_size(pos2(bg.left() + 8.0, y), Vec2::splat(BUTTON)), "modern:cancel", Icon::Close, "Cancel", false, true)
             .clicked()
         {
             close_tool(app, false);
@@ -1266,7 +1266,7 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: 
         if round_button(
             ui,
             Rect::from_min_size(pos2(bg.right() - 8.0 - BUTTON, y), Vec2::splat(BUTTON)),
-            "touch:done",
+            "modern:done",
             Icon::Check,
             "Done",
             false,
@@ -1278,9 +1278,9 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: 
             return;
         }
         let chips = Rect::from_min_max(pos2(bg.left() + 16.0 + BUTTON, bg.top()), pos2(bg.right() - 16.0 - BUTTON, bg.bottom()));
-        register(ui.ctx(), "touch:chips", chips);
+        register(ui.ctx(), "modern:chips", chips);
         let mut inner = ui.new_child(egui::UiBuilder::new().max_rect(chips));
-        egui::ScrollArea::horizontal().id_salt("touch-chips").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(
+        egui::ScrollArea::horizontal().id_salt("modern-chips").scroll_bar_visibility(egui::scroll_area::ScrollBarVisibility::AlwaysHidden).show(
             &mut inner,
             |ui| {
                 ui.set_min_height(chips.height());
@@ -1288,14 +1288,14 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: 
                     ui.spacing_mut().item_spacing.x = 6.0;
                     for spec in &specs {
                         let selected =
-                            spec.id == app.ui.touch.control || (app.ui.touch.control.is_empty() && specs.first().is_some_and(|f| f.id == spec.id));
+                            spec.id == app.ui.modern.control || (app.ui.modern.control.is_empty() && specs.first().is_some_and(|f| f.id == spec.id));
                         let changed = value_of(app, spec).is_some_and(|v| (v - spec.default).abs() > 1e-9 && !spec.id.starts_with("wb."));
                         let resp = chip(ui, spec, selected, changed);
-                        if selected && app.ui.touch.centred.0 != spec.id {
+                        if selected && app.ui.modern.centred.0 != spec.id {
                             // the parameter a drag changes sits in the middle of the row (an
                             // up/down drag on the photo steps through them)
                             resp.scroll_to_me(Some(egui::Align::Center));
-                            app.ui.touch.centred.0 = spec.id.to_string();
+                            app.ui.modern.centred.0 = spec.id.to_string();
                         }
                         if resp.double_clicked() {
                             // double tap: back to the default
@@ -1303,7 +1303,7 @@ fn adjust_bar(app: &mut LccApp, ui: &mut egui::Ui, area: Rect, form: Form, top: 
                                 let _ = app.run("develop.set", json!({"control": spec.id, "value": spec.default}));
                             }
                         } else if resp.clicked() {
-                            app.ui.touch.control = spec.id.to_string();
+                            app.ui.modern.control = spec.id.to_string();
                         }
                     }
                 });
@@ -1371,7 +1371,7 @@ fn chip(ui: &mut egui::Ui, spec: &ControlSpec, selected: bool, changed: bool) ->
     let size = vec2(galley.size().x + 28.0, BUTTON);
     let (r, resp) = ui.allocate_exact_size(size, Sense::click());
     resp.widget_info(|| egui::WidgetInfo::selected(egui::WidgetType::Button, true, selected, name));
-    register(ui.ctx(), format!("touch:param:{}", spec.id), r);
+    register(ui.ctx(), format!("modern:param:{}", spec.id), r);
     let p = ui.painter();
     let fill = if selected { t.accent } else { t.button };
     p.rect_filled(r, r.height() / 2.0, fill);
@@ -1385,89 +1385,89 @@ fn chip(ui: &mut egui::Ui, spec: &ControlSpec, selected: bool, changed: bool) ->
 
 /// The fork's touch commands (`menus_fork` lists them).
 pub const COMMANDS: &[crate::menus::UiCommand] = &[
-    ("view.touchLayout", "Touch Layout", None, "Window>Panels"),
-    ("touch.chrome", "Show Touch Tools", None, ""),
-    ("touch.panel", "Show All Edits", None, ""),
-    ("touch.tool", "Adjust with One Tool", None, ""),
-    ("touch.done", "Finish Adjusting", None, ""),
-    ("touch.back", "Back", None, ""),
-    ("touch.insets", "Screen Edges to Keep Clear", None, ""),
-    ("touch.histogram", "Touch Histogram", None, ""),
+    ("view.modernLayout", "Modern Layout", None, "Window>Panels"),
+    ("modern.chrome", "Show Touch Tools", None, ""),
+    ("modern.panel", "Show All Edits", None, ""),
+    ("modern.tool", "Adjust with One Tool", None, ""),
+    ("modern.done", "Finish Adjusting", None, ""),
+    ("modern.back", "Back", None, ""),
+    ("modern.insets", "Screen Edges to Keep Clear", None, ""),
+    ("modern.histogram", "Modern Histogram", None, ""),
 ];
 
-/// Runs a touch command; `None`: not one. `touch.tool {tool, control?}` opens a slider tool,
-/// `touch.done {cancel?}` leaves it.
+/// Runs a touch command; `None`: not one. `modern.tool {tool, control?}` opens a slider tool,
+/// `modern.done {cancel?}` leaves it.
 pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value, String>> {
     let flag = |p: &Value, now: bool| p.get("on").and_then(Value::as_bool).unwrap_or(!now);
     Some(match id {
-        "view.touchLayout" => {
-            app.ui.touch.enabled = flag(p, app.ui.touch.enabled);
-            if !app.ui.touch.enabled {
+        "view.modernLayout" => {
+            app.ui.modern.enabled = flag(p, app.ui.modern.enabled);
+            if !app.ui.modern.enabled {
                 close_tool(app, true);
                 stop_holding(app);
             }
-            Ok(json!({"on": app.ui.touch.enabled}))
+            Ok(json!({"on": app.ui.modern.enabled}))
         }
-        "touch.chrome" => {
-            app.ui.touch.chrome = flag(p, app.ui.touch.chrome);
-            Ok(json!({"on": app.ui.touch.chrome}))
+        "modern.chrome" => {
+            app.ui.modern.chrome = flag(p, app.ui.modern.chrome);
+            Ok(json!({"on": app.ui.modern.chrome}))
         }
-        "touch.panel" => {
-            app.ui.touch.panel = flag(p, app.ui.touch.panel);
-            if app.ui.touch.panel {
+        "modern.panel" => {
+            app.ui.modern.panel = flag(p, app.ui.modern.panel);
+            if app.ui.modern.panel {
                 close_tool(app, true);
             }
-            Ok(json!({"on": app.ui.touch.panel}))
+            Ok(json!({"on": app.ui.modern.panel}))
         }
-        "touch.tool" => {
+        "modern.tool" => {
             let Some(name) = p.get("tool").and_then(Value::as_str) else {
-                return Some(Err("touch.tool: give `tool` (basic, colour, tone, detail, optics or effects)".into()));
+                return Some(Err("modern.tool: give `tool` (basic, colour, tone, detail, optics or effects)".into()));
             };
             let Some(tool) = Tool::parse(name) else {
-                return Some(Err(format!("touch.tool: unknown tool `{name}` (basic, colour, tone, detail, optics or effects)")));
+                return Some(Err(format!("modern.tool: unknown tool `{name}` (basic, colour, tone, detail, optics or effects)")));
             };
             if app.session.active().is_none() {
-                return Some(Err("touch.tool: no photo is active".into()));
+                return Some(Err("modern.tool: no photo is active".into()));
             }
             close_tool(app, true);
             open_tool(app, tool);
             if let Some(c) = p.get("control").and_then(Value::as_str) {
                 // `wb.temp` / `wb.tint` also name the relative white balance of a rendered file
                 let Some(spec) = tool_specs(app, tool).into_iter().find(|s| s.id == c || develop_value(s, 0.0).0 == c) else {
-                    return Some(Err(format!("touch.tool: `{c}` is not one of {}'s controls", tool.label())));
+                    return Some(Err(format!("modern.tool: `{c}` is not one of {}'s controls", tool.label())));
                 };
-                app.ui.touch.control = spec.id.to_string();
+                app.ui.modern.control = spec.id.to_string();
             }
-            Ok(json!({"tool": tool, "control": app.ui.touch.control}))
+            Ok(json!({"tool": tool, "control": app.ui.modern.control}))
         }
-        "touch.done" => {
+        "modern.done" => {
             let cancel = p.get("cancel").and_then(Value::as_bool).unwrap_or(false);
             close_tool(app, !cancel);
             Ok(Value::Null)
         }
-        "touch.back" => {
+        "modern.back" => {
             let closed = back(app);
             if closed.is_none() {
-                app.ui.touch.system_back = true;
+                app.ui.modern.system_back = true;
             }
             Ok(json!({"handled": closed.is_some(), "closed": closed}))
         }
-        "touch.insets" => {
+        "modern.insets" => {
             let mut v = [0.0f32; 4];
             for (slot, key) in v.iter_mut().zip(["left", "top", "right", "bottom"]) {
                 match p.get(key) {
                     None | Some(Value::Null) => {}
                     Some(Value::Number(n)) => *slot = Insets::clean(n.as_f64()),
-                    Some(other) => return Some(Err(format!("touch.insets: `{key}` must be a number of points, not {other}"))),
+                    Some(other) => return Some(Err(format!("modern.insets: `{key}` must be a number of points, not {other}"))),
                 }
             }
-            app.ui.touch.insets = Insets { left: v[0], top: v[1], right: v[2], bottom: v[3] };
-            Ok(serde_json::to_value(app.ui.touch.insets).unwrap_or(Value::Null))
+            app.ui.modern.insets = Insets { left: v[0], top: v[1], right: v[2], bottom: v[3] };
+            Ok(serde_json::to_value(app.ui.modern.insets).unwrap_or(Value::Null))
         }
-        "touch.histogram" => {
+        "modern.histogram" => {
             let place = match p.get("mode") {
                 None | Some(Value::Null) => {
-                    if app.ui.touch.histogram == HistogramPlace::Off {
+                    if app.ui.modern.histogram == HistogramPlace::Off {
                         HistogramPlace::Pinned
                     } else {
                         HistogramPlace::Off
@@ -1475,9 +1475,9 @@ pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
                 }
                 Some(Value::String(m)) => match HistogramPlace::parse(m) {
                     Some(h) => h,
-                    None => return Some(Err(format!("touch.histogram: unknown mode `{m}` (off, pinned or floating)"))),
+                    None => return Some(Err(format!("modern.histogram: unknown mode `{m}` (off, pinned or floating)"))),
                 },
-                Some(other) => return Some(Err(format!("touch.histogram: `mode` must be off, pinned or floating, not {other}"))),
+                Some(other) => return Some(Err(format!("modern.histogram: `mode` must be off, pinned or floating, not {other}"))),
             };
             if let Some(at) = p.get("at") {
                 let xy: Option<Vec<f32>> = at
@@ -1485,12 +1485,12 @@ pub(crate) fn run(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Value,
                     .filter(|a| a.len() == 2)
                     .map(|a| a.iter().filter_map(Value::as_f64).filter(|v| v.is_finite()).map(|v| v.clamp(0.0, 1.0) as f32).collect());
                 match xy.as_deref() {
-                    Some([x, y]) => app.ui.touch.histogram_at = [*x, *y],
-                    _ => return Some(Err("touch.histogram: `at` must be [x, y], each 0…1".into())),
+                    Some([x, y]) => app.ui.modern.histogram_at = [*x, *y],
+                    _ => return Some(Err("modern.histogram: `at` must be [x, y], each 0…1".into())),
                 }
             }
-            app.ui.touch.histogram = place;
-            Ok(json!({"mode": place, "at": app.ui.touch.histogram_at}))
+            app.ui.modern.histogram = place;
+            Ok(json!({"mode": place, "at": app.ui.modern.histogram_at}))
         }
         _ => return None,
     })
