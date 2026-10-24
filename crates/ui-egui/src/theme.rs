@@ -459,22 +459,25 @@ pub enum SliderLayout {
     OneRow,
     /// Name and value on a line, the track across the panel under them, as in Camera Raw.
     TwoRows,
+    /// One rounded bar with the name and value inside it, dragged anywhere (the Modern layout's).
+    Pill,
 }
 
 impl Default for SliderLayout {
-    /// Two rows on Android's tablets, where a finger wants the longer track; one row elsewhere.
+    /// Pills on Android, where a finger wants the whole bar; one row elsewhere.
     fn default() -> Self {
-        if cfg!(target_os = "android") { SliderLayout::TwoRows } else { SliderLayout::OneRow }
+        if cfg!(target_os = "android") { SliderLayout::Pill } else { SliderLayout::OneRow }
     }
 }
 
 impl SliderLayout {
-    pub const ALL: [SliderLayout; 2] = [SliderLayout::OneRow, SliderLayout::TwoRows];
+    pub const ALL: [SliderLayout; 3] = [SliderLayout::OneRow, SliderLayout::TwoRows, SliderLayout::Pill];
 
     pub fn label(self) -> &'static str {
         match self {
             SliderLayout::OneRow => "One Row",
             SliderLayout::TwoRows => "Two Rows",
+            SliderLayout::Pill => "Pill",
         }
     }
 }

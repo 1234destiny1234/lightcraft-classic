@@ -313,6 +313,9 @@ pub fn form_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool) -
 }
 
 fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>, form_label: Option<f32>) -> SliderOut {
+    if form_label.is_none() && crate::theme::slider_layout(ui.ctx()) == crate::theme::SliderLayout::Pill {
+        return pill_slider(ui, spec, value, enabled, label_override);
+    }
     let t = Tokens::get(ui.ctx());
     let w = ui.available_width();
     // a panel slider on two rows (Settings ▸ Interface): name and value, then the track under them
@@ -708,6 +711,221 @@ fn slider_laid_out(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, l
     p.circle_filled(pos2(tx, track_rect.center().y), ring, ring_c);
     p.circle_stroke(pos2(tx, track_rect.center().y), ring, Stroke::new(1.0, t.chrome));
     if hovered {
+        ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
+    }
+    out
+}
+
+/// A pill slider's height (points): big enough for a finger, small enough for a mouse.
+pub(crate) const PILL_H: f32 = 40.0;
+
+/// The Modern layout's slider (also Settings ▸ Sliders ▸ Pill): one rounded bar the width of the
+/// panel with the name on the left and the value on the right, inside it. A drag anywhere on it
+/// moves the value by the drag's travel over the bar's width (Shift: a tenth), so a tap never jumps
+/// it; the colour grows from the default (the middle of a ± slider). Double-click resets, a click on
+/// the value types one, sideways scrolling and the arrow keys nudge it. Registers the same ids as
+/// [`slider`] (`slider:`, `sliderLabel:`, `sliderValue:`). Own design.
+fn pill_slider(ui: &mut Ui, spec: &ControlSpec, value: f64, enabled: bool, label_override: Option<&str>) -> SliderOut {
+    let t = Tokens::get(ui.ctx());
+    let w = ui.available_width();
+    let (row, _) = ui.allocate_exact_size(vec2(w, PILL_H + 4.0), Sense::hover());
+    let pill = row.shrink2(vec2(0.0, 2.0));
+    let radius = pill.height() / 2.0;
+    let name = crate::i18n::tr(label_override.unwrap_or(spec.label)).to_string();
+    // Settings ▸ Slider text: Full Size makes the name and value larger, as on the other layouts
+    let k = text_scale(&slider_font(ui));
+    let font = t.semibold(13.0 * k);
+    let value_font = t.font(13.0 * k);
+    let id = ui.id().with(spec.id);
+    let value_w = (72.0 * k).min(pill.width() * 0.4);
+    let value_rect = Rect::from_min_max(pos2(pill.right() - radius * 0.6 - value_w, pill.top()), pos2(pill.right() - radius * 0.6, pill.bottom()));
+    let label_rect =
+        Rect::from_min_max(pos2(pill.left() + radius * 0.6, pill.top()), pos2((value_rect.left() - 6.0).max(pill.left()), pill.bottom()));
+    let resp = ui.interact(pill, id, if enabled { Sense::click_and_drag() } else { Sense::hover() });
+    let value_resp = ui.interact(value_rect, id.with("value"), if enabled { Sense::click() } else { Sense::hover() });
+    register(ui.ctx(), format!("slider:{}", spec.id), pill);
+    register(ui.ctx(), format!("sliderLabel:{}", spec.id), label_rect);
+    register(ui.ctx(), format!("sliderValue:{}", spec.id), value_rect);
+    resp.widget_info(|| egui::WidgetInfo::slider(enabled, value, name.clone()));
+    let shown = shown_value(spec, value);
+    ui.ctx().accesskit_node_builder(resp.id, |node| {
+        node.set_min_numeric_value(spec.min);
+        node.set_max_numeric_value(spec.max);
+        node.set_numeric_value_step(spec.step);
+        node.set_value(shown);
+        if enabled {
+            node.add_action(egui::accesskit::Action::Increment);
+            node.add_action(egui::accesskit::Action::Decrement);
+        }
+    });
+    if enabled && (resp.clicked() || resp.drag_started()) {
+        resp.request_focus();
+    }
+    let mut out = SliderOut::default();
+    let step = spec.step.max(1e-9);
+    let snap = |v: f64| ((v / step).round() * step).clamp(spec.min, spec.max);
+    let mut v = value;
+    // typing a value: (text, frames since it opened)
+    let typing_id = id.with("typing");
+    let field_id = format!("sliderField:{}", spec.id);
+    let mut typing: Option<(String, u8)> = ui.data(|m| m.get_temp(typing_id));
+    if enabled && typing.is_none() && value_resp.clicked() {
+        typing = Some((shown_value(spec, value).trim_start_matches('+').to_string(), 0));
+    }
+    let pos_id = id.with("pill-pos");
+    if let Some((mut text, frames)) = typing.take() {
+        let mut child = ui.new_child(egui::UiBuilder::new().max_rect(value_rect).layout(egui::Layout::right_to_left(egui::Align::Center)));
+        let field = crate::text_field::TextField::singleline(&field_id, &mut text)
+            .font(value_font.clone())
+            .horizontal_align(egui::Align::RIGHT)
+            .width(value_rect.width())
+            .margin(egui::Margin::ZERO)
+            .select_on_focus(true)
+            .begin_edit(frames == 0)
+            .show(&mut child);
+        if frames < 2 && !matches!(field.ending, Some(crate::text_field::Ending::Return | crate::text_field::Ending::Escape)) {
+            field.response.request_focus();
+            typing = Some((text, frames.saturating_add(1)));
+        } else if field.ending.is_some() || !field.editing || !enabled {
+            // Esc keeps the old value; Return or clicking away applies the typed one
+            let cancelled = !enabled || field.cancelled();
+            if let Some(nv) = typed_value(spec, &text).filter(|nv| !cancelled && (nv - value).abs() > 1e-12) {
+                out.value = Some(nv);
+                out.drag_started = true;
+                out.drag_stopped = true;
+                v = nv;
+            }
+        } else {
+            typing = Some((text, frames));
+        }
+        ui.data_mut(|m| match &typing {
+            Some(t) => {
+                m.insert_temp(typing_id, t.clone());
+            }
+            None => {
+                m.remove::<(String, u8)>(typing_id);
+            }
+        });
+    } else if resp.double_clicked() {
+        out.reset = true;
+        out.value = Some(spec.default);
+        v = spec.default;
+    } else {
+        if resp.drag_started() {
+            out.drag_started = true;
+            ui.data_mut(|m| m.insert_temp(pos_id, spec.position(value)));
+        }
+        if resp.dragged() {
+            let fine = if ui.input(|i| i.modifiers.shift) { 0.1 } else { 1.0 };
+            let dx = ui.input(|i| i.pointer.delta().x);
+            let width = f64::from(pill.width().max(1.0));
+            let start = ui.data(|m| m.get_temp::<f64>(pos_id)).unwrap_or_else(|| spec.position(value));
+            let pos = (start + f64::from(dx) / width * fine).clamp(0.0, 1.0);
+            ui.data_mut(|m| m.insert_temp(pos_id, pos));
+            let nv = snap(spec.value_at(pos));
+            if (nv - value).abs() > 1e-12 {
+                out.value = Some(nv);
+                v = nv;
+            }
+        }
+        if resp.drag_stopped() {
+            out.drag_stopped = true;
+            ui.data_mut(|m| m.remove::<f64>(pos_id));
+        }
+        // the arrow keys (hovered or focused), a screen reader's increment / decrement
+        let (inc, dec) = ui.input(|i| {
+            i.events.iter().fold((false, false), |(inc, dec), e| match e {
+                egui::Event::AccessKitActionRequest(r) if r.target_node == resp.id.accesskit_id() => {
+                    (inc || r.action == egui::accesskit::Action::Increment, dec || r.action == egui::accesskit::Action::Decrement)
+                }
+                _ => (inc, dec),
+            })
+        });
+        let pointer_in = ui.rect_contains_pointer(pill);
+        if enabled && out.value.is_none() && (pointer_in || resp.has_focus() || inc || dec) {
+            let (up, down, shift) = ui.input_mut(|i| {
+                let shift = i.modifiers.shift;
+                let m = if shift { egui::Modifiers::SHIFT } else { egui::Modifiers::NONE };
+                (i.consume_key(m, egui::Key::ArrowUp), i.consume_key(m, egui::Key::ArrowDown), shift)
+            });
+            let (up, down) = (up || inc, down || dec);
+            if up || down {
+                let nv = nudged(spec, value, if up { 1.0 } else { -1.0 } * if shift { 5.0 } else { 1.0 });
+                if (nv - value).abs() > 1e-12 {
+                    out.value = Some(nv);
+                    out.drag_started = true;
+                    out.drag_stopped = true;
+                    v = nv;
+                }
+            }
+        }
+        // a mostly sideways scroll over it nudges it (the panel scrolls only up and down)
+        let side_id = id.with("side-rem");
+        let (dx, dy) = ui.input(|i| (i.smooth_scroll_delta.x, i.smooth_scroll_delta.y));
+        if !enabled || out.value.is_some() || !pointer_in || dx.abs() <= dy.abs() {
+            ui.data_mut(|m| m.remove::<f32>(side_id));
+        } else {
+            ui.input_mut(|i| i.smooth_scroll_delta = egui::Vec2::ZERO);
+            let mut remainder = ui.data(|m| m.get_temp::<f32>(side_id)).unwrap_or(0.0);
+            let steps = wheel_nudges(&mut remainder, dx);
+            ui.data_mut(|m| m.insert_temp(side_id, remainder));
+            let nv = nudged(spec, value, steps);
+            if steps != 0.0 && (nv - value).abs() > 1e-12 {
+                out.value = Some(nv);
+                out.drag_started = true;
+                out.drag_stopped = true;
+                v = nv;
+            }
+        }
+    }
+    // paint: the bar, the fill from the default to the value, the default's tick, name and value
+    let p = ui.painter();
+    let active = resp.dragged() || resp.has_focus();
+    p.rect_filled(pill, radius, t.button);
+    let to_x = |v: f64| pill.left() + spec.position(v) as f32 * pill.width();
+    let (x0, x1) = (to_x(spec.default.clamp(spec.min, spec.max)), to_x(v));
+    if (x1 - x0).abs() > 0.5 {
+        let fill = Rect::from_x_y_ranges(x0.min(x1)..=x0.max(x1), pill.y_range());
+        let c = if enabled { t.accent.gamma_multiply(if active { 0.75 } else { 0.55 }) } else { t.text_disabled.gamma_multiply(0.35) };
+        p.with_clip_rect(fill.intersect(p.clip_rect())).rect_filled(pill, radius, c);
+    }
+    if let Some(stops) = track_stops(&spec.track) {
+        // a coloured track (temperature, tint, hue…) as a thin line along the bottom
+        let line = Rect::from_min_max(
+            pos2(pill.left() + radius, pill.bottom() - 6.0),
+            pos2((pill.right() - radius).max(pill.left() + radius), pill.bottom() - 4.0),
+        );
+        let n = stops.len().max(2) - 1;
+        let segs = 32;
+        let stop = |i: usize| stops.get(i.min(n)).copied().unwrap_or(t.track);
+        for i in 0..segs {
+            let (a, b) = (i as f32 / segs as f32, (i + 1) as f32 / segs as f32);
+            let seg = (a * n as f32).floor() as usize;
+            let c = lerp(stop(seg), stop(seg + 1), a * n as f32 - seg as f32);
+            p.rect_filled(Rect::from_x_y_ranges(line.left() + line.width() * a..=line.left() + line.width() * b + 0.5, line.y_range()), 0.0, c);
+        }
+    }
+    if spec.default > spec.min && spec.default < spec.max {
+        p.vline(x0, pill.shrink(radius * 0.55).y_range(), Stroke::new(1.0, t.text_dim.gamma_multiply(0.5)));
+    }
+    if resp.hovered() && enabled && !active {
+        p.rect_stroke(pill, radius, Stroke::new(1.0, t.accent.gamma_multiply(0.6)), StrokeKind::Inside);
+    }
+    let text_c = if enabled { t.text } else { t.text_disabled };
+    let mut job = egui::text::LayoutJob::simple_singleline(name, font, text_c);
+    job.wrap =
+        egui::text::TextWrapping { max_width: label_rect.width().max(0.0), max_rows: 1, break_anywhere: true, overflow_character: Some('…') };
+    let galley = p.layout_job(job);
+    let gw = galley.size().x;
+    p.galley(pos2(label_rect.left(), label_rect.center().y - galley.size().y / 2.0), galley, text_c);
+    if (v - spec.default).abs() > 1e-9 && !spec.id.starts_with("wb.") {
+        // changed from its default: a small dot after the name
+        p.circle_filled(pos2(label_rect.left() + gw + 7.0, label_rect.center().y), 2.5, t.pick);
+    }
+    if typing.is_none() {
+        p.text(value_rect.right_center(), Align2::RIGHT_CENTER, shown_value(spec, v), value_font, text_c);
+    }
+    if resp.hovered() || resp.dragged() {
         ui.ctx().set_cursor_icon(egui::CursorIcon::ResizeHorizontal);
     }
     out

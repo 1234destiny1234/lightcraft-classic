@@ -693,6 +693,11 @@ pub struct LccApp {
 }
 
 impl LccApp {
+    /// How panel sliders are laid out: always pills in the Modern layout, else as Settings say.
+    pub(crate) fn slider_layout(&self) -> theme::SliderLayout {
+        if self.ui.modern.enabled { theme::SliderLayout::Pill } else { self.ui.settings.slider_layout }
+    }
+
     pub fn new(mut session: Session, services: Services) -> Self {
         if cfg!(test) {
             // unit tests never open the file manager or start other programs
@@ -1260,7 +1265,7 @@ impl LccApp {
     /// themes, the system's appearance in Auto) is not the one it shows. A no-op otherwise.
     pub fn sync_theme(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         let wanted = self.ui.settings.theme(self.system_theme(ctx));
@@ -1361,7 +1366,7 @@ impl LccApp {
 
     fn logic_inner(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if !self.styled {
@@ -1556,7 +1561,7 @@ impl LccApp {
     /// Apply settings that act outside the UI state: GPU rendering and window full screen.
     fn apply_settings(&mut self, ctx: &egui::Context) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         if self.gpu_applied != Some(self.ui.settings.gpu) {
@@ -1714,7 +1719,7 @@ impl LccApp {
     /// Frame timings once layout is done (`t0`: when layout started).
     fn end_frame(&mut self, ctx: &egui::Context, t0: f64) {
         theme::set_ui_font_size(ctx, self.ui.settings.ui_font_size);
-        theme::set_slider_layout(ctx, self.ui.settings.slider_layout);
+        theme::set_slider_layout(ctx, self.slider_layout());
         theme::set_slider_text(ctx, self.ui.settings.slider_text);
         theme::set_slider_control(ctx, self.ui.settings.slider_control);
         self.text_focus = self.tasks.repaint.as_ref().is_some_and(|c| c.egui_wants_keyboard_input());
@@ -2534,3 +2539,5 @@ mod tests_modern;
 mod tests_modern_gestures;
 #[cfg(test)]
 mod tests_modern_sheets;
+#[cfg(test)]
+mod tests_pill_slider;
