@@ -388,8 +388,8 @@ pub fn show_controls(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             if ui.checkbox(&mut lp, crate::i18n::tr("Enable Lens Corrections")).changed() {
                 let _ = app.run("develop.merge", json!({"settings": {"optics": {"lens_profile": lp}}, "label": "Lens Corrections"}));
             }
-            if lp && !has_lens {
-                lens_note(app, ui, id);
+            if lp {
+                lens_note(app, ui, id, has_lens);
             }
         });
         if d.optics.lens_profile {
@@ -2616,13 +2616,29 @@ fn quick_develop(app: &mut LccApp, ui: &mut egui::Ui, n: usize) {
     });
 }
 
-/// Why Enable Lens Corrections has nothing to apply to photo `id` (its file carries no correction): no lens database
-/// (a link that opens Settings ▸ Lens profiles), no lens named in its metadata, or none of the database's profiles
-/// fits its lens.
-fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId) {
+/// What Enable Lens Corrections applies to photo `id` (issue #307): the database profile it uses (matched by name or
+/// chosen), or the correction its file carries; else why nothing applies: no lens database (a link that opens
+/// Settings ▸ Lens profiles), no lens named in its metadata, or none of the database's profiles fits its lens.
+/// `has_lens`: the photo carries a correction (its file's, or one found in the database).
+fn lens_note(app: &mut LccApp, ui: &mut egui::Ui, id: lcc_catalog::PhotoId, has_lens: bool) {
     use crate::i18n::tr;
     use lcc_engine::lens_profiles::Match;
     let t = Tokens::get(ui.ctx());
+    let Some(photo) = app.session.catalog.photo(id) else { return };
+    let applied = match app.session.lens_match(photo) {
+        None if has_lens => Some(tr("Correction from the file").to_string()),
+        Some(Match::Found(name)) => Some(tr("Profile: {name}").replace("{name}", &name)),
+        Some(Match::Chosen(name)) => Some(tr("Profile: {name} (chosen)").replace("{name}", &name)),
+        _ => None,
+    };
+    if let Some(text) = applied {
+        let r = ui.label(egui::RichText::new(text).size(11.0).color(t.text_dim));
+        crate::widgets::register(ui.ctx(), "label:lensStatus", r.rect);
+        return;
+    }
+    if has_lens {
+        return;
+    }
     let Some(state) = app.session.catalog.photo(id).and_then(|p| app.session.lens_match(p)) else { return };
     let text = match state {
         Match::NoDatabase => {
