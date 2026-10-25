@@ -327,6 +327,9 @@ pub use control::{ControlRequest, ControlResponse};
 pub use state::UiState;
 
 const TOAST_SECONDS: f64 = 1.4;
+
+/// How long after a mask slider last moved its overlay stays hidden (ms).
+const MASK_ADJUST_HIDE_MS: u64 = 250;
 /// The `path` of a display profile read from the screen rather than chosen as a file.
 pub const SCREEN_PROFILE: &str = "screen";
 
@@ -760,6 +763,15 @@ pub struct LccApp {
 }
 
 impl LccApp {
+    /// Whether the selected mask has settings (an effect to judge), see [`panels::detail::mask_has_settings`].
+    fn active_mask_has_settings(&self) -> bool {
+        let Some(id) = self.session.active_mask else { return false };
+        self.session
+            .active()
+            .and_then(|p| self.session.develop_of(p))
+            .is_some_and(|d| d.masks.iter().any(|m| m.id == id && panels::detail::mask_has_settings(m)))
+    }
+
     /// How panel sliders are laid out: always pills in the Modern layout, else as Settings say.
     pub(crate) fn slider_layout(&self) -> theme::SliderLayout {
         if self.ui.modern.enabled { theme::SliderLayout::Pill } else { self.ui.settings.slider_layout }
@@ -967,14 +979,16 @@ impl LccApp {
             self.ui.search.clear();
         }
         if r.is_ok() && id == "mask.adjust" {
-            // Judge local adjustments on the photo, without the selection overlay obscuring them.
-            // Keep it hidden after release; O / the overlay eye can show it again.
-            self.ui.mask_overlay = false;
+            // Judge local adjustments on the photo: while a slider is at work nothing covers it, not even
+            // an overlay switched on with O (it comes back when the slider rests); one that showed by
+            // itself goes, as the mask now has settings (upstream PR 2920's overlay rule).
+            self.ui.mask_adjusting_until = Some(std::time::Instant::now() + std::time::Duration::from_millis(MASK_ADJUST_HIDE_MS));
+            self.ui.mask_overlay = self.ui.mask_overlay_pinned;
         }
         if r.is_ok() && matches!(id, "mask.add" | "mask.addComponent" | "mask.duplicate" | "mask.select") {
-            // A new or newly picked mask shows its overlay again, as in Lightroom: hidden by a slider
-            // drag above, it stayed hidden while the Overlay menu still named a mode (issue #1800).
-            self.ui.mask_overlay = true;
+            // A new or picked mask shows its overlay by itself only while it has no settings: one with
+            // settings is judged by its effect (O, the eye or hovering its row shows the overlay).
+            self.ui.mask_overlay = self.ui.mask_overlay_pinned || !self.active_mask_has_settings();
         }
         if r.is_ok() {
             // These commands finish synchronously, so their completion would otherwise
@@ -1182,8 +1196,8 @@ impl LccApp {
             ctx.request_repaint();
         }
         if let Some(mask) = polled.refine {
-            // a new selection from a click or a description: show it, as `run` does for new masks
-            self.ui.mask_overlay = true;
+            // a new selection from a click or a description: shown by the same rule as a new mask
+            self.ui.mask_overlay = self.ui.mask_overlay_pinned || !self.active_mask_has_settings();
             self.ui.detail_due = Some((now + 0.3, mask));
         }
         if let Some(e) = polled.messages.into_iter().last() {

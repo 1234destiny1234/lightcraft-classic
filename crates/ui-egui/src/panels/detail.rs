@@ -857,6 +857,10 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui) {
     // (a drag that fell back is one drag for `DragScale` across its pauses, so its draft size holds)
     let draft_drag = interacting && (!hq || app.hq_drag.fell_back());
     let overlay = view_overlay(app, &d, ui.input(|i| i.modifiers.alt));
+    // an overlay hidden while a mask slider worked comes back once it rests, input or not
+    if let Some(left) = app.ui.mask_adjusting_until.map(|t| t.saturating_duration_since(std::time::Instant::now())).filter(|d| !d.is_zero()) {
+        ui.ctx().request_repaint_after(left);
+    }
     // a drag drafts at full size where the GPU draws the view (by the GPU's own rule, `handles`;
     // `ready` first: `available` would wait for a device still being created)
     let gpu = draft_drag
@@ -2143,15 +2147,37 @@ pub(crate) fn hdr_window(app: &mut LccApp, c: &WindowCtx, v: &WindowView, full: 
 /// The diagnostic overlay the loupe shows (the selected mask, Point Color's visualized range,
 /// Visualize Spots, Visualize HDR, and the clipping overlay: J's per-pixel red/blue tint, or the
 /// black/white clipping mask while ⌥/Alt-dragging a global tone slider).
+/// Whether a mask has settings: an effect on the photo to judge. A mask without any shows its
+/// overlay by itself, so what it selects can be seen (upstream PR 2920's overlay rule).
+pub(crate) fn mask_has_settings(m: &lcc_develop::Mask) -> bool {
+    m.adjust != lcc_develop::LocalAdjustments::default() || !m.curve.is_identity()
+}
+
 pub(crate) fn view_overlay(app: &LccApp, d: &DevelopSettings, alt_held: bool) -> lcc_pipeline::Overlay {
     use lcc_pipeline::{MaskView, Overlay};
     if app.ui.fullscreen {
+        return Overlay::None;
+    }
+    // While a mask slider is at work nothing covers the photo: its effect is what is being judged.
+    if app.ui.right == RightPanel::Masking && app.ui.mask_adjusting_until.is_some_and(|t| std::time::Instant::now() < t) {
         return Overlay::None;
     }
     // Show every visible mask's region at once (Ctrl+Shift+O / Cmd+Shift+O), ahead of the selected-mask overlay
     // so the shortcut is not shadowed by the always-on single-mask overlay.
     if app.ui.right == RightPanel::Masking && app.ui.mask_overlay_all && d.masks.iter().any(|m| m.visible && !m.components.is_empty()) {
         return Overlay::AllMasks {
+            view: MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default(),
+            color: app.ui.mask_overlay_color,
+            opacity: app.ui.mask_overlay_opacity.clamp(0.0, 100.0).round() as u8,
+        };
+    }
+    // the pointer on a mask's row in the list shows what that mask selects
+    if app.ui.right == RightPanel::Masking
+        && let Some(m) = app.ui.mask_hover.and_then(|id| d.masks.iter().find(|m| m.id == id))
+        && !m.components.is_empty()
+    {
+        return Overlay::Mask {
+            id: m.id.min(u16::MAX as u32) as u16,
             view: MaskView::parse(&app.ui.mask_overlay_mode).unwrap_or_default(),
             color: app.ui.mask_overlay_color,
             opacity: app.ui.mask_overlay_opacity.clamp(0.0, 100.0).round() as u8,

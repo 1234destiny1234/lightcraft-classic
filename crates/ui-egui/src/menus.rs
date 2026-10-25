@@ -1268,6 +1268,9 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
         }
         "view.maskOverlay" => {
             app.ui.mask_overlay = p.get("show").and_then(Value::as_bool).unwrap_or(!app.ui.mask_overlay);
+            // switched on, it stays on through edits; switched off, it shows by itself again only for a
+            // mask without settings
+            app.ui.mask_overlay_pinned = app.ui.mask_overlay;
             Ok(json!({"maskOverlay": app.ui.mask_overlay}))
         }
         "view.maskOverlayAll" => {
