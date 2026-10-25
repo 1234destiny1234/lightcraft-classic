@@ -80,6 +80,10 @@ pub struct Region {
 #[derive(Clone, Debug, PartialEq, Eq, Serialize, Deserialize)]
 pub enum RegionKind {
     Face,
+    /// A face the user chose to ignore (a blurry crop, a false detection): kept in the catalog so it is not
+    /// detected again and can be restored, left out of people, matching and the face gallery. Catalog-only:
+    /// regions are never written to XMP.
+    IgnoredFace,
     Pet,
     Focus,
     BarCode,
