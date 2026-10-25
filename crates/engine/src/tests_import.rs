@@ -314,7 +314,7 @@ fn find_missing_finds_the_files_of_a_library_made_on_windows() {
 /// unrelated photo uses is still refused.
 #[test]
 fn find_missing_relinks_virtual_copies_to_their_originals_file() {
-    use lightcraft_catalog::{Op, Photo, PhotoId, Source};
+    use lcc_catalog::{Op, Photo, PhotoId, Source};
     let dir = temp_dir("missing-copies");
     std::fs::create_dir_all(dir.join("new")).unwrap();
     for name in ["a.jpg", "b.jpg", "c.jpg"] {

@@ -425,13 +425,13 @@ fn cases() -> Vec<(&'static str, Edit)> {
             s.masks = vec![
                 Mask {
                     components: vec![comp(MaskOp::Add, 0.3), comp(MaskOp::Add, 0.7), comp(MaskOp::Subtract, 0.3)],
-                    adjust: lightcraft_develop::LocalAdjustments { exposure: 0.5, ..Default::default() },
+                    adjust: lcc_develop::LocalAdjustments { exposure: 0.5, ..Default::default() },
                     invert: true,
                     ..Default::default()
                 },
                 Mask {
                     components: vec![comp(MaskOp::Add, 0.3), comp(MaskOp::Intersect, 0.5)],
-                    adjust: lightcraft_develop::LocalAdjustments { exposure: -0.5, ..Default::default() },
+                    adjust: lcc_develop::LocalAdjustments { exposure: -0.5, ..Default::default() },
                     invert: true,
                     ..Default::default()
                 },
