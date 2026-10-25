@@ -96,7 +96,7 @@ the selected photos. `⌥0` makes the next keyword set current and `⌥⇧0` the
 `Alt+Shift+0`), in the order of the Keywords panel's Keyword Set menu: Recent Keywords, then the saved
 sets. After the last set comes Recent Keywords again, and before Recent Keywords comes the last set;
 with no saved sets the keys leave Recent Keywords current. The shortcut list does not say what happens
-past either end; wrapping around is LightCraft's choice. The same steps are the Next / Previous
+past either end; wrapping around is the app's choice. The same steps are the Next / Previous
 Keyword Set commands (`keyword.nextSet`, `keyword.previousSet`), which return what `keyword.sets`
 returns, and both keys can be reassigned in Help → Keyboard Shortcuts.
 

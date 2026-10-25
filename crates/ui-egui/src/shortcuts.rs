@@ -936,7 +936,7 @@ mod tests {
     /// key comes back once the entry is gone.
     #[test]
     fn a_saved_key_wins_over_another_commands_declared_key() {
-        use lightcraft_catalog::{Flag, PhotoId};
+        use lcc_catalog::{Flag, PhotoId};
         let mut h = library();
         h.app.ui.settings.keymap.insert("photo.increaseRating".into(), "P".into());
         assert_eq!(super::shortcut_of(&h.app.ui.settings.keymap, "photo.pick"), None);
@@ -962,7 +962,7 @@ mod tests {
     /// a declared shortcut on the same keys keep working.
     #[test]
     fn junk_keymap_entries_leave_aliases_ratings_and_declared_keys() {
-        use lightcraft_catalog::{Flag, PhotoId};
+        use lcc_catalog::{Flag, PhotoId};
         let mut h = library();
         for (id, sc) in [("no.suchCommand", "Shift+X"), ("no.otherCommand", "5"), ("no.thirdCommand", "P")] {
             h.app.ui.settings.keymap.insert(id.into(), sc.into());
