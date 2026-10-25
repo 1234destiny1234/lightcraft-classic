@@ -463,6 +463,14 @@ fn photo_id_arg(args: &Value) -> Result<Option<u64>, String> {
     }
 }
 
+/// Where the backend writes a render or screenshot for us to read back: `<tag>.png` in a new
+/// `lcc-mcp-<pid>-<random>` folder in the temp dir, private to this user on Unix (0700).
+/// Straight in a shared /tmp, other users could read the PNG, and a name they took first made the
+/// render fail (upstream #2573). Dropping this removes the folder and whatever is in it.
+struct TempPng {
+    dir: std::path::PathBuf,
+    file: std::path::PathBuf,
+}
 
 impl TempPng {
     fn new(tag: &str) -> Result<Self, String> {

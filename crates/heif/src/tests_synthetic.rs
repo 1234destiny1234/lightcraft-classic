@@ -235,7 +235,9 @@ fn declared_sizes_and_dimensions_are_checked_not_trusted() {
         // probe only reports the declaration (callers check their limits against it).
         let _ = probe(&b);
     }
-/// CodeRabbit #44: heic-rs keeps every associated transform and each one re-allocates the
+}
+
+/// heic-rs (upstream review): heic-rs keeps every associated transform and each one re-allocates the
 /// whole picture, so 13 of them are over the [`crate::MAX_TRANSFORMS`] cap and refused.
 #[test]
 fn too_many_transform_properties_are_refused() {

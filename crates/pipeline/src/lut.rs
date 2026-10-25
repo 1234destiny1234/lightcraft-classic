@@ -166,6 +166,9 @@ mod tests {
         let back = Lut3d::parse_cube(&l.to_cube()).unwrap();
         assert_eq!((back.size, back.title.as_deref()), (5, Some("test")));
         assert!(back.data.iter().zip(&l.data).all(|(a, b)| (0..3).all(|k| (a[k] - b[k]).abs() < 1e-5)));
+    }
+
+    #[test]
     fn non_finite_entries_rejected() {
         let bad_line = |body: &str| {
             let e = Lut3d::parse_cube(body).expect_err(body);
