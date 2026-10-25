@@ -110,6 +110,12 @@ fn first<'a>(props: &'a BTreeMap<String, Vec<String>>, k: &str) -> Option<&'a st
     props.get(k).and_then(|v| v.first()).map(|s| s.trim()).filter(|s| !s.is_empty())
 }
 
+/// The profile an export was rendered with: its `crs:Look` name (Lightroom's creative profiles sit on top of the
+/// camera profile), else its `crs:CameraProfile`.
+pub fn look_name(props: &BTreeMap<String, Vec<String>>) -> Option<String> {
+    first(props, "crs:Look/crs:Name").or_else(|| first(props, "crs:CameraProfile")).map(str::to_string)
+}
+
 fn num(props: &BTreeMap<String, Vec<String>>, k: &str) -> Option<f64> {
     first(props, k).and_then(|s| s.trim_start_matches('+').parse::<f64>().ok()).filter(|v| v.is_finite())
 }
@@ -170,6 +176,12 @@ pub fn baseline_problem(props: &BTreeMap<String, Vec<String>>) -> Option<String>
             return Some(format!("not at the baseline preset ({name} = {v})"));
         }
     }
+    // a creative profile at another strength than 100 % is not the profile's own look
+    if let Some(a) = num(props, "crs:Look/crs:Amount")
+        && (a - 1.0).abs() > 1e-3
+    {
+        return Some(format!("profile amount {:.0} % (export at 100 %)", a * 100.0));
+    }
     if first(props, "crs:HasCrop").is_some_and(|s| s.eq_ignore_ascii_case("true")) {
         return Some("cropped (export without a crop)".into());
     }
@@ -228,9 +240,10 @@ pub fn export_files(sets: &[ExportSet], skipped: &mut Vec<(String, String)>) -> 
                 skipped.push((file_name(&path), why));
                 continue;
             }
-            // the profile Lightroom names, else the folder the export sits in
+            // the profile chosen in Lightroom: a creative profile ("Adobe Color", "Adobe Vivid"…) is a Look on top
+            // of the camera profile ("Adobe Standard"), else the camera profile itself, else the export's folder
             let folder = path.parent().map(file_name).unwrap_or_default();
-            let look = first(&props, "crs:CameraProfile").map(str::to_string).unwrap_or(folder);
+            let look = look_name(&props).unwrap_or(folder);
             let temp_tint = num(&props, "crs:Temperature").zip(num(&props, "crs:Tint"));
             out.push(Export {
                 path,
@@ -302,6 +315,19 @@ pub fn pair(raws: &[RawFile], exports: &[Export], skipped: &mut Vec<(String, Str
 
 #[cfg(test)]
 mod tests {
+
+    #[test]
+    fn a_creative_profile_is_named_by_its_look_not_the_camera_profile() {
+        let mut p: BTreeMap<String, Vec<String>> = BTreeMap::new();
+        p.insert("crs:CameraProfile".into(), vec!["Adobe Standard".into()]);
+        assert_eq!(look_name(&p).as_deref(), Some("Adobe Standard"));
+        p.insert("crs:Look/crs:Name".into(), vec!["Adobe Color".into()]);
+        p.insert("crs:Look/crs:Amount".into(), vec!["1".into()]);
+        assert_eq!(look_name(&p).as_deref(), Some("Adobe Color"));
+        assert_eq!(baseline_problem(&p), None);
+        p.insert("crs:Look/crs:Amount".into(), vec!["0.5".into()]);
+        assert!(baseline_problem(&p).is_some_and(|w| w.contains("50 %")));
+    }
 
     #[test]
     fn export_folders_are_searched_with_their_subfolders_once() {

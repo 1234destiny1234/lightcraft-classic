@@ -69,7 +69,8 @@ pick the matching look for each photo's profile.
    with the app's current colour and with the calibration. If the calibration doesn't beat the current colour, it
    says what failed (often: add photos under another light).
 
-6. **Send the JSON file**: open an issue or pull request on the project's repository and attach it. `--contributor`
+6. **Send the JSON file** where `fit` tells you to: the project's calibration thread on Discord (the link is printed),
+   or an issue on the project's repository. `--contributor`
    is optional; leave it out to stay anonymous.
 
 ## Privacy: what the file holds

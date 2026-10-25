@@ -554,6 +554,7 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
     let before_lut = pipe::Lut::build(None)?;
     let mut look_evidence = Vec::new();
     let mut gated = 0usize;
+    let mut dropped: Vec<String> = Vec::new();
     for l in &looks {
         let of_look = |held: bool| -> Vec<&PhotoSamples> { photos.iter().filter(|p| p.held_out == held && p.look.trim() == l.name).collect() };
         let (held, trained) = (of_look(true), of_look(false));
@@ -584,6 +585,16 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
         let (b, a) = (deltae::summary(&before), deltae::summary(&after));
         if !held.is_empty() {
             gated += 1;
+            if !(a.median < b.median && a.p95 < b.p95) && l.name != base {
+                // another look that a fixed look can't match (an adaptive profile changes with each photo) is left out
+                eprintln!(
+                    "note: look {:?} left out: on the held-out photos it does not beat the app's current colour \
+                     (ΔE00 median {:.2} vs {:.2}, p95 {:.2} vs {:.2}); adaptive profiles change with each photo and can't be matched",
+                    l.name, a.median, b.median, a.p95, b.p95
+                );
+                dropped.push(l.name.clone());
+                continue;
+            }
             if !(a.median < b.median && a.p95 < b.p95) {
                 return Err(Error(format!(
                     "{}: on the held-out photos the fitted colour (ΔE00 median {:.2}, p95 {:.2}) does not beat the app's current colour \
@@ -595,6 +606,7 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
         }
         look_evidence.push(LookEvidence { name: l.name.clone(), photos: count_photos(&trained), held_out: count_photos(&held), before: b, after: a });
     }
+    looks.retain(|l| !dropped.contains(&l.name));
     if gated == 0 {
         return Err(Error("no held-out photos to check the fit on: collect with a hold-out share above 0, or add photos".into()));
     }

@@ -173,7 +173,13 @@ fn fit_cmd(args: &[String]) -> Result<(), String> {
     println!();
     println!("Send this file: {}", json_path.display());
     println!("  It holds only the numbers listed above: no images, file names, dates, serial numbers, locations or lenses.");
-    println!("  Open an issue or pull request on the project's repository and attach it (licence {}).", calibration::LICENCE);
+    if lcc_brand::CALIBRATION_DISCORD.is_empty() {
+        println!("  Open an issue on {} and attach it (licence {}).", lcc_brand::REPOSITORY, calibration::LICENCE);
+    } else {
+        let thread =
+            if lcc_brand::CALIBRATION_THREAD.is_empty() { String::new() } else { format!(" in the {} thread", lcc_brand::CALIBRATION_THREAD) };
+        println!("  Send it on Discord{thread}: {} (licence {}).", lcc_brand::CALIBRATION_DISCORD, calibration::LICENCE);
+    }
     if !dcps.is_empty() {
         println!("For your own testing only (do not send): Camera ▸ Import DCP… in the app, or `camera.importDcp`:");
         for p in &dcps {
