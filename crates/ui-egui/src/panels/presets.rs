@@ -204,6 +204,8 @@ pub fn show(app: &mut LccApp, ui: &mut egui::Ui, side: &[PanelId], in_column: bo
                 show_folder_node(app, ui, node, &all_user_folders, row_h, visible, &last, &marked, &current, thumbs, amt_id);
             }
             let (space_r, space_resp) = ui.allocate_exact_size(vec2(ui.available_width(), 40.0), Sense::click());
+            // (the empty space under the folders: a drop target and the create menu)
+            crate::widgets::announce(&space_resp, crate::i18n::tr("Presets").to_string());
             if let Some(dragged) = app.ui.dragging_preset_group.as_ref()
                 && space_resp.hovered()
             {
