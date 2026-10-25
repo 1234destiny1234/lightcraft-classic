@@ -275,8 +275,14 @@ fn chunked_bodies_and_unpinned_files() {
     let e = run(&[small], &[format!("{}/good", srv.base)], &dir2, &AtomicBool::new(false)).0.unwrap_err().to_string();
     assert!(e.contains("wrong size") || e.contains("more than"), "{e}");
     assert!(!dir2.join("vocab.json").exists() && !part_path(&dir2, "vocab.json").exists());
-    let _ = std::fs::remove_dir_all(&dir);
-    let _ = std::fs::remove_dir_all(&dir2);
+    // over plain http from another computer an unpinned file is refused before connecting (#2140)
+    let dir3 = tmp("unpinned-http");
+    let e = run(&[f], &["http://mirror.invalid/sam3".to_string()], &dir3, &AtomicBool::new(false)).0.unwrap_err().to_string();
+    assert!(e.contains("https only"), "{e}");
+    assert!(is_loopback("localhost") && is_loopback("127.0.0.1") && is_loopback("[::1]") && !is_loopback("10.0.0.1"));
+    for d in [&dir, &dir2, &dir3] {
+        let _ = std::fs::remove_dir_all(d);
+    }
 }
 
 #[test]
@@ -350,17 +356,19 @@ fn content_ranges() {
     assert_eq!(parse_content_range("items 1-2/3"), None);
 }
 
-/// A bearer token goes only to https, only to the host the download began at, and only when there is one.
+/// A bearer token goes only to https, only to the host and port the download began at, and only when there is one.
 #[test]
 fn a_token_is_sent_only_over_https_to_the_first_host() {
     let u = |s: &str| Url::parse(s).unwrap();
     let first = u("https://huggingface.co/x/model.bin");
-    assert_eq!(bearer(Some(" hf_abc \n"), &first, "huggingface.co"), Some("hf_abc"));
-    // the storage host a redirect leads to, plain http, no token, an empty one
-    assert_eq!(bearer(Some("hf_abc"), &u("https://cdn-lfs.example/x"), "huggingface.co"), None);
-    assert_eq!(bearer(Some("hf_abc"), &u("http://huggingface.co/x"), "huggingface.co"), None);
-    assert_eq!(bearer(None, &first, "huggingface.co"), None);
-    assert_eq!(bearer(Some("  "), &first, "huggingface.co"), None);
+    let hf = ("huggingface.co", 443);
+    assert_eq!(bearer(Some(" hf_abc \n"), &first, hf), Some("hf_abc"));
+    // the storage host a redirect leads to, another port of the same host (#2140), plain http, no token, an empty one
+    assert_eq!(bearer(Some("hf_abc"), &u("https://cdn-lfs.example/x"), hf), None);
+    assert_eq!(bearer(Some("hf_abc"), &u("https://huggingface.co:8443/x"), hf), None);
+    assert_eq!(bearer(Some("hf_abc"), &u("http://huggingface.co/x"), hf), None);
+    assert_eq!(bearer(None, &first, hf), None);
+    assert_eq!(bearer(Some("  "), &first, hf), None);
     // a caller that names no variable sends nothing, whatever the environment holds
     assert!(Options::default().token_env.is_none());
 }
