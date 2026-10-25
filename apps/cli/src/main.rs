@@ -14,6 +14,7 @@
 //! <cli> controls [--json]
 //! <cli> calibrate [--max N] [--out DIR] FOLDERS/FILES…
 //! <cli> calibrate-lightroom preset|fit|add|list|verify …
+//! <cli> compare REFERENCE TEST [--size N] [--no-align] [--diff OUT.png] [--json]
 //! <cli> camdb extract [--contributor NAME] NATIVE.dng…
 //! <cli> camdb show MAKE MODEL
 //! ```
@@ -23,6 +24,7 @@
 mod alloc_release;
 mod calibrate_lightroom;
 mod catalog_migrate;
+mod compare;
 mod run_action;
 mod sync_folder;
 
@@ -145,6 +147,11 @@ USAGE:
       The calibrations built into this binary, with their looks and held-out colour error.
   {cli} calibrate-lightroom verify --catalog X.lrcat --exports DIR
       Whole-pipeline check against an edited catalogue (not available yet).
+  {cli} compare REFERENCE TEST [--size N] [--no-align] [--diff OUT.png] [--json]
+      How far TEST is from REFERENCE: two renders of the same photo from any editor or camera (JPEG, TIFF, PNG,
+      …, read through their embedded colour profiles). Lines them up, then prints CIEDE2000 (mean, median, p95,
+      p99) overall, by tone band and by hue, with the lightness, saturation and hue bias. --size: long edge
+      compared (default 512); --no-align: compare pixel for pixel; --diff: write a false-colour ΔE00 map.
   {cli} camdb extract [--contributor NAME] NATIVE.dng…
       Print camera database entries (TOML, for data/cameras/<maker>.toml in the camdb crate) from DNGs the
       camera wrote itself. DNGs written by Adobe software or by {app}'s own export are refused.
@@ -234,6 +241,7 @@ fn main() -> ExitCode {
         Some("calibrate") => calibrate(&args[1..]),
         Some("camdb") => camdb(&args[1..]),
         Some("calibrate-lightroom") => calibrate_lightroom::run(&args[1..]),
+        Some("compare") => compare::run(&args[1..]),
         Some("--version" | "-V" | "version") => {
             println!("{CLI} {}", env!("CARGO_PKG_VERSION"));
             Ok(())

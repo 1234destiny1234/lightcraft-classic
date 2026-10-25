@@ -183,4 +183,19 @@ list` prints the calibrations built into a binary, their looks (`cal:<id>`) and 
 `{{cli_binary}} calibrate-lightroom verify --catalog X.lrcat --exports DIR` (whole-pipeline error between the app's render of
 an *edited* catalogue and its edited exports) is planned and not available yet.
 
+### Measuring a render against another editor: `compare`
+
+`{{cli_binary}} compare REFERENCE TEST` measures how far one render of a photo is from another, from any editor or
+camera (JPEG, TIFF, PNG, … read through their embedded colour profiles). It lines the two up (scale and shift, so a
+small lens-correction or crop difference is fine), then prints CIEDE2000 mean, median, p95 and p99 overall, by tone
+band (by the reference's L*) and by hue sector, with the test's mean lightness, chroma and hue bias. `--diff MAP.png`
+writes a false-colour ΔE00 map, `--json` the full report, `--size N` sets the long edge compared (default 512) and
+`--no-align` compares pixel for pixel. Use it to check a calibration on photos it did not see, or the app's render of
+an edited photo against the edited export from the editor you are moving from:
+
+```
+{{cli_binary}} render IMG_0001.CR3 -o ours.tif
+{{cli_binary}} compare lightroom/IMG_0001.tif ours.tif --diff map.png
+```
+
 Sources: own design; DNG specification 1.7 chapter 6 (profile model); CIEDE2000 (Sharma, Wu, Dalal 2005).
