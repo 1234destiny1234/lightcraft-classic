@@ -98,7 +98,8 @@ pub fn jpeg_segments(b: &[u8]) -> Embedded {
     let mut icc_parts: [Option<&[u8]>; 255] = [None; 255];
     let mut icc_total = None;
     let mut icc_invalid = false;
-    let mut ext: Vec<(u32, Vec<u8>)> = Vec::new();
+    // extended XMP chunks: (GUID, full length, offset, data)
+    let mut ext: Vec<([u8; 32], u32, u32, &[u8])> = Vec::new();
     let mut i = 2usize;
     while i + 4 <= b.len() {
         if b[i] != 0xff {
@@ -132,10 +133,12 @@ pub fn jpeg_segments(b: &[u8]) -> Embedded {
             }
             0xe1 if payload.starts_with(XMP_EXT_SIG) => {
                 // GUID (32) + full length (4) + offset (4) + data
-                let p = &payload[XMP_EXT_SIG.len()..];
-                if p.len() >= 40 {
-                    let off = u32::from_be_bytes([p[36], p[37], p[38], p[39]]);
-                    ext.push((off, p[40..].to_vec()));
+                if complete
+                    && let Some(p) = payload.get(XMP_EXT_SIG.len()..)
+                    && let (Some(guid), Some(full), Some(off), Some(data)) = (p.get(..32), p.get(32..36), p.get(36..40), p.get(40..))
+                    && let (Ok(guid), Ok(full), Ok(off)) = (<[u8; 32]>::try_from(guid), <[u8; 4]>::try_from(full), <[u8; 4]>::try_from(off))
+                {
+                    ext.push((guid, u32::from_be_bytes(full), u32::from_be_bytes(off), data));
                 }
             }
             0xe2 if payload.starts_with(b"ICC_PROFILE\0") => {
@@ -197,11 +200,45 @@ pub fn jpeg_segments(b: &[u8]) -> Embedded {
             out.icc = Some(profile);
         }
     }
-    if !ext.is_empty() {
-        ext.sort_by_key(|p| p.0);
-        out.xmp_extended = Some(String::from_utf8_lossy(&ext.into_iter().flat_map(|p| p.1).collect::<Vec<u8>>()).into_owned());
-    }
+    out.xmp_extended = out.xmp.as_deref().and_then(extended_guid).and_then(|guid| reassemble_extended(&guid, ext));
     out
+}
+
+/// The most bytes an extended XMP packet may claim: far more than any real one carries.
+const MAX_EXTENDED_XMP: u32 = 64 << 20;
+
+/// The GUID the main XMP packet names in `xmpNote:HasExtendedXMP` (32 upper-case hex digits, the
+/// MD5 of the extended packet), as an attribute or an element. `None` when it names none.
+fn extended_guid(xmp: &str) -> Option<[u8; 32]> {
+    let at = xmp.find("HasExtendedXMP")?;
+    let rest = xmp.get(at..)?.get("HasExtendedXMP".len()..)?;
+    let rest = rest.trim_start_matches(|c: char| c.is_whitespace() || matches!(c, '=' | '"' | '\'' | '>'));
+    let guid = <[u8; 32]>::try_from(rest.as_bytes().get(..32)?).ok()?;
+    guid.iter().all(u8::is_ascii_hexdigit).then_some(guid)
+}
+
+/// The extended XMP packet the main packet refers to (XMP Specification Part 3, 1.1.3.1): only the
+/// chunks carrying its GUID, all agreeing on the full length, which together cover that length
+/// exactly once. Anything else (chunks of another packet, a gap, an overlap, a length past the
+/// cap) is not that packet, and nothing of it is read.
+fn reassemble_extended(guid: &[u8; 32], chunks: Vec<([u8; 32], u32, u32, &[u8])>) -> Option<String> {
+    let mut mine: Vec<(u32, u32, &[u8])> = chunks.into_iter().filter(|c| c.0.eq_ignore_ascii_case(guid)).map(|c| (c.1, c.2, c.3)).collect();
+    let full = mine.first()?.0;
+    if full == 0 || full > MAX_EXTENDED_XMP || mine.iter().any(|c| c.0 != full) {
+        return None;
+    }
+    mine.sort_by_key(|c| c.1);
+    let mut packet = Vec::with_capacity(full as usize);
+    for (_, off, data) in mine {
+        if off as usize != packet.len() {
+            return None;
+        }
+        packet.extend_from_slice(data);
+        if packet.len() > full as usize {
+            return None;
+        }
+    }
+    (packet.len() == full as usize).then(|| String::from_utf8_lossy(&packet).into_owned())
 }
 
 /// IPTC-IIM block (resource 0x0404) from a Photoshop image-resource stream (`8BIM` records).
@@ -346,18 +383,74 @@ mod tests {
         assert_eq!(m.caption.as_deref(), Some("A caption"));
     }
 
-    #[test]
-    fn jpeg_extended_xmp() {
+    const GUID: &[u8; 32] = b"0123456789ABCDEF0123456789ABCDEF";
+
+    /// A JPEG whose main packet names `named` and whose extended chunks are `(guid, full, offset, data)`.
+    fn jpeg_with_extended(named: Option<&[u8; 32]>, chunks: &[(&[u8; 32], u32, u32, &[u8])]) -> Vec<u8> {
         let mut j = vec![0xff, 0xd8];
-        for (off, part) in [(5u32, &b"world"[..]), (0, b"hello")] {
+        let main = match named {
+            Some(g) => format!(
+                "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"><rdf:RDF xmlns:rdf=\"http://www.w3.org/1999/02/22-rdf-syntax-ns#\"><rdf:Description rdf:about=\"\" xmlns:xmpNote=\"http://ns.adobe.com/xmp/note/\" xmpNote:HasExtendedXMP=\"{}\"/></rdf:RDF></x:xmpmeta>",
+                std::str::from_utf8(g).unwrap()
+            ),
+            None => "<x:xmpmeta xmlns:x=\"adobe:ns:meta/\"/>".to_string(),
+        };
+        let mut p = XMP_SIG.to_vec();
+        p.extend_from_slice(main.as_bytes());
+        j.extend(seg(0xe1, &p));
+        for (guid, full, off, part) in chunks {
             let mut p = XMP_EXT_SIG.to_vec();
-            p.extend_from_slice(&[b'A'; 32]);
-            p.extend_from_slice(&10u32.to_be_bytes());
+            p.extend_from_slice(&guid[..]);
+            p.extend_from_slice(&full.to_be_bytes());
             p.extend_from_slice(&off.to_be_bytes());
             p.extend_from_slice(part);
             j.extend(seg(0xe1, &p));
         }
+        j
+    }
+
+    #[test]
+    fn jpeg_extended_xmp() {
+        let j = jpeg_with_extended(Some(GUID), &[(GUID, 10, 5, b"world"), (GUID, 10, 0, b"hello")]);
         assert_eq!(jpeg_segments(&j).xmp_extended.as_deref(), Some("helloworld"));
+        // chunks of another packet are left out
+        let other = b"FEDCBA9876543210FEDCBA9876543210";
+        let j = jpeg_with_extended(Some(GUID), &[(GUID, 10, 5, b"world"), (other, 3, 0, b"bad"), (GUID, 10, 0, b"hello")]);
+        assert_eq!(jpeg_segments(&j).xmp_extended.as_deref(), Some("helloworld"));
+    }
+
+    /// What a writer moved to the extended packet (here a GPS position and a caption) is read with
+    /// the main packet's fields, so export's location check sees it too.
+    #[test]
+    fn extract_reads_the_referenced_extended_packet() {
+        let ext = r#"<x:xmpmeta xmlns:x="adobe:ns:meta/"><rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#"><rdf:Description rdf:about="" xmlns:exif="http://ns.adobe.com/exif/1.0/" xmlns:dc="http://purl.org/dc/elements/1.1/" exif:GPSLatitude="51,30.0N" exif:GPSLongitude="0,7.5W"><dc:description><rdf:Alt><rdf:li xml:lang="x-default">Long caption</rdf:li></rdf:Alt></dc:description></rdf:Description></rdf:RDF></x:xmpmeta>"#;
+        let (a, b) = ext.as_bytes().split_at(40);
+        let full = ext.len() as u32;
+        let j = jpeg_with_extended(Some(GUID), &[(GUID, full, 40, b), (GUID, full, 0, a)]);
+        let m = crate::extract(&j);
+        assert_eq!(m.caption.as_deref(), Some("Long caption"));
+        assert!(m.gps.is_some(), "{m:?}");
+        // not referenced: not read
+        let j = jpeg_with_extended(None, &[(GUID, full, 0, ext.as_bytes())]);
+        assert!(crate::extract(&j).gps.is_none());
+    }
+
+    #[test]
+    fn jpeg_extended_xmp_is_read_only_whole_and_referenced() {
+        let other = b"FEDCBA9876543210FEDCBA9876543210";
+        for (name, named, chunks) in [
+            ("not referenced", None, vec![(GUID, 10, 0, &b"helloworld"[..])]),
+            ("another GUID", Some(GUID), vec![(other, 10, 0, &b"helloworld"[..])]),
+            ("a gap", Some(GUID), vec![(GUID, 10, 0, &b"hell"[..]), (GUID, 10, 5, b"world")]),
+            ("an overlap", Some(GUID), vec![(GUID, 10, 0, &b"hello"[..]), (GUID, 10, 4, b"oworld")]),
+            ("short", Some(GUID), vec![(GUID, 10, 0, &b"hello"[..])]),
+            ("past its length", Some(GUID), vec![(GUID, 4, 0, &b"hello"[..])]),
+            ("lengths disagree", Some(GUID), vec![(GUID, 10, 0, &b"hello"[..]), (GUID, 11, 5, b"world")]),
+            ("a huge length", Some(GUID), vec![(GUID, u32::MAX, 0, &b"hello"[..])]),
+        ] {
+            let j = jpeg_with_extended(named, &chunks);
+            assert_eq!(jpeg_segments(&j).xmp_extended, None, "{name}");
+        }
     }
 
     #[test]
