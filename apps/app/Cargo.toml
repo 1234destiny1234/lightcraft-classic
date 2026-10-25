@@ -44,6 +44,8 @@ getrandom = { workspace = true }
 log = { workspace = true }
 # HDR metadata on the window's swapchain (Vulkan; no-op elsewhere)
 lcc-hdrmeta = { workspace = true }
+# how much GPU memory the window's adapter offers (the HDR zoom cache needs room)
+lcc-gpumem = { workspace = true }
 bytemuck = { workspace = true }
 
 [build-dependencies]

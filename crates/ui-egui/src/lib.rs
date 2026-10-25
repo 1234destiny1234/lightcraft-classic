@@ -173,6 +173,8 @@ mod tests_grid;
 #[cfg(test)]
 mod tests_guided_guides;
 #[cfg(test)]
+mod tests_hdr_zoom_cache;
+#[cfg(test)]
 mod tests_histogram_drag;
 #[cfg(test)]
 mod tests_histogram_modes;
@@ -364,6 +366,16 @@ pub trait HdrOutput {
     /// doesn't take them (it uploads with another headroom), and [`Self::upload`] is used.
     fn upload_texels(&mut self, slot: u8, width: usize, height: usize, texels: &[u16], headroom: f32) -> Option<Result<egui::TextureId, String>> {
         let _ = (slot, width, height, texels, headroom);
+        None
+    }
+    /// Free `slot`'s texture: nothing shows it any more (a zoomed view's window that left its
+    /// recent ones). The slot's next [`Self::upload`] makes a new one.
+    fn release(&mut self, slot: u8) {
+        let _ = slot;
+    }
+    /// How much memory the GPU these textures live on offers, in bytes (`None`: unknown). Decides
+    /// whether a zoomed view may keep its recent HDR windows ([`render::hdr_cache_fit`]).
+    fn gpu_memory(&mut self) -> Option<u64> {
         None
     }
     /// Whether the window surface is extended linear sRGB (macOS EDR / Windows scRGB): when
@@ -1365,6 +1377,16 @@ impl LccApp {
         stopped && idle
     }
 
+    /// Whether the GPU of the HDR output has room for zoomed views' recent HDR windows on this
+    /// screen (`None`: no HDR output, nothing to keep).
+    pub(crate) fn hdr_cache_fit(&mut self, ctx: &egui::Context) -> Option<render::HdrCacheFit> {
+        let have = self.services.hdr_output.as_mut()?.gpu_memory();
+        let content = ctx.content_rect().size();
+        let points = content.max(ctx.input(|i| i.viewport().monitor_size).unwrap_or(content));
+        let ppp = ctx.pixels_per_point();
+        Some(render::hdr_cache_fit([points.x * ppp, points.y * ppp], have))
+    }
+
     /// Per-frame logic before layout (control channel, renders, shortcuts, drops).
     pub fn logic(&mut self, ctx: &egui::Context) {
         i18n::set_language(self.ui.language);
@@ -1375,6 +1397,15 @@ impl LccApp {
         if let Some(h) = self.services.hdr_output.as_mut() {
             self.hdr_headroom = h.headroom();
             self.hdr_display_sdr = self.hdr_headroom.is_none();
+        }
+        // zoomed HDR views keep their recent windows only where the GPU has room for them, and
+        // the textures of windows nothing shows or keeps any more are freed at once
+        let cache = self.ui.settings.hdr_zoom_cache && self.hdr_cache_fit(ctx).is_none_or(|f| f.fits());
+        self.renderer.set_hdr_cache(cache);
+        if let Some(h) = self.services.hdr_output.as_mut() {
+            for slot in self.renderer.hdr_unused_slots() {
+                h.release(slot);
+            }
         }
         self.logic_inner(ctx);
         self.perf.logic_ms = now_ms() - t0;

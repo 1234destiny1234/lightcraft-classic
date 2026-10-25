@@ -4466,6 +4466,7 @@ dependencies = [
  "lcc-codecs",
  "lcc-engine",
  "lcc-gpu",
+ "lcc-gpumem",
  "lcc-hdrmeta",
  "lcc-pipeline",
  "lcc-raster",
@@ -4885,6 +4886,19 @@ dependencies = [
  "log",
  "pollster 1.0.1",
  "wgpu",
+]
+
+[[package]]
+name = "lcc-gpumem"
+version = "26.43.6"
+dependencies = [
+ "ash",
+ "lcc-testkit",
+ "objc2-metal 0.3.2",
+ "pollster 1.0.1",
+ "wgpu",
+ "wgpu-hal",
+ "windows 0.62.2",
 ]
 
 [[package]]

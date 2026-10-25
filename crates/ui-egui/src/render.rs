@@ -112,6 +112,42 @@ const HDR_WINDOW_RING: u8 = 8;
 /// back: shown at once), within [`HDR_WINDOWS_BYTES`] together.
 const HDR_WINDOWS_KEPT: usize = 4;
 const HDR_WINDOWS_BYTES: usize = 256 << 20;
+/// Zoomed panes that can show at once (Before / After, the two Compare panes).
+const HDR_ZOOMED_PANES: u64 = 2;
+/// The kept windows may take no more than this share of the GPU's memory (1 / n): the rest is
+/// for the whole-frame textures, the GPU render pipeline and everything else on screen.
+const HDR_CACHE_SHARE: u64 = 4;
+
+/// Whether the GPU has room for the zoomed panes' recent HDR windows ([`Renderer::set_hdr_cache`])
+/// on a screen of a given size.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct HdrCacheFit {
+    /// GPU memory the kept windows can take, in bytes.
+    pub need: u64,
+    /// GPU memory there is (`None`: unknown).
+    pub have: Option<u64>,
+}
+
+impl HdrCacheFit {
+    /// The kept windows fit in their share of the GPU's memory (assumed when it can't be read).
+    pub fn fits(&self) -> bool {
+        self.have.is_none_or(|have| self.need <= have / HDR_CACHE_SHARE)
+    }
+}
+
+/// [`HdrCacheFit`] for a screen of `screen_px` physical pixels and a GPU with `have` bytes: each
+/// zoomed pane keeps [`HDR_WINDOWS_KEPT`] windows the size of the screen with the margin a zoomed
+/// view renders around it, as `Rgba16Float`, up to [`HDR_WINDOWS_BYTES`].
+pub fn hdr_cache_fit(screen_px: [f32; 2], have: Option<u64>) -> HdrCacheFit {
+    use crate::region::{MAX_SPAN, SNAP};
+    let side = |v: f32| {
+        let px = if v.is_finite() { v.clamp(0.0, 1e6) as usize } else { 0 };
+        px.saturating_add(2 * SNAP).div_ceil(SNAP).saturating_mul(SNAP).min(MAX_SPAN)
+    };
+    let window = (side(screen_px[0]) as u64).saturating_mul(side(screen_px[1]) as u64).saturating_mul(8);
+    let per_pane = window.saturating_mul(HDR_WINDOWS_KEPT as u64).min(HDR_WINDOWS_BYTES as u64);
+    HdrCacheFit { need: per_pane.saturating_mul(HDR_ZOOMED_PANES), have }
+}
 
 /// A view's HDR texture ([`Slot::HdrView`]), drawn in place of (or over) its 8-bit render.
 #[derive(Clone, Copy, Debug)]
@@ -359,6 +395,10 @@ pub struct Renderer {
     pub hdr_view: HashMap<u8, HdrView>,
     /// A zoomed view's recent HDR windows besides the one shown, newest first.
     hdr_kept: HashMap<u8, Vec<HdrView>>,
+    /// How many recent windows a zoomed view keeps ([`Self::set_hdr_cache`]).
+    hdr_windows_kept: usize,
+    /// The zoomed panes' upload slots that hold a texture ([`Self::hdr_unused_slots`]).
+    hdr_ring_textures: std::collections::BTreeSet<u8>,
     hdr_geometry: HashMap<u8, HdrGeometry>,
     /// How long each view's latest HDR render took (ms): what a high quality drag times when the
     /// HDR texture is what shows it.
@@ -461,6 +501,8 @@ impl Renderer {
             hdr_headroom: None,
             hdr_view: HashMap::new(),
             hdr_kept: HashMap::new(),
+            hdr_windows_kept: HDR_WINDOWS_KEPT,
+            hdr_ring_textures: std::collections::BTreeSet::new(),
             hdr_geometry: HashMap::new(),
             hdr_view_ms: HashMap::new(),
             last_main_ms: 0.0,
@@ -658,6 +700,32 @@ impl Renderer {
         self.hdr_headroom = headroom;
     }
 
+    /// Whether zoomed views keep their recent HDR windows to show again (the setting, where the
+    /// GPU has room: [`hdr_cache_fit`]). Off, the ones kept go, and each pane holds only the window
+    /// shown and the one on its way.
+    pub fn set_hdr_cache(&mut self, on: bool) {
+        self.hdr_windows_kept = if on { HDR_WINDOWS_KEPT } else { 0 };
+        if !on {
+            self.hdr_kept.clear();
+        }
+    }
+
+    /// How many recent HDR windows a zoomed view keeps now.
+    pub fn hdr_windows_kept(&self) -> usize {
+        self.hdr_windows_kept
+    }
+
+    /// The zoomed panes' upload slots whose texture nothing shows or keeps any more: the host
+    /// frees them ([`crate::HdrOutput::release`]), and they are forgotten here.
+    pub fn hdr_unused_slots(&mut self) -> Vec<u8> {
+        let used: std::collections::BTreeSet<u8> = self.hdr_view.values().chain(self.hdr_kept.values().flatten()).map(|v| v.slot).collect();
+        let unused: Vec<u8> = self.hdr_ring_textures.difference(&used).copied().collect();
+        for s in &unused {
+            self.hdr_ring_textures.remove(s);
+        }
+        unused
+    }
+
     fn request_needed(&self, slot: Slot, key: u64, priority: u32) -> bool {
         // A matching old texture must not mask a different newer request (e.g. undo).
         if let Some(&(k, p)) = self.pending.get(&slot) {
@@ -759,6 +827,14 @@ impl Renderer {
             return view;
         };
         let Some(last) = base.checked_add(HDR_WINDOW_RING - 1) else { return view };
+        let slot = self.ring_slot(view, window, base, last);
+        if slot >= HDR_RING_SLOTS {
+            self.hdr_ring_textures.insert(slot);
+        }
+        slot
+    }
+
+    fn ring_slot(&mut self, view: u8, window: Option<lcc_pipeline::PixelWindow>, base: u8, last: u8) -> u8 {
         if let Some(shown) = self.hdr_view.get(&view).filter(|v| v.window == window && (base..=last).contains(&v.slot)) {
             return shown.slot;
         }
@@ -775,7 +851,8 @@ impl Renderer {
     /// the one it replaces (of the same photo) for going back to it.
     pub fn adopt_hdr(&mut self, view: u8, frame: HdrView) {
         let Some(shown) = self.hdr_view.insert(view, frame) else { return };
-        if view < HDR_ZOOMED || shown.photo != frame.photo || shown.slot == frame.slot || shown.key == frame.key {
+        let limit = self.hdr_windows_kept;
+        if view < HDR_ZOOMED || limit == 0 || shown.photo != frame.photo || shown.slot == frame.slot || shown.key == frame.key {
             return;
         }
         let kept = self.hdr_kept.entry(view).or_default();
@@ -786,7 +863,7 @@ impl Renderer {
             bytes = bytes.saturating_add(v.size[0].saturating_mul(v.size[1]).saturating_mul(8));
             bytes <= HDR_WINDOWS_BYTES
         });
-        kept.truncate(HDR_WINDOWS_KEPT);
+        kept.truncate(limit);
     }
 
     /// Request a render for `slot` (no-op if already current or pending at the same priority).
@@ -2180,6 +2257,58 @@ mod thumbnail_tests {
         let (slot, job) = work.borrow_mut().jobs.drain(..).find(|(s, _)| matches!(s, Slot::HdrView(_))).expect("the HDR window job");
         finish(&mut app, &work, &ctx, slot, job.run());
         assert!(matches!(hdr_window(&mut app, &c, &v, (8, 8)), HdrPane::Sdr), "a failed HDR window: the tiles");
+    }
+
+    // Given pans across a zoomed HDR pane, the textures of windows nothing shows or keeps any
+    // more are handed back to be freed: with the cache on no more than the window shown and the
+    // ones kept stay, with it off only the one shown
+    #[test]
+    fn zoomed_hdr_windows_nothing_keeps_are_freed() {
+        let view = HDR_ZOOMED + PANE_AFTER;
+        let at = |x| Some(lcc_pipeline::PixelWindow { x, y: 0, w: 64, h: 64 });
+        for cache in [true, false] {
+            let mut r = Renderer::default();
+            r.set_hdr_cache(cache);
+            let mut live = std::collections::BTreeSet::new();
+            for (i, x) in (0..30).map(|i| (i, i * 64)) {
+                let slot = r.hdr_upload_slot(view, at(x));
+                live.insert(slot);
+                r.adopt_hdr(
+                    view,
+                    HdrView { photo: PhotoId(1), key: i as u64, tex: egui::TextureId::User(u64::from(slot)), size: [64, 64], window: at(x), slot },
+                );
+                for freed in r.hdr_unused_slots() {
+                    assert_ne!(freed, r.hdr_view[&view].slot, "the window shown is never freed");
+                    live.remove(&freed);
+                }
+                let kept = r.hdr_kept.get(&view).map_or(0, Vec::len);
+                assert_eq!(live.len(), 1 + kept, "cache {cache}: a texture per window shown or kept, no more");
+            }
+            let most = if cache { 1 + HDR_WINDOWS_KEPT } else { 1 };
+            assert!(live.len() <= most, "cache {cache}: {} textures", live.len());
+            // a new photo: its frames go, and so do their textures
+            r.forget_all();
+            assert_eq!(r.hdr_unused_slots().len(), live.len());
+        }
+    }
+
+    // Given a GPU's memory and a screen, the recent zoomed HDR windows are offered only where
+    // they fit in their share of it; an unknown size doesn't block them, and nonsense sizes
+    // don't panic
+    #[test]
+    fn the_hdr_zoom_cache_needs_room_on_the_gpu() {
+        const GB: u64 = 1 << 30;
+        let uhd = [3840.0, 2160.0];
+        assert!(!hdr_cache_fit(uhd, Some(GB)).fits(), "1 GB on a 4K screen");
+        assert!(hdr_cache_fit(uhd, Some(8 * GB)).fits(), "8 GB on a 4K screen");
+        assert!(hdr_cache_fit(uhd, None).fits(), "unknown");
+        // a bigger screen needs more, up to the cap per pane
+        assert!(hdr_cache_fit([1920.0, 1080.0], None).need < hdr_cache_fit(uhd, None).need);
+        assert_eq!(hdr_cache_fit([1e9, 1e9], None).need, hdr_cache_fit([20_000.0, 20_000.0], None).need);
+        for bad in [[f32::NAN, 1.0], [f32::INFINITY, -5.0], [0.0, 0.0]] {
+            let fit = hdr_cache_fit(bad, Some(GB));
+            assert!(fit.need > 0 && fit.need <= hdr_cache_fit(uhd, None).need, "{bad:?}: {fit:?}");
+        }
     }
 
     #[test]

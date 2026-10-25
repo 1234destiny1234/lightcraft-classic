@@ -280,6 +280,8 @@ pub struct WindowHdr {
     levels: Option<Levels>,
     upload_headroom: Option<f32>,
     textures: std::collections::HashMap<u8, (wgpu::Texture, egui::TextureId, [usize; 2])>,
+    /// The adapter's memory once read (`lcc_gpumem`; the inner `None`: unknown).
+    gpu_memory: Option<Option<u64>>,
 }
 
 impl WindowHdr {
@@ -299,6 +301,7 @@ impl WindowHdr {
             levels: None,
             upload_headroom: None,
             textures: std::collections::HashMap::new(),
+            gpu_memory: None,
         }
     }
 
@@ -338,6 +341,20 @@ impl lcc_ui_egui::HdrOutput for WindowHdr {
     fn upload_texels(&mut self, slot: u8, width: usize, height: usize, texels: &[u16], headroom: f32) -> Option<Result<egui::TextureId, String>> {
         let n = width.checked_mul(height).and_then(|n| n.checked_mul(4));
         (headroom.to_bits() == self.encode_headroom().to_bits() && n == Some(texels.len())).then(|| self.write(slot, width, height, texels))
+    }
+
+    fn release(&mut self, slot: u8) {
+        if let Some((_, id, _)) = self.textures.remove(&slot) {
+            self.state.renderer.write().free_texture(&id);
+        }
+    }
+
+    fn gpu_memory(&mut self) -> Option<u64> {
+        *self.gpu_memory.get_or_insert_with(|| {
+            let bytes = lcc_gpumem::adapter_memory(&self.state.adapter);
+            log::info!("display: GPU memory {}", bytes.map_or("unknown".into(), |b| format!("{} MB", b >> 20)));
+            bytes
+        })
     }
 }
 
