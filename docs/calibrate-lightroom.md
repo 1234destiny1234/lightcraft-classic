@@ -3,13 +3,89 @@
 > **Last updated:** 2026-10-25
 
 The app renders most raws close to Lightroom, but not the same: its camera colour is estimated (from the camera's
-own JPEG, spectral data or DNG matrices), not matched. `<cli> calibrate-lightroom` closes that gap one camera model at
+own JPEG, spectral data or DNG matrices), not matched. `lightcraft-classic-cli calibrate-lightroom` closes that gap one camera model at
 a time. You run it on **your own raws** and **Lightroom's exports of the same photos**. It fits the camera's colour
 model and one look per Lightroom profile you exported, and writes **one small file of numbers** that you send to the
 project. Once it is added, every user of that camera gets the matched colour, and catalogues imported from Lightroom
 pick the matching look for each photo's profile.
 
-`<cli>` is the command-line tool shipped with every release (next to the app).
+`lightcraft-classic-cli` is the command-line tool shipped with every release (next to the app).
+
+## Running the command-line tool
+
+The desktop app doesn't take commands: the fit runs in **`lightcraft-classic-cli`**, the command-line tool every release ships
+next to it. The examples use release 26.43.7; use the version you downloaded. Each one ends with `--help`, which lists
+every subcommand: replace it with `calibrate-lightroom …` from the steps below. Folder names with spaces need quotes
+(`"My Photos"`).
+
+### Windows
+
+Open **PowerShell** (Start menu ▸ type *PowerShell*).
+
+- **Installer (`lightcraft-classic-26.43.7-windows-x64.msi`)**: the tool is installed next to the app, by default in
+  `C:\Program Files\Chromaforge`:
+
+  ```powershell
+  & "C:\Program Files\Chromaforge\lightcraft-classic-cli.exe" --help
+  ```
+
+  (If you chose another folder at install, use that one.)
+- **Portable (`lightcraft-classic-26.43.7-windows-x64-portable.zip`)**: unzip it (right-click ▸ *Extract All…*), then in
+  PowerShell go to that folder and run the tool from it:
+
+  ```powershell
+  cd "$HOME\Downloads\lightcraft-classic-26.43.7-windows-x64-portable"
+  .\lightcraft-classic-cli.exe --help
+  ```
+
+On ARM PCs the files say `arm64` instead of `x64`.
+
+### macOS
+
+The app's disk image holds only the app: download **`lightcraft-classic-cli-26.43.7-macos-universal.zip`** from the same
+release too (signed and notarized, for Apple silicon and Intel). Double-click it in Finder to unzip, then open
+**Terminal** (Applications ▸ Utilities) and run it from that folder:
+
+```sh
+cd ~/Downloads
+./lightcraft-classic-cli --help
+```
+
+To run it from anywhere, move it onto your PATH once: `sudo mv ~/Downloads/lightcraft-classic-cli /usr/local/bin/`.
+
+### Linux
+
+Open a terminal.
+
+- **Debian/Ubuntu (`.deb`) or Fedora/openSUSE (`.rpm`)**: the package installs the tool on your PATH:
+
+  ```sh
+  lightcraft-classic-cli --help
+  ```
+
+- **Tarball (`lightcraft-classic-26.43.7-linux-x86_64.tar.gz`)**: unpack it and run the tool from its `bin` folder:
+
+  ```sh
+  tar xf lightcraft-classic-26.43.7-linux-x86_64.tar.gz
+  ./lightcraft-classic-26.43.7-linux-x86_64/bin/lightcraft-classic-cli --help
+  ```
+
+- **AppImage**: starting the AppImage starts the app; the tool is inside it. Unpack it once and run the tool from the
+  unpacked folder:
+
+  ```sh
+  chmod +x lightcraft-classic-26.43.7-linux-x86_64.AppImage
+  ./lightcraft-classic-26.43.7-linux-x86_64.AppImage --appimage-extract
+  ./squashfs-root/usr/bin/lightcraft-classic-cli --help
+  ```
+
+- **Flatpak**: run the tool inside the app's sandbox, giving it your home folder (where the raws and exports are):
+
+  ```sh
+  flatpak run --filesystem=home --command=lightcraft-classic-cli com.emmertex.chromaforge --help
+  ```
+
+Every example below writes `lightcraft-classic-cli`: put the path or prefix you used here in front of it.
 
 ## What you need
 
@@ -23,7 +99,7 @@ pick the matching look for each photo's profile.
 1. **Write the baseline preset:**
 
    ```sh
-   <cli> calibrate-lightroom preset -o Baseline.xmp
+   lightcraft-classic-cli calibrate-lightroom preset -o Baseline.xmp
    ```
 
    It sets every Basic and Presence slider to 0, sharpening and noise reduction (colour too) to 0, turns lens
@@ -47,7 +123,7 @@ pick the matching look for each photo's profile.
 4. **Check the set** without fitting:
 
    ```sh
-   <cli> calibrate-lightroom fit --raws ~/Pictures/raws --exports exports --dry-run
+   lightcraft-classic-cli calibrate-lightroom fit --raws ~/Pictures/raws --exports exports --dry-run
    ```
 
    It prints how many raw ↔ export pairs it found, each file it skipped and why (a different camera, a crop, a
@@ -57,7 +133,7 @@ pick the matching look for each photo's profile.
 5. **Fit:**
 
    ```sh
-   <cli> calibrate-lightroom fit --raws ~/Pictures/raws --exports exports -o out --contributor "Your Name"
+   lightcraft-classic-cli calibrate-lightroom fit --raws ~/Pictures/raws --exports exports -o out --contributor "Your Name"
    ```
 
    Progress goes to the terminal; a fit takes a few minutes. It writes:
@@ -92,7 +168,7 @@ Adobe-converted DNGs and Adobe-rendered pixels never ship.
 ## For developers: adding a contribution
 
 ```sh
-<cli> calibrate-lightroom add path/to/<Make>_<Model>.json [--repo .] [--contributor "Name"]
+lightcraft-classic-cli calibrate-lightroom add path/to/<Make>_<Model>.json [--repo .] [--contributor "Name"]
 ```
 
 `add` parses and validates the file (format version, allow-listed fields, matrix and table bounds), optionally sets
@@ -101,10 +177,10 @@ replaces) its row in `assets/ATTRIBUTION.md`. Commit both, with the release note
 refused with the reason and nothing is written.
 
 Before committing, try a contribution in a debug build without adding it: point
-`<PREFIX>_CAMERA_CALIBRATIONS` at a folder holding the JSON and open that camera's raws. `<cli> calibrate-lightroom
+`LIGHTCRAFT_CLASSIC_CAMERA_CALIBRATIONS` at a folder holding the JSON and open that camera's raws. `lightcraft-classic-cli calibrate-lightroom
 list` prints the calibrations built into a binary, their looks (`cal:<id>`) and their held-out ΔE00.
 
-`<cli> calibrate-lightroom verify --catalog X.lrcat --exports DIR` (whole-pipeline error between the app's render of
+`lightcraft-classic-cli calibrate-lightroom verify --catalog X.lrcat --exports DIR` (whole-pipeline error between the app's render of
 an *edited* catalogue and its edited exports) is planned and not available yet.
 
 Sources: own design; DNG specification 1.7 chapter 6 (profile model); CIEDE2000 (Sharma, Wu, Dalal 2005).
