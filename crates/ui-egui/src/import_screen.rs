@@ -27,8 +27,8 @@ const HEADER_H: f32 = 56.0;
 const RAIL_WIDE: f32 = 200.0;
 const RAIL_NARROW: f32 = 60.0;
 const OPTIONS_W: f32 = 340.0;
-/// From this width the options sit beside the photos (else under them).
-const WIDE: f32 = 980.0;
+/// The photos' narrowest beside the options column (else the options go under them).
+const GRID_MIN: f32 = 280.0;
 /// From this width the rail shows the sources' names.
 const ROOMY: f32 = 640.0;
 const CELL: f32 = 116.0;
@@ -123,7 +123,7 @@ pub(crate) fn show(app: &mut LccApp, ctx: &egui::Context) {
         ui.painter().vline(rail.right(), body.y_range(), Stroke::new(1.0, t.divider));
         let rest = Rect::from_min_max(pos2(rail.right() + 1.0, body.top()), body.max);
         let empty = !d.immich && d.candidates.is_empty();
-        if rest.width() >= WIDE - RAIL_WIDE && !empty {
+        if rest.width() >= OPTIONS_W + GRID_MIN && !empty {
             let opts = Rect::from_min_max(pos2(rest.right() - OPTIONS_W, rest.top()), rest.max);
             ui.painter().vline(opts.left(), rest.y_range(), Stroke::new(1.0, t.divider));
             let mid = Rect::from_min_max(rest.min, pos2(opts.left() - 1.0, rest.bottom()));
@@ -575,21 +575,8 @@ fn options(app: &mut LccApp, ui: &mut egui::Ui, d: &mut ImportDialog) {
             }
         });
     });
-    if !app.session.metadata_presets.is_empty() {
-        form_row(ui, "Metadata", |ui| {
-            let cur = if d.metadata_preset.is_empty() { crate::i18n::tr("None").to_string() } else { d.metadata_preset.clone() };
-            crate::widgets::combo_box("import-metadata").selected_text(cur).show_ui(ui, |ui| {
-                if ui.selectable_label(d.metadata_preset.is_empty(), crate::i18n::tr("None")).clicked() {
-                    d.metadata_preset.clear();
-                }
-                for m in &app.session.metadata_presets {
-                    if ui.selectable_label(d.metadata_preset == m.name, &m.name).clicked() {
-                        d.metadata_preset = m.name.clone();
-                    }
-                }
-            });
-        });
-    }
+    // (always there: New Preset… makes one when there are none)
+    form_row(ui, "Metadata", |ui| crate::import::metadata_preset_picker(app, ui, d));
     form_row(ui, "Keywords", |ui| {
         let r = ui.add(egui::TextEdit::singleline(&mut d.keywords).hint_text(crate::i18n::tr("comma, separated")).desired_width(f32::INFINITY));
         register(ui.ctx(), "field:importKeywords", r.rect);
