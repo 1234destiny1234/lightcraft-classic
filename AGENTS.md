@@ -1,6 +1,6 @@
 # Instructions for agents
 
-The app is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`; merge procedure in `docs/upstream-merge.md`).
+The app is a clean-room, open-source, pure-Rust photo library + non-destructive raw developer targeting Adobe Lightroom parity (and beyond). Native on macOS, Windows, Linux; web via WASM. It is a fork of an upstream project (see `NOTICE`). Since 2026-10-25 the fork no longer merges upstream: upstream commits are reviewed weekly and the useful ones cherry-picked (`cargo xtask upstream-review`, procedure in `docs/upstream-merge.md`).
 
 ## The name lives in `brand.toml` only
 - The product name, binary names, app id, settings folder, env-var prefix, MCP server id, URL scheme and file
@@ -84,7 +84,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - **Release notes, one file per change:** a user-visible change adds `docs/whats-new/<YYYY-MM-DD>-<slug>.md` (one
   `### Title` and its bullets, for Help ▸ What's New) and, when the release's changelog should mention it,
   `docs/changelog/unreleased/<YYYY-MM-DD>-<slug>.md` (one `## Section` and its bullets); the READMEs there say how.
-  Never add to `docs/whats-new.md` (upstream's entries, changed only by upstream merges) or to a released
+  Never add to `docs/whats-new.md` (upstream's entries up to the last merge, now frozen) or to a released
   `docs/changelog/<version>.md`. `cargo xtask notes --check` (part of `ci`) checks every entry and fails when
   `docs/whats-new.md` changed outside an upstream merge.
 

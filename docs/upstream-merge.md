@@ -1,106 +1,83 @@
-# Merging upstream (LightCraft)
+# Upstream (LightCraft): review and port, no more merges
 
-This repository is a fork of LightCraft. The fork point is tagged `fork-base`, so
+This repository is a fork of LightCraft. **Since 2026-10-25 it no longer merges upstream.** The last merge
+(PR #486, 281 upstream commits, 88 conflicted files) showed where the cost is: the fork's UI (the Modern layout, the
+full-window Settings, Import and Export screens, the dialog cards) replaced upstream's, so every merge conflicts
+there and brings in upstream UI changes, tests and translations that have to be undone or rewritten. What upstream
+still offers that helps us is mostly in the engine, raw decoding, the pipeline, the GPU, the catalog and security
+fixes, and those port cleanly as single commits. So upstream is now **reviewed weekly and ported by hand**: we
+cherry-pick what helps and skip the rest.
 
-```sh
-git log --oneline fork-base..upstream/main
-```
-
-always lists what upstream has done since. Merge it in **weekly** at first (more often while the code bases are still
-close, since small merges are cheap and big ones are not).
+The fork point is tagged `fork-base`; the last merge is `9601cbbc6` (upstream commit `38f8d2508`). The last upstream
+commit reviewed since then is recorded in [`upstream-reviewed.txt`](../upstream-reviewed.txt).
 
 ## Remotes (one-time)
 
 ```sh
-git remote -v                    # upstream = the LightCraft repository, origin = this fork
-git remote add upstream ../lightcraft   # only if it is missing
+git remote -v                          # upstream = the LightCraft repository, origin = this fork
+git remote add upstream ../lightcraft  # only if it is missing
 ```
 
-## One-time setup
+## The weekly review
 
-```sh
-git config rerere.enabled true   # git records conflict resolutions and replays them in later merges
-```
+1. **List what is new.**
+   ```sh
+   cargo xtask upstream-review          # fetches upstream; writes target/upstream/upstream-review-YYYYMMDD.md
+   ```
+   Every upstream commit since the last review, oldest first, with the areas it touches (`crates/raw`,
+   `apps/app`, `docs`, …). Paths that are ours ([`upstream-owned.txt`](../upstream-owned.txt) → `[owned]`, which
+   includes `crates/ui-egui/` and `crates/catalog/`) are marked *(ours)*, and a commit that touches only those says so.
+2. **Decide per commit.** Port it when it helps the fork:
+   - **Port:** bug fixes, security fixes, crash fixes, raw / codec / camera support, pipeline and GPU fixes,
+     performance, catalog fixes (by hand: the catalog diverged), engine features we lack.
+   - **Usually skip:** UI reworks of things the fork redesigned (Settings, menus, dialogs, panels the Modern layout
+     replaced), label renames, upstream's own CI and packaging, its docs and What's New, features that conflict with
+     the fork's behaviour (e.g. the fork's drop rule: photo files at once, a folder opens the review).
+   - When unsure, ask whether a user of the fork would notice the difference. If not, skip it.
+3. **Port by cherry-pick**, one commit (or a small related group) at a time:
+   ```sh
+   git cherry-pick -x <hash>                            # -x records "(cherry picked from commit …)"
+   cargo xtask rename-crates --upstream --since HEAD~1  # map upstream crate names (lightcraft_x → lcc_x)
+   cargo xtask brand check                              # no upstream product name anywhere
+   ```
+   Resolve conflicts keeping the fork's behaviour, and fit the change to the fork's structure (an upstream fix to a
+   UI file usually has to be redone in our file by hand). A commit that won't cherry-pick cleanly is often easier to
+   port by reading `git show <hash>` and writing the change. Bring its tests along, adapted. A crate upstream
+   **added** is not known to `rename-crates`: rename its package to `lcc-<name>`, register it in
+   `xtask/src/layers.rs`, and run the command again.
+4. **What's New:** an upstream feature worth telling users about gets one of our entries (`docs/whats-new/` and,
+   if needed, `docs/changelog/unreleased/`), in our words. `docs/whats-new.md` (upstream's history up to the last
+   merge) stays as it is: `cargo xtask notes --check` fails if it changes.
+5. **Check and land** as any change: `cargo xtask ci --fast` plus the targeted tests, then a PR into `main`. Mention
+   the upstream commit(s) in the PR (the `cherry picked from` lines do this per commit).
+6. **Record the review** once every listed commit is ported or decided against:
+   ```sh
+   cargo xtask upstream-review --done <hash>   # the last upstream commit reviewed (the command prints it)
+   ```
+   Commit the updated `upstream-reviewed.txt` (with the ports, or on its own).
 
-## The commands
+## Sending fixes upstream
 
-Owned paths (where we diverge on purpose, `plan/upstream.md` → *What we own*) are listed in
-[`upstream-owned.txt`](../upstream-owned.txt), together with the regenerated files (`Cargo.lock`, the
-`docs/parity-checklist.md` summary, `*.md` rendered from `*.md.in`) and the paths exempt from the shared-code check.
+Upstream may still want our generic fixes. That is optional now and doesn't depend on merging:
 
-- **`cargo xtask upstream-merge [--ref upstream/main] [--no-ci]`** automates steps 1–3 below and checks step 4:
-  refuses on a dirty tree, fetches, creates `merge/upstream-YYYYMMDD` from the current HEAD, runs
-  `git merge --no-ff --no-commit` (with `merge.conflictStyle=zdiff3`), settles the conflict hunks where one side equals the base once crate names are mapped (`lightcraft_x` → `lcc_x`, `LightcraftApp` → `LccApp`, `lightcraft/heif` → `lcc-app/heif`), then puts back our version of every owned path (conflicted ones too; files
-  upstream added under an owned path are dropped). Git's `merge=ours` attribute is not enough: it only applies when
-  both sides changed a file. Upstream commits that touched owned paths go into `target/upstream/review-YYYYMMDD.md`
-  (hash, subject, files with line counts): they were set aside, review them for anything worth porting by hand.
-  It then runs `rename-crates --upstream --since HEAD`, prints `brand check` findings, lists remaining conflicts
-  (exit non-zero), and otherwise leaves the merge staged but uncommitted and runs `cargo xtask ci`. Continue at
-  step 4.
 - **`cargo xtask upstream-pr <branch> <commit>...`** creates `<branch>` off `upstream/main` and replays the commits
   (`git am --3way`) with our crate names mapped back to upstream's (`lcc-x` → upstream's prefix, `-p lcc-app` →
-  upstream's app package), in the patches and the touched files. It never pushes: it prints the push/PR steps. Our
-  copy of the commit then carries `UPSTREAM-PR: <link>` in its message.
-  A What's New entry in those commits is a file in `docs/whats-new/`, which upstream doesn't read: on the upstream
-  branch, move its lines into upstream's `docs/whats-new.md` by hand. When that upstream PR comes back in a merge,
-  delete our entry file, or Help ▸ What's New shows it twice.
-- **`cargo xtask shared-check [--strict]`** (a warning step in `cargo xtask ci`) lists commits since the last
-  upstream merge (else the `fork-base` tag) that change shared paths without an `UPSTREAM-PR:` line. It warns and
-  exits 0 unless `--strict`; without the `upstream` remote or the tag it warns and skips.
-
-## The routine by hand (what `upstream-merge` automates)
-
-1. **Fetch.**
-   ```sh
-   git fetch upstream
-   git log --oneline fork-base..upstream/main | wc -l   # how much is new
-   ```
-2. **Merge on a branch** named for the day:
-   ```sh
-   git switch -c merge/upstream-$(date +%Y%m%d) main
-   git merge --no-ff upstream/main
-   ```
-   Git's rename detection maps upstream's `apps/lightcraft`, `apps/lightcraft-cli` and `apps/lightcraft-web` onto
-   `apps/app`, `apps/cli` and `apps/web`. Resolve content conflicts as usual, but **never by hand-editing names**
-   (step 3 does that).
-3. **Map upstream crate names to ours.** Upstream calls its crates `lightcraft-*` (paths `lightcraft_*`); ours use
-   the internal prefix (`lcc-*`). Rewrite every incoming reference in the files the merge touched:
-   ```sh
-   cargo xtask rename-crates --upstream            # files changed since fork-base, plus conflicted files
-   cargo xtask rename-crates --upstream --since HEAD~1   # narrower: only what this merge brought
-   ```
-   Only names of crates this workspace has are rewritten (`lightcraft-raw` → `lcc-raw`, `lightcraft_engine::` →
-   `lcc_engine::`, `-p lightcraft` → `-p lcc-app`). A crate upstream **added** is not known yet: rename its package
-   to `lcc-<name>` in its `Cargo.toml`, register it in `xtask/src/layers.rs`, and run the command again.
-4. **Remove upstream's product name** everywhere else. Upstream writes "LightCraft", `lightcraft`, `LIGHTCRAFT_*`
-   and its app id into code, docs and packaging; here every name comes from `brand.toml`:
-   ```sh
-   cargo xtask brand check
-   ```
-   lists each `file:line`. Fix them with the brand constants (`lcc_brand::DISPLAY_NAME`, `lcc_brand::env("LOG")`,
-   `lcc_brand::fill("… {app} …")`), `{{app}}`/`{{binary}}` placeholders in `*.md.in` docs and `packaging/**/*.in`
-   templates, or neutral wording ("the app"). New legacy handling (code that must name an old identity to migrate
-   from it) goes in `LEGACY_FILES` in `xtask/src/brand.rs`, and the old values in `[legacy]` of `brand.toml`.
-5. **Regenerate and verify.**
-   ```sh
-   cargo xtask docs          # re-render *.md.in after upstream doc changes
-   cargo xtask ci            # fmt, brand check, docs --check, notes --check, clippy, tests, parity, layers, assets, deny, wasm
-   cargo xtask brand test    # optional locally; CI runs it: the throw-away brand shows nowhere else
-   ```
-   `docs/whats-new.md` holds upstream's What's New only (ours are files in `docs/whats-new/`): take upstream's side
-   of any conflict there, then record the result with `cargo xtask notes --upstream` (`upstream-merge` does this
-   itself when the file merged cleanly); `notes --check` in `ci` fails until it is recorded. Product-name fixes
-   to that file change it again: run `cargo xtask notes --upstream` once more after them.
-6. **Commit, review, merge.** Commit the merge (one commit for the merge itself, separate commits for the
-   rename and brand fixes keep the history readable), open a PR from `merge/upstream-YYYYMMDD`, and merge it into
-   `main` once CI is green.
+  upstream's app package). It never pushes: it prints the push/PR steps. Our copy of the commit then carries
+  `UPSTREAM-PR: <link>` in its message. A What's New entry in those commits is a file in `docs/whats-new/`, which
+  upstream doesn't read: on the upstream branch, move its lines into upstream's `docs/whats-new.md` by hand.
+- **`cargo xtask shared-check [--strict]`** lists commits since the last merge that change shared paths without an
+  `UPSTREAM-PR:` line. It is no longer a `ci` step (most fork changes now stay in the fork); run it when choosing
+  what to offer upstream. [`upstream-candidates.md`](upstream-candidates.md) lists earlier candidates.
 
 ## Notes
 
-- Upstream renames are resolved by the brand tooling (`rename-crates --upstream`, `brand check`), never by
+- Upstream names are mapped by the brand tooling (`rename-crates --upstream`, `brand check`), never by
   hand-editing names; if a pattern keeps coming back, teach the tooling instead.
 - Licence: upstream code arrives under MIT OR Apache-2.0; we use it under MIT and keep upstream's copyright lines in
   `LICENSE`/`NOTICE`. `crates/segment` and `crates/fetch` stay Apache-2.0. `cargo deny check licenses` (part of
-  `cargo xtask ci`) catches a dependency upstream adds under a licence `deny.toml` does not allow.
+  `cargo xtask ci`) catches a dependency a port brings in under a licence `deny.toml` does not allow.
 - To change our own crate prefix (an internal codename users never see), run `cargo xtask rename-crates <prefix>` in
   a commit of its own, then re-check that `--upstream` still maps cleanly.
+- **The old merge routine** (`cargo xtask upstream-merge [--ref REF] [--no-ci]`: a `merge/upstream-YYYYMMDD` branch,
+  owned paths kept as ours, a list of what was set aside, crate names mapped, `ci`) still works, for an exceptional
+  catch-up only. Expect most conflicts in `crates/ui-egui/` and upstream's UI tests; see PR #486 for how that went.
