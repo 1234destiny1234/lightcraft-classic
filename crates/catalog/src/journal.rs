@@ -603,7 +603,14 @@ impl Journal {
             seq = seq
                 .checked_add(1)
                 .ok_or_else(|| CatalogError::Corrupt("the catalog's op sequence is exhausted (restore it from a backup)".into()))?;
-            buf.push_str(&encode_record(seq, op));
+            let record = encode_record(seq, op);
+            // JSON has no NaN or infinity: serde writes them as null, which passes the CRC and then fails
+            // to parse, refusing the library as "newer" on the next open. Such an op is refused here
+            // instead, before the log has it (issue #2140).
+            if decode_record(&record).is_none() {
+                return Err(CatalogError::Invalid("an edit holds a value that can't be saved (not a finite number)".into()));
+            }
+            buf.push_str(&record);
             buf.push('\n');
         }
         if self.tail_dirty {
