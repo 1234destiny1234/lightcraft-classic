@@ -4531,6 +4531,7 @@ dependencies = [
  "lcc-color",
  "lcc-raw",
  "serde",
+ "serde_json",
  "toml",
 ]
 
@@ -4646,6 +4647,27 @@ dependencies = [
  "lcc-geom",
  "proptest",
  "serde",
+]
+
+[[package]]
+name = "lcc-colourfit"
+version = "26.43.6"
+dependencies = [
+ "lcc-brand",
+ "lcc-camdb",
+ "lcc-codecs",
+ "lcc-color",
+ "lcc-develop",
+ "lcc-engine",
+ "lcc-meta",
+ "lcc-pipeline",
+ "lcc-raster",
+ "lcc-raw",
+ "lcc-scenes",
+ "lcc-testkit",
+ "rayon",
+ "serde",
+ "serde_json",
 ]
 
 [[package]]
