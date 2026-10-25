@@ -800,14 +800,13 @@ fn current_histogram(app: &LccApp, ctx: &egui::Context, id: PhotoId, hdr_edit: b
     live.or_else(|| preview_histogram(app, id))
 }
 
-pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
-    let t = Tokens::get(ui.ctx());
-    let w = ui.available_width();
+/// What a histogram of photo `id` drawn in `mode` shows this frame (the panel's first plot, the
+/// Modern layout's floating one), asking for the renders it needs.
+pub(crate) fn shown_histogram(app: &mut LccApp, ctx: &egui::Context, id: PhotoId, mode: HistogramMode) -> Option<Histogram> {
     let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
     // a drag of an HDR edit: its drafts have no HDR histogram, so a small render beside them
     // gives one (at its own pace: the drafts don't wait for it)
-    let interacting = app.session.interaction.is_some();
-    if interacting && hdr_edit {
+    if app.session.interaction.is_some() && hdr_edit {
         let edge = lcc_pipeline::HDR_HISTOGRAM_DRAG_EDGE;
         if let Some(job) = app.session.render_job(id, edge, edge, false, app.ui.right != RightPanel::Crop)
             && app.renderer.live_hdr_histogram.as_ref().is_none_or(|l| l.1 != job.key)
@@ -815,10 +814,17 @@ pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
             app.renderer.request(Slot::HdrHistogram, job, 95);
         }
     }
-    let mode = super::histogram::mode_of(app);
-    let hist = current_histogram(app, ui.ctx(), id, hdr_edit);
+    let hist = current_histogram(app, ctx, id, hdr_edit);
     let hist = panel_render_histogram(app, id, mode, hist);
-    let hist = steady_hdr_histogram(ui.ctx(), id, hdr_edit, hist);
+    steady_hdr_histogram(ctx, id, hdr_edit, hist)
+}
+
+pub(crate) fn histogram(app: &mut LccApp, ui: &mut egui::Ui, id: PhotoId) {
+    let t = Tokens::get(ui.ctx());
+    let w = ui.available_width();
+    let hdr_edit = app.session.develop_of(id).is_some_and(|d| d.hdr.enabled);
+    let mode = super::histogram::mode_of(app);
+    let hist = shown_histogram(app, ui.ctx(), id, mode);
     let scale = super::histogram::scale_of(app);
     // an HDR edit's 1D histogram (`pipeline::hdr_histogram`) gets a colour bar and an SDR / HDR
     // label row under the plot; a 2D scope gets a taller plot instead so its disc has room
