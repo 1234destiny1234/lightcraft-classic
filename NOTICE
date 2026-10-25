@@ -19,6 +19,11 @@ Third-party material
 This product bundles third-party material under its own licenses, listed below. The per-file
 list (author, source, license) is in assets/ATTRIBUTION.md.
 
+Some raw decoders in crates/raw were translated from, or written with reference to, functions of
+dcraw.c (https://www.dechifro.org/dcraw/), Copyright 1997-2018 by Dave Coffin, outside its
+RESTRICTED (Foveon) block, which its header releases "free for all uses". Each such module names
+the dcraw revision and functions in its documentation.
+
 vendor/egui-wgpu is egui-wgpu 0.36.2 (https://github.com/emilk/egui), Copyright (c) 2018-2021
 Emil Ernerfeldt and the egui contributors, licensed under the MIT License or the Apache License,
 Version 2.0 (vendor/egui-wgpu/LICENSE-MIT, vendor/egui-wgpu/LICENSE-APACHE), with local changes

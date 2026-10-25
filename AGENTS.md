@@ -73,7 +73,7 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
   integration tests, examples and benches. New crates start with the attribute.
 
 ## Non-negotiables
-- **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw-derived GPL code…).
+- **Clean-room.** Never read/disassemble anything inside Adobe app bundles (names/listings only). Never copy Adobe icons, presets, profiles (DCP), lens profiles (LCP), camera matrices, fonts. Observation of the installed Lightroom is read-only (it syncs the user's personal library: never import/edit/rate/delete there). Never copy GPL/LGPL/AGPL code (darktable, RawTherapee, ART, LibRaw, rawspeed, rawloader, rawler, lensfun, dcraw's RESTRICTED Foveon code, GPL descendants of dcraw…). dcraw's other functions fall under the dcraw reference policy below.
 - **Pure Rust** in the product. No C/C++ dependencies.
 - **Layering** (`plan/architecture.md` §3, enforced by `cargo xtask layers`): nothing below L5 depends on egui/eframe/winit/rfd.
 - **Everything is a command** (`crates/engine`): id, label, menu path, shortcut, params, enabled(), run(). UI, CLI, control channel and MCP all dispatch by id. Every slider is a `develop` control spec.
@@ -93,6 +93,21 @@ of it. Full standard: `../craftrules/standards/never-crash.md`
 - Their source trees in `../darktable` and `../ansel` are **off-limits to agents**: never open, grep, read or copy
   them. The same goes for GPL data tables wherever they appear: `noiseprofiles.json`, `wb_presets.json`,
   `colormatrices.c`, basecurves.
+- **dcraw reference policy** (2026-10-24). Dave Coffin's `dcraw.c` may be read, and its raw-decoding
+  functions translated, **except** the block between `/* RESTRICTED code starts here */` and `/* RESTRICTED code ends
+  here */` (the `foveon_*` functions). The file's header releases everything outside that block "free for all uses",
+  which fits the MIT workspace; the restricted block is GPL-only and stays off-limits, so X3F stays clean-room.
+  - Only dcraw's own file, from dcraw's site or a verbatim mirror of it; name its `$Revision`. Never LibRaw
+    (LGPL-2.1 / CDDL), RawTherapee's `dcraw.cc` (GPL), UFRaw or any other dcraw descendant, even where a function
+    looks the same.
+  - Decoding code only, never its camera data: `adobe_coeff` holds matrices and levels from Adobe's converter (see
+    the Adobe rules and `crates/camdb`).
+  - Say what was done. The module docs and the commit's **Sources:** line name the dcraw revision and function(s)
+    and say "translated from" or "read as a reference"; never "no code copied" when the structure follows dcraw.
+    `NOTICE` credits dcraw. Check every layout on CC0 samples as for any other decoder.
+  - Every other decoder source stays unread: rawspeed, rawloader, rawler / dnglab, LibRaw, darktable, RawTherapee,
+    ART. dcraw's last revision (1.478, 2018) predates CR3, Nikon HE and ARQ; those stay clean-room.
+  - Upstream doesn't share this policy: decoders built on dcraw are fork-only and are never offered upstream.
 - Camera matrices are **never harvested from Adobe-converted DNGs**: check the DNG's `Software` tag (Adobe DNG
   Converter, Lightroom, Camera Raw) and reject those. Camera-native DNGs (written by the camera itself) are fine.
 - **Black-box fits to Lightroom output images may ship** (maintainer decision 2026-10-25): a contributor runs
