@@ -15,11 +15,13 @@
 //!    toward the shared one when few low-CCT photos back it. Refined for `rounds` rounds on residuals.
 //! 5. Every other look (exports with another `crs:CameraProfile`): its own tone curve and a look table on top of the
 //!    base camera model.
-//! 6. Gates: held-out ΔE00 median and p95 must beat the colour the app gives without the calibration.
-//!
-//! The closed loop runs on this analytic model of the decode (`model`) with the pipeline rendered as a LUT; the real
-//! decode of the raws is not re-run because the samples don't carry their positions in the photo.
-use crate::dataset::PhotoSamples;
+//! 6. Closed loop through the real decode ([`real`]): the candidate is installed as an imported profile, the training
+//!    raws are rendered at a small size and read at the samples' positions, and the gap between the real render and
+//!    the analytic model (`model` + the pipeline LUT) is folded into the targets; tone curves and tables are refitted
+//!    on them for [`LOOP_ROUNDS`] rounds (a round that makes the real training error worse is undone).
+//! 7. Gates: held-out ΔE00 median and p95, from real renders (the app's own colour `lc` before, the candidate after),
+//!    must beat the app's current colour. When a raw can't be rendered, the analytic numbers stand in, with a note.
+use crate::dataset::{DngMatrices, PhotoSamples};
 use crate::deltae;
 use crate::{Error, Result};
 use lcc_camdb::calibration::{Calibration, CameraModel, CctBin, Evidence, LICENCE, Look, LookEvidence, METHOD, VERSION};
@@ -29,6 +31,7 @@ use lcc_raw::profile::ToneCurve;
 mod linalg;
 mod model;
 mod pipe;
+mod real;
 mod table;
 
 use model::{LookModel, Model, PhotoDecode};
@@ -48,6 +51,8 @@ const XY_A: Xy = Xy::new(0.44757, 0.40745);
 const LM_SAMPLES: usize = 3000;
 /// Samples a table round uses.
 const TABLE_SAMPLES: usize = 40_000;
+/// Closed-loop rounds through the real decode.
+const LOOP_ROUNDS: usize = 2;
 
 /// Calibration-1 (StdA) weight of a white of temperature `t` (inverse-CCT interpolation, DNG chapter 6).
 fn g_of_temp(t: f64) -> f64 {
@@ -99,28 +104,36 @@ struct Prior {
     fm_target: [Mat3; 2],
 }
 
-fn prior(make: &str, model_name: &str) -> Prior {
-    let fallback = SRGB.from_xyz();
-    let entry = lcc_camdb::find(Some(make), model_name);
-    let (cm, fm) = match &entry {
-        Some(e) => {
-            let temp = |i: usize| lcc_raw::color::illuminant_temperature(e.illuminants[i]).unwrap_or(5000.0);
-            let ordered = |pair: &[Option<Mat3>; 2]| -> Option<[Mat3; 2]> {
-                match pair {
-                    [Some(a), Some(b)] => Some(if temp(0) <= temp(1) { [*a, *b] } else { [*b, *a] }),
-                    [Some(a), None] | [None, Some(a)] => Some([*a, *a]),
-                    [None, None] => None,
-                }
-            };
-            let cm = ordered(&e.color_matrix).filter(|m| m.iter().all(matrix_ok));
-            let fm = match &e.forward_matrix {
-                [Some(_), Some(_)] => ordered(&e.forward_matrix).filter(|m| m.iter().all(matrix_ok)),
-                _ => None,
-            };
-            (cm.unwrap_or([fallback, fallback]), if cm.is_some() { fm } else { None })
+/// Colour (and forward) matrices ordered StdA-like first, from a file's or the database's tags; `None` when the colour
+/// matrices are missing or unusable.
+fn ordered_tags(illuminants: [u16; 2], cm: &[Option<Mat3>; 2], fm: &[Option<Mat3>; 2]) -> Option<([Mat3; 2], Option<[Mat3; 2]>)> {
+    let temp = |i: usize| lcc_raw::color::illuminant_temperature(illuminants[i]).unwrap_or(5000.0);
+    let ordered = |pair: &[Option<Mat3>; 2]| -> Option<[Mat3; 2]> {
+        match pair {
+            [Some(a), Some(b)] => Some(if temp(0) <= temp(1) { [*a, *b] } else { [*b, *a] }),
+            [Some(a), None] | [None, Some(a)] => Some([*a, *a]),
+            [None, None] => None,
         }
-        None => ([fallback, fallback], None),
     };
+    let cm = ordered(cm).filter(|m| m.iter().all(matrix_ok))?;
+    let fm = match fm {
+        [Some(_), Some(_)] => ordered(fm).filter(|m| m.iter().all(matrix_ok)),
+        _ => None,
+    };
+    Some((cm, fm))
+}
+
+/// The prior: the raw's own matrices when it has them, else the camera database's, else a camera that sees like
+/// linear sRGB.
+fn prior(make: &str, model_name: &str, dng: Option<&DngMatrices>) -> Prior {
+    let fallback = SRGB.from_xyz();
+    let own = dng.and_then(|d| ordered_tags(d.illuminant, &d.color_matrix, &d.forward_matrix));
+    let (cm, fm) = own
+        .or_else(|| {
+            let e = lcc_camdb::find(Some(make), model_name)?;
+            ordered_tags(e.illuminants, &e.color_matrix, &e.forward_matrix)
+        })
+        .unwrap_or(([fallback, fallback], None));
     let derived = [derived_fm(&cm[0], XY_A), derived_fm(&cm[1], D65)];
     let srgb_fm = lcc_color::bradford(D65, D50).mul(&SRGB.to_xyz());
     let fm_target = fm.unwrap_or([derived[0].unwrap_or(srgb_fm), derived[1].unwrap_or(srgb_fm)]);
@@ -183,6 +196,8 @@ struct Pair {
     xyz: [f64; 3],
     lab: [f64; 3],
     w: f64,
+    /// The sample's position in the developed frame (normalised).
+    pos: [f32; 2],
 }
 
 /// The usable pairs of `photos`, at most `cap` (evenly strided), each with its photo's index.
@@ -207,7 +222,7 @@ fn pairs(photos: &[&PhotoSamples], cap: usize) -> Vec<Pair> {
                 && s.weight.is_finite()
                 && s.weight > 0.0;
             if ok {
-                out.push(Pair { photo: i, camera: s.camera, xyz, lab: deltae::lab(xyz), w: f64::from(s.weight).min(1e3) });
+                out.push(Pair { photo: i, camera: s.camera, xyz, lab: deltae::lab(xyz), w: f64::from(s.weight).min(1e3), pos: s.pos });
             }
         }
     }
@@ -432,6 +447,7 @@ fn table_round(model: &mut Model, look: &mut LookModel, which: Which, photos: &[
 }
 
 /// One look's fitted parts.
+#[derive(Clone)]
 struct FittedLook {
     name: String,
     look: LookModel,
@@ -473,7 +489,7 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
     }
 
     // 1. white points
-    let prior = prior(&make, &model_name);
+    let prior = prior(&make, &model_name, train.iter().find_map(|p| p.dng.as_ref()));
     let (cm, white_points) = fit_white(&train, &prior.cm);
     let mut model = Model { cm, fm: Some(prior.fm_target), hsm: None };
 
@@ -527,7 +543,13 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
         looks.insert(0, l);
     }
 
-    // 6. evidence and gates
+    // 6. closed loop through the real decode
+    let prior_fm = prior.fm_target;
+    let who = Who { make: &make, model: &model_name, contributor: opts.contributor.as_deref() };
+    closed_loop(&mut model, &mut looks, &train, &base, &who, prior_fm);
+
+    // 7. evidence and gates
+    let candidate = assemble(&who, &model, &looks, prior_fm, Evidence::default());
     let before_model = Model { cm: prior.cm, fm: prior.fm, hsm: None };
     let before_lut = pipe::Lut::build(None)?;
     let mut look_evidence = Vec::new();
@@ -537,8 +559,28 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
         let (held, trained) = (of_look(true), of_look(false));
         let set = if held.is_empty() { &trained } else { &held };
         let ps = pairs(set, usize::MAX);
-        let before = errors(&before_model, &LookModel::default(), &before_lut, set, &ps);
-        let after = errors(&model, &l.look, &l.lut, set, &ps);
+        let real = candidate
+            .looks
+            .iter()
+            .find(|c| c.name == l.name)
+            .ok_or_else(|| Error("look missing from the candidate".into()))
+            .and_then(|cl| Ok((real_outputs(set, &ps, None)?, real_outputs(set, &ps, Some(candidate.look_dcp(cl)))?)));
+        let (mut before, mut after) = (Vec::new(), Vec::new());
+        match real {
+            Ok((rb, ra)) => {
+                for ((s, b), a) in ps.iter().zip(&rb).zip(&ra) {
+                    if let (Some(b), Some(a)) = (b, a) {
+                        before.push(deltae::de2000(deltae::lab(*b), s.lab));
+                        after.push(deltae::de2000(deltae::lab(*a), s.lab));
+                    }
+                }
+            }
+            Err(e) => eprintln!("note: {}: ΔE00 from the analytic model, a raw could not be rendered ({e})", l.name),
+        }
+        if before.is_empty() {
+            before = errors(&before_model, &LookModel::default(), &before_lut, set, &ps);
+            after = errors(&model, &l.look, &l.lut, set, &ps);
+        }
         let (b, a) = (deltae::summary(&before), deltae::summary(&after));
         if !held.is_empty() {
             gated += 1;
@@ -565,30 +607,146 @@ pub fn fit(photos: &[PhotoSamples], opts: &FitOptions) -> Result<Calibration> {
         white_points,
         looks: look_evidence,
     };
-    let hsm = model.hsm.clone();
-    let cal = Calibration {
+    let cal = assemble(&who, &model, &looks, prior_fm, evidence);
+    cal.validate().map_err(|e| Error(format!("the fitted calibration is not valid: {e}")))?;
+    Ok(cal)
+}
+
+/// Who the calibration is for and by.
+struct Who<'a> {
+    make: &'a str,
+    model: &'a str,
+    contributor: Option<&'a str>,
+}
+
+/// The calibration file of a fitted model and looks.
+fn assemble(who: &Who, model: &Model, looks: &[FittedLook], prior_fm: [Mat3; 2], evidence: Evidence) -> Calibration {
+    Calibration {
         version: VERSION,
-        make,
-        model: model_name,
+        make: who.make.to_string(),
+        model: who.model.to_string(),
         aliases: Vec::new(),
         method: METHOD.into(),
         tool_version: env!("CARGO_PKG_VERSION").into(),
-        contributor: opts.contributor.as_ref().map(|c| c.trim().to_string()).filter(|c| !c.is_empty()),
+        contributor: who.contributor.map(|c| c.trim().to_string()).filter(|c| !c.is_empty()),
         licence: LICENCE.into(),
-        camera: CameraModel { illuminants: [17, 21], color_matrix: model.cm, forward_matrix: model.fm.unwrap_or(prior.fm_target), hue_sat_map: hsm },
+        camera: CameraModel { illuminants: [17, 21], color_matrix: model.cm, forward_matrix: model.fm.unwrap_or(prior_fm), hue_sat_map: model.hsm.clone() },
         looks: looks
             .iter()
-            .map(|l| Look {
-                name: l.name.clone(),
-                baseline_exposure_offset: l.look.offset,
-                look_table: l.look.table.clone(),
-                tone_curve: l.tone.clone(),
-            })
+            .map(|l| Look { name: l.name.clone(), baseline_exposure_offset: l.look.offset, look_table: l.look.table.clone(), tone_curve: l.tone.clone() })
             .collect(),
         evidence,
+    }
+}
+
+/// Each pair's colour in a real render of its raw: with the app's own colour (`candidate` `None`) or with `candidate`
+/// installed as an imported profile. `None` where the position falls off the render.
+fn real_outputs(set: &[&PhotoSamples], pairs: &[Pair], candidate: Option<lcc_raw::dcp::Dcp>) -> Result<Vec<Option<[f64; 3]>>> {
+    let mut positions: Vec<Vec<[f32; 2]>> = vec![Vec::new(); set.len()];
+    let mut slot: Vec<Option<(usize, usize)>> = Vec::with_capacity(pairs.len());
+    for s in pairs {
+        slot.push(positions.get_mut(s.photo).map(|v| {
+            v.push(s.pos);
+            (s.photo, v.len() - 1)
+        }));
+    }
+    let mut job_of: Vec<Option<usize>> = vec![None; set.len()];
+    let mut jobs: Vec<(&std::path::Path, Vec<[f32; 2]>)> = Vec::new();
+    for (i, (p, pos)) in set.iter().zip(positions).enumerate() {
+        if !pos.is_empty()
+            && let Some(j) = job_of.get_mut(i)
+        {
+            *j = Some(jobs.len());
+            jobs.push((p.raw_path.as_path(), pos));
+        }
+    }
+    let got = match candidate {
+        Some(d) => real::with_candidate(d, || real::read_back(&jobs, real::CANDIDATE))?,
+        None => real::read_back(&jobs, "lc")?,
     };
-    cal.validate().map_err(|e| Error(format!("the fitted calibration is not valid: {e}")))?;
-    Ok(cal)
+    Ok(slot
+        .iter()
+        .map(|s| {
+            let (photo, k) = (*s)?;
+            let j = (*job_of.get(photo)?)?;
+            got.get(j)?.get(k).copied().flatten()
+        })
+        .collect())
+}
+
+/// Step 6: render the training raws with the candidate, fold the gap between the real render and the analytic model
+/// into the targets and refit tone curves and tables; a round that makes the real training error worse is undone.
+/// A raw that can't be rendered stops the loop (the analytic fit stands, with a note).
+fn closed_loop(model: &mut Model, looks: &mut [FittedLook], train: &[&PhotoSamples], base: &str, who: &Who, prior_fm: [Mat3; 2]) {
+    let no_look = LookModel::default();
+    let mut best: Option<(f64, Model, Vec<FittedLook>)> = None;
+    for round in 0..=LOOP_ROUNDS {
+        let cal = assemble(who, model, looks, prior_fm, Evidence::default());
+        let mut errs = Vec::new();
+        let mut refits: Vec<(usize, Vec<&PhotoSamples>, Vec<Pair>)> = Vec::new();
+        for (li, l) in looks.iter().enumerate() {
+            let set: Vec<&PhotoSamples> = train.iter().copied().filter(|p| p.look.trim() == l.name).collect();
+            let lp = pairs(&set, TABLE_SAMPLES);
+            let Some(cl) = cal.looks.iter().find(|c| c.name == l.name) else { continue };
+            let real = match real_outputs(&set, &lp, Some(cal.look_dcp(cl))) {
+                Ok(r) => r,
+                Err(e) => {
+                    eprintln!("note: closed loop through the real decode skipped, a raw could not be rendered ({e}); the analytic fit stands");
+                    if let Some((_, m, l)) = best {
+                        *model = m;
+                        looks.clone_from_slice(&l);
+                    }
+                    return;
+                }
+            };
+            let dec = decodes(model, &l.look, &set);
+            let mut adj = Vec::with_capacity(lp.len());
+            for (s, r) in lp.iter().zip(&real) {
+                let (Some(r), Some(Some(d))) = (r, dec.get(s.photo)) else { continue };
+                errs.push(deltae::de2000(deltae::lab(*r), s.lab));
+                let pred = l.lut.eval(d.scene(s.camera));
+                let xyz: [f64; 3] = std::array::from_fn(|i| (s.xyz[i] + pred[i] - r[i]).clamp(0.0, 2.0));
+                if xyz.iter().all(|v| v.is_finite()) && xyz[1] > 1e-4 {
+                    adj.push(Pair { xyz, lab: deltae::lab(xyz), ..*s });
+                }
+            }
+            refits.push((li, set, adj));
+        }
+        let median = deltae::median(&errs);
+        if errs.is_empty() || !median.is_finite() {
+            return;
+        }
+        eprintln!("closed loop round {round}: real-render training ΔE00 median {median:.2}");
+        if let Some((b, m, l)) = &best
+            && median >= *b
+        {
+            *model = m.clone();
+            looks.clone_from_slice(l);
+            return;
+        }
+        best = Some((median, model.clone(), looks.to_vec()));
+        if round == LOOP_ROUNDS {
+            return;
+        }
+        // the base look first: its hue/saturation map is shared by the others
+        refits.sort_by_key(|(li, _, _)| looks.get(*li).is_none_or(|l| l.name != base));
+        for (li, set, adj) in refits {
+            if adj.len() < 50 {
+                continue;
+            }
+            let Some(l) = looks.get_mut(li) else { continue };
+            let Ok(tone) = fit_tone(&tone_pairs(model, &no_look, &set, &adj)) else { continue };
+            let Ok(lut) = lut_for(&tone) else { continue };
+            l.tone = tone;
+            l.lut = lut;
+            let FittedLook { look, lut, name, .. } = l;
+            if name == base {
+                table_round(model, look, Which::HueSat, &set, &adj, lut);
+            } else {
+                table_round(&mut model.clone(), look, Which::Look, &set, &adj, lut);
+            }
+        }
+    }
 }
 
 fn count_photos(set: &[&PhotoSamples]) -> u32 {

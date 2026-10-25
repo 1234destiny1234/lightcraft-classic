@@ -39,6 +39,19 @@ pub struct Sample {
     pub lightroom_xyz: [f32; 3],
     /// Weight (bin balancing).
     pub weight: f32,
+    /// Where the sample sits: normalised `[x, y]` (0..1, cell centre) in our developed frame (default crop, EXIF
+    /// orientation), the frame the app's decode renders, so the fit can re-render the raw and read the same place.
+    pub pos: [f32; 2],
+}
+
+/// The raw file's own colour tags (DNG `ColorMatrix1/2` / `ForwardMatrix1/2`, or a decoder's equivalent), the
+/// fit's first choice of prior.
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct DngMatrices {
+    /// `CalibrationIlluminant1/2` (Exif LightSource codes).
+    pub illuminant: [u16; 2],
+    pub color_matrix: [Option<lcc_color::Mat3>; 2],
+    pub forward_matrix: [Option<lcc_color::Mat3>; 2],
 }
 
 /// One raw paired with one export of one look.
@@ -58,6 +71,8 @@ pub struct PhotoSamples {
     pub raw_path: PathBuf,
     /// Path of the export (local only).
     pub export_path: PathBuf,
+    /// The raw's own colour matrices, when it has any.
+    pub dng: Option<DngMatrices>,
 }
 
 /// Options for collecting.
@@ -111,6 +126,7 @@ struct Ours {
     white: White,
     make: String,
     model: String,
+    dng: Option<DngMatrices>,
 }
 
 /// Decode, develop (camera RGB, no white balance, no matrix), orient and reduce a raw to long edge `reg`.
@@ -134,7 +150,14 @@ fn develop_ours(path: &Path, reg: usize) -> std::result::Result<Ours, String> {
     let (cam, cam_max) = reduce_rgb(&src, w, h, |p| p[0].max(p[1]).max(p[2]));
     let white = white_of(&raw.color, raw.wb_multipliers);
     let m = &raw.metadata;
+    let c = &raw.color;
+    let dng = c.color_matrix.iter().any(Option::is_some).then_some(DngMatrices {
+        illuminant: c.illuminant,
+        color_matrix: c.color_matrix,
+        forward_matrix: c.forward_matrix,
+    });
     Ok(Ours {
+        dng,
         cam,
         cam_max,
         white,
@@ -275,6 +298,7 @@ pub fn collect(raws: &[PathBuf], exports: &[ExportSet], opts: &CollectOptions) -
                         held_out: held_out(rank, n_raws, opts.hold_out),
                         raw_path: rf.path.clone(),
                         export_path: ex.path.clone(),
+                        dng: ours.dng,
                     }),
                     Err(e) => skipped.push((file_name(&ex.path), e)),
                 }
