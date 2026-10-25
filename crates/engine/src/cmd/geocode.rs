@@ -543,7 +543,7 @@ mod tests {
     #[test]
     fn a_client_cannot_choose_where_the_place_names_download_to() {
         let mut s = Session::with_demo();
-        let dir = std::env::temp_dir().join(format!("lightcraft-geocode-elsewhere-{}", std::process::id()));
+        let dir = std::env::temp_dir().join(format!("lcc-geocode-elsewhere-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&dir);
         for p in [json!({"dataset": dir}), json!({"base": "https://example.com/"}), json!({"dataset": dir, "base": "https://example.com/"})] {
             let e = s.execute("metadata.downloadPlaceNames", &p).unwrap_err().to_string();
@@ -560,7 +560,7 @@ mod tests {
     fn a_download_replaces_a_planted_link_instead_of_writing_through_it() {
         let mut s = Session::with_demo();
         let base = serve();
-        let root = std::env::temp_dir().join(format!("lightcraft-geocode-link-{}", std::process::id()));
+        let root = std::env::temp_dir().join(format!("lcc-geocode-link-{}", std::process::id()));
         let _ = std::fs::remove_dir_all(&root);
         let dir = root.join("geonames");
         std::fs::create_dir_all(&dir).unwrap();
