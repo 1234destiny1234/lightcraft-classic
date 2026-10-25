@@ -3,7 +3,7 @@
 //!
 //! Port of the VC-5 decoder in GoPro's GPR SDK (<https://github.com/gopro/gpr>, `source/lib/vc5_common` and
 //! `source/lib/vc5_decoder`), Copyright 2018 GoPro Inc., licensed under the Apache License 2.0 or the MIT License, at
-//! your option (see NOTICE). Translated to Rust and restructured by the LightCraft contributors (2026): the stream is
+//! your option (see NOTICE). Translated to Rust and restructured by the upstream project's contributors (2026): the stream is
 //! first split into its coded bands by their chunk sizes, the bands are then decoded and the four channels
 //! reconstructed in parallel, and malformed input returns an error where the C code asserts. The arithmetic (codebook,
 //! companding, dequantization, the 2/6 inverse wavelet with its edge filters, the log curve and the Bayer repacking)
