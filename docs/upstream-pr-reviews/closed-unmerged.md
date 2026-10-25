@@ -33,7 +33,7 @@ Summary: 7 adopted, 6 to learn from, 161 skipped, of 174 reviewed.
 | #2193 | denoise-serve: auth deadline over the whole first line; per-address back-off after bad tokens (#2133) | ADOPT | author abandoned it; denoise-serve auth deadline and back-off (security) | fork #515 |
 | #2191 | SAM 3 worker: token handshake, concurrent handshakes, survive accept errors (#2134) | ADOPT | author abandoned it; SAM 3 worker token handshake (env names via lcc_brand) | fork #515 |
 | #2190 | Develop settings: limits on every list (masks, strokes, samples, spots, red eye, ...) (#2121) | ADOPT | author abandoned it; caps every list in develop settings (never-crash) | fork #515 |
-| #2189 | Library folders: never write, cut or read through a planted link (#2122) | ADOPT | author abandoned it; merged with the fork's own partial #2122 fix (link-safe reads, appends, cuts) | fork #515 |
+| #2189 | Library folders: never write, cut or read through a planted link (#2122) | ADOPT | partial: lock and store side duplicated by upstream #2552 (now on fork main); the rest (faces index, sidecar backups, thumbnail cache, profiles, read_no_follow) adopted | fork #515 |
 | #2186 | Imported profiles: read and delete only the library's own copies in Profiles/ (#2123) | ADOPT | author abandoned it; imported profiles read/deleted only inside Profiles/ | fork #515 |
 | #2185 | Edit In: start only the editor set in Settings, never one a client names (#2115) | SKIP | duplicate: the fork fixed #2115 itself (b34d09c20, #479: Edit In starts only editors set in Settings) |  |
 | #2183 | engine: stop the export batch's lane queue on every scope exit (#2132) | SKIP | duplicate: already upstream via #2145, so in the fork |  |
