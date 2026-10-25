@@ -708,6 +708,10 @@ pub fn apply_kind(ctx: &egui::Context, kind: ThemeKind) {
     );
     w.noninteractive.bg_stroke = Stroke::new(1.0, t.divider);
     w.inactive.bg_stroke = Stroke::new(1.0, t.button_border);
+    // egui's own buttons, fields and combo boxes: softly rounded, as the app's buttons and cards
+    for state in [&mut w.inactive, &mut w.hovered, &mut w.active, &mut w.open] {
+        state.corner_radius = CornerRadius::same(7);
+    }
     ctx.set_visuals_of(egui::Theme::Dark, v.clone());
     ctx.set_visuals_of(egui::Theme::Light, v);
     ctx.set_theme(if dark { egui::Theme::Dark } else { egui::Theme::Light });

@@ -599,7 +599,9 @@ fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
         p.rect_filled(track, 0.0, SCOPE_BG);
         graticule_rows(p, track, 4);
         let image = waveform_image(h, &planes, scale);
-        let id = egui::Id::new(("scope-waveform", k));
+        // a texture per scope and track: a Parade beside a Waveform (the second histogram) must not
+        // share one, or the scope drawn last shows in both
+        let id = egui::Id::new(("scope-waveform", mode.name(), k));
         let tex = p.ctx().data_mut(|d| d.get_temp::<egui::TextureHandle>(id));
         let tex = match tex {
             Some(mut t) => {
@@ -607,7 +609,7 @@ fn paint_waveform(p: &Painter, plot: Rect, h: &Histogram, mode: HistogramMode, s
                 t
             }
             None => {
-                let t = p.ctx().load_texture(format!("scope-waveform-{k}"), image, egui::TextureOptions::LINEAR);
+                let t = p.ctx().load_texture(format!("scope-waveform-{}-{k}", mode.name()), image, egui::TextureOptions::LINEAR);
                 p.ctx().data_mut(|d| d.insert_temp(id, t.clone()));
                 t
             }

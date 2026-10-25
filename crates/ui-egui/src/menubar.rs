@@ -514,6 +514,7 @@ pub fn checked(app: &LccApp, id: &str) -> Option<bool> {
         "panel.redeye" => panel(RightPanel::RedEye),
         "panel.versions" => panel(RightPanel::Versions),
         "panel.activity" => panel(RightPanel::Activity),
+        "panel.info" if crate::modern::on(app) => Some(app.ui.modern.info),
         "panel.info" => panel(RightPanel::Info),
         "panel.keywords" => panel(RightPanel::Keywords),
         "panel.presets" => Some(u.presets),

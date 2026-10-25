@@ -1417,7 +1417,15 @@ pub fn run_ui_command(app: &mut LccApp, id: &str, p: &Value) -> Option<Result<Va
             Ok(Value::Null)
         }
         "panel.info" => {
-            panel(app, &ctx, RightPanel::Info, "Info");
+            // the Modern layout's Info card (Library), else Classic's Info panel
+            if crate::modern::on(app) {
+                app.ui.modern.info = !app.ui.modern.info;
+                if app.ui.modern.info && app.ui.module != crate::module::ModuleId::Library {
+                    let _ = app.run("module.library", serde_json::json!({}));
+                }
+            } else {
+                panel(app, &ctx, RightPanel::Info, "Info");
+            }
             Ok(Value::Null)
         }
         "panel.keywords" => {
