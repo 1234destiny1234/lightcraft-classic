@@ -2397,7 +2397,9 @@ pub(crate) fn export_screen(app: &mut LccApp, ctx: &egui::Context) {
     let tops: Vec<(String, f32, String)> = ctx.data_mut(|d| d.remove_temp(egui::Id::new(EXPORT_TOPS))).unwrap_or_default();
     // the dialog's own id and the modal layer: popups opened in it (dropdowns) stay open
     let shown = egui::Area::new(egui::Id::new("app-export-dialog")).movable(false).order(egui::Order::Middle).fixed_pos(screen.min).show(ctx, |ui| {
-        let (bg, _) = ui.allocate_exact_size(screen.size(), egui::Sense::click());
+        // (hover only: the area on top already keeps clicks from the window below, and a
+        // nameless clickable backdrop would be an unnamed control to a screen reader)
+        let (bg, _) = ui.allocate_exact_size(screen.size(), egui::Sense::hover());
         ui.painter().rect_filled(bg, 0.0, t.chrome);
         // (the dialog's id, as the window had)
         crate::widgets::register(ui.ctx(), "dialog:window", bg);
