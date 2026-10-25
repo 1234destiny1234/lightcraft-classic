@@ -36,7 +36,8 @@ const EMBEDDED: &[(&str, &[&str])] = &[
     ("assets/app-icon/", &["lcc-app"]),
     ("assets/camera-profiles/", &["lcc-engine"]),
     ("assets/camera-tone/", &["lcc-engine"]),
-    ("assets/fonts/", &["lcc-engine", "lcc-ui-egui"]),
+    ("assets/fonts/", &["lcc-engine", "lcc-ui-egui", "lcc-pdf", "lcc-text"]),
+    ("brand.toml", &["lcc-brand"]),
     ("contributors/", &["lcc-ui-egui"]),
     ("docs/whats-new.md", &["lcc-ui-egui"]),
     ("docs/raw/coverage-sweep.tsv", &["lcc-raw"]),
@@ -332,6 +333,10 @@ mod tests {
             for t in targets {
                 // outside the workspace (`../craft-fonts`), not a real file, or inside the package
                 let Some(rel) = normalize(&t) else { continue };
+                // the workspace root itself: a path prefix (`manifest.join("../..").join(p)`), not a file
+                if rel.is_empty() {
+                    continue;
+                }
                 if !root.join(&rel).exists() || rel.starts_with(&format!("{pkg_rel}/")) {
                     continue;
                 }
