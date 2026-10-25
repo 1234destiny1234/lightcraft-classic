@@ -187,7 +187,8 @@ impl DevelopSettings {
         }
     }
 
-    /// Reset every control in `section` to its default.
+    /// Reset every control in `section` to its default, and the settings of the section that are not
+    /// controls (the creative profile, the curve, the white balance mode).
     pub fn reset_section(&mut self, section: Section) {
         for c in controls::in_section(section) {
             controls::set(self, c.id, c.default);
@@ -199,6 +200,13 @@ impl DevelopSettings {
             }
             Section::Color => self.wb.mode = WbMode::AsShot,
             Section::Detail => self.enhance.denoise_on = None,
+            // the creative profile is not a control: the chosen look goes back to the default one,
+            // and so does the camera's own local tone mapping
+            Section::Profile => {
+                let d = Profile::default();
+                self.profile.id = d.id;
+                self.profile.camera_local_tone = d.camera_local_tone;
+            }
             _ => {}
         }
     }
@@ -214,6 +222,19 @@ mod tests_process;
 
 #[cfg(test)]
 mod tests {
+    #[test]
+    fn resetting_the_profile_section_restores_the_default_profile() {
+        // the chosen creative profile is not a control, so resetting the section must restore it too
+        let mut s = super::DevelopSettings::default();
+        s.profile.id = "lc.muted.matte-soft".into();
+        s.profile.amount = 40.0;
+        s.profile.camera_local_tone = !super::Profile::default().camera_local_tone;
+        s.reset_section(super::Section::Profile);
+        assert_eq!(s.profile.id, super::Profile::default().id, "the creative profile survives a Profile reset");
+        assert_eq!(s.profile.amount, super::Profile::default().amount);
+        assert_eq!(s.profile.camera_local_tone, super::Profile::default().camera_local_tone);
+    }
+
     use super::*;
     use serde_json::json;
 
